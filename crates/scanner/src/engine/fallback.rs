@@ -1,16 +1,12 @@
 use super::*;
 #[cfg(feature = "simd")]
-use crate::simd::backend::{HsCompileOpts, HsScanner};
+use super::fallback_hs::HsFallbackEngine;
 use aho_corasick::AhoCorasick;
 use std::cell::RefCell;
 use std::sync::atomic::{AtomicU64, AtomicU8, Ordering::Relaxed};
 use std::sync::OnceLock;
-use std::time::Instant;
 
-use super::fallback_truncate::{
-    focus_ceil_boundary, focus_floor_boundary, regex_prefix_anchorable, truncate_for_prefilter,
-    truncate_src,
-};
+use super::fallback_truncate::truncate_for_prefilter;
 
 /// Per-pattern fallback profiler (env-gated; measurement only). Set
 /// `KEYHOG_PROFILE_FALLBACK=1` to accumulate, per fallback pattern index, the
@@ -18,7 +14,7 @@ use super::fallback_truncate::{
 /// isolates WHICH fallback detectors dominate `scan_fallback_patterns` (77-85%
 /// of phase-2 per the breakdown) so anchor-localization targets the real hot
 /// set, not the homoglyph variants that never fire. Zero-cost when unset.
-fn fallback_pat_prof_enabled() -> bool {
+pub(crate) fn fallback_pat_prof_enabled() -> bool {
     static EN: OnceLock<bool> = OnceLock::new();
     *EN.get_or_init(|| std::env::var("KEYHOG_PROFILE_FALLBACK").as_deref() == Ok("1"))
 }
@@ -29,8 +25,8 @@ static FALLBACK_PAT_RUNS: OnceLock<Vec<AtomicU64>> = OnceLock::new();
 /// Sub-split of `populate_active_fallback`: time spent in the always-active
 /// RegexSet prefilter vs the keyword Aho-Corasick. Confirms which half of the
 /// active-set computation dominates. Env-gated like the per-pattern profiler.
-static POPULATE_PREFILTER_NS: AtomicU64 = AtomicU64::new(0);
-static POPULATE_KEYWORD_NS: AtomicU64 = AtomicU64::new(0);
+pub(crate) static POPULATE_PREFILTER_NS: AtomicU64 = AtomicU64::new(0);
+pub(crate) static POPULATE_KEYWORD_NS: AtomicU64 = AtomicU64::new(0);
 
 /// Prefix-gate diagnostics (env-gated by `KEYHOG_PROFILE_FALLBACK`). Counts how
 /// many gateable batches were SKIPPED (their required prefix literals absent)
@@ -58,14 +54,14 @@ pub fn fallback_gate_stats_dump() -> (u64, u64, u64) {
     (calls, skips, runs)
 }
 
-fn fallback_prof_vecs(len: usize) -> (&'static [AtomicU64], &'static [AtomicU64]) {
+pub(crate) fn fallback_prof_vecs(len: usize) -> (&'static [AtomicU64], &'static [AtomicU64]) {
     let ns = FALLBACK_PAT_NS.get_or_init(|| (0..len).map(|_| AtomicU64::new(0)).collect());
     let runs = FALLBACK_PAT_RUNS.get_or_init(|| (0..len).map(|_| AtomicU64::new(0)).collect());
     (ns.as_slice(), runs.as_slice())
 }
 
 #[inline]
-fn fallback_prof_record(len: usize, index: usize, nanos: u64) {
+pub(crate) fn fallback_prof_record(len: usize, index: usize, nanos: u64) {
     let (ns, runs) = fallback_prof_vecs(len);
     if let (Some(n), Some(r)) = (ns.get(index), runs.get(index)) {
         n.fetch_add(nanos, Relaxed);
@@ -85,8 +81,8 @@ fn fallback_prof_record(len: usize, index: usize, nanos: u64) {
 ///     that is both always-active and keyword-triggered, without the O(F)
 ///     per-chunk clear a dense bitmap would need. The generation counter just
 ///     increments; `stamp` is grown once and reused.
-struct ActivePatternsScratch {
-    active: Vec<usize>,
+pub(crate) struct ActivePatternsScratch {
+    pub(crate) active: Vec<usize>,
     stamp: Vec<u32>,
     generation: u32,
 }
@@ -104,7 +100,7 @@ impl ActivePatternsScratch {
     /// stale, ensure the stamp vector covers `len` patterns, and clear the
     /// sparse list (retaining its capacity). On generation wraparound the
     /// stamp vector is reset so a stale `u32::MAX` stamp can't alias.
-    fn begin(&mut self, len: usize) {
+    pub(crate) fn begin(&mut self, len: usize) {
         if self.stamp.len() < len {
             self.stamp.resize(len, 0);
         }
@@ -118,9 +114,10 @@ impl ActivePatternsScratch {
     }
 
     /// Record `index` as active if it has not already been recorded this
-    /// generation. Returns nothing; dedup is silent.
+    /// generation. Returns nothing; dedup is silent. `pub(crate)` so the
+    /// extracted [`super::fallback_hs::HsFallbackEngine::mark`] can mark into it.
     #[inline]
-    fn mark(&mut self, index: usize) {
+    pub(crate) fn mark(&mut self, index: usize) {
         if let Some(slot) = self.stamp.get_mut(index) {
             if *slot != self.generation {
                 *slot = self.generation;
@@ -133,7 +130,7 @@ impl ActivePatternsScratch {
     /// shared-anchor path to gate candidate positions to the active set
     /// without a second pass over `active`.
     #[inline]
-    fn is_active(&self, index: usize) -> bool {
+    pub(crate) fn is_active(&self, index: usize) -> bool {
         self.stamp.get(index) == Some(&self.generation)
     }
 }
@@ -177,7 +174,7 @@ pub fn set_fallback_homoglyph_gate(mode: Option<bool>) {
 /// Whether the homoglyph ASCII-gate is enabled (default on). Set
 /// `KEYHOG_HOMOGLYPH_GATE=0` (or `set_fallback_homoglyph_gate(Some(false))`) to
 /// run every homoglyph variant on every chunk (the unoptimized path).
-fn homoglyph_gate_enabled() -> bool {
+pub(crate) fn homoglyph_gate_enabled() -> bool {
     match HOMOGLYPH_GATE_OVERRIDE.load(Relaxed) {
         1 => return true,
         2 => return false,
@@ -225,7 +222,7 @@ pub fn set_homoglyph_ascii_skip(mode: Option<bool>) {
 /// skip — not the skip itself. Gated behind `KEYHOG_HOMOGLYPH_ASCII_SKIP=1`
 /// (measurement only). NOTE: earlier "recall-neutral" measurements were vacuous —
 /// HS was the default prefilter and early-returned before this per-batch skip ran.
-fn homoglyph_ascii_skip_enabled() -> bool {
+pub(crate) fn homoglyph_ascii_skip_enabled() -> bool {
     match HOMOGLYPH_ASCII_SKIP_OVERRIDE.load(Relaxed) {
         1 => return true,
         2 => return false,
@@ -253,7 +250,7 @@ pub fn set_fallback_reverse(mode: Option<bool>) {
 /// prove whether the final finding set is INDEPENDENT of fallback extraction
 /// order — if it is, an O(text) literal prefilter (which marks in a different
 /// order than the RegexSet) is safe to adopt.
-fn fallback_reverse_enabled() -> bool {
+pub(crate) fn fallback_reverse_enabled() -> bool {
     match FALLBACK_REVERSE_OVERRIDE.load(Relaxed) {
         1 => return true,
         2 => return false,
@@ -267,7 +264,7 @@ fn fallback_reverse_enabled() -> bool {
 /// `KEYHOG_FALLBACK_ANCHOR=0` (or `set_fallback_anchor_mode(Some(false))`) to
 /// force the legacy whole-chunk path. Recall is identical either way — this is
 /// a pure performance route.
-fn fallback_anchor_enabled() -> bool {
+pub(crate) fn fallback_anchor_enabled() -> bool {
     match FALLBACK_ANCHOR_OVERRIDE.load(Relaxed) {
         1 => return true,
         2 => return false,
@@ -280,7 +277,7 @@ fn fallback_anchor_enabled() -> bool {
 thread_local! {
     /// Per-thread scratch for shared-anchor candidate `(pattern_idx, pos)`
     /// pairs. Grown once and reused (cleared, not freed) per chunk.
-    static ANCHOR_CANDIDATES: RefCell<Vec<(u32, u32)>> = const { RefCell::new(Vec::new()) };
+    pub(crate) static ANCHOR_CANDIDATES: RefCell<Vec<(u32, u32)>> = const { RefCell::new(Vec::new()) };
 }
 
 /// Combined-RegexSet prefilter for the always-active fallback patterns.
@@ -373,117 +370,6 @@ pub(crate) struct AlwaysActiveFallbackPrefilter {
     hs: Option<HsFallbackEngine>,
 }
 
-/// Hyperscan-backed always-active prefilter engine. See the `hs` field on
-/// [`AlwaysActiveFallbackPrefilter`].
-#[cfg(feature = "simd")]
-struct HsFallbackEngine {
-    scanner: HsScanner,
-    /// HS pattern id -> always-active fallback index (the `det_idx` slot we set
-    /// on each surviving pattern at build).
-    hs_to_fallback: Vec<usize>,
-    /// Patterns HS could not compile (PCRE feature / over-long): a LOUD host
-    /// path (Law 10). Each keeps its own compiled regex and is marked per chunk
-    /// via `is_match`, so its recall is preserved, never silently dropped.
-    dropped: Vec<(usize, LazyRegex)>,
-}
-
-#[cfg(feature = "simd")]
-impl HsFallbackEngine {
-    /// Compile an HS database over the always-active patterns. Each pattern
-    /// carries its OWN case flag (`is_case_insensitive`) so the marked set is
-    /// identical to the per-pattern `regex` reference, plus `SINGLEMATCH` so a
-    /// broad always-active pattern fires once instead of storming the callback.
-    /// Returns `None` (caller keeps the RegexSet path) if no pattern survives.
-    fn build(
-        fallback: &[(CompiledPattern, Vec<String>)],
-        always_active: &[usize],
-    ) -> Option<Self> {
-        let mut refs: Vec<(usize, usize, &str, bool)> = Vec::with_capacity(always_active.len());
-        let mut caseless: Vec<bool> = Vec::with_capacity(always_active.len());
-        for &idx in always_active {
-            let Some((pat, _)) = fallback.get(idx) else {
-                continue;
-            };
-            // det_idx slot carries the fallback index back through `pattern_info`.
-            refs.push((idx, 0, pat.regex.as_str(), false));
-            caseless.push(pat.regex.is_case_insensitive());
-        }
-        if refs.is_empty() {
-            return None;
-        }
-        let opts = HsCompileOpts {
-            singlematch: true,
-            caseless: Some(&caseless),
-            // ONE database: the prefilter scans every chunk against all patterns,
-            // so a sharded scan would pay the per-shard overhead N times per
-            // chunk and lose to the RegexSet on tiny files. A single DB + the
-            // no-alloc `scan_each` is the fast path.
-            shard_target: Some(usize::MAX),
-            // Byte mode (UTF8 off): both the pattern source and the haystack are
-            // UTF-8 bytes, so byte matching is correct for the unicode homoglyph
-            // classes, and HS_FLAG_UTF8 actually REJECTS many of these patterns
-            // at compile (→ silent fallback to RegexSet). Byte mode keeps them on
-            // the fast path; findings parity holds (`..._findings_parity`).
-            utf8: false,
-        };
-        let (scanner, unsupported) = match HsScanner::compile_with_opts(&refs, opts) {
-            Ok(v) => v,
-            Err(error) => {
-                tracing::warn!(
-                    target: "keyhog::fallback",
-                    %error,
-                    "HS always-active prefilter compile failed — using the regex::RegexSet path",
-                );
-                return None;
-            }
-        };
-        let mut hs_to_fallback = vec![0usize; scanner.pattern_count()];
-        for hs_id in 0..scanner.pattern_count() {
-            if let Some((fb, _, _)) = scanner.pattern_info(hs_id) {
-                hs_to_fallback[hs_id] = fb;
-            }
-        }
-        // `unsupported` indexes `refs`; map back to fallback indices and keep
-        // each on its own compiled regex (the LOUD host path, Law 10).
-        let dropped: Vec<(usize, LazyRegex)> = unsupported
-            .iter()
-            .filter_map(|&i| refs.get(i).map(|r| r.0))
-            .map(|fb_idx| (fb_idx, fallback[fb_idx].0.regex.clone()))
-            .collect();
-        if !dropped.is_empty() {
-            tracing::warn!(
-                target: "keyhog::fallback",
-                count = dropped.len(),
-                "HS prefilter: {} always-active pattern(s) on the loud regex host path (HS-incompatible)",
-                dropped.len(),
-            );
-        }
-        Some(Self {
-            scanner,
-            hs_to_fallback,
-            dropped,
-        })
-    }
-
-    /// Mark every always-active pattern that can match `match_text`. One SIMD
-    /// scan marks the HS-covered patterns; the loud host path marks the few
-    /// HS-incompatible ones. The marked set is a sound superset of the matching
-    /// patterns (extraction filters), identical to the RegexSet path.
-    #[inline]
-    fn mark(&self, match_text: &str, scratch: &mut ActivePatternsScratch) {
-        let hs_to_fallback = &self.hs_to_fallback;
-        self.scanner.scan_each(match_text.as_bytes(), |hs_id| {
-            if let Some(&fb) = hs_to_fallback.get(hs_id) {
-                scratch.mark(fb);
-            }
-        });
-        for (idx, re) in &self.dropped {
-            if re.get().is_match(match_text) {
-                scratch.mark(*idx);
-            }
-        }
-    }
-}
 
 /// Override for the fallback prefix-literal skip gate (test/diagnostic).
 /// `Some(true)` forces it on, `Some(false)` off, `None` = env default (on).
@@ -526,7 +412,7 @@ pub fn set_fallback_hs(mode: Option<bool>) {
 /// (`fallback_prefilter_hs_vs_regexset`) and is the measured #1 scan cost.
 /// `KEYHOG_FALLBACK_HS=0` forces the legacy reference path.
 #[cfg(feature = "simd")]
-fn fallback_hs_enabled() -> bool {
+pub(crate) fn fallback_hs_enabled() -> bool {
     match FALLBACK_HS_OVERRIDE.load(Relaxed) {
         1 => return true,
         2 => return false,
@@ -544,7 +430,7 @@ fn fallback_hs_enabled() -> bool {
 /// `KEYHOG_FALLBACK_HS_MAX_LEN`; default chosen so the small-file regime (the
 /// common case) takes HS and 16 KiB chunks take the RegexSet.
 #[cfg(feature = "simd")]
-fn hs_prefilter_max_len() -> usize {
+pub(crate) fn hs_prefilter_max_len() -> usize {
     static MAX: OnceLock<usize> = OnceLock::new();
     *MAX.get_or_init(|| {
         std::env::var("KEYHOG_FALLBACK_HS_MAX_LEN")
@@ -565,7 +451,7 @@ pub fn set_prefilter_truncate(mode: Option<bool>) {
     );
 }
 
-fn prefilter_truncate_enabled() -> bool {
+pub(crate) fn prefilter_truncate_enabled() -> bool {
     match PREFILTER_TRUNCATE_OVERRIDE.load(Relaxed) {
         1 => return true,
         2 => return false,
@@ -591,7 +477,7 @@ pub fn set_fallback_prefix_gate(mode: Option<bool>) {
     );
 }
 
-fn fallback_prefix_gate_enabled() -> bool {
+pub(crate) fn fallback_prefix_gate_enabled() -> bool {
     match PREFIX_GATE_OVERRIDE.load(Relaxed) {
         1 => return true,
         2 => return false,
@@ -645,7 +531,7 @@ pub(crate) fn decode_focus_enabled() -> bool {
 /// match that begins in context and extends into the decoded text (the credential
 /// prefix). Generous relative to credential prefix lengths; the differential
 /// `decode_focus_parity` gate validates it is sufficient.
-const DECODE_FOCUS_MARGIN: usize = 64;
+pub(crate) const DECODE_FOCUS_MARGIN: usize = 64;
 
 // NOTE: there is intentionally NO confirmed-pass equivalent of this focus. A
 // decode sub-chunk splices the decoded text in place of the encoded blob, which
@@ -665,7 +551,7 @@ const DECODE_FOCUS_MARGIN: usize = 64;
 /// presence oracle). Returns the literal byte strings, or `None` when the
 /// pattern can match without any specific prefix literal (then it must never be
 /// gated). Mirrors the soundness contract of `regex_prefix_anchorable`.
-fn gate_prefix_literals(src: &str) -> Option<Vec<Vec<u8>>> {
+pub(crate) fn gate_prefix_literals(src: &str) -> Option<Vec<Vec<u8>>> {
     use regex_syntax::hir::literal::{ExtractKind, Extractor};
     let hir = regex_syntax::ParserBuilder::new().build().parse(src).ok()?;
     let mut ex = Extractor::new();
@@ -1041,7 +927,7 @@ impl AlwaysActiveFallbackPrefilter {
     /// are SKIPPED here (no whole-chunk RegexSet pass). When false, plain
     /// batches run their ASCII-folded alternate (the order-preserving fold) —
     /// the safety-net path that is always recall-correct.
-    fn mark_matches(
+    pub(crate) fn mark_matches(
         &self,
         match_text: &str,
         scratch: &mut ActivePatternsScratch,
@@ -1156,768 +1042,6 @@ impl AlwaysActiveFallbackPrefilter {
 thread_local! {
     /// Per-thread pool for the active-fallback scratch. Pool one per worker;
     /// it is grown once and reused thereafter (no per-chunk allocation).
-    static ACTIVE_PATTERNS_POOL: RefCell<ActivePatternsScratch> =
+    pub(crate) static ACTIVE_PATTERNS_POOL: RefCell<ActivePatternsScratch> =
         const { RefCell::new(ActivePatternsScratch::new()) };
-}
-
-impl CompiledScanner {
-    #[allow(clippy::too_many_arguments, dead_code)]
-    pub(crate) fn scan_fallback_patterns(
-        &self,
-        preprocessed: &ScannerPreprocessedText<'_>,
-        line_offsets: &[usize],
-        code_lines: &[&str],
-        documentation_lines: &[bool],
-        chunk: &Chunk,
-        scan_state: &mut ScanState,
-        deadline: Option<std::time::Instant>,
-    ) {
-        if let Some(deadline) = deadline {
-            if std::time::Instant::now() >= deadline {
-                return;
-            }
-        }
-
-        // Shared-anchor fast path: one Aho-Corasick pass over all eligible
-        // patterns' required-prefix literals yields candidate positions, each
-        // verified by an anchored regex - replacing each pattern's own
-        // whole-chunk walk. Recall-identical (see `fallback_anchor`); handles
-        // any chunk size, so it supersedes the small/large split below. Active
-        // patterns with no required-literal anchor keep the whole-chunk path
-        // inside `scan_fallback_with_anchors`.
-        if !self.fallback.is_empty() && fallback_anchor_enabled() {
-            if let Some(anchor_idx) = &self.fallback_anchor_index {
-                self.scan_fallback_with_anchors(
-                    anchor_idx,
-                    preprocessed,
-                    line_offsets,
-                    code_lines,
-                    documentation_lines,
-                    chunk,
-                    scan_state,
-                    deadline,
-                    None,
-                );
-                return;
-            }
-        }
-
-        if preprocessed.text.len() > LARGE_FALLBACK_SCAN_THRESHOLD && !self.fallback.is_empty() {
-            self.scan_large_fallback_patterns(
-                preprocessed,
-                line_offsets,
-                code_lines,
-                documentation_lines,
-                chunk,
-                scan_state,
-                deadline,
-            );
-            return;
-        }
-        let prof = fallback_pat_prof_enabled();
-        self.with_active_fallback_patterns(
-            &chunk.data,
-            &preprocessed.text,
-            |this, active_patterns| {
-                // `active_patterns` is the SPARSE list of active fallback indices,
-                // so we touch only the patterns that can fire on this chunk rather
-                // than the full `fallback.len()` vector.
-                for (tested, &index) in active_patterns.iter().enumerate() {
-                    if let Some(deadline) = deadline {
-                        if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
-                            break;
-                        }
-                    }
-                    let (entry, _keywords) = &this.fallback[index];
-                    let t0 = if prof { Some(Instant::now()) } else { None };
-                    this.extract_matches(
-                        entry,
-                        preprocessed,
-                        line_offsets,
-                        code_lines,
-                        documentation_lines,
-                        chunk,
-                        scan_state,
-                        0,
-                        0,
-                        deadline,
-                    );
-                    if let Some(t0) = t0 {
-                        fallback_prof_record(
-                            this.fallback.len(),
-                            index,
-                            t0.elapsed().as_nanos() as u64,
-                        );
-                    }
-                }
-            },
-        );
-    }
-
-    /// Decode-recursion FOCUS variant of `scan_fallback_patterns`. A decode
-    /// sub-chunk is a small window of already-scanned parent context with the
-    /// freshly decoded text spliced in at `focus = (start, end)`. Everything
-    /// outside `[start,end)` was scanned (and any finding deduped against
-    /// `seen`) when the parent chunk was scanned, so the only NEW fallback
-    /// matches are those that touch the decoded text.
-    ///
-    /// This windows the two expensive parts of the fallback pass — the
-    /// always-active prefilter RegexSet and the per-pattern regex extraction —
-    /// to `[start-margin, end+margin)`, while keeping the FULL splice for every
-    /// signal that decides whether/how a match is reported:
-    ///   - `keyword_nearby` (`compute_pattern_signals` reads the full `chunk`),
-    ///   - the keyword Aho-Corasick prefilter (`data = &chunk.data`, so a
-    ///     keyword in far context still activates its pattern),
-    ///   - `line_offsets` / `documentation_lines` / `base_offset` / `base_line`.
-    /// So for any match that STARTS inside the focus window the produced
-    /// `(detector, credential, location, confidence)` is byte-identical to the
-    /// whole-splice scan. Matches outside the window are either pure-context
-    /// (already found by the parent → deduped) or unreachable, so the reported
-    /// set is unchanged (validated by `decode_focus_parity`).
-    ///
-    /// PRECONDITION: `preprocessed.text` must be byte-aligned with `chunk.data`
-    /// (the homoglyph-normalisation no-op passthrough), so `focus` — computed in
-    /// `chunk.data` coordinates — indexes `preprocessed.text` correctly. The
-    /// caller checks this; a non-passthrough chunk takes the full-scan path.
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn scan_fallback_patterns_focused(
-        &self,
-        preprocessed: &ScannerPreprocessedText<'_>,
-        line_offsets: &[usize],
-        code_lines: &[&str],
-        documentation_lines: &[bool],
-        chunk: &Chunk,
-        scan_state: &mut ScanState,
-        deadline: Option<std::time::Instant>,
-        focus: (usize, usize),
-    ) {
-        if let Some(deadline) = deadline {
-            if std::time::Instant::now() >= deadline {
-                return;
-            }
-        }
-        if self.fallback.is_empty() {
-            return;
-        }
-        let text: &str = &preprocessed.text;
-        // Expand the decoded span by the margin and snap to char boundaries.
-        let fs = focus_floor_boundary(text, focus.0.saturating_sub(DECODE_FOCUS_MARGIN));
-        let fe = focus_ceil_boundary(
-            text,
-            focus.1.saturating_add(DECODE_FOCUS_MARGIN).min(text.len()),
-        );
-        if fs >= fe {
-            return;
-        }
-        // If the focus window already covers (almost) the whole chunk, the
-        // restriction buys nothing — run the normal path so we don't pay the
-        // extra slice setup for no gain.
-        if fe - fs >= text.len() {
-            self.scan_fallback_patterns(
-                preprocessed,
-                line_offsets,
-                code_lines,
-                documentation_lines,
-                chunk,
-                scan_state,
-                deadline,
-            );
-            return;
-        }
-        let focus = Some((fs, fe));
-
-        // Prefer the optimized shared-anchor path (the default), now focus-aware:
-        // its AC candidate scan + always-active prefilter run over the window
-        // while signals/lines stay full. This is what makes the restriction a net
-        // win — the non-anchor whole-chunk prefilter, even windowed, barely beats
-        // the anchor path on full text.
-        if fallback_anchor_enabled() {
-            if let Some(anchor_idx) = &self.fallback_anchor_index {
-                self.scan_fallback_with_anchors(
-                    anchor_idx,
-                    preprocessed,
-                    line_offsets,
-                    code_lines,
-                    documentation_lines,
-                    chunk,
-                    scan_state,
-                    deadline,
-                    focus,
-                );
-                return;
-            }
-        }
-
-        // Anchor index unavailable: windowed non-anchor path (prefilter over the
-        // focus slice, keyword AC over full `chunk.data`, extraction cursor-bound
-        // to the window).
-        let match_text = &text[fs..fe];
-        let cursor = focus;
-        let prof = fallback_pat_prof_enabled();
-        self.with_active_fallback_patterns(&chunk.data, match_text, |this, active_patterns| {
-            for (tested, &index) in active_patterns.iter().enumerate() {
-                if let Some(deadline) = deadline {
-                    if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
-                        break;
-                    }
-                }
-                let (entry, _keywords) = &this.fallback[index];
-                let t0 = if prof { Some(Instant::now()) } else { None };
-                this.extract_matches_inner(
-                    entry,
-                    preprocessed,
-                    line_offsets,
-                    code_lines,
-                    documentation_lines,
-                    chunk,
-                    scan_state,
-                    0,
-                    0,
-                    cursor,
-                    deadline,
-                );
-                if let Some(t0) = t0 {
-                    fallback_prof_record(
-                        this.fallback.len(),
-                        index,
-                        t0.elapsed().as_nanos() as u64,
-                    );
-                }
-            }
-        });
-    }
-
-    /// Compute the active-fallback set into the thread-local pool, run the
-    /// caller's closure with a borrow of the SPARSE active-index list, and
-    /// return whatever the closure returns. The scratch is reset (not freed)
-    /// on entry, so the next chunk the same worker handles reuses the
-    /// allocation. The closure receives `&[usize]` - the fallback indices
-    /// that are active for this chunk, so it visits only those patterns
-    /// rather than the full `fallback.len()` vector.
-    /// `data` seeds the keyword-AC prefilter (raw chunk bytes, as before).
-    /// `match_text` is the text the always-active RegexSet prefilter runs on and
-    /// MUST be the same text per-pattern extraction uses (`preprocessed.text`)
-    /// so the prefilter is sound under unicode normalization.
-    fn with_active_fallback_patterns<R>(
-        &self,
-        data: &str,
-        match_text: &str,
-        f: impl FnOnce(&Self, &[usize]) -> R,
-    ) -> R {
-        ACTIVE_PATTERNS_POOL.with(|cell| {
-            let mut scratch = cell.borrow_mut();
-            scratch.begin(self.fallback.len());
-            // anchor_mode = false: the legacy whole-chunk path has no AC gating,
-            // so every always-active pattern must be marked for recall.
-            self.populate_active_fallback(data, match_text, &mut scratch, false);
-            if fallback_reverse_enabled() {
-                scratch.active.reverse();
-            }
-            f(self, &scratch.active)
-        })
-    }
-
-    /// As `with_active_fallback_patterns`, but hands the closure the full
-    /// `ActivePatternsScratch` (not just the sparse list) so it can also test
-    /// `is_active(idx)` in O(1) - the shared-anchor path needs that to gate
-    /// candidate positions to the active set.
-    fn with_active_fallback_scratch<R>(
-        &self,
-        data: &str,
-        match_text: &str,
-        f: impl FnOnce(&Self, &ActivePatternsScratch) -> R,
-    ) -> R {
-        ACTIVE_PATTERNS_POOL.with(|cell| {
-            let mut scratch = cell.borrow_mut();
-            scratch.begin(self.fallback.len());
-            // anchor_mode = true: this method only runs on the shared-anchor
-            // path, where eligible always-active patterns are gated by the AC.
-            self.populate_active_fallback(data, match_text, &mut scratch, true);
-            if fallback_reverse_enabled() {
-                scratch.active.reverse();
-            }
-            f(self, &scratch)
-        })
-    }
-
-    /// Shared-anchor fallback scan. Computes the active set once, then:
-    ///   1. runs ONE Aho-Corasick pass over the chunk for every eligible
-    ///      pattern's required-prefix literals, collecting `(pattern, pos)`
-    ///      candidates for the patterns that are active;
-    ///   2. verifies each active eligible pattern anchored at its candidate
-    ///      positions (O(match length) each, no per-pattern chunk scan);
-    ///   3. runs the remaining active NON-eligible patterns on the legacy
-    ///      whole-chunk path.
-    /// The union of (2) and (3) is exactly the active set the legacy loop would
-    /// have scanned, producing an identical match set (asserted by
-    /// `fallback_anchor_parity`).
-    #[allow(clippy::too_many_arguments)]
-    fn scan_fallback_with_anchors(
-        &self,
-        anchor_idx: &fallback_anchor::FallbackAnchorIndex,
-        preprocessed: &ScannerPreprocessedText<'_>,
-        line_offsets: &[usize],
-        code_lines: &[&str],
-        documentation_lines: &[bool],
-        chunk: &Chunk,
-        scan_state: &mut ScanState,
-        deadline: Option<std::time::Instant>,
-        // Decode-recursion FOCUS window `[fs, fe)` (in `preprocessed.text` ==
-        // `chunk.data` coordinates). When `Some`, the AC candidate scan, the
-        // always-active prefilter and every whole-chunk extraction are restricted
-        // to this window — the rest of the splice is already-scanned parent
-        // context. Signals (`keyword_nearby` via `&chunk.data`), line numbers and
-        // anchored verification still use the FULL text, so results for matches
-        // starting inside the window are byte-identical. `None` = whole chunk.
-        focus: Option<(usize, usize)>,
-    ) {
-        let prof = fallback_pat_prof_enabled();
-        // Text the AC candidate scan and the always-active prefilter run on.
-        let scan_text: &str = match focus {
-            Some((fs, fe)) => &preprocessed.text[fs..fe],
-            None => &preprocessed.text,
-        };
-        let shift = focus.map_or(0u32, |(fs, _)| fs as u32);
-        // `cursor_range` for the whole-chunk extraction fallbacks: restrict match
-        // STARTS to the focus window (matches still extend right freely).
-        let cursor = focus;
-        // Keyword AC still seeds from the FULL chunk bytes so a keyword in far
-        // context activates its pattern; only the prefilter text is windowed.
-        self.with_active_fallback_scratch(&chunk.data, scan_text, |this, scratch| {
-            ANCHOR_CANDIDATES.with(|cell| {
-                let mut cands = cell.borrow_mut();
-                {
-                    let _g = super::profile::span(super::profile::P::FbSharedAc);
-                    anchor_idx.collect_candidates(
-                        scan_text,
-                        |pat| scratch.is_active(pat),
-                        &mut cands,
-                    );
-                }
-                // Candidate positions are relative to `scan_text`; lift them back
-                // into full-text coordinates so anchored verification indexes the
-                // real (full) `preprocessed.text`.
-                if shift != 0 {
-                    for c in cands.iter_mut() {
-                        c.1 += shift;
-                    }
-                }
-                // Candidates are sorted by (pattern, pos); verify each
-                // pattern's contiguous run together so its per-pattern
-                // signal cache is built at most once.
-                let _verify_g = super::profile::span(super::profile::P::FbAnchoredVerify);
-                let mut i = 0usize;
-                while i < cands.len() {
-                    if let Some(deadline) = deadline {
-                        if std::time::Instant::now() >= deadline {
-                            break;
-                        }
-                    }
-                    let pat = cands[i].0 as usize;
-                    let mut j = i + 1;
-                    while j < cands.len() && cands[j].0 as usize == pat {
-                        j += 1;
-                    }
-                    let group = &cands[i..j];
-                    let (entry, _) = &this.fallback[pat];
-                    let t0 = if prof { Some(Instant::now()) } else { None };
-                    match anchor_idx.anchored_regex(pat) {
-                        Some(re) => this.extract_anchored(
-                            entry,
-                            re,
-                            group,
-                            preprocessed,
-                            line_offsets,
-                            code_lines,
-                            documentation_lines,
-                            chunk,
-                            scan_state,
-                            deadline,
-                        ),
-                        // Anchored regex failed to compile (logged once in
-                        // `AnchoredRegex::get`): fall back LOUDLY to the
-                        // whole-chunk walk so recall is preserved.
-                        None => this.extract_matches_inner(
-                            entry,
-                            preprocessed,
-                            line_offsets,
-                            code_lines,
-                            documentation_lines,
-                            chunk,
-                            scan_state,
-                            0,
-                            0,
-                            cursor,
-                            deadline,
-                        ),
-                    }
-                    if let Some(t0) = t0 {
-                        fallback_prof_record(
-                            this.fallback.len(),
-                            pat,
-                            t0.elapsed().as_nanos() as u64,
-                        );
-                    }
-                    i = j;
-                }
-            });
-
-            // Localized homoglyph path (ASCII chunks): the prefilter skipped
-            // the plain (homoglyph) patterns, so verify them here from the
-            // folded-literal AC candidate positions via `extract_anchored`
-            // (O(match) each — dense over-marking from a short literal is a
-            // cheap quick-fail, not a whole-chunk scan). Plain patterns with
-            // no folded literal run whole-chunk (they are few).
-            if homoglyph_gate_enabled() && scan_text.is_ascii() && anchor_idx.has_plain_localizer()
-            {
-                ANCHOR_CANDIDATES.with(|cell| {
-                    let mut cands = cell.borrow_mut();
-                    anchor_idx.collect_plain_candidates(scan_text, &mut cands);
-                    if shift != 0 {
-                        for c in cands.iter_mut() {
-                            c.1 += shift;
-                        }
-                    }
-                    let mut i = 0usize;
-                    while i < cands.len() {
-                        if let Some(deadline) = deadline {
-                            if std::time::Instant::now() >= deadline {
-                                break;
-                            }
-                        }
-                        let pat = cands[i].0 as usize;
-                        let mut j = i + 1;
-                        while j < cands.len() && cands[j].0 as usize == pat {
-                            j += 1;
-                        }
-                        let group = &cands[i..j];
-                        let (entry, _) = &this.fallback[pat];
-                        let t0 = if prof { Some(Instant::now()) } else { None };
-                        match anchor_idx.anchored_regex(pat) {
-                            Some(re) => this.extract_anchored(
-                                entry,
-                                re,
-                                group,
-                                preprocessed,
-                                line_offsets,
-                                code_lines,
-                                documentation_lines,
-                                chunk,
-                                scan_state,
-                                deadline,
-                            ),
-                            None => this.extract_matches_inner(
-                                entry,
-                                preprocessed,
-                                line_offsets,
-                                code_lines,
-                                documentation_lines,
-                                chunk,
-                                scan_state,
-                                0,
-                                0,
-                                cursor,
-                                deadline,
-                            ),
-                        }
-                        if let Some(t0) = t0 {
-                            fallback_prof_record(
-                                this.fallback.len(),
-                                pat,
-                                t0.elapsed().as_nanos() as u64,
-                            );
-                        }
-                        i = j;
-                    }
-                });
-                for &idx in anchor_idx.plain_always_mark() {
-                    if let Some(deadline) = deadline {
-                        if std::time::Instant::now() >= deadline {
-                            break;
-                        }
-                    }
-                    let pat = idx as usize;
-                    let (entry, _) = &this.fallback[pat];
-                    let t0 = if prof { Some(Instant::now()) } else { None };
-                    this.extract_matches_inner(
-                        entry,
-                        preprocessed,
-                        line_offsets,
-                        code_lines,
-                        documentation_lines,
-                        chunk,
-                        scan_state,
-                        0,
-                        0,
-                        cursor,
-                        deadline,
-                    );
-                    if let Some(t0) = t0 {
-                        fallback_prof_record(
-                            this.fallback.len(),
-                            pat,
-                            t0.elapsed().as_nanos() as u64,
-                        );
-                    }
-                }
-            }
-
-            // Active patterns with no required-literal anchor: whole-chunk
-            // (windowed to the focus cursor when focus-restricting).
-            let _wholechunk_g = super::profile::span(super::profile::P::FbWholeChunk);
-            for (tested, &index) in scratch.active.iter().enumerate() {
-                if anchor_idx.is_eligible(index) {
-                    continue;
-                }
-                if let Some(deadline) = deadline {
-                    if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
-                        break;
-                    }
-                }
-                let (entry, _) = &this.fallback[index];
-                let t0 = if prof { Some(Instant::now()) } else { None };
-                this.extract_matches_inner(
-                    entry,
-                    preprocessed,
-                    line_offsets,
-                    code_lines,
-                    documentation_lines,
-                    chunk,
-                    scan_state,
-                    0,
-                    0,
-                    cursor,
-                    deadline,
-                );
-                if let Some(t0) = t0 {
-                    fallback_prof_record(
-                        this.fallback.len(),
-                        index,
-                        t0.elapsed().as_nanos() as u64,
-                    );
-                }
-            }
-        });
-    }
-
-    /// True iff scanning `data` through the fallback path would activate at
-    /// least one pattern — i.e. the always-active RegexSet prefilter marks a
-    /// pattern OR a fallback keyword occurs in `data`.
-    ///
-    /// This is the EXACT, cheap necessary condition for a fallback match and is
-    /// the recall-load-bearing admission gate for no-Hyperscan-hit chunks (see
-    /// `should_scan_no_hit_chunk`): without it, a chunk that fires no literal
-    /// prefix but contains a prefix-less / keyword-less detector (asana-pat and
-    /// ~3100 similar, issue #69) is silently dropped (Law 10).
-    ///
-    /// It runs the SAME `populate_active_fallback` the production scan runs, so
-    /// it can never admit a chunk the scan then finds inert nor reject one the
-    /// scan would mark — admission and extraction share one active-set contract.
-    /// Note the earlier coarse form short-circuited to `true` whenever ANY
-    /// always-active pattern existed (so it answered "is there unconditional
-    /// fallback work?", admitting EVERY chunk); running the prefilter answers the
-    /// per-chunk question instead, which is what no-hit admission needs.
-    //
-    // `any(simd, gpu)`: the only caller is `should_scan_no_hit_chunk`, the
-    // no-phase-1-trigger admission gate that exists solely on the coalesced
-    // (`simd`) and megakernel (`gpu`) phase-2 tail. A no-`simd`-no-`gpu` build
-    // scans every chunk through the AC+fallback path unconditionally (no
-    // trigger-skip step), so it never asks this question — gating here keeps
-    // that profile warning-clean (Law 11) without dropping any chunk (Law 10).
-    #[cfg(any(feature = "simd", feature = "gpu"))]
-    pub(crate) fn has_active_fallback_patterns_for_chunk(&self, data: &str) -> bool {
-        if self.fallback.is_empty() {
-            return false;
-        }
-        // No keyword AC compiled => `populate_active_fallback` marks EVERY
-        // fallback pattern (its `else` arm), so the answer is unconditionally
-        // yes; skip the scan.
-        if self.fallback_keyword_ac.is_none() {
-            return true;
-        }
-        // Run the real active-set computation: the always-active RegexSet
-        // prefilter (marks the anchorless patterns that can fire on THIS chunk)
-        // plus the keyword AC. `match_text == data` because admission runs on the
-        // raw chunk before any structured preprocessing.
-        self.with_active_fallback_patterns(data, data, |_, active_patterns| {
-            !active_patterns.is_empty()
-        })
-    }
-
-    /// True iff `idx` is an eligible always-active pattern handled by the shared
-    /// anchor AC (and therefore excluded from the RegexSet prefilter).
-    #[inline]
-    fn anchor_always_active_eligible(&self, idx: usize) -> bool {
-        self.fallback_anchor_index
-            .as_ref()
-            .is_some_and(|a| a.is_always_active_eligible(idx))
-    }
-
-    /// Compute the active fallback set. `anchor_mode` selects how always-active
-    /// patterns are gated:
-    ///   * `true` (shared-anchor path): the RegexSet prefilter covers only the
-    ///     NON-eligible always-active patterns; eligible ones are gated later by
-    ///     the shared AC (see `scan_fallback_with_anchors`), so they are NOT
-    ///     marked here. This is the ~10x-smaller prefilter that is the win.
-    ///   * `false` (legacy whole-chunk path): every always-active pattern is
-    ///     marked (the reduced prefilter doesn't cover the eligible ones, and
-    ///     there is no AC gating on this path), so recall is preserved.
-    fn populate_active_fallback(
-        &self,
-        data: &str,
-        match_text: &str,
-        scratch: &mut ActivePatternsScratch,
-        anchor_mode: bool,
-    ) {
-        if let Some(keyword_ac) = &self.fallback_keyword_ac {
-            let prof = fallback_pat_prof_enabled();
-            // Always-active patterns (no >=4-char keyword) would each run their
-            // capture regex over the whole chunk. Gate them through a combined
-            // RegexSet so only patterns that can actually match are activated;
-            // the rest extract nothing and are dead work. The set is built with
-            // each pattern's own flags, so this drops cost, never recall. When
-            // the set could not be compiled, fall back to marking all of them.
-            // The always-active prefilter marks the patterns that can fire. Its
-            // plain (homoglyph) batches use a fast ASCII-folded alternate on
-            // pure-ASCII chunks (identical marking, far faster) — the perf win.
-            // When anchor localization is on, the prefilter covers only the
-            // non-eligible always-active set (eligible ones are handled by the
-            // shared AC); on the legacy path every always-active pattern must be
-            // marked, so a `None` prefilter falls back to marking them all.
-            // On the shared-anchor path, plain (homoglyph) patterns are handled
-            // by the localized AC on ASCII chunks, so the prefilter skips them.
-            let localize_plain = anchor_mode
-                && self
-                    .fallback_anchor_index
-                    .as_ref()
-                    .is_some_and(|a| a.has_plain_localizer());
-            let t0 = if prof { Some(Instant::now()) } else { None };
-            {
-                // The anchorless always-active RegexSet — the detectors that run
-                // on EVERY chunk. This span is the cost the "fallback" name hides.
-                let _g = super::profile::span(super::profile::P::FbPrefilter);
-                match &self.fallback_always_active_prefilter {
-                    Some(prefilter) => prefilter.mark_matches(match_text, scratch, localize_plain),
-                    None => {
-                        for &index in &self.fallback_always_active_indices {
-                            if anchor_mode && self.anchor_always_active_eligible(index) {
-                                continue;
-                            }
-                            scratch.mark(index);
-                        }
-                    }
-                }
-            }
-            if let Some(t0) = t0 {
-                POPULATE_PREFILTER_NS.fetch_add(t0.elapsed().as_nanos() as u64, Relaxed);
-            }
-            let t1 = if prof { Some(Instant::now()) } else { None };
-            {
-                let _g = super::profile::span(super::profile::P::FbKeywordAc);
-                for mat in keyword_ac.find_iter(data) {
-                    let keyword_idx = mat.pattern().as_usize();
-                    if let Some(pattern_indices) =
-                        self.fallback_keyword_to_patterns.get(keyword_idx)
-                    {
-                        for &pattern_idx in pattern_indices {
-                            scratch.mark(pattern_idx as usize);
-                        }
-                    }
-                }
-            }
-            if let Some(t1) = t1 {
-                POPULATE_KEYWORD_NS.fetch_add(t1.elapsed().as_nanos() as u64, Relaxed);
-            }
-        } else {
-            // No keyword prefilter compiled - every fallback pattern is
-            // considered active.
-            for index in 0..self.fallback.len() {
-                scratch.mark(index);
-            }
-        }
-    }
-
-    #[allow(clippy::too_many_arguments, dead_code)]
-    fn scan_large_fallback_patterns(
-        &self,
-        preprocessed: &ScannerPreprocessedText<'_>,
-        line_offsets: &[usize],
-        code_lines: &[&str],
-        documentation_lines: &[bool],
-        chunk: &Chunk,
-        scan_state: &mut ScanState,
-        deadline: Option<std::time::Instant>,
-    ) {
-        let prof = fallback_pat_prof_enabled();
-        self.with_active_fallback_patterns(&chunk.data, &preprocessed.text, |this, active_set| {
-            // `active_set` is the sparse list of active fallback indices, so
-            // we iterate only the patterns that can fire - no second
-            // `Vec<&CompiledPattern>` collect and no scan over the inactive
-            // entries of the full fallback vector.
-            for (tested, &index) in active_set.iter().enumerate() {
-                if let Some(deadline) = deadline {
-                    if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
-                        break;
-                    }
-                }
-                let (entry, _) = &this.fallback[index];
-                let t0 = if prof { Some(Instant::now()) } else { None };
-                this.extract_matches(
-                    entry,
-                    preprocessed,
-                    line_offsets,
-                    code_lines,
-                    documentation_lines,
-                    chunk,
-                    scan_state,
-                    0,
-                    0,
-                    deadline,
-                );
-                if let Some(t0) = t0 {
-                    fallback_prof_record(
-                        this.fallback.len(),
-                        index,
-                        t0.elapsed().as_nanos() as u64,
-                    );
-                }
-            }
-        });
-    }
-
-    /// Print and reset the per-pattern fallback profile (top 30 by time). Call
-    /// after a profiled run (`KEYHOG_PROFILE_FALLBACK=1`). Each line is the
-    /// fallback detector's regex, total ms, run count, and ns/run, plus whether
-    /// it carries a regex-required prefix anchor (the localization candidate).
-    pub fn fallback_profile_dump(&self, label: &str) {
-        let len = self.fallback.len();
-        let (ns, runs) = fallback_prof_vecs(len);
-        let mut rows: Vec<(usize, u64, u64)> = (0..len)
-            .map(|i| (i, ns[i].swap(0, Relaxed), runs[i].swap(0, Relaxed)))
-            .filter(|&(_, n, _)| n > 0)
-            .collect();
-        rows.sort_unstable_by(|a, b| b.1.cmp(&a.1));
-        let grand: u64 = rows.iter().map(|r| r.1).sum();
-        let prefilter_ms = POPULATE_PREFILTER_NS.swap(0, Relaxed) as f64 / 1e6;
-        let keyword_ms = POPULATE_KEYWORD_NS.swap(0, Relaxed) as f64 / 1e6;
-        eprintln!(
-            "=== FALLBACK per-pattern profile [{label}] ===\n  populate: always-active RegexSet prefilter={prefilter_ms:.1} ms, keyword-AC={keyword_ms:.1} ms\n  extract: {:.1} ms over {} active patterns",
-            grand as f64 / 1e6,
-            rows.len()
-        );
-        for (i, n, r) in rows.iter().take(30) {
-            let src = self.fallback[*i].0.regex.as_str();
-            let anchored = regex_prefix_anchorable(src);
-            let per_run = if *r > 0 { *n / *r } else { 0 };
-            eprintln!(
-                "  {:>6.1}ms {:>5.1}%  runs={:<6} {:>7}ns/run  [{}] {}",
-                *n as f64 / 1e6,
-                100.0 * *n as f64 / grand.max(1) as f64,
-                r,
-                per_run,
-                if anchored { "ANCHOR" } else { "  --  " },
-                truncate_src(src, 64),
-            );
-        }
-    }
 }

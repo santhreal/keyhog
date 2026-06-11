@@ -55,9 +55,12 @@ mod compile;
 mod extract;
 pub(crate) mod fallback;
 mod fallback_anchor;
+mod fallback_compiled;
 mod fallback_entropy;
 mod fallback_entropy_helpers;
 mod fallback_generic;
+#[cfg(feature = "simd")]
+mod fallback_hs;
 pub(crate) mod fallback_truncate;
 mod gpu_cache;
 mod gpu_forced;
