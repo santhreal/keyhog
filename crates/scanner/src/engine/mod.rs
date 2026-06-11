@@ -73,6 +73,7 @@ mod scan;
 mod scan_filters;
 mod scan_inner_profile;
 mod scan_postprocess;
+mod scoring;
 pub mod segment_attribution;
 mod trigger_bitmap;
 mod windowed;
