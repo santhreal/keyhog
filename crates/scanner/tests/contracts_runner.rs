@@ -61,7 +61,13 @@ struct Negative {
     reason: String,
 }
 
+// `deny_unknown_fields`: a top-level scalar written AFTER a `[perf]`/`[scale]`
+// header binds to that table in TOML, not to the Contract. A `readme_claim`
+// misplaced at the bottom of a contract used to land here and be silently
+// dropped, making `every_contract_readme_claim_present` vacuous. Rejecting
+// unknown budget keys turns that mistake into a loud parse error.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct PerfBudget {
     fixture_bytes: usize,
     max_microseconds: u64,
@@ -70,6 +76,7 @@ struct PerfBudget {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ScaleBudget {
     fixture_bytes: usize,
     min_findings: usize,
@@ -470,8 +477,10 @@ fn every_contract_readme_claim_present() {
         }
     };
     let mut failures: Vec<String> = Vec::new();
+    let mut checked = 0usize;
     for (path, c) in &contracts {
         if let Some(claim) = &c.readme_claim {
+            checked += 1;
             if !readme.contains(claim) {
                 failures.push(format!(
                     "{}: README claim {:?} not present in README.md ({})",
@@ -486,6 +495,46 @@ fn every_contract_readme_claim_present() {
         failures.is_empty(),
         "README claim drift:\n  - {}",
         failures.join("\n  - "),
+    );
+
+    // Liveness floor: this gate is only meaningful if it actually checked
+    // claims. A `readme_claim` placed after a `[perf]`/`[scale]` header binds
+    // to the budget table, not the Contract, so it parsed as `None` and this
+    // test passed vacuously for years. `deny_unknown_fields` on the budget
+    // structs now makes that a loud parse error; this floor is the second
+    // guard, so the gate cannot silently regress to checking nothing.
+    assert!(
+        checked >= 6,
+        "every_contract_readme_claim_present checked only {checked} readme_claim(s) — \
+         expected >= 6. A claim was likely misplaced under a [table] and dropped; \
+         move it to the top-level scalar position (right after `severity`).",
+    );
+}
+
+/// Every contract's `detector_id` MUST resolve to a real loaded detector.
+/// An orphan id is not harmless: the negative-test loop keys `detector_fired`
+/// on `detector_id`, so a contract for a non-existent detector has VACUOUS
+/// precision coverage (its negatives can never fire). Found `nih-pubmed-api`
+/// (real id `nih-pubmed-api-key`) this way.
+#[test]
+fn every_contract_detector_id_resolves() {
+    let detectors =
+        keyhog_core::load_detectors(&detector_dir()).expect("detectors loadable");
+    let ids: std::collections::HashSet<&str> =
+        detectors.iter().map(|d| d.id.as_str()).collect();
+
+    let contracts = load_contracts();
+    let mut orphans: Vec<String> = Vec::new();
+    for (path, c) in &contracts {
+        if !ids.contains(c.detector_id.as_str()) {
+            orphans.push(format!("{} ({})", c.detector_id, path.display()));
+        }
+    }
+    assert!(
+        orphans.is_empty(),
+        "contract(s) name a detector_id with no matching detector — their negative \
+         tests are vacuous (the `detector_fired` check keys on detector_id):\n  - {}",
+        orphans.join("\n  - "),
     );
 }
 

@@ -1,20 +1,38 @@
-//! Contract: README claims 900 detectors - tree must match exactly.
+//! Contract: the loaded corpus size equals the on-disk `detectors/` TOML
+//! count — i.e. the loader loads EVERY on-disk detector, none silently
+//! dropped. The count is single-sourced from the loader (see
+//! `readme_claims::readme_claim_detector_count`); this test pins the
+//! internal invariant with no hardcoded number, so adding a detector never
+//! requires editing a literal here.
 
 use std::path::PathBuf;
 
-#[test]
-fn readme_detector_count_matches_disk() {
+fn detectors_dir() -> PathBuf {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     d.pop();
     d.pop();
     d.push("detectors");
-    let count = std::fs::read_dir(&d)
+    d
+}
+
+#[test]
+fn readme_detector_count_matches_disk() {
+    let dir = detectors_dir();
+    let disk_count = std::fs::read_dir(&dir)
         .expect("detectors/")
         .flatten()
         .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("toml"))
         .count();
+
+    let loaded = keyhog_core::load_detectors(&dir)
+        .expect("detectors/ must load")
+        .len();
+
     assert_eq!(
-        count, 900,
-        "README contract: 900 detector TOMLs on disk, found {count}"
+        disk_count, loaded,
+        "loader drift: {disk_count} *.toml files on disk in {} but the loader \
+         returned {loaded} detectors. A detector TOML is being silently dropped \
+         (bad id, duplicate, parse-skip) — every on-disk detector must load.",
+        dir.display(),
     );
 }

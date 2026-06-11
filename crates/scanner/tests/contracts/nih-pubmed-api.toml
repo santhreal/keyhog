@@ -1,5 +1,5 @@
 schema_version = 1
-detector_id = "nih-pubmed-api"
+detector_id = "nih-pubmed-api-key"
 service = "nih"
 severity = "medium"
 
