@@ -76,6 +76,32 @@ impl std::fmt::Debug for ReassembledCandidate {
     }
 }
 
+/// Deterministically evict one fragment when a scope exceeds
+/// [`MAX_FRAGMENTS_PER_SCOPE`]. The previous `cluster.remove(0)` dropped the
+/// EARLIEST-ARRIVED fragment, but under the parallel (rayon) scan the order in
+/// which sibling chunks of the same file win the per-shard mutex is a thread
+/// race — so once a scope filled past the cap, *which* fragment survived (and
+/// therefore which reassembly joins, and which standalone findings they
+/// cannibalize) varied run-to-run on identical input. Evicting the fragment
+/// with the smallest `(line, value)` key is content/position-derived, hence
+/// independent of arrival order; in a SEQUENTIAL scan fragments arrive in
+/// increasing file position, so this is identical to the old `remove(0)`
+/// ("drop oldest") behaviour — it only removes the nondeterminism (Law 7).
+fn evict_one(cluster: &mut Vec<SecretFragment>) {
+    if let Some(idx) = cluster
+        .iter()
+        .enumerate()
+        .min_by(|(_, a), (_, b)| {
+            a.line
+                .cmp(&b.line)
+                .then_with(|| a.value.as_bytes().cmp(b.value.as_bytes()))
+        })
+        .map(|(i, _)| i)
+    {
+        cluster.remove(idx);
+    }
+}
+
 /// Global cache for tracking fragmented secrets across the entire scan run.
 pub struct FragmentCache {
     /// Maps normalized prefix (e.g. "aws_key") to a list of found fragments.
@@ -115,9 +141,9 @@ impl FragmentCache {
         }) {
             cluster.push(fragment);
             if cluster.len() > MAX_FRAGMENTS_PER_SCOPE {
-                // LRU-style: drop the oldest. The Zeroizing<String> drop
-                // impl scrubs the bytes before the allocator gets them.
-                cluster.remove(0);
+                // Deterministic eviction (see `evict_one`). The Zeroizing<String>
+                // drop impl scrubs the dropped fragment's bytes.
+                evict_one(cluster);
             }
         }
 
@@ -201,7 +227,8 @@ impl FragmentCache {
         }) {
             cluster.push(fragment);
             if cluster.len() > MAX_FRAGMENTS_PER_SCOPE {
-                cluster.remove(0);
+                // Deterministic eviction (see `evict_one`).
+                evict_one(cluster);
             }
         }
 

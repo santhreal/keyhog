@@ -325,13 +325,23 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
             }
             continue;
         }
-        // Sort: highest-confidence first, then severity desc, then detector_id asc.
+        // Sort: highest-confidence first, then severity desc, then detector_id
+        // asc, then credential / credential_hash / offset so the order is TOTAL.
+        // The winner is `group.remove(0)`; without the trailing keys, two
+        // matches sharing (confidence, severity, detector_id) — e.g. the same
+        // detector firing on two credentials at one (file, line, commit) scope —
+        // compare Equal, so which becomes the primary (vs. a `cross_detector.*`
+        // companion) is decided by input order, which is HashMap-iteration /
+        // thread nondeterministic. A total key fixes the primary credential.
         group.sort_by(|a, b| {
             let ac = a.confidence.unwrap_or(0.0);
             let bc = b.confidence.unwrap_or(0.0);
             bc.total_cmp(&ac)
                 .then_with(|| b.severity.cmp(&a.severity))
                 .then_with(|| a.detector_id.cmp(&b.detector_id))
+                .then_with(|| a.credential.cmp(&b.credential))
+                .then_with(|| a.credential_hash.cmp(&b.credential_hash))
+                .then_with(|| a.primary_location.offset.cmp(&b.primary_location.offset))
         });
         let mut winner = group.remove(0);
         for (idx, loser) in group.into_iter().enumerate() {

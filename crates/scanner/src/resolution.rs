@@ -89,8 +89,16 @@ fn resolve_match_groups(mut matches: Vec<RawMatch>) -> Vec<RawMatch> {
         let line = m.location.line.unwrap_or(0);
         groups.entry((file, line)).or_default().push(m);
     }
+    // Iterate groups in a deterministic key order. `HashMap::into_values` yields
+    // groups in RandomState order, so `resolved` came out shuffled run-to-run;
+    // the downstream total sort in `dedup_matches` washes that out for the final
+    // report, but emitting a stable order here keeps every intermediate consumer
+    // (and the resolution unit tests) reproducible. The `(file, line)` key is
+    // unique per group, so this is a total order.
+    let mut grouped: Vec<((Arc<str>, usize), Vec<RawMatch>)> = groups.into_iter().collect();
+    grouped.sort_by(|a, b| a.0.cmp(&b.0));
     let mut resolved = Vec::new();
-    for group in groups.into_values() {
+    for (_key, group) in grouped {
         if group.len() == SINGLE_MATCH_COUNT {
             resolved.extend(group);
             continue;
@@ -105,7 +113,11 @@ fn best_matches_for_group(group: Vec<RawMatch>) -> Vec<RawMatch> {
         .into_iter()
         .map(|matched| (match_priority_score(&matched), matched))
         .collect();
-    scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    // Total order: score desc via `total_cmp` (not `partial_cmp().unwrap_or`,
+    // which collapses NaN/ties to Equal and leaves the survivor at insertion
+    // order), then the `RawMatch` total `Ord` so equal-score matches break ties
+    // by content, not by the HashMap-iteration order they arrived in.
+    scored.sort_by(|a, b| b.0.total_cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
     let top_score = scored[0].0;
     scored
         .into_iter()

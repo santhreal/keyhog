@@ -155,9 +155,29 @@ impl Ord for RawMatch {
             ord => return ord,
         }
 
-        // Finally, deterministic sort by detector and credential
+        // Then by detector and credential.
         match self.detector_id.cmp(&other.detector_id) {
-            std::cmp::Ordering::Equal => self.credential.cmp(&other.credential),
+            std::cmp::Ordering::Equal => {}
+            ord => return ord,
+        }
+        match self.credential.cmp(&other.credential) {
+            std::cmp::Ordering::Equal => {}
+            ord => return ord,
+        }
+
+        // Finally by location (offset, then line) so the order is TOTAL with
+        // respect to the dedup identity (detector, credential, offset). Without
+        // this last key, two matches of the same secret at different offsets
+        // compare Equal, so when the capped per-chunk match heap
+        // (`ScanState::push_match`) evicts among them at `max_matches_per_chunk`,
+        // the survivor is chosen by insertion order — which is HashMap-iteration
+        // and rayon-thread nondeterministic. A dense, repetitive chunk (e.g. the
+        // concat-source throughput corpus) overflows the cap with many such
+        // ties, so the finding set flickered run-to-run. Including the location
+        // makes eviction content-determined: the kept set is reproducible
+        // regardless of marking volume or thread interleaving.
+        match self.location.offset.cmp(&other.location.offset) {
+            std::cmp::Ordering::Equal => self.location.line.cmp(&other.location.line),
             ord => ord,
         }
     }
