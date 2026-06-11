@@ -1,0 +1,60 @@
+# Per-detector contract: aws-bedrock-api-key
+#
+# Long-term AWS Bedrock API key: literal `ABSK` + the deterministic base64
+# anchor `QmVkcm9ja0FQSUtleS` + a 110-char base64 body (132 chars total).
+# The anchor is effectively unique (it encodes "BedrockAPIKey"), so positives
+# are synthetic-but-format-valid and negatives prove the anchor + length
+# bounds are load-bearing. Not checksum-gated, so format-valid fixtures are
+# not silently dropped.
+
+schema_version = 1
+detector_id = "aws-bedrock-api-key"
+service = "aws"
+severity = "critical"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "ABSKQmVkcm9ja0FQSUtleSYGcEYmTIBr6ysnXHravYjroDShigIQLS0PNHDWjrpil9o3qRwpbzFl0vePrls1cDN8QvUdbqJwNSlzq23meO5ACW3zsuzeDQgwLd92dO3gFCPF"
+credential = "ABSKQmVkcm9ja0FQSUtleSYGcEYmTIBr6ysnXHravYjroDShigIQLS0PNHDWjrpil9o3qRwpbzFl0vePrls1cDN8QvUdbqJwNSlzq23meO5ACW3zsuzeDQgwLd92dO3gFCPF"
+reason = "Bare canonical 132-char long-term Bedrock key (ABSK + BedrockAPIKey anchor)."
+
+[[positive]]
+text = 'AWS_BEARER_TOKEN_BEDROCK="ABSKQmVkcm9ja0FQSUtleSy2J0fajDUXD1efoRCtqKODGGBi8UWr7UJsq2tkhFhx8ZEDEd9hnKHivse0YHShMdeCAbPEOXOxyhkg5cqNGHA1grwAyKC3Y8HDD62wLdl37iKN"'
+credential = "ABSKQmVkcm9ja0FQSUtleSy2J0fajDUXD1efoRCtqKODGGBi8UWr7UJsq2tkhFhx8ZEDEd9hnKHivse0YHShMdeCAbPEOXOxyhkg5cqNGHA1grwAyKC3Y8HDD62wLdl37iKN"
+reason = "Env-var assignment (AWS_BEARER_TOKEN_BEDROCK), double-quoted."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "export ABSK_REGION=us-east-1 # just an ABSK-prefixed var name, no key"
+reason = "ABSK literal but not followed by the QmVkcm9ja0FQSUtleS base64 anchor."
+
+[[negative]]
+text = "ABSKQmVkcm9ja0FQSUtleSdeadbeef0000  # correct anchor but body far under 100 base64 chars"
+reason = "Correct anchor, body length below the {100,130} bound; must not fire."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "Authorization: Bearer ABSKQmVkcm9ja0FQSUtleSoM4fgI2BhUzqHSmTNK2bzg6OohEl6GBlKcywRZadfZPtESfwDHffnlHL1NXQi8QrrbKxjb8XAgluB8CqBjA4ir6vcnq6NdVJFKGZ2Q5YZfHU27"
+credential = "ABSKQmVkcm9ja0FQSUtleSoM4fgI2BhUzqHSmTNK2bzg6OohEl6GBlKcywRZadfZPtESfwDHffnlHL1NXQi8QrrbKxjb8XAgluB8CqBjA4ir6vcnq6NdVJFKGZ2Q5YZfHU27"
+reason = "Inside an HTTP Authorization header."
+
+[[evasion]]
+text = "# leaked: ABSKQmVkcm9ja0FQSUtleScgp7LkU0G7nApxwxBXqKhF73ZXikbtVfiXXF2av9gXCm7iYGMPqcSWkgHlUWH6BRool3VzAUMT47UmVxqSV8ZRRmDQxhvDuClQHjq9aldgSZJ7"
+credential = "ABSKQmVkcm9ja0FQSUtleScgp7LkU0G7nApxwxBXqKhF73ZXikbtVfiXXF2av9gXCm7iYGMPqcSWkgHlUWH6BRool3VzAUMT47UmVxqSV8ZRRmDQxhvDuClQHjq9aldgSZJ7"
+reason = "Inside a shell/Python comment line."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Single 4 KiB fixture, one planted Bedrock key, full pipeline."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + one planted Bedrock key; asserts the key surfaces despite filler."
