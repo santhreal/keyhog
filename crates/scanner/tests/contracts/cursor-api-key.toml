@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:6440965edd9f86a407cebbdb6fdc7ed0c60aaf103ce6cf9671ef968d92e759d1
-size 1321
+schema_version = 1
+detector_id = "cursor-api-key"
+service = "cursor"
+severity = "high"
+
+[[positive]]
+text = "CURSOR_API_KEY=key_719f3553f917bddb719f3553f917bddb719f3553f917bddb719f3553f917bddb"
+credential = "key_719f3553f917bddb719f3553f917bddb719f3553f917bddb719f3553f917bddb"
+reason = "Cursor API key env-var: key_ + exactly 64 hex (256-bit token)."
+
+[[positive]]
+text = "cursor api token: key_dd7b913f55f319b7dd7b913f55f319b7dd7b913f55f319b7dd7b913f55f319b7"
+credential = "key_dd7b913f55f319b7dd7b913f55f319b7dd7b913f55f319b7dd7b913f55f319b7"
+reason = "cursor keyword + key_<64 hex> in prose context."
+
+[[negative]]
+text = "primary_key_id = 42"
+reason = "key_ without a 64-hex body (ordinary identifier)."
+
+[[negative]]
+text = "key_deadbeef"
+reason = "key_ with only 8 hex chars - below the exact-64 requirement."
+
+[[evasion]]
+text = "cursor key_719f3553f917bddb719f3553f917bddb719f3553f917bddb719f3553f917bddb"
+credential = "key_719f3553f917bddb719f3553f917bddb719f3553f917bddb719f3553f917bddb"
+reason = "Space-separated cursor keyword + token (no = assignment)."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Cursor key."

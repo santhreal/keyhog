@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:7d851efdc2a57ca0aeaf0a0fd72c303eb746b0fbee0d0b753d1d1b5b4fc996d0
-size 1005
+schema_version = 1
+detector_id = "cypress-record-key"
+service = "cypress"
+severity = "high"
+
+[[positive]]
+text = "CYPRESS_RECORD_KEY=42136df0-709e-8c36-3ba2-01818f559a75"
+credential = "42136df0-709e-8c36-3ba2-01818f559a75"
+reason = "CYPRESS_RECORD_KEY env-var with valid GUID."
+
+[[positive]]
+text = "npx cypress run --record --key 01818f55-9a75-4213-6df0-709e8c363ba2"
+credential = "01818f55-9a75-4213-6df0-709e8c363ba2"
+reason = "CLI --record --key form with GUID."
+
+[[negative]]
+text = "cypress_record_key=not-a-uuid"
+reason = "Invalid GUID format."
+
+[[evasion]]
+text = "export CYPRESS_RECORD_KEY=\"42136df0-709e-8c36-3ba2-01818f559a75\""
+credential = "42136df0-709e-8c36-3ba2-01818f559a75"
+reason = "Quoted inside a shell export statement."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Cypress record key."

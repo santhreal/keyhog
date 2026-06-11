@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:0891e94f4745472ba26adcff3e589943580eacaa66a7355bc80bb0abce32716f
-size 1254
+schema_version = 1
+detector_id = "percy-token"
+service = "percy"
+severity = "critical"
+
+[[positive]]
+text = "percy_h3KLZpjNQVXQtYzZ36cCBZ9ab39wZdGc"
+credential = "percy_h3KLZpjNQVXQtYzZ36cCBZ9ab39wZdGc"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "percy_h3KLZpjNQVXQtYzZ36cCBZ9ab39wZdGc=\"percy_h3KLZpjNQVXQtYzZ36cCBZ9ab39wZdGc\""
+credential = "percy_h3KLZpjNQVXQtYzZ36cCBZ9ab39wZdGc"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "percyEXAMPLEEXAMPLEwZdGc"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "Authorization: Bearer percy_h3KLZpjNQVXQtYzZ36cCBZ9ab39wZdGc"
+credential = "percy_h3KLZpjNQVXQtYzZ36cCBZ9ab39wZdGc"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

@@ -1,3 +1,66 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:04d0a7fb42ee537ef285b5c110ee559429ec71cbe3ecf81851eccc1a4800cdcb
-size 2492
+# Per-detector contract: sendgrid-api-key
+#
+# Format: `SG.` + 22..32-char [a-zA-Z0-9_-] segment + `.` + 43..47-char
+# [a-zA-Z0-9_-] segment. Two dot-separated halves; the first is the
+# key ID, the second is the HMAC.
+
+schema_version = 1
+detector_id = "sendgrid-api-key"
+service = "sendgrid"
+severity = "critical"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "SG.9X3kQp7VbT2hYRzNcMfWj4.DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeF"
+credential = "SG.9X3kQp7VbT2hYRzNcMfWj4.DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeF"
+reason = "Bare canonical SendGrid key, 22-char key ID + 43-char HMAC (both in the [22..32]/[43..47] ranges)."
+
+[[positive]]
+text = "SENDGRID_API_KEY=SG.9X3kQp7VbT2hYRzNcMfWj4.DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeF"
+credential = "SG.9X3kQp7VbT2hYRzNcMfWj4.DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeF"
+reason = "Standard env-var assignment."
+
+[[positive]]
+text = "Authorization: Bearer SG.9X3kQp7VbT2hYRzNcMfWj4.DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeF"
+credential = "SG.9X3kQp7VbT2hYRzNcMfWj4.DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeF"
+reason = "Bearer-token header context."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "SG.short.short"
+reason = "Both segments below the 22 / 43 minimum."
+
+[[negative]]
+text = "SG."
+reason = "Just the prefix, no body."
+
+[[negative]]
+text = "the SG. prefix is documented in the sendgrid api guide"
+reason = "Prose mentioning the prefix without a key body."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "// SG.9X3kQp7VbT2hYRzNcMfWj4.DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeF"
+credential = "SG.9X3kQp7VbT2hYRzNcMfWj4.DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeF"
+reason = "Inside a single-line comment."
+
+[[evasion]]
+text = "{\"api_key\":\"SG.9X3kQp7VbT2hYRzNcMfWj4.DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeF\"}"
+credential = "SG.9X3kQp7VbT2hYRzNcMfWj4.DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeF"
+reason = "JSON payload — extraction must not consume the closing quote/brace."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted SendGrid key."

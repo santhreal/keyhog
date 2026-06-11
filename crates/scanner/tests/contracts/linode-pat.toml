@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:275737b06968672ca4819670348a954b4e142b24cfb956cbcf663a5929767c38
-size 1209
+schema_version = 1
+detector_id = "linode-pat"
+service = "linode"
+severity = "critical"
+
+[[positive]]
+text = "LINODE_TOKEN=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "LINODE_TOKEN env-var (64 hex)."
+
+[[positive]]
+text = "linode_api_token: \"4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f\""
+credential = "4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f"
+reason = "YAML-style linode_api_token assignment."
+
+[[negative]]
+text = "LINODE_TOKEN=short"
+reason = "Body below 64 hex chars."
+
+[[evasion]]
+text = "curl https://api.linode.com/v4/account -H 'Authorization: Bearer 7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d'"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Bearer-header form — pattern 2 explicitly matches Authorization: Bearer <64hex>."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Linode PAT."

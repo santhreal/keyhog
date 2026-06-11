@@ -1,3 +1,55 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:3b35eb6b8cb53aa2ddc81ce40f945ef34992b32171c6ed1a7e3e1beaddfe2b26
-size 1795
+# Per-detector contract: shopify-access-token
+#
+# Format: `shpca_` + exactly 32 hex chars (custom app access token).
+
+schema_version = 1
+detector_id = "shopify-access-token"
+service = "shopify"
+severity = "critical"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "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"
+credential = "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"
+reason = "Canonical Shopify custom app access token, exactly 32 hex chars after shpca_."
+
+[[positive]]
+text = "SHOPIFY_ACCESS_TOKEN=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"
+credential = "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"
+reason = "Standard env-var assignment."
+
+[[positive]]
+text = "X-Shopify-Access-Token: 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"
+credential = "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"
+reason = "Shopify API auth header — official Shopify-defined header name."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "shpca_short"
+reason = "Body shorter than 32 hex chars."
+
+[[negative]]
+text = "shpca_9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2"
+reason = "31 hex chars after shpca_ (one short)."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "{\"access_token\":\"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\"}"
+credential = "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"
+reason = "JSON payload."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted Shopify token."

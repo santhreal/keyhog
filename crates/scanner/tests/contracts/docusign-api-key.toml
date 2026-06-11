@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:a7e30badbabc1a1cedb41e0fe699c65343199fedcde393392c2abe90c3e37aa8
-size 1059
+schema_version = 1
+detector_id = "docusign-api-key"
+service = "docusign"
+severity = "critical"
+
+[[positive]]
+text = "DOCUSIGN_INTEGRATION_KEY=0a82d930-0311-5873-e7cb-7c3a6be1eacf"
+credential = "0a82d930-0311-5873-e7cb-7c3a6be1eacf"
+reason = "Docusign Integration Key with env-var anchor and lowercase hex UUID."
+
+[[positive]]
+text = "docusign.client.id=d3c2f3a3-a2d7-7fd2-1c93-90e375cce14f"
+credential = "d3c2f3a3-a2d7-7fd2-1c93-90e375cce14f"
+reason = "Lowercase dot-separated client ID variant."
+
+[[negative]]
+text = "DOCUSIGN_INTEGRATION_KEY=short"
+reason = "Body too short / wrong shape."
+
+[[evasion]]
+text = "docusign-integration-key=\"0a82d930-0311-5873-e7cb-7c3a6be1eacf\""
+credential = "0a82d930-0311-5873-e7cb-7c3a6be1eacf"
+reason = "Hyphen-separated lowercase variant with quoted value."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Docusign credential."

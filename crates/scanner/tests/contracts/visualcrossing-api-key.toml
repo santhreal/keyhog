@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:def29da3e6cd4e1e3dffa6c30093c1f7a346eb2b51a8cbbc8fea64a44fc5c392
-size 1946
+schema_version = 1
+detector_id = "visualcrossing-api-key"
+service = "visualcrossing"
+severity = "medium"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "VISUAL CROSSING_ _   _    _   _                _             _        _     _         _       _ __    _API               ___      _     __         _   _  _   _ _ _           _         KEY ' '  '  '    \" '      \"  '  \"   \"    :\"  '   =  ' ''\"=' \"   iq54zAtIiU0vSow2ql2EVsFgBHPRUj48B0oV"
+credential = "iq54zAtIiU0vSow2ql2EVsFgBHPRUj48B0oV"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "VISUAL CROSSING_ _   _    _   _                _             _        _     _         _       _ __    _API               ___      _     __         _   _  _   _ _ _           _         KEY ' '  '  '    \" '      \"  '  \"   \"    :\"  '   =  ' ''\"=' \"   iq54zAtIiU0vSow2ql2EVsFgBHPRUj48B0oV"
+credential = "iq54zAtIiU0vSow2ql2EVsFgBHPRUj48B0oV"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "VISUAL CROSSING_ _   _    _   _                _             _        _     _         _       _ __    _API               ___      _     __         _   _  _   _ _ _           _         KEY ' '  '  '    \" '      \"  '  \"   \"    :\"  '   =  ' ''\"=' \"   YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "VISUAL CROSSING_ _   _    _   _                _             _        _     _         _       _ __    _API               ___      _     __         _   _  _   _ _ _           _         KEY ' '  '  '    \" '      \"  '  \"   \"    :\"  '   =  ' ''\"=' \"   iq54zEXAMPLEEXAMPLE8B0oV"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

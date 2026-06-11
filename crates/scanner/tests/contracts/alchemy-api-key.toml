@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:eea9bd147a23c6010ff9cfba8ac03f2c47fa7d81a13f5e7c770b116421bdd613
-size 944
+schema_version = 1
+detector_id = "alchemy-api-key"
+service = "alchemy"
+severity = "critical"
+
+[[positive]]
+text = "ALCHEMY_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Alchemy API key env-var (32 hex)."
+
+[[positive]]
+text = "alchemy_api_key: '4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f'"
+credential = "4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f"
+reason = "YAML alchemy_api_key form."
+
+[[negative]]
+text = "ALCHEMY_API_KEY=short"
+reason = "Body below 32 hex chars."
+
+[[evasion]]
+text = "alchemy.api.key=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Dot-separated alchemy.api.key — regex covers [_\\-.]?"
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Alchemy API key."

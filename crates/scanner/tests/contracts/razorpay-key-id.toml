@@ -1,3 +1,39 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:f70164a05fa72ff0527d5117507f5c8908d87ceb861692cfb1ae02e25f9a12c1
-size 1296
+schema_version = 1
+detector_id = "razorpay-key-id"
+service = "razorpay"
+severity = "high"
+
+# Razorpay Key IDs ship in two flavors: test (`rzp_test_`) and live (`rzp_live_`).
+# The `razorpay_key_secret` companion is optional but raises confidence; the
+# contract covers both halves alone and the paired form.
+
+[[positive]]
+text = """RAZORPAY_KEY_ID=rzp_test_Kp4Qx7Rm2Sn5Tb
+RAZORPAY_KEY_SECRET=Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3"""
+credential = "rzp_test_Kp4Qx7Rm2Sn5Tb"
+reason = "Standard env-var pair — test key + secret companion satisfied."
+
+[[positive]]
+text = "razorpay_key_id: rzp_live_KpQxRmSnTbVwYzKp"
+credential = "rzp_live_KpQxRmSnTbVwYzKp"
+reason = "YAML-style live key alone — companion optional."
+
+[[negative]]
+text = "rzp_test_short"
+reason = "Body fails the {14,} length requirement."
+
+[[evasion]]
+text = "RAZORPAY_KEY_ID=rzp_test_Kp4Qx7Rm2Sn5Tb\nRAZORPAY_KEY_SECRET=Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3"
+credential = "rzp_test_Kp4Qx7Rm2Sn5Tb"
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Razorpay live key."

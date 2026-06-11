@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:b9b8b62d07e08e14ae0035480f70b1d11393b28199b4d8fb5c6cba54ba9603c7
-size 1058
+schema_version = 1
+detector_id = "azure-functions-key"
+service = "azure"
+severity = "critical"
+
+[[positive]]
+text = "https://myapp.azurewebsites.net/api/HttpTrigger?code=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+reason = "Azure Functions URL with code= query param (40 alnum)."
+
+[[positive]]
+text = "x-functions-key: Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9B"
+credential = "Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk9B"
+reason = "x-functions-key header form."
+
+[[negative]]
+text = "x-functions-key: short"
+reason = "Body below 40 alnum chars."
+
+[[evasion]]
+text = "AZURE_FUNCTIONS_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+reason = "AZURE_FUNCTIONS_KEY env-var form (second pattern)."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Azure Functions key."

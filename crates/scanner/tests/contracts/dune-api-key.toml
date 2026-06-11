@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:5238455d7750d3acd48b07803013601482caf26f5888e8d8999a3fa009b81acc
-size 1019
+schema_version = 1
+detector_id = "dune-api-key"
+service = "dune"
+severity = "high"
+
+[[positive]]
+text = "dune_api_key=466426fae9480469a7737ec218a5dca3"
+credential = "466426fae9480469a7737ec218a5dca3"
+reason = "Dune API key with dune_api_key prefix and 32-char hex body."
+
+[[positive]]
+text = "x-dune-api-key=82b4f3c2fd1a38d2311722b455d4ae94"
+credential = "82b4f3c2fd1a38d2311722b455d4ae94"
+reason = "Dune API key in header format with x-dune-api-key prefix."
+
+[[negative]]
+text = "dune_api_key=short"
+reason = "Body too short — only 5 hex chars."
+
+[[evasion]]
+text = "dune_api_key=466426fae9480469a7737ec218a5dca3"
+credential = "466426fae9480469a7737ec218a5dca3"
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted dune credential."

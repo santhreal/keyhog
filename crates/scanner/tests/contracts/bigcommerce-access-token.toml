@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:4ca05dc361d3d509ef13757a7405e31e554d40a0fb1f004444bd2232e440a06d
-size 1193
+schema_version = 1
+detector_id = "bigcommerce-access-token"
+service = "bigcommerce"
+severity = "critical"
+
+[[positive]]
+text = "bbc_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz"
+credential = "bbc_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz"
+reason = "BigCommerce V2/V3 access token (bbc_ + 60 alnum, >= 48 min)."
+
+[[positive]]
+text = "at_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGh"
+credential = "at_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGh"
+reason = "BigCommerce Stencil CLI access token (at_ + 80 alnum, >= 64 min)."
+
+[[negative]]
+text = "bbc_short"
+reason = "Body below 48 chars."
+
+[[evasion]]
+text = "X-Auth-Token: bbc_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz"
+credential = "bbc_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrStUvWxYz"
+reason = "BigCommerce X-Auth-Token header shape."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted BigCommerce token."

@@ -1,3 +1,41 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:eeab2bd9abe44782c4bb7b49d03d74c311e817ea739c6232792a4ecd7d459586
-size 1522
+schema_version = 1
+detector_id = "flickr-api-key"
+service = "flickr"
+severity = "medium"
+
+[[positive]]
+text = "flickr_api_key=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Standard env-var assignment with underscore separators."
+
+# Pre-2026-05-29 this contract asserted a SECOND positive
+#   text = "api_key=9f2b4d6c8a1e3f5b7d9c2a4e6f8b1d3a"
+# under the reason "URL parameter style without keyword prefix." That
+# was wrong attribution: a bare `api_key=<32hex>` carries NO Flickr-
+# specific evidence and the corresponding detector regex
+# (`api_key=([a-f0-9]{32})`) mis-claimed every random 32-hex value
+# in any `api_key=` assignment as Flickr. Mirror v23: 111 FPs across
+# sha256-hex prefixes, sha1-hex digests, and the 32-hex bodies of
+# other services. Removing this positive + the matching detector
+# pattern is the correct fix - bare `api_key=<32hex>` is the
+# province of generic-secret / generic-api-key, not Flickr.
+
+[[negative]]
+text = "flickr_api_key=short"
+reason = "Body too short (5 chars) for exact 32 hex requirement."
+
+[[evasion]]
+text = 'FLICKR_API_KEY:"7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"'
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Colon-and-quote wrapping instead of equals sign."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted flickr credential."

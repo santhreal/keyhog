@@ -1,3 +1,61 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:ef9798b67e2c764980de120ef39c5e9d9ed56d78192cfe7ca3920a4f0813cd3f
-size 2435
+# Per-detector contract: mongodb-connection-string
+#
+# Format: `mongodb://user:password@host.domain` or `mongodb+srv://`
+# variant. The credential string is the FULL connection URL — the
+# password is embedded so anything past `mongodb://` is sensitive.
+
+schema_version = 1
+detector_id = "mongodb-connection-string"
+service = "mongodb"
+severity = "critical"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "mongodb://dbuser:R7VXNPLMQ3HSKWJT@cluster0.mongodb.net"
+credential = "mongodb://dbuser:R7VXNPLMQ3HSKWJT@cluster0.mongodb.net"
+reason = "Canonical MongoDB connection string with embedded credentials."
+
+[[positive]]
+text = "MONGO_URI=mongodb+srv://dbuser:R7VXNPLMQ3HSKWJT@cluster0.abcde.mongodb.net"
+credential = "mongodb+srv://dbuser:R7VXNPLMQ3HSKWJT@cluster0.abcde.mongodb.net"
+reason = "Standard env-var assignment with mongodb+srv:// variant."
+
+[[positive]]
+text = "const client = new MongoClient(\"mongodb://app:Tx8vQp2zNcMfWj@prod-db.example.com\");"
+credential = "mongodb://app:Tx8vQp2zNcMfWj@prod-db.example.com"
+reason = "Node MongoClient constructor call shape."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "mongodb://localhost"
+reason = "No user:password@ — just a host. Must not match the credential-required shape."
+
+[[negative]]
+text = "see the mongodb connection string docs at mongodb.com"
+reason = "Prose mentioning mongodb without a URL."
+
+[[negative]]
+text = "mongodb://user@host.example.com"
+reason = "User but no password (no `:` between user and `@`) — must not match."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# MONGO_URI=mongodb://dbuser:R7VXNPLMQ3HSKWJT@cluster0.mongodb.net"
+credential = "mongodb://dbuser:R7VXNPLMQ3HSKWJT@cluster0.mongodb.net"
+reason = "Commented-out env-var assignment — keyword + assignment lift confidence above Comment-context hard-suppress floor. Bare `// URI` is intentionally suppressed (engine precision choice)."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted MongoDB URI."

@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:b6c6040b73bd9736d7bc0b1c1da52f360afb1eb39078528b74aaa3f6dc47e3f8
-size 1035
+schema_version = 1
+detector_id = "flipt-api-token"
+service = "flipt"
+severity = "high"
+
+[[positive]]
+text = "flipt_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7"
+credential = "flipt_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7"
+reason = "Bare token with flipt_ prefix and 40 hex body."
+
+[[positive]]
+text = "FLIPT_TOKEN=flipt_9f2b4d6c8a1e3f5b7d9c2a4e6f8b1d3a5e9f1b7c4d"
+credential = "flipt_9f2b4d6c8a1e3f5b7d9c2a4e6f8b1d3a5e9f1b7c4d"
+reason = "Env-var assignment with keyword prefix."
+
+[[negative]]
+text = "flipt_short"
+reason = "Body too short (5 chars) for 40+ hex requirement."
+
+[[evasion]]
+text = "Authorization: Bearer flipt_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7"
+credential = "flipt_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7"
+reason = "Bearer header authorization format."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted flipt credential."

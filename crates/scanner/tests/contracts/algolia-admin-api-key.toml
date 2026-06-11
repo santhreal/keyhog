@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:714dd9679258b74b2c0406d199b68ccce47262cf15d8bbb6a90eb00622eee9e3
-size 953
+schema_version = 1
+detector_id = "algolia-admin-api-key"
+service = "algolia"
+severity = "critical"
+
+[[positive]]
+text = "ALGOLIA_ADMIN_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Algolia admin API key env-var (32 hex)."
+
+[[positive]]
+text = "admin_api_key: \"4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f\""
+credential = "4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f"
+reason = "YAML admin_api_key with context anchor."
+
+[[negative]]
+text = "ALGOLIA_ADMIN_KEY=short"
+reason = "Body below 32 hex chars."
+
+[[evasion]]
+text = "algolia_admin_key='7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d'"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Single-quoted lowercase form."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Algolia admin key."

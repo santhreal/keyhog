@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:0f64942ecd3364ac17c18a63385af80d0f0240ad3dc3b05a7b7667b6e96f1c23
-size 1208
+schema_version = 1
+detector_id = "daily-co-api-key"
+service = "daily"
+severity = "critical"
+
+[[positive]]
+text = "DAILY_API_KEY = a223af74096e28e3dda4f9d71fd2d696644154aeb843d9d779616433e1e04344"
+credential = "a223af74096e28e3dda4f9d71fd2d696644154aeb843d9d779616433e1e04344"
+reason = "DAILY_API_KEY env-var with 64-hex key."
+
+[[positive]]
+text = "daily.co : 'ff74aa55fb28cfab33883722a0d1aa0ae1a473c2c80ee9f6eaec12f964fabdd0'"
+credential = "ff74aa55fb28cfab33883722a0d1aa0ae1a473c2c80ee9f6eaec12f964fabdd0"
+reason = "daily.co domain context with single-quoted 64-hex key."
+
+[[negative]]
+text = "daily_api_key=94b30f1916f5b1d8a784a71660c14f04"
+reason = "Only 32 hex chars, not 64."
+
+[[evasion]]
+text = "Authorization: Bearer daily_api_key=\"a223af74096e28e3dda4f9d71fd2d696644154aeb843d9d779616433e1e04344\""
+credential = "a223af74096e28e3dda4f9d71fd2d696644154aeb843d9d779616433e1e04344"
+reason = "Quoted daily API key inside Authorization header."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Daily.co API key."

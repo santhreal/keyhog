@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:ad2f8f2c8a8d4c7c40b0b22241b4593a58da99111cc84788c9d1f1d8ae895100
-size 1212
+schema_version = 1
+detector_id = "lastfm-api-key"
+service = "lastfm"
+severity = "medium"
+
+[[positive]]
+text = "LASTFM=e7a40edf8635d0cdb47ea9f156d972bc"
+credential = "e7a40edf8635d0cdb47ea9f156d972bc"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "LASTFM=\"e7a40edf8635d0cdb47ea9f156d972bc\""
+credential = "e7a40edf8635d0cdb47ea9f156d972bc"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "LASTFM=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "LASTFM=e7a40EXAMPLEEXAMPLE972bc"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export LASTFM=e7a40edf8635d0cdb47ea9f156d972bc"
+credential = "e7a40edf8635d0cdb47ea9f156d972bc"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 35000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

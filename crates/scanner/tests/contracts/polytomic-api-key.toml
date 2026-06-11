@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:b049434b27e8d31a62f324a5249e6e42cc31d111e6cc72526748d3e5f82e9bf9
-size 1295
+schema_version = 1
+detector_id = "polytomic-api-key"
+service = "polytomic"
+severity = "high"
+
+[[positive]]
+text = "POLYTOMIC_API_KEY=aec51681-9963-c39a-1dca-dd7658e6395a"
+credential = "aec51681-9963-c39a-1dca-dd7658e6395a"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "POLYTOMIC_API_KEY=\"aec51681-9963-c39a-1dca-dd7658e6395a\""
+credential = "aec51681-9963-c39a-1dca-dd7658e6395a"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "POLYTOMIC_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "POLYTOMIC_API_KEY=aec51EXAMPLEEXAMPLE6395a"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export POLYTOMIC_API_KEY=aec51681-9963-c39a-1dca-dd7658e6395a"
+credential = "aec51681-9963-c39a-1dca-dd7658e6395a"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

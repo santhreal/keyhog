@@ -1,3 +1,36 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:b4c4394dec1a129c17feb1b26c084674eb6aa1d1a6e072dbf9dd91eefd25c5cb
-size 957
+schema_version = 1
+detector_id = "zora-api-key"
+service = "zora"
+severity = "low"
+
+
+
+
+[[positive]]
+text = """ZORA API KEY = "k7mNp2qRs4tUv8wXy1zA3bC5dEfGhIj""""
+credential = "k7mNp2qRs4tUv8wXy1zA3bC5dEfGhIj"
+reason = "Hand-tuned positive matching detector regex (R2-F adversarial batch)."
+
+[[positive]]
+text = """ZORA_API_KEY="m8nOq3rSt5uVw9xYz2aB4cD6eFgHiJk""""
+credential = "m8nOq3rSt5uVw9xYz2aB4cD6eFgHiJk"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "ZORA_API_KEY=\"short\""
+reason = "Body fails the {16,} length constraint."
+
+[[negative]]
+text = "ZORA_API_KEY=\"YOUR_API_KEY_HERE_PLACEHOLDER_VALUE\""
+reason = "Placeholder body — suppression gate strips it."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Zora API key."

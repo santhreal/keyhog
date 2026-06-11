@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:4924572b888c3c315cd67b0c2d4df7296441f7c35a121853723e9d5eb404e914
-size 845
+schema_version = 1
+detector_id = "datadog-application-key"
+service = "datadog"
+severity = "high"
+
+[positive_with_companion]
+text = "DATADOG_APP_KEY=807e106098490e0784549ac3dec13fc04e80c551\nDATADOG_API_KEY=76cab46aab7ad36498acd2aef751418c"
+expected_findings = ["datadog-application-key"]
+expected_companions = { datadog_api_key = "76cab46aab7ad36498acd2aef751418c" }
+reason = "Primary paired with companion(s) datadog_api_key."
+
+[positive_primary_only]
+text = "DATADOG_APP_KEY=807e106098490e0784549ac3dec13fc04e80c551"
+expected_findings = ["datadog-application-key"]
+must_not_verify = true
+reason = "Primary found without companion datadog_api_key; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "DATADOG_API_KEY=76cab46aab7ad36498acd2aef751418c"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

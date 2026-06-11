@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:1e048c4da040f5e5be97892862be277618b2393cb33e888442ff51a86e4db53e
-size 971
+schema_version = 1
+detector_id = "dnsimple-api-token"
+service = "dnsimple"
+severity = "critical"
+
+[[positive]]
+text = "DNSIMPLE_API_TOKEN=C372xGw30nSx5QdQuTxy"
+credential = "C372xGw30nSx5QdQuTxy"
+reason = "DNSimple API token with env-var anchor and 20-char alnum body."
+
+[[positive]]
+text = "dnsimple-key=\"lGxX6dGh1kjNSSkH7qsEwZrIfm0PGSWGHV0WrK\""
+credential = "lGxX6dGh1kjNSSkH7qsEwZrIfm0PGSWGHV0WrK"
+reason = "Lowercase dnsimple with hyphen separator and quoted value."
+
+[[negative]]
+text = "DNSIMPLE_API_TOKEN=short"
+reason = "Body too short / wrong shape."
+
+[[evasion]]
+text = "DNSIMPLE_TOKEN=\"C372xGw30nSx5QdQuTxy\""
+credential = "C372xGw30nSx5QdQuTxy"
+reason = "No _API middle segment, quoted value."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted DNSimple credential."

@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:cf168b19c523bc759c2628bc8107d5d60aea944943a89f19e2e4c9901c9b21ea
-size 1251
+schema_version = 1
+detector_id = "moodle-api-token"
+service = "moodle"
+severity = "high"
+
+[[positive]]
+text = "webservicewstoken=523c55846f4a794128a9d99731891b9c"
+credential = "523c55846f4a794128a9d99731891b9c"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "webservicewstoken=\"523c55846f4a794128a9d99731891b9c\""
+credential = "523c55846f4a794128a9d99731891b9c"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "webservicewstoken=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "webservicewstoken=523c5EXAMPLEEXAMPLE91b9c"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "# webservicewstoken=523c55846f4a794128a9d99731891b9c"
+credential = "523c55846f4a794128a9d99731891b9c"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

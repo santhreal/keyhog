@@ -1,3 +1,27 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:7f049ea9ca59593522b818bd06ac17bc882ffc5c2b53dc0dcaeae5c58d839ec9
-size 1516
+schema_version = 1
+detector_id = "aws-govcloud-access-key"
+service = "aws-govcloud"
+severity = "critical"
+
+# NOTE: the primary key intentionally does NOT use AWS's canonical doc
+# placeholder `AKIAIOSFODNN7EXAMPLE`. keyhog suppresses any credential ending
+# in EXAMPLE/EXAMPLEKEY as a documentation placeholder
+# (context::is_known_example_credential), so a contract asserting that key must
+# fire would contradict correct behaviour. Use realistic non-placeholder values,
+# mirroring the aws-access-key contract.
+[positive_with_companion]
+text = "AWS_GOVCLOUD_ACCESS_KEY=AKIAVKCT3RW7QZ5XPN2D\nAWS_SECRET_ACCESS_KEY=wQ8r/N3pZ2bK7yXmD0vF5tA6sG9hJ4cLeR2nU1oP\nAWS_SESSION_TOKEN=FwoGZXIvYXdzEMrK2pR5tV9wB3cX6yD0aS4eH1gL7mN2oP5qT8uW0xZ3bC6dF9hJ2kM5nQ8rT1vY4wZ7bD0fH3jL6"
+expected_findings = ["aws-govcloud-access-key"]
+expected_companions = { secret_key = "wQ8r/N3pZ2bK7yXmD0vF5tA6sG9hJ4cLeR2nU1oP", session_token = "FwoGZXIvYXdzEMrK2pR5tV9wB3cX6yD0aS4eH1gL7mN2oP5qT8uW0xZ3bC6dF9hJ2kM5nQ8rT1vY4wZ7bD0fH3jL6" }
+reason = "GovCloud access key paired with secret and session token."
+
+[positive_primary_only]
+text = "AWS_GOVCLOUD_ACCESS_KEY=AKIAVKCT3RW7QZ5XPN2D"
+expected_findings = ["aws-govcloud-access-key"]
+must_not_verify = true
+reason = "Primary found without companion secret_key/session_token; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+expected_findings = []
+reason = "Secret key alone without GovCloud access key primary."

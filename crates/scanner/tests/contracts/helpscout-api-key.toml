@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:58f0358c32e212c91f4acbac21f5ae8dcf4acfa24229d0ad851fe2d5213818ca
-size 1188
+schema_version = 1
+detector_id = "helpscout-api-key"
+service = "helpscout"
+severity = "high"
+
+[[positive]]
+text = "HELPSCOUT_API_KEY=f5b0cdd4581ec28b6767"
+credential = "f5b0cdd4581ec28b6767"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "HELPSCOUT_API_KEY=\"f5b0cdd4581ec28b6767\""
+credential = "f5b0cdd4581ec28b6767"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "HELPSCOUT_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "HELPSCOUT_API_KEY=f5b0cEXAMPLEEXAMPLEb6767"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export HELPSCOUT_API_KEY=f5b0cdd4581ec28b6767"
+credential = "f5b0cdd4581ec28b6767"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

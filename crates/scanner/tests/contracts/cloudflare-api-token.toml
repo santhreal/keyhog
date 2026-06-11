@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:82574971c7b0224e10ff68d23b4aa1ff6842acaa087c4572d6a75119baf1e6e2
-size 1068
+schema_version = 1
+detector_id = "cloudflare-api-token"
+service = "cloudflare"
+severity = "critical"
+
+[[positive]]
+text = "CF_API_TOKEN=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd"
+credential = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd"
+reason = "Standard CF_API_TOKEN env-var shape (40 alnum)."
+
+[[positive]]
+text = "cloudflare_API_TOKEN: \"AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd\""
+credential = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd"
+reason = "Cloudflare context-anchored YAML-style assignment."
+
+[[negative]]
+text = "CF_API_TOKEN=short"
+reason = "Body below 40 chars; regex requires exactly 40."
+
+[[evasion]]
+text = "Authorization: Bearer CF_API_TOKEN=AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd"
+credential = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd"
+reason = "Bearer-header wrap around the assignment."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Cloudflare token."

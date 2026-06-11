@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:78b4376af1c9a8064bf67794d96b4172010793762ae87ac683545986c2ac1af3
-size 1187
+schema_version = 1
+detector_id = "transifex-api-token"
+service = "transifex"
+severity = "high"
+
+[positive_with_companion]
+text = "TRANSIFEX   '' :' = = '    = :    =  :: ' =  _dglGv8SvE8HzrlviKIP5xzBEfZ1qxwqe_4zXNcCIfcWIxzSuRYsgXHy0sn6RUEeFlkMR1-xByYRZK0O-1\nTRANSIFEX_APIPASSWORD '   \"\":: =\"===  '   b45WIH6tcxTAC_WMH7z7a1XxO1yhXaYqnC2m8BmXf-rkub5qNJMWlMyA-KSA6QyS6I6UW"
+expected_findings = ["transifex-api-token"]
+expected_companions = { "Transifex API Password/Token" = "b45WIH6tcxTAC_WMH7z7a1XxO1yhXaYqnC2m8BmXf-rkub5qNJMWlMyA-KSA6QyS6I6UW" }
+reason = "Primary paired with companion(s) Transifex API Password/Token."
+
+[positive_primary_only]
+text = "TRANSIFEX   '' :' = = '    = :    =  :: ' =  _dglGv8SvE8HzrlviKIP5xzBEfZ1qxwqe_4zXNcCIfcWIxzSuRYsgXHy0sn6RUEeFlkMR1-xByYRZK0O-1"
+expected_findings = ["transifex-api-token"]
+must_not_verify = true
+reason = "Primary found without companion Transifex API Password/Token; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "TRANSIFEX_APIPASSWORD '   \"\":: =\"===  '   b45WIH6tcxTAC_WMH7z7a1XxO1yhXaYqnC2m8BmXf-rkub5qNJMWlMyA-KSA6QyS6I6UW"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

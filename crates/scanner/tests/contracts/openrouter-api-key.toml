@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:ef99f5a3a2f2a1ff07dbe45e71fdb77bd2cc8132acc0bc45b25a14722dbba3de
-size 1227
+schema_version = 1
+detector_id = "openrouter-api-key"
+service = "openrouter"
+severity = "critical"
+
+[[positive]]
+text = "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"
+credential = "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"
+reason = "OpenRouter sk-or-v1- prefixed key (56 hex body, ≥48 required)."
+
+[[positive]]
+text = "OPENROUTER_API_KEY=sk-or-v1-4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f4c9a8f6e3b7d1a2c5e8f0b9d"
+credential = "sk-or-v1-4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f4c9a8f6e3b7d1a2c5e8f0b9d"
+reason = "Env-var assignment shape around prefix detector."
+
+[[negative]]
+text = "sk-or-v1-short"
+reason = "Body below 48 hex chars after `sk-or-v1-` prefix."
+
+[[evasion]]
+text = "Authorization: Bearer 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"
+credential = "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"
+reason = "Bearer-header wrap around prefix detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted OpenRouter key."

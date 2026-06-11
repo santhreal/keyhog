@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:fb43b42af3d50b3bcd5c8ac31dae69d37c698ff68e89102fd02871c638fe7f83
-size 1055
+schema_version = 1
+detector_id = "fathom-api-key"
+service = "fathom"
+severity = "medium"
+
+[[positive]]
+text = "fathom_api_key=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+reason = "Lowercase underscore context anchor with 32-char alnum body."
+
+[[positive]]
+text = "https://api.usefathom.com/v1/account Authorization: Bearer Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+reason = "Bearer token in Authorization header for Fathom API call."
+
+[[negative]]
+text = "fathom_api_key=short"
+reason = "Body too short; does not meet 32-char minimum."
+
+[[evasion]]
+text = "FATHOM-API-KEY:Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+reason = "Uppercase env-var with hyphens and colon separator."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted fathom credential."

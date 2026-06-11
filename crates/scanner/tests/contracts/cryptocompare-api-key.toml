@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:8fdac390db41d67cabb6b49a3c66948dc5b5f8c81aaa3c01056e672dda0b776c
-size 1075
+schema_version = 1
+detector_id = "cryptocompare-api-key"
+service = "cryptocompare"
+severity = "medium"
+
+[[positive]]
+text = "cryptocompare-apikey:I0KlQV3zt8j3ItZqVtLrUbpqepvgWw1r"
+credential = "I0KlQV3zt8j3ItZqVtLrUbpqepvgWw1r"
+reason = "cryptocompare prefix with hyphen and apikey delimiter."
+
+[[positive]]
+text = "Authorization: Apikey z0PbVqvHtsi0H0WJVoDJnedvagQP3o9o min-api.cryptocompare.com"
+credential = "z0PbVqvHtsi0H0WJVoDJnedvagQP3o9o"
+reason = "Authorization header (pattern 2 anchors on the trailing cryptocompare host)."
+
+[[negative]]
+text = "cryptocompare key short"
+reason = "Body too short (<20 chars)."
+
+[[evasion]]
+text = "cryptocompare_api_key=\"I0KlQV3zt8j3ItZqVtLrUbpqepvgWw1r\""
+credential = "I0KlQV3zt8j3ItZqVtLrUbpqepvgWw1r"
+reason = "Quoted JSON-style value with cryptocompare anchor."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted CryptoCompare API key."

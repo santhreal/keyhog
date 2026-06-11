@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:b01d7fef6e4021a4c45b8935a7dc8cbcc48cb6f891b3a0ab1cac70cd7de1c22c
-size 1022
+schema_version = 1
+detector_id = "filebase-api-key"
+service = "filebase"
+severity = "high"
+
+[[positive]]
+text = "FILEBASE_ACCESS_KEY=K4Q7R2S5T8V3Y6Z9B1N2"
+credential = "K4Q7R2S5T8V3Y6Z9B1N2"
+reason = "Filebase S3 access key with uppercase context anchor and 20-char uppercase body."
+
+[[positive]]
+text = "filebase_s3_key=\"K4Q7R2S5T8V3Y6Z9B1N2\""
+credential = "K4Q7R2S5T8V3Y6Z9B1N2"
+reason = "Quoted lowercase underscore context anchor form."
+
+[[negative]]
+text = "FILEBASE_ACCESS_KEY=short"
+reason = "Body too short and lowercase; does not meet 20-char uppercase A-Z0-9 requirement."
+
+[[evasion]]
+text = "FILEBASE_KEY=K4Q7R2S5T8V3Y6Z9B1N2"
+credential = "K4Q7R2S5T8V3Y6Z9B1N2"
+reason = "Omitted ACCESS and S3 tokens but still matches optional regex segments."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted filebase credential."

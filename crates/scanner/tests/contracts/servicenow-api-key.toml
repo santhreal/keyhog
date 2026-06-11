@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:3f467c7e5b1e61e85f2e1979d221fddbd55ac74c2e114c00a48fc6d5df774ce6
-size 1239
+schema_version = 1
+detector_id = "servicenow-api-key"
+service = "servicenow"
+severity = "critical"
+
+[[positive]]
+text = "servicenow_instance=dev12345.service-now.com"
+credential = "dev12345.service-now.com"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "servicenow_instance=\"dev12345.service-now.com\""
+credential = "dev12345.service-now.com"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "servicenow_instance=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "servicenow_instance=dev12EXAMPLEEXAMPLEw.com"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export servicenow_instance=dev12345.service-now.com"
+credential = "dev12345.service-now.com"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

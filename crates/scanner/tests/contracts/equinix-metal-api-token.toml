@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:4900ca95eaed9795503abce1f731319f39a39d66ebbe38fdd3c9ca025317ee5d
-size 1067
+schema_version = 1
+detector_id = "equinix-metal-api-token"
+service = "equinix"
+severity = "critical"
+
+[[positive]]
+text = "EQUINIX_API_TOKEN=7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+credential = "7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+reason = "Uppercase EQUINIX_API_TOKEN with equals separator and UUID body."
+
+[[positive]]
+text = "METAL_AUTH_TOKEN=\"a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d\""
+credential = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
+reason = "METAL_AUTH_TOKEN with quoted UUID body."
+
+[[negative]]
+text = "equinix_token=short"
+reason = "Body too short and not UUID format."
+
+[[evasion]]
+text = "EQUINIX_API_TOKEN=7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+credential = "7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted equinix credential."

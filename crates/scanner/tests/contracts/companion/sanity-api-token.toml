@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:a2de21452205534cf0b22931effce8d4da6f27a3b4e6d4f1d8dda469c3b401b4
-size 758
+schema_version = 1
+detector_id = "sanity-api-token"
+service = "sanity"
+severity = "critical"
+
+[positive_with_companion]
+text = "SANITY_API_TOKEN=skSanityPrja4f2c891e7b0635d2c8f4e1a\nSANITY_PROJECT_ID=voj0zc75nt3"
+expected_findings = ["sanity-api-token"]
+expected_companions = { sanity_project_id = "voj0zc75nt3" }
+reason = "Sanity API token paired with project ID."
+
+[positive_primary_only]
+text = "SANITY_API_TOKEN=skSanityPrja4f2c891e7b0635d2c8f4e1a"
+expected_findings = ["sanity-api-token"]
+must_not_verify = true
+reason = "Primary found without companion sanity_project_id; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "SANITY_PROJECT_ID=voj0zc75nt3"
+expected_findings = []
+reason = "Project ID alone without Sanity API token."

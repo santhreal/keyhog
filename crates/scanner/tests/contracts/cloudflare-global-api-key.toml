@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:364122bd70492c0c9ea4a5549b21955c59e4fddf4482b1466d31bb83cae46ae1
-size 1037
+schema_version = 1
+detector_id = "cloudflare-global-api-key"
+service = "cloudflare"
+severity = "critical"
+
+[[positive]]
+text = "CLOUDFLARE_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9"
+reason = "Canonical env-var with exactly 37 hex chars."
+
+[[positive]]
+text = "X-Auth-Key: a3f5c7d9e1b8a4f2c6d0e5b7a9f3c1d8e2b4a"
+credential = "a3f5c7d9e1b8a4f2c6d0e5b7a9f3c1d8e2b4a"
+reason = "HTTP header form with exactly 37 hex chars."
+
+[[negative]]
+text = "CLOUDFLARE_API_KEY=short"
+reason = "Body not exactly 37 hex chars."
+
+[[evasion]]
+text = "Authorization: Bearer CLOUDFLARE_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9"
+reason = "Bearer-header wrap around the assignment."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Cloudflare global key."

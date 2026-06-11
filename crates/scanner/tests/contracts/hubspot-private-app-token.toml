@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:a76e6d4953e88d9bf8333c0ce16c37e5c468a4019285202e7890c91f47f85867
-size 1205
+schema_version = 1
+detector_id = "hubspot-private-app-token"
+service = "hubspot"
+severity = "critical"
+
+[[positive]]
+text = "pat-na1-a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+credential = "pat-na1-a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "export pat-na1-a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+credential = "pat-na1-a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "pat-=short"
+reason = "Truncated value below detector minimum length."
+
+[[negative]]
+text = "pat- token abcdef"
+reason = "Keyword context without valid credential body."
+
+[[evasion]]
+text = "pat-na1-a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+credential = "pat-na1-a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+reason = "Adversarial anchor_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted HubSpot Private App Token credential."

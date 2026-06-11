@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:b6cb9939d6d67056f2d1a039c136f7bb927e3386f6f69d48f12cd3acc9e88ab0
-size 809
+schema_version = 1
+detector_id = "activecampaign-api-key"
+service = "activecampaign"
+severity = "critical"
+
+[positive_with_companion]
+text = "activecampaignAPIKEY=ErnwlbxJb6LKGDDeY1QAo22xxavrgz7A\nhttps://es.activehosted.com"
+expected_findings = ["activecampaign-api-key"]
+expected_companions = { activecampaign_url = "https://es.activehosted.com" }
+reason = "Primary paired with companion(s) activecampaign_url."
+
+[positive_primary_only]
+text = "activecampaignAPIKEY=ErnwlbxJb6LKGDDeY1QAo22xxavrgz7A"
+expected_findings = ["activecampaign-api-key"]
+must_not_verify = true
+reason = "Primary found without companion activecampaign_url; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "https://es.activehosted.com"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

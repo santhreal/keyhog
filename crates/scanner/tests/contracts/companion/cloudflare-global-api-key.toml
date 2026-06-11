@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:c590183a86d3404caf56c05328574ac0c367ebc4c203895f2c6051ecfafd1575
-size 1253
+schema_version = 1
+detector_id = "cloudflare-global-api-key"
+service = "cloudflare"
+severity = "critical"
+
+[positive_with_companion]
+text = "CLOUDFLARE_API_KEY=33ac6703231ba63ab45baf740b99f4d4f7498\nCLOUDFLARE_EMAIL\"=  ' ' =\" :    ==   =  \" = :'  \"  \" =:  =\" : =  fZHol9FvCgmtINH2YkZgzXw8fWk4hli.gu1wESI2WwgCvbThPmbU6D97BZF1MIXlDi6E8cz@VnHb2cqZ0jyXsFNySkDfTKwrVU5i28.mKQCiHiRj5B3Odw.kmSrFJP"
+expected_findings = ["cloudflare-global-api-key"]
+expected_companions = { cloudflare_email = "fZHol9FvCgmtINH2YkZgzXw8fWk4hli.gu1wESI2WwgCvbThPmbU6D97BZF1MIXlDi6E8cz@VnHb2cqZ0jyXsFNySkDfTKwrVU5i28.mKQCiHiRj5B3Odw.kmSrFJP" }
+reason = "Primary paired with companion(s) cloudflare_email."
+
+[positive_primary_only]
+text = "CLOUDFLARE_API_KEY=33ac6703231ba63ab45baf740b99f4d4f7498"
+expected_findings = ["cloudflare-global-api-key"]
+must_not_verify = true
+reason = "Primary found without companion cloudflare_email; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "CLOUDFLARE_EMAIL\"=  ' ' =\" :    ==   =  \" = :'  \"  \" =:  =\" : =  fZHol9FvCgmtINH2YkZgzXw8fWk4hli.gu1wESI2WwgCvbThPmbU6D97BZF1MIXlDi6E8cz@VnHb2cqZ0jyXsFNySkDfTKwrVU5i28.mKQCiHiRj5B3Odw.kmSrFJP"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

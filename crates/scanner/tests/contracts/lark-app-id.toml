@@ -1,3 +1,40 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:b727866358cac7908a7cdda792561521fdc9e5ec4cada099dfa0e6b8a7315cb7
-size 1169
+schema_version = 1
+detector_id = "lark-app-id"
+service = "lark"
+severity = "high"
+
+
+
+[[positive]]
+text = """lark app_id cli_a1b2c3d4e5f67890"""
+credential = "cli_a1b2c3d4e5f67890"
+reason = "Hand-tuned positive matching detector regex (R2-F adversarial batch)."
+
+[[positive]]
+text = """LARK_APP_ID="cli_b2c3d4e5f6789012""""
+credential = "cli_b2c3d4e5f6789012"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "cli_hEXAMPLEEXAMPLEHbNdi"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "{\"api_key\":\"cli_herTvrGRY4qfD1ZG4KhHNPM39KrHbNdi\"}"
+credential = "cli_herTvrGRY4qfD1ZG4KhHNPM39KrHbNdi"
+reason = "Adversarial json_cred envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:26ce706b5798874c576a90a76f06b55bcee06283cabfd48084464ed84bc03853
-size 1273
+schema_version = 1
+detector_id = "redis-labs-api-key"
+service = "redis"
+severity = "high"
+
+[[positive]]
+text = "REDIS_LABS_API_KEY=517cfd95dfd9f72aaf77a72c5fadfc74"
+credential = "517cfd95dfd9f72aaf77a72c5fadfc74"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "REDIS_LABS_API_KEY=\"517cfd95dfd9f72aaf77a72c5fadfc74\""
+credential = "517cfd95dfd9f72aaf77a72c5fadfc74"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "REDIS_LABS_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "REDIS_LABS_API_KEY=517cfEXAMPLEEXAMPLEdfc74"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export REDIS_LABS_API_KEY=517cfd95dfd9f72aaf77a72c5fadfc74"
+credential = "517cfd95dfd9f72aaf77a72c5fadfc74"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

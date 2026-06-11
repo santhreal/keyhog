@@ -1,3 +1,62 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:df86816147eeec0ee9950c02ce3868e61b5bdf88143db4ac494473f23c9c90f9
-size 2732
+schema_version = 1
+detector_id = "anthropic-api-key"
+service = "anthropic"
+severity = "critical"
+
+[[positive]]
+text = "ANTHROPIC_API_KEY=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"
+credential = "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"
+reason = "Revoked real Anthropic key shape with an 86-char body before the last dash."
+
+[[positive]]
+text = "anthropic_api_key = \"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\""
+credential = "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"
+reason = "Quoted assignment form."
+
+[[positive]]
+text = "sk-ant-api03-ahowDKSZ6cjqyFMU18elsAHOW3_gnuCJQY5aipwELS07ckryGNU29emtAIPW4-govCKRY6biqxEMT08d"
+credential = "sk-ant-api03-ahowDKSZ6cjqyFMU18elsAHOW3_gnuCJQY5aipwELS07ckryGNU29emtAIPW4-govCKRY6biqxEMT08d"
+reason = "Lower bound: exactly 80 body chars (the regex minimum). Must match."
+
+[[positive]]
+text = "sk-ant-api03-ahowDKSZ6cjqyFMU18elsAHOW3_gnuCJQY5aipwELS07ckryGNU29emtAIPW4-govCKRY6biqxEMT08dkszGOV2_fmuBIQX4ahowDKSZ6cjqyFMU18elsAHO"
+credential = "sk-ant-api03-ahowDKSZ6cjqyFMU18elsAHOW3_gnuCJQY5aipwELS07ckryGNU29emtAIPW4-govCKRY6biqxEMT08dkszGOV2_fmuBIQX4ahowDKSZ6cjqyFMU18elsAHO"
+reason = "Upper bound: exactly 120 body chars (the regex maximum). Must match."
+
+[[positive]]
+text = "ANTHROPIC_ADMIN_KEY=sk-ant-admin01-Rk8wQ2xJpN3mZ7tY1bV5sD9fG4hL6jX0aC2eU8iO5rT7yW1nB3kM6pA4dF9gH2sJ7lZ0xQ5vN8cR3bE6"
+credential = "sk-ant-admin01-Rk8wQ2xJpN3mZ7tY1bV5sD9fG4hL6jX0aC2eU8iO5rT7yW1nB3kM6pA4dF9gH2sJ7lZ0xQ5vN8cR3bE6"
+reason = "DET-17: Anthropic ADMIN key (sk-ant-admin01- prefix, docs-confirmed) — caught by the broad modern sk-ant- pattern, locked here so org-admin keys can't regress to the generic path. Synthetic random 80-char body."
+
+[[negative]]
+text = "ANTHROPIC_API_KEY=sk-ant-api03-shortbody"
+reason = "Too short."
+
+[[negative]]
+text = "see anthropic docs: sk-ant-api03 keys are issued via the console"
+reason = "Prefix mention without a key body."
+
+[[negative]]
+text = "sk-ant-api03-ahowDKSZ6cjqyFMU18elsAHOW3_gnuCJQY5aipwELS07ckryGNU29emtAIPW4-govCKRY6biqxEMT08"
+reason = "One char below the 80-char minimum body: must NOT match (locks the lower bound)."
+
+[[evasion]]
+text = "# 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"
+credential = "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"
+reason = "Commented shell/config line."
+
+[[evasion]]
+text = "x-api-key: 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"
+credential = "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"
+reason = "Header form."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted key."

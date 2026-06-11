@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:d6871cdef785e5877b887b88ae3a33a098010baa10a4c4264040bc71738b2bfd
-size 1117
+schema_version = 1
+detector_id = "maxmind-geoip-license-key"
+service = "maxmind"
+severity = "medium"
+
+[[positive]]
+text = "MAXMIND=avH2zSZWSvN8xcCT"
+credential = "avH2zSZWSvN8xcCT"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "MAXMIND=\"avH2zSZWSvN8xcCT\""
+credential = "avH2zSZWSvN8xcCT"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "MAXMIND=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "MAXMIND=avH2zEXAMPLEEXAMPLE8xcCT"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "# MAXMIND=avH2zSZWSvN8xcCT"
+credential = "avH2zSZWSvN8xcCT"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 35000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

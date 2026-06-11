@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:40fb951cb4935526830cfe3a3433adc976ea81a4e0c56e3e7695ea5f339adc46
-size 1305
+schema_version = 1
+detector_id = "packagist-api-token"
+service = "packagist"
+severity = "high"
+
+[[positive]]
+text = "PACKAGIST_API_KEY=a6a5effa36c91d47cb12be92bd74e20b3148bf5b"
+credential = "a6a5effa36c91d47cb12be92bd74e20b3148bf5b"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "PACKAGIST_API_KEY=\"a6a5effa36c91d47cb12be92bd74e20b3148bf5b\""
+credential = "a6a5effa36c91d47cb12be92bd74e20b3148bf5b"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "PACKAGIST_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "PACKAGIST_API_KEY=a6a5eEXAMPLEEXAMPLE8bf5b"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "# PACKAGIST_API_KEY=a6a5effa36c91d47cb12be92bd74e20b3148bf5b"
+credential = "a6a5effa36c91d47cb12be92bd74e20b3148bf5b"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

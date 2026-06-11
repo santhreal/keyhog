@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:f7d8520d1d69f980a89db3bd57e5a1b64e5956b3853f86c1016bfcc21877dcc8
-size 965
+schema_version = 1
+detector_id = "uploadcare-public-key"
+service = "uploadcare"
+severity = "medium"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "UPLOADCAREKEY=acbb7763f9b872d8aec7e11cbd083acb"
+credential = "acbb7763f9b872d8aec7e11cbd083acb"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "UPLOADCAREKEY=\"acbb7763f9b872d8aec7e11cbd083acb\""
+credential = "acbb7763f9b872d8aec7e11cbd083acb"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "UPLOADCAREKEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "UPLOADCAREKEY=acbb7EXAMPLEEXAMPLE83acb"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

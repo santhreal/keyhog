@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:8b27997b48ed685a30de07d2b642f703ae8bf39ca2fff7ca90064029a39f760c
-size 1285
+schema_version = 1
+detector_id = "payload-cms-api-key"
+service = "payload"
+severity = "high"
+
+[[positive]]
+text = "PAYLOAD_API_KEY=c191374f-c337-41b5-4a8b-64b48783d13f"
+credential = "c191374f-c337-41b5-4a8b-64b48783d13f"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "PAYLOAD_API_KEY=\"c191374f-c337-41b5-4a8b-64b48783d13f\""
+credential = "c191374f-c337-41b5-4a8b-64b48783d13f"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "PAYLOAD_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "PAYLOAD_API_KEY=c1913EXAMPLEEXAMPLE3d13f"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export PAYLOAD_API_KEY=c191374f-c337-41b5-4a8b-64b48783d13f"
+credential = "c191374f-c337-41b5-4a8b-64b48783d13f"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

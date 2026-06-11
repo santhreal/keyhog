@@ -1,3 +1,55 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:a7e4a64ec4e051e894374aead6398638bdf3000ed2ccabbd3f58c47c5e12805d
-size 1797
+# Per-detector contract: flyio-access-token
+#
+# Format: `fm2_` + 43 chars from [a-zA-Z0-9_-] (base64url body).
+
+schema_version = 1
+detector_id = "flyio-access-token"
+service = "flyio"
+severity = "critical"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "fm2_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY"
+credential = "fm2_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY"
+reason = "Bare Fly.io access token, 43 chars after fm2_."
+
+[[positive]]
+text = "FLY_API_TOKEN=fm2_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY"
+credential = "fm2_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY"
+reason = "Standard env-var assignment (Fly's documented variable)."
+
+[[positive]]
+text = "Authorization: FlyV1 fm2_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY"
+credential = "fm2_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY"
+reason = "Fly v1 API auth header shape."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "fm2_short"
+reason = "Body shorter than 43 chars."
+
+[[negative]]
+text = "fm2_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRt"
+reason = "42 chars after fm2_ (one short)."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "{\"token\":\"fm2_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY\"}"
+credential = "fm2_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY"
+reason = "JSON payload."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted Fly.io token."

@@ -1,3 +1,41 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:55ec130ec8c9c5991f40e18f04ef1d112bb2aefbd1d3138d8aebaa7b4c55659e
-size 1145
+schema_version = 1
+detector_id = "jotform-api-key"
+service = "jotform"
+severity = "high"
+
+
+
+
+[[positive]]
+text = """jotform api_key 2963950e3ed2e3dc49d5740982bac6a9"""
+credential = "2963950e3ed2e3dc49d5740982bac6a9"
+reason = "Hand-tuned positive matching detector regex (R2-F adversarial batch)."
+
+[[positive]]
+text = """JOTFORM API KEY 2963950e3ed2e3dc49d5740982bac6a9"""
+credential = "2963950e3ed2e3dc49d5740982bac6a9"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "JOTFORM_API_KEY=short"
+reason = "Truncated value below detector minimum length."
+
+[[negative]]
+text = "JOTFORM_API_KEY token abcdef"
+reason = "Keyword context without valid credential body."
+
+[[evasion]]
+text = """jotform   api_key   2963950e3ed2e3dc49d5740982bac6a9"""
+credential = "2963950e3ed2e3dc49d5740982bac6a9"
+reason = "Quoted inside a Bearer authorization string."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted JotForm API Key credential."

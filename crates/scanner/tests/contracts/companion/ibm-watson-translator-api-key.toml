@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:2e370a8e1337e804ea56871d8c5dca60ae5a2391d8fabfaddcb3c8db216dbb34
-size 1372
+schema_version = 1
+detector_id = "ibm-watson-translator-api-key"
+service = "ibm-watson-translator"
+severity = "high"
+
+[positive_with_companion]
+text = "IBM_WATSON=pvBCBysHxrT5E5DtE1rPfm63p2sqy6as\nIBM_TRANSLATOR SERVICE_URL \"    ='  '=   =  '  :\":' ':  \"  \"    '  '\"==  '       =   =   = :      \":  == =  '\"\": https://api.rlbojnumeunwpmqislxqmqmxodkvxeduoujowfxvzvszqjhped-lhdwarsxperudwbxrydnxfun.language-translator.watson.cloud.ibm.com"
+expected_findings = ["ibm-watson-translator-api-key"]
+expected_companions = { "IBM Watson Service URL" = "https://api.rlbojnumeunwpmqislxqmqmxodkvxeduoujowfxvzvszqjhped-lhdwarsxperudwbxrydnxfun.language-translator.watson.cloud.ibm.com" }
+reason = "Primary paired with companion(s) IBM Watson Service URL."
+
+[positive_primary_only]
+text = "IBM_WATSON=pvBCBysHxrT5E5DtE1rPfm63p2sqy6as"
+expected_findings = ["ibm-watson-translator-api-key"]
+must_not_verify = true
+reason = "Primary found without companion IBM Watson Service URL; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "IBM_TRANSLATOR SERVICE_URL \"    ='  '=   =  '  :\":' ':  \"  \"    '  '\"==  '       =   =   = :      \":  == =  '\"\": https://api.rlbojnumeunwpmqislxqmqmxodkvxeduoujowfxvzvszqjhped-lhdwarsxperudwbxrydnxfun.language-translator.watson.cloud.ibm.com"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

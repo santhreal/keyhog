@@ -1,3 +1,115 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:f9bbc9ab0c34cdfb708f6c4c9e6221f8f7dd063422f3d9b1636f48c1a90470a2
-size 4736
+# Per-detector contract: aws-access-key
+#
+# CLAUDE.md "per-rule directory contract" instantiated as a single
+# TOML. The shared runner (crates/scanner/tests/contracts/runner.rs)
+# enforces every section. A detector without a green contract isn't
+# legendary — adding a new entry to the corpus or detector regex
+# WITHOUT updating this file fails the runner.
+#
+# Section semantics:
+#   [[positive]]      MUST fire on this text. Tests recall.
+#   [[negative]]      MUST NOT fire on this text. Tests precision.
+#   [[evasion]]       Hostile-input variants. MUST still fire.
+#   [[cve_replay]]    Known-leaked sample, with provenance.
+#   [perf]            μs/file budget for a 4 KiB fixture.
+#   [scale]           Bounds for a 64 MiB fixture (count + wall time).
+#   readme_claim      Strings from README that this detector backs.
+
+schema_version = 1
+detector_id = "aws-access-key"
+service = "aws"
+severity = "critical"
+# README claim (top-level scalar — see every_contract_readme_claim_present):
+readme_claim = "aws-access-key"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+# Canonical formats. Each MUST fire under SOME detector (we check the
+# credential string, not detector_id, because dedup_cross_detector
+# can relabel the finding).
+
+[[positive]]
+text = "AKIAQYLPMN5HFIQR7XYA"
+credential = "AKIAQYLPMN5HFIQR7XYA"
+reason = "Bare canonical key, no surrounding context."
+
+[[positive]]
+text = "AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA"
+credential = "AKIAQYLPMN5HFIQR7XYA"
+reason = "env-var-style assignment, no quotes."
+
+[[positive]]
+text = "const KEY = \"AKIAQYLPMN5HFIQR7XYA\";"
+credential = "AKIAQYLPMN5HFIQR7XYA"
+reason = "JS-style quoted assignment, semicolon terminated."
+
+[[positive]]
+text = "aws_access_key_id = AKIAQYLPMN5HFIQR7XYA"
+credential = "AKIAQYLPMN5HFIQR7XYA"
+reason = "INI-style lowercase, no quotes."
+
+[[positive]]
+text = "ASIAQYLPMN5HFIQR7XYA"
+credential = "ASIAQYLPMN5HFIQR7XYA"
+reason = "STS temporary-credential prefix."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+# Look-alike text that MUST NOT fire. Each captures a fail-mode the
+# detector has been seen to confuse in the past.
+
+[[negative]]
+text = "AKIA tag in a sentence with spaces"
+reason = "AKIA literal but no 16-char key follows."
+
+[[negative]]
+text = "AKIAQYLPMN5HFIQR7XY"
+reason = "Only 15 alphanumerics after AKIA; should not match."
+
+[[negative]]
+text = "Akiaqylpmn5hfiqr7xya"
+reason = "Lowercase variant; the regex requires uppercase AKIA + uppercase tail."
+
+[[negative]]
+text = "regex example: AKIA[0-9A-Z]{16}"
+reason = "The detector's own regex string appears as a credential."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+# Hostile encodings / obfuscations. Each MUST still fire.
+
+[[evasion]]
+text = "X-Custom-Header: AKIAQYLPMN5HFIQR7XYA"
+credential = "AKIAQYLPMN5HFIQR7XYA"
+reason = "Inside an HTTP header line."
+
+[[evasion]]
+text = "<!-- AKIAQYLPMN5HFIQR7XYA --><html>"
+credential = "AKIAQYLPMN5HFIQR7XYA"
+reason = "Inside an HTML comment."
+
+[[evasion]]
+text = "/* AKIAQYLPMN5HFIQR7XYA */"
+credential = "AKIAQYLPMN5HFIQR7XYA"
+reason = "Inside a C-style block comment."
+
+# ---- CVE / KNOWN-LEAK REPLAY ----------------------------------------
+# Real public leaks, hand-curated. `credential` is verbatim from the
+# leak; `provenance` cites the source so the entry is auditable.
+
+# OPEN: No `[[cve_replay]]` entries yet — this detector has zero
+# leak-replay coverage. The fixture must be verbatim from a real
+# public leak with an auditable `provenance` citation; fabricated
+# strings or rotated-and-published examples don't qualify (they
+# regress to the [[positive]] tier). Closing this means landing
+# one verified-revoked key with public-source attribution.
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Single 4 KiB fixture, one planted key, full 894-detector pipeline. The pipeline is built for batch throughput, not single-file latency — a 4 KiB scan pays the full per-call orchestration cost. Steady-state baseline ~6 ms on a 5090; budget set with 2.5× headroom. Tighten when scan_one_chunk gets a fast path for sub-page inputs."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB corpus with one planted AWS key. Asserts the planted key surfaces despite 1 MiB of contextual filler. Larger fixtures stress-test the GPU AC kernel which is currently failing on >4 MiB shards (task #56)."

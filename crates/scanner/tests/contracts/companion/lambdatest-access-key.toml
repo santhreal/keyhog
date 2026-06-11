@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:c900e694220eef334c870540a6c68455e6fc4d7145c3336ee57615104004e644
-size 958
+schema_version = 1
+detector_id = "lambdatest-access-key"
+service = "lambdatest"
+severity = "critical"
+
+[positive_with_companion]
+text = "LT_ACCESSKEY  =:\"  \"         =   '=   :\"    \"' 9xTA11jXdyywudqdFLHF1dmSerT4OAOnWY9gUcfQtDQwLcTrXzsf0bMJOwU\nLT_USERNAME=k2fkWDrKMY3EdjWlkTxJLoeuTf8BFWj0"
+expected_findings = ["lambdatest-access-key"]
+expected_companions = { lambdatest-username = "k2fkWDrKMY3EdjWlkTxJLoeuTf8BFWj0" }
+reason = "Primary paired with companion(s) lambdatest-username."
+
+[positive_primary_only]
+text = "LT_ACCESSKEY  =:\"  \"         =   '=   :\"    \"' 9xTA11jXdyywudqdFLHF1dmSerT4OAOnWY9gUcfQtDQwLcTrXzsf0bMJOwU"
+expected_findings = ["lambdatest-access-key"]
+must_not_verify = true
+reason = "Primary found without companion lambdatest-username; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "LT_USERNAME=k2fkWDrKMY3EdjWlkTxJLoeuTf8BFWj0"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

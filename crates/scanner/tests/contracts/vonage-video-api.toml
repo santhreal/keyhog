@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:d69f29375c4e03cd27a08763cd23f0ba194110465ff997423efa282ee7b89c58
-size 887
+schema_version = 1
+detector_id = "vonage-video-api"
+service = "vonage"
+severity = "critical"
+
+[[positive]]
+text = """VONAGE_API_KEY=54689afc
+VONAGE_API_SECRET=0123456789abcdef"""
+credential = "54689afc"
+reason = "Video API key with secret companion in env-var form."
+
+[[positive]]
+text = "vonage_api_key = 'a1b2c3d4'"
+credential = "a1b2c3d4"
+reason = "Single-quoted assignment with vonage anchor."
+
+[[negative]]
+text = "VONAGE_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder body — suppression gate strips it."
+
+[[negative]]
+text = "54689afc"
+reason = "Bare 8-hex string without VONAGE_API_KEY anchor."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Vonage Video API key."

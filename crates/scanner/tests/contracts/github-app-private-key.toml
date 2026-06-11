@@ -1,3 +1,43 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:e47abe09d4ea0844b7049cb5b9bc8cedabd8cd71daa98c5fbba4ffdc22d11cc1
-size 2124
+schema_version = 1
+detector_id = "github-app-private-key"
+service = "github"
+severity = "critical"
+
+[[positive]]
+text = "-----BEGIN RSA PRIVATE KEY-----\nMIIEpQIBAAKCAQEA7n2K9xR4vQ1mWcZ8hLbF3jD5sT6yU0pN2aG4eH7iO9kB1lM3rV5wX8zC0dQ2fS4gJ6kP8mR0tU2wY4aB6cD8eF0gH2iJ4kL6mN8oP0qR2sT4uV6wX8yZ0aB2cD4eF6gH8iJ0kL2mN4oP6qR8sT0uV2wX4yZ6aB8cD0eF2gH4iJ6kL8mN0oP2qR4sT6uV8wX0yZ2aB4cD6eF8gH0iJ2kL4\n-----END RSA PRIVATE KEY-----"
+credential = "MIIEpQIBAAKCAQEA7n2K9xR4vQ1mWcZ8hLbF3jD5s"
+reason = "Full RSA PEM block (>=200B body) satisfying the detector's BEGIN…END regex; captured credential must include the key body."
+
+[[positive]]
+text = "GITHUB_APP_PRIVATE_KEY=\"-----BEGIN RSA PRIVATE KEY-----\nMIIEpQIBAAKCAQEA7n2K9xR4vQ1mWcZ8hLbF3jD5sT6yU0pN2aG4eH7iO9kB1lM3rV5wX8zC0dQ2fS4gJ6kP8mR0tU2wY4aB6cD8eF0gH2iJ4kL6mN8oP0qR2sT4uV6wX8yZ0aB2cD4eF6gH8iJ0kL2mN4oP6qR8sT0uV2wX4yZ6aB8cD0eF2gH4iJ6kL8mN0oP2qR4sT6uV8wX0yZ2aB4cD6eF8gH0iJ2kL4\n-----END RSA PRIVATE KEY-----\""
+credential = "MIIEpQIBAAKCAQEA7n2K9xR4vQ1mWcZ8hLbF3jD5s"
+reason = "Quoted-assignment variant of the full-block positive."
+
+[[negative]]
+text = "-----BEGIN RSA PRIVATE KEY-----=short"
+reason = "Truncated value below detector minimum length."
+
+[[negative]]
+text = "-----BEGIN RSA PRIVATE KEY----- token abcdef"
+reason = "Keyword context without valid credential body."
+
+[[evasion]]
+text = """
+private_key: |
+  -----BEGIN RSA PRIVATE KEY-----
+  MIIEpQIBAAKCAQEA7n2K9xR4vQ1mWcZ8hLbF3jD5sT6yU0pN2aG4eH7iO9kB1lM3rV5wX8zC0dQ2fS4gJ6kP8mR0tU2wY4aB6cD8eF0gH2iJ4kL6mN8oP0qR2sT4uV6wX8yZ0aB2cD4eF6gH8iJ0kL2mN4oP6qR8sT0uV2wX4yZ6aB8cD0eF2gH4iJ6kL8mN0oP2qR4sT6uV8wX0yZ2aB4cD6eF8gH0iJ2kL4
+  -----END RSA PRIVATE KEY-----
+"""
+credential = "MIIEpQIBAAKCAQEA7n2K9xR4vQ1mWcZ8hLbF3jD5s"
+reason = "Adversarial yaml_block envelope wrapping a full RSA PEM block — the key body must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted GitHub App Private Key credential."

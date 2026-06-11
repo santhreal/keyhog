@@ -1,3 +1,83 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:edbc9971b3f0962c228c027a0db59c925386d151b7cbbbb73028ba14589a3bbe
-size 3630
+# Per-detector contract: openai-api-key
+#
+# Two formats coexist in the wild:
+#   - Legacy:   `sk-` + exactly 48 alphanumerics
+#   - Project:  `sk-proj-` + 40..164 chars from [a-zA-Z0-9_-]
+#
+# The contract covers both so a future regex tightening (e.g. raising
+# the project-key min length) doesn't silently drop legacy keys.
+
+schema_version = 1
+detector_id = "openai-api-key"
+service = "openai"
+severity = "critical"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ"
+credential = "sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ"
+reason = "Legacy sk- key with exactly 48 alphanumerics."
+
+[[positive]]
+text = "OPENAI_API_KEY=sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ"
+credential = "sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ"
+reason = "Standard env-var name OpenAI itself uses in docs."
+
+[[positive]]
+text = "sk-proj-abcDEF123_def-456GHI789jkl-MNO012pqr-STU345vwx-YZA678bcd_efghi"
+credential = "sk-proj-abcDEF123_def-456GHI789jkl-MNO012pqr-STU345vwx-YZA678bcd_efghi"
+reason = "Project key, ~60 chars after sk-proj- (above 40 minimum)."
+
+[[positive]]
+text = "client = OpenAI(api_key=\"sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ\")"
+credential = "sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ"
+reason = "Python-style constructor call with quoted key."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "sk-too-short"
+reason = "Legacy key requires exactly 48 alphanumerics — must not match."
+
+[[negative]]
+text = "sk-proj-short"
+reason = "Project key requires >=40 chars after prefix — must not match."
+
+[[negative]]
+text = "stripe sk_live_ format is unrelated to openai's sk- prefix"
+reason = "Prose mentioning both prefixes without a real key body."
+
+[[negative]]
+text = "sk-1234567890abcdefghijABCDEFGHIJ1234567890abcdef"
+reason = "Only 47 alphanumerics after sk- — one short of legacy length."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# OPENAI_API_KEY=sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ"
+credential = "sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ"
+reason = "Inside a shell/python comment."
+
+[[evasion]]
+text = "<!-- OPENAI_API_KEY=sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ -->"
+credential = "sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ"
+reason = "HTML-commented config line — the realistic leak shape: env-var name + key together inside a commented-out block. The assignment + sensitive variable name lift confidence above the Comment-context hard-suppress floor. Bare `<!--KEY-->` (no env-var) is intentionally suppressed by the engine — see tests/openai_html_comment_bug_62.rs for that DOCUMENTED behavior."
+
+[[evasion]]
+text = "Authorization: Bearer sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ"
+credential = "sk-9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwM8vZ"
+reason = "Bearer-token header context."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Single 4 KiB fixture, one planted key, full pipeline cost. Budget allows for CI jitter — typical local run is ~15 ms but loaded runners spike to 19 ms."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted legacy key. Filler is non-alphanumeric so the unbounded sk-proj- regex cannot run greedy past the planted token."

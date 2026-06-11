@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:bb1f3d121218bccf723fa70286fad35f4684ef0134fcebd635b3faf30f7fd4b5
-size 1203
+schema_version = 1
+detector_id = "gumroad-api-key"
+service = "gumroad"
+severity = "critical"
+
+[[positive]]
+text = "gumroad access_token=b2963950e3ed2e3dc49d5740982bac6a94"
+credential = "b2963950e3ed2e3dc49d5740982bac6a94"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "GUMROAD api_key=\"353f2da167246ebe0e04dc37c9e74a75b5b95a61d015\""
+credential = "353f2da167246ebe0e04dc37c9e74a75b5b95a61d015"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "GUMROAD=short"
+reason = "Truncated value below detector minimum length."
+
+[[negative]]
+text = "GUMROAD token abcdef"
+reason = "Keyword context without valid credential body."
+
+[[evasion]]
+text = "gumroad access_token=b2963950e3ed2e3dc49d5740982bac6a94"
+credential = "b2963950e3ed2e3dc49d5740982bac6a94"
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Gumroad API Key credential."

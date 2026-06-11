@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:c848d2ba0bbffd83c9ec76e1dd5e41876ac10ad830977836a77f4b4cd24464d6
-size 811
+schema_version = 1
+detector_id = "wasabi-access-key"
+service = "wasabi"
+severity = "high"
+
+[positive_with_companion]
+text = "WASABI_ACCESS_KEY=ABCD1234EFGH5678IJKL\nWASABI_SECRET_KEY=abcd1234efgh5678ijkl9012mnop3456qrst7890"
+expected_findings = ["wasabi-access-key"]
+expected_companions = { secret_access_key = "abcd1234efgh5678ijkl9012mnop3456qrst7890" }
+reason = "Wasabi access key paired with secret key."
+
+[positive_primary_only]
+text = "WASABI_ACCESS_KEY=ABCD1234EFGH5678IJKL"
+expected_findings = ["wasabi-access-key"]
+must_not_verify = true
+reason = "Primary found without companion secret_access_key; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "WASABI_SECRET_KEY=abcd1234efgh5678ijkl9012mnop3456qrst7890"
+expected_findings = []
+reason = "Secret key alone without access key."

@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:7cd3ce5cc416452f87e07c90a28d34a0d0c2027445746bf913507c8f989d666f
-size 1437
+schema_version = 1
+detector_id = "playstation-api-key"
+service = "playstation"
+severity = "high"
+
+[[positive]]
+text = "PSN_API_KEY=39ff7f8437d8ac46e79536bc00e27c0a367fbb9357961603fddf2b5706196f97"
+credential = "39ff7f8437d8ac46e79536bc00e27c0a367fbb9357961603fddf2b5706196f97"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "PSN_API_KEY=\"39ff7f8437d8ac46e79536bc00e27c0a367fbb9357961603fddf2b5706196f97\""
+credential = "39ff7f8437d8ac46e79536bc00e27c0a367fbb9357961603fddf2b5706196f97"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "PSN_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "PSN_API_KEY=39ff7EXAMPLEEXAMPLE96f97"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export PSN_API_KEY=39ff7f8437d8ac46e79536bc00e27c0a367fbb9357961603fddf2b5706196f97"
+credential = "39ff7f8437d8ac46e79536bc00e27c0a367fbb9357961603fddf2b5706196f97"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

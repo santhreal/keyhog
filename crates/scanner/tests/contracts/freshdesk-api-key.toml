@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:e5ab1596a35163829455ba09a914053498d2df1f889857556fc5fcdef2a2cf84
-size 889
+schema_version = 1
+detector_id = "freshdesk-api-key"
+service = "freshdesk"
+severity = "high"
+
+[[positive]]
+text = "FRESHDESK_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3Yz"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3Yz"
+reason = "FRESHDESK_API_KEY env-var (20 alnum)."
+
+[[positive]]
+text = "freshdesk_api_key: \"Vk9Bn3Lp7Qm2Rs5Tw8VB\""
+credential = "Vk9Bn3Lp7Qm2Rs5Tw8VB"
+reason = "YAML-style lowercase freshdesk_api_key assignment."
+
+[[negative]]
+text = "FRESHDESK_API_KEY=short"
+reason = "Body below 20 alnum chars."
+
+[[evasion]]
+text = "freshdesk_api_key=Kp4Qx7Rm2Sn5Tb8Vw3Yz"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3Yz"
+reason = "Equals-style lowercase assignment."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Freshdesk key."

@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:4a41e34ca9112fca5bf084cfa86c07d6059ddecc1b90705c24c1b3512cfae312
-size 795
+schema_version = 1
+detector_id = "pubnub-subscribe-key"
+service = "pubnub"
+severity = "medium"
+
+[positive_with_companion]
+text = "sub-c-83c4b666-ff3d-491f-00e1-0f38fe7ae7a4\npub-c-081badb7-e05c-3eb9-6876-9431ccf1b145"
+expected_findings = ["pubnub-subscribe-key"]
+expected_companions = { publish_key = "pub-c-081badb7-e05c-3eb9-6876-9431ccf1b145" }
+reason = "Primary paired with companion(s) publish_key."
+
+[positive_primary_only]
+text = "sub-c-83c4b666-ff3d-491f-00e1-0f38fe7ae7a4"
+expected_findings = ["pubnub-subscribe-key"]
+must_not_verify = true
+reason = "Primary found without companion publish_key; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "pub-c-081badb7-e05c-3eb9-6876-9431ccf1b145"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

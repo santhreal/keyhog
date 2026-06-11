@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:ad41a574501a3cd98190d9af8d9a825dfdbe2e0a3c7ac21993a47321934403e1
-size 732
+schema_version = 1
+detector_id = "lark-app-id"
+service = "lark"
+severity = "high"
+
+[positive_with_companion]
+text = "lark_app_id=cli_a1b2c3d4e5f6g7h8\nlark_app_secret=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
+expected_findings = ["lark-app-id"]
+expected_companions = { lark_app_secret = "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6" }
+reason = "App ID paired with app secret."
+
+[positive_primary_only]
+text = "lark_app_id=cli_a1b2c3d4e5f6g7h8"
+expected_findings = ["lark-app-id"]
+must_not_verify = true
+reason = "Primary found without companion lark_app_secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "lark_app_secret=a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6"
+expected_findings = []
+reason = "App secret alone without app ID."

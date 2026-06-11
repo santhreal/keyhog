@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:20debbc3dc5db9a0037a419f466d263996c29bd54bb8d02f5e7e5e148bc503c0
-size 1318
+schema_version = 1
+detector_id = "magiceden-api-key"
+service = "magiceden"
+severity = "medium"
+
+[[positive]]
+text = "MAGIC_EDEN_API_KEY=\"715472b2cf72-9213-04277e05-ef7d86c0-\""
+credential = "715472b2cf72-9213-04277e05-ef7d86c0-"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "MAGIC_EDEN_API_KEY=\"715472b2cf72-9213-04277e05-ef7d86c0-\""
+credential = "715472b2cf72-9213-04277e05-ef7d86c0-"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "MAGIC_EDEN_API_KEY=\"YOUR_API_KEY_HERE_PLACEHOLDER_VALUE\""
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "MAGIC_EDEN_API_KEY=\"71547EXAMPLEEXAMPLE86c0-\""
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export MAGIC_EDEN_API_KEY=\"715472b2cf72-9213-04277e05-ef7d86c0-\""
+credential = "715472b2cf72-9213-04277e05-ef7d86c0-"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 35000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

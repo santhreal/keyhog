@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:33886624b09e2cd0391069c431f60fc76dccac9fd6fdf7abd23fad3372b0afaa
-size 1318
+schema_version = 1
+detector_id = "tomorrow-api-key"
+service = "tomorrow"
+severity = "medium"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "tomorrow      _     _   _     _              _      _    KEY '   \"' :'='       \"'     ' 4n3FhslpA2JoPccqUu2r5DQNogrUqgGidmASlLTHuAR1e9S"
+credential = "4n3FhslpA2JoPccqUu2r5DQNogrUqgGidmASlLTHuAR1e9S"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "tomorrow      _     _   _     _              _      _    KEY '   \"' :'='       \"'     ' 4n3FhslpA2JoPccqUu2r5DQNogrUqgGidmASlLTHuAR1e9S"
+credential = "4n3FhslpA2JoPccqUu2r5DQNogrUqgGidmASlLTHuAR1e9S"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "tomorrow      _     _   _     _              _      _    KEY '   \"' :'='       \"'     ' YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "tomorrow      _     _   _     _              _      _    KEY '   \"' :'='       \"'     ' 4n3FhEXAMPLEEXAMPLER1e9S"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

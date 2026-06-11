@@ -1,3 +1,64 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:1cec1a033c1bcc4421a558a7c4d7e72357a08e53b400c9bb1a2d152ff50f961c
-size 2452
+# Per-detector contract: digitalocean-pat
+#
+# Format: `dop_v1_` + exactly 64 hex chars.
+
+schema_version = 1
+detector_id = "digitalocean-pat"
+service = "digitalocean"
+severity = "critical"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "dop_v1_9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b"
+credential = "dop_v1_9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b"
+reason = "Canonical DigitalOcean v1 PAT, 64 hex chars after dop_v1_."
+
+[[positive]]
+text = "DIGITALOCEAN_TOKEN=dop_v1_9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b"
+credential = "dop_v1_9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b"
+reason = "Standard env-var assignment."
+
+[[positive]]
+text = "Authorization: Bearer dop_v1_9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b"
+credential = "dop_v1_9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b"
+reason = "DigitalOcean API auth header shape."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "dop_v1_short"
+reason = "Body shorter than 64 chars."
+
+[[negative]]
+text = "dop_v2_9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b"
+reason = "dop_v2_ is not the current PAT shape — must not match v1 regex."
+
+[[negative]]
+text = "the dop_v1_ prefix is documented in the DigitalOcean API guide"
+reason = "Prose mentioning the prefix without a body."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "// dop_v1_9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b"
+credential = "dop_v1_9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b"
+reason = "Inside a single-line comment."
+
+[[evasion]]
+text = "<!--dop_v1_9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b-->"
+credential = "dop_v1_9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b"
+reason = "Inside an HTML comment."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget; 71-char fixed extraction."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted DO PAT. Fixed-width regex cannot run greedy."

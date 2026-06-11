@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:57a28e93460fe90579ff5eb6b9d175b0a1d1b3bb17607b68e69c21a81ef61d01
-size 1259
+schema_version = 1
+detector_id = "onesignal-api-key"
+service = "onesignal"
+severity = "critical"
+
+[[positive]]
+text = "onesignal=32c4a791-27eb-8b3d-4a7f-015e589fcb92"
+credential = "32c4a791-27eb-8b3d-4a7f-015e589fcb92"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "onesignal=\"32c4a791-27eb-8b3d-4a7f-015e589fcb92\""
+credential = "32c4a791-27eb-8b3d-4a7f-015e589fcb92"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "onesignal=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "onesignal=32c4aEXAMPLEEXAMPLEfcb92"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export onesignal=32c4a791-27eb-8b3d-4a7f-015e589fcb92"
+credential = "32c4a791-27eb-8b3d-4a7f-015e589fcb92"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

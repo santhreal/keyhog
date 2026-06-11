@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:9f7e3f52304472c5ed7369f30c108f78b1d8e2116b76731e7251360129ca7ca3
-size 1023
+schema_version = 1
+detector_id = "cohere-api-key"
+service = "cohere"
+severity = "critical"
+
+[[positive]]
+text = "co_K3p7QxR4mN9sBv2Ta5Yc8Wh3Lj6Dz1FgU"
+credential = "co_K3p7QxR4mN9sBv2Ta5Yc8Wh3Lj6Dz1FgU"
+reason = "Cohere co_-prefixed API key (30+ alnum/_/- body)."
+
+[[positive]]
+text = "COHERE_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+reason = "Legacy 40-char alnum API key with COHERE_API_KEY context anchor."
+
+[[negative]]
+text = "co_short"
+reason = "Body below 30 chars after `co_` prefix."
+
+[[evasion]]
+text = "headers={\"Authorization\":\"Bearer co_K3p7QxR4mN9sBv2Ta5Yc8Wh3Lj6Dz1FgU\"}"
+credential = "co_K3p7QxR4mN9sBv2Ta5Yc8Wh3Lj6Dz1FgU"
+reason = "Bearer-header wrap around the prefix-anchored key."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Cohere key."

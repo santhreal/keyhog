@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:ae3af65b66df32e4c854820ebcdf1f4a1b4a680b74f9d71cb1072c4a90bd2b83
-size 1042
+schema_version = 1
+detector_id = "trello-api-token"
+service = "trello"
+severity = "critical"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "TRELLO_API_TOKEN=ViHrr2Iq7a43W4O4uE_6NJW5N1Uzm5XkEzq7IhdxW1M4JvR05_"
+credential = "ViHrr2Iq7a43W4O4uE_6NJW5N1Uzm5XkEzq7IhdxW1M4JvR05_"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "TRELLO_API_TOKEN=\"ViHrr2Iq7a43W4O4uE_6NJW5N1Uzm5XkEzq7IhdxW1M4JvR05_\""
+credential = "ViHrr2Iq7a43W4O4uE_6NJW5N1Uzm5XkEzq7IhdxW1M4JvR05_"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "TRELLO_API_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "TRELLO_API_TOKEN=ViHrrEXAMPLEEXAMPLEvR05_"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

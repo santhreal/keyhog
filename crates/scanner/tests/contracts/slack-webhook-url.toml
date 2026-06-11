@@ -1,3 +1,68 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:219987b5a3e0eb36ff7bddc7142e48fa02d065ab22ac32638e78f24b3e75afda
-size 2940
+# Per-detector contract: slack-webhook-url
+#
+# Format: `https://hooks.slack.com/services/T<team>/B<bot>/<secret>`
+# where team + bot are 8..10 alphanumeric chars and secret is exactly
+# 24 alphanumeric chars.
+
+schema_version = 1
+detector_id = "slack-webhook-url"
+service = "slack"
+severity = "critical"
+# README claim (top-level scalar — see every_contract_readme_claim_present):
+readme_claim = "Slack"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "https://hooks.slack.com/services/T01234567/B98765432/AbCdEfGhIjKlMnOpQrStUvWx"
+credential = "https://hooks.slack.com/services/T01234567/B98765432/AbCdEfGhIjKlMnOpQrStUvWx"
+reason = "Canonical Slack incoming webhook URL with team/bot/secret segments."
+
+[[positive]]
+text = "SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T01234567/B98765432/AbCdEfGhIjKlMnOpQrStUvWx"
+credential = "https://hooks.slack.com/services/T01234567/B98765432/AbCdEfGhIjKlMnOpQrStUvWx"
+reason = "Standard env-var assignment."
+
+[[positive]]
+text = "curl -X POST -H 'Content-type: application/json' --data '{\"text\":\"Hi\"}' https://hooks.slack.com/services/T01234567/B98765432/AbCdEfGhIjKlMnOpQrStUvWx"
+credential = "https://hooks.slack.com/services/T01234567/B98765432/AbCdEfGhIjKlMnOpQrStUvWx"
+reason = "Curl command shape — the most common leak channel in scripts and CI configs."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "https://hooks.slack.com/services/T123/B456/secret"
+reason = "Segments below the 8/8/24-char minimums."
+
+[[negative]]
+text = "https://hooks.slack.com"
+reason = "Just the host, no services path."
+
+[[negative]]
+text = "the Slack webhook URL prefix is https://hooks.slack.com/services/..."
+reason = "Prose mentioning the URL prefix without a real token."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "# SLACK_WEBHOOK_URL=https://hooks.slack.com/services/T01234567/B98765432/AbCdEfGhIjKlMnOpQrStUvWx"
+credential = "https://hooks.slack.com/services/T01234567/B98765432/AbCdEfGhIjKlMnOpQrStUvWx"
+reason = "Commented-out env-var assignment — the env-var keyword + assignment lift confidence above the Comment-context hard-suppress floor. A bare `// URL` shape is intentionally suppressed (engine precision choice; see openai-api-key contract for the same pattern)."
+
+[[evasion]]
+text = "{\"url\":\"https://hooks.slack.com/services/T01234567/B98765432/AbCdEfGhIjKlMnOpQrStUvWx\"}"
+credential = "https://hooks.slack.com/services/T01234567/B98765432/AbCdEfGhIjKlMnOpQrStUvWx"
+reason = "JSON payload — extraction must not consume the closing quote/brace."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted Slack webhook URL."

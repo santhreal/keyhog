@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:a0bec00c63fcfad60b8a1b88ba6c088d8b47fcca390fb51cb86b1a5ed614417a
-size 2257
+schema_version = 1
+detector_id = "oracle-cloud-api-key"
+service = "oracle-cloud"
+severity = "critical"
+
+[[positive]]
+text = "ocid1.user.oc1.mzks6yx4t4ccgj0myg6d0lm4ox2uush50dkkrmkkyrjn960x7560kzvq1m63t4yk7u2w13lo6hsegd223arj54.gcsxajsz0f04t9fbn8vhlnikxk7fpnge3blz5a53p5z3rp30p4xj851oqsbgruhnhv3ojp2icsyog"
+credential = "ocid1.user.oc1.mzks6yx4t4ccgj0myg6d0lm4ox2uush50dkkrmkkyrjn960x7560kzvq1m63t4yk7u2w13lo6hsegd223arj54.gcsxajsz0f04t9fbn8vhlnikxk7fpnge3blz5a53p5z3rp30p4xj851oqsbgruhnhv3ojp2icsyog"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "ocid1.user.oc1.mzks6yx4t4ccgj0myg6d0lm4ox2uush50dkkrmkkyrjn960x7560kzvq1m63t4yk7u2w13lo6hsegd223arj54.gcsxajsz0f04t9fbn8vhlnikxk7fpnge3blz5a53p5z3rp30p4xj851oqsbgruhnhv3ojp2icsyog=\"ocid1.user.oc1.mzks6yx4t4ccgj0myg6d0lm4ox2uush50dkkrmkkyrjn960x7560kzvq1m63t4yk7u2w13lo6hsegd223arj54.gcsxajsz0f04t9fbn8vhlnikxk7fpnge3blz5a53p5z3rp30p4xj851oqsbgruhnhv3ojp2icsyog\""
+credential = "ocid1.user.oc1.mzks6yx4t4ccgj0myg6d0lm4ox2uush50dkkrmkkyrjn960x7560kzvq1m63t4yk7u2w13lo6hsegd223arj54.gcsxajsz0f04t9fbn8vhlnikxk7fpnge3blz5a53p5z3rp30p4xj851oqsbgruhnhv3ojp2icsyog"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "ocid1EXAMPLEEXAMPLEcsyog"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "Authorization: Bearer ocid1.user.oc1.mzks6yx4t4ccgj0myg6d0lm4ox2uush50dkkrmkkyrjn960x7560kzvq1m63t4yk7u2w13lo6hsegd223arj54.gcsxajsz0f04t9fbn8vhlnikxk7fpnge3blz5a53p5z3rp30p4xj851oqsbgruhnhv3ojp2icsyog"
+credential = "ocid1.user.oc1.mzks6yx4t4ccgj0myg6d0lm4ox2uush50dkkrmkkyrjn960x7560kzvq1m63t4yk7u2w13lo6hsegd223arj54.gcsxajsz0f04t9fbn8vhlnikxk7fpnge3blz5a53p5z3rp30p4xj851oqsbgruhnhv3ojp2icsyog"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

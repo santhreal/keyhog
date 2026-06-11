@@ -1,3 +1,55 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:8e10a41c4cb173d8c81b67b5f3740e87edc6bdaf0c46d26495aa0de6d4e459ed
-size 1730
+# Per-detector contract: databricks-token
+#
+# Format: `dapi` + 32+ hex chars.
+
+schema_version = 1
+detector_id = "databricks-token"
+service = "databricks"
+severity = "critical"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "dapi9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d"
+credential = "dapi9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d"
+reason = "Bare Databricks PAT, 32 hex chars after dapi."
+
+[[positive]]
+text = "DATABRICKS_TOKEN=dapi9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d"
+credential = "dapi9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d"
+reason = "Standard env-var assignment."
+
+[[positive]]
+text = "Authorization: Bearer dapi9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d"
+credential = "dapi9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d"
+reason = "Bearer header — Databricks API auth shape."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "dapi-too-short"
+reason = "Body too short / non-hex."
+
+[[negative]]
+text = "the dapi prefix marks Databricks PATs"
+reason = "Prose mentioning the prefix without a body."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "{\"token\":\"dapi9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d\"}"
+credential = "dapi9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d"
+reason = "JSON payload — extraction must not consume closing quote/brace."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted Databricks token."

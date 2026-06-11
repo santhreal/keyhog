@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:89a7037107ee06c3bff65d4f4fd10cbd50b9f03f154c87cd22b947af7c5d77ef
-size 778
+schema_version = 1
+detector_id = "saucelabs-access-key"
+service = "saucelabs"
+severity = "critical"
+
+[positive_with_companion]
+text = "SAUCE_ACCESS_KEY=7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d\nSAUCE_USERNAME=sauce_user_01"
+expected_findings = ["saucelabs-access-key"]
+expected_companions = { "saucelabs-username" = "sauce_user_01" }
+reason = "Access key UUID paired with SauceLabs username."
+
+[positive_primary_only]
+text = "SAUCE_ACCESS_KEY=7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+expected_findings = ["saucelabs-access-key"]
+must_not_verify = true
+reason = "Primary found without companion saucelabs-username; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "SAUCE_USERNAME=sauce_user_01"
+expected_findings = []
+reason = "Username alone without access key."

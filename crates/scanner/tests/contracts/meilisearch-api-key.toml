@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:3221f7edfefeeaf02fb64b97bb0f30b718b5255d469d7a5f2c9dc6c20607219e
-size 1173
+schema_version = 1
+detector_id = "meilisearch-api-key"
+service = "meilisearch"
+severity = "high"
+
+[[positive]]
+text = "MEILISEARCH_API_KEY=zbNdq6Fp78ZTADck"
+credential = "zbNdq6Fp78ZTADck"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "MEILISEARCH_API_KEY=\"zbNdq6Fp78ZTADck\""
+credential = "zbNdq6Fp78ZTADck"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "MEILISEARCH_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "MEILISEARCH_API_KEY=zbNdqEXAMPLEEXAMPLETADck"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "# MEILISEARCH_API_KEY=zbNdq6Fp78ZTADck"
+credential = "zbNdq6Fp78ZTADck"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

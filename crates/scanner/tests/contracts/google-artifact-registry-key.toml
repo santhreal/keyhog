@@ -1,3 +1,41 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:41e00ae5c7f773add0c9790e4e7c3e2e5b08c4c983e2821e3a600e31e513b33a
-size 1376
+schema_version = 1
+detector_id = "google-artifact-registry-key"
+service = "google-artifact-registry"
+severity = "critical"
+
+
+
+
+[[positive]]
+text = """{"type": "service_account", "private_key": "-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----"}"""
+credential = "-----BEGIN PRIVATE KEY-----"
+reason = "Hand-tuned positive matching detector regex (R2-F adversarial batch)."
+
+[[positive]]
+text = """_json_key={"type":"service_account","private_key":"-----BEGIN PRIVATE KEY-----\nMIIE\n-----END PRIVATE KEY-----"}"""
+credential = "-----BEGIN PRIVATE KEY-----"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "_json_key=short"
+reason = "Truncated value below detector minimum length."
+
+[[negative]]
+text = "_json_key token abcdef"
+reason = "Keyword context without valid credential body."
+
+[[evasion]]
+text = '# docker login -u _json_key -p {"type":"service_account","private_key":"-----BEGIN PRIVATE KEY-----\nabc\n-----END PRIVATE KEY-----"}'
+credential = "-----BEGIN PRIVATE KEY-----"
+reason = "Comment-adjacent GAR JSON key material."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Google Artifact Registry Service Account Key credential."

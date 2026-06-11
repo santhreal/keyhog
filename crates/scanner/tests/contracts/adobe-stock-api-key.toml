@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:ade4b70bcbb69a299a52173c0e6c4624304bc7221414061aa3e2b05fa9e11e9f
-size 987
+schema_version = 1
+detector_id = "adobe-stock-api-key"
+service = "adobe-stock"
+severity = "high"
+
+[[positive]]
+text = "ADOBE_STOCK_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Adobe Stock API key env-var (32 hex)."
+
+[[positive]]
+text = "adobe_stock_client_id=4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f7b2d9c5a"
+credential = "4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f7b2d9c5a"
+reason = "Lowercase adobe_stock_client_id form (40 hex)."
+
+[[negative]]
+text = "ADOBE_STOCK_API_KEY=short"
+reason = "Body below 32 hex chars."
+
+[[evasion]]
+text = "adobe.stock.api.key=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Dot-separated adobe.stock.api.key form."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Adobe Stock key."

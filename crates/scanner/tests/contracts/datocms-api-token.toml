@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:45f0ce8a84e2f381d56a0279d719c8a5b77b8db723742b11b19bb22932612381
-size 1095
+schema_version = 1
+detector_id = "datocms-api-token"
+service = "datocms"
+severity = "high"
+
+[[positive]]
+text = "DATOCMS_API_TOKEN=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+reason = "Uppercase DATOCMS_API_TOKEN env-var with 38 alnum chars."
+
+[[positive]]
+text = "Authorization: Bearer Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5 datocms"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+reason = "Bearer token form with trailing dato context (32 alnum)."
+
+[[negative]]
+text = "DATOCMS_API_TOKEN=Kp4Qx7Rm"
+reason = "Body below 30 chars, fails alphanumeric length requirement."
+
+[[evasion]]
+text = "DATOCMS READWRITE TOKEN = 'Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz'"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+reason = "Spaced token name with single-quote wrapper (38 alnum)."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted DatoCMS credential."

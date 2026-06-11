@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:a381282c079ac36045ee34dd374c7fba16ffc3950a6edbdcc126d3445b234839
-size 1214
+schema_version = 1
+detector_id = "env0-api-key"
+service = "env0"
+severity = "critical"
+
+[positive_with_companion]
+text = "ENV0_API_KEY     ' :='' '  '  '    = :  '\"\"    =   =\"'   \"'\"  =   '  \"  \"  \" :       '  \" 87e2614f-375a-e82f-5d03-02e753421f03\nENV0_API_SECRET:\"'  \"      \"'' ' \"= ''  :\"':  = =       =    '   \"  :   :::' '\"     ':   =: ': \"\"=: :       'xec7dbj0x9Zk9IUeu0xiUqcy1d2TYigblZSO9QDfxcTBM"
+expected_findings = ["env0-api-key"]
+expected_companions = { env0_api_secret = "xec7dbj0x9Zk9IUeu0xiUqcy1d2TYigblZSO9QDfxcTBM" }
+reason = "Primary paired with companion(s) env0_api_secret."
+
+[positive_primary_only]
+text = "ENV0_API_KEY     ' :='' '  '  '    = :  '\"\"    =   =\"'   \"'\"  =   '  \"  \"  \" :       '  \" 87e2614f-375a-e82f-5d03-02e753421f03"
+expected_findings = ["env0-api-key"]
+must_not_verify = true
+reason = "Primary found without companion env0_api_secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "ENV0_API_SECRET:\"'  \"      \"'' ' \"= ''  :\"':  = =       =    '   \"  :   :::' '\"     ':   =: ': \"\"=: :       'xec7dbj0x9Zk9IUeu0xiUqcy1d2TYigblZSO9QDfxcTBM"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

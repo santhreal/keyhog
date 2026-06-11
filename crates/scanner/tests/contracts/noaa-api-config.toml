@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:75380b72790f0315f595d581c433136e076b840648afc9a8dab9e100b9217bba
-size 1266
+schema_version = 1
+detector_id = "noaa-api-config"
+service = "noaa"
+severity = "low"
+
+[[positive]]
+text = "User-Agent=mDnz,U!<T$2Zy#c?d:8E)H37Auqweather.govz)Y"
+credential = "mDnz,U!<T$2Zy#c?d:8E)H37Auqweather.govz)Y"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "User-Agent=\"mDnz,U!<T$2Zy#c?d:8E)H37Auqweather.govz)Y\""
+credential = "mDnz,U!<T$2Zy#c?d:8E)H37Auqweather.govz)Y"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "User-Agent=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "User-Agent=mDnz,EXAMPLEEXAMPLEovz)Y"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "# User-Agent=mDnz,U!<T$2Zy#c?d:8E)H37Auqweather.govz)Y"
+credential = "mDnz,U!<T$2Zy#c?d:8E)H37Auqweather.govz)Y"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 35000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

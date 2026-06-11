@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:5a8e862640bc362a7bf65e15b33eb56c6f393ae366829f1c21b647b7fff42249
-size 1257
+schema_version = 1
+detector_id = "sonarqube-token"
+service = "sonarqube"
+severity = "high"
+
+[[positive]]
+text = "SONAR=204f1387a0335f63afce7b2685befb39f7cf1d26"
+credential = "204f1387a0335f63afce7b2685befb39f7cf1d26"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "SONAR=\"204f1387a0335f63afce7b2685befb39f7cf1d26\""
+credential = "204f1387a0335f63afce7b2685befb39f7cf1d26"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "SONAR=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "SONAR=204f1EXAMPLEEXAMPLEf1d26"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export SONAR=204f1387a0335f63afce7b2685befb39f7cf1d26"
+credential = "204f1387a0335f63afce7b2685befb39f7cf1d26"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

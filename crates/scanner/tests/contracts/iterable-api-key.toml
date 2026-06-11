@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:9a3765b84b1f88fe92fabc0eac89c94167952d3bf25e1f9e988663485e8880e7
-size 1228
+schema_version = 1
+detector_id = "iterable-api-key"
+service = "iterable"
+severity = "critical"
+
+[[positive]]
+text = "ITERABLE=425d50e126cedeee2e523de4e609df80"
+credential = "425d50e126cedeee2e523de4e609df80"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "ITERABLE=\"425d50e126cedeee2e523de4e609df80\""
+credential = "425d50e126cedeee2e523de4e609df80"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "ITERABLE=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "ITERABLE=425d5EXAMPLEEXAMPLE9df80"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export ITERABLE=425d50e126cedeee2e523de4e609df80"
+credential = "425d50e126cedeee2e523de4e609df80"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

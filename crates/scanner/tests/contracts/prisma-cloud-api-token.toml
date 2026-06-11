@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:457b2546f3c2204fb78bbecf436fbd730d5ef7dbf0f0115fd4baae3ec5d49057
-size 2162
+schema_version = 1
+detector_id = "prisma-cloud-api-token"
+service = "prisma-cloud"
+severity = "critical"
+
+[[positive]]
+text = "PRISMA_API_KEY=eyJ1Gk3_5qIWlCW9vrWA_Zc-CikFlEy5grq-2ah0D7iS150sDBETlYuoN_r_XnRJK0Q.A8Lrhe179XcO43ta8Er9KpU33H_dwrJBsHKF1z7bspluw3wF7r4mGMKpVCr9U5s-P58CXz3eACIeqezEPDEGO4PUH4LR9w.yO6nijlKQf5R0gF1JB"
+credential = "eyJ1Gk3_5qIWlCW9vrWA_Zc-CikFlEy5grq-2ah0D7iS150sDBETlYuoN_r_XnRJK0Q.A8Lrhe179XcO43ta8Er9KpU33H_dwrJBsHKF1z7bspluw3wF7r4mGMKpVCr9U5s-P58CXz3eACIeqezEPDEGO4PUH4LR9w.yO6nijlKQf5R0gF1JB"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "PRISMA_API_KEY=\"eyJ1Gk3_5qIWlCW9vrWA_Zc-CikFlEy5grq-2ah0D7iS150sDBETlYuoN_r_XnRJK0Q.A8Lrhe179XcO43ta8Er9KpU33H_dwrJBsHKF1z7bspluw3wF7r4mGMKpVCr9U5s-P58CXz3eACIeqezEPDEGO4PUH4LR9w.yO6nijlKQf5R0gF1JB\""
+credential = "eyJ1Gk3_5qIWlCW9vrWA_Zc-CikFlEy5grq-2ah0D7iS150sDBETlYuoN_r_XnRJK0Q.A8Lrhe179XcO43ta8Er9KpU33H_dwrJBsHKF1z7bspluw3wF7r4mGMKpVCr9U5s-P58CXz3eACIeqezEPDEGO4PUH4LR9w.yO6nijlKQf5R0gF1JB"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "PRISMA_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "PRISMA_API_KEY=eyJ1GEXAMPLEEXAMPLEgF1JB"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export PRISMA_API_KEY=eyJ1Gk3_5qIWlCW9vrWA_Zc-CikFlEy5grq-2ah0D7iS150sDBETlYuoN_r_XnRJK0Q.A8Lrhe179XcO43ta8Er9KpU33H_dwrJBsHKF1z7bspluw3wF7r4mGMKpVCr9U5s-P58CXz3eACIeqezEPDEGO4PUH4LR9w.yO6nijlKQf5R0gF1JB"
+credential = "eyJ1Gk3_5qIWlCW9vrWA_Zc-CikFlEy5grq-2ah0D7iS150sDBETlYuoN_r_XnRJK0Q.A8Lrhe179XcO43ta8Er9KpU33H_dwrJBsHKF1z7bspluw3wF7r4mGMKpVCr9U5s-P58CXz3eACIeqezEPDEGO4PUH4LR9w.yO6nijlKQf5R0gF1JB"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

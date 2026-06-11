@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:0f833d759d02af48dfe27d9e99acb2fcd9c79f51160b8a8ba0a72a5d87039184
-size 977
+schema_version = 1
+detector_id = "devto-api-key"
+service = "devto"
+severity = "medium"
+
+[[positive]]
+text = "DEVTO_API_KEY=2be3296b917aada29c38889518f13ab6"
+credential = "2be3296b917aada29c38889518f13ab6"
+reason = "Dev.to API key with exact env-var anchor and 32-char hex body."
+
+[[positive]]
+text = "FOREM_API_KEY:\"4366c5af28d806c6f4d0b5c91fb26bbb\""
+credential = "4366c5af28d806c6f4d0b5c91fb26bbb"
+reason = "Forem API key with colon+quote separator."
+
+[[negative]]
+text = "DEVTO_API_KEY=short"
+reason = "Body too short / wrong shape."
+
+[[evasion]]
+text = "DEV_TO_API_KEY = 2be3296b917aada29c38889518f13ab6"
+credential = "2be3296b917aada29c38889518f13ab6"
+reason = "Spaces around equals, different keyword variant."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted devto credential."

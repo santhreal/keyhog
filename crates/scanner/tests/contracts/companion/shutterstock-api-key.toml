@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:83dd01a8e24e61957fd8a8c73ecaf554011e6560c2c5f2fc798c103e59d5dfa0
-size 902
+schema_version = 1
+detector_id = "shutterstock-api-key"
+service = "shutterstock"
+severity = "high"
+
+[positive_with_companion]
+text = "shutterstockCONSUMERKEY=vmo13ocM5SQAAzGbcbxITROgTMngelsx\nshutterstockconsumersecret=3hW6vZhZO7TA7CeEMkDfZggFFbhy4Wiq"
+expected_findings = ["shutterstock-api-key"]
+expected_companions = { shutterstock-consumer-secret = "3hW6vZhZO7TA7CeEMkDfZggFFbhy4Wiq" }
+reason = "Primary paired with companion(s) shutterstock-consumer-secret."
+
+[positive_primary_only]
+text = "shutterstockCONSUMERKEY=vmo13ocM5SQAAzGbcbxITROgTMngelsx"
+expected_findings = ["shutterstock-api-key"]
+must_not_verify = true
+reason = "Primary found without companion shutterstock-consumer-secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "shutterstockconsumersecret=3hW6vZhZO7TA7CeEMkDfZggFFbhy4Wiq"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

@@ -1,3 +1,70 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:d0e9ba8686968f37ebf7e90370e05e93046fd78508a99145373379cfcbcb7968
-size 2319
+# Per-detector contract: gitlab-personal-access-token
+#
+# Format: `glpat-` + 20..64 chars from [a-zA-Z0-9-]. No checksum;
+# precision relies on the distinctive `glpat-` prefix.
+
+schema_version = 1
+detector_id = "gitlab-personal-access-token"
+service = "gitlab"
+severity = "critical"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "glpat-aB3kQp7VbT2hYRzNcMfW"
+credential = "glpat-aB3kQp7VbT2hYRzNcMfW"
+reason = "Bare canonical GitLab PAT, exactly 20 chars after prefix (gitlab checksum validator requires exactly 20)."
+
+[[positive]]
+text = "GITLAB_TOKEN=glpat-aB3kQp7VbT2hYRzNcMfW"
+credential = "glpat-aB3kQp7VbT2hYRzNcMfW"
+reason = "Standard env-var assignment."
+
+[[positive]]
+text = "git push https://oauth2:glpat-aB3kQp7VbT2hYRzNcMfW@gitlab.com/me/repo.git"
+credential = "glpat-aB3kQp7VbT2hYRzNcMfW"
+reason = "URL-embedded credential — common shell-history leak shape."
+
+[[positive]]
+text = "PRIVATE-TOKEN: glpat-aB3kQp7VbT2hYRzNcMfW"
+credential = "glpat-aB3kQp7VbT2hYRzNcMfW"
+reason = "GitLab's official API auth header shape."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "glpat-short"
+reason = "Body too short for the 20-char minimum."
+
+[[negative]]
+text = "the glpat- prefix is documented at docs.gitlab.com"
+reason = "Prose mentioning the prefix without a token body."
+
+[[negative]]
+text = "glpat_aB3kQp7VbT2hYRzNcMfWj4Dg"
+reason = "Underscore instead of hyphen after `glpat` — must not match."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "// glpat-aB3kQp7VbT2hYRzNcMfW"
+credential = "glpat-aB3kQp7VbT2hYRzNcMfW"
+reason = "Inside a C++/JS single-line comment."
+
+[[evasion]]
+text = "{\"private_token\":\"glpat-aB3kQp7VbT2hYRzNcMfW\"}"
+credential = "glpat-aB3kQp7VbT2hYRzNcMfW"
+reason = "JSON payload — extraction must not consume the closing quote/brace."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted GitLab PAT."

@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:0cacb9c0451682b36fc774a2c068dd37f42d6af8f68a04d440c398cda53b2f9d
-size 1044
+schema_version = 1
+detector_id = "cherryservers-api-key"
+service = "cherryservers"
+severity = "critical"
+
+[[positive]]
+text = "CHERRY_AUTH_TOKEN=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+reason = "Cherry Servers auth token env-var (32 alnum)."
+
+[[positive]]
+text = "cherry_api_token: \"Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5\""
+credential = "Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5"
+reason = "Lowercase cherry_api_token YAML form (32 alnum)."
+
+[[negative]]
+text = "CHERRY_AUTH_TOKEN=Kp4Qx7Rm2Sn5Tb8Vw3Yz"
+reason = "Body 22 chars, below 32 minimum."
+
+[[evasion]]
+text = "Bearer CHERRY_API_TOKEN=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+reason = "Bearer prefix before CHERRY_API_TOKEN — regex still fires."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted cherryservers credential."

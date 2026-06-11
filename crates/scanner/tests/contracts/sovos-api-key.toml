@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:0e2720906939cc1e25eb9dca68f387ab8af4630774b8cbf4b22d9c9daba7f3b4
-size 1160
+schema_version = 1
+detector_id = "sovos-api-key"
+service = "sovos"
+severity = "critical"
+
+[[positive]]
+text = "SOVOS_API_KEY=Z5bJgWzWferfBeuIonJB"
+credential = "Z5bJgWzWferfBeuIonJB"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "SOVOS_API_KEY=\"Z5bJgWzWferfBeuIonJB\""
+credential = "Z5bJgWzWferfBeuIonJB"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "SOVOS_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "SOVOS_API_KEY=Z5bJgEXAMPLEEXAMPLEIonJB"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "{\"secret\":\"Z5bJgWzWferfBeuIonJB\"}"
+credential = "Z5bJgWzWferfBeuIonJB"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

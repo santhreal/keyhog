@@ -1,3 +1,41 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:8317b691467d0e523bddf7d3fea604ba60f18f46d6d18c3a4c17cec0589b764e
-size 1121
+schema_version = 1
+detector_id = "lastpass-dev-creds"
+service = "lastpass"
+severity = "critical"
+
+
+
+
+[[positive]]
+text = """lastpass id=9860386"""
+credential = "9860386"
+reason = "Hand-tuned positive matching detector regex (R2-F adversarial batch)."
+
+[[positive]]
+text = """LASTPASS id=9860387"""
+credential = "9860387"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "microsoft_advertising client_id=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "microsoft_advertising client_id=9860386_EXAMPLE"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "lastpass id=9860386"
+credential = "9860386"
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

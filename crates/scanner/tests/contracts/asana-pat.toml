@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:8b509e7c23c366c5e577f42e42667044e531c150ff7a72f9744a242b6d65f7c1
-size 1259
+schema_version = 1
+detector_id = "asana-pat"
+service = "asana"
+severity = "high"
+
+[[positive]]
+text = "ASANA_ACCESS_TOKEN=1/4827193056718294/Kp7QxR4mN9sBv2Ta5Yc8Wh3Lj6Dz1FgU"
+credential = "1/4827193056718294/Kp7QxR4mN9sBv2Ta5Yc8Wh3Lj6Dz1FgU"
+reason = "Asana PAT (1/<userid 16-20 digits>/<token 32-48 alnum>) with ASANA_ACCESS_TOKEN context."
+
+[[positive]]
+text = "asana = \"1/8273916405832671/Kp7QxR4mN9sBv2Ta5Yc8Wh3Lj6Dz1FgU\""
+credential = "1/8273916405832671/Kp7QxR4mN9sBv2Ta5Yc8Wh3Lj6Dz1FgU"
+reason = "Asana PAT in TOML-style asana = \"value\" assignment."
+
+[[negative]]
+text = "1/short/short"
+reason = "Body segments below required lengths."
+
+[[evasion]]
+text = "curl https://app.asana.com/api/1.0/users/me -H 'Authorization: Bearer 1/4827193056718294/Kp7QxR4mN9sBv2Ta5Yc8Wh3Lj6Dz1FgU'"
+credential = "1/4827193056718294/Kp7QxR4mN9sBv2Ta5Yc8Wh3Lj6Dz1FgU"
+reason = "curl command at the documented asana endpoint — `app.asana.com` keyword activates the fallback regex (this regression-gates task #69)."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Asana PAT."

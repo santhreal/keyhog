@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:7c6f7c3eb6a57347f7e4d3adef595f0ad60bdd859a29181e01cb9da4e3748873
-size 1064
+schema_version = 1
+detector_id = "mongodb-atlas-api-key"
+service = "mongodb"
+severity = "critical"
+
+[[positive]]
+text = "ATLAS=eHIfkXby"
+credential = "eHIfkXby"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "ATLAS=\"eHIfkXby\""
+credential = "eHIfkXby"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "ATLAS=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "ATLAS=eHIfkXbyEXAMPLE"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export ATLAS=eHIfkXby"
+credential = "eHIfkXby"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

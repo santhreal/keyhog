@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:6897c6b952ce7f3c3d0d6ea9e29bb8045832f5605056bd3b6e903eb2d9c78528
-size 1162
+schema_version = 1
+detector_id = "raygun-api-key"
+service = "raygun"
+severity = "high"
+
+[[positive]]
+text = "RAYGUN_API_KEY=zHHPHPTJ-SaJd915YTMi"
+credential = "zHHPHPTJ-SaJd915YTMi"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "RAYGUN_API_KEY=\"zHHPHPTJ-SaJd915YTMi\""
+credential = "zHHPHPTJ-SaJd915YTMi"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "RAYGUN_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "RAYGUN_API_KEY=zHHPHEXAMPLEEXAMPLE5YTMi"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "{\"secret\":\"zHHPHPTJ-SaJd915YTMi\"}"
+credential = "zHHPHPTJ-SaJd915YTMi"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

@@ -1,3 +1,46 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:397f52038da2300d7322f5f6109918621a3a00414c4c3eaba85c6372a0ba4280
-size 1604
+# Per-detector contract: square-access-token
+#
+# Square (payments platform) access tokens. Distinct from Squarespace; the
+# `sq0atp-`/`sq0csp-` prefixes are unambiguous, so no context anchor is needed.
+
+schema_version = 1
+detector_id = "square-access-token"
+service = "square"
+severity = "high"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+[[positive]]
+text = "SQUARE_ACCESS_TOKEN=sq0atp-TYPn7nNYVuAYfVUPY8nlGY"
+credential = "sq0atp-TYPn7nNYVuAYfVUPY8nlGY"
+reason = "Square personal access token (sq0atp- + 22 chars)."
+
+[[positive]]
+text = "square_oauth_secret: \"sq0csp-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij0123456\""
+credential = "sq0csp-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij0123456"
+reason = "Square OAuth application secret (sq0csp- + 43 chars)."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+[[negative]]
+text = "token = sq0atp-short"
+reason = "sq0atp- body below the 22-char minimum."
+
+[[negative]]
+text = "squarespace_key = abcdefghijklmnopqrstuvwxyz0123456789ABCD"
+reason = "Squarespace context without a Square prefix must not fire square-access-token."
+
+# ---- EVASION --------------------------------------------------------
+[[evasion]]
+text = "creds:\n  square: 'sq0atp-TYPn7nNYVuAYfVUPY8nlGY'\n"
+credential = "sq0atp-TYPn7nNYVuAYfVUPY8nlGY"
+reason = "Quoted YAML value form."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Square access token."

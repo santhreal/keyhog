@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:1a8573bbb35755a9a9aa46c1675cd7217fac2fa5dc9fd04f996b06b105fc2f8c
-size 1232
+schema_version = 1
+detector_id = "scrapingbee-api-key"
+service = "scrapingbee"
+severity = "high"
+
+[[positive]]
+text = "scrapingbee=cnSctbWZ2NV8jmNLV0upUAtUAAP2aK3l"
+credential = "cnSctbWZ2NV8jmNLV0upUAtUAAP2aK3l"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "scrapingbee=\"cnSctbWZ2NV8jmNLV0upUAtUAAP2aK3l\""
+credential = "cnSctbWZ2NV8jmNLV0upUAtUAAP2aK3l"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "scrapingbee=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "scrapingbee=cnSctEXAMPLEEXAMPLE2aK3l"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "{\"secret\":\"cnSctbWZ2NV8jmNLV0upUAtUAAP2aK3l\"}"
+credential = "cnSctbWZ2NV8jmNLV0upUAtUAAP2aK3l"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

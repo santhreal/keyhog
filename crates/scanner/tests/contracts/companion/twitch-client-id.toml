@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:597f55cba71cbd3017e6f26c2c4ce05e87a4187feb4f45ce66635c7780aa4e53
-size 1336
+schema_version = 1
+detector_id = "twitch-client-id"
+service = "twitch"
+severity = "high"
+
+[positive_with_companion]
+text = "TWITCH     _     -   _-_  _   _   _  __ -    _- _  _ -    -    _           _      _-_      _-    client _     -    --- -     _  _      _- -     -  _          -   -  _ _-     _          -     _- id'  =\"\" :=  = '   '  \" : '   \"=  '\" \"' \"  \"  '\"     ==  \" \" ' : \"= '6icxl05wny1t9prhm49bjv5u0lmamc\ntwitchclientsecret=qyntfeiqke0bcaa8um4dkjlbagz5lo"
+expected_findings = ["twitch-client-id"]
+expected_companions = { twitch_client_secret = "qyntfeiqke0bcaa8um4dkjlbagz5lo" }
+reason = "Primary paired with companion(s) twitch_client_secret."
+
+[positive_primary_only]
+text = "TWITCH     _     -   _-_  _   _   _  __ -    _- _  _ -    -    _           _      _-_      _-    client _     -    --- -     _  _      _- -     -  _          -   -  _ _-     _          -     _- id'  =\"\" :=  = '   '  \" : '   \"=  '\" \"' \"  \"  '\"     ==  \" \" ' : \"= '6icxl05wny1t9prhm49bjv5u0lmamc"
+expected_findings = ["twitch-client-id"]
+must_not_verify = true
+reason = "Primary found without companion twitch_client_secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "twitchclientsecret=qyntfeiqke0bcaa8um4dkjlbagz5lo"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

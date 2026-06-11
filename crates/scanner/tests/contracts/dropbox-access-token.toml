@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:221a70a5e2cab692297383544628409fb44efefb6f49f5cc02ac283779bf2735
-size 1445
+schema_version = 1
+detector_id = "dropbox-access-token"
+service = "dropbox"
+severity = "critical"
+
+[[positive]]
+text = "sl.9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy1234567890AbCdEfGhIjKlMnOpQrStUv"
+credential = "sl.9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy1234567890AbCdEfGhIjKlMnOpQrStUv"
+reason = "Bare Dropbox short-lived access token (sl. + 100+ base64url body)."
+
+[[positive]]
+text = "DROPBOX_ACCESS_TOKEN=sl.9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy1234567890AbCdEfGhIjKlMnOpQrStUv"
+credential = "sl.9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy1234567890AbCdEfGhIjKlMnOpQrStUv"
+reason = "Standard env-var assignment."
+
+[[negative]]
+text = "sl.short"
+reason = "Body below 100 chars."
+
+[[evasion]]
+text = "Authorization: Bearer sl.9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy1234567890AbCdEfGhIjKlMnOpQrStUv"
+credential = "sl.9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy1234567890AbCdEfGhIjKlMnOpQrStUv"
+reason = "Bearer header shape."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Dropbox token."

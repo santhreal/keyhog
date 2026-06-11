@@ -1,3 +1,36 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:ff7e8a089bfee065156aa3916657fa08520c24ee54174db2aa650a246d26e3cc
-size 1355
+# Per-detector contract: elastic-cloud-api-key
+
+schema_version = 1
+detector_id = "elastic-cloud-api-key"
+service = "elastic"
+severity = "critical"
+
+[[positive]]
+text = "ELASTIC_CLOUD_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz:Kp4Qx7Rm2Sn5Tb8V"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz:Kp4Qx7Rm2Sn5Tb8V"
+reason = "id:key format with 38-char id and 16-char key separated by colon."
+
+[[positive]]
+text = "elastic_cloud_api_key=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S=="
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S=="
+reason = "Base64-encoded shape with 52 alnum/underscore/hyphen chars followed by double-equals."
+
+[[negative]]
+text = "ELASTIC_CLOUD_API_KEY=short"
+reason = "Body too short — id:key pattern requires 20+:16+ and base64 requires 40+."
+
+[[evasion]]
+text = "{\"ELASTIC_CLOUD_API_KEY\": \"Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz:Kp4Qx7Rm2Sn5Tb8V\"}"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz:Kp4Qx7Rm2Sn5Tb8V"
+reason = "JSON-encoded assignment with quoted id:key value."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Elastic Cloud credential."

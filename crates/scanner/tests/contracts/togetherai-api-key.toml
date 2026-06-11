@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:8dc824f6f2eda67f43a2603f4c3048246e0d42331663de7912ee6fba8170efdf
-size 1150
+schema_version = 1
+detector_id = "togetherai-api-key"
+service = "togetherai"
+severity = "critical"
+
+[[positive]]
+text = "TOGETHER_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "TOGETHER_API_KEY env-var (64 hex)."
+
+[[positive]]
+text = "together = \"4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f\""
+credential = "4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f"
+reason = "YAML-style together = \"...\" assignment."
+
+[[negative]]
+text = "TOGETHER_API_KEY=short"
+reason = "Body below 64 hex chars."
+
+[[evasion]]
+text = "togetherai_api_key=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Lowercase togetherai_api_key assignment shape."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Together AI key."

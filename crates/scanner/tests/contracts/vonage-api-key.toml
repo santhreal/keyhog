@@ -1,3 +1,33 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:489857337de9dfbe3099b8adfdd554b671b9302360b0b91c8a5e449c07caeb91
-size 831
+schema_version = 1
+detector_id = "vonage-api-key"
+service = "vonage"
+severity = "critical"
+
+[[positive]]
+text = "NEXMO_API_KEY=f3ed3778"
+credential = "f3ed3778"
+reason = "Standard Nexmo env-var API key (8 hex)."
+
+[[positive]]
+text = "vonage_api_key: \"a1b2c3d4\""
+credential = "a1b2c3d4"
+reason = "YAML-style vonage anchor with quoted value."
+
+[[negative]]
+text = "NEXMO_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder body — suppression gate strips it."
+
+[[negative]]
+text = "deadbeef"
+reason = "Bare 8-hex string without vonage/nexmo keyword anchor."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Vonage API key."

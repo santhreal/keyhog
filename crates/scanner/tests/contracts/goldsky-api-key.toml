@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:58ac1d485b3f282fb379776e700914d51141e52f521bdf044829c55fe909fe53
-size 1217
+schema_version = 1
+detector_id = "goldsky-api-key"
+service = "goldsky"
+severity = "high"
+
+[[positive]]
+text = "GOLDSKY=d659b9c912fa62843c5d8226bcb17ea0"
+credential = "d659b9c912fa62843c5d8226bcb17ea0"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "GOLDSKY=\"d659b9c912fa62843c5d8226bcb17ea0\""
+credential = "d659b9c912fa62843c5d8226bcb17ea0"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "GOLDSKY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "GOLDSKY=d659bEXAMPLEEXAMPLE17ea0"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export GOLDSKY=d659b9c912fa62843c5d8226bcb17ea0"
+credential = "d659b9c912fa62843c5d8226bcb17ea0"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

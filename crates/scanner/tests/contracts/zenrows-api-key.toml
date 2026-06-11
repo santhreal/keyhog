@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:7f2e40371e786b2ebff3912a456306e5083887b54f42487bf201ddbfee0ab2d7
-size 930
+schema_version = 1
+detector_id = "zenrows-api-key"
+service = "zenrows"
+severity = "high"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "zenrows=M4konqTT3I7XgZ2O6ii284W8pAcp4STn"
+credential = "M4konqTT3I7XgZ2O6ii284W8pAcp4STn"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "zenrows=\"M4konqTT3I7XgZ2O6ii284W8pAcp4STn\""
+credential = "M4konqTT3I7XgZ2O6ii284W8pAcp4STn"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "zenrows=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "zenrows=M4konEXAMPLEEXAMPLEp4STn"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

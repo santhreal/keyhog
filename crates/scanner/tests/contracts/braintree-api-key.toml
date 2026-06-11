@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:69f64e68d54ded2324316346342864a5810e1599cb097b6913b57e7efeb1ba38
-size 985
+schema_version = 1
+detector_id = "braintree-api-key"
+service = "braintree"
+severity = "critical"
+
+[[positive]]
+text = "braintree_public_key=kp4qx7rm_sn5tb8vw_3yzkp4qx"
+credential = "kp4qx7rm_sn5tb8vw_3yzkp4qx"
+reason = "Braintree public key env-var (8_8_8 lowercase alnum)."
+
+[[positive]]
+text = "public_key = \"7rm2sn5t_b8vw3yzk_p4qx7rm2\""
+credential = "7rm2sn5t_b8vw3yzk_p4qx7rm2"
+reason = "Braintree public key with assignment context."
+
+[[negative]]
+text = "braintree_public_key=kp4qx7rm_sn5tb8vw"
+reason = "Missing final underscore and 8-char segment."
+
+[[evasion]]
+text = "BRAINTREE PUBLIC_KEY: kp4qx7rm_sn5tb8vw_3yzkp4qx"
+credential = "kp4qx7rm_sn5tb8vw_3yzkp4qx"
+reason = "Uppercase prefix with colon separator."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Braintree public key."

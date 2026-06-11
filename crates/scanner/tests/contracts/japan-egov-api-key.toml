@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:2644082a651ae88608e75efe8635514ba3966a89e68cc3b7b295c96281f5174f
-size 1172
+schema_version = 1
+detector_id = "japan-egov-api-key"
+service = "japan-egov"
+severity = "medium"
+
+[[positive]]
+text = "e-Statapi_key=8K2IWCe8Ib6RIp7hlOzI"
+credential = "8K2IWCe8Ib6RIp7hlOzI"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "e-Statapi_key=\"8K2IWCe8Ib6RIp7hlOzI\""
+credential = "8K2IWCe8Ib6RIp7hlOzI"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "e-Statapi_key=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "e-Statapi_key=8K2IWEXAMPLEEXAMPLEhlOzI"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export e-Statapi_key=8K2IWCe8Ib6RIp7hlOzI"
+credential = "8K2IWCe8Ib6RIp7hlOzI"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 35000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

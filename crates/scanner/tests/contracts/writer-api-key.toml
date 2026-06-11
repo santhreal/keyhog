@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:e8cc03df3734da31c8ab8cc6b560fff8e072790b722f8b7069d1b98528edab35
-size 922
+schema_version = 1
+detector_id = "writer-api-key"
+service = "writer"
+severity = "high"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "sk-8e85a2fc-0787-9349-5f0b-0600feee8683"
+credential = "sk-8e85a2fc-0787-9349-5f0b-0600feee8683"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "sk-8e85a2fc-0787-9349-5f0b-0600feee8683\""
+credential = "sk-8e85a2fc-0787-9349-5f0b-0600feee8683"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "sk-8eEXAMPLEEXAMPLEe8683"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

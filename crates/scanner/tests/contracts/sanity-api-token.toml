@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:3163017c53e4243f55fe61ab38c81591d4d895e8d721340cf7d31d7379d21d48
-size 1265
+schema_version = 1
+detector_id = "sanity-api-token"
+service = "sanity"
+severity = "critical"
+
+[[positive]]
+text = "SANITY_API_TOKEN=sk4VI2EWMzmLvb5a9dd9403a8d3b0f37f91f289"
+credential = "sk4VI2EWMzmLvb5a9dd9403a8d3b0f37f91f289"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "SANITY_API_TOKEN=\"sk4VI2EWMzmLvb5a9dd9403a8d3b0f37f91f289\""
+credential = "sk4VI2EWMzmLvb5a9dd9403a8d3b0f37f91f289"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "skRAAEXAMPLEEXAMPLEee713"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "SANITY_API_TOKEN=sk4VI2EWMzmLvb5a9dd9403a8d3b0f37f91f289"
+credential = "sk4VI2EWMzmLvb5a9dd9403a8d3b0f37f91f289"
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:5149aa4810878ef0fd43bc5a1f0fcefb2775fe0c040bea1e5a08b670659dcd8a
-size 1049
+schema_version = 1
+detector_id = "flutterwave-api-key"
+service = "flutterwave"
+severity = "critical"
+
+[[positive]]
+text = "FLWSECK_TEST-7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d-X"
+credential = "FLWSECK_TEST-7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d-X"
+reason = "Test secret key with exact prefix and suffix."
+
+[[positive]]
+text = "FLWPUBK_LIVE-9f2b4d6c8a1e3f5b7d9c2a4e6f8b1d3a-X"
+credential = "FLWPUBK_LIVE-9f2b4d6c8a1e3f5b7d9c2a4e6f8b1d3a-X"
+reason = "Live public key with exact prefix and suffix."
+
+[[negative]]
+text = "FLWSECK_TEST-short-X"
+reason = "Body too short for 32-64 hex requirement."
+
+[[evasion]]
+text = "flutterwave_secret_key=FLWSECK_TEST-7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d-X"
+credential = "FLWSECK_TEST-7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d-X"
+reason = "Keyword-prefixed env-var assignment."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted flutterwave credential."

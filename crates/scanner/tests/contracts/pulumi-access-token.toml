@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:d25ffa3b663d8ad3e2788c5c149960822e9a0153d0b099ce7904385655165cdf
-size 973
+schema_version = 1
+detector_id = "pulumi-access-token"
+service = "pulumi"
+severity = "critical"
+
+[[positive]]
+text = "pul-9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b"
+credential = "pul-9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b"
+reason = "Bare Pulumi access token, 40 hex chars after pul-."
+
+[[positive]]
+text = "PULUMI_ACCESS_TOKEN=pul-9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b"
+credential = "pul-9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b"
+reason = "Standard env-var assignment."
+
+[[negative]]
+text = "pul-short"
+reason = "Body shorter than 40 chars."
+
+[[evasion]]
+text = "{\"token\":\"pul-9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b\"}"
+credential = "pul-9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b"
+reason = "JSON payload."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + one planted Pulumi token."

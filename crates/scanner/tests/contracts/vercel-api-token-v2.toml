@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:c8fc9b58232545f51152b12e9130f64be3dc8369bf8f0b2121c8cc8e134b7ed6
-size 911
+schema_version = 1
+detector_id = "vercel-api-token-v2"
+service = "vercel"
+severity = "critical"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "vercel_v2_cAOp9dzV2rgZio80vbSLSvNU"
+credential = "vercel_v2_cAOp9dzV2rgZio80vbSLSvNU"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "vercel_v2_cAOp9dzV2rgZio80vbSLSvNU\""
+credential = "vercel_v2_cAOp9dzV2rgZio80vbSLSvNU"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "verceEXAMPLEEXAMPLELSvNU"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

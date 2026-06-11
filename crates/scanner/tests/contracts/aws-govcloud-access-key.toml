@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:109ecb873acdb46858beea0f85e97bfa71c24386c2de3dbfc12a31ec5b874576
-size 975
+schema_version = 1
+detector_id = "aws-govcloud-access-key"
+service = "aws-govcloud"
+severity = "critical"
+
+[[positive]]
+text = "AWS_GOVCLOUD_ACCESS_KEY=AKIAKPQXRMSNTBVWYZBN"
+credential = "AKIAKPQXRMSNTBVWYZBN"
+reason = "AWS GovCloud access key; group 1 captures the full 20-char key (prefix + 16 body chars)."
+
+[[positive]]
+text = "AWS_REGION=us-gov-west-1"
+credential = "us-gov-west-1"
+reason = "AWS GovCloud region identifier."
+
+[[negative]]
+text = "AWS_GOVCLOUD_ACCESS_KEY=NOTAKIA1234567890XYZA"
+reason = "Body not starting with AKIA/ASIA."
+
+[[evasion]]
+text = "GOVCLOUD_KEY_ID=AKIAKPQXRMSNTBVWYZBN"
+credential = "AKIAKPQXRMSNTBVWYZBN"
+reason = "GOVCLOUD_KEY_ID short-form context anchor; full 20-char key captured."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted GovCloud key."

@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:758f2a754295c10ed6e256f6e2313ab08e50914940025b77fa938fcf12c7a9ec
-size 985
+schema_version = 1
+detector_id = "plivo-voice-auth"
+service = "plivo"
+severity = "critical"
+
+[positive_with_companion]
+text = "plivo_auth_id  =                                                                                                    tU0bSzJA6jWZTnqn3axT\"\nR5a8PcQ01Ftp9lTlPJXk0xEaMkhe5zTmNdP0ZqGs"
+expected_findings = ["plivo-voice-auth"]
+expected_companions = { plivo_auth_token = "R5a8PcQ01Ftp9lTlPJXk0xEaMkhe5zTmNdP0ZqGs" }
+reason = "Primary paired with companion(s) plivo_auth_token."
+
+[positive_primary_only]
+text = "plivo_auth_id  =                                                                                                    tU0bSzJA6jWZTnqn3axT\""
+expected_findings = ["plivo-voice-auth"]
+must_not_verify = true
+reason = "Primary found without companion plivo_auth_token; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "R5a8PcQ01Ftp9lTlPJXk0xEaMkhe5zTmNdP0ZqGs"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

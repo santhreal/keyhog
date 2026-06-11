@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:150add0bc0c48175d415ac5e199943a01905e5e4fa0bd580eea6af356e5af934
-size 820
+schema_version = 1
+detector_id = "filebase-api-key"
+service = "filebase"
+severity = "high"
+
+[positive_with_companion]
+text = "FILEBASE_ACCESS_KEY=ABCD1234EFGH5678IJKL\nFILEBASE_SECRET_KEY=abcd1234efgh5678ijkl9012mnop3456qrst7890"
+expected_findings = ["filebase-api-key"]
+expected_companions = { secret_access_key = "abcd1234efgh5678ijkl9012mnop3456qrst7890" }
+reason = "Filebase access key paired with secret key."
+
+[positive_primary_only]
+text = "FILEBASE_ACCESS_KEY=ABCD1234EFGH5678IJKL"
+expected_findings = ["filebase-api-key"]
+must_not_verify = true
+reason = "Primary found without companion secret_access_key; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "FILEBASE_SECRET_KEY=abcd1234efgh5678ijkl9012mnop3456qrst7890"
+expected_findings = []
+reason = "Secret key alone without access key."

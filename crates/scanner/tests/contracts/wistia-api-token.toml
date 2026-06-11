@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:43ebac3992c7e68bb489223661f93f08bec699c71f01c6e372e633b4b8eb2b77
-size 962
+schema_version = 1
+detector_id = "wistia-api-token"
+service = "wistia"
+severity = "high"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "wistiaapi_token=f58ba8284e74e6b6500bd0ddecb8e5e4"
+credential = "f58ba8284e74e6b6500bd0ddecb8e5e4"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "wistiaapi_token=\"f58ba8284e74e6b6500bd0ddecb8e5e4\""
+credential = "f58ba8284e74e6b6500bd0ddecb8e5e4"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "wistiaapi_token=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "wistiaapi_token=f58baEXAMPLEEXAMPLE8e5e4"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

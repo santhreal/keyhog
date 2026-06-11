@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:48043ac846a76063a585dd95fcc773f4f04436b06748128eb2418558c20c6953
-size 1099
+schema_version = 1
+detector_id = "circleci-api-token"
+service = "circleci"
+severity = "critical"
+
+[[positive]]
+text = "CIRCLE_TOKEN=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f"
+reason = "CircleCI personal API token via CIRCLE_TOKEN env-var (40 hex)."
+
+[[positive]]
+text = "circleci_token=4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f7b2d9c5a"
+credential = "4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f7b2d9c5a"
+reason = "Lowercase circleci_token with context anchor (40 hex)."
+
+[[negative]]
+text = "CIRCLE_TOKEN=short"
+reason = "Body below 40 hex chars."
+
+[[evasion]]
+text = "curl -H 'Circle-Token: 7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f' https://circleci.com/api/v2/me"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f"
+reason = "Inline CircleCI curl example with dash-form Circle-Token header (40 hex)."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted CircleCI token."

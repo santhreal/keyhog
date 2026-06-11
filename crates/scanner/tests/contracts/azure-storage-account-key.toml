@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:d17c35c175051f36f70896ca7ef731eaeb1e2ec430ec94e39e2256b9a6451bcd
-size 1606
+schema_version = 1
+detector_id = "azure-storage-account-key"
+service = "azure"
+severity = "critical"
+
+[[positive]]
+text = "AZURE_STORAGE_KEY=to8PuP8XWbrLmr4e+y/DLH/Hhsl6ArMtSIkCSqL7lSJOrb59CUVd0Hqb0tV/RxYsX8L5UrwFv1eFWPQ9pE++O/=="
+credential = "to8PuP8XWbrLmr4e+y/DLH/Hhsl6ArMtSIkCSqL7lSJOrb59CUVd0Hqb0tV/RxYsX8L5UrwFv1eFWPQ9pE++O/=="
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "AZURE_STORAGE_KEY=\"to8PuP8XWbrLmr4e+y/DLH/Hhsl6ArMtSIkCSqL7lSJOrb59CUVd0Hqb0tV/RxYsX8L5UrwFv1eFWPQ9pE++O/==\""
+credential = "to8PuP8XWbrLmr4e+y/DLH/Hhsl6ArMtSIkCSqL7lSJOrb59CUVd0Hqb0tV/RxYsX8L5UrwFv1eFWPQ9pE++O/=="
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "AZURE_STORAGE_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "AZURE_STORAGE_KEY=to8PuEXAMPLEEXAMPLE+O/=="
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "AZURE_STORAGE_KEY=to8PuP8XWbrLmr4e+y/DLH/Hhsl6ArMtSIkCSqL7lSJOrb59CUVd0Hqb0tV/RxYsX8L5UrwFv1eFWPQ9pE++O/=="
+credential = "to8PuP8XWbrLmr4e+y/DLH/Hhsl6ArMtSIkCSqL7lSJOrb59CUVd0Hqb0tV/RxYsX8L5UrwFv1eFWPQ9pE++O/=="
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

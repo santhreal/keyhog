@@ -1,3 +1,37 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:04bfc73989ab49fba9bb009a267871058ca8006baaed01f8fc7c14b7b3b965d5
-size 1673
+schema_version = 1
+detector_id = "dynatrace-api-token"
+service = "dynatrace"
+severity = "critical"
+
+# Dynatrace token shape: dt0 + 1 alpha + 2 digits + . + 24 uppercase-hex + . + 64 uppercase-hex.
+# Segment 2 must be EXACTLY 24 chars; segment 3 must be EXACTLY 64 chars.
+# Mixed-distribution uppercase to dodge sequential-hex test-key suppressor.
+[[positive]]
+text = "dt0c01.A9C7E3F1B5D2H8K4N6P0Q8R2.Z3X8N7Y2V6W1H4G9B5D3F8K2L4M6Q1R7T0P3X8N7Y2V6W1H4G9B5D3F8K2L4M6Q1"
+credential = "dt0c01.A9C7E3F1B5D2H8K4N6P0Q8R2.Z3X8N7Y2V6W1H4G9B5D3F8K2L4M6Q1R7T0P3X8N7Y2V6W1H4G9B5D3F8K2L4M6Q1"
+reason = "Standard Dynatrace dt0-prefixed token (3 dot-separated segments: 6 / 24 / 64)."
+
+[[positive]]
+text = "dynatrace_token=dt0a02.B4D2F8H6K0M4P8R2T6V0X4Y8.C5G9J3L7N1Q5S9U3W7Z1B5D9F3H7K1M5N9P3Q7S1U5W9Y3A7C1E5G9J3L7N1Q5S9"
+credential = "dt0a02.B4D2F8H6K0M4P8R2T6V0X4Y8.C5G9J3L7N1Q5S9U3W7Z1B5D9F3H7K1M5N9P3Q7S1U5W9Y3A7C1E5G9J3L7N1Q5S9"
+reason = "Context-anchored dynatrace_token=...dt0... assignment (64-char segment 3)."
+
+[[negative]]
+text = "dt0c01.SHORT.SHORT"
+reason = "Segments below required {24} and {64} lengths."
+
+[[evasion]]
+text = "Authorization: Api-Token dt0c01.A9C7E3F1B5D2H8K4N6P0Q8R2.Z3X8N7Y2V6W1H4G9B5D3F8K2L4M6Q1R7T0P3X8N7Y2V6W1H4G9B5D3F8K2L4M6Q1"
+credential = "dt0c01.A9C7E3F1B5D2H8K4N6P0Q8R2.Z3X8N7Y2V6W1H4G9B5D3F8K2L4M6Q1R7T0P3X8N7Y2V6W1H4G9B5D3F8K2L4M6Q1"
+reason = "Api-Token header form around prefix detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Dynatrace token."

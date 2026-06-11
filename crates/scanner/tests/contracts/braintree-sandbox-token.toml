@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:5bb398df4be7963481bd3ddb1f230e8c46d6c52b4d83bd40e99ffe389c428675
-size 1076
+schema_version = 1
+detector_id = "braintree-sandbox-token"
+service = "braintree"
+severity = "high"
+
+[[positive]]
+text = "sandbox_kp4qx7rm_sn5tb8vw_3yzkp4qx"
+credential = "sandbox_kp4qx7rm_sn5tb8vw_3yzkp4qx"
+reason = "Bare Braintree sandbox tokenization key matches standalone pattern."
+
+[[positive]]
+text = "BRAINTREE_TOKENIZATION_KEY=production_vk9bn3lp_7qm2rs5t_w8vk9bn3"
+credential = "production_vk9bn3lp_7qm2rs5t_w8vk9bn3"
+reason = "Context-anchored production token with BRAINTREE prefix."
+
+[[negative]]
+text = "sandbox_kp4qx7rm_sn5tb8vw_3yzkp4"
+reason = "Last segment only 6 chars, regex requires 8."
+
+[[evasion]]
+text = "sandbox_kp4qx7rm_sn5tb8vw_3yzkp4qx"
+credential = "sandbox_kp4qx7rm_sn5tb8vw_3yzkp4qx"
+reason = "Adversarial anchor_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Braintree credential."

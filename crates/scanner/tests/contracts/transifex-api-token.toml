@@ -1,3 +1,43 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:4690322d49e929972fb1e1e919adc7ce80858a93c1ac56e49e10896434588a79
-size 1703
+schema_version = 1
+detector_id = "transifex-api-token"
+service = "transifex"
+severity = "high"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "TRANSIFEX_APIAPI KEY=:=  fVhbDg-4JFCsChNTF3Orb3eHG4rmKVZVLSp3B961_xO02X6O3vo_9cpuqmzYJvqEy"
+credential = "fVhbDg-4JFCsChNTF3Orb3eHG4rmKVZVLSp3B961_xO02X6O3vo_9cpuqmzYJvqEy"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "TRANSIFEX_APIAPI KEY=\":=  fVhbDg-4JFCsChNTF3Orb3eHG4rmKVZVLSp3B961_xO02X6O3vo_9cpuqmzYJvqEy\""
+credential = "fVhbDg-4JFCsChNTF3Orb3eHG4rmKVZVLSp3B961_xO02X6O3vo_9cpuqmzYJvqEy"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "TRANSIFEX_APIAPI KEY=:=  YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "TRANSIFEX_APIAPI KEY=:=  fVhbDEXAMPLEEXAMPLEJvqEy"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = """# https://www.transifex.com/api/3/
+Authorization: Bearer fVhbDg-4JFCsChNTF3Orb3eHG4rmKVZVLSp3B961_xO02X6O3vo_9cpuqmzYJvqEy"""
+credential = "fVhbDg-4JFCsChNTF3Orb3eHG4rmKVZVLSp3B961_xO02X6O3vo_9cpuqmzYJvqEy"
+reason = "Bearer header with transifex.com URL comment — domain-context pattern."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

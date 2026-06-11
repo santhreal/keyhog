@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:1513b52bd171109c3a16ad6d0dd286c9d5f1d637f125e59a05ca706e881a1cc2
-size 1169
+schema_version = 1
+detector_id = "octopus-deploy-api-key"
+service = "octopus-deploy"
+severity = "critical"
+
+[[positive]]
+text = "API-7X68S9206QLQW4S2FVP"
+credential = "API-7X68S9206QLQW4S2FVP"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "API-7X68S9206QLQW4S2FVP=\"API-7X68S9206QLQW4S2FVP\""
+credential = "API-7X68S9206QLQW4S2FVP"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "API-7EXAMPLEEXAMPLES2FVP"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "Authorization: Bearer API-7X68S9206QLQW4S2FVP"
+credential = "API-7X68S9206QLQW4S2FVP"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

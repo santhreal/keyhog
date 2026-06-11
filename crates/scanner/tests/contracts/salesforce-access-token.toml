@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:9a5e0a35b37cffee78155a1070c14ac63e60b9012f60ceeae3a8f8f873873f90
-size 1869
+schema_version = 1
+detector_id = "salesforce-access-token"
+service = "salesforce"
+severity = "critical"
+
+[[positive]]
+text = "00Dl9EknYBnvVPAD5pXo5!tqBk6FKee.qQU89ru6oLQ2bJPgvjXk1.gKc4VP7pwxJAhDxk0hQ4WkRQRnOTvzj2R040Zk18jojez.HumrM7hrkdRMU0sSHMXdxB"
+credential = "00Dl9EknYBnvVPAD5pXo5!tqBk6FKee.qQU89ru6oLQ2bJPgvjXk1.gKc4VP7pwxJAhDxk0hQ4WkRQRnOTvzj2R040Zk18jojez.HumrM7hrkdRMU0sSHMXdxB"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "00Dl9EknYBnvVPAD5pXo5!tqBk6FKee.qQU89ru6oLQ2bJPgvjXk1.gKc4VP7pwxJAhDxk0hQ4WkRQRnOTvzj2R040Zk18jojez.HumrM7hrkdRMU0sSHMXdxB=\"00Dl9EknYBnvVPAD5pXo5!tqBk6FKee.qQU89ru6oLQ2bJPgvjXk1.gKc4VP7pwxJAhDxk0hQ4WkRQRnOTvzj2R040Zk18jojez.HumrM7hrkdRMU0sSHMXdxB\""
+credential = "00Dl9EknYBnvVPAD5pXo5!tqBk6FKee.qQU89ru6oLQ2bJPgvjXk1.gKc4VP7pwxJAhDxk0hQ4WkRQRnOTvzj2R040Zk18jojez.HumrM7hrkdRMU0sSHMXdxB"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "00Dl9EXAMPLEEXAMPLEMXdxB"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "Authorization: Bearer token=\"00Dl9EknYBnvVPAD5pXo5!tqBk6FKee.qQU89ru6oLQ2bJPgvjXk1.gKc4VP7pwxJAhDxk0hQ4WkRQRnOTvzj2R040Zk18jojez.HumrM7hrkdRMU0sSHMXdxB\""
+credential = "00Dl9EknYBnvVPAD5pXo5!tqBk6FKee.qQU89ru6oLQ2bJPgvjXk1.gKc4VP7pwxJAhDxk0hQ4WkRQRnOTvzj2R040Zk18jojez.HumrM7hrkdRMU0sSHMXdxB"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

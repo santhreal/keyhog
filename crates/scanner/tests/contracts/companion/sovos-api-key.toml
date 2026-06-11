@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:e12176da18c4215d84126ab3279eb9f5ffdeb978e13a2b0bd6f616a7efd45d0f
-size 788
+schema_version = 1
+detector_id = "sovos-api-key"
+service = "sovos"
+severity = "critical"
+
+[positive_with_companion]
+text = "SOVOSKEY=4BDwPwJUBMBFRbTX9MNDEPbPyw5eLN0t\nsovosapiSECRET=qiTFnOGhXfmAtSdE0BJpNkGL0SDnEq4J"
+expected_findings = ["sovos-api-key"]
+expected_companions = { sovos_api_secret = "qiTFnOGhXfmAtSdE0BJpNkGL0SDnEq4J" }
+reason = "Primary paired with companion(s) sovos_api_secret."
+
+[positive_primary_only]
+text = "SOVOSKEY=4BDwPwJUBMBFRbTX9MNDEPbPyw5eLN0t"
+expected_findings = ["sovos-api-key"]
+must_not_verify = true
+reason = "Primary found without companion sovos_api_secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "sovosapiSECRET=qiTFnOGhXfmAtSdE0BJpNkGL0SDnEq4J"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

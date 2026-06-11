@@ -1,3 +1,42 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:a01e07ee6bd86644c42ff931ec1df983e10057e6403714ddde2895ae8b20d4c5
-size 1490
+schema_version = 1
+detector_id = "honeybadger-api-key"
+service = "honeybadger"
+severity = "high"
+
+[[positive]]
+text = "HONEYBADGER_API_KEY=eb9bba259a9ddafe89e911d116ebdf68"
+credential = "eb9bba259a9ddafe89e911d116ebdf68"
+reason = "Canonical honeybadger-anchored key satisfying the narrow vendor regex."
+
+[[positive]]
+text = "honeybadger_api_key=\"eb9bba259a9ddafe89e911d116ebdf68\""
+credential = "eb9bba259a9ddafe89e911d116ebdf68"
+reason = "Quoted lower-case honeybadger-anchored variant of the canonical positive."
+
+[[negative]]
+text = "api_key=eb9bba259a9ddafe89e911d116ebdf68"
+reason = "Bare api_key with no honeybadger anchor must NOT attribute to honeybadger (was the FP-prone branch)."
+
+[[negative]]
+text = "HONEYBADGER_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "HONEYBADGER_API_KEY=eb9bbEXAMPLEEXAMPLEbdf68"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "# HONEYBADGER_API_KEY=eb9bba259a9ddafe89e911d116ebdf68"
+credential = "eb9bba259a9ddafe89e911d116ebdf68"
+reason = "Adversarial envelope — honeybadger-anchored credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

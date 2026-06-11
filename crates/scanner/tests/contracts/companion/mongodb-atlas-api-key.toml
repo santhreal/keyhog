@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:cc29a491f8d0eb44245c93ab77e51ff8d78029f387a83f0d3b349b9ee974b5e5
-size 1072
+schema_version = 1
+detector_id = "mongodb-atlas-api-key"
+service = "mongodb"
+severity = "critical"
+
+[positive_with_companion]
+text = "ATLASkey=bfPpxTOK0M0qvcmOV486gihKNhcjliMr\nATLAS _  PRIVATE     _   _ _   _   _ _         _  _        _       _              _  '= :=\"  =  \"  =  :='\" '      :\" \"\" ' '  '      :::      d095b221-bda5-6626-3253-769316899134"
+expected_findings = ["mongodb-atlas-api-key"]
+expected_companions = { privateKey = "d095b221-bda5-6626-3253-769316899134" }
+reason = "Primary paired with companion(s) privateKey."
+
+[positive_primary_only]
+text = "ATLASkey=bfPpxTOK0M0qvcmOV486gihKNhcjliMr"
+expected_findings = ["mongodb-atlas-api-key"]
+must_not_verify = true
+reason = "Primary found without companion privateKey; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "ATLAS _  PRIVATE     _   _ _   _   _ _         _  _        _       _              _  '= :=\"  =  \"  =  :='\" '      :\" \"\" ' '  '      :::      d095b221-bda5-6626-3253-769316899134"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

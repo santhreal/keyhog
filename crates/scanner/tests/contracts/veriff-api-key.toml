@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:ce39942ab52364cf69c0ab03f16fb62585adcd776be4f76d0c7225838b1f3fc2
-size 996
+schema_version = 1
+detector_id = "veriff-api-key"
+service = "veriff"
+severity = "high"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "X-AUTH-CLIENT:':  ;\" bd3e5ab3-5b99-d7d5-9427-3a5531a1dfed"
+credential = "bd3e5ab3-5b99-d7d5-9427-3a5531a1dfed"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "X-AUTH-CLIENT:':  ;\" bd3e5ab3-5b99-d7d5-9427-3a5531a1dfed"
+credential = "bd3e5ab3-5b99-d7d5-9427-3a5531a1dfed"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "X-AUTH-CLIENT:':  ;\" YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "X-AUTH-CLIENT:':  ;\" bd3e5EXAMPLEEXAMPLE1dfed"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

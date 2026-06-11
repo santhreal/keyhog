@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:6badbc635a50518452b89ac08eecae57e27ac9c9aadca2a5a7667f6267deca8b
-size 1227
+schema_version = 1
+detector_id = "cloudinary-api-key"
+service = "cloudinary"
+severity = "critical"
+
+[positive_with_companion]
+text = "cloudinary://6917252848282357651245658:EvXA4ucFqaMCpMV9AN1ewqej6jdwzOo2nuglh_OAtXBGXsE7y_B5PDcLn-2E1U7Jr55OOnTrhigNR4Ws82DEAXhdzojZm6_@NoWgKlONIP9v3aKHbY2E0_tPX9-TplQXOeCKS\nCLOUDINARY_URL=cloudinary://0465562184524791620623690680882302246679455043886068773704529565973779310:RqAusO65bMPLFYVXVM7TZi2-@W"
+expected_findings = ["cloudinary-api-key"]
+expected_companions = { cloudinary_secret = "RqAusO65bMPLFYVXVM7TZi2-" }
+reason = "Primary paired with companion(s) cloudinary_secret."
+
+[positive_primary_only]
+text = "cloudinary://6917252848282357651245658:EvXA4ucFqaMCpMV9AN1ewqej6jdwzOo2nuglh_OAtXBGXsE7y_B5PDcLn-2E1U7Jr55OOnTrhigNR4Ws82DEAXhdzojZm6_@NoWgKlONIP9v3aKHbY2E0_tPX9-TplQXOeCKS"
+expected_findings = ["cloudinary-api-key"]
+must_not_verify = true
+reason = "Primary found without companion cloudinary_secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "CLOUDINARY_URL=cloudinary://0465562184524791620623690680882302246679455043886068773704529565973779310:RqAusO65bMPLFYVXVM7TZi2-@W"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

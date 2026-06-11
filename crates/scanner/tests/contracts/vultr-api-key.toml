@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:0260ccd53a988a4f80a5c99eb0ec925c2eea21e85b5d23da7433fbfcda17bb52
-size 1478
+schema_version = 1
+detector_id = "vultr-api-key"
+service = "vultr"
+severity = "critical"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "VULTR     _       --   -        -   _    _ _       -   api       -       - _ _       -         _  - -    key \"  :    \"\"\"  :    ' \":  \"  M49195NUQSS5Y3NI88IUJABUUEJM9QWZZERI"
+credential = "M49195NUQSS5Y3NI88IUJABUUEJM9QWZZERI"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "VULTR     _       --   -        -   _    _ _       -   api       -       - _ _       -         _  - -    key \"  :    \"\"\"  :    ' \":  \"  M49195NUQSS5Y3NI88IUJABUUEJM9QWZZERI"
+credential = "M49195NUQSS5Y3NI88IUJABUUEJM9QWZZERI"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "VULTR     _       --   -        -   _    _ _       -   api       -       - _ _       -         _  - -    key \"  :    \"\"\"  :    ' \":  \"  YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "VULTR     _       --   -        -   _    _ _       -   api       -       - _ _       -         _  - -    key \"  :    \"\"\"  :    ' \":  \"  M4919EXAMPLEEXAMPLEZZERI"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

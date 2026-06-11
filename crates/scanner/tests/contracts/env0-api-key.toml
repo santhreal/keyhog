@@ -1,3 +1,36 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:3fd020ca8ff01b8a123f59b0557284c8c65497c487a2594ab6d34d68c27ae6a1
-size 1076
+# Per-detector contract: env0-api-key
+
+schema_version = 1
+detector_id = "env0-api-key"
+service = "env0"
+severity = "critical"
+
+[[positive]]
+text = "ENV0_API_KEY=a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
+credential = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
+reason = "env0 API Key ID in standard UUID format."
+
+[[positive]]
+text = "ENV0_API_SECRET=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S"
+reason = "env0 API Secret with 44 alphanumeric chars."
+
+[[negative]]
+text = "ENV0_API_KEY=short"
+reason = "Body is not a UUID — pattern requires 8-4-4-4-12 hex format."
+
+[[evasion]]
+text = "export ENV0_API_KEY=a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
+credential = "a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d"
+reason = "Shell export syntax with ENV0_API_KEY prefix."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted env0 credential."

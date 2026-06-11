@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:fbd9c3fb24fb9b6754201830e950e97923b1074cf86f762a770074cf724bdd44
-size 1130
+schema_version = 1
+detector_id = "pusher-app-key"
+service = "pusher"
+severity = "high"
+
+[[positive]]
+text = "PUSHER=7a5c6e6b26ccfcb788cb"
+credential = "7a5c6e6b26ccfcb788cb"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "PUSHER=\"7a5c6e6b26ccfcb788cb\""
+credential = "7a5c6e6b26ccfcb788cb"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "PUSHER=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "PUSHER=7a5c6EXAMPLEEXAMPLE788cb"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "{\"secret\":\"7a5c6e6b26ccfcb788cb\"}"
+credential = "7a5c6e6b26ccfcb788cb"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

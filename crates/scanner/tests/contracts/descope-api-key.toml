@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:b03b7244b0a9392a426b6c855bfc82e1d6cb1c5612b91358b5e385eed987a78b
-size 1049
+schema_version = 1
+detector_id = "descope-api-key"
+service = "descope"
+severity = "critical"
+
+[[positive]]
+text = "descope project P2Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+credential = "P2Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+reason = "Descope project ID with P2 prefix and 32 alnum chars."
+
+[[positive]]
+text = "DESCOPE_P2Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+credential = "P2Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+reason = "Uppercase DESCOPE with P2 prefix adjacent (32 alnum)."
+
+[[negative]]
+text = "descope project P2"
+reason = "P2 prefix with no trailing alphanumeric chars, regex group cannot match."
+
+[[evasion]]
+text = 'var descope = "P2Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"'
+credential = "P2Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+reason = "Wrapped in JS variable declaration with double-quote (32 alnum)."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Descope credential."

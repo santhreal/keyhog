@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:4cb84d43df39d7cc64c0152ad47a47ca4ee072776324145774f68353ce07215d
-size 956
+schema_version = 1
+detector_id = "vercel-token"
+service = "vercel"
+severity = "critical"
+
+[[positive]]
+text = "VERCEL_TOKEN=Xh7QkP4mZ2sBvR9aT5fN8cWy"
+credential = "Xh7QkP4mZ2sBvR9aT5fN8cWy"
+reason = "VERCEL_TOKEN env-var assignment (24 alnum, random-looking to dodge test-key suppressor)."
+
+[[positive]]
+text = "vercel_api_token = \"Jz3RkV5bN8mLp4QwT2dY7sFh\""
+credential = "Jz3RkV5bN8mLp4QwT2dY7sFh"
+reason = "vercel_api_token YAML-style assignment."
+
+[[negative]]
+text = "VERCEL_TOKEN=short"
+reason = "Body below 24 chars."
+
+[[evasion]]
+text = "Authorization: Bearer VERCEL_TOKEN=Xh7QkP4mZ2sBvR9aT5fN8cWy"
+credential = "Xh7QkP4mZ2sBvR9aT5fN8cWy"
+reason = "Bearer-header wrap around the assignment."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Vercel token."

@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:a35e9207be1a2f21ab820f7ed5244ee652ef881852f9918264f1d83af9ee77af
-size 974
+schema_version = 1
+detector_id = "xata-api-key"
+service = "xata"
+severity = "high"
+
+[positive_with_companion]
+text = "xau_LKqCeUdiilJa_QOjNu93Ww0wUsoZxpKwM7DP5644XRT0iZFPcVJVQ5k3wgLWXVQhz2W2oMZvI01WRRlVrLT\nhttps://1c4j0ofgpquq2rmlzaibh41x3r2rbtvqb7onjtomvcsh4wjl73qpftbwlh.xata.sh"
+expected_findings = ["xata-api-key"]
+expected_companions = { xata_workspace_url = "https://1c4j0ofgpquq2rmlzaibh41x3r2rbtvqb7onjtomvcsh4wjl73qpftbwlh.xata.sh" }
+reason = "Primary paired with companion(s) xata_workspace_url."
+
+[positive_primary_only]
+text = "xau_LKqCeUdiilJa_QOjNu93Ww0wUsoZxpKwM7DP5644XRT0iZFPcVJVQ5k3wgLWXVQhz2W2oMZvI01WRRlVrLT"
+expected_findings = ["xata-api-key"]
+must_not_verify = true
+reason = "Primary found without companion xata_workspace_url; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "https://1c4j0ofgpquq2rmlzaibh41x3r2rbtvqb7onjtomvcsh4wjl73qpftbwlh.xata.sh"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

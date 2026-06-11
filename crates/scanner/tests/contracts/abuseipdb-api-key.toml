@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:416f577407406310f2c2586a8cbd52c2fbc261771ac8468218d7797987bb59fb
-size 1249
+schema_version = 1
+detector_id = "abuseipdb-api-key"
+service = "abuseipdb"
+severity = "medium"
+
+[[positive]]
+text = "ABUSEIPDB_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+reason = "AbuseIPDB API key env-var (80 alnum)."
+
+[[positive]]
+text = "abuseipdb_token=mK8qR2vL9zT5nP3xY7cH4sD6fG1aB0eU8wQ2rN5tV9yZ3pC6hJ4lM7dS1fA8gK2xR5uT9vN3pQ6rS8wX"
+credential = "mK8qR2vL9zT5nP3xY7cH4sD6fG1aB0eU8wQ2rN5tV9yZ3pC6hJ4lM7dS1fA8gK2xR5uT9vN3pQ6rS8wX"
+reason = "Lowercase abuseipdb token form."
+
+[[negative]]
+text = "ABUSEIPDB_API_KEY=short"
+reason = "Body below 80 alnum chars."
+
+[[evasion]]
+text = "ABUSEIPDB_KEY: \"Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz\""
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+reason = "ABUSEIPDB_KEY (no API) form via permissive regex pattern."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted AbuseIPDB key."

@@ -1,3 +1,55 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:21495053387614064bcd6a0305869886d8b4b94f04c0696ab02a63a1c9d54fe0
-size 1629
+# Per-detector contract: figma-pat
+#
+# Format: `figd_` + 20..50 chars from [a-zA-Z0-9_-].
+
+schema_version = 1
+detector_id = "figma-pat"
+service = "figma"
+severity = "critical"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "figd_9X3kQp7VbT2hYRzNcMfW"
+credential = "figd_9X3kQp7VbT2hYRzNcMfW"
+reason = "Bare Figma PAT, 20 chars after figd_ (minimum length)."
+
+[[positive]]
+text = "FIGMA_TOKEN=figd_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPq"
+credential = "figd_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPq"
+reason = "Standard env-var assignment with longer body."
+
+[[positive]]
+text = "X-Figma-Token: figd_9X3kQp7VbT2hYRzNcMfW"
+credential = "figd_9X3kQp7VbT2hYRzNcMfW"
+reason = "Figma API auth header shape."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "figd_short"
+reason = "Body shorter than 20 chars."
+
+[[negative]]
+text = "the figd_ prefix marks Figma PATs"
+reason = "Prose mentioning the prefix without a body."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "{\"token\":\"figd_9X3kQp7VbT2hYRzNcMfW\"}"
+credential = "figd_9X3kQp7VbT2hYRzNcMfW"
+reason = "JSON payload."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted Figma PAT."

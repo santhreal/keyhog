@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:b060a5dec6d08ae2211e361a54fe64cf7bc8d3b747f39e7dccdc5e217a3cbccf
-size 977
+schema_version = 1
+detector_id = "activepieces-api-key"
+service = "activepieces"
+severity = "high"
+
+[[positive]]
+text = "ap_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "ap_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Activepieces API key (ap_ prefix + 32 hex body)."
+
+[[positive]]
+text = "ACTIVEPIECES_API_KEY=ap_4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f"
+credential = "ap_4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f"
+reason = "Env-var wrap around prefix detector."
+
+[[negative]]
+text = "ap_short"
+reason = "Body below 32 hex chars after ap_ prefix."
+
+[[evasion]]
+text = "Authorization: Bearer ap_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "ap_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Bearer-header wrap around prefix detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Activepieces key."

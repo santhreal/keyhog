@@ -1,3 +1,29 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:612c7669f8998e2d8deb21e4625f498f6f448db200bd613f93cb7f853e4e5293
-size 1001
+schema_version = 1
+detector_id = "slack-app-token"
+service = "slack"
+severity = "critical"
+
+[[positive]]
+text = 'SLACK_APP_TOKEN=xapp-1-A012B3CDEFG-1234567890123-1f9a0b7c4e2d6a8b3c5f7e9d0a1b2c3d'
+credential = "xapp-1-A012B3CDEFG-1234567890123-1f9a0b7c4e2d6a8b3c5f7e9d0a1b2c3d"
+reason = "Canonical xapp- app-level token: version, app id, install id, 32-hex secret."
+
+[[negative]]
+text = 'xapp-1-A012B3CDEFG-1234567890123'
+reason = "Missing the trailing hex secret segment; the regex requires it."
+
+[[evasion]]
+text = '{"app_token":"xapp-1-A012B3CDEFG-1234567890123-1f9a0b7c4e2d6a8b3c5f7e9d0a1b2c3d"}'
+credential = "xapp-1-A012B3CDEFG-1234567890123-1f9a0b7c4e2d6a8b3c5f7e9d0a1b2c3d"
+reason = "JSON-embedded app token with surrounding quotes."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Slack xapp- token."

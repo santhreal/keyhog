@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:0f70dcabe7e4ee6ca9b85a8c965fa92427d8f1b5b7eb7af95beb56621ee00417
-size 1364
+schema_version = 1
+detector_id = "tiktok-api-token"
+service = "tiktok"
+severity = "high"
+
+[positive_with_companion]
+text = "TIKTOK  _     -- _  - -_    -   _   -     ___            - _         _       -_-  _       __ACCESS-_ _-  _- -    _-_  _   __ _           -       -   --- -         --_             -    -   TOKEN \" ' 8z9piVul03DAxvOxnJazH80alap38ZVfm0VkMDcyjEfNtjzDbNpm4cLVmXFfEYz3ktTpQo0IjdQiELZ6xk2K19ByrekPmDyRU\n014558254358957335210568677734050901538370177685870161062491900079955507"
+expected_findings = ["tiktok-api-token"]
+expected_companions = { app_id = "014558254358957335210568677734050901538370177685870161062491900079955507" }
+reason = "Primary paired with companion(s) app_id."
+
+[positive_primary_only]
+text = "TIKTOK  _     -- _  - -_    -   _   -     ___            - _         _       -_-  _       __ACCESS-_ _-  _- -    _-_  _   __ _           -       -   --- -         --_             -    -   TOKEN \" ' 8z9piVul03DAxvOxnJazH80alap38ZVfm0VkMDcyjEfNtjzDbNpm4cLVmXFfEYz3ktTpQo0IjdQiELZ6xk2K19ByrekPmDyRU"
+expected_findings = ["tiktok-api-token"]
+must_not_verify = true
+reason = "Primary found without companion app_id; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "014558254358957335210568677734050901538370177685870161062491900079955507"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:f0445fa8020d25ddf698ea5224f0c6649424672c02473f8f5e9924909b9af8b4
-size 1033
+schema_version = 1
+detector_id = "countly-api-key"
+service = "countly"
+severity = "high"
+
+[[positive]]
+text = "COUNTLY_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "COUNTLY_API_KEY anchor with exactly 32 lowercase hex chars."
+
+[[positive]]
+text = "countly_app_key=3a5e9f1b7c4d2e6b8a3c5d7e9f1b3a5d"
+credential = "3a5e9f1b7c4d2e6b8a3c5d7e9f1b3a5d"
+reason = "Lowercase countly_app_key anchor with 32 lowercase hex chars."
+
+[[negative]]
+text = "COUNTLY_KEY=7b3e5d8c1a9f4e2b6c8d3a5e"
+reason = "Body 24 chars, below 32 minimum."
+
+[[evasion]]
+text = "Countly.init({app_key: \"7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\"})"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "SDK initialization pattern with quoted hex app_key."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted countly credential."

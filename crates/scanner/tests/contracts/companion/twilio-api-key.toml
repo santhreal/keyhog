@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:07e3da5dc49c31c6603cfa0d9b955c78e6294bb22b5a2adbedf2473d282e81df
-size 758
+schema_version = 1
+detector_id = "twilio-api-key"
+service = "twilio"
+severity = "high"
+
+[positive_with_companion]
+text = "TWILIO_API_KEY=SK3d5f7b9c1e2a4d6f8b0c2e4a6d8f1b3c\nTWILIO_API_SECRET=7a2c4e6f8b1d3a5c7e9f2b4d6a8c1e3f"
+expected_findings = ["twilio-api-key"]
+expected_companions = { secret = "7a2c4e6f8b1d3a5c7e9f2b4d6a8c1e3f" }
+reason = "API Key SK... paired with its secret."
+
+[positive_primary_only]
+text = "TWILIO_API_KEY=SK3d5f7b9c1e2a4d6f8b0c2e4a6d8f1b3c"
+expected_findings = []
+must_not_verify = true
+reason = "Missing required companion secret; scanner must suppress match."
+
+[negative_companion_lookalike]
+text = "TWILIO_API_SECRET=7a2c4e6f8b1d3a5c7e9f2b4d6a8c1e3f"
+expected_findings = []
+reason = "Secret alone without SK... API key primary."

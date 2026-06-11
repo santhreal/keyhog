@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:d4fc66c540aa7e79b9a69d4b6376b5ed97c3b0b5c7889232ee7ed1165797ab1c
-size 1277
+schema_version = 1
+detector_id = "postman-api-key"
+service = "postman"
+severity = "high"
+
+[[positive]]
+text = 'POSTMAN_API_KEY=PMAK-606a8c2da5c08a004dfd060f-c7cdd622c690177cce465538021e349288'
+credential = "PMAK-606a8c2da5c08a004dfd060f-c7cdd622c690177cce465538021e349288"
+reason = "Canonical PMAK- key: 24-hex segment, dash, 34-hex segment."
+
+[[positive]]
+text = 'x-api-key: PMAK-606a8c2da5c08a004dfd060f-c7cdd622c690177cce465538021e349288'
+credential = "PMAK-606a8c2da5c08a004dfd060f-c7cdd622c690177cce465538021e349288"
+reason = "Header placement; the PMAK- structure matches without a service keyword."
+
+[[negative]]
+text = 'POSTMAN_API_KEY=PMAK-606a8c2da5c08a004dfd060f'
+reason = "Truncated: missing the trailing 34-hex segment, so the regex cannot match."
+
+[[evasion]]
+text = '{"postman_api_key": "PMAK-606a8c2da5c08a004dfd060f-c7cdd622c690177cce465538021e349288"}'
+credential = "PMAK-606a8c2da5c08a004dfd060f-c7cdd622c690177cce465538021e349288"
+reason = "JSON-embedded with braces and quotes around the token."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Postman PMAK- key."

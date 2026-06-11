@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:226402f7e089666057b13029cac4c9afc0249d74702b6ac003d5d16a6489d011
-size 783
+schema_version = 1
+detector_id = "gitlab-deploy-token"
+service = "gitlab"
+severity = "high"
+
+[positive_with_companion]
+text = "gldt-3aznKWydbv7kJUwtqvW-ozS75DM1LIgEr-XcCNsEHW7Hxq3p\nuser=nhZkVb4NeQUUdBhxB1WmrD7XnVu1tb5j"
+expected_findings = ["gitlab-deploy-token"]
+expected_companions = { username = "nhZkVb4NeQUUdBhxB1WmrD7XnVu1tb5j" }
+reason = "Primary paired with companion(s) username."
+
+[positive_primary_only]
+text = "gldt-3aznKWydbv7kJUwtqvW-ozS75DM1LIgEr-XcCNsEHW7Hxq3p"
+expected_findings = ["gitlab-deploy-token"]
+must_not_verify = true
+reason = "Primary found without companion username; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "user=nhZkVb4NeQUUdBhxB1WmrD7XnVu1tb5j"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

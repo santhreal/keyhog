@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:10e3f8915ee4f30a1d57d2fb7774a7d193a82af8c466fcace67fba9469f7a2cc
-size 1374
+schema_version = 1
+detector_id = "prisma-cloud-api-token"
+service = "prisma-cloud"
+severity = "critical"
+
+[positive_with_companion]
+text = "PRISMA              _            TOKEN\"=::       \"   \" '   '= \"  :   :'    :':   '\" '  '    = \"  :  '\"=  :  :  ' =  =     eyJi58Ow5asgICxTSKkZ4R7f6rVy2IWl-Au0AfGxulF4-4dckQw.mZxfEsmskgfjhaEPPIP-Cdxk8Rd-OhUjrrLsPVMLUKT7yOTsFCFuJk0xFCq5Z7iYli00ER4BkMfrWnH83rwjnd.y6yimPRqC6\nhttp://5bAlY2DNVZ4JL-SlWAxPTaIxD9PUVam4vX1y-EXzOdCrZixaO.twistlock.com"
+expected_findings = ["prisma-cloud-api-token"]
+expected_companions = { prisma_console = "http://5bAlY2DNVZ4JL-SlWAxPTaIxD9PUVam4vX1y-EXzOdCrZixaO.twistlock.com" }
+reason = "Primary paired with companion(s) prisma_console."
+
+[positive_primary_only]
+text = "PRISMA              _            TOKEN\"=::       \"   \" '   '= \"  :   :'    :':   '\" '  '    = \"  :  '\"=  :  :  ' =  =     eyJi58Ow5asgICxTSKkZ4R7f6rVy2IWl-Au0AfGxulF4-4dckQw.mZxfEsmskgfjhaEPPIP-Cdxk8Rd-OhUjrrLsPVMLUKT7yOTsFCFuJk0xFCq5Z7iYli00ER4BkMfrWnH83rwjnd.y6yimPRqC6"
+expected_findings = ["prisma-cloud-api-token"]
+must_not_verify = true
+reason = "Primary found without companion prisma_console; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "http://5bAlY2DNVZ4JL-SlWAxPTaIxD9PUVam4vX1y-EXzOdCrZixaO.twistlock.com"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

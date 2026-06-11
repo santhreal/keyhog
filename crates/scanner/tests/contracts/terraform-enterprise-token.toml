@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:22c1c0faba2a4949788806ac8d94778b2db7a6908c0996f0e2898ae0d283cec2
-size 1236
+schema_version = 1
+detector_id = "terraform-enterprise-token"
+service = "terraform-enterprise"
+severity = "critical"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "gI0K0lFi9sRt6a.atlasv1.pjqKbeILsS9prSy4rJKA1mJkK4NG3iIsHrn4dAeHHYYvyPyGSVh8TcjSx4sgN3ONTyqGEUhq40bJJtI6OFNkZRN"
+credential = "gI0K0lFi9sRt6a.atlasv1.pjqKbeILsS9prSy4rJKA1mJkK4NG3iIsHrn4dAeHHYYvyPyGSVh8TcjSx4sgN3ONTyqGEUhq40bJJtI6OFNkZRN"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "gI0K0lFi9sRt6a.atlasv1.pjqKbeILsS9prSy4rJKA1mJkK4NG3iIsHrn4dAeHHYYvyPyGSVh8TcjSx4sgN3ONTyqGEUhq40bJJtI6OFNkZRN\""
+credential = "gI0K0lFi9sRt6a.atlasv1.pjqKbeILsS9prSy4rJKA1mJkK4NG3iIsHrn4dAeHHYYvyPyGSVh8TcjSx4sgN3ONTyqGEUhq40bJJtI6OFNkZRN"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "gI0K0EXAMPLEEXAMPLENkZRN"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

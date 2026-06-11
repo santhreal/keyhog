@@ -1,3 +1,36 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:763de55355f771de1c6cb986501e69f11ac9ec94cdc9a2347f240fd528f9b279
-size 1089
+# Per-detector contract: epa-api-key
+
+schema_version = 1
+detector_id = "epa-api-key"
+service = "epa"
+severity = "medium"
+
+[[positive]]
+text = "EPA_API_KEY=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+reason = "EPA_API_KEY context anchor with 40 alphanumeric chars."
+
+[[positive]]
+text = "X-Api-Key: Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz in EPA system"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+reason = "HTTP header style with X-Api-Key prefix and trailing EPA context."
+
+[[negative]]
+text = "EPA_API_KEY=short"
+reason = "Body too short — pattern requires 32-40 alphanumeric chars."
+
+[[evasion]]
+text = "EPA_API_KEY: Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+reason = "YAML-style colon-space separator."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted EPA credential."

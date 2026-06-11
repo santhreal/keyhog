@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:7ffe878916185ff4d823288ca8fef7f8b06ea32349a448d5e3a7ac0ffe41c268
-size 1140
+schema_version = 1
+detector_id = "twitter-api-key"
+service = "twitter"
+severity = "critical"
+
+[positive_with_companion]
+text = "TWITTER_      -  -      -   -_       -_   _   -   _ - -- - -      _   - api     _ --    -    _     -        _      --        _-    -       -   _ _-    - _ _  -      -  key==\" =    ':  D6DER3m0LpqmEoIUNWwRyScZ0\nrmcCBj29R8EgbIxhZkxYL16F7rWxkSkW37CcJHuDiKeO2cUqb3"
+expected_findings = ["twitter-api-key"]
+expected_companions = { api_secret = "rmcCBj29R8EgbIxhZkxYL16F7rWxkSkW37CcJHuDiKeO2cUqb3" }
+reason = "Primary paired with companion(s) api_secret."
+
+[positive_primary_only]
+text = "TWITTER_      -  -      -   -_       -_   _   -   _ - -- - -      _   - api     _ --    -    _     -        _      --        _-    -       -   _ _-    - _ _  -      -  key==\" =    ':  D6DER3m0LpqmEoIUNWwRyScZ0"
+expected_findings = ["twitter-api-key"]
+must_not_verify = true
+reason = "Primary found without companion api_secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "rmcCBj29R8EgbIxhZkxYL16F7rWxkSkW37CcJHuDiKeO2cUqb3"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

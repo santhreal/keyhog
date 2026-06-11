@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:75405a940b0e41f26b45cde57db5d956fe3f5cd8481720b02fb6aa5daaf95315
-size 1198
+schema_version = 1
+detector_id = "apple-push-notification-key"
+service = "apple"
+severity = "critical"
+
+[[positive]]
+text = "APNS=Kp4Qx7Rm2Sn5Tb8Vw3Yz.Vk9Bn3Lp7Qm2Rs5Tw8Yz.Kp4Qx7Rm2Sn5Tb8Vw3Yz"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3Yz.Vk9Bn3Lp7Qm2Rs5Tw8Yz.Kp4Qx7Rm2Sn5Tb8Vw3Yz"
+reason = "APNs JWT with three 20-char base64url segments."
+
+[[positive]]
+text = "apns:\"Vk9Bn3Lp7Qm2Rs5Tw8Yz.Kp4Qx7Rm2Sn5Tb8Vw3Yz.Vk9Bn3Lp7Qm2Rs5Tw8Yz\""
+credential = "Vk9Bn3Lp7Qm2Rs5Tw8Yz.Kp4Qx7Rm2Sn5Tb8Vw3Yz.Vk9Bn3Lp7Qm2Rs5Tw8Yz"
+reason = "Lowercase apns prefix with quoted JWT."
+
+[[negative]]
+text = "APNS=Kp4Qx7Rm2Sn5Tb8Vw3Yz.Vk9Bn3Lp7Qm2Rs5Tw8Yz"
+reason = "Two segments only, missing third JWT part."
+
+[[evasion]]
+text = "Authorization: Bearer APNS=Kp4Qx7Rm2Sn5Tb8Vw3Yz.Vk9Bn3Lp7Qm2Rs5Tw8Yz.Kp4Qx7Rm2Sn5Tb8Vw3Yz"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3Yz.Vk9Bn3Lp7Qm2Rs5Tw8Yz.Kp4Qx7Rm2Sn5Tb8Vw3Yz"
+reason = "Bearer authorization header wrapping APNS token."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted apple push notification key."

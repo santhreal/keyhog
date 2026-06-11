@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:991a24a30724413c8afcd040b45a72a382b4ba0f37053b94ba25f407d8dea652
-size 1265
+schema_version = 1
+detector_id = "ns1-api-key"
+service = "ns1"
+severity = "critical"
+
+[[positive]]
+text = "NS1_API_KEY=LMg_4h12QvVuiYMIkeb9azkXGNDu3GdphrBLzm4h"
+credential = "LMg_4h12QvVuiYMIkeb9azkXGNDu3GdphrBLzm4h"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "NS1_API_KEY=\"LMg_4h12QvVuiYMIkeb9azkXGNDu3GdphrBLzm4h\""
+credential = "LMg_4h12QvVuiYMIkeb9azkXGNDu3GdphrBLzm4h"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "NS1_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "NS1_API_KEY=LMg_4EXAMPLEEXAMPLELzm4h"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "# NS1_API_KEY=LMg_4h12QvVuiYMIkeb9azkXGNDu3GdphrBLzm4h"
+credential = "LMg_4h12QvVuiYMIkeb9azkXGNDu3GdphrBLzm4h"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

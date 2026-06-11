@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:534574a603268c8720793734738b1334954ca5dff50f38c482988b06da00198a
-size 1321
+schema_version = 1
+detector_id = "time4vps-api-key"
+service = "time4vps"
+severity = "critical"
+
+[positive_with_companion]
+text = "time4vps_password=4LPO9vQFeumtgqcxUID5snxdSWxfPDIv\nTIME4VPS_USERNAME     : :     :  :' \"\" \" \"'   = = \"\"' :  : :::  =\" '  ' %YG0ky+lOIWF_60M8QlPTlH@t1xQRBWCRK7nGApzeL.XXbu8gXgraYuKDKmafEby08luCpqBMhz8ZVgCc027R0nZUOAMvMvrDxX0pWdiDXbnwcmc08mGWXPX.OhkeVbMBxvCTIzuFGDIdsbdwGPnPByiYBem"
+expected_findings = ["time4vps-api-key"]
+expected_companions = { time4vps_username = "%YG0ky+lOIWF_60M8QlPTlH@t1xQRBWCRK7nGApzeL.XXbu8gXgraYuKDKmafEby08luCpqBMhz8ZVgCc027R0nZUOAMvMvrDxX0pWdiDXbnwcmc08mGWXPX.OhkeVbMBxvCTIzuFGDIdsbdwGPnPByiYBem" }
+reason = "Primary paired with companion(s) time4vps_username."
+
+[positive_primary_only]
+text = "time4vps_password=4LPO9vQFeumtgqcxUID5snxdSWxfPDIv"
+expected_findings = ["time4vps-api-key"]
+must_not_verify = true
+reason = "Primary found without companion time4vps_username; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "TIME4VPS_USERNAME     : :     :  :' \"\" \" \"'   = = \"\"' :  : :::  =\" '  ' %YG0ky+lOIWF_60M8QlPTlH@t1xQRBWCRK7nGApzeL.XXbu8gXgraYuKDKmafEby08luCpqBMhz8ZVgCc027R0nZUOAMvMvrDxX0pWdiDXbnwcmc08mGWXPX.OhkeVbMBxvCTIzuFGDIdsbdwGPnPByiYBem"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

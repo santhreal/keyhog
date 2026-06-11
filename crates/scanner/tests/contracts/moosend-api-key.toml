@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:3575cd0c1f76413a02cc68a27da2c33888ded314d0eb444b029a510ae6fc8970
-size 1281
+schema_version = 1
+detector_id = "moosend-api-key"
+service = "moosend"
+severity = "high"
+
+[[positive]]
+text = "MOOSEND_API_KEY=a4f4f-7a6c28--633f18a1a2b0ff571464fc"
+credential = "a4f4f-7a6c28--633f18a1a2b0ff571464fc"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "MOOSEND_API_KEY=\"a4f4f-7a6c28--633f18a1a2b0ff571464fc\""
+credential = "a4f4f-7a6c28--633f18a1a2b0ff571464fc"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "MOOSEND_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "MOOSEND_API_KEY=a4f4fEXAMPLEEXAMPLE464fc"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export MOOSEND_API_KEY=a4f4f-7a6c28--633f18a1a2b0ff571464fc"
+credential = "a4f4f-7a6c28--633f18a1a2b0ff571464fc"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

@@ -1,3 +1,36 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:7c40ce34506ade1bc0afe5d8202232f28a9506ac0b68b6502cfd6dfec26e92ae
-size 1132
+# Per-detector contract: epicgames-api-key
+
+schema_version = 1
+detector_id = "epicgames-api-key"
+service = "epicgames"
+severity = "critical"
+
+[[positive]]
+text = "EPIC_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "env-var EPIC_API_KEY with 32 lowercase hex chars."
+
+[[positive]]
+text = "EG_CLIENT_ID=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "EG_CLIENT_ID prefix with 64 lowercase hex chars."
+
+[[negative]]
+text = "EPIC_API_KEY=short"
+reason = "Body too short — pattern requires 32-64 lowercase hex chars."
+
+[[evasion]]
+text = "epic_games_api_key = 7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Lowercase underscore prefix with space-separated equals."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Epic Games credential."

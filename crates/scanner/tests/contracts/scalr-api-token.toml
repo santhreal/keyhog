@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:0020c292cc03a994dddfc0d5ee03586797171fef9e1c20c0685b4057a23299e8
-size 2247
+schema_version = 1
+detector_id = "scalr-api-token"
+service = "scalr"
+severity = "critical"
+
+[[positive]]
+text = "SCALR_TOKEN=eyJqEn0DWRqaI8.eyJ2EZmQ0rQI1KS2vAHKhbVxPEJrwHqJUcpDGcDzG5b6ZjeO_rTJlAFLwM_mj9M4z90pm5indkRJqaMe_7qcLhcbk.zatKoCFZ3LnYyOgxIRh6SRcFLfddJzxS8Kk2_emw-BnII8IGYXfjppfEeEqE_K0IGediMBiPhaX7Te67vFmO6XL7wc-93hJ"
+credential = "eyJqEn0DWRqaI8.eyJ2EZmQ0rQI1KS2vAHKhbVxPEJrwHqJUcpDGcDzG5b6ZjeO_rTJlAFLwM_mj9M4z90pm5indkRJqaMe_7qcLhcbk.zatKoCFZ3LnYyOgxIRh6SRcFLfddJzxS8Kk2_emw-BnII8IGYXfjppfEeEqE_K0IGediMBiPhaX7Te67vFmO6XL7wc-93hJ"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "SCALR_TOKEN=\"eyJqEn0DWRqaI8.eyJ2EZmQ0rQI1KS2vAHKhbVxPEJrwHqJUcpDGcDzG5b6ZjeO_rTJlAFLwM_mj9M4z90pm5indkRJqaMe_7qcLhcbk.zatKoCFZ3LnYyOgxIRh6SRcFLfddJzxS8Kk2_emw-BnII8IGYXfjppfEeEqE_K0IGediMBiPhaX7Te67vFmO6XL7wc-93hJ\""
+credential = "eyJqEn0DWRqaI8.eyJ2EZmQ0rQI1KS2vAHKhbVxPEJrwHqJUcpDGcDzG5b6ZjeO_rTJlAFLwM_mj9M4z90pm5indkRJqaMe_7qcLhcbk.zatKoCFZ3LnYyOgxIRh6SRcFLfddJzxS8Kk2_emw-BnII8IGYXfjppfEeEqE_K0IGediMBiPhaX7Te67vFmO6XL7wc-93hJ"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "SCALR_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "SCALR_TOKEN=eyJqEEXAMPLEEXAMPLE-93hJ"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export SCALR_TOKEN=eyJqEn0DWRqaI8.eyJ2EZmQ0rQI1KS2vAHKhbVxPEJrwHqJUcpDGcDzG5b6ZjeO_rTJlAFLwM_mj9M4z90pm5indkRJqaMe_7qcLhcbk.zatKoCFZ3LnYyOgxIRh6SRcFLfddJzxS8Kk2_emw-BnII8IGYXfjppfEeEqE_K0IGediMBiPhaX7Te67vFmO6XL7wc-93hJ"
+credential = "eyJqEn0DWRqaI8.eyJ2EZmQ0rQI1KS2vAHKhbVxPEJrwHqJUcpDGcDzG5b6ZjeO_rTJlAFLwM_mj9M4z90pm5indkRJqaMe_7qcLhcbk.zatKoCFZ3LnYyOgxIRh6SRcFLfddJzxS8Kk2_emw-BnII8IGYXfjppfEeEqE_K0IGediMBiPhaX7Te67vFmO6XL7wc-93hJ"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

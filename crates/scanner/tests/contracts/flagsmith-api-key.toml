@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:7715edb68dc275ed47f72be28066f63ecc982e87a6d25753547b6263f9c393d5
-size 1045
+schema_version = 1
+detector_id = "flagsmith-api-key"
+service = "flagsmith"
+severity = "high"
+
+[[positive]]
+text = "ser.Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+credential = "ser.Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+reason = "Bare server-side API key with ser. prefix and 40 alnum body."
+
+[[positive]]
+text = "FLAGSMITH_KEY=ser.7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7"
+credential = "ser.7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7"
+reason = "Env-var assignment with keyword prefix."
+
+[[negative]]
+text = "ser.short"
+reason = "Body too short (5 chars) for 40+ alnum requirement."
+
+[[evasion]]
+text = '{"environment_key": "ser.Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"}'
+credential = "ser.Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+reason = "JSON-formatted key inside an object."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted flagsmith credential."

@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:563883662ba0ee0a3f7afd6b885ffa3f56259c7da62b237af9078952f4e66c17
-size 860
+schema_version = 1
+detector_id = "splunk-victorops-api-key"
+service = "splunk"
+severity = "critical"
+
+[positive_with_companion]
+text = "VICTOROPS_API_KEY=630aad19ff252d6f8eb80373c9da5d8e7033dfd1\nvictorops.api.id=cbNpUaGMqvRahphxQQHsp6nylG0oKwLC"
+expected_findings = ["splunk-victorops-api-key"]
+expected_companions = { victorops_api_id = "cbNpUaGMqvRahphxQQHsp6nylG0oKwLC" }
+reason = "Primary paired with companion(s) victorops_api_id."
+
+[positive_primary_only]
+text = "VICTOROPS_API_KEY=630aad19ff252d6f8eb80373c9da5d8e7033dfd1"
+expected_findings = ["splunk-victorops-api-key"]
+must_not_verify = true
+reason = "Primary found without companion victorops_api_id; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "victorops.api.id=cbNpUaGMqvRahphxQQHsp6nylG0oKwLC"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

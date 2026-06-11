@@ -1,3 +1,50 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:006f025af7e7753bba9988f5523d5e3292dc075c14e49a89bf3a14dfcff4fe43
-size 1624
+# Per-detector contract: linear-api-key
+#
+# Format: `lin_api_` + exactly 40 alphanumeric chars.
+
+schema_version = 1
+detector_id = "linear-api-key"
+service = "linear"
+severity = "critical"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "lin_api_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKq"
+credential = "lin_api_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKq"
+reason = "Bare canonical Linear API key, exactly 40 chars after lin_api_."
+
+[[positive]]
+text = "LINEAR_API_KEY=lin_api_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKq"
+credential = "lin_api_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKq"
+reason = "Standard env-var assignment."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "lin_api_short"
+reason = "Body shorter than 40 chars."
+
+[[negative]]
+text = "lin_api_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxK"
+reason = "39 chars after lin_api_ (one short of the required 40)."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "Authorization: lin_api_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKq"
+credential = "lin_api_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKq"
+reason = "Linear API auth header shape."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted Linear API key."

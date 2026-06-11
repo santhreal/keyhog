@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:d7dc7d029ddd806d0f26d8730973dc5949b2c76cb597b878a86ca0bcb9c9d3eb
-size 1312
+schema_version = 1
+detector_id = "opsgenie-heartbeat-api-key"
+service = "opsgenie"
+severity = "critical"
+
+[[positive]]
+text = "OPSGENIE_HEARTBEAT=740abf96-f0bb-5397-0c19-8650db0db039"
+credential = "740abf96-f0bb-5397-0c19-8650db0db039"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "OPSGENIE_HEARTBEAT=\"740abf96-f0bb-5397-0c19-8650db0db039\""
+credential = "740abf96-f0bb-5397-0c19-8650db0db039"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "OPSGENIE_HEARTBEAT=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "OPSGENIE_HEARTBEAT=740abEXAMPLEEXAMPLEdb039"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export OPSGENIE_HEARTBEAT=740abf96-f0bb-5397-0c19-8650db0db039"
+credential = "740abf96-f0bb-5397-0c19-8650db0db039"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

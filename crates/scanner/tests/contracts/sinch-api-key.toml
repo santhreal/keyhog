@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:fe0fa00df2f884f2e381fd2aa9d962f1f32c0c2f15c6acf17f15bc0ad8f65a0d
-size 1228
+schema_version = 1
+detector_id = "sinch-api-key"
+service = "sinch"
+severity = "critical"
+
+[[positive]]
+text = "sinchproject=6fea9b0996bEa7A40e325382d2eEc4CE"
+credential = "6fea9b0996bEa7A40e325382d2eEc4CE"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "sinchproject=\"6fea9b0996bEa7A40e325382d2eEc4CE\""
+credential = "6fea9b0996bEa7A40e325382d2eEc4CE"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "sinchproject=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "sinchproject=6fea9EXAMPLEEXAMPLEEc4CE"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "{\"secret\":\"6fea9b0996bEa7A40e325382d2eEc4CE\"}"
+credential = "6fea9b0996bEa7A40e325382d2eEc4CE"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

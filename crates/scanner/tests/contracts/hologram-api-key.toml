@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:a5343f27d720ae7c791a151fec5005265fb6679de605995ed9adda95cafd9405
-size 1305
+schema_version = 1
+detector_id = "hologram-api-key"
+service = "hologram"
+severity = "critical"
+
+[[positive]]
+text = "HOLOGRAM_API_KEY=0hJbPI18aekE205Bq4osIbrsNwBPn5EaLtbbmfpG"
+credential = "0hJbPI18aekE205Bq4osIbrsNwBPn5EaLtbbmfpG"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "HOLOGRAM_API_KEY=\"0hJbPI18aekE205Bq4osIbrsNwBPn5EaLtbbmfpG\""
+credential = "0hJbPI18aekE205Bq4osIbrsNwBPn5EaLtbbmfpG"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "HOLOGRAM_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "HOLOGRAM_API_KEY=0hJbPEXAMPLEEXAMPLEbmfpG"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export HOLOGRAM_API_KEY=0hJbPI18aekE205Bq4osIbrsNwBPn5EaLtbbmfpG"
+credential = "0hJbPI18aekE205Bq4osIbrsNwBPn5EaLtbbmfpG"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

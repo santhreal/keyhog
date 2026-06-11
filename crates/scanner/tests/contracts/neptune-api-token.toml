@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:0b726e04f1ae5deb210dd1ede39c5948f16aceb76b103aaf54c8bb3146bb327f
-size 1463
+schema_version = 1
+detector_id = "neptune-api-token"
+service = "neptune"
+severity = "high"
+
+[[positive]]
+text = "NEPTUNE_API_TOKEN=L2Vq6GK3z1UsQ5g8jBQmYXxTC0cEJcZ83n2tcOhktobehu8/ZtSIy8bEB/EJ3yPB+U="
+credential = "L2Vq6GK3z1UsQ5g8jBQmYXxTC0cEJcZ83n2tcOhktobehu8/ZtSIy8bEB/EJ3yPB+U="
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "NEPTUNE_API_TOKEN=\"L2Vq6GK3z1UsQ5g8jBQmYXxTC0cEJcZ83n2tcOhktobehu8/ZtSIy8bEB/EJ3yPB+U=\""
+credential = "L2Vq6GK3z1UsQ5g8jBQmYXxTC0cEJcZ83n2tcOhktobehu8/ZtSIy8bEB/EJ3yPB+U="
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "NEPTUNE_API_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "NEPTUNE_API_TOKEN=L2Vq6EXAMPLEEXAMPLEPB+U="
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "# NEPTUNE_API_TOKEN=L2Vq6GK3z1UsQ5g8jBQmYXxTC0cEJcZ83n2tcOhktobehu8/ZtSIy8bEB/EJ3yPB+U="
+credential = "L2Vq6GK3z1UsQ5g8jBQmYXxTC0cEJcZ83n2tcOhktobehu8/ZtSIy8bEB/EJ3yPB+U="
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

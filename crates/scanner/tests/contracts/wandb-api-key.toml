@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:103dd0ff0236814a6e761aad277dc8f5b1c87a1c1a4eca5b46a6a87abf2fc0d7
-size 982
+schema_version = 1
+detector_id = "wandb-api-key"
+service = "wandb"
+severity = "high"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "WANDB_API_KEY=034b1509e9cb1c6131ba5ee7dc30a6d542944a55"
+credential = "034b1509e9cb1c6131ba5ee7dc30a6d542944a55"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "WANDB_API_KEY=\"034b1509e9cb1c6131ba5ee7dc30a6d542944a55\""
+credential = "034b1509e9cb1c6131ba5ee7dc30a6d542944a55"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "WANDB_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "WANDB_API_KEY=034b1EXAMPLEEXAMPLE44a55"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

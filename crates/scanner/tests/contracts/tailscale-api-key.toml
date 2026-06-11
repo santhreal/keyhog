@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:d6e432f201d312bd74918fd2f46997d43db53a89995c311ef8680dd47ad735ae
-size 1200
+schema_version = 1
+detector_id = "tailscale-api-key"
+service = "tailscale"
+severity = "critical"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "tskey-api-bHbEzy1zf6wCro8yiOZ8HEFGG742OVcXgVErdxjAWQUaHqRRfdcjvAe-UZ2bOS0aRNzaoiZNmL3QqvhSyYOPeMhhlFrr7U3l"
+credential = "tskey-api-bHbEzy1zf6wCro8yiOZ8HEFGG742OVcXgVErdxjAWQUaHqRRfdcjvAe-UZ2bOS0aRNzaoiZNmL3QqvhSyYOPeMhhlFrr7U3l"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "tskey-api-bHbEzy1zf6wCro8yiOZ8HEFGG742OVcXgVErdxjAWQUaHqRRfdcjvAe-UZ2bOS0aRNzaoiZNmL3QqvhSyYOPeMhhlFrr7U3l\""
+credential = "tskey-api-bHbEzy1zf6wCro8yiOZ8HEFGG742OVcXgVErdxjAWQUaHqRRfdcjvAe-UZ2bOS0aRNzaoiZNmL3QqvhSyYOPeMhhlFrr7U3l"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "tskeyEXAMPLEEXAMPLEr7U3l"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

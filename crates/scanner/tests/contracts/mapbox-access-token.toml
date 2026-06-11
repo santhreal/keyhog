@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:1a03469d394309883abb7d07b5880f3f240b77206d0cc3cf1ab0998b9c9194cb
-size 1830
+schema_version = 1
+detector_id = "mapbox-access-token"
+service = "mapbox"
+severity = "critical"
+
+[[positive]]
+text = "pk.eyJA5HA_hbDTF1ehFQcw04n1IbyKHrAsL0Ii98UNshdQVdyf43_duDPPNyWFZzVb06zdZNhAI8KWT_MieYZ.2VSbx2uM9jl7Sw75lvz9IFDKTSCPhLMo"
+credential = "pk.eyJA5HA_hbDTF1ehFQcw04n1IbyKHrAsL0Ii98UNshdQVdyf43_duDPPNyWFZzVb06zdZNhAI8KWT_MieYZ.2VSbx2uM9jl7Sw75lvz9IFDKTSCPhLMo"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "pk.eyJA5HA_hbDTF1ehFQcw04n1IbyKHrAsL0Ii98UNshdQVdyf43_duDPPNyWFZzVb06zdZNhAI8KWT_MieYZ.2VSbx2uM9jl7Sw75lvz9IFDKTSCPhLMo=\"pk.eyJA5HA_hbDTF1ehFQcw04n1IbyKHrAsL0Ii98UNshdQVdyf43_duDPPNyWFZzVb06zdZNhAI8KWT_MieYZ.2VSbx2uM9jl7Sw75lvz9IFDKTSCPhLMo\""
+credential = "pk.eyJA5HA_hbDTF1ehFQcw04n1IbyKHrAsL0Ii98UNshdQVdyf43_duDPPNyWFZzVb06zdZNhAI8KWT_MieYZ.2VSbx2uM9jl7Sw75lvz9IFDKTSCPhLMo"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "pk.eyEXAMPLEEXAMPLEPhLMo"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "Authorization: Bearer pk.eyJA5HA_hbDTF1ehFQcw04n1IbyKHrAsL0Ii98UNshdQVdyf43_duDPPNyWFZzVb06zdZNhAI8KWT_MieYZ.2VSbx2uM9jl7Sw75lvz9IFDKTSCPhLMo"
+credential = "pk.eyJA5HA_hbDTF1ehFQcw04n1IbyKHrAsL0Ii98UNshdQVdyf43_duDPPNyWFZzVb06zdZNhAI8KWT_MieYZ.2VSbx2uM9jl7Sw75lvz9IFDKTSCPhLMo"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

@@ -1,3 +1,39 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:dad3346e641b707e912071a83e1f481a2a9715fc2c9a020d34f5704010b60e45
-size 1428
+schema_version = 1
+detector_id = "grafana-cloud-api-key"
+service = "grafana"
+severity = "high"
+
+[[positive]]
+text = "GRAFANA_TOKEN=glsa_hqzIR09irAJS1ajsBKT2bktCLU3cluDM_4ba1076d"
+credential = "glsa_hqzIR09irAJS1ajsBKT2bktCLU3cluDM_4ba1076d"
+reason = "Grafana service-account token (glsa_<32 alnum>_<8 hex>)."
+
+[[positive]]
+text = "grafana_cloud_token = \"glc_LRZjv9NfzJh7X1V3bBpT/tdPD5xrnllnrx5DPdt/TpBb3V1X7hJzfN9vjZRL\""
+credential = "glc_LRZjv9NfzJh7X1V3bBpT/tdPD5xrnllnrx5DPdt/TpBb3V1X7hJzfN9vjZRL"
+reason = "Grafana Cloud access-policy token (glc_<base64>)."
+
+[[positive]]
+text = "GF_API_KEY=eyJrIjoiLPVdnzBRj3Nl/b5Z7fFtXDxhTH91vrpprv19HThxDXtFf7Z5b/lN3jRBzndVPLJJLPVdnzBRj3Nl/b5Z"
+credential = "eyJrIjoiLPVdnzBRj3Nl/b5Z7fFtXDxhTH91vrpprv19HThxDXtFf7Z5b/lN3jRBzndVPLJJLPVdnzBRj3Nl/b5Z"
+reason = "Grafana legacy API key (base64 of {\"k\":...})."
+
+[[negative]]
+text = "GRAFANA_URL=https://grafana.example.com/dashboards"
+reason = "Grafana URL, no token prefix."
+
+[[evasion]]
+text = "grafana glsa_hqzIR09irAJS1ajsBKT2bktCLU3cluDM_4ba1076d"
+credential = "glsa_hqzIR09irAJS1ajsBKT2bktCLU3cluDM_4ba1076d"
+reason = "Space-separated grafana keyword + service-account token."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Grafana token."

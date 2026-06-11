@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:0781c15b034d40d0efd2ca62318338fa5a1d098b15321727c3871cc0452588e6
-size 1098
+schema_version = 1
+detector_id = "cloudflare-zero-trust-service-token"
+service = "cloudflare"
+severity = "high"
+
+[[positive]]
+text = "CF-Access-Client-Id=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d.access"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Canonical Client ID with 32 hex chars before .access suffix."
+
+[[positive]]
+text = "CF.Access.Client.Id: a3f5c7d9e1b8a4f2c6d0e5b7a9f3c1d8.access"
+credential = "a3f5c7d9e1b8a4f2c6d0e5b7a9f3c1d8"
+reason = "Dot-separated header form with 32 hex chars."
+
+[[negative]]
+text = "CF-Access-Client-Id=short.access"
+reason = "Body not exactly 32 hex chars before .access suffix."
+
+[[evasion]]
+text = "Authorization: Bearer CF-Access-Client-Id=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d.access"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Bearer-header wrap around the assignment."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Cloudflare Zero Trust token."

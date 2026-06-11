@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:1161de93caab2770857e0a3493614314660ba2026d60d0112ee376158db350f5
-size 1091
+schema_version = 1
+detector_id = "eu-open-data-api-key"
+service = "eu-open-data"
+severity = "medium"
+
+[[positive]]
+text = "party_token EU_CLIENT-ID=7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+credential = "7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+reason = "Keyword prefix with EU_CLIENT-ID and UUID body."
+
+[[positive]]
+text = "party_token EDP_API_TOKEN=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8V"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8V"
+reason = "Keyword prefix with EDP_API_TOKEN and 32-char alnum body."
+
+[[negative]]
+text = "EU_CLIENT_ID=short"
+reason = "Body too short and not UUID format."
+
+[[evasion]]
+text = "party_token EU_CLIENT-ID=7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+credential = "7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted eu-open-data credential."

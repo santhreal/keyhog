@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:0637bfd68156f2fb787286af095e87830bc2fedc85943d11b745c71ecb0c60ba
-size 1239
+schema_version = 1
+detector_id = "istock-api-key"
+service = "istock"
+severity = "high"
+
+[[positive]]
+text = "ISTOCK_API_KEY=xqaL6boKvK9T28agUy-2UKclZ___ijuK"
+credential = "xqaL6boKvK9T28agUy-2UKclZ___ijuK"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "ISTOCK_API_KEY=\"xqaL6boKvK9T28agUy-2UKclZ___ijuK\""
+credential = "xqaL6boKvK9T28agUy-2UKclZ___ijuK"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "ISTOCK_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "ISTOCK_API_KEY=xqaL6EXAMPLEEXAMPLE_ijuK"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export ISTOCK_API_KEY=xqaL6boKvK9T28agUy-2UKclZ___ijuK"
+credential = "xqaL6boKvK9T28agUy-2UKclZ___ijuK"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

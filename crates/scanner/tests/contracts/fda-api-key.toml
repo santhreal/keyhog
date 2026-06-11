@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:12cd04e280225b96b45ac4dad3cd2a687334640acf698354e91056df441af98f
-size 1270
+schema_version = 1
+detector_id = "fda-api-key"
+service = "fda"
+severity = "medium"
+
+[[positive]]
+text = "FDA_API_KEY=P9Zu9Et3gR9l0wzCFBMXTtYj4rssu8aHN3ahXjJd"
+credential = "P9Zu9Et3gR9l0wzCFBMXTtYj4rssu8aHN3ahXjJd"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "FDA_API_KEY=\"P9Zu9Et3gR9l0wzCFBMXTtYj4rssu8aHN3ahXjJd\""
+credential = "P9Zu9Et3gR9l0wzCFBMXTtYj4rssu8aHN3ahXjJd"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "FDA_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "FDA_API_KEY=P9Zu9EXAMPLEEXAMPLEhXjJd"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "FDA_API_KEY=P9Zu9Et3gR9l0wzCFBMXTtYj4rssu8aHN3ahXjJd"
+credential = "P9Zu9Et3gR9l0wzCFBMXTtYj4rssu8aHN3ahXjJd"
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 35000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

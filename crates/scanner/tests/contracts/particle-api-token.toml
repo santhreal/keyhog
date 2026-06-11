@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:c0234d0c3e1f846fcb6c52be5d1700144acefbe31b09c87f84a566c13d3b5416
-size 1323
+schema_version = 1
+detector_id = "particle-api-token"
+service = "particle"
+severity = "high"
+
+[[positive]]
+text = "PARTICLE_ACCESS_TOKEN=148ddd535501d0d2be7e63b142409d7f6a0e6c7f"
+credential = "148ddd535501d0d2be7e63b142409d7f6a0e6c7f"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "PARTICLE_ACCESS_TOKEN=\"148ddd535501d0d2be7e63b142409d7f6a0e6c7f\""
+credential = "148ddd535501d0d2be7e63b142409d7f6a0e6c7f"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "PARTICLE_ACCESS_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "PARTICLE_ACCESS_TOKEN=148ddEXAMPLEEXAMPLEe6c7f"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "# PARTICLE_ACCESS_TOKEN=148ddd535501d0d2be7e63b142409d7f6a0e6c7f"
+credential = "148ddd535501d0d2be7e63b142409d7f6a0e6c7f"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

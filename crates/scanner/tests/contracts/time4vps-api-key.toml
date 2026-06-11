@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:c0fde1f1b4202be1ab689ee92eeff779ac5012da7385f3b58affc61922186b69
-size 1244
+schema_version = 1
+detector_id = "time4vps-api-key"
+service = "time4vps"
+severity = "critical"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "TIME4VPS_PASSWORD\" =  \"   :\"  '= =     \"\"\"      =  \"      =\": : :'   :    :' :'   ' '      =    ==l38Q;d$kByGv"
+credential = "l38Q;d$kByGv"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "TIME4VPS_PASSWORD\" =  \"   :\"  '= =     \"\"\"      =  \"      =\": : :'   :    :' :'   ' '      =    ==l38Q;d$kByGv"
+credential = "l38Q;d$kByGv"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "TIME4VPS_PASSWORD\" =  \"   :\"  '= =     \"\"\"      =  \"      =\": : :'   :    :' :'   ' '      =    ==YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "TIME4VPS_PASSWORD\" =  \"   :\"  '= =     \"\"\"      =  \"      =\": : :'   :    :' :'   ' '      =    ==l38Q;EXAMPLEEXAMPLEkByGv"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

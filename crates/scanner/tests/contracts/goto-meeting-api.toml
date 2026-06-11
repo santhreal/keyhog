@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:6263042996d92d9298e23ac36a8980318f60589d111a1e7a31ee3a471983dfd1
-size 1245
+schema_version = 1
+detector_id = "goto-meeting-api"
+service = "goto-meeting"
+severity = "critical"
+
+[[positive]]
+text = "GOTO_MEETING_API_KEY=\"JodFX1GOZrhrztAQpiN0k8s0Rc3VgTg9abcd\""
+credential = "JodFX1GOZrhrztAQpiN0k8s0Rc3VgTg9abcd"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "gotomeeting access_token=M9TBrKrmGsNmjQ8mT3OA94HhblZaQFPiyCEs5lkO"
+credential = "M9TBrKrmGsNmjQ8mT3OA94HhblZaQFPiyCEs5lkO"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "GOTO_MEETING=short"
+reason = "Truncated value below detector minimum length."
+
+[[negative]]
+text = "GOTO_MEETING token abcdef"
+reason = "Keyword context without valid credential body."
+
+[[evasion]]
+text = "GOTO_MEETING_API_KEY=\"JodFX1GOZrhrztAQpiN0k8s0Rc3VgTg9abcd\""
+credential = "JodFX1GOZrhrztAQpiN0k8s0Rc3VgTg9abcd"
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted GoTo Meeting API Credentials credential."

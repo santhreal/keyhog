@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:970cbdba7f5d3786d18173f7997935ee52a0408562b1f16ac524e4ae58479da0
-size 1532
+schema_version = 1
+detector_id = "prometheus-alertmanager-webhook"
+service = "prometheus"
+severity = "high"
+
+[[positive]]
+text = "webhook_url=https://_EAl6PnnHt219ecRFVqmq.KCUwXJEgxe8lSfCNbSuBUhXRem2nao7nKXJrNvv/hooks/Iy"
+credential = "https://_EAl6PnnHt219ecRFVqmq.KCUwXJEgxe8lSfCNbSuBUhXRem2nao7nKXJrNvv/hooks/Iy"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "webhook_url=\"https://_EAl6PnnHt219ecRFVqmq.KCUwXJEgxe8lSfCNbSuBUhXRem2nao7nKXJrNvv/hooks/Iy\""
+credential = "https://_EAl6PnnHt219ecRFVqmq.KCUwXJEgxe8lSfCNbSuBUhXRem2nao7nKXJrNvv/hooks/Iy"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "webhook_url=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "webhook_url=httpsEXAMPLEEXAMPLEks/Iy"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export webhook_url=https://_EAl6PnnHt219ecRFVqmq.KCUwXJEgxe8lSfCNbSuBUhXRem2nao7nKXJrNvv/hooks/Iy"
+credential = "https://_EAl6PnnHt219ecRFVqmq.KCUwXJEgxe8lSfCNbSuBUhXRem2nao7nKXJrNvv/hooks/Iy"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

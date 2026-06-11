@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:3188538f163c7f40afa9ba2bd17fdef31115690221d2ce3080be2bd0c1b93255
-size 1264
+schema_version = 1
+detector_id = "sketch-cloud-api-key"
+service = "sketch"
+severity = "high"
+
+[[positive]]
+text = "sketch_api_key=abcdefghijklmnopqrstuvwxyz1234567890"
+credential = "abcdefghijklmnopqrstuvwxyz1234567890"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "sketch_api_key=\"abcdefghijklmnopqrstuvwxyz1234567890\""
+credential = "abcdefghijklmnopqrstuvwxyz1234567890"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "sketch_api_key=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "sketch_api_key=abcdeEXAMPLEEXAMPLE67890"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "{\"secret\":\"abcdefghijklmnopqrstuvwxyz1234567890\"}"
+credential = "abcdefghijklmnopqrstuvwxyz1234567890"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

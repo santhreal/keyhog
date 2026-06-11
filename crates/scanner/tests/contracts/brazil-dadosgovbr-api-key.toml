@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:245e6af378a8877790b408efe385da0be45417b9152a6a007cc4cdcceaadbd29
-size 1102
+schema_version = 1
+detector_id = "brazil-dadosgovbr-api-key"
+service = "brazil-dadosgovbr"
+severity = "medium"
+
+[[positive]]
+text = "DADOS_GOV_API_KEY=7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+credential = "7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+reason = "CKAN API key with DADOS_GOV context anchor."
+
+[[positive]]
+text = "dados.gov.br Authorization: 9f3e5b8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+credential = "9f3e5b8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+reason = "Brazil API key in Authorization header with dados.gov.br prefix."
+
+[[negative]]
+text = "BRAZIL_api_key=7b3e5d8c"
+reason = "UUID segment too short, fails regex."
+
+[[evasion]]
+text = "DADOS_GOV_API_KEY=7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+credential = "7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Brazil dados.gov.br API key."

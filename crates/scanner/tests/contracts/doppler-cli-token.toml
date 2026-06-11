@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:1440f63a4b0d15c07c58246967aa3eb5911a23c9f308121920434eef64e1f7a7
-size 1149
+schema_version = 1
+detector_id = "doppler-cli-token"
+service = "doppler"
+severity = "critical"
+
+[[positive]]
+text = "doppler dp.ct.NbrnTP3fAbnFbmOHnKYaXRvj7uff0LYTH8xIZM1JRcor"
+credential = "dp.ct.NbrnTP3fAbnFbmOHnKYaXRvj7uff0LYTH8xIZM1JRcor"
+reason = "Doppler CLI token with dp.ct. prefix and 44-char base58 body."
+
+[[positive]]
+text = "DOPPLER dp.pt.eogrNwwmq6OLkTkx9NIQ0Wobtqn62tOy4CqpIqK3yn9F"
+credential = "dp.pt.eogrNwwmq6OLkTkx9NIQ0Wobtqn62tOy4CqpIqK3yn9F"
+reason = "Doppler personal token with dp.pt. prefix and 44-char base58 body."
+
+[[negative]]
+text = "doppler dp.ct.short"
+reason = "Body too short — only 5 chars after prefix."
+
+[[evasion]]
+text = "doppler dp.ct.NbrnTP3fAbnFbmOHnKYaXRvj7uff0LYTH8xIZM1JRcor"
+credential = "dp.ct.NbrnTP3fAbnFbmOHnKYaXRvj7uff0LYTH8xIZM1JRcor"
+reason = "Adversarial anchor_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted doppler credential."

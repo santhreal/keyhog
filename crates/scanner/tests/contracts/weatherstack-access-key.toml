@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:7e644e724cbf872825a26cf8f7d2fed5c053b37009cffd59146d2f2da2016636
-size 1431
+schema_version = 1
+detector_id = "weatherstack-access-key"
+service = "weatherstack"
+severity = "medium"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "weatherstack _        _   _   _  ___  _ _        _   _    _  _    __          _        KEY BKe3WCBO8JIILnzQeTQgSIMCOhUAEJcABtxlR7lZST6ju3MBJSPfwjkh2Ek5g2ocLW8SSZg"
+credential = "BKe3WCBO8JIILnzQeTQgSIMCOhUAEJcABtxlR7lZST6ju3MBJSPfwjkh2Ek5g2ocLW8SSZg"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "weatherstack _        _   _   _  ___  _ _        _   _    _  _    __          _        KEY BKe3WCBO8JIILnzQeTQgSIMCOhUAEJcABtxlR7lZST6ju3MBJSPfwjkh2Ek5g2ocLW8SSZg\""
+credential = "BKe3WCBO8JIILnzQeTQgSIMCOhUAEJcABtxlR7lZST6ju3MBJSPfwjkh2Ek5g2ocLW8SSZg"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "weatherstack _        _   _   _  ___  _ _        _   _    _  _    __          _        KEY YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "weatherstack _        _   _   _  ___  _ _        _   _    _  _    __          _        KEY BKe3WEXAMPLEEXAMPLE8SSZg"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

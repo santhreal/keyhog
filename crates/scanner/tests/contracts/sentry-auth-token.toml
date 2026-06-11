@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:78d3eb62fed5fb5780ff910b0142177e66f86009080dc83d0435fd89e42786f8
-size 1249
+schema_version = 1
+detector_id = "sentry-auth-token"
+service = "sentry"
+severity = "critical"
+
+[[positive]]
+text = "sntrys_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm"
+credential = "sntrys_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm"
+reason = "Sentry new-format sntrys_-prefixed auth token (64+ base64-ish body)."
+
+[[positive]]
+text = "SENTRY_AUTH_TOKEN=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Legacy Sentry 64-hex auth token with SENTRY_AUTH_TOKEN context."
+
+[[negative]]
+text = "sntrys_short"
+reason = "Body below 64 chars after `sntrys_`."
+
+[[evasion]]
+text = "Authorization: Bearer sntrys_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm"
+credential = "sntrys_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm"
+reason = "Bearer-header wrap around the new-format prefix detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Sentry auth token."

@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:303f69a9790d607e4070d4a70e6b7d80a41161d1917e5320c17263b7b0723458
-size 1033
+schema_version = 1
+detector_id = "shippo-api-token"
+service = "shippo"
+severity = "high"
+
+[[positive]]
+text = "shippo_live_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "shippo_live_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Shippo live API token (shippo_live_ + 32 hex body)."
+
+[[positive]]
+text = "SHIPPO_TOKEN=shippo_test_4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f"
+credential = "shippo_test_4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f"
+reason = "Shippo test token in env-var assignment."
+
+[[negative]]
+text = "shippo_live_short"
+reason = "Body below 32 hex chars after `shippo_live_` prefix."
+
+[[evasion]]
+text = "Authorization: ShippoToken shippo_live_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "shippo_live_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "ShippoToken auth header form."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Shippo live token."

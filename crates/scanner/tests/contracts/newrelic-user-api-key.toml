@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:ac15fe5e5d50852bb4e08eff7d6e47cd28d121f859131b9a8ab6bcf0a21dc971
-size 1225
+schema_version = 1
+detector_id = "newrelic-user-api-key"
+service = "newrelic"
+severity = "critical"
+
+[[positive]]
+text = "NRAK-2EYOINJXROC0URJH7T52XQYNDJX"
+credential = "NRAK-2EYOINJXROC0URJH7T52XQYNDJX"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "NRAK-2EYOINJXROC0URJH7T52XQYNDJX=\"NRAK-2EYOINJXROC0URJH7T52XQYNDJX\""
+credential = "NRAK-2EYOINJXROC0URJH7T52XQYNDJX"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "NRAK-EXAMPLEEXAMPLEYNDJX"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "Authorization: Bearer NRAK-2EYOINJXROC0URJH7T52XQYNDJX"
+credential = "NRAK-2EYOINJXROC0URJH7T52XQYNDJX"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

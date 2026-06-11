@@ -1,3 +1,46 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:b323ceabc50945ae166a8f336bddd80f996e5aa704b148d8e1bd786d9c8d4d9d
-size 1749
+schema_version = 1
+detector_id = "consul-acl-token"
+service = "consul"
+severity = "critical"
+
+[[positive]]
+text = "CONSUL_HTTP_TOKEN=\"7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d\""
+credential = "7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+reason = "CONSUL_HTTP_TOKEN env-var with quoted UUID."
+
+# Pre-2026-05-29 this contract asserted a positive
+#   text = "token: 4c9a8f6e-3b7d-1a2c-5e8f-0b9d6a3c4e1f"
+# under the reason "Config-file token colon anchor with unquoted UUID."
+# That was wrong attribution: a bare YAML `token: <uuid>` carries NO
+# Consul-specific evidence and the corresponding detector pattern
+# mis-claimed every UUID in any `token:` YAML field across Kubernetes
+# secrets, Vault configs, Istio meshes, Linkerd tokens, etc. (Mirror
+# v23: 70 FPs.) Consul's actual config / CLI output formats are
+# CONSUL_HTTP_TOKEN, CONSUL_TOKEN, consul_token, bootstrap_token,
+# and `SecretID: <uuid>` - all still covered by other patterns + the
+# CONSUL_HTTP_TOKEN positive above and bootstrap_token evasion below.
+
+[[positive]]
+text = "SecretID: 4c9a8f6e-3b7d-1a2c-5e8f-0b9d6a3c4e1f"
+credential = "4c9a8f6e-3b7d-1a2c-5e8f-0b9d6a3c4e1f"
+reason = "Consul CLI output marker `SecretID: <uuid>` - the actual contextual anchor."
+
+[[negative]]
+text = "CONSUL_HTTP_TOKEN=short"
+reason = "Body well below UUID length."
+
+[[evasion]]
+text = "bootstrap_token = '7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d'"
+credential = "7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+reason = "Single-quoted UUID with spaces around equals."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Consul ACL token."

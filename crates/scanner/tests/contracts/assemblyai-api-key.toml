@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:51292194ef234a25223d6d95ea3f0b0fed9edc1138a31ac500df2cd1d3823890
-size 943
+schema_version = 1
+detector_id = "assemblyai-api-key"
+service = "assemblyai"
+severity = "high"
+
+[[positive]]
+text = "ASSEMBLYAI_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "AssemblyAI API key env-var (32 hex)."
+
+[[positive]]
+text = "assemblyai: \"4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f\""
+credential = "4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f"
+reason = "Lowercase assemblyai YAML form."
+
+[[negative]]
+text = "ASSEMBLYAI_API_KEY=short"
+reason = "Body below 32 hex chars."
+
+[[evasion]]
+text = "ASSEMBLYAI='7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d'"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Bare ASSEMBLYAI keyword + single-quoted body."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted AssemblyAI key."

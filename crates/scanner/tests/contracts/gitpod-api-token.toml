@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:993b971ff06fe507e15fe922421ef6488940c99d375a82a89237ca919eeb4360
-size 1274
+schema_version = 1
+detector_id = "gitpod-api-token"
+service = "gitpod"
+severity = "high"
+
+[[positive]]
+text = "GITPOD_TOKEN=6075ce188a4ce087f9a60f3f9c0fd5b6dae4c36a"
+credential = "6075ce188a4ce087f9a60f3f9c0fd5b6dae4c36a"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "GITPOD_TOKEN=\"6075ce188a4ce087f9a60f3f9c0fd5b6dae4c36a\""
+credential = "6075ce188a4ce087f9a60f3f9c0fd5b6dae4c36a"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "GITPOD_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "GITPOD_TOKEN=6075cEXAMPLEEXAMPLE4c36a"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "# GITPOD_TOKEN=6075ce188a4ce087f9a60f3f9c0fd5b6dae4c36a"
+credential = "6075ce188a4ce087f9a60f3f9c0fd5b6dae4c36a"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

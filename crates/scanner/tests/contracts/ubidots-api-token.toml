@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:69b687fddaab9b5eaf67e43a58c6461fe48ec71a00836e71bbe0163c465dcf82
-size 950
+schema_version = 1
+detector_id = "ubidots-api-token"
+service = "ubidots"
+severity = "high"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "BBFF-XQ8OBlzu2R0HzEBkpYHfJouztyi1Yx41cHgw5Tvm"
+credential = "BBFF-XQ8OBlzu2R0HzEBkpYHfJouztyi1Yx41cHgw5Tvm"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "BBFF-XQ8OBlzu2R0HzEBkpYHfJouztyi1Yx41cHgw5Tvm\""
+credential = "BBFF-XQ8OBlzu2R0HzEBkpYHfJouztyi1Yx41cHgw5Tvm"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "BBFF-EXAMPLEEXAMPLEw5Tvm"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:de7f3fa00cf44094e2cd9d04a4fdddcf8ccb4648551660cef4263b087a9d4488
-size 1086
+schema_version = 1
+detector_id = "australia-data-gov-api-key"
+service = "australia-data-gov"
+severity = "medium"
+
+[[positive]]
+text = "data.gov.au_API_KEY=7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+credential = "7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+reason = "data.gov.au CKAN API key in env-var form."
+
+[[positive]]
+text = "CKAN-apikey: \"4c9a8f6e-3b7d-1a2c-5e8f-0b9d6a3c4e1f\""
+credential = "4c9a8f6e-3b7d-1a2c-5e8f-0b9d6a3c4e1f"
+reason = "CKAN hyphenated apikey with quoted UUID."
+
+[[negative]]
+text = "data.gov.au_API_KEY=7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4"
+reason = "Last segment 11 chars, below 12 required."
+
+[[evasion]]
+text = "data.gov.au Authorization: 7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+credential = "7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+reason = "Authorization header with data.gov.au context prefix."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted australia-data-gov credential."

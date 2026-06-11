@@ -1,3 +1,39 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:1965cc7148f391c3fc1084ecb2822d94e211b9ac1832dc3b886a383d86737674
-size 1448
+schema_version = 1
+detector_id = "linode-object-storage-access-key"
+service = "linode"
+severity = "high"
+
+# Linode Object Storage uses S3-style access key (20 uppercase alnum) and
+# secret key (40 base64). The `secret_access_key` companion is optional
+# (no `required = true`) — it raises confidence but doesn't gate detection.
+
+[[positive]]
+text = """LINODE_OBJECT_STORAGE_ACCESS_KEY=KPQXRMSNTBVWYZK4Q7M2
+LINODE_OBJECT_STORAGE_SECRET_KEY=Vk9Bn3Lp7Qm2Rs5Tw8/+Vk9Bn3Lp7Qm2Rs5Tw8=A"""
+credential = "KPQXRMSNTBVWYZK4Q7M2"
+reason = "Standard env-var pair (access + secret) — companion satisfied."
+
+[[positive]]
+text = "# https://acme.linodeobjects.com bucket\nlinode_access_key=KPQXRMSNTBVWYZ4Q7M28"
+credential = "KPQXRMSNTBVWYZ4Q7M28"
+reason = "snake_case env-var + linodeobjects.com keyword — companion optional, detector still fires."
+
+[[negative]]
+text = "linode_access_key=keyTooShort"
+reason = "Body fails the [A-Z0-9]{20} constraint (lowercase + short)."
+
+[[evasion]]
+text = "LINODE-OBJECT-STORAGE-ACCESS-KEY = \"KPQXRMSNTBVWYZK4Q7M2\""
+credential = "KPQXRMSNTBVWYZK4Q7M2"
+reason = "Hyphen-separated env-var with quoted value — regex's `[._-]?` covers dashes."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Linode object-storage credentials."

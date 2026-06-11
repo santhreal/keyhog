@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:a44da0eeaf3e4d3466e6f0fae72d967bdf8de7ec411f380a5fc9d3ad9bcf7da0
-size 1664
+schema_version = 1
+detector_id = "fullstory-api-key"
+service = "fullstory"
+severity = "high"
+
+[[positive]]
+text = "FULLSTORY_API_KEY=na1.ylPfzLN_HDUWbwrKqwThoQUtlcBtscgCtYvQG04QvayuUORdk1v1QdsZZWUOoHw5jFS52CijRBH1MSO6dcQ9NmJQG2ae4hn"
+credential = "na1.ylPfzLN_HDUWbwrKqwThoQUtlcBtscgCtYvQG04QvayuUORdk1v1QdsZZWUOoHw5jFS52CijRBH1MSO6dcQ9NmJQG2ae4hn"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "FULLSTORY_API_KEY=\"na1.ylPfzLN_HDUWbwrKqwThoQUtlcBtscgCtYvQG04QvayuUORdk1v1QdsZZWUOoHw5jFS52CijRBH1MSO6dcQ9NmJQG2ae4hn\""
+credential = "na1.ylPfzLN_HDUWbwrKqwThoQUtlcBtscgCtYvQG04QvayuUORdk1v1QdsZZWUOoHw5jFS52CijRBH1MSO6dcQ9NmJQG2ae4hn"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "FULLSTORY_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "FULLSTORY_API_KEY=na1.yEXAMPLEEXAMPLEae4hn"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "FULLSTORY_API_KEY=na1.ylPfzLN_HDUWbwrKqwThoQUtlcBtscgCtYvQG04QvayuUORdk1v1QdsZZWUOoHw5jFS52CijRBH1MSO6dcQ9NmJQG2ae4hn"
+credential = "na1.ylPfzLN_HDUWbwrKqwThoQUtlcBtscgCtYvQG04QvayuUORdk1v1QdsZZWUOoHw5jFS52CijRBH1MSO6dcQ9NmJQG2ae4hn"
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

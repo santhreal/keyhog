@@ -1,3 +1,41 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:beefa86bb3ffd94c667d8feff7ab4415f6a54675103a53669ee57d2597bbf92c
-size 1165
+schema_version = 1
+detector_id = "invision-api-key"
+service = "invision"
+severity = "high"
+
+
+
+
+[[positive]]
+text = """IPS4 api_key=2963950e3ed2e3dc49d5740982bac6a9"""
+credential = "2963950e3ed2e3dc49d5740982bac6a9"
+reason = "Hand-tuned positive matching detector regex (R2-F adversarial batch)."
+
+[[positive]]
+text = """invision token=2963950e3ed2e3dc49d5740982bac6a9"""
+credential = "2963950e3ed2e3dc49d5740982bac6a9"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "IPS4_API_KEY=short"
+reason = "Truncated value below detector minimum length."
+
+[[negative]]
+text = "IPS4_API_KEY token abcdef"
+reason = "Keyword context without valid credential body."
+
+[[evasion]]
+text = "export IPS4 api_key=2963950e3ed2e3dc49d5740982bac6a9"
+credential = "2963950e3ed2e3dc49d5740982bac6a9"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted InVision API Key credential."

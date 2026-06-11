@@ -1,15 +1,12 @@
-# Rust source/test files (*.rs) must NEVER be LFS-tracked. In a non-LFS
-# checkout an LFS-tracked .rs is a pointer file, which Cargo tries to parse as
-# Rust, so `cargo check --all-targets` fails before any test runs.
-# `readme_claims.rs` (an active README-claims test suite) and `diagnose_*.rs`
-# (two SIMD/GPU divergence diagnostics) were previously LFS-tracked; they are
-# now stored as normal text. Guarded by
-# crates/scanner/tests/contract/rust_test_sources_are_not_lfs_pointers.rs.
+# This repository intentionally uses NO Git LFS.
 #
-# Follow-up (flagged, not yet fixed): the contract *.toml fixtures and the
-# proptest-regressions seed below are still LFS-tracked, so a non-LFS checkout
-# sees pointers and contracts_runner panics parsing them as TOML. Tracked as an
-# audit item; de-LFS scoped to .rs sources for now.
-crates/scanner/tests/contracts/*.toml filter=lfs diff=lfs merge=lfs -text
-crates/scanner/tests/contracts/companion/*.toml filter=lfs diff=lfs merge=lfs -text
-crates/scanner/tests/*.proptest-regressions filter=lfs diff=lfs merge=lfs -text
+# Test sources and fixtures are text and must be stored as normal git objects.
+# When they were LFS-tracked, a checkout without Git LFS materialized them as
+# pointer files: Cargo then tried to parse pointer text as Rust
+# (`cargo check --all-targets` failed), and `contracts_runner` panicked parsing
+# pointer text as TOML. The scanner tests fixtures (`*.toml`), the
+# proptest-regressions seeds, and the Rust test sources (`readme_claims.rs`,
+# `diagnose_*.rs`) have all been de-LFS'd and are stored as text.
+#
+# Guarded by crates/scanner/tests/contract/rust_test_sources_are_not_lfs_pointers.rs
+# — do not re-add `filter=lfs` rules for files under crates/scanner/tests/.

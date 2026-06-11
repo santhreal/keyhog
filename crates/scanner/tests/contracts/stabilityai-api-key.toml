@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:769da09d2275cd0d0a5542ac6302fc02dbccc07fc1f82dedcac2422ff8076427
-size 1369
+schema_version = 1
+detector_id = "stabilityai-api-key"
+service = "stabilityai"
+severity = "critical"
+
+[[positive]]
+text = "sk-OMnteYvYJjTJJnaDUVtiV1BAzmBQ2oOu18uWz8HSrx419wAP"
+credential = "sk-OMnteYvYJjTJJnaDUVtiV1BAzmBQ2oOu18uWz8HSrx419wAP"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "sk-OMnteYvYJjTJJnaDUVtiV1BAzmBQ2oOu18uWz8HSrx419wAP=\"sk-OMnteYvYJjTJJnaDUVtiV1BAzmBQ2oOu18uWz8HSrx419wAP\""
+credential = "sk-OMnteYvYJjTJJnaDUVtiV1BAzmBQ2oOu18uWz8HSrx419wAP"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "sk-OMEXAMPLEEXAMPLE19wAP"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "Authorization: Bearer token=\"sk-OMnteYvYJjTJJnaDUVtiV1BAzmBQ2oOu18uWz8HSrx419wAP\""
+credential = "sk-OMnteYvYJjTJJnaDUVtiV1BAzmBQ2oOu18uWz8HSrx419wAP"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:af3e95ee41fa18d00046126e737bd6077c6936d149fd338cc74fee240785ec7e
-size 769
+schema_version = 1
+detector_id = "contentful-delivery-token"
+service = "contentful"
+severity = "medium"
+
+[positive_with_companion]
+text = "CONTENTFUL_DELIVERY_TOKEN=8l10XWwTZKG4XDnAv6PnD_VrlexcWTgmILNWjVFN3jf\nf60s62yfqh97"
+expected_findings = ["contentful-delivery-token"]
+expected_companions = { space_id = "f60s62yfqh97" }
+reason = "Primary paired with companion(s) space_id."
+
+[positive_primary_only]
+text = "CONTENTFUL_DELIVERY_TOKEN=8l10XWwTZKG4XDnAv6PnD_VrlexcWTgmILNWjVFN3jf"
+expected_findings = ["contentful-delivery-token"]
+must_not_verify = true
+reason = "Primary found without companion space_id; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "f60s62yfqh97"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

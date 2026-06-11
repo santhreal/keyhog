@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:43aeae1d7be314f88c5d69f49230312c9da034b257ea86caf850634a95d81dc1
-size 1157
+schema_version = 1
+detector_id = "redis-labs-api-key"
+service = "redis"
+severity = "high"
+
+[positive_with_companion]
+text = "redislabsoT+-7Q}G/jt() 7O=09api_keyI '  '  \"   :   =      =      \"\"'\"\"  '\"\" \" = =:    ::\"   \" : :'    :\"d72cb40071cb7c59e9c4ef1f84be3b8a\nREDISLABSl'tsecret4sU   '    ::=     '   '\"= = =d7b5f05f8a36cfc2243c851999d4581204e32773079f0be0bb5534877dc241b4"
+expected_findings = ["redis-labs-api-key"]
+expected_companions = { secret_key = "d7b5f05f8a36cfc2243c851999d4581204e32773079f0be0bb5534877dc241b4" }
+reason = "Primary paired with companion(s) secret_key."
+
+[positive_primary_only]
+text = "redislabsoT+-7Q}G/jt() 7O=09api_keyI '  '  \"   :   =      =      \"\"'\"\"  '\"\" \" = =:    ::\"   \" : :'    :\"d72cb40071cb7c59e9c4ef1f84be3b8a"
+expected_findings = ["redis-labs-api-key"]
+must_not_verify = true
+reason = "Primary found without companion secret_key; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "REDISLABSl'tsecret4sU   '    ::=     '   '\"= = =d7b5f05f8a36cfc2243c851999d4581204e32773079f0be0bb5534877dc241b4"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

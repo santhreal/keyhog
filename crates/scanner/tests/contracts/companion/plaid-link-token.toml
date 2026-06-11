@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:b62e27ec0dbba4d2dc2150e79592371d8ca6dc9305128ff33f3ace25015d08c3
-size 764
+schema_version = 1
+detector_id = "plaid-link-token"
+service = "plaid"
+severity = "high"
+
+[positive_with_companion]
+text = "link-sandbox-d2f3c6dd-a0d0-d6cb-d7c5-06df60fcbd01\nPLAID=9f101ca9094fc19f1aee255d"
+expected_findings = ["plaid-link-token"]
+expected_companions = { plaid_client_id = "9f101ca9094fc19f1aee255d" }
+reason = "Primary paired with companion(s) plaid_client_id."
+
+[positive_primary_only]
+text = "link-sandbox-d2f3c6dd-a0d0-d6cb-d7c5-06df60fcbd01"
+expected_findings = ["plaid-link-token"]
+must_not_verify = true
+reason = "Primary found without companion plaid_client_id; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "PLAID=9f101ca9094fc19f1aee255d"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

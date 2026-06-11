@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:701e395e82fa247285fb512e0ab2e339055fe3395dac270a0725b3fb489ea1b7
-size 1239
+schema_version = 1
+detector_id = "klaviyo-api-key"
+service = "klaviyo"
+severity = "critical"
+
+[[positive]]
+text = "pk_a4XfZQFqVQ39GLNmbBMF2LMaiwZjZoEb"
+credential = "pk_a4XfZQFqVQ39GLNmbBMF2LMaiwZjZoEb"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "pk_a4XfZQFqVQ39GLNmbBMF2LMaiwZjZoEb=\"pk_a4XfZQFqVQ39GLNmbBMF2LMaiwZjZoEb\""
+credential = "pk_a4XfZQFqVQ39GLNmbBMF2LMaiwZjZoEb"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "pk_a4EXAMPLEEXAMPLEjZoEb"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "Authorization: Bearer pk_a4XfZQFqVQ39GLNmbBMF2LMaiwZjZoEb"
+credential = "pk_a4XfZQFqVQ39GLNmbBMF2LMaiwZjZoEb"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

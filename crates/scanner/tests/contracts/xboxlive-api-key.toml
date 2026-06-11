@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:3a0aa66737296dc6d9ac01294ff23b5257bf960d1c7da729506948c9ead9c1cb
-size 1100
+schema_version = 1
+detector_id = "xboxlive-api-key"
+service = "xboxlive"
+severity = "high"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "XboxLiveAPI:      \"  = \"     \":   :    M5Nbb3hRr6iZuT74aXW6c9c7PhQdj71UQ1PxIpCB="
+credential = "M5Nbb3hRr6iZuT74aXW6c9c7PhQdj71UQ1PxIpCB="
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "XboxLiveAPI:      \"  = \"     \":   :    M5Nbb3hRr6iZuT74aXW6c9c7PhQdj71UQ1PxIpCB="
+credential = "M5Nbb3hRr6iZuT74aXW6c9c7PhQdj71UQ1PxIpCB="
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "XboxLiveAPI:      \"  = \"     \":   :    YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "XboxLiveAPI:      \"  = \"     \":   :    M5NbbEXAMPLEEXAMPLEIpCB="
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

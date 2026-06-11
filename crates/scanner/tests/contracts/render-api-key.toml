@@ -1,3 +1,39 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:de9674e10df37dca614d3a3be086731e9a1eb1c0bee44accb2d8d9b63b223b35
-size 1030
+schema_version = 1
+detector_id = "render-api-key"
+service = "render"
+severity = "critical"
+
+[[positive]]
+text = "rnd_9X3kQp7VbT2hYRzNcMfWj4Dg"
+credential = "rnd_9X3kQp7VbT2hYRzNcMfWj4Dg"
+reason = "Bare Render API key, 24 alnum chars after rnd_."
+
+[[positive]]
+text = "RENDER_API_KEY=rnd_9X3kQp7VbT2hYRzNcMfWj4Dg"
+credential = "rnd_9X3kQp7VbT2hYRzNcMfWj4Dg"
+reason = "Standard env-var assignment."
+
+[[positive]]
+text = "Authorization: Bearer rnd_9X3kQp7VbT2hYRzNcMfWj4Dg"
+credential = "rnd_9X3kQp7VbT2hYRzNcMfWj4Dg"
+reason = "Bearer header — Render API auth shape."
+
+[[negative]]
+text = "rnd_short"
+reason = "Body shorter than 24 chars."
+
+[[evasion]]
+text = "{\"key\":\"rnd_9X3kQp7VbT2hYRzNcMfWj4Dg\"}"
+credential = "rnd_9X3kQp7VbT2hYRzNcMfWj4Dg"
+reason = "JSON payload."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + one planted Render key."

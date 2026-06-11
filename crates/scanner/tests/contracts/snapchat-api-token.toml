@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:0cbf06de73fe5188540c4932e75d88a939905bc459c624a4d3937771ebe272a5
-size 1458
+schema_version = 1
+detector_id = "snapchat-api-token"
+service = "snapchat"
+severity = "high"
+
+[[positive]]
+text = "SNAPCHAT_API_KEY=a573881b385d7370d17ec84d8f8264a6f9a8d7709bc9323e8be592ba1c474c1a"
+credential = "a573881b385d7370d17ec84d8f8264a6f9a8d7709bc9323e8be592ba1c474c1a"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "SNAPCHAT_API_KEY=\"a573881b385d7370d17ec84d8f8264a6f9a8d7709bc9323e8be592ba1c474c1a\""
+credential = "a573881b385d7370d17ec84d8f8264a6f9a8d7709bc9323e8be592ba1c474c1a"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "SNAPCHAT_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "SNAPCHAT_API_KEY=a5738EXAMPLEEXAMPLE74c1a"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export SNAPCHAT_API_KEY=a573881b385d7370d17ec84d8f8264a6f9a8d7709bc9323e8be592ba1c474c1a"
+credential = "a573881b385d7370d17ec84d8f8264a6f9a8d7709bc9323e8be592ba1c474c1a"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

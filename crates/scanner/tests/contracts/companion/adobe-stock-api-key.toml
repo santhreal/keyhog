@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:d74dfc1c7ed1a244a9b290544e0b8d20442ba38981badacb1f53e11a4bb5302c
-size 890
+schema_version = 1
+detector_id = "adobe-stock-api-key"
+service = "adobe-stock"
+severity = "high"
+
+[positive_with_companion]
+text = "ADOBESTOCKAPIKEY=ec3cfe8abdaf8ffe55873be8dfa349d8\nADOBESTOCKCLIENTSECRET=408e8f52525ae78e23bc21861bfabdd6"
+expected_findings = ["adobe-stock-api-key"]
+expected_companions = { adobe-stock-client-secret = "ADOBESTOCKCLIENTSECRET=408e8f52525ae78e23bc21861bfabdd6" }
+reason = "Primary paired with companion(s) adobe-stock-client-secret."
+
+[positive_primary_only]
+text = "ADOBESTOCKAPIKEY=ec3cfe8abdaf8ffe55873be8dfa349d8"
+expected_findings = ["adobe-stock-api-key"]
+must_not_verify = true
+reason = "Primary found without companion adobe-stock-client-secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "ADOBESTOCKCLIENTSECRET=408e8f52525ae78e23bc21861bfabdd6"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

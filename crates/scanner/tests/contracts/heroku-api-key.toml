@@ -1,3 +1,57 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:1f59af81521e94fd6762eaa9e1258ec76dd1ded31f30fc44223dc5192b4abea4
-size 2006
+# Per-detector contract: heroku-api-key
+#
+# Format: UUID v4-shaped string, captured via context-anchored regex
+# that requires `HEROKU_API_KEY=` or `heroku_api_key=` to precede.
+# Pure UUID with no context is intentionally not flagged — UUIDs
+# are too generic without a Heroku-specific anchor.
+
+schema_version = 1
+detector_id = "heroku-api-key"
+service = "heroku"
+severity = "critical"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "HEROKU_API_KEY=9a3b7c2e-4d1f-6a8b-0c5d-9e3f7a1b4c2d"
+credential = "9a3b7c2e-4d1f-6a8b-0c5d-9e3f7a1b4c2d"
+reason = "Standard env-var assignment with UUID body."
+
+[[positive]]
+text = "heroku_api_key: 9a3b7c2e-4d1f-6a8b-0c5d-9e3f7a1b4c2d"
+credential = "9a3b7c2e-4d1f-6a8b-0c5d-9e3f7a1b4c2d"
+reason = "YAML-style assignment, lowercase variant."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "9a3b7c2e-4d1f-6a8b-0c5d-9e3f7a1b4c2d"
+reason = "Bare UUID with no Heroku context — must NOT match (UUIDs are too generic without anchor)."
+
+[[negative]]
+text = "HEROKU_API_KEY=short"
+reason = "Body not a UUID — must not match."
+
+[[negative]]
+text = "see Heroku docs for HEROKU_API_KEY format"
+reason = "Prose mentioning the variable name without a value."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "{\"HEROKU_API_KEY\":\"9a3b7c2e-4d1f-6a8b-0c5d-9e3f7a1b4c2d\"}"
+credential = "9a3b7c2e-4d1f-6a8b-0c5d-9e3f7a1b4c2d"
+reason = "JSON payload with the env-var name as key — extraction must not consume the closing quote/brace."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted Heroku UUID."

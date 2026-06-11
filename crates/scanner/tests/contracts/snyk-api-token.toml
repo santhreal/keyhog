@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:54480cd308a113c8f7819fab84edf6365a8308a22ea13bfa5f11e3893ab30fba
-size 1006
+schema_version = 1
+detector_id = "snyk-api-token"
+service = "snyk"
+severity = "high"
+
+[[positive]]
+text = "SNYK_TOKEN=01234567-89ab-cdef-0123-456789abcdef"
+credential = "01234567-89ab-cdef-0123-456789abcdef"
+reason = "Standard SNYK_TOKEN env-var (UUID format)."
+
+[[positive]]
+text = "snyk_api_token: \"01234567-89ab-cdef-0123-456789abcdef\""
+credential = "01234567-89ab-cdef-0123-456789abcdef"
+reason = "YAML-style snyk_api_token assignment."
+
+[[negative]]
+text = "SNYK_TOKEN=not-a-uuid"
+reason = "Body is not a valid UUID shape."
+
+[[evasion]]
+text = "Authorization: snyk-api-token=01234567-89ab-cdef-0123-456789abcdef"
+credential = "01234567-89ab-cdef-0123-456789abcdef"
+reason = "snyk-api-token form (regex requires the snyk keyword before `token`)."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Snyk token."

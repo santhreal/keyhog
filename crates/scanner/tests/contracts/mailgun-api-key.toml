@@ -1,3 +1,59 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:06a248584ffdda08a97c109773cff5d4ea0cd70913cc940f4136e0accbbf04e4
-size 1889
+# Per-detector contract: mailgun-api-key
+#
+# Format: `key-` + exactly 32 lowercase hex chars.
+
+schema_version = 1
+detector_id = "mailgun-api-key"
+service = "mailgun"
+severity = "critical"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "key-9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d"
+credential = "key-9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d"
+reason = "Bare canonical Mailgun API key, exactly 32 hex chars after key-."
+
+[[positive]]
+text = "MAILGUN_API_KEY=key-9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d"
+credential = "key-9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d"
+reason = "Standard env-var assignment."
+
+[[positive]]
+text = "https://api:key-9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d@api.mailgun.net/v3/example.com/messages"
+credential = "key-9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d"
+reason = "Mailgun curl/SDK URL-embedded credential."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "key-short"
+reason = "Body shorter than 32 hex chars."
+
+[[negative]]
+text = "key-9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2"
+reason = "31 chars after key- (one short)."
+
+[[negative]]
+text = "the key- prefix marks Mailgun API keys"
+reason = "Prose mentioning the prefix without a body."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "{\"api_key\":\"key-9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d\"}"
+credential = "key-9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d"
+reason = "JSON payload — extraction must not consume closing quote/brace."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted Mailgun key."

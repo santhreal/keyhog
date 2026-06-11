@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:2b5ca273e339b3bdf0f4bb1fb90970ec098d37a792f847939e02f374c99a1386
-size 933
+schema_version = 1
+detector_id = "canvas-api-token"
+service = "canvas"
+severity = "high"
+
+[positive_with_companion]
+text = "instructuresecret=V56gRJSJfmUUIj6asR2AACh7AGe8rZeeJ_FKoQ5hHqwS-gs5CUWlTtNOsfBSK1V9\nhttp://Q2ziPW-zreYRxOGio7qkFUfdzXL2eE-2pou5U4XB-.instructure.com"
+expected_findings = ["canvas-api-token"]
+expected_companions = { canvas_domain = "http://Q2ziPW-zreYRxOGio7qkFUfdzXL2eE-2pou5U4XB-.instructure.com" }
+reason = "Primary paired with companion(s) canvas_domain."
+
+[positive_primary_only]
+text = "instructuresecret=V56gRJSJfmUUIj6asR2AACh7AGe8rZeeJ_FKoQ5hHqwS-gs5CUWlTtNOsfBSK1V9"
+expected_findings = ["canvas-api-token"]
+must_not_verify = true
+reason = "Primary found without companion canvas_domain; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "http://Q2ziPW-zreYRxOGio7qkFUfdzXL2eE-2pou5U4XB-.instructure.com"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

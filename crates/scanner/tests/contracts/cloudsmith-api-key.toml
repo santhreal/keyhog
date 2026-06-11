@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:e0e1bd58c47ac19814ffe0be8f4d1cd8530b46d89b32d8c539f9d25350c37f08
-size 974
+schema_version = 1
+detector_id = "cloudsmith-api-key"
+service = "cloudsmith"
+severity = "high"
+
+[[positive]]
+text = "cs_AbCdEfGhIjKlMnOpQrStUvWxYz01234567"
+credential = "cs_AbCdEfGhIjKlMnOpQrStUvWxYz01234567"
+reason = "Cloudsmith API key (cs_ + 35 alnum, within 32-48 body range)."
+
+[[positive]]
+text = "CLOUDSMITH_API_KEY=\"AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd\""
+credential = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd"
+reason = "Context-anchored CLOUDSMITH_API_KEY assignment."
+
+[[negative]]
+text = "cs_short"
+reason = "Body below 32 chars."
+
+[[evasion]]
+text = "Authorization: Token cs_AbCdEfGhIjKlMnOpQrStUvWxYz01234567"
+credential = "cs_AbCdEfGhIjKlMnOpQrStUvWxYz01234567"
+reason = "Token-auth header wrap."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Cloudsmith key."

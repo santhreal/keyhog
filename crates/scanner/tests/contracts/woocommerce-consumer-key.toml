@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:f1b7c57dc49222512fa349d6ab1bd9e707e4a6e49c8dc50c3192c8298032e874
-size 953
+schema_version = 1
+detector_id = "woocommerce-consumer-key"
+service = "woocommerce"
+severity = "high"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "ck_0a6efc600fa229b936e33cb2e62710fe11c2409e"
+credential = "ck_0a6efc600fa229b936e33cb2e62710fe11c2409e"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "ck_0a6efc600fa229b936e33cb2e62710fe11c2409e\""
+credential = "ck_0a6efc600fa229b936e33cb2e62710fe11c2409e"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "ck_0aEXAMPLEEXAMPLE2409e"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

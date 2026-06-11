@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:34817b8ac85611676195cd6af271222b74e191a28d2c04e659a2c5470f9dbcef
-size 1024
+schema_version = 1
+detector_id = "huggingface-user-token"
+service = "huggingface"
+severity = "high"
+
+[[positive]]
+text = "hf_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb"
+credential = "hf_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb"
+reason = "HuggingFace user access token (hf_ prefix + 34 alnum body)."
+
+[[positive]]
+text = "HUGGINGFACE_TOKEN=hf_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8VkBn3Lp"
+credential = "hf_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8VkBn3Lp"
+reason = "Env-var wrap around prefix detector."
+
+[[negative]]
+text = "hf_short"
+reason = "Body below 34 alnum chars after hf_ prefix."
+
+[[evasion]]
+text = "Authorization: Bearer hf_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb"
+credential = "hf_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb"
+reason = "Bearer-header wrap around prefix detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted HuggingFace user token."

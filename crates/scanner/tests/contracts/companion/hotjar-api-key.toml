@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:a927c6e360ef327740b2fba75827c968c4ff00332f69069ecf6d3bd7593a680f
-size 1263
+schema_version = 1
+detector_id = "hotjar-api-key"
+service = "hotjar"
+severity = "medium"
+
+[positive_with_companion]
+text = "hotjarclientid  \" == :  ='  ' :   =     '      \"    '=  '='=:     \" :   :    '  ZkeuAyho6uoAZu5dKHPnE0lFRzXiyFXi7lTfkH43\nHOTJAR_CLIENT-SECRET                  ' '    \" =:\":'\"   :   : \"'  \"\"  \"':  '     =  ' zmRDqytcsWLFo6ixT0TxVxpchRvSuHFhilrmmI5d1-h60dim"
+expected_findings = ["hotjar-api-key"]
+expected_companions = { hotjar-client-secret = "HOTJAR_CLIENT-SECRET                  ' '    \" =:\":'\"   :   : \"'  \"\"  \"':  '     =  ' zmRDqytcsWLFo6ixT0TxVxpchRvSuHFhilrmmI5d1-h60dim" }
+reason = "Primary paired with companion(s) hotjar-client-secret."
+
+[positive_primary_only]
+text = "hotjarclientid  \" == :  ='  ' :   =     '      \"    '=  '='=:     \" :   :    '  ZkeuAyho6uoAZu5dKHPnE0lFRzXiyFXi7lTfkH43"
+expected_findings = ["hotjar-api-key"]
+must_not_verify = true
+reason = "Primary found without companion hotjar-client-secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "HOTJAR_CLIENT-SECRET                  ' '    \" =:\":'\"   :   : \"'  \"\"  \"':  '     =  ' zmRDqytcsWLFo6ixT0TxVxpchRvSuHFhilrmmI5d1-h60dim"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

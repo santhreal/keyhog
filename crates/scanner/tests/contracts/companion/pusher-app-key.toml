@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:6778dc86d926b0a9154c656dc7aaf262070bb105196d437a45ec562ad5f08784
-size 738
+schema_version = 1
+detector_id = "pusher-app-key"
+service = "pusher"
+severity = "high"
+
+[positive_with_companion]
+text = "PUSHER=e0e2f4961fd65d2441c0\nPUSHERSECRET=85343cb63a9e241d1693b72f7976b5e3"
+expected_findings = ["pusher-app-key"]
+expected_companions = { app_secret = "85343cb63a9e241d1693b72f7976b5e3" }
+reason = "Primary paired with companion(s) app_secret."
+
+[positive_primary_only]
+text = "PUSHER=e0e2f4961fd65d2441c0"
+expected_findings = ["pusher-app-key"]
+must_not_verify = true
+reason = "Primary found without companion app_secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "PUSHERSECRET=85343cb63a9e241d1693b72f7976b5e3"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

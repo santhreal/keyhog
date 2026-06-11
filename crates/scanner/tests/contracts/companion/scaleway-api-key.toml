@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:ed4c19dc312fa9f92a1b96b2f2acaddacd75ee74c8d5a516cd46149b5b0fa932
-size 1112
+schema_version = 1
+detector_id = "scaleway-api-key"
+service = "scaleway"
+severity = "critical"
+
+[positive_with_companion]
+text = "SCW_SECRET_KEY \"' ' ==       :  \" : =   ===  :   :=\" : \":  '= =:   \"= '   ==''   d7b6c18f-d2c6-ab5f-642b-8e010712585f\nSCALEWAY_ACCESS_KEY='           '=  \"   '   ::: =  \"   ==\" =    =\"\" ':  \"   \"  \"=\"   \"   SCW824W9QRPZR9MPW0P1CKH"
+expected_findings = ["scaleway-api-key"]
+expected_companions = { scaleway_access_key = "SCW824W9QRPZR9MPW0P1CKH" }
+reason = "Primary paired with companion(s) scaleway_access_key."
+
+[positive_primary_only]
+text = "SCW_SECRET_KEY \"' ' ==       :  \" : =   ===  :   :=\" : \":  '= =:   \"= '   ==''   d7b6c18f-d2c6-ab5f-642b-8e010712585f"
+expected_findings = ["scaleway-api-key"]
+must_not_verify = true
+reason = "Primary found without companion scaleway_access_key; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "SCALEWAY_ACCESS_KEY='           '=  \"   '   ::: =  \"   ==\" =    =\"\" ':  \"   \"  \"=\"   \"   SCW824W9QRPZR9MPW0P1CKH"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

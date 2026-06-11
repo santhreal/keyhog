@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:37467c6513222af88b770119db57f5bbcc4ee3da62e1c49c0b6706208c9f5a66
-size 1220
+schema_version = 1
+detector_id = "hibp-api-key"
+service = "hibp"
+severity = "high"
+
+[[positive]]
+text = "hibp-api-key=1d8744f744361c8c3e27549b337d5863"
+credential = "1d8744f744361c8c3e27549b337d5863"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "hibp-api-key=\"1d8744f744361c8c3e27549b337d5863\""
+credential = "1d8744f744361c8c3e27549b337d5863"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "hibp-api-key=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "hibp-api-key=1d874EXAMPLEEXAMPLEd5863"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "# hibp-api-key=1d8744f744361c8c3e27549b337d5863"
+credential = "1d8744f744361c8c3e27549b337d5863"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

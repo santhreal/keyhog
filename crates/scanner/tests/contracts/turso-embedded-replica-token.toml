@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:f3d133c8ac48fe4d5d3f84aa5c5d01687136d0a107296c4d9251882acc163600
-size 927
+schema_version = 1
+detector_id = "turso-embedded-replica-token"
+service = "turso"
+severity = "high"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "libsql://rYtzWWtuGM68sLiqBQ0.turso.io"
+credential = "libsql://rYtzWWtuGM68sLiqBQ0.turso.io"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "libsql://rYtzWWtuGM68sLiqBQ0.turso.io\""
+credential = "libsql://rYtzWWtuGM68sLiqBQ0.turso.io"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "libsqEXAMPLEEXAMPLEso.io"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

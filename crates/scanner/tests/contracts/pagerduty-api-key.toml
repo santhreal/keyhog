@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:afaa2bf80a9654dcf10b7163258504c3e4196c5edf9f332fceb4b7716eb62f13
-size 1010
+schema_version = 1
+detector_id = "pagerduty-api-key"
+service = "pagerduty"
+severity = "critical"
+
+[[positive]]
+text = "PAGERDUTY_API_KEY=k7p4qx9rm2sn5tb8vw3yz0a6b8c4d1f3"
+credential = "k7p4qx9rm2sn5tb8vw3yz0a6b8c4d1f3"
+reason = "PAGERDUTY_API_KEY env-var (32 lowercase alnum)."
+
+[[positive]]
+text = "pagerduty_api_key: \"v9bn3lp7qm2rs5tw8vk9bn3lp7qm2rs5\""
+credential = "v9bn3lp7qm2rs5tw8vk9bn3lp7qm2rs5"
+reason = "YAML-style lowercase pagerduty_api_key assignment."
+
+[[negative]]
+text = "PAGERDUTY_API_KEY=short"
+reason = "Body below 32 alnum chars."
+
+[[evasion]]
+text = "pagerduty.api.key=k7p4qx9rm2sn5tb8vw3yz0a6b8c4d1f3"
+credential = "k7p4qx9rm2sn5tb8vw3yz0a6b8c4d1f3"
+reason = "Dot-style pagerduty.api.key — regex's `[._]?` covers the separator."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted PagerDuty key."

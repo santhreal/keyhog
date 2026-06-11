@@ -1,3 +1,61 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:9c4f7cfe5b1eed85e9cffb3222315afcc8558c3b89402b364af1c80d3c2c8272
-size 2718
+# Per-detector contract: terraform-cloud-api-token
+#
+# Format: <14 alnum>.atlasv1.<67+ alnum>. The `.atlasv1.` infix is
+# the load-bearing fingerprint — Terraform Cloud's official issuance
+# format always carries it.
+
+schema_version = 1
+detector_id = "terraform-cloud-api-token"
+service = "terraform"
+severity = "critical"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "9X3kQp7VbT2hYR.atlasv1.NcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy"
+credential = "9X3kQp7VbT2hYR.atlasv1.NcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy"
+reason = "Canonical Terraform Cloud token shape: 14-char id + .atlasv1. + 67-char body."
+
+[[positive]]
+text = "TF_TOKEN_app_terraform_io=9X3kQp7VbT2hYR.atlasv1.NcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy"
+credential = "9X3kQp7VbT2hYR.atlasv1.NcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy"
+reason = "Standard `TF_TOKEN_app_terraform_io` env-var shape (Terraform's documented variable name)."
+
+[[positive]]
+text = "credentials \"app.terraform.io\" { token = \"9X3kQp7VbT2hYR.atlasv1.NcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy\" }"
+credential = "9X3kQp7VbT2hYR.atlasv1.NcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy"
+reason = "Terraform CLI credentials file block — the canonical HCL leak channel."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "abc.atlasv1.short"
+reason = "Both segments below the 14/67-char minimums."
+
+[[negative]]
+text = "atlasv1 is the infix used in Terraform Cloud tokens"
+reason = "Prose mentioning the infix without a real token."
+
+[[negative]]
+text = "9X3kQp7VbT2hYR.atlasv2.NcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy"
+reason = "atlasv2 is not the documented infix — must not match."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "{\"token\":\"9X3kQp7VbT2hYR.atlasv1.NcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy\"}"
+credential = "9X3kQp7VbT2hYR.atlasv1.NcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0aBcDeFgHiJkLmNoPqRsTuVwXy"
+reason = "JSON payload — extraction must not consume the closing quote/brace."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted Terraform Cloud token."

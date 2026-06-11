@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:05ed5db5af7cb3796d1f4dbffcbccff13617cf5cb1088d94daa37d18fb0b0312
-size 1642
+schema_version = 1
+detector_id = "line-api-token"
+service = "line"
+severity = "high"
+
+[[positive]]
+text = "LINE CHANNEL_ACCESS_TOKEN=\"/ZM9TBrKrmGsNmjQ8mT3OA94HhblZa+QFPiyCEs5lkO/nMLpQAK4lXOELxyxeH8ilqtekYJEB1J5+TkPo/QyFcIoCVvQ2hmsCfjd==\""
+credential = "/ZM9TBrKrmGsNmjQ8mT3OA94HhblZa+QFPiyCEs5lkO/nMLpQAK4lXOELxyxeH8ilqtekYJEB1J5+TkPo/QyFcIoCVvQ2hmsCfjd=="
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "LINE channel_access_token /ZM9TBrKrmGsNmjQ8mT3OA94HhblZa+QFPiyCEs5lkO/nMLpQAK4lXOELxyxeH8ilqtekYJEB1J5+TkPo/QyFcIoCVvQ2hmsCfjd=="
+credential = "/ZM9TBrKrmGsNmjQ8mT3OA94HhblZa+QFPiyCEs5lkO/nMLpQAK4lXOELxyxeH8ilqtekYJEB1J5+TkPo/QyFcIoCVvQ2hmsCfjd=="
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "CHANNEL_ACCESS_TOKEN=short"
+reason = "Truncated value below detector minimum length."
+
+[[negative]]
+text = "CHANNEL_ACCESS_TOKEN token abcdef"
+reason = "Keyword context without valid credential body."
+
+[[evasion]]
+text = "LINE CHANNEL_ACCESS_TOKEN=\"/ZM9TBrKrmGsNmjQ8mT3OA94HhblZa+QFPiyCEs5lkO/nMLpQAK4lXOELxyxeH8ilqtekYJEB1J5+TkPo/QyFcIoCVvQ2hmsCfjd==\""
+credential = "/ZM9TBrKrmGsNmjQ8mT3OA94HhblZa+QFPiyCEs5lkO/nMLpQAK4lXOELxyxeH8ilqtekYJEB1J5+TkPo/QyFcIoCVvQ2hmsCfjd=="
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted LINE Messaging API Token credential."

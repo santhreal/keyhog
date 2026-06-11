@@ -1,3 +1,65 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:69eae5a03c1342a951b8abbacb90aab6ce513d87ae16ec148440c36913742300
-size 2354
+# Per-detector contract: github-classic-pat
+# See aws-access-key.toml for section semantics + runner contract.
+
+schema_version = 1
+detector_id = "github-classic-pat"
+service = "github"
+severity = "critical"
+# README claim (top-level scalar — see every_contract_readme_claim_present):
+readme_claim = "github-classic-pat"
+
+# ---- POSITIVES ------------------------------------------------------
+
+[[positive]]
+text = "GH_TOKEN=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"
+credential = "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"
+reason = "env-var-style assignment, common in CI configs."
+
+[[positive]]
+text = "token: \"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\""
+credential = "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"
+reason = "YAML quoted assignment — valid-CRC32 classic PAT (entropy body + matching 6-char base62 checksum) so github-classic-pat fires, not just a generic high-entropy fallback."
+
+[[positive]]
+text = "Authorization: token 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"
+credential = "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"
+reason = "HTTP Authorization header — the leak shape every CVE scanner cares about most."
+
+# ---- NEGATIVES ------------------------------------------------------
+
+[[negative]]
+text = "ghp_ tag in a sentence"
+reason = "ghp_ prefix but no 36-char body."
+
+[[negative]]
+text = "ghp_short"
+reason = "Only 5 chars after ghp_; should not match."
+
+[[negative]]
+text = "ghp_THIS_HAS_UNDERSCORES_IN_IT_NOT_A_TOKEN0"
+reason = "Underscores break the [A-Za-z0-9]{36} class."
+
+# ---- EVASIONS -------------------------------------------------------
+
+[[evasion]]
+text = "GH_TOKEN=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"
+credential = "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"
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[[evasion]]
+text = "<token>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</token>"
+credential = "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"
+reason = "Inside an XML element body."
+
+# ---- PERF / SCALE ---------------------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Same budget rationale as aws-access-key: ~6 ms steady-state on 5090 with full 894-detector pipeline."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB corpus with one planted GitHub PAT. Same budget as aws-access-key."

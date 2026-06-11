@@ -1,3 +1,65 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:405c1dc23765f4709e575cbb61001e28f1626493355203ac92b117d225e77757
-size 2442
+# Per-detector contract: google-api-key
+#
+# Format: `AIza` + exactly 35 chars from [0-9A-Za-z_-].  All Google
+# Cloud / Maps / Translate / YouTube / Firebase keys share this shape.
+
+schema_version = 1
+detector_id = "google-api-key"
+service = "google"
+severity = "critical"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "AIza9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnV"
+credential = "AIza9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnV"
+reason = "Bare canonical Google API key, exactly 39 chars total (`AIza` + 35 alnum chars per Google's documented format)."
+
+[[positive]]
+text = "GOOGLE_API_KEY=AIza9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnV"
+credential = "AIza9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnV"
+reason = "Standard env-var assignment."
+
+[[positive]]
+text = "https://maps.googleapis.com/maps/api/geocode/json?address=NYC&key=AIza9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnV"
+credential = "AIza9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnV"
+reason = "URL query-string embed — common JS/web client leak shape."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "AIza"
+reason = "Just the prefix, no key body."
+
+[[negative]]
+text = "AIza9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBn"
+reason = "34 chars after AIza (one short of the required 35)."
+
+[[negative]]
+text = "the AIza prefix is documented at developers.google.com"
+reason = "Prose mentioning the prefix without a key body."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "// AIza9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnV"
+credential = "AIza9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnV"
+reason = "Inside a C++/JS single-line comment."
+
+[[evasion]]
+text = "<meta name=\"google-api-key\" content=\"AIza9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnV\">"
+credential = "AIza9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnV"
+reason = "HTML meta tag — extraction must not consume the closing quote/bracket."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Single 4 KiB fixture; loaded CI runners spike to ~20 ms on the full 894-detector pipeline. Budget allows real 2x regressions to fail while absorbing jitter."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted Google API key."

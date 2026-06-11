@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:f5763cdede8fd7e4134c8216329a51859ef22898b3b73474673bb35f6bc20442
-size 829
+schema_version = 1
+detector_id = "usps-webtools-api-key"
+service = "usps"
+severity = "medium"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "USPS_USER=prEZZ_"
+credential = "prEZZ_"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "USPS_USER=\"prEZZ_\""
+credential = "prEZZ_"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "USPS_USER=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "USPS_USER=prEZZ__EXAMPLE"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

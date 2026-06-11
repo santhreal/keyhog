@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:38ae2c0d513dece9f286c1e8847e333d3b356db1c25236d446f1799cbd2258c2
-size 1000
+schema_version = 1
+detector_id = "confluent-cloud-api-key"
+service = "confluent-cloud"
+severity = "critical"
+
+[positive_with_companion]
+text = "cfltrWJlWuTGH0znHrVoZ0h8hVFvZQeJNjc8iPapWXMz5Uy7Raq0X5g7p4aUV4l2\nCONFLUENT_CLOUDPASSWORD=jtosNTbCuIeU5HL2tvxwiFtgM8YUvP15dezbUmDrkWRf8IU5jHGJ1GieDn2Lfkae"
+expected_findings = ["confluent-cloud-api-key"]
+expected_companions = { confluent_api_secret = "jtosNTbCuIeU5HL2tvxwiFtgM8YUvP15dezbUmDrkWRf8IU5jHGJ1GieDn2Lfkae" }
+reason = "Primary paired with companion(s) confluent_api_secret."
+
+[positive_primary_only]
+text = "cfltrWJlWuTGH0znHrVoZ0h8hVFvZQeJNjc8iPapWXMz5Uy7Raq0X5g7p4aUV4l2"
+expected_findings = ["confluent-cloud-api-key"]
+must_not_verify = true
+reason = "Primary found without companion confluent_api_secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "CONFLUENT_CLOUDPASSWORD=jtosNTbCuIeU5HL2tvxwiFtgM8YUvP15dezbUmDrkWRf8IU5jHGJ1GieDn2Lfkae"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

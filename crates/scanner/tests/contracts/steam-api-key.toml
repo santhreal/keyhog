@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:6f51cbf9ea735c080e59f358c3fd416229b695486464dfe74fd578ab2fdfc19a
-size 1243
+schema_version = 1
+detector_id = "steam-api-key"
+service = "steam"
+severity = "high"
+
+[[positive]]
+text = "STEAM_API_KEY=15eb9b9185146a3ab266d4e7ba0c5aba"
+credential = "15eb9b9185146a3ab266d4e7ba0c5aba"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "STEAM_API_KEY=\"15eb9b9185146a3ab266d4e7ba0c5aba\""
+credential = "15eb9b9185146a3ab266d4e7ba0c5aba"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "STEAM_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "STEAM_API_KEY=15eb9EXAMPLEEXAMPLEc5aba"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export STEAM_API_KEY=15eb9b9185146a3ab266d4e7ba0c5aba"
+credential = "15eb9b9185146a3ab266d4e7ba0c5aba"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

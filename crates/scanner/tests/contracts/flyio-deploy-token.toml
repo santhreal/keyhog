@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:67284c641fa6e4fb8aa58deab7951b4162ef2db66192068a163b7b530fb70a2d
-size 1113
+schema_version = 1
+detector_id = "flyio-deploy-token"
+service = "flyio"
+severity = "critical"
+
+[[positive]]
+text = "fo1_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Q"
+credential = "fo1_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Q"
+reason = "Bare deploy token with fo1_ prefix and 43 alnum/underscore/hyphen body."
+
+[[positive]]
+text = "FLY_DEPLOY_TOKEN=fo1_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7c4d"
+credential = "fo1_7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d3a5e9f1b7c4d"
+reason = "Env-var assignment with uppercase context anchor."
+
+[[negative]]
+text = "fo1_short"
+reason = "Body too short (5 chars) for 40+ alnum/underscore/hyphen requirement."
+
+[[evasion]]
+text = 'export FLY_DEPLOY_TOKEN="fo1_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Q"'
+credential = "fo1_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Q"
+reason = "Quoted shell export with keyword prefix."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted flyio credential."

@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:2f64f489c608bcec5bbc4897398b407a7e69eb5816eb2c5f07a6db189c1dc4ee
-size 994
+schema_version = 1
+detector_id = "footprint-api-key"
+service = "footprint"
+severity = "medium"
+
+[[positive]]
+text = "footprint_api_key=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S5T"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S5T"
+reason = "Standard env-var assignment with 32-char alnum body."
+
+[[positive]]
+text = "FOOTPRINT=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Bare keyword prefix with equals separator."
+
+[[negative]]
+text = "footprint=short"
+reason = "Body too short (5 chars) for exact 32 alnum requirement."
+
+[[evasion]]
+text = '"footprint_apikey":"Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S5T"'
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2S5T"
+reason = "JSON object form with colon and quotes."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted footprint credential."

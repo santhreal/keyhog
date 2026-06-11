@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:47cd6f3d2aca88a42b4583e63121729275442a378884c2e3d702c5abed674e07
-size 1123
+schema_version = 1
+detector_id = "vonage-video-api"
+service = "vonage"
+severity = "critical"
+
+[positive_with_companion]
+text = "vonage_api_key  '\"'    :                                                                                               00920fb6\nvonage_api_secret  ' \"   \"      \"                  \"    '  \" =                                              0957adf99d85b5f6"
+expected_findings = ["vonage-video-api"]
+expected_companions = { vonage_api_secret = "0957adf99d85b5f6" }
+reason = "Primary paired with companion(s) vonage_api_secret."
+
+[positive_primary_only]
+text = "vonage_api_key  '\"'    :                                                                                               00920fb6"
+expected_findings = ["vonage-video-api"]
+must_not_verify = true
+reason = "Primary found without companion vonage_api_secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "vonage_api_secret  ' \"   \"      \"                  \"    '  \" =                                              0957adf99d85b5f6"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:bb7dfddff3afeab497b29fea0ad434d076d1250ae18a700f8a32ac2d3c1f55bf
-size 1353
+schema_version = 1
+detector_id = "podio-access-token"
+service = "podio"
+severity = "high"
+
+[[positive]]
+text = "PODIO_ACCESS_TOKEN=FzJHRZOsYwWCxU45KXdMIyV5CZSTY1DU5bnigGf4UskM4BeF"
+credential = "FzJHRZOsYwWCxU45KXdMIyV5CZSTY1DU5bnigGf4UskM4BeF"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "PODIO_ACCESS_TOKEN=\"FzJHRZOsYwWCxU45KXdMIyV5CZSTY1DU5bnigGf4UskM4BeF\""
+credential = "FzJHRZOsYwWCxU45KXdMIyV5CZSTY1DU5bnigGf4UskM4BeF"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "PODIO_ACCESS_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "PODIO_ACCESS_TOKEN=FzJHREXAMPLEEXAMPLEM4BeF"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "# PODIO_ACCESS_TOKEN=FzJHRZOsYwWCxU45KXdMIyV5CZSTY1DU5bnigGf4UskM4BeF"
+credential = "FzJHRZOsYwWCxU45KXdMIyV5CZSTY1DU5bnigGf4UskM4BeF"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

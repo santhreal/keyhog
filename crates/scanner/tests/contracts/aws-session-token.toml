@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:0e0a6fc249fca8291b6a9f53fb984fba670be402e4125caaab65b9207106de92
-size 1315
+schema_version = 1
+detector_id = "aws-session-token"
+service = "aws"
+severity = "high"
+
+[[positive]]
+text = "AWS_SESSION_TOKEN=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw"
+reason = "AWS session token env-var (80 base64-like alnum)."
+
+[[positive]]
+text = "aws_session_token=FQoGZXIvYXdzEJr//////////wEaDHRlc3QtZGl2ZXJzZSIqA4b9Kx2mP7qRs8Tn5Uv1Wx3Yz6Za0Bc9De2Fg4Hi7Jk8Lm9No0Pq1Rs2Tu3Vw4Xy5Z"
+credential = "FQoGZXIvYXdzEJr//////////wEaDHRlc3QtZGl2ZXJzZSIqA4b9Kx2mP7qRs8Tn5Uv1Wx3Yz6Za0Bc9De2Fg4Hi7Jk8Lm9No0Pq1Rs2Tu3Vw4Xy5Z"
+reason = "Lowercase aws_session_token env-var."
+
+[[negative]]
+text = "AWS_SESSION_TOKEN=short"
+reason = "Body below 80 base64 chars."
+
+[[evasion]]
+text = "X-Amz-Security-Token=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw"
+reason = "X-Amz-Security-Token header form (third pattern)."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted AWS session token."

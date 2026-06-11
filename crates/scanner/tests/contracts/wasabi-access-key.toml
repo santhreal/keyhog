@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:50e8c41ed4d0da5f5e0825133d2c2fc503e430d2101e992d48790ca3bc8dbef3
-size 891
+schema_version = 1
+detector_id = "wasabi-access-key"
+service = "wasabi"
+severity = "high"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "WASABIKEY=D1R7E3FCOQ5SBACMK1F2"
+credential = "D1R7E3FCOQ5SBACMK1F2"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "WASABIKEY=\"D1R7E3FCOQ5SBACMK1F2\""
+credential = "D1R7E3FCOQ5SBACMK1F2"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "WASABIKEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "WASABIKEY=D1R7EEXAMPLEEXAMPLEMK1F2"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

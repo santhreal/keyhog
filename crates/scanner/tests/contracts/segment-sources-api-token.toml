@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:bf318126c123c1075b7674059d3426ce5ad6f72d49c545d58fe0911d4991d462
-size 1341
+schema_version = 1
+detector_id = "segment-sources-api-token"
+service = "segment"
+severity = "high"
+
+[[positive]]
+text = "SEGMENT_API_TOKEN=72qoIjIstcOUXiPOw9CuHNOHFEZLODhcJhlrNhR4Ff6d"
+credential = "72qoIjIstcOUXiPOw9CuHNOHFEZLODhcJhlrNhR4Ff6d"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "SEGMENT_API_TOKEN=\"72qoIjIstcOUXiPOw9CuHNOHFEZLODhcJhlrNhR4Ff6d\""
+credential = "72qoIjIstcOUXiPOw9CuHNOHFEZLODhcJhlrNhR4Ff6d"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "SEGMENT_API_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "SEGMENT_API_TOKEN=72qoIEXAMPLEEXAMPLE4Ff6d"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "{\"segment_api_token\":\"72qoIjIstcOUXiPOw9CuHNOHFEZLODhcJhlrNhR4Ff6d\"}"
+credential = "72qoIjIstcOUXiPOw9CuHNOHFEZLODhcJhlrNhR4Ff6d"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:5e0ca3c4d38d8ea7c6e101abad7a9f4e3804a86b2d5c9e66cd7e65f6037c42db
-size 956
+schema_version = 1
+detector_id = "bamboohr-api-key"
+service = "bamboohr"
+severity = "critical"
+
+[[positive]]
+text = "BAMBOOHR_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f"
+reason = "BambooHR API key env-var (40 hex)."
+
+[[positive]]
+text = "bamboo_api_key=4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f7b2d9c5a"
+credential = "4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f7b2d9c5a"
+reason = "bamboo_api_key alias."
+
+[[negative]]
+text = "BAMBOOHR_API_KEY=short"
+reason = "Body below 40 hex chars."
+
+[[evasion]]
+text = "BAMBOO_API_KEY: '7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f'"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f"
+reason = "Single-quoted YAML form."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted BambooHR key."

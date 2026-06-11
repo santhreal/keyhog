@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:8b799ed2d3082fbe41fe7836bbb4067676cc8fcbb9fc81c07713d35c01ad6b00
-size 1279
+schema_version = 1
+detector_id = "saucelabs-access-key"
+service = "saucelabs"
+severity = "critical"
+
+[[positive]]
+text = "SAUCE_ACCESS_KEY=020932ee-9a19-8c18-b71b-8fb4c1643844"
+credential = "020932ee-9a19-8c18-b71b-8fb4c1643844"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "SAUCE_ACCESS_KEY=\"020932ee-9a19-8c18-b71b-8fb4c1643844\""
+credential = "020932ee-9a19-8c18-b71b-8fb4c1643844"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "SAUCE_ACCESS_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "SAUCE_ACCESS_KEY=02093EXAMPLEEXAMPLE43844"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "{\"secret\":\"020932ee-9a19-8c18-b71b-8fb4c1643844\"}"
+credential = "020932ee-9a19-8c18-b71b-8fb4c1643844"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

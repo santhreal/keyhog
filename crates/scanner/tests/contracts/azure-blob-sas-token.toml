@@ -1,3 +1,50 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:8977f309d2d4bfebdfe482e1db214ccb2055b6ada1294d1f6a2a59db48b5f576
-size 2446
+# Per-detector contract: azure-blob-sas-token
+#
+# Format: query-string fragment starting with `?sv=YYYY-MM-DD&...sig=<20+ char>`.
+
+schema_version = 1
+detector_id = "azure-blob-sas-token"
+service = "azure"
+severity = "critical"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "?sv=2023-08-03&ss=b&srt=co&sp=rwdlacx&se=2030-12-31T00:00:00Z&st=2023-01-01T00:00:00Z&spr=https&sig=AbCdEfGhIjKlMnOpQrStUvWxYz1234567890%2F%2BabCD%3D"
+credential = "?sv=2023-08-03&ss=b&srt=co&sp=rwdlacx&se=2030-12-31T00:00:00Z&st=2023-01-01T00:00:00Z&spr=https&sig=AbCdEfGhIjKlMnOpQrStUvWxYz1234567890%2F%2BabCD%3D"
+reason = "Canonical Azure Blob SAS token query string with sv (storage version), permissions, and sig (signature)."
+
+[[positive]]
+text = "https://myaccount.blob.core.windows.net/container/blob?sv=2023-08-03&ss=b&srt=co&sp=rwdlacx&se=2030-12-31T00:00:00Z&st=2023-01-01T00:00:00Z&spr=https&sig=AbCdEfGhIjKlMnOpQrStUvWxYz1234567890%2F%2BabCD%3D"
+credential = "?sv=2023-08-03&ss=b&srt=co&sp=rwdlacx&se=2030-12-31T00:00:00Z&st=2023-01-01T00:00:00Z&spr=https&sig=AbCdEfGhIjKlMnOpQrStUvWxYz1234567890%2F%2BabCD%3D"
+reason = "Full Azure Blob URL with SAS token — the canonical leak channel."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "?sv=2023-08-03"
+reason = "Just the storage version, no signature — must not match."
+
+[[negative]]
+text = "?sv=abc&sig=short"
+reason = "Invalid storage version format (not YYYY-MM-DD) and short signature."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "AZURE_STORAGE_SAS_TOKEN=?sv=2023-08-03&ss=b&srt=co&sp=rwdlacx&se=2030-12-31T00:00:00Z&st=2023-01-01T00:00:00Z&spr=https&sig=AbCdEfGhIjKlMnOpQrStUvWxYz1234567890%2F%2BabCD%3D"
+credential = "?sv=2023-08-03&ss=b&srt=co&sp=rwdlacx&se=2030-12-31T00:00:00Z&st=2023-01-01T00:00:00Z&spr=https&sig=AbCdEfGhIjKlMnOpQrStUvWxYz1234567890%2F%2BabCD%3D"
+reason = "Env-var assignment shape with Azure's documented variable name."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted Azure SAS token."

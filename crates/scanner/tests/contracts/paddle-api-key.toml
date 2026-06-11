@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:bcd2c84ac61a441cd52ccb246ae4bbfca70418daff44d4bfdf1340309e454d51
-size 1080
+schema_version = 1
+detector_id = "paddle-api-key"
+service = "paddle"
+severity = "critical"
+
+[[positive]]
+text = "pdl_live_apikey_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+credential = "pdl_live_apikey_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+reason = "Paddle live API key (pdl_live_apikey_ + 32-char body)."
+
+[[positive]]
+text = "PADDLE_API_KEY=pdl_sdbx_apikey_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5"
+credential = "pdl_sdbx_apikey_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5"
+reason = "Paddle sandbox API key in env-var assignment."
+
+[[negative]]
+text = "pdl_live_apikey_short"
+reason = "Body below 30 chars after `pdl_live_apikey_` prefix."
+
+[[evasion]]
+text = "Authorization: Bearer pdl_live_apikey_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+credential = "pdl_live_apikey_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+reason = "Bearer-header wrap around prefix detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Paddle API key."

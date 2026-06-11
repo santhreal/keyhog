@@ -1,3 +1,33 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:06e49d8ee0e42bbf802b1d3219428db704f5592a4e1b566016996caaf95eb868
-size 994
+schema_version = 1
+detector_id = "zendesk-api-token"
+service = "zendesk"
+severity = "high"
+
+[[positive]]
+text = "agent@subdomain.zendesk.com/token:5wSb6t3sE96nM6VaHoI2GWl6bp7zB8loar6sPi5w"
+credential = "5wSb6t3sE96nM6VaHoI2GWl6bp7zB8loar6sPi5w"
+reason = "Canonical email/token:40-char format."
+
+[[positive]]
+text = "ZENDESK_API_TOKEN=5wSb6t3sE96nM6VaHoI2GWl6bp7zB8loar6sPi5w"
+credential = "5wSb6t3sE96nM6VaHoI2GWl6bp7zB8loar6sPi5w"
+reason = "Env-var anchored 40-char token."
+
+[[negative]]
+text = "ZENDESK_API_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder body — suppression gate strips it."
+
+[[negative]]
+text = "agent@subdomain.zendesk.com/token:tooshort"
+reason = "Token body fails the {40} length constraint."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Zendesk API token."

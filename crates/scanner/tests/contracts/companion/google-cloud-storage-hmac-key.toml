@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:5f0edcf9bc83779b2eb6c7e0a8d91358f4afc3c0affef30c46d7221d0fed8b50
-size 855
+schema_version = 1
+detector_id = "google-cloud-storage-hmac-key"
+service = "gcp"
+severity = "critical"
+
+[positive_with_companion]
+text = "GOOG4VDVYEK0F4Z01LDRSRBV3FT22BMI1TZH449337VA\nSRGRoyB56LnPB69OvdbM1TDykXG0iPlF5g65o/dG3hMWsOMxOHkt3n7h"
+expected_findings = ["google-cloud-storage-hmac-key"]
+expected_companions = { hmac_secret = "GOOG4VDVYEK0F4Z01LDRSRBV3FT22BMI1TZH449337VA" }
+reason = "Primary paired with companion(s) hmac_secret."
+
+[positive_primary_only]
+text = "GOOG4VDVYEK0F4Z01LDRSRBV3FT22BMI1TZH449337VA"
+expected_findings = ["google-cloud-storage-hmac-key"]
+must_not_verify = true
+reason = "Primary found without companion hmac_secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "SRGRoyB56LnPB69OvdbM1TDykXG0iPlF5g65o/dG3hMWsOMxOHkt3n7h"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:09c9de92047cb2d380363b262eb31f372c88fe933c3da8e87bd7059fd0e38968
-size 1010
+schema_version = 1
+detector_id = "checkout-com-api-key"
+service = "checkout-com"
+severity = "critical"
+
+[[positive]]
+text = "sk_sbox_kp4qx7rm2sn5tb8vw3yzkp4qx"
+credential = "sk_sbox_kp4qx7rm2sn5tb8vw3yzkp4qx"
+reason = "Checkout.com sandbox secret key with 24-char lowercase alnum body."
+
+[[positive]]
+text = "cko = \"sk_kp4qx7rm2sn5tb8vw3yzkp4qx7rm2\""
+credential = "sk_kp4qx7rm2sn5tb8vw3yzkp4qx7rm2"
+reason = "Production secret key with checkout context anchor and quotes."
+
+[[negative]]
+text = "sk_sbox_short"
+reason = "Body below 24 alnum chars."
+
+[[evasion]]
+text = "Bearer sk_sbox_kp4qx7rm2sn5tb8vw3yzkp4qx"
+credential = "sk_sbox_kp4qx7rm2sn5tb8vw3yzkp4qx"
+reason = "Bearer prefix before sandbox key — no-context pattern still matches."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted checkout-com credential."

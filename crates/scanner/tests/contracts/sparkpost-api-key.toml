@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:e1e259115bccbe3278d80993ef4f64829f20fb6f6b057a5dc2aa6fb634ce5c0a
-size 1275
+schema_version = 1
+detector_id = "sparkpost-api-key"
+service = "sparkpost"
+severity = "critical"
+
+[[positive]]
+text = "SPARKPOST_API_KEY=a1ef083b518e8cda65a1acb5d443e2b7"
+credential = "a1ef083b518e8cda65a1acb5d443e2b7"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "SPARKPOST_API_KEY=\"a1ef083b518e8cda65a1acb5d443e2b7\""
+credential = "a1ef083b518e8cda65a1acb5d443e2b7"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "SPARKPOST_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "SPARKPOST_API_KEY=a1ef0EXAMPLEEXAMPLE3e2b7"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export SPARKPOST_API_KEY=a1ef083b518e8cda65a1acb5d443e2b7"
+credential = "a1ef083b518e8cda65a1acb5d443e2b7"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:e56d8a7ec53df40a13a87198da1a2a30b6c98cde6630754864c55933b12a6c0c
-size 1257
+schema_version = 1
+detector_id = "sentry-api-key-legacy"
+service = "sentry"
+severity = "high"
+
+[[positive]]
+text = "SENTRY_API_KEY=26551c665f4a3f14f1162c872eddb8bc"
+credential = "26551c665f4a3f14f1162c872eddb8bc"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "SENTRY_API_KEY=\"26551c665f4a3f14f1162c872eddb8bc\""
+credential = "26551c665f4a3f14f1162c872eddb8bc"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "SENTRY_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "SENTRY_API_KEY=26551EXAMPLEEXAMPLEdb8bc"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export SENTRY_API_KEY=26551c665f4a3f14f1162c872eddb8bc"
+credential = "26551c665f4a3f14f1162c872eddb8bc"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

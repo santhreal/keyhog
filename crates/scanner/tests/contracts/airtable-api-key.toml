@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:f8c84914971a33420adc8cdc39eb157bbc83835629853ab9ade0fa5f0f5abc86
-size 1243
+schema_version = 1
+detector_id = "airtable-api-key"
+service = "airtable"
+severity = "critical"
+
+[[positive]]
+text = "pat9X3kQp7VbT2hYR.9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b"
+credential = "pat9X3kQp7VbT2hYR.9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b"
+reason = "Canonical Airtable PAT: pat<14 alnum>.<64 hex>."
+
+[[positive]]
+text = "AIRTABLE_API_KEY=pat9X3kQp7VbT2hYR.9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b"
+credential = "pat9X3kQp7VbT2hYR.9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b"
+reason = "Standard env-var assignment."
+
+[[negative]]
+text = "pat9X3kQp7VbT2hYR.short"
+reason = "Body shorter than 64 hex chars."
+
+[[evasion]]
+text = "Authorization: Bearer pat9X3kQp7VbT2hYR.9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b"
+credential = "pat9X3kQp7VbT2hYR.9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d8e6f0a1b3c4d5e6f7a8b9c0d1e2f3a4b"
+reason = "Bearer header — Airtable API auth shape."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Airtable PAT."

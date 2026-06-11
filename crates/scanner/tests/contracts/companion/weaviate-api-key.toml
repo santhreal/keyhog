@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:dec9095a43c1cf7a798d8b3827091bb0aa71ac9793bc0edbfd3eacf40d9558a2
-size 992
+schema_version = 1
+detector_id = "weaviate-api-key"
+service = "weaviate"
+severity = "high"
+
+[positive_with_companion]
+text = "weaviateapi_key'  \"  =  ==      \"''   \" = \" :    '  =  ': =  \"  :=   = \"   \"=\" =     G1G4HlxpqGc8DfFkA7I8DLQ6dy0lF-Cxjwb6vdp2yMu_rcNHUMF6eaC\nhttps://46la5qkkqy5yfiinc.weaviate.cloud"
+expected_findings = ["weaviate-api-key"]
+expected_companions = { weaviate_url = "https://46la5qkkqy5yfiinc.weaviate.cloud" }
+reason = "Primary paired with companion(s) weaviate_url."
+
+[positive_primary_only]
+text = "weaviateapi_key'  \"  =  ==      \"''   \" = \" :    '  =  ': =  \"  :=   = \"   \"=\" =     G1G4HlxpqGc8DfFkA7I8DLQ6dy0lF-Cxjwb6vdp2yMu_rcNHUMF6eaC"
+expected_findings = ["weaviate-api-key"]
+must_not_verify = true
+reason = "Primary found without companion weaviate_url; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "https://46la5qkkqy5yfiinc.weaviate.cloud"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:3b53ba41d765f64926922a70964ff4e04b52b166b033ac1c66011e1821539687
-size 971
+schema_version = 1
+detector_id = "braintree-api-key"
+service = "braintree"
+severity = "critical"
+
+[positive_with_companion]
+text = "BRAINTREEpublic_key' \" : :  \"  =' ='':  \" :=\" '=  ' \"   ='= '   :' :19qpcgkp_ugw7ljlf_jihk4v1g\nBRAINTREE_PRIVATE_KEY=ecfe4b15133cd6e8aa9859f3be8d687b"
+expected_findings = ["braintree-api-key"]
+expected_companions = { braintree_private_key = "BRAINTREE_PRIVATE_KEY=ecfe4b15133cd6e8aa9859f3be8d687b" }
+reason = "Primary paired with companion(s) braintree_private_key."
+
+[positive_primary_only]
+text = "BRAINTREEpublic_key' \" : :  \"  =' ='':  \" :=\" '=  ' \"   ='= '   :' :19qpcgkp_ugw7ljlf_jihk4v1g"
+expected_findings = ["braintree-api-key"]
+must_not_verify = true
+reason = "Primary found without companion braintree_private_key; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "BRAINTREE_PRIVATE_KEY=ecfe4b15133cd6e8aa9859f3be8d687b"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

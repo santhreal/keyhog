@@ -1,3 +1,79 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:174296ec3ecf17489f5fe8420b3025c6bb6f440a641675375b34b406f76b455a
-size 3127
+# Per-detector contract: slack-bot-token
+#
+# Slack bot tokens follow `xoxb-{team_id}-{installer_id}-{secret}`.
+# The detector has two regex variants — the 3-segment canonical and a
+# 2-segment "mixed" form Slack documents for older installs. Both
+# must surface on planted fixtures.
+
+schema_version = 1
+detector_id = "slack-bot-token"
+service = "slack"
+severity = "critical"
+# README claim (top-level scalar — see every_contract_readme_claim_present):
+readme_claim = "Slack"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx"
+credential = "xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx"
+reason = "Canonical 3-segment bot token, 24-char secret."
+
+[[positive]]
+text = "SLACK_BOT_TOKEN=xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx"
+credential = "xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx"
+reason = "env-var assignment, no quotes."
+
+[[positive]]
+text = "token: \"xoxb-9999999999-9999999999-ZzZzZzZzZzZzZzZzZzZzZzZz\""
+credential = "xoxb-9999999999-9999999999-ZzZzZzZzZzZzZzZzZzZzZzZz"
+reason = "YAML-style quoted token field."
+
+[[positive]]
+text = "Authorization: Bearer xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx"
+credential = "xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx"
+reason = "HTTP Authorization header carrying the bot token."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "xoxb-12345"
+reason = "Too short to match either pattern — only one short segment."
+
+[[negative]]
+text = "xoxp-1234567890-1234567890-1234567890-abcdef1234567890abcdef1234567890"
+reason = "xoxp (user token) prefix — different detector, must not fire under xoxb rule."
+
+[[negative]]
+text = "the xoxb prefix is documented at api.slack.com/authentication/token-types"
+reason = "Documentation prose mentioning the prefix without a real token."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "// xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx"
+credential = "xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx"
+reason = "Inside a single-line C++ comment."
+
+[[evasion]]
+text = "<token>xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx</token>"
+credential = "xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx"
+reason = "Wrapped in XML tags — extraction must not over-capture into the closing tag."
+
+[[evasion]]
+text = "{\"slack_token\":\"xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx\"}"
+credential = "xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx"
+reason = "JSON payload — must not consume the closing quote/brace."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Same 4 KiB single-file budget as aws-access-key — pipeline orchestration dominates at this size."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted bot token at the midpoint. The non-alphanumeric filler cycle in the runner prevents the secret regex from running greedily into the filler."

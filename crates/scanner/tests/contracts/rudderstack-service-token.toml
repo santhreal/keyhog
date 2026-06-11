@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:1b97a43de2e4f0a9583beae79c0deaebf1cc05068021d608b9c244070dc397eb
-size 1202
+schema_version = 1
+detector_id = "rudderstack-service-token"
+service = "rudderstack"
+severity = "critical"
+
+[[positive]]
+text = "RUDDERSTACK_API_KEY=Ai0HDp1bdBeM6a5E4BlV"
+credential = "Ai0HDp1bdBeM6a5E4BlV"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "RUDDERSTACK_API_KEY=\"Ai0HDp1bdBeM6a5E4BlV\""
+credential = "Ai0HDp1bdBeM6a5E4BlV"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "RUDDERSTACK_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "RUDDERSTACK_API_KEY=Ai0HDEXAMPLEEXAMPLEE4BlV"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "{\"secret\":\"Ai0HDp1bdBeM6a5E4BlV\"}"
+credential = "Ai0HDp1bdBeM6a5E4BlV"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

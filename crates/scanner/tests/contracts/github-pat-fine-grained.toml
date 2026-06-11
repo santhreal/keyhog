@@ -1,3 +1,76 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:d44f5bd6eb2c20719643d84f9e3d3568b61deb3daf14ef34bb3e820c5d176568
-size 3468
+# Per-detector contract: github-pat-fine-grained
+#
+# GitHub's fine-grained PAT format is fixed:
+#   github_pat_{22 alphanumerics}_{59 alphanumerics}
+#
+# That's an 11-char prefix + 22 + 1 + 59 = 93-char fixed token. The
+# detector regex anchors to those exact widths; this contract pins
+# the recall, the underscore-mid-token shape, and the negative case
+# where one segment is one char short.
+
+schema_version = 1
+detector_id = "github-pat-fine-grained"
+service = "github"
+severity = "critical"
+# README claim (top-level scalar — see every_contract_readme_claim_present):
+readme_claim = "GitHub CRC32"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "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"
+credential = "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"
+reason = "Bare canonical fine-grained PAT, exact 22+1+59 widths."
+
+[[positive]]
+text = "GITHUB_TOKEN=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"
+credential = "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"
+reason = "Standard env-var name `GITHUB_TOKEN` with the new fine-grained format."
+
+[[positive]]
+text = "git push https://oauth2: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@github.com/me/repo.git"
+credential = "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"
+reason = "URL-embedded credential — common shell-history leak shape."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "github_pat_short"
+reason = "Body shorter than the 22+1+59 fixed width."
+
+[[negative]]
+text = "github_pat_KhYxNqJ4pVbZ7Lm5RfWcG_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaB1yIoX0"
+reason = "First segment is 21 chars (one short of the required 22). The checksum from the positive fixture, made structurally invalid by shortening the prefix segment."
+
+[[negative]]
+text = "github_pat_KhYxNqJ4pVbZ7Lm5RfWcGs_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtYwMPqW3rTaBxxxxxx"
+reason = "Same widths as the positive fixture, but the last 6 chars are not a valid CRC32 base62 checksum — the GitHub checksum gate must reject."
+
+[[negative]]
+text = "the github_pat_ prefix is described in github's docs"
+reason = "Prose mentioning the prefix with no token body."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "<!-- 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 -->"
+credential = "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"
+reason = "HTML comment wrapper."
+
+[[evasion]]
+text = "Authorization: token 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"
+credential = "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"
+reason = "Legacy `token` auth header — GitHub still accepts it."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget; 93-char fixed token is fast to extract."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler. Fixed-width regex cannot run greedy."

@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:a21c91ec7dbca980851dd51a1ee65874577e73fbdc3a6a1fb8711516a239dc27
-size 1303
+schema_version = 1
+detector_id = "retool-api-key"
+service = "retool"
+severity = "critical"
+
+[[positive]]
+text = "retool_api_0sI0n2TSM9vvCvZmGeP8eoWow4CByclT"
+credential = "retool_api_0sI0n2TSM9vvCvZmGeP8eoWow4CByclT"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "retool_api_0sI0n2TSM9vvCvZmGeP8eoWow4CByclT=\"retool_api_0sI0n2TSM9vvCvZmGeP8eoWow4CByclT\""
+credential = "retool_api_0sI0n2TSM9vvCvZmGeP8eoWow4CByclT"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "retooEXAMPLEEXAMPLEByclT"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "Authorization: Bearer token=\"retool_api_0sI0n2TSM9vvCvZmGeP8eoWow4CByclT\""
+credential = "retool_api_0sI0n2TSM9vvCvZmGeP8eoWow4CByclT"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

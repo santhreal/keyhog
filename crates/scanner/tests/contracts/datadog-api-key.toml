@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:cf7120c05eb9e363ae9e2bf5e871a7d071caf7b83cef00620fa30bb298c70d6c
-size 992
+schema_version = 1
+detector_id = "datadog-api-key"
+service = "datadog"
+severity = "critical"
+
+[[positive]]
+text = "DD_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Standard DD_API_KEY env-var (32 hex, random-looking)."
+
+[[positive]]
+text = "DATADOG_API_KEY: \"4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f\""
+credential = "4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f"
+reason = "YAML-style DATADOG_API_KEY assignment."
+
+[[negative]]
+text = "DD_API_KEY=short"
+reason = "Body below 32 hex chars."
+
+[[evasion]]
+text = "dd_api_key=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Lowercased dd_api_key — regex `DD.API.KEY` dot-class accepts underscore separator."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Datadog API key."

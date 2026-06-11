@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:f7e0e7ac5029b432eec6064b468e0e11075cc5082281b7a2213e010ea2ec4ece
-size 1297
+schema_version = 1
+detector_id = "fusionauth-api-key"
+service = "fusionauth"
+severity = "critical"
+
+[[positive]]
+text = "FUSIONAUTH_API_KEY=ce182726-b648-cd71-b829-85ccb18fb1e8"
+credential = "ce182726-b648-cd71-b829-85ccb18fb1e8"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "FUSIONAUTH_API_KEY=\"ce182726-b648-cd71-b829-85ccb18fb1e8\""
+credential = "ce182726-b648-cd71-b829-85ccb18fb1e8"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "FUSIONAUTH_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "FUSIONAUTH_API_KEY=ce182EXAMPLEEXAMPLEfb1e8"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "FUSIONAUTH_API_KEY=ce182726-b648-cd71-b829-85ccb18fb1e8"
+credential = "ce182726-b648-cd71-b829-85ccb18fb1e8"
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

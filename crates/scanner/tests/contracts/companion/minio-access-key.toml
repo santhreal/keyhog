@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:4206670ea05e93519bc0eb93de8387a1fe575a041cc465df466a41dd9808d134
-size 973
+schema_version = 1
+detector_id = "minio-access-key"
+service = "minio"
+severity = "high"
+
+[positive_with_companion]
+text = "minio-ROOT.USER\"       \" : \"=         :== := '':\"  '= '  ': :  '  = :'=\" =    \"==  '  \"= ' ':\"   ulmoKF-nN5OjTp1cKLxsRW51G-Seo-e049vIyE\nminiosecret=GhuDaQVABLFdNin3mZW56B0lLZS2s6PF"
+expected_findings = ["minio-access-key"]
+expected_companions = { secret_key = "GhuDaQVABLFdNin3mZW56B0lLZS2s6PF" }
+reason = "Primary paired with companion(s) secret_key."
+
+[positive_primary_only]
+text = "minio-ROOT.USER\"       \" : \"=         :== := '':\"  '= '  ': :  '  = :'=\" =    \"==  '  \"= ' ':\"   ulmoKF-nN5OjTp1cKLxsRW51G-Seo-e049vIyE"
+expected_findings = ["minio-access-key"]
+must_not_verify = true
+reason = "Primary found without companion secret_key; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "miniosecret=GhuDaQVABLFdNin3mZW56B0lLZS2s6PF"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

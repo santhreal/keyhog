@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:af8e26af41f2f9b9cc59918de8b109eef56bc6c2fcedcb5c38f5873aeba91a64
-size 847
+schema_version = 1
+detector_id = "cypress-record-key"
+service = "cypress"
+severity = "high"
+
+[positive_with_companion]
+text = "cypressrecord_key   \"   : := d38eb55a-57df-4893-c9d7-166a64e9aed9\nprojectId=Jo73tN3m28tNALxpaa9UV3hkV4V82syV"
+expected_findings = ["cypress-record-key"]
+expected_companions = { cypress-project-id = "Jo73tN3m28tNALxpaa9UV3hkV4V82syV" }
+reason = "Primary paired with companion(s) cypress-project-id."
+
+[positive_primary_only]
+text = "cypressrecord_key   \"   : := d38eb55a-57df-4893-c9d7-166a64e9aed9"
+expected_findings = ["cypress-record-key"]
+must_not_verify = true
+reason = "Primary found without companion cypress-project-id; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "projectId=Jo73tN3m28tNALxpaa9UV3hkV4V82syV"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

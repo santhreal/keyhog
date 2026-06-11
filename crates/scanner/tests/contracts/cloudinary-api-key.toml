@@ -1,3 +1,37 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:d22524dddbce5d5e8055ba0783d39e17903e508060147a0f9a02ea8355fd42cf
-size 1598
+schema_version = 1
+detector_id = "cloudinary-api-key"
+service = "cloudinary"
+severity = "critical"
+
+
+
+
+[[positive]]
+text = """cloudinary://946054033816433664211118670346455:NvXnEzfHQBPE9sQVcnk@rgV7LEbhI1QMVD7lYiBrqFtq3avz_fSEXZpggxdEGkHDnUT3TMXyqaAAPFYT"""
+credential = "cloudinary://946054033816433664211118670346455:NvXnEzfHQBPE9sQVcnk@rgV7LEbhI1QMVD7lYiBrqFtq3avz_fSEXZpggxdEGkHDnUT3TMXyqaAAPFYT"
+reason = "Hand-tuned positive matching detector regex (R2-F adversarial batch)."
+
+[[positive]]
+text = """cloudinary://946054033816433664211118670346455:NvXnEzfHQBPE9sQVcnk@rgV7LEbhI1QMVD7lYiBrqFtq3avz_fSEXZpggxdEGkHDnUT3TMXyqaAAPFYT="cloudinary://946054033816433664211118670346455:NvXnEzfHQBPE9sQVcnk@rgV7LEbhI1QMVD7lYiBrqFtq3avz_fSEXZpggxdEGkHDnUT3TMXyqaAAPFYT""""
+credential = "cloudinary://946054033816433664211118670346455:NvXnEzfHQBPE9sQVcnk@rgV7LEbhI1QMVD7lYiBrqFtq3avz_fSEXZpggxdEGkHDnUT3TMXyqaAAPFYT"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "cloudinary://123:@cloud"
+reason = "Missing secret after colon; regex requires at least one alnum/underscore/hyphen."
+
+[[evasion]]
+text = "cloudinary://123456:Kp4Qx7Rm2Sn5Tb8Vw3Yz@mycloud"
+credential = "cloudinary://123456:Kp4Qx7Rm2Sn5Tb8Vw3Yz@mycloud"
+reason = "Adversarial header_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Cloudinary URL."

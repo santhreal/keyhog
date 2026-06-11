@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:1c1ccb043943ba179acf54c5df9a5d40b992dd44fca7b1903855bce50e146ddf
-size 955
+schema_version = 1
+detector_id = "adobe-api-key"
+service = "adobe"
+severity = "high"
+
+[[positive]]
+text = "ADOBE_CLIENT_ID=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Adobe Client ID env-var (32 hex)."
+
+[[positive]]
+text = "adobe_api_key: \"4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f7b2d9c5a\""
+credential = "4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f7b2d9c5a"
+reason = "Adobe API key (40 hex variant)."
+
+[[negative]]
+text = "ADOBE_CLIENT_ID=short"
+reason = "Body below 32 hex chars."
+
+[[evasion]]
+text = "adobe.client.id=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Dot-separated adobe.client.id — regex covers [._-]?"
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Adobe Client ID."

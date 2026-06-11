@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:293076ffd7f8dc16daa1bc1a34a44166f42d4deb15876a59a641ddbfd92bfdc0
-size 1010
+schema_version = 1
+detector_id = "deezer-api-key"
+service = "deezer"
+severity = "medium"
+
+[[positive]]
+text = "DEEZER_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Uppercase DEEZER_API_KEY env-var with 32 hex chars."
+
+[[positive]]
+text = "deezer_key=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Lowercase deezer_key form with 32 hex chars."
+
+[[negative]]
+text = "DEEZER_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c"
+reason = "Only 30 hex chars, below required 32."
+
+[[evasion]]
+text = '"deezer_key":"7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"'
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Lowercase anchor in JSON-like double-quote wrapper (32 hex)."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Deezer credential."

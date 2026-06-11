@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:9feb93fe4e65b3ccf8c6d63fd68321ed5629c0f8d07b6b2cd98f3c11f0767cd6
-size 1302
+schema_version = 1
+detector_id = "carbon-black-api-key"
+service = "carbon-black"
+severity = "critical"
+
+[positive_with_companion]
+text = "vmware_cbKEY=46A0550F0621FE657012\ncarbon__      _        __        __   _     _ _ _               __  _         _    black_    _     _     _ ID   \"  \"  ' : = '  : ='  \" \"' : ::':\"\" : \" 889333842873763194935173025816642151729810706909507054976647217868359625236\nCBORGKEY=OYCBCSJP"
+expected_findings = ["carbon-black-api-key"]
+expected_companions = { carbon_black_api_id = "889333842873763194935173025816642151729810706909507054976647217868359625236", org_key = "OYCBCSJP" }
+reason = "Primary paired with companion(s) carbon_black_api_id, org_key."
+
+[positive_primary_only]
+text = "vmware_cbKEY=46A0550F0621FE657012"
+expected_findings = ["carbon-black-api-key"]
+must_not_verify = true
+reason = "Primary found without companion carbon_black_api_id, org_key; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "carbon__      _        __        __   _     _ _ _               __  _         _    black_    _     _     _ ID   \"  \"  ' : = '  : ='  \" \"' : ::':\"\" : \" 889333842873763194935173025816642151729810706909507054976647217868359625236\nCBORGKEY=OYCBCSJP"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

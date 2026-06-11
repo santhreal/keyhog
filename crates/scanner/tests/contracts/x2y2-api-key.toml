@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:c2bfca8e20d741cdeceb3f354163e84870d27d4d8118326d1054c991a7e9eb34
-size 1384
+schema_version = 1
+detector_id = "x2y2-api-key"
+service = "x2y2"
+severity = "medium"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "X-API-KEY                                          :                                                    JSuKxKWNfd898GujYX9p66-_M1knu3xIPTZfsus5cByqlnilvi7"
+credential = "JSuKxKWNfd898GujYX9p66-_M1knu3xIPTZfsus5cByqlnilvi7"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "X-API-KEY                                          :                                                    JSuKxKWNfd898GujYX9p66-_M1knu3xIPTZfsus5cByqlnilvi7\""
+credential = "JSuKxKWNfd898GujYX9p66-_M1knu3xIPTZfsus5cByqlnilvi7"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "X-API-KEY                                          :                                                    YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "X-API-KEY                                          :                                                    JSuKxEXAMPLEEXAMPLEilvi7"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

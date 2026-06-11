@@ -1,3 +1,43 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:64a56be89f44d68bc637ed4a494bc34d2189f53b35535cfaa658795e92c33a28
-size 1409
+schema_version = 1
+detector_id = "supabase-management-api-key"
+service = "supabase"
+severity = "critical"
+
+[[positive]]
+text = "sb_publishable_aBcDeFgHiJkLmNoPqRsTuV_AbCdEfGh"
+credential = "sb_publishable_aBcDeFgHiJkLmNoPqRsTuV_AbCdEfGh"
+reason = "Bare Supabase publishable key (sb_publishable_ + 22 alnum + _ + 8 alnum)."
+
+[[positive]]
+text = "SUPABASE_KEY=sb_secret_zXcVbNmAsDfGhJkLpOiUyT_QwErTyUi"
+credential = "sb_secret_zXcVbNmAsDfGhJkLpOiUyT_QwErTyUi"
+reason = "Standard env-var assignment for sb_secret_ shape."
+
+[[negative]]
+text = "sb_other_aBcDeFgHiJkLmNoPqRsTuV_AbCdEfGh"
+reason = "Wrong middle keyword — only publishable/secret are valid."
+
+[[negative]]
+text = "sb_publishable_short_AbCdEfGh"
+reason = "Body too short (must be 22 alnum before the _ separator)."
+
+[[evasion]]
+text = "Authorization: Bearer sb_publishable_aBcDeFgHiJkLmNoPqRsTuV_AbCdEfGh"
+credential = "sb_publishable_aBcDeFgHiJkLmNoPqRsTuV_AbCdEfGh"
+reason = "Bearer-header shape."
+
+[[evasion]]
+text = "SUPABASE_MANAGEMENT_KEY=\"sb_secret_zXcVbNmAsDfGhJkLpOiUyT_QwErTyUi\""
+credential = "sb_secret_zXcVbNmAsDfGhJkLpOiUyT_QwErTyUi"
+reason = "Quoted context-anchored variant."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Supabase key."

@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:1cf7bc9d8eedead97a6c2ac00ef09a246e2e15ed9603522b5351c9a8f3282660
-size 1255
+schema_version = 1
+detector_id = "humanloop-api-key"
+service = "humanloop"
+severity = "high"
+
+[[positive]]
+text = "HUMANLOOP_API_KEY=24ed7c1290d4ed5e45bd69c30994238c"
+credential = "24ed7c1290d4ed5e45bd69c30994238c"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "HUMANLOOP_API_KEY=\"24ed7c1290d4ed5e45bd69c30994238c\""
+credential = "24ed7c1290d4ed5e45bd69c30994238c"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "HUMANLOOP_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "HUMANLOOP_API_KEY=24ed7EXAMPLEEXAMPLE4238c"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "# HUMANLOOP_API_KEY=24ed7c1290d4ed5e45bd69c30994238c"
+credential = "24ed7c1290d4ed5e45bd69c30994238c"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

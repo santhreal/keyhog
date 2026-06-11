@@ -1,3 +1,53 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:56791f1877cb2ae5d4bfb0dfee3ba372c89a311019b4b3a1c3597c345ae52187
-size 1941
+# Per-detector contract: notion-api-key
+#
+# Format: `secret_` + exactly 43 alphanumeric chars. The `secret_`
+# prefix is generic, so the keyword-anchored detector relies on
+# nearby `notion`/`NOTION_API_KEY` mentions for high-confidence
+# extraction (per the keywords array).
+
+schema_version = 1
+detector_id = "notion-api-key"
+service = "notion"
+severity = "critical"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "NOTION_API_KEY=secret_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY"
+credential = "secret_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY"
+reason = "Env-var name + key body — keyword anchor lifts confidence above generic-`secret_` floor."
+
+[[positive]]
+text = "const notionApi = new Client({ auth: \"secret_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY\" });"
+credential = "secret_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY"
+reason = "Notion JS SDK Client constructor — the canonical leak shape."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "secret_short"
+reason = "Body shorter than 43 chars."
+
+[[negative]]
+text = "secret_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRt"
+reason = "42 chars after secret_ (one short)."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "Authorization: Bearer secret_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY"
+credential = "secret_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBnVkPxKqRtY"
+reason = "Bearer-token header — `Bearer` keyword adjacent to credential."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted Notion key."

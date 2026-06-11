@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:9c036112b64806b16a3716f1c2df1f8dcd930413da5d834759757a6085d0fd4e
-size 1131
+schema_version = 1
+detector_id = "minio-access-key"
+service = "minio"
+severity = "high"
+
+[[positive]]
+text = "MINIO_ACCESS_KEY=0vp69pixmZ8oC"
+credential = "0vp69pixmZ8oC"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "MINIO_ACCESS_KEY=\"0vp69pixmZ8oC\""
+credential = "0vp69pixmZ8oC"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "MINIO_ACCESS_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "MINIO_ACCESS_KEY=0vp69EXAMPLEEXAMPLEmZ8oC"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "# MINIO_ACCESS_KEY=0vp69pixmZ8oC"
+credential = "0vp69pixmZ8oC"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:2d30e70fb2a6cc05e9e2c1fa813f640d023e7e8468d05cbddf02a12f66ecf75f
-size 1240
+schema_version = 1
+detector_id = "musixmatch-api-key"
+service = "musixmatch"
+severity = "medium"
+
+[[positive]]
+text = "MUSIXMATCH=431d32a80271b1e9ce85e2be0007d8ff"
+credential = "431d32a80271b1e9ce85e2be0007d8ff"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "MUSIXMATCH=\"431d32a80271b1e9ce85e2be0007d8ff\""
+credential = "431d32a80271b1e9ce85e2be0007d8ff"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "MUSIXMATCH=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "MUSIXMATCH=431d3EXAMPLEEXAMPLE7d8ff"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export MUSIXMATCH=431d32a80271b1e9ce85e2be0007d8ff"
+credential = "431d32a80271b1e9ce85e2be0007d8ff"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 35000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:85d1c7a68e3035ab1f0a52555e749a0b75c45c91bde4389bf82592c1a58515c5
-size 771
+schema_version = 1
+detector_id = "flickr-api-key"
+service = "flickr"
+severity = "medium"
+
+[positive_with_companion]
+text = "FLICKRAPIKEY=4a6caadf2bd276168f2eb5f2e4d060bd\nFLICKRAPISECRET=3b763eaacf2dc97d"
+expected_findings = ["flickr-api-key"]
+expected_companions = { flickr-api-secret = "FLICKRAPISECRET=3b763eaacf2dc97d" }
+reason = "Primary paired with companion(s) flickr-api-secret."
+
+[positive_primary_only]
+text = "FLICKRAPIKEY=4a6caadf2bd276168f2eb5f2e4d060bd"
+expected_findings = ["flickr-api-key"]
+must_not_verify = true
+reason = "Primary found without companion flickr-api-secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "FLICKRAPISECRET=3b763eaacf2dc97d"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

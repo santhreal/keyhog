@@ -1,3 +1,42 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:e1baf6c2cecd4ad4618700bf922d6dbeb57d6c54d231e54fb4b1c4895bc26b74
-size 2761
+schema_version = 1
+detector_id = "webex-access-token"
+service = "webex"
+severity = "critical"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "WEBEX     - _     _         _     _  _    _       -  _-  teams       ---- _      _  --   _      -   __     ---___- __   -   access- -   _  - - token  :\"\"'    :   =:    \"  :\"=\" :::  =\"'=\"\" :\" ''\"  \"': :' '=':'  ='    \" \" :\"  '   ':= = :'C5F3mMhup3zhyd9CX-AOJE9geQEdpztAkN0kGQSoA7oC5jsfsiKM2bp5hs_8epQPzPcGfU6oX-rkn768q4tMrDlKvCG7i5HsO5gb"
+credential = "C5F3mMhup3zhyd9CX-AOJE9geQEdpztAkN0kGQSoA7oC5jsfsiKM2bp5hs_8epQPzPcGfU6oX-rkn768q4tMrDlKvCG7i5HsO5gb"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "WEBEX     - _     _         _     _  _    _       -  _-  teams       ---- _      _  --   _      -   __     ---___- __   -   access- -   _  - - token  :\"\"'    :   =:    \"  :\"=\" :::  =\"'=\"\" :\" ''\"  \"': :' '=':'  ='    \" \" :\"  '   ':= = :'C5F3mMhup3zhyd9CX-AOJE9geQEdpztAkN0kGQSoA7oC5jsfsiKM2bp5hs_8epQPzPcGfU6oX-rkn768q4tMrDlKvCG7i5HsO5gb"
+credential = "C5F3mMhup3zhyd9CX-AOJE9geQEdpztAkN0kGQSoA7oC5jsfsiKM2bp5hs_8epQPzPcGfU6oX-rkn768q4tMrDlKvCG7i5HsO5gb"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "WEBEX     - _     _         _     _  _    _       -  _-  teams       ---- _      _  --   _      -   __     ---___- __   -   access- -   _  - - token  :\"\"'    :   =:    \"  :\"=\" :::  =\"'=\"\" :\" ''\"  \"': :' '=':'  ='    \" \" :\"  '   ':= = :'YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "WEBEX     - _     _         _     _  _    _       -  _-  teams       ---- _      _  --   _      -   __     ---___- __   -   access- -   _  - - token  :\"\"'    :   =:    \"  :\"=\" :::  =\"'=\"\" :\" ''\"  \"': :' '=':'  ='    \" \" :\"  '   ':= = :'C5F3mEXAMPLEEXAMPLEsO5gb"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = """{"webex_access_token": "C5F3mMhup3zhyd9CX-AOJE9geQEdpztAkN0kGQSoA7oC5jsfsiKM2bp5hs_8epQPzPcGfU6oX-rkn768q4tMrDlKvCG7i5HsO5gb"}"""
+credential = "C5F3mMhup3zhyd9CX-AOJE9geQEdpztAkN0kGQSoA7oC5jsfsiKM2bp5hs_8epQPzPcGfU6oX-rkn768q4tMrDlKvCG7i5HsO5gb"
+reason = "JSON config blob with snake_case webex_access_token key."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

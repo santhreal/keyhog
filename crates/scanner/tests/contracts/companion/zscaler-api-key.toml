@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:ac7bd50a3f22aaec256742724043ed00577227ea30cd24d4479fecd9916f33fc
-size 825
+schema_version = 1
+detector_id = "zscaler-api-key"
+service = "zscaler"
+severity = "critical"
+
+[positive_with_companion]
+text = "zscalerID=HBVhp49DZB3ArlMbtGxWPUUvyD8gBdCF\nZSCALERSECRET=BZTz2QVYj-ceUvpjbWZ88waspsrMtX1K"
+expected_findings = ["zscaler-api-key"]
+expected_companions = { zscaler_client_secret = "ZSCALERSECRET=BZTz2QVYj-ceUvpjbWZ88waspsrMtX1K" }
+reason = "Primary paired with companion(s) zscaler_client_secret."
+
+[positive_primary_only]
+text = "zscalerID=HBVhp49DZB3ArlMbtGxWPUUvyD8gBdCF"
+expected_findings = ["zscaler-api-key"]
+must_not_verify = true
+reason = "Primary found without companion zscaler_client_secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "ZSCALERSECRET=BZTz2QVYj-ceUvpjbWZ88waspsrMtX1K"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

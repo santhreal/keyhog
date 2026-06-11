@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:f2de8b7c1edf24c63891f32177bd337c5863c43bd7c3b74135e10d02461d4cca
-size 2033
+schema_version = 1
+detector_id = "render-deploy-hook"
+service = "render"
+severity = "high"
+
+[[positive]]
+text = "https://api.render.com/deploy/srv-io418fk5icxm3yawaaove0uasyyelq6t5818ilo9b92bkw1pt15ff3jkwo0y6h80mz4zp1ho6h5p3r84ra0f3fjh6sk03mtpz9?key=6EW1MZSw_KYtNzt_qVhQ2jVpB8XWuRi8lXju"
+credential = "https://api.render.com/deploy/srv-io418fk5icxm3yawaaove0uasyyelq6t5818ilo9b92bkw1pt15ff3jkwo0y6h80mz4zp1ho6h5p3r84ra0f3fjh6sk03mtpz9?key=6EW1MZSw_KYtNzt_qVhQ2jVpB8XWuRi8lXju"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "RENDER_DEPLOY_HOOK=\"https://api.render.com/deploy/srv-io418fk5icxm3yawaaove0uasyyelq6t5818ilo9b92bkw1pt15ff3jkwo0y6h80mz4zp1ho6h5p3r84ra0f3fjh6sk03mtpz9?key=6EW1MZSw_KYtNzt_qVhQ2jVpB8XWuRi8lXju\""
+credential = "https://api.render.com/deploy/srv-io418fk5icxm3yawaaove0uasyyelq6t5818ilo9b92bkw1pt15ff3jkwo0y6h80mz4zp1ho6h5p3r84ra0f3fjh6sk03mtpz9?key=6EW1MZSw_KYtNzt_qVhQ2jVpB8XWuRi8lXju"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "httpsEXAMPLEEXAMPLEOF9BW"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export https://api.render.com/deploy/srv-io418fk5icxm3yawaaove0uasyyelq6t5818ilo9b92bkw1pt15ff3jkwo0y6h80mz4zp1ho6h5p3r84ra0f3fjh6sk03mtpz9?key=6EW1MZSw_KYtNzt_qVhQ2jVpB8XWuRi8lXju"
+credential = "https://api.render.com/deploy/srv-io418fk5icxm3yawaaove0uasyyelq6t5818ilo9b92bkw1pt15ff3jkwo0y6h80mz4zp1ho6h5p3r84ra0f3fjh6sk03mtpz9?key=6EW1MZSw_KYtNzt_qVhQ2jVpB8XWuRi8lXju"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

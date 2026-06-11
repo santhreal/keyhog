@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:bc4383c832f8654fcfc6d1771d7197d9bce3bc274fe5bc9ee7da2679dfc2909b
-size 1310
+schema_version = 1
+detector_id = "smartthings-api-token"
+service = "smartthings"
+severity = "high"
+
+[[positive]]
+text = "SMARTTHINGS_ACCESS_TOKEN=be96d2f7-20dc-a4ec-aa3a-c4179112746d"
+credential = "be96d2f7-20dc-a4ec-aa3a-c4179112746d"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "SMARTTHINGS_ACCESS_TOKEN=\"be96d2f7-20dc-a4ec-aa3a-c4179112746d\""
+credential = "be96d2f7-20dc-a4ec-aa3a-c4179112746d"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "SMARTTHINGS_ACCESS_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "SMARTTHINGS_ACCESS_TOKEN=be96dEXAMPLEEXAMPLE2746d"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "{\"secret\":\"be96d2f7-20dc-a4ec-aa3a-c4179112746d\"}"
+credential = "be96d2f7-20dc-a4ec-aa3a-c4179112746d"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

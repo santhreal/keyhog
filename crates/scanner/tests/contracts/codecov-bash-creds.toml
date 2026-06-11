@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:3ec785704bfb25dffda3a6ff9f1d00a1b4bbfdf65a4f942f6163af236321f566
-size 1169
+schema_version = 1
+detector_id = "codecov-bash-creds"
+service = "codecov"
+severity = "critical"
+
+[[positive]]
+text = "https://codecov.io/upload/v4?package=bash-1.2.3&token=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+reason = "Codecov bash uploader URL with token parameter."
+
+[[positive]]
+text = "https://codecov.io/upload/v4?package=bash-2024.12.1&token=Ab3Cd-Ef4Gh-Ij5Kl-Mn6Op-Qr7St-Uv8Wx"
+credential = "Ab3Cd-Ef4Gh-Ij5Kl-Mn6Op-Qr7St-Uv8Wx"
+reason = "URL with dashed token and longer version string."
+
+[[negative]]
+text = "https://codecov.io/upload/v4?package=bash-1.0"
+reason = "Missing token parameter entirely."
+
+[[evasion]]
+text = "https://codecov.io/upload/v4?package=bash-1.2.3&token=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5"
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Codecov credential."

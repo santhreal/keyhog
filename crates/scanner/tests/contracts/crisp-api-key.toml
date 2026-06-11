@@ -1,3 +1,37 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:b99f2dba71f8a1dff024b109b4827e2034aab24c9384d7605680378faf9f46da
-size 1039
+schema_version = 1
+detector_id = "crisp-api-key"
+service = "crisp"
+severity = "high"
+
+
+
+
+[[positive]]
+text = """CRISP_API_KEY=a5e95c2c-2e61-575f-5f7f-8f3b3462918d"""
+credential = "a5e95c2c-2e61-575f-5f7f-8f3b3462918d"
+reason = "Hand-tuned positive matching detector regex (R2-F adversarial batch)."
+
+[[positive]]
+text = """CRISP_API_KEY="a5e95c2c-2e61-575f-5f7f-8f3b3462918d""""
+credential = "a5e95c2c-2e61-575f-5f7f-8f3b3462918d"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "crisp_api_key=short"
+reason = "Body too short for UUID or 32-hex secret."
+
+[[evasion]]
+text = "api-key: Bearer crisp_api_key=\"42136df0-709e-8c36-3ba2-01818f559a75\""
+credential = "42136df0-709e-8c36-3ba2-01818f559a75"
+reason = "Quoted inside a Bearer header string."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted crisp credential."

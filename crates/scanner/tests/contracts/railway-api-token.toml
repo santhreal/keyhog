@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:2b39c6f5c4869995279f093c71314ed378b730fcece88dd2c7dca135f3182844
-size 1067
+schema_version = 1
+detector_id = "railway-api-token"
+service = "railway"
+severity = "critical"
+
+[[positive]]
+text = "RAILWAY_API_TOKEN=9f3e5b8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+credential = "9f3e5b8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+reason = "RAILWAY_API_TOKEN env-var with UUID v4 value."
+
+[[positive]]
+text = "railway_token: \"4c9a8f6e-3b7d-1a2c-5e8f-0b9d6a3c4e1f\""
+credential = "4c9a8f6e-3b7d-1a2c-5e8f-0b9d6a3c4e1f"
+reason = "YAML-style lowercase railway_token assignment."
+
+[[negative]]
+text = "RAILWAY_API_TOKEN=not-a-uuid"
+reason = "Body is not a valid UUID v4 shape."
+
+[[evasion]]
+text = "Authorization: Bearer backboard.railway=9f3e5b8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+credential = "9f3e5b8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+reason = "Backboard subdomain context — keyword `backboard.railway` listed in detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Railway token."

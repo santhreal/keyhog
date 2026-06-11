@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:f50fdbb1427f97bce609248e023099187a06e2873d279bee1fae0bbf16d7bfb3
-size 855
+schema_version = 1
+detector_id = "braintree-sandbox-token"
+service = "braintree"
+severity = "high"
+
+[positive_with_companion]
+text = "sandbox_cesh2o9n_8ozjg2pw_7lfl5sht\nBRAINTREE_PRIVATE_KEY=088ba213c558bac0147124d586d95aa8"
+expected_findings = ["braintree-sandbox-token"]
+expected_companions = { braintree_private_key = "BRAINTREE_PRIVATE_KEY=088ba213c558bac0147124d586d95aa8" }
+reason = "Primary paired with companion(s) braintree_private_key."
+
+[positive_primary_only]
+text = "sandbox_cesh2o9n_8ozjg2pw_7lfl5sht"
+expected_findings = ["braintree-sandbox-token"]
+must_not_verify = true
+reason = "Primary found without companion braintree_private_key; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "BRAINTREE_PRIVATE_KEY=088ba213c558bac0147124d586d95aa8"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

@@ -1,3 +1,45 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:ea4c9dd91d3b947bb9e7325caf837d9a53e3aa04c32dc9310d6ce048187824df
-size 1219
+schema_version = 1
+detector_id = "gravity-forms-rest-api-key"
+service = "gravityforms"
+severity = "high"
+
+
+
+
+
+
+
+
+[[positive]]
+text = "GRAVITY FORMS api_key 963950e3ed2e3dc49d5740982bac6a94"
+credential = "963950e3ed2e3dc49d5740982bac6a94"
+reason = "Hand-tuned positive matching detector regex (R2-F adversarial batch)."
+
+[[positive]]
+text = "GRAVITY FORMS public_key f2da167246ebe0e04dc37c9e74a75b5b"
+credential = "f2da167246ebe0e04dc37c9e74a75b5b"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "GRAVITY_FORMS=short"
+reason = "Truncated value below detector minimum length."
+
+[[negative]]
+text = "GRAVITY_FORMS token abcdef"
+reason = "Keyword context without valid credential body."
+
+[[evasion]]
+text = "export GRAVITY_FORMS api_key \"963950e3ed2e3dc49d5740982bac6a94\""
+credential = "963950e3ed2e3dc49d5740982bac6a94"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Gravity Forms REST API Key credential."

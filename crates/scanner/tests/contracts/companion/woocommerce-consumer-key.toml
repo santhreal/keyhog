@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:e2a189ff18ebd4eb4ba26acaa19b3f8bc81e0987633c4970dd575b2818559581
-size 863
+schema_version = 1
+detector_id = "woocommerce-consumer-key"
+service = "woocommerce"
+severity = "high"
+
+[positive_with_companion]
+text = "ck_0ba2a3d99b4e934b7fb938e9cf3dfcb4e9eb46d4\ncs_499fb5e7ac12670f650685e2bc0a3ca929e510a8"
+expected_findings = ["woocommerce-consumer-key"]
+expected_companions = { woocommerce_consumer_secret = "cs_499fb5e7ac12670f650685e2bc0a3ca929e510a8" }
+reason = "Primary paired with companion(s) woocommerce_consumer_secret."
+
+[positive_primary_only]
+text = "ck_0ba2a3d99b4e934b7fb938e9cf3dfcb4e9eb46d4"
+expected_findings = ["woocommerce-consumer-key"]
+must_not_verify = true
+reason = "Primary found without companion woocommerce_consumer_secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "cs_499fb5e7ac12670f650685e2bc0a3ca929e510a8"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

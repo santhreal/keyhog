@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:eff23464e3456d34bcfb7dc647043c89b3c57b1a2ef8f542709147cc23f0c9f0
-size 1467
+schema_version = 1
+detector_id = "hellosign-api-key"
+service = "hellosign"
+severity = "critical"
+
+[[positive]]
+text = "HELLOSIGN_API_KEY=81fc3a20ce0cad006fce26868e24bc50b88514eaa4dc7c5d9676e7c1b184e9a4"
+credential = "81fc3a20ce0cad006fce26868e24bc50b88514eaa4dc7c5d9676e7c1b184e9a4"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "HELLOSIGN_API_KEY=\"81fc3a20ce0cad006fce26868e24bc50b88514eaa4dc7c5d9676e7c1b184e9a4\""
+credential = "81fc3a20ce0cad006fce26868e24bc50b88514eaa4dc7c5d9676e7c1b184e9a4"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "HELLOSIGN_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "HELLOSIGN_API_KEY=81fc3EXAMPLEEXAMPLE4e9a4"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export HELLOSIGN_API_KEY=81fc3a20ce0cad006fce26868e24bc50b88514eaa4dc7c5d9676e7c1b184e9a4"
+credential = "81fc3a20ce0cad006fce26868e24bc50b88514eaa4dc7c5d9676e7c1b184e9a4"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

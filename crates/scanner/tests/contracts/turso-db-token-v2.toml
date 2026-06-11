@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:d64a3ab9d98e0872852de495fe18e2a79c63d2f0c3ce1990f573450fedee4e12
-size 1998
+schema_version = 1
+detector_id = "turso-db-token-v2"
+service = "turso"
+severity = "critical"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "TURSOAPI TOKEN   \" ==           :':\" ' : :=  : \"    \" \":  = \"  \"    ' = \"  '  ' \" \"   ' ''   '\"  \": 'eyJU392wf3w4AmX6yLP72s_1rUYhYZWSj9UYKJLuIzr_ulMtybIjXyy1iSP1H_E74oL.eyJB8MkQam9OUqV_yYiSxd32BrO6nOEv_k6I5q_--lX8EmNFFR02589yzf7vs0EprMgUhdZ9lEWu3rKKFnBLuMnZOQBAErME.QQ8ACgDR3OdN5Irt0xYLD93NPc0bD"
+credential = "eyJU392wf3w4AmX6yLP72s_1rUYhYZWSj9UYKJLuIzr_ulMtybIjXyy1iSP1H_E74oL.eyJB8MkQam9OUqV_yYiSxd32BrO6nOEv_k6I5q_--lX8EmNFFR02589yzf7vs0EprMgUhdZ9lEWu3rKKFnBLuMnZOQBAErME.QQ8ACgDR3OdN5Irt0xYLD93NPc0bD"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "TURSOAPI TOKEN   \" ==           :':\" ' : :=  : \"    \" \":  = \"  \"    ' = \"  '  ' \" \"   ' ''   '\"  \": 'eyJU392wf3w4AmX6yLP72s_1rUYhYZWSj9UYKJLuIzr_ulMtybIjXyy1iSP1H_E74oL.eyJB8MkQam9OUqV_yYiSxd32BrO6nOEv_k6I5q_--lX8EmNFFR02589yzf7vs0EprMgUhdZ9lEWu3rKKFnBLuMnZOQBAErME.QQ8ACgDR3OdN5Irt0xYLD93NPc0bD"
+credential = "eyJU392wf3w4AmX6yLP72s_1rUYhYZWSj9UYKJLuIzr_ulMtybIjXyy1iSP1H_E74oL.eyJB8MkQam9OUqV_yYiSxd32BrO6nOEv_k6I5q_--lX8EmNFFR02589yzf7vs0EprMgUhdZ9lEWu3rKKFnBLuMnZOQBAErME.QQ8ACgDR3OdN5Irt0xYLD93NPc0bD"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "TURSOAPI TOKEN   \" ==           :':\" ' : :=  : \"    \" \":  = \"  \"    ' = \"  '  ' \" \"   ' ''   '\"  \": 'YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "TURSOAPI TOKEN   \" ==           :':\" ' : :=  : \"    \" \":  = \"  \"    ' = \"  '  ' \" \"   ' ''   '\"  \": 'eyJU3EXAMPLEEXAMPLEPc0bD"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:683ba97f3d3db67d44069828da9701f16b05c2427f36d5527da9954674aa6a53
-size 960
+schema_version = 1
+detector_id = "crisp-api-key"
+service = "crisp"
+severity = "high"
+
+[positive_with_companion]
+text = "CRISPTOKEN =  : ==:    =  =   ' '    ''   :     '\"  '\"    \"  \"= \"    ='  \"          \"\"  ==  \"b47790a3-a552-54e4-801e-c26263da2179\nCRISPSECRET=bBAZmeDCxkqfygj4fRxAK8StIlxPd1Na"
+expected_findings = ["crisp-api-key"]
+expected_companions = { crisp_secret = "bBAZmeDCxkqfygj4fRxAK8StIlxPd1Na" }
+reason = "Primary paired with companion(s) crisp_secret."
+
+[positive_primary_only]
+text = "CRISPTOKEN =  : ==:    =  =   ' '    ''   :     '\"  '\"    \"  \"= \"    ='  \"          \"\"  ==  \"b47790a3-a552-54e4-801e-c26263da2179"
+expected_findings = ["crisp-api-key"]
+must_not_verify = true
+reason = "Primary found without companion crisp_secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "CRISPSECRET=bBAZmeDCxkqfygj4fRxAK8StIlxPd1Na"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

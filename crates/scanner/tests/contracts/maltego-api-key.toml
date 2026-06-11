@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:8e0179752efe5d0fec5870044d2341216c1ea6bacd70f5396ef72774dfc638bd
-size 1120
+schema_version = 1
+detector_id = "maltego-api-key"
+service = "maltego"
+severity = "high"
+
+[[positive]]
+text = "maltegokey=QaoH6LgKMjTTuEuU"
+credential = "QaoH6LgKMjTTuEuU"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "maltegokey=\"QaoH6LgKMjTTuEuU\""
+credential = "QaoH6LgKMjTTuEuU"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "maltegokey=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "maltegokey=QaoH6EXAMPLEEXAMPLETuEuU"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "# maltegokey=QaoH6LgKMjTTuEuU"
+credential = "QaoH6LgKMjTTuEuU"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

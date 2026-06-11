@@ -1,3 +1,47 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:a63567f51107b55307c7ac3af0df33f446ccd0847bfde02e57fa4f1988d0761d
-size 1888
+schema_version = 1
+detector_id = "azure-container-registry-token"
+service = "azure-container-registry"
+severity = "high"
+
+[[positive]]
+text = "ACR_TOKEN=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJrcDRxeDcifQ"
+credential = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJrcDRxeDcifQ"
+reason = "ACR JWT-shape access token (eyJ.eyJ structure)."
+
+[[positive]]
+text = "azurecr.io_PASSWORD=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3VlciI6InZrOWJuM2xwNyJ9"
+credential = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3VlciI6InZrOWJuM2xwNyJ9"
+reason = "azurecr.io password JWT-form."
+
+[[positive]]
+text = "ACR_USER=acrServiceUser01"
+credential = "acrServiceUser01"
+reason = "ACR username references should still surface when they are not C hex constants."
+
+[[negative]]
+text = "ACR_TOKEN=plain-string-not-jwt"
+reason = "Body not in JWT eyJ.eyJ format."
+
+[[negative]]
+text = "DW_MACRO_lo_user = 0xe0"
+reason = "Dogfood 2026-05-29: the username pattern matched 'ACR' INSIDE 'MACRO' (DW_M-ACR-O_lo_user) and captured the hex macro value 0xe0. The \\bACR word boundary + {8,} capture floor must keep this from firing. FP source: LLVM Dwarf.h."
+
+[[negative]]
+text = "#define ACR_USER 0x00000000"
+reason = "Linux kernel m52xxacr.h dogfood: ACR_USER is a C access-control register constant, not an Azure Container Registry username. Hex constants must not satisfy the username capture."
+
+[[evasion]]
+text = "ACR_TOKEN=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJrcDRxeDcifQ"
+credential = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJrcDRxeDcifQ"
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted ACR JWT."

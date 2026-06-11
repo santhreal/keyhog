@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:4af6e983a6f7fe822635a91d7b5d041cd0f25d08c396b34072d88816a9b7ca20
-size 1571
+schema_version = 1
+detector_id = "rootly-api-token"
+service = "rootly"
+severity = "critical"
+
+[[positive]]
+text = "rootly-nAdOzDbZnj6TamM8tkZ4_nmGv1Kl7411nuD1n8ogRKBe1Bh8LlWiEpMVDiFLyb8gX3axlWWmL6"
+credential = "rootly-nAdOzDbZnj6TamM8tkZ4_nmGv1Kl7411nuD1n8ogRKBe1Bh8LlWiEpMVDiFLyb8gX3axlWWmL6"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "rootly-nAdOzDbZnj6TamM8tkZ4_nmGv1Kl7411nuD1n8ogRKBe1Bh8LlWiEpMVDiFLyb8gX3axlWWmL6=\"rootly-nAdOzDbZnj6TamM8tkZ4_nmGv1Kl7411nuD1n8ogRKBe1Bh8LlWiEpMVDiFLyb8gX3axlWWmL6\""
+credential = "rootly-nAdOzDbZnj6TamM8tkZ4_nmGv1Kl7411nuD1n8ogRKBe1Bh8LlWiEpMVDiFLyb8gX3axlWWmL6"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "rootlEXAMPLEEXAMPLEWWmL6"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "Authorization: Bearer token=\"rootly-nAdOzDbZnj6TamM8tkZ4_nmGv1Kl7411nuD1n8ogRKBe1Bh8LlWiEpMVDiFLyb8gX3axlWWmL6\""
+credential = "rootly-nAdOzDbZnj6TamM8tkZ4_nmGv1Kl7411nuD1n8ogRKBe1Bh8LlWiEpMVDiFLyb8gX3axlWWmL6"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

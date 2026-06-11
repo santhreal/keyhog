@@ -1,3 +1,41 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:c1c715be3f95a6b4d4d2f5673fa33779ad2193d12017f3f280a3713816f95511
-size 1275
+schema_version = 1
+detector_id = "statuscake-api-key"
+service = "statuscake"
+severity = "high"
+
+
+
+
+[[positive]]
+text = """statuscake_api_key=qc8f2a91b7e4d6c3a5f0b8e2d7c4a9f1"""
+credential = "qc8f2a91b7e4d6c3a5f0b8e2d7c4a9f1"
+reason = "Hand-tuned positive matching detector regex (R2-F adversarial batch)."
+
+[[positive]]
+text = """statuscake_api_key="b3e7f1a9c2d4e6f8a0b2c4d6e8f0a1b3""""
+credential = "b3e7f1a9c2d4e6f8a0b2c4d6e8f0a1b3"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "statuscake_api_key=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "statuscake_api_key=abcdeEXAMPLEEXAMPLEtuvwx"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "statuscake_api_key=qc8f2a91b7e4d6c3a5f0b8e2d7c4a9f1"
+credential = "qc8f2a91b7e4d6c3a5f0b8e2d7c4a9f1"
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:9d5a2c912316d29c13d9fe99f18cd46def62765d752cde5c6f47583de4f281b2
-size 955
+schema_version = 1
+detector_id = "directus-api-token"
+service = "directus"
+severity = "high"
+
+[[positive]]
+text = "DIRECTUS_TOKEN=C372xGw30nSx5QdQuTxy"
+credential = "C372xGw30nSx5QdQuTxy"
+reason = "Directus token with env-var anchor and 20-char alnum body."
+
+[[positive]]
+text = "Authorization: Bearer lterdnEiDiRiERKXFI0hg8M5QQWSfu # directus"
+credential = "lterdnEiDiRiERKXFI0hg8M5QQWSfu"
+reason = "Bearer token in Authorization header with directus context."
+
+[[negative]]
+text = "DIRECTUS_TOKEN=short"
+reason = "Body too short / wrong shape."
+
+[[evasion]]
+text = "DIRECTUS_API_KEY=\"C372xGw30nSx5QdQuTxy\""
+credential = "C372xGw30nSx5QdQuTxy"
+reason = "API_KEY variant with quoted value."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Directus credential."

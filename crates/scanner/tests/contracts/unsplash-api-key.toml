@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:47e1182eafcc9a4d6346cf0b417d25fca6c9a3ae993b882e67904f69961e1e3e
-size 1018
+schema_version = 1
+detector_id = "unsplash-api-key"
+service = "unsplash"
+severity = "medium"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "UNSPLASHACCESSKEY=b56N2Squqb-gGnPqf5VOZGsBl15UBi9LJhkMOwkSOxB"
+credential = "b56N2Squqb-gGnPqf5VOZGsBl15UBi9LJhkMOwkSOxB"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "UNSPLASHACCESSKEY=\"b56N2Squqb-gGnPqf5VOZGsBl15UBi9LJhkMOwkSOxB\""
+credential = "b56N2Squqb-gGnPqf5VOZGsBl15UBi9LJhkMOwkSOxB"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "UNSPLASHACCESSKEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "UNSPLASHACCESSKEY=b56N2EXAMPLEEXAMPLEkSOxB"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

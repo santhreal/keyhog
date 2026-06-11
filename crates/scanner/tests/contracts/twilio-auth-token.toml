@@ -1,3 +1,42 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:5d82200cc600f1340a7a5cd412fff09c3fc1ceb0b7a8e92a7899b514eff49fc1
-size 1618
+schema_version = 1
+detector_id = "twilio-auth-token"
+service = "twilio"
+severity = "critical"
+
+# Twilio auth token requires the `account_sid` companion (a literal `AC` + 32 hex)
+# to be present within `within_lines = 5` — otherwise the detector skips the
+# finding (the `required = true` companion gate). Each fixture pairs the
+# auth-token line with an account-sid line.
+
+[[positive]]
+text = """TWILIO_ACCOUNT_SID=AC7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d
+TWILIO_AUTH_TOKEN=4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f"""
+credential = "4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f"
+reason = "Standard Twilio env-var pair (account_sid + auth_token) — companion gate satisfied."
+
+[[positive]]
+text = """accountSid: \"AC9f3e5b8c1a9f4e2b6c8d3a5e9f1b7c4d\"
+authToken: \"4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f\""""
+credential = "4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f"
+reason = "JS/Ruby-style camelCase pair within companion window."
+
+[[negative]]
+text = "TWILIO_AUTH_TOKEN=4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f"
+reason = "Auth token alone, no account_sid companion — required-companion gate suppresses the finding."
+
+[[evasion]]
+text = """Twilio.AccountSid=AC7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d
+Twilio.AuthToken=4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f"""
+credential = "4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f"
+reason = "C#/.NET-style dot-property naming — regex's `[_\\s-]*` covers the `.` separator."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Twilio account_sid+auth_token pair."

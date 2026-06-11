@@ -1,3 +1,41 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:3d1363f3bd0f6c16588e9a909a39c1591fab410783dc821b6fa9562b69ec425a
-size 1243
+schema_version = 1
+detector_id = "socure-api-key"
+service = "socure"
+severity = "high"
+
+
+
+
+[[positive]]
+text = """SOCURE sdk_key="abcdefghijklmnopqrstuvwx123456""""
+credential = "abcdefghijklmnopqrstuvwx123456"
+reason = "Hand-tuned positive matching detector regex (R2-F adversarial batch)."
+
+[[positive]]
+text = """socure api key=qc8f2a91b7e4d6c3a5f0b8e2d7c4a9f1"""
+credential = "qc8f2a91b7e4d6c3a5f0b8e2d7c4a9f1"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "socure api key=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "socure api key=abcdeEXAMPLEEXAMPLEtuvwx"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "SOCURE sdk_key=\"abcdefghijklmnopqrstuvwx123456\""
+credential = "abcdefghijklmnopqrstuvwx123456"
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

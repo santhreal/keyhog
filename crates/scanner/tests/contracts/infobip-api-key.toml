@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:c8def25de3ffcab212b5e7dbfc0096615c514284911d6f70afd5a58d116dbace
-size 1245
+schema_version = 1
+detector_id = "infobip-api-key"
+service = "infobip"
+severity = "critical"
+
+[[positive]]
+text = "infobip=521605cd-2e1a-7f93-dc93-62773b2dba23"
+credential = "521605cd-2e1a-7f93-dc93-62773b2dba23"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "infobip=\"521605cd-2e1a-7f93-dc93-62773b2dba23\""
+credential = "521605cd-2e1a-7f93-dc93-62773b2dba23"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "infobip=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "infobip=52160EXAMPLEEXAMPLEdba23"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "export infobip=521605cd-2e1a-7f93-dc93-62773b2dba23"
+credential = "521605cd-2e1a-7f93-dc93-62773b2dba23"
+reason = "Adversarial env_export envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

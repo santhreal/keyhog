@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:820cf6f1f37939420711ae79752a1bd0f59c3aa5c6d68cefbfdfe04c20c8ee38
-size 1078
+schema_version = 1
+detector_id = "fortinet-fortigate-token"
+service = "fortinet"
+severity = "critical"
+
+[[positive]]
+text = "FORTINET_API_TOKEN=Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+reason = "Uppercase keyword prefix with 32-char alnum/underscore/hyphen body."
+
+[[positive]]
+text = "fortigate_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Lowercase keyword prefix with uppercase KEY and 32-char alnum body."
+
+[[negative]]
+text = "FORTINET_TOKEN=short"
+reason = "Body too short (5 chars) for 32-64 char requirement."
+
+[[evasion]]
+text = 'FORTIGATE TOKEN "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"'
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz"
+reason = "Space-separated prefix with quoted token."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted fortinet credential."

@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:7cb81900f3f7e33fe28c9eac2d95357012ab9208a3b4bd4aecd0c5f7db87da8a
-size 1285
+schema_version = 1
+detector_id = "lightstep-access-token"
+service = "lightstep"
+severity = "high"
+
+[[positive]]
+text = "LIGHTSTEP_ACCESS_TOKEN=745f2198109b6eed5a2be2ab94a89e45"
+credential = "745f2198109b6eed5a2be2ab94a89e45"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "LIGHTSTEP_ACCESS_TOKEN=\"745f2198109b6eed5a2be2ab94a89e45\""
+credential = "745f2198109b6eed5a2be2ab94a89e45"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "LIGHTSTEP_ACCESS_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "LIGHTSTEP_ACCESS_TOKEN=745f2EXAMPLEEXAMPLE89e45"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "# LIGHTSTEP_ACCESS_TOKEN=745f2198109b6eed5a2be2ab94a89e45"
+credential = "745f2198109b6eed5a2be2ab94a89e45"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

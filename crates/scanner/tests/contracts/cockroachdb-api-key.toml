@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:5af59a18fb178a0cf2c93cefacb4604f7d7f0509e45c62065ccd620aabc73062
-size 1073
+schema_version = 1
+detector_id = "cockroachdb-api-key"
+service = "cockroachdb"
+severity = "critical"
+
+[[positive]]
+text = "COCKROACH_API_KEY=KP4QX7R_M2SN5TB_VW3YZKP_4QX7RM_2SN"
+credential = "KP4QX7R_M2SN5TB_VW3YZKP_4QX7RM_2SN"
+reason = "Canonical env-var with exact 7_7_7_6_3 uppercase alnum segments."
+
+[[positive]]
+text = "cockroachlabs=VK9BN3L_P7QM2RS_5TW8VK9_BN3LP7_QMR"
+credential = "VK9BN3L_P7QM2RS_5TW8VK9_BN3LP7_QMR"
+reason = "Lowercase context anchor with exact segmented format."
+
+[[negative]]
+text = "COCKROACH_API_KEY=short"
+reason = "Body does not match 7_7_7_6_3 uppercase alnum segment pattern."
+
+[[evasion]]
+text = "Authorization: Bearer COCKROACH_API_KEY=KP4QX7R_M2SN5TB_VW3YZKP_4QX7RM_2SN"
+credential = "KP4QX7R_M2SN5TB_VW3YZKP_4QX7RM_2SN"
+reason = "Bearer-header wrap around the assignment."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted CockroachDB API key."

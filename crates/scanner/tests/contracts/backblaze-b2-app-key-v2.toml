@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:65223a0ba8813f8fc2c6908f28edf0438655f6dcff992a6d923f06e8471db459
-size 911
+schema_version = 1
+detector_id = "backblaze-b2-app-key-v2"
+service = "backblaze"
+severity = "high"
+
+[[positive]]
+text = "K00MKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx"
+credential = "K00MKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx"
+reason = "Backblaze B2 v2 app key (K00M prefix + 25 alnum body)."
+
+[[positive]]
+text = "B2_APP_KEY=K00NVk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3"
+credential = "K00NVk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3"
+reason = "Env-var wrap around K00N variant."
+
+[[negative]]
+text = "K00Mshort"
+reason = "Body below 20 chars after K00M prefix."
+
+[[evasion]]
+text = "b2_app_key=K00MKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx"
+credential = "K00MKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx"
+reason = "Lowercase b2_app_key env-var form."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Backblaze B2 key."

@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:7395bf2e8881f217784bbce364966e8cfde026ce5fad4fc71af5a8b6b90c464f
-size 1248
+schema_version = 1
+detector_id = "rudder-api-token"
+service = "rudder"
+severity = "critical"
+
+[[positive]]
+text = "RUDDER_API_TOKEN=cCtjcSNc6txJcRF_v9yQGzlgF8t-GM3K"
+credential = "cCtjcSNc6txJcRF_v9yQGzlgF8t-GM3K"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "RUDDER_API_TOKEN=\"cCtjcSNc6txJcRF_v9yQGzlgF8t-GM3K\""
+credential = "cCtjcSNc6txJcRF_v9yQGzlgF8t-GM3K"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "RUDDER_API_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "RUDDER_API_TOKEN=cCtjcEXAMPLEEXAMPLE-GM3K"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "{\"secret\":\"cCtjcSNc6txJcRF_v9yQGzlgF8t-GM3K\"}"
+credential = "cCtjcSNc6txJcRF_v9yQGzlgF8t-GM3K"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

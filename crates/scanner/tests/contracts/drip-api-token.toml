@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:10b281005dcac61c1d48efac195548bfc81177beb393c39158a664c99f48b5f2
-size 998
+schema_version = 1
+detector_id = "drip-api-token"
+service = "drip"
+severity = "critical"
+
+[[positive]]
+text = "drip_api_token=kEnydx9qWCA79ISjs8JHUdKF0"
+credential = "kEnydx9qWCA79ISjs8JHUdKF0"
+reason = "Drip API token with drip_api_token prefix and 25-char alnum/underscore/hyphen body."
+
+[[positive]]
+text = "DRIP_ACCOUNT_ID=C99enq52"
+credential = "C99enq52"
+reason = "Drip account ID with DRIP_ACCOUNT_ID prefix and 8-char alnum body."
+
+[[negative]]
+text = "drip_api_token=short"
+reason = "Body too short — only 5 chars after prefix."
+
+[[evasion]]
+text = "drip_api_token=kEnydx9qWCA79ISjs8JHUdKF0"
+credential = "kEnydx9qWCA79ISjs8JHUdKF0"
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted drip credential."

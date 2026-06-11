@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:6d376c477568de2d1fc72644eb7b1598baf0853cc2bd06ab2be2b110118fff7e
-size 954
+schema_version = 1
+detector_id = "codecov-token"
+service = "codecov"
+severity = "high"
+
+[[positive]]
+text = "CODECOV_TOKEN=\"7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d\""
+credential = "7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+reason = "CODECOV_TOKEN env-var with UUID."
+
+[[positive]]
+text = "codecov: 4c9a8f6e-3b7d-1a2c-5e8f-0b9d6a3c4e1f"
+credential = "4c9a8f6e-3b7d-1a2c-5e8f-0b9d6a3c4e1f"
+reason = "Lowercase codecov anchor with colon separator."
+
+[[negative]]
+text = "CODECOV_TOKEN=short"
+reason = "Body below UUID length."
+
+[[evasion]]
+text = "codecov = '7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d'"
+credential = "7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+reason = "Single-quoted UUID with spaces around equals."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Codecov token."

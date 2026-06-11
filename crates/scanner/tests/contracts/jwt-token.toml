@@ -1,3 +1,55 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:96250bdf9192180239d94cfef03e7512daeea4a506df1d11993bd96d0d7e24f8
-size 2643
+# Per-detector contract: jwt-token
+#
+# JWT format: `eyJhbGci…` (base64url of `{"alg":…}`) + `.eyJ…` payload
+# + `.<signature>`. Three base64url segments separated by dots.
+
+schema_version = 1
+detector_id = "jwt-token"
+service = "jwt"
+severity = "high"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5OTk5OTk5OTk5IiwidGVuYW50Ijoia2V5aG9nLWUyZSIsImlhdCI6MTc0ODA3MjAwMH0.K3xqLnZWP4UlH9oZcQK7nBmJrEzVfYp2N1RsAtX5Y8w"
+credential = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5OTk5OTk5OTk5IiwidGVuYW50Ijoia2V5aG9nLWUyZSIsImlhdCI6MTc0ODA3MjAwMH0.K3xqLnZWP4UlH9oZcQK7nBmJrEzVfYp2N1RsAtX5Y8w"
+reason = "Canonical jwt.io example token (HS256, John Doe). The most-cited JWT in industry docs."
+
+[[positive]]
+text = "Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5OTk5OTk5OTk5IiwidGVuYW50Ijoia2V5aG9nLWUyZSIsImlhdCI6MTc0ODA3MjAwMH0.K3xqLnZWP4UlH9oZcQK7nBmJrEzVfYp2N1RsAtX5Y8w"
+credential = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5OTk5OTk5OTk5IiwidGVuYW50Ijoia2V5aG9nLWUyZSIsImlhdCI6MTc0ODA3MjAwMH0.K3xqLnZWP4UlH9oZcQK7nBmJrEzVfYp2N1RsAtX5Y8w"
+reason = "Bearer-token header — the most common JWT leak channel."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "eyJhbGci"
+reason = "Just the JWT header prefix, no payload + signature."
+
+[[negative]]
+text = "the eyJhbGci prefix is base64 of {\"alg\":...} per RFC 7519"
+reason = "Prose mentioning the prefix without a real JWT."
+
+[[negative]]
+text = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ"
+reason = "Header + payload but no signature (only 2 segments) — must not match."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "// eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5OTk5OTk5OTk5IiwidGVuYW50Ijoia2V5aG9nLWUyZSIsImlhdCI6MTc0ODA3MjAwMH0.K3xqLnZWP4UlH9oZcQK7nBmJrEzVfYp2N1RsAtX5Y8w"
+credential = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5OTk5OTk5OTk5IiwidGVuYW50Ijoia2V5aG9nLWUyZSIsImlhdCI6MTc0ODA3MjAwMH0.K3xqLnZWP4UlH9oZcQK7nBmJrEzVfYp2N1RsAtX5Y8w"
+reason = "Inside a single-line comment."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted JWT."

@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:4b1de0884427c704b962d85d220d8d9f065b6f7628d724578f4bddb55f315fe0
-size 1332
+schema_version = 1
+detector_id = "gocardless-access-token"
+service = "gocardless"
+severity = "critical"
+
+[[positive]]
+text = "GOCARDLESS_ACCESS_TOKEN=YBg4mNl8_wKuNd9dve0UagftXjR4RTS4pLin0z"
+credential = "YBg4mNl8_wKuNd9dve0UagftXjR4RTS4pLin0z"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "GOCARDLESS_ACCESS_TOKEN=\"YBg4mNl8_wKuNd9dve0UagftXjR4RTS4pLin0z\""
+credential = "YBg4mNl8_wKuNd9dve0UagftXjR4RTS4pLin0z"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "GOCARDLESS_ACCESS_TOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "GOCARDLESS_ACCESS_TOKEN=YBg4mEXAMPLEEXAMPLELin0z"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "# GOCARDLESS_ACCESS_TOKEN=YBg4mNl8_wKuNd9dve0UagftXjR4RTS4pLin0z"
+credential = "YBg4mNl8_wKuNd9dve0UagftXjR4RTS4pLin0z"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

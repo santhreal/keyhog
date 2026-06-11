@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:5fba98757d44afb79b98f6a88ded3a977a36daf2dc2830f7fbd93658bd55a138
-size 1348
+schema_version = 1
+detector_id = "singapore-govtech-api-key"
+service = "singapore-govtech"
+severity = "high"
+
+[[positive]]
+text = "SINGAPORE_GOVTECH_API_KEY=PDsuJtQ1j69J6nI4deWgxnRlCTHmcYgbmcRfsLA4"
+credential = "PDsuJtQ1j69J6nI4deWgxnRlCTHmcYgbmcRfsLA4"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "SINGAPORE_GOVTECH_API_KEY=\"PDsuJtQ1j69J6nI4deWgxnRlCTHmcYgbmcRfsLA4\""
+credential = "PDsuJtQ1j69J6nI4deWgxnRlCTHmcYgbmcRfsLA4"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "SINGAPORE_GOVTECH_API_KEY=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "SINGAPORE_GOVTECH_API_KEY=PDsuJEXAMPLEEXAMPLEfsLA4"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "{\"secret\":\"PDsuJtQ1j69J6nI4deWgxnRlCTHmcYgbmcRfsLA4\"}"
+credential = "PDsuJtQ1j69J6nI4deWgxnRlCTHmcYgbmcRfsLA4"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

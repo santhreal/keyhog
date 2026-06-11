@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:6e338a0007793cc823638693d1811b0cd46aabf1b6c49d48e183a929f5fb69f5
-size 754
+schema_version = 1
+detector_id = "checkly-api-key"
+service = "checkly"
+severity = "high"
+
+[positive_with_companion]
+text = "cu_K5xugdIe3vOIg7njMkyZy4Wu\ncheckly_account_id=iTECzTkoNbSUUViZA25wLQCHVTDOF7HZ"
+expected_findings = ["checkly-api-key"]
+expected_companions = { account_id = "iTECzTkoNbSUUViZA25wLQCHVTDOF7HZ" }
+reason = "Primary paired with companion(s) account_id."
+
+[positive_primary_only]
+text = "cu_K5xugdIe3vOIg7njMkyZy4Wu"
+expected_findings = ["checkly-api-key"]
+must_not_verify = true
+reason = "Primary found without companion account_id; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "checkly_account_id=iTECzTkoNbSUUViZA25wLQCHVTDOF7HZ"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

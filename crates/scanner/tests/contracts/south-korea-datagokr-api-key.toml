@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:80552d98036b7c49489a741779f1e2d5fdb9bcd607d8733d5a98418115b1a153
-size 1397
+schema_version = 1
+detector_id = "south-korea-datagokr-api-key"
+service = "south-korea-datagokr"
+severity = "medium"
+
+[[positive]]
+text = "data.go.krapi_key kVZ1IaWiI91uDEBI6tzGKy9soXY7baXffP0dRA9FjLiH1CWx"
+credential = "kVZ1IaWiI91uDEBI6tzGKy9soXY7baXffP0dRA9FjLiH1CWx"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "data.go.krapi_key=\"kVZ1IaWiI91uDEBI6tzGKy9soXY7baXffP0dRA9FjLiH1CWx\""
+credential = "kVZ1IaWiI91uDEBI6tzGKy9soXY7baXffP0dRA9FjLiH1CWx"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "data.go.krapi_key YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "data.go.krapi_key kVZ1IEXAMPLEEXAMPLEH1CWx"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "https://api.data.go.kr/openapi?serviceKey=kVZ1IaWiI91uDEBI6tzGKy9soXY7baXffP0dRA9FjLiH1CWx"
+credential = "kVZ1IaWiI91uDEBI6tzGKy9soXY7baXffP0dRA9FjLiH1CWx"
+reason = "Adversarial envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 35000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

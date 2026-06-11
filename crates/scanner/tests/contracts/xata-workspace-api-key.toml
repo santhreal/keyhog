@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:66ac5fa61b622a709119abb701a73aaf0b9cce23c940630125566f7c0e714ef6
-size 1132
+schema_version = 1
+detector_id = "xata-workspace-api-key"
+service = "xata"
+severity = "high"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "xau_8Di0DmOErHN_6oo82G98TQNTA815Z2aehzSbTPleCMZDqE5t6dg7eCqnGgBeji47hhMMJHbC0F0KrhnyFYTAyW"
+credential = "xau_8Di0DmOErHN_6oo82G98TQNTA815Z2aehzSbTPleCMZDqE5t6dg7eCqnGgBeji47hhMMJHbC0F0KrhnyFYTAyW"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "xau_8Di0DmOErHN_6oo82G98TQNTA815Z2aehzSbTPleCMZDqE5t6dg7eCqnGgBeji47hhMMJHbC0F0KrhnyFYTAyW\""
+credential = "xau_8Di0DmOErHN_6oo82G98TQNTA815Z2aehzSbTPleCMZDqE5t6dg7eCqnGgBeji47hhMMJHbC0F0KrhnyFYTAyW"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "xau_8EXAMPLEEXAMPLEYTAyW"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

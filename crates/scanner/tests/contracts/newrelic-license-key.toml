@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:4ec9b70cd1b71a32cead052e70804b2872fb2137b877b95d89eee7c12266141a
-size 1088
+schema_version = 1
+detector_id = "newrelic-license-key"
+service = "newrelic"
+severity = "critical"
+
+[[positive]]
+text = "NEW_RELIC_LICENSE_KEY=5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3ea9e2f5b8"
+credential = "5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3ea9e2f5b8"
+reason = "Standard NEW_RELIC_LICENSE_KEY (40 hex, random-looking) env-var shape."
+
+[[positive]]
+text = "newrelic_license_key: \"7b8c3d9e2f1a4b5c6d7e8f9a0b1c2d3e4f5a6b7c\""
+credential = "7b8c3d9e2f1a4b5c6d7e8f9a0b1c2d3e4f5a6b7c"
+reason = "YAML-style newrelic_license_key assignment."
+
+[[negative]]
+text = "NEW_RELIC_LICENSE_KEY=short"
+reason = "Body below 40 hex chars."
+
+[[evasion]]
+text = "newrelic_license=5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3ea9e2f5b8"
+credential = "5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3ea9e2f5b8"
+reason = "Lowercased `newrelic_license` token still anchored by detector regex."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted New Relic license."

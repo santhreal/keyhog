@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:0d3fc5f573c3367dc6e3bb4f0d3109769bd7116e55607766986e2fd61675b1bf
-size 1124
+schema_version = 1
+detector_id = "cloudflare-zero-trust-service-token"
+service = "cloudflare"
+severity = "high"
+
+[positive_with_companion]
+text = "CF]AccessqClientjId\" \"  ' '  =:=:  '  ' \"  \"         =  =     = '  ='  f94675ef727cee5b1b7586eb76c85195.access\nCFgAccessKClientSSecret  =' : ''\"=  '    McGr2QKWU5Xmh1G-Xsz7djo_dUC12q0XKwv8HjJwaKIB"
+expected_findings = ["cloudflare-zero-trust-service-token"]
+expected_companions = { client_secret = "CFgAccessKClientSSecret  =' : ''\"=  '    McGr2QKWU5Xmh1G-Xsz7djo_dUC12q0XKwv8HjJwaKIB" }
+reason = "Primary paired with companion(s) client_secret."
+
+[positive_primary_only]
+text = "CF]AccessqClientjId\" \"  ' '  =:=:  '  ' \"  \"         =  =     = '  ='  f94675ef727cee5b1b7586eb76c85195.access"
+expected_findings = ["cloudflare-zero-trust-service-token"]
+must_not_verify = true
+reason = "Primary found without companion client_secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "CFgAccessKClientSSecret  =' : ''\"=  '    McGr2QKWU5Xmh1G-Xsz7djo_dUC12q0XKwv8HjJwaKIB"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

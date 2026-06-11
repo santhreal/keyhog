@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:a758003ac5eb33168f1af63c47d49fc95eac751c76f9c1b6803bce03eaac601f
-size 1628
+schema_version = 1
+detector_id = "threads-api-token"
+service = "threads"
+severity = "high"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "threadid=\":   \"   :=  '   ==\"'  =::      '\"       ' \"'\"  \"    =    :   :          '  '= '   \"  \" \"   \": 7K4lq8YH2dZbHWOzNLjPPa3mCnnalyOSJlEGrPQvurQBHIAR9Y6G1D5CEsBOITC7AbByJxV8ZjRQuFECSQ5GnqrGsRSawQJxGZLH"
+credential = "7K4lq8YH2dZbHWOzNLjPPa3mCnnalyOSJlEGrPQvurQBHIAR9Y6G1D5CEsBOITC7AbByJxV8ZjRQuFECSQ5GnqrGsRSawQJxGZLH"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "threadid=\":   \"   :=  '   ==\"'  =::      '\"       ' \"'\"  \"    =    :   :          '  '= '   \"  \" \"   \": 7K4lq8YH2dZbHWOzNLjPPa3mCnnalyOSJlEGrPQvurQBHIAR9Y6G1D5CEsBOITC7AbByJxV8ZjRQuFECSQ5GnqrGsRSawQJxGZLH"
+credential = "7K4lq8YH2dZbHWOzNLjPPa3mCnnalyOSJlEGrPQvurQBHIAR9Y6G1D5CEsBOITC7AbByJxV8ZjRQuFECSQ5GnqrGsRSawQJxGZLH"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "threadid=\":   \"   :=  '   ==\"'  =::      '\"       ' \"'\"  \"    =    :   :          '  '= '   \"  \" \"   \": YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "threadid=\":   \"   :=  '   ==\"'  =::      '\"       ' \"'\"  \"    =    :   :          '  '= '   \"  \" \"   \": 7K4lqEXAMPLEEXAMPLExGZLH"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

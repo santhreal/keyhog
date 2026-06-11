@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:96fdd36b0a8088f17adf60cc31cfaffec40438b6df05a72e66098b7b417de614
-size 1022
+schema_version = 1
+detector_id = "checkly-api-key"
+service = "checkly"
+severity = "high"
+
+[[positive]]
+text = "CHECKLY_API_KEY=cu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Q"
+credential = "cu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Q"
+reason = "Uppercase CHECKLY_API_KEY prefix with cu_ plus 24 alnum chars."
+
+[[positive]]
+text = "checkly_api_key=\"cu_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3L\""
+credential = "cu_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3L"
+reason = "Lowercase checkly_api_key prefix with quoted cu_ plus 24 alnum chars."
+
+[[negative]]
+text = "cu_short"
+reason = "Body too short (only 5 chars after cu_ prefix)."
+
+[[evasion]]
+text = "Authorization: Bearer CHECKLY_API_KEY=\"cu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Q\""
+credential = "cu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Q"
+reason = "Wrapped in Bearer authorization header still matches."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted checkly credential."

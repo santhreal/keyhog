@@ -1,3 +1,55 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:450ea4a874301324717d1639b901e6a1af02b4aeb7201290007b36fdb34c48cd
-size 1746
+# Per-detector contract: huggingface-api-key
+#
+# Format: `hf_` + exactly 34 alphanumeric chars.
+
+schema_version = 1
+detector_id = "huggingface-api-key"
+service = "huggingface"
+severity = "critical"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "hf_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBn"
+credential = "hf_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBn"
+reason = "Bare HuggingFace API token, exactly 34 chars after hf_."
+
+[[positive]]
+text = "HF_TOKEN=hf_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBn"
+credential = "hf_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBn"
+reason = "Standard env-var assignment (HuggingFace's documented variable name)."
+
+[[positive]]
+text = "Authorization: Bearer hf_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBn"
+credential = "hf_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBn"
+reason = "Bearer header — HuggingFace Inference API auth shape."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "hf_short"
+reason = "Body shorter than 34 chars."
+
+[[negative]]
+text = "hf_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoB"
+reason = "33 chars after hf_ (one short)."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "{\"token\":\"hf_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBn\"}"
+credential = "hf_9X3kQp7VbT2hYRzNcMfWj4DgEsLuHaIoBn"
+reason = "JSON payload."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted HuggingFace token."

@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:e3c7b1cdb37638497dc2af4cd916aa5ebb214af91ad11b066b2cf95a0660a0c2
-size 999
+schema_version = 1
+detector_id = "cargo-registry-token"
+service = "cargo"
+severity = "high"
+
+[[positive]]
+text = "CARGO_REGISTRY_TOKEN=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Exact env-var name with 32 hex chars."
+
+[[positive]]
+text = "cargo login 7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Cargo login command variant with 32 hex chars."
+
+[[negative]]
+text = "CARGO_REGISTRY_TOKEN=short"
+reason = "Body below 32 hex chars."
+
+[[evasion]]
+text = "export CARGO_REGISTRY_TOKEN=\"7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d\""
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"
+reason = "Quoted shell export still matches via quote in separator class."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Cargo registry token."

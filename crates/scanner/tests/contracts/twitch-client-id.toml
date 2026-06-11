@@ -1,3 +1,43 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:0b2dd4cc20749500e236ebbbef4e08cb63b163602cd966d4f92bdc7aa90d86b3
-size 1700
+schema_version = 1
+detector_id = "twitch-client-id"
+service = "twitch"
+severity = "high"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "TWITCH client        _        - -    _        -   _   - - _   id::'=  '   \" ms2uvf52y6in49bdtvr079w81jvoa4"
+credential = "ms2uvf52y6in49bdtvr079w81jvoa4"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "TWITCH client        _        - -    _        -   _   - - _   id::'=  '   \" ms2uvf52y6in49bdtvr079w81jvoa4"
+credential = "ms2uvf52y6in49bdtvr079w81jvoa4"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "TWITCH client        _        - -    _        -   _   - - _   id::'=  '   \" YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "TWITCH client        _        - -    _        -   _   - - _   id::'=  '   \" ms2uvEXAMPLEEXAMPLEjvoa4"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = """TWITCH_CLIENT_ID=ms2uvf52y6in49bdtvr079w81jvoa4
+TWITCH_CLIENT_SECRET=abc123secret456789012345678901"""
+credential = "ms2uvf52y6in49bdtvr079w81jvoa4"
+reason = "Standard SCREAMING_SNAKE env-var pair with optional companion secret."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

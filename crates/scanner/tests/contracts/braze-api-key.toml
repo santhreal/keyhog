@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:575d17c98ccd86a4688c29cd5b974101922d056d810685bd124393d5d5c7bcef
-size 1043
+schema_version = 1
+detector_id = "braze-api-key"
+service = "braze"
+severity = "critical"
+
+[[positive]]
+text = "BRAZE_API_KEY=7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+credential = "7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+reason = "Standard Braze API key env-var (UUID v4 format)."
+
+[[positive]]
+text = "x-braze-authorization: 9f3e5b8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+credential = "9f3e5b8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+reason = "Braze API key from lowercase Authorization header."
+
+[[negative]]
+text = "BRAZE_API_KEY=7b3e5d8c"
+reason = "UUID segment too short, fails regex."
+
+[[evasion]]
+text = "BRAZE_API_KEY=7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+credential = "7b3e5d8c-1a9f-4e2b-6c8d-3a5e9f1b7c4d"
+reason = "Adversarial env_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Braze API key."

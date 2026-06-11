@@ -1,3 +1,39 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:a434811a97683b67dd9dcf434bc23a60c27a048c0110e80e0f3ecf188064432f
-size 1380
+schema_version = 1
+detector_id = "sourcegraph-access-token"
+service = "sourcegraph"
+severity = "high"
+
+[[positive]]
+text = "SRC_ACCESS_TOKEN=sgp_719f3553f917bddb719f3553f917bddb719f3553"
+credential = "sgp_719f3553f917bddb719f3553f917bddb719f3553"
+reason = "Sourcegraph dotcom access token (sgp_<40 hex>)."
+
+[[positive]]
+text = "sourcegraph token: sgp_3957fd1bb1df7593_b9d77d9b315ff513b9d77d9b315ff513b9d77d9b"
+credential = "sgp_3957fd1bb1df7593_b9d77d9b315ff513b9d77d9b315ff513b9d77d9b"
+reason = "Sourcegraph instance-scoped token (sgp_<16 hex>_<40 hex>)."
+
+[[positive]]
+text = "SRC_LICENSE_KEY=slk_5dfb11bfd57399375dfb11bfd57399375dfb11bfd57399375dfb11bfd5739937"
+credential = "slk_5dfb11bfd57399375dfb11bfd57399375dfb11bfd57399375dfb11bfd5739937"
+reason = "Sourcegraph license key (slk_<64 hex>)."
+
+[[negative]]
+text = "SRC_ENDPOINT=https://sourcegraph.example.com"
+reason = "Sourcegraph endpoint URL, no sgp_/slk_ token."
+
+[[evasion]]
+text = "sourcegraph sgp_719f3553f917bddb719f3553f917bddb719f3553"
+credential = "sgp_719f3553f917bddb719f3553f917bddb719f3553"
+reason = "Space-separated sourcegraph keyword + token."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Sourcegraph token."

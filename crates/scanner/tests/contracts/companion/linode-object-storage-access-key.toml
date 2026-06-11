@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:444598cdc2025b7e269d04cb0aaa78b8348ce56f74df1c9a4e460f10328014e2
-size 895
+schema_version = 1
+detector_id = "linode-object-storage-access-key"
+service = "linode"
+severity = "high"
+
+[positive_with_companion]
+text = "LINODE_ACCESS_KEY=ABCD1234EFGH5678IJKL\nLINODE_SECRET_KEY=abcd1234efgh5678ijkl9012mnop3456qrst7890"
+expected_findings = ["linode-object-storage-access-key"]
+expected_companions = { secret_access_key = "abcd1234efgh5678ijkl9012mnop3456qrst7890" }
+reason = "Access key paired with secret key (companion regex over-captures 'KEY=' prefix)."
+
+[positive_primary_only]
+text = "LINODE_ACCESS_KEY=ABCD1234EFGH5678IJKL"
+expected_findings = ["linode-object-storage-access-key"]
+must_not_verify = true
+reason = "Primary found without companion secret_access_key; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "LINODE_SECRET_KEY=abcd1234efgh5678ijkl9012mnop3456qrst7890"
+expected_findings = []
+reason = "Secret key alone without access key."

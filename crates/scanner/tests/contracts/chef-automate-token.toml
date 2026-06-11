@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:89a61addea984098bba4cf939d183305e191d652f77ff6181afc47189dafca2c
-size 968
+schema_version = 1
+detector_id = "chef-automate-token"
+service = "chef-automate"
+severity = "critical"
+
+[[positive]]
+text = "CHEF_AUTOMATE_TOKEN=Kp4Qx7Rm2Sn5Tb8Vw3YzK"
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzK"
+reason = "Chef Automate token env-var (20 alnum)."
+
+[[positive]]
+text = "api-token: Vk9Bn3Lp7Qm2Rs5Tw8Vk9B"
+credential = "Vk9Bn3Lp7Qm2Rs5Tw8Vk9B"
+reason = "api-token header form (20 alnum)."
+
+[[negative]]
+text = "CHEF_AUTOMATE_TOKEN=short"
+reason = "Body below 20 alnum chars."
+
+[[evasion]]
+text = "chef-automate auth token = \"Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn\""
+credential = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn"
+reason = "Chef-automate auth token with spaces and quotes — regex covers .*auth.*token."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted chef-automate token."

@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:b2ab45f711204f03bd2becbe6b933609c773113a1f2cbe2181bcbb2862ec52ef
-size 1212
+schema_version = 1
+detector_id = "kubernetes-bootstrap-token"
+service = "kubernetes"
+severity = "critical"
+
+[[positive]]
+text = "kubeadm join 10.0.0.1:6443 --token k3m9zq.4r8w2nq3p6vt5b1z --discovery-token-ca-cert-hash sha256:abc"
+credential = "k3m9zq.4r8w2nq3p6vt5b1z"
+reason = "Canonical kubeadm-join command — token format is 6-char id + 16-char secret separated by a literal dot."
+
+[[positive]]
+text = "bootstrap-token: 8nq3p6.k7m9zq4r8w2nq3p6\nusages: [signing, authentication]"
+credential = "8nq3p6.k7m9zq4r8w2nq3p6"
+reason = "Bootstrap-token YAML secret block (kubelet auth)."
+
+[[negative]]
+text = "kubeadm version: v1.29.3"
+reason = "Version string only — no token shape present."
+
+[[evasion]]
+text = "kubeadm join 10.0.0.1:6443 --token k3m9zq.4r8w2nq3p6vt5b1z --discovery-token-ca-cert-hash sha256:abc"
+credential = "k3m9zq.4r8w2nq3p6vt5b1z"
+reason = "Adversarial header_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted bootstrap token."

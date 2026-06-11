@@ -1,3 +1,38 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:5d546074d814f564c344dccf8161b81b1d505c1f2d2027ade358dd122cf06de1
-size 1109
+schema_version = 1
+detector_id = "heap-analytics-key"
+service = "heapanalytics"
+severity = "low"
+
+[[positive]]
+text = "heap.load(73405814"
+credential = "73405814"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "heap.load(73405814=\"73405814\""
+credential = "73405814"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "heap.load(YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "heap.load(\"YOUR_API_KEY_HERE_PLACEHOLDER_VALUE\""
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "heap.load(73405814"
+credential = "73405814"
+reason = "Adversarial anchor_bare envelope — credential must still surface under this detector."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 35000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

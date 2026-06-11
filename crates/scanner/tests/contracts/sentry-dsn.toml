@@ -1,3 +1,60 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:10d29770fa1b9f163371579d8bfa327b3c0c7e62314d9ec486c1ad1b29ea1586
-size 2281
+# Per-detector contract: sentry-dsn
+#
+# Format: `https://<32-hex>@o<orgid>.ingest.sentry.io/<projectid>` or
+# subdomain variant `<domain>.ingest.sentry.io`.
+
+schema_version = 1
+detector_id = "sentry-dsn"
+service = "sentry"
+severity = "critical"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "https://9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d@o12345.ingest.sentry.io/67890"
+credential = "https://9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d@o12345.ingest.sentry.io/67890"
+reason = "Canonical Sentry DSN with org ID."
+
+[[positive]]
+text = "SENTRY_DSN=https://9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d@o12345.ingest.sentry.io/67890"
+credential = "https://9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d@o12345.ingest.sentry.io/67890"
+reason = "Standard env-var assignment."
+
+[[positive]]
+text = "Sentry.init({ dsn: \"https://9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d@o12345.ingest.sentry.io/67890\" });"
+credential = "https://9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d@o12345.ingest.sentry.io/67890"
+reason = "Sentry JS SDK init call — most common public-client leak."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "https://abc@o12345.ingest.sentry.io/67890"
+reason = "3-char key (not 32 hex) — must not match."
+
+[[negative]]
+text = "https://9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d@example.com/67890"
+reason = "Wrong domain — must require sentry.io ingest."
+
+[[negative]]
+text = "see https://sentry.io/welcome/ for setup"
+reason = "Just a sentry.io URL with no DSN body."
+
+# ---- EVASIONS (adversarial) -----------------------------------------
+
+[[evasion]]
+text = "<meta name=\"sentry-dsn\" content=\"https://9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d@o12345.ingest.sentry.io/67890\">"
+credential = "https://9a3b7c2e4d1f6a8b0c5d9e3f7a1b4c2d@o12345.ingest.sentry.io/67890"
+reason = "HTML meta tag — extraction must not consume the closing quote/bracket."
+
+# ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 15000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler with one planted Sentry DSN."

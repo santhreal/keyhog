@@ -1,3 +1,42 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:09a34ce10081344bce64ae72b14611d79762a82f3d4c6f757d5c72995a5c9b94
-size 2316
+schema_version = 1
+detector_id = "uk-gov-notify-api-key"
+service = "uk-gov-notify"
+severity = "critical"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "govuk-notifycvj5q0z_sqygTVcSMHZ-AGEWPRIIbtAxcECtinRP-19f80e1f-0cc6-1d86-1a58-b15f0bcac555-1U0ujQHOU0ZrRq2lGlZtsOIEHykwtcTBlzNCxdAtsCp729RVcIRCxhhj9xRglS7DIHbAR3gKUf7Oevf_Um_zBi9zvV8ovXo_YVqj"
+credential = "govuk-notifycvj5q0z_sqygTVcSMHZ-AGEWPRIIbtAxcECtinRP-19f80e1f-0cc6-1d86-1a58-b15f0bcac555-1U0ujQHOU0ZrRq2lGlZtsOIEHykwtcTBlzNCxdAtsCp729RVcIRCxhhj9xRglS7DIHbAR3gKUf7Oevf_Um_zBi9zvV8ovXo_YVqj"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "govuk-notifycvj5q0z_sqygTVcSMHZ-AGEWPRIIbtAxcECtinRP-19f80e1f-0cc6-1d86-1a58-b15f0bcac555-1U0ujQHOU0ZrRq2lGlZtsOIEHykwtcTBlzNCxdAtsCp729RVcIRCxhhj9xRglS7DIHbAR3gKUf7Oevf_Um_zBi9zvV8ovXo_YVqj\""
+credential = "govuk-notifycvj5q0z_sqygTVcSMHZ-AGEWPRIIbtAxcECtinRP-19f80e1f-0cc6-1d86-1a58-b15f0bcac555-1U0ujQHOU0ZrRq2lGlZtsOIEHykwtcTBlzNCxdAtsCp729RVcIRCxhhj9xRglS7DIHbAR3gKUf7Oevf_Um_zBi9zvV8ovXo_YVqj"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "govukEXAMPLEEXAMPLE_YVqj"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."
+
+[[evasion]]
+text = "NOTIFY_API_KEY=live-govuk-notifycvj5q0z_sqygTVcSMHZ-AGEWPRIIbtAxcECtinRP-19f80e1f-0cc6-1d86-1a58-b15f0bcac555-1U0ujQHOU0ZrRq2lGlZtsOIEHykwtcTBlzNCxdAtsCp729RVcIRCxhhj9xRglS7DIHbAR3gKUf7Oevf_Um_zBi9zvV8ovXo_YVqj"
+credential = "govuk-notifycvj5q0z_sqygTVcSMHZ-AGEWPRIIbtAxcECtinRP-19f80e1f-0cc6-1d86-1a58-b15f0bcac555-1U0ujQHOU0ZrRq2lGlZtsOIEHykwtcTBlzNCxdAtsCp729RVcIRCxhhj9xRglS7DIHbAR3gKUf7Oevf_Um_zBi9zvV8ovXo_YVqj"
+reason = "Env-var assignment with live- service prefix before notify key body."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted credential."

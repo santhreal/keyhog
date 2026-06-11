@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:b155cab17138487a4309cee2ee74dc4e5bec84b215895d1350174b798feba655
-size 1052
+schema_version = 1
+detector_id = "vercel-edge-config-token"
+service = "vercel"
+severity = "high"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "ecfg_FW0BvtwcVjSHNW3E6sEiFh0poCf29bK44SnLZMBrT1n50X5B4rwblqa1FZS2k64F"
+credential = "ecfg_FW0BvtwcVjSHNW3E6sEiFh0poCf29bK44SnLZMBrT1n50X5B4rwblqa1FZS2k64F"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "ecfg_FW0BvtwcVjSHNW3E6sEiFh0poCf29bK44SnLZMBrT1n50X5B4rwblqa1FZS2k64F\""
+credential = "ecfg_FW0BvtwcVjSHNW3E6sEiFh0poCf29bK44SnLZMBrT1n50X5B4rwblqa1FZS2k64F"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "ecfg_EXAMPLEEXAMPLE2k64F"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

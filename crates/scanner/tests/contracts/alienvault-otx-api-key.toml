@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:9afa3c40756ffad7598dc7fa7f433ef4c7ea7ae128e42ca32bb9b461180a3306
-size 1135
+schema_version = 1
+detector_id = "alienvault-otx-api-key"
+service = "alienvault"
+severity = "medium"
+
+[[positive]]
+text = "OTX_API_KEY=7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f0c3d7e1a5f8c2b9d6a3c4e1f"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f0c3d7e1a5f8c2b9d6a3c4e1f"
+reason = "AlienVault OTX API key env-var (64 hex)."
+
+[[positive]]
+text = "alienvault: \"4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f7b2d9c5a8e0f3b1d4c9a8f6e3b7d1a2c\""
+credential = "4c9a8f6e3b7d1a2c5e8f0b9d6a3c4e1f7b2d9c5a8e0f3b1d4c9a8f6e3b7d1a2c"
+reason = "Lowercase alienvault YAML form."
+
+[[negative]]
+text = "OTX_API_KEY=short"
+reason = "Body below 64 hex chars."
+
+[[evasion]]
+text = "ALIENVAULT_API_KEY: 7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f0c3d7e1a5f8c2b9d6a3c4e1f"
+credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f0c3d7e1a5f8c2b9d6a3c4e1f"
+reason = "Uppercase ALIENVAULT_API_KEY env form."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted AlienVault OTX key."

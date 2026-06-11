@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:d2df28789d6de9ceb10574b12c4b60e863bc81b99b8ae0aab7493dd148752a3a
-size 1113
+schema_version = 1
+detector_id = "databricks-token"
+service = "databricks"
+severity = "critical"
+
+[positive_with_companion]
+text = "dapif727a94ba277e4cef673351af55f35801119a3f94c1de739\ndatabrickshost\"  ' = \":':  ::= \"  '  :=\"'  '     '\"    = '\" \":     = ::      \"  '=' =''\"   :=\"  \"'        :    http://-jdcv17ucecl-20uhbms0cdpgmrvrkjf.cloud.databricks.com"
+expected_findings = ["databricks-token"]
+expected_companions = { workspace_url = "http://-jdcv17ucecl-20uhbms0cdpgmrvrkjf.cloud.databricks.com" }
+reason = "Primary paired with companion(s) workspace_url."
+
+[positive_primary_only]
+text = "dapif727a94ba277e4cef673351af55f35801119a3f94c1de739"
+expected_findings = ["databricks-token"]
+must_not_verify = true
+reason = "Primary found without companion workspace_url; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "databrickshost\"  ' = \":':  ::= \"  '  :=\"'  '     '\"    = '\" \":     = ::      \"  '=' =''\"   :=\"  \"'        :    http://-jdcv17ucecl-20uhbms0cdpgmrvrkjf.cloud.databricks.com"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."

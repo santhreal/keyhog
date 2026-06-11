@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:a60dbfa32da88b10800db063252c3a30025d6bc2946f3337679b803ae32a338a
-size 960
+schema_version = 1
+detector_id = "dacast-api-key"
+service = "dacast"
+severity = "high"
+
+[[positive]]
+text = "DACAST_apikey = e8b57db06c18562a458356bda6c62f31"
+credential = "e8b57db06c18562a458356bda6c62f31"
+reason = "DACAST_apikey anchor with 32-hex key."
+
+[[positive]]
+text = "BROADKEY:6e3566653bd5a52b307cc2733286428d"
+credential = "6e3566653bd5a52b307cc2733286428d"
+reason = "Legacy BROADKEY context with 32-hex value."
+
+[[negative]]
+text = "dacast_api_key=94b3"
+reason = "Only 4 hex chars, well below 32."
+
+[[evasion]]
+text = "Authorization: Bearer dacast_api_key=\"e8b57db06c18562a458356bda6c62f31\""
+credential = "e8b57db06c18562a458356bda6c62f31"
+reason = "Wrapped in Bearer header with quotes."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Dacast API key."

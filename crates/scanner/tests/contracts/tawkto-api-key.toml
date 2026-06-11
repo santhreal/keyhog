@@ -1,3 +1,26 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:6a5e5c3755fc856a48e40a3daacbdbf7d72efe28be765db2589b83fac2be12ea
-size 950
+schema_version = 1
+detector_id = "tawkto-api-key"
+service = "tawkto"
+severity = "medium"
+
+# Auto-generated contract (gen_contracts.py). Hand-edit to add more
+# real-world shapes; the auto-stub validates the detector at
+# least fires on its canonical-shape anchor + body.
+
+[[positive]]
+text = "TAWK_TOTOKEN=6c452aaae4137a470868ddf5d894d06d"
+credential = "6c452aaae4137a470868ddf5d894d06d"
+reason = "Canonical anchor + synthesized body satisfying detector's primary regex."
+
+[[positive]]
+text = "TAWK_TOTOKEN=\"6c452aaae4137a470868ddf5d894d06d\""
+credential = "6c452aaae4137a470868ddf5d894d06d"
+reason = "Quoted-value variant of the canonical positive."
+
+[[negative]]
+text = "TAWK_TOTOKEN=YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
+reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."
+
+[[negative]]
+text = "TAWK_TOTOKEN=6c452EXAMPLEEXAMPLE4d06d"
+reason = "EXAMPLE token marker inside the body — suppression gate strips it."

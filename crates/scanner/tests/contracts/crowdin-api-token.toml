@@ -1,3 +1,34 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:003477bef37e97a61f02d694ce3bd2117967eadc5627f38d8eca6fbf7b50594e
-size 1095
+schema_version = 1
+detector_id = "crowdin-api-token"
+service = "crowdin"
+severity = "high"
+
+[[positive]]
+text = "CROWDIN_API_TOKEN = 3b70df2c347b7e02b642198793dc0b8a9827bb4c"
+credential = "3b70df2c347b7e02b642198793dc0b8a9827bb4c"
+reason = "Uppercase CROWDIN_API_TOKEN with 40-hex personal access token."
+
+[[positive]]
+text = "https://crowdin.com/project/demo?key=61bad96277f74ef17458f33b11db4707f46fd2f2"
+credential = "61bad96277f74ef17458f33b11db4707f46fd2f2"
+reason = "crowdin.com domain context with query parameter token."
+
+[[negative]]
+text = "crowdin token abcdef"
+reason = "Body far shorter than 40 hex chars."
+
+[[evasion]]
+text = "Authorization: Bearer crowdin_api_key\"3b70df2c347b7e02b642198793dc0b8a9827bb4c\""
+credential = "3b70df2c347b7e02b642198793dc0b8a9827bb4c"
+reason = "Quoted inside a Bearer authorization string."
+
+[perf]
+fixture_bytes = 4096
+max_microseconds = 25000
+note = "Standard single-file budget."
+
+[scale]
+fixture_bytes = 1048576
+min_findings = 1
+max_seconds = 2.0
+note = "1 MiB filler + planted Crowdin API token."

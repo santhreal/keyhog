@@ -1,3 +1,21 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:1db6abfe6c17c43bb1d3cefcf16e7a4a5b94af47e02741f2e6c6768cc36697a9
-size 1071
+schema_version = 1
+detector_id = "500px-api-key"
+service = "500px"
+severity = "medium"
+
+[positive_with_companion]
+text = "500pxAPIkey=pdQ6p641oZqxmggZQfbSYRYZXegdSmDf\n500px_CONSUMERsecret='       :'  =  ==    \"=  = =:   :'  : ':'=' =     h4uCPiPeG5S9oH59v-8KZ3Nn6lgjHIiAqZD4Mk1DpLcPorJse7AolbAHy5"
+expected_findings = ["500px-api-key"]
+expected_companions = { 500px-consumer-secret = "500px_CONSUMERsecret='       :'  =  ==    \"=  = =:   :'  : ':'=' =     h4uCPiPeG5S9oH59v-8KZ3Nn6lgjHIiAqZD4Mk1DpLcPorJse7AolbAHy5" }
+reason = "Primary paired with companion(s) 500px-consumer-secret."
+
+[positive_primary_only]
+text = "500pxAPIkey=pdQ6p641oZqxmggZQfbSYRYZXegdSmDf"
+expected_findings = ["500px-api-key"]
+must_not_verify = true
+reason = "Primary found without companion 500px-consumer-secret; verification must NOT proceed."
+
+[negative_companion_lookalike]
+text = "500px_CONSUMERsecret='       :'  =  ==    \"=  = =:   :'  : ':'=' =     h4uCPiPeG5S9oH59v-8KZ3Nn6lgjHIiAqZD4Mk1DpLcPorJse7AolbAHy5"
+expected_findings = []
+reason = "Companion lookalike(s) without primary."
