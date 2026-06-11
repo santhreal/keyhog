@@ -157,6 +157,9 @@ path = "crates/core/src/allowlist_metadata.rs"
 path = "crates/core/src/auto_fix.rs"
 
 [[module]]
+path = "crates/core/src/aws.rs"
+
+[[module]]
 path = "crates/core/src/banner.rs"
 
 [[module]]
