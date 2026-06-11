@@ -79,7 +79,12 @@ fn run_list(args: DetectorArgs) -> Result<()> {
         })
         .collect();
 
-    if args.json {
+    // Resolve the effective output format. `--format` is canonical (CLI-01);
+    // `--json` is the back-compat alias. They are mutually exclusive at the clap
+    // layer, so at most one is set — either selecting JSON yields JSON.
+    let want_json = args.json
+        || matches!(args.format, Some(crate::args::DetectorFormat::Json));
+    if want_json {
         print_detectors_json(&filtered)?;
         return Ok(());
     }

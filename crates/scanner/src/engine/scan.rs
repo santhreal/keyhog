@@ -1,6 +1,10 @@
-// `scan_filters` is consumed in the `feature = "simd"` arm below (the
-// trigger-bitmap / fallback path). Lean builds compile that arm out, so
-// gate the glob to match — otherwise rustc warns about an unused import.
+// `scan_filters` is consumed by `should_scan_no_hit_chunk` (the no-phase-1-hit
+// admission gate) on the shared phase-2 tail. That tail is reached by the
+// coalesced producer (`simd`) and the GPU megakernel — and `gpu` implies `simd`
+// at the feature level (the megakernel reuses this very tail), so `simd` is the
+// exact reachability of the tail. A no-`simd` build (portable / ci / full)
+// compiles the gate out entirely, so gating the glob to match keeps the import
+// from going unused there (no warning).
 #[cfg(feature = "simd")]
 use super::scan_filters::*;
 use super::scan_inner_profile::{
@@ -56,8 +60,6 @@ impl CompiledScanner {
     ///   Phase 2: Full extraction only on hit files (~5% of total)
     #[allow(clippy::needless_return)] // return needed under non-simd cfg branch
     pub fn scan_coalesced(&self, chunks: &[keyhog_core::Chunk]) -> Vec<Vec<keyhog_core::RawMatch>> {
-        #[cfg(feature = "simd")]
-        use crate::hw_probe::ScanBackend;
         use rayon::prelude::*;
 
         #[cfg(not(feature = "simd"))]
@@ -82,94 +84,182 @@ impl CompiledScanner {
                 return results;
             };
 
-            let ac_len = self.ac_map.len();
+            // Phase 1 (trigger production) is the swappable backend boundary:
+            // the Hyperscan literal prefilter here, or the GPU DFA megakernel in
+            // `scan_coalesced_megakernel`. Both yield the same per-chunk
+            // `Option<Vec<u64>>` bitmap and feed the SAME `scan_coalesced_phase2`.
+            let triggers = self.compute_coalesced_triggers(chunks, scanner);
+            return self.scan_coalesced_phase2(chunks, triggers);
+        } // #[cfg(feature = "simd")] block
+    } // scan_coalesced
 
-            // Phase 1: Parallel HS scan on RAW bytes. No prepare, no Arc, no alloc
-            // for non-hit files. Thread-local scratch + a per-worker bitmask
-            // POOL eliminate the per-chunk `vec![0u64; …]` alloc - we still
-            // need owned Vecs in the result so phase 2 can consume them, but
-            // empty-result chunks return `None` and skip the alloc entirely.
-            let words_needed = ac_len.div_ceil(64);
-            let _p1 = std::time::Instant::now();
-            let triggers: Vec<Option<Vec<u64>>> = chunks
-                .par_iter()
-                .map(|chunk| {
-                    let data = chunk.data.as_bytes();
-                    // Cheap O(n) content prefilters before the Hyperscan
-                    // automaton walk. mod.rs's per-chunk entry point screens
-                    // with these (alphabet set + bigram bloom) but the
-                    // coalesced phase-1 path historically fed every chunk's
-                    // raw bytes straight into the much heavier
-                    // `scanner.scan`. On a source-heavy monorepo the bloom
-                    // (a single 4096-bit pass) rejects the majority of files
-                    // that carry no detector literal-prefix, eliding the
-                    // Hyperscan scratch scan on them. Same gates, same
-                    // ordering, and the same `>= 64`-byte bloom guard as
-                    // mod.rs so behaviour is identical to the non-coalesced
-                    // path. A rejected chunk returns `None` (no trigger),
-                    // which routes phase 2 down the keyword/entropy fallback
-                    // branch exactly as a genuine no-HS-hit chunk would.
-                    let alphabet_rejected = self
-                        .alphabet_screen
-                        .as_ref()
-                        .is_some_and(|screen| !screen.screen(data));
-                    if alphabet_rejected
-                        || (data.len() >= 64 && !self.bigram_bloom.maybe_overlaps(data))
-                    {
-                        return None;
-                    }
-                    with_trigger_buffer(words_needed, |scratch| {
-                        for (hs_id, _start, _end) in scanner.scan(data) {
-                            let Some((_det, dedup_id, _grp)) = scanner.pattern_info(hs_id) else {
-                                continue;
-                            };
-                            if let Some(orig) = self.hs_index_map.get(dedup_id) {
-                                for &idx in orig {
-                                    let idx = idx as usize;
-                                    if idx < ac_len {
-                                        scratch[idx / 64] |= 1u64 << (idx % 64);
-                                    }
+    /// Phase 1 of the coalesced scan: the Hyperscan literal prefilter over raw
+    /// chunk bytes, producing one `Option<Vec<u64>>` trigger bitmap per chunk
+    /// (`None` = no detector literal present → routes to the keyword/entropy
+    /// no-hit branch in phase 2). This is the CPU trigger-production backend; the
+    /// GPU megakernel is the alternative producer feeding the same phase 2.
+    #[cfg(feature = "simd")]
+    pub(crate) fn compute_coalesced_triggers(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+        scanner: &crate::simd::backend::HsScanner,
+    ) -> Vec<Option<Vec<u64>>> {
+        use rayon::prelude::*;
+        let ac_len = self.ac_map.len();
+
+        // Parallel HS scan on RAW bytes. No prepare, no Arc, no alloc for
+        // non-hit files. Thread-local scratch + a per-worker bitmask POOL
+        // eliminate the per-chunk `vec![0u64; …]` alloc - we still need owned
+        // Vecs in the result so phase 2 can consume them, but empty-result
+        // chunks return `None` and skip the alloc entirely.
+        let words_needed = ac_len.div_ceil(64);
+        let triggers: Vec<Option<Vec<u64>>> = chunks
+            .par_iter()
+            .map(|chunk| {
+                let data = chunk.data.as_bytes();
+                // Cheap O(n) content prefilters before the Hyperscan automaton
+                // walk: alphabet set + bigram bloom. The bloom (a single
+                // 4096-bit pass) rejects the majority of files that carry no
+                // detector literal-prefix, eliding the Hyperscan scratch scan.
+                // Same gates, ordering, and `>= 64`-byte bloom guard as the
+                // per-chunk mod.rs path, so behaviour is identical. A rejected
+                // chunk returns `None` (no trigger), routing phase 2 down the
+                // keyword/entropy fallback branch like a genuine no-hit chunk.
+                let alphabet_rejected = self
+                    .alphabet_screen
+                    .as_ref()
+                    .is_some_and(|screen| !screen.screen(data));
+                if alphabet_rejected
+                    || (data.len() >= 64 && !self.bigram_bloom.maybe_overlaps(data))
+                {
+                    return None;
+                }
+                with_trigger_buffer(words_needed, |scratch| {
+                    for (hs_id, _start, _end) in scanner.scan(data) {
+                        let Some((_det, dedup_id, _grp)) = scanner.pattern_info(hs_id) else {
+                            continue;
+                        };
+                        if let Some(orig) = self.hs_index_map.get(dedup_id) {
+                            for &idx in orig {
+                                let idx = idx as usize;
+                                if idx < ac_len {
+                                    scratch[idx / 64] |= 1u64 << (idx % 64);
                                 }
                             }
                         }
-                        if scratch.iter().any(|&w| w != 0) {
-                            Some(scratch.to_vec())
-                        } else {
-                            None
-                        }
-                    })
+                    }
+                    if scratch.iter().any(|&w| w != 0) {
+                        Some(scratch.to_vec())
+                    } else {
+                        None
+                    }
                 })
-                .collect();
-            let _p1e = _p1.elapsed();
+            })
+            .collect();
 
-            // The phase-1 telemetry is purely a tracing::info! line, which
-            // is off at the default log level. `total_hs_matches` is a full
-            // popcount pass over every word of every hit bitmap; computing
-            // it unconditionally is O(total_words) of dead work per batch
-            // when info logging is disabled. Gate the whole summary (and its
-            // hit_count walk) behind an enabled check so the default path
-            // pays nothing.
-            if tracing::enabled!(tracing::Level::INFO) {
-                let hit_count = triggers.iter().filter(|t| t.is_some()).count();
-                let total_hs_matches: usize = triggers
-                    .iter()
-                    .filter_map(|t| t.as_ref())
-                    .map(|t| t.iter().map(|w| w.count_ones() as usize).sum::<usize>())
-                    .sum();
-                tracing::info!(
-                    files = chunks.len(),
-                    hits = hit_count,
-                    hs_matches = total_hs_matches,
-                    "coalesced scan phase 1 complete"
-                );
-            }
+        // The phase-1 telemetry is purely a tracing::info! line, off at the
+        // default log level. `total_hs_matches` is a full popcount pass over
+        // every hit bitmap; gate the whole summary behind an enabled check so
+        // the default path pays nothing.
+        if tracing::enabled!(tracing::Level::INFO) {
+            let hit_count = triggers.iter().filter(|t| t.is_some()).count();
+            let total_hs_matches: usize = triggers
+                .iter()
+                .filter_map(|t| t.as_ref())
+                .map(|t| t.iter().map(|w| w.count_ones() as usize).sum::<usize>())
+                .sum();
+            tracing::info!(
+                files = chunks.len(),
+                hits = hit_count,
+                hs_matches = total_hs_matches,
+                "coalesced scan phase 1 complete"
+            );
+        }
+        triggers
+    }
 
-            // Phase 2: Full extraction on hit files + multiline fallback (parallel).
-            let _p2 = std::time::Instant::now();
-            let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
-                .par_iter()
-                .zip(triggers.into_par_iter())
-                .map(|(chunk, triggered_opt)| {
+    #[cfg(feature = "simd")]
+    /// No-hit chunk admission: should a chunk that produced NO phase-1 trigger
+    /// (no Hyperscan literal-prefix hit) still be driven through the phase-2
+    /// fallback / generic / entropy tail?
+    ///
+    /// A `false` here drops the chunk to `Vec::new()` BEFORE any preprocessing —
+    /// so this gate is the only thing between a no-literal chunk and the silent
+    /// loss of every prefix-less / keyword-less fallback detector on it (asana-pat
+    /// and ~3100 similar, issue #69). It is therefore recall-load-bearing, and is
+    /// shared verbatim by the SIMD-coalesced and GPU-megakernel paths (both feed
+    /// `scan_coalesced_phase2`) so a finding can never depend on which backend
+    /// produced the triggers (Law 10).
+    ///
+    /// Admit when ANY holds:
+    ///   1. the chunk activates an always-active / keyword fallback pattern
+    ///      (`has_active_fallback_patterns_for_chunk` runs the real active-set
+    ///      prefilter — the exact, cheap necessary condition for a fallback
+    ///      match, with no 32 KiB cap because anchorless detectors are size-blind);
+    ///   2. multiline-concatenated secrets are plausible (concatenation
+    ///      indicators + a secret keyword) — these split across lines so no single
+    ///      literal fires;
+    ///   3. the chunk is ≤32 KiB and carries a generic-assignment or secret
+    ///      keyword, or a high-entropy run on an entropy-appropriate path — the
+    ///      generic-assignment and entropy stages' own admission policy.
+    //
+    // Gated `simd` (on the doc attr above): this is consumed only by
+    // `scan_coalesced_phase2`, the SHARED no-hit tail fed by BOTH the
+    // SIMD-coalesced producer AND the GPU megakernel dispatch. `gpu` implies
+    // `simd` (the megakernel reuses this very tail — see keyhog-scanner
+    // Cargo.toml), so `simd` is the exact reachability of the tail under both
+    // backends; a no-`simd` build (portable / ci / full) never reaches it.
+    pub(crate) fn should_scan_no_hit_chunk(&self, chunk: &keyhog_core::Chunk) -> bool {
+        // (1) Recall gate: does any fallback pattern actually activate here?
+        if self.has_active_fallback_patterns_for_chunk(&chunk.data) {
+            return true;
+        }
+        let data = chunk.data.as_bytes();
+        // (2) Multiline-concatenated secret plausibility (no size cap).
+        #[cfg(feature = "multiline")]
+        if crate::multiline::has_concatenation_indicators(&chunk.data)
+            && has_secret_keyword_fast(data)
+        {
+            return true;
+        }
+        // (3) Generic-assignment / secret-keyword / entropy admission, ≤32 KiB.
+        let entropy_admits = self.config.entropy_enabled
+            && crate::entropy::is_entropy_appropriate(
+                chunk.metadata.path.as_deref(),
+                self.config.entropy_in_source_files,
+            )
+            && has_high_entropy_run_fast(data);
+        chunk.data.len() <= 32 * 1024
+            && (has_generic_assignment_keyword(data)
+                || has_secret_keyword_fast(data)
+                || entropy_admits)
+    }
+
+    /// The SHARED phase-2 tail: both the SIMD-coalesced producer
+    /// (`scan_coalesced`, `#[cfg(simd)]`) and the GPU megakernel dispatch
+    /// (`megakernel_dispatch`, `#[cfg(gpu)]`) feed their per-chunk trigger
+    /// bitmaps into THIS one function, so findings are backend-invariant.
+    /// `gpu` implies `simd` (the megakernel reuses this tail — see
+    /// keyhog-scanner Cargo.toml), so it (and its exclusive helpers
+    /// `should_scan_no_hit_chunk` / `record_and_reassemble_for_no_hit_chunk`) is
+    /// gated on `simd` — compiled exactly when it has a caller. A no-`simd`
+    /// profile (`portable` / `full` / `ci`) scans through the AC+fallback path
+    /// and never reaches here, so compiling this tail there would be dead code
+    /// that references the `simd`-only helpers and breaks the build outright.
+    #[cfg(feature = "simd")]
+    pub(crate) fn scan_coalesced_phase2(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+        triggers: Vec<Option<Vec<u64>>>,
+    ) -> Vec<Vec<keyhog_core::RawMatch>> {
+        use crate::hw_probe::ScanBackend;
+        use rayon::prelude::*;
+
+        let _p2 = std::time::Instant::now();
+        let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
+            .par_iter()
+            .zip(triggers.into_par_iter())
+            .map(|(chunk, triggered_opt)| {
                     if let Some(triggered) = triggered_opt {
                         // Shared windowing contract (see `scan_chunk_or_window`):
                         // a >1 MiB chunk is windowed so the per-chunk match cap
@@ -187,166 +277,77 @@ impl CompiledScanner {
                             )
                         });
                     }
-                    // Multiline fallback: files with concatenation indicators AND
-                    // secret-related keywords may contain secrets split across lines
-                    // that HS can't match on raw bytes. Only scan these selectively.
-                    #[cfg(feature = "multiline")]
-                    if crate::multiline::has_concatenation_indicators(&chunk.data)
-                        && has_secret_keyword_fast(chunk.data.as_bytes())
-                    {
-                        let prepared = self.prepare_chunk(chunk);
-                        if prepared.preprocessed.text.as_bytes() != chunk.data.as_bytes() {
-                            let triggered = self.collect_triggered_patterns_for_backend(
+                    // No phase-1 trigger fired. The shared no-hit admission gate
+                    // (`should_scan_no_hit_chunk` — recall-load-bearing, see its
+                    // doc) decides whether the prefix-less / keyword-less fallback
+                    // detectors, generic-assignment and entropy stages get a shot
+                    // on this chunk; a `false` drops to the zero-work fast path
+                    // WITHOUT preprocessing. The gate consults
+                    // `has_active_fallback_patterns_for_chunk` FIRST, so a chunk
+                    // that activates an anchorless / keyword-less detector (asana-
+                    // pat and ~3100 similar, issue #69) is admitted even with no
+                    // generic-assignment keyword — closing the silent recall drop
+                    // the bare keyword gate left open (Law 10). Identical contract
+                    // for the SIMD-coalesced and GPU-megakernel producers (both
+                    // feed this tail), so findings are backend-invariant.
+                    if !self.should_scan_no_hit_chunk(chunk) {
+                        return Vec::new();
+                    }
+
+                    // Admitted. Reuse phase 1's empty Hyperscan result rather than
+                    // re-running the automaton: prepare the chunk and drive
+                    // `scan_prepared_with_triggered` with an EMPTY trigger bitmap,
+                    // so the keyword-AC fallback, generic-assignment and entropy
+                    // stages run off `code_lines` / preprocessed text with no
+                    // second HS pass. Confirmed-pattern extraction is correctly
+                    // skipped (no AC pattern fired). Recollect triggers ONLY on the
+                    // rare structured-preprocessor drift where the preprocessed
+                    // text differs from the raw bytes phase 1 scanned (decoded /
+                    // appended credential lines can carry named-detector literal
+                    // roots — this also covers the multiline-concatenation case).
+                    let prepared = self.prepare_chunk(chunk);
+                    let triggered =
+                        if prepared.preprocessed.text.as_bytes() == chunk.data.as_bytes() {
+                            Vec::new()
+                        } else {
+                            self.collect_triggered_patterns_for_backend(
                                 &prepared.preprocessed.text,
                                 ScanBackend::SimdCpu,
-                            );
-                            let mut matches = self.scan_prepared_with_triggered(
-                                prepared,
-                                ScanBackend::SimdCpu,
-                                triggered,
-                                None,
-                            );
-                            self.record_and_reassemble_for_no_hit_chunk(chunk, &mut matches);
-                            return matches;
-                        }
-                    }
-
-                    // Task #69 follow-up: scan_fallback_patterns runs the
-                    // keyword-AC-gated prefix-less detectors (kubernetes-
-                    // bootstrap-token, asana-pat, mailchimp #3, ...). The
-                    // SIMD-hit branch above routes through that call via
-                    // scan_prepared_with_triggered; this no-hit branch
-                    // historically only ran scan_generic_assignments, so
-                    // any chunk WITHOUT a literal-prefix HS hit silently
-                    // dropped every fallback detector - including
-                    // standalone-on-a-line k8s bootstrap tokens. Fix:
-                    // for chunks that plausibly carry a secret (have a
-                    // generic-assignment-keyword OR an explicit secret-
-                    // prefix substring like ghp_/sk-proj-/etc.) drive
-                    // scan_prepared_with_triggered directly with an empty
-                    // trigger bitmap (reusing phase 1's HS result rather
-                    // than re-running the automaton), which walks
-                    // scan_fallback_patterns → scan_generic_assignments
-                    // → scan_entropy_fallback.
-                    //
-                    // Bound on plausibility: pure source-code files
-                    // without any secret-related keyword stay on the
-                    // Vec::new() fast path so the per-chunk prepare +
-                    // re-Hyperscan cost doesn't regress monorepo scans
-                    // (gitlabhq: 64k mostly-source files would otherwise
-                    // pay 64k * ~150µs per-chunk fallback walks). The
-                    // gate is intentionally permissive - `token`,
-                    // `password`, `secret`, `api_key` cover every config
-                    // file shape that planted-credential corpora use.
-                    //
-                    // Cap stays at 32 KB to match the previous
-                    // generic-assignment cap: large source files
-                    // (>32 KB) are almost never config and the per-file
-                    // fallback walk on Go/Java/Python framework code is
-                    // dead work.
-                    // Third gate (added 2026-05-29): chunks containing a
-                    // contiguous base62 run >= 32 chars - the
-                    // generic-high-entropy-string corpus shape (a bare
-                    // entropy token with NO keyword anchor). Without
-                    // this, that category sat at recall 0.36 on the
-                    // SecretBench mirror; the entropy fallback never
-                    // saw the chunk because no keyword admitted it.
-                    //
-                    // Keep this gate aligned with scan_entropy_fallback's
-                    // own path/config admission. A high-entropy run inside
-                    // `src/*.rs` cannot produce an entropy finding when
-                    // `entropy_in_source_files=false`, so admitting that
-                    // chunk only pays prepare/fallback/generic work before
-                    // entropy immediately returns.
-                    let data = chunk.data.as_bytes();
-                    let entropy_admits = self.config.entropy_enabled
-                        && crate::entropy::is_entropy_appropriate(
-                            chunk.metadata.path.as_deref(),
-                            self.config.entropy_in_source_files,
-                        )
-                        && has_high_entropy_run_fast(data);
-                    if chunk.data.len() <= 32 * 1024
-                        && (has_generic_assignment_keyword(data)
-                            || has_secret_keyword_fast(data)
-                            || entropy_admits)
-                    {
-                        // KH perf: this is a no-HS-hit chunk - phase 1
-                        // already ran the Hyperscan automaton over these
-                        // bytes and found no literal-prefix hit (the empty
-                        // trigger bitmap was discarded as `None`). Calling
-                        // `scan_inner` here would call
-                        // `collect_triggered_patterns_for_backend` ->
-                        // `collect_triggered_patterns_simd`, which runs the
-                        // FULL Hyperscan automaton a SECOND time over the
-                        // same bytes for a result we already know is empty.
-                        // Reuse the phase-1 result instead: prepare the
-                        // chunk and drive `scan_prepared_with_triggered`
-                        // directly with an EMPTY trigger bitmap. The
-                        // confirmed-pattern extraction is correctly skipped
-                        // (no AC pattern fired); the keyword-AC fallback,
-                        // generic-assignment, and entropy stages run off
-                        // `code_lines` / preprocessed text and need no HS
-                        // pass - which is exactly the work this branch
-                        // wants. Saves one full Hyperscan walk per
-                        // keyworded no-hit file.
-                        let prepared = self.prepare_chunk(chunk);
-                        let triggered =
-                            if prepared.preprocessed.text.as_bytes() == chunk.data.as_bytes() {
-                                Vec::new()
-                            } else {
-                                // Phase 1 scanned raw bytes. Structured
-                                // preprocessors append decoded/configured
-                                // credential lines, so a no-hit raw chunk can
-                                // still contain named-detector literal roots in
-                                // the preprocessed text. Recollect only on that
-                                // rare drift path and keep the raw no-hit fast
-                                // path allocation-free.
-                                self.collect_triggered_patterns_for_backend(
-                                    &prepared.preprocessed.text,
-                                    ScanBackend::SimdCpu,
-                                )
-                            };
-                        let mut matches = self.scan_prepared_with_triggered(
-                            prepared,
-                            ScanBackend::SimdCpu,
-                            triggered,
-                            None,
-                        );
-                        // Preserve cross-file fragment reassembly that
-                        // the previous no-hit branch did. The fragment
-                        // cache is mostly populated by named-detector
-                        // matches that scan_inner now produces (e.g.
-                        // an `AWS_ACCESS_KEY=` match in one .env file
-                        // gets recorded for subsequent reassembly with an
-                        // `AWS_SECRET=` match in another).
-                        self.record_and_reassemble_for_no_hit_chunk(chunk, &mut matches);
-                        return matches;
-                    }
-
-                    Vec::new()
+                            )
+                        };
+                    let mut matches = self.scan_prepared_with_triggered(
+                        prepared,
+                        ScanBackend::SimdCpu,
+                        triggered,
+                        None,
+                    );
+                    // Preserve cross-file fragment reassembly the previous no-hit
+                    // branch did: named-detector matches feed cross-`.env`
+                    // reassembly (e.g. an `AWS_ACCESS_KEY=` match in one file is
+                    // recorded for reassembly with an `AWS_SECRET=` match in
+                    // another).
+                    self.record_and_reassemble_for_no_hit_chunk(chunk, &mut matches);
+                    matches
                 })
                 .collect();
 
-            let _p2e = _p2.elapsed();
-            // Cross-chunk reassembly: synthesize a thin boundary buffer
-            // from the tail of each chunk + head of its right neighbour
-            // (same file, gapless) and scan it. Catches secrets split
-            // across the 64 MiB scan-window boundary that in-chunk scan
-            // can't see.
-            let _bt = std::time::Instant::now();
-            super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
-            if std::env::var_os("KH_PERF").is_some() {
-                eprintln!(
-                    "KH_PERF scan_coalesced: chunks={} p1={:.3}s p2={:.3}s boundary={:.3}s",
-                    chunks.len(),
-                    _p1e.as_secs_f64(),
-                    _p2e.as_secs_f64(),
-                    _bt.elapsed().as_secs_f64()
-                );
-            }
-            results
-        } // #[cfg(feature = "simd")] block
-    } // scan_coalesced
+        let _p2e = _p2.elapsed();
+        // Cross-chunk reassembly: synthesize a thin boundary buffer from the
+        // tail of each chunk + head of its right neighbour (same file, gapless)
+        // and scan it. Catches secrets split across the 64 MiB scan-window
+        // boundary that in-chunk scan can't see.
+        let _bt = std::time::Instant::now();
+        super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
+        if std::env::var_os("KH_PERF").is_some() {
+            eprintln!(
+                "KH_PERF scan_coalesced_phase2: chunks={} p2={:.3}s boundary={:.3}s",
+                chunks.len(),
+                _p2e.as_secs_f64(),
+                _bt.elapsed().as_secs_f64()
+            );
+        }
+        results
+    }
 
     pub(crate) fn scan_inner(
         &self,
@@ -390,6 +391,9 @@ impl CompiledScanner {
     /// and this helper continues the previous fragment-cache flow on
     /// top of them so monorepo scans still pair AWS_ACCESS_KEY in one
     /// .env with AWS_SECRET in another.
+    // `simd`: exclusive helper of `scan_coalesced_phase2` (the shared tail).
+    // `gpu` implies `simd`, so the megakernel path carries it too — `simd` is
+    // the exact reachability under both backends.
     #[cfg(feature = "simd")]
     fn record_and_reassemble_for_no_hit_chunk(&self, chunk: &Chunk, matches: &mut Vec<RawMatch>) {
         if matches.is_empty() {

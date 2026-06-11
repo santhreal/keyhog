@@ -288,6 +288,17 @@ pub fn apply_config_file_quiet(args: &mut ScanArgs) -> ConfigOutcome {
 
 #[allow(clippy::collapsible_if, clippy::cmp_owned)]
 fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> ConfigOutcome {
+    // `--no-config`: hermetic run on the compiled-in Tier-A shipped defaults.
+    // Skip BOTH `.keyhog.toml` walk-up discovery AND any explicit `--config`
+    // path (clap already rejects `--config` together with `--no-config`, so
+    // honoring it here keeps the probe and the real merge consistent). This is
+    // what the bench harness passes so the benched config is the shipped
+    // default BY DESIGN, not by the accident of no config happening to be found
+    // on the walk-up from a corpus that lives inside the repo tree (MC-07). The
+    // shipped Tier-A floors/disables still apply — they ARE the default.
+    if args.no_config {
+        return shipped_config_outcome();
+    }
     let config_path = args
         .config
         .clone()

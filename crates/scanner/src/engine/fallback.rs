@@ -1803,15 +1803,45 @@ impl CompiledScanner {
         });
     }
 
+    /// True iff scanning `data` through the fallback path would activate at
+    /// least one pattern — i.e. the always-active RegexSet prefilter marks a
+    /// pattern OR a fallback keyword occurs in `data`.
+    ///
+    /// This is the EXACT, cheap necessary condition for a fallback match and is
+    /// the recall-load-bearing admission gate for no-Hyperscan-hit chunks (see
+    /// `should_scan_no_hit_chunk`): without it, a chunk that fires no literal
+    /// prefix but contains a prefix-less / keyword-less detector (asana-pat and
+    /// ~3100 similar, issue #69) is silently dropped (Law 10).
+    ///
+    /// It runs the SAME `populate_active_fallback` the production scan runs, so
+    /// it can never admit a chunk the scan then finds inert nor reject one the
+    /// scan would mark — admission and extraction share one active-set contract.
+    /// Note the earlier coarse form short-circuited to `true` whenever ANY
+    /// always-active pattern existed (so it answered "is there unconditional
+    /// fallback work?", admitting EVERY chunk); running the prefilter answers the
+    /// per-chunk question instead, which is what no-hit admission needs.
+    //
+    // `any(simd, gpu)`: the only caller is `should_scan_no_hit_chunk`, the
+    // no-phase-1-trigger admission gate that exists solely on the coalesced
+    // (`simd`) and megakernel (`gpu`) phase-2 tail. A no-`simd`-no-`gpu` build
+    // scans every chunk through the AC+fallback path unconditionally (no
+    // trigger-skip step), so it never asks this question — gating here keeps
+    // that profile warning-clean (Law 11) without dropping any chunk (Law 10).
+    #[cfg(any(feature = "simd", feature = "gpu"))]
     pub(crate) fn has_active_fallback_patterns_for_chunk(&self, data: &str) -> bool {
         if self.fallback.is_empty() {
             return false;
         }
-        if !self.fallback_always_active_indices.is_empty() || self.fallback_keyword_ac.is_none() {
+        // No keyword AC compiled => `populate_active_fallback` marks EVERY
+        // fallback pattern (its `else` arm), so the answer is unconditionally
+        // yes; skip the scan.
+        if self.fallback_keyword_ac.is_none() {
             return true;
         }
-        // No always-active patterns here (the check above returned early if any
-        // exist), so the RegexSet prefilter is irrelevant; pass `data` for both.
+        // Run the real active-set computation: the always-active RegexSet
+        // prefilter (marks the anchorless patterns that can fire on THIS chunk)
+        // plus the keyword AC. `match_text == data` because admission runs on the
+        // raw chunk before any structured preprocessing.
         self.with_active_fallback_patterns(data, data, |_, active_patterns| {
             !active_patterns.is_empty()
         })

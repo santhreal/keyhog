@@ -71,9 +71,20 @@ Each row is the same knob across all three layers. Defaults are
 |---|---|---|---|
 | Fast | `fast = true` | `--fast` | Pattern-match only — **disables decode + entropy + ML**. Fastest; largest blind spot. Refused under `--lockdown`. |
 | Deep | `deep = true` | `--deep` | Everything on, maximum recall. |
+| Precision | — | `--precision` | High-precision mass scanning: drops entropy-only/ML-speculative findings, raises the confidence floor to **0.85**, shallow decode. Stays fully offline and fast. |
 
-`--fast` and `--deep` are mutually exclusive and conflict with
+`--fast`, `--deep`, and `--precision` are mutually exclusive and conflict with
 `--no-decode`/`--no-entropy`.
+
+**A preset is a BASE, not a terminal state.** It seeds the decode/entropy/ML
+defaults, then any explicit knob you pass on the same command line **overrides**
+that base — `--deep --decode-depth 3` runs the deep base at decode-depth 3, and
+`--deep --min-confidence 0.9` raises the floor on the deep base. Two overrides
+are one-directional and cannot weaken a precision bar: under `--precision`,
+`--min-confidence` may *raise* the 0.85 floor but never lower it, and
+`--no-keyword-low-entropy` can only *disable* the relaxed keyword floor, never
+re-enable it under a preset that turned it off. Everything else takes effect as
+written.
 
 ## Nested tables
 

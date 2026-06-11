@@ -59,6 +59,7 @@ pub mod context_hard_suppress_encrypted_below_point_eight;
 pub mod context_markdown_fence_marks_documentation;
 pub mod context_out_of_bounds_returns_unknown;
 pub mod context_python_non_test_function_boundary;
+pub mod context_quote_noise_not_docstring;
 pub mod context_rust_test_file_suffix;
 pub mod context_string_literal_detects_quotes;
 pub mod context_test_directory_component;

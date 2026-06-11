@@ -1,159 +1,40 @@
 //! AVX2 and SSE2 optimized Shannon entropy and high-entropy heuristic checks for x86_64.
 
-#[cfg(target_arch = "x86_64")]
-use core::arch::x86_64::*;
-
 use crate::entropy_fast::{
-    distinct_byte_count, get_log2_table, histogram_8way, shannon_entropy_scalar,
+    distinct_byte_count, entropy_from_histogram, histogram_8way, shannon_entropy_scalar,
 };
 
-/// AVX2 path: 4-way parallel histogram to break load-add-store dependency chains.
+/// AVX2 path: the 8-way ILP histogram (the memory-bound part) shared via
+/// [`histogram_8way`], then the shared exact [`entropy_from_histogram`] reduction.
+///
+/// The `#[target_feature(enable = "avx2,fma")]` attribute is retained so this
+/// stays a distinct dispatch slot, but the reduction is no longer a vectorized
+/// polynomial-log2 (which diverged from the scalar reference by ~5e-3 bits/byte —
+/// see [`entropy_from_histogram`]); the 256-bin reduction is negligible and now
+/// bit-identical to every other path.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,fma")]
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(crate) unsafe fn shannon_entropy_avx2(data: &[u8]) -> f64 {
-    let len = data.len();
-    if len == 0 {
+    if data.is_empty() {
         return 0.0;
     }
 
-    // Histogram + null contract live in the shared `histogram_8way`; counting
-    // is memory-bound, so AVX2 specializes only the entropy reduction below.
     let (counts, active_len) = histogram_8way(data);
-    if active_len == 0 {
-        return 0.0;
-    }
-
-    // Log2 Table Lookup optimization for small active length
-    if active_len <= 255 {
-        let table = get_log2_table();
-        let mut sum = 0.0;
-        for &count in &counts {
-            if count > 0 {
-                sum += table[count as usize];
-            }
-        }
-        return (active_len as f64).log2() - sum / (active_len as f64);
-    }
-
-    let mut sum_v = _mm256_setzero_pd();
-    let len_v = _mm256_set1_pd(active_len as f64);
-
-    // Calculate entropy using vectorized 4-wide double-precision log approximation
-    for k in (0..256).step_by(4) {
-        let counts_v = _mm_loadu_si128(counts[k..].as_ptr() as *const _);
-        let counts_f = _mm256_cvtepi32_pd(counts_v);
-
-        let mask_v = _mm256_cmp_pd(counts_f, _mm256_setzero_pd(), 30);
-        let mask_bits = _mm256_movemask_pd(mask_v);
-        if mask_bits == 0 {
-            continue;
-        }
-
-        // p = count / len
-        let p = _mm256_div_pd(counts_f, len_v);
-
-        // log2(p)
-        let log2p = approx_log2_pd(p);
-
-        // term = p * log2p
-        let term = _mm256_mul_pd(p, log2p);
-        let term_masked = _mm256_and_pd(term, mask_v);
-        sum_v = _mm256_sub_pd(sum_v, term_masked);
-    }
-
-    // Reduce sum_v to scalar
-    let mut sums = [0.0f64; 4];
-    _mm256_storeu_pd(sums.as_mut_ptr(), sum_v);
-    sums.iter().sum()
+    entropy_from_histogram(&counts, active_len)
 }
 
-/// 5-term polynomial approximation for log2(x) where x is in (0, 1]
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2,fma")]
-#[allow(unsafe_op_in_unsafe_fn)]
-unsafe fn approx_log2_pd(x: __m256d) -> __m256d {
-    // Clamp polynomial log2 outputs strictly to the domain (0, 1] using pure float SIMD
-    let min_val = _mm256_set1_pd(f64::MIN_POSITIVE);
-    let max_val = _mm256_set1_pd(1.0);
-    let clamped_x = _mm256_max_pd(_mm256_min_pd(x, max_val), min_val);
-
-    // clamped_x = m * 2^e
-    // Extract exponent
-    let bits = _mm256_castpd_si256(clamped_x);
-    let e = _mm256_and_si256(_mm256_srli_epi64(bits, 52), _mm256_set1_epi64x(0x7FF_i64));
-
-    let e_packed = _mm256_permutevar8x32_epi32(e, _mm256_setr_epi32(0, 2, 4, 6, 0, 0, 0, 0));
-    let e_128 = _mm256_castsi256_si128(e_packed);
-    let e_unbiased = _mm_sub_epi32(e_128, _mm_set1_epi32(1023));
-    let e_f = _mm256_cvtepi32_pd(e_unbiased);
-
-    // Extract mantissa m in [1, 2)
-    let m_bits = _mm256_or_si256(
-        _mm256_and_si256(bits, _mm256_set1_epi64x(0x000F_FFFF_FFFF_FFFF_i64)),
-        _mm256_set1_epi64x(0x3FF0_0000_0000_0000_i64),
-    );
-    let m = _mm256_castsi256_pd(m_bits);
-
-    // z = m - 1, z in [0, 1)
-    let z = _mm256_sub_pd(m, _mm256_set1_pd(1.0));
-
-    // 5-term polynomial for log2(1+z)
-    let a1 = _mm256_set1_pd(1.442689882843058);
-    let a2 = _mm256_set1_pd(-0.721344529025066);
-    let a3 = _mm256_set1_pd(0.480884024344551);
-    let a4 = _mm256_set1_pd(-0.359880922880757);
-    let a5 = _mm256_set1_pd(0.246417534433544);
-
-    let mut poly = a5;
-    poly = _mm256_fmadd_pd(poly, z, a4);
-    poly = _mm256_fmadd_pd(poly, z, a3);
-    poly = _mm256_fmadd_pd(poly, z, a2);
-    poly = _mm256_fmadd_pd(poly, z, a1);
-    let log2m = _mm256_mul_pd(poly, z);
-
-    _mm256_add_pd(e_f, log2m)
-}
-
-/// SSE2 path: 4-way parallel histogram, unrolled to process 32 bytes per iteration
+/// SSE2 path: shared 8-way ILP histogram + shared exact reduction.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "sse2")]
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(crate) unsafe fn shannon_entropy_sse2(data: &[u8]) -> f64 {
-    let len = data.len();
-    if len == 0 {
+    if data.is_empty() {
         return 0.0;
     }
 
-    // Histogram + null contract live in the shared `histogram_8way`; counting
-    // is memory-bound, so the SSE2 path specializes only the reduction below.
     let (counts, active_len) = histogram_8way(data);
-    if active_len == 0 {
-        return 0.0;
-    }
-
-    // Log2 Table Lookup optimization for small active length
-    if active_len <= 255 {
-        let table = get_log2_table();
-        let mut sum = 0.0;
-        for &count in &counts {
-            if count > 0 {
-                sum += table[count as usize];
-            }
-        }
-        return (active_len as f64).log2() - sum / (active_len as f64);
-    }
-
-    let len_f = active_len as f64;
-    let mut entropy = 0.0;
-    for &count in &counts {
-        if count > 0 {
-            let p = count as f64 / len_f;
-            entropy -= p * p.log2();
-        }
-    }
-
-    entropy
+    entropy_from_histogram(&counts, active_len)
 }
 
 /// High-entropy fast check (x86_64).

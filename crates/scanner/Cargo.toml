@@ -43,13 +43,25 @@ simdsieve = ["dep:simdsieve"]  # SIMD-accelerated prefilter for top 8 patterns (
 # the feature OFF removes wgpu/vulkan/EGL linkage entirely — the lean CI
 # path. `vyre`/`vyre_libs` stay on either way because their CPU primitives
 # are woven into the scan types.
+#
+# `gpu` IMPLIES `simd`: the megakernel dispatch path reuses the SIMD prefilter
+# for its phase-2 no-hit tail (see megakernel_dispatch.rs and scan.rs
+# `scan_coalesced_phase2`). A gpu-without-simd build would leave the entire
+# megakernel stack dead — there is no coherent GPU detection path without the
+# SIMD tail, so the combination is disallowed at the feature level rather than
+# silently degraded.
 gpu = [
+    "simd",
     "dep:wgpu",
     "dep:pollster",
     "dep:bytemuck",
     "dep:vyre-driver-wgpu",
     "dep:vyre-runtime",
     "dep:vyre-driver-cuda",
+    # Persistent batch megakernel: the DFA rule-catalog dispatcher
+    # (BatchDispatcher / FileBatch / HitRecord) on both the runtime and the wgpu
+    # driver. This is the on-GPU detection path (see docs/GPU_DETECTION_REWRITE.md).
+    "vyre-driver-wgpu/megakernel-batch",
 ]
 # CUDA acquisition lives inside the `gpu` feature and is exercised on Linux
 # via cudarc `dynamic-loading` so the same `gpu` build works with or without a

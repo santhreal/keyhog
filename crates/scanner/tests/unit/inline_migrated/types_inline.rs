@@ -1,5 +1,6 @@
 //! Migrated from src/types.rs
 
+use keyhog_core::config::ScanConfig;
 use keyhog_scanner::multiline::MultilineConfig;
 use keyhog_scanner::ScannerConfig;
 
@@ -7,26 +8,32 @@ mod sanitise_tests {
     use super::*;
 
     fn baseline_config() -> ScannerConfig {
+        // MC-01: ScannerConfig is now a thin newtype wrapping the canonical
+        // ScanConfig plus the two scanner-local knobs. Shared knobs live on
+        // `.scan`; the asserts below reach them via Deref (`c.min_confidence`).
         ScannerConfig {
-            max_decode_depth: 5,
-            validate_decode: true,
-            entropy_enabled: true,
-            entropy_threshold: 4.5,
-            entropy_in_source_files: false,
-            entropy_ml_authoritative: true,
-            generic_keyword_low_entropy: true,
-            ml_enabled: false,
-            ml_weight: 0.6,
-            min_confidence: 0.3,
-            unicode_normalization: true,
-            max_decode_bytes: 65_536,
-            max_matches_per_chunk: 1000,
-            scan_comments: false,
+            scan: ScanConfig {
+                max_decode_depth: 5,
+                validate_decode: true,
+                entropy_enabled: true,
+                entropy_threshold: 4.5,
+                entropy_in_source_files: false,
+                entropy_ml_authoritative: true,
+                generic_keyword_low_entropy: true,
+                ml_enabled: false,
+                ml_weight: 0.6,
+                min_confidence: 0.3,
+                unicode_normalization: true,
+                max_decode_bytes: 65_536,
+                max_matches_per_chunk: 1000,
+                scan_comments: false,
+                known_prefixes: vec![],
+                secret_keywords: vec![],
+                test_keywords: vec![],
+                placeholder_keywords: vec![],
+                ..ScanConfig::default()
+            },
             multiline: MultilineConfig::default(),
-            known_prefixes: vec![],
-            secret_keywords: vec![],
-            test_keywords: vec![],
-            placeholder_keywords: vec![],
             penalize_test_paths: true,
         }
     }

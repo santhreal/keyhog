@@ -5,6 +5,30 @@ Accuracy is measured ONLY by the SecretBench mirror scorer
 flaws in the detection/scoring pipeline surfaced by the bench, with the data
 that proves them.
 
+## CURRENT STATE (2026-06-10) — supersedes the 2026-05-30 provenance below
+
+Canonical oracle is now `benchmarks/bench` (`baselines/mirror-keyhog-baseline.json`,
+deterministic CPU MoE path per the DET-11 fix). Mirror, 15 000 fixtures / 3 000
+labelled positives:
+
+  **F1 = 0.9131 · P = 0.9945 · R = 0.844 · TP = 2532 · FP = 14 · FN = 468**
+
+This is above the pre-closure 0.8919 / R 0.814 that DET-09 chased and well above
+the 0.845 the 2026-05-30 grid-sweep notes record — those numbers were taken on
+the broken flag path (DET-10) over the non-deterministic GPU route (DET-11), both
+now fixed, so they no longer describe the shipped binary. Per-category: crypto-
+private-key 1.0, db-connection-string 1.0, authentication-key 0.985, cloud-
+service-credential 0.888, api-key 0.908; the open recall gap is concentrated in
+generic-high-entropy-string (R 0.282, FN 130 — DET-14) and the base64-protobuf
+9-FP cost is the deliberate recall tradeoff (see the memory note; tightening it
+drops real CredData secrets).
+
+Scoring-pipeline BUGS are closed (DET-08/09/10/11/18/19 below). What remains open
+is RECALL/CAPABILITY breadth — genuine "cannot detect X yet" product gaps, not
+scoring flaws: DET-14 (decoy-aware generic), DET-15 (base64 decode-attribution),
+DET-17 (service-detector breadth). Those are honest long-horizon work and are NOT
+marked done.
+
 ## Bench provenance (2026-05-30)
 - Pre-closure binary (`keyhog-rebuilt-2b1d02b8`): F1=0.8919, P=0.986, R=0.814, TP=2443, FP=35, FN=557.
 - Post-closure binary (`keyhog-closure-2b1d02b8`): F1=0.8453, P=0.923, R=0.779, TP=2338, FP=194, FN=662.
@@ -36,7 +60,20 @@ that proves them.
 
 ## New bugs found while verifying the pin
 
-- **DET-10 · HIGH · flag path ≠ baked path for IDENTICAL config values** — passing
+- **DET-10 · DONE · flag path now resolves through the SAME applied config as the
+  baked path** — CLOSED by collapsing the config sprawl to one application point:
+  the orchestrator compiles the scanner then calls
+  `.with_config(effective_config.scanner.clone())` (orchestrator/mod.rs), so the
+  fully-resolved config (CLI flags → TOML → baked defaults → low-RAM cap, in that
+  precedence) is applied to the live scanner exactly once. There is no longer a
+  `CompiledScanner::compile`-with-`ScannerConfig::DEFAULT` path that the
+  `--decode-*` flags could diverge from. The low-RAM cap (DET-13) now mutates
+  `effective_config` BEFORE the run and is printed by the
+  `KEYHOG_PRINT_EFFECTIVE_CONFIG=1` oracle (DET-12), so flag-path and baked-path
+  scans resolve to one auditable config. The 270-FP flag/baked gap below was the
+  symptom; with one applied config it cannot recur.
+
+  Original report — passing
   `--min-confidence 0.40 --decode-depth 10 --decode-size-limit 512KB` (the same
   values baked into `ScanConfig::default()`) yields FP=312, but NOT passing them
   (baked defaults) yields FP=41 - same binary, same nominal config, 270-FP gap.
@@ -57,23 +94,38 @@ that proves them.
   and the baked path resolve through it identically. Until then, flag-path tuning
   is meaningless for the shipped product.
 
-- **DET-12 · MED · the coherence oracle is dead code** — `render_effective_config`
-  / `print_effective_config_if_requested` (orchestrator_config.rs:434) exist and
-  the doc calls them "the coherence oracle... assert tuned == benched == shipped",
-  but `print_effective_config_if_requested` is NEVER CALLED in the scan flow (no
-  caller). The env var `KEYHOG_PRINT_EFFECTIVE_CONFIG=1` does nothing. Wire it in
-  and add a dogfood test that diffs baked vs flag effective-config (would have
-  caught DET-10). Also the doc references a `--print-effective-config` FLAG that
-  does not exist (only the env var).
+- **DET-12 · DONE · the coherence oracle is wired + tested** — `print_effective_config_if_requested`
+  (orchestrator_config.rs:528) IS called in the scan flow (orchestrator/run.rs:44),
+  triggered by `KEYHOG_PRINT_EFFECTIVE_CONFIG=1`, and exercised by tests
+  (audit_insufficiency.rs spawns with the env var and asserts the oracle block on
+  stdout; regression_ml_threshold_wired_to_confidence_floor.rs checks the rendered
+  block). The stale `--print-effective-config` FLAG reference only survives in an
+  audit/plan doc (audits/2026-05-30-dominance-plan.md), not in user-facing help —
+  the env var is the real, documented surface.
 
-- **DET-13 · MED · low-RAM decode cap diverges from canonical** — `mod.rs:132`
-  silently caps `max_decode_bytes` to 256KB when `total_memory_mb < 4096`, so the
-  effective decode window on small machines (256KB) != the canonical/documented
-  512KB. Either document the cap as a tier or fold it into a single resolved
-  config that the effective-config oracle prints.
+- **DET-13 · DONE · low-RAM decode cap is loud + in the resolved config** —
+  the < 4 GiB cap (orchestrator/mod.rs:170) now (a) mutates `effective_config`
+  BEFORE the orchestrator runs, so the `KEYHOG_PRINT_EFFECTIVE_CONFIG=1` oracle
+  prints the actually-applied (capped) values — one auditable answer — and (b)
+  emits a one-shot LOUD stderr warning (Law 10) printing old→new `max_decode_bytes`
+  / `max_matches_per_chunk` and the RAM reason, instead of silently shrinking.
 
-- **DET-11 · HIGH · ROOT-CAUSED: GPU MoE confidence scorer makes the DEFAULT
-  scan non-deterministic AND lower-recall than the CPU path** — 2026-05-30, far
+- **DET-11 · DONE · GPU MoE confidence is now CPU-equal and deterministic** —
+  CLOSED on both fronts. SHIP fix: the GPU MoE shader's activation was a true
+  logistic sigmoid that diverged ~0.05 from the CPU rational sigmoid, flipping
+  near-floor findings run-to-run; the shader now computes the SAME rational
+  sigmoid as the CPU reduction (`backend/gpu_moe_backend.rs` scores are
+  numerically identical to CPU MoE per `ml_scorer.rs` parity reference). Guarded
+  by three always-on tests: `gpu_shader_sigmoid_contract.rs` (shader sigmoid ==
+  CPU rational sigmoid, host-independent), `backend_parity_matrix.rs`
+  (`determinism_each_backend_each_fixture_runs_twice_matches` — every backend, run
+  twice, bit-identical; passed 2/2 in 1427s) and `gpu_simd_parity.rs` (GPU-
+  hardware numeric parity vs CPU MoE). The bench also pins `KEYHOG_NO_GPU=1` for
+  the scored baseline so the leaderboard number is reproducible. The default
+  (auto-route) scan now produces the same finding set as the SIMD/CPU path; the
+  ±15-finding run-to-run swing and the ~80-finding recall deficit are gone.
+
+  Original root-cause (2026-05-30), far
   bigger than first thought. On the 15k mirror, identical back-to-back scans:
     SIMD-pinned (KEYHOG_NO_GPU=1): 2430, 2430 findings  → BIT-STABLE
     default (auto-route):          2353, 2341 findings  → varies AND ~80 fewer
@@ -114,19 +166,32 @@ that proves them.
   integrity (`sha512-...`), base64-protobuf. The positives are random base64/hex/
   uuid values in the SAME field shapes. So the discriminator is NOT the keyword or
   the value entropy - it is whether the value matches a known DECOY shape.
-- DET-14 · the real recall lever: a decoy-AWARE generic assignment detector that
-  fires on a credential-keyword assignment but is post-filtered to reject the decoy
-  families above (extend `looks_like_hash_digest` + add ARN / docker-digest /
-  npm-integrity / `sha256:`/`sha512-` prefix / `<placeholder>` guards). keyhog has
-  some guards (`is_known_example_credential`, `looks_like_hash_digest`) but they do
-  not cover ARN / sha512-integrity / docker-digest / protobuf, which is why the
-  generic detector false-fired. This is the precision-bounded path to recovering
-  the ~150 random-value credential-assignment FNs without an FP explosion.
-- Other clean levers (no FP risk): DET-15 k8s/json base64 decode-attribution
-  (keyhog decodes + reports the inner value; ground truth is the encoded literal,
-  so ~67 detected secrets score FN - report the encoded span); DET-16 `sk_test_` /
-  GCP `.apps.googleusercontent.com` are detected by existing detectors but dropped
-  (test-key / client-safe / confidence-floor) - un-suppress the detected-but-cut.
+- **DET-14 · OPEN · the real recall lever: a decoy-AWARE generic assignment
+  detector** — STILL the dominant open gap: on the current oracle
+  `generic-high-entropy-string` scores R = 0.282 / FN = 130 (F1 0.44), and it is
+  the single largest category deficit. Fires on a credential-keyword assignment
+  but post-filtered to reject the decoy families (extend `looks_like_hash_digest`
+  + add ARN / docker-digest / npm-integrity / `sha256:`/`sha512-` prefix /
+  `<placeholder>` guards). keyhog has some guards (`is_known_example_credential`,
+  `looks_like_hash_digest`) but they do not cover ARN / sha512-integrity /
+  docker-digest / protobuf, which is why a naive generic detector false-fired
+  (+1630 FP when tried gate-exempt). This is the precision-bounded path to
+  recovering the ~150 random-value credential-assignment FNs without an FP
+  explosion, and it requires ML/context discrimination (the memory note: shape
+  gates alone lose real CredData secrets). Genuine long-horizon work — NOT closed.
+- Other clean levers (no FP risk):
+  - **DET-16 · DONE · detected-but-cut tokens un-suppressed** — both un-cut.
+    `stripe-secret-key` fires `sk_test_` (it is a keyword + regex pattern, not
+    suppressed as a test key) with durable contract positives
+    (`sk_test_1234567890ABCDEFghijklmnopqrstuvwxyz1234`, plus an XML-embedded one).
+    The GCP `.apps.googleusercontent.com` client ID is un-floored by
+    `google-oauth-client-secret.toml`'s `min_confidence = 0.15` override (the
+    `.apps.googleusercontent.com` literal is the anchor). Both pass
+    `contracts_runner` (904/904).
+  - **DET-15 · OPEN · k8s/json base64 decode-attribution** — keyhog decodes and
+    reports the INNER value; ground truth is the encoded literal, so ~67 detected
+    secrets score FN. Fix is to ALSO report the encoded span (attribution), not a
+    suppression toggle. Genuine remaining recall work — not closed.
 
 ## Home-turf benchmark (competitors' own fixtures) — 2026-05-30
 
@@ -135,7 +200,25 @@ competitors' OWN shipped labeled truth (betterleaks `tps`/`fps`, kingfisher
 `examples`/`negative_examples`), scored by the canonical `score.py`. Apples-to-
 apples (same bare-token files to every tool).
 
-- **DET-17 · HIGH · keyhog LOSES to trufflehog on betterleaks' home turf** —
+- **DET-17 · PARTIAL · service-detector breadth (betterleaks home turf)** —
+  STATUS 2026-06-10: the recall half is substantially closed but not complete.
+  LANDED + contract-locked: openai (sk-svcacct-/sk-admin-), anthropic incl. the
+  `sk-ant-admin01-` ADMIN key (caught by the broad modern `sk-ant-` pattern, now
+  pinned by a contract positive), sourcegraph (sgp_/slk_), cursor (key_), grafana
+  (glc_/glsa_/eyJrIjoi), deepgram, openrouter, planetscale, assemblyai,
+  slack-config/slack-user, gitlab-runner (`glrt-`, covers gitlab-rrt),
+  aws-bedrock-api-key (`ABSK` long-term key, landed 2026-06-10), flyio;
+  gcp/google-api-key tightened with
+  an entropy floor (min_confidence). STILL MISSING (genuine capability gaps, NOT
+  closed): sumologic, gitea, etsy, sidekiq-sensitive-url, cerebras (`csk-`),
+  greptile. Several of the missing
+  (sumologic/gitea/etsy/greptile) lack a distinctive vendor prefix and need a
+  non-prefix discriminator before they can ship without an FP cost — they are
+  deliberately NOT added from guessed formats (soundness over reach). The prefix-
+  anchored `glrt-` (gitlab-runner) and `ABSK` (aws-bedrock-api-key) keys have
+  LANDED as Tier-B TOMLs; `csk-` (cerebras) is still gated on a real sample to
+  bound its body length. Original report:
+
   betterleaks-turf (116 pos / 201 neg):
     keyhog     F1=0.2132 P=0.259 R=0.181 (TP=21 FP=60 FN=95)
     trufflehog F1=0.3529 P=0.556 R=0.259 (TP=30 FP=24 FN=86)
@@ -194,9 +277,23 @@ apples (same bare-token files to every tool).
   the fresh binary over `~/.local/bin/keyhog`) before scoring — the version
   string is NOT a reliable provenance signal (collides across builds).
 
-- **DET-18 · HIGH · hex-body service tokens are cut by the confidence floor**
-  (CORRECTED — earlier draft mis-blamed the shape-gate; verified it is the
-  confidence floor). A new service detector whose token body is hex
+- **DET-18 · DONE · hex-body service tokens now ship working via a per-detector
+  floor override** — CLOSED. Rather than a body-entropy-blind global boost, the
+  fix uses the per-detector `min_confidence` override mechanism (the same Tier-B
+  knob DET-20 uses): `sourcegraph-access-token.toml` and `cursor-api-key.toml`
+  self-declare `min_confidence = 0.2`, so their distinctive vendor-prefix-anchored
+  hex tokens (`sgp_<40 hex>` / `slk_<64 hex>` / `key_<64 hex>`) clear the floor
+  while the global 0.40 floor still governs unanchored generic matches. This keeps
+  the Tier-B contract intact: a low-entropy-hex service IS now addable by dropping
+  in a TOML that names its own floor — no code change. Verified end-to-end:
+  `crates/scanner/tests/contracts/{sourcegraph-access-token,cursor-api-key}.toml`
+  pass positives/negatives/evasions in `contracts_runner` (904/904 green), proving
+  the tokens fire through the floor. FP risk is contained because the lower floor
+  is gated on the vendor prefix, which the sha1/sha256/git-sha decoy negatives do
+  not carry.
+
+  Original report (CORRECTED — earlier draft mis-blamed the shape-gate; verified
+  it is the confidence floor). A new service detector whose token body is hex
   (sourcegraph `sgp_<40hex>`/`slk_<64hex>`, cursor `key_<64hex>`, linode-style
   PATs) LOADS and MATCHES but is dropped: scanned bare at `--min-confidence 0.0`
   it fires (`sourcegraph-access-token`, **confidence 0.28**); at the default
@@ -217,42 +314,77 @@ apples (same bare-token files to every tool).
   sourcegraph/cursor TOMLs are committed and will activate the moment this
   confidence boost lands.
 
-## Open
+## Closed scoring bugs (were "Open")
 
-- **DET-08 · HIGH · min_confidence is non-monotonic in FP** — raising the floor
-  must monotonically reduce findings (FP can only fall). Measured FP went
-  173 → 37 → 306 as the floor rose 0.30 → 0.40 → 0.50 (shallow); and 0.50-shallow
-  (FP 306) vs 0.50-deep (FP 37) differ 8x. A clean post-filter cannot do this, so
-  `min_confidence` is entangled in the scan-time generic gate
-  (`engine/fallback_generic.rs`: `confidence < self.config.min_confidence`)
-  and/or the ML confidence computation, NOT just the post-scan gate
-  (`orchestrator/postprocess.rs:161`). Raising the scan-time floor likely drops
-  candidates BEFORE a dedup/suppression step that keyed off them, paradoxically
-  releasing more FPs. Fix: make the floor a single, orthogonal post-scan cutoff
-  (or prove the scan-time gate is monotonic). Until fixed, 0.40 is a tuned
-  sweet-spot, not a principled value. This is the highest-leverage coherence bug
-  in the scoring path.
+All scoring-pipeline bugs below are CLOSED with code + a durable test. The only
+items still genuinely OPEN are the recall/capability gaps tracked above:
+**DET-14** (decoy-aware generic detector — the dominant FN gap, generic-high-
+entropy R 0.282), **DET-15** (base64 decode-attribution), and **DET-17 PARTIAL**
+(remaining service-detector breadth). Those are long-horizon product work, not
+scoring flaws, and are deliberately not force-closed.
 
-- **DET-09 · HIGH · closure-round recall regression (~132 FN)** — at MATCHED
-  config (mc0.30, shallow ≈ pre-closure), the post-closure binary scores
-  FN=643 / FP=173 vs pre-closure FN=557 / FP=35. Best achievable post-closure
-  config (0.8642) is still below pre-closure 0.8919. So ~86-132 true positives
-  were lost to closure-round CODE changes (detection logic), independent of the
-  config floor, plus a precision regression (FP 35→37+ floor, but 173 at mc0.30).
-  Bisect the 79-file closure round for the detection-logic edits that dropped
-  TPs in: cloud-service-credential (-49), database-connection-string (-37),
-  api-key (-11), webhook-url-token (-14). These are the categories whose findings
-  the closure round demoted/dropped.
+- **DET-08 · DONE · min_confidence is monotonic in the finding set** — CLOSED.
+  The 173 → 37 → 306 FP swing was a MEASUREMENT ARTIFACT of two other bugs, both
+  now fixed: it was swept through the broken `--decode-*` flag path (DET-10, which
+  resolved a different config than the baked defaults — the 0.50-shallow FP 306 vs
+  0.50-deep FP 37 8× gap is exactly that flag/baked divergence) over the non-
+  deterministic GPU auto-route (DET-11, ±15 findings run-to-run near the floor).
+  The floor itself is monotonic BY CONSTRUCTION: the confidence a match carries is
+  computed with NO reference to `min_confidence` (the value never enters
+  `confidence::apply_post_ml_penalties`, the entropy/length boosts, or the
+  checksum policy), and both gates that consult it —
+  `engine/fallback_generic.rs` (scan-time) and `orchestrator/postprocess.rs`
+  (post-scan) — are pure `confidence < floor` comparisons. Raising a threshold
+  that does not feed back into the value it thresholds can only remove matches.
+  PROVEN end-to-end by a durable property test,
+  `crates/scanner/tests/confidence_floor_monotonic.rs::finding_set_is_nested_and_non_increasing_as_floor_rises`
+  (passed, 172.6s): it scans one fixed corpus on the real scanner + real detector
+  corpus across a 0.0 → 1.0 floor sweep (21 steps, including the 0.30/0.40/0.50
+  band DET-08 measured) and asserts the finding set at each higher floor is a
+  subset-or-equal of every lower floor AND the count never rises AND the floor
+  actually bites (0.0 set strictly larger than 1.0, and the planted AKIA token is
+  present) so it cannot pass vacuously. Deterministic CPU path → stable on every
+  CI host. 0.40 is now a principled cutoff, not a fragile sweet-spot.
+
+- **DET-09 · DONE · closure-round recall regression recovered and exceeded** —
+  the pre-closure target was F1 0.8919 / R 0.814; the shipped deterministic
+  oracle is now **F1 0.9131 / R 0.844 / P 0.9945** (FP 14, FN 468), above both.
+  The lost TPs were recovered by the work the regression motivated, NOT by reverting:
+  the DET-12 cryptographic-private-key collapse fix restored 112/112 distinct keys
+  (28→112, F1 0.8902→0.9108) and the DET-20 vendor-anchored floor-override campaign
+  recovered the floored recall (R cleared 0.814). The two regressed categories
+  named here are now whole: database-connection-string R = 1.0 (was -37),
+  cryptographic-private-key R = 1.0. cloud-service-credential is back to F1 0.888
+  (R 0.80) and api-key 0.908; their residual FN is the SAME generic-recall gap
+  tracked by DET-14, not a closure regression. The DET-09 measurement was also
+  distorted by DET-10/DET-11 (it was taken on the flag path over the GPU route);
+  re-measured on the fixed deterministic path the regression is gone.
 
 - **DET-01 · DONE · discord-bot-token dead detector** — TOML parse error at
   line 34 (single-quote in a single-quoted literal) dropped the detector silently
   (890/891 loaded). Fixed to a triple-quoted literal. Needs the rebuild to embed.
   → also testing T-04 / MC-16 (load-integrity must be a pre-push blocker).
 
-- **DET-19 · MED · CASELESS matching makes lowercase vendor prefixes fire on
-  SCREAMING_SNAKE constants** — Hyperscan is compiled `PatternFlags::CASELESS`
-  for EVERY pattern (simd.rs:64), so a detector with a lowercase literal prefix
-  matches its uppercase form. Proven: `codesandbox-api-token`
+- **DET-19 · DONE · per-pattern case sensitivity + tightened bodies** — CLOSED on
+  both axes the report named. (a) CASELESS is no longer forced on every pattern:
+  each pattern carries its own `case_insensitive` flag (`types.rs:198/234`,
+  `is_case_insensitive()`), and the SIMD/Hyperscan compile and the fallback marked
+  set apply `PatternFlags::CASELESS` PER PATTERN (`simd.rs`, `engine/fallback.rs`
+  builds the case-insensitive batch from `pat.regex.is_case_insensitive()`), so a
+  vendor-prefixed token can opt into case-sensitive matching instead of every
+  pattern matching its uppercase form. (b) The `codesandbox-api-token` body was
+  tightened from `csb_[a-zA-Z0-9_-]{20,}` to `csb_[a-zA-Z0-9]{20,}` (no `_`/`-`),
+  so SCREAMING_SNAKE identifiers can't match. The exact reported regression is
+  locked as a durable contract NEGATIVE,
+  `tests/contracts/codesandbox-api-token.toml`
+  (`PERF_ENGG_CSB_MACHINE_STALLED_BY_CSB_MEMORY = 0x000000bd`), and a sibling
+  CASELESS-class negative guards the cudnn `ENGINECFG_` → `ecfg_` FP on
+  `vercel-edge-function-credentials.toml`; both pass in `contracts_runner`
+  (904/904). FP delta was verified against the contract corpus, not eyeballed.
+
+  Original report: Hyperscan was compiled `PatternFlags::CASELESS` for EVERY
+  pattern, so a detector with a lowercase literal prefix matched its uppercase
+  form. Proven: `codesandbox-api-token`
   (`csb_[a-zA-Z0-9_-]{20,}`) fires on `CSB_MACHINE_STALLED_BY_CSB_MEMORY` and 3
   more enum names in drivers/gpu/drm/amd/include/soc21_enum.h - 4 false
   positives on a single Linux header. The `[a-zA-Z0-9_-]{20,}` body is the
@@ -272,8 +404,22 @@ apples (same bare-token files to every tool).
   agree and BOTH (correctly, per the current detector) emit them, so fixing the
   detector precision fixes both paths at once.
 
-- **DET-20 · recall floor-override campaign (SecretBench mirror, 2026-05-30)** —
-  systematic recovery of floor-gated recall. Baseline (post-parity, simd):
+- **DET-20 · DONE (target met; residual headroom folded into DET-14/15) · recall
+  floor-override campaign** — the campaign's recall target (R ≥ 0.814) is MET on
+  the shipped deterministic oracle (R = 0.844, F1 0.9131). The vendor-anchored
+  per-detector floor overrides ("WINS KEPT" below) are in the detector TOMLs and
+  guarded by `contracts_runner`. Both BLOCKERS it surfaced are resolved: the
+  DET-11 ±15-TP non-determinism is FIXED (GPU shader calibrated to the CPU rational
+  sigmoid; bench pins the deterministic path), so floor tuning is no longer flying
+  blind; and the score.py-vs-fp_analyze FP disagreement is explained (score.py
+  charges the label=true-no-overlap class that fp_analyze omits — the broad floors
+  add ZERO FP on the 12 000 clean negatives, real specificity 99.7%). The
+  remaining headroom to 0.8919-era recall is the still-undetected SHAPES
+  (`tok_<base62>`, bare 40-char terraform values, k8s base64 `data:` values) —
+  that is genuine new-capability work tracked by DET-14 (decoy-aware generic) and
+  DET-15 (decode-attribution), not a floor-tuning gap. Campaign record:
+
+  Systematic recovery of floor-gated recall. Baseline (post-parity, simd):
   P=0.9799 R=0.7467 F1=0.8475 (TP=2240 FP=46 FN=760). FN by category: cloud-
   service-credential 283, api-key 231, generic-high-entropy 129, db-connection
   66, auth-key 24. A floor-gate analyzer (scan corpus at --min-confidence 0,

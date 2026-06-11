@@ -28,6 +28,18 @@ use std::path::PathBuf;
 use std::sync::OnceLock;
 
 const BASE64_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+/// Base62 (`[A-Za-z0-9]`) — the standard base64 alphabet minus the two
+/// punctuation chars. The internal-`+` proptest draws its random body from THIS
+/// alphabet, not [`BASE64_ALPHABET`], on purpose: the contract under test is
+/// "an internal `+` does not break the high-entropy run pre-screen", and a
+/// single inserted `+` (no `/`) keeps the body clear of the byte-distribution
+/// random-blob gate, which DELIBERATELY suppresses uniform-random base64 that
+/// carries BOTH `+` and `/` (those are protobuf-of-random-bytes decoys — bench
+/// negatives, correctly dropped). Drawing the body from the full base64
+/// alphabet would let a random `/` combine with the inserted `+` to form such a
+/// decoy, making the test assert survival of a value the system is meant to
+/// drop — an unsound, flaky assertion (the prior generator's bug).
+const BASE62_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 const KEYWORD_FREE_MIN_LEN: usize = 56;
 
 fn shannon_entropy(data: &[u8]) -> f64 {
@@ -89,23 +101,31 @@ fn scan(body: String) -> Vec<keyhog_core::RawMatch> {
 proptest! {
     #![proptest_config(ProptestConfig { cases: 1_000, .. ProptestConfig::default() })]
 
-    /// Property: a 60-char alnum body with one `+` inserted near the
-    /// middle, planted as the value of a `TOKEN=` line, must surface
-    /// SOMEWHERE in the finding set. Before the fix the run gate
-    /// pre-screened the chunk out because the `+` split the run.
+    /// Property: a 60-char **base62** (alnum) body with one `+` inserted near
+    /// the middle, planted as the value of a `TOKEN=` line, must surface
+    /// SOMEWHERE in the finding set. Before the fix the run gate pre-screened
+    /// the chunk out because the `+` split the run.
+    ///
+    /// The body is drawn from [`BASE62_ALPHABET`] (no `+`/`/`) and exactly ONE
+    /// `+` is inserted, so the value carries `+` but never `/`. That is
+    /// deliberate: the byte-distribution random-blob gate suppresses uniform
+    /// base64 carrying BOTH `+` and `/` (protobuf-of-random-bytes decoys — bench
+    /// negatives), so a body with both would be dropped by design and is not a
+    /// valid positive for this contract. Single-`+` keeps the test on its
+    /// actual subject — the run pre-screen — not the blob suppression.
     #[test]
     fn b64_secret_with_internal_plus_surfaces(
-        idxs in prop::collection::vec(0u8..64u8, 59).prop_filter(
+        idxs in prop::collection::vec(0u8..62u8, 59).prop_filter(
             "high-entropy-like body",
             |idxs| {
-                let body = build_token(idxs, BASE64_ALPHABET);
+                let body = build_token(idxs, BASE62_ALPHABET);
                 let (head, tail) = body.split_at(29);
                 let body = format!("{head}+{tail}");
                 shannon_entropy(body.as_bytes()) > 4.8_f64
             }
         ),
     ) {
-        let chars: String = build_token(&idxs, BASE64_ALPHABET);
+        let chars: String = build_token(&idxs, BASE62_ALPHABET);
         let (head, tail) = chars.split_at(29);
         let body = format!("{head}+{tail}");
         prop_assert!(shannon_entropy(body.as_bytes()) > 4.8_f64, "generated body must clear the 4.8 entropy gate");
@@ -118,7 +138,7 @@ proptest! {
             .any(|m| m.credential.as_ref().contains(&body));
         prop_assert!(
             surfaced,
-            "60-char base64 body with internal `+` must surface in some finding; line={:?} matches={:?}",
+            "60-char base62 body with internal `+` must surface in some finding; line={:?} matches={:?}",
             line,
             matches
                 .iter()

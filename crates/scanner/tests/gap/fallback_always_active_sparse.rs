@@ -20,9 +20,21 @@ fn fallback_always_active_seed_is_sparse_not_dense_bool_scan() {
         fallback.contains("for &index in &self.fallback_always_active_indices"),
         "fallback hot path must seed from sparse always-active indices"
     );
+    // The active-set probe (`has_active_fallback_patterns_for_chunk`) is the
+    // recall-load-bearing no-hit admission gate. It MUST answer the per-chunk
+    // question by running the real prefilter, NOT coarsely short-circuit to
+    // `true` whenever any always-active detector exists. The earlier coarse
+    // `!self.fallback_always_active_indices.is_empty()` short-circuit admitted
+    // EVERY chunk (there are ~3100 prefix-less always-active detectors, so the
+    // index set is never empty), defeating `should_scan_no_hit_chunk`; it was
+    // deliberately removed (see the rationale on the probe in fallback.rs).
     assert!(
-        fallback.contains("!self.fallback_always_active_indices.is_empty()"),
-        "fallback active-set probe should short-circuit when always-active fallback detectors make the chunk active unconditionally"
+        fallback.contains("fn has_active_fallback_patterns_for_chunk"),
+        "fallback must expose a per-chunk active-set admission probe"
+    );
+    assert!(
+        !fallback.contains("!self.fallback_always_active_indices.is_empty()"),
+        "active-set probe must NOT coarsely short-circuit on a non-empty always-active index set: that admits every chunk and defeats no-hit admission"
     );
     assert!(
         !fallback.contains("fallback_always_active.iter().enumerate()"),

@@ -275,4 +275,8 @@ pub fn dump(label: &str) {
         "  (of all leaf time, {:.1}% was recorded inside decode sub-chunk rescans)",
         pct(decode_total, scan_ns),
     );
+
+    // Fold in the auxiliary histograms recorded on the hot path. Each early-returns
+    // when its counters are empty, so an unrelated run prints nothing extra.
+    super::scan_postprocess::ml_batch_profile_dump();
 }

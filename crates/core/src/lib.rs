@@ -96,6 +96,29 @@ pub fn embedded_detector_count() -> usize {
     embedded_detector_tomls().len()
 }
 
+/// Git commit SHA the binary was built from, or `"unknown"` for a build with no
+/// reachable `.git` tree (e.g. a `cargo package` / crates.io build). Stamped by
+/// `build.rs` via `cargo:rustc-env=GIT_HASH`; `env!` resolves here because the
+/// rustc-env applies to THIS crate's compilation. Surfaced in `keyhog --version`
+/// and meant to be embedded in every result so a scan traces back to an exact
+/// commit (MC-06: the false "F1 regression" was a stale binary benched against
+/// HEAD, undetectable while every build reported the same empty version).
+#[inline]
+pub fn git_hash() -> &'static str {
+    env!("GIT_HASH")
+}
+
+/// Digest identifying the EXACT embedded detector set compiled into this binary
+/// (`<count>-<fnv1a_hex>`). Stamped by `build.rs` via
+/// `cargo:rustc-env=KEYHOG_DETECTOR_DIGEST`. Lets the benchmark and `--version`
+/// assert the running binary's detectors match the on-disk `detectors/` tree —
+/// the authoritative answer to "what got compiled in" when cargo's
+/// `rerun-if-changed` can't be trusted across in-place TOML edits.
+#[inline]
+pub fn detector_digest() -> &'static str {
+    env!("KEYHOG_DETECTOR_DIGEST")
+}
+
 /// Redact a sensitive credential string for safe display.
 pub fn redact(s: &str) -> Cow<'static, str> {
     // ASCII fast path: byte indexing is valid (no UTF-8 boundary risk),

@@ -55,20 +55,27 @@ pub use env::*;
 /// allocates 2N owned strings just to enter ML scoring. The MlPendingMatch
 /// `String` fields stay live for the duration of the call - the borrow is
 /// safe.
-/// Split timers (env-gated by `KEYHOG_PROFILE_MLBATCH=1`): accumulated wall time
-/// in feature extraction vs MoE scoring across all `batch_ml_inference` calls.
-/// Only the SCORING fraction is GPU-offloadable; feature extraction is inherent
-/// per-candidate CPU work. This is the data that decides whether moving the MoE
-/// to a unified GPU batch is worth the recall cost of reordering finalization.
+/// Split timers: accumulated wall time in feature extraction vs MoE scoring
+/// across all `batch_ml_inference` calls. Only the SCORING fraction is
+/// GPU-offloadable; feature extraction is inherent per-candidate CPU work. This
+/// is the data that decides whether moving the MoE to a unified GPU batch is
+/// worth the recall cost of reordering finalization.
 static MOE_FEATURE_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static MOE_SCORE_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// Gated by the UNIFIED `KEYHOG_PROFILE=1` switch (dumped as part of
+/// [`crate::engine::profile_dump`]); the legacy `KEYHOG_PROFILE_MLBATCH=1` is
+/// still honoured for the older standalone workflow.
 fn ml_split_prof_enabled() -> bool {
     static EN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *EN.get_or_init(|| std::env::var("KEYHOG_PROFILE_MLBATCH").as_deref() == Ok("1"))
+    *EN.get_or_init(|| {
+        crate::engine::profile::enabled()
+            || std::env::var("KEYHOG_PROFILE_MLBATCH").as_deref() == Ok("1")
+    })
 }
 
-/// Print + reset the feature-vs-score split. Called from `phase2_profile_dump`.
+/// Print + reset the feature-vs-score split. Folded into the unified profiler:
+/// called from [`crate::engine::profile_dump`] (early-returns when no data).
 pub fn ml_split_profile_dump() {
     use std::sync::atomic::Ordering::Relaxed;
     let f = MOE_FEATURE_NS.swap(0, Relaxed) as f64 / 1e6;
@@ -405,7 +412,8 @@ pub fn vyre_ac_kernel_self_test() -> Result<VyreAcKernelSelfTest, String> {
 
 #[cfg(feature = "gpu")]
 pub fn vyre_ac_kernel_self_test() -> Result<VyreAcKernelSelfTest, String> {
-    use crate::engine::{CompiledScanner, GpuPhase1Output};
+    use crate::engine::CompiledScanner;
+    use crate::hw_probe::ScanBackend;
     use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 
     let detector = DetectorSpec {
@@ -437,28 +445,26 @@ pub fn vyre_ac_kernel_self_test() -> Result<VyreAcKernelSelfTest, String> {
         metadata: ChunkMetadata::default(),
     };
 
-    match scanner.scan_coalesced_gpu_ac_phase1(&[chunk]) {
-        GpuPhase1Output::Hits(hits) => {
-            let total: usize = hits.iter().map(Vec::len).sum();
-            if total == 0 {
-                return Err(
-                    "AC kernel ran on GPU but reported zero hits for the planted 'needle' \
-literal. Indicates either a phase-1 lowering regression or a workgroup-size mismatch."
-                        .to_string(),
-                );
-            }
-            Ok(VyreAcKernelSelfTest {
-                matches: total,
-                backend_id,
-            })
-        }
-        GpuPhase1Output::Done(_) => {
-            let detail = scanner
-                .last_gpu_degrade_reason()
-                .unwrap_or_else(|| "no concrete degrade reason was recorded".to_string());
-            Err(format!(
-                "AC phase 1 degraded to SIMD/CPU at runtime despite an acquired GPU stack: {detail}"
-            ))
-        }
+    // Drive the LIVE on-GPU detection path: the batched-DFA megakernel (the
+    // single GPU engine; the old GpuLiteralSet/AC two-phase path was retired).
+    // It degrades LOUDLY to SIMD/CPU on any GPU failure, recording the reason —
+    // so a degrade is distinguishable here from a genuine GPU run.
+    let results = scanner.scan_chunks_with_backend(&[chunk], ScanBackend::Gpu);
+    if let Some(detail) = scanner.last_gpu_degrade_reason() {
+        return Err(format!(
+            "megakernel degraded to SIMD/CPU at runtime despite an acquired GPU stack: {detail}"
+        ));
     }
+    let total: usize = results.iter().map(Vec::len).sum();
+    if total == 0 {
+        return Err(
+            "megakernel ran on GPU but reported zero matches for the planted 'needle' literal. \
+Indicates a catalog-lowering regression or a dispatch/workgroup-size mismatch."
+                .to_string(),
+        );
+    }
+    Ok(VyreAcKernelSelfTest {
+        matches: total,
+        backend_id,
+    })
 }

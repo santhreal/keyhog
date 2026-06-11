@@ -3,46 +3,23 @@
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
 
-use crate::entropy_fast::{get_log2_table, shannon_entropy_scalar};
+use crate::entropy_fast::shannon_entropy_scalar;
 
-/// AArch64 true Neon SIMD parallel histogram calculations.
-/// Unrolled to process 32 bytes per iteration with vector null filtering (KH-25, KH-34).
+/// AArch64 entropy: shared multi-stream histogram + shared exact reduction.
+///
+/// Counting (the memory-bound part) and the null-byte contract live in the
+/// shared [`crate::entropy_fast::histogram_8way`]; the 256-bin reduction is the
+/// shared exact [`crate::entropy_fast::entropy_from_histogram`]. Funnelling both
+/// through the one definition keeps this path bit-identical to scalar/AVX2/SSE2
+/// (KH-25, KH-28, KH-34).
 #[cfg(target_arch = "aarch64")]
 pub fn shannon_entropy_neon(data: &[u8]) -> f64 {
-    let len = data.len();
-    if len == 0 {
+    if data.is_empty() {
         return 0.0;
     }
 
-    // Histogram + null contract live in the shared `histogram_8way`; counting
-    // is memory-bound, so the Neon path specializes only the reduction below.
     let (counts, active_len) = crate::entropy_fast::histogram_8way(data);
-    if active_len == 0 {
-        return 0.0;
-    }
-
-    // Log2 Table Lookup optimization for small active length (KH-28)
-    if active_len <= 255 {
-        let table = get_log2_table();
-        let mut sum = 0.0;
-        for &count in &counts {
-            if count > 0 {
-                sum += table[count as usize];
-            }
-        }
-        return (active_len as f64).log2() - sum / (active_len as f64);
-    }
-
-    let len_f = active_len as f64;
-    let mut entropy = 0.0;
-    for &count in &counts {
-        if count > 0 {
-            let p = count as f64 / len_f;
-            entropy -= p * p.log2();
-        }
-    }
-
-    entropy
+    crate::entropy_fast::entropy_from_histogram(&counts, active_len)
 }
 
 /// Vectorized unique character checks using Neon (KH-21, KH-30)

@@ -1,9 +1,11 @@
 pub mod args_rs_exceeds_modularity_cap;
 pub mod backend_self_test_exit_code_four_in_src;
 pub mod detectors_audit_exit_code_three_in_src;
+pub mod doc_detector_ids_resolve_in_registry;
 pub mod exclude_paths_flag_not_wired;
 pub mod exit_code_system_vs_user;
 pub mod git_diff_non_repo_exits_nonzero;
+pub mod git_staged_non_repo_clean_error;
 pub mod git_history_non_repo_exits_nonzero;
 pub mod git_history_non_repo_no_clean_summary;
 pub mod inline_test_offenders_detectors_subcommand;

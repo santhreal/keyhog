@@ -136,19 +136,9 @@ fn scan_fixture(
     backend: ScanBackend,
 ) -> BTreeSet<FindingKey> {
     scanner.clear_fragment_cache();
-    if backend == ScanBackend::MegaScan {
-        unsafe { std::env::set_var("KEYHOG_USE_MEGAKERNEL", "1") };
-    }
+    // Gpu and MegaScan both route to the single on-GPU megakernel now.
     let results = scanner.scan_chunks_with_backend(chunks, backend);
-    if backend == ScanBackend::MegaScan {
-        unsafe { std::env::remove_var("KEYHOG_USE_MEGAKERNEL") };
-    }
     collect_keys(&results)
-}
-
-fn megakernel_waived() -> bool {
-    support::megakernel_waiver::megakernel_parity_waiver_active()
-        && support::megakernel_waiver::megakernel_env_unwired_in_engine()
 }
 
 #[test]
@@ -169,14 +159,12 @@ fn full_corpus_multi_backend_worst_case_parity() {
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
     let fixtures = synthetic_worst_case_fixtures();
 
-    let mut backends = vec![
+    let backends = vec![
         ScanBackend::SimdCpu,
         ScanBackend::CpuFallback,
         ScanBackend::Gpu,
+        ScanBackend::MegaScan,
     ];
-    if !megakernel_waived() {
-        backends.push(ScanBackend::MegaScan);
-    }
 
     let mut total_cells = 0usize;
     let mut skipped = 0usize;

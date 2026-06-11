@@ -36,9 +36,10 @@ impl CompiledScanner {
         // (`has_high_entropy_run_fast`) the no-HS-hit admission branch in
         // `scan_coalesced` uses, so the gate stays consistent and adds no
         // FPs (hash/UUID shapes are still suppressed downstream). The helper
-        // is only compiled under the `simd` feature (the shipped/benched
-        // default); without it the precheck is a no-op and behavior is
-        // unchanged.
+        // is compiled under `any(simd, gpu)` (it is also the no-hit admission
+        // gate's run scan); this precheck itself is `#[cfg(simd)]`, so on a
+        // no-`simd` build it is a no-op and the full entropy sweep runs
+        // unconditionally — same findings, just without the cheap skip.
         #[cfg(feature = "simd")]
         if !super::scan_filters::has_high_entropy_run_fast(preprocessed.text.as_bytes()) {
             return;

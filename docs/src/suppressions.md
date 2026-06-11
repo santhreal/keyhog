@@ -1,123 +1,266 @@
 # Suppressions
 
-A suppression is a filter that drops a candidate match after the regex
-fires but before it becomes a finding. KeyHog applies them in layers.
+A suppression is a filter that drops a candidate match before it becomes a
+reported finding. KeyHog has **two kinds**:
 
-## The two suppression lists
+- **Operator surfaces** — things *you* configure to silence findings you have
+  reviewed and accepted (allowlists, inline directives, per-detector floors,
+  baselines). This page is the single map of all of them.
+- **Always-on shape/path heuristics** — built-in precision filters that drop
+  shapes that are universally not credentials. You cannot turn these off; they
+  are summarised at the bottom and detailed in
+  [How detection works](./detection.md#stage-4-post-process).
 
-### Test fixtures (always on, opt-out)
+> **There is no `.keyhog.toml [suppress]` table.** Older docs showed a
+> `[suppress] hashes = […] / paths = […] / detectors = […]` block. It never
+> existed: `.keyhog.toml` does not `deny_unknown_fields`, so such a table is
+> *silently ignored* and your findings reappear with no warning. Use the
+> surfaces below instead. Per-detector control lives under `[detector.<id>]`;
+> hash/path/detector allowlisting lives in `.keyhogignore`.
 
-`crates/cli/data/suppressions/test-fixtures.toml`, baked into the
-binary. Lists publicly documented credentials that vendor docs ship
-as examples:
+## Where each surface fires
 
-```toml
-[[fixture]]
-detector = "stripe-secret-key"
-credential = "sk_live_4eC39HqLyjWDarjtT1zdp7dc"
-reason = "Stripe docs sample, https://stripe.com/docs/api/auth"
+Suppression runs at one chokepoint, in this order. Earlier surfaces act on raw
+matches (before dedup/verify); later ones act on resolved findings.
 
-[[fixture]]
-detector = "aws-access-key"
-credential = "AKIAIOSFODNN7EXAMPLE"
-reason = "AWS docs sample, https://docs.aws.amazon.com/general/latest/gr/aws-sec-cred-types.html"
+| # | Surface | Keyed on | Stage | Opt-out / scope |
+|---|---------|----------|-------|-----------------|
+| 1 | `[detector.<id>] enabled = false` (Tier-A compiled + Tier-B `.keyhog.toml`) | detector id | raw match | per-detector |
+| 2 | Bundled `test-fixtures.toml` | exact / substring of the credential value | raw match | `--no-suppress-test-fixtures` |
+| 3 | Self-scan test-data paths (keyhog repo only) | `detectors/` `tests/` `fixtures/` `benches/` segment | raw match | `--no-suppress-test-fixtures`; only inside keyhog's own tree |
+| 4 | `.keyhogignore` — `path:` | path glob | raw match | file |
+| 5 | `.keyhogignore` — `hash:` / bare hash | SHA-256 of value | raw match | file |
+| 6 | `.keyhogignore` — `detector:` | detector id | raw match | file |
+| 7 | `[detector.<id>] min_confidence` / `--min-confidence` | confidence score | raw match | floor |
+| 8 | `--severity` | severity rank | raw match | floor |
+| 9 | Inline `keyhog:ignore` (and aliases) | the line itself | raw match | in-source |
+| 10 | `.keyhogignore.toml` `[[suppress]]` rules | composable predicate | resolved finding | file |
+| 11 | `--hide-client-safe` | client-safe tier | resolved finding | flag |
+| 12 | Baseline (`--baseline` / `--update-baseline`) | finding identity | resolved finding | flag |
+
+Everything is wired through `filter_and_resolve` (raw stage) and the run loop
+(resolved stage), so the `--daemon` route and every output format apply the
+exact same set — there is no path that scans under a weaker suppression policy.
+
+---
+
+## Operator surfaces
+
+### `.keyhogignore` — line-based allowlist (opt-in, project-scoped)
+
+A `.keyhogignore` at your scan root, one rule per line. This is the zero-config
+allowlist: the format is deliberately a superset of `.gitignore`, so a copied
+`.gitignore` Just Works (every bare line is treated as a path glob).
+
+```text
+# Ignore a specific credential by SHA-256 of the captured value (64 hex chars).
+hash:5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
+
+# A bare 64-hex line is also read as a hash (the jq-append workflow below).
+5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8
+
+# Ignore every finding from one detector.
+detector:generic-password
+
+# Ignore files by glob.
+path:fixtures/**
+path:docs/example_*.env
+
+# A bare glob with no prefix is a path rule (gitignore-style).
+node_modules/
+*.min.js
 ```
 
-Disable with `--no-suppress-test-fixtures` if you want to see them
-fire (rare, but useful when validating that a detector still matches
-the canonical shape).
-
-### Repo-local suppressions (opt-in, project-scoped)
-
-`.keyhog.toml` in your repo root:
-
-```toml
-[suppress]
-# Drop findings on these credential hashes (sha256 of the captured value).
-# Use when a finding is a true positive that you've intentionally accepted
-# (e.g. a published OAuth client_id, or a fixture you've cleared with
-# the upstream service).
-hashes = [
-    "sha256:abc123...",
-    "sha256:def456...",
-]
-
-# Drop findings from these files entirely (gitignore-style globs).
-paths = [
-    "fixtures/**",
-    "docs/example_*.env",
-]
-
-# Drop findings from these detectors entirely.
-detectors = [
-    "generic-password",
-]
-```
-
-Compute the hash of an existing finding:
+Hashes are bare 64-character hex (no `sha256:` prefix). Generate the exact line
+to append from an existing run:
 
 ```sh
-keyhog scan . --format json | jq -r '.[] | "\(.detector_id) \(.credential_hash)"'
+keyhog scan . --format jsonl | jq -r '.credential_hash' >> .keyhogignore
 ```
 
-## Shape-based suppression (always on, can't opt out)
+**Governance metadata** (optional) trails an entry after `;`:
 
-These don't depend on a list. They're heuristics about credential
-shape that are universally true:
+```text
+hash:5e88…42d8 ; reason="published OAuth client_id" ; expires=2026-12-31 ; approved_by="secops"
+```
+
+An entry whose `expires` date is in the past is dropped at load time with a
+warning, so short-lived approvals self-clean. (The `require_reason` /
+`require_approved_by` / `max_expires_days` governance *enforcement* flags under
+`[allowlist]` in `.keyhog.toml` are parsed but not yet enforced — do not rely on
+them to reject un-annotated entries.)
+
+### `.keyhogignore.toml` — declarative rule allowlist (opt-in, composable)
+
+When a single glob/hash/detector line is too blunt, a `.keyhogignore.toml`
+alongside it gives composable `[[suppress]]` rules. Fields within one table AND
+together; separate tables OR together. Full schema and field list:
+[.keyhogignore.toml reference](https://github.com/santhsecurity/keyhog/blob/main/docs/keyhogignore-toml.md).
+
+```toml
+# Drop aws-access-key findings under any tests directory.
+[[suppress]]
+detector = "aws-access-key"
+path_contains = "/tests/"
+
+# Drop low-or-lower stripe findings on one fixture file.
+[[suppress]]
+service = "stripe"
+severity_lte = "low"
+path_eq = "fixtures/stripe.yml"
+
+# Drop one credential everywhere (mirrors a .keyhogignore hash: line).
+[[suppress]]
+credential_hash = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8"
+```
+
+A `[[suppress]]` table with no conditions is rejected (it would silently drop
+every finding); write `literal_true = true` if you truly mean "drop all". A
+malformed file is reported via a warning and skipped — it never silently
+narrows the report.
+
+### Inline directives — suppress at the source line
+
+Put a directive in a comment on the finding's line, or the line directly above
+it. Recognised forms: `keyhog:ignore`, `keyhog:allow`, `gitleaks:allow`,
+`betterleaks:allow` (the last two ease migration). Comment markers understood:
+`//`, `#`, `--`, `/*`, `<!--`.
+
+```python
+API_KEY = "AKIA…EXAMPLE"  # keyhog:ignore
+```
+
+Scope it to one detector so an unrelated finding on the same line still fires:
+
+```js
+const token = "…";  // keyhog:ignore detector=stripe-secret-key
+```
+
+With no `detector=` token the directive suppresses every finding on that line.
+
+### Per-detector control — `.keyhog.toml [detector.<id>]`
+
+```toml
+# Turn a noisy detector off entirely.
+[detector.generic-password]
+enabled = false
+
+# Or keep it but raise its confidence floor (precedence over --min-confidence).
+[detector.slack-webhook-url]
+min_confidence = 0.85
+```
+
+These same per-detector floors/disables also ship **compiled into the binary**
+(Tier-A `SHIPPED_DETECTOR_FLOORS` / `SHIPPED_DISABLED_DETECTORS`), so the bench
+and every default scan apply them even with no `.keyhog.toml` present — a file
+entry overrides the compiled value for that id. This is why "tuned == benched ==
+shipped" holds for detector policy.
+
+### Bundled test fixtures (always on, opt-out)
+
+`crates/cli/data/suppressions/test-fixtures.toml`, baked into the binary, lists
+publicly documented credentials that vendor docs ship as examples. It is matched
+on the **exact captured value** (plus a tiny `substring` list for tokens like
+`EXAMPLE` / `PLACEHOLDER`). Schema:
+
+```toml
+schema_version = 1
+
+[[exact]]
+credential = "sk_live_4eC39HqLyjWDarjtT1zdp7dc"
+service = "stripe"
+source = "https://docs.stripe.com/api/authentication"
+
+[[substring]]
+needle = "EXAMPLE"
+```
+
+Pass `--no-suppress-test-fixtures` to see them fire (useful when validating that
+a detector still matches the canonical shape). The same flag also disables the
+self-scan test-data path filter (#3), which only ever applies inside keyhog's
+own source tree.
+
+### Confidence and severity floors
+
+- `--min-confidence <f>` (or `[scan] min_confidence`) drops findings below a
+  score. A per-detector `[detector.<id>] min_confidence` takes precedence for
+  that detector.
+- `--severity <level>` drops findings below a severity rank.
+- `--hide-client-safe` drops the client-safe tier (public-by-design keys).
+
+### Baselines — suppress what already existed
+
+Record the current findings, then on later runs report only *new* ones:
+
+```sh
+keyhog scan . --create-baseline .keyhog-baseline.json   # snapshot, report nothing
+keyhog scan . --baseline .keyhog-baseline.json          # report only new findings
+keyhog scan . --update-baseline .keyhog-baseline.json   # report new AND fold them in
+```
+
+---
+
+## Always-on heuristics (cannot opt out)
+
+### Shape-based
+
+List-independent heuristics about credential shape that are universally true.
 
 | Filter                             | Drops shapes like                                |
 |------------------------------------|--------------------------------------------------|
 | `punctuation_decorated_identifier` | `--api-secret`, `&password`, `$API_KEY`, `Password:`, `apiKey!` |
 
-For generic-only / entropy-only detectors, additional shape gates
-apply. See [How detection works](./detection.md#stage-4-post-process)
-for the full list and rationale.
+For generic-only / entropy-only / weakly-anchored detectors, additional shape
+gates apply (pure-identifier, scheme-URI, UUID, base64-blob, …). See
+[How detection works](./detection.md#stage-4-post-process) for the full list and
+rationale.
 
-## Path-based suppression (always on)
+### Path-based
 
-Specific directories produce findings that are almost always not
-credentials. KeyHog hard-codes a small set:
+Specific directories produce findings that are almost always not credentials.
+KeyHog hard-codes a small, high-precision set:
 
-| Path pattern                       | Why                                              |
-|------------------------------------|--------------------------------------------------|
-| `node_modules/`, `vendor/`, `bower_components/`, `jspm_packages/`, `site-packages/` | Vendored third-party code, minified bytes coincide with secret prefixes |
+| Path pattern | Why |
+|--------------|-----|
+| `node_modules/`, `vendor/`, `bower_components/`, `jspm_packages/`, `site-packages/` | Vendored third-party code; minified bytes coincide with secret prefixes |
 | `wp-content/plugins/`, `wp-content/themes/`, `wp-includes/` | WordPress vendored trees |
-| `app/assets/javascripts/bootstrap*.js`, `app/assets/javascripts/jquery*.js`, etc. | Rails legacy asset path, vendored JS |
+| `app/assets/javascripts/bootstrap*.js`, `…/jquery*.js`, etc. | Rails legacy asset path, vendored JS |
 | `*.min.js`, `*.bundle.js`, `*.min.css` | Minified bundles |
-| `.github/workflows/`, `.gitlab-ci.yml`, `.circleci/`, `Jenkinsfile`, `.travis.yml`, `azure-pipelines*`, `bitbucket-pipelines*` | CI config, `${{ secrets.X }}` is syntactic |
-| `locale/`, `locales/`, `i18n/`, `l10n/`, `translations/`, `lang/`, `langs/`, `*.po`, `*.pot` | i18n translation files, translated `password`/`token` words are not credentials |
-| Files containing `secretscanner`, `secret-scanner`, `trufflehog`, `gitleaks`, `detect-secrets` in the path | The file IS itself a secret scanner; its regex literals shouldn't fire on itself |
+| `.github/workflows/`, `.gitlab-ci.yml`, `.circleci/`, `Jenkinsfile`, `.travis.yml`, `azure-pipelines*`, `bitbucket-pipelines*` | CI config; `${{ secrets.X }}` is syntactic |
+| `locale/`, `locales/`, `i18n/`, `l10n/`, `translations/`, `lang/`, `langs/`, `*.po`, `*.pot` | i18n files; translated `password`/`token` words are not credentials |
+| Paths containing `secretscanner`, `secret-scanner`, `trufflehog`, `gitleaks`, `detect-secrets` | The file IS a secret scanner; its regex literals shouldn't fire on itself |
 
-These are not configurable. They have such high precision / low recall
-loss that making them opt-in would just make the scanner louder for
-no benefit. If a specific path you care about is being suppressed
-incorrectly, that's a bug worth reporting.
+These are not configurable: their precision is high enough that making them
+opt-in would only make the scanner louder. If one suppresses a path you care
+about, that is a bug worth reporting.
+
+> Not a suppression surface: `[lockdown] require = true` in `.keyhog.toml` (and
+> `--lockdown`) is a fail-*closed* hardening control — it refuses to run, mlocks
+> memory, and forbids disk cache / `--verify` / `--show-secrets`. It never hides
+> a finding. Likewise `audit.toml` is cargo-audit's RustSec advisory ignore-list
+> for keyhog's *own* dependencies (a supply-chain CI gate), unrelated to scan
+> findings.
 
 ## Telemetry: what got suppressed
-
-Pass `--dogfood` to surface what was dropped:
 
 ```sh
 keyhog scan . --dogfood --format json | jq '.dogfood.events[]'
 ```
 
-Each event has the suppressor name (`test_fixture_suppression`,
-`pure_identifier_no_digit`, `vendored_minified_path`, etc.), the
-path, the redacted credential, and the rule that fired. Useful when
-asking "is the scanner being too aggressive on my code?".
+Each event carries the suppressor name (`test_fixture_suppression`,
+`pure_identifier_no_digit`, `vendored_minified_path`, …), the path, the redacted
+credential, and the rule that fired — the answer to "is the scanner being too
+aggressive on my code?".
 
-## Adding a suppression for FP cluster
+## Adding a suppression for an FP cluster
 
-If you find a cluster of 5+ FPs that share a shape, file an issue
-with:
+If you find a cluster of 5+ FPs that share a shape, file an issue with:
 
-1. The detector that fired
-2. A sanitized example of the FP (replace the captured value with
-   `[REDACTED]`)
-3. Why it's not a credential (regex shouldn't have matched, or
-   shape gate should have caught it)
+1. The detector that fired.
+2. A sanitized example (replace the captured value with `[REDACTED]`).
+3. Why it is not a credential (regex shouldn't have matched, or a shape gate
+   should have caught it).
 
-The right fix is either a tightened regex, a new shape filter, or a
-path / file-extension exclusion. Adding the literal credential to
-the test-fixtures list is the LAST resort because it only hides one
-specific FP, not the underlying shape.
+The right fix is a tightened regex, a new shape filter, or a path exclusion.
+Adding the literal credential to the test-fixtures list is the LAST resort — it
+hides one specific value, not the underlying shape.

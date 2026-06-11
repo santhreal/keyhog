@@ -22,5 +22,13 @@ fn scan_output_writes_file() {
     let written = std::fs::read_to_string(&out_path).expect("output file");
     let parsed = serde_json::from_str::<serde_json::Value>(&written).expect("json");
     let arr = parsed.as_array().expect("array");
-    assert!(!arr.is_empty());
+    // Truth assert: the written file carries the REAL planted AWS finding, proving
+    // --output persisted actual findings (not an empty/junk array) to disk.
+    assert!(
+        arr.iter().any(|f| matches!(
+            f.get("detector_id").and_then(|v| v.as_str()),
+            Some("aws-access-key" | "hot-aws_key")
+        )),
+        "--output file must contain the planted AWS finding; got {arr:?}"
+    );
 }

@@ -214,6 +214,18 @@ fn is_user_io_error(error: &(dyn std::error::Error + 'static)) -> bool {
 
 fn print_version_info() {
     println!("KeyHog v{}", env!("CARGO_PKG_VERSION"));
+    // Build provenance (MC-06): the git commit + the digest of the exact
+    // embedded detector set. Without these, `tuned==benched==shipped` is
+    // unverifiable — a stale binary reports the same version string as HEAD,
+    // which is precisely how a false "F1 regression" was chased. Stamped by
+    // keyhog-core's build.rs and surfaced here so every scan traces to a commit
+    // and a known detector set.
+    println!("Commit: {}", keyhog_core::git_hash());
+    println!(
+        "Detector Set: {} ({})",
+        keyhog_core::embedded_detector_count(),
+        keyhog_core::detector_digest()
+    );
     println!(
         "Build Target: {}-{}",
         std::env::consts::ARCH,

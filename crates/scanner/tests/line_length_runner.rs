@@ -1,102 +1,76 @@
-//! Line-length / window-boundary runner.
+//! Line-length / window-boundary runner — a credential-sufficient secret
+//! surfaces at any BYTE OFFSET, including past the in-memory window cap.
 //!
-//! Some scanners pre-tokenise input on newlines and apply a hard
-//! per-line ceiling (8 KB, 16 KB, 64 KB) to bound regex work on
-//! pathological one-line files - minified JS, base64-encoded blobs
-//! dumped without wrapping, single-line k8s ConfigMap output. A
-//! credential past that boundary silently never reaches the engine.
+//! Minified JS, a base64 blob dumped without wrapping, single-line k8s
+//! ConfigMap output: a credential can sit megabytes into one unbroken line. A
+//! scanner that pre-tokenises on newlines and applies a hard per-line ceiling
+//! silently never reaches it; one that stops after its first ≤1 MiB window
+//! never reaches a credential past the cap.
 //!
-//! This runner builds one giant single-line payload with the
-//! credential at progressively further offsets and asserts the
-//! scanner still surfaces it. If a window-cap regression lands, the
-//! per-offset hit-rate column flips to zero at the new boundary and
-//! the strict gate (KEYHOG_LINE_LEN_STRICT=1) turns CI red.
+//! BEHAVIOR contract, not an accuracy rate
+//! ---------------------------------------
+//! We place a credential-sufficient secret VERBATIM after a filler prefix of
+//! the chosen length and assert it still surfaces. The credential bytes are
+//! left untouched — a multiline PEM keeps its internal newlines; collapsing
+//! them with `replace('\n', " ")` would mutate the credential into a DIFFERENT
+//! string (the bug this rewrite removes, which dropped every `ssh-private-key`
+//! positive at *every* offset including 0). So this is a *credential-
+//! sufficiency invariance* contract (see `support::contracts`): a credential
+//! that fires on its own bytes alone MUST still surface no matter how far into
+//! the buffer it sits. The in-memory `scan(&chunk)` path WINDOWS any chunk over
+//! `MAX_SCAN_CHUNK_BYTES` (1 MiB) into overlapping ≤1 MiB windows
+//! (`WINDOW_OVERLAP_BYTES` = 128 KiB), and `max_file_size` is a filesystem-
+//! walker bound that does NOT apply here — so there is no legitimate
+//! per-line/per-chunk cap on this path below the 16 MiB decode ceiling, and
+//! every credential-sufficient miss at any offset below is a real windowing
+//! recall bug. We gate exactly that, all-or-nothing.
 //!
-//! Surface
-//! -------
-//! 348 contracts × ~2 positives × 8 offsets = **5 500 cases per run**.
+//! Why the seam sample is the LONGEST credentials, not the whole corpus
+//! -------------------------------------------------------------------
+//! The seam offsets generate megabyte chunks; scanning one per gated primary in
+//! a debug build is minutes of wall-clock (Law 7 — the prior version took
+//! 315 s). The windowing math bounds exactly what the seam can probe: the
+//! windows of a ~1.5 MiB chunk are [0, 1 MiB] and [1 MiB − 128 KiB, 1.9 MiB],
+//! so any credential no longer than the 128 KiB overlap is FULLY CONTAINED in
+//! some window regardless of where it lands. The only thing the seam adds over
+//! the realistic ladder is "does `scan_windowed` iterate PAST window 1 and find
+//! a credential there" — a single scanner behavior, hardest for the LONGEST
+//! credential (closest to the containment bound). We therefore run the seam
+//! over the `SEAM_SAMPLE` longest gated credentials. The restriction is logged,
+//! not silent (CLAUDE.md Law 10), and the realistic ladder still gates EVERY
+//! gated primary up to 64 KiB.
+//!
+//! Companion-required positives (a bare UUID, a low-entropy body needing a
+//! keyword anchor) depend on surrounding context a transform may perturb; their
+//! survival is an accuracy RATE owned by the bench, so they are counted ONCE at
+//! baseline for corpus context and never gated or swept across offsets.
 
 mod support;
-use support::paths::detector_dir;
+use support::contracts::{
+    load_contracts, make_chunk, primaries, scanner, sufficiency_mask, surfaces, Primary,
+};
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
-use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::CompiledScanner;
-use serde::Deserialize;
+const SOURCE_TYPE: &str = "line-length";
 
-#[derive(Debug, Deserialize)]
-struct Contract {
-    #[allow(dead_code)]
-    schema_version: u32,
-    #[allow(dead_code)]
-    detector_id: String,
-    #[allow(dead_code)]
-    service: String,
-    #[allow(dead_code)]
-    severity: String,
-    #[serde(default)]
-    positive: Vec<Positive>,
-}
+/// Realistic offsets (bytes from line start) every GATED primary is placed at:
+/// the common single-line range up to 64 KiB. Roughly geometric so a per-line
+/// ceiling between rungs surfaces at the nearest rung.
+const REALISTIC_OFFSETS: &[usize] = &[0, 256, 4 * 1024, 16 * 1024, 64 * 1024];
 
-#[derive(Debug, Deserialize)]
-struct Positive {
-    text: String,
-    credential: String,
-    #[allow(dead_code)]
-    reason: String,
-}
+/// Seam offsets that cross `MAX_SCAN_CHUNK_BYTES` (1 MiB): 1 MiB places the
+/// credential right at the first window's end boundary; 1.5 MiB places it beyond
+/// the first window entirely so only the second overlapping window can reach it.
+/// Both prove `scan_windowed` iterates past window 1. Megabyte chunks — run only
+/// over the seam sample, see `SEAM_SAMPLE`.
+const SEAM_OFFSETS: &[usize] = &[1024 * 1024, 1024 * 1024 + 512 * 1024];
 
-fn contracts_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.push("tests");
-    d.push("contracts");
-    d
-}
-
-fn load_contracts() -> Vec<Contract> {
-    let dir = contracts_dir();
-    let mut out = Vec::new();
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        return out;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
-            continue;
-        }
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let Ok(contract) = toml::from_str::<Contract>(&text) else {
-            continue;
-        };
-        out.push(contract);
-    }
-    out
-}
-
-fn scanner() -> CompiledScanner {
-    let detectors = keyhog_core::load_detectors(&detector_dir())
-        .expect("detectors directory loadable from line-length runner");
-    CompiledScanner::compile(detectors).expect("scanner compile from line-length runner")
-}
-
-/// Offsets the credential gets placed at, measured in bytes from the
-/// start of the line. Ladder is roughly geometric so a regression
-/// that puts a ceiling somewhere between rungs surfaces at the
-/// nearest rung.
-const OFFSETS: &[usize] = &[
-    0,        // baseline
-    256,      // typical "short" minified line
-    4 * 1024, // small block
-    16 * 1024,
-    64 * 1024,  // common per-line cap in legacy scanners
-    256 * 1024, // start of "absurd" territory
-    1 * 1024 * 1024,
-    4 * 1024 * 1024, // 4 MB: well past anything legitimate
-];
+/// Number of longest gated credentials the megabyte seam scans run over. The
+/// windowing guarantee (containment for any credential ≤ 128 KiB overlap) makes
+/// the longest credentials the binding worst case; a small sample proves
+/// `scan_windowed` reaches past window 1 without minutes of debug scanning.
+const SEAM_SAMPLE: usize = 8;
 
 const FILLER: &str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789..";
 
@@ -109,86 +83,120 @@ fn make_filler(n: usize) -> String {
     out
 }
 
-fn make_chunk(text: &str) -> Chunk {
-    Chunk {
-        data: text.into(),
-        metadata: ChunkMetadata {
-            source_type: "line-length".into(),
-            path: Some("oneliner.txt".into()),
-            ..Default::default()
-        },
-    }
-}
-
-fn any_credential_contains(matches: &[keyhog_core::RawMatch], expected: &str) -> bool {
-    matches
-        .iter()
-        .any(|m| m.credential.as_ref().contains(expected))
-}
-
 #[test]
-fn every_positive_survives_long_line_offsets() {
+fn credential_sufficient_secrets_survive_long_line_offsets() {
     let scanner = scanner();
     let contracts = load_contracts();
-    assert!(
-        !contracts.is_empty(),
-        "tests/contracts/ has no *.toml - line-length runner has nothing to drive"
-    );
+    let primaries: Vec<Primary> = primaries(&contracts);
+    let sufficient = sufficiency_mask(&scanner, SOURCE_TYPE, &primaries);
+    let n_sufficient = sufficient.iter().filter(|b| **b).count();
 
-    let mut per_offset: BTreeMap<usize, (usize, usize)> = BTreeMap::new();
-    let mut total_runs: usize = 0;
-    let mut total_hits: usize = 0;
+    // Each offset's filler is built ONCE and reused across every probe. The old
+    // code rebuilt `make_filler(offset)` on every probe, so the 1.5 MiB seam
+    // fillers were re-allocated hundreds of times (a Law-7 cost bug).
+    let mut fillers: BTreeMap<usize, String> = BTreeMap::new();
+    for &offset in REALISTIC_OFFSETS.iter().chain(SEAM_OFFSETS) {
+        fillers.entry(offset).or_insert_with(|| make_filler(offset));
+    }
 
-    for c in &contracts {
-        for p in &c.positive {
-            for &offset in OFFSETS {
-                let prefix = make_filler(offset);
-                // Wrap the positive on a single line with no newlines
-                // so a per-line cap (rather than per-chunk cap) is the
-                // thing under test. Replace any positive-internal
-                // newlines with spaces.
-                let positive_inline = p.text.replace('\n', " ");
-                let text = format!("{prefix} {positive_inline}");
-                scanner.clear_fragment_cache();
-                let chunk = make_chunk(&text);
-                let matches = scanner.scan(&chunk);
-                let hit = any_credential_contains(&matches, &p.credential);
-                let bucket = per_offset.entry(offset).or_insert((0, 0));
-                bucket.0 += 1;
-                total_runs += 1;
-                if hit {
-                    bucket.1 += 1;
-                    total_hits += 1;
-                }
+    // Place a credential VERBATIM at `offset` bytes and ask whether it
+    // surfaces. The credential bytes (including any internal newlines) are never
+    // mutated, so byte-preservation — and therefore the soundness of the
+    // credential-sufficiency invariance — holds by construction.
+    let probe = |p: &Primary, offset: usize| -> bool {
+        let prefix = &fillers[&offset];
+        let text = format!("{prefix} {}", p.credential);
+        let chunk = make_chunk(&text, SOURCE_TYPE, "oneliner.txt");
+        surfaces(&scanner, &chunk, &p.credential)
+    };
+
+    let mut gated_assertions = 0usize;
+    let mut gated_hits = 0usize;
+    let mut violations: Vec<String> = Vec::new();
+
+    // Realistic ladder: every gated primary at every realistic offset.
+    for (idx, p) in primaries.iter().enumerate() {
+        if !sufficient[idx] {
+            continue;
+        }
+        for &offset in REALISTIC_OFFSETS {
+            gated_assertions += 1;
+            if probe(p, offset) {
+                gated_hits += 1;
+            } else {
+                violations.push(format!(
+                    "{detector} :: offset={offset} :: standalone-firing credential {cred:?} \
+                     DROPPED at this line offset",
+                    detector = p.detector_id,
+                    cred = p.credential,
+                ));
             }
         }
     }
 
-    let mut summary = String::from("line-length per-offset hit rate:\n");
-    for (offset, (runs, hits)) in &per_offset {
-        let pct = (*hits as f64 / (*runs).max(1) as f64) * 100.0;
-        summary.push_str(&format!(
-            "  offset={offset:>9}  {hits:>4}/{runs:<4} ({pct:5.1}%)\n"
-        ));
+    // Seam ladder: the SEAM_SAMPLE longest gated credentials at megabyte offsets
+    // (see header). Longest = worst case for window containment.
+    let mut gated_desc_by_len: Vec<usize> =
+        (0..primaries.len()).filter(|&i| sufficient[i]).collect();
+    gated_desc_by_len.sort_by_key(|&i| std::cmp::Reverse(primaries[i].credential.len()));
+    let seam_idxs: Vec<usize> = gated_desc_by_len.into_iter().take(SEAM_SAMPLE).collect();
+    for &idx in &seam_idxs {
+        let p = &primaries[idx];
+        for &offset in SEAM_OFFSETS {
+            gated_assertions += 1;
+            if probe(p, offset) {
+                gated_hits += 1;
+            } else {
+                violations.push(format!(
+                    "{detector} :: offset={offset} (seam) :: standalone-firing credential \
+                     {cred:?} DROPPED past the 1 MiB window cap",
+                    detector = p.detector_id,
+                    cred = p.credential,
+                ));
+            }
+        }
     }
-    let overall = (total_hits as f64 / total_runs.max(1) as f64) * 100.0;
-    summary.push_str(&format!(
-        "  TOTAL {total_hits}/{total_runs} ({overall:.1}%) - flat across \
-         offsets = legendary; a step-down = a window-cap regression\n"
-    ));
-    eprintln!("{summary}");
 
-    let strict = std::env::var("KEYHOG_LINE_LEN_STRICT")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
-    // 60% floor: the 4 MB and 1 MB rungs may legitimately get capped
-    // by `max_file_size` / decode-bomb guards. The middle rungs
-    // (256 B - 64 KB) should be flat at ~100%, so any drop below 60%
-    // means even the small rungs regressed.
-    if strict && overall < 60.0 {
-        panic!(
-            "line-length overall recall {overall:.1}% dropped below 60% floor - \
-             a per-line/window-size cap regression likely landed"
-        );
+    // Companion-required corpus context, counted ONCE at baseline. Their text
+    // (which carries the keyword anchor) is inlined; this is informational —
+    // their per-offset survival is a bench-owned RATE, never gated here.
+    let mut companion_runs = 0usize;
+    let mut companion_hits = 0usize;
+    let baseline_filler = &fillers[&0];
+    for (idx, p) in primaries.iter().enumerate() {
+        if sufficient[idx] {
+            continue;
+        }
+        companion_runs += 1;
+        let text = format!("{baseline_filler} {}", p.text.replace('\n', " "));
+        let chunk = make_chunk(&text, SOURCE_TYPE, "oneliner.txt");
+        if surfaces(&scanner, &chunk, &p.credential) {
+            companion_hits += 1;
+        }
     }
+
+    let seam_lens: Vec<usize> = seam_idxs
+        .iter()
+        .map(|&i| primaries[i].credential.len())
+        .collect();
+    eprintln!(
+        "line-length: {n_sufficient}/{} primaries fire standalone; gated survival \
+         {gated_hits}/{gated_assertions} (must be 100%) across realistic offsets \
+         {REALISTIC_OFFSETS:?} (every gated primary) + seam offsets {SEAM_OFFSETS:?} over the {} \
+         longest gated credentials (lengths {seam_lens:?}). companion-required baseline: \
+         {companion_hits}/{companion_runs} fire at offset 0 (informational; per-offset survival \
+         is a bench RATE).",
+        primaries.len(),
+        seam_idxs.len(),
+    );
+
+    assert!(
+        violations.is_empty(),
+        "line-length credential-sufficiency invariance violated ({} cases): a credential that \
+         fires standalone was dropped at a larger byte offset — a per-line/window-cap recall bug \
+         on the in-memory scan path (which windows, so no legitimate cap applies below 16 MiB):\n  \
+         - {}",
+        violations.len(),
+        violations.join("\n  - "),
+    );
 }

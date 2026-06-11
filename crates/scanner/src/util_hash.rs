@@ -18,18 +18,69 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 
+/// FNV-1a offset basis (seed). The ONE place the seed lives — every cache that
+/// keys on this hash depends on the value being identical.
+const FNV_OFFSET_BASIS: u64 = 0xcbf29ce484222325;
+/// FNV-1a prime. The ONE place the prime lives.
+const FNV_PRIME: u64 = 0x100000001b3;
+
 /// FNV-1a hash of `data`. Non-cryptographic; used as a content key for dedup
 /// and memoization across the scanner. Keep the seed/prime in sync here only -
 /// every cache that keys on this depends on the value being identical.
 #[inline]
 #[must_use]
 pub fn hash_fast(data: &[u8]) -> u64 {
-    let mut hash: u64 = 0xcbf29ce484222325;
-    for &byte in data {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x100000001b3);
+    let mut h = FnvHasher::new();
+    h.write(data);
+    h.finish()
+}
+
+/// Allocation-free incremental FNV-1a, for content keys composed of MORE THAN
+/// ONE slice (e.g. the ML scorer keys on `text` + separator + `context`).
+/// Folding the slices into one [`FnvHasher`] is byte-for-byte identical to
+/// hashing their concatenation but never allocates the joined buffer — the
+/// reason this exists instead of `hash_fast(&[a, b].concat())` on a hot path.
+/// Shares the SINGLE seed/prime ([`FNV_OFFSET_BASIS`] / [`FNV_PRIME`]) with
+/// [`hash_fast`], so a single-slice `FnvHasher` and `hash_fast` agree (MC-12).
+#[derive(Clone, Copy)]
+pub struct FnvHasher {
+    hash: u64,
+}
+
+impl Default for FnvHasher {
+    #[inline]
+    fn default() -> Self {
+        Self::new()
     }
-    hash
+}
+
+impl FnvHasher {
+    /// New hasher seeded at the FNV-1a offset basis.
+    #[inline]
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            hash: FNV_OFFSET_BASIS,
+        }
+    }
+
+    /// Fold `data` into the running hash (FNV-1a: xor-then-multiply per byte).
+    #[inline]
+    pub fn write(&mut self, data: &[u8]) {
+        let mut hash = self.hash;
+        for &byte in data {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+        self.hash = hash;
+    }
+
+    /// The accumulated 64-bit content key.
+    #[inline]
+    #[must_use]
+    pub fn finish(&self) -> u64 {
+        self.hash
+    }
 }
 
 /// Default ceiling for [`memoize_by_hash`] caches: cleared wholesale when this

@@ -33,9 +33,12 @@ real tree. Items carry the data that proves them.
   dedicated pool can't be built.
   VERIFIED 2026-05-30: release binary now scans the full kernel in **93.5 s
   wall** (was: infinite hang), peak RSS 2.2 GB, 22 findings, SIMD backend.
-  → testing gap: no large-tree (50k+ file) scan test exists; the whole class
-  was invisible. Add a generated wide-tree e2e that asserts completion under
-  a wall-clock deadline (T-perf-bigtree).
+  → testing gap CLOSED: a generated wide-tree e2e now exists —
+  `crates/cli/tests/e2e/scan_bigtree_completes_and_recalls.rs` (T-perf-bigtree)
+  builds a synthetic wide tree, asserts the scan COMPLETES under a wall-clock
+  deadline (the deadlock would hang it forever), and asserts a planted secret
+  is still recalled (completion alone could be a no-op). The whole large-tree
+  class is no longer invisible to CI.
 
 - **PERF-02 · HIGH · GPU (Vulkan) path has unbounded host waits** — independent
   of PERF-01, the GPU backend can block the scan forever:
@@ -477,3 +480,50 @@ The full-kernel finding count changed from the older 22-finding artifact to
 not planted credentials. Live GPU evidence remains green:
 `backend --self-test --json` reports RTX 5090 `status=pass`,
 `recommended_backend=gpu`, and `vyre_ac_kernel=pass`.
+
+### PERF-05 / PERF-08 resolution — the consumer-side serial funnel is GONE (fused parallel read+scan, 2026-06-10)
+
+PERF-05's NARROWED LEVER (the single main-thread chunk drain + single scanner
+thread giving ~2 effective cores of 32, "stop routing every tiny chunk through
+one drain thread") is RESOLVED. The fix is the **fused parallel read+scan
+pipeline** `scan_sources_fused` (`crates/cli/src/orchestrator/dispatch.rs`),
+now the default for CPU/SIMD filesystem scans (`should_use_fused_pipeline`).
+It batches chunks off the reader channel and runs every batch through
+`scan_coalesced` on the global rayon pool via `par_bridge` — no single-thread
+drain, no single scanner thread. The legacy single-drain batch pipeline
+(`scan_sources`) is kept only for the GPU/MegaScan coalesce model and is
+selected by `backend_requires_legacy_gpu_pipeline` (explicit `--backend gpu`)
+or `KEYHOG_LEGACY_PIPELINE=1`; auto/default stays fused even on GPU hosts.
+
+Remeasured warm-cache on the full Linux kernel (94825 files, 2.0 GB at
+`/mnt/FlareTraining/santh-corpus/repos/linux`), 32-core / 91 GB box, release:
+
+  | path                         | wall   | CPU    | effective cores |
+  |------------------------------|--------|--------|-----------------|
+  | fused (default)              | 4.25 s | 1833 % | ~18 of 32       |
+  | legacy (`KEYHOG_LEGACY_PIPELINE=1`) | 7.12 s | 749 % | ~7              |
+
+Thread scaling 1→32 on the fused path: 40.78 s → 4.25 s = **9.6× → Amdahl
+serial fraction ~0.075** (was ~0.65 / ~2 cores in the PERF-08 framing above).
+Finding set is BYTE-IDENTICAL across default / `--backend simd` / legacy:
+27 findings (21 generic-secret, 3 cloudsmith, 2 devcycle, 1
+github-app-private-key). Guarded by `pipeline_fused_and_legacy_agree`
+(fused == legacy finding set), `pipeline_auto_filesystem_uses_fused` (routing),
+and `scan_bigtree_completes_and_recalls`.
+
+Tier-A throughput knobs added (compiled default → env override, no CLI/TOML
+surface yet): `KEYHOG_FUSED_BATCH` (default 32 chunks/batch — amortises
+`scan_coalesced`'s own two-phase `par_iter` fork-join barrier) and
+`KEYHOG_FUSED_DEPTH` (reader→scanner `sync_channel` depth, default
+`clamp(threads*¾, 2, 8)`). The 256-default sweep was inconclusive and the
+default stays at the proven 32; the knobs let the optimum be retuned per host
+without a rebuild. Always MEASURE on the kernel before shipping a hot-path
+default — the prior reader-pull `into_par_iter` rewrite regressed 84→103 s.
+
+CAVEAT — absolute kernel wall-clock is in flux: an in-progress scanner refactor
+(GPU subcrate removal + `megakernel.rs`/`scan.rs` rewrite, uncommitted as of
+2026-06-10) is actively changing `scan_coalesced` phase-2 cost, so a binary
+built from the working tree mid-refactor does NOT reflect the 4.25 s number
+above. Re-measure the fused-vs-legacy wall on the kernel once that refactor
+lands. The serial-funnel ARCHITECTURE fix (this section) is independent of it
+and is locked by the three parity/routing tests.

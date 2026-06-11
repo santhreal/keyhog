@@ -195,55 +195,73 @@ impl CompiledScanner {
     ) -> Vec<u64> {
         let _g = profile::span(profile::P::Phase1Triggers);
         match backend {
-            // MegaScan currently reuses the literal-set trigger
-            // collection - its own regex-NFA trigger pass is open and
-            // unfinished. The trigger bitmask shape is identical to
-            // the literal-set output so upstream consumers don't
-            // branch; the gap is precision, not correctness (extra
-            // patterns enter the cheap-filter, but evaluation still
-            // filters them on the per-pattern match step).
-            ScanBackend::Gpu | ScanBackend::MegaScan => self.collect_triggered_patterns_gpu(text),
+            // Per-chunk GPU trigger production uses the GPU literal-set PRESENCE
+            // bitmap; its bitmap shape is identical to the CPU paths so
+            // downstream extraction never branches on backend. NOTE: the
+            // coalesced BATCH path produces its triggers differently — via the
+            // megakernel's on-GPU DFA catalog in `scan_coalesced_megakernel` —
+            // so this per-chunk method runs only for the `scan_inner` entry, not
+            // the batch megakernel.
+            ScanBackend::Gpu | ScanBackend::MegaScan => {
+                self.collect_triggered_patterns_gpu(text, backend)
+            }
             ScanBackend::SimdCpu => self.collect_triggered_patterns_simd(text),
             ScanBackend::CpuFallback => self.collect_triggered_patterns_cpu(text),
         }
     }
 
-    fn collect_triggered_patterns_gpu(&self, text: &str) -> Vec<u64> {
-        if let Some(matcher) = self.gpu_matcher() {
-            let Some(backend) = self.gpu_backend.as_ref() else {
-                return self.collect_triggered_patterns_simd(text);
-            };
-            // Use the PRESENCE-bitmap dispatch, not the match-triple `scan`. Phase-1
-            // only needs WHICH literal patterns fired (it discards positions one
-            // line below in `triggered_patterns_from_gpu_presence`), so the triple
-            // path was pure waste: it atomic-appended an (id,start,end) triple per
-            // hit and read them all back, which on match-dense source collapses GPU
-            // throughput ~888x (measured: 2.3 MB/s triples vs 2047 MB/s presence on
-            // a 5090). The presence bitmap is strictly >= the triple triggers: it
-            // has NO match cap, whereas `scan(.., 10000)` truncated at 10k hits and
-            // could drop a pattern id beyond the cap. Same per-pattern-id mapping
-            // (`mark_triggered_pattern`), so the trigger set is recall-identical-or-
-            // -better. Validated by `gpu_presence_trigger_parity`.
-            match matcher.scan_presence(&**backend, text.as_bytes()) {
-                Ok(presence) => {
-                    // Union with the AC literal triggers for the same
-                    // soundness reason as the SIMD path: the GPU literal
-                    // matcher must not be the sole gate for literal-anchored
-                    // patterns, or context-anchored detectors with large
-                    // bounded-repeat bodies silently never fire on GPU.
-                    let mut triggered = self.collect_triggered_patterns_cpu(text);
-                    let gpu = self.triggered_patterns_from_gpu_presence(&presence);
-                    for (slot, bits) in triggered.iter_mut().zip(gpu.iter()) {
-                        *slot |= *bits;
-                    }
-                    return triggered;
-                }
-                Err(error) => {
-                    tracing::debug!("gpu presence scan failed: {error}");
-                }
+    /// Per-chunk GPU trigger production (`scan_inner` entry only — the batch path
+    /// is the megakernel). Every path off the GPU is a LOUD, reason-recording
+    /// degrade, never a silent SIMD swap: a missing matcher/backend or a failed
+    /// dispatch records the concrete cause in `gpu_last_degrade_reason` and routes
+    /// through `deny_silent_gpu_degrade_with_reason`, which hard-fails under forced
+    /// `KEYHOG_BACKEND` / `KEYHOG_REQUIRE_GPU` and otherwise emits the one-shot
+    /// stderr warning (suppressed only on `KEYHOG_NO_GPU` / CI, where CPU is the
+    /// correct path). The degraded trigger set comes from the backend that is
+    /// actually live — SIMD prefilter if compiled, else pure-CPU AC (Law 10).
+    fn collect_triggered_patterns_gpu(&self, text: &str, backend: ScanBackend) -> Vec<u64> {
+        // Loud, recall-preserving degrade off the per-chunk GPU trigger path.
+        let degrade = |reason: String| -> Vec<u64> {
+            if let Ok(mut slot) = self.gpu_last_degrade_reason.lock() {
+                *slot = Some(reason.clone());
             }
+            super::gpu_forced::deny_silent_gpu_degrade_with_reason(self, backend, Some(&reason));
+            self.collect_triggered_patterns_simd(text)
+        };
+
+        let Some(matcher) = self.gpu_matcher() else {
+            return degrade("gpu literal matcher not built for this scanner".to_string());
+        };
+        let Some(gpu_backend) = self.gpu_backend.as_ref() else {
+            return degrade("no gpu backend acquired for per-chunk trigger dispatch".to_string());
+        };
+        // Use the PRESENCE-bitmap dispatch, not the match-triple `scan`. Phase-1
+        // only needs WHICH literal patterns fired (it discards positions one
+        // line below in `triggered_patterns_from_gpu_presence`), so the triple
+        // path was pure waste: it atomic-appended an (id,start,end) triple per
+        // hit and read them all back, which on match-dense source collapses GPU
+        // throughput ~888x (measured: 2.3 MB/s triples vs 2047 MB/s presence on
+        // a 5090). The presence bitmap is strictly >= the triple triggers: it
+        // has NO match cap, whereas `scan(.., 10000)` truncated at 10k hits and
+        // could drop a pattern id beyond the cap. Same per-pattern-id mapping
+        // (`mark_triggered_pattern`), so the trigger set is recall-identical-or-
+        // -better. Validated by `gpu_presence_trigger_parity`.
+        match matcher.scan_presence(&**gpu_backend, text.as_bytes()) {
+            Ok(presence) => {
+                // Union with the AC literal triggers for the same
+                // soundness reason as the SIMD path: the GPU literal
+                // matcher must not be the sole gate for literal-anchored
+                // patterns, or context-anchored detectors with large
+                // bounded-repeat bodies silently never fire on GPU.
+                let mut triggered = self.collect_triggered_patterns_cpu(text);
+                let gpu = self.triggered_patterns_from_gpu_presence(&presence);
+                for (slot, bits) in triggered.iter_mut().zip(gpu.iter()) {
+                    *slot |= *bits;
+                }
+                triggered
+            }
+            Err(error) => degrade(format!("gpu presence scan failed: {error}")),
         }
-        self.collect_triggered_patterns_simd(text)
     }
 
     fn collect_triggered_patterns_simd(&self, text: &str) -> Vec<u64> {
@@ -296,7 +314,7 @@ impl CompiledScanner {
     }
 
     pub(crate) fn collect_triggered_patterns_cpu(&self, text: &str) -> Vec<u64> {
-        let mut triggered_patterns = vec![0u64; self.ac_map.len().div_ceil(64)];
+        let mut triggered_patterns = super::trigger_bitmap::new_trigger_bitmap(self.ac_map.len());
         if let Some(ac) = &self.ac {
             for ac_match in ac.find_iter(text.as_bytes()) {
                 self.mark_triggered_pattern(&mut triggered_patterns, ac_match.pattern().as_usize());
@@ -311,7 +329,7 @@ impl CompiledScanner {
     /// per-pattern counterpart of consuming per-hit match triples (the triple path
     /// was removed; see `collect_triggered_patterns_gpu`).
     fn triggered_patterns_from_gpu_presence(&self, presence: &[u32]) -> Vec<u64> {
-        let mut triggered = vec![0u64; self.ac_map.len().div_ceil(64)];
+        let mut triggered = super::trigger_bitmap::new_trigger_bitmap(self.ac_map.len());
         for (word_idx, &word) in presence.iter().enumerate() {
             let mut bits = word;
             while bits != 0 {
@@ -338,11 +356,25 @@ impl CompiledScanner {
         }
     }
 
+    // `#[cfg(feature = "gpu")]`: the ONLY caller is the GPU megakernel
+    // dispatch's failure path (`megakernel_dispatch.rs`), so this — and its
+    // `has_simd_prefilter` helper — are needed exactly when `gpu` is compiled.
+    // A no-`gpu` build never recovers from a GPU failure, so leaving it
+    // ungated is dead code there (Law 11).
+    #[cfg(feature = "gpu")]
     pub(crate) fn degraded_backend_after_gpu_failure(&self) -> ScanBackend {
-        #[cfg(feature = "simd")]
-        if self.simd_prefilter.is_some() {
-            return ScanBackend::SimdCpu;
+        // Route to the backend that is ACTUALLY live: `SimdCpu` only when a
+        // Hyperscan prefilter is compiled in and built, else the pure-CPU AC
+        // `CpuFallback` — otherwise the operator-visible backend would claim
+        // SimdCpu while silently running the weaker AC path (Law 10). `gpu`
+        // implies `simd`, so the prefilter is always compiled in here; the
+        // `has_simd_prefilter` accessor still gates on whether the Hyperscan
+        // database actually BUILT at runtime (it can be `None` on a build
+        // failure), keeping the degraded-backend label honest.
+        if self.has_simd_prefilter() {
+            ScanBackend::SimdCpu
+        } else {
+            ScanBackend::CpuFallback
         }
-        ScanBackend::CpuFallback
     }
 }

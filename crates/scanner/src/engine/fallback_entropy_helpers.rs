@@ -113,37 +113,17 @@ pub(crate) fn entropy_path_looks_like_filename(value: &str) -> bool {
 
 #[cfg(feature = "entropy")]
 pub(crate) fn entropy_path_looks_like_random_base64_blob(value: &str) -> bool {
-    // Lower bound 50 (was 40) so 40-49 char base64-shaped credentials get
-    // a path through the entropy fallback. Real-world recall fixtures sit
-    // in this 40-49 char band (Stripe-style restricted-secret-key bodies,
-    // GitHub legacy 40-char auth secrets). Protobuf-of-random-bytes
-    // decoys skew larger (median 64 chars per negatives.py: 30-80 random
-    // bytes) so this band is overwhelmingly real credentials.
-    if !(50..=300).contains(&value.len()) {
-        return false;
-    }
-    let has_padding = value.ends_with("==") || value.ends_with('=');
-    let length_mult_4 = value.len() % 4 == 0;
-    if !has_padding && !length_mult_4 {
-        return false;
-    }
-    let mut has_plus = false;
-    let mut has_slash = false;
-    for c in value.chars() {
-        match c {
-            'A'..='Z' | 'a'..='z' | '0'..='9' | '=' => {}
-            '+' => has_plus = true,
-            '/' => has_slash = true,
-            _ => return false,
-        }
-    }
-    // Tightened punctuation requirement: require BOTH `+` AND `/` (or
-    // padding with at least one of them). Real protobuf-of-random-bytes
-    // encoding produces both `+` and `/` because the byte distribution
-    // is uniform; restricted-secret-key style positives often contain
-    // only one. Padded values with at least one `+/` still trip - this
-    // is a per-byte distribution signal, not a structural one.
-    (has_plus && has_slash) || (has_padding && (has_plus || has_slash))
+    // Band 50..=300: lower bound 50 (was 40) so 40-49 char base64-shaped
+    // credentials get a path through the entropy fallback. Real-world recall
+    // fixtures sit in this 40-49 char band (Stripe-style restricted-secret-key
+    // bodies, GitHub legacy 40-char auth secrets). Protobuf-of-random-bytes
+    // decoys skew larger (median 64 chars per negatives.py: 30-80 random bytes)
+    // so this band is overwhelmingly real credentials.
+    //
+    // The band + padding + standard-base64-alphabet + BOTH-`+`-AND-`/` skeleton
+    // is the shared `is_byte_distribution_base64_blob` canonical (MC-12); this
+    // path composes only its band on top.
+    crate::decode_structure::is_byte_distribution_base64_blob(value, 50, 300)
 }
 
 /// The four synthetic entropy-fallback metadata triples, index-parallel with

@@ -162,7 +162,7 @@ fn gpu_ac_kernel_finds_stackblitz_token_in_narrow_window() {
     // unavailable), we still get a result; finds_stackblitz then
     // reflects the AC outcome OR the fallback outcome, which is
     // what an end user would see at KEYHOG_GPU_KERNEL=ac.
-    let ac_results = scanner.scan_coalesced_gpu_ac(&chunks);
+    let ac_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::Gpu);
     let ac_flat: Vec<_> = ac_results.into_iter().flatten().collect();
     assert!(
         finds_stackblitz(&ac_flat),
@@ -252,7 +252,7 @@ fn bisect_gpu_ac_recall_by_window_size() {
         // Drive both backends over the SAME bytes. If SIMD finds it
         // and AC misses it, the bug is purely AC-side. If both miss
         // it, the chunk-coalesce + dedup downstream is dropping it.
-        let ac_results = scanner.scan_coalesced_gpu_ac(std::slice::from_ref(&chunk));
+        let ac_results = scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::Gpu);
         let ac_flat: Vec<_> = ac_results.into_iter().flatten().collect();
         let ac_hit = finds_stackblitz(&ac_flat);
         let ac_stackblitz_count = ac_flat
@@ -355,7 +355,7 @@ fn gpu_ac_kernel_must_find_stackblitz_token_on_full_corpus() {
 
     // First: direct call to the AC dispatch path. This is the
     // engine surface keyhog's CLI ultimately routes to.
-    let direct_results = scanner.scan_coalesced_gpu_ac(&chunks);
+    let direct_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::Gpu);
     let direct_flat: Vec<_> = direct_results.into_iter().flatten().collect();
     let direct_has_stackblitz = finds_stackblitz(&direct_flat);
 

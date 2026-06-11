@@ -62,20 +62,16 @@ pub fn score_with_config(
             RefCell::new(std::collections::HashMap::with_capacity(64));
     }
 
-    // FNV-1a hash of text + separator + context
+    // FNV-1a content key over text + separator + context, folded through the
+    // shared allocation-free `util_hash::FnvHasher` (MC-12). The `&[0]`
+    // separator round reproduces the previous inline `hash ^= 0; *= prime`
+    // exactly, so the key is byte-identical to the old hand-rolled loop.
     let cache_key = {
-        let mut hash: u64 = 0xcbf29ce484222325;
-        for &byte in text.as_bytes() {
-            hash ^= u64::from(byte);
-            hash = hash.wrapping_mul(0x100000001b3);
-        }
-        hash ^= 0; // separator
-        hash = hash.wrapping_mul(0x100000001b3);
-        for &byte in context.as_bytes() {
-            hash ^= u64::from(byte);
-            hash = hash.wrapping_mul(0x100000001b3);
-        }
-        hash
+        let mut h = crate::util_hash::FnvHasher::new();
+        h.write(text.as_bytes());
+        h.write(&[0]); // separator
+        h.write(context.as_bytes());
+        h.finish()
     };
 
     if let Some(score) = SCORE_CACHE.with(|cache| cache.borrow().get(&cache_key).copied()) {

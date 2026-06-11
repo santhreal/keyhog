@@ -304,20 +304,47 @@ fn load_detectors_embedded_or_fail(path: &Path) -> Result<Vec<DetectorSpec>> {
             "using embedded detectors (no external detectors directory found)"
         );
         let mut detectors = Vec::new();
+        let mut failed: Vec<(&str, String)> = Vec::new();
         for (name, toml_content) in embedded {
             match toml::from_str::<keyhog_core::DetectorFile>(toml_content) {
                 Ok(file) => detectors.push(file.detector),
-                Err(error) => {
-                    tracing::debug!("failed to parse embedded detector {}: {}", name, error)
-                }
+                // Law 10 (NO SILENT FALLBACKS): an EMBEDDED detector that fails
+                // to parse is a build/source bug, never a runtime condition the
+                // operator can act on — the set is compiled into the binary, the
+                // user cannot have edited it. The old `tracing::debug!`-then-
+                // continue silently dropped the offender, which is exactly how
+                // the dead `discord-bot-token` detector (a single-quoted TOML
+                // literal that broke parsing) reached a benched release binary
+                // as an invisible recall hole (DET-01 / MC-16 / DF-07). Collect
+                // every offender and FAIL CLOSED below so a corrupt embedded
+                // corpus is a hard release blocker, not a buried stderr line.
+                Err(error) => failed.push((name, error.to_string())),
             }
+        }
+        if !failed.is_empty() {
+            let detail = failed
+                .iter()
+                .map(|(name, error)| format!("  - {name}: {error}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            anyhow::bail!(
+                "{} of {} embedded detector(s) failed to parse — the binary baked \
+                 in a CORRUPT detector set, so its recall is silently degraded. \
+                 This is a build/source bug, not a runtime condition: the embedded \
+                 corpus is compiled in and cannot have been edited at runtime. \
+                 Offending detector(s):\n{detail}\nFix: repair the named TOML(s) \
+                 under `detectors/` (the toml error names the line/column) and \
+                 rebuild keyhog so build.rs re-embeds a valid set.",
+                failed.len(),
+                embedded.len(),
+            );
         }
         if detectors.is_empty() {
             anyhow::bail!(
-                "no detectors loaded from embedded data - every embedded TOML \
-                 failed to parse. Fix: pass `--detectors <DIR>` to load from a \
-                 directory of TOMLs, or rebuild keyhog from source so the \
-                 build.rs detector-embedding step re-runs."
+                "no detectors loaded from embedded data - the embedded set is \
+                 empty. Fix: pass `--detectors <DIR>` to load from a directory \
+                 of TOMLs, or rebuild keyhog from source so the build.rs \
+                 detector-embedding step re-runs."
             );
         }
         return Ok(detectors);

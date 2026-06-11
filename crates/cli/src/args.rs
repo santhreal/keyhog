@@ -12,7 +12,7 @@ use std::path::PathBuf;
 #[command(
     name = "keyhog",
     about = "KeyHog: The developer-first secret scanner.\nFind leaked credentials in your code before hackers do. Fast, accurate, and verifying.",
-    after_help = "EXIT CODES:\n  0   Success (no secrets found)\n  1   Secrets found (unverified or verification skipped)\n  2   User error (e.g., config error, unreadable path)\n  3   System error (local environment failure or detector-corpus audit failure)\n  4   Health/self-test failure (doctor unhealthy / repair could not restore a working binary / backend --self-test failed)\n  10  Live credentials found (requires --verify)\n  11  Scanner thread panicked mid-scan (state is unreliable)",
+    after_help = "EXIT CODES:\n  0   Success (no secrets found)\n  1   Secrets found (unverified or verification skipped)\n  2   User error (bad flag/config, missing --baseline, non-repo source, detector-load failure, not-found/permission-denied path)\n  3   System error (local environment failure: low-level I/O that is not not-found/permission-denied, or GPU/hardware init)\n  4   Health/self-test failure (doctor unhealthy / repair could not restore a working binary / backend --self-test failed)\n  10  Live credentials found (requires --verify)\n  11  Scanner thread panicked mid-scan (state is unreliable)",
     disable_version_flag = true
 )]
 pub struct Cli {
@@ -409,6 +409,15 @@ pub struct DetectorArgs {
     /// unless `--fix` is also set.
     #[arg(long, requires = "fix")]
     pub dry_run: bool,
+    /// Output format for the detector listing. `text` (default) is the grouped,
+    /// human-readable summary; `json` emits the structured array described under
+    /// `--json`. This is the canonical flag — it matches `scan --format` so the
+    /// two surfaces share one convention (CLI-01). Only `text`/`json` apply to a
+    /// detector listing, so the format set is intentionally narrower than
+    /// `scan`'s. Mutually exclusive with `--audit` / `--fix` (they emit their own
+    /// structured formats) and with the legacy `--json` alias.
+    #[arg(long, value_enum, conflicts_with_all = ["audit", "fix", "json"])]
+    pub format: Option<DetectorFormat>,
     /// Emit the detector listing as a JSON array on stdout instead of the
     /// human-readable grouped summary. Pairs with `--search` for filtered
     /// programmatic discovery (CI gates, bench harnesses, IDE plugins).
@@ -418,8 +427,22 @@ pub struct DetectorArgs {
     /// "patterns": [{ "regex", "description", "group" }, ..],
     /// "companions": [{ "name", "regex", "within_lines", "required" }, ..],
     /// "verify": <bool> }, ..]`.
+    ///
+    /// Back-compat alias for `--format json`; prefer `--format` in new scripts.
     #[arg(long, conflicts_with_all = ["audit", "fix"])]
     pub json: bool,
+}
+
+/// Output formats valid for the `detectors` listing. Deliberately a narrow
+/// pair (not the full [`OutputFormat`]): a detector listing has exactly one
+/// structured form (JSON) and one human form (text); SARIF/JUnit/CSV/HTML are
+/// findings-report shapes with no meaning here, so offering them would be an
+/// incoherent surface. Shares the `--format` flag *name* with `scan` for
+/// convention parity (CLI-01) without sharing the irrelevant variants.
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum DetectorFormat {
+    Text,
+    Json,
 }
 
 #[derive(Clone, ValueEnum)]
@@ -469,6 +492,26 @@ impl CliDedupScope {
             Self::None => DedupScope::None,
         }
     }
+}
+
+/// Tri-state daemon routing policy for `scan --daemon[=auto|on|off]` (CLI-02).
+///
+/// Collapses what used to be a `--daemon` / `--no-daemon` boolean conflict pair
+/// into a single flag with an explicit value, while preserving both legacy
+/// spellings:
+///   * `--daemon` (bare)  → [`Self::On`]   (back-compat: force the daemon route)
+///   * `--daemon=auto`    → [`Self::Auto`] (the default when the flag is absent)
+///   * `--daemon=off`     → [`Self::Off`]  (canonical form of `--no-daemon`)
+///   * `--no-daemon`      → [`Self::Off`]  (retained compatibility alias)
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum, Debug)]
+pub enum DaemonMode {
+    /// Use the daemon when a live socket is present, else scan in-process. This
+    /// is the behavior when no `--daemon`/`--no-daemon` flag is given.
+    Auto,
+    /// Force the scan through a running `keyhog daemon`; fail if none is up.
+    On,
+    /// Force in-process scanning even when a daemon is running.
+    Off,
 }
 
 /// Build the top-level clap [`clap::Command`] with the runtime-derived detector

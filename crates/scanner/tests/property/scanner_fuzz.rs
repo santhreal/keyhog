@@ -76,10 +76,13 @@ static CORRECTNESS_SCANNER: LazyLock<CompiledScanner> = LazyLock::new(|| {
     CompiledScanner::compile(fuzz_detectors())
         .expect("fuzz detectors compile")
         .with_config(keyhog_scanner::ScannerConfig {
-            min_confidence: 0.0,
-            ml_enabled: false,
-            entropy_enabled: false,
-            ..keyhog_scanner::ScannerConfig::default()
+            scan: keyhog_core::config::ScanConfig {
+                min_confidence: 0.0,
+                ml_enabled: false,
+                entropy_enabled: false,
+                ..Default::default()
+            },
+            ..Default::default()
         })
 });
 

@@ -8,61 +8,43 @@ impl CompiledScanner {
         chunks: &[Chunk],
         backend: ScanBackend,
     ) -> Vec<Vec<RawMatch>> {
-        // GPU paths: literal-set (Gpu) and regex-NFA (MegaScan). Both
-        // require a working GPU adapter + compiled matchers; the lazy
-        // compile is gated below so a missing GPU silently degrades to
-        // SIMD via `scan_with_backend` per chunk.
+        // Non-GPU backends (and empty batches) run the parallel CPU path. rayon's
+        // global pool is configured by the CLI orchestrator (--threads /
+        // KEYHOG_THREADS / physical cores); Hyperscan + AC scans are CPU-bound
+        // and independent per-chunk, so par_iter() saturates cores. The
+        // `scan_chunk_boundaries` pass reassembles secrets straddling the seam
+        // between adjacent gapless chunks of the same file (a per-chunk scan sees
+        // each half too short to match) — load-bearing recall, not optional.
         let gpu_path = matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan);
         if !gpu_path || chunks.is_empty() {
-            // Parallel CPU path: rayon's global pool is configured by the
-            // CLI orchestrator with --threads / KEYHOG_THREADS / physical
-            // core count. Hyperscan + AC scans are CPU-bound and trivially
-            // independent per-chunk, so par_iter() saturates cores cleanly
-            // - was previously a serial iter().map() that pinned to one
-            // worker even on 32-core boxes.
             use rayon::prelude::*;
             let mut results: Vec<Vec<RawMatch>> = chunks
                 .par_iter()
                 .map(|chunk| self.scan_with_backend(chunk, backend))
                 .collect();
-            // Cross-chunk window-boundary reassembly. Without this, a
-            // secret straddling the seam between two adjacent gapless
-            // chunks from the same file is invisible - both halves are
-            // too short to match the regex on their own. The GPU paths
-            // below call `scan_chunk_boundaries` after their batch
-            // dispatch (see `scan_coalesced_megascan`/`scan_coalesced_gpu`);
-            // the CPU path historically did NOT, so callers using
-            // `scan_chunks_with_backend(_, SimdCpu | CpuFallback)` lost
-            // boundary recall silently. P3 proptest regression: a 38-byte
-            // tail chunk plus 911-byte head chunk dropped an ASIA…
-            // credential that straddled byte 911. Boundary scan
-            // synthesises a 2 KiB tail+head buffer per adjacent pair
-            // (`MAX_BOUNDARY` per side) and runs a fresh in-chunk scan;
-            // cost is `(N-1) × ~2 KiB` total, negligible vs per-chunk
-            // scan cost on the same dataset.
             super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
             return results;
         }
 
-        // GPU batch path: `scan_coalesced_gpu` produces full per-chunk
-        // RawMatch results in one device dispatch + parallel post-process.
-        // The previous `populate_gpu_batch_triggers` was a comment-only TODO
-        // that threw the GPU results away - see audit release-2026-04-26.
-        if self.gpu_literals.is_none() || self.gpu_backend.is_none() {
-            super::gpu_forced::deny_silent_gpu_degrade(self, backend);
-            let fallback_backend = self.degraded_backend_after_gpu_failure();
+        // The batched-DFA megakernel is the SINGLE on-GPU detection path. It
+        // acquires its own wgpu backend and, on any failure, degrades LOUDLY to
+        // the per-chunk SIMD path (Law 10) — never a silent empty result — so it
+        // runs whenever a GPU backend is selected.
+        #[cfg(feature = "gpu")]
+        {
+            self.scan_coalesced_megakernel(chunks)
+        }
+        // GPU compiled out: a Gpu/MegaScan request degrades to the per-chunk SIMD
+        // path, preserving cross-chunk boundary recall.
+        #[cfg(not(feature = "gpu"))]
+        {
             use rayon::prelude::*;
             let mut results: Vec<Vec<RawMatch>> = chunks
                 .par_iter()
-                .map(|chunk| self.scan_with_backend(chunk, fallback_backend))
+                .map(|chunk| self.scan_with_backend(chunk, backend))
                 .collect();
             super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
-            return results;
-        }
-
-        match backend {
-            ScanBackend::MegaScan => self.scan_coalesced_megascan(chunks),
-            _ => self.scan_coalesced_gpu(chunks),
+            results
         }
     }
 

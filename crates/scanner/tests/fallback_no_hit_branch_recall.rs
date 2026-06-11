@@ -16,23 +16,12 @@
 //! The detector was silently dead on its own canonical input.
 
 mod support;
+use support::contracts::test_chunk as make_chunk;
 use support::paths::detector_dir;
 
-use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScannerConfig};
 
 const BARE_ENTROPY_SECRET: &str = "qA9zM4nB7vC2xL8pR5tY1uI6oP3sD0fG9hJ2kL7mN4bV8cX1zQ6wE5rT0yU3iO";
-fn make_chunk(text: &str, path: &str) -> Chunk {
-    Chunk {
-        data: text.into(),
-        metadata: ChunkMetadata {
-            source_type: "test".into(),
-            path: Some(path.into()),
-            base_offset: 0,
-            ..Default::default()
-        },
-    }
-}
 
 fn compile_scanner_with_config(config: ScannerConfig) -> CompiledScanner {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");

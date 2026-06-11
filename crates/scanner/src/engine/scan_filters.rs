@@ -9,16 +9,23 @@
 /// previous loop of N independent `memmem` scans (each O(n)) which traversed
 /// the chunk N times. With the AC automaton the scan is O(n) total, with
 /// one memory walk and shared cache lines.
+//
+// `any(simd, gpu)`: invoked only from `should_scan_no_hit_chunk`, the
+// no-phase-1-trigger admission gate on the coalesced (`simd`) / megakernel
+// (`gpu`) phase-2 tail. The no-`simd`-no-`gpu` AC+fallback path scans every
+// chunk whole and never routes through that gate, so this filter has no caller
+// there — gated to match (Law 11).
+#[cfg(any(feature = "simd", feature = "gpu"))]
 pub(super) fn has_secret_keyword_fast(data: &[u8]) -> bool {
     use aho_corasick::AhoCorasick;
     use std::sync::LazyLock;
-    // Hold a `Result` (via `.ok()` → `Option`) instead of `.expect()`-
-    // unwrapping at LazyLock-init time. A panic in the static
-    // initializer poisons the LazyLock for the rest of the process
-    // and kills every subsequent prefilter call across all threads.
-    // The fallback (`None` → return `true`) makes this a soft no-op
-    // (the next stage filters anyway); strictly more conservative
-    // than dropping the match.
+    // Hold an `Option` instead of `.expect()`-unwrapping at LazyLock-init
+    // time: a panic in a static initializer poisons the LazyLock for the
+    // rest of the process and kills every subsequent prefilter call across
+    // all threads. On the (build-invariant-violating) `None` path the
+    // consumer returns `true` — scan the chunk unconditionally, so recall is
+    // preserved — but Law 10 forbids doing that SILENTLY, so the init closure
+    // warns loudly exactly once via `prefilter_degrade`.
     static AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
         // Distinctive enough to be real secrets AND commonly split across
         // lines in source code. The previous 5-entry list missed every
@@ -28,7 +35,7 @@ pub(super) fn has_secret_keyword_fast(data: &[u8]) -> bool {
         // GCP service-key prefixes that show up split across lines in
         // copy-pasted .env files. Avoid short prefixes (AKIA, eyJ) that
         // appear in fixtures.
-        AhoCorasick::new([
+        match AhoCorasick::new([
             // OpenAI
             "sk-proj-",
             "sk-svcacct-",
@@ -64,9 +71,19 @@ pub(super) fn has_secret_keyword_fast(data: &[u8]) -> bool {
             "npm_",
             // Heroku UUID-style key family
             "HRKU-",
-        ])
-        .ok()
+        ]) {
+            Ok(ac) => Some(ac),
+            Err(e) => {
+                crate::prefilter_degrade::warn_prefilter_disabled(
+                    "multiline secret-keyword gate (has_secret_keyword_fast)",
+                    &e,
+                );
+                None
+            }
+        }
     });
+    // Fail-closed (Law 10): `None` → scan the chunk unconditionally rather than
+    // skip it. The warning above already surfaced the degradation once.
     AC.as_ref().is_none_or(|ac| ac.find(data).is_some())
 }
 
@@ -128,17 +145,32 @@ pub(super) const GENERIC_ASSIGNMENT_KEYWORDS: &[&str] = &[
 /// `ascii_case_insensitive` builder option matches both `secret` and
 /// `SECRET` from a single literal at scan-time, halving the pattern count.
 ///
+//
+// `any(simd, gpu)`: like `has_secret_keyword_fast`, this is consumed only by
+// `should_scan_no_hit_chunk` on the coalesced/megakernel phase-2 tail; gated to
+// match its caller so no-`simd`-no-`gpu` builds stay warning-clean (Law 11).
+#[cfg(any(feature = "simd", feature = "gpu"))]
 pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
     use aho_corasick::AhoCorasick;
     use std::sync::LazyLock;
-    // See `has_secret_keyword_fast` for the rationale; same soft-
-    // fallback (`true` on init failure) so the prefilter never causes
-    // an FN by dropping a chunk that should have been scanned.
+    // See `has_secret_keyword_fast` for the rationale; same fail-closed
+    // (`true` on init failure) so the prefilter never causes an FN by
+    // dropping a chunk, and the same loud one-shot warning (Law 10) so the
+    // degradation is never silent.
     static AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
-        AhoCorasick::builder()
+        match AhoCorasick::builder()
             .ascii_case_insensitive(true)
             .build(GENERIC_ASSIGNMENT_KEYWORDS.iter().copied())
-            .ok()
+        {
+            Ok(ac) => Some(ac),
+            Err(e) => {
+                crate::prefilter_degrade::warn_prefilter_disabled(
+                    "generic-assignment keyword gate (has_generic_assignment_keyword)",
+                    &e,
+                );
+                None
+            }
+        }
     });
     AC.as_ref().is_none_or(|ac| ac.find(data).is_some())
 }
@@ -161,6 +193,13 @@ pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
 /// suppressed downstream by `looks_like_hash_digest` /
 /// `is_uuid_v4_shape`, so trip-firing the gate does NOT add FPs - it
 /// just admits the chunk to the entropy fallback for inspection.
+//
+// `any(simd, gpu)`: both callers live behind these features — the
+// `should_scan_no_hit_chunk` admission gate (`any(simd, gpu)`) and the entropy
+// fallback's cheap precheck (`#[cfg(simd)]` in `fallback_entropy.rs`). Their
+// union is `any(simd, gpu)`; the no-`simd`-no-`gpu` path has neither, so gating
+// here keeps that profile warning-clean (Law 11).
+#[cfg(any(feature = "simd", feature = "gpu"))]
 pub(super) fn has_high_entropy_run_fast(data: &[u8]) -> bool {
     const MIN_ENTROPY_RUN: usize = 32;
     let mut run = 0usize;

@@ -48,6 +48,12 @@ jobs:
         with:
           shared-key: bench-nightly
 
+      # keyhog's default build links Hyperscan (hyperscan-sys -> pkg-config
+      # libhs), so building the release binary from source needs the dev
+      # package, not just the runtime. Mirrors ci.yml / runners-nightly.yml.
+      - name: Install Vectorscan
+        run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+
       - name: Build keyhog release binary
         run: cargo build --release -p keyhog --bin keyhog
 

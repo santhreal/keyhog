@@ -348,40 +348,4 @@ impl CompiledScanner {
             })
             .as_ref()
     }
-
-    /// Lazily build fused GPU decode→scan programs (base64 + hex).
-    ///
-    /// Returns `None` when no GPU matcher is available (no literals, no
-    /// adapter). The fused programs share the same DFA transition tables
-    /// as the literal-set engine but prepend an on-GPU decode stage,
-    /// eliminating the CPU→GPU round-trip for encoded content.
-    pub fn fused_decode_programs(
-        &self,
-    ) -> Option<&super::gpu_decode_scan::FusedDecodeScanPrograms> {
-        self.fused_decode_programs
-            .get_or_init(|| {
-                let matcher = self.gpu_matcher()?;
-                let state_count = matcher.dfa.state_count;
-                let input_len = super::rule_pipeline::megascan_input_len() as u32;
-                let programs = super::gpu_decode_scan::build_fused_programs(state_count, input_len);
-                if programs.any_available() {
-                    tracing::info!(
-                        target: "keyhog::gpu",
-                        base64 = programs.base64_program.is_some(),
-                        hex = programs.hex_program.is_some(),
-                        state_count,
-                        input_len,
-                        "fused decode+scan programs built"
-                    );
-                    Some(programs)
-                } else {
-                    tracing::debug!(
-                        target: "keyhog::gpu",
-                        "fused decode+scan programs not available - CPU decode path will be used"
-                    );
-                    None
-                }
-            })
-            .as_ref()
-    }
 }

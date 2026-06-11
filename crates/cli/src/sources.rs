@@ -281,6 +281,38 @@ fn get_staged_files(repo_path: Option<&std::path::Path>) -> Result<Vec<PathBuf>>
     // trusted absolute path; refuse $PATH lookup.
     let git_bin = keyhog_core::safe_bin::resolve_safe_bin("git")
         .ok_or_else(|| anyhow::anyhow!("git binary not found in trusted system bin dirs"))?;
+
+    // DF-03: detect "not a git repository" BEFORE running `git diff --cached`,
+    // so the operator gets a clean, actionable message instead of a raw git
+    // error leaking out of the diff invocation. `rev-parse --is-inside-work-tree`
+    // is the canonical probe — it succeeds inside a repo (incl. worktrees /
+    // submodules / subdirectories where a bare `.git` filesystem check would
+    // miss) and exits non-zero with "fatal: not a git repository" outside one.
+    {
+        let mut probe = std::process::Command::new(&git_bin);
+        probe.args(["rev-parse", "--is-inside-work-tree"]);
+        if let Some(path) = repo_path {
+            probe.current_dir(path);
+        }
+        let inside = probe
+            .output()
+            .context("failed to run `git rev-parse --is-inside-work-tree`")?;
+        let is_repo = inside.status.success()
+            && String::from_utf8_lossy(&inside.stdout).trim() == "true";
+        if !is_repo {
+            let where_ = repo_path
+                .map(|p| p.display().to_string())
+                .or_else(|| std::env::current_dir().ok().map(|p| p.display().to_string()))
+                .unwrap_or_else(|| ".".to_string());
+            anyhow::bail!(
+                "'{where_}' is not a git repository — `--git-staged` scans the git \
+                 staging area, which only exists inside a repo. Run keyhog from inside \
+                 a git repository (or pass a repo path), or drop `--git-staged` to scan \
+                 the working tree directly."
+            );
+        }
+    }
+
     let mut cmd = std::process::Command::new(&git_bin);
     cmd.args(["diff", "--cached", "--name-only", "--diff-filter=ACM"]);
     if let Some(path) = repo_path {

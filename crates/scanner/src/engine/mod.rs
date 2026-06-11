@@ -1,8 +1,53 @@
-//! Core scanning engine implementation.
+//! Core scanning engine.
+//!
+//! # The one flow
+//!
+//! Every scan is the same pipeline. The ONLY thing that varies is *phase 1*
+//! (which detectors could fire where) — produced on the CPU by Hyperscan or on
+//! the GPU by the megakernel. Everything downstream is shared:
+//!
+//! ```text
+//!   files ─▶ phase 1: trigger production         (swappable backend)
+//!           ├─ CPU: compute_coalesced_triggers   (Hyperscan prefilter)   scan.rs
+//!           └─ GPU: scan_coalesced_megakernel    (batched-DFA megakernel) megakernel_dispatch.rs
+//!                       │  one bitmap per chunk: "which detectors may match here"
+//!                       ▼
+//!           phase 2: scan_coalesced_phase2       (THE shared tail)        scan.rs
+//!             • windowing (scan_chunk_or_window, >1 MiB)                   windowed.rs
+//!             • per-chunk extraction (scan_prepared_with_triggered)        backend_triggered.rs
+//!                 confirmed → fallback → generic → entropy → ML
+//!             • post-process: suppression, dedup, confidence, decode       scan_postprocess.rs
+//!             • cross-chunk boundary reassembly (scan_chunk_boundaries)    boundary.rs
+//! ```
+//!
+//! There is exactly ONE on-GPU detection engine: the megakernel
+//! ([`megakernel`] + [`megakernel_dispatch`]). Selecting a GPU backend
+//! (`--backend gpu` / `KEYHOG_BACKEND=gpu`) routes the batch path through it;
+//! the default backend is the CPU Hyperscan path. The GPU path degrades LOUDLY
+//! to CPU on any failure (never a silent empty result — Law 10).
+//!
+//! # Where each method lives (the `CompiledScanner` god-object is split by job)
+//!
+//! `CompiledScanner` is one type whose `impl` blocks are spread across this
+//! directory by responsibility. To find a method, look here first:
+//!
+//! - `scan` / `scan_with_backend` / `scan_with_deadline*` ............ mod.rs (public entry)
+//! - `scan_coalesced` / `compute_coalesced_triggers` / `scan_coalesced_phase2` / `scan_inner` .. scan.rs
+//! - `scan_chunks_with_backend_internal` (CPU-vs-GPU batch routing) .. backend_dispatch.rs
+//! - `scan_coalesced_megakernel` (GPU trigger production) ............ megakernel_dispatch.rs
+//! - `MegakernelCatalog` (DFA catalog build + cache + dispatch) ...... megakernel.rs
+//! - `scan_prepared_with_triggered` / `collect_triggered_patterns_*` . backend_triggered.rs
+//! - `scan_chunk_or_window` / `scan_windowed` (the windowing contract) windowed.rs
+//! - confirmed-pattern extraction ................................... extract.rs
+//! - fallback prefilter + keyword/anchor/generic/entropy passes ..... fallback*.rs
+//! - hot-pattern fast path (simdsieve) ............................. hot_patterns.rs
+//! - post-process (suppression, dedup, confidence, decode recursion). scan_postprocess.rs, process.rs
+//! - cross-chunk seam reassembly ................................... boundary.rs
+//! - loud GPU-degrade / fail-closed helpers ....................... gpu_forced.rs
+//! - compile (build the scanner, acquire backends) ................. compile.rs
 
 mod backend;
 mod backend_dispatch;
-mod backend_pattern_hits;
 mod backend_prepared;
 mod backend_triggered;
 pub mod boundary;
@@ -13,21 +58,13 @@ mod fallback_anchor;
 mod fallback_entropy;
 mod fallback_entropy_helpers;
 mod fallback_generic;
-mod gpu_ac_phase1;
 mod gpu_cache;
-mod gpu_coalesce;
-pub mod gpu_decode_scan;
-mod gpu_dispatch;
 mod gpu_forced;
 mod gpu_lazy;
-mod gpu_literal_phase1;
-mod gpu_megascan;
-mod gpu_phase2;
-mod gpu_region_presence;
-pub(crate) mod gpu_postprocess;
-pub mod gpu_program_fusion;
-pub mod gpu_regex_dfa;
-mod gpu_scan_wrappers;
+#[cfg(feature = "gpu")]
+pub(crate) mod megakernel;
+#[cfg(feature = "gpu")]
+mod megakernel_dispatch;
 mod hot_patterns;
 mod process;
 pub(crate) mod profile;
@@ -37,6 +74,7 @@ mod scan_filters;
 mod scan_inner_profile;
 mod scan_postprocess;
 pub mod segment_attribution;
+mod trigger_bitmap;
 mod windowed;
 
 // `build_simd_scanner` only exists under the `simd` (Hyperscan) feature; its
@@ -51,10 +89,6 @@ pub use fallback::{
     set_fallback_homoglyph_gate, set_fallback_prefix_gate, set_fallback_reverse,
     set_homoglyph_ascii_skip, set_prefilter_truncate,
 };
-pub use gpu_cache::{AcConstPacks, GpuConstPacks};
-pub use gpu_coalesce::coalesce_chunks;
-pub use gpu_regex_dfa::{build_regex_dfa, RegexDfaError};
-pub use gpu_scan_wrappers::GpuPhase1Output;
 pub use rule_pipeline::{
     build_rule_pipeline, megascan_input_len, rule_pipeline_cached, AC_GPU_MAX_MATCHES_PER_DISPATCH,
     MEGASCAN_INPUT_LEN, MEGASCAN_INPUT_LEN_DEFAULT,
@@ -232,29 +266,16 @@ pub struct CompiledScanner {
     pub(crate) wgpu_backend: Option<Arc<vyre_driver_wgpu::WgpuBackend>>,
     pub(crate) gpu_literals: Option<Arc<Vec<Vec<u8>>>>,
     pub(crate) gpu_matcher: OnceLock<Option<vyre_libs::scan::GpuLiteralSet>>,
-    pub(crate) gpu_const_packs: OnceLock<GpuConstPacks>,
-    pub(crate) gpu_ac_const_packs: OnceLock<AcConstPacks>,
+    /// On-GPU detection rule catalog (the megakernel `BatchDispatcher` path).
+    /// Lazily built (or loaded from the on-disk cache) from `ac_map` on the
+    /// first megakernel scan. The catalog always exists; `rule_count() == 0`
+    /// means no pattern lowered, which `megakernel_catalog()` reports as `None`
+    /// so the caller degrades loudly.
+    #[cfg(feature = "gpu")]
+    pub(crate) megakernel_catalog: OnceLock<megakernel::MegakernelCatalog>,
     pub(crate) ac_gpu_program: OnceLock<Option<vyre::Program>>,
     pub(crate) gpu_last_degrade_reason: std::sync::Mutex<Option<String>>,
     pub(crate) rule_pipeline: OnceLock<Option<vyre_libs::scan::RulePipeline>>,
-    /// Resident-dispatch session for the MegaScan `RulePipeline`: the immutable
-    /// NFA transition/epsilon tables uploaded once into GPU-resident buffers, so
-    /// each coalesced batch transfers only its haystack instead of re-uploading
-    /// the (tens-of-MB) static tables every dispatch. Lazily prepared on the
-    /// first megascan batch from `(rule_pipeline, gpu_backend)`, sized to that
-    /// batch. `None` = resident prepare failed or the backend lacks resident
-    /// support → the megascan path uses the recall-identical borrowed dispatch.
-    /// The `Mutex` serialises the single per-batch GPU dispatch (megascan
-    /// batches already run one-at-a-time in the orchestrator; the lock makes any
-    /// concurrent caller — e.g. parity tests — safe against shared-buffer races).
-    pub(crate) resident_megascan:
-        OnceLock<Option<std::sync::Mutex<vyre_libs::scan::ResidentRulePipeline>>>,
-    /// Fused AC + rule pipeline program (single GPU dispatch instead of two).
-    /// Lazily built on first access via `fused_program()`.
-    pub(crate) fused_program: OnceLock<Option<vyre::Program>>,
-    /// Fused decode→scan programs for base64/hex GPU decode.
-    /// Lazily built on first access.
-    pub(crate) fused_decode_programs: OnceLock<Option<gpu_decode_scan::FusedDecodeScanPrograms>>,
     pub(crate) static_intern: Arc<crate::static_intern::StaticInterner>,
     /// Per-detector interned `(id, name, service)` metadata triple, indexed by
     /// `detector_index`. Built ONCE at scanner construction from the same
@@ -342,16 +363,19 @@ impl CompiledScanner {
     /// the answer is always `false`. This accessor keeps the reroute guards
     /// compiling in every feature combination without scattering
     /// `#[cfg(feature = "simd")]` across each call site.
-    #[cfg(feature = "simd")]
+    ///
+    /// Compiled only under `gpu`: its SOLE consumer is
+    /// `degraded_backend_after_gpu_failure` on the GPU dispatch path, so a
+    /// no-`gpu` build never asks the question. Gating it here keeps the
+    /// no-`gpu` profiles warning-clean (Law 11) without changing any answer.
+    /// `gpu` implies `simd` at the feature level (see keyhog-scanner Cargo.toml
+    /// — the megakernel reuses the SIMD phase-2 tail), so the `simd_prefilter`
+    /// field is always present here; the runtime `is_some()` still reflects
+    /// whether the Hyperscan database actually built.
+    #[cfg(feature = "gpu")]
     #[inline]
     pub(crate) fn has_simd_prefilter(&self) -> bool {
         self.simd_prefilter.is_some()
-    }
-
-    #[cfg(not(feature = "simd"))]
-    #[inline]
-    pub(crate) fn has_simd_prefilter(&self) -> bool {
-        false
     }
 
     /// Number of loaded detectors.

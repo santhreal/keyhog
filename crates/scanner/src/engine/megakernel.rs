@@ -1,276 +1,573 @@
-//! Megakernel persistent runtime session for keyhog scan dispatch.
+//! On-GPU detection via vyre's batched DFA rule-catalog megakernel.
 //!
-//! [`MegakernelSession`] wraps the vyre megakernel lifecycle - bootstrap,
-//! submit, flush, shutdown - into a single value that [`CompiledScanner`] can
-//! hold behind an [`OnceLock`].  If the megakernel fails to initialize (no
-//! compatible adapter, backend compile failure, device loss) the constructor
-//! returns `None` so the caller transparently degrades to per-batch dispatch.
+//! This is the REAL megakernel path (not the dead persistent-ring stub this
+//! file used to hold): the `vyre_driver_wgpu::megakernel::BatchDispatcher`
+//! engine, proven end-to-end in `tests/megakernel_cpu_parity.rs` (GPU≡CPU
+//! firings on 1500 real files, one dispatch). It is the dispatch-overhead-free
+//! vehicle the GPU-detection rewrite targets (`docs/GPU_DETECTION_REWRITE.md`).
 //!
-//! # Design
+//! # Model
 //!
-//! The session owns:
+//! Detection is a two-stage split (doc "Core abstraction: the candidate"):
 //!
-//! * A compiled [`Megakernel`] handle (the persistent GPU bytecode interpreter).
-//! * [`MegakernelResidentBuffers`] - host-side mirror of the four ABI buffers
-//!   (control, ring, debug log, IO queue) kept resident across dispatches.
-//! * A [`MegakernelSessionConfig`] that controls slot geometry, work-item
-//!   sizing, and launch policy.
+//! * **GPU generate** — one unanchored DFA per detector pattern, packed into a
+//!   resident rule catalog, dispatched over a COALESCED batch of files in a
+//!   single launch. Emits `(file, detector, match_end)` firings.
+//! * **Host tail** — for each firing, the existing per-detector extraction runs
+//!   on that file (capture + checksum + companion + ML + confidence). The
+//!   megakernel REPLACES the prefilter ("which detectors fire where"), not the
+//!   extraction, so recall/precision policy is unchanged.
 //!
-//! Each [`submit_scan`](MegakernelSession::submit_scan) call encodes the
-//! incoming chunk as a contiguous sequence of [`MegakernelWorkItem`]s, publishes
-//! them into the resident ring, dispatches, reads back, and decodes the
-//! hit buffer into [`LiteralMatch`] values.  This is the persistent-kernel
-//! equivalent of the sharded `GpuLiteralSet::scan` path.
+//! Patterns the unanchored DFA can't carry (PCRE lookaround/backref, or DFA
+//! state-budget blowups) take a **loud host path** (Law 10) — never a silent
+//! drop. `MegakernelCatalog::build` records every one in `host_detectors`.
 //!
-//! [`CompiledScanner`]: super::CompiledScanner
+//! # Status
 //!
-//! # Status: not yet wired into the live GPU dispatch path
-//!
-//! This module is a **migration target**, not dead-per-audit: it is intended to
-//! replace per-shard `GpuLiteralSet`-style dispatch (see `gpu_literal_phase1`)
-//! with a persistent kernel that keeps the four ABI
-//! buffers resident across dispatches, removing per-batch launch + buffer
-//! (re)allocation overhead. Two things are still missing before it can carry
-//! real scan traffic, and both live OUTSIDE this file:
-//!
-//! 1. **Declaration / engagement.** `engine/mod.rs` must declare
-//!    `mod megakernel;` and `CompiledScanner` must hold a [`MegakernelSession`]
-//!    (behind a `OnceLock`, like the other GPU resources) so that
-//!    `scan_coalesced_gpu_phase1` can prefer [`MegakernelSession::submit_scan`]
-//!    over per-shard dispatch when a session bootstraps.
-//! 2. **Hit decoding.** [`MegakernelSession::submit_scan`] cannot yet decode
-//!    [`LiteralMatch`] triples out of the IO-queue readback because the vyre
-//!    megakernel program is not configured with the literal-set opcode
-//!    handlers (a `vyre-runtime` change). Until that lands, `submit_scan`
-//!    returns an empty match set - see the explicit gate at its decode site.
-//!
-//! Do not delete this module to satisfy a dead-code lint: the wiring above is
-//! the fix, deletion is not.
+//! The catalog build + GPU scan + firing decode are implemented and tested here
+//! (`tests/megakernel_catalog_scan.rs`). Wiring this as the live GPU backend
+//! (routing `ScanBackend::Gpu` through it, fail-closed, and retiring the
+//! `RulePipeline` / `GpuLiteralSet` parallel paths) is the next step.
+#![cfg(feature = "gpu")]
 
 use std::sync::Arc;
 
-use vyre_runtime::megakernel::{
-    Megakernel, MegakernelConfig, MegakernelResidentBuffers, MegakernelWorkItem,
+use vyre_driver_wgpu::megakernel::{
+    BatchDispatchConfig, BatchDispatcher, BatchFile, FileBatch, HitRecord,
 };
-use vyre_runtime::PipelineError;
+use vyre_driver_wgpu::WgpuBackend;
+use vyre_libs::scan::build_regex_dfa_unanchored;
+use vyre_runtime::megakernel::rule_catalog::pack_rule_catalog;
+use vyre_runtime::megakernel::BatchRuleProgram;
 
-use vyre_libs::scan::LiteralMatch;
+/// Per-rule DFA state budget for the unanchored catalog. Unanchored DFAs run
+/// ~3x the anchored state count; 16384 admits the AKIA-class bodies
+/// (`AKIA[A-Z0-9]{16}` = 2468 states) while still rejecting the genuine
+/// large-charclass×long-body explosions (`AIza[A-Za-z0-9_-]{35}`) to the loud
+/// host path. Tunable as detection coverage vs transition-table memory.
+const PER_RULE_MAX_DFA_STATES: usize = 16_384;
+/// Per-rule match cap fed to the DFA builder (metadata only; the dispatcher's
+/// hit ring is sized separately at scan time).
+const PER_RULE_MAX_MATCHES: u32 = 200_000;
+/// Stable hit-ring capacity for EVERY megakernel dispatch. Fixed (not scaled
+/// per batch) so the reused dispatcher compiles exactly ONE pipeline variant —
+/// `BatchPipelineShape` keys on `hit_capacity`, so a per-batch capacity forced a
+/// fresh `compile_persistent` (~10s) every batch. 1M entries (~16 MiB ring)
+/// comfortably holds any single batch's firings; overflow is surfaced LOUDLY by
+/// the dispatcher report, never silently dropped (Law 10).
+const MEGAKERNEL_HIT_CAPACITY: u32 = 1_000_000;
+/// Cache-key namespace version for the on-disk compiled catalog. Bump on any
+/// change to the catalog's MEANING that the wire format alone can't catch —
+/// e.g. a vyre `build_regex_dfa_unanchored` semantics change that produces
+/// different DFAs from the same regex. (Wire-FORMAT changes bump
+/// `MegakernelCatalog::WIRE_VERSION` instead.)
+const MEGAKERNEL_CATALOG_CACHE_VERSION: u32 = 1;
+/// Magic stamped on the cached-catalog blob and folded into the cache key.
+const CATALOG_WIRE_MAGIC: [u8; 4] = *b"KHMK";
 
-/// Megakernel session configuration.
+/// A compiled on-GPU detection catalog: one DFA rule per lowerable detector
+/// pattern, plus the detectors that must run on the host (loud path).
 ///
-/// Config taxonomy: this is a **Tier-3 transport/runtime config** (GPU ring
-/// geometry and launch policy). It is orthogonal to detection tuning and is
-/// explicitly **outside the benchmark-coherence contract** - changing
-/// `slot_count` / `workgroup_size_x` / `tenant_count` cannot move a detection
-/// metric, so the benchmark never touches it. Tier 1 is the unified detection
-/// config (`keyhog_core::config::ScanConfig`); Tier 2 is subsystem configs
-/// nested inside it where they affect detection (e.g. `MultilineConfig` inside
-/// `ScannerConfig`). See `keyhog_core::config` for the canonical 3-tier model.
-#[derive(Debug, Clone)]
-pub struct MegakernelSessionConfig {
-    /// Number of ring-buffer slots (rounded up to workgroup width).
-    pub slot_count: u32,
-    /// Workgroup size for the persistent kernel launch.
-    pub workgroup_size_x: u32,
-    /// Number of logical tenants sharing the ring.
-    pub tenant_count: u32,
-    /// Observable control-buffer slots for host-side telemetry.
-    pub observable_slots: u32,
-    /// Megakernel planning/fusion config forwarded to the runtime.
-    pub config: MegakernelConfig,
+/// Built once at scanner compile (the per-pattern subset construction is the
+/// expensive part — parallelised here) and held resident for every scan.
+pub(crate) struct MegakernelCatalog {
+    /// Dense unanchored-DFA rule programs, `rule_idx == position in this vec`.
+    rules: Vec<BatchRuleProgram>,
+    /// `rule_to_detector[rule_idx]` = the detector index that rule belongs to,
+    /// so a GPU `HitRecord.rule_idx` decodes back to a keyhog detector.
+    rule_to_detector: Vec<usize>,
+    /// Detector indices whose pattern the unanchored DFA could NOT carry
+    /// (PCRE feature / state-budget blowup). These run on the host — LOUD, never
+    /// silently dropped.
+    host_detectors: Vec<usize>,
+    /// The batched-megakernel dispatcher, created lazily on the first `scan` and
+    /// REUSED across every batch. Reuse is the whole perf story: the dispatcher
+    /// holds the compiled WGSL pipeline and the GPU-resident rule catalog
+    /// (`ensure_rule_buffers` no-ops when the rule fingerprints are unchanged),
+    /// so batches after the first pay only file upload + GPU scan + readback.
+    /// Recreating it per batch (the old code) recompiled the pipeline and
+    /// re-uploaded the entire DFA catalog every time (~10s/batch). `Mutex`
+    /// because `dispatch_into` needs `&mut` while the catalog is shared `&self`;
+    /// batches are dispatched sequentially so it is never contended.
+    dispatcher: std::sync::Mutex<Option<BatchDispatcher>>,
 }
 
-impl Default for MegakernelSessionConfig {
-    fn default() -> Self {
+/// One GPU detection firing: detector `detector` matched in coalesced file
+/// `file_index`, with the match ending `match_end` bytes into that file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Firing {
+    pub file_index: usize,
+    pub detector: usize,
+    pub match_end: usize,
+}
+
+impl MegakernelCatalog {
+    /// Compile `(regex, detector_index)` patterns into the resident catalog.
+    ///
+    /// Patterns are compiled to unanchored DFAs in parallel (rayon); each that
+    /// fails to lower is recorded in `host_detectors` (the loud host path),
+    /// never dropped. Always returns a catalog: if NOT ONE pattern lowered (or
+    /// the catalog fails to pack) it returns one with zero GPU rules — both
+    /// cases LOUDLY logged — and the caller treats `rule_count() == 0` as "no
+    /// GPU path" and degrades loudly. Always returning `Self` (not `Option`)
+    /// lets the on-disk cache compose with the generic `cached_load_or_compile`.
+    pub(crate) fn build(patterns: &[(String, usize)]) -> Self {
+        use rayon::prelude::*;
+
+        // The unanchored-DFA subset construction is the expensive part — minutes
+        // for the full detector set. A cold build prints NOTHING for that whole
+        // time, which dogfooding showed reads as a hang. Surface it LOUDLY on
+        // stderr (it runs only on a cache MISS via `build_cached`, so this is
+        // one-time per pattern set + DFA budget; the result is cached at
+        // ~/.cache/keyhog/programs/).
+        let announce = patterns.len() > 256;
+        if announce {
+            eprintln!(
+                "keyhog: building GPU detection catalog for {} detectors \
+                 (one-time, can take a few minutes; cached afterward)…",
+                patterns.len()
+            );
+        }
+
+        // (Option<dfa>, detector_index): Some => lowered to a DFA, None => host.
+        let built: Vec<(Option<(Vec<u32>, Vec<u32>, u32)>, usize)> = patterns
+            .par_iter()
+            .map(|(regex, detector)| {
+                let lowered = build_regex_dfa_unanchored(
+                    std::slice::from_ref(&regex.as_str()),
+                    PER_RULE_MAX_MATCHES,
+                    PER_RULE_MAX_DFA_STATES,
+                )
+                .ok()
+                .map(|pipe| (pipe.dfa.transitions, pipe.dfa.accept, pipe.dfa.state_count));
+                (lowered, *detector)
+            })
+            .collect();
+
+        let mut rules = Vec::new();
+        let mut rule_to_detector = Vec::new();
+        let mut host_detectors = Vec::new();
+        for (lowered, detector) in built {
+            match lowered {
+                Some((transitions, accept, state_count)) => {
+                    match BatchRuleProgram::new(
+                        rules.len() as u32,
+                        transitions,
+                        accept,
+                        state_count,
+                    ) {
+                        Ok(rule) => {
+                            rules.push(rule);
+                            rule_to_detector.push(detector);
+                        }
+                        // A validated-shape failure is also a loud host path,
+                        // not a drop.
+                        Err(_) => host_detectors.push(detector),
+                    }
+                }
+                None => host_detectors.push(detector),
+            }
+        }
+
+        if rules.is_empty() {
+            tracing::error!(
+                target: "keyhog::gpu",
+                host_path = host_detectors.len(),
+                "megakernel catalog: NO detector pattern lowered to a GPU DFA — the whole pass runs on the loud host path",
+            );
+        } else if !host_detectors.is_empty() {
+            tracing::info!(
+                target: "keyhog::gpu",
+                gpu_rules = rules.len(),
+                host_path = host_detectors.len(),
+                "megakernel catalog: {} detector pattern(s) on the loud host path (un-lowerable)",
+                host_detectors.len(),
+            );
+        }
+        // Validate the catalog packs (the resident layout the dispatcher uses);
+        // a pack failure means it can't be dispatched — drop ALL rules to the
+        // loud host path rather than ship an undispatchable catalog (so the
+        // caller sees rule_count()==0 and degrades loudly, never a silent empty).
+        if !rules.is_empty() && pack_rule_catalog(&rules).is_err() {
+            tracing::error!(
+                target: "keyhog::gpu",
+                "megakernel catalog: rule catalog failed to pack — disabling all {} GPU rules (host path only)",
+                rules.len(),
+            );
+            host_detectors.extend(rule_to_detector.drain(..));
+            rules.clear();
+        }
+        if std::env::var_os("KH_PERF").is_some() {
+            let bytes_of =
+                |r: &BatchRuleProgram| (r.transitions.len() + r.accept.len()) * std::mem::size_of::<u32>();
+            let words: usize = rules.iter().map(|r| r.transitions.len() + r.accept.len()).sum();
+            // State-count buckets + MiB attributable to each, to see whether a
+            // few explosive DFAs dominate the catalog size (lower the cap, push
+            // them to the host/HS path) or it is uniform.
+            let hi = [512usize, 2048, 8192, usize::MAX];
+            let mut cnt = [0usize; 4];
+            let mut mib = [0f64; 4];
+            for r in &rules {
+                let sc = r.state_count as usize;
+                let b = hi.iter().position(|&h| sc <= h).unwrap_or(3);
+                cnt[b] += 1;
+                mib[b] += bytes_of(r) as f64 / (1024.0 * 1024.0);
+            }
+            eprintln!(
+                "KH_PERF megakernel catalog: {} gpu rules, {} host, {:.1} MiB total",
+                rules.len(),
+                host_detectors.len(),
+                (words * std::mem::size_of::<u32>()) as f64 / (1024.0 * 1024.0),
+            );
+            eprintln!(
+                "KH_PERF megakernel states: <=512: {} rules {:.0}MiB | <=2048: {} {:.0}MiB | <=8192: {} {:.0}MiB | >8192: {} {:.0}MiB",
+                cnt[0], mib[0], cnt[1], mib[1], cnt[2], mib[2], cnt[3], mib[3],
+            );
+        }
         Self {
-            slot_count: 256,
-            workgroup_size_x: 256,
-            tenant_count: 1,
-            observable_slots: 0,
-            config: MegakernelConfig::default(),
+            rules,
+            rule_to_detector,
+            host_detectors,
+            dispatcher: std::sync::Mutex::new(None),
         }
     }
-}
 
-/// Persistent megakernel runtime session.
-///
-/// Manages the full lifecycle of a vyre megakernel: bootstrap, resident-buffer
-/// allocation, work-item submission, dispatch, and readback.  If any step
-/// fails, the session degrades gracefully - callers receive `None` from
-/// [`MegakernelSession::new`] and fall back to per-batch dispatch.
-pub struct MegakernelSession {
-    kernel: Megakernel,
-    buffers: MegakernelResidentBuffers,
-    config: MegakernelSessionConfig,
-    /// Monotonically increasing slot cursor; wraps modulo `slot_count`.
-    next_slot: u32,
-}
-
-// SAFETY: `Megakernel` is Send + Sync (ArcSwap + Arc internals).
-// `MegakernelResidentBuffers` is plain Vec-based host memory.
-// These assertions mirror the `CompiledScanner` Send + Sync contract.
-const _: () = {
-    const fn assert_send_sync<T: Send + Sync>() {}
-    let _ = assert_send_sync::<MegakernelSession>;
-};
-
-impl MegakernelSession {
-    /// Bootstrap a megakernel session on the given backend.
-    ///
-    /// Returns `Ok(None)` when the backend cannot compile the megakernel
-    /// program - this is the graceful-degradation contract that lets
-    /// [`CompiledScanner`] fall back to per-batch dispatch without logging
-    /// an error.
-    ///
-    /// Returns `Err` only for internal errors that should be surfaced
-    /// (e.g. resident-buffer allocation overflows).
-    ///
-    /// # Errors
-    ///
-    /// Returns [`PipelineError`] when resident-buffer allocation fails.
-    pub fn new(
-        backend: Arc<dyn vyre::VyreBackend>,
-        session_config: MegakernelSessionConfig,
-    ) -> Result<Option<Self>, PipelineError> {
-        let kernel = match Megakernel::bootstrap_sharded(
-            backend,
-            session_config.slot_count,
-            session_config.workgroup_size_x,
-            Vec::new(),
-        ) {
-            Ok(k) => k,
-            Err(error) => {
-                tracing::debug!(
-                    target: "keyhog::gpu",
-                    %error,
-                    "megakernel bootstrap failed - degrading to per-batch dispatch",
-                );
-                return Ok(None);
-            }
+    /// On-disk-cached [`build`](Self::build): loads the compiled catalog from
+    /// `~/.cache/keyhog/programs/` when a blob for this exact pattern set + DFA
+    /// parameters exists, else runs the (minutes-long) subset construction and
+    /// caches it. The key folds in the pattern set, DFA budgets, and a catalog
+    /// format version, so any of those changing invalidates automatically; a
+    /// stale/corrupt blob is dropped and rebuilt by `cached_load_or_compile`.
+    /// A missing cache directory just means a direct build (identical catalog,
+    /// no recall difference — not a silent fallback).
+    pub(crate) fn build_cached(patterns: &[(String, usize)]) -> Self {
+        let Some(cache_dir) = super::gpu_cache::gpu_matcher_cache_dir() else {
+            return Self::build(patterns);
         };
-
-        let buffers = MegakernelResidentBuffers::new(
-            session_config.slot_count,
-            session_config.tenant_count,
-            session_config.observable_slots,
-        )?;
-
-        Ok(Some(Self {
-            kernel,
-            buffers,
-            config: session_config,
-            next_slot: 0,
-        }))
+        let key = megakernel_catalog_cache_key(patterns);
+        vyre_libs::scan::cached_load_or_compile(&cache_dir, &key, || Self::build(patterns))
     }
 
-    /// Submit a scan chunk through the persistent megakernel.
+    /// Detector indices on the loud host path (un-lowerable patterns).
+    pub(crate) fn host_detectors(&self) -> &[usize] {
+        &self.host_detectors
+    }
+
+    /// Number of GPU-resident DFA rules.
+    pub(crate) fn rule_count(&self) -> usize {
+        self.rules.len()
+    }
+
+    /// Scan a coalesced batch of files on the GPU, returning detection firings.
     ///
-    /// Encodes the work items into the resident ring, dispatches, reads back,
-    /// and returns decoded literal matches.
+    /// `files[i]` is `(path_hash, bytes)`; the returned `Firing.file_index`
+    /// indexes `files`. One device dispatch covers the whole batch. Errors
+    /// (upload / dispatch / readback) propagate so the caller fails CLOSED
+    /// rather than silently returning an empty result.
     ///
     /// # Errors
     ///
-    /// Returns [`PipelineError`] when ring publication, dispatch, or readback
-    /// fails.  Device-loss recovery is attempted once by the underlying
-    /// [`Megakernel`] handle; if that also fails the error propagates.
-    pub fn submit_scan(
-        &mut self,
-        work_items: &[MegakernelWorkItem],
-    ) -> Result<Vec<LiteralMatch>, PipelineError> {
-        if work_items.is_empty() {
+    /// Returns the dispatcher's error string on upload/dispatch/readback failure.
+    pub(crate) fn scan(
+        &self,
+        backend: &Arc<WgpuBackend>,
+        files: &[(u64, Vec<u8>)],
+    ) -> Result<Vec<Firing>, String> {
+        if files.is_empty() || self.rules.is_empty() {
             return Ok(Vec::new());
         }
 
-        // Publish items into the resident ring at the current cursor.
-        let published = self.buffers.publish_work_items(
-            self.next_slot,
-            0, // tenant_id - single-tenant for keyhog scan dispatch
-            work_items,
-        )?;
+        // Fixed hit-ring capacity (see MEGAKERNEL_HIT_CAPACITY): the batch ring
+        // and the reused dispatcher's compiled pipeline MUST agree on capacity,
+        // and a stable value keeps it to a single compiled pipeline variant.
+        let hit_capacity = MEGAKERNEL_HIT_CAPACITY;
 
-        // Advance cursor (wrapping within slot_count).
-        self.next_slot = (self.next_slot + published) % self.config.slot_count;
+        let batch_files: Vec<BatchFile> = files
+            .iter()
+            .enumerate()
+            .map(|(i, (hash, bytes))| BatchFile::new(*hash ^ i as u64, 0, bytes.clone()))
+            .collect();
 
-        // Dispatch and read back.
-        let readback = self.buffers.dispatch(&self.kernel)?;
+        let batch = FileBatch::upload(
+            backend.device_queue(),
+            &batch_files,
+            self.rules.len() as u32,
+            hit_capacity,
+        )
+        .map_err(|e| format!("megakernel FileBatch upload: {e:?}"))?;
 
-        // Decode literal matches from the readback IO-queue bytes.
-        //
-        // GAP (tracked, see module-level "Status" doc): the megakernel stores
-        // match triples in the IO-queue output buffer, but decoding them into
-        // `LiteralMatch` requires the literal-set opcode handlers in the vyre
-        // megakernel program, which are not yet configured (a `vyre-runtime`
-        // change). Until that lands this path is intentionally degraded to an
-        // empty match set rather than a fabricated result. This is NOT a
-        // silent stub: the session is not engaged on the live dispatch path
-        // (no `mod megakernel;` in `engine/mod.rs`), so no real scan relies on
-        // this return value. Decoding `io_queue_bytes` is the remaining work.
-        let _readback_io = readback.io_queue_bytes;
-        let matches = Vec::new();
-
-        tracing::trace!(
-            target: "keyhog::gpu",
-            published,
-            readback_control_bytes = readback.control_bytes.len(),
-            readback_ring_bytes = readback.ring_bytes.len(),
-            "megakernel scan dispatch completed",
-        );
-
-        Ok(matches)
-    }
-
-    /// Flush any pending work in the resident ring.
-    ///
-    /// This dispatches the current ring state without publishing new items,
-    /// draining any in-flight slots.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`PipelineError`] on dispatch or readback failure.
-    pub fn flush(&mut self) -> Result<(), PipelineError> {
-        self.buffers.dispatch_update(&self.kernel)?;
-
-        tracing::trace!(
-            target: "keyhog::gpu",
-            "megakernel flush completed",
-        );
-
-        Ok(())
-    }
-
-    /// Shut down the session and release GPU resources.
-    ///
-    /// After shutdown, the session should be dropped.  This method resets
-    /// the resident buffers to their initial state so destructors release
-    /// any backend-held resources cleanly.
-    pub fn shutdown(&mut self) {
-        if let Err(error) = self.buffers.reset(
-            self.config.tenant_count,
-            self.config.observable_slots,
-        ) {
-            tracing::warn!(
-                target: "keyhog::gpu",
-                %error,
-                "megakernel resident buffer reset failed during shutdown",
+        // Create the dispatcher ONCE and reuse it for every batch. The first
+        // dispatch compiles the WGSL pipeline and uploads the DFA catalog;
+        // subsequent dispatches reuse the cached pipeline and skip the rule
+        // upload (fingerprints unchanged). Recreating it per batch — the old
+        // code — recompiled + re-uploaded the whole catalog every batch (~10s).
+        let mut guard = self
+            .dispatcher
+            .lock()
+            .map_err(|e| format!("megakernel dispatcher mutex poisoned: {e}"))?;
+        if guard.is_none() {
+            let config = BatchDispatchConfig {
+                workgroup_size_x: 64,
+                // 0 => the dispatcher derives worker_groups from device limits.
+                worker_groups: 0,
+                hit_capacity,
+                timeout: std::time::Duration::from_secs(30),
+                ..Default::default()
+            };
+            *guard = Some(
+                BatchDispatcher::new((**backend).clone(), config)
+                    .map_err(|e| format!("megakernel dispatcher init: {e:?}"))?,
             );
         }
-        self.next_slot = 0;
+        let dispatcher = guard
+            .as_mut()
+            .expect("dispatcher initialized immediately above");
 
-        tracing::debug!(
-            target: "keyhog::gpu",
-            "megakernel session shutdown",
+        let mut hits: Vec<HitRecord> = Vec::with_capacity(4096);
+        dispatcher
+            .dispatch_into(&batch, &self.rules, &mut hits)
+            .map_err(|e| format!("megakernel dispatch: {e:?}"))?;
+
+        Ok(hits
+            .iter()
+            .filter_map(|h| {
+                self.rule_to_detector
+                    .get(h.rule_idx as usize)
+                    .map(|&detector| Firing {
+                        file_index: h.file_idx as usize,
+                        detector,
+                        match_end: h.match_offset as usize,
+                    })
+            })
+            .collect())
+    }
+}
+
+/// Cache key for the on-disk compiled catalog: SHA-256 over the catalog magic +
+/// version, the DFA budgets, and every `(detector_index, regex)` in order. Any
+/// change to the pattern set, the budgets, or the version yields a fresh key, so
+/// a stale catalog is never loaded for a changed detector set.
+fn megakernel_catalog_cache_key(patterns: &[(String, usize)]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(CATALOG_WIRE_MAGIC);
+    h.update(MEGAKERNEL_CATALOG_CACHE_VERSION.to_le_bytes());
+    h.update((PER_RULE_MAX_DFA_STATES as u64).to_le_bytes());
+    h.update((PER_RULE_MAX_MATCHES as u64).to_le_bytes());
+    h.update((patterns.len() as u64).to_le_bytes());
+    for (regex, detector) in patterns {
+        h.update((*detector as u64).to_le_bytes());
+        h.update((regex.len() as u64).to_le_bytes());
+        h.update(regex.as_bytes());
+    }
+    let digest = h.finalize();
+    let mut key = String::with_capacity(67);
+    key.push_str("mk-");
+    for b in digest {
+        use std::fmt::Write as _;
+        let _ = write!(key, "{b:02x}");
+    }
+    key
+}
+
+/// Wire-decode failures for the cached catalog. Every variant means "stale or
+/// corrupt blob — drop and recompile" (the `cached_load_or_compile` contract),
+/// never "refuse to start".
+#[derive(Debug)]
+pub(crate) enum CatalogWireError {
+    /// Buffer ended mid-field.
+    Truncated,
+    /// Leading magic did not match `WIRE_MAGIC`.
+    BadMagic,
+    /// Wire version did not match `WIRE_VERSION`.
+    VersionMismatch,
+    /// A decoded rule failed `BatchRuleProgram::new` shape validation.
+    BadRuleShape,
+}
+
+impl std::fmt::Display for CatalogWireError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Truncated => "cached megakernel catalog truncated",
+            Self::BadMagic => "cached megakernel catalog has wrong magic",
+            Self::VersionMismatch => "cached megakernel catalog wire-version mismatch",
+            Self::BadRuleShape => "cached megakernel catalog rule failed shape validation",
+        })
+    }
+}
+
+/// Little-endian cursor over a cache blob with bounds checks. No panics and no
+/// `bytemuck` alignment assumptions on read — every multi-byte field is decoded
+/// via `from_le_bytes`. The cache is host-local, so LE encoding is fine.
+struct WireReader<'a> {
+    buf: &'a [u8],
+    pos: usize,
+}
+
+impl<'a> WireReader<'a> {
+    fn new(buf: &'a [u8]) -> Self {
+        Self { buf, pos: 0 }
+    }
+    fn take(&mut self, n: usize) -> Result<&'a [u8], CatalogWireError> {
+        let end = self.pos.checked_add(n).ok_or(CatalogWireError::Truncated)?;
+        let s = self.buf.get(self.pos..end).ok_or(CatalogWireError::Truncated)?;
+        self.pos = end;
+        Ok(s)
+    }
+    fn u32(&mut self) -> Result<u32, CatalogWireError> {
+        let b = self.take(4)?;
+        Ok(u32::from_le_bytes([b[0], b[1], b[2], b[3]]))
+    }
+    fn u64(&mut self) -> Result<u64, CatalogWireError> {
+        let b = self.take(8)?;
+        let mut a = [0u8; 8];
+        a.copy_from_slice(b);
+        Ok(u64::from_le_bytes(a))
+    }
+    fn u32_vec(&mut self, len: usize) -> Result<Vec<u32>, CatalogWireError> {
+        let bytes = self.take(len.checked_mul(4).ok_or(CatalogWireError::Truncated)?)?;
+        Ok(bytes
+            .chunks_exact(4)
+            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+            .collect())
+    }
+    fn usize_vec(&mut self, len: usize) -> Result<Vec<usize>, CatalogWireError> {
+        let mut v = Vec::with_capacity(len.min(1 << 20));
+        for _ in 0..len {
+            v.push(self.u64()? as usize);
+        }
+        Ok(v)
+    }
+}
+
+impl vyre_libs::scan::MatchEngineCache for MegakernelCatalog {
+    type WireError = CatalogWireError;
+    const WIRE_MAGIC: [u8; 4] = CATALOG_WIRE_MAGIC;
+    const WIRE_VERSION: u32 = 1;
+    // The catalog is ~GB of dense DFA transition tables; the default 64 MiB
+    // bound would reject it as oversized and force a full rebuild every run.
+    const MAX_CACHE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+
+    fn to_bytes(&self) -> Result<Vec<u8>, CatalogWireError> {
+        let words: usize = self
+            .rules
+            .iter()
+            .map(|r| r.transitions.len() + r.accept.len() + 4)
+            .sum();
+        let mut out = Vec::with_capacity(words * 4 + 64);
+        out.extend_from_slice(&Self::WIRE_MAGIC);
+        out.extend_from_slice(&Self::WIRE_VERSION.to_le_bytes());
+        out.extend_from_slice(&(self.rules.len() as u32).to_le_bytes());
+        for r in &self.rules {
+            out.extend_from_slice(&r.rule_idx.to_le_bytes());
+            out.extend_from_slice(&r.state_count.to_le_bytes());
+            out.extend_from_slice(&(r.transitions.len() as u32).to_le_bytes());
+            out.extend_from_slice(bytemuck::cast_slice(&r.transitions));
+            out.extend_from_slice(&(r.accept.len() as u32).to_le_bytes());
+            out.extend_from_slice(bytemuck::cast_slice(&r.accept));
+        }
+        out.extend_from_slice(&(self.rule_to_detector.len() as u32).to_le_bytes());
+        for &d in &self.rule_to_detector {
+            out.extend_from_slice(&(d as u64).to_le_bytes());
+        }
+        out.extend_from_slice(&(self.host_detectors.len() as u32).to_le_bytes());
+        for &d in &self.host_detectors {
+            out.extend_from_slice(&(d as u64).to_le_bytes());
+        }
+        Ok(out)
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, CatalogWireError> {
+        let mut r = WireReader::new(bytes);
+        if r.take(4)? != Self::WIRE_MAGIC {
+            return Err(CatalogWireError::BadMagic);
+        }
+        if r.u32()? != Self::WIRE_VERSION {
+            return Err(CatalogWireError::VersionMismatch);
+        }
+        let rule_count = r.u32()? as usize;
+        let mut rules = Vec::with_capacity(rule_count.min(1 << 20));
+        for _ in 0..rule_count {
+            let rule_idx = r.u32()?;
+            let state_count = r.u32()?;
+            let tlen = r.u32()? as usize;
+            let transitions = r.u32_vec(tlen)?;
+            let alen = r.u32()? as usize;
+            let accept = r.u32_vec(alen)?;
+            let rule = BatchRuleProgram::new(rule_idx, transitions, accept, state_count)
+                .map_err(|_| CatalogWireError::BadRuleShape)?;
+            rules.push(rule);
+        }
+        let rtd_len = r.u32()? as usize;
+        let rule_to_detector = r.usize_vec(rtd_len)?;
+        let host_len = r.u32()? as usize;
+        let host_detectors = r.usize_vec(host_len)?;
+        Ok(Self {
+            rules,
+            rule_to_detector,
+            host_detectors,
+            dispatcher: std::sync::Mutex::new(None),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The catalog build must lower the overlap-free / bounded-body patterns to
+    /// GPU DFA rules and route the genuine state-explosion (`AIza` — 64-char
+    /// class × 35) to the loud host path — never silently drop it.
+    #[test]
+    fn catalog_classifies_lowerable_vs_host() {
+        let patterns = vec![
+            ("ghp_[A-Za-z0-9]{36}".to_string(), 0),   // overlap-free → GPU
+            ("AKIA[A-Z0-9]{16}".to_string(), 1),      // 2468 states < budget → GPU
+            ("AIza[A-Za-z0-9_-]{35}".to_string(), 2), // explodes → host path
+        ];
+        let catalog = MegakernelCatalog::build(&patterns);
+        assert!(
+            catalog.rule_count() >= 2,
+            "ghp_ and AKIA must lower to GPU rules, got {}",
+            catalog.rule_count()
+        );
+        assert!(
+            catalog.host_detectors().contains(&2),
+            "AIza (state explosion) must take the loud host path, host={:?}",
+            catalog.host_detectors()
         );
     }
 
-    /// Current slot count in the resident ring.
-    #[must_use]
-    pub fn slot_count(&self) -> u32 {
-        self.config.slot_count
+    /// An all-unlowerable set yields a catalog with ZERO GPU rules (the caller
+    /// treats `rule_count() == 0` as "no GPU path" and degrades loudly) rather
+    /// than a catalog that would silently match nothing.
+    #[test]
+    fn catalog_empty_when_nothing_lowers() {
+        // A backreference is not a regular language — the DFA builder rejects it.
+        let patterns = vec![(r"(\w+)\s+\1".to_string(), 0)];
+        let catalog = MegakernelCatalog::build(&patterns);
+        assert_eq!(catalog.rule_count(), 0);
+        // The un-lowerable detector must land on the loud host path, not vanish.
+        assert_eq!(catalog.host_detectors(), &[0]);
     }
 
-    /// Current next-slot cursor position.
-    #[must_use]
-    pub fn next_slot(&self) -> u32 {
-        self.next_slot
+    /// A round-trip through the on-disk wire format reproduces the catalog
+    /// (rules, rule→detector map, host detectors) so a cached load matches a
+    /// fresh build.
+    #[test]
+    fn catalog_wire_roundtrip() {
+        use vyre_libs::scan::MatchEngineCache;
+        let patterns = vec![
+            ("ghp_[A-Za-z0-9]{36}".to_string(), 7),
+            ("AKIA[A-Z0-9]{16}".to_string(), 3),
+            ("AIza[A-Za-z0-9_-]{35}".to_string(), 5), // host path
+        ];
+        let built = MegakernelCatalog::build(&patterns);
+        let bytes = built.to_bytes().expect("encode");
+        let loaded = MegakernelCatalog::from_bytes(&bytes).expect("decode");
+        assert_eq!(loaded.rule_count(), built.rule_count());
+        assert_eq!(loaded.rule_to_detector, built.rule_to_detector);
+        assert_eq!(loaded.host_detectors(), built.host_detectors());
+        assert_eq!(loaded.rules, built.rules);
     }
 }

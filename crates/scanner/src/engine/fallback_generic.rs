@@ -21,20 +21,41 @@ static GENERIC_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
     // transition, so `GRAPHITE_PASS=`, `clientSecret=` and `SECRET=` all match
     // while `bypass=`/`compass=`/`xtoken=` do not. This is what makes the short
     // `pass` abbreviation safe to include (CredData's dominant `*_PASS=` shape).
-    regex::Regex::new(
+    match regex::Regex::new(
         r#"(?i)(secret|passphrase|password|passwd|pwd|pass|token|api[._-]?key|apikey|auth[._-]?token|auth[._-]?key|credential|private[._-]?key|signing[._-]?key|encryption[._-]?key|access[._-]?key|client[._-]?secret|app[._-]?secret|master[._-]?key|license[._-]?key)["'`]?\s*[=:]\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]*\s*[=:]\s*)?["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#
-    ).ok()
+    ) {
+        Ok(re) => Some(re),
+        // Law 10: this static, build-from-constant regex compiling is a build
+        // invariant. If it ever fails the generic value bridge (the dominant
+        // CredData `*_PASS=` / `secret:` surface) goes dark — there is no
+        // recall-preserving alternative, so surface it as loudly as possible.
+        Err(e) => {
+            crate::prefilter_degrade::warn_prefilter_disabled(
+                "generic-assignment value bridge (GENERIC_RE)",
+                &e,
+            );
+            None
+        }
+    }
 });
 
 static KEYWORD_AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
-    AhoCorasick::builder()
+    match AhoCorasick::builder()
         .ascii_case_insensitive(true)
         .build(
             super::scan_filters::GENERIC_ASSIGNMENT_KEYWORDS
                 .iter()
                 .copied(),
-        )
-        .ok()
+        ) {
+        Ok(ac) => Some(ac),
+        Err(e) => {
+            crate::prefilter_degrade::warn_prefilter_disabled(
+                "generic-assignment keyword prefilter (KEYWORD_AC)",
+                &e,
+            );
+            None
+        }
+    }
 });
 
 pub(crate) fn warm_generic_assignment_runtime() {
@@ -118,11 +139,10 @@ impl CompiledScanner {
         // every keyword simultaneously. On an 8 MiB no-hit corpus this drops
         // the scan_generic_assignments pre-filter from ~16 × 240 ms of
         // window-scan to a single AC pass.
+        // `None` here means the keyword AC failed to build; the `KEYWORD_AC`
+        // initializer already emitted the loud one-shot Law-10 warning, so this
+        // per-chunk path just returns (the named-detector pass still ran).
         let Some(keyword_ac) = KEYWORD_AC.as_ref() else {
-            tracing::warn!(
-                "generic-assignment keyword AC failed to compile; \
-                 skipping keyword prefilter for this scan"
-            );
             return;
         };
 
@@ -508,18 +528,38 @@ impl CompiledScanner {
                     line_idx,
                     chunk.metadata.path.as_deref(),
                 );
+                // The test/docs base-confidence haircut is the SAME path-keyed
+                // policy `--no-suppress-test-fixtures` (penalize_test_paths)
+                // governs everywhere else (scan_postprocess.rs:787, fallback.rs:2090).
+                // This generic-secret fallback historically baked 0.25/0.30 into
+                // `base_conf` UNCONDITIONALLY, so the opt-out could not clear it:
+                // MC-15 proved on the bench that the same byte-identical corpus
+                // scored ~600 fewer findings under a `fixtures/`-named scan dir
+                // than under `corpus/` even with the flag set, because TestCode
+                // values landed at 0.25 and fell below the 0.40 floor. Gating the
+                // haircut on `penalize_test_paths` (mirroring the canonical policy)
+                // makes the opt-out actually clear the path penalty here too; with
+                // the flag UNSET (default) behaviour is byte-identical to before.
                 let base_conf = match context {
-                    crate::context::CodeContext::TestCode => 0.25,
+                    crate::context::CodeContext::TestCode if self.config.penalize_test_paths => {
+                        0.25
+                    }
                     // `--scan-comments` (see ScannerConfig.scan_comments)
                     // promotes comment-context credentials to the
                     // ordinary-source base confidence so a real secret
                     // pasted into a TODO/debug-trace comment surfaces
                     // instead of getting silently filtered. Documentation
                     // context stays downgraded - it's a different (and
-                    // far noisier) signal class than inline comments.
+                    // far noisier) signal class than inline comments - but it
+                    // too is cleared by the fixture opt-out, matching the
+                    // canonical TestCode|Documentation policy.
                     crate::context::CodeContext::Comment if self.config.scan_comments => 0.60,
-                    crate::context::CodeContext::Comment
-                    | crate::context::CodeContext::Documentation => 0.30,
+                    crate::context::CodeContext::Documentation
+                        if self.config.penalize_test_paths =>
+                    {
+                        0.30
+                    }
+                    crate::context::CodeContext::Comment => 0.30,
                     _ => 0.60,
                 };
 
@@ -640,27 +680,12 @@ fn generic_path_looks_like_random_base64_blob(value: &str, entropy: f64) -> bool
         return false;
     }
 
-    if !(40..=300).contains(&value.len()) {
-        return false;
-    }
-    let has_padding = value.ends_with("==") || value.ends_with('=');
-    let length_mult_4 = value.len().is_multiple_of(4);
-    if !has_padding && !length_mult_4 {
-        return false;
-    }
-    let mut has_plus = false;
-    let mut has_slash = false;
-    for c in value.chars() {
-        match c {
-            'A'..='Z' | 'a'..='z' | '0'..='9' | '=' => {}
-            '+' => has_plus = true,
-            '/' => has_slash = true,
-            _ => return false,
-        }
-    }
-    // Require both `+` and `/` from a real byte-distribution sample, or
-    // padded payloads with at least one of them.
-    (has_plus && has_slash) || (has_padding && (has_plus || has_slash))
+    // Band 40..=300 (covers both the 40-80 protobuf sweet spot and the longer
+    // 80-300 k8s `data:` blobs). The band + padding + standard-base64-alphabet +
+    // BOTH-`+`-AND-`/` skeleton is the shared `is_byte_distribution_base64_blob`
+    // canonical (MC-12); this path composes its entropy cutoff (above) and band
+    // on top.
+    crate::decode_structure::is_byte_distribution_base64_blob(value, 40, 300)
 }
 
 /// Random-byte base64 decoy detector for the generic-secret path only.

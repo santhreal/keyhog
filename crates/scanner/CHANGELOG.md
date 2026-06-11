@@ -2,6 +2,34 @@
 
 ## Unreleased
 
+- Add the `aws-bedrock-api-key` detector (critical) — long-term AWS Bedrock
+  API keys (`ABSK` prefix + the deterministic `QmVkcm9ja0FQSUtleS` base64
+  anchor + 110-char body, 132 chars total; AWS's own published form). The
+  anchor encodes "BedrockAPIKey" and is effectively unique, so precision is
+  anchor-driven (defensive `min_confidence = 0.2` floor since the fixed anchor
+  dilutes entropy scoring). Not checksum-gated. Detector count 900 → 901.
+  Contract-locked by `crates/scanner/tests/contracts/aws-bedrock-api-key.toml`
+  (positives, anchor/length negatives, header + comment evasions). Short-term
+  `bedrock-api-key-` keys are deliberately omitted (their body is not
+  authoritatively bounded — soundness over reach).
+- Fix a dead contract gate: `every_contract_readme_claim_present` had been
+  passing vacuously. A `readme_claim` written after a contract's `[perf]`/
+  `[scale]` header binds to that TOML table, not the Contract, so serde
+  silently dropped it and every contract's claim parsed as `None` — the gate
+  checked nothing (and "stripe" never matched README's "Stripe"). Moved the
+  six real `readme_claim`s to the top-level scalar position, corrected the
+  `stripe`→`Stripe` claim, added `#[serde(deny_unknown_fields)]` to the perf
+  and scale budget structs so a future misplacement is a loud parse error
+  instead of a silent drop (Law 10), and added a liveness floor (`checked >=
+  6`) so the gate can't regress to vacuous.
+- De-duplicate the detector-count claim (was denormalized across 782 places):
+  removed the `readme_claim = "900 service-specific detectors"` stamp from 781
+  per-detector contracts and made the count derive from `load_detectors()` in
+  one place — `readme_claims::readme_claim_detector_count` (README + banner),
+  `contract::readme_detector_count` (disk == loader, no literal), and the
+  `e2e_binary` banner test (binary == loaded corpus). Adding a detector now
+  touches only the new TOMLs + the human-facing README/banner, with no
+  test-literal or 781-file churn.
 - Byte-cap the per-match context windows (`local_context_window` ML context to 8 KiB, `context::inference::surrounding_line_window` FP context to 2 KiB). Previously each candidate's context was the whole containing line; on a line with no `\n` for kilobytes (minified bundles, or a file that is one long run of credential-shaped tokens) the per-match ML feature / FP keyword scan was O(line_len), making a many-match scan quadratic (a 164 KiB single-line file with 8 K matches took ~18 s). The caps make per-match context O(1) and noticeably speed ordinary minified-bundle scans. Behavior-preserving for normal source — a short line hits its newline well before the cap — verified by byte-identical mirror-corpus findings (F1 0.9167, 2564 findings) and the full scanner suite. Regressioned by `unit/a3_pipeline/local_context_window_caps_long_line`. (A residual super-linear cost remains when a single file carries thousands of distinct credential-shaped matches; bounded in practice by `--timeout` and the 1M-iteration-per-pattern cap.)
 
 - Fix windowed-scan line attribution: findings in files past the 1 MiB

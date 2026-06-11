@@ -211,52 +211,16 @@ impl Default for ScanConfig {
 }
 
 impl ScanConfig {
-    // PRESET ROUTING NOTE: these core presets are the canonical preset
-    // definitions, reachable in the engine only via
-    // `ScannerConfig::from(ScanConfig::fast()/thorough()/paranoid())`.
-    // The CLI's `build_scanner_config` currently selects the parallel
-    // `ScannerConfig::fast()/thorough()` instead, whose values DIVERGE
-    // from these (e.g. fast decode-depth 0 vs 2, thorough 10 vs 8). The
-    // single-source-of-truth fix is to route the CLI through these core
-    // presets and drop the scanner-side duplicates; until that lands,
-    // a reader auditing "what --fast does" must check the CLI path, not
-    // these methods. Values here are pinned by `crates/core/tests/unit`.
-
-    /// Fast configuration optimized for speed over exhaustive recall.
-    pub fn fast() -> Self {
-        Self {
-            max_decode_depth: 2,
-            entropy_enabled: false,
-            ml_enabled: false,
-            ..Default::default()
-        }
-    }
-
-    /// Thorough configuration for deep penetration into encoded layers.
-    pub fn thorough() -> Self {
-        Self {
-            max_decode_depth: 8,
-            entropy_in_source_files: true,
-            ml_enabled: true,
-            ..Default::default()
-        }
-    }
-
-    /// Maximum paranoia: deep decoding and aggressive entropy analysis.
-    pub fn paranoid() -> Self {
-        Self {
-            max_decode_depth: MAX_DECODE_DEPTH_LIMIT,
-            entropy_enabled: true,
-            entropy_in_source_files: true,
-            // Deliberately below the default of 20: paranoid mode trades
-            // precision for recall and accepts shorter candidates. Not a
-            // default disagreement - see `min_secret_len`'s field note on
-            // its (currently no-op) live-path status.
-            min_secret_len: 16,
-            ml_enabled: true,
-            ..Default::default()
-        }
-    }
+    // PRESET SINGLE SOURCE OF TRUTH (MC-05): the operator-facing presets
+    // (`--fast` / `--deep` / `--precision`) live on `ScannerConfig`
+    // (`scanner/src/scanner_config.rs::{fast,thorough,high_precision}`) — the
+    // one path the CLI's `build_scanner_config` actually selects. Earlier this
+    // crate also carried `ScanConfig::fast/thorough/paranoid`, but they had ZERO
+    // production callers and their values DIVERGED from the shipped ones (e.g.
+    // fast decode-depth 2 vs the shipped 0), so a reader auditing "what --fast
+    // does" got the wrong answer here. They are deleted rather than re-pointed:
+    // until MC-01 collapses `ScannerConfig` back into `ScanConfig`, the presets
+    // stay with the config the engine runs, and there is exactly one preset path.
 
     /// Validate the configuration parameters.
     pub fn validate(&self) -> Result<(), ConfigError> {

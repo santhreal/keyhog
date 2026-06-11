@@ -255,7 +255,12 @@ fn segment_base64_padding_recovered_credential_has_no_keyword_prefix() {
     // `segment_write_key=<body>==`. Assert it never does.
     let full = format!("{B64_BODY_31}==");
     let creds = scan_creds(&format!("{SEGMENT_KEYWORD}={full}"));
-    assert!(!creds.is_empty());
+    // Truth assert: the EXACT double-padded value is recovered (not merely "some
+    // finding"). A junk single-pad or keyword-prefixed credential fails has_exact.
+    assert!(
+        has_exact(&creds, &full),
+        "padding recovery must surface the exact value {full:?}, got {creds:?}"
+    );
     for c in &creds {
         assert!(
             !c.contains(SEGMENT_KEYWORD),
@@ -356,7 +361,8 @@ fn segment_quoted_value_credential_excludes_opening_quote() {
     // must not lead the credential. (The trailing quote is outside the capture.)
     let value = format!("{B64_BODY_31}=");
     let creds = scan_creds(&format!("{SEGMENT_KEYWORD}=\"{value}\""));
-    assert!(!creds.is_empty(), "quoted segment value should still fire");
+    // Non-emptiness is proven by the exact `has_exact(&creds, &value)` truth
+    // assert below; a bare shape assert here would pass on a junk finding.
     for c in &creds {
         assert!(
             !c.starts_with('"'),
@@ -462,10 +468,8 @@ fn homebrew_token_bounded_by_closing_quote() {
 #[test]
 fn homebrew_ghp_attributed_with_exact_credential() {
     let pairs = scan_pairs(&format!("{HOMEBREW_KEYWORD}={GHP_TOKEN}"));
-    assert!(
-        !pairs.is_empty(),
-        "ghp_ homebrew token must fire some detector"
-    );
+    // Non-emptiness is proven by the exact `any(c == GHP_TOKEN)` truth assert
+    // below; a bare shape assert would pass on a junk finding.
     // Whichever detector(s) fire on this exact token, the credential they carry
     // is the clean token — never the keyword-prefixed whole match.
     for (cred, det) in &pairs {
@@ -484,7 +488,8 @@ fn homebrew_ghp_attributed_with_exact_credential() {
 fn segment_padded_value_attribution_carries_clean_credential() {
     let full = format!("{B64_BODY_31}==");
     let pairs = scan_pairs(&format!("{SEGMENT_KEYWORD}={full}"));
-    assert!(!pairs.is_empty());
+    // Non-emptiness is proven by the exact `any(c == &full)` truth assert below;
+    // a bare shape assert would pass on a junk finding.
     // No detector — segment, generic, or decode-through — may surface a
     // credential that embeds the keyword anchor. The grouped-extraction fix is
     // unconditional across attribution.
@@ -735,7 +740,8 @@ fn elasticsearch_base64_double_pad_value_no_keyword_leak() {
     let body40 = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd"; // 40 chars
     let value = format!("{body40}==");
     let creds = scan_creds(&format!("ELASTICSEARCH_API_KEY={value}"));
-    assert!(!creds.is_empty(), "elasticsearch base64 value should fire");
+    // Non-emptiness is proven by the exact body assert below (`any(c == value ||
+    // c.contains(body40))`); a bare shape assert would pass on a junk finding.
     for c in &creds {
         assert!(!c.contains(ES_KEYWORD), "credential {c:?} leaked keyword");
         assert!(!c.starts_with('='), "credential {c:?} leads with separator");

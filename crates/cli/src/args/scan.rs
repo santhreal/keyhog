@@ -213,19 +213,34 @@ pub struct ScanArgs {
     )]
     pub backend: Option<String>,
 
-    /// Force the scan through a running `keyhog daemon`. Fails if no
-    /// daemon is up. Use this in pre-commit hooks / IDE save handlers
-    /// where the ~3 s in-process cold-start dominates the actual scan;
-    /// the daemon holds a compiled scanner so each invocation is sub-ms
-    /// IPC + scan. See `keyhog daemon start --help`.
-    #[arg(long, conflicts_with = "no_daemon")]
-    pub daemon: bool,
+    /// Daemon routing: `auto` (default — use a live daemon if one is up, else
+    /// scan in-process), `on` (force the daemon route; fail if none is up), or
+    /// `off` (force in-process). Bare `--daemon` means `on`. Use `on` in
+    /// pre-commit hooks / IDE save handlers where the ~3 s in-process cold-start
+    /// dominates the actual scan; the daemon holds a compiled scanner so each
+    /// invocation is sub-ms IPC + scan. See `keyhog daemon start --help`.
+    ///
+    /// Read it through [`ScanArgs::daemon_mode`], never directly: that folds in
+    /// the `--no-daemon` compatibility alias.
+    #[arg(
+        long,
+        value_enum,
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "on",
+        value_name = "auto|on|off",
+        conflicts_with = "no_daemon"
+    )]
+    pub daemon: Option<super::DaemonMode>,
 
-    /// Force in-process scanning even when a daemon is running. Useful
-    /// for debugging, hardware probing, contract tests, or any case
-    /// where you need the orchestrator's full pipeline (baseline /
-    /// merkle skip cache / verification) which the daemon's stdin-
-    /// only fast path does not replicate.
+    /// Force in-process scanning even when a daemon is running. Useful for
+    /// debugging, hardware probing, contract tests, or any case where you need
+    /// the orchestrator's full pipeline (baseline / merkle skip cache /
+    /// verification) which the daemon's stdin-only fast path does not replicate.
+    ///
+    /// Compatibility alias for `--daemon=off` (CLI-02); the canonical spelling
+    /// is `--daemon=off`. Retained because pre-commit hooks and editor
+    /// integrations in the wild pass `--no-daemon`.
     #[arg(long, conflicts_with = "daemon")]
     pub no_daemon: bool,
 
@@ -296,10 +311,17 @@ pub struct ScanArgs {
     pub source: Option<Vec<String>>,
 
     /// Fast mode: pattern matching only. No decode, no entropy. Maximum speed.
+    /// A preset is a BASE: it seeds defaults, then any explicit knob you pass
+    /// overrides it (e.g. `--fast --decode-depth 2` re-enables shallow decode on
+    /// top of the fast base). `--no-decode`/`--no-entropy` conflict with presets
+    /// (already implied here) and are rejected together.
     #[arg(long, conflicts_with_all = ["deep", "precision", "no_decode", "no_entropy"])]
     pub fast: bool,
 
-    /// Deep mode: all features enabled.
+    /// Deep mode: all features enabled. A preset is a BASE: it seeds defaults
+    /// (decode-depth 10, entropy + ML on), then any explicit knob you pass
+    /// overrides it — e.g. `--deep --decode-depth 3` runs deep with depth 3, and
+    /// `--deep --min-confidence 0.9` raises the floor on the deep base.
     #[arg(long, conflicts_with_all = ["fast", "precision", "no_decode", "no_entropy"])]
     pub deep: bool,
 
@@ -378,6 +400,16 @@ pub struct ScanArgs {
     /// Load configuration from a specific file path.
     #[arg(long, value_name = "PATH")]
     pub config: Option<PathBuf>,
+
+    /// Ignore any ambient `.keyhog.toml`: skip the walk-up discovery from the
+    /// scan root and reject an explicit `--config`. The scan then runs on the
+    /// compiled-in shipped defaults (the Tier-A `SHIPPED_*` floors/disables)
+    /// and nothing else. This is the hermetic, reproducible config used by CI
+    /// gates and the benchmark harness, so the measured behavior is the shipped
+    /// default BY DESIGN and cannot silently drift when a stray `.keyhog.toml`
+    /// appears on an ancestor path (backlog MC-07).
+    #[arg(long, conflicts_with = "config")]
+    pub no_config: bool,
 
     /// Suppress findings that match an existing baseline file
     #[arg(long, value_name = "PATH", conflicts_with_all = ["create_baseline", "update_baseline"])]
@@ -495,4 +527,21 @@ pub struct ScanArgs {
     /// Placeholder keywords (internal use for config merge)
     #[arg(skip)]
     pub placeholder_keywords: Vec<String>,
+}
+
+impl ScanArgs {
+    /// Resolve the effective daemon routing policy (CLI-02), folding the
+    /// `--no-daemon` compatibility alias into the canonical `--daemon=...`
+    /// tri-state. clap's `conflicts_with` guarantees the two are never both
+    /// user-supplied, so the alias check is unambiguous.
+    ///
+    /// All daemon-routing logic must read THIS, never the raw `daemon` /
+    /// `no_daemon` fields, so the alias can never be silently bypassed.
+    #[must_use]
+    pub fn daemon_mode(&self) -> super::DaemonMode {
+        if self.no_daemon {
+            return super::DaemonMode::Off;
+        }
+        self.daemon.unwrap_or(super::DaemonMode::Auto)
+    }
 }

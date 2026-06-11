@@ -4,74 +4,64 @@ use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashSet};
 #[cfg(feature = "ml")]
 use std::collections::{HashMap, VecDeque};
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
-/// Configuration for the scanner's decoding and processing heuristics.
+use keyhog_core::config::ScanConfig;
+
+/// Scanner-side configuration: the canonical [`ScanConfig`] — the single owned
+/// source of truth for every shared detection knob (decode depth, entropy, ML,
+/// confidence floor, keyword lists, …) — PLUS the two knobs that are
+/// scanner-crate-local and have no place on `keyhog-core`'s `ScanConfig`:
+///
+/// - `multiline` — its type ([`crate::multiline::MultilineConfig`]) is defined
+///   in THIS crate, and `keyhog-core` cannot depend on `keyhog-scanner` without
+///   a dependency cycle, so the field cannot live on `ScanConfig`.
+/// - `penalize_test_paths` — a scanner-internal suppression toggle the CLI flips
+///   for `--no-suppress-test-fixtures`; it never appears on the on-disk config.
+///
+/// This is the "thin newtype over `ScanConfig`" MC-01 calls for. It deliberately
+/// does **not** restate any of `ScanConfig`'s fields: every shared knob is read
+/// and written straight through [`Deref`]/[`DerefMut`] (`config.min_confidence`,
+/// `config.entropy_enabled`, `config.known_prefixes`, …), so there is exactly
+/// ONE definition of each — no parallel field list that can drift, and the
+/// `From<ScanConfig>` impl below is a structural wrap, never a hand-maintained
+/// field-by-field copy.
+///
+/// `ScanConfig`'s `min_secret_len` / `max_file_size` / `dedup` fields are
+/// reachable through the deref but are NOT consumed by the scan engine — they
+/// are enforced elsewhere (the source walker and the verifier) and carry that
+/// caveat in their own doc comments on `ScanConfig`. Their presence here is the
+/// wrapped truth, not a second silent copy.
 #[derive(Debug, Clone)]
 pub struct ScannerConfig {
-    /// Maximum recursion depth for decode-through (base64, hex, etc.)
-    pub max_decode_depth: usize,
-    /// Validate decoded strings (e.g. check if decoded base64 is UTF-8)
-    pub validate_decode: bool,
-    /// Enable entropy-based detection
-    pub entropy_enabled: bool,
-    /// Threshold for entropy-based detection
-    pub entropy_threshold: f64,
-    /// Enable entropy-based detection in source code files
-    pub entropy_in_source_files: bool,
-    /// Route entropy-fallback candidates through the MoE with the model
-    /// AUTHORITATIVE (no entropy-magnitude floor) instead of the bare entropy
-    /// heuristic. Mirrors `keyhog_core::config::ScanConfig::entropy_ml_authoritative`
-    /// and the CLI `--no-entropy-ml-scoring` opt-out. No-op unless both
-    /// `entropy_enabled` and `ml_enabled` are set. See `apply_ml_batch_scores`
-    /// and `scan_entropy_fallback`.
-    pub entropy_ml_authoritative: bool,
-    /// Admit generic keyword-bridge values (`PASSWORD=`, `*_PASS=`, `secret:`,
-    /// `api_key=` ...) on the relaxed `generic-keyword-secret` entropy floor
-    /// instead of the high `generic-secret` floor. Mirrors
-    /// `keyhog_core::config::ScanConfig::generic_keyword_low_entropy` and the CLI
-    /// `--no-keyword-low-entropy` opt-out. The keyword key is the evidence;
-    /// precision is carried by the MoE + shape filters. See
-    /// `scan_generic_assignments`.
-    pub generic_keyword_low_entropy: bool,
-    /// Enable ML-based confidence scoring
-    pub ml_enabled: bool,
-    /// ML weight for confidence scoring, 0.0-1.0
-    pub ml_weight: f64,
-    /// Minimum confidence threshold for matches
-    pub min_confidence: f64,
-    /// Enable Unicode normalization
-    pub unicode_normalization: bool,
-    /// Maximum bytes for decode-through processing
-    pub max_decode_bytes: usize,
-    /// Maximum matches to collect per chunk before stopping.
-    /// Prevents OOM on extremely noisy files.
-    pub max_matches_per_chunk: usize,
-    /// When `true`, credentials inside source-code comments are
-    /// treated as first-class findings (no confidence downgrade,
-    /// no comment-context multiplier). Mirrors
-    /// `keyhog_core::config::ScanConfig::scan_comments` and the
-    /// CLI's `--scan-comments` flag. See that field's doc for why
-    /// the default is off.
-    pub scan_comments: bool,
-    /// Configuration for multiline concatenation
+    /// The canonical shared detection config — single source of truth for every
+    /// knob the engine and CLI agree on. Reached transparently via `Deref`, so
+    /// callers write `config.min_confidence`, not `config.scan.min_confidence`.
+    pub scan: ScanConfig,
+    /// Configuration for multiline concatenation (scanner-local type).
     pub multiline: crate::multiline::MultilineConfig,
-    /// Known secret prefixes used to boost confidence.
-    pub known_prefixes: Vec<String>,
-    /// Keywords indicating a secret context (e.g. "api_key", "token").
-    pub secret_keywords: Vec<String>,
-    /// Keywords indicating a test/mock context (e.g. "test", "fake").
-    pub test_keywords: Vec<String>,
-    /// Keywords indicating a placeholder value (e.g. "change_me", "todo").
-    pub placeholder_keywords: Vec<String>,
     /// Apply test/example path confidence and hard-suppression heuristics.
     /// The CLI disables this for `--no-suppress-test-fixtures`.
     pub penalize_test_paths: bool,
 }
 
+impl Deref for ScannerConfig {
+    type Target = ScanConfig;
+    fn deref(&self) -> &ScanConfig {
+        &self.scan
+    }
+}
+
+impl DerefMut for ScannerConfig {
+    fn deref_mut(&mut self) -> &mut ScanConfig {
+        &mut self.scan
+    }
+}
+
 impl Default for ScannerConfig {
     fn default() -> Self {
-        keyhog_core::config::ScanConfig::default().into()
+        ScanConfig::default().into()
     }
 }
 
@@ -82,12 +72,11 @@ impl ScannerConfig {
     pub const HIGH_PRECISION_MIN_CONFIDENCE: f64 = 0.85;
 
     pub fn fast() -> Self {
-        Self {
-            max_decode_depth: 0,
-            ml_enabled: false,
-            entropy_enabled: false,
-            ..Default::default()
-        }
+        let mut c = Self::default();
+        c.max_decode_depth = 0;
+        c.ml_enabled = false;
+        c.entropy_enabled = false;
+        c
     }
 
     pub fn thorough() -> Self {
@@ -95,12 +84,11 @@ impl ScannerConfig {
         // `ScanConfig::default()` floor (single source of truth) instead of
         // forking a second literal. Deep scanning widens decode/entropy, not
         // the confidence bar.
-        Self {
-            max_decode_depth: 10,
-            ml_enabled: true,
-            entropy_enabled: true,
-            ..Default::default()
-        }
+        let mut c = Self::default();
+        c.max_decode_depth = 10;
+        c.ml_enabled = true;
+        c.entropy_enabled = true;
+        c
     }
 
     /// High-precision mass-scan preset: minimise false positives at the cost of
@@ -124,17 +112,16 @@ impl ScannerConfig {
     /// `penalize_test_paths` stays on (the default) to suppress fixture-shaped
     /// hits. A `--min-confidence` override still layers on top of this preset.
     pub fn high_precision() -> Self {
-        Self {
-            max_decode_depth: 1,
-            entropy_enabled: false,
-            // High-precision mode does not admit low-entropy keyword-anchored
-            // values: that surface trades precision for real-world recall, the
-            // opposite of this preset's contract. Restores the high
-            // `generic-secret` floor.
-            generic_keyword_low_entropy: false,
-            min_confidence: Self::HIGH_PRECISION_MIN_CONFIDENCE,
-            ..Default::default()
-        }
+        let mut c = Self::default();
+        c.max_decode_depth = 1;
+        c.entropy_enabled = false;
+        // High-precision mode does not admit low-entropy keyword-anchored
+        // values: that surface trades precision for real-world recall, the
+        // opposite of this preset's contract. Restores the high
+        // `generic-secret` floor.
+        c.generic_keyword_low_entropy = false;
+        c.min_confidence = Self::HIGH_PRECISION_MIN_CONFIDENCE;
+        c
     }
 
     pub fn min_confidence(mut self, min_confidence: f64) -> Self {
@@ -194,52 +181,28 @@ impl ScannerConfig {
     }
 }
 
-impl From<keyhog_core::config::ScanConfig> for ScannerConfig {
-    fn from(config: keyhog_core::config::ScanConfig) -> Self {
-        // Identity-style mapping: every shared knob carries 1:1 with the
-        // SAME field name on both sides. No rename, no invented value -
-        // the From must not introduce drift, or a tuning baked into one
-        // `Default` silently disagrees with the benched/shipped path.
+impl From<ScanConfig> for ScannerConfig {
+    fn from(scan: ScanConfig) -> Self {
+        // Structural wrap, NOT a field-by-field copy: the canonical `ScanConfig`
+        // is moved in whole into `self.scan`, so there is no parallel field list
+        // that can silently drift from the owned truth (the original lossy
+        // `From` — which renamed/invented/dropped fields — was MC-01's core
+        // complaint; a wrap makes that class of bug structurally impossible).
         //
-        // `multiline` has no `ScanConfig` counterpart (its type lives in
-        // this crate, and `keyhog-core` cannot depend on `keyhog-scanner`
-        // without a dependency cycle), so it takes the scanner default.
-        //
-        // `ScanConfig::{min_secret_len, max_file_size, dedup}` are NOT
-        // carried: the scanner reads none of them, so mapping them in
-        // would be dead state that could drift. `max_file_size` is
-        // enforced independently at the source walker (`keyhog-sources`,
-        // `FilesystemSource::with_max_file_size`); `dedup` is applied by
-        // the verifier via `DedupScope`; `min_secret_len` currently has no
-        // reader at all. They stay on `ScanConfig` (covered by core config
-        // tests) but have no `ScannerConfig` peer by design.
+        // The only additions are the two scanner-crate-local knobs:
+        //   - `multiline` — its type lives in this crate; `keyhog-core` cannot
+        //     depend on `keyhog-scanner` (cycle), so it cannot sit on
+        //     `ScanConfig`. Takes the scanner default here.
+        //   - `penalize_test_paths` — defaults on; the CLI flips it off for
+        //     `--no-suppress-test-fixtures`.
         let mut out = Self {
-            max_decode_depth: config.max_decode_depth,
-            validate_decode: config.validate_decode,
-            entropy_enabled: config.entropy_enabled,
-            entropy_threshold: config.entropy_threshold,
-            entropy_in_source_files: config.entropy_in_source_files,
-            entropy_ml_authoritative: config.entropy_ml_authoritative,
-            generic_keyword_low_entropy: config.generic_keyword_low_entropy,
-            ml_enabled: config.ml_enabled,
-            ml_weight: config.ml_weight,
-            min_confidence: config.min_confidence,
-            unicode_normalization: config.unicode_normalization,
-            max_decode_bytes: config.max_decode_bytes,
-            max_matches_per_chunk: config.max_matches_per_chunk,
-            scan_comments: config.scan_comments,
+            scan,
             multiline: crate::multiline::MultilineConfig::default(),
-            known_prefixes: config.known_prefixes,
-            secret_keywords: config.secret_keywords,
-            test_keywords: config.test_keywords,
-            placeholder_keywords: config.placeholder_keywords,
-            // Scanner-only knob; the CLI flips it off for
-            // `--no-suppress-test-fixtures`.
             penalize_test_paths: true,
         };
-        // Defensive clamp + NaN scrub on every user-influenced
-        // numeric field. Idempotent. See `ScannerConfig::sanitise`
-        // for rationale.
+        // Defensive clamp + NaN scrub on every user-influenced numeric field
+        // (applied to the wrapped `ScanConfig` via `DerefMut`). Idempotent.
+        // See `ScannerConfig::sanitise` for rationale.
         out.sanitise();
         out
     }

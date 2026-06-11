@@ -56,7 +56,19 @@ static ROTATED_PREFIX_AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
             needles.push(caesar_shift(prefix, 26 - k));
         }
     }
-    AhoCorasick::new(&needles).ok()
+    match AhoCorasick::new(&needles) {
+        Ok(ac) => Some(ac),
+        // Law 10: built from the constant `KNOWN_PREFIXES`, so a build failure is
+        // an invariant violation. `matched_caesar_shifts` falls back to trying
+        // all 25 shifts (recall-preserving), but that must not happen silently.
+        Err(e) => {
+            crate::prefilter_degrade::warn_prefilter_disabled(
+                "Caesar rotated-prefix gate (ROTATED_PREFIX_AC)",
+                &e,
+            );
+            None
+        }
+    }
 });
 
 /// File extensions where Caesar-decoding is pure noise. Matched against the

@@ -283,9 +283,12 @@ fn generic_keyword_low_entropy_knob_gates_low_entropy_values() {
     let relaxed = CompiledScanner::compile(vec![demo_detector()])
         .unwrap()
         .with_config(keyhog_scanner::ScannerConfig {
-            generic_keyword_low_entropy: true,
-            ml_enabled: false,
-            min_confidence: 0.0,
+            scan: keyhog_core::config::ScanConfig {
+                generic_keyword_low_entropy: true,
+                ml_enabled: false,
+                min_confidence: 0.0,
+                ..Default::default()
+            },
             ..Default::default()
         });
     assert!(
@@ -300,9 +303,12 @@ fn generic_keyword_low_entropy_knob_gates_low_entropy_values() {
     let strict = CompiledScanner::compile(vec![demo_detector()])
         .unwrap()
         .with_config(keyhog_scanner::ScannerConfig {
-            generic_keyword_low_entropy: false,
-            ml_enabled: false,
-            min_confidence: 0.0,
+            scan: keyhog_core::config::ScanConfig {
+                generic_keyword_low_entropy: false,
+                ml_enabled: false,
+                min_confidence: 0.0,
+                ..Default::default()
+            },
             ..Default::default()
         });
     assert!(

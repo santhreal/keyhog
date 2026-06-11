@@ -677,8 +677,9 @@ fn entropy_mod_error() {
 // ── crates/scanner/src/entropy/scanner.rs ─────────────────────────────
 #[test]
 fn entropy_scanner_happy() {
+    let body = "abcdefghijklmnopqrstuvwxyz";
     let secrets = keyhog_scanner::entropy::find_entropy_secrets(
-        "SECRET=abcdefghijklmnopqrstuvwxyz",
+        &format!("SECRET={body}"),
         16,
         1,
         3.5,
@@ -686,7 +687,20 @@ fn entropy_scanner_happy() {
         &[],
         &[],
     );
-    assert!(!secrets.is_empty());
+    // Truth assert (not "some match"): the EXACT high-entropy body is surfaced,
+    // anchored to the SECRET keyword on line 1, above the 3.5 threshold it
+    // cleared, with no keyword bytes leaked into the credential value.
+    let m = secrets
+        .iter()
+        .find(|m| m.value == body)
+        .unwrap_or_else(|| panic!("entropy scan did not surface {body:?}; got {secrets:?}"));
+    assert_eq!(m.keyword, "SECRET", "match not anchored to the SECRET keyword: {m:?}");
+    assert_eq!(m.line, 1, "match reported the wrong line: {m:?}");
+    assert!(
+        m.entropy > 3.5,
+        "match entropy {} is below the 3.5 threshold it passed: {m:?}",
+        m.entropy
+    );
 }
 #[test]
 fn entropy_scanner_error() {
@@ -1159,7 +1173,10 @@ fn types_happy() {
 #[test]
 fn types_error() {
     let cfg = ScannerConfig {
-        max_decode_depth: 0,
+        scan: keyhog_core::config::ScanConfig {
+            max_decode_depth: 0,
+            ..Default::default()
+        },
         ..Default::default()
     };
     assert_eq!(cfg.max_decode_depth, 0);

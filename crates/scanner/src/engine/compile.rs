@@ -93,7 +93,14 @@ impl CompiledScanner {
                     }
                 };
                 match cuda_backend {
-                    Some(cuda) => (literals, Some(cuda), None),
+                    Some(cuda) => {
+                        // The megakernel (the single on-GPU detection path) uses
+                        // the wgpu `BatchDispatcher`, so acquire wgpu ALONGSIDE
+                        // CUDA whenever GPU init runs — CUDA still serves any other
+                        // GPU primitives via `gpu_backend`.
+                        let wgpu_for_mk = vyre_driver_wgpu::WgpuBackend::shared().ok();
+                        (literals, Some(cuda), wgpu_for_mk)
+                    }
                     None => match vyre_driver_wgpu::WgpuBackend::shared() {
                         Ok(wgpu) => {
                             let trait_obj: Arc<dyn vyre::VyreBackend> = wgpu.clone();
@@ -348,15 +355,12 @@ impl CompiledScanner {
             wgpu_backend,
             gpu_literals,
             gpu_matcher: OnceLock::new(),
-            gpu_const_packs: OnceLock::new(),
-            gpu_ac_const_packs: OnceLock::new(),
+            #[cfg(feature = "gpu")]
+            megakernel_catalog: OnceLock::new(),
             ac_gpu_program: OnceLock::new(),
             gpu_last_degrade_reason: std::sync::Mutex::new(None),
 
             rule_pipeline: OnceLock::new(),
-            resident_megascan: OnceLock::new(),
-            fused_program: OnceLock::new(),
-            fused_decode_programs: OnceLock::new(),
             static_intern,
             metadata_by_index,
             suffix_gate_ac,

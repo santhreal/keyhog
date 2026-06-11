@@ -1,92 +1,41 @@
-//! Comment-embed runner - credentials inside source-code comments.
+//! Comment-embed runner — the `scan_comments` toggle is a sound, wired,
+//! monotone behavior switch.
 //!
-//! `# api_key = "ghp_…"` in a Python file, `// AWS_SECRET="…"` in
-//! a JS file, `/* token=… */` in a Rust block comment, `<!-- … -->`
-//! in HTML. A non-trivial fraction of real leaks live inside
-//! comments, usually with intent ("noting this is temporary" /
-//! "TODO: rotate") or the secret got pasted in a debug-trace
-//! comment. Many scanners *suppress* comment-bodied secrets on the
-//! theory that they're examples; if keyhog does this we want to
-//! know exactly how much recall it costs.
+//! `# api_key = "ghp_…"` in Python, `// AWS_SECRET="…"` in JS, `/* token=… */`
+//! in Rust, `<!-- … -->` in HTML. A non-trivial fraction of real leaks live in
+//! comments. keyhog treats comment-bodied secrets as INTENTIONAL policy: by
+//! default (`scan_comments=false`) it applies a 0.4 confidence multiplier and
+//! hard-suppresses comment matches below 0.5; `--scan-comments` opts the Comment
+//! context out of that penalty so the credential surfaces at full weight.
 //!
-//! Runner wraps every contract positive in 7 single-line + block-
-//! comment styles, asserts the credential surfaces, and reports the
-//! per-style hit rate. The rate is the moral question - comment
-//! suppression is intentional design in some scanners - but the
-//! NUMBER must not drift silently.
+//! BEHAVIOR contract, not an accuracy rate
+//! ---------------------------------------
+//! Because comment suppression is a deliberate, config-gated choice, "what
+//! fraction of comment-bodied secrets surface" is an accuracy RATE that belongs
+//! to the differential bench (`benchmarks/bench`), NOT `cargo test` (T-01). What
+//! IS a sound, rate-free TOOL-BEHAVIOR contract is the toggle itself, asserted
+//! all-or-nothing over the credential-sufficient set:
 //!
-//! Surface
-//! -------
-//! 348 contracts × ~2 positives × 7 comment styles ≈ **4 800 cases**.
+//!   1. **Monotonicity** — enabling `scan_comments` can only ADD comment
+//!      findings, never remove one. For every credential-sufficient positive in
+//!      every comment style, `default-surfaces ⟹ enabled-surfaces`. A single
+//!      counterexample is a real suppression-ordering bug.
+//!   2. **The flag is wired** — there is at least one credential-sufficient
+//!      positive that the default scanner suppresses in a comment and the
+//!      `scan_comments=true` scanner surfaces. A zero-effect flag is a dead-knob
+//!      wiring bug (CLAUDE.md WIRING / Law 11), caught here rather than shipped.
 
 mod support;
-use support::paths::detector_dir;
+use support::contracts::{
+    load_contracts, make_chunk, primaries, scanner, scanner_with, sufficiency_mask, surfaces,
+    Primary,
+};
 
 use std::collections::BTreeMap;
-use std::path::PathBuf;
 
-use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::CompiledScanner;
-use serde::Deserialize;
+use keyhog_core::config::ScanConfig;
 
-#[derive(Debug, Deserialize)]
-struct Contract {
-    #[allow(dead_code)]
-    schema_version: u32,
-    #[allow(dead_code)]
-    detector_id: String,
-    #[allow(dead_code)]
-    service: String,
-    #[allow(dead_code)]
-    severity: String,
-    #[serde(default)]
-    positive: Vec<Positive>,
-}
-
-#[derive(Debug, Deserialize)]
-struct Positive {
-    text: String,
-    credential: String,
-    #[allow(dead_code)]
-    reason: String,
-}
-
-fn contracts_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.push("tests");
-    d.push("contracts");
-    d
-}
-
-fn load_contracts() -> Vec<Contract> {
-    let dir = contracts_dir();
-    let mut out = Vec::new();
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        return out;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("toml") {
-            continue;
-        }
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let Ok(contract) = toml::from_str::<Contract>(&text) else {
-            continue;
-        };
-        out.push(contract);
-    }
-    out
-}
-
-fn scanner() -> CompiledScanner {
-    let detectors = keyhog_core::load_detectors(&detector_dir())
-        .expect("detectors directory loadable from comment runner");
-    CompiledScanner::compile(detectors).expect("scanner compile from comment runner")
-}
-
-// ── comment styles ──────────────────────────────────────────────────
+const SOURCE_TYPE: &str = "comment-embed";
 
 #[derive(Debug, Clone, Copy)]
 enum Comment {
@@ -122,102 +71,108 @@ impl Comment {
         }
     }
 
-    /// Wrap one or more text lines in the comment style. Inputs that
-    /// already contain newlines are split and each line gets the
-    /// line-comment prefix; block-comment styles wrap the whole.
     fn wrap(self, text: &str) -> String {
+        let line_prefix = |prefix: &str| {
+            text.lines()
+                .map(|l| format!("{prefix} {l}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
         match self {
-            Comment::HashLine => text
-                .lines()
-                .map(|l| format!("# {l}"))
-                .collect::<Vec<_>>()
-                .join("\n"),
-            Comment::SlashSlash => text
-                .lines()
-                .map(|l| format!("// {l}"))
-                .collect::<Vec<_>>()
-                .join("\n"),
+            Comment::HashLine => line_prefix("#"),
+            Comment::SlashSlash => line_prefix("//"),
             Comment::SlashStarBlock => format!("/* {text} */"),
             Comment::HtmlBlock => format!("<!-- {text} -->"),
-            Comment::SemiLine => text
-                .lines()
-                .map(|l| format!("; {l}"))
-                .collect::<Vec<_>>()
-                .join("\n"),
-            Comment::DashDashLine => text
-                .lines()
-                .map(|l| format!("-- {l}"))
-                .collect::<Vec<_>>()
-                .join("\n"),
-            Comment::PercentLine => text
-                .lines()
-                .map(|l| format!("% {l}"))
-                .collect::<Vec<_>>()
-                .join("\n"),
+            Comment::SemiLine => line_prefix(";"),
+            Comment::DashDashLine => line_prefix("--"),
+            Comment::PercentLine => line_prefix("%"),
         }
-    }
-}
-
-fn make_chunk(text: &str) -> Chunk {
-    Chunk {
-        data: text.into(),
-        metadata: ChunkMetadata {
-            source_type: "comment-embed".into(),
-            path: Some("source.txt".into()),
-            ..Default::default()
-        },
     }
 }
 
 #[test]
-fn every_positive_swept_through_comment_styles() {
-    let scanner = scanner();
+fn scan_comments_toggle_is_wired_and_monotone() {
+    let default_scanner = scanner();
+    let enabled_scanner = scanner_with(ScanConfig {
+        scan_comments: true,
+        ..ScanConfig::default()
+    });
+
     let contracts = load_contracts();
-    assert!(
-        !contracts.is_empty(),
-        "tests/contracts/ has no *.toml - comment runner has nothing to drive"
-    );
+    let primaries: Vec<Primary> = primaries(&contracts);
+    // Sufficiency is a property of the credential bytes, probed with the
+    // default scanner in plain (non-comment) context.
+    let sufficient = sufficiency_mask(&default_scanner, SOURCE_TYPE, &primaries);
+    let n_sufficient = sufficient.iter().filter(|b| **b).count();
 
-    let mut per_style: BTreeMap<&'static str, (usize, usize)> = BTreeMap::new();
-    let mut total_runs: usize = 0;
-    let mut total_hits: usize = 0;
+    // Per style: (default_hits, enabled_hits, gated_runs) over the
+    // credential-sufficient set — informational shape of the toggle's effect.
+    let mut per_style: BTreeMap<&'static str, (usize, usize, usize)> = BTreeMap::new();
+    let mut monotonicity_violations: Vec<String> = Vec::new();
+    let mut flag_effect_cases = 0usize;
 
-    for c in &contracts {
-        for p in &c.positive {
-            for style in Comment::ALL {
-                let text = style.wrap(&p.text);
-                scanner.clear_fragment_cache();
-                let chunk = make_chunk(&text);
-                let matches = scanner.scan(&chunk);
-                let hit = matches
-                    .iter()
-                    .any(|m| m.credential.as_ref().contains(&p.credential));
-                let bucket = per_style.entry(style.label()).or_insert((0, 0));
+    for (idx, p) in primaries.iter().enumerate() {
+        if !sufficient[idx] {
+            continue; // companion-required survival is a bench rate, not gated
+        }
+        for style in Comment::ALL {
+            let text = style.wrap(&p.text);
+            let chunk = make_chunk(&text, SOURCE_TYPE, "source.txt");
+            let default_hit = surfaces(&default_scanner, &chunk, &p.credential);
+            let enabled_hit = surfaces(&enabled_scanner, &chunk, &p.credential);
+
+            let bucket = per_style.entry(style.label()).or_insert((0, 0, 0));
+            bucket.2 += 1;
+            if default_hit {
                 bucket.0 += 1;
-                total_runs += 1;
-                if hit {
-                    bucket.1 += 1;
-                    total_hits += 1;
-                }
+            }
+            if enabled_hit {
+                bucket.1 += 1;
+            }
+
+            // (1) Monotonicity: enabling the flag must never remove a finding.
+            if default_hit && !enabled_hit {
+                monotonicity_violations.push(format!(
+                    "{detector} :: style={style} :: credential {cred:?} surfaced with \
+                     scan_comments=false but VANISHED with scan_comments=true",
+                    detector = p.detector_id,
+                    style = style.label(),
+                    cred = p.credential,
+                ));
+            }
+            // (2) Flag wired: enabling surfaces something the default suppressed.
+            if enabled_hit && !default_hit {
+                flag_effect_cases += 1;
             }
         }
     }
 
-    let mut summary = String::from("comment-embed per-style hit rate:\n");
-    for (style, (runs, hits)) in &per_style {
-        let pct = (*hits as f64 / (*runs).max(1) as f64) * 100.0;
-        summary.push_str(&format!("  {style:<17} {hits:>4}/{runs:<4} ({pct:5.1}%)\n"));
+    let mut summary = format!(
+        "comment-embed scan_comments toggle: {n_sufficient}/{} primaries fire standalone; \
+         per-style credential-sufficient hits (default → enabled), informational:\n",
+        primaries.len(),
+    );
+    for (style, (d, e, runs)) in &per_style {
+        summary.push_str(&format!("    {style:<17} {d:>4} → {e:<4} / {runs}\n"));
     }
-    let overall = (total_hits as f64 / total_runs.max(1) as f64) * 100.0;
     summary.push_str(&format!(
-        "  TOTAL {total_hits}/{total_runs} ({overall:.1}%)\n"
+        "  flag-effect cases (enabled surfaced what default suppressed): {flag_effect_cases}\n"
     ));
     eprintln!("{summary}");
 
-    let strict = std::env::var("KEYHOG_COMMENT_STRICT")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
-    if strict && overall < 70.0 {
-        panic!("comment-embed overall recall {overall:.1}% dropped below 70% floor");
-    }
+    assert!(
+        monotonicity_violations.is_empty(),
+        "scan_comments monotonicity violated ({} cases): enabling --scan-comments REMOVED a \
+         comment finding it should only ever add — a suppression-ordering bug:\n  - {}",
+        monotonicity_violations.len(),
+        monotonicity_violations.join("\n  - "),
+    );
+    assert!(
+        flag_effect_cases > 0,
+        "scan_comments had ZERO effect across the entire credential-sufficient corpus in every \
+         comment style: no credential-sufficient secret that the default scanner suppressed in a \
+         comment was surfaced by scan_comments=true. The flag is dead-wired (CLAUDE.md WIRING / \
+         Law 11) — either the config no longer reaches the Comment-context penalty, or comment \
+         context detection broke."
+    );
 }

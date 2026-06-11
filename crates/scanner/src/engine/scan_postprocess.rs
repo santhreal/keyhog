@@ -24,14 +24,21 @@ fn confirmed_prof_vecs(len: usize) -> (&'static [AtomicU64], &'static [AtomicU64
     (ns.as_slice(), runs.as_slice())
 }
 
-/// ML batch-size histogram (env-gated by `KEYHOG_PROFILE_MLBATCH=1`). Buckets the
-/// `ml_pending.len()` seen at each [`CompiledScanner::apply_ml_batch_scores`]
-/// call so we can measure how far per-(sub)chunk ML batches sit from the GPU MoE
-/// 64-candidate dispatch threshold — the data that decides whether cross-(sub)chunk
-/// batch unification is worth the recall-exactness cost. Zero-cost when unset.
+/// ML batch-size histogram. Buckets the `ml_pending.len()` seen at each
+/// [`CompiledScanner::apply_ml_batch_scores`] call so we can measure how far
+/// per-(sub)chunk ML batches sit from the GPU MoE 64-candidate dispatch threshold
+/// — the data that decides whether cross-(sub)chunk batch unification is worth
+/// the recall-exactness cost. Zero-cost when unset.
+///
+/// Gated by the UNIFIED `KEYHOG_PROFILE=1` switch (the histogram is dumped as
+/// part of [`super::profile::dump`]); the legacy `KEYHOG_PROFILE_MLBATCH=1` is
+/// still honoured so the older standalone workflow keeps recording.
 fn ml_batch_prof_enabled() -> bool {
     static EN: OnceLock<bool> = OnceLock::new();
-    *EN.get_or_init(|| std::env::var("KEYHOG_PROFILE_MLBATCH").as_deref() == Ok("1"))
+    *EN.get_or_init(|| {
+        super::profile::enabled()
+            || std::env::var("KEYHOG_PROFILE_MLBATCH").as_deref() == Ok("1")
+    })
 }
 static ML_BATCH_BUCKETS: [AtomicU64; 10] = [
     AtomicU64::new(0),
@@ -76,8 +83,9 @@ pub(crate) fn ml_batch_record(n: usize) {
     }
 }
 
-/// Print + reset the ML batch-size histogram. Called from `phase2_profile_dump`.
-pub fn ml_batch_profile_dump() {
+/// Print + reset the ML batch-size histogram. Folded into the unified profiler:
+/// called from [`super::profile::dump`] (early-returns when no data was recorded).
+pub(crate) fn ml_batch_profile_dump() {
     let calls = ML_BATCH_CALLS.swap(0, Relaxed);
     let cands = ML_BATCH_CANDIDATES.swap(0, Relaxed);
     let calls_ge64 = ML_BATCH_CALLS_GE64.swap(0, Relaxed);
@@ -572,42 +580,33 @@ impl CompiledScanner {
             return Vec::new();
         }
         let mut expanded = triggered_patterns.to_vec();
-        for (word_idx, &word) in triggered_patterns.iter().enumerate() {
-            if word == 0 {
-                continue;
+        super::trigger_bitmap::for_each_set_bit(triggered_patterns, |pat_idx| {
+            // kimi-engine audit: defensive bounds check. ac_map and
+            // same_prefix_patterns SHOULD be the same length after
+            // compilation, but if a future deserialization path
+            // restores compiled state from disk with a mismatched
+            // shape (or a bug in the compiler tears the invariant)
+            // we'd panic on the indexed access. .get() turns that
+            // into a benign skip - we lose the same-prefix expansion
+            // for this pattern rather than crashing the scan.
+            if pat_idx >= self.ac_map.len() {
+                return;
             }
-            let mut bits = word;
-            while bits != 0 {
-                let bit = bits.trailing_zeros() as usize;
-                let pat_idx = word_idx * 64 + bit;
-                if pat_idx >= self.ac_map.len() {
-                    break;
-                }
-                // kimi-engine audit: defensive bounds check. ac_map and
-                // same_prefix_patterns SHOULD be the same length after
-                // compilation, but if a future deserialization path
-                // restores compiled state from disk with a mismatched
-                // shape (or a bug in the compiler tears the invariant)
-                // we'd panic on the indexed access. .get() turns that
-                // into a benign skip - we lose the same-prefix expansion
-                // for this pattern rather than crashing the scan.
-                if let Some(siblings) = self.same_prefix_patterns.get(pat_idx) {
-                    for &other_idx in siblings {
-                        let other_idx = other_idx as usize;
-                        // Same defensive bound on the expanded write -
-                        // a stale sibling index past the bitmask end
-                        // would otherwise panic via bounds-checked
-                        // slice index. We compute the bucket up front
-                        // and silently skip out-of-range writes.
-                        let bucket = other_idx / 64;
-                        if let Some(slot) = expanded.get_mut(bucket) {
-                            *slot |= 1u64 << (other_idx % 64);
-                        }
+            if let Some(siblings) = self.same_prefix_patterns.get(pat_idx) {
+                for &other_idx in siblings {
+                    let other_idx = other_idx as usize;
+                    // Same defensive bound on the expanded write -
+                    // a stale sibling index past the bitmask end
+                    // would otherwise panic via bounds-checked
+                    // slice index. We compute the bucket up front
+                    // and silently skip out-of-range writes.
+                    let bucket = other_idx / 64;
+                    if let Some(slot) = expanded.get_mut(bucket) {
+                        *slot |= 1u64 << (other_idx % 64);
                     }
                 }
-                bits &= bits - 1; // clear lowest set bit
             }
-        }
+        });
         expanded
     }
 

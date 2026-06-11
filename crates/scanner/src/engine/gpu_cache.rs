@@ -1,26 +1,5 @@
-//! GPU matcher on-disk cache helpers and constant-pack types.
-
-/// Cached per-process GPU input constants - pre-packed LE byte streams
-/// for the four pattern-shape inputs the GpuLiteralSet kernel reads on
-/// every dispatch. Filled on first scan, borrowed thereafter.
-pub struct GpuConstPacks {
-    pub pattern_offsets: Vec<u8>,
-    pub pattern_lengths: Vec<u8>,
-    pub pattern_bytes: Vec<u8>,
-    pub pattern_count: Vec<u8>,
-}
-
-/// Cached per-process AC-kernel input constants - pre-packed LE byte
-/// streams for the four DFA-shape inputs the AC bounded-ranges kernel
-/// reads on every dispatch. Separate from `GpuConstPacks` because the
-/// AC kernel binds different fields (`dfa.transitions`,
-/// `dfa.output_offsets`, `dfa.output_records`, `pattern_lengths`).
-pub struct AcConstPacks {
-    pub transitions: Vec<u8>,
-    pub output_offsets: Vec<u8>,
-    pub output_records: Vec<u8>,
-    pub pattern_lengths: Vec<u8>,
-}
+//! On-disk cache helpers for compiled GPU matchers (the megakernel catalog
+//! cache lives at `~/.cache/keyhog/programs/` and is keyed via these helpers).
 
 /// On-disk cache for `GpuLiteralSet`. The compiled matcher is keyed by a
 /// SHA-256 of the literal set + the vyre wire version (which is bumped

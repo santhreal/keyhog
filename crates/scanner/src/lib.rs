@@ -87,6 +87,9 @@ pub mod unicode_hardening;
 /// helper they all share, so a hash change can never re-key only some caches.
 pub(crate) mod util_hash;
 
+/// Loud, recall-preserving degradation for static prefilter automata (Law 10).
+pub(crate) mod prefilter_degrade;
+
 /// SHA-256 of a credential as the raw 32 inline bytes - matching
 /// `Finding::credential_hash: [u8; 32]`. Hex encoding happens at the
 /// serde/reporter boundary (`keyhog_core::hex_encode`), keeping the pre-dedup
@@ -108,7 +111,6 @@ pub(crate) mod shared_regexes;
 
 pub use engine::decode_profile_dump;
 pub use engine::set_confirmed_suffix_gate;
-pub use engine::GpuPhase1Output;
 pub use engine::scan_inner_profile_dump;
 pub use engine::{profile_dump, profile_reset};
 pub use engine::{
@@ -206,10 +208,6 @@ pub mod testing {
     pub use crate::engine::fallback::truncate_for_prefilter;
     pub use crate::confidence::penalties::finalize_confidence;
     pub use crate::engine::boundary::scan_chunk_boundaries;
-    pub use crate::engine::gpu_postprocess::{
-        attribute_matches_to_chunks, fold_overlapping_same_pid_inplace, gpu_phase2_hits_are_dense,
-    };
-    pub use crate::engine::gpu_regex_dfa::extract_literal_core;
     pub use crate::entropy::keywords::looks_like_program_identifier;
 
     /// Internal entropy shape-classification predicates, exposed for the

@@ -1,31 +1,44 @@
-//! Multi-secret runner - multiple credentials on one line/file.
+//! Multi-secret runner — multiple credentials on one line/file.
 //!
 //! A `.env` with 8 service credentials, a CI YAML with `env:` for
 //! every service the team uses, a debug dump that prints every key
-//! the worker holds - all real shapes. A detector that fires on the
-//! first credential but misses the next two (because it stops at
-//! the first match per-line, or its span/window happened to cover
-//! only the first) silently drops 50–80% of recall on these files.
+//! the worker holds — all real shapes. A detector that fires on the
+//! first credential but misses the next two (because it stops at the
+//! first match per-line, or its span/window happened to cover only
+//! the first) silently drops 50–80% of recall on these files.
+//!
+//! BEHAVIOR contract, not an accuracy rate
+//! ---------------------------------------
+//! The gate asserts a sound PROPERTY, all-or-nothing, never a
+//! recall/precision *rate* over a corpus (those live in the
+//! differential bench):
+//!
+//!   *credential-sufficiency invariance* — if a detector fires on its
+//!   credential ALONE (a distinctive prefix/shape, no companion
+//!   context needed), then co-locating other secrets on the same
+//!   line/file CANNOT remove that match. Every such credential MUST
+//!   surface in every pack it appears in.
+//!
+//! A detector whose credential does NOT fire standalone is
+//! companion-REQUIRED: a bare UUID, or a low-entropy generic body
+//! that needs an `api`/`secret`/`credentials` anchor. Dense
+//! co-location legitimately perturbs that companion attribution —
+//! how well it survives is evasion ACCURACY owned by the bench, so
+//! those positives are recorded for visibility but never gated.
+//! (Forcing them to 100% would assert an accuracy rate in
+//! `cargo test`, the exact T-01 violation this rewrite removes.)
 //!
 //! Two scenarios this runner covers:
 //!
-//! 1. **N positives on N lines** - each contract's first positive
-//!    is concatenated with the first positive of N other contracts,
-//!    one per line. Asserts the scanner finds ALL N credentials.
-//! 2. **N positives in one paragraph** - same N positives, but
-//!    joined with `; ` separators on a single line. Asserts the
-//!    scanner finds ALL N credentials within one line.
-//!
-//! Surface
-//! -------
-//! 348 contracts × {3, 5, 10} positives-per-fixture × 2 layouts ≈
-//! **2 100 multi-secret fixtures**, each verifying every embedded
-//! credential surfaced.
+//! 1. **N positives on N lines** — each contract's first positive is
+//!    concatenated with the first positive of N other contracts, one
+//!    per line.
+//! 2. **N positives in one paragraph** — same N positives, joined
+//!    with `; ` separators on a single line.
 
 mod support;
 use support::paths::detector_dir;
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use keyhog_core::{Chunk, ChunkMetadata};
@@ -36,7 +49,6 @@ use serde::Deserialize;
 struct Contract {
     #[allow(dead_code)]
     schema_version: u32,
-    #[allow(dead_code)]
     detector_id: String,
     #[allow(dead_code)]
     service: String,
@@ -54,6 +66,14 @@ struct Positive {
     reason: String,
 }
 
+/// One contract's first positive, carrying the detector id so a miss
+/// names the exact offending detector instead of an anonymous count.
+struct Primary {
+    detector_id: String,
+    text: String,
+    credential: String,
+}
+
 fn contracts_dir() -> PathBuf {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     d.push("tests");
@@ -64,20 +84,17 @@ fn contracts_dir() -> PathBuf {
 fn load_contracts() -> Vec<Contract> {
     let dir = contracts_dir();
     let mut out = Vec::new();
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        return out;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
+    let entries = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read tests/contracts dir {}: {e}", dir.display()));
+    for entry in entries {
+        let path = entry.expect("dir entry readable").path();
         if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let Ok(contract) = toml::from_str::<Contract>(&text) else {
-            continue;
-        };
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read contract {}: {e}", path.display()));
+        let contract = toml::from_str::<Contract>(&text)
+            .unwrap_or_else(|e| panic!("parse contract {}: {e}", path.display()));
         out.push(contract);
     }
     out
@@ -125,84 +142,113 @@ impl Layout {
 const PACK_SIZES: &[usize] = &[3, 5, 10];
 const LAYOUTS: &[Layout] = &[Layout::Lines, Layout::Paragraph];
 
+fn surfaces(scanner: &CompiledScanner, text: &str, credential: &str) -> bool {
+    scanner.clear_fragment_cache();
+    let matches = scanner.scan(&make_chunk(text));
+    matches
+        .iter()
+        .any(|m| m.credential.as_ref().contains(credential))
+}
+
 #[test]
-fn n_secrets_in_one_fixture_all_fire() {
+fn credential_sufficient_secrets_survive_colocation() {
     let scanner = scanner();
     let contracts = load_contracts();
     assert!(
         !contracts.is_empty(),
-        "tests/contracts/ has no *.toml - multi-secret runner has nothing to drive"
+        "tests/contracts/ has no *.toml — multi-secret runner has nothing to drive"
     );
 
-    // Pre-extract the first positive of every contract that has at
-    // least one. Skip contracts with no positives.
-    let primaries: Vec<&Positive> = contracts
+    // First positive of every contract that has one, carrying its
+    // detector id so a miss is attributable.
+    let primaries: Vec<Primary> = contracts
         .iter()
-        .filter_map(|c| c.positive.first())
+        .filter_map(|c| {
+            c.positive.first().map(|p| Primary {
+                detector_id: c.detector_id.clone(),
+                text: p.text.clone(),
+                credential: p.credential.clone(),
+            })
+        })
         .collect();
 
-    // Build packs of N positives, walking the corpus in chunks so
-    // every primary is covered once at every (size, layout). Total
-    // packs = primaries.len() / pack_size (rounded down) per
-    // (size, layout).
-    let mut per_combo: BTreeMap<(usize, &'static str), (usize, usize)> = BTreeMap::new();
-    let mut total_fixtures: usize = 0;
-    let mut total_credential_assertions: usize = 0;
-    let mut total_hits: usize = 0;
+    // Partition once: does each credential fire on its own (no
+    // companion context)? Only the credential-sufficient set is gated.
+    let credential_sufficient: Vec<bool> = primaries
+        .iter()
+        .map(|p| surfaces(&scanner, &p.credential, &p.credential))
+        .collect();
+    let n_sufficient = credential_sufficient.iter().filter(|b| **b).count();
+
+    let mut gated_assertions: usize = 0;
+    let mut gated_hits: usize = 0;
+    let mut companion_runs: usize = 0;
+    let mut companion_hits: usize = 0;
+    let mut violations: Vec<String> = Vec::new();
 
     for &pack_size in PACK_SIZES {
         for layout in LAYOUTS {
-            for chunk_window in primaries.chunks(pack_size) {
-                if chunk_window.len() != pack_size {
+            for (wi, window) in primaries.chunks(pack_size).enumerate() {
+                if window.len() != pack_size {
                     continue; // skip the partial tail; keeps the size honest
                 }
-                let texts: Vec<String> = chunk_window.iter().map(|p| p.text.clone()).collect();
+                let texts: Vec<String> = window.iter().map(|p| p.text.clone()).collect();
                 let fixture = layout.join(&texts);
                 scanner.clear_fragment_cache();
-                let chunk_obj = make_chunk(&fixture);
-                let matches = scanner.scan(&chunk_obj);
-                total_fixtures += 1;
+                let matches = scanner.scan(&make_chunk(&fixture));
 
-                let mut fixture_hits = 0;
-                for p in chunk_window {
-                    total_credential_assertions += 1;
+                let base = wi * pack_size;
+                for (offset, p) in window.iter().enumerate() {
                     let hit = matches
                         .iter()
                         .any(|m| m.credential.as_ref().contains(&p.credential));
-                    if hit {
-                        fixture_hits += 1;
-                        total_hits += 1;
+                    if credential_sufficient[base + offset] {
+                        gated_assertions += 1;
+                        if hit {
+                            gated_hits += 1;
+                        } else {
+                            let pack: Vec<&str> =
+                                window.iter().map(|q| q.detector_id.as_str()).collect();
+                            violations.push(format!(
+                                "{detector} :: size={pack_size} layout={layout} :: \
+                                 standalone-firing credential {cred:?} DROPPED when \
+                                 co-located; pack={pack:?}",
+                                detector = p.detector_id,
+                                layout = layout.label(),
+                                cred = p.credential,
+                            ));
+                        }
+                    } else {
+                        companion_runs += 1;
+                        if hit {
+                            companion_hits += 1;
+                        }
                     }
                 }
-                let bucket = per_combo
-                    .entry((pack_size, layout.label()))
-                    .or_insert((0, 0));
-                bucket.0 += pack_size;
-                bucket.1 += fixture_hits;
             }
         }
     }
 
-    let mut summary =
-        String::from("multi-secret per (pack_size × layout) per-credential hit rate:\n");
-    for ((size, layout), (asserts, hits)) in &per_combo {
-        let pct = (*hits as f64 / (*asserts).max(1) as f64) * 100.0;
-        summary.push_str(&format!(
-            "  size={size:>2} layout={layout:<10}  {hits:>5}/{asserts:<5} \
-             ({pct:5.1}%)\n"
-        ));
-    }
-    let overall = (total_hits as f64 / total_credential_assertions.max(1) as f64) * 100.0;
-    summary.push_str(&format!(
-        "  TOTAL {total_hits}/{total_credential_assertions} ({overall:.1}%) \
-         across {total_fixtures} fixtures\n"
-    ));
-    eprintln!("{summary}");
+    let companion_rate = if companion_runs > 0 {
+        (companion_hits as f64 / companion_runs as f64) * 100.0
+    } else {
+        100.0
+    };
+    eprintln!(
+        "multi-secret: {n_sufficient}/{} primaries fire standalone; gated co-location \
+         recall {gated_hits}/{gated_assertions} (must be 100%); companion-required \
+         co-location {companion_hits}/{companion_runs} = {companion_rate:.1}% (informational)",
+        primaries.len(),
+    );
 
-    let strict = std::env::var("KEYHOG_MULTI_STRICT")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
-    if strict && overall < 80.0 {
-        panic!("multi-secret overall hit-rate {overall:.1}% dropped below 80% floor");
-    }
+    assert!(
+        violations.is_empty(),
+        "multi-secret credential-sufficiency invariance violated ({} cases): a credential \
+         that fires standalone was dropped when other secrets were co-located. This is a \
+         multi-match recall bug (the engine stopped at an earlier match or its window \
+         missed a later secret) — NOT a fixture artifact, because the credential needs no \
+         companion context:\n  - {}",
+        violations.len(),
+        violations.join("\n  - "),
+    );
 }

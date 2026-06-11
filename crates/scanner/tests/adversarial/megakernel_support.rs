@@ -1,7 +1,4 @@
-//! Helpers for megakernel ↔ CPU parity adversarial samples (KH-GAP-043 extension).
-
-#[path = "../support/mod.rs"]
-mod support;
+//! Helpers for megakernel ↔ CPU parity adversarial samples.
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
@@ -59,16 +56,9 @@ pub fn assert_cpu_megakernel_parity(text: &str, path: &str, label: &str) {
         "{label}: CPU baseline must fire on adversarial sample (recall oracle)"
     );
 
-    if support::megakernel_waiver::megakernel_parity_waiver_active()
-        && support::megakernel_waiver::megakernel_env_unwired_in_engine()
-    {
-        // KH-GAP-043: megakernel parity deferred while dispatch is unwired (waiver expires 2026-08-01).
-        return;
-    }
-
-    unsafe { std::env::set_var("KEYHOG_USE_MEGAKERNEL", "1") };
+    // The megakernel is the single on-GPU detection path; selecting the GPU
+    // backend routes through it.
     let mega = credential_keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::Gpu));
-    unsafe { std::env::remove_var("KEYHOG_USE_MEGAKERNEL") };
 
     if mega.is_empty() {
         // No GPU adapter in this environment — CPU recall oracle above is the gate.

@@ -19,22 +19,12 @@
 //! validated the GPU path.
 
 mod support;
+use support::contracts::test_chunk as make_chunk;
 use support::paths::detector_dir;
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::collections::BTreeSet;
-fn make_chunk(text: &str, path: &str) -> Chunk {
-    Chunk {
-        data: text.into(),
-        metadata: ChunkMetadata {
-            source_type: "test".into(),
-            path: Some(path.into()),
-            base_offset: 0,
-            ..Default::default()
-        },
-    }
-}
 
 type FindingKey = (String, String, usize);
 

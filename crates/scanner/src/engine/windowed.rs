@@ -76,6 +76,12 @@ impl CompiledScanner {
     /// chunk and running whichever seeded extractor (triggered bitmap, GPU pid
     /// hits, …) the caller has. Post-processing (decode recursion, cross-chunk
     /// reassembly) stays at the caller, applied uniformly to either branch.
+    //
+    // `any(simd, gpu)`: the only caller is `scan_coalesced_phase2`, the shared
+    // tail of the coalesced (`simd`) and megakernel (`gpu`) producers. The
+    // per-file and decode paths call `scan_windowed` directly, so the wrapper
+    // itself is unused in a no-`simd`-no-`gpu` build — gated to match (Law 11).
+    #[cfg(any(feature = "simd", feature = "gpu"))]
     pub(crate) fn scan_chunk_or_window<F>(
         &self,
         chunk: &Chunk,

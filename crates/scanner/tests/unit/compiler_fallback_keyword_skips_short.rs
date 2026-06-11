@@ -10,6 +10,7 @@ fn compiler_fallback_keyword_skips_short() {
         regex: LazyRegex::detector("key=[a-z0-9]{16}"),
         group: None,
         client_safe: false,
+        homoglyph_variant: false,
     };
     let fallback = vec![(pattern, vec!["id".into(), "token".into()])];
     let (ac, mapping) = build_fallback_keyword_ac(&fallback);

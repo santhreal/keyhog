@@ -1,4 +1,4 @@
-use keyhog_core::{ScanConfig, MAX_DECODE_DEPTH_LIMIT};
+use keyhog_core::ScanConfig;
 
 #[test]
 fn default_config_valid() {
@@ -41,29 +41,6 @@ fn default_config_valid() {
         "default max_matches_per_chunk too low: {}",
         config.max_matches_per_chunk
     );
-}
-
-#[test]
-fn fast_config_valid() {
-    let config = ScanConfig::fast();
-    assert!(config.validate().is_ok());
-    assert_eq!(config.max_decode_depth, 2);
-    assert!(!config.entropy_enabled);
-}
-
-#[test]
-fn thorough_config_valid() {
-    let config = ScanConfig::thorough();
-    assert!(config.validate().is_ok());
-    assert_eq!(config.max_decode_depth, 8);
-    assert!(config.entropy_in_source_files);
-}
-
-#[test]
-fn paranoid_config_valid() {
-    let config = ScanConfig::paranoid();
-    assert!(config.validate().is_ok());
-    assert_eq!(config.max_decode_depth, MAX_DECODE_DEPTH_LIMIT);
 }
 
 #[test]

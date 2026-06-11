@@ -79,32 +79,20 @@ pub fn is_encoded_binary(candidate: &str) -> bool {
     use std::cell::RefCell;
     use std::collections::HashMap;
 
-    const MAX_CACHE_ENTRIES: usize = 4096;
-
     thread_local! {
         static CACHE: RefCell<HashMap<u64, bool>> = RefCell::new(HashMap::with_capacity(256));
     }
 
-    // FNV-1a over the candidate bytes - the same hash the entropy / ML-score
-    // caches key on.
-    let mut hash: u64 = 0xcbf29ce484222325;
-    for &byte in candidate.as_bytes() {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-
-    CACHE.with(|cache| {
-        if let Some(&verdict) = cache.borrow().get(&hash) {
-            return verdict;
-        }
-        let verdict = analyze(candidate).is_binary_payload();
-        let mut cache = cache.borrow_mut();
-        if cache.len() >= MAX_CACHE_ENTRIES {
-            cache.clear();
-        }
-        cache.insert(hash, verdict);
-        verdict
-    })
+    // FNV-1a content key + bounded thread-local memoization, both from the one
+    // `util_hash` home (MC-12) so this cache keys identically to the entropy /
+    // ML-score / sibling decode-structure caches.
+    let key = crate::util_hash::hash_fast(candidate.as_bytes());
+    crate::util_hash::memoize_by_hash(
+        &CACHE,
+        key,
+        crate::util_hash::DEFAULT_MAX_CACHE_ENTRIES,
+        || analyze(candidate).is_binary_payload(),
+    )
 }
 
 /// Placeholder words that mark a credential as a documentation sample, not a
@@ -148,13 +136,13 @@ pub const PLACEHOLDER_WORDS: &[&[u8]] = &[
 ///      reach but placeholders / English words never do at the band floor.
 ///
 /// `min_diversity == 0` disables the diversity admit (only punctuation /
-/// padding then qualify) - that is how a caller wanting the stricter
-/// "structural punctuation required" behavior (the entropy path's intent)
-/// opts out of the diversity wedge while still sharing this band + alphabet
-/// skeleton. The entropy path additionally requires BOTH `+` and `/`; it
-/// composes that tightening on top of this gate in its own wrapper (it owns
-/// that file boundary), calling here for the band + alphabet + padding
-/// skeleton.
+/// padding then qualify). The two penalty-path callers that share THIS gate are
+/// [`looks_like_uniform_base64_blob`] (44..=600, diversity 32) and
+/// `suppression::shape_gates::looks_like_standard_base64_blob` (40..=80,
+/// diversity 32). The *emit-drop* fallback paths need a stricter admit (BOTH
+/// `+` AND `/`), so they share the separate [`is_byte_distribution_base64_blob`]
+/// skeleton instead of this one — see that function for why the two admit
+/// policies cannot be one over-parameterised gate.
 #[must_use]
 pub fn is_random_base64_blob(
     value: &str,
@@ -225,6 +213,53 @@ pub fn looks_like_uniform_base64_blob(value: &str) -> bool {
     is_random_base64_blob(value, 44, 600, 32)
 }
 
+/// Stricter sibling of [`is_random_base64_blob`] for the **emit-drop** fallback
+/// paths (`engine::fallback_entropy_helpers::entropy_path_looks_like_random_base64_blob`
+/// and `engine::fallback_generic::generic_path_looks_like_random_base64_blob`).
+/// Same band + padding/mult-4 + standard-base64 alphabet skeleton, but the admit
+/// clause demands a genuine **byte-distribution** signal: BOTH `+` AND `/`
+/// present, or trailing `=` padding with at least one of them.
+///
+/// Why a separate canonical instead of a parameter on [`is_random_base64_blob`]:
+/// the two have *mutually exclusive* admit policies. `is_random_base64_blob`
+/// powers the *penalty* path and admits on `+`-OR-`/` OR padding OR a high
+/// alphanumeric-diversity wedge — tuned to slam pure-alphanumeric blobs hard.
+/// This gate powers the *emit drop* and must NOT bite restricted-secret-key
+/// positives that carry at most one punctuation mark, so it has no diversity
+/// admit and requires BOTH punctuation marks. Real provider tokens are pure
+/// base62 (no `+/`, no padding) because their length is `prefix + fixed body`,
+/// never base64-of-N-random-bytes; a uniform random byte payload almost always
+/// produces both `+` and `/`. Requiring both is exactly what separates the
+/// protobuf-of-random-bytes decoy class from single-punct positives. Folding
+/// these two would re-introduce the divergence MC-12 exists to remove, so the
+/// shared *skeleton* (this function) is the single source of truth and each
+/// caller composes its own band (and the generic path its entropy cutoff) on top.
+#[must_use]
+pub fn is_byte_distribution_base64_blob(value: &str, min_len: usize, max_len: usize) -> bool {
+    if !(min_len..=max_len).contains(&value.len()) {
+        return false;
+    }
+    let has_padding = value.ends_with("==") || value.ends_with('=');
+    let length_mult_4 = value.len().is_multiple_of(4);
+    if !has_padding && !length_mult_4 {
+        return false;
+    }
+    let mut has_plus = false;
+    let mut has_slash = false;
+    for b in value.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'=' => {}
+            b'+' => has_plus = true,
+            b'/' => has_slash = true,
+            // Any other byte (incl. UTF-8 continuation bytes of a non-ASCII
+            // char) rejects, identical to the prior `chars()` loops.
+            _ => return false,
+        }
+    }
+    // Byte-distribution admit: both punctuation marks, or padded with one.
+    (has_plus && has_slash) || (has_padding && (has_plus || has_slash))
+}
+
 /// True when `value` base64-decodes to bytes that are themselves all in
 /// the base64 alphabet (double-encoded base64). k8s `data:` fields wrap
 /// their values in another base64 layer; the inner decoded bytes are the
@@ -243,30 +278,19 @@ pub fn decoded_is_base64_blob(candidate: &str) -> bool {
     use std::cell::RefCell;
     use std::collections::HashMap;
 
-    const MAX_CACHE_ENTRIES: usize = 4096;
-
     thread_local! {
         static CACHE: RefCell<HashMap<u64, bool>> = RefCell::new(HashMap::with_capacity(256));
     }
 
-    let mut hash: u64 = 0xcbf29ce484222325;
-    for &byte in candidate.as_bytes() {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-
-    CACHE.with(|cache| {
-        if let Some(&verdict) = cache.borrow().get(&hash) {
-            return verdict;
-        }
-        let verdict = compute_decoded_is_base64_blob(candidate);
-        let mut cache = cache.borrow_mut();
-        if cache.len() >= MAX_CACHE_ENTRIES {
-            cache.clear();
-        }
-        cache.insert(hash, verdict);
-        verdict
-    })
+    // Shared FNV-1a key + bounded memoization (MC-12), keyed identically to the
+    // sibling decode-structure caches.
+    let key = crate::util_hash::hash_fast(candidate.as_bytes());
+    crate::util_hash::memoize_by_hash(
+        &CACHE,
+        key,
+        crate::util_hash::DEFAULT_MAX_CACHE_ENTRIES,
+        || compute_decoded_is_base64_blob(candidate),
+    )
 }
 
 fn compute_decoded_is_base64_blob(candidate: &str) -> bool {
@@ -299,32 +323,19 @@ pub fn decoded_contains_placeholder(candidate: &str) -> bool {
     use std::cell::RefCell;
     use std::collections::HashMap;
 
-    const MAX_CACHE_ENTRIES: usize = 4096;
-
     thread_local! {
         static CACHE: RefCell<HashMap<u64, bool>> = RefCell::new(HashMap::with_capacity(256));
     }
 
-    // FNV-1a over the candidate bytes - keyed identically to is_encoded_binary
-    // so the two caches cost a single hash per credential.
-    let mut hash: u64 = 0xcbf29ce484222325;
-    for &byte in candidate.as_bytes() {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-
-    CACHE.with(|cache| {
-        if let Some(&verdict) = cache.borrow().get(&hash) {
-            return verdict;
-        }
-        let verdict = compute_decoded_contains_placeholder(candidate);
-        let mut cache = cache.borrow_mut();
-        if cache.len() >= MAX_CACHE_ENTRIES {
-            cache.clear();
-        }
-        cache.insert(hash, verdict);
-        verdict
-    })
+    // Shared FNV-1a key + bounded memoization (MC-12), keyed identically to
+    // is_encoded_binary so the two caches cost a single hash per credential.
+    let key = crate::util_hash::hash_fast(candidate.as_bytes());
+    crate::util_hash::memoize_by_hash(
+        &CACHE,
+        key,
+        crate::util_hash::DEFAULT_MAX_CACHE_ENTRIES,
+        || compute_decoded_contains_placeholder(candidate),
+    )
 }
 
 fn compute_decoded_contains_placeholder(candidate: &str) -> bool {

@@ -158,12 +158,35 @@ impl ScanOrchestrator {
             }
         }
 
+        // Low-RAM host adaptation: shrink the decode window and per-chunk match
+        // cap on machines with < 4 GiB RAM so a deep-decode scan can't OOM. This
+        // DIVERGES from the configured/documented values, so per Law 10 it is
+        // surfaced LOUDLY (once per process) rather than silently applied — the
+        // operator must be able to see why their effective decode window is
+        // smaller than what they set. The capped values are also what the
+        // `KEYHOG_PRINT_EFFECTIVE_CONFIG=1` oracle prints (this mutation lands in
+        // `effective_config` before it is handed to the orchestrator), so "what
+        // runs" stays a single auditable answer.
         if let Some(mem_mb) = hw.total_memory_mb {
             if mem_mb < 4096 {
-                effective_config.scanner.max_matches_per_chunk =
-                    effective_config.scanner.max_matches_per_chunk.min(500);
-                effective_config.scanner.max_decode_bytes =
-                    effective_config.scanner.max_decode_bytes.min(256 * 1024);
+                let prev_matches = effective_config.scanner.max_matches_per_chunk;
+                let prev_decode = effective_config.scanner.max_decode_bytes;
+                let new_matches = prev_matches.min(500);
+                let new_decode = prev_decode.min(256 * 1024);
+                effective_config.scanner.max_matches_per_chunk = new_matches;
+                effective_config.scanner.max_decode_bytes = new_decode;
+                if new_matches != prev_matches || new_decode != prev_decode {
+                    static LOW_RAM_CAP_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+                    if LOW_RAM_CAP_WARNED.set(()).is_ok() {
+                        eprintln!(
+                            "keyhog: low-RAM host ({mem_mb} MiB < 4096) — capping scan limits to \
+                             avoid OOM: max_decode_bytes {prev_decode} → {new_decode}, \
+                             max_matches_per_chunk {prev_matches} → {new_matches}. Set these \
+                             explicitly in .keyhog.toml or via flags to override; run with \
+                             KEYHOG_PRINT_EFFECTIVE_CONFIG=1 to see the full resolved config."
+                        );
+                    }
+                }
             }
         }
         effective_config.min_confidence = effective_config.scanner.min_confidence;
@@ -304,6 +327,9 @@ impl ScanOrchestrator {
 }
 
 fn gpu_init_policy_for_args(args: &ScanArgs) -> GpuInitPolicy {
+    // GPU init (which acquires the wgpu backend the megakernel needs) follows the
+    // selected backend: an explicit `--backend gpu`/`KEYHOG_BACKEND=gpu`, or the
+    // auto-routing policy below.
     if let Some(policy) = backend_name_gpu_policy(args.backend.as_deref()) {
         return policy;
     }

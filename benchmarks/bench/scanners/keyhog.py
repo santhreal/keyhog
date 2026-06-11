@@ -13,8 +13,10 @@ Maps a :class:`ScannerConfig` to keyhog CLI flags:
 * **mode** -> ``--fast`` for ``fast``, full pipeline otherwise.
 
 Scoring parity flags are always present:
-``--format json --show-secrets --no-suppress-test-fixtures``. Findings are
-written to ``--output`` so GNU time's RSS report never crosses the JSON.
+``--format json --show-secrets --no-suppress-test-fixtures --no-config``.
+``--no-config`` makes the run hermetic — the compiled shipped defaults are
+scored, never a stray ``.keyhog.toml`` on a corpus ancestor (MC-07). Findings
+are written to ``--output`` so GNU time's RSS report never crosses the JSON.
 
 The default config (``variants()[0]``) is ``simd-nocache-nodaemon-full`` —
 the deterministic build the README leaderboard cites.
@@ -185,6 +187,12 @@ class KeyhogScanner(Scanner):
         cmd = [self.binary, "scan",
                "--format", "json", "--show-secrets",
                "--no-suppress-test-fixtures",
+               # Hermetic config: the leaderboard scores the COMPILED shipped
+               # defaults, never a stray `.keyhog.toml` that happens to sit on
+               # an ancestor of the corpus (which lives inside the repo tree).
+               # `--no-config` skips the walk-up discovery so the benched config
+               # is the shipped default by design, not by accident (MC-07).
+               "--no-config",
                "--backend", cfg.backend,
                "--output", str(output)]
         cmd += ["--daemon"] if cfg.daemon == "on" else ["--no-daemon"]

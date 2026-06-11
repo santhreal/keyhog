@@ -1,4 +1,4 @@
-//! Unicode-confusable runner - homoglyph evasion coverage.
+//! Unicode-confusable runner — homoglyph evasion coverage.
 //!
 //! A real adversary who wants their credential leak to slip past a
 //! secret scanner can replace ASCII characters in the surrounding
@@ -10,23 +10,24 @@
 //! `аpі_kеу` and any companion-anchored detector misses.
 //!
 //! This runner mutates ONLY the companion-context portion of every
-//! contract positive - never the credential itself - and asserts
-//! the detector still surfaces the credential.
+//! contract positive — never the credential itself.
 //!
-//! Result is one of two outcomes:
+//! BEHAVIOR contract, not an accuracy rate
+//! ---------------------------------------
+//! The gate asserts a sound PROPERTY, all-or-nothing, never a
+//! recall/precision *rate* over the corpus:
 //!
-//! 1. Detector fires on the credential alone (no companion
-//!    requirement). Recall stays at 100% - confirms the
-//!    detector is shape-robust.
-//! 2. Detector requires companion context and the homoglyph
-//!    swap breaks it. We log the per-detector miss so the
-//!    contributor can decide whether to add Unicode normalization
-//!    to the companion-detection pre-pass.
+//!   *credential-sufficiency invariance* — if a detector fires on the
+//!   credential ALONE (it does not need the companion context), then
+//!   homoglyphing the companion CANNOT break it at any swap density.
+//!   Every such positive MUST surface its credential at every density.
 //!
-//! Surface
-//! -------
-//! 348 contracts × ~2 positives × 4 confusable density levels
-//! ≈ **2 800 cases**.
+//! Positives whose detector REQUIRES companion context (the credential
+//! alone does not fire) are a different question: how well unicode
+//! normalization *recovers* a homoglyphed anchor is genuine evasion
+//! ACCURACY, measured by the differential bench — it is recorded here
+//! for visibility but never gated, because forcing it to 100% would be
+//! asserting an accuracy rate in `cargo test` (T-01).
 
 mod support;
 use support::paths::detector_dir;
@@ -42,7 +43,6 @@ use serde::Deserialize;
 struct Contract {
     #[allow(dead_code)]
     schema_version: u32,
-    #[allow(dead_code)]
     detector_id: String,
     #[allow(dead_code)]
     service: String,
@@ -70,20 +70,17 @@ fn contracts_dir() -> PathBuf {
 fn load_contracts() -> Vec<Contract> {
     let dir = contracts_dir();
     let mut out = Vec::new();
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        return out;
-    };
-    for entry in entries.flatten() {
-        let path = entry.path();
+    let entries = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read tests/contracts dir {}: {e}", dir.display()));
+    for entry in entries {
+        let path = entry.expect("dir entry readable").path();
         if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let Ok(contract) = toml::from_str::<Contract>(&text) else {
-            continue;
-        };
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read contract {}: {e}", path.display()));
+        let contract = toml::from_str::<Contract>(&text)
+            .unwrap_or_else(|e| panic!("parse contract {}: {e}", path.display()));
         out.push(contract);
     }
     out
@@ -103,7 +100,7 @@ fn scanner() -> CompiledScanner {
 /// auth/bearer/access).
 fn confusable_for(c: char) -> Option<char> {
     Some(match c {
-        // Cyrillic look-alikes - the canonical attack class.
+        // Cyrillic look-alikes — the canonical attack class.
         'a' => '\u{0430}',
         'c' => '\u{0441}',
         'e' => '\u{0435}',
@@ -143,7 +140,7 @@ fn apply_confusable(s: &str, swap_every: usize) -> String {
 }
 
 /// Apply confusable swaps to only the companion-context portion of
-/// the positive text - never the credential bytes. Locates the
+/// the positive text — never the credential bytes. Locates the
 /// credential by `find` and swaps everything BEFORE / AFTER.
 fn swap_companion(text: &str, credential: &str, swap_every: usize) -> String {
     let Some(pos) = text.find(credential) else {
@@ -165,75 +162,132 @@ fn make_chunk(text: &str) -> Chunk {
     }
 }
 
-const SWAP_DENSITIES: &[(usize, &str)] = &[
-    // (swap_every, label) - every Nth char gets confused.
-    (0, "none"),       // control - should match contracts_runner
-    (1, "every-char"), // strongest evasion: swap every confusable-eligible char
-    (2, "every-2nd"),  // every other char swapped
-    (4, "every-4th"),  // light dusting
-];
+fn surfaces(scanner: &CompiledScanner, text: &str, credential: &str) -> bool {
+    scanner.clear_fragment_cache();
+    let matches = scanner.scan(&make_chunk(text));
+    matches
+        .iter()
+        .any(|m| m.credential.as_ref().contains(credential))
+}
 
+/// (swap_every, label) — every Nth confusable-eligible char swapped.
+/// `0` is the no-swap control. `1` is the strongest evasion.
+const SWAP_DENSITIES: &[(usize, &str)] = &[(1, "every-char"), (2, "every-2nd"), (4, "every-4th")];
+
+/// BEHAVIOR gate: a detector that fires on the credential ALONE must
+/// remain swap-invariant — homoglyphing companion context it does not
+/// use cannot drop it. All-or-nothing, no rate. Companion-required
+/// positives are recorded but not gated (evasion accuracy → bench).
 #[test]
-fn every_positive_swept_through_unicode_confusables() {
+fn credential_sufficient_detectors_are_swap_invariant() {
     let scanner = scanner();
     let contracts = load_contracts();
     assert!(
         !contracts.is_empty(),
-        "tests/contracts/ has no *.toml - unicode runner has nothing to drive"
+        "tests/contracts/ has no *.toml — unicode runner has nothing to drive"
     );
 
-    let mut per_density: BTreeMap<&'static str, (usize, usize)> = BTreeMap::new();
+    let mut credential_sufficient = 0usize;
+    let mut companion_required = 0usize;
+    let mut companion_recovered = 0usize; // recovered via normalization despite swap
+    let mut companion_runs = 0usize;
+    let mut violations: Vec<String> = Vec::new();
 
     for c in &contracts {
         for p in &c.positive {
-            for (n, label) in SWAP_DENSITIES {
-                let text = swap_companion(&p.text, &p.credential, *n);
-                scanner.clear_fragment_cache();
-                let chunk = make_chunk(&text);
-                let matches = scanner.scan(&chunk);
-                let hit = matches
-                    .iter()
-                    .any(|m| m.credential.as_ref().contains(&p.credential));
-                let bucket = per_density.entry(label).or_insert((0, 0));
-                bucket.0 += 1;
-                if hit {
-                    bucket.1 += 1;
+            // Does the credential surface on its own, with no companion?
+            let credential_only = surfaces(&scanner, &p.credential, &p.credential);
+
+            if credential_only {
+                credential_sufficient += 1;
+                for (n, label) in SWAP_DENSITIES {
+                    let text = swap_companion(&p.text, &p.credential, *n);
+                    if !surfaces(&scanner, &text, &p.credential) {
+                        violations.push(format!(
+                            "{detector}: credential fires standalone but was DROPPED at \
+                             swap={label} (homoglyphing unused companion context broke it). \
+                             credential={cred:?}",
+                            detector = c.detector_id,
+                            cred = p.credential,
+                        ));
+                    }
+                }
+            } else {
+                companion_required += 1;
+                for (n, _label) in SWAP_DENSITIES {
+                    companion_runs += 1;
+                    let text = swap_companion(&p.text, &p.credential, *n);
+                    if surfaces(&scanner, &text, &p.credential) {
+                        companion_recovered += 1;
+                    }
                 }
             }
         }
     }
 
-    let mut summary = String::from("unicode-confusable per-density recall:\n");
-    for (density, (runs, hits)) in &per_density {
-        let pct = (*hits as f64 / (*runs).max(1) as f64) * 100.0;
-        summary.push_str(&format!(
-            "  swap={density:<11}  {hits:>4}/{runs:<4} ({pct:5.1}%)\n"
-        ));
-    }
-    eprintln!("{summary}");
-
-    // The 'none' density is the control - it MUST hit 100% (it's
-    // identical to the contracts_runner positive path). If this
-    // falls below 99%, the runner itself is broken.
-    let none_runs_hits = per_density.get("none").copied().unwrap_or((0, 0));
-    let none_pct = (none_runs_hits.1 as f64 / none_runs_hits.0.max(1) as f64) * 100.0;
-    assert!(
-        none_pct >= 99.0,
-        "unicode-confusable control (no swap) dropped below 99%: {none_pct:.1}% - \
-         runner is broken or contracts changed"
+    // Informational only — the companion-recovery rate is evasion
+    // ACCURACY (how well normalization rescues a homoglyphed anchor),
+    // owned by the differential bench, never a cargo-test gate.
+    let recovery = if companion_runs > 0 {
+        (companion_recovered as f64 / companion_runs as f64) * 100.0
+    } else {
+        100.0
+    };
+    eprintln!(
+        "unicode-confusable: {credential_sufficient} credential-sufficient positives \
+         (gated swap-invariant), {companion_required} companion-required positives \
+         (normalization recovered {companion_recovered}/{companion_runs} = {recovery:.1}%, \
+         informational)"
     );
 
-    let strict = std::env::var("KEYHOG_UNICODE_STRICT")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
-    if strict {
-        let every_char = per_density.get("every-char").copied().unwrap_or((0, 0));
-        let pct = (every_char.1 as f64 / every_char.0.max(1) as f64) * 100.0;
-        if pct < 30.0 {
-            panic!(
-                "every-char unicode confusable recall {pct:.1}% dropped below 30% \
-                 floor - detector companion-context heuristic regressed"
+    assert!(
+        violations.is_empty(),
+        "unicode credential-sufficiency invariance violated ({} cases): a detector that \
+         fires on the bare credential must not be broken by homoglyphing companion \
+         context it does not depend on:\n  - {}",
+        violations.len(),
+        violations.join("\n  - "),
+    );
+}
+
+/// Control: the no-swap path must reproduce the contract-runner
+/// positive exactly. If this drops, the runner harness (not the
+/// engine) is broken.
+#[test]
+fn no_swap_control_matches_contract_positives() {
+    let scanner = scanner();
+    let contracts = load_contracts();
+
+    let mut per_outcome: BTreeMap<&'static str, usize> = BTreeMap::new();
+    let mut misses: Vec<String> = Vec::new();
+    let mut total = 0usize;
+
+    for c in &contracts {
+        for p in &c.positive {
+            total += 1;
+            // density 0 == identical bytes to the contract positive.
+            let text = swap_companion(&p.text, &p.credential, 0);
+            assert_eq!(
+                text, p.text,
+                "swap_every=0 must be a byte-identical no-op for {}",
+                c.detector_id
             );
+            if surfaces(&scanner, &text, &p.credential) {
+                *per_outcome.entry("hit").or_default() += 1;
+            } else {
+                *per_outcome.entry("miss").or_default() += 1;
+                misses.push(format!("{}: {:?}", c.detector_id, p.credential));
+            }
         }
     }
+
+    let hits = per_outcome.get("hit").copied().unwrap_or(0);
+    eprintln!("unicode no-swap control: {hits}/{total} contract positives surfaced");
+    assert!(
+        misses.is_empty(),
+        "no-swap control dropped {} contract positive(s) — the runner is mutating bytes it \
+         must not, or the contract corpus changed:\n  - {}",
+        misses.len(),
+        misses.join("\n  - "),
+    );
 }

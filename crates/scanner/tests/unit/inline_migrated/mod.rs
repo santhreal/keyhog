@@ -11,8 +11,6 @@ mod entropy_keywords_inline;
 mod entropy_scanner_inline;
 mod fragment_cache_inline;
 mod gpu_inline;
-mod gpu_postprocess_inline;
-mod gpu_regex_dfa_inline;
 mod hw_probe_inline;
 mod jwt_inline;
 mod parsers_inline;

@@ -12,7 +12,7 @@
 //! falls through to in-process and the `--daemon` flag is treated as
 //! advisory in those cases.
 
-use crate::args::ScanArgs;
+use crate::args::{DaemonMode, ScanArgs};
 // Daemon module is unix-only - Windows has no `tokio::net::UnixListener`
 // or `std::os::unix::net::UnixStream`, so the whole `crate::daemon`
 // subtree is `#[cfg(unix)]`. See `lib.rs` for the rationale. On
@@ -55,11 +55,11 @@ pub async fn run(args: ScanArgs) -> Result<ExitCode> {
     // they didn't, fall straight through to the orchestrator.
     #[cfg(not(unix))]
     {
-        if args.daemon {
+        if args.daemon_mode() == DaemonMode::On {
             bail!(
-                "`--daemon` is a unix-only flag (the daemon serves scans \
+                "`--daemon=on` is a unix-only flag (the daemon serves scans \
                  over a Unix-domain socket). Drop the flag to run \
-                 in-process, or pass `--no-daemon` to be explicit."
+                 in-process, or pass `--daemon=off` to be explicit."
             );
         }
         let orchestrator = ScanOrchestrator::new(args)?;
@@ -159,9 +159,11 @@ impl EffectivePolicy {
 
 #[cfg(unix)]
 fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
-    if args.no_daemon {
+    let mode = args.daemon_mode();
+    if mode == DaemonMode::Off {
         return DaemonRoute::Forbidden;
     }
+    let forced_on = mode == DaemonMode::On;
 
     // Daemon path doesn't run verification - the daemon process
     // holds a scanner but not the verifier engine. Trying to honour
@@ -170,17 +172,17 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
     // is the only honest answer.
     #[cfg(feature = "verify")]
     if args.verify {
-        if args.daemon {
+        if forced_on {
             tracing::warn!(
-                "--verify forces the in-process path (daemon has no verifier); --daemon ignored"
+                "--verify forces the in-process path (daemon has no verifier); --daemon=on ignored"
             );
         }
         return DaemonRoute::Forbidden;
     }
     if args.baseline.is_some() {
-        if args.daemon {
+        if forced_on {
             tracing::warn!(
-                "--baseline forces the in-process path (daemon has no CLI-side state); --daemon ignored"
+                "--baseline forces the in-process path (daemon has no CLI-side state); --daemon=on ignored"
             );
         }
         return DaemonRoute::Forbidden;
@@ -188,9 +190,9 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
 
     let is_eligible_shape = args.stdin || effective_single_file_path(args).is_some();
     if !is_eligible_shape {
-        if args.daemon {
+        if forced_on {
             tracing::warn!(
-                "--daemon only supports --stdin or a single regular file (no directories, archives, git, http sources); falling back to in-process"
+                "--daemon=on only supports --stdin or a single regular file (no directories, archives, git, http sources); falling back to in-process"
             );
         }
         return DaemonRoute::Forbidden;
@@ -221,9 +223,9 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
         || policy.min_confidence.is_some()
         || args.hide_client_safe
     {
-        if args.daemon {
+        if forced_on {
             tracing::warn!(
-                "--daemon ignored: this scan requests filtering/lockdown/secret-output \
+                "--daemon=on ignored: this scan requests filtering/lockdown/secret-output \
                  policy the daemon cannot enforce (CLI flag or .keyhog.toml); \
                  using the in-process path"
             );
@@ -231,7 +233,7 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
         return DaemonRoute::Forbidden;
     }
 
-    if args.daemon {
+    if forced_on {
         return DaemonRoute::Required;
     }
 
