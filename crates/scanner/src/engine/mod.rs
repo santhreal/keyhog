@@ -62,6 +62,7 @@ mod fallback_generic;
 #[cfg(feature = "simd")]
 mod fallback_hs;
 mod fallback_prefilter;
+mod fallback_toggles;
 pub(crate) mod fallback_truncate;
 mod gpu_cache;
 mod gpu_forced;
