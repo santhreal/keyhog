@@ -58,6 +58,7 @@ mod fallback_anchor;
 mod fallback_entropy;
 mod fallback_entropy_helpers;
 mod fallback_generic;
+pub(crate) mod fallback_truncate;
 mod gpu_cache;
 mod gpu_forced;
 mod gpu_lazy;

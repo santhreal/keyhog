@@ -205,7 +205,7 @@ pub mod testing {
     pub use crate::compiler::{rewrite_alternation_prefix, split_leading_inline_flag};
     /// Prefilter `{N,}`→`{N}` truncation, exposed for the sound-superset unit
     /// tests migrated out of `src/engine/fallback.rs` (no-inline-tests gate).
-    pub use crate::engine::fallback::truncate_for_prefilter;
+    pub use crate::engine::fallback_truncate::truncate_for_prefilter;
     pub use crate::confidence::penalties::finalize_confidence;
     pub use crate::engine::boundary::scan_chunk_boundaries;
     pub use crate::entropy::keywords::looks_like_program_identifier;
