@@ -61,6 +61,7 @@ mod fallback_entropy_helpers;
 mod fallback_generic;
 #[cfg(feature = "simd")]
 mod fallback_hs;
+mod fallback_prefilter;
 pub(crate) mod fallback_truncate;
 mod gpu_cache;
 mod gpu_forced;
