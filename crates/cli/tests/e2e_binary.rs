@@ -63,7 +63,8 @@ fn scan_finds_planted_aws_key_and_returns_exit_1() {
 
     let findings: serde_json::Value = serde_json::from_str(&stdout).expect("stdout is valid JSON");
     let arr = findings.as_array().expect("findings JSON is an array");
-    assert!(!arr.is_empty(), "expected at least one finding");
+    // Non-emptiness is proven by the exact AWS-detector assert below; a bare
+    // shape assert here would pass on a single junk finding.
     // An AKIA key is caught by the simdsieve fast path (`hot-aws_key`) when it
     // engages, otherwise by the named `aws-access-key` detector. Both are a
     // correct AWS detection - assert on either so the test does not break on a
@@ -88,6 +89,94 @@ fn scan_returns_exit_0_on_clean_file() {
     assert!(arr.is_empty(), "expected zero findings; got: {arr:?}");
 }
 
+/// G1 binary proof: a planted long-term AWS Bedrock API key surfaces through
+/// the real binary under the `aws-bedrock-api-key` detector and lands exit 1
+/// (findings present, none verified live). Split-literal so the test file
+/// itself isn't a planted-secret tripwire.
+#[test]
+fn scan_finds_planted_bedrock_key_and_returns_exit_1() {
+    let fixture = concat!(
+        "AWS_BEARER_TOKEN_BEDROCK=\"ABSKQmVkcm9ja0FQSUtleS",
+        "y2J0fajDUXD1efoRCtqKODGGBi8UWr7UJsq2tkhFhx8ZEDEd9hnKHivse0YHShMdeCAbPEOXOxyhkg5cqNGHA1grwAyKC3Y8HDD62wLdl37iKN\"\n",
+    );
+    let (stdout, _stderr, code) = scan_text_file(fixture, &[]);
+    assert_eq!(code, Some(1), "planted Bedrock key should exit 1; got {code:?}");
+    let arr: Vec<serde_json::Value> =
+        serde_json::from_str(&stdout).expect("stdout is valid JSON");
+    let bedrock = arr
+        .iter()
+        .find(|f| f.get("detector_id").and_then(|v| v.as_str()) == Some("aws-bedrock-api-key"));
+    assert!(
+        bedrock.is_some(),
+        "expected an aws-bedrock-api-key finding; got: {arr:?}",
+    );
+    assert_eq!(
+        bedrock.unwrap().get("severity").and_then(|v| v.as_str()),
+        Some("critical"),
+        "Bedrock key must be critical severity",
+    );
+}
+
+/// Exit-code contract (`docs/src/reference/exit-codes.md`, row `2`): an
+/// unknown CLI flag is user error → exit 2, never 1 or 3.
+#[test]
+fn scan_unknown_flag_exits_2() {
+    let dir = TempDir::new().expect("tempdir");
+    let output = Command::new(binary())
+        .arg("scan")
+        .arg("--this-flag-does-not-exist")
+        .arg(dir.path())
+        .output()
+        .expect("spawn keyhog scan");
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "unknown flag must exit 2 (user error); stderr={}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+/// Exit-code contract: a source backend the user named that can't read its
+/// input (`--git-history` on a non-git directory) is USER error → exit 2,
+/// NOT the system-error 3. This is the exact case the exit-codes doc and the
+/// `--help` banner previously mislabeled as 3.
+#[test]
+fn scan_git_history_on_non_repo_exits_2() {
+    let dir = TempDir::new().expect("tempdir");
+    std::fs::write(dir.path().join("a.txt"), "nothing here\n").expect("write");
+    let output = Command::new(binary())
+        .arg("scan")
+        .arg("--git-history")
+        .arg(dir.path())
+        .output()
+        .expect("spawn keyhog scan --git-history");
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "--git-history on a non-git dir must exit 2 (user error), not 3; stderr={}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+/// Exit-code contract: `diff` with a baseline file the user named that does
+/// not exist is user error → exit 2 (not 1 = "no new entries", not 3).
+#[test]
+fn diff_missing_baseline_exits_2() {
+    let dir = TempDir::new().expect("tempdir");
+    let output = Command::new(binary())
+        .arg("diff")
+        .arg(dir.path().join("before.json"))
+        .arg(dir.path().join("after.json"))
+        .output()
+        .expect("spawn keyhog diff");
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "diff with a missing baseline must exit 2 (user error); stderr={}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
 #[test]
 fn scan_json_schema_carries_required_fields() {
     let fixture = "GH_TOKEN = \"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\"\n";
@@ -95,7 +184,19 @@ fn scan_json_schema_carries_required_fields() {
 
     let findings: serde_json::Value = serde_json::from_str(&stdout).expect("stdout is valid JSON");
     let arr = findings.as_array().expect("findings JSON is an array");
-    assert!(!arr.is_empty(), "expected the GH token to fire");
+    // Truth assert (not "some finding"): the planted ghp_ token fired a GitHub
+    // detector on line 1 — otherwise the field-presence loop below would pass
+    // vacuously over an empty array.
+    let gh = arr.iter().find(|f| {
+        let det = f.get("detector_id").and_then(|v| v.as_str()).unwrap_or("");
+        let svc = f.get("service").and_then(|v| v.as_str()).unwrap_or("");
+        (det.contains("github") || svc.contains("github"))
+            && f.pointer("/location/line").and_then(|v| v.as_u64()) == Some(1)
+    });
+    assert!(
+        gh.is_some(),
+        "expected the planted ghp_ token to fire a GitHub detector on line 1; got {arr:?}"
+    );
 
     // Every finding MUST carry the contract fields downstream
     // consumers (CI gates, SARIF converters, IDE plugins) depend on.
@@ -125,22 +226,26 @@ fn scan_json_schema_carries_required_fields() {
     }
 }
 
-/// README binding test: the banner advertises an exact detector +
-/// pattern count. If we add detectors or rewrite a regex pair, the
-/// banner becomes a lie unless updated. This test surfaces drift
-/// before it ships.
-///
-/// README line under audit (root README.md):
-///   `KeyHog vX.Y.Z | ... | 900 detectors (1668 patterns)`
-///
-/// When you legitimately change the counts:
-///   1. Update README.md banner.
-///   2. Update these two constants.
-///   3. CI stays green.
+/// Shipped-artifact binding test: the binary must advertise exactly the
+/// detector + pattern corpus it was built from. Both expected counts are
+/// DERIVED from `keyhog_core::load_detectors` over the on-disk `detectors/`
+/// tree — the same set `build.rs` embeds — so adding/removing a detector
+/// never requires editing a literal here (the count is single-sourced from
+/// the loader; the README headline is pinned separately in
+/// `scanner/tests/readme_claims.rs`).
 #[test]
 fn readme_banner_counts_match_loaded_corpus() {
-    const README_DETECTOR_COUNT: usize = 900;
-    const README_PATTERN_COUNT: usize = 1668;
+    // repo_root/detectors — CARGO_MANIFEST_DIR is crates/cli.
+    let detector_dir = {
+        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        d.pop();
+        d.pop();
+        d.push("detectors");
+        d
+    };
+    let specs = keyhog_core::load_detectors(&detector_dir).expect("load detectors/ corpus");
+    let expected_detectors = specs.len();
+    let expected_patterns: usize = specs.iter().map(|d| d.patterns.len()).sum();
 
     let output = Command::new(binary())
         .arg("detectors")
@@ -162,15 +267,16 @@ fn readme_banner_counts_match_loaded_corpus() {
 
     assert_eq!(
         arr.len(),
-        README_DETECTOR_COUNT,
-        "README banner says {README_DETECTOR_COUNT} detectors; actual={}. \
-         Update README and the constant in this test together.",
+        expected_detectors,
+        "binary advertises {} detectors but the on-disk corpus has {expected_detectors}. \
+         The shipped binary embeds a stale set — rebuild, or a detector silently failed \
+         to embed.",
         arr.len(),
     );
     assert_eq!(
-        actual_patterns, README_PATTERN_COUNT,
-        "README banner says {README_PATTERN_COUNT} patterns; actual={actual_patterns}. \
-         Update README and the constant in this test together.",
+        actual_patterns, expected_patterns,
+        "binary advertises {actual_patterns} patterns but the on-disk corpus has \
+         {expected_patterns}. Binary/corpus pattern drift.",
     );
 }
 
