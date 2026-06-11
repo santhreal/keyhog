@@ -64,6 +64,7 @@ mod fallback_compiled_anchored;
 mod fallback_entropy;
 mod fallback_entropy_helpers;
 mod fallback_generic;
+mod fallback_generic_shape;
 #[cfg(feature = "simd")]
 mod fallback_hs;
 mod fallback_prefilter;
