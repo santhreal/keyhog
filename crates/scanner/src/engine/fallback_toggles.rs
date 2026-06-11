@@ -4,8 +4,26 @@
 //! can drive one input down both code paths. Pure env/atomic plumbing — no scan
 //! state. Re-exported through `fallback` (`pub use super::fallback_toggles::*`),
 //! so existing `fallback::set_*` / `fallback::*_enabled` paths are unchanged.
-use std::sync::atomic::{AtomicU8, Ordering::Relaxed};
+use std::sync::atomic::{AtomicU8, AtomicUsize, Ordering::Relaxed};
 use std::sync::OnceLock;
+
+/// Runtime override for [`hs_prefilter_max_len`]: `usize::MAX` = follow
+/// env/default, any other value = force that threshold. Lets a differential test
+/// drive one large input down BOTH the HS and RegexSet prefilter paths in one
+/// process (the env read is cached in a `OnceLock`, so it alone can't be toggled
+/// mid-run). `usize::MAX` is the sentinel because it equals the lifted default,
+/// so "override to no-gate" and "follow default" coincide — no expressiveness
+/// lost (forcing the RegexSet path uses a small finite threshold like 4096).
+static HS_MAX_LEN_OVERRIDE: AtomicUsize = AtomicUsize::new(usize::MAX);
+
+/// Force the HS-prefilter size gate (test/diagnostic). `Some(4096)` pins the
+/// historical gate so a chunk >4 KiB takes the RegexSet reference path;
+/// `Some(usize::MAX)` / `None` restores the lifted default (HS at every size).
+/// Recall is identical either way (`fallback_prefilter_hs_large_parity`); this
+/// only selects the SIMD-fast HS path vs the RegexSet reference.
+pub fn set_hs_prefilter_max_len(threshold: Option<usize>) {
+    HS_MAX_LEN_OVERRIDE.store(threshold.unwrap_or(usize::MAX), Relaxed);
+}
 
 /// Runtime override for the anchor enable flag: 0 = follow env, 1 = force on,
 /// 2 = force off. Lets a differential test scan one input down BOTH the
@@ -200,18 +218,34 @@ pub(crate) fn fallback_hs_enabled() -> bool {
 /// Max chunk length (bytes) for which the HS prefilter is used; larger chunks
 /// fall through to the `regex::RegexSet` batches. HS's per-scan cost is roughly
 /// constant in chunk size (dominated by the unicode-homoglyph automaton), so it
-/// beats the RegexSet's per-call setup on SMALL chunks but loses once the
-/// per-byte automaton work over a large chunk dominates. Tunable via
-/// `KEYHOG_FALLBACK_HS_MAX_LEN`; default chosen so the small-file regime (the
-/// common case) takes HS and 16 KiB chunks take the RegexSet.
+/// beats the RegexSet at EVERY size — 6.3× faster wall-clock on the 46 MiB
+/// throughput corpus (19.2s → 3.1s), since the RegexSet pays ~3.5s/850 KiB-chunk
+/// over ~2700 always-active patterns.
+///
+/// The historical default was 4096 — large chunks took the slow RegexSet path —
+/// to dodge an HS/RegexSet finding DIVERGENCE. That divergence was never an HS
+/// recall gap: it was a nondeterministic dedup survivor (a match in the
+/// preprocessor's appended synthetic region aliases the real match at a second
+/// offset; whichever survived the per-chunk cap / dedup flipped run-to-run).
+/// Once `RawMatch`/dedup ordering became total (see RawMatch::cmp and
+/// dedup_cross_detector), HS-large is byte-identical to the RegexSet path
+/// (`fallback_prefilter_hs_large_parity`: 227==227, 0 diffs either direction on
+/// 6 diverse files) AND deterministic across threads/runs. So the gate is
+/// lifted by default; the prefilter input is already bounded by the windowing
+/// contract (chunks >1 MiB are windowed), so this is never an unbounded scan.
+/// `KEYHOG_FALLBACK_HS_MAX_LEN` is retained as a rollback / A-B escape hatch.
 #[cfg(feature = "simd")]
 pub(crate) fn hs_prefilter_max_len() -> usize {
+    let override_val = HS_MAX_LEN_OVERRIDE.load(Relaxed);
+    if override_val != usize::MAX {
+        return override_val;
+    }
     static MAX: OnceLock<usize> = OnceLock::new();
     *MAX.get_or_init(|| {
         std::env::var("KEYHOG_FALLBACK_HS_MAX_LEN")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(4096)
+            .unwrap_or(usize::MAX)
     })
 }
 

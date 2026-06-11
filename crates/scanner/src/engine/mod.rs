@@ -94,7 +94,7 @@ pub(crate) use backend_prepared::PreparedChunk;
 pub use fallback::{
     fallback_gate_stats_dump, set_decode_focus, set_fallback_anchor_mode, set_fallback_hs,
     set_fallback_homoglyph_gate, set_fallback_prefix_gate, set_fallback_reverse,
-    set_homoglyph_ascii_skip, set_prefilter_truncate,
+    set_homoglyph_ascii_skip, set_hs_prefilter_max_len, set_prefilter_truncate,
 };
 pub use rule_pipeline::{
     build_rule_pipeline, megascan_input_len, rule_pipeline_cached, AC_GPU_MAX_MATCHES_PER_DISPATCH,
