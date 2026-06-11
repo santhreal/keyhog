@@ -62,6 +62,7 @@ mod fallback_anchor_scan;
 mod fallback_compiled;
 mod fallback_compiled_anchored;
 mod fallback_entropy;
+mod fallback_entropy_gates;
 mod fallback_entropy_helpers;
 mod fallback_generic;
 mod fallback_generic_shape;
