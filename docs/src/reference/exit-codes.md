@@ -7,8 +7,8 @@ consumers (CI gates, pre-commit hooks, IDE plugins) can rely on them.
 |------|--------------------------------------------------------------------|
 | `0`  | Scan completed, zero findings.                                     |
 | `1`  | Findings present, NONE confirmed live (unverified, or verified-dead). |
-| `2`  | User error: unknown CLI flag, `.keyhog.toml` parse failure, bad `--baseline`. |
-| `3`  | System error: I/O failure, source-backend failure, or detector-corpus audit failure. |
+| `2`  | User error (bad input): unknown CLI flag, `.keyhog.toml` parse failure, a missing or invalid `--baseline` file, an unreadable / non-repo source you named (`--git-history` / `--git-staged` outside a git repo), a detector TOML that failed to load, or `--require-gpu` with no GPU present. Also any not-found / permission-denied I/O error. |
+| `3`  | System error: the local environment failed in a way no flag change fixes — a low-level I/O failure that is *not* not-found / permission-denied, or a hardware / GPU **init** failure. Retry or route differently from `2`. |
 | `4`  | Health/self-test failure: `keyhog doctor` unhealthy, `keyhog repair` could not restore a working binary, `keyhog backend` self-test failed. |
 | `10` | **LIVE credentials confirmed** (a `--verify` scan where the vendor API accepted a found secret) - the highest-severity gate. Also returned by `keyhog update --check` when a newer release exists. |
 | `11` | Scanner thread panicked. The finding count is NOT trustworthy - investigate, don't ship. Distinct from `2`/`3` so CI can tell a code bug from a config error. |
@@ -63,10 +63,13 @@ depending on where the error happened.
 
 ## `3` (system error)
 
-A failure the operator can't fix by correcting a flag: an I/O error, a
-source backend that couldn't read its input, or a detector-corpus audit
-failure. Distinct from `2` (user error) so a pipeline can retry/route
-differently. Stderr carries the cause.
+A failure the operator can't fix by correcting a flag: a low-level I/O
+error that is NOT not-found / permission-denied (those map to `2`), or a
+hardware / GPU **init** failure. A source backend you named that can't
+read its input (a non-repo for `--git-history`, a missing/garbage
+`--baseline`) is *user* error and exits `2`, not `3` — see above. A
+detector TOML that fails to load is likewise `2`. Distinct from `2` so a
+pipeline can retry/route differently. Stderr carries the cause.
 
 ## `4` (health / self-test failure)
 
