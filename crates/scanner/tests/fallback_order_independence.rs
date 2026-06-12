@@ -7,9 +7,12 @@
 mod support;
 use support::paths::{corpus_dir, detector_dir};
 
-use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
+use keyhog_core::{Chunk, ChunkMetadata, MatchLocation, RawMatch, Severity};
+use keyhog_scanner::scanner_config::ScanState;
 use keyhog_scanner::{CompiledScanner, ScanBackend};
+use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 fn chunk_of(bytes: &[u8], label: &str) -> Chunk {
     Chunk {
@@ -129,5 +132,76 @@ fn fallback_order_independence() {
     assert_eq!(
         diverged, 0,
         "fallback finding set depends on extraction order"
+    );
+}
+
+/// A candidate that ties on EVERY primary Ord key (confidence, severity,
+/// detector, credential) and differs ONLY by byte offset — so the
+/// `(offset, line)` tie-break is the sole thing that totally orders it.
+fn tied_match(offset: usize) -> RawMatch {
+    RawMatch {
+        detector_id: Arc::from("generic-secret"),
+        detector_name: Arc::from("Generic Secret"),
+        service: Arc::from("generic"),
+        severity: Severity::High,
+        credential: Arc::from("AKIAIOSFODNN7EXAMPLE"),
+        credential_hash: [0u8; 32],
+        companions: HashMap::new(),
+        location: MatchLocation {
+            source: Arc::from("filesystem"),
+            file_path: Some(Arc::from("f.env")),
+            line: Some(1),
+            offset,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        entropy: None,
+        confidence: Some(0.5),
+    }
+}
+
+/// The MECHANISM behind `fallback_order_independence`, gated directly and without
+/// a corpus so it runs in CI (the corpus test above is `#[ignore]` and the mirror
+/// chunks may not even overflow the cap). When a chunk produces more than
+/// `max_matches_per_chunk` matches, `ScanState::push_match` keeps the top-N by
+/// `RawMatch::Ord` in a bounded heap. If two candidates ever compared Equal at the
+/// survival boundary, eviction among them would fall back to INSERTION ORDER —
+/// which is the fallback extraction order the diagnostic test perturbs, and is
+/// HashMap-/thread-nondeterministic in production. These 24 candidates tie on every
+/// primary key and differ only by offset, so only the total-order `(offset, line)`
+/// tie-break makes the kept set well-defined. Inserting ascending vs descending
+/// MUST yield the identical surviving set; a divergence means `RawMatch::Ord` lost
+/// totality (e.g. someone dropped the offset key) and the finding set will flicker.
+#[test]
+fn push_match_eviction_set_is_insertion_order_independent() {
+    const LIMIT: usize = 8;
+    let offsets: Vec<usize> = (0..24).map(|i| i * 7).collect();
+
+    let mut asc = ScanState::default();
+    for &o in &offsets {
+        asc.push_match(tied_match(o), LIMIT);
+    }
+    let mut desc = ScanState::default();
+    for &o in offsets.iter().rev() {
+        desc.push_match(tied_match(o), LIMIT);
+    }
+
+    let kept = |st: ScanState| {
+        let mut v: Vec<usize> = st.into_matches().iter().map(|m| m.location.offset).collect();
+        v.sort_unstable();
+        v
+    };
+    let a = kept(asc);
+    let d = kept(desc);
+    assert_eq!(
+        a.len(),
+        LIMIT,
+        "the bounded heap must retain exactly the cap of distinct findings, got {a:?}"
+    );
+    assert_eq!(
+        a, d,
+        "push_match kept a DIFFERENT set for ascending vs descending insertion — \
+         eviction is insertion-order-dependent (RawMatch::Ord is not total): {a:?} vs {d:?}"
     );
 }

@@ -148,6 +148,51 @@ fn raw_match_ord_severity_breaks_confidence_tie() {
 }
 
 #[test]
+fn raw_match_ord_is_total_to_offset_then_line() {
+    // The load-bearing invariant for `ScanState::push_match`: when a chunk
+    // overflows `max_matches_per_chunk`, the bounded heap evicts the LOWEST by
+    // this Ord. If two same-secret matches at different positions compared Equal,
+    // eviction among them would fall back to insertion order (HashMap-iteration /
+    // rayon-thread nondeterministic) and the kept set would flicker run-to-run —
+    // and depend on fallback extraction order (`fallback_order_independence`). So
+    // the Ord MUST stay total down to (offset, then line); two matches identical
+    // in every PRIMARY key but differing in position must NOT compare Equal.
+    let same = |off, line| {
+        raw(
+            "d",
+            "D",
+            "s",
+            Severity::High,
+            "AKIAIOSFODNN7EXAMPLE",
+            loc("f", line, off),
+            Some(0.5),
+        )
+    };
+    // Same detector+credential+confidence+severity, different OFFSET => ordered by
+    // offset, never Equal.
+    let a = same(0, 1);
+    let b = same(64, 1);
+    assert_eq!(
+        a.cmp(&b),
+        std::cmp::Ordering::Less,
+        "lower offset must sort first (Ord total to offset)"
+    );
+    assert_ne!(
+        a.cmp(&b),
+        std::cmp::Ordering::Equal,
+        "distinct offsets must never compare Equal, or heap eviction is insertion-order-dependent"
+    );
+    // Same offset, different LINE => the final tie-break decides; still not Equal.
+    let c = same(64, 2);
+    assert_eq!(
+        b.cmp(&c),
+        std::cmp::Ordering::Less,
+        "at equal offset, lower line must sort first (final total-order key)"
+    );
+    assert_ne!(b.cmp(&c), std::cmp::Ordering::Equal);
+}
+
+#[test]
 fn raw_match_sanitize_floats_clears_nan() {
     let mut m = raw("d", "D", "s", Severity::Low, "x", loc("f", 1, 0), None);
     m.entropy = Some(f64::NAN);
