@@ -10,14 +10,23 @@ fn scanner_source(path: &str) -> String {
 
 #[test]
 fn gpu_degrade_batch_path_runs_boundary_reassembly() {
-    let source = scanner_source("engine/backend_dispatch.rs");
-    let fallback = source
-        .split("degraded_backend_after_gpu_failure")
-        .nth(1)
-        .expect("gpu degrade fallback branch present");
+    // The 78046450 consolidation moved the GPU-batch degrade closure from
+    // backend_dispatch.rs into the megakernel dispatch (`scan_coalesced_megakernel`):
+    // it picks `degraded_backend_after_gpu_failure()` then re-runs the per-chunk
+    // boundary reassembly so the loud CPU degrade keeps cross-chunk recall.
+    let source = scanner_source("engine/megakernel_dispatch.rs");
+    // Position-based (robust to the comment that also names the helper): the
+    // degrade closure picks the live CPU backend, THEN re-runs boundary reassembly.
+    let degrade_at = source
+        .find("self.degraded_backend_after_gpu_failure()")
+        .expect("gpu degrade must pick the live CPU backend");
+    let boundary_at = source
+        .find("scan_chunk_boundaries(self, chunks, &mut results)")
+        .expect("gpu degrade must run cross-chunk boundary reassembly");
     assert!(
-        fallback.contains("scan_chunk_boundaries(self, chunks, &mut results)"),
-        "GPU batch degrade to CPU must preserve cross-chunk boundary recall"
+        boundary_at > degrade_at,
+        "GPU batch degrade to CPU must run boundary reassembly AFTER picking the degraded backend, \
+         preserving cross-chunk recall"
     );
 }
 
