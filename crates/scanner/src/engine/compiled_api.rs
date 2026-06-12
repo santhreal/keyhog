@@ -57,6 +57,15 @@ impl CompiledScanner {
         self.ac_map.len() + self.fallback.len()
     }
 
+    /// This scanner's performance route tuning. Differential parity tests flip a
+    /// route on ONE scanner — e.g. `scanner.tuning().set_fallback_hs(Some(false))`
+    /// — to drive a single input down both code paths without any process-global
+    /// state; production code never calls the setters, so every override stays at
+    /// "follow env". See [`fallback::ScannerTuning`].
+    pub fn tuning(&self) -> &fallback::ScannerTuning {
+        &self.tuning
+    }
+
     /// Diagnostic: `(fallback_total, always_active, always_active_eligible)` —
     /// how much the shared-anchor index shrinks the RegexSet prefilter. The
     /// prefilter cost scales with `always_active - always_active_eligible`.

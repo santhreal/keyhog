@@ -37,7 +37,7 @@ impl CompiledScanner {
         // any chunk size, so it supersedes the small/large split below. Active
         // patterns with no required-literal anchor keep the whole-chunk path
         // inside `scan_fallback_with_anchors`.
-        if !self.fallback.is_empty() && fallback_anchor_enabled() {
+        if !self.fallback.is_empty() && self.tuning.fallback_anchor_enabled() {
             if let Some(anchor_idx) = &self.fallback_anchor_index {
                 self.scan_fallback_with_anchors(
                     anchor_idx,
@@ -183,7 +183,7 @@ impl CompiledScanner {
         // while signals/lines stay full. This is what makes the restriction a net
         // win — the non-anchor whole-chunk prefilter, even windowed, barely beats
         // the anchor path on full text.
-        if fallback_anchor_enabled() {
+        if self.tuning.fallback_anchor_enabled() {
             if let Some(anchor_idx) = &self.fallback_anchor_index {
                 self.scan_fallback_with_anchors(
                     anchor_idx,
@@ -262,7 +262,7 @@ impl CompiledScanner {
             // anchor_mode = false: the legacy whole-chunk path has no AC gating,
             // so every always-active pattern must be marked for recall.
             self.populate_active_fallback(data, match_text, &mut scratch, false);
-            if fallback_reverse_enabled() {
+            if self.tuning.fallback_reverse_enabled() {
                 scratch.active.reverse();
             }
             f(self, &scratch.active)
@@ -329,11 +329,20 @@ impl CompiledScanner {
         }
         let _g = super::profile::span(super::profile::P::FbPrefilter);
         match &self.fallback_always_active_prefilter {
-            Some(prefilter) => prefilter.any_active_match(data),
-            // No prefilter compiled but always-active indices exist =>
-            // `populate_active_fallback`'s `None` arm marks them all
-            // unconditionally, so the active set is non-empty.
-            None => !self.fallback_always_active_indices.is_empty(),
+            Some(prefilter) => prefilter.any_active_match(data, &self.tuning),
+            // No always-active prefilter compiled (degraded build): there is no
+            // discriminating prefilter to run, so defer to the REAL marking path
+            // (`populate_active_fallback`, anchor_mode = false) and admit iff it
+            // produces an active pattern — exactly what the production scan would
+            // mark for this chunk. Never a coarse count short-circuit over the
+            // always-active index set (that admits EVERY chunk and defeats no-hit
+            // admission; see `fallback_always_active_sparse`).
+            None => ACTIVE_PATTERNS_POOL.with(|cell| {
+                let mut scratch = cell.borrow_mut();
+                scratch.begin(self.fallback.len());
+                self.populate_active_fallback(data, data, &mut scratch, false);
+                !scratch.active.is_empty()
+            }),
         }
     }
 
@@ -390,7 +399,12 @@ impl CompiledScanner {
                 // on EVERY chunk. This span is the cost the "fallback" name hides.
                 let _g = super::profile::span(super::profile::P::FbPrefilter);
                 match &self.fallback_always_active_prefilter {
-                    Some(prefilter) => prefilter.mark_matches(match_text, scratch, localize_plain),
+                    Some(prefilter) => prefilter.mark_matches(
+                        match_text,
+                        scratch,
+                        localize_plain,
+                        &self.tuning,
+                    ),
                     None => {
                         for &index in &self.fallback_always_active_indices {
                             if anchor_mode && self.anchor_always_active_eligible(index) {

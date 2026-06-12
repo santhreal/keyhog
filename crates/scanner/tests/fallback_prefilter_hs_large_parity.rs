@@ -21,10 +21,7 @@ use std::collections::BTreeSet;
 use std::sync::Mutex;
 
 use keyhog_core::{dedup_matches, Chunk, ChunkMetadata, DedupScope, RawMatch};
-use keyhog_scanner::{
-    resolution::resolve_matches, set_fallback_hs, set_hs_prefilter_max_len, CompiledScanner,
-    ScanBackend,
-};
+use keyhog_scanner::{resolution::resolve_matches, CompiledScanner, ScanBackend};
 
 #[path = "support/mod.rs"]
 mod support;
@@ -157,18 +154,18 @@ fn hs_large_prefilter_identical_to_regexset_and_deterministic() {
     );
 
     // Force the HS engine for both arms; the ONLY difference is the size gate.
-    set_fallback_hs(Some(true));
+    scanner.tuning().set_fallback_hs(Some(true));
 
     // Arm A: HS at every size (the lifted default). Keep the raw matches so the
     // raw- and pipeline-parity asserts reuse one scan each (no extra passes).
-    set_hs_prefilter_max_len(None);
+    scanner.tuning().set_hs_prefilter_max_len(None);
     let hs_raw = scan_raw(&scanner, &text);
     // Arm B: pin the historical 4 KiB gate so the >1 MiB chunk takes the slow
     // RegexSet reference. This is the one expensive scan — reuse it for both
     // parity asserts.
-    set_hs_prefilter_max_len(Some(4096));
+    scanner.tuning().set_hs_prefilter_max_len(Some(4096));
     let regex_raw = scan_raw(&scanner, &text);
-    set_hs_prefilter_max_len(None);
+    scanner.tuning().set_hs_prefilter_max_len(None);
 
     let hs_keys = raw_keys(&hs_raw);
     let regex_keys = raw_keys(&regex_raw);
@@ -213,7 +210,7 @@ fn hs_large_prefilter_identical_to_regexset_and_deterministic() {
     assert_eq!(run_a, run_b, "HS-large nondeterministic across runs (a!=b)");
     assert_eq!(run_b, run_c, "HS-large nondeterministic across runs (b!=c)");
 
-    // Restore the env-driven default for any later test in this binary.
-    set_hs_prefilter_max_len(None);
-    set_fallback_hs(None);
+    // Restore this scanner's overrides to "follow env" (instance-local).
+    scanner.tuning().set_hs_prefilter_max_len(None);
+    scanner.tuning().set_fallback_hs(None);
 }

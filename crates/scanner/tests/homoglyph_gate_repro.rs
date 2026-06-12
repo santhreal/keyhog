@@ -2,9 +2,7 @@
 //! corners (anchor x homoglyph-gate).
 mod support;
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::{
-    set_fallback_anchor_mode, set_fallback_homoglyph_gate, CompiledScanner, ScanBackend,
-};
+use keyhog_scanner::{CompiledScanner, ScanBackend};
 use support::paths::detector_dir;
 
 fn chunk(s: &str) -> Chunk {
@@ -26,8 +24,8 @@ fn stripe_corners() {
     let scanner = CompiledScanner::compile(detectors).expect("compile");
     let input = "{\n  \"STRIPE_RESTRICTED_KEY\": \"rk_live_2S2FrlCUpmb2ou955jvUlPSH\",\n  \"ttl\": 3600\n}\n";
     for (a, g) in [(true, true), (true, false), (false, true), (false, false)] {
-        set_fallback_anchor_mode(Some(a));
-        set_fallback_homoglyph_gate(Some(g));
+        scanner.tuning().set_fallback_anchor_mode(Some(a));
+        scanner.tuning().set_fallback_homoglyph_gate(Some(g));
         scanner.clear_fragment_cache();
         let r = scanner.scan_chunks_with_backend(
             std::slice::from_ref(&chunk(input)),
@@ -41,10 +39,10 @@ fn stripe_corners() {
         eprintln!("anchor={a} gate={g} -> {} findings: {:?}", dets.len(), dets);
     }
     // Also show fallback-only (no confirmed/ac_map) for gate on vs off.
-    set_fallback_anchor_mode(None);
-    set_fallback_homoglyph_gate(Some(true));
+    scanner.tuning().set_fallback_anchor_mode(None);
+    scanner.tuning().set_fallback_homoglyph_gate(Some(true));
     let fb_on = scanner.debug_scan_fallback_only(&chunk(input));
-    set_fallback_homoglyph_gate(Some(false));
+    scanner.tuning().set_fallback_homoglyph_gate(Some(false));
     let fb_off = scanner.debug_scan_fallback_only(&chunk(input));
     eprintln!(
         "fallback-only gate=on: {:?}",
@@ -60,5 +58,5 @@ fn stripe_corners() {
             .map(|m| m.detector_id.to_string())
             .collect::<Vec<_>>()
     );
-    set_fallback_homoglyph_gate(None);
+    scanner.tuning().set_fallback_homoglyph_gate(None);
 }

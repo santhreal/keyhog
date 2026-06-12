@@ -11,7 +11,7 @@ mod support;
 use support::paths::{corpus_dir, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
-use keyhog_scanner::{set_confirmed_suffix_gate, CompiledScanner, ScanBackend};
+use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::path::PathBuf;
 
 struct Lcg(u64);
@@ -94,11 +94,11 @@ fn scan_both(
     s: &CompiledScanner,
     c: &Chunk,
 ) -> (Vec<(String, String, String)>, Vec<(String, String, String)>) {
-    set_confirmed_suffix_gate(Some(true));
+    s.tuning().set_confirmed_suffix_gate(Some(true));
     s.clear_fragment_cache();
     let on =
         canonical(&s.scan_chunks_with_backend(std::slice::from_ref(c), ScanBackend::CpuFallback));
-    set_confirmed_suffix_gate(Some(false));
+    s.tuning().set_confirmed_suffix_gate(Some(false));
     s.clear_fragment_cache();
     let off =
         canonical(&s.scan_chunks_with_backend(std::slice::from_ref(c), ScanBackend::CpuFallback));
@@ -195,7 +195,7 @@ fn confirmed_gate_parity_default() {
             checked += 1;
         }
     }
-    set_confirmed_suffix_gate(None);
+    scanner.tuning().set_confirmed_suffix_gate(None);
     eprintln!("confirmed_gate_parity: {checked} inputs, gate-on ≡ gate-off");
     assert!(checked >= n);
 }

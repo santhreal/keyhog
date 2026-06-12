@@ -847,7 +847,7 @@ path = "crates/scanner/src/engine/fallback_hs.rs"
 path = "crates/scanner/src/engine/fallback_prefilter.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/fallback_toggles.rs"
+path = "crates/scanner/src/engine/tuning.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/fallback_truncate.rs"

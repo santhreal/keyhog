@@ -365,6 +365,7 @@ impl AlwaysActiveFallbackPrefilter {
         match_text: &str,
         scratch: &mut ActivePatternsScratch,
         localize_plain: bool,
+        tuning: &ScannerTuning,
     ) {
         // SIMD fast path: one Hyperscan scan replaces the whole-chunk RegexSet
         // batch loop below (the measured #1 scan cost). `localize_plain` is a
@@ -378,13 +379,13 @@ impl AlwaysActiveFallbackPrefilter {
             // cost beats the RegexSet's per-call lazy-DFA setup), but its unicode
             // automaton over MANY bytes loses to the folded/truncated RegexSet on
             // large chunks. Above the threshold, fall through to the batches.
-            if fallback_hs_enabled() && match_text.len() <= hs_prefilter_max_len() {
+            if tuning.fallback_hs_enabled() && match_text.len() <= tuning.hs_prefilter_max_len() {
                 let _ = localize_plain;
                 hs.mark(match_text, scratch);
                 return;
             }
         }
-        let use_ascii = homoglyph_gate_enabled() && match_text.is_ascii();
+        let use_ascii = tuning.homoglyph_gate_enabled() && match_text.is_ascii();
 
         // Prefix-literal skip gate (KH decode-recursion lever). A `gateable`
         // batch's patterns ALL provably require one of their prefix literals; if
@@ -395,7 +396,7 @@ impl AlwaysActiveFallbackPrefilter {
         // skip case (the dominant decode-recursion sub-chunk shape, and most
         // low-density source). `present == true` means "run gateable batches as
         // before" — recall is identical, only dead work is removed.
-        let gate_on = fallback_prefix_gate_enabled();
+        let gate_on = tuning.fallback_prefix_gate_enabled();
         // ci batches run `set` on every chunk -> the ci gate applies always.
         let ci_present = !gate_on
             || self
@@ -419,7 +420,7 @@ impl AlwaysActiveFallbackPrefilter {
         // Truncated (lazy-DFA) marking sets: a sound SUPERSET — over-marks at
         // most, extraction with the full pattern filters. The win is keeping the
         // RegexSet off PikeVM on `{N,}` bodies.
-        let truncate = prefilter_truncate_enabled();
+        let truncate = tuning.prefilter_truncate_enabled();
         let ascii = match_text.is_ascii();
         for batch in &self.batches {
             let is_plain = batch.ascii_set.is_some();
@@ -431,7 +432,7 @@ impl AlwaysActiveFallbackPrefilter {
             // all-ASCII source. Proven recall-neutral by `homoglyph_ascii_skip_parity`.
             // Generic/case-sensitive plain fallbacks (no base AC) are in
             // non-skippable batches and are unaffected.
-            if batch.homoglyph_skippable && ascii && homoglyph_ascii_skip_enabled() {
+            if batch.homoglyph_skippable && ascii && tuning.homoglyph_ascii_skip_enabled() {
                 continue;
             }
             // Or: the caller's localizer covers this plain batch.
@@ -491,7 +492,7 @@ impl AlwaysActiveFallbackPrefilter {
     /// no-phase-1-hit admission gate that exists only on the `simd`/`gpu`
     /// phase-2 tail) so non-`simd` profiles don't carry it as dead code (Law 11).
     #[cfg(any(feature = "simd", feature = "gpu"))]
-    pub(crate) fn any_active_match(&self, match_text: &str) -> bool {
+    pub(crate) fn any_active_match(&self, match_text: &str, tuning: &ScannerTuning) -> bool {
         // Patterns whose batch failed to compile run unconditionally
         // (`ungated_indices`), so the active set is non-empty for every chunk.
         if !self.ungated_indices.is_empty() {
@@ -499,15 +500,15 @@ impl AlwaysActiveFallbackPrefilter {
         }
         #[cfg(feature = "simd")]
         if let Some(hs) = &self.hs {
-            if fallback_hs_enabled() && match_text.len() <= hs_prefilter_max_len() {
+            if tuning.fallback_hs_enabled() && match_text.len() <= tuning.hs_prefilter_max_len() {
                 return hs.any_match(match_text);
             }
         }
         // RegexSet reference path (HS absent / over the size gate): the active
         // set is non-empty iff some batch's set matches. `is_match` early-exits
         // at the first matching pattern within the batch.
-        let truncate = prefilter_truncate_enabled();
-        let use_ascii = homoglyph_gate_enabled() && match_text.is_ascii();
+        let truncate = tuning.prefilter_truncate_enabled();
+        let use_ascii = tuning.homoglyph_gate_enabled() && match_text.is_ascii();
         for batch in &self.batches {
             let set = match (
                 truncate,

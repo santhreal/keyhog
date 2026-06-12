@@ -18,7 +18,7 @@ mod support;
 use support::paths::{corpus_dir, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
-use keyhog_scanner::{set_fallback_hs, set_homoglyph_ascii_skip, CompiledScanner, ScanBackend};
+use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::path::PathBuf;
 
 struct Lcg(u64);
@@ -123,20 +123,20 @@ fn canonical(matches: &[Vec<RawMatch>]) -> Vec<Key> {
 fn scan_both(scanner: &CompiledScanner, chunk: &Chunk) -> (Vec<Key>, Vec<Key>) {
     // The homoglyph ASCII-skip lever lives in the legacy RegexSet prefilter path;
     // force HS off so the lever is actually exercised (HS bypasses it).
-    set_fallback_hs(Some(false));
-    set_homoglyph_ascii_skip(Some(false));
+    scanner.tuning().set_fallback_hs(Some(false));
+    scanner.tuning().set_homoglyph_ascii_skip(Some(false));
     scanner.clear_fragment_cache();
     let off = canonical(&scanner.scan_chunks_with_backend(
         std::slice::from_ref(chunk),
         ScanBackend::CpuFallback,
     ));
-    set_homoglyph_ascii_skip(Some(true));
+    scanner.tuning().set_homoglyph_ascii_skip(Some(true));
     scanner.clear_fragment_cache();
     let on = canonical(&scanner.scan_chunks_with_backend(
         std::slice::from_ref(chunk),
         ScanBackend::CpuFallback,
     ));
-    set_homoglyph_ascii_skip(None);
+    scanner.tuning().set_homoglyph_ascii_skip(None);
     (on, off)
 }
 

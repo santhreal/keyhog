@@ -7,18 +7,19 @@ use std::sync::Arc;
 
 // Profiling + suffix-gate machinery and the cross-chunk fragment scan were
 // split into sibling satellites (Law 5). Re-export the public/crate interface
-// so external paths (`scan_postprocess::{set_confirmed_suffix_gate,
-// decode_profile_dump, build_confirmed_suffix_gate, ml_batch_profile_dump}`)
-// keep resolving, and pull the recorder symbols this file's impl still pokes.
+// so external paths (`scan_postprocess::{decode_profile_dump,
+// build_confirmed_suffix_gate, ml_batch_profile_dump}`) keep resolving, and pull
+// the recorder symbols this file's impl still pokes. The confirmed-suffix-gate
+// ENABLE/override toggle now lives on the per-scanner `ScannerTuning`
+// (`self.tuning.confirmed_suffix_gate_enabled()`); only the gate BUILDER remains
+// in the suffix-gate satellite.
 use super::scan_postprocess_profile::{
     confirmed_prof_enabled, confirmed_prof_vecs, decode_prof_enabled, ml_batch_prof_enabled,
     ml_batch_record, DECODE_GEN_NS, DECODE_PARENTS, DECODE_SCAN_NS, DECODE_SUBCHUNKS,
     DECODE_SUBCHUNK_BYTES,
 };
-use super::scan_postprocess_suffix_gate::confirmed_suffix_gate_enabled;
 pub use super::scan_postprocess_profile::decode_profile_dump;
 pub(crate) use super::scan_postprocess_profile::ml_batch_profile_dump;
-pub use super::scan_postprocess_suffix_gate::set_confirmed_suffix_gate;
 pub(crate) use super::scan_postprocess_suffix_gate::build_confirmed_suffix_gate;
 
 impl CompiledScanner {
@@ -265,7 +266,7 @@ impl CompiledScanner {
         // whole-chunk regex run is skipped. `None` when the gate is disabled or
         // no pattern is gateable.
         let suffix_present: Option<std::collections::HashSet<usize>> = match &self.suffix_gate_ac {
-            Some(ac) if confirmed_suffix_gate_enabled() => Some(
+            Some(ac) if self.tuning.confirmed_suffix_gate_enabled() => Some(
                 ac.find_overlapping_iter(&*preprocessed.text)
                     .map(|m| m.pattern().as_usize())
                     .collect(),

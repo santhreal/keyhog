@@ -12,10 +12,7 @@ mod support;
 use support::paths::{corpus_dir, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::{
-    set_confirmed_suffix_gate, set_decode_focus, set_fallback_homoglyph_gate,
-    set_prefilter_truncate, CompiledScanner, ScanBackend,
-};
+use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::path::PathBuf;
 use std::time::Instant;
 
@@ -134,31 +131,31 @@ fn fullscan_throughput_mirror() {
 
     // Isolate each opt. "on=false" => that opt off; baseline has BOTH off.
     let fallback_only = |on: bool| {
-        set_fallback_homoglyph_gate(Some(on));
-        set_confirmed_suffix_gate(Some(false));
+        scanner.tuning().set_fallback_homoglyph_gate(Some(on));
+        scanner.tuning().set_confirmed_suffix_gate(Some(false));
     };
     let confirmed_only = |on: bool| {
-        set_fallback_homoglyph_gate(Some(false));
-        set_confirmed_suffix_gate(Some(on));
+        scanner.tuning().set_fallback_homoglyph_gate(Some(false));
+        scanner.tuning().set_confirmed_suffix_gate(Some(on));
     };
     let both = |on: bool| {
-        set_fallback_homoglyph_gate(Some(on));
-        set_confirmed_suffix_gate(Some(on));
+        scanner.tuning().set_fallback_homoglyph_gate(Some(on));
+        scanner.tuning().set_confirmed_suffix_gate(Some(on));
     };
     // Decode-recursion focus: homoglyph fold + confirmed gate stay at their
     // shipped default (on); toggle ONLY the focus restriction.
     let decode_focus = |on: bool| {
-        set_fallback_homoglyph_gate(Some(true));
-        set_confirmed_suffix_gate(Some(true));
-        set_decode_focus(Some(on));
+        scanner.tuning().set_fallback_homoglyph_gate(Some(true));
+        scanner.tuning().set_confirmed_suffix_gate(Some(true));
+        scanner.tuning().set_decode_focus(Some(on));
     };
     // Prefilter {N,}->{N} truncation: keeps the always-active prefilter RegexSet
     // on the lazy-DFA. Other opts at shipped default; isolates the truncation.
     let prefilter_trunc = |on: bool| {
-        set_fallback_homoglyph_gate(Some(true));
-        set_confirmed_suffix_gate(Some(true));
-        set_decode_focus(Some(true));
-        set_prefilter_truncate(Some(on));
+        scanner.tuning().set_fallback_homoglyph_gate(Some(true));
+        scanner.tuning().set_confirmed_suffix_gate(Some(true));
+        scanner.tuning().set_decode_focus(Some(true));
+        scanner.tuning().set_prefilter_truncate(Some(on));
     };
     eprintln!(
         "=== {} 16-KiB chunks ({} KiB), interleaved median of 9 ===",
@@ -176,8 +173,8 @@ fn fullscan_throughput_mirror() {
     eprint!("prefilter truncate  ");
     ab_interleaved(&scanner, &chunks, bytes16, &prefilter_trunc);
 
-    set_fallback_homoglyph_gate(None);
-    set_confirmed_suffix_gate(None);
-    set_decode_focus(None);
-    set_prefilter_truncate(None);
+    scanner.tuning().set_fallback_homoglyph_gate(None);
+    scanner.tuning().set_confirmed_suffix_gate(None);
+    scanner.tuning().set_decode_focus(None);
+    scanner.tuning().set_prefilter_truncate(None);
 }

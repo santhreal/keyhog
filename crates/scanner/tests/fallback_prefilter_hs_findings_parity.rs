@@ -7,8 +7,8 @@
 //! `(detector, credential, offset)` set the scanner emits must be byte-identical.
 //!
 //! This scans the real mirror corpus twice on the SAME compiled scanner —
-//! `set_fallback_hs(Some(true))` (SIMD path) and `Some(false)` (RegexSet
-//! reference) — and asserts the finding sets are identical per file. A mismatch
+//! `scanner.tuning().set_fallback_hs(Some(true))` (SIMD path) and `Some(false)`
+//! (RegexSet reference) — and asserts the finding sets are identical per file. A mismatch
 //! is a recall/precision regression (Law 6/Law 10) and fails the gate.
 //!
 //! Run: cargo test -p keyhog-scanner --features simd \
@@ -19,7 +19,7 @@ use std::collections::BTreeSet;
 use std::path::PathBuf;
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::{set_fallback_hs, CompiledScanner, ScanBackend};
+use keyhog_scanner::{CompiledScanner, ScanBackend};
 
 #[path = "support/mod.rs"]
 mod support;
@@ -80,7 +80,7 @@ fn scan_file(scanner: &CompiledScanner, path: &str, bytes: &[u8]) -> BTreeSet<Fi
 #[test]
 #[ignore = "real-corpus soundness gate; run with --ignored --nocapture"]
 fn hs_prefilter_findings_identical_to_regexset() {
-    // Mirror files are all well under the HS size threshold, so `set_fallback_hs`
+    // Mirror files are all well under the HS size threshold, so `set_fallback_hs` on the scanner's tuning
     // toggles HS vs the RegexSet reference on every file. Both engines are always
     // built, so no env setup is needed.
     let detectors = match keyhog_core::load_detectors(&detector_dir()) {
@@ -103,9 +103,9 @@ fn hs_prefilter_findings_identical_to_regexset() {
     let mut total_hs = 0usize;
     let mut total_legacy = 0usize;
     for (path, bytes) in &files {
-        set_fallback_hs(Some(true));
+        scanner.tuning().set_fallback_hs(Some(true));
         let hs = scan_file(&scanner, path, bytes);
-        set_fallback_hs(Some(false));
+        scanner.tuning().set_fallback_hs(Some(false));
         let legacy = scan_file(&scanner, path, bytes);
         total_hs += hs.len();
         total_legacy += legacy.len();
@@ -121,7 +121,7 @@ fn hs_prefilter_findings_identical_to_regexset() {
             }
         }
     }
-    set_fallback_hs(None);
+    scanner.tuning().set_fallback_hs(None);
 
     eprintln!(
         "\nfindings parity: {} / {} files identical | HS findings={total_hs} legacy findings={total_legacy}",

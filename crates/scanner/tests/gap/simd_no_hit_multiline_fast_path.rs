@@ -8,21 +8,35 @@ fn scanner_root() -> PathBuf {
 fn simd_no_hit_multiline_branch_does_not_reenter_full_scan() {
     let src = std::fs::read_to_string(scanner_root().join("src/engine/scan.rs"))
         .expect("scan source readable");
-    let multiline = src
-        .find("Multiline fallback: files with concatenation indicators")
-        .expect("SIMD no-hit multiline branch must exist");
-    let fallback = src
-        .find("Task #69 follow-up: scan_fallback_patterns")
-        .expect("SIMD no-hit fallback branch must exist");
-    let branch = &src[multiline..fallback];
+    // The SIMD-coalesced phase-2 no-hit branch: a chunk that fired no phase-1
+    // trigger but was admitted by `should_scan_no_hit_chunk`. The old code had
+    // two separate branches (a "Multiline fallback" branch + a "Task #69
+    // follow-up" branch); they were unified into one no-hit path that scans the
+    // (possibly drifted) preprocessed text directly via the triggered path —
+    // which also covers the multiline-concatenation / decode-append case. The
+    // invariant this gate protects is unchanged: that path must NOT re-enter
+    // `self.scan(chunk)` (which would re-run preprocessing + decode recursion and
+    // double the work), and it MUST scan drifted preprocessed text via
+    // `scan_prepared_with_triggered`, gated by the raw-vs-preprocessed drift
+    // check.
+    let start = src
+        .find("No phase-1 trigger fired.")
+        .expect("SIMD no-hit branch must exist");
+    let end = src
+        .find("Cross-chunk reassembly:")
+        .expect("phase-2 boundary-reassembly tail must follow the no-hit branch");
+    assert!(start < end, "no-hit branch must precede the reassembly tail");
+    let branch = &src[start..end];
 
     assert!(
         !branch.contains("return self.scan(chunk);"),
-        "SIMD no-hit multiline path must not re-enter full scan/postprocess decode"
+        "SIMD no-hit branch must not re-enter full scan/postprocess decode"
     );
     assert!(
-        branch.contains("prepared.preprocessed.text.as_bytes() != chunk.data.as_bytes()")
+        branch.contains("prepared.preprocessed.text.as_bytes() == chunk.data.as_bytes()")
             && branch.contains("scan_prepared_with_triggered("),
-        "SIMD no-hit multiline path must scan changed preprocessed text without decode recursion"
+        "SIMD no-hit branch must scan drifted preprocessed text via the triggered \
+         path (raw-vs-preprocessed drift guard + scan_prepared_with_triggered), \
+         not decode recursion"
     );
 }

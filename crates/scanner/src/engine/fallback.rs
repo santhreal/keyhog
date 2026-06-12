@@ -5,11 +5,10 @@ use std::cell::RefCell;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::sync::OnceLock;
 
-// The fallback/prefilter runtime toggles live in `fallback_toggles.rs`;
-// re-export them here so the existing `fallback::set_*` / `fallback::*_enabled`
-// paths (mod.rs, lib.rs, backend_triggered.rs, the satellite impls) are
-// unchanged after the split.
-pub use super::fallback_toggles::*;
+// The per-scanner performance tuning ([`ScannerTuning`]) lives in `tuning.rs`;
+// re-export it here so the `fallback::ScannerTuning` path the satellite impls
+// and `mod.rs`/`lib.rs` use is unchanged after the split.
+pub use super::tuning::*;
 
 
 /// Per-pattern fallback profiler (env-gated; measurement only). Set

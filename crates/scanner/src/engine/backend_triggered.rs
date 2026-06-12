@@ -105,7 +105,7 @@ impl CompiledScanner {
         // no-op passthrough) so the span — in `chunk.data` coordinates — indexes
         // `preprocessed.text`; otherwise the full scan runs.
         let focus = prepared.chunk.metadata.decoded_span.filter(|_| {
-            fallback::decode_focus_enabled()
+            self.tuning.decode_focus_enabled()
                 && std::ptr::eq(
                     prepared.preprocessed.text.as_ptr(),
                     prepared.chunk.data.as_ptr(),

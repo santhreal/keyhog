@@ -110,14 +110,9 @@ mod simdsieve_prefilter;
 pub(crate) mod shared_regexes;
 
 pub use engine::decode_profile_dump;
-pub use engine::set_confirmed_suffix_gate;
 pub use engine::scan_inner_profile_dump;
 pub use engine::{profile_dump, profile_reset};
-pub use engine::{
-    fallback_gate_stats_dump, set_decode_focus, set_fallback_anchor_mode, set_fallback_hs,
-    set_fallback_homoglyph_gate, set_fallback_prefix_gate, set_fallback_reverse,
-    set_homoglyph_ascii_skip, set_hs_prefilter_max_len, set_prefilter_truncate,
-};
+pub use engine::{fallback_gate_stats_dump, ScannerTuning};
 pub use engine::{CompiledScanner, GpuInitPolicy};
 pub use error::{Result, ScanError};
 pub use hw_probe::{probe_hardware, select_backend, HardwareCaps, ScanBackend};

@@ -25,7 +25,7 @@ impl CompiledScanner {
             // anchor_mode = true: this method only runs on the shared-anchor
             // path, where eligible always-active patterns are gated by the AC.
             self.populate_active_fallback(data, match_text, &mut scratch, true);
-            if fallback_reverse_enabled() {
+            if self.tuning.fallback_reverse_enabled() {
                 scratch.active.reverse();
             }
             f(self, &scratch)
@@ -160,7 +160,9 @@ impl CompiledScanner {
             // (O(match) each — dense over-marking from a short literal is a
             // cheap quick-fail, not a whole-chunk scan). Plain patterns with
             // no folded literal run whole-chunk (they are few).
-            if homoglyph_gate_enabled() && scan_text.is_ascii() && anchor_idx.has_plain_localizer()
+            if self.tuning.homoglyph_gate_enabled()
+                && scan_text.is_ascii()
+                && anchor_idx.has_plain_localizer()
             {
                 ANCHOR_CANDIDATES.with(|cell| {
                     let mut cands = cell.borrow_mut();

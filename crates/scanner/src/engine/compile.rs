@@ -376,6 +376,7 @@ impl CompiledScanner {
             fallback_always_active_indices,
             fallback_always_active_prefilter,
             fallback_anchor_index,
+            tuning: fallback::ScannerTuning::from_env(),
             #[cfg(feature = "simd")]
             simd_prefilter,
             #[cfg(feature = "simd")]

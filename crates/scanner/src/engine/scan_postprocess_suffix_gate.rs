@@ -1,39 +1,12 @@
-//! Confirmed-pass SUFFIX GATE, extracted from `scan_postprocess.rs` (Law 5).
-//! Builds one ASCII-case-insensitive Aho-Corasick over every ac_map pattern's
-//! required trailing literals so the confirmed pass can skip a pattern whose
-//! suffix is absent (it cannot match) — recall-identical, see the unit gate.
-//! `build_confirmed_suffix_gate` / `set_confirmed_suffix_gate` /
-//! `confirmed_suffix_gate_enabled` are re-exported through `scan_postprocess`.
+//! Confirmed-pass SUFFIX GATE builder, extracted from `scan_postprocess.rs`
+//! (Law 5). Builds one ASCII-case-insensitive Aho-Corasick over every ac_map
+//! pattern's required trailing literals so the confirmed pass can skip a pattern
+//! whose suffix is absent (it cannot match) — recall-identical, see the unit
+//! gate. `build_confirmed_suffix_gate` is re-exported through `scan_postprocess`.
+//! The runtime ENABLE/override toggle lives on the per-scanner `ScannerTuning`
+//! (`tuning::ScannerTuning::confirmed_suffix_gate_enabled`), not here — there is
+//! no process-global gate state.
 use crate::types::*;
-use std::sync::atomic::Ordering::Relaxed;
-use std::sync::OnceLock;
-
-static CONFIRMED_GATE_OVERRIDE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
-
-/// Override the confirmed-pass suffix gate (test/diagnostic). `Some(true)`
-/// forces it on, `Some(false)` off, `None` = env default (on). Recall is
-/// identical either way — the gate only skips patterns whose required suffix
-/// literal is absent (so they cannot match), so it is safe to flip.
-pub fn set_confirmed_suffix_gate(mode: Option<bool>) {
-    CONFIRMED_GATE_OVERRIDE.store(
-        match mode {
-            None => 0,
-            Some(true) => 1,
-            Some(false) => 2,
-        },
-        Relaxed,
-    );
-}
-
-pub(crate) fn confirmed_suffix_gate_enabled() -> bool {
-    match CONFIRMED_GATE_OVERRIDE.load(Relaxed) {
-        1 => return true,
-        2 => return false,
-        _ => {}
-    }
-    static EN: OnceLock<bool> = OnceLock::new();
-    *EN.get_or_init(|| std::env::var("KEYHOG_CONFIRMED_GATE").as_deref() != Ok("0"))
-}
 
 /// Extract a pattern's required SUFFIX literals: every match ENDS with one of
 /// these, so if NONE appears in the chunk the pattern cannot match and its

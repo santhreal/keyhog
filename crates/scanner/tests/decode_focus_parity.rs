@@ -15,7 +15,7 @@ use support::paths::{corpus_dir, detector_dir};
 
 use base64::Engine;
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
-use keyhog_scanner::{set_decode_focus, CompiledScanner, ScanBackend};
+use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::path::PathBuf;
 
 struct Lcg(u64);
@@ -129,11 +129,11 @@ fn scan_both(
     s: &CompiledScanner,
     c: &Chunk,
 ) -> (Vec<(String, String, String)>, Vec<(String, String, String)>) {
-    set_decode_focus(Some(true));
+    s.tuning().set_decode_focus(Some(true));
     s.clear_fragment_cache();
     let on =
         canonical(&s.scan_chunks_with_backend(std::slice::from_ref(c), ScanBackend::CpuFallback));
-    set_decode_focus(Some(false));
+    s.tuning().set_decode_focus(Some(false));
     s.clear_fragment_cache();
     let off =
         canonical(&s.scan_chunks_with_backend(std::slice::from_ref(c), ScanBackend::CpuFallback));
@@ -227,7 +227,7 @@ fn decode_focus_parity_default() {
         }
     }
 
-    set_decode_focus(None);
+    scanner.tuning().set_decode_focus(None);
     eprintln!("decode_focus_parity: {checked} inputs, focus-on ≡ focus-off");
     assert!(checked >= n);
 }

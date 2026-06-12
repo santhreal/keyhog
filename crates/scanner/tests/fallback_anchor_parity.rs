@@ -3,8 +3,9 @@
 //! divergence is an unsound literal extraction (a dropped or extra match) and a
 //! recall bug — the gate fails loudly with the offending input.
 //!
-//! Scans each input twice in one process via `set_fallback_anchor_mode`
-//! (forcing anchored on, then off) and compares the canonical
+//! Scans each input twice in one process via `scanner.tuning()
+//! .set_fallback_anchor_mode` (forcing anchored on, then off) and compares the
+//! canonical
 //! `(detector_id, credential)` multisets. Runs over a large seeded-synthetic
 //! corpus that stresses the cursor-equivalence edges (adjacent/overlapping
 //! tokens, offset 0, end-of-buffer, repeats, homoglyph noise, assignment
@@ -18,9 +19,7 @@ mod support;
 use support::paths::{corpus_dir, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
-use keyhog_scanner::{
-    set_fallback_anchor_mode, set_fallback_homoglyph_gate, CompiledScanner, ScanBackend,
-};
+use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::path::PathBuf;
 
 /// Tiny deterministic LCG so the corpus is reproducible without a crate dep and
@@ -159,15 +158,15 @@ fn scan_both(scanner: &CompiledScanner, chunk: &Chunk) -> (Vec<Key>, Vec<Key>) {
     // second (a test-only hazard — in production each chunk is scanned once and
     // the cache evolves identically for a fixed anchor setting).
     // Shipping config: shared-anchor localization ON + homoglyph ASCII-gate ON.
-    set_fallback_anchor_mode(Some(true));
-    set_fallback_homoglyph_gate(Some(true));
+    scanner.tuning().set_fallback_anchor_mode(Some(true));
+    scanner.tuning().set_fallback_homoglyph_gate(Some(true));
     scanner.clear_fragment_cache();
     let optimized =
         scanner.scan_chunks_with_backend(std::slice::from_ref(chunk), ScanBackend::CpuFallback);
     // Fully-unoptimized baseline: every fallback pattern runs the legacy
     // whole-chunk path, including every homoglyph variant on every chunk.
-    set_fallback_anchor_mode(Some(false));
-    set_fallback_homoglyph_gate(Some(false));
+    scanner.tuning().set_fallback_anchor_mode(Some(false));
+    scanner.tuning().set_fallback_homoglyph_gate(Some(false));
     scanner.clear_fragment_cache();
     let baseline =
         scanner.scan_chunks_with_backend(std::slice::from_ref(chunk), ScanBackend::CpuFallback);
@@ -286,9 +285,9 @@ fn fallback_only_diff_mirror() {
     let mut diverged = 0;
     for (i, c) in chunks_16k.iter().enumerate() {
         let chunk = chunk_of(c, &format!("mirror-16k-{i}"));
-        set_fallback_anchor_mode(Some(true));
+        scanner.tuning().set_fallback_anchor_mode(Some(true));
         let a = scanner.debug_scan_fallback_only(&chunk);
-        set_fallback_anchor_mode(Some(false));
+        scanner.tuning().set_fallback_anchor_mode(Some(false));
         let w = scanner.debug_scan_fallback_only(&chunk);
         let ak = canonical(&[a]);
         let wk = canonical(&[w]);
@@ -301,7 +300,7 @@ fn fallback_only_diff_mirror() {
             }
         }
     }
-    set_fallback_anchor_mode(None);
+    scanner.tuning().set_fallback_anchor_mode(None);
     eprintln!("fallback-only diff: {diverged} diverging chunks");
 }
 
@@ -339,9 +338,11 @@ fn fallback_anchor_parity_default() {
         checked += assert_corpus(&scanner, &chunks_16k, "mirror-16k");
     }
 
-    // Restore the env-driven defaults for any later test in the binary.
-    set_fallback_anchor_mode(None);
-    set_fallback_homoglyph_gate(None);
+    // Restore this scanner's overrides to "follow env" (instance-local; with
+    // per-scanner tuning there is no cross-test global to leak, but keep the
+    // pairing explicit).
+    scanner.tuning().set_fallback_anchor_mode(None);
+    scanner.tuning().set_fallback_homoglyph_gate(None);
     eprintln!("fallback_anchor_parity: {checked} inputs checked, optimized ≡ baseline");
     assert!(
         checked >= n,

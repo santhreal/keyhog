@@ -69,7 +69,7 @@ mod fallback_generic_shape;
 #[cfg(feature = "simd")]
 mod fallback_hs;
 mod fallback_prefilter;
-mod fallback_toggles;
+mod tuning;
 pub(crate) mod fallback_truncate;
 mod gpu_cache;
 mod gpu_forced;
@@ -101,11 +101,7 @@ mod windowed;
 #[cfg(feature = "simd")]
 pub(crate) use backend_prepared::build_simd_scanner;
 pub(crate) use backend_prepared::PreparedChunk;
-pub use fallback::{
-    fallback_gate_stats_dump, set_decode_focus, set_fallback_anchor_mode, set_fallback_hs,
-    set_fallback_homoglyph_gate, set_fallback_prefix_gate, set_fallback_reverse,
-    set_homoglyph_ascii_skip, set_hs_prefilter_max_len, set_prefilter_truncate,
-};
+pub use fallback::{fallback_gate_stats_dump, ScannerTuning};
 pub use rule_pipeline::{
     build_rule_pipeline, megascan_input_len, rule_pipeline_cached, AC_GPU_MAX_MATCHES_PER_DISPATCH,
     MEGASCAN_INPUT_LEN, MEGASCAN_INPUT_LEN_DEFAULT,
@@ -113,7 +109,6 @@ pub use rule_pipeline::{
 pub use profile::{dump as profile_dump, reset as profile_reset};
 pub use scan_inner_profile::scan_inner_profile_dump;
 pub use scan_postprocess::decode_profile_dump;
-pub use scan_postprocess::set_confirmed_suffix_gate;
 pub use windowed::{
     floor_char_boundary, line_number_for_offset, next_window_offset, record_window_match,
     window_chunk, window_end_offset,
@@ -250,6 +245,12 @@ pub struct CompiledScanner {
     /// chunk; non-eligible patterns keep the whole-chunk path. `None` when no
     /// pattern is anchor-eligible. Recall-identical (see `fallback_anchor`).
     pub(crate) fallback_anchor_index: Option<fallback_anchor::FallbackAnchorIndex>,
+    /// Per-scanner performance route tuning (HS vs RegexSet, anchor
+    /// localization, prefilter truncation, decode focus, confirmed-suffix gate,
+    /// …). Resolved from the `KEYHOG_*` env defaults; differential parity tests
+    /// override one route on THIS scanner via [`CompiledScanner::tuning`] without
+    /// touching any global state. See [`fallback::ScannerTuning`].
+    pub(crate) tuning: fallback::ScannerTuning,
     #[cfg(feature = "simd")]
     pub(crate) simd_prefilter: Option<crate::simd::backend::HsScanner>,
     #[cfg(feature = "simd")]

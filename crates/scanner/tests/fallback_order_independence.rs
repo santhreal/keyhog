@@ -8,7 +8,7 @@ mod support;
 use support::paths::{corpus_dir, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
-use keyhog_scanner::{set_fallback_reverse, CompiledScanner, ScanBackend};
+use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::path::PathBuf;
 
 fn chunk_of(bytes: &[u8], label: &str) -> Chunk {
@@ -90,13 +90,13 @@ fn fallback_order_independence() {
     let mut diverged = 0;
     for (i, c) in chunks.iter().enumerate() {
         let chunk = chunk_of(c, &format!("c-{i}"));
-        set_fallback_reverse(Some(false));
+        scanner.tuning().set_fallback_reverse(Some(false));
         scanner.clear_fragment_cache();
         let normal = canonical(
             &scanner
                 .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback),
         );
-        set_fallback_reverse(Some(true));
+        scanner.tuning().set_fallback_reverse(Some(true));
         scanner.clear_fragment_cache();
         let reversed = canonical(
             &scanner
@@ -121,7 +121,7 @@ fn fallback_order_independence() {
             }
         }
     }
-    set_fallback_reverse(None);
+    scanner.tuning().set_fallback_reverse(None);
     eprintln!(
         "fallback_order_independence: {} chunks, {diverged} order-dependent",
         chunks.len()
