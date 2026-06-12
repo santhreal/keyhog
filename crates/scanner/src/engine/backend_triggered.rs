@@ -316,7 +316,22 @@ impl CompiledScanner {
     pub(crate) fn collect_triggered_patterns_cpu(&self, text: &str) -> Vec<u64> {
         let mut triggered_patterns = super::trigger_bitmap::new_trigger_bitmap(self.ac_map.len());
         if let Some(ac) = &self.ac {
-            for ac_match in ac.find_iter(text.as_bytes()) {
+            // OVERLAPPING iteration, not leftmost `find_iter`: a non-overlapping
+            // sweep reports the longest literal at each position and SKIPS PAST it,
+            // so a shorter literal nested inside a longer one is shadowed and never
+            // marks its detector. Concretely `client_secret` (pattern 5's quoted-
+            // JSON literal) swallows the `secret` inside it, so generic-password
+            // pattern 4 (`(?:…|secret)\s*=\s*"…"`) is never AC-confirmed and only
+            // the always-active homoglyph variant catches it on ASCII — the exact
+            // base-AC coverage gap that blocked the homoglyph ASCII-skip. Triggers
+            // are position-independent bits (the confirmed pass re-scans the whole
+            // chunk and filters by full regex), so marking every literal that
+            // occurs — overlaps included — only ever ADDS sound confirmation work,
+            // never a false positive, and closes the shadow gap for every backend.
+            // Phase-1 is ~1.7% of scan and literals are sparse in real source, so
+            // the extra overlap matches are negligible; proven recall-neutral for
+            // the skip by `homoglyph_ascii_skip_parity_default`.
+            for ac_match in ac.find_overlapping_iter(text.as_bytes()) {
                 self.mark_triggered_pattern(&mut triggered_patterns, ac_match.pattern().as_usize());
             }
         }

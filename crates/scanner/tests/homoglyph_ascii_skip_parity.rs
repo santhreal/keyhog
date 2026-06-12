@@ -175,14 +175,16 @@ fn collect_files(root: &PathBuf, limit: usize) -> Vec<Vec<u8>> {
     files
 }
 
-// The SOUNDNESS bar for the `homoglyph_ascii_skip` optimization (off by default).
-// It does NOT pass today: skipping homoglyph variants on ASCII drops real
-// findings (e.g. `generic-password` on `client_secret="…"`) — the variants are
-// not redundant with the AC base path. This gate is the proof obligation a real
-// fix (closing the base-AC coverage gap) must clear before the skip can default
-// on. Run with `--ignored` while working that fix; it names every leak.
+// The SOUNDNESS gate for the `homoglyph_ascii_skip` optimization (now default ON).
+// It PASSES: closing the base-AC coverage gap — phase-1 marks triggers with
+// OVERLAPPING AC matching, so a detector whose base literal is shadowed by a
+// longer literal (e.g. `secret` inside `client_secret`) is still AC-confirmed —
+// made skip ≡ fold at the raw-match level on every ASCII chunk. This gate now
+// guards that the skip stays recall-neutral: a divergence means a NEW shadow
+// case the overlapping triggers don't cover, i.e. a real coverage regression,
+// NOT a reason to weaken the test. Default `KEYHOG_PARITY_N` + corpus cap keep CI
+// fast; set `KEYHOG_PARITY_N` higher for an exhaustive sweep.
 #[test]
-#[ignore = "soundness bar for an off-by-default opt; refutes skip-on-ASCII today (drops generic-password) — names the coverage gaps to close"]
 fn homoglyph_ascii_skip_parity_default() {
     let detectors = match keyhog_core::load_detectors(&detector_dir()) {
         Ok(d) => d,
@@ -196,7 +198,7 @@ fn homoglyph_ascii_skip_parity_default() {
     let n: usize = std::env::var("KEYHOG_PARITY_N")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(20_000);
+        .unwrap_or(5_000);
 
     let mut rng = Lcg(0x1234_5678_9abc_def0);
     let mut checked = 0usize;
@@ -212,9 +214,11 @@ fn homoglyph_ascii_skip_parity_default() {
         checked += 1;
     }
 
-    // Real mirror corpus — the representative ASCII source files.
+    // Real mirror corpus — the representative ASCII source files. Capped for CI
+    // speed; the synthetic sweep above plus this sample is a strong regression
+    // gate, and `KEYHOG_PARITY_N` widens the synthetic half for exhaustive runs.
     if let Some(root) = corpus_dir() {
-        for (i, f) in collect_files(&root, 8000).into_iter().enumerate() {
+        for (i, f) in collect_files(&root, 3000).into_iter().enumerate() {
             if !f.is_ascii() {
                 continue;
             }

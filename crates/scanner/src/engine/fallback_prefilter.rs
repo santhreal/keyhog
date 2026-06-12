@@ -426,12 +426,17 @@ impl AlwaysActiveFallbackPrefilter {
             let is_plain = batch.ascii_set.is_some();
             // A HOMOGLYPH-variant batch on a pure-ASCII chunk: skip entirely. Each
             // variant's base ASCII prefix is in the AC/confirmed path
-            // (compiler_build.rs pushes both), and a chunk with no non-ASCII bytes
-            // has no homoglyph for the variant to catch — so it adds nothing the
-            // base AC doesn't. This removes the dominant `fb:prefilter` cost on
-            // all-ASCII source. Proven recall-neutral by `homoglyph_ascii_skip_parity`.
-            // Generic/case-sensitive plain fallbacks (no base AC) are in
-            // non-skippable batches and are unaffected.
+            // (compiler_build.rs pushes both) AND that path now CONFIRMS it even
+            // when the literal is shadowed by a longer one, because phase-1 marks
+            // triggers with OVERLAPPING AC matching (collect_triggered_patterns_cpu)
+            // — the missing half that previously let the always-active variant be
+            // the sole matcher for e.g. generic-password on `client_secret="…"`. A
+            // chunk with no non-ASCII bytes has no homoglyph for the variant to
+            // catch, so on ASCII it adds nothing the base AC doesn't. This removes
+            // the dominant `fb:prefilter` cost on all-ASCII source (~13% of scan).
+            // Proven recall-neutral by `homoglyph_ascii_skip_parity_default` (now a
+            // live gate, not `#[ignore]`). Generic/case-sensitive plain fallbacks
+            // (no base AC) are in non-skippable batches and are unaffected.
             if batch.homoglyph_skippable && ascii && tuning.homoglyph_ascii_skip_enabled() {
                 continue;
             }

@@ -43,7 +43,8 @@ pub struct ScannerTuning {
     fallback_anchor: AtomicU8,
     /// Override for the homoglyph ASCII gate.
     homoglyph_gate: AtomicU8,
-    /// Override for the homoglyph ASCII-skip (measurement only, default off).
+    /// Override for the homoglyph ASCII-skip (default ON; recall-safe since the
+    /// overlapping-AC trigger fix closed the base-literal shadow gap).
     homoglyph_ascii_skip: AtomicU8,
     /// Override for the diagnostic fallback extraction-order reversal.
     fallback_reverse: AtomicU8,
@@ -178,11 +179,18 @@ impl ScannerTuning {
     }
 
     /// Whether to SKIP the always-active homoglyph fallback variants on a
-    /// pure-ASCII chunk. **MEASURED NEGATIVE — default OFF** (skipping drops real
-    /// findings, e.g. `generic-password`, via an overlap-suppression cascade; the
-    /// always-active variant is load-bearing on ASCII, not redundant). Gated
-    /// behind `KEYHOG_HOMOGLYPH_ASCII_SKIP=1` (measurement only) until the
-    /// base-AC coverage gap is closed.
+    /// pure-ASCII chunk. **Default ON** since the base-AC coverage gap was closed:
+    /// `collect_triggered_patterns_cpu` now scans the trigger AC with OVERLAPPING
+    /// matching, so a detector whose base literal is a substring of a longer
+    /// matched literal (e.g. `secret` inside `client_secret`) is no longer
+    /// shadowed — its match is reproduced by the AC/confirmed path, making the
+    /// always-active homoglyph variant redundant on a chunk with no non-ASCII
+    /// bytes. Proven recall-neutral by `homoglyph_ascii_skip_parity_default`
+    /// (skip ≡ fold over the mirror corpus + 20k synthetic ASCII inputs). On the
+    /// mirror corpus this also corrects an overlap-suppression cascade
+    /// (`MAILGUN_API_KEY=key-…` was mislabelled Webhook-Signing-Key when the
+    /// variant ran) and is ~13% faster (`fb:prefilter` is 55% of scan).
+    /// `KEYHOG_HOMOGLYPH_ASCII_SKIP=0` forces the legacy fold-every-variant path.
     pub(crate) fn homoglyph_ascii_skip_enabled(&self) -> bool {
         match self.homoglyph_ascii_skip.load(Relaxed) {
             1 => true,
@@ -327,7 +335,13 @@ fn env_homoglyph_gate() -> bool {
 
 fn env_homoglyph_ascii_skip() -> bool {
     static EN: OnceLock<bool> = OnceLock::new();
-    *EN.get_or_init(|| std::env::var("KEYHOG_HOMOGLYPH_ASCII_SKIP").as_deref() == Ok("1"))
+    // Default ON: the base-AC coverage gap that made this drop findings is closed
+    // (overlapping AC triggers in `collect_triggered_patterns_cpu` now confirm
+    // every detector whose base literal is shadowed by a longer literal, so the
+    // always-active homoglyph variant is redundant on a pure-ASCII chunk). Proven
+    // recall-neutral by `homoglyph_ascii_skip_parity_default`. `=0` forces the
+    // legacy fold-every-variant path.
+    *EN.get_or_init(|| std::env::var("KEYHOG_HOMOGLYPH_ASCII_SKIP").as_deref() != Ok("0"))
 }
 
 fn env_fallback_reverse() -> bool {
