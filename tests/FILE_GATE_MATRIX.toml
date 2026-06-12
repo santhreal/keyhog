@@ -815,3 +815,60 @@ path = "crates/verifier/src/verify/request.rs"
 
 [[module]]
 path = "crates/verifier/src/verify/response.rs"
+
+# Engine 500-LOC split satellites + previously-untracked engine/prefilter
+# modules (LR2-A8 audit coverage; one [[module]] per scanner src file).
+
+[[module]]
+path = "crates/scanner/src/engine/compiled_api.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/csr.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/fallback_anchor_scan.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/fallback_compiled.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/fallback_compiled_anchored.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/fallback_entropy_gates.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/fallback_generic_shape.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/fallback_hs.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/fallback_prefilter.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/fallback_toggles.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/fallback_truncate.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/megakernel_dispatch.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/scan_postprocess_fragments.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/scan_postprocess_profile.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/scan_postprocess_suffix_gate.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/scoring.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/trigger_bitmap.rs"
+
+[[module]]
+path = "crates/scanner/src/prefilter_degrade.rs"

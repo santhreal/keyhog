@@ -1,6 +1,4 @@
 #[cfg(feature = "entropy")]
-use super::fallback_entropy_helpers::*;
-#[cfg(feature = "entropy")]
 use super::*;
 #[cfg(feature = "entropy")]
 use super::fallback_entropy_gates::entropy_match_suppressed;

@@ -11,11 +11,14 @@ fn fallback_always_active_seed_is_sparse_not_dense_bool_scan() {
         "dense fallback bool tables force an O(fallback-patterns) scan per chunk"
     );
 
+    // The fallback scan impl (hot-path seed loop + the active-set admission
+    // probe) was split out of `fallback.rs` into `fallback_compiled.rs` under the
+    // 500-LOC ceiling (Law 5); the sparse-seed invariant now lives there.
     let fallback = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/src/engine/fallback.rs"
+        "/src/engine/fallback_compiled.rs"
     ))
-    .expect("read fallback module");
+    .expect("read fallback_compiled module");
     assert!(
         fallback.contains("for &index in &self.fallback_always_active_indices"),
         "fallback hot path must seed from sparse always-active indices"

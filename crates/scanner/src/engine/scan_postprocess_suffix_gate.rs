@@ -5,7 +5,7 @@
 //! `build_confirmed_suffix_gate` / `set_confirmed_suffix_gate` /
 //! `confirmed_suffix_gate_enabled` are re-exported through `scan_postprocess`.
 use crate::types::*;
-use std::sync::atomic::{AtomicU8, Ordering::Relaxed};
+use std::sync::atomic::Ordering::Relaxed;
 use std::sync::OnceLock;
 
 static CONFIRMED_GATE_OVERRIDE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);

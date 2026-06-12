@@ -43,7 +43,10 @@ fn no_hit_admission_consults_active_fallback_set() {
     );
 
     // The active-set probe must stay shared with the production fallback scanner.
-    let fallback = scanner_source("engine/fallback.rs");
+    // The fallback scan impl was split out of `fallback.rs` into
+    // `fallback_compiled.rs` under the 500-LOC ceiling (Law 5); the probe now
+    // lives there, still `pub(crate)` and still the one the no-hit gate calls.
+    let fallback = scanner_source("engine/fallback_compiled.rs");
     assert!(
         fallback.contains("pub(crate) fn has_active_fallback_patterns_for_chunk"),
         "fallback active-set probe must stay shared with the production fallback scanner"
