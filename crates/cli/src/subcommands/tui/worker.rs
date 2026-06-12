@@ -11,7 +11,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use keyhog_core::{dedup_cross_detector, dedup_matches, Chunk, ChunkMetadata, DedupScope};
+use keyhog_core::{
+    dedup_cross_detector, dedup_matches, Chunk, ChunkMetadata, DedupScope, DedupedMatch,
+};
 use keyhog_scanner::engine::CompiledScanner;
 
 use super::{Counters, FindingEvent};
@@ -95,20 +97,7 @@ pub(super) fn scan_worker(
                 ..Default::default()
             },
         };
-        // Dedup to the SAME findings `keyhog scan` reports rather than streaming
-        // raw per-chunk hits: `dedup_matches` (credential scope — the scan
-        // default) collapses the same credential found by multiple paths, and
-        // `dedup_cross_detector` collapses overlay detectors firing on one line
-        // (e.g. entropy-token / generic-secret on a `ghp_`/`sk_live_` line).
-        // Without this the live feed over-surfaces — 11 rows where `keyhog scan`
-        // reports 4 — and the stats `findings` count disagrees with the scan
-        // reporter. Dedup is per-file (the streaming feed can't buffer the whole
-        // tree for cross-file credential dedup), which matches how each file's
-        // findings appear as it is scanned.
-        let mut matches = scanner.scan(&chunk);
-        matches.sort_by_key(|m| std::cmp::Reverse(m.severity));
-        let deduped =
-            dedup_cross_detector(dedup_matches(matches, &DedupScope::Credential));
+        let deduped = dedup_file_findings(&scanner, &chunk);
         counters
             .findings_total
             .fetch_add(deduped.len(), Ordering::Relaxed);
@@ -126,6 +115,27 @@ pub(super) fn scan_worker(
         slot.clear();
     }
     drop(sender);
+}
+
+/// Per-file dedup pipeline shared by the live TUI worker and its contract test.
+///
+/// Runs the SAME collapse `keyhog scan` applies before the reporter prints:
+/// sort by severity descending, then `dedup_matches` (credential scope — the
+/// scan default) to fold one credential surfaced by several paths, then
+/// `dedup_cross_detector` to fold overlay detectors (entropy-token /
+/// generic-secret) that fire on the same `ghp_` / `sk_live_` line. Without it
+/// the live feed streams raw per-chunk hits and over-surfaces — the stats
+/// `findings` count and the feed rows disagree with the `keyhog scan` reporter
+/// (e.g. one `ghp_…` line shown three times by three detectors).
+///
+/// Scope is deliberately per-file: the streaming feed cannot buffer the whole
+/// tree for cross-file credential dedup, which matches how each file's findings
+/// appear as it is scanned. Two files holding the same literal secret therefore
+/// surface once each, exactly as the live walk reaches them.
+pub fn dedup_file_findings(scanner: &CompiledScanner, chunk: &Chunk) -> Vec<DedupedMatch> {
+    let mut matches = scanner.scan(chunk);
+    matches.sort_by_key(|m| std::cmp::Reverse(m.severity));
+    dedup_cross_detector(dedup_matches(matches, &DedupScope::Credential))
 }
 
 fn walk_files(root: &Path, max_files: usize) -> Vec<PathBuf> {

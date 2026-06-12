@@ -13,6 +13,8 @@
 mod render;
 mod worker;
 
+pub use worker::dedup_file_findings;
+
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
