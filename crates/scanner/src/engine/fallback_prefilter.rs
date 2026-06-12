@@ -470,4 +470,60 @@ impl AlwaysActiveFallbackPrefilter {
             scratch.mark(index);
         }
     }
+
+    /// True iff ANY always-active pattern can fire on `match_text` — the BOOLEAN
+    /// companion to [`mark_matches`](Self::mark_matches) for the admission gate
+    /// (`has_active_fallback_patterns_for_chunk`), which needs only "is the
+    /// active set non-empty?", not the full marked set. Early-exits at the first
+    /// active pattern; the marked set is the measured #1 scan cost and the gate
+    /// would otherwise build it in full only to call `.is_empty()` (then have
+    /// extraction build it AGAIN). Mirrors `mark_matches`'s engine dispatch with
+    /// `localize_plain = false` (the gate runs `anchor_mode = false`): in the
+    /// default config this computes EXACTLY the same active-set membership
+    /// (HS marks the full set; no prune applies), so admission and extraction
+    /// share one contract. It never applies the optional measurement-only prunes
+    /// (`fallback_prefix_gate` / `homoglyph_ascii_skip`), so under those toggles
+    /// it answers over the marking SUPERSET — sound (it can never reject a chunk
+    /// the scan would mark, so no finding is lost), at most over-admitting an
+    /// inert chunk to the extraction that already filters it.
+    ///
+    /// Gated to its sole caller (`has_active_fallback_patterns_for_chunk`, the
+    /// no-phase-1-hit admission gate that exists only on the `simd`/`gpu`
+    /// phase-2 tail) so non-`simd` profiles don't carry it as dead code (Law 11).
+    #[cfg(any(feature = "simd", feature = "gpu"))]
+    pub(crate) fn any_active_match(&self, match_text: &str) -> bool {
+        // Patterns whose batch failed to compile run unconditionally
+        // (`ungated_indices`), so the active set is non-empty for every chunk.
+        if !self.ungated_indices.is_empty() {
+            return true;
+        }
+        #[cfg(feature = "simd")]
+        if let Some(hs) = &self.hs {
+            if fallback_hs_enabled() && match_text.len() <= hs_prefilter_max_len() {
+                return hs.any_match(match_text);
+            }
+        }
+        // RegexSet reference path (HS absent / over the size gate): the active
+        // set is non-empty iff some batch's set matches. `is_match` early-exits
+        // at the first matching pattern within the batch.
+        let truncate = prefilter_truncate_enabled();
+        let use_ascii = homoglyph_gate_enabled() && match_text.is_ascii();
+        for batch in &self.batches {
+            let set = match (
+                truncate,
+                use_ascii,
+                &batch.ascii_set,
+                &batch.ascii_set_trunc,
+            ) {
+                (true, true, Some(_), Some(ascii_trunc)) => ascii_trunc,
+                (false, true, Some(ascii), _) => ascii,
+                (true, _, _, _) => &batch.set_trunc,
+                (false, _, _, _) => &batch.set,
+            };
+            if set.is_match(match_text) {
+                return true;
+            }
+        }
+        false
+    }
 }

@@ -301,16 +301,40 @@ impl CompiledScanner {
         // No keyword AC compiled => `populate_active_fallback` marks EVERY
         // fallback pattern (its `else` arm), so the answer is unconditionally
         // yes; skip the scan.
-        if self.fallback_keyword_ac.is_none() {
+        let Some(keyword_ac) = &self.fallback_keyword_ac else {
             return true;
+        };
+        // Boolean admission: does any fallback keyword OR any always-active
+        // prefilter pattern fire on this chunk? This is the SAME union the
+        // production scan marks (`populate_active_fallback`, `anchor_mode=false`,
+        // `match_text == data` — admission runs on the raw chunk before any
+        // structured preprocessing), but each side EARLY-EXITS at its first hit
+        // instead of building the full marked set. Building that set is the
+        // measured #1 scan cost (`fb:prefilter`), and extraction rebuilds it
+        // when the chunk is admitted — so the gate's own marked set was pure
+        // redundant work. The cheap keyword AC is tried first, so a
+        // keyword-admitted chunk skips the prefilter scan entirely.
+        {
+            let _g = super::profile::span(super::profile::P::FbKeywordAc);
+            for mat in keyword_ac.find_iter(data) {
+                let keyword_idx = mat.pattern().as_usize();
+                if self
+                    .fallback_keyword_to_patterns
+                    .get(keyword_idx)
+                    .is_some_and(|patterns| !patterns.is_empty())
+                {
+                    return true;
+                }
+            }
         }
-        // Run the real active-set computation: the always-active RegexSet
-        // prefilter (marks the anchorless patterns that can fire on THIS chunk)
-        // plus the keyword AC. `match_text == data` because admission runs on the
-        // raw chunk before any structured preprocessing.
-        self.with_active_fallback_patterns(data, data, |_, active_patterns| {
-            !active_patterns.is_empty()
-        })
+        let _g = super::profile::span(super::profile::P::FbPrefilter);
+        match &self.fallback_always_active_prefilter {
+            Some(prefilter) => prefilter.any_active_match(data),
+            // No prefilter compiled but always-active indices exist =>
+            // `populate_active_fallback`'s `None` arm marks them all
+            // unconditionally, so the active set is non-empty.
+            None => !self.fallback_always_active_indices.is_empty(),
+        }
     }
 
     /// True iff `idx` is an eligible always-active pattern handled by the shared

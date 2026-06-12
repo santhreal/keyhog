@@ -656,6 +656,47 @@ pub(crate) mod backend {
             }
         }
 
+        /// True iff ANY compiled pattern matches `text`. The BOOLEAN companion
+        /// to [`scan_each`](Self::scan_each): the match callback returns
+        /// `Matching::Terminate` on the first hit, so HS aborts the scan
+        /// (`HS_SCAN_TERMINATED`) instead of enumerating every match. On a chunk
+        /// that has an active pattern this returns after the first one — the
+        /// admission gate (`has_active_fallback_patterns_for_chunk`) needs only
+        /// "is anything active?", never the full marked set, and building that
+        /// set is the measured #1 scan cost (`fb:prefilter`).
+        ///
+        /// Returns the same boolean as `!scan_each(text).is_empty()` — same
+        /// database, same haystack — but short-circuits.
+        pub fn any_match(&self, text: &[u8]) -> bool {
+            thread_local! {
+                static TLS_ANY: std::cell::RefCell<
+                    std::collections::HashMap<(u64, usize), Scratch>,
+                > = std::cell::RefCell::new(std::collections::HashMap::new());
+            }
+            for (shard_idx, shard) in self.shards.iter().enumerate() {
+                let key = (self.scanner_id, shard_idx);
+                let scratch = TLS_ANY
+                    .with(|tls| tls.borrow_mut().remove(&key))
+                    .or_else(|| shard.scratch_pool.lock().pop())
+                    .or_else(|| shard.db.alloc_scratch().ok());
+                let Some(scratch) = scratch else {
+                    continue;
+                };
+                let mut hit = false;
+                let _ = shard.db.scan(text, &scratch, |_id, _from, _to, _flags| {
+                    hit = true;
+                    Matching::Terminate
+                });
+                TLS_ANY.with(|tls| {
+                    tls.borrow_mut().insert(key, scratch);
+                });
+                if hit {
+                    return true;
+                }
+            }
+            false
+        }
+
         /// Look up detector and pattern metadata for a Hyperscan pattern id.
         ///
         /// # Examples

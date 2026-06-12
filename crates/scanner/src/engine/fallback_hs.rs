@@ -116,4 +116,22 @@ impl HsFallbackEngine {
             }
         }
     }
+
+    /// True iff ANY always-active pattern can fire on `match_text`. The BOOLEAN
+    /// companion to [`mark`](Self::mark): one SIMD scan that early-exits at the
+    /// first hit (HS native termination), plus the loud host path for the few
+    /// HS-incompatible patterns. Recall-identical to `mark(...)` followed by a
+    /// non-empty check — same patterns, same haystack — without building the set.
+    #[inline]
+    pub(crate) fn any_match(&self, match_text: &str) -> bool {
+        if self.scanner.any_match(match_text.as_bytes()) {
+            return true;
+        }
+        for (_idx, re) in &self.dropped {
+            if re.get().is_match(match_text) {
+                return true;
+            }
+        }
+        false
+    }
 }
