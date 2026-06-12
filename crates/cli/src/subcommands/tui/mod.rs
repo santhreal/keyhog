@@ -27,7 +27,7 @@ use crossterm::execute;
 use crossterm::terminal::{
     disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen,
 };
-use keyhog_core::{RawMatch, Severity};
+use keyhog_core::{DedupedMatch, Severity};
 use keyhog_scanner::engine::CompiledScanner;
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
@@ -49,19 +49,19 @@ struct FindingEvent {
     redacted: String,
 }
 
-impl From<&RawMatch> for FindingEvent {
-    fn from(m: &RawMatch) -> Self {
+impl From<&DedupedMatch> for FindingEvent {
+    fn from(m: &DedupedMatch) -> Self {
         Self {
             severity: m.severity,
             service: m.service.to_string(),
             detector_id: m.detector_id.to_string(),
             path: m
-                .location
+                .primary_location
                 .file_path
                 .as_deref()
                 .map(str::to_owned)
                 .unwrap_or_else(|| "<stdin>".to_string()),
-            line: m.location.line,
+            line: m.primary_location.line,
             redacted: keyhog_core::redact(&m.credential).into_owned(),
         }
     }
@@ -188,8 +188,16 @@ fn run_ui(
     let pattern_count = scanner.pattern_count();
 
     let started = Instant::now();
+    // Once the scan completes the dashboard is STATIC ("press any key to
+    // exit"). Freeze the elapsed clock at the scan's real duration instead of
+    // letting it tick up forever, and stop the 50 ms redraw/poll spin so the
+    // idle dashboard sits near-0% CPU rather than busy-looping. `needs_redraw`
+    // gates the post-scan repaint to actual changes (a resize); while scanning
+    // we always repaint because the counters + elapsed advance every frame.
+    let mut frozen_elapsed: Option<Duration> = None;
     let mut findings_feed: std::collections::VecDeque<FindingEvent> =
         std::collections::VecDeque::with_capacity(feed_depth);
+    let mut needs_redraw = true;
 
     let result: Result<()> = loop {
         while let Ok(ev) = receiver.try_recv() {
@@ -197,40 +205,62 @@ fn run_ui(
                 findings_feed.pop_front();
             }
             findings_feed.push_back(ev);
+            needs_redraw = true;
         }
 
         let done = counters.done.load(Ordering::Relaxed);
+        if done && frozen_elapsed.is_none() {
+            // Scan just finished: snapshot the final elapsed ONCE and force a
+            // last repaint so the frozen state is painted.
+            frozen_elapsed = Some(started.elapsed());
+            needs_redraw = true;
+        }
+        let elapsed = frozen_elapsed.unwrap_or_else(|| started.elapsed());
 
-        if let Err(e) = terminal.draw(|frame| {
-            render::render(
-                frame,
-                &target,
-                &backend_label,
-                &preferred_backend,
-                pattern_count,
-                &counters,
-                &findings_feed,
-                started.elapsed(),
-                done,
-            );
-        }) {
-            break Err(anyhow::Error::new(e).context("drawing TUI frame"));
+        if !done || needs_redraw {
+            if let Err(e) = terminal.draw(|frame| {
+                render::render(
+                    frame,
+                    &target,
+                    &backend_label,
+                    &preferred_backend,
+                    pattern_count,
+                    &counters,
+                    &findings_feed,
+                    elapsed,
+                    done,
+                );
+            }) {
+                break Err(anyhow::Error::new(e).context("drawing TUI frame"));
+            }
+            needs_redraw = false;
         }
 
-        // Poll keyboard. After scan completion we still let the user
-        // sit on the dashboard so the demo recording can capture the
-        // final state; any keypress (or q/Esc) exits.
-        if event::poll(Duration::from_millis(50)).context("polling keyboard")? {
-            if let Event::Key(k) = event::read().context("reading keyboard event")? {
-                if k.kind == KeyEventKind::Press
-                    && (matches!(k.code, KeyCode::Char('q') | KeyCode::Esc)
-                        || (k.code == KeyCode::Char('c')
-                            && k.modifiers.contains(KeyModifiers::CONTROL))
-                        || done)
-                {
-                    cancel.store(true, Ordering::Relaxed);
-                    break Ok(());
+        // Poll cadence: tight (50 ms) while scanning for live progress; relaxed
+        // (500 ms) once the scan is done so the idle "press any key" dashboard
+        // doesn't burn CPU. A keypress or resize returns from `poll` the instant
+        // it arrives regardless of the timeout, so responsiveness is unchanged.
+        let poll_timeout = if done {
+            Duration::from_millis(500)
+        } else {
+            Duration::from_millis(50)
+        };
+        if event::poll(poll_timeout).context("polling keyboard")? {
+            match event::read().context("reading terminal event")? {
+                Event::Key(k) => {
+                    if k.kind == KeyEventKind::Press
+                        && (matches!(k.code, KeyCode::Char('q') | KeyCode::Esc)
+                            || (k.code == KeyCode::Char('c')
+                                && k.modifiers.contains(KeyModifiers::CONTROL))
+                            || done)
+                    {
+                        cancel.store(true, Ordering::Relaxed);
+                        break Ok(());
+                    }
                 }
+                // A resize invalidates the frozen frame; repaint next iteration.
+                Event::Resize(_, _) => needs_redraw = true,
+                _ => {}
             }
         }
     };
