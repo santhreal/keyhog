@@ -3,6 +3,7 @@ pub mod akia_split_across_chunk_boundary_reassembled;
 pub mod base64_akia_splice_across_chunks;
 pub mod chunk_boundary;
 pub mod concat;
+pub mod decode_through_real_source_offset;
 pub mod empty_chunk_no_findings;
 pub mod empty_corpus_zero_findings;
 mod engine;
