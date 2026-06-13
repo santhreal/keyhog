@@ -16,12 +16,19 @@ use std::path::{Path, PathBuf};
 /// Crate-private modules permitted to keep co-located `#[cfg(test)]` white-box
 /// tests. Paths are relative to `src/`. Keep this list SHORT and justified.
 const INLINE_TEST_ALLOWLIST: &[&str] = &[
-    // `MegakernelCatalog` is a `pub(crate)` GPU DFA-lowering internal; its catalog
-    // classification (lowerable-vs-host) and on-disk wire round-trip tests assert
-    // on private fields (`rules`, `rule_to_detector`) and call `pub(crate)`
-    // build/encode. No external test can reach it without making GPU internals
-    // `pub`, so white-box co-location is the correct place for this coverage.
+    // `MegakernelCatalog` is a `pub(crate)` GPU DFA-lowering internal. Its catalog
+    // classification (lowerable-vs-host) tests assert on the `pub(crate)`
+    // build/host_detectors API and the private rule set. No external test can
+    // reach this without making GPU internals `pub`, so white-box co-location is
+    // the correct place for the coverage (Law 1 / minimal public surface).
     "engine/megakernel.rs",
+    // The catalog cache wire (de)serialization, split out of megakernel.rs
+    // (Law 5). Its round-trip test asserts on the `pub(super)` private fields
+    // (`rules`, `rule_to_detector`, `host_detectors`) and calls `pub(crate)`
+    // build + the `MatchEngineCache` to_bytes/from_bytes — same white-box
+    // rationale as megakernel.rs: external `tests/` would force exposing the
+    // catalog internals as `pub`.
+    "engine/megakernel_wire.rs",
 ];
 
 /// True iff `path` ends with an allowlisted `src/`-relative path (component-wise,
