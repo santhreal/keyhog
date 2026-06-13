@@ -38,6 +38,24 @@ def test_run_result_round_trips_losslessly():
     assert decoded.result_filename() == "mirror-keyhog-simd-nocache-nodaemon-full.json"
 
 
+def test_scanner_config_min_confidence_is_optional_and_off_the_matrix_key():
+    """`min_confidence` is the harvest-only report-floor override. Unset (every
+    leaderboard config) it is omitted from JSON and absent from `config_id`;
+    set, it round-trips but STILL does not change `config_id` — a harvest scan
+    must never fork the stable matrix key the README table / gate index on."""
+    default = ScannerConfig(backend="simd")
+    assert default.min_confidence is None
+    assert "min_confidence" not in default.to_json()
+    assert default.config_id == "simd-nocache-nodaemon-full"
+    assert ScannerConfig.from_json(default.to_json()).min_confidence is None
+
+    floored = ScannerConfig(backend="simd", min_confidence=0.0)
+    encoded = floored.to_json()
+    assert encoded["min_confidence"] == 0.0
+    assert ScannerConfig.from_json(encoded).min_confidence == 0.0
+    assert floored.config_id == default.config_id  # harvest floor ∉ matrix key
+
+
 def test_per_detector_round_trips_with_histograms():
     aws = DetectorStat(unique_tp=2)
     aws.add_tp(0.91)   # tp -> 1

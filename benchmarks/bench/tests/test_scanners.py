@@ -191,6 +191,45 @@ def test_keyhog_gpu_benchmark_rows_require_real_gpu():
     }
 
 
+def test_keyhog_min_confidence_floor_is_harvest_only(tmp_path):
+    """The optional report-floor override threads to `--min-confidence` ONLY
+    when set, and never forks the leaderboard's stable `config_id`.
+
+    This is the harvest-loop knob: the ML harvest scans at a LOW floor so the
+    training corpus captures the sub-floor candidates the default ~0.30 floor
+    hides (the fix for the kubernetes-bootstrap-token +203-FP retrain blind
+    spot). Every leaderboard config leaves it None, so the scored command and
+    the matrix key are byte-identical to before the knob existed.
+    """
+    scanner = scanners.KeyhogScanner(binary="/bin/true")
+    root = tmp_path / "corpus"
+    out = tmp_path / "out.json"
+
+    # Leaderboard default: no override -> no flag, canonical config_id.
+    lb = ScannerConfig(backend="simd")
+    cmd_lb = scanner._cmd(root, lb, out, None)
+    assert "--min-confidence" not in cmd_lb
+    assert lb.config_id == "simd-nocache-nodaemon-full"
+    assert "min_confidence" not in lb.to_json()
+
+    # Harvest: floor 0.0 captures every scored candidate; flag present, but the
+    # config_id MUST be unchanged so the harvest scan can never masquerade as a
+    # distinct leaderboard row.
+    harvest = ScannerConfig(backend="simd", min_confidence=0.0)
+    cmd_h = scanner._cmd(root, harvest, out, None)
+    i = cmd_h.index("--min-confidence")
+    assert cmd_h[i + 1] == "0.0"
+    assert harvest.config_id == "simd-nocache-nodaemon-full"
+    assert harvest.to_json()["min_confidence"] == 0.0
+
+    # A fractional floor round-trips through the CLI float formatting.
+    frac = ScannerConfig(backend="cpu", min_confidence=0.05)
+    cmd_f = scanner._cmd(root, frac, out, None)
+    j = cmd_f.index("--min-confidence")
+    assert cmd_f[j + 1] == "0.05"
+    assert ScannerConfig.from_json(frac.to_json()).min_confidence == 0.05
+
+
 def test_keyhog_benchmark_prefers_fresh_release_binary(monkeypatch, tmp_path):
     target_dir = tmp_path / "cargo-target"
     release_dir = target_dir / "release"

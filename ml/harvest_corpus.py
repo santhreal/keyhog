@@ -32,6 +32,7 @@ file so the splitter can group by it.
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import json
 import pathlib
 import sys
@@ -70,7 +71,7 @@ def serve_context(file_label: str, abs_path: pathlib.Path, line: int) -> str:
     return prefix + window
 
 
-def harvest(corpus_name: str, keyhog_bin: str | None) -> list[dict]:
+def harvest(corpus_name: str, keyhog_bin: str | None, floor: float) -> list[dict]:
     corpus = resolve_corpus(corpus_name)
     records = corpus.records()
     by_key, aliases = _build_file_index(records, corpus.file_root)
@@ -79,7 +80,17 @@ def harvest(corpus_name: str, keyhog_bin: str | None) -> list[dict]:
         else resolve_scanner("keyhog")
     if not scanner.available():
         raise SystemExit(f"keyhog binary not found: {scanner.binary}")
-    findings, _stats = scanner.run(corpus.scan_root, scanner.default_config())
+    # Harvest at a LOW report floor (not the default ~0.30) so the corpus
+    # captures every candidate the pipeline scores — including the sub-floor
+    # ones the default floor hides. A retrain that only sees above-floor
+    # candidates can never learn the hard negatives keyhog currently fires on
+    # but scores below threshold; training on those is what stops a retrained
+    # model from over-promoting them (the kubernetes-bootstrap-token +203-FP
+    # regression came from exactly that blind spot). The score upstream gates
+    # (shape gates, entropy floor) still apply, so this is the full set the MoE
+    # is asked to score at serve time, never more.
+    cfg = dataclasses.replace(scanner.default_config(), min_confidence=floor)
+    findings, _stats = scanner.run(corpus.scan_root, cfg)
 
     out: list[dict] = []
     skipped_no_record = 0
@@ -125,13 +136,21 @@ def main() -> int:
                     help="corpus names to harvest (resolve_corpus)")
     ap.add_argument("--keyhog-bin", default=None,
                     help="keyhog binary (defaults to KEYHOG_BIN env / freshly built)")
+    ap.add_argument("--harvest-floor", type=float, default=0.0,
+                    help="report-confidence floor for the harvest scan (default "
+                         "0.0 = capture every scored candidate, incl. sub-floor "
+                         "hard negatives the default ~0.30 floor hides). Upstream "
+                         "shape/entropy gates still apply, so this is exactly the "
+                         "candidate set the MoE scores at serve time.")
     ap.add_argument("--out", default="ml/data/real_corpus.jsonl")
     args = ap.parse_args()
+    if not (0.0 <= args.harvest_floor <= 1.0):
+        ap.error(f"--harvest-floor must be in [0.0, 1.0], got {args.harvest_floor}")
 
     all_rows: list[dict] = []
     for name in args.corpora:
         try:
-            all_rows.extend(harvest(name, args.keyhog_bin))
+            all_rows.extend(harvest(name, args.keyhog_bin, args.harvest_floor))
         except SystemExit:
             raise
         except Exception as exc:  # a single corpus failing must not lose the rest

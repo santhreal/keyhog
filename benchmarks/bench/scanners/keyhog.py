@@ -195,6 +195,15 @@ class KeyhogScanner(Scanner):
                "--no-config",
                "--backend", cfg.backend,
                "--output", str(output)]
+        # Optional report-floor override. None (every leaderboard config) means
+        # the compiled shipped default floor is scored — byte-identical to
+        # before this knob existed. The ML harvest sets it LOW so it captures
+        # the sub-floor candidates a detector fires on but the default floor
+        # hides; without those, a retrain can never learn the hard negatives it
+        # currently surfaces only as below-threshold scores (the source of the
+        # kubernetes-bootstrap-token +203-FP retrain regression).
+        if cfg.min_confidence is not None:
+            cmd += ["--min-confidence", repr(float(cfg.min_confidence))]
         cmd += ["--daemon"] if cfg.daemon == "on" else ["--no-daemon"]
         if cfg.mode == "fast":
             cmd.append("--fast")

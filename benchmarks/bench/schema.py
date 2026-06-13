@@ -233,15 +233,30 @@ class ScannerConfig:
     cache: str = "off"         # on | off
     daemon: str = "off"        # on | off
     mode: str = "full"         # full | fast | <competitor-specific>
+    # Optional report-floor override. None = the scanner's compiled default
+    # (what the leaderboard scores). The harvest loop sets this LOW so the ML
+    # feedback loop can label the sub-floor candidates a detector fires on but
+    # the default floor hides — without those, a retrain can never learn the
+    # hard negatives it currently surfaces only as below-threshold scores
+    # (the kubernetes-bootstrap-token +203-FP retrain regression came from
+    # exactly this blind spot). Left None for every leaderboard config so
+    # config_id and scored behavior are byte-identical to before.
+    min_confidence: float | None = None
 
     @property
     def config_id(self) -> str:
+        # min_confidence is deliberately NOT part of the matrix key: it is a
+        # harvest-only knob, never a leaderboard axis, so a None vs low floor
+        # must not fork the stable config_id the README table / gate key on.
         return f"{self.backend}-{'cache' if self.cache == 'on' else 'nocache'}-" \
                f"{'daemon' if self.daemon == 'on' else 'nodaemon'}-{self.mode}"
 
     def to_json(self) -> dict:
-        return {"backend": self.backend, "cache": self.cache,
-                "daemon": self.daemon, "mode": self.mode}
+        out = {"backend": self.backend, "cache": self.cache,
+               "daemon": self.daemon, "mode": self.mode}
+        if self.min_confidence is not None:
+            out["min_confidence"] = self.min_confidence
+        return out
 
     @classmethod
     def from_json(cls, d: dict) -> "ScannerConfig":
