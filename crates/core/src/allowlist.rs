@@ -18,9 +18,10 @@ use std::path::Path;
 use crate::merkle_spec_hash::hex_nibble;
 use crate::VerifiedFinding;
 
-#[path = "allowlist_metadata.rs"]
-mod allowlist_metadata;
-use allowlist_metadata::*;
+// Submodule lives in `allowlist/` (native resolution), matching the
+// `foo.rs` + `foo/` layout used across the workspace.
+mod metadata;
+use metadata::*;
 
 /// User-defined suppressions loaded from `.keyhogignore`: credential hashes, detector IDs, and path globs.
 ///
