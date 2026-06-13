@@ -78,6 +78,11 @@ mod gpu_lazy;
 pub(crate) mod megakernel;
 #[cfg(feature = "gpu")]
 mod megakernel_dispatch;
+/// Catalog cache wire (de)serialization for [`megakernel::MegakernelCatalog`],
+/// split out of `megakernel.rs` (Law 5) — a stable boundary independent of the
+/// catalog build/dispatch responsibility.
+#[cfg(feature = "gpu")]
+mod megakernel_wire;
 mod hot_patterns;
 mod process;
 pub(crate) mod profile;
