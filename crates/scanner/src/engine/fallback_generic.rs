@@ -21,8 +21,23 @@ static GENERIC_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
     // transition, so `GRAPHITE_PASS=`, `clientSecret=` and `SECRET=` all match
     // while `bypass=`/`compass=`/`xtoken=` do not. This is what makes the short
     // `pass` abbreviation safe to include (CredData's dominant `*_PASS=` shape).
+    //
+    // KH-L-0411 (benign-suffix allowance): the keyword must be IMMEDIATELY before
+    // the `["'`]? [=:]` delimiter, so a credential keyword carrying a SUFFIX never
+    // bridged — `DJANGO_SECRET_KEY=` (the canonical Django/Flask/Rails secret),
+    // `secret_key_base=` (Rails), `credential_value:`, `token_value=`,
+    // `secretstring=`, `private_key_raw=` all silently failed generation (proven
+    // never-candidate on CredData, KH-L-0410). The non-capturing
+    // `(?:[._-]?(?:key|base|value|val|string|str|enc|raw|b64)){0,2}` admits up to
+    // two SECRET-PRESERVING suffixes between the stem and the delimiter. The suffix
+    // allowlist is deliberately tight: it EXCLUDES identifier/metadata suffixes
+    // (`_id`, `_hash`, `_type`, `_count`, `_name`, `_field`, `_confirmation`) that
+    // denote a non-secret, so `secret_key_id=`/`token_type=`/`password_hash=` still
+    // do NOT bridge. Group 1 still captures only the bare STEM (the suffix is
+    // non-capturing), so `keyword_has_word_boundary` and the strong-keyword hex-key
+    // exemption see the canonical token unchanged.
     match regex::Regex::new(
-        r#"(?i)(secret|passphrase|password|passwd|pwd|pass|token|api[._-]?key|apikey|auth[._-]?token|auth[._-]?key|credential|private[._-]?key|signing[._-]?key|encryption[._-]?key|access[._-]?key|client[._-]?secret|app[._-]?secret|master[._-]?key|license[._-]?key)["'`]?\s*[=:]\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]*\s*[=:]\s*)?["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#
+        r#"(?i)(secret|passphrase|password|passwd|pwd|pass|token|api[._-]?key|apikey|auth[._-]?token|auth[._-]?key|credential|private[._-]?key|signing[._-]?key|encryption[._-]?key|access[._-]?key|client[._-]?secret|app[._-]?secret|master[._-]?key|license[._-]?key)(?:[._-]?(?:key|base|value|val|string|str|enc|raw|b64)){0,2}["'`]?\s*[=:]\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]*\s*[=:]\s*)?["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#
     ) {
         Ok(re) => Some(re),
         // Law 10: this static, build-from-constant regex compiling is a build
