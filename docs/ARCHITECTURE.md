@@ -98,7 +98,7 @@ method-level version of steps 2–4.
    "which detectors may match here" bitmap per chunk. The fast prefilters
    (`simdsieve`, `bigram_bloom`, `alphabet_filter`, `prefix_trie`) live at
    `scanner/src/` top level; the detector→matcher build is `engine/compile.rs`
-   + `compiler*.rs`.
+   + `compiler.rs` + `compiler/`.
 3. **Phase 2 — extraction** (the shared tail, identical for CPU and GPU):
    per-chunk `confirmed → fallback → generic → entropy → ML`
    (`engine/extract.rs`, `engine/fallback*.rs`, `engine/scan.rs`). Decode-through
@@ -106,7 +106,7 @@ method-level version of steps 2–4.
 4. **Post-process** — suppression, dedup, confidence, decode recursion, cross-chunk
    seam reassembly (`engine/scan_postprocess.rs`, `engine/process.rs`,
    `engine/boundary.rs`). Confidence + ML scoring: `confidence/`, `ml_scorer.rs`
-   (+ `ml_features.rs`, `ml_weights.rs`); context inference: `context/`.
+   + `ml_scorer/` (`ml_features`, `ml_weights`); context inference: `context/`.
 5. **Verify (optional)** — for the ~341 detectors with a `[detector.verify]`
    endpoint, turn a candidate into verified-live, behind SSRF/bogon/rate guards.
    `verifier/`.
