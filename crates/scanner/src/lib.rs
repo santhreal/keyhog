@@ -2,6 +2,40 @@
 //!
 //! This crate implements the core scanning logic, combining SIMD pre-filtering,
 //! Aho-Corasick literal matching, regex fallback, and ML-based confidence scoring.
+//!
+//! # Module map (by pipeline stage)
+//!
+//! The modules below are declared in dependency order, but they READ in pipeline
+//! order — the same bytes→finding flow as [`docs/ARCHITECTURE.md`] and the
+//! method-level map in [`engine`] (`engine::mod` "# The one flow"). To find a
+//! responsibility, locate its stage:
+//!
+//! - **Config / shared types** — [`scanner_config`], [`types`], [`hw_probe`]
+//!   (hardware routing), [`error`].
+//! - **Phase 1 · prefilter** (cheap "could a detector fire here?") —
+//!   [`alphabet_filter`], [`bigram_bloom`], [`prefix_trie`], `ascii_ci`,
+//!   `simd` / `simdsieve_prefilter` (feature-gated), `prefilter_degrade`
+//!   (loud Law-10 fallback).
+//! - **Compile** (detectors → matchers) — [`compiler`], [`shared_regexes`],
+//!   [`static_intern`].
+//! - **Scan engine** (phase 1 triggers + phase 2 extraction; CPU or GPU) —
+//!   [`engine`] (start at its header doc), [`pipeline`], [`gpu`].
+//! - **Decode-through** (nested base64/hex/url/unicode, recursive) —
+//!   [`decode`], [`decode_structure`].
+//! - **Entropy** — [`entropy`]; the fast Shannon-entropy primitive is
+//!   [`entropy_fast`] (+ `entropy_avx512` / `entropy_fast_x86` /
+//!   `entropy_fast_neon`, arch-gated).
+//! - **Confidence / ML** — [`ml_scorer`] (serves the embedded `weights.bin`;
+//!   trained out-of-band by the repo's `ml/`), [`confidence`],
+//!   `probabilistic_gate`.
+//! - **Context, multiline, suppression, resolution** — [`context`],
+//!   [`multiline`], `suppression`, [`resolution`], `structured`.
+//! - **Specialized validators** — [`checksum`], [`jwt`], [`aws`],
+//!   `homoglyph`, [`unicode_hardening`].
+//! - **Cross-cutting** — [`telemetry`], `util_hash`.
+//!
+//! Most single-file modules are one responsibility each; the multi-file engine
+//! is the exception and carries its own internal map in `engine::mod`.
 
 #![deny(unsafe_op_in_unsafe_fn)]
 #![allow(clippy::too_many_arguments)]
