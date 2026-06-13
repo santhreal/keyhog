@@ -37,10 +37,12 @@ everything else is data, tooling, docs, or eval harness.
 | `backlog/`, `audits/`, `metrics/` | Working notes: thematic backlogs, audit plans, star metrics. Planning, not shipped artifacts. |
 | `coordination/` | *Gitignored* multi-agent scratch (review rounds, spec waivers). Not part of the build. |
 
-Two planning trees coexist on purpose: **`docs/legendary/`** is the structured,
-append-only execution plan + ledger (the live tracker); **`backlog/`** holds the
-older thematic deep-dives (detection / performance / testing / coherence) kept
-for their evidence. When they disagree, `docs/legendary/99_LEDGER.md` wins.
+Two planning trees coexist with different jobs: **`backlog/`** is the **flaw
+tracker** — concrete defects with `file:line` evidence and a fix recipe, grouped
+by theme (detection / performance / testing / coherence). **`docs/legendary/`**
+is the **structured perfection plan + execution ledger**;
+`docs/legendary/99_LEDGER.md` is the authoritative record of what has *landed*.
+File a found defect in `backlog/`; track planned/landed work in `docs/legendary/`.
 
 ---
 

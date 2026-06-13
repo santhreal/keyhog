@@ -3,6 +3,13 @@
 Living backlog of flaws and improvements found by dogfooding the real tool and
 auditing the codebase. The workflow takes these on; entries stay until closed.
 
+> **Two planning trees, different jobs** (see [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md)):
+> this `backlog/` is the **flaw tracker** — concrete defects with `file:line`
+> evidence and a fix recipe, grouped by theme. [`docs/legendary/`](../docs/legendary/)
+> is the **structured perfection plan + execution ledger**;
+> `docs/legendary/99_LEDGER.md` is the authoritative record of what has *landed*.
+> File a found defect here; track planned/landed work there.
+
 Each entry: `ID · severity · location · problem · fix`. Severity:
 `crit` (data loss / security / wrong result), `high`, `med`, `low`.
 
