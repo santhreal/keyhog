@@ -43,13 +43,13 @@ pub fn shannon_entropy_simd(data: &[u8]) -> f64 {
             && is_x86_feature_detected!("avx512bw")
             && is_x86_feature_detected!("avx512dq")
         {
-            return crate::entropy_avx512::calculate_shannon_entropy(data);
+            return crate::entropy::avx512::calculate_shannon_entropy(data);
         }
         if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
-            return crate::entropy_fast_x86::shannon_entropy_avx2(data);
+            return crate::entropy::fast_x86::shannon_entropy_avx2(data);
         }
         if is_x86_feature_detected!("sse2") {
-            return crate::entropy_fast_x86::shannon_entropy_sse2(data);
+            return crate::entropy::fast_x86::shannon_entropy_sse2(data);
         }
     }
 
@@ -59,7 +59,7 @@ pub fn shannon_entropy_simd(data: &[u8]) -> f64 {
 /// AArch64 true Neon SIMD parallel histogram calculations.
 #[cfg(target_arch = "aarch64")]
 pub fn shannon_entropy_simd(data: &[u8]) -> f64 {
-    crate::entropy_fast_neon::shannon_entropy_neon(data)
+    crate::entropy::fast_neon::shannon_entropy_neon(data)
 }
 
 /// Generic fallback for all other architectures.
@@ -217,14 +217,14 @@ pub fn has_high_entropy_fast(data: &[u8], threshold: f64) -> bool {
     {
         if is_x86_feature_detected!("sse2") {
             unsafe {
-                return crate::entropy_fast_x86::has_high_entropy_fast_x86(data, threshold);
+                return crate::entropy::fast_x86::has_high_entropy_fast_x86(data, threshold);
             }
         }
     }
     #[cfg(target_arch = "aarch64")]
     {
         unsafe {
-            return crate::entropy_fast_neon::has_high_entropy_fast_neon(data, threshold);
+            return crate::entropy::fast_neon::has_high_entropy_fast_neon(data, threshold);
         }
     }
 

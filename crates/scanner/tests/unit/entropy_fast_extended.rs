@@ -1,10 +1,10 @@
-/// Extended unit tests for `keyhog_scanner::entropy_fast`.
+/// Extended unit tests for `keyhog_scanner::entropy::fast`.
 ///
 /// Covers: empty slice, single byte, two bytes, exactly-2-byte all-same,
 /// uniform-256 distribution (max entropy = 8.0), power-of-2 distributions,
 /// has_high_entropy_fast with various thresholds, and the scalar/simd parity
 /// invariant.
-use keyhog_scanner::entropy_fast::{has_high_entropy_fast, shannon_entropy_scalar};
+use keyhog_scanner::entropy::fast::{has_high_entropy_fast, shannon_entropy_scalar};
 
 // ── shannon_entropy_scalar: boundary values ────────────────────────────────────
 

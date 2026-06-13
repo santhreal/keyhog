@@ -3,13 +3,13 @@
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
 
-use crate::entropy_fast::shannon_entropy_scalar;
+use crate::entropy::fast::shannon_entropy_scalar;
 
 /// AArch64 entropy: shared multi-stream histogram + shared exact reduction.
 ///
 /// Counting (the memory-bound part) and the null-byte contract live in the
-/// shared [`crate::entropy_fast::histogram_8way`]; the 256-bin reduction is the
-/// shared exact [`crate::entropy_fast::entropy_from_histogram`]. Funnelling both
+/// shared [`crate::entropy::fast::histogram_8way`]; the 256-bin reduction is the
+/// shared exact [`crate::entropy::fast::entropy_from_histogram`]. Funnelling both
 /// through the one definition keeps this path bit-identical to scalar/AVX2/SSE2
 /// (KH-25, KH-28, KH-34).
 #[cfg(target_arch = "aarch64")]
@@ -18,8 +18,8 @@ pub fn shannon_entropy_neon(data: &[u8]) -> f64 {
         return 0.0;
     }
 
-    let (counts, active_len) = crate::entropy_fast::histogram_8way(data);
-    crate::entropy_fast::entropy_from_histogram(&counts, active_len)
+    let (counts, active_len) = crate::entropy::fast::histogram_8way(data);
+    crate::entropy::fast::entropy_from_histogram(&counts, active_len)
 }
 
 /// Vectorized unique character checks using Neon (KH-21, KH-30)
@@ -104,5 +104,5 @@ pub(crate) unsafe fn has_high_entropy_fast_neon(data: &[u8], threshold: f64) -> 
         return false;
     }
 
-    crate::entropy_fast::shannon_entropy_simd(data) >= threshold
+    crate::entropy::fast::shannon_entropy_simd(data) >= threshold
 }

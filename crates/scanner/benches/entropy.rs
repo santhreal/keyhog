@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use keyhog_scanner::entropy::shannon_entropy;
-use keyhog_scanner::entropy_fast::shannon_entropy_simd;
+use keyhog_scanner::entropy::fast::shannon_entropy_simd;
 
 fn bench_entropy_lengths(c: &mut Criterion) {
     let mut group = c.benchmark_group("entropy");

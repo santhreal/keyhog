@@ -10,7 +10,7 @@ use keyhog_scanner::decode::{base64_decode, hex_decode};
 use keyhog_scanner::engine::segment_attribution::{map_offsets_to_segments, GlobalMatch, Segment};
 use keyhog_scanner::engine::CompiledScanner;
 use keyhog_scanner::entropy::{shannon_entropy, HIGH_ENTROPY_THRESHOLD};
-use keyhog_scanner::entropy_fast::shannon_entropy_simd;
+use keyhog_scanner::entropy::fast::shannon_entropy_simd;
 use keyhog_scanner::gpu::{batch_ml_inference, gpu_available, gpu_probe};
 use keyhog_scanner::jwt::{analyze, looks_like_jwt};
 use keyhog_scanner::ml_scorer::{

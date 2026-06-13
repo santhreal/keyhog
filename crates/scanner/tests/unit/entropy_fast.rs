@@ -1,4 +1,4 @@
-use keyhog_scanner::entropy_fast::{has_high_entropy_fast, shannon_entropy_scalar};
+use keyhog_scanner::entropy::fast::{has_high_entropy_fast, shannon_entropy_scalar};
 
 #[test]
 fn test_entropy_known_values() {

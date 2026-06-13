@@ -22,9 +22,10 @@
 //!   [`engine`] (start at its header doc), [`pipeline`], [`gpu`].
 //! - **Decode-through** (nested base64/hex/url/unicode, recursive) —
 //!   [`decode`], [`decode_structure`].
-//! - **Entropy** — [`entropy`]; the fast Shannon-entropy primitive is
-//!   [`entropy_fast`] (+ `entropy_avx512` / `entropy_fast_x86` /
-//!   `entropy_fast_neon`, arch-gated).
+//! - **Entropy** — [`entropy`] is now the single home for all of it: the
+//!   keyword/scanner detection logic plus the fast Shannon-entropy primitive
+//!   `entropy::fast` (+ `entropy::avx512` / `entropy::fast_x86` /
+//!   `entropy::fast_neon` SIMD impls, arch-gated).
 //! - **Confidence / ML** — [`ml_scorer`] (serves the embedded `weights.bin`;
 //!   trained out-of-band by the repo's `ml/`), [`confidence`],
 //!   `probabilistic_gate`.
@@ -90,14 +91,9 @@ pub mod alphabet_filter;
 pub(crate) mod ascii_ci;
 /// Bigram bloom filter for fast chunk gating.
 pub mod bigram_bloom;
-/// AVX-512 optimized entropy calculation.
-pub(crate) mod entropy_avx512;
-/// Fast scalar entropy calculation.
-pub mod entropy_fast;
-#[cfg(target_arch = "aarch64")]
-pub(crate) mod entropy_fast_neon;
-#[cfg(target_arch = "x86_64")]
-pub(crate) mod entropy_fast_x86;
+// The fast Shannon-entropy primitives (scalar dispatcher + AVX-512 / AVX2-SSE2 /
+// NEON SIMD impls) now live UNDER `entropy/` (entropy::fast / ::avx512 /
+// ::fast_x86 / ::fast_neon) — one home for all entropy code. See `entropy/mod.rs`.
 /// JWT structural validation and anomaly detection.
 pub mod jwt;
 // `fragment_cache` lives under `multiline/` (its only call sites are there);
@@ -315,7 +311,7 @@ pub mod testing {
     ///
     /// On every other target (aarch64/macOS, wasm, …) the AVX-512 kernel does
     /// not exist, so this routes to the portable feature-detecting dispatcher
-    /// (`entropy_fast::shannon_entropy_simd`), which is itself safe and always
+    /// (`entropy::fast::shannon_entropy_simd`), which is itself safe and always
     /// correct. The `unsafe` marker is kept for one cross-platform signature.
     /// Without this arch split the non-x86 build failed to compile
     /// (`E0425: cannot find calculate_shannon_entropy`), breaking the portable
@@ -323,11 +319,11 @@ pub mod testing {
     pub unsafe fn calculate_shannon_entropy(chunk: &[u8]) -> f64 {
         #[cfg(target_arch = "x86_64")]
         {
-            unsafe { crate::entropy_avx512::calculate_shannon_entropy(chunk) }
+            unsafe { crate::entropy::avx512::calculate_shannon_entropy(chunk) }
         }
         #[cfg(not(target_arch = "x86_64"))]
         {
-            crate::entropy_fast::shannon_entropy_simd(chunk)
+            crate::entropy::fast::shannon_entropy_simd(chunk)
         }
     }
 

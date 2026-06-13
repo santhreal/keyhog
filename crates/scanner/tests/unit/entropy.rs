@@ -391,7 +391,7 @@ fn keyword_free_uses_custom_threshold() {
 #[test]
 fn entropy_simd_agreement() {
     use keyhog_scanner::entropy::shannon_entropy as shannon_entropy_scalar;
-    use keyhog_scanner::entropy_fast::shannon_entropy_simd;
+    use keyhog_scanner::entropy::fast::shannon_entropy_simd;
     use proptest::prelude::*;
 
     let mut runner = proptest::test_runner::TestRunner::default();

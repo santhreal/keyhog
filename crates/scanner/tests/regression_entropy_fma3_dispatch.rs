@@ -3,10 +3,10 @@
 //! AVX2-without-FMA CPU/VM).
 //!
 //! Root cause (the bug this locks against): the vectorized AVX2 reduction in
-//! `entropy_fast_x86::shannon_entropy_avx2` / `approx_log2_pd` is declared
+//! `entropy::fast_x86::shannon_entropy_avx2` / `approx_log2_pd` is declared
 //! `#[target_feature(enable = "avx2,fma")]` and emits `_mm256_fmadd_pd`
 //! (VFMADD231PD, an FMA3 instruction). The earlier dispatch in
-//! `entropy_fast::shannon_entropy_simd` gated that call on only
+//! `entropy::fast::shannon_entropy_simd` gated that call on only
 //! `is_x86_feature_detected!("avx2")`. On a CPU/VM that has AVX2 but NOT FMA3
 //! (e.g. AMD Piledriver lineage without FMA3, or a hypervisor that masks FMA
 //! while leaving AVX2 visible), the gate would let the FMA3-emitting path run
@@ -24,7 +24,7 @@
 //! back to `avx2`-only — while the numeric assertions independently lock the
 //! reduction's correctness on whatever tier this host actually runs.
 
-use keyhog_scanner::entropy_fast::{
+use keyhog_scanner::entropy::fast::{
     has_high_entropy_fast, shannon_entropy_scalar, shannon_entropy_simd,
 };
 
@@ -110,8 +110,8 @@ fn fast_gate_negative_twin_short_circuits_below_ceiling() {
 // host, including AVX-512 hosts that never take the AVX2 branch at runtime.
 // ---------------------------------------------------------------------------
 
-const DISPATCH_SRC: &str = include_str!("../src/entropy_fast.rs");
-const AVX2_IMPL_SRC: &str = include_str!("../src/entropy_fast_x86.rs");
+const DISPATCH_SRC: &str = include_str!("../src/entropy/fast.rs");
+const AVX2_IMPL_SRC: &str = include_str!("../src/entropy/fast_x86.rs");
 
 /// Extract the body of the `#[cfg(target_arch = "x86_64")]` x86 dispatch
 /// `shannon_entropy_simd` so the assertions cannot be satisfied by a comment or

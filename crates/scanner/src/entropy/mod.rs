@@ -6,6 +6,18 @@
 pub mod keywords;
 pub(crate) mod scanner;
 
+// Fast Shannon-entropy primitives, relocated here from the crate root so all
+// entropy code shares one home. `fast` is the scalar dispatcher that routes to
+// the SIMD impls by runtime capability; the impls are arch-gated.
+/// Fast scalar entropy dispatcher (routes to the SIMD impls below).
+pub mod fast;
+/// AVX-512 optimized entropy calculation.
+pub(crate) mod avx512;
+#[cfg(target_arch = "aarch64")]
+pub(crate) mod fast_neon;
+#[cfg(target_arch = "x86_64")]
+pub(crate) mod fast_x86;
+
 pub use scanner::{find_entropy_secrets, find_entropy_secrets_with_threshold, is_sensitive_file};
 
 /// Threshold for keyword-context entropy detection.
@@ -44,7 +56,7 @@ pub fn shannon_entropy(data: &[u8]) -> f64 {
 }
 
 fn shannon_entropy_uncached(data: &[u8]) -> f64 {
-    crate::entropy_fast::shannon_entropy_simd(data)
+    crate::entropy::fast::shannon_entropy_simd(data)
 }
 
 /// Shannon entropy rescaled to `0.0..=1.0` by dividing by `log2(unique_bytes)`.

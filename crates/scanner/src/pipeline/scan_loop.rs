@@ -107,5 +107,5 @@ fn fallback_entropy(data: &[u8]) -> f64 {
     // Delegate to the maintained 8-way scalar histogram (with null-run
     // fast-path + log2-table). entropy_fast is feature-independent, so this
     // avoids carrying a stale, less-optimized fork of the same algorithm.
-    crate::entropy_fast::shannon_entropy_scalar(data)
+    crate::entropy::fast::shannon_entropy_scalar(data)
 }

@@ -14,7 +14,7 @@
 //!   disagree. The fix counts distinct bytes over the FULL buffer and only
 //!   short-circuits below the information-theoretic ceiling.
 
-use keyhog_scanner::entropy_fast::{has_high_entropy_fast, shannon_entropy_scalar};
+use keyhog_scanner::entropy::fast::{has_high_entropy_fast, shannon_entropy_scalar};
 
 /// Build the exact M11 failing input: a 1024-byte buffer that is the constant
 /// byte 0x41 ('A') at the positions the old samplers looked at (first 4, the
@@ -106,7 +106,7 @@ fn long_high_entropy_blob_does_not_sigill_and_is_correct() {
     // feature probe (C10/M9) this must complete instead of trapping, and the
     // value must be sane for a near-uniform high-entropy blob.
     let blob: Vec<u8> = (0..400u32).map(|i| (i % 256) as u8).collect();
-    let h = keyhog_scanner::entropy_fast::shannon_entropy_simd(&blob);
+    let h = keyhog_scanner::entropy::fast::shannon_entropy_simd(&blob);
     assert!(
         h.is_finite() && h > 6.0,
         "long high-entropy blob produced implausible entropy {h}"

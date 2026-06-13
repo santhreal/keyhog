@@ -6,8 +6,8 @@
 //!
 //! The byte-tally pass is a multi-stream scalar histogram (manual ILP, not a
 //! vector gather), shared with every other path via
-//! [`crate::entropy_fast::histogram_8way`]. The 256-bin entropy reduction is
-//! the shared exact [`crate::entropy_fast::entropy_from_histogram`] — counting
+//! [`crate::entropy::fast::histogram_8way`]. The 256-bin entropy reduction is
+//! the shared exact [`crate::entropy::fast::entropy_from_histogram`] — counting
 //! is the memory-bound part, so the reduction is negligible work and is kept
 //! bit-identical across all ISA paths rather than re-derived with a vectorized
 //! polynomial `log2` (which diverged from the scalar reference by ~5e-3
@@ -33,14 +33,14 @@
 //!    several x faster than single-array on Zen 4 / Sapphire Rapids for inputs
 //!    > 256 bytes; the dominant counting loop remains scalar with manual ILP,
 //!    not a true vector histogram. This lives in the shared
-//!    [`crate::entropy_fast::histogram_8way`] so the count is bit-identical
+//!    [`crate::entropy::fast::histogram_8way`] so the count is bit-identical
 //!    across every ISA path.
 
 /// Hardware-native Shannon Entropy evaluation via AVX-512.
 ///
 /// The histogram (the memory-bound part) is the shared multi-stream scalar
-/// [`crate::entropy_fast::histogram_8way`]; the 256-bin reduction is the shared
-/// exact [`crate::entropy_fast::entropy_from_histogram`]. This path is kept as a
+/// [`crate::entropy::fast::histogram_8way`]; the 256-bin reduction is the shared
+/// exact [`crate::entropy::fast::entropy_from_histogram`]. This path is kept as a
 /// distinct dispatch slot (gated on `avx512f`+`avx512bw`+`avx512dq`) for ABI and
 /// future-vectorization reasons, but it is now bit-identical to the scalar path:
 /// the previous vectorized polynomial-`log2` reduction diverged from the exact
@@ -67,6 +67,6 @@ pub(crate) unsafe fn calculate_shannon_entropy(chunk: &[u8]) -> f64 {
     // `histogram_8way` (8 independent scalar accumulators — counting is
     // memory-bound, so there is no AVX-512 histogram to win here); the 256-bin
     // entropy reduction is the shared exact `entropy_from_histogram`.
-    let (counts, active_len) = crate::entropy_fast::histogram_8way(chunk);
-    crate::entropy_fast::entropy_from_histogram(&counts, active_len)
+    let (counts, active_len) = crate::entropy::fast::histogram_8way(chunk);
+    crate::entropy::fast::entropy_from_histogram(&counts, active_len)
 }

@@ -1,4 +1,4 @@
-const GPU_SHADER: &str = include_str!("../../src/gpu_shader.rs");
+const GPU_SHADER: &str = include_str!("../../src/gpu/gpu_shader.rs");
 
 fn cpu_sigmoid(x: f32) -> f32 {
     if x <= -6.0 {

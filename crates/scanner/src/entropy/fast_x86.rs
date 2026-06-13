@@ -1,6 +1,6 @@
 //! AVX2 and SSE2 optimized Shannon entropy and high-entropy heuristic checks for x86_64.
 
-use crate::entropy_fast::{
+use crate::entropy::fast::{
     distinct_byte_count, entropy_from_histogram, histogram_8way, shannon_entropy_scalar,
 };
 
@@ -60,5 +60,5 @@ pub(crate) unsafe fn has_high_entropy_fast_x86(data: &[u8], threshold: f64) -> b
         return false;
     }
 
-    crate::entropy_fast::shannon_entropy_simd(data) >= threshold
+    crate::entropy::fast::shannon_entropy_simd(data) >= threshold
 }

@@ -1,5 +1,5 @@
 //! Standalone unit coverage for `keyhog_scanner::entropy` and
-//! `keyhog_scanner::entropy_fast` public functions.
+//! `keyhog_scanner::entropy::fast` public functions.
 //!
 //! Positive / negative / boundary / adversarial cases that assert REAL numeric
 //! values (Shannon bits within an epsilon, exact booleans, exact path verdicts),
@@ -9,7 +9,7 @@ use keyhog_scanner::entropy::{
     is_entropy_appropriate, is_entropy_appropriate_with_content, normalized_entropy,
     shannon_entropy, HIGH_ENTROPY_THRESHOLD, LOW_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD,
 };
-use keyhog_scanner::entropy_fast::{
+use keyhog_scanner::entropy::fast::{
     has_high_entropy_fast, shannon_entropy_scalar, shannon_entropy_simd,
 };
 
