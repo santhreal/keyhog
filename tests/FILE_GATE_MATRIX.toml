@@ -442,6 +442,9 @@ path = "crates/scanner/src/engine/hot_patterns.rs"
 path = "crates/scanner/src/engine/megakernel.rs"
 
 [[module]]
+path = "crates/scanner/src/engine/megakernel_wire.rs"
+
+[[module]]
 path = "crates/scanner/src/engine/mod.rs"
 
 [[module]]
