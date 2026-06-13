@@ -131,3 +131,25 @@ def test_keywords_ignores_unsliceable_and_non_hex(tmp_path, capsys):
     # No qualifying rows -> the per-keyword table has no data line and the
     # total line reports the empty-corpus sentinel.
     assert "none" in out, out
+
+
+def test_decompose_redact_mirrors_keyhog_core_redact():
+    # `decompose` joins a --dogfood event's redacted credential back to the
+    # ground-truth value, so its redaction MUST be byte-identical to
+    # keyhog_core::redact: <=8 ASCII chars -> "****", else first4 + "..." + last4.
+    assert cma._redact("") == "****"
+    assert cma._redact("short8ch") == "****"  # exactly 8 -> masked
+    assert cma._redact("abcdefghi") == "abcd...fghi"  # 9 -> first4...last4
+    assert cma._redact("GRAPHITE_PASS_value_1234") == "GRAP...1234"
+    # The reconstructed redaction is what the bucketer matches on, so a regression
+    # here would silently mis-bucket suppressed positives as never-candidate.
+    assert cma._redact("gjbubxsu") == "****"  # an 8-char password -> masked
+
+
+def test_decompose_is_a_registered_command():
+    # Coherence: the mode must be wired into argparse (a missing --scanner-bin
+    # default would also surface here). `decompose` with a missing corpus exits 2
+    # (the same guard the other modes use), proving the command is recognised.
+    rc = cma.main(["decompose", "--root", "/nonexistent-corpus-xyz",
+                   "--scanner-bin", "keyhog"])
+    assert rc == 2

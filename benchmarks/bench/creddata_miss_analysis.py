@@ -17,6 +17,16 @@ Two jobs, both grounded in the *real* CredData on-disk corpus:
    (:func:`bench.score.overlap`), so a candidate detector's CredData recall /
    precision delta can be measured in seconds without rebuilding keyhog.
 
+3. ``keywords`` — bucket the mirror-safe lengths by canonical assignment
+   keyword, to separate genuinely-distributed recall headroom from single-
+   fixture artifacts before committing to a shape+keyword surfacing rule.
+
+4. ``decompose`` — using a built keyhog binary's ``--dogfood`` suppression
+   trace, bucket every T-positive into TP / SUPPRESSED-by-gate (with a per-gate
+   reason histogram) / NEVER-CANDIDATE, so recall loss is attributed to
+   candidate GENERATION (un-generated) vs suppression (recoverable by gate
+   relaxation). Requires ``--scanner-bin``.
+
 This never fabricates truth: a positive whose value can't be sliced from its
 on-disk byte span is dropped, exactly as the production adapter does.
 """
@@ -27,10 +37,15 @@ import argparse
 import collections
 import csv
 import glob
+import json
 import math
+import os
 import pathlib
 import re
+import shutil
+import subprocess
 import sys
+import tempfile
 
 _BENCH_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _DEFAULT_CREDDATA = _BENCH_ROOT / "corpora" / "creddata" / "CredData"
@@ -307,12 +322,135 @@ def cmd_simulate(root: pathlib.Path, candidate: str) -> int:
     return 0
 
 
+def _redact(s: str) -> str:
+    """Mirror ``keyhog_core::redact``: <=8 ASCII chars -> ``****`` else
+    first4 + ``...`` + last4. Used to join a `--dogfood` suppression event's
+    redacted credential back to its ground-truth value."""
+    return "****" if len(s) <= 8 else s[:4] + "..." + s[-4:]
+
+
+def cmd_decompose(root: pathlib.Path, scanner_bin: str) -> int:
+    """Bucket every CredData T-positive into TP / SUPPRESSED-by-gate / NEVER-
+    CANDIDATE using the scanner's ``--dogfood`` suppression trace (KH-L-0408/
+    0409/0412). Answers *where* recall is lost: a value that no detector emits
+    AND no suppression gate names is truly un-generated (candidate-generation
+    bound); a value a gate suppresses is recoverable by relaxing that gate. The
+    per-gate reason histogram pinpoints which gates hold real positives.
+
+    Scans a temp tree of only the positive-bearing files (``keyhog scan`` takes a
+    single PATH), once, with ``--dogfood --show-secrets``. Promoted from the
+    throwaway probe script so the recall decomposition has a canonical home."""
+    cache = _LineCache(root)
+    # 1. collect T-positives with on-disk values, keyed by rel path.
+    pos: list[tuple[str, str]] = []
+    for row in _iter_meta(root):
+        if (row.get("GroundTruth") or "").strip().upper() != "T":
+            continue
+        rel = (row.get("FilePath") or "").strip()
+        try:
+            ls = int(row.get("LineStart") or 0)
+            vs = int(row.get("ValueStart") or -1)
+            ve = int(row.get("ValueEnd") or -1)
+        except ValueError:
+            continue
+        lines = cache.lines(rel)
+        if not lines or ls < 1 or ls > len(lines) or vs < 0:
+            continue
+        val = lines[ls - 1][vs:(ve if ve >= 0 else None)]
+        if val:
+            pos.append((rel, val))
+    rels = sorted({r for r, _ in pos})
+    print(f"T-positives w/ value: {len(pos)} across {len(rels)} files",
+          file=sys.stderr)
+
+    # 2. copy positive-bearing files into a temp tree, scan once.
+    tmp = pathlib.Path(tempfile.mkdtemp(prefix="creddata-decompose-"))
+    try:
+        for rel in rels:
+            dst = tmp / rel
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(root / rel, dst)
+        proc = subprocess.run(
+            [scanner_bin, "scan", "--path", str(tmp), "--dogfood",
+             "--show-secrets", "--format", "jsonl"],
+            capture_output=True, text=True,
+        )
+        if proc.returncode not in (0, 1):
+            print(f"scan failed rc={proc.returncode}: {proc.stderr[:500]}",
+                  file=sys.stderr)
+            return 1
+
+        def to_rel(p: str) -> str:
+            ap = os.path.abspath(p)
+            pre = str(tmp) + os.sep
+            return ap[len(pre):] if ap.startswith(pre) else ap
+
+        # 3. findings (stdout jsonl) + dogfood suppression events (stderr json).
+        finds: dict[str, list[str]] = collections.defaultdict(list)
+        for line in proc.stdout.splitlines():
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                d = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            loc = d.get("location") or {}
+            fp = loc.get("file_path") or loc.get("file") or ""
+            cred = d.get("credential") or d.get("credential_redacted") or ""
+            if fp and cred:
+                finds[to_rel(fp)].append(cred)
+        supp: dict[str, set[tuple[str, str]]] = collections.defaultdict(set)
+        for line in proc.stderr.splitlines():
+            line = line.strip()
+            if not line.startswith("{") or "dogfood" not in line:
+                continue
+            try:
+                d = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            for ev in (d.get("dogfood") or {}).get("events", []):
+                supp[to_rel(ev.get("path") or "")].add(
+                    (ev.get("credential_redacted", ""), ev.get("reason", "")))
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    # 4. bucket each positive.
+    bucket: collections.Counter = collections.Counter()
+    reason: collections.Counter = collections.Counter()
+    for rel, val in pos:
+        is_uuid = bool(UUID.match(val))
+        if any(val == c or val in c or c in val for c in finds.get(rel, [])):
+            bucket["TP_uuid" if is_uuid else "TP"] += 1
+            continue
+        rv = _redact(val)
+        matched = [r for (cr, r) in supp.get(rel, set()) if cr == rv]
+        if matched:
+            bucket["SUPPRESSED_uuid" if is_uuid else "SUPPRESSED"] += 1
+            if not is_uuid:
+                reason[matched[0]] += 1
+        else:
+            bucket["NEVERCAND_uuid" if is_uuid else "NEVERCAND"] += 1
+
+    total = sum(bucket.values()) or 1
+    print("\n=== CredData recall decomposition (T-positives) ===")
+    for key, n in bucket.most_common():
+        print(f"  {key:18} {n:6}  ({100 * n / total:.1f}%)")
+    print("\n=== suppressed-by-gate (non-UUID) reason histogram ===")
+    for r, c in reason.most_common():
+        print(f"  {c:5}  {r}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="CredData miss analysis")
-    ap.add_argument("command", choices=("shapes", "simulate", "keywords"))
+    ap.add_argument("command",
+                    choices=("shapes", "simulate", "keywords", "decompose"))
     ap.add_argument("--root", default=str(_DEFAULT_CREDDATA))
     ap.add_argument("--candidate", choices=tuple(CANDIDATES),
                     default="crypto_key_hex")
+    ap.add_argument("--scanner-bin", default="keyhog",
+                    help="keyhog binary for `decompose` (uses --dogfood trace)")
     args = ap.parse_args(argv)
     root = pathlib.Path(args.root)
     if not (root / "meta").is_dir():
@@ -322,6 +460,8 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_shapes(root)
     if args.command == "keywords":
         return cmd_keywords(root)
+    if args.command == "decompose":
+        return cmd_decompose(root, args.scanner_bin)
     return cmd_simulate(root, args.candidate)
 
 
