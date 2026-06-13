@@ -14,6 +14,7 @@ pub mod csr_hot_maps_adopted;
 pub mod decode_pipeline_exceeds_modularity_cap;
 pub mod degraded_batch_paths_preserve_boundaries;
 pub mod detector_contract_coverage_100pct;
+pub mod docs_megakernel_env_claim_matches_engine;
 pub mod entropy_keyword_only_requires_keyword_line;
 pub mod entropy_keywords_inline_tests_in_src;
 pub mod fallback_always_active_sparse;

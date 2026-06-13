@@ -10,4 +10,5 @@
 
 pub mod contracts;
 pub mod gpu_gate;
+pub mod megakernel_waiver;
 pub mod paths;
