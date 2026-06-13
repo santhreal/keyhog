@@ -49,6 +49,28 @@ VERIFY_EPSILON="${VERIFY_EPSILON:-0.005}"
 # feature set / profile.
 REBUILD_CMD="${REBUILD_CMD:-cargo build --release -p keyhog --bin keyhog --features simd}"
 
+# Resolve the cargo target-dir the same way the bench adapter does (env →
+# ~/.cargo/config.toml `target-dir` → <repo>/target) so VERIFY_BIN points at the
+# binary REBUILD_CMD actually produces — not a stale sibling profile. This was a
+# real footgun: the harvest auto-resolver preferred release-fast/keyhog while
+# REBUILD_CMD builds release/keyhog, so verify would have benched an un-rebuilt
+# stale binary and gated it against itself (verifying nothing).
+_resolve_target_dir() {
+  if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then echo "${CARGO_TARGET_DIR}"; return; fi
+  local cfg d
+  for cfg in "${HOME}/.cargo/config.toml" "${HOME}/.cargo/config"; do
+    if [[ -f "${cfg}" ]]; then
+      d="$(grep -oP '^\s*target-dir\s*=\s*"\K[^"]+' "${cfg}" 2>/dev/null | head -1 || true)"
+      [[ -n "${d}" ]] && { echo "${d}"; return; }
+    fi
+  done
+  echo "${REPO_ROOT}/target"
+}
+TARGET_DIR="$(_resolve_target_dir)"
+# The binary REBUILD_CMD writes (default `--release`). If you override REBUILD_CMD
+# to a different profile, set VERIFY_BIN to match its output path.
+VERIFY_BIN="${VERIFY_BIN:-${TARGET_DIR}/release/keyhog}"
+
 # Separate the loop's own --verify flag from the args forwarded to
 # train_classifier.py (which does not know --verify). --write is detected so the
 # verify stage only engages for a shipped model.
@@ -68,14 +90,18 @@ if [[ "${DO_VERIFY}" == "1" && "${DO_WRITE}" != "1" ]]; then
 fi
 
 # ── bench-verify helpers ────────────────────────────────────────────────────
-# A leaderboard run for one corpus into a results dir, scored on the resolved
-# keyhog binary (KEYHOG_NO_GPU=1 = the deterministic filesystem path the gate
-# baselines were captured on). Run from benchmarks/ so `bench` and each corpus
-# adapter's default root resolve.
-_bench_into() {  # corpus, out_dir
+# A leaderboard run for one corpus into a results dir, scored on an EXPLICIT
+# binary (KEYHOG_NO_GPU=1 = the deterministic filesystem path the gate baselines
+# were captured on). The binary is passed in, never the ambient KEYHOG_BIN, so
+# the candidate bench provably scores the freshly-rebuilt VERIFY_BIN. Run from
+# benchmarks/ so `bench` and each corpus adapter's default root resolve.
+_bench_into() {  # bin, corpus, out_dir
   ( cd "${REPO_ROOT}/benchmarks" \
-    && KEYHOG_BIN="${KEYHOG_BIN}" KEYHOG_NO_GPU=1 \
-       python3 -m bench leaderboard --corpus "$1" --scanners keyhog --out "$2" )
+    && KEYHOG_BIN="$1" KEYHOG_NO_GPU=1 \
+       python3 -m bench leaderboard --corpus "$2" --scanners keyhog --out "$3" )
+}
+_rebuild() {  # rebuild VERIFY_BIN from the current weights.bin
+  ( cd "${REPO_ROOT}" && ${REBUILD_CMD} )
 }
 # The regression gate: per-detector FP + overall-F1, candidate vs the pre-ship
 # baseline. --no-beat-competitors because verify benches keyhog alone (a model
@@ -92,19 +118,27 @@ _restore_and_rebuild() {
   if [[ -f "${WEIGHTS}.bak" ]]; then
     cp -f "${WEIGHTS}.bak" "${WEIGHTS}"
     echo "→ [verify] restored ${WEIGHTS} from .bak; rebuilding the known-good model" >&2
-    ( cd "${REPO_ROOT}" && ${REBUILD_CMD} ) \
+    _rebuild \
       || echo "WARNING: rebuild after restore FAILED — ${WEIGHTS} is reverted but the binary may be stale; rebuild manually" >&2
   else
     echo "WARNING: no ${WEIGHTS}.bak to restore — ${WEIGHTS} may still hold the rejected candidate; restore manually" >&2
   fi
 }
 
-# 1) Resolve a keyhog binary to harvest with (KEYHOG_BIN wins; else freshly built).
+# 1) Resolve a keyhog binary to harvest with. In --verify mode the harvest + the
+#    baseline must reflect the EXACT current weights.bin, so we rebuild VERIFY_BIN
+#    first and harvest with it (no stale-sibling ambiguity). Otherwise KEYHOG_BIN
+#    wins, else the freshly-built binary under the resolved target dir.
+if [[ "${DO_VERIFY}" == "1" ]]; then
+  echo "→ [verify] rebuilding the current model so the baseline binary matches weights.bin"
+  _rebuild || { echo "error: [verify] pre-ship rebuild failed; aborting before any change" >&2; exit 2; }
+  KEYHOG_BIN="${VERIFY_BIN}"
+fi
 KEYHOG_BIN="${KEYHOG_BIN:-}"
 if [[ -z "${KEYHOG_BIN}" ]]; then
   for c in \
-      "${CARGO_TARGET_DIR:-target}/release-fast/keyhog" \
-      "${CARGO_TARGET_DIR:-target}/release/keyhog" \
+      "${TARGET_DIR}/release-fast/keyhog" \
+      "${TARGET_DIR}/release/keyhog" \
       "$(command -v keyhog || true)"; do
     [[ -n "${c}" && -x "${c}" ]] && { KEYHOG_BIN="${c}"; break; }
   done
@@ -116,16 +150,16 @@ echo "→ keyhog: ${KEYHOG_BIN}"
 echo "→ harvesting real corpus: ${CORPORA}"
 python3 ml/harvest_corpus.py --corpora ${CORPORA} --keyhog-bin "${KEYHOG_BIN}" --out "${REAL_OUT}"
 
-# 2.5) [verify] Capture the PRE-SHIP baseline from the CURRENT binary, BEFORE the
-#      train --write overwrites weights.bin — so the gate compares the candidate
-#      against the exact model it replaces (honest per-detector FP / F1 deltas,
-#      no stale committed baseline).
+# 2.5) [verify] Capture the PRE-SHIP baseline from VERIFY_BIN (just rebuilt from
+#      the current weights.bin), BEFORE train --write overwrites it — so the gate
+#      compares the candidate against the exact model it replaces (honest
+#      per-detector FP / F1 deltas, no stale committed baseline).
 BASE_DIR=""
 if [[ "${DO_VERIFY}" == "1" ]]; then
   BASE_DIR="$(mktemp -d -t keyhog-verify-base-XXXXXX)"
   echo "→ [verify] capturing pre-ship baseline (current model) on: ${VERIFY_CORPORA}"
   for c in ${VERIFY_CORPORA}; do
-    _bench_into "${c}" "${BASE_DIR}" \
+    _bench_into "${VERIFY_BIN}" "${c}" "${BASE_DIR}" \
       || { echo "error: [verify] baseline bench failed for ${c}; aborting before any ship" >&2; exit 2; }
   done
 fi
@@ -141,20 +175,20 @@ python3 ml/train_classifier.py \
     --features "${FEATURES}" \
     "${WRITE_ARGS[@]}"
 
-# 4) [verify] Rebuild with the shipped candidate, bench it, and gate each corpus
-#    against the pre-ship baseline. Any per-detector FP spike or F1 regression →
-#    fail-closed revert. This is the guard the train-gates structurally cannot be.
+# 4) [verify] Rebuild with the shipped candidate, bench VERIFY_BIN, and gate each
+#    corpus against the pre-ship baseline. Any per-detector FP spike or F1
+#    regression → fail-closed revert. This is the guard train-gates cannot be.
 if [[ "${DO_WRITE}" == "1" && "${DO_VERIFY}" == "1" ]]; then
   echo "→ [verify] rebuilding keyhog with the shipped candidate model"
-  if ! ( cd "${REPO_ROOT}" && ${REBUILD_CMD} ); then
-    echo "error: [verify] rebuild failed; reverting" >&2
+  if ! _rebuild; then
+    echo "error: [verify] candidate rebuild failed; reverting" >&2
     _restore_and_rebuild
     exit 1
   fi
   CAND_DIR="$(mktemp -d -t keyhog-verify-cand-XXXXXX)"
   VERIFY_FAILED=0
   for c in ${VERIFY_CORPORA}; do
-    if ! _bench_into "${c}" "${CAND_DIR}"; then
+    if ! _bench_into "${VERIFY_BIN}" "${c}" "${CAND_DIR}"; then
       echo "error: [verify] candidate bench failed for ${c}" >&2
       VERIFY_FAILED=1; break
     fi
