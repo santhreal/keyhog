@@ -7,6 +7,7 @@ pub(crate) mod doc_markers;
 pub(crate) mod path_filter;
 pub(crate) mod shape;
 pub(crate) mod shape_gates;
+pub(crate) mod token_randomness;
 
 // Only the simdsieve hot-pattern fast path consumes this through the
 // `suppression::` alias; the direct callers in this crate go through

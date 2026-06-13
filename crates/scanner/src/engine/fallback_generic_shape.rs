@@ -12,6 +12,20 @@
 //! helpers (the gauntlet's only callers) move with it.
 use super::*;
 
+/// KH-L-0413: the identifier/type-name cluster (`pure_identifier_no_digit` /
+/// `pure_identifier` / `type_name_shape` / `word_separated_identifier`) drops
+/// code references (`password = getUserName`) — but also ~1114 keyword-anchored
+/// REAL random passwords (`GRAPHITE_PASS=gjbubxsu`) that are shape-identical
+/// (lowercase, no digit). `keep_identifier_gate` returns false (LIFT the gate,
+/// recover the value) ONLY when the value reads as a RANDOM token under the
+/// English bigram model — a dictionary identifier still returns true (stay
+/// suppressed). Lifting unconditionally cost +3554 CredData FP; gating on
+/// randomness is the sound recovery (verified on both bench corpora).
+#[inline]
+fn keep_identifier_gate(value: &str) -> bool {
+    !crate::suppression::token_randomness::is_random_token(value)
+}
+
 impl CompiledScanner {
     /// `Some(gate)` iff a generic-secret candidate `value` (with precomputed
     /// `entropy`) is rejected by a precision shape gate — the returned
@@ -101,7 +115,8 @@ impl CompiledScanner {
         // only as a coincidence; a 14-char value with two upper-case
         // clusters and a digit triplet is overwhelmingly a type
         // identifier.
-        if value.len() >= 8
+        if keep_identifier_gate(value)
+            && value.len() >= 8
             && value.len() <= 40
             && value.as_bytes()[0].is_ascii_uppercase()
             && value.bytes().all(|b| b.is_ascii_alphanumeric())
@@ -150,7 +165,7 @@ impl CompiledScanner {
             let has_digit = value.chars().any(|c| c.is_ascii_digit());
             let has_upper = value.chars().any(|c| c.is_ascii_uppercase());
             let has_lower = value.chars().any(|c| c.is_ascii_lowercase());
-            if !(has_digit && (has_upper || has_lower)) {
+            if keep_identifier_gate(value) && !(has_digit && (has_upper || has_lower)) {
                 return Some("pure_identifier_no_digit");
             }
         }
@@ -160,7 +175,7 @@ impl CompiledScanner {
         // config field), `curlx_strdup` (C single-underscore fn).
         // The `chars().all alphanumeric+_` branch above only covers
         // underscore separators; this extends coverage to hyphens.
-        if crate::pipeline::looks_like_pure_identifier(value) {
+        if keep_identifier_gate(value) && crate::pipeline::looks_like_pure_identifier(value) {
             return Some("pure_identifier");
         }
         // Word-separated identifier with embedded digits: catches
@@ -171,7 +186,7 @@ impl CompiledScanner {
         // headers). Real credentials concentrate randomness in one
         // long segment; programmer identifiers are sequences of
         // short dictionary fragments.
-        if crate::pipeline::looks_like_word_separated_identifier(value) {
+        if keep_identifier_gate(value) && crate::pipeline::looks_like_word_separated_identifier(value) {
             return Some("word_separated_identifier");
         }
         // Scheme-prefixed URI / URN: `urn:shopify:params:oauth:...`,

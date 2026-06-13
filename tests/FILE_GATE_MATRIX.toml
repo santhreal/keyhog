@@ -655,6 +655,9 @@ path = "crates/scanner/src/suppression/shape.rs"
 path = "crates/scanner/src/suppression/shape_gates.rs"
 
 [[module]]
+path = "crates/scanner/src/suppression/token_randomness.rs"
+
+[[module]]
 path = "crates/scanner/src/telemetry.rs"
 
 [[module]]
