@@ -267,7 +267,7 @@ impl CompiledScanner {
                         // and GPU phase-2 paths. (This is also where the GPU AC
                         // dense-prefix reroute lands, so it fixes forced-GPU
                         // recall on large files.)
-                        return self.scan_chunk_or_window(chunk, None, || {
+                        let mut matches = self.scan_chunk_or_window(chunk, None, || {
                             let prepared = self.prepare_chunk(chunk);
                             self.scan_prepared_with_triggered(
                                 prepared,
@@ -276,13 +276,17 @@ impl CompiledScanner {
                                 None,
                             )
                         });
+                        // Backend parity with the per-chunk `scan` API for the
+                        // line-based `:reassembled` cross-chunk fragment join — see
+                        // the rationale on the admitted branch below.
+                        self.scan_cross_chunk_fragments(chunk, &mut matches, None);
+                        return matches;
                     }
                     // No phase-1 trigger fired. The shared no-hit admission gate
                     // (`should_scan_no_hit_chunk` — recall-load-bearing, see its
                     // doc) decides whether the prefix-less / keyword-less fallback
                     // detectors, generic-assignment and entropy stages get a shot
-                    // on this chunk; a `false` drops to the zero-work fast path
-                    // WITHOUT preprocessing. The gate consults
+                    // on this chunk. The gate consults
                     // `has_active_fallback_patterns_for_chunk` FIRST, so a chunk
                     // that activates an anchorless / keyword-less detector (asana-
                     // pat and ~3100 similar, issue #69) is admitted even with no
@@ -290,44 +294,71 @@ impl CompiledScanner {
                     // the bare keyword gate left open (Law 10). Identical contract
                     // for the SIMD-coalesced and GPU-megakernel producers (both
                     // feed this tail), so findings are backend-invariant.
-                    if !self.should_scan_no_hit_chunk(chunk) {
-                        return Vec::new();
+                    if self.should_scan_no_hit_chunk(chunk) {
+                        // Admitted. Reuse phase 1's empty Hyperscan result rather
+                        // than re-running the automaton: prepare the chunk and drive
+                        // `scan_prepared_with_triggered` with an EMPTY trigger
+                        // bitmap, so the keyword-AC fallback, generic-assignment and
+                        // entropy stages run off `code_lines` / preprocessed text
+                        // with no second HS pass. Confirmed-pattern extraction is
+                        // correctly skipped (no AC pattern fired). Recollect triggers
+                        // ONLY on the rare structured-preprocessor drift where the
+                        // preprocessed text differs from the raw bytes phase 1
+                        // scanned (decoded / appended credential lines can carry
+                        // named-detector literal roots — also the multiline case).
+                        let prepared = self.prepare_chunk(chunk);
+                        let triggered =
+                            if prepared.preprocessed.text.as_bytes() == chunk.data.as_bytes() {
+                                Vec::new()
+                            } else {
+                                self.collect_triggered_patterns_for_backend(
+                                    &prepared.preprocessed.text,
+                                    ScanBackend::SimdCpu,
+                                )
+                            };
+                        let mut matches = self.scan_prepared_with_triggered(
+                            prepared,
+                            ScanBackend::SimdCpu,
+                            triggered,
+                            None,
+                        );
+                        // Match-based cross-file fragment reassembly: named-detector
+                        // matches feed cross-`.env` reassembly (an `AWS_ACCESS_KEY=`
+                        // match in one file paired with an `AWS_SECRET=` match in
+                        // another). Distinct from the line-based `:reassembled` join
+                        // below.
+                        self.record_and_reassemble_for_no_hit_chunk(chunk, &mut matches);
+                        // Backend parity with the per-chunk `scan` API for the
+                        // line-based `:reassembled` cross-chunk fragment join (an
+                        // `abcde…`-shaped secret split across two assignment lines/
+                        // chunks of one file reassembles into one finding). This tail
+                        // backs BOTH the SIMD `scan_coalesced` and the GPU megakernel,
+                        // so without it the production coalesced path silently dropped
+                        // every cross-chunk-reassembled secret a per-chunk scan
+                        // surfaces (Law 10; the GPU regression test
+                        // `gpu_batch_preserves_cross_chunk_reassembly` pins it).
+                        //
+                        // NOTE: decode-through (the OTHER half of
+                        // `post_process_matches`) is deliberately NOT run here. Unlike
+                        // reassembly — a measured clean recall win on CredData
+                        // (aws-access-key:reassembled +7 TP at ~0 FP) — enabling
+                        // decode-through on the bulk path is net-negative precision
+                        // (CredData −0.0142 P / +0.0028 R; breaches the mirror 0.9945
+                        // floor) because decoding key/digest/base64 BODIES yields
+                        // random bytes that coincidentally satisfy loose detectors
+                        // (private-key +45 FP/0 TP, google-api-key on PEM bodies …).
+                        // Closing the decode-through divergence requires the
+                        // decode-precision lane first; see KH-L ledger.
+                        self.scan_cross_chunk_fragments(chunk, &mut matches, None);
+                        return matches;
                     }
 
-                    // Admitted. Reuse phase 1's empty Hyperscan result rather than
-                    // re-running the automaton: prepare the chunk and drive
-                    // `scan_prepared_with_triggered` with an EMPTY trigger bitmap,
-                    // so the keyword-AC fallback, generic-assignment and entropy
-                    // stages run off `code_lines` / preprocessed text with no
-                    // second HS pass. Confirmed-pattern extraction is correctly
-                    // skipped (no AC pattern fired). Recollect triggers ONLY on the
-                    // rare structured-preprocessor drift where the preprocessed
-                    // text differs from the raw bytes phase 1 scanned (decoded /
-                    // appended credential lines can carry named-detector literal
-                    // roots — this also covers the multiline-concatenation case).
-                    let prepared = self.prepare_chunk(chunk);
-                    let triggered =
-                        if prepared.preprocessed.text.as_bytes() == chunk.data.as_bytes() {
-                            Vec::new()
-                        } else {
-                            self.collect_triggered_patterns_for_backend(
-                                &prepared.preprocessed.text,
-                                ScanBackend::SimdCpu,
-                            )
-                        };
-                    let mut matches = self.scan_prepared_with_triggered(
-                        prepared,
-                        ScanBackend::SimdCpu,
-                        triggered,
-                        None,
-                    );
-                    // Preserve cross-file fragment reassembly the previous no-hit
-                    // branch did: named-detector matches feed cross-`.env`
-                    // reassembly (e.g. an `AWS_ACCESS_KEY=` match in one file is
-                    // recorded for reassembly with an `AWS_SECRET=` match in
-                    // another).
-                    self.record_and_reassemble_for_no_hit_chunk(chunk, &mut matches);
-                    matches
+                    // Not admitted to direct extraction: the zero-work fast path. No
+                    // trigger, no fallback/keyword/entropy admission, so there is
+                    // nothing to extract and (decode-through being a separate lane,
+                    // above) nothing to post-process. Preserve the fast return that
+                    // keeps the phase-2 hot loop unregressed on the no-hit majority.
+                    Vec::new()
                 })
                 .collect();
 
