@@ -10,7 +10,9 @@
 
 include!(concat!(env!("OUT_DIR"), "/model_version.rs"));
 
-const WEIGHTS: &[u8] = include_bytes!("weights.bin");
+// `weights.bin` stays at `src/` (build.rs reads `src/weights.bin`); this file
+// now lives in `src/ml_scorer/`, so the embed path goes up one level.
+const WEIGHTS: &[u8] = include_bytes!("../weights.bin");
 
 const INPUT_DIM: usize = 42;
 const EXPERT_COUNT: usize = 6;

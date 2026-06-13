@@ -10,12 +10,12 @@
 //! length, entropy, char diversity, known prefixes, context keywords,
 //! placeholder patterns, structural signals, and coarse file-type cues.
 
-#[path = "ml_weights.rs"]
+// Submodules live in `ml_scorer/` (native path resolution), matching the
+// `foo.rs` + `foo/` layout used across the workspace (e.g. sources/filesystem).
 pub(crate) mod ml_weights;
 
 use std::cell::RefCell;
 
-#[path = "ml_features.rs"]
 mod ml_features;
 pub use ml_features::compute_features_with_config;
 pub use ml_features::{compute_features_public, NUM_FEATURES};
