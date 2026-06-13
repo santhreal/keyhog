@@ -2,7 +2,7 @@
 
 #[test]
 fn gpu_shader_no_unwrap_expect() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu_shader.rs");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu/gpu_shader.rs");
     let src = std::fs::read_to_string(path).expect("source readable");
     let mut offenders: Vec<(usize, &str)> = Vec::new();
     for (i, line) in src.lines().enumerate() {

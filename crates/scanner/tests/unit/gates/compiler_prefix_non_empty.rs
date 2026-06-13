@@ -2,7 +2,7 @@
 
 #[test]
 fn compiler_prefix_non_empty() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/compiler_prefix.rs");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/compiler/compiler_prefix.rs");
     let src = std::fs::read_to_string(path).expect("source readable");
     assert!(
         src.trim().len() >= 20,

@@ -14,7 +14,7 @@
 //! hardware.
 
 fn shader_src() -> String {
-    std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu_shader.rs"))
+    std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu/gpu_shader.rs"))
         .expect("read gpu_shader.rs")
 }
 

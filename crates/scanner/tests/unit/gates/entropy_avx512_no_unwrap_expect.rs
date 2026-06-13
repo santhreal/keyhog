@@ -2,7 +2,7 @@
 
 #[test]
 fn entropy_avx512_no_unwrap_expect() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/entropy_avx512.rs");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/entropy/avx512.rs");
     let src = std::fs::read_to_string(path).expect("source readable");
     let mut offenders: Vec<(usize, &str)> = Vec::new();
     for (i, line) in src.lines().enumerate() {

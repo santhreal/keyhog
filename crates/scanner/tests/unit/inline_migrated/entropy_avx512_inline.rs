@@ -1,4 +1,4 @@
-//! Migrated from src/entropy_avx512.rs
+//! Migrated from src/entropy/avx512.rs
 
 use keyhog_scanner::entropy::fast::shannon_entropy_scalar;
 use keyhog_scanner::testing::calculate_shannon_entropy;

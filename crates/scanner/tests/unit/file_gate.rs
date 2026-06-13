@@ -183,7 +183,7 @@ fn compiler_error() {
     assert!(build_compile_state(&[demo_detector("(unclosed", "x")]).is_err());
 }
 
-// ── crates/scanner/src/compiler_prefix.rs ─────────────────────────────
+// ── crates/scanner/src/compiler/compiler_prefix.rs ─────────────────────────────
 #[test]
 fn compiler_prefix_happy() {
     assert_eq!(extract_literal_prefix("ghp_"), Some("ghp_".into()));
@@ -716,7 +716,7 @@ fn entropy_scanner_error() {
     assert!(secrets.is_empty());
 }
 
-// ── crates/scanner/src/entropy_avx512.rs ──────────────────────────────
+// ── crates/scanner/src/entropy/avx512.rs ──────────────────────────────
 #[test]
 fn entropy_avx512_happy() {
     assert!(shannon_entropy_simd(b"mixed123") > 0.0);
@@ -726,7 +726,7 @@ fn entropy_avx512_error() {
     assert_eq!(shannon_entropy_simd(b""), 0.0);
 }
 
-// ── crates/scanner/src/entropy_fast.rs ────────────────────────────────
+// ── crates/scanner/src/entropy/fast.rs ────────────────────────────────
 #[test]
 fn entropy_fast_happy() {
     assert!(shannon_entropy_simd(b"abc123") > 0.0);
@@ -860,7 +860,7 @@ fn lib_error() {
     assert_eq!(normalize_chunk_data("a\u{200b}b").as_ref(), "ab");
 }
 
-// ── crates/scanner/src/ml_features.rs ─────────────────────────────────
+// ── crates/scanner/src/ml_scorer/ml_features.rs ─────────────────────────────────
 #[test]
 fn ml_features_happy() {
     let f = compute_features_public(
@@ -890,7 +890,7 @@ fn ml_scorer_error() {
     assert!(!model_version().is_empty());
 }
 
-// ── crates/scanner/src/ml_weights.rs ──────────────────────────────────
+// ── crates/scanner/src/ml_scorer/ml_weights.rs ──────────────────────────────────
 #[test]
 fn ml_weights_happy() {
     assert!(

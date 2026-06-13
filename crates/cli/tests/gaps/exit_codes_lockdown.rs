@@ -25,7 +25,7 @@
 //!   - anyhow errors that are NOT `io::Error` map to `EXIT_USER_ERROR = 2`;
 //!     all the lockdown `anyhow::bail!`s are plain string errors -> exit 2.
 //!   - clap parse failures exit 2 (clap's standard usage-error code).
-//! * `crates/scanner/src/gpu_env.rs`
+//! * `crates/scanner/src/gpu/env.rs`
 //!   - `require_gpu_preflight` is a no-op (Ok) unless `KEYHOG_REQUIRE_GPU=1`.
 //!   - `env_no_gpu`: `KEYHOG_NO_GPU=1` forces no-GPU; combined with
 //!     `KEYHOG_REQUIRE_GPU=1` the requirement is unsatisfiable -> exit 2 on

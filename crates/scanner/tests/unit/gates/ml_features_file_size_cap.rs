@@ -2,7 +2,7 @@
 
 #[test]
 fn ml_features_file_size_cap() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/ml_features.rs");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/ml_scorer/ml_features.rs");
     let src = std::fs::read_to_string(path).expect("source readable");
     let lines = src.lines().count();
     // Advisory cap (Santh STANDARD.md): warn, do not fail CI.

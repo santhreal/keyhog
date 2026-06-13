@@ -1,4 +1,4 @@
-//! Migrated from src/compiler.rs & src/compiler_prefix.rs
+//! Migrated from src/compiler.rs & src/compiler/compiler_prefix.rs
 
 use keyhog_scanner::compiler::{
     extract_inner_literals, extract_literal_prefixes, rewrite_alternation_prefix,

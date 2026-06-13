@@ -1,4 +1,4 @@
-"""Byte-exact Python port of `crates/scanner/src/ml_features.rs`.
+"""Byte-exact Python port of `crates/scanner/src/ml_scorer/ml_features.rs`.
 
 This is the single most parity-critical file in the ML pipeline: a model
 trained on features computed here is only valid if these features match what
@@ -90,7 +90,7 @@ def _binary(value: bool) -> float:
 
 def shannon_entropy(data: bytes) -> float:
     """Standard base-2 Shannon entropy over byte frequencies. Matches
-    `entropy_fast::shannon_entropy_scalar` for credential strings (no NUL runs,
+    `entropy::fast::shannon_entropy_scalar` for credential strings (no NUL runs,
     so the Rust NUL fast-path is inert)."""
     if not data:
         return 0.0

@@ -1,4 +1,4 @@
-//! Migrated from src/entropy_fast.rs — SIMD-vs-scalar entropy parity.
+//! Migrated from src/entropy/fast.rs — SIMD-vs-scalar entropy parity.
 //!
 //! The misalignment-boundary differential (the unrolled SIMD entropy kernel
 //! must agree with both the naive scalar path and an independent reference

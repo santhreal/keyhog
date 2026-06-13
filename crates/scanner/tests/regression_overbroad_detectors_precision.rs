@@ -24,7 +24,7 @@
 //! This test asserts the precision/recall behaviour DIRECTLY against the
 //! shipped detector TOMLs, compiling each pattern exactly the way the engine
 //! does (`RegexBuilder::new(p).case_insensitive(true).crlf(true)` — see
-//! `crates/scanner/src/compiler_compile.rs::shared_regex_compile`). It FAILS on
+//! `crates/scanner/src/compiler/compiler_compile.rs::shared_regex_compile`). It FAILS on
 //! the old over-broad regexes and PASSES on the tightened ones.
 
 use std::path::PathBuf;

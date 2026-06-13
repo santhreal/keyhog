@@ -2,7 +2,7 @@
 
 #[test]
 fn gpu_moe_readback_uses_bounded_polling() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu_moe_backend.rs");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu/backend.rs");
     let src = std::fs::read_to_string(path).expect("source readable");
 
     assert!(

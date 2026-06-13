@@ -151,7 +151,7 @@ path = "crates/cli/src/value_parsers.rs"
 path = "crates/core/src/allowlist.rs"
 
 [[module]]
-path = "crates/core/src/allowlist_metadata.rs"
+path = "crates/core/src/allowlist/metadata.rs"
 
 [[module]]
 path = "crates/core/src/auto_fix.rs"
@@ -283,13 +283,13 @@ path = "crates/scanner/src/checksum/stripe.rs"
 path = "crates/scanner/src/compiler.rs"
 
 [[module]]
-path = "crates/scanner/src/compiler_build.rs"
+path = "crates/scanner/src/compiler/compiler_build.rs"
 
 [[module]]
-path = "crates/scanner/src/compiler_compile.rs"
+path = "crates/scanner/src/compiler/compiler_compile.rs"
 
 [[module]]
-path = "crates/scanner/src/compiler_prefix.rs"
+path = "crates/scanner/src/compiler/compiler_prefix.rs"
 
 [[module]]
 path = "crates/scanner/src/confidence/mod.rs"
@@ -481,16 +481,16 @@ path = "crates/scanner/src/entropy/mod.rs"
 path = "crates/scanner/src/entropy/scanner.rs"
 
 [[module]]
-path = "crates/scanner/src/entropy_avx512.rs"
+path = "crates/scanner/src/entropy/avx512.rs"
 
 [[module]]
-path = "crates/scanner/src/entropy_fast.rs"
+path = "crates/scanner/src/entropy/fast.rs"
 
 [[module]]
-path = "crates/scanner/src/entropy_fast_neon.rs"
+path = "crates/scanner/src/entropy/fast_neon.rs"
 
 [[module]]
-path = "crates/scanner/src/entropy_fast_x86.rs"
+path = "crates/scanner/src/entropy/fast_x86.rs"
 
 [[module]]
 path = "crates/scanner/src/error.rs"
@@ -499,13 +499,13 @@ path = "crates/scanner/src/error.rs"
 path = "crates/scanner/src/gpu.rs"
 
 [[module]]
-path = "crates/scanner/src/gpu_env.rs"
+path = "crates/scanner/src/gpu/env.rs"
 
 [[module]]
-path = "crates/scanner/src/gpu_moe_backend.rs"
+path = "crates/scanner/src/gpu/backend.rs"
 
 [[module]]
-path = "crates/scanner/src/gpu_shader.rs"
+path = "crates/scanner/src/gpu/gpu_shader.rs"
 
 [[module]]
 path = "crates/scanner/src/homoglyph.rs"
@@ -535,13 +535,13 @@ path = "crates/scanner/src/jwt.rs"
 path = "crates/scanner/src/lib.rs"
 
 [[module]]
-path = "crates/scanner/src/ml_features.rs"
+path = "crates/scanner/src/ml_scorer/ml_features.rs"
 
 [[module]]
 path = "crates/scanner/src/ml_scorer.rs"
 
 [[module]]
-path = "crates/scanner/src/ml_weights.rs"
+path = "crates/scanner/src/ml_scorer/ml_weights.rs"
 
 [[module]]
 path = "crates/scanner/src/multiline/config.rs"

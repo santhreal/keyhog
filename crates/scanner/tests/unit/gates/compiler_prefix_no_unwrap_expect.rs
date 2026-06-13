@@ -2,7 +2,7 @@
 
 #[test]
 fn compiler_prefix_no_unwrap_expect() {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/compiler_prefix.rs");
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/compiler/compiler_prefix.rs");
     let src = std::fs::read_to_string(path).expect("source readable");
     let mut offenders: Vec<(usize, &str)> = Vec::new();
     for (i, line) in src.lines().enumerate() {
