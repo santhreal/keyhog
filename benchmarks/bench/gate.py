@@ -27,12 +27,24 @@ hard failure so a broken build can't sneak through green).
 from __future__ import annotations
 
 import argparse
+import json
 import pathlib
 import sys
 import tempfile
 
 from .report import canonical_leaderboard, load_results
-from .schema import RunResult
+from .schema import DetectorStat, RunResult
+
+# Per-detector FP-regression tolerances. The overall-F1 baseline gate is blind
+# to a single detector's FP spike that aggregate recall masks (the
+# kubernetes-bootstrap-token retrain shipped +203 FP on one detector while
+# overall CredData F1 *rose* 0.2539→0.2584 — an aggregate gate would have
+# passed it). A detector is flagged only when its FP growth clears BOTH an
+# absolute floor (so low-count corpus noise is ignored) AND a relative floor
+# (so proportional drift on an already-large detector is tolerated). A model
+# regression like 5→208 trips both; a benign 100→125 trips neither.
+DEFAULT_DETECTOR_FP_ABS = 20
+DEFAULT_DETECTOR_FP_REL = 1.0
 
 
 class GateError(Exception):
@@ -47,20 +59,62 @@ def _keyhog_row(rows: list[RunResult]) -> RunResult | None:
     return None
 
 
-def _baseline_keyhog_f1(baseline: pathlib.Path, corpus: str) -> float:
-    """The keyhog overall-F1 a committed baseline pins for ``corpus``.
+def _baseline_keyhog_row(baseline: pathlib.Path, corpus: str) -> RunResult:
+    """The keyhog RunResult a committed baseline pins for ``corpus``.
 
     ``baseline`` may be a single RunResult file or a directory of them;
-    canonical selection picks the same keyhog row the live run would."""
+    canonical selection picks the same keyhog row the live run would. The F1
+    floor and the per-detector FP baseline both derive from this one row, so
+    they can never disagree about which build is the baseline."""
     results = (
         load_results(baseline)
         if baseline.is_dir()
-        else [RunResult.from_json(__import__("json").loads(baseline.read_text()))]
+        else [RunResult.from_json(json.loads(baseline.read_text()))]
     )
     row = _keyhog_row(canonical_leaderboard(results, corpus))
     if row is None:
         raise GateError(f"baseline {baseline} has no keyhog result for corpus {corpus!r}")
-    return row.detection.overall.f1()
+    return row
+
+
+def _baseline_keyhog_f1(baseline: pathlib.Path, corpus: str) -> float:
+    """The keyhog overall-F1 a committed baseline pins for ``corpus``."""
+    return _baseline_keyhog_row(baseline, corpus).detection.overall.f1()
+
+
+def _detector_fp_regressions(
+    keyhog: RunResult,
+    baseline_detectors: dict[str, DetectorStat],
+    max_abs: int,
+    max_rel: float,
+) -> list[str]:
+    """Per-detector FP-regression violations (empty == none).
+
+    A detector is flagged when its candidate FP exceeds the baseline FP by more
+    than ``max_abs`` *and* by more than a ``max_rel`` fraction of the baseline
+    (a detector absent from the baseline is treated as baseline FP 0, so any
+    newly-firing detector above ``max_abs`` is flagged). This is the check the
+    aggregate F1 gate cannot make."""
+    out: list[str] = []
+    for det, stat in sorted(keyhog.detection.per_detector.items()):
+        cand = stat.fp
+        present = det in baseline_detectors
+        base = baseline_detectors[det].fp if present else 0
+        if cand <= base:
+            continue  # improved or unchanged
+        abs_delta = cand - base
+        if abs_delta <= max_abs:
+            continue  # within absolute tolerance — corpus noise, not a spike
+        rel = (abs_delta / base) if base > 0 else float("inf")
+        if rel <= max_rel:
+            continue  # proportional growth on an already-firing detector
+        shape = "new" if base == 0 else f"{rel:.1f}x"
+        out.append(
+            f"detector {det!r} FP {base if present else 'absent'}→{cand} "
+            f"(+{abs_delta}, {shape}) exceeds tolerance "
+            f"(abs>{max_abs}, rel>{max_rel:.2f})"
+        )
+    return out
 
 
 def evaluate(
@@ -72,11 +126,17 @@ def evaluate(
     beat_competitors: bool = True,
     baseline_f1: float | None = None,
     epsilon: float = 0.0,
+    baseline_detectors: dict[str, DetectorStat] | None = None,
+    max_detector_fp_abs: int = DEFAULT_DETECTOR_FP_ABS,
+    max_detector_fp_rel: float = DEFAULT_DETECTOR_FP_REL,
 ) -> list[str]:
     """Return the list of human-readable violations (empty == pass).
 
     Pure over the already-selected ``rows`` so it is unit-testable without a
-    scanner binary or disk."""
+    scanner binary or disk. When ``baseline_detectors`` is supplied, the
+    per-detector FP-regression check runs in addition to the overall-F1
+    baseline check — catching a single-detector spike the aggregate gate would
+    pass."""
     keyhog = _keyhog_row(rows)
     if keyhog is None or not keyhog.available:
         reason = "no result" if keyhog is None else (keyhog.error or "unavailable")
@@ -98,6 +158,10 @@ def evaluate(
             f"F1 {kf1:.4f} regressed below baseline {baseline_f1:.4f} "
             f"(epsilon {epsilon:.4f})"
         )
+
+    if baseline_detectors is not None:
+        violations.extend(_detector_fp_regressions(
+            keyhog, baseline_detectors, max_detector_fp_abs, max_detector_fp_rel))
 
     if beat_competitors:
         for r in rows:
@@ -141,6 +205,9 @@ def run_gate(
     baseline: pathlib.Path | None = None,
     epsilon: float = 0.0,
     corpus_root: str | pathlib.Path | None = None,
+    detector_fp_regression: bool = True,
+    max_detector_fp_abs: int = DEFAULT_DETECTOR_FP_ABS,
+    max_detector_fp_rel: float = DEFAULT_DETECTOR_FP_REL,
 ) -> int:
     """Run (or load) a leaderboard, evaluate the gate, print the verdict.
 
@@ -164,9 +231,13 @@ def run_gate(
         return 2
     _print_table(rows)
 
-    baseline_f1 = (
-        _baseline_keyhog_f1(baseline, corpus) if baseline is not None else None
-    )
+    baseline_f1: float | None = None
+    baseline_detectors: dict[str, DetectorStat] | None = None
+    if baseline is not None:
+        baseline_row = _baseline_keyhog_row(baseline, corpus)
+        baseline_f1 = baseline_row.detection.overall.f1()
+        if detector_fp_regression:
+            baseline_detectors = dict(baseline_row.detection.per_detector)
     try:
         violations = evaluate(
             rows,
@@ -176,6 +247,9 @@ def run_gate(
             beat_competitors=beat_competitors,
             baseline_f1=baseline_f1,
             epsilon=epsilon,
+            baseline_detectors=baseline_detectors,
+            max_detector_fp_abs=max_detector_fp_abs,
+            max_detector_fp_rel=max_detector_fp_rel,
         )
     except GateError as exc:
         print(f"\nGATE UNDECIDABLE: {exc}", file=sys.stderr)
@@ -216,6 +290,16 @@ def _main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-beat-competitors", action="store_true",
                     help="skip the strictly-better-than-every-competitor check "
                          "(regression-only gate)")
+    ap.add_argument("--no-detector-fp-regression", action="store_true",
+                    help="skip the per-detector FP-regression check against the "
+                         "--baseline (the check the aggregate-F1 gate can't make)")
+    ap.add_argument("--max-detector-fp-abs", type=int,
+                    default=DEFAULT_DETECTOR_FP_ABS,
+                    help="absolute per-detector FP increase tolerated vs baseline")
+    ap.add_argument("--max-detector-fp-rel", type=float,
+                    default=DEFAULT_DETECTOR_FP_REL,
+                    help="relative per-detector FP increase (fraction of baseline) "
+                         "tolerated vs baseline; a spike must clear BOTH to fail")
     args = ap.parse_args(argv)
     scanners = [s.strip() for s in args.scanners.split(",") if s.strip()]
     return run_gate(
@@ -229,6 +313,9 @@ def _main(argv: list[str] | None = None) -> int:
         baseline=args.baseline,
         epsilon=args.epsilon,
         corpus_root=args.corpus_root,
+        detector_fp_regression=not args.no_detector_fp_regression,
+        max_detector_fp_abs=args.max_detector_fp_abs,
+        max_detector_fp_rel=args.max_detector_fp_rel,
     )
 
 
