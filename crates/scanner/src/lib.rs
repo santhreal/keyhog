@@ -16,7 +16,7 @@
 //!   [`alphabet_filter`], [`bigram_bloom`], [`prefix_trie`], `ascii_ci`,
 //!   `simd` / `simdsieve_prefilter` (feature-gated), `prefilter_degrade`
 //!   (loud Law-10 fallback).
-//! - **Compile** (detectors → matchers) — [`compiler`], [`shared_regexes`],
+//! - **Compile** (detectors → matchers) — [`compiler`], `shared_regexes`,
 //!   [`static_intern`].
 //! - **Scan engine** (phase 1 triggers + phase 2 extraction; CPU or GPU) —
 //!   [`engine`] (start at its header doc), [`pipeline`], [`gpu`].
