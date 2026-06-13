@@ -181,6 +181,14 @@ jobs:
       # mirror corpus); this invocation runs only the corpus-free boundary gate.
       - name: finding-set eviction order-independence
         run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test fallback_order_independence
+      # Basic-Auth detector recall contract. `basic-auth-credentials` closes the
+      # Auth:Basic-Authorization CredData category (0 -> 491 TP, recall 0.824);
+      # this pins that a realistic `Basic <base64>` blob surfaces, the curl-shape
+      # surfaces, and the English word `basically` does NOT trip the `\b`-anchored
+      # detector — a recall regression here is a real detection loss to fix at the
+      # source, never to weaken.
+      - name: basic-auth detector recall contract
+        run: cargo test -p keyhog-scanner --no-default-features --features ci-lean --profile release-fast --test basic_auth_credentials_recall
       - name: RawMatch total-order gate
         run: cargo test -p keyhog-core --test new_core_finding_dedup --profile release-fast
 
