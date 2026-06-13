@@ -42,6 +42,22 @@ pub enum DogfoodEvent {
         credential_redacted: String,
         reason: Cow<'static, str>,
     },
+    /// A credential was matched but suppressed by a SHAPE / heuristic / marker
+    /// gate in the suppression cascade (UUID-v4, bare-hex digest, base64 blob,
+    /// repetitive run, dashed serial, template placeholder, DUMMY/PLACEHOLDER
+    /// word, doc-marker substring, …) other than the example-token counter
+    /// path. These gates are recall-affecting: a real secret that happens to
+    /// wear a suppressed shape is dropped here, so `--dogfood` must report it
+    /// (the `--help` contract: "whether a match was made and silenced, or never
+    /// reached the engine"). `reason` is the gate name (e.g.
+    /// `Cow::Borrowed("uuid_v4_shape")`). No detector field: the suppression
+    /// cascade adjudicates on shape/markers, not detector identity, so naming a
+    /// detector here would be a guess.
+    ShapeSuppressed {
+        path: Option<String>,
+        credential_redacted: String,
+        reason: Cow<'static, str>,
+    },
 }
 
 #[derive(Default)]
@@ -131,6 +147,45 @@ pub fn record_example_suppression(
     if let Ok(mut events) = t.events.lock() {
         events.push(DogfoodEvent::ExampleSuppressed {
             detector: detector.to_string(),
+            path: path.map(str::to_string),
+            credential_redacted: redacted,
+            reason: Cow::Borrowed(reason),
+        });
+    }
+}
+
+/// Record one SHAPE / heuristic suppression (UUID, bare-hex, base64 blob,
+/// repetitive run, …) for the `--dogfood` trace. Unlike
+/// [`record_example_suppression`] this is on the HOT suppression path (every
+/// candidate that hits a shape gate), so it is **zero-cost when dogfood is
+/// off**: the `is_dogfood_enabled()` atomic load short-circuits before any
+/// hashing / locking. It also does NOT bump the example-suppression counter -
+/// the reporter's "N example keys suppressed" summary stays example-only; shape
+/// drops are a `--dogfood`-only diagnostic. Dedup reuses the shared seen-set
+/// (keyed with a `shape\0` prefix so it can't collide with example keys).
+pub fn record_shape_suppression(path: Option<&str>, credential: &str, reason: &'static str) {
+    // Cheap atomic first - the common (no-dogfood) scan pays nothing beyond this.
+    if !is_dogfood_enabled() {
+        return;
+    }
+    let t = cell();
+    let credential_hash = {
+        let mut hasher = Sha256::new();
+        hasher.update(credential.as_bytes());
+        let digest = hasher.finalize();
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(&digest);
+        keyhog_core::hex_encode(&bytes)
+    };
+    let key = format!("shape\0{}\0{}\0{}", path.unwrap_or(""), credential_hash, reason);
+    if let Ok(mut seen) = t.seen_example_suppressions.lock() {
+        if !seen.insert(key) {
+            return;
+        }
+    }
+    let redacted = keyhog_core::redact(credential).into_owned();
+    if let Ok(mut events) = t.events.lock() {
+        events.push(DogfoodEvent::ShapeSuppressed {
             path: path.map(str::to_string),
             credential_redacted: redacted,
             reason: Cow::Borrowed(reason),

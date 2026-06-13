@@ -54,6 +54,7 @@ pub(super) fn check_markers(
     const PLACEHOLDER_WORDS: &[&str] = &["DUMMY", "PLACEHOLDER", "FAKE", "MOCK", "SAMPLE"];
     for word in PLACEHOLDER_WORDS {
         if upper_contains_token(upper, word) {
+            crate::telemetry::record_shape_suppression(path, credential, "placeholder_word");
             return MarkerVerdict::Suppress;
         }
     }
@@ -101,6 +102,11 @@ pub(super) fn check_markers(
                     .next_back()
                     .is_none_or(|c| !c.is_alphanumeric())
             }) {
+                crate::telemetry::record_shape_suppression(
+                    path,
+                    credential,
+                    "instructional_fragment",
+                );
                 return MarkerVerdict::Suppress;
             }
         }
@@ -108,6 +114,7 @@ pub(super) fn check_markers(
 
     // Developer markers override provider-prefix trust.
     if upper_contains_token(upper, "TODO") || upper_contains_token(upper, "FIXME") {
+        crate::telemetry::record_shape_suppression(path, credential, "dev_marker_todo_fixme");
         return MarkerVerdict::Suppress;
     }
 
@@ -131,6 +138,7 @@ pub(super) fn check_markers(
     // 349 leaked FPs in `jwt-rfc-example` category were the
     // `auth_token=…` log-line + `api.key=…` properties shape.
     if credential.contains(RFC7519_EXAMPLE_JWT_PREFIX) {
+        crate::telemetry::record_shape_suppression(path, credential, "rfc7519_example_jwt");
         return MarkerVerdict::Suppress;
     }
 
@@ -182,6 +190,7 @@ pub(super) fn check_markers(
                 {
                     continue;
                 }
+                crate::telemetry::record_shape_suppression(path, credential, "doc_marker_substring");
                 return MarkerVerdict::Suppress;
             }
         }
@@ -198,6 +207,7 @@ pub(super) fn check_markers(
     let known_prefix_body = known_prefix_body(credential);
     if let Some(body) = known_prefix_body {
         if looks_like_prefixed_masked_sequence(body) {
+            crate::telemetry::record_shape_suppression(path, credential, "prefixed_masked_sequence");
             return MarkerVerdict::Suppress;
         }
         if !credential.starts_with("TESTKEY_") {

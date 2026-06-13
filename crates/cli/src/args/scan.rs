@@ -472,11 +472,14 @@ pub struct ScanArgs {
     pub benchmark: bool,
 
     /// Emit a structured `--dogfood` JSON trace to stderr after the
-    /// scan: every example/test/placeholder credential that was
-    /// suppressed, with the reason. Credentials are redacted (prefix
-    /// only). Useful when keyhog reports zero findings and you want
-    /// to know whether a match was made and silenced, or never
-    /// reached the engine at all.
+    /// scan: every credential that was matched but suppressed, with the
+    /// reason — both example/test/placeholder markers
+    /// (`kind: example_suppressed`) AND shape/heuristic gates such as
+    /// UUID-v4, bare-hex digest, base64 blob, dashed serial, or repetitive
+    /// run (`kind: shape_suppressed`, `reason` names the gate). Credentials
+    /// are redacted (prefix only). Useful when keyhog reports zero findings
+    /// and you want to know whether a match was made and silenced (and by
+    /// which gate), or never reached the engine at all.
     #[arg(long)]
     pub dogfood: bool,
 
