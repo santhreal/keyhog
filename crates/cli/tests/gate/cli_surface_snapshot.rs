@@ -89,6 +89,10 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "min-confidence",
     "ml-threshold",
     "ml-weight",
+    // `--no-config`: hermetic run on the compiled-in Tier-A shipped defaults,
+    // rejecting ambient `.keyhog.toml` discovery (conflicts_with = "config";
+    // backlog MC-07). Unconditional — not feature-gated.
+    "no-config",
     "no-daemon",
     "no-decode",
     "no-default-excludes",
