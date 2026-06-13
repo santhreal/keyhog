@@ -561,6 +561,11 @@ Entries past `expires` are silently dropped on load with a WARN.
 
 ## Architecture
 
+> **Contributor map:** [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) is the
+> one-page guide to the whole repo — every top-level directory, the crate
+> layering, and the bytes→finding pipeline with each stage pointing at the
+> module that owns it. Start there to navigate the code.
+
 ```
 crates/
   core/       Detector loading, finding types, reporting (text/JSON/SARIF), allowlists
