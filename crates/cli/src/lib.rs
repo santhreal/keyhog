@@ -1,3 +1,27 @@
+//! KeyHog CLI: the user-facing binary that wires sources → scanner → verifier →
+//! reporter together. This crate is the top of the dependency DAG (see
+//! `docs/ARCHITECTURE.md`); it owns orchestration and I/O, never detection logic.
+//!
+//! # Module map (by responsibility)
+//!
+//! - **Entry** — `main.rs` (binary), this `lib.rs` (`run()` — the scan
+//!   lifecycle: parse → build config → drive sources → scan → report).
+//! - **Argument surface** — [`args`] (clap definitions), [`value_parsers`]
+//!   (typed flag parsing), [`path_validation`].
+//! - **Subcommands** — [`subcommands`] (scan, explain, detectors, diff,
+//!   calibrate, completion, …); long-running modes in [`daemon`].
+//! - **Scan orchestration** — [`orchestrator`] (fan-out, progress, deadlines),
+//!   [`orchestrator_config`] (resolve `--fast`/`--deep`/`--precision`/flag
+//!   overrides into one `ScannerConfig`), [`sources`] (CLI flags → input
+//!   sources).
+//! - **Output** — [`reporting`] (findings → text/JSON/SARIF), [`format`]
+//!   (formatting helpers), [`style`] (terminal styling).
+//! - **CI / baselines** — [`baseline`] (diff against a committed baseline),
+//!   [`benchmark`].
+//! - **Config & suppression** — [`config`] (`.keyhog.toml` discovery + merge),
+//!   [`inline_suppression`], [`test_fixture_suppressions`].
+//! - **Install / health** — [`installer`] (hook installer, `doctor`).
+
 use std::sync::atomic::{AtomicBool, AtomicUsize};
 
 pub static SCANNED_CHUNKS: AtomicUsize = AtomicUsize::new(0);
