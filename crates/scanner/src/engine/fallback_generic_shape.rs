@@ -2,18 +2,30 @@
 //! helpers, extracted from `fallback_generic.rs` (Law 5).
 //! `generic_value_shape_rejected` is the pure per-candidate predicate the
 //! `scan_generic_assignments` loop calls after computing `(value, entropy)`: it
-//! returns true iff any precision shape gate would have `continue`d
+//! returns `Some(gate)` iff a precision shape gate would have `continue`d
 //! (identifier / type-name / uri / base64-blob / encoded-binary / placeholder
-//! families). Behaviour-identical to the former inline gauntlet — every gate is
-//! verbatim, each `continue` became `return true`, recall guarded by the
-//! generic-secret bench gates. The three `generic_path_looks_like_*` helpers
-//! (the gauntlet's only callers) move with it.
+//! families), naming the firing gate, else `None`. Behaviour-identical to the
+//! former inline gauntlet — every gate is verbatim, each `continue` became
+//! `return Some("<gate>")` (KH-L-0412: the name feeds the `--dogfood`
+//! suppression trace; the caller records it, the predicate stays pure). Recall is
+//! guarded by the generic-secret bench gates. The three `generic_path_looks_like_*`
+//! helpers (the gauntlet's only callers) move with it.
 use super::*;
 
 impl CompiledScanner {
-    /// True iff a generic-secret candidate `value` (with precomputed `entropy`)
-    /// is rejected by any precision shape gate. Pure: reads `value`, `entropy`,
-    /// `chunk` metadata and `self.config` only — no side effects, no emission.
+    /// `Some(gate)` iff a generic-secret candidate `value` (with precomputed
+    /// `entropy`) is rejected by a precision shape gate — the returned
+    /// `&'static str` names the FIRING gate (for the `--dogfood` suppression
+    /// trace); `None` means the value passes every gate. Pure: reads `value`,
+    /// `entropy`, `chunk` metadata and `self.config` only — no side effects, no
+    /// emission (the caller, `scan_generic_assignments`, records the telemetry).
+    ///
+    /// KH-L-0412: this gauntlet was the last SILENT suppression path — the caller
+    /// did `if generic_value_shape_rejected(..) { continue }` with no telemetry,
+    /// so every generic-bridge shape drop was invisible to `--dogfood` (a Law-10
+    /// silent drop, and the bulk of the KH-L-0408 decomposition's never-candidate
+    /// vs suppressed ambiguity). Returning the gate NAME keeps the predicate pure
+    /// while making the drop loud and attributable.
     pub(crate) fn generic_value_shape_rejected(
         &self,
         value: &str,
@@ -24,7 +36,7 @@ impl CompiledScanner {
         // Threaded into the placeholder/hash suppression below to exempt it from
         // the bare-hex-digest gate ONLY (every other shape gate here still runs).
         allow_canonical_hex_key: bool,
-    ) -> bool {
+    ) -> Option<&'static str> {
         // Keyword-anchored values use the relaxed `generic-keyword-secret`
         // floor when `generic_keyword_low_entropy` is on (the default):
         // the credential keyword in the key is the evidence, and precision
@@ -43,12 +55,12 @@ impl CompiledScanner {
             value.len(),
         );
         if entropy < min_entropy {
-            return true;
+            return Some("generic_entropy_below_floor");
         }
 
         // Length gate
         if value.len() < 8 {
-            return true;
+            return Some("value_too_short");
         }
 
         // Variable-name filter: real secrets have mixed character classes.
@@ -59,7 +71,7 @@ impl CompiledScanner {
             || value.contains('{')
             || value.contains(' ')
         {
-            return true;
+            return Some("code_expression_chars");
         }
         // C++ / Rust scope-resolution (`Class::Member`, `Etc::passwd`,
         // `PrivateKey::<T>`) is the dominant generic-secret FP class
@@ -76,7 +88,7 @@ impl CompiledScanner {
         //     shape).  Real sha256 / git-blob digests never have
         //     `::`, so this never weakens digest recall.
         if value.starts_with(':') || value.contains("::") {
-            return true;
+            return Some("scope_resolution");
         }
         // Type-name / fully-qualified-path shape: starts with an
         // uppercase letter, has ≥ 2 uppercase letters, has lowercase
@@ -96,7 +108,7 @@ impl CompiledScanner {
             && value.bytes().filter(u8::is_ascii_uppercase).count() >= 2
             && value.bytes().any(|b| b.is_ascii_lowercase())
         {
-            return true;
+            return Some("type_name_shape");
         }
         // Allow dots ONLY in JWT-like patterns (exactly 2 dots separating
         // base64 segments). Reject other dotted values (method chains, FQDNs).
@@ -129,7 +141,7 @@ impl CompiledScanner {
                         })
                 });
             if !is_jwt_like {
-                return true;
+                return Some("non_jwt_dotted");
             }
         }
         // Reject pure identifiers: only alphanumeric + underscore
@@ -139,7 +151,7 @@ impl CompiledScanner {
             let has_upper = value.chars().any(|c| c.is_ascii_uppercase());
             let has_lower = value.chars().any(|c| c.is_ascii_lowercase());
             if !(has_digit && (has_upper || has_lower)) {
-                return true;
+                return Some("pure_identifier_no_digit");
             }
         }
         // Kebab-case / snake-case identifier shape: same filter the
@@ -149,7 +161,7 @@ impl CompiledScanner {
         // The `chars().all alphanumeric+_` branch above only covers
         // underscore separators; this extends coverage to hyphens.
         if crate::pipeline::looks_like_pure_identifier(value) {
-            return true;
+            return Some("pure_identifier");
         }
         // Word-separated identifier with embedded digits: catches
         // FPs missed by `looks_like_pure_identifier`'s `!has_digit`
@@ -160,14 +172,14 @@ impl CompiledScanner {
         // long segment; programmer identifiers are sequences of
         // short dictionary fragments.
         if crate::pipeline::looks_like_word_separated_identifier(value) {
-            return true;
+            return Some("word_separated_identifier");
         }
         // Scheme-prefixed URI / URN: `urn:shopify:params:oauth:...`,
         // `secret-token:<base64>` (bat-go merchant README). Documented
         // OAuth grant types and protocol URIs that the regex captures
         // via the trailing `token-type:...token` keyword.
         if crate::pipeline::looks_like_scheme_prefixed_uri(value) {
-            return true;
+            return Some("scheme_prefixed_uri");
         }
         // Punctuation-decorated identifier: `--api-secret` (CLI flag),
         // `&gss_recv_token` (C pointer), `@v_password` (SQL bind),
@@ -179,20 +191,20 @@ impl CompiledScanner {
         if !high_entropy_punctuation_payload
             && crate::pipeline::looks_like_punctuation_decorated_identifier(value)
         {
-            return true;
+            return Some("punctuation_decorated_identifier");
         }
         // URL / path-fragment shape: `user/settings/password` (gogs
         // template constants), `user/auth/forgot_passwd` (gogs auth
         // templates), `/api/v1/access_token` (alist OAuth URL).
         if crate::pipeline::looks_like_url_or_path_segment(value) {
-            return true;
+            return Some("url_or_path_segment");
         }
         // Vendored 3rd-party minified bundle: drop generic-secret
         // hits in vendored codemirror/pdfjs/wp-includes/etc. paths.
         if crate::pipeline::looks_like_vendored_minified_path(
             chunk.metadata.path.as_deref(),
         ) {
-            return true;
+            return Some("vendored_minified_path");
         }
         // Regex-literal suppression: the fast-path hot patterns and
         // generic-secret regex sometimes capture rules being defined
@@ -204,7 +216,7 @@ impl CompiledScanner {
         // 3 hot-aws_session_key / hot-slack_bot_token findings on
         // its own regex definitions.
         if crate::pipeline::looks_like_regex_literal_tail(value) {
-            return true;
+            return Some("regex_literal_tail");
         }
 
         // Standard-base64-arbitrary-bytes suppression for generic
@@ -220,7 +232,7 @@ impl CompiledScanner {
         // preserved. SecretBench-medium 15k seed-0: ~10 FPs/
         // shard × 256 shards = ~2.5k FPs from this path alone.
         if !allow_canonical_hex_key && generic_path_looks_like_random_base64_blob(value, entropy) {
-            return true;
+            return Some("base64_blob");
         }
 
         // ARN-without-prefix suppression for generic path.
@@ -235,7 +247,7 @@ impl CompiledScanner {
         // dedicated trimmed-prefix gate catches it without
         // weakening the global gate.
         if generic_path_looks_like_trimmed_aws_arn(value) {
-            return true;
+            return Some("trimmed_aws_arn");
         }
 
         // Placeholder suppression. NOTE: the credential-anchor variant
@@ -257,7 +269,7 @@ impl CompiledScanner {
             entropy,
             allow_canonical_hex_key,
         ) {
-            return true;
+            return Some("known_example_or_placeholder");
         }
         // Decoded-form placeholder check: a docs sample that arrives
         // base64-wrapped (e.g. QUtJQUVYQU1QTEVFWEFNUExFMTI= which
@@ -269,7 +281,7 @@ impl CompiledScanner {
         // but generic-secret emits directly via push_match and
         // bypasses it.
         if crate::decode_structure::decoded_contains_placeholder(value) {
-            return true;
+            return Some("decoded_placeholder");
         }
         // Decode-through binary suppression: a generic high-entropy
         // candidate that base64/hex-decodes to identifiable binary
@@ -279,7 +291,7 @@ impl CompiledScanner {
             && !allow_canonical_hex_key
             && crate::decode_structure::is_encoded_binary(value)
         {
-            return true;
+            return Some("encoded_binary");
         }
         // Random-byte base64 decoy suppression (generic path only).
         // `is_encoded_binary` above only fires on bytes that carry a
@@ -305,9 +317,9 @@ impl CompiledScanner {
             && !allow_canonical_hex_key
             && generic_path_looks_like_random_byte_blob(value)
         {
-            return true;
+            return Some("random_byte_blob");
         }
-        false
+        None
     }
 }
 

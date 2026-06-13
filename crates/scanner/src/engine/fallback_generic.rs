@@ -324,8 +324,19 @@ impl CompiledScanner {
                 // CredData/mirror soundness argument.
                 let allow_canonical_hex_key =
                     is_strong_keyword_anchored_hex_key(keyword_match.as_str(), value);
-                if self.generic_value_shape_rejected(value, entropy, chunk, allow_canonical_hex_key)
+                // KH-L-0412: the generic-bridge shape gauntlet was the last
+                // SILENT suppression path. Record the firing gate's name so a
+                // dropped generic-secret candidate is visible to `--dogfood`
+                // (Law-10), then continue. Zero-cost when dogfood is off (the
+                // `is_dogfood_enabled()` atomic short-circuits before any work).
+                if let Some(reason) =
+                    self.generic_value_shape_rejected(value, entropy, chunk, allow_canonical_hex_key)
                 {
+                    crate::telemetry::record_shape_suppression(
+                        chunk.metadata.path.as_deref(),
+                        value,
+                        reason,
+                    );
                     continue;
                 }
 
@@ -402,6 +413,15 @@ impl CompiledScanner {
                 let Some(confidence) =
                     crate::checksum::checksum_adjusted_confidence(confidence, value)
                 else {
+                    // A prefix-bearing token with an INVALID embedded checksum is a
+                    // confirmed false positive — trace the drop (KH-L-0412, Law-10)
+                    // so it is not silent, mirroring the named path's
+                    // `checksum_invalid` engine gate.
+                    crate::telemetry::record_shape_suppression(
+                        chunk.metadata.path.as_deref(),
+                        value,
+                        "checksum_invalid",
+                    );
                     continue;
                 };
 

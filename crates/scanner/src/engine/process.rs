@@ -123,6 +123,14 @@ impl CompiledScanner {
             detector.id.as_ref(),
             weak_anchor,
         ) {
+            // KH-L-0412 (Law-10): the weak-anchor named-detector context/example
+            // suppression was the last silent `return` on this path. Trace it so a
+            // dropped weak-anchored named match is visible to `--dogfood`.
+            crate::telemetry::record_shape_suppression(
+                chunk.metadata.path.as_deref(),
+                credential,
+                "named_weak_anchor_suppressed",
+            );
             return;
         }
 
