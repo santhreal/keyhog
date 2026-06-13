@@ -1,12 +1,9 @@
 //! Logic for compiling detector specifications into an efficient scanning engine.
 
-#[path = "compiler_build.rs"]
+// Submodules live in `compiler/` (native resolution), matching the
+// `foo.rs` + `foo/` layout used across the workspace. Names unchanged.
 pub mod compiler_build;
-
-#[path = "compiler_compile.rs"]
 pub mod compiler_compile;
-
-#[path = "compiler_prefix.rs"]
 pub mod compiler_prefix;
 
 pub use compiler_build::{
