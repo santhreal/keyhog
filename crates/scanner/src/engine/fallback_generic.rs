@@ -89,6 +89,66 @@ fn keyword_has_word_boundary(line: &str, kw_start: usize) -> bool {
     prev.is_ascii_lowercase() && kw_first.is_ascii_uppercase()
 }
 
+/// KH-L-0110: True iff the bridge `keyword` → `value` capture is a COMPLETE
+/// pure-hex value of canonical key length (32 or 48) anchored by a STRONG
+/// cryptographic-key keyword — a real key, not a hash digest.
+///
+/// On the real CredData corpus these are overwhelmingly genuine: hex48+kw is
+/// 1033 POS / **0 NEG** (precision 1.0), hex32+kw 1279 / 31 (0.976). Yet the
+/// bare-hex-digest shape gate (`suppression::shape_gates::looks_like_bare_hex_
+/// digest`, lengths 32|40|48|56|64|72|128) suppresses them as MD5/SHA1 digests,
+/// pinning generic recall near zero on this dominant shape.
+///
+/// Safe on BOTH bench corpora: the SecretBench mirror's `negatives.py` plants
+/// hex hash-decoys ONLY at length 40 (sha1 / git-commit-sha) and 64 (sha256 /
+/// docker-image-digest) — never 32 or 48 — and the decision-tree's v18 bare-hex
+/// FP regression (3304 FPs) was entirely len-40/64. So hex32/48 carry no
+/// hash-shaped negative twin; lifting them cannot reproduce the v31 `TOKEN=<hex>`
+/// catastrophe (which was the len-64 sha256 class).
+///
+/// Soundness vs the truncated-sha256-prefix that the gate's len-48 entry exists
+/// to catch: that truncation is produced by the weak-anchor NAMED path's
+/// `[a-f0-9]{32,48}` detector regexes capping mid-span. The keyword bridge's
+/// [`GENERIC_RE`] captures group 2 with `{8,128}` (NOT 48), so a length-48
+/// capture here is the COMPLETE hex run, terminated by a non-charclass byte —
+/// provably not a 64-hex sha256 prefix (which would capture as 64, a non-exempt
+/// length). hex40/hex64 are deliberately NOT exempted.
+///
+/// Only the bare-hex-digest arm is skipped; the repetitive / fake-sequence /
+/// placeholder / prefixed-`sha256:` arms in `should_suppress_inner` still run,
+/// so `deadbeef…`-style decoys and `0123456789abcdef…` sequences are unaffected.
+fn is_strong_keyword_anchored_hex_key(keyword: &str, value: &str) -> bool {
+    if !matches!(value.len(), 32 | 48) {
+        return false;
+    }
+    if !value.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return false;
+    }
+    // Canonicalize the captured keyword: case-fold and drop `_`/`-`/`.` so
+    // `API_KEY`, `api-key`, `encryption_key`, `clientSecret` all normalize to a
+    // single token, then match the STRONG cryptographic-key family ONLY.
+    // Deliberately EXCLUDES the weaker / more ambiguous bridge anchors
+    // (`token`, `pass*`, `auth*`, `credential`, `license_key`, `passphrase`),
+    // whose hex captures are not as cleanly real on CredData.
+    let canon: String = keyword
+        .bytes()
+        .filter(|b| !matches!(b, b'_' | b'-' | b'.'))
+        .map(|b| b.to_ascii_lowercase() as char)
+        .collect();
+    matches!(
+        canon.as_str(),
+        "secret"
+            | "apikey"
+            | "privatekey"
+            | "encryptionkey"
+            | "signingkey"
+            | "accesskey"
+            | "clientsecret"
+            | "appsecret"
+            | "masterkey"
+    )
+}
+
 thread_local! {
     /// Per-thread pool for the `lines_with_keyword` scratch buffer.
     ///
@@ -242,7 +302,15 @@ impl CompiledScanner {
                 // lifts the floor to that bits/byte value, suppressing values
                 // below it.
                 let entropy = crate::pipeline::match_entropy(value.as_bytes());
-                if self.generic_value_shape_rejected(value, entropy, chunk) {
+                // KH-L-0110: a complete pure-hex value of canonical key length
+                // (32/48) under a STRONG credential keyword is a real key, not a
+                // hash digest — exempt it from the bare-hex-digest shape gate
+                // (every other gate still applies). See the helper for the
+                // CredData/mirror soundness argument.
+                let allow_canonical_hex_key =
+                    is_strong_keyword_anchored_hex_key(keyword_match.as_str(), value);
+                if self.generic_value_shape_rejected(value, entropy, chunk, allow_canonical_hex_key)
+                {
                     continue;
                 }
 

@@ -37,16 +37,22 @@ pub fn should_suppress_known_example_credential_with_source(
     context: context::CodeContext,
     source_type: Option<&str>,
 ) -> bool {
-    should_suppress_inner(credential, path, context, source_type, false, false, None)
+    should_suppress_inner(credential, path, context, source_type, false, false, None, false)
 }
 
 /// Entropy-aware variant for high-entropy generic/entropy fallbacks.
+///
+/// `allow_canonical_hex_key` (KH-L-0110): set by the generic keyword-bridge when
+/// the value is a COMPLETE pure-hex value of canonical key length (32/48)
+/// anchored by a STRONG credential keyword — exempts it from the bare-hex-digest
+/// gate only (see [`super::decision::should_suppress_inner`]).
 pub(crate) fn should_suppress_known_example_credential_with_source_and_entropy(
     credential: &str,
     path: Option<&str>,
     context: context::CodeContext,
     source_type: Option<&str>,
     entropy: f64,
+    allow_canonical_hex_key: bool,
 ) -> bool {
     should_suppress_inner(
         credential,
@@ -56,6 +62,7 @@ pub(crate) fn should_suppress_known_example_credential_with_source_and_entropy(
         false,
         false,
         Some(entropy),
+        allow_canonical_hex_key,
     )
 }
 
@@ -327,6 +334,7 @@ pub fn should_suppress_named_detector_finding_weak(
         false,
         bypass_shape_gates,
         None,
+        false,
     )
 }
 

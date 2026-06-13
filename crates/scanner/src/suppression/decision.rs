@@ -21,6 +21,15 @@ pub(super) fn should_suppress_inner(
     skip_b64_decode_recheck: bool,
     bypass_shape_gates: bool,
     entropy_hint: Option<f64>,
+    // Bridge-path-only exemption (KH-L-0110): the caller has proven this is a
+    // COMPLETE, delimiter-terminated pure-hex value of canonical key length
+    // (32/48) anchored by a STRONG credential keyword — a real key on CredData
+    // (hex48+kw 1033 POS / 0 NEG; hex32+kw 0.976), invisible to the mirror's
+    // len-40/64 hash negatives. When set, skip the bare-hex-digest arm ONLY (the
+    // truncated-sha256-prefix it guards arises on the weak-anchor NAMED path's
+    // `{32,48}` regexes, never on a complete bridge capture). All other gates —
+    // prefixed-hash-digest, UUID, repetitive/placeholder/fake-sequence — stay.
+    allow_canonical_hex_key: bool,
 ) -> bool {
     let from_evasion_decoder =
         source_type.is_some_and(|s| s.contains("/reverse") || s.contains("/caesar"));
@@ -198,7 +207,7 @@ pub(super) fn should_suppress_inner(
     if looks_like_prefixed_hash_digest(credential) {
         return true;
     }
-    if !bypass_shape_gates && looks_like_bare_hex_digest(credential) {
+    if !bypass_shape_gates && !allow_canonical_hex_key && looks_like_bare_hex_digest(credential) {
         return true;
     }
     if !bypass_shape_gates && is_uuid_v4_shape(credential) {
@@ -442,6 +451,7 @@ pub(super) fn should_suppress_inner(
                     true,
                     bypass_shape_gates,
                     None,
+                    allow_canonical_hex_key,
                 )
             {
                 return true;

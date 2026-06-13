@@ -19,6 +19,11 @@ impl CompiledScanner {
         value: &str,
         entropy: f64,
         chunk: &Chunk,
+        // KH-L-0110: the keyword bridge proved this is a complete pure-hex value
+        // of canonical key length (32/48) under a STRONG credential keyword.
+        // Threaded into the placeholder/hash suppression below to exempt it from
+        // the bare-hex-digest gate ONLY (every other shape gate here still runs).
+        allow_canonical_hex_key: bool,
     ) -> bool {
         // Keyword-anchored values use the relaxed `generic-keyword-secret`
         // floor when `generic_keyword_low_entropy` is on (the default):
@@ -214,7 +219,7 @@ impl CompiledScanner {
         // through this gate, so service-specific recall is
         // preserved. SecretBench-medium 15k seed-0: ~10 FPs/
         // shard × 256 shards = ~2.5k FPs from this path alone.
-        if generic_path_looks_like_random_base64_blob(value, entropy) {
+        if !allow_canonical_hex_key && generic_path_looks_like_random_base64_blob(value, entropy) {
             return true;
         }
 
@@ -250,6 +255,7 @@ impl CompiledScanner {
             crate::context::CodeContext::Unknown,
             Some(chunk.metadata.source_type.as_str()),
             entropy,
+            allow_canonical_hex_key,
         ) {
             return true;
         }
@@ -270,6 +276,7 @@ impl CompiledScanner {
         // bytes (PNG / gzip / ELF / protobuf-wire) is embedded data,
         // not a credential.
         if !high_entropy_punctuation_payload
+            && !allow_canonical_hex_key
             && crate::decode_structure::is_encoded_binary(value)
         {
             return true;
@@ -295,6 +302,7 @@ impl CompiledScanner {
         // before this fallback, so a real 40-char anchored secret (AWS
         // etc.) is unaffected - the negative twin still fires.
         if !high_entropy_punctuation_payload
+            && !allow_canonical_hex_key
             && generic_path_looks_like_random_byte_blob(value)
         {
             return true;
