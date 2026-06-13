@@ -30,13 +30,19 @@ pub fn shannon_entropy_simd(data: &[u8]) -> f64 {
 
     // SAFETY: We verify AVX2/SSE2 support via is_x86_feature_detected! before calling specialized paths.
     //
-    // The wide paths emit instructions beyond their headline ISA, so the runtime
-    // probe must cover *every* feature the target_feature contract enables:
-    //  - the AVX-512 reduction calls `_mm512_cvtepi64_pd` (VCVTQQ2PD), an
-    //    AVX512DQ op, so `avx512dq` is required in addition to f+bw (else SIGILL
-    //    on an f+bw-only CPU/VM) — KH C10/M9.
-    //  - the AVX2 reduction emits `_mm256_fmadd_pd` (VFMADD231PD, an FMA3 op),
-    //    so `fma` is required in addition to `avx2` (else SIGILL on an
+    // The runtime probe must be a SUPERSET of every feature the dispatched
+    // function's `#[target_feature]` enables — entering a target_feature fn on a
+    // CPU that lacks those features is UB/SIGILL (the compiler assumes them
+    // throughout the body):
+    //  - the AVX-512 reduction (`entropy::avx512::calculate_shannon_entropy`)
+    //    declares `avx512f,avx512bw`; soundness needs only those two. The gate
+    //    ALSO requires `avx512dq` as deliberate forward-headroom, so a future
+    //    dq-using re-vectorization of the reduction needs no gate change (see
+    //    entropy/avx512.rs) — a sound over-gate, not a current intrinsic need.
+    //    KH C10/M9.
+    //  - the AVX2 reduction (`fast_x86::shannon_entropy_avx2`) declares
+    //    `avx2,fma`, which licenses the compiler to emit FMA3 (VFMADD231PD) in
+    //    its body, so `fma` is required in addition to `avx2` (else SIGILL on an
     //    AVX2-without-FMA CPU/VM). Falling through lands on SSE2/scalar.
     unsafe {
         if is_x86_feature_detected!("avx512f")

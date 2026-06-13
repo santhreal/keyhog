@@ -2,15 +2,20 @@
 //! dispatch must require `fma` in addition to `avx2` (else SIGILL on an
 //! AVX2-without-FMA CPU/VM).
 //!
-//! Root cause (the bug this locks against): the vectorized AVX2 reduction in
-//! `entropy::fast_x86::shannon_entropy_avx2` / `approx_log2_pd` is declared
-//! `#[target_feature(enable = "avx2,fma")]` and emits `_mm256_fmadd_pd`
-//! (VFMADD231PD, an FMA3 instruction). The earlier dispatch in
-//! `entropy::fast::shannon_entropy_simd` gated that call on only
-//! `is_x86_feature_detected!("avx2")`. On a CPU/VM that has AVX2 but NOT FMA3
-//! (e.g. AMD Piledriver lineage without FMA3, or a hypervisor that masks FMA
-//! while leaving AVX2 visible), the gate would let the FMA3-emitting path run
-//! and the process would trap with SIGILL on the first `vfmadd231pd`.
+//! Root cause (the bug this locks against): the AVX2 entropy reduction in
+//! `entropy::fast_x86::shannon_entropy_avx2` is compiled with
+//! `#[target_feature(enable = "avx2,fma")]`. Enabling `fma` LICENSES the
+//! compiler to emit FMA3 instructions (VFMADD231PD) anywhere in that function —
+//! historically via an explicit `_mm256_fmadd_pd` in a vectorized
+//! polynomial-log2, and still today via contraction of the reduction's float
+//! mul-adds. The earlier dispatch in `entropy::fast::shannon_entropy_simd`
+//! gated that call on only `is_x86_feature_detected!("avx2")`. On a CPU/VM that
+//! has AVX2 but NOT FMA3 (e.g. AMD Piledriver lineage without FMA3, or a
+//! hypervisor that masks FMA while leaving AVX2 visible), the gate would let
+//! the FMA3-capable path run and the process would trap with SIGILL on the
+//! first `vfmadd231pd`. The decisive, durable invariant is therefore the
+//! target_feature DECLARATION, not the presence of any one intrinsic (the
+//! polynomial-log2 was since replaced by the bit-exact shared reduction).
 //!
 //! Why this test is host-independent: a purely behavioral "does it SIGILL?"
 //! test only exercises whatever ISA tier the *runner's* CPU dispatches to. On a
@@ -129,21 +134,35 @@ fn x86_dispatch_body() -> &'static str {
 
 #[test]
 fn avx2_reduction_declares_fma_target_feature() {
-    // Establishes the premise: the AVX2 reduction really does opt into FMA3 (and
-    // therefore really can emit VFMADD231PD). Both the entropy function and its
-    // log2 helper must carry it.
-    let occurrences = AVX2_IMPL_SRC
-        .matches("#[target_feature(enable = \"avx2,fma\")]")
-        .count();
+    // Establishes the premise that makes the dispatch gate's `fma` requirement
+    // load-bearing: the AVX2 reduction is compiled with
+    // `#[target_feature(enable = "avx2,fma")]`. That DECLARATION — not any
+    // particular intrinsic in the body — is what licenses the compiler to emit
+    // FMA3 (VFMADD231PD) anywhere in the function (e.g. contracting the
+    // histogram reduction's `count * log2` mul-add), and is therefore what makes
+    // *entering* the function on a no-FMA CPU unsound. The reduction itself was
+    // deliberately moved to the shared, bit-exact `entropy_from_histogram` and
+    // no longer calls an explicit `_mm256_fmadd_pd` (see entropy/fast_x86.rs
+    // doc: the old vectorized polynomial-log2 diverged ~5e-3 bits/byte), so the
+    // gate contract is anchored on the target_feature declaration — the robust
+    // invariant — not on the presence of one intrinsic.
+    //
+    // Match a REAL attribute line (trimmed, starts with `#[target_feature`), not
+    // a doc-comment that merely mentions the attribute string.
+    let declares_avx2_fma = AVX2_IMPL_SRC.lines().any(|l| {
+        let t = l.trim_start();
+        t.starts_with("#[target_feature") && t.contains("avx2") && t.contains("fma")
+    });
     assert!(
-        occurrences >= 2,
-        "expected the AVX2 entropy fn and its log2 helper to both declare \
-         target_feature avx2,fma; found {occurrences} declaration(s)"
+        declares_avx2_fma,
+        "the AVX2 reduction must carry a real #[target_feature(enable = \"avx2,fma\")] \
+         attribute — that declaration is what forces the dispatch gate to require fma"
     );
-    // And it actually emits the FMA3 op, so the gate's `fma` requirement is real.
+    // And that opt-in must sit on the AVX2 entropy entry point itself, so the
+    // gate is guarding the function the runtime actually dispatches into.
     assert!(
-        AVX2_IMPL_SRC.contains("_mm256_fmadd_pd"),
-        "AVX2 reduction must emit _mm256_fmadd_pd (the FMA3 op the gate guards)"
+        AVX2_IMPL_SRC.contains("fn shannon_entropy_avx2"),
+        "the AVX2 reduction entry point shannon_entropy_avx2 must exist in the impl"
     );
 }
 
