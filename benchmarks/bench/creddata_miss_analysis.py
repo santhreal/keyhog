@@ -136,6 +136,76 @@ def cmd_shapes(root: pathlib.Path) -> int:
     return 0
 
 
+# The keyword token immediately left of the value's `=`/`:` assignment, captured
+# (not just detected) so we can bucket precision per keyword. Mirrors the shipped
+# Rust canonicalisation (case-fold, strip `_-.`) so the strong-set decision the
+# tool informs is the *same* comparison the scanner makes.
+KW_TOKEN = re.compile(r"([A-Za-z][A-Za-z0-9_.\-]{1,40})[\"'` ]*[=:]\s*[\"'`]?$")
+
+
+def _canon_kw(kw: str) -> str:
+    return re.sub(r"[_.\-]", "", kw.lower())
+
+
+def cmd_keywords(root: pathlib.Path) -> int:
+    """Per-keyword POS/NEG precision for the mirror-safe lengths (hex32/hex48).
+
+    The mirror plants ZERO hex32/hex48 negatives (only hex40/hex64), so a
+    keyword-set broadening confined to lengths 32/48 cannot regress mirror
+    precision. The only real-world FP cost lives on CredData; this command
+    surfaces it per canonical keyword so the strong set can be extended only to
+    keywords that clear a precision bar — soundness before reach.
+    """
+    cache = _LineCache(root)
+    # canon_kw -> {len -> Counter(POS/NEG)}
+    stat: dict[str, dict[int, collections.Counter]] = collections.defaultdict(
+        lambda: collections.defaultdict(collections.Counter))
+    for row in _iter_meta(root):
+        gt = (row.get("GroundTruth") or "").strip().upper()
+        label = "POS" if gt == "T" else "NEG"
+        ls = int(row.get("LineStart") or 0)
+        vs = int(row.get("ValueStart") or -1)
+        ve = int(row.get("ValueEnd") or -1)
+        lines = cache.lines((row.get("FilePath") or "").strip())
+        if not lines or ls < 1 or ls > len(lines) or vs < 0:
+            continue
+        line = lines[ls - 1]
+        val = line[vs:(ve if ve >= 0 else None)]
+        if not val or not HEX.match(val) or len(val) not in (32, 48):
+            continue
+        m = KW_TOKEN.search(line[:vs])
+        if not m:
+            continue
+        stat[_canon_kw(m.group(1))][len(val)][label] += 1
+
+    # Flatten to (canon_kw) -> Counter over both lengths for ranking.
+    rows = []
+    for kw, by_len in stat.items():
+        agg = collections.Counter()
+        for c in by_len.values():
+            agg.update(c)
+        pos, neg = agg["POS"], agg["NEG"]
+        if pos + neg < 5:
+            continue
+        prec = pos / (pos + neg)
+        rows.append((kw, pos, neg, prec,
+                     by_len.get(32, collections.Counter()),
+                     by_len.get(48, collections.Counter())))
+
+    print("== hex32/hex48 keyword-level precision (CredData; mirror-safe lengths) ==")
+    print(f"{'canon_keyword':22} {'POS':>5} {'NEG':>5} {'prec':>6}  "
+          f"{'h32 P/N':>10} {'h48 P/N':>10}")
+    for kw, pos, neg, prec, c32, c48 in sorted(rows, key=lambda r: -r[1]):
+        h32 = f"{c32['POS']}/{c32['NEG']}"
+        h48 = f"{c48['POS']}/{c48['NEG']}"
+        print(f"{kw:22} {pos:5} {neg:5} {prec:6.3f}  {h32:>10} {h48:>10}")
+    tot_pos = sum(r[1] for r in rows)
+    tot_neg = sum(r[2] for r in rows)
+    print(f"\ntotal keyworded hex32/48: POS={tot_pos} NEG={tot_neg} "
+          f"P={tot_pos/(tot_pos+tot_neg):.3f}" if tot_pos + tot_neg else "none")
+    return 0
+
+
 # ── candidate finding-extractors (line regexes -> (value) findings) ──────
 
 def _extract_candidate(line: str, patterns: list[re.Pattern]) -> list[str]:
@@ -239,7 +309,7 @@ def cmd_simulate(root: pathlib.Path, candidate: str) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="CredData miss analysis")
-    ap.add_argument("command", choices=("shapes", "simulate"))
+    ap.add_argument("command", choices=("shapes", "simulate", "keywords"))
     ap.add_argument("--root", default=str(_DEFAULT_CREDDATA))
     ap.add_argument("--candidate", choices=tuple(CANDIDATES),
                     default="crypto_key_hex")
@@ -250,6 +320,8 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.command == "shapes":
         return cmd_shapes(root)
+    if args.command == "keywords":
+        return cmd_keywords(root)
     return cmd_simulate(root, args.candidate)
 
 
