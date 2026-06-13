@@ -10,15 +10,28 @@ fn repo_root() -> PathBuf {
 }
 
 fn workspace_vyre_pin(manifest: &str) -> String {
+    // The `vyre` dependency line appears in one of two equivalent forms:
+    //   * bare-string pin:      vyre = "=0.6.1"
+    //   * inline table (carrying a path override during a vyre migration):
+    //                           vyre = { version = "=0.6.1", path = "..." }
+    // Both embed the exact pin as the `"=<version>"` literal, so locate the
+    // `vyre =` line and extract the version after `"=` regardless of layout —
+    // the previous `strip_prefix("vyre = \"=")` only matched the bare-string
+    // form and panicked on the inline-table form the workspace actually uses.
     manifest
         .lines()
+        .map(str::trim)
+        .filter(|line| line.starts_with("vyre =") || line.starts_with("vyre="))
         .find_map(|line| {
-            let trimmed = line.trim();
-            trimmed
-                .strip_prefix("vyre = \"=")
-                .and_then(|rest| rest.split_once('"').map(|(version, _)| version.to_string()))
+            let after = line.split_once("\"=")?.1;
+            after
+                .split_once('"')
+                .map(|(version, _)| version.to_string())
         })
-        .expect("root Cargo.toml must pin vyre")
+        .expect(
+            "root Cargo.toml must pin vyre as `vyre = \"=X.Y.Z\"` or \
+             `vyre = { version = \"=X.Y.Z\", .. }`",
+        )
 }
 
 #[test]
