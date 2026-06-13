@@ -155,11 +155,32 @@ fn combined_matches_each_half_exactly() {
 #[test]
 fn standard_base64_blob_detected() {
     use base64::Engine;
-    // A 48-byte random-ish payload -> 64-char standard base64 blob.
-    let blob = base64::engine::general_purpose::STANDARD.encode([0x5Au8; 48]);
+    // `is_random_base64_blob(_, 40, 80, 32)` (the single source of truth this
+    // delegates to) admits a blob via ANY of: `+/` punctuation, `=` padding, or
+    // >=32 distinct alphanumeric chars on a mult-of-4 length. The previous
+    // fixture (`[0x5A; 48]`) encoded to `WlpaWlpa…` — only 4 distinct chars, no
+    // punctuation, no padding — so it correctly FAILED all three admit clauses
+    // and this assertion was a stale false-positive expectation.
+    //
+    // Cover the two non-degenerate admit paths with real blobs:
+    //   (a) DIVERSITY: a 64-char (mult-of-4), no-padding, no-`+/` blob whose
+    //       alphabet diversity clears the 32-distinct floor (62 distinct alnum
+    //       here: A-Z a-z 0-9 + "AB" to reach length 64).
+    let diverse_blob = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789AB";
+    assert_eq!(diverse_blob.len(), 64, "fixture sanity: 64 is in [40,80] and mult-of-4");
     assert!(
-        looks_like_standard_base64_blob(&blob),
-        "{blob} should look like a standard base64 blob"
+        looks_like_standard_base64_blob(diverse_blob),
+        "{diverse_blob} (62-distinct-char 64-len blob) should look like a standard base64 blob"
+    );
+    //   (b) PADDING: 47 bytes -> a 64-char blob ending in `=` padding.
+    let padded_blob = base64::engine::general_purpose::STANDARD.encode([0xABu8; 47]);
+    assert!(
+        padded_blob.ends_with('='),
+        "fixture sanity: 47 bytes must produce `=` padding"
+    );
+    assert!(
+        looks_like_standard_base64_blob(&padded_blob),
+        "{padded_blob} (padded 64-char blob) should look like a standard base64 blob"
     );
 }
 
