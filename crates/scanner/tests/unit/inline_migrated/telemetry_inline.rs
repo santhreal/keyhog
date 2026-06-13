@@ -60,6 +60,7 @@ fn dogfood_captures_events() {
             );
             assert_eq!(reason.as_ref(), "ends_with_EXAMPLE");
         }
+        other => panic!("expected ExampleSuppressed, got {other:?}"),
     }
 }
 
@@ -80,6 +81,7 @@ fn redaction_keeps_prefix_only() {
             credential_redacted,
             ..
         } => credential_redacted.as_str(),
+        other => panic!("expected ExampleSuppressed, got {other:?}"),
     };
     assert!(red.starts_with("AKIA"));
     assert!(red.contains("..."));
@@ -104,5 +106,6 @@ fn redaction_handles_short_credentials() {
             "short/empty credentials must be masked by the canonical \
              keyhog_core::redact policy (<=8 chars -> ****), never leaked verbatim"
         ),
+        other => panic!("expected ExampleSuppressed, got {other:?}"),
     }
 }
