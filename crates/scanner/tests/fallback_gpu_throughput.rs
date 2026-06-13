@@ -1,3 +1,4 @@
+#![cfg(feature = "gpu")]
 //! Throughput measurement for the GPU fallback offload (`docs/GPU_DETECTION_REWRITE.md`):
 //! GPU megakernel dispatch of the always-active fallback DFA catalog over a
 //! 16 KB-file batch vs the equivalent SINGLE-THREAD CPU `RegexSet` work, at the

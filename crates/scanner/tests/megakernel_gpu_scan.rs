@@ -1,3 +1,4 @@
+#![cfg(feature = "gpu")]
 //! Megakernel fallback port — slice 2: end-to-end GPU scan.
 //!
 //! Dispatches a keyhog detector regex (compiled to a megakernel DFA rule) over a

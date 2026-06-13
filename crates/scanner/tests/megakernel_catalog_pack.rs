@@ -1,3 +1,4 @@
+#![cfg(feature = "gpu")]
 //! Megakernel fallback port — slice 1: host-side catalog construction.
 //!
 //! Proves keyhog's real detector regexes compile into the vyre megakernel's
