@@ -51,6 +51,11 @@ impl CompiledScanner {
         }
         let line = match_line_number(preprocessed, line_offsets, match_start);
         if is_within_hex_context(data, match_start, match_end) {
+            crate::telemetry::record_shape_suppression(
+                chunk.metadata.path.as_deref(),
+                credential,
+                "within_hex_context",
+            );
             return;
         }
         // Digest-fragment guard: a fixed-length hex credential (e.g. a {32}-hex
@@ -64,6 +69,11 @@ impl CompiledScanner {
         // Azure subscription) are delimiter-bounded (before==after==0) and are
         // never suppressed here, so recall is preserved.
         if is_hex_digest_fragment(data, match_start, match_end, credential) {
+            crate::telemetry::record_shape_suppression(
+                chunk.metadata.path.as_deref(),
+                credential,
+                "hex_digest_fragment",
+            );
             return;
         }
         // Probabilistic gate: fast rejection of obvious non-secrets (UUIDs, low-diversity
@@ -74,6 +84,11 @@ impl CompiledScanner {
             && crate::confidence::known_prefix_confidence_floor(credential).is_none()
             && !crate::probabilistic_gate::ProbabilisticGate::looks_promising(credential)
         {
+            crate::telemetry::record_shape_suppression(
+                chunk.metadata.path.as_deref(),
+                credential,
+                "probabilistic_gate_not_promising",
+            );
             return;
         }
         if context::is_false_positive_context(
@@ -85,6 +100,11 @@ impl CompiledScanner {
             match_start,
             chunk.metadata.path.as_deref(),
         ) {
+            crate::telemetry::record_shape_suppression(
+                chunk.metadata.path.as_deref(),
+                credential,
+                "false_positive_context",
+            );
             return;
         }
 
@@ -117,7 +137,14 @@ impl CompiledScanner {
         } else {
             match self.match_companions(entry, preprocessed, line) {
                 Some(c) => c,
-                None => return,
+                None => {
+                    crate::telemetry::record_shape_suppression(
+                        chunk.metadata.path.as_deref(),
+                        credential,
+                        "missing_required_companion",
+                    );
+                    return;
+                }
             }
         };
         let entropy = match_entropy(credential.as_bytes());
@@ -136,6 +163,11 @@ impl CompiledScanner {
             let entropy_floor =
                 generic_entropy_floor(self.config.entropy_threshold, floor_id, credential.len());
             if entropy < entropy_floor {
+                crate::telemetry::record_shape_suppression(
+                    chunk.metadata.path.as_deref(),
+                    credential,
+                    "entropy_below_floor",
+                );
                 return;
             }
             // camelCase-without-digits is the false-positive shape (Java/Go
@@ -154,6 +186,11 @@ impl CompiledScanner {
                     .take(2)
                     .count();
                 if camel_transitions >= 2 {
+                    crate::telemetry::record_shape_suppression(
+                        chunk.metadata.path.as_deref(),
+                        credential,
+                        "camel_case_no_digit",
+                    );
                     return;
                 }
             }
@@ -166,6 +203,11 @@ impl CompiledScanner {
         let checksum_result = crate::checksum::validate_checksum(credential);
         if checksum_result == crate::checksum::ChecksumResult::Invalid {
             // Checksum failed: NOT a real token. Skip expensive ML scoring.
+            crate::telemetry::record_shape_suppression(
+                chunk.metadata.path.as_deref(),
+                credential,
+                "checksum_invalid",
+            );
             return;
         }
 
@@ -196,6 +238,11 @@ impl CompiledScanner {
             is_named_detector,
             scan_state,
         ) else {
+            crate::telemetry::record_shape_suppression(
+                chunk.metadata.path.as_deref(),
+                credential,
+                "scoring_rejected",
+            );
             return;
         };
 

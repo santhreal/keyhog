@@ -321,3 +321,57 @@ fn null_padded_binaryish_chunk_is_safe() {
     let _matches = scanner.scan(&chunk);
     // Success means it didn"t panic or hang.
 }
+
+/// KH-L-0409: the `process_match` engine pre-cascade gates (probabilistic,
+/// entropy floor, camel, checksum, hex-fragment, FP-context, …) used to drop
+/// candidates SILENTLY — invisible to `--dogfood`, which conflated them with
+/// "never reached the engine" and blocked the recall decomposition. A
+/// generic-* detector matching a low-diversity value is rejected by the
+/// generic-only probabilistic gate (process.rs, BEFORE the suppression
+/// cascade); that drop must now emit a `ShapeSuppressed` event naming the gate.
+#[test]
+fn dogfood_records_engine_probabilistic_gate_drop() {
+    let _guard = telemetry_lock().lock().unwrap_or_else(|e| e.into_inner());
+    keyhog_scanner::telemetry::reset();
+    keyhog_scanner::telemetry::enable_dogfood();
+    let detector = DetectorSpec {
+        tests: Vec::new(),
+        id: "generic-secret".into(),
+        name: "Generic Secret".into(),
+        service: "generic".into(),
+        severity: Severity::Medium,
+        patterns: vec![PatternSpec {
+            regex: "[a-z]{16}".into(),
+            description: None,
+            group: None,
+            client_safe: false,
+        }],
+        companions: Vec::new(),
+        verify: None,
+        keywords: vec!["secret".into()],
+        min_confidence: None,
+    };
+    let scanner = CompiledScanner::compile(vec![detector]).unwrap();
+    // 16 identical chars: matches the regex, has a "secret" keyword anchor, but
+    // is the lowest-diversity value possible -> the probabilistic gate rejects it.
+    let chunk = make_chunk("secret = aaaaaaaaaaaaaaaa\n");
+    let _ = scanner.scan(&chunk);
+    // Pin to OUR planted credential's redaction ("aaaa...aaaa") so a concurrent
+    // test's suppression event can't satisfy the assertion.
+    let reasons: Vec<String> = keyhog_scanner::telemetry::drain_events()
+        .into_iter()
+        .filter_map(|e| match e {
+            DogfoodEvent::ShapeSuppressed {
+                reason,
+                credential_redacted,
+                ..
+            } if credential_redacted.starts_with("aaaa") => Some(reason.into_owned()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        reasons.iter().any(|r| r == "probabilistic_gate_not_promising"),
+        "the generic-detector probabilistic engine-gate drop must be traced \
+         (KH-L-0409); got reasons {reasons:?}"
+    );
+}
