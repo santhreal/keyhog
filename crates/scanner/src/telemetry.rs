@@ -66,6 +66,16 @@ struct Telemetry {
     example_suppressions: AtomicUsize,
     events: Mutex<Vec<DogfoodEvent>>,
     seen_example_suppressions: Mutex<HashSet<String>>,
+    /// One key (`path\0credential_hash`) per credential the trace has ALREADY
+    /// emitted a suppression EVENT for, across BOTH the example and shape paths.
+    /// The same credential is adjudicated by several pipeline stages (the
+    /// example-token gate AND a shape/weak-anchor gate can both drop the same
+    /// `AKIA…EXAMPLE` key), so without this the `--dogfood` trace emitted one
+    /// event per STAGE — duplicate noise for one logical suppression (KH-GAP-091).
+    /// Keyed without the reason/stage so the FIRST stage to record a credential
+    /// wins and later stages are deduped; the example counter keeps its own
+    /// (reason-keyed) dedup so per-stage COUNTS are unaffected.
+    emitted_suppression_events: Mutex<HashSet<String>>,
 }
 
 // Global lock-free telemetry counters (KH-116)
@@ -140,6 +150,13 @@ pub fn record_example_suppression(
         return;
     }
 
+    // One EVENT per credential+path across all stages (KH-GAP-091): if a later
+    // shape gate already recorded this same credential, or vice-versa, don't emit
+    // a duplicate. First stage to reach it wins.
+    if !mark_suppression_event_emitted(t, path, &credential_hash) {
+        return;
+    }
+
     // KH-disc: use the single canonical redaction policy (`keyhog_core::redact`)
     // so dogfood output matches finding output - the bespoke 6-char-prefix
     // helper leaked up to 6 of 8 bytes of short credentials.
@@ -151,6 +168,24 @@ pub fn record_example_suppression(
             credential_redacted: redacted,
             reason: Cow::Borrowed(reason),
         });
+    }
+}
+
+/// Insert `path\0credential_hash` into the shared emitted-event set, returning
+/// `true` only the FIRST time a given credential+path is seen. Both suppression
+/// recorders gate their `events.push` on this so the `--dogfood` trace carries
+/// one event per logical suppression rather than one per pipeline stage. A
+/// poisoned lock fails OPEN (returns `true`) — an extra event is a far smaller
+/// sin than silently dropping the trace (Law 10).
+fn mark_suppression_event_emitted(
+    t: &Telemetry,
+    path: Option<&str>,
+    credential_hash: &str,
+) -> bool {
+    let key = format!("{}\0{}", path.unwrap_or(""), credential_hash);
+    match t.emitted_suppression_events.lock() {
+        Ok(mut emitted) => emitted.insert(key),
+        Err(_) => true,
     }
 }
 
@@ -177,11 +212,14 @@ pub fn record_shape_suppression(path: Option<&str>, credential: &str, reason: &'
         bytes.copy_from_slice(&digest);
         keyhog_core::hex_encode(&bytes)
     };
-    let key = format!("shape\0{}\0{}\0{}", path.unwrap_or(""), credential_hash, reason);
-    if let Ok(mut seen) = t.seen_example_suppressions.lock() {
-        if !seen.insert(key) {
-            return;
-        }
+    // One EVENT per credential+path across ALL stages (KH-GAP-091): a credential
+    // the example-token gate already recorded (e.g. `AKIA…EXAMPLE`, which is also
+    // a weak-anchor shape) must not emit a second shape event for the same
+    // logical drop. The shared emitted-set also collapses the same shape gate
+    // firing twice for one credential, so this fully replaces the old
+    // reason-keyed dedup.
+    if !mark_suppression_event_emitted(t, path, &credential_hash) {
+        return;
     }
     let redacted = keyhog_core::redact(credential).into_owned();
     if let Ok(mut events) = t.events.lock() {
@@ -229,6 +267,13 @@ pub fn append_events<I: IntoIterator<Item = DogfoodEvent>>(events: I) {
 /// `enable_dogfood()` was never called.
 pub fn drain_events() -> Vec<DogfoodEvent> {
     let t = cell();
+    // The drained batch is one complete trace; the next scan must be able to emit
+    // its own events for the same credentials, so clear the per-credential
+    // emitted-event dedup alongside the drain (the example COUNTER dedup is a
+    // separate, longer-lived set and is intentionally NOT cleared here).
+    if let Ok(mut emitted) = t.emitted_suppression_events.lock() {
+        emitted.clear();
+    }
     if let Ok(mut events) = t.events.lock() {
         std::mem::take(&mut *events)
     } else {
@@ -283,5 +328,8 @@ pub fn reset() {
     }
     if let Ok(mut seen) = t.seen_example_suppressions.lock() {
         seen.clear();
+    }
+    if let Ok(mut emitted) = t.emitted_suppression_events.lock() {
+        emitted.clear();
     }
 }
