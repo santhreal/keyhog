@@ -176,6 +176,17 @@ impl CompiledScanner {
                 // is never identifier-shaped (digit-only segments, no `_`/`-`
                 // word structure), so the recall win for the 90+ real
                 // structured-key detectors is preserved.
+                // KH-L-0416 (EVALUATED, intentionally NOT discriminator-gated):
+                // this block runs ONLY in the `!looks_promising` branch — i.e. on
+                // LOW-DIVERSITY / structured values — and `token_randomness` is
+                // unreliable there: a repetitive run (`aaaaaaaaaaaaaaaa` −9.34,
+                // `qqqqwwww` −12.0) has improbable ENGLISH bigrams so it scores as
+                // "random", which would WRONGLY un-slam low-diversity junk for
+                // named detectors. The randomness discriminator is sound only
+                // where an upstream entropy/diversity floor runs first (the
+                // generic bridge); here `looks_promising` has already done the
+                // opposite filtering. A/B confirmed no-op on both corpora; left as
+                // the plain shape check by documented decision.
                 let identifier_shaped =
                     crate::pipeline::looks_like_word_separated_identifier(credential)
                         || crate::pipeline::looks_like_pure_identifier(credential);
