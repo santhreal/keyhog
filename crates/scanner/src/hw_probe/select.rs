@@ -250,7 +250,13 @@ pub(super) fn parse_backend_env() -> Option<ScanBackend> {
 pub fn parse_backend_str(raw: &str) -> Option<ScanBackend> {
     match raw.trim().to_ascii_lowercase().as_str() {
         "gpu" | "gpu-zero-copy" | "literal-set" => Some(ScanBackend::Gpu),
-        "mega-scan" | "gpu-mega-scan" | "regex-nfa" | "rule-pipeline" => {
+        // Both spellings are advertised `--backend` values (clap
+        // `PossibleValuesParser` in `args/scan.rs` accepts `mega-scan` AND
+        // `megascan`); the no-hyphen form was previously dropped to `None` here,
+        // so `--backend megascan` silently fell through to auto-routing instead
+        // of forcing the megakernel. Recognized here so the canonical parser
+        // matches the advertised CLI surface (coherence).
+        "mega-scan" | "megascan" | "gpu-mega-scan" | "regex-nfa" | "rule-pipeline" => {
             Some(ScanBackend::MegaScan)
         }
         "simd" | "simd-regex" | "hyperscan" => Some(ScanBackend::SimdCpu),

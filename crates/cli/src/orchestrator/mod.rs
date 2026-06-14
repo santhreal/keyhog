@@ -346,16 +346,18 @@ fn gpu_init_policy_for_args(args: &ScanArgs) -> GpuInitPolicy {
 }
 
 fn backend_name_gpu_policy(name: Option<&str>) -> Option<GpuInitPolicy> {
-    let name = name?.trim().to_ascii_lowercase();
-    match name.as_str() {
-        "gpu" | "gpu-zero-copy" | "literal-set" | "mega-scan" | "megascan" | "gpu-mega-scan"
-        | "regex-nfa" | "rule-pipeline" => Some(GpuInitPolicy::ForceEnabled),
-        "simd" | "simd-regex" | "hyperscan" | "cpu" | "cpu-fallback" | "scalar" => {
-            Some(GpuInitPolicy::ForceDisabled)
-        }
-        "auto" => None,
-        _ => None,
+    let name = name?.trim();
+    // "auto" is the explicit defer-to-routing choice (FromEnvironment), and is
+    // not a backend `parse_backend_str` recognizes.
+    if name.eq_ignore_ascii_case("auto") {
+        return None;
     }
+    // Single source of truth for backend-string parsing is the scanner's
+    // `parse_backend_str` (case-insensitive, owns every alias). Map its
+    // ScanBackend verdict to a GPU-init policy via `backend_gpu_policy` instead
+    // of re-listing every alias here — the two alias lists had already drifted
+    // apart, so a `--backend` value added to one was invisible to the other.
+    keyhog_scanner::hw_probe::parse_backend_str(name).map(backend_gpu_policy)
 }
 
 fn backend_gpu_policy(backend: keyhog_scanner::ScanBackend) -> GpuInitPolicy {
