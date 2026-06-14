@@ -4,7 +4,7 @@
 //! together makes the binary-vs-text heuristic easy to audit and
 //! changes obvious in `git diff`.
 
-pub(in crate::filesystem) fn decode_text_file(bytes: &[u8]) -> Option<String> {
+pub(crate) fn decode_text_file(bytes: &[u8]) -> Option<String> {
     // Cheap O(1) header rejects first - no full pass needed to know a PDF or
     // ZIP isn't a text file. NOTE: `has_utf16_nul_pattern` (which previously
     // co-gated this early-return) checks for the literal UTF-16 BOM, which is

@@ -314,7 +314,7 @@ impl CompiledScanner {
         // match - see `build_hot_pattern_validators`.
         #[cfg(feature = "simdsieve")]
         let hot_pattern_validators =
-            crate::simdsieve_prefilter::build_hot_pattern_validators(&detectors);
+            crate::simdsieve_prefilter::build_hot_pattern_validators(&detectors)?;
 
         // Pre-intern the hot-pattern metadata constants ONCE, index-parallel
         // with HOT_PATTERNS, so the simdsieve fast path clones by slot index

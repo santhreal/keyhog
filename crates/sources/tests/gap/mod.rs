@@ -5,6 +5,7 @@ pub mod binary_read_is_capped;
 pub mod binary_source_streaming;
 pub mod compressed_extraction_4x_budget_in_source;
 pub mod compressed_input_uses_size_cap;
+pub mod decode_file_bytes_recovers_non_utf8;
 pub mod docker_tar_caps_in_source;
 pub mod filesystem_archive_4x_budget_in_source;
 pub mod ghidra_subprocess_uses_wait_timeout;

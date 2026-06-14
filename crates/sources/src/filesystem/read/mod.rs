@@ -21,6 +21,11 @@ mod window;
 pub(super) use bytes::read_file_for_compressed_input;
 pub(super) use raw::{read_file_buffered, read_file_mmap, read_file_safe};
 pub(super) use window::read_file_windowed_mmap;
+/// Re-export the canonical text decoder so non-walker entry points (e.g.
+/// `keyhog watch`) can decode a single file's bytes IDENTICALLY to the scan
+/// walker, rather than each one inventing its own weaker read (Law 10 recall
+/// parity + no-duplication).
+pub(crate) use decode::decode_text_file;
 
 /// Cap on any mmap-based read. The walker already enforces the user's
 /// `max_file_size` based on a stat before scheduling; this is the

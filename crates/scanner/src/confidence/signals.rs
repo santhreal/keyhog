@@ -28,7 +28,7 @@ pub fn is_sensitive_path(path: &str) -> bool {
     static AC: OnceLock<Option<aho_corasick::AhoCorasick>> = OnceLock::new();
 
     let ac = AC.get_or_init(|| {
-        aho_corasick::AhoCorasickBuilder::new()
+        match aho_corasick::AhoCorasickBuilder::new()
             .ascii_case_insensitive(true)
             .build([
                 // Sensitive filenames
@@ -72,9 +72,33 @@ pub fn is_sensitive_path(path: &str) -> bool {
                 "sam-template",
                 "helm/values",
                 "chart/values",
-            ])
-            .ok()
+            ]) {
+            Ok(ac) => Some(ac),
+            Err(error) => {
+                // Law 10: never silently swallow the build error. This marker
+                // list is a fixed compile-time constant, so a build failure can
+                // only mean an INVALID marker (e.g. an empty string) was added
+                // above — a development-time bug. The old `.ok()` turned that
+                // into `None` and then returned `false` for EVERY path, silently
+                // deleting the sensitive-file confidence signal fleet-wide. Surface
+                // it LOUDLY (this hot path forbids panics — see the
+                // `confidence_signals_no_unwrap_expect` gate) and fall through to
+                // the recall-preserving branch below.
+                eprintln!(
+                    "keyhog: BUG — the static sensitive-path marker list failed to \
+                     build an Aho-Corasick automaton ({error}); an invalid marker \
+                     was added in confidence/signals.rs. Treating every path as \
+                     sensitive (fail toward recall) until the list is fixed."
+                );
+                None
+            }
+        }
     });
 
-    ac.as_ref().is_some_and(|ac| ac.is_match(path))
+    // On a successful build, the automaton answers precisely. On the
+    // build-bug-only `None`, fail TOWARD recall: treat the path as sensitive so
+    // the confidence boost is never silently lost — the loud `eprintln!` above
+    // already told the operator why (Law 10: a loud, recall-preserving fallback
+    // is permitted; a silent one is not).
+    ac.as_ref().map_or(true, |ac| ac.is_match(path))
 }

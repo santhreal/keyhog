@@ -244,6 +244,10 @@ CPU/SIMD scan path. Set KEYHOG_NO_GPU=1 to silence this, or KEYHOG_REQUIRE_GPU=1
 /// process, not once per batch on a multi-thousand-batch scan.
 static MOE_RUNTIME_DEGRADE_WARNED: OnceLock<()> = OnceLock::new();
 
+/// One-shot guard for the distinct NaN/Inf-score case (a GPU correctness fault,
+/// not a dispatch failure); surfaced once per process by [`moe_nonfinite_degrade`].
+static MOE_NONFINITE_WARNED: OnceLock<()> = OnceLock::new();
+
 /// Surface a runtime GPU-MoE dispatch failure that is about to degrade the
 /// affected batch(es) to the CPU MoE. This mirrors `engine::gpu_forced`'s
 /// posture exactly so the MoE path is coherent with the literal-set/MegaScan
@@ -278,6 +282,41 @@ fn moe_runtime_degrade(reason: &str) {
             "keyhog: GPU MoE dispatch failed at runtime ({reason}); affected batches in \
 this scan are scored on the CPU MoE (identical scores, lower throughput). Set \
 KEYHOG_NO_GPU=1 to silence, or KEYHOG_REQUIRE_GPU=1 to hard-fail next time."
+        );
+    }
+}
+
+/// Surface NaN / ±Inf scores returned by the GPU MoE staging buffer. A
+/// non-finite probability is not a routing choice — it can only come from a GPU
+/// driver bug, a shader miscompile, or a corrupt weights buffer, i.e. a GPU
+/// CORRECTNESS fault. Each bad value is sanitized to a neutral `0.5` at the GPU
+/// boundary (so downstream `confidence` math never sees NaN and the finding
+/// still surfaces on its heuristic score), but Law 10 forbids doing that
+/// silently: the operator must be told their GPU produced garbage. Gating
+/// mirrors [`moe_runtime_degrade`] — hard-fail under `KEYHOG_REQUIRE_GPU=1` (a
+/// GPU emitting NaN is exactly the malfunction that flag exists to catch), one
+/// loud stderr line on an ordinary run, and quiet under `KEYHOG_NO_GPU` / CI
+/// where the CPU MoE is the intended path anyway.
+fn moe_nonfinite_degrade(nonfinite: usize, total: usize) {
+    let no_gpu = super::env_no_gpu();
+    let require_gpu = std::env::var("KEYHOG_REQUIRE_GPU").as_deref() == Ok("1");
+    if require_gpu {
+        eprintln!(
+            "keyhog: KEYHOG_REQUIRE_GPU=1 but the GPU MoE returned {nonfinite}/{total} \
+non-finite (NaN/Inf) confidence score(s) — a GPU driver/shader/weights malfunction. \
+Refusing to silently sanitize and continue."
+        );
+        std::process::exit(2);
+    }
+    if no_gpu {
+        return;
+    }
+    if MOE_NONFINITE_WARNED.set(()).is_ok() {
+        eprintln!(
+            "keyhog: GPU MoE produced {nonfinite}/{total} non-finite (NaN/Inf) confidence \
+score(s); each was sanitized to a neutral 0.5 so the finding still surfaces on its \
+heuristic score, but this indicates a GPU driver/shader/weights bug worth investigating. \
+Set KEYHOG_NO_GPU=1 to score on the CPU MoE, or KEYHOG_REQUIRE_GPU=1 to hard-fail next time."
         );
     }
 }
@@ -437,6 +476,7 @@ pub fn batch_score_features(features: &[[f32; INPUT_DIM]]) -> Option<Vec<f64>> {
     // and the NaN propagated all the way to SARIF `confidence: NaN`.
     // Sanitize at the GPU boundary so every downstream consumer
     // sees a finite probability in [0, 1].
+    let mut nonfinite = 0usize;
     let result: Vec<f64> = scores
         .iter()
         .map(|&s| {
@@ -444,17 +484,25 @@ pub fn batch_score_features(features: &[[f32; INPUT_DIM]]) -> Option<Vec<f64>> {
             if v.is_finite() {
                 v.clamp(0.0, 1.0)
             } else {
-                // NaN or +/-Inf: treat as "no signal" sentinel and
-                // fall back to the neutral 0.5. The heuristic-only
-                // path will dominate the blend (see engine/mod.rs
-                // line 1185) so the finding still surfaces with
-                // the score the rule alone would have produced.
+                // NaN or +/-Inf: a GPU correctness fault. Sanitize to the neutral
+                // 0.5 sentinel so the heuristic score dominates the downstream
+                // blend (the finding still surfaces on the rule's own score), but
+                // COUNT it so the operator is told loudly below rather than the
+                // garbage being silently swallowed (Law 10).
+                nonfinite += 1;
                 0.5
             }
         })
         .collect();
     drop(data);
     staging_buf.unmap();
+
+    // Law 10: never sanitize NaN/Inf silently. If the GPU emitted any non-finite
+    // score, surface it (hard-fail under KEYHOG_REQUIRE_GPU, one loud line
+    // otherwise) so a driver/shader/weights bug is visible, not invisible.
+    if nonfinite > 0 {
+        moe_nonfinite_degrade(nonfinite, result.len());
+    }
 
     Some(result)
 }

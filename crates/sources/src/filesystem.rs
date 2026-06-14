@@ -13,6 +13,7 @@ mod extract;
 mod filter;
 mod read;
 
+pub(crate) use read::decode_text_file;
 use extract::process_entry;
 use filter::walker_config;
 /// Default source-level window size for the large-file scanning path.

@@ -83,3 +83,28 @@ fn default_cap_is_the_module_ceiling() {
     let sink = FindingSink::new();
     assert_eq!(sink.cap(), MAX_RESIDENT_FINDINGS);
 }
+
+#[test]
+fn skipped_chunks_start_at_zero_and_accumulate() {
+    // Law 10: an unreadable source chunk (corrupt git object, perm-denied path)
+    // is unscanned bytes. The sink counts each one so the final summary can warn
+    // the audit did NOT cover everything, instead of the old silent
+    // `Err(_) => continue` that made a partial scan look complete.
+    let mut sink = FindingSink::new();
+    assert_eq!(sink.skipped_chunks(), 0, "a fresh sink has skipped nothing");
+
+    for _ in 0..5 {
+        sink.record_skipped_chunk();
+    }
+    assert_eq!(
+        sink.skipped_chunks(),
+        5,
+        "every dropped chunk must be counted so the recall loss is surfaced"
+    );
+
+    // Skips are tracked independently of findings: a scan can drop chunks AND
+    // still surface findings, and both counts must be honest.
+    sink.absorb(vec![raw_match(1)]);
+    assert_eq!(sink.total(), 1, "findings count is unaffected by skip tracking");
+    assert_eq!(sink.skipped_chunks(), 5, "skip count is unaffected by findings");
+}

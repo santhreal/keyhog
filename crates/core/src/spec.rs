@@ -443,4 +443,17 @@ pub enum SpecError {
         path: std::path::PathBuf,
         source: toml::de::Error,
     },
+    #[error(
+        "{failed_count} of {total} embedded detector(s) failed to parse — the binary \
+         baked in a CORRUPT detector set, so its recall is silently degraded. This is \
+         a build/source bug, not a runtime condition: the embedded corpus is compiled \
+         in and cannot have been edited at runtime. Offending detector(s):\n{detail}\n\
+         Fix: repair the named TOML(s) under `detectors/` (the toml error names the \
+         line/column) and rebuild keyhog so build.rs re-embeds a valid set."
+    )]
+    EmbeddedCorpusCorrupt {
+        failed_count: usize,
+        total: usize,
+        detail: String,
+    },
 }

@@ -53,6 +53,12 @@ pub struct FindingSink {
     total: u64,
     cap: usize,
     capped_warned: bool,
+    /// Chunks the source could not yield (corrupt git object, perm-denied
+    /// `.git`, non-UTF-8 / unreadable file mid-walk). Law 10: a dropped chunk is
+    /// unscanned bytes — a recall loss — so it is COUNTED and surfaced in the
+    /// final summary, never silently `continue`d past. A non-zero count means the
+    /// "complete" scan did not cover everything.
+    skipped_chunks: u64,
 }
 
 impl FindingSink {
@@ -68,7 +74,22 @@ impl FindingSink {
             total: 0,
             cap,
             capped_warned: false,
+            skipped_chunks: 0,
         }
+    }
+
+    /// Record that a source chunk could not be read and was dropped from the
+    /// scan. The count is surfaced in the final summary so the recall loss is
+    /// visible (Law 10) instead of a silent `Err(_) => continue`.
+    #[doc(hidden)]
+    pub fn record_skipped_chunk(&mut self) {
+        self.skipped_chunks += 1;
+    }
+
+    /// Number of source chunks dropped due to read errors (unscanned bytes).
+    #[doc(hidden)]
+    pub fn skipped_chunks(&self) -> u64 {
+        self.skipped_chunks
     }
 
     /// Convert and absorb a chunk's worth of raw matches, dropping the raw
@@ -253,6 +274,18 @@ pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
         format_bytes(bytes_scanned.load(Ordering::Relaxed)),
         sink.total
     );
+    // Law 10: if any chunk was unreadable, the "complete" above covered LESS than
+    // the whole tree. Say so loudly — a partial audit that looks clean is worse
+    // than no audit.
+    if sink.skipped_chunks() > 0 {
+        eprintln!(
+            "⚠ {} source chunk(s) were UNREADABLE and went unscanned (corrupt git \
+             objects, permission-denied paths, or non-text files). This scan did \
+             NOT cover everything; rerun affected paths with elevated permissions \
+             to close the gap.",
+            sink.skipped_chunks()
+        );
+    }
 
     if let Some(out) = &args.output {
         // SECURITY: never write `RawMatch` to disk - its `credential` field
@@ -378,7 +411,13 @@ fn scan_mount(
         }
         let chunk = match chunk_result {
             Ok(c) => c,
-            Err(_) => continue,
+            // Law 10: an unreadable chunk is unscanned bytes. Count it (surfaced
+            // in the final summary) rather than silently dropping a slice of the
+            // filesystem from the audit.
+            Err(_) => {
+                out.record_skipped_chunk();
+                continue;
+            }
         };
         bytes_scanned.fetch_add(chunk.data.len() as u64, Ordering::Relaxed);
         // Convert + drop raw matches per chunk so plaintext-bearing RawMatch
@@ -404,7 +443,14 @@ fn scan_git_history(
             }
             let chunk = match chunk_result {
                 Ok(c) => c,
-                Err(_) => continue,
+                // Law 10: a corrupt git object / unreadable ref drops that slice
+                // of history from the audit. Count it (surfaced in the summary)
+                // so a silently-failed repo is not indistinguishable from a clean
+                // one.
+                Err(_) => {
+                    out.record_skipped_chunk();
+                    continue;
+                }
             };
             bytes_scanned.fetch_add(chunk.data.len() as u64, Ordering::Relaxed);
             // Convert + drop raw matches per chunk (audit: memory).

@@ -100,18 +100,24 @@ pub const HOT_PATTERN_DISPLAY_NAMES: &[&str] = &[
 /// needed.
 pub fn build_hot_pattern_validators(
     detectors: &[keyhog_core::DetectorSpec],
-) -> Vec<Option<regex::Regex>> {
+) -> crate::error::Result<Vec<Option<regex::Regex>>> {
     HOT_PATTERN_DETECTOR_IDS
         .iter()
-        .map(|&id| {
-            let detector = detectors.iter().find(|d| d.id == id)?;
+        .map(|&id| -> crate::error::Result<Option<regex::Regex>> {
+            // A slot with no loaded detector is the ONE legitimate `None`
+            // (`hot-square_secret`, genuinely fast-path-only): keep the
+            // length-floor as its sole gate. This is a documented design choice,
+            // not a failure.
+            let Some(detector) = detectors.iter().find(|d| d.id == id) else {
+                return Ok(None);
+            };
             let alts: Vec<String> = detector
                 .patterns
                 .iter()
                 .map(|p| format!("(?:{})", p.regex))
                 .collect();
             if alts.is_empty() {
-                return None;
+                return Ok(None);
             }
             // Anchor at the candidate start. The candidate always begins with
             // the hot literal and every hot detector's regex begins with that
@@ -122,13 +128,27 @@ pub fn build_hot_pattern_validators(
             // default with inline `(?-i)` (AWS `AKIA`/`ASIA`) scoping within
             // its own alternative, plus the same size and DFA limits.
             let combined = format!("^(?:{})", alts.join("|"));
-            regex::RegexBuilder::new(&combined)
+            // Law 10: FAIL CLOSED on a build error, never `.ok()` it away. The
+            // old `.ok()` turned a build failure into a silent `None`, which the
+            // consumer (`engine/hot_patterns.rs`) demotes to the weak
+            // length-floor gate — an invisible precision loss on the hot path.
+            // The individual detector patterns are already validated on the
+            // primary compile path; the only NEW failure here is the combined
+            // alternation exceeding the size/DFA limit. If that happens the build
+            // is corrupt: abort scanner compile with a precise error rather than
+            // run a degraded fast path.
+            let re = regex::RegexBuilder::new(&combined)
                 .case_insensitive(true)
                 .size_limit(crate::types::REGEX_SIZE_LIMIT_BYTES)
                 .dfa_size_limit(crate::types::regex_dfa_limit())
                 .crlf(true)
                 .build()
-                .ok()
+                .map_err(|source| crate::error::ScanError::RegexCompile {
+                    detector_id: id.to_string(),
+                    index: 0,
+                    source,
+                })?;
+            Ok(Some(re))
         })
         .collect()
 }

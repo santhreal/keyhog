@@ -123,9 +123,34 @@ fn scan_file(
     path: &std::path::Path,
     recently_scanned: &mut HashMap<PathBuf, (Instant, u64)>,
 ) {
-    let data = match std::fs::read_to_string(path) {
-        Ok(s) => s,
-        Err(_) => return, // not text, deleted, or permission denied - skip
+    // Read BYTES (not `read_to_string`) and decode through the SAME path the
+    // `keyhog scan` walker uses. `read_to_string` failed on the first non-UTF-8
+    // byte and silently dropped the whole file, so a config with one stray
+    // Latin-1 byte was scanned by `scan` (lossy decode) but invisibly skipped by
+    // `watch` — a recall divergence between the two entry points (Law 10). Now
+    // both share `decode_file_bytes`, so watch recovers the same secrets.
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(error) => {
+            // A file that VANISHED between the inotify event and our read is a
+            // benign race (nothing to scan) — stay quiet. Any OTHER error
+            // (permission denied, I/O failure) means a file that EXISTS went
+            // unscanned: surface it loudly so the recall loss is never silent.
+            if error.kind() != std::io::ErrorKind::NotFound {
+                eprintln!(
+                    "⚠ keyhog watch: could not read {} ({}); it was NOT scanned",
+                    path.display(),
+                    error.kind()
+                );
+            }
+            return;
+        }
+    };
+    // `None` => the bytes are binary (no text to scan): an intentional,
+    // documented skip that matches the scan walker's binary policy, not a
+    // failure — so no warning, consistent with `keyhog scan`.
+    let Some(data) = keyhog_sources::decode_file_bytes(&bytes) else {
+        return;
     };
     if data.is_empty() {
         return;

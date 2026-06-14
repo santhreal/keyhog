@@ -297,64 +297,26 @@ fn validate_detector_path_for_scan(path: &Path) -> Result<()> {
 }
 
 fn load_detectors_embedded_or_fail(path: &Path) -> Result<Vec<DetectorSpec>> {
-    let embedded = keyhog_core::embedded_detector_tomls();
-    if !embedded.is_empty() {
-        tracing::info!(
-            embedded_count = embedded.len(),
-            "using embedded detectors (no external detectors directory found)"
+    // The embedded set being empty is the one runtime-actionable case (the binary
+    // was built without baking in any detectors): tell the operator how to point
+    // at an on-disk corpus instead. Everything past here delegates to the single
+    // shared fail-closed loader in keyhog_core so the scan orchestrator and
+    // `keyhog tui` parse the compiled-in corpus byte-for-byte the same way.
+    if keyhog_core::embedded_detector_count() == 0 {
+        anyhow::bail!(
+            "detectors directory '{}' not found and no embedded detectors available. \
+             Fix: specify --detectors <path> or set KEYHOG_DETECTORS env var",
+            path.display()
         );
-        let mut detectors = Vec::new();
-        let mut failed: Vec<(&str, String)> = Vec::new();
-        for (name, toml_content) in embedded {
-            match toml::from_str::<keyhog_core::DetectorFile>(toml_content) {
-                Ok(file) => detectors.push(file.detector),
-                // Law 10 (NO SILENT FALLBACKS): an EMBEDDED detector that fails
-                // to parse is a build/source bug, never a runtime condition the
-                // operator can act on — the set is compiled into the binary, the
-                // user cannot have edited it. The old `tracing::debug!`-then-
-                // continue silently dropped the offender, which is exactly how
-                // the dead `discord-bot-token` detector (a single-quoted TOML
-                // literal that broke parsing) reached a benched release binary
-                // as an invisible recall hole (DET-01 / MC-16 / DF-07). Collect
-                // every offender and FAIL CLOSED below so a corrupt embedded
-                // corpus is a hard release blocker, not a buried stderr line.
-                Err(error) => failed.push((name, error.to_string())),
-            }
-        }
-        if !failed.is_empty() {
-            let detail = failed
-                .iter()
-                .map(|(name, error)| format!("  - {name}: {error}"))
-                .collect::<Vec<_>>()
-                .join("\n");
-            anyhow::bail!(
-                "{} of {} embedded detector(s) failed to parse — the binary baked \
-                 in a CORRUPT detector set, so its recall is silently degraded. \
-                 This is a build/source bug, not a runtime condition: the embedded \
-                 corpus is compiled in and cannot have been edited at runtime. \
-                 Offending detector(s):\n{detail}\nFix: repair the named TOML(s) \
-                 under `detectors/` (the toml error names the line/column) and \
-                 rebuild keyhog so build.rs re-embeds a valid set.",
-                failed.len(),
-                embedded.len(),
-            );
-        }
-        if detectors.is_empty() {
-            anyhow::bail!(
-                "no detectors loaded from embedded data - the embedded set is \
-                 empty. Fix: pass `--detectors <DIR>` to load from a directory \
-                 of TOMLs, or rebuild keyhog from source so the build.rs \
-                 detector-embedding step re-runs."
-            );
-        }
-        return Ok(detectors);
     }
-
-    anyhow::bail!(
-        "detectors directory '{}' not found and no embedded detectors available. \
-         Fix: specify --detectors <path> or set KEYHOG_DETECTORS env var",
-        path.display()
-    )
+    tracing::info!(
+        embedded_count = keyhog_core::embedded_detector_count(),
+        "using embedded detectors (no external detectors directory found)"
+    );
+    // Fails closed (returns `Err`) if ANY embedded detector TOML is malformed —
+    // a corrupt compiled-in corpus is a hard error, never a silently-dropped
+    // recall hole (Law 10).
+    Ok(keyhog_core::load_embedded_detectors_or_fail()?)
 }
 
 pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {

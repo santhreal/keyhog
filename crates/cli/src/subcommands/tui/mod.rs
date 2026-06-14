@@ -77,6 +77,17 @@ struct Counters {
     files_done: AtomicUsize,
     bytes_done: AtomicU64,
     findings_total: AtomicUsize,
+    /// Directories the walker could not read (permission denied, raced removal,
+    /// not-a-directory). Before this counter each one silently dropped an entire
+    /// subtree, so the TUI showed "complete" over an invisibly partial walk. Now
+    /// the stats panel surfaces the count so the operator knows coverage is
+    /// incomplete (Law 10: no silent fallback on the enumeration path).
+    walk_skipped_dirs: AtomicUsize,
+    /// Files dropped during enumeration because their type/metadata could not be
+    /// read (permission denied, TOCTOU race). Counted and shown rather than
+    /// silently omitted from `files_total`, which would have let the TUI report
+    /// 100% coverage while a file went unscanned.
+    walk_skipped_files: AtomicUsize,
     done: AtomicBool,
     /// Path of the file the worker is currently scanning. Lock-free
     /// reads use `parking_lot::Mutex<String>`-equivalent semantics via
@@ -95,15 +106,13 @@ pub fn run(args: TuiArgs) -> Result<ExitCode> {
         anyhow::bail!("scan target does not exist: {}", target.display());
     }
 
-    let mut detectors = Vec::new();
-    for (path, toml_str) in keyhog_core::embedded_detector_tomls() {
-        match keyhog_core::load_detectors_from_str(toml_str) {
-            Ok(mut ds) => detectors.append(&mut ds),
-            Err(e) => {
-                tracing::debug!(detector = %path, error = %e, "skipping malformed embedded detector");
-            }
-        }
-    }
+    // Single shared fail-closed loader (same one the `scan` orchestrator uses):
+    // a malformed embedded detector is a build bug, so this returns `Err` rather
+    // than silently dropping it and scanning the live TUI with degraded recall
+    // (Law 10). The prior inline `tracing::debug!`-then-continue loop here was a
+    // silent fallback invisible at the default `keyhog=warn` verbosity.
+    let detectors = keyhog_core::load_embedded_detectors_or_fail()
+        .context("loading embedded detector corpus for `keyhog tui`")?;
     if detectors.is_empty() {
         anyhow::bail!("embedded detector corpus is empty (build-time issue)");
     }
@@ -115,6 +124,8 @@ pub fn run(args: TuiArgs) -> Result<ExitCode> {
         files_done: AtomicUsize::new(0),
         bytes_done: AtomicU64::new(0),
         findings_total: AtomicUsize::new(0),
+        walk_skipped_dirs: AtomicUsize::new(0),
+        walk_skipped_files: AtomicUsize::new(0),
         done: AtomicBool::new(false),
         current_file: std::sync::RwLock::new(String::new()),
     });

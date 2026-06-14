@@ -96,6 +96,48 @@ pub fn embedded_detector_count() -> usize {
     embedded_detector_tomls().len()
 }
 
+/// Parse the embedded detector corpus, FAILING CLOSED on any malformed TOML.
+///
+/// This is the SINGLE loader every entrypoint shares (the `scan` orchestrator
+/// via `cli::orchestrator_config`, and `keyhog tui`) so the fail-closed contract
+/// holds uniformly — there is exactly one way to turn the compiled-in corpus
+/// into `DetectorSpec`s.
+///
+/// Law 10 (NO SILENT FALLBACKS): the embedded set is baked into the binary by
+/// `build.rs`; a TOML that fails to parse is a BUILD/SOURCE bug, never a runtime
+/// condition the operator can act on (the user cannot have edited a compiled-in
+/// string). The old per-callsite `tracing::debug!`-then-`continue` shape silently
+/// dropped the offender — exactly how the dead `discord-bot-token` detector (a
+/// single-quoted TOML literal that broke parsing) reached a benched release as an
+/// invisible recall hole. So this collects every offender and returns
+/// [`SpecError::EmbeddedCorpusCorrupt`] naming each, making a corrupt corpus a
+/// hard error rather than a buried log line. Each embedded TOML holds exactly one
+/// detector, so on success `result.len() == embedded_detector_count()`.
+pub fn load_embedded_detectors_or_fail() -> Result<Vec<DetectorSpec>, SpecError> {
+    let embedded = embedded_detector_tomls();
+    let mut detectors = Vec::with_capacity(embedded.len());
+    let mut failed: Vec<(String, String)> = Vec::new();
+    for (name, toml_content) in embedded {
+        match toml::from_str::<DetectorFile>(toml_content) {
+            Ok(file) => detectors.push(file.detector),
+            Err(error) => failed.push(((*name).to_string(), error.to_string())),
+        }
+    }
+    if !failed.is_empty() {
+        let detail = failed
+            .iter()
+            .map(|(name, error)| format!("  - {name}: {error}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        return Err(SpecError::EmbeddedCorpusCorrupt {
+            failed_count: failed.len(),
+            total: embedded.len(),
+            detail,
+        });
+    }
+    Ok(detectors)
+}
+
 /// Git commit SHA the binary was built from, or `"unknown"` for a build with no
 /// reachable `.git` tree (e.g. a `cargo package` / crates.io build). Stamped by
 /// `build.rs` via `cargo:rustc-env=GIT_HASH`; `env!` resolves here because the

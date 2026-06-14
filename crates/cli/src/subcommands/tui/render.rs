@@ -231,6 +231,8 @@ fn render_stats(
     let files_total = counters.files_total.load(Ordering::Relaxed);
     let bytes_done = counters.bytes_done.load(Ordering::Relaxed);
     let findings_total = counters.findings_total.load(Ordering::Relaxed);
+    let skipped_dirs = counters.walk_skipped_dirs.load(Ordering::Relaxed);
+    let skipped_files = counters.walk_skipped_files.load(Ordering::Relaxed);
     let secs = elapsed.as_secs_f64();
     let throughput_text = if bytes_done == 0 {
         if files_total == 0 {
@@ -278,23 +280,53 @@ fn render_stats(
                 Style::default().fg(Color::Rgb(0x30, 0xd1, 0x58)),
             ),
         ]),
+        // Law 10 surface: unreadable dirs/files dropped during the walk are NOT
+        // silently omitted from coverage — they are counted and shown here in
+        // amber so the operator knows the scan is incomplete (and why).
+        Line::from(vec![
+            stat_label("skipped"),
+            if skipped_dirs == 0 && skipped_files == 0 {
+                Span::styled("none", Style::default().fg(Color::DarkGray))
+            } else {
+                Span::styled(
+                    format!("{skipped_files} files, {skipped_dirs} dirs (unreadable)"),
+                    Style::default()
+                        .fg(Color::Rgb(0xff, 0x9f, 0x0a))
+                        .add_modifier(Modifier::BOLD),
+                )
+            },
+        ]),
     ];
 
+    // The live TUI scans file-by-file, and the autorouter (`select_backend`,
+    // the SAME one `keyhog scan` uses) sends each small source file to SIMD/CPU
+    // because the GPU's fixed per-dispatch cost only pays off on large coalesced
+    // batches. So "engine: simd" here is the autorouter working CORRECTLY for the
+    // per-file regime, not a missing/forced backend — spell that out so it never
+    // reads as "the autorouting is broken."
+    let gpu_compiled = !backend_label.is_empty();
     let backend_lines = vec![
         Line::from(vec![
             stat_label("engine"),
             Span::styled(
-                preferred_backend.to_string(),
+                format!("{preferred_backend} · per-file"),
                 Style::default().fg(Color::Rgb(0xbf, 0x5a, 0xf2)),
+            ),
+        ]),
+        Line::from(vec![
+            stat_label("routing"),
+            Span::styled(
+                "small files → SIMD/CPU · large batches → GPU".to_string(),
+                Style::default().fg(Color::DarkGray),
             ),
         ]),
         Line::from(vec![
             stat_label("gpu-stack"),
             Span::styled(
-                if backend_label.is_empty() {
-                    "(none compiled)".to_string()
+                if gpu_compiled {
+                    format!("{backend_label} (ready · engages on large `scan` batches)")
                 } else {
-                    backend_label.to_string()
+                    "(none compiled)".to_string()
                 },
                 Style::default().fg(Color::DarkGray),
             ),

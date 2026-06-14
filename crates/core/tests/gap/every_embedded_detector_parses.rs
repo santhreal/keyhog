@@ -5,8 +5,9 @@
 //! binary* as an invisible recall hole. It slipped through because:
 //!   1. the runtime embedded-load path silently dropped unparseable detectors
 //!      (`tracing::debug!` then continue — a Law-10 silent fallback, now fixed
-//!      to fail closed in `cli::orchestrator_config::load_detectors_embedded_or_fail`),
-//!      and
+//!      to fail closed in the single shared loader
+//!      `keyhog_core::load_embedded_detectors_or_fail`, which both the `scan`
+//!      orchestrator and `keyhog tui` route through), and
 //!   2. the existing self-validation test parsed TOMLs from the **on-disk**
 //!      `detectors/` tree, NOT the bytes actually **compiled into the binary**.
 //!      An embed-time drop or an in-place edit could diverge from what shipped.
@@ -71,5 +72,64 @@ fn embedded_parseable_count_equals_slice_len() {
         embedded.len(),
         embedded_detector_count(),
         "embedded slice length must match the authoritative embedded_detector_count()"
+    );
+}
+
+/// The shared fail-closed loader is now the SINGLE path the `scan` orchestrator
+/// and `keyhog tui` use to turn the compiled-in corpus into `DetectorSpec`s.
+/// Drive it directly (not a re-implementation): on a healthy build it returns
+/// exactly one detector per embedded TOML — no silent drops — with the count
+/// pinned to the authoritative `embedded_detector_count()`.
+#[test]
+fn shared_loader_returns_every_embedded_detector() {
+    let detectors = keyhog_core::load_embedded_detectors_or_fail()
+        .expect("a healthy embedded corpus must load via the shared fail-closed loader");
+
+    assert_eq!(
+        detectors.len(),
+        embedded_detector_count(),
+        "the shared loader returned {} detectors but the embedded corpus holds {} — \
+         a shorter result means a detector was silently dropped, the exact bug this \
+         fail-closed loader exists to prevent",
+        detectors.len(),
+        embedded_detector_count(),
+    );
+    assert!(
+        detectors.iter().all(|d| !d.id.is_empty()),
+        "every loaded detector must carry a non-empty id — an empty-shell spec \
+         indicates a malformed parse that slipped through"
+    );
+    assert!(
+        detectors.iter().all(|d| !d.patterns.is_empty()),
+        "every loaded detector must carry at least one pattern — a pattern-less \
+         spec would never match and signals a corrupt load"
+    );
+}
+
+/// The fail-closed error path is user-facing: when the embedded corpus is
+/// corrupt the loader must name every offender and tell the operator it is a
+/// build bug (so a corrupt set is a hard stop, never a buried log line). We can't
+/// corrupt the compiled-in corpus from a test, so assert the error TYPE renders
+/// the contract — offender list + "build/source bug" framing + the fix.
+#[test]
+fn embedded_corpus_corrupt_error_names_offenders() {
+    let err = keyhog_core::SpecError::EmbeddedCorpusCorrupt {
+        failed_count: 2,
+        total: 902,
+        detail: "  - discord-bot-token: invalid char class\n  - foo: trailing comma".to_string(),
+    };
+    let rendered = err.to_string();
+    assert!(
+        rendered.contains("discord-bot-token: invalid char class"),
+        "the corrupt-corpus error must name each offending detector; got: {rendered}"
+    );
+    assert!(
+        rendered.contains("2 of 902"),
+        "the error must report how many of how many detectors failed; got: {rendered}"
+    );
+    assert!(
+        rendered.contains("build/source bug") && rendered.contains("rebuild keyhog"),
+        "the error must frame this as a build bug and tell the operator to rebuild; \
+         got: {rendered}"
     );
 }
