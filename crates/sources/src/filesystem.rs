@@ -382,9 +382,37 @@ impl Source for FilesystemSource {
                                     // fresh keyhog-sources compile.)
                                     is_binary: false,
                                 })),
-                                Err(_) => Box::new(std::iter::empty()),
+                                // Law 10: the user EXPLICITLY --include'd this file but
+                                // `stat` failed (permission / I/O / race-delete). A
+                                // silent `empty()` here drops a requested file while the
+                                // scan still prints "0 secrets", reading as a clean bill
+                                // of health for a file we never read. Count it as
+                                // unreadable so `report_skip_summary` surfaces the gap
+                                // (the same counter the archive-symlink refusal above uses).
+                                Err(e) => {
+                                    tracing::warn!(
+                                        path = %path.display(),
+                                        error = %e,
+                                        "explicitly --include'd file could not be stat'd; NOT scanned"
+                                    );
+                                    crate::SKIPPED_UNREADABLE
+                                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                    Box::new(std::iter::empty())
+                                }
                             }
                         } else {
+                            // Explicitly --include'd path that is neither a file nor a
+                            // directory: a broken symlink, a special file (socket /
+                            // device / fifo), or it vanished between include-admission
+                            // and this walk. The user named it, so a silent drop would
+                            // again read as "clean" — count it unreadable so the gap is
+                            // surfaced rather than swallowed (Law 10).
+                            tracing::warn!(
+                                path = %path.display(),
+                                "explicitly --include'd path is neither a file nor a directory; NOT scanned"
+                            );
+                            crate::SKIPPED_UNREADABLE
+                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                             Box::new(std::iter::empty())
                         };
                     inner
