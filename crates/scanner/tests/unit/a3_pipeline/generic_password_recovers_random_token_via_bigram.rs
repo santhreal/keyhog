@@ -81,6 +81,29 @@ fn word_separated_acronym_identifier_stays_suppressed() {
 }
 
 #[test]
+fn low_diversity_patterns_stay_suppressed() {
+    // KH-L-0418 soundness guard: a repetitive / alternating PATTERN has
+    // improbable English bigrams (it passes the log-prob threshold) but is NOT a
+    // random token. `xzxzxzxz` is the worst case — 2 distinct letters,
+    // alphanumeric, no 3-consecutive run, so the decision.rs repetitive/symbolic
+    // gates miss it; only the distinct-letter guard in `is_random_token` keeps it
+    // suppressed (it must read as an identifier, not get lifted as a secret).
+    for val in ["xzxzxzxz", "qqqqwwww", "aaaaaaaa", "zzzzzzzzzzzz"] {
+        assert!(
+            should_suppress_named_detector_finding(
+                val,
+                Some("creds.env"),
+                CodeContext::Unknown,
+                None,
+                "generic-secret",
+            ),
+            "low-diversity pattern {val:?} must stay suppressed — it is a \
+             repetitive pattern, not a random secret (KH-L-0418 diversity guard)"
+        );
+    }
+}
+
+#[test]
 fn dictionary_identifier_still_suppressed() {
     // Negative twin: pronounceable code references of the SAME shape must STILL
     // suppress — the discriminator scores them as dictionary (high bigram

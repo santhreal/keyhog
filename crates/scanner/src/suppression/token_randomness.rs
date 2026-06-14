@@ -61,6 +61,18 @@ const MIN_ALPHA: usize = 6;
 /// the model's clean separation gap sits around −6.7.
 const RANDOM_LOGPROB_THRESHOLD: f32 = -6.85;
 
+/// Minimum DISTINCT lowercase letters a value must have for a `random` verdict.
+/// A 1–2 distinct-letter token (`aaaaaaaa`, `xzxzxzxz`, `qqqqwwww`) has
+/// improbable English bigrams — it would pass the log-prob threshold — but it is
+/// a repetitive / alternating PATTERN, not a random token. Without this guard the
+/// discriminator is only sound downstream of a caller-side entropy/diversity
+/// floor (the generic bridge has one; the api.rs weak-anchor path does not). The
+/// floor of 3 is data-calibrated: all 1285 CredData random passwords the
+/// discriminator recovers have ≥ 4 distinct letters (min 4, e.g. `ttqqrqjt`),
+/// while every blind-spot pattern has ≤ 2 — so 3 separates them with margin and
+/// drops no real password.
+const MIN_DISTINCT_LETTERS: usize = 3;
+
 /// Mean adjacent-bigram log-probability over the value's alphabetic runs, or
 /// `None` when there are too few alphabetic bigrams to judge. Bigrams are only
 /// counted between two ADJACENT ASCII letters (a digit/symbol breaks the run),
@@ -93,14 +105,30 @@ pub(crate) fn mean_bigram_logprob(value: &str) -> Option<f32> {
 }
 
 /// `true` iff `value` reads as a RANDOM token (real credential) rather than a
-/// pronounceable dictionary identifier (code reference). Fails safe to `false`
-/// (treat as identifier ⇒ keep suppressing) when the value is too short/sparse
-/// to judge — soundness over reach.
+/// pronounceable dictionary identifier (code reference) OR a low-diversity
+/// repetitive pattern. Fails safe to `false` (treat as NOT random ⇒ keep
+/// suppressing) when the value is too short/sparse to judge or has too few
+/// distinct letters — soundness over reach, independent of any caller-side floor.
 pub(crate) fn is_random_token(value: &str) -> bool {
     match mean_bigram_logprob(value) {
-        Some(score) => score <= RANDOM_LOGPROB_THRESHOLD,
+        // Improbable-under-English AND diverse enough to be a real random token.
+        Some(score) => score <= RANDOM_LOGPROB_THRESHOLD && distinct_letters(value) >= MIN_DISTINCT_LETTERS,
         None => false,
     }
+}
+
+/// Number of DISTINCT ASCII letters (case-folded) in `value`. A repetitive run
+/// (`aaaaaaaa` → 1) or an alternating pattern (`xzxzxzxz` → 2) has improbable
+/// English bigrams but is not random; [`is_random_token`] requires
+/// [`MIN_DISTINCT_LETTERS`] to reject those.
+fn distinct_letters(value: &str) -> usize {
+    let mut seen = 0u32;
+    for &b in value.as_bytes() {
+        if b.is_ascii_alphabetic() {
+            seen |= 1u32 << (b.to_ascii_lowercase() - b'a');
+        }
+    }
+    seen.count_ones() as usize
 }
 
 /// Shared decision for the CONTIGUOUS identifier/type-name shape gates
