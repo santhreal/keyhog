@@ -284,6 +284,9 @@ impl ScanOrchestrator {
                             keyhog_scanner::hw_probe::ScanBackend::Gpu,
                         );
                         crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+                        // Authoritative routing signal for the completion summary:
+                        // this is the single place chunks actually run on the GPU.
+                        crate::GPU_SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
                         let mut batch_findings = 0usize;
                         for chunk_findings in per_chunk {
                             batch_findings += chunk_findings.len();

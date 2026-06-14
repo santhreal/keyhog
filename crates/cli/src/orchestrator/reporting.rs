@@ -72,6 +72,66 @@ pub(crate) fn report_completion_summary(count: usize, elapsed: f64, ansi: bool) 
         }
     }
     report_skip_summary(ansi);
+    report_backend_summary(ansi);
+}
+
+/// Surface which backend the autorouter ACTUALLY used this scan, and — when a
+/// GPU is present but did not engage — WHY.
+///
+/// The per-batch routing decision (`select_backend_for_batch`) was previously
+/// logged only at `tracing::debug!` (target `keyhog::routing`), invisible at the
+/// default `keyhog=warn` verbosity. So a scan that CORRECTLY chose SIMD on a
+/// small-file tree — where SIMD is measured ~2× faster than the GPU because the
+/// per-dispatch + PCIe-copy cost isn't amortised by tiny files — read to the
+/// operator as "the GPU autorouting is broken." This prints ONE completion line
+/// stating the backend(s) used and the routing rationale, so the decision is
+/// visible instead of buried (Law 10 / coherence). Reuses the scanner's existing
+/// per-chunk telemetry (`gpu_dispatches` vs `files_scanned`); no new counters.
+pub(crate) fn report_backend_summary(ansi: bool) {
+    use std::sync::atomic::Ordering;
+    let total = crate::SCANNED_CHUNKS.load(Ordering::Relaxed);
+    if total == 0 {
+        // Nothing was scanned (empty tree, source error, zero chunks) — there is
+        // no routing decision to report.
+        return;
+    }
+    // GPU_SCANNED_CHUNKS counts the chunks the coalesced GPU arm dispatched to
+    // the megakernel; everything else (the default fused CPU path and the
+    // coalesced SIMD arm) ran on SIMD/CPU.
+    let gpu = crate::GPU_SCANNED_CHUNKS.load(Ordering::Relaxed).min(total);
+    let simd = total - gpu;
+    let hw = keyhog_scanner::hw_probe::probe_hardware();
+    let forced = std::env::var("KEYHOG_BACKEND")
+        .ok()
+        .filter(|s| !s.trim().is_empty());
+
+    let line = if let Some(b) = &forced {
+        let engine = if gpu > 0 { "gpu-zero-copy" } else { "simd-regex" };
+        format!("backend: {engine} (forced via KEYHOG_BACKEND={b})")
+    } else if gpu > 0 && simd > 0 {
+        format!(
+            "backend: gpu-zero-copy ({gpu} chunk(s)) + simd-regex ({simd} chunk(s)) — auto-routed per batch by size"
+        )
+    } else if gpu > 0 {
+        "backend: gpu-zero-copy (auto-routed: large-buffer batches)".to_string()
+    } else if hw.gpu_available && !hw.gpu_is_software {
+        let name = hw.gpu_name.as_deref().unwrap_or("a GPU").trim().to_string();
+        format!(
+            "backend: simd-regex — {name} present but NOT engaged. keyhog runs default \
+             filesystem scans on the parallel CPU path (measured fastest for real source \
+             trees) and reserves the GPU for large-buffer batch scans where its dispatch \
+             cost is amortised. Force the GPU with KEYHOG_BACKEND=gpu, or run \
+             `keyhog backend` for the routing matrix."
+        )
+    } else {
+        "backend: simd-regex (no GPU available on this host)".to_string()
+    };
+
+    if ansi {
+        eprintln!("\x1b[36m⚙ {line}\x1b[0m");
+    } else {
+        eprintln!("⚙ {line}");
+    }
 }
 
 /// Live progress ticker - overwrites the previous line via CR every

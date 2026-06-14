@@ -27,6 +27,15 @@ use std::sync::atomic::{AtomicBool, AtomicUsize};
 pub static SCANNED_CHUNKS: AtomicUsize = AtomicUsize::new(0);
 pub static TOTAL_CHUNKS: AtomicUsize = AtomicUsize::new(0);
 pub static FINDINGS_COUNT: AtomicUsize = AtomicUsize::new(0);
+/// Chunks actually dispatched to the GPU megakernel (a subset of
+/// [`SCANNED_CHUNKS`]; the remainder ran on the SIMD/CPU path). The orchestrator
+/// bumps this in the coalesced GPU arm — the single place the GPU runs — so the
+/// completion summary can state which backend the autorouter used and why,
+/// instead of the decision being buried at `tracing::debug!` (target
+/// `keyhog::routing`). The optimized coalesced scan paths bypass `scan_inner`'s
+/// per-chunk telemetry, so that snapshot under-counts on the production batch
+/// path; this orchestrator-level counter is the authoritative routing signal.
+pub static GPU_SCANNED_CHUNKS: AtomicUsize = AtomicUsize::new(0);
 /// Number of source-read errors (a source yielded `Err` instead of a chunk).
 /// Read at the end of `run()`: if a scan produced ZERO chunks AND a source
 /// errored, the requested scan never actually ran (e.g. `--git-history` /

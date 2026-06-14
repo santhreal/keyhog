@@ -52,6 +52,7 @@ pub mod invalid_severity_exits_two;
 pub mod keyhog_version_full_env_adds_hardware_line;
 pub mod no_args_exits_zero;
 pub mod progress_flag_emits_backend_line_without_tty;
+pub mod progress_flag_emits_routing_decision_summary;
 pub mod r5t_backend_help_documents_json_flag;
 pub mod r5t_backend_help_documents_self_test_flag;
 pub mod r5t_detectors_help_documents_json_flag;
