@@ -84,6 +84,16 @@ pub(crate) fn entropy_match_suppressed(
     // .properties file fires `entropy-password` on
     // `Benutzername` (12 letters, no digit - clearly a
     // dictionary word, not a credential).
+    // KH-L-0415 (EVALUATED, intentionally NOT discriminator-gated): unlike the
+    // generic-bridge + api.rs paths, gating this on `token_randomness` is a
+    // measured NO-OP on both bench corpora (mirror + CredData byte-identical
+    // A/B). The generic keyword bridge is the PRIMARY surfacing path and already
+    // recovers keyword-anchored random passwords (KH-L-0413) before the entropy
+    // fallback runs, and this path's own keyword-aware prose backstop (line ~113)
+    // already keeps strong-keyword-anchored lowercase values — so the
+    // discriminator changes no outcome here while adding model dependence to a
+    // precision-sensitive model-authoritative path. Left as the plain gate; the
+    // coherence decision is documented, not blindly wired.
     if crate::pipeline::looks_like_pure_identifier(&entropy_match.value) {
         return true;
     }
@@ -128,6 +138,8 @@ pub(crate) fn entropy_match_suppressed(
     // `broker1_keystore_creds` (bat-go docker-compose),
     // `s3_secret_access_key` (alist), train-case HTTP header
     // names, snake_case Go consts, etc.
+    // KH-L-0415: see the `looks_like_pure_identifier` note above — same measured
+    // no-op on both corpora, left as the plain gate by documented decision.
     if crate::pipeline::looks_like_word_separated_identifier(&entropy_match.value) {
         return true;
     }
