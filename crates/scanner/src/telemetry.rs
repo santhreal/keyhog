@@ -84,6 +84,15 @@ static BYTES_SCANNED: AtomicUsize = AtomicUsize::new(0);
 static SKIPPED_FILES: AtomicUsize = AtomicUsize::new(0);
 static TOTAL_MATCHES: AtomicUsize = AtomicUsize::new(0);
 static GPU_DISPATCHES: AtomicUsize = AtomicUsize::new(0);
+/// Files that MATCHED a structured-format heuristic (k8s Secret, Terraform
+/// state, Jupyter notebook, docker-compose) but FAILED to parse, so the
+/// structured decode-through (e.g. base64-encoded secrets inside a k8s `data:`
+/// block) was NOT applied. The raw text is still scanned, so this is not a total
+/// miss — but credentials only reachable via the structured decode are silently
+/// lost on the offending file. Counted (not just `tracing::debug!`-logged, which
+/// is filtered out at default verbosity) so the scan can surface the coverage
+/// gap loudly at completion (Law 10).
+static STRUCTURED_PARSE_FAILURES: AtomicUsize = AtomicUsize::new(0);
 
 // Global static dogfood capability flag for fast opt-in checking (KH-120)
 static DOGFOOD_ENABLED: AtomicBool = AtomicBool::new(false);
@@ -252,6 +261,20 @@ pub fn add_example_suppressions(n: usize) {
     cell().example_suppressions.fetch_add(n, Ordering::Relaxed);
 }
 
+/// Record that a file matched a structured-format heuristic but failed to parse,
+/// so its structured decode-through was not applied (see
+/// [`struct@STRUCTURED_PARSE_FAILURES`]). Always counts (not dogfood-gated): this
+/// is a recall-coverage fact the reporter surfaces unconditionally, like the
+/// walker skip counters.
+pub fn record_structured_parse_failure() {
+    STRUCTURED_PARSE_FAILURES.fetch_add(1, Ordering::Relaxed);
+}
+
+/// Count of files that matched a structured format but failed to parse this scan.
+pub fn structured_parse_failure_count() -> usize {
+    STRUCTURED_PARSE_FAILURES.load(Ordering::Relaxed)
+}
+
 /// Append events into the per-process buffer without going through the
 /// `record_example_suppression` path (no counter bump, no dogfood
 /// enable-check). Used by the daemon client to replay events captured
@@ -323,6 +346,7 @@ pub fn reset() {
     SKIPPED_FILES.store(0, Ordering::Relaxed);
     TOTAL_MATCHES.store(0, Ordering::Relaxed);
     GPU_DISPATCHES.store(0, Ordering::Relaxed);
+    STRUCTURED_PARSE_FAILURES.store(0, Ordering::Relaxed);
     if let Ok(mut events) = t.events.lock() {
         events.clear();
     }

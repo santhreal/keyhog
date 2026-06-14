@@ -6,6 +6,11 @@ pub fn parse_tfstate(text: &str) -> Vec<ExtractedPair> {
     let value: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
         Err(error) => {
+            // Law 10: a `.tfstate` file that won't parse loses its structured
+            // decode-through (the `value` fields never become scannable lines).
+            // Count it so the scan surfaces the coverage gap; keep the debug log
+            // for the `-v` error detail.
+            crate::telemetry::record_structured_parse_failure();
             tracing::debug!(target: "keyhog::structured", %error, "tfstate JSON parse failed");
             return pairs;
         }
@@ -64,6 +69,10 @@ pub fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
     let value: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
         Err(error) => {
+            // Law 10: a `.ipynb` that won't parse loses its code-cell
+            // decode-through (secrets pasted into notebook cells never become
+            // scannable lines). Count + keep the debug detail.
+            crate::telemetry::record_structured_parse_failure();
             tracing::debug!(target: "keyhog::structured", %error, "Jupyter notebook JSON parse failed");
             return pairs;
         }

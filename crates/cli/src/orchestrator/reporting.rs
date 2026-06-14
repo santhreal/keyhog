@@ -165,6 +165,29 @@ pub(crate) fn progress_ticker(done: Arc<std::sync::atomic::AtomicBool>, started:
 }
 
 pub(crate) fn report_skip_summary(ansi: bool) {
+    // Structured decode-through coverage gap — surfaced independently of the
+    // walker skip counters (a scan can fully cover the tree yet still fail to
+    // decode a malformed k8s Secret / tfstate / notebook). Law 10: a file that
+    // MATCHED a structured format but failed to parse loses the secrets encoded
+    // inside it (e.g. base64 in a k8s `data:` block), previously visible only at
+    // `tracing::debug!`. The raw text was still scanned, so this is a partial,
+    // not total, miss — the wording says so.
+    let structured_failures = keyhog_scanner::telemetry::structured_parse_failure_count();
+    if structured_failures > 0 {
+        let msg = format!(
+            "{structured_failures} file(s) matched a structured format (k8s Secret / \
+             Terraform state / Jupyter notebook / docker-compose) but FAILED to parse: \
+             secrets ENCODED inside them (e.g. base64 in a k8s `data:` block) were NOT \
+             decoded. The raw text was still scanned. Fix the file syntax to scan their \
+             encoded contents."
+        );
+        if ansi {
+            eprintln!("\x1b[33m{msg}\x1b[0m");
+        } else {
+            eprintln!("{msg}");
+        }
+    }
+
     let c = keyhog_sources::skip_counts();
     if c.total() == 0 {
         return;

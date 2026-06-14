@@ -11,6 +11,11 @@ pub fn parse_k8s_secret(text: &str) -> Vec<ExtractedPair> {
     let value: serde_yaml::Value = match serde_yaml::from_str(text) {
         Ok(v) => v,
         Err(error) => {
+            // Law 10: this file declared `kind: Secret` but won't parse, so its
+            // base64 `data:` values are never decoded — the exact secrets a k8s
+            // Secret hides. Count it (the file MATCHED the format, so this is a
+            // real coverage gap, not generic YAML noise); keep the debug detail.
+            crate::telemetry::record_structured_parse_failure();
             tracing::debug!(target: "keyhog::structured", %error, "k8s secret YAML parse failed");
             return pairs;
         }
@@ -63,6 +68,10 @@ pub fn parse_docker_compose(text: &str) -> Vec<ExtractedPair> {
     let value: serde_yaml::Value = match serde_yaml::from_str(text) {
         Ok(v) => v,
         Err(error) => {
+            // Law 10: a docker-compose file that won't parse loses its
+            // environment-block decode-through (inline `environment:` secrets
+            // never become scannable lines). Count + keep the debug detail.
+            crate::telemetry::record_structured_parse_failure();
             tracing::debug!(target: "keyhog::structured", %error, "docker-compose YAML parse failed");
             return pairs;
         }

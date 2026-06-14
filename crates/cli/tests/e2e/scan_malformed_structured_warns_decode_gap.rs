@@ -1,0 +1,59 @@
+//! E2E (Law 10): scanning a file that matches a structured format but fails to
+//! parse must surface the lost decode-through at completion, not swallow it at
+//! `tracing::debug!`. A `.yaml` declaring `kind: Secret` with broken YAML is the
+//! canonical case — its base64 `data:` values can't be decoded, so any secret
+//! encoded inside is invisible unless the operator is told the file didn't parse.
+
+use crate::e2e::support::{binary, write_temp_file};
+use std::process::Command;
+
+#[test]
+fn scan_malformed_k8s_secret_warns_about_lost_decode_through() {
+    // Matches the k8s-Secret heuristic (`.yaml` + `kind: Secret`) but the flow
+    // sequence is unclosed, so serde_yaml rejects it.
+    let (_dir, path) = write_temp_file(
+        "secret.yaml",
+        "apiVersion: v1\nkind: Secret\ndata:\n  api-key: [unclosed\n",
+    );
+    let output = Command::new(binary())
+        .args(["scan", "--no-daemon", "--progress", "--format", "json"])
+        .arg(&path)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .expect("spawn");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("matched a structured format") && stderr.contains("FAILED to parse"),
+        "a malformed k8s Secret must surface the structured decode-through gap on \
+         stderr (Law 10), not swallow it; got: {stderr}"
+    );
+    assert!(
+        stderr.contains("NOT decoded"),
+        "the warning must state that encoded secrets were not decoded; got: {stderr}"
+    );
+}
+
+#[test]
+fn scan_valid_k8s_secret_does_not_warn() {
+    // Negative twin: a well-formed Secret parses cleanly, so the decode-through
+    // gap warning must NOT fire (no false coverage alarm on healthy files).
+    let (_dir, path) = write_temp_file(
+        "secret.yaml",
+        "apiVersion: v1\nkind: Secret\nmetadata:\n  name: s\ndata:\n  api-key: YWJjMTIz\n",
+    );
+    let output = Command::new(binary())
+        .args(["scan", "--no-daemon", "--progress", "--format", "json"])
+        .arg(&path)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .expect("spawn");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("matched a structured format"),
+        "a valid k8s Secret must NOT trigger the parse-failure warning; got: {stderr}"
+    );
+}

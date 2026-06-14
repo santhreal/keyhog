@@ -47,6 +47,7 @@ pub mod scan_json_required_fields;
 pub mod scan_jsonl_format_valid_objects;
 pub mod scan_jsonl_one_line_per_finding;
 pub mod scan_lockdown_git_staged_clean_exits_zero;
+pub mod scan_malformed_structured_warns_decode_gap;
 pub mod scan_max_commits_limits_git_history;
 pub mod scan_max_file_size_skips_oversized;
 pub mod scan_no_daemon_flag_git_staged_clean;
