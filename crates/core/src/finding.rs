@@ -325,6 +325,21 @@ pub fn hex_encode(bytes: &[u8; 32]) -> String {
     hex::encode(bytes)
 }
 
+/// SHA-256 of a string as the raw 32 inline bytes, matching the
+/// `credential_hash: [u8; 32]` field. This is the single source for credential
+/// hashing across the workspace (scanner, dedup, telemetry); hex encoding is a
+/// separate step at the serde/reporter boundary via [`hex_encode`], keeping the
+/// pre-dedup hot path zero-heap. Every `credential_hash` assignment forwards
+/// this value straight into the `[u8; 32]` field, so callers want the byte form
+/// here, not the hex string.
+#[inline]
+pub fn sha256_hash(s: &str) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(s.as_bytes());
+    hasher.finalize().into()
+}
+
 /// Serde adapter keeping the on-wire shape of `credential_hash` a 64-char
 /// lower-case hex string while the in-memory field is raw `[u8; 32]`. This
 /// preserves the documented JSON/JSONL/baseline/SARIF format (`.credential_hash`

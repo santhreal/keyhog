@@ -120,17 +120,13 @@ pub(crate) mod util_hash;
 /// Loud, recall-preserving degradation for static prefilter automata (Law 10).
 pub(crate) mod prefilter_degrade;
 
-/// SHA-256 of a credential as the raw 32 inline bytes - matching
-/// `Finding::credential_hash: [u8; 32]`. Hex encoding happens at the
-/// serde/reporter boundary (`keyhog_core::hex_encode`), keeping the pre-dedup
-/// hot path zero-heap. All `credential_hash:` assignment sites forward this
-/// value straight into the `[u8; 32]` field, so the byte form is required.
-pub(crate) fn sha256_hash(s: &str) -> [u8; 32] {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(s.as_bytes());
-    hasher.finalize().into()
-}
+/// SHA-256 of a credential as the raw 32 inline bytes, matching
+/// `Finding::credential_hash: [u8; 32]`. Re-exported from the single canonical
+/// implementation in `keyhog_core` so the scanner, core dedup, and telemetry
+/// all hash credentials identically (no second copy to drift). Hex encoding is
+/// a separate step at the serde/reporter boundary (`keyhog_core::hex_encode`),
+/// keeping the pre-dedup hot path zero-heap.
+pub(crate) use keyhog_core::sha256_hash;
 
 #[cfg(feature = "simd")]
 pub(crate) mod simd;

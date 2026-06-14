@@ -16,7 +16,6 @@
 //! argument. Tests reset state via `reset()`.
 
 use serde::{Deserialize, Serialize};
-use sha2::{Digest, Sha256};
 use std::borrow::Cow;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -131,14 +130,7 @@ pub fn record_example_suppression(
     reason: &'static str,
 ) {
     let t = cell();
-    let credential_hash = {
-        let mut hasher = Sha256::new();
-        hasher.update(credential.as_bytes());
-        let digest = hasher.finalize();
-        let mut bytes = [0u8; 32];
-        bytes.copy_from_slice(&digest);
-        keyhog_core::hex_encode(&bytes)
-    };
+    let credential_hash = keyhog_core::hex_encode(&keyhog_core::sha256_hash(credential));
     let key = format!(
         "{}\0{}\0{}\0{}",
         detector,
@@ -213,14 +205,7 @@ pub fn record_shape_suppression(path: Option<&str>, credential: &str, reason: &'
         return;
     }
     let t = cell();
-    let credential_hash = {
-        let mut hasher = Sha256::new();
-        hasher.update(credential.as_bytes());
-        let digest = hasher.finalize();
-        let mut bytes = [0u8; 32];
-        bytes.copy_from_slice(&digest);
-        keyhog_core::hex_encode(&bytes)
-    };
+    let credential_hash = keyhog_core::hex_encode(&keyhog_core::sha256_hash(credential));
     // One EVENT per credential+path across ALL stages (KH-GAP-091): a credential
     // the example-token gate already recorded (e.g. `AKIA…EXAMPLE`, which is also
     // a weak-anchor shape) must not emit a second shape event for the same

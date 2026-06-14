@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::{MatchLocation, RawMatch, Severity};
+use crate::{sha256_hash, MatchLocation, RawMatch, Severity};
 
 /// Deduplication scope for grouping findings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -434,11 +434,4 @@ fn max_confidence(lhs: Option<f64>, rhs: Option<f64>) -> Option<f64> {
         (None, Some(b)) => Some(b),
         (None, None) => None,
     }
-}
-
-fn sha256_hash(s: &str) -> [u8; 32] {
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(s.as_bytes());
-    hasher.finalize().into()
 }
