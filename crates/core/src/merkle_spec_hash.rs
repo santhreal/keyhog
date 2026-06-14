@@ -42,19 +42,10 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
     *hasher.finalize().as_bytes()
 }
 
-pub(crate) fn hex_encode(bytes: &[u8; 32]) -> String {
-    // Lowercase-hex each byte directly into the preallocated buffer. The
-    // previous `push_str(&format!("{:02x}", b))` allocated a throwaway
-    // `String` per byte (32 allocations per call) on the merkle-save hot
-    // path - one call per cached entry, ~1M on a large repo.
-    const HEX: &[u8; 16] = b"0123456789abcdef";
-    let mut out = String::with_capacity(64);
-    for &b in bytes {
-        out.push(HEX[(b >> 4) as usize] as char);
-        out.push(HEX[(b & 0x0f) as usize] as char);
-    }
-    out
-}
+// `hex_encode` lives in `finding.rs` (the single canonical lower-case-hex of a
+// `[u8; 32]` digest, used by reporters and the merkle index alike). The former
+// hand-rolled copy here duplicated that algorithm; merkle_index now imports the
+// canonical one directly.
 
 pub(crate) fn hex_to_array(hex: &str) -> Option<[u8; 32]> {
     // Byte-slice, not `&str[..]`: a 64-byte input with a multibyte UTF-8 char

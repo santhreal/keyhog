@@ -365,14 +365,8 @@ fn megakernel_catalog_cache_key(patterns: &[(String, usize)]) -> String {
         h.update((regex.len() as u64).to_le_bytes());
         h.update(regex.as_bytes());
     }
-    let digest = h.finalize();
-    let mut key = String::with_capacity(67);
-    key.push_str("mk-");
-    for b in digest {
-        use std::fmt::Write as _;
-        let _ = write!(key, "{b:02x}");
-    }
-    key
+    let digest: [u8; 32] = h.finalize().into();
+    format!("mk-{}", keyhog_core::hex_encode(&digest))
 }
 
 #[cfg(test)]

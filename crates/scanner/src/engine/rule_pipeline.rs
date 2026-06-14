@@ -40,13 +40,8 @@ fn pipeline_cache_key(patterns: &[&str], input_len: u32) -> String {
         h.update((p.len() as u32).to_le_bytes());
         h.update(p.as_bytes());
     }
-    let digest = h.finalize();
-    let mut hex = String::with_capacity(64);
-    for byte in digest {
-        use std::fmt::Write as _;
-        let _ = write!(hex, "{:02x}", byte);
-    }
-    hex
+    let digest: [u8; 32] = h.finalize().into();
+    keyhog_core::hex_encode(&digest)
 }
 
 /// Compile-or-load a `RulePipeline` for the given regex set. First call

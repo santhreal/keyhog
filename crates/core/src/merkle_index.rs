@@ -44,7 +44,8 @@ use std::path::{Path, PathBuf};
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
 
-use crate::merkle_spec_hash::{hex_encode, hex_to_array};
+use crate::hex_encode;
+use crate::merkle_spec_hash::hex_to_array;
 
 pub use crate::merkle_spec_hash::compute_spec_hash;
 
