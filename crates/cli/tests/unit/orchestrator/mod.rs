@@ -40,3 +40,4 @@ pub mod pipeline_with_merkle_skips_already_cached_chunks;
 pub mod sanitise_thread_count_caps_pathological;
 pub mod sanitise_thread_count_passes_sane_values;
 pub mod sanitise_thread_count_zero_fallback;
+pub mod scanner_panic_notice_surfaced;

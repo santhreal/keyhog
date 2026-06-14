@@ -48,7 +48,40 @@ pub(crate) fn stream_report_previews(findings: &[VerifiedFinding]) {
     let _ = w.flush();
 }
 
+/// The unmissable "scan did not finish" notice, or `None` when the scanner
+/// thread ran to completion. Pure (takes the flag) so it is unit-testable; the
+/// completion summary feeds it `SCANNER_PANICKED`.
+///
+/// Law 10: a scanner-thread panic at `dispatch.rs` returns the partial findings
+/// gathered so far AND sets `SCANNER_PANICKED` + a dedicated `EXIT_SCANNER_PANIC`
+/// exit code, but the only terminal output was a `tracing::error!` — filtered
+/// out at the default verbosity, exactly like the `tracing::debug!` drops this
+/// sweep replaced. So a crashed scan still printed "✨ Scan complete! Found 0
+/// secrets" as its last word and read as a clean tree. This surfaces the crash
+/// unconditionally on stderr so "0 secrets" can never be mistaken for clean.
+pub(crate) fn scanner_panic_notice(panicked: bool) -> Option<String> {
+    panicked.then(|| {
+        "SCAN INCOMPLETE: the scanner thread panicked mid-scan. The findings below \
+         are PARTIAL — chunks in flight when it crashed were NOT scanned, so a \
+         \"0 secrets\" / low count is NOT a clean result. The process exits with a \
+         distinct scanner-panic code. Re-run; if it persists, file a bug with the \
+         input that triggered it."
+            .to_string()
+    })
+}
+
 pub(crate) fn report_completion_summary(count: usize, elapsed: f64, ansi: bool) {
+    // Surface a mid-scan crash FIRST, before the "Scan complete!" line, so the
+    // incompleteness frames everything below it (Law 10).
+    if let Some(notice) =
+        scanner_panic_notice(crate::SCANNER_PANICKED.load(std::sync::atomic::Ordering::Relaxed))
+    {
+        if ansi {
+            eprintln!("\x1b[1;31m⚠ {notice}\x1b[0m");
+        } else {
+            eprintln!("⚠ {notice}");
+        }
+    }
     if count == 0 {
         if ansi {
             eprintln!(

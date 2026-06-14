@@ -44,6 +44,11 @@ pub fn allowlist_root_for_test(path: &std::path::Path) -> std::path::PathBuf {
     allowlist::allowlist_root(path)
 }
 
+#[doc(hidden)]
+pub fn scanner_panic_notice_for_test(panicked: bool) -> Option<String> {
+    reporting::scanner_panic_notice(panicked)
+}
+
 pub struct ScanOrchestrator {
     pub(crate) args: ScanArgs,
     pub(crate) detectors: Vec<DetectorSpec>,
