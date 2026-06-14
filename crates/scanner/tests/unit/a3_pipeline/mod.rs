@@ -16,6 +16,7 @@ mod find_companion_respects_within_lines;
 mod floor_char_boundary_utf8;
 mod generic_detector_suppresses_identifier_shape;
 mod generic_password_does_not_suppress_alphanumeric_credential;
+mod generic_password_recovers_random_token_via_bigram;
 mod generic_password_suppresses_german_dictionary_word;
 mod generic_password_suppresses_java_getparameter;
 mod generic_password_suppresses_kebab_identifier;

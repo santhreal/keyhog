@@ -102,3 +102,45 @@ pub(crate) fn is_random_token(value: &str) -> bool {
         None => false,
     }
 }
+
+/// Shared decision for the CONTIGUOUS identifier/type-name shape gates
+/// (KH-L-0413): keep the gate engaged (`true` ⇒ the value stays suppressed)
+/// UNLESS the value reads as a random token, in which case lift it (`false` ⇒
+/// recover the value). The single source of truth for the gate so the scan-time
+/// generic bridge (`fallback_generic_shape`) and the post-process weak-anchor
+/// path (`suppression::api::should_suppress_named_detector_finding_weak`) agree
+/// byte-for-byte — both wrap the SAME `is_random_token`, never a second copy.
+///
+/// Used ONLY for the contiguous gates (`pure_identifier` / `type_name`), whose
+/// own predicates already reject digit-bearing values; the WORD-SEPARATED gate
+/// needs the stricter [`keep_word_separated_gate`].
+#[inline]
+pub(crate) fn keep_identifier_gate(value: &str) -> bool {
+    !is_random_token(value)
+}
+
+/// Stricter sibling of [`keep_identifier_gate`] for the WORD-SEPARATED identifier
+/// gate (KH-L-0414). The randomness model is an ENGLISH-WORD model, and a
+/// multi-segment programmer identifier with embedded digits / uppercase splits
+/// into SHORT acronym fragments (`d2i_PKCS7_bio` → `pkcs`, `curlx_memdup0` →
+/// `memdup`) that the model mis-scores as random — so `is_random_token` alone is
+/// unsound here. Real CredData word-separated passwords are uniformly
+/// all-lowercase letters + `_`/`-` separators (`abxnj_gjvpuqzo`,
+/// `aapqhgn-qhuuc-trnmf`); requiring that shape BEFORE trusting the randomness
+/// verdict recovers 141 real passwords while keeping every acronym / product-key
+/// identifier (`d2i_PKCS7_bio`, `sqlite3_malloc64`, `2iw9-n01w-Mc4V-faEC`)
+/// suppressed. Returns `true` (stay suppressed) for anything that is not an
+/// all-lowercase-letter (+ separator) random token.
+#[inline]
+pub(crate) fn keep_word_separated_gate(value: &str) -> bool {
+    // Any digit / uppercase / non-ASCII byte ⇒ not the clean lowercase password
+    // shape ⇒ keep the gate engaged (the acronym / product-key class the English
+    // model would mis-lift).
+    if !value
+        .bytes()
+        .all(|b| b.is_ascii_lowercase() || b == b'_' || b == b'-')
+    {
+        return true;
+    }
+    !is_random_token(value)
+}

@@ -10,6 +10,7 @@ use super::shape::{
     looks_like_scheme_prefixed_uri, looks_like_syntactic_punctuation_marker,
     looks_like_url_or_path_segment, looks_like_word_separated_identifier,
 };
+use super::token_randomness::{keep_identifier_gate, keep_word_separated_gate};
 use crate::context;
 
 /// Check if a credential should be suppressed (e.g., if it is a known example token).
@@ -136,7 +137,13 @@ pub fn should_suppress_named_detector_finding_weak(
     // contract evasions. See task #41 + the 2026-05-27 audit.
     let apply_tier_b = is_generic_or_entropy(detector_id, weak_anchor);
 
-    if apply_tier_b && looks_like_pure_identifier(credential) {
+    // KH-L-0414: the contiguous-identifier gate KH-L-0413 lifted on the
+    // scan-time generic bridge also fired here on weakly-anchored named /
+    // generic-* / entropy-* findings, dropping real random passwords a service
+    // detector flagged. Gate it on the SHARED `keep_identifier_gate` so a random
+    // token (`gjbubxsu`) is recovered while a dictionary reference
+    // (`getUserName`) still suppresses — one discriminator, both paths.
+    if apply_tier_b && keep_identifier_gate(credential) && looks_like_pure_identifier(credential) {
         crate::telemetry::record_example_suppression(
             "pipeline",
             path,
@@ -145,7 +152,15 @@ pub fn should_suppress_named_detector_finding_weak(
         );
         return true;
     }
-    if apply_tier_b && looks_like_word_separated_identifier(credential) {
+    // The word-separated gate uses the STRICTER `keep_word_separated_gate`
+    // (mirrors the generic-bridge path): the English bigram model mis-scores
+    // acronym fragments (`d2i_PKCS7_bio`, `curlx_memdup0`) as random, so the lift
+    // is trusted only for all-lowercase-letter random tokens. See the matching
+    // note in `fallback_generic_shape::generic_value_shape_rejected`.
+    if apply_tier_b
+        && keep_word_separated_gate(credential)
+        && looks_like_word_separated_identifier(credential)
+    {
         crate::telemetry::record_example_suppression(
             "pipeline",
             path,

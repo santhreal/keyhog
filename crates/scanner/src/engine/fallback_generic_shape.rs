@@ -19,12 +19,9 @@ use super::*;
 /// (lowercase, no digit). `keep_identifier_gate` returns false (LIFT the gate,
 /// recover the value) ONLY when the value reads as a RANDOM token under the
 /// English bigram model — a dictionary identifier still returns true (stay
-/// suppressed). Lifting unconditionally cost +3554 CredData FP; gating on
-/// randomness is the sound recovery (verified on both bench corpora).
-#[inline]
-fn keep_identifier_gate(value: &str) -> bool {
-    !crate::suppression::token_randomness::is_random_token(value)
-}
+/// suppressed). The gate is the SHARED `token_randomness::keep_identifier_gate`
+/// so this scan-time path and the post-process weak-anchor path agree exactly.
+use crate::suppression::token_randomness::{keep_identifier_gate, keep_word_separated_gate};
 
 impl CompiledScanner {
     /// `Some(gate)` iff a generic-secret candidate `value` (with precomputed
@@ -186,7 +183,20 @@ impl CompiledScanner {
         // headers). Real credentials concentrate randomness in one
         // long segment; programmer identifiers are sequences of
         // short dictionary fragments.
-        if keep_identifier_gate(value) && crate::pipeline::looks_like_word_separated_identifier(value) {
+        //
+        // KH-L-0414: this gate uses the STRICTER `keep_word_separated_gate`, NOT
+        // the contiguous `keep_identifier_gate`. The randomness discriminator is
+        // an ENGLISH-WORD model, and multi-segment programmer identifiers carry
+        // acronym fragments (`PKCS`, `curlx`, `d2i`) that are improbable under
+        // English and would be mis-scored as random (`d2i_PKCS7_bio` −7.88,
+        // `curlx_memdup0` −7.09, both below −6.85). `keep_word_separated_gate`
+        // only trusts the random verdict for all-lowercase-letter values, so it
+        // recovers the 141 real CredData word-separated passwords
+        // (`abxnj_gjvpuqzo`, `aapqhgn-qhuuc-trnmf`) while keeping every
+        // digit/uppercase-bearing acronym & product-key identifier suppressed.
+        if keep_word_separated_gate(value)
+            && crate::pipeline::looks_like_word_separated_identifier(value)
+        {
             return Some("word_separated_identifier");
         }
         // Scheme-prefixed URI / URN: `urn:shopify:params:oauth:...`,
