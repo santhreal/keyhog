@@ -1,6 +1,6 @@
 //! Invariant: every non-blocking subcommand, invoked with NO arguments,
 //! terminates cleanly with a documented exit code and no panic, under every
-//! profile. (scan/scan-system/watch/daemon/tui are excluded here: with no args
+//! profile. (scan/scan-system/watch/daemon are excluded here: with no args
 //! they would scan the cwd or run forever; their no-arg behavior is covered by
 //! dedicated tests with bounded inputs.)
 //!

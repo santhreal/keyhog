@@ -300,8 +300,8 @@ fn load_detectors_embedded_or_fail(path: &Path) -> Result<Vec<DetectorSpec>> {
     // The embedded set being empty is the one runtime-actionable case (the binary
     // was built without baking in any detectors): tell the operator how to point
     // at an on-disk corpus instead. Everything past here delegates to the single
-    // shared fail-closed loader in keyhog_core so the scan orchestrator and
-    // `keyhog tui` parse the compiled-in corpus byte-for-byte the same way.
+    // shared fail-closed loader in keyhog_core so every scan entry point parses
+    // the compiled-in corpus byte-for-byte the same way.
     if keyhog_core::embedded_detector_count() == 0 {
         anyhow::bail!(
             "detectors directory '{}' not found and no embedded detectors available. \

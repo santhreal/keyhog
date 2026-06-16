@@ -35,7 +35,6 @@ default = [
     "s3",                       # S3 bucket scanning
     "docker",                   # Docker image scanning
     "verify",                   # Live credential verification
-    "tui",                      # `keyhog tui` live-scan dashboard
     "mimalloc",                 # thread-caching global allocator (scan parallelism)
 ]
 # Thread-caching global allocator for the CLI binary. The scan hot path runs
@@ -57,7 +56,6 @@ ci-lean = [
     "s3",
     "docker",
     "verify",
-    "tui",
 ]
 # Unused Cargo flag — use `keyhog scan --fast` at runtime for pre-commit speed.
 fast = []
@@ -91,7 +89,7 @@ full = [
 #   cargo install --no-default-features --features ci
 # Drops every heavy axis a CI run never needs: NO Hyperscan (`simd` - kills the
 # ~1.7s cold-start; the AC+regex path is faster for keyhog's <2K patterns anyway),
-# NO GPU/vyre drivers, NO live verification, NO TUI, NO Ghidra, and NO git/web/
+# NO GPU/vyre drivers, NO live verification, NO Ghidra, and NO git/web/
 # cloud source backends (the always-on filesystem + stdin path covers
 # `keyhog scan .` / `keyhog scan --stdin`, which is how CI scans a checked-out
 # tree). Keeps the full embedded detector corpus + ML + entropy + decode-through +
@@ -114,10 +112,6 @@ verify = ["keyhog-verifier/live"]
 gpu = ["keyhog-scanner/gpu"]           # wgpu compute shader inference (heavy)
 simd = ["keyhog-scanner/simd"]         # Vectorscan/Hyperscan SIMD regex (system lib required)
 cuda = ["keyhog-scanner/cuda"]         # no-op alias: CUDA is the primary GPU backend on Linux, always compiled + runtime-loaded
-# Interactive TUI scan dashboard. Pulled in by default; can be turned
-# off in size-constrained builds via `--no-default-features`. Adds
-# ratatui + crossterm to the dependency closure.
-tui = ["dep:ratatui", "dep:crossterm"]
 
 [dependencies]
 keyhog-core = { workspace = true }
@@ -155,12 +149,6 @@ mimalloc = { version = "0.1", optional = true, default-features = false }
 # Verify-only minisign: `keyhog update` checks the release binary's
 # signature against the embedded public key before self-replacing.
 minisign-verify = { workspace = true }
-# Pulled in by the `keyhog tui` subcommand for the live-scan demo.
-# Both gated behind the `tui` feature so portable builds (Windows,
-# macOS via `--no-default-features --features portable`) still build
-# without paying the dep cost.
-ratatui = { workspace = true, optional = true }
-crossterm = { workspace = true, optional = true }
 
 [target.'cfg(unix)'.dependencies]
 # Used only by `reset_sigpipe()` in main.rs to restore the default

@@ -157,8 +157,6 @@ async fn main() -> ExitCode {
              `keyhog scan <path>`. Daemon-mode Windows support (via named \
              pipes) is tracked but not yet implemented."
         )),
-        #[cfg(feature = "tui")]
-        Some(Command::Tui(args)) => subcommands::tui::run(args),
         None => {
             let mut cmd = keyhog::args::command();
             let _ = cmd.print_help();

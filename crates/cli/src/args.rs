@@ -88,38 +88,6 @@ pub enum Command {
     /// 🔌 Manage the long-lived `keyhog daemon` (start, stop, status)
     #[command(verbatim_doc_comment)]
     Daemon(DaemonArgs),
-
-    /// 🖥  Live TUI dashboard: scan a path with a real-time finding feed
-    #[cfg(feature = "tui")]
-    #[command(verbatim_doc_comment)]
-    Tui(TuiArgs),
-}
-
-/// Arguments for the `keyhog tui` subcommand. Intentionally minimal: the
-/// TUI is a demo / interactive surface, not a CI gate. Use `keyhog scan`
-/// for headless / scriptable runs.
-#[cfg(feature = "tui")]
-#[derive(Parser)]
-pub struct TuiArgs {
-    /// Path to scan. Defaults to the current directory.
-    #[arg(value_name = "PATH", default_value = ".")]
-    pub path: PathBuf,
-
-    /// Limit the number of files scanned. Useful for long demos where
-    /// you want a fixed-duration loop. 0 = unlimited.
-    #[arg(long, value_name = "N", default_value_t = 0)]
-    pub max_files: usize,
-
-    /// Cap the finding feed depth (recent N findings kept). Default 200.
-    #[arg(long, value_name = "N", default_value_t = 200)]
-    pub feed_depth: usize,
-
-    /// Sleep N milliseconds between files. Slows the live feed so demo
-    /// recordings actually capture findings streaming in. Default 0
-    /// (scan as fast as possible). Use --throttle-ms 60 for a steady
-    /// ~16 findings/sec feed on small corpora.
-    #[arg(long, value_name = "MS", default_value_t = 0)]
-    pub throttle_ms: u64,
 }
 
 /// Subcommand args for `keyhog daemon {start, stop, status}`.

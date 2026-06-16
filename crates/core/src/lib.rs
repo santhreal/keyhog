@@ -99,9 +99,9 @@ pub fn embedded_detector_count() -> usize {
 /// Parse the embedded detector corpus, FAILING CLOSED on any malformed TOML.
 ///
 /// This is the SINGLE loader every entrypoint shares (the `scan` orchestrator
-/// via `cli::orchestrator_config`, and `keyhog tui`) so the fail-closed contract
-/// holds uniformly — there is exactly one way to turn the compiled-in corpus
-/// into `DetectorSpec`s.
+/// via `cli::orchestrator_config`, and every other scan entry point) so the
+/// fail-closed contract holds uniformly — there is exactly one way to turn the
+/// compiled-in corpus into `DetectorSpec`s.
 ///
 /// Law 10 (NO SILENT FALLBACKS): the embedded set is baked into the binary by
 /// `build.rs`; a TOML that fails to parse is a BUILD/SOURCE bug, never a runtime

@@ -75,7 +75,7 @@ done
 
 # --- cross-OS e2e ----------------------------------------------------------
 for os in linux_x64 linux_arm64 macos_arm64 windows; do
-  for surf in install doctor scan sarif tui hook uninstall; do
+  for surf in install doctor scan sarif hook uninstall; do
     emit "TC,AV13" "INSTALL" "$os" "$surf"
   done
 done

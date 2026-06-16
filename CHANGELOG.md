@@ -2,7 +2,19 @@
 
 All notable changes to KeyHog. Versions follow [Semantic Versioning](https://semver.org/).
 
-## 0.5.40 - 2026-06-04
+## [Unreleased]
+
+### Removed
+
+- **The `keyhog tui` live-scan dashboard.** The interactive TUI subcommand (the
+  `tui` module, `Tui`/`TuiArgs`, the `tui` Cargo feature, and the `ratatui` /
+  `crossterm` dependencies) is removed in full. It was an interactive frontend
+  over the in-process scanner that duplicated `keyhog scan`'s detection path
+  while carrying its own render/worker code, a terminal dep closure, and a
+  PTY-driven dogfood lane — surface that never paid for its maintenance cost.
+  Headless scanning (`keyhog scan`, `keyhog watch`, `keyhog daemon`) is the
+  supported interactive/automatable path and is unaffected. The synthetic
+  `demo/` tree and `demo.tape` recording now drive `keyhog scan demo`.
 
 ### Fixed
 

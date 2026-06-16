@@ -21,6 +21,6 @@ NOT detection accuracy (that is the SecretBench scorer's job).
 - Every output format BYTE-compared to a committed fixture (not just well-formed) — feeds the test-expansion vector.
 - `diff` two baselines; `calibrate`; `hook` install/run; `baseline`/`--create-baseline`/`--update-baseline` round-trip.
 - `--git-diff` / `--git-staged` / `--git-history` on a real repo; `--incremental` cache round-trip.
-- `watch`/`daemon` real socket lifecycle; `tui` render via vt100.
+- `watch`/`daemon` real socket lifecycle.
 - Malformed inputs: truncated archives, deep base64 nesting, giant single line (DoS), symlink loops, no-read-permission files, UTF-8/binary boundary.
 - Exit-code contract: assert 0=clean / 1=findings / 2=runtime error across every entry path.

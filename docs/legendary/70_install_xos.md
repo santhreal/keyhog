@@ -34,11 +34,15 @@ Numbers: KH-L-0710 … KH-L-0829.
 - KH-L-0725 [L8][CLI][M] `doctor` GPU self-test runs the real AC kernel on the host's backend (CUDA/wgpu/Metal) + reports which; a GPU-less host says so, not "fail". Proof: doctor on a GPU host + a GPU-less host, both sensible.
 - KH-L-0726 [AV9][CLI][M] `--self-test` JSON carries provenance (commit, detector digest, ML version, backend, degrade reason) for support. Proof: a self-test-JSON schema test.
 
-## TUI (cross-OS, via PTY)
+## TUI (cross-OS, via PTY) — REMOVED
 
-- KH-L-0727 [AV13,L7][TUI][M] `keyhog tui` idle sits at ~0% CPU (frozen clock, needs_redraw gate — done) on every OS; verify via PTY in dogfood-all-os. Proof: per-OS idle-CPU assertion.
-- KH-L-0728 [L6][TUI][M] TUI live feed == `keyhog scan` deduped output (done — gate it cross-surface) + resize/scroll/quit work over a PTY. Proof: a TUI-feed-parity + interaction test per OS.
-- KH-L-0729 [AV13][TUI][M] TUI compiled OUT of portable builds (feature-gated) — prove portable has no ratatui/crossterm link. Proof: a portable-no-tui gate.
+The `keyhog tui` subcommand was excised in full (module, `Tui`/`TuiArgs`, the
+`tui` Cargo feature, the `ratatui`/`crossterm` deps, and the PTY dogfood lane).
+The three items below are therefore N/A — kept as a record, not open work:
+
+- KH-L-0727 [AV13,L7][TUI][M] — N/A (TUI removed). Was: `keyhog tui` idle ~0% CPU verified via PTY per OS.
+- KH-L-0728 [L6][TUI][M] — N/A (TUI removed). Was: TUI live feed == `keyhog scan` deduped output + PTY interaction per OS.
+- KH-L-0729 [AV13][TUI][M] — RESOLVED BY REMOVAL: there is no `ratatui`/`crossterm` link in ANY build, portable or default.
 
 ## hook / daemon / watch (background modes)
 

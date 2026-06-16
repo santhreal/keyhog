@@ -24,7 +24,7 @@ the bench must never carry test-framework logic.
 - Every subcommand × default + ≥3 flag combos: snapshot stdout/stderr/exit.
 - Every output format (text/json/jsonl/sarif/csv/junit/html) byte-compared to a committed fixture (well-formed is not enough).
 - Exit-code contract asserted per entry path: 0 clean / 1 findings / 2 runtime error / 3 file error (DF-04 — and document it).
-- `daemon`/`watch` via the real socket; `tui` via vt100 render; `hook` install+run; `--git-staged/--git-diff/--git-history` on a real repo; `--incremental` cache round-trip; baseline create/update/diff round-trip.
+- `daemon`/`watch` via the real socket; `hook` install+run; `--git-staged/--git-diff/--git-history` on a real repo; `--incremental` cache round-trip; baseline create/update/diff round-trip.
 - GitHub Action, SARIF upload, pre-commit hook: end-to-end against a recorded backend.
 - CLI flag-surface snapshot per subcommand so the 68-flag surface can't grow silently (CLI-08).
 

@@ -26,7 +26,7 @@ Numbers: KH-L-0100 … KH-L-0249.
 - KH-L-0111 [L10][SUPPRESS][L] Every suppression rule is loud + auditable: a `--explain-suppressions` mode lists what was suppressed and why (never a silent drop). Proof: e2e test of the explain output.
 - KH-L-0112 [SCR,L6][SUPPRESS][M] Test-fixture suppression must not suppress a REAL secret that happens to sit in a tests/ dir — prove the heuristic's precision. Proof: a planted-real-secret-in-tests fixture still fires.
 - KH-L-0113 [AV15][SUPPRESS][M] Suppression-bypass audit: can an attacker-controlled `.keyhogignore`/path shape silence detection (e.g. via traversal or glob)? Proof: a suppression-evasion test corpus, all fail-closed.
-- KH-L-0114 [DEDUP][CORE][M] One dedup pipeline: `dedup_matches`→`dedup_cross_detector` is the only path; TUI + scan + daemon all use it (already aligned — gate it). Proof: a cross-surface dedup-parity test.
+- KH-L-0114 [DEDUP][CORE][M] One dedup pipeline: `dedup_matches`→`dedup_cross_detector` is the only path; scan + daemon all use it (already aligned — gate it). Proof: a cross-surface dedup-parity test.
 - KH-L-0115 [L6][CORE][M] Dedup identity (detector,credential,offset) is correct under every scope (None/Credential/File) — proptest the invariants. Proof: `dedup_invariants_proptest` extended to 10k.
 
 ## Decoder recall (the decode-through pipeline)

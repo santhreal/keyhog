@@ -6,8 +6,8 @@
 //!   1. the runtime embedded-load path silently dropped unparseable detectors
 //!      (`tracing::debug!` then continue — a Law-10 silent fallback, now fixed
 //!      to fail closed in the single shared loader
-//!      `keyhog_core::load_embedded_detectors_or_fail`, which both the `scan`
-//!      orchestrator and `keyhog tui` route through), and
+//!      `keyhog_core::load_embedded_detectors_or_fail`, which every scan
+//!      entry point routes through), and
 //!   2. the existing self-validation test parsed TOMLs from the **on-disk**
 //!      `detectors/` tree, NOT the bytes actually **compiled into the binary**.
 //!      An embed-time drop or an in-place edit could diverge from what shipped.
@@ -75,8 +75,8 @@ fn embedded_parseable_count_equals_slice_len() {
     );
 }
 
-/// The shared fail-closed loader is now the SINGLE path the `scan` orchestrator
-/// and `keyhog tui` use to turn the compiled-in corpus into `DetectorSpec`s.
+/// The shared fail-closed loader is now the SINGLE path every scan entry point
+/// uses to turn the compiled-in corpus into `DetectorSpec`s.
 /// Drive it directly (not a re-implementation): on a healthy build it returns
 /// exactly one detector per embedded TOML — no silent drops — with the count
 /// pinned to the authoritative `embedded_detector_count()`.

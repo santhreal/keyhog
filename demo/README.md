@@ -1,6 +1,6 @@
 # demo
 
-Synthetic application tree used to drive the `keyhog tui` demo
+Synthetic application tree used to drive the `keyhog scan` demo
 recording in `demo.tape`. Every "credential" in this directory is
 either:
 
@@ -16,6 +16,5 @@ values for actual deployments. Do NOT replicate the file names in
 your real project (the `app/.env.production` shape is intentional
 demo bait for screenshots).
 
-Run `keyhog tui demo` from the keyhog repo root to see the
-dashboard scan this directory. Run `keyhog scan demo` for the
-text output the GIF was previously based on.
+Run `keyhog scan demo` from the keyhog repo root to scan this
+directory — the text output the demo GIF (`demo.tape`) is based on.

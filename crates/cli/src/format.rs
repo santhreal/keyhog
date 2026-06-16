@@ -1,12 +1,10 @@
 //! Display formatting helpers shared between CLI subcommands.
 //!
-//! The TUI dashboard (`subcommands::tui::render`) and the system-scan
-//! orchestrator (`subcommands::scan_system`) previously kept two
-//! near-identical `format_bytes` fns. They drifted: the system-scan
-//! version handled TiB while the TUI version stopped at GiB. Both now
-//! consume the same `format_bytes` here, so a future bump to PiB
-//! (when someone tries to scan a 100 PB cluster archive) lands in
-//! one place.
+//! The system-scan orchestrator (`subcommands::scan_system`) and other
+//! subcommands previously kept near-identical `format_bytes` fns that
+//! drifted (one handled TiB, another stopped at GiB). They now all
+//! consume the same `format_bytes` here, so a future bump to PiB (when
+//! someone tries to scan a 100 PB cluster archive) lands in one place.
 
 /// Format a byte count as a human-readable string with the closest
 /// power-of-two unit (B / KiB / MiB / GiB / TiB). Two-decimal precision

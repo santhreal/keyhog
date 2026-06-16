@@ -17,14 +17,12 @@ use std::collections::BTreeSet;
 
 use keyhog::args::command;
 
-/// Top-level subcommands that are ALWAYS compiled in (no feature gate). The one
-/// feature-gated verb, `tui` (`#[cfg(feature = "tui")]` on `Command::Tui`), is
-/// added conditionally in [`expected_subcommands`] so this gate matches the
-/// compiled surface under ANY feature selection — `default`, `full`, `ci`, or a
-/// custom mix — instead of only passing under the feature set the test happened
-/// to be built with. Adding a subcommand is a deliberate surface-growth
-/// decision: update the right list (base here, or the matching `#[cfg]` block in
-/// [`expected_subcommands`]) in the same change and justify the new verb.
+/// Top-level subcommands that are ALWAYS compiled in (no feature gate). Every
+/// verb is currently unconditional, so [`expected_subcommands`] is just this
+/// list — but the helper stays a function so a future feature-gated verb is
+/// added under the SAME `#[cfg]` the `Command` variant carries, keeping the
+/// gate feature-robust. Adding a subcommand is a deliberate surface-growth
+/// decision: update this list in the same change and justify the new verb.
 const BASE_SUBCOMMANDS: &[&str] = &[
     "backend",
     "calibrate",
@@ -50,11 +48,7 @@ const BASE_SUBCOMMANDS: &[&str] = &[
 /// in `args.rs`, so the snapshot is feature-robust (Law 10: no silent surface
 /// drift hidden behind a feature flag).
 fn expected_subcommands() -> BTreeSet<String> {
-    let mut set: BTreeSet<String> = BASE_SUBCOMMANDS.iter().map(|s| s.to_string()).collect();
-    // `Command::Tui` is `#[cfg(feature = "tui")]` (default-on, off under `ci`).
-    #[cfg(feature = "tui")]
-    set.insert("tui".to_string());
-    set
+    BASE_SUBCOMMANDS.iter().map(|s| s.to_string()).collect()
 }
 
 /// `scan` long-flags that are ALWAYS compiled in (no feature gate). This is the

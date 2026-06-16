@@ -8,31 +8,26 @@ Set Theme "Dracula"
 Set Framerate 30
 Set TypingSpeed 28ms
 
-# Hide the dead-air cold-start: ~10s of keyhog tui boot (detector
-# compile + GPU init + first chunk scan) happen while vhs is in
-# Hide mode. We come out of Hide just before the first finding
-# lands so the visible portion of the gif is all live action -
-# findings streaming in, stats counters ticking up, banner flipping
-# from yellow "scanning" to green "scan complete".
+# Records a real `keyhog scan` of the synthetic demo/ tree: the headless
+# scan surface every user actually runs. Hide covers the cold-start
+# (detector compile + GPU init) so the visible portion of the gif is all
+# live output - findings printed with file:line, severity, and the
+# end-of-run summary counters.
 Hide
 Type "clear" Enter
 Sleep 100ms
-Type "keyhog tui demo --throttle-ms 600 --feed-depth 18" Enter
+Type "keyhog scan demo" Enter
 
-# Cold-start window. 6.5s captures the compile + GPU init phase
-# but leaves the actual file scan to happen on-screen. The 600ms
-# throttle means 11 demo files take ~6.6s to walk - perfectly
-# paced for the visible-frame window below.
-Sleep 6500ms
+# Cold-start window: detector compile + GPU init happen off-screen so the
+# visible frames below capture the findings + summary, not boot dead-air.
+Sleep 4500ms
 Show
 
-# Visible: findings stream in, counters update, banner flips green
-Sleep 8s
+# Visible: findings stream out, then the summary line lands.
+Sleep 6s
 
-# Hold on the populated end-state
-Sleep 600ms
+# Hold on the populated end-state.
+Sleep 800ms
 
-# Clean exit
 Hide
-Type "q"
-Sleep 400ms
+Sleep 200ms

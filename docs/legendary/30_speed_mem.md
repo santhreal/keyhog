@@ -41,7 +41,7 @@ Numbers: KH-L-0250 … KH-L-0379.
 ## Perf gates + no-regression
 
 - KH-L-0268 [AV1,SCALE][BENCH][M] Criterion baselines for every hot path; the perf gate fails a PR on >X% regression. Proof: a wired criterion-baseline CI gate.
-- KH-L-0269 [L7,AV6][SCANNER][S] No fixed sleeps / busy-waits anywhere on the scan or TUI path (the TUI idle fix is the model). Proof: a `no_fixed_sleep` grep gate with documented exceptions.
+- KH-L-0269 [L7,AV6][SCANNER][S] No fixed sleeps / busy-waits anywhere on the scan path. Proof: a `no_fixed_sleep` grep gate with documented exceptions.
 - KH-L-0270 [AV1][CLI][M] Cold-start latency budget enforced (portable < 150 ms incl. detector load); gated. Proof: a startup-latency e2e gate.
 - KH-L-0271 [L7,AV15][SCANNER][M] No avoidable O(n²): audit every nested loop on text (multiline preprocessor, context inference, dedup) for quadratic blowup on adversarial input. Proof: a worst-case-input bench per suspect.
 

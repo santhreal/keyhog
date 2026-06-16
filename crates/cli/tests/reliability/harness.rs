@@ -37,7 +37,6 @@ pub const SUBCOMMANDS: &[&str] = &[
     "uninstall",
     "scan-system",
     "daemon",
-    "tui",
 ];
 
 /// A hostile-environment profile. Each variant flips a real runtime branch

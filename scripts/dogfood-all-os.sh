@@ -1,17 +1,15 @@
 #!/usr/bin/env bash
 # Deep cross-OS dogfooding for keyhog.
 #
-# Builds the real binary and exercises three real surfaces on every machine in
+# Builds the real binary and exercises two real surfaces on every machine in
 # the fleet, then prints a per-OS PASS / FAIL / SKIP matrix:
 #   [cli]     the headless CLI on real inputs (planted secrets, clean trees,
 #             source-failure exit codes, lossy binary stdin)
-#   [tui]     the interactive `keyhog tui` loop, driven through a pseudo-terminal
-#             (default-feature builds only; portable builds compile the TUI out)
 #   [install] the real installer (install.sh --from-file -> doctor self-test ->
 #             seeded scan -> SARIF -> rollback), via the shared install proof
 # The point is to catch OS-specific breakage (path/encoding handling,
-# #[cfg(unix)] routes, mmap windowing, native-dep builds, TTY handling, the
-# install + doctor path) that a single-Linux unit gate never sees.
+# #[cfg(unix)] routes, mmap windowing, native-dep builds, the install + doctor
+# path) that a single-Linux unit gate never sees.
 #
 # Unreachable machines are SKIPPED *loudly* with a reason -- never silently
 # dropped, so "all green" cannot hide a box that was simply down.
@@ -107,20 +105,7 @@ run_unix() {  # $1 name  $2 host(or 'local')  $3 tree  $4 target  $5 features
   else unix_payload | "${SSH[@]}" "$host" "bash -s '$bin'"; fi
   [ $? -ne 0 ] && rc=1
 
-  # Phase 2 -- interactive TUI. Only the default feature set compiles the
-  # `tui` subcommand; portable builds (--features portable) deliberately drop
-  # ratatui/crossterm, so a TUI smoke there would just assert "subcommand
-  # missing". SKIP loudly in that case rather than fake a pass. tui_smoke.py
-  # drives the real ratatui loop through a pseudo-terminal (the binary needs a
-  # TTY); it ships in the same tree, so no file transfer is needed.
-  echo "  [tui]"
-  if [ -n "$feats" ]; then
-    echo "  SKIP tui (portable build has no 'tui' feature)"
-  else
-    on_unix "$host" "python3 '$tree/scripts/tui_smoke.py' '$bin' --timeout 30" || rc=1
-  fi
-
-  # Phase 3 -- installer. Reuses the canonical local-build install proof
+  # Phase 2 -- installer. Reuses the canonical local-build install proof
   # (install.sh --from-file -> backup/atomic-swap -> `keyhog doctor` self-test
   # -> seeded scan -> SARIF -> rollback). Same script every OS runs in CI, so
   # the dogfood exercises the exact installer users get, not a parallel copy.

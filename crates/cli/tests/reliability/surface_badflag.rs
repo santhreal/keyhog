@@ -1,9 +1,9 @@
 //! Invariant: an unknown flag is rejected cleanly for EVERY subcommand under
 //! EVERY profile. clap parses before the subcommand runs, so this is safe even
-//! for daemon/watch/tui/scan-system (no long-running work executes).
+//! for daemon/watch/scan-system (no long-running work executes).
 //!
 //! A premium CLI: exits 2 (usage error), names the offending flag or prints a
-//! usage hint, never panics, never leaks ANSI. 16 × 16 = 256 distinct tests.
+//! usage hint, never panics, never leaks ANSI. 15 × 16 = 240 distinct tests.
 
 use crate::reliability::harness::{
     assert_clean_exit, assert_no_ansi, assert_no_panic, run, Profile,
@@ -67,5 +67,4 @@ crate::kh_matrix!(
     uninstall => "uninstall",
     scan_system => "scan-system",
     daemon => "daemon",
-    tui => "tui",
 );
