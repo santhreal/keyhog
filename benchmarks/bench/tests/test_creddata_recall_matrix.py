@@ -124,3 +124,38 @@ def test_creddata_secret_is_recalled(rec, scan_result):
         f"keyhog did not surface the CredData {rec.category!r} secret at "
         f"{rec.file_path}:{rec.line_start} (record {rec.id}). The credential is "
         f"present and human-reviewed in CredData; this is a real recall miss.")
+
+
+# ── category blind-spot gate ──────────────────────────────────────────
+# Distinct from the per-secret matrix: a credential CATEGORY that keyhog
+# recalls ZERO of (despite a meaningful sample of real positives) is not a
+# scattering of hard individual misses — it is a detector CLASS the shipped
+# scanner is wholly blind to. The per-secret matrix would show that as N red
+# cases that look like the rest; this names the systemic hole directly. Only
+# categories with enough positives to be statistically real are gated (a
+# 2-positive category recalling 0 is noise, not a blind class).
+
+_CATEGORY_MIN_POSITIVES = 25
+
+_POSITIVES_BY_CATEGORY: dict[str, list] = {}
+for _r in _POSITIVES:
+    _POSITIVES_BY_CATEGORY.setdefault(_r.category or "unknown", []).append(_r)
+
+_GATED_CATEGORIES = sorted(
+    cat for cat, recs in _POSITIVES_BY_CATEGORY.items()
+    if len(recs) >= _CATEGORY_MIN_POSITIVES
+)
+
+
+@pytest.mark.skipif(
+    not _AVAILABLE,
+    reason="CredData corpus not on disk — category blind-spot gate cannot run")
+@pytest.mark.parametrize("category", _GATED_CATEGORIES)
+def test_creddata_category_is_not_entirely_blind(category, scan_result):
+    recs = _POSITIVES_BY_CATEGORY[category]
+    recalled = sum(1 for r in recs if r.id in scan_result)
+    assert recalled > 0, (
+        f"keyhog recalled ZERO of {len(recs)} human-reviewed CredData "
+        f"{category!r} secrets — the shipped scanner is wholly blind to this "
+        f"credential class, not just missing hard individuals. This is a "
+        f"detector-coverage finding, not a tuning miss.")
