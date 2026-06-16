@@ -154,6 +154,40 @@ def _file_category(recs: list[LabeledRecord]) -> str:
     return (recs[0].category if recs else "unknown") or "unknown"
 
 
+# ── per-record recall hit-set ──────────────────────────────────────────
+
+
+def found_record_ids(
+    records: list[LabeledRecord],
+    findings: list[Finding],
+    file_root: pathlib.Path,
+) -> set[str]:
+    """Return the ids of the POSITIVE records (``label and not ignore``) that
+    at least one finding's value overlaps.
+
+    This is the per-record recall hit-set that :func:`score` computes
+    internally (its ``hit_ids``) but does not expose. It reuses the SAME file
+    index, path resolution, and :func:`overlap` rule, so a record id is in this
+    set iff that record is a true positive in :func:`score` — the per-secret
+    recall matrix (``test_creddata_recall_matrix``) asserts membership here, and
+    its module pins ``len(found_record_ids(...)) == score(...).overall.tp`` so
+    the two can never drift. Kept a thin standalone helper (not folded into
+    ``score``) because ``score`` additionally threads per-detector confidence
+    bookkeeping that a recall hit-set does not need."""
+    by_key, aliases = _build_file_index(records, file_root)
+    found: set[str] = set()
+    for f in findings:
+        fpath = f.get("file") or ""
+        key = _resolve_finding_file(fpath, aliases) if fpath else None
+        if key is None:
+            continue
+        value = f.get("value") or ""
+        for rec in by_key[key]:
+            if rec.label and not rec.ignore and overlap(value, rec.secret):
+                found.add(rec.id)
+    return found
+
+
 # ── the scorer ─────────────────────────────────────────────────────────
 
 
