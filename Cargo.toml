@@ -7,7 +7,7 @@ members = [
     "crates/sources",
     "crates/cli",
 ]
-# Read-only reference snapshots — never built; see vendor/README.md (MC-11).
+# Read-only reference snapshots are never built; see vendor/README.md (MC-11).
 exclude = ["vendor/vyre", "vendor/bogon", "vendor/shared"]
 default-members = ["crates/cli"]
 
@@ -109,23 +109,21 @@ notify = "=8.0.0"
 
 # Performance libraries
 simdsieve = "=0.1.1"
-# vyre 0.6.1 is published to crates.io. The vendor/vyre/ tree is a READ-ONLY
-# reference snapshot, excluded from the workspace and NEVER built — the vendoring
-# contract lives in vendor/README.md (MC-11). The build resolves vyre from the
-# live-source path override below, never from vendor/vyre.
+# vyre 0.6.2 is published to crates.io and carries the megakernel APIs keyhog
+# imports (`vyre_libs::scan::build_regex_dfa_unanchored`, etc.). Keyhog consumes
+# the five runtime vyre crates through exact registry pins only: no path
+# overrides, no Santh NFS dependency, and no build path into vendor/vyre.
+#
+# vendor/vyre/ remains a READ-ONLY excluded reference snapshot and is NEVER built;
+# the vendoring contract lives in vendor/README.md (MC-11).
 # CUDA backend is wired in keyhog-scanner behind the `cuda` feature
 # (default on). On hosts without libcuda.so the backend's `acquire()`
 # call fails cleanly and the scanner falls back to wgpu.
-# TEMPORARY dev path-override (NOT a silent fallback — a build config): consumes
-# the unreleased `vyre_libs::scan::build_regex_dfa_unanchored` (megakernel
-# fallback port, docs/GPU_DETECTION_REWRITE.md). Replace with `version = "=0.6.2"`
-# registry pins once that vyre release is published. Path is relative to
-# software/keyhog/; points at the live SOURCE, never vendor/vyre (stale).
-vyre = { version = "=0.6.1", path = "../../libs/performance/matching/vyre/vyre-core" }
-vyre_libs = { package = "vyre-libs", version = "=0.6.1", path = "../../libs/performance/matching/vyre/vyre-libs" }
-vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "=0.6.1", path = "../../libs/performance/matching/vyre/vyre-driver-wgpu" }
-vyre-driver-cuda = { package = "vyre-driver-cuda", version = "=0.6.1", path = "../../libs/performance/matching/vyre/vyre-driver-cuda" }
-vyre-runtime = { version = "=0.6.1", path = "../../libs/performance/matching/vyre/vyre-runtime" }
+vyre = "=0.6.2"
+vyre_libs = { package = "vyre-libs", version = "=0.6.2" }
+vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "=0.6.2" }
+vyre-driver-cuda = { package = "vyre-driver-cuda", version = "=0.6.2" }
+vyre-runtime = "=0.6.2"
 wgpu = "=25.0.2"
 pollster = "=0.4.0"
 bytemuck = { version = "=1.25.0", features = ["derive"] }

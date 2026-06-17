@@ -1,104 +1,34 @@
 //! On-GPU detection via vyre's batched DFA rule-catalog megakernel.
-//!
-//! This is the REAL megakernel path (not the dead persistent-ring stub this
-//! file used to hold): the `vyre_driver_wgpu::megakernel::BatchDispatcher`
-//! engine, proven end-to-end in `tests/megakernel_cpu_parity.rs` (GPU≡CPU
-//! firings on 1500 real files, one dispatch). It is the dispatch-overhead-free
-//! vehicle the GPU-detection rewrite targets (`docs/GPU_DETECTION_REWRITE.md`).
-//!
-//! # Model
-//!
-//! Detection is a two-stage split (doc "Core abstraction: the candidate"):
-//!
-//! * **GPU generate** — one unanchored DFA per detector pattern, packed into a
-//!   resident rule catalog, dispatched over a COALESCED batch of files in a
-//!   single launch. Emits `(file, detector, match_end)` firings.
-//! * **Host tail** — for each firing, the existing per-detector extraction runs
-//!   on that file (capture + checksum + companion + ML + confidence). The
-//!   megakernel REPLACES the prefilter ("which detectors fire where"), not the
-//!   extraction, so recall/precision policy is unchanged.
-//!
-//! Patterns the unanchored DFA can't carry (PCRE lookaround/backref, or DFA
-//! state-budget blowups) take a **loud host path** (Law 10) — never a silent
-//! drop. `MegakernelCatalog::build` records every one in `host_detectors`.
-//!
-//! # Status
-//!
-//! The catalog build + GPU scan + firing decode are implemented and tested here
-//! (`tests/megakernel_catalog_scan.rs`). Wiring this as the live GPU backend
-//! (routing `ScanBackend::Gpu` through it, fail-closed, and retiring the
-//! `RulePipeline` / `GpuLiteralSet` parallel paths) is the next step.
 #![cfg(feature = "gpu")]
 
 use std::sync::Arc;
 
+use vyre_driver_wgpu::WgpuBackend;
 use vyre_driver_wgpu::megakernel::{
     BatchDispatchConfig, BatchDispatcher, BatchFile, FileBatch, HitRecord,
 };
-use vyre_driver_wgpu::WgpuBackend;
 use vyre_libs::scan::build_regex_dfa_unanchored;
-use vyre_runtime::megakernel::rule_catalog::pack_rule_catalog;
 use vyre_runtime::megakernel::BatchRuleProgram;
+use vyre_runtime::megakernel::rule_catalog::pack_rule_catalog;
 
-/// Per-rule DFA state budget for the unanchored catalog. Unanchored DFAs run
-/// ~3x the anchored state count; 16384 admits the AKIA-class bodies
-/// (`AKIA[A-Z0-9]{16}` = 2468 states) while still rejecting the genuine
-/// large-charclass×long-body explosions (`AIza[A-Za-z0-9_-]{35}`) to the loud
-/// host path. Tunable as detection coverage vs transition-table memory.
 const PER_RULE_MAX_DFA_STATES: usize = 16_384;
-/// Per-rule match cap fed to the DFA builder (metadata only; the dispatcher's
-/// hit ring is sized separately at scan time).
 const PER_RULE_MAX_MATCHES: u32 = 200_000;
-/// Stable hit-ring capacity for EVERY megakernel dispatch. Fixed (not scaled
-/// per batch) so the reused dispatcher compiles exactly ONE pipeline variant —
-/// `BatchPipelineShape` keys on `hit_capacity`, so a per-batch capacity forced a
-/// fresh `compile_persistent` (~10s) every batch. 1M entries (~16 MiB ring)
-/// comfortably holds any single batch's firings; overflow is surfaced LOUDLY by
-/// the dispatcher report, never silently dropped (Law 10).
 const MEGAKERNEL_HIT_CAPACITY: u32 = 1_000_000;
-/// Cache-key namespace version for the on-disk compiled catalog. Bump on any
-/// change to the catalog's MEANING that the wire format alone can't catch —
-/// e.g. a vyre `build_regex_dfa_unanchored` semantics change that produces
-/// different DFAs from the same regex. (Wire-FORMAT changes bump
-/// `MegakernelCatalog::WIRE_VERSION` instead.)
-const MEGAKERNEL_CATALOG_CACHE_VERSION: u32 = 1;
-/// Magic stamped on the cached-catalog blob and folded into the cache key.
-/// `pub(super)` so the sibling [`super::megakernel_wire`] module (the catalog
-/// cache wire format) and the cache-key here share one source of truth.
+// v7: Keyhog now builds against the published `vyre-driver-wgpu 0.6.2`
+// megakernel API only. That surface has whole-file batch geometry and no
+// segmentation/dropped-hit extensions, so cached catalogs from the live-tree
+// prototype must not be reused.
+const MEGAKERNEL_CATALOG_CACHE_VERSION: u32 = 7;
 pub(super) const CATALOG_WIRE_MAGIC: [u8; 4] = *b"KHMK";
 
-/// A compiled on-GPU detection catalog: one DFA rule per lowerable detector
-/// pattern, plus the detectors that must run on the host (loud path).
-///
-/// Built once at scanner compile (the per-pattern subset construction is the
-/// expensive part — parallelised here) and held resident for every scan.
 pub(crate) struct MegakernelCatalog {
-    // Fields are `pub(super)` so the sibling `super::megakernel_wire` module
-    // (the catalog cache wire format — `to_bytes`/`from_bytes`) can read and
-    // reconstruct them; they stay private to the `engine` module otherwise.
-    /// Dense unanchored-DFA rule programs, `rule_idx == position in this vec`.
     pub(super) rules: Vec<BatchRuleProgram>,
-    /// `rule_to_detector[rule_idx]` = the detector index that rule belongs to,
-    /// so a GPU `HitRecord.rule_idx` decodes back to a keyhog detector.
     pub(super) rule_to_detector: Vec<usize>,
-    /// Detector indices whose pattern the unanchored DFA could NOT carry
-    /// (PCRE feature / state-budget blowup). These run on the host — LOUD, never
-    /// silently dropped.
     pub(super) host_detectors: Vec<usize>,
-    /// The batched-megakernel dispatcher, created lazily on the first `scan` and
-    /// REUSED across every batch. Reuse is the whole perf story: the dispatcher
-    /// holds the compiled WGSL pipeline and the GPU-resident rule catalog
-    /// (`ensure_rule_buffers` no-ops when the rule fingerprints are unchanged),
-    /// so batches after the first pay only file upload + GPU scan + readback.
-    /// Recreating it per batch (the old code) recompiled the pipeline and
-    /// re-uploaded the entire DFA catalog every time (~10s/batch). `Mutex`
-    /// because `dispatch_into` needs `&mut` while the catalog is shared `&self`;
-    /// batches are dispatched sequentially so it is never contended.
     pub(super) dispatcher: std::sync::Mutex<Option<BatchDispatcher>>,
+    pub(super) resident_batch: std::sync::Mutex<Option<FileBatch>>,
 }
 
-/// One GPU detection firing: detector `detector` matched in coalesced file
-/// `file_index`, with the match ending `match_end` bytes into that file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct Firing {
     pub file_index: usize,
@@ -135,6 +65,8 @@ impl MegakernelCatalog {
         }
 
         // (Option<dfa>, detector_index): Some => lowered to a DFA, None => host.
+        // Build only against the published Vyre registry surface. Detector rules
+        // that do not lower are kept on the loud host path; nothing is dropped.
         let built: Vec<(Option<(Vec<u32>, Vec<u32>, u32)>, usize)> = patterns
             .par_iter()
             .map(|(regex, detector)| {
@@ -143,8 +75,10 @@ impl MegakernelCatalog {
                     PER_RULE_MAX_MATCHES,
                     PER_RULE_MAX_DFA_STATES,
                 )
-                .ok()
-                .map(|pipe| (pipe.dfa.transitions, pipe.dfa.accept, pipe.dfa.state_count));
+                .ok()  // LAW10: GPU lower/acquire failure => host path (recall-preserving, counted host_lower_failed + surfaced via tracing::info/last_gpu_degrade_reason)
+                .map(|pipe| {
+                    (pipe.dfa.transitions, pipe.dfa.accept, pipe.dfa.state_count)
+                });
                 (lowered, *detector)
             })
             .collect();
@@ -152,6 +86,7 @@ impl MegakernelCatalog {
         let mut rules = Vec::new();
         let mut rule_to_detector = Vec::new();
         let mut host_detectors = Vec::new();
+        let mut host_lower_failed = 0usize; // DFA build / BatchRuleProgram failure
         for (lowered, detector) in built {
             match lowered {
                 Some((transitions, accept, state_count)) => {
@@ -165,13 +100,37 @@ impl MegakernelCatalog {
                             rules.push(rule);
                             rule_to_detector.push(detector);
                         }
-                        // A validated-shape failure is also a loud host path,
-                        // not a drop.
-                        Err(_) => host_detectors.push(detector),
+                        // LAW10: recall-safe — a BatchRuleProgram build failure does
+                        // NOT drop the detector; it is pushed onto host_detectors and
+                        // runs on the host fallback engine instead (same as the `None`
+                        // arm below). The GPU batch is a faster path for the same
+                        // detector set, never the only path.
+                        Err(_) => { // LAW10: DFA-lower failure ⇒ detector runs on the loud host fallback path (recall preserved, same detector set), counted in host_lower_failed and surfaced via the tracing::info "un-lowerable" log (or tracing::error if all fail); host runs that set anyway, so the speed cost is a rounding error.
+                            host_detectors.push(detector);
+                            host_lower_failed += 1;
+                        }
                     }
                 }
-                None => host_detectors.push(detector),
+                None => {
+                    host_detectors.push(detector);
+                    host_lower_failed += 1;
+                }
             }
+        }
+        if std::env::var_os("KH_PERF").is_some() {
+            // Dedup ceiling: how many of the GPU rules are DISTINCT pattern strings.
+            // The kernel cost is ~linear in rule_count x files, so collapsing
+            // duplicate literal rules (many detectors share a prefix like `key`) to
+            // one rule fanning out to N detectors is the lever that keeps the kernel
+            // cheap as the catalog grows (e.g. absorbing the fallback anchors).
+            let unique_patterns: std::collections::HashSet<&str> =
+                patterns.iter().map(|(p, _)| p.as_str()).collect();
+            eprintln!(
+                "KH_PERF megakernel classify: gpu={} unique_patterns={}/{} | host: lower_failed={host_lower_failed}",
+                rules.len(),
+                unique_patterns.len(),
+                patterns.len(),
+            );
         }
 
         if rules.is_empty() {
@@ -203,9 +162,13 @@ impl MegakernelCatalog {
             rules.clear();
         }
         if std::env::var_os("KH_PERF").is_some() {
-            let bytes_of =
-                |r: &BatchRuleProgram| (r.transitions.len() + r.accept.len()) * std::mem::size_of::<u32>();
-            let words: usize = rules.iter().map(|r| r.transitions.len() + r.accept.len()).sum();
+            let bytes_of = |r: &BatchRuleProgram| {
+                (r.transitions.len() + r.accept.len()) * std::mem::size_of::<u32>()
+            };
+            let words: usize = rules
+                .iter()
+                .map(|r| r.transitions.len() + r.accept.len())
+                .sum();
             // State-count buckets + MiB attributable to each, to see whether a
             // few explosive DFAs dominate the catalog size (lower the cap, push
             // them to the host/HS path) or it is uniform.
@@ -214,7 +177,7 @@ impl MegakernelCatalog {
             let mut mib = [0f64; 4];
             for r in &rules {
                 let sc = r.state_count as usize;
-                let b = hi.iter().position(|&h| sc <= h).unwrap_or(3);
+                let b = hi.iter().position(|&h| sc <= h).unwrap_or(3);  // LAW10: empty/absent => documented numeric/sentinel default, recall-safe
                 cnt[b] += 1;
                 mib[b] += bytes_of(r) as f64 / (1024.0 * 1024.0);
             }
@@ -234,6 +197,7 @@ impl MegakernelCatalog {
             rule_to_detector,
             host_detectors,
             dispatcher: std::sync::Mutex::new(None),
+            resident_batch: std::sync::Mutex::new(None),
         }
     }
 
@@ -276,11 +240,12 @@ impl MegakernelCatalog {
     pub(crate) fn scan(
         &self,
         backend: &Arc<WgpuBackend>,
-        files: &[(u64, Vec<u8>)],
+        files: Vec<(u64, Vec<u8>)>,
     ) -> Result<Vec<Firing>, String> {
         if files.is_empty() || self.rules.is_empty() {
             return Ok(Vec::new());
         }
+        let file_count = files.len();
 
         // Fixed hit-ring capacity (see MEGAKERNEL_HIT_CAPACITY): the batch ring
         // and the reused dispatcher's compiled pipeline MUST agree on capacity,
@@ -288,18 +253,47 @@ impl MegakernelCatalog {
         let hit_capacity = MEGAKERNEL_HIT_CAPACITY;
 
         let batch_files: Vec<BatchFile> = files
-            .iter()
+            .into_iter()
             .enumerate()
-            .map(|(i, (hash, bytes))| BatchFile::new(*hash ^ i as u64, 0, bytes.clone()))
+            .map(|(i, (hash, bytes))| BatchFile::new(hash ^ i as u64, 0, bytes))
             .collect();
 
-        let batch = FileBatch::upload(
-            backend.device_queue(),
-            &batch_files,
-            self.rules.len() as u32,
-            hit_capacity,
-        )
-        .map_err(|e| format!("megakernel FileBatch upload: {e:?}"))?;
+        // Resident GPU batch: upload once, then REFRESH in place every scan.
+        // `FileBatch::upload` allocates all six GPU buffers (haystack, offsets,
+        // metadata, segments, queue_state, hit_ring) via
+        // `device.create_buffer` — a driver round-trip that dominated dispatch
+        // time (the realloc, not the compute). `refresh` reuses the resident
+        // buffers (`queue.write_buffer`) when the new batch fits the fixed
+        // `MEGAKERNEL_HIT_CAPACITY` ring, so only the FIRST scan pays the
+        // allocation. Fail-closed: `refresh` returns `Err` on a shape it can't
+        // fit, never a silent stale-buffer reuse.
+        let mut batch_guard = self
+            .resident_batch
+            .lock()
+            .map_err(|e| format!("megakernel batch mutex poisoned: {e}"))?;
+        match batch_guard.as_mut() {
+            Some(batch) => batch
+                .refresh(&batch_files, self.rules.len() as u32, hit_capacity)
+                .map_err(|e| format!("megakernel FileBatch refresh: {e:?}"))?,
+            None => {
+                *batch_guard = Some(
+                    FileBatch::upload(
+                        backend.device_queue(),
+                        &batch_files,
+                        self.rules.len() as u32,
+                        hit_capacity,
+                    )
+                    .map_err(|e| format!("megakernel FileBatch upload: {e:?}"))?,
+                );
+            }
+        }
+        // Published `vyre-driver-wgpu 0.6.2` exposes one work item per
+        // `(file, rule, layer)`. There is no segmentation knob in that registry
+        // surface, so Keyhog keeps exact whole-file scanning here and relies on a
+        // later Vyre release for tiled large-file geometry.
+        let batch = batch_guard
+            .as_ref()
+            .expect("resident batch initialized immediately above");
 
         // Create the dispatcher ONCE and reuse it for every batch. The first
         // dispatch compiles the WGSL pipeline and uploads the DFA catalog;
@@ -314,6 +308,11 @@ impl MegakernelCatalog {
             let config = BatchDispatchConfig {
                 workgroup_size_x: 64,
                 // 0 => the dispatcher derives worker_groups from device limits.
+                // Occupancy is NOT the megakernel bottleneck: at 100% occupancy
+                // proxy the kernel is already ~0.4 s/batch; the dominant single-
+                // scan cost is the ~1 GB DFA-catalog upload (one-time/process)
+                // and the CPU phase-2 tail, neither of which worker_groups moves
+                // (measured task #35, RTX 5090: WG 255→1024 left dispatch flat).
                 worker_groups: 0,
                 hit_capacity,
                 timeout: std::time::Duration::from_secs(30),
@@ -329,9 +328,50 @@ impl MegakernelCatalog {
             .expect("dispatcher initialized immediately above");
 
         let mut hits: Vec<HitRecord> = Vec::with_capacity(4096);
-        dispatcher
-            .dispatch_into(&batch, &self.rules, &mut hits)
+        let summary = dispatcher
+            .dispatch_into(batch, &self.rules, &mut hits)
             .map_err(|e| format!("megakernel dispatch: {e:?}"))?;
+        if std::env::var_os("KH_PERF").is_some() {
+            let t = &summary.telemetry;
+            eprintln!(
+                "KH_PERF mk-dispatch: files={} rules={} kernel_wall={:.3}s items={} hits={} occupancy_bps={} bytes_up={} bytes_back={} launches={}",
+                file_count,
+                self.rules.len(),
+                summary.wall_time.as_secs_f64(),
+                summary.items_processed,
+                summary.hit_count,
+                t.occupancy_proxy_bps,
+                t.bytes_uploaded,
+                t.bytes_read_back,
+                t.kernel_launches,
+            );
+        }
+
+        // LAW 10: published Vyre 0.6.2 caps the device hit counter at the ring
+        // capacity and does not expose a separate dropped-hit counter. An exact
+        // full ring is therefore ambiguous: it may be exactly full or it may have
+        // saturated. Fail CLOSED and let the caller run the complete CPU scan for
+        // this batch rather than returning a potentially truncated firing set.
+        if hits.len() >= hit_capacity as usize {
+            static OVERFLOW_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+            if OVERFLOW_WARNED.set(()).is_ok() {
+                eprintln!(
+                    "keyhog: GPU megakernel hit ring reached capacity {}; \
+                     falling back to the complete CPU scan for this batch. \
+                     Fix: raise MEGAKERNEL_HIT_CAPACITY or shard the batch.",
+                    MEGAKERNEL_HIT_CAPACITY,
+                );
+            }
+            tracing::warn!(
+                target: "keyhog::gpu",
+                returned = hits.len(),
+                capacity = MEGAKERNEL_HIT_CAPACITY,
+                "GPU megakernel hit-ring capacity reached; degrading this batch to the CPU scan for complete recall",
+            );
+            return Err(format!(
+                "GPU hit ring reached capacity {MEGAKERNEL_HIT_CAPACITY}; degrading to CPU for complete recall",
+            ));
+        }
 
         Ok(hits
             .iter()
@@ -373,8 +413,8 @@ fn megakernel_catalog_cache_key(patterns: &[(String, usize)]) -> String {
 mod tests {
     use super::*;
 
-    /// The catalog build must lower the overlap-free / bounded-body patterns to
-    /// GPU DFA rules and route the genuine state-explosion (`AIza` — 64-char
+    /// The catalog build must lower compact regular patterns to GPU DFA rules
+    /// and route the genuine state-explosion (`AIza` with a 64-byte alphabet
     /// class × 35) to the loud host path — never silently drop it.
     #[test]
     fn catalog_classifies_lowerable_vs_host() {
@@ -409,4 +449,45 @@ mod tests {
         assert_eq!(catalog.host_detectors(), &[0]);
     }
 
+    /// The over-firing mask in `scan_coalesced_megakernel` is sound ONLY if the
+    /// catalog partitions detectors into EXACTLY two disjoint sets that together
+    /// cover every detector: GPU-covered (`rule_to_detector`) and host-only
+    /// (`host_detectors`). If a detector were in BOTH, masking the CPU bits to
+    /// host-only would drop nothing but seeding from GPU would double-count it;
+    /// if a detector were in NEITHER, it would be silently uncovered on the GPU
+    /// path (a recall hole, Law 10). This pins the precondition so a future
+    /// catalog change that leaks or drops a detector goes red.
+    #[test]
+    fn every_detector_is_covered_by_exactly_one_path() {
+        use std::collections::BTreeSet;
+        let patterns = vec![
+            ("ghp_[A-Za-z0-9]{36}".to_string(), 0),   // GPU
+            ("AKIA[A-Z0-9]{16}".to_string(), 1),      // GPU
+            (r"(\w+)\s+\1".to_string(), 2),           // host (backref)
+            ("AIza[A-Za-z0-9_-]{35}".to_string(), 3), // host (state explosion)
+        ];
+        let catalog = MegakernelCatalog::build(&patterns);
+        let gpu: BTreeSet<usize> = catalog.rule_to_detector.iter().copied().collect();
+        let host: BTreeSet<usize> = catalog.host_detectors.iter().copied().collect();
+
+        // Disjoint: no detector is on both paths (no double-counting).
+        assert!(
+            gpu.is_disjoint(&host),
+            "a detector appears on BOTH the GPU and host path: gpu={gpu:?} host={host:?}"
+        );
+        // Complete: every input detector index is covered exactly once.
+        let mut union: BTreeSet<usize> = gpu.clone();
+        union.extend(host.iter().copied());
+        let expected: BTreeSet<usize> = (0..patterns.len()).collect();
+        assert_eq!(
+            union, expected,
+            "detector coverage gap: every detector must be on exactly one path"
+        );
+        // No index collisions in the dense rule_to_detector map either.
+        assert_eq!(
+            catalog.rule_to_detector.len(),
+            gpu.len(),
+            "rule_to_detector must map each GPU rule to a DISTINCT detector"
+        );
+    }
 }

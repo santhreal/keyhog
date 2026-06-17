@@ -6,10 +6,12 @@ making next. Vyre is a ~30-crate GPU compute framework - this doc
 catalogues every crate it ships so future wires don't have to
 re-discover the surface.
 
-Updated 2026-05-30, against workspace-pinned vyre v0.6.1 from crates.io.
-`vendor/vyre/` is a reference/offline-development snapshot only; the workspace
-does not build against it unless the root `Cargo.toml` is intentionally switched
-back to path dependencies.
+Updated 2026-06-17. The workspace pins all five runtime `vyre*` crates at
+`=0.6.2` from crates.io (root `Cargo.toml`, `[workspace.dependencies]`). That
+release carries the megakernel scan APIs Keyhog imports, including
+`vyre_libs::scan::build_regex_dfa_unanchored` (`engine/megakernel.rs`). The
+`vendor/vyre/` tree is a read-only reference snapshot (`vendor/README.md`, MC-11)
+and is NEVER built; it is `[workspace] exclude`d and is not a dependency target.
 
 ## What keyhog uses today
 
@@ -108,7 +110,7 @@ The SPIR-V backend (Vulkan-only path). Same surface as wgpu.
 ### vyre-driver-cuda
 
 CUDA backend, shipped through the workspace `cuda` feature via
-`vyre-driver-cuda = 0.6.1`.
+`vyre-driver-cuda = 0.6.2`.
 
 ### vyre-driver-reference
 
@@ -256,7 +258,7 @@ Derive + attribute macros: `define_op`, `vyre_ast_registry`,
 `derive_algebraic_laws`, `vyre_pass`, `skip_builder`. Used internally
 by primitive authors.
 
-## v0.5.37 status - everything wired so far
+## v0.5.40 status - everything wired so far
 
 | Wire                                 | Status      | Where                                                  |
 | ------------------------------------ | ----------- | ------------------------------------------------------ |
@@ -270,7 +272,7 @@ by primitive authors.
 | `fuse_programs` decode+scan          | ⏳ pending  | needs source/scanner restructure (entry below)         |
 | `nn::moe` replacing gpu.rs MoE       | ⏳ pending  | parity work against existing weights (entry below)     |
 | `GpuMappedBuffer` zero-copy I/O      | ⏳ pending  | Linux-only + lifetime work (entry below)               |
-| Vyre crate upgrade                   | current     | crates.io latest verified as `0.6.1` on 2026-05-30    |
+| Vyre crate upgrade                   | current     | crates.io latest verified as `0.6.2` on 2026-06-17    |
 
 ## Innovation lane
 
@@ -603,7 +605,7 @@ megakernel via `OpcodeHandler`s for entropy + regex eval.
 ## What blocks "max usage" right now
 
 - **vyre's regex frontend `STATE_CAP = LANES × 32 = 1024` states.**
-  The full 899-detector corpus compiles to an NFA larger than that
+  The full 902-detector corpus compiles to an NFA larger than that
   (ballpark 25k states), so MegaScan currently auto-degrades to the
   literal-set path on the production corpus. Lifted upstream when
   vyre adds either (a) per-subgroup state batching or (b) a
@@ -613,11 +615,15 @@ megakernel via `OpcodeHandler`s for entropy + regex eval.
   setup overhead - slower than literal-set on the full corpus.
   Megakernel fusion (item 8) is the right fix.
 
-- **vyre regex/frontend release cadence.** The workspace is on crates.io
-  `0.6.1`, so publishability is no longer blocked by path dependencies. Future
-  upgrades should go through `scripts/vendor-vyre-gated.sh` only when testing an
-  unreleased source tree; released upgrades should change the workspace pins and
-  run scanner GPU/CPU parity plus source aggregate gates.
+- **vyre regex/frontend release cadence.** crates.io's latest published Vyre
+  release used by Keyhog is `0.6.2`. The workspace resolves the five runtime
+  `vyre*` crates from exact registry pins, and the megakernel scan path imports
+  `vyre_libs::scan::build_regex_dfa_unanchored` from that release. Future
+  upgrades bump the workspace pins, run
+  `python3 scripts/gates/vyre_pin_consistency.py`, then run scanner GPU/CPU
+  parity plus source aggregate gates. Use `scripts/vendor-vyre-gated.sh` only
+  for an explicit refresh of the read-only `vendor/vyre/` reference snapshot;
+  that snapshot is not a build input.
 
 ## Shipping gates
 

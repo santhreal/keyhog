@@ -1,8 +1,9 @@
 # crates.io publishing
 
-> Status (2026-05-29): **DONE.** vyre 0.6.1 and keyhog 0.5.37 are live on crates.io.
-> `cargo install keyhog` source-builds from registry. `install.sh` (signed prebuilt) stays
-> the recommended path for end users; see [README.md](./README.md) for the trade-off.
+> Status (2026-06-17): the Keyhog workspace is pinned to published Vyre `0.6.2`
+> registry crates. `vyre-debug` is not a Keyhog dependency and does not block the
+> Keyhog publish chain. The last public Keyhog cut remains `0.5.37` until the
+> package publish steps below run.
 
 ## What's live on crates.io
 
@@ -14,15 +15,19 @@
 | `keyhog-sources` | 0.5.37 |
 | `keyhog-verifier`| 0.5.37 |
 
-Built against published `vyre 0.6.1` (+ 13 supporting crates: vyre-spec, vyre-foundation,
-vyre-lower, vyre-primitives, vyre-self-substrate, vyre-driver, vyre-emit-naga,
-vyre-runtime, vyre-emit-ptx, vyre-driver-cuda, vyre-driver-wgpu, vyre-harness,
-vyre-libs).
+Current source builds against published `vyre 0.6.2` plus the supporting Vyre
+crates Keyhog needs: `vyre-spec`, `vyre-foundation`, `vyre-lower`,
+`vyre-primitives`, `vyre-self-substrate`, `vyre-driver`, `vyre-emit-naga`,
+`vyre-runtime`, `vyre-emit-ptx`, `vyre-driver-cuda`, `vyre-driver-wgpu`,
+`vyre-harness`, and `vyre-libs`.
 
 ## Publish chain (for the next cut)
 
-The keyhog workspace pins `vyre = "=0.6.1"` via pure-registry references (no `path =`
-override; the `vendor/vyre/` tree stays on disk for offline work). To cut a new release:
+The keyhog workspace pins all five runtime `vyre*` crates (`vyre`, `vyre-libs`,
+`vyre-driver-wgpu`, `vyre-driver-cuda`, `vyre-runtime`) at `=0.6.2` from
+crates.io. The `vendor/vyre/` snapshot is a read-only reference copy
+(`vendor/README.md`, MC-11); nothing in the build resolves through it.
+To cut a new Keyhog release:
 
 1. **Bump the workspace version** in `Cargo.toml` (`[workspace.package] version`).
 2. **Run `cargo publish` in dependency order** (each step waits for crates.io to
@@ -39,17 +44,15 @@ override; the `vendor/vyre/` tree stays on disk for offline work). To cut a new 
 
 ## If vyre bumps minor
 
-If a new vyre (e.g. 0.6.2) is required, publish the full vyre chain from the upstream
-repo first (`libs/performance/matching/vyre/`, 14 crates in topo order rooted at
-`vyre-spec`), then bump the keyhog `vyre*` pins to match, then publish keyhog. The
-detailed vyre publish order is committed in vyre's own changelog.
+If a new Vyre minor is required, publish the needed Vyre chain from the upstream
+repo first, then bump the five Keyhog `vyre*` pins in root `Cargo.toml`, run
+`python3 scripts/gates/vyre_pin_consistency.py`, and publish Keyhog.
 
 ## Rate limits
 
-crates.io enforces ~5 new-crate publishes per ~10-minute burst. The keyhog cut here is
-five new versions of existing crates (lower limit, 30/week, very forgiving). The vyre
-0.6.1 cut tripped the new-crate limit at version 6 (vyre-libs); waited ~9 minutes and
-retried successfully.
+crates.io enforces new-crate burst limits. The Vyre `0.6.2` cut hit those limits
+while publishing optional/support crates; Keyhog only needs the already-published
+runtime crates listed above.
 
 ## Stale `keyhog 0.2.1` on crates.io
 

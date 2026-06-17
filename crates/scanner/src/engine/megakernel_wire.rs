@@ -14,7 +14,7 @@
 
 use vyre_runtime::megakernel::BatchRuleProgram;
 
-use super::megakernel::{MegakernelCatalog, CATALOG_WIRE_MAGIC};
+use super::megakernel::{CATALOG_WIRE_MAGIC, MegakernelCatalog};
 
 /// Wire-decode failures for the cached catalog. Every variant means "stale or
 /// corrupt blob — drop and recompile" (the `cached_load_or_compile` contract),
@@ -56,7 +56,10 @@ impl<'a> WireReader<'a> {
     }
     fn take(&mut self, n: usize) -> Result<&'a [u8], CatalogWireError> {
         let end = self.pos.checked_add(n).ok_or(CatalogWireError::Truncated)?;
-        let s = self.buf.get(self.pos..end).ok_or(CatalogWireError::Truncated)?;
+        let s = self
+            .buf
+            .get(self.pos..end)
+            .ok_or(CatalogWireError::Truncated)?;
         self.pos = end;
         Ok(s)
     }
@@ -153,6 +156,7 @@ impl vyre_libs::scan::MatchEngineCache for MegakernelCatalog {
             rule_to_detector,
             host_detectors,
             dispatcher: std::sync::Mutex::new(None),
+            resident_batch: std::sync::Mutex::new(None),
         })
     }
 }
