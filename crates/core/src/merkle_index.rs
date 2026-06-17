@@ -36,54 +36,20 @@
 //! and what its content fingerprint is, which is why `--lockdown`
 //! refuses to load or write the cache at all.
 
-use std::collections::hash_map::DefaultHasher;
-use std::collections::HashMap;
+use std::collections::{hash_map::DefaultHasher, HashMap};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
 use parking_lot::RwLock;
-use serde::{Deserialize, Serialize};
-
-use crate::hex_encode;
-use crate::merkle_spec_hash::hex_to_array;
 
 pub use crate::merkle_spec_hash::compute_spec_hash;
 
-// Stale-tmp-file hygiene is a filesystem-cleanup responsibility orthogonal to
-// indexing; it lives in its own module and the index only calls into the sweep.
+// Disk persistence and stale-tmp hygiene are separate filesystem responsibilities;
+// the root module owns only the live index and calls those owners through methods.
+mod storage;
 mod tmp_hygiene;
-use tmp_hygiene::sweep_stale_tmp_files;
 
-/// On-disk per-entry record (v2). The `mtime_ns` + `size` pair is the
-/// fast-path key: a successful match short-circuits the BLAKE3 read
-/// entirely. `hash` remains as a paranoid-mode verifier and as the
-/// authoritative content fingerprint when mtime alone changed.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct EntryV2 {
-    /// `mtime` in nanoseconds since UNIX epoch. Stored as `u64` so we
-    /// don't lose ext4/NTFS sub-second precision; older filesystems
-    /// (FAT32 with 2-second resolution) just round-trip the rounded value.
-    mtime_ns: u64,
-    /// File size in bytes from `fs::metadata`.
-    size: u64,
-    /// BLAKE3 hex digest of the chunk content.
-    hash: String,
-}
-
-/// Top-level on-disk schema.
-#[derive(Debug, Serialize, Deserialize)]
-struct OnDisk {
-    /// Schema version. Bumped on incompatible changes.
-    version: u32,
-    /// Hex BLAKE3 of the canonical detector-spec digest. Optional for
-    /// schemas written before spec hashing was added; loaders treating
-    /// `None` as "trust the cache" stay back-compatible.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    spec_hash: Option<String>,
-    /// `path → entry`. Stored as hex strings (not raw bytes) so a human
-    /// can `git diff` the file and see which entries changed.
-    entries: HashMap<String, EntryV2>,
-}
+pub(crate) use storage::default_cache_path;
 
 const SCHEMA_VERSION: u32 = 2;
 
@@ -182,236 +148,6 @@ impl MerkleIndex {
     /// The configured maximum number of retained entries (`0` = unbounded).
     pub(crate) fn max_entries(&self) -> usize {
         self.max_entries
-    }
-
-    /// Load the index from `path` without spec-hash gating. Returns an
-    /// empty index when the file doesn't exist (first run) or fails to
-    /// parse (treat as cold start - safer than poisoning the cache from
-    /// a corrupted artifact). v1 caches are intentionally rejected as
-    /// cold-start because they lack metadata fields.
-    pub(crate) fn load(path: &Path) -> Self {
-        sweep_stale_tmp_files(path);
-        Self::load_with_spec_inner(path, None)
-    }
-
-    /// Load the index, gated on a matching detector-spec hash. When the
-    /// stored `spec_hash` differs from `expected_spec_hash`, the cache is
-    /// treated as cold-start. This is the correctness gate that prevents
-    /// "added a detector → unchanged file silently skipped → new
-    /// detector never runs against it" from ever happening.
-    pub fn load_with_spec(path: &Path, expected_spec_hash: &[u8; 32]) -> Self {
-        sweep_stale_tmp_files(path);
-        Self::load_with_spec_inner(path, Some(expected_spec_hash))
-    }
-
-    fn load_with_spec_inner(path: &Path, expected_spec_hash: Option<&[u8; 32]>) -> Self {
-        let bytes = match std::fs::read(path) {
-            Ok(b) => b,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Self::empty(),
-            Err(e) => {
-                tracing::warn!(
-                    cache = %path.display(),
-                    error = %e,
-                    "merkle index file read failed; treating as cold start"
-                );
-                return Self::empty();
-            }
-        };
-        let on_disk: OnDisk = match serde_json::from_slice(&bytes) {
-            Ok(d) => d,
-            Err(error) => {
-                tracing::warn!(
-                    cache = %path.display(),
-                    %error,
-                    "merkle index parse failed; treating as cold start"
-                );
-                return Self::empty();
-            }
-        };
-        if on_disk.version != SCHEMA_VERSION {
-            tracing::warn!(
-                cache = %path.display(),
-                version = on_disk.version,
-                expected = SCHEMA_VERSION,
-                "merkle index schema mismatch; treating as cold start"
-            );
-            return Self::empty();
-        }
-        if let Some(expected) = expected_spec_hash {
-            let stored_match = on_disk
-                .spec_hash
-                .as_deref()
-                .and_then(hex_to_array)
-                .is_some_and(|stored| &stored == expected);
-            if !stored_match {
-                tracing::info!(
-                    cache = %path.display(),
-                    "detector spec changed since last scan; cache invalidated"
-                );
-                return Self::empty();
-            }
-        }
-        let entries: HashMap<PathBuf, CacheEntry> = on_disk
-            .entries
-            .into_iter()
-            .filter_map(|(p, e)| {
-                hex_to_array(&e.hash).map(|hash| {
-                    (
-                        PathBuf::from(p),
-                        CacheEntry {
-                            mtime_ns: e.mtime_ns,
-                            size: e.size,
-                            hash,
-                        },
-                    )
-                })
-            })
-            .collect();
-        tracing::info!(
-            cache = %path.display(),
-            count = entries.len(),
-            "merkle index loaded"
-        );
-        let idx = Self::empty();
-        // Respect the entry cap even on load: a previously-saved index
-        // larger than the current cap (e.g. cap was lowered, or the file
-        // was produced by an unbounded build) must not blow the working
-        // set on read. Insert up to the cap, then warn-and-stop. The
-        // dropped tail of paths is simply re-scanned next run.
-        for (p, e) in entries {
-            if !idx.try_insert(p, e) {
-                break;
-            }
-        }
-        idx
-    }
-
-    /// Persist the index without binding it to a detector-spec hash. Old
-    /// callers stay on this path; the next-cycle load won't enforce a
-    /// spec match. Use [`Self::save_with_spec`] for the safe modern path.
-    pub(crate) fn save(&self, path: &Path) -> std::io::Result<()> {
-        self.save_inner(path, None)
-    }
-
-    /// Persist the index *with* the given detector-spec hash so a future
-    /// load can detect detector drift and invalidate cleanly.
-    pub fn save_with_spec(&self, path: &Path, spec_hash: &[u8; 32]) -> std::io::Result<()> {
-        self.save_inner(path, Some(spec_hash))
-    }
-
-    fn save_inner(&self, path: &Path, spec_hash: Option<&[u8; 32]>) -> std::io::Result<()> {
-        // Concurrency note: two `keyhog scan --incremental` processes
-        // running against overlapping paths will both want to write
-        // `merkle.idx`. The tmp-file uses `std::process::id()` so
-        // there's no tmp-name collision, but the final `rename` is
-        // last-writer-wins.
-        //
-        // To minimise data loss on concurrent saves, READ the
-        // current on-disk entries first and merge our in-memory
-        // state on top - entries in memory take precedence (we just
-        // observed those files in this scan), but disk entries that
-        // we DIDN'T touch are preserved. This narrows the data-loss
-        // window from "entire scan" to "between read-and-rename"
-        // (~milliseconds) instead of "between scan-start and save".
-        //
-        // A truly race-free solution needs an OS-level file lock
-        // (`fcntl(F_SETLK)` / `LockFileEx`); that would block the
-        // second writer entirely. We accept the small remaining
-        // race as a correctness/perf trade - losing a few entries
-        // means an extra rescan, not a missed leak.
-        let mut merged = HashMap::<PathBuf, CacheEntry>::new();
-        // Read existing on-disk entries first. Use the SAME spec
-        // hash we're about to write - if disk was written under a
-        // different spec, those entries are stale (a future load
-        // would invalidate them) and we drop them now. If spec
-        // matches (or this is the no-spec save path), preserve.
-        // Format-mismatch / corrupted-file paths already log inside
-        // `load`; ignore the error here so a bad on-disk state
-        // doesn't stop us writing a fresh one.
-        let on_disk_now = match spec_hash {
-            Some(hash) => Self::load_with_spec(path, hash),
-            None => Self::load(path),
-        };
-        for shard in &on_disk_now.shards {
-            merged.extend(shard.read().iter().map(|(p, e)| (p.clone(), *e)));
-        }
-        // In-memory entries layer on top - last-write-wins by path.
-        // These are the paths we observed THIS scan, so they're the most
-        // valuable; insert them after the on-disk set so they win, and
-        // remember the set so the cap step below keeps them first.
-        let mut in_memory_paths = std::collections::HashSet::<PathBuf>::new();
-        for shard in &self.shards {
-            for (p, e) in shard.read().iter() {
-                merged.insert(p.clone(), *e);
-                in_memory_paths.insert(p.clone());
-            }
-        }
-        // Enforce the entry cap on the persisted set too. Both inputs are
-        // already cap-bounded individually (load truncates, in-memory
-        // `record` truncates), but their UNION can be up to ~2x the cap.
-        // Truncate, preferring paths observed this scan (in-memory) so a
-        // capped save keeps the freshest fingerprints. Without this, a
-        // monorepo whose on-disk and in-memory path sets barely overlap
-        // could write a file ~2x the budget, which the next load would
-        // then truncate anyway - so cap it here for an honest on-disk size.
-        if self.max_entries != 0 && merged.len() > self.max_entries {
-            let mut kept = HashMap::<PathBuf, CacheEntry>::with_capacity(self.max_entries);
-            // Freshest first.
-            for p in &in_memory_paths {
-                if kept.len() >= self.max_entries {
-                    break;
-                }
-                if let Some(e) = merged.get(p) {
-                    kept.insert(p.clone(), *e);
-                }
-            }
-            // Fill remaining budget from carried-over on-disk paths.
-            for (p, e) in &merged {
-                if kept.len() >= self.max_entries {
-                    break;
-                }
-                kept.entry(p.clone()).or_insert(*e);
-            }
-            merged = kept;
-        }
-        let entries: HashMap<String, EntryV2> = merged
-            .iter()
-            .map(|(p, e)| {
-                (
-                    p.display().to_string(),
-                    EntryV2 {
-                        mtime_ns: e.mtime_ns,
-                        size: e.size,
-                        hash: hex_encode(&e.hash),
-                    },
-                )
-            })
-            .collect();
-        let on_disk = OnDisk {
-            version: SCHEMA_VERSION,
-            spec_hash: spec_hash.map(hex_encode),
-            entries,
-        };
-        let serialized = serde_json::to_vec_pretty(&on_disk)
-            .map_err(|e| std::io::Error::other(format!("merkle index encode: {e}")))?;
-        // `Path::parent()` is `None` only for a root/empty path, where the CWD
-        // (".") is the correct directory to create the temp file in.
-        let parent = path.parent().unwrap_or_else(|| std::path::Path::new(".")); // LAW10: deterministic default, not a swallowed failure
-        std::fs::create_dir_all(parent)?;
-        // `NamedTempFile::new_in` creates a randomly-named file in
-        // the same directory as the final target, then `persist`
-        // atomic-renames it. If we panic between create and persist,
-        // NamedTempFile's Drop deletes the tmp file - earlier code
-        // used `path.with_extension(format!("tmp.{pid}"))` and
-        // leaked the tmp on panic. A SIGTERM/SIGKILL still leaks
-        // (Drop doesn't run); the only complete fix for that is a
-        // startup-time stale-tmp sweep, which we accept as a
-        // smaller residual hygiene issue.
-        let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-        std::io::Write::write_all(&mut tmp, &serialized)?;
-        tmp.as_file().sync_all()?;
-        tmp.persist(path).map_err(|e| e.error)?;
-        Ok(())
     }
 
     /// Hash the given content with BLAKE3 (32-byte output).
@@ -583,13 +319,6 @@ impl Default for MerkleIndex {
     fn default() -> Self {
         Self::empty()
     }
-}
-
-/// Default index location: `$XDG_CACHE_HOME/keyhog/merkle.idx` or
-/// `~/.cache/keyhog/merkle.idx` on Linux, `~/Library/Caches/keyhog/...`
-/// on macOS.
-pub(crate) fn default_cache_path() -> Option<PathBuf> {
-    dirs::cache_dir().map(|d| d.join("keyhog").join("merkle.idx"))
 }
 
 #[doc(hidden)]
