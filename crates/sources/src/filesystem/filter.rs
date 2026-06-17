@@ -1,125 +1,191 @@
 use codewalk::WalkConfig;
-use std::collections::HashSet;
-use std::sync::OnceLock;
+use std::collections::{BTreeSet, HashSet};
+use std::sync::LazyLock;
 
-static SKIP_EXTENSIONS_SET: OnceLock<HashSet<&'static str>> = OnceLock::new();
+static DEFAULT_EXCLUDES: LazyLock<DefaultExcludeRules> = LazyLock::new(|| {
+    match parse_default_excludes(include_str!("../../../../rules/default_excludes.toml")) {
+        Ok(rules) => rules,
+        Err(error) => {
+            panic!(
+                "rules/default_excludes.toml is invalid: {error}. Fix the bundled Tier-B \
+                 default-exclude policy; refusing to run with unknown source exclusion truth."
+            )
+        }
+    }
+});
+
+static SKIP_EXTENSIONS_SET: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    default_excludes()
+        .extensions
+        .iter()
+        .map(String::as_str)
+        .collect()
+});
 
 pub(super) fn skip_extensions() -> &'static HashSet<&'static str> {
-    SKIP_EXTENSIONS_SET.get_or_init(|| SKIP_EXTENSIONS.iter().copied().collect())
+    &SKIP_EXTENSIONS_SET
 }
 
-/// File extensions to skip (binary, images, etc.).
-const SKIP_EXTENSIONS: &[&str] = &[
-    // Images
-    "png",
-    "jpg",
-    "jpeg",
-    "gif",
-    "bmp",
-    "ico",
-    "cur",
-    "icns",
-    "webp",
-    "svg",
-    // Audio/Video
-    "mp3",
-    "mp4",
-    "avi",
-    "mov",
-    "mkv",
-    "flac",
-    "wav",
-    "ogg",
-    "webm",
-    // Archives (binary). `tar` / `gz` / `zst` / `lz4` / `sz` / `tgz` are NOT
-    // skipped - they are handled by the unpack / streaming-decompression path
-    // in `extract::process_entry`. `tar` routes to the per-entry tar-unpack
-    // branch (mirroring the zip branch): each archived file becomes its own
-    // chunk with source_type `filesystem/archive` and path `<archive>//<entry>`,
-    // so a secret committed inside a `.tar` (docker layer export, helm chart,
-    // source tarball) is found exactly as it is inside a `.zip`. `tgz`
-    // (gzip(tar)) is decompressed then untarred per-entry. Dropping these from
-    // the skip list is what lets them reach the decoder branch. Earlier
-    // versions skipped them here, silently bypassing extraction - a recall bug.
-    "bz2",
-    "xz",
-    "rar",
-    "7z",
-    // NOTE: the zip extension is deliberately NOT skipped here. The per-file
-    // read gate below (`if skip_extensions().contains(ext) { return }`) runs
-    // BEFORE the archive-unpack branch (which matches zip/apk/ipa/crx/jar), so
-    // listing the zip extension here made a .zip return empty before
-    // extraction ever ran - a recall bug where a secret in a committed .zip
-    // was silently missed (.jar, in neither list, worked on identical bytes).
-    // Dogfood 2026-05-29. The 7z/rar extensions stay skipped: no unpack
-    // branch handles them yet.
-    // Native binaries
-    "exe",
-    "dll",
-    "so",
-    "dylib",
-    "o",
-    "a",
-    "lib",
-    "obj",
-    // Compiled/bytecode
-    "class",
-    "wasm",
-    "pyc",
-    "pyo",
-    "elc",
-    "beam",
-    // Documents (binary formats)
-    "pdf",
-    "doc",
-    "docx",
-    "xls",
-    "xlsx",
-    "ppt",
-    "pptx",
-    // Fonts
-    "ttf",
-    "otf",
-    "woff",
-    "woff2",
-    "eot",
-    // Database files
-    "db",
-    "sqlite",
-    "sqlite3",
-    // Disk images / firmware
-    "iso",
-    "img",
-    "bin",
-    "rom",
-    // Serialized data (not human-authored)
-    "pickle",
-    "npy",
-    "npz",
-    "onnx",
-    "pb",
-    "tflite",
-    "pt",
-    "safetensors",
-];
+fn default_excludes() -> &'static DefaultExcludeRules {
+    &DEFAULT_EXCLUDES
+}
 
-/// Directories to skip entirely.
-const SKIP_DIRS: &[&str] = &[
-    ".git",
-    "node_modules",
-    "target",
-    "__pycache__",
-    ".venv",
-    "venv",
-    ".tox",
-    "dist",
-    "build",
-    ".next",
-    ".nuxt",
-    "vendor",
-    "swagger-ui",
-    "swagger",
-];
+#[derive(Debug)]
+struct DefaultExcludeRules {
+    extensions: Vec<String>,
+    dirs: Vec<String>,
+    suffixes: Vec<String>,
+    filenames: Vec<String>,
+    filename_prefix_suffixes: Vec<PrefixSuffixRule>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct DefaultExcludeFile {
+    default_excludes: DefaultExcludeSection,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct DefaultExcludeSection {
+    extensions: Vec<String>,
+    dirs: Vec<String>,
+    suffixes: Vec<String>,
+    filenames: Vec<String>,
+    filename_prefix_suffixes: Vec<PrefixSuffixRule>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct PrefixSuffixRule {
+    prefix: String,
+    suffix: String,
+}
+
+fn parse_default_excludes(raw: &str) -> Result<DefaultExcludeRules, String> {
+    let parsed: DefaultExcludeFile =
+        toml::from_str(raw).map_err(|error| format!("invalid default_excludes.toml: {error}"))?;
+    let section = parsed.default_excludes;
+    let extensions =
+        normalize_rule_list("extensions", section.extensions, RuleListKind::Extension)?;
+    let dirs = normalize_rule_list("dirs", section.dirs, RuleListKind::PathSegment)?;
+    let suffixes = normalize_rule_list("suffixes", section.suffixes, RuleListKind::Suffix)?;
+    let filenames = normalize_rule_list("filenames", section.filenames, RuleListKind::Filename)?;
+    let filename_prefix_suffixes = normalize_prefix_suffix_rules(section.filename_prefix_suffixes)?;
+
+    Ok(DefaultExcludeRules {
+        extensions,
+        dirs,
+        suffixes,
+        filenames,
+        filename_prefix_suffixes,
+    })
+}
+
+#[derive(Clone, Copy)]
+enum RuleListKind {
+    Extension,
+    PathSegment,
+    Suffix,
+    Filename,
+}
+
+fn normalize_rule_list(
+    name: &str,
+    values: Vec<String>,
+    kind: RuleListKind,
+) -> Result<Vec<String>, String> {
+    if values.is_empty() {
+        return Err(format!(
+            "default_excludes.{name} must contain at least one entry"
+        ));
+    }
+
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::with_capacity(values.len());
+    for raw in values {
+        let value = raw.trim();
+        validate_rule_value(name, value, kind)?;
+        let value = value.to_string();
+        if !seen.insert(value.clone()) {
+            return Err(format!("duplicate default_excludes.{name} entry {value:?}"));
+        }
+        out.push(value);
+    }
+    Ok(out)
+}
+
+fn validate_rule_value(name: &str, value: &str, kind: RuleListKind) -> Result<(), String> {
+    if value.is_empty() {
+        return Err(format!("default_excludes.{name} entries must not be empty"));
+    }
+    if value != value.to_ascii_lowercase() {
+        return Err(format!(
+            "default_excludes.{name} entry {value:?} must be lowercase ASCII"
+        ));
+    }
+    if value.chars().any(char::is_control) {
+        return Err(format!(
+            "default_excludes.{name} entry {value:?} contains a control character"
+        ));
+    }
+    match kind {
+        RuleListKind::Extension => {
+            if value.starts_with('.') || value.contains('/') || value.contains('\\') {
+                return Err(format!(
+                    "default_excludes.extensions entry {value:?} must be an extension without dot or path separators"
+                ));
+            }
+        }
+        RuleListKind::PathSegment | RuleListKind::Filename => {
+            if value.contains('/') || value.contains('\\') {
+                return Err(format!(
+                    "default_excludes.{name} entry {value:?} must not contain path separators"
+                ));
+            }
+        }
+        RuleListKind::Suffix => {
+            if !value.starts_with('.') || value.contains('/') || value.contains('\\') {
+                return Err(format!(
+                    "default_excludes.suffixes entry {value:?} must start with dot and contain no path separators"
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn normalize_prefix_suffix_rules(
+    rules: Vec<PrefixSuffixRule>,
+) -> Result<Vec<PrefixSuffixRule>, String> {
+    if rules.is_empty() {
+        return Err(
+            "default_excludes.filename_prefix_suffixes must contain at least one entry".to_string(),
+        );
+    }
+
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::with_capacity(rules.len());
+    for mut rule in rules {
+        rule.prefix = rule.prefix.trim().to_string();
+        rule.suffix = rule.suffix.trim().to_string();
+        validate_rule_value(
+            "filename_prefix_suffixes.prefix",
+            &rule.prefix,
+            RuleListKind::Filename,
+        )?;
+        validate_rule_value(
+            "filename_prefix_suffixes.suffix",
+            &rule.suffix,
+            RuleListKind::Suffix,
+        )?;
+        let key = (rule.prefix.clone(), rule.suffix.clone());
+        if !seen.insert(key.clone()) {
+            return Err(format!(
+                "duplicate default_excludes.filename_prefix_suffixes entry {key:?}"
+            ));
+        }
+        out.push(rule);
+    }
+    Ok(out)
+}
 
 /// Check if a path matches the built-in default exclusion patterns.
 /// Mirrors the patterns in `crates/cli/src/sources.rs`.
@@ -131,41 +197,25 @@ const SKIP_DIRS: &[&str] = &[
 /// file on the walker hot path and (b) silently failed to exclude
 /// `\node_modules\`, `\vendor\`, etc. on Windows checkouts.
 pub(super) fn is_default_excluded(path: &str) -> bool {
+    let rules = default_excludes();
     let bytes = path.as_bytes();
     let ends_ci = |suffix: &[u8]| -> bool {
         bytes.len() >= suffix.len()
             && bytes[bytes.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
     };
 
-    const SUFFIXES: &[&[u8]] = &[
-        b".min.js",
-        b".min.css",
-        b".bak",
-        b".swp",
-        b".tmp",
-        b".map",
-        b".cache",
-    ];
-    if SUFFIXES.iter().any(|s| ends_ci(s)) {
+    if rules
+        .suffixes
+        .iter()
+        .any(|suffix| ends_ci(suffix.as_bytes()))
+    {
         return true;
     }
 
-    const SKIP_SEGMENTS: &[&[u8]] = &[
-        b"node_modules",
-        b".git",
-        b"__pycache__",
-        b"vendor",
-        b"dist",
-        b"build",
-        b"out",
-    ];
     let mut filename: &[u8] = bytes;
     for segment in path.split(['/', '\\']) {
         let seg_bytes = segment.as_bytes();
-        if SKIP_SEGMENTS
-            .iter()
-            .any(|skip| seg_bytes.eq_ignore_ascii_case(skip))
-        {
+        if is_default_excluded_segment(seg_bytes) {
             return true;
         }
         if !seg_bytes.is_empty() {
@@ -173,36 +223,36 @@ pub(super) fn is_default_excluded(path: &str) -> bool {
         }
     }
 
-    const FILENAMES: &[&[u8]] = &[
-        b"package-lock.json",
-        b"yarn.lock",
-        b"pnpm-lock.yaml",
-        b"cache.json",
-        b"cargo.lock",
-        b"go.sum",
-        b"gemfile.lock",
-        b"angular.json",
-    ];
-    if FILENAMES
+    if rules
+        .filenames
         .iter()
-        .any(|name| filename.eq_ignore_ascii_case(name))
+        .any(|name| filename.eq_ignore_ascii_case(name.as_bytes()))
     {
         return true;
     }
 
-    let tsc = b"tsconfig";
-    let json = b".json";
-    filename.len() >= tsc.len() + json.len()
-        && filename[..tsc.len()].eq_ignore_ascii_case(tsc)
-        && filename[filename.len() - json.len()..].eq_ignore_ascii_case(json)
+    rules.filename_prefix_suffixes.iter().any(|rule| {
+        let prefix = rule.prefix.as_bytes();
+        let suffix = rule.suffix.as_bytes();
+        filename.len() >= prefix.len() + suffix.len()
+            && filename[..prefix.len()].eq_ignore_ascii_case(prefix)
+            && filename[filename.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
+    })
+}
+
+fn is_default_excluded_segment(segment: &[u8]) -> bool {
+    default_excludes()
+        .dirs
+        .iter()
+        .any(|skip| segment.eq_ignore_ascii_case(skip.as_bytes()))
 }
 
 pub(super) fn walker_config(max_file_size: u64, ignore_paths: &[String]) -> WalkConfig {
     let mut exclude_extensions = HashSet::new();
-    exclude_extensions.extend(SKIP_EXTENSIONS.iter().map(|ext| (*ext).to_string()));
+    exclude_extensions.extend(default_excludes().extensions.iter().cloned());
 
     let mut exclude_dirs = HashSet::new();
-    exclude_dirs.extend(SKIP_DIRS.iter().map(|dir| (*dir).to_string()));
+    exclude_dirs.extend(default_excludes().dirs.iter().cloned());
 
     let ignore_overrides = ignore_paths
         .iter()
@@ -222,7 +272,7 @@ pub(super) fn walker_config(max_file_size: u64, ignore_paths: &[String]) -> Walk
     // binary-detect read, so disabling it adds ~4 KiB of extra read
     // per over-size file - negligible at the scale where users hit
     // the cap.
-    let _ = max_file_size;
+    let _ = max_file_size; // LAW10: unused-binding marker; no runtime effect, not a fallback
 
     WalkConfig::default()
         .max_file_size(0)

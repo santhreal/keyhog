@@ -80,7 +80,7 @@
 use std::path::PathBuf;
 use std::process::Command;
 
-const N_FILES: usize = 2000;
+const N_FILES: usize = 4000;
 const RUNS: usize = 3;
 
 /// Hard ceiling on `read(2)` syscalls per scanned file. Current ~6.8; an

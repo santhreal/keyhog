@@ -44,7 +44,7 @@ pub(in crate::filesystem) fn read_file_windowed_mmap(
     overlap: usize,
 ) -> Option<Vec<FileWindow>> {
     debug_assert!(window_size > overlap, "window must exceed overlap");
-    let file = open_file_safe(path).ok()?;
+    let file = open_file_safe(path).ok()?; // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
 
     // Post-open re-stat: defeat the walker-stat-then-grow race. See
     // read_file_mmap for the full rationale + MMAP_TOCTOU_SANITY_CAP_BYTES
@@ -81,7 +81,8 @@ pub(in crate::filesystem) fn read_file_windowed_mmap(
     // (the windows we hand back are owned `String` copies).
     let mmap = match unsafe { MmapOptions::new().map(&file) } {
         Ok(m) => m,
-        Err(_) => {
+        Err(_error) => {
+            // Law 10: mmap/read failure => release lock + buffered read path / loud-skip counter; recall-preserving
             #[cfg(unix)]
             {
                 use std::os::unix::io::AsRawFd;

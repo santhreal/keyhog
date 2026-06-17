@@ -9,7 +9,11 @@ fn git_corrupt_index_missing_for_worktree_rejected() {
     let git_dir = dir.path().join(".git");
     std::fs::create_dir_all(git_dir.join("refs/heads")).expect("refs");
     std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").expect("head");
-    std::fs::write(git_dir.join("refs/heads/main"), "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n").expect("ref");
+    std::fs::write(
+        git_dir.join("refs/heads/main"),
+        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n",
+    )
+    .expect("ref");
     std::fs::write(dir.path().join("tracked.txt"), "x\n").expect("tracked");
 
     let err = GitSource::new(dir.path().to_path_buf())

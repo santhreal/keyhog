@@ -33,7 +33,8 @@ use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 
 mod ssrf;
 pub(crate) use ssrf::{
-    build_web_client, is_disallowed_ip, is_disallowed_web_host, redact_url, resolve_and_screen,
+    build_web_client, is_autoroute_loopback_calibration_url, is_disallowed_ip,
+    is_disallowed_web_host, redact_url, resolve_and_screen,
 };
 
 /// Minimum printable string length for WASM binary string extraction.
@@ -78,21 +79,6 @@ impl WebSource {
         }
     }
 
-    /// Create a web source from a single URL.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use keyhog_sources::WebSource;
-    /// use keyhog_core::Source;
-    ///
-    /// let source = WebSource::from_url("https://example.com/app.js");
-    /// assert_eq!(source.name(), "web");
-    /// ```
-    pub fn from_url(url: &str) -> Self {
-        Self::new(vec![url.to_string()])
-    }
-
     /// Override the default HTTP policy (proxy, insecure-TLS,
     /// timeout). Construct from `HttpClientConfig` directly when the
     /// caller already has CLI-derived flags to thread through.
@@ -130,7 +116,7 @@ impl WebSource {
             // missing surface. Without it,
             // `WebSource::new(vec!["http://169.254.169.254/latest/meta-data/iam/..."])`
             // would fetch the cloud metadata endpoint and extract IAM creds.
-            if is_disallowed_web_host(url) {
+            if is_disallowed_web_host(url) && !is_autoroute_loopback_calibration_url(url) {
                 let safe_url = redact_url(url);
                 results.push(Err(SourceError::Other(format!(
                     "refusing to fetch {safe_url}: host resolves to a private / \
@@ -166,12 +152,11 @@ impl Source for WebSource {
         // dropping its internal runtime inside an async context aborts the
         // process. `fetch_all` is eager, so run it on a scoped std thread that
         // carries no ambient tokio runtime.
-        let all = std::thread::scope(|s| {
-            s.spawn(|| self.fetch_all()).join().unwrap_or_else(|_| {
-                vec![Err(SourceError::Other(
-                    "web fetch thread panicked".to_string(),
-                ))]
-            })
+        let all = std::thread::scope(|s| match s.spawn(|| self.fetch_all()).join() {
+            Ok(result) => result,
+            Err(_panic) => vec![Err(SourceError::Other(
+                "web fetch thread panicked".to_string(),
+            ))],
         });
         Box::new(all.into_iter())
     }
@@ -196,7 +181,7 @@ fn fetch_url(client: &reqwest::blocking::Client, url: &str) -> Vec<Result<Chunk,
     // would fetch the cloud metadata endpoint and extract IAM credentials.
     // The redirect-target and DNS-rebinding bypasses of this gate are closed
     // in `build_web_client`. Kimi sources-audit web-source SSRF finding.
-    if is_disallowed_web_host(url) {
+    if is_disallowed_web_host(url) && !is_autoroute_loopback_calibration_url(url) {
         let safe_url = redact_url(url);
         return vec![Err(SourceError::Other(format!(
             "refusing to fetch {safe_url}: host resolves to a private / \
@@ -218,8 +203,11 @@ fn fetch_url(client: &reqwest::blocking::Client, url: &str) -> Vec<Result<Chunk,
     let status = resp.status().as_u16();
     if status != 200 {
         let safe_url = redact_url(url);
-        tracing::warn!(url = %safe_url, status, "non-200 response, skipping");
-        return Vec::new();
+        tracing::warn!(url = %safe_url, status, "non-200 response; URL body was NOT scanned");
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        return vec![Err(SourceError::Other(format!(
+            "failed to fetch {safe_url}: HTTP status {status}; response body was not scanned"
+        )))];
     }
 
     // Route by URL extension
@@ -248,7 +236,8 @@ fn handle_js(resp: reqwest::blocking::Response, url: &str) -> Vec<Result<Chunk, 
                 date: None,
                 mtime_ns: None,
                 size_bytes: None,
-                decoded_span: None,            },
+                decoded_span: None,
+            },
         })],
         Err(e) => vec![Err(e)],
     }
@@ -282,14 +271,15 @@ fn handle_sourcemap(
                     date: None,
                     mtime_ns: None,
                     size_bytes: None,
-                    decoded_span: None,                },
+                    decoded_span: None,
+                },
             })];
         }
     };
 
     let sources: Vec<String> = map["sources"]
         .as_array()
-        .unwrap_or(&vec![])
+        .unwrap_or(&vec![]) // LAW10: a sourcemap with no `sources` array yields empty NAMES; the loop below still scans every `sourcesContent` entry (named `source_{i}`), so no code is dropped
         .iter()
         .filter_map(|v| v.as_str().map(String::from))
         .collect();
@@ -297,7 +287,7 @@ fn handle_sourcemap(
     let contents: Vec<Option<String>> = map["sourcesContent"]
         .as_array()
         .map(|arr| arr.iter().map(|v| v.as_str().map(String::from)).collect())
-        .unwrap_or_default();
+        .unwrap_or_default(); // LAW10: missing/non-string field => empty/placeholder; recall-safe
 
     let mut chunks = Vec::new();
 
@@ -309,7 +299,7 @@ fn handle_sourcemap(
             let source_name = sources
                 .get(i)
                 .cloned()
-                .unwrap_or_else(|| format!("source_{i}"));
+                .unwrap_or_else(|| format!("source_{i}")); // LAW10: synthetic label for an unnamed sourcemap entry; the content is still scanned
             chunks.push(Ok(Chunk {
                 data: code.clone().into(),
                 metadata: ChunkMetadata {
@@ -322,7 +312,8 @@ fn handle_sourcemap(
                     date: None,
                     mtime_ns: None,
                     size_bytes: None,
-                    decoded_span: None,                },
+                    decoded_span: None,
+                },
             }));
         }
     }
@@ -341,7 +332,8 @@ fn handle_sourcemap(
                 date: None,
                 mtime_ns: None,
                 size_bytes: None,
-                decoded_span: None,            },
+                decoded_span: None,
+            },
         }));
     }
 
@@ -357,8 +349,12 @@ fn handle_wasm(resp: reqwest::blocking::Response, url: &str) -> Vec<Result<Chunk
 
     // Verify WASM magic bytes
     if bytes.len() < 4 || &bytes[..4] != WASM_MAGIC {
-        tracing::warn!(url = %redact_url(url), "not a valid WASM file (wrong magic bytes)");
-        return Vec::new();
+        let safe_url = redact_url(url);
+        tracing::warn!(url = %safe_url, "not a valid WASM file; body was NOT scanned as WebAssembly strings");
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        return vec![Err(SourceError::Other(format!(
+            "failed to scan {safe_url}: URL ended with .wasm but response did not start with WASM magic bytes"
+        )))];
     }
 
     let strings = crate::strings::extract_printable_strings(&bytes, MIN_WASM_STRING_LEN);
@@ -378,7 +374,8 @@ fn handle_wasm(resp: reqwest::blocking::Response, url: &str) -> Vec<Result<Chunk
             date: None,
             mtime_ns: None,
             size_bytes: None,
-            decoded_span: None,        },
+            decoded_span: None,
+        },
     })]
 }
 
@@ -391,7 +388,10 @@ fn handle_wasm(resp: reqwest::blocking::Response, url: &str) -> Vec<Result<Chunk
 /// web.rs:287-301`.
 fn read_text_response(resp: reqwest::blocking::Response) -> Result<String, SourceError> {
     let bytes = read_bytes_response(resp)?;
-    String::from_utf8(bytes).map_err(|e| SourceError::Other(format!("non-UTF-8 response: {e}")))
+    String::from_utf8(bytes).map_err(|e| {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        SourceError::Other(format!("non-UTF-8 response: {e}"))
+    })
 }
 
 /// Read an HTTP response body as bytes, capping at `MAX_RESPONSE_BYTES`
@@ -403,6 +403,7 @@ fn read_bytes_response(resp: reqwest::blocking::Response) -> Result<Vec<u8>, Sou
 
     if let Some(len) = resp.content_length() {
         if len as usize > MAX_RESPONSE_BYTES {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             return Err(SourceError::Other(format!(
                 "response from {safe_url} declares {len} bytes (> {} MB limit)",
                 MAX_RESPONSE_BYTES / (1024 * 1024)
@@ -413,10 +414,12 @@ fn read_bytes_response(resp: reqwest::blocking::Response) -> Result<Vec<u8>, Sou
     // Stream into a bounded buffer; abort the moment we exceed the cap.
     let mut buf = Vec::with_capacity(MAX_RESPONSE_BYTES.min(64 * 1024));
     let mut taken = resp.take(MAX_RESPONSE_BYTES as u64 + 1);
-    taken
-        .read_to_end(&mut buf)
-        .map_err(|e| SourceError::Other(format!("failed to read bytes from {safe_url}: {e}")))?;
+    taken.read_to_end(&mut buf).map_err(|e| {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        SourceError::Other(format!("failed to read bytes from {safe_url}: {e}"))
+    })?;
     if buf.len() > MAX_RESPONSE_BYTES {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         return Err(SourceError::Other(format!(
             "response from {safe_url} exceeds {} MB limit",
             MAX_RESPONSE_BYTES / (1024 * 1024)

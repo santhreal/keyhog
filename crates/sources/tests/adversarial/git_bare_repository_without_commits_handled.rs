@@ -11,9 +11,7 @@ fn git_bare_repository_without_commits_handled() {
     std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").expect("head");
     std::fs::create_dir_all(git_dir.join("refs/heads")).expect("refs");
 
-    let chunks: Vec<_> = GitSource::new(git_dir)
-        .chunks()
-        .collect();
+    let chunks: Vec<_> = GitSource::new(git_dir).chunks().collect();
     assert!(
         chunks.is_empty() || chunks.iter().all(Result::is_err),
         "bare repo without commits must not panic; got {chunks:?}"

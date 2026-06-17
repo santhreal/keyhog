@@ -11,12 +11,45 @@
 //! `cargo build -F binary` pulls in `goblin` for format detection; Ghidra is optional.
 
 /// Maximum bytes read for strings/section extraction - prevents OOM on multi-GB binaries.
-pub const MAX_BINARY_READ_BYTES: usize = 64 * 1024 * 1024;
+const MAX_BINARY_READ_BYTES: usize = 64 * 1024 * 1024;
 
 use std::io::BufRead;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::AtomicUsize;
+
+/// How many binaries had their requested Ghidra deep-decompiler analysis
+/// degrade to shallow strings-only extraction (Ghidra failed, timed out, or
+/// produced decompiled output too large to process). Each degradation is a
+/// recall loss the operator chose against by enabling Ghidra, so it is both
+/// printed loudly on stderr AND counted here for auditability (Law 10). Read
+/// it via [`binary_degraded_to_strings`].
+pub(crate) static GHIDRA_DEGRADED_TO_STRINGS: AtomicUsize = AtomicUsize::new(0);
+
+/// How many binaries could not be read at all for strings extraction
+/// (permission denied / I/O error) and were therefore dropped from the scan
+/// entirely — an UNKNOWN, never a clean file (Law 10). Surfaced loudly +
+/// counted at each drop site.
+pub(crate) static BINARY_UNREADABLE: AtomicUsize = AtomicUsize::new(0);
+
+/// Snapshot of the binary-source degradation counters for end-of-scan
+/// reporting. Reset by the test harness via [`reset_binary_counters`].
+pub fn binary_degraded_to_strings() -> usize {
+    GHIDRA_DEGRADED_TO_STRINGS.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Read the count of binaries dropped from the scan as unreadable.
+pub fn binary_unreadable() -> usize {
+    BINARY_UNREADABLE.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Reset both binary-source counters. Public so test fixtures baselining
+/// between runs in one process clear them.
+pub fn reset_binary_counters() {
+    GHIDRA_DEGRADED_TO_STRINGS.store(0, std::sync::atomic::Ordering::Relaxed);
+    BINARY_UNREADABLE.store(0, std::sync::atomic::Ordering::Relaxed);
+}
 
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use wait_timeout::ChildExt;
@@ -35,7 +68,7 @@ const MAX_DECOMPILED_SIZE: u64 = 50 * 1024 * 1024;
 /// use keyhog_core::Source;
 /// use keyhog_sources::BinarySource;
 ///
-/// let source = BinarySource::strings_only("target/app");
+/// let source = BinarySource::new("target/app");
 /// assert_eq!(source.name(), "binary");
 /// ```
 pub struct BinarySource {
@@ -63,23 +96,6 @@ impl BinarySource {
         }
     }
 
-    /// Explicitly set the Ghidra analyzeHeadless path.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use keyhog_core::Source;
-    /// use keyhog_sources::BinarySource;
-    /// use std::path::PathBuf;
-    ///
-    /// let source = BinarySource::new("target/app").with_ghidra(PathBuf::from("/opt/ghidra/support/analyzeHeadless"));
-    /// assert_eq!(source.name(), "binary");
-    /// ```
-    pub fn with_ghidra(mut self, ghidra_path: PathBuf) -> Self {
-        self.ghidra_path = Some(ghidra_path);
-        self
-    }
-
     /// Force strings-only mode (skip Ghidra even if available).
     ///
     /// # Examples
@@ -88,10 +104,10 @@ impl BinarySource {
     /// use keyhog_core::Source;
     /// use keyhog_sources::BinarySource;
     ///
-    /// let source = BinarySource::strings_only("target/app");
+    /// let source = BinarySource::new("target/app");
     /// assert_eq!(source.name(), "binary");
     /// ```
-    pub fn strings_only(path: impl Into<PathBuf>) -> Self {
+    pub(crate) fn strings_only(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
             ghidra_path: None,
@@ -123,8 +139,8 @@ impl BinarySource {
                 match child.wait_timeout(timeout).map_err(std::io::Error::other)? {
                     Some(status) => Ok(status),
                     None => {
-                        let _ = child.kill();
-                        let _ = child.wait();
+                        let _ = child.kill(); // LAW10: unused-binding marker; no runtime effect, not a fallback
+                        let _ = child.wait(); // LAW10: unused-binding marker; no runtime effect, not a fallback
                         Err(std::io::Error::new(
                             std::io::ErrorKind::TimedOut,
                             format!("Ghidra analysis timed out after {}s", timeout.as_secs()),
@@ -137,11 +153,25 @@ impl BinarySource {
             Ok(s) if s.success() && output_path.exists() => {
                 self.parse_decompiled_output(&output_path)
             }
-            Ok(_) | Err(_) => {
-                tracing::debug!(
-                    path = %self.path.display(),
-                    "Ghidra analysis failed or produced no output, falling back to strings"
+            // Law 10: NOT silent — the operator explicitly enabled Ghidra (deep
+            // decompiler analysis); a failure/timeout that silently degrades to
+            // shallow strings-only would hide that the deeper analysis was skipped
+            // (a recall loss the operator cannot see). Surface it LOUDLY on stderr
+            // (the old `tracing::debug!` was invisible at default verbosity) AND
+            // count it so the degradation is auditable.
+            other => {
+                let reason = match &other {
+                    Ok(s) => format!("exited unsuccessfully (status {s}) or produced no output"),
+                    Err(e) => e.to_string(),
+                };
+                eprintln!(
+                    "keyhog: WARNING: Ghidra decompiler analysis failed for {} ({reason}); \
+                     falling back to shallow strings-only extraction — encoded/split secrets \
+                     this binary may carry will NOT be recovered. Re-run after fixing Ghidra to \
+                     restore deep analysis.",
+                    self.path.display()
                 );
+                GHIDRA_DEGRADED_TO_STRINGS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 Ok(self.strings_chunks())
             }
         }
@@ -150,11 +180,18 @@ impl BinarySource {
     fn parse_decompiled_output(&self, output_path: &Path) -> Result<Vec<Chunk>, SourceError> {
         let metadata = std::fs::metadata(output_path).map_err(SourceError::Io)?;
         if metadata.len() > MAX_DECOMPILED_SIZE {
-            tracing::warn!(
-                path = %self.path.display(),
-                size = metadata.len(),
-                "Decompiled output too large, falling back to strings"
+            // Law 10: loud, not silent — the deep-analysis output was discarded
+            // (too large to process) and we fall back to shallow strings. Same
+            // recall-loss surfacing + count as the Ghidra-failure arm.
+            eprintln!(
+                "keyhog: WARNING: Ghidra decompiled output for {} is {} bytes (> {} cap); \
+                 falling back to shallow strings-only extraction — encoded/split secrets may \
+                 be missed.",
+                self.path.display(),
+                metadata.len(),
+                MAX_DECOMPILED_SIZE
             );
+            GHIDRA_DEGRADED_TO_STRINGS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             return Ok(self.strings_chunks());
         }
 
@@ -188,7 +225,8 @@ impl BinarySource {
                     date: None,
                     mtime_ns: None,
                     size_bytes: None,
-                    decoded_span: None,                },
+                    decoded_span: None,
+                },
             });
         }
 
@@ -206,7 +244,8 @@ impl BinarySource {
                     date: None,
                     mtime_ns: None,
                     size_bytes: None,
-                    decoded_span: None,                },
+                    decoded_span: None,
+                },
             });
         }
 
@@ -221,11 +260,15 @@ impl BinarySource {
         let bytes = match read_binary_capped(&self.path, MAX_BINARY_READ_BYTES) {
             Ok(b) => b,
             Err(error) => {
-                tracing::debug!(
-                    path = %self.path.display(),
-                    %error,
-                    "binary strings read failed; no strings extracted from this file"
+                // Law 10: an unreadable binary is an UNKNOWN dropped from the scan,
+                // not a clean file. The old `tracing::debug!` made that drop
+                // invisible at default verbosity. Surface it loudly + count it so
+                // a "no secrets found" result is not mistaken for full coverage.
+                eprintln!(
+                    "keyhog: WARNING: cannot read binary {} ({error}); it was NOT scanned for secrets.",
+                    self.path.display()
                 );
+                BINARY_UNREADABLE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 return Vec::new();
             }
         };
@@ -256,7 +299,8 @@ impl BinarySource {
                     date: None,
                     mtime_ns: None,
                     size_bytes: None,
-                    decoded_span: None,                },
+                    decoded_span: None,
+                },
             });
         }
 

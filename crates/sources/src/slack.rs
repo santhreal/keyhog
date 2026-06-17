@@ -32,12 +32,6 @@ impl SlackSource {
         }
     }
 
-    /// Set how many messages to fetch per channel.
-    pub fn with_lookback(mut self, n: usize) -> Self {
-        self.lookback_messages = n;
-        self
-    }
-
     /// Override the shared HTTP policy. Threads CLI `--proxy` / `--insecure`
     /// into the Slack API client.
     pub fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
@@ -56,12 +50,11 @@ impl Source for SlackSource {
         // (dropping its internal runtime in an async context aborts the
         // process). Collection is eager, so run it on a scoped std thread with
         // no ambient tokio runtime.
-        let result = std::thread::scope(|s| {
-            s.spawn(|| self.collect_chunks()).join().unwrap_or_else(|_| {
-                Err(SourceError::Other(
-                    "slack fetch thread panicked".to_string(),
-                ))
-            })
+        let result = std::thread::scope(|s| match s.spawn(|| self.collect_chunks()).join() {
+            Ok(result) => result,
+            Err(_panic) => Err(SourceError::Other(
+                "slack fetch thread panicked".to_string(),
+            )),
         });
         match result {
             Ok(chunks) => Box::new(chunks.into_iter().map(Ok)),
@@ -123,7 +116,7 @@ impl SlackSource {
 
         // Concurrent per-channel history fetch. Slack's tier-2 rate limit is
         // 20+ requests/minute; cap parallelism at 8 to leave headroom for the
-        // burst budget. Was sequential - see audits/legendary-2026-04-26.
+        // burst budget. Was sequential - see docs/EXECUTION_PLAN.md.
         use rayon::prelude::*;
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(8)
@@ -199,7 +192,7 @@ impl SlackSource {
             // "channel_not_found" are common values; "<no error field>"
             // distinguishes a malformed response from one with an actual
             // error code).
-            let error_code = resp.error.as_deref().unwrap_or("<no error field>");
+            let error_code = resp.error.as_deref().unwrap_or("<no error field>"); // LAW10: missing/non-string field => empty/placeholder; recall-safe
             return Err(SourceError::Other(format!("Slack API error: {error_code}")));
         }
         Ok(resp.data.channels)
@@ -231,7 +224,7 @@ impl SlackSource {
             // "channel_not_found" are common values; "<no error field>"
             // distinguishes a malformed response from one with an actual
             // error code).
-            let error_code = resp.error.as_deref().unwrap_or("<no error field>");
+            let error_code = resp.error.as_deref().unwrap_or("<no error field>"); // LAW10: missing/non-string field => empty/placeholder; recall-safe
             return Err(SourceError::Other(format!("Slack API error: {error_code}")));
         }
         Ok(resp.data.messages)

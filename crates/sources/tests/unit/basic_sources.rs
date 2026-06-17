@@ -19,7 +19,7 @@ fn web_source_empty_urls_produce_no_chunks() {
 #[cfg(feature = "web")]
 #[test]
 fn web_source_from_url_is_constructible() {
-    let source = keyhog_sources::WebSource::from_url("https://example.com/app.js");
+    let source = keyhog_sources::WebSource::new(vec!["https://example.com/app.js".to_string()]);
     assert_eq!(source.name(), "web");
 }
 
@@ -49,4 +49,24 @@ fn docker_source_name_is_stable() {
 fn github_org_source_name_is_stable() {
     let source = keyhog_sources::GitHubOrgSource::new("acme".into(), "ghp_example".into());
     assert_eq!(source.name(), "github-org");
+}
+
+#[cfg(feature = "gitlab")]
+#[test]
+fn gitlab_group_source_name_is_stable() {
+    let source =
+        keyhog_sources::create_source("gitlab-group", Some("acme\nglpat-exampletoken12345"))
+            .expect("gitlab source");
+    assert_eq!(source.name(), "gitlab-group");
+}
+
+#[cfg(feature = "bitbucket")]
+#[test]
+fn bitbucket_workspace_source_name_is_stable() {
+    let source = keyhog_sources::create_source(
+        "bitbucket-workspace",
+        Some("acme\nbuildbot\napp-password-example"),
+    )
+    .expect("bitbucket source");
+    assert_eq!(source.name(), "bitbucket-workspace");
 }

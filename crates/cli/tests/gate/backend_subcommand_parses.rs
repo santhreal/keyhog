@@ -12,6 +12,6 @@ fn backend_subcommand_selects_backend_variant() {
             assert_eq!(args.patterns, 1509);
             assert!(!args.self_test);
         }
-        other => panic!("expected Backend subcommand"),
+        _ => panic!("expected Backend subcommand"),
     }
 }

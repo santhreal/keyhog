@@ -8,6 +8,6 @@ fn explain_subcommand_carries_detector_id() {
     let cli = Cli::try_parse_from(["keyhog", "explain", "aws-access-key"]).unwrap();
     match cli.command {
         Some(Command::Explain(args)) => assert_eq!(args.detector_id, "aws-access-key"),
-        other => panic!("expected Explain subcommand"),
+        _ => panic!("expected Explain subcommand"),
     }
 }

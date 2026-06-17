@@ -4,7 +4,7 @@
 #[test]
 fn ghidra_timeout_is_five_minutes() {
     assert_eq!(
-        keyhog_sources::timeouts::GHIDRA_ANALYSIS,
+        keyhog_sources::testing::ghidra_analysis_timeout(),
         std::time::Duration::from_secs(300),
         "GHIDRA_ANALYSIS must stay at 300s"
     );

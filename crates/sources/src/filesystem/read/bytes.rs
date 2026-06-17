@@ -5,9 +5,26 @@
 //! the decompressor ever started.
 
 use memmap2::MmapOptions;
+use std::io::Read as _;
 use std::path::Path;
 
 use super::raw::open_file_safe;
+
+/// Buffered read bounded at `cap` bytes, routed through the same
+/// `open_file_safe` (`O_NOFOLLOW` / Windows symlink refusal) the primary
+/// path uses. Replaces the bare whole-file `fs` read fallbacks, which (a)
+/// FOLLOWED symlinks — re-opening the path with the libc default, undoing
+/// the no-follow guard the mmap open just applied — and (b) were UNBOUNDED,
+/// so a compressed file grown past its stat between the size check and the
+/// fallback read (a TOCTOU race) was slurped whole into a `Vec`. `.take(cap)`
+/// caps the allocation at the same ceiling the mmap path already enforces.
+/// (KH-GAP-OOM-compressed-fallback)
+fn read_capped_no_follow(path: &Path, cap: u64) -> std::io::Result<Vec<u8>> {
+    let file = open_file_safe(path)?;
+    let mut bytes = Vec::new();
+    file.take(cap).read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
 
 /// File bytes returned to a caller that needs `&[u8]` but doesn't
 /// care whether they live in a heap allocation or in a kernel-managed
@@ -26,7 +43,7 @@ pub(in crate::filesystem) enum FileBytes {
 }
 
 impl FileBytes {
-    pub fn as_slice(&self) -> &[u8] {
+    pub(in crate::filesystem) fn as_slice(&self) -> &[u8] {
         match self {
             FileBytes::Mmap(m) => m,
             FileBytes::Owned(v) => v,
@@ -49,20 +66,49 @@ impl FileBytes {
 /// Returns `None` when the file is larger than `size_cap` (refuses
 /// pathological inputs at the source rather than letting them land in
 /// the decompressor) or when neither mmap nor buffered read can
-/// produce bytes.
+/// produce bytes. `size_cap == 0` means caller-level "unlimited"; this helper
+/// still applies the hard 2 GiB TOCTOU sanity cap.
 pub(in crate::filesystem) fn read_file_for_compressed_input(
     path: &Path,
     size_cap: u64,
 ) -> Option<FileBytes> {
-    let file = open_file_safe(path).ok()?;
-    let metadata = file.metadata().ok()?;
-    if metadata.len() > size_cap {
+    let effective_size_cap = if size_cap == 0 {
+        super::MMAP_TOCTOU_SANITY_CAP_BYTES
+    } else {
+        size_cap
+    };
+    let file = match open_file_safe(path) {
+        Ok(f) => f,
+        Err(error) => {
+            tracing::warn!(
+                path = %path.display(),
+                %error,
+                "cannot open compressed file; skipping"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return None;
+        }
+    };
+    let metadata = match file.metadata() {
+        Ok(m) => m,
+        Err(error) => {
+            tracing::warn!(
+                path = %path.display(),
+                %error,
+                "cannot stat compressed file; skipping"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return None;
+        }
+    };
+    if metadata.len() > effective_size_cap {
         tracing::warn!(
             path = %path.display(),
             size = metadata.len(),
-            cap = size_cap,
+            cap = effective_size_cap,
             "compressed file exceeds size cap; refusing to map"
         );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         return None;
     }
 
@@ -82,7 +128,28 @@ pub(in crate::filesystem) fn read_file_for_compressed_input(
         // inputs are usually not actively being written, but
         // belt-and-braces).
         if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) } != 0 {
-            return std::fs::read(path).ok().map(FileBytes::Owned);
+            tracing::debug!(
+                path = %path.display(),
+                "compressed file is locked; falling back to buffered read"
+            );
+            // Law 10: recall-safe — mmap vs buffered is a mechanism choice, not a
+            // recall change; the buffered read recovers the FULL file content the
+            // decompressor needs. The only true failure (read error) takes the
+            // `.or_else` arm below, which bumps SKIPPED_UNREADABLE + warns loudly.
+            // Now routed through `read_capped_no_follow` so it is bounded at
+            // `effective_size_cap` AND honours the no-follow symlink guard (the old bare
+            // `std::fs::read` did neither).
+            return read_capped_no_follow(path, effective_size_cap)
+                .ok() // LAW10: mmap/read failure => release lock + buffered read path / loud-skip counter; recall-preserving
+                .or_else(|| {
+                    tracing::warn!(
+                        path = %path.display(),
+                        "cannot read locked compressed file; skipping"
+                    );
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                    None
+                })
+                .map(FileBytes::Owned);
         }
     }
 
@@ -112,7 +179,12 @@ pub(in crate::filesystem) fn read_file_for_compressed_input(
             }
             Some(FileBytes::Mmap(mmap))
         }
-        Err(_) => {
+        Err(error) => {
+            tracing::warn!(
+                path = %path.display(),
+                %error,
+                "cannot mmap compressed file; falling back to buffered read"
+            );
             #[cfg(unix)]
             {
                 use std::os::unix::io::AsRawFd;
@@ -121,7 +193,21 @@ pub(in crate::filesystem) fn read_file_for_compressed_input(
                 // the advisory shared lock taken above.
                 unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
             }
-            std::fs::read(path).ok().map(FileBytes::Owned)
+            // Law 10: recall-safe + now bounded/no-follow — see the locked-file
+            // arm above. The bare `std::fs::read` here was both unbounded (OOM on
+            // a TOCTOU-grown compressed file) and symlink-following; `read_capped_no_follow`
+            // fixes both while recovering the same bytes for the decompressor.
+            read_capped_no_follow(path, effective_size_cap)
+                .ok() // LAW10: mmap/read failure => release lock + buffered read path / loud-skip counter; recall-preserving
+                .or_else(|| {
+                    tracing::warn!(
+                        path = %path.display(),
+                        "cannot read compressed file after mmap failure; skipping"
+                    );
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                    None
+                })
+                .map(FileBytes::Owned)
         }
     }
 }

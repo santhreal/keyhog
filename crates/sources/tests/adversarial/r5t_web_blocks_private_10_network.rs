@@ -3,7 +3,9 @@
 #[cfg(feature = "web")]
 #[test]
 fn r5t_web_blocks_private_10_network() {
-    assert!(keyhog_sources::testing::is_disallowed_web_host("http://10.255.255.254/internal.js"));
+    assert!(keyhog_sources::testing::is_disallowed_web_host(
+        "http://10.255.255.254/internal.js"
+    ));
 }
 
 #[cfg(not(feature = "web"))]

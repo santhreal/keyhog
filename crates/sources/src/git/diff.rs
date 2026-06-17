@@ -120,7 +120,7 @@ fn stream_added_lines(
     let mut reader = std::io::BufReader::new(stdout);
 
     // Get commit info for metadata
-    let metadata_commit = head_commit.unwrap_or_else(|| base_commit.clone());
+    let metadata_commit = head_commit.unwrap_or_else(|| base_commit.clone()); // LAW10: absent verify-spec field => documented default (GET / AuthSpec::None / first); recall-safe
     let author = super::get_commit_author(&repo_arg, &metadata_commit)?;
     let date = super::get_commit_date(&repo_arg, &metadata_commit)?;
 
@@ -174,7 +174,8 @@ fn stream_added_lines(
                                     date: Some(date.clone()),
                                     mtime_ns: None,
                                     size_bytes: None,
-                                    decoded_span: None,                                },
+                                    decoded_span: None,
+                                },
                             }));
                         }
                     }
@@ -205,7 +206,8 @@ fn stream_added_lines(
                                 date: Some(date.clone()),
                                 mtime_ns: None,
                                 size_bytes: None,
-                                decoded_span: None,                            },
+                                decoded_span: None,
+                            },
                         }));
                     }
                 }
@@ -233,7 +235,7 @@ fn stream_added_lines(
                 // Start of a new hunk: flush the previous hunk as its own
                 // chunk (so its base line applies cleanly), then adopt this
                 // hunk's new-file start as the base for the lines that follow.
-                let new_start = super::parse_hunk_new_start(&line).unwrap_or(1);
+                let new_start = super::parse_hunk_new_start(&line).unwrap_or(1); // LAW10: empty/absent => documented numeric default, recall-safe
                 let prev_content = std::mem::take(&mut current_content);
                 let prev_base_line = current_base_line;
                 current_base_line = new_start.saturating_sub(1);
@@ -252,7 +254,8 @@ fn stream_added_lines(
                                 date: Some(date.clone()),
                                 mtime_ns: None,
                                 size_bytes: None,
-                                decoded_span: None,                            },
+                                decoded_span: None,
+                            },
                         }));
                     }
                 }
@@ -272,8 +275,9 @@ fn stream_added_lines(
                         // that follow continue the SAME hunk, so advance the
                         // base by the lines we are emitting now to keep their
                         // attribution correct after the buffer resets.
-                        current_base_line = current_base_line
-                            .saturating_add(memchr::memchr_iter(b'\n', current_content.as_bytes()).count());
+                        current_base_line = current_base_line.saturating_add(
+                            memchr::memchr_iter(b'\n', current_content.as_bytes()).count(),
+                        );
                         let chunk_content = current_content.trim().to_string();
                         current_content = String::new();
                         return Some(Ok(Chunk {
@@ -288,7 +292,8 @@ fn stream_added_lines(
                                 date: Some(date.clone()),
                                 mtime_ns: None,
                                 size_bytes: None,
-                                decoded_span: None,                            },
+                                decoded_span: None,
+                            },
                         }));
                     }
                 }
@@ -296,4 +301,3 @@ fn stream_added_lines(
         }
     }))
 }
-

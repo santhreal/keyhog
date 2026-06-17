@@ -13,6 +13,6 @@ fn hook_install_subcommand_is_selected() {
                 keyhog::subcommands::hook::HookCommand::Install { .. }
             ));
         }
-        other => panic!("expected Hook subcommand"),
+        _ => panic!("expected Hook subcommand"),
     }
 }

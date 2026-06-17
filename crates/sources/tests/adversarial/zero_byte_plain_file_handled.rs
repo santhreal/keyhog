@@ -19,7 +19,11 @@ fn zero_byte_plain_file_handled() {
         "readable neighbor must still be scanned"
     );
     assert!(
-        !chunks.iter().any(|c| c.metadata.path.as_deref().is_some_and(|p| p.ends_with("empty.txt"))),
+        !chunks.iter().any(|c| c
+            .metadata
+            .path
+            .as_deref()
+            .is_some_and(|p| p.ends_with("empty.txt"))),
         "zero-byte file should be skipped, not surfaced as an empty chunk"
     );
 }

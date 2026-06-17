@@ -36,8 +36,7 @@ fn recovers_secret_from_non_utf8_text() {
 #[test]
 fn valid_utf8_passes_through_unchanged() {
     let text = "GITHUB_TOKEN=ghp_0123456789abcdefghijABCDEFGHIJ0123456789\n";
-    let decoded = decode_file_bytes(text.as_bytes())
-        .expect("plain UTF-8 must decode");
+    let decoded = decode_file_bytes(text.as_bytes()).expect("plain UTF-8 must decode");
     assert_eq!(
         decoded, text,
         "valid UTF-8 must pass through byte-for-byte (no lossy mangling)"

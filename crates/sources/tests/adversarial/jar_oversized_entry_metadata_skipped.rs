@@ -15,16 +15,11 @@ fn jar_oversized_entry_metadata_skipped() {
     let mut zip = ZipWriter::new(file);
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
     zip.start_file("huge.bin", opts).expect("start");
-    // Write tiny payload but we cannot fake central-directory size easily via zip crate;
-    // instead use max_file_size=0 to force skip of any positive uncompressed entry.
-    zip.write_all(
-        b"TOKEN=should-not-appear
-",
-    )
-    .expect("write");
+    zip.write_all(format!("TOKEN=should-not-appear\n{}", "x".repeat(4096)).as_bytes())
+        .expect("write");
     zip.finish().expect("finish");
 
-    let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(0);
+    let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(512);
     let count = source.chunks().flatten().count();
-    assert_eq!(count, 0, "max_file_size=0 must skip jar entries");
+    assert_eq!(count, 0, "over-cap jar entries must be skipped");
 }

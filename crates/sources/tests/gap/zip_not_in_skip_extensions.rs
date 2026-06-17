@@ -3,7 +3,7 @@
 //!
 //! 2026-05-29 dogfood: a secret in a `.zip` was silently missed while the same
 //! bytes in a `.jar` were found. The read gate and walker now share the single
-//! `filesystem/filter.rs` extension list; this test prevents reintroducing
+//! Tier-B default extension denylist; this test prevents reintroducing
 //! `zip` to that denylist, which would bypass the archive extraction branch.
 
 fn read(rel: &str) -> String {
@@ -18,20 +18,19 @@ fn zip_not_in_skip_extensions() {
     // archive-unpack branch, so a "zip" here is the bug that hid secrets in
     // committed .zip files. `.jar`/`.apk`/`.ipa`/`.crx` are in neither list -
     // "zip" must match them (absent) so it reaches extraction identically.
-    let filter = read("src/filesystem/filter.rs");
-    let gate = filter
-        .split_once("const SKIP_EXTENSIONS")
-        .and_then(|(_, rest)| rest.split_once("];"))
-        .map(|(decl, _)| decl)
-        .expect("filesystem/filter.rs must declare SKIP_EXTENSIONS");
+    let rules = read("../../rules/default_excludes.toml");
     assert!(
-        !gate.contains("\"zip\""),
-        "filesystem/filter.rs SKIP_EXTENSIONS (the read gate at the `contains(ext)` check) must not \
+        !rules.contains("\"zip\""),
+        "rules/default_excludes.toml extensions (the read gate at the `contains(ext)` check) must not \
          list \"zip\": it returns before the archive-unpack branch, so listing zip silently \
          skips every .zip - secrets inside are never scanned (2026-05-29 dogfood regression)."
     );
+    let extract = read("src/filesystem/extract.rs");
+    let archive = read("src/filesystem/extract/archive.rs");
     assert!(
-        filter.contains("archive-unpack branch"),
-        "filesystem/filter.rs must document zip archive routing"
+        extract.contains("archive::is_openpack_archive_ext(&ext)")
+            && extract.contains("archive::extract_openpack_archive")
+            && archive.contains("\"zip\" | \"apk\" | \"ipa\" | \"crx\" | \"jar\""),
+        "filesystem extract/archive owners must keep zip archive routing"
     );
 }

@@ -18,7 +18,9 @@ fn nested_zip_bomb_budget_enforced() {
     let mut inner = ZipWriter::new(inner_file);
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
     for i in 0..2 {
-        inner.start_file(format!("chunk{i}.txt"), opts).expect("start");
+        inner
+            .start_file(format!("chunk{i}.txt"), opts)
+            .expect("start");
         inner.write_all(&vec![b'Q'; 500]).expect("write");
     }
     inner.finish().expect("finish inner");
@@ -27,9 +29,13 @@ fn nested_zip_bomb_budget_enforced() {
     let outer_file = File::create(&outer_path).expect("outer");
     let mut outer = ZipWriter::new(outer_file);
     outer.start_file("nested.zip", opts).expect("start nested");
-    outer.write_all(&std::fs::read(&inner_path).expect("read inner")).expect("embed");
+    outer
+        .write_all(&std::fs::read(&inner_path).expect("read inner"))
+        .expect("embed");
     outer.start_file("tail-secret.env", opts).expect("tail");
-    outer.write_all(b"TAIL=AKIAQYLPMN5HFIQR7XYA\n").expect("tail write");
+    outer
+        .write_all(b"TAIL=AKIAQYLPMN5HFIQR7XYA\n")
+        .expect("tail write");
     outer.finish().expect("finish outer");
 
     let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())

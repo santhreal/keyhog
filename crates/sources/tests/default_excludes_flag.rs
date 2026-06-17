@@ -4,8 +4,10 @@
 //! `package-lock.json` stayed silently excluded even with the flag set.
 
 use keyhog_core::{Chunk, Source};
-use keyhog_sources::FilesystemSource;
+use keyhog_sources::{skip_counts, testing::reset_skip_counters, FilesystemSource};
 use std::fs;
+
+static SKIP_COUNTER_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn scan_dir(dir: &std::path::Path, respect_default_excludes: bool) -> Vec<Chunk> {
     FilesystemSource::new(dir.to_path_buf())
@@ -72,5 +74,48 @@ fn default_excludes_drop_lockfiles_then_flag_includes_them() {
     assert!(
         body_contains(&included, SENTINEL),
         "with --no-default-excludes the walker must scan package-lock.json / *.min.js"
+    );
+}
+
+#[test]
+fn default_excludes_apply_to_direct_include_paths_by_relative_path() {
+    let _guard = SKIP_COUNTER_GUARD.lock().expect("counter guard");
+    let dir = tempfile::tempdir().unwrap();
+    let excluded = dir.path().join("node_modules").join("pkg");
+    fs::create_dir_all(&excluded).unwrap();
+    let secret = excluded.join("token.env");
+    fs::write(&secret, format!("TOKEN={SENTINEL}\n")).unwrap();
+
+    reset_skip_counters();
+    let skipped = FilesystemSource::new(dir.path().to_path_buf())
+        .with_include_paths(vec![secret.clone()])
+        .chunks()
+        .flatten()
+        .collect::<Vec<_>>();
+    assert!(
+        !body_contains(&skipped, SENTINEL),
+        "source-owned default excludes must classify direct include paths by relative path"
+    );
+    assert_eq!(
+        skip_counts().excluded,
+        1,
+        "direct include default-exclude skip must be surfaced through the typed counter"
+    );
+
+    reset_skip_counters();
+    let included = FilesystemSource::new(dir.path().to_path_buf())
+        .with_include_paths(vec![secret])
+        .with_default_excludes(false)
+        .chunks()
+        .flatten()
+        .collect::<Vec<_>>();
+    assert!(
+        body_contains(&included, SENTINEL),
+        "--no-default-excludes must scan the direct include path"
+    );
+    assert_eq!(
+        skip_counts().excluded,
+        0,
+        "disabled default excludes must not emit excluded skip events"
     );
 }

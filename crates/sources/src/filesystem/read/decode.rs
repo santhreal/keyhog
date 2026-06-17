@@ -22,7 +22,7 @@ pub(crate) fn decode_text_file(bytes: &[u8]) -> Option<String> {
     if let Some(text) = decode_utf16(bytes) {
         return Some(text);
     }
-    let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes);
+    let bytes = bytes.strip_prefix(&[0xEF, 0xBB, 0xBF]).unwrap_or(bytes); // LAW10: no prefix/BOM to strip => value unchanged (intended), recall-safe
 
     // Valid-UTF-8 fast path (the common case for source trees): one SIMD
     // pass via `std::str::from_utf8` validates the whole file in zero
@@ -269,7 +269,8 @@ pub(in crate::filesystem::read) fn decode_utf16(bytes: &[u8]) -> Option<String> 
         total += 1;
         match r {
             Ok(c) => out.push(c),
-            Err(_) => {
+            Err(_error) => {
+                // Law 10: undecodable unit => U+FFFD lossy, keeps scanning the valid remainder; recall-preserving (see block comment)
                 // Law 10 (no silent fallbacks): the previous `r.ok()?` returned
                 // None from the WHOLE function on the first undecodable unit, so a
                 // single unpaired surrogate (truncated trailing half, a binary

@@ -1,17 +1,15 @@
 //! S3 bucket source: lists text-like objects with ListObjectsV2 and downloads
 //! each candidate object for scanning. Large or non-text objects are skipped.
 
-use std::io::Read;
-use std::path::Path;
-
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use reqwest::blocking::Client;
+use std::io::Read;
 
 mod auth;
 mod listing;
 
 use auth::AwsSigV4Config;
-use listing::{encode_s3_key_path, parse_s3_listing};
+use listing::parse_s3_listing;
 
 const DEFAULT_S3_HOST_SUFFIX: &str = "s3.amazonaws.com";
 const DEFAULT_MAX_OBJECTS: usize = 100_000;
@@ -134,19 +132,21 @@ impl Source for S3Source {
         // process). Collection is eager, so run it on a scoped std thread with
         // no ambient tokio runtime.
         let result = std::thread::scope(|s| {
-            s.spawn(|| {
-                collect_s3_chunks(
-                    &self.bucket,
-                    self.prefix.as_deref(),
-                    self.endpoint.as_deref(),
-                    self.max_objects,
-                    &self.http,
-                )
-            })
-            .join()
-            .unwrap_or_else(|_| {
-                Err(SourceError::Other("s3 fetch thread panicked".to_string()))
-            })
+            match s
+                .spawn(|| {
+                    collect_s3_chunks(
+                        &self.bucket,
+                        self.prefix.as_deref(),
+                        self.endpoint.as_deref(),
+                        self.max_objects,
+                        &self.http,
+                    )
+                })
+                .join()
+            {
+                Ok(result) => result,
+                Err(_panic) => Err(SourceError::Other("s3 fetch thread panicked".to_string())),
+            }
         });
         match result {
             Ok(chunks) => Box::new(chunks.into_iter().map(Ok)),
@@ -191,11 +191,15 @@ fn collect_s3_chunks(
     // `KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD=1` (env-only, no CLI surface
     // so it can't be set accidentally by shell history) when they've
     // verified the endpoint and accept the credential-leak exposure.
-    let aws_auth = if endpoint.is_none() || endpoint_is_aws(endpoint.unwrap_or("")) {
+    let endpoint_is_aws_host = match endpoint {
+        Some(value) => endpoint_is_aws(value),
+        None => true,
+    };
+    let aws_auth = if endpoint_is_aws_host {
         AwsSigV4Config::from_env(&base_url)
     } else if credential_forward_allowed() {
         tracing::warn!(
-            endpoint = %endpoint.unwrap_or(""),
+            endpoint = %endpoint.unwrap_or(""),  // LAW10: missing/non-string field => empty/placeholder; recall-safe
             "KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD=1: forwarding ambient AWS \
              credentials to non-AWS endpoint. Verify you trust this host."
         );
@@ -203,7 +207,7 @@ fn collect_s3_chunks(
     } else {
         if std::env::var("AWS_ACCESS_KEY_ID").is_ok() {
             tracing::warn!(
-                endpoint = %endpoint.unwrap_or(""),
+                endpoint = %endpoint.unwrap_or(""),  // LAW10: missing/non-string field => empty/placeholder; recall-safe
                 "AWS credentials present but endpoint is non-AWS; refusing to \
                  forward. Set KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD=1 to opt in."
             );
@@ -213,9 +217,15 @@ fn collect_s3_chunks(
     let mut continuation_token = None::<String>;
     let mut chunks = Vec::new();
     let mut listed_objects = 0usize;
+    let mut source_truncated_reported = false;
 
     loop {
         if listed_objects >= max_objects {
+            crate::cloud::record_source_truncated_once(
+                "s3",
+                "max_objects limit reached before listing all objects",
+                &mut source_truncated_reported,
+            );
             break;
         }
 
@@ -263,7 +273,16 @@ fn collect_s3_chunks(
         let page_chunks: Vec<Result<Option<Chunk>, SourceError>> = pool.install(|| {
             page.par_iter()
                 .map(|object| -> Result<Option<Chunk>, SourceError> {
-                    if object.size == 0 || !is_probably_text(&object.key) {
+                    if object.size == 0 {
+                        return Ok(None);
+                    }
+                    if !crate::cloud::is_probably_text_object_key(&object.key) {
+                        tracing::warn!(
+                            bucket = %bucket,
+                            key = %object.key,
+                            "skipping S3 object: extension is treated as binary/container content; NOT scanned as text",
+                        );
+                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
                         return Ok(None);
                     }
                     fetch_object_chunk(
@@ -284,10 +303,22 @@ fn collect_s3_chunks(
         }
 
         if reached_limit || !listing.is_truncated {
+            if reached_limit {
+                crate::cloud::record_source_truncated_once(
+                    "s3",
+                    "max_objects limit reached within the current S3 listing page",
+                    &mut source_truncated_reported,
+                );
+            }
             break;
         }
         continuation_token = listing.next_continuation_token;
         if continuation_token.is_none() {
+            crate::cloud::record_source_truncated_once(
+                "s3",
+                "S3 listing response was truncated but omitted NextContinuationToken",
+                &mut source_truncated_reported,
+            );
             break;
         }
     }
@@ -304,17 +335,23 @@ fn fetch_object_chunk(
     aws_auth: Option<&AwsSigV4Config>,
 ) -> Result<Option<Chunk>, SourceError> {
     if object_size > MAX_S3_OBJECT_BYTES {
-        tracing::debug!(
-            "failed to read S3 object: {}/{} exceeds {} byte limit with {} bytes",
+        // Law 10: an over-cap object is dropped from the scan — an UNKNOWN, not a
+        // clean object. The old `tracing::debug!` was invisible at default
+        // verbosity, so a secret in an oversized object vanished with no trace.
+        // Surface loudly + count it (as over-max-size, the matching category the
+        // CLI already reports) so end-of-scan coverage reflects the drop.
+        tracing::warn!(
             bucket,
             key,
-            MAX_S3_OBJECT_BYTES,
-            object_size
+            object_size,
+            cap = MAX_S3_OBJECT_BYTES,
+            "skipping S3 object: listed size exceeds the per-object byte cap; NOT scanned",
         );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         return Ok(None);
     }
 
-    let encoded_key = encode_s3_key_path(key);
+    let encoded_key = crate::cloud::encode_object_key_path(key);
     let url = format!("{}/{}", base_url.trim_end_matches('/'), encoded_key);
     let request = client.get(&url);
     let request = if let Some(auth) = aws_auth {
@@ -327,37 +364,61 @@ fn fetch_object_chunk(
         .map_err(|e| SourceError::Other(format!("failed to download S3 object: {key}: {e}")))?;
 
     if !response.status().is_success() {
+        let status = response.status();
+        tracing::warn!(
+            bucket,
+            key,
+            %status,
+            "skipping S3 object: GET returned non-success status; NOT scanned",
+        );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
         return Ok(None);
     }
 
     if let Some(content_length) = response.content_length() {
         if content_length > MAX_S3_OBJECT_BYTES {
-            tracing::debug!(
-                "failed to read S3 object: {}/{} content-length {} exceeds {} byte limit",
+            // Law 10: the object's real (Content-Length) size exceeds the cap, so
+            // it is dropped — an UNKNOWN. Surface loudly + count (over-max-size)
+            // exactly like the listed-size guard above so the drop is auditable.
+            tracing::warn!(
                 bucket,
                 key,
                 content_length,
-                MAX_S3_OBJECT_BYTES
+                cap = MAX_S3_OBJECT_BYTES,
+                "skipping S3 object: Content-Length exceeds the per-object byte cap; NOT scanned",
             );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             return Ok(None);
         }
     }
 
     // Skip objects that declare a binary content type - they won't contain text secrets.
-    if let Some(ct) = response
+    let content_type = response
         .headers()
         .get("content-type")
-        .and_then(|v| v.to_str().ok())
-    {
-        let ct_lower = ct.to_ascii_lowercase();
-        if ct_lower.starts_with("image/")
-            || ct_lower.starts_with("audio/")
-            || ct_lower.starts_with("video/")
-            || ct_lower == "application/octet-stream"
-            || ct_lower == "application/zip"
-            || ct_lower == "application/gzip"
-        {
-            tracing::debug!("skipping S3 object {key}: binary content-type {ct}");
+        .and_then(|v| match v.to_str() {
+            Ok(value) => Some(value),
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    "S3 object content-type header is not valid text; scanning body as unknown content type"
+                );
+                None
+            }
+        });
+    if let Some(ct) = content_type {
+        if crate::cloud::is_binary_content_type(ct) {
+            // Law 10: a binary content-type skip is a deliberate non-text drop —
+            // the SAME category as the filesystem walker's binary-extension skip.
+            // Route it to the SKIPPED_BINARY counter (already CLI-surfaced) so it
+            // is visible, not a silent `tracing::debug!` return.
+            tracing::warn!(
+                bucket,
+                key,
+                content_type = %ct,
+                "skipping S3 object: binary content-type; NOT scanned as text",
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
             return Ok(None);
         }
     }
@@ -370,12 +431,19 @@ fn fetch_object_chunk(
     std::io::Read::read_to_end(&mut reader, &mut body)
         .map_err(|e| SourceError::Other(format!("failed to read S3 object body: {key}: {e}")))?;
     if body.len() as u64 > MAX_S3_OBJECT_BYTES {
-        tracing::debug!(
-            "failed to read S3 object: {}/{} downloaded size exceeds {} byte limit",
+        // Law 10: the server streamed more than it declared (lying/absent
+        // Content-Length) and we hit the `.take(cap + 1)` ceiling — the body is
+        // truncated/over-cap and dropped. An UNKNOWN, not a clean object. Surface
+        // loudly + count (over-max-size) so the drop is auditable.
+        tracing::warn!(
             bucket,
             key,
-            MAX_S3_OBJECT_BYTES
+            downloaded = body.len(),
+            cap = MAX_S3_OBJECT_BYTES,
+            "skipping S3 object: streamed body exceeds the per-object byte cap \
+             (Content-Length was absent or understated); NOT scanned",
         );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         return Ok(None);
     }
     // Strict UTF-8 because the content-type guard above already
@@ -388,13 +456,20 @@ fn fetch_object_chunk(
     let object_text = match String::from_utf8(body) {
         Ok(text) => text,
         Err(error) => {
+            // Law 10: a body the server labelled text but that fails UTF-8 is an
+            // UNKNOWN dropped from the scan (server lied about Content-Type, gzip
+            // body claiming text/plain, EBCDIC export, ...). The `tracing::warn!`
+            // alone left it out of the end-of-scan coverage numbers — count it as
+            // unreadable so "0 findings" on a bucket the user knows has text is
+            // not mistaken for full coverage.
             let valid_up_to = error.utf8_error().valid_up_to();
             tracing::warn!(
                 bucket,
                 key,
                 valid_up_to,
-                "skipping S3 object: body claimed text content-type but failed UTF-8 decode"
+                "skipping S3 object: body claimed text content-type but failed UTF-8 decode; NOT scanned"
             );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
             return Ok(None);
         }
     };
@@ -411,7 +486,8 @@ fn fetch_object_chunk(
             date: None,
             mtime_ns: None,
             size_bytes: None,
-            decoded_span: None,        },
+            decoded_span: None,
+        },
     }))
 }
 
@@ -426,10 +502,10 @@ fn fetch_object_chunk(
 /// everything else as third-party. Conservative on purpose: a typo'd
 /// host (`s3.amazonaws.co`) falls into the non-AWS bucket and the
 /// operator must opt in explicitly.
-pub fn endpoint_is_aws(endpoint: &str) -> bool {
+pub(crate) fn endpoint_is_aws(endpoint: &str) -> bool {
     let parsed = match reqwest::Url::parse(endpoint) {
         Ok(u) => u,
-        Err(_) => return false,
+        Err(_) => return false, // LAW10: failure => fail-closed error (blocked/refused), never proceeds; security guard
     };
     let host = match parsed.host_str() {
         Some(h) => h.to_ascii_lowercase(),
@@ -444,10 +520,10 @@ pub fn endpoint_is_aws(endpoint: &str) -> bool {
 /// AWS credentials to non-AWS endpoints. `KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD`
 /// is env-only (no CLI surface) so it can't be silently set by shell
 /// history or a stale `--flag` in someone's notes.
-pub fn credential_forward_allowed() -> bool {
+pub(crate) fn credential_forward_allowed() -> bool {
     matches!(
         std::env::var("KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD")
-            .ok()
+            .ok() // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
             .as_deref(),
         Some("1") | Some("true") | Some("yes") | Some("on")
     )
@@ -507,36 +583,4 @@ fn validate_endpoint(endpoint: &str) -> Result<String, SourceError> {
     }
 
     Ok(parsed.to_string().trim_end_matches('/').to_string())
-}
-
-fn is_probably_text(key: &str) -> bool {
-    let ext = Path::new(key)
-        .extension()
-        .and_then(|value| value.to_str())
-        .map(|value| value.to_ascii_lowercase());
-
-    !matches!(
-        ext.as_deref(),
-        Some(
-            "png"
-                | "jpg"
-                | "jpeg"
-                | "gif"
-                | "webp"
-                | "zip"
-                | "gz"
-                | "tgz"
-                | "tar"
-                | "7z"
-                | "pdf"
-                | "woff"
-                | "woff2"
-                | "mp3"
-                | "mp4"
-                | "mov"
-                | "dll"
-                | "so"
-                | "dylib"
-        )
-    )
 }

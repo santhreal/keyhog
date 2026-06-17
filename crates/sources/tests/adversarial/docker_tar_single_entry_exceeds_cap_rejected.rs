@@ -18,7 +18,10 @@ fn docker_tar_single_entry_exceeds_cap_rejected() {
 
     let err = keyhog_sources::testing::validate_docker_tar_archive(&tar_path).unwrap_err();
     let msg = err.to_string();
-    assert!(msg.contains("exceeds"), "expected per-entry cap rejection, got {msg:?}");
+    assert!(
+        msg.contains("exceeds"),
+        "expected per-entry cap rejection, got {msg:?}"
+    );
 }
 
 #[cfg(not(feature = "docker"))]

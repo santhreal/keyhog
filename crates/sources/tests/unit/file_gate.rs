@@ -47,19 +47,39 @@ fn filesystem_read_error() {
 }
 
 // ── crates/sources/src/timeouts.rs ────────────────────────────────────
+#[cfg(any(feature = "web", feature = "slack", feature = "s3", feature = "github"))]
 #[test]
 fn timeouts_happy() {
-    assert!(keyhog_sources::timeouts::HTTP_REQUEST.as_secs() > 0);
+    assert!(keyhog_sources::testing::http_request_timeout().as_secs() > 0);
+}
+#[cfg(not(any(feature = "web", feature = "slack", feature = "s3", feature = "github")))]
+#[test]
+fn timeouts_happy() {
+    assert!(!cfg!(any(
+        feature = "web",
+        feature = "slack",
+        feature = "s3",
+        feature = "github"
+    )));
 }
 #[test]
 fn timeouts_error() {
     #[cfg(feature = "binary")]
-    assert!(keyhog_sources::timeouts::GHIDRA_ANALYSIS.as_secs() >= 60);
-    #[cfg(not(feature = "binary"))]
-    assert!(keyhog_sources::timeouts::HTTP_REQUEST.as_secs() < 3600);
+    assert!(keyhog_sources::testing::ghidra_analysis_timeout().as_secs() >= 60);
+    #[cfg(all(
+        not(feature = "binary"),
+        any(feature = "web", feature = "slack", feature = "s3", feature = "github")
+    ))]
+    assert!(keyhog_sources::testing::http_request_timeout().as_secs() < 3600);
+    #[cfg(all(
+        not(feature = "binary"),
+        not(any(feature = "web", feature = "slack", feature = "s3", feature = "github"))
+    ))]
+    assert!(!cfg!(feature = "binary"));
 }
 
 // ── crates/sources/src/http.rs ────────────────────────────────────────
+#[cfg(any(feature = "web", feature = "slack", feature = "s3", feature = "github"))]
 #[test]
 fn http_error() {
     let cfg = keyhog_sources::http::HttpClientConfig {
@@ -67,6 +87,16 @@ fn http_error() {
         ..Default::default()
     };
     assert_eq!(cfg.proxy.as_deref(), Some("off"));
+}
+#[cfg(not(any(feature = "web", feature = "slack", feature = "s3", feature = "github")))]
+#[test]
+fn http_error() {
+    assert!(!cfg!(any(
+        feature = "web",
+        feature = "slack",
+        feature = "s3",
+        feature = "github"
+    )));
 }
 
 // ── crates/sources/src/strings.rs ─────────────────────────────────────
@@ -191,6 +221,36 @@ fn github_org_error() {
     assert_eq!(source.name(), "github-org");
 }
 
+// ── crates/sources/src/gitlab_group.rs ────────────────────────────────
+#[cfg(feature = "gitlab")]
+#[test]
+fn gitlab_group_happy() {
+    let source = create_source("gitlab-group", Some("acme\nglpat-exampletoken12345")).unwrap();
+    assert_eq!(source.name(), "gitlab-group");
+}
+#[cfg(feature = "gitlab")]
+#[test]
+fn gitlab_group_error() {
+    assert!(create_source("gitlab-group", None).is_err());
+}
+
+// ── crates/sources/src/bitbucket_workspace.rs ─────────────────────────
+#[cfg(feature = "bitbucket")]
+#[test]
+fn bitbucket_workspace_happy() {
+    let source = create_source(
+        "bitbucket-workspace",
+        Some("acme\nbuildbot\napp-password-example"),
+    )
+    .unwrap();
+    assert_eq!(source.name(), "bitbucket-workspace");
+}
+#[cfg(feature = "bitbucket")]
+#[test]
+fn bitbucket_workspace_error() {
+    assert!(create_source("bitbucket-workspace", None).is_err());
+}
+
 // ── crates/sources/src/slack.rs ───────────────────────────────────────
 #[cfg(feature = "slack")]
 #[test]
@@ -208,7 +268,7 @@ fn slack_error() {
 #[cfg(feature = "web")]
 #[test]
 fn web_happy() {
-    let source = keyhog_sources::WebSource::from_url("https://example.com/app.js");
+    let source = keyhog_sources::WebSource::new(vec!["https://example.com/app.js".to_string()]);
     assert_eq!(source.name(), "web");
 }
 #[cfg(feature = "web")]

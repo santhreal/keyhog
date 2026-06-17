@@ -10,6 +10,6 @@ fn daemon_status_action_is_selected() {
         Some(Command::Daemon(args)) => {
             assert!(matches!(args.action, DaemonAction::Status { .. }));
         }
-        other => panic!("expected Daemon subcommand"),
+        _ => panic!("expected Daemon subcommand"),
     }
 }

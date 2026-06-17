@@ -1,0 +1,140 @@
+# Tier-B data: default filesystem/Git/archive exclusions.
+#
+# Schema:
+#   [default_excludes]
+#   extensions = ["lowercase-extension-without-dot", ...]
+#   dirs = ["path-segment", ...]
+#   suffixes = [".suffix", ...]
+#   filenames = ["exact-filename", ...]
+#   filename_prefix_suffixes = [{ prefix = "lowercase-prefix", suffix = ".suffix" }, ...]
+#
+# Semantics:
+# - The source crate consumes this file through one fail-closed loader.
+# - `extensions` feed the walker/read binary-extension denylist.
+# - `dirs`, `suffixes`, `filenames`, and `filename_prefix_suffixes` feed the
+#   default-exclude path classifier used by filesystem, archive, compressed,
+#   RAR/7z, and Git source traversal.
+# - Structured extractors must keep their handled container formats absent from
+#   `extensions`; otherwise the extension read gate would skip them before
+#   extraction.
+
+[default_excludes]
+extensions = [
+  # Images
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "bmp",
+  "ico",
+  "cur",
+  "icns",
+  "webp",
+  "svg",
+
+  # Audio/video
+  "mp3",
+  "mp4",
+  "avi",
+  "mov",
+  "mkv",
+  "flac",
+  "wav",
+  "ogg",
+  "webm",
+
+  # Native binaries
+  "exe",
+  "dll",
+  "so",
+  "dylib",
+  "o",
+  "a",
+  "lib",
+  "obj",
+
+  # Compiled/bytecode
+  "class",
+  "wasm",
+  "pyc",
+  "pyo",
+  "elc",
+  "beam",
+
+  # Legacy binary documents. ZIP-container office formats and PDFs have
+  # structured extractors and must stay absent here.
+  "doc",
+  "xls",
+  "ppt",
+
+  # Fonts
+  "ttf",
+  "otf",
+  "woff",
+  "woff2",
+  "eot",
+
+  # Database files
+  "db",
+  "sqlite",
+  "sqlite3",
+
+  # Disk images / firmware
+  "iso",
+  "img",
+  "bin",
+  "rom",
+
+  # Serialized data
+  "pickle",
+  "npy",
+  "npz",
+  "onnx",
+  "pb",
+  "tflite",
+  "pt",
+  "safetensors",
+]
+
+dirs = [
+  ".git",
+  "node_modules",
+  "target",
+  "__pycache__",
+  ".venv",
+  "venv",
+  ".tox",
+  "dist",
+  "build",
+  "out",
+  ".next",
+  ".nuxt",
+  "vendor",
+  "swagger-ui",
+  "swagger",
+]
+
+suffixes = [
+  ".min.js",
+  ".min.css",
+  ".bak",
+  ".swp",
+  ".tmp",
+  ".map",
+  ".cache",
+]
+
+filenames = [
+  "package-lock.json",
+  "yarn.lock",
+  "pnpm-lock.yaml",
+  "cache.json",
+  "cargo.lock",
+  "go.sum",
+  "gemfile.lock",
+  "angular.json",
+]
+
+filename_prefix_suffixes = [
+  { prefix = "tsconfig", suffix = ".json" },
+]

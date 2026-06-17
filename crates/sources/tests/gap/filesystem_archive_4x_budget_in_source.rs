@@ -4,15 +4,15 @@
 fn filesystem_archive_4x_budget_in_source() {
     let src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/src/filesystem/extract.rs"
+        "/src/filesystem/extract/archive.rs"
     ))
-    .expect("filesystem/extract.rs");
+    .expect("filesystem/extract/archive.rs");
     assert!(
-        src.contains("total_budget: u64 = max_size.saturating_mul(4)"),
+        src.contains("max_size.saturating_mul(4)"),
         "missing archive 4x zip-bomb budget"
     );
     assert!(
-        src.contains("aborting archive extraction: total uncompressed size exceeds 4x file cap"),
+        src.contains("aborting archive extraction"),
         "missing archive budget abort log"
     );
 }

@@ -1,15 +1,22 @@
 //! Shared timeouts for remote / subprocess sources (avoid magic-number drift).
 
-use std::time::Duration;
-
-/// Typical HTTP(S) request timeout (web fetch, Slack API, S3 REST).
-#[cfg(any(feature = "web", feature = "slack", feature = "s3", feature = "github"))]
-pub const HTTP_REQUEST: Duration = Duration::from_secs(30);
+/// Typical HTTP(S) request timeout (web fetch, Slack API, S3/GCS REST).
+#[cfg(any(
+    feature = "azure",
+    feature = "web",
+    feature = "slack",
+    feature = "s3",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket",
+    feature = "gcs"
+))]
+pub(crate) const HTTP_REQUEST: std::time::Duration = std::time::Duration::from_secs(30);
 
 /// Shallow `git clone` for org scans (and other long-running subprocess work).
-#[cfg(feature = "github")]
-pub const GIT_CLONE: Duration = Duration::from_secs(300);
+#[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
+pub(crate) const GIT_CLONE: std::time::Duration = std::time::Duration::from_secs(300);
 
 /// Ghidra `analyzeHeadless` wall-clock budget.
 #[cfg(feature = "binary")]
-pub const GHIDRA_ANALYSIS: Duration = Duration::from_secs(300);
+pub(crate) const GHIDRA_ANALYSIS: std::time::Duration = std::time::Duration::from_secs(300);

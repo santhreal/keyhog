@@ -1,8 +1,7 @@
 //! Files over max_file_size must be skipped and bump SKIPPED_OVER_MAX_SIZE.
 
 use keyhog_core::Source;
-use keyhog_sources::{reset_skipped_over_max_size, FilesystemSource, SKIPPED_OVER_MAX_SIZE};
-use std::sync::atomic::Ordering;
+use keyhog_sources::{reset_skipped_over_max_size, skip_counts, FilesystemSource};
 
 #[test]
 fn max_file_size_skips_oversize_plain_file() {
@@ -21,7 +20,7 @@ fn max_file_size_skips_oversize_plain_file() {
     assert_eq!(chunks.len(), 1);
     assert!(chunks[0].data.contains("ok"));
     assert!(
-        SKIPPED_OVER_MAX_SIZE.load(Ordering::Relaxed) >= 1,
+        skip_counts().over_max_size >= 1,
         "oversize file must increment skip counter at least once"
     );
 }

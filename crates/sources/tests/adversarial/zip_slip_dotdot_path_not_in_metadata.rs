@@ -27,8 +27,10 @@ fn zip_slip_dotdot_reported_path_is_sanitized() {
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
 
     // Traversal entry — name contains `../`
-    zip.start_file("../traversal.env", opts).expect("start traversal");
-    zip.write_all(b"TRAVERSAL_KEY=some_value\n").expect("write traversal");
+    zip.start_file("../traversal.env", opts)
+        .expect("start traversal");
+    zip.write_all(b"TRAVERSAL_KEY=some_value\n")
+        .expect("write traversal");
 
     // Safe entry — should still be scanned
     zip.start_file("safe.env", opts).expect("start safe");
@@ -55,7 +57,7 @@ fn zip_slip_dotdot_reported_path_is_sanitized() {
     // The safe entry must still produce a chunk (recall not broken).
     let safe_bodies: Vec<_> = chunks
         .iter()
-        .filter(|c| c.data.as_str().contains("SAFE_KEY=ok"))
+        .filter(|c| c.data.contains("SAFE_KEY=ok"))
         .collect();
     assert!(
         !safe_bodies.is_empty(),

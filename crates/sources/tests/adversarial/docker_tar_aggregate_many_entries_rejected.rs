@@ -21,7 +21,10 @@ fn docker_tar_aggregate_many_entries_rejected() {
     let err = keyhog_sources::testing::validate_docker_tar_archive_with_total_cap(&tar_path, 1_000)
         .unwrap_err();
     let msg = err.to_string();
-    assert!(msg.contains("cumulative size exceeds") && msg.contains("zip-bomb"), "got {msg:?}");
+    assert!(
+        msg.contains("cumulative size exceeds") && msg.contains("zip-bomb"),
+        "got {msg:?}"
+    );
 }
 
 #[cfg(not(feature = "docker"))]

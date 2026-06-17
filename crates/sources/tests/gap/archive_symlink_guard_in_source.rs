@@ -4,6 +4,11 @@
 fn archive_symlink_guard_in_source() {
     let src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
+        "/src/filesystem/extract/archive.rs"
+    ))
+    .expect("filesystem/extract/archive.rs");
+    let parent = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
         "/src/filesystem/extract.rs"
     ))
     .expect("filesystem/extract.rs");
@@ -12,14 +17,14 @@ fn archive_symlink_guard_in_source() {
         "archive symlink guard log must exist"
     );
     assert!(
-        src.contains("std::fs::symlink_metadata(path)"),
+        parent.contains("std::fs::symlink_metadata(path)"),
         "symlink helper must use symlink_metadata without following links"
     );
     let guard = src
-        .find("if is_symlink(&path)")
+        .find("if is_symlink(path)")
         .expect("archive symlink guard");
     let open = src
-        .find("openpack::OpenPack::open_default(&path)")
+        .find("openpack::OpenPack::open(path")
         .expect("archive open");
     assert!(
         guard < open,

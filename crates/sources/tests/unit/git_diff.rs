@@ -109,7 +109,11 @@ fn git_diff_chunks_carry_absolute_base_line_per_hunk() {
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
 
     // One chunk per hunk.
-    assert_eq!(chunks.len(), 2, "expected one chunk per hunk; got {chunks:?}");
+    assert_eq!(
+        chunks.len(),
+        2,
+        "expected one chunk per hunk; got {chunks:?}"
+    );
     // Match each chunk to its hunk by content and assert its base line is the
     // new-file start minus one (line 10 -> base_line 9, line 200 -> 199).
     for c in &chunks {

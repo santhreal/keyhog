@@ -35,18 +35,8 @@
 //! offending shrunken case.
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::{CompiledScanner, ScannerConfig};
+use keyhog_scanner::CompiledScanner;
 use proptest::prelude::*;
-use std::path::PathBuf;
-use std::sync::OnceLock;
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
-}
 
 fn shared_scanner() -> &'static CompiledScanner {
     // Shared single scanner (LG2): all adversarial full-detector tests

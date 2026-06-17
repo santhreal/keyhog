@@ -9,8 +9,16 @@ fn git_corrupt_packed_refs_malformed_rejected() {
     let git_dir = dir.path().join(".git");
     std::fs::create_dir_all(git_dir.join("refs/heads")).expect("refs");
     std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").expect("head");
-    std::fs::write(git_dir.join("refs/heads/main"), "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n").expect("ref");
-    std::fs::write(git_dir.join("packed-refs"), b"# pack-refs with headers\n^not-a-ref\n").expect("packed");
+    std::fs::write(
+        git_dir.join("refs/heads/main"),
+        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n",
+    )
+    .expect("ref");
+    std::fs::write(
+        git_dir.join("packed-refs"),
+        b"# pack-refs with headers\n^not-a-ref\n",
+    )
+    .expect("packed");
 
     let err = GitSource::new(dir.path().to_path_buf())
         .chunks()

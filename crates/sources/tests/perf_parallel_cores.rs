@@ -161,7 +161,12 @@ fn ceiling(chunks: &[Chunk], threads: usize, k: usize) -> (f64, usize) {
     best_of(
         || {
             let t = Instant::now();
-            let s: u64 = p.install(|| chunks.par_iter().map(per_chunk_work).sum());
+            let s: u64 = p.install(|| {
+                chunks
+                    .par_iter()
+                    .map(per_chunk_work)
+                    .reduce(|| 0, |a, b| a.wrapping_add(b))
+            });
             std::hint::black_box(s);
             (t.elapsed().as_secs_f64(), chunks.len())
         },
@@ -203,7 +208,10 @@ fn via_source(root: &std::path::Path, threads: usize, k: usize) -> (f64, usize) 
                 rx.into_iter()
                     .par_bridge()
                     .map(|batch| {
-                        let s: u64 = batch.iter().map(per_chunk_work).sum();
+                        let s = batch
+                            .iter()
+                            .map(per_chunk_work)
+                            .fold(0u64, |a, b| a.wrapping_add(b));
                         (s, batch.len())
                     })
                     .reduce(|| (0u64, 0usize), |a, b| (a.0.wrapping_add(b.0), a.1 + b.1))

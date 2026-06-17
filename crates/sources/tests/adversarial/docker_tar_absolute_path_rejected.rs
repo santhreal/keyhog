@@ -19,7 +19,10 @@ fn docker_tar_absolute_path_rejected() {
 
     let err = keyhog_sources::testing::validate_docker_tar_archive(&tar_path).unwrap_err();
     let msg = err.to_string();
-    assert!(msg.contains("unsafe path"), "expected tar rejection, got {msg:?}");
+    assert!(
+        msg.contains("unsafe path"),
+        "expected tar rejection, got {msg:?}"
+    );
 }
 
 #[cfg(feature = "docker")]

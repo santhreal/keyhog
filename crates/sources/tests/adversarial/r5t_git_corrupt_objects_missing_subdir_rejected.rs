@@ -9,7 +9,11 @@ fn r5t_git_corrupt_objects_missing_subdir_rejected() {
     let git_dir = dir.path().join(".git");
     std::fs::create_dir_all(&git_dir).expect("mkdir");
     std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").expect("head");
-    std::fs::write(git_dir.join("config"), "[core]\n\trepositoryformatversion = 0\n").expect("cfg");
+    std::fs::write(
+        git_dir.join("config"),
+        "[core]\n\trepositoryformatversion = 0\n",
+    )
+    .expect("cfg");
     let err = GitSource::new(dir.path().to_path_buf())
         .chunks()
         .next()

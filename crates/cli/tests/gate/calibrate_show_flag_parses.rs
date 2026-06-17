@@ -12,6 +12,6 @@ fn calibrate_show_sets_show_only_mode() {
             assert!(args.tp.is_empty());
             assert!(args.fp.is_empty());
         }
-        other => panic!("expected Calibrate subcommand"),
+        _ => panic!("expected Calibrate subcommand"),
     }
 }

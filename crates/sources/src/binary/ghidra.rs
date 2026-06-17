@@ -41,9 +41,31 @@ pub(crate) fn find_ghidra_headless() -> Option<PathBuf> {
         "/usr/share/ghidra/support/analyzeHeadless",
         "/usr/local/share/ghidra/support/analyzeHeadless",
     ] {
-        for entry in glob::glob(pattern).into_iter().flatten().flatten() {
-            if entry.exists() {
-                return Some(entry);
+        let paths = match glob::glob(pattern) {
+            Ok(paths) => paths,
+            Err(error) => {
+                tracing::warn!(
+                    pattern,
+                    %error,
+                    "Ghidra discovery glob pattern failed; skipping pattern"
+                );
+                continue;
+            }
+        };
+        for entry in paths {
+            match entry {
+                Ok(entry) => {
+                    if entry.exists() {
+                        return Some(entry);
+                    }
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        pattern,
+                        %error,
+                        "Ghidra discovery glob entry failed; skipping entry"
+                    );
+                }
             }
         }
     }

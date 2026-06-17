@@ -9,7 +9,11 @@ fn git_corrupt_config_invalid_ini_rejected() {
     let git_dir = dir.path().join(".git");
     std::fs::create_dir_all(&git_dir).expect("mkdir");
     std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").expect("head");
-    std::fs::write(git_dir.join("config"), b"[core\n\trepositoryformatversion = not-a-number\n").expect("config");
+    std::fs::write(
+        git_dir.join("config"),
+        b"[core\n\trepositoryformatversion = not-a-number\n",
+    )
+    .expect("config");
 
     let err = GitSource::new(dir.path().to_path_buf())
         .chunks()

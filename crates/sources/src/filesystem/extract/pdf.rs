@@ -1,0 +1,436 @@
+//! Bounded PDF text extraction for filesystem entries.
+//!
+//! The normal text decoder must keep rejecting `%PDF-` bytes: a PDF is a
+//! structured container, not a text file. This module owns the explicit PDF
+//! route so `.pdf` entries are no longer silently skipped by extension while
+//! malformed, encrypted, unsupported-filter, or truncated PDFs still surface a
+//! source coverage gap.
+
+use super::{display_path, is_symlink};
+use crate::filesystem::read;
+use keyhog_core::{Chunk, ChunkMetadata, SourceError};
+use memchr::memmem;
+use std::io::Read as _;
+use std::path::Path;
+
+const STREAM: &[u8] = b"stream";
+const ENDSTREAM: &[u8] = b"endstream";
+const PDF_UNCAPPED_DECODE_BUDGET: usize = 1024 * 1024 * 1024;
+const MIN_PDF_TEXT_LEN: usize = 4;
+
+pub(super) fn extract_pdf_chunks(
+    path: &Path,
+    file_size: u64,
+    live_mtime_ns: Option<u64>,
+    max_size: u64,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) {
+    if is_symlink(path) {
+        tracing::warn!(
+            path = %path.display(),
+            "refusing to open PDF at a symlink path - prevents the link-swap attack class"
+        );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        return;
+    }
+
+    let bytes = match read::read_file_safe(path, file_size) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            tracing::warn!(
+                path = %path.display(),
+                %error,
+                "cannot read PDF file; skipping"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            let _ = emit(Err(SourceError::Io(error))); // LAW10: loud-counted/surfaced: read failure already bumped unreadable and this terminal Err chunk is emitted before returning; consumer stop status has no later work to suppress
+            return;
+        }
+    };
+    let path_display = display_path(path);
+
+    if !bytes.starts_with(b"%PDF-") {
+        emit_non_pdf_extension_fallback(bytes, path_display, live_mtime_ns, file_size, emit);
+        return;
+    }
+
+    let budget = pdf_decode_budget(max_size);
+    let extracted = extract_pdf_text(&bytes, budget);
+    if extracted.encrypted_or_unsupported {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+    }
+    if extracted.truncated {
+        eprintln!(
+            "keyhog: WARNING: PDF extraction of {} hit the {} byte decoded-stream cap - only the truncated prefix was scanned; the rest was NOT.",
+            path.display(),
+            budget
+        );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+    }
+
+    let text = extracted.text.trim();
+    if text.is_empty() {
+        return;
+    }
+    if !emit(Ok(Chunk {
+        data: text.to_owned().into(),
+        metadata: ChunkMetadata {
+            source_type: "filesystem/pdf".to_string(),
+            path: Some(path_display),
+            mtime_ns: live_mtime_ns,
+            size_bytes: Some(file_size),
+            decoded_span: None,
+            ..Default::default()
+        },
+    })) {
+        tracing::debug!("PDF chunk consumer stopped before final chunk");
+    }
+}
+
+fn emit_non_pdf_extension_fallback(
+    bytes: Vec<u8>,
+    path_display: String,
+    live_mtime_ns: Option<u64>,
+    file_size: u64,
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+) {
+    let (data, source_type) = match read::decode_text_file(&bytes) {
+        Some(text) if !text.is_empty() => (text.into(), "filesystem"),
+        _ => {
+            let strings = crate::strings::extract_printable_strings(&bytes, 8);
+            if strings.is_empty() {
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                return;
+            }
+            (
+                keyhog_core::SensitiveString::join(&strings, "\n"),
+                "filesystem:binary-strings",
+            )
+        }
+    };
+
+    if !emit(Ok(Chunk {
+        data,
+        metadata: ChunkMetadata {
+            source_type: source_type.to_string(),
+            path: Some(path_display),
+            mtime_ns: live_mtime_ns,
+            size_bytes: Some(file_size),
+            decoded_span: None,
+            ..Default::default()
+        },
+    })) {
+        return;
+    }
+}
+
+fn pdf_decode_budget(max_size: u64) -> usize {
+    if max_size == 0 {
+        return PDF_UNCAPPED_DECODE_BUDGET;
+    }
+    let budget = max_size.saturating_mul(4);
+    match usize::try_from(budget) {
+        Ok(value) => value.min(PDF_UNCAPPED_DECODE_BUDGET),
+        Err(_error) => PDF_UNCAPPED_DECODE_BUDGET,
+    }
+}
+
+#[derive(Default)]
+struct PdfExtract {
+    text: String,
+    encrypted_or_unsupported: bool,
+    truncated: bool,
+}
+
+fn extract_pdf_text(bytes: &[u8], decoded_budget: usize) -> PdfExtract {
+    let mut out = PdfExtract::default();
+    if memmem::find(bytes, b"/Encrypt").is_some() {
+        out.encrypted_or_unsupported = true;
+    }
+
+    let mut ranges = Vec::new();
+    let mut cursor = 0usize;
+    let mut remaining_budget = decoded_budget;
+    while let Some(rel) = memmem::find(&bytes[cursor..], STREAM) {
+        let stream_pos = cursor + rel;
+        if !is_pdf_keyword_boundary(bytes, stream_pos, STREAM.len()) {
+            cursor = stream_pos + STREAM.len();
+            continue;
+        }
+
+        let body_start = stream_body_start(bytes, stream_pos + STREAM.len());
+        let Some(end_rel) = memmem::find(&bytes[body_start..], ENDSTREAM) else {
+            out.encrypted_or_unsupported = true;
+            break;
+        };
+        let body_end = body_start + end_rel;
+        ranges.push((body_start, body_end + ENDSTREAM.len()));
+
+        if remaining_budget == 0 {
+            out.truncated = true;
+            cursor = body_end + ENDSTREAM.len();
+            continue;
+        }
+
+        let dict = stream_dictionary_window(bytes, stream_pos);
+        let stream_bytes = &bytes[body_start..body_end];
+        match decode_stream(dict, stream_bytes, remaining_budget) {
+            StreamDecode::Borrowed(slice, truncated) => {
+                append_pdf_strings(slice, &mut out.text);
+                remaining_budget = remaining_budget.saturating_sub(slice.len());
+                out.truncated |= truncated;
+            }
+            StreamDecode::Owned(decoded, truncated, recovered_after_error) => {
+                append_pdf_strings(&decoded, &mut out.text);
+                remaining_budget = remaining_budget.saturating_sub(decoded.len());
+                out.truncated |= truncated;
+                out.encrypted_or_unsupported |= recovered_after_error;
+            }
+            StreamDecode::UnsupportedOrUnreadable => {
+                out.encrypted_or_unsupported = true;
+            }
+        }
+        cursor = body_end + ENDSTREAM.len();
+    }
+
+    append_pdf_strings_outside_streams(bytes, &ranges, &mut out.text);
+    out
+}
+
+enum StreamDecode<'a> {
+    Borrowed(&'a [u8], bool),
+    Owned(Vec<u8>, bool, bool),
+    UnsupportedOrUnreadable,
+}
+
+fn decode_stream<'a>(dict: &[u8], stream_bytes: &'a [u8], budget: usize) -> StreamDecode<'a> {
+    if stream_is_image(dict) {
+        return StreamDecode::Borrowed(&[], false);
+    }
+
+    let has_filter = memmem::find(dict, b"/Filter").is_some();
+    let has_flate =
+        memmem::find(dict, b"/FlateDecode").is_some() || memmem::find(dict, b"/Fl").is_some();
+
+    if has_filter && !has_flate {
+        return StreamDecode::UnsupportedOrUnreadable;
+    }
+    if has_filter {
+        return inflate_pdf_stream(stream_bytes, budget);
+    }
+
+    let take = stream_bytes.len().min(budget);
+    StreamDecode::Borrowed(&stream_bytes[..take], stream_bytes.len() > take)
+}
+
+fn inflate_pdf_stream(stream_bytes: &[u8], budget: usize) -> StreamDecode<'_> {
+    let mut out = Vec::new();
+    let limit = (budget as u64).saturating_add(1);
+    let mut decoder = flate2::read::ZlibDecoder::new(stream_bytes).take(limit);
+    let result = decoder.read_to_end(&mut out);
+    let truncated = out.len() > budget;
+    if truncated {
+        out.truncate(budget);
+    }
+    match result {
+        Ok(_) => StreamDecode::Owned(out, truncated, false),
+        Err(_) if !out.is_empty() => StreamDecode::Owned(out, truncated, true),
+        Err(_) => StreamDecode::UnsupportedOrUnreadable, // LAW10: loud-counted/surfaced: caller turns this stream decode failure into an unreadable source coverage gap
+    }
+}
+
+fn stream_is_image(dict: &[u8]) -> bool {
+    memmem::find(dict, b"/Subtype").is_some() && memmem::find(dict, b"/Image").is_some()
+}
+
+fn stream_dictionary_window(bytes: &[u8], stream_pos: usize) -> &[u8] {
+    let window_start = stream_pos.saturating_sub(8192);
+    &bytes[window_start..stream_pos]
+}
+
+fn stream_body_start(bytes: &[u8], after_stream_keyword: usize) -> usize {
+    match bytes.get(after_stream_keyword) {
+        Some(b'\r') => {
+            if bytes.get(after_stream_keyword + 1) == Some(&b'\n') {
+                after_stream_keyword + 2
+            } else {
+                after_stream_keyword + 1
+            }
+        }
+        Some(b'\n') => after_stream_keyword + 1,
+        _ => after_stream_keyword,
+    }
+}
+
+fn is_pdf_keyword_boundary(bytes: &[u8], pos: usize, len: usize) -> bool {
+    let before = pos
+        .checked_sub(1)
+        .and_then(|idx| bytes.get(idx))
+        .copied()
+        .map(is_pdf_name_byte)
+        .is_some_and(|is_name| is_name);
+    let after = bytes
+        .get(pos + len)
+        .copied()
+        .map(is_pdf_name_byte)
+        .is_some_and(|is_name| is_name);
+    !before && !after
+}
+
+fn is_pdf_name_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
+}
+
+fn append_pdf_strings_outside_streams(bytes: &[u8], ranges: &[(usize, usize)], out: &mut String) {
+    let mut cursor = 0usize;
+    for &(start, end) in ranges {
+        if start > cursor {
+            append_pdf_strings(&bytes[cursor..start], out);
+        }
+        cursor = cursor.max(end.min(bytes.len()));
+    }
+    if cursor < bytes.len() {
+        append_pdf_strings(&bytes[cursor..], out);
+    }
+}
+
+fn append_pdf_strings(bytes: &[u8], out: &mut String) {
+    let mut pos = 0usize;
+    while pos < bytes.len() {
+        match bytes[pos] {
+            b'(' => match parse_literal_string(bytes, pos) {
+                Some((text, next)) => {
+                    push_scannable_pdf_text(&text, out);
+                    pos = next;
+                }
+                None => pos += 1,
+            },
+            b'<' if bytes.get(pos + 1) != Some(&b'<') => match parse_hex_string(bytes, pos) {
+                Some((text, next)) => {
+                    push_scannable_pdf_text(&text, out);
+                    pos = next;
+                }
+                None => pos += 1,
+            },
+            _ => pos += 1,
+        }
+    }
+}
+
+fn push_scannable_pdf_text(text: &str, out: &mut String) {
+    let text = text.trim();
+    if text.len() < MIN_PDF_TEXT_LEN || !text.bytes().any(|b| b.is_ascii_alphanumeric()) {
+        return;
+    }
+    if out.is_empty() {
+        out.push_str(text);
+    } else {
+        out.push('\n');
+        out.push_str(text);
+    }
+}
+
+fn parse_literal_string(bytes: &[u8], start: usize) -> Option<(String, usize)> {
+    let mut pos = start + 1;
+    let mut depth = 1usize;
+    let mut out = Vec::new();
+    while pos < bytes.len() {
+        match bytes[pos] {
+            b'\\' => {
+                pos += 1;
+                if pos >= bytes.len() {
+                    return None;
+                }
+                match bytes[pos] {
+                    b'n' => out.push(b'\n'),
+                    b'r' => out.push(b'\r'),
+                    b't' => out.push(b'\t'),
+                    b'b' => out.push(0x08),
+                    b'f' => out.push(0x0c),
+                    b'(' | b')' | b'\\' => out.push(bytes[pos]),
+                    b'\r' => {
+                        if bytes.get(pos + 1) == Some(&b'\n') {
+                            pos += 1;
+                        }
+                    }
+                    b'\n' => {}
+                    b'0'..=b'7' => {
+                        let (value, consumed) = parse_octal_escape(bytes, pos);
+                        out.push(value);
+                        pos += consumed.saturating_sub(1);
+                    }
+                    other => out.push(other),
+                }
+            }
+            b'(' => {
+                depth += 1;
+                out.push(b'(');
+            }
+            b')' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some((String::from_utf8_lossy(&out).into_owned(), pos + 1));
+                }
+                out.push(b')');
+            }
+            byte => out.push(byte),
+        }
+        pos += 1;
+    }
+    None
+}
+
+fn parse_octal_escape(bytes: &[u8], start: usize) -> (u8, usize) {
+    let mut value = 0u16;
+    let mut consumed = 0usize;
+    for idx in start..(start + 3).min(bytes.len()) {
+        match bytes[idx] {
+            b'0'..=b'7' => {
+                value = value * 8 + u16::from(bytes[idx] - b'0');
+                consumed += 1;
+            }
+            _ => break,
+        }
+    }
+    ((value & 0xff) as u8, consumed)
+}
+
+fn parse_hex_string(bytes: &[u8], start: usize) -> Option<(String, usize)> {
+    let mut pos = start + 1;
+    let mut nibbles = Vec::new();
+    while pos < bytes.len() {
+        let byte = bytes[pos];
+        if byte == b'>' {
+            if nibbles.len() % 2 == 1 {
+                nibbles.push(0);
+            }
+            let mut decoded = Vec::with_capacity(nibbles.len() / 2);
+            let mut idx = 0usize;
+            while idx + 1 < nibbles.len() {
+                decoded.push((nibbles[idx] << 4) | nibbles[idx + 1]);
+                idx += 2;
+            }
+            return Some((String::from_utf8_lossy(&decoded).into_owned(), pos + 1));
+        }
+        if byte.is_ascii_whitespace() {
+            pos += 1;
+            continue;
+        }
+        let value = match hex_value(byte) {
+            Some(value) => value,
+            None => return None,
+        };
+        nibbles.push(value);
+        pos += 1;
+    }
+    None
+}
+
+fn hex_value(byte: u8) -> Option<u8> {
+    match byte {
+        b'0'..=b'9' => Some(byte - b'0'),
+        b'a'..=b'f' => Some(byte - b'a' + 10),
+        b'A'..=b'F' => Some(byte - b'A' + 10),
+        _ => None,
+    }
+}

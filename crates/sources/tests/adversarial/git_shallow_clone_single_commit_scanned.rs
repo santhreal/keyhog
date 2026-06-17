@@ -14,7 +14,11 @@ fn git_shallow_clone_single_commit_scanned() {
         .status()
         .expect("git init")
         .success());
-    std::fs::write(origin.path().join("secret.env"), "SHALLOW=AKIAQYLPMN5HFIQR7XYA\n").expect("write");
+    std::fs::write(
+        origin.path().join("secret.env"),
+        "SHALLOW=AKIAQYLPMN5HFIQR7XYA\n",
+    )
+    .expect("write");
     assert!(Command::new("git")
         .args(["add", "secret.env"])
         .current_dir(origin.path())
@@ -22,7 +26,15 @@ fn git_shallow_clone_single_commit_scanned() {
         .expect("git add")
         .success());
     assert!(Command::new("git")
-        .args(["-c", "user.email=test@example.com", "-c", "user.name=test", "commit", "-m", "init"])
+        .args([
+            "-c",
+            "user.email=test@example.com",
+            "-c",
+            "user.name=test",
+            "commit",
+            "-m",
+            "init"
+        ])
         .current_dir(origin.path())
         .status()
         .expect("git commit")

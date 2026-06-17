@@ -28,6 +28,11 @@ pub use diff::GitDiffSource;
 pub use history::GitHistorySource;
 pub use source::GitSource;
 
+#[cfg(feature = "git")]
+pub(crate) fn record_git_history_cap_for_test(total_bytes: usize, chunk_count: usize) -> bool {
+    source::record_git_history_cap_for_test(total_bytes, chunk_count)
+}
+
 /// Per-line read cap for `git log`/`git diff` stdout. A commit that stored a
 /// single newline-free blob (minified bundle, base64 of a binary, a DB dump on
 /// one line) would otherwise let `read_until`/`.lines()` grow the line buffer
@@ -132,7 +137,7 @@ pub(crate) fn parse_hunk_new_start(header: &str) -> Option<usize> {
         .chars()
         .take_while(|c| c.is_ascii_digit())
         .collect();
-    digits.parse().ok()
+    digits.parse().ok() // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
 }
 
 #[cfg(test)]
@@ -157,7 +162,11 @@ pub(crate) fn validate_repo_path(repo_path: &Path) -> Result<String, SourceError
     // a repo. We now canonicalize the path (resolves `..` and symlinks) and
     // require it to point at an actual `.git` directory or a worktree
     // containing one. Anything else is refused.
-    let raw = repo_path.to_str().unwrap_or(".");
+    // Law 10: security-safe — `raw` is used ONLY for the `-`/control-char
+    // pre-check and error display. A non-UTF-8 path defaulting to "." here cannot
+    // bypass the real gate: line below canonicalizes the ORIGINAL `repo_path`
+    // (not `raw`) and refuses anything not pointing at a real `.git`.
+    let raw = repo_path.to_str().unwrap_or("."); // LAW10: absent name/label => display default; reporting-only, recall-safe
     if raw.starts_with('-') || raw.chars().any(char::is_control) {
         return Err(SourceError::Other(
             "repository path contains unsafe characters".into(),

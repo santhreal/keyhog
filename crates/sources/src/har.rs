@@ -44,7 +44,7 @@ use keyhog_core::{Chunk, ChunkMetadata, SourceError};
 /// `path_str` is the display path used as the `ChunkMetadata.path`
 /// prefix for each emitted chunk - typically the path the user passed
 /// to `keyhog scan`. The per-entry URL is appended with `#`.
-pub fn try_expand_har(
+pub(crate) fn try_expand_har(
     bytes: &[u8],
     path_str: &str,
     max_size: u64,
@@ -215,7 +215,11 @@ fn decoded_content_text(content: &HarContent) -> Option<String> {
     if content.encoding.as_deref() == Some("base64") {
         match base64::engine::general_purpose::STANDARD.decode(text.trim()) {
             Ok(bytes) => Some(String::from_utf8_lossy(&bytes).into_owned()),
-            Err(_) => Some(text.clone()),
+            // Law 10: recall-safe — a malformed `encoding: base64` body is scanned
+            // RAW instead of being dropped, so a credential in the un-decodable
+            // body still reaches the scanner. Proven by the
+            // `malformed_base64_encoding_falls_back_to_raw_text` regression test.
+            Err(_) => Some(text.clone()), // LAW10: unrecognized/partial => caller scans whole-file/recovered prefix; recall-preserving
         }
     } else {
         Some(text.clone())

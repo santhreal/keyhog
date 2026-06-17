@@ -1,6 +1,6 @@
 [package]
 name = "keyhog-sources"
-description = "keyhog-sources: pluggable input backends for KeyHog (git, S3, Docker, Web)"
+description = "keyhog-sources: pluggable input backends for KeyHog (git, S3, GCS, Azure Blob, Docker, Web)"
 version.workspace = true
 authors = ["Santh Project <security@santh.dev>"]
 edition.workspace = true
@@ -23,23 +23,28 @@ git = ["gix"]
 # they're unconditional now (serde for the HAR parser in
 # filesystem.rs::har, which is in the always-on path).
 #
-# `keyhog-verifier` is pulled in so the WebSource SSRF gate
-# (web/ssrf.rs) delegates to the fleet-canonical IP classifier
-# `keyhog_verifier::ssrf::is_private_ip_addr` instead of forking it.
-# That predicate already layers the fast reserved-range checks
-# (Class E, CGN, benchmark, IETF, 0.0.0.0/8, ...) on top of
-# `bogon::ip_addr_is_bogon`, exactly as the bogon module docs mandate.
-web = ["dep:reqwest", "dep:url", "dep:keyhog-verifier"]
+# `keyhog-verifier` is pulled in by web and s3 so WebSource SSRF delegates to
+# the fleet-canonical URL/IP classifier and S3 request signing delegates to the
+# single SigV4 owner instead of carrying source-local forks.
+web = ["dep:reqwest", "dep:keyhog-verifier"]
 github = ["dep:reqwest", "dep:tempfile"]
+gitlab = ["dep:reqwest", "dep:tempfile", "dep:urlencoding"]
+bitbucket = ["dep:reqwest", "dep:tempfile"]
 slack = ["dep:reqwest"]
+azure = [
+    "dep:reqwest",
+    "dep:quick-xml",
+    "dep:urlencoding",
+]
+gcs = [
+    "dep:reqwest",
+    "dep:urlencoding",
+]
 s3 = [
     "dep:reqwest",
     "dep:quick-xml",
     "dep:urlencoding",
-    "dep:hmac",
-    "dep:sha2",
-    "dep:hex",
-    "dep:chrono",
+    "dep:keyhog-verifier",
 ]
 # `tar` is now an unconditional dependency (used by the always-on filesystem
 # tarball-unpack path), so the docker feature only needs to pull in tempfile.
@@ -50,14 +55,16 @@ binary = ["dep:goblin", "dep:tempfile", "dep:glob", "dep:wait-timeout"]  # ELF/P
 keyhog-core = { workspace = true }
 # Canonical SSRF IP classifier lives here as `keyhog_verifier::ssrf`
 # (which composes the fast reserved-range checks with
-# `bogon::ip_addr_is_bogon`). Gated under `web` because only the
-# WebSource SSRF guard consumes it. No dependency cycle: keyhog-verifier
-# depends only on keyhog-core, never on keyhog-sources.
+# `bogon::ip_addr_is_bogon`); canonical SigV4 signing lives here as
+# `keyhog_verifier::sigv4`. Gated under the features that consume those owners.
+# No dependency cycle: keyhog-verifier depends only on keyhog-core, never on
+# keyhog-sources.
 keyhog-verifier = { workspace = true, optional = true }
 codewalk = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 rayon = { workspace = true }
+toml = { workspace = true }
 # Concurrent dedup/seen-path maps in the always-on filesystem walker
 # (`filesystem.rs`). Was previously only present transitively via other
 # workspace members, so reduced-feature builds (e.g. `--features ci`) failed
@@ -70,6 +77,8 @@ memchr = { workspace = true }
 regex = { workspace = true }
 ziftsieve = { workspace = true, features = ["gzip", "lz4", "zstd", "snappy"] }
 openpack = { workspace = true, features = ["zip", "apk", "ipa", "crx"] }
+zip = "2.2"
+rars = { workspace = true }
 # True-decompression decoders for the always-on filesystem compressed-input
 # path (filesystem/extract.rs). ziftsieve only extracts DEFLATE literals for
 # its bloom prefilter (drops back-references), so it cannot reconstruct the
@@ -78,11 +87,16 @@ flate2 = { workspace = true }
 zstd = { workspace = true }
 lz4_flex = { workspace = true }
 snap = { workspace = true }
+bzip2 = { workspace = true }
+xz2 = { workspace = true }
+sevenz-rust2 = { workspace = true }
 # `tar` is non-optional (NOT just the `docker` feature) because the always-on
 # filesystem path untars gzip(tar)/.tgz/.tar containers per-entry so a secret
 # in a tarball is scanned with the correct inner path. The `docker` feature
 # reuses the same dependency.
 tar = { workspace = true }
+blake3 = { workspace = true }
+sha2 = { workspace = true }
 # Binary analysis dependencies
 goblin = { workspace = true, optional = true }
 glob = { workspace = true, optional = true }
@@ -96,7 +110,7 @@ io-uring = { workspace = true }
 
 # Feature-gated optional deps. Previously declared inside the
 # `[target.cfg(target_os = "linux")]` block, which silently scoped
-# them to Linux only — every `web` / `github` / `s3` / `docker` /
+# them to Linux only — every `web` / `github` / `s3` / `gcs` / `docker` /
 # `binary` build on Windows or macOS failed with `unresolved
 # import reqwest`. They need to be declared at workspace scope so
 # all OSes that activate the corresponding feature can resolve them.
@@ -137,41 +151,40 @@ optional = true
 [dependencies.unicode-normalization]
 workspace = true
 
-# url crate is used by the WebSource SSRF filter (web.rs::is_disallowed_web_host)
-# to match reqwest::Url::host() into Ipv4 / Ipv6 / Domain variants. The
-# variant types are re-exported from reqwest internally but not as a
-# public path, so we depend on `url` directly. Optional because only
-# the `web` feature compiles the SSRF gate.
-[dependencies.url]
-workspace = true
-optional = true
-
-[dependencies.hmac]
-workspace = true
-optional = true
-
-[dependencies.sha2]
-workspace = true
-optional = true
-
-[dependencies.hex]
-workspace = true
-optional = true
-
-[dependencies.chrono]
-workspace = true
-default-features = true
-optional = true
-
 [dev-dependencies]
 flate2 = "1"
-zip = "2.2"
 httpmock = { workspace = true }
 proptest = { workspace = true }
 proptest-derive = { workspace = true }
 tempfile = { workspace = true }
+sevenz-rust2 = { workspace = true, features = ["compress"] }
 
 [[test]]
 name = "s3_ambient_credential_forward"
 path = "tests/s3_ambient_credential_forward.rs"
 required-features = ["s3"]
+
+[[test]]
+name = "regression_azure_blob_object_drops_counted"
+path = "tests/regression_azure_blob_object_drops_counted.rs"
+required-features = ["azure"]
+
+[[test]]
+name = "regression_gcs_object_drops_counted"
+path = "tests/regression_gcs_object_drops_counted.rs"
+required-features = ["gcs"]
+
+[[test]]
+name = "regression_s3_skipped_objects_counted"
+path = "tests/regression_s3_skipped_objects_counted.rs"
+required-features = ["s3"]
+
+[[test]]
+name = "regression_git_blob_drops_counted"
+path = "tests/regression_git_blob_drops_counted.rs"
+required-features = ["git"]
+
+[[test]]
+name = "regression_binary_unreadable_counted"
+path = "tests/regression_binary_unreadable_counted.rs"
+required-features = ["binary"]

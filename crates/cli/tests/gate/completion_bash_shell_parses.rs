@@ -9,6 +9,6 @@ fn completion_bash_shell_is_selected() {
     let cli = Cli::try_parse_from(["keyhog", "completion", "bash"]).unwrap();
     match cli.command {
         Some(Command::Completion(args)) => assert_eq!(args.shell, Shell::Bash),
-        other => panic!("expected Completion subcommand"),
+        _ => panic!("expected Completion subcommand"),
     }
 }

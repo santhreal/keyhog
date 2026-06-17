@@ -14,7 +14,8 @@ fn r5t_zip_slip_null_byte_in_name_not_extracted() {
     let file = File::create(&zip_path).expect("create");
     let mut zip = ZipWriter::new(file);
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-    zip.start_file("safe\0../../etc/passwd", opts).expect("start");
+    zip.start_file("safe\0../../etc/passwd", opts)
+        .expect("start");
     zip.write_all(b"ROOT=1\n").expect("write");
     zip.finish().expect("finish");
     let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())
@@ -22,5 +23,8 @@ fn r5t_zip_slip_null_byte_in_name_not_extracted() {
         .flatten()
         .map(|c| c.data.to_string())
         .collect();
-    assert!(!bodies.iter().any(|b| b.contains("ROOT=1")), "null-byte path must not extract; got {bodies:?}");
+    assert!(
+        !bodies.iter().any(|b| b.contains("ROOT=1")),
+        "null-byte path must not extract; got {bodies:?}"
+    );
 }

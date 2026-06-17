@@ -19,7 +19,13 @@
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
 
-use keyhog_sources::http::{async_client_builder, blocking_client_builder, HttpClientConfig};
+use keyhog_sources::{
+    http::HttpClientConfig,
+    testing::{
+        http_async_client_builder, http_blocking_client_builder, http_effective_insecure_tls,
+        http_effective_proxy,
+    },
+};
 
 const POLICY_CASES: u32 = 10_000;
 const BUILDER_CASES: u32 = 256;
@@ -119,7 +125,7 @@ proptest! {
     ) {
         with_http_env(env.as_deref(), None, || {
             let cfg = HttpClientConfig { proxy: Some(flag.clone()), ..Default::default() };
-            let resolved = cfg.effective_proxy();
+            let resolved = http_effective_proxy(&cfg);
             prop_assert_eq!(resolved.as_deref(), Some(flag.as_str()));
             Ok(())
         })?;
@@ -134,9 +140,9 @@ proptest! {
             // documented behavior - operators sometimes export an
             // empty var to "clear" a parent shell's setting).
             if env.is_empty() {
-                prop_assert_eq!(cfg.effective_proxy(), None);
+                prop_assert_eq!(http_effective_proxy(&cfg), None);
             } else {
-                prop_assert_eq!(cfg.effective_proxy(), Some(env.clone()));
+                prop_assert_eq!(http_effective_proxy(&cfg), Some(env.clone()));
             }
             Ok(())
         })?;
@@ -149,7 +155,7 @@ proptest! {
         let _ = noise;
         with_http_env(Some(""), None, || {
             let cfg = HttpClientConfig::default();
-            prop_assert!(cfg.effective_proxy().is_none());
+            prop_assert!(http_effective_proxy(&cfg).is_none());
             Ok(())
         })?;
     }
@@ -165,7 +171,7 @@ proptest! {
     fn blocking_builder_handles_every_proxy_url(p in any_proxy_url()) {
         with_http_env(None, None, || {
             let cfg = HttpClientConfig { proxy: Some(p.clone()), ..Default::default() };
-            match blocking_client_builder(&cfg) {
+            match http_blocking_client_builder(&cfg) {
                 Ok(_) | Err(_) => {} // either is fine; we're proving no-panic
             }
         });
@@ -176,7 +182,7 @@ proptest! {
     fn async_builder_handles_every_proxy_url(p in any_proxy_url()) {
         with_http_env(None, None, || {
             let cfg = HttpClientConfig { proxy: Some(p.clone()), ..Default::default() };
-            match async_client_builder(&cfg) {
+            match http_async_client_builder(&cfg) {
                 Ok(_) | Err(_) => {}
             }
         });
@@ -192,8 +198,8 @@ proptest! {
     fn default_builder_always_succeeds(insecure in any::<bool>()) {
         with_http_env(None, None, || {
             let cfg = HttpClientConfig { insecure_tls: insecure, ..Default::default() };
-            let blocking = blocking_client_builder(&cfg);
-            let r#async = async_client_builder(&cfg);
+            let blocking = http_blocking_client_builder(&cfg);
+            let r#async = http_async_client_builder(&cfg);
             prop_assert!(blocking.is_ok(), "blocking builder must succeed for insecure_tls={insecure}");
             prop_assert!(r#async.is_ok(), "async builder must succeed for insecure_tls={insecure}");
             // Build the actual clients (not just the builders) - a
@@ -205,7 +211,7 @@ proptest! {
                 "async builder must produce a usable client");
             // The insecure flag must round-trip through the cfg
             // accessor - regression check on accessor wiring.
-            prop_assert_eq!(cfg.effective_insecure_tls(), insecure);
+            prop_assert_eq!(http_effective_insecure_tls(&cfg), insecure);
             Ok(())
         })?;
     }
@@ -222,7 +228,7 @@ proptest! {
         with_http_env(None, Some(&value), || {
             let cfg = HttpClientConfig::default();
             let expected = matches!(value.as_str(), "1" | "true" | "TRUE");
-            prop_assert_eq!(cfg.effective_insecure_tls(), expected);
+            prop_assert_eq!(http_effective_insecure_tls(&cfg), expected);
             Ok(())
         })?;
     }
@@ -236,7 +242,7 @@ proptest! {
     ) {
         with_http_env(None, Some(&env), || {
             let cfg = HttpClientConfig { insecure_tls: true, ..Default::default() };
-            prop_assert!(cfg.effective_insecure_tls());
+            prop_assert!(http_effective_insecure_tls(&cfg));
             Ok(())
         })?;
     }
@@ -249,8 +255,8 @@ proptest! {
     fn default_config_is_offline_safe(_seed in any::<u32>()) {
         with_http_env(None, None, || {
             let cfg = HttpClientConfig::default();
-            prop_assert_eq!(cfg.effective_proxy(), None);
-            prop_assert!(!cfg.effective_insecure_tls());
+            prop_assert_eq!(http_effective_proxy(&cfg), None);
+            prop_assert!(!http_effective_insecure_tls(&cfg));
             prop_assert!(cfg.ua_suffix.is_none());
             Ok(())
         })?;
@@ -270,7 +276,7 @@ proptest! {
                 proxy: Some(flag.clone()),
                 ..Default::default()
             };
-            let resolved = cfg.effective_proxy();
+            let resolved = http_effective_proxy(&cfg);
             prop_assert_eq!(resolved.as_deref(), Some(flag.as_str()));
             Ok(())
         })?;
@@ -289,8 +295,8 @@ proptest! {
                 timeout: Some(std::time::Duration::from_secs(secs)),
                 ..Default::default()
             };
-            prop_assert!(blocking_client_builder(&cfg).is_ok());
-            prop_assert!(async_client_builder(&cfg).is_ok());
+            prop_assert!(http_blocking_client_builder(&cfg).is_ok());
+            prop_assert!(http_async_client_builder(&cfg).is_ok());
             Ok(())
         })?;
     }
@@ -307,8 +313,8 @@ proptest! {
                 },
                 ..Default::default()
             };
-            prop_assert!(blocking_client_builder(&cfg).unwrap().build().is_ok());
-            prop_assert!(async_client_builder(&cfg).unwrap().build().is_ok());
+            prop_assert!(http_blocking_client_builder(&cfg).unwrap().build().is_ok());
+            prop_assert!(http_async_client_builder(&cfg).unwrap().build().is_ok());
             Ok(())
         })?;
     }

@@ -9,12 +9,12 @@
 
 use keyhog_core::{Chunk, Source};
 use keyhog_sources::{
-    reset_skip_counters, skip_counts, FilesystemSource, SkipCounts, SKIPPED_BINARY,
-    SKIPPED_EXCLUDED, SKIPPED_OVER_MAX_SIZE, SKIPPED_UNREADABLE,
+    skip_counts,
+    testing::{reset_skip_counters, set_skip_counts},
+    FilesystemSource, SkipCounts,
 };
 use std::fs;
 use std::path::Path;
-use std::sync::atomic::Ordering;
 
 fn collect(src: &FilesystemSource) -> Vec<Chunk> {
     src.chunks().flatten().collect()
@@ -75,7 +75,9 @@ fn walks_and_delivers_file_content() {
     assert!(any_path_ends_with(&chunks, "app.env"));
     assert!(any_path_ends_with(&chunks, "readme.txt"));
     // source_type is the filesystem tag.
-    assert!(chunks.iter().all(|c| c.metadata.source_type == "filesystem"));
+    assert!(chunks
+        .iter()
+        .all(|c| c.metadata.source_type == "filesystem"));
 }
 
 #[test]
@@ -148,7 +150,7 @@ fn max_file_size_skips_oversize_file_and_bumps_counter() {
         "over-cap file content must not reach a chunk"
     );
     assert!(
-        SKIPPED_OVER_MAX_SIZE.load(Ordering::Relaxed) >= 1,
+        skip_counts().over_max_size >= 1,
         "the over-max-size skip counter must be bumped"
     );
 }
@@ -177,9 +179,8 @@ fn default_excludes_drop_lockfile_then_flag_includes_it() {
     );
 
     // Flag off: lockfile scanned.
-    let included = collect(
-        &FilesystemSource::new(dir.path().to_path_buf()).with_default_excludes(false),
-    );
+    let included =
+        collect(&FilesystemSource::new(dir.path().to_path_buf()).with_default_excludes(false));
     assert!(body_contains(&included, "control_marker_value"));
     assert!(
         body_contains(&included, SENTINEL),
@@ -215,9 +216,8 @@ fn gitignore_respected_inside_a_repo_then_overridable() {
     );
 
     // respect=false => secrets.env is scanned (scan-system behavior).
-    let unrestricted = collect(
-        &FilesystemSource::new(dir.path().to_path_buf()).with_respect_gitignore(false),
-    );
+    let unrestricted =
+        collect(&FilesystemSource::new(dir.path().to_path_buf()).with_respect_gitignore(false));
     assert!(
         body_contains(&unrestricted, "gitignored_marker_value"),
         "with respect_gitignore(false) the ignored file must be scanned"
@@ -283,16 +283,15 @@ fn ignore_paths_glob_excludes_matching_files() {
 }
 
 // ---------------------------------------------------------------------------
-// skipped_counter() handle
+// source construction
 // ---------------------------------------------------------------------------
 
 #[test]
-fn skipped_counter_handle_is_readable() {
+fn filesystem_source_new_is_readable() {
     let dir = tempfile::tempdir().unwrap();
     let src = FilesystemSource::new(dir.path().to_path_buf());
-    let counter = src.skipped_counter();
-    // Fresh source: metadata-skip counter starts at zero (no merkle index).
-    assert_eq!(counter.load(Ordering::Relaxed), 0);
+    let chunks = collect(&src);
+    assert!(chunks.is_empty(), "fresh empty source should be readable");
 }
 
 // ---------------------------------------------------------------------------
@@ -306,8 +305,18 @@ fn skip_counts_total_sums_all_categories() {
         binary: 3,
         excluded: 5,
         unreadable: 7,
+        archive_truncated: 11,
+        // Partial-coverage signals — deliberately NOT part of the whole-file
+        // skip total, so non-zero values here must not change total().
+        binary_section_name_unresolved: 13,
+        source_truncated: 17,
     };
-    assert_eq!(c.total(), 17);
+    assert_eq!(
+        c.total(),
+        28,
+        "total() sums only the five whole-file skip categories; partial-coverage \
+         counters are surfaced separately and excluded"
+    );
 }
 
 #[test]
@@ -319,10 +328,15 @@ fn skip_counts_default_is_all_zero() {
 
 #[test]
 fn reset_skip_counters_zeroes_every_category() {
-    SKIPPED_OVER_MAX_SIZE.store(11, Ordering::Relaxed);
-    SKIPPED_BINARY.store(22, Ordering::Relaxed);
-    SKIPPED_EXCLUDED.store(33, Ordering::Relaxed);
-    SKIPPED_UNREADABLE.store(44, Ordering::Relaxed);
+    set_skip_counts(SkipCounts {
+        over_max_size: 11,
+        binary: 22,
+        excluded: 33,
+        unreadable: 44,
+        archive_truncated: 0,
+        binary_section_name_unresolved: 55,
+        source_truncated: 66,
+    });
 
     reset_skip_counters();
 
@@ -331,13 +345,24 @@ fn reset_skip_counters_zeroes_every_category() {
     assert_eq!(snap.binary, 0);
     assert_eq!(snap.excluded, 0);
     assert_eq!(snap.unreadable, 0);
+    assert_eq!(
+        snap.binary_section_name_unresolved, 0,
+        "reset_skip_counters must also zero the binary section partial-parse counter"
+    );
+    assert_eq!(
+        snap.source_truncated, 0,
+        "reset_skip_counters must also zero source-level truncation counters"
+    );
     assert_eq!(snap.total(), 0);
 }
 
 #[test]
 fn skip_counts_reads_live_counters() {
     reset_skip_counters();
-    SKIPPED_BINARY.store(9, Ordering::Relaxed);
+    set_skip_counts(SkipCounts {
+        binary: 9,
+        ..SkipCounts::default()
+    });
     let snap = skip_counts();
     assert_eq!(snap.binary, 9, "snapshot must read the live atomic value");
     reset_skip_counters();

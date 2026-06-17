@@ -5,123 +5,26 @@ use codewalk::CodeWalker;
 use keyhog_core::merkle_index::MerkleIndex;
 use keyhog_core::{Chunk, Source, SourceError};
 use std::collections::HashSet;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::AtomicUsize;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 mod extract;
 mod filter;
+mod path;
 mod read;
+mod reader;
 
-pub(crate) use read::decode_text_file;
-use extract::process_entry;
 use filter::walker_config;
-/// Default source-level window size for the large-file scanning path.
-///
-/// Keep this aligned with the scanner's 1 MiB max chunk size so a multi-MiB
-/// source file enters the scanner as many independent chunks instead of one
-/// worker serially re-windowing the entire file. The overlap below preserves
-/// boundary-spanning secrets.
-const DEFAULT_WINDOW_SIZE: usize = 1024 * 1024;
+pub(crate) use path::display_path;
+pub(crate) use read::decode_text_file;
 
-/// Convert a `Path` to a user-facing display string, stripping the
-/// `\\?\` UNC verbatim prefix on Windows. `std::fs::canonicalize` on
-/// Windows always returns extended-length paths (`\\?\C:\Users\...`),
-/// which leak into finding output as
-/// `"\\\\?\\C:\\Users\\..."` JSON strings. Editors don't jump to those,
-/// and the prefix is purely a kernel implementation detail. Strip it
-/// when surfacing the path to humans / IDEs while leaving the actual
-/// `PathBuf` we use for I/O untouched.
-pub(crate) fn display_path(path: &Path) -> String {
-    let raw = path.display().to_string();
-    if cfg!(windows) {
-        strip_unc_prefix(&raw).to_string()
-    } else {
-        raw
-    }
+pub(crate) fn is_default_excluded_path(path: &str) -> bool {
+    filter::is_default_excluded(path)
 }
 
-pub(crate) fn strip_unc_prefix(s: &str) -> &str {
-    // Two shapes Rust may emit on Windows:
-    //   `\\?\C:\Users\me\src` (drive-letter form - the common case)
-    //   `\\?\UNC\server\share\dir` (network share form)
-    // Both prefixes are 4 / 8 bytes of ASCII; safe to slice.
-    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
-        // `\\?\UNC\server\share` → `\\server\share`. Rebuilding the
-        // double-backslash leading would require an allocation, so we
-        // accept losing it: returning the bare `server\share` form is
-        // ambiguous, so for UNC we leave it as-is for now (rare in
-        // user scans) and just trim the `\\?\` part.
-        let _ = rest;
-        s.strip_prefix(r"\\?\").unwrap_or(s)
-    } else if let Some(rest) = s.strip_prefix(r"\\?\") {
-        rest
-    } else {
-        s
-    }
-}
-
-/// Default overlap between consecutive source windows. 128 KiB matches the
-/// scanner's own window overlap and covers PEM-sized and multiline secrets
-/// that straddle a source cut.
-const DEFAULT_WINDOW_OVERLAP: usize = 128 * 1024;
-
-/// Hard ceiling on the dedicated file-reader crew. The crew is sized as a
-/// SMALL fraction of the host's cores (the I/O-overlap budget), NOT as a
-/// fraction of the scan pool. Reader threads spend almost all their time
-/// blocked - on the bounded `sync_channel(64)` `send` (downstream backpressure,
-/// confirmed by PERF-05's off-CPU profile) or on `read(2)` - so a modest crew
-/// overlaps read + decode + chunk-assembly with scanning while leaving the bulk
-/// of the cores to the scan workers. Growing it with the scan pool (the old
-/// `scan/2` sizing) only oversubscribes cores against the scan workers.
-const MAX_READER_THREADS: usize = 4;
-
-/// Number of dedicated file-reader threads to run alongside a scan pool of
-/// `scanner_threads`.
-///
-/// CRITICAL INVARIANT (PERF-parallel_cores): the reader crew must NOT scale
-/// with the scan pool. The previous sizing `clamp(scanner_threads/2, 2, 16)`
-/// added a SECOND CPU pool on top of the scan pool, so an N-core box running
-/// N scan threads also ran ~N/2 reader threads (16 scan + 8 reader = 24 on 16
-/// cores; 32 + 16 = 48). Those reader threads do real CPU work (UTF-8 decode,
-/// chunk assembly) and the OS time-sliced them against the scan workers,
-/// capping end-to-end multicore scaling at ~4.7x@16t (the scan engine alone
-/// reaches ~9.7x) and REGRESSING at 32t.
-///
-/// The crew is instead a small slice of the host (~1/4 of the cores), capped at
-/// [`MAX_READER_THREADS`] and floored at 2. That is the I/O-overlap budget: a
-/// handful of readers keep many scan workers fed (real scan work - Hyperscan +
-/// ML - dwarfs per-file read/decode, so few readers saturate the consumer),
-/// while the crew never balloons with the scan pool and so never oversubscribes
-/// cores. The readers run on their OWN threads (never the global/scan rayon
-/// pool), preserving the deadlock-avoidance invariant from the large-tree hang
-/// fix. `scanner_threads/4` ties the crew to the same core count the scan pool
-/// is sized from (the CLI sizes the global pool to `--threads`/physical cores),
-/// so reader + scan stays within the machine instead of stacking a second pool
-/// on top of it.
-fn reader_thread_count(scanner_threads: usize) -> usize {
-    // Tier-A operational override: `KEYHOG_READER_THREADS` lets an operator pin
-    // the reader crew (e.g. on an unusually I/O-bound or unusually CPU-bound
-    // corpus) without a recompile. A `0` / unparseable value falls back to the
-    // computed default. The override is still bounded by `scanner_threads` so it
-    // can never request more readers than the scan pool can usefully feed.
-    if let Ok(raw) = std::env::var("KEYHOG_READER_THREADS") {
-        if let Ok(n) = raw.trim().parse::<usize>() {
-            if n > 0 {
-                return n.min(scanner_threads.max(1));
-            }
-        }
-    }
-    // ~1/4 of the cores for I/O overlap, floored at 2 (one reader can stall on
-    // a slow file) and capped so the crew never balloons. Never more readers
-    // than scan threads (a 1-thread scan needs only 1 reader).
-    let crew = (scanner_threads / 4).clamp(2, MAX_READER_THREADS);
-    crew.min(scanner_threads.max(1))
-}
-
-#[doc(hidden)]
-pub fn reader_pool_thread_count_for_test(scanner_threads: usize) -> usize {
-    reader_thread_count(scanner_threads)
+pub(crate) fn reader_pool_thread_count_for_test(scanner_threads: usize) -> usize {
+    reader::reader_thread_count(scanner_threads)
 }
 
 /// Scans files in a directory tree.
@@ -168,7 +71,7 @@ impl FilesystemSource {
     pub fn new(root: PathBuf) -> Self {
         // Canonicalize so that discovered file paths are absolute and match
         // include_paths that are typically absolute (e.g. from git diff).
-        let root = root.canonicalize().unwrap_or(root);
+        let root = root.canonicalize().unwrap_or(root); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
         Self {
             root,
             max_file_size: 100 * 1024 * 1024, // 100 MB default - large files use windowed scanning
@@ -177,8 +80,8 @@ impl FilesystemSource {
             respect_gitignore: true,
             merkle: None,
             skipped: Arc::new(AtomicUsize::new(0)),
-            window_size: DEFAULT_WINDOW_SIZE,
-            window_overlap: DEFAULT_WINDOW_OVERLAP,
+            window_size: reader::DEFAULT_WINDOW_SIZE,
+            window_overlap: reader::DEFAULT_WINDOW_OVERLAP,
             respect_default_excludes: true,
         }
     }
@@ -196,7 +99,7 @@ impl FilesystemSource {
     /// with the defaults (1 MiB / 128 KiB); tests use this to exercise
     /// the multi-window path on tiny fixtures. `window_size` must
     /// strictly exceed `overlap` (the underlying slicer asserts this).
-    pub fn with_window_config(mut self, window_size: usize, overlap: usize) -> Self {
+    pub(crate) fn with_window_config(mut self, window_size: usize, overlap: usize) -> Self {
         assert!(window_size > overlap, "window must exceed overlap");
         self.window_size = window_size;
         self.window_overlap = overlap;
@@ -216,7 +119,7 @@ impl FilesystemSource {
     /// Returns a counter that the source increments every time the
     /// metadata fast-path skips a file. Cloned `Arc<AtomicUsize>`, safe
     /// to read after the iterator drains.
-    pub fn skipped_counter(&self) -> Arc<AtomicUsize> {
+    pub(crate) fn skipped_counter(&self) -> Arc<AtomicUsize> {
         self.skipped.clone()
     }
 
@@ -293,7 +196,7 @@ impl Source for FilesystemSource {
                     // not fully covered (Law 10 — a permission-denied subtree must
                     // not read as "clean"). The warn! line is debug-level noise at
                     // the default log level; the counter is the durable signal.
-                    crate::SKIPPED_UNREADABLE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
                     tracing::warn!(
                         %error,
                         "skipping unreadable filesystem entry; scan continues"
@@ -303,14 +206,16 @@ impl Source for FilesystemSource {
             })
         }
 
-        let entries: Box<dyn Iterator<Item = codewalk::FileEntry> + Send> =
-            if !self.include_paths.is_empty() {
-                // Restrict the walk to the canonicalized allowed set so we
-                // never traverse unrequested subdirectories (KH-54). The set is
-                // small (user-supplied include list); the directory walks it
-                // spawns stream lazily via `flat_map`, and explicitly-named
-                // single files are stat'd directly without a walk.
-                let allowed: HashSet<PathBuf> = self
+        let entries: Box<dyn Iterator<Item = codewalk::FileEntry> + Send> = if !self
+            .include_paths
+            .is_empty()
+        {
+            // Restrict the walk to the canonicalized allowed set so we
+            // never traverse unrequested subdirectories (KH-54). The set is
+            // small (user-supplied include list); the directory walks it
+            // spawns stream lazily via `flat_map`, and explicitly-named
+            // single files are stat'd directly without a walk.
+            let allowed: HashSet<PathBuf> = self
                     .include_paths
                     .iter()
                     .filter(|p| {
@@ -334,14 +239,14 @@ impl Source for FilesystemSource {
                         // branches in `extract.rs::process_entry`.
                         let is_link = std::fs::symlink_metadata(p)
                             .map(|m| m.file_type().is_symlink())
-                            .unwrap_or(false);
+                            .unwrap_or(false);  // LAW10: empty/absent => documented numeric default, recall-safe
                         if !is_link {
                             return true;
                         }
                         let ext = p
                             .extension()
                             .and_then(|e| e.to_str())
-                            .unwrap_or("")
+                            .unwrap_or("")  // LAW10: missing/non-string field => empty/placeholder; recall-safe
                             .to_ascii_lowercase();
                         let expandable = matches!(
                             ext.as_str(),
@@ -353,74 +258,72 @@ impl Source for FilesystemSource {
                                 path = %p.display(),
                                 "refusing --include of an archive symlink - prevents the link-swap exfiltration class"
                             );
-                            crate::SKIPPED_UNREADABLE
-                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            let _event =
+                                crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
                             return false;
                         }
                         true
                     })
-                    .map(|p| p.canonicalize().unwrap_or_else(|_| p.clone()))
+                    .map(|p| p.canonicalize().unwrap_or_else(|_| p.clone()))  // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
                     .collect();
-                Box::new(allowed.into_iter().flat_map(move |path| {
-                    let inner: Box<dyn Iterator<Item = codewalk::FileEntry> + Send> =
-                        if path.is_dir() {
-                            let sub_walker = CodeWalker::new(&path, config.clone());
-                            Box::new(forward_entries(sub_walker.walk_parallel(0)))
-                        } else if path.is_file() {
-                            match std::fs::metadata(&path) {
-                                Ok(meta) => Box::new(std::iter::once(codewalk::FileEntry {
-                                    path,
-                                    size: meta.len(),
-                                    // `is_binary` is a walk-time hint codewalk fills for
-                                    // directory walks. For an EXPLICITLY-included single
-                                    // file the user asked us to scan, leave it false:
-                                    // keyhog never reads this field (it does its own
-                                    // null-byte binary check at read time in this same
-                                    // file), so the hint is inert and `false` keeps the
-                                    // requested file in the scan set. (Required field
-                                    // since codewalk 0.2.5; omitting it broke every
-                                    // fresh keyhog-sources compile.)
-                                    is_binary: false,
-                                })),
-                                // Law 10: the user EXPLICITLY --include'd this file but
-                                // `stat` failed (permission / I/O / race-delete). A
-                                // silent `empty()` here drops a requested file while the
-                                // scan still prints "0 secrets", reading as a clean bill
-                                // of health for a file we never read. Count it as
-                                // unreadable so `report_skip_summary` surfaces the gap
-                                // (the same counter the archive-symlink refusal above uses).
-                                Err(e) => {
-                                    tracing::warn!(
-                                        path = %path.display(),
-                                        error = %e,
-                                        "explicitly --include'd file could not be stat'd; NOT scanned"
-                                    );
-                                    crate::SKIPPED_UNREADABLE
-                                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                                    Box::new(std::iter::empty())
-                                }
-                            }
-                        } else {
-                            // Explicitly --include'd path that is neither a file nor a
-                            // directory: a broken symlink, a special file (socket /
-                            // device / fifo), or it vanished between include-admission
-                            // and this walk. The user named it, so a silent drop would
-                            // again read as "clean" — count it unreadable so the gap is
-                            // surfaced rather than swallowed (Law 10).
+            Box::new(allowed.into_iter().flat_map(move |path| {
+                let inner: Box<dyn Iterator<Item = codewalk::FileEntry> + Send> = if path.is_dir() {
+                    let sub_walker = CodeWalker::new(&path, config.clone());
+                    Box::new(forward_entries(sub_walker.walk_parallel(0)))
+                } else if path.is_file() {
+                    match std::fs::metadata(&path) {
+                        Ok(meta) => Box::new(std::iter::once(codewalk::FileEntry {
+                            path,
+                            size: meta.len(),
+                            // `is_binary` is a walk-time hint codewalk fills for
+                            // directory walks. For an EXPLICITLY-included single
+                            // file the user asked us to scan, leave it false:
+                            // keyhog never reads this field (it does its own
+                            // null-byte binary check at read time in this same
+                            // file), so the hint is inert and `false` keeps the
+                            // requested file in the scan set. (Required field
+                            // since codewalk 0.2.5; omitting it broke every
+                            // fresh keyhog-sources compile.)
+                            is_binary: false,
+                        })),
+                        // Law 10: the user EXPLICITLY --include'd this file but
+                        // `stat` failed (permission / I/O / race-delete). A
+                        // silent `empty()` here drops a requested file while the
+                        // scan still prints "0 secrets", reading as a clean bill
+                        // of health for a file we never read. Count it as
+                        // unreadable so `report_skip_summary` surfaces the gap
+                        // (the same counter the archive-symlink refusal above uses).
+                        Err(e) => {
                             tracing::warn!(
                                 path = %path.display(),
-                                "explicitly --include'd path is neither a file nor a directory; NOT scanned"
+                                error = %e,
+                                "explicitly --include'd file could not be stat'd; NOT scanned"
                             );
-                            crate::SKIPPED_UNREADABLE
-                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            let _event =
+                                crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
                             Box::new(std::iter::empty())
-                        };
-                    inner
-                }))
-            } else {
-                let walker = CodeWalker::new(&self.root, config);
-                Box::new(forward_entries(walker.walk_parallel(0)))
-            };
+                        }
+                    }
+                } else {
+                    // Explicitly --include'd path that is neither a file nor a
+                    // directory: a broken symlink, a special file (socket /
+                    // device / fifo), or it vanished between include-admission
+                    // and this walk. The user named it, so a silent drop would
+                    // again read as "clean" — count it unreadable so the gap is
+                    // surfaced rather than swallowed (Law 10).
+                    tracing::warn!(
+                        path = %path.display(),
+                        "explicitly --include'd path is neither a file nor a directory; NOT scanned"
+                    );
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                    Box::new(std::iter::empty())
+                };
+                inner
+            }))
+        } else {
+            let walker = CodeWalker::new(&self.root, config);
+            Box::new(forward_entries(walker.walk_parallel(0)))
+        };
 
         let merkle = self.merkle.clone();
         let skipped = self.skipped.clone();
@@ -428,170 +331,16 @@ impl Source for FilesystemSource {
         let window_overlap = self.window_overlap;
         let respect_default_excludes = self.respect_default_excludes;
 
-        // Parallel file producer: the walk is lazy (dir tree syscalls
-        // amortize cheaply), but per-file I/O + decode + chunk assembly
-        // was previously serial - at ~16 MiB/s/core that meant a 16-core
-        // box scanned at the speed of one core. A spawned producer thread
-        // bridges the walk iterator into the rayon pool (which the CLI
-        // sizes to `--threads`/physical cores), and each worker pushes
-        // finished chunks through a bounded channel. The bound (64) caps
-        // peak in-flight memory at ~64 × max-chunk-size independent of
-        // corpus size; backpressure is automatic - when the scanner
-        // thread (downstream) falls behind, workers block on `send` and
-        // stop reading new files. Nosey Parker uses the same pattern
-        // (ignore::WalkBuilder::build_parallel); the gap was never
-        // throughput, it was concurrency.
-        let (tx, rx) = std::sync::mpsc::sync_channel::<Result<Chunk, SourceError>>(64);
-
-        // DEADLOCK FIX (large-tree scan hang) + CORE-BUDGET FIX
-        // (PERF-parallel_cores). Two invariants the reader MUST satisfy:
-        //
-        //   1. Readers must NOT run on the global rayon pool. The downstream
-        //      scanner runs `scan_coalesced` via `par_iter` on that pool. If
-        //      the readers shared it, on a large tree every pool worker would
-        //      park in `tx.send` (channel full) and the scanner could never
-        //      get a worker to drain the channel and unblock the readers - a
-        //      reader-blocks-on-send / scanner-needs-worker cycle that hung the
-        //      94k-file Linux kernel scan every time (all threads in futex at
-        //      ~0% CPU). Readers on their OWN threads break the cycle: they may
-        //      all park in `send`, but the global pool stays free to scan.
-        //
-        //   2. Readers must NOT form a SECOND full CPU pool sized as a fraction
-        //      of the scan pool. The previous design ran a dedicated rayon pool
-        //      of `clamp(scan_threads/2, 2, 16)` readers ON TOP of the scan
-        //      pool, so an N-core box ran N scan + ~N/2 reader threads (16+8=24
-        //      on 16 cores; 32+16=48). Reader threads do real CPU work (UTF-8
-        //      decode, chunk assembly), so the OS time-sliced them against the
-        //      scan workers and capped end-to-end scaling at ~4.7x@16t while
-        //      the scan engine alone reaches ~9.7x - and 32t REGRESSED below
-        //      16t as the reader pool grew to 16. (PERF-parallel_cores tripwire)
-        //
-        // The fix that satisfies BOTH: a SMALL FIXED crew of dedicated reader
-        // threads (`reader_thread_count`, ~1/4 of the cores, capped at
-        // MAX_READER_THREADS), sharing the lazy walk iterator through a
-        // `Mutex`-guarded cursor and
-        // pushing finished chunks into the same bounded `sync_channel(64)`.
-        // The crew is mostly parked (on `send` backpressure or `read(2)`), so
-        // it overlaps reads with scans WITHOUT claiming scan cores, and its
-        // size never grows with the scan pool - ending the oversubscription.
-        // The cursor `Mutex` is held only for the O(1) `next()` pull; the heavy
-        // per-file work (`process_entry`: read + decode + chunk assembly) runs
-        // OUTSIDE the lock, so the readers still parallelise across files. This
-        // mirrors `par_bridge`'s shared-cursor pull WITHOUT par_bridge's pool
-        // coupling: pulling off a single shared cursor (not an `into_par_iter`
-        // split tree) also keeps the worker stack bounded for any corpus size,
-        // so the 100k+-file stack-overflow that forced the old `.with_min_len`
-        // floor cannot recur.
-        let cursor: Arc<Mutex<Box<dyn Iterator<Item = codewalk::FileEntry> + Send>>> =
-            Arc::new(Mutex::new(entries));
-        let reader_count = reader_thread_count(rayon::current_num_threads());
-
-        // One reader's drain loop: pull entries off the shared cursor and feed
-        // each one's chunks into `tx` until the walk is drained or the receiver
-        // is gone. Shared by every reader thread (and by the synchronous
-        // fallback below) so the production path is identical regardless of how
-        // many threads back it.
-        let run_reader =
-            move |cursor: Arc<Mutex<Box<dyn Iterator<Item = codewalk::FileEntry> + Send>>>,
-                  tx: std::sync::mpsc::SyncSender<Result<Chunk, SourceError>>,
-                  merkle: Option<Arc<MerkleIndex>>,
-                  skipped: Arc<AtomicUsize>| {
-                loop {
-                    // Hold the cursor lock only for the cheap pull, then release it
-                    // so other readers advance while this thread does the heavy
-                    // read + decode.
-                    let entry = {
-                        let mut guard = match cursor.lock() {
-                            Ok(g) => g,
-                            // A peer reader panicked mid-pull: the walk iterator may
-                            // be in any state, so stop this reader rather than risk
-                            // emitting torn chunks.
-                            Err(_) => return,
-                        };
-                        guard.next()
-                    };
-                    let Some(entry) = entry else {
-                        return; // walk drained
-                    };
-
-                    // `emit` returns false once the receiver is gone (scan
-                    // cancelled / orchestrator shut down); `process_entry` stops
-                    // producing the moment that happens instead of churning chunks
-                    // no one will read. Emitting through a callback (rather than
-                    // returning a Vec) keeps the windowed-file path streaming - one
-                    // window's String is resident at a time, not the whole file.
-                    let mut sender_alive = true;
-                    let mut emit = |chunk: Result<Chunk, SourceError>| {
-                        let ok = tx.send(chunk).is_ok();
-                        sender_alive = ok;
-                        ok
-                    };
-                    process_entry(
-                        entry,
-                        &merkle,
-                        &skipped,
-                        max_size,
-                        window_size,
-                        window_overlap,
-                        respect_default_excludes,
-                        &mut emit,
-                    );
-                    if !sender_alive {
-                        return; // receiver dropped; nothing more to feed
-                    }
-                }
-            };
-
-        let mut spawned = 0usize;
-        for i in 0..reader_count {
-            let cursor = Arc::clone(&cursor);
-            let tx = tx.clone();
-            let merkle = merkle.clone();
-            let skipped = skipped.clone();
-            let run_reader = run_reader.clone();
-            match std::thread::Builder::new()
-                .name(format!("keyhog-reader-{i}"))
-                .spawn(move || run_reader(cursor, tx, merkle, skipped))
-            {
-                Ok(_) => spawned += 1,
-                // OS thread-table exhaustion (EAGAIN) must not abort the scan:
-                // the cursor is shared, so any reader that DID start still
-                // drains the whole walk - it just has less I/O overlap. We log
-                // and keep going rather than panic.
-                Err(error) => {
-                    tracing::warn!(%error, reader = i, "failed to spawn file-reader thread; continuing with fewer readers");
-                }
-            }
-        }
-
-        // Guarantee the walk is drained even if EVERY reader spawn failed: hand
-        // the cursor to one last dedicated thread. If even that spawn fails
-        // (the box is truly out of threads), drain synchronously on this thread
-        // before returning - the channel is bounded(64) so this can't OOM, and
-        // it is strictly better than returning an iterator no thread will ever
-        // feed (which would surface ZERO findings - a silent recall loss). This
-        // mirrors the previous design's `None => pump()` inline fallback.
-        if spawned == 0 {
-            let cursor_fb = Arc::clone(&cursor);
-            let tx_fb = tx.clone();
-            let merkle_fb = merkle.clone();
-            let skipped_fb = skipped.clone();
-            let run_reader_fb = run_reader.clone();
-            if std::thread::Builder::new()
-                .name("keyhog-reader-fallback".to_string())
-                .spawn(move || run_reader_fb(cursor_fb, tx_fb, merkle_fb, skipped_fb))
-                .is_err()
-            {
-                run_reader(cursor, tx.clone(), merkle.clone(), skipped.clone());
-            }
-        }
-
-        // Drop the original `tx`: once every reader thread finishes and drops
-        // its clone, the channel closes and `rx.into_iter()` ends. Without this
-        // the consumer would block forever waiting on a sender that never
-        // existed past this point.
-        drop(tx);
-
+        let rx = reader::spawn_chunk_producer(
+            entries,
+            merkle,
+            skipped,
+            self.root.clone(),
+            max_size,
+            window_size,
+            window_overlap,
+            respect_default_excludes,
+        );
         Box::new(rx.into_iter())
     }
 

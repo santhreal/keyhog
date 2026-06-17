@@ -161,7 +161,8 @@ fn stream_git_history_chunks(
                                     date: Some(date.clone()),
                                     mtime_ns: None,
                                     size_bytes: None,
-                                    decoded_span: None,                                },
+                                    decoded_span: None,
+                                },
                             }));
                         }
                     }
@@ -197,7 +198,8 @@ fn stream_git_history_chunks(
                                 date: Some(date.clone()),
                                 mtime_ns: None,
                                 size_bytes: None,
-                                decoded_span: None,                            },
+                                decoded_span: None,
+                            },
                         })
                     } else {
                         None
@@ -251,7 +253,8 @@ fn stream_git_history_chunks(
                                 date: Some(date.clone()),
                                 mtime_ns: None,
                                 size_bytes: None,
-                                decoded_span: None,                            },
+                                decoded_span: None,
+                            },
                         })
                     } else {
                         None
@@ -288,7 +291,7 @@ fn stream_git_history_chunks(
                 // New hunk: flush the previous hunk's added lines as their own
                 // chunk (carrying their base line), then adopt this hunk's
                 // new-file start for the lines that follow.
-                let new_start = super::parse_hunk_new_start(&line).unwrap_or(1);
+                let new_start = super::parse_hunk_new_start(&line).unwrap_or(1); // LAW10: empty/absent => documented numeric default, recall-safe
                 let prev_content = std::mem::take(&mut current_content);
                 let prev_base_line = current_base_line;
                 current_base_line = new_start.saturating_sub(1);
@@ -312,7 +315,8 @@ fn stream_git_history_chunks(
                                 date: Some(date.clone()),
                                 mtime_ns: None,
                                 size_bytes: None,
-                                decoded_span: None,                            },
+                                decoded_span: None,
+                            },
                         }));
                     }
                 }
@@ -356,7 +360,8 @@ fn stream_git_history_chunks(
                             date: Some(date.clone()),
                             mtime_ns: None,
                             size_bytes: None,
-                            decoded_span: None,                        },
+                            decoded_span: None,
+                        },
                     }));
                 }
             }

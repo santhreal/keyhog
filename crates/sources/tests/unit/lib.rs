@@ -1,14 +1,13 @@
 use keyhog_core::Source;
-use keyhog_sources::{reset_skipped_over_max_size, FilesystemSource, SKIPPED_OVER_MAX_SIZE};
+use keyhog_sources::{
+    reset_skipped_over_max_size, skip_counts, testing::bump_skipped_over_max_size, FilesystemSource,
+};
 
 #[test]
 fn reset_skipped_over_max_size_clears_counter() {
-    SKIPPED_OVER_MAX_SIZE.store(3, std::sync::atomic::Ordering::Relaxed);
+    bump_skipped_over_max_size(3);
     reset_skipped_over_max_size();
-    assert_eq!(
-        SKIPPED_OVER_MAX_SIZE.load(std::sync::atomic::Ordering::Relaxed),
-        0
-    );
+    assert_eq!(skip_counts().over_max_size, 0);
 }
 
 #[test]

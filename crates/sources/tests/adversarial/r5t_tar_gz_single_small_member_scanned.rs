@@ -14,7 +14,9 @@ fn r5t_tar_gz_single_small_member_scanned() {
     header.set_path("inner.env").expect("path");
     header.set_size(24);
     header.set_cksum();
-    tar_builder.append(&header, &b"AWS=AKIAQYLPMN5HFIQR7XYA\n"[..]).expect("append");
+    tar_builder
+        .append(&header, &b"AWS=AKIAQYLPMN5HFIQR7XYA\n"[..])
+        .expect("append");
     let tar_bytes = tar_builder.into_inner().expect("tar");
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(&tar_bytes).expect("gzip");
@@ -25,5 +27,8 @@ fn r5t_tar_gz_single_small_member_scanned() {
         .flatten()
         .map(|c| c.data.to_string())
         .collect();
-    assert!(bodies.iter().any(|b| b.contains("AKIAQYLPMN5HFIQR7XYA")), "tar.gz member must be scanned; got {bodies:?}");
+    assert!(
+        bodies.iter().any(|b| b.contains("AKIAQYLPMN5HFIQR7XYA")),
+        "tar.gz member must be scanned; got {bodies:?}"
+    );
 }

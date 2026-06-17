@@ -58,6 +58,13 @@ fn gpu_batch_preserves_cross_chunk_reassembly() {
     // Match counts can vary slightly between CPU/GPU pre-filters due to different
     // state machine budgets, but reassembly must produce the same result.
     assert!(
+        cpu_findings
+            .iter()
+            .flatten()
+            .any(|finding| finding.detector_id.ends_with(":reassembled")),
+        "CPU fallback batch scan must run normal reassembly post-processing"
+    );
+    assert!(
         gpu_findings
             .iter()
             .flatten()

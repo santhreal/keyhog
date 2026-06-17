@@ -42,7 +42,9 @@ fn zip_bomb_4x_budget_aborts_before_late_entry() {
         "walk must continue after zip-bomb abort"
     );
     assert!(
-        !bodies.iter().any(|b| b.contains("LEAK=AKIAQYLPMN5HFIQR7XYA")),
+        !bodies
+            .iter()
+            .any(|b| b.contains("LEAK=AKIAQYLPMN5HFIQR7XYA")),
         "entry past 4× budget must never be extracted; got {bodies:?}"
     );
 }

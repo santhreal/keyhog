@@ -63,7 +63,7 @@ pub struct HttpClientConfig {
 impl HttpClientConfig {
     /// Resolve proxy from env vars when no explicit value was set.
     /// Returns `Some("off")` if the operator disabled proxying.
-    pub fn effective_proxy(&self) -> Option<String> {
+    pub(crate) fn effective_proxy(&self) -> Option<String> {
         if let Some(p) = &self.proxy {
             return Some(p.clone());
         }
@@ -76,7 +76,7 @@ impl HttpClientConfig {
     }
 
     /// Resolve insecure-TLS from env when not set explicitly.
-    pub fn effective_insecure_tls(&self) -> bool {
+    pub(crate) fn effective_insecure_tls(&self) -> bool {
         if self.insecure_tls {
             return true;
         }
@@ -87,7 +87,27 @@ impl HttpClientConfig {
     }
 }
 
+#[cfg(any(
+    feature = "azure",
+    feature = "web",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket",
+    feature = "slack",
+    feature = "s3",
+    feature = "gcs"
+))]
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
+#[cfg(any(
+    feature = "azure",
+    feature = "web",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket",
+    feature = "slack",
+    feature = "s3",
+    feature = "gcs"
+))]
 const REDIRECT_LIMIT: usize = 5;
 
 pub(crate) fn user_agent(suffix: Option<&str>) -> String {
@@ -101,12 +121,21 @@ pub(crate) fn user_agent(suffix: Option<&str>) -> String {
 /// Build a `reqwest::blocking::ClientBuilder` populated with the
 /// shared policy. Callers can chain extra builder methods (e.g.
 /// `.default_headers(...)`) before `.build()`.
-#[cfg(any(feature = "web", feature = "github", feature = "slack", feature = "s3"))]
-pub fn blocking_client_builder(
+#[cfg(any(
+    feature = "azure",
+    feature = "web",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket",
+    feature = "slack",
+    feature = "s3",
+    feature = "gcs"
+))]
+pub(crate) fn blocking_client_builder(
     cfg: &HttpClientConfig,
 ) -> Result<reqwest::blocking::ClientBuilder, String> {
     let mut builder = reqwest::blocking::Client::builder()
-        .timeout(cfg.timeout.unwrap_or(DEFAULT_TIMEOUT))
+        .timeout(cfg.timeout.unwrap_or(DEFAULT_TIMEOUT)) // LAW10: Tier-A config default — unset timeout uses the documented DEFAULT_TIMEOUT, not a silent error
         .redirect(reqwest::redirect::Policy::limited(REDIRECT_LIMIT))
         .user_agent(user_agent(cfg.ua_suffix.as_deref()))
         .no_gzip()
@@ -133,10 +162,21 @@ pub fn blocking_client_builder(
 }
 
 /// Async sibling for the verifier's tokio-based call sites.
-#[cfg(any(feature = "web", feature = "github", feature = "slack", feature = "s3"))]
-pub fn async_client_builder(cfg: &HttpClientConfig) -> Result<reqwest::ClientBuilder, String> {
+#[cfg(any(
+    feature = "azure",
+    feature = "web",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket",
+    feature = "slack",
+    feature = "s3",
+    feature = "gcs"
+))]
+pub(crate) fn async_client_builder(
+    cfg: &HttpClientConfig,
+) -> Result<reqwest::ClientBuilder, String> {
     let mut builder = reqwest::Client::builder()
-        .timeout(cfg.timeout.unwrap_or(DEFAULT_TIMEOUT))
+        .timeout(cfg.timeout.unwrap_or(DEFAULT_TIMEOUT)) // LAW10: Tier-A config default — unset timeout uses the documented DEFAULT_TIMEOUT, not a silent error
         .redirect(reqwest::redirect::Policy::limited(REDIRECT_LIMIT))
         .user_agent(user_agent(cfg.ua_suffix.as_deref()))
         .danger_accept_invalid_certs(cfg.effective_insecure_tls());

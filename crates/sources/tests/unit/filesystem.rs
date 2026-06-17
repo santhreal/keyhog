@@ -1,5 +1,5 @@
 use keyhog_core::Source;
-use keyhog_sources::{reader_pool_thread_count_for_test, FilesystemSource};
+use keyhog_sources::{testing::reader_pool_thread_count, FilesystemSource};
 use std::path::PathBuf;
 
 #[test]
@@ -31,19 +31,19 @@ fn filesystem_reader_crew_is_a_small_fixed_count_that_never_scales_with_scan_poo
     // it overlaps I/O with scanning without claiming scan cores.
 
     // 1-thread scan needs only 1 reader (no oversubscription possible).
-    assert_eq!(reader_pool_thread_count_for_test(1), 1);
+    assert_eq!(reader_pool_thread_count(1), 1);
     // Small pools: floored at 2 so a single reader stalling on a slow file
     // can't starve the consumer.
-    assert_eq!(reader_pool_thread_count_for_test(2), 2);
-    assert_eq!(reader_pool_thread_count_for_test(4), 2);
-    assert_eq!(reader_pool_thread_count_for_test(8), 2);
+    assert_eq!(reader_pool_thread_count(2), 2);
+    assert_eq!(reader_pool_thread_count(4), 2);
+    assert_eq!(reader_pool_thread_count(8), 2);
     // The crew is ~1/4 of the cores (the I/O-overlap budget), NOT scan/2.
-    assert_eq!(reader_pool_thread_count_for_test(16), 4);
+    assert_eq!(reader_pool_thread_count(16), 4);
     // CRITICAL: above the cap the crew stops growing, so it can NEVER become a
     // second full pool. (old formula returned 16 at scan=32/64; new crew caps at 4.)
-    assert_eq!(reader_pool_thread_count_for_test(32), 4);
-    assert_eq!(reader_pool_thread_count_for_test(64), 4);
-    assert_eq!(reader_pool_thread_count_for_test(128), 4);
+    assert_eq!(reader_pool_thread_count(32), 4);
+    assert_eq!(reader_pool_thread_count(64), 4);
+    assert_eq!(reader_pool_thread_count(128), 4);
 
     // The defining property the PERF tripwire protects: the reader crew is a
     // SMALL slice of the machine that never balloons with the scan pool. The
@@ -52,7 +52,7 @@ fn filesystem_reader_crew_is_a_small_fixed_count_that_never_scales_with_scan_poo
     // is now <= 1/4 of the scan pool (capped at MAX_READER_THREADS) for every
     // realistic host, so reader + scan stays within the machine.
     for scan in [8usize, 16, 24, 32, 48, 64, 128] {
-        let readers = reader_pool_thread_count_for_test(scan);
+        let readers = reader_pool_thread_count(scan);
         assert!(
             readers <= 4,
             "reader crew {readers} for {scan} scan threads exceeds the fixed cap; \

@@ -7,8 +7,6 @@ members = [
     "crates/sources",
     "crates/cli",
 ]
-# Read-only reference snapshots are never built; see vendor/README.md (MC-11).
-exclude = ["vendor/vyre", "vendor/bogon", "vendor/shared"]
 default-members = ["crates/cli"]
 
 [workspace.package]
@@ -80,6 +78,7 @@ unicode-normalization = "=0.1.25"
 tempfile = "=3.27.0"
 memmap2 = "=0.9.10"
 glob = "=0.3.3"
+fs2 = "=0.4.3"
 wait-timeout = "=0.2.1"
 tar = "=0.4.45"
 # True-decompression decoders for the always-on filesystem compressed-input
@@ -92,6 +91,9 @@ flate2 = "=1.1.9"
 zstd = "=0.13.3"
 lz4_flex = "=0.11.6"
 snap = "=1.1.1"
+bzip2 = "=0.5.2"
+xz2 = "=0.1.7"
+sevenz-rust2 = { version = "=0.20.2", default-features = false }
 
 # Git
 gix = { version = "=0.77.0", default-features = false, features = ["max-performance-safe"] }
@@ -112,10 +114,7 @@ simdsieve = "=0.1.1"
 # vyre 0.6.2 is published to crates.io and carries the megakernel APIs keyhog
 # imports (`vyre_libs::scan::build_regex_dfa_unanchored`, etc.). Keyhog consumes
 # the five runtime vyre crates through exact registry pins only: no path
-# overrides, no Santh NFS dependency, and no build path into vendor/vyre.
-#
-# vendor/vyre/ remains a READ-ONLY excluded reference snapshot and is NEVER built;
-# the vendoring contract lives in vendor/README.md (MC-11).
+# overrides, no Santh NFS dependency, and no repository `vendor/` tree.
 # CUDA backend is wired in keyhog-scanner behind the `cuda` feature
 # (default on). On hosts without libcuda.so the backend's `acquire()`
 # call fails cleanly and the scanner falls back to wgpu.
@@ -151,6 +150,7 @@ uuid = { version = "=1.11.0", features = ["v4"] }
 # Archive and binary analysis
 ziftsieve = "=0.1.0"
 openpack = "=0.2.2"
+rars = "=0.2.0"
 goblin = "=0.10.5"
 quick-xml = { version = "=0.37.5", features = ["serialize"] }
 libc = "=0.2.186"
@@ -224,7 +224,7 @@ debug = "line-tables-only"
 strip = "none"
 
 # codewalk-0.2.5 (released 2026-05-03) ships the Windows-stable
-# fix that was previously vendored under `vendor/codewalk` —
+# fix that previously required a local patch:
 # replacing the nightly-only `volume_serial_number()` /
 # `file_index()` symlink-identity probe with a `canonicalize`-based
 # one that works on stable rustc on every platform we ship to.

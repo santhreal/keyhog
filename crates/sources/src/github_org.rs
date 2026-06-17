@@ -1,20 +1,14 @@
 //! GitHub organization source: clones and scans all repositories in a GitHub
 //! organization via the GitHub API.
 
-use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::thread;
-use std::time::{Duration, Instant};
 
-use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
+use keyhog_core::{Chunk, Source, SourceError};
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderMap, HeaderValue, ACCEPT, AUTHORIZATION};
 use serde::Deserialize;
 
-use crate::FilesystemSource;
-
-mod sanitize;
-use sanitize::sanitize_git_error_message;
+use crate::hosted_git::{self, HostedRepo};
 
 /// Scans all repositories in a GitHub organization by shallow-cloning them to a temp directory.
 ///
@@ -85,13 +79,15 @@ impl Source for GitHubOrgSource {
         // failure (bad org/token, unreachable API) surfaces as an `Err` chunk
         // the orchestrator turns into a non-zero exit instead of a crash.
         let result = thread::scope(|s| {
-            s.spawn(|| collect_org_chunks(&self.org, &self.token, &self.http))
+            match s
+                .spawn(|| collect_org_chunks(&self.org, &self.token, &self.http))
                 .join()
-                .unwrap_or_else(|_| {
-                    Err(SourceError::Other(
-                        "github-org fetch thread panicked".to_string(),
-                    ))
-                })
+            {
+                Ok(result) => result,
+                Err(_panic) => Err(SourceError::Other(
+                    "github-org fetch thread panicked".to_string(),
+                )),
+            }
         });
         match result {
             Ok(chunks) => Box::new(chunks.into_iter().map(Ok)),
@@ -115,23 +111,28 @@ struct GitHubRepo {
 /// path-traversal vector where a compromised API response can drive
 /// `temp_root.join(&repo.name)` outside the temp dir.
 pub(crate) fn validate_repo_name(name: &str) -> Result<(), SourceError> {
-    if name.is_empty() || name.len() > 100 {
+    hosted_git::validate_repo_name("github", name)
+}
+
+/// Refuse organization names that can alter the GitHub API URL path or query.
+/// GitHub org/user names are ASCII alphanumeric with interior hyphens, up to
+/// 39 bytes. This keeps `list_repos` from interpolating slashes, `?`, `#`, or
+/// control bytes into the request URL.
+pub(crate) fn validate_org_name(name: &str) -> Result<(), SourceError> {
+    if name.is_empty() || name.len() > 39 {
         return Err(SourceError::Other(format!(
-            "github: refusing repo with out-of-range name length ({})",
+            "github: refusing org with out-of-range name length ({})",
             name.len()
         )));
     }
-    if name == "." || name == ".." || name.contains('/') || name.contains('\\') {
+    if name.starts_with('-') || name.ends_with('-') {
         return Err(SourceError::Other(format!(
-            "github: refusing repo with traversal/separator in name: {name:?}"
+            "github: refusing org with leading/trailing hyphen: {name:?}"
         )));
     }
-    if !name
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
-    {
+    if !name.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
         return Err(SourceError::Other(format!(
-            "github: refusing repo with non-alphanumeric name: {name:?}"
+            "github: refusing org with unsafe characters: {name:?}"
         )));
     }
     Ok(())
@@ -143,23 +144,7 @@ pub(crate) fn validate_repo_name(name: &str) -> Result<(), SourceError> {
 /// negotiation. We accept only `https://<host>/...` URLs because that
 /// is the only shape the GitHub API ever returns for public repos.
 pub(crate) fn validate_clone_url(url: &str) -> Result<(), SourceError> {
-    if !url.starts_with("https://") {
-        return Err(SourceError::Other(format!(
-            "github: refusing non-https clone URL (potential ext::/ssh:// RCE vector): {url:?}"
-        )));
-    }
-    if url.contains(' ') || url.contains('\n') || url.contains('\r') || url.contains('\0') {
-        return Err(SourceError::Other(format!(
-            "github: refusing clone URL with control characters: {url:?}"
-        )));
-    }
-    if url.len() > 2048 {
-        return Err(SourceError::Other(format!(
-            "github: refusing clone URL longer than 2048 chars ({})",
-            url.len()
-        )));
-    }
-    Ok(())
+    hosted_git::validate_clone_url("github", url)
 }
 
 fn collect_org_chunks(
@@ -167,49 +152,17 @@ fn collect_org_chunks(
     token: &str,
     http: &crate::http::HttpClientConfig,
 ) -> Result<Vec<Chunk>, SourceError> {
-    use rayon::prelude::*;
-
+    validate_org_name(org)?;
     let client = build_client(token, http)?;
     let repos = list_repos(&client, org)?;
-    let temp_dir = tempfile::tempdir().map_err(SourceError::Io)?;
-    let temp_root = temp_dir.path().to_path_buf();
-
-    // Concurrent clone + scan: GitHub clone bandwidth is the bottleneck on
-    // org scans, not the API. Eight parallel slots saturate typical
-    // network links without provoking abuse-detection backoff. The previous
-    // sequential `for repo in repos` loop wasted 7/8ths of the wall-clock
-    // on a 200-repo org. See audits/legendary-2026-04-26.
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(8)
-        .build()
-        .map_err(|e| SourceError::Other(format!("rayon pool build: {e}")))?;
-    let per_repo: Vec<Result<Vec<Chunk>, SourceError>> = pool.install(|| {
-        repos
-            .par_iter()
-            .map(|repo| -> Result<Vec<Chunk>, SourceError> {
-                // SECURITY: validate repo name + clone URL BEFORE any
-                // filesystem-join or process-spawn happens. A hostile
-                // GitHub API response (compromised endpoint, GHE proxy)
-                // could return `name = "../../etc/passwd"` (path
-                // traversal - kimi-5 finding #2) or
-                // `clone_url = "ext::sh -c whoami"` (git URL-scheme
-                // RCE - kimi-5 finding #1). We refuse anything that
-                // is not a single safe path component and an https://
-                // clone URL.
-                validate_repo_name(&repo.name)?;
-                validate_clone_url(&repo.clone_url)?;
-                let clone_path = temp_root.join(&repo.name);
-                clone_repo(repo, token, &clone_path)?;
-                Ok(scan_repo(org, &repo.name, &clone_path))
-            })
-            .collect()
-    });
-
-    let mut chunks = Vec::new();
-    for result in per_repo {
-        chunks.extend(result?);
-    }
-    Ok(chunks)
+    hosted_git::scan_hosted_repos(
+        "github",
+        "github-org",
+        Some(org),
+        "x-access-token",
+        token,
+        &repos,
+    )
 }
 
 fn build_client(token: &str, http: &crate::http::HttpClientConfig) -> Result<Client, SourceError> {
@@ -246,7 +199,7 @@ fn build_client(token: &str, http: &crate::http::HttpClientConfig) -> Result<Cli
         .map_err(|e| SourceError::Other(format!("failed to build GitHub client: {e}")))
 }
 
-fn list_repos(client: &Client, org: &str) -> Result<Vec<GitHubRepo>, SourceError> {
+fn list_repos(client: &Client, org: &str) -> Result<Vec<HostedRepo>, SourceError> {
     let mut repos = Vec::new();
     let mut page = 1;
     // Hard ceiling: GitHub returns max 100 repos/page, so 1000 pages =
@@ -271,7 +224,11 @@ fn list_repos(client: &Client, org: &str) -> Result<Vec<GitHubRepo>, SourceError
             .map_err(|e| SourceError::Other(format!("failed to parse GitHub API response: {e}")))?;
 
         let count = page_repos.len();
-        repos.extend(page_repos);
+        repos.extend(page_repos.into_iter().map(|repo| HostedRepo {
+            clone_dir_name: repo.name.clone(),
+            display_path: repo.name,
+            clone_url: repo.clone_url,
+        }));
 
         if count < 100 {
             return Ok(repos);
@@ -280,13 +237,11 @@ fn list_repos(client: &Client, org: &str) -> Result<Vec<GitHubRepo>, SourceError
         page += 1;
     }
 
-    tracing::warn!(
-        org = %org,
-        max_pages = MAX_PAGES,
-        repos = repos.len(),
-        "github listing reached MAX_PAGES; truncating result set"
-    );
-    Ok(repos)
+    Err(github_listing_truncated_error(org, repos.len(), MAX_PAGES))
+}
+
+fn github_listing_truncated_error(org: &str, repo_count: usize, max_pages: usize) -> SourceError {
+    hosted_git::listing_truncated_error("GitHub", "organization", org, repo_count, max_pages)
 }
 
 fn send_github_request_with_backoff(
@@ -308,12 +263,12 @@ fn send_github_request_with_backoff(
         let retry_after = response
             .headers()
             .get("retry-after")
-            .and_then(|value| value.to_str().ok())
-            .and_then(|value| value.parse::<u64>().ok());
+            .and_then(|value| value.to_str().ok()) // LAW10: non-ASCII/absent header value => skipped via None (intended HTTP header parse), recall-irrelevant
+            .and_then(|value| value.parse::<u64>().ok()); // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
         let rate_limited = response
             .headers()
             .get("x-ratelimit-remaining")
-            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.to_str().ok()) // LAW10: non-ASCII/absent header value => skipped via None (intended HTTP header parse), recall-irrelevant
             .is_some_and(|value| value == "0");
 
         if !(status.as_u16() == 429 || (status.as_u16() == 403 && rate_limited)) {
@@ -327,181 +282,52 @@ fn send_github_request_with_backoff(
         }
 
         std::thread::sleep(std::time::Duration::from_secs(
-            retry_after.unwrap_or((attempt + 1) as u64),
+            retry_after.unwrap_or((attempt + 1) as u64), // LAW10: absent Retry-After => attempt-based backoff default; perf/timing, recall-irrelevant
         ));
     }
 
     Err(SourceError::Other("GitHub API retry limit exceeded".into()))
 }
 
-fn clone_repo(repo: &GitHubRepo, token: &str, clone_path: &Path) -> Result<(), SourceError> {
-    let clone_target = clone_path.to_str().ok_or_else(|| {
-        SourceError::Other(format!("non-UTF-8 clone path for repo {}", repo.name))
-    })?;
-    let auth_material = GitAskpassAuth::create(token)?;
-
-    // SECURITY: kimi-wave1 audit finding 3.PATH-git. Use trusted-system-bin
-    // resolution; refuse falling back to $PATH lookup.
-    let git_bin = keyhog_core::safe_bin::resolve_safe_bin("git").ok_or_else(|| {
-        SourceError::Other(
-            "git binary not found in trusted system bin dirs (refusing $PATH lookup)".into(),
-        )
-    })?;
-    let child = Command::new(&git_bin)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_ASKPASS", &auth_material.askpass_path)
-        .env("SSH_ASKPASS", &auth_material.askpass_path)
-        .args(["clone", "--depth", "1", "--quiet"])
-        .arg("--end-of-options")
-        .arg(&repo.clone_url)
-        .arg(clone_target)
-        .spawn()
-        .map_err(SourceError::Io)?;
-
-    let output = wait_for_command_with_timeout(child, crate::timeouts::GIT_CLONE)
-        .map_err(|err| SourceError::Git(format!("failed to clone {}: {}", repo.name, err)))?;
-
-    if !output.status.success() {
-        return Err(SourceError::Git(format!(
-            "failed to clone {}: {}",
-            repo.name,
-            sanitize_git_error_message(&String::from_utf8_lossy(&output.stderr))
-        )));
-    }
-
-    Ok(())
+pub(crate) fn rewrite_chunk_path_for_test(
+    chunk: Chunk,
+    org: &str,
+    repo_name: &str,
+    clone_path: &std::path::Path,
+) -> Result<Chunk, SourceError> {
+    hosted_git::rewrite_chunk_path(
+        chunk,
+        "github",
+        "github-org",
+        Some(org),
+        repo_name,
+        clone_path,
+    )
 }
 
-fn wait_for_command_with_timeout(
-    mut child: std::process::Child,
-    timeout: Duration,
-) -> Result<std::process::Output, String> {
-    let start = Instant::now();
-    loop {
-        if child.try_wait().map_err(|e| e.to_string())?.is_some() {
-            return child.wait_with_output().map_err(|e| e.to_string());
-        }
-
-        if start.elapsed() >= timeout {
-            child.kill().map_err(|e| e.to_string())?;
-            let _ = child.wait();
-            return Err(format!("git clone timed out after {}s", timeout.as_secs()));
-        }
-
-        thread::sleep(Duration::from_millis(100));
-    }
+pub(crate) fn scan_repo_chunks_for_test<I>(
+    chunks: I,
+    org: &str,
+    repo_name: &str,
+    clone_path: &std::path::Path,
+) -> Result<Vec<Chunk>, SourceError>
+where
+    I: IntoIterator<Item = Result<Chunk, SourceError>>,
+{
+    hosted_git::scan_repo_chunks(
+        chunks,
+        "github",
+        "github-org",
+        Some(org),
+        repo_name,
+        clone_path,
+    )
 }
 
-#[derive(Debug)]
-struct GitAskpassAuth {
-    _dir: tempfile::TempDir,
-    askpass_path: PathBuf,
-}
-
-impl GitAskpassAuth {
-    fn create(token: &str) -> Result<Self, SourceError> {
-        validate_github_token(token)?;
-        let dir = tempfile::tempdir().map_err(SourceError::Io)?;
-        let token_path = dir.path().join("token");
-
-        // Create the token file with restricted permissions.
-        // On Unix, we use O_NOFOLLOW and mode 0600.
-        // On Windows, we rely on tempdir creating a private directory (usually).
-        {
-            use std::io::Write;
-            let mut options = std::fs::OpenOptions::new();
-            options.write(true).create_new(true);
-
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-                options.mode(0o600);
-            }
-
-            let mut file = options.open(&token_path).map_err(SourceError::Io)?;
-            file.write_all(token.as_bytes()).map_err(SourceError::Io)?;
-        }
-
-        let askpass_path = if cfg!(unix) {
-            let path = dir.path().join("askpass.sh");
-            std::fs::write(
-                &path,
-                "#!/bin/sh\nset -eu\nTOKEN_FILE=\"$(dirname \"$0\")/token\"\ncase \"$1\" in\n*Username*) printf '%s' x-access-token ;;\n*) exec cat -- \"$TOKEN_FILE\" ;;\nesac\n",
-            )
-            .map_err(SourceError::Io)?;
-
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
-                    .map_err(SourceError::Io)?;
-            }
-            path
-        } else {
-            let path = dir.path().join("askpass.bat");
-            let content = format!(
-                "@echo off\r\necho %1 | findstr /I \"Username\" >nul\r\nif %errorlevel% == 0 (\r\n  echo x-access-token\r\n) else (\r\n  type \"{}\"\r\n)\r\n",
-                token_path.display()
-            );
-            std::fs::write(&path, content).map_err(SourceError::Io)?;
-            path
-        };
-
-        Ok(Self {
-            _dir: dir,
-            askpass_path,
-        })
-    }
-}
-
-fn validate_github_token(token: &str) -> Result<(), SourceError> {
-    if token.is_empty() || token.chars().any(char::is_control) {
-        return Err(SourceError::Other(
-            "github token contains unsafe characters".into(),
-        ));
-    }
-    Ok(())
-}
-
-fn scan_repo(org: &str, repo_name: &str, clone_path: &Path) -> Vec<Chunk> {
-    let source = FilesystemSource::new(clone_path.to_path_buf());
-    let mut chunks = Vec::new();
-
-    for chunk in source.chunks().flatten() {
-        chunks.push(rewrite_chunk_path(chunk, org, repo_name, clone_path));
-    }
-
-    chunks
-}
-
-fn rewrite_chunk_path(mut chunk: Chunk, org: &str, repo_name: &str, clone_path: &Path) -> Chunk {
-    let relative_path = chunk
-        .metadata
-        .path
-        .as_ref()
-        .and_then(|path| make_relative_path(path, clone_path));
-
-    chunk.metadata = ChunkMetadata {
-        base_offset: 0,
-        base_line: 0,
-        source_type: "github-org".into(),
-        path: relative_path.map(|relative| format!("{org}/{repo_name}/{relative}")),
-        commit: None,
-        author: None,
-        date: None,
-        mtime_ns: None,
-        size_bytes: None,
-        decoded_span: None,    };
-
-    chunk
-}
-
-fn make_relative_path(path: &str, clone_path: &Path) -> Option<String> {
-    let normalized_path = std::fs::canonicalize(path).ok()?;
-    let normalized_clone_path = std::fs::canonicalize(clone_path).ok()?;
-    let relative = normalized_path
-        .strip_prefix(&normalized_clone_path)
-        .ok()?
-        .to_path_buf();
-    Some(relative.to_string_lossy().into_owned())
+pub(crate) fn github_listing_truncated_error_for_test(
+    org: &str,
+    repo_count: usize,
+    max_pages: usize,
+) -> SourceError {
+    github_listing_truncated_error(org, repo_count, max_pages)
 }

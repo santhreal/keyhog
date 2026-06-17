@@ -22,5 +22,8 @@ fn r5t_zip_slip_uppercase_dotdot_not_extracted() {
         .flatten()
         .map(|c| c.data.to_string())
         .collect();
-    assert!(!bodies.iter().any(|b| b.contains("LEAK=1")), "uppercase dotdot must not extract; got {bodies:?}");
+    assert!(
+        !bodies.iter().any(|b| b.contains("LEAK=1")),
+        "uppercase dotdot must not extract; got {bodies:?}"
+    );
 }

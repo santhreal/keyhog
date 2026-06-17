@@ -11,8 +11,11 @@ fn corrupt_git_missing_objects_rejected() {
     std::fs::create_dir_all(&git_dir).expect("mkdir");
     std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").expect("head");
     std::fs::create_dir_all(git_dir.join("refs/heads")).expect("refs");
-    std::fs::write(git_dir.join("refs/heads/main"), "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n")
-        .expect("ref");
+    std::fs::write(
+        git_dir.join("refs/heads/main"),
+        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n",
+    )
+    .expect("ref");
 
     let err = GitSource::new(dir.path().to_path_buf())
         .chunks()

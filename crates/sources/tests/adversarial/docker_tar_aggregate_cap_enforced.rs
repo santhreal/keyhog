@@ -13,9 +13,7 @@ fn docker_tar_aggregate_cap_enforced() {
     for i in 0..3 {
         let payload = vec![b'Z'; 400];
         let mut header = tar::Header::new_gnu();
-        header
-            .set_path(format!("part{i}.bin"))
-            .expect("set path");
+        header.set_path(format!("part{i}.bin")).expect("set path");
         header.set_size(400);
         header.set_entry_type(tar::EntryType::Regular);
         header.set_cksum();
@@ -23,11 +21,8 @@ fn docker_tar_aggregate_cap_enforced() {
     }
     builder.finish().expect("finish tar");
 
-    let err = keyhog_sources::testing::validate_docker_tar_archive_with_total_cap(
-        &tar_path,
-        1_000,
-    )
-    .unwrap_err();
+    let err = keyhog_sources::testing::validate_docker_tar_archive_with_total_cap(&tar_path, 1_000)
+        .unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("cumulative size exceeds") && msg.contains("zip-bomb"),

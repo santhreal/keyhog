@@ -8,6 +8,6 @@ fn detectors_subcommand_default_audit_off() {
     let cli = Cli::try_parse_from(["keyhog", "detectors"]).unwrap();
     match cli.command {
         Some(Command::Detectors(args)) => assert!(!args.audit),
-        other => panic!("expected Detectors subcommand"),
+        _ => panic!("expected Detectors subcommand"),
     }
 }

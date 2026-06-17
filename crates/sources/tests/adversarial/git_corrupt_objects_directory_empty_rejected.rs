@@ -10,7 +10,11 @@ fn git_corrupt_objects_directory_empty_rejected() {
     std::fs::create_dir_all(git_dir.join("objects")).expect("objects");
     std::fs::create_dir_all(git_dir.join("refs/heads")).expect("refs");
     std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").expect("head");
-    std::fs::write(git_dir.join("refs/heads/main"), "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n").expect("ref");
+    std::fs::write(
+        git_dir.join("refs/heads/main"),
+        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef\n",
+    )
+    .expect("ref");
 
     let source = GitSource::new(dir.path().to_path_buf());
     let mut iter = source.chunks();

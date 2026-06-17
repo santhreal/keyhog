@@ -2,15 +2,12 @@
 
 #[test]
 fn http_async_client_no_auto_gzip() {
-    let src = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/http.rs"
-    ))
-    .expect("http.rs");
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/http.rs"))
+        .expect("http.rs");
     let async_fn = src
-        .split("pub fn async_client_builder")
+        .split("fn async_client_builder")
         .nth(1)
-        .expect("async_client_builder must exist");
+        .expect("async_client_builder owner must exist");
     let async_body = async_fn
         .split("pub fn ")
         .next()

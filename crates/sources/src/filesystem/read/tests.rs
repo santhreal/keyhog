@@ -382,6 +382,15 @@ fn read_file_for_compressed_input_refuses_oversize_input() {
     // cap at-or-above file size → accepted.
     let fb = read_file_for_compressed_input(&path, 4096);
     assert!(fb.is_some(), "input at-or-below size_cap must succeed");
+
+    // Source-level max_file_size=0 means unlimited. The compressed helper still
+    // uses the hard TOCTOU sanity cap, but must not treat zero as "refuse every
+    // non-empty compressed input".
+    let fb = read_file_for_compressed_input(&path, 0);
+    assert!(
+        fb.is_some(),
+        "size_cap=0 must mean unlimited up to the hard sanity cap"
+    );
 }
 
 #[test]

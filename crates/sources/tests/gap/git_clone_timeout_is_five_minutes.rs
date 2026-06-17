@@ -4,7 +4,7 @@
 #[test]
 fn git_clone_timeout_is_five_minutes() {
     assert_eq!(
-        keyhog_sources::timeouts::GIT_CLONE,
+        keyhog_sources::testing::git_clone_timeout(),
         std::time::Duration::from_secs(300)
     );
 }

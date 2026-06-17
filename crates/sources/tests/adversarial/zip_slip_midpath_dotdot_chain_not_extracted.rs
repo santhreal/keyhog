@@ -15,8 +15,10 @@ fn zip_slip_midpath_dotdot_chain_not_extracted() {
     let file = File::create(dir.path().join("slip.zip")).expect("create");
     let mut zip = ZipWriter::new(file);
     let opts = SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
-    zip.start_file("a/b/../../../secret.env", opts).expect("start slip");
-    zip.write_all(b"SLIP=AKIAQYLPMN5HFIQR7XYA\n").expect("write");
+    zip.start_file("a/b/../../../secret.env", opts)
+        .expect("start slip");
+    zip.write_all(b"SLIP=AKIAQYLPMN5HFIQR7XYA\n")
+        .expect("write");
     zip.start_file("safe.txt", opts).expect("start safe");
     zip.write_all(b"SAFE=1\n").expect("write safe");
     zip.finish().expect("finish");

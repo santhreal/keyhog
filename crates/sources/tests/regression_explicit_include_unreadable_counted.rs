@@ -9,7 +9,7 @@
 //! isolated from the parallel integration pool and can assert exact counts.
 
 use keyhog_core::Source;
-use keyhog_sources::{reset_skip_counters, skip_counts, FilesystemSource};
+use keyhog_sources::{skip_counts, testing::reset_skip_counters, FilesystemSource};
 
 #[test]
 fn explicitly_included_unreadable_path_is_counted_not_silently_dropped() {

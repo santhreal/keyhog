@@ -10,6 +10,6 @@ fn scan_subcommand_default_input_is_dot() {
         Some(Command::Scan(args)) => {
             assert_eq!(args.input.as_deref(), Some(std::path::Path::new(".")));
         }
-        other => panic!("expected Scan subcommand"),
+        _ => panic!("expected Scan subcommand"),
     }
 }

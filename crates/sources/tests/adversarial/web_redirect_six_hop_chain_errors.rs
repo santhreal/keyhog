@@ -26,7 +26,7 @@ fn web_redirect_six_hop_chain_errors() {
     }
 
     let start = next;
-    let results: Vec<_> = WebSource::from_url(&start).chunks().collect();
+    let results: Vec<_> = WebSource::new(vec![start]).chunks().collect();
     assert!(
         results.iter().any(|r| r.is_err()) || results.is_empty(),
         "six-hop redirect chain must not succeed; got {results:?}"

@@ -14,9 +14,7 @@ fn git_empty_repo_no_commits_handled() {
         .output()
         .expect("git init");
 
-    let chunks: Vec<_> = GitSource::new(dir.path().to_path_buf())
-        .chunks()
-        .collect();
+    let chunks: Vec<_> = GitSource::new(dir.path().to_path_buf()).chunks().collect();
 
     assert!(
         chunks.is_empty(),

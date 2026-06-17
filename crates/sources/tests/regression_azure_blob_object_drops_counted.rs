@@ -1,0 +1,225 @@
+#![cfg(feature = "azure")]
+
+use keyhog_core::Source;
+use keyhog_sources::{skip_counts, testing::reset_skip_counters, AzureBlobSource};
+use std::sync::{Mutex, MutexGuard};
+
+static COUNTER_LOCK: Mutex<()> = Mutex::new(());
+
+fn counter_guard() -> MutexGuard<'static, ()> {
+    COUNTER_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn blob(name: &str, size: u64, content_type: &str) -> String {
+    format!(
+        r#"<Blob><Name>{name}</Name><Properties><Content-Length>{size}</Content-Length><Content-Type>{content_type}</Content-Type></Properties></Blob>"#
+    )
+}
+
+fn listing(blobs: &str) -> String {
+    format!(
+        r#"<?xml version="1.0" encoding="utf-8"?>
+<EnumerationResults ServiceEndpoint="https://account.blob.core.windows.net/" ContainerName="container">
+  <Blobs>{blobs}</Blobs>
+  <NextMarker />
+</EnumerationResults>"#
+    )
+}
+
+fn container_url(server: &httpmock::MockServer) -> String {
+    format!("{}/container?sv=2024-11-04&sig=regression", server.url(""))
+}
+
+#[test]
+fn plain_text_blob_is_scanned_and_sas_query_is_preserved() {
+    let _guard = counter_guard();
+    reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/container")
+            .query_param("sv", "2024-11-04")
+            .query_param("sig", "regression")
+            .query_param("restype", "container")
+            .query_param("comp", "list");
+        then.status(200)
+            .header("content-type", "application/xml")
+            .body(listing(&blob("config.txt", 40, "text/plain")));
+    });
+    let _obj = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/container/config.txt")
+            .query_param("sv", "2024-11-04")
+            .query_param("sig", "regression");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body("aws_key=AKIAQYLPMN5HFIQR7XYA\n"); // keyhog:ignore detector=aws-access-key
+    });
+
+    let chunks: Vec<_> = AzureBlobSource::new(container_url(&server))
+        .chunks()
+        .collect();
+    let ok: Vec<_> = chunks
+        .into_iter()
+        .filter_map(|result| result.ok())
+        .collect();
+    assert_eq!(ok.len(), 1, "Azure text blob should produce one chunk");
+    assert!(
+        ok[0].data.as_ref().contains("AKIAQYLPMN5HFIQR7XYA"), // keyhog:ignore detector=aws-access-key
+        "chunk must carry blob body"
+    );
+    assert_eq!(
+        ok[0].metadata.path.as_deref(),
+        Some("azblob://127.0.0.1/container/config.txt")
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.total(),
+        before.total(),
+        "a scanned text blob must not inflate skip counters"
+    );
+}
+
+#[test]
+fn binary_extension_blob_is_counted_binary_without_get() {
+    let _guard = counter_guard();
+    reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/container")
+            .query_param("restype", "container")
+            .query_param("comp", "list");
+        then.status(200)
+            .header("content-type", "application/xml")
+            .body(listing(&blob("bundle.zip", 512, "application/zip")));
+    });
+    let object_get = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/container/bundle.zip");
+        then.status(200).body("SHOULD_NOT_BE_FETCHED");
+    });
+
+    let chunks: Vec<_> = AzureBlobSource::new(container_url(&server))
+        .chunks()
+        .collect();
+    let ok: Vec<_> = chunks
+        .into_iter()
+        .filter_map(|result| result.ok())
+        .collect();
+    assert_eq!(ok.len(), 0, "binary-extension blob must not be scanned");
+
+    let after = skip_counts();
+    assert_eq!(
+        after.binary - before.binary,
+        1,
+        "Azure binary/container extension prefilter MUST bump SKIPPED_BINARY"
+    );
+    assert_eq!(
+        object_get.calls(),
+        0,
+        "binary-extension blob must not be fetched"
+    );
+}
+
+#[test]
+fn non_success_get_is_counted_unreadable() {
+    let _guard = counter_guard();
+    reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/container")
+            .query_param("restype", "container")
+            .query_param("comp", "list");
+        then.status(200)
+            .header("content-type", "application/xml")
+            .body(listing(&blob("forbidden.txt", 32, "text/plain")));
+    });
+    let _obj = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/container/forbidden.txt");
+        then.status(403).body("AuthorizationFailure");
+    });
+
+    let chunks: Vec<_> = AzureBlobSource::new(container_url(&server))
+        .chunks()
+        .collect();
+    let ok: Vec<_> = chunks
+        .into_iter()
+        .filter_map(|result| result.ok())
+        .collect();
+    assert_eq!(ok.len(), 0, "failed blob GET must not produce a chunk");
+
+    let after = skip_counts();
+    assert_eq!(
+        after.unreadable - before.unreadable,
+        1,
+        "Azure non-success blob GET MUST bump SKIPPED_UNREADABLE"
+    );
+}
+
+#[test]
+fn max_objects_limit_is_counted_source_truncated() {
+    let _guard = counter_guard();
+    reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/container")
+            .query_param("restype", "container")
+            .query_param("comp", "list");
+        then.status(200)
+            .header("content-type", "application/xml")
+            .body(listing(&format!(
+                "{}{}",
+                blob("first.txt", 16, "text/plain"),
+                blob("second.txt", 16, "text/plain")
+            )));
+    });
+    let _first = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/container/first.txt");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body("first blob\n");
+    });
+    let second_get = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/container/second.txt");
+        then.status(200).body("SHOULD_NOT_BE_FETCHED");
+    });
+
+    let chunks: Vec<_> = AzureBlobSource::new(container_url(&server))
+        .with_max_objects(1)
+        .chunks()
+        .collect();
+    let ok: Vec<_> = chunks
+        .into_iter()
+        .filter_map(|result| result.ok())
+        .collect();
+    assert_eq!(ok.len(), 1, "first blob within cap should be scanned");
+
+    let after = skip_counts();
+    assert_eq!(
+        after.source_truncated - before.source_truncated,
+        1,
+        "Azure max_objects truncation MUST bump SOURCE_TRUNCATED"
+    );
+    assert_eq!(
+        second_get.calls(),
+        0,
+        "blobs beyond the cap must not be fetched"
+    );
+}

@@ -24,7 +24,7 @@ pub(crate) struct ListObject {
 }
 
 pub(crate) fn parse_s3_listing(body: &str) -> Result<ListBucketResult, SourceError> {
-    if contains_forbidden_xml_markup(body) {
+    if crate::cloud::contains_forbidden_xml_markup(body) {
         return Err(SourceError::Other(
             "S3 XML response contains unsupported DTD/entity declarations".into(),
         ));
@@ -51,25 +51,4 @@ pub(crate) fn parse_s3_listing(body: &str) -> Result<ListBucketResult, SourceErr
     let mut deserializer = Deserializer::from_str_with_resolver(body, PredefinedEntityResolver);
     ListBucketResult::deserialize(&mut deserializer)
         .map_err(|e| SourceError::Other(format!("failed to parse S3 ListObjectsV2 XML: {e}")))
-}
-
-fn contains_forbidden_xml_markup(body: &str) -> bool {
-    let upper = body.to_ascii_uppercase();
-    upper.contains("<!DOCTYPE") || upper.contains("<!ENTITY")
-}
-
-pub(crate) fn encode_s3_key_path(key: &str) -> String {
-    let mut encoded = String::with_capacity(key.len());
-    let mut segment = String::new();
-    for ch in key.chars() {
-        if ch == '/' {
-            encoded.push_str(&urlencoding::encode(&segment));
-            encoded.push('/');
-            segment.clear();
-        } else {
-            segment.push(ch);
-        }
-    }
-    encoded.push_str(&urlencoding::encode(&segment));
-    encoded
 }

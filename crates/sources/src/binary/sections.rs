@@ -1,5 +1,29 @@
 use keyhog_core::{Chunk, ChunkMetadata};
 
+/// Resolve an ELF section name from a `shdr_strtab.get_at(..)` result.
+///
+/// LAW10 (loud recall guard): goblin returns `None` when the `sh_name` index
+/// points OUTSIDE the section-name string table — a corrupt/truncated strtab.
+/// A section header with a non-zero `sh_name` that fails to resolve is a parse
+/// anomaly: the section could be a high-value `.rodata`/`.data` blob whose name
+/// we simply could not read, and substituting `""` would silently drop it from
+/// the high-value scan list. We bump `BINARY_SECTION_NAME_UNRESOLVED` so the
+/// partial parse is operator-visible, then return `""`. A `sh_name == 0` (the
+/// strtab's mandatory empty first entry, i.e. a legitimately unnamed section)
+/// resolves to `""` WITHOUT bumping the counter — that is normal, not an error.
+pub(crate) fn resolve_section_name(resolved: Option<&str>, sh_name: usize) -> &str {
+    match resolved {
+        Some(n) => n,
+        None => {
+            if sh_name != 0 {
+                let _event =
+                    crate::record_skip_event(crate::SourceSkipEvent::BinarySectionNameUnresolved);
+            }
+            ""
+        }
+    }
+}
+
 /// Extract strings from specific binary sections (ELF .rodata/.data, PE .rdata/.data).
 /// These sections are the most likely to contain embedded secrets.
 pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
@@ -7,7 +31,10 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
 
     let obj = match Object::parse(bytes) {
         Ok(o) => o,
-        Err(_) => return None,
+        // Law 10: recall-safe — bytes that aren't a recognized object format return
+        // `None` here, and the caller falls back to whole-file printable-string
+        // extraction (`extract_printable_strings`), so the binary is still scanned.
+        Err(_) => return None, // LAW10: unrecognized/partial => caller scans whole-file/recovered prefix; recall-preserving
     };
 
     let mut chunks = Vec::new();
@@ -27,7 +54,7 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
     match obj {
         Object::Elf(elf) => {
             for sh in &elf.section_headers {
-                let name = elf.shdr_strtab.get_at(sh.sh_name).unwrap_or("");
+                let name = resolve_section_name(elf.shdr_strtab.get_at(sh.sh_name), sh.sh_name);
                 if target_sections.contains(&name) {
                     let start = sh.sh_offset as usize;
                     // `start + sh_size` can overflow on a malformed ELF whose
@@ -55,7 +82,8 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
                                     date: None,
                                     mtime_ns: None,
                                     size_bytes: None,
-                                    decoded_span: None,                                },
+                                    decoded_span: None,
+                                },
                             });
                         }
                     }
@@ -64,9 +92,21 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
         }
         Object::PE(pe) => {
             for section in &pe.sections {
-                let name = std::str::from_utf8(&section.name)
-                    .unwrap_or("")
-                    .trim_end_matches('\0');
+                let name = match std::str::from_utf8(&section.name) {
+                    Ok(n) => n.trim_end_matches('\0'),
+                    Err(_error) => {
+                        // Law 10: loud — bumps BINARY_SECTION_NAME_UNRESOLVED, never a silent drop
+                        // Law 10: loud — a non-UTF-8 PE section name means the
+                        // section table is corrupt; we cannot tell whether this is
+                        // a high-value `.rdata`/`.data` section, so bump the
+                        // partial-parse counter instead of silently treating it as
+                        // an unnamed (and therefore skipped) section.
+                        let _event = crate::record_skip_event(
+                            crate::SourceSkipEvent::BinarySectionNameUnresolved,
+                        );
+                        ""
+                    }
+                };
                 if target_sections.contains(&name) {
                     let start = section.pointer_to_raw_data as usize;
                     // saturating_add: a malformed PE can claim a raw-data
@@ -94,7 +134,8 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
                                     date: None,
                                     mtime_ns: None,
                                     size_bytes: None,
-                                    decoded_span: None,                                },
+                                    decoded_span: None,
+                                },
                             });
                         }
                     }
@@ -103,8 +144,32 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
         }
         Object::Mach(goblin::mach::Mach::Binary(macho)) => {
             for seg in &macho.segments {
-                for (section, _) in seg.sections().unwrap_or_default() {
-                    let name = section.name().unwrap_or("");
+                // Law 10: a corrupt Mach-O segment whose section list cannot be
+                // parsed bumps the partial-parse counter (loud), then yields an
+                // empty section iterator — we do NOT silently treat the whole
+                // segment as section-free, which would hide a `__cstring`/`__data`
+                // section holding embedded secrets.
+                let sections = match seg.sections() {
+                    Ok(s) => s,
+                    Err(_error) => {
+                        // Law 10: loud — bumps BINARY_SECTION_NAME_UNRESOLVED, never a silent drop
+                        let _event = crate::record_skip_event(
+                            crate::SourceSkipEvent::BinarySectionNameUnresolved,
+                        );
+                        Vec::new()
+                    }
+                };
+                for (section, _) in sections {
+                    let name = match section.name() {
+                        Ok(n) => n,
+                        Err(_error) => {
+                            // Law 10: loud — bumps BINARY_SECTION_NAME_UNRESOLVED, never a silent drop
+                            let _event = crate::record_skip_event(
+                                crate::SourceSkipEvent::BinarySectionNameUnresolved,
+                            );
+                            ""
+                        }
+                    };
                     if target_sections.contains(&name) {
                         let start = section.offset as usize;
                         // saturating_add: a malformed Mach-O section can claim
@@ -130,7 +195,8 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
                                         date: None,
                                         mtime_ns: None,
                                         size_bytes: None,
-                                        decoded_span: None,                                    },
+                                        decoded_span: None,
+                                    },
                                 });
                             }
                         }

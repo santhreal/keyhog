@@ -6,7 +6,8 @@
 
 #![allow(clippy::too_many_arguments)]
 
-pub mod timeouts;
+pub mod api;
+pub(crate) mod timeouts;
 
 use std::sync::atomic::AtomicUsize;
 
@@ -17,24 +18,50 @@ use std::sync::atomic::AtomicUsize;
 /// the previously-silent walker filter dropped (kimi-1 dogfood #130).
 /// Counter is process-global; reset between scans by the test harness
 /// via `reset_skipped_over_max_size()`.
-pub static SKIPPED_OVER_MAX_SIZE: AtomicUsize = AtomicUsize::new(0);
+pub(crate) static SKIPPED_OVER_MAX_SIZE: AtomicUsize = AtomicUsize::new(0);
 
 /// How many files the filesystem walker skipped because their extension (or a
 /// content-sniffed magic header / NUL byte) marked them binary, before any
 /// content scan. Previously a silent `return` (Law 10): a `.bin`/`.dat`/no-ext
 /// file that is actually a planted-credential blob vanished with no trace. Bumped
 /// at each binary skip site in `process_entry`; surfaced at end-of-scan.
-pub static SKIPPED_BINARY: AtomicUsize = AtomicUsize::new(0);
+pub(crate) static SKIPPED_BINARY: AtomicUsize = AtomicUsize::new(0);
 
 /// How many files were skipped by the default-exclusion filter (lock files,
 /// minified/bundled JS, vendored trees). Also previously a silent `return`.
-pub static SKIPPED_EXCLUDED: AtomicUsize = AtomicUsize::new(0);
+pub(crate) static SKIPPED_EXCLUDED: AtomicUsize = AtomicUsize::new(0);
 
 /// How many files the walker could not read (permission denied / I/O error) and
 /// therefore did NOT scan. This is the most important to surface: an unreadable
 /// file is an UNKNOWN, not a clean file — silently dropping it is a false-clean
 /// (Law 10). Bumped on the walk's error path.
-pub static SKIPPED_UNREADABLE: AtomicUsize = AtomicUsize::new(0);
+pub(crate) static SKIPPED_UNREADABLE: AtomicUsize = AtomicUsize::new(0);
+
+/// How many archives (zip/apk/jar/tar/.gz/.tgz/...) had their extraction
+/// TRUNCATED by a decompression-bomb guard — the per-archive 4x-of-`--max-file-size`
+/// uncompressed budget was exceeded, so the remaining entries were NOT scanned.
+/// A truncated archive is partial coverage, not a clean archive: silently
+/// dropping the unscanned tail is a false-clean (Law 10). Bumped once per
+/// archive that hit a bomb guard; surfaced at end-of-scan alongside the other
+/// skip categories.
+pub(crate) static SKIPPED_ARCHIVE_TRUNCATED: AtomicUsize = AtomicUsize::new(0);
+
+/// How many binary (ELF/PE/Mach-O) sections were SKIPPED because their name
+/// could not be resolved from the object's section-name string table — a
+/// corrupt/truncated strtab in a malformed binary. The previous code substituted
+/// an empty name (`unwrap_or("")`) and then silently dropped the section because
+/// `""` is never in the high-value target list: a `.rodata`/`.data` section whose
+/// name lookup failed vanished from the scan with no trace (Law 10 false-clean —
+/// embedded secrets in that section were never scanned). Bumped once per section
+/// whose name lookup fails; surfaced so the operator knows the binary parse was
+/// partial. Reset via `reset_skip_counters`.
+pub(crate) static BINARY_SECTION_NAME_UNRESOLVED: AtomicUsize = AtomicUsize::new(0);
+
+/// How many source scans stopped before exhausting their input because a
+/// source-level aggregate cap fired. This is distinct from per-file
+/// over-max-size skips: e.g. Git history may stop after the aggregate
+/// byte/chunk ceiling even though every individual blob was below its own cap.
+pub(crate) static SOURCE_TRUNCATED: AtomicUsize = AtomicUsize::new(0);
 
 /// Immutable snapshot of the skip counters, read once at end-of-scan so every
 /// reporter (human summary + structured JSON/SARIF) surfaces the same numbers.
@@ -44,12 +71,76 @@ pub struct SkipCounts {
     pub binary: usize,
     pub excluded: usize,
     pub unreadable: usize,
+    /// Archives truncated by a decompression-bomb guard (partial coverage).
+    pub archive_truncated: usize,
+    /// Binary sections dropped because their name could not be resolved from a
+    /// corrupt section-name string table (partial binary parse).
+    pub binary_section_name_unresolved: usize,
+    /// Source scans stopped early by a source-level aggregate cap.
+    pub source_truncated: usize,
 }
 
 impl SkipCounts {
     /// Total files skipped (not scanned) across all categories.
+    ///
+    /// `binary_section_name_unresolved` and `source_truncated` are partial-
+    /// coverage signals, not whole-file skips, so they are surfaced separately
+    /// and are NOT added into this file-skip total.
     pub fn total(&self) -> usize {
-        self.over_max_size + self.binary + self.excluded + self.unreadable
+        self.over_max_size + self.binary + self.excluded + self.unreadable + self.archive_truncated
+    }
+}
+
+/// Typed source coverage gap recorded when input bytes are deliberately not
+/// scanned or only partially scanned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SourceSkipEvent {
+    OverMaxSize,
+    Binary,
+    Excluded,
+    Unreadable,
+    ArchiveTruncated,
+    #[cfg(feature = "binary")]
+    BinarySectionNameUnresolved,
+    SourceTruncated,
+}
+
+impl SourceSkipEvent {
+    fn counter(self) -> &'static AtomicUsize {
+        match self {
+            Self::OverMaxSize => &SKIPPED_OVER_MAX_SIZE,
+            Self::Binary => &SKIPPED_BINARY,
+            Self::Excluded => &SKIPPED_EXCLUDED,
+            Self::Unreadable => &SKIPPED_UNREADABLE,
+            Self::ArchiveTruncated => &SKIPPED_ARCHIVE_TRUNCATED,
+            #[cfg(feature = "binary")]
+            Self::BinarySectionNameUnresolved => &BINARY_SECTION_NAME_UNRESOLVED,
+            Self::SourceTruncated => &SOURCE_TRUNCATED,
+        }
+    }
+}
+
+/// Receipt proving a source skip event passed through the typed recorder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use = "source skip events must be recorded through the typed recorder so coverage gaps remain surfaced"]
+pub(crate) struct RecordedSkipEvent {
+    event: SourceSkipEvent,
+    previous: usize,
+    delta: usize,
+}
+
+pub(crate) fn record_skip_event(event: SourceSkipEvent) -> RecordedSkipEvent {
+    record_skip_events(event, 1)
+}
+
+pub(crate) fn record_skip_events(event: SourceSkipEvent, delta: usize) -> RecordedSkipEvent {
+    use std::sync::atomic::Ordering::Relaxed;
+
+    let previous = event.counter().fetch_add(delta, Relaxed);
+    RecordedSkipEvent {
+        event,
+        previous,
+        delta,
     }
 }
 
@@ -76,17 +167,23 @@ pub fn skip_counts() -> SkipCounts {
         binary: SKIPPED_BINARY.load(Relaxed),
         excluded: SKIPPED_EXCLUDED.load(Relaxed),
         unreadable: SKIPPED_UNREADABLE.load(Relaxed),
+        archive_truncated: SKIPPED_ARCHIVE_TRUNCATED.load(Relaxed),
+        binary_section_name_unresolved: BINARY_SECTION_NAME_UNRESOLVED.load(Relaxed),
+        source_truncated: SOURCE_TRUNCATED.load(Relaxed),
     }
 }
 
 /// Reset every skip counter. Public so test fixtures and the orchestrator can
 /// baseline between scans in one process.
-pub fn reset_skip_counters() {
+pub(crate) fn reset_skip_counters() {
     use std::sync::atomic::Ordering::Relaxed;
     SKIPPED_OVER_MAX_SIZE.store(0, Relaxed);
     SKIPPED_BINARY.store(0, Relaxed);
     SKIPPED_EXCLUDED.store(0, Relaxed);
     SKIPPED_UNREADABLE.store(0, Relaxed);
+    SKIPPED_ARCHIVE_TRUNCATED.store(0, Relaxed);
+    BINARY_SECTION_NAME_UNRESOLVED.store(0, Relaxed);
+    SOURCE_TRUNCATED.store(0, Relaxed);
 }
 
 /// Reset the over-max-size counter. Retained for API compatibility (Law 3);
@@ -102,9 +199,18 @@ pub fn reset_skipped_over_max_size() {
 /// that wasn't compiled in, which fails resolution on stable rustc
 /// (especially on Windows where `--no-default-features` is the
 /// release profile we ship for the no-Hyperscan build).
-#[cfg(any(feature = "web", feature = "github", feature = "slack", feature = "s3"))]
+#[cfg(any(
+    feature = "azure",
+    feature = "web",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket",
+    feature = "slack",
+    feature = "s3",
+    feature = "gcs"
+))]
 pub mod reqwest {
-    pub use ::reqwest::*;
+    pub use reqwest::*;
 }
 
 /// Shared HTTP-client policy (proxy, TLS, UA) used by every source
@@ -116,14 +222,24 @@ pub mod http;
 
 #[cfg(feature = "binary")]
 mod binary;
+#[cfg(feature = "bitbucket")]
+mod bitbucket_workspace;
+#[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
+mod cloud;
 #[cfg(feature = "docker")]
 mod docker;
 mod filesystem;
+#[cfg(feature = "gcs")]
+mod gcs;
 #[cfg(feature = "git")]
 mod git;
 #[cfg(feature = "github")]
 mod github_org;
+#[cfg(feature = "gitlab")]
+mod gitlab_group;
 mod har;
+#[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
+mod hosted_git;
 #[cfg(feature = "s3")]
 pub mod s3;
 #[cfg(feature = "slack")]
@@ -133,36 +249,16 @@ pub mod strings;
 #[cfg(feature = "web")]
 mod web;
 
-#[cfg(feature = "binary")]
-pub use binary::BinarySource;
-#[cfg(feature = "docker")]
-pub use docker::DockerImageSource;
-#[doc(hidden)]
-pub use filesystem::reader_pool_thread_count_for_test;
-pub use filesystem::FilesystemSource;
-#[cfg(feature = "git")]
-pub use git::GitDiffSource;
-#[cfg(feature = "git")]
-pub use git::GitHistorySource;
-#[cfg(feature = "git")]
-pub use git::GitSource;
-#[cfg(feature = "github")]
-pub use github_org::GitHubOrgSource;
-#[cfg(feature = "s3")]
-pub use s3::S3Source;
-#[cfg(feature = "slack")]
-pub use slack::SlackSource;
-pub use stdin::StdinSource;
-#[cfg(feature = "web")]
-pub use web::WebSource;
+pub use api::*;
 
-use keyhog_core::registry::get_source_registry;
 // Arc is used by the registry-registration plugins below. The cfg
 // match has to track the *actual* `Arc::new(...)` call sites, not
 // every feature flag the file references - gating broader than this
 // triggers `unused_imports` on builds that include only Docker
 // (which doesn't go through the registry).
-#[cfg(any(feature = "slack", feature = "s3"))]
+#[cfg(any(feature = "azure", feature = "slack", feature = "s3", feature = "gcs"))]
+use keyhog_core::registry::register_source;
+#[cfg(any(feature = "azure", feature = "slack", feature = "s3", feature = "gcs"))]
 use std::sync::Arc;
 
 /// Create a source instance from a name and optional parameters.
@@ -171,14 +267,24 @@ pub fn create_source(
     name: &str,
     params: Option<&str>,
 ) -> Result<Box<dyn keyhog_core::Source>, keyhog_core::SourceError> {
+    create_source_with_http_config(name, params, crate::http::HttpClientConfig::default())
+}
+
+/// Create a source while applying the shared outbound HTTP policy to
+/// network-backed source implementations.
+pub fn create_source_with_http_config(
+    name: &str,
+    params: Option<&str>,
+    _http: crate::http::HttpClientConfig,
+) -> Result<Box<dyn keyhog_core::Source>, keyhog_core::SourceError> {
     match name {
         "slack" => {
             if let Some(token) = params {
                 #[cfg(feature = "slack")]
-                return Ok(Box::new(SlackSource::new(token)));
+                return Ok(Box::new(SlackSource::new(token).with_http_config(_http)));
                 #[cfg(not(feature = "slack"))]
                 {
-                    let _ = token;
+                    let _ = token; // LAW10: unused-binding marker; no runtime effect, not a fallback
                     return Err(keyhog_core::SourceError::Other(
                         "slack feature not enabled".into(),
                     ));
@@ -194,7 +300,7 @@ pub fn create_source(
                 return Ok(Box::new(DockerImageSource::new(image)));
                 #[cfg(not(feature = "docker"))]
                 {
-                    let _ = image;
+                    let _ = image; // LAW10: unused-binding marker; no runtime effect, not a fallback
                     return Err(keyhog_core::SourceError::Other(
                         "docker feature not enabled".into(),
                     ));
@@ -207,10 +313,10 @@ pub fn create_source(
         "s3" => {
             if let Some(bucket) = params {
                 #[cfg(feature = "s3")]
-                return Ok(Box::new(S3Source::new(bucket)));
+                return Ok(Box::new(S3Source::new(bucket).with_http_config(_http)));
                 #[cfg(not(feature = "s3"))]
                 {
-                    let _ = bucket;
+                    let _ = bucket; // LAW10: unused-binding marker; no runtime effect, not a fallback
                     return Err(keyhog_core::SourceError::Other(
                         "s3 feature not enabled".into(),
                     ));
@@ -218,6 +324,77 @@ pub fn create_source(
             }
             Err(keyhog_core::SourceError::Other(
                 "s3 source requires a bucket name: s3:BUCKET".into(),
+            ))
+        }
+        "gcs" => {
+            if let Some(bucket) = params {
+                #[cfg(feature = "gcs")]
+                return Ok(Box::new(GcsSource::new(bucket).with_http_config(_http)));
+                #[cfg(not(feature = "gcs"))]
+                {
+                    let _ = bucket; // LAW10: unused-binding marker; no runtime effect, not a fallback
+                    return Err(keyhog_core::SourceError::Other(
+                        "gcs feature not enabled".into(),
+                    ));
+                }
+            }
+            Err(keyhog_core::SourceError::Other(
+                "gcs source requires a bucket name: gcs:BUCKET".into(),
+            ))
+        }
+        "azure_blob" => {
+            if let Some(container_url) = params {
+                #[cfg(feature = "azure")]
+                return Ok(Box::new(
+                    AzureBlobSource::new(container_url).with_http_config(_http),
+                ));
+                #[cfg(not(feature = "azure"))]
+                {
+                    let _ = container_url; // LAW10: unused-binding marker; no runtime effect, not a fallback
+                    return Err(keyhog_core::SourceError::Other(
+                        "azure feature not enabled".into(),
+                    ));
+                }
+            }
+            Err(keyhog_core::SourceError::Other(
+                "azure_blob source requires a container URL: azure_blob:URL".into(),
+            ))
+        }
+        "gitlab-group" | "gitlab_group" => {
+            if let Some(params) = params {
+                #[cfg(feature = "gitlab")]
+                return Ok(Box::new(crate::gitlab_group::source_from_params(
+                    params, _http,
+                )?));
+                #[cfg(not(feature = "gitlab"))]
+                {
+                    let _ = params; // LAW10: unused-binding marker; feature-disabled path returns a loud source error
+                    return Err(keyhog_core::SourceError::Other(
+                        "gitlab feature not enabled".into(),
+                    ));
+                }
+            }
+            Err(keyhog_core::SourceError::Other(
+                "gitlab-group source requires GROUP, TOKEN, and optional ENDPOINT parameters"
+                    .into(),
+            ))
+        }
+        "bitbucket-workspace" | "bitbucket_workspace" => {
+            if let Some(params) = params {
+                #[cfg(feature = "bitbucket")]
+                return Ok(Box::new(crate::bitbucket_workspace::source_from_params(
+                    params, _http,
+                )?));
+                #[cfg(not(feature = "bitbucket"))]
+                {
+                    let _ = params; // LAW10: unused-binding marker; feature-disabled path returns a loud source error
+                    return Err(keyhog_core::SourceError::Other(
+                        "bitbucket feature not enabled".into(),
+                    ));
+                }
+            }
+            Err(keyhog_core::SourceError::Other(
+                "bitbucket-workspace source requires WORKSPACE, USERNAME, APP_PASSWORD, and optional ENDPOINT parameters".into(),
             ))
         }
         _ => Err(keyhog_core::SourceError::Other(format!(
@@ -231,81 +408,30 @@ pub fn create_source(
 /// This allows the CLI to discover sources like `slack` or `s3` via the
 /// generic `--source` flag without hardcoded logic in the main crate.
 pub fn register_plugins() {
-    #[allow(unused_variables)]
-    let registry = get_source_registry();
-
     #[cfg(feature = "slack")]
     if let Ok(token) = std::env::var("SLACK_TOKEN") {
-        registry.register(Arc::new(SlackSource::new(token)));
+        register_source(Arc::new(SlackSource::new(token)));
     }
 
     #[cfg(feature = "s3")]
     if let Ok(bucket) = std::env::var("S3_BUCKET") {
-        registry.register(Arc::new(S3Source::new(bucket)));
+        register_source(Arc::new(S3Source::new(bucket)));
+    }
+
+    #[cfg(feature = "gcs")]
+    if let Ok(bucket) = std::env::var("GCS_BUCKET") {
+        register_source(Arc::new(GcsSource::new(bucket)));
+    }
+
+    #[cfg(feature = "azure")]
+    if let Ok(container_url) = std::env::var("AZURE_BLOB_CONTAINER_URL") {
+        register_source(Arc::new(AzureBlobSource::new(container_url)));
     }
 }
 
 #[doc(hidden)]
 pub mod testing {
-    pub fn strip_unc_prefix(s: &str) -> &str {
-        crate::filesystem::strip_unc_prefix(s)
-    }
-
-    pub fn user_agent(suffix: Option<&str>) -> String {
-        crate::http::user_agent(suffix)
-    }
-
-    #[cfg(feature = "binary")]
-    pub fn extract_string_literals(line: &str) -> Vec<String> {
-        let mut out = Vec::new();
-        crate::binary::literals::extract_string_literals(line, &mut out);
-        out
-    }
-
-    #[cfg(feature = "binary")]
-    pub fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<keyhog_core::Chunk>> {
-        crate::binary::sections::extract_sections(bytes, path)
-    }
-
-    #[cfg(feature = "github")]
-    pub fn validate_repo_name(name: &str) -> Result<(), keyhog_core::SourceError> {
-        crate::github_org::validate_repo_name(name)
-    }
-
-    #[cfg(feature = "github")]
-    pub fn validate_clone_url(url: &str) -> Result<(), keyhog_core::SourceError> {
-        crate::github_org::validate_clone_url(url)
-    }
-
-    #[cfg(feature = "web")]
-    pub fn redact_url(url: &str) -> String {
-        crate::web::redact_url(url).into_owned()
-    }
-
-    #[cfg(feature = "web")]
-    pub fn is_disallowed_web_host(url: &str) -> bool {
-        crate::web::is_disallowed_web_host(url)
-    }
-
-    #[cfg(feature = "web")]
-    pub fn is_disallowed_ip(ip: std::net::IpAddr) -> bool {
-        crate::web::is_disallowed_ip(ip)
-    }
-
-    #[cfg(feature = "web")]
-    pub fn resolve_and_screen(
-        host: &str,
-        port: u16,
-    ) -> Result<Vec<std::net::SocketAddr>, keyhog_core::SourceError> {
-        crate::web::resolve_and_screen(host, port)
-    }
-
-    #[cfg(feature = "web")]
-    pub fn build_web_client(
-        http: &crate::http::HttpClientConfig,
-        original_url: &str,
-        use_proxy: bool,
-    ) -> Result<crate::reqwest::blocking::Client, keyhog_core::SourceError> {
-        crate::web::build_web_client(http, original_url, use_proxy)
-    }
+    pub use crate::testing_facade::testing::*;
 }
+
+mod testing_facade;

@@ -1,0 +1,226 @@
+#![cfg(feature = "gcs")]
+
+use keyhog_core::Source;
+use keyhog_sources::{skip_counts, testing::reset_skip_counters, GcsSource};
+use std::sync::{Mutex, MutexGuard};
+
+const BUCKET: &str = "regression-bucket";
+static COUNTER_LOCK: Mutex<()> = Mutex::new(());
+
+fn counter_guard() -> MutexGuard<'static, ()> {
+    COUNTER_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn object(name: &str, size: u64) -> String {
+    format!(r#"{{"name":"{name}","size":"{size}"}}"#)
+}
+
+fn listing(objects: &str) -> String {
+    format!(r#"{{"items":[{objects}]}}"#)
+}
+
+#[test]
+fn plain_text_object_is_scanned_and_not_counted_as_skipped() {
+    let _guard = counter_guard();
+    reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path(format!("/storage/v1/b/{BUCKET}/o"))
+            .query_param("alt", "json");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(listing(&object("config.txt", 40)));
+    });
+    let _obj = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path(format!("/storage/v1/b/{BUCKET}/o/config.txt"))
+            .query_param("alt", "media");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body("aws_key=AKIAQYLPMN5HFIQR7XYA\n"); // keyhog:ignore detector=aws-access-key
+    });
+
+    let chunks: Vec<_> = GcsSource::new(BUCKET)
+        .with_endpoint(server.url(""))
+        .chunks()
+        .collect();
+    let ok: Vec<_> = chunks
+        .into_iter()
+        .filter_map(|result| result.ok())
+        .collect();
+    assert_eq!(ok.len(), 1, "GCS text object should produce one chunk");
+    assert!(
+        ok[0].data.as_ref().contains("AKIAQYLPMN5HFIQR7XYA"), // keyhog:ignore detector=aws-access-key
+        "chunk must carry object body"
+    );
+    assert_eq!(
+        ok[0].metadata.path.as_deref(),
+        Some("gs://regression-bucket/config.txt")
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.total(),
+        before.total(),
+        "a scanned text object must not inflate skip counters"
+    );
+}
+
+#[test]
+fn binary_extension_object_is_counted_binary_without_get() {
+    let _guard = counter_guard();
+    reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path(format!("/storage/v1/b/{BUCKET}/o"))
+            .query_param("alt", "json");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(listing(&object("bundle.zip", 512)));
+    });
+    let object_get = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path(format!("/storage/v1/b/{BUCKET}/o/bundle.zip"));
+        then.status(200).body("SHOULD_NOT_BE_FETCHED");
+    });
+
+    let chunks: Vec<_> = GcsSource::new(BUCKET)
+        .with_endpoint(server.url(""))
+        .chunks()
+        .collect();
+    let ok: Vec<_> = chunks
+        .into_iter()
+        .filter_map(|result| result.ok())
+        .collect();
+    assert_eq!(ok.len(), 0, "binary-extension object must not be scanned");
+
+    let after = skip_counts();
+    assert_eq!(
+        after.binary - before.binary,
+        1,
+        "GCS binary/container extension prefilter MUST bump SKIPPED_BINARY"
+    );
+    assert_eq!(
+        object_get.calls(),
+        0,
+        "binary-extension object must not be fetched"
+    );
+}
+
+#[test]
+fn non_success_get_is_counted_unreadable() {
+    let _guard = counter_guard();
+    reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path(format!("/storage/v1/b/{BUCKET}/o"))
+            .query_param("alt", "json");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(listing(&object("forbidden.txt", 32)));
+    });
+    let _obj = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path(format!("/storage/v1/b/{BUCKET}/o/forbidden.txt"))
+            .query_param("alt", "media");
+        then.status(403).body("AccessDenied");
+    });
+
+    let chunks: Vec<_> = GcsSource::new(BUCKET)
+        .with_endpoint(server.url(""))
+        .chunks()
+        .collect();
+    let ok: Vec<_> = chunks
+        .into_iter()
+        .filter_map(|result| result.ok())
+        .collect();
+    assert_eq!(ok.len(), 0, "failed object GET must not produce a chunk");
+
+    let after = skip_counts();
+    assert_eq!(
+        after.unreadable - before.unreadable,
+        1,
+        "GCS non-success object GET MUST bump SKIPPED_UNREADABLE"
+    );
+}
+
+#[test]
+fn max_objects_limit_is_counted_source_truncated() {
+    let _guard = counter_guard();
+    reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path(format!("/storage/v1/b/{BUCKET}/o"))
+            .query_param("alt", "json");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(listing(&format!(
+                "{},{}",
+                object("first.txt", 16),
+                object("second.txt", 16)
+            )));
+    });
+    let _first = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path(format!("/storage/v1/b/{BUCKET}/o/first.txt"))
+            .query_param("alt", "media");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body("first object\n");
+    });
+    let second_get = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path(format!("/storage/v1/b/{BUCKET}/o/second.txt"));
+        then.status(200).body("SHOULD_NOT_BE_FETCHED");
+    });
+
+    let chunks: Vec<_> = GcsSource::new(BUCKET)
+        .with_endpoint(server.url(""))
+        .with_max_objects(1)
+        .chunks()
+        .collect();
+    let ok: Vec<_> = chunks
+        .into_iter()
+        .filter_map(|result| result.ok())
+        .collect();
+    assert_eq!(ok.len(), 1, "first object within cap should be scanned");
+
+    let after = skip_counts();
+    assert_eq!(
+        after.source_truncated - before.source_truncated,
+        1,
+        "GCS max_objects truncation MUST bump SOURCE_TRUNCATED"
+    );
+    assert_eq!(
+        second_get.calls(),
+        0,
+        "objects beyond the cap must not be fetched"
+    );
+}
+
+#[test]
+fn custom_endpoint_is_not_treated_as_google_for_token_forwarding() {
+    assert!(keyhog_sources::testing::gcs_endpoint_is_google(
+        "https://storage.googleapis.com"
+    ));
+    assert!(!keyhog_sources::testing::gcs_endpoint_is_google(
+        "https://storage.googleapis.com.attacker.example"
+    ));
+    assert!(!keyhog_sources::testing::gcs_endpoint_is_google(
+        "https://minio.example.test"
+    ));
+}

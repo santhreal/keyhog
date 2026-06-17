@@ -1,8 +1,6 @@
-use std::time::SystemTime;
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use hmac::{Hmac, Mac};
 use keyhog_core::SourceError;
-use sha2::{Digest, Sha256};
 
 const EMPTY_PAYLOAD_SHA256: &str =
     "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
@@ -17,17 +15,23 @@ pub(crate) struct AwsSigV4Config {
 
 impl AwsSigV4Config {
     pub(crate) fn from_env(base_url: &str) -> Option<Self> {
-        let access_key_id = std::env::var("AWS_ACCESS_KEY_ID").ok()?;
-        let secret_access_key = std::env::var("AWS_SECRET_ACCESS_KEY").ok()?;
+        // An absent access key / secret is the EXPECTED "no static credentials
+        // configured" state: `None` makes the caller fall through to ANONYMOUS
+        // (unsigned) S3 access for public buckets — a documented mode surfaced by
+        // the caller, not a silent credential drop.
+        let access_key_id = std::env::var("AWS_ACCESS_KEY_ID").ok()?; // LAW10: env-absent ⇒ anonymous S3, see note
+        let secret_access_key = std::env::var("AWS_SECRET_ACCESS_KEY").ok()?; // LAW10: env-absent ⇒ anonymous S3, see note
         let region = std::env::var("AWS_REGION")
             .or_else(|_| std::env::var("AWS_DEFAULT_REGION"))
-            .ok()
+            .ok() // LAW10: env-absent region ⇒ infer from URL then us-east-1 default, see chain below
             .or_else(|| infer_s3_region(base_url))
-            .unwrap_or_else(|| "us-east-1".into());
+            .unwrap_or_else(|| "us-east-1".into()); // LAW10: AWS's canonical default region, not a swallowed failure
         Some(Self {
             access_key_id,
             secret_access_key,
-            session_token: std::env::var("AWS_SESSION_TOKEN").ok(),
+            // AWS_SESSION_TOKEN is optional (only for temporary STS creds);
+            // `None` is the correct "long-lived key, no token" state.
+            session_token: std::env::var("AWS_SESSION_TOKEN").ok(), // LAW10: optional STS token, None is valid, see note
             region,
         })
     }
@@ -37,9 +41,10 @@ impl AwsSigV4Config {
         request: reqwest::blocking::RequestBuilder,
         url: &str,
     ) -> Result<reqwest::blocking::RequestBuilder, SourceError> {
-        let now = chrono::DateTime::<chrono::Utc>::from(SystemTime::now());
-        let amz_date = now.format("%Y%m%dT%H%M%SZ").to_string();
-        let date_stamp = now.format("%Y%m%d").to_string();
+        let now_secs = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| SourceError::Other(format!("failed to read system clock: {e}")))?
+            .as_secs();
         let parsed = reqwest::Url::parse(url)
             .map_err(|e| SourceError::Other(format!("invalid S3 URL for signing: {e}")))?;
         let host = parsed
@@ -50,36 +55,25 @@ impl AwsSigV4Config {
         } else {
             parsed.path()
         };
-        let canonical_query = canonical_query_string(&parsed);
-
-        let mut canonical_headers = format!(
-            "host:{host}\nx-amz-content-sha256:{EMPTY_PAYLOAD_SHA256}\nx-amz-date:{amz_date}\n"
-        );
-        let mut signed_headers = "host;x-amz-content-sha256;x-amz-date".to_string();
-        if let Some(token) = &self.session_token {
-            canonical_headers.push_str(&format!("x-amz-security-token:{token}\n"));
-            signed_headers.push_str(";x-amz-security-token");
-        }
-
-        let canonical_request = format!(
-            "GET\n{canonical_uri}\n{canonical_query}\n{canonical_headers}\n{signed_headers}\n{EMPTY_PAYLOAD_SHA256}"
-        );
-        let credential_scope = format!("{date_stamp}/{}/s3/aws4_request", self.region);
-        let string_to_sign = format!(
-            "AWS4-HMAC-SHA256\n{amz_date}\n{credential_scope}\n{:x}",
-            Sha256::digest(canonical_request.as_bytes())
-        );
-        let signature = hex::encode(signing_key(
+        let query_pairs = parsed
+            .query_pairs()
+            .map(|(key, value)| (key.into_owned(), value.into_owned()))
+            .collect::<Vec<_>>();
+        let (authorization, amz_date, _) = keyhog_verifier::sigv4::sign_request_authorization(
+            &self.access_key_id,
             &self.secret_access_key,
-            &date_stamp,
+            self.session_token.as_deref(),
             &self.region,
             "s3",
-            &string_to_sign,
-        )?);
-        let authorization = format!(
-            "AWS4-HMAC-SHA256 Credential={}/{}, SignedHeaders={}, Signature={signature}",
-            self.access_key_id, credential_scope, signed_headers
-        );
+            "GET",
+            canonical_uri,
+            &query_pairs,
+            host,
+            EMPTY_PAYLOAD_SHA256,
+            now_secs,
+            &[("x-amz-content-sha256", EMPTY_PAYLOAD_SHA256)],
+        )
+        .map_err(|e| SourceError::Other(format!("failed to sign S3 request: {e}")))?;
 
         let mut request = request
             .header("x-amz-date", amz_date)
@@ -93,7 +87,10 @@ impl AwsSigV4Config {
 }
 
 fn infer_s3_region(base_url: &str) -> Option<String> {
-    let host = reqwest::Url::parse(base_url).ok()?.host_str()?.to_string();
+    // An unparseable base URL yields `None` (inference declines), which the
+    // caller turns into the `us-east-1` default — there is no region to infer
+    // from a bad URL, so this is a sound fallback, not a swallowed error.
+    let host = reqwest::Url::parse(base_url).ok()?.host_str()?.to_string(); // LAW10: bad URL ⇒ decline inference, caller defaults region, see note
     let parts: Vec<&str> = host.split('.').collect();
     let s3_idx = parts.iter().position(|part| *part == "s3")?;
     let region = parts.get(s3_idx + 1)?;
@@ -102,51 +99,4 @@ fn infer_s3_region(base_url: &str) -> Option<String> {
     } else {
         Some((*region).to_string())
     }
-}
-
-pub(crate) fn canonical_query_string(url: &reqwest::Url) -> String {
-    let mut pairs = url
-        .query_pairs()
-        .map(|(key, value)| (aws_uri_encode(&key), aws_uri_encode(&value)))
-        .collect::<Vec<_>>();
-    pairs.sort();
-    pairs
-        .into_iter()
-        .map(|(key, value)| format!("{key}={value}"))
-        .collect::<Vec<_>>()
-        .join("&")
-}
-
-fn aws_uri_encode(input: &str) -> String {
-    let mut encoded = String::with_capacity(input.len());
-    for byte in input.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                encoded.push(byte as char);
-            }
-            _ => encoded.push_str(&format!("%{byte:02X}")),
-        }
-    }
-    encoded
-}
-
-fn signing_key(
-    secret: &str,
-    date_stamp: &str,
-    region: &str,
-    service: &str,
-    string_to_sign: &str,
-) -> Result<Vec<u8>, SourceError> {
-    let date_key = hmac_sha256(format!("AWS4{secret}").as_bytes(), date_stamp.as_bytes())?;
-    let region_key = hmac_sha256(&date_key, region.as_bytes())?;
-    let service_key = hmac_sha256(&region_key, service.as_bytes())?;
-    let signing_key = hmac_sha256(&service_key, b"aws4_request")?;
-    hmac_sha256(&signing_key, string_to_sign.as_bytes())
-}
-
-fn hmac_sha256(key: &[u8], data: &[u8]) -> Result<Vec<u8>, SourceError> {
-    let mut mac = Hmac::<Sha256>::new_from_slice(key)
-        .map_err(|e| SourceError::Other(format!("failed to initialize S3 signer: {e}")))?;
-    mac.update(data);
-    Ok(mac.finalize().into_bytes().to_vec())
 }

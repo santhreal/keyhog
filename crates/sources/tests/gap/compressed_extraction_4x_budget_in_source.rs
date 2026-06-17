@@ -14,15 +14,17 @@
 fn compressed_extraction_4x_budget_in_source() {
     let src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/src/filesystem/extract.rs"
+        "/src/filesystem/extract/compressed.rs"
     ))
-    .expect("filesystem/extract.rs");
+    .expect("filesystem/extract/compressed.rs");
     assert!(
         src.contains("max_size.saturating_mul(4)"),
         "missing 4x decompression/extraction budget (max_size.saturating_mul(4))"
     );
     assert!(
-        src.contains("4x decompressed-size cap") || src.contains("exceeds 4x file cap"),
+        src.contains("4x decompressed-size cap")
+            || src.contains("exceeds 4x file cap")
+            || src.contains("4x --max-file-size"),
         "missing the 4x decompression-bomb cap log on the compressed/archive path"
     );
 }

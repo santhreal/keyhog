@@ -20,7 +20,7 @@
 //! Wire-format verification lives in unit tests under
 //! `crates/sources/src/s3/auth.rs`.
 
-use keyhog_sources::s3::{credential_forward_allowed, endpoint_is_aws};
+use keyhog_sources::testing::{s3_credential_forward_allowed, s3_endpoint_is_aws};
 
 /// AWS-owned endpoints: every shape `aws s3 endpoint-url` documents.
 /// Pre-fix: trivially true (everything got creds). Post-fix: these stay
@@ -37,7 +37,7 @@ fn aws_owned_endpoints_are_recognized_as_aws() {
         "https://s3.us-gov-east-1.amazonaws.com",
     ] {
         assert!(
-            endpoint_is_aws(endpoint),
+            s3_endpoint_is_aws(endpoint),
             "AWS-owned endpoint {endpoint} must be recognized as AWS",
         );
     }
@@ -71,7 +71,7 @@ fn non_aws_endpoints_do_not_pass_aws_gate() {
         "https://eu-central-1.linodeobjects.com",
     ] {
         assert!(
-            !endpoint_is_aws(endpoint),
+            !s3_endpoint_is_aws(endpoint),
             "non-AWS endpoint {endpoint} must NOT be recognized as AWS \
              (would forward AWS_ACCESS_KEY_ID + AWS_SESSION_TOKEN to a \
              third party). Issue #4.",
@@ -116,13 +116,13 @@ fn credential_forward_opt_in_requires_truthy_env() {
 
     // Default = off
     set(None);
-    assert!(!credential_forward_allowed(), "unset must be off");
+    assert!(!s3_credential_forward_allowed(), "unset must be off");
 
     // Falsy values
     for v in ["", "0", "false", "no", "off", "FALSE", " "] {
         set(Some(v));
         assert!(
-            !credential_forward_allowed(),
+            !s3_credential_forward_allowed(),
             "value {v:?} must NOT enable credential forwarding",
         );
     }
@@ -131,7 +131,7 @@ fn credential_forward_opt_in_requires_truthy_env() {
     for v in ["1", "true", "yes", "on"] {
         set(Some(v));
         assert!(
-            credential_forward_allowed(),
+            s3_credential_forward_allowed(),
             "value {v:?} must enable credential forwarding",
         );
     }

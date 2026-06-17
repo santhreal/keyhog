@@ -4,11 +4,11 @@
 fn compressed_input_uses_size_cap() {
     let fs_src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/src/filesystem/extract.rs"
+        "/src/filesystem/extract/compressed.rs"
     ))
-    .expect("filesystem/extract.rs");
+    .expect("filesystem/extract/compressed.rs");
     assert!(
-        fs_src.contains("read_file_for_compressed_input(path, max_size)"),
+        fs_src.contains("read::read_file_for_compressed_input(path, max_size)"),
         "extract_compressed_chunks must pass max_size cap"
     );
 

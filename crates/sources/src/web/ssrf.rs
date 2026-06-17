@@ -8,9 +8,12 @@ pub(crate) fn redact_url(url: &str) -> std::borrow::Cow<'_, str> {
         None => return std::borrow::Cow::Borrowed(url),
     };
     let after_scheme = &url[scheme_end..];
+    // When no path/query/fragment delimiter is present the authority IS the
+    // whole remainder, so `after_scheme.len()` is the correct end index (e.g.
+    // `https://user@host` with no trailing path) — not a swallowed failure.
     let authority_end = after_scheme
         .find(['/', '?', '#'])
-        .unwrap_or(after_scheme.len());
+        .unwrap_or(after_scheme.len()); // LAW10: no-delimiter ⇒ authority is whole remainder, see note
     let authority = &after_scheme[..authority_end];
     let Some(at_offset) = authority.find('@') else {
         return std::borrow::Cow::Borrowed(url);
@@ -23,25 +26,23 @@ pub(crate) fn redact_url(url: &str) -> std::borrow::Cow<'_, str> {
 }
 
 pub(crate) fn is_disallowed_web_host(url: &str) -> bool {
-    let parsed = match reqwest::Url::parse(url) {
-        Ok(u) => u,
-        Err(_) => return true,
-    };
-    let Some(host) = parsed.host() else {
-        return true;
-    };
-    match host {
-        url::Host::Ipv4(ip) => is_disallowed_ip(std::net::IpAddr::V4(ip)),
-        url::Host::Ipv6(ip) => is_disallowed_ip(std::net::IpAddr::V6(ip)),
-        url::Host::Domain(d) => {
-            let lower = d.to_ascii_lowercase();
-            lower == "localhost"
-                || lower.ends_with(".local")
-                || lower.ends_with(".internal")
-                || lower.ends_with(".localdomain")
-                || lower == "metadata.google.internal"
-        }
+    keyhog_verifier::ssrf::is_private_url(url)
+}
+
+pub(crate) fn is_autoroute_loopback_calibration_url(url: &str) -> bool {
+    if std::env::var_os("KEYHOG_AUTOROUTE_CALIBRATE").is_none() {
+        return false;
     }
+    let Ok(parsed) = reqwest::Url::parse(url) else {
+        return false;
+    };
+    if parsed.scheme() != "http" {
+        return false;
+    }
+    parsed
+        .host_str()
+        .and_then(|host| host.parse::<std::net::IpAddr>().ok()) // LAW10: non-IP hosts fail closed as non-calibration URLs; the normal SSRF block remains active
+        .is_some_and(|ip| ip.is_loopback())
 }
 
 /// SSRF IP-classification for the WebSource fetch surface.
@@ -83,7 +84,7 @@ fn ssrf_revalidating_redirect_policy() -> reqwest::redirect::Policy {
             (
                 url.as_str().to_string(),
                 url.host_str().map(str::to_owned),
-                url.port_or_known_default().unwrap_or(443),
+                url.port_or_known_default().unwrap_or(443), // LAW10: 443 is the correct https default port, not a swallowed failure
             )
         };
         if is_disallowed_web_host(&target_str) {
@@ -112,11 +113,11 @@ pub(crate) fn build_web_client(
         .timeout(crate::timeouts::HTTP_REQUEST)
         .redirect(ssrf_revalidating_redirect_policy());
 
-    if !proxy_in_use {
+    if !proxy_in_use && !is_autoroute_loopback_calibration_url(url) {
         let parsed = reqwest::Url::parse(url)
             .map_err(|e| SourceError::Other(format!("invalid URL: {e}")))?;
         if let Some(host) = parsed.host_str() {
-            let port = parsed.port_or_known_default().unwrap_or(443);
+            let port = parsed.port_or_known_default().unwrap_or(443); // LAW10: 443 is the correct https default port, not a swallowed error
             let host = host.to_string();
             let addrs = resolve_and_screen(&host, port)?;
             builder = builder.resolve_to_addrs(&host, &addrs);

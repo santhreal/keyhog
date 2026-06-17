@@ -11,7 +11,11 @@ pub fn oracle_plain_file_symlink_refused() {
     std::fs::write(outer.path().join("target.env"), "TARGET=secret\n").expect("target");
 
     let root = tempfile::tempdir().expect("root");
-    symlink_file(outer.path().join("target.env"), root.path().join("link.env")).expect("symlink");
+    symlink_file(
+        outer.path().join("target.env"),
+        root.path().join("link.env"),
+    )
+    .expect("symlink");
     std::fs::write(root.path().join("real.txt"), "REAL=ok\n").expect("real");
 
     let paths: Vec<_> = FilesystemSource::new(root.path().to_path_buf())
@@ -119,12 +123,18 @@ pub fn oracle_archive_symlink_target_swap_attempt() {
 }
 
 #[cfg(unix)]
-fn symlink_file(src: impl AsRef<std::path::Path>, dst: impl AsRef<std::path::Path>) -> std::io::Result<()> {
+fn symlink_file(
+    src: impl AsRef<std::path::Path>,
+    dst: impl AsRef<std::path::Path>,
+) -> std::io::Result<()> {
     std::os::unix::fs::symlink(src, dst)
 }
 
 #[cfg(windows)]
-fn symlink_file(src: impl AsRef<std::path::Path>, dst: impl AsRef<std::path::Path>) -> std::io::Result<()> {
+fn symlink_file(
+    src: impl AsRef<std::path::Path>,
+    dst: impl AsRef<std::path::Path>,
+) -> std::io::Result<()> {
     std::os::windows::fs::symlink_file(src, dst)
 }
 

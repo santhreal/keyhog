@@ -22,10 +22,8 @@
 //! relabel), only that the credential bytes surface SOMEWHERE.
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::{CompiledScanner, ScannerConfig};
+use keyhog_scanner::CompiledScanner;
 use proptest::prelude::*;
-use std::path::PathBuf;
-use std::sync::OnceLock;
 
 const BASE64_ALPHABET: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 /// Base62 (`[A-Za-z0-9]`) — the standard base64 alphabet minus the two
@@ -69,14 +67,6 @@ fn build_token(indices: &[u8], alphabet: &[u8]) -> String {
         .iter()
         .map(|idx| alphabet[*idx as usize] as char)
         .collect()
-}
-
-fn detector_dir() -> PathBuf {
-    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    d.pop();
-    d.pop();
-    d.push("detectors");
-    d
 }
 
 fn shared_scanner() -> &'static CompiledScanner {

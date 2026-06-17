@@ -14,8 +14,14 @@ fn r5t_git_history_max_commits_one_stops() {
         .flatten()
         .collect();
     let bodies: String = chunks.iter().map(|c| c.data.to_string()).collect();
-    assert!(bodies.contains("b=2"), "max_commits=1 must include only latest commit; got {bodies}");
-    assert!(!bodies.contains("a=1"), "older commit must be skipped; got {bodies}");
+    assert!(
+        bodies.contains("b=2"),
+        "max_commits=1 must include only latest commit; got {bodies}"
+    );
+    assert!(
+        !bodies.contains("a=1"),
+        "older commit must be skipped; got {bodies}"
+    );
 }
 
 #[cfg(not(feature = "git"))]

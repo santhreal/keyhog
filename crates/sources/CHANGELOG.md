@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add GitLab group and Bitbucket workspace source backends through a shared
+  hosted-git clone/scan owner, moving git-error redaction out of the GitHub-only
+  module so every forge source redacts clone failures through the same control.
 - Fix `--git-diff` and `--git-history` line attribution: both sources
   concatenated every added line of a file into one chunk and discarded the
   `@@ … +new_start @@` hunk header, so every finding was reported at line 1
@@ -17,7 +20,8 @@
   emit-site fix).
 - Mark `s3_ambient_credential_forward` with `required-features = ["s3"]` so default `keyhog-sources` tests no longer compile an S3-only integration test without the S3 module.
 - Move inline helper tests into registered external source tests via a hidden internal test facade, and clear the no-inline/no-production-unwrap gates for filesystem, binary literals/sections, GitHub org, HTTP, and web sources.
-- Move GitHub org git-error redaction into `github_org/sanitize.rs`, bringing `github_org.rs` under the 500-line modularity target.
+- Move hosted-git git-error redaction into `hosted_git/sanitize.rs`, keeping
+  clone stderr sanitization shared across GitHub, GitLab, and Bitbucket sources.
 - Move WebSource SSRF/redaction/DNS-pinning helpers into `web/ssrf.rs`, bringing `web.rs` under the 500-line modularity target.
 - Move filesystem per-entry extraction into `filesystem/extract.rs` and walker/filter policy into `filesystem/filter.rs`, bringing `filesystem.rs` under the 500-line modularity target and wiring the zip archive skip-list regression into the aggregate source tests.
 - Fix HTTP property-test env isolation, split 10k-case policy fuzzing from bounded reqwest builder/client smoke fuzzing, and use direct proptest regression files for HTTP/filesystem property tests so aggregate source gates run without `http_fuzz` skips.

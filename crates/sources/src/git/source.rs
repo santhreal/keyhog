@@ -2,12 +2,13 @@
 //! `gix`, stopping once the in-memory byte cap is reached.
 
 use std::collections::{HashSet, VecDeque};
-use std::io::BufRead;
+use std::io::{BufRead, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use gix::objs::Kind;
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
+use rayon::prelude::*;
 
 /// Maximum total in-memory bytes for all git blob content.
 /// 256 MiB covers large monorepos without OOM.
@@ -23,7 +24,109 @@ const MAX_GIT_BLOB_BYTES: u64 = 10 * 1024 * 1024;
 /// so 500K chunks × 200B = ~100 MB metadata ceiling.
 const MAX_GIT_CHUNKS: usize = 500_000;
 
-/// Scans git history: traverses commits and extracts text blob contents.
+/// Upper bound for one parallel blob decode batch.
+///
+/// Git object bytes are decompressed into owned `String`s before the iterator
+/// drains them into chunks, so this is intentionally much lower than the full
+/// history cap. It keeps the parallel path from reintroducing the "collect the
+/// whole tree" memory spike that the serial cap loop removed.
+const GIT_PARALLEL_BLOB_BATCH_BYTES: u64 = 32 * 1024 * 1024;
+
+/// Metadata item bound for one parallel blob decode batch.
+const GIT_PARALLEL_BLOB_BATCH_ITEMS: usize = 4096;
+
+#[derive(Debug, Clone)]
+struct GitBlobCandidate {
+    oid: gix::ObjectId,
+    filepath: Vec<u8>,
+    size_bytes: u64,
+}
+
+#[derive(Debug)]
+struct DecodedGitBlob {
+    oid: gix::ObjectId,
+    filepath: Vec<u8>,
+    size_bytes: u64,
+    file_text: String,
+}
+
+#[derive(Debug)]
+enum GitBlobBatchItem {
+    Candidate(GitBlobCandidate),
+    Skip(GitBlobSkip),
+}
+
+#[derive(Debug)]
+enum GitBlobDecodeOutcome {
+    Decoded(DecodedGitBlob),
+    Skip(GitBlobSkip),
+}
+
+#[derive(Debug)]
+enum GitBlobSkip {
+    HeaderUnreadable { oid: gix::ObjectId, error: String },
+    OverMaxSize { oid: gix::ObjectId, size: u64 },
+    RepositoryOpen { oid: gix::ObjectId, error: String },
+    ObjectUnreadable { oid: gix::ObjectId, error: String },
+    Binary,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum GitHistoryCap {
+    TotalBytes { total: usize, cap: usize },
+    Chunks { count: usize, cap: usize },
+}
+
+fn git_history_cap_status(total_bytes: usize, chunk_count: usize) -> Option<GitHistoryCap> {
+    if total_bytes >= MAX_GIT_TOTAL_BYTES {
+        return Some(GitHistoryCap::TotalBytes {
+            total: total_bytes,
+            cap: MAX_GIT_TOTAL_BYTES,
+        });
+    }
+    if chunk_count >= MAX_GIT_CHUNKS {
+        return Some(GitHistoryCap::Chunks {
+            count: chunk_count,
+            cap: MAX_GIT_CHUNKS,
+        });
+    }
+    None
+}
+
+fn record_git_history_cap_once(cap: GitHistoryCap, reported: &mut bool) {
+    if *reported {
+        return;
+    }
+    *reported = true;
+    match cap {
+        GitHistoryCap::TotalBytes { total, cap } => {
+            tracing::warn!(
+                total_bytes = total,
+                cap,
+                "git history source reached aggregate byte cap; remaining blobs were NOT scanned"
+            );
+        }
+        GitHistoryCap::Chunks { count, cap } => {
+            tracing::warn!(
+                chunks = count,
+                cap,
+                "git history source reached aggregate chunk cap; remaining blobs were NOT scanned"
+            );
+        }
+    }
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
+}
+
+pub(crate) fn record_git_history_cap_for_test(total_bytes: usize, chunk_count: usize) -> bool {
+    let Some(cap) = git_history_cap_status(total_bytes, chunk_count) else {
+        return false;
+    };
+    let mut reported = false;
+    record_git_history_cap_once(cap, &mut reported);
+    reported
+}
+
+/// Scans git blobs reachable from refs, reflogs, stashes, and dangling commits.
 ///
 /// # Examples
 ///
@@ -100,27 +203,30 @@ fn stream_git_blobs(
 ) -> Result<impl Iterator<Item = Result<Chunk, SourceError>>, SourceError> {
     let repo_arg = super::validate_repo_path(repo_path)?;
 
-    // Get commit hashes from ALL refs - branches, tags, dangling commits.
-    // The previous version walked HEAD ancestry only, silently missing
-    // secrets in feature branches, deleted-but-tagged history, and merge-only
-    // commits. See audit release-2026-04-26 sources/git/source.rs:104.
+    // Get commit hashes from refs plus reflogs. `--all` alone misses deleted
+    // branch reflog commits on current Git, and it also misses refs/stash on
+    // some versions, so stash is added explicitly when present.
     let mut log_cmd = Command::new(super::git_bin()?);
     log_cmd.args([
         "-C",
         &repo_arg,
         "log",
+        "--reflog",
         "--all",
-        "--branches",
-        "--tags",
+        "--date-order",
         "-m", // emit patches for merge commits ("evil merges")
-        "--format=%H %an",
+        "--format=%H",
     ]);
     if let Some(limit) = max_commits {
         log_cmd.args(["--max-count", &limit.to_string()]);
     }
     log_cmd.arg("--end-of-options");
+    if git_ref_exists(&repo_arg, "refs/stash")? {
+        log_cmd.arg("refs/stash");
+    }
 
     log_cmd.stdout(std::process::Stdio::piped());
+    log_cmd.stderr(std::process::Stdio::piped());
     let mut log_child = log_cmd.spawn().map_err(SourceError::Io)?;
     let log_stdout = log_child
         .stdout
@@ -131,7 +237,7 @@ fn stream_git_blobs(
     // Open the gix repo ONCE and reuse it for every commit. The previous
     // version called `gix::open(&repo_owned)` per-commit which on a 10k-commit
     // repo opened the repo 10k times - fd churn + IO amplification.
-    let repo_owned = repo_path.to_path_buf();
+    let repo_owned = PathBuf::from(&repo_arg);
     let repo_handle = gix::open(&repo_owned)
         .map_err(|e| SourceError::Io(std::io::Error::other(format!("gix open: {e}"))))?;
     // Snapshot every blob OID reachable from HEAD's tree. Used to label
@@ -140,33 +246,21 @@ fn stream_git_blobs(
     // the severity of `git/history` findings - a credential a developer
     // already removed from HEAD is still a leak, but less urgent than
     // one currently grep-able from main. Cheap: one tree walk at most.
-    // If the HEAD blob walk fails (corrupt object, unborn HEAD, partial
-    // clone without the tree objects) we fall back to an empty set,
-    // which labels every chunk as `git/history`. The downstream scorer
-    // downgrades that bucket, so a silent failure here would
-    // systematically deflate severity for findings that are actually
-    // live in HEAD. Surface the missing set so the operator sees the
-    // cause and can fall back to `keyhog scan --git-staged` or
-    // `--git-diff` instead.
-    let head_blobs = match collect_head_blob_set(&repo_handle) {
-        Some(set) => set,
-        None => {
-            tracing::warn!(
-                "git: HEAD blob walk produced no set; all findings will be \
-                 labelled git/history (lower severity). The scan continues \
-                 but you may underweight live-in-HEAD leaks. Common causes: \
-                 unborn HEAD, partial clone without tree objects, \
-                 corrupt ref."
-            );
-            HashSet::new()
-        }
-    };
+    // Snapshot failures are source failures, not a severity-label guess. If
+    // HEAD exists but its commit/tree cannot be read, labeling live blobs as
+    // `git/history` would silently downgrade active leaks. The only clean empty
+    // case is an unborn/empty repo, where there are no HEAD blobs to label.
+    let head_blobs = collect_head_blob_set(&repo_handle)?;
     let mut current_tree_blobs: VecDeque<Chunk> = VecDeque::new();
     let mut seen_blobs: HashSet<gix::ObjectId> = HashSet::new();
     let mut seen_commits: HashSet<gix::ObjectId> = HashSet::new();
     let mut total_bytes = 0usize;
     let mut chunk_count = 0usize;
+    let mut log_done = false;
+    let mut unreachable_loaded = false;
+    let mut unreachable_commits: VecDeque<gix::ObjectId> = VecDeque::new();
     let mut done = false;
+    let mut aggregate_cap_reported = false;
 
     Ok(std::iter::from_fn(move || {
         if done {
@@ -178,118 +272,174 @@ fn stream_git_blobs(
                 return Some(Ok(chunk));
             }
 
-            if total_bytes >= MAX_GIT_TOTAL_BYTES || chunk_count >= MAX_GIT_CHUNKS {
+            if let Some(cap) = git_history_cap_status(total_bytes, chunk_count) {
+                record_git_history_cap_once(cap, &mut aggregate_cap_reported);
                 done = true;
                 return None;
             }
 
-            let line = match log_lines.next() {
-                Some(Ok(l)) => l,
-                Some(Err(e)) => {
-                    done = true;
-                    return Some(Err(SourceError::Io(e)));
+            let id = if let Some(id) = unreachable_commits.pop_front() {
+                id
+            } else if !log_done {
+                match log_lines.next() {
+                    Some(Ok(line)) => match parse_commit_id_line(&line) {
+                        Ok(Some(id)) => id,
+                        Ok(None) => continue,
+                        Err(error) => {
+                            done = true;
+                            return Some(Err(error));
+                        }
+                    },
+                    Some(Err(e)) => {
+                        done = true;
+                        return Some(Err(SourceError::Io(e)));
+                    }
+                    None => {
+                        log_done = true;
+                        if let Err(error) = wait_for_git_child(&mut log_child, "git log") {
+                            done = true;
+                            return Some(Err(error));
+                        }
+                        continue;
+                    }
                 }
-                None => {
-                    done = true;
-                    return None;
+            } else if !unreachable_loaded {
+                let remaining = max_commits.map(|limit| limit.saturating_sub(seen_commits.len()));
+                unreachable_loaded = true;
+                match collect_unreachable_commit_ids(&repo_arg, remaining) {
+                    Ok(ids) => unreachable_commits = ids,
+                    Err(error) => {
+                        done = true;
+                        return Some(Err(error));
+                    }
                 }
+                match unreachable_commits.pop_front() {
+                    Some(id) => id,
+                    None => {
+                        done = true;
+                        return None;
+                    }
+                }
+            } else {
+                done = true;
+                return None;
             };
-
-            let parts: Vec<&str> = line.splitn(2, ' ').collect();
-            if parts.len() < 2 {
-                continue;
-            }
-            let commit_id = parts[0];
-            let author = parts[1];
 
             let repo = &repo_handle;
-            let Ok(id) = gix::ObjectId::from_hex(commit_id.as_bytes()) else {
-                continue;
-            };
             // Cache visited Git commit OIDs in a fast set to avoid traversing duplicate merge commits (KH-56)
             if !seen_commits.insert(id) {
                 continue;
             }
-            let Ok(obj) = repo.find_object(id) else {
-                continue;
+            let commit_id_str = id.to_string();
+            // Law 10: `git log` already enumerated this commit, so a gix failure to
+            // load its object / commit / tree means a commit's blobs are NOT
+            // scanned (corrupt object, partial clone missing the tree). Count each
+            // as unreadable + warn so the dropped commit is operator-visible rather
+            // than a silent `continue` that reads as full history coverage.
+            let obj = match repo.find_object(id) {
+                Ok(o) => o,
+                Err(error) => {
+                    tracing::warn!(%error, commit = %commit_id_str, "git commit object unreadable; its blobs were NOT scanned");
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                    continue;
+                }
             };
-            let Ok(commit) = obj.try_into_commit() else {
-                continue;
+            let commit = match obj.try_into_commit() {
+                Ok(c) => c,
+                Err(error) => {
+                    tracing::warn!(%error, commit = %commit_id_str, "git object is not a commit; its blobs were NOT scanned");
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                    continue;
+                }
             };
-            let Ok(tree) = commit.tree() else {
-                continue;
+            let author_str = commit_author_name(&commit, &commit_id_str);
+            let tree = match commit.tree() {
+                Ok(t) => t,
+                Err(error) => {
+                    tracing::warn!(%error, commit = %commit_id_str, "git commit tree unreadable; its blobs were NOT scanned");
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                    continue;
+                }
             };
 
             let mut blob_metadata = Vec::new();
             collect_tree_blobs_metadata(repo, &tree, &mut seen_blobs, &mut blob_metadata, b"");
 
             if !blob_metadata.is_empty() {
-                let repo_cloned = repo.clone();
-                let commit_id_str = commit_id.to_string();
-                let author_str = author.to_string();
+                let mut blob_metadata = blob_metadata.into_iter();
                 let head_blobs_ref = &head_blobs;
 
-                // Serial blob decompression. This was `into_par_iter()` (KH-58),
-                // but `gix::Repository` (gix 0.77) holds RefCell-backed object/
-                // pack caches: it is `Send` but NOT `Sync`, so sharing one across
-                // Rayon worker threads does not compile. A fresh
-                // `cargo build -p keyhog-sources --features git` failed with 7
-                // `RefCell<…> cannot be shared between threads safely` errors -
-                // which is why clean CI builds went red while cached local builds
-                // still passed. Correct re-parallelization needs a per-thread
-                // `gix::open(git_dir)` via `map_init` (each worker owns its own
-                // Repository); tracked as a follow-up. Serial is correct and
-                // keeps git history scanning working.
-                //
-                // Memory bound (M16): enforce the aggregate byte/chunk caps
-                // INSIDE this per-commit loop rather than only between commits.
-                // The previous `.collect()` materialized every unique blob in
-                // the commit's reachable tree at once - for the initial commit
-                // of a large monorepo that is the entire tree (multi-GiB),
-                // blowing past MAX_GIT_TOTAL_BYTES before a single chunk drained.
-                // Accumulate into `total_bytes`/`chunk_count` as each blob is
-                // decoded and stop collecting the moment a cap is crossed.
-                for (oid, filepath) in blob_metadata {
-                    if total_bytes >= MAX_GIT_TOTAL_BYTES || chunk_count >= MAX_GIT_CHUNKS {
+                'blob_batches: loop {
+                    if git_history_cap_status(total_bytes, chunk_count).is_some() {
                         break;
                     }
-                    // Reject blobs larger than max_file_size immediately by reading only the Git object header metadata (KH-66)
-                    let Ok(header) = repo_cloned.find_header(oid) else {
-                        continue;
-                    };
-                    if header.kind() != Kind::Blob || header.size() > MAX_GIT_BLOB_BYTES {
-                        continue;
+
+                    let batch = next_git_blob_batch(repo, &mut blob_metadata);
+                    if batch.is_empty() {
+                        break;
                     }
-                    let Ok(obj) = repo_cloned.find_object(oid) else {
-                        continue;
-                    };
-                    // Decode contract mirrors the filesystem source (C4): a
-                    // single non-UTF-8 byte must NOT discard the whole blob, or
-                    // `keyhog scan --git` silently under-recalls vs.
-                    // `keyhog scan <dir>`. Skip only true binary; otherwise
-                    // decode losslessly.
-                    let Some(file_text) = decode_git_blob(&obj.data) else {
-                        continue;
-                    };
-                    let path = String::from_utf8_lossy(&filepath).to_string();
-                    let in_head = head_blobs_ref.contains(&oid);
-                    let chunk = Chunk {
-                        data: file_text.into(),
-                        metadata: ChunkMetadata {
-                            base_offset: 0,
-                            base_line: 0,
-                            source_type: if in_head { "git/head" } else { "git/history" }.into(),
-                            path: Some(path),
-                            commit: Some(commit_id_str.clone()),
-                            author: Some(author_str.clone()),
-                            date: None,
-                            mtime_ns: None,
-                            size_bytes: Some(header.size()),
-                            decoded_span: None,                        },
-                    };
-                    total_bytes = total_bytes.saturating_add(chunk.data.len());
-                    chunk_count += 1;
-                    current_tree_blobs.push_back(chunk);
+
+                    let candidates = batch
+                        .iter()
+                        .filter_map(|item| match item {
+                            GitBlobBatchItem::Candidate(candidate) => Some(candidate.clone()),
+                            GitBlobBatchItem::Skip(_) => None,
+                        })
+                        .collect::<Vec<_>>();
+                    let mut decoded =
+                        decode_git_blob_candidates_parallel(&repo_owned, candidates).into_iter();
+
+                    for item in batch {
+                        if git_history_cap_status(total_bytes, chunk_count).is_some() {
+                            break 'blob_batches;
+                        }
+
+                        let decoded_blob = match item {
+                            GitBlobBatchItem::Skip(skip) => {
+                                record_git_blob_skip(skip);
+                                continue;
+                            }
+                            GitBlobBatchItem::Candidate(candidate) => match decoded.next() {
+                                Some(GitBlobDecodeOutcome::Decoded(decoded_blob)) => decoded_blob,
+                                Some(GitBlobDecodeOutcome::Skip(skip)) => {
+                                    record_git_blob_skip(skip);
+                                    continue;
+                                }
+                                None => {
+                                    tracing::warn!(
+                                        %candidate.oid,
+                                        "git blob decode batch lost an outcome; blob NOT scanned"
+                                    );
+                                    let _event = crate::record_skip_event(
+                                        crate::SourceSkipEvent::Unreadable,
+                                    );
+                                    continue;
+                                }
+                            },
+                        };
+
+                        let path = String::from_utf8_lossy(&decoded_blob.filepath).to_string();
+                        let in_head = head_blobs_ref.contains(&decoded_blob.oid);
+                        let chunk = Chunk {
+                            data: decoded_blob.file_text.into(),
+                            metadata: ChunkMetadata {
+                                base_offset: 0,
+                                base_line: 0,
+                                source_type: if in_head { "git/head" } else { "git/history" }
+                                    .into(),
+                                path: Some(path),
+                                commit: Some(commit_id_str.clone()),
+                                author: Some(author_str.clone()),
+                                date: None,
+                                mtime_ns: None,
+                                size_bytes: Some(decoded_blob.size_bytes),
+                                decoded_span: None,
+                            },
+                        };
+                        total_bytes = total_bytes.saturating_add(chunk.data.len());
+                        chunk_count += 1;
+                        current_tree_blobs.push_back(chunk);
+                    }
                 }
 
                 if let Some(chunk) = current_tree_blobs.pop_front() {
@@ -298,6 +448,142 @@ fn stream_git_blobs(
             }
         }
     }))
+}
+
+fn next_git_blob_batch(
+    repo: &gix::Repository,
+    blob_metadata: &mut std::vec::IntoIter<(gix::ObjectId, Vec<u8>)>,
+) -> Vec<GitBlobBatchItem> {
+    let mut batch = Vec::new();
+    let mut batch_bytes = 0u64;
+    let mut batch_items = 0usize;
+
+    while batch_items < GIT_PARALLEL_BLOB_BATCH_ITEMS && batch_bytes < GIT_PARALLEL_BLOB_BATCH_BYTES
+    {
+        let Some((oid, filepath)) = blob_metadata.next() else {
+            break;
+        };
+        batch_items += 1;
+
+        let header = match repo.find_header(oid) {
+            Ok(header) => header,
+            Err(error) => {
+                batch.push(GitBlobBatchItem::Skip(GitBlobSkip::HeaderUnreadable {
+                    oid,
+                    error: error.to_string(),
+                }));
+                continue;
+            }
+        };
+
+        if header.kind() != Kind::Blob {
+            continue;
+        }
+
+        let size_bytes = header.size();
+        if size_bytes > MAX_GIT_BLOB_BYTES {
+            batch.push(GitBlobBatchItem::Skip(GitBlobSkip::OverMaxSize {
+                oid,
+                size: size_bytes,
+            }));
+            continue;
+        }
+
+        batch_bytes = batch_bytes.saturating_add(size_bytes);
+        batch.push(GitBlobBatchItem::Candidate(GitBlobCandidate {
+            oid,
+            filepath,
+            size_bytes,
+        }));
+    }
+
+    batch
+}
+
+fn decode_git_blob_candidates_parallel(
+    repo_path: &Path,
+    candidates: Vec<GitBlobCandidate>,
+) -> Vec<GitBlobDecodeOutcome> {
+    let repo_path = repo_path.to_path_buf();
+    candidates
+        .into_par_iter()
+        .map_init(
+            || gix::open(&repo_path).map_err(|error| error.to_string()),
+            |repo_state, candidate| match repo_state {
+                Ok(repo) => decode_git_blob_candidate(repo, candidate),
+                Err(error) => GitBlobDecodeOutcome::Skip(GitBlobSkip::RepositoryOpen {
+                    oid: candidate.oid,
+                    error: error.clone(),
+                }),
+            },
+        )
+        .collect()
+}
+
+fn decode_git_blob_candidate(
+    repo: &gix::Repository,
+    candidate: GitBlobCandidate,
+) -> GitBlobDecodeOutcome {
+    let obj = match repo.find_object(candidate.oid) {
+        Ok(object) => object,
+        Err(error) => {
+            return GitBlobDecodeOutcome::Skip(GitBlobSkip::ObjectUnreadable {
+                oid: candidate.oid,
+                error: error.to_string(),
+            });
+        }
+    };
+
+    let Some(file_text) = decode_git_blob(&obj.data) else {
+        return GitBlobDecodeOutcome::Skip(GitBlobSkip::Binary);
+    };
+
+    GitBlobDecodeOutcome::Decoded(DecodedGitBlob {
+        oid: candidate.oid,
+        filepath: candidate.filepath,
+        size_bytes: candidate.size_bytes,
+        file_text,
+    })
+}
+
+fn record_git_blob_skip(skip: GitBlobSkip) {
+    match skip {
+        GitBlobSkip::HeaderUnreadable { oid, error } => {
+            // Law 10: the blob is referenced by the tree but its object header
+            // could not be read. It is not scanned, so count it as unreadable.
+            tracing::warn!(
+                %error, %oid,
+                "git blob header unreadable (corrupt/missing object); blob NOT scanned"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        }
+        GitBlobSkip::OverMaxSize { oid, size } => {
+            tracing::warn!(
+                %oid,
+                size,
+                cap = MAX_GIT_BLOB_BYTES,
+                "git blob exceeds the per-blob size cap; NOT scanned"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+        }
+        GitBlobSkip::RepositoryOpen { oid, error } => {
+            tracing::warn!(
+                %error, %oid,
+                "git repository could not be opened by a blob decode worker; blob NOT scanned"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        }
+        GitBlobSkip::ObjectUnreadable { oid, error } => {
+            tracing::warn!(
+                %error, %oid,
+                "git blob object unreadable (corrupt/missing object); blob NOT scanned"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        }
+        GitBlobSkip::Binary => {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+        }
+    }
 }
 
 /// Decode a git blob into scannable text using the same recall-preserving
@@ -410,6 +696,125 @@ fn looks_binary_blob(data: &[u8]) -> bool {
     false
 }
 
+fn git_ref_exists(repo_arg: &str, ref_name: &str) -> Result<bool, SourceError> {
+    let output = Command::new(super::git_bin()?)
+        .args([
+            "-C",
+            repo_arg,
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            "--end-of-options",
+        ])
+        .arg(format!("{ref_name}^{{commit}}"))
+        .output()
+        .map_err(SourceError::Io)?;
+    Ok(output.status.success())
+}
+
+fn parse_commit_id_line(line: &str) -> Result<Option<gix::ObjectId>, SourceError> {
+    let Some(commit_id) = line.split_whitespace().next() else {
+        return Ok(None);
+    };
+    match gix::ObjectId::from_hex(commit_id.as_bytes()) {
+        Ok(id) => Ok(Some(id)),
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                commit = commit_id,
+                "git reported an unparsable commit id; commit NOT scanned"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            Ok(None)
+        }
+    }
+}
+
+fn wait_for_git_child(child: &mut std::process::Child, label: &str) -> Result<(), SourceError> {
+    let status = child.wait().map_err(SourceError::Io)?;
+    if status.success() {
+        return Ok(());
+    }
+
+    let mut stderr = String::new();
+    if let Some(stderr_pipe) = child.stderr.as_mut() {
+        if let Err(error) = stderr_pipe.read_to_string(&mut stderr) {
+            stderr = format!("stderr unavailable: {error}");
+        }
+    }
+    Err(SourceError::Git(format!(
+        "{label} failed while enumerating git commits: {}",
+        stderr.trim()
+    )))
+}
+
+fn collect_unreachable_commit_ids(
+    repo_arg: &str,
+    remaining: Option<usize>,
+) -> Result<VecDeque<gix::ObjectId>, SourceError> {
+    if remaining == Some(0) {
+        return Ok(VecDeque::new());
+    }
+
+    let output = Command::new(super::git_bin()?)
+        .args([
+            "-C",
+            repo_arg,
+            "fsck",
+            "--unreachable",
+            "--no-reflogs",
+            "--no-progress",
+        ])
+        .output()
+        .map_err(SourceError::Io)?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(SourceError::Git(format!(
+            "git fsck failed while enumerating unreachable commits: {}",
+            stderr.trim()
+        )));
+    }
+
+    let mut out = VecDeque::new();
+    for line in String::from_utf8_lossy(&output.stdout).lines() {
+        let Some(commit_id) = line.strip_prefix("unreachable commit ") else {
+            continue;
+        };
+        let Some(id) = parse_commit_id_line(commit_id)? else {
+            continue;
+        };
+        out.push_back(id);
+        if remaining.is_some_and(|limit| out.len() >= limit) {
+            break;
+        }
+    }
+    Ok(out)
+}
+
+fn commit_author_name(commit: &gix::Commit<'_>, commit_id: &str) -> String {
+    match commit.author() {
+        Ok(author) => {
+            let name = String::from_utf8_lossy(author.name.as_ref())
+                .trim()
+                .to_string();
+            if name.is_empty() {
+                "unknown".to_string()
+            } else {
+                name
+            }
+        }
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                commit = commit_id,
+                "git commit author metadata unreadable; chunk author set to unknown"
+            );
+            "unknown".to_string()
+        }
+    }
+}
+
 fn collect_tree_blobs_metadata(
     repo: &gix::Repository,
     tree: &gix::Tree<'_>,
@@ -421,23 +826,21 @@ fn collect_tree_blobs_metadata(
         let entry = match entry_ref {
             Ok(e) => e,
             Err(error) => {
-                tracing::debug!(%error, "git tree entry read failed; skipping");
+                // Law 10: a tree entry that fails to parse (corrupt/truncated tree
+                // object) means the blob(s) it would reference are NOT scanned — an
+                // UNKNOWN, not a clean tree. The old `tracing::debug!` was invisible
+                // at default verbosity, so the dropped blobs vanished from coverage
+                // with no trace. Surface loudly + count as unreadable so a "0
+                // findings --git" run is not mistaken for full history coverage.
+                tracing::warn!(
+                    %error,
+                    "git tree entry could not be read (corrupt tree object); \
+                     its blob(s) were NOT scanned"
+                );
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
                 continue;
             }
         };
-
-        // Skip Git trees containing only excluded paths without reading individual blob OIDs (KH-59)
-        let name = entry.filename();
-        if name == b"node_modules"
-            || name == b"target"
-            || name == b".git"
-            || name == b"__pycache__"
-            || name == b"dist"
-            || name == b"build"
-            || name == b"vendor"
-        {
-            continue;
-        }
 
         let oid = entry.oid().to_owned();
 
@@ -450,11 +853,27 @@ fn collect_tree_blobs_metadata(
             p
         };
 
+        let default_exclude_path = String::from_utf8_lossy(&filepath);
+        if crate::filesystem::is_default_excluded_path(default_exclude_path.as_ref()) {
+            continue;
+        }
+
         let mode = entry.mode();
 
         if mode.is_tree() {
-            if let Ok(obj) = repo.find_object(oid) {
-                if let Ok(subtree) = obj.try_into_tree() {
+            let obj = match repo.find_object(oid) {
+                Ok(obj) => obj,
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        "git subtree object unreadable; its blob(s) were NOT scanned"
+                    );
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                    continue;
+                }
+            };
+            match obj.try_into_tree() {
+                Ok(subtree) => {
                     collect_tree_blobs_metadata(
                         repo,
                         &subtree,
@@ -462,6 +881,13 @@ fn collect_tree_blobs_metadata(
                         blob_metadata,
                         &filepath,
                     );
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        "git tree entry resolved to a non-tree object; its blob(s) were NOT scanned"
+                    );
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
                 }
             }
             continue;
@@ -479,38 +905,79 @@ fn collect_tree_blobs_metadata(
 
 /// Walk HEAD's tree and collect every blob OID reachable from it.
 ///
-/// Returns an empty set if HEAD doesn't resolve (detached, empty repo, or
-/// transient I/O error). The caller's behavior in that case: every blob is
-/// labeled `git/history` since we cannot prove it sits in HEAD - safer than
-/// the inverse, which would suppress severity downgrades for genuine
-/// historical leaks.
-fn collect_head_blob_set(repo: &gix::Repository) -> Option<HashSet<gix::ObjectId>> {
-    let head = repo.head().ok()?;
-    let head_id = head.try_into_peeled_id().ok().flatten()?;
-    let commit = repo.find_object(head_id).ok()?.try_into_commit().ok()?;
-    let tree = commit.tree().ok()?;
+/// Returns an empty set for an unborn/empty repository. Any failure after HEAD
+/// resolves is a source error: otherwise live HEAD blobs can be mislabeled as
+/// `git/history`, silently downgrading active leaks.
+fn collect_head_blob_set(repo: &gix::Repository) -> Result<HashSet<gix::ObjectId>, SourceError> {
+    let head = match repo.head() {
+        Ok(head) => head,
+        Err(error) => {
+            tracing::debug!(
+                %error,
+                "git: HEAD is unavailable while collecting HEAD blob set; treating repository as empty"
+            );
+            return Ok(HashSet::new());
+        }
+    };
+    let Some(head_id) = head.try_into_peeled_id().map_err(|error| {
+        SourceError::Git(format!(
+            "failed to resolve git HEAD while collecting live blob set: {error}"
+        ))
+    })?
+    else {
+        return Ok(HashSet::new());
+    };
+    let commit = repo
+        .find_object(head_id)
+        .map_err(|error| {
+            SourceError::Git(format!(
+                "failed to read git HEAD object while collecting live blob set: {error}"
+            ))
+        })?
+        .try_into_commit()
+        .map_err(|error| {
+            SourceError::Git(format!(
+                "git HEAD object is not a commit while collecting live blob set: {error}"
+            ))
+        })?;
+    let tree = commit.tree().map_err(|error| {
+        SourceError::Git(format!(
+            "failed to read git HEAD tree while collecting live blob set: {error}"
+        ))
+    })?;
     let mut out = HashSet::new();
-    walk_tree_for_blobs(repo, &tree, &mut out);
-    Some(out)
+    walk_tree_for_blobs(repo, &tree, &mut out)?;
+    Ok(out)
 }
 
 fn walk_tree_for_blobs(
     repo: &gix::Repository,
     tree: &gix::Tree<'_>,
     out: &mut HashSet<gix::ObjectId>,
-) {
+) -> Result<(), SourceError> {
     for entry_ref in tree.iter() {
-        let Ok(entry) = entry_ref else { continue };
+        let entry = entry_ref.map_err(|error| {
+            SourceError::Git(format!(
+                "failed to read git HEAD tree entry while collecting live blob set: {error}"
+            ))
+        })?;
         let oid = entry.oid().to_owned();
         let mode = entry.mode();
         if mode.is_tree() {
-            if let Ok(obj) = repo.find_object(oid) {
-                if let Ok(subtree) = obj.try_into_tree() {
-                    walk_tree_for_blobs(repo, &subtree, out);
-                }
-            }
+            let obj = repo.find_object(oid).map_err(|error| {
+                SourceError::Git(format!(
+                    "failed to read git HEAD subtree object while collecting live blob set: {error}"
+                ))
+            })?;
+            let subtree = obj.try_into_tree().map_err(|error| {
+                SourceError::Git(format!(
+                    "git HEAD subtree object is not a tree while collecting live blob set: {error}"
+                ))
+            })?;
+            walk_tree_for_blobs(repo, &subtree, out)?;
         } else if mode.is_blob() {
             out.insert(oid);
         }
     }
+    Ok(())
 }

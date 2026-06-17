@@ -61,14 +61,17 @@ fn commit_file(repo_path: &PathBuf, filename: &str, content: &str, message: &str
 fn git_history_later_commit_addition_carries_absolute_base_line() {
     let (_temp_dir, repo_path) = create_test_repo();
     // Commit 1: 100 clean lines, no secret.
-    let clean: String = (1..=100)
-        .map(|i| format!("clean_{i} = {i}\n"))
-        .collect();
+    let clean: String = (1..=100).map(|i| format!("clean_{i} = {i}\n")).collect();
     commit_file(&repo_path, "f.txt", &clean, "clean base");
     // Commit 2: change only line 80 to a secret.
     let mut lines: Vec<String> = (1..=100).map(|i| format!("clean_{i} = {i}")).collect();
     lines[79] = "hist_key = \"AKIAQYLPMN5HFIQR7XYA\"".to_string();
-    commit_file(&repo_path, "f.txt", &(lines.join("\n") + "\n"), "add secret at line 80");
+    commit_file(
+        &repo_path,
+        "f.txt",
+        &(lines.join("\n") + "\n"),
+        "add secret at line 80",
+    );
 
     let source = GitHistorySource::new(repo_path);
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
