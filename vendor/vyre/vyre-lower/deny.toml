@@ -1,8 +1,0 @@
-[advisories]
-version = 2
-
-[bans]
-multiple-versions = "warn"
-
-[licenses]
-allow = ["MIT", "Apache-2.0", "Unicode-3.0"]

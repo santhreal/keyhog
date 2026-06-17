@@ -1,10 +1,9 @@
 //! Lane 3 - VYRE INTEGRATION coherence regression tests.
 //!
-//! Keyhog consumes Vyre from crates.io, not from a path mirror and not from the
-//! read-only `vendor/vyre/` snapshot. These tests pin the registry contract:
+//! Keyhog consumes Vyre from crates.io, not from a path mirror and not from any
+//! retired repository `vendor/` snapshot. These tests pin the registry contract:
 //! all five runtime Vyre crates are exact `=0.6.2` pins, they stay in lockstep,
-//! no Vyre dependency carries `path =`, and `vendor/vyre` never becomes a build
-//! input.
+//! no Vyre dependency carries `path =`, and repository `vendor/` does not exist.
 
 use std::path::PathBuf;
 use toml::Value;
@@ -108,7 +107,7 @@ fn renamed_vyre_dependencies_resolve_to_the_expected_packages() {
 }
 
 #[test]
-fn vendor_vyre_is_excluded_and_never_a_build_dependency() {
+fn repository_vendor_tree_is_absent_and_never_a_build_dependency() {
     let root = repo_root();
     let cargo = root_cargo();
     let exclude: Vec<String> = cargo
@@ -123,8 +122,12 @@ fn vendor_vyre_is_excluded_and_never_a_build_dependency() {
         })
         .unwrap_or_default();
     assert!(
-        exclude.iter().any(|entry| entry == "vendor/vyre"),
-        "root [workspace] exclude must list vendor/vyre; got {exclude:?}"
+        !root.join("vendor").exists(),
+        "repository vendor/ must not exist; keyhog consumes published dependencies from crates.io"
+    );
+    assert!(
+        !exclude.iter().any(|entry| entry.starts_with("vendor/")),
+        "root [workspace] exclude must not preserve retired vendor snapshots; got {exclude:?}"
     );
 
     let mut cargos: Vec<PathBuf> = vec![root.join("Cargo.toml")];
@@ -142,7 +145,7 @@ fn vendor_vyre_is_excluded_and_never_a_build_dependency() {
             let normalized = line.replace('\\', "/");
             if normalized.contains("path")
                 && normalized.contains('=')
-                && (normalized.contains("vendor/vyre")
+                && (normalized.contains("vendor/")
                     || normalized.contains("third_party/vyre")
                     || normalized.contains("libs/performance/matching/vyre"))
             {
@@ -159,7 +162,7 @@ fn vendor_vyre_is_excluded_and_never_a_build_dependency() {
     assert_eq!(
         offending,
         Vec::<String>::new(),
-        "Vyre must not resolve through vendor, third_party mirrors, or the Santh live tree"
+        "Vyre must not resolve through vendor snapshots, third_party mirrors, or the Santh live tree"
     );
 }
 

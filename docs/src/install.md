@@ -94,7 +94,7 @@ The installer auto-detects, but you can override:
 |-----------------------------------------|---------------------------------------------------------------|
 | `KEYHOG_VARIANT=cuda` (or `--variant=cuda`) | Force the CUDA-accelerated Linux build (requires libcuda.so). |
 | `KEYHOG_VARIANT=cpu`  (or `--variant=cpu`)  | Force the default WGPU + SIMD build, skip GPU detection.      |
-| `KEYHOG_VERSION=v0.5.37` (or `--version=v0.5.37`) | Pin a specific release tag (default: most recent release with assets attached). |
+| `KEYHOG_VERSION=v0.5.40` (or `--version=v0.5.40`) | Pin a specific release tag (default: most recent release with assets attached). |
 | `KEYHOG_INSTALL=/usr/local/bin` (or `--install-dir=...`) | Install into a different directory.            |
 | `--yes` / `-y`                          | Non-interactive: accept all defaults, no prompts.             |
 | `--no-color`                            | Disable ANSI colors (e.g. for log capture).                   |
@@ -105,9 +105,9 @@ The installer auto-detects, but you can override:
 |--------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `KEYHOG_NO_GPU=1`        | Force the CPU + SIMD path; skip every GPU init (saves ~250 ms of cold-start on hosts with no usable GPU).                                                                                                                                    |
 | `KEYHOG_NO_GPU=0`        | Force GPU init even when CI auto-detection would otherwise skip it. Useful on self-hosted GitHub / GitLab runners with a real GPU.                                                                                                            |
-| `KEYHOG_REQUIRE_GPU=1`   | Hard-fail (`exit 2`) instead of silently degrading when the GPU stack is unavailable. Pairs with the no-silent-fallback contract.                                                                                                            |
+| `KEYHOG_REQUIRE_GPU=1`   | Hard-fail (`exit 2`) when the GPU stack is unavailable. This is a diagnostic/CI assertion, separate from autoroute. Autoroute itself is not a fallback hierarchy: it selects the fastest measured-correct backend from all eligible candidates. |
 | `KEYHOG_GPU_MOE_TIMEOUT_MS=<MS>` | Bound one GPU MoE confidence readback. Default `30000`; timeout falls back to CPU MoE for that batch.                                                                                                                             |
-| `KEYHOG_BACKEND=gpu\|mega-scan\|simd\|cpu` | Force a specific scan backend regardless of hardware probe. Mostly for benches; production code should let auto-select route.                                                                                                  |
+| `KEYHOG_BACKEND=gpu\|mega-scan\|simd\|cpu` | Force a specific scan backend regardless of autoroute. Diagnostic and benchmark override only; it does not prove autoroute correctness.                                                                                                  |
 
 **CI auto-detect.** When `CI=true` is set (or any of `GITHUB_ACTIONS`, `GITLAB_CI`, `CIRCLECI`, `TRAVIS`, `JENKINS_URL`, `TF_BUILD`, `BUILDKITE`, `DRONE`, `APPVEYOR`, `TEAMCITY_VERSION`, `CODEBUILD_BUILD_ID`, `BITBUCKET_BUILD_NUMBER`, `WERCKER`, `SEMAPHORE`), keyhog skips the GPU probe entirely and goes straight to the SIMD + CPU path. The savings: ~250 ms of cold-start per `keyhog` invocation, plus no confusing "GPU MoE init failed" warning when the runner's only GPU is `llvmpipe`. Override with `KEYHOG_NO_GPU=0` on self-hosted GPU runners.
 
@@ -194,11 +194,8 @@ slower on big inputs.
 
 ## crates.io
 
-Not yet. KeyHog vendors `vyre-libs` (the GPU literal-set scan crate)
-and isn't published to crates.io until that dependency lands there.
-Track the
-[crates.io publish issue](https://github.com/santhsecurity/keyhog/issues?q=is%3Aissue+crates.io)
-for status.
+KeyHog consumes the published Vyre runtime crates from crates.io through exact
+workspace pins. The repository does not carry a `vendor/` source tree.
 
 ## Verify the install
 

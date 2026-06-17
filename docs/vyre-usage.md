@@ -10,28 +10,26 @@ Updated 2026-06-17. The workspace pins all five runtime `vyre*` crates at
 `=0.6.2` from crates.io (root `Cargo.toml`, `[workspace.dependencies]`). That
 release carries the megakernel scan APIs Keyhog imports, including
 `vyre_libs::scan::build_regex_dfa_unanchored` (`engine/megakernel.rs`). The
-`vendor/vyre/` tree is a read-only reference snapshot (`vendor/README.md`, MC-11)
-and is NEVER built; it is `[workspace] exclude`d and is not a dependency target.
+repository carries no `vendor/` source tree; the exact crates.io pins are the
+only Vyre source for builds.
 
 ## What keyhog uses today
 
 | Vyre symbol                                          | Where keyhog uses it                                                |
 | ---------------------------------------------------- | ------------------------------------------------------------------- |
-| `vyre_libs::matching::GpuLiteralSet`                 | `engine/scan_gpu.rs::scan_coalesced_gpu` - primary GPU path         |
-| `vyre_libs::matching::RulePipeline`                  | `engine/scan_gpu.rs::scan_coalesced_megascan` - regex-NFA GPU path  |
-| `vyre_libs::matching::build_rule_pipeline_from_regex`| `engine/mod.rs::build_rule_pipeline` - MegaScan compile             |
-| `vyre_libs::matching::LiteralMatch`                  | Re-exported as `keyhog_scanner::LiteralMatch` for API stability     |
-| `vyre_libs::matching::dedup_regions_inplace`         | Per-pid match deduplication after both GPU dispatches               |
-| `vyre_libs::matching::RegionTriple`                  | Same - input shape for the dedup primitive                          |
-| `vyre_libs::matching::cached_load_or_compile`        | On-disk cache for compiled GPU literal-set + rule pipelines         |
+| `vyre_libs::scan::GpuLiteralSet`                     | `engine/gpu_lazy.rs::gpu_matcher` - per-chunk literal prefilter     |
+| `vyre_libs::scan::build_regex_dfa_unanchored`        | `engine/megakernel.rs` - lowers detector literals into DFA rules    |
+| `vyre_runtime::megakernel::BatchRuleProgram`         | `engine/megakernel.rs` / `megakernel_wire.rs` - catalog program     |
+| `vyre_driver_wgpu::megakernel::{BatchDispatcher, FileBatch, HitRecord}` | `engine/megakernel.rs` - persistent batched DFA dispatch |
+| `vyre_libs::scan::LiteralMatch`                      | Re-exported as `keyhog_scanner::LiteralMatch` for API stability     |
+| `vyre_libs::scan::cached_load_or_compile`            | On-disk cache for compiled GPU literal-set programs                 |
 | `vyre_libs::intern::perfect_hash::PerfectHash`       | `static_intern.rs` - frozen detector-metadata interner              |
 | `vyre_libs::intern::perfect_hash::build_chd`         | Same - built once at scanner construction                           |
 | `vyre_driver_wgpu::WgpuBackend`                      | Persistent wgpu device handle held by `CompiledScanner`             |
-| `vyre_driver_wgpu::runtime::cached_device`           | Aliveness check before each GPU dispatch                            |
-| `vyre_libs::matching::nfa` (via RulePipeline)        | Indirectly - consumed by `build_rule_pipeline_from_regex`           |
 
-Three scanner files (`engine/scan_gpu.rs`, `engine/mod.rs`,
-`engine/backend.rs`, `static_intern.rs`) are the only consumers.
+Current scanner consumers are `engine/gpu_lazy.rs`, `engine/megakernel.rs`,
+`engine/megakernel_wire.rs`, `engine/compile.rs`, `gpu.rs`, and
+`static_intern.rs`.
 
 ## Full vyre crate surface
 
@@ -621,9 +619,8 @@ megakernel via `OpcodeHandler`s for entropy + regex eval.
   `vyre_libs::scan::build_regex_dfa_unanchored` from that release. Future
   upgrades bump the workspace pins, run
   `python3 scripts/gates/vyre_pin_consistency.py`, then run scanner GPU/CPU
-  parity plus source aggregate gates. Use `scripts/vendor-vyre-gated.sh` only
-  for an explicit refresh of the read-only `vendor/vyre/` reference snapshot;
-  that snapshot is not a build input.
+  parity plus source aggregate gates. Do not recreate repository vendored
+  source trees for Vyre or any other dependency.
 
 ## Shipping gates
 

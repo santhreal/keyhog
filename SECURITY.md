@@ -100,13 +100,12 @@ suitable replacement appears in our transitive dep tree.
 against it will not be patched.
 
 **Why not applicable now:** keyhog itself does not depend on bincode
-directly. It is only pulled in transitively through the vendored
-vyre GPU stack (`vendor/vyre/`), which uses bincode for serializing
-compiled GPU pattern databases. The serialization surface is local
-disk caches keyed under `$KEYHOG_CACHE_DIR`; there is no untrusted
-network input deserialized through bincode. This advisory clears
-when vyre cuts a release that drops bincode 1.x or migrates to
-bincode 2.x.
+directly. It is only pulled in transitively through the published Vyre
+GPU stack, which uses bincode for serializing compiled GPU pattern
+databases. The serialization surface is local disk caches keyed under
+`$KEYHOG_CACHE_DIR`; there is no untrusted network input deserialized
+through bincode. This advisory clears when Vyre cuts a release that
+drops bincode 1.x or migrates to bincode 2.x.
 
 ### Resolved in v0.5.3
 

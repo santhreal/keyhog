@@ -11,9 +11,10 @@ that made the old setup brittle:
   1. all five deps exist in root `[workspace.dependencies]`;
   2. all five are exact registry pins at the same version;
   3. none of the five carries a `path =` override;
-  4. no Cargo manifest resolves a dependency through `vendor/vyre`;
-  5. no Cargo manifest reintroduces the retired `third_party/vyre` mirror;
-  6. the key Vyre docs agree that the active build uses crates.io pins.
+  4. the repository has no `vendor/` source tree;
+  5. no Cargo manifest resolves a dependency through `vendor/`;
+  6. no Cargo manifest reintroduces the retired `third_party/vyre` mirror;
+  7. the key Vyre docs agree that the active build uses crates.io pins.
 
 Run: python3 scripts/gates/vyre_pin_consistency.py
 """
@@ -83,9 +84,6 @@ def _manifest_version_and_path(
 def _cargo_manifests() -> list[pathlib.Path]:
     manifests: list[pathlib.Path] = []
     for path in REPO.rglob("Cargo.toml"):
-        rel = path.relative_to(REPO).as_posix()
-        if rel.startswith("vendor/vyre/") or rel.startswith("vendor/bogon/"):
-            continue
         manifests.append(path)
     return sorted(manifests)
 
@@ -99,11 +97,17 @@ def check() -> list[str]:
     ws = data.get("workspace", {})
     deps = ws.get("dependencies", {})
 
-    exclude = ws.get("exclude", [])
-    if "vendor/vyre" not in exclude:
+    if (REPO / "vendor").exists():
         violations.append(
-            "root Cargo.toml [workspace] exclude must list 'vendor/vyre' so the "
-            "read-only reference snapshot can never become a workspace member."
+            "repository-level vendor/ must not exist. Keyhog consumes Vyre from "
+            "crates.io pins and must not carry vendored source snapshots."
+        )
+
+    exclude = ws.get("exclude", [])
+    if any(isinstance(entry, str) and entry.startswith("vendor/") for entry in exclude):
+        violations.append(
+            "root Cargo.toml [workspace] exclude still lists vendor paths. "
+            "There must be no repository vendor tree to exclude."
         )
 
     versions: dict[str, str] = {}
@@ -142,7 +146,7 @@ def check() -> list[str]:
             + ", ".join(f"{k}={v}" for k, v in sorted(versions.items()))
         )
 
-    vendor_path_re = re.compile(r'path\s*=\s*"[^"]*vendor/vyre[^"]*"')
+    vendor_path_re = re.compile(r'path\s*=\s*"[^"]*vendor/[^"]*"')
     retired_mirror_re = re.compile(r'path\s*=\s*"[^"]*third_party/vyre[^"]*"')
     live_tree_re = re.compile(r'path\s*=\s*"[^"]*libs/performance/matching/vyre[^"]*"')
     for cargo in _cargo_manifests():
@@ -150,8 +154,8 @@ def check() -> list[str]:
         text = cargo.read_text(encoding="utf-8")
         if vendor_path_re.search(text):
             violations.append(
-                f"{rel} declares a Cargo path dependency into vendor/vyre. That "
-                "snapshot is read-only and never a build input."
+                f"{rel} declares a Cargo path dependency into vendor/. Keyhog "
+                "must not resolve dependencies from repository vendored snapshots."
             )
         if retired_mirror_re.search(text):
             violations.append(

@@ -1,6 +1,0 @@
-[build]
-rustc-wrapper = ""
-
-[alias]
-xtask = "run -p xtask --bin xtask --"
-check-vyre = "run -p xtask --bin xtask -- abstraction-gate"

@@ -1,5 +1,0 @@
-error: expected `struct`
- --> tests/ui/bad_pass_on_enum.rs:4:5
-  |
-4 | pub enum BadItemKind {
-  |     ^^^^

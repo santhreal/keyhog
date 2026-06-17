@@ -1,8 +1,8 @@
-//! TARGET-SPEC - Vyre registry pin and vendor isolation.
+//! TARGET-SPEC - Vyre registry pin and no repository vendor tree.
 //!
 //! Vyre 0.6.2 is published with the megakernel APIs Keyhog imports, so Keyhog's
 //! active build must resolve the Vyre runtime fleet from crates.io exact pins.
-//! The read-only `vendor/vyre/` snapshot is not a build source.
+//! The old repository-level `vendor/` snapshots must not exist.
 
 use std::path::PathBuf;
 use toml::Value;
@@ -68,7 +68,7 @@ fn vyre_runtime_fleet_is_published_0_6_2_without_path_overrides() {
 }
 
 #[test]
-fn vendor_vyre_is_excluded_and_not_a_cargo_resolution_path() {
+fn repository_vendor_tree_is_removed_and_not_a_cargo_resolution_path() {
     let root = repo_root();
     let cargo = root_cargo();
     let excludes: Vec<String> = cargo
@@ -84,8 +84,12 @@ fn vendor_vyre_is_excluded_and_not_a_cargo_resolution_path() {
         .unwrap_or_default();
 
     assert!(
-        excludes.iter().any(|entry| entry == "vendor/vyre"),
-        "vendor/vyre must remain excluded while the snapshot exists"
+        !root.join("vendor").exists(),
+        "repository vendor/ must not exist; keyhog consumes published dependencies from crates.io"
+    );
+    assert!(
+        !excludes.iter().any(|entry| entry.starts_with("vendor/")),
+        "root [workspace] exclude must not preserve retired vendor snapshots"
     );
 
     let mut cargo_files = vec![root.join("Cargo.toml")];
@@ -103,7 +107,7 @@ fn vendor_vyre_is_excluded_and_not_a_cargo_resolution_path() {
             let normalized = line.replace('\\', "/");
             if normalized.contains("path")
                 && normalized.contains('=')
-                && normalized.contains("vendor/vyre")
+                && normalized.contains("vendor/")
             {
                 offenders.push(format!(
                     "{}: {line}",
@@ -116,6 +120,6 @@ fn vendor_vyre_is_excluded_and_not_a_cargo_resolution_path() {
     assert_eq!(
         offenders,
         Vec::<String>::new(),
-        "vendor/vyre is a read-only snapshot and must not be a Cargo dependency path"
+        "repository vendor/ must not be a Cargo dependency path"
     );
 }

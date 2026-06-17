@@ -45,7 +45,8 @@ Operator path (real binary, real temp inputs):
 | `uninstall` (dry run)                | rc 0 |
 | `uninstall --yes`                    | **rc 0, binary REMOVED** (kernel unlinks the running exe) |
 
-Installer proof (`tests/install/install_from_local_build.sh`): **11 / 11 PASS**
+Installer proof (`tests/install/linux/install_from_local_build.sh` and
+`tests/install/macos/install_from_local_build.sh`): **11 / 11 PASS**
 — `--from-file` install, binary placed, `--version`, `doctor` exit 0, seeded
 scan exit 1, empty scan exit 0, SARIF well-formed, correct/tampered `.sha256`
 gate, missing-file error path, and the `expect`-driven interactive wizard.
@@ -126,6 +127,5 @@ Pinned GREEN by
 `crates/cli/tests/target_spec/cross_os_contracts.rs::vyre_pins_are_self_contained_for_offline_cross_os_build`
 and `crates/cli/tests/vyre_pin_coherence_lane3.rs::all_five_vyre_pins_present_exact_registry_and_lockstep`.
 
-The remaining cleanup target is separate: the stale `vendor/vyre` reference
-snapshot is not a build input and stays excluded until an explicit
-operator-approved cleanup removes or refreshes it.
+The repository-level `vendor/` tree has been removed. Cross-OS builds depend on
+crates.io pins and workspace members only, not local source mirrors.
