@@ -181,9 +181,10 @@ pub struct VerifySpec {
     /// every probe still has to actually fetch our collector to confirm it
     /// will deliver attacker-controlled traffic.
     ///
-    /// Gated behind the runtime `--verify-oob` flag - never default. When the
-    /// flag is off, `oob` is ignored and verification falls back to the
-    /// HTTP success criteria alone.
+    /// Gated behind the runtime `--verify-oob` flag - never default. When a
+    /// detector sets `oob`, verification requires an active OOB session and
+    /// fails closed if the session is unavailable, rather than sending a
+    /// malformed HTTP-only probe with empty interactsh substitutions.
     pub oob: Option<OobSpec>,
 }
 

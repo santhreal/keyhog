@@ -299,6 +299,15 @@ fn check_oob_consistency(verify: &VerifySpec, issues: &mut Vec<QualityIssue>) {
         }
     }
     let oob_configured = verify.oob.is_some();
+    if oob_configured && !verify.steps.is_empty() {
+        issues.push(QualityIssue::Error(
+            "verify.oob cannot be combined with multi-step verification: the \
+             runtime must bind each interactsh callback to a concrete request \
+             step, and this detector shape cannot be evaluated honestly. Use a \
+             single request verifier for the OOB probe or split the detector."
+                .into(),
+        ));
+    }
     match (oob_configured, interactsh_referenced) {
         (true, false) => issues.push(QualityIssue::Error(
             "verify.oob is set but no `{{interactsh}}` / `{{interactsh.host}}` / \

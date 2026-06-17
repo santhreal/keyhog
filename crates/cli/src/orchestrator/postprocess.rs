@@ -317,7 +317,9 @@ impl ScanOrchestrator {
                 tracing::warn!(
                     error = %e,
                     server = %self.args.oob_server,
-                    "OOB verification disabled: collector handshake failed; continuing with HTTP-only verification"
+                    "OOB verification unavailable: collector handshake failed; \
+                     detectors that require [detector.verify.oob] will return \
+                     verification errors while non-OOB detectors continue"
                 );
             }
         }

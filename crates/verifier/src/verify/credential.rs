@@ -26,10 +26,48 @@ fn warn_oob_required_without_session_once() {
     if OOB_REQUIRED_WARNED.set(()).is_ok() {
         tracing::warn!(
             "verifier: a detector spec required OOB callback verification but \
-no OOB session is active. Verification degrades to HTTP-only for this \
-finding (and any further OOB-required findings in this process). To \
-enable OOB verification pass --verify-oob to the CLI."
+no OOB session is active. Verification fails closed for this finding \
+(and any further OOB-required findings in this process) before sending an \
+HTTP probe. To enable OOB verification pass --verify-oob to the CLI."
         );
+    }
+}
+
+fn oob_required_without_session() -> VerificationAttempt {
+    warn_oob_required_without_session_once();
+    let mut metadata = HashMap::new();
+    metadata.insert(
+        "oob_disabled".to_string(),
+        "no active OOB session".to_string(),
+    );
+    VerificationAttempt {
+        result: VerificationResult::Error(
+            "OOB verification required by detector but no OOB session is active. \
+             Fix: run with --verify-oob and a reachable --oob-server, or remove \
+             [detector.verify.oob] from the detector."
+                .into(),
+        ),
+        metadata,
+        transient: false,
+    }
+}
+
+fn multi_step_oob_refused() -> VerificationAttempt {
+    let mut metadata = HashMap::new();
+    metadata.insert(
+        "oob_disabled".to_string(),
+        "multi-step OOB verification has no per-step callback binding".to_string(),
+    );
+    VerificationAttempt {
+        result: VerificationResult::Error(
+            "invalid detector runtime contract: multi-step verify specs cannot use \
+             [detector.verify.oob] because OOB minting must bind to a concrete \
+             request step. Fix: move the interactsh probe to a single request \
+             verifier or split the detector."
+                .into(),
+        ),
+        metadata,
+        transient: false,
     }
 }
 
@@ -122,13 +160,9 @@ pub(crate) async fn verify_credential(
     oob_session: Option<&Arc<OobSession>>,
 ) -> VerificationAttempt {
     if !spec.steps.is_empty() {
-        // Multi-step specs run the no-OOB `verify_multi_step` path -
-        // threading OOB through per-step or per-flow minting is open
-        // and unfinished. No bundled detector currently combines
-        // `[[steps]]` with an `oob` block, so the gap doesn't bite
-        // today; adding a detector that needs both must land the
-        // per-step OOB plumbing too or it will silently lose the
-        // out-of-band signal.
+        if spec.oob.is_some() {
+            return multi_step_oob_refused();
+        }
         return verify_multi_step(
             client,
             spec,
@@ -145,10 +179,10 @@ pub(crate) async fn verify_credential(
 
     // OOB context: mint a per-finding callback URL up front and weave it into
     // the companions map so every interpolation pass - URL, headers, body,
-    // auth - picks up `{{interactsh}}` substitutions. We only mint when the
-    // session is active; specs with `oob` set but no session emit a one-shot
-    // warning so the operator notices the OOB-required detector silently
-    // degrading to HTTP-only verification.
+    // auth - picks up `{{interactsh}}` substitutions. A spec with `oob` set
+    // cannot be evaluated without an active session: sending an HTTP request
+    // with empty interactsh substitutions is a malformed probe, not a
+    // degraded but valid verification path.
     let oob_ctx = match (spec.oob.as_ref(), oob_session) {
         (Some(oob_spec), Some(session)) => {
             let minted = session.mint();
@@ -165,8 +199,7 @@ pub(crate) async fn verify_credential(
             })
         }
         (Some(_), None) => {
-            warn_oob_required_without_session_once();
-            None
+            return oob_required_without_session();
         }
         _ => None,
     };
@@ -390,9 +423,10 @@ async fn combine_oob(
     }
     if let OobObservation::Disabled(reason) = &observation {
         metadata.insert("oob_disabled".to_string(), reason.clone());
-        // Session unhealthy → fall back to HTTP-only verdict regardless of
-        // policy. Better to report what we know than mark everything Dead.
-        return http_only_result;
+        return VerificationResult::Error(format!(
+            "OOB verification disabled during callback wait: {reason}. \
+             Fix: inspect collector connectivity and rerun with --verify-oob."
+        ));
     }
 
     match ctx.spec.policy {
