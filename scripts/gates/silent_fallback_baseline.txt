@@ -1,0 +1,1 @@
+# Silent-fallback baseline (Gate #1). Shrink-only: an entry leaving this list (fixed or annotated `// LAW10:`) is good; a NEW entry not in this list fails CI. Regenerate ONLY when intentionally shrinking.
