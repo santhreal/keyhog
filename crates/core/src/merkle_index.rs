@@ -10,7 +10,7 @@
 //! `(mtime, size)` differ but BLAKE3 matches we record the new mtime
 //! and still skip - same content, different stat (touched, copied).
 //!
-//! Tier-B moat innovation #3 from audits/legendary-2026-04-26: "10–100×
+//! Tier-B moat innovation #3 from docs/EXECUTION_PLAN.md: "10–100×
 //! speedup on CI re-runs" by skipping the 99% of files that didn't change.
 //!
 //! ## Schema versions
@@ -48,6 +48,11 @@ use crate::hex_encode;
 use crate::merkle_spec_hash::hex_to_array;
 
 pub use crate::merkle_spec_hash::compute_spec_hash;
+
+// Stale-tmp-file hygiene is a filesystem-cleanup responsibility orthogonal to
+// indexing; it lives in its own module and the index only calls into the sweep.
+mod tmp_hygiene;
+use tmp_hygiene::sweep_stale_tmp_files;
 
 /// On-disk per-entry record (v2). The `mtime_ns` + `size` pair is the
 /// fast-path key: a successful match short-circuits the BLAKE3 read
@@ -155,7 +160,7 @@ pub struct MerkleIndex {
 impl MerkleIndex {
     /// Construct a fresh, empty [`MerkleIndex`] with no cached entries and
     /// the default entry cap ([`MERKLE_DEFAULT_MAX_ENTRIES`]).
-    pub fn empty() -> Self {
+    fn empty() -> Self {
         Self::with_max_entries(MERKLE_DEFAULT_MAX_ENTRIES)
     }
 
@@ -163,7 +168,7 @@ impl MerkleIndex {
     /// A cap of `0` is treated as "unbounded" for callers that genuinely
     /// want the old behavior, but the documented resident cost still
     /// applies (~150 bytes/entry).
-    pub fn with_max_entries(max_entries: usize) -> Self {
+    pub(crate) fn with_max_entries(max_entries: usize) -> Self {
         Self {
             shards: (0..MERKLE_SHARDS)
                 .map(|_| RwLock::new(HashMap::new()))
@@ -175,7 +180,7 @@ impl MerkleIndex {
     }
 
     /// The configured maximum number of retained entries (`0` = unbounded).
-    pub fn max_entries(&self) -> usize {
+    pub(crate) fn max_entries(&self) -> usize {
         self.max_entries
     }
 
@@ -184,7 +189,7 @@ impl MerkleIndex {
     /// parse (treat as cold start - safer than poisoning the cache from
     /// a corrupted artifact). v1 caches are intentionally rejected as
     /// cold-start because they lack metadata fields.
-    pub fn load(path: &Path) -> Self {
+    pub(crate) fn load(path: &Path) -> Self {
         sweep_stale_tmp_files(path);
         Self::load_with_spec_inner(path, None)
     }
@@ -284,7 +289,7 @@ impl MerkleIndex {
     /// Persist the index without binding it to a detector-spec hash. Old
     /// callers stay on this path; the next-cycle load won't enforce a
     /// spec match. Use [`Self::save_with_spec`] for the safe modern path.
-    pub fn save(&self, path: &Path) -> std::io::Result<()> {
+    pub(crate) fn save(&self, path: &Path) -> std::io::Result<()> {
         self.save_inner(path, None)
     }
 
@@ -389,7 +394,9 @@ impl MerkleIndex {
         };
         let serialized = serde_json::to_vec_pretty(&on_disk)
             .map_err(|e| std::io::Error::other(format!("merkle index encode: {e}")))?;
-        let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+        // `Path::parent()` is `None` only for a root/empty path, where the CWD
+        // (".") is the correct directory to create the temp file in.
+        let parent = path.parent().unwrap_or_else(|| std::path::Path::new(".")); // LAW10: deterministic default, not a swallowed failure
         std::fs::create_dir_all(parent)?;
         // `NamedTempFile::new_in` creates a randomly-named file in
         // the same directory as the final target, then `persist`
@@ -408,14 +415,31 @@ impl MerkleIndex {
     }
 
     /// Hash the given content with BLAKE3 (32-byte output).
-    pub fn hash_content(content: &[u8]) -> [u8; 32] {
+    pub(crate) fn hash_content(content: &[u8]) -> [u8; 32] {
         *blake3::hash(content).as_bytes()
+    }
+
+    /// Record one observed chunk and return `true` when it matched the
+    /// previously indexed content hash. This is the production incremental
+    /// scan contract: callers provide the path, stat metadata, and bytes they
+    /// already read; the index owns hashing, skip classification, and update.
+    pub fn record_chunk_and_check_unchanged(
+        &self,
+        path: PathBuf,
+        mtime_ns: u64,
+        size: u64,
+        content: &[u8],
+    ) -> bool {
+        let content_hash = Self::hash_content(content);
+        let unchanged = self.unchanged(&path, &content_hash);
+        self.record_with_metadata(path, mtime_ns, size, content_hash);
+        unchanged
     }
 
     /// Returns `true` when `path` was previously indexed with the SAME
     /// content hash. Kept for callers that already have the hash in hand
     /// (e.g. the orchestrator's chunk-level skip path).
-    pub fn unchanged(&self, path: &Path, content_hash: &[u8; 32]) -> bool {
+    pub(crate) fn unchanged(&self, path: &Path, content_hash: &[u8; 32]) -> bool {
         let i = shard_index(path);
         self.shards[i]
             .read()
@@ -440,7 +464,7 @@ impl MerkleIndex {
     /// or `None` if the index hasn't seen it. Used by paranoid-mode
     /// verifiers that want to confirm content didn't change even when
     /// metadata happens to match.
-    pub fn lookup(&self, path: &Path) -> Option<(u64, u64, [u8; 32])> {
+    pub(crate) fn lookup(&self, path: &Path) -> Option<(u64, u64, [u8; 32])> {
         let i = shard_index(path);
         self.shards[i]
             .read()
@@ -452,7 +476,7 @@ impl MerkleIndex {
     /// zero-metadata entry - calls into [`Self::record_with_metadata`]
     /// with `mtime_ns = 0` and `size = 0` so existing callers keep
     /// working but won't benefit from the metadata fast-path.
-    pub fn record(&self, path: PathBuf, content_hash: [u8; 32]) {
+    pub(crate) fn record(&self, path: PathBuf, content_hash: [u8; 32]) {
         self.record_with_metadata(path, 0, 0, content_hash);
     }
 
@@ -460,7 +484,7 @@ impl MerkleIndex {
     /// entry at the same path. The path-shard mutex is held for the
     /// duration of the insert only; concurrent recordings against
     /// different shards never contend.
-    pub fn record_with_metadata(
+    pub(crate) fn record_with_metadata(
         &self,
         path: PathBuf,
         mtime_ns: u64,
@@ -545,12 +569,12 @@ impl MerkleIndex {
     }
 
     /// Number of indexed entries.
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.shards.iter().map(|s| s.read().len()).sum()
     }
 
     /// Returns true if no cached entries are present across any shard.
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.shards.iter().all(|s| s.read().is_empty())
     }
 }
@@ -564,71 +588,9 @@ impl Default for MerkleIndex {
 /// Default index location: `$XDG_CACHE_HOME/keyhog/merkle.idx` or
 /// `~/.cache/keyhog/merkle.idx` on Linux, `~/Library/Caches/keyhog/...`
 /// on macOS.
-pub fn default_cache_path() -> Option<PathBuf> {
+pub(crate) fn default_cache_path() -> Option<PathBuf> {
     dirs::cache_dir().map(|d| d.join("keyhog").join("merkle.idx"))
 }
 
-/// Stale-tmp-file age cutoff. `tempfile::NamedTempFile`'s Drop impl
-/// cleans up on panic but NOT on SIGKILL/SIGTERM - those leak a
-/// random-named tmp file in the cache directory. Older than this
-/// cutoff means "no chance an in-flight save by another keyhog
-/// process is still using it." 1 hour is generous; the longest
-/// merkle save in observed runs is < 1 second on a fully-loaded
-/// 100k-file scan.
-const STALE_TMP_CUTOFF_SECS: u64 = 60 * 60;
-
-/// Best-effort sweep of stale tmp files left behind by SIGKILL'd
-/// keyhog processes. Called from `load`/`load_with_spec` before
-/// reading the cache so stale tmps don't accumulate forever next
-/// to the real `merkle.idx`. Logged at debug level only since
-/// failure is non-fatal.
-fn sweep_stale_tmp_files(cache_path: &Path) {
-    let Some(parent) = cache_path.parent() else {
-        return;
-    };
-    let Ok(entries) = std::fs::read_dir(parent) else {
-        return;
-    };
-    let stem = cache_path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("merkle");
-    let now = std::time::SystemTime::now();
-    let mut swept = 0usize;
-    for entry in entries.flatten() {
-        let name = entry.file_name();
-        let Some(name_str) = name.to_str() else {
-            continue;
-        };
-        // tempfile::NamedTempFile uses random hex-suffixed names with
-        // a `.tmp` prefix - match conservatively to avoid eating
-        // unrelated files: `<stem>.tmp*` OR `.tmp<hex>`.
-        let is_tmp_sibling =
-            name_str.starts_with(&format!("{stem}.tmp")) || name_str.starts_with(".tmp");
-        if !is_tmp_sibling {
-            continue;
-        }
-        let path = entry.path();
-        let Ok(meta) = path.metadata() else { continue };
-        let Ok(modified) = meta.modified() else {
-            continue;
-        };
-        let age = match now.duration_since(modified) {
-            Ok(d) => d,
-            Err(_) => continue, // mtime in the future - skip rather than guess
-        };
-        if age.as_secs() < STALE_TMP_CUTOFF_SECS {
-            continue;
-        }
-        if std::fs::remove_file(&path).is_ok() {
-            swept += 1;
-        }
-    }
-    if swept > 0 {
-        tracing::debug!(
-            count = swept,
-            dir = %parent.display(),
-            "swept stale cache tmp files left by an interrupted save"
-        );
-    }
-}
+#[doc(hidden)]
+pub mod testing;

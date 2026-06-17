@@ -8,8 +8,9 @@ mod run;
 
 use crate::args::ScanArgs;
 use crate::orchestrator_config::{
-    auto_discover_detectors, configure_threads, load_detectors_no_cache, load_detectors_with_cache,
-    resolve_scan_config, ResolvedScanConfig,
+    auto_discover_detectors, autoroute_config_digest, configure_threads, load_detectors_no_cache,
+    load_detectors_with_cache, resolve_scan_config, resolved_scan_config_for_scanner,
+    ResolvedScanConfig,
 };
 use anyhow::{Context, Result};
 use keyhog_core::{DetectorSpec, RawMatch, Source};
@@ -18,6 +19,10 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 pub use run::{EXIT_LIVE_CREDENTIALS, EXIT_SCANNER_PANIC};
+
+fn default_incremental_cache_path() -> Option<PathBuf> {
+    dirs::cache_dir().map(|d| d.join("keyhog").join("merkle.idx"))
+}
 
 /// Offline (no-verify, no-network) structural metadata for a finding's
 /// credential. Single source of truth shared by every scan-output route so the
@@ -32,7 +37,21 @@ pub use run::{EXIT_LIVE_CREDENTIALS, EXIT_SCANNER_PANIC};
 pub(crate) use postprocess::offline_finding_metadata;
 
 #[doc(hidden)]
-pub use dispatch::{backend_requires_legacy_gpu_pipeline_for_test, explicit_backend_override};
+pub use dispatch::{backend_requires_coalesced_batch_pipeline_for_test, explicit_backend_override};
+
+pub(crate) use dispatch::CachedBackendRouter;
+
+pub(crate) fn cached_autoroute_router_for_default_config(
+    scanner: &CompiledScanner,
+    detectors: &[DetectorSpec],
+) -> CachedBackendRouter {
+    let hw_caps = keyhog_scanner::hw_probe::probe_hardware().clone();
+    let pattern_count = scanner.runtime_status().pattern_count;
+    let rules_digest = keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(detectors));
+    let resolved = resolved_scan_config_for_scanner(keyhog_scanner::ScannerConfig::default());
+    let config_digest = autoroute_config_digest(&resolved);
+    CachedBackendRouter::new(hw_caps, pattern_count, rules_digest, config_digest, scanner)
+}
 
 #[doc(hidden)]
 pub fn gpu_init_policy_for_args_for_test(args: &ScanArgs) -> GpuInitPolicy {
@@ -92,7 +111,7 @@ impl ScanOrchestrator {
         if args.git_staged && args.path.is_none() {
             args.path = Some(PathBuf::from("."));
         }
-        let mut effective_config = resolve_scan_config(&mut args);
+        let mut effective_config = resolve_scan_config(&mut args)?;
         let disabled_detectors = effective_config.disabled_detectors.clone();
         // Operator `.keyhog.toml` `[detector.<id>] min_confidence` overrides;
         // detector self-declared floors (DetectorSpec::min_confidence, merged
@@ -115,7 +134,7 @@ impl ScanOrchestrator {
         // --regex-dfa-limit). Set the process-global BEFORE any detector regex
         // compiles, so the cap takes effect on the per-worker DFA caches that
         // dominate scan memory. 0 = use the compiled default.
-        keyhog_scanner::types::set_regex_dfa_limit(args.regex_dfa_limit.unwrap_or(0));
+        keyhog_scanner::types::set_regex_dfa_limit(args.regex_dfa_limit.unwrap_or(0)); // LAW10: empty/absent => documented numeric default, recall-safe
 
         let hw = keyhog_scanner::hw_probe::probe_hardware();
         configure_threads(args.threads, hw.physical_cores);
@@ -280,14 +299,14 @@ impl ScanOrchestrator {
         self.args
             .incremental_cache
             .clone()
-            .or_else(keyhog_core::merkle_index::default_cache_path)
+            .or_else(default_incremental_cache_path)
     }
 
     pub(crate) fn build_merkle_index(&self) -> Option<Arc<keyhog_core::merkle_index::MerkleIndex>> {
         let path = self.incremental_cache_path()?;
         let spec_hash = keyhog_core::merkle_index::compute_spec_hash(&self.detectors);
         let idx = keyhog_core::merkle_index::MerkleIndex::load_with_spec(&path, &spec_hash);
-        tracing::info!(indexed = idx.len(), "incremental scan: loaded merkle index");
+        tracing::info!("incremental scan: loaded merkle index");
         Some(Arc::new(idx))
     }
 
@@ -298,8 +317,31 @@ impl ScanOrchestrator {
         sources: Vec<Box<dyn Source>>,
         show_progress: bool,
         merkle: Option<Arc<keyhog_core::merkle_index::MerkleIndex>>,
-    ) -> Vec<RawMatch> {
-        self.scan_sources(sources, show_progress, merkle)
+    ) -> Result<Vec<RawMatch>> {
+        let prior_backend = std::env::var_os("KEYHOG_BACKEND");
+        if prior_backend.is_none() {
+            // SAFETY: this test-only entry point runs synchronously before the
+            // dispatch workers are created. It pins deterministic SIMD routing
+            // so pipeline unit tests exercise scanner behavior without needing
+            // installer autoroute calibration artifacts.
+            unsafe {
+                std::env::set_var("KEYHOG_BACKEND", "simd");
+            }
+        }
+        let result = self.scan_sources(sources, show_progress, merkle);
+        match prior_backend {
+            Some(value) => unsafe {
+                // SAFETY: test-only restoration after dispatch workers have
+                // joined; no scanner thread is still reading KEYHOG_BACKEND.
+                std::env::set_var("KEYHOG_BACKEND", value);
+            },
+            None => unsafe {
+                // SAFETY: test-only restoration after dispatch workers have
+                // joined; no scanner thread is still reading KEYHOG_BACKEND.
+                std::env::remove_var("KEYHOG_BACKEND");
+            },
+        }
+        result
     }
 
     /// Test-only constructor bypassing detector-cache and lockdown gating.
@@ -326,6 +368,7 @@ impl ScanOrchestrator {
                 detector_min_confidence: std::collections::HashMap::new(),
                 disabled_detectors: std::collections::HashSet::new(),
                 require_lockdown: false,
+                regex_dfa_limit: None,
             },
         }
     }
@@ -334,7 +377,7 @@ impl ScanOrchestrator {
 fn gpu_init_policy_for_args(args: &ScanArgs) -> GpuInitPolicy {
     // GPU init (which acquires the wgpu backend the megakernel needs) follows the
     // selected backend: an explicit `--backend gpu`/`KEYHOG_BACKEND=gpu`, or the
-    // auto-routing policy below.
+    // measured backend-selection policy below.
     if let Some(policy) = backend_name_gpu_policy(args.backend.as_deref()) {
         return policy;
     }
@@ -380,11 +423,11 @@ fn backend_gpu_policy(backend: keyhog_scanner::ScanBackend) -> GpuInitPolicy {
 fn env_explicitly_enables_gpu() -> bool {
     std::env::var("KEYHOG_NO_GPU")
         .map(|v| matches!(v.as_str(), "" | "0" | "false" | "FALSE" | "off" | "OFF"))
-        .unwrap_or(false)
+        .unwrap_or(false) // LAW10: empty/absent => documented numeric default, recall-safe
 }
 
 fn filesystem_auto_scan_cannot_route_gpu(args: &ScanArgs) -> bool {
-    if std::env::var_os("KEYHOG_LEGACY_PIPELINE").is_some() {
+    if std::env::var_os("KEYHOG_BATCH_PIPELINE").is_some() {
         return false;
     }
     if args.path.is_none() {
@@ -405,8 +448,24 @@ fn filesystem_auto_scan_cannot_route_gpu(args: &ScanArgs) -> bool {
     if args.github_org.is_some() {
         return false;
     }
+    #[cfg(feature = "gitlab")]
+    if args.gitlab_group.is_some() {
+        return false;
+    }
+    #[cfg(feature = "bitbucket")]
+    if args.bitbucket_workspace.is_some() {
+        return false;
+    }
     #[cfg(feature = "s3")]
     if args.s3_bucket.is_some() {
+        return false;
+    }
+    #[cfg(feature = "gcs")]
+    if args.gcs_bucket.is_some() {
+        return false;
+    }
+    #[cfg(feature = "azure")]
+    if args.azure_container_url.is_some() {
         return false;
     }
     #[cfg(feature = "docker")]

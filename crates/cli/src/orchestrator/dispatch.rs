@@ -8,51 +8,16 @@
 //! report later dropped — a correctness/coherence bug (AUD-testing_dogfood-1).
 
 use super::ScanOrchestrator;
+use crate::orchestrator_config::autoroute_config_digest;
+mod backend;
+mod fused;
+use anyhow::Result;
+pub(crate) use backend::CachedBackendRouter;
+pub use backend::{backend_requires_coalesced_batch_pipeline_for_test, explicit_backend_override};
+use backend::{AutorouteRoutingError, MeasuredBackendRouter};
 use keyhog_core::{RawMatch, Source};
 use std::sync::Arc;
 use std::time::Instant;
-
-/// Returns the backend the user explicitly forced via `KEYHOG_BACKEND`
-/// or `--backend <name>`.
-///
-/// Thin re-export over `keyhog_scanner::hw_probe::forced_backend_from_env`
-/// so the orchestrator and the scanner agree on the parsed override
-/// set (including aliases like `literal-set` and `regex-nfa`). The
-/// previous hand-rolled match here drifted from the scanner-side
-/// match table; consolidating means new aliases only need to land in
-/// one place.
-pub fn explicit_backend_override() -> Option<keyhog_scanner::hw_probe::ScanBackend> {
-    // Use the uncached parser. This is called once per scan startup, not
-    // per-file, so the per-file cache that `forced_backend_from_env` shares
-    // with `select_backend` is unnecessary here - and using it would have a
-    // subtle side effect: integration tests that flip `KEYHOG_BACKEND`
-    // between cases in a single test binary would all observe the first
-    // value the cache locked in.
-    keyhog_scanner::hw_probe::forced_backend_from_env_uncached()
-}
-
-fn backend_requires_legacy_gpu_pipeline(
-    explicit: Option<keyhog_scanner::hw_probe::ScanBackend>,
-) -> bool {
-    match explicit {
-        Some(keyhog_scanner::hw_probe::ScanBackend::Gpu)
-        | Some(keyhog_scanner::hw_probe::ScanBackend::MegaScan) => true,
-        Some(keyhog_scanner::hw_probe::ScanBackend::SimdCpu)
-        | Some(keyhog_scanner::hw_probe::ScanBackend::CpuFallback) => false,
-        // `ScanBackend` is #[non_exhaustive]: an unknown future backend stays
-        // on the legacy pipeline, which auto-routes/handles every backend,
-        // rather than silently forcing the CPU fused path.
-        Some(_) => true,
-        None => false,
-    }
-}
-
-#[doc(hidden)]
-pub fn backend_requires_legacy_gpu_pipeline_for_test(
-    explicit: Option<keyhog_scanner::hw_probe::ScanBackend>,
-) -> bool {
-    backend_requires_legacy_gpu_pipeline(explicit)
-}
 
 impl ScanOrchestrator {
     pub(crate) fn scan_sources(
@@ -60,11 +25,11 @@ impl ScanOrchestrator {
         sources: Vec<Box<dyn Source>>,
         show_progress: bool,
         merkle: Option<Arc<keyhog_core::merkle_index::MerkleIndex>>,
-    ) -> Vec<RawMatch> {
+    ) -> Result<Vec<RawMatch>> {
         use std::sync::atomic::Ordering;
 
         // Fused parallel read+scan path for CPU/SIMD filesystem scans. The
-        // legacy batch pipeline below funnels the parallel reader's output
+        // coalesced batch pipeline below funnels the parallel reader's output
         // through one main-thread drain + one scanner thread running 23
         // sequential per-batch `par_iter`s, which pins a 32-core box at ~9
         // cores (measured: kernel scan flat from 1->32 threads). The fused
@@ -77,6 +42,11 @@ impl ScanOrchestrator {
         }
 
         keyhog_sources::reset_skipped_over_max_size();
+        // Binary-source degradation counters live in a separate module from the
+        // walker skip counters, so reset them alongside (otherwise Ghidra-fallback
+        // / unreadable-binary totals leak across scans in `watch`/multi-scan runs).
+        #[cfg(feature = "binary")]
+        keyhog_sources::reset_binary_counters();
 
         let progress_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let progress_handle = if show_progress && !self.args.stream {
@@ -114,11 +84,11 @@ impl ScanOrchestrator {
             let total_ram_bytes = keyhog_scanner::hw_probe::probe_hardware()
                 .total_memory_mb
                 .map(|mb| (mb as usize) * 1024 * 1024)
-                .unwrap_or(0);
-            // Pipeline depth here is still being computed below, so
-            // assume the max (3) for the headroom clamp. Worst case
-            // is the orchestrator picking depth=1 and only using a
-            // third of the headroom - safe in the under-direction.
+                .unwrap_or(0); // LAW10: empty/absent => documented numeric default, recall-safe
+                               // Pipeline depth here is still being computed below, so
+                               // assume the max (3) for the headroom clamp. Worst case
+                               // is the orchestrator picking depth=1 and only using a
+                               // third of the headroom - safe in the under-direction.
             let headroom_cap = total_ram_bytes / (8 * 3);
             if headroom_cap == 0 {
                 engine_cap
@@ -168,172 +138,160 @@ impl ScanOrchestrator {
             "scan dispatch pipeline sized"
         );
 
-        // Auto-route every batch through `select_backend` when the user has not
-        // pinned KEYHOG_BACKEND. Previously the default (no-override) path fell
-        // straight into the SIMD `scan_coalesced` arm, so on a discrete-GPU host
-        // the GPU engine and its phase1/phase2 streaming overlap were dead
-        // unless `KEYHOG_BACKEND=gpu` was set explicitly - the documented
-        // GPU-default behaviour had regressed to opt-in. `select_backend`
-        // already gates GPU on availability + tier thresholds and returns SIMD
-        // under `env_no_gpu()` (CI), so this is a no-op on CI and on small
-        // batches, and the GPU init path degrades to SIMD if the device is
-        // unusable. Captured once and moved into the scanner thread.
+        // Auto-route every batch through the persisted calibration router when
+        // the user has not pinned KEYHOG_BACKEND. Normal scans do not benchmark
+        // candidates and do not apply hardware-name thresholds: every selected
+        // backend must come from an installer/maintenance calibration record
+        // keyed by this binary, detector digest, resolved config, host profile,
+        // and workload bucket. A missing/stale/incomplete decision returns a
+        // routing error before scanning instead of substituting CPU/SIMD/GPU.
         //
-        // COHERENCE HAZARD: because this auto-routes by hardware + batch
-        // size, the DEFAULT scan result is a function of which machine ran
-        // it and how files were batched (a >= GPU_MIN_BYTES_HIGH_TIER batch
-        // on a discrete-GPU host takes the GPU phase1/phase2 path; a smaller
-        // batch or a CI host takes SIMD `scan_coalesced`). SIMD and GPU MUST
-        // produce identical findings for this to be safe. That equivalence
-        // is not self-evident (see `crates/scanner/tests/diagnose_sb_divergence.rs`
-        // and the `gpu_parity` gate), so two invariants live OUTSIDE this
-        // file and must hold for tuned == benched == shipped:
-        //   1. Benchmarks pin a deterministic backend (score.py sets
-        //      KEYHOG_BACKEND=simd / KEYHOG_NO_GPU=1) so the tuned F1 is not
-        //      silently measured on a different code path than what ships.
-        //   2. GPU-vs-SIMD parity is a RELEASE BLOCKER (gpu_parity), so
-        //      auto-routing can never change the finding set under the user.
-        // Do not relax either without re-checking this site.
-        let hw_caps = keyhog_scanner::hw_probe::probe_hardware();
-        let pattern_count = scanner.pattern_count();
+        // COHERENCE HAZARD: backend selection can still change the execution
+        // path for the same input on different hosts, so SIMD/GPU/scalar parity
+        // remains a release-blocking invariant. Benchmarks that tune detector
+        // quality must pin an explicit backend; production `auto` is only as
+        // trustworthy as the persisted fastest-correct calibration evidence.
+        let hw_caps = keyhog_scanner::hw_probe::probe_hardware().clone();
+        let pattern_count = scanner.runtime_status().pattern_count;
+        let config_digest = autoroute_config_digest(&self.effective_config);
+        let rules_digest =
+            keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&self.detectors));
 
-        let scanner_thread = std::thread::spawn(move || {
-            let mut findings: Vec<RawMatch> = Vec::new();
-
-            let mut prev_phase2: Option<(std::thread::JoinHandle<Vec<Vec<RawMatch>>>, usize)> =
-                None;
-
-            let drain_prev =
-                |prev: Option<(std::thread::JoinHandle<Vec<Vec<RawMatch>>>, usize)>,
-                 findings: &mut Vec<RawMatch>| {
-                    if let Some((handle, scanned_count)) = prev {
-                        let per_chunk = handle.join().unwrap_or_else(|e| {
-                            std::panic::resume_unwind(e);
-                        });
-                        crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
-                        let mut batch_findings = 0usize;
-                        for chunk_findings in per_chunk {
-                            batch_findings += chunk_findings.len();
-                            findings.extend(chunk_findings);
-                        }
-                        crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
-                    }
-                };
-
-            let sc_t0 = std::time::Instant::now();
-            let mut scan_dur = std::time::Duration::ZERO;
-            let mut recv_dur = std::time::Duration::ZERO;
-            let mut last_end = std::time::Instant::now();
-            for batch in rx {
-                recv_dur += last_end.elapsed();
-                if batch.is_empty() {
-                    last_end = std::time::Instant::now();
-                    continue;
-                }
-                let _scan_start = std::time::Instant::now();
-                let scanned_count = batch.len();
-                // Explicit KEYHOG_BACKEND wins; otherwise auto-route this batch
-                // by size/pattern-count/hardware. Auto-routed Gpu/MegaScan land
-                // in the same streaming arms as the explicit choice below.
-                let chosen_backend = explicit_backend_override().or_else(|| {
-                    let batch_bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
-                    // Large-chunk DOMINANCE drives the GPU/SIMD decision: the
-                    // device cost is paid on the whole coalesced buffer, so GPU
-                    // pays off only when most of the batch is genuinely large-
-                    // file data it can accelerate. A swarm of tiny files (the
-                    // kernel tree: 94k files, only 55 >= 2 MiB, sprinkled
-                    // through the walk) never clears the dominance bar no matter
-                    // how the large files cluster, so it stays on SIMD - measured
-                    // 2.1x faster + 3x less RSS than routing the coalesced total
-                    // to the GPU. `large_chunk_bytes` sums only chunks at/above
-                    // the tier's per-file GPU floor. See `select_backend_for_batch`.
-                    let tier =
-                        keyhog_scanner::hw_probe::classify_gpu_tier(hw_caps.gpu_name.as_deref());
-                    let gpu_floor = keyhog_scanner::hw_probe::gpu_min_bytes_for_tier(tier);
-                    let large_chunk_bytes: u64 = batch
-                        .iter()
-                        .map(|c| c.data.len() as u64)
-                        .filter(|&n| n >= gpu_floor)
-                        .sum();
-                    Some(keyhog_scanner::hw_probe::select_backend_for_batch(
-                        &hw_caps,
-                        batch_bytes,
-                        pattern_count,
-                        large_chunk_bytes,
-                    ))
-                });
-                match chosen_backend {
-                    // The batched-DFA megakernel is the SINGLE on-GPU detection
-                    // path (it replaced the GpuLiteralSet two-phase and RulePipeline
-                    // MegaScan engines). It owns its backend acquisition and
-                    // degrades LOUDLY to SIMD CPU, so both an explicit GPU request
-                    // and an auto-routed Gpu/MegaScan batch land here.
-                    Some(keyhog_scanner::hw_probe::ScanBackend::Gpu)
-                    | Some(keyhog_scanner::hw_probe::ScanBackend::MegaScan) => {
-                        drain_prev(prev_phase2.take(), &mut findings);
-                        let batch_bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
-                        tracing::debug!(
-                            target: "keyhog::routing",
-                            backend = "gpu",
-                            batch_bytes,
-                            chunks = scanned_count,
-                            "batch dispatched (gpu megakernel)",
-                        );
-                        let per_chunk = scanner.scan_chunks_with_backend(
-                            &batch,
-                            keyhog_scanner::hw_probe::ScanBackend::Gpu,
-                        );
-                        crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
-                        // Authoritative routing signal for the completion summary:
-                        // this is the single place chunks actually run on the GPU.
-                        crate::GPU_SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
-                        let mut batch_findings = 0usize;
-                        for chunk_findings in per_chunk {
-                            batch_findings += chunk_findings.len();
-                            findings.extend(chunk_findings);
-                        }
-                        crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
-                    }
-                    _ => {
-                        drain_prev(prev_phase2.take(), &mut findings);
-                        let per_chunk = scanner.scan_coalesced(&batch);
-                        crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
-                        let mut batch_findings = 0usize;
-                        for chunk_findings in per_chunk {
-                            batch_findings += chunk_findings.len();
-                            findings.extend(chunk_findings);
-                        }
-                        crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
-                    }
-                }
-                scan_dur += _scan_start.elapsed();
-                last_end = std::time::Instant::now();
-            }
-            drain_prev(prev_phase2.take(), &mut findings);
-            if std::env::var("KH_PERF").is_ok() {
-                let wall = sc_t0.elapsed().as_secs_f64().max(1e-9);
-                eprintln!(
-                    "KH_PERF scanner_thread: wall={:.2}s scan={:.2}s recv_wait={:.2}s (scan {:.0}%, recv_wait {:.0}%)",
-                    wall, scan_dur.as_secs_f64(), recv_dur.as_secs_f64(),
-                    100.0 * scan_dur.as_secs_f64() / wall,
-                    100.0 * recv_dur.as_secs_f64() / wall,
+        let scanner_thread = std::thread::spawn(
+            move || -> std::result::Result<Vec<RawMatch>, AutorouteRoutingError> {
+                let mut findings: Vec<RawMatch> = Vec::new();
+                let mut router = MeasuredBackendRouter::new(
+                    hw_caps,
+                    pattern_count,
+                    rules_digest,
+                    config_digest,
+                    scanner.as_ref(),
                 );
-            }
-            // Surface the pipeline phase profiler (per-stage span breakdown) and
-            // the prepare/phase-1 overhead profiler to the operator. Both
-            // accumulate into process-global atomics across the rayon scan, so
-            // one dump here at streaming-scan completion reports the whole run.
-            // Without this the `KEYHOG_PROFILE`/`KEYHOG_PROFILE_SCANINNER` env
-            // gates were dead from the CLI (the data was collected but never
-            // printed) — a UTILIZATION gap.
-            if std::env::var("KEYHOG_PROFILE").as_deref() == Ok("1") {
-                keyhog_scanner::profile_dump("keyhog scan");
-            }
-            if std::env::var("KEYHOG_PROFILE_SCANINNER").as_deref() == Ok("1") {
-                keyhog_scanner::scan_inner_profile_dump();
-            }
-            findings
-        });
+
+                let mut prev_phase2: Option<(std::thread::JoinHandle<Vec<Vec<RawMatch>>>, usize)> =
+                    None;
+
+                let drain_prev =
+                    |prev: Option<(std::thread::JoinHandle<Vec<Vec<RawMatch>>>, usize)>,
+                     findings: &mut Vec<RawMatch>| {
+                        if let Some((handle, scanned_count)) = prev {
+                            let per_chunk = match handle.join() {
+                                Ok(per_chunk) => per_chunk,
+                                Err(error) => std::panic::resume_unwind(error),
+                            };
+                            crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+                            let mut batch_findings = 0usize;
+                            for chunk_findings in per_chunk {
+                                batch_findings += chunk_findings.len();
+                                findings.extend(chunk_findings);
+                            }
+                            crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
+                        }
+                    };
+
+                let sc_t0 = std::time::Instant::now();
+                let mut scan_dur = std::time::Duration::ZERO;
+                let mut recv_dur = std::time::Duration::ZERO;
+                let mut last_end = std::time::Instant::now();
+                for batch in rx {
+                    recv_dur += last_end.elapsed();
+                    if batch.is_empty() {
+                        last_end = std::time::Instant::now();
+                        continue;
+                    }
+                    let _scan_start = std::time::Instant::now();
+                    let scanned_count = batch.len();
+                    let chosen_backend =
+                        router.choose(scanner.as_ref(), explicit_backend_override(), &batch)?;
+                    match chosen_backend {
+                        // The batched-DFA megakernel is the SINGLE on-GPU detection
+                        // path (it replaced the GpuLiteralSet two-phase and RulePipeline
+                        // MegaScan engines). It owns its backend acquisition and
+                        // degrades LOUDLY to SIMD CPU, so both an explicit GPU request
+                        // and a selected Gpu/MegaScan batch land here.
+                        keyhog_scanner::hw_probe::ScanBackend::Gpu
+                        | keyhog_scanner::hw_probe::ScanBackend::MegaScan => {
+                            drain_prev(prev_phase2.take(), &mut findings);
+                            let batch_bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
+                            tracing::debug!(
+                                target: "keyhog::routing",
+                                backend = "gpu",
+                                batch_bytes,
+                                chunks = scanned_count,
+                                "batch dispatched (gpu megakernel)",
+                            );
+                            let per_chunk = scanner.scan_chunks_with_backend(
+                                &batch,
+                                keyhog_scanner::hw_probe::ScanBackend::Gpu,
+                            );
+                            crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+                            // Authoritative routing signal for the completion summary:
+                            // this is the single place chunks actually run on the GPU.
+                            crate::GPU_SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+                            let mut batch_findings = 0usize;
+                            for chunk_findings in per_chunk {
+                                batch_findings += chunk_findings.len();
+                                findings.extend(chunk_findings);
+                            }
+                            crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
+                        }
+                        keyhog_scanner::hw_probe::ScanBackend::CpuFallback => {
+                            drain_prev(prev_phase2.take(), &mut findings);
+                            let per_chunk = scanner.scan_chunks_with_backend(
+                                &batch,
+                                keyhog_scanner::hw_probe::ScanBackend::CpuFallback,
+                            );
+                            crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+                            let mut batch_findings = 0usize;
+                            for chunk_findings in per_chunk {
+                                batch_findings += chunk_findings.len();
+                                findings.extend(chunk_findings);
+                            }
+                            crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
+                        }
+                        _ => {
+                            drain_prev(prev_phase2.take(), &mut findings);
+                            let per_chunk = scanner.scan_coalesced(&batch);
+                            crate::SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
+                            let mut batch_findings = 0usize;
+                            for chunk_findings in per_chunk {
+                                batch_findings += chunk_findings.len();
+                                findings.extend(chunk_findings);
+                            }
+                            crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
+                        }
+                    }
+                    scan_dur += _scan_start.elapsed();
+                    last_end = std::time::Instant::now();
+                }
+                drain_prev(prev_phase2.take(), &mut findings);
+                if std::env::var("KH_PERF").is_ok() {
+                    let wall = sc_t0.elapsed().as_secs_f64().max(1e-9);
+                    eprintln!(
+                        "KH_PERF scanner_thread: wall={:.2}s scan={:.2}s recv_wait={:.2}s (scan {:.0}%, recv_wait {:.0}%)",
+                        wall,
+                        scan_dur.as_secs_f64(),
+                        recv_dur.as_secs_f64(),
+                        100.0 * scan_dur.as_secs_f64() / wall,
+                        100.0 * recv_dur.as_secs_f64() / wall,
+                    );
+                }
+                // Surface the pipeline phase profiler (per-stage span breakdown) and
+                // the prepare/phase-1 overhead profiler to the operator. Both
+                // accumulate into process-global atomics across the rayon scan, so
+                // one dump here at streaming-scan completion reports the whole run.
+                // Without this the `KEYHOG_PROFILE`/`KEYHOG_PROFILE_SCANINNER` env
+                // gates were dead from the CLI (the data was collected but never
+                // printed) — a UTILIZATION gap.
+                if std::env::var("KEYHOG_PROFILE").as_deref() == Ok("1") {
+                    keyhog_scanner::profile_dump("keyhog scan");
+                }
+                if std::env::var("KEYHOG_PROFILE_SCANINNER").as_deref() == Ok("1") {
+                    keyhog_scanner::scan_inner_profile_dump();
+                }
+                Ok(findings)
+            },
+        );
 
         let mut batch: Vec<keyhog_core::Chunk> = Vec::with_capacity(BATCH_CHUNK_LIMIT);
         let mut batch_bytes: usize = 0;
@@ -368,26 +326,16 @@ impl ScanOrchestrator {
                         if let (Some(idx), Some(path_str)) =
                             (merkle.as_ref(), c.metadata.path.as_deref())
                         {
-                            let chunk_hash = keyhog_core::merkle_index::MerkleIndex::hash_content(
-                                c.data.as_bytes(),
-                            );
                             let path = std::path::PathBuf::from(path_str);
-                            if idx.unchanged(&path, &chunk_hash) {
-                                idx.record_with_metadata(
-                                    path,
-                                    c.metadata.mtime_ns.unwrap_or(0),
-                                    c.metadata.size_bytes.unwrap_or(0),
-                                    chunk_hash,
-                                );
+                            if idx.record_chunk_and_check_unchanged(
+                                path,
+                                c.metadata.mtime_ns.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
+                                c.metadata.size_bytes.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
+                                c.data.as_bytes(),
+                            ) {
                                 skipped_unchanged += 1;
                                 continue;
                             }
-                            idx.record_with_metadata(
-                                path,
-                                c.metadata.mtime_ns.unwrap_or(0),
-                                c.metadata.size_bytes.unwrap_or(0),
-                                chunk_hash,
-                            );
                         }
 
                         let len = c.data.len();
@@ -404,7 +352,7 @@ impl ScanOrchestrator {
                     Ok(c) => {
                         src_chunks += 1;
                         let mb = c.data.len() / (1024 * 1024);
-                        let path = c.metadata.path.as_deref().unwrap_or("<unknown>");
+                        let path = c.metadata.path.as_deref().unwrap_or("<unknown>"); // LAW10: absent path/field => display placeholder for REPORTING only; finding still emitted, recall-safe
                         tracing::warn!(
                             path = %path,
                             size_mb = mb,
@@ -412,28 +360,39 @@ impl ScanOrchestrator {
                         );
                     }
                     Err(e) => {
-                        crate::SOURCE_ERRORS.fetch_add(1, Ordering::Relaxed);
+                        let _receipt = crate::record_source_error();
                         src_errored = true;
                         tracing::warn!("source: {e}");
                     }
                 }
             }
             if src_chunks == 0 && src_errored {
-                crate::FAILED_SOURCES.fetch_add(1, Ordering::Relaxed);
+                let _receipt = crate::record_failed_source();
             }
         }
 
         send_batch(&mut batch, &mut batch_bytes, &mut pipeline_alive);
         drop(tx);
-        let findings = scanner_thread.join().unwrap_or_else(|_| {
-            tracing::error!("scanner thread panicked mid-scan; results are incomplete");
-            crate::SCANNER_PANICKED.store(true, std::sync::atomic::Ordering::Relaxed);
-            Vec::new()
-        });
+        let findings = match scanner_thread.join() {
+            Ok(Ok(findings)) => findings,
+            Ok(Err(error)) => {
+                progress_done.store(true, std::sync::atomic::Ordering::Relaxed);
+                if let Some(h) = progress_handle {
+                    let _ = h.join(); // LAW10: unused-binding marker; no runtime effect, not a fallback
+                }
+                return Err(error.into());
+            }
+            Err(error) => {
+                drop(error);
+                tracing::error!("scanner thread panicked mid-scan; results are incomplete");
+                let _receipt = crate::record_scanner_panic();
+                Vec::new()
+            }
+        };
 
         progress_done.store(true, std::sync::atomic::Ordering::Relaxed);
         if let Some(h) = progress_handle {
-            let _ = h.join();
+            let _ = h.join(); // LAW10: unused-binding marker; no runtime effect, not a fallback
         }
 
         self.finalize_incremental(
@@ -443,11 +402,11 @@ impl ScanOrchestrator {
             &findings,
         );
 
-        findings
+        Ok(findings)
     }
 
     /// Persist the merkle index after a scan and log skip stats. Shared by
-    /// the legacy batch pipeline and the fused parallel path so both honour
+    /// the coalesced batch pipeline and the fused parallel path so both honour
     /// the same incremental-mode safety contract.
     fn finalize_incremental(
         &self,
@@ -479,270 +438,5 @@ impl ScanOrchestrator {
                 tracing::warn!(error = %e, "failed to persist merkle index");
             }
         }
-    }
-
-    /// Decide whether a scan runs on the fused parallel read+scan path.
-    ///
-    /// Engaged for filesystem sources unless the operator explicitly forced a
-    /// GPU backend:
-    /// * **GPU/MegaScan forced by the user** keeps the coalesced per-batch
-    ///   pipeline so `gpu_parity` and the large-buffer dispatch are untouched.
-    ///   Default/auto filesystem scans stay fused on GPU hosts because the
-    ///   current filesystem source emits ordinary files in 1 MiB windows while
-    ///   high-tier GPU routing has a 2 MiB per-chunk floor. Treating "GPU
-    ///   available" as "GPU in play" therefore sent CredData-shaped
-    ///   many-file scans through the legacy single scanner-thread funnel even
-    ///   though batch routing selected SIMD anyway.
-    /// * **Non-filesystem sources** (git, stdin, docker, ...) may emit
-    ///   *gapless* chunks where `scan_chunk_boundaries` is load-bearing; the
-    ///   fused path scans each chunk independently and relies on the
-    ///   filesystem source's 128 KiB window *overlap* (for which the boundary
-    ///   pass is already a no-op) to cover seam-straddling secrets.
-    /// * `KEYHOG_LEGACY_PIPELINE=1` forces the batch path (A/B + escape hatch).
-    fn should_use_fused_pipeline(&self, sources: &[Box<dyn Source>]) -> bool {
-        if std::env::var_os("KEYHOG_LEGACY_PIPELINE").is_some() {
-            return false;
-        }
-        // A GPU backend (explicit or auto) runs on the coalesced batch pipeline
-        // where the megakernel lives — the single on-GPU detection path — not the
-        // per-chunk fused pipeline. Route GPU scans there.
-        if backend_requires_legacy_gpu_pipeline(explicit_backend_override()) {
-            return false;
-        }
-        !sources.is_empty()
-            && sources
-                .iter()
-                .all(|s| s.as_any().is::<keyhog_sources::FilesystemSource>())
-    }
-
-    /// Fused parallel read+scan: stream chunks off the source's parallel
-    /// reader pool and scan each on the global rayon pool via `par_bridge`,
-    /// so I/O and CPU overlap continuously across all cores with no
-    /// single-thread drain and no per-batch barrier.
-    ///
-    /// A small drain thread bridges the source's non-`Send` chunk iterator
-    /// into a bounded `Send` channel that the global pool consumes; the
-    /// reader pool (dedicated, inside the source) and the global scan pool
-    /// are distinct, so neither starves the other (the deadlock the legacy
-    /// pipeline's dedicated reader pool was built to avoid).
-    fn scan_sources_fused(
-        &self,
-        sources: Vec<Box<dyn Source>>,
-        show_progress: bool,
-        merkle: Option<Arc<keyhog_core::merkle_index::MerkleIndex>>,
-    ) -> Vec<RawMatch> {
-        use rayon::iter::{ParallelBridge, ParallelIterator};
-        use std::sync::atomic::{AtomicUsize, Ordering};
-
-        keyhog_sources::reset_skipped_over_max_size();
-
-        let progress_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let progress_handle = if show_progress && !self.args.stream {
-            let done = Arc::clone(&progress_done);
-            let started_t = Instant::now();
-            Some(std::thread::spawn(move || {
-                super::reporting::progress_ticker(done, started_t)
-            }))
-        } else {
-            None
-        };
-
-        let incremental_path = self.incremental_cache_path();
-        let scanner = Arc::clone(&self.scanner);
-
-        let skipped_unchanged = Arc::new(AtomicUsize::new(0));
-        let sc_t0 = Instant::now();
-
-        // Bridge the source's `!Send` chunk iterator into a `Send` channel of
-        // BATCHES that the global pool consumes via `par_bridge`. Reusing
-        // `scan_coalesced` per batch keeps the finding set bit-identical to the
-        // legacy pipeline (same scan entry, same phase-1 HS prefilter + no-hit
-        // gating); parallelising ACROSS batches is what removes the legacy
-        // single scanner-thread funnel that pinned a 32-core box at ~9 cores.
-        // `scan_coalesced` already calls the HS prefilter concurrently from its
-        // own internal `par_iter`, so invoking it from several batch workers at
-        // once is the same proven concurrency model, just wider. Batches are
-        // small enough that the outer `par_bridge` keeps every core busy and
-        // large enough to amortise scan_coalesced's per-batch phase/collect
-        // cost. The drain thread only groups chunks + enforces the 512 MiB
-        // ceiling; merkle hashing + scanning run in parallel in the consumer.
-        //
-        // Measured flat optimum on small-file filesystem corpora: 32 chunks
-        // amortises the nested `scan_coalesced` phase costs better than 16
-        // without the RSS bump seen at 64; buffering at roughly one batch per
-        // four workers lets the drain thread stay ahead without letting
-        // small-file corpora prefetch thousands of windows into RAM. Verified on
-        // the full kernel tree (94k files, 32-core box): 4.25 s wall / 1833 % CPU
-        // (~18 cores, 9.6x over single-thread), finding set byte-identical to the
-        // legacy funnel (7.12 s / 749 %).
-        const FUSED_BATCH_DEFAULT: usize = 32;
-        // FUSED_BATCH and the channel depth are Tier-A throughput knobs.
-        // `scan_coalesced` runs its OWN two-phase `par_iter` over each batch, so
-        // `par_bridge` over batches nests parallelism: the batch size trades
-        // par_bridge cursor-mutex contention (smaller = more locking) against the
-        // inner par_iter's per-batch fork-join barrier granularity (larger = more
-        // work amortising each barrier). `KEYHOG_FUSED_BATCH` / `KEYHOG_FUSED_DEPTH`
-        // override the defaults for host-specific tuning without a rebuild.
-        let fused_batch: usize = std::env::var("KEYHOG_FUSED_BATCH")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .filter(|&n| n > 0)
-            .unwrap_or(FUSED_BATCH_DEFAULT);
-        let fused_depth: usize = std::env::var("KEYHOG_FUSED_DEPTH")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .filter(|&n| n > 0)
-            .unwrap_or_else(|| {
-                rayon::current_num_threads()
-                    .saturating_add(3)
-                    .saturating_div(4)
-                    .clamp(2, 8)
-            });
-        let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<keyhog_core::Chunk>>(fused_depth);
-        let drain = std::thread::spawn(move || {
-            let mut batch: Vec<keyhog_core::Chunk> = Vec::with_capacity(fused_batch);
-            'sources: for source in &sources {
-                // Per-source outcome (see the non-fused path): a source that
-                // yields zero chunks AND errors failed entirely; tracked so a
-                // failed remote scan isn't masked by a clean local one.
-                let mut src_chunks = 0usize;
-                let mut src_errored = false;
-                for chunk_result in source.chunks() {
-                    match chunk_result {
-                        Ok(c) if c.data.len() <= 512 * 1024 * 1024 => {
-                            src_chunks += 1;
-                            batch.push(c);
-                            if batch.len() >= fused_batch {
-                                if tx.send(std::mem::take(&mut batch)).is_err() {
-                                    break 'sources;
-                                }
-                                batch = Vec::with_capacity(fused_batch);
-                            }
-                        }
-                        Ok(c) => {
-                            src_chunks += 1;
-                            let mb = c.data.len() / (1024 * 1024);
-                            let path = c.metadata.path.as_deref().unwrap_or("<unknown>");
-                            tracing::warn!(
-                                path = %path,
-                                size_mb = mb,
-                                "skipping chunk over 512 MiB scan ceiling"
-                            );
-                        }
-                        Err(e) => {
-                            crate::SOURCE_ERRORS.fetch_add(1, Ordering::Relaxed);
-                            src_errored = true;
-                            tracing::warn!("source: {e}");
-                        }
-                    }
-                }
-                if src_chunks == 0 && src_errored {
-                    crate::FAILED_SOURCES.fetch_add(1, Ordering::Relaxed);
-                }
-            }
-            if !batch.is_empty() {
-                let _ = tx.send(batch);
-            }
-        });
-
-        let merkle_ref = merkle.as_ref();
-        let skipped_ref = &skipped_unchanged;
-        let scanner_ref = scanner.as_ref();
-
-        let findings: Vec<RawMatch> = rx
-            .into_iter()
-            .par_bridge()
-            .flat_map_iter(|batch| {
-                // Incremental skip (parallel across batches): hash each chunk
-                // and drop the ones the merkle index already has unchanged.
-                // Mirrors the legacy producer: record metadata for every chunk
-                // seen (changed or not); `finalize_incremental` later forgets
-                // any path that produced a finding.
-                let batch: Vec<keyhog_core::Chunk> = if let Some(idx) = merkle_ref {
-                    batch
-                        .into_iter()
-                        .filter(|c| {
-                            let Some(path_str) = c.metadata.path.as_deref() else {
-                                return true;
-                            };
-                            let chunk_hash = keyhog_core::merkle_index::MerkleIndex::hash_content(
-                                c.data.as_bytes(),
-                            );
-                            let path = std::path::PathBuf::from(path_str);
-                            let unchanged = idx.unchanged(&path, &chunk_hash);
-                            idx.record_with_metadata(
-                                path,
-                                c.metadata.mtime_ns.unwrap_or(0),
-                                c.metadata.size_bytes.unwrap_or(0),
-                                chunk_hash,
-                            );
-                            if unchanged {
-                                skipped_ref.fetch_add(1, Ordering::Relaxed);
-                            }
-                            !unchanged
-                        })
-                        .collect()
-                } else {
-                    batch
-                };
-                if batch.is_empty() {
-                    return Vec::new();
-                }
-
-                crate::TOTAL_CHUNKS.fetch_add(batch.len(), Ordering::Relaxed);
-                let per_chunk = scanner_ref.scan_coalesced(&batch);
-                crate::SCANNED_CHUNKS.fetch_add(batch.len(), Ordering::Relaxed);
-
-                let mut out: Vec<RawMatch> = Vec::new();
-                let mut batch_findings = 0usize;
-                for chunk_findings in per_chunk {
-                    batch_findings += chunk_findings.len();
-                    out.extend(chunk_findings);
-                }
-                if batch_findings > 0 {
-                    crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
-                }
-                out
-            })
-            .collect();
-
-        // Drain thread only moves chunks; it finishes once the source is
-        // exhausted and the channel is consumed.
-        let _ = drain.join();
-
-        if std::env::var("KH_PERF").is_ok() {
-            eprintln!(
-                "KH_PERF scan_sources_fused: wall={:.2}s findings={} scanned={} fused_batch={} fused_depth={}",
-                sc_t0.elapsed().as_secs_f64(),
-                findings.len(),
-                crate::SCANNED_CHUNKS.load(Ordering::Relaxed),
-                fused_batch,
-                fused_depth,
-            );
-        }
-        // Same operator-facing profiler dump as the streaming path: the fused
-        // orchestrator is the other scan mode, so the `KEYHOG_PROFILE` gates
-        // must surface here too (otherwise the profiler is dead on fused runs).
-        if std::env::var("KEYHOG_PROFILE").as_deref() == Ok("1") {
-            keyhog_scanner::profile_dump("keyhog scan");
-        }
-        if std::env::var("KEYHOG_PROFILE_SCANINNER").as_deref() == Ok("1") {
-            keyhog_scanner::scan_inner_profile_dump();
-        }
-
-        progress_done.store(true, Ordering::Relaxed);
-        if let Some(h) = progress_handle {
-            let _ = h.join();
-        }
-
-        let skipped_unchanged = skipped_unchanged.load(Ordering::Relaxed);
-        self.finalize_incremental(
-            merkle.as_ref(),
-            incremental_path.as_deref(),
-            skipped_unchanged,
-            &findings,
-        );
-
-        findings
     }
 }

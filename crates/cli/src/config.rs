@@ -1,19 +1,21 @@
 //! Configuration file handling for the KeyHog CLI.
 
 use crate::args::ScanArgs;
-use crate::value_parsers::{parse_dedup_scope, parse_output_format, parse_severity_filter};
+use crate::value_parsers::{
+    parse_byte_size, parse_dedup_scope, parse_output_format, parse_severity_filter,
+};
 use std::path::PathBuf;
 
 /// On-disk `.keyhog.toml` configuration file that mirrors CLI arguments.
 /// CLI flags always override values from the config file.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default)]
-pub struct ConfigFile {
+pub(crate) struct ConfigFile {
     /// Path to detector TOMLs directory.
     pub detectors: Option<String>,
     /// Minimum severity to report: info, low, medium, high, critical.
     pub severity: Option<String>,
-    /// Output format: text, json, jsonl, sarif.
+    /// Output format: text, json, jsonl, sarif, csv, github-annotations, gitlab-sast, html, junit.
     pub format: Option<String>,
     /// Enable fast mode (pattern matching only).
     pub fast: Option<bool>,
@@ -49,6 +51,8 @@ pub struct ConfigFile {
     pub entropy_source_files: Option<bool>,
     /// Entropy threshold in bits per byte (default: 4.5).
     pub entropy_threshold: Option<f64>,
+    /// Minimum credential length for entropy-fallback candidates.
+    pub min_secret_len: Option<usize>,
     /// Disable Unicode normalization.
     pub no_unicode_norm: Option<bool>,
     /// Disable ML-based confidence scoring.
@@ -116,9 +120,10 @@ pub struct ConfigFile {
 /// shapes and warn-on-mismatch.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default)]
-pub struct ScanSection {
+pub(crate) struct ScanSection {
     pub severity: Option<String>,
     pub min_confidence: Option<f64>,
+    pub min_secret_len: Option<usize>,
     pub format: Option<String>,
     pub exclude: Option<Vec<String>>,
     pub threads: Option<usize>,
@@ -132,7 +137,7 @@ pub struct ScanSection {
 /// surfaced to the allowlist evaluator post-parse.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default)]
-pub struct AllowlistSection {
+pub(crate) struct AllowlistSection {
     pub file: Option<String>,
     pub require_reason: Option<bool>,
     pub require_approved_by: Option<bool>,
@@ -147,7 +152,7 @@ pub struct AllowlistSection {
 /// README-documented and now reach the runtime.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default)]
-pub struct DetectorSection {
+pub(crate) struct DetectorSection {
     pub enabled: Option<bool>,
     pub min_confidence: Option<f64>,
 }
@@ -157,7 +162,7 @@ pub struct DetectorSection {
 /// implied this was active; pre-fix the table was discarded silently.
 #[derive(Debug, Default, serde::Deserialize)]
 #[serde(default)]
-pub struct LockdownSection {
+pub(crate) struct LockdownSection {
     pub require: Option<bool>,
 }
 
@@ -178,7 +183,7 @@ pub struct LockdownSection {
 /// without requiring the operator to author a TOML; the change ships in the
 /// binary and the bench picks it up automatically. Tier B (the detector
 /// corpus) stays in `rules/`; this is the Tier-A scalar knob.
-pub const SHIPPED_DETECTOR_FLOORS: &[(&str, f64)] = &[];
+const SHIPPED_DETECTOR_FLOORS: &[(&str, f64)] = &[];
 
 /// Compiled-in Tier-A detector disables that ship inside the binary, same
 /// rationale as [`SHIPPED_DETECTOR_FLOORS`]: a detector listed here is dropped
@@ -186,7 +191,7 @@ pub const SHIPPED_DETECTOR_FLOORS: &[(&str, f64)] = &[];
 /// path. A user `.keyhog.toml` `[detector.<id>] enabled = true` cannot
 /// re-enable a compiled disable today (the merge is additive); keep this table
 /// for detectors that must never fire by default.
-pub const SHIPPED_DISABLED_DETECTORS: &[&str] = &[];
+const SHIPPED_DISABLED_DETECTORS: &[&str] = &[];
 
 /// Build the baseline [`ConfigOutcome`] from the compiled-in Tier-A defaults.
 /// Every return path of [`apply_config_file`] starts from this (not the empty
@@ -204,12 +209,27 @@ fn shipped_config_outcome() -> ConfigOutcome {
             .iter()
             .map(|(id, floor)| ((*id).to_string(), *floor))
             .collect(),
+        config_errors: Vec::new(),
+    }
+}
+
+fn invalid_config_value(field: &str, value: &str, detail: &str) -> String {
+    format!("- {field} = {value:?}: {detail}")
+}
+
+fn parse_config_byte_size(errors: &mut Vec<String>, field: &str, value: &str) -> Option<usize> {
+    match parse_byte_size(value) {
+        Ok(size) => Some(size),
+        Err(error) => {
+            errors.push(invalid_config_value(field, value, &error));
+            None
+        }
     }
 }
 
 /// Search for `.keyhog.toml` starting from the scan root, walking up to the
 /// filesystem root. Returns `None` when no config file is found.
-pub fn find_config_file(start: Option<&std::path::Path>) -> Option<PathBuf> {
+pub(crate) fn find_config_file(start: Option<&std::path::Path>) -> Option<PathBuf> {
     let mut dir = start
         .and_then(|p| {
             if p.is_dir() {
@@ -218,7 +238,7 @@ pub fn find_config_file(start: Option<&std::path::Path>) -> Option<PathBuf> {
                 p.parent().map(std::path::Path::to_path_buf)
             }
         })
-        .or_else(|| std::env::current_dir().ok())?;
+        .or_else(|| std::env::current_dir().ok())?; // LAW10: optional env/cwd probe; absent => None (intended config/probe), recall-irrelevant
 
     loop {
         let candidate = dir.join(".keyhog.toml");
@@ -243,7 +263,7 @@ pub fn find_config_file(start: Option<&std::path::Path>) -> Option<PathBuf> {
 /// `args` (the "tuned != benched != shipped" leak). `detector_min_confidence`
 /// here is the source the resolved struct carries through to post-processing.
 #[derive(Debug, Default)]
-pub struct ConfigOutcome {
+pub(crate) struct ConfigOutcome {
     /// Detector ids disabled via `[detector.<id>] enabled = false`; the caller
     /// drops these from the loaded corpus.
     pub disabled_detectors: Vec<String>,
@@ -260,6 +280,12 @@ pub struct ConfigOutcome {
     /// `DetectorSection.min_confidence` and silently ignored before this
     /// wiring (the README documents it as active).
     pub detector_min_confidence: std::collections::HashMap<String, f64>,
+    /// Semantic config errors that TOML parsing alone cannot catch, such as
+    /// invalid enum strings or byte-size strings. The real scan path fails
+    /// closed on these; the quiet daemon-routing probe uses the same field to
+    /// force routing back through the in-process path where the error is
+    /// surfaced exactly once.
+    pub config_errors: Vec<String>,
 }
 
 /// Load and merge a `.keyhog.toml` config file into the parsed `ScanArgs`.
@@ -269,7 +295,7 @@ pub struct ConfigOutcome {
 /// via `[detector.<id>] enabled = false` (dropped from the corpus) and whether
 /// `[lockdown] require = true` demands `--lockdown`. Both are README-documented
 /// but were parsed-and-silently-ignored before this wiring.
-pub fn apply_config_file(args: &mut ScanArgs) -> ConfigOutcome {
+pub(crate) fn apply_config_file(args: &mut ScanArgs) -> ConfigOutcome {
     apply_config_file_impl(args, true)
 }
 
@@ -282,7 +308,7 @@ pub fn apply_config_file(args: &mut ScanArgs) -> ConfigOutcome {
 /// "Failed to parse .keyhog.toml" warning, so a malformed config warned TWICE on
 /// the daemon route (HUNT-2). Keep the emission on the real path; only the probe
 /// is silenced.
-pub fn apply_config_file_quiet(args: &mut ScanArgs) -> ConfigOutcome {
+pub(crate) fn apply_config_file_quiet(args: &mut ScanArgs) -> ConfigOutcome {
     apply_config_file_impl(args, false)
 }
 
@@ -347,6 +373,7 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     };
 
     tracing::debug!(path = %config_path.display(), "loaded .keyhog.toml");
+    let mut config_errors = Vec::new();
 
     // Apply config values only when no explicit CLI flag was given.
     if let Some(ref detectors_str) = config.detectors {
@@ -356,17 +383,33 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     }
 
     if let Some(ref format_str) = config.format {
-        // Only override if the user didn't set --format (defaults to Text).
-        if matches!(args.format, crate::args::OutputFormat::Text) {
-            if let Some(fmt) = parse_output_format(format_str) {
-                args.format = fmt;
+        match parse_output_format(format_str) {
+            Some(fmt) => {
+                // Only override if the user didn't set --format (defaults to Text).
+                if matches!(args.format, crate::args::OutputFormat::Text) {
+                    args.format = fmt;
+                }
             }
+            None => config_errors.push(invalid_config_value(
+                "format",
+                format_str,
+                "expected one of text, json, jsonl, sarif, csv, github-annotations, gitlab-sast, html, junit",
+            )),
         }
     }
 
     if let Some(ref severity_str) = config.severity {
-        if args.severity.is_none() {
-            args.severity = parse_severity_filter(severity_str);
+        match parse_severity_filter(severity_str) {
+            Some(severity) => {
+                if args.severity.is_none() {
+                    args.severity = Some(severity);
+                }
+            }
+            None => config_errors.push(invalid_config_value(
+                "severity",
+                severity_str,
+                "expected one of info, low, medium, high, critical",
+            )),
         }
     }
 
@@ -407,11 +450,18 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     }
 
     if let Some(ref dedup_str) = config.dedup {
-        // credential is the clap default
-        if matches!(args.dedup, crate::args::CliDedupScope::Credential) {
-            if let Some(scope) = parse_dedup_scope(dedup_str) {
-                args.dedup = scope;
+        match parse_dedup_scope(dedup_str) {
+            Some(scope) => {
+                // credential is the clap default
+                if matches!(args.dedup, crate::args::CliDedupScope::Credential) {
+                    args.dedup = scope;
+                }
             }
+            None => config_errors.push(invalid_config_value(
+                "dedup",
+                dedup_str,
+                "expected one of credential, file, none",
+            )),
         }
     }
 
@@ -454,8 +504,10 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     }
 
     if let Some(ref limit_str) = config.decode_size_limit {
+        let parsed_size =
+            parse_config_byte_size(&mut config_errors, "decode_size_limit", limit_str);
         if args.decode_size_limit.is_none() {
-            if let Ok(size) = crate::value_parsers::parse_byte_size(limit_str) {
+            if let Some(size) = parsed_size {
                 args.decode_size_limit = Some(size);
             }
         }
@@ -470,6 +522,14 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     if let Some(_entropy_threshold) = config.entropy_threshold {
         if args.entropy_threshold.is_none() {
             args.entropy_threshold = Some(_entropy_threshold);
+        }
+    }
+
+    if let Some(min_secret_len) = config.min_secret_len {
+        if min_secret_len == 0 {
+            config_errors.push("- min_secret_len = 0: use a positive integer".to_string());
+        } else if args.min_secret_len.is_none() {
+            args.min_secret_len = Some(min_secret_len);
         }
     }
 
@@ -492,16 +552,18 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     }
 
     if let Some(ref limit_str) = config.max_file_size {
+        let parsed_size = parse_config_byte_size(&mut config_errors, "max_file_size", limit_str);
         if args.max_file_size.is_none() {
-            if let Ok(size) = crate::value_parsers::parse_byte_size(limit_str) {
+            if let Some(size) = parsed_size {
                 args.max_file_size = Some(size);
             }
         }
     }
 
     if let Some(ref limit_str) = config.regex_dfa_limit {
+        let parsed_size = parse_config_byte_size(&mut config_errors, "regex_dfa_limit", limit_str);
         if args.regex_dfa_limit.is_none() {
-            if let Ok(size) = crate::value_parsers::parse_byte_size(limit_str) {
+            if let Some(size) = parsed_size {
                 args.regex_dfa_limit = Some(size);
             }
         }
@@ -533,17 +595,50 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     if let Some(scan) = config.scan {
         if args.severity.is_none() {
             if let Some(ref s) = scan.severity {
-                args.severity = parse_severity_filter(s);
+                match parse_severity_filter(s) {
+                    Some(severity) => args.severity = Some(severity),
+                    None => config_errors.push(invalid_config_value(
+                        "[scan].severity",
+                        s,
+                        "expected one of info, low, medium, high, critical",
+                    )),
+                }
+            }
+        } else if let Some(ref s) = scan.severity {
+            if parse_severity_filter(s).is_none() {
+                config_errors.push(invalid_config_value(
+                    "[scan].severity",
+                    s,
+                    "expected one of info, low, medium, high, critical",
+                ));
             }
         }
         if args.min_confidence.is_none() {
             args.min_confidence = scan.min_confidence;
         }
+        if scan.min_secret_len == Some(0) {
+            config_errors.push("- [scan].min_secret_len = 0: use a positive integer".to_string());
+        } else if args.min_secret_len.is_none() {
+            args.min_secret_len = scan.min_secret_len;
+        }
         if matches!(args.format, crate::args::OutputFormat::Text) {
             if let Some(ref f) = scan.format {
-                if let Some(fmt) = parse_output_format(f) {
-                    args.format = fmt;
+                match parse_output_format(f) {
+                    Some(fmt) => args.format = fmt,
+                    None => config_errors.push(invalid_config_value(
+                        "[scan].format",
+                        f,
+                        "expected one of text, json, jsonl, sarif, csv, github-annotations, gitlab-sast, html, junit",
+                    )),
                 }
+            }
+        } else if let Some(ref f) = scan.format {
+            if parse_output_format(f).is_none() {
+                config_errors.push(invalid_config_value(
+                    "[scan].format",
+                    f,
+                    "expected one of text, json, jsonl, sarif, csv, github-annotations, gitlab-sast, html, junit",
+                ));
             }
         }
         if args.exclude_paths.is_none() {
@@ -554,9 +649,22 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         }
         if matches!(args.dedup, crate::args::CliDedupScope::Credential) {
             if let Some(ref d) = scan.dedup {
-                if let Some(scope) = parse_dedup_scope(d) {
-                    args.dedup = scope;
+                match parse_dedup_scope(d) {
+                    Some(scope) => args.dedup = scope,
+                    None => config_errors.push(invalid_config_value(
+                        "[scan].dedup",
+                        d,
+                        "expected one of credential, file, none",
+                    )),
                 }
+            }
+        } else if let Some(ref d) = scan.dedup {
+            if parse_dedup_scope(d).is_none() {
+                config_errors.push(invalid_config_value(
+                    "[scan].dedup",
+                    d,
+                    "expected one of credential, file, none",
+                ));
             }
         }
     }
@@ -567,7 +675,7 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         .lockdown
         .as_ref()
         .and_then(|l| l.require)
-        .unwrap_or(false);
+        .unwrap_or(false); // LAW10: empty/absent => documented numeric default, recall-safe
 
     // `[detector.<id>]` table: `enabled = false` drops the detector from the
     // loaded corpus after `load_detectors`; `min_confidence = <f>` becomes a
@@ -599,5 +707,19 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         disabled_detectors,
         require_lockdown,
         detector_min_confidence,
+        config_errors,
+    }
+}
+
+#[doc(hidden)]
+pub mod testing {
+    use std::path::{Path, PathBuf};
+
+    pub fn apply_config_file_quiet(args: &mut crate::args::ScanArgs) {
+        let _outcome = super::apply_config_file_quiet(args);
+    }
+
+    pub fn find_config_file(start: Option<&Path>) -> Option<PathBuf> {
+        super::find_config_file(start)
     }
 }

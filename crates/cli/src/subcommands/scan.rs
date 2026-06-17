@@ -16,7 +16,7 @@ use crate::args::{DaemonMode, ScanArgs};
 // Daemon module is unix-only - Windows has no `tokio::net::UnixListener`
 // or `std::os::unix::net::UnixStream`, so the whole `crate::daemon`
 // subtree is `#[cfg(unix)]`. See `lib.rs` for the rationale. On
-// Windows, the `--daemon` flag and the daemon auto-route in
+// Windows, the `--daemon` flag and daemon selection in
 // `daemon_route` short-circuit to `Forbidden` (or emit a clear
 // "daemon is unix-only" error if the user explicitly passed
 // `--daemon`).
@@ -85,7 +85,7 @@ pub async fn run(args: ScanArgs) -> Result<ExitCode> {
             Err(e) => {
                 tracing::debug!(
                     error = %e,
-                    "daemon auto-route unavailable; falling back to in-process scanner"
+                    "daemon selection unavailable; falling back to in-process scanner"
                 );
                 let orchestrator = ScanOrchestrator::new(args)?;
                 orchestrator.run().await
@@ -127,6 +127,9 @@ struct EffectivePolicy {
     /// the daemon cannot enforce. Forces in-process so the orchestrator's
     /// `bail!` fires when `--lockdown` was not passed.
     require_lockdown: bool,
+    /// Semantic config errors detected by the quiet config probe. Forces
+    /// in-process so the real orchestrator emits the precise error once.
+    has_config_errors: bool,
 }
 
 #[cfg(unix)]
@@ -153,6 +156,7 @@ impl EffectivePolicy {
             show_secrets: probe.show_secrets,
             severity: probe.severity.is_some(),
             require_lockdown: outcome.require_lockdown,
+            has_config_errors: !outcome.config_errors.is_empty(),
         }
     }
 }
@@ -221,11 +225,12 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
         || policy.show_secrets
         || policy.severity
         || policy.min_confidence.is_some()
+        || policy.has_config_errors
         || args.hide_client_safe
     {
         if forced_on {
             tracing::warn!(
-                "--daemon=on ignored: this scan requests filtering/lockdown/secret-output \
+                "--daemon=on ignored: this scan requests filtering/lockdown/secret-output/config \
                  policy the daemon cannot enforce (CLI flag or .keyhog.toml); \
                  using the in-process path"
             );
@@ -247,15 +252,14 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
 #[cfg(unix)]
 fn effective_single_file_path(args: &ScanArgs) -> Option<&Path> {
     let raw = args.path.as_deref().or(args.input.as_deref())?;
-    let meta = std::fs::metadata(raw).ok()?;
+    let meta = std::fs::metadata(raw).ok()?; // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
     if !meta.is_file() {
         return None;
     }
     if raw
         .extension()
         .and_then(|e| e.to_str())
-        .map(|e| e.eq_ignore_ascii_case("har"))
-        .unwrap_or(false)
+        .is_some_and(|e| e.eq_ignore_ascii_case("har"))
     {
         return None;
     }
@@ -264,6 +268,7 @@ fn effective_single_file_path(args: &ScanArgs) -> Option<&Path> {
 
 #[cfg(unix)]
 async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
+    let wall_start = chrono::Utc::now();
     let socket = default_socket_path();
     let mut conn = client::connect(&socket).await.with_context(|| {
         format!(
@@ -280,7 +285,7 @@ async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
         unwrap_scan_results(resp)?
     } else if let Some(path) = effective_single_file_path(args) {
         let working_dir = std::env::current_dir()
-            .ok()
+            .ok() // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
             .map(|p| p.to_string_lossy().into_owned());
         let resp = conn
             .round_trip(&Request::ScanPath {
@@ -296,8 +301,10 @@ async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
         );
     };
 
-    let findings = finalize_for_report(matches, args);
-    crate::reporting::report_findings(&findings, args)?;
+    let findings = finalize_for_report(matches, args)?;
+    let report_metadata =
+        crate::reporting::ReportMetadata::from_scan_times(wall_start, chrono::Utc::now());
+    crate::reporting::report_findings_with_metadata(&findings, args, &report_metadata)?;
 
     if findings.is_empty() {
         Ok(ExitCode::SUCCESS)
@@ -357,7 +364,7 @@ fn unwrap_scan_results(resp: Response) -> Result<Vec<RawMatch>> {
 }
 
 #[cfg(unix)]
-fn finalize_for_report(matches: Vec<RawMatch>, args: &ScanArgs) -> Vec<VerifiedFinding> {
+fn finalize_for_report(matches: Vec<RawMatch>, args: &ScanArgs) -> Result<Vec<VerifiedFinding>> {
     // Test-fixture suppression mirrors the orchestrator's
     // pipeline_tests::* filter: known-public example credentials
     // (Stripe's sk_live_4eC39…, GitHub's ghp_… README sample, …) get
@@ -380,7 +387,7 @@ fn finalize_for_report(matches: Vec<RawMatch>, args: &ScanArgs) -> Vec<VerifiedF
     // daemon socket happens to be live. Anchor the allowlist files at the
     // same root the orchestrator uses: the scanned path's directory, or
     // "." for the stdin / bare-filename case.
-    let allowlist = load_daemon_allowlist(args);
+    let allowlist = load_daemon_allowlist(args)?;
 
     // Mirror the in-process orchestrator's behaviour: when the
     // test-fixture filter drops a credential, bump the example-suppression
@@ -471,14 +478,11 @@ fn finalize_for_report(matches: Vec<RawMatch>, args: &ScanArgs) -> Vec<VerifiedF
     // The orchestrator applies this AFTER dedup on the final
     // `VerifiedFinding` set (see `orchestrator::run`), so we match that
     // ordering exactly. A missing/empty file is a no-op.
-    let rule_suppressor = load_daemon_rule_suppressor(args);
-    if rule_suppressor.is_empty() {
-        return findings;
-    }
-    findings
+    let rule_suppressor = load_daemon_rule_suppressor(args)?;
+    Ok(findings
         .into_iter()
         .filter(|f| !rule_suppressor.matches(f))
-        .collect()
+        .collect())
 }
 
 /// Resolve the directory used to discover `.keyhogignore` /
@@ -497,40 +501,38 @@ fn daemon_allowlist_root(args: &ScanArgs) -> PathBuf {
     path.parent()
         .filter(|p| !p.as_os_str().is_empty())
         .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."))
+        .unwrap_or_else(|| PathBuf::from(".")) // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
 }
 
-/// Load the legacy line-based `.keyhogignore` allowlist for the daemon
-/// route. Returns an empty allowlist when the file is missing or fails to
-/// parse, matching `orchestrator::allowlist::load_allowlist`.
+/// Load the legacy line-based `.keyhogignore` allowlist for the daemon route.
+/// A malformed file is a policy failure, not an empty allowlist.
 #[cfg(unix)]
-fn load_daemon_allowlist(args: &ScanArgs) -> keyhog_core::allowlist::Allowlist {
+fn load_daemon_allowlist(args: &ScanArgs) -> Result<keyhog_core::allowlist::Allowlist> {
     let ignore_path = daemon_allowlist_root(args).join(".keyhogignore");
     if ignore_path.exists() {
-        keyhog_core::allowlist::Allowlist::load(&ignore_path)
-            .unwrap_or_else(|_| keyhog_core::allowlist::Allowlist::empty())
+        keyhog_core::allowlist::Allowlist::load(&ignore_path).with_context(|| {
+            format!(
+                "daemon route: failed to load {}. Fix or remove the allowlist; refusing to scan with silently ignored policy.",
+                ignore_path.display()
+            )
+        })
     } else {
-        keyhog_core::allowlist::Allowlist::empty()
+        Ok(keyhog_core::allowlist::Allowlist::empty())
     }
 }
 
-/// Load the declarative `.keyhogignore.toml` rule suppressor for the
-/// daemon route. A malformed file is logged and treated as empty so a
-/// bad rules file never silently blocks a scan - same posture as
-/// `orchestrator::allowlist::load_rule_suppressor`.
+/// Load the declarative `.keyhogignore.toml` rule suppressor for the daemon
+/// route. A malformed file is a policy failure, not an empty suppressor.
 #[cfg(unix)]
-fn load_daemon_rule_suppressor(args: &ScanArgs) -> RuleSuppressor {
+fn load_daemon_rule_suppressor(args: &ScanArgs) -> Result<RuleSuppressor> {
     let toml_path = daemon_allowlist_root(args).join(".keyhogignore.toml");
     match RuleSuppressor::load(&toml_path) {
-        Ok(s) => s,
-        Err(e) => {
-            tracing::warn!(
-                file = %toml_path.display(),
-                error = %e,
-                "daemon route: failed to load .keyhogignore.toml; ignoring rules. \
-                 Fix: validate the TOML schema (see docs/keyhogignore-toml.md)."
-            );
-            RuleSuppressor::empty()
-        }
+        Ok(s) => Ok(s),
+        Err(e) => anyhow::bail!(
+            "daemon route: failed to load {}: {e}. Fix the TOML schema \
+             (see docs/keyhogignore-toml.md) or remove the file; refusing to scan \
+             with silently ignored suppression rules.",
+            toml_path.display()
+        ),
     }
 }

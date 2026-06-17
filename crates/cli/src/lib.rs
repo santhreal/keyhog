@@ -22,7 +22,8 @@
 //!   [`inline_suppression`], [`test_fixture_suppressions`].
 //! - **Install / health** — [`installer`] (hook installer, `doctor`).
 
-use std::sync::atomic::{AtomicBool, AtomicUsize};
+use std::io::Write;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 pub static SCANNED_CHUNKS: AtomicUsize = AtomicUsize::new(0);
 pub static TOTAL_CHUNKS: AtomicUsize = AtomicUsize::new(0);
@@ -30,7 +31,7 @@ pub static FINDINGS_COUNT: AtomicUsize = AtomicUsize::new(0);
 /// Chunks actually dispatched to the GPU megakernel (a subset of
 /// [`SCANNED_CHUNKS`]; the remainder ran on the SIMD/CPU path). The orchestrator
 /// bumps this in the coalesced GPU arm — the single place the GPU runs — so the
-/// completion summary can state which backend the autorouter used and why,
+/// completion summary can state which backend selection used and why,
 /// instead of the decision being buried at `tracing::debug!` (target
 /// `keyhog::routing`). The optimized coalesced scan paths bypass `scan_inner`'s
 /// per-chunk telemetry, so that snapshot under-counts on the production batch
@@ -60,6 +61,56 @@ pub static FAILED_SOURCES: AtomicUsize = AtomicUsize::new(0);
 /// clean" - that was the prior behavior and would mislead any
 /// caller piping keyhog into CI as a gate.
 pub static SCANNER_PANICKED: AtomicBool = AtomicBool::new(false);
+
+/// Operator-visible scan failure event recorded by the CLI orchestrator.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ScanFailureEvent {
+    SourceError,
+    FailedSource,
+    ScannerPanicked,
+}
+
+/// Receipt proving an operator-visible scan failure passed through the typed
+/// recorder instead of mutating the global counters directly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use = "scan failure events must be recorded through the typed recorder so exit/status semantics remain honest"]
+pub(crate) struct RecordedScanFailureEvent {
+    event: ScanFailureEvent,
+    previous: usize,
+}
+
+pub(crate) fn record_scan_failure(event: ScanFailureEvent) -> RecordedScanFailureEvent {
+    let previous = match event {
+        ScanFailureEvent::SourceError => SOURCE_ERRORS.fetch_add(1, Ordering::Relaxed),
+        ScanFailureEvent::FailedSource => FAILED_SOURCES.fetch_add(1, Ordering::Relaxed),
+        ScanFailureEvent::ScannerPanicked => {
+            let was_panicked = SCANNER_PANICKED.swap(true, Ordering::Relaxed);
+            usize::from(was_panicked)
+        }
+    };
+    RecordedScanFailureEvent { event, previous }
+}
+
+pub(crate) fn record_source_error() -> RecordedScanFailureEvent {
+    record_scan_failure(ScanFailureEvent::SourceError)
+}
+
+pub(crate) fn record_failed_source() -> RecordedScanFailureEvent {
+    record_scan_failure(ScanFailureEvent::FailedSource)
+}
+
+pub(crate) fn record_scanner_panic() -> RecordedScanFailureEvent {
+    record_scan_failure(ScanFailureEvent::ScannerPanicked)
+}
+
+pub fn write_banner<W: Write>(
+    w: &mut W,
+    colors: bool,
+    ascii: bool,
+    detector_count: usize,
+) -> std::io::Result<()> {
+    keyhog_core::banner::print_banner(w, colors, ascii, detector_count)
+}
 
 pub mod args;
 pub mod baseline;

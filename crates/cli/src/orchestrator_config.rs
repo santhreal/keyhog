@@ -1,8 +1,18 @@
 use crate::args::ScanArgs;
 use anyhow::{Context, Result};
-use keyhog_core::{load_detectors, DetectorSpec};
+use keyhog_core::{load_detectors, validate_detector, DetectorSpec, QualityIssue};
 use keyhog_scanner::ScannerConfig;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
+
+const DETECTOR_CACHE_VERSION: u32 = 3;
+
+#[derive(Serialize, Deserialize)]
+struct DetectorCacheFile {
+    version: u32,
+    source_fingerprint: String,
+    detectors: Vec<DetectorSpec>,
+}
 
 /// Hard ceiling on the parallel thread count. Above this, thread
 /// creation overhead + scheduler contention dominates any throughput
@@ -13,7 +23,7 @@ use std::path::{Path, PathBuf};
 /// Hard ceiling on the worker thread count. Requested values above this are
 /// clamped (and logged) by [`sanitise_thread_count`]; spawning thousands of
 /// threads thrashes the OS scheduler without speeding the scan up.
-pub const MAX_THREADS_CAP: usize = 256;
+pub(crate) const MAX_THREADS_CAP: usize = 256;
 
 /// Canonical default for `--ml-threshold` (`ScanArgs::ml_threshold`). Single
 /// source of truth for the flag's declared default: the clap `default_value`
@@ -22,7 +32,7 @@ pub const MAX_THREADS_CAP: usize = 256;
 /// whether the operator actually moved the knob. An unset flag (value equal to
 /// this default) must leave the canonical confidence floor untouched, so the
 /// fix for a dead `--ml-threshold` does not silently change default behaviour.
-pub const ML_THRESHOLD_DEFAULT: f64 = 0.5;
+pub(crate) const ML_THRESHOLD_DEFAULT: f64 = 0.5;
 
 pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) {
     // Resolution order: --threads CLI arg > KEYHOG_THREADS env > physical core
@@ -46,8 +56,8 @@ pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) {
                 sanitise_thread_count(t, physical_cores, "env:KEYHOG_THREADS"),
                 "env:KEYHOG_THREADS",
             ),
-            Err(_) => {
-                tracing::warn!(value = %env, "ignoring invalid KEYHOG_THREADS value");
+            Err(error) => {
+                tracing::warn!(value = %env, %error, "ignoring invalid KEYHOG_THREADS value");
                 (physical_cores.max(1), "physical-cores")
             }
         }
@@ -106,16 +116,6 @@ fn sanitise_thread_count(requested: usize, physical_cores: usize, source: &'stat
     requested
 }
 
-#[doc(hidden)]
-#[allow(dead_code)]
-pub fn sanitise_thread_count_for_test(
-    requested: usize,
-    physical_cores: usize,
-    source: &'static str,
-) -> usize {
-    sanitise_thread_count(requested, physical_cores, source)
-}
-
 pub(crate) fn auto_discover_detectors(path: &Path) -> Result<PathBuf> {
     if let Ok(env_path) = std::env::var("KEYHOG_DETECTORS") {
         let p = PathBuf::from(&env_path);
@@ -136,7 +136,7 @@ pub(crate) fn auto_discover_detectors(path: &Path) -> Result<PathBuf> {
         }
         default_dirs.push(
             std::env::current_exe()
-                .ok()
+                .ok() // LAW10: optional env/cwd probe; absent => None (intended config/probe), recall-irrelevant
                 .and_then(|p| p.parent().map(|p| p.join("detectors"))),
         );
         for dir in default_dirs.into_iter().flatten() {
@@ -159,44 +159,190 @@ pub(crate) fn load_detectors_with_cache(path: &Path) -> Result<Vec<DetectorSpec>
         // failed with `Permission denied` on EVERY run, spamming two WARN
         // lines and silently re-parsing each time. Keying the cache by the
         // source dir keeps distinct detector directories from colliding;
-        // `load_detector_cache` still mtime-checks the source TOMLs for
-        // staleness regardless of where the cache file lives.
+        // The CLI parse cache fingerprints the source TOML filenames and
+        // contents, so removed/renamed/edited detectors cannot leave stale
+        // detectors live just because no remaining file is newer than cache.
         let cache_path = detector_cache_path(path);
         if let Some(cache_path) = &cache_path {
-            if let Some(cached) = keyhog_core::load_detector_cache(cache_path, path) {
-                require_non_empty_detectors(&cached, path)?;
-                return Ok(cached);
-            }
+            let loaded = load_detectors_from_dir_with_cache(path, cache_path)
+                .context("loading detectors from directory with parse cache")?;
+            require_non_empty_detectors(&loaded, path)?;
+            return Ok(loaded);
         }
         let loaded = load_detectors(path)?;
         require_non_empty_detectors(&loaded, path)?;
-        if let Some(cache_path) = &cache_path {
-            if let Err(error) = keyhog_core::save_detector_cache(&loaded, cache_path) {
-                // A read-only or absent cache dir is not an error the operator
-                // can act on and not worth a per-run WARN: the scan proceeds,
-                // just without the (small) parse-cache speedup. Debug-level so
-                // `-v` still surfaces it for diagnosis.
-                tracing::debug!(
-                    cache_path = %cache_path.display(),
-                    %error,
-                    "detector parse cache not written (cache dir unwritable); \
-                     re-parsing TOML each run"
-                );
-            }
-        }
         return Ok(loaded);
     }
     load_detectors_embedded_or_fail(path)
+}
+
+fn load_detectors_from_dir_with_cache(
+    source_dir: &Path,
+    cache_path: &Path,
+) -> Result<Vec<DetectorSpec>> {
+    if let Some(cached) = load_detector_cache(cache_path, source_dir) {
+        return Ok(cached);
+    }
+
+    let loaded = load_detectors(source_dir).map_err(anyhow::Error::from)?;
+    if loaded.is_empty() {
+        return Ok(loaded);
+    }
+    let source_fingerprint = match detector_source_fingerprint(source_dir) {
+        Ok(fingerprint) => fingerprint,
+        Err(error) => {
+            tracing::warn!(
+                source_dir = %source_dir.display(),
+                %error,
+                "detector source changed after load; parse cache not written"
+            );
+            return Ok(loaded);
+        }
+    };
+    if let Err(error) = save_detector_cache(&loaded, cache_path, source_fingerprint) {
+        tracing::debug!(
+            cache_path = %cache_path.display(),
+            %error,
+            "detector parse cache not written; re-parsing TOML on the next run"
+        );
+    }
+    Ok(loaded)
+}
+
+fn save_detector_cache(
+    detectors: &[DetectorSpec],
+    cache_path: &Path,
+    source_fingerprint: String,
+) -> std::io::Result<()> {
+    for detector in detectors {
+        let issues = validate_detector(detector);
+        if issues
+            .iter()
+            .any(|issue| matches!(issue, QualityIssue::Error(_)))
+        {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!(
+                    "refusing to cache invalid detector '{}'. Fix: repair the detector before writing the cache",
+                    detector.id
+                ),
+            ));
+        }
+    }
+
+    let json = serde_json::to_vec(&DetectorCacheFile {
+        version: DETECTOR_CACHE_VERSION,
+        source_fingerprint,
+        detectors: detectors.to_vec(),
+    })?;
+    let parent = cache_path.parent().unwrap_or_else(|| Path::new(".")); // LAW10: cache path with no parent => current dir fallback before create_dir_all; cache write only, scan reparses source on failure
+    std::fs::create_dir_all(parent)?;
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+    std::io::Write::write_all(&mut tmp, &json)?;
+    tmp.as_file().sync_all()?;
+    tmp.persist(cache_path).map_err(|e| e.error)?;
+    Ok(())
+}
+
+fn load_detector_cache(cache_path: &Path, source_dir: &Path) -> Option<Vec<DetectorSpec>> {
+    let source_fingerprint = match detector_source_fingerprint(source_dir) {
+        Ok(fingerprint) => fingerprint,
+        Err(error) => {
+            tracing::warn!(
+                source_dir = %source_dir.display(),
+                %error,
+                "cannot fingerprint detector source directory; ignoring detector cache and re-parsing TOML"
+            );
+            return None;
+        }
+    };
+
+    let data = match std::fs::read(cache_path) {
+        Ok(data) => data,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
+        Err(error) => {
+            tracing::warn!(
+                "failed to read detector cache {}: {}",
+                cache_path.display(),
+                error
+            );
+            return None;
+        }
+    };
+    let cache: DetectorCacheFile = match serde_json::from_slice(&data) {
+        Ok(cache) => cache,
+        Err(error) => {
+            tracing::warn!(
+                "failed to parse detector cache {}: {}",
+                cache_path.display(),
+                error
+            );
+            return None;
+        }
+    };
+    if cache.version != DETECTOR_CACHE_VERSION {
+        return None;
+    }
+    if cache.source_fingerprint != source_fingerprint {
+        return None;
+    }
+
+    let mut validated = Vec::with_capacity(cache.detectors.len());
+    for spec in cache.detectors {
+        let issues = validate_detector(&spec);
+        if issues
+            .iter()
+            .any(|issue| matches!(issue, QualityIssue::Error(_)))
+        {
+            tracing::warn!(
+                "cached detector '{}' failed quality gate; discarding the entire cache",
+                spec.id
+            );
+            return None;
+        }
+        validated.push(spec);
+    }
+
+    if validated.is_empty() {
+        tracing::warn!("detector cache is empty after validation, re-parsing detector TOML");
+        return None;
+    }
+
+    Some(validated)
+}
+
+fn detector_source_fingerprint(source_dir: &Path) -> std::io::Result<String> {
+    let mut entries = Vec::new();
+    for entry in std::fs::read_dir(source_dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if !path.extension().is_some_and(|ext| ext == "toml") {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let bytes = std::fs::read(&path)?;
+        entries.push((name, *blake3::hash(&bytes).as_bytes()));
+    }
+    entries.sort_by(|a, b| a.0.cmp(&b.0));
+
+    let mut hasher = blake3::Hasher::new();
+    for (name, hash) in entries {
+        hasher.update(name.as_bytes());
+        hasher.update(b"\0");
+        hasher.update(&hash);
+        hasher.update(b"\n");
+    }
+    Ok(keyhog_core::hex_encode(hasher.finalize().as_bytes()))
 }
 
 /// Path to the detector parse cache in the user's XDG cache dir, keyed by the
 /// source directory so multiple `--detectors` trees don't collide. Returns
 /// `None` when no cache dir is resolvable (cache simply disabled). The
 /// `.json` is created on first successful parse and revalidated against the
-/// source TOMLs' mtimes by `keyhog_core::load_detector_cache`.
+/// source TOMLs' mtimes by the CLI parse-cache loader.
 fn detector_cache_path(source_dir: &Path) -> Option<std::path::PathBuf> {
     use std::hash::{Hash, Hasher};
-    let canonical = std::fs::canonicalize(source_dir).unwrap_or_else(|_| source_dir.to_path_buf());
+    let canonical = std::fs::canonicalize(source_dir).unwrap_or_else(|_| source_dir.to_path_buf()); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     canonical.hash(&mut hasher);
     // Version-scope the key: the embedded/default corpus shape can change
@@ -266,7 +412,7 @@ pub(crate) fn require_non_empty_detectors(
 /// messages and on the fallback-to-embedded branch - kimi-dedup rows #4-6.
 // `pub` (was pub(crate)) so the relocated explain test loads the embedded
 // corpus through the same path production uses (no_inline_tests_in_src gate).
-pub fn load_detectors_or_embedded(path: &Path) -> Result<Vec<DetectorSpec>> {
+pub(crate) fn load_detectors_or_embedded(path: &Path) -> Result<Vec<DetectorSpec>> {
     validate_detector_path_for_scan(path)?;
     if path.exists() && path.is_dir() {
         let loaded = load_detectors(path).context("loading detectors from directory")?;
@@ -319,7 +465,7 @@ fn load_detectors_embedded_or_fail(path: &Path) -> Result<Vec<DetectorSpec>> {
     Ok(keyhog_core::load_embedded_detectors_or_fail()?)
 }
 
-pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
+pub(crate) fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
     // The preset (`--fast` / `--deep`) is a BASE, not a terminal state. It
     // seeds decode-depth / entropy / ml defaults; the per-flag overrides below
     // then layer on top. Pre-fix this function early-returned at the preset, so
@@ -389,6 +535,9 @@ pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
     if let Some(threshold) = args.entropy_threshold {
         config.entropy_threshold = threshold;
     }
+    if let Some(min_secret_len) = args.min_secret_len {
+        config.min_secret_len = min_secret_len;
+    }
     config.entropy_in_source_files = args.entropy_source_files;
     // Entropy candidates are scored through the MoE (model authoritative) by
     // default; `--no-entropy-ml-scoring` restores the legacy heuristic emit.
@@ -453,28 +602,30 @@ pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
 /// once and handing the live worker this struct makes "what runs" a single,
 /// printable answer (see `KEYHOG_PRINT_EFFECTIVE_CONFIG=1`).
 #[derive(Debug, Clone)]
-pub struct ResolvedScanConfig {
+pub(crate) struct ResolvedScanConfig {
     /// Engine-side config consumed by `CompiledScanner::with_config`.
-    pub scanner: ScannerConfig,
+    pub(crate) scanner: ScannerConfig,
     /// The global post-scan confidence floor a finding must clear to be
     /// reported. This is `scanner.min_confidence` - the SAME resolved value the
     /// engine uses, never a re-read of the raw args or a second literal. The
     /// live worker reads THIS, not `args.min_confidence.unwrap_or(0.3)`.
-    pub min_confidence: f64,
+    pub(crate) min_confidence: f64,
     /// Whether ML confidence scoring is enabled. Mirrors `scanner.ml_enabled`.
     /// The post-scan floor applies regardless of this: disabling ML changes how
     /// confidence is *computed*, not whether a `--min-confidence` floor the
     /// operator set is honoured. (Pre-fix the floor was gated on `!no_ml`, so
     /// `--no-ml` silently bypassed `--min-confidence` entirely.)
-    pub ml_enabled: bool,
+    pub(crate) ml_enabled: bool,
     /// Per-detector floors from `.keyhog.toml` `[detector.<id>] min_confidence`.
     /// Take precedence over `min_confidence` for the matching detector id.
-    pub detector_min_confidence: std::collections::HashMap<String, f64>,
+    pub(crate) detector_min_confidence: std::collections::HashMap<String, f64>,
     /// Detector ids disabled via `.keyhog.toml` `[detector.<id>] enabled = false`.
     /// These are dropped from the loaded corpus before scanner compilation.
-    pub disabled_detectors: std::collections::HashSet<String>,
+    pub(crate) disabled_detectors: std::collections::HashSet<String>,
     /// Whether `.keyhog.toml` requires lockdown mode for this scan.
-    pub require_lockdown: bool,
+    pub(crate) require_lockdown: bool,
+    /// Resolved regex lazy-DFA cache cap applied before scanner compilation.
+    pub(crate) regex_dfa_limit: Option<usize>,
 }
 
 /// Resolve the full scan configuration in one place: run the precedence merge
@@ -488,21 +639,42 @@ pub struct ResolvedScanConfig {
 /// the orchestrator's pre-existing `apply_config_file(&mut args)` call did. The
 /// caller keeps the same `args` for the surfaces that still read it directly
 /// (severity filter, dedup scope, verify/show-secrets gating).
-pub fn resolve_scan_config(args: &mut ScanArgs) -> ResolvedScanConfig {
+pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanConfig> {
     let outcome = crate::config::apply_config_file(args);
+    if !outcome.config_errors.is_empty() {
+        anyhow::bail!(
+            "invalid .keyhog.toml configuration:\n{}",
+            outcome.config_errors.join("\n")
+        );
+    }
     let scanner = build_scanner_config(args);
     // The post-scan floor is the SAME value the engine resolved - read it back
     // off the built config rather than re-deriving from `args`, so the two can
     // never drift. `ScannerConfig::from`/`sanitise` already clamped NaN/range.
     let min_confidence = scanner.min_confidence;
     let ml_enabled = scanner.ml_enabled;
-    ResolvedScanConfig {
+    Ok(ResolvedScanConfig {
         scanner,
         min_confidence,
         ml_enabled,
         detector_min_confidence: outcome.detector_min_confidence,
         disabled_detectors: outcome.disabled_detectors.into_iter().collect(),
         require_lockdown: outcome.require_lockdown,
+        regex_dfa_limit: args.regex_dfa_limit,
+    })
+}
+
+pub(crate) fn resolved_scan_config_for_scanner(scanner: ScannerConfig) -> ResolvedScanConfig {
+    let min_confidence = scanner.min_confidence;
+    let ml_enabled = scanner.ml_enabled;
+    ResolvedScanConfig {
+        scanner,
+        min_confidence,
+        ml_enabled,
+        detector_min_confidence: std::collections::HashMap::new(),
+        disabled_detectors: std::collections::HashSet::new(),
+        require_lockdown: false,
+        regex_dfa_limit: None,
     }
 }
 
@@ -514,10 +686,10 @@ pub fn resolve_scan_config(args: &mut ScanArgs) -> ResolvedScanConfig {
 /// the existing env-or-flag precedent (`KEYHOG_BACKEND`/`--backend`,
 /// `KEYHOG_THREADS`/`--threads`). Writes the rendered block to stdout so it is
 /// captured by the same `--output`-less stdout path the formatted report uses.
-pub fn print_effective_config_if_requested(resolved: &ResolvedScanConfig) -> bool {
+pub(crate) fn print_effective_config_if_requested(resolved: &ResolvedScanConfig) -> bool {
     let requested = std::env::var("KEYHOG_PRINT_EFFECTIVE_CONFIG")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
+        .unwrap_or(false); // LAW10: empty/absent => documented numeric default, recall-safe
     if !requested {
         return false;
     }
@@ -534,52 +706,188 @@ pub fn print_effective_config_if_requested(resolved: &ResolvedScanConfig) -> boo
 /// Emitted as deterministic `key = value` lines (sorted detector floors) rather
 /// than JSON so it is greppable and diffable in dogfood snapshots without a
 /// serde derive on the engine `ScannerConfig` (which lives in another crate).
-pub fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
-    use std::fmt::Write as _;
+pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
     let s = &resolved.scanner;
     let mut out = String::new();
-    let _ = writeln!(out, "[effective-config]");
-    let _ = writeln!(out, "min_confidence = {}", resolved.min_confidence);
-    let _ = writeln!(out, "ml_enabled = {}", resolved.ml_enabled);
-    let _ = writeln!(out, "ml_weight = {}", s.ml_weight);
-    let _ = writeln!(out, "entropy_enabled = {}", s.entropy_enabled);
-    let _ = writeln!(
-        out,
-        "entropy_ml_authoritative = {}",
+    out.push_str("[effective-config]\n");
+    out.push_str(&format!("min_confidence = {}\n", resolved.min_confidence));
+    out.push_str(&format!("ml_enabled = {}\n", resolved.ml_enabled));
+    out.push_str(&format!("ml_weight = {}\n", s.ml_weight));
+    out.push_str(&format!("entropy_enabled = {}\n", s.entropy_enabled));
+    out.push_str(&format!(
+        "entropy_ml_authoritative = {}\n",
         s.entropy_ml_authoritative
-    );
-    let _ = writeln!(
-        out,
-        "generic_keyword_low_entropy = {}",
+    ));
+    out.push_str(&format!(
+        "generic_keyword_low_entropy = {}\n",
         s.generic_keyword_low_entropy
-    );
-    let _ = writeln!(out, "entropy_threshold = {}", s.entropy_threshold);
-    let _ = writeln!(
-        out,
-        "entropy_in_source_files = {}",
+    ));
+    out.push_str(&format!("entropy_threshold = {}\n", s.entropy_threshold));
+    out.push_str(&format!(
+        "entropy_in_source_files = {}\n",
         s.entropy_in_source_files
-    );
-    let _ = writeln!(out, "max_decode_depth = {}", s.max_decode_depth);
-    let _ = writeln!(out, "max_decode_bytes = {}", s.max_decode_bytes);
-    let _ = writeln!(out, "scan_comments = {}", s.scan_comments);
-    let _ = writeln!(out, "unicode_normalization = {}", s.unicode_normalization);
-    let _ = writeln!(
-        out,
-        "disabled_detectors = {}",
+    ));
+    out.push_str(&format!("max_decode_depth = {}\n", s.max_decode_depth));
+    out.push_str(&format!("max_decode_bytes = {}\n", s.max_decode_bytes));
+    out.push_str(&format!("scan_comments = {}\n", s.scan_comments));
+    out.push_str(&format!(
+        "unicode_normalization = {}\n",
+        s.unicode_normalization
+    ));
+    out.push_str(&format!(
+        "disabled_detectors = {}\n",
         resolved.disabled_detectors.len()
-    );
-    let _ = writeln!(out, "known_prefixes = {}", s.known_prefixes.len());
-    let _ = writeln!(out, "secret_keywords = {}", s.secret_keywords.len());
-    let _ = writeln!(out, "test_keywords = {}", s.test_keywords.len());
-    let _ = writeln!(
-        out,
-        "placeholder_keywords = {}",
+    ));
+    out.push_str(&format!("known_prefixes = {}\n", s.known_prefixes.len()));
+    out.push_str(&format!("secret_keywords = {}\n", s.secret_keywords.len()));
+    out.push_str(&format!("test_keywords = {}\n", s.test_keywords.len()));
+    out.push_str(&format!(
+        "placeholder_keywords = {}\n",
         s.placeholder_keywords.len()
-    );
+    ));
     let mut floors: Vec<(&String, &f64)> = resolved.detector_min_confidence.iter().collect();
     floors.sort_by(|a, b| a.0.cmp(b.0));
     for (id, floor) in floors {
-        let _ = writeln!(out, "detector_min_confidence.{id} = {floor}");
+        out.push_str(&format!("detector_min_confidence.{id} = {floor}\n"));
     }
     out
+}
+
+/// Stable-enough fingerprint for autoroute cache identity. It is computed from
+/// the resolved config that actually reaches the engine/postprocess layer, so
+/// `.keyhog.toml`, presets, CLI overrides, and host caps all invalidate routing
+/// together when they change scan cost or candidate volume.
+pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    let s = &resolved.scanner;
+    s.min_confidence.to_bits().hash(&mut h);
+    s.ml_enabled.hash(&mut h);
+    s.ml_weight.to_bits().hash(&mut h);
+    s.entropy_enabled.hash(&mut h);
+    s.entropy_ml_authoritative.hash(&mut h);
+    s.generic_keyword_low_entropy.hash(&mut h);
+    s.entropy_threshold.to_bits().hash(&mut h);
+    s.entropy_in_source_files.hash(&mut h);
+    s.max_decode_depth.hash(&mut h);
+    s.max_decode_bytes.hash(&mut h);
+    s.max_matches_per_chunk.hash(&mut h);
+    s.scan_comments.hash(&mut h);
+    s.unicode_normalization.hash(&mut h);
+    s.penalize_test_paths.hash(&mut h);
+    s.multiline.max_join_lines.hash(&mut h);
+    s.multiline.python_implicit.hash(&mut h);
+    s.multiline.backslash_continuation.hash(&mut h);
+    s.multiline.plus_concatenation.hash(&mut h);
+    s.multiline.template_literals.hash(&mut h);
+    hash_strings(&s.known_prefixes, &mut h);
+    hash_strings(&s.secret_keywords, &mut h);
+    hash_strings(&s.test_keywords, &mut h);
+    hash_strings(&s.placeholder_keywords, &mut h);
+    resolved.min_confidence.to_bits().hash(&mut h);
+    resolved.ml_enabled.hash(&mut h);
+    let mut floors: Vec<_> = resolved.detector_min_confidence.iter().collect();
+    floors.sort_by(|a, b| a.0.cmp(b.0));
+    for (id, floor) in floors {
+        id.hash(&mut h);
+        floor.to_bits().hash(&mut h);
+    }
+    let mut disabled: Vec<_> = resolved.disabled_detectors.iter().collect();
+    disabled.sort();
+    for id in disabled {
+        id.hash(&mut h);
+    }
+    resolved.require_lockdown.hash(&mut h);
+    resolved.regex_dfa_limit.hash(&mut h);
+    hash_autoroute_runtime_env(&mut h);
+    h.finish()
+}
+
+fn hash_strings(strings: &[String], h: &mut impl std::hash::Hasher) {
+    use std::hash::Hash;
+    strings.len().hash(h);
+    for s in strings {
+        s.hash(h);
+    }
+}
+
+fn hash_autoroute_runtime_env(h: &mut impl std::hash::Hasher) {
+    use std::hash::Hash;
+    const ROUTING_ENV: &[&str] = &[
+        "KEYHOG_BATCH_PIPELINE",
+        "KEYHOG_NO_GPU",
+        "KEYHOG_REQUIRE_GPU",
+        "KEYHOG_GPU_RECALL_FLOOR",
+        "KEYHOG_GPU_PARITY",
+        "KEYHOG_GPU_KERNEL",
+        "KEYHOG_GPU_MOE_TIMEOUT_MS",
+        "KEYHOG_SHARD_TARGET",
+        "KEYHOG_FALLBACK_HS",
+        "KEYHOG_FALLBACK_HS_MAX_LEN",
+        "KEYHOG_FALLBACK_ANCHOR",
+        "KEYHOG_HOMOGLYPH_GATE",
+        "KEYHOG_HOMOGLYPH_ASCII_SKIP",
+        "KEYHOG_FALLBACK_REVERSE",
+        "KEYHOG_PREFILTER_TRUNCATE",
+        "KEYHOG_FALLBACK_PREFIX_GATE",
+        "KEYHOG_DECODE_FOCUS",
+        "KEYHOG_CONFIRMED_GATE",
+        "KEYHOG_NO_CANDIDATE_GATE",
+        "KEYHOG_PER_CHUNK_TIMEOUT_MS",
+    ];
+    ROUTING_ENV.len().hash(h);
+    for key in ROUTING_ENV {
+        key.hash(h);
+        std::env::var(key).ok().hash(h); // LAW10: absent routing env ⇒ hashes as None, a DISTINCT cache-key state (intended); this BUILDS the digest, it does not swallow a failure or pick a path.
+    }
+}
+
+#[doc(hidden)]
+pub mod testing {
+    use crate::args::ScanArgs;
+    use anyhow::Result;
+    use keyhog_core::DetectorSpec;
+    use keyhog_scanner::ScannerConfig;
+    use std::path::Path;
+
+    pub const MAX_THREADS_CAP: usize = super::MAX_THREADS_CAP;
+    pub const ML_THRESHOLD_DEFAULT: f64 = super::ML_THRESHOLD_DEFAULT;
+
+    pub fn sanitise_thread_count(
+        requested: usize,
+        physical_cores: usize,
+        source: &'static str,
+    ) -> usize {
+        super::sanitise_thread_count(requested, physical_cores, source)
+    }
+
+    pub fn load_detectors_or_embedded(path: &Path) -> Result<Vec<DetectorSpec>> {
+        super::load_detectors_or_embedded(path)
+    }
+
+    pub fn load_detectors_from_dir_with_cache(
+        source_dir: &Path,
+        cache_path: &Path,
+    ) -> Result<Vec<DetectorSpec>> {
+        super::load_detectors_from_dir_with_cache(source_dir, cache_path)
+    }
+
+    pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
+        super::build_scanner_config(args)
+    }
+
+    pub fn render_effective_config_for_scanner(scanner: ScannerConfig) -> String {
+        let min_confidence = scanner.min_confidence;
+        let ml_enabled = scanner.ml_enabled;
+        let resolved = super::ResolvedScanConfig {
+            scanner,
+            min_confidence,
+            ml_enabled,
+            detector_min_confidence: std::collections::HashMap::new(),
+            disabled_detectors: std::collections::HashSet::new(),
+            require_lockdown: false,
+            regex_dfa_limit: None,
+        };
+        super::render_effective_config(&resolved)
+    }
 }

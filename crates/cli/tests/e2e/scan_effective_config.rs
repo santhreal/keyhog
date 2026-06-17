@@ -17,6 +17,14 @@ fn effective_config(args: &[&str]) -> (String, String, Option<i32>) {
     )
 }
 
+fn effective_config_with_toml(toml: &str) -> (String, String, Option<i32>) {
+    let dir = TempDir::new().expect("tempdir");
+    let config_path = dir.path().join(".keyhog.toml");
+    std::fs::write(&config_path, toml).expect("write config");
+    let config_path = config_path.to_string_lossy();
+    effective_config(&["scan", "--no-daemon", "--config", &config_path])
+}
+
 #[test]
 fn scan_effective_config_env_prints_and_exits_without_source() {
     let (stdout, stderr, code) = effective_config(&["scan", "--no-daemon"]);
@@ -102,6 +110,70 @@ fn scan_effective_config_fast_disables_decode_entropy_and_ml() {
         assert!(
             stdout.contains(required),
             "--fast effective config missing `{required}`; stdout={stdout}"
+        );
+    }
+}
+
+#[test]
+fn scan_effective_config_rejects_invalid_config_byte_sizes() {
+    let (stdout, stderr, code) = effective_config_with_toml(
+        "decode_size_limit = \"10\"\n\
+         max_file_size = \"wat\"\n\
+         regex_dfa_limit = \"1XB\"\n",
+    );
+
+    assert_eq!(code, Some(2), "stdout={stdout}\nstderr={stderr}");
+    assert!(
+        stdout.is_empty(),
+        "invalid config must not print config: {stdout}"
+    );
+    for required in [
+        "invalid .keyhog.toml configuration",
+        "decode_size_limit = \"10\"",
+        "missing a unit",
+        "max_file_size = \"wat\"",
+        "unknown size suffix",
+        "regex_dfa_limit = \"1XB\"",
+    ] {
+        assert!(
+            stderr.contains(required),
+            "stderr missing `{required}`; stderr={stderr}"
+        );
+    }
+}
+
+#[test]
+fn scan_effective_config_rejects_invalid_config_enums_and_min_length() {
+    let (stdout, stderr, code) = effective_config_with_toml(
+        "format = \"yaml\"\n\
+         severity = \"urgent\"\n\
+         dedup = \"global\"\n\
+         min_secret_len = 0\n\
+         [scan]\n\
+         format = \"xml\"\n\
+         severity = \"panic\"\n\
+         dedup = \"all\"\n\
+         min_secret_len = 0\n",
+    );
+
+    assert_eq!(code, Some(2), "stdout={stdout}\nstderr={stderr}");
+    assert!(
+        stdout.is_empty(),
+        "invalid config must not print config: {stdout}"
+    );
+    for required in [
+        "format = \"yaml\"",
+        "severity = \"urgent\"",
+        "dedup = \"global\"",
+        "min_secret_len = 0",
+        "[scan].format = \"xml\"",
+        "[scan].severity = \"panic\"",
+        "[scan].dedup = \"all\"",
+        "[scan].min_secret_len = 0",
+    ] {
+        assert!(
+            stderr.contains(required),
+            "stderr missing `{required}`; stderr={stderr}"
         );
     }
 }

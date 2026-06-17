@@ -28,6 +28,7 @@
 
 //! Core types shared across all KeyHog crates.
 pub mod allowlist;
+pub mod api;
 /// Offline AWS account-ID decode + canary-token classification (single source
 /// of truth shared by the scanner's finding metadata and the verifier's
 /// suppress-live-verification-for-canaries gate).
@@ -39,8 +40,11 @@ pub mod config;
 /// Secure credential storage and redaction.
 pub mod credential;
 mod dedup;
+mod display;
 /// Shared standard Base64 decode (wire / K8s), bounded for DoS safety.
 pub mod encoding;
+/// Shared environment-variable parsing for numeric KeyHog knobs.
+pub mod env_config;
 mod finding;
 /// Security hardening: memory zeroization and process isolation helpers.
 pub mod hardening;
@@ -55,13 +59,7 @@ use std::borrow::Cow;
 /// Global registry for sources and verifiers.
 pub mod registry;
 
-pub use allowlist::*;
-pub use config::*;
-pub use credential::{Credential, SensitiveString};
-pub use dedup::*;
-pub use finding::*;
-pub use report::*;
-pub use source::*;
+pub use api::*;
 /// Auto-fix suggestion logic for SARIF output.
 pub mod auto_fix;
 /// Bayesian confidence calibration for detectors.
@@ -69,14 +67,11 @@ pub mod calibration;
 /// Incremental scan state via BLAKE3 Merkle index.
 pub mod merkle_index;
 mod merkle_spec_hash;
-pub use merkle_spec_hash::compute_spec_hash;
 /// Declarative `.keyhogignore.toml` rule-based finding suppression.
 /// Wraps vyre's CPU rule evaluator with a TOML schema scoped to
 /// keyhog's finding shape (detector / service / severity / path /
 /// credential_hash predicates).
 pub mod rule_filter;
-pub use rule_filter::{RuleSuppressor, RuleSuppressorError};
-pub use spec::*;
 
 // Embedded detectors compiled into the binary at build time.
 // These are used when no external detectors directory is found.
@@ -186,3 +181,6 @@ pub fn redact(s: &str) -> Cow<'static, str> {
     let last_four: String = s.chars().skip(char_count.saturating_sub(4)).collect();
     Cow::Owned(format!("{first_four}...{last_four}"))
 }
+
+#[doc(hidden)]
+pub mod testing;
