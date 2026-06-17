@@ -34,9 +34,9 @@ pub(super) fn log_metadata_audit(kind: &str, entry: &str, meta: &InlineMetadata)
     tracing::info!(
         kind,
         entry,
-        reason = meta.reason.as_deref().unwrap_or("<unspecified>"),
-        approved_by = meta.approved_by.as_deref().unwrap_or("<unspecified>"),
-        expires = meta.expires.as_deref().unwrap_or("<no expiry>"),
+        reason = meta.reason.as_deref().unwrap_or("<unspecified>"), // LAW10: log-display placeholder for an optional audit field; no recall/security effect
+        approved_by = meta.approved_by.as_deref().unwrap_or("<unspecified>"), // LAW10: log-display placeholder; optional field
+        expires = meta.expires.as_deref().unwrap_or("<no expiry>"), // LAW10: log-display placeholder; optional field
         "allowlist entry loaded with audit metadata"
     );
 }
@@ -47,7 +47,7 @@ pub(super) fn today_yyyy_mm_dd() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
+        .unwrap_or(0); // LAW10: empty/absent => documented numeric default, recall-safe
     let days = secs.div_euclid(86_400);
     // Civil-from-days, after Howard Hinnant.
     let z = days + 719_468;

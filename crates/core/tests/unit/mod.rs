@@ -1,4 +1,7 @@
 pub mod allowlist;
+pub mod allowlist_expired_entries_dropped;
+pub mod allowlist_extended;
+pub mod allowlist_future_dated_entries_load;
 pub mod allowlist_hash_parse_non_ascii_does_not_panic;
 pub mod apply_default_protections_populates_report_fields;
 pub mod aws;

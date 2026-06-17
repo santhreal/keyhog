@@ -1,51 +1,51 @@
 //! Allowlist and declarative rule suppressor loading for scan runs.
 
+use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
-pub(crate) fn load_allowlist(scan_path: Option<&Path>) -> keyhog_core::allowlist::Allowlist {
+pub(crate) fn load_allowlist(
+    scan_path: Option<&Path>,
+) -> Result<keyhog_core::allowlist::Allowlist> {
     let base_path = scan_path
         .map(allowlist_root)
-        .unwrap_or_else(|| PathBuf::from("."));
+        .unwrap_or_else(|| PathBuf::from(".")); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
     let ignore_path = base_path.join(".keyhogignore");
     if ignore_path.exists() {
-        keyhog_core::allowlist::Allowlist::load(&ignore_path)
-            .unwrap_or_else(|_| keyhog_core::allowlist::Allowlist::empty())
+        keyhog_core::allowlist::Allowlist::load(&ignore_path).with_context(|| {
+            format!(
+                "failed to load {}. Fix or remove the allowlist; refusing to scan with silently ignored policy.",
+                ignore_path.display()
+            )
+        })
     } else {
-        keyhog_core::allowlist::Allowlist::empty()
+        Ok(keyhog_core::allowlist::Allowlist::empty())
     }
 }
 
 /// Load the declarative `.keyhogignore.toml` rule suppressor (vyre
 /// rule engine via CPU evaluator) alongside the legacy line-based
-/// allowlist. Returns an empty suppressor when the file is missing
-/// or fails to parse - a malformed rules file shouldn't stop the
-/// scan; the parse error is surfaced via `tracing::warn!` so the
-/// operator still notices.
-pub(crate) fn load_rule_suppressor(scan_path: Option<&Path>) -> keyhog_core::RuleSuppressor {
+/// allowlist. Missing file means empty suppressor; malformed present file is a
+/// policy failure and stops the scan.
+pub(crate) fn load_rule_suppressor(
+    scan_path: Option<&Path>,
+) -> Result<keyhog_core::RuleSuppressor> {
     let base_path = scan_path
         .map(allowlist_root)
-        .unwrap_or_else(|| PathBuf::from("."));
+        .unwrap_or_else(|| PathBuf::from(".")); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
     let toml_path = base_path.join(".keyhogignore.toml");
     match keyhog_core::RuleSuppressor::load(&toml_path) {
         Ok(s) => {
-            if !s.is_empty() {
-                tracing::info!(
-                    rules = s.len(),
-                    file = %toml_path.display(),
-                    "loaded declarative suppression rules"
-                );
-            }
-            s
-        }
-        Err(e) => {
-            tracing::warn!(
+            tracing::debug!(
                 file = %toml_path.display(),
-                error = %e,
-                "failed to load .keyhogignore.toml; ignoring rules. \
-                 Fix: validate the TOML schema (see docs/keyhogignore-toml.md)."
+                "loaded declarative suppression policy"
             );
-            keyhog_core::RuleSuppressor::empty()
+            Ok(s)
         }
+        Err(e) => anyhow::bail!(
+            "failed to load {}: {e}. Fix the TOML schema (see docs/keyhogignore-toml.md) \
+             or remove the file; refusing to scan with silently ignored suppression rules.",
+            toml_path.display()
+        ),
     }
 }
 
@@ -60,7 +60,7 @@ pub(crate) fn allowlist_root(path: &Path) -> PathBuf {
             .parent()
             .filter(|p| !p.as_os_str().is_empty())
             .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from("."));
+            .unwrap_or_else(|| PathBuf::from(".")); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
     }
     // Non-existent path. Shape heuristic:
     //   * has a file extension AND has a parent  -> treat as file

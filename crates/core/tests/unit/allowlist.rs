@@ -48,7 +48,7 @@ detector:entropy
 path:tests/**
 path:*.example
 ";
-    let al = Allowlist::parse(content);
+    let al = keyhog_core::testing::allowlist_parse(content);
     assert_eq!(al.credential_hashes.len(), 1);
     assert!(al.ignored_detectors.contains("entropy"));
     assert_eq!(al.ignored_paths.len(), 2);
@@ -57,7 +57,9 @@ path:*.example
 #[test]
 fn empty_allowlist_allows_nothing() {
     let al = Allowlist::empty();
-    assert!(!al.is_hash_allowed("anything"));
+    assert!(!keyhog_core::testing::allowlist_is_hash_allowed(
+        &al, "anything"
+    ));
 }
 
 #[test]
@@ -94,7 +96,7 @@ fn is_allowed_checks_detector_and_path_rules_consistently() {
         additional_locations: Vec::new(),
         confidence: None,
     };
-    assert!(al.is_allowed(&finding));
+    assert!(keyhog_core::testing::allowlist_is_allowed(&al, &finding));
 
     let finding = VerifiedFinding {
         detector_id: "other".into(),
@@ -109,13 +111,13 @@ fn is_allowed_checks_detector_and_path_rules_consistently() {
         },
         ..finding
     };
-    assert!(al.is_allowed(&finding));
+    assert!(keyhog_core::testing::allowlist_is_allowed(&al, &finding));
 }
 
 #[test]
 fn gitleaks_format_parse_compatibility() {
     let content = "hash:deadbeef1234567890abcdef1234567890abcdef1234567890abcdef12345678\ndetector:aws-access-key\npath:**/*.test\n";
-    let al = Allowlist::parse(content);
+    let al = keyhog_core::testing::allowlist_parse(content);
     assert_eq!(al.credential_hashes.len(), 1);
     assert!(al.ignored_detectors.contains("aws-access-key"));
     assert_eq!(al.ignored_paths.len(), 1);
@@ -129,15 +131,19 @@ fn gitleaks_hash_suppression_behavior() {
     let entry_hash = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
     let other_hash = "0000000000000000000000000000000000000000000000000000000000000000";
     let content = format!("hash:{entry_hash}");
-    let al = Allowlist::parse(&content);
-    assert!(al.is_hash_allowed(entry_hash));
-    assert!(!al.is_hash_allowed(other_hash));
+    let al = keyhog_core::testing::allowlist_parse(&content);
+    assert!(keyhog_core::testing::allowlist_is_hash_allowed(
+        &al, entry_hash
+    ));
+    assert!(!keyhog_core::testing::allowlist_is_hash_allowed(
+        &al, other_hash
+    ));
 }
 
 #[test]
 fn gitleaks_detector_ignore_by_id() {
     let content = "detector:generic-api-key";
-    let al = Allowlist::parse(content);
+    let al = keyhog_core::testing::allowlist_parse(content);
     let finding = VerifiedFinding {
         detector_id: "generic-api-key".into(),
         detector_name: "Generic API Key".into(),
@@ -159,13 +165,16 @@ fn gitleaks_detector_ignore_by_id() {
         additional_locations: Vec::new(),
         confidence: None,
     };
-    assert!(al.is_allowed(&finding));
+    assert!(keyhog_core::testing::allowlist_is_allowed(&al, &finding));
 
     let other_finding = VerifiedFinding {
         detector_id: "different-detector".into(),
         ..finding
     };
-    assert!(!al.is_allowed(&other_finding));
+    assert!(!keyhog_core::testing::allowlist_is_allowed(
+        &al,
+        &other_finding
+    ));
 }
 
 #[test]
@@ -176,7 +185,7 @@ hash:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 # Another comment
 detector:test
 ";
-    let al = Allowlist::parse(content);
+    let al = keyhog_core::testing::allowlist_parse(content);
     assert_eq!(al.credential_hashes.len(), 1);
     assert!(al.ignored_detectors.contains("test"));
 }
@@ -193,7 +202,7 @@ hash:
 path:
 hash:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 ";
-        let al = Allowlist::parse(content);
+        let al = keyhog_core::testing::allowlist_parse(content);
         assert_eq!(al.credential_hashes.len(), 1);
     });
     // Bare non-prefixed lines are path globs (gitignore-style); only malformed
@@ -217,27 +226,43 @@ fn gitleaks_hash_case_insensitive() {
     let upper = "hash:9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08";
     let mixed = "hash:9F86D081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
 
-    let al_lower = Allowlist::parse(lower);
-    let al_upper = Allowlist::parse(upper);
-    let al_mixed = Allowlist::parse(mixed);
+    let al_lower = keyhog_core::testing::allowlist_parse(lower);
+    let al_upper = keyhog_core::testing::allowlist_parse(upper);
+    let al_mixed = keyhog_core::testing::allowlist_parse(mixed);
 
     // Lookups must succeed regardless of how the hex was cased on either side
     // (allowlist file entry, lookup query). All three forms decode to the
     // same 32 bytes.
     let lookup_lower = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
     let lookup_upper = "9F86D081884C7D659A2FEAA0C55AD015A3BF4F1B2B0B822CD15D6C15B0F00A08";
-    assert!(al_lower.is_hash_allowed(lookup_lower));
-    assert!(al_upper.is_hash_allowed(lookup_lower));
-    assert!(al_mixed.is_hash_allowed(lookup_lower));
-    assert!(al_lower.is_hash_allowed(lookup_upper));
+    assert!(keyhog_core::testing::allowlist_is_hash_allowed(
+        &al_lower,
+        lookup_lower
+    ));
+    assert!(keyhog_core::testing::allowlist_is_hash_allowed(
+        &al_upper,
+        lookup_lower
+    ));
+    assert!(keyhog_core::testing::allowlist_is_hash_allowed(
+        &al_mixed,
+        lookup_lower
+    ));
+    assert!(keyhog_core::testing::allowlist_is_hash_allowed(
+        &al_lower,
+        lookup_upper
+    ));
 }
 
 #[test]
 fn raw_hash_lookup_accepts_hex_hashes_directly() {
     let content = "hash:9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
-    let al = Allowlist::parse(content);
-    assert!(al.is_hash_allowed("9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"));
-    assert!(
-        al.is_raw_hash_ignored("9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08")
-    );
+    let al = keyhog_core::testing::allowlist_parse(content);
+    assert!(keyhog_core::testing::allowlist_is_hash_allowed(
+        &al,
+        "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+    ));
+    assert!(keyhog_core::testing::allowlist_is_raw_hash_ignored(
+        &al,
+        "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08"
+    ));
 }

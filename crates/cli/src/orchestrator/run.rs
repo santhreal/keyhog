@@ -216,7 +216,7 @@ impl ScanOrchestrator {
             return Ok(std::process::ExitCode::SUCCESS);
         }
 
-        let allowlist = load_allowlist(self.args.path.as_deref());
+        let allowlist = load_allowlist(self.args.path.as_deref())?;
         let merkle = self.build_merkle_index();
 
         let sources = crate::sources::build_sources(
@@ -234,7 +234,7 @@ impl ScanOrchestrator {
         let filtered = self.filter_and_resolve(all_matches, &allowlist);
         let findings_pre_rules = self.finalize(filtered).await?;
 
-        let rule_suppressor = load_rule_suppressor(self.args.path.as_deref());
+        let rule_suppressor = load_rule_suppressor(self.args.path.as_deref())?;
         let pre_rule_count = findings_pre_rules.len();
         let hide_client_safe = self.args.hide_client_safe;
         let mut client_safe_dropped = 0usize;

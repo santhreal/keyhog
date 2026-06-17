@@ -10,28 +10,40 @@
 ///   - `path:<glob>` - ignore files matching a glob pattern
 ///   - `# comment` - comments
 ///   - blank lines are skipped
-use std::collections::HashMap;
 use std::collections::HashSet;
-use std::path::Component;
 use std::path::Path;
 
 use crate::merkle_spec_hash::hex_nibble;
 use crate::VerifiedFinding;
 
-// Submodule lives in `allowlist/` (native resolution), matching the
+// Submodules live in `allowlist/` (native resolution), matching the
 // `foo.rs` + `foo/` layout used across the workspace.
 mod metadata;
 use metadata::*;
+
+// Path-glob matching (normalization, segment automaton, first-segment bucketed
+// index) is its own subsystem; the `Allowlist` holds a precompiled index and
+// delegates every path decision to it.
+mod glob;
+use glob::{normalize_path, PathGlobIndex};
 
 /// User-defined suppressions loaded from `.keyhogignore`: credential hashes, detector IDs, and path globs.
 ///
 /// # Examples
 ///
 /// ```rust
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// use keyhog_core::allowlist::Allowlist;
 ///
-/// let allowlist = Allowlist::parse("detector:demo-token\npath:**/*.md\n");
+/// let path = std::env::temp_dir().join(format!(
+///     "keyhog_allowlist_struct_{}.keyhogignore",
+///     std::process::id()
+/// ));
+/// std::fs::write(&path, "detector:demo-token\npath:**/*.md\n")?;
+/// let allowlist = Allowlist::load(&path)?;
+/// std::fs::remove_file(&path)?;
 /// assert!(allowlist.ignored_detectors.contains("demo-token"));
+/// # Ok(()) }
 /// ```
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Allowlist {
@@ -50,130 +62,17 @@ pub struct Allowlist {
     /// rebuild if ever needed) so the serialized shape is unchanged.
     #[serde(skip)]
     path_index: PathGlobIndex,
+    /// Expired policy lines found while parsing. They are never active
+    /// suppressions; `load` turns them into a user-visible policy error.
+    #[serde(skip)]
+    expired_entries: Vec<ExpiredAllowlistEntry>,
 }
 
-const MAX_GLOB_SEGMENTS: usize = 256;
-const MAX_GLOB_SEGMENT_LEN: usize = 1024;
-
-/// One precompiled ignored-path glob: its normalized segments computed ONCE at
-/// parse time, plus the oversize verdict that `glob_match_normalized` used to
-/// recompute per finding. `anchor` records how the pattern's first segment can
-/// match a path's first segment, so the index can skip patterns that cannot
-/// possibly match a given path without running the full automaton.
 #[derive(Debug, Clone)]
-struct CompiledGlob {
-    /// Normalized pattern segments (the `normalize_path` + `split_segments`
-    /// result, owned). Empty when the pattern normalized to nothing.
-    segments: Vec<String>,
-    /// True when the pattern (or, at match time, the path) is too large to
-    /// match safely - preserves the original `glob_match_normalized` fail-safe.
-    /// A path larger than the cap is rejected at match time; an oversize
-    /// pattern is pre-marked here so it never matches anything.
-    oversize: bool,
-}
-
-/// First-segment bucketed index over the compiled globs. A path can match a
-/// glob only if the glob's first segment is `**` (matches any prefix), or it
-/// matches the path's FIRST segment. Literal first segments key a hash bucket;
-/// wildcard / `**` first segments (which can match many first segments) fall
-/// into `wild_first`, always tested. This turns the per-finding O(rules) sweep
-/// into O(wild_first + matching_literal_bucket), sub-linear in total rule count
-/// for the realistic monorepo `.gitignore` shape (mostly literal-anchored dir
-/// rules), while reproducing `glob_match_segments` bit-for-bit.
-#[derive(Debug, Clone, Default)]
-struct PathGlobIndex {
-    /// Globs whose first segment is a pure literal, keyed by that literal. A
-    /// path is tested only against the bucket for its own first segment.
-    literal_first: HashMap<String, Vec<CompiledGlob>>,
-    /// Globs whose first segment is `**` or contains a `*` wildcard (it can
-    /// match more than one distinct first segment, so it cannot be bucketed by
-    /// a literal). Always tested.
-    wild_first: Vec<CompiledGlob>,
-    /// Globs that normalized to ZERO segments (e.g. a pattern that was only
-    /// `.` / `..` noise). `glob_match_segments(&[], path)` is true only for the
-    /// empty path, so these are kept apart and only consulted for that case.
-    empty_pattern: Vec<CompiledGlob>,
-    /// Number of source patterns this index was compiled from. `ignored_paths`
-    /// is a PUBLIC, mutable field: callers may push/extend/clear it directly
-    /// after construction (the documented `.gitignore`-append workflow). The
-    /// matcher compares this against the live `ignored_paths.len()` and rebuilds
-    /// on mismatch, so a directly-mutated allowlist never silently under- or
-    /// over-suppresses. Construction paths (`parse`/`load`/`empty`) keep it in
-    /// sync, so the hot scanner path never pays the rebuild.
-    source_len: usize,
-}
-
-impl PathGlobIndex {
-    /// Build the index from raw ignored-path patterns. Runs `normalize_path` +
-    /// `split_segments` + the oversize scan ONCE per pattern (the work
-    /// `glob_match_normalized` previously repeated on every finding).
-    fn build(patterns: &[String]) -> Self {
-        let mut index = PathGlobIndex::default();
-        index.source_len = patterns.len();
-        for pattern in patterns {
-            let normalized_pattern = normalize_path(pattern);
-            let segments: Vec<String> = split_segments(&normalized_pattern)
-                .into_iter()
-                .map(str::to_string)
-                .collect();
-            // Mirror the pattern half of the original oversize fail-safe: an
-            // oversize pattern can never match (it returned false before).
-            let oversize = segments.len() > MAX_GLOB_SEGMENTS
-                || segments.iter().any(|s| s.len() > MAX_GLOB_SEGMENT_LEN);
-            let glob = CompiledGlob { segments, oversize };
-
-            match glob.segments.first() {
-                None => index.empty_pattern.push(glob),
-                Some(first) if first == "**" || first.contains('*') => {
-                    index.wild_first.push(glob);
-                }
-                Some(first) => {
-                    index
-                        .literal_first
-                        .entry(first.clone())
-                        .or_default()
-                        .push(glob);
-                }
-            }
-        }
-        index
-    }
-
-    /// True when any compiled glob matches `normalized_path`. Tests only the
-    /// candidate set for `normalized_path`'s first segment plus the always-on
-    /// wildcard-anchored globs - never the full rule list.
-    fn matches(&self, normalized_path: &str) -> bool {
-        let path_segments = split_segments(normalized_path);
-
-        // Path-side oversize fail-safe (was recomputed per pattern before).
-        let path_oversize = path_segments.len() > MAX_GLOB_SEGMENTS
-            || path_segments.iter().any(|s| s.len() > MAX_GLOB_SEGMENT_LEN);
-        if path_oversize {
-            tracing::warn!(
-                "skipping oversized allowlist path match ({} segments). Fix: shorten the path",
-                path_segments.len()
-            );
-            return false;
-        }
-
-        let test = |glob: &CompiledGlob| -> bool {
-            !glob.oversize && glob_match_segments(&glob.segments, &path_segments)
-        };
-
-        // Empty path: only a zero-segment pattern (or a `**`-led one, which is
-        // in wild_first) can match. Mirror `glob_match_segments(&[], &[])`.
-        if path_segments.is_empty() {
-            return self.empty_pattern.iter().any(test) || self.wild_first.iter().any(test);
-        }
-
-        let first = path_segments[0];
-        if let Some(bucket) = self.literal_first.get(first) {
-            if bucket.iter().any(test) {
-                return true;
-            }
-        }
-        self.wild_first.iter().any(test)
-    }
+struct ExpiredAllowlistEntry {
+    line_number: usize,
+    entry: String,
+    expires: String,
 }
 
 impl Allowlist {
@@ -193,6 +92,7 @@ impl Allowlist {
             ignored_detectors: HashSet::new(),
             ignored_paths: Vec::new(),
             path_index: PathGlobIndex::default(),
+            expired_entries: Vec::new(),
         }
     }
 
@@ -210,7 +110,11 @@ impl Allowlist {
     /// ```
     pub fn load(path: &Path) -> Result<Self, std::io::Error> {
         let contents = std::fs::read_to_string(path)?;
-        Ok(Self::parse(&contents))
+        let allowlist = Self::parse(&contents);
+        if !allowlist.expired_entries.is_empty() {
+            return Err(allowlist.expired_entries_error(path));
+        }
+        Ok(allowlist)
     }
 
     /// Parse allowlist from string content.
@@ -218,10 +122,18 @@ impl Allowlist {
     /// # Examples
     ///
     /// ```rust
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use keyhog_core::allowlist::Allowlist;
     ///
-    /// let allowlist = Allowlist::parse("path:**/.env\ndetector:demo-token\n");
+    /// let path = std::env::temp_dir().join(format!(
+    ///     "keyhog_allowlist_parse_{}.keyhogignore",
+    ///     std::process::id()
+    /// ));
+    /// std::fs::write(&path, "path:**/.env\ndetector:demo-token\n")?;
+    /// let allowlist = Allowlist::load(&path)?;
+    /// std::fs::remove_file(&path)?;
     /// assert!(allowlist.is_path_ignored("app/.env"));
+    /// # Ok(()) }
     /// ```
     pub fn parse(content: &str) -> Self {
         let mut al = Self::empty();
@@ -234,14 +146,19 @@ impl Allowlist {
             // Optional inline metadata: `entry; reason="..."; expires=YYYY-MM-DD; approved_by="..."`
             // Each `;`-separated token after the first is a key=value pair.
             let mut parts = raw_line.splitn(2, ';');
-            let entry = parts.next().unwrap_or("").trim();
-            let metadata = parts.next().unwrap_or("");
+            let entry = parts.next().unwrap_or("").trim(); // LAW10: missing/non-string field => empty/placeholder; recall-safe
+            let metadata = parts.next().unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
             let parsed_meta = parse_inline_metadata(metadata);
 
             // Drop entries whose `expires` is past - keeps `.keyhogignore`
             // self-cleaning for short-lived approvals (Tier-B #18 governance).
             if let Some(exp) = parsed_meta.expires.as_deref() {
                 if exp < today.as_str() {
+                    al.expired_entries.push(ExpiredAllowlistEntry {
+                        line_number: line_number + 1,
+                        entry: entry.to_string(),
+                        expires: exp.to_string(),
+                    });
                     tracing::warn!(
                         "allowlist entry expired on {} (today is {}): '{}'",
                         exp,
@@ -313,6 +230,30 @@ impl Allowlist {
         al
     }
 
+    fn expired_entries_error(&self, path: &Path) -> std::io::Error {
+        let first = &self.expired_entries[0];
+        let extra = self.expired_entries.len().saturating_sub(1);
+        let suffix = if extra == 0 {
+            String::new()
+        } else if extra == 1 {
+            " (+1 more expired entry)".to_string()
+        } else {
+            format!(" (+{extra} more expired entries)")
+        };
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "{} contains expired allowlist policy at line {}: '{}' expired on {}{}. \
+                 Remove the entry or renew its expires metadata; refusing to scan with stale suppressions.",
+                path.display(),
+                first.line_number,
+                first.entry,
+                first.expires,
+                suffix
+            ),
+        )
+    }
+
     /// Check whether detector or path rules suppress a verified finding.
     ///
     /// Hash-based suppression is evaluated earlier on [`crate::RawMatch`] values
@@ -321,33 +262,19 @@ impl Allowlist {
     /// # Examples
     ///
     /// ```rust
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use keyhog_core::allowlist::Allowlist;
-    /// use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
-    /// use std::collections::HashMap;
     ///
-    /// let allowlist = Allowlist::parse("detector:demo-token\n");
-    /// let finding = VerifiedFinding {
-    ///     detector_id: "demo-token".into(),
-    ///     detector_name: "Demo Token".into(),
-    ///     service: "demo".into(),
-    ///     severity: Severity::High,
-    ///     credential_redacted: "demo_...1234".into(),
-    ///     location: MatchLocation {
-    ///         source: "fs".into(),
-    ///         file_path: Some("src/main.rs".into()),
-    ///         line: Some(1),
-    ///         offset: 0,
-    ///         commit: None,
-    ///         author: None,
-    ///         date: None,
-    ///     },
-    ///     verification: VerificationResult::Unverifiable,
-    ///     metadata: std::collections::HashMap::new(),
-    ///     additional_locations: Vec::new(),
-    ///     confidence: None,
-    ///     credential_hash: [0u8; 32],
-    /// };
-    /// assert!(allowlist.is_allowed(&finding));
+    /// let path = std::env::temp_dir().join(format!(
+    ///     "keyhog_allowlist_allowed_{}.keyhogignore",
+    ///     std::process::id()
+    /// ));
+    /// std::fs::write(&path, "detector:demo-token\npath:src/*.rs\n")?;
+    /// let allowlist = Allowlist::load(&path)?;
+    /// std::fs::remove_file(&path)?;
+    /// assert!(allowlist.ignored_detectors.contains("demo-token"));
+    /// assert!(allowlist.is_path_ignored("src/main.rs"));
+    /// # Ok(()) }
     /// ```
     pub fn is_allowed(&self, finding: &VerifiedFinding) -> bool {
         let detector_ignored = self.ignored_detectors.contains(&*finding.detector_id);
@@ -367,10 +294,18 @@ impl Allowlist {
     /// # Examples
     ///
     /// ```rust
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use keyhog_core::allowlist::Allowlist;
     ///
-    /// let allowlist = Allowlist::parse("");
-    /// assert!(!allowlist.is_hash_allowed("demo_ABC12345"));
+    /// let path = std::env::temp_dir().join(format!(
+    ///     "keyhog_allowlist_hash_{}.keyhogignore",
+    ///     std::process::id()
+    /// ));
+    /// std::fs::write(&path, "hash:0000000000000000000000000000000000000000000000000000000000000000\n")?;
+    /// let allowlist = Allowlist::load(&path)?;
+    /// std::fs::remove_file(&path)?;
+    /// assert!(allowlist.is_hash_ignored(&[0u8; 32]));
+    /// # Ok(()) }
     /// ```
     pub fn is_hash_allowed(&self, credential: &str) -> bool {
         parse_sha256_hex(credential).is_some_and(|bytes| self.matches_ignored_hash(&bytes))
@@ -394,10 +329,18 @@ impl Allowlist {
     /// # Examples
     ///
     /// ```rust
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// use keyhog_core::allowlist::Allowlist;
     ///
-    /// let allowlist = Allowlist::parse("path:**/*.md\n");
+    /// let path = std::env::temp_dir().join(format!(
+    ///     "keyhog_allowlist_path_{}.keyhogignore",
+    ///     std::process::id()
+    /// ));
+    /// std::fs::write(&path, "path:**/*.md\n")?;
+    /// let allowlist = Allowlist::load(&path)?;
+    /// std::fs::remove_file(&path)?;
     /// assert!(allowlist.is_path_ignored("docs/README.md"));
+    /// # Ok(()) }
     /// ```
     pub fn is_path_ignored(&self, path: &str) -> bool {
         let normalized = normalize_path(path);
@@ -411,7 +354,7 @@ impl Allowlist {
     /// always takes the fast branch; only a hand-mutated allowlist pays the
     /// one-off rebuild, and it pays it for correctness, not silently skips it.
     fn path_matches(&self, normalized_path: &str) -> bool {
-        if self.path_index.source_len == self.ignored_paths.len() {
+        if self.path_index.source_len() == self.ignored_paths.len() {
             self.path_index.matches(normalized_path)
         } else {
             PathGlobIndex::build(&self.ignored_paths).matches(normalized_path)
@@ -428,154 +371,6 @@ impl Allowlist {
         // see audit release-2026-04-26.)
         self.credential_hashes.contains(hash)
     }
-}
-
-fn split_segments(path: &str) -> Vec<&str> {
-    if path.is_empty() {
-        Vec::new()
-    } else {
-        path.split(['/', '\\']).collect()
-    }
-}
-
-/// Segment-automaton glob match. Pattern segments are accepted by reference
-/// (`AsRef<str>`) so the precompiled `Vec<String>` index entries match WITHOUT
-/// re-borrowing into a `Vec<&str>` per finding; the path segments stay
-/// `&[&str]` (borrowed from the normalized path string). The matching logic is
-/// byte-for-byte the original automaton - only the pattern element type was
-/// generalized, so suppression decisions are identical.
-fn glob_match_segments<S: AsRef<str>>(pattern: &[S], path: &[&str]) -> bool {
-    let mut states = vec![false; path.len() + 1];
-    states[0] = true;
-
-    for segment in pattern {
-        let segment = segment.as_ref();
-        let mut next = vec![false; path.len() + 1];
-        if segment == "**" {
-            let mut reachable = false;
-            for idx in 0..=path.len() {
-                reachable |= states[idx];
-                next[idx] = reachable;
-            }
-        } else {
-            for idx in 0..path.len() {
-                if states[idx] && segment_match(segment, path[idx]) {
-                    next[idx + 1] = true;
-                }
-            }
-        }
-        states = next;
-    }
-
-    states[path.len()]
-}
-
-fn segment_match(pattern: &str, text: &str) -> bool {
-    if pattern.is_ascii() && text.is_ascii() {
-        return segment_match_ascii(pattern.as_bytes(), text.as_bytes());
-    }
-
-    segment_match_chars(pattern, text)
-}
-
-#[allow(clippy::similar_names)] // star_pi / star_ti name the same Kleene-star state in two coordinate systems
-fn segment_match_ascii(pattern: &[u8], text: &[u8]) -> bool {
-    let mut pi = 0usize;
-    let mut ti = 0usize;
-    let mut star_pi = None;
-    let mut star_ti = 0usize;
-
-    while ti < text.len() {
-        if pi < pattern.len() && pattern[pi] == b'*' {
-            star_pi = Some(pi);
-            star_ti = ti;
-            pi += 1;
-            continue;
-        }
-
-        if pi < pattern.len() && pattern[pi] == text[ti] {
-            pi += 1;
-            ti += 1;
-            continue;
-        }
-
-        if let Some(star) = star_pi {
-            star_ti += 1;
-            ti = star_ti;
-            pi = star + 1;
-            continue;
-        }
-
-        return false;
-    }
-
-    while pi < pattern.len() && pattern[pi] == b'*' {
-        pi += 1;
-    }
-
-    pi == pattern.len()
-}
-
-#[allow(clippy::similar_names)] // star_pi / star_ti name the same Kleene-star state in two coordinate systems
-fn segment_match_chars(pattern: &str, text: &str) -> bool {
-    let pattern_chars: Vec<char> = pattern.chars().collect();
-    let text_chars: Vec<char> = text.chars().collect();
-
-    let mut pi = 0usize;
-    let mut ti = 0usize;
-    let mut star_pi = None;
-    let mut star_ti = 0usize;
-
-    while ti < text_chars.len() {
-        if pi < pattern_chars.len() && pattern_chars[pi] == '*' {
-            star_pi = Some(pi);
-            star_ti = ti;
-            pi += 1;
-            continue;
-        }
-
-        if pi < pattern_chars.len() && pattern_chars[pi] == text_chars[ti] {
-            pi += 1;
-            ti += 1;
-            continue;
-        }
-
-        if let Some(star) = star_pi {
-            star_ti += 1;
-            ti = star_ti;
-            pi = star + 1;
-            continue;
-        }
-
-        return false;
-    }
-
-    while pi < pattern_chars.len() && pattern_chars[pi] == '*' {
-        pi += 1;
-    }
-
-    pi == pattern_chars.len()
-}
-
-fn normalize_path(path: &str) -> String {
-    let path = path.replace('\\', "/");
-    let mut parts = Vec::new();
-    for component in Path::new(&path).components() {
-        match component {
-            Component::CurDir => {}
-            Component::ParentDir => {
-                if !parts.is_empty() && parts.last().is_some_and(|part| part != "..") {
-                    parts.pop();
-                } else {
-                    parts.push("..".to_string());
-                }
-            }
-            Component::Normal(part) => parts.push(part.to_string_lossy().into_owned()),
-            Component::RootDir => parts.clear(),
-            Component::Prefix(prefix) => parts.push(prefix.as_os_str().to_string_lossy().into()),
-        }
-    }
-    parts.join("/")
 }
 
 fn parse_sha256_hex(input: &str) -> Option<[u8; 32]> {
@@ -600,7 +395,7 @@ fn parse_sha256_hex(input: &str) -> Option<[u8; 32]> {
 
 /// Inline metadata parsed from a `.keyhogignore` line trailer. Used to
 /// implement enterprise governance fields (`reason`, `expires`,
-/// `approved_by`) per audits/legendary-2026-04-26 Tier-B #18.
+/// `approved_by`) per docs/EXECUTION_PLAN.md Tier-B #18.
 #[derive(Default, Debug)]
 struct InlineMetadata {
     reason: Option<String>,

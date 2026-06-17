@@ -1,5 +1,6 @@
 mod support;
 
+pub mod allowlist_policy_fail_closed_contract;
 pub mod allowlist_root_directory_unchanged;
 pub mod allowlist_root_file_uses_parent;
 pub mod allowlist_root_file_without_parent_falls_back_dot;
