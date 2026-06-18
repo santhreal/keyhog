@@ -1265,6 +1265,22 @@ if [ -f install.ps1 ]; then
         _record_fail "19.24 install.ps1 classifies wizard failures" \
             "missing Warn-WizardCommandFailure/LASTEXITCODE/unknown-subcommand-only hint"
     fi
+    if grep -q 'Show-AutorouteCalibrationSummary -ProbeCount' install.ps1 \
+       && grep -q 'ConvertFrom-Json -ErrorAction Stop' install.ps1 \
+       && grep -q 'selected backend margin' install.ps1; then
+        _record_pass "19.25 install.ps1 renders persisted autoroute calibration decisions"
+    else
+        _record_fail "19.25 install.ps1 renders persisted autoroute calibration decisions" \
+            "PowerShell calibration must read the cache JSON and print selected backend margins"
+    fi
+    if grep -q 'Get-AutorouteCachePathForInstall' install.ps1 \
+       && grep -q 'KEYHOG_AUTOROUTE_CACHE' install.ps1 \
+       && grep -q 'LocalApplicationData' install.ps1; then
+        _record_pass "19.26 install.ps1 resolves the same persistent autoroute cache path"
+    else
+        _record_fail "19.26 install.ps1 resolves the same persistent autoroute cache path" \
+            "missing KEYHOG_AUTOROUTE_CACHE override or LocalApplicationData default"
+    fi
 fi
 
 # ======================================================================

@@ -322,6 +322,106 @@ function Verify-LocalChecksum {
     return $false
 }
 
+function Get-AutorouteCachePathForInstall {
+    $raw = [Environment]::GetEnvironmentVariable('KEYHOG_AUTOROUTE_CACHE')
+    if ($null -ne $raw) {
+        $trimmed = $raw.Trim()
+        if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed.ToLowerInvariant() -in @('0', 'off')) {
+            return $null
+        }
+        if ($trimmed -match '^[A-Za-z]:[\\/]' -or $trimmed -match '^\\\\') {
+            return $trimmed
+        }
+        Warn "Autoroute cache summary cannot use KEYHOG_AUTOROUTE_CACHE=$trimmed; the binary requires an absolute cache path."
+        return $null
+    }
+
+    $root = $env:LOCALAPPDATA
+    if (-not $root) {
+        $root = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+    }
+    if (-not $root) { return $null }
+    return (Join-Path (Join-Path $root 'keyhog') 'autoroute.json')
+}
+
+function Format-AutorouteByteCount {
+    param([UInt64]$Bytes)
+    if ($Bytes -ge 1GB) { return ('{0:N1}GiB' -f ($Bytes / 1GB)) }
+    if ($Bytes -ge 1MB) { return ('{0:N1}MiB' -f ($Bytes / 1MB)) }
+    if ($Bytes -ge 1KB) { return ('{0:N1}KiB' -f ($Bytes / 1KB)) }
+    return ("${Bytes}B")
+}
+
+function Format-AutorouteMs {
+    param($Value)
+    if ($null -eq $Value) { return '-' }
+    $text = [string]$Value
+    if ([string]::IsNullOrWhiteSpace($text)) { return '-' }
+    return "${text}ms"
+}
+
+function Format-AutorouteMargin {
+    param($Value)
+    if ($null -eq $Value) { return 'tie' }
+    $ns = [double]$Value
+    if ($ns -le 0) { return 'tie' }
+    if ($ns -lt 1000) { return ('{0:N0}ns' -f $ns) }
+    if ($ns -lt 1000000) { return ('{0:N1}us' -f ($ns / 1000)) }
+    if ($ns -lt 1000000000) { return ('{0:N1}ms' -f ($ns / 1000000)) }
+    return ('{0:N2}s' -f ($ns / 1000000000))
+}
+
+function Show-AutorouteCalibrationSummary {
+    param([int]$ProbeCount, [datetime]$StartedAt)
+    $cachePath = Get-AutorouteCachePathForInstall
+    if (-not $cachePath) {
+        Warn "Autoroute calibration summary unavailable: persistent autoroute cache is disabled or invalid."
+        return $false
+    }
+    if (-not (Test-Path -PathType Leaf $cachePath)) {
+        Warn "Autoroute calibration summary unavailable: no readable cache at $cachePath."
+        return $false
+    }
+
+    try {
+        $cache = Get-Content -Raw -Path $cachePath -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        Warn "Autoroute calibration summary unavailable: could not parse persisted cache at ${cachePath}: $($_.Exception.Message)"
+        return $false
+    }
+
+    $rows = @()
+    foreach ($pair in @($cache.decisions)) {
+        $items = @($pair)
+        if ($items.Count -lt 2) { continue }
+        $decision = $items[1]
+        if (-not $decision.backend) { continue }
+        $sampleBytes = if ($null -ne $decision.sample_bytes) { [UInt64]$decision.sample_bytes } else { [UInt64]0 }
+        $sampleChunks = if ($null -ne $decision.sample_chunks) { [int]$decision.sample_chunks } else { 0 }
+        $sample = '{0} / {1}ch' -f (Format-AutorouteByteCount $sampleBytes), $sampleChunks
+        $rows += ('  {0,-18} {1,-16} {2,-9} {3,-7} {4,-7} {5,-7}' -f `
+            $sample, `
+            ([string]$decision.backend), `
+            (Format-AutorouteMargin $decision.selected_margin_ns), `
+            (Format-AutorouteMs $decision.simd_ms), `
+            (Format-AutorouteMs $decision.cpu_ms), `
+            (Format-AutorouteMs $decision.gpu_ms))
+    }
+    if ($rows.Count -eq 0) {
+        Warn "Autoroute calibration summary unavailable: persisted cache at $cachePath has no decisions."
+        return $false
+    }
+
+    $elapsed = [math]::Max(0, [math]::Round(((Get-Date) - $StartedAt).TotalSeconds, 1))
+    Say ""
+    Info "Autoroute calibration decisions"
+    Dim "  cache: $cachePath"
+    Say ('  probes: {0} in {1}s; decisions persisted: {2}' -f $ProbeCount, $elapsed, $rows.Count)
+    Say '  sample/chunks       selected backend margin    simd    cpu     gpu'
+    foreach ($row in $rows) { Say $row }
+    return $true
+}
+
 function Invoke-AutorouteCalibration {
     param($BinPath)
     $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("keyhog-autoroute-prime-{0}" -f ([System.Guid]::NewGuid()))
@@ -335,6 +435,7 @@ function Invoke-AutorouteCalibration {
         Say ""
         Info "Autoroute calibration"
         Dim "  visible install phase; persistent until you run install.ps1 -Calibrate again"
+        $calibrationStartedAt = Get-Date
         $oldCal = $env:KEYHOG_AUTOROUTE_CALIBRATE
         $oldBatch = $env:KEYHOG_BATCH_PIPELINE
         $oldGpu = $env:KEYHOG_GPU_AUTOROUTE
@@ -573,6 +674,10 @@ function Invoke-AutorouteCalibration {
             if ($unavailableCalibrations.Count -gt 0) {
                 Warn ("Autoroute calibration incomplete for unavailable source classes: {0}." -f ($unavailableCalibrations -join ', '))
                 Warn "Install the required source tools and rerun install.ps1 -Calibrate before using those source routes."
+            }
+            if (-not (Show-AutorouteCalibrationSummary -ProbeCount $workloads.Count -StartedAt $calibrationStartedAt)) {
+                Err "Autoroute calibration completed but persisted decisions could not be read back."
+                return $false
             }
             Ok "Autoroute calibration phase complete."
             return $true
