@@ -150,6 +150,27 @@ case "$1" in
 esac
 SH
 
+# Binary that installs successfully, then fails the optional wizard's completion
+# and hook commands with concrete stderr. The PTY test must surface those exact
+# reasons instead of blaming an old/missing subcommand.
+cat > "$FIX_DIR/fake_keyhog_wizard_fail" <<'SH'
+#!/bin/sh
+case "$1" in
+  --version) echo "KeyHog v9.9.9 (mock)" ;;
+  doctor)    echo "mock doctor: healthy"; exit 0 ;;
+  scan)
+    case "${2:-}" in
+      --help) echo "Usage: keyhog scan [--no-config]" ;;
+      *) ;;
+    esac
+    exit 0
+    ;;
+  completion) echo "completion disk denied" >&2; exit 13 ;;
+  hook)       echo "hook denied by policy" >&2; exit 12 ;;
+  *) ;;
+esac
+SH
+
 # Binary that advertises Docker source support while the sandbox intentionally
 # lacks docker. Install must still calibrate filesystem/stdin and tell the
 # operator Docker source autorouting is not calibrated on this host.
@@ -994,6 +1015,41 @@ else
     _record_fail "19.18 install.sh calibration TERM terminates active probe" "signal path was not reached"
 fi
 rm -rf "$signal_state" "$signal_tmp" "$sb" "$h"
+if command -v script >/dev/null 2>&1 && script -qefc true /dev/null >/dev/null 2>&1; then
+    reset_mocks
+    sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
+    repo="$h/repo"
+    mkdir -p "$repo/.git"
+    wizard_cmd="cd $repo && env -i PATH=$h/.local/bin:$sb/bin HOME=$h SHELL=/bin/bash KEYHOG_INSTALL=$h/.local/bin MOCK_STATE_DIR=$h/state MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_wizard_fail MOCK_FALLBACK=404 MOCK_SHA=match MOCK_LDD=ok KEYHOG_VARIANT=auto KEYHOG_VERSION=v9.9.9 sh $INSTALL_SH --no-color"
+    out=$(printf 'y\ny\ny\n' | script -qefc "$wizard_cmd" /dev/null 2>&1); st=$?
+    expect_status "19.19 interactive wizard failure test exits 0" 0 "$st"
+    expect_match  "19.20 completion wizard surfaces real stderr" "completion generation failed: completion disk denied" "$out"
+    expect_match  "19.21 hook wizard surfaces real stderr" "pre-commit hook install failed: hook denied by policy" "$out"
+    expect_nomatch "19.22 wizard failures are not mis-attributed to upgrade" "upgrade keyhog|v0\\.5\\.30" "$out"
+    rm -rf "$sb" "$h"
+else
+    skip "19.19 interactive wizard failure test exits 0" "script(1) PTY helper unavailable"
+    skip "19.20 completion wizard surfaces real stderr" "script(1) PTY helper unavailable"
+    skip "19.21 hook wizard surfaces real stderr" "script(1) PTY helper unavailable"
+    skip "19.22 wizard failures are not mis-attributed to upgrade" "script(1) PTY helper unavailable"
+fi
+if [ -f install.ps1 ]; then
+    if grep -q 'completion powershell > $file 2> $errFile' install.ps1 \
+       && grep -q 'hook install 2> $errFile' install.ps1; then
+        _record_pass "19.23 install.ps1 captures wizard stderr for completion and hook"
+    else
+        _record_fail "19.23 install.ps1 captures wizard stderr" \
+            "completion/hook wizard calls must redirect native stderr to errFile"
+    fi
+    if grep -q 'Warn-WizardCommandFailure' install.ps1 \
+       && grep -q '$LASTEXITCODE' install.ps1 \
+       && grep -q 'upgrade keyhog and rerun install' install.ps1; then
+        _record_pass "19.24 install.ps1 classifies wizard failures before showing upgrade hint"
+    else
+        _record_fail "19.24 install.ps1 classifies wizard failures" \
+            "missing Warn-WizardCommandFailure/LASTEXITCODE/unknown-subcommand-only hint"
+    fi
+fi
 
 # ======================================================================
 # 20. recoverability: a failed upgrade/repair must never leave the host

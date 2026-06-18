@@ -94,6 +94,39 @@ function Confirm-Choice {
     }
 }
 
+function Get-FirstErrorLine {
+    param([string]$Path, [string]$Fallback)
+    $line = $null
+    if ($Path -and (Test-Path $Path)) {
+        $line = Get-Content -Path $Path -TotalCount 1 -ErrorAction SilentlyContinue
+    }
+    if ($line) { return [string]$line }
+    return $Fallback
+}
+
+function Test-WizardCommandUnavailable {
+    param([string]$Reason)
+    return ($Reason -match '(?i)(unknown|unrecognized|invalid|no such)\s+subcommand')
+}
+
+function Warn-WizardCommandFailure {
+    param(
+        [string]$Label,
+        [string]$ErrFile,
+        [string]$UnavailableMessage,
+        [string]$DirectHint,
+        [string]$Fallback
+    )
+    $reason = Get-FirstErrorLine $ErrFile $Fallback
+    if ($UnavailableMessage -and (Test-WizardCommandUnavailable $reason)) {
+        Warn $UnavailableMessage
+    } elseif ($reason) {
+        Warn "  $Label failed: $reason"
+    } else {
+        Warn "  $Label failed without stderr. Run '$DirectHint' directly for details."
+    }
+}
+
 # ============================================================
 # detection
 # ============================================================
@@ -949,18 +982,59 @@ function Post-Install-Wizard {
         $dir = Join-Path $env:USERPROFILE 'Documents\PowerShell\Completions'
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
         $file = Join-Path $dir 'keyhog.ps1'
+        $errFile = [System.IO.Path]::GetTempFileName()
         try {
-            & (Join-Path $InstallDir 'keyhog.exe') completion powershell > $file
-            Ok "  Completions at $file. Add 'Import-Module $file' to your `$PROFILE."
+            & (Join-Path $InstallDir 'keyhog.exe') completion powershell > $file 2> $errFile
+            $exit = $LASTEXITCODE
+            if ($exit -eq 0) {
+                Ok "  Completions at $file. Add 'Import-Module $file' to your `$PROFILE."
+            } else {
+                Warn-WizardCommandFailure `
+                    "completion generation" `
+                    $errFile `
+                    "  completion subcommand not in this build, skipping (upgrade keyhog and rerun install)." `
+                    "keyhog.exe completion powershell" `
+                    "exit code $exit"
+                Remove-Item -Force $file -ErrorAction SilentlyContinue
+            }
         } catch {
-            Warn "  completions subcommand not in this build, skipping (upgrade to v0.5.30+)."
+            Warn-WizardCommandFailure `
+                "completion generation" `
+                $errFile `
+                "  completion subcommand not in this build, skipping (upgrade keyhog and rerun install)." `
+                "keyhog.exe completion powershell" `
+                $_.Exception.Message
             Remove-Item -Force $file -ErrorAction SilentlyContinue
+        } finally {
+            Remove-Item -Force $errFile -ErrorAction SilentlyContinue
         }
     }
 
     if (Confirm-Choice "Install a git pre-commit hook in the current directory?" 'N') {
-        try { & (Join-Path $InstallDir 'keyhog.exe') hook install }
-        catch { Warn "  hook subcommand not in this build, skipping (upgrade to v0.5.30+)." }
+        $errFile = [System.IO.Path]::GetTempFileName()
+        try {
+            & (Join-Path $InstallDir 'keyhog.exe') hook install 2> $errFile
+            $exit = $LASTEXITCODE
+            if ($exit -eq 0) {
+                Ok "  Pre-commit hook installed in the current directory."
+            } else {
+                Warn-WizardCommandFailure `
+                    "pre-commit hook install" `
+                    $errFile `
+                    "  hook subcommand not in this build, skipping (upgrade keyhog and rerun install)." `
+                    "keyhog.exe hook install" `
+                    "exit code $exit"
+            }
+        } catch {
+            Warn-WizardCommandFailure `
+                "pre-commit hook install" `
+                $errFile `
+                "  hook subcommand not in this build, skipping (upgrade keyhog and rerun install)." `
+                "keyhog.exe hook install" `
+                $_.Exception.Message
+        } finally {
+            Remove-Item -Force $errFile -ErrorAction SilentlyContinue
+        }
     }
 }
 

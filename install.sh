@@ -1321,6 +1321,29 @@ show_summary() {
     fi
 }
 
+wizard_command_unavailable() {
+    case "$1" in
+      *"unknown subcommand"*|*"unrecognized subcommand"*|*"invalid subcommand"*|*"No such subcommand"*)
+        return 0 ;;
+      *) return 1 ;;
+    esac
+}
+
+warn_wizard_command_failure() {
+    label="$1"
+    errfile="$2"
+    unavailable_msg="$3"
+    direct_hint="$4"
+    reason="$(head -n 1 "$errfile" 2>/dev/null || true)"
+    if [ -n "$unavailable_msg" ] && wizard_command_unavailable "$reason"; then
+        warn "$unavailable_msg"
+    elif [ -n "$reason" ]; then
+        warn "  $label failed: $reason"
+    else
+        warn "  $label failed without stderr. Run '$direct_hint' directly for details."
+    fi
+}
+
 # Offer to wire keyhog into common entry points. Each is opt-in so we
 # never silently mutate config files the user didn't ask us to touch.
 post_install_wizard() {
@@ -1353,9 +1376,19 @@ post_install_wizard() {
 
     if confirm "Wire keyhog as a git pre-commit hook in the CURRENT directory?" N; then
         if [ -d .git ]; then
-            "$INSTALL_DIR/keyhog" hook install 2>/dev/null && \
-                ok "  Pre-commit hook installed in $(pwd)/.git/hooks/pre-commit" || \
-                warn "  keyhog hook install failed in this directory."
+            if ! hook_err="$(mktemp -t keyhog-hook-err-XXXXXX)"; then
+                warn "  pre-commit hook install failed: could not create a temporary stderr file."
+            elif "$INSTALL_DIR/keyhog" hook install 2>"$hook_err"; then
+                ok "  Pre-commit hook installed in $(pwd)/.git/hooks/pre-commit"
+                rm -f "$hook_err"
+            else
+                warn_wizard_command_failure \
+                    "pre-commit hook install" \
+                    "$hook_err" \
+                    "  hook subcommand not in this build, skipping (upgrade keyhog and rerun install)." \
+                    "keyhog hook install"
+                rm -f "$hook_err"
+            fi
         else
             warn "  No .git directory here, skipping."
         fi
@@ -1393,13 +1426,26 @@ install_completions() {
       fish) dir="$HOME/.config/fish/completions"; file="$dir/keyhog.fish" ;;
       *) warn "  Unknown shell ($shell_name), skipping completions."; return ;;
     esac
-    mkdir -p "$dir"
-    if "$INSTALL_DIR/keyhog" completion "$shell_name" > "$file" 2>/dev/null; then
+    if ! completion_err="$(mktemp -t keyhog-completion-err-XXXXXX)"; then
+        warn "  completion generation failed: could not create a temporary stderr file."
+        return
+    fi
+    if ! mkdir -p "$dir" 2>"$completion_err"; then
+        warn_wizard_command_failure "completion directory setup" "$completion_err" "" "mkdir -p $dir"
+        rm -f "$completion_err"
+        return
+    fi
+    if "$INSTALL_DIR/keyhog" completion "$shell_name" > "$file" 2>"$completion_err"; then
         ok "  Completions written to $file"
     else
-        warn "  completions subcommand not in this build, skipping (upgrade to v0.5.30+)."
+        warn_wizard_command_failure \
+            "completion generation" \
+            "$completion_err" \
+            "  completion subcommand not in this build, skipping (upgrade keyhog and rerun install)." \
+            "keyhog completion $shell_name"
         rm -f "$file"
     fi
+    rm -f "$completion_err"
 }
 
 # ============================================================
