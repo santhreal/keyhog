@@ -34,9 +34,9 @@
 #   --no-color          disable ANSI colors
 #   --help / -h         show this help and exit
 #
-# Env overrides (same effect as the flags):
+# Env overrides:
 #   KEYHOG_VERSION, KEYHOG_VARIANT, KEYHOG_INSTALL, KEYHOG_FROM_FILE,
-#   KEYHOG_INSECURE_INSTALL, GITHUB_TOKEN, NO_COLOR
+#   GITHUB_TOKEN, NO_COLOR
 
 set -eu
 
@@ -45,7 +45,7 @@ INSTALL_DIR="${KEYHOG_INSTALL:-$HOME/.local/bin}"
 VERSION="${KEYHOG_VERSION:-}"
 VARIANT="${KEYHOG_VARIANT:-auto}"
 FROM_FILE="${KEYHOG_FROM_FILE:-}"
-INSECURE_INSTALL="${KEYHOG_INSECURE_INSTALL:-0}"
+INSECURE_INSTALL=0
 MODE="install"
 INTERACTIVE=1
 ASSUME_YES=0
@@ -165,7 +165,7 @@ usage() {
 "Modes:  (default) install/upgrade   --repair   --diagnose   --uninstall" \
 "Flags:  --version=vX.Y.Z  --variant=cpu|cuda  --install-dir=PATH" \
 "        --from-file=PATH  --yes/-y  --no-prompt  --insecure  --no-color  --help/-h" \
-"Env:    KEYHOG_VERSION  KEYHOG_VARIANT  KEYHOG_INSTALL  KEYHOG_FROM_FILE  KEYHOG_INSECURE_INSTALL  GITHUB_TOKEN  NO_COLOR"
+"Env:    KEYHOG_VERSION  KEYHOG_VARIANT  KEYHOG_INSTALL  KEYHOG_FROM_FILE  GITHUB_TOKEN  NO_COLOR"
     fi
     exit 0
 }
@@ -483,7 +483,7 @@ allow_unverified_install() {
     reason="$1"
     if [ "$INSECURE_INSTALL" = "1" ]; then
         warn "  INSECURE: $reason"
-        warn "  Proceeding without checksum verification because --insecure or KEYHOG_INSECURE_INSTALL=1 is set."
+        warn "  Proceeding without checksum verification because --insecure is set."
         return 0
     fi
     err "$reason"
@@ -495,7 +495,7 @@ allow_unverified_install() {
 
 # Verify the SHA256 of $1 against the per-asset .sha256 file on the
 # release. Returns 0 on match. Missing proof fails closed unless the
-# operator explicitly chooses --insecure / KEYHOG_INSECURE_INSTALL=1.
+# operator explicitly chooses --insecure.
 verify_checksum() {
     binary="$1"
     asset_name="$2"
@@ -528,7 +528,7 @@ verify_checksum() {
 # written by `sha256sum binary > binary.sha256` or shipped beside a release
 # asset). Used by --from-file installs so an offline/CI install can still
 # integrity-check the artifact. Returns 0 on match. Missing proof fails closed
-# unless the operator explicitly chooses --insecure / KEYHOG_INSECURE_INSTALL=1.
+# unless the operator explicitly chooses --insecure.
 verify_local_checksum() {
     binary="$1"
     sumfile="$2"

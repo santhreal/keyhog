@@ -25,9 +25,9 @@
 #                         checksum mismatches still fail
 #   -NoColor              disable ANSI colors
 #
-# Env overrides (same effect as the flags):
+# Env overrides:
 #   $env:KEYHOG_VERSION, $env:KEYHOG_FROM_FILE, $env:KEYHOG_INSTALL,
-#   $env:KEYHOG_INSECURE_INSTALL, $env:NO_COLOR
+#   $env:NO_COLOR
 
 [CmdletBinding()]
 param(
@@ -46,9 +46,6 @@ param(
 $ErrorActionPreference = 'Stop'
 $Repo = 'santhsecurity/keyhog'
 $Script:InsecureInstall = [bool]$Insecure
-if (-not $Script:InsecureInstall -and ($env:KEYHOG_INSECURE_INSTALL -match '^(1|true|yes)$')) {
-    $Script:InsecureInstall = $true
-}
 
 # ============================================================
 # colors + i/o helpers
@@ -248,7 +245,7 @@ function Allow-UnverifiedInstall {
     param([string]$Reason)
     if ($Script:InsecureInstall) {
         Warn "  INSECURE: $Reason"
-        Warn "  Proceeding without checksum verification because -Insecure or KEYHOG_INSECURE_INSTALL=1 is set."
+        Warn "  Proceeding without checksum verification because -Insecure is set."
         return $true
     }
     Err $Reason
