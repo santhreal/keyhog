@@ -1,7 +1,7 @@
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::CompiledScanner;
 #[test]
-fn scan_skips_detectors_directory_path() {
+fn scan_scans_detectors_directory_path() {
     let d = DetectorSpec {
         tests: Vec::new(),
         id: "a".into(),
@@ -28,5 +28,10 @@ fn scan_skips_detectors_directory_path() {
             ..Default::default()
         },
     };
-    assert!(s.scan(&chunk).is_empty());
+    let matches = s.scan(&chunk);
+    assert_eq!(
+        matches.len(),
+        1,
+        "scanner must scan caller-provided chunks even when the user path contains detectors/: {matches:?}"
+    );
 }

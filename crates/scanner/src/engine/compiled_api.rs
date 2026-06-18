@@ -249,17 +249,6 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
         backend: Option<crate::hw_probe::ScanBackend>,
     ) -> Vec<RawMatch> {
-        if let Some(path) = chunk.metadata.path.as_deref() {
-            let filename = path.rsplit(['/', '\\']).next().unwrap_or(path);
-            if filename == ".keyhog"
-                || filename == ".keyhogignore"
-                || path.split(['/', '\\']).any(|c| c == "detectors")
-            {
-                crate::telemetry::record_file_skipped();
-                return Vec::new();
-            }
-        }
-
         // Direct-match prefilters: skip chunks that carry none of any
         // detector's literal bytes (`AlphabetScreen`) or bigrams (bloom). A
         // FULLY-ENCODED secret (e.g. `data = "<base64-of-ghp_…>"`) carries none

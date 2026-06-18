@@ -1,7 +1,7 @@
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::CompiledScanner;
 #[test]
-fn scan_skips_keyhogignore_path() {
+fn scan_scans_keyhogignore_path_when_source_hands_it_over() {
     let d = DetectorSpec {
         tests: Vec::new(),
         id: "a".into(),
@@ -28,5 +28,10 @@ fn scan_skips_keyhogignore_path() {
             ..Default::default()
         },
     };
-    assert!(s.scan(&chunk).is_empty());
+    let matches = s.scan(&chunk);
+    assert_eq!(
+        matches.len(),
+        1,
+        "scanner must not own source exclusion policy; chunks handed to it are scanned: {matches:?}"
+    );
 }
