@@ -85,6 +85,7 @@ pub(crate) fn try_expand_har(
         let request_len = request_text.len() as u64;
         total_bytes = total_bytes.saturating_add(request_len);
         if total_bytes > budget {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
             tracing::warn!(
                 path = %path_str,
                 budget,
@@ -107,6 +108,7 @@ pub(crate) fn try_expand_har(
         let response_len = response_text.len() as u64;
         total_bytes = total_bytes.saturating_add(response_len);
         if total_bytes > budget {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
             tracing::warn!(
                 path = %path_str,
                 budget,
@@ -374,6 +376,26 @@ mod tests {
         // Looks like HAR (has the markers) but JSON parser will reject.
         let half = br#"{"log": {"entries": [{"request": {"method": "GET", "url": "x"#;
         assert!(try_expand_har(half, "broken.har", 1024).is_none());
+    }
+
+    #[test]
+    fn expansion_budget_truncation_is_counted_source_truncated() {
+        crate::reset_skip_counters();
+
+        let chunks = try_expand_har(fixture().as_bytes(), "cap.har", 1)
+            .expect("valid HAR should parse before the expansion budget fires");
+
+        assert!(
+            chunks.is_empty(),
+            "over-budget expansion must not emit a chunk it cannot prove covered; chunks={chunks:?}"
+        );
+        assert_eq!(
+            crate::skip_counts().source_truncated,
+            1,
+            "HAR expansion budget must surface as a partial source truncation"
+        );
+
+        crate::reset_skip_counters();
     }
 
     /// Build a one-entry HAR whose response body carries the given

@@ -222,7 +222,10 @@ pub(crate) fn report_skip_summary(ansi: bool) {
     }
 
     let c = keyhog_sources::skip_counts();
-    if c.total() == 0 && c.structured_source_parse_failures == 0 {
+    if c.total() == 0
+        && c.source_truncated == 0
+        && c.structured_source_parse_failures == 0
+    {
         return;
     }
     // One stderr line per non-empty skip category, each with the reason AND the
@@ -264,6 +267,15 @@ pub(crate) fn report_skip_summary(ansi: bool) {
             format!(
                 "{} file(s) NOT scanned: unreadable (permission denied or I/O error). These were NOT checked for secrets.",
                 c.unreadable
+            ),
+            true,
+        ));
+    }
+    if c.source_truncated > 0 {
+        lines.push((
+            format!(
+                "{} source scan(s) only PARTIALLY scanned: a source-level aggregate cap was reached before all input was exhausted.",
+                c.source_truncated
             ),
             true,
         ));
