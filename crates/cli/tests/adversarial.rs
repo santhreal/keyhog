@@ -71,14 +71,14 @@ mod keyhog_backend_env_with_scan;
 mod keyhog_detectors_missing_path_ignored;
 #[path = "adversarial/keyhog_detectors_valid_path_unix.rs"]
 mod keyhog_detectors_valid_path_unix;
-#[path = "adversarial/keyhog_threads_empty_string_ignored.rs"]
-mod keyhog_threads_empty_string_ignored;
-#[path = "adversarial/keyhog_threads_invalid_value_ignored.rs"]
-mod keyhog_threads_invalid_value_ignored;
-#[path = "adversarial/keyhog_threads_overflow_clamped.rs"]
-mod keyhog_threads_overflow_clamped;
-#[path = "adversarial/keyhog_threads_zero_uses_defaults.rs"]
-mod keyhog_threads_zero_uses_defaults;
+#[path = "adversarial/keyhog_threads_empty_string_warns.rs"]
+mod keyhog_threads_empty_string_warns;
+#[path = "adversarial/keyhog_threads_invalid_value_warns.rs"]
+mod keyhog_threads_invalid_value_warns;
+#[path = "adversarial/keyhog_threads_overflow_clamp_warns.rs"]
+mod keyhog_threads_overflow_clamp_warns;
+#[path = "adversarial/keyhog_threads_zero_warns.rs"]
+mod keyhog_threads_zero_warns;
 #[path = "adversarial/pipe_stdout_json_valid_unix.rs"]
 mod pipe_stdout_json_valid_unix;
 #[path = "adversarial/pipe_stdout_json_windows_stub.rs"]

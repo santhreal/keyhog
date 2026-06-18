@@ -50,17 +50,14 @@ pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) {
             sanitise_thread_count(t, physical_cores, "cli-arg"),
             "cli-arg",
         )
-    } else if let Ok(env) = std::env::var("KEYHOG_THREADS") {
-        match env.parse::<usize>() {
-            Ok(t) => (
-                sanitise_thread_count(t, physical_cores, "env:KEYHOG_THREADS"),
-                "env:KEYHOG_THREADS",
-            ),
-            Err(error) => {
-                tracing::warn!(value = %env, %error, "ignoring invalid KEYHOG_THREADS value");
-                (physical_cores.max(1), "physical-cores")
-            }
-        }
+    } else if std::env::var_os("KEYHOG_THREADS").is_some() {
+        let default = physical_cores.max(1);
+        let threads =
+            keyhog_core::env_config::usize_at_least_or_default("KEYHOG_THREADS", 1, default);
+        (
+            sanitise_thread_count(threads, physical_cores, "env:KEYHOG_THREADS"),
+            "env:KEYHOG_THREADS",
+        )
     } else {
         (physical_cores.max(1), "physical-cores")
     };
@@ -96,6 +93,9 @@ pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) {
 fn sanitise_thread_count(requested: usize, physical_cores: usize, source: &'static str) -> usize {
     let safe_default = physical_cores.max(1);
     if requested == 0 {
+        eprintln!(
+            "keyhog: invalid {source} thread count 0; expected an integer >= 1; using {safe_default}"
+        );
         tracing::warn!(
             source,
             requested = 0,
@@ -105,6 +105,9 @@ fn sanitise_thread_count(requested: usize, physical_cores: usize, source: &'stat
         return safe_default;
     }
     if requested > MAX_THREADS_CAP {
+        eprintln!(
+            "keyhog: {source} thread count {requested} exceeds cap {MAX_THREADS_CAP}; using {MAX_THREADS_CAP}"
+        );
         tracing::warn!(
             source,
             requested,

@@ -37,7 +37,7 @@ documented here with default, effect, and a typical use case.
 
 | Variable                     | Default            | Effect                                       |
 |------------------------------|--------------------|----------------------------------------------|
-| `KEYHOG_THREADS`             | physical-core count | Pin the rayon worker pool. Useful inside containers where `available_parallelism()` reports the wrong value. |
+| `KEYHOG_THREADS`             | physical-core count | Pin the rayon worker pool. Positive integer only; malformed or zero values are printed to stderr and fall back to the physical-core default, while values above the hard cap are printed to stderr and clamped. Useful inside containers where `available_parallelism()` reports the wrong value. |
 | `KEYHOG_PER_CHUNK_TIMEOUT_MS` | (unset)            | Hard deadline per chunk scan in milliseconds. Recommended `30000` for production scans where bounded latency matters more than scan completeness. |
 | `KEYHOG_DETECTORS`           | (workspace default) | Override the auto-discovered detector directory path. |
 | `KEYHOG_TRUSTED_BIN_DIR`     | (unset)            | Restrict which binary paths the daemon will execute when forking for sub-scans (defense-in-depth knob). |
