@@ -1,7 +1,8 @@
 #![cfg(unix)]
 
-use crate::e2e::support::binary;
-use std::process::Command;
+use crate::e2e::support::{binary, DaemonGuard};
+use std::io::Write;
+use std::process::{Command, Stdio};
 use tempfile::TempDir;
 
 #[test]
@@ -66,6 +67,53 @@ fn forced_daemon_rejects_unenforceable_policy_without_in_process_fallback() {
     );
 }
 
+#[test]
+fn forced_daemon_stdin_honors_cli_byte_limit() {
+    let daemon = DaemonGuard::start();
+
+    let out = daemon_stdin_scan(
+        daemon.runtime_dir(),
+        None,
+        &["--limit-stdin-bytes", "4B"],
+        b"abcdef",
+    );
+
+    let combined = combined_output(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "daemon stdin must enforce --limit-stdin-bytes before scanning; output={combined}"
+    );
+    assert!(
+        combined.contains("stdin exceeds 4 byte limit"),
+        "daemon stdin limit error must name the resolved CLI limit; output={combined}"
+    );
+}
+
+#[test]
+fn forced_daemon_stdin_honors_config_byte_limit() {
+    let daemon = DaemonGuard::start();
+    let work = TempDir::new().expect("work dir");
+    std::fs::write(
+        work.path().join(".keyhog.toml"),
+        "[limits]\nstdin_bytes = \"4B\"\n",
+    )
+    .expect("write config");
+
+    let out = daemon_stdin_scan(daemon.runtime_dir(), Some(work.path()), &[], b"abcdef");
+
+    let combined = combined_output(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "daemon stdin must enforce [limits].stdin_bytes from .keyhog.toml; output={combined}"
+    );
+    assert!(
+        combined.contains("stdin exceeds 4 byte limit"),
+        "daemon stdin limit error must name the resolved config limit; output={combined}"
+    );
+}
+
 fn combined_output(out: &std::process::Output) -> String {
     format!(
         "{}\n{}",
@@ -80,4 +128,31 @@ fn aws_key_line() -> String {
 
 fn aws_key() -> String {
     concat!("AKIA", "QYLPMN5HFIQR7XYA").to_string()
+}
+
+fn daemon_stdin_scan(
+    runtime_dir: &std::path::Path,
+    current_dir: Option<&std::path::Path>,
+    extra_args: &[&str],
+    stdin_bytes: &[u8],
+) -> std::process::Output {
+    let mut cmd = Command::new(binary());
+    cmd.env("XDG_RUNTIME_DIR", runtime_dir)
+        .args(["scan", "--daemon=on", "--stdin", "--format", "json"])
+        .args(extra_args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    if let Some(dir) = current_dir {
+        cmd.current_dir(dir);
+    }
+
+    let mut child = cmd.spawn().expect("spawn daemon stdin scan");
+    child
+        .stdin
+        .take()
+        .expect("child stdin")
+        .write_all(stdin_bytes)
+        .expect("write stdin");
+    child.wait_with_output().expect("daemon stdin output")
 }

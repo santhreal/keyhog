@@ -81,8 +81,8 @@ pub async fn run(args: ScanArgs) -> Result<ExitCode> {
     let policy = EffectivePolicy::resolve(&args);
     #[cfg(unix)]
     match daemon_route(&args, &policy) {
-        DaemonRoute::Required => run_via_daemon(&args).await,
-        DaemonRoute::Opportunistic => match run_via_daemon(&args).await {
+        DaemonRoute::Required => run_via_daemon(&policy.effective_args).await,
+        DaemonRoute::Opportunistic => match run_via_daemon(&policy.effective_args).await {
             Ok(exit) => Ok(exit),
             Err(e) => {
                 tracing::debug!(
@@ -117,6 +117,10 @@ enum DaemonRoute {
 /// what the in-process path will enforce.
 #[cfg(unix)]
 struct EffectivePolicy {
+    /// Routing clone after the quiet config merge. The daemon path must consume
+    /// this, not the raw CLI args, for knobs it can enforce client-side
+    /// (dedup, output, stdin byte limit) to match the in-process route.
+    effective_args: ScanArgs,
     /// `min_confidence` after the config merge (CLI flag OR `.keyhog.toml` /
     /// `[scan]` floor). When `Some`, the daemon's floor-less finalize would
     /// surface findings the in-process path suppresses, so force in-process.
@@ -155,10 +159,14 @@ impl EffectivePolicy {
         // `apply_config_file` here would warn TWICE on a malformed `.keyhog.toml`
         // over the daemon route (HUNT-2).
         let outcome = crate::config::apply_config_file_quiet(&mut probe);
+        let min_confidence = probe.min_confidence;
+        let show_secrets = probe.show_secrets;
+        let severity = probe.severity.is_some();
         EffectivePolicy {
-            min_confidence: probe.min_confidence,
-            show_secrets: probe.show_secrets,
-            severity: probe.severity.is_some(),
+            effective_args: probe,
+            min_confidence,
+            show_secrets,
+            severity,
             require_lockdown: outcome.require_lockdown,
             has_config_errors: !outcome.config_errors.is_empty(),
         }
@@ -294,7 +302,7 @@ async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
     })?;
 
     let matches = if args.stdin {
-        let text = read_stdin_to_string()?;
+        let text = read_stdin_to_string(args)?;
         let resp = conn
             .round_trip(&Request::ScanText { path: None, text })
             .await?;
@@ -330,18 +338,18 @@ async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
 }
 
 #[cfg(unix)]
-fn read_stdin_to_string() -> Result<String> {
+fn read_stdin_to_string(args: &ScanArgs) -> Result<String> {
     use std::io::Read;
-    const STDIN_CAP_BYTES: usize = 10 * 1024 * 1024;
+    let stdin_cap_bytes = args.limits.to_source_limits().stdin_bytes;
     let mut buf = Vec::with_capacity(8 * 1024);
     std::io::stdin()
         .lock()
-        .take(STDIN_CAP_BYTES as u64 + 1)
+        .take(stdin_cap_bytes.saturating_add(1) as u64)
         .read_to_end(&mut buf)
         .context("daemon route: reading stdin")?;
-    if buf.len() > STDIN_CAP_BYTES {
+    if buf.len() > stdin_cap_bytes {
         bail!(
-            "daemon route: stdin exceeds {STDIN_CAP_BYTES} byte limit. \
+            "daemon route: stdin exceeds {stdin_cap_bytes} byte limit. \
              Drop `--daemon` to use the streaming in-process path."
         );
     }
