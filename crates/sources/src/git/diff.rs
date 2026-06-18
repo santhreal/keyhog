@@ -23,6 +23,7 @@ pub struct GitDiffSource {
     repo_path: PathBuf,
     base_ref: String,
     head_ref: Option<String>,
+    limits: crate::SourceLimits,
 }
 
 impl GitDiffSource {
@@ -43,6 +44,7 @@ impl GitDiffSource {
             repo_path,
             base_ref: base_ref.into(),
             head_ref: None,
+            limits: crate::SourceLimits::default(),
         }
     }
 
@@ -62,6 +64,11 @@ impl GitDiffSource {
         self.head_ref = Some(head_ref.into());
         self
     }
+
+    pub fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
+        self.limits = limits;
+        self
+    }
 }
 
 impl Source for GitDiffSource {
@@ -70,7 +77,12 @@ impl Source for GitDiffSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        match stream_added_lines(&self.repo_path, &self.base_ref, self.head_ref.as_deref()) {
+        match stream_added_lines(
+            &self.repo_path,
+            &self.base_ref,
+            self.head_ref.as_deref(),
+            self.limits,
+        ) {
             Ok(iter) => Box::new(iter),
             Err(e) => Box::new(std::iter::once(Err(e))),
         }
@@ -85,6 +97,7 @@ fn stream_added_lines(
     repo_path: &Path,
     base_ref: &str,
     head_ref: Option<&str>,
+    limits: crate::SourceLimits,
 ) -> Result<impl Iterator<Item = Result<Chunk, SourceError>>, SourceError> {
     let base_ref = super::validate_ref_name(base_ref)?;
     let head_ref = head_ref.map(super::validate_ref_name).transpose()?;
@@ -145,43 +158,40 @@ fn stream_added_lines(
         }
 
         loop {
-            let line = match super::read_capped_line(
-                &mut reader,
-                &mut line_buf,
-                super::MAX_GIT_LINE_BYTES,
-            ) {
-                Ok(n) if n > 0 => {
-                    let l = String::from_utf8_lossy(&line_buf);
-                    l.trim_end_matches('\n').trim_end_matches('\r').to_string()
-                }
-                Err(e) => {
-                    done = true;
-                    return Some(Err(SourceError::Io(e)));
-                }
-                Ok(_) => {
-                    done = true;
-                    if let Some(ref path) = current_path {
-                        if !current_content.trim().is_empty() {
-                            return Some(Ok(Chunk {
-                                data: current_content.trim().to_string().into(),
-                                metadata: ChunkMetadata {
-                                    base_offset: 0,
-                                    base_line: current_base_line,
-                                    source_type: "git-diff".into(),
-                                    path: Some(path.clone()),
-                                    commit: Some(metadata_commit.clone()),
-                                    author: Some(author.clone()),
-                                    date: Some(date.clone()),
-                                    mtime_ns: None,
-                                    size_bytes: None,
-                                    decoded_span: None,
-                                },
-                            }));
-                        }
+            let line =
+                match super::read_capped_line(&mut reader, &mut line_buf, limits.git_line_bytes) {
+                    Ok(n) if n > 0 => {
+                        let l = String::from_utf8_lossy(&line_buf);
+                        l.trim_end_matches('\n').trim_end_matches('\r').to_string()
                     }
-                    return None;
-                }
-            };
+                    Err(e) => {
+                        done = true;
+                        return Some(Err(SourceError::Io(e)));
+                    }
+                    Ok(_) => {
+                        done = true;
+                        if let Some(ref path) = current_path {
+                            if !current_content.trim().is_empty() {
+                                return Some(Ok(Chunk {
+                                    data: current_content.trim().to_string().into(),
+                                    metadata: ChunkMetadata {
+                                        base_offset: 0,
+                                        base_line: current_base_line,
+                                        source_type: "git-diff".into(),
+                                        path: Some(path.clone()),
+                                        commit: Some(metadata_commit.clone()),
+                                        author: Some(author.clone()),
+                                        date: Some(date.clone()),
+                                        mtime_ns: None,
+                                        size_bytes: None,
+                                        decoded_span: None,
+                                    },
+                                }));
+                            }
+                        }
+                        return None;
+                    }
+                };
 
             if line.starts_with("diff --git ") {
                 let prev_path = current_path.take();

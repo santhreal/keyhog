@@ -118,11 +118,11 @@ simdsieve = "=0.1.1"
 # CUDA backend is wired in keyhog-scanner behind the `cuda` feature
 # (default on). On hosts without libcuda.so the backend's `acquire()`
 # call fails cleanly and the scanner falls back to wgpu.
-vyre = "=0.6.2"
-vyre_libs = { package = "vyre-libs", version = "=0.6.2" }
-vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "=0.6.2" }
-vyre-driver-cuda = { package = "vyre-driver-cuda", version = "=0.6.2" }
-vyre-runtime = "=0.6.2"
+vyre = "=0.6.3"
+vyre_libs = { package = "vyre-libs", version = "=0.6.3" }
+vyre-driver-wgpu = { package = "vyre-driver-wgpu", version = "=0.6.3" }
+vyre-driver-cuda = { package = "vyre-driver-cuda", version = "=0.6.3" }
+vyre-runtime = "=0.6.3"
 wgpu = "=25.0.2"
 pollster = "=0.4.0"
 bytemuck = { version = "=1.25.0", features = ["derive"] }

@@ -3,10 +3,6 @@
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use std::io::Read;
 
-// Security boundary: stdin is intentionally capped so piped input cannot force
-// an unbounded allocation during scan startup.
-const MAX_STDIN_BYTES: usize = 10 * 1024 * 1024;
-
 /// Reads all of stdin as a single chunk.
 ///
 /// # Examples
@@ -20,37 +16,66 @@ const MAX_STDIN_BYTES: usize = 10 * 1024 * 1024;
 /// ```
 pub struct StdinSource;
 
+/// Stdin source with caller-resolved source limits.
+pub struct ConfiguredStdinSource {
+    limits: crate::SourceLimits,
+}
+
+impl StdinSource {
+    pub fn with_limits(self, limits: crate::SourceLimits) -> ConfiguredStdinSource {
+        ConfiguredStdinSource { limits }
+    }
+}
+
 impl Source for StdinSource {
     fn name(&self) -> &str {
         "stdin"
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        let stdin_read = read_stdin_limited(MAX_STDIN_BYTES);
-
-        Box::new(std::iter::once(match stdin_read {
-            Ok(data) => Ok(Chunk {
-                data: data.into(),
-                metadata: ChunkMetadata {
-                    base_offset: 0,
-                    base_line: 0,
-                    source_type: "stdin".into(),
-                    path: None,
-                    commit: None,
-                    author: None,
-                    date: None,
-                    mtime_ns: None,
-                    size_bytes: None,
-                    decoded_span: None,
-                },
-            }),
-            Err(e) => Err(SourceError::Io(e)),
-        }))
+        chunks_with_limit(crate::SourceLimits::default().stdin_bytes)
     }
 
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+}
+
+impl Source for ConfiguredStdinSource {
+    fn name(&self) -> &str {
+        "stdin"
+    }
+
+    fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
+        chunks_with_limit(self.limits.stdin_bytes)
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
+
+fn chunks_with_limit(max_bytes: usize) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>>> {
+    let stdin_read = read_stdin_limited(max_bytes);
+
+    Box::new(std::iter::once(match stdin_read {
+        Ok(data) => Ok(Chunk {
+            data: data.into(),
+            metadata: ChunkMetadata {
+                base_offset: 0,
+                base_line: 0,
+                source_type: "stdin".into(),
+                path: None,
+                commit: None,
+                author: None,
+                date: None,
+                mtime_ns: None,
+                size_bytes: None,
+                decoded_span: None,
+            },
+        }),
+        Err(e) => Err(SourceError::Io(e)),
+    }))
 }
 
 fn read_stdin_limited(max_bytes: usize) -> std::io::Result<String> {

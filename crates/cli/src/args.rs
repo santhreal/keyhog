@@ -1,7 +1,9 @@
 //! Command-line argument parsing for KeyHog.
 
+mod limits;
 mod scan;
 
+pub use limits::SourceLimitArgs;
 pub use scan::ScanArgs;
 
 use clap::{Parser, ValueEnum};

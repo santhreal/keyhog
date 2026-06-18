@@ -26,6 +26,7 @@ pub mod pdf_not_in_skip_extensions;
 pub mod read_file_safe_capped_in_source;
 pub mod s3_max_object_bytes_in_source;
 pub mod seven_zip_not_in_skip_extensions;
+pub mod source_limits_single_owner;
 pub mod stdin_max_bytes_cap_in_source;
 pub mod unix_open_no_follow_in_read;
 pub mod walker_follow_symlinks_disabled;

@@ -369,6 +369,7 @@ impl ScanOrchestrator {
                 disabled_detectors: std::collections::HashSet::new(),
                 require_lockdown: false,
                 regex_dfa_limit: None,
+                source_limits: keyhog_sources::SourceLimits::default(),
             },
         }
     }

@@ -10,20 +10,6 @@ use gix::objs::Kind;
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use rayon::prelude::*;
 
-/// Maximum total in-memory bytes for all git blob content.
-/// 256 MiB covers large monorepos without OOM.
-const MAX_GIT_TOTAL_BYTES: usize = 256 * 1024 * 1024;
-
-/// Maximum size of a single git blob. Larger objects (binaries, vendor bundles)
-/// are skipped entirely - secrets almost never appear in 10+ MiB files.
-const MAX_GIT_BLOB_BYTES: u64 = 10 * 1024 * 1024;
-
-/// Maximum number of chunks the git source can produce.
-/// Guards against repos with millions of tiny files where the byte limit alone
-/// wouldn't cap memory: each chunk carries ~200 bytes of metadata overhead,
-/// so 500K chunks × 200B = ~100 MB metadata ceiling.
-const MAX_GIT_CHUNKS: usize = 500_000;
-
 /// Upper bound for one parallel blob decode batch.
 ///
 /// Git object bytes are decompressed into owned `String`s before the iterator
@@ -64,10 +50,23 @@ enum GitBlobDecodeOutcome {
 
 #[derive(Debug)]
 enum GitBlobSkip {
-    HeaderUnreadable { oid: gix::ObjectId, error: String },
-    OverMaxSize { oid: gix::ObjectId, size: u64 },
-    RepositoryOpen { oid: gix::ObjectId, error: String },
-    ObjectUnreadable { oid: gix::ObjectId, error: String },
+    HeaderUnreadable {
+        oid: gix::ObjectId,
+        error: String,
+    },
+    OverMaxSize {
+        oid: gix::ObjectId,
+        size: u64,
+        cap: u64,
+    },
+    RepositoryOpen {
+        oid: gix::ObjectId,
+        error: String,
+    },
+    ObjectUnreadable {
+        oid: gix::ObjectId,
+        error: String,
+    },
     Binary,
 }
 
@@ -77,17 +76,21 @@ enum GitHistoryCap {
     Chunks { count: usize, cap: usize },
 }
 
-fn git_history_cap_status(total_bytes: usize, chunk_count: usize) -> Option<GitHistoryCap> {
-    if total_bytes >= MAX_GIT_TOTAL_BYTES {
+fn git_history_cap_status(
+    total_bytes: usize,
+    chunk_count: usize,
+    limits: crate::SourceLimits,
+) -> Option<GitHistoryCap> {
+    if total_bytes >= limits.git_total_bytes {
         return Some(GitHistoryCap::TotalBytes {
             total: total_bytes,
-            cap: MAX_GIT_TOTAL_BYTES,
+            cap: limits.git_total_bytes,
         });
     }
-    if chunk_count >= MAX_GIT_CHUNKS {
+    if chunk_count >= limits.git_chunk_count {
         return Some(GitHistoryCap::Chunks {
             count: chunk_count,
-            cap: MAX_GIT_CHUNKS,
+            cap: limits.git_chunk_count,
         });
     }
     None
@@ -118,7 +121,9 @@ fn record_git_history_cap_once(cap: GitHistoryCap, reported: &mut bool) {
 }
 
 pub(crate) fn record_git_history_cap_for_test(total_bytes: usize, chunk_count: usize) -> bool {
-    let Some(cap) = git_history_cap_status(total_bytes, chunk_count) else {
+    let Some(cap) =
+        git_history_cap_status(total_bytes, chunk_count, crate::SourceLimits::default())
+    else {
         return false;
     };
     let mut reported = false;
@@ -141,6 +146,7 @@ pub(crate) fn record_git_history_cap_for_test(total_bytes: usize, chunk_count: u
 pub struct GitSource {
     repo_path: PathBuf,
     max_commits: Option<usize>,
+    limits: crate::SourceLimits,
 }
 
 impl GitSource {
@@ -160,6 +166,7 @@ impl GitSource {
         Self {
             repo_path,
             max_commits: None,
+            limits: crate::SourceLimits::default(),
         }
     }
 
@@ -179,6 +186,11 @@ impl GitSource {
         self.max_commits = Some(n);
         self
     }
+
+    pub fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
+        self.limits = limits;
+        self
+    }
 }
 
 impl Source for GitSource {
@@ -187,7 +199,7 @@ impl Source for GitSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        match stream_git_blobs(&self.repo_path, self.max_commits) {
+        match stream_git_blobs(&self.repo_path, self.max_commits, self.limits) {
             Ok(iter) => Box::new(iter),
             Err(e) => Box::new(std::iter::once(Err(e))),
         }
@@ -200,6 +212,7 @@ impl Source for GitSource {
 fn stream_git_blobs(
     repo_path: &Path,
     max_commits: Option<usize>,
+    limits: crate::SourceLimits,
 ) -> Result<impl Iterator<Item = Result<Chunk, SourceError>>, SourceError> {
     let repo_arg = super::validate_repo_path(repo_path)?;
 
@@ -272,7 +285,7 @@ fn stream_git_blobs(
                 return Some(Ok(chunk));
             }
 
-            if let Some(cap) = git_history_cap_status(total_bytes, chunk_count) {
+            if let Some(cap) = git_history_cap_status(total_bytes, chunk_count, limits) {
                 record_git_history_cap_once(cap, &mut aggregate_cap_reported);
                 done = true;
                 return None;
@@ -370,11 +383,11 @@ fn stream_git_blobs(
                 let head_blobs_ref = &head_blobs;
 
                 'blob_batches: loop {
-                    if git_history_cap_status(total_bytes, chunk_count).is_some() {
+                    if git_history_cap_status(total_bytes, chunk_count, limits).is_some() {
                         break;
                     }
 
-                    let batch = next_git_blob_batch(repo, &mut blob_metadata);
+                    let batch = next_git_blob_batch(repo, &mut blob_metadata, limits);
                     if batch.is_empty() {
                         break;
                     }
@@ -390,7 +403,7 @@ fn stream_git_blobs(
                         decode_git_blob_candidates_parallel(&repo_owned, candidates).into_iter();
 
                     for item in batch {
-                        if git_history_cap_status(total_bytes, chunk_count).is_some() {
+                        if git_history_cap_status(total_bytes, chunk_count, limits).is_some() {
                             break 'blob_batches;
                         }
 
@@ -453,6 +466,7 @@ fn stream_git_blobs(
 fn next_git_blob_batch(
     repo: &gix::Repository,
     blob_metadata: &mut std::vec::IntoIter<(gix::ObjectId, Vec<u8>)>,
+    limits: crate::SourceLimits,
 ) -> Vec<GitBlobBatchItem> {
     let mut batch = Vec::new();
     let mut batch_bytes = 0u64;
@@ -481,10 +495,11 @@ fn next_git_blob_batch(
         }
 
         let size_bytes = header.size();
-        if size_bytes > MAX_GIT_BLOB_BYTES {
+        if size_bytes > limits.git_blob_bytes {
             batch.push(GitBlobBatchItem::Skip(GitBlobSkip::OverMaxSize {
                 oid,
                 size: size_bytes,
+                cap: limits.git_blob_bytes,
             }));
             continue;
         }
@@ -557,11 +572,11 @@ fn record_git_blob_skip(skip: GitBlobSkip) {
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
         }
-        GitBlobSkip::OverMaxSize { oid, size } => {
+        GitBlobSkip::OverMaxSize { oid, size, cap } => {
             tracing::warn!(
                 %oid,
                 size,
-                cap = MAX_GIT_BLOB_BYTES,
+                cap,
                 "git blob exceeds the per-blob size cap; NOT scanned"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);

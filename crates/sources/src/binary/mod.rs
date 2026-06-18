@@ -10,9 +10,6 @@
 //! The Ghidra integration is a runtime dependency, not compile-time.
 //! `cargo build -F binary` pulls in `goblin` for format detection; Ghidra is optional.
 
-/// Maximum bytes read for strings/section extraction - prevents OOM on multi-GB binaries.
-const MAX_BINARY_READ_BYTES: usize = 64 * 1024 * 1024;
-
 use std::io::BufRead;
 use std::io::Read;
 use std::path::{Path, PathBuf};
@@ -57,9 +54,6 @@ use wait_timeout::ChildExt;
 /// Minimum printable string length for strings-mode extraction.
 pub(crate) const MIN_STRING_LEN: usize = 8;
 
-/// Maximum decompiled output size we'll process (50 MB).
-const MAX_DECOMPILED_SIZE: u64 = 50 * 1024 * 1024;
-
 /// Binary analysis source for executables and shared libraries.
 ///
 /// # Examples
@@ -74,6 +68,7 @@ const MAX_DECOMPILED_SIZE: u64 = 50 * 1024 * 1024;
 pub struct BinarySource {
     path: PathBuf,
     ghidra_path: Option<PathBuf>,
+    limits: crate::SourceLimits,
 }
 
 impl BinarySource {
@@ -93,6 +88,7 @@ impl BinarySource {
         Self {
             path: path.into(),
             ghidra_path,
+            limits: crate::SourceLimits::default(),
         }
     }
 
@@ -111,7 +107,13 @@ impl BinarySource {
         Self {
             path: path.into(),
             ghidra_path: None,
+            limits: crate::SourceLimits::default(),
         }
+    }
+
+    pub fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
+        self.limits = limits;
+        self
     }
 
     fn ghidra_chunks(&self, ghidra_bin: &Path) -> Result<Vec<Chunk>, SourceError> {
@@ -179,7 +181,7 @@ impl BinarySource {
 
     fn parse_decompiled_output(&self, output_path: &Path) -> Result<Vec<Chunk>, SourceError> {
         let metadata = std::fs::metadata(output_path).map_err(SourceError::Io)?;
-        if metadata.len() > MAX_DECOMPILED_SIZE {
+        if metadata.len() > self.limits.binary_decompiled_bytes {
             // Law 10: loud, not silent — the deep-analysis output was discarded
             // (too large to process) and we fall back to shallow strings. Same
             // recall-loss surfacing + count as the Ghidra-failure arm.
@@ -189,7 +191,7 @@ impl BinarySource {
                  be missed.",
                 self.path.display(),
                 metadata.len(),
-                MAX_DECOMPILED_SIZE
+                self.limits.binary_decompiled_bytes
             );
             GHIDRA_DEGRADED_TO_STRINGS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             return Ok(self.strings_chunks());
@@ -257,8 +259,20 @@ impl BinarySource {
     }
 
     fn strings_chunks(&self) -> Vec<Chunk> {
-        let bytes = match read_binary_capped(&self.path, MAX_BINARY_READ_BYTES) {
-            Ok(b) => b,
+        let bytes = match read_binary_capped(&self.path, self.limits.binary_read_bytes) {
+            Ok(read) => {
+                if read.truncated {
+                    eprintln!(
+                        "keyhog: WARNING: binary {} exceeded the {} byte strings-read cap; \
+                         only the first {} bytes were scanned.",
+                        self.path.display(),
+                        self.limits.binary_read_bytes,
+                        self.limits.binary_read_bytes
+                    );
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
+                }
+                read.bytes
+            }
             Err(error) => {
                 // Law 10: an unreadable binary is an UNKNOWN dropped from the scan,
                 // not a clean file. The old `tracing::debug!` made that drop
@@ -331,12 +345,21 @@ impl Source for BinarySource {
 }
 
 /// Read at most `cap` bytes from `path` for strings extraction (OOM guard).
-fn read_binary_capped(path: &Path, cap: usize) -> std::io::Result<Vec<u8>> {
+struct CappedBinaryRead {
+    bytes: Vec<u8>,
+    truncated: bool,
+}
+
+fn read_binary_capped(path: &Path, cap: usize) -> std::io::Result<CappedBinaryRead> {
     let file = std::fs::File::open(path)?;
-    let mut limited = file.take(cap as u64);
+    let mut limited = file.take(cap as u64 + 1);
     let mut bytes = Vec::new();
     limited.read_to_end(&mut bytes)?;
-    Ok(bytes)
+    let truncated = bytes.len() > cap;
+    if truncated {
+        bytes.truncate(cap);
+    }
+    Ok(CappedBinaryRead { bytes, truncated })
 }
 
 pub(crate) fn extract_printable_strings(

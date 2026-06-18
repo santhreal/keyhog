@@ -1,7 +1,5 @@
 //! KH-GAP-010 closed: binary strings path uses capped read, not unbounded fs::read.
 
-const MAX_BINARY_READ_BYTES: usize = 64 * 1024 * 1024;
-
 #[test]
 fn binary_mod_uses_capped_read_helper() {
     let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/binary/mod.rs"))
@@ -16,12 +14,17 @@ fn binary_mod_uses_capped_read_helper() {
         "unbounded std::fs::read on binary path is forbidden"
     );
     assert!(
-        src.contains("MAX_BINARY_READ_BYTES"),
-        "cap constant must be documented in binary/mod.rs"
+        !src.contains("MAX_BINARY_READ_BYTES"),
+        "binary read cap must be owned by SourceLimits"
     );
-    assert_eq!(
-        MAX_BINARY_READ_BYTES,
-        64 * 1024 * 1024,
-        "documented 64 MiB cap for binary strings read"
+    assert!(
+        src.contains("binary_read_bytes") && src.contains("SourceTruncated"),
+        "binary strings extraction must use resolved SourceLimits and surface capped partial reads"
+    );
+    let limits = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/limits.rs"))
+        .expect("limits.rs readable");
+    assert!(
+        limits.contains("binary_read_bytes: 64 * 1024 * 1024"),
+        "binary strings default cap must remain 64 MiB in SourceLimits"
     );
 }

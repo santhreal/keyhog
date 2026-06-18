@@ -20,6 +20,7 @@ use std::process::Command;
 pub struct GitHistorySource {
     repo_path: PathBuf,
     max_commits: Option<usize>,
+    limits: crate::SourceLimits,
 }
 
 impl GitHistorySource {
@@ -39,6 +40,7 @@ impl GitHistorySource {
         Self {
             repo_path,
             max_commits: None,
+            limits: crate::SourceLimits::default(),
         }
     }
 
@@ -58,6 +60,11 @@ impl GitHistorySource {
         self.max_commits = Some(n);
         self
     }
+
+    pub fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
+        self.limits = limits;
+        self
+    }
 }
 
 impl Source for GitHistorySource {
@@ -66,7 +73,7 @@ impl Source for GitHistorySource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        match stream_git_history_chunks(&self.repo_path, self.max_commits) {
+        match stream_git_history_chunks(&self.repo_path, self.max_commits, self.limits) {
             Ok(iter) => Box::new(iter),
             Err(error) => Box::new(std::iter::once(Err(error))),
         }
@@ -79,6 +86,7 @@ impl Source for GitHistorySource {
 fn stream_git_history_chunks(
     repo_path: &Path,
     max_commits: Option<usize>,
+    limits: crate::SourceLimits,
 ) -> Result<impl Iterator<Item = Result<Chunk, SourceError>>, SourceError> {
     let repo_arg = super::validate_repo_path(repo_path)?;
     let mut command = Command::new(super::git_bin()?);
@@ -135,48 +143,45 @@ fn stream_git_history_chunks(
 
         loop {
             line_buf.clear();
-            let line = match super::read_capped_line(
-                &mut reader,
-                &mut line_buf,
-                super::MAX_GIT_LINE_BYTES,
-            ) {
-                Ok(0) => {
-                    done = true;
-                    if let (Some(commit), Some(author), Some(date), Some(path)) = (
-                        &current_commit,
-                        &current_author,
-                        &current_date,
-                        &current_path,
-                    ) {
-                        if !current_content.trim().is_empty() {
-                            return Some(Ok(Chunk {
-                                data: current_content.trim().to_string().into(),
-                                metadata: ChunkMetadata {
-                                    base_offset: 0,
-                                    base_line: 0,
-                                    source_type: "git-history".into(),
-                                    path: Some(path.clone()),
-                                    commit: Some(commit.clone()),
-                                    author: Some(author.clone()),
-                                    date: Some(date.clone()),
-                                    mtime_ns: None,
-                                    size_bytes: None,
-                                    decoded_span: None,
-                                },
-                            }));
+            let line =
+                match super::read_capped_line(&mut reader, &mut line_buf, limits.git_line_bytes) {
+                    Ok(0) => {
+                        done = true;
+                        if let (Some(commit), Some(author), Some(date), Some(path)) = (
+                            &current_commit,
+                            &current_author,
+                            &current_date,
+                            &current_path,
+                        ) {
+                            if !current_content.trim().is_empty() {
+                                return Some(Ok(Chunk {
+                                    data: current_content.trim().to_string().into(),
+                                    metadata: ChunkMetadata {
+                                        base_offset: 0,
+                                        base_line: 0,
+                                        source_type: "git-history".into(),
+                                        path: Some(path.clone()),
+                                        commit: Some(commit.clone()),
+                                        author: Some(author.clone()),
+                                        date: Some(date.clone()),
+                                        mtime_ns: None,
+                                        size_bytes: None,
+                                        decoded_span: None,
+                                    },
+                                }));
+                            }
                         }
+                        return None;
                     }
-                    return None;
-                }
-                Ok(_) => {
-                    let l = String::from_utf8_lossy(&line_buf);
-                    l.trim_end_matches('\n').trim_end_matches('\r').to_string()
-                }
-                Err(e) => {
-                    done = true;
-                    return Some(Err(SourceError::Io(e)));
-                }
-            };
+                    Ok(_) => {
+                        let l = String::from_utf8_lossy(&line_buf);
+                        l.trim_end_matches('\n').trim_end_matches('\r').to_string()
+                    }
+                    Err(e) => {
+                        done = true;
+                        return Some(Err(SourceError::Io(e)));
+                    }
+                };
 
             if let Some(commit) = line.strip_prefix("commit ") {
                 let prev_chunk = if let (Some(commit), Some(author), Some(date), Some(path)) = (

@@ -13,7 +13,6 @@ use listing::parse_s3_listing;
 
 const DEFAULT_S3_HOST_SUFFIX: &str = "s3.amazonaws.com";
 const DEFAULT_MAX_OBJECTS: usize = 100_000;
-const MAX_S3_OBJECT_BYTES: u64 = 10 * 1024 * 1024;
 
 /// Scan text objects in an S3 bucket via the ListObjectsV2 REST API.
 ///
@@ -31,6 +30,7 @@ pub struct S3Source {
     prefix: Option<String>,
     endpoint: Option<String>,
     max_objects: usize,
+    limits: crate::SourceLimits,
     /// Shared HTTP policy (proxy, insecure_tls, ua_suffix, timeout). Defaults
     /// to `HttpClientConfig::default()` (env-var fallbacks honored). Set via
     /// `with_http_config` so the CLI's `--proxy` / `--insecure` reach this
@@ -56,6 +56,7 @@ impl S3Source {
             prefix: None,
             endpoint: None,
             max_objects: DEFAULT_MAX_OBJECTS,
+            limits: crate::SourceLimits::default(),
             http: crate::http::HttpClientConfig {
                 ua_suffix: Some("s3".into()),
                 ..Default::default()
@@ -69,6 +70,11 @@ impl S3Source {
     /// would silently bypass the configured proxy and corp-mandated MITM CA.
     pub fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
         self.http = http;
+        self
+    }
+
+    pub fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
+        self.limits = limits;
         self
     }
 
@@ -139,6 +145,7 @@ impl Source for S3Source {
                         self.prefix.as_deref(),
                         self.endpoint.as_deref(),
                         self.max_objects,
+                        self.limits,
                         &self.http,
                     )
                 })
@@ -163,6 +170,7 @@ fn collect_s3_chunks(
     prefix: Option<&str>,
     endpoint: Option<&str>,
     max_objects: usize,
+    limits: crate::SourceLimits,
     http: &crate::http::HttpClientConfig,
 ) -> Result<Vec<Chunk>, SourceError> {
     let bucket = validate_bucket_name(bucket)?;
@@ -292,6 +300,7 @@ fn collect_s3_chunks(
                         &object.key,
                         object.size,
                         aws_auth.as_ref(),
+                        limits.s3_object_bytes,
                     )
                 })
                 .collect()
@@ -333,8 +342,9 @@ fn fetch_object_chunk(
     key: &str,
     object_size: u64,
     aws_auth: Option<&AwsSigV4Config>,
+    max_object_bytes: u64,
 ) -> Result<Option<Chunk>, SourceError> {
-    if object_size > MAX_S3_OBJECT_BYTES {
+    if object_size > max_object_bytes {
         // Law 10: an over-cap object is dropped from the scan — an UNKNOWN, not a
         // clean object. The old `tracing::debug!` was invisible at default
         // verbosity, so a secret in an oversized object vanished with no trace.
@@ -344,7 +354,7 @@ fn fetch_object_chunk(
             bucket,
             key,
             object_size,
-            cap = MAX_S3_OBJECT_BYTES,
+            cap = max_object_bytes,
             "skipping S3 object: listed size exceeds the per-object byte cap; NOT scanned",
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
@@ -376,7 +386,7 @@ fn fetch_object_chunk(
     }
 
     if let Some(content_length) = response.content_length() {
-        if content_length > MAX_S3_OBJECT_BYTES {
+        if content_length > max_object_bytes {
             // Law 10: the object's real (Content-Length) size exceeds the cap, so
             // it is dropped — an UNKNOWN. Surface loudly + count (over-max-size)
             // exactly like the listed-size guard above so the drop is auditable.
@@ -384,7 +394,7 @@ fn fetch_object_chunk(
                 bucket,
                 key,
                 content_length,
-                cap = MAX_S3_OBJECT_BYTES,
+                cap = max_object_bytes,
                 "skipping S3 object: Content-Length exceeds the per-object byte cap; NOT scanned",
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
@@ -427,10 +437,10 @@ fn fetch_object_chunk(
     // lacks byte-stream support, so we use `copy()` into a size-limited
     // buffer to abort before the full response is buffered into memory.
     let mut body = Vec::new();
-    let mut reader = response.take(MAX_S3_OBJECT_BYTES + 1);
+    let mut reader = response.take(max_object_bytes + 1);
     std::io::Read::read_to_end(&mut reader, &mut body)
         .map_err(|e| SourceError::Other(format!("failed to read S3 object body: {key}: {e}")))?;
-    if body.len() as u64 > MAX_S3_OBJECT_BYTES {
+    if body.len() as u64 > max_object_bytes {
         // Law 10: the server streamed more than it declared (lying/absent
         // Content-Length) and we hit the `.take(cap + 1)` ceiling — the body is
         // truncated/over-cap and dropped. An UNKNOWN, not a clean object. Surface
@@ -439,7 +449,7 @@ fn fetch_object_chunk(
             bucket,
             key,
             downloaded = body.len(),
-            cap = MAX_S3_OBJECT_BYTES,
+            cap = max_object_bytes,
             "skipping S3 object: streamed body exceeds the per-object byte cap \
              (Content-Length was absent or understated); NOT scanned",
         );

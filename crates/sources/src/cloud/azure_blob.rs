@@ -11,12 +11,12 @@ use reqwest::blocking::Client;
 use serde::Deserialize;
 
 const DEFAULT_MAX_OBJECTS: usize = 100_000;
-const MAX_AZURE_BLOB_BYTES: u64 = 10 * 1024 * 1024;
 
 pub struct AzureBlobSource {
     container_url: String,
     prefix: Option<String>,
     max_objects: usize,
+    limits: crate::SourceLimits,
     http: crate::http::HttpClientConfig,
 }
 
@@ -26,6 +26,7 @@ impl AzureBlobSource {
             container_url: container_url.into(),
             prefix: None,
             max_objects: DEFAULT_MAX_OBJECTS,
+            limits: crate::SourceLimits::default(),
             http: crate::http::HttpClientConfig {
                 ua_suffix: Some("azure-blob".into()),
                 ..Default::default()
@@ -35,6 +36,11 @@ impl AzureBlobSource {
 
     pub fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
         self.http = http;
+        self
+    }
+
+    pub fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
+        self.limits = limits;
         self
     }
 
@@ -62,6 +68,7 @@ impl Source for AzureBlobSource {
                         &self.container_url,
                         self.prefix.as_deref(),
                         self.max_objects,
+                        self.limits,
                         &self.http,
                     )
                 })
@@ -129,6 +136,7 @@ fn collect_azure_blob_chunks(
     container_url: &str,
     prefix: Option<&str>,
     max_objects: usize,
+    limits: crate::SourceLimits,
     http: &crate::http::HttpClientConfig,
 ) -> Result<Vec<Chunk>, SourceError> {
     let container_url = validate_container_url(container_url)?;
@@ -208,7 +216,13 @@ fn collect_azure_blob_chunks(
                             return Ok(None);
                         }
                     }
-                    fetch_azure_blob_chunk(&client, &container_url, &blob.name, listed_size)
+                    fetch_azure_blob_chunk(
+                        &client,
+                        &container_url,
+                        &blob.name,
+                        listed_size,
+                        limits.azure_blob_bytes,
+                    )
                 })
                 .collect()
         });
@@ -240,13 +254,14 @@ fn fetch_azure_blob_chunk(
     container_url: &reqwest::Url,
     name: &str,
     listed_size: Option<u64>,
+    max_blob_bytes: u64,
 ) -> Result<Option<Chunk>, SourceError> {
     if let Some(size) = listed_size {
-        if size > MAX_AZURE_BLOB_BYTES {
+        if size > max_blob_bytes {
             tracing::warn!(
                 key = name,
                 object_size = size,
-                cap = MAX_AZURE_BLOB_BYTES,
+                cap = max_blob_bytes,
                 "skipping Azure blob: listed size exceeds the per-blob byte cap; NOT scanned",
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
@@ -269,11 +284,11 @@ fn fetch_azure_blob_chunk(
         return Ok(None);
     }
     if let Some(content_length) = response.content_length() {
-        if content_length > MAX_AZURE_BLOB_BYTES {
+        if content_length > max_blob_bytes {
             tracing::warn!(
                 key = name,
                 content_length,
-                cap = MAX_AZURE_BLOB_BYTES,
+                cap = max_blob_bytes,
                 "skipping Azure blob: Content-Length exceeds the per-blob byte cap; NOT scanned",
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
@@ -306,15 +321,15 @@ fn fetch_azure_blob_chunk(
     }
 
     let mut body = Vec::new();
-    let mut reader = response.take(MAX_AZURE_BLOB_BYTES + 1);
+    let mut reader = response.take(max_blob_bytes + 1);
     std::io::Read::read_to_end(&mut reader, &mut body).map_err(|error| {
         SourceError::Other(format!("failed to read Azure blob body: {name}: {error}"))
     })?;
-    if body.len() as u64 > MAX_AZURE_BLOB_BYTES {
+    if body.len() as u64 > max_blob_bytes {
         tracing::warn!(
             key = name,
             downloaded = body.len(),
-            cap = MAX_AZURE_BLOB_BYTES,
+            cap = max_blob_bytes,
             "skipping Azure blob: streamed body exceeds the per-blob byte cap; NOT scanned",
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);

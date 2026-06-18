@@ -13,22 +13,6 @@ use regex::Regex;
 
 use crate::FilesystemSource;
 
-const MAX_TAR_ENTRY_BYTES: u64 = 128 * 1024 * 1024;
-const MAX_IMAGE_CONFIG_BYTES: u64 = 16 * 1024 * 1024;
-
-/// Cumulative cap across ALL entries in one Docker archive. The
-/// per-entry [`MAX_TAR_ENTRY_BYTES`] cap alone is bypassed by a
-/// zip-bomb that ships thousands of entries each just under 128 MiB:
-/// the validator passed every entry individually and unpack()
-/// happily wrote N × 128 MiB to disk. With this aggregate cap the
-/// validator rejects the archive before unpack starts.
-///
-/// 8 GiB is generous for any real Docker image (the biggest common
-/// base images max out around 1 GiB) but small enough that a 1000-
-/// entry × 127 MiB ≈ 127 GiB zip-bomb is rejected on entry ~64. Kimi
-/// sources-audit finding #docker-zip-bomb.
-const MAX_TAR_TOTAL_BYTES: u64 = 8 * 1024 * 1024 * 1024;
-
 /// Scan a Docker image by saving it as a tar archive and unpacking each layer.
 ///
 /// # Examples
@@ -42,6 +26,7 @@ const MAX_TAR_TOTAL_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 /// ```
 pub struct DockerImageSource {
     image: String,
+    limits: crate::SourceLimits,
 }
 
 impl DockerImageSource {
@@ -59,7 +44,13 @@ impl DockerImageSource {
     pub fn new(image: impl Into<String>) -> Self {
         Self {
             image: image.into(),
+            limits: crate::SourceLimits::default(),
         }
+    }
+
+    pub fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
+        self.limits = limits;
+        self
     }
 }
 
@@ -69,7 +60,7 @@ impl Source for DockerImageSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        match collect_docker_chunks(&self.image) {
+        match collect_docker_chunks(&self.image, self.limits) {
             Ok(chunks) => Box::new(chunks.into_iter().map(Ok)),
             Err(error) => Box::new(std::iter::once(Err(error))),
         }
@@ -79,7 +70,10 @@ impl Source for DockerImageSource {
     }
 }
 
-fn collect_docker_chunks(image: &str) -> Result<Vec<Chunk>, SourceError> {
+fn collect_docker_chunks(
+    image: &str,
+    limits: crate::SourceLimits,
+) -> Result<Vec<Chunk>, SourceError> {
     let image = validate_image_name(image)?;
     let tempdir = tempfile::tempdir().map_err(SourceError::Io)?;
     // Store the temp path in a binding so RAII deletes the archive on scope exit
@@ -121,11 +115,11 @@ fn collect_docker_chunks(image: &str) -> Result<Vec<Chunk>, SourceError> {
         )));
     }
 
-    unpack_tar(&archive_path, &root_path)?;
+    unpack_tar(&archive_path, &root_path, limits)?;
 
     let mut chunks = Vec::new();
-    chunks.extend(find_manifest_config_chunks(&root_path, &image)?);
-    for layer_tar in find_layer_archives(&root_path)? {
+    chunks.extend(find_manifest_config_chunks(&root_path, &image, limits)?);
+    for layer_tar in find_layer_archives(&root_path, limits)? {
         let layer_name = layer_tar
             .strip_prefix(&root_path)
             .ok() // LAW10: a non-prefixed path falls back to the full display path below — both are valid scannable labels, no layer is dropped
@@ -136,7 +130,7 @@ fn collect_docker_chunks(image: &str) -> Result<Vec<Chunk>, SourceError> {
             .join("layers")
             .join(sanitize_layer_name(&layer_name));
         create_private_directory_all(&layer_dir)?;
-        unpack_layer_archive(&layer_tar, &layer_dir)?;
+        unpack_layer_archive(&layer_tar, &layer_dir, limits)?;
 
         chunks.extend(rewrite_layer_chunks(
             FilesystemSource::new(layer_dir.clone()).chunks(),
@@ -185,13 +179,17 @@ fn validate_image_name(image: &str) -> Result<String, SourceError> {
     Ok(image.to_string())
 }
 
-fn unpack_tar(archive_path: &Path, destination: &Path) -> Result<(), SourceError> {
+fn unpack_tar(
+    archive_path: &Path,
+    destination: &Path,
+    limits: crate::SourceLimits,
+) -> Result<(), SourceError> {
     // Open the archive file exactly once to prevent TOCTOU race conditions.
     // A separate open for validation and extraction would allow the file to
     // be swapped between the two passes.
     let mut file = File::open(archive_path).map_err(SourceError::Io)?;
     let mut validation_archive = tar::Archive::new(&mut file);
-    validate_extracted_tree(&mut validation_archive)?;
+    validate_extracted_tree(&mut validation_archive, limits)?;
 
     // Rewind the same file descriptor for extraction - no second open.
     file.rewind().map_err(SourceError::Io)?;
@@ -199,12 +197,16 @@ fn unpack_tar(archive_path: &Path, destination: &Path) -> Result<(), SourceError
     extract_archive.unpack(destination).map_err(SourceError::Io)
 }
 
-fn unpack_layer_archive(archive_path: &Path, destination: &Path) -> Result<(), SourceError> {
+fn unpack_layer_archive(
+    archive_path: &Path,
+    destination: &Path,
+    limits: crate::SourceLimits,
+) -> Result<(), SourceError> {
     match layer_archive_encoding(archive_path)? {
-        LayerArchiveEncoding::RawTar => unpack_tar(archive_path, destination),
+        LayerArchiveEncoding::RawTar => unpack_tar(archive_path, destination, limits),
         LayerArchiveEncoding::GzipTar => {
             let validation_file = File::open(archive_path).map_err(SourceError::Io)?;
-            validate_tar_reader(flate2::read::GzDecoder::new(validation_file))?;
+            validate_tar_reader(flate2::read::GzDecoder::new(validation_file), limits)?;
 
             let extract_file = File::open(archive_path).map_err(SourceError::Io)?;
             unpack_tar_reader(flate2::read::GzDecoder::new(extract_file), destination)
@@ -213,7 +215,7 @@ fn unpack_layer_archive(archive_path: &Path, destination: &Path) -> Result<(), S
             let validation_file = File::open(archive_path).map_err(SourceError::Io)?;
             let validation_reader =
                 zstd::stream::read::Decoder::new(validation_file).map_err(SourceError::Io)?;
-            validate_tar_reader(validation_reader)?;
+            validate_tar_reader(validation_reader, limits)?;
 
             let extract_file = File::open(archive_path).map_err(SourceError::Io)?;
             let extract_reader =
@@ -223,9 +225,9 @@ fn unpack_layer_archive(archive_path: &Path, destination: &Path) -> Result<(), S
     }
 }
 
-fn validate_tar_reader(reader: impl Read) -> Result<(), SourceError> {
+fn validate_tar_reader(reader: impl Read, limits: crate::SourceLimits) -> Result<(), SourceError> {
     let mut archive = tar::Archive::new(reader);
-    validate_extracted_tree(&mut archive)
+    validate_extracted_tree(&mut archive, limits)
 }
 
 fn unpack_tar_reader(reader: impl Read, destination: &Path) -> Result<(), SourceError> {
@@ -254,13 +256,14 @@ fn layer_archive_encoding(archive_path: &Path) -> Result<LayerArchiveEncoding, S
 
 fn validate_extracted_tree<R: std::io::Read>(
     archive: &mut tar::Archive<R>,
+    limits: crate::SourceLimits,
 ) -> Result<(), SourceError> {
-    validate_extracted_tree_with_total_cap(archive, MAX_TAR_TOTAL_BYTES)
+    validate_extracted_tree_with_limits(archive, limits)
 }
 
-fn validate_extracted_tree_with_total_cap<R: std::io::Read>(
+fn validate_extracted_tree_with_limits<R: std::io::Read>(
     archive: &mut tar::Archive<R>,
-    total_cap: u64,
+    limits: crate::SourceLimits,
 ) -> Result<(), SourceError> {
     let mut cumulative_bytes: u64 = 0;
     for entry in archive.entries().map_err(SourceError::Io)? {
@@ -297,23 +300,23 @@ fn validate_extracted_tree_with_total_cap<R: std::io::Read>(
                 path.display()
             )));
         }
-        if size > MAX_TAR_ENTRY_BYTES {
+        if size > limits.docker_tar_entry_bytes {
             return Err(SourceError::Other(format!(
                 "docker archive entry '{}' exceeds {} bytes",
                 path.display(),
-                MAX_TAR_ENTRY_BYTES
+                limits.docker_tar_entry_bytes
             )));
         }
         // Zip-bomb defense: a malicious archive can ship 1000+ entries
-        // each just under MAX_TAR_ENTRY_BYTES (127 MiB × 1000 = 127 GiB).
+        // each just under the per-entry cap (127 MiB × 1000 = 127 GiB).
         // Each entry passes the per-entry gate but the cumulative
         // unpack exhausts disk. Reject before unpack starts.
         cumulative_bytes = cumulative_bytes.saturating_add(size);
-        if cumulative_bytes > total_cap {
+        if cumulative_bytes > limits.docker_tar_total_bytes {
             return Err(SourceError::Other(format!(
                 "docker archive cumulative size exceeds {} bytes at entry '{}' \
                  (likely zip-bomb)",
-                total_cap,
+                limits.docker_tar_total_bytes,
                 path.display(),
             )));
         }
@@ -322,8 +325,11 @@ fn validate_extracted_tree_with_total_cap<R: std::io::Read>(
     Ok(())
 }
 
-fn find_layer_archives(root_path: &Path) -> Result<Vec<PathBuf>, SourceError> {
-    let manifest_layers = find_manifest_layer_archives(root_path)?;
+fn find_layer_archives(
+    root_path: &Path,
+    limits: crate::SourceLimits,
+) -> Result<Vec<PathBuf>, SourceError> {
+    let manifest_layers = find_manifest_layer_archives(root_path, limits)?;
     if !manifest_layers.is_empty() {
         return dedup_layer_archives_by_content(manifest_layers);
     }
@@ -389,12 +395,19 @@ struct OciLoadedManifest {
     manifest: OciImageManifest,
 }
 
-fn load_manifest_entries(root_path: &Path) -> Result<Vec<DockerArchiveManifestEntry>, SourceError> {
+fn load_manifest_entries(
+    root_path: &Path,
+    limits: crate::SourceLimits,
+) -> Result<Vec<DockerArchiveManifestEntry>, SourceError> {
     let manifest_path = root_path.join("manifest.json");
     if !manifest_path.is_file() {
         return Ok(Vec::new());
     }
-    let manifest = read_capped_file(&manifest_path, "docker manifest", MAX_IMAGE_CONFIG_BYTES)?;
+    let manifest = read_capped_file(
+        &manifest_path,
+        "docker manifest",
+        limits.docker_image_config_bytes,
+    )?;
     serde_json::from_slice(&manifest).map_err(|error| {
         SourceError::Other(format!(
             "invalid docker manifest.json at '{}': {error}",
@@ -403,8 +416,12 @@ fn load_manifest_entries(root_path: &Path) -> Result<Vec<DockerArchiveManifestEn
     })
 }
 
-fn find_manifest_config_chunks(root_path: &Path, image: &str) -> Result<Vec<Chunk>, SourceError> {
-    let entries = load_manifest_entries(root_path)?;
+fn find_manifest_config_chunks(
+    root_path: &Path,
+    image: &str,
+    limits: crate::SourceLimits,
+) -> Result<Vec<Chunk>, SourceError> {
+    let entries = load_manifest_entries(root_path, limits)?;
     let mut chunks = Vec::new();
     for (idx, entry) in entries.into_iter().enumerate() {
         let config = entry.config;
@@ -415,7 +432,11 @@ fn find_manifest_config_chunks(root_path: &Path, image: &str) -> Result<Vec<Chun
                 config
             )));
         }
-        let bytes = read_capped_file(&config_path, "docker image config", MAX_IMAGE_CONFIG_BYTES)?;
+        let bytes = read_capped_file(
+            &config_path,
+            "docker image config",
+            limits.docker_image_config_bytes,
+        )?;
         let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
             SourceError::Other(format!(
                 "invalid docker image config '{}' referenced by manifest entry {idx}: {error}",
@@ -444,12 +465,15 @@ fn find_manifest_config_chunks(root_path: &Path, image: &str) -> Result<Vec<Chun
             data: data.into(),
         });
     }
-    chunks.extend(find_oci_config_chunks(root_path, image)?);
+    chunks.extend(find_oci_config_chunks(root_path, image, limits)?);
     Ok(chunks)
 }
 
-fn find_manifest_layer_archives(root_path: &Path) -> Result<Vec<PathBuf>, SourceError> {
-    let entries = load_manifest_entries(root_path)?;
+fn find_manifest_layer_archives(
+    root_path: &Path,
+    limits: crate::SourceLimits,
+) -> Result<Vec<PathBuf>, SourceError> {
+    let entries = load_manifest_entries(root_path, limits)?;
     let mut layers = Vec::new();
     for entry in entries {
         let entry_layers = match entry.layers {
@@ -467,13 +491,16 @@ fn find_manifest_layer_archives(root_path: &Path) -> Result<Vec<PathBuf>, Source
             layers.push(layer_path);
         }
     }
-    layers.extend(find_oci_layer_archives(root_path)?);
+    layers.extend(find_oci_layer_archives(root_path, limits)?);
     layers.sort();
     layers.dedup();
     Ok(layers)
 }
 
-fn load_oci_image_manifests(root_path: &Path) -> Result<Vec<OciLoadedManifest>, SourceError> {
+fn load_oci_image_manifests(
+    root_path: &Path,
+    limits: crate::SourceLimits,
+) -> Result<Vec<OciLoadedManifest>, SourceError> {
     let layout_path = root_path.join("oci-layout");
     let index_path = root_path.join("index.json");
     if !layout_path.exists() && !index_path.exists() {
@@ -484,7 +511,11 @@ fn load_oci_image_manifests(root_path: &Path) -> Result<Vec<OciLoadedManifest>, 
             "OCI image layout is missing index.json".into(),
         ));
     }
-    let index_bytes = read_capped_file(&index_path, "OCI image index", MAX_IMAGE_CONFIG_BYTES)?;
+    let index_bytes = read_capped_file(
+        &index_path,
+        "OCI image index",
+        limits.docker_image_config_bytes,
+    )?;
     let index: OciIndex = serde_json::from_slice(&index_bytes).map_err(|error| {
         SourceError::Other(format!(
             "invalid OCI image index '{}': {error}",
@@ -494,10 +525,14 @@ fn load_oci_image_manifests(root_path: &Path) -> Result<Vec<OciLoadedManifest>, 
 
     let mut manifests = Vec::new();
     for (idx, descriptor) in index.manifests.into_iter().enumerate() {
-        let manifest_path = resolve_oci_blob_digest_path(root_path, "manifest", &descriptor)?;
+        let manifest_path =
+            resolve_oci_blob_digest_path(root_path, "manifest", &descriptor, limits)?;
         verify_oci_blob_sha256(&manifest_path, &descriptor.digest)?;
-        let manifest_bytes =
-            read_capped_file(&manifest_path, "OCI image manifest", MAX_IMAGE_CONFIG_BYTES)?;
+        let manifest_bytes = read_capped_file(
+            &manifest_path,
+            "OCI image manifest",
+            limits.docker_image_config_bytes,
+        )?;
         let manifest: OciImageManifest =
             serde_json::from_slice(&manifest_bytes).map_err(|error| {
                 SourceError::Other(format!(
@@ -520,14 +555,22 @@ fn load_oci_image_manifests(root_path: &Path) -> Result<Vec<OciLoadedManifest>, 
     Ok(manifests)
 }
 
-fn find_oci_config_chunks(root_path: &Path, image: &str) -> Result<Vec<Chunk>, SourceError> {
-    let manifests = load_oci_image_manifests(root_path)?;
+fn find_oci_config_chunks(
+    root_path: &Path,
+    image: &str,
+    limits: crate::SourceLimits,
+) -> Result<Vec<Chunk>, SourceError> {
+    let manifests = load_oci_image_manifests(root_path, limits)?;
     let mut chunks = Vec::new();
     for loaded in manifests {
         let config = loaded.manifest.config;
-        let config_path = resolve_oci_blob_digest_path(root_path, "config", &config)?;
+        let config_path = resolve_oci_blob_digest_path(root_path, "config", &config, limits)?;
         verify_oci_blob_sha256(&config_path, &config.digest)?;
-        let bytes = read_capped_file(&config_path, "OCI image config", MAX_IMAGE_CONFIG_BYTES)?;
+        let bytes = read_capped_file(
+            &config_path,
+            "OCI image config",
+            limits.docker_image_config_bytes,
+        )?;
         let value: serde_json::Value = serde_json::from_slice(&bytes).map_err(|error| {
             SourceError::Other(format!(
                 "invalid OCI image config '{}' referenced by manifest '{}': {error}",
@@ -564,12 +607,15 @@ fn find_oci_config_chunks(root_path: &Path, image: &str) -> Result<Vec<Chunk>, S
     Ok(chunks)
 }
 
-fn find_oci_layer_archives(root_path: &Path) -> Result<Vec<PathBuf>, SourceError> {
-    let manifests = load_oci_image_manifests(root_path)?;
+fn find_oci_layer_archives(
+    root_path: &Path,
+    limits: crate::SourceLimits,
+) -> Result<Vec<PathBuf>, SourceError> {
+    let manifests = load_oci_image_manifests(root_path, limits)?;
     let mut layers = Vec::new();
     for loaded in manifests {
         for layer in loaded.manifest.layers {
-            let layer_path = resolve_oci_blob_digest_path(root_path, "layer", &layer)?;
+            let layer_path = resolve_oci_blob_digest_path(root_path, "layer", &layer, limits)?;
             verify_oci_blob_sha256(&layer_path, &layer.digest)?;
             layers.push(layer_path);
         }
@@ -633,13 +679,14 @@ fn resolve_oci_blob_digest_path(
     root_path: &Path,
     kind: &str,
     descriptor: &OciDescriptor,
+    limits: crate::SourceLimits,
 ) -> Result<PathBuf, SourceError> {
     let hex = parse_oci_sha256_digest(kind, &descriptor.digest)?;
     if let Some(size) = descriptor.size {
-        if size > MAX_TAR_TOTAL_BYTES {
+        if size > limits.docker_tar_total_bytes {
             return Err(SourceError::Other(format!(
                 "OCI {kind} descriptor '{}' declares {} bytes, above {} byte cap",
-                descriptor.digest, size, MAX_TAR_TOTAL_BYTES
+                descriptor.digest, size, limits.docker_tar_total_bytes
             )));
         }
     }
@@ -810,7 +857,7 @@ fn create_private_directory_all(path: &Path) -> Result<(), SourceError> {
 pub(crate) fn manifest_layer_archives_for_test(
     root_path: &Path,
 ) -> Result<Vec<PathBuf>, SourceError> {
-    find_layer_archives(root_path)
+    find_layer_archives(root_path, crate::SourceLimits::default())
 }
 
 #[doc(hidden)]
@@ -818,7 +865,7 @@ pub(crate) fn manifest_config_chunks_for_test(
     root_path: &Path,
     image: &str,
 ) -> Result<Vec<Chunk>, SourceError> {
-    find_manifest_config_chunks(root_path, image)
+    find_manifest_config_chunks(root_path, image, crate::SourceLimits::default())
 }
 
 #[doc(hidden)]
@@ -826,7 +873,7 @@ pub(crate) fn unpack_layer_archive_for_test(
     archive_path: &Path,
     destination: &Path,
 ) -> Result<(), SourceError> {
-    unpack_layer_archive(archive_path, destination)
+    unpack_layer_archive(archive_path, destination, crate::SourceLimits::default())
 }
 
 #[doc(hidden)]
@@ -844,7 +891,10 @@ where
 
 #[doc(hidden)]
 pub(crate) fn validate_tar_archive_for_test(archive_path: &Path) -> Result<(), SourceError> {
-    validate_tar_archive_with_total_cap_for_test(archive_path, MAX_TAR_TOTAL_BYTES)
+    validate_tar_archive_with_total_cap_for_test(
+        archive_path,
+        crate::SourceLimits::default().docker_tar_total_bytes,
+    )
 }
 
 #[doc(hidden)]
@@ -854,5 +904,9 @@ pub(crate) fn validate_tar_archive_with_total_cap_for_test(
 ) -> Result<(), SourceError> {
     let file = File::open(archive_path).map_err(SourceError::Io)?;
     let mut archive = tar::Archive::new(file);
-    validate_extracted_tree_with_total_cap(&mut archive, total_cap)
+    let limits = crate::SourceLimits {
+        docker_tar_total_bytes: total_cap,
+        ..crate::SourceLimits::default()
+    };
+    validate_extracted_tree_with_limits(&mut archive, limits)
 }

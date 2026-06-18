@@ -40,9 +40,6 @@ pub(crate) use ssrf::{
 /// Minimum printable string length for WASM binary string extraction.
 const MIN_WASM_STRING_LEN: usize = 8;
 
-/// Maximum response body size to prevent OOM on malicious targets (10 MB).
-const MAX_RESPONSE_BYTES: usize = 10 * 1024 * 1024;
-
 /// WASM magic bytes: `\0asm`.
 const WASM_MAGIC: &[u8; 4] = b"\x00asm";
 
@@ -55,6 +52,7 @@ const WASM_MAGIC: &[u8; 4] = b"\x00asm";
 pub struct WebSource {
     urls: Vec<String>,
     http: crate::http::HttpClientConfig,
+    limits: crate::SourceLimits,
 }
 
 impl WebSource {
@@ -76,6 +74,7 @@ impl WebSource {
                 ua_suffix: Some("web".into()),
                 ..Default::default()
             },
+            limits: crate::SourceLimits::default(),
         }
     }
 
@@ -90,6 +89,11 @@ impl WebSource {
             http.ua_suffix = Some("web".into());
         }
         self.http = http;
+        self
+    }
+
+    pub fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
+        self.limits = limits;
         self
     }
 
@@ -134,7 +138,7 @@ impl WebSource {
                 }
             };
 
-            let chunks = fetch_url(&client, url);
+            let chunks = fetch_url(&client, url, self.limits.web_response_bytes);
             results.extend(chunks);
         }
 
@@ -173,7 +177,11 @@ impl Source for WebSource {
 /// SSRF-revalidating redirect policy. The pre-filter is repeated here as a
 /// cheap defense-in-depth guard so this helper stays safe even if a future
 /// caller hands it a client that skipped `build_web_client`.
-fn fetch_url(client: &reqwest::blocking::Client, url: &str) -> Vec<Result<Chunk, SourceError>> {
+fn fetch_url(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    max_response_bytes: usize,
+) -> Vec<Result<Chunk, SourceError>> {
     // SSRF defense (host pre-filter): the verifier already has this gate via
     // bogon for live verifications; WebSource was the missing surface.
     // Without it,
@@ -213,17 +221,21 @@ fn fetch_url(client: &reqwest::blocking::Client, url: &str) -> Vec<Result<Chunk,
     // Route by URL extension
     let lower = url.to_lowercase();
     if lower.ends_with(".wasm") {
-        handle_wasm(resp, url)
+        handle_wasm(resp, url, max_response_bytes)
     } else if lower.ends_with(".map") || lower.contains(".map?") {
-        handle_sourcemap(resp, url)
+        handle_sourcemap(resp, url, max_response_bytes)
     } else {
-        handle_js(resp, url)
+        handle_js(resp, url, max_response_bytes)
     }
 }
 
 /// Handle a JavaScript file: return the full text as a single chunk.
-fn handle_js(resp: reqwest::blocking::Response, url: &str) -> Vec<Result<Chunk, SourceError>> {
-    match read_text_response(resp) {
+fn handle_js(
+    resp: reqwest::blocking::Response,
+    url: &str,
+    max_response_bytes: usize,
+) -> Vec<Result<Chunk, SourceError>> {
+    match read_text_response(resp, max_response_bytes) {
         Ok(body) => vec![Ok(Chunk {
             data: body.into(),
             metadata: ChunkMetadata {
@@ -248,8 +260,9 @@ fn handle_js(resp: reqwest::blocking::Response, url: &str) -> Vec<Result<Chunk, 
 fn handle_sourcemap(
     resp: reqwest::blocking::Response,
     url: &str,
+    max_response_bytes: usize,
 ) -> Vec<Result<Chunk, SourceError>> {
-    let body = match read_text_response(resp) {
+    let body = match read_text_response(resp, max_response_bytes) {
         Ok(b) => b,
         Err(e) => return vec![Err(e)],
     };
@@ -341,8 +354,12 @@ fn handle_sourcemap(
 }
 
 /// Handle a WASM binary: extract printable strings and scan as text.
-fn handle_wasm(resp: reqwest::blocking::Response, url: &str) -> Vec<Result<Chunk, SourceError>> {
-    let bytes = match read_bytes_response(resp) {
+fn handle_wasm(
+    resp: reqwest::blocking::Response,
+    url: &str,
+    max_response_bytes: usize,
+) -> Vec<Result<Chunk, SourceError>> {
+    let bytes = match read_bytes_response(resp, max_response_bytes) {
         Ok(b) => b,
         Err(e) => return vec![Err(e)],
     };
@@ -379,50 +396,54 @@ fn handle_wasm(resp: reqwest::blocking::Response, url: &str) -> Vec<Result<Chunk
     })]
 }
 
-/// Read an HTTP response body as text, capping at `MAX_RESPONSE_BYTES`.
+/// Read an HTTP response body as text, capping at the resolved source limit.
 ///
 /// Pre-flight Content-Length and streamed cap-aware copy. The previous
 /// version called `.text()` (which auto-decompresses gzip/deflate to
 /// completion) before checking the size - a 1 MB gzip bomb expanding to
 /// 1+ GB would OOM before this check fired. See `audit release-2026-04-26
 /// web.rs:287-301`.
-fn read_text_response(resp: reqwest::blocking::Response) -> Result<String, SourceError> {
-    let bytes = read_bytes_response(resp)?;
+fn read_text_response(
+    resp: reqwest::blocking::Response,
+    max_response_bytes: usize,
+) -> Result<String, SourceError> {
+    let bytes = read_bytes_response(resp, max_response_bytes)?;
     String::from_utf8(bytes).map_err(|e| {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
         SourceError::Other(format!("non-UTF-8 response: {e}"))
     })
 }
 
-/// Read an HTTP response body as bytes, capping at `MAX_RESPONSE_BYTES`
+/// Read an HTTP response body as bytes, capping at the resolved source limit
 /// BEFORE decompression to defeat gzip-bomb DoS.
-fn read_bytes_response(resp: reqwest::blocking::Response) -> Result<Vec<u8>, SourceError> {
+fn read_bytes_response(
+    resp: reqwest::blocking::Response,
+    max_response_bytes: usize,
+) -> Result<Vec<u8>, SourceError> {
     use std::io::Read;
     let url = resp.url().to_string();
     let safe_url = redact_url(&url);
 
     if let Some(len) = resp.content_length() {
-        if len as usize > MAX_RESPONSE_BYTES {
+        if len as usize > max_response_bytes {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             return Err(SourceError::Other(format!(
-                "response from {safe_url} declares {len} bytes (> {} MB limit)",
-                MAX_RESPONSE_BYTES / (1024 * 1024)
+                "response from {safe_url} declares {len} bytes (> {max_response_bytes} byte limit)"
             )));
         }
     }
 
     // Stream into a bounded buffer; abort the moment we exceed the cap.
-    let mut buf = Vec::with_capacity(MAX_RESPONSE_BYTES.min(64 * 1024));
-    let mut taken = resp.take(MAX_RESPONSE_BYTES as u64 + 1);
+    let mut buf = Vec::with_capacity(max_response_bytes.min(64 * 1024));
+    let mut taken = resp.take(max_response_bytes as u64 + 1);
     taken.read_to_end(&mut buf).map_err(|e| {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
         SourceError::Other(format!("failed to read bytes from {safe_url}: {e}"))
     })?;
-    if buf.len() > MAX_RESPONSE_BYTES {
+    if buf.len() > max_response_bytes {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         return Err(SourceError::Other(format!(
-            "response from {safe_url} exceeds {} MB limit",
-            MAX_RESPONSE_BYTES / (1024 * 1024)
+            "response from {safe_url} exceeds {max_response_bytes} byte limit"
         )));
     }
 

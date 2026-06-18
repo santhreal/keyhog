@@ -14,7 +14,7 @@
 
 use vyre_runtime::megakernel::BatchRuleProgram;
 
-use super::megakernel::{CATALOG_WIRE_MAGIC, MegakernelCatalog};
+use super::megakernel::{MegakernelCatalog, CATALOG_WIRE_MAGIC};
 
 /// Wire-decode failures for the cached catalog. Every variant means "stale or
 /// corrupt blob — drop and recompile" (the `cached_load_or_compile` contract),
@@ -157,6 +157,7 @@ impl vyre_libs::scan::MatchEngineCache for MegakernelCatalog {
             host_detectors,
             dispatcher: std::sync::Mutex::new(None),
             resident_batch: std::sync::Mutex::new(None),
+            segment_overlap: std::sync::OnceLock::new(),
         })
     }
 }

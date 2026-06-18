@@ -3,23 +3,63 @@
 
 use std::sync::Arc;
 
-use vyre_driver_wgpu::WgpuBackend;
+use vyre_driver_wgpu::megakernel::segmentation::catalog_sync_overlap;
 use vyre_driver_wgpu::megakernel::{
     BatchDispatchConfig, BatchDispatcher, BatchFile, FileBatch, HitRecord,
 };
+use vyre_driver_wgpu::WgpuBackend;
 use vyre_libs::scan::build_regex_dfa_unanchored;
-use vyre_runtime::megakernel::BatchRuleProgram;
 use vyre_runtime::megakernel::rule_catalog::pack_rule_catalog;
+use vyre_runtime::megakernel::BatchRuleProgram;
 
 const PER_RULE_MAX_DFA_STATES: usize = 16_384;
 const PER_RULE_MAX_MATCHES: u32 = 200_000;
 const MEGAKERNEL_HIT_CAPACITY: u32 = 1_000_000;
-// v7: Keyhog now builds against the published `vyre-driver-wgpu 0.6.2`
-// megakernel API only. That surface has whole-file batch geometry and no
-// segmentation/dropped-hit extensions, so cached catalogs from the live-tree
-// prototype must not be reused.
-const MEGAKERNEL_CATALOG_CACHE_VERSION: u32 = 7;
+// v8: Keyhog builds against the published `vyre-driver-wgpu 0.6.3` megakernel API
+// and engages intra-file segmentation at dispatch (see `scan`). The catalog (DFA
+// transition tables) is unchanged by segmentation — geometry is a per-batch
+// work-queue property, not a catalog property — but the bump invalidates caches
+// packed by the older 0.6.2-only whole-file build.
+const MEGAKERNEL_CATALOG_CACHE_VERSION: u32 = 8;
 pub(super) const CATALOG_WIRE_MAGIC: [u8; 4] = *b"KHMK";
+
+/// Target number of GPU work-items (`segment_count * rule_count`) a single batch
+/// should produce so a large file saturates the device instead of leaving
+/// occupancy bounded by `rule_count`. ~64Ki covers an RTX 5090's resident-lane
+/// count with headroom; a file shorter than the resulting `seg_len` stays whole.
+const GPU_SATURATION_WORK_ITEMS: u64 = 64 * 1024;
+/// Floor on a window's owned width so DFA warm-up (the `overlap` bytes each window
+/// re-scans) stays a small fraction of useful work.
+const MIN_SEG_OWNED_BYTES: u32 = 1024;
+
+/// Pick the intra-file segment (owned-window) width that saturates the GPU for a
+/// batch of `total_bytes` against `rule_count` rules, given the catalog warm-up
+/// `overlap`. Splitting each file into `ceil(file_len / seg_len)` windows turns one
+/// large file into many `(segment, rule)` work-items; this sizes `seg_len` so the
+/// batch yields ~[`GPU_SATURATION_WORK_ITEMS`] of them. Floored so warm-up overhead
+/// stays low and windows stay wider than the overlap; a file shorter than the
+/// result is left as a single whole-file window by the planner.
+fn choose_seg_len(total_bytes: usize, rule_count: u32, overlap: u32) -> u32 {
+    if rule_count == 0 {
+        return u32::MAX; // no rules -> nothing to segment
+    }
+    let target_segments = (GPU_SATURATION_WORK_ITEMS / u64::from(rule_count)).max(1);
+    let bytes_per_segment = (total_bytes as u64 / target_segments).max(1);
+    let seg_len = match u32::try_from(bytes_per_segment) {
+        Ok(value) => value,
+        Err(error) => {
+            eprintln!(
+                "keyhog megakernel: requested segment length {bytes_per_segment} exceeds \
+                 u32::MAX; clamping to the Vyre segment-length limit (recall preserved, \
+                 GPU occupancy may be lower): {error}."
+            );
+            u32::MAX
+        }
+    };
+    seg_len
+        .max(MIN_SEG_OWNED_BYTES)
+        .max(overlap.saturating_add(1))
+}
 
 pub(crate) struct MegakernelCatalog {
     pub(super) rules: Vec<BatchRuleProgram>,
@@ -27,6 +67,13 @@ pub(crate) struct MegakernelCatalog {
     pub(super) host_detectors: Vec<usize>,
     pub(super) dispatcher: std::sync::Mutex<Option<BatchDispatcher>>,
     pub(super) resident_batch: std::sync::Mutex<Option<FileBatch>>,
+    /// Catalog synchronization-distance overlap, computed once (lazily) from
+    /// `rules`: `Some(o)` is the minimum warm-up that keeps intra-file
+    /// segmentation byte-identical to a whole-file scan; `None` means some rule
+    /// has unbounded memory and the catalog must be scanned whole-file. Cached
+    /// because the per-rule product-automaton analysis is far too costly to
+    /// repeat per scan.
+    pub(super) segment_overlap: std::sync::OnceLock<Option<u32>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,10 +122,8 @@ impl MegakernelCatalog {
                     PER_RULE_MAX_MATCHES,
                     PER_RULE_MAX_DFA_STATES,
                 )
-                .ok()  // LAW10: GPU lower/acquire failure => host path (recall-preserving, counted host_lower_failed + surfaced via tracing::info/last_gpu_degrade_reason)
-                .map(|pipe| {
-                    (pipe.dfa.transitions, pipe.dfa.accept, pipe.dfa.state_count)
-                });
+                .ok() // LAW10: GPU lower/acquire failure => host path (recall-preserving, counted host_lower_failed + surfaced via tracing::info/last_gpu_degrade_reason)
+                .map(|pipe| (pipe.dfa.transitions, pipe.dfa.accept, pipe.dfa.state_count));
                 (lowered, *detector)
             })
             .collect();
@@ -100,12 +145,13 @@ impl MegakernelCatalog {
                             rules.push(rule);
                             rule_to_detector.push(detector);
                         }
-                        // LAW10: recall-safe — a BatchRuleProgram build failure does
+                        // Law 10: recall-safe — a BatchRuleProgram build failure does
                         // NOT drop the detector; it is pushed onto host_detectors and
                         // runs on the host fallback engine instead (same as the `None`
                         // arm below). The GPU batch is a faster path for the same
                         // detector set, never the only path.
-                        Err(_) => { // LAW10: DFA-lower failure ⇒ detector runs on the loud host fallback path (recall preserved, same detector set), counted in host_lower_failed and surfaced via the tracing::info "un-lowerable" log (or tracing::error if all fail); host runs that set anyway, so the speed cost is a rounding error.
+                        Err(_error) => {
+                            // Law 10: DFA-lower failure ⇒ detector runs on the loud host fallback path (recall preserved, same detector set), counted in host_lower_failed and surfaced via the tracing::info "un-lowerable" log (or tracing::error if all fail); host runs that set anyway, so the speed cost is a rounding error.
                             host_detectors.push(detector);
                             host_lower_failed += 1;
                         }
@@ -177,7 +223,7 @@ impl MegakernelCatalog {
             let mut mib = [0f64; 4];
             for r in &rules {
                 let sc = r.state_count as usize;
-                let b = hi.iter().position(|&h| sc <= h).unwrap_or(3);  // LAW10: empty/absent => documented numeric/sentinel default, recall-safe
+                let b = hi.iter().position(|&h| sc <= h).unwrap_or(3); // LAW10: empty/absent => documented numeric/sentinel default, recall-safe
                 cnt[b] += 1;
                 mib[b] += bytes_of(r) as f64 / (1024.0 * 1024.0);
             }
@@ -198,6 +244,7 @@ impl MegakernelCatalog {
             host_detectors,
             dispatcher: std::sync::Mutex::new(None),
             resident_batch: std::sync::Mutex::new(None),
+            segment_overlap: std::sync::OnceLock::new(),
         }
     }
 
@@ -246,6 +293,9 @@ impl MegakernelCatalog {
             return Ok(Vec::new());
         }
         let file_count = files.len();
+        // Total coalesced bytes (before `files` is consumed into `batch_files`),
+        // used to size the intra-file segment width below.
+        let total_bytes: usize = files.iter().map(|(_, bytes)| bytes.len()).sum();
 
         // Fixed hit-ring capacity (see MEGAKERNEL_HIT_CAPACITY): the batch ring
         // and the reused dispatcher's compiled pipeline MUST agree on capacity,
@@ -287,10 +337,48 @@ impl MegakernelCatalog {
                 );
             }
         }
-        // Published `vyre-driver-wgpu 0.6.2` exposes one work item per
-        // `(file, rule, layer)`. There is no segmentation knob in that registry
-        // surface, so Keyhog keeps exact whole-file scanning here and relies on a
-        // later Vyre release for tiled large-file geometry.
+        // Engage intra-file segmentation (vyre 0.6.3): tile each file into
+        // overlapping windows so one large file saturates the GPU instead of
+        // leaving occupancy bounded by `rule_count`. The overlap is the catalog's
+        // synchronization distance — the minimum warm-up that keeps a windowed scan
+        // byte-identical to a whole-file scan — computed once and cached. `None`
+        // means some rule has unbounded memory (an `a.*b`-style gap) that CANNOT be
+        // soundly segmented: fail safe to whole-file scanning, surfaced LOUDLY
+        // (recall is fully preserved; never a silent slow-or-wrong path). `refresh`
+        // above reset the batch to the whole-file default, so this re-applies the
+        // geometry for the current file lengths every scan.
+        let overlap = *self
+            .segment_overlap
+            .get_or_init(|| catalog_sync_overlap(&self.rules));
+        {
+            let batch = batch_guard
+                .as_mut()
+                .expect("resident batch initialized immediately above");
+            match overlap {
+                Some(overlap) => {
+                    let seg_len = choose_seg_len(total_bytes, self.rules.len() as u32, overlap);
+                    batch.set_segmentation(seg_len, overlap).map_err(|e| {
+                        format!(
+                            "megakernel set_segmentation(seg_len={seg_len}, overlap={overlap}): {e:?}"
+                        )
+                    })?;
+                    if std::env::var_os("KH_PERF").is_some() {
+                        eprintln!(
+                            "KH_PERF mk-segment: total_bytes={total_bytes} rules={} seg_len={seg_len} overlap={overlap} segments~={}",
+                            self.rules.len(),
+                            (total_bytes as u64).div_ceil(u64::from(seg_len.max(1)))
+                        );
+                    }
+                }
+                None => {
+                    eprintln!(
+                        "keyhog megakernel: catalog has an unbounded-memory rule; intra-file \
+                         segmentation disabled, scanning whole-file (recall preserved, large-file \
+                         GPU occupancy limited to rule_count)."
+                    );
+                }
+            }
+        }
         let batch = batch_guard
             .as_ref()
             .expect("resident batch initialized immediately above");
@@ -489,5 +577,25 @@ mod tests {
             gpu.len(),
             "rule_to_detector must map each GPU rule to a DISTINCT detector"
         );
+    }
+
+    /// `choose_seg_len` must split a large batch into a saturating number of
+    /// windows while leaving small batches and large-overlap catalogs sound.
+    #[test]
+    fn choose_seg_len_saturates_large_and_floors_small() {
+        const MIB: usize = 1024 * 1024;
+        // 8 MiB, 8 rules, small overlap: target 64Ki/8 = 8192 segments ⇒
+        // seg_len = 8 MiB / 8192 = 1024 bytes (the floor, exactly).
+        assert_eq!(choose_seg_len(8 * MIB, 8, 8), 1024);
+        // 8 MiB, 512 rules: target 128 segments ⇒ seg_len = 8 MiB/128 = 65536.
+        assert_eq!(choose_seg_len(8 * MIB, 512, 8), 65_536);
+        // Tiny batch floors to MIN_SEG_OWNED_BYTES so a short file stays a single
+        // whole-file window (seg_len > file_len ⇒ 1 window in plan_segments).
+        assert_eq!(choose_seg_len(100, 8, 8), MIN_SEG_OWNED_BYTES);
+        // Overlap above the computed/floored width raises seg_len above it, so
+        // warm-up never exceeds the owned region (seg_len > overlap always).
+        assert_eq!(choose_seg_len(4096, 8, 4000), 4001);
+        // Zero rules ⇒ no-segmentation sentinel (whole-file).
+        assert_eq!(choose_seg_len(8 * MIB, 0, 0), u32::MAX);
     }
 }

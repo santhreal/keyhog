@@ -9,13 +9,13 @@ use serde::Deserialize;
 
 const DEFAULT_GCS_ENDPOINT: &str = "https://storage.googleapis.com";
 const DEFAULT_MAX_OBJECTS: usize = 100_000;
-const MAX_GCS_OBJECT_BYTES: u64 = 10 * 1024 * 1024;
 
 pub struct GcsSource {
     bucket: String,
     prefix: Option<String>,
     endpoint: String,
     max_objects: usize,
+    limits: crate::SourceLimits,
     http: crate::http::HttpClientConfig,
 }
 
@@ -26,6 +26,7 @@ impl GcsSource {
             prefix: None,
             endpoint: DEFAULT_GCS_ENDPOINT.to_string(),
             max_objects: DEFAULT_MAX_OBJECTS,
+            limits: crate::SourceLimits::default(),
             http: crate::http::HttpClientConfig {
                 ua_suffix: Some("gcs".into()),
                 ..Default::default()
@@ -35,6 +36,11 @@ impl GcsSource {
 
     pub fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
         self.http = http;
+        self
+    }
+
+    pub fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
+        self.limits = limits;
         self
     }
 
@@ -68,6 +74,7 @@ impl Source for GcsSource {
                         self.prefix.as_deref(),
                         &self.endpoint,
                         self.max_objects,
+                        self.limits,
                         &self.http,
                     )
                 })
@@ -122,6 +129,7 @@ fn collect_gcs_chunks(
     prefix: Option<&str>,
     endpoint: &str,
     max_objects: usize,
+    limits: crate::SourceLimits,
     http: &crate::http::HttpClientConfig,
 ) -> Result<Vec<Chunk>, SourceError> {
     let bucket = validate_bucket_name(bucket)?;
@@ -210,6 +218,7 @@ fn collect_gcs_chunks(
                         &object.name,
                         listed_size,
                         bearer.as_deref(),
+                        limits.gcs_object_bytes,
                     )
                 })
                 .collect()
@@ -244,14 +253,15 @@ fn fetch_gcs_object_chunk(
     name: &str,
     listed_size: Option<u64>,
     bearer: Option<&str>,
+    max_object_bytes: u64,
 ) -> Result<Option<Chunk>, SourceError> {
     if let Some(size) = listed_size {
-        if size > MAX_GCS_OBJECT_BYTES {
+        if size > max_object_bytes {
             tracing::warn!(
                 bucket,
                 key = name,
                 object_size = size,
-                cap = MAX_GCS_OBJECT_BYTES,
+                cap = max_object_bytes,
                 "skipping GCS object: listed size exceeds the per-object byte cap; NOT scanned",
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
@@ -279,12 +289,12 @@ fn fetch_gcs_object_chunk(
         return Ok(None);
     }
     if let Some(content_length) = response.content_length() {
-        if content_length > MAX_GCS_OBJECT_BYTES {
+        if content_length > max_object_bytes {
             tracing::warn!(
                 bucket,
                 key = name,
                 content_length,
-                cap = MAX_GCS_OBJECT_BYTES,
+                cap = max_object_bytes,
                 "skipping GCS object: Content-Length exceeds the per-object byte cap; NOT scanned",
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
@@ -318,16 +328,16 @@ fn fetch_gcs_object_chunk(
     }
 
     let mut body = Vec::new();
-    let mut reader = response.take(MAX_GCS_OBJECT_BYTES + 1);
+    let mut reader = response.take(max_object_bytes + 1);
     std::io::Read::read_to_end(&mut reader, &mut body).map_err(|error| {
         SourceError::Other(format!("failed to read GCS object body: {name}: {error}"))
     })?;
-    if body.len() as u64 > MAX_GCS_OBJECT_BYTES {
+    if body.len() as u64 > max_object_bytes {
         tracing::warn!(
             bucket,
             key = name,
             downloaded = body.len(),
-            cap = MAX_GCS_OBJECT_BYTES,
+            cap = max_object_bytes,
             "skipping GCS object: streamed body exceeds the per-object byte cap; NOT scanned",
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);

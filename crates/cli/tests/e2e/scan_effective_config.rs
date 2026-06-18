@@ -86,6 +86,43 @@ fn scan_effective_config_baked_values_equal_explicit_flags() {
     assert!(from_config.contains("ml_enabled = false"));
 }
 
+#[cfg(all(feature = "web", feature = "git"))]
+#[test]
+fn scan_effective_config_source_limits_follow_config_and_cli_precedence() {
+    let dir = TempDir::new().expect("tempdir");
+    let config_path = dir.path().join(".keyhog.toml");
+    std::fs::write(
+        &config_path,
+        "[limits]\n\
+         stdin_bytes = \"1MB\"\n\
+         web_response_bytes = \"2MB\"\n\
+         git_chunks = 17\n",
+    )
+    .expect("write config");
+
+    let config_path = config_path.to_string_lossy();
+    let (stdout, stderr, code) = effective_config(&[
+        "scan",
+        "--no-daemon",
+        "--config",
+        &config_path,
+        "--limit-stdin-bytes",
+        "3MB",
+    ]);
+
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    for required in [
+        "limit_stdin_bytes = 3145728",
+        "limit_web_response_bytes = 2097152",
+        "limit_git_chunks = 17",
+    ] {
+        assert!(
+            stdout.contains(required),
+            "effective config missing `{required}`; stdout={stdout}"
+        );
+    }
+}
+
 #[test]
 fn scan_effective_config_no_decode_sets_depth_zero() {
     let (stdout, stderr, code) = effective_config(&["scan", "--no-daemon", "--no-decode"]);
@@ -119,7 +156,9 @@ fn scan_effective_config_rejects_invalid_config_byte_sizes() {
     let (stdout, stderr, code) = effective_config_with_toml(
         "decode_size_limit = \"10\"\n\
          max_file_size = \"wat\"\n\
-         regex_dfa_limit = \"1XB\"\n",
+         regex_dfa_limit = \"1XB\"\n\
+         [limits]\n\
+         stdin_bytes = \"9\"\n",
     );
 
     assert_eq!(code, Some(2), "stdout={stdout}\nstderr={stderr}");
@@ -134,6 +173,7 @@ fn scan_effective_config_rejects_invalid_config_byte_sizes() {
         "max_file_size = \"wat\"",
         "unknown size suffix",
         "regex_dfa_limit = \"1XB\"",
+        "[limits].stdin_bytes = \"9\"",
     ] {
         assert!(
             stderr.contains(required),

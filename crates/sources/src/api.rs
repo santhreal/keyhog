@@ -22,6 +22,6 @@ pub use crate::github_org::GitHubOrgSource;
 pub use crate::s3::S3Source;
 #[cfg(feature = "slack")]
 pub use crate::slack::SlackSource;
-pub use crate::stdin::StdinSource;
+pub use crate::stdin::{ConfiguredStdinSource, StdinSource};
 #[cfg(feature = "web")]
 pub use crate::web::WebSource;

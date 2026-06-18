@@ -7,6 +7,7 @@
 #![allow(clippy::too_many_arguments)]
 
 pub mod api;
+mod limits;
 pub(crate) mod timeouts;
 
 use std::sync::atomic::AtomicUsize;
@@ -250,6 +251,7 @@ pub mod strings;
 mod web;
 
 pub use api::*;
+pub use limits::{SourceLimits, DEFAULT_SOURCE_LIMITS};
 
 // Arc is used by the registry-registration plugins below. The cfg
 // match has to track the *actual* `Arc::new(...)` call sites, not
@@ -277,6 +279,17 @@ pub fn create_source_with_http_config(
     params: Option<&str>,
     _http: crate::http::HttpClientConfig,
 ) -> Result<Box<dyn keyhog_core::Source>, keyhog_core::SourceError> {
+    create_source_with_http_config_and_limits(name, params, _http, crate::SourceLimits::default())
+}
+
+/// Create a source while applying shared HTTP policy and source byte/count
+/// limits to network/container implementations.
+pub fn create_source_with_http_config_and_limits(
+    name: &str,
+    params: Option<&str>,
+    _http: crate::http::HttpClientConfig,
+    limits: crate::SourceLimits,
+) -> Result<Box<dyn keyhog_core::Source>, keyhog_core::SourceError> {
     match name {
         "slack" => {
             if let Some(token) = params {
@@ -297,7 +310,7 @@ pub fn create_source_with_http_config(
         "docker" => {
             if let Some(image) = params {
                 #[cfg(feature = "docker")]
-                return Ok(Box::new(DockerImageSource::new(image)));
+                return Ok(Box::new(DockerImageSource::new(image).with_limits(limits)));
                 #[cfg(not(feature = "docker"))]
                 {
                     let _ = image; // LAW10: unused-binding marker; no runtime effect, not a fallback
@@ -313,7 +326,11 @@ pub fn create_source_with_http_config(
         "s3" => {
             if let Some(bucket) = params {
                 #[cfg(feature = "s3")]
-                return Ok(Box::new(S3Source::new(bucket).with_http_config(_http)));
+                return Ok(Box::new(
+                    S3Source::new(bucket)
+                        .with_http_config(_http)
+                        .with_limits(limits),
+                ));
                 #[cfg(not(feature = "s3"))]
                 {
                     let _ = bucket; // LAW10: unused-binding marker; no runtime effect, not a fallback
@@ -329,7 +346,11 @@ pub fn create_source_with_http_config(
         "gcs" => {
             if let Some(bucket) = params {
                 #[cfg(feature = "gcs")]
-                return Ok(Box::new(GcsSource::new(bucket).with_http_config(_http)));
+                return Ok(Box::new(
+                    GcsSource::new(bucket)
+                        .with_http_config(_http)
+                        .with_limits(limits),
+                ));
                 #[cfg(not(feature = "gcs"))]
                 {
                     let _ = bucket; // LAW10: unused-binding marker; no runtime effect, not a fallback
@@ -346,7 +367,9 @@ pub fn create_source_with_http_config(
             if let Some(container_url) = params {
                 #[cfg(feature = "azure")]
                 return Ok(Box::new(
-                    AzureBlobSource::new(container_url).with_http_config(_http),
+                    AzureBlobSource::new(container_url)
+                        .with_http_config(_http)
+                        .with_limits(limits),
                 ));
                 #[cfg(not(feature = "azure"))]
                 {

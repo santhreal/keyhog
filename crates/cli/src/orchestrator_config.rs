@@ -639,6 +639,8 @@ pub(crate) struct ResolvedScanConfig {
     pub(crate) require_lockdown: bool,
     /// Resolved regex lazy-DFA cache cap applied before scanner compilation.
     pub(crate) regex_dfa_limit: Option<usize>,
+    /// Resolved source byte/count limits applied while constructing sources.
+    pub(crate) source_limits: keyhog_sources::SourceLimits,
 }
 
 /// Resolve the full scan configuration in one place: run the precedence merge
@@ -674,6 +676,7 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
         disabled_detectors: outcome.disabled_detectors.into_iter().collect(),
         require_lockdown: outcome.require_lockdown,
         regex_dfa_limit: args.regex_dfa_limit,
+        source_limits: args.limits.to_source_limits(),
     })
 }
 
@@ -688,6 +691,7 @@ pub(crate) fn resolved_scan_config_for_scanner(scanner: ScannerConfig) -> Resolv
         disabled_detectors: std::collections::HashSet::new(),
         require_lockdown: false,
         regex_dfa_limit: None,
+        source_limits: keyhog_sources::SourceLimits::default(),
     }
 }
 
@@ -742,6 +746,57 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
     ));
     out.push_str(&format!("max_decode_depth = {}\n", s.max_decode_depth));
     out.push_str(&format!("max_decode_bytes = {}\n", s.max_decode_bytes));
+    let limits = resolved.source_limits;
+    out.push_str(&format!("limit_stdin_bytes = {}\n", limits.stdin_bytes));
+    out.push_str(&format!(
+        "limit_web_response_bytes = {}\n",
+        limits.web_response_bytes
+    ));
+    out.push_str(&format!(
+        "limit_s3_object_bytes = {}\n",
+        limits.s3_object_bytes
+    ));
+    out.push_str(&format!(
+        "limit_gcs_object_bytes = {}\n",
+        limits.gcs_object_bytes
+    ));
+    out.push_str(&format!(
+        "limit_azure_blob_bytes = {}\n",
+        limits.azure_blob_bytes
+    ));
+    out.push_str(&format!(
+        "limit_docker_tar_entry_bytes = {}\n",
+        limits.docker_tar_entry_bytes
+    ));
+    out.push_str(&format!(
+        "limit_docker_image_config_bytes = {}\n",
+        limits.docker_image_config_bytes
+    ));
+    out.push_str(&format!(
+        "limit_docker_tar_total_bytes = {}\n",
+        limits.docker_tar_total_bytes
+    ));
+    out.push_str(&format!(
+        "limit_git_line_bytes = {}\n",
+        limits.git_line_bytes
+    ));
+    out.push_str(&format!(
+        "limit_git_total_bytes = {}\n",
+        limits.git_total_bytes
+    ));
+    out.push_str(&format!(
+        "limit_git_blob_bytes = {}\n",
+        limits.git_blob_bytes
+    ));
+    out.push_str(&format!("limit_git_chunks = {}\n", limits.git_chunk_count));
+    out.push_str(&format!(
+        "limit_binary_read_bytes = {}\n",
+        limits.binary_read_bytes
+    ));
+    out.push_str(&format!(
+        "limit_binary_decompiled_bytes = {}\n",
+        limits.binary_decompiled_bytes
+    ));
     out.push_str(&format!("scan_comments = {}\n", s.scan_comments));
     out.push_str(&format!(
         "unicode_normalization = {}\n",
@@ -812,6 +867,7 @@ pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
     }
     resolved.require_lockdown.hash(&mut h);
     resolved.regex_dfa_limit.hash(&mut h);
+    resolved.source_limits.hash(&mut h);
     hash_autoroute_runtime_env(&mut h);
     h.finish()
 }
@@ -900,6 +956,7 @@ pub mod testing {
             disabled_detectors: std::collections::HashSet::new(),
             require_lockdown: false,
             regex_dfa_limit: None,
+            source_limits: keyhog_sources::SourceLimits::default(),
         };
         super::render_effective_config(&resolved)
     }
