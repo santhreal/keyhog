@@ -117,11 +117,21 @@ fn sanitise_thread_count(requested: usize, physical_cores: usize, source: &'stat
 }
 
 pub(crate) fn auto_discover_detectors(path: &Path) -> Result<PathBuf> {
-    if let Ok(env_path) = std::env::var("KEYHOG_DETECTORS") {
+    if path != Path::new("detectors") {
+        return Ok(path.to_path_buf());
+    }
+
+    if let Some(env_path) = std::env::var_os("KEYHOG_DETECTORS") {
         let p = PathBuf::from(&env_path);
-        if p.exists() && p.is_dir() {
+        if p.is_dir() {
             return Ok(p);
         }
+        anyhow::bail!(
+            "KEYHOG_DETECTORS points at '{}', but it is not an existing detector directory. \
+             Fix: unset KEYHOG_DETECTORS, set it to an existing detector directory, or pass \
+             --detectors <path> explicitly.",
+            p.display()
+        );
     }
 
     if path == Path::new("detectors") && !path.exists() {
