@@ -64,7 +64,6 @@ struct Telemetry {
     dogfood_enabled: AtomicBool,
     example_suppressions: AtomicUsize,
     events: Mutex<Vec<DogfoodEvent>>,
-    seen_example_suppressions: Mutex<HashSet<String>>,
     /// One key (`path\0credential_hash`) per credential the trace has ALREADY
     /// emitted a suppression EVENT for, across BOTH the example and shape paths.
     /// The same credential is adjudicated by several pipeline stages (the
@@ -121,8 +120,9 @@ pub fn is_dogfood_enabled() -> bool {
     DOGFOOD_ENABLED.load(Ordering::Relaxed)
 }
 
-/// Record one example/placeholder suppression. Always increments the
-/// counter; only appends a full event record when `--dogfood` is on.
+/// Record one example/placeholder suppression. The default path is only the
+/// per-scan atomic counter; hash/lock/redaction work is reserved for opt-in
+/// `--dogfood` event capture.
 pub fn record_example_suppression(
     detector: &str,
     path: Option<&str>,
@@ -130,20 +130,6 @@ pub fn record_example_suppression(
     reason: &'static str,
 ) {
     let t = cell();
-    let credential_hash = keyhog_core::hex_encode(&keyhog_core::sha256_hash(credential));
-    let key = format!(
-        "{}\0{}\0{}\0{}",
-        detector,
-        path.unwrap_or(""),
-        credential_hash,
-        reason
-    );
-    if let Ok(mut seen) = t.seen_example_suppressions.lock() {
-        if !seen.insert(key) {
-            return;
-        }
-    }
-
     t.example_suppressions.fetch_add(1, Ordering::Relaxed);
 
     // KH-120: Wrap dogfood logging events behind static capability flags to eliminate overhead during silent scans.
@@ -151,6 +137,7 @@ pub fn record_example_suppression(
         return;
     }
 
+    let credential_hash = keyhog_core::hex_encode(&keyhog_core::sha256_hash(credential));
     // One EVENT per credential+path across all stages (KH-GAP-091): if a later
     // shape gate already recorded this same credential, or vice-versa, don't emit
     // a duplicate. First stage to reach it wins.
@@ -277,8 +264,7 @@ pub fn drain_events() -> Vec<DogfoodEvent> {
     let t = cell();
     // The drained batch is one complete trace; the next scan must be able to emit
     // its own events for the same credentials, so clear the per-credential
-    // emitted-event dedup alongside the drain (the example COUNTER dedup is a
-    // separate, longer-lived set and is intentionally NOT cleared here).
+    // emitted-event dedup alongside the drain.
     if let Ok(mut emitted) = t.emitted_suppression_events.lock() {
         emitted.clear();
     }
@@ -334,9 +320,6 @@ pub fn reset() {
     STRUCTURED_PARSE_FAILURES.store(0, Ordering::Relaxed);
     if let Ok(mut events) = t.events.lock() {
         events.clear();
-    }
-    if let Ok(mut seen) = t.seen_example_suppressions.lock() {
-        seen.clear();
     }
     if let Ok(mut emitted) = t.emitted_suppression_events.lock() {
         emitted.clear();

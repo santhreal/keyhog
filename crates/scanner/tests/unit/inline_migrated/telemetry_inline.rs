@@ -2,7 +2,7 @@
 
 use keyhog_scanner::telemetry::{
     drain_events, enable_dogfood, example_suppression_count, record_example_suppression, reset,
-    DogfoodEvent,
+    reset_example_suppression_count, DogfoodEvent,
 };
 use std::sync::Mutex;
 
@@ -18,6 +18,57 @@ fn counter_increments_without_dogfood() {
     assert!(
         drain_events().is_empty(),
         "events only collected with --dogfood"
+    );
+}
+
+#[test]
+fn repeated_default_suppression_counts_without_event_dedup_work() {
+    let _g = T_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    reset();
+    record_example_suppression("aws", Some("same.env"), "AKIAEXAMPLE", "ends_with_EXAMPLE");
+    record_example_suppression("aws", Some("same.env"), "AKIAEXAMPLE", "ends_with_EXAMPLE");
+
+    assert_eq!(
+        example_suppression_count(),
+        2,
+        "default scans must count per-scan suppressions without a process-global String dedup set"
+    );
+    assert!(
+        drain_events().is_empty(),
+        "default scans must not allocate dogfood events"
+    );
+}
+
+#[test]
+fn reset_example_suppression_count_makes_repeated_daemon_scans_stable() {
+    let _g = T_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    reset();
+    record_example_suppression("aws", Some("same.env"), "AKIAEXAMPLE", "ends_with_EXAMPLE");
+    assert_eq!(example_suppression_count(), 1);
+
+    reset_example_suppression_count();
+    record_example_suppression("aws", Some("same.env"), "AKIAEXAMPLE", "ends_with_EXAMPLE");
+    assert_eq!(
+        example_suppression_count(),
+        1,
+        "daemon-style per-scan reset must not be defeated by process-global example dedup"
+    );
+}
+
+#[test]
+fn drain_events_allows_same_dogfood_suppression_in_next_scan() {
+    let _g = T_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    reset();
+    enable_dogfood();
+    record_example_suppression("aws", Some("same.env"), "AKIAEXAMPLE", "ends_with_EXAMPLE");
+    assert_eq!(drain_events().len(), 1);
+
+    reset_example_suppression_count();
+    record_example_suppression("aws", Some("same.env"), "AKIAEXAMPLE", "ends_with_EXAMPLE");
+    assert_eq!(
+        drain_events().len(),
+        1,
+        "draining one daemon scan must clear event dedup for the next scan"
     );
 }
 
