@@ -17,11 +17,22 @@
 //!
 //! - **v1 (legacy)** - `path → BLAKE3 hex` only. Loadable but lacks the
 //!   metadata short-circuit; treated as cold-start to avoid mixing schemas.
-//! - **v2 (current)** - `path → (mtime_ns, size, BLAKE3 hex)` plus a
+//! - **v2 (legacy)** - `path → (mtime_ns, size, BLAKE3 hex)` plus a
 //!   top-level `spec_hash` derived from the loaded detector set. A
 //!   spec-hash mismatch invalidates the entire cache; this is the
 //!   correctness fix for "added a detector but unchanged files were
-//!   silently skipped, missing the new detection forever."
+//!   silently skipped, missing the new detection forever." Superseded by
+//!   v3 and treated as cold-start (it lacks the racy-clean timestamp).
+//! - **v3 (current)** - v2 plus a top-level `written_at_ns` (wall-clock
+//!   nanoseconds when the index was last written). On load, any entry
+//!   whose file `mtime_ns` falls in the same clock-second as - or after -
+//!   `written_at_ns` is dropped (git's "racy index" guard): a
+//!   size-preserving edit made in that window leaves `(mtime, size)`
+//!   unchanged on coarse-granularity filesystems (FAT/HFS+/some NFS expose
+//!   whole-second mtimes), so trusting the stored hash would skip a
+//!   freshly injected secret forever. Dropped entries are simply re-read
+//!   and re-hashed on the next scan - slower for those few files, never
+//!   unsound.
 //!
 //! ## Serialization
 //!
@@ -51,7 +62,7 @@ mod tmp_hygiene;
 
 pub(crate) use storage::default_cache_path;
 
-const SCHEMA_VERSION: u32 = 2;
+const SCHEMA_VERSION: u32 = 3;
 
 /// Shard count: spreads concurrent `record` / `unchanged` calls across
 /// independent locks so tiny-file storms don't serialize all rayon workers.

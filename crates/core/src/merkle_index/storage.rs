@@ -37,8 +37,44 @@ struct OnDisk {
     /// Hex BLAKE3 of the canonical detector-spec digest.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     spec_hash: Option<String>,
+    /// Wall-clock time (nanoseconds since the UNIX epoch) when this index was
+    /// last written. Reference point for the racy-clean guard on load: an entry
+    /// whose file `mtime_ns` is in the same clock-second as - or after - this
+    /// value may have been modified after we recorded its hash, so it is dropped
+    /// and re-checked rather than trusted. A `0` value (clock read failed at
+    /// save time) floors every entry to racy, which fails safe: the next scan
+    /// re-reads and re-hashes everything rather than trusting a stale entry.
+    #[serde(default)]
+    written_at_ns: u64,
     /// `path -> entry`. Stored as hex strings so a human can diff cache files.
     entries: HashMap<String, EntryV2>,
+}
+
+/// Nanoseconds per second; used to floor a timestamp to its whole second for
+/// the racy-clean comparison.
+const NS_PER_SEC: u64 = 1_000_000_000;
+
+/// Floor a UNIX-epoch nanosecond timestamp to its whole second. The racy-clean
+/// guard compares a file's `mtime_ns` against the FLOORED index-write time so
+/// coarse-granularity filesystems are handled correctly: a file written in the
+/// same wall-second as the index has a truncated `mtime_ns` numerically *below*
+/// the fine-grained `written_at_ns`, yet must still be treated as racy.
+fn second_floor(ns: u64) -> u64 {
+    (ns / NS_PER_SEC) * NS_PER_SEC
+}
+
+/// Current wall-clock time in nanoseconds since the UNIX epoch. A clock set
+/// before the epoch (or an arithmetic overflow past ~year 2554) collapses to a
+/// value that marks every later load racy, which fails safe: the next scan
+/// re-reads and re-hashes everything rather than trusting a stale entry.
+fn now_unix_ns() -> u64 {
+    let Ok(duration) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) else {
+        return 0;
+    };
+    let Ok(ns) = u64::try_from(duration.as_nanos()) else {
+        return 0;
+    };
+    ns
 }
 
 impl MerkleIndex {
@@ -105,10 +141,34 @@ impl MerkleIndex {
         }
 
         let idx = Self::empty();
+        // Racy-clean guard (git's "racy index" problem): an entry whose file
+        // mtime falls in the same clock-second as - or after - the moment we
+        // last wrote this index cannot be trusted by (mtime, size) alone. A
+        // size-preserving edit in that window leaves the stat unchanged on
+        // coarse-granularity filesystems, so skipping the file would miss a
+        // freshly injected secret forever. Drop those entries so the next scan
+        // re-reads and content-hashes them. `written_at_ns == 0` (clock read
+        // failed at save time) floors to 0, marking every entry racy => full,
+        // correct cold re-scan that self-heals on the next save.
+        let racy_floor = second_floor(on_disk.written_at_ns);
+        let mut racy_dropped = 0usize;
         for (path, entry) in decode_entries(on_disk.entries) {
+            if entry.mtime_ns >= racy_floor {
+                racy_dropped += 1;
+                continue;
+            }
             if !idx.try_insert(path, entry) {
                 break;
             }
+        }
+        if racy_dropped > 0 {
+            tracing::info!(
+                cache = %path.display(),
+                racy_dropped,
+                "merkle index: entries modified in the same second as (or after) \
+                 the last index write were dropped (racy-clean guard) and will be \
+                 re-read + re-scanned this run"
+            );
         }
         tracing::info!(
             cache = %path.display(),
@@ -137,6 +197,7 @@ impl MerkleIndex {
         let on_disk = OnDisk {
             version: SCHEMA_VERSION,
             spec_hash: spec_hash.map(hex_encode),
+            written_at_ns: now_unix_ns(),
             entries: encode_entries(&merged),
         };
         let serialized = serde_json::to_vec_pretty(&on_disk)
