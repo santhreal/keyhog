@@ -68,6 +68,69 @@ fn forced_daemon_rejects_unenforceable_policy_without_in_process_fallback() {
 }
 
 #[test]
+fn forced_daemon_rejects_multiple_primary_sources() {
+    let work = TempDir::new().expect("work dir");
+    let path = work.path().join("leak.env");
+    std::fs::write(&path, aws_key_line()).expect("write fixture");
+    let runtime = TempDir::new().expect("isolated runtime");
+
+    let mut child = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", runtime.path())
+        .args(["scan", "--daemon=on", "--stdin", "--format", "json"])
+        .arg(&path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("spawn keyhog scan");
+    child
+        .stdin
+        .take()
+        .expect("child stdin")
+        .write_all(b"clean stdin\n")
+        .expect("write stdin");
+
+    let out = child.wait_with_output().expect("scan output");
+    let combined = combined_output(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "forced daemon with --stdin plus a file must fail instead of dropping one source; output={combined}"
+    );
+    assert!(
+        combined.contains("--daemon=on cannot be honored") && combined.contains("exactly one"),
+        "forced-daemon rejection must explain the multi-source mismatch; output={combined}"
+    );
+}
+
+#[test]
+fn forced_daemon_rejects_scan_mode_flags() {
+    let work = TempDir::new().expect("work dir");
+    let path = work.path().join("leak.env");
+    std::fs::write(&path, aws_key_line()).expect("write fixture");
+    let runtime = TempDir::new().expect("isolated runtime");
+
+    let out = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", runtime.path())
+        .args(["scan", "--daemon=on", "--no-decode", "--format", "json"])
+        .arg(&path)
+        .output()
+        .expect("spawn keyhog scan");
+
+    let combined = combined_output(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "forced daemon with scan-mode flags must fail instead of using a differently configured scanner; output={combined}"
+    );
+    assert!(
+        combined.contains("--daemon=on cannot be honored")
+            && combined.contains("in-process scanner"),
+        "forced-daemon rejection must explain the scanner-config mismatch; output={combined}"
+    );
+}
+
+#[test]
 fn forced_daemon_stdin_honors_cli_byte_limit() {
     let daemon = DaemonGuard::start();
 

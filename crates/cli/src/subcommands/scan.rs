@@ -206,12 +206,20 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
         return DaemonRoute::Forbidden;
     }
 
-    let is_eligible_shape = args.stdin || effective_single_file_path(args).is_some();
-    if !is_eligible_shape {
+    let single_file = effective_single_file_path(args).is_some();
+    let primary_sources = usize::from(args.stdin) + usize::from(single_file);
+    if primary_sources != 1 || has_daemon_incompatible_extra_sources(args) {
         if let Some(route) = reject_forced_daemon(
             forced_on,
-            "the daemon only supports --stdin or a single regular file; directories, archives, git, remote, and multi-source scans require the in-process scanner",
+            "the daemon only supports exactly one source: --stdin or a single regular file; directories, archives, git, remote, binary, dynamic, and multi-source scans require the in-process scanner",
         ) {
+            return route;
+        }
+        return DaemonRoute::Forbidden;
+    }
+
+    if let Some(reason) = daemon_incompatible_scan_options(&policy.effective_args) {
+        if let Some(route) = reject_forced_daemon(forced_on, reason) {
             return route;
         }
         return DaemonRoute::Forbidden;
@@ -271,6 +279,107 @@ fn reject_forced_daemon(forced_on: bool, reason: &str) -> Option<DaemonRoute> {
              `--daemon=off` / `--no-daemon` to run the in-process scanner explicitly."
         ))
     })
+}
+
+#[cfg(unix)]
+fn has_daemon_incompatible_extra_sources(args: &ScanArgs) -> bool {
+    #[cfg(feature = "binary")]
+    if args.binary {
+        return true;
+    }
+    #[cfg(feature = "git")]
+    if args.git_blobs.is_some()
+        || args.git_diff.is_some()
+        || args.git_history.is_some()
+        || args.git_staged
+    {
+        return true;
+    }
+    #[cfg(feature = "github")]
+    if args.github_org.is_some() {
+        return true;
+    }
+    #[cfg(feature = "gitlab")]
+    if args.gitlab_group.is_some() {
+        return true;
+    }
+    #[cfg(feature = "bitbucket")]
+    if args.bitbucket_workspace.is_some() {
+        return true;
+    }
+    #[cfg(feature = "s3")]
+    if args.s3_bucket.is_some() {
+        return true;
+    }
+    #[cfg(feature = "gcs")]
+    if args.gcs_bucket.is_some() {
+        return true;
+    }
+    #[cfg(feature = "azure")]
+    if args.azure_container_url.is_some() {
+        return true;
+    }
+    #[cfg(feature = "docker")]
+    if args.docker_image.is_some() {
+        return true;
+    }
+    #[cfg(feature = "web")]
+    if args.url.as_ref().is_some_and(|urls| !urls.is_empty()) {
+        return true;
+    }
+    args.source
+        .as_ref()
+        .is_some_and(|sources| !sources.is_empty())
+}
+
+#[cfg(unix)]
+fn daemon_incompatible_scan_options(args: &ScanArgs) -> Option<&'static str> {
+    if args.fast
+        || args.deep
+        || args.precision
+        || args.no_decode
+        || args.no_entropy
+        || args.no_entropy_ml_scoring
+        || args.no_keyword_low_entropy
+        || args.entropy_source_files
+        || args.no_unicode_norm
+        || args.no_ml
+        || args.scan_comments
+        || args.benchmark
+        || args.dogfood
+    {
+        return Some(
+            "this scan sets scan-mode, engine, benchmark, or dogfood options that require the in-process scanner",
+        );
+    }
+    if args.decode_depth.is_some()
+        || args.decode_size_limit.is_some()
+        || args.entropy_threshold.is_some()
+        || args.min_secret_len.is_some()
+        || args.ml_weight.is_some()
+        || args.max_file_size.is_some()
+        || args.regex_dfa_limit.is_some()
+        || args.ml_threshold != crate::orchestrator_config::ML_THRESHOLD_DEFAULT
+    {
+        return Some(
+            "this scan changes scanner or source-limit configuration that the precompiled daemon scanner cannot honor",
+        );
+    }
+    if args.no_default_excludes || args.exclude_paths.is_some() {
+        return Some(
+            "this scan changes path exclusion policy that the daemon single-file route cannot honor",
+        );
+    }
+    if !args.known_prefixes.is_empty()
+        || !args.secret_keywords.is_empty()
+        || !args.test_keywords.is_empty()
+        || !args.placeholder_keywords.is_empty()
+    {
+        return Some(
+            "this scan changes detector confidence vocabulary that the precompiled daemon scanner cannot honor",
+        );
+    }
+    None
 }
 
 #[cfg(unix)]
