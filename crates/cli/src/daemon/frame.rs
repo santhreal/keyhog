@@ -1,9 +1,10 @@
 //! Length-prefixed JSON framing over an async stream.
 //!
 //! Frame layout: `<u32 BE body length><JSON body>`. The length
-//! prefix bounds the recv buffer (we refuse any frame larger than
-//! `MAX_FRAME_BYTES`), so a hostile peer can't make us OOM by lying
-//! about the size.
+//! prefix bounds the accepted body size (we refuse any frame larger
+//! than `MAX_FRAME_BYTES`), and reads grow the buffer only as bytes
+//! arrive, so a hostile peer cannot pin `MAX_FRAME_BYTES` of zeroed
+//! memory by announcing a large frame and then stalling.
 
 use crate::daemon::protocol::{Request, Response, MAX_FRAME_BYTES};
 use anyhow::{bail, Context, Result};
@@ -78,18 +79,14 @@ async fn write_frame<W>(writer: &mut W, body: &[u8]) -> Result<()>
 where
     W: AsyncWriteExt + Unpin,
 {
-    let len: u32 = body
-        .len()
-        .try_into()
-        .ok()
-        .filter(|n: &u32| *n <= MAX_FRAME_BYTES)
-        .with_context(|| {
-            format!(
-                "frame: body of {} bytes exceeds {} byte cap",
-                body.len(),
-                MAX_FRAME_BYTES
-            )
-        })?;
+    if body.len() > MAX_FRAME_BYTES as usize {
+        bail!(
+            "frame: body of {} bytes exceeds {} byte cap",
+            body.len(),
+            MAX_FRAME_BYTES
+        );
+    }
+    let len = body.len() as u32;
     writer.write_all(&len.to_be_bytes()).await?;
     writer.write_all(body).await?;
     writer.flush().await?;
@@ -116,7 +113,16 @@ where
             MAX_FRAME_BYTES
         );
     }
-    let mut body = vec![0u8; len as usize];
-    reader.read_exact(&mut body).await?;
+    let expected_len = len as usize;
+    let mut body = Vec::new();
+    let mut limited = reader.take(u64::from(len));
+    limited.read_to_end(&mut body).await?;
+    if body.len() != expected_len {
+        bail!(
+            "frame: peer closed after {} of {} announced bytes",
+            body.len(),
+            expected_len
+        );
+    }
     Ok(Some(body))
 }
