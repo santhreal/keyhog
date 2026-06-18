@@ -11,6 +11,11 @@ use keyhog_core::{RawMatch, Source};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
+enum ActiveBackendRouter {
+    Cached(CachedBackendRouter),
+    Measured(Arc<Mutex<MeasuredBackendRouter>>),
+}
+
 impl ScanOrchestrator {
     /// Decide whether a scan runs on the fused parallel read+scan path.
     ///
@@ -123,9 +128,11 @@ impl ScanOrchestrator {
         let scanner = Arc::clone(&self.scanner);
         let explicit_backend = explicit_backend_override();
         let calibration_mode = std::env::var_os("KEYHOG_AUTOROUTE_CALIBRATE").is_some();
-        let cached_router = (!calibration_mode).then(|| self.cached_backend_router());
-        let measured_router =
-            calibration_mode.then(|| Arc::new(Mutex::new(self.measured_backend_router())));
+        let active_router = if calibration_mode {
+            ActiveBackendRouter::Measured(Arc::new(Mutex::new(self.measured_backend_router())))
+        } else {
+            ActiveBackendRouter::Cached(self.cached_backend_router())
+        };
         let routing_error = Arc::new(Mutex::new(None));
 
         let skipped_unchanged = Arc::new(AtomicUsize::new(0));
@@ -277,17 +284,15 @@ impl ScanOrchestrator {
                 // no guesses. In explicit calibration mode it uses the measured
                 // router on the SAME fused batch shape normal scans request, so
                 // persisted decisions cover the production runtime key.
-                let selected_backend = if let Some(router) = measured_router.as_ref() {
-                    let mut router = match router.lock() {
-                        Ok(guard) => guard,
-                        Err(poisoned) => poisoned.into_inner(),
-                    };
-                    router.choose(scanner_ref, explicit_backend, &batch)
-                } else {
-                    cached_router
-                        .as_ref()
-                        .expect("cached router must exist outside calibration mode")
-                        .choose(explicit_backend, &batch)
+                let selected_backend = match &active_router {
+                    ActiveBackendRouter::Measured(router) => {
+                        let mut router = match router.lock() {
+                            Ok(guard) => guard,
+                            Err(poisoned) => poisoned.into_inner(),
+                        };
+                        router.choose(scanner_ref, explicit_backend, &batch)
+                    }
+                    ActiveBackendRouter::Cached(router) => router.choose(explicit_backend, &batch),
                 };
 
                 let backend = match selected_backend {

@@ -204,15 +204,22 @@ impl BackendTimingEvidence {
         if trials_ns.is_empty() {
             trials_ns.push(0);
         }
-        let min_ns = *trials_ns
-            .iter()
-            .min()
-            .expect("trial vector was normalized non-empty");
-        let max_ns = *trials_ns
-            .iter()
-            .max()
-            .expect("trial vector was normalized non-empty");
-        let sum = trials_ns.iter().copied().sum::<u128>();
+        let mut min_ns: Option<u128> = None;
+        let mut max_ns: Option<u128> = None;
+        let mut sum = 0u128;
+        for ns in trials_ns.iter().copied() {
+            min_ns = Some(min_ns.map_or(ns, |current| current.min(ns)));
+            max_ns = Some(max_ns.map_or(ns, |current| current.max(ns)));
+            sum = sum.saturating_add(ns);
+        }
+        let min_ns = match min_ns {
+            Some(ns) => ns,
+            None => 0,
+        };
+        let max_ns = match max_ns {
+            Some(ns) => ns,
+            None => 0,
+        };
         let mean_ns = sum / trials_ns.len() as u128;
         let confidence_interval_95_ns = TimingConfidenceInterval::from_trials(&trials_ns);
         Self {

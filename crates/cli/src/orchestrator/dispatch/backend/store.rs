@@ -222,13 +222,13 @@ pub(super) fn load_autoroute_cache(
     }
     let mut out = HashMap::with_capacity(cache.decisions.len());
     for (key, decision) in cache.decisions {
-        if decision.backend().is_none() {
+        let Some(selected_backend) = decision.backend() else {
             return Err(format!(
                 "cache contains unsupported backend decision {:?}",
                 decision.backend
             )
             .into());
-        }
+        };
         if decision.trials < AUTOROUTE_CALIBRATION_TRIALS {
             return Err("cache was produced with insufficient calibration trials".into());
         }
@@ -257,9 +257,6 @@ pub(super) fn load_autoroute_cache(
             }
         }
         validate_gpu_cold_warm_cache_evidence(&decision)?;
-        let selected_backend = decision
-            .backend()
-            .expect("unsupported backend rejected above");
         let Some(selected_timing) = decision.timing_for_backend(selected_backend) else {
             return Err("selected backend is missing timing evidence".into());
         };
