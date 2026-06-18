@@ -11,6 +11,7 @@
 
 use crate::args::BackendArgs;
 use crate::exit_codes::EXIT_BACKEND_SELF_TEST_FAILED;
+use crate::style::{self, Palette};
 use anyhow::Result;
 use keyhog_scanner::hw_probe::{
     gpu_routing_profile, gpu_routing_profiles, probe_hardware, select_backend,
@@ -18,7 +19,15 @@ use keyhog_scanner::hw_probe::{
 use serde::Serialize;
 use std::process::ExitCode;
 
-pub fn run(args: BackendArgs) -> Result<ExitCode> {
+pub(crate) fn run(args: BackendArgs) -> Result<ExitCode> {
+    let gpu_policy = if args.require_gpu {
+        keyhog_scanner::gpu::GpuRuntimePolicy::Required
+    } else if args.no_gpu {
+        keyhog_scanner::gpu::GpuRuntimePolicy::Disabled
+    } else {
+        keyhog_scanner::gpu::GpuRuntimePolicy::Auto
+    };
+    keyhog_scanner::gpu::set_gpu_runtime_policy(gpu_policy);
     if args.self_test {
         return run_self_test(args.json);
     }
@@ -115,14 +124,14 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
     ];
     for (bytes, label) in scenarios {
         let backend = select_backend(hw, *bytes, pat);
-        println!("  {:<42} → {}", label, backend.label());
+        println!("  {:<42} {}", label, backend.label());
     }
 
     if let Some(bytes) = args.probe_bytes {
         println!();
         let backend = select_backend(hw, bytes, pat);
         println!("## --probe-bytes {bytes}");
-        println!("  → {}", backend.label());
+        println!("  {}", backend.label());
     }
 
     println!();
@@ -383,6 +392,7 @@ fn collect_self_test_report() -> BackendSelfTestReport {
 }
 
 fn print_self_test_report(report: &BackendSelfTestReport) {
+    let palette = style::for_stdout();
     println!("## GPU self-test");
     if report.status == BackendSelfTestStatus::Skip {
         let message = report
@@ -390,58 +400,64 @@ fn print_self_test_report(report: &BackendSelfTestReport) {
             .first()
             .and_then(|probe| probe.message.as_deref())
             .unwrap_or("GPU self-test skipped"); // LAW10: absent name/label => display default; reporting-only, recall-safe
-        println!("  \x1b[33mSKIP\x1b[0m: {message}");
+        println!("  {}: {message}", style::warn("SKIP", &palette));
         return;
     }
 
     for probe in &report.probes {
         print!("  {:<17} ... ", probe.name);
         match probe.status {
-            BackendSelfTestStatus::Pass => print_pass_probe(probe),
+            BackendSelfTestStatus::Pass => print_pass_probe(probe, &palette),
             BackendSelfTestStatus::Fail => {
                 let message = probe.message.as_deref().unwrap_or("probe failed"); // LAW10: absent name/label => display default; reporting-only, recall-safe
-                println!("\x1b[31mFAIL\x1b[0m  {message}");
+                println!("{}  {message}", style::fail("FAIL", &palette));
             }
             BackendSelfTestStatus::Known => {
                 let message = probe.message.as_deref().unwrap_or("known limitation"); // LAW10: absent name/label => display default; reporting-only, recall-safe
-                println!("\x1b[33mKNOWN\x1b[0m {message}.");
+                println!("{} {message}.", style::warn("KNOWN", &palette));
             }
             BackendSelfTestStatus::Skip => {
                 let message = probe.message.as_deref().unwrap_or("probe skipped"); // LAW10: absent name/label => display default; reporting-only, recall-safe
-                println!("\x1b[33mSKIP\x1b[0m  {message}");
+                println!("{}  {message}", style::warn("SKIP", &palette));
             }
         }
     }
 
     println!();
     if report.ok {
-        println!("\x1b[32m✓ GPU self-test passed\x1b[0m, scans on this box can route to GPU.");
+        println!(
+            "{} GPU self-test passed, scans on this box can route to GPU.",
+            style::pass("PASS", &palette)
+        );
     } else {
+        let stderr_palette = style::for_stderr();
         eprintln!(
-            "\x1b[31m✗ GPU self-test failed\x1b[0m, keyhog will fall back to SIMD/CPU on this box."
+            "{} GPU self-test failed, keyhog will fall back to SIMD/CPU on this box.",
+            style::fail("FAIL", &stderr_palette)
         );
     }
 }
 
-fn print_pass_probe(probe: &BackendSelfTestProbe) {
+fn print_pass_probe(probe: &BackendSelfTestProbe, palette: &Palette) {
+    let pass = style::pass("PASS", palette);
     match probe.name {
         "moe_kernel" => println!(
-            "\x1b[32mPASS\x1b[0m  ({}, scores={}, max_buffer={} MB)",
+            "{pass}  ({}, scores={}, max_buffer={} MB)",
             probe.adapter_name.as_deref().unwrap_or("unknown adapter"), // LAW10: absent name/label => display default; reporting-only, recall-safe
             probe.scores.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
             probe.max_buffer_mb.unwrap_or(0) // LAW10: empty/absent => documented numeric default, recall-safe
         ),
         "vyre_literal_set" => println!(
-            "\x1b[32mPASS\x1b[0m  (direct={}, coalesced={})",
+            "{pass}  (direct={}, coalesced={})",
             probe.direct_matches.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
             probe.coalesced_matches.unwrap_or(0) // LAW10: empty/absent => documented numeric default, recall-safe
         ),
         "vyre_ac_kernel" => println!(
-            "\x1b[32mPASS\x1b[0m  (matches={}, backend={})",
+            "{pass}  (matches={}, backend={})",
             probe.matches.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
             probe.backend_id.unwrap_or("unknown") // LAW10: absent name/label => display default; reporting-only, recall-safe
         ),
-        _ => println!("\x1b[32mPASS\x1b[0m"),
+        _ => println!("{pass}"),
     }
 }
 
@@ -450,10 +466,10 @@ fn render_self_test_json_for_contract(report: &BackendSelfTestReport) -> Result<
 }
 
 #[doc(hidden)]
-pub mod testing {
+pub(crate) mod testing {
     use anyhow::Result;
 
-    pub fn render_failing_ac_probe_json() -> Result<String> {
+    pub(crate) fn render_failing_ac_probe_json() -> Result<String> {
         let report = super::BackendSelfTestReport {
             ok: false,
             status: super::BackendSelfTestStatus::Fail,

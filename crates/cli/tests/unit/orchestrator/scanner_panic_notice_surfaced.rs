@@ -4,19 +4,20 @@
 //! word. `scanner_panic_notice` is the unconditional stderr notice the
 //! completion summary now prints; pin its contract here.
 
-use keyhog::orchestrator::scanner_panic_notice_for_test;
+use keyhog::testing::{CliTestApi as _, API};
 
 #[test]
 fn a_completed_scan_produces_no_panic_notice() {
     // Negative twin: the scanner thread ran to completion, so there must be NO
     // incomplete-scan warning (no false alarm framing a clean result as broken).
-    assert_eq!(scanner_panic_notice_for_test(false), None);
+    assert_eq!(API.scanner_panic_notice_for_test(false), None);
 }
 
 #[test]
 fn a_panicked_scan_produces_an_unmissable_incomplete_notice() {
-    let notice =
-        scanner_panic_notice_for_test(true).expect("a mid-scan panic must produce a notice");
+    let notice = API
+        .scanner_panic_notice_for_test(true)
+        .expect("a mid-scan panic must produce a notice");
     // It must name the incompleteness and warn against reading "0 secrets" as
     // clean — the whole point of surfacing it (not just a tracing::error).
     assert!(

@@ -8,12 +8,12 @@ use std::time::Instant;
 
 // Total ≈ 96 MiB. Above the 64 MiB GPU_MIN_BYTES routing threshold so the
 // `keyhog scan --benchmark` results compare GPU and SimdCpu under conditions
-// where auto-routing would actually pick GPU. Below the 256 MiB
+// where measured backend selection would actually pick GPU. Below the 256 MiB
 // GPU_BYTES_BREAKEVEN_SOLO cap to keep CI run-time reasonable.
 const BENCHMARK_CHUNKS: usize = 768;
 const BENCHMARK_CHUNK_BYTES: usize = 128 * 1024;
 
-pub struct BackendBenchmark {
+pub(crate) struct BackendBenchmark {
     pub backend: ScanBackend,
     pub mb_per_sec: f64,
     pub findings: usize,
@@ -22,13 +22,14 @@ pub struct BackendBenchmark {
 
 /// Format a one-line GPU summary string for hardware-aware reporting.
 ///
-/// The shipping startup banner is built by `keyhog_core::banner::print_banner`
+/// The shipping startup banner is built by the CLI banner writer
 /// plus `keyhog_scanner::hw_probe::startup_banner` (see `orchestrator/run.rs`);
-/// there is intentionally no second `startup_summary` banner builder here.
-/// This helper remains as standalone, independently tested public surface
-/// (`tests/gate/benchmark_gpu_summary_nonempty.rs`) for callers that want just
-/// the GPU portion.
-pub fn format_gpu_summary() -> String {
+/// there is intentionally no second `startup_summary` banner builder here. This
+/// helper renders just the GPU portion (adapter name + VRAM, or `unavailable`)
+/// and is emitted as the `benchmark | gpu=…` header of `keyhog scan --benchmark`
+/// (`orchestrator/run.rs`), so the operator can see which adapter produced the
+/// GPU throughput row.
+pub(crate) fn format_gpu_summary() -> String {
     let hw = probe_hardware();
     match (&hw.gpu_name, hw.gpu_vram_mb) {
         (Some(name), Some(vram_mb)) => format!("{} ({}GB)", name, (vram_mb / 1024).max(1)),
@@ -37,7 +38,7 @@ pub fn format_gpu_summary() -> String {
     }
 }
 
-pub fn run_benchmark(orchestrator: &ScanOrchestrator) -> Result<Vec<BackendBenchmark>> {
+pub(crate) fn run_benchmark(orchestrator: &ScanOrchestrator) -> Result<Vec<BackendBenchmark>> {
     let corpus = build_benchmark_corpus();
     let total_bytes: usize = corpus.iter().map(|chunk| chunk.data.len()).sum();
     let hw = probe_hardware();
@@ -70,6 +71,13 @@ pub fn run_benchmark(orchestrator: &ScanOrchestrator) -> Result<Vec<BackendBench
     }
 
     Ok(results)
+}
+
+#[doc(hidden)]
+pub(crate) mod testing {
+    pub(crate) fn format_gpu_summary() -> String {
+        super::format_gpu_summary()
+    }
 }
 
 fn build_benchmark_corpus() -> Vec<Chunk> {
@@ -122,7 +130,8 @@ fn build_benchmark_corpus() -> Vec<Chunk> {
                 date: None,
                 mtime_ns: None,
                 size_bytes: None,
-                decoded_span: None,            },
+                decoded_span: None,
+            },
         });
     }
     chunks

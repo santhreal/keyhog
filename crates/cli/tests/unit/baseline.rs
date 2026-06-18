@@ -1,4 +1,4 @@
-use keyhog::baseline::Baseline;
+use keyhog::testing::{CliTestApi as _, API};
 use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -50,7 +50,7 @@ fn baseline_creation_produces_expected_entries() {
         make_finding("aws-key", "def456", Some("src/aws.py")),
     ];
 
-    let baseline = Baseline::from_findings(&findings);
+    let baseline = API.baseline_from_findings(&findings);
     assert_eq!(baseline.version, 1);
     assert_eq!(baseline.entries.len(), 2);
     assert_eq!(baseline.entries[0].detector_id, "aws-key");
@@ -70,7 +70,7 @@ fn baseline_creation_dedupes_duplicate_credentials() {
         make_finding("github-pat", "abc123", Some("src/other.py")),
     ];
 
-    let baseline = Baseline::from_findings(&findings);
+    let baseline = API.baseline_from_findings(&findings);
     assert_eq!(baseline.entries.len(), 1);
     assert_eq!(baseline.entries[0].detector_id, "github-pat");
 }
@@ -82,21 +82,21 @@ fn baseline_suppresses_known_findings() {
         make_finding("aws-key", "def456", Some("src/aws.py")),
     ];
 
-    let baseline = Baseline::from_findings(&findings);
-    let suppressed = baseline.filter_new(&findings);
+    let baseline = API.baseline_from_findings(&findings);
+    let suppressed = API.baseline_filter_new(&baseline, &findings);
     assert!(suppressed.is_empty());
 }
 
 #[test]
 fn baseline_does_not_suppress_new_findings() {
     let baseline =
-        Baseline::from_findings(&[make_finding("github-pat", "abc123", Some("src/config.py"))]);
+        API.baseline_from_findings(&[make_finding("github-pat", "abc123", Some("src/config.py"))]);
     let new_findings = vec![
         make_finding("github-pat", "abc123", Some("src/config.py")),
         make_finding("github-pat", "newhash", Some("src/new.py")),
     ];
 
-    let filtered = baseline.filter_new(&new_findings);
+    let filtered = API.baseline_filter_new(&baseline, &new_findings);
     assert_eq!(filtered.len(), 1);
     assert_eq!(filtered[0].credential_hash, test_hash("newhash"));
 }
@@ -104,13 +104,13 @@ fn baseline_does_not_suppress_new_findings() {
 #[test]
 fn baseline_update_adds_new_findings() {
     let mut baseline =
-        Baseline::from_findings(&[make_finding("github-pat", "abc123", Some("src/config.py"))]);
+        API.baseline_from_findings(&[make_finding("github-pat", "abc123", Some("src/config.py"))]);
     let new_findings = vec![
         make_finding("github-pat", "abc123", Some("src/config.py")),
         make_finding("aws-key", "def456", Some("src/aws.py")),
     ];
 
-    baseline.merge(&new_findings);
+    API.baseline_merge(&mut baseline, &new_findings);
     assert_eq!(baseline.entries.len(), 2);
     let ids: Vec<_> = baseline
         .entries
@@ -126,10 +126,10 @@ fn baseline_save_and_load_roundtrip() {
     let tmp = tempfile::tempdir().unwrap();
     let path = tmp.path().join("baseline.json");
     let findings = vec![make_finding("github-pat", "abc123", Some("src/config.py"))];
-    let baseline = Baseline::from_findings(&findings);
+    let baseline = API.baseline_from_findings(&findings);
 
-    baseline.save(&path).unwrap();
-    let loaded = Baseline::load(&path).unwrap();
+    API.baseline_save(&baseline, &path).unwrap();
+    let loaded = API.baseline_load(&path).unwrap();
 
     assert_eq!(loaded, baseline);
 }
@@ -137,36 +137,35 @@ fn baseline_save_and_load_roundtrip() {
 #[test]
 fn baseline_matching_ignores_file_path_and_line() {
     let findings = vec![make_finding("github-pat", "abc123", Some("src/config.py"))];
-    let baseline = Baseline::from_findings(&findings);
+    let baseline = API.baseline_from_findings(&findings);
     let moved_finding = make_finding("github-pat", "abc123", Some("src/moved.py"));
 
-    assert!(baseline.contains(&moved_finding));
+    assert!(API.baseline_contains(&baseline, &moved_finding));
 }
 
 // ── Moved from src/baseline.rs (#[cfg(test)]) per the no_inline_tests_in_src
 //    gate. findings-report-vs-baseline detection + actionable load error.
-use keyhog::baseline::{looks_like_findings_report, BASELINE_VERSION};
 use std::io::Write;
 
 #[test]
 fn findings_report_array_is_recognized() {
     // `scan --format json` emits a top-level ARRAY of findings.
-    assert!(looks_like_findings_report(
-        r#"[{"detector_id":"hot-github_pat","line":1}]"#
-    ));
+    assert!(
+        API.baseline_looks_like_findings_report(r#"[{"detector_id":"hot-github_pat","line":1}]"#)
+    );
 }
 
 #[test]
 fn findings_report_object_without_baseline_keys_is_recognized() {
     // An object lacking version+entries is not a baseline.
-    assert!(looks_like_findings_report(r#"{"results":[],"summary":{}}"#));
+    assert!(API.baseline_looks_like_findings_report(r#"{"results":[],"summary":{}}"#));
 }
 
 #[test]
 fn real_baseline_is_not_flagged_as_findings_report() {
-    assert!(!looks_like_findings_report(
-        r#"{"version":1,"created":"now","entries":[]}"#
-    ));
+    assert!(
+        !API.baseline_looks_like_findings_report(r#"{"version":1,"created":"now","entries":[]}"#)
+    );
 }
 
 #[test]
@@ -176,7 +175,9 @@ fn load_of_scan_report_gives_actionable_error_not_serde_noise() {
     // corruption. It must instead name the right command.
     let mut tmp = tempfile::NamedTempFile::new().unwrap();
     write!(tmp, r#"[{{"detector_id":"hot-github_pat","line":1}}]"#).unwrap();
-    let err = Baseline::load(tmp.path()).expect_err("a findings array is not a baseline");
+    let err = API
+        .baseline_load(tmp.path())
+        .expect_err("a findings array is not a baseline");
     let msg = format!("{err:#}");
     assert!(
         msg.contains("--create-baseline"),
@@ -190,9 +191,9 @@ fn load_of_scan_report_gives_actionable_error_not_serde_noise() {
 
 #[test]
 fn load_of_valid_baseline_roundtrips() {
-    let b = Baseline::empty();
+    let b = API.baseline_empty();
     let mut tmp = tempfile::NamedTempFile::new().unwrap();
     write!(tmp, "{}", serde_json::to_string(&b).unwrap()).unwrap();
-    let loaded = Baseline::load(tmp.path()).expect("valid baseline loads");
-    assert_eq!(loaded.version, BASELINE_VERSION);
+    let loaded = API.baseline_load(tmp.path()).expect("valid baseline loads");
+    assert_eq!(loaded.version, API.baseline_version());
 }

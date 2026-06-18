@@ -1,6 +1,6 @@
 //! CLI value parsers for typed command-line options.
 
-pub fn parse_min_confidence(s: &str) -> Result<f64, String> {
+pub(crate) fn parse_min_confidence(s: &str) -> Result<f64, String> {
     let val: f64 = s
         .parse()
         .map_err(|_| format!("'{}' is not a valid floating point number", s))?;
@@ -18,7 +18,7 @@ pub fn parse_min_confidence(s: &str) -> Result<f64, String> {
 /// cap that comfortably covers every real-world API; rejects accidental
 /// `--verify-rate 1e308` typos that would otherwise be silently clamped
 /// to 1 rps deep inside the limiter).
-pub fn parse_verify_rate(s: &str) -> Result<f64, String> {
+pub(crate) fn parse_verify_rate(s: &str) -> Result<f64, String> {
     let val: f64 = s
         .parse()
         .map_err(|_| format!("'{s}' is not a valid floating point number"))?;
@@ -42,7 +42,7 @@ pub fn parse_verify_rate(s: &str) -> Result<f64, String> {
 
 /// `--ml-threshold T`: must be a finite f64 in `[0.0, 1.0]`. NaN
 /// silently becoming "every prediction passes" was the CLI-003 bug.
-pub fn parse_ml_threshold(s: &str) -> Result<f64, String> {
+pub(crate) fn parse_ml_threshold(s: &str) -> Result<f64, String> {
     let val: f64 = s
         .parse()
         .map_err(|_| format!("'{s}' is not a valid floating point number"))?;
@@ -59,19 +59,32 @@ pub fn parse_ml_threshold(s: &str) -> Result<f64, String> {
     Ok(val)
 }
 
-pub fn parse_decode_depth(s: &str) -> Result<usize, String> {
+pub(crate) fn parse_decode_depth(s: &str) -> Result<usize, String> {
     let val: usize = s
         .parse()
         .map_err(|_| format!("'{}' is not a valid positive integer", s))?;
-    let limit = keyhog_core::config::max_decode_depth_limit();
+    let limit = keyhog_core::max_decode_depth_limit();
     if (1..=limit).contains(&val) {
         Ok(val)
     } else {
-        Err(format!("decode depth must be between 1 and {limit}, got {val}"))
+        Err(format!(
+            "decode depth must be between 1 and {limit}, got {val}"
+        ))
     }
 }
 
-pub fn parse_positive_thread_count(s: &str) -> Result<usize, String> {
+pub(crate) fn parse_min_secret_len(s: &str) -> Result<usize, String> {
+    let val: usize = s
+        .parse()
+        .map_err(|_| format!("'{s}' is not a valid positive integer"))?;
+    if val == 0 {
+        Err("--min-secret-len must be greater than zero".to_string())
+    } else {
+        Ok(val)
+    }
+}
+
+pub(crate) fn parse_positive_thread_count(s: &str) -> Result<usize, String> {
     let val: usize = s
         .parse()
         .map_err(|_| format!("'{s}' is not a valid positive integer"))?;
@@ -82,7 +95,51 @@ pub fn parse_positive_thread_count(s: &str) -> Result<usize, String> {
     }
 }
 
-pub fn parse_byte_size(s: &str) -> Result<usize, String> {
+pub(crate) fn parse_positive_limit_count(s: &str) -> Result<usize, String> {
+    let val: usize = s
+        .parse()
+        .map_err(|_| format!("'{s}' is not a valid positive integer"))?;
+    if val == 0 {
+        Err("limit count must be greater than zero".to_string())
+    } else {
+        Ok(val)
+    }
+}
+
+pub(crate) fn parse_positive_usize(s: &str) -> Result<usize, String> {
+    let val: usize = s
+        .parse()
+        .map_err(|_| format!("'{s}' is not a valid positive integer"))?;
+    if val == 0 {
+        Err("value must be greater than zero".to_string())
+    } else {
+        Ok(val)
+    }
+}
+
+pub(crate) fn parse_daemon_request_timeout_secs(s: &str) -> Result<u64, String> {
+    let val: u64 = s
+        .parse()
+        .map_err(|_| format!("'{s}' is not a valid positive integer"))?;
+    if val == 0 {
+        Err("--request-timeout-secs must be greater than zero".to_string())
+    } else {
+        Ok(val)
+    }
+}
+
+pub(crate) fn parse_positive_millis(s: &str) -> Result<u64, String> {
+    let val: u64 = s
+        .parse()
+        .map_err(|_| format!("'{s}' is not a valid positive integer"))?;
+    if val == 0 {
+        Err("millisecond timeout must be greater than zero".to_string())
+    } else {
+        Ok(val)
+    }
+}
+
+pub(crate) fn parse_byte_size(s: &str) -> Result<usize, String> {
     let trimmed = s.trim();
     // Empty input keeps the historical Ok(0) contract - clap callers
     // that accept an optional size flag rely on it. Only inputs that
@@ -93,7 +150,7 @@ pub fn parse_byte_size(s: &str) -> Result<usize, String> {
     }
     let split_idx = trimmed
         .find(|c: char| !c.is_ascii_digit() && c != '.')
-        .unwrap_or(trimmed.len());
+        .unwrap_or(trimmed.len()); // LAW10: search/boundary miss => span end (whole remainder), recall-safe boundary default
     let (num_part, suffix) = trimmed.split_at(split_idx);
 
     let suffix_upper = suffix.trim().to_ascii_uppercase();
@@ -115,7 +172,7 @@ pub fn parse_byte_size(s: &str) -> Result<usize, String> {
         other => {
             return Err(format!(
                 "unknown size suffix '{other}'. Supported: B, K/KB, M/MB, G/GB, T/TB"
-            ))
+            ));
         }
     };
 
@@ -181,7 +238,7 @@ pub fn parse_byte_size(s: &str) -> Result<usize, String> {
 /// instead of a clap `unexpected argument 'list'` error. Any other token is a
 /// typo and must be rejected loudly rather than silently swallowed, so the
 /// operator gets a precise message instead of a misparsed flag value.
-pub fn parse_detectors_verb(s: &str) -> Result<String, String> {
+pub(crate) fn parse_detectors_verb(s: &str) -> Result<String, String> {
     if s.eq_ignore_ascii_case("list") {
         Ok("list".to_string())
     } else {
@@ -197,7 +254,7 @@ pub fn parse_detectors_verb(s: &str) -> Result<String, String> {
 /// Parse a severity string into the CLI filter enum. Shared by the flat
 /// top-level `severity` field and the `[scan]` nested table in `.keyhog.toml`
 /// so both surfaces accept identical spellings (one source of truth).
-pub fn parse_severity_filter(s: &str) -> Option<crate::args::SeverityFilter> {
+pub(crate) fn parse_severity_filter(s: &str) -> Option<crate::args::SeverityFilter> {
     use crate::args::SeverityFilter as S;
     match s.to_lowercase().as_str() {
         "info" => Some(S::Info),
@@ -210,24 +267,80 @@ pub fn parse_severity_filter(s: &str) -> Option<crate::args::SeverityFilter> {
 }
 
 /// Parse an output-format string. Shared by the flat `format` field and `[scan]`.
-pub fn parse_output_format(s: &str) -> Option<crate::args::OutputFormat> {
+pub(crate) fn parse_output_format(s: &str) -> Option<crate::args::OutputFormat> {
     use crate::args::OutputFormat as F;
     match s.to_lowercase().as_str() {
+        "text" => Some(F::Text),
         "json" => Some(F::Json),
         "jsonl" => Some(F::Jsonl),
         "sarif" => Some(F::Sarif),
-        "text" => Some(F::Text),
+        "csv" => Some(F::Csv),
+        "github-annotations" | "github_annotations" => Some(F::GithubAnnotations),
+        "gitlab-sast" | "gitlab_sast" => Some(F::GitlabSast),
+        "html" => Some(F::Html),
+        "junit" => Some(F::Junit),
         _ => None,
     }
 }
 
 /// Parse a dedup-scope string. Shared by the flat `dedup` field and `[scan]`.
-pub fn parse_dedup_scope(s: &str) -> Option<crate::args::CliDedupScope> {
+pub(crate) fn parse_dedup_scope(s: &str) -> Option<crate::args::CliDedupScope> {
     use crate::args::CliDedupScope as D;
     match s.to_lowercase().as_str() {
         "credential" => Some(D::Credential),
         "file" => Some(D::File),
         "none" => Some(D::None),
         _ => None,
+    }
+}
+
+#[doc(hidden)]
+pub(crate) mod testing {
+    pub(crate) fn parse_min_confidence(s: &str) -> Result<f64, String> {
+        super::parse_min_confidence(s)
+    }
+
+    pub(crate) fn parse_verify_rate(s: &str) -> Result<f64, String> {
+        super::parse_verify_rate(s)
+    }
+
+    pub(crate) fn parse_ml_threshold(s: &str) -> Result<f64, String> {
+        super::parse_ml_threshold(s)
+    }
+
+    pub(crate) fn parse_decode_depth(s: &str) -> Result<usize, String> {
+        super::parse_decode_depth(s)
+    }
+
+    pub(crate) fn parse_min_secret_len(s: &str) -> Result<usize, String> {
+        super::parse_min_secret_len(s)
+    }
+
+    pub(crate) fn parse_positive_thread_count(s: &str) -> Result<usize, String> {
+        super::parse_positive_thread_count(s)
+    }
+
+    pub(crate) fn parse_positive_usize(s: &str) -> Result<usize, String> {
+        super::parse_positive_usize(s)
+    }
+
+    pub(crate) fn parse_byte_size(s: &str) -> Result<usize, String> {
+        super::parse_byte_size(s)
+    }
+
+    pub(crate) fn parse_detectors_verb(s: &str) -> Result<String, String> {
+        super::parse_detectors_verb(s)
+    }
+
+    pub(crate) fn parse_severity_filter(s: &str) -> Option<crate::args::SeverityFilter> {
+        super::parse_severity_filter(s)
+    }
+
+    pub(crate) fn parse_output_format(s: &str) -> Option<crate::args::OutputFormat> {
+        super::parse_output_format(s)
+    }
+
+    pub(crate) fn parse_dedup_scope(s: &str) -> Option<crate::args::CliDedupScope> {
+        super::parse_dedup_scope(s)
     }
 }

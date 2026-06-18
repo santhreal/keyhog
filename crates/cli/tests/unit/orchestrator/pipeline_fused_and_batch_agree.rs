@@ -7,7 +7,10 @@
 //! 128 KiB-overlapping windows anyway. This test is the parity guard for that
 //! claim: same corpus, same detectors, the two pipelines must agree exactly.
 
-use super::support::{make_detector, make_orchestrator, ENV_LOCK};
+use super::support::{make_detector, make_orchestrator, make_orchestrator_with_args};
+use clap::Parser;
+use keyhog::args::ScanArgs;
+use keyhog::testing::{CliTestApi as _, API};
 use keyhog_core::Source;
 use std::collections::BTreeSet;
 use std::io::Write;
@@ -33,12 +36,18 @@ fn planted_dir() -> tempfile::TempDir {
 /// scan_sources returns pre-dedup RawMatch — one planted secret yields several
 /// raw matches across the named/generic-assignment/entropy stages — so the
 /// parity claim is over the distinct set, not raw multiplicity.
-fn scan_findings(dir: &Path) -> BTreeSet<(String, String, String, String)> {
-    let orch = make_orchestrator(vec![make_detector()]);
+fn scan_findings(dir: &Path, batch_pipeline: bool) -> BTreeSet<(String, String, String, String)> {
+    let detectors = vec![make_detector()];
+    let orch = if batch_pipeline {
+        let args = ScanArgs::try_parse_from(["scan", "--batch-pipeline"]).expect("parse args");
+        make_orchestrator_with_args(detectors, args)
+    } else {
+        make_orchestrator(detectors)
+    };
     let sources: Vec<Box<dyn Source>> = vec![Box::new(keyhog_sources::FilesystemSource::new(
         dir.to_path_buf(),
     ))];
-    orch.scan_sources_for_test(sources, false, None)
+    API.scan_orchestrator_scan_sources_for_test(&orch, sources, false, None)
         .expect("scan sources")
         .into_iter()
         .map(|m| {
@@ -55,18 +64,13 @@ fn scan_findings(dir: &Path) -> BTreeSet<(String, String, String, String)> {
 #[test]
 fn fused_and_batch_pipelines_agree_on_filesystem_scan() {
     let dir = planted_dir();
-    let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
     // The test orchestrator constructor pins deterministic SIMD routing so the
     // fused path engages regardless of whether the test host has a GPU.
 
-    std::env::remove_var("KEYHOG_BATCH_PIPELINE");
-    let fused = scan_findings(dir.path());
+    let fused = scan_findings(dir.path(), false);
+    let batch = scan_findings(dir.path(), true);
 
-    std::env::set_var("KEYHOG_BATCH_PIPELINE", "1");
-    let batch = scan_findings(dir.path());
-
-    std::env::remove_var("KEYHOG_BATCH_PIPELINE");
     // The core claim: the two pipelines surface the identical finding set.
     assert_eq!(
         fused, batch,

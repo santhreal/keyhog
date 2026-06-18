@@ -1,6 +1,6 @@
-use keyhog::orchestrator_config::sanitise_thread_count_for_test;
+use keyhog::testing::{CliTestApi as _, API};
 
 #[test]
 fn sanitise_thread_count_zero_fallback() {
-    assert_eq!(sanitise_thread_count_for_test(0, 8, "test"), 8);
+    assert_eq!(API.sanitise_thread_count(0, 8, "test"), 8);
 }

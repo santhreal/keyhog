@@ -35,6 +35,17 @@ pub(crate) const MAX_THREADS_CAP: usize = 256;
 /// fix for a dead `--ml-threshold` does not silently change default behaviour.
 pub(crate) const ML_THRESHOLD_DEFAULT: f64 = 0.5;
 
+/// Default chunk batch size for the fused filesystem read+scan pipeline.
+pub(crate) const FUSED_BATCH_DEFAULT: usize = 32;
+
+/// Default bounded-channel depth for fused filesystem batches.
+pub(crate) fn fused_depth_default(worker_threads: usize) -> usize {
+    worker_threads
+        .saturating_add(3)
+        .saturating_div(4)
+        .clamp(2, 8)
+}
+
 pub(crate) fn parse_backend_override(
     raw: Option<&str>,
 ) -> Result<Option<keyhog_scanner::ScanBackend>> {
@@ -59,11 +70,23 @@ pub(crate) fn backend_override_label(backend: Option<keyhog_scanner::ScanBackend
     backend.map_or("auto", keyhog_scanner::ScanBackend::label)
 }
 
+pub(crate) fn gpu_runtime_policy_from_args(
+    args: &ScanArgs,
+) -> keyhog_scanner::gpu::GpuRuntimePolicy {
+    if args.require_gpu {
+        keyhog_scanner::gpu::GpuRuntimePolicy::Required
+    } else if args.no_gpu {
+        keyhog_scanner::gpu::GpuRuntimePolicy::Disabled
+    } else {
+        keyhog_scanner::gpu::GpuRuntimePolicy::Auto
+    }
+}
+
 pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) {
-    // Resolution order: --threads CLI arg > KEYHOG_THREADS env > physical core
-    // count. Physical (not logical) is the right default for CPU-bound regex
-    // - SMT/Hyperthreading siblings share execution units, so 2× the threads
-    // yields ~1.1× the throughput while doubling cache pressure.
+    // Resolution order: --threads / [scan].threads > physical core count.
+    // Physical (not logical) is the right default for CPU-bound regex: SMT /
+    // Hyperthreading siblings share execution units, so 2x the threads yields
+    // ~1.1x the throughput while doubling cache pressure.
     //
     // Each source is sanitised through `sanitise_thread_count`, which:
     //   * rejects 0 (rayon would silently use its own default - confusing)
@@ -74,14 +97,6 @@ pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) {
         (
             sanitise_thread_count(t, physical_cores, "cli-arg"),
             "cli-arg",
-        )
-    } else if std::env::var_os("KEYHOG_THREADS").is_some() {
-        let default = physical_cores.max(1);
-        let threads =
-            keyhog_core::env_config::usize_at_least_or_default("KEYHOG_THREADS", 1, default);
-        (
-            sanitise_thread_count(threads, physical_cores, "env:KEYHOG_THREADS"),
-            "env:KEYHOG_THREADS",
         )
     } else {
         (physical_cores.max(1), "physical-cores")
@@ -611,6 +626,9 @@ pub(crate) fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
     if let Some(min_secret_len) = args.min_secret_len {
         config.min_secret_len = min_secret_len;
     }
+    config.per_chunk_timeout_ms = args.per_chunk_timeout_ms;
+    config.profile = args.profile;
+    config.perf_trace = args.perf_trace;
     config.entropy_in_source_files = args.entropy_source_files;
     // Entropy candidates are scored through the MoE (model authoritative) by
     // default; `--no-entropy-ml-scoring` restores the legacy heuristic emit.
@@ -679,6 +697,28 @@ pub(crate) struct ResolvedScanConfig {
     /// Explicit backend selected by `--backend`. `None` means autoroute/cache
     /// decides; shipped scans do not read backend selection from ambient env.
     pub(crate) backend_override: Option<keyhog_scanner::ScanBackend>,
+    /// Force the coalesced batch scan pipeline. False means filesystem scans
+    /// may use the fused filesystem pipeline when the backend/source contract
+    /// permits it.
+    pub(crate) batch_pipeline: bool,
+    /// Explicit scan worker count from `--threads` / `[scan].threads`.
+    /// `None` means the runtime uses the host physical-core default.
+    pub(crate) threads: Option<usize>,
+    /// Explicit filesystem reader thread count.
+    pub(crate) reader_threads: Option<usize>,
+    /// Fused filesystem pipeline chunk batch size.
+    pub(crate) fused_batch: usize,
+    /// Fused filesystem pipeline channel depth. `None` means derive from the
+    /// configured worker pool at scan time.
+    pub(crate) fused_depth: Option<usize>,
+    /// Resolved GPU runtime policy for probe/init/degrade behavior.
+    pub(crate) gpu_runtime_policy: keyhog_scanner::gpu::GpuRuntimePolicy,
+    /// Whether autoroute calibration may include GPU candidates.
+    pub(crate) autoroute_gpu: bool,
+    /// Explicit scan execution mode that writes autoroute calibration evidence.
+    /// This is intentionally not part of `autoroute_config_digest`: calibration
+    /// records must be keyed to the normal scan identity they will serve.
+    pub(crate) autoroute_calibration: bool,
     /// Engine-side config consumed by `CompiledScanner::with_config`.
     pub(crate) scanner: ScannerConfig,
     /// The global post-scan confidence floor a finding must clear to be
@@ -734,17 +774,25 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
             outcome.config_errors.join("\n")
         );
     }
-    keyhog_core::safe_bin::set_extra_trusted_dirs(outcome.trusted_bin_dirs.clone());
+    keyhog_core::set_extra_trusted_dirs(outcome.trusted_bin_dirs.clone());
     let mut aws_canary_accounts = outcome.aws_canary_accounts;
     aws_canary_accounts.sort();
     aws_canary_accounts.dedup();
     let aws_canary_set = aws_canary_accounts.iter().cloned().collect();
-    keyhog_core::aws::set_extra_canary_accounts(aws_canary_set);
+    keyhog_core::set_extra_canary_accounts(aws_canary_set);
     configure_hyperscan_cache_dir(args.cache_dir.clone())?;
     let autoroute_cache_path =
         crate::autoroute_cache_path::resolve_autoroute_cache_path(args.autoroute_cache.as_deref())
             .map_err(anyhow::Error::msg)?;
     let backend_override = parse_backend_override(args.backend.as_deref())?;
+    let batch_pipeline = args.batch_pipeline && !args.no_batch_pipeline;
+    let threads = args.threads;
+    let reader_threads = args.reader_threads;
+    let fused_batch = args.fused_batch.unwrap_or(FUSED_BATCH_DEFAULT); // LAW10: absent fused-batch config => documented compiled throughput default; no recall path changes and the value is printed/hashes into autoroute identity
+    let fused_depth = args.fused_depth;
+    let gpu_runtime_policy = gpu_runtime_policy_from_args(args);
+    let autoroute_gpu = args.autoroute_gpu && !args.no_autoroute_gpu;
+    let autoroute_calibration = args.autoroute_calibrate;
     let scanner_tuning = outcome.scanner_tuning;
     let scanner = build_scanner_config(args);
     // The post-scan floor is the SAME value the engine resolved - read it back
@@ -754,6 +802,14 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
     let ml_enabled = scanner.ml_enabled;
     Ok(ResolvedScanConfig {
         backend_override,
+        batch_pipeline,
+        threads,
+        reader_threads,
+        fused_batch,
+        fused_depth,
+        gpu_runtime_policy,
+        autoroute_gpu,
+        autoroute_calibration,
         scanner,
         min_confidence,
         ml_enabled,
@@ -774,6 +830,14 @@ pub(crate) fn resolved_scan_config_for_scanner(scanner: ScannerConfig) -> Resolv
     let ml_enabled = scanner.ml_enabled;
     ResolvedScanConfig {
         backend_override: None,
+        batch_pipeline: false,
+        threads: None,
+        reader_threads: None,
+        fused_batch: FUSED_BATCH_DEFAULT,
+        fused_depth: None,
+        gpu_runtime_policy: keyhog_scanner::gpu::GpuRuntimePolicy::Auto,
+        autoroute_gpu: false,
+        autoroute_calibration: false,
         scanner,
         min_confidence,
         ml_enabled,
@@ -806,6 +870,34 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         "backend = {}\n",
         backend_override_label(resolved.backend_override)
     ));
+    out.push_str(&format!("batch_pipeline = {}\n", resolved.batch_pipeline));
+    out.push_str(&format!(
+        "threads = {}\n",
+        resolved
+            .threads
+            .map_or_else(|| "auto".to_string(), |n| n.to_string())
+    ));
+    out.push_str(&format!(
+        "reader_threads = {}\n",
+        resolved
+            .reader_threads
+            .map_or_else(|| "auto".to_string(), |n| n.to_string())
+    ));
+    out.push_str(&format!("fused_batch = {}\n", resolved.fused_batch));
+    out.push_str(&format!(
+        "fused_depth = {}\n",
+        resolved
+            .fused_depth
+            .map_or_else(|| "auto".to_string(), |n| n.to_string())
+    ));
+    out.push_str(&format!("gpu = {}\n", resolved.gpu_runtime_policy));
+    out.push_str(&format!("autoroute_gpu = {}\n", resolved.autoroute_gpu));
+    out.push_str(&format!(
+        "autoroute_calibration = {}\n",
+        resolved.autoroute_calibration
+    ));
+    out.push_str(&format!("profile = {}\n", s.profile));
+    out.push_str(&format!("perf_trace = {}\n", s.perf_trace));
     out.push_str(&format!("min_confidence = {}\n", resolved.min_confidence));
     out.push_str(&format!("ml_enabled = {}\n", resolved.ml_enabled));
     out.push_str(&format!("ml_weight = {}\n", s.ml_weight));
@@ -825,6 +917,11 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
     ));
     out.push_str(&format!("max_decode_depth = {}\n", s.max_decode_depth));
     out.push_str(&format!("max_decode_bytes = {}\n", s.max_decode_bytes));
+    out.push_str(&format!(
+        "per_chunk_timeout_ms = {}\n",
+        s.per_chunk_timeout_ms
+            .map_or_else(|| "off".to_string(), |ms| ms.to_string())
+    ));
     let limits = resolved.source_limits;
     out.push_str(&format!("limit_stdin_bytes = {}\n", limits.stdin_bytes));
     out.push_str(&format!(
@@ -901,58 +998,60 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         "aws_canary_accounts = {}\n",
         resolved.aws_canary_accounts.len()
     ));
-    let tuning = &resolved.scanner_tuning;
-    out.push_str(&format!(
-        "tuning_fallback_hs = {}\n",
-        tuning.fallback_hs_effective()
-    ));
+    let tuning = resolved.scanner_tuning.effective();
+    out.push_str(&format!("tuning_fallback_hs = {}\n", tuning.fallback_hs));
     out.push_str(&format!(
         "tuning_hs_prefilter_max_len = {}\n",
-        tuning.hs_prefilter_max_len_effective()
+        tuning.hs_prefilter_max_len
+    ));
+    out.push_str(&format!(
+        "tuning_hs_shard_target = {}\n",
+        tuning.hs_shard_target
     ));
     out.push_str(&format!(
         "tuning_fallback_anchor = {}\n",
-        tuning.fallback_anchor_effective()
+        tuning.fallback_anchor
     ));
     out.push_str(&format!(
         "tuning_homoglyph_gate = {}\n",
-        tuning.homoglyph_gate_effective()
+        tuning.homoglyph_gate
     ));
     out.push_str(&format!(
         "tuning_homoglyph_ascii_skip = {}\n",
-        tuning.homoglyph_ascii_skip_effective()
+        tuning.homoglyph_ascii_skip
     ));
     out.push_str(&format!(
         "tuning_fallback_reverse = {}\n",
-        tuning.fallback_reverse_effective()
+        tuning.fallback_reverse
     ));
     out.push_str(&format!(
         "tuning_prefilter_truncate = {}\n",
-        tuning.prefilter_truncate_effective()
+        tuning.prefilter_truncate
     ));
     out.push_str(&format!(
         "tuning_fallback_prefix_gate = {}\n",
-        tuning.fallback_prefix_gate_effective()
+        tuning.fallback_prefix_gate
     ));
-    out.push_str(&format!(
-        "tuning_decode_focus = {}\n",
-        tuning.decode_focus_effective()
-    ));
+    out.push_str(&format!("tuning_decode_focus = {}\n", tuning.decode_focus));
     out.push_str(&format!(
         "tuning_confirmed_suffix_gate = {}\n",
-        tuning.confirmed_suffix_gate_effective()
+        tuning.confirmed_suffix_gate
     ));
     out.push_str(&format!(
         "tuning_no_candidate_gate = {}\n",
-        tuning.no_candidate_gate_effective()
+        tuning.no_candidate_gate
     ));
     out.push_str(&format!(
         "tuning_fallback_localizer = {}\n",
-        tuning.fallback_localizer_effective()
+        tuning.fallback_localizer
+    ));
+    out.push_str(&format!(
+        "tuning_gpu_recall_floor = {}\n",
+        tuning.gpu_recall_floor
     ));
     out.push_str(&format!(
         "tuning_gpu_moe_timeout_ms = {}\n",
-        tuning.gpu_moe_timeout_ms_effective()
+        tuning.gpu_moe_timeout_ms
     ));
     out.push_str(&format!("known_prefixes = {}\n", s.known_prefixes.len()));
     out.push_str(&format!("secret_keywords = {}\n", s.secret_keywords.len()));
@@ -987,6 +1086,7 @@ pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
     s.entropy_in_source_files.hash(&mut h);
     s.max_decode_depth.hash(&mut h);
     s.max_decode_bytes.hash(&mut h);
+    s.per_chunk_timeout_ms.hash(&mut h);
     s.max_matches_per_chunk.hash(&mut h);
     s.scan_comments.hash(&mut h);
     s.unicode_normalization.hash(&mut h);
@@ -1015,12 +1115,18 @@ pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
     }
     resolved.require_lockdown.hash(&mut h);
     backend_override_label(resolved.backend_override).hash(&mut h);
+    resolved.batch_pipeline.hash(&mut h);
+    resolved.threads.hash(&mut h);
+    resolved.reader_threads.hash(&mut h);
+    resolved.fused_batch.hash(&mut h);
+    resolved.fused_depth.hash(&mut h);
+    resolved.gpu_runtime_policy.hash(&mut h);
+    resolved.autoroute_gpu.hash(&mut h);
     resolved.regex_dfa_limit.hash(&mut h);
     resolved.hyperscan_cache_dir.hash(&mut h);
     resolved.aws_canary_accounts.hash(&mut h);
     resolved.scanner_tuning.hash(&mut h);
     resolved.source_limits.hash(&mut h);
-    hash_autoroute_runtime_env(&mut h);
     h.finish()
 }
 
@@ -1032,37 +1138,18 @@ fn hash_strings(strings: &[String], h: &mut impl std::hash::Hasher) {
     }
 }
 
-fn hash_autoroute_runtime_env(h: &mut impl std::hash::Hasher) {
-    use std::hash::Hash;
-    const ROUTING_ENV: &[&str] = &[
-        "KEYHOG_BATCH_PIPELINE",
-        "KEYHOG_NO_GPU",
-        "KEYHOG_REQUIRE_GPU",
-        "KEYHOG_GPU_AUTOROUTE",
-        "KEYHOG_GPU_RECALL_FLOOR",
-        "KEYHOG_GPU_PARITY",
-        "KEYHOG_SHARD_TARGET",
-        "KEYHOG_PER_CHUNK_TIMEOUT_MS",
-    ];
-    ROUTING_ENV.len().hash(h);
-    for key in ROUTING_ENV {
-        key.hash(h);
-        std::env::var(key).ok().hash(h); // LAW10: absent routing env ⇒ hashes as None, a DISTINCT cache-key state (intended); this BUILDS the digest, it does not swallow a failure or pick a path.
-    }
-}
-
 #[doc(hidden)]
-pub mod testing {
+pub(crate) mod testing {
     use crate::args::ScanArgs;
     use anyhow::Result;
     use keyhog_core::DetectorSpec;
     use keyhog_scanner::ScannerConfig;
     use std::path::Path;
 
-    pub const MAX_THREADS_CAP: usize = super::MAX_THREADS_CAP;
-    pub const ML_THRESHOLD_DEFAULT: f64 = super::ML_THRESHOLD_DEFAULT;
+    pub(crate) const MAX_THREADS_CAP: usize = super::MAX_THREADS_CAP;
+    pub(crate) const ML_THRESHOLD_DEFAULT: f64 = super::ML_THRESHOLD_DEFAULT;
 
-    pub fn sanitise_thread_count(
+    pub(crate) fn sanitise_thread_count(
         requested: usize,
         physical_cores: usize,
         source: &'static str,
@@ -1070,38 +1157,47 @@ pub mod testing {
         super::sanitise_thread_count(requested, physical_cores, source)
     }
 
-    pub fn load_detectors_or_embedded(path: &Path) -> Result<Vec<DetectorSpec>> {
+    pub(crate) fn load_detectors_or_embedded(path: &Path) -> Result<Vec<DetectorSpec>> {
         super::load_detectors_or_embedded(path)
     }
 
-    pub fn load_detectors_from_dir_with_cache(
+    pub(crate) fn load_detectors_from_dir_with_cache(
         source_dir: &Path,
         cache_path: &Path,
     ) -> Result<Vec<DetectorSpec>> {
         super::load_detectors_from_dir_with_cache(source_dir, cache_path)
     }
 
-    pub fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
+    pub(crate) fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
         super::build_scanner_config(args)
     }
 
-    pub fn resolve_scan_config(args: &mut ScanArgs) -> anyhow::Result<()> {
+    pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> anyhow::Result<()> {
         super::resolve_scan_config(args).map(|_| ())
     }
 
-    pub fn resolve_scan_config_aws_canary_accounts(
+    pub(crate) fn resolve_scan_config_aws_canary_accounts(
         args: &mut ScanArgs,
     ) -> anyhow::Result<Vec<String>> {
         super::resolve_scan_config(args).map(|resolved| resolved.aws_canary_accounts)
     }
 
-    pub fn render_effective_config_for_scanner(scanner: ScannerConfig) -> String {
+    pub(crate) fn render_effective_config_for_scanner(scanner: ScannerConfig) -> String {
         let resolved = resolved_config_for_scanner(scanner);
         super::render_effective_config(&resolved)
     }
 
-    pub fn autoroute_config_digest_for_scanner(scanner: ScannerConfig) -> u64 {
+    pub(crate) fn autoroute_config_digest_for_scanner(scanner: ScannerConfig) -> u64 {
         let resolved = resolved_config_for_scanner(scanner);
+        super::autoroute_config_digest(&resolved)
+    }
+
+    pub(crate) fn autoroute_config_digest_for_scanner_with_autoroute_gpu(
+        scanner: ScannerConfig,
+        autoroute_gpu: bool,
+    ) -> u64 {
+        let mut resolved = resolved_config_for_scanner(scanner);
+        resolved.autoroute_gpu = autoroute_gpu;
         super::autoroute_config_digest(&resolved)
     }
 
@@ -1110,6 +1206,14 @@ pub mod testing {
         let ml_enabled = scanner.ml_enabled;
         super::ResolvedScanConfig {
             backend_override: None,
+            batch_pipeline: false,
+            threads: None,
+            reader_threads: None,
+            fused_batch: super::FUSED_BATCH_DEFAULT,
+            fused_depth: None,
+            gpu_runtime_policy: keyhog_scanner::gpu::GpuRuntimePolicy::Auto,
+            autoroute_gpu: false,
+            autoroute_calibration: false,
             scanner,
             min_confidence,
             ml_enabled,

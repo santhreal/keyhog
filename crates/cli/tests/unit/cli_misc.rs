@@ -1,12 +1,10 @@
-use keyhog::benchmark::format_gpu_summary;
-use keyhog::config::find_config_file;
-use keyhog::inline_suppression::filter_inline_suppressions;
+use keyhog::testing::{CliTestApi as _, API};
 use keyhog_core::{MatchLocation, RawMatch, Severity};
 use std::sync::Arc;
 
 #[test]
 fn startup_summary_includes_detector_count() {
-    assert!(!format_gpu_summary().is_empty());
+    assert!(!API.format_gpu_summary().is_empty());
 }
 
 fn test_hash() -> [u8; 32] {
@@ -16,7 +14,7 @@ fn test_hash() -> [u8; 32] {
 #[test]
 fn find_config_file_returns_none_for_empty_temp_dir() {
     let dir = tempfile::tempdir().unwrap();
-    assert!(find_config_file(Some(dir.path())).is_none());
+    assert!(API.find_config_file(Some(dir.path())).is_none());
 }
 
 #[test]
@@ -26,7 +24,7 @@ fn filter_inline_suppressions_keeps_non_filesystem_matches() {
         detector_name: Arc::from("Demo"),
         service: Arc::from("demo"),
         severity: Severity::Low,
-        credential: Arc::from("abc"),
+        credential: keyhog_core::SensitiveString::from("abc"),
         credential_hash: test_hash(),
         companions: Default::default(),
         location: MatchLocation {
@@ -41,7 +39,7 @@ fn filter_inline_suppressions_keeps_non_filesystem_matches() {
         entropy: None,
         confidence: None,
     };
-    let kept = filter_inline_suppressions(vec![m]);
+    let kept = API.filter_inline_suppressions(vec![m]);
     assert_eq!(kept.len(), 1);
 }
 
@@ -60,7 +58,7 @@ fn filter_inline_suppressions_drops_directive_marked_line() {
         detector_name: Arc::from("Demo"),
         service: Arc::from("demo"),
         severity: Severity::Low,
-        credential: Arc::from("secret"),
+        credential: keyhog_core::SensitiveString::from("secret"),
         credential_hash: test_hash(),
         companions: Default::default(),
         location: MatchLocation {
@@ -75,8 +73,47 @@ fn filter_inline_suppressions_drops_directive_marked_line() {
         entropy: None,
         confidence: None,
     };
-    let kept = filter_inline_suppressions(vec![m]);
+    let kept = API.filter_inline_suppressions(vec![m]);
     assert!(kept.is_empty());
+}
+
+#[test]
+fn filter_inline_suppressions_keeps_findings_after_read_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("invalid_utf8_after_ignore.rs");
+    std::fs::write(
+        &path,
+        b"// keyhog:ignore\n\xff\xfe\nlet token = \"secret\";\n",
+    )
+    .unwrap();
+
+    let m = RawMatch {
+        detector_id: Arc::from("demo"),
+        detector_name: Arc::from("Demo"),
+        service: Arc::from("demo"),
+        severity: Severity::Low,
+        credential: keyhog_core::SensitiveString::from("secret"),
+        credential_hash: test_hash(),
+        companions: Default::default(),
+        location: MatchLocation {
+            source: Arc::from("filesystem"),
+            file_path: Some(Arc::from(path.to_string_lossy().as_ref())),
+            line: Some(3),
+            offset: 0,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        entropy: None,
+        confidence: None,
+    };
+
+    let kept = API.filter_inline_suppressions(vec![m]);
+    assert_eq!(
+        kept.len(),
+        1,
+        "a read error after an inline directive must not reuse stale suppression context for later findings"
+    );
 }
 
 #[test]
@@ -95,7 +132,7 @@ fn filter_inline_suppressions_supports_migrated_directives() {
             detector_name: Arc::from("Demo"),
             service: Arc::from("demo"),
             severity: Severity::Low,
-            credential: Arc::from("secret"),
+            credential: keyhog_core::SensitiveString::from("secret"),
             credential_hash: test_hash(),
             companions: Default::default(),
             location: MatchLocation {
@@ -110,7 +147,7 @@ fn filter_inline_suppressions_supports_migrated_directives() {
             entropy: None,
             confidence: None,
         };
-        let kept = filter_inline_suppressions(vec![m]);
+        let kept = API.filter_inline_suppressions(vec![m]);
         assert!(
             kept.is_empty(),
             "directive '{}' did not suppress finding",
@@ -135,7 +172,7 @@ fn filter_inline_suppressions_with_detector_suffix() {
         detector_name: Arc::from("AWS Access Key"),
         service: Arc::from("aws"),
         severity: Severity::Low,
-        credential: Arc::from("secret"),
+        credential: keyhog_core::SensitiveString::from("secret"),
         credential_hash: test_hash(),
         companions: Default::default(),
         location: MatchLocation {
@@ -150,7 +187,7 @@ fn filter_inline_suppressions_with_detector_suffix() {
         entropy: None,
         confidence: None,
     };
-    let kept_match = filter_inline_suppressions(vec![m_match]);
+    let kept_match = API.filter_inline_suppressions(vec![m_match]);
     assert!(
         kept_match.is_empty(),
         "matching detector should be suppressed"
@@ -162,7 +199,7 @@ fn filter_inline_suppressions_with_detector_suffix() {
         detector_name: Arc::from("Stripe Secret Key"),
         service: Arc::from("stripe"),
         severity: Severity::Low,
-        credential: Arc::from("secret"),
+        credential: keyhog_core::SensitiveString::from("secret"),
         credential_hash: test_hash(),
         companions: Default::default(),
         location: MatchLocation {
@@ -177,7 +214,7 @@ fn filter_inline_suppressions_with_detector_suffix() {
         entropy: None,
         confidence: None,
     };
-    let kept_nonmatch = filter_inline_suppressions(vec![m_nonmatch]);
+    let kept_nonmatch = API.filter_inline_suppressions(vec![m_nonmatch]);
     assert_eq!(
         kept_nonmatch.len(),
         1,
@@ -206,7 +243,7 @@ fn filter_inline_suppressions_detector_suffix_is_case_insensitive() {
         detector_name: Arc::from("AWS Access Key"),
         service: Arc::from("aws"),
         severity: Severity::Low,
-        credential: Arc::from("secret"),
+        credential: keyhog_core::SensitiveString::from("secret"),
         credential_hash: test_hash(),
         companions: Default::default(),
         location: MatchLocation {
@@ -223,14 +260,14 @@ fn filter_inline_suppressions_detector_suffix_is_case_insensitive() {
     };
 
     // Mixed-case id that case-folds to the directive target: suppressed.
-    let kept_match = filter_inline_suppressions(vec![make("AWS-Access-KEY")]);
+    let kept_match = API.filter_inline_suppressions(vec![make("AWS-Access-KEY")]);
     assert!(
         kept_match.is_empty(),
         "mixed-case detector id matching the directive target must be suppressed"
     );
 
     // Unrelated id: not suppressed by a scoped `detector=` directive.
-    let kept_nonmatch = filter_inline_suppressions(vec![make("GCP-Service-Key")]);
+    let kept_nonmatch = API.filter_inline_suppressions(vec![make("GCP-Service-Key")]);
     assert_eq!(
         kept_nonmatch.len(),
         1,

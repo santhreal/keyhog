@@ -18,6 +18,7 @@
 //! they can always invoke `keyhog scan` separately.
 
 use crate::args::WatchArgs;
+use crate::style;
 use anyhow::{Context, Result};
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
@@ -34,7 +35,7 @@ use std::time::{Duration, Instant};
 /// always re-scanned because the content hash changes.
 const DEDUP_WINDOW: Duration = Duration::from_millis(750);
 
-pub fn run(args: WatchArgs) -> Result<()> {
+pub(crate) fn run(args: WatchArgs) -> Result<()> {
     crate::backend_env::validate_scan_runtime_env()?;
     crate::orchestrator_config::configure_hyperscan_cache_dir(args.cache_dir.clone())?;
 
@@ -106,6 +107,7 @@ pub fn run(args: WatchArgs) -> Result<()> {
         let event = match event {
             Ok(e) => e,
             Err(e) => {
+                let palette = style::for_stderr();
                 // Law 10: a watcher error is a DROPPED filesystem event — a save
                 // the watcher never told us about means that file went unscanned
                 // (a recall loss). On Linux an inotify queue overflow
@@ -114,11 +116,12 @@ pub fn run(args: WatchArgs) -> Result<()> {
                 // degrades. A `tracing::warn!` here is invisible without RUST_LOG,
                 // so surface it LOUDLY on stderr and tell the operator what to do.
                 eprintln!(
-                    "⚠ keyhog watch: filesystem watcher error ({e}); one or more change \
+                    "{} keyhog watch: filesystem watcher error ({e}); one or more change \
                      events were DROPPED and those files were NOT re-scanned. \
                      If this recurs under heavy file churn, raise \
                      fs.inotify.max_queued_events or run `keyhog scan {}` for a \
                      full one-shot rescan.",
+                    style::warn("WARN", &palette),
                     watch_root.display()
                 );
                 continue;
@@ -174,8 +177,10 @@ fn scan_file(
             // (permission denied, I/O failure) means a file that EXISTS went
             // unscanned: surface it loudly so the recall loss is never silent.
             if error.kind() != std::io::ErrorKind::NotFound {
+                let palette = style::for_stderr();
                 eprintln!(
-                    "⚠ keyhog watch: could not read {} ({}); it was NOT scanned",
+                    "{} keyhog watch: could not read {} ({}); it was NOT scanned",
+                    style::warn("WARN", &palette),
                     path.display(),
                     error.kind()
                 );
@@ -226,7 +231,8 @@ fn scan_file(
     let backend = match router.choose(None, std::slice::from_ref(&chunk)) {
         Ok(backend) => backend,
         Err(error) => {
-            eprintln!("✗ keyhog watch: {error}");
+            let palette = style::for_stderr();
+            eprintln!("{} keyhog watch: {error}", style::fail("FAIL", &palette));
             return;
         }
     };

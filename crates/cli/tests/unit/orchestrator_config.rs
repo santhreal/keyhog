@@ -1,21 +1,366 @@
-use keyhog::orchestrator_config::{sanitise_thread_count_for_test as sanitise, MAX_THREADS_CAP};
+use clap::Parser;
+use keyhog::args::ScanArgs;
+use keyhog::testing::{CliTestApi as _, API};
+use tempfile::TempDir;
+
+fn args_for_config(contents: &str) -> ScanArgs {
+    args_for_config_with_extra(contents, &[])
+}
+
+fn args_for_config_with_extra(contents: &str, extra_args: &[&str]) -> ScanArgs {
+    let dir = TempDir::new().expect("tempdir");
+    std::fs::write(dir.path().join(".keyhog.toml"), contents).expect("write config");
+    let path = dir.path().to_string_lossy().to_string();
+    let mut argv = vec!["scan".to_string(), "--path".to_string(), path];
+    argv.extend(extra_args.iter().copied().map(String::from));
+    let mut args = ScanArgs::try_parse_from(argv).unwrap();
+    API.apply_config_file_quiet(&mut args);
+    args
+}
+
+fn detector_toml(id: &str, prefix: &str) -> String {
+    format!(
+        r#"
+        [detector]
+        id = "{id}"
+        name = "{id}"
+        service = "demo"
+        severity = "high"
+        keywords = ["{prefix}"]
+
+        [[detector.patterns]]
+        regex = "{prefix}[A-Z0-9]{{8}}"
+        "#
+    )
+}
 
 #[test]
 fn sanitise_thread_count_rejects_zero() {
-    assert_eq!(sanitise(0, 8, "test"), 8);
-    assert_eq!(sanitise(0, 0, "test"), 1);
+    assert_eq!(API.sanitise_thread_count(0, 8, "test"), 8);
+    assert_eq!(API.sanitise_thread_count(0, 0, "test"), 1);
 }
 
 #[test]
 fn sanitise_thread_count_caps_pathological_values() {
-    assert_eq!(sanitise(999_999, 8, "test"), MAX_THREADS_CAP);
-    assert_eq!(sanitise(MAX_THREADS_CAP + 1, 8, "test"), MAX_THREADS_CAP);
+    assert_eq!(
+        API.sanitise_thread_count(999_999, 8, "test"),
+        API.max_threads_cap()
+    );
+    assert_eq!(
+        API.sanitise_thread_count(API.max_threads_cap() + 1, 8, "test"),
+        API.max_threads_cap()
+    );
 }
 
 #[test]
 fn sanitise_thread_count_passes_through_sane_values() {
-    assert_eq!(sanitise(1, 8, "test"), 1);
-    assert_eq!(sanitise(8, 8, "test"), 8);
-    assert_eq!(sanitise(64, 8, "test"), 64);
-    assert_eq!(sanitise(MAX_THREADS_CAP, 8, "test"), MAX_THREADS_CAP);
+    assert_eq!(API.sanitise_thread_count(1, 8, "test"), 1);
+    assert_eq!(API.sanitise_thread_count(8, 8, "test"), 8);
+    assert_eq!(API.sanitise_thread_count(64, 8, "test"), 64);
+    assert_eq!(
+        API.sanitise_thread_count(API.max_threads_cap(), 8, "test"),
+        API.max_threads_cap()
+    );
+}
+
+#[test]
+fn config_top_level_min_secret_len_reaches_scan_args() {
+    let args = args_for_config("min_secret_len = 29\n");
+    assert_eq!(args.min_secret_len, Some(29));
+}
+
+#[test]
+fn config_scan_min_secret_len_reaches_scan_args() {
+    let args = args_for_config("[scan]\nmin_secret_len = 33\n");
+    assert_eq!(args.min_secret_len, Some(33));
+}
+
+#[test]
+fn config_top_level_min_secret_len_wins_over_scan_table() {
+    let args = args_for_config("min_secret_len = 29\n[scan]\nmin_secret_len = 33\n");
+    assert_eq!(args.min_secret_len, Some(29));
+}
+
+#[test]
+fn config_limit_stdin_bytes_reaches_source_limits() {
+    let args = args_for_config("[limits]\nstdin_bytes = \"1MB\"\n");
+    assert_eq!(args.limits.to_source_limits().stdin_bytes, 1024 * 1024);
+}
+
+#[test]
+fn cli_limit_stdin_bytes_wins_over_config_limit() {
+    let args = args_for_config_with_extra(
+        "[limits]\nstdin_bytes = \"1MB\"\n",
+        &["--limit-stdin-bytes", "3MB"],
+    );
+    assert_eq!(args.limits.to_source_limits().stdin_bytes, 3 * 1024 * 1024);
+}
+
+#[test]
+fn system_trusted_bin_dirs_reach_safe_bin_resolver() {
+    let dir = TempDir::new().expect("tempdir");
+    let bin_dir = dir.path().join("bin");
+    std::fs::create_dir_all(&bin_dir).expect("mkdir bin");
+    let bin_name = "keyhog-config-wired-bin";
+    let bin = bin_dir.join(bin_name);
+    std::fs::write(&bin, b"#!/bin/sh\nexit 0\n").expect("write fake binary");
+    std::fs::write(
+        dir.path().join(".keyhog.toml"),
+        format!(
+            "[system]\ntrusted_bin_dirs = [{}]\n",
+            toml::Value::String(bin_dir.to_string_lossy().to_string())
+        ),
+    )
+    .expect("write config");
+
+    let path = dir.path().to_string_lossy().to_string();
+    let mut args = ScanArgs::try_parse_from(["scan", "--path", &path]).expect("parse scan args");
+    API.resolve_scan_config(&mut args)
+        .expect("resolve scan config");
+    let resolved = keyhog_core::resolve_safe_bin(bin_name);
+    keyhog_core::set_extra_trusted_dirs(Vec::new());
+
+    assert_eq!(
+        resolved.as_deref(),
+        Some(bin.as_path()),
+        "[system].trusted_bin_dirs must reach the safe binary resolver used by git/docker sources"
+    );
+}
+
+#[test]
+fn system_cache_dir_reaches_scan_args() {
+    let dir = TempDir::new().expect("tempdir");
+    let cache_dir = dir.path().join("hs-cache");
+    let args = args_for_config(&format!(
+        "[system]\ncache_dir = {}\n",
+        toml::Value::String(cache_dir.to_string_lossy().to_string())
+    ));
+
+    assert_eq!(
+        args.cache_dir.as_deref(),
+        Some(cache_dir.as_path()),
+        "[system].cache_dir must reach the scan args consumed before scanner compilation"
+    );
+}
+
+#[test]
+fn cli_cache_dir_wins_over_system_cache_dir() {
+    let dir = TempDir::new().expect("tempdir");
+    let config_cache = dir.path().join("config-cache");
+    let cli_cache = dir.path().join("cli-cache");
+    let cli_cache_arg = cli_cache.to_string_lossy().to_string();
+    let args = args_for_config_with_extra(
+        &format!(
+            "[system]\ncache_dir = {}\n",
+            toml::Value::String(config_cache.to_string_lossy().to_string())
+        ),
+        &["--cache-dir", &cli_cache_arg],
+    );
+
+    assert_eq!(
+        args.cache_dir.as_deref(),
+        Some(cli_cache.as_path()),
+        "--cache-dir must override [system].cache_dir"
+    );
+}
+
+#[test]
+fn relative_system_trusted_bin_dir_is_config_error() {
+    let dir = TempDir::new().expect("tempdir");
+    std::fs::write(
+        dir.path().join(".keyhog.toml"),
+        "[system]\ntrusted_bin_dirs = [\"relative-bin\"]\n",
+    )
+    .expect("write config");
+
+    let path = dir.path().to_string_lossy().to_string();
+    let mut args = ScanArgs::try_parse_from(["scan", "--path", &path]).expect("parse scan args");
+    let error = API
+        .resolve_scan_config(&mut args)
+        .expect_err("relative trusted bin dir must fail");
+
+    assert!(
+        error
+            .to_string()
+            .contains("[system].trusted_bin_dirs: trusted binary directory relative-bin must be absolute"),
+        "relative trusted binary directories must fail closed with an actionable config error: {error}"
+    );
+}
+
+#[test]
+fn relative_system_cache_dir_is_config_error() {
+    let dir = TempDir::new().expect("tempdir");
+    std::fs::write(
+        dir.path().join(".keyhog.toml"),
+        "[system]\ncache_dir = \"relative-cache\"\n",
+    )
+    .expect("write config");
+
+    let path = dir.path().to_string_lossy().to_string();
+    let mut args = ScanArgs::try_parse_from(["scan", "--path", &path]).expect("parse scan args");
+    let error = API
+        .resolve_scan_config(&mut args)
+        .expect_err("relative cache dir must fail");
+
+    assert!(
+        error.to_string().contains(
+            "[system].cache_dir: Hyperscan cache directory relative-cache must be absolute"
+        ),
+        "relative cache dirs must fail closed with an actionable config error: {error}"
+    );
+}
+
+#[test]
+fn aws_canary_accounts_reach_resolved_scan_config() {
+    let dir = TempDir::new().expect("tempdir");
+    std::fs::write(
+        dir.path().join(".keyhog.toml"),
+        "[aws]\ncanary_accounts = [\"000000000001\"]\n",
+    )
+    .expect("write config");
+
+    let path = dir.path().to_string_lossy().to_string();
+    let mut args = ScanArgs::try_parse_from(["scan", "--path", &path]).expect("parse scan args");
+    let accounts = API
+        .resolve_scan_config_aws_canary_accounts(&mut args)
+        .expect("resolve scan config");
+
+    assert_eq!(
+        accounts,
+        vec!["000000000001".to_string()],
+        "[aws].canary_accounts must be carried by the resolved scan config"
+    );
+    keyhog_core::set_extra_canary_accounts(Default::default());
+}
+
+#[test]
+fn invalid_aws_canary_accounts_are_config_errors() {
+    let dir = TempDir::new().expect("tempdir");
+    std::fs::write(
+        dir.path().join(".keyhog.toml"),
+        "[aws]\ncanary_accounts = [\"1234\"]\nknockoff_accounts = [\"\"]\n",
+    )
+    .expect("write config");
+
+    let path = dir.path().to_string_lossy().to_string();
+    let mut args = ScanArgs::try_parse_from(["scan", "--path", &path]).expect("parse scan args");
+    let error = API
+        .resolve_scan_config(&mut args)
+        .expect_err("invalid AWS accounts must fail");
+    let message = error.to_string();
+
+    assert!(
+        message.contains("[aws].canary_accounts")
+            && message.contains("12-digit AWS account id")
+            && message.contains("[aws].knockoff_accounts")
+            && message.contains("must not be empty"),
+        "invalid AWS account IDs must fail closed with actionable config errors: {message}"
+    );
+    keyhog_core::set_extra_canary_accounts(Default::default());
+}
+
+#[cfg(all(feature = "web", feature = "git"))]
+#[test]
+fn config_feature_limits_reach_source_limits() {
+    let args = args_for_config(
+        "[limits]\n\
+         web_response_bytes = \"2MB\"\n\
+         git_chunks = 17\n",
+    );
+    let limits = args.limits.to_source_limits();
+
+    assert_eq!(limits.web_response_bytes, 2 * 1024 * 1024);
+    assert_eq!(limits.git_chunk_count, 17);
+}
+
+#[test]
+fn detector_parse_cache_has_single_cli_owner() {
+    let cli_src = include_str!("../../src/orchestrator_config.rs");
+    let core_src = include_str!("../../../core/src/spec/load.rs");
+    assert!(
+        cli_src.contains("struct DetectorCacheFile") && cli_src.contains("source_fingerprint"),
+        "CLI detector loading owns the XDG parse-cache schema and source fingerprint"
+    );
+    assert!(
+        !cli_src.contains("keyhog_core::load_detectors_with_cache("),
+        "orchestrator_config must not call a second core detector-cache owner"
+    );
+    assert!(
+        !core_src.contains("DetectorCacheFile")
+            && !core_src.contains("save_detector_cache")
+            && !core_src.contains("load_detector_cache"),
+        "keyhog-core must not keep a second detector parse-cache schema/parser"
+    );
+}
+
+#[test]
+fn detector_parse_cache_invalidates_deleted_source_toml() {
+    let dir = TempDir::new().expect("tempdir");
+    let source_dir = dir.path().join("detectors");
+    std::fs::create_dir_all(&source_dir).expect("mkdir detectors");
+    std::fs::write(
+        source_dir.join("alpha.toml"),
+        detector_toml("alpha-token", "alpha_"),
+    )
+    .expect("write alpha");
+    std::fs::write(
+        source_dir.join("bravo.toml"),
+        detector_toml("bravo-token", "bravo_"),
+    )
+    .expect("write bravo");
+    let cache_path = dir.path().join("detectors-cache.json");
+
+    let first = API
+        .load_detectors_from_dir_with_cache(&source_dir, &cache_path)
+        .expect("first load");
+    assert_eq!(first.len(), 2);
+    assert!(cache_path.exists(), "first cached load should write cache");
+
+    std::fs::remove_file(source_dir.join("bravo.toml")).expect("delete bravo");
+    let second = API
+        .load_detectors_from_dir_with_cache(&source_dir, &cache_path)
+        .expect("second load");
+    assert_eq!(
+        second.iter().map(|d| d.id.as_str()).collect::<Vec<_>>(),
+        vec!["alpha-token"],
+        "deleted detector TOML must invalidate the cache instead of keeping stale detectors live"
+    );
+}
+
+#[test]
+fn detector_parse_cache_rejects_poisoned_cached_detector() {
+    let dir = TempDir::new().expect("tempdir");
+    let source_dir = dir.path().join("detectors");
+    std::fs::create_dir_all(&source_dir).expect("mkdir detectors");
+    std::fs::write(
+        source_dir.join("alpha.toml"),
+        detector_toml("alpha-token", "alpha_"),
+    )
+    .expect("write alpha");
+    let cache_path = dir.path().join("detectors-cache.json");
+
+    let first = API
+        .load_detectors_from_dir_with_cache(&source_dir, &cache_path)
+        .expect("first load");
+    assert_eq!(first.len(), 1);
+
+    let mut poisoned: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&cache_path).expect("read cache"))
+            .expect("cache JSON");
+    poisoned["detectors"][0]["patterns"][0]["regex"] = serde_json::json!("(");
+    std::fs::write(
+        &cache_path,
+        serde_json::to_vec_pretty(&poisoned).expect("serialize poisoned cache"),
+    )
+    .expect("write poisoned cache");
+
+    let second = API
+        .load_detectors_from_dir_with_cache(&source_dir, &cache_path)
+        .expect("second load");
+    assert_eq!(second.len(), 1);
+    assert_eq!(second[0].id, "alpha-token");
+    assert_eq!(
+        second[0].patterns[0].regex, "alpha_[A-Z0-9]{8}",
+        "invalid cached detector must be rejected and replaced by source TOML"
+    );
 }

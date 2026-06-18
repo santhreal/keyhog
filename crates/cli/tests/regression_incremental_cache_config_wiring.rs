@@ -3,7 +3,7 @@
 
 use clap::Parser;
 use keyhog::args::ScanArgs;
-use keyhog::config::testing::apply_config_file_quiet;
+use keyhog::testing::{CliTestApi as _, API};
 use std::path::PathBuf;
 use tempfile::TempDir;
 
@@ -14,7 +14,7 @@ fn args_for_config(contents: &str, extra_args: &[&str]) -> ScanArgs {
     let mut argv = vec!["scan".to_string(), "--path".to_string(), scan_path];
     argv.extend(extra_args.iter().copied().map(String::from));
     let mut args = ScanArgs::try_parse_from(argv).expect("parse scan args");
-    apply_config_file_quiet(&mut args);
+    API.apply_config_file_quiet(&mut args);
     args
 }
 

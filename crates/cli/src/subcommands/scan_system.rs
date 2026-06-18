@@ -15,6 +15,7 @@ mod mounts;
 
 use crate::args::ScanSystemArgs;
 use crate::format::format_bytes;
+use crate::style;
 use anyhow::{Context, Result};
 use keyhog_scanner::CompiledScanner;
 use mounts::enumerate_mounts;
@@ -96,9 +97,11 @@ impl FindingSink {
                 self.redacted.push(m.to_redacted());
             } else if !self.capped_warned {
                 self.capped_warned = true;
+                let palette = style::for_stderr();
                 eprintln!(
-                    "⚠ resident findings cap ({}) reached; further findings are \
+                    "{} resident findings cap ({}) reached; further findings are \
                      counted but not retained in memory",
+                    style::warn("WARN", &palette),
                     self.cap
                 );
             }
@@ -138,69 +141,69 @@ impl FindingSink {
 }
 
 #[doc(hidden)]
-pub mod testing {
-    pub const MAX_RESIDENT_FINDINGS: usize = super::MAX_RESIDENT_FINDINGS;
+pub(crate) mod testing {
+    pub(crate) const MAX_RESIDENT_FINDINGS: usize = super::MAX_RESIDENT_FINDINGS;
 
-    pub struct FindingSink {
+    pub(crate) struct FindingSink {
         inner: super::FindingSink,
     }
 
     impl FindingSink {
-        pub fn new() -> Self {
+        pub(crate) fn new() -> Self {
             Self {
                 inner: super::FindingSink::new(),
             }
         }
 
-        pub fn with_cap(cap: usize) -> Self {
+        pub(crate) fn with_cap(cap: usize) -> Self {
             Self {
                 inner: super::FindingSink::with_cap(cap),
             }
         }
 
-        pub fn record_skipped_chunk(&mut self) {
+        pub(crate) fn record_skipped_chunk(&mut self) {
             self.inner.record_skipped_chunk();
         }
 
-        pub fn skipped_chunks(&self) -> u64 {
+        pub(crate) fn skipped_chunks(&self) -> u64 {
             self.inner.skipped_chunks()
         }
 
-        pub fn absorb(&mut self, matches: Vec<keyhog_core::RawMatch>) {
+        pub(crate) fn absorb(&mut self, matches: Vec<keyhog_core::RawMatch>) {
             self.inner.absorb(matches);
         }
 
-        pub fn is_empty(&self) -> bool {
+        pub(crate) fn is_empty(&self) -> bool {
             self.inner.is_empty()
         }
 
-        pub fn total(&self) -> u64 {
+        pub(crate) fn total(&self) -> u64 {
             self.inner.total()
         }
 
-        pub fn retained_len(&self) -> usize {
+        pub(crate) fn retained_len(&self) -> usize {
             self.inner.retained_len()
         }
 
-        pub fn cap(&self) -> usize {
+        pub(crate) fn cap(&self) -> usize {
             self.inner.cap()
         }
 
-        pub fn capped_warned(&self) -> bool {
+        pub(crate) fn capped_warned(&self) -> bool {
             self.inner.capped_warned()
         }
 
-        pub fn retained_hash(&self, index: usize) -> Option<[u8; 32]> {
+        pub(crate) fn retained_hash(&self, index: usize) -> Option<[u8; 32]> {
             self.inner.retained_hash(index)
         }
 
-        pub fn retained_json(&self) -> Result<String, serde_json::Error> {
+        pub(crate) fn retained_json(&self) -> Result<String, serde_json::Error> {
             self.inner.retained_json()
         }
     }
 }
 
-pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
+pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     crate::backend_env::validate_scan_runtime_env()?;
     crate::orchestrator_config::configure_hyperscan_cache_dir(args.cache_dir.clone())?;
 
@@ -231,7 +234,7 @@ pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     // ptrace, even outside lockdown mode. `--lockdown` applies the stronger
     // tier here because the main `scan` orchestrator gate does not run for
     // this subcommand.
-    let report = keyhog_core::hardening::apply_protections(args.lockdown);
+    let report = keyhog_core::apply_protections(args.lockdown);
     if args.lockdown && !report.failures.is_empty() {
         anyhow::bail!(
             "lockdown mode requested but protections failed to apply: {:?}",
@@ -239,13 +242,24 @@ pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
         );
     }
     if !args.lockdown && !report.failures.is_empty() {
-        eprintln!("⚠ hardening warnings: {:?}", report.failures);
+        let palette = style::for_stderr();
+        eprintln!(
+            "{} hardening warnings: {:?}",
+            style::warn("WARN", &palette),
+            report.failures
+        );
     }
     if args.lockdown {
-        eprintln!("🔒 LOCKDOWN MODE: coredump-blocked, mlocked, network mounts refused");
+        let palette = style::for_stderr();
+        eprintln!(
+            "{} LOCKDOWN MODE: coredump-blocked, mlocked, network mounts refused",
+            style::info("INFO", &palette)
+        );
     }
+    let palette = style::for_stderr();
     eprintln!(
-        "🔒 core_dumps={} ptrace={} (always-on protections applied)",
+        "{} core_dumps={} ptrace={} (always-on protections applied)",
+        style::info("INFO", &palette),
         if report.no_core_dumps { "off" } else { "on" },
         if report.no_ptrace {
             "denied"
@@ -255,7 +269,12 @@ pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     );
 
     let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
-    eprintln!("📋 loaded {} detectors", detectors.len());
+    let palette = style::for_stderr();
+    eprintln!(
+        "{} loaded {} detectors",
+        style::info("INFO", &palette),
+        detectors.len()
+    );
     let scanner = Arc::new(CompiledScanner::compile(detectors.clone()).map_err(|e| {
         crate::orchestrator_config::detector_compile_failed(
             "keyhog scan-system",
@@ -300,13 +319,20 @@ pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     // that aborts when --space is hit.
     for mount in &mounts {
         if bytes_scanned.load(Ordering::Relaxed) >= space_cap {
+            let palette = style::for_stderr();
             eprintln!(
-                "⚠ space cap reached ({}); skipping remaining mounts",
+                "{} space cap reached ({}); skipping remaining mounts",
+                style::warn("WARN", &palette),
                 format_bytes(space_cap)
             );
             break;
         }
-        eprintln!("→ walking {}", mount.display());
+        let palette = style::for_stderr();
+        eprintln!(
+            "{} walking {}",
+            style::info("INFO", &palette),
+            mount.display()
+        );
         scan_mount(
             &scanner,
             &router,
@@ -322,10 +348,19 @@ pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     if !args.no_git_history {
         for repo in &git_repos {
             if bytes_scanned.load(Ordering::Relaxed) >= space_cap {
-                eprintln!("⚠ space cap reached; skipping remaining git histories");
+                let palette = style::for_stderr();
+                eprintln!(
+                    "{} space cap reached; skipping remaining git histories",
+                    style::warn("WARN", &palette)
+                );
                 break;
             }
-            eprintln!("→ git history: {}", repo.display());
+            let palette = style::for_stderr();
+            eprintln!(
+                "{} git history: {}",
+                style::info("INFO", &palette),
+                repo.display()
+            );
             scan_git_history(
                 &scanner,
                 &router,
@@ -337,8 +372,10 @@ pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
         }
     }
 
+    let palette = style::for_stderr();
     eprintln!(
-        "✅ system scan complete | bytes scanned: {} | findings: {}",
+        "{} system scan complete | bytes scanned: {} | findings: {}",
+        style::pass("PASS", &palette),
         format_bytes(bytes_scanned.load(Ordering::Relaxed)),
         sink.total
     );
@@ -346,11 +383,13 @@ pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     // the whole tree. Say so loudly — a partial audit that looks clean is worse
     // than no audit.
     if sink.skipped_chunks() > 0 {
+        let palette = style::for_stderr();
         eprintln!(
-            "⚠ {} source chunk(s) were UNREADABLE and went unscanned (corrupt git \
+            "{} {} source chunk(s) were UNREADABLE and went unscanned (corrupt git \
              objects, permission-denied paths, or non-text files). This scan did \
              NOT cover everything; rerun affected paths with elevated permissions \
              to close the gap.",
+            style::warn("WARN", &palette),
             sink.skipped_chunks()
         );
     }
@@ -362,11 +401,16 @@ pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
         // See kimi-wave1 audit finding 2.1.
         let json = serde_json::to_string_pretty(&sink.redacted).context("serialize findings")?;
         std::fs::write(out, json).with_context(|| format!("write {}", out.display()))?;
-        eprintln!("📄 wrote findings to {}", out.display());
+        let palette = style::for_stderr();
+        eprintln!(
+            "{} wrote findings to {}",
+            style::info("INFO", &palette),
+            out.display()
+        );
     } else {
         for m in &sink.redacted {
             println!(
-                "🔍 {} {}{} {:?}  {}",
+                "FINDING {} {}{} {:?}  {}",
                 m.detector_id,
                 m.location.file_path.as_deref().unwrap_or("<no-path>"), // LAW10: absent path/field => display placeholder for REPORTING only; finding still emitted, recall-safe
                 m.location.line.map(|l| format!(":{l}")).unwrap_or_default(), // LAW10: missing/non-string field => empty/placeholder; recall-safe
@@ -582,10 +626,12 @@ fn scan_git_history(
                                                              // silent `tracing::warn!` skip would let a partial audit look complete.
                                                              // Surface it LOUDLY on stderr AND count it as a skipped chunk so the
                                                              // final summary's "did NOT cover everything" warning fires.
+        let palette = style::for_stderr();
         eprintln!(
-            "⚠ keyhog scan-system: git history of {} was NOT scanned — this binary \
+            "{} keyhog scan-system: git history of {} was NOT scanned — this binary \
              was built without the `git` feature. Reinstall with `git` (the default \
              build) or pass `--no-git-history` to stop discovering repos you cannot scan.",
+            style::warn("WARN", &palette),
             repo.display()
         );
         out.record_skipped_chunk();

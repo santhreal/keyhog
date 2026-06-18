@@ -3,11 +3,10 @@
 //! Moved out of `src/subcommands/explain.rs` per the `no_inline_tests_in_src`
 //! gate (the inline module also carried a `.expect(...)`, which tripped
 //! `subcommands_explain_no_unwrap_expect`). The tested helpers
-//! `canonical_for_hot_id` / `explain_not_found` and the embedded-corpus loader
-//! are `pub` for this.
+//! `canonical_for_hot_id` / `explain_not_found` are reached through the hidden
+//! testing namespace so the helper functions do not become public CLI API.
 
-use keyhog::orchestrator_config::load_detectors_or_embedded;
-use keyhog::subcommands::explain::{canonical_for_hot_id, explain_not_found};
+use keyhog::testing::{CliTestApi as _, API};
 use keyhog_core::DetectorSpec;
 use std::path::Path;
 
@@ -17,7 +16,8 @@ fn embedded() -> Vec<DetectorSpec> {
     // `detectors/` dir is present in the test cwd it falls back to the embedded
     // corpus (the production default). An explicit non-existent path now errors
     // by design, so we must use the sentinel, not a bogus directory name.
-    load_detectors_or_embedded(Path::new("detectors")).expect("embedded detector corpus must load")
+    API.load_detectors_or_embedded(Path::new("detectors"))
+        .expect("embedded detector corpus must load")
 }
 
 /// Coherence: every `hot-*` id keyhog can print in a finding must resolve
@@ -40,7 +40,8 @@ fn hot_ids_resolve_to_real_detectors() {
         "hot-slack_bot_token",
         "hot-slack_user_token",
     ] {
-        let canon = canonical_for_hot_id(hot)
+        let canon = API
+            .canonical_for_hot_id(hot)
             .unwrap_or_else(|| panic!("{hot} must map to a canonical detector"));
         assert!(
             ids.contains(canon),
@@ -52,8 +53,8 @@ fn hot_ids_resolve_to_real_detectors() {
     // Square (`sq0csp-`) has no standalone registry detector yet: it must
     // map to None and the not-found path must say so without pretending it
     // is a typo or mis-resolving to `squarespace-api-key`.
-    assert!(canonical_for_hot_id("hot-square_secret").is_none());
-    let err = explain_not_found(&detectors, "hot-square_secret", "hot-square_secret");
+    assert!(API.canonical_for_hot_id("hot-square_secret").is_none());
+    let err = API.explain_not_found(&detectors, "hot-square_secret", "hot-square_secret");
     let msg = format!("{err}");
     assert!(
         msg.contains("fast-path"),

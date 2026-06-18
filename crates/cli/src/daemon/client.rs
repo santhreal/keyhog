@@ -108,8 +108,8 @@ async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result
 }
 
 #[doc(hidden)]
-pub mod testing {
-    pub use crate::daemon::trust::testing::{
+pub(crate) mod testing {
+    pub(crate) use crate::daemon::trust::testing::{
         connected_peer_uid, current_uid, validate_socket_for_connect,
     };
 }
@@ -126,7 +126,7 @@ pub struct Client {
 impl Client {
     /// The keyhog version the connected daemon reported. Empty only if the
     /// handshake did not complete (it always does on a returned `Client`).
-    pub fn daemon_version(&self) -> &str {
+    pub(crate) fn daemon_version(&self) -> &str {
         &self.daemon_version
     }
 
@@ -134,15 +134,15 @@ impl Client {
     /// client — i.e. a daemon left running across a `keyhog update`, now
     /// serving an older detector corpus. `connect` refuses such a daemon;
     /// `connect_any_version` tolerates it, so its callers use this to warn.
-    pub fn is_stale(&self) -> bool {
+    pub(crate) fn is_stale(&self) -> bool {
         !self.daemon_version.is_empty() && self.daemon_version != CLIENT_KEYHOG_VERSION
     }
 
-    pub async fn send(&mut self, request: &Request) -> Result<()> {
+    pub(crate) async fn send(&mut self, request: &Request) -> Result<()> {
         frame::write_request(&mut self.writer, request).await
     }
 
-    pub async fn recv(&mut self) -> Result<Response> {
+    pub(crate) async fn recv(&mut self) -> Result<Response> {
         match frame::read_response(&mut self.reader).await? {
             Some(r) => Ok(r),
             None => bail!(
@@ -154,7 +154,7 @@ impl Client {
         }
     }
 
-    pub async fn round_trip(&mut self, request: &Request) -> Result<Response> {
+    pub(crate) async fn round_trip(&mut self, request: &Request) -> Result<Response> {
         self.send(request).await?;
         self.recv().await
     }

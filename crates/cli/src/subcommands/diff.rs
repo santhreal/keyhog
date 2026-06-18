@@ -1,6 +1,6 @@
 //! `keyhog diff <baseline-a.json> <baseline-b.json>` - finding-set diff.
 //!
-//! Tier-B moat innovation #10 from audits/legendary-2026-04-26: surface the
+//! Tier-B moat innovation #10 from docs/EXECUTION_PLAN.md: surface the
 //! delta between two scan results so CI can gate merges on "no NEW secrets"
 //! regardless of how many baselined secrets remain.
 //!
@@ -21,7 +21,7 @@ use crate::baseline::Baseline;
 use anyhow::Result;
 use std::process::ExitCode;
 
-pub fn run(args: DiffArgs) -> Result<ExitCode> {
+pub(crate) fn run(args: DiffArgs) -> Result<ExitCode> {
     ensure_baseline_input(&args.before)?;
     ensure_baseline_input(&args.after)?;
 
@@ -102,36 +102,17 @@ fn print_human(
     unchanged: &[&crate::baseline::BaselineEntry],
     hide_unchanged: bool,
 ) {
-    use std::io::IsTerminal;
-    let color = std::io::stdout().is_terminal();
-    let red = |s: &str| {
-        if color {
-            format!("\x1b[31m{s}\x1b[0m")
-        } else {
-            s.to_string()
-        }
-    };
-    let green = |s: &str| {
-        if color {
-            format!("\x1b[32m{s}\x1b[0m")
-        } else {
-            s.to_string()
-        }
-    };
-    let dim = |s: &str| {
-        if color {
-            format!("\x1b[2m{s}\x1b[0m")
-        } else {
-            s.to_string()
-        }
-    };
+    let palette = crate::style::for_stdout();
+    let red = |s: &str| format!("{}{}{}", palette.red, s, palette.reset);
+    let green = |s: &str| format!("{}{}{}", palette.green, s, palette.reset);
+    let dim = |s: &str| format!("{}{}{}", palette.dim, s, palette.reset);
 
-    println!("\u{1F500} keyhog diff");
+    println!("keyhog diff");
     println!();
     println!(
         "  {} new   {} resolved   {} unchanged",
-        red(&format!("\u{2716} {}", new.len())),
-        green(&format!("\u{2714} {}", resolved.len())),
+        red(&format!("FAIL {}", new.len())),
+        green(&format!("PASS {}", resolved.len())),
         dim(&format!("= {}", unchanged.len()))
     );
     println!();
@@ -143,8 +124,8 @@ fn print_human(
                 "  {} {} @ {}{}",
                 red("+"),
                 e.detector_id,
-                e.file_path.as_deref().unwrap_or("<unknown>"),
-                e.line.map(|l| format!(":{l}")).unwrap_or_default()
+                e.file_path.as_deref().unwrap_or("<unknown>"), // LAW10: absent path/field => display placeholder for REPORTING only; finding still emitted, recall-safe
+                e.line.map(|l| format!(":{l}")).unwrap_or_default() // LAW10: missing/non-string field => empty/placeholder; recall-safe
             );
         }
         println!();
@@ -157,8 +138,8 @@ fn print_human(
                 "  {} {} @ {}{}",
                 green("-"),
                 e.detector_id,
-                e.file_path.as_deref().unwrap_or("<unknown>"),
-                e.line.map(|l| format!(":{l}")).unwrap_or_default()
+                e.file_path.as_deref().unwrap_or("<unknown>"), // LAW10: absent path/field => display placeholder for REPORTING only; finding still emitted, recall-safe
+                e.line.map(|l| format!(":{l}")).unwrap_or_default() // LAW10: missing/non-string field => empty/placeholder; recall-safe
             );
         }
         println!();
@@ -171,20 +152,20 @@ fn print_human(
                 "  {} {} @ {}{}",
                 dim("="),
                 e.detector_id,
-                e.file_path.as_deref().unwrap_or("<unknown>"),
-                e.line.map(|l| format!(":{l}")).unwrap_or_default()
+                e.file_path.as_deref().unwrap_or("<unknown>"), // LAW10: absent path/field => display placeholder for REPORTING only; finding still emitted, recall-safe
+                e.line.map(|l| format!(":{l}")).unwrap_or_default() // LAW10: missing/non-string field => empty/placeholder; recall-safe
             );
         }
         println!();
     }
 
     if new.is_empty() {
-        println!("{}", green("\u{2714} no new findings"));
+        println!("{}", green("PASS no new findings"));
     } else {
         println!(
             "{}",
             red(&format!(
-                "\u{2716} {} regression{}",
+                "FAIL {} regression{}",
                 new.len(),
                 if new.len() == 1 { "" } else { "s" }
             ))

@@ -7,20 +7,33 @@ use crate::args::DaemonArgs;
 use crate::daemon::client;
 use crate::daemon::protocol::{Request, Response};
 use crate::daemon::server::{self, default_socket_path};
+use crate::style;
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 use std::process::ExitCode;
+use std::time::Duration;
 
-pub async fn run(args: DaemonArgs) -> Result<ExitCode> {
+pub(crate) async fn run(args: DaemonArgs) -> Result<ExitCode> {
     match args.action {
-        crate::args::DaemonAction::Start { socket, detectors } => start(socket, detectors).await,
+        crate::args::DaemonAction::Start {
+            socket,
+            detectors,
+            cache_dir,
+            request_timeout_secs,
+        } => start(socket, detectors, cache_dir, request_timeout_secs).await,
         crate::args::DaemonAction::Stop { socket } => stop(socket).await,
         crate::args::DaemonAction::Status { socket } => status(socket).await,
     }
 }
 
-async fn start(socket: Option<PathBuf>, detectors_dir: PathBuf) -> Result<ExitCode> {
+async fn start(
+    socket: Option<PathBuf>,
+    detectors_dir: PathBuf,
+    cache_dir: Option<PathBuf>,
+    request_timeout_secs: u64,
+) -> Result<ExitCode> {
     crate::backend_env::validate_scan_runtime_env()?;
+    crate::orchestrator_config::configure_hyperscan_cache_dir(cache_dir)?;
 
     let socket = socket.unwrap_or_else(default_socket_path); // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
                                                              // Use the same load-or-embedded fallback that `scan`, `watch`, `scan-system`
@@ -36,7 +49,10 @@ async fn start(socket: Option<PathBuf>, detectors_dir: PathBuf) -> Result<ExitCo
                 detectors_dir.display()
             )
         })?;
-    server::run(socket, detectors).await?;
+    let options = server::ServerOptions {
+        request_read_timeout: Duration::from_secs(request_timeout_secs),
+    };
+    server::run(socket, detectors, options).await?;
     Ok(ExitCode::SUCCESS)
 }
 
@@ -104,11 +120,13 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
                 uptime_secs, scans_served, active_scans, detector_count
             );
             if stale {
+                let palette = style::for_stderr();
                 eprintln!(
-                    "⚠ this daemon is running keyhog {} but you are on {} — it holds an \
+                    "{} this daemon is running keyhog {} but you are on {} — it holds an \
                      OLDER detector corpus and the scan route will BYPASS it (run \
                      in-process) until you restart it: `keyhog daemon stop && keyhog \
                      daemon start`.",
+                    style::warn("WARN", &palette),
                     daemon_version,
                     env!("CARGO_PKG_VERSION"),
                 );

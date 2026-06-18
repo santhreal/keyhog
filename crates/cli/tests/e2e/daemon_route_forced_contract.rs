@@ -1,6 +1,8 @@
 #![cfg(unix)]
 
 use crate::e2e::support::{binary, DaemonGuard};
+use keyhog::daemon::protocol::{Request, Response};
+use keyhog::testing::{CliTestApi as _, API};
 use std::io::Write;
 use std::process::{Command, Stdio};
 use tempfile::TempDir;
@@ -175,6 +177,47 @@ fn forced_daemon_stdin_honors_config_byte_limit() {
         combined.contains("stdin exceeds 4 byte limit"),
         "daemon stdin limit error must name the resolved config limit; output={combined}"
     );
+}
+
+#[tokio::test]
+async fn daemon_ignores_keyhog_dogfood_env_for_wire_events() {
+    let daemon = DaemonGuard::start_with_env(&[("KEYHOG_DOGFOOD", "1")]);
+    let socket = daemon.runtime_dir().join("keyhog.sock");
+    let mut client = keyhog::daemon::client::connect(&socket)
+        .await
+        .expect("connect daemon");
+
+    let request = Request::ScanText {
+        path: Some("demo.env".into()),
+        text: "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n".into(),
+    };
+    let response = API
+        .daemon_client_round_trip(&mut client, &request)
+        .await
+        .expect("scan text");
+
+    match response {
+        Response::ScanResults {
+            matches,
+            engine_example_suppressions,
+            dogfood_events,
+            ..
+        } => {
+            assert!(
+                matches.is_empty(),
+                "known example credential should be suppressed before reporting"
+            );
+            assert!(
+                engine_example_suppressions > 0,
+                "daemon must still count suppressed examples for the client summary"
+            );
+            assert!(
+                dogfood_events.is_empty(),
+                "daemon must ignore ambient KEYHOG_DOGFOOD and avoid hidden event capture; got {dogfood_events:?}"
+            );
+        }
+        other => panic!("expected ScanResults, got {other:?}"),
+    }
 }
 
 fn combined_output(out: &std::process::Output) -> String {

@@ -11,7 +11,7 @@
 /// matches the prior CLI output verbatim so existing snapshot tests
 /// stay green across the consolidation.
 #[must_use]
-pub fn format_bytes(n: u64) -> String {
+pub(crate) fn format_bytes(n: u64) -> String {
     const KIB: u64 = 1024;
     const MIB: u64 = 1024 * 1024;
     const GIB: u64 = 1024 * 1024 * 1024;

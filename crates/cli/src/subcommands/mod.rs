@@ -1,20 +1,21 @@
 //! Subcommand implementations for the KeyHog CLI.
 
-pub mod backend;
-pub mod calibrate;
-pub mod completion;
+pub(crate) mod backend;
+pub(crate) mod calibrate;
+pub(crate) mod completion;
+pub(crate) mod config;
 // See `lib.rs` for why `daemon` is unix-only. The Windows handler
 // for the `daemon` subcommand lives inline in `main.rs`.
 #[cfg(unix)]
-pub mod daemon;
-pub mod detectors;
-pub mod diff;
-pub mod doctor;
-pub mod explain;
-pub mod hook;
-pub mod repair;
-pub mod scan;
-pub mod scan_system;
-pub mod uninstall;
-pub mod update;
-pub mod watch;
+pub(crate) mod daemon;
+pub(crate) mod detectors;
+pub(crate) mod diff;
+pub(crate) mod doctor;
+pub(crate) mod explain;
+pub(crate) mod hook;
+pub(crate) mod repair;
+pub(crate) mod scan;
+pub(crate) mod scan_system;
+pub(crate) mod uninstall;
+pub(crate) mod update;
+pub(crate) mod watch;

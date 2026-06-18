@@ -2,13 +2,13 @@
 //!
 //! Prints id, name, service, severity, all patterns, keywords, companions,
 //! verification spec presence, and a service-keyed rotation-guide URL when
-//! one is known. Tier-B innovation #9 from audits/legendary-2026-04-26.
+//! one is known. Tier-B innovation #9 from docs/EXECUTION_PLAN.md.
 
 use crate::args::ExplainArgs;
 use anyhow::Result;
 use keyhog_core::DetectorSpec;
 
-pub fn run(args: ExplainArgs) -> Result<()> {
+pub(crate) fn run(args: ExplainArgs) -> Result<()> {
     let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
 
     let raw = args.detector_id.to_lowercase();
@@ -49,9 +49,7 @@ pub fn run(args: ExplainArgs) -> Result<()> {
 /// there is no standalone Square-payments detector in the registry yet (only
 /// `squarespace-api-key`, a different service), so it falls through to the
 /// tailored not-found path rather than mis-resolving to the wrong service.
-// `pub` so tests/unit/subcommands_explain.rs can assert the hot→canonical
-// mapping directly (no_inline_tests_in_src gate).
-pub fn canonical_for_hot_id(id: &str) -> Option<&'static str> {
+fn canonical_for_hot_id(id: &str) -> Option<&'static str> {
     match id {
         "hot-github_pat" => Some("github-classic-pat"),
         "hot-openai_key" => Some("openai-api-key"),
@@ -67,13 +65,9 @@ pub fn canonical_for_hot_id(id: &str) -> Option<&'static str> {
 /// Build the "not found" error, with a tailored branch for `hot-*` ids that
 /// have no canonical registry detector so the user learns it's a real fast-path
 /// pattern rather than chasing a typo.
-pub fn explain_not_found(
-    detectors: &[DetectorSpec],
-    requested: &str,
-    lowered: &str,
-) -> anyhow::Error {
+fn explain_not_found(detectors: &[DetectorSpec], requested: &str, lowered: &str) -> anyhow::Error {
     if let Some(stripped) = lowered.strip_prefix("hot-") {
-        let svc = stripped.split('_').next().unwrap_or(stripped);
+        let svc = stripped.split('_').next().unwrap_or(stripped); // LAW10: split yields >=1 element; unwrap_or is the never-taken total default, recall-safe
         let related: Vec<&str> = detectors
             .iter()
             .filter(|d| d.id.to_lowercase().contains(svc) || d.service.to_lowercase().contains(svc))
@@ -111,6 +105,23 @@ pub fn explain_not_found(
             "no detector with id '{requested}'. Did you mean: {}?",
             suggestions.join(", ")
         )
+    }
+}
+
+#[doc(hidden)]
+pub(crate) mod testing {
+    use keyhog_core::DetectorSpec;
+
+    pub(crate) fn canonical_for_hot_id(id: &str) -> Option<&'static str> {
+        super::canonical_for_hot_id(id)
+    }
+
+    pub(crate) fn explain_not_found(
+        detectors: &[DetectorSpec],
+        requested: &str,
+        lowered: &str,
+    ) -> anyhow::Error {
+        super::explain_not_found(detectors, requested, lowered)
     }
 }
 
@@ -179,22 +190,42 @@ fn print_explanation(d: &DetectorSpec) {
 fn rotation_guide(service: &str) -> Option<&'static str> {
     let lower = service.to_lowercase();
     match lower.as_str() {
-        s if s.contains("aws") => Some("https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html#Using_RotateAccessKey"),
-        s if s.contains("github") => Some("https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens"),
-        s if s.contains("gitlab") => Some("https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html#revoke-a-personal-access-token"),
+        s if s.contains("aws") => Some(
+            "https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html#Using_RotateAccessKey",
+        ),
+        s if s.contains("github") => Some(
+            "https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/managing-your-personal-access-tokens",
+        ),
+        s if s.contains("gitlab") => Some(
+            "https://docs.gitlab.com/ee/user/profile/personal_access_tokens.html#revoke-a-personal-access-token",
+        ),
         s if s.contains("slack") => Some("https://api.slack.com/legacy/oauth-scopes#auth.revoke"),
         s if s.contains("openai") => Some("https://platform.openai.com/api-keys"),
         s if s.contains("anthropic") => Some("https://console.anthropic.com/settings/keys"),
         s if s.contains("stripe") => Some("https://dashboard.stripe.com/apikeys"),
-        s if s.contains("twilio") => Some("https://www.twilio.com/docs/iam/access-tokens#rotate-keys"),
-        s if s.contains("sendgrid") => Some("https://docs.sendgrid.com/ui/account-and-settings/api-keys"),
-        s if s.contains("google") || s.contains("gcp") => Some("https://cloud.google.com/iam/docs/creating-managing-service-account-keys#rotating"),
-        s if s.contains("azure") => Some("https://learn.microsoft.com/en-us/azure/active-directory/develop/howto-create-service-principal-portal#authentication-two-options"),
+        s if s.contains("twilio") => {
+            Some("https://www.twilio.com/docs/iam/access-tokens#rotate-keys")
+        }
+        s if s.contains("sendgrid") => {
+            Some("https://docs.sendgrid.com/ui/account-and-settings/api-keys")
+        }
+        s if s.contains("google") || s.contains("gcp") => Some(
+            "https://cloud.google.com/iam/docs/creating-managing-service-account-keys#rotating",
+        ),
+        s if s.contains("azure") => Some(
+            "https://learn.microsoft.com/en-us/azure/active-directory/develop/howto-create-service-principal-portal#authentication-two-options",
+        ),
         s if s.contains("npm") => Some("https://docs.npmjs.com/revoking-access-tokens"),
         s if s.contains("pypi") => Some("https://pypi.org/help/#apitoken"),
-        s if s.contains("docker") => Some("https://docs.docker.com/security/for-developers/access-tokens/"),
-        s if s.contains("datadog") => Some("https://docs.datadoghq.com/account_management/api-app-keys/"),
-        s if s.contains("snowflake") => Some("https://docs.snowflake.com/en/user-guide/key-pair-auth#configuring-key-pair-rotation"),
+        s if s.contains("docker") => {
+            Some("https://docs.docker.com/security/for-developers/access-tokens/")
+        }
+        s if s.contains("datadog") => {
+            Some("https://docs.datadoghq.com/account_management/api-app-keys/")
+        }
+        s if s.contains("snowflake") => Some(
+            "https://docs.snowflake.com/en/user-guide/key-pair-auth#configuring-key-pair-rotation",
+        ),
         _ => None,
     }
 }

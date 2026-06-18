@@ -8,17 +8,16 @@
 
 use crate::args::UninstallArgs;
 use crate::installer;
-use crate::style::Palette;
+use crate::style::{self, Palette};
 use anyhow::{anyhow, Result};
 use std::path::Path;
 use std::process::ExitCode;
 
-pub fn run(args: UninstallArgs) -> Result<ExitCode> {
-    let palette = Palette::for_stdout();
+pub(crate) fn run(args: UninstallArgs) -> Result<ExitCode> {
+    let palette = style::for_stdout();
     // `dim` is used only by print_integration_hints, which reads it from the
     // palette we pass in; run() itself uses the four below.
     let Palette {
-        green,
         yellow,
         bold,
         reset,
@@ -37,7 +36,11 @@ pub fn run(args: UninstallArgs) -> Result<ExitCode> {
     }
 
     remove_binary(&exe)?;
-    println!("\n{green}{bold}✓ removed {}{reset}", exe.display());
+    println!(
+        "\n{} removed {}",
+        style::pass("PASS", &palette),
+        exe.display()
+    );
     print_integration_hints(&exe, &palette);
     Ok(ExitCode::SUCCESS)
 }
@@ -51,13 +54,26 @@ fn print_integration_hints(exe: &Path, palette: &Palette) {
     let dir = exe
         .parent()
         .map(|d| d.display().to_string())
-        .unwrap_or_else(|| "the install dir".into());
+        .unwrap_or_else(|| "the install dir".into()); // LAW10: absent name/label => display default; reporting-only, recall-safe
     println!("\n{bold}manual cleanup (keyhog never edits your shell config):{reset}");
     println!(
         "  {dim}- PATH export for {dir} in your shell rc (~/.bashrc, ~/.zshrc, ~/.config/fish/config.fish){reset}"
     );
     println!("  {dim}- shell completions you installed via `keyhog completion`{reset}");
     println!("  {dim}- the pre-commit hook in any repo where you ran `keyhog hook install`{reset}");
+    // The on-disk cache (compiled GPU rule catalogs + the detector/merkle
+    // cache) survives a binary removal and can be ~GB. A premium uninstall
+    // names it with its real, current path so the user can reclaim the space —
+    // it is NOT auto-deleted (a reinstall reuses it to skip the multi-second
+    // catalog recompile), but leaving it unmentioned orphaned it silently.
+    if let Some(cache) = dirs::cache_dir().map(|d| d.join("keyhog")) {
+        if cache.is_dir() {
+            println!(
+                "  {dim}- the keyhog cache at {} (compiled catalogs; safe to delete, a reinstall rebuilds it){reset}",
+                cache.display()
+            );
+        }
+    }
 }
 
 #[cfg(unix)]

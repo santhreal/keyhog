@@ -12,7 +12,7 @@ const INLINE_SUPPRESSION_DIRECTIVES: &[&str] = &[
 const DETECTOR_DIRECTIVE_PREFIX: &str = "detector=";
 const INLINE_COMMENT_MARKERS: &[&str] = &["//", "#", "--", "/*", "<!--"];
 
-pub fn filter_inline_suppressions(matches: Vec<RawMatch>) -> Vec<RawMatch> {
+pub(crate) fn filter_inline_suppressions(matches: Vec<RawMatch>) -> Vec<RawMatch> {
     use std::io::BufRead;
 
     let mut files_to_matches: HashMap<String, Vec<RawMatch>> = HashMap::new();
@@ -33,39 +33,61 @@ pub fn filter_inline_suppressions(matches: Vec<RawMatch>) -> Vec<RawMatch> {
 
     let mut filtered_matches = non_file_matches;
     for (path, mut file_matches) in files_to_matches {
-        file_matches.sort_by_key(|m| m.location.line.unwrap_or(0));
+        file_matches.sort_by_key(|m| m.location.line.unwrap_or(0)); // LAW10: empty/absent => documented numeric default, recall-safe
 
-        if let Ok(file) = std::fs::File::open(&path) {
-            let mut reader = std::io::BufReader::new(file);
-            let mut line_buf = String::new();
-            let mut current_line_num = 1;
-            let mut prev_line = String::new();
-            let mut current_line = String::new();
+        match std::fs::File::open(&path) {
+            Ok(file) => {
+                let mut reader = std::io::BufReader::new(file);
+                let mut line_buf = String::new();
+                let mut current_line_num = 1;
+                let mut prev_line = String::new();
+                let mut current_line = String::new();
 
-            for m in file_matches {
-                let Some(target_line) = m.location.line else {
-                    filtered_matches.push(m);
-                    continue;
-                };
+                let mut file_matches = file_matches.into_iter();
+                'findings: while let Some(m) = file_matches.next() {
+                    let Some(target_line) = m.location.line else {
+                        filtered_matches.push(m);
+                        continue;
+                    };
 
-                while current_line_num <= target_line {
-                    line_buf.clear();
-                    if reader.read_line(&mut line_buf).unwrap_or(0) > 0 {
-                        // Trim trailing newline for the directive check
-                        let line = line_buf.trim_end_matches(['\n', '\r']).to_string();
-                        prev_line = std::mem::replace(&mut current_line, line);
-                        current_line_num += 1;
-                    } else {
-                        break;
+                    while current_line_num <= target_line {
+                        line_buf.clear();
+                        match reader.read_line(&mut line_buf) {
+                            Ok(n) if n > 0 => {
+                                // Trim trailing newline for the directive check.
+                                let line = line_buf.trim_end_matches(['\n', '\r']).to_string();
+                                prev_line = std::mem::replace(&mut current_line, line);
+                                current_line_num += 1;
+                            }
+                            Ok(_) => break,
+                            Err(error) => {
+                                tracing::warn!(
+                                    path = %path,
+                                    line = current_line_num,
+                                    target_line,
+                                    %error,
+                                    "failed reading inline suppression context; keeping current and remaining findings unsuppressed"
+                                );
+                                filtered_matches.push(m);
+                                filtered_matches.extend(file_matches);
+                                break 'findings;
+                            }
+                        }
+                    }
+
+                    if !is_inline_suppressed_buffered(&prev_line, &current_line, &m.detector_id) {
+                        filtered_matches.push(m);
                     }
                 }
-
-                if !is_inline_suppressed_buffered(&prev_line, &current_line, &m.detector_id) {
-                    filtered_matches.push(m);
-                }
             }
-        } else {
-            filtered_matches.extend(file_matches);
+            Err(error) => {
+                tracing::warn!(
+                    path = %path,
+                    %error,
+                    "failed opening file for inline suppression context; keeping findings unsuppressed"
+                );
+                filtered_matches.extend(file_matches);
+            }
         }
     }
 

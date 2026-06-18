@@ -12,9 +12,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::Path;
 
-// `pub` so the relocated tests under `tests/unit/baseline.rs` can assert the
-// roundtripped version (no_inline_tests_in_src gate).
-pub const BASELINE_VERSION: u32 = 1;
+const BASELINE_VERSION: u32 = 1;
 
 /// A baseline file containing acknowledged secrets.
 ///
@@ -23,7 +21,7 @@ pub const BASELINE_VERSION: u32 = 1;
 /// calls so we don't re-hash every entry on every call. Constructors that
 /// know the entry list will not change can call `build_index()` to amortize.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Baseline {
+pub(crate) struct Baseline {
     pub version: u32,
     #[serde(default = "default_created")]
     pub created: String,
@@ -34,7 +32,7 @@ pub struct Baseline {
 
 /// A single entry in a baseline file.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
-pub struct BaselineEntry {
+pub(crate) struct BaselineEntry {
     pub detector_id: String,
     pub credential_hash: String,
     #[serde(default, alias = "path", skip_serializing_if = "Option::is_none")]
@@ -57,8 +55,7 @@ fn default_created() -> String {
 /// does this JSON look like a `scan` findings report rather than a baseline?
 /// A baseline is a JSON object carrying `version` + `entries`; a findings
 /// report is an array, or an object without that shape.
-/// `pub` so the relocated `tests/unit/baseline.rs` can drive it directly.
-pub fn looks_like_findings_report(content: &str) -> bool {
+fn looks_like_findings_report(content: &str) -> bool {
     match serde_json::from_str::<serde_json::Value>(content) {
         Ok(serde_json::Value::Array(_)) => true,
         Ok(serde_json::Value::Object(map)) => {
@@ -70,7 +67,7 @@ pub fn looks_like_findings_report(content: &str) -> bool {
 
 impl Baseline {
     /// Create an empty baseline with the current timestamp.
-    pub fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Self {
             version: BASELINE_VERSION,
             created: chrono::Utc::now().to_rfc3339(),
@@ -80,7 +77,7 @@ impl Baseline {
     }
 
     /// Load a baseline from a JSON file.
-    pub fn load(path: &Path) -> Result<Self> {
+    pub(crate) fn load(path: &Path) -> Result<Self> {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("reading baseline file {}", path.display()))?;
         let baseline: Baseline = serde_json::from_str(&content).map_err(|e| {
@@ -119,8 +116,8 @@ impl Baseline {
     /// tmp file is reaped by `NamedTempFile`'s Drop. Without this
     /// pattern a mid-write `--update-baseline` could leave a half-
     /// written JSON that the next run can't parse.
-    pub fn save(&self, path: &Path) -> Result<()> {
-        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    pub(crate) fn save(&self, path: &Path) -> Result<()> {
+        let parent = path.parent().unwrap_or_else(|| Path::new(".")); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating baseline parent dir {}", parent.display()))?;
         let serialized = serde_json::to_vec_pretty(self)
@@ -140,7 +137,7 @@ impl Baseline {
 
     /// Build a new baseline from a slice of findings.
     /// Entries are deduplicated by `(detector_id, credential_hash)`.
-    pub fn from_findings(findings: &[VerifiedFinding]) -> Self {
+    pub(crate) fn from_findings(findings: &[VerifiedFinding]) -> Self {
         let mut entries: Vec<BaselineEntry> = findings
             .iter()
             .map(|f| BaselineEntry {
@@ -173,7 +170,7 @@ impl Baseline {
 
     /// Merge new findings into an existing baseline.
     /// New entries are added; existing entries are preserved.
-    pub fn merge(&mut self, findings: &[VerifiedFinding]) {
+    pub(crate) fn merge(&mut self, findings: &[VerifiedFinding]) {
         let existing: HashSet<(String, String)> = self
             .entries
             .iter()
@@ -214,7 +211,7 @@ impl Baseline {
     ///
     /// O(N) - for hot paths (e.g. filtering a large finding set against a
     /// baseline) prefer `contains_set` + `index_set` to amortize lookups.
-    pub fn contains(&self, finding: &VerifiedFinding) -> bool {
+    pub(crate) fn contains(&self, finding: &VerifiedFinding) -> bool {
         let hash = format!(
             "sha256:{}",
             keyhog_core::hex_encode(&finding.credential_hash)
@@ -227,7 +224,7 @@ impl Baseline {
     /// Cached O(1) lookup set keyed by `(detector_id, credential_hash)`.
     /// Built once on first access via `OnceLock` and reused; subsequent
     /// `filter_new` / `contains` calls are O(N) total instead of O(N·M).
-    pub fn index_set(&self) -> &HashSet<(String, String)> {
+    pub(crate) fn index_set(&self) -> &HashSet<(String, String)> {
         self.cached_index.get_or_init(|| {
             self.entries
                 .iter()
@@ -239,7 +236,7 @@ impl Baseline {
     /// Filter a slice of findings, returning only those **not** present in
     /// the baseline. Uses an O(1) HashSet lookup so total cost is O(N) in
     /// the number of findings instead of O(N·M).
-    pub fn filter_new(&self, findings: &[VerifiedFinding]) -> Vec<VerifiedFinding> {
+    pub(crate) fn filter_new(&self, findings: &[VerifiedFinding]) -> Vec<VerifiedFinding> {
         let index = self.index_set();
         findings
             .iter()
@@ -252,5 +249,51 @@ impl Baseline {
             })
             .cloned()
             .collect()
+    }
+}
+
+#[doc(hidden)]
+pub(crate) mod testing {
+    use anyhow::Result;
+    use keyhog_core::VerifiedFinding;
+    use std::path::Path;
+
+    pub(crate) fn baseline_version() -> u32 {
+        super::BASELINE_VERSION
+    }
+
+    pub(crate) fn looks_like_findings_report(content: &str) -> bool {
+        super::looks_like_findings_report(content)
+    }
+
+    pub(crate) fn empty() -> super::Baseline {
+        super::Baseline::empty()
+    }
+
+    pub(crate) fn load(path: &Path) -> Result<super::Baseline> {
+        super::Baseline::load(path)
+    }
+
+    pub(crate) fn save(baseline: &super::Baseline, path: &Path) -> Result<()> {
+        baseline.save(path)
+    }
+
+    pub(crate) fn from_findings(findings: &[VerifiedFinding]) -> super::Baseline {
+        super::Baseline::from_findings(findings)
+    }
+
+    pub(crate) fn merge(baseline: &mut super::Baseline, findings: &[VerifiedFinding]) {
+        baseline.merge(findings);
+    }
+
+    pub(crate) fn contains(baseline: &super::Baseline, finding: &VerifiedFinding) -> bool {
+        baseline.contains(finding)
+    }
+
+    pub(crate) fn filter_new(
+        baseline: &super::Baseline,
+        findings: &[VerifiedFinding],
+    ) -> Vec<VerifiedFinding> {
+        baseline.filter_new(findings)
     }
 }

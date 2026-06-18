@@ -15,7 +15,7 @@
 //!   overrides into one `ScannerConfig`), [`sources`] (CLI flags → input
 //!   sources).
 //! - **Output** — [`reporting`] (findings → text/JSON/SARIF), [`format`]
-//!   (formatting helpers), [`style`] (terminal styling).
+//!   (formatting helpers), and private terminal styling.
 //! - **CI / baselines** — [`baseline`] (diff against a committed baseline),
 //!   [`benchmark`].
 //! - **Config & suppression** — [`config`] (`.keyhog.toml` discovery + merge),
@@ -23,11 +23,12 @@
 //! - **Install / health** — [`installer`] (hook installer, `doctor`).
 
 use std::io::Write;
+use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-pub static SCANNED_CHUNKS: AtomicUsize = AtomicUsize::new(0);
-pub static TOTAL_CHUNKS: AtomicUsize = AtomicUsize::new(0);
-pub static FINDINGS_COUNT: AtomicUsize = AtomicUsize::new(0);
+pub(crate) static SCANNED_CHUNKS: AtomicUsize = AtomicUsize::new(0);
+pub(crate) static TOTAL_CHUNKS: AtomicUsize = AtomicUsize::new(0);
+pub(crate) static FINDINGS_COUNT: AtomicUsize = AtomicUsize::new(0);
 /// Chunks actually dispatched to the GPU megakernel (a subset of
 /// [`SCANNED_CHUNKS`]; the remainder ran on the SIMD/CPU path). The orchestrator
 /// bumps this in the coalesced GPU arm — the single place the GPU runs — so the
@@ -36,7 +37,7 @@ pub static FINDINGS_COUNT: AtomicUsize = AtomicUsize::new(0);
 /// `keyhog::routing`). The optimized coalesced scan paths bypass `scan_inner`'s
 /// per-chunk telemetry, so that snapshot under-counts on the production batch
 /// path; this orchestrator-level counter is the authoritative routing signal.
-pub static GPU_SCANNED_CHUNKS: AtomicUsize = AtomicUsize::new(0);
+pub(crate) static GPU_SCANNED_CHUNKS: AtomicUsize = AtomicUsize::new(0);
 /// Number of source-read errors (a source yielded `Err` instead of a chunk).
 /// Read at the end of `run()`: if a scan produced ZERO chunks AND a source
 /// errored, the requested scan never actually ran (e.g. `--git-history` /
@@ -44,7 +45,7 @@ pub static GPU_SCANNED_CHUNKS: AtomicUsize = AtomicUsize::new(0);
 /// must NOT print "no findings, all clean" and exit 0 — that would tell a CI
 /// gate the tree is clean when nothing was scanned (KH-GAP-096). Same intent
 /// as `SCANNER_PANICKED`, for the source-failure path.
-pub static SOURCE_ERRORS: AtomicUsize = AtomicUsize::new(0);
+pub(crate) static SOURCE_ERRORS: AtomicUsize = AtomicUsize::new(0);
 /// Number of sources that failed *entirely* — produced ZERO chunks AND
 /// errored. A source the user explicitly requested (e.g. `--github-org`,
 /// `--git-diff`, `--url`) that yields nothing because the fetch failed means
@@ -54,13 +55,13 @@ pub static SOURCE_ERRORS: AtomicUsize = AtomicUsize::new(0);
 /// successor to the `SOURCE_ERRORS && TOTAL_CHUNKS==0` global check). A
 /// partial failure — a tree with some unreadable files that still produced
 /// chunks — does NOT count: that source produced data.
-pub static FAILED_SOURCES: AtomicUsize = AtomicUsize::new(0);
+pub(crate) static FAILED_SOURCES: AtomicUsize = AtomicUsize::new(0);
 /// Set to `true` if the scanner thread panicked during `scan_sources`.
 /// Read at the end of `run()` so a crashed scanner exits with a
 /// non-zero code instead of silently reporting "no findings, all
 /// clean" - that was the prior behavior and would mislead any
 /// caller piping keyhog into CI as a gate.
-pub static SCANNER_PANICKED: AtomicBool = AtomicBool::new(false);
+pub(crate) static SCANNER_PANICKED: AtomicBool = AtomicBool::new(false);
 
 /// Operator-visible scan failure event recorded by the CLI orchestrator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -103,24 +104,272 @@ pub(crate) fn record_scanner_panic() -> RecordedScanFailureEvent {
     record_scan_failure(ScanFailureEvent::ScannerPanicked)
 }
 
-pub fn write_banner<W: Write>(
+pub(crate) fn write_banner<W: Write>(
     w: &mut W,
     colors: bool,
     ascii: bool,
     detector_count: usize,
 ) -> std::io::Result<()> {
-    keyhog_core::banner::print_banner(w, colors, ascii, detector_count)
+    if ascii {
+        let banner = r"
+    ⠀⣠⣶⣿⣿⣿⣿⣶⣄⠀
+    ⠀⣿⣿⠉⠛⠛⠉⣿⣿⠀
+    ⠀⢿⣿⣶⣿⣿⣶⣿⡿⠀
+    ⠀⠀⠙⣿⣦⣴⣿⠋⠀⠀
+    ⠀⠀⠀⢸⣿⣿⡇⠀⠀⠀
+    ⠀⠀⠀⣼⣿⣿⣧⠀⠀⠀
+";
+        let palette = style::terminal_palette(colors, false);
+        writeln!(w, "{}{}{}", palette.yellow, banner, palette.reset)?;
+    }
+
+    let palette = style::terminal_palette(colors, false);
+    if colors {
+        writeln!(w, "    {}K E Y H O G{}", palette.bold, palette.reset)?;
+        writeln!(w, "    {}───────────{}", palette.dim, palette.reset)?;
+        writeln!(
+            w,
+            "    {}v{} · secret scanner · {} detectors{}",
+            palette.green,
+            env!("CARGO_PKG_VERSION"),
+            detector_count,
+            palette.reset
+        )?;
+        writeln!(w, "    {}by santh{}", palette.dim, palette.reset)?;
+    } else {
+        writeln!(w, "    K E Y H O G")?;
+        writeln!(w, "    ───────────")?;
+        writeln!(
+            w,
+            "    v{} · secret scanner · {} detectors",
+            env!("CARGO_PKG_VERSION"),
+            detector_count
+        )?;
+        writeln!(w, "    by santh")?;
+    }
+    writeln!(w)?;
+    Ok(())
+}
+
+/// Run the CLI command selected by the current process arguments.
+///
+/// The binary target delegates here so internal CLI modules can stay
+/// crate-private instead of becoming public API just to let `main.rs` dispatch
+/// subcommands.
+pub async fn cli_main() -> ExitCode {
+    // `env::args()` panics on non-UTF-8 args (Linux allows raw-byte
+    // paths). The version check only needs to recognize literal ASCII
+    // flags, so iterate args_os() and lossy-compare; non-UTF-8 args
+    // could not possibly be the `-V` / `--version` literal.
+    // kimi-dogfood-2 #134.
+    let mut is_version = false;
+    let mut full_version = false;
+    for arg in std::env::args_os() {
+        if let Some(s) = arg.to_str() {
+            is_version |= s == "-V" || s == "--version";
+            full_version |= s == "--full";
+        }
+    }
+
+    // Fast-path: --version skips Ctrl-C handler spawn, tracing subscriber
+    // install, and Cli::parse(). The cold-start audit measured this at ~25ms
+    // saved per invocation on top of the hardware-probe skip.
+    if is_version {
+        print_version_info(full_version);
+        return ExitCode::SUCCESS;
+    }
+
+    tokio::spawn(async move {
+        if let Ok(()) = tokio::signal::ctrl_c().await {
+            let scanned = SCANNED_CHUNKS.load(Ordering::SeqCst);
+            let total = TOTAL_CHUNKS.load(Ordering::SeqCst);
+            let findings = FINDINGS_COUNT.load(Ordering::SeqCst);
+            eprintln!("\nScan interrupted. {scanned}/{total} files scanned. {findings} findings.");
+            std::process::exit(i32::from(exit_codes::EXIT_INTERRUPTED));
+        }
+    });
+
+    // Color the log stream only when stderr is a TTY and NO_COLOR is unset;
+    // otherwise pipes, files, and CI logs would receive raw ANSI escape
+    // sequences.
+    let log_ansi = {
+        use std::io::IsTerminal;
+        std::io::stderr().is_terminal() && std::env::var_os("NO_COLOR").is_none()
+    };
+    let default_log_directive = match "keyhog=warn".parse() {
+        Ok(directive) => directive,
+        Err(error) => {
+            tracing::warn!(
+                %error,
+                "failed to parse built-in logging directive; enabling info-level logs"
+            );
+            tracing_subscriber::filter::Directive::from(tracing::Level::INFO)
+        }
+    };
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_ansi(log_ansi)
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::from_default_env().add_directive(default_log_directive),
+        )
+        .with_target(false)
+        .init();
+
+    let cli = args::parse();
+
+    if cli.version {
+        print_version_info(cli.full);
+        return ExitCode::SUCCESS;
+    }
+
+    let command_outcome = match cli.command {
+        Some(args::Command::Scan(args)) => subcommands::scan::run(*args).await,
+        Some(args::Command::Config(args)) => subcommands::config::run(*args),
+        Some(args::Command::Hook { command }) => subcommands::hook::run(command),
+        Some(args::Command::Detectors(args)) => subcommands::detectors::run(args),
+        Some(args::Command::Explain(args)) => {
+            subcommands::explain::run(args).map(|()| ExitCode::SUCCESS)
+        }
+        Some(args::Command::Diff(args)) => subcommands::diff::run(args),
+        Some(args::Command::Calibrate(args)) => {
+            subcommands::calibrate::run(args).map(|()| ExitCode::SUCCESS)
+        }
+        Some(args::Command::Watch(args)) => {
+            subcommands::watch::run(args).map(|()| ExitCode::SUCCESS)
+        }
+        Some(args::Command::Completion(args)) => {
+            subcommands::completion::run(args);
+            return ExitCode::SUCCESS;
+        }
+        Some(args::Command::Backend(args)) => subcommands::backend::run(args),
+        Some(args::Command::Doctor(args)) => subcommands::doctor::run(args),
+        Some(args::Command::Update(args)) => subcommands::update::run(args).await,
+        Some(args::Command::Repair(args)) => subcommands::repair::run(args).await,
+        Some(args::Command::Uninstall(args)) => subcommands::uninstall::run(args),
+        Some(args::Command::ScanSystem(args)) => subcommands::scan_system::run(args),
+        #[cfg(unix)]
+        Some(args::Command::Daemon(args)) => subcommands::daemon::run(args).await,
+        #[cfg(not(unix))]
+        Some(args::Command::Daemon(_args)) => Err(anyhow::anyhow!(
+            "`keyhog daemon` is a unix-only command (it serves scans over a \
+             Unix-domain socket). On Windows, run scans in-process: \
+             `keyhog scan <path>`. Daemon-mode Windows support (via named \
+             pipes) is tracked but not yet implemented."
+        )),
+        None => {
+            let mut cmd = args::command();
+            let _ = cmd.print_help(); // LAW10: unused-binding marker; no runtime effect, not a fallback
+            return ExitCode::from(0);
+        }
+    };
+
+    match command_outcome {
+        Ok(outcome) => {
+            if SCANNER_PANICKED.load(Ordering::Relaxed) {
+                ExitCode::from(exit_codes::EXIT_SCANNER_PANIC)
+            } else {
+                outcome
+            }
+        }
+        Err(error) => {
+            // {:#} prints the chained user-facing message instead of the {:?}
+            // debug dump that includes backtrace internals.
+            eprintln!("error: {error:#}");
+            let code = if SCANNER_PANICKED.load(Ordering::SeqCst) {
+                exit_codes::EXIT_SCANNER_PANIC
+            } else if error.chain().any(is_user_io_error) {
+                exit_codes::EXIT_USER_ERROR
+            } else if error.chain().any(|e| e.is::<std::io::Error>()) {
+                exit_codes::EXIT_SYSTEM_ERROR
+            } else {
+                exit_codes::EXIT_USER_ERROR
+            };
+            ExitCode::from(code)
+        }
+    }
+}
+
+fn is_user_io_error(error: &(dyn std::error::Error + 'static)) -> bool {
+    let Some(io) = error.downcast_ref::<std::io::Error>() else {
+        return false;
+    };
+    matches!(
+        io.kind(),
+        std::io::ErrorKind::NotFound
+            | std::io::ErrorKind::PermissionDenied
+            | std::io::ErrorKind::ConnectionRefused
+            | std::io::ErrorKind::InvalidInput
+            | std::io::ErrorKind::InvalidData
+            | std::io::ErrorKind::AlreadyExists
+    )
+}
+
+fn print_version_info(full: bool) {
+    println!("KeyHog v{}", env!("CARGO_PKG_VERSION"));
+    println!("Commit: {}", keyhog_core::git_hash());
+    println!(
+        "Detector Set: {} ({})",
+        keyhog_core::embedded_detector_count(),
+        keyhog_core::detector_digest()
+    );
+    println!(
+        "Build Target: {}-{}",
+        std::env::consts::ARCH,
+        std::env::consts::OS
+    );
+    println!(
+        "ML Model Version: {}",
+        keyhog_scanner::ml_scorer::model_version()
+    );
+    if !full {
+        return;
+    }
+    let hw = keyhog_scanner::hw_probe::probe_hardware();
+    if hw.gpu_available {
+        println!(
+            "GPU Acceleration: {}{}",
+            hw.gpu_name.as_deref().unwrap_or("available"), // LAW10: absent name/label => display default; reporting-only, recall-safe
+            hw.gpu_vram_mb
+                .map(|mb| {
+                    if mb >= 1024 {
+                        format!(" (max buffer {} GB)", mb / 1024)
+                    } else {
+                        format!(" (max buffer {mb} MB)")
+                    }
+                })
+                .unwrap_or_default() // LAW10: missing/non-string field => empty/placeholder; recall-safe
+        );
+    } else {
+        println!("GPU Acceleration: not detected");
+    }
+    if hw.hyperscan_available {
+        println!("SIMD Regex:       vectorscan/hyperscan (active)");
+    } else if hw.has_avx512 || hw.has_avx2 || hw.has_neon {
+        let simd = if hw.has_avx512 {
+            "AVX-512"
+        } else if hw.has_avx2 {
+            "AVX2"
+        } else {
+            "NEON"
+        };
+        println!("SIMD Regex:       {simd} (no Hyperscan)");
+    } else {
+        println!("SIMD Regex:       not available");
+    }
+    if hw.io_uring_available {
+        println!("io_uring:         available");
+    }
 }
 
 pub mod args;
-pub mod autoroute_cache_path;
-pub mod backend_env;
-pub mod baseline;
-pub mod benchmark;
-pub mod config;
+pub(crate) mod autoroute_cache_path;
+pub(crate) mod backend_env;
+pub(crate) mod baseline;
+pub(crate) mod benchmark;
+pub(crate) mod config;
 pub mod exit_codes;
-pub mod format;
-pub mod installer;
+pub(crate) mod format;
+pub(crate) mod installer;
 // Daemon uses Unix-domain sockets (`tokio::net::UnixListener` and
 // `std::os::unix::net`). Windows lacks both surfaces in the form
 // this server uses, and named pipes have a totally different
@@ -130,13 +379,15 @@ pub mod installer;
 // "unix-only" error there (see `main.rs` and `subcommands/scan.rs`).
 #[cfg(unix)]
 pub mod daemon;
-pub mod inline_suppression;
-pub mod orchestrator;
-pub mod orchestrator_config;
-pub mod path_validation;
-pub mod reporting;
-pub mod sources;
-pub mod style;
-pub mod subcommands;
-pub mod test_fixture_suppressions;
-pub mod value_parsers;
+pub(crate) mod inline_suppression;
+pub(crate) mod orchestrator;
+pub(crate) mod orchestrator_config;
+pub(crate) mod path_validation;
+pub(crate) mod reporting;
+pub(crate) mod sources;
+mod style;
+pub(crate) mod subcommands;
+pub(crate) mod test_fixture_suppressions;
+#[doc(hidden)]
+pub mod testing;
+pub(crate) mod value_parsers;

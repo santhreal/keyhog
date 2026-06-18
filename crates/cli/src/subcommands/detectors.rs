@@ -8,12 +8,13 @@ use brace_rewrite::{
 
 use crate::args::DetectorArgs;
 use crate::exit_codes::EXIT_DETECTOR_AUDIT_FAILED;
+use crate::style;
 use anyhow::{Context, Result};
 use keyhog_core::{validate_detector, DetectorFile, DetectorSpec, QualityIssue};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-pub fn run(args: DetectorArgs) -> Result<ExitCode> {
+pub(crate) fn run(args: DetectorArgs) -> Result<ExitCode> {
     // The optional `list` verb names the default action explicitly, so it is
     // incompatible with the alternate actions `--audit` / `--fix`: `keyhog
     // detectors list --audit` would be asking for two different verbs at once.
@@ -77,8 +78,7 @@ fn run_list(args: DetectorArgs) -> Result<()> {
     // Resolve the effective output format. `--format` is canonical (CLI-01);
     // `--json` is the back-compat alias. They are mutually exclusive at the clap
     // layer, so at most one is set — either selecting JSON yields JSON.
-    let want_json = args.json
-        || matches!(args.format, Some(crate::args::DetectorFormat::Json));
+    let want_json = args.json || matches!(args.format, Some(crate::args::DetectorFormat::Json));
     if want_json {
         print_detectors_json(&filtered)?;
         return Ok(());
@@ -174,25 +174,20 @@ fn print_detectors_json(detectors: &[&DetectorSpec]) -> Result<()> {
 }
 
 fn load_embedded_or_bail(detectors_path: &Path) -> Result<Vec<DetectorSpec>> {
-    let embedded = keyhog_core::embedded_detector_tomls();
-    if embedded.is_empty() {
+    let dets = keyhog_core::load_embedded_detectors_or_fail()
+        .context("parsing embedded detector corpus")?;
+    if dets.is_empty() {
         anyhow::bail!(
             "detector directory '{}' not found and no embedded detectors available. \
              Fix: rebuild with detectors/ directory or specify --detectors <path>",
             detectors_path.display()
         );
     }
-    let mut dets = Vec::new();
-    for (name, toml_content) in embedded {
-        match toml::from_str::<DetectorFile>(toml_content) {
-            Ok(file) => dets.push(file.detector),
-            Err(e) => eprintln!("warning: failed to parse embedded detector {name}: {e}"),
-        }
-    }
     Ok(dets)
 }
 
 fn run_audit(args: &DetectorArgs) -> Result<ExitCode> {
+    let palette = style::for_stdout();
     let detectors = if args.detectors.exists() && args.detectors.is_dir() {
         keyhog_core::load_detectors(&args.detectors)?
     } else {
@@ -221,8 +216,10 @@ fn run_audit(args: &DetectorArgs) -> Result<ExitCode> {
         println!("\n  {} ({} error(s), {} warning(s))", d.id, e, w);
         for issue in issues {
             match issue {
-                QualityIssue::Error(m) => println!("    \x1b[31mERROR\x1b[0m: {m}"),
-                QualityIssue::Warning(m) => println!("    \x1b[33mWARN\x1b[0m:  {m}"),
+                QualityIssue::Error(m) => println!("    {}: {m}", style::fail("ERROR", &palette)),
+                QualityIssue::Warning(m) => {
+                    println!("    {}:  {m}", style::warn("WARN", &palette));
+                }
             }
         }
     }
@@ -332,7 +329,7 @@ fn atomic_write(path: &Path, content: &str) -> Result<()> {
     let parent = path
         .parent()
         .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
+        .unwrap_or_else(|| Path::new(".")); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
     let tmp = tempfile::NamedTempFile::new_in(parent)
         .with_context(|| format!("creating tempfile in {}", parent.display()))?;
     {
@@ -384,16 +381,20 @@ fn print_detector_verbose(d: &DetectorSpec) {
 }
 
 #[doc(hidden)]
-pub fn rewrite_braces_for_test(s: &str) -> (String, usize) {
-    rewrite_braces(s)
-}
+pub(crate) mod testing {
+    pub(crate) fn rewrite_braces(s: &str) -> (String, usize) {
+        super::rewrite_braces(s)
+    }
 
-#[doc(hidden)]
-pub fn fix_single_brace_in_verify_blocks_for_test(toml_text: &str) -> (String, usize) {
-    fix_single_brace_in_verify_blocks(toml_text)
-}
+    pub(crate) fn fix_single_brace_in_verify_blocks(toml_text: &str) -> (String, usize) {
+        super::fix_single_brace_in_verify_blocks(toml_text)
+    }
 
-#[doc(hidden)]
-pub fn rewrite_braces_in_string_literals_for_test(line: &str) -> (String, usize) {
-    rewrite_braces_in_string_literals(line)
+    pub(crate) fn fix_verify_braces_for_test(toml_text: &str) -> (String, usize) {
+        super::fix_single_brace_in_verify_blocks(toml_text)
+    }
+
+    pub(crate) fn rewrite_braces_in_string_literals(line: &str) -> (String, usize) {
+        super::rewrite_braces_in_string_literals(line)
+    }
 }

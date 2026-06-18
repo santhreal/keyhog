@@ -13,14 +13,15 @@
 use crate::args::DoctorArgs;
 use crate::exit_codes::EXIT_DOCTOR_UNHEALTHY;
 use crate::installer::scan_engine_self_test;
-use crate::style::Palette;
+use crate::style::{self, Palette};
 use anyhow::Result;
 use keyhog_scanner::hw_probe::probe_hardware;
 use std::process::ExitCode;
 
-pub fn run(_args: DoctorArgs) -> Result<ExitCode> {
+pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
     let mut healthy = true;
     let mut warned = false;
+    let palette = style::for_stdout();
     let Palette {
         green,
         red,
@@ -28,7 +29,8 @@ pub fn run(_args: DoctorArgs) -> Result<ExitCode> {
         dim,
         bold,
         reset,
-    } = Palette::for_stdout();
+        ..
+    } = palette;
 
     println!("{bold}keyhog doctor{reset}  v{}", env!("CARGO_PKG_VERSION"));
 
@@ -59,7 +61,7 @@ pub fn run(_args: DoctorArgs) -> Result<ExitCode> {
     } else if hw.gpu_is_software {
         format!("{yellow}software renderer (disabled for scans){reset}")
     } else {
-        format!("{green}{}{reset}", hw.gpu_name.as_deref().unwrap_or("yes"))
+        format!("{green}{}{reset}", hw.gpu_name.as_deref().unwrap_or("yes")) // LAW10: absent name/label => display default; reporting-only, recall-safe
     };
     println!("  gpu            {gpu}");
     println!(
@@ -90,7 +92,7 @@ pub fn run(_args: DoctorArgs) -> Result<ExitCode> {
             if let Some(dir) = exe.parent() {
                 let on_path = std::env::var_os("PATH")
                     .map(|p| std::env::split_paths(&p).any(|d| d == dir))
-                    .unwrap_or(false);
+                    .unwrap_or(false); // LAW10: empty/absent => documented numeric default, recall-safe
                 if on_path {
                     println!("  on PATH        {green}yes{reset}");
                 } else {
@@ -125,7 +127,7 @@ pub fn run(_args: DoctorArgs) -> Result<ExitCode> {
         for dir in std::env::split_paths(&pathvar) {
             let cand = dir.join(exe_name);
             if cand.is_file() {
-                let canon = std::fs::canonicalize(&cand).unwrap_or(cand);
+                let canon = std::fs::canonicalize(&cand).unwrap_or(cand); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
                 if !on_path.contains(&canon) {
                     on_path.push(canon);
                 }
@@ -133,8 +135,8 @@ pub fn run(_args: DoctorArgs) -> Result<ExitCode> {
         }
     }
     let running = std::env::current_exe()
-        .ok()
-        .and_then(|p| std::fs::canonicalize(&p).ok());
+        .ok() // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
+        .and_then(|p| std::fs::canonicalize(&p).ok()); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
     match on_path.len() {
         0 => println!(
             "  resolves       {dim}not on PATH (invoke by full path or add its dir){reset}"
@@ -179,15 +181,19 @@ pub fn run(_args: DoctorArgs) -> Result<ExitCode> {
     println!("\n{bold}self-test{reset}");
     match scan_engine_self_test() {
         Ok(true) => println!(
-            "  scan engine    {green}PASS{reset}  {dim}planted secret detected end-to-end{reset}"
+            "  scan engine    {}  {dim}planted secret detected end-to-end{reset}",
+            style::pass("PASS", &palette)
         ),
         Ok(false) => {
             healthy = false;
-            println!("  scan engine    {red}FAIL{reset}  planted secret was NOT detected");
+            println!(
+                "  scan engine    {}  planted secret was NOT detected",
+                style::fail("FAIL", &palette)
+            );
         }
         Err(e) => {
             healthy = false;
-            println!("  scan engine    {red}FAIL{reset}  {e}");
+            println!("  scan engine    {}  {e}", style::fail("FAIL", &palette));
         }
     }
 
@@ -202,13 +208,16 @@ pub fn run(_args: DoctorArgs) -> Result<ExitCode> {
     if hw.gpu_available && !hw.gpu_is_software {
         match keyhog_scanner::gpu::vyre_ac_kernel_self_test() {
             Ok(report) => println!(
-                "  gpu scan path  {green}PASS{reset}  {dim}AC kernel matches={}, backend={}{reset}",
-                report.matches, report.backend_id
+                "  gpu scan path  {}  {dim}AC kernel matches={}, backend={}{reset}",
+                style::pass("PASS", &palette),
+                report.matches,
+                report.backend_id
             ),
             Err(e) => {
                 warned = true;
                 println!(
-                    "  gpu scan path  {yellow}DEGRADED{reset}  GPU AC kernel self-test failed; scans fall back to SIMD/CPU (recall preserved, large-file GPU acceleration lost).\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test` for the full GPU diagnostic{reset}"
+                    "  gpu scan path  {}  GPU AC kernel self-test failed; scans fall back to SIMD/CPU (recall preserved, large-file GPU acceleration lost).\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test` for the full GPU diagnostic{reset}",
+                    style::warn("WARN", &palette)
                 );
             }
         }
@@ -217,13 +226,20 @@ pub fn run(_args: DoctorArgs) -> Result<ExitCode> {
     // ── Summary ───────────────────────────────────────────────────────
     println!();
     if healthy && !warned {
-        println!("{green}{bold}✓ keyhog is healthy.{reset}");
+        println!("{} keyhog is healthy.", style::pass("PASS", &palette));
         Ok(ExitCode::SUCCESS)
     } else if healthy {
-        println!("{yellow}{bold}keyhog works, with warnings above.{reset}");
+        println!(
+            "{} keyhog works, with warnings above.",
+            style::warn("WARN", &palette)
+        );
         Ok(ExitCode::SUCCESS)
     } else {
-        eprintln!("{red}{bold}✗ keyhog is unhealthy - see failures above.{reset}");
+        let stderr_palette = style::for_stderr();
+        eprintln!(
+            "{} keyhog is unhealthy - see failures above.",
+            style::fail("FAIL", &stderr_palette)
+        );
         Ok(ExitCode::from(EXIT_DOCTOR_UNHEALTHY))
     }
 }

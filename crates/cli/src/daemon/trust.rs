@@ -344,27 +344,27 @@ fn platform_connected_peer_uid(_stream: &tokio::net::UnixStream) -> Result<libc:
 }
 
 #[doc(hidden)]
-pub mod testing {
+pub(crate) mod testing {
     use anyhow::Result;
     use std::path::Path;
 
-    pub fn ensure_private_socket_dir(parent: &Path) -> Result<()> {
+    pub(crate) fn ensure_private_socket_dir(parent: &Path) -> Result<()> {
         super::ensure_private_socket_dir(parent)
     }
 
-    pub fn remove_stale_socket_if_trusted(socket_path: &Path) -> Result<()> {
+    pub(crate) fn remove_stale_socket_if_trusted(socket_path: &Path) -> Result<()> {
         super::remove_stale_socket_if_trusted(socket_path)
     }
 
-    pub fn validate_socket_for_connect(socket_path: &Path) -> Result<()> {
+    pub(crate) fn validate_socket_for_connect(socket_path: &Path) -> Result<()> {
         super::validate_socket_for_connect(socket_path)
     }
 
-    pub fn connected_peer_uid(stream: &tokio::net::UnixStream) -> Result<libc::uid_t> {
+    pub(crate) fn connected_peer_uid(stream: &tokio::net::UnixStream) -> Result<libc::uid_t> {
         super::connected_peer_uid(stream)
     }
 
-    pub fn current_uid() -> libc::uid_t {
+    pub(crate) fn current_uid() -> libc::uid_t {
         super::current_uid()
     }
 }

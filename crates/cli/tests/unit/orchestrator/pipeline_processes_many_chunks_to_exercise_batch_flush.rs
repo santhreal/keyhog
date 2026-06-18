@@ -1,6 +1,7 @@
 //! Pipeline: batch flush preserves recall across >4096 chunks.
 
 use super::support::{make_chunk, make_detector, make_orchestrator, StaticSource};
+use keyhog::testing::{CliTestApi as _, API};
 use keyhog_core::{Chunk, Source};
 
 #[test]
@@ -16,7 +17,9 @@ fn pipeline_processes_many_chunks_to_exercise_batch_flush() {
         })
         .collect();
     let sources: Vec<Box<dyn Source>> = vec![Box::new(StaticSource { chunks })];
-    let findings = orch.scan_sources_for_test(sources, false, None);
+    let findings = API
+        .scan_orchestrator_scan_sources_for_test(&orch, sources, false, None)
+        .expect("scan sources");
     // Every one of the N chunks contains exactly one planted STATIC_SECRET_ match, so a
     // correct batch flush across the >4096 boundary must surface exactly N findings. A loose
     // recall floor (e.g. 0.80) would silently tolerate ~1200 dropped chunks - the exact

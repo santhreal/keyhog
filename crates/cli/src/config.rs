@@ -1,6 +1,7 @@
 //! Configuration file handling for the KeyHog CLI.
 
 use crate::args::ScanArgs;
+use crate::style;
 use crate::value_parsers::{
     parse_byte_size, parse_dedup_scope, parse_output_format, parse_severity_filter,
 };
@@ -29,6 +30,14 @@ pub(crate) struct ConfigFile {
     pub min_confidence: Option<f64>,
     /// Number of parallel scanning threads.
     pub threads: Option<usize>,
+    /// Dedicated filesystem reader threads.
+    pub reader_threads: Option<usize>,
+    /// Fused filesystem pipeline chunk batch size.
+    pub fused_batch: Option<usize>,
+    /// Fused filesystem pipeline channel depth.
+    pub fused_depth: Option<usize>,
+    /// Hard deadline per chunk scan in milliseconds.
+    pub per_chunk_timeout_ms: Option<u64>,
     /// Deduplication scope: credential, file, none.
     pub dedup: Option<String>,
     /// Whether to verify discovered credentials.
@@ -142,6 +151,10 @@ pub(crate) struct ScanSection {
     pub format: Option<String>,
     pub exclude: Option<Vec<String>>,
     pub threads: Option<usize>,
+    pub reader_threads: Option<usize>,
+    pub fused_batch: Option<usize>,
+    pub fused_depth: Option<usize>,
+    pub per_chunk_timeout_ms: Option<u64>,
     pub dedup: Option<String>,
     pub incremental: Option<bool>,
     pub incremental_cache: Option<PathBuf>,
@@ -218,6 +231,15 @@ pub(crate) struct SystemSection {
     /// Absolute autoroute calibration cache file, or `off` to disable.
     /// CLI `--autoroute-cache` wins over this value.
     pub autoroute_cache: Option<String>,
+    /// Force the coalesced batch scan pipeline. CLI `--batch-pipeline` /
+    /// `--no-batch-pipeline` wins over this value.
+    pub batch_pipeline: Option<bool>,
+    /// GPU runtime policy: auto, off, or required. CLI `--no-gpu` /
+    /// `--require-gpu` wins over this value.
+    pub gpu: Option<String>,
+    /// Allow autoroute calibration to include GPU candidates. CLI
+    /// `--autoroute-gpu` / `--no-autoroute-gpu` wins over this value.
+    pub autoroute_gpu: Option<bool>,
 }
 
 /// `[aws]` offline AWS safety metadata.
@@ -237,6 +259,7 @@ pub(crate) struct AwsSection {
 pub(crate) struct TuningSection {
     pub fallback_hs: Option<bool>,
     pub hs_prefilter_max_len: Option<usize>,
+    pub hs_shard_target: Option<usize>,
     pub fallback_anchor: Option<bool>,
     pub homoglyph_gate: Option<bool>,
     pub homoglyph_ascii_skip: Option<bool>,
@@ -247,6 +270,7 @@ pub(crate) struct TuningSection {
     pub confirmed_suffix_gate: Option<bool>,
     pub no_candidate_gate: Option<bool>,
     pub fallback_localizer: Option<bool>,
+    pub gpu_recall_floor: Option<bool>,
     pub gpu_moe_timeout_ms: Option<u64>,
 }
 
@@ -314,8 +338,21 @@ fn parse_config_byte_size(errors: &mut Vec<String>, field: &str, value: &str) ->
     }
 }
 
+fn parse_gpu_runtime_policy(raw: &str) -> Option<keyhog_scanner::gpu::GpuRuntimePolicy> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "auto" => Some(keyhog_scanner::gpu::GpuRuntimePolicy::Auto),
+        "off" | "disabled" | "disable" | "false" => {
+            Some(keyhog_scanner::gpu::GpuRuntimePolicy::Disabled)
+        }
+        "required" | "require" | "on" | "true" => {
+            Some(keyhog_scanner::gpu::GpuRuntimePolicy::Required)
+        }
+        _ => None,
+    }
+}
+
 fn parse_config_decode_depth(errors: &mut Vec<String>, field: &str, depth: usize) -> Option<usize> {
-    let limit = keyhog_core::config::max_decode_depth_limit();
+    let limit = keyhog_core::max_decode_depth_limit();
     if (1..=limit).contains(&depth) {
         return Some(depth);
     }
@@ -657,8 +694,10 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
             // routing probe passes `emit_diagnostics = false` so a malformed
             // config does not warn twice (HUNT-2).
             if emit_diagnostics {
+                let palette = style::for_stderr();
                 eprintln!(
-                    "⚠️  WARNING: Failed to parse .keyhog.toml at {}: {}",
+                    "{} Failed to parse .keyhog.toml at {}: {}",
+                    style::warn("WARN", &palette),
                     config_path.display(),
                     error
                 );
@@ -724,24 +763,70 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
             args.autoroute_cache = Some(autoroute_cache);
         }
     }
+    if let Some(batch_pipeline) = config
+        .system
+        .as_ref()
+        .and_then(|system| system.batch_pipeline)
+    {
+        if !args.batch_pipeline && !args.no_batch_pipeline {
+            args.batch_pipeline = batch_pipeline;
+        }
+    }
+    if let Some(gpu_policy) = config.system.as_ref().and_then(|system| system.gpu.clone()) {
+        match parse_gpu_runtime_policy(&gpu_policy) {
+            Some(keyhog_scanner::gpu::GpuRuntimePolicy::Disabled) => {
+                if !args.no_gpu && !args.require_gpu {
+                    args.no_gpu = true;
+                }
+            }
+            Some(keyhog_scanner::gpu::GpuRuntimePolicy::Required) => {
+                if !args.no_gpu && !args.require_gpu {
+                    args.require_gpu = true;
+                }
+            }
+            Some(keyhog_scanner::gpu::GpuRuntimePolicy::Auto) => {}
+            None => config_errors.push(invalid_config_value(
+                "[system].gpu",
+                &gpu_policy,
+                "expected auto, off, or required",
+            )),
+        }
+    }
+    if let Some(autoroute_gpu) = config
+        .system
+        .as_ref()
+        .and_then(|system| system.autoroute_gpu)
+    {
+        if !args.autoroute_gpu && !args.no_autoroute_gpu {
+            args.autoroute_gpu = autoroute_gpu;
+        }
+    }
     if let Some(aws) = config.aws.as_ref() {
         if let Some(accounts) = aws.canary_accounts.clone() {
-            match keyhog_core::aws::parse_canary_account_ids(accounts.iter().map(String::as_str)) {
+            match keyhog_core::parse_canary_account_ids(accounts.iter().map(String::as_str)) {
                 Ok(parsed) => aws_canary_accounts.extend(parsed),
                 Err(error) => config_errors.push(format!("- [aws].canary_accounts: {error}")),
             }
         }
         if let Some(accounts) = aws.knockoff_accounts.clone() {
-            match keyhog_core::aws::parse_canary_account_ids(accounts.iter().map(String::as_str)) {
+            match keyhog_core::parse_canary_account_ids(accounts.iter().map(String::as_str)) {
                 Ok(parsed) => aws_canary_accounts.extend(parsed),
                 Err(error) => config_errors.push(format!("- [aws].knockoff_accounts: {error}")),
             }
         }
     }
     if let Some(tuning) = config.tuning {
-        scanner_tuning.fallback_hs = tuning.fallback_hs;
+        scanner_tuning.phase2_hs = tuning.fallback_hs;
         scanner_tuning.hs_prefilter_max_len = tuning.hs_prefilter_max_len;
-        scanner_tuning.fallback_anchor = tuning.fallback_anchor;
+        if let Some(shard_target) = tuning.hs_shard_target {
+            if shard_target == 0 {
+                config_errors
+                    .push("- [tuning].hs_shard_target: expected an integer >= 1".to_string());
+            } else {
+                scanner_tuning.hs_shard_target = Some(shard_target);
+            }
+        }
+        scanner_tuning.phase2_anchor = tuning.fallback_anchor;
         scanner_tuning.homoglyph_gate = tuning.homoglyph_gate;
         scanner_tuning.homoglyph_ascii_skip = tuning.homoglyph_ascii_skip;
         scanner_tuning.fallback_reverse = tuning.fallback_reverse;
@@ -751,6 +836,7 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         scanner_tuning.confirmed_suffix_gate = tuning.confirmed_suffix_gate;
         scanner_tuning.no_candidate_gate = tuning.no_candidate_gate;
         scanner_tuning.fallback_localizer = tuning.fallback_localizer;
+        scanner_tuning.gpu_recall_floor = tuning.gpu_recall_floor;
         if let Some(timeout_ms) = tuning.gpu_moe_timeout_ms {
             if timeout_ms == 0 {
                 config_errors
@@ -832,6 +918,34 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     if let Some(threads) = config.threads {
         if args.threads.is_none() {
             args.threads = Some(threads);
+        }
+    }
+    if let Some(threads) = config.reader_threads {
+        if threads == 0 {
+            config_errors.push("- reader_threads = 0: use a positive integer".to_string());
+        } else if args.reader_threads.is_none() {
+            args.reader_threads = Some(threads);
+        }
+    }
+    if let Some(batch) = config.fused_batch {
+        if batch == 0 {
+            config_errors.push("- fused_batch = 0: use a positive integer".to_string());
+        } else if args.fused_batch.is_none() {
+            args.fused_batch = Some(batch);
+        }
+    }
+    if let Some(depth) = config.fused_depth {
+        if depth == 0 {
+            config_errors.push("- fused_depth = 0: use a positive integer".to_string());
+        } else if args.fused_depth.is_none() {
+            args.fused_depth = Some(depth);
+        }
+    }
+    if let Some(timeout_ms) = config.per_chunk_timeout_ms {
+        if timeout_ms == 0 {
+            config_errors.push("- per_chunk_timeout_ms = 0: use a positive integer".to_string());
+        } else if args.per_chunk_timeout_ms.is_none() {
+            args.per_chunk_timeout_ms = Some(timeout_ms);
         }
     }
 
@@ -1055,6 +1169,36 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         if args.threads.is_none() {
             args.threads = scan.threads;
         }
+        if let Some(threads) = scan.reader_threads {
+            if threads == 0 {
+                config_errors
+                    .push("- [scan].reader_threads = 0: use a positive integer".to_string());
+            } else if args.reader_threads.is_none() {
+                args.reader_threads = Some(threads);
+            }
+        }
+        if let Some(batch) = scan.fused_batch {
+            if batch == 0 {
+                config_errors.push("- [scan].fused_batch = 0: use a positive integer".to_string());
+            } else if args.fused_batch.is_none() {
+                args.fused_batch = Some(batch);
+            }
+        }
+        if let Some(depth) = scan.fused_depth {
+            if depth == 0 {
+                config_errors.push("- [scan].fused_depth = 0: use a positive integer".to_string());
+            } else if args.fused_depth.is_none() {
+                args.fused_depth = Some(depth);
+            }
+        }
+        if let Some(timeout_ms) = scan.per_chunk_timeout_ms {
+            if timeout_ms == 0 {
+                config_errors
+                    .push("- [scan].per_chunk_timeout_ms = 0: use a positive integer".to_string());
+            } else if args.per_chunk_timeout_ms.is_none() {
+                args.per_chunk_timeout_ms = Some(timeout_ms);
+            }
+        }
         if matches!(args.dedup, crate::args::CliDedupScope::Credential) {
             if let Some(ref d) = scan.dedup {
                 match parse_dedup_scope(d) {
@@ -1131,14 +1275,14 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
 }
 
 #[doc(hidden)]
-pub mod testing {
+pub(crate) mod testing {
     use std::path::{Path, PathBuf};
 
-    pub fn apply_config_file_quiet(args: &mut crate::args::ScanArgs) {
+    pub(crate) fn apply_config_file_quiet(args: &mut crate::args::ScanArgs) {
         let _outcome = super::apply_config_file_quiet(args);
     }
 
-    pub fn find_config_file(start: Option<&Path>) -> Option<PathBuf> {
+    pub(crate) fn find_config_file(start: Option<&Path>) -> Option<PathBuf> {
         super::find_config_file(start)
     }
 }

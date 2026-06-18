@@ -1,15 +1,16 @@
-use keyhog::subcommands::hook::{CANONICAL_SCAN_ARGS, HOOK_CONTENT};
+use keyhog::testing::{CliTestApi as _, API};
 use std::path::PathBuf;
 
 #[test]
 fn hook_template_embeds_canonical_scan_args() {
-    let expected = format!("exec keyhog {CANONICAL_SCAN_ARGS}\n");
+    let canonical = API.canonical_scan_args();
+    let expected = format!("exec keyhog {canonical}\n");
     assert!(
-        HOOK_CONTENT.contains(&expected),
-        "HOOK_CONTENT must invoke `{expected}` verbatim; the installed pre-commit hook diverged from CANONICAL_SCAN_ARGS"
+        API.hook_content().contains(&expected),
+        "API.hook_content() must invoke `{expected}` verbatim; the installed pre-commit hook diverged from API.canonical_scan_args()"
     );
-    assert!(CANONICAL_SCAN_ARGS.contains("--git-staged"));
-    assert!(CANONICAL_SCAN_ARGS.contains("--fast"));
+    assert!(API.canonical_scan_args().contains("--git-staged"));
+    assert!(API.canonical_scan_args().contains("--fast"));
 }
 
 fn repo_root() -> PathBuf {
@@ -24,7 +25,8 @@ fn pre_commit_hooks_yaml_matches_canonical_scan_args() {
     let yaml = std::fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("reading {}: {err}", path.display()));
 
-    let expected_entry = format!("entry: keyhog {CANONICAL_SCAN_ARGS}");
+    let canonical = API.canonical_scan_args();
+    let expected_entry = format!("entry: keyhog {canonical}");
     assert!(
         yaml.contains(&expected_entry),
         ".pre-commit-hooks.yaml must contain `{expected_entry}` so the framework hook mirrors `hook install`; found:\n{yaml}"
@@ -41,10 +43,11 @@ fn scripts_pre_commit_divergence_is_pinned() {
     let script = std::fs::read_to_string(&path)
         .unwrap_or_else(|err| panic!("reading {}: {err}", path.display()));
 
-    let uses_canonical = script.contains(CANONICAL_SCAN_ARGS);
+    let canonical = API.canonical_scan_args();
+    let uses_canonical = script.contains(canonical);
     let uses_path_detectors = script.contains("--detectors") && script.contains("--path");
     assert!(
         uses_canonical || uses_path_detectors,
-        "scripts/pre-commit must either invoke the canonical `keyhog {CANONICAL_SCAN_ARGS}` or keep its documented `--path`/`--detectors` staged-tree-copy form"
+        "scripts/pre-commit must either invoke the canonical `keyhog {canonical}` or keep its documented `--path`/`--detectors` staged-tree-copy form"
     );
 }

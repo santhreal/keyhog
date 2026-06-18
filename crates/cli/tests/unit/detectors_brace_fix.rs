@@ -1,31 +1,29 @@
-use keyhog::subcommands::detectors::{
-    fix_verify_braces_for_test, rewrite_braces, rewrite_braces_in_string_literals,
-};
+use keyhog::testing::{CliTestApi as _, API};
 
 #[test]
 fn rewrites_single_brace_to_double() {
-    let (out, n) = rewrite_braces("https://api.example.com/{shop}/orders/{id}");
+    let (out, n) = API.rewrite_detector_braces("https://api.example.com/{shop}/orders/{id}");
     assert_eq!(out, "https://api.example.com/{{shop}}/orders/{{id}}");
     assert_eq!(n, 2);
 }
 
 #[test]
 fn leaves_already_doubled_alone() {
-    let (out, n) = rewrite_braces("https://api.example.com/{{shop}}/orders/{{id}}");
+    let (out, n) = API.rewrite_detector_braces("https://api.example.com/{{shop}}/orders/{{id}}");
     assert_eq!(out, "https://api.example.com/{{shop}}/orders/{{id}}");
     assert_eq!(n, 0);
 }
 
 #[test]
 fn dotted_identifier_is_recognised() {
-    let (out, n) = rewrite_braces("https://api.example.com/{companion.shop}/charge");
+    let (out, n) = API.rewrite_detector_braces("https://api.example.com/{companion.shop}/charge");
     assert_eq!(out, "https://api.example.com/{{companion.shop}}/charge");
     assert_eq!(n, 1);
 }
 
 #[test]
 fn non_identifier_braces_left_intact() {
-    let (out, n) = rewrite_braces("[A-Z]{4,6}");
+    let (out, n) = API.rewrite_detector_braces("[A-Z]{4,6}");
     assert_eq!(out, "[A-Z]{4,6}");
     assert_eq!(n, 0);
 }
@@ -42,7 +40,7 @@ regex = "[A-Z]{4}"
 [detector.verify]
 url = "https://api.example.com/{shop}/orders"
 "#;
-    let (out, n) = fix_verify_braces_for_test(toml);
+    let (out, n) = API.fix_verify_braces(toml);
     assert_eq!(n, 1, "only the verify URL should be rewritten");
     assert!(
         out.contains("regex = \"[A-Z]{4}\""),
@@ -54,7 +52,7 @@ url = "https://api.example.com/{shop}/orders"
 #[test]
 fn handles_string_with_escape_sequences() {
     let (out, n) =
-        rewrite_braces_in_string_literals(r#"body = "Hello {name}, payload=\"{{value}}\"""#);
+        API.rewrite_braces_in_string_literals(r#"body = "Hello {name}, payload=\"{{value}}\"""#);
     assert!(out.contains("{{name}}"), "got: {out}");
     assert_eq!(n, 1);
 }
@@ -68,7 +66,7 @@ id = "demo"
 [detector.verify]
 url = "https://api.example.com/{{companion.shop}}"
 "#;
-    let (out, n) = fix_verify_braces_for_test(toml);
+    let (out, n) = API.fix_verify_braces(toml);
     assert_eq!(n, 0);
     assert_eq!(out.trim(), toml.trim());
 }

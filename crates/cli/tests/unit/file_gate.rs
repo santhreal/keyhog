@@ -2,9 +2,7 @@
 
 use clap::Parser;
 use keyhog::args::{Cli, ScanArgs};
-use keyhog::baseline::Baseline;
-use keyhog::benchmark::format_gpu_summary;
-use keyhog::config::find_config_file;
+use keyhog::testing::{CliTestApi as _, API};
 // The `keyhog::daemon::*` modules are unix-only (Unix-domain sockets).
 // Gate the imports and the daemon_* tests below so the file compiles
 // on Windows.
@@ -12,25 +10,44 @@ use keyhog::config::find_config_file;
 use keyhog::daemon::default_socket_path;
 #[cfg(unix)]
 use keyhog::daemon::protocol::{Request, Response, MAX_FRAME_BYTES, WIRE_VERSION};
-use keyhog::inline_suppression::filter_inline_suppressions;
-use keyhog::path_validation::validate_cli_path_arg;
-use keyhog::reporting::report_findings;
-use keyhog::test_fixture_suppressions::TestFixtureSuppressions;
-use keyhog::value_parsers::{parse_decode_depth, parse_min_confidence};
 use keyhog_core::{MatchLocation, RawMatch, Severity};
 use std::sync::Arc;
 
 // ── crates/cli/src/lib.rs ─────────────────────────────────────────────
 #[test]
 fn lib_happy() {
-    assert_eq!(
-        keyhog::SCANNED_CHUNKS.load(std::sync::atomic::Ordering::Relaxed),
-        0
-    );
+    assert_eq!(API.scanned_chunks(), 0);
 }
 #[test]
 fn lib_error() {
-    assert!(!keyhog::SCANNER_PANICKED.load(std::sync::atomic::Ordering::Relaxed));
+    assert!(!API.scanner_panicked());
+}
+
+#[test]
+fn lib_scan_failure_counters_have_typed_owner() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lib = std::fs::read_to_string(root.join("src/lib.rs")).expect("read cli lib");
+    let dispatch =
+        std::fs::read_to_string(root.join("src/orchestrator/dispatch.rs")).expect("read dispatch");
+    let fused = std::fs::read_to_string(root.join("src/orchestrator/dispatch/fused.rs"))
+        .expect("read fused dispatch");
+
+    assert!(
+        lib.contains("enum ScanFailureEvent") && lib.contains("struct RecordedScanFailureEvent"),
+        "CLI scan failures need a typed event owner and must-use receipt"
+    );
+    for (name, source) in [("dispatch", dispatch), ("fused dispatch", fused)] {
+        assert!(
+            source.contains("record_source_error") || source.contains("record_scanner_panic"),
+            "{name} must record failure state through typed recorders"
+        );
+        assert!(
+            !source.contains("SOURCE_ERRORS.fetch_add")
+                && !source.contains("FAILED_SOURCES.fetch_add")
+                && !source.contains("SCANNER_PANICKED.store"),
+            "{name} must not mutate scan-failure counters directly"
+        );
+    }
 }
 
 // ── crates/cli/src/main.rs ────────────────────────────────────────────
@@ -58,29 +75,33 @@ fn args_error() {
 // ── crates/cli/src/baseline.rs ────────────────────────────────────────
 #[test]
 fn baseline_happy() {
-    let baseline = Baseline::from_findings(&[]);
+    let baseline = API.baseline_from_findings(&[]);
     assert!(baseline.entries.is_empty());
 }
 #[test]
 fn baseline_error() {
-    assert!(Baseline::load(std::path::Path::new("/nonexistent/baseline.json")).is_err());
+    assert!(API
+        .baseline_load(std::path::Path::new("/nonexistent/baseline.json"))
+        .is_err());
 }
 
 // ── crates/cli/src/benchmark.rs ───────────────────────────────────────
 #[test]
 fn benchmark_happy() {
-    assert!(!format_gpu_summary().is_empty());
+    assert!(!API.format_gpu_summary().is_empty());
 }
 
 // ── crates/cli/src/config.rs ──────────────────────────────────────────
 #[test]
 fn config_happy() {
     let dir = tempfile::tempdir().unwrap();
-    assert!(find_config_file(Some(dir.path())).is_none());
+    assert!(API.find_config_file(Some(dir.path())).is_none());
 }
 #[test]
 fn config_error() {
-    assert!(find_config_file(Some(std::path::Path::new("/nonexistent"))).is_none());
+    assert!(API
+        .find_config_file(Some(std::path::Path::new("/nonexistent")))
+        .is_none());
 }
 
 // ── crates/cli/src/daemon/mod.rs ──────────────────────────────────────
@@ -153,7 +174,7 @@ fn inline_suppression_happy() {
         detector_name: Arc::from("Demo"),
         service: Arc::from("demo"),
         severity: Severity::Low,
-        credential: Arc::from("abc"),
+        credential: keyhog_core::SensitiveString::from("abc"),
         credential_hash: [7u8; 32],
         companions: Default::default(),
         location: MatchLocation {
@@ -168,23 +189,23 @@ fn inline_suppression_happy() {
         entropy: None,
         confidence: None,
     };
-    assert_eq!(filter_inline_suppressions(vec![m]).len(), 1);
+    assert_eq!(API.filter_inline_suppressions(vec![m]).len(), 1);
 }
 #[test]
 fn inline_suppression_error() {
-    assert!(filter_inline_suppressions(vec![]).is_empty());
+    assert!(API.filter_inline_suppressions(vec![]).is_empty());
 }
 
 // ── crates/cli/src/orchestrator.rs ────────────────────────────────────
 #[test]
 fn orchestrator_happy() {
-    assert!(!format_gpu_summary().is_empty());
+    assert!(!API.format_gpu_summary().is_empty());
 }
 #[test]
 fn orchestrator_error() {
-    assert!(
-        validate_cli_path_arg(std::path::Path::new("/nonexistent/keyhog-path"), "scan").is_err()
-    );
+    assert!(API
+        .validate_cli_path_arg(std::path::Path::new("/nonexistent/keyhog-path"), "scan")
+        .is_err());
 }
 
 // ── crates/cli/src/orchestrator_config.rs ─────────────────────────────
@@ -197,23 +218,23 @@ fn orchestrator_config_happy() {
 // ── crates/cli/src/path_validation.rs ─────────────────────────────────
 #[test]
 fn path_validation_error() {
-    assert!(
-        validate_cli_path_arg(std::path::Path::new("/nonexistent/keyhog-path"), "scan").is_err()
-    );
+    assert!(API
+        .validate_cli_path_arg(std::path::Path::new("/nonexistent/keyhog-path"), "scan")
+        .is_err());
 }
 
 // ── crates/cli/src/reporting.rs ───────────────────────────────────────
 #[test]
 fn reporting_error() {
     let args = ScanArgs::try_parse_from(["scan", ".", "--output", "/"]).unwrap();
-    assert!(report_findings(&[], &args).is_err());
+    assert!(API.report_findings(&[], &args).is_err());
 }
 
 // ── crates/cli/src/sources.rs ───────────────────────────────────────
 #[test]
 fn sources_error() {
     let args = ScanArgs::try_parse_from(["scan", "--path", "/nonexistent/keyhog-path"]).unwrap();
-    assert!(keyhog::sources::build_sources(&args, vec![], None).is_err());
+    assert!(API.build_sources(&args, vec![], None).is_err());
 }
 
 // ── crates/cli/src/subcommands/mod.rs ─────────────────────────────────
@@ -307,21 +328,21 @@ fn subcommands_watch_error() {
 // ── crates/cli/src/test_fixture_suppressions.rs ───────────────────────
 #[test]
 fn test_fixture_suppressions_happy() {
-    let s = TestFixtureSuppressions::bundled();
-    assert!(s.exact_count() >= 1);
+    let s = API.bundled_test_fixture_suppressions();
+    assert!(API.test_fixture_exact_count(&s) >= 1);
 }
 #[test]
 fn test_fixture_suppressions_error() {
-    let s = TestFixtureSuppressions::empty();
-    assert!(!s.suppresses("sk_live_realistic_token_value"));
+    let s = API.empty_test_fixture_suppressions();
+    assert!(!API.test_fixture_suppresses(&s, "sk_live_realistic_token_value"));
 }
 
 // ── crates/cli/src/value_parsers.rs ───────────────────────────────────
 #[test]
 fn value_parsers_happy() {
-    assert_eq!(parse_min_confidence("0.5").unwrap(), 0.5);
+    assert_eq!(API.parse_min_confidence("0.5").unwrap(), 0.5);
 }
 #[test]
 fn value_parsers_error() {
-    assert!(parse_decode_depth("not-a-number").is_err());
+    assert!(API.parse_decode_depth("not-a-number").is_err());
 }

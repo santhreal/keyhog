@@ -12,7 +12,7 @@ use crate::orchestrator_config::autoroute_config_digest;
 mod backend;
 mod fused;
 use anyhow::Result;
-pub use backend::backend_requires_coalesced_batch_pipeline_for_test;
+pub(crate) use backend::backend_requires_coalesced_batch_pipeline_for_test;
 pub(crate) use backend::CachedBackendRouter;
 use backend::{AutorouteRoutingError, MeasuredBackendRouter};
 use keyhog_core::{RawMatch, Source};
@@ -24,7 +24,7 @@ impl ScanOrchestrator {
         &self,
         sources: Vec<Box<dyn Source>>,
         show_progress: bool,
-        merkle: Option<Arc<keyhog_core::merkle_index::MerkleIndex>>,
+        merkle: Option<Arc<keyhog_core::MerkleIndex>>,
     ) -> Result<Vec<RawMatch>> {
         use std::sync::atomic::Ordering;
 
@@ -80,7 +80,7 @@ impl ScanOrchestrator {
         // enough to want the bigger buffer) than to break the
         // memory-safety invariant.
         let batch_bytes_budget: usize = {
-            let engine_cap = keyhog_scanner::engine::megascan_input_len();
+            let engine_cap = keyhog_scanner::megascan_input_len();
             let total_ram_bytes = keyhog_scanner::hw_probe::probe_hardware()
                 .total_memory_mb
                 .map(|mb| (mb as usize) * 1024 * 1024)
@@ -157,7 +157,10 @@ impl ScanOrchestrator {
         let rules_digest =
             keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&self.detectors));
         let autoroute_cache_path = Ok(self.effective_config.autoroute_cache_path.clone());
+        let autoroute_gpu = self.effective_config.autoroute_gpu;
+        let autoroute_calibration = self.effective_config.autoroute_calibration;
         let explicit_backend = self.effective_config.backend_override;
+        let perf_trace = self.effective_config.scanner.perf_trace;
 
         let scanner_thread = std::thread::spawn(
             move || -> std::result::Result<Vec<RawMatch>, AutorouteRoutingError> {
@@ -173,6 +176,8 @@ impl ScanOrchestrator {
                         pattern_count,
                         rules_digest,
                         config_digest,
+                        autoroute_gpu,
+                        autoroute_calibration,
                         autoroute_cache_path,
                         scanner.as_ref(),
                     )),
@@ -279,10 +284,10 @@ impl ScanOrchestrator {
                     last_end = std::time::Instant::now();
                 }
                 drain_prev(prev_phase2.take(), &mut findings);
-                if std::env::var("KH_PERF").is_ok() {
+                if perf_trace {
                     let wall = sc_t0.elapsed().as_secs_f64().max(1e-9);
                     eprintln!(
-                        "KH_PERF scanner_thread: wall={:.2}s scan={:.2}s recv_wait={:.2}s (scan {:.0}%, recv_wait {:.0}%)",
+                        "perf-trace scanner_thread: wall={:.2}s scan={:.2}s recv_wait={:.2}s (scan {:.0}%, recv_wait {:.0}%)",
                         wall,
                         scan_dur.as_secs_f64(),
                         recv_dur.as_secs_f64(),
@@ -290,19 +295,9 @@ impl ScanOrchestrator {
                         100.0 * recv_dur.as_secs_f64() / wall,
                     );
                 }
-                // Surface the pipeline phase profiler (per-stage span breakdown) and
-                // the prepare/phase-1 overhead profiler to the operator. Both
-                // accumulate into process-global atomics across the rayon scan, so
-                // one dump here at streaming-scan completion reports the whole run.
-                // Without this the `KEYHOG_PROFILE`/`KEYHOG_PROFILE_SCANINNER` env
-                // gates were dead from the CLI (the data was collected but never
-                // printed) — a UTILIZATION gap.
-                if std::env::var("KEYHOG_PROFILE").as_deref() == Ok("1") {
-                    keyhog_scanner::profile_dump("keyhog scan");
-                }
-                if std::env::var("KEYHOG_PROFILE_SCANINNER").as_deref() == Ok("1") {
-                    keyhog_scanner::scan_inner_profile_dump();
-                }
+                // Scanner owns the profiling switch and all report shards; the
+                // CLI only asks the compiled scanner to drain them at scan end.
+                scanner.dump_profile_reports("keyhog scan");
                 Ok(findings)
             },
         );
@@ -424,7 +419,7 @@ impl ScanOrchestrator {
     /// the same incremental-mode safety contract.
     fn finalize_incremental(
         &self,
-        merkle: Option<&Arc<keyhog_core::merkle_index::MerkleIndex>>,
+        merkle: Option<&Arc<keyhog_core::MerkleIndex>>,
         incremental_path: Option<&std::path::Path>,
         skipped_unchanged: usize,
         findings: &[RawMatch],
@@ -447,7 +442,7 @@ impl ScanOrchestrator {
                     idx.forget(std::path::Path::new(fp));
                 }
             }
-            let spec_hash = keyhog_core::merkle_index::compute_spec_hash(&self.detectors);
+            let spec_hash = keyhog_core::compute_spec_hash(&self.detectors);
             if let Err(e) = idx.save_with_spec(path, &spec_hash) {
                 tracing::warn!(error = %e, "failed to persist merkle index");
             }

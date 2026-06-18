@@ -12,13 +12,14 @@ use crate::orchestrator_config::{
     load_detectors_with_cache, parse_backend_override, resolve_scan_config,
     resolved_scan_config_for_scanner, ResolvedScanConfig,
 };
+use crate::style;
 use anyhow::{Context, Result};
 use keyhog_core::{DetectorSpec, RawMatch, Source};
 use keyhog_scanner::{CompiledScanner, GpuInitPolicy};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub use crate::exit_codes::{EXIT_LIVE_CREDENTIALS, EXIT_SCANNER_PANIC};
+pub(crate) use crate::exit_codes::{EXIT_LIVE_CREDENTIALS, EXIT_SCANNER_PANIC};
 
 fn default_incremental_cache_path() -> Option<PathBuf> {
     dirs::cache_dir().map(|d| d.join("keyhog").join("merkle.idx"))
@@ -37,7 +38,7 @@ fn default_incremental_cache_path() -> Option<PathBuf> {
 pub(crate) use postprocess::offline_finding_metadata;
 
 #[doc(hidden)]
-pub use dispatch::backend_requires_coalesced_batch_pipeline_for_test;
+pub(crate) use dispatch::backend_requires_coalesced_batch_pipeline_for_test;
 
 pub(crate) use dispatch::CachedBackendRouter;
 
@@ -61,26 +62,28 @@ pub(crate) fn cached_autoroute_router_for_default_config(
 }
 
 #[doc(hidden)]
-pub fn gpu_init_policy_for_args_for_test(args: &ScanArgs) -> GpuInitPolicy {
+pub(crate) fn gpu_init_policy_for_args_for_test(args: &ScanArgs) -> GpuInitPolicy {
     gpu_init_policy_for_args(args)
 }
 
 #[doc(hidden)]
-pub fn explicit_backend_override(raw: Option<&str>) -> Result<Option<keyhog_scanner::ScanBackend>> {
+pub(crate) fn explicit_backend_override(
+    raw: Option<&str>,
+) -> Result<Option<keyhog_scanner::ScanBackend>> {
     parse_backend_override(raw)
 }
 
 #[doc(hidden)]
-pub fn allowlist_root_for_test(path: &std::path::Path) -> std::path::PathBuf {
+pub(crate) fn allowlist_root_for_test(path: &std::path::Path) -> std::path::PathBuf {
     allowlist::allowlist_root(path)
 }
 
 #[doc(hidden)]
-pub fn scanner_panic_notice_for_test(panicked: bool) -> Option<String> {
+pub(crate) fn scanner_panic_notice_for_test(panicked: bool) -> Option<String> {
     reporting::scanner_panic_notice(panicked)
 }
 
-pub struct ScanOrchestrator {
+pub(crate) struct ScanOrchestrator {
     pub(crate) args: ScanArgs,
     pub(crate) detectors: Vec<DetectorSpec>,
     pub(crate) scanner: Arc<CompiledScanner>,
@@ -102,7 +105,7 @@ pub struct ScanOrchestrator {
 }
 
 impl ScanOrchestrator {
-    pub fn new(mut args: ScanArgs) -> Result<Self> {
+    pub(crate) fn new(mut args: ScanArgs) -> Result<Self> {
         // Grep/wc/curl convention: a positional `-` means "read from
         // stdin". Some users will try `keyhog scan - --stdin <<<...`
         // and otherwise hit `error: path '-' does not exist`. Promote
@@ -124,6 +127,7 @@ impl ScanOrchestrator {
             args.path = Some(PathBuf::from("."));
         }
         let mut effective_config = resolve_scan_config(&mut args)?;
+        keyhog_scanner::gpu::set_gpu_runtime_policy(effective_config.gpu_runtime_policy);
         let disabled_detectors = effective_config.disabled_detectors.clone();
         // Operator `.keyhog.toml` `[detector.<id>] min_confidence` overrides;
         // detector self-declared floors (DetectorSpec::min_confidence, merged
@@ -146,7 +150,9 @@ impl ScanOrchestrator {
         // --regex-dfa-limit). Set the process-global BEFORE any detector regex
         // compiles, so the cap takes effect on the per-worker DFA caches that
         // dominate scan memory. 0 = use the compiled default.
-        keyhog_scanner::types::set_regex_dfa_limit(args.regex_dfa_limit.unwrap_or(0)); // LAW10: empty/absent => documented numeric default, recall-safe
+        keyhog_scanner::set_regex_dfa_limit(args.regex_dfa_limit.unwrap_or(0)); // LAW10: empty/absent => documented numeric default, recall-safe
+        keyhog_scanner::set_profile_enabled(effective_config.scanner.profile);
+        keyhog_scanner::set_perf_trace_enabled(effective_config.scanner.perf_trace);
 
         let hw = keyhog_scanner::hw_probe::probe_hardware();
         configure_threads(args.threads, hw.physical_cores);
@@ -187,9 +193,12 @@ impl ScanOrchestrator {
                     "disabled detectors via .keyhog.toml [detector.<id>] enabled = false"
                 );
             } else {
+                let palette = style::for_stderr();
                 eprintln!(
-                    "⚠️  .keyhog.toml disables detector id(s) {disabled_detectors:?}, but none matched the loaded corpus. \
+                    "{} .keyhog.toml disables detector id(s) {disabled_detectors:?}, but none matched the loaded corpus. \
                      Detector ids come from `keyhog detectors` (e.g. hot-pattern ids are prefixed `hot-`)."
+                    ,
+                    style::warn("WARN", &palette)
                 );
             }
         }
@@ -244,12 +253,14 @@ impl ScanOrchestrator {
 
         let gpu_init_policy = gpu_init_policy_for_args(&args);
         let scanner = Arc::new(
-            CompiledScanner::compile_with_gpu_policy(detectors.clone(), gpu_init_policy)
-                .with_context(|| {
-                    format!("compiling scanner from {} detector specs", detectors.len())
-                })?
-                .with_config(effective_config.scanner.clone())
-                .with_tuning_config(effective_config.scanner_tuning.clone()),
+            CompiledScanner::compile_with_gpu_policy_and_tuning(
+                detectors.clone(),
+                gpu_init_policy,
+                &effective_config.scanner_tuning,
+            )
+            .with_context(|| format!("compiling scanner from {} detector specs", detectors.len()))?
+            .with_config(effective_config.scanner.clone())
+            .with_tuning_config(effective_config.scanner_tuning.clone()),
         );
 
         // Detector regexes compile lazily on first use. Warm the whole set in
@@ -293,11 +304,11 @@ impl ScanOrchestrator {
         })
     }
 
-    pub fn scanner(&self) -> &CompiledScanner {
+    pub(crate) fn scanner(&self) -> &CompiledScanner {
         self.scanner.as_ref()
     }
 
-    pub fn args(&self) -> &ScanArgs {
+    pub(crate) fn args(&self) -> &ScanArgs {
         &self.args
     }
 
@@ -328,34 +339,41 @@ impl ScanOrchestrator {
             .or_else(default_incremental_cache_path)
     }
 
-    pub(crate) fn build_merkle_index(&self) -> Option<Arc<keyhog_core::merkle_index::MerkleIndex>> {
+    pub(crate) fn build_merkle_index(&self) -> Option<Arc<keyhog_core::MerkleIndex>> {
         let path = self.incremental_cache_path()?;
-        let spec_hash = keyhog_core::merkle_index::compute_spec_hash(&self.detectors);
-        let idx = keyhog_core::merkle_index::MerkleIndex::load_with_spec(&path, &spec_hash);
+        let spec_hash = keyhog_core::compute_spec_hash(&self.detectors);
+        let idx = keyhog_core::MerkleIndex::load_with_spec(&path, &spec_hash);
         tracing::info!("incremental scan: loaded merkle index");
         Some(Arc::new(idx))
     }
 
     /// Test-only entry point for the producer/scanner pipeline.
     #[doc(hidden)]
-    pub fn scan_sources_for_test(
+    pub(crate) fn scan_sources_for_test(
         &self,
         sources: Vec<Box<dyn Source>>,
         show_progress: bool,
-        merkle: Option<Arc<keyhog_core::merkle_index::MerkleIndex>>,
+        merkle: Option<Arc<keyhog_core::MerkleIndex>>,
     ) -> Result<Vec<RawMatch>> {
         self.scan_sources(sources, show_progress, merkle)
     }
 
     /// Test-only constructor bypassing detector-cache and lockdown gating.
     #[doc(hidden)]
-    pub fn from_parts_for_test(
+    pub(crate) fn from_parts_for_test(
         args: ScanArgs,
         detectors: Vec<DetectorSpec>,
         scanner: Arc<CompiledScanner>,
         signatures: std::collections::HashSet<Arc<str>>,
         test_fixture_suppressions: crate::test_fixture_suppressions::TestFixtureSuppressions,
     ) -> Self {
+        let batch_pipeline = args.batch_pipeline && !args.no_batch_pipeline;
+        let threads = args.threads;
+        let reader_threads = args.reader_threads;
+        let fused_batch = args
+            .fused_batch
+            .unwrap_or(crate::orchestrator_config::FUSED_BATCH_DEFAULT); // LAW10: absent fused-batch config => documented compiled throughput default; no scan feature disabled and effective config prints the concrete value
+        let fused_depth = args.fused_depth;
         Self {
             args,
             detectors,
@@ -366,6 +384,14 @@ impl ScanOrchestrator {
             detector_min_confidence: std::collections::HashMap::new(),
             effective_config: ResolvedScanConfig {
                 backend_override: Some(keyhog_scanner::ScanBackend::SimdCpu),
+                batch_pipeline,
+                threads,
+                reader_threads,
+                fused_batch,
+                fused_depth,
+                gpu_runtime_policy: keyhog_scanner::gpu::GpuRuntimePolicy::Auto,
+                autoroute_gpu: false,
+                autoroute_calibration: false,
                 scanner: keyhog_scanner::ScannerConfig::default(),
                 min_confidence: keyhog_scanner::ScannerConfig::default().min_confidence,
                 ml_enabled: keyhog_scanner::ScannerConfig::default().ml_enabled,
@@ -390,10 +416,10 @@ fn gpu_init_policy_for_args(args: &ScanArgs) -> GpuInitPolicy {
     if let Some(policy) = backend_name_gpu_policy(args.backend.as_deref()) {
         return policy;
     }
-    if filesystem_auto_scan_cannot_route_gpu(args)
-        && std::env::var("KEYHOG_REQUIRE_GPU").as_deref() != Ok("1")
-        && !env_explicitly_enables_gpu()
-    {
+    if args.no_gpu && !args.require_gpu {
+        return GpuInitPolicy::ForceDisabled;
+    }
+    if filesystem_auto_scan_cannot_route_gpu(args) && !args.require_gpu {
         return GpuInitPolicy::ForceDisabled;
     }
     GpuInitPolicy::FromEnvironment
@@ -426,14 +452,8 @@ fn backend_gpu_policy(backend: keyhog_scanner::ScanBackend) -> GpuInitPolicy {
     }
 }
 
-fn env_explicitly_enables_gpu() -> bool {
-    std::env::var("KEYHOG_NO_GPU")
-        .map(|v| matches!(v.as_str(), "" | "0" | "false" | "FALSE" | "off" | "OFF"))
-        .unwrap_or(false) // LAW10: empty/absent => documented numeric default, recall-safe
-}
-
 fn filesystem_auto_scan_cannot_route_gpu(args: &ScanArgs) -> bool {
-    if std::env::var_os("KEYHOG_BATCH_PIPELINE").is_some() {
+    if args.batch_pipeline && !args.no_batch_pipeline {
         return false;
     }
     if args.path.is_none() {

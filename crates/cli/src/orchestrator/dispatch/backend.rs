@@ -33,6 +33,8 @@ pub(super) struct MeasuredBackendRouter {
     detector_digest: u64,
     rules_digest: String,
     config_digest: u64,
+    autoroute_gpu: bool,
+    calibration_mode: bool,
     host_profile: AutorouteHostProfile,
     decisions: HashMap<WorkloadKey, AutorouteDecision>,
     cache_path: Option<PathBuf>,
@@ -73,7 +75,7 @@ impl AutorouteRoutingError {
                  missing decision. Run \
                  `install.sh --calibrate` on Unix or `install.ps1 -Calibrate` on Windows for \
                  this binary, host, detector corpus, resolved scan config, source class, and \
-                 backend-affecting environment; or pass an explicit `--backend <simd|cpu|gpu|megascan>` \
+                 explicit scan controls; or pass an explicit `--backend <simd|cpu|gpu|megascan>` \
                  for diagnostics.",
                 key.bytes_bucket,
                 key.chunks_bucket,
@@ -175,6 +177,8 @@ impl MeasuredBackendRouter {
         pattern_count: usize,
         rules_digest: String,
         config_digest: u64,
+        autoroute_gpu: bool,
+        calibration_mode: bool,
         autoroute_cache_path: Result<Option<PathBuf>, String>,
         scanner: &CompiledScanner,
     ) -> Self {
@@ -195,6 +199,8 @@ impl MeasuredBackendRouter {
             detector_digest,
             rules_digest,
             config_digest,
+            autoroute_gpu,
+            calibration_mode,
             host_profile,
             decisions,
             cache_path,
@@ -219,8 +225,7 @@ impl MeasuredBackendRouter {
             }
         }
 
-        let calibration_mode = std::env::var_os("KEYHOG_AUTOROUTE_CALIBRATE").is_some();
-        if !calibration_mode {
+        if !self.calibration_mode {
             return Err(AutorouteRoutingError::missing_decision(
                 key,
                 &self.cache_path,
@@ -232,8 +237,13 @@ impl MeasuredBackendRouter {
             .map_err(AutorouteRoutingError::host_identity_unavailable)?;
         self.persist_cache_path()?;
 
-        let decision =
-            calibrate_fastest_correct_backend(scanner, &self.hw_caps, self.pattern_count, batch)?;
+        let decision = calibrate_fastest_correct_backend(
+            scanner,
+            &self.hw_caps,
+            self.pattern_count,
+            batch,
+            self.autoroute_gpu,
+        )?;
         let backend = match decision.backend() {
             Some(backend) => backend,
             None => {
@@ -386,7 +396,7 @@ pub(super) fn backend_requires_coalesced_batch_pipeline(
 }
 
 #[doc(hidden)]
-pub fn backend_requires_coalesced_batch_pipeline_for_test(
+pub(crate) fn backend_requires_coalesced_batch_pipeline_for_test(
     explicit: Option<keyhog_scanner::hw_probe::ScanBackend>,
 ) -> bool {
     backend_requires_coalesced_batch_pipeline(explicit)

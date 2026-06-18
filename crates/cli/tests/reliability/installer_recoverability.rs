@@ -16,7 +16,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
-use keyhog::installer::{backup_path, install_with_rollback};
+use keyhog::testing::{CliTestApi as _, API};
 use tempfile::TempDir;
 
 /// A fake install dir holding a fake "current" binary with given contents.
@@ -28,14 +28,26 @@ fn staged_exe(contents: &[u8]) -> (TempDir, PathBuf) {
     (dir, exe)
 }
 
+fn version_script(version: &str) -> Vec<u8> {
+    format!(
+        "#!/bin/sh\n\
+         case \"$1\" in\n\
+           doctor) exit 0 ;;\n\
+           --version) echo 'KeyHog v{version}'; exit 0 ;;\n\
+           *) exit 2 ;;\n\
+         esac\n"
+    )
+    .into_bytes()
+}
+
 #[test]
 fn successful_install_swaps_bytes_and_leaves_no_backup() {
     let (_dir, exe) = staged_exe(b"OLD-WORKING-BINARY");
-    let r = install_with_rollback(&exe, b"NEW-GOOD-BINARY", |_| true);
+    let r = API.install_with_rollback(&exe, b"NEW-GOOD-BINARY", |_| true);
     assert!(r.is_ok(), "verified install should succeed: {r:?}");
     assert_eq!(fs::read(&exe).unwrap(), b"NEW-GOOD-BINARY");
     assert!(
-        !backup_path(&exe).exists(),
+        !API.backup_path(&exe).exists(),
         "a successful install must not leave a .bak turd behind"
     );
 }
@@ -43,7 +55,7 @@ fn successful_install_swaps_bytes_and_leaves_no_backup() {
 #[test]
 fn successful_install_keeps_executable_bit() {
     let (_dir, exe) = staged_exe(b"OLD");
-    install_with_rollback(&exe, b"NEW", |_| true).unwrap();
+    API.install_with_rollback(&exe, b"NEW", |_| true).unwrap();
     let mode = fs::metadata(&exe).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o755, "installed binary must be executable (0755)");
 }
@@ -53,7 +65,7 @@ fn failed_verify_rolls_back_to_the_working_binary() {
     // The core invariant: the new binary is signed + a valid ELF but does not
     // run on this host (verify == false). We must restore the old binary.
     let (_dir, exe) = staged_exe(b"OLD-WORKING-BINARY");
-    let r = install_with_rollback(&exe, b"NEW-BROKEN-BINARY", |_| false);
+    let r = API.install_with_rollback(&exe, b"NEW-BROKEN-BINARY", |_| false);
     assert!(r.is_err(), "a failed health check must report an error");
     assert_eq!(
         fs::read(&exe).unwrap(),
@@ -61,7 +73,7 @@ fn failed_verify_rolls_back_to_the_working_binary() {
         "ROLLBACK FAILED: the working binary was not restored after a broken update"
     );
     assert!(
-        !backup_path(&exe).exists(),
+        !API.backup_path(&exe).exists(),
         "rollback must consume the backup, not leave it beside the binary"
     );
     let mode = fs::metadata(&exe).unwrap().permissions().mode() & 0o777;
@@ -78,7 +90,7 @@ fn rolled_back_binary_is_byte_identical_to_the_original() {
     fs::write(&exe, &original).unwrap();
     fs::set_permissions(&exe, fs::Permissions::from_mode(0o755)).unwrap();
 
-    let _ = install_with_rollback(&exe, b"broken", |_| false);
+    let _ = API.install_with_rollback(&exe, b"broken", |_| false);
     assert_eq!(
         fs::read(&exe).unwrap(),
         original,
@@ -93,7 +105,7 @@ fn fresh_install_failed_verify_removes_the_broken_binary() {
     let dir = TempDir::new().unwrap();
     let exe = dir.path().join("keyhog");
     assert!(!exe.exists());
-    let r = install_with_rollback(&exe, b"NEW-BROKEN", |_| false);
+    let r = API.install_with_rollback(&exe, b"NEW-BROKEN", |_| false);
     assert!(r.is_err());
     assert!(
         !exe.exists(),
@@ -105,7 +117,7 @@ fn fresh_install_failed_verify_removes_the_broken_binary() {
 fn fresh_install_success_leaves_the_new_binary() {
     let dir = TempDir::new().unwrap();
     let exe = dir.path().join("keyhog");
-    let r = install_with_rollback(&exe, b"NEW-GOOD", |_| true);
+    let r = API.install_with_rollback(&exe, b"NEW-GOOD", |_| true);
     assert!(r.is_ok(), "{r:?}");
     assert_eq!(fs::read(&exe).unwrap(), b"NEW-GOOD");
 }
@@ -116,7 +128,7 @@ fn verify_runs_against_the_newly_installed_bytes() {
     // health check actually exercises the candidate, not the old binary.
     let (_dir, exe) = staged_exe(b"OLD");
     let exe_for_closure = exe.clone();
-    let r = install_with_rollback(&exe, b"NEW-CANDIDATE", move |p: &Path| {
+    let r = API.install_with_rollback(&exe, b"NEW-CANDIDATE", move |p: &Path| {
         // verify is handed the live exe path; it must already hold the new bytes.
         p == exe_for_closure && fs::read(p).unwrap() == b"NEW-CANDIDATE"
     });
@@ -124,6 +136,47 @@ fn verify_runs_against_the_newly_installed_bytes() {
         r.is_ok(),
         "verify did not see the new bytes at the exe path: {r:?}"
     );
+}
+
+#[test]
+fn release_tag_version_mismatch_rolls_back_to_the_working_binary() {
+    let original = b"OLD-WORKING-BINARY";
+    let (_dir, exe) = staged_exe(original);
+    let candidate = version_script("0.5.39");
+
+    let err = API
+        .install_with_rollback_checked(&exe, &candidate, |path| {
+            API.verify_candidate_release(path, "v0.5.40", "0.5.38", false)
+        })
+        .expect_err("a signed binary whose reported version mismatches the release tag must fail");
+
+    let msg = err.to_string();
+    assert!(
+        msg.contains("does not match release tag") && msg.contains("rolled back"),
+        "version mismatch must be operator-visible and rollback-explicit, got: {msg}"
+    );
+    assert_eq!(
+        fs::read(&exe).unwrap(),
+        original,
+        "version mismatch rollback must restore the prior binary byte-for-byte"
+    );
+}
+
+#[test]
+fn older_candidate_version_requires_an_explicit_pin() {
+    let candidate = version_script("0.5.39");
+    let (_dir, exe) = staged_exe(&candidate);
+
+    let err = API
+        .verify_candidate_release(&exe, "v0.5.39", "0.5.40", false)
+        .expect_err("unrequested downgrade must fail closed");
+    assert!(
+        err.to_string().contains("implicit downgrade"),
+        "implicit downgrade error must name the policy, got: {err}"
+    );
+
+    API.verify_candidate_release(&exe, "v0.5.39", "0.5.40", true)
+        .expect("an exact explicitly pinned older release remains allowed");
 }
 
 #[test]
@@ -137,7 +190,7 @@ fn cannot_create_backup_in_readonly_dir_leaves_original_untouched() {
     // Make the directory unwritable so the backup copy fails.
     fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o555)).unwrap();
 
-    let r = install_with_rollback(&exe, b"NEW", |_| true);
+    let r = API.install_with_rollback(&exe, b"NEW", |_| true);
 
     // Restore dir perms so TempDir can clean up regardless of the assertion.
     fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o755)).unwrap();
@@ -156,7 +209,7 @@ fn cannot_create_backup_in_readonly_dir_leaves_original_untouched() {
 #[test]
 fn backup_path_sits_beside_the_exe_and_is_hidden() {
     let exe = Path::new("/opt/keyhog/bin/keyhog");
-    let bak = backup_path(exe);
+    let bak = API.backup_path(exe);
     assert_eq!(
         bak.parent(),
         exe.parent(),

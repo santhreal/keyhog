@@ -29,7 +29,7 @@ use crate::daemon::protocol::{Request, Response};
 #[cfg(unix)]
 use crate::daemon::server::default_socket_path;
 use crate::orchestrator::ScanOrchestrator;
-use anyhow::{Result, bail};
+use anyhow::{bail, Result};
 // The daemon-only result-massaging path (unwrap_scan_results,
 // finalize_for_report) is the only consumer of `RawMatch` /
 // `VerifiedFinding` / the dedup helpers in this file. The
@@ -40,14 +40,14 @@ use anyhow::{Result, bail};
 use anyhow::Context;
 #[cfg(unix)]
 use keyhog_core::{
-    RawMatch, RuleSuppressor, VerificationResult, VerifiedFinding, dedup_cross_detector,
-    dedup_matches,
+    dedup_cross_detector, dedup_matches, RawMatch, RuleSuppressor, VerificationResult,
+    VerifiedFinding,
 };
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-pub async fn run(args: ScanArgs) -> Result<ExitCode> {
+pub(crate) async fn run(args: ScanArgs) -> Result<ExitCode> {
     crate::backend_env::validate_scan_runtime_env()?;
 
     // On Windows, the daemon route is never available (the `crate::daemon`
@@ -137,6 +137,9 @@ struct EffectivePolicy {
     /// Semantic config errors detected by the quiet config probe. Forces
     /// in-process so the real orchestrator emits the precise error once.
     has_config_errors: bool,
+    /// Extra AWS canary/knockoff account IDs from `.keyhog.toml`. The daemon
+    /// process owns its own scanner state and cannot consume per-client config.
+    custom_aws_canary_accounts: bool,
 }
 
 #[cfg(unix)]
@@ -168,6 +171,7 @@ impl EffectivePolicy {
             severity,
             require_lockdown: outcome.require_lockdown,
             has_config_errors: !outcome.config_errors.is_empty(),
+            custom_aws_canary_accounts: !outcome.aws_canary_accounts.is_empty(),
         }
     }
 }
@@ -249,11 +253,12 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
         || policy.severity
         || policy.min_confidence.is_some()
         || policy.has_config_errors
+        || policy.custom_aws_canary_accounts
         || args.hide_client_safe
     {
         if let Some(route) = reject_forced_daemon(
             forced_on,
-            "this scan requests filtering, lockdown, secret-output, or config policy the daemon cannot enforce",
+            "this scan requests filtering, lockdown, secret-output, AWS canary config, or config policy the daemon cannot enforce",
         ) {
             return route;
         }
@@ -359,6 +364,7 @@ fn daemon_incompatible_scan_options(args: &ScanArgs) -> Option<&'static str> {
         || args.ml_weight.is_some()
         || args.max_file_size.is_some()
         || args.regex_dfa_limit.is_some()
+        || args.cache_dir.is_some()
         || args.ml_threshold != crate::orchestrator_config::ML_THRESHOLD_DEFAULT
     {
         return Some(
@@ -647,17 +653,17 @@ fn daemon_allowlist_root(args: &ScanArgs) -> PathBuf {
 /// Load the legacy line-based `.keyhogignore` allowlist for the daemon route.
 /// A malformed file is a policy failure, not an empty allowlist.
 #[cfg(unix)]
-fn load_daemon_allowlist(args: &ScanArgs) -> Result<keyhog_core::allowlist::Allowlist> {
+fn load_daemon_allowlist(args: &ScanArgs) -> Result<keyhog_core::Allowlist> {
     let ignore_path = daemon_allowlist_root(args).join(".keyhogignore");
     if ignore_path.exists() {
-        keyhog_core::allowlist::Allowlist::load(&ignore_path).with_context(|| {
+        keyhog_core::Allowlist::load(&ignore_path).with_context(|| {
             format!(
                 "daemon route: failed to load {}. Fix or remove the allowlist; refusing to scan with silently ignored policy.",
                 ignore_path.display()
             )
         })
     } else {
-        Ok(keyhog_core::allowlist::Allowlist::empty())
+        Ok(keyhog_core::Allowlist::empty())
     }
 }
 

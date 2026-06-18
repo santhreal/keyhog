@@ -18,6 +18,7 @@
 use keyhog::daemon::client;
 use keyhog::daemon::frame;
 use keyhog::daemon::protocol::{Request, Response, WIRE_VERSION};
+use keyhog::testing::{CliTestApi as _, API};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use tokio::io::{BufReader, BufWriter};
@@ -104,11 +105,11 @@ async fn connect_any_version_accepts_stale_daemon_so_stop_status_work() {
         .expect("connect_any_version must tolerate a keyhog-version mismatch");
     // And it must REPORT the staleness so `daemon status` can warn the operator.
     assert!(
-        conn.is_stale(),
+        API.daemon_client_is_stale(&conn),
         "a daemon on a different keyhog version must be reported stale"
     );
     assert_eq!(
-        conn.daemon_version(),
+        API.daemon_client_version(&conn),
         "0.0.1-stale",
         "the daemon's reported version must be exposed for the status warning"
     );
@@ -130,11 +131,11 @@ async fn connect_succeeds_against_same_version_daemon() {
         .await
         .expect("connect must succeed when the daemon runs the same keyhog version");
     assert!(
-        !conn.is_stale(),
+        !API.daemon_client_is_stale(&conn),
         "a same-version daemon must NOT be reported stale"
     );
     assert_eq!(
-        conn.daemon_version(),
+        API.daemon_client_version(&conn),
         env!("CARGO_PKG_VERSION"),
         "connect must record the daemon's reported version"
     );

@@ -1,8 +1,9 @@
-use keyhog::orchestrator::explicit_backend_override;
+use keyhog::testing::{CliTestApi as _, API};
 
 #[test]
 fn explicit_backend_unknown_value_is_rejected() {
-    let error = explicit_backend_override(Some("not-a-real-backend"))
+    let error = API
+        .explicit_backend_override(Some("not-a-real-backend"))
         .expect_err("invalid --backend must be rejected before routing");
 
     let message = error.to_string();

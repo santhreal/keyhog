@@ -1,16 +1,16 @@
 //! `keyhog calibrate` - show or update per-detector Beta(α, β) counters.
 //!
-//! Tier-B moat innovation #4 from audits/legendary-2026-04-26.
+//! Tier-B moat innovation #4 from docs/EXECUTION_PLAN.md.
 
 use crate::args::CalibrateArgs;
 use anyhow::{Context, Result};
-use keyhog_core::calibration::Calibration;
+use keyhog_core::{BetaCounters, Calibration};
 
-pub fn run(args: CalibrateArgs) -> Result<()> {
+pub(crate) fn run(args: CalibrateArgs) -> Result<()> {
     let cache_path = args
         .cache
         .clone()
-        .or_else(keyhog_core::calibration::default_cache_path)
+        .or_else(keyhog_core::calibration_default_cache_path)
         .context("could not resolve calibration cache path; pass --cache <PATH> explicitly")?;
     if cache_path.is_dir() {
         anyhow::bail!(
@@ -29,10 +29,10 @@ pub fn run(args: CalibrateArgs) -> Result<()> {
     }
 
     for detector_id in &args.tp {
-        calibration.record_true_positive(detector_id);
+        calibration.record_outcome(detector_id, true);
     }
     for detector_id in &args.fp {
-        calibration.record_false_positive(detector_id);
+        calibration.record_outcome(detector_id, false);
     }
 
     calibration
@@ -70,7 +70,7 @@ fn print_show(calibration: &Calibration, cache_path: &std::path::Path) {
         "DETECTOR", "α", "β", "POSTERIOR", "OBS"
     );
     for (id, c) in entries {
-        let mean = c.posterior_mean();
+        let mean = posterior_mean(c);
         let bar = bar_for(mean);
         println!(
             "    {:<40}  {:>5}  {:>5}  {:>6.3}  {} {:>4}",
@@ -79,9 +79,25 @@ fn print_show(calibration: &Calibration, cache_path: &std::path::Path) {
             c.beta,
             mean,
             bar,
-            c.observations()
+            observations(c)
         );
     }
+}
+
+fn posterior_mean(counters: BetaCounters) -> f64 {
+    let total = counters.alpha as f64 + counters.beta as f64;
+    if total == 0.0 {
+        0.5
+    } else {
+        counters.alpha as f64 / total
+    }
+}
+
+fn observations(counters: BetaCounters) -> u32 {
+    counters
+        .alpha
+        .saturating_sub(1)
+        .saturating_add(counters.beta.saturating_sub(1))
 }
 
 fn bar_for(mean: f64) -> String {

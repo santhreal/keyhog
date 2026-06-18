@@ -3,22 +3,20 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
-pub(crate) fn load_allowlist(
-    scan_path: Option<&Path>,
-) -> Result<keyhog_core::allowlist::Allowlist> {
+pub(crate) fn load_allowlist(scan_path: Option<&Path>) -> Result<keyhog_core::Allowlist> {
     let base_path = scan_path
         .map(allowlist_root)
         .unwrap_or_else(|| PathBuf::from(".")); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
     let ignore_path = base_path.join(".keyhogignore");
     if ignore_path.exists() {
-        keyhog_core::allowlist::Allowlist::load(&ignore_path).with_context(|| {
+        keyhog_core::Allowlist::load(&ignore_path).with_context(|| {
             format!(
                 "failed to load {}. Fix or remove the allowlist; refusing to scan with silently ignored policy.",
                 ignore_path.display()
             )
         })
     } else {
-        Ok(keyhog_core::allowlist::Allowlist::empty())
+        Ok(keyhog_core::Allowlist::empty())
     }
 }
 

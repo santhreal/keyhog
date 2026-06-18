@@ -1,54 +1,25 @@
 use super::support::ENV_LOCK;
 use clap::{CommandFactory, Parser};
 use keyhog::args::ScanArgs;
-use keyhog::orchestrator::gpu_init_policy_for_args_for_test;
-use keyhog::orchestrator_config::testing::{
-    autoroute_config_digest_for_scanner, build_scanner_config,
-};
+use keyhog::testing::{CliTestApi as _, API};
 use keyhog_scanner::hw_probe::parse_backend_str;
 use keyhog_scanner::GpuInitPolicy;
-use std::ffi::OsString;
 
 fn scan_args(args: &[&str]) -> ScanArgs {
     ScanArgs::try_parse_from(args).expect("parse scan args")
 }
 
-fn with_clean_gpu_env(test: impl FnOnce()) {
+fn with_route_policy_lock(test: impl FnOnce()) {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
-    let keys = [
-        "KEYHOG_NO_GPU",
-        "KEYHOG_REQUIRE_GPU",
-        "KEYHOG_BATCH_PIPELINE",
-        "KEYHOG_GPU_AUTOROUTE",
-    ];
-    let previous: Vec<(&str, Option<OsString>)> = keys
-        .into_iter()
-        .map(|key| (key, std::env::var_os(key)))
-        .collect();
-    unsafe {
-        for (key, _) in &previous {
-            std::env::remove_var(key);
-        }
-    }
-
     test();
-
-    unsafe {
-        for (key, value) in previous {
-            match value {
-                Some(value) => std::env::set_var(key, value),
-                None => std::env::remove_var(key),
-            }
-        }
-    }
 }
 
 #[test]
 fn explicit_simd_backend_skips_gpu_compile() {
-    with_clean_gpu_env(|| {
+    with_route_policy_lock(|| {
         let args = scan_args(&["scan", "--backend", "simd", "--path", "."]);
         assert_eq!(
-            gpu_init_policy_for_args_for_test(&args),
+            API.gpu_init_policy_for_args_for_test(&args),
             GpuInitPolicy::ForceDisabled
         );
     });
@@ -56,10 +27,10 @@ fn explicit_simd_backend_skips_gpu_compile() {
 
 #[test]
 fn explicit_gpu_backend_forces_gpu_compile() {
-    with_clean_gpu_env(|| {
+    with_route_policy_lock(|| {
         let args = scan_args(&["scan", "--backend", "megascan", "--path", "."]);
         assert_eq!(
-            gpu_init_policy_for_args_for_test(&args),
+            API.gpu_init_policy_for_args_for_test(&args),
             GpuInitPolicy::ForceEnabled
         );
     });
@@ -67,21 +38,39 @@ fn explicit_gpu_backend_forces_gpu_compile() {
 
 #[test]
 fn filesystem_auto_scan_skips_gpu_compile() {
-    with_clean_gpu_env(|| {
+    with_route_policy_lock(|| {
         let args = scan_args(&["scan", "--backend", "auto", "--path", "."]);
         assert_eq!(
-            gpu_init_policy_for_args_for_test(&args),
+            API.gpu_init_policy_for_args_for_test(&args),
             GpuInitPolicy::ForceDisabled
         );
     });
 }
 
 #[test]
+fn batch_pipeline_filesystem_auto_keeps_environment_gpu_policy() {
+    with_route_policy_lock(|| {
+        let args = scan_args(&[
+            "scan",
+            "--backend",
+            "auto",
+            "--batch-pipeline",
+            "--path",
+            ".",
+        ]);
+        assert_eq!(
+            API.gpu_init_policy_for_args_for_test(&args),
+            GpuInitPolicy::FromEnvironment
+        );
+    });
+}
+
+#[test]
 fn stdin_auto_scan_keeps_environment_gpu_policy() {
-    with_clean_gpu_env(|| {
+    with_route_policy_lock(|| {
         let args = scan_args(&["scan", "--backend", "auto", "--stdin"]);
         assert_eq!(
-            gpu_init_policy_for_args_for_test(&args),
+            API.gpu_init_policy_for_args_for_test(&args),
             GpuInitPolicy::FromEnvironment
         );
     });
@@ -89,22 +78,32 @@ fn stdin_auto_scan_keeps_environment_gpu_policy() {
 
 #[test]
 fn backend_flag_gpu_overrides_filesystem_auto_skip() {
-    with_clean_gpu_env(|| {
+    with_route_policy_lock(|| {
         let args = scan_args(&["scan", "--backend", "gpu", "--path", "."]);
         assert_eq!(
-            gpu_init_policy_for_args_for_test(&args),
+            API.gpu_init_policy_for_args_for_test(&args),
             GpuInitPolicy::ForceEnabled
         );
     });
 }
 
 #[test]
-fn explicit_no_gpu_zero_keeps_environment_gpu_policy_for_auto() {
-    with_clean_gpu_env(|| {
-        unsafe { std::env::set_var("KEYHOG_NO_GPU", "0") };
-        let args = scan_args(&["scan", "--backend", "auto", "--path", "."]);
+fn no_gpu_flag_forces_disabled_policy_for_auto() {
+    with_route_policy_lock(|| {
+        let args = scan_args(&["scan", "--backend", "auto", "--no-gpu", "--path", "."]);
         assert_eq!(
-            gpu_init_policy_for_args_for_test(&args),
+            API.gpu_init_policy_for_args_for_test(&args),
+            GpuInitPolicy::ForceDisabled
+        );
+    });
+}
+
+#[test]
+fn require_gpu_flag_keeps_auto_filesystem_gpu_policy_open() {
+    with_route_policy_lock(|| {
+        let args = scan_args(&["scan", "--backend", "auto", "--require-gpu", "--path", "."]);
+        assert_eq!(
+            API.gpu_init_policy_for_args_for_test(&args),
             GpuInitPolicy::FromEnvironment
         );
     });
@@ -112,13 +111,13 @@ fn explicit_no_gpu_zero_keeps_environment_gpu_policy_for_auto() {
 
 #[test]
 fn autoroute_config_digest_includes_gpu_autoroute_opt_in() {
-    with_clean_gpu_env(|| {
+    with_route_policy_lock(|| {
         let args = scan_args(&["scan", "--path", "."]);
-        let scanner = build_scanner_config(&args);
+        let scanner = API.build_scanner_config(&args);
 
-        let without_gpu_probe = autoroute_config_digest_for_scanner(scanner.clone());
-        unsafe { std::env::set_var("KEYHOG_GPU_AUTOROUTE", "1") };
-        let with_gpu_probe = autoroute_config_digest_for_scanner(scanner);
+        let without_gpu_probe = API.autoroute_config_digest_for_scanner(scanner.clone());
+        let with_gpu_probe =
+            API.autoroute_config_digest_for_scanner_with_autoroute_gpu(scanner, true);
 
         assert_ne!(
             without_gpu_probe, with_gpu_probe,

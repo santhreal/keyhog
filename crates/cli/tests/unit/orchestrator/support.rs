@@ -1,6 +1,6 @@
 use clap::Parser;
 use keyhog::args::ScanArgs;
-use keyhog::orchestrator::ScanOrchestrator;
+use keyhog::testing::{CliTestApi as _, ScanOrchestrator, API};
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity, Source, SourceError};
 use keyhog_scanner::CompiledScanner;
 use std::sync::Arc;
@@ -55,16 +55,23 @@ pub fn make_detector() -> DetectorSpec {
 
 pub fn make_orchestrator(detectors: Vec<DetectorSpec>) -> ScanOrchestrator {
     let args = ScanArgs::try_parse_from(["scan"]).expect("parse scan args");
+    make_orchestrator_with_args(detectors, args)
+}
+
+pub fn make_orchestrator_with_args(
+    detectors: Vec<DetectorSpec>,
+    args: ScanArgs,
+) -> ScanOrchestrator {
     let scanner = Arc::new(CompiledScanner::compile(detectors.clone()).expect("compile"));
     let signatures = detectors
         .iter()
         .flat_map(|d| d.patterns.iter().map(|p| Arc::from(p.regex.as_str())))
         .collect();
-    ScanOrchestrator::from_parts_for_test(
+    API.scan_orchestrator_from_parts_for_test(
         args,
         detectors,
         scanner,
         signatures,
-        keyhog::test_fixture_suppressions::TestFixtureSuppressions::bundled(),
+        API.bundled_test_fixture_suppressions(),
     )
 }

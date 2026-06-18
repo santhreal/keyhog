@@ -2,6 +2,7 @@
 
 use clap::Parser;
 use keyhog::args::ScanArgs;
+use keyhog::testing::{CliTestApi as _, API};
 use std::sync::Mutex;
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -55,7 +56,9 @@ fn with_ambient_source_env<R>(body: impl FnOnce() -> R) -> R {
 fn build_sources_ignores_ambient_remote_source_env() {
     with_ambient_source_env(|| {
         let args = ScanArgs::try_parse_from(["scan"]).expect("parse default scan args");
-        let sources = keyhog::sources::build_sources(&args, vec![], None).expect("build sources");
+        let sources = API
+            .build_sources(&args, vec![], None)
+            .expect("build sources");
 
         assert!(
             sources.is_empty(),
@@ -69,15 +72,14 @@ fn build_sources_ignores_ambient_remote_source_env() {
 }
 
 #[test]
-fn register_plugins_does_not_register_ambient_remote_sources() {
-    with_ambient_source_env(|| {
-        keyhog_sources::register_plugins();
-
-        for source in ["slack", "s3", "gcs", "azure_blob"] {
-            assert!(
-                keyhog_core::registry::get_source(source).is_none(),
-                "register_plugins must not register {source} from ambient env"
-            );
-        }
-    });
+fn source_factory_has_no_dead_global_registry_fallback() {
+    let src = include_str!("../src/sources.rs");
+    assert!(
+        !src.contains("keyhog_core::get_source"),
+        "source construction must not fall back to the dead global registry branch"
+    );
+    assert!(
+        !src.contains("register the source plugin before using --source"),
+        "operator errors must not advertise a registry plugin path the binary cannot wire"
+    );
 }

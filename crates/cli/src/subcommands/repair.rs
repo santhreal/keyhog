@@ -9,27 +9,30 @@
 use crate::args::RepairArgs;
 use crate::exit_codes::EXIT_REPAIR_FAILED;
 use crate::installer;
-use crate::style::Palette;
+use crate::style::{self, Palette};
 use anyhow::Result;
 use std::process::ExitCode;
 
-pub async fn run(args: RepairArgs) -> Result<ExitCode> {
+pub(crate) async fn run(args: RepairArgs) -> Result<ExitCode> {
+    let palette = style::for_stdout();
     let Palette {
-        green,
-        red,
         yellow,
         dim,
         bold,
         reset,
-    } = Palette::for_stdout();
+        ..
+    } = palette;
     println!("{bold}keyhog repair{reset}");
 
     // 1. Diagnose. The in-process self-test exercises the running binary's
     //    scan pipeline; if it works and the user didn't force, there's nothing
     //    to repair.
-    let healthy = installer::scan_engine_self_test().unwrap_or(false);
+    let healthy = installer::scan_engine_self_test().unwrap_or(false); // LAW10: empty/absent => documented numeric default, recall-safe
     if healthy && !args.force {
-        println!("  {green}scan engine healthy{reset} - nothing to repair.");
+        println!(
+            "  {} scan engine healthy - nothing to repair.",
+            style::pass("PASS", &palette)
+        );
         println!("  {dim}use --force to reinstall the latest release anyway.{reset}");
         return Ok(ExitCode::SUCCESS);
     }
@@ -41,9 +44,16 @@ pub async fn run(args: RepairArgs) -> Result<ExitCode> {
 
     // 2. Reinstall a known-good release binary (latest, or pinned --version).
     let client = installer::http_client()?;
-    let release = installer::resolve_release(&client, args.version.as_deref()).await?;
+    let release = installer::resolve_release(
+        &client,
+        args.version.as_deref(),
+        args.release_api_base.as_deref(),
+    )
+    .await?;
     let want_cuda = args.variant.as_deref() == Some("cuda");
     let asset = installer::select_asset(&release, want_cuda)?;
+    let expected_tag = release.tag_name.clone();
+    let allow_explicit_downgrade = args.version.is_some();
     println!("  downloading    {} ({})", asset.name, release.tag_name);
     let bytes = installer::download_verified_asset(&client, asset).await?;
     let exe = installer::current_binary()?;
@@ -57,11 +67,19 @@ pub async fn run(args: RepairArgs) -> Result<ExitCode> {
     //    working tool. `install_with_rollback` returns Ok only when the new
     //    binary passed its own health check.
     println!("\n{dim}reinstalling and verifying the new binary...{reset}\n");
-    match installer::install_with_rollback(&exe, &bytes, installer::verify_via_doctor) {
+    match installer::install_with_rollback_checked(&exe, &bytes, |candidate| {
+        installer::verify_candidate_release(
+            candidate,
+            &expected_tag,
+            env!("CARGO_PKG_VERSION"),
+            allow_explicit_downgrade,
+        )
+    }) {
         Ok(()) => {
             println!(
-                "\n{green}{bold}✓ repaired: reinstalled {} and verified healthy.{reset}",
-                release.tag_name
+                "\n{} repaired: reinstalled {} and verified healthy.",
+                style::pass("PASS", &palette),
+                release.tag_name,
             );
             Ok(ExitCode::SUCCESS)
         }
@@ -69,10 +87,13 @@ pub async fn run(args: RepairArgs) -> Result<ExitCode> {
         // way a working binary is preserved where one existed; fail closed with
         // the dedicated code so CI/automation can branch on it.
         Err(e) => {
+            let stderr_palette = style::for_stderr();
+            let Palette { dim, reset, .. } = stderr_palette;
             eprintln!(
-                "\n{red}{bold}✗ repair of {} did not produce a healthy binary:{reset} {e}\n\
+                "\n{} repair of {} did not produce a healthy binary: {e}\n\
                  {dim}If a shared library is missing, install it (see the doctor output above) \
                  and retry, or try `keyhog repair --version <older-tag>`.{reset}",
+                style::fail("FAIL", &stderr_palette),
                 release.tag_name
             );
             Ok(ExitCode::from(EXIT_REPAIR_FAILED))

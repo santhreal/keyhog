@@ -4,6 +4,7 @@
 use crate::daemon::frame;
 use crate::daemon::protocol::{Request, Response, WIRE_VERSION};
 use crate::daemon::trust;
+use crate::style;
 use anyhow::{Context, Result};
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, RawMatch};
 use keyhog_scanner::CompiledScanner;
@@ -204,9 +205,11 @@ pub async fn run(
                             // briefly and keep serving rather than tearing the
                             // daemon down for a momentary spike.
                             if is_transient_accept_error(&e) {
+                                let palette = style::for_stderr();
                                 eprintln!(
-                                    "⚠ keyhog daemon: accept() failed transiently ({e}); \
-                                     backing off and continuing to serve"
+                                    "{} keyhog daemon: accept() failed transiently ({e}); \
+                                     backing off and continuing to serve",
+                                    style::warn("WARN", &palette)
                                 );
                                 tokio::time::sleep(std::time::Duration::from_millis(50)).await;
                                 continue;
@@ -217,10 +220,12 @@ pub async fn run(
                             // zombie — surface loudly and trigger graceful
                             // shutdown so the process actually exits and a
                             // supervisor / the operator can restart it.
+                            let palette = style::for_stderr();
                             eprintln!(
-                                "✗ keyhog daemon: listener accept failed fatally ({e}); \
+                                "{} keyhog daemon: listener accept failed fatally ({e}); \
                                  the daemon can no longer accept connections and is \
-                                 shutting down. Restart it with `keyhog daemon start`."
+                                 shutting down. Restart it with `keyhog daemon start`.",
+                                style::fail("FAIL", &palette)
                             );
                             accept_shutdown.notify_waiters();
                             break;
@@ -455,8 +460,8 @@ fn drain_daemon_scan_telemetry(
 }
 
 #[doc(hidden)]
-pub mod testing {
-    pub use crate::daemon::trust::testing::{
+pub(crate) mod testing {
+    pub(crate) use crate::daemon::trust::testing::{
         ensure_private_socket_dir, remove_stale_socket_if_trusted,
     };
 }

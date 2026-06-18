@@ -4,64 +4,36 @@ use crate::args::ScanArgs;
 #[cfg(feature = "git")]
 use anyhow::Context;
 use anyhow::Result;
-use keyhog_core::merkle_index::MerkleIndex;
+use keyhog_core::MerkleIndex;
 use keyhog_core::Source;
+use std::num::NonZeroUsize;
 #[cfg(feature = "git")]
 use std::path::PathBuf;
 use std::sync::Arc;
 
-/// Built-in exclusion patterns applied unless `--no-default-excludes` is passed.
-/// These are checked against file paths BEFORE reading file content.
-const DEFAULT_EXCLUDE_PATTERNS: &[&str] = &[
-    "**/package-lock.json*",
-    "**/yarn.lock",
-    "**/pnpm-lock.yaml",
-    "**/*.min.js",
-    "**/*.min.css",
-    "**/*.bak",
-    "**/*.swp",
-    "**/*.tmp",
-    "**/*.map",
-    "**/node_modules/**",
-    "**/.git/**",
-    "**/__pycache__/**",
-    "**/vendor/**",
-    "**/dist/**",
-    "**/build/**",
-    "**/out/**",
-    "**/*.cache",
-    "**/cache.json",
-    "**/Cargo.lock",
-    "**/go.sum",
-    "**/Gemfile.lock",
-    "**/angular.json",
-    "**/tsconfig*.json",
-];
-
-/// Merge default excludes, `.keyhogignore` paths, and `--exclude-paths`.
-pub fn merge_scan_ignore_paths(args: &ScanArgs, allowlist_paths: Vec<String>) -> Vec<String> {
-    let mut merged = if args.no_default_excludes {
-        allowlist_paths
-    } else {
-        let mut paths: Vec<String> = DEFAULT_EXCLUDE_PATTERNS
-            .iter()
-            .map(|s| s.to_string())
-            .collect();
-        paths.extend(allowlist_paths);
-        paths
-    };
+/// Merge `.keyhogignore` paths and `--exclude-paths`.
+///
+/// Default excludes are owned by `keyhog_sources::FilesystemSource` so the
+/// actual scanner path, not a CLI glob mirror, decides what is skipped and
+/// records the surfaced skip reason.
+pub(crate) fn merge_scan_ignore_paths(
+    args: &ScanArgs,
+    allowlist_paths: Vec<String>,
+) -> Vec<String> {
+    let mut merged = allowlist_paths;
     if let Some(exclude) = &args.exclude_paths {
         merged.extend(exclude.iter().cloned());
     }
     merged
 }
 
-pub fn build_sources(
+pub(crate) fn build_sources(
     args: &ScanArgs,
     ignore_paths: Vec<String>,
     merkle: Option<Arc<MerkleIndex>>,
 ) -> Result<Vec<Box<dyn Source>>> {
     let mut sources: Vec<Box<dyn Source>> = Vec::new();
+    let source_limits = args.limits.to_source_limits();
 
     #[cfg(feature = "git")]
     let mut staged_files = if args.git_staged {
@@ -133,11 +105,14 @@ pub fn build_sources(
         }
         let mut fs_source = keyhog_sources::FilesystemSource::new(path.clone())
             .with_ignore_paths(merged_ignore_paths)
-            // `--no-default-excludes` must reach the walker's built-in
-            // lock/minified/vendored filter, not only the glob layer above.
+            // Default excludes are source-owned. `--no-default-excludes` must
+            // toggle the actual file classifier, not a CLI-side glob mirror.
             .with_default_excludes(!args.no_default_excludes);
         if let Some(limit) = args.max_file_size {
             fs_source = fs_source.with_max_file_size(limit as u64);
+        }
+        if let Some(threads) = args.reader_threads.and_then(NonZeroUsize::new) {
+            fs_source = fs_source.with_reader_threads(threads);
         }
         if let Some(idx) = merkle.as_ref() {
             fs_source = fs_source.with_merkle_skip(idx.clone());
@@ -149,18 +124,24 @@ pub fn build_sources(
         sources.push(Box::new(fs_source));
         #[cfg(feature = "binary")]
         if args.binary {
-            sources.push(Box::new(keyhog_sources::BinarySource::new(path.clone())));
+            sources.push(Box::new(
+                keyhog_sources::BinarySource::new(path.clone()).with_limits(source_limits),
+            ));
         }
     }
 
     if args.stdin {
-        sources.push(Box::new(keyhog_sources::StdinSource));
+        sources.push(Box::new(
+            keyhog_sources::StdinSource.with_limits(source_limits),
+        ));
     }
 
     #[cfg(feature = "git")]
     if let Some(ref path) = args.git_blobs {
         sources.push(Box::new(
-            keyhog_sources::GitSource::new(path.clone()).with_max_commits(args.max_commits),
+            keyhog_sources::GitSource::new(path.clone())
+                .with_max_commits(args.max_commits)
+                .with_limits(source_limits),
         ));
     }
 
@@ -169,17 +150,19 @@ pub fn build_sources(
         let repo_path = args
             .git_diff_path
             .clone()
-            .unwrap_or_else(|| PathBuf::from("."));
-        sources.push(Box::new(keyhog_sources::GitDiffSource::new(
-            repo_path,
-            base_ref.clone(),
-        )));
+            .unwrap_or_else(|| PathBuf::from(".")); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
+        sources.push(Box::new(
+            keyhog_sources::GitDiffSource::new(repo_path, base_ref.clone())
+                .with_limits(source_limits),
+        ));
     }
 
     #[cfg(feature = "git")]
     if let Some(ref path) = args.git_history {
         sources.push(Box::new(
-            keyhog_sources::GitHistorySource::new(path.clone()).with_max_commits(args.max_commits),
+            keyhog_sources::GitHistorySource::new(path.clone())
+                .with_max_commits(args.max_commits)
+                .with_limits(source_limits),
         ));
     }
 
@@ -201,37 +184,120 @@ pub fn build_sources(
 
     #[cfg(feature = "github")]
     if let (Some(org), Some(token)) = (&args.github_org, &args.github_token) {
-        sources.push(Box::new(
-            keyhog_sources::GitHubOrgSource::new(org.clone(), token.clone())
-                .with_http_config(http_cfg!("github-org")),
-        ));
+        let params = format!("{org}\n{token}");
+        sources.push(keyhog_sources::create_source_with_http_config(
+            "github-org",
+            Some(&params),
+            http_cfg!("github-org"),
+        )?);
+    }
+
+    #[cfg(feature = "gitlab")]
+    if let (Some(group), Some(token)) = (&args.gitlab_group, &args.gitlab_token) {
+        let params = format!("{group}\n{token}\n{}", args.gitlab_endpoint);
+        sources.push(keyhog_sources::create_source_with_http_config(
+            "gitlab-group",
+            Some(&params),
+            http_cfg!("gitlab-group"),
+        )?);
+    }
+
+    #[cfg(feature = "bitbucket")]
+    if let (Some(workspace), Some(username), Some(token)) = (
+        &args.bitbucket_workspace,
+        &args.bitbucket_username,
+        &args.bitbucket_token,
+    ) {
+        let params = format!(
+            "{workspace}\n{username}\n{token}\n{}",
+            args.bitbucket_endpoint
+        );
+        sources.push(keyhog_sources::create_source_with_http_config(
+            "bitbucket-workspace",
+            Some(&params),
+            http_cfg!("bitbucket-workspace"),
+        )?);
     }
 
     #[cfg(feature = "s3")]
     if let Some(bucket) = &args.s3_bucket {
-        let mut source =
-            keyhog_sources::S3Source::new(bucket.clone()).with_http_config(http_cfg!("s3"));
-        if let Some(prefix) = &args.s3_prefix {
-            source = source.with_prefix(prefix.clone());
+        if args.allow_s3_credential_forward {
+            eprintln!(
+                "warning: --allow-s3-credential-forward is active; ambient AWS credentials may be sent to the configured non-AWS S3 endpoint"
+            );
         }
-        if let Some(endpoint) = &args.s3_endpoint {
-            source = source.with_endpoint(endpoint.clone());
+        let params = format!(
+            "{bucket}\n{}\n{}\n{}",
+            args.s3_prefix.as_deref().unwrap_or(""),
+            args.s3_endpoint.as_deref().unwrap_or(""),
+            args.allow_s3_credential_forward
+        );
+        sources.push(keyhog_sources::create_source_with_http_config_and_limits(
+            "s3",
+            Some(&params),
+            http_cfg!("s3"),
+            source_limits,
+        )?);
+    }
+
+    #[cfg(feature = "gcs")]
+    if let Some(bucket) = &args.gcs_bucket {
+        if args.allow_gcs_token_forward {
+            eprintln!(
+                "warning: --allow-gcs-token-forward is active; ambient GCS bearer tokens may be sent to the configured non-Google GCS endpoint"
+            );
         }
-        sources.push(Box::new(source));
+        let params = format!(
+            "{bucket}\n{}\n{}\n{}",
+            args.gcs_prefix.as_deref().unwrap_or(""),
+            args.gcs_endpoint.as_deref().unwrap_or(""),
+            args.allow_gcs_token_forward
+        );
+        sources.push(keyhog_sources::create_source_with_http_config_and_limits(
+            "gcs",
+            Some(&params),
+            http_cfg!("gcs"),
+            source_limits,
+        )?);
+    }
+
+    #[cfg(feature = "azure")]
+    if let Some(container_url) = &args.azure_container_url {
+        let params = format!(
+            "{container_url}\n{}",
+            args.azure_prefix.as_deref().unwrap_or("")
+        );
+        sources.push(keyhog_sources::create_source_with_http_config_and_limits(
+            "azure_blob",
+            Some(&params),
+            http_cfg!("azure-blob"),
+            source_limits,
+        )?);
     }
 
     #[cfg(feature = "docker")]
     if let Some(image) = &args.docker_image {
-        sources.push(Box::new(keyhog_sources::DockerImageSource::new(
-            image.clone(),
-        )));
+        sources.push(keyhog_sources::create_source_with_http_config_and_limits(
+            "docker",
+            Some(image),
+            http_cfg!("docker"),
+            source_limits,
+        )?);
     }
 
     #[cfg(feature = "web")]
     if let Some(urls) = &args.url {
-        sources.push(Box::new(
-            keyhog_sources::WebSource::new(urls.clone()).with_http_config(http_cfg!("web")),
-        ));
+        let params = if args.autoroute_calibrate {
+            format!("autoroute_loopback_calibration=true\n{}", urls.join("\n"))
+        } else {
+            urls.join("\n")
+        };
+        sources.push(keyhog_sources::create_source_with_http_config_and_limits(
+            "web",
+            Some(&params),
+            http_cfg!("web"),
+            source_limits,
+        )?);
     }
 
     if let Some(ref dynamic_sources) = args.source {
@@ -242,13 +308,22 @@ pub fn build_sources(
                 (source_spec.as_str(), None)
             };
 
-            match keyhog_sources::create_source(source_name, params) {
+            match keyhog_sources::create_source_with_http_config_and_limits(
+                source_name,
+                params,
+                http_cfg!(source_name),
+                source_limits,
+            ) {
                 Ok(s) => {
                     sources.push(s);
                     continue;
                 }
                 Err(e) if e.to_string().contains("unknown source plugin") => {
-                    // Fallback to global registry for static/pre-registered sources
+                    anyhow::bail!(
+                        "custom source '{source_name}' not found in the compiled source factory. \
+                         Fix: use a compiled-in source name or a dedicated source flag from \
+                         `keyhog scan --help`."
+                    );
                 }
                 // `{e:#}` preserves the full anyhow source chain instead
                 // of the `.to_string()` that bare `anyhow::bail!(e)` would
@@ -260,17 +335,6 @@ pub fn build_sources(
                      credentials, or use the dedicated source flags shown by `keyhog scan --help`."
                 ),
             }
-
-            if let Some(reg_source) = keyhog_core::registry::get_source_registry().get(source_name)
-            {
-                sources.push(Box::new(RegistrySourceBridge { inner: reg_source }));
-            } else {
-                anyhow::bail!(
-                    "custom source '{source_name}' not found in registry (and factory failed). \
-                     Fix: use a compiled-in source name or a dedicated source flag from \
-                     `keyhog scan --help`, or register the source plugin before using --source."
-                );
-            }
         }
     }
 
@@ -281,7 +345,7 @@ pub fn build_sources(
 fn get_staged_files(repo_path: Option<&std::path::Path>) -> Result<Vec<PathBuf>> {
     // SECURITY: kimi-wave1 audit finding 3.PATH-git. Resolve git to a
     // trusted absolute path; refuse $PATH lookup.
-    let git_bin = keyhog_core::safe_bin::resolve_safe_bin("git")
+    let git_bin = keyhog_core::resolve_safe_bin("git")
         .ok_or_else(|| anyhow::anyhow!("git binary not found in trusted system bin dirs"))?;
 
     // DF-03: detect "not a git repository" BEFORE running `git diff --cached`,
@@ -299,13 +363,17 @@ fn get_staged_files(repo_path: Option<&std::path::Path>) -> Result<Vec<PathBuf>>
         let inside = probe
             .output()
             .context("failed to run `git rev-parse --is-inside-work-tree`")?;
-        let is_repo = inside.status.success()
-            && String::from_utf8_lossy(&inside.stdout).trim() == "true";
+        let is_repo =
+            inside.status.success() && String::from_utf8_lossy(&inside.stdout).trim() == "true";
         if !is_repo {
             let where_ = repo_path
                 .map(|p| p.display().to_string())
-                .or_else(|| std::env::current_dir().ok().map(|p| p.display().to_string()))
-                .unwrap_or_else(|| ".".to_string());
+                .or_else(|| {
+                    std::env::current_dir()
+                        .ok() // LAW10: cwd probe for an ERROR-MESSAGE string only (the "not a git repository" bail); absent => '.' below, recall-irrelevant
+                        .map(|p| p.display().to_string())
+                })
+                .unwrap_or_else(|| ".".to_string()); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
             anyhow::bail!(
                 "'{where_}' is not a git repository — `--git-staged` scans the git \
                  staging area, which only exists inside a repo. Run keyhog from inside \
@@ -332,9 +400,9 @@ fn get_staged_files(repo_path: Option<&std::path::Path>) -> Result<Vec<PathBuf>>
 
     let base = repo_path
         .map(PathBuf::from)
-        .or_else(|| std::env::current_dir().ok())
-        .unwrap_or_else(|| PathBuf::from("."));
-    let base = base.canonicalize().unwrap_or(base);
+        .or_else(|| std::env::current_dir().ok()) // LAW10: optional env/cwd probe; absent => None (intended config/probe), recall-irrelevant
+        .unwrap_or_else(|| PathBuf::from(".")); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
+    let base = base.canonicalize().unwrap_or(base); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
 
     let stdout = String::from_utf8(output.stdout).context("git output is not valid UTF-8")?;
     let mut files: Vec<PathBuf> = Vec::new();
@@ -368,12 +436,12 @@ fn filter_staged_files_by_cli_excludes(files: &mut Vec<PathBuf>, args: &ScanArgs
         .path
         .as_deref()
         .map(PathBuf::from)
-        .or_else(|| std::env::current_dir().ok())
-        .unwrap_or_else(|| PathBuf::from("."))
+        .or_else(|| std::env::current_dir().ok()) // LAW10: optional env/cwd probe; absent => None (intended config/probe), recall-irrelevant
+        .unwrap_or_else(|| PathBuf::from(".")) // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
         .canonicalize()
-        .unwrap_or_else(|_| PathBuf::from("."));
+        .unwrap_or_else(|_| PathBuf::from(".")); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
     files.retain(|path| {
-        let rel = path.strip_prefix(&base).unwrap_or(path);
+        let rel = path.strip_prefix(&base).unwrap_or(path); // LAW10: no prefix/BOM to strip => value unchanged (intended), recall-safe
         let rel = rel.to_string_lossy().replace('\\', "/");
         !excludes.iter().any(|exclude| {
             let exclude = exclude.replace('\\', "/");
@@ -382,24 +450,5 @@ fn filter_staged_files_by_cli_excludes(files: &mut Vec<PathBuf>, args: &ScanArgs
     });
     if files.is_empty() {
         files.push(base.join(".keyhog-empty-staged-include-set"));
-    }
-}
-
-/// Bridge to allow Arc<dyn Source> from registry to be used as Box<dyn Source>.
-struct RegistrySourceBridge {
-    inner: Arc<dyn keyhog_core::Source>,
-}
-
-impl keyhog_core::Source for RegistrySourceBridge {
-    fn name(&self) -> &str {
-        self.inner.name()
-    }
-    fn chunks(
-        &self,
-    ) -> Box<dyn Iterator<Item = Result<keyhog_core::Chunk, keyhog_core::SourceError>> + '_> {
-        self.inner.chunks()
-    }
-    fn as_any(&self) -> &dyn std::any::Any {
-        self.inner.as_any()
     }
 }

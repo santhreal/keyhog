@@ -9,12 +9,12 @@
 
 use clap::Parser;
 use keyhog::args::ScanArgs;
-use keyhog::orchestrator_config::build_scanner_config;
+use keyhog::testing::{CliTestApi as _, API};
 
 #[test]
 fn deep_preset_applies_thorough_decode_depth_base() {
     let args = ScanArgs::try_parse_from(["scan", ".", "--deep"]).unwrap();
-    let cfg = build_scanner_config(&args);
+    let cfg = API.build_scanner_config(&args);
     // ScannerConfig::thorough() seeds max_decode_depth = 10.
     assert_eq!(
         cfg.max_decode_depth, 10,
@@ -26,7 +26,7 @@ fn deep_preset_applies_thorough_decode_depth_base() {
 #[test]
 fn deep_preset_then_explicit_decode_depth_override_wins() {
     let args = ScanArgs::try_parse_from(["scan", ".", "--deep", "--decode-depth", "3"]).unwrap();
-    let cfg = build_scanner_config(&args);
+    let cfg = API.build_scanner_config(&args);
     // The explicit override must layer on top of the preset base — the MC-02 bug
     // was this value being silently dropped to the preset's 10.
     assert_eq!(

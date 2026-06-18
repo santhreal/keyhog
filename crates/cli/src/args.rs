@@ -23,62 +23,71 @@ pub struct Cli {
     /// Print version, build information, and statistics
     #[arg(short = 'V', long)]
     pub version: bool,
+
+    /// Include the hardware probe in version output. This initializes GPU/SIMD
+    /// discovery, so it is explicit instead of controlled by ambient env.
+    #[arg(long, requires = "version")]
+    pub full: bool,
 }
 
 #[derive(clap::Subcommand)]
 pub enum Command {
-    /// 🔍 Scan files, directories, or repositories for secrets
+    /// Scan files, directories, or repositories for secrets
     #[command(verbatim_doc_comment)]
     Scan(Box<ScanArgs>),
 
-    /// 🪝 Manage git pre-commit hooks
+    /// Print resolved scan configuration without scanning
+    #[command(verbatim_doc_comment)]
+    Config(Box<ConfigArgs>),
+
+    /// Manage git pre-commit hooks
     #[command(verbatim_doc_comment)]
     Hook {
         #[command(subcommand)]
-        command: crate::subcommands::hook::HookCommand,
+        command: HookCommand,
     },
 
-    /// 📋 List all loaded secret detectors
+    /// List all loaded secret detectors
     #[command(verbatim_doc_comment)]
     Detectors(DetectorArgs),
 
-    /// 📖 Explain a detector: spec, regex, severity, rotation guide
+    /// Explain a detector: spec, regex, severity, rotation guide
     #[command(verbatim_doc_comment)]
     Explain(ExplainArgs),
 
-    /// 🔀 Diff two baseline JSON files: show NEW / RESOLVED / UNCHANGED
+    /// Diff two baseline JSON files: show NEW / RESOLVED / UNCHANGED
     #[command(verbatim_doc_comment)]
     Diff(DiffArgs),
 
-    /// 📊 Show or update per-detector Bayesian calibration counters
+    /// Show or update per-detector Bayesian calibration counters
     #[command(verbatim_doc_comment)]
     Calibrate(CalibrateArgs),
 
-    /// 👁  Watch a directory and scan files as they change (daemon mode)
+    /// Watch a directory and scan files as they change (daemon mode)
     #[command(verbatim_doc_comment)]
     Watch(WatchArgs),
 
-    /// 🔧 Print shell completion script (bash, zsh, fish, powershell, elvish)
+    /// Print shell completion script (bash, zsh, fish, powershell, elvish)
     #[command(verbatim_doc_comment)]
     Completion(CompletionArgs),
 
-    /// ⚙️  Inspect detected hardware + the auto-selected scan backend
+    /// Inspect detected hardware + the auto-selected scan backend
     #[command(verbatim_doc_comment)]
     Backend(BackendArgs),
 
-    /// 🩺 Health-check the install: host, PATH, detector corpus, scan self-test
+    /// Health-check the install: host, PATH, detector corpus, scan self-test
     #[command(verbatim_doc_comment)]
     Doctor(DoctorArgs),
 
-    /// ⬆️  Update keyhog to the latest release: verified download + self-replace
+    /// Update keyhog to the latest release: verified download + self-replace
     #[command(verbatim_doc_comment)]
     Update(UpdateArgs),
 
-    /// 🔧 Repair a broken install: reinstall a known-good binary, then verify
+    /// Repair a broken install: reinstall a known-good binary, then verify
     #[command(verbatim_doc_comment)]
     Repair(RepairArgs),
 
-    /// 🗑  Uninstall keyhog: remove the binary (dry run unless --yes)
+    /// Uninstall keyhog: remove the binary (dry run unless --yes)
     #[command(verbatim_doc_comment)]
     Uninstall(UninstallArgs),
 
@@ -89,6 +98,32 @@ pub enum Command {
     /// 🔌 Manage the long-lived `keyhog daemon` (start, stop, status)
     #[command(verbatim_doc_comment)]
     Daemon(DaemonArgs),
+}
+
+#[derive(clap::Subcommand, Debug, Clone)]
+pub enum HookCommand {
+    /// Install a git pre-commit hook in the current repository
+    Install {
+        /// Replace an existing non-KeyHog pre-commit hook.
+        #[arg(long, default_value_t = false)]
+        force: bool,
+    },
+    /// Remove the KeyHog pre-commit hook from the current repository
+    Uninstall,
+}
+
+#[derive(Parser)]
+pub struct ConfigArgs {
+    /// Print the resolved scan configuration and exit without scanning.
+    ///
+    /// Accepts the same config-affecting flags as `keyhog scan`, so operators
+    /// can prove the compiled defaults, TOML config, and CLI overrides that
+    /// would reach the scanner for the same scan invocation.
+    #[arg(long, required = true)]
+    pub effective: bool,
+
+    #[command(flatten)]
+    pub scan: ScanArgs,
 }
 
 /// Subcommand args for `keyhog daemon {start, stop, status}`.
@@ -111,6 +146,18 @@ pub enum DaemonAction {
         /// Detector directory (same default as `keyhog scan --detectors`).
         #[arg(long, default_value = "detectors")]
         detectors: PathBuf,
+        /// Override the Hyperscan compiled-database cache directory.
+        #[arg(long, value_name = "DIR")]
+        cache_dir: Option<PathBuf>,
+        /// Max seconds a client connection may sit without completing one
+        /// request frame before the daemon closes it and reclaims the slot.
+        #[arg(
+            long,
+            default_value_t = 300,
+            value_name = "SECS",
+            value_parser = crate::value_parsers::parse_daemon_request_timeout_secs
+        )]
+        request_timeout_secs: u64,
     },
     /// Stop the running daemon by sending it a `Shutdown` over the socket.
     Stop {
@@ -160,6 +207,10 @@ pub struct ScanSystemArgs {
     /// Detector directory (same as `keyhog scan --detectors`).
     #[arg(long, default_value = "detectors")]
     pub detectors: PathBuf,
+
+    /// Override the Hyperscan compiled-database cache directory.
+    #[arg(long, value_name = "DIR")]
+    pub cache_dir: Option<PathBuf>,
 
     /// Number of parallel scanning threads (default: number of CPU cores).
     #[arg(long, value_name = "N", value_parser = crate::value_parsers::parse_positive_thread_count)]
@@ -219,6 +270,14 @@ pub struct BackendArgs {
     /// Emit `backend --self-test` as stable JSON for CI health gates.
     #[arg(long, requires = "self_test")]
     pub json: bool,
+
+    /// Disable GPU probing for backend inspection/self-test.
+    #[arg(long, conflicts_with = "require_gpu")]
+    pub no_gpu: bool,
+
+    /// Fail closed when backend self-test cannot use a real GPU.
+    #[arg(long, conflicts_with = "no_gpu")]
+    pub require_gpu: bool,
 }
 
 /// Arguments for `keyhog doctor`. The health check is fully automatic; no
@@ -245,6 +304,11 @@ pub struct UpdateArgs {
     /// which still uses the GPU via WGPU and runs everywhere).
     #[arg(long)]
     pub variant: Option<String>,
+
+    /// Hidden test seam for offline update lifecycle tests. Production users
+    /// should resolve releases from the canonical GitHub API.
+    #[arg(long, hide = true, value_name = "URL")]
+    pub release_api_base: Option<String>,
 }
 
 /// Arguments for `keyhog repair` (reinstall a known-good binary from releases).
@@ -262,6 +326,11 @@ pub struct RepairArgs {
     /// WGPU+SIMD build (default).
     #[arg(long)]
     pub variant: Option<String>,
+
+    /// Hidden test seam for offline repair lifecycle tests. Production users
+    /// should resolve releases from the canonical GitHub API.
+    #[arg(long, hide = true, value_name = "URL")]
+    pub release_api_base: Option<String>,
 }
 
 /// Arguments for `keyhog uninstall`.
@@ -281,6 +350,9 @@ pub struct WatchArgs {
     /// Detector TOML directory. Falls back to embedded corpus if missing.
     #[arg(short, long, default_value = "detectors")]
     pub detectors: PathBuf,
+    /// Override the Hyperscan compiled-database cache directory.
+    #[arg(long, value_name = "DIR")]
+    pub cache_dir: Option<PathBuf>,
     /// Quiet mode: only print findings (suppress "watching X" status).
     #[arg(long)]
     pub quiet: bool,
@@ -435,13 +507,15 @@ impl SeverityFilter {
     }
 }
 
-#[derive(Clone, ValueEnum)]
+#[derive(Clone, Debug, PartialEq, Eq, ValueEnum)]
 pub enum OutputFormat {
     Text,
     Json,
     Jsonl,
     Sarif,
     Csv,
+    GithubAnnotations,
+    GitlabSast,
     Html,
     Junit,
 }

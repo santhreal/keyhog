@@ -1,30 +1,26 @@
-use keyhog::installer::{
-    asset_name, download_verified_asset, http_client, is_newer, looks_like_native_executable,
-    parse_semver, reap_stale_binaries, replace_running_binary, scan_engine_self_test,
-    verify_release_signature, Asset,
-};
+use keyhog::testing::{CliTestApi as _, API};
 
 #[test]
 fn asset_name_matches_release_convention() {
     assert_eq!(
-        asset_name("linux", "x86_64", false).as_deref(),
+        API.asset_name("linux", "x86_64", false).as_deref(),
         Some("keyhog-linux-x86_64")
     );
     assert_eq!(
-        asset_name("linux", "x86_64", true).as_deref(),
+        API.asset_name("linux", "x86_64", true).as_deref(),
         Some("keyhog-linux-x86_64-cuda")
     );
     assert_eq!(
-        asset_name("macos", "aarch64", false).as_deref(),
+        API.asset_name("macos", "aarch64", false).as_deref(),
         Some("keyhog-macos-aarch64")
     );
     assert_eq!(
-        asset_name("macos", "x86_64", false).as_deref(),
+        API.asset_name("macos", "x86_64", false).as_deref(),
         Some("keyhog-macos-x86_64")
     );
     // macOS has no CUDA build - cuda flag is ignored, no `-cuda` suffix.
     assert_eq!(
-        asset_name("macos", "aarch64", true).as_deref(),
+        API.asset_name("macos", "aarch64", true).as_deref(),
         Some("keyhog-macos-aarch64")
     );
     // Windows x86_64: release.yml uploads keyhog-windows-x86_64.exe, so
@@ -32,53 +28,49 @@ fn asset_name_matches_release_convention() {
     // left both commands dead on Windows). CUDA has no Windows asset, so
     // the flag is ignored - no `-cuda` suffix.
     assert_eq!(
-        asset_name("windows", "x86_64", false).as_deref(),
+        API.asset_name("windows", "x86_64", false).as_deref(),
         Some("keyhog-windows-x86_64.exe")
     );
     assert_eq!(
-        asset_name("windows", "x86_64", true).as_deref(),
+        API.asset_name("windows", "x86_64", true).as_deref(),
         Some("keyhog-windows-x86_64.exe")
     );
     // Unsupported (os, arch) pairs still yield None.
-    assert_eq!(asset_name("windows", "aarch64", false), None);
-    assert_eq!(asset_name("linux", "riscv64", false), None);
+    assert_eq!(API.asset_name("windows", "aarch64", false), None);
+    assert_eq!(API.asset_name("linux", "riscv64", false), None);
 }
 
 #[test]
 fn semver_parsing_handles_v_prefix_and_suffix() {
-    assert_eq!(parse_semver("v0.5.36"), Some((0, 5, 36)));
-    assert_eq!(parse_semver("0.5.36"), Some((0, 5, 36)));
-    assert_eq!(parse_semver("v1.2.3-rc1"), Some((1, 2, 3)));
-    assert_eq!(parse_semver("garbage"), None);
-    assert_eq!(parse_semver("v1.2"), None);
+    assert_eq!(API.parse_semver("v0.5.36"), Some((0, 5, 36)));
+    assert_eq!(API.parse_semver("0.5.36"), Some((0, 5, 36)));
+    assert_eq!(API.parse_semver("v1.2.3-rc1"), Some((1, 2, 3)));
+    assert_eq!(API.parse_semver("garbage"), None);
+    assert_eq!(API.parse_semver("v1.2"), None);
 }
 
 #[test]
 fn is_newer_compares_correctly() {
-    assert!(is_newer("0.5.35", "v0.5.36"));
-    assert!(is_newer("0.5.35", "0.6.0"));
-    assert!(is_newer("0.5.35", "1.0.0"));
-    assert!(!is_newer("0.5.36", "v0.5.36"));
-    assert!(!is_newer("0.5.36", "v0.5.35"));
-    assert!(!is_newer("0.5.35", "garbage"));
+    assert!(API.is_newer("0.5.35", "v0.5.36"));
+    assert!(API.is_newer("0.5.35", "0.6.0"));
+    assert!(API.is_newer("0.5.35", "1.0.0"));
+    assert!(!API.is_newer("0.5.36", "v0.5.36"));
+    assert!(!API.is_newer("0.5.36", "v0.5.35"));
+    assert!(!API.is_newer("0.5.35", "garbage"));
 }
 
 #[test]
 fn rejects_non_executable_download() {
-    assert!(!looks_like_native_executable(
-        b"<!DOCTYPE html><html>Not Found"
-    ));
-    assert!(!looks_like_native_executable(b""));
+    assert!(!API.looks_like_native_executable(b"<!DOCTYPE html><html>Not Found"));
+    assert!(!API.looks_like_native_executable(b""));
     #[cfg(target_os = "linux")]
-    assert!(looks_like_native_executable(&[
-        0x7F, b'E', b'L', b'F', 2, 1, 1, 0
-    ]));
+    assert!(API.looks_like_native_executable(&[0x7F, b'E', b'L', b'F', 2, 1, 1, 0]));
 }
 
 #[test]
 fn self_test_detects_planted_secret() {
     // The doctor/repair self-test must actually fire end-to-end.
-    assert!(scan_engine_self_test().expect("self-test runs"));
+    assert!(API.scan_engine_self_test().expect("self-test runs"));
 }
 
 // A real minisign signature of FIXTURE_DATA, produced by the keyhog release
@@ -93,7 +85,7 @@ L/wvGiwIhpaBlkEUaQ364Q8ph9ksqIxJyIMy1RQbs/QS4+q8biUaJGt+0weV4E0IV/pPHywDFtZhvUD0
 
 #[test]
 fn release_signature_verifies_against_embedded_key() {
-    verify_release_signature(FIXTURE_DATA, FIXTURE_SIG)
+    API.verify_release_signature(FIXTURE_DATA, FIXTURE_SIG)
         .expect("a genuine signature must verify against the embedded public key");
 }
 
@@ -101,15 +93,18 @@ fn release_signature_verifies_against_embedded_key() {
 fn release_signature_rejects_tampered_payload() {
     // Same signature, different bytes: the update must be refused.
     assert!(
-        verify_release_signature(b"tampered binary contents", FIXTURE_SIG).is_err(),
+        API.verify_release_signature(b"tampered binary contents", FIXTURE_SIG)
+            .is_err(),
         "a signature must not verify against payload it didn't sign"
     );
 }
 
 #[test]
 fn release_signature_rejects_malformed_signature() {
-    assert!(verify_release_signature(FIXTURE_DATA, "not a minisig file").is_err());
-    assert!(verify_release_signature(FIXTURE_DATA, "").is_err());
+    assert!(API
+        .verify_release_signature(FIXTURE_DATA, "not a minisig file")
+        .is_err());
+    assert!(API.verify_release_signature(FIXTURE_DATA, "").is_err());
 }
 
 // ── Moved from src/installer.rs (#[cfg(test)] mod rename_away_tests) per the
@@ -123,14 +118,15 @@ fn replace_success_installs_new_and_returns_stash() {
     let exe = dir.path().join("keyhog");
     std::fs::write(&exe, b"OLD-WORKING-BINARY").unwrap();
 
-    let stash = replace_running_binary(&exe, b"NEW-GOOD-BINARY", |_| true)
+    let stash = API
+        .replace_running_binary(&exe, b"NEW-GOOD-BINARY", |_| true)
         .expect("replace should succeed when verify passes");
 
     assert_eq!(std::fs::read(&exe).unwrap(), b"NEW-GOOD-BINARY");
     let stash = stash.expect("a prior binary existed, so a stash is returned");
     // The caller reaps the stash; until then it holds the old bytes.
     assert_eq!(std::fs::read(&stash).unwrap(), b"OLD-WORKING-BINARY");
-    reap_stale_binaries(&exe);
+    API.reap_stale_binaries(&exe);
     assert!(!stash.exists(), "reap must remove the stash");
 }
 
@@ -142,7 +138,8 @@ fn replace_failure_rolls_back_byte_for_byte() {
     let original: Vec<u8> = (0u8..=255).cycle().take(4096).collect();
     std::fs::write(&exe, &original).unwrap();
 
-    let err = replace_running_binary(&exe, b"NEW-BROKEN-BINARY", |_| false)
+    let err = API
+        .replace_running_binary(&exe, b"NEW-BROKEN-BINARY", |_| false)
         .expect_err("replace must fail when verify rejects the new binary");
     assert!(format!("{err}").contains("rolled back"));
     assert_eq!(
@@ -151,7 +148,7 @@ fn replace_failure_rolls_back_byte_for_byte() {
         "rollback must restore the original binary byte-for-byte"
     );
     // No stash left orphaned beside the exe after a rollback.
-    reap_stale_binaries(&exe);
+    API.reap_stale_binaries(&exe);
     let leftovers: Vec<_> = std::fs::read_dir(dir.path())
         .unwrap()
         .flatten()
@@ -165,7 +162,8 @@ fn fresh_install_failure_removes_broken_binary() {
     let dir = tempfile::tempdir().unwrap();
     let exe = dir.path().join("keyhog");
     // No prior binary: a failed verify must not leave a broken executable.
-    let err = replace_running_binary(&exe, b"BROKEN", |_| false)
+    let err = API
+        .replace_running_binary(&exe, b"BROKEN", |_| false)
         .expect_err("fresh install must fail when verify rejects it");
     assert!(format!("{err}").contains("no prior binary"));
     assert!(!exe.exists(), "broken fresh install must be removed");
@@ -181,10 +179,24 @@ fn reap_only_touches_this_binarys_stashes() {
     std::fs::write(&mine, b"old").unwrap();
     std::fs::write(&other, b"keep").unwrap();
 
-    reap_stale_binaries(&exe);
+    API.reap_stale_binaries(&exe);
     assert!(!mine.exists(), "matching stash must be reaped");
     assert!(other.exists(), "unrelated files must be left alone");
     assert!(exe.exists(), "the live binary must never be reaped");
+}
+
+#[test]
+fn reap_stale_binaries_does_not_flatten_read_dir_errors() {
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/installer.rs"))
+        .expect("installer source readable");
+    assert!(
+        !src.contains("entries.flatten()"),
+        "installer stale-artifact reap must match read_dir entry errors explicitly"
+    );
+    assert!(
+        src.contains("cannot read installer artifact directory entry"),
+        "installer stale-artifact reap must log unreadable directory entries"
+    );
 }
 
 // Supply-chain: a missing `.minisig` must FAIL CLOSED. A forged 404 on the
@@ -209,11 +221,13 @@ async fn unsigned_release_download_fails_closed() {
         when.method(GET).path(format!("{asset_path}.minisig"));
         then.status(404).body("Not Found");
     });
-    let asset = Asset {
-        name: "keyhog-linux-x86_64".to_string(),
-        browser_download_url: format!("{}{}", server.base_url(), asset_path),
-    };
-    let res = download_verified_asset(&http_client().unwrap(), &asset).await;
+    let res = API
+        .download_verified_asset(
+            &API.http_client().unwrap(),
+            "keyhog-linux-x86_64",
+            format!("{}{}", server.base_url(), asset_path),
+        )
+        .await;
     assert!(
         res.is_err(),
         "a missing .minisig must fail closed (refuse), not install on HTTPS-only trust"

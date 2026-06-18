@@ -1,14 +1,14 @@
 use clap::Parser;
 use keyhog::args::ScanArgs;
-use keyhog::orchestrator_config::build_scanner_config;
+use keyhog::testing::{CliTestApi as _, API};
 
 #[test]
 fn build_scanner_config_respects_no_decode() {
     let default_args = ScanArgs::try_parse_from(["scan", "."]).unwrap();
     let no_decode_args = ScanArgs::try_parse_from(["scan", ".", "--no-decode"]).unwrap();
 
-    let default_cfg = build_scanner_config(&default_args);
-    let no_decode_cfg = build_scanner_config(&no_decode_args);
+    let default_cfg = API.build_scanner_config(&default_args);
+    let no_decode_cfg = API.build_scanner_config(&no_decode_args);
 
     assert!(
         default_cfg.max_decode_depth > 0,
