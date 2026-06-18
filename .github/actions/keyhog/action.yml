@@ -25,7 +25,7 @@ inputs:
       matching release asset exists, falls back to a source build.
     default: ''
   upload-sarif:
-    description: 'When format=sarif, upload via github/codeql-action/upload-sarif@v3.'
+    description: 'When format=sarif, upload via the GitHub Code Scanning SARIF action.'
     default: 'true'
   fail-on-findings:
     description: |
@@ -185,11 +185,11 @@ runs:
 
     - name: Install Rust toolchain (source-build fallback)
       if: steps.download.outputs.found != 'true'
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
 
     - name: Cache cargo registry/build (source-build fallback)
       if: steps.download.outputs.found != 'true'
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
 
     - name: Install Vectorscan/Hyperscan (Linux source-build only)
       if: steps.download.outputs.found != 'true' && runner.os == 'Linux'
@@ -287,13 +287,13 @@ runs:
       # of silently passing without Code Scanning annotations.
       if: inputs.format == 'sarif' && inputs.upload-sarif == 'true' && steps.report-check.outputs.exists == 'true'
       continue-on-error: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository }}
-      uses: github/codeql-action/upload-sarif@v3
+      uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3
       with:
         sarif_file: ${{ steps.outfile.outputs.name }}
 
     - name: Upload scan report as workflow artifact
       if: always() && steps.report-check.outputs.exists == 'true'
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
       with:
         name: keyhog-report-${{ github.job }}-${{ strategy.job-index || '0' }}-${{ github.run_attempt }}-${{ steps.scan.outputs.duration-ms || 'unknown-duration' }}
         path: ${{ steps.outfile.outputs.name }}

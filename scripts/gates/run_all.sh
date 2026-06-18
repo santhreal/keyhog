@@ -10,6 +10,7 @@
 #   #1b law10_semantics      — Law-10 exemptions must prove conservation/loud surfacing
 #   #1c no_stale_internal_refs — retired planning docs/registries cannot reappear
 #   #1d site_truth           — website claims and detector catalog match source truth
+#   #1e github_actions_pinned — repo CI cannot execute mutable third-party refs
 #   #4 surface_coverage      — a subcommand with no real-process test
 #   #5 complexity_budget     — engine grew a new lane/backend/file past budget
 #   org_audit.py             — stale claims, generated LOC-cap bloat, evidence wiring
@@ -84,6 +85,10 @@ run "Gate #1d self-test: stale website claims are detected" \
   python3 scripts/gates/site_truth.py --self-test
 run "Gate #1d: website product claims and detector catalog match source truth" \
   python3 scripts/gates/site_truth.py
+run "Gate #1e self-test: mutable GitHub Action refs are detected" \
+  python3 scripts/gates/github_actions_pinned.py --self-test
+run "Gate #1e: GitHub Actions are commit-pinned" \
+  python3 scripts/gates/github_actions_pinned.py
 run "Gate #4: surface coverage (every subcommand spawned)" \
   python3 scripts/gates/surface_coverage.py
 run "Gate #5: complexity budget (engine lane/backend/file growth)" \

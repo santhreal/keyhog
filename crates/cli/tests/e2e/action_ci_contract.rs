@@ -1198,8 +1198,10 @@ fn composite_action_sarif_upload_fails_closed_on_trusted_runs() {
         .expect("SARIF upload step exists");
 
     assert!(
-        upload_step.contains("uses: github/codeql-action/upload-sarif@v3"),
-        "SARIF upload must use the GitHub Code Scanning action"
+        upload_step.contains(
+            "uses: github/codeql-action/upload-sarif@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3"
+        ),
+        "SARIF upload must use a SHA-pinned GitHub Code Scanning action"
     );
     assert!(
         upload_step.contains(

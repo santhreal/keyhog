@@ -35,15 +35,15 @@ jobs:
       KEYHOG_ENCODING_STRICT: "1"
       KEYHOG_PATH_SHAPE_STRICT: "1"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           # Same LFS requirement as the Test job: tests/contracts/*.toml
           # and readme_claims.rs are pointer-tracked. Without lfs:true the
           # tree has 3-line LFS stubs and every runner that parses TOML
           # or rust source fixtures fails immediately.
           lfs: true
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Install Vectorscan
         run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
       - name: Strict runner gate (PR subset)
@@ -58,7 +58,7 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           # crates/scanner/tests/contracts/*.toml and
           # crates/scanner/tests/readme_claims.rs are LFS-tracked (the
@@ -69,8 +69,8 @@ jobs:
           # fixture content and contracts_runner crashes parsing them
           # as TOML.
           lfs: true
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Install Vectorscan
         run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
       - run: cargo test -p keyhog-core --lib
@@ -115,11 +115,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           lfs: true
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Install Vectorscan
         run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
       # Full detection path (Hyperscan/simd + simdsieve hot path + ML/decode/
@@ -202,9 +202,9 @@ jobs:
     # tests here cover the same code paths the Windows/Linux jobs do
     # except for the simd-feature-gated Hyperscan path.
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - run: cargo build -p keyhog-core -p keyhog-scanner --no-default-features
       - run: cargo test -p keyhog-core --lib
       - run: cargo test -p keyhog-scanner --lib --no-default-features --features "entropy,multiline,ml"
@@ -232,9 +232,9 @@ jobs:
     # composite Action depend on. Anything anyone might `cargo install`
     # has to compile cleanly with the documented feature set.
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Install Vectorscan
         run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
       - name: portable (no system libs)
@@ -259,11 +259,11 @@ jobs:
     # are caught by the test gates; clippy is a suggestion, not a verdict.
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Install Vectorscan
         run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
       # No `-D warnings`: lints are reported but do not fail the step.
@@ -273,7 +273,7 @@ jobs:
     name: Install scripts (install.sh edge cases)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       # No Rust build needed: both harnesses mock curl / uname / nvidia-smi /
       # ldconfig / ldd and the downloaded binary, so install.sh runs fully
       # offline. The hosted runner has no CUDA stack, so the CUDA-detection
@@ -310,7 +310,7 @@ jobs:
     name: Format
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           # cargo fmt walks every .rs file under tests/, including
           # readme_claims.rs and diagnose_84_divergence.rs which are
@@ -321,7 +321,7 @@ jobs:
           # rustfmt cannot parse ("expected one of `!` or `::`,
           # found `https`").
           lfs: true
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: rustfmt
       # Scope fmt to keyhog's own crates. The vendored vyre tree under
@@ -334,10 +334,10 @@ jobs:
     name: Supply-chain (cargo deny)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Install cargo-deny
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@b8cecb83565409bcc297b2df6e77f030b2a468d5 # v2
         with:
           tool: cargo-deny
       # `cargo deny check` walks up the directory tree looking for the
@@ -353,10 +353,10 @@ jobs:
     name: Security Audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Install cargo-audit
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@b8cecb83565409bcc297b2df6e77f030b2a468d5 # v2
         with:
           tool: cargo-audit
       # The four `--ignore` flags below match the four
@@ -377,9 +377,9 @@ jobs:
     name: Build Release
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
       - name: Install Vectorscan
         run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
       # release-fast (thin LTO, codegen-units=16) is the profile built for
@@ -437,8 +437,8 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - name: Install Vectorscan
         run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
 
