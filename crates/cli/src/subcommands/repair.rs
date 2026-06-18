@@ -7,14 +7,11 @@
 //! `doctor`. Exits non-zero if the reinstalled binary still isn't healthy.
 
 use crate::args::RepairArgs;
+use crate::exit_codes::EXIT_REPAIR_FAILED;
 use crate::installer;
 use crate::style::Palette;
 use anyhow::Result;
 use std::process::ExitCode;
-
-/// Exit code when repair ran but the reinstalled binary still fails its health
-/// check - distinct so a CI/automation caller can fail closed.
-const EXIT_REPAIR_FAILED: u8 = 4;
 
 pub async fn run(args: RepairArgs) -> Result<ExitCode> {
     let Palette {

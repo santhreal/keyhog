@@ -18,7 +18,7 @@ use keyhog_scanner::{CompiledScanner, GpuInitPolicy};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub use run::{EXIT_LIVE_CREDENTIALS, EXIT_SCANNER_PANIC};
+pub use crate::exit_codes::{EXIT_LIVE_CREDENTIALS, EXIT_SCANNER_PANIC};
 
 fn default_incremental_cache_path() -> Option<PathBuf> {
     dirs::cache_dir().map(|d| d.join("keyhog").join("merkle.idx"))

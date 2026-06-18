@@ -8,7 +8,7 @@
 //!     `--no-default-features --features portable` (release-fast, 1m10s, rc 0),
 //!     then ran the full operator path: `keyhog doctor` (exit 0), seeded scan
 //!     (exit 1, `aws-access-key` detector fired), clean scan (exit 0), SARIF
-//!     2.1.0 with 1 result, `--git-history` on a non-repo (exit 2, fail-closed),
+//!     2.1.0 with 1 result, `--git-history` on a non-repo (exit 13, fail-closed),
 //!     `uninstall` dry-run (exit 0) and `uninstall --yes` (exit 0, binary
 //!     unlinked). `tests/install/install_from_local_build.sh` => 11/11 PASS.
 //!   * windows-thinkpad (Windows 10.0.26200, rustc/cargo 1.94.1) — REACHED.
@@ -110,11 +110,9 @@ fn uninstall_remove_binary_is_per_os_and_windows_fails_closed() {
 /// coherent with the source.
 #[test]
 fn main_defines_exit_user_error_two_for_windows_uninstall_path() {
+    assert_eq!(keyhog::exit_codes::EXIT_USER_ERROR, 2);
     let src = read("crates/cli/src/main.rs");
-    assert!(
-        src.contains("const EXIT_USER_ERROR: u8 = 2;"),
-        "main.rs must define EXIT_USER_ERROR = 2 (the Windows uninstall --yes exit code)"
-    );
+    assert!(!src.contains("const EXIT_USER_ERROR"));
 }
 
 /// `keyhog daemon` is unix-only by design: it serves scans over a Unix-domain

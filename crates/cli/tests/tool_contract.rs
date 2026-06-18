@@ -63,7 +63,7 @@ fn exit_code_contract_clean_findings_error() {
     let (missing_ec, _) = run(&["scan", "/no/such/path/kh-contract", "--no-daemon"]);
     assert!(
         missing_ec >= 2,
-        "scan of a nonexistent path must exit >=2 (runtime error), got {missing_ec}"
+        "scan of a nonexistent path must exit >=2 (user/source/system error), got {missing_ec}"
     );
 }
 
@@ -114,7 +114,7 @@ fn output_formats_are_well_formed() {
         let (ec, out) = run(&["scan", p, "--no-daemon", "--format", fmt]);
         assert!(
             ec == 0 || ec == 1,
-            "--format {fmt} must exit 0/1 (not a runtime error), got {ec}"
+            "--format {fmt} must exit 0/1 (not an operator/configuration error), got {ec}"
         );
         assert!(
             !out.trim().is_empty(),

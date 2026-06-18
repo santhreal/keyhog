@@ -7,16 +7,11 @@ use brace_rewrite::{
 };
 
 use crate::args::DetectorArgs;
+use crate::exit_codes::EXIT_DETECTOR_AUDIT_FAILED;
 use anyhow::{Context, Result};
 use keyhog_core::{validate_detector, DetectorFile, DetectorSpec, QualityIssue};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-
-/// Exit code for `detectors --audit` when one or more `Error`-severity
-/// issues were found. Distinct from the scan exit codes (10 = live
-/// credentials, 11 = scanner panic) so a CI gate can treat detector
-/// quality as its own signal.
-const EXIT_AUDIT_FAILED: u8 = 3;
 
 pub fn run(args: DetectorArgs) -> Result<ExitCode> {
     // The optional `list` verb names the default action explicitly, so it is
@@ -241,7 +236,7 @@ fn run_audit(args: &DetectorArgs) -> Result<ExitCode> {
     );
 
     if total_errors > 0 {
-        Ok(ExitCode::from(EXIT_AUDIT_FAILED))
+        Ok(ExitCode::from(EXIT_DETECTOR_AUDIT_FAILED))
     } else {
         Ok(ExitCode::SUCCESS)
     }

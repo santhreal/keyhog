@@ -14,7 +14,6 @@ use std::path::PathBuf;
 #[command(
     name = "keyhog",
     about = "KeyHog: The developer-first secret scanner.\nFind leaked credentials in your code before hackers do. Fast, accurate, and verifying.",
-    after_help = "EXIT CODES:\n  0   Success (no secrets found)\n  1   Secrets found (unverified or verification skipped)\n  2   User error (bad flag/config, missing --baseline, non-repo source, detector-load failure, not-found/permission-denied path)\n  3   System error (local environment failure: low-level I/O that is not not-found/permission-denied, or GPU/hardware init)\n  4   Health/self-test failure (doctor unhealthy / repair could not restore a working binary / backend --self-test failed)\n  10  Live credentials found (requires --verify)\n  11  Scanner thread panicked mid-scan (state is unreliable)",
     disable_version_flag = true
 )]
 pub struct Cli {
@@ -506,9 +505,12 @@ pub fn command() -> clap::Command {
          name, service, and keywords. Useful for finding detectors in the \
          {count}-strong corpus (e.g. `keyhog detectors --search aws`)."
     );
-    Cli::command().mut_subcommand("detectors", move |sub| {
-        sub.mut_arg("search", move |arg| arg.long_help(long_help.clone()))
-    })
+    Cli::command()
+        .after_help(crate::exit_codes::HELP)
+        .mut_subcommand("scan", |sub| sub.after_help(crate::exit_codes::HELP))
+        .mut_subcommand("detectors", move |sub| {
+            sub.mut_arg("search", move |arg| arg.long_help(long_help.clone()))
+        })
 }
 
 /// Parse the CLI from `std::env::args_os`, using the dynamic [`command`] so the

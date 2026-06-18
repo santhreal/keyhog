@@ -13,25 +13,16 @@
 static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
 use keyhog::args::Command;
-use keyhog::orchestrator::EXIT_SCANNER_PANIC;
+use keyhog::exit_codes::{
+    EXIT_INTERRUPTED, EXIT_SCANNER_PANIC, EXIT_SYSTEM_ERROR, EXIT_USER_ERROR,
+};
 use keyhog::{subcommands, FINDINGS_COUNT, SCANNED_CHUNKS, SCANNER_PANICKED, TOTAL_CHUNKS};
 use std::io::IsTerminal;
 use std::process::ExitCode;
 use std::sync::atomic::Ordering;
 
-// Santh STANDARD.md exit-code classes:
-// - 0 success / 1 findings present (the "headline" outcomes; not constants here)
-// - EXIT_USER_ERROR (2): the caller gave us bad input. Bad CLI flags, malformed
-//   config, missing files the user named, unknown detector IDs, etc.
-// - EXIT_SYSTEM_ERROR (3): the local environment failed. Underlying IO failures
-//   (disk full, permission denied on a path the user did not explicitly name),
-//   hardware probe failures, GPU init failures, OS-level panics. These are
-//   "not your fault, but the run can't continue."
-// - EXIT_SCANNER_PANIC (11): a scanner-thread panic, a strict subcase of system
-//   error tracked separately so CI can distinguish a bug from "disk full". A
-//   panic always also implies the system-error class.
-const EXIT_USER_ERROR: u8 = 2;
-const EXIT_SYSTEM_ERROR: u8 = 3;
+// Exit-code numbers live in `keyhog::exit_codes`; main only maps top-level
+// errors into that shared contract.
 
 /// Restore the default SIGPIPE handler so Unix piping works.
 ///
@@ -93,7 +84,7 @@ async fn main() -> ExitCode {
             let total = TOTAL_CHUNKS.load(std::sync::atomic::Ordering::SeqCst);
             let findings = FINDINGS_COUNT.load(std::sync::atomic::Ordering::SeqCst);
             eprintln!("\nScan interrupted. {scanned}/{total} files scanned. {findings} findings.");
-            std::process::exit(130);
+            std::process::exit(i32::from(EXIT_INTERRUPTED));
         }
     });
 

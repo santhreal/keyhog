@@ -546,13 +546,15 @@ See [keyhogignore-toml.md](keyhogignore-toml.md) for the full schema.
 
 - `0` - no findings
 - `1` - findings at or above `--severity` / `--min-confidence`
-- `2` - runtime error (bad flag, missing/unreadable path, config error)
+- `2` - user error (bad flag, missing/unreadable path, config error)
 - `10` - live credentials confirmed (only under `--verify`)
 - `11` - scanner thread panicked mid-scan (state unreliable)
+- `12` - required GPU unavailable
+- `13` - requested source failed before producing scan data
 
 CI gates should treat `exit 1` and `exit 10` as build-blocking scan
-outcomes. `exit 2` is an infrastructure/configuration problem to surface
-to the on-call.
+outcomes. `exit 2`, `exit 12`, and `exit 13` are operator/configuration
+problems to surface to the on-call.
 
 ---
 

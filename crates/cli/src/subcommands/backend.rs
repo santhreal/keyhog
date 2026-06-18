@@ -9,6 +9,7 @@
 //! Honors the `KEYHOG_BACKEND={gpu,simd,cpu}` env var override.
 
 use crate::args::BackendArgs;
+use crate::exit_codes::EXIT_BACKEND_SELF_TEST_FAILED;
 use anyhow::Result;
 use keyhog_scanner::hw_probe::{
     classify_gpu_tier, gpu_min_bytes_for_tier, gpu_solo_bytes_for_tier, probe_hardware,
@@ -16,11 +17,6 @@ use keyhog_scanner::hw_probe::{
 };
 use serde::Serialize;
 use std::process::ExitCode;
-
-/// Exit code for `backend --self-test` when one of the GPU dispatch
-/// proofs fails. Distinct from the scan-side exit codes so a CI
-/// release gate can fail closed on real GPU breakage.
-const EXIT_SELF_TEST_FAILED: u8 = 4;
 
 pub fn run(args: BackendArgs) -> Result<ExitCode> {
     if args.self_test {
@@ -390,7 +386,11 @@ fn collect_self_test_report() -> BackendSelfTestReport {
         } else {
             BackendSelfTestStatus::Fail
         },
-        exit_code: if all_ok { 0 } else { EXIT_SELF_TEST_FAILED },
+        exit_code: if all_ok {
+            0
+        } else {
+            EXIT_BACKEND_SELF_TEST_FAILED
+        },
         gpu_available: hw.gpu_available,
         gpu_is_software: hw.gpu_is_software,
         gpu_name: hw.gpu_name.clone(),

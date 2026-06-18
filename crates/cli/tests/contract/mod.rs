@@ -20,6 +20,7 @@ pub mod detectors_help_exits_zero;
 pub mod detectors_search_filters_stdout;
 pub mod diff_help_exits_zero;
 pub mod diff_missing_file_exits_two;
+pub mod exit_codes_single_owner;
 pub mod explain_help_exits_zero;
 pub mod explain_unknown_detector_exits_two;
 pub mod help_documents_exit_code_eleven;

@@ -5,15 +5,11 @@
 //! `--check` reports availability without installing.
 
 use crate::args::UpdateArgs;
+use crate::exit_codes::EXIT_UPDATE_AVAILABLE;
 use crate::installer;
 use crate::style::Palette;
 use anyhow::Result;
 use std::process::ExitCode;
-
-/// `--check` exit code when a newer release is available (0 = up-to-date).
-/// Distinct so a cron/CI poller can branch on "update available" without
-/// parsing stdout.
-const EXIT_UPDATE_AVAILABLE: u8 = 10;
 
 pub async fn run(args: UpdateArgs) -> Result<ExitCode> {
     let Palette {

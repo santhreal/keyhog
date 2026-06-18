@@ -21,3 +21,4 @@ pub mod orchestrator_defines_live_exit_ten;
 pub mod orchestrator_defines_scanner_panic_exit_eleven;
 pub mod orchestrator_modularity_cap;
 pub mod scan_system_rs_exceeds_modularity_cap;
+pub mod scan_help_documents_exit_codes;

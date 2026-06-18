@@ -130,12 +130,9 @@ fn detectors_help_count_matches_embedded_json_count() {
 /// failure* covering THREE producers:
 ///   "`keyhog doctor` unhealthy, `keyhog repair` could not restore a working
 ///    binary, `keyhog backend` self-test failed."
-/// The source agrees that exit 4 has multiple producers:
-///   - crates/cli/src/subcommands/repair.rs:17  `const EXIT_REPAIR_FAILED: u8 = 4;`
-///   - crates/cli/src/subcommands/backend.rs:23  `const EXIT_SELF_TEST_FAILED: u8 = 4;`
-/// BUT the `--help` EXIT CODES block (crates/cli/src/args.rs:15) describes exit
-/// 4 as ONLY "`backend --self-test` failed (GPU/SIMD probe error)", silently
-/// dropping the `keyhog repair` producer that the docs and source both have.
+/// The source agrees through `crates/cli/src/exit_codes.rs`: exit 4 has multiple
+/// producers (doctor, repair, backend self-test). The help text must not
+/// describe it as backend-only.
 /// An operator who reads `keyhog --help` is given an incomplete exit-4 contract
 /// that does not match the documentation they are pointed at (README.md:83).
 ///
@@ -145,9 +142,9 @@ fn detectors_help_count_matches_embedded_json_count() {
 /// mentions only `backend`/self-test) and passes once the help text is widened
 /// to match the documented contract.
 ///
-/// EXPECTED FIX: update the exit-4 line in the `after_help` EXIT CODES block in
-/// crates/cli/src/args.rs:15 to describe the full exit-4 contract (doctor /
-/// repair / backend self-test), matching docs/src/reference/exit-codes.md.
+/// EXPECTED FIX: keep the exit-4 line in `exit_codes::HELP` aligned with the
+/// full exit-4 contract (doctor / repair / backend self-test), matching
+/// docs/src/reference/exit-codes.md.
 #[test]
 fn help_exit_codes_describe_full_exit4_contract() {
     let (help, _e, _c) = run(&["--help"]);
@@ -177,7 +174,7 @@ fn help_exit_codes_describe_full_exit4_contract() {
         exit4_line.contains("repair"),
         "`keyhog --help` exit-code 4 line ({exit4_line:?}) omits the `keyhog repair` \
          producer that docs/src/reference/exit-codes.md documents and that \
-         crates/cli/src/subcommands/repair.rs:17 (EXIT_REPAIR_FAILED = 4) emits. \
+         crates/cli/src/exit_codes.rs (EXIT_REPAIR_FAILED = 4) emits. \
          The help exit-code contract drifted from the documented contract."
     );
 }
@@ -185,7 +182,7 @@ fn help_exit_codes_describe_full_exit4_contract() {
 /// AUD-coherence-3 — `--help` calls exit 2 "Runtime error"; docs call it "user error".
 ///
 /// FINDING: The same exit code 2 is labelled two contradictory ways:
-///   - `keyhog --help` (crates/cli/src/args.rs:15):
+///   - `keyhog --help`:
 ///       "2   Runtime error (e.g., config error, unreadable path)"
 ///   - docs/src/reference/exit-codes.md:
 ///       "`2`  User error: unknown CLI flag, `.keyhog.toml` parse failure, bad `--baseline`."
@@ -194,7 +191,7 @@ fn help_exit_codes_describe_full_exit4_contract() {
 /// The binary's behaviour matches the DOCS' framing: an unknown flag exits 2
 /// and a nonexistent path exits 2 — both are *user* errors, distinct from the
 /// "System error" reserved for exit 3. Calling exit 2 a "Runtime error" in
-/// `--help` while the docs and `main.rs` (`EXIT_USER_ERROR: u8 = 2`) call it a
+/// `--help` while the docs and `exit_codes.rs` (`EXIT_USER_ERROR: u8 = 2`) call it a
 /// user error is a label disagreement on the same code: the two sources of
 /// truth an operator consults give different names for the same exit.
 ///
@@ -202,10 +199,9 @@ fn help_exit_codes_describe_full_exit4_contract() {
 /// label for exit 2 agrees with the documented "user error" wording. It fails
 /// today because `--help` says "Runtime error", not "user error".
 ///
-/// EXPECTED FIX: relabel the exit-2 line in the EXIT CODES `after_help` block in
-/// crates/cli/src/args.rs:15 to "User error" to match docs/src/reference/
-/// exit-codes.md, docs/src/first-scan.md, and the `EXIT_USER_ERROR` constant
-/// name in crates/cli/src/main.rs:26.
+/// EXPECTED FIX: relabel the exit-2 line in `exit_codes::HELP` to "User error"
+/// to match docs/src/reference/exit-codes.md, docs/src/first-scan.md, and the
+/// `EXIT_USER_ERROR` constant name in crates/cli/src/exit_codes.rs.
 #[test]
 fn help_exit_code_2_label_matches_docs_user_error() {
     // Behavioural anchor: an unknown flag is a user error and must exit 2.
@@ -233,7 +229,7 @@ fn help_exit_code_2_label_matches_docs_user_error() {
         exit2_line.contains("user error"),
         "`keyhog --help` labels exit 2 as {exit2_line:?}, but docs/src/reference/\
          exit-codes.md and docs/src/first-scan.md call exit 2 a \"user error\" \
-         (and crates/cli/src/main.rs:26 names the constant EXIT_USER_ERROR). The \
+         (and crates/cli/src/exit_codes.rs names the constant EXIT_USER_ERROR). The \
          --help label drifted from the documented contract."
     );
 }

@@ -13,6 +13,8 @@
 //! path.
 
 use crate::args::{DaemonMode, ScanArgs};
+#[cfg(unix)]
+use crate::exit_codes::EXIT_CREDENTIALS_FOUND;
 // Daemon module is unix-only - Windows has no `tokio::net::UnixListener`
 // or `std::os::unix::net::UnixStream`, so the whole `crate::daemon`
 // subtree is `#[cfg(unix)]`. See `lib.rs` for the rationale. On
@@ -45,8 +47,6 @@ use keyhog_core::{
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
-#[cfg(unix)]
-const EXIT_CREDENTIALS_FOUND: u8 = 1;
 
 pub async fn run(args: ScanArgs) -> Result<ExitCode> {
     crate::backend_env::validate_scan_runtime_env()?;

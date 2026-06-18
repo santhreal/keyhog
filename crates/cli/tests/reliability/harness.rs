@@ -320,11 +320,14 @@ pub fn assert_clean_exit(o: &Outcome) {
 /// Exit code must be one of keyhog's documented codes. Anything else is an
 /// undocumented surprise the integration contract forbids.
 pub fn assert_documented_exit(o: &Outcome) {
-    const DOCUMENTED: &[i32] = &[0, 1, 2, 3, 4, 10, 11, 130];
     if let Some(c) = o.code {
+        let documented: Vec<i32> = keyhog::exit_codes::DEFINITIONS
+            .iter()
+            .map(|definition| i32::from(definition.code))
+            .collect();
         assert!(
-            DOCUMENTED.contains(&c),
-            "{}: undocumented exit code {c} (documented: {DOCUMENTED:?})\nstderr:\n{}",
+            documented.contains(&c),
+            "{}: undocumented exit code {c} (documented: {documented:?})\nstderr:\n{}",
             o.what,
             o.stderr.chars().take(400).collect::<String>()
         );

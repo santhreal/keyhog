@@ -4,25 +4,15 @@ use super::allowlist::{load_allowlist, load_rule_suppressor};
 use super::reporting::{dump_dogfood_trace, report_completion_summary, report_skip_summary};
 use super::ScanOrchestrator;
 use crate::baseline::Baseline;
+use crate::exit_codes::{
+    EXIT_FINDINGS, EXIT_LIVE_CREDENTIALS, EXIT_REQUIRE_GPU_UNMET, EXIT_SCANNER_PANIC,
+    EXIT_SOURCE_FAILED,
+};
 use crate::orchestrator_config::print_effective_config_if_requested;
 use anyhow::Result;
 use keyhog_core::{VerificationResult, VerifiedFinding};
 use std::io::IsTerminal;
 use std::time::Instant;
-
-pub const EXIT_LIVE_CREDENTIALS: u8 = 10;
-pub const EXIT_SCANNER_PANIC: u8 = 11;
-/// Documented "configuration problem" exit code (see docs/src/reference/exit-codes.md).
-/// Returned when `KEYHOG_REQUIRE_GPU=1` is set but no usable GPU is present, so the
-/// require-GPU contract fails closed instead of silently degrading to CPU.
-pub const EXIT_REQUIRE_GPU_UNMET: u8 = 2;
-/// Returned when the scan produced no data because every source failed to read
-/// (e.g. `--git-history` / `--git-diff` on a non-repo or bad ref, an
-/// unreachable remote). User-error class (2): the caller named a source we
-/// could not read. We fail closed rather than report "clean" + exit 0, which
-/// would tell a CI gate the tree is clean when nothing was scanned
-/// (KH-GAP-096).
-pub const EXIT_SOURCE_FAILED: u8 = 2;
 
 impl ScanOrchestrator {
     pub async fn run(self) -> Result<std::process::ExitCode> {
@@ -366,7 +356,7 @@ impl ScanOrchestrator {
         } else if scanner_panicked {
             std::process::ExitCode::from(EXIT_SCANNER_PANIC)
         } else if has_new_entries {
-            std::process::ExitCode::from(1)
+            std::process::ExitCode::from(EXIT_FINDINGS)
         } else {
             std::process::ExitCode::SUCCESS
         })

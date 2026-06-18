@@ -46,9 +46,15 @@ fn assert_handled(path: &Path, extra: &[&str], secs: u64, what: &str) {
     assert!(code.is_some(), "{what}: keyhog crashed (killed by signal)");
     let c = code.unwrap();
     assert!(
-        [0, 1, 2, 3].contains(&c),
+        documented_scan_exit(c),
         "{what}: undocumented/abnormal exit {c}"
     );
+}
+
+fn documented_scan_exit(code: i32) -> bool {
+    keyhog::exit_codes::DEFINITIONS
+        .iter()
+        .any(|definition| definition.scan_reachable && i32::from(definition.code) == code)
 }
 
 #[test]
@@ -206,7 +212,7 @@ fn filename_that_looks_like_a_flag_via_separator() {
         "scanning a file named --output crashed"
     );
     assert!(
-        [0, 1, 2, 3].contains(&out.status.code().unwrap()),
+        documented_scan_exit(out.status.code().unwrap()),
         "scanning a flag-like filename gave abnormal exit {:?}",
         out.status.code()
     );
@@ -229,7 +235,7 @@ fn unreadable_directory_is_skipped_not_fatal() {
 
     assert!(!timed_out, "scan hung on an unreadable subdir");
     assert!(
-        code.is_some() && [0, 1, 2, 3].contains(&code.unwrap()),
+        code.is_some() && documented_scan_exit(code.unwrap()),
         "an unreadable subdir should warn-and-continue, got {code:?}"
     );
 }

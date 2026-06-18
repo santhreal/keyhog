@@ -68,7 +68,7 @@ fn missing_path_exits_two() {
     assert_eq!(
         code,
         Some(2),
-        "a missing path must exit 2 (documented: 2=runtime error / unreadable path)"
+        "a missing path must exit 2 (documented: 2=user error / unreadable path)"
     );
 }
 
@@ -106,10 +106,12 @@ fn clean_exit_is_independent_of_output_format() {
 fn help_documents_every_exit_code_it_can_return() {
     let out = Command::new(binary()).arg("--help").output().unwrap();
     let help = String::from_utf8_lossy(&out.stdout);
-    // The codes the binary actually emits across its surfaces.
-    for code in ["0", "1", "2", "3", "4", "10", "11"] {
+    for code in keyhog::exit_codes::DEFINITIONS
+        .iter()
+        .map(|definition| definition.code.to_string())
+    {
         assert!(
-            help.contains(code),
+            help.contains(&code),
             "`keyhog --help` EXIT CODES section omits documented code {code}:\n{help}"
         );
     }

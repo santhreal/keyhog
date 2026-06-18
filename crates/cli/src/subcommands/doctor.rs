@@ -11,15 +11,12 @@
 //! can fail closed on a broken binary.
 
 use crate::args::DoctorArgs;
+use crate::exit_codes::EXIT_DOCTOR_UNHEALTHY;
 use crate::installer::scan_engine_self_test;
 use crate::style::Palette;
 use anyhow::Result;
 use keyhog_scanner::hw_probe::probe_hardware;
 use std::process::ExitCode;
-
-/// Exit code when the scan-engine self-test fails - distinct from scan-side
-/// codes so a post-install gate can fail closed on a broken binary.
-const EXIT_DOCTOR_UNHEALTHY: u8 = 4;
 
 pub fn run(_args: DoctorArgs) -> Result<ExitCode> {
     let mut healthy = true;

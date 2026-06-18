@@ -117,6 +117,7 @@ pub mod backend_env;
 pub mod baseline;
 pub mod benchmark;
 pub mod config;
+pub mod exit_codes;
 pub mod format;
 pub mod installer;
 // Daemon uses Unix-domain sockets (`tokio::net::UnixListener` and

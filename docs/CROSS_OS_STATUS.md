@@ -41,7 +41,7 @@ Operator path (real binary, real temp inputs):
 | seeded scan (`leak.env`, json)       | rc 1, detector `aws-access-key` fired |
 | clean scan                           | rc 0 |
 | SARIF (`--format sarif`)             | well-formed `2.1.0`, `"results"` present, 1 `ruleId` |
-| `scan --git-history` on non-repo     | rc 2 (fail-closed) |
+| `scan --git-history` on non-repo     | rc 13 (fail-closed) |
 | `uninstall` (dry run)                | rc 0 |
 | `uninstall --yes`                    | **rc 0, binary REMOVED** (kernel unlinks the running exe) |
 
@@ -72,7 +72,7 @@ Operator path (`scripts/dogfood-windows.ps1` payload):
 | seeded scan (`leak.env`, json)       | rc 1, detector `aws-access-key` fired |
 | clean scan                           | rc 0 |
 | SARIF (`--format sarif`)             | well-formed `2.1.0`, `"results"` present, 1 `ruleId` |
-| `scan --git-history` on non-repo     | rc 2 (fail-closed) |
+| `scan --git-history` on non-repo     | rc 13 (fail-closed) |
 | `uninstall` (dry run)                | rc 0 |
 | `uninstall --yes`                    | **rc 2, binary STILL PRESENT** (Windows can't delete a running .exe) |
 

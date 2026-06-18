@@ -137,11 +137,10 @@ fn scan_unknown_flag_exits_2() {
 }
 
 /// Exit-code contract: a source backend the user named that can't read its
-/// input (`--git-history` on a non-git directory) is USER error → exit 2,
-/// NOT the system-error 3. This is the exact case the exit-codes doc and the
-/// `--help` banner previously mislabeled as 3.
+/// input (`--git-history` on a non-git directory) is a distinct source failure
+/// -> exit 13, not generic user-error 2 or system-error 3.
 #[test]
-fn scan_git_history_on_non_repo_exits_2() {
+fn scan_git_history_on_non_repo_exits_13() {
     let dir = TempDir::new().expect("tempdir");
     std::fs::write(dir.path().join("a.txt"), "nothing here\n").expect("write");
     let output = Command::new(binary())
@@ -152,8 +151,8 @@ fn scan_git_history_on_non_repo_exits_2() {
         .expect("spawn keyhog scan --git-history");
     assert_eq!(
         output.status.code(),
-        Some(2),
-        "--git-history on a non-git dir must exit 2 (user error), not 3; stderr={}",
+        Some(13),
+        "--git-history on a non-git dir must exit 13 (source failed), not 2/3; stderr={}",
         String::from_utf8_lossy(&output.stderr),
     );
 }
@@ -801,7 +800,7 @@ fn lockdown_bails_on_verify_flag() {
     assert_eq!(
         output.status.code(),
         Some(2),
-        "lockdown+verify must exit 2 (runtime error); got {:?}",
+        "lockdown+verify must exit 2 (user error); got {:?}",
         output.status.code()
     );
     let combined = format!(

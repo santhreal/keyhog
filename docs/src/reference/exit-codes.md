@@ -7,11 +7,13 @@ consumers (CI gates, pre-commit hooks, IDE plugins) can rely on them.
 |------|--------------------------------------------------------------------|
 | `0`  | Scan completed, zero findings.                                     |
 | `1`  | Findings present, NONE confirmed live (unverified, or verified-dead). |
-| `2`  | User error (bad input): unknown CLI flag, `.keyhog.toml` parse failure, a missing or invalid `--baseline` file, an unreadable / non-repo source you named (`--git-history` / `--git-staged` outside a git repo), a detector TOML that failed to load, or `--require-gpu` with no GPU present. Also any not-found / permission-denied I/O error. |
+| `2`  | User error (bad input/config): unknown CLI flag, `.keyhog.toml` parse failure, a missing path or invalid `--baseline` file, or a detector TOML that failed to load. Also any not-found / permission-denied I/O error. |
 | `3`  | System error: the local environment failed in a way no flag change fixes — a low-level I/O failure that is *not* not-found / permission-denied, or a hardware / GPU **init** failure. Retry or route differently from `2`. |
 | `4`  | Health/self-test failure: `keyhog doctor` unhealthy, `keyhog repair` could not restore a working binary, `keyhog backend` self-test failed. |
 | `10` | **LIVE credentials confirmed** (a `--verify` scan where the vendor API accepted a found secret) - the highest-severity gate. Also returned by `keyhog update --check` when a newer release exists. |
 | `11` | Scanner thread panicked. The finding count is NOT trustworthy - investigate, don't ship. Distinct from `2`/`3` so CI can tell a code bug from a config error. |
+| `12` | Required GPU unavailable: `--require-gpu` / `KEYHOG_REQUIRE_GPU=1` was set but no usable GPU path was available. |
+| `13` | A requested source failed before producing scan data, so the scan did not actually run for that source. |
 | `130`| Interrupted (SIGINT / Ctrl-C).                                     |
 
 ## `0` (clean)
@@ -44,7 +46,7 @@ live. A scan that confirms a live credential exits `10` instead (see
 below) - so "findings but all dead" vs "some live" is just `1` vs `10`,
 no JSON parsing required.
 
-## `2` (runtime error)
+## `2` (user error)
 
 Things that exit `2`:
 
@@ -53,7 +55,6 @@ Things that exit `2`:
 - Detector load failure for a specific TOML (with a stderr warning;
   the rest of the scan continues but exits 2 at the end).
 - `--baseline <FILE>` where FILE doesn't exist or isn't valid JSON.
-- A source backend failure (e.g. `--git-history` on a non-git dir).
 - Network error during `--verify` is NOT a `2`; it's a `verification-error`
   marker per finding and the scan exits `1` if any unverified-live
   findings exist.
@@ -65,11 +66,11 @@ depending on where the error happened.
 
 A failure the operator can't fix by correcting a flag: a low-level I/O
 error that is NOT not-found / permission-denied (those map to `2`), or a
-hardware / GPU **init** failure. A source backend you named that can't
-read its input (a non-repo for `--git-history`, a missing/garbage
-`--baseline`) is *user* error and exits `2`, not `3` — see above. A
-detector TOML that fails to load is likewise `2`. Distinct from `2` so a
-pipeline can retry/route differently. Stderr carries the cause.
+hardware / GPU **init** failure. A missing/garbage `--baseline` is *user*
+error and exits `2`; a requested source that produced no scan data (for
+example `--git-history` on a non-repo) exits `13`, not `3`. A detector TOML
+that fails to load is likewise `2`. Distinct from `2` so a pipeline can
+retry/route differently. Stderr carries the cause.
 
 ## `4` (health / self-test failure)
 
@@ -106,9 +107,23 @@ The reason this is `11` rather than `2`:
 - A panic is a code bug worth surfacing distinctly.
 - Some CIs (older Jenkins, certain shell wrappers) collapse `2` with
   "command not found" or other ambient errors. `11` is unambiguous.
-- A future expansion of error categories (`12` = OOM-killed, `13` =
-  timeout-exceeded, etc.) is possible without renumbering existing
+- Additional scan failure categories can be added without renumbering existing
   codes.
+
+## `12` (required GPU unavailable)
+
+Returned before scanning when the operator explicitly required GPU execution
+(`--require-gpu` or `KEYHOG_REQUIRE_GPU=1`) but the host cannot provide a usable
+GPU path. This is distinct from `2` so CI can tell "bad input" from "GPU runner
+regressed or was scheduled on the wrong host" without scraping stderr.
+
+## `13` (requested source failed)
+
+Returned when a source the operator explicitly requested produced no scan data:
+for example `--git-history` on a non-git directory, a bad git ref, or a remote
+source that could not be read. This is distinct from clean `0` and generic
+user-error `2`; the scan did not prove the target clean because the source did
+not run.
 
 ## Composing in shell
 
@@ -128,6 +143,8 @@ case "$rc" in
   2)     echo "user error (bad flag/config) -> failing build" ;;
   3)     echo "system error -> retry / investigate" ;;
   11)    echo "scanner panic -> paging on-call" ;;
+  12)    echo "required GPU unavailable -> reroute to GPU runner" ;;
+  13)    echo "requested source failed -> fix source/ref/token" ;;
   130)   echo "interrupted" ;;
   *)     echo "unknown exit $rc" ;;
 esac
