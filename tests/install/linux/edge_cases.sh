@@ -872,6 +872,42 @@ if [ -f install.ps1 ]; then
         _record_fail "19.9 install.ps1 announces rollback" "rollback message missing"
     fi
 fi
+if grep -q 'mktemp -d -t keyhog-autoroute-prime-XXXXXX' install.sh \
+   && ! grep -q 'keyhog-autoroute-prime\.\$\$' install.sh \
+   && ! grep -q 'keyhog-autoroute-calibration:\$\$' install.sh; then
+    _record_pass "19.10 install.sh calibration uses unpredictable workspace and docker tag"
+else
+    _record_fail "19.10 install.sh calibration uses unpredictable workspace and docker tag" \
+        'expected mktemp -d workspace and no $$-derived calibration names'
+fi
+if grep -q 'cleanup_autoroute_calibration()' install.sh \
+   && grep -q "trap 'cleanup_autoroute_calibration" install.sh \
+   && grep -q 'exit 130' install.sh; then
+    _record_pass "19.11 install.sh calibration has cleanup traps for exit and signal"
+else
+    _record_fail "19.11 install.sh calibration has cleanup traps for exit and signal" \
+        "cleanup_autoroute_calibration trap/exit 130 missing"
+fi
+if grep -q 'stop_calibration_web_server "$cleanup_web_pid_file"' install.sh; then
+    _record_pass "19.12 install.sh calibration cleanup stops the loopback web server"
+else
+    _record_fail "19.12 install.sh calibration cleanup stops web server" \
+        "stop_calibration_web_server not owned by cleanup helper"
+fi
+if grep -q 'image rm -f "$cleanup_docker_image"' install.sh; then
+    _record_pass "19.13 install.sh calibration cleanup removes the docker probe image"
+else
+    _record_fail "19.13 install.sh calibration cleanup removes docker image" \
+        "docker image cleanup not owned by cleanup helper"
+fi
+if ! grep -q 'total=9' install.sh \
+   && grep -q 'for _kib in $kib_sizes' install.sh \
+   && grep -q 'for _mib in $mib_sizes' install.sh; then
+    _record_pass "19.14 install.sh calibration derives progress totals from workloads"
+else
+    _record_fail "19.14 install.sh calibration derives progress totals" \
+        "hardcoded total=9 or missing workload-derived total loop"
+fi
 
 # ======================================================================
 # 20. recoverability: a failed upgrade/repair must never leave the host

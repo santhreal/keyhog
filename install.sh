@@ -762,13 +762,40 @@ verify_install() {
     return 1
 }
 
+cleanup_autoroute_calibration() {
+    cleanup_tmpdir="$1"
+    cleanup_web_pid_file="$2"
+    cleanup_docker_bin="$3"
+    cleanup_docker_image="$4"
+    cleanup_docker_ready="$5"
+
+    if [ -n "$cleanup_web_pid_file" ]; then
+        stop_calibration_web_server "$cleanup_web_pid_file"
+    fi
+    if [ "$cleanup_docker_ready" = "1" ] && [ -n "$cleanup_docker_bin" ] && [ -n "$cleanup_docker_image" ]; then
+        if ! "$cleanup_docker_bin" image rm -f "$cleanup_docker_image" >/dev/null 2>&1; then
+            dim "  Docker calibration image cleanup failed for $cleanup_docker_image"
+        fi
+    fi
+    if [ -n "$cleanup_tmpdir" ]; then
+        if ! rm -rf "$cleanup_tmpdir" 2>/dev/null; then
+            dim "  Autoroute calibration workspace cleanup failed for $cleanup_tmpdir"
+        fi
+    fi
+}
+
 prime_autoroute_cache() {
     bin="$1"
-    tmpdir="${TMPDIR:-/tmp}/keyhog-autoroute-prime.$$"
-    if ! mkdir -p "$tmpdir"; then
-        err "Could not create autoroute calibration workspace: $tmpdir"
+    if ! tmpdir="$(mktemp -d -t keyhog-autoroute-prime-XXXXXX)"; then
+        err "Could not create autoroute calibration workspace with mktemp."
         return 1
     fi
+    web_pid_file=""
+    docker_bin=""
+    docker_image=""
+    docker_image_ready=0
+    trap 'cleanup_autoroute_calibration "$tmpdir" "$web_pid_file" "$docker_bin" "$docker_image" "$docker_image_ready"' EXIT
+    trap 'cleanup_autoroute_calibration "$tmpdir" "$web_pid_file" "$docker_bin" "$docker_image" "$docker_image_ready"; trap - EXIT INT TERM; exit 130' INT TERM
 
     say ""
     info "Autoroute calibration"
@@ -801,8 +828,6 @@ prime_autoroute_cache() {
         fi
     fi
     docker_calibration=0
-    docker_bin=""
-    docker_image=""
     if printf '%s' "$scan_help" | grep -q -- '--docker-image'; then
         docker_bin="$(command -v docker 2>/dev/null || true)"
         if [ -z "$docker_bin" ]; then
@@ -828,7 +853,17 @@ prime_autoroute_cache() {
 
     kib_sizes="4 64"
     mib_sizes="1 8 32"
-    total=9
+    total=0
+    total=$((total + 1)) # empty stdin
+    total=$((total + 1)) # stdin 64 KiB
+    for _kib in $kib_sizes; do
+        total=$((total + 1))
+    done
+    for _mib in $mib_sizes; do
+        total=$((total + 1))
+    done
+    total=$((total + 1)) # decode-heavy 256 KiB
+    total=$((total + 1)) # 32 x 4 KiB files
     if [ "$git_calibration" = "1" ]; then
         total=$((total + 3))
     fi
@@ -972,6 +1007,7 @@ prime_autoroute_cache() {
         elif ! start_calibration_web_server "$web_dir" "$web_port_file" "$web_pid_file" "$web_log" "$python_bin"; then
             printf '  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
             stop_calibration_web_server "$web_pid_file"
+            web_pid_file=""
             real_err="$(head -n 1 "$web_log" 2>/dev/null)"
             [ -n "$real_err" ] && dim "    reason: $real_err"
             err "Could not start loopback Web URL autoroute calibration server."
@@ -982,17 +1018,18 @@ prime_autoroute_cache() {
                 failed=1
             fi
             stop_calibration_web_server "$web_pid_file"
+            web_pid_file=""
         fi
     fi
 
     if [ "$docker_calibration" = "1" ]; then
         idx=$((idx + 1))
         docker_dir="$tmpdir/docker-source"
-        docker_image="keyhog-autoroute-calibration:$$"
+        calibration_id="$(basename "$tmpdir")"
+        docker_image="keyhog-autoroute-calibration:$calibration_id"
         out="$tmpdir/out-docker-image.json"
         err="$tmpdir/err-docker-image.txt"
         label="docker image 4 KiB source workload"
-        docker_image_ready=0
         if ! make_calibration_docker_image "$docker_dir" "$docker_image" "$docker_bin" 2>"$err"; then
             printf '  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
             real_err="$(head -n 1 "$err" 2>/dev/null)"
@@ -1005,12 +1042,14 @@ prime_autoroute_cache() {
                 failed=1
             fi
         fi
-        if [ "$docker_image_ready" = "1" ] && ! "$docker_bin" image rm -f "$docker_image" >/dev/null 2>&1; then
-            dim "  Docker calibration image cleanup failed for $docker_image"
-        fi
     fi
 
-    rm -rf "$tmpdir"
+    cleanup_autoroute_calibration "$tmpdir" "$web_pid_file" "$docker_bin" "$docker_image" "$docker_image_ready"
+    trap - EXIT INT TERM
+    tmpdir=""
+    web_pid_file=""
+    docker_image=""
+    docker_image_ready=0
     if [ "$failed" != "0" ]; then
         err "Autoroute calibration phase failed; persisted auto routing was not updated for every required workload."
         return 1

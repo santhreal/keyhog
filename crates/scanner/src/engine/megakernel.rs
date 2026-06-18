@@ -20,7 +20,7 @@ const MEGAKERNEL_HIT_CAPACITY: u32 = 1_000_000;
 // transition tables) is unchanged by segmentation — geometry is a per-batch
 // work-queue property, not a catalog property — but the bump invalidates caches
 // packed by the older 0.6.2-only whole-file build.
-const MEGAKERNEL_CATALOG_CACHE_VERSION: u32 = 8;
+const MEGAKERNEL_CATALOG_CACHE_VERSION: u32 = 9;
 pub(super) const CATALOG_WIRE_MAGIC: [u8; 4] = *b"KHMK";
 
 /// Target number of GPU work-items (`segment_count * rule_count`) a single batch
@@ -63,7 +63,11 @@ fn choose_seg_len(total_bytes: usize, rule_count: u32, overlap: u32) -> u32 {
 
 pub(crate) struct MegakernelCatalog {
     pub(super) rules: Vec<BatchRuleProgram>,
-    pub(super) rule_to_detector: Vec<usize>,
+    /// GPU rule index → the anchor(s) (ac_map indices) it fires for. Identical
+    /// literal anchors are deduplicated into ONE rule that fans out to every
+    /// anchor sharing the literal, so `rules.len()` is the count of UNIQUE
+    /// literals (≤ anchors). Every anchor appears in exactly one rule's list.
+    pub(super) rule_to_detectors: Vec<Vec<usize>>,
     pub(super) host_detectors: Vec<usize>,
     pub(super) dispatcher: std::sync::Mutex<Option<BatchDispatcher>>,
     pub(super) resident_batch: std::sync::Mutex<Option<FileBatch>>,
@@ -129,12 +133,28 @@ impl MegakernelCatalog {
             .collect();
 
         let mut rules = Vec::new();
-        let mut rule_to_detector = Vec::new();
+        let mut rule_to_detectors: Vec<Vec<usize>> = Vec::new();
         let mut host_detectors = Vec::new();
         let mut host_lower_failed = 0usize; // DFA build / BatchRuleProgram failure
-        for (lowered, detector) in built {
+        // DEDUP identical literal anchors. Many anchors share a literal string
+        // (`key`, `akia`, …): the live catalog has 1643 UNIQUE literals across 3124
+        // anchors. The kernel cost is ~linear in rule_count × bytes, so building ONE
+        // GPU rule per unique literal that FANS OUT to every anchor sharing it
+        // ~halves the dispatch. Lossless: a hit on the shared literal is validated
+        // against each fanned anchor's own full regex — the exact firing set the
+        // per-anchor rules produced, just without scanning the same literal twice.
+        // `built[i]` is in lockstep with `patterns[i]` (parallel map preserves order).
+        use std::collections::HashMap;
+        let mut literal_to_rule: HashMap<&str, usize> = HashMap::new();
+        for ((pattern, _), (lowered, detector)) in patterns.iter().zip(built) {
             match lowered {
                 Some((transitions, accept, state_count)) => {
+                    if let Some(&rule_idx) = literal_to_rule.get(pattern.as_str()) {
+                        // Identical literal already lowered — fan this anchor onto
+                        // its existing rule, no duplicate DFA in the catalog.
+                        rule_to_detectors[rule_idx].push(detector);
+                        continue;
+                    }
                     match BatchRuleProgram::new(
                         rules.len() as u32,
                         transitions,
@@ -142,16 +162,17 @@ impl MegakernelCatalog {
                         state_count,
                     ) {
                         Ok(rule) => {
+                            literal_to_rule.insert(pattern.as_str(), rules.len());
                             rules.push(rule);
-                            rule_to_detector.push(detector);
+                            rule_to_detectors.push(vec![detector]);
                         }
                         // Law 10: recall-safe — a BatchRuleProgram build failure does
-                        // NOT drop the detector; it is pushed onto host_detectors and
+                        // NOT drop the anchor; it is pushed onto host_detectors and
                         // runs on the host fallback engine instead (same as the `None`
                         // arm below). The GPU batch is a faster path for the same
                         // detector set, never the only path.
                         Err(_error) => {
-                            // Law 10: DFA-lower failure ⇒ detector runs on the loud host fallback path (recall preserved, same detector set), counted in host_lower_failed and surfaced via the tracing::info "un-lowerable" log (or tracing::error if all fail); host runs that set anyway, so the speed cost is a rounding error.
+                            // Law 10: DFA-lower failure ⇒ anchor runs on the loud host fallback path (recall preserved, same detector set), counted in host_lower_failed and surfaced via the tracing::info "un-lowerable" log (or tracing::error if all fail); host runs that set anyway, so the speed cost is a rounding error.
                             host_detectors.push(detector);
                             host_lower_failed += 1;
                         }
@@ -204,7 +225,7 @@ impl MegakernelCatalog {
                 "megakernel catalog: rule catalog failed to pack — disabling all {} GPU rules (host path only)",
                 rules.len(),
             );
-            host_detectors.extend(rule_to_detector.drain(..));
+            host_detectors.extend(rule_to_detectors.drain(..).flatten());
             rules.clear();
         }
         if std::env::var_os("KH_PERF").is_some() {
@@ -240,7 +261,7 @@ impl MegakernelCatalog {
         }
         Self {
             rules,
-            rule_to_detector,
+            rule_to_detectors,
             host_detectors,
             dispatcher: std::sync::Mutex::new(None),
             resident_batch: std::sync::Mutex::new(None),
@@ -463,13 +484,21 @@ impl MegakernelCatalog {
 
         Ok(hits
             .iter()
-            .filter_map(|h| {
-                self.rule_to_detector
+            .flat_map(|h| {
+                // One GPU rule may be a deduplicated literal shared by several
+                // anchors — fan the hit out to EVERY anchor on it (each is
+                // re-confirmed against its own regex in validate), so dedup never
+                // drops an anchor's firing.
+                let file_index = h.file_idx as usize;
+                let match_offset = h.match_offset as usize;
+                self.rule_to_detectors
                     .get(h.rule_idx as usize)
-                    .map(|&detector| Firing {
-                        file_index: h.file_idx as usize,
+                    .into_iter()
+                    .flatten()
+                    .map(move |&detector| Firing {
+                        file_index,
                         detector,
-                        match_offset: h.match_offset as usize,
+                        match_offset,
                     })
             })
             .collect())
@@ -555,7 +584,8 @@ mod tests {
             ("AIza[A-Za-z0-9_-]{35}".to_string(), 3), // host (state explosion)
         ];
         let catalog = MegakernelCatalog::build(&patterns);
-        let gpu: BTreeSet<usize> = catalog.rule_to_detector.iter().copied().collect();
+        let gpu: BTreeSet<usize> =
+            catalog.rule_to_detectors.iter().flatten().copied().collect();
         let host: BTreeSet<usize> = catalog.host_detectors.iter().copied().collect();
 
         // Disjoint: no detector is on both paths (no double-counting).
@@ -571,11 +601,52 @@ mod tests {
             union, expected,
             "detector coverage gap: every detector must be on exactly one path"
         );
-        // No index collisions in the dense rule_to_detector map either.
+        // Each anchor is on exactly one GPU rule: the flattened fan-out lists have
+        // no duplicate anchor, so their total length equals the distinct-anchor
+        // count (dedup fans literals to multiple anchors, never an anchor to two
+        // rules).
+        let flat_len: usize = catalog.rule_to_detectors.iter().map(Vec::len).sum();
         assert_eq!(
-            catalog.rule_to_detector.len(),
+            flat_len,
             gpu.len(),
-            "rule_to_detector must map each GPU rule to a DISTINCT detector"
+            "an anchor appears on more than one GPU rule (fan-out must be disjoint)"
+        );
+    }
+
+    /// Identical literal anchors collapse to ONE GPU rule that fans out to every
+    /// anchor sharing the literal — fewer rules (cheaper dispatch, ~linear in
+    /// rule_count) with zero dropped anchors (each is still re-confirmed on its own
+    /// regex via the firing). This is the dedup lever the kernel-cost comment names.
+    #[test]
+    fn duplicate_literals_dedup_to_one_rule_fanning_out() {
+        // Anchors 0 and 2 share the SAME literal `key`; anchor 1 is a different
+        // literal. Expect 2 GPU rules, with the `key` rule fanning to BOTH 0 and 2.
+        let patterns = vec![
+            ("key".to_string(), 0),
+            ("akia".to_string(), 1),
+            ("key".to_string(), 2),
+        ];
+        let catalog = MegakernelCatalog::build(&patterns);
+        assert_eq!(
+            catalog.rule_count(),
+            2,
+            "identical `key` literal must dedup to a single GPU rule, got {}",
+            catalog.rule_count()
+        );
+        // Every anchor still covered exactly once across the fan-out lists.
+        let mut covered: Vec<usize> =
+            catalog.rule_to_detectors.iter().flatten().copied().collect();
+        covered.sort_unstable();
+        assert_eq!(covered, vec![0, 1, 2], "dedup dropped or duplicated an anchor");
+        // The shared literal's rule fans out to BOTH anchors that used it.
+        let key_rule = catalog
+            .rule_to_detectors
+            .iter()
+            .find(|dets| dets.contains(&0))
+            .expect("anchor 0 must be on a GPU rule");
+        assert!(
+            key_rule.contains(&2),
+            "the deduped `key` rule must fan out to both anchors 0 and 2, got {key_rule:?}"
         );
     }
 

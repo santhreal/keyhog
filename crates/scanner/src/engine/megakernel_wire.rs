@@ -92,7 +92,10 @@ impl<'a> WireReader<'a> {
 impl vyre_libs::scan::MatchEngineCache for MegakernelCatalog {
     type WireError = CatalogWireError;
     const WIRE_MAGIC: [u8; 4] = CATALOG_WIRE_MAGIC;
-    const WIRE_VERSION: u32 = 1;
+    // v2: `rule_to_detector` (Vec<usize>) became `rule_to_detectors`
+    // (Vec<Vec<usize>>) for dedup fan-out — the wire layout changed, so reject
+    // v1 blobs and rebuild rather than misparse.
+    const WIRE_VERSION: u32 = 2;
     // The catalog is ~GB of dense DFA transition tables; the default 64 MiB
     // bound would reject it as oversized and force a full rebuild every run.
     const MAX_CACHE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
@@ -115,9 +118,12 @@ impl vyre_libs::scan::MatchEngineCache for MegakernelCatalog {
             out.extend_from_slice(&(r.accept.len() as u32).to_le_bytes());
             out.extend_from_slice(bytemuck::cast_slice(&r.accept));
         }
-        out.extend_from_slice(&(self.rule_to_detector.len() as u32).to_le_bytes());
-        for &d in &self.rule_to_detector {
-            out.extend_from_slice(&(d as u64).to_le_bytes());
+        out.extend_from_slice(&(self.rule_to_detectors.len() as u32).to_le_bytes());
+        for dets in &self.rule_to_detectors {
+            out.extend_from_slice(&(dets.len() as u32).to_le_bytes());
+            for &d in dets {
+                out.extend_from_slice(&(d as u64).to_le_bytes());
+            }
         }
         out.extend_from_slice(&(self.host_detectors.len() as u32).to_le_bytes());
         for &d in &self.host_detectors {
@@ -148,12 +154,16 @@ impl vyre_libs::scan::MatchEngineCache for MegakernelCatalog {
             rules.push(rule);
         }
         let rtd_len = r.u32()? as usize;
-        let rule_to_detector = r.usize_vec(rtd_len)?;
+        let mut rule_to_detectors = Vec::with_capacity(rtd_len.min(1 << 20));
+        for _ in 0..rtd_len {
+            let inner = r.u32()? as usize;
+            rule_to_detectors.push(r.usize_vec(inner)?);
+        }
         let host_len = r.u32()? as usize;
         let host_detectors = r.usize_vec(host_len)?;
         Ok(Self {
             rules,
-            rule_to_detector,
+            rule_to_detectors,
             host_detectors,
             dispatcher: std::sync::Mutex::new(None),
             resident_batch: std::sync::Mutex::new(None),
@@ -181,7 +191,7 @@ mod tests {
         let bytes = built.to_bytes().expect("encode");
         let loaded = MegakernelCatalog::from_bytes(&bytes).expect("decode");
         assert_eq!(loaded.rule_count(), built.rule_count());
-        assert_eq!(loaded.rule_to_detector, built.rule_to_detector);
+        assert_eq!(loaded.rule_to_detectors, built.rule_to_detectors);
         assert_eq!(loaded.host_detectors(), built.host_detectors());
         assert_eq!(loaded.rules, built.rules);
     }
