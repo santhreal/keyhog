@@ -3,12 +3,13 @@
 
 use crate::daemon::frame;
 use crate::daemon::protocol::{Request, Response, WIRE_VERSION};
+use crate::daemon::trust;
 use anyhow::{Context, Result};
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, RawMatch};
 use keyhog_scanner::CompiledScanner;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Notify, Semaphore};
@@ -132,31 +133,12 @@ pub async fn run(socket_path: PathBuf, detectors: Vec<DetectorSpec>) -> Result<(
         tracing::info!("daemon: dogfood event capture enabled (KEYHOG_DOGFOOD set)");
     }
 
-    // Remove a stale socket file from a previous crashed instance.
-    // If the file exists AND a daemon is still listening on it, the
-    // bind below will fail loudly - we don't unlink blindly.
-    if socket_path.exists() {
-        match std::os::unix::net::UnixStream::connect(&socket_path) {
-            Ok(_) => anyhow::bail!(
-                "daemon: socket {} is already bound by another keyhog daemon (refuse to clobber). \
-                 Run `keyhog daemon stop` first, or pass --socket to use a different path.",
-                socket_path.display()
-            ),
-            Err(error) => {
-                tracing::warn!(
-                    socket = %socket_path.display(),
-                    %error,
-                    "removing stale daemon socket (no listener on the other end)"
-                );
-                let _ = std::fs::remove_file(&socket_path); // LAW10: unused-binding marker; no runtime effect, not a fallback
-            }
-        }
-    }
-
     if let Some(parent) = socket_path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating daemon socket parent dir {}", parent.display()))?;
+        trust::ensure_private_socket_dir(parent)?;
     }
+    // Remove a stale socket file from a previous crashed instance only after
+    // the parent dir and stale socket file both pass the daemon trust checks.
+    trust::remove_stale_socket_if_trusted(&socket_path)?;
 
     let listener = UnixListener::bind(&socket_path)
         .with_context(|| format!("daemon: binding Unix socket at {}", socket_path.display()))?;
@@ -165,7 +147,7 @@ pub async fn run(socket_path: PathBuf, detectors: Vec<DetectorSpec>) -> Result<(
     // default which on most distros is 0644 - a co-tenant user on
     // the same box could connect and request scans, exposing every
     // credential the scanner finds via its responses.
-    set_socket_mode_user_only(&socket_path)?;
+    trust::set_socket_mode_user_only(&socket_path)?;
 
     let shutdown = Arc::new(Notify::new());
     let state = Arc::new(ServerState::new(
@@ -287,21 +269,6 @@ pub fn is_transient_accept_error(e: &std::io::Error) -> bool {
         return true;
     }
     false
-}
-
-#[cfg(unix)]
-fn set_socket_mode_user_only(path: &Path) -> Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-    let meta = std::fs::metadata(path)?;
-    let mut perms = meta.permissions();
-    perms.set_mode(0o600);
-    std::fs::set_permissions(path, perms)
-        .with_context(|| format!("daemon: chmod 0600 on socket {}", path.display()))
-}
-
-#[cfg(not(unix))]
-fn set_socket_mode_user_only(_path: &Path) -> Result<()> {
-    Ok(())
 }
 
 async fn handle_connection(state: Arc<ServerState>, mut stream: UnixStream) -> Result<()> {
@@ -495,4 +462,11 @@ fn drain_daemon_scan_telemetry(
     // another's counts/events.
     let snapshot = telemetry.drain();
     (snapshot.example_suppressions, snapshot.dogfood_events)
+}
+
+#[doc(hidden)]
+pub mod testing {
+    pub use crate::daemon::trust::testing::{
+        ensure_private_socket_dir, remove_stale_socket_if_trusted,
+    };
 }

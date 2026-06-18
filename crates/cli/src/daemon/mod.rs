@@ -25,5 +25,6 @@ pub mod client;
 pub mod frame;
 pub mod protocol;
 pub mod server;
+mod trust;
 
 pub use server::default_socket_path;

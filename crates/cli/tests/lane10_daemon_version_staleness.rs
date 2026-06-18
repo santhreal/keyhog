@@ -18,6 +18,7 @@
 use keyhog::daemon::client;
 use keyhog::daemon::frame;
 use keyhog::daemon::protocol::{Request, Response, WIRE_VERSION};
+use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
 use tokio::io::{BufReader, BufWriter};
 use tokio::net::UnixListener;
@@ -26,7 +27,13 @@ use tokio::net::UnixListener;
 /// with the given wire + keyhog version, then closes. Returns once the listener
 /// is bound so the client connect cannot race ahead of it.
 async fn spawn_mock_daemon(socket: PathBuf, wire_version: u32, keyhog_version: String) {
+    if let Some(parent) = socket.parent() {
+        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
+            .expect("chmod mock daemon parent 0700");
+    }
     let listener = UnixListener::bind(&socket).expect("bind mock daemon socket");
+    std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))
+        .expect("chmod mock daemon socket 0600");
     tokio::spawn(async move {
         if let Ok((stream, _)) = listener.accept().await {
             let (reader, writer) = stream.into_split();

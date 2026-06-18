@@ -3,6 +3,7 @@
 
 use crate::daemon::frame;
 use crate::daemon::protocol::{Request, Response, WIRE_VERSION};
+use crate::daemon::trust;
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 use std::time::Duration;
@@ -37,6 +38,7 @@ pub async fn connect_any_version(socket_path: &Path) -> Result<Client> {
 }
 
 async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result<Client> {
+    trust::validate_socket_for_connect(socket_path)?;
     // 1 s connect ceiling so a stale socket file with no listener
     // fails fast instead of blocking the CLI for the kernel's
     // default connect timeout (which on Linux ranges into multiple
@@ -50,6 +52,7 @@ async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result
             )
         })?
         .with_context(|| format!("daemon client: connect to {}", socket_path.display()))?;
+    trust::verify_connected_peer(&stream, socket_path)?;
 
     let (reader, writer) = stream.into_split();
     let mut client = Client {
@@ -102,6 +105,13 @@ async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result
         ),
         other => bail!("daemon client: expected Hello reply, got {other:?}"),
     }
+}
+
+#[doc(hidden)]
+pub mod testing {
+    pub use crate::daemon::trust::testing::{
+        connected_peer_uid, current_uid, validate_socket_for_connect,
+    };
 }
 
 pub struct Client {
