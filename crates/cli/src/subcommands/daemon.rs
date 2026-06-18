@@ -22,13 +22,13 @@ pub async fn run(args: DaemonArgs) -> Result<ExitCode> {
 async fn start(socket: Option<PathBuf>, detectors_dir: PathBuf) -> Result<ExitCode> {
     crate::backend_env::validate_scan_runtime_env()?;
 
-    let socket = socket.unwrap_or_else(default_socket_path);
-    // Use the same load-or-embedded fallback that `scan`, `watch`, `scan-system`
-    // and `explain` go through. Before this, `daemon start` ran
-    // `keyhog_core::load_detectors(&"detectors")` directly and bailed with
-    // `failed to read detector file detectors: No such file or directory`
-    // on every install where the user hadn't `cd`'d into a checked-out
-    // repo - which is every install via `install.sh` / `cargo install`.
+    let socket = socket.unwrap_or_else(default_socket_path); // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
+                                                             // Use the same load-or-embedded fallback that `scan`, `watch`, `scan-system`
+                                                             // and `explain` go through. Before this, `daemon start` ran
+                                                             // `keyhog_core::load_detectors(&"detectors")` directly and bailed with
+                                                             // `failed to read detector file detectors: No such file or directory`
+                                                             // on every install where the user hadn't `cd`'d into a checked-out
+                                                             // repo - which is every install via `install.sh` / `cargo install`.
     let detectors = crate::orchestrator_config::load_detectors_or_embedded(&detectors_dir)
         .with_context(|| {
             format!(
@@ -41,13 +41,20 @@ async fn start(socket: Option<PathBuf>, detectors_dir: PathBuf) -> Result<ExitCo
 }
 
 async fn stop(socket: Option<PathBuf>) -> Result<ExitCode> {
-    let socket = socket.unwrap_or_else(default_socket_path);
-    let mut conn = client::connect(&socket).await.with_context(|| {
-        format!(
-            "daemon stop: no daemon at {} (already stopped?)",
-            socket.display()
-        )
-    })?;
+    let socket = socket.unwrap_or_else(default_socket_path); // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
+                                                             // `connect_any_version`, not `connect`: a daemon left running across a
+                                                             // `keyhog update` reports an older keyhog version, and the whole point of
+                                                             // `daemon stop` is to clear exactly that stale daemon. The strict
+                                                             // version-gated `connect` (used by the scan route) would REFUSE to talk to
+                                                             // it, stranding the stale process; `stop` must still be able to shut it down.
+    let mut conn = client::connect_any_version(&socket)
+        .await
+        .with_context(|| {
+            format!(
+                "daemon stop: no daemon at {} (already stopped?)",
+                socket.display()
+            )
+        })?;
     match conn.round_trip(&Request::Shutdown).await? {
         Response::Shutdown => {
             eprintln!("keyhog daemon stopped");
@@ -65,13 +72,26 @@ async fn stop(socket: Option<PathBuf>) -> Result<ExitCode> {
 }
 
 async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
-    let socket = socket.unwrap_or_else(default_socket_path);
-    let mut conn = client::connect(&socket).await.with_context(|| {
-        format!(
-            "daemon status: no daemon at {} (start one with `keyhog daemon start`)",
-            socket.display()
-        )
-    })?;
+    let socket = socket.unwrap_or_else(default_socket_path); // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
+                                                             // `connect_any_version`: `status` is diagnostic — an operator inspecting a
+                                                             // daemon left running across an upgrade NEEDS to see it (so they can decide
+                                                             // to restart it), not get a refusal. The strict version-gated `connect`
+                                                             // would hide the very stale daemon the operator is trying to find.
+    let mut conn = client::connect_any_version(&socket)
+        .await
+        .with_context(|| {
+            format!(
+                "daemon status: no daemon at {} (start one with `keyhog daemon start`)",
+                socket.display()
+            )
+        })?;
+    // Surface staleness LOUDLY: a daemon left running across a `keyhog update`
+    // serves an OLDER detector corpus. The scan route already refuses it
+    // (`connect` fails closed), but an operator running `status` must SEE that
+    // the daemon is stale — otherwise the healthy-looking uptime line hides the
+    // very reason their scans are silently routed in-process.
+    let stale = conn.is_stale();
+    let daemon_version = conn.daemon_version().to_string();
     match conn.round_trip(&Request::Health).await? {
         Response::Health {
             uptime_secs,
@@ -83,6 +103,16 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
                 "keyhog daemon: uptime {}s · {} scans served · {} active · {} detectors",
                 uptime_secs, scans_served, active_scans, detector_count
             );
+            if stale {
+                eprintln!(
+                    "⚠ this daemon is running keyhog {} but you are on {} — it holds an \
+                     OLDER detector corpus and the scan route will BYPASS it (run \
+                     in-process) until you restart it: `keyhog daemon stop && keyhog \
+                     daemon start`.",
+                    daemon_version,
+                    env!("CARGO_PKG_VERSION"),
+                );
+            }
             Ok(ExitCode::SUCCESS)
         }
         other => anyhow::bail!(

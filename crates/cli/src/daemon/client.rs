@@ -9,11 +9,34 @@ use std::time::Duration;
 use tokio::io::{BufReader, BufWriter};
 use tokio::net::UnixStream;
 
-/// Open a connection to the daemon and send `Hello` first to confirm
-/// a compatible wire version. Returns the live stream split into
-/// reader and writer halves; subsequent request/response cycles
-/// reuse them.
+/// This client binary's keyhog version. A daemon reporting a DIFFERENT version
+/// in its `Hello` is running an older (or newer) binary — and therefore a
+/// possibly-different detector corpus + scan pipeline — than the client that
+/// just upgraded. Routing scans to it would silently return stale-corpus
+/// results, so [`connect`] fails closed on a mismatch.
+const CLIENT_KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Open a connection to the daemon and confirm BOTH wire compatibility AND
+/// that the daemon is running the SAME keyhog version as this client. Use this
+/// for the scan route: a daemon left running across a `keyhog update` would
+/// otherwise keep serving scans with its OLD detector corpus, silently
+/// returning stale results to the upgraded client. Returns the live stream
+/// split into reader and writer halves.
 pub async fn connect(socket_path: &Path) -> Result<Client> {
+    connect_inner(socket_path, true).await
+}
+
+/// Connect WITHOUT the keyhog-version staleness check — only wire
+/// compatibility is enforced. `daemon stop` / `daemon status` use this so an
+/// operator can still stop or inspect a daemon left running across an upgrade
+/// (the whole point of `stop` on a stale daemon is to clear it; refusing on a
+/// version mismatch would strand it). The wire-version gate still applies
+/// because a wire-incompatible daemon cannot be framed at all.
+pub async fn connect_any_version(socket_path: &Path) -> Result<Client> {
+    connect_inner(socket_path, false).await
+}
+
+async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result<Client> {
     // 1 s connect ceiling so a stale socket file with no listener
     // fails fast instead of blocking the CLI for the kernel's
     // default connect timeout (which on Linux ranges into multiple
@@ -32,6 +55,7 @@ pub async fn connect(socket_path: &Path) -> Result<Client> {
     let mut client = Client {
         reader: BufReader::new(reader),
         writer: BufWriter::new(writer),
+        daemon_version: String::new(),
     };
 
     // Hello handshake gates the connection on wire compatibility. A
@@ -41,7 +65,33 @@ pub async fn connect(socket_path: &Path) -> Result<Client> {
     // cleanly.
     client.send(&Request::Hello).await?;
     match client.recv().await? {
-        Response::Hello { wire_version, .. } if wire_version == WIRE_VERSION => Ok(client),
+        Response::Hello {
+            wire_version,
+            keyhog_version,
+            ..
+        } if wire_version == WIRE_VERSION => {
+            // Staleness gate: the wire version can stay stable across keyhog
+            // releases that change the DETECTOR CORPUS or scan pipeline (e.g.
+            // 0.5.40 -> 0.5.41, both wire v2). A daemon started before a
+            // `keyhog update` keeps the old scanner in memory and would serve
+            // the upgraded client OLD-corpus results — a silent recall/precision
+            // divergence the wire check cannot catch. Refuse so the scan path
+            // never depends on whether a stale daemon happens to be running.
+            if require_same_version && keyhog_version != CLIENT_KEYHOG_VERSION {
+                bail!(
+                    "daemon version mismatch: this keyhog is {CLIENT_KEYHOG_VERSION} but the \
+                     daemon at {} is running {keyhog_version} — it holds an OLDER detector \
+                     corpus in memory and would return stale scan results. Restart it with \
+                     `keyhog daemon stop && keyhog daemon start`, or pass `--no-daemon` to \
+                     scan in-process.",
+                    socket_path.display(),
+                );
+            }
+            // Record the daemon's reported version so callers that tolerate a
+            // mismatch (`status`) can still surface staleness to the operator.
+            client.daemon_version = keyhog_version;
+            Ok(client)
+        }
         Response::Hello {
             wire_version,
             keyhog_version,
@@ -57,9 +107,27 @@ pub async fn connect(socket_path: &Path) -> Result<Client> {
 pub struct Client {
     reader: BufReader<tokio::net::unix::OwnedReadHalf>,
     writer: BufWriter<tokio::net::unix::OwnedWriteHalf>,
+    /// The `keyhog_version` the daemon reported in its `Hello`. Set during
+    /// `connect`/`connect_any_version`. Lets `daemon status` warn loudly when a
+    /// daemon left running across an upgrade is now stale.
+    daemon_version: String,
 }
 
 impl Client {
+    /// The keyhog version the connected daemon reported. Empty only if the
+    /// handshake did not complete (it always does on a returned `Client`).
+    pub fn daemon_version(&self) -> &str {
+        &self.daemon_version
+    }
+
+    /// `true` when the daemon is running a DIFFERENT keyhog version than this
+    /// client — i.e. a daemon left running across a `keyhog update`, now
+    /// serving an older detector corpus. `connect` refuses such a daemon;
+    /// `connect_any_version` tolerates it, so its callers use this to warn.
+    pub fn is_stale(&self) -> bool {
+        !self.daemon_version.is_empty() && self.daemon_version != CLIENT_KEYHOG_VERSION
+    }
+
     pub async fn send(&mut self, request: &Request) -> Result<()> {
         frame::write_request(&mut self.writer, request).await
     }
