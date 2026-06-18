@@ -1,0 +1,107 @@
+//! Autorouting calibrates installer/maintenance workload buckets, persists the
+//! result, and lets the fused filesystem path consume cache-only decisions.
+
+#[test]
+fn dispatch_autoroute_calibrates_missing_buckets_and_persists() {
+    let dispatch = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator/dispatch.rs"
+    ))
+    .expect("dispatch.rs readable");
+    let fused = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator/dispatch/fused.rs"
+    ))
+    .expect("dispatch/fused.rs readable");
+    let backend = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator/dispatch/backend.rs"
+    ))
+    .expect("dispatch/backend.rs readable");
+    let calibration = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator/dispatch/backend/calibration.rs"
+    ))
+    .expect("dispatch/backend/calibration.rs readable");
+    let evidence = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator/dispatch/backend/evidence.rs"
+    ))
+    .expect("dispatch/backend/evidence.rs readable");
+    let store = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator/dispatch/backend/store.rs"
+    ))
+    .expect("dispatch/backend/store.rs readable");
+    let cache_path = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator/dispatch/backend/cache_path.rs"
+    ))
+    .expect("dispatch/backend/cache_path.rs readable");
+
+    assert!(
+        dispatch.contains("MeasuredBackendRouter::new"),
+        "serialized scan dispatch must route through the calibrated backend router"
+    );
+    assert!(
+        fused.contains("MeasuredBackendRouter::new")
+            && fused.contains("CachedBackendRouter::new")
+            && fused.contains(".choose(explicit_backend, &batch)")
+            && fused.contains("router.choose(scanner_ref, explicit_backend, &batch)")
+            && fused.contains("routing_error")
+            && !fused.contains("has_gpu_decision()")
+            && !fused.contains("let backend = keyhog_scanner::hw_probe::ScanBackend::SimdCpu;"),
+        "fused filesystem dispatch must consume cache-only autoroute evidence per batch during normal scans, and calibration mode must persist decisions for the same fused batch shape"
+    );
+    assert!(
+        backend.contains("struct CachedBackendRouter")
+            && backend.contains("load_persistent_autoroute_decisions")
+            && !backend.contains("pub(crate) fn has_gpu_decision")
+            && backend.contains("AutorouteRoutingError::missing_decision")
+            && !backend
+                .contains("autoroute cache miss outside calibration mode; using safe default"),
+        "fused autoroute must share cache validation, fail loud when no measured bucket exists, and avoid cache-wide GPU switches"
+    );
+    assert!(
+        backend.contains("calibrate_fastest_correct_backend")
+            && evidence.contains("canonical_matches")
+            && calibration.contains("backend rejected by autoroute parity check")
+            && calibration.contains("clear_fragment_cache")
+            && backend.contains("self.save_cache()?")
+            && !calibration.contains("sampling_closed"),
+        "autoroute must probe missing buckets only in calibration mode, reject parity-divergent candidates, and persist every measured decision"
+    );
+    assert!(
+        !dispatch.contains("select_backend_for_batch(")
+            && !fused.contains("select_backend_for_batch("),
+        "dispatch paths must not use fixed-threshold backend selection"
+    );
+    assert!(
+        fused.contains("keyhog_core::env_config::usize_at_least_or_default")
+            && fused.contains("KEYHOG_FUSED_BATCH")
+            && fused.contains("KEYHOG_FUSED_DEPTH")
+            && !fused.contains("and_then(|v| v.parse::<usize>().ok())"),
+        "fused pipeline tuning env parse failures must be visible instead of silently falling back"
+    );
+
+    // Persistent idempotent autoroute cache: calibrated decisions are written to
+    // disk and reused across runs for the same host + detector digest.
+    assert!(
+        backend.contains("detector_digest")
+            && backend.contains("AutorouteHostProfile")
+            && cache_path.contains("KEYHOG_AUTOROUTE_CACHE")
+            && store.contains("load_autoroute_cache")
+            && store.contains("save_autoroute_cache")
+            && store.contains("AutorouteCache"),
+        "autoroute must persist decisions to an on-disk cache keyed by detector digest and host profile"
+    );
+    assert!(
+        backend.contains("impl Drop for MeasuredBackendRouter")
+            || backend.contains("fn drop(&mut self)") && backend.contains("MeasuredBackendRouter"),
+        "autoroute cache must be flushed when the router is dropped"
+    );
+    assert!(
+        cache_path.contains("KEYHOG_AUTOROUTE_CACHE"),
+        "autoroute cache path must be overridable/disablable via KEYHOG_AUTOROUTE_CACHE"
+    );
+}

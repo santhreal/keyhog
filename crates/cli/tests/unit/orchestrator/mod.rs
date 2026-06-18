@@ -16,6 +16,7 @@ pub mod explicit_backend_megascan_env_parsed;
 pub mod explicit_backend_simd_aliases;
 pub mod explicit_backend_trim_and_lowercase;
 pub mod explicit_backend_unknown_returns_none;
+pub mod fused_pipeline_autorouting;
 pub mod gpu_init_policy_matches_scan_route;
 pub mod orchestrator_allowlist_module_exists;
 pub mod orchestrator_args_accessor_returns_scan_args;

@@ -23,10 +23,10 @@ impl ScanOrchestrator {
     /// GPU backend:
     /// * **GPU/MegaScan forced by the user** keeps the coalesced per-batch
     ///   pipeline so `gpu_parity` and the large-buffer dispatch are untouched.
-    ///   Default/auto filesystem scans stay fused only when the persisted
-    ///   calibration cache has no GPU decision for this host/config. Treating
-    ///   "GPU available" as "GPU in play" would send CPU/SIMD-calibrated
-    ///   many-file scans through the coalesced single scanner-thread pipeline.
+    ///   Default/auto filesystem scans stay fused. Persisted autoroute
+    ///   decisions are consumed per fused batch, where the exact workload key is
+    ///   known, so a GPU decision for one bucket cannot disable fused
+    ///   filesystem scanning globally.
     /// * **Non-filesystem sources** (git, stdin, docker, ...) may emit
     ///   *gapless* chunks where `scan_chunk_boundaries` is load-bearing; the
     ///   fused path scans each chunk independently and relies on the
@@ -37,19 +37,11 @@ impl ScanOrchestrator {
         if std::env::var_os("KEYHOG_BATCH_PIPELINE").is_some() {
             return false;
         }
-        let calibration_mode = std::env::var_os("KEYHOG_AUTOROUTE_CALIBRATE").is_some();
         let explicit = explicit_backend_override();
-        // Explicit GPU runs on the coalesced batch pipeline where the
-        // megakernel lives - the single on-GPU detection path - not the
-        // per-chunk fused pipeline. Auto GPU decisions are handled by the
-        // cache-only check below.
+        // Explicit GPU runs on the coalesced batch pipeline for diagnostics and
+        // large-buffer parity. Auto GPU is a per-batch autoroute decision inside
+        // the fused path, never a global switch based on another bucket.
         if backend_requires_coalesced_batch_pipeline(explicit) {
-            return false;
-        }
-        if !calibration_mode
-            && explicit.is_none()
-            && self.cached_backend_router().has_gpu_decision()
-        {
             return false;
         }
         !sources.is_empty()

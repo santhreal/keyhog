@@ -186,13 +186,6 @@ impl CachedBackendRouter {
             &self.cache_load_error,
         ))
     }
-
-    pub(crate) fn has_gpu_decision(&self) -> bool {
-        self.decisions
-            .values()
-            .filter_map(AutorouteDecision::backend)
-            .any(is_gpu_backend)
-    }
 }
 
 impl MeasuredBackendRouter {
