@@ -2,7 +2,7 @@
 //!
 //! Two tiers:
 //!
-//! 1. **Always on** (`apply_default_protections`): zero-cost runtime
+//! 1. **Always on** (`apply_protections(false)`): zero-cost runtime
 //!    settings that disable debugging features. No throughput impact, so
 //!    they live outside the `lockdown` feature gate. Examples:
 //!    - Linux: `prctl(PR_SET_DUMPABLE, 0)` - no core dumps, no
@@ -10,7 +10,7 @@
 //!    - macOS: `ptrace(PT_DENY_ATTACH, …)` - same intent.
 //!    - Windows: best-effort process mitigation policy.
 //!
-//! 2. **Lockdown-only** (`apply_lockdown_protections`): protections that
+//! 2. **Lockdown-only** (`apply_protections(true)`): protections that
 //!    have a real cost or change runtime behavior. Examples:
 //!    - `mlockall(MCL_CURRENT | MCL_FUTURE)` - pin all current and
 //!      future allocations into RAM. Slows allocator paths and can be
@@ -25,7 +25,16 @@
 
 #![allow(missing_docs)]
 
-use std::path::PathBuf;
+use std::ffi::OsStr;
+use std::io::Read;
+use std::path::{Path, PathBuf};
+
+const HYPERSCAN_CACHE_MAGIC: &[u8; 4] = b"KHHS";
+const HYPERSCAN_CACHE_VERSION: u32 = 1;
+const HYPERSCAN_CACHE_PREFIX: &str = "hs-";
+const HYPERSCAN_CACHE_SUFFIX: &str = ".db";
+const SHA256_HEX_LEN: usize = 64;
+const HYPERSCAN_CACHE_HEADER_LEN: usize = 8;
 
 /// Outcome of a hardening attempt - collected so callers can log which
 /// protections actually took.
@@ -36,6 +45,27 @@ pub struct HardeningReport {
     pub mlocked: bool,
     pub coredump_filter_safe: bool,
     pub failures: Vec<String>,
+}
+
+/// Apply the process protections for the requested security mode.
+///
+/// When `lockdown` is true, this also fails closed on persisted keyhog cache
+/// artifacts that could expose past findings.
+#[must_use]
+pub fn apply_protections(lockdown: bool) -> HardeningReport {
+    if !lockdown {
+        return apply_default_protections();
+    }
+
+    let mut report = apply_lockdown_protections();
+    for path in lockdown_disk_cache_violations() {
+        report.failures.push(format!(
+            "lockdown disk cache exists at {} and could expose past findings. \
+             Fix: remove it and rerun.",
+            path.display()
+        ));
+    }
+    report
 }
 
 /// Apply zero-cost process protections that should always be on for a
@@ -151,9 +181,14 @@ pub fn apply_lockdown_protections() -> HardeningReport {
         // when *both* RLIMIT_CORE could not be set AND the filter is
         // open, which is the only scenario where credentials could
         // actually reach disk.
+        // A read/parse failure here yields `None`, and the `match filter` below
+        // escalates `None` to a `report.failures` entry (surfaced to the lockdown
+        // caller, which treats any `failures` entry as a hard error) UNLESS
+        // RLIMIT_CORE=0 already blocks any dump. The failure is recorded, never
+        // swallowed.
         let filter = std::fs::read_to_string("/proc/self/coredump_filter")
-            .ok()
-            .and_then(|s| u32::from_str_radix(s.trim(), 16).ok());
+            .ok() // LAW10: None -> report.failures entry below; recorded, not swallowed
+            .and_then(|s| u32::from_str_radix(s.trim(), 16).ok()); // LAW10: parse failure -> report.failures below
         let rlimit_blocked = rc == 0;
         match filter {
             Some(0) => report.coredump_filter_safe = true,
@@ -194,32 +229,120 @@ pub fn apply_lockdown_protections() -> HardeningReport {
 /// lockdown is supposed to prevent. Returns the offending paths, empty if clean.
 ///
 /// NOT every file under `<cache>/keyhog` qualifies. The compiled Hyperscan
-/// pattern database (`hs-*.db`) is the only thing keyhog writes there by
-/// default; it holds the compiled DETECTOR AUTOMATON - regex shapes - with zero
-/// scan findings or credentials, and keyhog (re)creates it early in startup.
-/// Treating it as a violation made `--lockdown` self-defeating: the gate
-/// tripped on keyhog's own freshly-compiled pattern DB on every machine, so the
-/// flag could never run. Only findings-bearing caches (an incremental/merkle
-/// cache written into this dir) are real lockdown violations.
+/// pattern database is the only thing keyhog writes there by default; it holds
+/// the compiled DETECTOR AUTOMATON - regex shapes - with zero scan findings or
+/// credentials, and keyhog (re)creates it early in startup. Treating it as a
+/// violation made `--lockdown` self-defeating: the gate tripped on keyhog's own
+/// freshly-compiled pattern DB on every machine, so the flag could never run.
+/// Only files with keyhog's exact `hs-<sha256>.db` shard name and `KHHS` cache
+/// header are trusted as compiled-pattern caches; everything else is a
+/// potential findings-bearing cache and therefore a lockdown violation.
 #[must_use]
 pub fn lockdown_disk_cache_violations() -> Vec<PathBuf> {
     let mut hits = Vec::new();
     if let Some(cache_root) = dirs::cache_dir() {
         let keyhog_root = cache_root.join("keyhog");
-        let has_findings_cache = std::fs::read_dir(&keyhog_root)
-            .map(|entries| {
-                entries.filter_map(Result::ok).any(|e| {
-                    let name = e.file_name();
-                    let name = name.to_string_lossy();
-                    // Compiled-pattern DBs (`hs-*.db`) carry no findings; any
-                    // other file is a potential past-findings cache.
-                    !(name.starts_with("hs-") && name.ends_with(".db"))
-                })
-            })
-            .unwrap_or(false);
+        let has_findings_cache = match std::fs::read_dir(&keyhog_root) {
+            Ok(entries) => keyhog_cache_contains_findings(&keyhog_root, entries),
+            // The cache dir simply not existing is the genuinely-clean case:
+            // there is no past-findings artifact to leak.
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => false,
+            // Law 10 / fail-closed for a SECURITY gate: any OTHER error (e.g. a
+            // permission denial on a directory that DOES exist) must NOT be read
+            // as "clean" — that would let `--lockdown` start with an unaudited
+            // cache present. Surface it LOUDLY and treat the path as a violation
+            // so lockdown refuses to start rather than silently passing.
+            Err(e) => {
+                eprintln!(
+                    "keyhog: cannot inspect cache dir '{}' for past-findings artifacts: {e}; \
+                     refusing lockdown (fail-closed)",
+                    keyhog_root.display()
+                );
+                true
+            }
+        };
         if has_findings_cache {
             hits.push(keyhog_root);
         }
     }
     hits
+}
+
+fn keyhog_cache_contains_findings<I>(keyhog_root: &Path, entries: I) -> bool
+where
+    I: IntoIterator<Item = std::io::Result<std::fs::DirEntry>>,
+{
+    for entry in entries {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                eprintln!(
+                    "keyhog: cannot inspect an entry in cache dir '{}' for past-findings \
+                     artifacts: {error}; refusing lockdown (fail-closed)",
+                    keyhog_root.display()
+                );
+                return true;
+            }
+        };
+        match trusted_compiled_pattern_cache_entry(&entry) {
+            Ok(true) => {}
+            Ok(false) => return true,
+            Err(error) => {
+                eprintln!(
+                    "keyhog: cannot inspect candidate compiled-pattern cache entry '{}' in '{}' \
+                     for past-findings artifacts: {error}; refusing lockdown (fail-closed)",
+                    entry.file_name().to_string_lossy(),
+                    keyhog_root.display()
+                );
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn trusted_compiled_pattern_cache_entry(entry: &std::fs::DirEntry) -> std::io::Result<bool> {
+    if !compiled_pattern_cache_filename(&entry.file_name()) {
+        return Ok(false);
+    }
+    if !entry.file_type()?.is_file() {
+        return Ok(false);
+    }
+    compiled_pattern_cache_header_is_valid(&entry.path())
+}
+
+fn compiled_pattern_cache_filename(name: &OsStr) -> bool {
+    let Some(name) = name.to_str() else {
+        return false;
+    };
+    let Some(digest) = name
+        .strip_prefix(HYPERSCAN_CACHE_PREFIX)
+        .and_then(|s| s.strip_suffix(HYPERSCAN_CACHE_SUFFIX))
+    else {
+        return false;
+    };
+    digest.len() == SHA256_HEX_LEN
+        && digest
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+fn compiled_pattern_cache_header_is_valid(path: &Path) -> std::io::Result<bool> {
+    let mut file = std::fs::File::open(path)?;
+    let mut header = [0_u8; HYPERSCAN_CACHE_HEADER_LEN];
+    match file.read_exact(&mut header) {
+        Ok(()) => {
+            let version = u32::from_le_bytes([header[4], header[5], header[6], header[7]]);
+            Ok(&header[..4] == HYPERSCAN_CACHE_MAGIC && version == HYPERSCAN_CACHE_VERSION)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+pub(crate) fn lockdown_cache_entry_error_is_violation_for_test() -> bool {
+    let entries = std::iter::once(Err::<std::fs::DirEntry, std::io::Error>(
+        std::io::Error::new(std::io::ErrorKind::PermissionDenied, "entry denied"),
+    ));
+    keyhog_cache_contains_findings(Path::new("<test-cache>"), entries)
 }
