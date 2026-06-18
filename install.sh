@@ -1522,6 +1522,114 @@ zsh_completion_wiring_present() {
     grep -F '.zfunc' "$rc" >/dev/null 2>&1 && grep -F 'compinit' "$rc" >/dev/null 2>&1
 }
 
+run_binary_uninstall() {
+    bin="$1"
+    if [ ! -x "$bin" ]; then
+        return
+    fi
+    if ! uninstall_err="$(mktemp -t keyhog-uninstall-err-XXXXXX)"; then
+        warn "  installed-binary uninstall skipped: could not create a temporary stderr file."
+        return
+    fi
+    if "$bin" uninstall --yes 2>"$uninstall_err"; then
+        rm -f "$uninstall_err"
+        return
+    fi
+    reason="$(head -n 1 "$uninstall_err" 2>/dev/null || true)"
+    if wizard_command_unavailable "$reason"; then
+        warn "  installed keyhog has no uninstall subcommand; removing installer-owned files directly."
+    elif [ -n "$reason" ]; then
+        warn "  keyhog uninstall --yes failed: $reason"
+    else
+        warn "  keyhog uninstall --yes failed without stderr; removing installer-owned files directly."
+    fi
+    rm -f "$uninstall_err"
+}
+
+remove_completion_file() {
+    file="$1"
+    label="$2"
+    if [ ! -e "$file" ]; then
+        return
+    fi
+    if rm -f "$file"; then
+        ok "  Removed $label: $file"
+    else
+        warn "  Could not remove $label: $file"
+    fi
+}
+
+remove_path_setup_entry() {
+    rc="$1"
+    install_dir="$2"
+    [ -f "$rc" ] || return 0
+    grep -F '# keyhog' "$rc" >/dev/null 2>&1 || return 0
+    grep -F "$install_dir" "$rc" >/dev/null 2>&1 || return 0
+    if ! tmp="$(mktemp -t keyhog-rc-clean-XXXXXX)"; then
+        warn "  Could not create a temporary file to clean $rc."
+        return
+    fi
+    if awk -v install_dir="$install_dir" '
+        $0 == "# keyhog" {
+            status = getline nextline
+            if (status > 0 && index(nextline, install_dir) > 0 &&
+                (index(nextline, "export PATH=\"") == 1 || index(nextline, "set -gx PATH ") == 1)) {
+                next
+            }
+            print $0
+            if (status > 0) {
+                print nextline
+            }
+            next
+        }
+        { print }
+    ' "$rc" > "$tmp" && cp "$tmp" "$rc"; then
+        ok "  Removed PATH entry from $rc"
+    else
+        warn "  Could not remove PATH entry from $rc"
+    fi
+    rm -f "$tmp"
+}
+
+remove_zsh_completion_wiring() {
+    rc="$1"
+    [ -f "$rc" ] || return 0
+    grep -Fx '# keyhog completions' "$rc" >/dev/null 2>&1 || return 0
+    if ! tmp="$(mktemp -t keyhog-zsh-clean-XXXXXX)"; then
+        warn "  Could not create a temporary file to clean $rc."
+        return
+    fi
+    if awk '
+        $0 == "# keyhog completions" {
+            skip = 5
+            next
+        }
+        skip > 0 {
+            skip--
+            next
+        }
+        { print }
+    ' "$rc" > "$tmp" && cp "$tmp" "$rc"; then
+        ok "  Removed zsh completion wiring from $rc"
+    else
+        warn "  Could not remove zsh completion wiring from $rc"
+    fi
+    rm -f "$tmp"
+}
+
+remove_installer_owned_integrations() {
+    install_dir="$1"
+    remove_path_setup_entry "$HOME/.bashrc" "$install_dir"
+    remove_path_setup_entry "$HOME/.bash_profile" "$install_dir"
+    remove_path_setup_entry "$HOME/.profile" "$install_dir"
+    remove_path_setup_entry "$HOME/.zshrc" "$install_dir"
+    remove_path_setup_entry "$HOME/.config/fish/config.fish" "$install_dir"
+    remove_zsh_completion_wiring "$HOME/.zshrc"
+    remove_completion_file "$HOME/.local/share/bash-completion/completions/keyhog" "bash completion"
+    remove_completion_file "$HOME/.zfunc/_keyhog" "zsh completion"
+    remove_completion_file "$HOME/.config/fish/completions/keyhog.fish" "fish completion"
+}
+
 # ============================================================
 # install / repair / diagnose / uninstall
 # ============================================================
@@ -1660,13 +1768,19 @@ do_uninstall() {
         warn "Aborted."
         return
     fi
-    rm -f "$bin"
-    ok "Removed $bin"
-    # Completions + shell rc entries are left alone on purpose. We don't
-    # know which lines in your .bashrc / .zshrc are ours vs yours, and
-    # silently editing those files is exactly the kind of installer
-    # behavior we don't want. Remove manually if needed.
-    dim "  (Shell rc entries and completions, if any, are left in place.)"
+    install_dir=$(dirname "$bin")
+    run_binary_uninstall "$bin"
+    if [ -e "$bin" ]; then
+        if rm -f "$bin"; then
+            ok "Removed $bin"
+        else
+            err "Could not remove $bin. Fix: check permissions or rerun with sudo if it lives in a system path."
+            exit 1
+        fi
+    else
+        ok "Removed $bin"
+    fi
+    remove_installer_owned_integrations "$install_dir"
 }
 
 # ============================================================

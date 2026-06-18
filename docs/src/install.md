@@ -121,7 +121,7 @@ a tag with the CUDA variant lands.
 ```sh
 sh keyhog-install.sh --diagnose    # print host + binary state, change nothing
 sh keyhog-install.sh --repair      # re-download the right variant for this host
-sh keyhog-install.sh --uninstall   # remove the binary (leaves PATH entries alone)
+sh keyhog-install.sh --uninstall   # remove the binary + installer-owned shell wiring
 ```
 
 `--diagnose` is the first thing to run if something looks off: it
@@ -134,11 +134,10 @@ the existing binary still runs. Useful after a host upgrade adds a
 new GPU, or after CUDA userland gets installed and the WGPU build
 should be swapped for the CUDA build.
 
-`--uninstall` only removes the binary itself. Shell `PATH` entries
-and completion files added by the post-install wizard are left in
-place: we don't know which lines in your `.bashrc` / `.zshrc` are
-ours vs yours, and silently editing those files is exactly the kind
-of installer behavior we don't want.
+`--uninstall` removes the binary, asks an installed `keyhog uninstall --yes`
+to surface/clean persisted state first when that subcommand is available,
+then removes only the shell artifacts the installer owns: its marked `PATH`
+block and the known bash/zsh/fish completion files.
 
 ## Direct binary download
 

@@ -146,6 +146,7 @@ case "$1" in
   doctor)    echo "mock doctor: healthy"; exit 0 ;;
   hook)      exit 0 ;;
   completion) echo "# mock completion for ${2:-sh}" ;;
+  uninstall) printf '%s\n' "$*" > "$HOME/keyhog-uninstall-called"; exit 0 ;;
   *) ;;
 esac
 SH
@@ -684,9 +685,39 @@ expect_status "9.10 uninstall no-op exits 0" 0 "$st"
 # 9.11 uninstall removes an installed binary (--yes to auto-confirm)
 KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt >/dev/null 2>&1
 expect_file   "9.11 pre-uninstall binary exists" "$h/.local/bin/keyhog"
+mkdir -p "$h/.local/share/bash-completion/completions" "$h/.zfunc" \
+    "$h/.config/fish/completions" "$h/.config/fish"
+printf 'keep-bash-before\n# keyhog\nexport PATH="%s:$PATH"\nkeep-bash-after\n' "$h/.local/bin" > "$h/.bashrc"
+{
+    printf '%s\n' 'keep-zsh-before'
+    printf '%s\n' '# keyhog'
+    printf 'export PATH="%s:$PATH"\n' "$h/.local/bin"
+    printf '%s\n' '# keyhog completions'
+    printf '%s\n' 'if [ -d "$HOME/.zfunc" ]; then'
+    printf '%s\n' '  fpath=("$HOME/.zfunc" $fpath)'
+    printf '%s\n' '  autoload -Uz compinit'
+    printf '%s\n' '  compinit'
+    printf '%s\n' 'fi'
+    printf '%s\n' 'keep-zsh-after'
+} > "$h/.zshrc"
+printf '# keyhog\nset -gx PATH %s $PATH\n' "$h/.local/bin" > "$h/.config/fish/config.fish"
+touch "$h/.local/share/bash-completion/completions/keyhog" \
+    "$h/.zfunc/_keyhog" \
+    "$h/.config/fish/completions/keyhog.fish"
 out=$(run_install "$sb" "$h" -- --uninstall --yes --no-color); st=$?
 expect_match  "9.12 uninstall removes binary" "Removed" "$out"
 expect_nofile "9.13 binary gone after uninstall" "$h/.local/bin/keyhog"
+expect_file   "9.14 shell uninstall delegates to binary uninstall first" "$h/keyhog-uninstall-called"
+expect_nofile "9.15 shell uninstall removes bash completion" "$h/.local/share/bash-completion/completions/keyhog"
+expect_nofile "9.16 shell uninstall removes zsh completion" "$h/.zfunc/_keyhog"
+expect_nofile "9.17 shell uninstall removes fish completion" "$h/.config/fish/completions/keyhog.fish"
+if grep -F "$h/.local/bin" "$h/.bashrc" "$h/.zshrc" "$h/.config/fish/config.fish" >/dev/null 2>&1 \
+   || grep -F '# keyhog completions' "$h/.zshrc" >/dev/null 2>&1; then
+    _record_fail "9.18 shell uninstall removes installer-owned rc blocks" \
+        "$(printf '%s\n---\n%s\n---\n%s\n' "$(cat "$h/.bashrc")" "$(cat "$h/.zshrc")" "$(cat "$h/.config/fish/config.fish")")"
+else
+    _record_pass "9.18 shell uninstall removes installer-owned rc blocks"
+fi
 rm -rf "$sb" "$h"
 
 # ======================================================================

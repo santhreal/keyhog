@@ -135,7 +135,7 @@ Three diagnostic modes ship with the same script:
 ```bash
 sh install.sh --diagnose    # print host + binary state, change nothing
 sh install.sh --repair      # re-download the right variant for this host
-sh install.sh --uninstall   # remove the binary (leaves PATH entries alone)
+sh install.sh --uninstall   # remove the binary + installer-owned shell wiring
 ```
 
 For an interactive install (variant prompts + post-install wizard for
