@@ -1,10 +1,10 @@
 //! Migrated from src/telemetry.rs
 
 use keyhog_scanner::telemetry::{
-    drain_events, enable_dogfood, example_suppression_count, record_example_suppression, reset,
-    reset_example_suppression_count, DogfoodEvent,
+    DogfoodEvent, ScanTelemetry, drain_events, enable_dogfood, example_suppression_count,
+    record_example_suppression, reset, reset_example_suppression_count, with_scan_telemetry,
 };
-use std::sync::Mutex;
+use std::sync::{Arc, Barrier, Mutex};
 
 static T_LOCK: Mutex<()> = Mutex::new(());
 
@@ -69,6 +69,66 @@ fn drain_events_allows_same_dogfood_suppression_in_next_scan() {
         drain_events().len(),
         1,
         "draining one daemon scan must clear event dedup for the next scan"
+    );
+}
+
+#[test]
+fn scoped_scan_telemetry_isolates_concurrent_daemon_counts() {
+    let _g = T_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    reset();
+    enable_dogfood();
+
+    let first = Arc::new(ScanTelemetry::new());
+    let second = Arc::new(ScanTelemetry::new());
+    let barrier = Arc::new(Barrier::new(3));
+
+    let first_worker = {
+        let telemetry = Arc::clone(&first);
+        let barrier = Arc::clone(&barrier);
+        std::thread::spawn(move || {
+            with_scan_telemetry(&telemetry, || {
+                barrier.wait();
+                record_example_suppression("aws", Some("first.env"), "AKIAFIRSTEXAMPLE", "first");
+                barrier.wait();
+            });
+        })
+    };
+    let second_worker = {
+        let telemetry = Arc::clone(&second);
+        let barrier = Arc::clone(&barrier);
+        std::thread::spawn(move || {
+            with_scan_telemetry(&telemetry, || {
+                barrier.wait();
+                record_example_suppression(
+                    "aws",
+                    Some("second.env"),
+                    "AKIASECONDEXAMPLE",
+                    "second",
+                );
+                barrier.wait();
+            });
+        })
+    };
+
+    barrier.wait();
+    barrier.wait();
+    first_worker.join().expect("first telemetry worker");
+    second_worker.join().expect("second telemetry worker");
+
+    let first_snapshot = first.drain();
+    let second_snapshot = second.drain();
+    assert_eq!(first_snapshot.example_suppressions, 1);
+    assert_eq!(second_snapshot.example_suppressions, 1);
+    assert_eq!(first_snapshot.dogfood_events.len(), 1);
+    assert_eq!(second_snapshot.dogfood_events.len(), 1);
+    assert_eq!(
+        example_suppression_count(),
+        0,
+        "scoped daemon telemetry must not leak into the process-global CLI counter"
+    );
+    assert!(
+        drain_events().is_empty(),
+        "scoped daemon telemetry must not leak dogfood events into the global buffer"
     );
 }
 

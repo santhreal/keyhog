@@ -4,11 +4,11 @@
 use crate::daemon::frame;
 use crate::daemon::protocol::{Request, Response, WIRE_VERSION};
 use anyhow::{Context, Result};
-use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec};
+use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, RawMatch};
 use keyhog_scanner::CompiledScanner;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Notify, Semaphore};
@@ -67,11 +67,6 @@ struct ServerState {
     active_scans: AtomicU32,
     shutdown: Arc<Notify>,
     detector_count: usize,
-    // Serializes the read+drain+reset of the process-global
-    // `keyhog_scanner::telemetry` counters across concurrent daemon
-    // connections. See the scan_text / scan_path drain block for the
-    // race scenario.
-    telemetry_drain: Arc<Mutex<()>>,
     // Caps concurrent in-flight client connections. Without this,
     // every accepted socket spawns an unbounded tokio task that in
     // turn unboundedly spawn_blocks a scanner thread. A burst of
@@ -102,7 +97,6 @@ impl ServerState {
             active_scans: AtomicU32::new(0),
             shutdown,
             detector_count,
-            telemetry_drain: Arc::new(Mutex::new(())),
             connection_limit: Arc::new(Semaphore::new(max_conns)),
         }
     }
@@ -377,27 +371,31 @@ async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> R
     let scanner = state.scanner.clone();
     let router = state.router.clone();
     let chunk_path = path.clone();
-    let drain_lock = state.telemetry_drain.clone();
+    let telemetry = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
     // Hand the actual scan to a blocking thread - calibrated backend scanning
     // is CPU-heavy and not async-aware. Without `spawn_blocking` a
     // large scan would stall the tokio reactor and block every
     // other connection's framing reads.
     let res = tokio::task::spawn_blocking(move || -> Result<_> {
-        let chunk = Chunk {
-            data: text.into(),
-            metadata: ChunkMetadata {
-                source_type: "stdin".into(),
-                path: chunk_path,
-                ..Default::default()
+        let matches = keyhog_scanner::telemetry::with_scan_telemetry(
+            &telemetry,
+            || -> Result<Vec<RawMatch>> {
+                let chunk = Chunk {
+                    data: text.into(),
+                    metadata: ChunkMetadata {
+                        source_type: "stdin".into(),
+                        path: chunk_path,
+                        ..Default::default()
+                    },
+                };
+                let backend = router.choose(
+                    crate::orchestrator::explicit_backend_override(),
+                    std::slice::from_ref(&chunk),
+                )?;
+                Ok(scanner.scan_with_backend(&chunk, backend))
             },
-        };
-        let backend = router.choose(
-            crate::orchestrator::explicit_backend_override(),
-            std::slice::from_ref(&chunk),
         )?;
-        let matches = scanner.scan_with_backend(&chunk, backend);
-        let (engine_example_suppressions, dogfood_events) =
-            drain_daemon_scan_telemetry(&drain_lock);
+        let (engine_example_suppressions, dogfood_events) = drain_daemon_scan_telemetry(&telemetry);
         Ok((matches, engine_example_suppressions, dogfood_events))
     })
     .await;
@@ -433,9 +431,9 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
     let scanner = state.scanner.clone();
     let router = state.router.clone();
     let resolved_owned = resolved.clone();
-    let drain_lock = state.telemetry_drain.clone();
+    let telemetry = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
     type ScanOutput = (
-        Vec<keyhog_core::RawMatch>,
+        Vec<RawMatch>,
         u64,
         Vec<keyhog_scanner::telemetry::DogfoodEvent>,
     );
@@ -444,24 +442,28 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
             .with_context(|| format!("daemon: reading {}", resolved_owned.display()))?;
         let Some(text) = keyhog_sources::decode_file_bytes(&bytes) else {
             let (engine_example_suppressions, dogfood_events) =
-                drain_daemon_scan_telemetry(&drain_lock);
+                drain_daemon_scan_telemetry(&telemetry);
             return Ok((Vec::new(), engine_example_suppressions, dogfood_events));
         };
-        let chunk = Chunk {
-            data: text.into(),
-            metadata: ChunkMetadata {
-                source_type: "filesystem".into(),
-                path: Some(resolved_owned.to_string_lossy().into_owned()),
-                ..Default::default()
+        let matches = keyhog_scanner::telemetry::with_scan_telemetry(
+            &telemetry,
+            || -> Result<Vec<RawMatch>> {
+                let chunk = Chunk {
+                    data: text.into(),
+                    metadata: ChunkMetadata {
+                        source_type: "filesystem".into(),
+                        path: Some(resolved_owned.to_string_lossy().into_owned()),
+                        ..Default::default()
+                    },
+                };
+                let backend = router.choose(
+                    crate::orchestrator::explicit_backend_override(),
+                    std::slice::from_ref(&chunk),
+                )?;
+                Ok(scanner.scan_with_backend(&chunk, backend))
             },
-        };
-        let backend = router.choose(
-            crate::orchestrator::explicit_backend_override(),
-            std::slice::from_ref(&chunk),
         )?;
-        let matches = scanner.scan_with_backend(&chunk, backend);
-        let (engine_example_suppressions, dogfood_events) =
-            drain_daemon_scan_telemetry(&drain_lock);
+        let (engine_example_suppressions, dogfood_events) = drain_daemon_scan_telemetry(&telemetry);
         Ok((matches, engine_example_suppressions, dogfood_events))
     })
     .await;
@@ -485,16 +487,12 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
 }
 
 fn drain_daemon_scan_telemetry(
-    drain_lock: &Mutex<()>,
+    telemetry: &keyhog_scanner::telemetry::ScanTelemetry,
 ) -> (u64, Vec<keyhog_scanner::telemetry::DogfoodEvent>) {
     // Drain telemetry alongside the matches so the client can merge per-scan
-    // counts into its own process-local counters (telemetry lives in a OnceLock
-    // and does not cross the IPC boundary on its own). The lock serializes
-    // count+drain+reset across concurrent daemon connections; see ServerState
-    // .telemetry_drain for the race scenario.
-    let _drain = drain_lock.lock().unwrap_or_else(|e| e.into_inner()); // LAW10: poisoned lock => recover the inner guard (data still valid); never blocks/deref-panics
-    let engine_example_suppressions = keyhog_scanner::telemetry::example_suppression_count() as u64;
-    let dogfood_events = keyhog_scanner::telemetry::drain_events();
-    keyhog_scanner::telemetry::reset_example_suppression_count();
-    (engine_example_suppressions, dogfood_events)
+    // counts into its own process-local counters. Each daemon request owns a
+    // `ScanTelemetry` scope, so concurrent requests cannot observe or reset one
+    // another's counts/events.
+    let snapshot = telemetry.drain();
+    (snapshot.example_suppressions, snapshot.dogfood_events)
 }

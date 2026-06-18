@@ -10,16 +10,16 @@
 //!    per-decision detail so a user can answer "why didn't keyhog fire
 //!    on my fixture?" without rebuilding with debug instrumentation.
 //!
-//! Single-process scope: keyhog runs one scan per process, so a
-//! process-global `OnceLock<Telemetry>` is the lightest container that
-//! doesn't drag every engine boundary into accepting a `&Telemetry`
-//! argument. Tests reset state via `reset()`.
+//! Single-process CLI scans use the process-global `OnceLock<Telemetry>` as
+//! the lightest container. Long-lived daemon workers use [`ScanTelemetry`]
+//! scopes so concurrent client scans do not share counts/events.
 
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 /// A single dogfood event. Variants are intentionally narrow - anything
 /// scanner-internal that would help a user understand a missed or
@@ -76,6 +76,79 @@ struct Telemetry {
     emitted_suppression_events: Mutex<HashSet<String>>,
 }
 
+/// Per-request scanner telemetry used by daemon scan workers.
+///
+/// The regular CLI process still uses the process-global telemetry cell because
+/// it runs one scan per process. A daemon serves many client requests in one
+/// process, so each request owns one `ScanTelemetry` and installs it with
+/// [`with_scan_telemetry`] for the duration of the scan. Recorders then route
+/// counts/events into that scope instead of the process-global cell.
+#[derive(Default)]
+pub struct ScanTelemetry {
+    example_suppressions: AtomicUsize,
+    events: Mutex<Vec<DogfoodEvent>>,
+    emitted_suppression_events: Mutex<HashSet<String>>,
+}
+
+impl ScanTelemetry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn example_suppression_count(&self) -> usize {
+        self.example_suppressions.load(Ordering::Relaxed)
+    }
+
+    pub fn drain_events(&self) -> Vec<DogfoodEvent> {
+        drain_event_buffers(&self.events, &self.emitted_suppression_events)
+    }
+
+    pub fn drain(&self) -> ScanTelemetrySnapshot {
+        ScanTelemetrySnapshot {
+            example_suppressions: self.example_suppression_count() as u64,
+            dogfood_events: self.drain_events(),
+        }
+    }
+}
+
+pub struct ScanTelemetrySnapshot {
+    pub example_suppressions: u64,
+    pub dogfood_events: Vec<DogfoodEvent>,
+}
+
+thread_local! {
+    static CURRENT_SCAN_TELEMETRY: RefCell<Option<Arc<ScanTelemetry>>> = RefCell::new(None);
+}
+
+struct ScanTelemetryRestore {
+    previous: Option<Arc<ScanTelemetry>>,
+}
+
+impl Drop for ScanTelemetryRestore {
+    fn drop(&mut self) {
+        let previous = self.previous.take();
+        CURRENT_SCAN_TELEMETRY.with(|slot| {
+            *slot.borrow_mut() = previous;
+        });
+    }
+}
+
+/// Run `f` with `telemetry` installed for scanner telemetry recorders on this
+/// thread. Nested scopes restore the previous owner on drop, including during
+/// unwinding.
+pub fn with_scan_telemetry<R>(telemetry: &Arc<ScanTelemetry>, f: impl FnOnce() -> R) -> R {
+    let previous = CURRENT_SCAN_TELEMETRY.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        std::mem::replace(&mut *slot, Some(Arc::clone(telemetry)))
+    });
+    let _restore = ScanTelemetryRestore { previous };
+    f()
+}
+
+fn current_scan_telemetry() -> Option<Arc<ScanTelemetry>> {
+    CURRENT_SCAN_TELEMETRY.with(|slot| slot.borrow().clone())
+}
+
 // Global lock-free telemetry counters (KH-116)
 static FILES_SCANNED: AtomicUsize = AtomicUsize::new(0);
 static BYTES_SCANNED: AtomicUsize = AtomicUsize::new(0);
@@ -129,8 +202,41 @@ pub fn record_example_suppression(
     credential: &str,
     reason: &'static str,
 ) {
+    if let Some(t) = current_scan_telemetry() {
+        record_example_suppression_in(
+            &t.example_suppressions,
+            &t.events,
+            &t.emitted_suppression_events,
+            detector,
+            path,
+            credential,
+            reason,
+        );
+        return;
+    }
+
     let t = cell();
-    t.example_suppressions.fetch_add(1, Ordering::Relaxed);
+    record_example_suppression_in(
+        &t.example_suppressions,
+        &t.events,
+        &t.emitted_suppression_events,
+        detector,
+        path,
+        credential,
+        reason,
+    );
+}
+
+fn record_example_suppression_in(
+    example_suppressions: &AtomicUsize,
+    events: &Mutex<Vec<DogfoodEvent>>,
+    emitted_suppression_events: &Mutex<HashSet<String>>,
+    detector: &str,
+    path: Option<&str>,
+    credential: &str,
+    reason: &'static str,
+) {
+    example_suppressions.fetch_add(1, Ordering::Relaxed);
 
     // KH-120: Wrap dogfood logging events behind static capability flags to eliminate overhead during silent scans.
     if !is_dogfood_enabled() {
@@ -141,7 +247,7 @@ pub fn record_example_suppression(
     // One EVENT per credential+path across all stages (KH-GAP-091): if a later
     // shape gate already recorded this same credential, or vice-versa, don't emit
     // a duplicate. First stage to reach it wins.
-    if !mark_suppression_event_emitted(t, path, &credential_hash) {
+    if !mark_suppression_event_emitted(emitted_suppression_events, path, &credential_hash) {
         return;
     }
 
@@ -149,7 +255,7 @@ pub fn record_example_suppression(
     // so dogfood output matches finding output - the bespoke 6-char-prefix
     // helper leaked up to 6 of 8 bytes of short credentials.
     let redacted = keyhog_core::redact(credential).into_owned();
-    if let Ok(mut events) = t.events.lock() {
+    if let Ok(mut events) = events.lock() {
         events.push(DogfoodEvent::ExampleSuppressed {
             detector: detector.to_string(),
             path: path.map(str::to_string),
@@ -166,12 +272,12 @@ pub fn record_example_suppression(
 /// poisoned lock fails OPEN (returns `true`) — an extra event is a far smaller
 /// sin than silently dropping the trace (Law 10).
 fn mark_suppression_event_emitted(
-    t: &Telemetry,
+    emitted_suppression_events: &Mutex<HashSet<String>>,
     path: Option<&str>,
     credential_hash: &str,
 ) -> bool {
-    let key = format!("{}\0{}", path.unwrap_or(""), credential_hash);
-    match t.emitted_suppression_events.lock() {
+    let key = format!("{}\0{}", path.unwrap_or(""), credential_hash); // LAW10: absent path/field => display placeholder; reporting-only, recall-safe
+    match emitted_suppression_events.lock() {
         Ok(mut emitted) => emitted.insert(key),
         Err(_) => true,
     }
@@ -191,7 +297,33 @@ pub fn record_shape_suppression(path: Option<&str>, credential: &str, reason: &'
     if !is_dogfood_enabled() {
         return;
     }
+    if let Some(t) = current_scan_telemetry() {
+        record_shape_suppression_in(
+            &t.events,
+            &t.emitted_suppression_events,
+            path,
+            credential,
+            reason,
+        );
+        return;
+    }
     let t = cell();
+    record_shape_suppression_in(
+        &t.events,
+        &t.emitted_suppression_events,
+        path,
+        credential,
+        reason,
+    );
+}
+
+fn record_shape_suppression_in(
+    events: &Mutex<Vec<DogfoodEvent>>,
+    emitted_suppression_events: &Mutex<HashSet<String>>,
+    path: Option<&str>,
+    credential: &str,
+    reason: &'static str,
+) {
     let credential_hash = keyhog_core::hex_encode(&keyhog_core::sha256_hash(credential));
     // One EVENT per credential+path across ALL stages (KH-GAP-091): a credential
     // the example-token gate already recorded (e.g. `AKIA…EXAMPLE`, which is also
@@ -199,11 +331,11 @@ pub fn record_shape_suppression(path: Option<&str>, credential: &str, reason: &'
     // logical drop. The shared emitted-set also collapses the same shape gate
     // firing twice for one credential, so this fully replaces the old
     // reason-keyed dedup.
-    if !mark_suppression_event_emitted(t, path, &credential_hash) {
+    if !mark_suppression_event_emitted(emitted_suppression_events, path, &credential_hash) {
         return;
     }
     let redacted = keyhog_core::redact(credential).into_owned();
-    if let Ok(mut events) = t.events.lock() {
+    if let Ok(mut events) = events.lock() {
         events.push(DogfoodEvent::ShapeSuppressed {
             path: path.map(str::to_string),
             credential_redacted: redacted,
@@ -262,13 +394,20 @@ pub fn append_events<I: IntoIterator<Item = DogfoodEvent>>(events: I) {
 /// `enable_dogfood()` was never called.
 pub fn drain_events() -> Vec<DogfoodEvent> {
     let t = cell();
+    drain_event_buffers(&t.events, &t.emitted_suppression_events)
+}
+
+fn drain_event_buffers(
+    events: &Mutex<Vec<DogfoodEvent>>,
+    emitted_suppression_events: &Mutex<HashSet<String>>,
+) -> Vec<DogfoodEvent> {
     // The drained batch is one complete trace; the next scan must be able to emit
     // its own events for the same credentials, so clear the per-credential
     // emitted-event dedup alongside the drain.
-    if let Ok(mut emitted) = t.emitted_suppression_events.lock() {
+    if let Ok(mut emitted) = emitted_suppression_events.lock() {
         emitted.clear();
     }
-    if let Ok(mut events) = t.events.lock() {
+    if let Ok(mut events) = events.lock() {
         std::mem::take(&mut *events)
     } else {
         Vec::new()
@@ -324,4 +463,7 @@ pub fn reset() {
     if let Ok(mut emitted) = t.emitted_suppression_events.lock() {
         emitted.clear();
     }
+    CURRENT_SCAN_TELEMETRY.with(|slot| {
+        *slot.borrow_mut() = None;
+    });
 }
