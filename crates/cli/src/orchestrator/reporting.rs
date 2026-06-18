@@ -222,7 +222,7 @@ pub(crate) fn report_skip_summary(ansi: bool) {
     }
 
     let c = keyhog_sources::skip_counts();
-    if c.total() == 0 {
+    if c.total() == 0 && c.structured_source_parse_failures == 0 {
         return;
     }
     // One stderr line per non-empty skip category, each with the reason AND the
@@ -264,6 +264,15 @@ pub(crate) fn report_skip_summary(ansi: bool) {
             format!(
                 "{} file(s) NOT scanned: unreadable (permission denied or I/O error). These were NOT checked for secrets.",
                 c.unreadable
+            ),
+            true,
+        ));
+    }
+    if c.structured_source_parse_failures > 0 {
+        lines.push((
+            format!(
+                "{} structured source file(s) only PARTIALLY scanned: format-specific expansion failed, so raw text was scanned but derived request/response/body chunks were not expanded.",
+                c.structured_source_parse_failures
             ),
             true,
         ));

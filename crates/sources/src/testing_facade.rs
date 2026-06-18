@@ -11,6 +11,8 @@ pub mod testing {
         crate::SKIPPED_ARCHIVE_TRUNCATED.store(counts.archive_truncated, Relaxed);
         crate::BINARY_SECTION_NAME_UNRESOLVED.store(counts.binary_section_name_unresolved, Relaxed);
         crate::SOURCE_TRUNCATED.store(counts.source_truncated, Relaxed);
+        crate::STRUCTURED_SOURCE_PARSE_FAILURES
+            .store(counts.structured_source_parse_failures, Relaxed);
     }
 
     pub fn reset_skip_counters() {

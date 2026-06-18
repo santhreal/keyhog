@@ -63,6 +63,8 @@ pub(crate) fn try_expand_har(
     let doc: HarDocument = match serde_json::from_slice(bytes) {
         Ok(d) => d,
         Err(error) => {
+            let _event =
+                crate::record_skip_event(crate::SourceSkipEvent::StructuredSourceParseFailure);
             tracing::debug!(
                 path = %path_str,
                 %error,

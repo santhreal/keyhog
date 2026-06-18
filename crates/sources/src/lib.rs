@@ -64,6 +64,12 @@ pub(crate) static BINARY_SECTION_NAME_UNRESOLVED: AtomicUsize = AtomicUsize::new
 /// byte/chunk ceiling even though every individual blob was below its own cap.
 pub(crate) static SOURCE_TRUNCATED: AtomicUsize = AtomicUsize::new(0);
 
+/// How many structured source files matched a format-specific source expander
+/// but failed to parse, so only the raw text fallback was scanned. This is
+/// partial coverage, not a whole-file skip: e.g. a malformed HAR still gets
+/// scanned as text, but request/response/body expansion is missing.
+pub(crate) static STRUCTURED_SOURCE_PARSE_FAILURES: AtomicUsize = AtomicUsize::new(0);
+
 /// Immutable snapshot of the skip counters, read once at end-of-scan so every
 /// reporter (human summary + structured JSON/SARIF) surfaces the same numbers.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -79,14 +85,18 @@ pub struct SkipCounts {
     pub binary_section_name_unresolved: usize,
     /// Source scans stopped early by a source-level aggregate cap.
     pub source_truncated: usize,
+    /// Structured source files whose format-specific parser failed; raw text was
+    /// still scanned, but derived chunks/decoded bodies were not expanded.
+    pub structured_source_parse_failures: usize,
 }
 
 impl SkipCounts {
     /// Total files skipped (not scanned) across all categories.
     ///
-    /// `binary_section_name_unresolved` and `source_truncated` are partial-
-    /// coverage signals, not whole-file skips, so they are surfaced separately
-    /// and are NOT added into this file-skip total.
+    /// `binary_section_name_unresolved`, `source_truncated`, and
+    /// `structured_source_parse_failures` are partial-coverage signals, not
+    /// whole-file skips, so they are surfaced separately and are NOT added into
+    /// this file-skip total.
     pub fn total(&self) -> usize {
         self.over_max_size + self.binary + self.excluded + self.unreadable + self.archive_truncated
     }
@@ -104,6 +114,7 @@ pub(crate) enum SourceSkipEvent {
     #[cfg(feature = "binary")]
     BinarySectionNameUnresolved,
     SourceTruncated,
+    StructuredSourceParseFailure,
 }
 
 impl SourceSkipEvent {
@@ -117,6 +128,7 @@ impl SourceSkipEvent {
             #[cfg(feature = "binary")]
             Self::BinarySectionNameUnresolved => &BINARY_SECTION_NAME_UNRESOLVED,
             Self::SourceTruncated => &SOURCE_TRUNCATED,
+            Self::StructuredSourceParseFailure => &STRUCTURED_SOURCE_PARSE_FAILURES,
         }
     }
 }
@@ -171,6 +183,7 @@ pub fn skip_counts() -> SkipCounts {
         archive_truncated: SKIPPED_ARCHIVE_TRUNCATED.load(Relaxed),
         binary_section_name_unresolved: BINARY_SECTION_NAME_UNRESOLVED.load(Relaxed),
         source_truncated: SOURCE_TRUNCATED.load(Relaxed),
+        structured_source_parse_failures: STRUCTURED_SOURCE_PARSE_FAILURES.load(Relaxed),
     }
 }
 
@@ -185,6 +198,7 @@ pub(crate) fn reset_skip_counters() {
     SKIPPED_ARCHIVE_TRUNCATED.store(0, Relaxed);
     BINARY_SECTION_NAME_UNRESOLVED.store(0, Relaxed);
     SOURCE_TRUNCATED.store(0, Relaxed);
+    STRUCTURED_SOURCE_PARSE_FAILURES.store(0, Relaxed);
 }
 
 /// Reset the over-max-size counter. Retained for API compatibility (Law 3);
