@@ -152,6 +152,8 @@ impl FindingSink {
 }
 
 pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
+    crate::backend_env::validate_keyhog_backend_env()?;
+
     if args.space == 0 {
         anyhow::bail!("scan-system --space must be greater than zero bytes");
     }

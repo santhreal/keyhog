@@ -31,6 +31,8 @@ pub fn run(args: BackendArgs) -> Result<ExitCode> {
 }
 
 fn print_backend_report(args: &BackendArgs) -> Result<()> {
+    crate::backend_env::validate_keyhog_backend_env()?;
+
     let hw = probe_hardware();
 
     println!("## hardware");

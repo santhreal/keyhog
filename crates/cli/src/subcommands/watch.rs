@@ -35,6 +35,8 @@ use std::time::{Duration, Instant};
 const DEDUP_WINDOW: Duration = Duration::from_millis(750);
 
 pub fn run(args: WatchArgs) -> Result<()> {
+    crate::backend_env::validate_keyhog_backend_env()?;
+
     let watch_root = std::fs::canonicalize(&args.path)
         .with_context(|| format!("canonicalize {}", args.path.display()))?;
     if !watch_root.is_dir() {
