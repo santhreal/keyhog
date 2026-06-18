@@ -36,7 +36,7 @@
 #
 # Env overrides (same effect as the flags):
 #   KEYHOG_VERSION, KEYHOG_VARIANT, KEYHOG_INSTALL, KEYHOG_FROM_FILE,
-#   KEYHOG_INSECURE_INSTALL, NO_COLOR
+#   KEYHOG_INSECURE_INSTALL, GITHUB_TOKEN, NO_COLOR
 
 set -eu
 
@@ -166,7 +166,7 @@ usage() {
 "Modes:  (default) install/upgrade   --repair   --diagnose   --uninstall" \
 "Flags:  --version=vX.Y.Z  --variant=cpu|cuda  --install-dir=PATH" \
 "        --from-file=PATH  --yes/-y  --no-prompt  --insecure  --no-color  --help/-h" \
-"Env:    KEYHOG_VERSION  KEYHOG_VARIANT  KEYHOG_INSTALL  KEYHOG_FROM_FILE  KEYHOG_INSECURE_INSTALL  NO_COLOR"
+"Env:    KEYHOG_VERSION  KEYHOG_VARIANT  KEYHOG_INSTALL  KEYHOG_FROM_FILE  KEYHOG_INSECURE_INSTALL  GITHUB_TOKEN  NO_COLOR"
     fi
     exit 0
 }
@@ -370,6 +370,22 @@ resolve_tag() {
         return
     fi
 
+    TAG="latest"
+}
+
+github_api_get() {
+    url="$1"
+    if [ -n "${GITHUB_TOKEN:-}" ]; then
+        curl -fsSL \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "$url"
+    else
+        curl -fsSL "$url"
+    fi
+}
+
+resolve_tag_from_api() {
     # /releases/latest reports the most recently-published release. But
     # a release can exist with zero assets (e.g. the release-workflow
     # built the workspace but failed to upload), in which case every
@@ -377,7 +393,7 @@ resolve_tag() {
     # /releases (most-recent first) and pick the newest tag that has
     # ANY asset attached. This survives a one-off release-workflow
     # failure without forcing the operator to pass --version manually.
-    releases_json=$(curl -fsSL "https://api.github.com/repos/$REPO/releases?per_page=10" 2>/dev/null || true)
+    releases_json=$(github_api_get "https://api.github.com/repos/$REPO/releases?per_page=10" 2>/dev/null || true)
     if [ -z "$releases_json" ]; then
         err "Could not query GitHub releases API."
         err "Try --version=v0.5.37 (or another known tag) explicitly."
@@ -416,6 +432,15 @@ resolve_tag() {
     fi
 }
 
+release_asset_url() {
+    name="$1"
+    if [ "$TAG" = "latest" ]; then
+        printf 'https://github.com/%s/releases/latest/download/%s\n' "$REPO" "$name"
+    else
+        printf 'https://github.com/%s/releases/download/%s/%s\n' "$REPO" "$TAG" "$name"
+    fi
+}
+
 current_binary() {
     if [ -x "$INSTALL_DIR/keyhog" ]; then
         printf '%s\n' "$INSTALL_DIR/keyhog"
@@ -437,7 +462,7 @@ current_version() {
 download_asset() {
     name="$1"
     out="$2"
-    url="https://github.com/$REPO/releases/download/$TAG/$name"
+    url=$(release_asset_url "$name")
     # --retry rides out transient transfer failures (timeouts, connection
     # resets, a CDN dropping a multi-MB body mid-stream). Without it a single
     # flaky connection turns into a failed install - the failure mode that broke
@@ -475,7 +500,7 @@ allow_unverified_install() {
 verify_checksum() {
     binary="$1"
     asset_name="$2"
-    checksum_url="https://github.com/$REPO/releases/download/$TAG/$asset_name.sha256"
+    checksum_url=$(release_asset_url "$asset_name.sha256")
     expected=$(curl -fsSL "$checksum_url" 2>/dev/null | awk '{print $1}' | head -n1)
     if [ -z "$expected" ]; then
         allow_unverified_install "No .sha256 checksum was published for $asset_name at $TAG."
@@ -537,6 +562,32 @@ verify_local_checksum() {
 # broken one. Empty when there was nothing to back up (fresh install).
 INSTALL_BACKUP=""
 
+download_selected_release_asset() {
+    out="$1"
+    quiet="${2:-0}"
+    if download_asset "$ASSET" "$out" 2>/dev/null; then
+        return 0
+    fi
+    if [ -n "$ASSET_FALLBACK" ] && [ "$ASSET_FALLBACK" != "$ASSET" ]; then
+        warn "$ASSET is not published for $TAG yet. Falling back to $ASSET_FALLBACK."
+        if download_asset "$ASSET_FALLBACK" "$out"; then
+            ASSET="$ASSET_FALLBACK"
+            ASSET_FALLBACK=""
+            return 0
+        fi
+        if [ "$quiet" != "1" ]; then
+            err "Neither $ASSET nor $ASSET_FALLBACK could be downloaded for $TAG."
+            err "Browse https://github.com/$REPO/releases to confirm."
+        fi
+        return 1
+    fi
+    if [ "$quiet" != "1" ]; then
+        err "Download failed. Is the release published yet?"
+        err "Browse https://github.com/$REPO/releases to confirm."
+    fi
+    return 1
+}
+
 stage_and_install() {
     tmp=$(mktemp)
     staged=""
@@ -561,20 +612,23 @@ stage_and_install() {
             trap - EXIT INT TERM
             exit 1
         fi
-    elif ! download_asset "$ASSET" "$tmp" 2>/dev/null; then
-        if [ -n "$ASSET_FALLBACK" ] && [ "$ASSET_FALLBACK" != "$ASSET" ]; then
-            warn "$ASSET is not published for $TAG yet. Falling back to $ASSET_FALLBACK."
-            if ! download_asset "$ASSET_FALLBACK" "$tmp"; then
-                err "Neither $ASSET nor $ASSET_FALLBACK could be downloaded for $TAG."
-                err "Browse https://github.com/$REPO/releases to confirm."
+    elif [ -z "$VERSION" ] && [ "$TAG" = "latest" ]; then
+        if ! download_selected_release_asset "$tmp" 1; then
+            warn "Latest release asset redirect did not provide $ASSET; checking recent releases for the newest tag with assets."
+            resolve_tag_from_api
+            say "  Release tag: $TAG"
+            if download_selected_release_asset "$tmp"; then
+                :
+            else
+                rm -f "$tmp"
+                trap - EXIT INT TERM
                 exit 1
             fi
-            ASSET="$ASSET_FALLBACK"
-        else
-            err "Download failed. Is the release published yet?"
-            err "Browse https://github.com/$REPO/releases to confirm."
-            exit 1
         fi
+    elif ! download_selected_release_asset "$tmp"; then
+        rm -f "$tmp"
+        trap - EXIT INT TERM
+        exit 1
     fi
 
     # A zero-byte download means the asset 404'd into an empty file, the

@@ -8,8 +8,9 @@ documented here with default, effect, and a typical use case.
 | Variable            | Default                                       | Effect                                |
 |---------------------|-----------------------------------------------|---------------------------------------|
 | `KEYHOG_INSTALL`    | `~/.local/bin` (sh) / `%LOCALAPPDATA%\keyhog\bin` (ps1) | Where install.sh / install.ps1 drops the binary. |
-| `KEYHOG_VERSION`    | (latest release with assets)                  | Pin install.sh / install.ps1 to a specific tag. install.sh now walks back through `/releases?per_page=10` to find the most recent release with binaries attached, surviving a one-off release-workflow failure without forcing an explicit pin. |
+| `KEYHOG_VERSION`    | (latest release asset redirect)               | Pin install.sh / install.ps1 to a specific tag. Without a pin, install.sh first downloads through GitHub's non-API `/releases/latest/download/...` redirect, then walks `/releases?per_page=10` only when that asset is missing so a one-off zero-asset release still recovers. |
 | `KEYHOG_VARIANT`    | `auto` (`cuda` on hosts with the full CUDA toolkit, `cpu` otherwise) | Force the `cuda` or `cpu` variant of the Linux build during install. `cpu` is the WGPU + SIMD default which already dispatches on any compatible adapter via Vulkan; `cuda` adds the native-CUDA backend on hosts with libcuda + the matching toolkit. |
+| `GITHUB_TOKEN`      | (unset)                                       | Optional token used only for the fallback GitHub releases API lookup. The default latest-asset redirect path does not read it. |
 
 ## Cache
 

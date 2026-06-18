@@ -248,6 +248,7 @@ sha_of() {
 # the mock curl reads at runtime (exported into the run via run_install):
 #   MOCK_RELEASES   - path to releases JSON, or "DOWN" to simulate API down
 #   MOCK_ASSET      - path to the binary to serve, or "404"
+#   MOCK_LATEST_ASSET - path served by /releases/latest/download, or "404"
 #   MOCK_FALLBACK   - path to serve for the *fallback* asset, or "404"
 #   MOCK_SHA        - "match" | "mismatch" | "absent"
 #   MOCK_LDD        - "ok" | path-to-missing-lib-name (e.g. "libhyperscan.so.5")
@@ -340,6 +341,8 @@ mkdir -p "$sd" 2>/dev/null || true
 
 case "$url" in
   *api.github.com*releases*)
+    : > "$HOME/github-api-called"
+    case " $* " in *"Authorization: Bearer "*) : > "$HOME/github-api-auth" ;; esac
     if [ "${MOCK_RELEASES:-DOWN}" = "DOWN" ]; then exit 22; fi
     emit < "$MOCK_RELEASES"; exit 0 ;;
   *.sha256)
@@ -352,6 +355,12 @@ case "$url" in
         [ -z "$h" ] && h=$(shasum -a 256 "$sf" 2>/dev/null | awk '{print $1}')
         printf '%s  asset\n' "$h" | emit; exit 0 ;;
     esac ;;
+  *releases/latest/download/*)
+    if [ "${MOCK_LATEST_ASSET:-${MOCK_ASSET:-404}}" = "404" ]; then exit 22; fi
+    served="${MOCK_LATEST_ASSET:-$MOCK_ASSET}"
+    printf '%s' "$served" > "$sd/served"
+    cat "$served" > "$out"
+    exit 0 ;;
   *releases/download/*)
     # First download attempt = primary asset, second = fallback. Tracked
     # via a marker file so the ordering survives across curl processes.
@@ -384,11 +393,13 @@ run_install() {
         MOCK_STATE_DIR="$state" \
         MOCK_RELEASES="${MOCK_RELEASES:-DOWN}" \
         MOCK_ASSET="${MOCK_ASSET:-404}" \
+        MOCK_LATEST_ASSET="${MOCK_LATEST_ASSET:-${MOCK_ASSET:-404}}" \
         MOCK_FALLBACK="${MOCK_FALLBACK:-404}" \
         MOCK_SHA="${MOCK_SHA:-absent}" \
         MOCK_LDD="${MOCK_LDD:-ok}" \
         KEYHOG_VARIANT="${KEYHOG_VARIANT:-auto}" \
         ${KEYHOG_VERSION:+KEYHOG_VERSION="$KEYHOG_VERSION"} \
+        ${GITHUB_TOKEN:+GITHUB_TOKEN="$GITHUB_TOKEN"} \
         sh "$INSTALL_SH" "$@" 2>&1
     rc=$?
     rm -rf "$state"
@@ -402,8 +413,8 @@ echo " install.sh edge-case battery"
 echo "=============================================================="
 
 reset_mocks() {
-    unset MOCK_RELEASES MOCK_ASSET MOCK_FALLBACK MOCK_SHA MOCK_LDD \
-          KEYHOG_VARIANT KEYHOG_VERSION KEYHOG_INSTALL_OVERRIDE
+    unset MOCK_RELEASES MOCK_ASSET MOCK_LATEST_ASSET MOCK_FALLBACK MOCK_SHA MOCK_LDD \
+          KEYHOG_VARIANT KEYHOG_VERSION KEYHOG_INSTALL_OVERRIDE GITHUB_TOKEN
 }
 
 # ======================================================================
@@ -436,22 +447,29 @@ printf '\n[2] resolve_tag against GitHub-shaped JSON\n'
 reset_mocks
 sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
 out=$(MOCK_RELEASES="$FIX_DIR/releases_normal.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match  "2.1 picks newest release tag v9.9.9" "Release tag:   v9.9.9" "$out"
+expect_match  "2.1 default install uses latest asset redirect" "Release tag:   latest" "$out"
 expect_status "2.2 normal install exits 0" 0 "$st"
+expect_nofile "2.3 default latest success skips GitHub API" "$h/github-api-called"
 rm -rf "$h"; h=$(newhome)
-out=$(MOCK_RELEASES="$FIX_DIR/releases_latest_empty.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt)
-expect_match  "2.3 skips asset-less newest, picks v9.9.8" "Release tag:   v9.9.8" "$out"
+out=$(MOCK_LATEST_ASSET=404 MOCK_RELEASES="$FIX_DIR/releases_latest_empty.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt)
+expect_match  "2.4 latest miss falls back to API release walk" "checking recent releases" "$out"
+expect_match  "2.5 skips asset-less newest, picks v9.9.8" "Release tag: v9.9.8" "$out"
+expect_file   "2.6 latest miss calls GitHub API" "$h/github-api-called"
 rm -rf "$h"; h=$(newhome)
-out=$(MOCK_RELEASES="$FIX_DIR/releases_all_empty.json" run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match  "2.4 all-empty releases errors" "No GitHub release" "$out"
-expect_status "2.5 all-empty exits 1" 1 "$st"
+out=$(GITHUB_TOKEN=ghp_mock_token MOCK_LATEST_ASSET=404 MOCK_RELEASES="$FIX_DIR/releases_latest_empty.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
+expect_status "2.7 authenticated API fallback install exits 0" 0 "$st"
+expect_file   "2.8 API fallback sends Authorization when GITHUB_TOKEN is set" "$h/github-api-auth"
 rm -rf "$h"; h=$(newhome)
-out=$(run_install "$sb" "$h" -- --no-prompt); st=$?    # MOCK_RELEASES unset => DOWN
-expect_match  "2.6 API down errors clearly" "Could not query GitHub releases API" "$out"
-expect_status "2.7 API down exits 1" 1 "$st"
+out=$(MOCK_LATEST_ASSET=404 MOCK_RELEASES="$FIX_DIR/releases_all_empty.json" run_install "$sb" "$h" -- --no-prompt); st=$?
+expect_match  "2.9 all-empty releases errors" "No GitHub release" "$out"
+expect_status "2.10 all-empty exits 1" 1 "$st"
+rm -rf "$h"; h=$(newhome)
+out=$(MOCK_LATEST_ASSET=404 run_install "$sb" "$h" -- --no-prompt); st=$?    # MOCK_RELEASES unset => DOWN
+expect_match  "2.11 API down errors clearly after latest miss" "Could not query GitHub releases API" "$out"
+expect_status "2.12 API down exits 1" 1 "$st"
 rm -rf "$h"; h=$(newhome)
 out=$(KEYHOG_VERSION=v1.2.3 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt)
-expect_match  "2.8 --version pin skips API" "Release tag:   v1.2.3" "$out"
+expect_match  "2.13 --version pin skips API" "Release tag:   v1.2.3" "$out"
 rm -rf "$h"; h=$(newhome)
 # A bare semver (no leading v) must normalise to the v-prefixed tag. keyhog
 # tags are all vX.Y.Z, so `--version=9.9.9` building a download URL from the
@@ -459,8 +477,8 @@ rm -rf "$h"; h=$(newhome)
 # (the smoke passed "0.5.37", not "v0.5.37"). Assert the resolved tag is v-fixed
 # AND the install completes, so the 404 can never come back silently.
 out=$(KEYHOG_VERSION=9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match  "2.9 bare semver normalises to v-prefixed tag" "Release tag:   v9.9.9" "$out"
-expect_status "2.10 bare-semver install exits 0" 0 "$st"
+expect_match  "2.14 bare semver normalises to v-prefixed tag" "Release tag:   v9.9.9" "$out"
+expect_status "2.15 bare-semver install exits 0" 0 "$st"
 rm -rf "$sb" "$h"
 
 # ======================================================================
@@ -826,7 +844,8 @@ out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb"
 expect_match "14.2 bare numeric tag normalises to v-prefixed" "Release tag:   v2.0.0" "$out"
 rm -rf "$h"; h=$(newhome)
 out=$(MOCK_RELEASES="$FIX_DIR/releases_normal.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --version= --no-prompt)
-expect_match "14.3 empty --version falls back to API" "Release tag:   v9.9.9" "$out"
+expect_match "14.3 empty --version uses default latest redirect" "Release tag:   latest" "$out"
+expect_nofile "14.4 empty --version does not call GitHub API when latest succeeds" "$h/github-api-called"
 rm -rf "$sb" "$h"
 
 # ======================================================================
