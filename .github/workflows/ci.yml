@@ -274,6 +274,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - name: Install install-script linters
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends shellcheck shfmt
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: Install-Module -Name PSScriptAnalyzer -Scope CurrentUser -Force
+      - name: Static analysis (install scripts)
+        env:
+          REQUIRE_INSTALL_LINTERS: '1'
+        run: bash scripts/gates/install_static_analysis.sh
       # No Rust build needed: both harnesses mock curl / uname / nvidia-smi /
       # ldconfig / ldd and the downloaded binary, so install.sh runs fully
       # offline. The hosted runner has no CUDA stack, so the CUDA-detection

@@ -67,10 +67,9 @@ setup_colors() {
         C_RED=$(printf '\033[31m')
         C_GREEN=$(printf '\033[32m')
         C_YELLOW=$(printf '\033[33m')
-        C_BLUE=$(printf '\033[34m')
         C_CYAN=$(printf '\033[36m')
     else
-        C_RESET='' C_BOLD='' C_DIM='' C_RED='' C_GREEN='' C_YELLOW='' C_BLUE='' C_CYAN=''
+        C_RESET='' C_BOLD='' C_DIM='' C_RED='' C_GREEN='' C_YELLOW='' C_CYAN=''
     fi
 }
 
@@ -870,9 +869,11 @@ prime_autoroute_cache() {
     scan_help="$("$bin" scan --help 2>/dev/null || true)"
     if printf '%s' "$scan_help" | grep -q -- '--no-config'; then
         cfg_flag="--no-config"
+        cfg_file=""
     else
         : > "$tmpdir/empty-config.toml"
-        cfg_flag="--config $tmpdir/empty-config.toml"
+        cfg_flag="--config"
+        cfg_file="$tmpdir/empty-config.toml"
     fi
     unavailable_calibrations=""
     git_calibration=0
@@ -1156,6 +1157,14 @@ run_autoroute_docker_image_probe() {
     run_autoroute_scan_probe "$1" "$2" "$3" docker-image "$4" "$5" "$6"
 }
 
+run_keyhog_calibration_scan() {
+    if [ "$cfg_flag" = "--no-config" ]; then
+        "$bin" "$@" --no-config
+    else
+        "$bin" "$@" --config "$cfg_file"
+    fi
+}
+
 run_autoroute_scan_probe() {
     idx="$1"
     total="$2"
@@ -1168,31 +1177,31 @@ run_autoroute_scan_probe() {
     case "$mode" in
         path)
             KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                "$bin" scan "$probe" $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile" &
+                run_keyhog_calibration_scan scan "$probe" --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         stdin)
             KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                "$bin" scan --stdin $cfg_flag --format json -o "$out" < "$probe" >/dev/null 2>"$errfile" &
+                run_keyhog_calibration_scan scan --stdin --format json -o "$out" < "$probe" >/dev/null 2>"$errfile" &
             ;;
         git-history)
             KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                "$bin" scan --git-history "$probe" --max-commits 1 $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile" &
+                run_keyhog_calibration_scan scan --git-history "$probe" --max-commits 1 --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         git-blobs)
             KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                "$bin" scan --git-blobs "$probe" --max-commits 2 $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile" &
+                run_keyhog_calibration_scan scan --git-blobs "$probe" --max-commits 2 --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         git-diff)
             KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                "$bin" scan --git-diff HEAD --git-diff-path "$probe" $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile" &
+                run_keyhog_calibration_scan scan --git-diff HEAD --git-diff-path "$probe" --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         url)
             KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                "$bin" scan --url "$probe" $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile" &
+                run_keyhog_calibration_scan scan --url "$probe" --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         docker-image)
             KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                "$bin" scan --docker-image "$probe" $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile" &
+                run_keyhog_calibration_scan scan --docker-image "$probe" --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         *)
             (
@@ -1660,8 +1669,10 @@ offer_path_setup() {
                 return
             fi
             if [ "$shell_name" = "fish" ]; then
+                # shellcheck disable=SC2016 # write a literal $PATH into the user's rc file
                 printf '\n# keyhog\nset -gx PATH %s $PATH\n' "$INSTALL_DIR" >> "$rc"
             else
+                # shellcheck disable=SC2016 # write a literal $PATH into the user's rc file
                 printf '\n# keyhog\nexport PATH="%s:$PATH"\n' "$INSTALL_DIR" >> "$rc"
             fi
             ok "  Added. Restart your shell or 'source $rc' to pick it up."
@@ -1753,7 +1764,9 @@ ensure_zsh_completion_wiring() {
     fi
     if ! {
         printf '\n# keyhog completions\n'
+        # shellcheck disable=SC2016 # write literal zsh startup code into the user's rc file
         printf 'if [ -d "$HOME/.zfunc" ]; then\n'
+        # shellcheck disable=SC2016 # write literal zsh startup code into the user's rc file
         printf '  fpath=("$HOME/.zfunc" $fpath)\n'
         printf '  autoload -Uz compinit\n'
         printf '  compinit\n'
