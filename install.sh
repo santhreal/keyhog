@@ -860,6 +860,7 @@ prime_autoroute_cache() {
     say ""
     info "Autoroute calibration"
     dim "  visible install phase; persistent until you run install.sh --calibrate again"
+    calibration_started_s="$(date +%s 2>/dev/null || printf '0')"
 
     # Pick the config-isolation flag the INSTALLED binary actually accepts. A
     # released binary that predates `--no-config` only has `--config <PATH>`;
@@ -1119,6 +1120,10 @@ prime_autoroute_cache() {
         warn "Autoroute calibration incomplete for unavailable source classes:$unavailable_calibrations."
         warn "Install the required source tools and rerun install.sh --calibrate before using those source routes."
     fi
+    if ! show_autoroute_calibration_summary "$total" "$calibration_started_s"; then
+        err "Autoroute calibration completed but persisted decisions could not be read back."
+        return 1
+    fi
     ok "Autoroute calibration phase complete."
     return 0
 }
@@ -1219,6 +1224,197 @@ run_autoroute_scan_probe() {
     [ -n "$real_err" ] && dim "    reason: $real_err"
     err "Autoroute calibration probe failed for $label."
     return 1
+}
+
+autoroute_cache_path_for_install() {
+    if [ "${KEYHOG_AUTOROUTE_CACHE+x}" = "x" ]; then
+        kh_cache_env_trim="$(printf '%s' "$KEYHOG_AUTOROUTE_CACHE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+        kh_cache_env_lc="$(printf '%s' "$kh_cache_env_trim" | tr '[:upper:]' '[:lower:]')"
+        case "$kh_cache_env_lc" in
+            ""|0|off)
+                return 1
+                ;;
+        esac
+        case "$kh_cache_env_trim" in
+            /*)
+                printf '%s\n' "$kh_cache_env_trim"
+                return 0
+                ;;
+            *)
+                warn "Autoroute cache summary cannot use KEYHOG_AUTOROUTE_CACHE=$kh_cache_env_trim; the binary requires an absolute cache path."
+                return 1
+                ;;
+        esac
+    fi
+
+    if [ "$OS" = "darwin" ]; then
+        printf '%s/Library/Caches/keyhog/autoroute.json\n' "$HOME"
+    elif [ -n "${XDG_CACHE_HOME:-}" ]; then
+        printf '%s/keyhog/autoroute.json\n' "$XDG_CACHE_HOME"
+    else
+        printf '%s/.cache/keyhog/autoroute.json\n' "$HOME"
+    fi
+}
+
+show_autoroute_calibration_summary() {
+    calibration_probe_total="$1"
+    calibration_started_s="$2"
+    cache_path="$(autoroute_cache_path_for_install || true)"
+    if [ -z "$cache_path" ]; then
+        warn "Autoroute calibration summary unavailable: persistent autoroute cache is disabled or invalid."
+        return 1
+    fi
+    if [ ! -s "$cache_path" ] || [ ! -r "$cache_path" ]; then
+        warn "Autoroute calibration summary unavailable: no readable cache at $cache_path."
+        return 1
+    fi
+
+    calibration_now_s="$(date +%s 2>/dev/null || printf '0')"
+    case "$calibration_started_s:$calibration_now_s" in
+        *[!0123456789:]*|0:*|*:0) calibration_elapsed_s="-1" ;;
+        *) calibration_elapsed_s=$((calibration_now_s - calibration_started_s)) ;;
+    esac
+
+    if ! calibration_summary="$(awk -v probes="$calibration_probe_total" -v elapsed="$calibration_elapsed_s" '
+        function json_string(line, v) {
+            v = line
+            sub(/^[^:]*:[[:space:]]*"/, "", v)
+            sub(/".*$/, "", v)
+            return v
+        }
+        function json_number(line, v) {
+            v = line
+            sub(/^[^:]*:[[:space:]]*/, "", v)
+            sub(/[[:space:],]*$/, "", v)
+            gsub(/"/, "", v)
+            if (v == "" || v == "null") {
+                return "-"
+            }
+            return v
+        }
+        function bytes_label(value) {
+            value += 0
+            if (value >= 1073741824) {
+                return sprintf("%.1fGiB", value / 1073741824)
+            }
+            if (value >= 1048576) {
+                return sprintf("%.1fMiB", value / 1048576)
+            }
+            if (value >= 1024) {
+                return sprintf("%.1fKiB", value / 1024)
+            }
+            return sprintf("%dB", value)
+        }
+        function ms_label(value) {
+            if (value == "" || value == "-") {
+                return "-"
+            }
+            return sprintf("%sms", value)
+        }
+        function margin_label(value, ns) {
+            if (value == "" || value == "-") {
+                return "tie"
+            }
+            ns = value + 0
+            if (ns <= 0) {
+                return "tie"
+            }
+            if (ns < 1000) {
+                return sprintf("%dns", ns)
+            }
+            if (ns < 1000000) {
+                return sprintf("%.1fus", ns / 1000)
+            }
+            if (ns < 1000000000) {
+                return sprintf("%.1fms", ns / 1000000)
+            }
+            return sprintf("%.2fs", ns / 1000000000)
+        }
+        function emit_row(sample, chunk_label, row) {
+            if (backend == "") {
+                return
+            }
+            if (sample_bytes == "") {
+                sample_bytes = 0
+            }
+            if (sample_chunks == "") {
+                sample_chunks = 0
+            }
+            sample = bytes_label(sample_bytes)
+            chunk_label = sample_chunks "ch"
+            row = sprintf("  %-18s %-16s %-9s %-7s %-7s %-7s",
+                sample " / " chunk_label,
+                backend,
+                margin_label(selected_margin_ns),
+                ms_label(simd_ms),
+                ms_label(cpu_ms),
+                ms_label(gpu_ms))
+            rows[++count] = row
+            backend = ""
+            sample_bytes = ""
+            sample_chunks = ""
+            simd_ms = ""
+            cpu_ms = ""
+            gpu_ms = ""
+            selected_margin_ns = ""
+        }
+        /"backend"[[:space:]]*:/ {
+            backend = json_string($0)
+            next
+        }
+        backend != "" && /"sample_bytes"[[:space:]]*:/ {
+            sample_bytes = json_number($0)
+            next
+        }
+        backend != "" && /"sample_chunks"[[:space:]]*:/ {
+            sample_chunks = json_number($0)
+            next
+        }
+        backend != "" && /"simd_ms"[[:space:]]*:/ {
+            simd_ms = json_number($0)
+            next
+        }
+        backend != "" && /"cpu_ms"[[:space:]]*:/ {
+            cpu_ms = json_number($0)
+            next
+        }
+        backend != "" && /"gpu_ms"[[:space:]]*:/ {
+            gpu_ms = json_number($0)
+            next
+        }
+        backend != "" && /"selected_margin_ns"[[:space:]]*:/ {
+            selected_margin_ns = json_number($0)
+            next
+        }
+        backend != "" && /"trials"[[:space:]]*:/ {
+            emit_row()
+            next
+        }
+        END {
+            emit_row()
+            if (count == 0) {
+                exit 1
+            }
+            if (elapsed >= 0) {
+                printf "  probes: %s in %ss; decisions persisted: %d\n", probes, elapsed, count
+            } else {
+                printf "  probes: %s; decisions persisted: %d\n", probes, count
+            }
+            print "  sample/chunks       selected backend margin    simd    cpu     gpu"
+            for (i = 1; i <= count; i++) {
+                print rows[i]
+            }
+        }
+    ' "$cache_path" 2>/dev/null)"; then
+        warn "Autoroute calibration summary unavailable: could not parse persisted cache at $cache_path."
+        return 1
+    fi
+
+    say ""
+    info "Autoroute calibration decisions"
+    dim "  cache: $cache_path"
+    printf '%s\n' "$calibration_summary"
+    return 0
 }
 
 make_calibration_probe() {

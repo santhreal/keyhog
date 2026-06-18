@@ -141,9 +141,68 @@ JSON
 # so verify_install can actually execute it for --version + doctor.
 cat > "$FIX_DIR/fake_keyhog_healthy" <<'SH'
 #!/bin/sh
+write_mock_autoroute_cache() {
+  case "${KEYHOG_AUTOROUTE_CACHE:-}" in
+    0|off|OFF|Off) return 0 ;;
+    /*) cache="${KEYHOG_AUTOROUTE_CACHE}" ;;
+    *)
+      if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+        cache="$HOME/Library/Caches/keyhog/autoroute.json"
+      elif [ -n "${XDG_CACHE_HOME:-}" ]; then
+        cache="$XDG_CACHE_HOME/keyhog/autoroute.json"
+      else
+        cache="$HOME/.cache/keyhog/autoroute.json"
+      fi
+      ;;
+  esac
+  mkdir -p "$(dirname "$cache")" || exit 1
+  cat > "$cache" <<'JSON'
+{
+  "decisions": [
+    [
+      { "bytes_bucket": 0, "chunks_bucket": 0, "max_file_bucket": 0, "pattern_bucket": 0, "decode_density_bucket": 0, "source_class_hash": 1 },
+      {
+        "backend": "simd-regex",
+        "sample_bytes": 0,
+        "sample_chunks": 0,
+        "correctness_digest": 1,
+        "calibrated_at_unix_ms": 1,
+        "simd_ms": 1,
+        "cpu_ms": 3,
+        "gpu_ms": null,
+        "selected_margin_ns": 2000000,
+        "trials": 3
+      }
+    ],
+    [
+      { "bytes_bucket": 12, "chunks_bucket": 1, "max_file_bucket": 12, "pattern_bucket": 9, "decode_density_bucket": 1, "source_class_hash": 2 },
+      {
+        "backend": "gpu-zero-copy",
+        "sample_bytes": 8388608,
+        "sample_chunks": 1,
+        "correctness_digest": 2,
+        "calibrated_at_unix_ms": 1,
+        "simd_ms": 9,
+        "cpu_ms": 12,
+        "gpu_ms": 2,
+        "selected_margin_ns": 7000000,
+        "trials": 3
+      }
+    ]
+  ]
+}
+JSON
+}
 case "$1" in
   --version) echo "KeyHog v9.9.9 (mock)" ;;
   doctor)    echo "mock doctor: healthy"; exit 0 ;;
+  scan)
+    case "${2:-}" in
+      --help) echo "Usage: keyhog scan [--no-config]" ;;
+      *) [ -n "${KEYHOG_AUTOROUTE_CALIBRATE:-}" ] && write_mock_autoroute_cache ;;
+    esac
+    exit 0
+    ;;
   hook)      exit 0 ;;
   completion) echo "# mock completion for ${2:-sh}" ;;
   uninstall) printf '%s\n' "$*" > "$HOME/keyhog-uninstall-called"; exit 0 ;;
@@ -156,13 +215,40 @@ SH
 # reasons instead of blaming an old/missing subcommand.
 cat > "$FIX_DIR/fake_keyhog_wizard_fail" <<'SH'
 #!/bin/sh
+write_mock_autoroute_cache() {
+  if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+    cache="$HOME/Library/Caches/keyhog/autoroute.json"
+  else
+    cache="${XDG_CACHE_HOME:-$HOME/.cache}/keyhog/autoroute.json"
+  fi
+  mkdir -p "$(dirname "$cache")" || exit 1
+  cat > "$cache" <<'JSON'
+{
+  "decisions": [
+    [
+      {},
+      {
+        "backend": "simd-regex",
+        "sample_bytes": 4096,
+        "sample_chunks": 1,
+        "simd_ms": 1,
+        "cpu_ms": 2,
+        "gpu_ms": null,
+        "selected_margin_ns": 1000000,
+        "trials": 3
+      }
+    ]
+  ]
+}
+JSON
+}
 case "$1" in
   --version) echo "KeyHog v9.9.9 (mock)" ;;
   doctor)    echo "mock doctor: healthy"; exit 0 ;;
   scan)
     case "${2:-}" in
       --help) echo "Usage: keyhog scan [--no-config]" ;;
-      *) ;;
+      *) [ -n "${KEYHOG_AUTOROUTE_CALIBRATE:-}" ] && write_mock_autoroute_cache ;;
     esac
     exit 0
     ;;
@@ -177,13 +263,40 @@ SH
 # operator Docker source autorouting is not calibrated on this host.
 cat > "$FIX_DIR/fake_keyhog_docker_help" <<'SH'
 #!/bin/sh
+write_mock_autoroute_cache() {
+  if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+    cache="$HOME/Library/Caches/keyhog/autoroute.json"
+  else
+    cache="${XDG_CACHE_HOME:-$HOME/.cache}/keyhog/autoroute.json"
+  fi
+  mkdir -p "$(dirname "$cache")" || exit 1
+  cat > "$cache" <<'JSON'
+{
+  "decisions": [
+    [
+      {},
+      {
+        "backend": "simd-regex",
+        "sample_bytes": 4096,
+        "sample_chunks": 1,
+        "simd_ms": 1,
+        "cpu_ms": 2,
+        "gpu_ms": null,
+        "selected_margin_ns": 1000000,
+        "trials": 3
+      }
+    ]
+  ]
+}
+JSON
+}
 case "$1" in
   --version) echo "KeyHog v9.9.9 (mock)" ;;
   doctor)    echo "mock doctor: healthy"; exit 0 ;;
   scan)
     case "$2" in
       --help) echo "Usage: keyhog scan [--docker-image IMAGE]" ;;
-      *) ;;
+      *) [ -n "${KEYHOG_AUTOROUTE_CALIBRATE:-}" ] && write_mock_autoroute_cache ;;
     esac
     exit 0
     ;;
@@ -231,9 +344,43 @@ SH
 # Binary that runs but whose doctor fails (self-test unhealthy).
 cat > "$FIX_DIR/fake_keyhog_doctor_fail" <<'SH'
 #!/bin/sh
+write_mock_autoroute_cache() {
+  if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+    cache="$HOME/Library/Caches/keyhog/autoroute.json"
+  else
+    cache="${XDG_CACHE_HOME:-$HOME/.cache}/keyhog/autoroute.json"
+  fi
+  mkdir -p "$(dirname "$cache")" || exit 1
+  cat > "$cache" <<'JSON'
+{
+  "decisions": [
+    [
+      {},
+      {
+        "backend": "simd-regex",
+        "sample_bytes": 4096,
+        "sample_chunks": 1,
+        "simd_ms": 1,
+        "cpu_ms": 2,
+        "gpu_ms": null,
+        "selected_margin_ns": 1000000,
+        "trials": 3
+      }
+    ]
+  ]
+}
+JSON
+}
 case "$1" in
   --version) echo "KeyHog v9.9.9 (mock)" ;;
   doctor)    echo "mock doctor: UNHEALTHY" >&2; exit 4 ;;
+  scan)
+    case "${2:-}" in
+      --help) echo "Usage: keyhog scan [--no-config]" ;;
+      *) [ -n "${KEYHOG_AUTOROUTE_CALIBRATE:-}" ] && write_mock_autoroute_cache ;;
+    esac
+    exit 0
+    ;;
   *) ;;
 esac
 SH
@@ -584,6 +731,9 @@ expect_status "6.1 healthy install exits 0" 0 "$st"
 expect_match  "6.2 reports installed version" "KeyHog v9.9.9" "$out"
 expect_match  "6.3 SHA256 verified line"      "SHA256 verified" "$out"
 expect_exec   "6.4 binary is executable"      "$h/.local/bin/keyhog"
+expect_match  "6.4a calibration summary table printed" "Autoroute calibration decisions" "$out"
+expect_match  "6.4b calibration summary reports persisted decision count" "decisions persisted: 2" "$out"
+expect_match  "6.4c calibration summary shows backend margin" "gpu-zero-copy.*7\\.0ms" "$out"
 rm -rf "$h"
 # 6.5 checksum mismatch refuses + no install
 h=$(newhome)
@@ -1007,6 +1157,22 @@ if ! grep -q 'total=9' install.sh \
 else
     _record_fail "19.14 install.sh calibration derives progress totals" \
         "hardcoded total=9 or missing workload-derived total loop"
+fi
+if grep -q 'show_autoroute_calibration_summary "$total"' install.sh \
+   && grep -q 'selected backend margin' install.sh \
+   && grep -q 'selected_margin_ns' install.sh; then
+    _record_pass "19.14a install.sh renders persisted autoroute decisions after calibration"
+else
+    _record_fail "19.14a install.sh renders persisted autoroute decisions" \
+        "summary table must read selected backend and selected_margin_ns from the cache"
+fi
+if grep -q 'while kill -0 "$pid"' install.sh \
+   && grep -q 'calibration_probe_pid="$pid"' install.sh \
+   && grep -q 'sleep 0.15' install.sh; then
+    _record_pass "19.14b install.sh calibration probes have live spinner progress"
+else
+    _record_fail "19.14b install.sh calibration probes have live spinner progress" \
+        "probe loop must keep an active pid and update progress while it runs"
 fi
 reset_mocks
 sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
