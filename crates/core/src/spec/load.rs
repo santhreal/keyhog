@@ -160,7 +160,8 @@ pub fn load_detector_cache(cache_path: &Path, source_dir: &Path) -> Option<Vec<D
 }
 
 /// Load all detector specs from a directory of TOML files.
-/// Runs quality gate on each detector. Rejects detectors with errors, warns on issues.
+/// Runs the quality gate on each detector and fails closed if any detector
+/// cannot be read, parsed, or accepted by the gate.
 ///
 /// # Examples
 ///
@@ -178,7 +179,8 @@ pub fn load_detectors(dir: &Path) -> Result<Vec<DetectorSpec>, SpecError> {
 }
 
 /// Load detectors with optional quality gate enforcement.
-/// When `enforce_gate` is `true`, detectors with quality errors are skipped.
+/// When `enforce_gate` is `true`, detector read/parse/quality errors reject
+/// the entire corpus instead of returning a partial detector set.
 ///
 /// # Examples
 ///
@@ -199,17 +201,17 @@ pub fn load_detectors_with_gate(
         path: dir.display().to_string(),
         source: e,
     })?;
-    let toml_paths: Vec<PathBuf> = entries
-        .filter_map(|entry| {
-            let entry = entry.ok()?;
-            let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "toml") {
-                Some(path)
-            } else {
-                None
-            }
-        })
-        .collect();
+    let mut toml_paths = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| SpecError::ReadFile {
+            path: dir.display().to_string(),
+            source: e,
+        })?;
+        let path = entry.path();
+        if path.extension().is_some_and(|ext| ext == "toml") {
+            toml_paths.push(path);
+        }
+    }
 
     // Phase 2: read + parse all TOMLs in parallel
     let parsed: Vec<ReadDetectorOutcome> = toml_paths
@@ -228,6 +230,7 @@ pub fn load_detectors_with_gate(
                     &spec,
                     enforce_gate,
                     &mut load_state.gate_rejected,
+                    &mut load_state.gate_errors,
                     &mut load_state.total_warnings,
                 ) {
                     continue;
@@ -242,6 +245,9 @@ pub fn load_detectors_with_gate(
     }
 
     log_load_summary(&load_state);
+    if enforce_gate && load_state.has_failures() {
+        return Err(load_state.into_rejected_error(dir, toml_paths.len()));
+    }
 
     detectors.sort_by(|a, b| a.id.cmp(&b.id));
     Ok(detectors)
@@ -252,7 +258,30 @@ struct DetectorLoadState {
     skipped: usize,
     load_errors: Vec<String>,
     gate_rejected: usize,
+    gate_errors: Vec<String>,
     total_warnings: usize,
+}
+
+impl DetectorLoadState {
+    fn has_failures(&self) -> bool {
+        self.skipped > 0 || self.gate_rejected > 0
+    }
+
+    fn into_rejected_error(self, dir: &Path, total: usize) -> SpecError {
+        let mut details = self.load_errors;
+        details.extend(self.gate_errors);
+        let detail = details
+            .into_iter()
+            .map(|line| format!("  - {line}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        SpecError::DetectorCorpusRejected {
+            dir: dir.display().to_string(),
+            failed_count: self.skipped + self.gate_rejected,
+            total,
+            detail,
+        }
+    }
 }
 
 fn log_load_summary(state: &DetectorLoadState) {
@@ -263,20 +292,17 @@ fn log_load_summary(state: &DetectorLoadState) {
         tracing::warn!("detector load issue: {error}");
     }
     if state.gate_rejected > 0 {
-        // Demoted from `warn!` - the per-detector causes are already
-        // logged at debug, and the aggregate fires on every CLI run
-        // that auto-discovers a `detectors/` directory (i.e. anyone
-        // running `keyhog` from the repo root). The user's output
-        // showed `Loaded 867 detectors` instead of the marketed 888;
-        // demoting this avoids that line being the first thing
-        // judges/operators see on stderr.
-        tracing::debug!(
-            "quality gate: {} detectors skipped (run with RUST_LOG=keyhog_core=debug for per-detector causes)",
+        // Law 10: quality-gate rejections are not silent. The per-detector
+        // causes are logged at warn! below; the aggregate is surfaced at
+        // the default level so operators see why the detector set would have
+        // been smaller than expected.
+        tracing::warn!(
+            "quality gate rejected {} detectors (see per-detector warnings above)",
             state.gate_rejected
         );
     }
     if state.total_warnings > 0 {
-        tracing::debug!("quality gate: {} warnings", state.total_warnings);
+        tracing::warn!("quality gate: {} warnings", state.total_warnings);
     }
 }
 
@@ -330,31 +356,24 @@ fn should_reject_detector(
     spec: &DetectorSpec,
     enforce_gate: bool,
     gate_rejected: &mut usize,
+    gate_errors: &mut Vec<String>,
     total_warnings: &mut usize,
 ) -> bool {
     let mut has_errors = false;
+    let mut detector_errors = Vec::new();
     for issue in validate_detector(spec) {
         match issue {
             QualityIssue::Warning(warning) => {
-                tracing::debug!("quality: {} - {}", spec.id, warning);
+                tracing::warn!("quality: {} - {}", spec.id, warning);
                 *total_warnings += 1;
             }
             QualityIssue::Error(error) => {
-                // Demoted from `warn!` - these errors fire on roughly
-                // a dozen embedded detectors at every CLI invocation
-                // (`scan`, `detectors`, `backend`, `--version` all
-                // load detectors), which made every command print 12+
-                // lines of dev-facing validator notes about URL
-                // templating before any actual output. The detectors
-                // still load and scan correctly; the validator just
-                // can't auto-verify them. Operators don't need this
-                // on their terminal - the keyhog dev who wrote the
-                // validator does, via `RUST_LOG=keyhog_core=debug`.
-                tracing::debug!(
-                    "detector quality issue (still loaded, verify path may degrade): {}: {}",
-                    spec.id,
-                    error
-                );
+                // Law 10: a detector that fails the quality gate must not be
+                // silently loaded. The warning names the detector and the
+                // issue so the author can fix it; when enforce_gate is true
+                // the detector is rejected below.
+                tracing::warn!("detector quality error: {}: {}", spec.id, error);
+                detector_errors.push(format!("{}: {}", spec.id, error));
                 has_errors = true;
             }
         }
@@ -362,6 +381,7 @@ fn should_reject_detector(
 
     if has_errors && enforce_gate {
         *gate_rejected += 1;
+        gate_errors.extend(detector_errors);
         return true;
     }
 

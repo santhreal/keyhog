@@ -457,4 +457,16 @@ pub enum SpecError {
         total: usize,
         detail: String,
     },
+    #[error(
+        "{failed_count} of {total} detector file(s) from {dir} failed to load or \
+         pass the quality gate; refusing to scan with a partial detector corpus. \
+         Offending detector(s):\n{detail}\nFix: repair the named TOML file(s) \
+         and rerun the scan."
+    )]
+    DetectorCorpusRejected {
+        dir: String,
+        failed_count: usize,
+        total: usize,
+        detail: String,
+    },
 }

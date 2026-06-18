@@ -168,7 +168,7 @@ fn invalid_cached_detector_rejects_entire_cache() {
 }
 
 #[test]
-fn malformed_toml_files_emit_warnings_and_keep_valid_detectors() {
+fn malformed_toml_files_fail_closed_instead_of_returning_partial_corpus() {
     let dir = temp_dir("detector-load");
     fs::write(
         dir.join("valid.toml"),
@@ -188,9 +188,16 @@ fn malformed_toml_files_emit_warnings_and_keep_valid_detectors() {
     fs::write(dir.join("broken.toml"), "[detector").unwrap();
 
     let logs = capture_logs(|| {
-        let detectors = load_detectors_with_gate(&dir, true).unwrap();
-        assert_eq!(detectors.len(), 1);
-        assert_eq!(detectors[0].id, "demo-token");
+        let error = load_detectors_with_gate(&dir, true)
+            .expect_err("enforced detector load must reject a partial corpus");
+        let message = error.to_string();
+        assert!(
+            message.contains("failed to load or pass the quality gate")
+                && message.contains("partial detector corpus")
+                && message.contains("broken.toml")
+                && message.contains("Fix: repair the named TOML"),
+            "malformed detector error must be operator-visible; got {message}"
+        );
     });
 
     assert!(logs.contains("failed to parse"));
