@@ -98,6 +98,11 @@ documented here with default, effect, and a typical use case.
 - `KEYHOG_*` flags for changing detector behavior. Detector tuning is
   via `.keyhog.toml` only, so the same scan reproduces across
   developer machines without env-var contamination.
+- Ambient remote-source targets such as `SLACK_TOKEN`, `S3_BUCKET`,
+  `GCS_BUCKET`, or `AZURE_BLOB_CONTAINER_URL`. Use explicit source flags
+  (`--source slack:TOKEN`, `--s3-bucket`, `--gcs-bucket`,
+  `--azure-container-url`) so target selection is visible in the command
+  and captured by config/audit logs.
 - Anything named `KEYHOG_API_KEY` / `KEYHOG_TOKEN`. The scanner never
   reports findings upstream; there's no service to authenticate to.
 - `KEYHOG_TELEMETRY_*`. There is no telemetry. Findings stay local.

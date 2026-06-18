@@ -234,9 +234,6 @@ pub fn build_sources(
         ));
     }
 
-    // Dynamic sources from the global registry / plugin factory
-    keyhog_sources::register_plugins();
-
     if let Some(ref dynamic_sources) = args.source {
         for source_spec in dynamic_sources {
             let (source_name, params) = if let Some(idx) = source_spec.find(':') {

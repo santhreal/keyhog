@@ -267,16 +267,6 @@ mod web;
 pub use api::*;
 pub use limits::{SourceLimits, DEFAULT_SOURCE_LIMITS};
 
-// Arc is used by the registry-registration plugins below. The cfg
-// match has to track the *actual* `Arc::new(...)` call sites, not
-// every feature flag the file references - gating broader than this
-// triggers `unused_imports` on builds that include only Docker
-// (which doesn't go through the registry).
-#[cfg(any(feature = "azure", feature = "slack", feature = "s3", feature = "gcs"))]
-use keyhog_core::registry::register_source;
-#[cfg(any(feature = "azure", feature = "slack", feature = "s3", feature = "gcs"))]
-use std::sync::Arc;
-
 /// Create a source instance from a name and optional parameters.
 /// This allows the CLI to remain agnostic of specific source implementations.
 pub fn create_source(
@@ -441,29 +431,15 @@ pub fn create_source_with_http_config_and_limits(
     }
 }
 
-/// Register all compiled-in source plugins into the global registry.
-/// This allows the CLI to discover sources like `slack` or `s3` via the
-/// generic `--source` flag without hardcoded logic in the main crate.
+/// Register built-in source plugins.
+///
+/// Built-ins are created by [`create_source_with_http_config_and_limits`] from
+/// explicit CLI/TOML source specs. This function intentionally has no ambient
+/// env side effects: source targets and credentials must not appear from
+/// `SLACK_TOKEN`, `S3_BUCKET`, `GCS_BUCKET`, or `AZURE_BLOB_CONTAINER_URL`.
+/// The function stays as a compatibility hook for callers that used to invoke
+/// it during startup.
 pub fn register_plugins() {
-    #[cfg(feature = "slack")]
-    if let Ok(token) = std::env::var("SLACK_TOKEN") {
-        register_source(Arc::new(SlackSource::new(token)));
-    }
-
-    #[cfg(feature = "s3")]
-    if let Ok(bucket) = std::env::var("S3_BUCKET") {
-        register_source(Arc::new(S3Source::new(bucket)));
-    }
-
-    #[cfg(feature = "gcs")]
-    if let Ok(bucket) = std::env::var("GCS_BUCKET") {
-        register_source(Arc::new(GcsSource::new(bucket)));
-    }
-
-    #[cfg(feature = "azure")]
-    if let Ok(container_url) = std::env::var("AZURE_BLOB_CONTAINER_URL") {
-        register_source(Arc::new(AzureBlobSource::new(container_url)));
-    }
 }
 
 #[doc(hidden)]
