@@ -155,6 +155,12 @@ impl ScanOrchestrator {
                                     || seg.eq_ignore_ascii_case("benches")
                             });
                             if suppressed {
+                                keyhog_scanner::telemetry::record_example_suppression(
+                                    m.detector_id.as_ref(),
+                                    m.location.file_path.as_deref(),
+                                    cred,
+                                    "self_scan_test_data_path",
+                                );
                                 return false;
                             }
                         }
