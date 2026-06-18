@@ -163,22 +163,33 @@ fn watch_detectors_flag_overrides_detector_directory() {
 fn watch_default_path_is_current_directory() {
     let dir = TempDir::new().expect("create tempdir");
 
-    // Spawn watch with no explicit path (should default to current dir).
-    // We can't easily test the default behavior in an isolated temp dir
-    // from here, so instead we verify that `watch` without a path fails
-    // gracefully (missing required positional argument).
-    let output = Command::new(binary())
+    // Spawn watch with no explicit path from an isolated current directory.
+    let mut child = Command::new(binary())
         .arg("watch")
-        .output()
+        .arg("--quiet")
+        .current_dir(dir.path())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .expect("spawn keyhog watch (no path)");
 
-    let code = output.status.code();
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    thread::sleep(Duration::from_millis(300));
 
-    // Without a positional path, clap should reject it as a usage error (exit 2).
-    // OR the path might default to "." and the command succeeds. Both are acceptable.
-    assert!(
-        code == Some(2) || code == Some(0) || code == Some(3),
-        "watch without explicit path should handle gracefully; code: {code:?}"
-    );
+    match child.try_wait() {
+        Ok(None) => {
+            let _ = child.kill();
+            let output = child.wait_with_output().expect("capture watch output");
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                !stderr.contains("canonicalize"),
+                "watch default path should not fail path resolution; stderr: {stderr}"
+            );
+        }
+        Ok(Some(status)) => {
+            let output = child.wait_with_output().expect("capture watch output");
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            panic!("watch default path exited early with status {status}; stderr: {stderr}");
+        }
+        Err(e) => panic!("failed to check watch status: {e}"),
+    }
 }
