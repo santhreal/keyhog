@@ -1,6 +1,9 @@
 use super::support::ENV_LOCK;
 use clap::{CommandFactory, Parser};
 use keyhog::args::ScanArgs;
+use keyhog::orchestrator_config::testing::{
+    autoroute_config_digest_for_scanner, build_scanner_config,
+};
 use keyhog::orchestrator::gpu_init_policy_for_args_for_test;
 use keyhog_scanner::hw_probe::parse_backend_str;
 use keyhog_scanner::GpuInitPolicy;
@@ -17,6 +20,7 @@ fn with_clean_gpu_env(test: impl FnOnce()) {
         "KEYHOG_NO_GPU",
         "KEYHOG_REQUIRE_GPU",
         "KEYHOG_LEGACY_PIPELINE",
+        "KEYHOG_GPU_AUTOROUTE",
     ];
     let previous: Vec<(&str, Option<OsString>)> = keys
         .into_iter()
@@ -104,6 +108,23 @@ fn explicit_no_gpu_zero_keeps_environment_gpu_policy_for_auto() {
         assert_eq!(
             gpu_init_policy_for_args_for_test(&args),
             GpuInitPolicy::FromEnvironment
+        );
+    });
+}
+
+#[test]
+fn autoroute_config_digest_includes_gpu_autoroute_opt_in() {
+    with_clean_gpu_env(|| {
+        let args = scan_args(&["scan", "--path", "."]);
+        let scanner = build_scanner_config(&args);
+
+        let without_gpu_probe = autoroute_config_digest_for_scanner(scanner.clone());
+        unsafe { std::env::set_var("KEYHOG_GPU_AUTOROUTE", "1") };
+        let with_gpu_probe = autoroute_config_digest_for_scanner(scanner);
+
+        assert_ne!(
+            without_gpu_probe, with_gpu_probe,
+            "autoroute cache identity must distinguish calibration with and without GPU candidates"
         );
     });
 }

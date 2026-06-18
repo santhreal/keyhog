@@ -886,6 +886,7 @@ fn hash_autoroute_runtime_env(h: &mut impl std::hash::Hasher) {
         "KEYHOG_BATCH_PIPELINE",
         "KEYHOG_NO_GPU",
         "KEYHOG_REQUIRE_GPU",
+        "KEYHOG_GPU_AUTOROUTE",
         "KEYHOG_GPU_RECALL_FLOOR",
         "KEYHOG_GPU_PARITY",
         "KEYHOG_GPU_KERNEL",
@@ -946,9 +947,19 @@ pub mod testing {
     }
 
     pub fn render_effective_config_for_scanner(scanner: ScannerConfig) -> String {
+        let resolved = resolved_config_for_scanner(scanner);
+        super::render_effective_config(&resolved)
+    }
+
+    pub fn autoroute_config_digest_for_scanner(scanner: ScannerConfig) -> u64 {
+        let resolved = resolved_config_for_scanner(scanner);
+        super::autoroute_config_digest(&resolved)
+    }
+
+    fn resolved_config_for_scanner(scanner: ScannerConfig) -> super::ResolvedScanConfig {
         let min_confidence = scanner.min_confidence;
         let ml_enabled = scanner.ml_enabled;
-        let resolved = super::ResolvedScanConfig {
+        super::ResolvedScanConfig {
             scanner,
             min_confidence,
             ml_enabled,
@@ -957,7 +968,6 @@ pub mod testing {
             require_lockdown: false,
             regex_dfa_limit: None,
             source_limits: keyhog_sources::SourceLimits::default(),
-        };
-        super::render_effective_config(&resolved)
+        }
     }
 }
