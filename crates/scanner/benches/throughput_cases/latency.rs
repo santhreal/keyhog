@@ -42,7 +42,7 @@ fn benchmark_latency_ml_inference(c: &mut Criterion) {
         let context = format!("API_KEY={}", credential);
         group.bench_with_input(BenchmarkId::new("score", name), credential, |b, cred| {
             b.iter(|| {
-                let score = ml_scorer::score(black_box(cred), &context);
+                let score = keyhog_scanner::testing::ml_score(black_box(cred), &context);
                 black_box(score)
             });
         });

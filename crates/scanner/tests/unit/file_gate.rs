@@ -3,30 +3,33 @@
 use base64::Engine;
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::checksum::{validate_checksum, ChecksumResult};
-use keyhog_scanner::compiler::{build_compile_state, extract_literal_prefix};
-use keyhog_scanner::confidence::{apply_post_ml_penalties, compute_confidence, ConfidenceSignals};
+use keyhog_scanner::confidence::{compute_confidence, ConfidenceSignals};
 use keyhog_scanner::context::{infer_context, CodeContext};
 use keyhog_scanner::decode::{base64_decode, hex_decode};
-use keyhog_scanner::engine::segment_attribution::{map_offsets_to_segments, GlobalMatch, Segment};
 use keyhog_scanner::engine::CompiledScanner;
 use keyhog_scanner::entropy::{shannon_entropy, HIGH_ENTROPY_THRESHOLD};
-use keyhog_scanner::entropy::fast::shannon_entropy_simd;
 use keyhog_scanner::gpu::{batch_ml_inference, gpu_available, gpu_probe};
-use keyhog_scanner::jwt::{analyze, looks_like_jwt};
-use keyhog_scanner::ml_scorer::{
-    compute_features_public, model_version, score, score_with_config, NUM_FEATURES,
-};
-use keyhog_scanner::multiline::{preprocess_multiline, MultilineConfig};
-use keyhog_scanner::prefix_trie::build_propagation_table;
+use keyhog_scanner::ml_scorer::{model_version, score, score_with_config};
 use keyhog_scanner::resolution::resolve_matches;
-use keyhog_scanner::telemetry::{drain_events, enable_dogfood, record_example_suppression, reset};
-use keyhog_scanner::types::ScannerConfig;
-use keyhog_scanner::unicode_hardening::is_evasion_char;
-use keyhog_scanner::{bigram_bloom::BigramBloom, fragment_cache::FragmentCache};
-use keyhog_scanner::{
-    compute_line_offsets, match_entropy, normalize_chunk_data, probe_hardware, select_backend,
-    ScanError,
+use keyhog_scanner::telemetry::{
+    drain_events, enable_dogfood, record_example_suppression, testing::reset,
 };
+use keyhog_scanner::testing::build_propagation_table;
+use keyhog_scanner::testing::confidence::apply_post_ml_penalties;
+use keyhog_scanner::testing::entropy_fast::shannon_entropy_simd;
+use keyhog_scanner::testing::extract_literal_prefix;
+use keyhog_scanner::testing::fragment_cache::FragmentCache;
+use keyhog_scanner::testing::jwt::{analyze, looks_like_jwt};
+use keyhog_scanner::testing::multiline::{preprocess_multiline, MultilineConfig};
+use keyhog_scanner::testing::segment_attribution::{map_offsets_to_segments, GlobalMatch, Segment};
+use keyhog_scanner::testing::unicode_hardening::is_evasion_char;
+use keyhog_scanner::testing::BigramBloom;
+use keyhog_scanner::testing::{
+    compile_state_is_ok, compute_line_offsets, match_entropy, normalize_chunk_data, AlphabetScreen,
+};
+use keyhog_scanner::testing::{compute_features_public, NUM_FEATURES};
+use keyhog_scanner::types::ScannerConfig;
+use keyhog_scanner::{probe_hardware, select_backend, ScanError};
 
 fn demo_chunk(data: &str) -> Chunk {
     Chunk {
@@ -68,12 +71,12 @@ fn demo_detector(regex: &str, keyword: &str) -> DetectorSpec {
 // ── crates/scanner/src/alphabet_filter.rs ───────────────────────────
 #[test]
 fn alphabet_filter_happy_screens_matching_alphabet() {
-    let screen = keyhog_scanner::alphabet_filter::AlphabetScreen::new(&["ghp_".into()]);
+    let screen = AlphabetScreen::new(&["ghp_".into()]);
     assert!(screen.screen(b"prefix ghp_token"));
 }
 #[test]
 fn alphabet_filter_error_rejects_unrelated_bytes() {
-    let screen = keyhog_scanner::alphabet_filter::AlphabetScreen::new(&["zzzz".into()]);
+    let screen = AlphabetScreen::new(&["zzzz".into()]);
     assert!(!screen.screen(b"plain english prose"));
 }
 
@@ -180,7 +183,7 @@ fn checksum_stripe_error() {
 // ── crates/scanner/src/compiler.rs ────────────────────────────────────
 #[test]
 fn compiler_error() {
-    assert!(build_compile_state(&[demo_detector("(unclosed", "x")]).is_err());
+    assert!(!compile_state_is_ok(&[demo_detector("(unclosed", "x")]));
 }
 
 // ── crates/scanner/src/compiler/compiler_prefix.rs ─────────────────────────────
@@ -288,17 +291,17 @@ fn context_documentation_error() {
 #[test]
 fn context_false_positive_happy() {
     let line = "API_TOKEN=ghp_1234567890abcdef1234567890abcdef123456 # fake credential, demo only";
-    assert!(keyhog_scanner::context::is_false_positive_match_context(
-        line, 10, None
-    ));
+    assert!(keyhog_scanner::testing::context::is_false_positive_match_context(line, 10, None));
 }
 #[test]
 fn context_false_positive_error() {
-    assert!(!keyhog_scanner::context::is_false_positive_match_context(
-        "production credential",
-        0,
-        None
-    ));
+    assert!(
+        !keyhog_scanner::testing::context::is_false_positive_match_context(
+            "production credential",
+            0,
+            None
+        )
+    );
 }
 
 // ── crates/scanner/src/context/inference.rs ───────────────────────────
@@ -340,17 +343,90 @@ fn decode_base64_error() {
     assert!(base64_decode("!!!").is_err());
 }
 
+#[test]
+fn decode_base64_shape_and_decode_have_one_scanner_owner() {
+    let owner = include_str!("../../src/decode/base64.rs");
+    assert_eq!(
+        owner.matches("fn classify_base64(").count(),
+        1,
+        "decode/base64.rs must own the scanner base64 variant classifier"
+    );
+    assert_eq!(
+        owner
+            .matches("pub(crate) fn standard_base64_shape(")
+            .count(),
+        1,
+        "decode/base64.rs must own standard-base64 shape facts"
+    );
+
+    for (path, src) in [
+        (
+            "decode/pipeline/extractor.rs",
+            include_str!("../../src/decode/pipeline/extractor.rs"),
+        ),
+        (
+            "decode_structure.rs",
+            include_str!("../../src/decode_structure.rs"),
+        ),
+        (
+            "engine/phase2_entropy/helpers.rs",
+            include_str!("../../src/engine/phase2_entropy/helpers.rs"),
+        ),
+        (
+            "engine/phase2_generic/shape_helpers.rs",
+            include_str!("../../src/engine/phase2_generic/shape_helpers.rs"),
+        ),
+        (
+            "engine/scan_filters.rs",
+            include_str!("../../src/engine/scan_filters.rs"),
+        ),
+        (
+            "entropy/scanner.rs",
+            include_str!("../../src/entropy/scanner.rs"),
+        ),
+        (
+            "suppression/decode.rs",
+            include_str!("../../src/suppression/decode.rs"),
+        ),
+        (
+            "suppression/shape_gates.rs",
+            include_str!("../../src/suppression/shape_gates.rs"),
+        ),
+        ("decode/mod.rs", include_str!("../../src/decode/mod.rs")),
+    ] {
+        assert!(
+            !src.contains("base64::engine::general_purpose"),
+            "{path} must call decode::base64_decode or decode::standard_base64_shape instead of choosing a base64 engine privately"
+        );
+        assert!(
+            !src.contains("STANDARD.decode(")
+                && !src.contains("URL_SAFE.decode(")
+                && !src.contains("STANDARD_NO_PAD.decode(")
+                && !src.contains("URL_SAFE_NO_PAD.decode("),
+            "{path} must not carry a private base64 decode cascade"
+        );
+        assert!(
+            !src.contains("c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '='"),
+            "{path} must not carry a private standard-base64 alphabet loop"
+        );
+        assert!(
+            !src.contains("b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'='"),
+            "{path} must not carry a private scan-base64 alphabet byte loop"
+        );
+    }
+}
+
 // ── crates/scanner/src/decode/caesar.rs ───────────────────────────────
 #[test]
 fn decode_caesar_happy() {
     let chunk = demo_chunk("ROT13=uryyb");
-    let out = keyhog_scanner::decode::decode_chunk(&chunk, 2, false, None, None);
+    let out = keyhog_scanner::testing::decode_chunk(&chunk, 2, false, None, None);
     assert!(!out.is_empty() || chunk.data.contains("uryyb"));
 }
 #[test]
 fn decode_caesar_error() {
     let chunk = demo_chunk("no-encoding-here");
-    assert!(keyhog_scanner::decode::decode_chunk(&chunk, 1, false, None, None).is_empty());
+    assert!(keyhog_scanner::testing::decode_chunk(&chunk, 1, false, None, None).is_empty());
 }
 
 // ── crates/scanner/src/decode/hex.rs ──────────────────────────────────
@@ -370,13 +446,13 @@ fn decode_hex_error() {
 #[test]
 fn decode_json_happy() {
     let chunk = demo_chunk(r#"{"k":"c2s="}"#);
-    let out = keyhog_scanner::decode::decode_chunk(&chunk, 2, false, None, None);
+    let out = keyhog_scanner::testing::decode_chunk(&chunk, 2, false, None, None);
     let _ = out;
 }
 #[test]
 fn decode_json_error() {
     let chunk = demo_chunk("{not json");
-    assert!(keyhog_scanner::decode::decode_chunk(&chunk, 1, false, None, None).is_empty());
+    assert!(keyhog_scanner::testing::decode_chunk(&chunk, 1, false, None, None).is_empty());
 }
 
 // ── crates/scanner/src/decode/mod.rs ──────────────────────────────────
@@ -396,19 +472,21 @@ fn decode_mod_error() {
 #[test]
 fn decode_pipeline_happy() {
     let chunk = demo_chunk("deadbeef0123456789abcdef01234567");
-    let out = keyhog_scanner::decode::decode_chunk(&chunk, 2, false, None, None);
+    let out = keyhog_scanner::testing::decode_chunk(&chunk, 2, false, None, None);
     let _ = out;
 }
 #[test]
 fn decode_pipeline_error() {
-    assert!(keyhog_scanner::decode::decode_chunk(&demo_chunk(""), 1, false, None, None).is_empty());
+    assert!(
+        keyhog_scanner::testing::decode_chunk(&demo_chunk(""), 1, false, None, None).is_empty()
+    );
 }
 
 // ── crates/scanner/src/decode/reverse.rs ──────────────────────────────
 #[test]
 fn decode_reverse_error() {
     assert!(
-        keyhog_scanner::decode::decode_chunk(&demo_chunk("forward"), 1, false, None, None)
+        keyhog_scanner::testing::decode_chunk(&demo_chunk("forward"), 1, false, None, None)
             .is_empty()
     );
 }
@@ -417,7 +495,7 @@ fn decode_reverse_error() {
 #[test]
 fn decode_unicode_escape_error() {
     let chunk = demo_chunk(r#"\xZZ"#);
-    let layers = keyhog_scanner::decode::decode_chunk(&chunk, 1, false, None, None);
+    let layers = keyhog_scanner::testing::decode_chunk(&chunk, 1, false, None, None);
     assert!(
         layers.is_empty() || !layers.iter().any(|c| c.data.contains("sk")),
         "invalid hex escape must not decode to sk"
@@ -428,13 +506,14 @@ fn decode_unicode_escape_error() {
 #[test]
 fn decode_url_happy() {
     let chunk = demo_chunk("token=%73%6b");
-    let out = keyhog_scanner::decode::decode_chunk(&chunk, 2, false, None, None);
+    let out = keyhog_scanner::testing::decode_chunk(&chunk, 2, false, None, None);
     assert!(out.iter().any(|c| c.data.contains("sk")) || chunk.data.contains("%73"));
 }
 #[test]
 fn decode_url_error() {
     assert!(
-        keyhog_scanner::decode::decode_chunk(&demo_chunk("plain"), 1, false, None, None).is_empty()
+        keyhog_scanner::testing::decode_chunk(&demo_chunk("plain"), 1, false, None, None)
+            .is_empty()
     );
 }
 
@@ -448,7 +527,7 @@ fn decode_util_error() {
 #[test]
 fn decode_impl_error() {
     assert!(
-        keyhog_scanner::decode::decode_chunk(&demo_chunk("x"), 0, false, None, None).is_empty()
+        keyhog_scanner::testing::decode_chunk(&demo_chunk("x"), 0, false, None, None).is_empty()
     );
 }
 
@@ -458,7 +537,7 @@ fn decode_impl_error() {
 fn engine_backend_happy() {
     use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
     use keyhog_scanner::engine::CompiledScanner;
-    use keyhog_scanner::hw_probe::ScanBackend;
+    use keyhog_scanner::hw_probe::testing::ScanBackend;
     let det = DetectorSpec {
         tests: Vec::new(),
         id: "gate".into(),
@@ -493,7 +572,7 @@ fn engine_backend_happy() {
 fn engine_backend_error() {
     use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
     use keyhog_scanner::engine::CompiledScanner;
-    use keyhog_scanner::hw_probe::ScanBackend;
+    use keyhog_scanner::hw_probe::testing::ScanBackend;
     let det = DetectorSpec {
         tests: Vec::new(),
         id: "gate".into(),
@@ -540,21 +619,39 @@ fn engine_scan_error() {
     assert!(scanner.scan(&demo_chunk("")).is_empty());
 }
 
+#[test]
+fn engine_scan_reassembly_uses_synthetic_naming() {
+    let src = include_str!("../../src/engine/scan.rs");
+    assert!(
+        src.contains("synthetic_data")
+            && src.contains("synthetic_metadata")
+            && src.contains("synthetic_chunk"),
+        "reassembly scratch chunk names must describe synthetic scan input"
+    );
+    assert!(
+        !src.contains("dummy_data")
+            && !src.contains("dummy_metadata")
+            && !src.contains("dummy_chunk")
+            && !src.contains("dummy chunk"),
+        "engine/scan.rs must not regress to dummy naming for shipped reassembly internals"
+    );
+}
+
 // ── crates/scanner/src/engine/windowed.rs ─────────────────────────────
 #[test]
 fn engine_windowed_happy() {
-    use keyhog_scanner::engine::window_end_offset;
+    use keyhog_scanner::testing::window_end_offset;
     assert!(window_end_offset("hello", 0, 3) <= 5);
 }
 #[test]
 fn engine_windowed_error() {
-    use keyhog_scanner::engine::window_end_offset;
+    use keyhog_scanner::testing::window_end_offset;
     assert_eq!(window_end_offset("hello", 99, 10), 5);
 }
 
-// ── crates/scanner/src/engine/fallback.rs + fallback_entropy + fallback_generic
+// ── crates/scanner/src/engine/phase2.rs + phase2_entropy + phase2_generic
 #[test]
-fn engine_fallback_happy() {
+fn engine_phase2_happy() {
     let scanner =
         CompiledScanner::compile(vec![demo_detector(r"ghp_[A-Za-z0-9]{20,}", "ghp_")]).unwrap();
     let token = concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17");
@@ -564,7 +661,7 @@ fn engine_fallback_happy() {
         .any(|m| m.credential.as_ref() == token));
 }
 #[test]
-fn engine_fallback_error() {
+fn engine_phase2_error() {
     let scanner =
         CompiledScanner::compile(vec![demo_detector(r"ghp_[A-Za-z0-9]{20,}", "ghp_")]).unwrap();
     assert!(scanner.scan(&demo_chunk("plain prose")).is_empty());
@@ -592,40 +689,161 @@ fn engine_scan_filters_error() {
 // ── crates/scanner/src/engine/scan_gpu.rs + hot_patterns.rs ───────────
 #[test]
 fn engine_scan_gpu_happy() {
-    use keyhog_scanner::hw_probe::ScanBackend;
+    use keyhog_scanner::hw_probe::testing::ScanBackend;
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
     assert!(scanner.warm_backend(ScanBackend::CpuFallback));
 }
 #[test]
 fn engine_scan_gpu_error() {
-    use keyhog_scanner::hw_probe::ScanBackend;
+    use keyhog_scanner::hw_probe::testing::ScanBackend;
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
     let _ = scanner.warm_backend(ScanBackend::MegaScan);
+}
+
+#[test]
+fn gpu_moe_readback_has_no_fixed_millisecond_sleep_floor() {
+    let src = include_str!("../../src/gpu/backend.rs");
+    assert!(
+        !src.contains("Duration::from_millis(1)"),
+        "GPU MoE readback must use bounded adaptive backoff, not a fixed 1 ms sleep floor"
+    );
+    assert!(
+        src.contains("ReadbackWaitBackoff"),
+        "GPU MoE readback must keep the adaptive wait helper wired"
+    );
 }
 
 // ── crates/scanner/src/engine/boundary.rs ─────────────────────────────
 #[test]
 fn engine_boundary_happy() {
-    use keyhog_scanner::engine::floor_char_boundary;
+    use keyhog_scanner::testing::floor_char_boundary;
     assert_eq!(floor_char_boundary("aαb", 2), 1);
 }
 #[test]
 fn engine_boundary_error() {
-    use keyhog_scanner::engine::floor_char_boundary;
+    use keyhog_scanner::testing::floor_char_boundary;
     assert_eq!(floor_char_boundary("", 0), 0);
+}
+
+#[test]
+fn engine_utf8_boundary_helper_has_one_implementation_owner() {
+    let owner = include_str!("../../src/engine/windowed_support.rs");
+    assert_eq!(
+        owner.matches("pub(crate) fn floor_char_boundary(").count(),
+        1,
+        "windowed_support.rs must own the single scanner UTF-8 floor helper body"
+    );
+
+    for (path, src) in [
+        (
+            "context/inference.rs",
+            include_str!("../../src/context/inference.rs"),
+        ),
+        (
+            "decode/pipeline.rs",
+            include_str!("../../src/decode/pipeline.rs"),
+        ),
+        (
+            "engine/phase2_truncate.rs",
+            include_str!("../../src/engine/phase2_truncate.rs"),
+        ),
+        (
+            "engine/extract.rs",
+            include_str!("../../src/engine/extract.rs"),
+        ),
+        (
+            "engine/scan_filters.rs",
+            include_str!("../../src/engine/scan_filters.rs"),
+        ),
+        (
+            "pipeline/context_window.rs",
+            include_str!("../../src/pipeline/context_window.rs"),
+        ),
+        (
+            "pipeline/scan_loop.rs",
+            include_str!("../../src/pipeline/scan_loop.rs"),
+        ),
+    ] {
+        assert!(
+            !src.contains("fn floor_char_boundary("),
+            "{path} must call the engine helper instead of defining another floor_char_boundary"
+        );
+        assert!(
+            !src.contains("while idx > 0 && !s.is_char_boundary(idx)"),
+            "{path} must not carry a private UTF-8 floor loop"
+        );
+        assert!(
+            !src.contains("while end > start && !text.is_char_boundary(end)")
+                && !src.contains("while end < data.len() && !data.is_char_boundary(end)")
+                && !src.contains("while next < bytes_total && !haystack.is_char_boundary(next)")
+                && !src.contains("while next < bytes_total && !search_text.is_char_boundary(next)"),
+            "{path} must not carry private UTF-8 floor/ceil loops"
+        );
+    }
 }
 
 // ── crates/scanner/src/engine/hot_patterns.rs ─────────────────────────
 #[test]
 fn engine_hot_patterns_happy() {
-    use keyhog_scanner::hw_probe::ScanBackend;
+    use keyhog_scanner::hw_probe::testing::ScanBackend;
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
     assert!(scanner.warm_backend(ScanBackend::SimdCpu));
 }
 #[test]
 fn engine_hot_patterns_error() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
-    assert!(scanner.pattern_count() >= 1);
+    assert!(scanner.runtime_status().pattern_count >= 1);
+}
+
+#[test]
+fn engine_hot_and_entropy_metadata_clones_are_heap_admission_gated() {
+    let state_src = include_str!("../../src/scanner_config.rs");
+    assert!(
+        state_src.contains("struct RawMatchPriority"),
+        "ScanState must expose a borrowed RawMatch priority key for admission"
+    );
+    assert!(
+        state_src.contains("fn push_match_lazy"),
+        "ScanState must own lazy capped-heap admission"
+    );
+
+    for (path, src, table) in [
+        (
+            "engine/hot_patterns.rs",
+            include_str!("../../src/engine/hot_patterns.rs"),
+            "self.hot_metadata_by_index[pattern_idx]",
+        ),
+        (
+            "engine/phase2_entropy.rs",
+            include_str!("../../src/engine/phase2_entropy.rs"),
+            "self.entropy_metadata_by_index[entropy_meta_idx]",
+        ),
+    ] {
+        assert!(
+            src.contains("push_match_lazy"),
+            "{path} must compare a borrowed priority before building capped-heap matches"
+        );
+        assert!(
+            !src.contains("(m.0.clone(), m.1.clone(), m.2.clone())"),
+            "{path} must not resurrect unconditional detector metadata triple clones"
+        );
+        assert!(
+            src.contains(table),
+            "{path} must keep using the pre-interned metadata table"
+        );
+        assert!(
+            src.contains("Arc::clone(&metadata.0)")
+                && src.contains("Arc::clone(&metadata.1)")
+                && src.contains("Arc::clone(&metadata.2)"),
+            "{path} must build owned metadata only inside the admitted RawMatch builder"
+        );
+    }
+
+    let hot_src = include_str!("../../src/engine/hot_patterns.rs");
+    assert!(
+        !hot_src.contains("scan_state.matches.len() >= self.config.max_matches_per_chunk"),
+        "hot-pattern scanning must not stop at first-N and bypass best-N heap admission"
+    );
 }
 
 // ── crates/scanner/src/engine/segment_attribution.rs ──────────────────
@@ -651,17 +869,21 @@ fn entropy_keywords_happy() {
     // path correctly rejects dash-segmented-alnum as a serial decoy (real
     // `sk-proj-` OpenAI keys are surfaced by their named hot-pattern detector,
     // not this generic entropy gate), so it was never a valid happy case here.
-    assert!(keyhog_scanner::entropy::keywords::is_secret_plausible(
-        "9fKp2mNqR7vT4wXz8bYsH3jD6gA1cE0uViK5oLtBnW",
-        &[]
-    ));
+    assert!(
+        keyhog_scanner::testing::entropy_keywords::is_secret_plausible(
+            "9fKp2mNqR7vT4wXz8bYsH3jD6gA1cE0uViK5oLtBnW",
+            &[]
+        )
+    );
 }
 #[test]
 fn entropy_keywords_error() {
-    assert!(!keyhog_scanner::entropy::keywords::is_secret_plausible(
-        "password",
-        &["password".into()]
-    ));
+    assert!(
+        !keyhog_scanner::testing::entropy_keywords::is_secret_plausible(
+            "password",
+            &["password".into()]
+        )
+    );
 }
 
 // ── crates/scanner/src/entropy/mod.rs ─────────────────────────────────
@@ -694,7 +916,13 @@ fn entropy_scanner_happy() {
         .iter()
         .find(|m| m.value == body)
         .unwrap_or_else(|| panic!("entropy scan did not surface {body:?}; got {secrets:?}"));
-    assert_eq!(m.keyword, "SECRET", "match not anchored to the SECRET keyword: {m:?}");
+    // assignment_keyword_for_line calls normalize_assignment_keyword which lowercases
+    // and normalises the LHS identifier: `SECRET` → `secret`. The stored keyword is
+    // the normalised form, not the original case from the source line.
+    assert_eq!(
+        m.keyword, "secret",
+        "match keyword should be the normalised lowercase form 'secret', got: {m:?}"
+    );
     assert_eq!(m.line, 1, "match reported the wrong line: {m:?}");
     assert!(
         m.entropy > 3.5,
@@ -860,6 +1088,159 @@ fn lib_error() {
     assert_eq!(normalize_chunk_data("a\u{200b}b").as_ref(), "ab");
 }
 
+#[test]
+fn lib_root_pipeline_helpers_are_reexports_not_forwarders() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs");
+    let source = std::fs::read_to_string(path).expect("read scanner lib.rs");
+    for name in [
+        "normalize_scannable_chunk",
+        "compute_line_offsets",
+        "match_line_number",
+        "match_entropy",
+        "floor_char_boundary",
+        "is_within_hex_context",
+        "should_suppress_known_example_credential",
+        "find_companion",
+    ] {
+        assert!(
+            !source.contains(&format!("pub(crate) fn {name}(")),
+            "crate root must not reintroduce a zero-behavior forwarding fn for {name}"
+        );
+    }
+    assert!(
+        source.contains("pub(crate) use pipeline::compute_line_offsets;"),
+        "crate root should keep the only internally-used pipeline helper as a re-export"
+    );
+    assert!(
+        source.contains("pub(crate) use engine::floor_char_boundary;"),
+        "crate root should expose the engine boundary helper as a re-export"
+    );
+}
+
+#[test]
+fn testing_facade_pipeline_helpers_are_owner_reexports_not_forwarders() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/testing.rs");
+    let source = std::fs::read_to_string(path).expect("read scanner testing.rs");
+    for name in [
+        "normalize_chunk_data",
+        "compute_line_offsets",
+        "match_line_number",
+        "match_entropy",
+        "floor_char_boundary",
+        "is_within_hex_context",
+        "should_suppress_known_example_credential",
+        "should_suppress_known_example_credential_with_source",
+        "should_suppress_named_detector_finding",
+        "should_suppress_named_detector_finding_weak",
+        "find_companion",
+        "line_window_offsets",
+        "window_end_offset",
+        "next_window_offset",
+        "window_chunk",
+        "record_window_match",
+        "line_number_for_offset",
+    ] {
+        assert!(
+            !source.contains(&format!("pub(crate) fn {name}(")),
+            "testing facade must re-export the owner for {name}, not restate a forwarding signature"
+        );
+    }
+    assert!(
+        source.contains("pub(crate) use crate::pipeline::{")
+            && source.contains("pub(crate) use crate::engine::{"),
+        "testing facade should group owner re-exports by implementation boundary"
+    );
+}
+
+#[test]
+fn lib_root_stays_module_map_not_testing_facade_body() {
+    let lib_path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs");
+    let testing_path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/testing.rs");
+    let lib = std::fs::read_to_string(lib_path).expect("read scanner lib.rs");
+    let testing = std::fs::read_to_string(testing_path).expect("read scanner testing.rs");
+    let line_count = lib.lines().count();
+    assert!(
+        line_count <= 260,
+        "scanner lib.rs must stay a readable module map/API root; got {line_count} lines"
+    );
+    assert!(
+        lib.contains("#[doc(hidden)]\npub mod testing;"),
+        "scanner lib.rs should point at src/testing.rs instead of owning the testing facade body"
+    );
+    assert!(
+        !lib.contains("pub mod testing {"),
+        "scanner lib.rs must not inline the testing facade body again"
+    );
+    assert!(
+        testing.contains("Doc-hidden scanner test facade")
+            && testing.contains("pub fn pattern_regex_strs"),
+        "src/testing.rs must own the doc-hidden testing facade"
+    );
+}
+
+#[test]
+fn scanner_benches_use_testing_facade_not_private_modules() {
+    fn collect_rs_files(root: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(root)
+            .unwrap_or_else(|error| panic!("read_dir({}) failed: {error}", root.display()))
+        {
+            let path = entry
+                .unwrap_or_else(|error| {
+                    panic!("read_dir entry failed in {}: {error}", root.display())
+                })
+                .path();
+            if path.is_dir() {
+                collect_rs_files(&path, out);
+            } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+                out.push(path);
+            }
+        }
+    }
+
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let mut bench_files = Vec::new();
+    collect_rs_files(&manifest_dir.join("benches"), &mut bench_files);
+    assert!(
+        !bench_files.is_empty(),
+        "scanner benchmark harness must stay present and wired"
+    );
+
+    for path in bench_files {
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("read {} failed: {error}", path.display()));
+        for forbidden in [
+            "use keyhog_scanner::confidence",
+            "keyhog_scanner::confidence::",
+            "use keyhog_scanner::entropy::fast",
+            "keyhog_scanner::entropy::fast::",
+            "ml_scorer::score(",
+            "use keyhog_scanner::{decode,",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "benchmark {} must use public API or keyhog_scanner::testing facade, not private scanner internals via `{forbidden}`",
+                path.display()
+            );
+        }
+    }
+
+    let facade = std::fs::read_to_string(manifest_dir.join("src/testing.rs"))
+        .expect("read scanner testing facade");
+    for required in [
+        "pub fn decode_chunk(",
+        "pub fn ml_score(",
+        "pub mod confidence",
+        "pub fn compute_confidence(",
+        "pub mod entropy_fast",
+        "pub fn shannon_entropy_simd(",
+    ] {
+        assert!(
+            facade.contains(required),
+            "scanner testing facade must keep benchmark probe contract `{required}`"
+        );
+    }
+}
+
 // ── crates/scanner/src/ml_scorer/ml_features.rs ─────────────────────────────────
 #[test]
 fn ml_features_happy() {
@@ -921,14 +1302,14 @@ fn multiline_config_error() {
     assert_eq!(out.text, "a");
 }
 
-// ── crates/scanner/src/multiline/fragment_cache.rs ────────────────────
+// ── crates/scanner/src/fragment_cache.rs ──────────────────────────────
 #[test]
-fn multiline_fragment_cache_happy() {
+fn fragment_cache_happy() {
     let cache = FragmentCache::new(10);
     cache.clear();
 }
 #[test]
-fn multiline_fragment_cache_error() {
+fn fragment_cache_error() {
     let cache = FragmentCache::new(0);
     cache.clear();
 }
@@ -1030,7 +1411,7 @@ fn resolution_happy() {
         detector_name: Arc::from("a"),
         service: Arc::from("s"),
         severity: Severity::High,
-        credential: Arc::from("same"),
+        credential: keyhog_core::SensitiveString::from("same"),
         credential_hash: [0u8; 32],
         companions: Default::default(),
         location: MatchLocation {
@@ -1071,7 +1452,7 @@ fn shared_regexes_error() {
 #[cfg(feature = "simd")]
 fn simd_happy() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
-    assert!(scanner.pattern_count() >= 1);
+    assert!(scanner.runtime_status().pattern_count >= 1);
 }
 #[test]
 #[cfg(not(feature = "simd"))]
@@ -1104,7 +1485,7 @@ fn simdsieve_prefilter_error() {
 #[test]
 fn static_intern_happy() {
     let interner =
-        keyhog_scanner::static_intern::StaticInterner::from_detector_strings(vec!["demo", "Demo"]);
+        keyhog_scanner::testing::StaticInterner::from_detector_strings(vec!["demo", "Demo"]);
     let a = interner.lookup("demo").unwrap();
     let b = interner.lookup("demo").unwrap();
     assert_eq!(a.as_ref(), "demo");
@@ -1113,9 +1494,7 @@ fn static_intern_happy() {
 #[test]
 fn static_intern_error() {
     let interner =
-        keyhog_scanner::static_intern::StaticInterner::from_detector_strings(std::iter::empty::<
-            &str,
-        >());
+        keyhog_scanner::testing::StaticInterner::from_detector_strings(std::iter::empty::<&str>());
     assert!(interner.lookup("dynamic").is_none());
 }
 
@@ -1164,6 +1543,40 @@ fn telemetry_error() {
     assert!(drain_events().is_empty());
 }
 
+#[test]
+fn telemetry_coverage_gap_counters_have_typed_owner() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/telemetry.rs");
+    let source = std::fs::read_to_string(path).expect("read telemetry source");
+
+    assert!(
+        source.contains("enum ScannerCoverageGapEvent"),
+        "scanner coverage gaps need a typed event owner"
+    );
+    assert!(
+        source.contains("struct RecordedScannerCoverageGap"),
+        "scanner coverage-gap recording must return a must-use receipt"
+    );
+    assert_eq!(
+        source
+            .matches("STRUCTURED_PARSE_FAILURES.fetch_add")
+            .count(),
+        0,
+        "structured parse coverage gaps must route through record_scanner_coverage_gap"
+    );
+    assert_eq!(
+        source.matches("DECODE_TRUNCATIONS.fetch_add").count(),
+        0,
+        "decode truncation coverage gaps must route through record_scanner_coverage_gap"
+    );
+    assert!(
+        source.contains(
+            "record_scanner_coverage_gap(ScannerCoverageGapEvent::StructuredParseFailure"
+        ) && source
+            .contains("record_scanner_coverage_gap(ScannerCoverageGapEvent::DecodeTruncation"),
+        "public recorder wrappers must delegate to the typed scanner coverage-gap owner"
+    );
+}
+
 // ── crates/scanner/src/types.rs ───────────────────────────────────────
 #[test]
 fn types_happy() {
@@ -1173,7 +1586,7 @@ fn types_happy() {
 #[test]
 fn types_error() {
     let cfg = ScannerConfig {
-        scan: keyhog_core::config::ScanConfig {
+        scan: keyhog_core::ScanConfig {
             max_decode_depth: 0,
             ..Default::default()
         },

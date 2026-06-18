@@ -1,5 +1,5 @@
 #[test]
-fn installer_primes_autoroute_and_runtime_requires_calibration_env() {
+fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
     let mut backend = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/orchestrator/dispatch/backend.rs"
@@ -118,14 +118,17 @@ fn installer_primes_autoroute_and_runtime_requires_calibration_env() {
     let env_ref_text = env_ref.split_whitespace().collect::<Vec<_>>().join(" ");
 
     assert!(
-        backend.contains("KEYHOG_AUTOROUTE_CALIBRATE")
+        backend.contains("calibration_mode")
             && backend.contains("autoroute calibration required")
             && backend.contains("Normal auto scans never")
             && backend.contains("benchmark, guess")
             && backend.contains("source class")
+            && backend.contains("autoroute workload evidence incomplete")
+            && backend.contains("ChunkMetadata.source_type")
             && backend.contains("install.sh --calibrate")
             && !backend
                 .contains("autoroute cache miss outside calibration mode; using safe default")
+            && !backend.contains("unwrap_or(\"unknown\")")
             && !backend.contains("return fallback;"),
         "runtime autoroute must fail loud on cache miss unless explicit calibration mode is set"
     );
@@ -196,7 +199,7 @@ fn installer_primes_autoroute_and_runtime_requires_calibration_env() {
     );
     assert!(
         run.contains("backend prewarm skipped during autoroute calibration")
-            && run.contains("KEYHOG_AUTOROUTE_CALIBRATE")
+            && run.contains("autoroute_calibration")
             && backend.contains("gpu_route_ms")
             && backend.contains("cold_ns.max(warm_timing.best_ns)")
             && backend.contains("route_candidates"),
@@ -227,11 +230,12 @@ fn installer_primes_autoroute_and_runtime_requires_calibration_env() {
             && scanner_gpu_backend.contains("adapter_info.driver")
             && dispatch.contains("scanner.as_ref()")
             && config.contains("pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64")
-            && config.contains("hash_autoroute_runtime_env")
-            && config.contains("KEYHOG_SHARD_TARGET")
-            && config.contains("KEYHOG_GPU_RECALL_FLOOR")
+            && !config.contains("hash_autoroute_runtime_env")
+            && !config.contains("KEYHOG_SHARD_TARGET")
+            && config.contains("per_chunk_timeout_ms")
             && config.contains("resolved.scanner_tuning.hash(&mut h)")
-            && config.contains("KEYHOG_PER_CHUNK_TIMEOUT_MS")
+            && config.contains("tuning_hs_shard_target")
+            && config.contains("tuning_gpu_recall_floor")
             && config.contains("detector_min_confidence")
             && config.contains("disabled_detectors"),
         "autoroute cache identity must include the fully resolved scan config and runtime backend knobs, not only hardware and detector corpus"
@@ -248,9 +252,11 @@ fn installer_primes_autoroute_and_runtime_requires_calibration_env() {
             && daemon_server.contains("cached_autoroute_router_for_default_config")
             && daemon_server.contains("router: Arc<crate::orchestrator::CachedBackendRouter>")
             && daemon_server.contains("router.choose(")
-            && daemon_server.contains("scan_with_backend(&chunk, backend)")
+            && (daemon_server.contains("scan_with_backend(&chunk, backend)")
+                || daemon_server.contains("scan_chunks_with_backend(&chunks, backend)"))
             && daemon_server.contains("source_type: \"stdin\"")
-            && daemon_server.contains("source_type: \"filesystem\"")
+            && (daemon_server.contains("source_type: \"filesystem\"")
+                || daemon_server.contains("FilesystemSource::new"))
             && scan_system.contains("cached_autoroute_router_for_default_config")
             && scan_system.contains("router.choose(")
             && scan_system.contains("scan_with_backend(&chunk, backend)")
@@ -267,12 +273,15 @@ fn installer_primes_autoroute_and_runtime_requires_calibration_env() {
             && install_sh.contains("Autoroute calibration")
             && install_sh.contains("kib_sizes=\"4 64\"")
             && install_sh.contains("mib_sizes=\"1 8 32\"")
+            && install_sh.contains("elapsed_ms_since")
+            && install_sh.contains("PASS %s (%sms)")
+            && install_sh.contains("FAIL %s (%sms)")
             && install_sh.contains("total=0")
             && install_sh.contains("total=$((total + 3))")
             && install_sh.contains("empty stdin workload")
             && install_sh.contains("stdin 64 KiB workload")
             && install_sh.contains("run_autoroute_stdin_probe")
-            && install_sh.contains("scan --stdin")
+            && install_sh.contains("scan --autoroute-calibrate --stdin")
             && install_sh.contains("make_calibration_tree_kib")
             && install_sh.contains("32 x 4 KiB files workload")
             && install_sh.contains("decode-heavy 256 KiB workload")
@@ -305,9 +314,12 @@ fn installer_primes_autoroute_and_runtime_requires_calibration_env() {
             && install_sh.contains("git was not found on PATH")
             && install_sh.contains("python3/python was not found on PATH")
             && install_sh.contains("docker was not found on PATH")
-            && install_sh.contains("KEYHOG_AUTOROUTE_CALIBRATE=1")
-            && install_sh.contains("KEYHOG_BATCH_PIPELINE=1")
-            && install_sh.contains("KEYHOG_GPU_AUTOROUTE=1")
+            && install_sh.contains("--autoroute-calibrate")
+            && !install_sh.contains("KEYHOG_AUTOROUTE_CALIBRATE")
+            && install_sh.contains("--batch-pipeline")
+            && !install_sh.contains("KEYHOG_BATCH_PIPELINE")
+            && install_sh.contains("--autoroute-gpu")
+            && !install_sh.contains("KEYHOG_GPU_AUTOROUTE")
             && install_sh.contains("failed=0")
             && install_sh.contains("return 1")
             && install_sh.contains("persisted auto routing was not updated")
@@ -319,6 +331,9 @@ fn installer_primes_autoroute_and_runtime_requires_calibration_env() {
         install_ps1.contains("Invoke-AutorouteCalibration")
             && install_ps1.contains("-Calibrate")
             && install_ps1.contains("Autoroute calibration")
+            && install_ps1.contains("TotalMilliseconds")
+            && install_ps1.contains("PASS {0} ({1}ms)")
+            && install_ps1.contains("FAIL {0} ({1}ms)")
             && install_ps1.contains("@(4, 64)")
             && install_ps1.contains("@(1, 8, 32)")
             && install_ps1.contains("empty stdin workload")
@@ -357,9 +372,12 @@ fn installer_primes_autoroute_and_runtime_requires_calibration_env() {
             && install_ps1.contains("'--docker-image'")
             && install_ps1.contains("git was not found on PATH")
             && install_ps1.contains("docker was not found on PATH")
-            && install_ps1.contains("KEYHOG_AUTOROUTE_CALIBRATE")
-            && install_ps1.contains("KEYHOG_BATCH_PIPELINE")
-            && install_ps1.contains("KEYHOG_GPU_AUTOROUTE")
+            && install_ps1.contains("'--autoroute-calibrate'")
+            && !install_ps1.contains("KEYHOG_AUTOROUTE_CALIBRATE")
+            && install_ps1.contains("'--batch-pipeline'")
+            && !install_ps1.contains("KEYHOG_BATCH_PIPELINE")
+            && install_ps1.contains("'--autoroute-gpu'")
+            && !install_ps1.contains("KEYHOG_GPU_AUTOROUTE")
             && install_ps1.contains("$failed = $false")
             && install_ps1.contains("return $false")
             && install_ps1.contains("persisted auto routing was not updated")
@@ -376,15 +394,15 @@ fn installer_primes_autoroute_and_runtime_requires_calibration_env() {
             && readme_text.contains("repeated parity-checked trials")
             && readme_text.contains("Invalid existing cache records are rejected")
             && readme_text.contains("resolved scan-config digest")
-            && readme_text.contains("backend-affecting runtime env")
+            && readme_text.contains("batch-pipeline route")
+            && readme_text.contains("explicit calibration controls")
             && readme_text.contains("install.sh --calibrate")
             && readme_text.contains("install.ps1 -Calibrate")
             && env_ref_text.contains("visible calibration phase")
-            && env_ref_text.contains("normal scans leave it unset")
-            && env_ref_text.contains("bounded repeated backend probes")
-            && env_ref_text.contains("resolved scan config")
-            && env_ref_text.contains("backend-affecting runtime env")
-            && env_ref_text.contains("Invalid/stale cache records are rejected"),
+            && env_ref_text.contains("keyhog scan --autoroute-calibrate")
+            && env_ref_text.contains("Normal scans never benchmark on cache miss")
+            && env_ref_text.contains("fastest-correct decisions")
+            && !env_ref_text.contains("KEYHOG_AUTOROUTE_CALIBRATE"),
         "README and env reference must state the persistent install-time autoroute calibration contract"
     );
 }

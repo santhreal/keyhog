@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
-use keyhog_scanner::{decode, CompiledScanner};
+use keyhog_scanner::CompiledScanner;
 
 fn make_chunk(data: &str, path: Option<&str>) -> Chunk {
     Chunk {
@@ -105,7 +105,8 @@ fn benchmark_deep_base64(c: &mut Criterion) {
     group.throughput(Throughput::Bytes(full_data.len() as u64));
     group.bench_function("recursive_decode", |b| {
         b.iter(|| {
-            let decoded = decode::decode_chunk(black_box(&chunk), 3, false, None, None);
+            let decoded =
+                keyhog_scanner::testing::decode_chunk(black_box(&chunk), 3, false, None, None);
             black_box(decoded)
         })
     });

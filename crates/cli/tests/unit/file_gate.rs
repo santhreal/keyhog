@@ -36,7 +36,10 @@ fn lib_scan_failure_counters_have_typed_owner() {
         lib.contains("enum ScanFailureEvent") && lib.contains("struct RecordedScanFailureEvent"),
         "CLI scan failures need a typed event owner and must-use receipt"
     );
-    for (name, source) in [("dispatch", dispatch), ("fused dispatch", fused)] {
+    for (name, source) in [
+        ("dispatch", dispatch.as_str()),
+        ("fused dispatch", fused.as_str()),
+    ] {
         assert!(
             source.contains("record_source_error") || source.contains("record_scanner_panic"),
             "{name} must record failure state through typed recorders"
@@ -48,6 +51,12 @@ fn lib_scan_failure_counters_have_typed_owner() {
             "{name} must not mutate scan-failure counters directly"
         );
     }
+    assert!(
+        fused.contains("fused source drain thread panicked")
+            && fused.contains("record_scanner_panic()")
+            && !fused.contains("let _ = drain.join()"),
+        "fused dispatch must fail loud when the source drain thread panics, not ignore the join result"
+    );
 }
 
 // ── crates/cli/src/main.rs ────────────────────────────────────────────

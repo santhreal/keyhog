@@ -4,7 +4,7 @@ use super::backend::{
     backend_requires_coalesced_batch_pipeline, CachedBackendRouter, MeasuredBackendRouter,
 };
 use crate::orchestrator::ScanOrchestrator;
-use crate::orchestrator_config::autoroute_config_digest;
+use crate::orchestrator_config::{autoroute_config_digest, fused_depth_default};
 use anyhow::Result;
 use keyhog_core::{RawMatch, Source};
 use std::sync::{Arc, Mutex};
@@ -32,9 +32,9 @@ impl ScanOrchestrator {
     ///   fused path scans each chunk independently and relies on the
     ///   filesystem source's 128 KiB window *overlap* (for which the boundary
     ///   pass is already a no-op) to cover seam-straddling secrets.
-    /// * `KEYHOG_BATCH_PIPELINE=1` forces the coalesced batch path (A/B + escape hatch).
+    /// * `--batch-pipeline` forces the coalesced batch path (A/B + escape hatch).
     pub(super) fn should_use_fused_pipeline(&self, sources: &[Box<dyn Source>]) -> bool {
-        if std::env::var_os("KEYHOG_BATCH_PIPELINE").is_some() {
+        if self.effective_config.batch_pipeline {
             return false;
         }
         let explicit = self.effective_config.backend_override;
@@ -69,6 +69,8 @@ impl ScanOrchestrator {
             pattern_count,
             rules_digest,
             config_digest,
+            self.effective_config.autoroute_gpu,
+            self.effective_config.autoroute_calibration,
             Ok(self.effective_config.autoroute_cache_path.clone()),
             self.scanner.as_ref(),
         )
@@ -98,7 +100,7 @@ impl ScanOrchestrator {
         &self,
         sources: Vec<Box<dyn Source>>,
         show_progress: bool,
-        merkle: Option<Arc<keyhog_core::merkle_index::MerkleIndex>>,
+        merkle: Option<Arc<keyhog_core::MerkleIndex>>,
     ) -> Result<Vec<RawMatch>> {
         use rayon::iter::{ParallelBridge, ParallelIterator};
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -121,7 +123,7 @@ impl ScanOrchestrator {
         let incremental_path = self.incremental_cache_path();
         let scanner = Arc::clone(&self.scanner);
         let explicit_backend = self.effective_config.backend_override;
-        let calibration_mode = std::env::var_os("KEYHOG_AUTOROUTE_CALIBRATE").is_some();
+        let calibration_mode = self.effective_config.autoroute_calibration;
         let active_router = if let Some(backend) = explicit_backend {
             ActiveBackendRouter::Explicit(backend)
         } else if calibration_mode {
@@ -156,28 +158,19 @@ impl ScanOrchestrator {
         // the full kernel tree (94k files, 32-core box): 4.25 s wall / 1833 % CPU
         // (~18 cores, 9.6x over single-thread), finding set byte-identical to the
         // coalesced batch path (7.12 s / 749 %).
-        const FUSED_BATCH_DEFAULT: usize = 32;
         // FUSED_BATCH and the channel depth are Tier-A throughput knobs.
         // `scan_coalesced` runs its OWN two-phase `par_iter` over each batch, so
         // `par_bridge` over batches nests parallelism: the batch size trades
         // par_bridge cursor-mutex contention (smaller = more locking) against the
         // inner par_iter's per-batch fork-join barrier granularity (larger = more
-        // work amortising each barrier). `KEYHOG_FUSED_BATCH` / `KEYHOG_FUSED_DEPTH`
-        // override the defaults for host-specific tuning without a rebuild.
-        let fused_batch = keyhog_core::env_config::usize_at_least_or_default(
-            "KEYHOG_FUSED_BATCH",
-            1,
-            FUSED_BATCH_DEFAULT,
-        );
-        let fused_depth_default = rayon::current_num_threads()
-            .saturating_add(3)
-            .saturating_div(4)
-            .clamp(2, 8);
-        let fused_depth = keyhog_core::env_config::usize_at_least_or_default(
-            "KEYHOG_FUSED_DEPTH",
-            1,
-            fused_depth_default,
-        );
+        // work amortising each barrier). Explicit CLI/TOML config owns these
+        // values so `keyhog config --effective`, autoroute identity, and the
+        // hot path cannot drift behind ambient process env.
+        let fused_batch = self.effective_config.fused_batch;
+        let fused_depth = self
+            .effective_config
+            .fused_depth
+            .unwrap_or_else(|| fused_depth_default(rayon::current_num_threads())); // LAW10: absent fused-depth config => documented worker-derived default, surfaced by effective config as auto and hashed through thread/hardware identity; recall-safe throughput default
         let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<keyhog_core::Chunk>>(fused_depth);
         let drain = std::thread::spawn(move || {
             let mut batch: Vec<keyhog_core::Chunk> = Vec::with_capacity(fused_batch);
@@ -350,9 +343,14 @@ impl ScanOrchestrator {
             })
             .collect();
 
-        // Drain thread only moves chunks; it finishes once the source is
-        // exhausted and the channel is consumed.
-        let _ = drain.join(); // LAW10: unused-binding marker; no runtime effect, not a fallback
+        // Drain thread owns source iteration for the fused path. A panic here
+        // means the scan saw only a prefix of the requested input; record the
+        // same incomplete-scan state as scanner worker panics so report and
+        // exit semantics cannot read as clean.
+        if drain.join().is_err() {
+            tracing::error!("fused source drain thread panicked mid-scan; results are incomplete");
+            let _receipt = crate::record_scanner_panic();
+        }
 
         let routing_error = match routing_error.lock() {
             Ok(mut guard) => guard.take(),
@@ -366,9 +364,9 @@ impl ScanOrchestrator {
             return Err(error.into());
         }
 
-        if std::env::var("KH_PERF").is_ok() {
+        if self.effective_config.scanner.perf_trace {
             eprintln!(
-                "KH_PERF scan_sources_fused: wall={:.2}s findings={} scanned={} fused_batch={} fused_depth={}",
+                "perf-trace scan_sources_fused: wall={:.2}s findings={} scanned={} fused_batch={} fused_depth={}",
                 sc_t0.elapsed().as_secs_f64(),
                 findings.len(),
                 crate::SCANNED_CHUNKS.load(Ordering::Relaxed),
@@ -376,15 +374,9 @@ impl ScanOrchestrator {
                 fused_depth,
             );
         }
-        // Same operator-facing profiler dump as the streaming path: the fused
-        // orchestrator is the other scan mode, so the `KEYHOG_PROFILE` gates
-        // must surface here too (otherwise the profiler is dead on fused runs).
-        if std::env::var("KEYHOG_PROFILE").as_deref() == Ok("1") {
-            keyhog_scanner::profile_dump("keyhog scan");
-        }
-        if std::env::var("KEYHOG_PROFILE_SCANINNER").as_deref() == Ok("1") {
-            keyhog_scanner::scan_inner_profile_dump();
-        }
+        // Same operator-facing profiler drain as the streaming path. Scanner
+        // owns the profiling switch; fused dispatch only requests the report.
+        self.scanner.dump_profile_reports("keyhog scan");
 
         progress_done.store(true, Ordering::Relaxed);
         if let Some(h) = progress_handle {

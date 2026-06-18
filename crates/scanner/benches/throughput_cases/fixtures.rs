@@ -3,7 +3,7 @@ use criterion::{
     black_box, criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode, Throughput,
 };
 use keyhog_core::{load_detectors, Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
-use keyhog_scanner::{decode, entropy, ml_scorer, CompiledScanner};
+use keyhog_scanner::{entropy, CompiledScanner};
 use std::path::Path;
 
 // TEST DATA GENERATORS

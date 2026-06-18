@@ -10,7 +10,7 @@ use self::calibration::calibrate_fastest_correct_backend;
 use self::evidence::AutorouteDecision;
 use self::host::AutorouteHostProfile;
 use self::store::{load_autoroute_cache, save_autoroute_cache};
-use self::workload::{workload_key, WorkloadKey};
+use self::workload::{workload_key, WorkloadClassificationError, WorkloadKey};
 use keyhog_core::Chunk;
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
 use keyhog_scanner::CompiledScanner;
@@ -109,6 +109,18 @@ impl AutorouteRoutingError {
             ),
         }
     }
+
+    fn incomplete_workload_evidence(error: WorkloadClassificationError) -> Self {
+        Self {
+            message: format!(
+                "autoroute workload evidence incomplete: {error}. Autoroute requires exact \
+                 source-class evidence before it can trust a persisted fastest-correct backend \
+                 decision. Fix the source implementation so it populates ChunkMetadata.source_type, \
+                 rerun `install.sh --calibrate` or `install.ps1 -Calibrate`, or pass an explicit \
+                 `--backend <simd|cpu|gpu|megascan>` for diagnostics."
+            ),
+        }
+    }
 }
 
 impl fmt::Display for AutorouteRoutingError {
@@ -155,7 +167,8 @@ impl CachedBackendRouter {
         if let Some(forced) = explicit {
             return Ok(forced);
         }
-        let key = workload_key(batch, self.pattern_count);
+        let key = workload_key(batch, self.pattern_count)
+            .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;
         if let Some(backend) = self
             .decisions
             .get(&key)
@@ -218,7 +231,8 @@ impl MeasuredBackendRouter {
         if let Some(forced) = explicit {
             return Ok(forced);
         }
-        let key = workload_key(batch, self.pattern_count);
+        let key = workload_key(batch, self.pattern_count)
+            .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;
         if let Some(decision) = self.decisions.get(&key) {
             if let Some(backend) = decision.backend() {
                 return Ok(backend);

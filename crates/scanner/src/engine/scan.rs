@@ -74,6 +74,48 @@ fn mark_hs_trigger(
 }
 
 impl CompiledScanner {
+    #[cfg(feature = "decode")]
+    #[inline]
+    pub(super) fn chunk_needs_decode_postprocess(&self, chunk: &keyhog_core::Chunk) -> bool {
+        self.config.max_decode_depth > 0
+            && chunk.data.len() <= self.config.max_decode_bytes
+            && crate::decode::has_decodable_payload(chunk.data.as_bytes())
+    }
+
+    #[cfg(not(feature = "decode"))]
+    #[inline]
+    pub(super) fn chunk_needs_decode_postprocess(&self, _chunk: &keyhog_core::Chunk) -> bool {
+        false
+    }
+
+    #[cfg(feature = "simd")]
+    #[inline]
+    fn post_process_coalesced_matches(
+        &self,
+        chunk: &keyhog_core::Chunk,
+        matches: &mut Vec<keyhog_core::RawMatch>,
+    ) {
+        if self.chunk_needs_decode_postprocess(chunk) {
+            self.post_process_matches(chunk, matches, None);
+        } else {
+            self.scan_cross_chunk_fragments(chunk, matches, None);
+        }
+    }
+
+    #[cfg(feature = "simd")]
+    #[inline]
+    fn decode_only_coalesced_matches(
+        &self,
+        chunk: &keyhog_core::Chunk,
+    ) -> Option<Vec<keyhog_core::RawMatch>> {
+        if !self.chunk_needs_decode_postprocess(chunk) {
+            return None;
+        }
+        let mut matches = Vec::new();
+        self.post_process_matches(chunk, &mut matches, None);
+        Some(matches)
+    }
+
     /// High-throughput coalesced scan: all files scanned in parallel,
     /// zero overhead for non-hit files.
     ///
@@ -90,11 +132,10 @@ impl CompiledScanner {
             // the per-chunk scan is independent and CPU-bound. This is the
             // coalesced SIMD/CPU path, so it must not consult auto backend
             // selection when the SIMD feature is absent.
-            let mut results: Vec<Vec<keyhog_core::RawMatch>> =
-                chunks
-                    .par_iter()
-                    .map(|c| self.scan_with_backend(c, crate::hw_probe::ScanBackend::SimdCpu))
-                    .collect();
+            let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
+                .par_iter()
+                .map(|c| self.scan_with_backend(c, crate::hw_probe::ScanBackend::SimdCpu))
+                .collect();
             super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
             return results;
         }
@@ -106,11 +147,10 @@ impl CompiledScanner {
                 // explicit SimdCpu/CPU route instead of consulting auto backend
                 // selection; autoroute calibration labels this path as the
                 // SIMD reference and must never inherit a GPU/env override here.
-                let mut results: Vec<Vec<keyhog_core::RawMatch>> =
-                    chunks
-                        .par_iter()
-                        .map(|c| self.scan_with_backend(c, crate::hw_probe::ScanBackend::SimdCpu))
-                        .collect();
+                let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
+                    .par_iter()
+                    .map(|c| self.scan_with_backend(c, crate::hw_probe::ScanBackend::SimdCpu))
+                    .collect();
                 super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
                 return results;
             };
@@ -224,7 +264,7 @@ impl CompiledScanner {
     ///
     /// Admit when ANY holds:
     ///   1. the chunk activates an always-active / keyword fallback pattern
-    ///      (`has_active_fallback_patterns_for_chunk` runs the real active-set
+    ///      (`has_active_phase2_patterns_for_chunk` runs the real active-set
     ///      prefilter — the exact, cheap necessary condition for a fallback
     ///      match, with no 32 KiB cap because anchorless detectors are size-blind);
     ///   2. multiline-concatenated secrets are plausible (concatenation
@@ -242,7 +282,7 @@ impl CompiledScanner {
     // backends; a no-`simd` build (portable / ci / full) never reaches it.
     pub(crate) fn should_scan_no_hit_chunk(&self, chunk: &keyhog_core::Chunk) -> bool {
         // (1) Recall gate: does any fallback pattern actually activate here?
-        if self.has_active_fallback_patterns_for_chunk(&chunk.data) {
+        if self.has_active_phase2_patterns_for_chunk(&chunk.data) {
             return true;
         }
         let data = chunk.data.as_bytes();
@@ -291,74 +331,75 @@ impl CompiledScanner {
             .par_iter()
             .zip(triggers.into_par_iter())
             .map(|(chunk, triggered_opt)| {
-                    if let Some(triggered) = triggered_opt {
-                        // Shared windowing contract (see `scan_chunk_or_window`):
-                        // a >1 MiB chunk is windowed so the per-chunk match cap
-                        // can't silently truncate it, like the per-file/GPU paths.
-                        let mut matches = self.scan_chunk_or_window(chunk, None, || {
-                            let prepared = self.prepare_chunk(chunk);
-                            self.scan_prepared_with_triggered(
-                                prepared,
-                                ScanBackend::SimdCpu,
-                                triggered,
-                                None,
-                            )
-                        });
-                        // Cross-chunk fragment reassembly parity — see admitted branch.
-                        self.scan_cross_chunk_fragments(chunk, &mut matches, None);
+                if let Some(triggered) = triggered_opt {
+                    // Shared windowing contract (see `scan_chunk_or_window`):
+                    // a >1 MiB chunk is windowed so the per-chunk match cap
+                    // can't silently truncate it, like the per-file/GPU paths.
+                    let mut matches = self.scan_chunk_or_window(chunk, None, || {
+                        let prepared = self.prepare_chunk(chunk);
+                        self.scan_prepared_with_triggered(
+                            prepared,
+                            ScanBackend::SimdCpu,
+                            triggered,
+                            None,
+                        )
+                    });
+                    // Cross-chunk fragment reassembly always runs. Decode-through
+                    // runs only on encoded-looking chunks so coalesced GPU/SIMD
+                    // stays recall-equivalent to per-file scan without charging
+                    // every no-hit chunk for recursive decode.
+                    self.post_process_coalesced_matches(chunk, &mut matches);
+                    return matches;
+                }
+                // No phase-1 trigger fired. The shared no-hit admission gate
+                // (`should_scan_no_hit_chunk`, recall-load-bearing) decides
+                // whether the prefix-less / keyword-less fallback detectors
+                // (asana-pat and ~3100 similar, issue #69), generic-assignment
+                // and entropy stages get a shot; a `false` drops to the zero-work
+                // fast path WITHOUT preprocessing. Identical contract for the
+                // SIMD-coalesced and GPU-megakernel producers (both feed this
+                // tail), so findings are backend-invariant (Law 10).
+                if !self.should_scan_no_hit_chunk(chunk) {
+                    if let Some(matches) = self.decode_only_coalesced_matches(chunk) {
                         return matches;
                     }
-                    // No phase-1 trigger fired. The shared no-hit admission gate
-                    // (`should_scan_no_hit_chunk`, recall-load-bearing) decides
-                    // whether the prefix-less / keyword-less fallback detectors
-                    // (asana-pat and ~3100 similar, issue #69), generic-assignment
-                    // and entropy stages get a shot; a `false` drops to the zero-work
-                    // fast path WITHOUT preprocessing. Identical contract for the
-                    // SIMD-coalesced and GPU-megakernel producers (both feed this
-                    // tail), so findings are backend-invariant (Law 10).
-                    if !self.should_scan_no_hit_chunk(chunk) {
-                        return Vec::new();
-                    }
+                    return Vec::new();
+                }
 
-                    // Admitted. Reuse phase 1's empty Hyperscan result: prepare the
-                    // chunk and drive `scan_prepared_with_triggered` with an EMPTY
-                    // trigger bitmap (keyword-AC fallback, generic-assignment and
-                    // entropy run off the preprocessed text; confirmed extraction is
-                    // skipped — no AC pattern fired). Recollect triggers ONLY on the
-                    // rare structured-preprocessor drift where the preprocessed text
-                    // differs from the raw bytes phase 1 scanned.
-                    let prepared = self.prepare_chunk(chunk);
-                    let triggered =
-                        if prepared.preprocessed.text.as_bytes() == chunk.data.as_bytes() {
-                            Vec::new()
-                        } else {
-                            self.collect_triggered_patterns_for_backend(
-                                &prepared.preprocessed.text,
-                                ScanBackend::SimdCpu,
-                            )
-                        };
-                    let mut matches = self.scan_prepared_with_triggered(
-                        prepared,
+                // Admitted. Reuse phase 1's empty Hyperscan result: prepare the
+                // chunk and drive `scan_prepared_with_triggered` with an EMPTY
+                // trigger bitmap (keyword-AC fallback, generic-assignment and
+                // entropy run off the preprocessed text; confirmed extraction is
+                // skipped — no AC pattern fired). Recollect triggers ONLY on the
+                // rare structured-preprocessor drift where the preprocessed text
+                // differs from the raw bytes phase 1 scanned.
+                let prepared = self.prepare_chunk(chunk);
+                let triggered = if prepared.preprocessed.text.as_bytes() == chunk.data.as_bytes() {
+                    Vec::new()
+                } else {
+                    self.collect_triggered_patterns_for_backend(
+                        &prepared.preprocessed.text,
                         ScanBackend::SimdCpu,
-                        triggered,
-                        None,
-                    );
-                    // Match-based cross-file fragment reassembly (an `AWS_ACCESS_KEY=`
-                    // match in one .env paired with an `AWS_SECRET=` match in another).
-                    self.record_and_reassemble_for_no_hit_chunk(chunk, &mut matches);
-                    // Line-based `:reassembled` cross-chunk fragment join — backend
-                    // parity with the per-chunk `scan` API. This tail backs BOTH the
-                    // SIMD `scan_coalesced` and the GPU megakernel, so without it the
-                    // production coalesced path silently dropped every cross-chunk-
-                    // reassembled secret a per-chunk scan surfaces (Law 10; pinned by
-                    // `gpu_batch_preserves_cross_chunk_reassembly`). decode-through —
-                    // the OTHER half of `post_process_matches` — is deliberately NOT
-                    // run on the bulk path: net-negative precision, breaches the
-                    // mirror floor (KH-L-0404).
-                    self.scan_cross_chunk_fragments(chunk, &mut matches, None);
-                    matches
-                })
-                .collect();
+                    )
+                };
+                let mut matches = self.scan_prepared_with_triggered(
+                    prepared,
+                    ScanBackend::SimdCpu,
+                    triggered,
+                    None,
+                );
+                // Match-based cross-file fragment reassembly (an `AWS_ACCESS_KEY=`
+                // match in one .env paired with an `AWS_SECRET=` match in another).
+                self.record_and_reassemble_for_no_hit_chunk(chunk, &mut matches);
+                // Line-based `:reassembled` cross-chunk fragment join — backend
+                // parity with the per-chunk `scan` API. Encoded-looking chunks
+                // also run the bounded decode-through postprocess; otherwise the
+                // coalesced GPU/MegaScan path misses encoded-only secrets that
+                // the explicit CPU backends recover.
+                self.post_process_coalesced_matches(chunk, &mut matches);
+                matches
+            })
+            .collect();
 
         let _p2e = _p2.elapsed();
         // Cross-chunk reassembly: synthesize a thin boundary buffer from the
@@ -367,9 +408,9 @@ impl CompiledScanner {
         // boundary that in-chunk scan can't see.
         let _bt = std::time::Instant::now();
         super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
-        if std::env::var_os("KH_PERF").is_some() {
+        if super::profile::perf_trace_enabled() {
             eprintln!(
-                "KH_PERF scan_coalesced_phase2: chunks={} p2={:.3}s boundary={:.3}s",
+                "perf-trace scan_coalesced_phase2: chunks={} p2={:.3}s boundary={:.3}s",
                 chunks.len(),
                 _p2e.as_secs_f64(),
                 _bt.elapsed().as_secs_f64()
@@ -485,29 +526,29 @@ impl CompiledScanner {
             if entropy < 3.0 || candidate.value.len() < 16 {
                 continue;
             }
-            let mut dummy_data = String::with_capacity(candidate.value.len() + 24);
-            dummy_data.push_str("reassembled_key = \"");
-            dummy_data.push_str(candidate.value.as_str());
-            dummy_data.push('"');
-            // Stamp the dummy chunk's metadata from the ANCHOR fragment's
+            let mut synthetic_data = String::with_capacity(candidate.value.len() + 24);
+            synthetic_data.push_str("reassembled_key = \"");
+            synthetic_data.push_str(candidate.value.as_str());
+            synthetic_data.push('"');
+            // Stamp the synthetic chunk's metadata from the ANCHOR fragment's
             // path, not chunk.metadata.clone(): the contributing
             // fragment may have come from a different file than the chunk
             // currently being scanned (same coalesced batch). Falling
             // back to chunk.metadata is only for the shouldn't-happen
             // case where the anchor lost its path.
-            let mut dummy_metadata = chunk.metadata.clone();
+            let mut synthetic_metadata = chunk.metadata.clone();
             if let Some(frag_path) = candidate.path.as_deref() {
-                dummy_metadata.path = Some(frag_path.to_string());
+                synthetic_metadata.path = Some(frag_path.to_string());
             }
-            let dummy_chunk = Chunk {
-                data: dummy_data.into(),
-                metadata: dummy_metadata,
+            let synthetic_chunk = Chunk {
+                data: synthetic_data.into(),
+                metadata: synthetic_metadata,
             };
             // Tiny synthesized chunk; skip GPU unconditionally -
             // per-dispatch overhead dwarfs the work. Matches the
             // scan_cross_chunk_fragments rationale.
             let backend = crate::hw_probe::ScanBackend::SimdCpu;
-            let mut reassembled_matches = self.scan_inner(&dummy_chunk, backend, None);
+            let mut reassembled_matches = self.scan_inner(&synthetic_chunk, backend, None);
             // Point each reassembled finding at the anchor fragment's
             // real source line so the finding's location matches the file
             // its metadata now names.

@@ -2,6 +2,7 @@
 
 use keyhog_core::Chunk;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 
 const AUTOROUTE_DECODE_DENSITY_SAMPLE_BYTES: usize = 64 * 1024;
 const AUTOROUTE_DECODE_MIN_ENCODED_RUN: usize = 24;
@@ -15,6 +16,40 @@ pub(super) struct WorkloadKey {
     pub(super) decode_density_bucket: u8,
     pub(super) source_class_hash: u64,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) struct WorkloadClassificationError {
+    source_type: String,
+    path: Option<String>,
+}
+
+impl WorkloadClassificationError {
+    fn missing_source_family(chunk: &Chunk) -> Self {
+        Self {
+            source_type: chunk.metadata.source_type.clone(),
+            path: chunk.metadata.path.clone(),
+        }
+    }
+}
+
+impl fmt::Display for WorkloadClassificationError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.path.as_deref() {
+            Some(path) => write!(
+                f,
+                "chunk at {path} has invalid source_type {:?}; every autorouted chunk must carry a non-empty source family",
+                self.source_type
+            ),
+            None => write!(
+                f,
+                "chunk has invalid source_type {:?}; every autorouted chunk must carry a non-empty source family",
+                self.source_type
+            ),
+        }
+    }
+}
+
+impl std::error::Error for WorkloadClassificationError {}
 
 pub(super) fn sample_batch(batch: &[Chunk]) -> Vec<Chunk> {
     const MAX_SAMPLE_CHUNKS: usize = 16;
@@ -31,21 +66,24 @@ pub(super) fn sample_batch(batch: &[Chunk]) -> Vec<Chunk> {
     out
 }
 
-pub(super) fn workload_key(batch: &[Chunk], pattern_count: usize) -> WorkloadKey {
+pub(super) fn workload_key(
+    batch: &[Chunk],
+    pattern_count: usize,
+) -> Result<WorkloadKey, WorkloadClassificationError> {
     let bytes: u64 = batch.iter().map(|c| c.data.len() as u64).sum();
     let max_file = batch
         .iter()
         .map(|c| c.metadata.size_bytes.unwrap_or(c.data.len() as u64)) // LAW10: empty/absent => documented numeric default, recall-safe
         .max()
         .unwrap_or(0); // LAW10: empty/absent => documented numeric default, recall-safe
-    WorkloadKey {
+    Ok(WorkloadKey {
         bytes_bucket: autoroute_stable_bucket(bytes),
         chunks_bucket: autoroute_stable_bucket(batch.len() as u64),
         max_file_bucket: autoroute_stable_bucket(max_file),
         pattern_bucket: log2_bucket(pattern_count as u64),
         decode_density_bucket: autoroute_stable_density_bucket(decode_density_bucket(batch)),
-        source_class_hash: source_class_hash(batch),
-    }
+        source_class_hash: source_class_hash(batch)?,
+    })
 }
 
 pub(super) fn autoroute_stable_bucket(value: u64) -> u8 {
@@ -109,12 +147,12 @@ fn is_decode_trigger_byte(byte: u8) -> bool {
     )
 }
 
-pub(super) fn source_class_hash(batch: &[Chunk]) -> u64 {
+pub(super) fn source_class_hash(batch: &[Chunk]) -> Result<u64, WorkloadClassificationError> {
     use std::hash::{Hash, Hasher};
-    let mut classes: Vec<&str> = batch
-        .iter()
-        .map(|chunk| source_family(&chunk.metadata.source_type))
-        .collect();
+    let mut classes: Vec<&str> = Vec::new();
+    for chunk in batch {
+        classes.push(source_family(chunk)?);
+    }
     classes.sort_unstable();
     classes.dedup();
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -122,15 +160,18 @@ pub(super) fn source_class_hash(batch: &[Chunk]) -> u64 {
     for class in classes {
         class.hash(&mut h);
     }
-    h.finish()
+    Ok(h.finish())
 }
 
-pub(super) fn source_family(source_type: &str) -> &str {
-    source_type
+fn source_family(chunk: &Chunk) -> Result<&str, WorkloadClassificationError> {
+    chunk
+        .metadata
+        .source_type
+        .trim()
         .split([':', '/'])
         .next()
         .filter(|family| !family.is_empty())
-        .unwrap_or("unknown") // LAW10: empty source_type => explicit cache-key family label only; chunk still scans and missing metadata does not suppress findings
+        .ok_or_else(|| WorkloadClassificationError::missing_source_family(chunk))
 }
 
 pub(super) fn log2_bucket(value: u64) -> u8 {

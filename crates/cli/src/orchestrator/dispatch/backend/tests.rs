@@ -62,8 +62,9 @@ fn workload_key_distinguishes_decode_density_for_same_size_batches() {
     let encoded = "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=".repeat(128);
     let mut plain = "id: x\npath: ./src\n".repeat((encoded.len() / 18) + 1);
     plain.truncate(encoded.len());
-    let plain_key = workload_key(&[test_chunk(plain)], 902);
-    let encoded_key = workload_key(&[test_chunk(encoded)], 902);
+    let plain_key = workload_key(&[test_chunk(plain)], 902).expect("plain workload classified");
+    let encoded_key =
+        workload_key(&[test_chunk(encoded)], 902).expect("encoded workload classified");
 
     assert_eq!(plain_key.bytes_bucket, encoded_key.bytes_bucket);
     assert_eq!(plain_key.chunks_bucket, encoded_key.chunks_bucket);
@@ -79,10 +80,10 @@ fn workload_key_distinguishes_decode_density_for_same_size_batches() {
 #[test]
 fn workload_key_coalesces_parallel_reader_adjacent_bucket_jitter() {
     assert_eq!(
-            autoroute_stable_bucket(1_u64 << 26),
-            autoroute_stable_bucket((1_u64 << 27) - 1),
-            "adjacent aggregate byte buckets from parallel reader batch jitter must not invalidate calibration"
-        );
+        autoroute_stable_bucket(1_u64 << 26),
+        autoroute_stable_bucket((1_u64 << 27) - 1),
+        "adjacent aggregate byte buckets from parallel reader batch jitter must not invalidate calibration"
+    );
     assert_ne!(
         autoroute_stable_bucket(1_u64 << 26),
         autoroute_stable_bucket(1_u64 << 28),
@@ -97,20 +98,34 @@ fn workload_key_coalesces_parallel_reader_adjacent_bucket_jitter() {
 
 #[test]
 fn source_class_hash_uses_stable_top_level_source_family() {
-    let plain = source_class_hash(&[test_chunk_with_source("a".repeat(64), "filesystem")]);
+    let plain = source_class_hash(&[test_chunk_with_source("a".repeat(64), "filesystem")])
+        .expect("filesystem source class hashes");
     let mixed_filesystem = source_class_hash(&[
         test_chunk_with_source("a".repeat(64), "filesystem/windowed"),
         test_chunk_with_source("a".repeat(64), "filesystem/archive"),
-    ]);
-    let docker = source_class_hash(&[test_chunk_with_source("a".repeat(64), "docker")]);
+    ])
+    .expect("filesystem subtype source classes hash");
+    let docker = source_class_hash(&[test_chunk_with_source("a".repeat(64), "docker")])
+        .expect("docker source class hashes");
 
     assert_eq!(
-            plain, mixed_filesystem,
-            "filesystem subtype mixtures depend on parallel batch grouping and must route as one family"
-        );
+        plain, mixed_filesystem,
+        "filesystem subtype mixtures depend on parallel batch grouping and must route as one family"
+    );
     assert_ne!(
         plain, docker,
         "different top-level source families still need separate autoroute cache keys"
+    );
+}
+
+#[test]
+fn workload_key_rejects_missing_source_class_evidence() {
+    let err = workload_key(&[test_chunk_with_source("a".repeat(64), "")], 902)
+        .expect_err("autoroute must not hash missing source class as a reusable bucket");
+    let text = err.to_string();
+    assert!(
+        text.contains("source_type") && text.contains("non-empty source family"),
+        "missing source-class metadata must be an explicit autoroute evidence error, got: {text}"
     );
 }
 
@@ -480,12 +495,12 @@ fn autoroute_cache_rejects_gpu_cold_warm_evidence_mismatch() {
     .unwrap();
     let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
     assert!(
-            loaded
-                .expect_err("mismatched GPU cold/warm evidence must be rejected")
-                .to_string()
-                .contains("mismatched GPU cold/warm route evidence"),
-            "GPU autoroute cache trust requires first-dispatch and warmed timing evidence to match the trial distribution"
-        );
+        loaded
+            .expect_err("mismatched GPU cold/warm evidence must be rejected")
+            .to_string()
+            .contains("mismatched GPU cold/warm route evidence"),
+        "GPU autoroute cache trust requires first-dispatch and warmed timing evidence to match the trial distribution"
+    );
 
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 }
@@ -517,12 +532,12 @@ fn autoroute_cache_rejects_selected_backend_that_is_not_fastest() {
     .unwrap();
     let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
     assert!(
-            loaded
-                .expect_err("selected backend must match persisted fastest route")
-                .to_string()
-                .contains("selected backend is not the fastest persisted timing evidence"),
-            "autoroute cache load must not trust a backend label that contradicts persisted timing evidence"
-        );
+        loaded
+            .expect_err("selected backend must match persisted fastest route")
+            .to_string()
+            .contains("selected backend is not the fastest persisted timing evidence"),
+        "autoroute cache load must not trust a backend label that contradicts persisted timing evidence"
+    );
 
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
 }
