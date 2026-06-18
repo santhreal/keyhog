@@ -255,10 +255,13 @@ pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
 
     let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
     eprintln!("📋 loaded {} detectors", detectors.len());
-    let scanner = Arc::new(
-        CompiledScanner::compile(detectors.clone())
-            .map_err(|e| anyhow::anyhow!("scanner compile failed: {e:?}"))?,
-    );
+    let scanner = Arc::new(CompiledScanner::compile(detectors.clone()).map_err(|e| {
+        crate::orchestrator_config::detector_compile_failed(
+            "keyhog scan-system",
+            &args.detectors,
+            e,
+        )
+    })?);
     let router =
         crate::orchestrator::cached_autoroute_router_for_default_config(&scanner, &detectors);
     // System-wide scan touches every mounted drive and every git history:

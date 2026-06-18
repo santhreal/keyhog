@@ -50,8 +50,9 @@ pub fn run(args: WatchArgs) -> Result<()> {
 
     let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
     let detector_count = detectors.len();
-    let scanner = CompiledScanner::compile(detectors.clone())
-        .map_err(|e| anyhow::anyhow!("scanner compile failed: {e:?}"))?;
+    let scanner = CompiledScanner::compile(detectors.clone()).map_err(|e| {
+        crate::orchestrator_config::detector_compile_failed("keyhog watch", &args.detectors, e)
+    })?;
     let router =
         crate::orchestrator::cached_autoroute_router_for_default_config(&scanner, &detectors);
 
@@ -73,11 +74,27 @@ pub fn run(args: WatchArgs) -> Result<()> {
         // notify hands events on its own thread; forward to the main loop.
         let _ = tx.send(res); // LAW10: unused-binding marker; no runtime effect, not a fallback
     })
-    .map_err(|e| anyhow::anyhow!("failed to build filesystem watcher: {e}"))?;
+    .map_err(|e| {
+        anyhow::anyhow!(
+            "failed to build filesystem watcher for {root}: {e}\n  \
+             Fix: on Linux raise watcher limits with:\n    \
+             sudo sysctl fs.inotify.max_user_instances=1024 fs.inotify.max_user_watches=524288\n  \
+             then retry, or run `keyhog scan {root}` for a one-shot scan.",
+            root = watch_root.display(),
+        )
+    })?;
 
     watcher
         .watch(&watch_root, RecursiveMode::Recursive)
-        .map_err(|e| anyhow::anyhow!("failed to watch {}: {e}", watch_root.display()))?;
+        .map_err(|e| {
+            anyhow::anyhow!(
+                "failed to watch {root}: {e}\n  \
+             On Linux a large tree usually exhausts the inotify watch limit — raise it with:\n    \
+             sudo sysctl fs.inotify.max_user_watches=524288   (persist in /etc/sysctl.conf)\n  \
+             or run a one-shot `keyhog scan {root}` instead of watch.",
+                root = watch_root.display(),
+            )
+        })?;
 
     // Per-path dedupe state: last (scan time, content hash) seen for a path.
     // notify fires Create then Modify for a single new-file write, which

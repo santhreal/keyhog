@@ -257,7 +257,11 @@ pub fn build_sources(
                 // of the `.to_string()` that bare `anyhow::bail!(e)` would
                 // produce - operators get the whole crash trace, not just
                 // the outermost message.
-                Err(e) => anyhow::bail!("failed to construct source '{source_name}': {e:#}"),
+                Err(e) => anyhow::bail!(
+                    "failed to construct source '{source_name}': {e:#}\n  \
+                     Fix: check the `--source {source_name}:...` parameter format and required \
+                     credentials, or use the dedicated source flags shown by `keyhog scan --help`."
+                ),
             }
 
             if let Some(reg_source) = keyhog_core::registry::get_source_registry().get(source_name)
@@ -265,8 +269,9 @@ pub fn build_sources(
                 sources.push(Box::new(RegistrySourceBridge { inner: reg_source }));
             } else {
                 anyhow::bail!(
-                    "custom source '{}' not found in registry (and factory failed)",
-                    source_name
+                    "custom source '{source_name}' not found in registry (and factory failed). \
+                     Fix: use a compiled-in source name or a dedicated source flag from \
+                     `keyhog scan --help`, or register the source plugin before using --source."
                 );
             }
         }

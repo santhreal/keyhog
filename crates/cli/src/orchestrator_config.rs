@@ -3,6 +3,7 @@ use anyhow::{Context, Result};
 use keyhog_core::{load_detectors, validate_detector, DetectorSpec, QualityIssue};
 use keyhog_scanner::ScannerConfig;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 const DETECTOR_CACHE_VERSION: u32 = 3;
@@ -433,6 +434,20 @@ pub(crate) fn load_detectors_or_embedded(path: &Path) -> Result<Vec<DetectorSpec
         return Ok(loaded);
     }
     load_detectors_embedded_or_fail(path)
+}
+
+pub(crate) fn detector_compile_failed(
+    command: &str,
+    detectors_path: &Path,
+    error: impl fmt::Display,
+) -> anyhow::Error {
+    anyhow::anyhow!(
+        "{command}: scanner compile failed while compiling detectors from '{}': {error}. \
+         Fix: run `keyhog detectors --audit --detectors {}` and repair detector errors, \
+         or omit --detectors to use the embedded corpus.",
+        detectors_path.display(),
+        detectors_path.display(),
+    )
 }
 
 fn validate_detector_path_for_scan(path: &Path) -> Result<()> {
