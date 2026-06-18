@@ -94,13 +94,14 @@ set a value, the flat form wins.
 
 ### `[scan]`
 
-Mirrors the flat scalars (`severity`, `min_confidence`, `format`, `exclude`,
-`threads`, `dedup`) — the shape the rest of the docs use as canonical.
+Mirrors the flat scalars (`severity`, `min_confidence`, `decode_depth`, `format`,
+`exclude`, `threads`, `dedup`) — the shape the rest of the docs use as canonical.
 
 ```toml
 [scan]
 severity = "high"
 min_confidence = 0.40       # raise toward 0.85 for fewer false positives
+decode_depth = 10           # 1-10, same ceiling as --decode-depth
 exclude = ["**/test/fixtures/**", "vendor/"]
 ```
 

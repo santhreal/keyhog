@@ -51,6 +51,28 @@ fn with_trigger_buffer<R>(words_needed: usize, f: impl FnOnce(&mut [u64]) -> R) 
     })
 }
 
+#[cfg(feature = "simd")]
+#[inline]
+fn mark_hs_trigger(
+    scratch: &mut [u64],
+    scanner: &crate::simd::backend::HsScanner,
+    hs_index_map: &super::CsrU32,
+    ac_len: usize,
+    hs_id: usize,
+) {
+    let Some((_det, dedup_id, _grp)) = scanner.pattern_info(hs_id) else {
+        return;
+    };
+    if let Some(orig) = hs_index_map.get(dedup_id) {
+        for &idx in orig {
+            let idx = idx as usize;
+            if idx < ac_len {
+                scratch[idx / 64] |= 1u64 << (idx % 64);
+            }
+        }
+    }
+}
+
 impl CompiledScanner {
     /// High-throughput coalesced scan: all files scanned in parallel,
     /// zero overhead for non-hit files.
@@ -135,17 +157,17 @@ impl CompiledScanner {
                     return None;
                 }
                 with_trigger_buffer(words_needed, |scratch| {
-                    for (hs_id, _start, _end) in scanner.scan(data) {
-                        let Some((_det, dedup_id, _grp)) = scanner.pattern_info(hs_id) else {
-                            continue;
-                        };
-                        if let Some(orig) = self.hs_index_map.get(dedup_id) {
-                            for &idx in orig {
-                                let idx = idx as usize;
-                                if idx < ac_len {
-                                    scratch[idx / 64] |= 1u64 << (idx % 64);
-                                }
-                            }
+                    let scan_result = scanner.scan_each_result(data, |hs_id| {
+                        mark_hs_trigger(scratch, scanner, &self.hs_index_map, ac_len, hs_id);
+                    });
+                    if let Err(error) = scan_result {
+                        tracing::warn!(
+                            %error,
+                            "hyperscan coalesced phase-1 scan failed; over-marking SIMD-covered patterns for this chunk"
+                        );
+                        scratch.fill(0);
+                        for hs_id in 0..scanner.pattern_count() {
+                            mark_hs_trigger(scratch, scanner, &self.hs_index_map, ac_len, hs_id);
                         }
                     }
                     if scratch.iter().any(|&w| w != 0) {
@@ -435,7 +457,7 @@ impl CompiledScanner {
                     prefix: m.detector_id.to_string(),
                     var_name: m.detector_name.to_string(),
                     value: zeroize::Zeroizing::new(m.credential.to_string()),
-                    line: m.location.line.unwrap_or(0),
+                    line: m.location.line.unwrap_or(0), // LAW10: absent source line => fragment-cache metadata sentinel only; candidate remains eligible
                     path: Some(std::sync::Arc::clone(path)),
                 };
                 // Stamped variant: cross-file pooling is impossible now

@@ -86,6 +86,20 @@ fn scan_effective_config_baked_values_equal_explicit_flags() {
     assert!(from_config.contains("ml_enabled = false"));
 }
 
+#[test]
+fn scan_effective_config_scan_section_decode_depth_is_wired() {
+    let (stdout, stderr, code) = effective_config_with_toml(
+        "[scan]\n\
+         decode_depth = 4\n",
+    );
+
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("max_decode_depth = 4"),
+        "[scan].decode_depth must reach the engine config; stdout={stdout}"
+    );
+}
+
 #[cfg(all(feature = "web", feature = "git"))]
 #[test]
 fn scan_effective_config_source_limits_follow_config_and_cli_precedence() {
@@ -188,11 +202,13 @@ fn scan_effective_config_rejects_invalid_config_enums_and_min_length() {
         "format = \"yaml\"\n\
          severity = \"urgent\"\n\
          dedup = \"global\"\n\
+         decode_depth = 11\n\
          min_secret_len = 0\n\
          [scan]\n\
          format = \"xml\"\n\
          severity = \"panic\"\n\
          dedup = \"all\"\n\
+         decode_depth = 0\n\
          min_secret_len = 0\n",
     );
 
@@ -205,10 +221,12 @@ fn scan_effective_config_rejects_invalid_config_enums_and_min_length() {
         "format = \"yaml\"",
         "severity = \"urgent\"",
         "dedup = \"global\"",
+        "decode_depth = 11",
         "min_secret_len = 0",
         "[scan].format = \"xml\"",
         "[scan].severity = \"panic\"",
         "[scan].dedup = \"all\"",
+        "[scan].decode_depth = 0",
         "[scan].min_secret_len = 0",
     ] {
         assert!(

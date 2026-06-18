@@ -103,7 +103,12 @@ pub struct ScanConfig {
 }
 
 /// Limits for decoding to prevent infinite recursion or memory exhaustion.
-pub const MAX_DECODE_DEPTH_LIMIT: usize = 16;
+pub const MAX_DECODE_DEPTH_LIMIT: usize = 10;
+
+/// Maximum recursive decode passes accepted from CLI and TOML config.
+pub const fn max_decode_depth_limit() -> usize {
+    MAX_DECODE_DEPTH_LIMIT
+}
 
 /// Serde default for [`ScanConfig::entropy_ml_authoritative`]: a config
 /// deserialized from a TOML that predates the field gets the shipped default

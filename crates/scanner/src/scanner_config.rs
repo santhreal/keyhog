@@ -165,12 +165,11 @@ impl ScannerConfig {
         } else if self.entropy_threshold > 8.0 {
             self.entropy_threshold = 8.0;
         }
-        // Recursion-depth + chunk-size caps. Production-bound the
-        // worst case: max_decode_depth > 32 risks stack overflow on
-        // pathological nested base64. max_matches_per_chunk has no
-        // theoretical upper bound but a billion is misconfiguration.
-        if self.max_decode_depth > 32 {
-            self.max_decode_depth = 32;
+        // Recursion-depth + chunk-size caps. The decode-depth ceiling is the
+        // same contract used by CLI parsing and TOML validation.
+        let max_decode_depth = keyhog_core::config::max_decode_depth_limit();
+        if self.max_decode_depth > max_decode_depth {
+            self.max_decode_depth = max_decode_depth;
         }
         if self.max_matches_per_chunk > 1_000_000 {
             self.max_matches_per_chunk = 1_000_000;

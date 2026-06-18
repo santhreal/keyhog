@@ -63,13 +63,11 @@ pub fn parse_decode_depth(s: &str) -> Result<usize, String> {
     let val: usize = s
         .parse()
         .map_err(|_| format!("'{}' is not a valid positive integer", s))?;
-    if (1..=10).contains(&val) {
+    let limit = keyhog_core::config::max_decode_depth_limit();
+    if (1..=limit).contains(&val) {
         Ok(val)
     } else {
-        Err(format!(
-            "decode depth must be between 1 and 10, got {}",
-            val
-        ))
+        Err(format!("decode depth must be between 1 and {limit}, got {val}"))
     }
 }
 

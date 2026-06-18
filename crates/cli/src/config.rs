@@ -125,6 +125,7 @@ pub(crate) struct ConfigFile {
 pub(crate) struct ScanSection {
     pub severity: Option<String>,
     pub min_confidence: Option<f64>,
+    pub decode_depth: Option<usize>,
     pub min_secret_len: Option<usize>,
     pub format: Option<String>,
     pub exclude: Option<Vec<String>>,
@@ -248,6 +249,17 @@ fn parse_config_byte_size(errors: &mut Vec<String>, field: &str, value: &str) ->
             None
         }
     }
+}
+
+fn parse_config_decode_depth(errors: &mut Vec<String>, field: &str, depth: usize) -> Option<usize> {
+    let limit = keyhog_core::config::max_decode_depth_limit();
+    if (1..=limit).contains(&depth) {
+        return Some(depth);
+    }
+    errors.push(format!(
+        "- {field} = {depth}: decode depth must be between 1 and {limit}"
+    ));
+    None
 }
 
 fn merge_limit_bytes(
@@ -716,8 +728,9 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     }
 
     if let Some(depth) = config.decode_depth {
+        let parsed_depth = parse_config_decode_depth(&mut config_errors, "decode_depth", depth);
         if args.decode_depth.is_none() {
-            args.decode_depth = Some(depth);
+            args.decode_depth = parsed_depth;
         }
     }
 
@@ -837,6 +850,13 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         }
         if args.min_confidence.is_none() {
             args.min_confidence = scan.min_confidence;
+        }
+        if let Some(depth) = scan.decode_depth {
+            let parsed_depth =
+                parse_config_decode_depth(&mut config_errors, "[scan].decode_depth", depth);
+            if args.decode_depth.is_none() {
+                args.decode_depth = parsed_depth;
+            }
         }
         if scan.min_secret_len == Some(0) {
             config_errors.push("- [scan].min_secret_len = 0: use a positive integer".to_string());

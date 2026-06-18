@@ -22,7 +22,8 @@ fn default_config_valid() {
         config.min_confidence
     );
     assert_eq!(
-        config.max_decode_depth, 10,
+        config.max_decode_depth,
+        keyhog_core::testing::max_decode_depth_limit(),
         "default max_decode_depth must be the canonical 10 (decode-through depth); got {}",
         config.max_decode_depth
     );

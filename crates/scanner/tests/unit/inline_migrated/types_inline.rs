@@ -82,9 +82,10 @@ mod sanitise_tests {
         let mut c = baseline_config();
         c.max_decode_depth = 9999;
         c.sanitise();
-        assert!(
-            c.max_decode_depth <= 32,
-            "deep recursion risks stack overflow on nested base64"
+        assert_eq!(
+            c.max_decode_depth,
+            keyhog_core::testing::max_decode_depth_limit(),
+            "scanner sanitise must use the same decode-depth ceiling as CLI/TOML"
         );
     }
 
