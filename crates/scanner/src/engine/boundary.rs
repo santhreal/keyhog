@@ -16,6 +16,7 @@
 //! boundary data - negligible next to the per-chunk scan cost.
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
+use regex_syntax::ast::{Ast, RepetitionKind, RepetitionRange};
 
 use super::{floor_char_boundary, CompiledScanner};
 
@@ -26,6 +27,48 @@ use super::{floor_char_boundary, CompiledScanner};
 /// else is < 200). 1024 bytes per side gives a 2 KiB boundary buffer
 /// that fits any realistic credential plus surrounding keyword context.
 const MAX_BOUNDARY: usize = 1024;
+
+pub(crate) fn regex_match_byte_upper_bound(source: &str) -> Option<usize> {
+    let ast = match regex_syntax::ast::parse::Parser::new().parse(source) {
+        Ok(ast) => ast,
+        Err(_) => return None,
+    };
+    ast_match_byte_upper_bound(&ast)
+}
+
+fn ast_match_byte_upper_bound(ast: &Ast) -> Option<usize> {
+    match ast {
+        Ast::Empty(_) | Ast::Flags(_) | Ast::Assertion(_) => Some(0),
+        Ast::Literal(literal) => Some(literal.c.len_utf8()),
+        Ast::Dot(_) | Ast::ClassUnicode(_) | Ast::ClassPerl(_) | Ast::ClassBracketed(_) => Some(4),
+        Ast::Group(group) => ast_match_byte_upper_bound(&group.ast),
+        Ast::Alternation(alternation) => {
+            let mut max_bound = 0usize;
+            for ast in &alternation.asts {
+                max_bound = max_bound.max(ast_match_byte_upper_bound(ast)?);
+            }
+            Some(max_bound)
+        }
+        Ast::Concat(concat) => {
+            let mut total = 0usize;
+            for ast in &concat.asts {
+                total = total.saturating_add(ast_match_byte_upper_bound(ast)?);
+            }
+            Some(total)
+        }
+        Ast::Repetition(repetition) => {
+            let inner = ast_match_byte_upper_bound(&repetition.ast)?;
+            let max_repetitions = match repetition.op.kind {
+                RepetitionKind::ZeroOrOne => 1,
+                RepetitionKind::ZeroOrMore | RepetitionKind::OneOrMore => return None,
+                RepetitionKind::Range(RepetitionRange::Exactly(n)) => n,
+                RepetitionKind::Range(RepetitionRange::Bounded(_, n)) => n,
+                RepetitionKind::Range(RepetitionRange::AtLeast(_)) => return None,
+            };
+            Some(inner.saturating_mul(max_repetitions as usize))
+        }
+    }
+}
 
 /// For each pair of adjacent chunks belonging to the same file, scan a
 /// synthetic boundary buffer and append any straddle matches to the

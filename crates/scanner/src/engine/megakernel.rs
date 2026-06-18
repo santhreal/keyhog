@@ -33,7 +33,7 @@ pub(crate) struct MegakernelCatalog {
 pub(crate) struct Firing {
     pub file_index: usize,
     pub detector: usize,
-    pub match_end: usize,
+    pub match_offset: usize,
 }
 
 impl MegakernelCatalog {
@@ -381,7 +381,7 @@ impl MegakernelCatalog {
                     .map(|&detector| Firing {
                         file_index: h.file_idx as usize,
                         detector,
-                        match_end: h.match_offset as usize,
+                        match_offset: h.match_offset as usize,
                     })
             })
             .collect())

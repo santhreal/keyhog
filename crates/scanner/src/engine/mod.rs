@@ -213,6 +213,7 @@ pub struct CompiledScanner {
     pub(crate) megakernel_catalog: OnceLock<megakernel::MegakernelCatalog>,
     pub(crate) ac_gpu_program: OnceLock<Option<vyre::Program>>,
     pub(crate) gpu_last_degrade_reason: std::sync::Mutex<Option<String>>,
+    pub(crate) gpu_degrade_count: std::sync::atomic::AtomicU64,
     pub(crate) rule_pipeline: OnceLock<Option<vyre_libs::scan::RulePipeline>>,
     pub(crate) static_intern: Arc<crate::static_intern::StaticInterner>,
     /// Per-detector interned `(id, name, service)` metadata triple, indexed by
@@ -224,6 +225,11 @@ pub struct CompiledScanner {
     /// field). The strings are byte-identical to `static_intern.lookup(...)`
     /// because they ARE its arena entries — see `perf_locality_intern.rs`.
     pub(crate) metadata_by_index: Vec<(Arc<str>, Arc<str>, Arc<str>)>,
+    /// Per-`ac_map` regex byte upper bound for GPU hit-local validation. `None`
+    /// means the detector regex is unbounded or unparsable by the AST bounder,
+    /// so GPU validation keeps the full prepared-chunk oracle.
+    #[cfg(feature = "gpu")]
+    pub(crate) ac_match_upper_bounds: Vec<Option<usize>>,
     pub(crate) ac_map: Vec<CompiledPattern>,
     /// Confirmed-pass suffix gate: AC over ac_map patterns' required suffix
     /// literals (every match ends with one). `ac_suffix_gate[i]` are pattern

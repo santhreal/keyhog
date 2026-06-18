@@ -285,6 +285,13 @@ impl CompiledScanner {
             })
             .collect();
 
+        #[cfg(feature = "gpu")]
+        let ac_match_upper_bounds: Vec<Option<usize>> = state
+            .ac_map
+            .iter()
+            .map(|pattern| boundary::regex_match_byte_upper_bound(pattern.regex.as_str()))
+            .collect();
+
         // Pre-intern the four synthetic entropy-fallback metadata triples once
         // (PERF-locality_intern-1). These are not detector specs, so they are
         // not in the StaticInterner universe; intern them directly into shared
@@ -359,10 +366,13 @@ impl CompiledScanner {
             megakernel_catalog: OnceLock::new(),
             ac_gpu_program: OnceLock::new(),
             gpu_last_degrade_reason: std::sync::Mutex::new(None),
+            gpu_degrade_count: std::sync::atomic::AtomicU64::new(0),
 
             rule_pipeline: OnceLock::new(),
             static_intern,
             metadata_by_index,
+            #[cfg(feature = "gpu")]
+            ac_match_upper_bounds,
             suffix_gate_ac,
             ac_suffix_gate,
             ac_map: state.ac_map,
