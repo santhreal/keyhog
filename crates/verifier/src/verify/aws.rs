@@ -37,20 +37,28 @@ pub(crate) async fn build_aws_probe(
     // operator learns why. Uses the fleet-canonical classifier in
     // `keyhog_core::aws` (same decode + list the scanner attaches as metadata),
     // so there is exactly one canary source of truth.
-    if keyhog_core::aws::key_id_is_canary(&access_key) {
-        let mut metadata = HashMap::from([("is_canary".to_string(), "true".to_string())]);
-        if let Some(account) = keyhog_core::aws::aws_account_from_key_id(&access_key) {
-            metadata.insert("account_id".to_string(), account);
+    match keyhog_core::aws::key_id_canary_status(&access_key) {
+        Ok(true) => {
+            let metadata = match keyhog_core::aws::finding_metadata(&access_key) {
+                Some(metadata) => metadata,
+                None => HashMap::from([("is_canary".to_string(), "true".to_string())]),
+            }; // LAW10: canary classifier already matched; fallback preserves the canary marker if metadata enrichment is unavailable
+            return super::request::RequestBuildResult::Final {
+                result: VerificationResult::Unverifiable,
+                metadata,
+                transient: false,
+            };
         }
-        metadata.insert(
-            "canary_message".to_string(),
-            keyhog_core::aws::CANARY_MESSAGE.to_string(),
-        );
-        return super::request::RequestBuildResult::Final {
-            result: VerificationResult::Unverifiable,
-            metadata,
-            transient: false,
-        };
+        Ok(false) => {}
+        Err(error) => {
+            return super::request::RequestBuildResult::Final {
+                result: VerificationResult::Error(format!(
+                    "AWS canary account configuration invalid: {error}"
+                )),
+                metadata: HashMap::from([("canary_config_error".into(), error)]),
+                transient: false,
+            };
+        }
     }
 
     if secret_key.is_empty() {

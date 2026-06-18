@@ -26,6 +26,7 @@
 //!    <https://trufflesecurity.com/blog/canaries>.
 
 use std::collections::{HashMap, HashSet};
+use std::env::VarError;
 
 /// The two access-key-ID prefixes whose 12-digit account number is embedded.
 /// `AKIA` is a long-term IAM key, `ASIA` a temporary STS session key. Both use
@@ -94,25 +95,87 @@ pub fn aws_account_from_key_id(key_id: &str) -> Option<String> {
 /// The Tier-B baseline canary account list, compiled into the binary from
 /// `data/aws-canary-accounts.toml`, unioned at first use with any runtime
 /// extension file pointed to by `KEYHOG_AWS_CANARY_ACCOUNTS`.
-///
-/// Soft-fails to an empty set so a corrupted data file degrades canary
-/// awareness rather than crashing.
-static CANARY_ACCOUNTS: std::sync::LazyLock<HashSet<String>> = std::sync::LazyLock::new(|| {
-    let mut set = HashSet::new();
-    merge_canary_accounts(&mut set, include_str!("../data/aws-canary-accounts.toml"));
-    if let Ok(path) = std::env::var("KEYHOG_AWS_CANARY_ACCOUNTS") {
-        match std::fs::read_to_string(&path) {
-            Ok(raw) => merge_canary_accounts(&mut set, &raw),
-            Err(e) => tracing::warn!(
-                path = %path,
-                error = %e,
-                "KEYHOG_AWS_CANARY_ACCOUNTS points at an unreadable file; \
-                 using the compiled-in canary baseline only"
-            ),
-        }
+static CANARY_ACCOUNTS: std::sync::LazyLock<Result<HashSet<String>, String>> =
+    std::sync::LazyLock::new(load_canary_accounts);
+
+fn load_canary_accounts() -> Result<HashSet<String>, String> {
+    let mut set = parse_canary_accounts(include_str!("../data/aws-canary-accounts.toml"))
+        .map_err(|error| {
+            format!(
+                "crates/core/data/aws-canary-accounts.toml is invalid: {error}. \
+                 Fix the bundled Tier-B canary list; refusing to run without canary awareness."
+            )
+        })?;
+    if set.is_empty() {
+        return Err(
+            "crates/core/data/aws-canary-accounts.toml is invalid: no canary accounts. \
+             Fix the bundled Tier-B canary list; refusing to run without canary awareness."
+                .to_string(),
+        );
     }
-    set
-});
+    if let Some(accounts) = load_canary_accounts_env()? {
+        set.extend(accounts);
+    }
+    Ok(set)
+}
+
+fn load_canary_accounts_env() -> Result<Option<HashSet<String>>, String> {
+    let path = match std::env::var("KEYHOG_AWS_CANARY_ACCOUNTS") {
+        Ok(path) => path,
+        Err(VarError::NotPresent) => return Ok(None),
+        Err(VarError::NotUnicode(_)) => {
+            return Err(
+                "KEYHOG_AWS_CANARY_ACCOUNTS is not valid UTF-8. \
+                 Fix: unset KEYHOG_AWS_CANARY_ACCOUNTS or set it to a readable TOML file."
+                    .to_string(),
+            );
+        }
+    };
+
+    if path.trim().is_empty() {
+        return Err(
+            "KEYHOG_AWS_CANARY_ACCOUNTS is empty. \
+             Fix: unset KEYHOG_AWS_CANARY_ACCOUNTS or set it to a readable TOML file."
+                .to_string(),
+        );
+    }
+
+    let raw = std::fs::read_to_string(&path).map_err(|error| {
+        format!(
+            "KEYHOG_AWS_CANARY_ACCOUNTS points at unreadable file '{path}': {error}. \
+             Fix: unset KEYHOG_AWS_CANARY_ACCOUNTS or set it to a readable TOML file."
+        )
+    })?;
+    let accounts = parse_canary_accounts(&raw).map_err(|error| {
+        format!(
+            "KEYHOG_AWS_CANARY_ACCOUNTS file '{path}' is invalid: {error}. \
+             Fix: repair the TOML canary account list or unset KEYHOG_AWS_CANARY_ACCOUNTS."
+        )
+    })?;
+    if accounts.is_empty() {
+        return Err(format!(
+            "KEYHOG_AWS_CANARY_ACCOUNTS file '{path}' contains no canary accounts. \
+             Fix: add at least one 12-digit AWS account id or unset KEYHOG_AWS_CANARY_ACCOUNTS."
+        ));
+    }
+    Ok(Some(accounts))
+}
+
+/// Validate the optional `KEYHOG_AWS_CANARY_ACCOUNTS` runtime extension file.
+///
+/// Call this at process boundaries that can run scans or live verification. A
+/// bad canary extension must not be treated as "unset": that would let a typo
+/// remove operator-supplied canary protection while the scan appears normal.
+pub fn validate_canary_accounts_env() -> Result<(), String> {
+    canary_accounts().map(|_| ())
+}
+
+fn canary_accounts() -> Result<&'static HashSet<String>, String> {
+    match CANARY_ACCOUNTS.as_ref() {
+        Ok(accounts) => Ok(accounts),
+        Err(error) => Err(error.clone()),
+    }
+}
 
 /// `[canary]`/`[knockoff]` TOML shape shared by the baseline and any runtime
 /// extension file. Both tables are merged into the same account set — keyhog
@@ -131,35 +194,41 @@ struct CanaryTable {
     accounts: Vec<String>,
 }
 
-/// Parse one canary TOML document and union its accounts into `set`. Trims each
-/// account so whitespace in a hand-edited extension file never silently misses.
-fn merge_canary_accounts(set: &mut HashSet<String>, raw: &str) {
-    match toml::from_str::<CanaryFile>(raw) {
-        Ok(parsed) => {
-            for acct in parsed
-                .canary
-                .accounts
-                .into_iter()
-                .chain(parsed.knockoff.accounts)
-            {
-                let acct = acct.trim();
-                if !acct.is_empty() {
-                    set.insert(acct.to_string());
-                }
-            }
+/// Parse one canary TOML document. Trims each account so whitespace in a
+/// hand-edited extension file never silently misses.
+pub(crate) fn parse_canary_accounts(raw: &str) -> Result<HashSet<String>, String> {
+    let parsed: CanaryFile = toml::from_str(raw)
+        .map_err(|error| format!("invalid aws-canary-accounts.toml: {error}"))?;
+    let mut set = HashSet::new();
+    for raw_account in parsed
+        .canary
+        .accounts
+        .into_iter()
+        .chain(parsed.knockoff.accounts)
+    {
+        let account = raw_account.trim();
+        if account.is_empty() {
+            return Err("canary account entries must not be empty".to_string());
         }
-        Err(e) => tracing::warn!(
-            error = %e,
-            "aws-canary-accounts.toml failed to parse; canary awareness disabled this run"
-        ),
+        if account.len() != 12 || !account.bytes().all(|byte| byte.is_ascii_digit()) {
+            return Err(format!(
+                "canary account {account:?} must be a 12-digit AWS account id"
+            ));
+        }
+        set.insert(account.to_string());
     }
+    Ok(set)
 }
 
 /// True when `account_id` (a 12-digit AWS account string) belongs to a known
 /// canary-token issuer.
 #[must_use]
 pub fn account_is_canary(account_id: &str) -> bool {
-    CANARY_ACCOUNTS.contains(account_id)
+    canary_accounts().is_ok_and(|accounts| accounts.contains(account_id))
+}
+
+fn account_is_canary_checked(account_id: &str) -> Result<bool, String> {
+    Ok(canary_accounts()?.contains(account_id))
 }
 
 /// True when `key_id` is a decodable AWS access-key ID whose offline-decoded
@@ -168,7 +237,24 @@ pub fn account_is_canary(account_id: &str) -> bool {
 /// the decode.
 #[must_use]
 pub fn key_id_is_canary(key_id: &str) -> bool {
-    aws_account_from_key_id(key_id).is_some_and(|acct| account_is_canary(&acct))
+    match key_id_canary_status(key_id) {
+        Ok(is_canary) => is_canary,
+        Err(error) => {
+            eprintln!("keyhog: {error}");
+            false
+        }
+    }
+}
+
+/// Checked canary classifier used by live-verification paths.
+///
+/// Unlike [`key_id_is_canary`], this surfaces a bad runtime extension file as
+/// an error so callers can fail closed before any network verification.
+pub fn key_id_canary_status(key_id: &str) -> Result<bool, String> {
+    match aws_account_from_key_id(key_id) {
+        Some(account_id) => account_is_canary_checked(&account_id),
+        None => Ok(false),
+    }
 }
 
 /// Operator-facing note attached to a canary finding so the report explains why

@@ -49,7 +49,7 @@ use std::process::ExitCode;
 const EXIT_CREDENTIALS_FOUND: u8 = 1;
 
 pub async fn run(args: ScanArgs) -> Result<ExitCode> {
-    crate::backend_env::validate_keyhog_backend_env()?;
+    crate::backend_env::validate_scan_runtime_env()?;
 
     // On Windows, the daemon route is never available (the `crate::daemon`
     // module is cfg(unix)). If the user explicitly passed `--daemon`,

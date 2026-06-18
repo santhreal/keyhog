@@ -1,4 +1,4 @@
-//! Validation boundary for the `KEYHOG_BACKEND` process override.
+//! Validation boundary for process env that can change scan/runtime behavior.
 
 use anyhow::{bail, Result};
 
@@ -32,4 +32,13 @@ pub fn validate_keyhog_backend_env() -> Result<()> {
          Fix: unset KEYHOG_BACKEND or set it to one supported backend value.",
         raw
     );
+}
+
+/// Reject malformed scan-affecting env before scan surfaces can silently run
+/// with a different detector/protection/routing state than the operator asked
+/// for.
+pub fn validate_scan_runtime_env() -> Result<()> {
+    validate_keyhog_backend_env()?;
+    keyhog_core::aws::validate_canary_accounts_env().map_err(anyhow::Error::msg)?;
+    Ok(())
 }

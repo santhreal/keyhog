@@ -20,6 +20,8 @@ pub async fn run(args: DaemonArgs) -> Result<ExitCode> {
 }
 
 async fn start(socket: Option<PathBuf>, detectors_dir: PathBuf) -> Result<ExitCode> {
+    crate::backend_env::validate_scan_runtime_env()?;
+
     let socket = socket.unwrap_or_else(default_socket_path);
     // Use the same load-or-embedded fallback that `scan`, `watch`, `scan-system`
     // and `explain` go through. Before this, `daemon start` ran

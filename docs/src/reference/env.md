@@ -70,6 +70,7 @@ documented here with default, effect, and a typical use case.
 |---------------------------|---------|-------------------------------------------------------|
 | `KEYHOG_INSECURE_TLS`     | (unset) | If set, accept self-signed TLS certs on verifier traffic. Equivalent to `--insecure`. Use only in lab environments. |
 | `KEYHOG_ALLOW_SCRIPT_VERIFY` | (unset) | Permit the `script:` verifier kind (which would otherwise be refused as a remote-execution risk). Opt-in for trusted detector corpora only. |
+| `KEYHOG_AWS_CANARY_ACCOUNTS` | (unset) | Path to a TOML extension file with `[canary].accounts` / `[knockoff].accounts` 12-digit AWS account IDs. Unreadable, empty, malformed, or non-UTF-8 values fail closed before scans or AWS verification, because ignoring this file would remove operator-supplied canary protection. |
 | `KEYHOG_LIVE_VERIFY`      | (unset) | Internal: enables a special live-verify mode used by the end-to-end test harness. |
 | `KEYHOG_LIVE_AWS_ACCESS_KEY_ID`, `KEYHOG_LIVE_AWS_SECRET_ACCESS_KEY`, `KEYHOG_LIVE_GITHUB_PAT` | (unset) | Test-only credentials the verifier integration tests probe against real upstream services. Never set these outside the maintainer test environment. |
 
