@@ -160,13 +160,20 @@ impl ScanOrchestrator {
         let scanner_thread = std::thread::spawn(
             move || -> std::result::Result<Vec<RawMatch>, AutorouteRoutingError> {
                 let mut findings: Vec<RawMatch> = Vec::new();
-                let mut router = MeasuredBackendRouter::new(
-                    hw_caps,
-                    pattern_count,
-                    rules_digest,
-                    config_digest,
-                    scanner.as_ref(),
-                );
+                enum BatchBackendRouter {
+                    Explicit(keyhog_scanner::hw_probe::ScanBackend),
+                    Measured(MeasuredBackendRouter),
+                }
+                let mut router = match explicit_backend_override() {
+                    Some(backend) => BatchBackendRouter::Explicit(backend),
+                    None => BatchBackendRouter::Measured(MeasuredBackendRouter::new(
+                        hw_caps,
+                        pattern_count,
+                        rules_digest,
+                        config_digest,
+                        scanner.as_ref(),
+                    )),
+                };
 
                 let mut prev_phase2: Option<(std::thread::JoinHandle<Vec<Vec<RawMatch>>>, usize)> =
                     None;
@@ -201,8 +208,12 @@ impl ScanOrchestrator {
                     }
                     let _scan_start = std::time::Instant::now();
                     let scanned_count = batch.len();
-                    let chosen_backend =
-                        router.choose(scanner.as_ref(), explicit_backend_override(), &batch)?;
+                    let chosen_backend = match &mut router {
+                        BatchBackendRouter::Explicit(backend) => *backend,
+                        BatchBackendRouter::Measured(router) => {
+                            router.choose(scanner.as_ref(), None, &batch)?
+                        }
+                    };
                     match chosen_backend {
                         // The batched-DFA megakernel is the SINGLE on-GPU detection
                         // path (it replaced the GpuLiteralSet two-phase and RulePipeline

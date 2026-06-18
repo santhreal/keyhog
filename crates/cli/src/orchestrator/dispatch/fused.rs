@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 enum ActiveBackendRouter {
+    Explicit(keyhog_scanner::hw_probe::ScanBackend),
     Cached(CachedBackendRouter),
     Measured(Arc<Mutex<MeasuredBackendRouter>>),
 }
@@ -120,7 +121,9 @@ impl ScanOrchestrator {
         let scanner = Arc::clone(&self.scanner);
         let explicit_backend = explicit_backend_override();
         let calibration_mode = std::env::var_os("KEYHOG_AUTOROUTE_CALIBRATE").is_some();
-        let active_router = if calibration_mode {
+        let active_router = if let Some(backend) = explicit_backend {
+            ActiveBackendRouter::Explicit(backend)
+        } else if calibration_mode {
             ActiveBackendRouter::Measured(Arc::new(Mutex::new(self.measured_backend_router())))
         } else {
             ActiveBackendRouter::Cached(self.cached_backend_router())
@@ -277,14 +280,15 @@ impl ScanOrchestrator {
                 // router on the SAME fused batch shape normal scans request, so
                 // persisted decisions cover the production runtime key.
                 let selected_backend = match &active_router {
+                    ActiveBackendRouter::Explicit(backend) => Ok(*backend),
                     ActiveBackendRouter::Measured(router) => {
                         let mut router = match router.lock() {
                             Ok(guard) => guard,
                             Err(poisoned) => poisoned.into_inner(),
                         };
-                        router.choose(scanner_ref, explicit_backend, &batch)
+                        router.choose(scanner_ref, None, &batch)
                     }
-                    ActiveBackendRouter::Cached(router) => router.choose(explicit_backend, &batch),
+                    ActiveBackendRouter::Cached(router) => router.choose(None, &batch),
                 };
 
                 let backend = match selected_backend {
