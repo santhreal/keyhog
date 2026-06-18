@@ -1,4 +1,4 @@
-use keyhog_core::{redact, MatchLocation, RawMatch, Severity};
+use keyhog_core::{MatchLocation, RawMatch, Severity, redact};
 use std::collections::HashMap;
 
 #[test]
@@ -88,11 +88,11 @@ fn redact_long_secret() {
 
 #[test]
 fn redact_utf8_secret_handles_multibyte_chars() {
-    // 12 chars / 24 bytes (each emoji is 4 bytes in UTF-8). Should keep
-    // the first 4 and last 4 *chars*, not bytes.
+    // 12 chars / 48 bytes (each emoji is 4 bytes in UTF-8). The scaled
+    // preview keeps the first 3 and last 3 chars, not bytes.
     let s = "😀😁😂😃😄😅😆😇😈😉😊😋";
     let redacted = redact(s);
-    assert_eq!(redacted, "😀😁😂😃...😈😉😊😋");
+    assert_eq!(redacted, "😀😁😂...😉😊😋");
 }
 
 #[test]

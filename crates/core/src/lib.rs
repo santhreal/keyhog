@@ -166,10 +166,11 @@ pub fn redact(s: &str) -> Cow<'static, str> {
         if s.len() <= 8 {
             return Cow::Borrowed("****");
         }
-        let mut out = String::with_capacity(s.len().min(11));
-        out.push_str(&s[..4]);
+        let edge = redaction_edge_len(s.len());
+        let mut out = String::with_capacity((edge * 2) + 3);
+        out.push_str(&s[..edge]);
         out.push_str("...");
-        out.push_str(&s[s.len() - 4..]);
+        out.push_str(&s[s.len() - edge..]);
         return Cow::Owned(out);
     }
     // UTF-8 path: char-count for grapheme correctness.
@@ -177,9 +178,14 @@ pub fn redact(s: &str) -> Cow<'static, str> {
     if char_count <= 8 {
         return Cow::Borrowed("****");
     }
-    let first_four: String = s.chars().take(4).collect();
-    let last_four: String = s.chars().skip(char_count.saturating_sub(4)).collect();
-    Cow::Owned(format!("{first_four}...{last_four}"))
+    let edge = redaction_edge_len(char_count);
+    let prefix: String = s.chars().take(edge).collect();
+    let suffix: String = s.chars().skip(char_count.saturating_sub(edge)).collect();
+    Cow::Owned(format!("{prefix}...{suffix}"))
+}
+
+fn redaction_edge_len(char_count: usize) -> usize {
+    (char_count / 4).clamp(1, 4)
 }
 
 #[doc(hidden)]

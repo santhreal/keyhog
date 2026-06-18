@@ -1,6 +1,6 @@
 /// Extended unit tests for `keyhog_core::redact`.
 ///
-/// Covers: exact-8-char boundary (returns "****"), 9-char (first reveal),
+/// Covers: exact-8-char boundary (returns "****"), 9-char scaled preview,
 /// ASCII fast path vs UTF-8 slow path, multi-byte characters at boundaries,
 /// empty string, all-same character, and the anti-rig contract that the full
 /// secret never appears in the output for long strings.
@@ -25,15 +25,25 @@ fn redact_eight_chars_returns_stars() {
 
 #[test]
 fn redact_nine_chars_reveals_edges() {
-    // 9 ASCII chars: first 4 + "..." + last 4 (overlap of 1 char)
+    // 9 ASCII chars: first 2 + "..." + last 2.
     let result = redact("123456789");
-    assert_eq!(result, "1234...6789");
+    assert_eq!(result, "12...89");
 }
 
 #[test]
 fn redact_twelve_chars_no_overlap() {
     let result = redact("abcdefghijkl");
-    assert_eq!(result, "abcd...ijkl");
+    assert_eq!(result, "abc...jkl");
+}
+
+#[test]
+fn redact_short_preview_edges_scale_with_length() {
+    assert_eq!(redact("123456789"), "12...89");
+    assert_eq!(redact("1234567890"), "12...90");
+    assert_eq!(redact("12345678901"), "12...01");
+    assert_eq!(redact("123456789012"), "123...012");
+    assert_eq!(redact("123456789012345"), "123...345");
+    assert_eq!(redact("1234567890123456"), "1234...3456");
 }
 
 #[test]
@@ -42,7 +52,10 @@ fn redact_long_string_never_exposes_middle() {
     let redacted = redact(secret);
     // The middle must be replaced by "..."
     assert!(redacted.contains("..."), "must contain ellipsis");
-    assert!(redacted.starts_with("ghp_"), "first 4 chars preserved");
+    assert!(
+        redacted.starts_with("ghp_"),
+        "first 4 chars preserved for 16+ chars"
+    );
     // Full secret must not appear
     assert!(
         !redacted.as_ref().contains(secret),
@@ -71,10 +84,14 @@ fn redact_utf8_nine_graphemes_reveals_edges() {
     let secret = "αβγδεζηθι";
     let result = redact(secret);
     assert!(result.contains("..."), "must contain ellipsis");
-    // First 4 graphemes: αβγδ
-    assert!(result.as_ref().starts_with("αβγδ"), "first 4 graphemes preserved");
-    // Last 4 graphemes: ζηθι
-    assert!(result.as_ref().ends_with("ζηθι"), "last 4 graphemes preserved");
+    assert!(
+        result.as_ref().starts_with("αβ"),
+        "first 2 graphemes preserved"
+    );
+    assert!(
+        result.as_ref().ends_with("θι"),
+        "last 2 graphemes preserved"
+    );
 }
 
 #[test]

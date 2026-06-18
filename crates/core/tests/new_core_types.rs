@@ -214,27 +214,24 @@ fn redact_short_ascii_fully_masked() {
 }
 
 #[test]
-fn redact_long_ascii_shows_first4_last4() {
-    assert_eq!(redact("123456789"), "1234...6789"); // 9 chars
-    assert_eq!(
-        redact("ghp_0123456789abcdef"),
-        "ghp_...cdef"
-    );
+fn redact_long_ascii_uses_scaled_edges() {
+    assert_eq!(redact("123456789"), "12...89"); // 9 chars
+    assert_eq!(redact("ghp_0123456789abcdef"), "ghp_...cdef");
 }
 
 #[test]
 fn redact_boundary_at_nine_chars() {
     // 8 -> masked, 9 -> partial; pin the boundary.
     assert_eq!(redact("AAAAAAAA"), "****");
-    assert_eq!(redact("AAAAAAAAA"), "AAAA...AAAA");
+    assert_eq!(redact("AAAAAAAAA"), "AA...AA");
 }
 
 #[test]
 fn redact_unicode_uses_char_count() {
-    // 9 multibyte chars -> first 4 ... last 4.
+    // 9 multibyte chars -> first 2 ... last 2.
     let s = "αβγδεζηθι"; // 9 Greek letters, 2 bytes each
     assert_eq!(s.chars().count(), 9);
-    assert_eq!(redact(s), "αβγδ...ζηθι");
+    assert_eq!(redact(s), "αβ...θι");
 }
 
 #[test]

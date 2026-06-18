@@ -1,8 +1,7 @@
 //! Proving test: redact never exposes the middle of a long secret.
 //! Contract: For any credential >8 chars, redact() output must:
 //! 1. Contain exactly "..." separator
-//! 2. Start with first 4 chars
-//! 3. End with last 4 chars
+//! 2. Reveal only the length-scaled edge windows
 //! 4. Never contain the full secret as a substring
 
 use keyhog_core::redact;
@@ -33,8 +32,7 @@ fn redact_exactly_nine_chars_no_full_exposure() {
     let secret = "ABCDEFGHI";
     let result = redact(secret);
 
-    // Output is "ABCD...GHI"
-    assert_eq!(result, "ABCD...GHI");
+    assert_eq!(result, "AB...HI");
 
     // The full secret must not appear.
     assert!(
@@ -43,8 +41,8 @@ fn redact_exactly_nine_chars_no_full_exposure() {
     );
 
     // Individual characters are visible, but not contiguously.
-    assert!(result.as_ref().contains("ABCD"));
-    assert!(result.as_ref().contains("GHI"));
+    assert!(result.as_ref().contains("AB"));
+    assert!(result.as_ref().contains("HI"));
     // The transition DEFG must be hidden.
     assert!(!result.as_ref().contains("DEFG"));
 }
