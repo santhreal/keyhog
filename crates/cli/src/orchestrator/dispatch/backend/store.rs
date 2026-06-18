@@ -222,6 +222,7 @@ pub(super) fn load_autoroute_cache(
     }
     let mut out = HashMap::with_capacity(cache.decisions.len());
     for (key, decision) in cache.decisions {
+        validate_decision_calibration_evidence(&decision)?;
         let Some(selected_backend) = decision.backend() else {
             return Err(format!(
                 "cache contains unsupported backend decision {:?}",
@@ -278,6 +279,18 @@ pub(super) fn load_autoroute_cache(
         out.insert(key, decision);
     }
     Ok(out)
+}
+
+fn validate_decision_calibration_evidence(
+    decision: &AutorouteDecision,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if decision.sample_chunks == 0 || decision.sample_bytes == 0 {
+        return Err("cache decision is missing calibration sample evidence".into());
+    }
+    if decision.correctness_digest == 0 {
+        return Err("cache decision is missing correctness digest".into());
+    }
+    Ok(())
 }
 
 fn validate_gpu_cold_warm_cache_evidence(

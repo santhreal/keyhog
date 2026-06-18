@@ -382,6 +382,79 @@ fn autoroute_cache_rejects_selected_backend_without_timing_evidence() {
 }
 
 #[test]
+fn autoroute_cache_rejects_missing_calibration_sample_evidence() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_missing_sample_{}.json",
+        std::process::id()
+    ));
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(None);
+    let key = test_workload_key();
+    let mut bad = AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None);
+    bad.sample_bytes = 0;
+    bad.sample_chunks = 0;
+    let mut decisions = HashMap::new();
+    decisions.insert(key, bad);
+
+    save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &decisions,
+    )
+    .unwrap();
+    let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
+    assert!(
+        loaded
+            .expect_err("cache decision without calibration sample must be rejected")
+            .to_string()
+            .contains("missing calibration sample evidence"),
+        "autoroute cache load must not trust a fastest-backend label without sample evidence"
+    );
+
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
+fn autoroute_cache_rejects_missing_correctness_digest() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_missing_correctness_{}.json",
+        std::process::id()
+    ));
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(None);
+    let key = test_workload_key();
+    let mut bad = AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None);
+    bad.correctness_digest = 0;
+    let mut decisions = HashMap::new();
+    decisions.insert(key, bad);
+
+    save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &decisions,
+    )
+    .unwrap();
+    let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
+    assert!(
+        loaded
+            .expect_err("cache decision without correctness digest must be rejected")
+            .to_string()
+            .contains("missing correctness digest"),
+        "autoroute cache load must not trust timing evidence without parity evidence"
+    );
+
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
 fn autoroute_cache_rejects_gpu_cold_warm_evidence_mismatch() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_autoroute_gpu_cold_warm_mismatch_{}.json",

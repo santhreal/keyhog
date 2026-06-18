@@ -87,9 +87,14 @@ impl CompiledScanner {
         #[cfg(not(feature = "simd"))]
         {
             // Parallel CPU dispatch - same reasoning as scan_chunks_with_backend:
-            // the per-chunk scan is independent and CPU-bound.
+            // the per-chunk scan is independent and CPU-bound. This is the
+            // coalesced SIMD/CPU path, so it must not consult auto backend
+            // selection when the SIMD feature is absent.
             let mut results: Vec<Vec<keyhog_core::RawMatch>> =
-                chunks.par_iter().map(|c| self.scan(c)).collect();
+                chunks
+                    .par_iter()
+                    .map(|c| self.scan_with_backend(c, crate::hw_probe::ScanBackend::SimdCpu))
+                    .collect();
             super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
             return results;
         }
@@ -97,11 +102,15 @@ impl CompiledScanner {
         #[cfg(feature = "simd")]
         {
             let Some(scanner) = &self.simd_prefilter else {
-                // Hyperscan failed to initialize at compile time - fall back
-                // to per-chunk parallel SimdCpu (or whichever backend the
-                // scanner picks), then preserve cross-window boundary recall.
+                // Hyperscan failed to initialize at compile time. Stay on the
+                // explicit SimdCpu/CPU route instead of consulting auto backend
+                // selection; autoroute calibration labels this path as the
+                // SIMD reference and must never inherit a GPU/env override here.
                 let mut results: Vec<Vec<keyhog_core::RawMatch>> =
-                    chunks.par_iter().map(|c| self.scan(c)).collect();
+                    chunks
+                        .par_iter()
+                        .map(|c| self.scan_with_backend(c, crate::hw_probe::ScanBackend::SimdCpu))
+                        .collect();
                 super::boundary::scan_chunk_boundaries(self, chunks, &mut results);
                 return results;
             };
