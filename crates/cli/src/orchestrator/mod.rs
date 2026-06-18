@@ -8,9 +8,9 @@ mod run;
 
 use crate::args::ScanArgs;
 use crate::orchestrator_config::{
-    auto_discover_detectors, autoroute_config_digest, configure_threads, load_detectors_no_cache,
-    load_detectors_with_cache, resolve_scan_config, resolved_scan_config_for_scanner,
-    ResolvedScanConfig,
+    ResolvedScanConfig, auto_discover_detectors, autoroute_config_digest, configure_threads,
+    load_detectors_no_cache, load_detectors_with_cache, resolve_scan_config,
+    resolved_scan_config_for_scanner,
 };
 use anyhow::{Context, Result};
 use keyhog_core::{DetectorSpec, RawMatch, Source};
@@ -296,6 +296,19 @@ impl ScanOrchestrator {
             tracing::warn!("lockdown mode: --incremental disabled (cache writes refused)");
             return None;
         }
+        self.configured_incremental_cache_path()
+    }
+
+    pub(crate) fn lockdown_persistence_cache_paths(&self) -> Vec<std::path::PathBuf> {
+        if !(self.args.incremental || self.args.incremental_cache.is_some()) {
+            return Vec::new();
+        }
+        self.configured_incremental_cache_path()
+            .into_iter()
+            .collect()
+    }
+
+    fn configured_incremental_cache_path(&self) -> Option<std::path::PathBuf> {
         self.args
             .incremental_cache
             .clone()

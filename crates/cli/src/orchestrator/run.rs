@@ -69,19 +69,14 @@ impl ScanOrchestrator {
                 );
             }
 
-            let lockdown = keyhog_core::hardening::apply_lockdown_protections();
+            let lockdown = keyhog_core::hardening::apply_protections_with_persistence_paths(
+                true,
+                self.lockdown_persistence_cache_paths(),
+            );
             if !lockdown.failures.is_empty() {
                 anyhow::bail!(
                     "lockdown mode requested but protections failed to apply: {:?}",
                     lockdown.failures
-                );
-            }
-            let violations = keyhog_core::hardening::lockdown_disk_cache_violations();
-            if !violations.is_empty() {
-                anyhow::bail!(
-                    "lockdown mode requested but disk caches exist (would expose past findings): {:?}. \
-                     Remove these and rerun.",
-                    violations
                 );
             }
             tracing::info!(

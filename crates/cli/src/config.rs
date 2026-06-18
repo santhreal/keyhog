@@ -41,6 +41,10 @@ pub(crate) struct ConfigFile {
     pub max_commits: Option<usize>,
     /// Show full credentials (not redacted).
     pub show_secrets: Option<bool>,
+    /// Enable incremental Merkle-cache scanning.
+    pub incremental: Option<bool>,
+    /// Override the incremental Merkle-cache file path.
+    pub incremental_cache: Option<PathBuf>,
     /// Maximum depth for recursive decoding (1-10, default: 10 — the canonical
     /// `ScanConfig::default().max_decode_depth`).
     pub decode_depth: Option<usize>,
@@ -131,6 +135,8 @@ pub(crate) struct ScanSection {
     pub exclude: Option<Vec<String>>,
     pub threads: Option<usize>,
     pub dedup: Option<String>,
+    pub incremental: Option<bool>,
+    pub incremental_cache: Option<PathBuf>,
 }
 
 /// `[allowlist]` nested table. Issue #5: README documents `file`,
@@ -727,6 +733,16 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         }
     }
 
+    if let Some(incremental) = config.incremental {
+        if !args.incremental {
+            args.incremental = incremental;
+        }
+    }
+
+    if args.incremental_cache.is_none() {
+        args.incremental_cache = config.incremental_cache;
+    }
+
     if let Some(depth) = config.decode_depth {
         let parsed_depth = parse_config_decode_depth(&mut config_errors, "decode_depth", depth);
         if args.decode_depth.is_none() {
@@ -908,6 +924,14 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
                     "expected one of credential, file, none",
                 ));
             }
+        }
+        if let Some(incremental) = scan.incremental {
+            if !args.incremental {
+                args.incremental = incremental;
+            }
+        }
+        if args.incremental_cache.is_none() {
+            args.incremental_cache = scan.incremental_cache;
         }
     }
 

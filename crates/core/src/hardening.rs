@@ -53,12 +53,26 @@ pub struct HardeningReport {
 /// artifacts that could expose past findings.
 #[must_use]
 pub fn apply_protections(lockdown: bool) -> HardeningReport {
+    apply_protections_with_persistence_paths(lockdown, std::iter::empty::<PathBuf>())
+}
+
+/// Apply process protections and, in lockdown mode, fail closed on known
+/// persistence artifacts outside the default keyhog cache root.
+#[must_use]
+pub fn apply_protections_with_persistence_paths<I, P>(
+    lockdown: bool,
+    persistence_paths: I,
+) -> HardeningReport
+where
+    I: IntoIterator<Item = P>,
+    P: AsRef<Path>,
+{
     if !lockdown {
         return apply_default_protections();
     }
 
     let mut report = apply_lockdown_protections();
-    for path in lockdown_disk_cache_violations() {
+    for path in lockdown_disk_cache_violations_for_paths(persistence_paths) {
         report.failures.push(format!(
             "lockdown disk cache exists at {} and could expose past findings. \
              Fix: remove it and rerun.",
@@ -239,6 +253,20 @@ pub fn apply_lockdown_protections() -> HardeningReport {
 /// potential findings-bearing cache and therefore a lockdown violation.
 #[must_use]
 pub fn lockdown_disk_cache_violations() -> Vec<PathBuf> {
+    lockdown_disk_cache_violations_for_paths(std::iter::empty::<PathBuf>())
+}
+
+/// Return persisted keyhog cache artifacts that violate lockdown mode.
+///
+/// The default keyhog cache root is always checked. `persistence_paths` lets
+/// callers pass resolved custom Merkle/incremental cache paths that may live
+/// outside the default root.
+#[must_use]
+pub fn lockdown_disk_cache_violations_for_paths<I, P>(persistence_paths: I) -> Vec<PathBuf>
+where
+    I: IntoIterator<Item = P>,
+    P: AsRef<Path>,
+{
     let mut hits = Vec::new();
     if let Some(cache_root) = dirs::cache_dir() {
         let keyhog_root = cache_root.join("keyhog");
@@ -265,7 +293,45 @@ pub fn lockdown_disk_cache_violations() -> Vec<PathBuf> {
             hits.push(keyhog_root);
         }
     }
+    for path in persistence_paths {
+        let path = path.as_ref();
+        if explicit_persistence_path_is_violation(path) {
+            push_unique_path(&mut hits, path.to_path_buf());
+        }
+    }
     hits
+}
+
+fn explicit_persistence_path_is_violation(path: &Path) -> bool {
+    match std::fs::metadata(path) {
+        Ok(metadata) if metadata.is_dir() => match std::fs::read_dir(path) {
+            Ok(entries) => keyhog_cache_contains_findings(path, entries),
+            Err(error) => {
+                eprintln!(
+                    "keyhog: cannot inspect configured cache dir '{}' for past-findings \
+                     artifacts: {error}; refusing lockdown (fail-closed)",
+                    path.display()
+                );
+                true
+            }
+        },
+        Ok(_) => true,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => false,
+        Err(error) => {
+            eprintln!(
+                "keyhog: cannot inspect configured cache path '{}' for past-findings artifacts: \
+                 {error}; refusing lockdown (fail-closed)",
+                path.display()
+            );
+            true
+        }
+    }
+}
+
+fn push_unique_path(hits: &mut Vec<PathBuf>, path: PathBuf) {
+    if !hits.iter().any(|hit| hit == &path) {
+        hits.push(path);
+    }
 }
 
 fn keyhog_cache_contains_findings<I>(keyhog_root: &Path, entries: I) -> bool

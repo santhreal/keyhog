@@ -1,3 +1,4 @@
+use keyhog_core::hardening::lockdown_disk_cache_violations_for_paths;
 use keyhog_core::testing::{
     lockdown_cache_entry_error_is_violation, lockdown_disk_cache_violations,
 };
@@ -116,6 +117,22 @@ fn non_empty_keyhog_cache_dir_is_lockdown_violation() {
             lockdown_disk_cache_violations(),
             vec![keyhog_cache],
             "non-empty keyhog cache dir must fail lockdown"
+        );
+    });
+}
+
+#[test]
+fn configured_incremental_cache_file_is_lockdown_violation() {
+    with_xdg_cache_home(|cache_home| {
+        let custom_root = cache_home.path().join("custom");
+        std::fs::create_dir_all(&custom_root).expect("create custom cache dir");
+        let custom_cache = custom_root.join("merkle.idx");
+        std::fs::write(&custom_cache, b"cached metadata\n").expect("write custom merkle cache");
+
+        assert_eq!(
+            lockdown_disk_cache_violations_for_paths([custom_cache.clone()]),
+            vec![custom_cache],
+            "lockdown must inspect configured incremental cache files outside the default root"
         );
     });
 }
