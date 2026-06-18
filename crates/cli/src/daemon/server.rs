@@ -15,6 +15,27 @@ use tokio::sync::{Notify, Semaphore};
 
 const KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// Maximum wall-clock time a single client request may take to fully arrive
+/// once the connection is otherwise idle-waiting for it. Bounds a slowloris /
+/// half-frame stall: a peer that announces a frame length (up to the 64 MiB
+/// `MAX_FRAME_BYTES`) then sends the body slowly — or never — would otherwise
+/// hold a `connection_limit` semaphore permit forever, and enough such
+/// connections starve every OTHER same-uid client of the daemon. The socket is
+/// 0600 (same-uid trust), so this is a buggy/crashed client (an IDE plugin that
+/// opened a socket and died mid-write), not an adversary; the timeout reclaims
+/// the permit so one stuck client can't deadlock the daemon. Five minutes is
+/// generous for a 64 MiB scan payload over a local Unix socket. Overridable via
+/// `KEYHOG_DAEMON_REQUEST_TIMEOUT_SECS` for very large pre-warmed batches.
+fn request_read_timeout() -> std::time::Duration {
+    const DEFAULT_SECS: u64 = 300;
+    let secs = keyhog_core::env_config::u64_at_least_or_default(
+        "KEYHOG_DAEMON_REQUEST_TIMEOUT_SECS",
+        1,
+        DEFAULT_SECS,
+    );
+    std::time::Duration::from_secs(secs)
+}
+
 /// Default socket path. Prefers `$XDG_RUNTIME_DIR/keyhog.sock`
 /// (per-user, tmpfs-backed, auto-cleaned on logout) and falls back
 /// to `~/.cache/keyhog/server.sock` when the runtime dir isn't
@@ -31,7 +52,7 @@ pub fn default_socket_path() -> PathBuf {
     // HOME set) - `std::env::temp_dir()` is /tmp on Unix and
     // %TEMP% on Windows, never the hardcoded `/tmp` we used before
     // (which would silently mkdir `C:\tmp` on Windows).
-    let cache = dirs::cache_dir().unwrap_or_else(std::env::temp_dir);
+    let cache = dirs::cache_dir().unwrap_or_else(std::env::temp_dir); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
     let mut p = cache;
     p.push("keyhog");
     p.push("server.sock");
@@ -40,6 +61,7 @@ pub fn default_socket_path() -> PathBuf {
 
 struct ServerState {
     scanner: Arc<CompiledScanner>,
+    router: Arc<crate::orchestrator::CachedBackendRouter>,
     started_at: Instant,
     scans_served: AtomicU64,
     active_scans: AtomicU32,
@@ -62,13 +84,19 @@ struct ServerState {
 }
 
 impl ServerState {
-    fn new(scanner: CompiledScanner, shutdown: Arc<Notify>, detector_count: usize) -> Self {
+    fn new(
+        scanner: CompiledScanner,
+        router: crate::orchestrator::CachedBackendRouter,
+        shutdown: Arc<Notify>,
+        detector_count: usize,
+    ) -> Self {
         let cores = std::thread::available_parallelism()
             .map(|n| n.get())
-            .unwrap_or(4);
+            .unwrap_or(4); // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
         let max_conns = (cores * 4).clamp(8, 256);
         Self {
             scanner: Arc::new(scanner),
+            router: Arc::new(router),
             started_at: Instant::now(),
             scans_served: AtomicU64::new(0),
             active_scans: AtomicU32::new(0),
@@ -90,8 +118,10 @@ impl ServerState {
 /// init cost (which is the whole point of running a daemon).
 pub async fn run(socket_path: PathBuf, detectors: Vec<DetectorSpec>) -> Result<()> {
     let detector_count = detectors.len();
-    let scanner = CompiledScanner::compile(detectors)
+    let scanner = CompiledScanner::compile(detectors.clone())
         .context("daemon: compiling scanner from detector specs")?;
+    let router =
+        crate::orchestrator::cached_autoroute_router_for_default_config(&scanner, &detectors);
     // The daemon is long-lived and serves many scan requests; pay the lazy
     // regex compile once, up front and in parallel, so no client request
     // eats a detector's first-use compile latency.
@@ -118,12 +148,13 @@ pub async fn run(socket_path: PathBuf, detectors: Vec<DetectorSpec>) -> Result<(
                  Run `keyhog daemon stop` first, or pass --socket to use a different path.",
                 socket_path.display()
             ),
-            Err(_) => {
+            Err(error) => {
                 tracing::warn!(
                     socket = %socket_path.display(),
+                    %error,
                     "removing stale daemon socket (no listener on the other end)"
                 );
-                let _ = std::fs::remove_file(&socket_path);
+                let _ = std::fs::remove_file(&socket_path); // LAW10: unused-binding marker; no runtime effect, not a fallback
             }
         }
     }
@@ -143,7 +174,12 @@ pub async fn run(socket_path: PathBuf, detectors: Vec<DetectorSpec>) -> Result<(
     set_socket_mode_user_only(&socket_path)?;
 
     let shutdown = Arc::new(Notify::new());
-    let state = Arc::new(ServerState::new(scanner, shutdown.clone(), detector_count));
+    let state = Arc::new(ServerState::new(
+        scanner,
+        router,
+        shutdown.clone(),
+        detector_count,
+    ));
 
     eprintln!(
         "keyhog daemon ready on {} ({} detectors, wire={})",
@@ -181,7 +217,40 @@ pub async fn run(socket_path: PathBuf, detectors: Vec<DetectorSpec>) -> Result<(
                             });
                         }
                         Err(e) => {
-                            tracing::error!("daemon: listener accept failed: {e}");
+                            // Law 10: a swallowed accept() error silently kills
+                            // the daemon's ability to serve while the process
+                            // stays alive — `daemon status` keeps reporting
+                            // "ready" but every new connection is refused. A
+                            // `tracing::error!` here is invisible without
+                            // RUST_LOG, so the operator never learns the daemon
+                            // went deaf. Surface it LOUDLY on stderr.
+                            //
+                            // Transient errors (fd exhaustion under a connection
+                            // burst, an interrupted syscall, a peer that aborted
+                            // mid-handshake) are RECOVERABLE: a permit-bounded
+                            // backlog drains and accept() works again. Back off
+                            // briefly and keep serving rather than tearing the
+                            // daemon down for a momentary spike.
+                            if is_transient_accept_error(&e) {
+                                eprintln!(
+                                    "⚠ keyhog daemon: accept() failed transiently ({e}); \
+                                     backing off and continuing to serve"
+                                );
+                                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                                continue;
+                            }
+                            // A genuinely fatal accept error (the listening socket
+                            // was unlinked, the fd was closed under us): the
+                            // daemon can never serve again. Do NOT leave a deaf
+                            // zombie — surface loudly and trigger graceful
+                            // shutdown so the process actually exits and a
+                            // supervisor / the operator can restart it.
+                            eprintln!(
+                                "✗ keyhog daemon: listener accept failed fatally ({e}); \
+                                 the daemon can no longer accept connections and is \
+                                 shutting down. Restart it with `keyhog daemon start`."
+                            );
+                            accept_shutdown.notify_waiters();
                             break;
                         }
                     }
@@ -191,9 +260,39 @@ pub async fn run(socket_path: PathBuf, detectors: Vec<DetectorSpec>) -> Result<(
     });
 
     shutdown.notified().await;
-    let _ = accept_task.await;
-    let _ = std::fs::remove_file(&socket_path);
+    let _ = accept_task.await; // LAW10: unused-binding marker; no runtime effect, not a fallback
+    let _ = std::fs::remove_file(&socket_path); // LAW10: unused-binding marker; no runtime effect, not a fallback
     Ok(())
+}
+
+/// Classify an `accept()` I/O error as transient (recoverable — back off and
+/// keep serving) versus fatal (the listening socket is unusable — shut down).
+///
+/// Transient cases are the ones a momentary spike produces and that clear on
+/// their own once the backlog drains: per-process / system-wide fd exhaustion
+/// (`EMFILE` / `ENFILE`, surfaced by std as `Other`), a connection the peer
+/// aborted between the SYN and our accept (`ECONNABORTED`), an interrupted
+/// syscall (`EINTR` -> `Interrupted`), and a transient resource shortage
+/// (`WouldBlock`). Everything else (e.g. the socket fd closed under us) is
+/// treated as fatal so the daemon doesn't spin forever on an unrecoverable
+/// error.
+pub fn is_transient_accept_error(e: &std::io::Error) -> bool {
+    use std::io::ErrorKind;
+    if matches!(
+        e.kind(),
+        ErrorKind::Interrupted | ErrorKind::WouldBlock | ErrorKind::ConnectionAborted
+    ) {
+        return true;
+    }
+    // EMFILE (24) / ENFILE (23): too many open files. std maps these to
+    // ErrorKind::Other (no stable variant), so match on the raw errno — the
+    // single most important transient accept() failure for a daemon under a
+    // connection burst, since refusing to recover would let one spike kill it.
+    #[cfg(unix)]
+    if matches!(e.raw_os_error(), Some(24) | Some(23)) {
+        return true;
+    }
+    false
 }
 
 #[cfg(unix)]
@@ -216,7 +315,32 @@ async fn handle_connection(state: Arc<ServerState>, mut stream: UnixStream) -> R
     let mut reader = tokio::io::BufReader::new(reader);
     let mut writer = tokio::io::BufWriter::new(writer);
 
-    while let Some(request) = frame::read_request(&mut reader).await? {
+    let read_timeout = request_read_timeout();
+    loop {
+        // Bound the per-request read so a half-frame / slowloris stall (a peer
+        // that announces a frame length then sends the body slowly or never)
+        // cannot hold this connection's `connection_limit` permit forever and
+        // starve other same-uid clients. keyhog daemon clients do one
+        // round-trip then disconnect, so a connection idle past the timeout is
+        // either finished (should have closed) or stuck — closing it is correct
+        // and frees the permit.
+        let request =
+            match tokio::time::timeout(read_timeout, frame::read_request(&mut reader)).await {
+                Ok(Ok(Some(req))) => req,
+                // Clean EOF: peer closed. Done.
+                Ok(Ok(None)) => break,
+                // Frame/parse error: propagate so the connection is dropped.
+                Ok(Err(e)) => return Err(e),
+                Err(_elapsed) => {
+                    anyhow::bail!(
+                        "daemon: connection idle for {}s without a complete request; \
+                     closing it to reclaim the connection slot (a stuck or slow \
+                     client). Raise KEYHOG_DAEMON_REQUEST_TIMEOUT_SECS for very \
+                     large pre-warmed batches.",
+                        read_timeout.as_secs()
+                    );
+                }
+            };
         let response = dispatch(&state, request).await;
         let is_shutdown_ack = matches!(response, Response::Shutdown);
         frame::write_response(&mut writer, &response).await?;
@@ -251,45 +375,53 @@ async fn dispatch(state: &ServerState, request: Request) -> Response {
 async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> Response {
     state.active_scans.fetch_add(1, Ordering::Relaxed);
     let scanner = state.scanner.clone();
+    let router = state.router.clone();
     let chunk_path = path.clone();
     let drain_lock = state.telemetry_drain.clone();
-    // Hand the actual scan to a blocking thread - `scanner.scan` is
-    // CPU-heavy and not async-aware. Without `spawn_blocking` a
+    // Hand the actual scan to a blocking thread - calibrated backend scanning
+    // is CPU-heavy and not async-aware. Without `spawn_blocking` a
     // large scan would stall the tokio reactor and block every
     // other connection's framing reads.
-    let res = tokio::task::spawn_blocking(move || {
+    let res = tokio::task::spawn_blocking(move || -> Result<_> {
         let chunk = Chunk {
             data: text.into(),
             metadata: ChunkMetadata {
-                source_type: "daemon/scan_text".into(),
+                source_type: "stdin".into(),
                 path: chunk_path,
                 ..Default::default()
             },
         };
-        let matches = scanner.scan(&chunk);
+        let backend = router.choose(
+            crate::orchestrator::explicit_backend_override(),
+            std::slice::from_ref(&chunk),
+        )?;
+        let matches = scanner.scan_with_backend(&chunk, backend);
         // Drain telemetry alongside the matches so the client can
         // merge per-scan counts into its own process-local counters
         // (telemetry lives in a OnceLock and doesn't cross the IPC
         // boundary on its own). The lock serializes count+drain+reset
         // across concurrent daemon connections - see ServerState
         // .telemetry_drain for the race scenario.
-        let _drain = drain_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let _drain = drain_lock.lock().unwrap_or_else(|e| e.into_inner()); // LAW10: poisoned lock => recover the inner guard (data still valid); never blocks/deref-panics
         let engine_example_suppressions =
             keyhog_scanner::telemetry::example_suppression_count() as u64;
         let dogfood_events = keyhog_scanner::telemetry::drain_events();
         keyhog_scanner::telemetry::reset_example_suppression_count();
-        (matches, engine_example_suppressions, dogfood_events)
+        Ok((matches, engine_example_suppressions, dogfood_events))
     })
     .await;
     state.active_scans.fetch_sub(1, Ordering::Relaxed);
     state.scans_served.fetch_add(1, Ordering::Relaxed);
 
     match res {
-        Ok((matches, engine_example_suppressions, dogfood_events)) => Response::ScanResults {
+        Ok(Ok((matches, engine_example_suppressions, dogfood_events))) => Response::ScanResults {
             path,
             matches,
             engine_example_suppressions,
             dogfood_events,
+        },
+        Ok(Err(e)) => Response::Error {
+            message: format!("daemon: scan_text failed: {e:#}"),
         },
         Err(e) => Response::Error {
             message: format!("daemon: scan task panicked or was cancelled: {e:#}"),
@@ -308,6 +440,7 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
 
     state.active_scans.fetch_add(1, Ordering::Relaxed);
     let scanner = state.scanner.clone();
+    let router = state.router.clone();
     let resolved_owned = resolved.clone();
     let drain_lock = state.telemetry_drain.clone();
     type ScanOutput = (
@@ -322,14 +455,18 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
         let chunk = Chunk {
             data: text.into(),
             metadata: ChunkMetadata {
-                source_type: "daemon/scan_path".into(),
+                source_type: "filesystem".into(),
                 path: Some(resolved_owned.to_string_lossy().into_owned()),
                 ..Default::default()
             },
         };
-        let matches = scanner.scan(&chunk);
+        let backend = router.choose(
+            crate::orchestrator::explicit_backend_override(),
+            std::slice::from_ref(&chunk),
+        )?;
+        let matches = scanner.scan_with_backend(&chunk, backend);
         // See scan_text for the rationale on this drain lock.
-        let _drain = drain_lock.lock().unwrap_or_else(|e| e.into_inner());
+        let _drain = drain_lock.lock().unwrap_or_else(|e| e.into_inner()); // LAW10: poisoned lock => recover the inner guard (data still valid); never blocks/deref-panics
         let engine_example_suppressions =
             keyhog_scanner::telemetry::example_suppression_count() as u64;
         let dogfood_events = keyhog_scanner::telemetry::drain_events();

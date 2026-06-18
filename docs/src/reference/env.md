@@ -48,6 +48,7 @@ documented here with default, effect, and a typical use case.
 |---------------------|-----------------------------------------------|---------------------------------------|
 | `XDG_RUNTIME_DIR`   | (set by login session)                        | Daemon socket location: `$XDG_RUNTIME_DIR/keyhog.sock`. Fallback is `~/.cache/keyhog/server.sock`. |
 | `KEYHOG_DOGFOOD`    | (unset)                                       | Enable dogfood telemetry capture in the daemon. Equivalent to passing `--dogfood` on every connecting client. |
+| `KEYHOG_DAEMON_REQUEST_TIMEOUT_SECS` | `300` | Max wall-clock time a single client request may take to fully arrive before the daemon closes that connection and reclaims its slot. Bounds a half-frame / slow client so one stuck connection can't starve other same-uid clients. Positive integer only; malformed or zero values are printed to stderr and fall back to `300`. Raise it for very large pre-warmed scan batches. |
 
 ## Verification
 
