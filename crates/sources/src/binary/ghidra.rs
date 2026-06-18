@@ -1,38 +1,14 @@
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use keyhog_core::SourceError;
 
 /// Search standard locations for Ghidra's `analyzeHeadless` script.
 pub(crate) fn find_ghidra_headless() -> Option<PathBuf> {
-    // Check GHIDRA_HOME env var first
-    if let Ok(home) = std::env::var("GHIDRA_HOME") {
-        let path = PathBuf::from(&home).join("support").join("analyzeHeadless");
-        if path.exists() {
-            return Some(path);
-        }
-    }
-
-    // SECURITY: kimi-wave1 audit finding 3.PATH-which. Don't shell out to
-    // `which` (resolved via $PATH itself) - instead enumerate trusted
-    // locations directly. The `analyzeHeadless` script is shipped by
-    // Ghidra, not a system binary, so we look in the standard install
-    // dirs explicitly. The previous `Command::new("which")` was
-    // PATH-injectable, and what `which` returned was used as the binary
-    // we then exec'd, double-amplifying the injection surface.
-    if let Some(which_bin) = keyhog_core::safe_bin::resolve_safe_bin("which") {
-        if let Ok(output) = Command::new(&which_bin).arg("analyzeHeadless").output() {
-            if output.status.success() {
-                let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                // Only accept if the resolved path is absolute. Defends
-                // against `which` being aliased / shimmed to print
-                // attacker-controlled text.
-                let pb = PathBuf::from(&path);
-                if pb.is_absolute() && pb.exists() {
-                    return Some(pb);
-                }
-            }
-        }
+    // Non-standard Ghidra installs belong in .keyhog.toml
+    // [system].trusted_bin_dirs, never in PATH or GHIDRA_HOME. This keeps
+    // decompiler execution under the same trust boundary as git/docker.
+    if let Some(path) = keyhog_core::resolve_safe_bin("analyzeHeadless") {
+        return Some(path);
     }
 
     // Common installation paths
