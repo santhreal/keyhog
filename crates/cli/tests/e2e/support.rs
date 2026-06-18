@@ -67,3 +67,61 @@ pub fn scan_path(path: &Path, extra_args: &[&str]) -> Output {
         .output()
         .expect("spawn keyhog scan")
 }
+
+#[cfg(unix)]
+pub struct DaemonGuard {
+    runtime: TempDir,
+    child: std::process::Child,
+}
+
+#[cfg(unix)]
+impl DaemonGuard {
+    pub fn start() -> Self {
+        use std::process::Stdio;
+        use std::time::{Duration, Instant};
+
+        let runtime = TempDir::new().expect("runtime dir");
+        let detectors = workspace_detectors();
+        let child = Command::new(binary())
+            .env("XDG_RUNTIME_DIR", runtime.path())
+            .env("KEYHOG_BACKEND", "simd")
+            .args([
+                "daemon",
+                "start",
+                "--detectors",
+                detectors.to_str().expect("detectors path"),
+            ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn keyhog daemon");
+
+        let socket = runtime.path().join("keyhog.sock");
+        let deadline = Instant::now() + Duration::from_secs(30);
+        while !socket.exists() {
+            assert!(
+                Instant::now() < deadline,
+                "daemon socket did not appear in time"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        Self { runtime, child }
+    }
+
+    pub fn runtime_dir(&self) -> &Path {
+        self.runtime.path()
+    }
+}
+
+#[cfg(unix)]
+impl Drop for DaemonGuard {
+    fn drop(&mut self) {
+        let _ = Command::new(binary())
+            .env("XDG_RUNTIME_DIR", self.runtime.path())
+            .args(["daemon", "stop"])
+            .output();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}

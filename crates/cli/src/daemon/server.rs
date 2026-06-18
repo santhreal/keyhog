@@ -396,17 +396,8 @@ async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> R
             std::slice::from_ref(&chunk),
         )?;
         let matches = scanner.scan_with_backend(&chunk, backend);
-        // Drain telemetry alongside the matches so the client can
-        // merge per-scan counts into its own process-local counters
-        // (telemetry lives in a OnceLock and doesn't cross the IPC
-        // boundary on its own). The lock serializes count+drain+reset
-        // across concurrent daemon connections - see ServerState
-        // .telemetry_drain for the race scenario.
-        let _drain = drain_lock.lock().unwrap_or_else(|e| e.into_inner()); // LAW10: poisoned lock => recover the inner guard (data still valid); never blocks/deref-panics
-        let engine_example_suppressions =
-            keyhog_scanner::telemetry::example_suppression_count() as u64;
-        let dogfood_events = keyhog_scanner::telemetry::drain_events();
-        keyhog_scanner::telemetry::reset_example_suppression_count();
+        let (engine_example_suppressions, dogfood_events) =
+            drain_daemon_scan_telemetry(&drain_lock);
         Ok((matches, engine_example_suppressions, dogfood_events))
     })
     .await;
@@ -451,7 +442,11 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
     let res = tokio::task::spawn_blocking(move || -> Result<ScanOutput> {
         let bytes = std::fs::read(&resolved_owned)
             .with_context(|| format!("daemon: reading {}", resolved_owned.display()))?;
-        let text = String::from_utf8_lossy(&bytes).into_owned();
+        let Some(text) = keyhog_sources::decode_file_bytes(&bytes) else {
+            let (engine_example_suppressions, dogfood_events) =
+                drain_daemon_scan_telemetry(&drain_lock);
+            return Ok((Vec::new(), engine_example_suppressions, dogfood_events));
+        };
         let chunk = Chunk {
             data: text.into(),
             metadata: ChunkMetadata {
@@ -465,12 +460,8 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
             std::slice::from_ref(&chunk),
         )?;
         let matches = scanner.scan_with_backend(&chunk, backend);
-        // See scan_text for the rationale on this drain lock.
-        let _drain = drain_lock.lock().unwrap_or_else(|e| e.into_inner()); // LAW10: poisoned lock => recover the inner guard (data still valid); never blocks/deref-panics
-        let engine_example_suppressions =
-            keyhog_scanner::telemetry::example_suppression_count() as u64;
-        let dogfood_events = keyhog_scanner::telemetry::drain_events();
-        keyhog_scanner::telemetry::reset_example_suppression_count();
+        let (engine_example_suppressions, dogfood_events) =
+            drain_daemon_scan_telemetry(&drain_lock);
         Ok((matches, engine_example_suppressions, dogfood_events))
     })
     .await;
@@ -491,4 +482,19 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
             message: format!("daemon: scan task panicked or was cancelled: {e:#}"),
         },
     }
+}
+
+fn drain_daemon_scan_telemetry(
+    drain_lock: &Mutex<()>,
+) -> (u64, Vec<keyhog_scanner::telemetry::DogfoodEvent>) {
+    // Drain telemetry alongside the matches so the client can merge per-scan
+    // counts into its own process-local counters (telemetry lives in a OnceLock
+    // and does not cross the IPC boundary on its own). The lock serializes
+    // count+drain+reset across concurrent daemon connections; see ServerState
+    // .telemetry_drain for the race scenario.
+    let _drain = drain_lock.lock().unwrap_or_else(|e| e.into_inner()); // LAW10: poisoned lock => recover the inner guard (data still valid); never blocks/deref-panics
+    let engine_example_suppressions = keyhog_scanner::telemetry::example_suppression_count() as u64;
+    let dogfood_events = keyhog_scanner::telemetry::drain_events();
+    keyhog_scanner::telemetry::reset_example_suppression_count();
+    (engine_example_suppressions, dogfood_events)
 }
