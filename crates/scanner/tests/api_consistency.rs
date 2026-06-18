@@ -38,13 +38,14 @@ fn make_chunk(text: &str, path: &str) -> Chunk {
     }
 }
 
-type FindingKey = (String, String, usize);
+type FindingKey = (String, String, String, usize);
 
 fn key(matches: &[keyhog_core::RawMatch]) -> BTreeSet<FindingKey> {
     matches
         .iter()
         .map(|m| {
             (
+                m.detector_id.as_ref().to_string(),
                 m.credential.as_ref().to_string(),
                 m.location
                     .file_path
@@ -62,6 +63,7 @@ fn key_chunks(per_chunk: &[Vec<keyhog_core::RawMatch>]) -> BTreeSet<FindingKey> 
     for chunk in per_chunk {
         for m in chunk {
             s.insert((
+                m.detector_id.as_ref().to_string(),
                 m.credential.as_ref().to_string(),
                 m.location
                     .file_path
@@ -76,14 +78,43 @@ fn key_chunks(per_chunk: &[Vec<keyhog_core::RawMatch>]) -> BTreeSet<FindingKey> 
 }
 
 #[test]
+fn daemon_style_stdin_aws_chunk_reports_named_detector() {
+    let scanner = scanner();
+    let chunk = Chunk {
+        data: "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n".into(),
+        metadata: ChunkMetadata {
+            source_type: "stdin".into(),
+            path: None,
+            base_offset: 0,
+            ..Default::default()
+        },
+    };
+    for backend in [ScanBackend::SimdCpu, ScanBackend::CpuFallback] {
+        let matches = scanner.scan_with_backend(&chunk, backend);
+        assert!(
+            matches.iter().any(|m| {
+                m.detector_id.as_ref() == "aws-access-key"
+                    && m.credential.as_ref() == "AKIAQYLPMN5HFIQR7XYA"
+                    && m.location.source.as_ref() == "stdin"
+                    && m.location.file_path.is_none()
+                    && m.location.line == Some(1)
+            }),
+            "daemon-style stdin scan on {backend:?} must include the named AWS detector; got {matches:?}"
+        );
+    }
+}
+
+#[test]
 fn scan_and_scan_with_deadline_none_agree() {
     let scanner = scanner();
     let chunk = make_chunk(
-        "const AWS = \"AKIAQYLPMN5HFIQR7XYA\";\nconst PAT = \"ghp_aBcD1234EFgh5678ijklMNop9012qrSTuvWX\";\n",
+        "const AWS = \"AKIAQYLPMN5HFIQR7XYA\";\nconst PAT = \"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\";\n",
         "fixtures/aws_pat.rs",
     );
     let auto = key(&scanner.scan(&chunk));
-    let deadline_none = key(&scanner.scan_with_deadline(&chunk, None));
+    let deadline_none = key(&keyhog_scanner::testing::scan_with_deadline(
+        &scanner, &chunk, None,
+    ));
     assert_eq!(
         auto, deadline_none,
         "scan() and scan_with_deadline(None) must produce identical findings"
@@ -118,7 +149,7 @@ fn scan_repeated_invocations_produce_identical_findings() {
     // same input twice in a row must produce byte-identical findings.
     let scanner = scanner();
     let chunk = make_chunk(
-        "GITHUB_TOKEN=ghp_aBcD1234EFgh5678ijklMNop9012qrSTuvWX\n",
+        "GITHUB_TOKEN=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\n",
         "env.txt",
     );
     let a = key(&scanner.scan(&chunk));
@@ -146,7 +177,7 @@ fn multi_chunk_input_preserves_per_chunk_attribution() {
         make_chunk("AWS = \"AKIAQYLPMN5HFIQR7XYA\"\n", "b.txt"),
         make_chunk("more noise\n", "c.txt"),
         make_chunk(
-            "PAT = \"ghp_aBcD1234EFgh5678ijklMNop9012qrSTuvWX\"\n",
+            "PAT = \"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\"\n",
             "d.txt",
         ),
     ];

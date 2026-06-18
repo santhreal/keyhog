@@ -100,9 +100,12 @@ fn scan_finds_planted_bedrock_key_and_returns_exit_1() {
         "y2J0fajDUXD1efoRCtqKODGGBi8UWr7UJsq2tkhFhx8ZEDEd9hnKHivse0YHShMdeCAbPEOXOxyhkg5cqNGHA1grwAyKC3Y8HDD62wLdl37iKN\"\n",
     );
     let (stdout, _stderr, code) = scan_text_file(fixture, &[]);
-    assert_eq!(code, Some(1), "planted Bedrock key should exit 1; got {code:?}");
-    let arr: Vec<serde_json::Value> =
-        serde_json::from_str(&stdout).expect("stdout is valid JSON");
+    assert_eq!(
+        code,
+        Some(1),
+        "planted Bedrock key should exit 1; got {code:?}"
+    );
+    let arr: Vec<serde_json::Value> = serde_json::from_str(&stdout).expect("stdout is valid JSON");
     let bedrock = arr
         .iter()
         .find(|f| f.get("detector_id").and_then(|v| v.as_str()) == Some("aws-bedrock-api-key"));
@@ -969,12 +972,17 @@ fn daemon_wire_scan_stdin_finds_planted_secret() {
     let findings: serde_json::Value =
         serde_json::from_slice(&scan.stdout).expect("daemon stdin stdout is JSON");
     let arr = findings.as_array().expect("array");
+    assert_eq!(
+        arr.len(),
+        1,
+        "daemon ScanText/stdin must resolve the planted AWS key to one finding; got {arr:?}"
+    );
     assert!(
-        arr.iter().any(|f| matches!(
-            f.get("detector_id").and_then(|v| v.as_str()),
+        matches!(
+            arr[0].get("detector_id").and_then(|v| v.as_str()),
             Some("aws-access-key" | "hot-aws_key")
-        )),
-        "daemon ScanText/stdin wire path must return an AWS finding; got {arr:?}"
+        ),
+        "daemon ScanText/stdin wire path must return the named AWS finding, not a generic entropy duplicate; got {arr:?}"
     );
 }
 

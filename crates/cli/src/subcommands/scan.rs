@@ -29,7 +29,7 @@ use crate::daemon::protocol::{Request, Response};
 #[cfg(unix)]
 use crate::daemon::server::default_socket_path;
 use crate::orchestrator::ScanOrchestrator;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 // The daemon-only result-massaging path (unwrap_scan_results,
 // finalize_for_report) is the only consumer of `RawMatch` /
 // `VerifiedFinding` / the dedup helpers in this file. The
@@ -40,13 +40,12 @@ use anyhow::{bail, Result};
 use anyhow::Context;
 #[cfg(unix)]
 use keyhog_core::{
-    dedup_cross_detector, dedup_matches, RawMatch, RuleSuppressor, VerificationResult,
-    VerifiedFinding,
+    RawMatch, RuleSuppressor, VerificationResult, VerifiedFinding, dedup_cross_detector,
+    dedup_matches,
 };
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-
 
 pub async fn run(args: ScanArgs) -> Result<ExitCode> {
     crate::backend_env::validate_scan_runtime_env()?;
@@ -225,13 +224,14 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
         return DaemonRoute::Forbidden;
     }
 
-    // The daemon's client-side finalize (finalize_for_report) applies only
-    // test-fixture suppression + dedup; it does NOT enforce the confidence floor,
-    // --severity, --hide-client-safe, or the --lockdown contract (no mlock /
-    // coredump block, and it would print plaintext under --show-secrets). Routing
-    // a scan that requests any of those over the daemon would silently change
-    // results or bypass a hard security guard — and the opportunistic route flips
-    // on merely because a daemon socket exists. Force the in-process path whenever
+    // The daemon's client-side finalize mirrors allowlist/rule suppression,
+    // inline suppression, match resolution, and dedup for daemon-eligible scans.
+    // It still does NOT run live verification or enforce the policy/security
+    // gates below (lockdown protections, secret-output policy, severity hiding,
+    // client-safe hiding, or explicit confidence-floor policy). Routing a scan
+    // that requests any of those over the daemon would silently change results
+    // or bypass a hard security guard — and the opportunistic route flips on
+    // merely because a daemon socket exists. Force the in-process path whenever
     // such policy is in play, so behavior never depends on whether a daemon
     // happens to be running.
     //
@@ -558,6 +558,13 @@ fn finalize_for_report(matches: Vec<RawMatch>, args: &ScanArgs) -> Result<Vec<Ve
             true
         })
         .collect();
+
+    // Match resolution mirrors `ScanOrchestrator::filter_and_resolve`: named
+    // service detectors beat generic/entropy matches on the same secret line
+    // before cross-detector dedup picks a winner. Without this, daemon stdin can
+    // report `entropy-api-key` for an AKIA value even though the scanner also
+    // found the canonical `aws-access-key`.
+    matches = keyhog_scanner::resolution::resolve_matches(matches);
 
     // Inline `keyhog:ignore` / `gitleaks:allow` comment suppression. The
     // shared filter only acts on matches whose source is "filesystem"
