@@ -87,15 +87,22 @@ impl<'a> WireReader<'a> {
         }
         Ok(v)
     }
+    /// A `u32`-length-prefixed raw byte run (a grouped rule's literal bytes).
+    fn bytes_vec(&mut self) -> Result<Vec<u8>, CatalogWireError> {
+        let len = self.u32()? as usize;
+        Ok(self.take(len)?.to_vec())
+    }
 }
 
 impl vyre_libs::scan::MatchEngineCache for MegakernelCatalog {
     type WireError = CatalogWireError;
     const WIRE_MAGIC: [u8; 4] = CATALOG_WIRE_MAGIC;
     // v2: `rule_to_detector` (Vec<usize>) became `rule_to_detectors`
-    // (Vec<Vec<usize>>) for dedup fan-out — the wire layout changed, so reject
-    // v1 blobs and rebuild rather than misparse.
-    const WIRE_VERSION: u32 = 2;
+    // (Vec<Vec<usize>>) for dedup fan-out.
+    // v3: added `group_literals` (Vec<Vec<(Vec<u8>, Vec<usize>)>>) — the per-rule
+    // byte-check disambiguation table for GROUPED literal rules. The wire layout
+    // changed again, so reject v1/v2 blobs and rebuild rather than misparse.
+    const WIRE_VERSION: u32 = 3;
     // The catalog is ~GB of dense DFA transition tables; the default 64 MiB
     // bound would reject it as oversized and force a full rebuild every run.
     const MAX_CACHE_BYTES: u64 = 4 * 1024 * 1024 * 1024;
@@ -123,6 +130,22 @@ impl vyre_libs::scan::MatchEngineCache for MegakernelCatalog {
             out.extend_from_slice(&(dets.len() as u32).to_le_bytes());
             for &d in dets {
                 out.extend_from_slice(&(d as u64).to_le_bytes());
+            }
+        }
+        // group_literals: per rule, a list of (literal bytes, anchors). EMPTY list
+        // for a single/regex rule. `rule_to_detectors.len() == group_literals.len()`
+        // (one entry per rule) by construction; both are length-prefixed independently
+        // so a decode never has to assume that.
+        out.extend_from_slice(&(self.group_literals.len() as u32).to_le_bytes());
+        for lits in &self.group_literals {
+            out.extend_from_slice(&(lits.len() as u32).to_le_bytes());
+            for (lit, anchors) in lits {
+                out.extend_from_slice(&(lit.len() as u32).to_le_bytes());
+                out.extend_from_slice(lit);
+                out.extend_from_slice(&(anchors.len() as u32).to_le_bytes());
+                for &a in anchors {
+                    out.extend_from_slice(&(a as u64).to_le_bytes());
+                }
             }
         }
         out.extend_from_slice(&(self.host_detectors.len() as u32).to_le_bytes());
@@ -159,11 +182,25 @@ impl vyre_libs::scan::MatchEngineCache for MegakernelCatalog {
             let inner = r.u32()? as usize;
             rule_to_detectors.push(r.usize_vec(inner)?);
         }
+        let gl_len = r.u32()? as usize;
+        let mut group_literals = Vec::with_capacity(gl_len.min(1 << 20));
+        for _ in 0..gl_len {
+            let n = r.u32()? as usize;
+            let mut lits = Vec::with_capacity(n.min(1 << 20));
+            for _ in 0..n {
+                let lit = r.bytes_vec()?;
+                let alen = r.u32()? as usize;
+                let anchors = r.usize_vec(alen)?;
+                lits.push((lit, anchors));
+            }
+            group_literals.push(lits);
+        }
         let host_len = r.u32()? as usize;
         let host_detectors = r.usize_vec(host_len)?;
         Ok(Self {
             rules,
             rule_to_detectors,
+            group_literals,
             host_detectors,
             dispatcher: std::sync::Mutex::new(None),
             resident_batch: std::sync::Mutex::new(None),
@@ -192,6 +229,7 @@ mod tests {
         let loaded = MegakernelCatalog::from_bytes(&bytes).expect("decode");
         assert_eq!(loaded.rule_count(), built.rule_count());
         assert_eq!(loaded.rule_to_detectors, built.rule_to_detectors);
+        assert_eq!(loaded.group_literals, built.group_literals);
         assert_eq!(loaded.host_detectors(), built.host_detectors());
         assert_eq!(loaded.rules, built.rules);
     }

@@ -20,7 +20,11 @@ const MEGAKERNEL_HIT_CAPACITY: u32 = 1_000_000;
 // transition tables) is unchanged by segmentation — geometry is a per-batch
 // work-queue property, not a catalog property — but the bump invalidates caches
 // packed by the older 0.6.2-only whole-file build.
-const MEGAKERNEL_CATALOG_CACHE_VERSION: u32 = 9;
+// v10: literals are GROUPED into combined multi-pattern DFAs (GPU_LITERAL_RULE_GROUPS
+// rules instead of one-per-literal) with a per-rule byte-check disambiguation table
+// (`group_literals`). The packed catalog AND the cached wire layout both changed, so
+// the bump invalidates v9 (per-literal) blobs and forces a rebuild.
+const MEGAKERNEL_CATALOG_CACHE_VERSION: u32 = 10;
 pub(super) const CATALOG_WIRE_MAGIC: [u8; 4] = *b"KHMK";
 
 /// Target number of GPU work-items (`segment_count * rule_count`) a single batch
@@ -61,6 +65,62 @@ fn choose_seg_len(total_bytes: usize, rule_count: u32, overlap: u32) -> u32 {
         .max(overlap.saturating_add(1))
 }
 
+/// Number of GPU literal RULES the unique-literal set is packed into. Each rule is
+/// ONE combined multi-pattern DFA that matches ~`unique_literals / N` distinct
+/// literals in a SINGLE pass over the haystack, instead of one DFA per literal
+/// scanned independently. The kernel cost is ~linear in `rule_count × bytes`, so
+/// collapsing ~1.6k per-literal rules into this many combined rules is the dominant
+/// dispatch lever (measured RTX 5090, 8 MiB bench: per-literal kernel 278 ms → a few
+/// ms grouped). A grouped hit names only the rule + match-end offset, never which
+/// literal accepted, so each is byte-checked against the group's literals
+/// (`group_literals`) to fan to exactly the right anchors. Bounded so the kernel
+/// stays cheap as the catalog grows; a group's combined DFA stays far below
+/// `PER_RULE_MAX_DFA_STATES` for short token literals (a group of ~50 ≤16-byte
+/// literals is ~hundreds of states). Tier-A-tunable later; a constant for now.
+const GPU_LITERAL_RULE_GROUPS: usize = 32;
+
+/// Recover the raw literal bytes a `regex::escape`d pattern matches, or `None` when
+/// the pattern is a genuine regex (an UNescaped regex metacharacter) rather than an
+/// escaped literal.
+///
+/// `regex::escape` backslash-prefixes every metacharacter and leaves ordinary bytes
+/// bare, so the inverse is: a `\` takes the next byte literally; a BARE
+/// metacharacter means "this is a real regex" — the non-UTF8-literal tail in
+/// `megakernel_catalog` that falls back to the detector's FULL regex. Those are kept
+/// as their own single-pattern rule (empty `group_literals`), never grouped, because
+/// there is no fixed literal to byte-check at a hit offset.
+///
+/// Soundness for recall (Law 10): the only failure that loses a firing is
+/// misclassifying a real regex AS a literal (its "unescaped" bytes would byte-check
+/// against the haystack and never match), so the bare-metacharacter set below is the
+/// FULL `regex_syntax::is_meta_character` set — erring toward "treat as regex". The
+/// reverse misclassification (a literal seen as a regex) only costs a grouping
+/// opportunity, never a firing. `unescape_literal_roundtrips` proves the inverse on
+/// representative literals; the byte-check at the hit offset is the runtime backstop.
+fn unescape_literal(pattern: &str) -> Option<Vec<u8>> {
+    // Exactly `regex_syntax::is_meta_character`: any of these appearing UNescaped
+    // means the pattern is a regex, not a `regex::escape`d literal.
+    const META: &[u8] = br"\.+*?()|[]{}^$#&-~";
+    let bytes = pattern.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b == b'\\' {
+            // Escaped metacharacter: the next byte is the literal one.
+            let next = *bytes.get(i + 1)?; // trailing backslash ⇒ not a clean literal
+            out.push(next);
+            i += 2;
+        } else if META.contains(&b) {
+            return None; // bare metacharacter ⇒ genuine regex, never grouped
+        } else {
+            out.push(b);
+            i += 1;
+        }
+    }
+    Some(out)
+}
+
 pub(crate) struct MegakernelCatalog {
     pub(super) rules: Vec<BatchRuleProgram>,
     /// GPU rule index → the anchor(s) (ac_map indices) it fires for. Identical
@@ -68,6 +128,19 @@ pub(crate) struct MegakernelCatalog {
     /// anchor sharing the literal, so `rules.len()` is the count of UNIQUE
     /// literals (≤ anchors). Every anchor appears in exactly one rule's list.
     pub(super) rule_to_detectors: Vec<Vec<usize>>,
+    /// GPU rule index → byte-check disambiguation table for a GROUPED literal rule.
+    /// A grouped rule's combined DFA matches ANY of several distinct literals in one
+    /// pass; the GPU `HitRecord` names only the rule + match-end offset, not which
+    /// literal accepted. `group_literals[rule]` is `(lowercased literal bytes,
+    /// anchors sharing that literal)` for every literal in the group, so a hit at
+    /// `match_offset` is byte-checked (the literal must END exactly at `match_offset`)
+    /// to fan ONLY to the anchors of the literal that actually matched — not the whole
+    /// group. EMPTY for a single-pattern / regex (un-groupable) rule, where the hit
+    /// fans straight to `rule_to_detectors[rule]` (the validate oracle filters), so
+    /// the two paths compose without a flag. `rule_to_detectors[rule]` always holds
+    /// the rule's COMPLETE anchor set (grouped: the union; single: the one anchor),
+    /// keeping the every-anchor-in-exactly-one-rule invariant for coverage checks.
+    pub(super) group_literals: Vec<Vec<(Vec<u8>, Vec<usize>)>>,
     pub(super) host_detectors: Vec<usize>,
     pub(super) dispatcher: std::sync::Mutex<Option<BatchDispatcher>>,
     pub(super) resident_batch: std::sync::Mutex<Option<FileBatch>>,
@@ -115,69 +188,151 @@ impl MegakernelCatalog {
             );
         }
 
-        // (Option<dfa>, detector_index): Some => lowered to a DFA, None => host.
-        // Build only against the published Vyre registry surface. Detector rules
-        // that do not lower are kept on the loud host path; nothing is dropped.
-        let built: Vec<(Option<(Vec<u32>, Vec<u32>, u32)>, usize)> = patterns
+        // GROUP + DEDUP. The kernel cost is ~linear in `rule_count × bytes`, so the
+        // catalog packs the unique literals into GPU_LITERAL_RULE_GROUPS combined
+        // multi-pattern DFAs (each scanned ONCE over the haystack) instead of one DFA
+        // per literal. Step 1 classifies + dedups; step 2 groups; step 3 builds the
+        // combined DFAs in parallel; step 4 assembles deterministically.
+        use std::collections::HashMap;
+
+        // 1. Classify each pattern as a pure literal (groupable, byte-checkable) or a
+        //    genuine regex (the non-UTF8 tail that fell back to the full detector
+        //    regex — no fixed literal to byte-check). Dedup literals by escaped
+        //    pattern, preserving first-seen order, accumulating every anchor that
+        //    shares the literal (the fan target — exactly the old dedup, now feeding
+        //    a grouped rule). `pattern.as_str()` borrows `patterns` (lives the fn).
+        let mut lit_index: HashMap<&str, usize> = HashMap::new();
+        // (escaped pattern, raw lowercased literal bytes, anchors sharing it)
+        let mut unique_lits: Vec<(&str, Vec<u8>, Vec<usize>)> = Vec::new();
+        // (escaped regex, anchor) — non-literal patterns, never grouped.
+        let mut regex_rules: Vec<(&str, usize)> = Vec::new();
+        for (pattern, detector) in patterns {
+            match unescape_literal(pattern) {
+                Some(raw) => match lit_index.get(pattern.as_str()) {
+                    Some(&idx) => unique_lits[idx].2.push(*detector),
+                    None => {
+                        lit_index.insert(pattern.as_str(), unique_lits.len());
+                        unique_lits.push((pattern.as_str(), raw, vec![*detector]));
+                    }
+                },
+                None => regex_rules.push((pattern.as_str(), *detector)),
+            }
+        }
+
+        // 2. Group the unique literals. Sorting by literal co-locates shared-prefix
+        //    literals so each group's combined DFA shares transitions and stays small.
+        unique_lits.sort_by(|a, b| a.1.cmp(&b.1));
+        let group_count = GPU_LITERAL_RULE_GROUPS.min(unique_lits.len()).max(1);
+        let per_group = unique_lits.len().div_ceil(group_count).max(1);
+
+        // 3. Build each group's COMBINED DFA in parallel. On lower failure (state
+        //    explosion past PER_RULE_MAX_DFA_STATES) the group is rebuilt
+        //    literal-by-literal so recall is preserved — never dropped (Law 10).
+        struct GroupBuilt {
+            combined: Option<(Vec<u32>, Vec<u32>, u32)>,
+            // (raw literal bytes, anchors) for every literal in the group.
+            lits: Vec<(Vec<u8>, Vec<usize>)>,
+            // Per-literal DFAs, built ONLY when the combined build failed.
+            split: Vec<Option<(Vec<u32>, Vec<u32>, u32)>>,
+        }
+        let lower = |pats: &[&str]| {
+            build_regex_dfa_unanchored(pats, PER_RULE_MAX_MATCHES, PER_RULE_MAX_DFA_STATES)
+                .ok() // LAW10: lower failure ⇒ recall-preserving host/split path, surfaced below
+                .map(|p| (p.dfa.transitions, p.dfa.accept, p.dfa.state_count))
+        };
+        let groups: Vec<GroupBuilt> = if unique_lits.is_empty() {
+            Vec::new()
+        } else {
+            unique_lits
+                .par_chunks(per_group)
+                .map(|chunk| {
+                    let pats: Vec<&str> = chunk.iter().map(|(esc, _, _)| *esc).collect();
+                    let combined = lower(&pats);
+                    let lits: Vec<(Vec<u8>, Vec<usize>)> = chunk
+                        .iter()
+                        .map(|(_, raw, anchors)| (raw.clone(), anchors.clone()))
+                        .collect();
+                    let split = if combined.is_some() {
+                        Vec::new()
+                    } else {
+                        chunk.iter().map(|(esc, _, _)| lower(std::slice::from_ref(esc))).collect()
+                    };
+                    GroupBuilt { combined, lits, split }
+                })
+                .collect()
+        };
+        // Regex (non-literal) rules: one DFA each, no byte-check.
+        let regex_built: Vec<(Option<(Vec<u32>, Vec<u32>, u32)>, usize)> = regex_rules
             .par_iter()
-            .map(|(regex, detector)| {
-                let lowered = build_regex_dfa_unanchored(
-                    std::slice::from_ref(&regex.as_str()),
-                    PER_RULE_MAX_MATCHES,
-                    PER_RULE_MAX_DFA_STATES,
-                )
-                .ok() // LAW10: GPU lower/acquire failure => host path (recall-preserving, counted host_lower_failed + surfaced via tracing::info/last_gpu_degrade_reason)
-                .map(|pipe| (pipe.dfa.transitions, pipe.dfa.accept, pipe.dfa.state_count));
-                (lowered, *detector)
-            })
+            .map(|(esc, detector)| (lower(std::slice::from_ref(esc)), *detector))
             .collect();
 
-        let mut rules = Vec::new();
+        // 4. Assemble (sequential ⇒ deterministic rule_idx). A grouped rule carries a
+        //    non-empty `group_literals[rule]` (byte-check disambiguation); a single /
+        //    regex rule has an EMPTY entry (hit fans straight to rule_to_detectors,
+        //    validate filters). Every anchor lands in exactly one rule's
+        //    rule_to_detectors (the coverage invariant).
+        let mut rules: Vec<BatchRuleProgram> = Vec::new();
         let mut rule_to_detectors: Vec<Vec<usize>> = Vec::new();
+        let mut group_literals: Vec<Vec<(Vec<u8>, Vec<usize>)>> = Vec::new();
         let mut host_detectors = Vec::new();
         let mut host_lower_failed = 0usize; // DFA build / BatchRuleProgram failure
-        // DEDUP identical literal anchors. Many anchors share a literal string
-        // (`key`, `akia`, …): the live catalog has 1643 UNIQUE literals across 3124
-        // anchors. The kernel cost is ~linear in rule_count × bytes, so building ONE
-        // GPU rule per unique literal that FANS OUT to every anchor sharing it
-        // ~halves the dispatch. Lossless: a hit on the shared literal is validated
-        // against each fanned anchor's own full regex — the exact firing set the
-        // per-anchor rules produced, just without scanning the same literal twice.
-        // `built[i]` is in lockstep with `patterns[i]` (parallel map preserves order).
-        use std::collections::HashMap;
-        let mut literal_to_rule: HashMap<&str, usize> = HashMap::new();
-        for ((pattern, _), (lowered, detector)) in patterns.iter().zip(built) {
-            match lowered {
-                Some((transitions, accept, state_count)) => {
-                    if let Some(&rule_idx) = literal_to_rule.get(pattern.as_str()) {
-                        // Identical literal already lowered — fan this anchor onto
-                        // its existing rule, no duplicate DFA in the catalog.
-                        rule_to_detectors[rule_idx].push(detector);
-                        continue;
-                    }
-                    match BatchRuleProgram::new(
-                        rules.len() as u32,
-                        transitions,
-                        accept,
-                        state_count,
-                    ) {
+        // Law 10: a DFA that lowered but fails BatchRuleProgram shape validation, or
+        // that never lowered, routes its anchors to the loud host path — never
+        // dropped. Host runs that set anyway, so the cost is a rounding error.
+        let to_host = |anchors: Vec<usize>, host: &mut Vec<usize>, failed: &mut usize| {
+            *failed += anchors.len();
+            host.extend(anchors);
+        };
+        for GroupBuilt { combined, lits, split } in groups {
+            match combined {
+                Some((t, a, sc)) => {
+                    let anchors: Vec<usize> =
+                        lits.iter().flat_map(|(_, an)| an.iter().copied()).collect();
+                    match BatchRuleProgram::new(rules.len() as u32, t, a, sc) {
                         Ok(rule) => {
-                            literal_to_rule.insert(pattern.as_str(), rules.len());
                             rules.push(rule);
-                            rule_to_detectors.push(vec![detector]);
+                            rule_to_detectors.push(anchors);
+                            group_literals.push(lits);
                         }
-                        // Law 10: recall-safe — a BatchRuleProgram build failure does
-                        // NOT drop the anchor; it is pushed onto host_detectors and
-                        // runs on the host fallback engine instead (same as the `None`
-                        // arm below). The GPU batch is a faster path for the same
-                        // detector set, never the only path.
-                        Err(_error) => {
-                            // Law 10: DFA-lower failure ⇒ anchor runs on the loud host fallback path (recall preserved, same detector set), counted in host_lower_failed and surfaced via the tracing::info "un-lowerable" log (or tracing::error if all fail); host runs that set anyway, so the speed cost is a rounding error.
-                            host_detectors.push(detector);
-                            host_lower_failed += 1;
+                        Err(_error) => to_host(anchors, &mut host_detectors, &mut host_lower_failed),
+                    }
+                }
+                // Combined DFA didn't lower: one rule per literal (or host).
+                None => {
+                    for ((raw, anchors), dfa) in lits.into_iter().zip(split) {
+                        match dfa {
+                            Some((t, a, sc)) => {
+                                match BatchRuleProgram::new(rules.len() as u32, t, a, sc) {
+                                    Ok(rule) => {
+                                        rules.push(rule);
+                                        rule_to_detectors.push(anchors.clone());
+                                        group_literals.push(vec![(raw, anchors)]);
+                                    }
+                                    Err(_error) => {
+                                        to_host(anchors, &mut host_detectors, &mut host_lower_failed)
+                                    }
+                                }
+                            }
+                            None => to_host(anchors, &mut host_detectors, &mut host_lower_failed),
                         }
                     }
                 }
+            }
+        }
+        for (dfa, detector) in regex_built {
+            match dfa {
+                Some((t, a, sc)) => match BatchRuleProgram::new(rules.len() as u32, t, a, sc) {
+                    Ok(rule) => {
+                        rules.push(rule);
+                        rule_to_detectors.push(vec![detector]);
+                        group_literals.push(Vec::new());
+                    }
+                    Err(_error) => {
+                        host_detectors.push(detector);
+                        host_lower_failed += 1;
+                    }
+                },
                 None => {
                     host_detectors.push(detector);
                     host_lower_failed += 1;
@@ -192,9 +347,14 @@ impl MegakernelCatalog {
             // cheap as the catalog grows (e.g. absorbing the fallback anchors).
             let unique_patterns: std::collections::HashSet<&str> =
                 patterns.iter().map(|(p, _)| p.as_str()).collect();
+            let grouped_rules = group_literals.iter().filter(|g| !g.is_empty()).count();
+            let grouped_lits: usize = group_literals.iter().map(Vec::len).sum();
             eprintln!(
-                "KH_PERF megakernel classify: gpu={} unique_patterns={}/{} | host: lower_failed={host_lower_failed}",
+                "KH_PERF megakernel classify: gpu_rules={} (grouped={} carrying {} literals, target_groups={}) unique_patterns={}/{} | host: lower_failed={host_lower_failed}",
                 rules.len(),
+                grouped_rules,
+                grouped_lits,
+                GPU_LITERAL_RULE_GROUPS,
                 unique_patterns.len(),
                 patterns.len(),
             );
@@ -226,6 +386,7 @@ impl MegakernelCatalog {
                 rules.len(),
             );
             host_detectors.extend(rule_to_detectors.drain(..).flatten());
+            group_literals.clear();
             rules.clear();
         }
         if std::env::var_os("KH_PERF").is_some() {
@@ -262,6 +423,7 @@ impl MegakernelCatalog {
         Self {
             rules,
             rule_to_detectors,
+            group_literals,
             host_detectors,
             dispatcher: std::sync::Mutex::new(None),
             resident_batch: std::sync::Mutex::new(None),
@@ -482,26 +644,46 @@ impl MegakernelCatalog {
             ));
         }
 
-        Ok(hits
-            .iter()
-            .flat_map(|h| {
-                // One GPU rule may be a deduplicated literal shared by several
-                // anchors — fan the hit out to EVERY anchor on it (each is
-                // re-confirmed against its own regex in validate), so dedup never
-                // drops an anchor's firing.
-                let file_index = h.file_idx as usize;
-                let match_offset = h.match_offset as usize;
-                self.rule_to_detectors
-                    .get(h.rule_idx as usize)
-                    .into_iter()
-                    .flatten()
-                    .map(move |&detector| Firing {
-                        file_index,
-                        detector,
-                        match_offset,
-                    })
-            })
-            .collect())
+        let mut firings: Vec<Firing> = Vec::with_capacity(hits.len());
+        for h in &hits {
+            let file_index = h.file_idx as usize;
+            let match_offset = h.match_offset as usize;
+            let rule_idx = h.rule_idx as usize;
+            match self.group_literals.get(rule_idx) {
+                // GROUPED rule: the combined DFA matched SOME literal in the group
+                // ENDING at `match_offset`, but can't say which. Byte-check each group
+                // literal against the scanned bytes — it must end exactly at
+                // `match_offset` — and fan ONLY to the anchors of the literal(s) that
+                // actually matched. The bytes are what the GPU scanned, so a hit
+                // implies at least one literal byte-matches; every fanned anchor is
+                // still re-confirmed against its own full regex in validate.
+                Some(lits) if !lits.is_empty() => {
+                    let bytes = batch_files.get(file_index).map(|f| f.bytes.as_slice());
+                    let end = match_offset.saturating_add(1);
+                    for (lit, anchors) in lits {
+                        let len = lit.len();
+                        if len == 0 || end < len {
+                            continue;
+                        }
+                        if bytes.and_then(|b| b.get(end - len..end)) == Some(lit.as_slice()) {
+                            for &detector in anchors {
+                                firings.push(Firing { file_index, detector, match_offset });
+                            }
+                        }
+                    }
+                }
+                // SINGLE / regex rule (empty disambiguation table): no fixed literal
+                // to byte-check — fan to every anchor on the rule (validate filters).
+                _ => {
+                    if let Some(dets) = self.rule_to_detectors.get(rule_idx) {
+                        for &detector in dets {
+                            firings.push(Firing { file_index, detector, match_offset });
+                        }
+                    }
+                }
+            }
+        }
+        Ok(firings)
     }
 }
 
@@ -648,6 +830,102 @@ mod tests {
             key_rule.contains(&2),
             "the deduped `key` rule must fan out to both anchors 0 and 2, got {key_rule:?}"
         );
+    }
+
+    /// `unescape_literal` must invert `regex::escape` on real token literals (so a
+    /// grouped rule's byte-check sees the exact bytes the GPU DFA matches) and reject
+    /// genuine regexes (so the non-UTF8 tail stays a single, un-byte-checked rule).
+    /// A wrong answer is a RECALL bug: a regex misread as a literal would byte-check
+    /// against the haystack and never fan its anchor.
+    #[test]
+    fn unescape_literal_roundtrips_and_rejects_regexes() {
+        // Round-trip: escape(lit) then unescape == lit, including metacharacter bytes
+        // that `regex::escape` backslash-protects (`.`, `+`, `-`).
+        for lit in [
+            "ghp_", "AKIA", "xoxb-", "glpat-", "sk-ant-api03", "tok_123", "v1/secret",
+            "key.value", "a+b", "name@host",
+        ] {
+            let escaped = regex::escape(lit);
+            assert_eq!(
+                unescape_literal(&escaped).as_deref(),
+                Some(lit.as_bytes()),
+                "escape→unescape must reproduce the literal {lit:?} (escaped {escaped:?})"
+            );
+        }
+        // Genuine regexes (bare metacharacters) must classify as NON-literal so they
+        // are kept as a single rule, never grouped + byte-checked.
+        for rx in [
+            "ghp_[A-Za-z0-9]{36}",
+            r"AIza[\w-]{35}",
+            r"(\w+)\s+\1",
+            "a|b",
+            "ab+",
+        ] {
+            assert_eq!(
+                unescape_literal(rx),
+                None,
+                "regex {rx:?} must NOT be misclassified as an escaped literal"
+            );
+        }
+    }
+
+    /// Many distinct literals must PACK into at most `GPU_LITERAL_RULE_GROUPS`
+    /// combined rules (the dispatch lever) while every anchor stays covered exactly
+    /// once and each literal maps — in `group_literals` — to its own anchor with the
+    /// exact bytes the GPU will byte-check. This pins the grouping contract that the
+    /// 8 MiB GPU win depends on.
+    #[test]
+    fn many_literals_pack_into_bounded_groups_covering_all_anchors() {
+        const N: usize = 200;
+        // Distinct pure-literal patterns (no metacharacters ⇒ all groupable), anchor
+        // i ↦ literal `tok{i:03}`.
+        let patterns: Vec<(String, usize)> =
+            (0..N).map(|i| (format!("tok{i:03}"), i)).collect();
+        let catalog = MegakernelCatalog::build(&patterns);
+
+        // Grouped: far fewer rules than literals, bounded by the group target.
+        assert!(
+            catalog.rule_count() <= GPU_LITERAL_RULE_GROUPS,
+            "200 literals must pack into ≤{} rules, got {}",
+            GPU_LITERAL_RULE_GROUPS,
+            catalog.rule_count()
+        );
+        assert!(
+            catalog.rule_count() < N,
+            "grouping did not happen: {} rules for {N} literals",
+            catalog.rule_count()
+        );
+        assert!(catalog.host_detectors().is_empty(), "no literal should fall to host");
+
+        // Every anchor covered exactly once via rule_to_detectors.
+        let mut covered: Vec<usize> =
+            catalog.rule_to_detectors.iter().flatten().copied().collect();
+        covered.sort_unstable();
+        assert_eq!(covered, (0..N).collect::<Vec<_>>(), "anchor coverage gap/dup");
+
+        // Every rule carries a non-empty byte-check table (all rules here are grouped
+        // literals), and rule_to_detectors[r] == the union of that rule's group anchors.
+        for (r, lits) in catalog.group_literals.iter().enumerate() {
+            assert!(!lits.is_empty(), "grouped rule {r} has an empty disambiguation table");
+            let mut from_lits: Vec<usize> =
+                lits.iter().flat_map(|(_, a)| a.iter().copied()).collect();
+            from_lits.sort_unstable();
+            let mut from_rtd = catalog.rule_to_detectors[r].clone();
+            from_rtd.sort_unstable();
+            assert_eq!(from_lits, from_rtd, "rule {r}: group_literals anchors != rule_to_detectors");
+        }
+
+        // Each literal maps to its own anchor with the exact lowercased bytes.
+        let mut seen = std::collections::BTreeSet::new();
+        for lits in &catalog.group_literals {
+            for (lit, anchors) in lits {
+                assert_eq!(anchors.len(), 1, "each distinct test literal has exactly one anchor");
+                let anchor = anchors[0];
+                assert_eq!(lit, format!("tok{anchor:03}").as_bytes(), "literal↔anchor mismatch");
+                assert!(seen.insert(anchor), "anchor {anchor} appears in two groups");
+            }
+        }
+        assert_eq!(seen.len(), N, "every literal must appear in exactly one group");
     }
 
     /// `choose_seg_len` must split a large batch into a saturating number of
