@@ -319,6 +319,22 @@ function Verify-LocalChecksum {
     return $false
 }
 
+function Clear-MarkOfTheWeb {
+    param([string]$Path)
+    $unblock = Get-Command Unblock-File -ErrorAction SilentlyContinue
+    if (-not $unblock) {
+        Warn "Could not remove Windows Mark-of-the-Web because Unblock-File is unavailable."
+        Warn "If SmartScreen prompts on first run, verify the SHA256 above before allowing keyhog.exe."
+        return
+    }
+    try {
+        Unblock-File -Path $Path -ErrorAction Stop
+    } catch {
+        Warn "Could not remove Windows Mark-of-the-Web from $Path: $($_.Exception.Message)"
+        Warn "If SmartScreen prompts on first run, verify the SHA256 above before allowing keyhog.exe."
+    }
+}
+
 function Get-AutorouteCachePathForInstall {
     $raw = [Environment]::GetEnvironmentVariable('KEYHOG_AUTOROUTE_CACHE')
     if ($null -ne $raw) {
@@ -968,6 +984,7 @@ function Stage-Install {
     }
     try {
         Move-Item -Force $tmp $dest
+        Clear-MarkOfTheWeb -Path $dest
     } catch {
         Err "Could not write $dest (file in use or directory not writable?): $_"
         if ($Script:InstallBackup) { Remove-Item -Force $Script:InstallBackup -ErrorAction SilentlyContinue; $Script:InstallBackup = $null }
