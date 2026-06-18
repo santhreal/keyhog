@@ -1,6 +1,6 @@
 //! `keyhog watch <path>` - daemon mode.
 //!
-//! Tier-B moat innovation #7 from audits/legendary-2026-04-26: compile-once,
+//! Tier-B moat innovation #7 from docs/EXECUTION_PLAN.md: compile-once,
 //! scan-many. The detector corpus + Hyperscan database are built ONCE at
 //! startup; subsequent scans on a saved file run in O(file_size) without
 //! the ~50-100 ms compile overhead a fresh `keyhog scan` invocation pays.
@@ -9,8 +9,8 @@
 //!   1. Compile a `CompiledScanner` once.
 //!   2. Walk the path with `notify::recommended_watcher` (inotify on Linux,
 //!      FSEvents on macOS, ReadDirectoryChangesW on Windows).
-//!   3. On `Modify` or `Create` events: read the file, build a Chunk, call
-//!      `scanner.scan(&chunk)`, print findings to stdout.
+//!   3. On `Modify` or `Create` events: read the file, build a Chunk, select
+//!      the persisted calibrated backend, scan, and print findings to stdout.
 //!   4. Block on the channel forever; Ctrl-C exits cleanly.
 //!
 //! No batching, no orchestrator: a single saved file is the natural scan
@@ -50,8 +50,10 @@ pub fn run(args: WatchArgs) -> Result<()> {
 
     let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
     let detector_count = detectors.len();
-    let scanner = CompiledScanner::compile(detectors)
+    let scanner = CompiledScanner::compile(detectors.clone())
         .map_err(|e| anyhow::anyhow!("scanner compile failed: {e:?}"))?;
+    let router =
+        crate::orchestrator::cached_autoroute_router_for_default_config(&scanner, &detectors);
 
     if !args.quiet {
         eprintln!(
@@ -69,7 +71,7 @@ pub fn run(args: WatchArgs) -> Result<()> {
     // requires us to keep the handle alive; dropping it stops the watcher.
     let mut watcher = notify::recommended_watcher(move |res| {
         // notify hands events on its own thread; forward to the main loop.
-        let _ = tx.send(res);
+        let _ = tx.send(res); // LAW10: unused-binding marker; no runtime effect, not a fallback
     })
     .map_err(|e| anyhow::anyhow!("failed to build filesystem watcher: {e}"))?;
 
@@ -86,7 +88,21 @@ pub fn run(args: WatchArgs) -> Result<()> {
         let event = match event {
             Ok(e) => e,
             Err(e) => {
-                tracing::warn!("watcher error: {e}");
+                // Law 10: a watcher error is a DROPPED filesystem event — a save
+                // the watcher never told us about means that file went unscanned
+                // (a recall loss). On Linux an inotify queue overflow
+                // (`Error::Generic` / ENOSPC under heavy churn) is the common
+                // case: events are coalesced/lost and the daemon's recall silently
+                // degrades. A `tracing::warn!` here is invisible without RUST_LOG,
+                // so surface it LOUDLY on stderr and tell the operator what to do.
+                eprintln!(
+                    "⚠ keyhog watch: filesystem watcher error ({e}); one or more change \
+                     events were DROPPED and those files were NOT re-scanned. \
+                     If this recurs under heavy file churn, raise \
+                     fs.inotify.max_queued_events or run `keyhog scan {}` for a \
+                     full one-shot rescan.",
+                    watch_root.display()
+                );
                 continue;
             }
         };
@@ -101,7 +117,7 @@ pub fn run(args: WatchArgs) -> Result<()> {
             if path.is_dir() || should_skip(&path) {
                 continue;
             }
-            scan_file(&scanner, &path, &mut recently_scanned);
+            scan_file(&scanner, &router, &path, &mut recently_scanned);
         }
     }
     Ok(())
@@ -122,6 +138,7 @@ fn content_hash(data: &str) -> u64 {
 
 fn scan_file(
     scanner: &CompiledScanner,
+    router: &crate::orchestrator::CachedBackendRouter,
     path: &std::path::Path,
     recently_scanned: &mut HashMap<PathBuf, (Instant, u64)>,
 ) {
@@ -178,22 +195,33 @@ fn scan_file(
         metadata: ChunkMetadata {
             base_offset: 0,
             base_line: 0,
-            source_type: "filesystem/watch".into(),
+            source_type: "filesystem".into(),
             path: Some(path.display().to_string()),
             commit: None,
             author: None,
             date: None,
             mtime_ns: None,
             size_bytes: None,
-            decoded_span: None,        },
+            decoded_span: None,
+        },
     };
-    let matches = scanner.scan(&chunk);
+    let backend = match router.choose(
+        crate::orchestrator::explicit_backend_override(),
+        std::slice::from_ref(&chunk),
+    ) {
+        Ok(backend) => backend,
+        Err(error) => {
+            eprintln!("✗ keyhog watch: {error}");
+            return;
+        }
+    };
+    let matches = scanner.scan_with_backend(&chunk, backend);
     for m in matches {
-        let line = m.location.line.map(|l| format!(":{l}")).unwrap_or_default();
+        let line = m.location.line.map(|l| format!(":{l}")).unwrap_or_default(); // LAW10: missing/non-string field => empty/placeholder; recall-safe
         let conf = m
             .confidence
             .map(|c| format!(" ({:.2})", c))
-            .unwrap_or_default();
+            .unwrap_or_default(); // LAW10: missing/non-string field => empty/placeholder; recall-safe
         println!(
             "\u{1F50D} {} {}{} {:?}{}  {}",
             m.detector_id,

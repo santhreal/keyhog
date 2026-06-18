@@ -1,4 +1,4 @@
-use keyhog::subcommands::scan_system::{FindingSink, MAX_RESIDENT_FINDINGS};
+use keyhog::subcommands::scan_system::testing::{FindingSink, MAX_RESIDENT_FINDINGS};
 use keyhog_core::{MatchLocation, RawMatch, Severity};
 use std::sync::Arc;
 
@@ -105,6 +105,32 @@ fn skipped_chunks_start_at_zero_and_accumulate() {
     // Skips are tracked independently of findings: a scan can drop chunks AND
     // still surface findings, and both counts must be honest.
     sink.absorb(vec![raw_match(1)]);
-    assert_eq!(sink.total(), 1, "findings count is unaffected by skip tracking");
-    assert_eq!(sink.skipped_chunks(), 5, "skip count is unaffected by findings");
+    assert_eq!(
+        sink.total(),
+        1,
+        "findings count is unaffected by skip tracking"
+    );
+    assert_eq!(
+        sink.skipped_chunks(),
+        5,
+        "skip count is unaffected by findings"
+    );
+}
+
+#[test]
+fn git_repo_discovery_does_not_flatten_read_dir_errors() {
+    let src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/subcommands/scan_system.rs"
+    ))
+    .expect("scan-system source readable");
+    assert!(
+        !src.contains("entries.flatten()"),
+        "scan-system repo discovery must match read_dir entry errors explicitly so skipped subtrees are logged"
+    );
+    assert!(
+        src.contains("cannot read directory entry while discovering git repositories")
+            && src.contains("cannot read directory while discovering git repositories"),
+        "scan-system repo discovery must warn for per-entry and whole-directory read failures"
+    );
 }

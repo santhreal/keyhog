@@ -37,8 +37,7 @@ use std::sync::Arc;
 /// resident set at this ceiling so memory is bounded independent of corpus
 /// secret-density. Beyond the cap we stop retaining findings but keep counting
 /// them, so the exit-code contract (0 = clean, 1 = findings) still holds.
-#[doc(hidden)]
-pub const MAX_RESIDENT_FINDINGS: usize = 1_000_000;
+const MAX_RESIDENT_FINDINGS: usize = 1_000_000;
 
 /// Bounded collector for system-scan findings.
 ///
@@ -47,8 +46,7 @@ pub const MAX_RESIDENT_FINDINGS: usize = 1_000_000;
 /// the total count seen even after the cap is hit. Conversion happens per
 /// chunk in `scan_mount`/`scan_git_history`, so raw matches are dropped as
 /// soon as they are produced rather than accumulated.
-#[doc(hidden)]
-pub struct FindingSink {
+struct FindingSink {
     redacted: Vec<keyhog_core::RedactedFinding>,
     total: u64,
     cap: usize,
@@ -62,13 +60,11 @@ pub struct FindingSink {
 }
 
 impl FindingSink {
-    #[doc(hidden)]
-    pub fn new() -> Self {
+    fn new() -> Self {
         Self::with_cap(MAX_RESIDENT_FINDINGS)
     }
 
-    #[doc(hidden)]
-    pub fn with_cap(cap: usize) -> Self {
+    fn with_cap(cap: usize) -> Self {
         Self {
             redacted: Vec::new(),
             total: 0,
@@ -81,22 +77,19 @@ impl FindingSink {
     /// Record that a source chunk could not be read and was dropped from the
     /// scan. The count is surfaced in the final summary so the recall loss is
     /// visible (Law 10) instead of a silent `Err(_) => continue`.
-    #[doc(hidden)]
-    pub fn record_skipped_chunk(&mut self) {
+    fn record_skipped_chunk(&mut self) {
         self.skipped_chunks += 1;
     }
 
     /// Number of source chunks dropped due to read errors (unscanned bytes).
-    #[doc(hidden)]
-    pub fn skipped_chunks(&self) -> u64 {
+    fn skipped_chunks(&self) -> u64 {
         self.skipped_chunks
     }
 
     /// Convert and absorb a chunk's worth of raw matches, dropping the raw
     /// (plaintext-bearing) matches immediately. Retains up to the resident
     /// cap; counts everything.
-    #[doc(hidden)]
-    pub fn absorb(&mut self, matches: Vec<keyhog_core::RawMatch>) {
+    fn absorb(&mut self, matches: Vec<keyhog_core::RawMatch>) {
         for m in &matches {
             self.total += 1;
             if self.redacted.len() < self.cap {
@@ -113,41 +106,97 @@ impl FindingSink {
         // `matches` (the plaintext-bearing RawMatch Vec) is dropped here.
     }
 
-    #[doc(hidden)]
-    pub fn is_empty(&self) -> bool {
+    fn is_empty(&self) -> bool {
         self.total == 0
     }
 
-    #[doc(hidden)]
-    pub fn total(&self) -> u64 {
+    fn total(&self) -> u64 {
         self.total
     }
 
-    #[doc(hidden)]
-    pub fn retained_len(&self) -> usize {
+    fn retained_len(&self) -> usize {
         self.redacted.len()
     }
 
-    #[doc(hidden)]
-    pub fn cap(&self) -> usize {
+    fn cap(&self) -> usize {
         self.cap
     }
 
-    #[doc(hidden)]
-    pub fn capped_warned(&self) -> bool {
+    fn capped_warned(&self) -> bool {
         self.capped_warned
     }
 
-    #[doc(hidden)]
-    pub fn retained_hash(&self, index: usize) -> Option<[u8; 32]> {
+    fn retained_hash(&self, index: usize) -> Option<[u8; 32]> {
         self.redacted
             .get(index)
             .map(|finding| finding.credential_hash)
     }
 
-    #[doc(hidden)]
-    pub fn retained_json(&self) -> Result<String, serde_json::Error> {
+    fn retained_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(&self.redacted)
+    }
+}
+
+#[doc(hidden)]
+pub mod testing {
+    pub const MAX_RESIDENT_FINDINGS: usize = super::MAX_RESIDENT_FINDINGS;
+
+    pub struct FindingSink {
+        inner: super::FindingSink,
+    }
+
+    impl FindingSink {
+        pub fn new() -> Self {
+            Self {
+                inner: super::FindingSink::new(),
+            }
+        }
+
+        pub fn with_cap(cap: usize) -> Self {
+            Self {
+                inner: super::FindingSink::with_cap(cap),
+            }
+        }
+
+        pub fn record_skipped_chunk(&mut self) {
+            self.inner.record_skipped_chunk();
+        }
+
+        pub fn skipped_chunks(&self) -> u64 {
+            self.inner.skipped_chunks()
+        }
+
+        pub fn absorb(&mut self, matches: Vec<keyhog_core::RawMatch>) {
+            self.inner.absorb(matches);
+        }
+
+        pub fn is_empty(&self) -> bool {
+            self.inner.is_empty()
+        }
+
+        pub fn total(&self) -> u64 {
+            self.inner.total()
+        }
+
+        pub fn retained_len(&self) -> usize {
+            self.inner.retained_len()
+        }
+
+        pub fn cap(&self) -> usize {
+            self.inner.cap()
+        }
+
+        pub fn capped_warned(&self) -> bool {
+            self.inner.capped_warned()
+        }
+
+        pub fn retained_hash(&self, index: usize) -> Option<[u8; 32]> {
+            self.inner.retained_hash(index)
+        }
+
+        pub fn retained_json(&self) -> Result<String, serde_json::Error> {
+            self.inner.retained_json()
+        }
     }
 }
 
@@ -177,26 +226,22 @@ pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
         if args.no_git_history { "no" } else { "yes" },
     );
 
-    // Apply lockdown protections at scan-system entry too - the main
-    // `scan` orchestrator's lockdown gate doesn't run for this subcommand.
-    if args.lockdown {
-        let lockdown = keyhog_core::hardening::apply_lockdown_protections();
-        if !lockdown.failures.is_empty() {
-            anyhow::bail!(
-                "lockdown mode requested but protections failed to apply: {:?}",
-                lockdown.failures
-            );
-        }
-        eprintln!("🔒 LOCKDOWN MODE: coredump-blocked, mlocked, network mounts refused");
-    }
-
     // Always-on hardening: every scan-system run disables core dumps and
-    // ptrace, even outside lockdown mode. Cost is zero and the use case
-    // (triage on a fresh machine) is exactly when an attacker pivoting
-    // through a debugger would harvest the most.
-    let report = keyhog_core::hardening::apply_default_protections();
-    if !report.failures.is_empty() {
+    // ptrace, even outside lockdown mode. `--lockdown` applies the stronger
+    // tier here because the main `scan` orchestrator gate does not run for
+    // this subcommand.
+    let report = keyhog_core::hardening::apply_protections(args.lockdown);
+    if args.lockdown && !report.failures.is_empty() {
+        anyhow::bail!(
+            "lockdown mode requested but protections failed to apply: {:?}",
+            report.failures
+        );
+    }
+    if !args.lockdown && !report.failures.is_empty() {
         eprintln!("⚠ hardening warnings: {:?}", report.failures);
+    }
+    if args.lockdown {
+        eprintln!("🔒 LOCKDOWN MODE: coredump-blocked, mlocked, network mounts refused");
     }
     eprintln!(
         "🔒 core_dumps={} ptrace={} (always-on protections applied)",
@@ -211,9 +256,11 @@ pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     let detectors = crate::orchestrator_config::load_detectors_or_embedded(&args.detectors)?;
     eprintln!("📋 loaded {} detectors", detectors.len());
     let scanner = Arc::new(
-        CompiledScanner::compile(detectors)
+        CompiledScanner::compile(detectors.clone())
             .map_err(|e| anyhow::anyhow!("scanner compile failed: {e:?}"))?,
     );
+    let router =
+        crate::orchestrator::cached_autoroute_router_for_default_config(&scanner, &detectors);
     // System-wide scan touches every mounted drive and every git history:
     // detector regexes compile lazily on first use, so warm them all up
     // front (in parallel) rather than stalling the first file that hits each
@@ -256,7 +303,15 @@ pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
             break;
         }
         eprintln!("→ walking {}", mount.display());
-        scan_mount(&scanner, mount, &args, &bytes_scanned, space_cap, &mut sink);
+        scan_mount(
+            &scanner,
+            &router,
+            mount,
+            &args,
+            &bytes_scanned,
+            space_cap,
+            &mut sink,
+        )?;
     }
 
     // Then walk every git history.
@@ -267,7 +322,14 @@ pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
                 break;
             }
             eprintln!("→ git history: {}", repo.display());
-            scan_git_history(&scanner, repo, &bytes_scanned, space_cap, &mut sink);
+            scan_git_history(
+                &scanner,
+                &router,
+                repo,
+                &bytes_scanned,
+                space_cap,
+                &mut sink,
+            )?;
         }
     }
 
@@ -302,8 +364,8 @@ pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
             println!(
                 "🔍 {} {}{} {:?}  {}",
                 m.detector_id,
-                m.location.file_path.as_deref().unwrap_or("<no-path>"),
-                m.location.line.map(|l| format!(":{l}")).unwrap_or_default(),
+                m.location.file_path.as_deref().unwrap_or("<no-path>"), // LAW10: absent path/field => display placeholder for REPORTING only; finding still emitted, recall-safe
+                m.location.line.map(|l| format!(":{l}")).unwrap_or_default(), // LAW10: missing/non-string field => empty/placeholder; recall-safe
                 m.severity,
                 m.credential_redacted
             );
@@ -377,15 +439,46 @@ fn discover_git_repos(root: &Path, out: &mut Vec<PathBuf>, _space_cap: u64) {
                 continue;
             }
         }
-        if let Ok(entries) = fs::read_dir(&dir) {
-            for entry in entries.flatten() {
-                if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                    if let Ok(canon) = fs::canonicalize(entry.path()) {
-                        if !visited.contains(&canon) {
-                            stack.push(canon);
+        match fs::read_dir(&dir) {
+            Ok(entries) => {
+                for entry in entries {
+                    let entry = match entry {
+                        Ok(entry) => entry,
+                        Err(error) => {
+                            tracing::warn!(
+                                dir = %dir.display(),
+                                %error,
+                                "cannot read directory entry while discovering git repositories; skipping entry"
+                            );
+                            continue;
+                        }
+                    };
+                    let file_type = match entry.file_type() {
+                        Ok(file_type) => file_type,
+                        Err(error) => {
+                            tracing::warn!(
+                                path = %entry.path().display(),
+                                %error,
+                                "cannot read directory entry type while discovering git repositories; skipping entry"
+                            );
+                            continue;
+                        }
+                    };
+                    if file_type.is_dir() {
+                        if let Ok(canon) = fs::canonicalize(entry.path()) {
+                            if !visited.contains(&canon) {
+                                stack.push(canon);
+                            }
                         }
                     }
                 }
+            }
+            Err(error) => {
+                tracing::warn!(
+                    dir = %dir.display(),
+                    %error,
+                    "cannot read directory while discovering git repositories; skipping subtree"
+                );
             }
         }
     }
@@ -393,12 +486,13 @@ fn discover_git_repos(root: &Path, out: &mut Vec<PathBuf>, _space_cap: u64) {
 
 fn scan_mount(
     scanner: &CompiledScanner,
+    router: &crate::orchestrator::CachedBackendRouter,
     root: &Path,
     args: &ScanSystemArgs,
     bytes_scanned: &AtomicU64,
     space_cap: u64,
     out: &mut FindingSink,
-) {
+) -> Result<()> {
     use keyhog_core::Source;
     use keyhog_sources::FilesystemSource;
 
@@ -409,39 +503,50 @@ fn scan_mount(
         FilesystemSource::new(root.to_path_buf()).with_respect_gitignore(args.respect_gitignore);
     for chunk_result in source.chunks() {
         if bytes_scanned.load(Ordering::Relaxed) >= space_cap {
-            return;
+            return Ok(());
         }
         let chunk = match chunk_result {
             Ok(c) => c,
             // Law 10: an unreadable chunk is unscanned bytes. Count it (surfaced
             // in the final summary) rather than silently dropping a slice of the
             // filesystem from the audit.
-            Err(_) => {
+            Err(error) => {
+                tracing::warn!(
+                    root = %root.display(),
+                    %error,
+                    "source chunk could not be read during system scan; counted as skipped"
+                );
                 out.record_skipped_chunk();
                 continue;
             }
         };
         bytes_scanned.fetch_add(chunk.data.len() as u64, Ordering::Relaxed);
+        let backend = router.choose(
+            crate::orchestrator::explicit_backend_override(),
+            std::slice::from_ref(&chunk),
+        )?;
         // Convert + drop raw matches per chunk so plaintext-bearing RawMatch
         // entries are never accumulated (audit: memory).
-        out.absorb(scanner.scan(&chunk));
+        out.absorb(scanner.scan_with_backend(&chunk, backend));
     }
+    Ok(())
 }
 
 fn scan_git_history(
     scanner: &CompiledScanner,
+    router: &crate::orchestrator::CachedBackendRouter,
     repo: &Path,
     bytes_scanned: &AtomicU64,
     space_cap: u64,
     out: &mut FindingSink,
-) {
+) -> Result<()> {
     #[cfg(feature = "git")]
     {
         use keyhog_core::Source;
         let source = keyhog_sources::GitSource::new(repo.to_path_buf());
         for chunk_result in source.chunks() {
             if bytes_scanned.load(Ordering::Relaxed) >= space_cap {
-                return;
+                return Ok(());
             }
             let chunk = match chunk_result {
                 Ok(c) => c,
@@ -449,19 +554,43 @@ fn scan_git_history(
                 // of history from the audit. Count it (surfaced in the summary)
                 // so a silently-failed repo is not indistinguishable from a clean
                 // one.
-                Err(_) => {
+                Err(error) => {
+                    tracing::warn!(
+                        repo = %repo.display(),
+                        %error,
+                        "git history chunk could not be read during system scan; counted as skipped"
+                    );
                     out.record_skipped_chunk();
                     continue;
                 }
             };
             bytes_scanned.fetch_add(chunk.data.len() as u64, Ordering::Relaxed);
+            let backend = router.choose(
+                crate::orchestrator::explicit_backend_override(),
+                std::slice::from_ref(&chunk),
+            )?;
             // Convert + drop raw matches per chunk (audit: memory).
-            out.absorb(scanner.scan(&chunk));
+            out.absorb(scanner.scan_with_backend(&chunk, backend));
         }
+        Ok(())
     }
     #[cfg(not(feature = "git"))]
     {
-        let _ = (scanner, repo, bytes_scanned, space_cap, out);
-        tracing::warn!("git history scan requires the `git` feature; skipping");
+        let _ = (scanner, router, bytes_scanned, space_cap); // LAW10: unused-binding marker; no runtime effect, not a fallback
+                                                             // Law 10: this binary was built WITHOUT the `git` feature, so the git
+                                                             // history of a discovered repo cannot be scanned — those commits are
+                                                             // unscanned bytes (a recall loss), not "nothing to do". The banner above
+                                                             // announced "git history: yes" and "discovered N git repo(s)", so a
+                                                             // silent `tracing::warn!` skip would let a partial audit look complete.
+                                                             // Surface it LOUDLY on stderr AND count it as a skipped chunk so the
+                                                             // final summary's "did NOT cover everything" warning fires.
+        eprintln!(
+            "⚠ keyhog scan-system: git history of {} was NOT scanned — this binary \
+             was built without the `git` feature. Reinstall with `git` (the default \
+             build) or pass `--no-git-history` to stop discovering repos you cannot scan.",
+            repo.display()
+        );
+        out.record_skipped_chunk();
+        Ok(())
     }
 }
