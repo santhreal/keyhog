@@ -768,7 +768,12 @@ cleanup_autoroute_calibration() {
     cleanup_docker_bin="$3"
     cleanup_docker_image="$4"
     cleanup_docker_ready="$5"
+    cleanup_probe_pid="$6"
 
+    if [ -n "$cleanup_probe_pid" ]; then
+        kill "$cleanup_probe_pid" >/dev/null 2>&1 || true
+        wait "$cleanup_probe_pid" 2>/dev/null || true
+    fi
     if [ -n "$cleanup_web_pid_file" ]; then
         stop_calibration_web_server "$cleanup_web_pid_file"
     fi
@@ -794,8 +799,9 @@ prime_autoroute_cache() {
     docker_bin=""
     docker_image=""
     docker_image_ready=0
-    trap 'cleanup_autoroute_calibration "$tmpdir" "$web_pid_file" "$docker_bin" "$docker_image" "$docker_image_ready"' EXIT
-    trap 'cleanup_autoroute_calibration "$tmpdir" "$web_pid_file" "$docker_bin" "$docker_image" "$docker_image_ready"; trap - EXIT INT TERM; exit 130' INT TERM
+    calibration_probe_pid=""
+    trap 'cleanup_autoroute_calibration "$tmpdir" "$web_pid_file" "$docker_bin" "$docker_image" "$docker_image_ready" "$calibration_probe_pid"' EXIT
+    trap 'cleanup_autoroute_calibration "$tmpdir" "$web_pid_file" "$docker_bin" "$docker_image" "$docker_image_ready" "$calibration_probe_pid"; trap - EXIT INT TERM; exit 130' INT TERM
 
     say ""
     info "Autoroute calibration"
@@ -1044,12 +1050,13 @@ prime_autoroute_cache() {
         fi
     fi
 
-    cleanup_autoroute_calibration "$tmpdir" "$web_pid_file" "$docker_bin" "$docker_image" "$docker_image_ready"
+    cleanup_autoroute_calibration "$tmpdir" "$web_pid_file" "$docker_bin" "$docker_image" "$docker_image_ready" "$calibration_probe_pid"
     trap - EXIT INT TERM
     tmpdir=""
     web_pid_file=""
     docker_image=""
     docker_image_ready=0
+    calibration_probe_pid=""
     if [ "$failed" != "0" ]; then
         err "Autoroute calibration phase failed; persisted auto routing was not updated for every required workload."
         return 1
@@ -1099,43 +1106,44 @@ run_autoroute_scan_probe() {
     out="$6"
     errfile="$7"
     printf '  [%s/%s] %s ' "$idx" "$total" "$label"
-    (
-        case "$mode" in
-            path)
-                KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                    "$bin" scan "$probe" $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile"
-                ;;
-            stdin)
-                KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                    "$bin" scan --stdin $cfg_flag --format json -o "$out" < "$probe" >/dev/null 2>"$errfile"
-                ;;
-            git-history)
-                KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                    "$bin" scan --git-history "$probe" --max-commits 1 $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile"
-                ;;
-            git-blobs)
-                KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                    "$bin" scan --git-blobs "$probe" --max-commits 2 $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile"
-                ;;
-            git-diff)
-                KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                    "$bin" scan --git-diff HEAD --git-diff-path "$probe" $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile"
-                ;;
-            url)
-                KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                    "$bin" scan --url "$probe" $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile"
-                ;;
-            docker-image)
-                KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                    "$bin" scan --docker-image "$probe" $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile"
-                ;;
-            *)
+    case "$mode" in
+        path)
+            KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
+                "$bin" scan "$probe" $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile" &
+            ;;
+        stdin)
+            KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
+                "$bin" scan --stdin $cfg_flag --format json -o "$out" < "$probe" >/dev/null 2>"$errfile" &
+            ;;
+        git-history)
+            KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
+                "$bin" scan --git-history "$probe" --max-commits 1 $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile" &
+            ;;
+        git-blobs)
+            KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
+                "$bin" scan --git-blobs "$probe" --max-commits 2 $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile" &
+            ;;
+        git-diff)
+            KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
+                "$bin" scan --git-diff HEAD --git-diff-path "$probe" $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile" &
+            ;;
+        url)
+            KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
+                "$bin" scan --url "$probe" $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile" &
+            ;;
+        docker-image)
+            KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
+                "$bin" scan --docker-image "$probe" $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile" &
+            ;;
+        *)
+            (
                 printf 'unsupported autoroute calibration mode: %s\n' "$mode" > "$errfile"
                 exit 2
-                ;;
-        esac
-    ) &
+            ) &
+            ;;
+    esac
     pid=$!
+    calibration_probe_pid="$pid"
     spin='-\|/'
     n=0
     while kill -0 "$pid" 2>/dev/null; do
@@ -1145,9 +1153,11 @@ run_autoroute_scan_probe() {
         sleep 0.15
     done
     if wait "$pid"; then
+        calibration_probe_pid=""
         printf '\r  [%s/%s] %s OK\n' "$idx" "$total" "$label"
         return 0
     fi
+    calibration_probe_pid=""
     printf '\r  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
     # Surface the REAL reason, not a blind "FAILED" (Law 10). One line is
     # enough to tell a flag mismatch from a GPU/driver fault.

@@ -171,6 +171,34 @@ case "$1" in
 esac
 SH
 
+# Binary that reaches calibration, starts a scan, and then stays alive until the
+# installer signal trap terminates it. Used to prove calibration cleanup behavior
+# through the real install path instead of only grepping source shape.
+cat > "$FIX_DIR/fake_keyhog_slow_scan" <<'SH'
+#!/bin/sh
+case "$1" in
+  --version) echo "KeyHog v9.9.9 (mock)" ;;
+  doctor)    echo "mock doctor: healthy"; exit 0 ;;
+  scan)
+    case "${2:-}" in
+      --help) echo "Usage: keyhog scan [--no-config]"; exit 0 ;;
+      *) ;;
+    esac
+    mkdir -p "${MOCK_STATE_DIR:-/tmp}"
+    : > "${MOCK_STATE_DIR:-/tmp}/scan-started"
+    printf '%s\n' "$$" > "${MOCK_STATE_DIR:-/tmp}/scan-pid"
+    i=0
+    while :; do
+      i=$((i + 1))
+      [ "$i" -gt 1000000 ] && i=0
+    done
+    ;;
+  hook)      exit 0 ;;
+  completion) echo "# mock completion for ${2:-sh}" ;;
+  *) ;;
+esac
+SH
+
 # Binary whose --version fails (simulates a corrupt/wrong-arch download).
 cat > "$FIX_DIR/fake_keyhog_broken" <<'SH'
 #!/bin/sh
@@ -882,11 +910,12 @@ else
 fi
 if grep -q 'cleanup_autoroute_calibration()' install.sh \
    && grep -q "trap 'cleanup_autoroute_calibration" install.sh \
+   && grep -q 'INT TERM' install.sh \
    && grep -q 'exit 130' install.sh; then
     _record_pass "19.11 install.sh calibration has cleanup traps for exit and signal"
 else
     _record_fail "19.11 install.sh calibration has cleanup traps for exit and signal" \
-        "cleanup_autoroute_calibration trap/exit 130 missing"
+        "cleanup_autoroute_calibration EXIT/INT/TERM trap missing"
 fi
 if grep -q 'stop_calibration_web_server "$cleanup_web_pid_file"' install.sh; then
     _record_pass "19.12 install.sh calibration cleanup stops the loopback web server"
@@ -908,6 +937,63 @@ else
     _record_fail "19.14 install.sh calibration derives progress totals" \
         "hardcoded total=9 or missing workload-derived total loop"
 fi
+reset_mocks
+sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
+signal_state=$(mktemp -d -t kh-signal-state-XXXXXX)
+signal_tmp=$(mktemp -d -t kh-signal-tmp-XXXXXX)
+signal_out="$h/signal.out"
+env -i PATH="$sb/bin" HOME="$h" \
+    KEYHOG_INSTALL="$h/.local/bin" \
+    TMPDIR="$signal_tmp" \
+    MOCK_STATE_DIR="$signal_state" \
+    MOCK_RELEASES="$FIX_DIR/releases_normal.json" \
+    MOCK_ASSET="$FIX_DIR/fake_keyhog_slow_scan" \
+    MOCK_FALLBACK=404 \
+    MOCK_SHA=match \
+    MOCK_LDD=ok \
+    KEYHOG_VARIANT=auto \
+    KEYHOG_VERSION=v9.9.9 \
+    sh "$INSTALL_SH" --no-prompt --no-color >"$signal_out" 2>&1 &
+signal_pid=$!
+i=0
+while [ "$i" -lt 200 ]; do
+    [ -e "$signal_state/scan-started" ] && break
+    if ! kill -0 "$signal_pid" 2>/dev/null; then
+        break
+    fi
+    sleep 0.05
+    i=$((i + 1))
+done
+if [ -e "$signal_state/scan-started" ]; then
+    _record_pass "19.15 install.sh calibration signal test reaches a real scan"
+    kill -TERM "$signal_pid" >/dev/null 2>&1 || true
+    wait "$signal_pid"
+    signal_status=$?
+    expect_status "19.16 install.sh calibration TERM exits 130" 130 "$signal_status"
+    if find "$signal_tmp" -maxdepth 1 -name 'keyhog-autoroute-prime-*' -print | grep -q .; then
+        _record_fail "19.17 install.sh calibration TERM removes workspace" \
+            "$(find "$signal_tmp" -maxdepth 1 -name 'keyhog-autoroute-prime-*' -print)"
+    else
+        _record_pass "19.17 install.sh calibration TERM removes workspace"
+    fi
+    scan_pid="$(cat "$signal_state/scan-pid" 2>/dev/null || true)"
+    if [ -n "$scan_pid" ] && kill -0 "$scan_pid" 2>/dev/null; then
+        _record_fail "19.18 install.sh calibration TERM terminates active probe" \
+            "probe pid still alive: $scan_pid"
+        kill "$scan_pid" >/dev/null 2>&1 || true
+    else
+        _record_pass "19.18 install.sh calibration TERM terminates active probe"
+    fi
+else
+    kill -TERM "$signal_pid" >/dev/null 2>&1 || true
+    wait "$signal_pid" 2>/dev/null || true
+    _record_fail "19.15 install.sh calibration signal test reaches a real scan" \
+        "$(head -20 "$signal_out" 2>/dev/null)"
+    _record_fail "19.16 install.sh calibration TERM exits 130" "signal path was not reached"
+    _record_fail "19.17 install.sh calibration TERM removes workspace" "signal path was not reached"
+    _record_fail "19.18 install.sh calibration TERM terminates active probe" "signal path was not reached"
+fi
+rm -rf "$signal_state" "$signal_tmp" "$sb" "$h"
 
 # ======================================================================
 # 20. recoverability: a failed upgrade/repair must never leave the host
