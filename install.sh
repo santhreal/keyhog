@@ -1397,15 +1397,18 @@ post_install_wizard() {
 
 offer_path_setup() {
     shell_name=$(basename "${SHELL:-/bin/sh}")
-    case "$shell_name" in
-      bash) rc="$HOME/.bashrc" ;;
-      zsh)  rc="$HOME/.zshrc"  ;;
-      fish) rc="$HOME/.config/fish/config.fish" ;;
-      *)    rc="" ;;
-    esac
+    rc=$(path_setup_rc_file "$shell_name")
+    if [ -n "$rc" ] && path_setup_entry_present "$rc" "$shell_name"; then
+        ok "  PATH already configured in $rc"
+        return
+    fi
     if [ -n "$rc" ]; then
         if confirm "  Append to $rc?" Y; then
             mkdir -p "$(dirname "$rc")"
+            if path_setup_entry_present "$rc" "$shell_name"; then
+                ok "  PATH already configured in $rc"
+                return
+            fi
             if [ "$shell_name" = "fish" ]; then
                 printf '\n# keyhog\nset -gx PATH %s $PATH\n' "$INSTALL_DIR" >> "$rc"
             else
@@ -1416,6 +1419,38 @@ offer_path_setup() {
         fi
     fi
     dim "  Add manually: export PATH=\"$INSTALL_DIR:\$PATH\""
+}
+
+path_setup_rc_file() {
+    shell_name="$1"
+    case "$shell_name" in
+      bash)
+        if [ "${OS:-}" = "darwin" ]; then
+            if [ -f "$HOME/.bash_profile" ] || [ ! -f "$HOME/.profile" ]; then
+                printf '%s\n' "$HOME/.bash_profile"
+            else
+                printf '%s\n' "$HOME/.profile"
+            fi
+        else
+            printf '%s\n' "$HOME/.bashrc"
+        fi
+        ;;
+      zsh)  printf '%s\n' "$HOME/.zshrc" ;;
+      fish) printf '%s\n' "$HOME/.config/fish/config.fish" ;;
+      *)    printf '%s\n' "" ;;
+    esac
+}
+
+path_setup_entry_present() {
+    rc="$1"
+    shell_name="$2"
+    [ -f "$rc" ] || return 1
+    if [ "$shell_name" = "fish" ]; then
+        grep -F "set -gx PATH $INSTALL_DIR " "$rc" >/dev/null 2>&1 && return 0
+    else
+        grep -F "export PATH=\"$INSTALL_DIR:" "$rc" >/dev/null 2>&1 && return 0
+    fi
+    grep -F '# keyhog' "$rc" >/dev/null 2>&1 && grep -F "$INSTALL_DIR" "$rc" >/dev/null 2>&1
 }
 
 install_completions() {
