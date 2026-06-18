@@ -2,15 +2,15 @@
 //!
 //! Default: build a [`ScanOrchestrator`] and run the full in-process
 //! pipeline. For the simple stdin / single-file case there is also a
-//! daemon fast path: when `--daemon` is set (or auto-detected via a
-//! live socket), the input goes through the running `keyhog daemon`
-//! over a Unix socket and skips the ~3 s `CompiledScanner::compile`
-//! cold start. The daemon path is deliberately narrow - directory
-//! walks, git-staged scans, archive decoding, baseline filtering,
-//! merkle skip cache, and verification all still go through the
-//! orchestrator. Anything outside the stdin / single-file shape
-//! falls through to in-process and the `--daemon` flag is treated as
-//! advisory in those cases.
+//! daemon fast path: when `--daemon=auto` sees a live socket, eligible
+//! stdin / single-file scans go through the running `keyhog daemon`
+//! and skip the ~3 s `CompiledScanner::compile` cold start. The daemon
+//! path is deliberately narrow - directory walks, git-staged scans,
+//! archive decoding, baseline filtering, merkle skip cache, and
+//! verification all still go through the orchestrator. `--daemon=on`
+//! is a hard contract: if the daemon cannot honor the requested scan
+//! exactly, the command fails instead of silently running a different
+//! path.
 
 use crate::args::{DaemonMode, ScanArgs};
 // Daemon module is unix-only - Windows has no `tokio::net::UnixListener`
@@ -93,6 +93,7 @@ pub async fn run(args: ScanArgs) -> Result<ExitCode> {
                 orchestrator.run().await
             }
         },
+        DaemonRoute::Rejected(reason) => bail!("{reason}"),
         DaemonRoute::Forbidden => {
             let orchestrator = ScanOrchestrator::new(args)?;
             orchestrator.run().await
@@ -105,6 +106,7 @@ enum DaemonRoute {
     Required,
     Opportunistic,
     Forbidden,
+    Rejected(String),
 }
 
 /// The routing-relevant policy AFTER merging `.keyhog.toml`, so the daemon
@@ -178,28 +180,31 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
     // is the only honest answer.
     #[cfg(feature = "verify")]
     if args.verify {
-        if forced_on {
-            tracing::warn!(
-                "--verify forces the in-process path (daemon has no verifier); --daemon=on ignored"
-            );
+        if let Some(route) = reject_forced_daemon(
+            forced_on,
+            "--verify requires the in-process verifier; the daemon only returns scanner matches",
+        ) {
+            return route;
         }
         return DaemonRoute::Forbidden;
     }
     if args.baseline.is_some() {
-        if forced_on {
-            tracing::warn!(
-                "--baseline forces the in-process path (daemon has no CLI-side state); --daemon=on ignored"
-            );
+        if let Some(route) = reject_forced_daemon(
+            forced_on,
+            "--baseline requires the in-process baseline filter; the daemon has no baseline state",
+        ) {
+            return route;
         }
         return DaemonRoute::Forbidden;
     }
 
     let is_eligible_shape = args.stdin || effective_single_file_path(args).is_some();
     if !is_eligible_shape {
-        if forced_on {
-            tracing::warn!(
-                "--daemon=on only supports --stdin or a single regular file (no directories, archives, git, http sources); falling back to in-process"
-            );
+        if let Some(route) = reject_forced_daemon(
+            forced_on,
+            "the daemon only supports --stdin or a single regular file; directories, archives, git, remote, and multi-source scans require the in-process scanner",
+        ) {
+            return route;
         }
         return DaemonRoute::Forbidden;
     }
@@ -230,12 +235,11 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
         || policy.has_config_errors
         || args.hide_client_safe
     {
-        if forced_on {
-            tracing::warn!(
-                "--daemon=on ignored: this scan requests filtering/lockdown/secret-output/config \
-                 policy the daemon cannot enforce (CLI flag or .keyhog.toml); \
-                 using the in-process path"
-            );
+        if let Some(route) = reject_forced_daemon(
+            forced_on,
+            "this scan requests filtering, lockdown, secret-output, or config policy the daemon cannot enforce",
+        ) {
+            return route;
         }
         return DaemonRoute::Forbidden;
     }
@@ -249,6 +253,16 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
     } else {
         DaemonRoute::Forbidden
     }
+}
+
+#[cfg(unix)]
+fn reject_forced_daemon(forced_on: bool, reason: &str) -> Option<DaemonRoute> {
+    forced_on.then(|| {
+        DaemonRoute::Rejected(format!(
+            "--daemon=on cannot be honored: {reason}. Drop `--daemon=on`, or pass \
+             `--daemon=off` / `--no-daemon` to run the in-process scanner explicitly."
+        ))
+    })
 }
 
 #[cfg(unix)]
