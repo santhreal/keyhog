@@ -1218,6 +1218,28 @@ if command -v script >/dev/null 2>&1 && script -qefc true /dev/null >/dev/null 2
     expect_file   "21.6 macOS bash PATH setup writes login profile" "$h/.bash_profile"
     expect_nofile "21.7 macOS bash PATH setup does not write .bashrc" "$h/.bashrc"
     rm -rf "$sb" "$h"
+
+    reset_mocks
+    sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
+    zsh_env="PATH=$sb/bin HOME=$h SHELL=/bin/zsh KEYHOG_INSTALL=$h/.local/bin MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_FALLBACK=404 MOCK_SHA=match MOCK_LDD=ok KEYHOG_VARIANT=auto KEYHOG_VERSION=v9.9.9"
+    zsh_cmd1="env -i $zsh_env MOCK_STATE_DIR=$h/zsh-state-1 sh $INSTALL_SH --no-color"
+    zsh_cmd2="env -i $zsh_env MOCK_STATE_DIR=$h/zsh-state-2 sh $INSTALL_SH --no-color"
+    out=$(printf 'y\ny\ny\ny\nn\n' | script -qefc "$zsh_cmd1" /dev/null 2>&1); st=$?
+    expect_status "21.8 zsh completion setup install exits 0" 0 "$st"
+    expect_file   "21.9 zsh completion file is written" "$h/.zfunc/_keyhog"
+    expect_match  "21.10 zsh completion setup reports rc wiring" "zsh completion path configured" "$out"
+    out=$(printf 'y\ny\ny\nn\n' | script -qefc "$zsh_cmd2" /dev/null 2>&1); st=$?
+    expect_status "21.11 zsh completion setup rerun exits 0" 0 "$st"
+    expect_match  "21.12 zsh completion setup rerun reports existing wiring" "zsh completion path already configured" "$out"
+    zsh_markers=$(grep -c '^# keyhog completions$' "$h/.zshrc" 2>/dev/null || true)
+    zsh_fpath=$(grep -c 'fpath=("$HOME/.zfunc" $fpath)' "$h/.zshrc" 2>/dev/null || true)
+    if [ "$zsh_markers" = "1" ] && [ "$zsh_fpath" = "1" ]; then
+        _record_pass "21.13 zsh completion wiring writes exactly one fpath block"
+    else
+        _record_fail "21.13 zsh completion wiring writes exactly one fpath block" \
+            "markers=$zsh_markers fpath=$zsh_fpath rc=$(cat "$h/.zshrc" 2>/dev/null)"
+    fi
+    rm -rf "$sb" "$h"
 else
     skip "21.1 first bash PATH setup install exits 0" "script(1) PTY helper unavailable"
     skip "21.2 second bash PATH setup install exits 0" "script(1) PTY helper unavailable"
@@ -1226,6 +1248,12 @@ else
     skip "21.5 macOS bash PATH setup install exits 0" "script(1) PTY helper unavailable"
     skip "21.6 macOS bash PATH setup writes login profile" "script(1) PTY helper unavailable"
     skip "21.7 macOS bash PATH setup does not write .bashrc" "script(1) PTY helper unavailable"
+    skip "21.8 zsh completion setup install exits 0" "script(1) PTY helper unavailable"
+    skip "21.9 zsh completion file is written" "script(1) PTY helper unavailable"
+    skip "21.10 zsh completion setup reports rc wiring" "script(1) PTY helper unavailable"
+    skip "21.11 zsh completion setup rerun exits 0" "script(1) PTY helper unavailable"
+    skip "21.12 zsh completion setup rerun reports existing wiring" "script(1) PTY helper unavailable"
+    skip "21.13 zsh completion wiring writes exactly one fpath block" "script(1) PTY helper unavailable"
 fi
 
 # ======================================================================

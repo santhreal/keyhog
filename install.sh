@@ -1472,6 +1472,9 @@ install_completions() {
     fi
     if "$INSTALL_DIR/keyhog" completion "$shell_name" > "$file" 2>"$completion_err"; then
         ok "  Completions written to $file"
+        if [ "$shell_name" = "zsh" ]; then
+            ensure_zsh_completion_wiring "$dir"
+        fi
     else
         warn_wizard_command_failure \
             "completion generation" \
@@ -1481,6 +1484,42 @@ install_completions() {
         rm -f "$file"
     fi
     rm -f "$completion_err"
+}
+
+ensure_zsh_completion_wiring() {
+    completion_dir="$1"
+    rc=$(path_setup_rc_file zsh)
+    if [ -z "$rc" ]; then
+        warn "  zsh completion path setup skipped: unknown zsh rc file."
+        return
+    fi
+    if zsh_completion_wiring_present "$rc"; then
+        ok "  zsh completion path already configured in $rc"
+        return
+    fi
+    if ! mkdir -p "$(dirname "$rc")"; then
+        warn "  zsh completion path setup failed: could not create $(dirname "$rc")."
+        return
+    fi
+    if ! {
+        printf '\n# keyhog completions\n'
+        printf 'if [ -d "$HOME/.zfunc" ]; then\n'
+        printf '  fpath=("$HOME/.zfunc" $fpath)\n'
+        printf '  autoload -Uz compinit\n'
+        printf '  compinit\n'
+        printf 'fi\n'
+    } >> "$rc"; then
+        warn "  zsh completion path setup failed: could not append to $rc."
+        return
+    fi
+    ok "  zsh completion path configured in $rc for $completion_dir"
+}
+
+zsh_completion_wiring_present() {
+    rc="$1"
+    [ -f "$rc" ] || return 1
+    grep -F '# keyhog completions' "$rc" >/dev/null 2>&1 && return 0
+    grep -F '.zfunc' "$rc" >/dev/null 2>&1 && grep -F 'compinit' "$rc" >/dev/null 2>&1
 }
 
 # ============================================================
