@@ -14,6 +14,7 @@
 #   (default)         install or upgrade keyhog
 #   --repair          detect a broken install and re-download
 #   --diagnose        print full host + binary status, make no changes
+#   --calibrate       rerun visible autoroute calibration for the installed binary
 #   --uninstall       remove the binary + optionally clean up hooks
 #
 # Common flags:
@@ -25,14 +26,17 @@
 #                       of downloading a release (offline / air-gapped installs,
 #                       and CI proving a freshly-built binary). Skips the GitHub
 #                       release lookup; still runs the full backup + atomic swap
-#                       + verify (`keyhog doctor`) + rollback path. If a sibling
-#                       PATH.sha256 exists it is verified before install.
+#                       + verify (`keyhog doctor`) + rollback path. Requires a
+#                       sibling PATH.sha256 unless --insecure is explicit.
 #   --yes / -y          non-interactive: accept defaults, no prompts
+#   --insecure          allow an install only when checksum proof is unavailable;
+#                       checksum mismatches still fail
 #   --no-color          disable ANSI colors
 #   --help / -h         show this help and exit
 #
 # Env overrides (same effect as the flags):
-#   KEYHOG_VERSION, KEYHOG_VARIANT, KEYHOG_INSTALL, KEYHOG_FROM_FILE, NO_COLOR
+#   KEYHOG_VERSION, KEYHOG_VARIANT, KEYHOG_INSTALL, KEYHOG_FROM_FILE,
+#   KEYHOG_INSECURE_INSTALL, NO_COLOR
 
 set -eu
 
@@ -41,6 +45,7 @@ INSTALL_DIR="${KEYHOG_INSTALL:-$HOME/.local/bin}"
 VERSION="${KEYHOG_VERSION:-}"
 VARIANT="${KEYHOG_VARIANT:-auto}"
 FROM_FILE="${KEYHOG_FROM_FILE:-}"
+INSECURE_INSTALL="${KEYHOG_INSECURE_INSTALL:-0}"
 MODE="install"
 INTERACTIVE=1
 ASSUME_YES=0
@@ -160,8 +165,8 @@ usage() {
 "" \
 "Modes:  (default) install/upgrade   --repair   --diagnose   --uninstall" \
 "Flags:  --version=vX.Y.Z  --variant=cpu|cuda  --install-dir=PATH" \
-"        --from-file=PATH  --yes/-y  --no-prompt  --no-color  --help/-h" \
-"Env:    KEYHOG_VERSION  KEYHOG_VARIANT  KEYHOG_INSTALL  KEYHOG_FROM_FILE  NO_COLOR"
+"        --from-file=PATH  --yes/-y  --no-prompt  --insecure  --no-color  --help/-h" \
+"Env:    KEYHOG_VERSION  KEYHOG_VARIANT  KEYHOG_INSTALL  KEYHOG_FROM_FILE  KEYHOG_INSECURE_INSTALL  NO_COLOR"
     fi
     exit 0
 }
@@ -170,6 +175,7 @@ while [ $# -gt 0 ]; do
     case "$1" in
         --repair)          MODE="repair" ;;
         --diagnose)        MODE="diagnose" ;;
+        --calibrate)       MODE="calibrate" ;;
         --uninstall)       MODE="uninstall" ;;
         --version=*)       VERSION="${1#--version=}" ;;
         --variant=*)       VARIANT="${1#--variant=}" ;;
@@ -177,6 +183,7 @@ while [ $# -gt 0 ]; do
         --from-file=*)     FROM_FILE="${1#--from-file=}" ;;
         --yes|-y)          ASSUME_YES=1 ;;
         --no-prompt)       INTERACTIVE=0 ;;
+        --insecure)        INSECURE_INSTALL=1 ;;
         --no-color)        USE_COLOR=0 ;;
         --help|-h)         usage ;;
         *)
@@ -293,7 +300,7 @@ resolve_asset() {
             ;;
           cuda)
             ASSET="keyhog-linux-x86_64-cuda"
-            ASSET_FALLBACK="keyhog-linux-x86_64"
+            ASSET_FALLBACK=""
             GPU_NOTE="Variant=cuda, installing CUDA-accelerated build."
             ;;
           auto|*)
@@ -448,26 +455,39 @@ download_asset() {
     fi
 }
 
+allow_unverified_install() {
+    reason="$1"
+    if [ "$INSECURE_INSTALL" = "1" ]; then
+        warn "  INSECURE: $reason"
+        warn "  Proceeding without checksum verification because --insecure or KEYHOG_INSECURE_INSTALL=1 is set."
+        return 0
+    fi
+    err "$reason"
+    err "Refusing to install an unverified keyhog binary."
+    err "Fix: provide the .sha256 file and ensure sha256sum or shasum is installed."
+    err "Only for emergency/local diagnostics, rerun with --insecure to accept an unverified binary."
+    return 1
+}
+
 # Verify the SHA256 of $1 against the per-asset .sha256 file on the
-# release. Returns 0 on match OR when no checksum file is published
-# (we can't enforce verification against releases that pre-date the
-# checksum feature). Returns 1 only on an actual mismatch.
+# release. Returns 0 on match. Missing proof fails closed unless the
+# operator explicitly chooses --insecure / KEYHOG_INSECURE_INSTALL=1.
 verify_checksum() {
     binary="$1"
     asset_name="$2"
     checksum_url="https://github.com/$REPO/releases/download/$TAG/$asset_name.sha256"
     expected=$(curl -fsSL "$checksum_url" 2>/dev/null | awk '{print $1}' | head -n1)
     if [ -z "$expected" ]; then
-        dim "  (no .sha256 file for $TAG, skipping checksum verification)"
-        return 0
+        allow_unverified_install "No .sha256 checksum was published for $asset_name at $TAG."
+        return $?
     fi
     if command -v sha256sum >/dev/null 2>&1; then
         actual=$(sha256sum "$binary" | awk '{print $1}')
     elif command -v shasum >/dev/null 2>&1; then
         actual=$(shasum -a 256 "$binary" | awk '{print $1}')
     else
-        warn "  (no sha256sum / shasum tool installed, skipping checksum verification)"
-        return 0
+        allow_unverified_install "No sha256sum or shasum tool is installed, so $asset_name cannot be verified."
+        return $?
     fi
     if [ "$expected" = "$actual" ]; then
         ok "SHA256 verified ($expected)."
@@ -483,23 +503,23 @@ verify_checksum() {
 # Verify $1 against a LOCAL checksum file $2 (a `<sha256>  <name>` line, as
 # written by `sha256sum binary > binary.sha256` or shipped beside a release
 # asset). Used by --from-file installs so an offline/CI install can still
-# integrity-check the artifact. Returns 0 on match or when no hashing tool is
-# available; 1 only on an actual mismatch.
+# integrity-check the artifact. Returns 0 on match. Missing proof fails closed
+# unless the operator explicitly chooses --insecure / KEYHOG_INSECURE_INSTALL=1.
 verify_local_checksum() {
     binary="$1"
     sumfile="$2"
     expected=$(awk '{print $1}' "$sumfile" 2>/dev/null | head -n1)
     if [ -z "$expected" ]; then
-        dim "  ($sumfile is empty; skipping checksum verification)"
-        return 0
+        allow_unverified_install "Local checksum file $sumfile is empty or unreadable."
+        return $?
     fi
     if command -v sha256sum >/dev/null 2>&1; then
         actual=$(sha256sum "$binary" | awk '{print $1}')
     elif command -v shasum >/dev/null 2>&1; then
         actual=$(shasum -a 256 "$binary" | awk '{print $1}')
     else
-        warn "  (no sha256sum / shasum tool installed, skipping checksum verification)"
-        return 0
+        allow_unverified_install "No sha256sum or shasum tool is installed, so $binary cannot be verified against $sumfile."
+        return $?
     fi
     if [ "$expected" = "$actual" ]; then
         ok "SHA256 verified ($expected)."
@@ -575,8 +595,8 @@ stage_and_install() {
 
     # Checksum is verified BEFORE we overwrite, so a corrupt artifact can never
     # replace a working binary. Downloads check against the release's per-asset
-    # .sha256; a --from-file install checks a sibling PATH.sha256 if the caller
-    # staged one, otherwise trusts the local artifact (provenance is theirs).
+    # .sha256; a --from-file install requires a sibling PATH.sha256 unless the
+    # operator explicitly accepts an unverified local artifact.
     if [ -n "$FROM_FILE" ]; then
         if [ -f "$FROM_FILE.sha256" ]; then
             if ! verify_local_checksum "$tmp" "$FROM_FILE.sha256"; then
@@ -585,7 +605,11 @@ stage_and_install() {
                 exit 1
             fi
         else
-            dim "  (no $FROM_FILE.sha256 beside the binary; skipping checksum for local install)"
+            if ! allow_unverified_install "No local checksum file found beside --from-file binary: $FROM_FILE.sha256"; then
+                rm -f "$tmp"
+                trap - EXIT INT TERM
+                exit 1
+            fi
         fi
     elif ! verify_checksum "$tmp" "$ASSET"; then
         rm -f "$tmp"
@@ -694,6 +718,10 @@ verify_install() {
         if ! "$INSTALL_DIR/keyhog" doctor; then
             warn "keyhog doctor reported issues above; the binary is installed but may not be fully healthy."
         fi
+        if ! prime_autoroute_cache "$INSTALL_DIR/keyhog"; then
+            err "Autoroute calibration failed; refusing to leave an install whose default auto route is not usable."
+            return 1
+        fi
         return 0
     fi
 
@@ -732,6 +760,504 @@ verify_install() {
     err "  Picked asset: $ASSET"
     err "  Browse https://github.com/$REPO/releases to confirm asset availability."
     return 1
+}
+
+prime_autoroute_cache() {
+    bin="$1"
+    tmpdir="${TMPDIR:-/tmp}/keyhog-autoroute-prime.$$"
+    if ! mkdir -p "$tmpdir"; then
+        err "Could not create autoroute calibration workspace: $tmpdir"
+        return 1
+    fi
+
+    say ""
+    info "Autoroute calibration"
+    dim "  visible install phase; persistent until you run install.sh --calibrate again"
+
+    # Pick the config-isolation flag the INSTALLED binary actually accepts. A
+    # released binary that predates `--no-config` only has `--config <PATH>`;
+    # passing `--no-config` to it makes clap exit 2 and every probe "FAILED"
+    # for a reason the old `>/dev/null 2>&1` hid (Law 10: a swallowed installer
+    # error reads as a broken product). Detect once, never guess.
+    scan_help="$("$bin" scan --help 2>/dev/null || true)"
+    if printf '%s' "$scan_help" | grep -q -- '--no-config'; then
+        cfg_flag="--no-config"
+    else
+        : > "$tmpdir/empty-config.toml"
+        cfg_flag="--config $tmpdir/empty-config.toml"
+    fi
+    unavailable_calibrations=""
+    git_calibration=0
+    git_bin=""
+    if printf '%s' "$scan_help" | grep -q -- '--git-history' && \
+       printf '%s' "$scan_help" | grep -q -- '--git-diff'; then
+        git_bin="$(command -v git 2>/dev/null || true)"
+        if [ -z "$git_bin" ]; then
+            warn "  Git source calibration unavailable: git was not found on PATH."
+            warn "  Filesystem/stdin calibration will continue; install git and rerun install.sh --calibrate before relying on git-source autorouting."
+            unavailable_calibrations="${unavailable_calibrations} git"
+        else
+            git_calibration=1
+        fi
+    fi
+    docker_calibration=0
+    docker_bin=""
+    docker_image=""
+    if printf '%s' "$scan_help" | grep -q -- '--docker-image'; then
+        docker_bin="$(command -v docker 2>/dev/null || true)"
+        if [ -z "$docker_bin" ]; then
+            warn "  Docker image calibration unavailable: docker was not found on PATH."
+            warn "  Filesystem/stdin calibration will continue; install Docker and rerun install.sh --calibrate before relying on Docker image autorouting."
+            unavailable_calibrations="${unavailable_calibrations} docker"
+        else
+            docker_calibration=1
+        fi
+    fi
+    web_calibration=0
+    python_bin=""
+    if printf '%s' "$scan_help" | grep -q -- '--url'; then
+        python_bin="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
+        if [ -z "$python_bin" ]; then
+            warn "  Web URL calibration unavailable: python3/python was not found on PATH."
+            warn "  Filesystem/stdin calibration will continue; install Python and rerun install.sh --calibrate before relying on Web URL autorouting."
+            unavailable_calibrations="${unavailable_calibrations} web"
+        else
+            web_calibration=1
+        fi
+    fi
+
+    kib_sizes="4 64"
+    mib_sizes="1 8 32"
+    total=9
+    if [ "$git_calibration" = "1" ]; then
+        total=$((total + 3))
+    fi
+    if [ "$docker_calibration" = "1" ]; then
+        total=$((total + 1))
+    fi
+    if [ "$web_calibration" = "1" ]; then
+        total=$((total + 1))
+    fi
+    idx=0
+    failed=0
+
+    idx=$((idx + 1))
+    probe="$tmpdir/probe-stdin-empty.txt"
+    out="$tmpdir/out-stdin-empty.json"
+    err="$tmpdir/err-stdin-empty.txt"
+    label="empty stdin workload"
+    : > "$probe"
+    if ! run_autoroute_stdin_probe "$idx" "$total" "$label" "$probe" "$out" "$err"; then
+        failed=1
+    fi
+
+    idx=$((idx + 1))
+    probe="$tmpdir/probe-stdin-64kib.txt"
+    out="$tmpdir/out-stdin-64kib.json"
+    err="$tmpdir/err-stdin-64kib.txt"
+    label="stdin 64 KiB workload"
+    if ! make_calibration_probe_kib "$probe" 64; then
+        printf '  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
+        err "Could not create 64 KiB stdin autoroute calibration probe at $probe."
+        failed=1
+    elif ! run_autoroute_stdin_probe "$idx" "$total" "$label" "$probe" "$out" "$err"; then
+        failed=1
+    fi
+
+    for kib in $kib_sizes; do
+        idx=$((idx + 1))
+        probe="$tmpdir/probe-${kib}kib.txt"
+        out="$tmpdir/out-${kib}kib.json"
+        err="$tmpdir/err-${kib}kib.txt"
+        label="${kib} KiB workload"
+        if ! make_calibration_probe_kib "$probe" "$kib"; then
+            printf '  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
+            err "Could not create ${kib} KiB autoroute calibration probe at $probe."
+            failed=1
+            continue
+        fi
+        if ! run_autoroute_probe "$idx" "$total" "$label" "$probe" "$out" "$err"; then
+            failed=1
+        fi
+    done
+
+    for mib in $mib_sizes; do
+        idx=$((idx + 1))
+        probe="$tmpdir/probe-${mib}mib.txt"
+        out="$tmpdir/out-${mib}mib.json"
+        err="$tmpdir/err-${mib}mib.txt"
+        label="${mib} MiB workload"
+        if ! make_calibration_probe "$probe" "$mib"; then
+            printf '  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
+            err "Could not create ${mib} MiB autoroute calibration probe at $probe."
+            failed=1
+            continue
+        fi
+        if ! run_autoroute_probe "$idx" "$total" "$label" "$probe" "$out" "$err"; then
+            failed=1
+        fi
+    done
+
+    idx=$((idx + 1))
+    probe="$tmpdir/probe-decode-heavy-256kib.txt"
+    out="$tmpdir/out-decode-heavy-256kib.json"
+    err="$tmpdir/err-decode-heavy-256kib.txt"
+    label="decode-heavy 256 KiB workload"
+    if ! make_decode_heavy_calibration_probe_kib "$probe" 256; then
+        printf '  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
+        err "Could not create decode-heavy autoroute calibration probe at $probe."
+        failed=1
+    elif ! run_autoroute_probe "$idx" "$total" "$label" "$probe" "$out" "$err"; then
+        failed=1
+    fi
+
+    idx=$((idx + 1))
+    probe_dir="$tmpdir/many-4k"
+    out="$tmpdir/out-many-4k.json"
+    err="$tmpdir/err-many-4k.txt"
+    label="32 x 4 KiB files workload"
+    if ! make_calibration_tree_kib "$probe_dir" 32 4; then
+        printf '  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
+        err "Could not create many-file autoroute calibration probe at $probe_dir."
+        failed=1
+    elif ! run_autoroute_probe "$idx" "$total" "$label" "$probe_dir" "$out" "$err"; then
+        failed=1
+    fi
+
+    if [ "$git_calibration" = "1" ]; then
+        git_repo="$tmpdir/git-source"
+        if ! make_calibration_git_repo "$git_repo" "$git_bin"; then
+            err "Could not create git source autoroute calibration repository at $git_repo."
+            failed=1
+        else
+            idx=$((idx + 1))
+            out="$tmpdir/out-git-history.json"
+            err="$tmpdir/err-git-history.txt"
+            label="git history 4 KiB source workload"
+            if ! run_autoroute_git_history_probe "$idx" "$total" "$label" "$git_repo" "$out" "$err"; then
+                failed=1
+            fi
+
+            idx=$((idx + 1))
+            out="$tmpdir/out-git-blobs.json"
+            err="$tmpdir/err-git-blobs.txt"
+            label="git blobs head/history source workload"
+            if ! run_autoroute_git_blobs_probe "$idx" "$total" "$label" "$git_repo" "$out" "$err"; then
+                failed=1
+            fi
+
+            idx=$((idx + 1))
+            out="$tmpdir/out-git-diff.json"
+            err="$tmpdir/err-git-diff.txt"
+            label="git diff 12 KiB source workload"
+            if ! run_autoroute_git_diff_probe "$idx" "$total" "$label" "$git_repo" "$out" "$err"; then
+                failed=1
+            fi
+        fi
+    fi
+
+    if [ "$web_calibration" = "1" ]; then
+        idx=$((idx + 1))
+        web_dir="$tmpdir/web-source"
+        web_port_file="$tmpdir/web-source.port"
+        web_pid_file="$tmpdir/web-source.pid"
+        web_log="$tmpdir/web-source.log"
+        out="$tmpdir/out-web-url.json"
+        err="$tmpdir/err-web-url.txt"
+        label="web URL 4 KiB source workload"
+        if ! make_calibration_web_fixture "$web_dir"; then
+            printf '  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
+            err "Could not create Web URL autoroute calibration fixture at $web_dir."
+            failed=1
+        elif ! start_calibration_web_server "$web_dir" "$web_port_file" "$web_pid_file" "$web_log" "$python_bin"; then
+            printf '  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
+            stop_calibration_web_server "$web_pid_file"
+            real_err="$(head -n 1 "$web_log" 2>/dev/null)"
+            [ -n "$real_err" ] && dim "    reason: $real_err"
+            err "Could not start loopback Web URL autoroute calibration server."
+            failed=1
+        else
+            web_url="http://127.0.0.1:$(cat "$web_port_file")/probe.js"
+            if ! run_autoroute_url_probe "$idx" "$total" "$label" "$web_url" "$out" "$err"; then
+                failed=1
+            fi
+            stop_calibration_web_server "$web_pid_file"
+        fi
+    fi
+
+    if [ "$docker_calibration" = "1" ]; then
+        idx=$((idx + 1))
+        docker_dir="$tmpdir/docker-source"
+        docker_image="keyhog-autoroute-calibration:$$"
+        out="$tmpdir/out-docker-image.json"
+        err="$tmpdir/err-docker-image.txt"
+        label="docker image 4 KiB source workload"
+        docker_image_ready=0
+        if ! make_calibration_docker_image "$docker_dir" "$docker_image" "$docker_bin" 2>"$err"; then
+            printf '  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
+            real_err="$(head -n 1 "$err" 2>/dev/null)"
+            [ -n "$real_err" ] && dim "    reason: $real_err"
+            err "Could not create Docker image autoroute calibration probe at $docker_image."
+            failed=1
+        else
+            docker_image_ready=1
+            if ! run_autoroute_docker_image_probe "$idx" "$total" "$label" "$docker_image" "$out" "$err"; then
+                failed=1
+            fi
+        fi
+        if [ "$docker_image_ready" = "1" ] && ! "$docker_bin" image rm -f "$docker_image" >/dev/null 2>&1; then
+            dim "  Docker calibration image cleanup failed for $docker_image"
+        fi
+    fi
+
+    rm -rf "$tmpdir"
+    if [ "$failed" != "0" ]; then
+        err "Autoroute calibration phase failed; persisted auto routing was not updated for every required workload."
+        return 1
+    fi
+    if [ -n "$unavailable_calibrations" ]; then
+        warn "Autoroute calibration incomplete for unavailable source classes:$unavailable_calibrations."
+        warn "Install the required source tools and rerun install.sh --calibrate before using those source routes."
+    fi
+    ok "Autoroute calibration phase complete."
+    return 0
+}
+
+run_autoroute_probe() {
+    run_autoroute_scan_probe "$1" "$2" "$3" path "$4" "$5" "$6"
+}
+
+run_autoroute_stdin_probe() {
+    run_autoroute_scan_probe "$1" "$2" "$3" stdin "$4" "$5" "$6"
+}
+
+run_autoroute_git_history_probe() {
+    run_autoroute_scan_probe "$1" "$2" "$3" git-history "$4" "$5" "$6"
+}
+
+run_autoroute_git_blobs_probe() {
+    run_autoroute_scan_probe "$1" "$2" "$3" git-blobs "$4" "$5" "$6"
+}
+
+run_autoroute_git_diff_probe() {
+    run_autoroute_scan_probe "$1" "$2" "$3" git-diff "$4" "$5" "$6"
+}
+
+run_autoroute_url_probe() {
+    run_autoroute_scan_probe "$1" "$2" "$3" url "$4" "$5" "$6"
+}
+
+run_autoroute_docker_image_probe() {
+    run_autoroute_scan_probe "$1" "$2" "$3" docker-image "$4" "$5" "$6"
+}
+
+run_autoroute_scan_probe() {
+    idx="$1"
+    total="$2"
+    label="$3"
+    mode="$4"
+    probe="$5"
+    out="$6"
+    errfile="$7"
+    printf '  [%s/%s] %s ' "$idx" "$total" "$label"
+    (
+        case "$mode" in
+            path)
+                KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
+                    "$bin" scan "$probe" $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile"
+                ;;
+            stdin)
+                KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
+                    "$bin" scan --stdin $cfg_flag --format json -o "$out" < "$probe" >/dev/null 2>"$errfile"
+                ;;
+            git-history)
+                KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
+                    "$bin" scan --git-history "$probe" --max-commits 1 $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile"
+                ;;
+            git-blobs)
+                KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
+                    "$bin" scan --git-blobs "$probe" --max-commits 2 $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile"
+                ;;
+            git-diff)
+                KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
+                    "$bin" scan --git-diff HEAD --git-diff-path "$probe" $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile"
+                ;;
+            url)
+                KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
+                    "$bin" scan --url "$probe" $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile"
+                ;;
+            docker-image)
+                KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
+                    "$bin" scan --docker-image "$probe" $cfg_flag --format json -o "$out" >/dev/null 2>"$errfile"
+                ;;
+            *)
+                printf 'unsupported autoroute calibration mode: %s\n' "$mode" > "$errfile"
+                exit 2
+                ;;
+        esac
+    ) &
+    pid=$!
+    spin='-\|/'
+    n=0
+    while kill -0 "$pid" 2>/dev/null; do
+        n=$(( (n + 1) % 4 ))
+        c=$(printf '%s' "$spin" | cut -c $((n + 1)))
+        printf '\r  [%s/%s] %s %s' "$idx" "$total" "$label" "$c"
+        sleep 0.15
+    done
+    if wait "$pid"; then
+        printf '\r  [%s/%s] %s OK\n' "$idx" "$total" "$label"
+        return 0
+    fi
+    printf '\r  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
+    # Surface the REAL reason, not a blind "FAILED" (Law 10). One line is
+    # enough to tell a flag mismatch from a GPU/driver fault.
+    real_err="$(head -n 1 "$errfile" 2>/dev/null)"
+    [ -n "$real_err" ] && dim "    reason: $real_err"
+    err "Autoroute calibration probe failed for $label."
+    return 1
+}
+
+make_calibration_probe() {
+    path="$1"
+    mib="$2"
+    make_calibration_probe_kib "$path" $((mib * 1024))
+}
+
+make_calibration_probe_kib() {
+    path="$1"
+    kib="$2"
+    block="$(plain_calibration_block)" || return 1
+    awk -v block="$block" -v kib="$kib" 'BEGIN { for (i = 0; i < kib; i++) printf "%s", block }' > "$path"
+}
+
+plain_calibration_block() {
+    seed='src path one. scan text two. keyhog route plain. config value sample. '
+    block="$seed"
+    while [ "${#block}" -lt 1024 ]; do
+        block="${block}${seed}"
+    done
+    printf '%.1024s' "$block"
+}
+
+make_decode_heavy_calibration_probe_kib() {
+    path="$1"
+    kib="$2"
+    block="$(decode_heavy_calibration_block)" || return 1
+    awk -v block="$block" -v kib="$kib" 'BEGIN { for (i = 0; i < kib; i++) printf "%s", block }' > "$path"
+}
+
+decode_heavy_calibration_block() {
+    seed='apiVersion:v1 kind:Secret data token:QUtJQUlPU0ZPRE5ON0VYQU1QTEVBS0lBSU9TRk9ETk43RVhBTVBMRT0= payload:c2stcHJvai1BQkNkZWZHSElKS0xtbm9QUVJTVFVWV1hZWjAxMjM0NTY3ODkwPQ== '
+    block="$seed"
+    while [ "${#block}" -lt 1024 ]; do
+        block="${block}${seed}"
+    done
+    printf '%.1024s' "$block"
+}
+
+make_calibration_git_repo() {
+    dir="$1"
+    git_cmd="$2"
+    mkdir -p "$dir" || return 1
+    "$git_cmd" init -q "$dir" || return 1
+    "$git_cmd" -C "$dir" config user.email keyhog-calibration@example.invalid || return 1
+    "$git_cmd" -C "$dir" config user.name "Keyhog Autoroute Calibration" || return 1
+    "$git_cmd" -C "$dir" config commit.gpgsign false || return 1
+    make_calibration_probe_kib "$dir/probe.txt" 4 || return 1
+    "$git_cmd" -C "$dir" add probe.txt || return 1
+    "$git_cmd" -C "$dir" commit -q -m "keyhog autoroute calibration baseline" || return 1
+    make_calibration_probe_kib "$dir/probe.txt" 8 || return 1
+    "$git_cmd" -C "$dir" add probe.txt || return 1
+    "$git_cmd" -C "$dir" commit -q -m "keyhog autoroute calibration head" || return 1
+    make_calibration_probe_kib "$dir/probe.txt" 12 || return 1
+}
+
+make_calibration_docker_image() {
+    dir="$1"
+    image="$2"
+    docker_cmd="$3"
+    context="$dir/context"
+    mkdir -p "$context" || return 1
+    make_calibration_probe_kib "$context/probe.txt" 4 || return 1
+    {
+        printf '%s\n' 'FROM scratch'
+        printf '%s\n' 'COPY probe.txt /keyhog-autoroute-probe.txt'
+    } > "$context/Dockerfile" || return 1
+    "$docker_cmd" build -q -t "$image" "$context" >/dev/null || return 1
+}
+
+make_calibration_web_fixture() {
+    dir="$1"
+    mkdir -p "$dir" || return 1
+    make_calibration_probe_kib "$dir/probe.js" 4 || return 1
+}
+
+start_calibration_web_server() {
+    dir="$1"
+    port_file="$2"
+    pid_file="$3"
+    log_file="$4"
+    python_cmd="$5"
+    (
+        cd "$dir" || exit 1
+        "$python_cmd" - "$port_file" <<'PY'
+import http.server
+import socketserver
+import sys
+
+port_file = sys.argv[1]
+
+class Handler(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass
+
+class Server(socketserver.TCPServer):
+    allow_reuse_address = True
+
+with Server(("127.0.0.1", 0), Handler) as httpd:
+    with open(port_file, "w", encoding="ascii") as f:
+        f.write(str(httpd.server_address[1]))
+    httpd.serve_forever()
+PY
+    ) >"$log_file" 2>&1 &
+    server_pid=$!
+    printf '%s\n' "$server_pid" > "$pid_file" || return 1
+    i=0
+    while [ "$i" -lt 100 ]; do
+        if [ -s "$port_file" ]; then
+            return 0
+        fi
+        if ! kill -0 "$server_pid" 2>/dev/null; then
+            return 1
+        fi
+        sleep 0.05
+        i=$((i + 1))
+    done
+    return 1
+}
+
+stop_calibration_web_server() {
+    pid_file="$1"
+    [ -s "$pid_file" ] || return 0
+    server_pid="$(cat "$pid_file" 2>/dev/null || true)"
+    [ -n "$server_pid" ] || return 0
+    kill "$server_pid" >/dev/null 2>&1 || true
+    wait "$server_pid" 2>/dev/null || true
+}
+
+make_calibration_tree_kib() {
+    dir="$1"
+    files="$2"
+    kib="$3"
+    mkdir -p "$dir" || return 1
+    i=0
+    while [ "$i" -lt "$files" ]; do
+        if ! make_calibration_probe_kib "$dir/file-$i.txt" "$kib"; then
+            return 1
+        fi
+        i=$((i + 1))
+    done
 }
 
 show_summary() {
@@ -944,6 +1470,17 @@ do_diagnose() {
     say "  Would install: $ASSET"
 }
 
+do_calibrate() {
+    bin=$(current_binary || true)
+    if [ -z "$bin" ] || [ ! -x "$bin" ]; then
+        err "No installed keyhog binary found to calibrate. Run install first."
+        exit 1
+    fi
+    if ! prime_autoroute_cache "$bin"; then
+        exit 1
+    fi
+}
+
 do_uninstall() {
     bin=$(current_binary)
     if [ -z "$bin" ]; then
@@ -978,5 +1515,6 @@ case "$MODE" in
     install)   do_install ;;
     repair)    do_repair ;;
     diagnose)  do_diagnose ;;
+    calibrate) do_calibrate ;;
     uninstall) do_uninstall ;;
 esac

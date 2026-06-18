@@ -11,27 +11,33 @@
 #   (default)        install or upgrade keyhog
 #   -Repair          detect a broken install and re-download
 #   -Diagnose        print full host + binary status, make no changes
+#   -Calibrate       rerun visible autoroute calibration for the installed binary
 #   -Uninstall       remove the binary
 #
 # Common flags:
 #   -Version v0.5.37      pin a release tag (default: latest release with assets)
 #   -FromFile PATH        install a pre-built/pre-downloaded keyhog.exe instead
 #                         of querying GitHub (offline / air-gapped / CI proving).
-#                         A sibling PATH.sha256 is checksum-verified if present.
+#                         Requires a sibling PATH.sha256 unless -Insecure is explicit.
 #   -InstallDir PATH      override $env:KEYHOG_INSTALL
 #   -Yes                  non-interactive: accept defaults, no prompts
+#   -Insecure             allow install only when checksum proof is unavailable;
+#                         checksum mismatches still fail
 #   -NoColor              disable ANSI colors
 #
 # Env overrides (same effect as the flags):
-#   $env:KEYHOG_VERSION, $env:KEYHOG_FROM_FILE, $env:KEYHOG_INSTALL, $env:NO_COLOR
+#   $env:KEYHOG_VERSION, $env:KEYHOG_FROM_FILE, $env:KEYHOG_INSTALL,
+#   $env:KEYHOG_INSECURE_INSTALL, $env:NO_COLOR
 
 [CmdletBinding()]
 param(
     [switch]$Repair,
     [switch]$Diagnose,
+    [switch]$Calibrate,
     [switch]$Uninstall,
     [switch]$Yes,
     [switch]$NoColor,
+    [switch]$Insecure,
     [string]$Version = $env:KEYHOG_VERSION,
     [string]$FromFile = $env:KEYHOG_FROM_FILE,
     [string]$InstallDir = $(if ($env:KEYHOG_INSTALL) { $env:KEYHOG_INSTALL } else { Join-Path $env:LOCALAPPDATA 'keyhog\bin' })
@@ -39,6 +45,10 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $Repo = 'santhsecurity/keyhog'
+$Script:InsecureInstall = [bool]$Insecure
+if (-not $Script:InsecureInstall -and ($env:KEYHOG_INSECURE_INSTALL -match '^(1|true|yes)$')) {
+    $Script:InsecureInstall = $true
+}
 
 # ============================================================
 # colors + i/o helpers
@@ -201,6 +211,20 @@ function Download-Asset {
     }
 }
 
+function Allow-UnverifiedInstall {
+    param([string]$Reason)
+    if ($Script:InsecureInstall) {
+        Warn "  INSECURE: $Reason"
+        Warn "  Proceeding without checksum verification because -Insecure or KEYHOG_INSECURE_INSTALL=1 is set."
+        return $true
+    }
+    Err $Reason
+    Err "Refusing to install an unverified keyhog binary."
+    Err "Fix: provide the .sha256 file and ensure Get-FileHash is available."
+    Err "Only for emergency/local diagnostics, rerun with -Insecure to accept an unverified binary."
+    return $false
+}
+
 function Verify-Checksum {
     param($BinaryPath, $AssetName)
     $checksumUrl = "https://github.com/$Repo/releases/download/$($Script:Tag)/$AssetName.sha256"
@@ -211,15 +235,17 @@ function Verify-Checksum {
             $expected = ($line -split '\s+')[0]
         }
     } catch {
-        Dim "  (no .sha256 file for $($Script:Tag), skipping checksum verification)"
-        return $true
+        return (Allow-UnverifiedInstall "No .sha256 checksum was published for $AssetName at $($Script:Tag).")
     }
     if (-not $expected) {
-        Dim "  (no .sha256 file for $($Script:Tag), skipping checksum verification)"
-        return $true
+        return (Allow-UnverifiedInstall "No .sha256 checksum was published for $AssetName at $($Script:Tag).")
     }
-    $hash = (Get-FileHash -Algorithm SHA256 -Path $BinaryPath).Hash.ToLower()
-    if ($hash -eq $expected.ToLower()) {
+    try {
+        $hash = (Get-FileHash -Algorithm SHA256 -Path $BinaryPath -ErrorAction Stop).Hash.ToLowerInvariant()
+    } catch {
+        return (Allow-UnverifiedInstall "Get-FileHash could not verify $AssetName: $($_.Exception.Message)")
+    }
+    if ($hash -eq $expected.ToLowerInvariant()) {
         Ok "SHA256 verified ($expected)."
         return $true
     }
@@ -233,9 +259,8 @@ function Verify-Checksum {
 # Verify $BinaryPath against a LOCAL checksum file $SumFile (a `<sha256>  <name>`
 # line, as written by `Get-FileHash ... | Format-Table` or shipped beside a
 # release asset). Used by -FromFile installs so an offline/CI install can still
-# integrity-check the artifact. Returns $true on match or when the file is
-# empty; $false only on an actual mismatch. Mirrors install.sh
-# verify_local_checksum.
+# integrity-check the artifact. Returns $true on match. Missing proof fails
+# closed unless the operator explicitly chooses -Insecure.
 function Verify-LocalChecksum {
     param($BinaryPath, $SumFile)
     $expected = $null
@@ -243,15 +268,17 @@ function Verify-LocalChecksum {
         $line = (Get-Content -Path $SumFile -TotalCount 1 -ErrorAction Stop)
         if ($line) { $expected = ($line -split '\s+')[0] }
     } catch {
-        Dim "  ($SumFile could not be read; skipping checksum verification)"
-        return $true
+        return (Allow-UnverifiedInstall "Local checksum file $SumFile could not be read.")
     }
     if (-not $expected) {
-        Dim "  ($SumFile is empty; skipping checksum verification)"
-        return $true
+        return (Allow-UnverifiedInstall "Local checksum file $SumFile is empty or unreadable.")
     }
-    $hash = (Get-FileHash -Algorithm SHA256 -Path $BinaryPath).Hash.ToLower()
-    if ($hash -eq $expected.ToLower()) {
+    try {
+        $hash = (Get-FileHash -Algorithm SHA256 -Path $BinaryPath -ErrorAction Stop).Hash.ToLowerInvariant()
+    } catch {
+        return (Allow-UnverifiedInstall "Get-FileHash could not verify $BinaryPath against ${SumFile}: $($_.Exception.Message)")
+    }
+    if ($hash -eq $expected.ToLowerInvariant()) {
         Ok "SHA256 verified ($expected)."
         return $true
     }
@@ -260,6 +287,460 @@ function Verify-LocalChecksum {
     Err "  Got:      $hash"
     Err "Refusing to install the local binary."
     return $false
+}
+
+function Invoke-AutorouteCalibration {
+    param($BinPath)
+    $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("keyhog-autoroute-prime-{0}" -f ([System.Guid]::NewGuid()))
+    try {
+        New-Item -ItemType Directory -Force -Path $tmpDir | Out-Null
+    } catch {
+        Err "Could not create autoroute calibration workspace ${tmpDir}: $_"
+        return $false
+    }
+    try {
+        Say ""
+        Info "Autoroute calibration"
+        Dim "  visible install phase; persistent until you run install.ps1 -Calibrate again"
+        $oldCal = $env:KEYHOG_AUTOROUTE_CALIBRATE
+        $oldBatch = $env:KEYHOG_BATCH_PIPELINE
+        $oldGpu = $env:KEYHOG_GPU_AUTOROUTE
+        $failed = $false
+        $dockerImagesToRemove = @()
+        $webJobsToStop = @()
+        try {
+            $env:KEYHOG_AUTOROUTE_CALIBRATE = '1'
+            $env:KEYHOG_BATCH_PIPELINE = '1'
+            $env:KEYHOG_GPU_AUTOROUTE = '1'
+            $scanHelp = try { (& $BinPath scan --help 2>$null | Out-String) } catch { '' }
+            $configArgs = if ($scanHelp -match '--no-config') {
+                @('--no-config')
+            } else {
+                $emptyConfig = Join-Path $tmpDir 'empty-config.toml'
+                New-Item -ItemType File -Force -Path $emptyConfig | Out-Null
+                @('--config', $emptyConfig)
+            }
+            $unavailableCalibrations = @()
+            $gitCalibration = $false
+            $gitPath = $null
+            if (($scanHelp -match '--git-history') -and ($scanHelp -match '--git-diff')) {
+                $gitCmd = Get-Command git -ErrorAction SilentlyContinue
+                if (-not $gitCmd) {
+                    Warn "  Git source calibration unavailable: git was not found on PATH."
+                    Warn "  Filesystem/stdin calibration will continue; install git and rerun install.ps1 -Calibrate before relying on git-source autorouting."
+                    $unavailableCalibrations += 'git'
+                } else {
+                    $gitPath = $gitCmd.Source
+                    $gitCalibration = $true
+                }
+            }
+            $dockerCalibration = $false
+            $dockerPath = $null
+            if ($scanHelp -match '--docker-image') {
+                $dockerCmd = Get-Command docker -ErrorAction SilentlyContinue
+                if (-not $dockerCmd) {
+                    Warn "  Docker image calibration unavailable: docker was not found on PATH."
+                    Warn "  Filesystem/stdin calibration will continue; install Docker and rerun install.ps1 -Calibrate before relying on Docker image autorouting."
+                    $unavailableCalibrations += 'docker'
+                } else {
+                    $dockerPath = $dockerCmd.Source
+                    $dockerCalibration = $true
+                }
+            }
+            $webCalibration = $false
+            if ($scanHelp -match '--url') {
+                $webCalibration = $true
+            }
+            $workloads = @()
+            $emptyStdin = Join-Path $tmpDir 'probe-stdin-empty.txt'
+            New-Item -ItemType File -Force -Path $emptyStdin | Out-Null
+            $workloads += [pscustomobject]@{
+                Label = 'empty stdin workload'
+                Target = $emptyStdin
+                Mode = 'stdin'
+                Out = Join-Path $tmpDir 'out-stdin-empty.json'
+                Stdout = Join-Path $tmpDir 'stdout-stdin-empty.txt'
+                Stderr = Join-Path $tmpDir 'stderr-stdin-empty.txt'
+            }
+            $stdin64 = Join-Path $tmpDir 'probe-stdin-64kib.txt'
+            New-CalibrationProbeKiB -Path $stdin64 -KiB 64
+            $workloads += [pscustomobject]@{
+                Label = 'stdin 64 KiB workload'
+                Target = $stdin64
+                Mode = 'stdin'
+                Out = Join-Path $tmpDir 'out-stdin-64kib.json'
+                Stdout = Join-Path $tmpDir 'stdout-stdin-64kib.txt'
+                Stderr = Join-Path $tmpDir 'stderr-stdin-64kib.txt'
+            }
+            foreach ($kib in @(4, 64)) {
+                $probe = Join-Path $tmpDir "probe-${kib}kib.txt"
+                New-CalibrationProbeKiB -Path $probe -KiB $kib
+                $workloads += [pscustomobject]@{
+                    Label = "${kib} KiB workload"
+                    Target = $probe
+                    Mode = 'path'
+                    Out = Join-Path $tmpDir "out-${kib}kib.json"
+                    Stdout = Join-Path $tmpDir "stdout-${kib}kib.txt"
+                    Stderr = Join-Path $tmpDir "stderr-${kib}kib.txt"
+                }
+            }
+            foreach ($mib in @(1, 8, 32)) {
+                $probe = Join-Path $tmpDir "probe-${mib}mib.txt"
+                New-CalibrationProbe -Path $probe -MiB $mib
+                $workloads += [pscustomobject]@{
+                    Label = "${mib} MiB workload"
+                    Target = $probe
+                    Mode = 'path'
+                    Out = Join-Path $tmpDir "out-${mib}mib.json"
+                    Stdout = Join-Path $tmpDir "stdout-${mib}mib.txt"
+                    Stderr = Join-Path $tmpDir "stderr-${mib}mib.txt"
+                }
+            }
+            $decodeHeavy = Join-Path $tmpDir 'probe-decode-heavy-256kib.txt'
+            New-DecodeHeavyCalibrationProbeKiB -Path $decodeHeavy -KiB 256
+            $workloads += [pscustomobject]@{
+                Label = 'decode-heavy 256 KiB workload'
+                Target = $decodeHeavy
+                Mode = 'path'
+                Out = Join-Path $tmpDir 'out-decode-heavy-256kib.json'
+                Stdout = Join-Path $tmpDir 'stdout-decode-heavy-256kib.txt'
+                Stderr = Join-Path $tmpDir 'stderr-decode-heavy-256kib.txt'
+            }
+            $tree = Join-Path $tmpDir 'many-4k'
+            New-CalibrationTreeKiB -Path $tree -Files 32 -KiB 4
+            $workloads += [pscustomobject]@{
+                Label = '32 x 4 KiB files workload'
+                Target = $tree
+                Mode = 'path'
+                Out = Join-Path $tmpDir 'out-many-4k.json'
+                Stdout = Join-Path $tmpDir 'stdout-many-4k.txt'
+                Stderr = Join-Path $tmpDir 'stderr-many-4k.txt'
+            }
+            if ($gitCalibration) {
+                $gitRepo = Join-Path $tmpDir 'git-source'
+                New-CalibrationGitRepository -Path $gitRepo -GitPath $gitPath
+                $workloads += [pscustomobject]@{
+                    Label = 'git history 4 KiB source workload'
+                    Target = $gitRepo
+                    Mode = 'git-history'
+                    Out = Join-Path $tmpDir 'out-git-history.json'
+                    Stdout = Join-Path $tmpDir 'stdout-git-history.txt'
+                    Stderr = Join-Path $tmpDir 'stderr-git-history.txt'
+                }
+                $workloads += [pscustomobject]@{
+                    Label = 'git blobs head/history source workload'
+                    Target = $gitRepo
+                    Mode = 'git-blobs'
+                    Out = Join-Path $tmpDir 'out-git-blobs.json'
+                    Stdout = Join-Path $tmpDir 'stdout-git-blobs.txt'
+                    Stderr = Join-Path $tmpDir 'stderr-git-blobs.txt'
+                }
+                $workloads += [pscustomobject]@{
+                    Label = 'git diff 12 KiB source workload'
+                    Target = $gitRepo
+                    Mode = 'git-diff'
+                    Out = Join-Path $tmpDir 'out-git-diff.json'
+                    Stdout = Join-Path $tmpDir 'stdout-git-diff.txt'
+                    Stderr = Join-Path $tmpDir 'stderr-git-diff.txt'
+                }
+            }
+            if ($dockerCalibration) {
+                $dockerImage = 'keyhog-autoroute-calibration:{0}-{1}' -f $PID, ([System.Guid]::NewGuid().ToString('N').Substring(0, 12))
+                New-CalibrationDockerImage -Path (Join-Path $tmpDir 'docker-source') -Image $dockerImage -DockerPath $dockerPath
+                $dockerImagesToRemove += $dockerImage
+                $workloads += [pscustomobject]@{
+                    Label = 'docker image 4 KiB source workload'
+                    Target = $dockerImage
+                    Mode = 'docker-image'
+                    Out = Join-Path $tmpDir 'out-docker-image.json'
+                    Stdout = Join-Path $tmpDir 'stdout-docker-image.txt'
+                    Stderr = Join-Path $tmpDir 'stderr-docker-image.txt'
+                }
+            }
+            if ($webCalibration) {
+                $webRoot = Join-Path $tmpDir 'web-source'
+                New-CalibrationWebFixture -Path $webRoot
+                $webServer = Start-CalibrationWebServer -Path $webRoot -PortFile (Join-Path $tmpDir 'web-source.port')
+                $webJobsToStop += $webServer.Job
+                $workloads += [pscustomobject]@{
+                    Label = 'web URL 4 KiB source workload'
+                    Target = $webServer.Url
+                    Mode = 'url'
+                    Out = Join-Path $tmpDir 'out-web-url.json'
+                    Stdout = Join-Path $tmpDir 'stdout-web-url.txt'
+                    Stderr = Join-Path $tmpDir 'stderr-web-url.txt'
+                }
+            }
+
+            for ($i = 0; $i -lt $workloads.Count; $i++) {
+                $workload = $workloads[$i]
+                $label = "  [{0}/{1}] {2}" -f ($i + 1), $workloads.Count, $workload.Label
+                switch ($workload.Mode) {
+                    'stdin' {
+                        $args = @('scan', '--stdin') + $configArgs + @('--format', 'json', '-o', $workload.Out)
+                    }
+                    'path' {
+                        $args = @('scan', $workload.Target) + $configArgs + @('--format', 'json', '-o', $workload.Out)
+                    }
+                    'git-history' {
+                        $args = @('scan', '--git-history', $workload.Target, '--max-commits', '1') + $configArgs + @('--format', 'json', '-o', $workload.Out)
+                    }
+                    'git-blobs' {
+                        $args = @('scan', '--git-blobs', $workload.Target, '--max-commits', '2') + $configArgs + @('--format', 'json', '-o', $workload.Out)
+                    }
+                    'git-diff' {
+                        $args = @('scan', '--git-diff', 'HEAD', '--git-diff-path', $workload.Target) + $configArgs + @('--format', 'json', '-o', $workload.Out)
+                    }
+                    'url' {
+                        $args = @('scan', '--url', $workload.Target) + $configArgs + @('--format', 'json', '-o', $workload.Out)
+                    }
+                    'docker-image' {
+                        $args = @('scan', '--docker-image', $workload.Target) + $configArgs + @('--format', 'json', '-o', $workload.Out)
+                    }
+                    default {
+                        throw "unsupported autoroute calibration mode: $($workload.Mode)"
+                    }
+                }
+                $argList = ($args | ForEach-Object { Quote-ProcessArgument $_ }) -join ' '
+                $startArgs = @{
+                    FilePath = $BinPath
+                    ArgumentList = $argList
+                    RedirectStandardOutput = $workload.Stdout
+                    RedirectStandardError = $workload.Stderr
+                    NoNewWindow = $true
+                    PassThru = $true
+                }
+                if ($workload.Mode -eq 'stdin') {
+                    $startArgs.RedirectStandardInput = $workload.Target
+                }
+                $proc = Start-Process @startArgs
+                $frames = @('-', '\', '|', '/')
+                $frame = 0
+                while (-not $proc.HasExited) {
+                    Write-Host ("`r{0} {1}" -f $label, $frames[$frame]) -NoNewline
+                    $frame = ($frame + 1) % $frames.Count
+                    Start-Sleep -Milliseconds 150
+                    $proc.Refresh()
+                }
+                $proc.WaitForExit()
+                if ($proc.ExitCode -eq 0) {
+                    Write-Host ("`r{0} OK" -f $label)
+                } else {
+                    Write-Host ("`r{0} FAILED" -f $label)
+                    $reason = Get-FirstNonEmptyLine -Paths @($workload.Stderr, $workload.Stdout)
+                    if ($reason) { Dim "    reason: $reason" }
+                    Err "Autoroute calibration probe failed for $($workload.Label)."
+                    $failed = $true
+                }
+            }
+            if ($failed) {
+                Err "Autoroute calibration phase failed; persisted auto routing was not updated for every required workload."
+                return $false
+            }
+            if ($unavailableCalibrations.Count -gt 0) {
+                Warn ("Autoroute calibration incomplete for unavailable source classes: {0}." -f ($unavailableCalibrations -join ', '))
+                Warn "Install the required source tools and rerun install.ps1 -Calibrate before using those source routes."
+            }
+            Ok "Autoroute calibration phase complete."
+            return $true
+        } finally {
+            foreach ($job in $webJobsToStop) {
+                Stop-Job -Job $job -ErrorAction SilentlyContinue
+                Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+            }
+            if ($dockerPath) {
+                foreach ($image in $dockerImagesToRemove) {
+                    & $dockerPath image rm -f $image *> $null
+                    if ($LASTEXITCODE -ne 0) {
+                        Dim "  Docker calibration image cleanup failed for $image"
+                    }
+                }
+            }
+            if ($null -eq $oldCal) { Remove-Item Env:KEYHOG_AUTOROUTE_CALIBRATE -ErrorAction SilentlyContinue } else { $env:KEYHOG_AUTOROUTE_CALIBRATE = $oldCal }
+            if ($null -eq $oldBatch) { Remove-Item Env:KEYHOG_BATCH_PIPELINE -ErrorAction SilentlyContinue } else { $env:KEYHOG_BATCH_PIPELINE = $oldBatch }
+            if ($null -eq $oldGpu) { Remove-Item Env:KEYHOG_GPU_AUTOROUTE -ErrorAction SilentlyContinue } else { $env:KEYHOG_GPU_AUTOROUTE = $oldGpu }
+        }
+    } catch {
+        Err "Autoroute calibration probe failed: $_"
+        return $false
+    } finally {
+        Remove-Item -Recurse -Force $tmpDir -ErrorAction SilentlyContinue
+    }
+}
+
+function Get-FirstNonEmptyLine {
+    param([string[]]$Paths)
+    foreach ($path in $Paths) {
+        if (-not (Test-Path $path)) { continue }
+        foreach ($line in Get-Content -Path $path -ErrorAction SilentlyContinue) {
+            if (-not [string]::IsNullOrWhiteSpace($line)) {
+                return $line
+            }
+        }
+    }
+    return $null
+}
+
+function Quote-ProcessArgument {
+    param([string]$Value)
+    if ($Value -notmatch '[\s"]') { return $Value }
+    return '"' + ($Value -replace '"', '\"') + '"'
+}
+
+function New-CalibrationProbe {
+    param([string]$Path, [int]$MiB)
+    New-CalibrationProbeKiB -Path $Path -KiB ($MiB * 1024)
+}
+
+function New-CalibrationProbeKiB {
+    param([string]$Path, [int]$KiB)
+    $chunk = New-PlainCalibrationBlock
+    $writer = [System.IO.StreamWriter]::new($Path, $false, [System.Text.Encoding]::ASCII)
+    try {
+        for ($i = 0; $i -lt $KiB; $i++) { $writer.Write($chunk) }
+    } finally {
+        $writer.Dispose()
+    }
+}
+
+function New-DecodeHeavyCalibrationProbeKiB {
+    param([string]$Path, [int]$KiB)
+    $chunk = New-DecodeHeavyCalibrationBlock
+    $writer = [System.IO.StreamWriter]::new($Path, $false, [System.Text.Encoding]::ASCII)
+    try {
+        for ($i = 0; $i -lt $KiB; $i++) { $writer.Write($chunk) }
+    } finally {
+        $writer.Dispose()
+    }
+}
+
+function New-RepeatedCalibrationBlock {
+    param([string]$Seed)
+    $block = $Seed
+    while ($block.Length -lt 1024) {
+        $block += $Seed
+    }
+    return $block.Substring(0, 1024)
+}
+
+function New-PlainCalibrationBlock {
+    New-RepeatedCalibrationBlock -Seed 'src path one. scan text two. keyhog route plain. config value sample. '
+}
+
+function New-DecodeHeavyCalibrationBlock {
+    New-RepeatedCalibrationBlock -Seed 'apiVersion:v1 kind:Secret data token:QUtJQUlPU0ZPRE5ON0VYQU1QTEVBS0lBSU9TRk9ETk43RVhBTVBMRT0= payload:c2stcHJvai1BQkNkZWZHSElKS0xtbm9QUVJTVFVWV1hZWjAxMjM0NTY3ODkwPQ== '
+}
+
+function Invoke-GitCalibrationCommand {
+    param([string]$GitPath, [string[]]$Arguments)
+    & $GitPath @Arguments | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "git $($Arguments -join ' ') exited with code $LASTEXITCODE"
+    }
+}
+
+function New-CalibrationGitRepository {
+    param([string]$Path, [string]$GitPath)
+    New-Item -ItemType Directory -Force -Path $Path | Out-Null
+    Invoke-GitCalibrationCommand -GitPath $GitPath -Arguments @('init', '-q', $Path)
+    Invoke-GitCalibrationCommand -GitPath $GitPath -Arguments @('-C', $Path, 'config', 'user.email', 'keyhog-calibration@example.invalid')
+    Invoke-GitCalibrationCommand -GitPath $GitPath -Arguments @('-C', $Path, 'config', 'user.name', 'Keyhog Autoroute Calibration')
+    Invoke-GitCalibrationCommand -GitPath $GitPath -Arguments @('-C', $Path, 'config', 'commit.gpgsign', 'false')
+    New-CalibrationProbeKiB -Path (Join-Path $Path 'probe.txt') -KiB 4
+    Invoke-GitCalibrationCommand -GitPath $GitPath -Arguments @('-C', $Path, 'add', 'probe.txt')
+    Invoke-GitCalibrationCommand -GitPath $GitPath -Arguments @('-C', $Path, 'commit', '-q', '-m', 'keyhog autoroute calibration baseline')
+    New-CalibrationProbeKiB -Path (Join-Path $Path 'probe.txt') -KiB 8
+    Invoke-GitCalibrationCommand -GitPath $GitPath -Arguments @('-C', $Path, 'add', 'probe.txt')
+    Invoke-GitCalibrationCommand -GitPath $GitPath -Arguments @('-C', $Path, 'commit', '-q', '-m', 'keyhog autoroute calibration head')
+    New-CalibrationProbeKiB -Path (Join-Path $Path 'probe.txt') -KiB 12
+}
+
+function Invoke-DockerCalibrationCommand {
+    param([string]$DockerPath, [string[]]$Arguments)
+    & $DockerPath @Arguments | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "docker $($Arguments -join ' ') exited with code $LASTEXITCODE"
+    }
+}
+
+function New-CalibrationDockerImage {
+    param([string]$Path, [string]$Image, [string]$DockerPath)
+    $context = Join-Path $Path 'context'
+    New-Item -ItemType Directory -Force -Path $context | Out-Null
+    New-CalibrationProbeKiB -Path (Join-Path $context 'probe.txt') -KiB 4
+    Set-Content -Path (Join-Path $context 'Dockerfile') -Encoding ASCII -Value @(
+        'FROM scratch',
+        'COPY probe.txt /keyhog-autoroute-probe.txt'
+    )
+    Invoke-DockerCalibrationCommand -DockerPath $DockerPath -Arguments @('build', '-q', '-t', $Image, $context)
+}
+
+function New-CalibrationWebFixture {
+    param([string]$Path)
+    New-Item -ItemType Directory -Force -Path $Path | Out-Null
+    New-CalibrationProbeKiB -Path (Join-Path $Path 'probe.js') -KiB 4
+}
+
+function Start-CalibrationWebServer {
+    param([string]$Path, [string]$PortFile)
+    $job = Start-Job -ScriptBlock {
+        param([string]$Root, [string]$PortPath)
+        $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Parse('127.0.0.1'), 0)
+        $listener.Start()
+        try {
+            $port = ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
+            Set-Content -Path $PortPath -Encoding ASCII -Value $port
+            while ($true) {
+                $client = $listener.AcceptTcpClient()
+                try {
+                    $stream = $client.GetStream()
+                    $reader = [System.IO.StreamReader]::new($stream, [System.Text.Encoding]::ASCII, $false, 1024, $true)
+                    do {
+                        $line = $reader.ReadLine()
+                    } while ($null -ne $line -and $line.Length -gt 0)
+                    $body = [System.IO.File]::ReadAllBytes((Join-Path $Root 'probe.js'))
+                    $header = "HTTP/1.1 200 OK`r`nContent-Type: application/javascript`r`nContent-Length: $($body.Length)`r`nConnection: close`r`n`r`n"
+                    $headerBytes = [System.Text.Encoding]::ASCII.GetBytes($header)
+                    $stream.Write($headerBytes, 0, $headerBytes.Length)
+                    $stream.Write($body, 0, $body.Length)
+                } finally {
+                    $client.Close()
+                }
+            }
+        } finally {
+            $listener.Stop()
+        }
+    } -ArgumentList $Path, $PortFile
+
+    for ($i = 0; $i -lt 100; $i++) {
+        if (Test-Path -PathType Leaf $PortFile) {
+            $port = (Get-Content -Path $PortFile -TotalCount 1).Trim()
+            if ($port) {
+                return [pscustomobject]@{
+                    Job = $job
+                    Url = "http://127.0.0.1:$port/probe.js"
+                }
+            }
+        }
+        if ($job.State -in @('Failed', 'Stopped', 'Completed')) {
+            $reason = Receive-Job -Job $job -ErrorAction SilentlyContinue | Out-String
+            Stop-Job -Job $job -ErrorAction SilentlyContinue
+            Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+            throw "loopback Web URL calibration server exited before publishing a port. $reason"
+        }
+        Start-Sleep -Milliseconds 50
+    }
+    Stop-Job -Job $job -ErrorAction SilentlyContinue
+    Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+    throw "loopback Web URL calibration server did not publish a port"
+}
+
+function New-CalibrationTreeKiB {
+    param([string]$Path, [int]$Files, [int]$KiB)
+    New-Item -ItemType Directory -Force -Path $Path | Out-Null
+    for ($i = 0; $i -lt $Files; $i++) {
+        New-CalibrationProbeKiB -Path (Join-Path $Path "file-$i.txt") -KiB $KiB
+    }
 }
 
 # Holds the path to the pre-upgrade binary backup so a failed verification can
@@ -312,8 +793,8 @@ function Stage-Install {
     }
     # Checksum is verified BEFORE we overwrite, so a corrupt artifact can never
     # replace a working binary. Downloads check against the release's per-asset
-    # .sha256; a -FromFile install checks a sibling PATH.sha256 if the caller
-    # staged one, otherwise trusts the local artifact (provenance is theirs).
+    # .sha256; a -FromFile install requires a sibling PATH.sha256 unless the
+    # operator explicitly accepts an unverified local artifact.
     if ($FromFile) {
         $localSum = "$FromFile.sha256"
         if (Test-Path -PathType Leaf $localSum) {
@@ -322,7 +803,10 @@ function Stage-Install {
                 exit 1
             }
         } else {
-            Dim "  (no $localSum beside the binary; skipping checksum for local install)"
+            if (-not (Allow-UnverifiedInstall "No local checksum file found beside -FromFile binary: $localSum")) {
+                Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+                exit 1
+            }
         }
     } elseif (-not (Verify-Checksum -BinaryPath $tmp -AssetName $Script:Asset)) {
         Remove-Item -Force $tmp -ErrorAction SilentlyContinue
@@ -387,7 +871,6 @@ function Test-Binary {
 function Finalize-Install {
     param($BinPath)
     if (Test-Binary -BinPath $BinPath) {
-        if ($Script:InstallBackup) { Remove-Item -Force $Script:InstallBackup -ErrorAction SilentlyContinue; $Script:InstallBackup = $null }
         # Native post-install health check (parity with install.sh): reuses the
         # scanner's own hw_probe and runs an end-to-end scan self-test, proving
         # the binary actually detects a secret on this host. Non-fatal; a PATH
@@ -404,6 +887,19 @@ function Finalize-Install {
         } catch {
             Warn "Could not run 'keyhog doctor' for post-install verification: $_"
         }
+        if (-not (Invoke-AutorouteCalibration -BinPath $BinPath)) {
+            Err "Autoroute calibration failed; refusing to leave an install whose default auto route is not usable."
+            if ($Script:InstallBackup -and (Test-Path $Script:InstallBackup)) {
+                Move-Item -Force $Script:InstallBackup $BinPath
+                $Script:InstallBackup = $null
+                Warn "Rolled back to your previous working keyhog at $BinPath."
+            } else {
+                Remove-Item -Force $BinPath -ErrorAction SilentlyContinue
+                Warn "Removed the uncalibrated binary; no working keyhog was overwritten."
+            }
+            return $false
+        }
+        if ($Script:InstallBackup) { Remove-Item -Force $Script:InstallBackup -ErrorAction SilentlyContinue; $Script:InstallBackup = $null }
         return $true
     }
     if ($Script:InstallBackup -and (Test-Path $Script:InstallBackup)) {
@@ -576,6 +1072,17 @@ function Do-Uninstall {
     Dim "  (Shell profile entries and completions, if any, are left in place.)"
 }
 
+function Do-Calibrate {
+    $bin = Get-CurrentBinary
+    if (-not $bin) {
+        Err "No installed keyhog binary found to calibrate. Run install first."
+        exit 1
+    }
+    if (-not (Invoke-AutorouteCalibration -BinPath $bin)) {
+        exit 1
+    }
+}
+
 # ============================================================
 # main
 # ============================================================
@@ -584,5 +1091,6 @@ Show-Banner
 
 if ($Repair)         { Do-Repair }
 elseif ($Diagnose)   { Do-Diagnose }
+elseif ($Calibrate)  { Do-Calibrate }
 elseif ($Uninstall)  { Do-Uninstall }
 else                 { Do-Install }
