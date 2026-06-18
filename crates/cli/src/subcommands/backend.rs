@@ -1,4 +1,4 @@
-//! `keyhog backend` - inspect the auto-routing decision for this hardware.
+//! `keyhog backend` - inspect backend selection inputs for this hardware.
 //!
 //! Prints detected hardware (cores, SIMD, GPU, Hyperscan, io_uring), the
 //! steady-state backend the orchestrator would pick on this box, and a
@@ -6,14 +6,14 @@
 //! for confirming the GPU is actually being routed to on a build where you
 //! expect it (CI matrix, post-install smoke check).
 //!
-//! Honors the `KEYHOG_BACKEND={gpu,simd,cpu}` env var override.
+//! Backend overrides are explicit scan flags (`keyhog scan --backend ...`);
+//! this report shows the automatic hardware/workload matrix.
 
 use crate::args::BackendArgs;
 use crate::exit_codes::EXIT_BACKEND_SELF_TEST_FAILED;
 use anyhow::Result;
 use keyhog_scanner::hw_probe::{
-    classify_gpu_tier, gpu_min_bytes_for_tier, gpu_solo_bytes_for_tier, probe_hardware,
-    select_backend, thresholds, GpuTier,
+    gpu_routing_profile, gpu_routing_profiles, probe_hardware, select_backend,
 };
 use serde::Serialize;
 use std::process::ExitCode;
@@ -27,8 +27,6 @@ pub fn run(args: BackendArgs) -> Result<ExitCode> {
 }
 
 fn print_backend_report(args: &BackendArgs) -> Result<()> {
-    crate::backend_env::validate_keyhog_backend_env()?;
-
     let hw = probe_hardware();
 
     println!("## hardware");
@@ -49,7 +47,7 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
     println!(
         "  gpu:               {} {}",
         if hw.gpu_available {
-            hw.gpu_name.as_deref().unwrap_or("yes")
+            hw.gpu_name.as_deref().unwrap_or("yes") // LAW10: absent name/label => display default; reporting-only, recall-safe
         } else {
             "not detected"
         },
@@ -90,21 +88,15 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
         }
     );
 
-    if let Ok(forced) = std::env::var("KEYHOG_BACKEND") {
-        println!();
-        println!("## env override");
-        println!("  KEYHOG_BACKEND={forced}");
-    }
-
     let pat = args.patterns;
     println!();
     println!("## routing decision matrix (pattern_count = {pat})");
     // Tier-aware: pull the active GPU's actual thresholds so the
     // matrix reflects what THIS box would route to, not the legacy
     // low-tier defaults that didn't apply to RTX 40/50-class adapters.
-    let active_tier = classify_gpu_tier(hw.gpu_name.as_deref());
-    let active_min = gpu_min_bytes_for_tier(active_tier);
-    let active_solo = gpu_solo_bytes_for_tier(active_tier);
+    let active_profile = gpu_routing_profile(hw.gpu_name.as_deref());
+    let active_min = active_profile.min_bytes;
+    let active_solo = active_profile.solo_bytes;
     let scenarios: &[(u64, &str)] = &[
         (0, "idle (size=0)"),
         (4 * 1024, "4 KiB single chunk"),
@@ -135,55 +127,41 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
 
     println!();
     println!("## gpu tier (heuristic from adapter name)");
-    let tier = classify_gpu_tier(hw.gpu_name.as_deref());
-    let tier_label = match tier {
-        GpuTier::High => "High (RTX 40/50, A100/H100, M-Max)",
-        GpuTier::Mid => "Mid (RTX 20/30, GTX 16, Arc, M-Pro/base)",
-        GpuTier::Low => "Low / unknown",
-    };
+    let tier = gpu_routing_profile(hw.gpu_name.as_deref());
+    let tier_label = format!("{} ({})", tier.tier, tier.description);
     println!("  classified:                {tier_label}");
     println!(
-        "  effective min bytes:       {} (tier {:?})",
-        fmt_bytes(gpu_min_bytes_for_tier(tier)),
-        tier
+        "  effective min bytes:       {} (tier {})",
+        fmt_bytes(tier.min_bytes),
+        tier.tier
     );
     println!(
         "  effective solo cap:        {}",
-        fmt_bytes(gpu_solo_bytes_for_tier(tier))
+        fmt_bytes(tier.solo_bytes)
     );
 
     println!();
     println!("## thresholds (per-tier table)");
-    println!(
-        "  high tier  min/solo       = {} / {}",
-        fmt_bytes(thresholds::GPU_MIN_BYTES_HIGH_TIER),
-        fmt_bytes(thresholds::GPU_BYTES_BREAKEVEN_SOLO_HIGH_TIER)
-    );
-    println!(
-        "  mid tier   min/solo       = {} / {}",
-        fmt_bytes(thresholds::GPU_MIN_BYTES_MID_TIER),
-        fmt_bytes(thresholds::GPU_BYTES_BREAKEVEN_SOLO_MID_TIER)
-    );
-    println!(
-        "  low tier   min/solo       = {} / {}",
-        fmt_bytes(thresholds::GPU_MIN_BYTES),
-        fmt_bytes(thresholds::GPU_BYTES_BREAKEVEN_SOLO)
-    );
-    println!(
-        "  GPU_PATTERN_BREAKEVEN     = {} patterns",
-        thresholds::GPU_PATTERN_BREAKEVEN
-    );
+    for profile in gpu_routing_profiles() {
+        println!(
+            "  {:<4} tier  min/solo/pattern = {} / {} / {}",
+            profile.tier,
+            fmt_bytes(profile.min_bytes),
+            fmt_bytes(profile.solo_bytes),
+            profile.pattern_breakeven
+        );
+    }
 
     println!();
     println!(
-        "Force a backend with: KEYHOG_BACKEND={{gpu|simd|cpu}}  (or `keyhog scan --backend ...`)"
+        "Force a scan backend with: keyhog scan --backend {{gpu|mega-scan|simd|cpu|auto}} ..."
     );
     Ok(())
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum BackendSelfTestStatus {
+pub(crate) enum BackendSelfTestStatus {
     Pass,
     Fail,
     Known,
@@ -191,25 +169,25 @@ pub enum BackendSelfTestStatus {
 }
 
 #[derive(Debug, Serialize)]
-pub struct BackendSelfTestProbe {
-    pub name: &'static str,
-    pub status: BackendSelfTestStatus,
+pub(crate) struct BackendSelfTestProbe {
+    pub(crate) name: &'static str,
+    pub(crate) status: BackendSelfTestStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub message: Option<String>,
+    pub(crate) message: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub adapter_name: Option<String>,
+    pub(crate) adapter_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub scores: Option<usize>,
+    pub(crate) scores: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_buffer_mb: Option<u64>,
+    pub(crate) max_buffer_mb: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub direct_matches: Option<usize>,
+    pub(crate) direct_matches: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub coalesced_matches: Option<usize>,
+    pub(crate) coalesced_matches: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub matches: Option<usize>,
+    pub(crate) matches: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub backend_id: Option<&'static str>,
+    pub(crate) backend_id: Option<&'static str>,
 }
 
 impl BackendSelfTestProbe {
@@ -246,19 +224,19 @@ impl BackendSelfTestProbe {
 }
 
 #[derive(Debug, Serialize)]
-pub struct BackendSelfTestReport {
-    pub ok: bool,
-    pub status: BackendSelfTestStatus,
-    pub exit_code: u8,
-    pub gpu_available: bool,
-    pub gpu_is_software: bool,
+pub(crate) struct BackendSelfTestReport {
+    pub(crate) ok: bool,
+    pub(crate) status: BackendSelfTestStatus,
+    pub(crate) exit_code: u8,
+    pub(crate) gpu_available: bool,
+    pub(crate) gpu_is_software: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub gpu_name: Option<String>,
+    pub(crate) gpu_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub gpu_max_buffer_mb: Option<u64>,
+    pub(crate) gpu_max_buffer_mb: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub recommended_backend: Option<&'static str>,
-    pub probes: Vec<BackendSelfTestProbe>,
+    pub(crate) recommended_backend: Option<&'static str>,
+    pub(crate) probes: Vec<BackendSelfTestProbe>,
 }
 
 impl BackendSelfTestReport {
@@ -411,7 +389,7 @@ fn print_self_test_report(report: &BackendSelfTestReport) {
             .probes
             .first()
             .and_then(|probe| probe.message.as_deref())
-            .unwrap_or("GPU self-test skipped");
+            .unwrap_or("GPU self-test skipped"); // LAW10: absent name/label => display default; reporting-only, recall-safe
         println!("  \x1b[33mSKIP\x1b[0m: {message}");
         return;
     }
@@ -421,15 +399,15 @@ fn print_self_test_report(report: &BackendSelfTestReport) {
         match probe.status {
             BackendSelfTestStatus::Pass => print_pass_probe(probe),
             BackendSelfTestStatus::Fail => {
-                let message = probe.message.as_deref().unwrap_or("probe failed");
+                let message = probe.message.as_deref().unwrap_or("probe failed"); // LAW10: absent name/label => display default; reporting-only, recall-safe
                 println!("\x1b[31mFAIL\x1b[0m  {message}");
             }
             BackendSelfTestStatus::Known => {
-                let message = probe.message.as_deref().unwrap_or("known limitation");
+                let message = probe.message.as_deref().unwrap_or("known limitation"); // LAW10: absent name/label => display default; reporting-only, recall-safe
                 println!("\x1b[33mKNOWN\x1b[0m {message}.");
             }
             BackendSelfTestStatus::Skip => {
-                let message = probe.message.as_deref().unwrap_or("probe skipped");
+                let message = probe.message.as_deref().unwrap_or("probe skipped"); // LAW10: absent name/label => display default; reporting-only, recall-safe
                 println!("\x1b[33mSKIP\x1b[0m  {message}");
             }
         }
@@ -449,27 +427,86 @@ fn print_pass_probe(probe: &BackendSelfTestProbe) {
     match probe.name {
         "moe_kernel" => println!(
             "\x1b[32mPASS\x1b[0m  ({}, scores={}, max_buffer={} MB)",
-            probe.adapter_name.as_deref().unwrap_or("unknown adapter"),
-            probe.scores.unwrap_or(0),
-            probe.max_buffer_mb.unwrap_or(0)
+            probe.adapter_name.as_deref().unwrap_or("unknown adapter"), // LAW10: absent name/label => display default; reporting-only, recall-safe
+            probe.scores.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
+            probe.max_buffer_mb.unwrap_or(0) // LAW10: empty/absent => documented numeric default, recall-safe
         ),
         "vyre_literal_set" => println!(
             "\x1b[32mPASS\x1b[0m  (direct={}, coalesced={})",
-            probe.direct_matches.unwrap_or(0),
-            probe.coalesced_matches.unwrap_or(0)
+            probe.direct_matches.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
+            probe.coalesced_matches.unwrap_or(0) // LAW10: empty/absent => documented numeric default, recall-safe
         ),
         "vyre_ac_kernel" => println!(
             "\x1b[32mPASS\x1b[0m  (matches={}, backend={})",
-            probe.matches.unwrap_or(0),
-            probe.backend_id.unwrap_or("unknown")
+            probe.matches.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
+            probe.backend_id.unwrap_or("unknown") // LAW10: absent name/label => display default; reporting-only, recall-safe
         ),
         _ => println!("\x1b[32mPASS\x1b[0m"),
     }
 }
 
-#[doc(hidden)]
-pub fn render_self_test_json_for_contract(report: &BackendSelfTestReport) -> Result<String> {
+fn render_self_test_json_for_contract(report: &BackendSelfTestReport) -> Result<String> {
     serde_json::to_string_pretty(report).map_err(Into::into)
+}
+
+#[doc(hidden)]
+pub mod testing {
+    use anyhow::Result;
+
+    pub fn render_failing_ac_probe_json() -> Result<String> {
+        let report = super::BackendSelfTestReport {
+            ok: false,
+            status: super::BackendSelfTestStatus::Fail,
+            exit_code: 4,
+            gpu_available: true,
+            gpu_is_software: false,
+            gpu_name: Some("NVIDIA GeForce RTX 5090".to_string()),
+            gpu_max_buffer_mb: Some(262_144),
+            recommended_backend: Some("simd-regex"),
+            probes: vec![
+                super::BackendSelfTestProbe {
+                    name: "moe_kernel",
+                    status: super::BackendSelfTestStatus::Pass,
+                    message: None,
+                    adapter_name: Some("NVIDIA GeForce RTX 5090".to_string()),
+                    scores: Some(64),
+                    max_buffer_mb: Some(262_144),
+                    direct_matches: None,
+                    coalesced_matches: None,
+                    matches: None,
+                    backend_id: None,
+                },
+                super::BackendSelfTestProbe {
+                    name: "vyre_literal_set",
+                    status: super::BackendSelfTestStatus::Known,
+                    message: Some(
+                        "vyre IR lowering rejects literal_set's subgroup form".to_string(),
+                    ),
+                    adapter_name: None,
+                    scores: None,
+                    max_buffer_mb: None,
+                    direct_matches: None,
+                    coalesced_matches: None,
+                    matches: None,
+                    backend_id: None,
+                },
+                super::BackendSelfTestProbe {
+                    name: "vyre_ac_kernel",
+                    status: super::BackendSelfTestStatus::Fail,
+                    message: Some("GPU AC emitted degenerate match triples".to_string()),
+                    adapter_name: None,
+                    scores: None,
+                    max_buffer_mb: None,
+                    direct_matches: None,
+                    coalesced_matches: None,
+                    matches: None,
+                    backend_id: None,
+                },
+            ],
+        };
+
+        super::render_self_test_json_for_contract(&report)
+    }
 }
 
 fn fmt_bytes(n: u64) -> String {

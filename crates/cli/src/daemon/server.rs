@@ -10,31 +10,30 @@ use keyhog_scanner::CompiledScanner;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::sync::{Notify, Semaphore};
 
 const KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
 
-/// Maximum wall-clock time a single client request may take to fully arrive
-/// once the connection is otherwise idle-waiting for it. Bounds a slowloris /
-/// half-frame stall: a peer that announces a frame length (up to the 64 MiB
-/// `MAX_FRAME_BYTES`) then sends the body slowly — or never — would otherwise
-/// hold a `connection_limit` semaphore permit forever, and enough such
-/// connections starve every OTHER same-uid client of the daemon. The socket is
-/// 0600 (same-uid trust), so this is a buggy/crashed client (an IDE plugin that
-/// opened a socket and died mid-write), not an adversary; the timeout reclaims
-/// the permit so one stuck client can't deadlock the daemon. Five minutes is
-/// generous for a 64 MiB scan payload over a local Unix socket. Overridable via
-/// `KEYHOG_DAEMON_REQUEST_TIMEOUT_SECS` for very large pre-warmed batches.
-fn request_read_timeout() -> std::time::Duration {
-    const DEFAULT_SECS: u64 = 300;
-    let secs = keyhog_core::env_config::u64_at_least_or_default(
-        "KEYHOG_DAEMON_REQUEST_TIMEOUT_SECS",
-        1,
-        DEFAULT_SECS,
-    );
-    std::time::Duration::from_secs(secs)
+const DEFAULT_REQUEST_READ_TIMEOUT_SECS: u64 = 300;
+
+#[derive(Debug, Clone, Copy)]
+pub struct ServerOptions {
+    /// Maximum wall-clock time a single client request may take to fully arrive
+    /// once the connection is otherwise idle-waiting for it. Bounds a slowloris
+    /// / half-frame stall: a peer that announces a frame length (up to the
+    /// 64 MiB `MAX_FRAME_BYTES`) then sends the body slowly, or never, would
+    /// otherwise hold a `connection_limit` semaphore permit forever.
+    pub request_read_timeout: Duration,
+}
+
+impl Default for ServerOptions {
+    fn default() -> Self {
+        Self {
+            request_read_timeout: Duration::from_secs(DEFAULT_REQUEST_READ_TIMEOUT_SECS),
+        }
+    }
 }
 
 /// Default socket path. Prefers `$XDG_RUNTIME_DIR/keyhog.sock`
@@ -68,6 +67,7 @@ struct ServerState {
     active_scans: AtomicU32,
     shutdown: Arc<Notify>,
     detector_count: usize,
+    request_read_timeout: Duration,
     // Caps concurrent in-flight client connections. Without this,
     // every accepted socket spawns an unbounded tokio task that in
     // turn unboundedly spawn_blocks a scanner thread. A burst of
@@ -85,6 +85,7 @@ impl ServerState {
         router: crate::orchestrator::CachedBackendRouter,
         shutdown: Arc<Notify>,
         detector_count: usize,
+        options: ServerOptions,
     ) -> Self {
         let cores = std::thread::available_parallelism()
             .map(|n| n.get())
@@ -98,6 +99,7 @@ impl ServerState {
             active_scans: AtomicU32::new(0),
             shutdown,
             detector_count,
+            request_read_timeout: options.request_read_timeout,
             connection_limit: Arc::new(Semaphore::new(max_conns)),
         }
     }
@@ -111,7 +113,11 @@ impl ServerState {
 /// listener closes. The compiled scanner is built once before the
 /// listener accepts so the first client connection doesn't pay the
 /// init cost (which is the whole point of running a daemon).
-pub async fn run(socket_path: PathBuf, detectors: Vec<DetectorSpec>) -> Result<()> {
+pub async fn run(
+    socket_path: PathBuf,
+    detectors: Vec<DetectorSpec>,
+    options: ServerOptions,
+) -> Result<()> {
     let detector_count = detectors.len();
     let scanner = CompiledScanner::compile(detectors.clone())
         .context("daemon: compiling scanner from detector specs")?;
@@ -121,17 +127,6 @@ pub async fn run(socket_path: PathBuf, detectors: Vec<DetectorSpec>) -> Result<(
     // regex compile once, up front and in parallel, so no client request
     // eats a detector's first-use compile latency.
     scanner.warm();
-
-    // Process-wide dogfood capture is gated by the `KEYHOG_DOGFOOD`
-    // env var on the daemon side. Per-request toggling would require a
-    // protocol bump (and could let one client's debug session inflate
-    // another client's payload), so the env-var path is the conservative
-    // wiring: an operator who wants `keyhog scan --dogfood` to work
-    // against the daemon runs `KEYHOG_DOGFOOD=1 keyhog daemon start`.
-    if std::env::var_os("KEYHOG_DOGFOOD").is_some() {
-        keyhog_scanner::telemetry::enable_dogfood();
-        tracing::info!("daemon: dogfood event capture enabled (KEYHOG_DOGFOOD set)");
-    }
 
     if let Some(parent) = socket_path.parent() {
         trust::ensure_private_socket_dir(parent)?;
@@ -155,6 +150,7 @@ pub async fn run(socket_path: PathBuf, detectors: Vec<DetectorSpec>) -> Result<(
         router,
         shutdown.clone(),
         detector_count,
+        options,
     ));
 
     eprintln!(
@@ -276,7 +272,7 @@ async fn handle_connection(state: Arc<ServerState>, mut stream: UnixStream) -> R
     let mut reader = tokio::io::BufReader::new(reader);
     let mut writer = tokio::io::BufWriter::new(writer);
 
-    let read_timeout = request_read_timeout();
+    let read_timeout = state.request_read_timeout;
     loop {
         // Bound the per-request read so a half-frame / slowloris stall (a peer
         // that announces a frame length then sends the body slowly or never)
@@ -296,8 +292,8 @@ async fn handle_connection(state: Arc<ServerState>, mut stream: UnixStream) -> R
                     anyhow::bail!(
                         "daemon: connection idle for {}s without a complete request; \
                      closing it to reclaim the connection slot (a stuck or slow \
-                     client). Raise KEYHOG_DAEMON_REQUEST_TIMEOUT_SECS for very \
-                     large pre-warmed batches.",
+                     client). Restart the daemon with --request-timeout-secs \
+                     <N> for very large pre-warmed batches.",
                         read_timeout.as_secs()
                     );
                 }
@@ -355,10 +351,7 @@ async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> R
                         ..Default::default()
                     },
                 };
-                let backend = router.choose(
-                    crate::orchestrator::explicit_backend_override(),
-                    std::slice::from_ref(&chunk),
-                )?;
+                let backend = router.choose(None, std::slice::from_ref(&chunk))?;
                 Ok(scanner.scan_with_backend(&chunk, backend))
             },
         )?;
@@ -423,10 +416,7 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
                         ..Default::default()
                     },
                 };
-                let backend = router.choose(
-                    crate::orchestrator::explicit_backend_override(),
-                    std::slice::from_ref(&chunk),
-                )?;
+                let backend = router.choose(None, std::slice::from_ref(&chunk))?;
                 Ok(scanner.scan_with_backend(&chunk, backend))
             },
         )?;

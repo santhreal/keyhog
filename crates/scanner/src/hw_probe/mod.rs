@@ -5,13 +5,11 @@
 //! All detection is done once at startup and cached for the process
 //! lifetime.
 //!
-//! Split into focused submodules so no single file exceeds the
-//! 500-line cap:
+//! Split into focused submodules by hardware-probe responsibility:
 //!
-//!   * [`thresholds`] - GPU routing crossover constants (pub, also
-//!     consumed by tests and the `keyhog backend` debug subcommand).
-//!   * [`tier`] - [`GpuTier`] enum + `classify_gpu_tier` substring
-//!     heuristics + tier→threshold lookups.
+//!   * `thresholds` - GPU routing crossover constants consumed through
+//!     the public tier lookup functions.
+//!   * [`tier`] - GPU adapter classification + tier threshold profiles.
 //!   * [`select`] - [`select_backend`] routing logic + env-override
 //!     parsing.
 //!   * [`banner`] - `startup_banner` formatter for the CLI header.
@@ -22,21 +20,15 @@ use std::sync::OnceLock;
 
 mod banner;
 mod platform;
-mod select;
+pub(crate) mod select;
 mod tier;
 
-pub mod thresholds;
+pub(crate) mod thresholds;
 
 pub use banner::startup_banner;
-pub use select::{
-    clear_test_backend_override, forced_backend_from_env, forced_backend_from_env_uncached,
-    gpu_could_engage, parse_backend_str, select_backend, select_backend_for_batch,
-    set_test_backend_override,
-};
-pub use tier::{
-    classify_gpu_tier, gpu_min_bytes_for_tier, gpu_pattern_breakeven_for_tier,
-    gpu_solo_bytes_for_tier, GpuTier,
-};
+pub(crate) use select::select_backend_for_file;
+pub use select::{cpu_tier_backend, gpu_could_engage, parse_backend_str, select_backend};
+pub use tier::{gpu_routing_profile, gpu_routing_profiles, GpuRoutingProfile};
 
 /// Scan execution backend selected for a given workload.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,7 +39,7 @@ pub enum ScanBackend {
     /// literal-prefix matching only.
     Gpu,
     /// GPU regex multimatch via vyre's `RulePipeline` mega-scan
-    /// pipeline (NFA-based). Activated by `KEYHOG_BACKEND=mega-scan`;
+    /// pipeline (NFA-based). Activated by `--backend mega-scan`;
     /// the regex-completion path that handles patterns
     /// `GpuLiteralSet`'s literal prefix can't reduce to a literal.
     MegaScan,
@@ -82,6 +74,7 @@ pub struct HardwareCaps {
     pub gpu_available: bool,
     pub gpu_name: Option<String>,
     pub gpu_vram_mb: Option<u64>,
+    pub gpu_runtime_identity: Option<String>,
     /// True when the GPU is a software renderer (llvmpipe/lavapipe) - always slower than CPU.
     pub gpu_is_software: bool,
     pub total_memory_mb: Option<u64>,
@@ -97,8 +90,8 @@ pub fn probe_hardware() -> &'static HardwareCaps {
     HW_PROBE.get_or_init(|| {
         let logical_cores = std::thread::available_parallelism()
             .map(|n| n.get())
-            .unwrap_or(1);
-        let physical_cores = platform::physical_core_count().unwrap_or(logical_cores);
+            .unwrap_or(1); // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
+        let physical_cores = platform::physical_core_count().unwrap_or(logical_cores); // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
 
         #[cfg(target_arch = "x86_64")]
         let (has_avx2, has_avx512, has_neon) = (
@@ -112,6 +105,7 @@ pub fn probe_hardware() -> &'static HardwareCaps {
         let (has_avx2, has_avx512, has_neon) = (false, false, false);
 
         let (gpu_available, gpu_name, gpu_vram_mb) = crate::gpu::gpu_probe();
+        let gpu_runtime_identity = crate::gpu::gpu_runtime_identity();
 
         let gpu_is_software = gpu_name.as_deref().is_some_and(|name: &str| {
             let lower = name.to_ascii_lowercase();
@@ -139,6 +133,7 @@ pub fn probe_hardware() -> &'static HardwareCaps {
             gpu_available,
             gpu_name: gpu_name.clone(),
             gpu_vram_mb,
+            gpu_runtime_identity,
             gpu_is_software,
             total_memory_mb,
             io_uring_available,
@@ -160,4 +155,69 @@ pub fn probe_hardware() -> &'static HardwareCaps {
 
         caps
     })
+}
+
+#[doc(hidden)]
+pub mod testing {
+    pub use super::{
+        cpu_tier_backend, gpu_could_engage, parse_backend_str, probe_hardware, select_backend,
+        startup_banner, HardwareCaps, ScanBackend,
+    };
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum GpuTier {
+        High,
+        Mid,
+        Low,
+    }
+
+    fn from_inner(tier: super::tier::GpuTier) -> GpuTier {
+        match tier {
+            super::tier::GpuTier::High => GpuTier::High,
+            super::tier::GpuTier::Mid => GpuTier::Mid,
+            super::tier::GpuTier::Low => GpuTier::Low,
+        }
+    }
+
+    fn to_inner(tier: GpuTier) -> super::tier::GpuTier {
+        match tier {
+            GpuTier::High => super::tier::GpuTier::High,
+            GpuTier::Mid => super::tier::GpuTier::Mid,
+            GpuTier::Low => super::tier::GpuTier::Low,
+        }
+    }
+
+    pub fn classify_gpu_tier(adapter_name: Option<&str>) -> GpuTier {
+        from_inner(super::tier::classify_gpu_tier(adapter_name))
+    }
+
+    pub fn gpu_min_bytes_for_tier(tier: GpuTier) -> u64 {
+        super::tier::gpu_min_bytes_for_tier(to_inner(tier))
+    }
+
+    pub fn gpu_solo_bytes_for_tier(tier: GpuTier) -> u64 {
+        super::tier::gpu_solo_bytes_for_tier(to_inner(tier))
+    }
+
+    pub fn gpu_pattern_breakeven_for_tier(tier: GpuTier) -> usize {
+        super::tier::gpu_pattern_breakeven_for_tier(to_inner(tier))
+    }
+
+    pub fn select_backend_for_batch(
+        caps: &HardwareCaps,
+        workload_bytes: u64,
+        pattern_count: usize,
+        large_chunk_bytes: u64,
+    ) -> ScanBackend {
+        super::select::select_backend_for_batch(
+            caps,
+            workload_bytes,
+            pattern_count,
+            large_chunk_bytes,
+        )
+    }
+
+    pub fn forced_backend_override_for_test() -> Option<ScanBackend> {
+        super::select::forced_backend_override_for_test()
+    }
 }

@@ -15,8 +15,8 @@
 
 ---
 
-**keyhog** scans source trees, git history, Docker images, S3 buckets, and
-running systems for leaked credentials. **902 service-specific detectors**,
+**keyhog** scans source trees, git history, Docker images, GitHub/GitLab/Bitbucket
+repository collections, S3/GCS/Azure Blob buckets, and running systems for leaked credentials. **902 service-specific detectors**,
 decode-through (base64/hex/url/protobuf), confidence scoring, SARIF output,
 zero runtime configuration. Default `keyhog scan .` works out of the box.
 
@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.37
+      - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
         with: { path: ., severity: high, format: sarif }
 ```
 
@@ -58,9 +58,10 @@ lefthook recipes: [`docs/DROP_IN_USAGE.md`](docs/DROP_IN_USAGE.md).
 ### How it works
 
 keyhog compiles its 902 detectors into a single Hyperscan NFA database,
-decodes nested encodings before matching, calibrates confidence per
-detector via Bayesian Beta(α,β) feedback, and routes every scan to the
-fastest hardware backend present:
+decodes nested encodings before matching, and calibrates confidence per
+detector via Bayesian Beta(α,β) feedback. Hardware acceleration is an
+explicit backend selection layer; every selected backend must preserve the
+same detector ids and findings contract:
 
 | Layer / Backend | When | How |
 |---|---|---|
@@ -69,15 +70,53 @@ fastest hardware backend present:
 | `simd-regex` | AVX-512 / AVX2 / NEON + Hyperscan | parallel multi-pattern NFA at ~500 MB/s |
 | `cpu-fallback` | no SIMD, no GPU | Aho-Corasick prefix + Rust `regex` extraction |
 
+### Autoroute Contract
+
+The goal of autoroute is simple and strict: for every scan, on every supported
+OS, architecture, CPU, GPU, driver stack, detector set, config, and workload
+shape, keyhog must pick the fastest backend that returns the same findings.
+
+That means autoroute is not a fixed threshold table, not a hardware-name
+heuristic, and not a fallback hierarchy. There is no "GPU primary with CPU
+fallback", no "CPU safe default", and no preferred backend that runs when the
+decision table is missing. GPU, Hyperscan/SIMD, scalar CPU, and any new engine
+are peer candidates. A backend is eligible only after calibration proves two
+things for the current binary, detector digest, host profile, and workload
+class:
+
+- **Correctness parity:** the candidate backend returns the same detector ids,
+  locations, hashes, and finding counts as the reference scanner path for the
+  sampled workload.
+- **Measured speed:** the candidate is faster than the alternatives on this
+  host and workload class, including batching, detector digest, file-size
+  distribution, accelerator state, and platform overhead. Calibration records
+  store repeated parity-checked trials, not a single lucky timing sample.
+
+The selected decision must be explainable and reproducible. Any cached routing
+decision is keyed by binary version, OS/arch, CPU features, GPU identity,
+detector digest, resolved scan-config digest, backend-affecting runtime env
+knobs, calibration schema, and workload-shape buckets; changing any of those
+invalidates the decision and requires a fresh calibration probe during install
+or explicit recalibration. Invalid existing cache records are rejected instead
+of being silently trusted. The installer runs a visible autoroute calibration
+phase and persists those measured decisions on disk. Normal scans do not
+benchmark candidates or rewrite routing records; they either find a valid
+persisted fastest-correct decision for the scan class or report an invalid
+autoroute state. A missing, stale, invalid, or incomplete decision is not
+permission to run SIMD/CPU/GPU as a substitute. Rerun `install.sh --calibrate`
+or `install.ps1 -Calibrate` to replace the persisted calibration. Explicit
+`--backend` overrides are for diagnostics and benchmarking,
+not evidence that autoroute is correct.
+
 The `simdsieve` prefilter is a performance layer, not a separate detector: a
 hit surfaces under its **canonical detector id** (`aws-access-key`,
 `github-classic-pat`, `slack-bot-token`, …) - identical on every platform and
 build, whether the fast path or the full regex engine made the find.
 
-Backend selection is automatic. On startup:
+Backend selection is reported on startup:
 
 ```
-keyhog v0.5.37 | 16 cores | SIMD: AVX-512 | Hyperscan | 902 detectors
+keyhog v0.5.40 | 16 cores | SIMD: AVX-512 | Hyperscan | 902 detectors
 ```
 
 **Full documentation:** [santhsecurity.github.io/keyhog](https://santhsecurity.github.io/keyhog/) - install, first scan, output formats, detection internals, suppressions, verification, pre-commit + CI integration, CLI reference, exit codes, env vars, contributing. Source under `docs/`.
@@ -128,7 +167,7 @@ install.
 Override the variant with `KEYHOG_VARIANT=cuda` (force the native CUDA
 build, requires `libcuda.so` at runtime) or `KEYHOG_VARIANT=cpu` (force
 the default WGPU + SIMD build, skip GPU detection entirely). Pin a
-version with `KEYHOG_VERSION=v0.5.37`. Change the install dir with
+version with `KEYHOG_VERSION=v0.5.40`. Change the install dir with
 `KEYHOG_INSTALL=/usr/local/bin`.
 
 Three diagnostic modes ship with the same script:
@@ -188,15 +227,12 @@ keyhog scan --git-diff main                            # files changed since bas
 keyhog scan --git-history .                            # every commit, every branch
 keyhog scan --docker-image registry/app:v1             # Docker image layers
 keyhog scan --s3-bucket logs-prod --s3-prefix /        # S3 objects (--s3-endpoint for non-AWS)
+keyhog scan --gcs-bucket logs-prod --gcs-prefix config/ # GCS objects (--gcs-endpoint for compatible APIs)
+keyhog scan --azure-container-url "$AZURE_CONTAINER_URL" --azure-prefix config/
 keyhog scan --github-org acme --github-token "$GH_PAT" # every repo in a GitHub org (PAT required)
+keyhog scan --gitlab-group acme --gitlab-token "$GL_PAT" # every project in a GitLab group
+keyhog scan --bitbucket-workspace acme --bitbucket-username "$BB_USER" --bitbucket-token "$BB_APP_PASSWORD"
 keyhog scan-system --space 50G                         # walk every drive, every git history
-```
-
-Interactive dashboard:
-
-```bash
-keyhog tui demo                       # live finding feed + GPU panel + stats
-keyhog tui . --throttle-ms 200        # paced scan, useful for recordings/demos
 ```
 
 Filter, format, gate:
@@ -270,8 +306,10 @@ loads all 902 with severity + service + keyword filter.
 - **Confidence scoring.** Every finding carries a `[0.0, 1.0]` score
   derived from Shannon entropy, surrounding context, companion match,
   checksum (GitHub CRC32, npm, Slack), and a small ML classifier
-  (~30k params). Default threshold `0.3` filters low-quality matches
-  without hiding real secrets.
+  (~30k params). Default threshold `0.40` (the canonical
+  `ScanConfig::default()` floor; same as the `--min-confidence` default
+  and the `[scan] min_confidence` example below) filters low-quality
+  matches without hiding real secrets.
 - **Bayesian per-detector calibration.** `keyhog calibrate --fp generic-api-key`
   feeds a Beta(α,β) posterior that damps detectors that fire wrongly in
   your codebase, sharpening over time without manual rule tuning.
@@ -352,7 +390,7 @@ backend/cache/daemon/OS/GPU matrix.
 ### GitHub Actions
 
 ```yaml
-- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.37
+- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
   with:
     path: .
     severity: high       # info | low | medium | high | critical
@@ -407,7 +445,7 @@ Or via the `pre-commit` framework:
 ```yaml
 repos:
   - repo: https://github.com/santhsecurity/keyhog
-    rev: v0.5.37
+    rev: v0.5.40
     hooks:
       - id: keyhog
 ```
@@ -508,7 +546,7 @@ let findings = scanner.scan(&Chunk {
 Mix shipped + custom detectors by concatenating before compile. The
 scanner is `Send + Sync`; share one across rayon workers. Streaming
 source helpers in `keyhog-sources` (file-system, git, stdin, Docker,
-S3, GitHub org). Live verification in `keyhog-verifier`.
+S3, GCS, Azure Blob, GitHub org, GitLab group, Bitbucket workspace). Live verification in `keyhog-verifier`.
 
 Full API surface + stability policy: [`site/api.html`](./site/api.html).
 
@@ -522,6 +560,12 @@ severity = "high"
 min_confidence = 0.40          # canonical default; raise toward 0.85 for fewer FPs
 exclude = ["**/test/fixtures/**", "vendor/"]
 
+[limits]
+stdin_bytes = "10MB"
+web_response_bytes = "10MB"
+git_total_bytes = "256MB"
+docker_tar_total_bytes = "8GB"
+
 [detector.generic-api-key]
 enabled = false                # noisy detector? turn it off (hot-* fast-path
                                # ids like `hot-aws_key` are disabled the same way)
@@ -531,6 +575,21 @@ min_confidence = 0.6           # per-detector floor; overrides the global one
 
 [lockdown]
 require = true                 # refuse to run unless --lockdown is passed
+
+[system]
+autoroute_cache = "/home/alice/.cache/keyhog/autoroute.json"  # or "off"
+
+[aws]
+canary_accounts = []           # extra 12-digit canary issuer accounts
+knockoff_accounts = []         # treated the same way: do not live-verify
+
+[tuning]
+fallback_hs = true             # scanner recall-route defaults; printed by config --effective
+hs_prefilter_max_len = 4096
+decode_focus = true
+confirmed_suffix_gate = true
+no_candidate_gate = true
+gpu_moe_timeout_ms = 30000
 ```
 
 Precedence (rightmost wins): compiled defaults → `.keyhog.toml`
@@ -570,8 +629,8 @@ Entries past `expires` are silently dropped on load with a WARN.
 crates/
   core/       Detector loading, finding types, reporting (text/JSON/SARIF), allowlists
   scanner/    Hardware routing, Hyperscan, GPU, decode-through, entropy, ML, multiline
-  sources/    File system, git (staged/diff/history), stdin, Docker, S3, GitHub org, web
-  verifier/   Live credential verification (341 detectors carry an active `[detector.verify]` endpoint)
+  sources/    File system, git (staged/diff/history), stdin, Docker, S3, GCS, Azure Blob, GitHub/GitLab/Bitbucket, web
+  verifier/   Live credential verification (344 detectors carry an active `[detector.verify]` endpoint)
   cli/        CLI binary, daemon, watch, baselines, calibrate, hook installer
 detectors/    902 TOML files (data, not code)
 site/         Documentation site (17 pages, GitHub-Pages-ready)

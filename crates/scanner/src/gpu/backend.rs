@@ -13,12 +13,16 @@ use wgpu::util::DeviceExt;
 /// `ml_scorer` so the host-side serial/parallel crossover and this GPU-engage
 /// gate stay locked together.
 use crate::ml_scorer::GPU_BATCH_THRESHOLD;
-const DEFAULT_GPU_MOE_TIMEOUT_MS: u64 = 30_000;
 
 // Single source of truth for the feature width: the MoE input dimension is the
 // ML feature-vector length. Kept in lockstep with the WGSL `INPUT_DIM` in
 // gpu_shader.rs and the host-side feature extractor.
 const INPUT_DIM: usize = crate::ml_scorer::NUM_FEATURES;
+
+const GPU_READBACK_SPIN_LIMIT: u32 = 32;
+const GPU_READBACK_YIELD_LIMIT: u32 = 64;
+const GPU_READBACK_INITIAL_SLEEP_US: u64 = 2;
+const GPU_READBACK_MAX_SLEEP_US: u64 = 256;
 
 #[derive(Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
@@ -52,6 +56,20 @@ impl GpuContext {
         &self.adapter_info.name
     }
 
+    /// Stable-enough runtime identity for calibration caches: wgpu backend,
+    /// device type, PCI/vendor IDs where available, and driver strings.
+    pub(super) fn runtime_identity(&self) -> String {
+        format!(
+            "wgpu:{:?}:type={:?}:vendor={:04x}:device={:04x}:driver={}:info={}",
+            self.adapter_info.backend,
+            self.adapter_info.device_type,
+            self.adapter_info.vendor,
+            self.adapter_info.device,
+            self.adapter_info.driver,
+            self.adapter_info.driver_info
+        )
+    }
+
     #[inline]
     fn device(&self) -> &wgpu::Device {
         &self.device_queue.0
@@ -65,16 +83,39 @@ impl GpuContext {
 
 static GPU: OnceLock<Option<GpuContext>> = OnceLock::new();
 
-fn gpu_moe_timeout() -> Duration {
-    static TIMEOUT: OnceLock<Duration> = OnceLock::new();
-    *TIMEOUT.get_or_init(|| {
-        let ms = std::env::var("KEYHOG_GPU_MOE_TIMEOUT_MS")
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .filter(|&value| value > 0)
-            .unwrap_or(DEFAULT_GPU_MOE_TIMEOUT_MS);
-        Duration::from_millis(ms)
-    })
+struct ReadbackWaitBackoff {
+    iterations: u32,
+    sleep_us: u64,
+}
+
+impl ReadbackWaitBackoff {
+    fn new() -> Self {
+        Self {
+            iterations: 0,
+            sleep_us: GPU_READBACK_INITIAL_SLEEP_US,
+        }
+    }
+
+    fn wait(&mut self, remaining: Duration) {
+        self.iterations = self.iterations.saturating_add(1);
+        if self.iterations <= GPU_READBACK_SPIN_LIMIT {
+            std::hint::spin_loop();
+            return;
+        }
+        if self.iterations <= GPU_READBACK_YIELD_LIMIT {
+            std::thread::yield_now();
+            return;
+        }
+
+        let sleep = Duration::from_micros(self.sleep_us).min(remaining);
+        if !sleep.is_zero() {
+            std::thread::sleep(sleep);
+        }
+        self.sleep_us = self
+            .sleep_us
+            .saturating_mul(2)
+            .min(GPU_READBACK_MAX_SLEEP_US);
+    }
 }
 
 fn init_gpu() -> Result<GpuContext, Box<dyn std::error::Error + Send + Sync>> {
@@ -233,11 +274,15 @@ pub fn get_gpu() -> Option<&'static GpuContext> {
 CPU/SIMD scan path. Set KEYHOG_NO_GPU=1 to silence this, or KEYHOG_REQUIRE_GPU=1 to fail instead."
                 );
             }
-            tracing::debug!("GPU MoE init failed, using CPU fallback: {e}");
+            tracing::debug!("GPU MoE init failed, using CPU fallback: {e}"); // LAW10: NOT the sole surface — the degrade is loud at line ~230 (eprintln when a GPU is actually present) + the MOE_RUNTIME_DEGRADE_WARNED once-guard; CPU MoE is recall-preserving. This debug line is supplementary detail only.
             None
         }
     })
     .as_ref()
+}
+
+pub(super) fn gpu_runtime_identity() -> Option<String> {
+    get_gpu().map(GpuContext::runtime_identity)
 }
 
 /// One-shot guard so a *runtime* GPU-MoE dispatch failure surfaces once per
@@ -327,9 +372,12 @@ Set KEYHOG_NO_GPU=1 to score on the CPU MoE, or KEYHOG_REQUIRE_GPU=1 to hard-fai
 ///
 /// ```rust,ignore
 /// use keyhog_scanner::gpu::batch_score_features;
-/// let _ = batch_score_features(&[[0.0; 42]]);
+/// let _ = batch_score_features(&[[0.0; 42]], std::time::Duration::from_millis(30_000));
 /// ```
-pub fn batch_score_features(features: &[[f32; INPUT_DIM]]) -> Option<Vec<f64>> {
+pub fn batch_score_features(
+    features: &[[f32; INPUT_DIM]],
+    readback_timeout: Duration,
+) -> Option<Vec<f64>> {
     if features.len() < GPU_BATCH_THRESHOLD {
         return None; // Too small for GPU, caller should use CPU
     }
@@ -417,10 +465,11 @@ pub fn batch_score_features(features: &[[f32; INPUT_DIM]]) -> Option<Vec<f64>> {
     let slice = staging_buf.slice(..);
     let (sender, receiver) = std::sync::mpsc::channel();
     slice.map_async(wgpu::MapMode::Read, move |result| {
-        let _ = sender.send(result);
+        let _ = sender.send(result); // LAW10: map-async callback; receiver-dropped => the await already timed out/abandoned (handled below), nothing to deliver; recall-irrelevant
     });
-    let timeout = gpu_moe_timeout();
+    let timeout = readback_timeout;
     let deadline = Instant::now() + timeout;
+    let mut backoff = ReadbackWaitBackoff::new();
     let map_recv = loop {
         match receiver.try_recv() {
             Ok(result) => break result,
@@ -456,7 +505,7 @@ pub fn batch_score_features(features: &[[f32; INPUT_DIM]]) -> Option<Vec<f64>> {
             break result;
         }
 
-        std::thread::sleep(Duration::from_millis(1));
+        backoff.wait(deadline.saturating_duration_since(Instant::now()));
     };
     if let Err(error) = map_recv {
         tracing::warn!(

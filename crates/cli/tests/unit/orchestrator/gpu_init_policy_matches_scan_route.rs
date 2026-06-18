@@ -1,10 +1,10 @@
 use super::support::ENV_LOCK;
 use clap::{CommandFactory, Parser};
 use keyhog::args::ScanArgs;
+use keyhog::orchestrator::gpu_init_policy_for_args_for_test;
 use keyhog::orchestrator_config::testing::{
     autoroute_config_digest_for_scanner, build_scanner_config,
 };
-use keyhog::orchestrator::gpu_init_policy_for_args_for_test;
 use keyhog_scanner::hw_probe::parse_backend_str;
 use keyhog_scanner::GpuInitPolicy;
 use std::ffi::OsString;
@@ -16,10 +16,9 @@ fn scan_args(args: &[&str]) -> ScanArgs {
 fn with_clean_gpu_env(test: impl FnOnce()) {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|err| err.into_inner());
     let keys = [
-        "KEYHOG_BACKEND",
         "KEYHOG_NO_GPU",
         "KEYHOG_REQUIRE_GPU",
-        "KEYHOG_LEGACY_PIPELINE",
+        "KEYHOG_BATCH_PIPELINE",
         "KEYHOG_GPU_AUTOROUTE",
     ];
     let previous: Vec<(&str, Option<OsString>)> = keys
@@ -89,10 +88,9 @@ fn stdin_auto_scan_keeps_environment_gpu_policy() {
 }
 
 #[test]
-fn env_forced_gpu_overrides_filesystem_auto_skip() {
+fn backend_flag_gpu_overrides_filesystem_auto_skip() {
     with_clean_gpu_env(|| {
-        unsafe { std::env::set_var("KEYHOG_BACKEND", "gpu") };
-        let args = scan_args(&["scan", "--path", "."]);
+        let args = scan_args(&["scan", "--backend", "gpu", "--path", "."]);
         assert_eq!(
             gpu_init_policy_for_args_for_test(&args),
             GpuInitPolicy::ForceEnabled

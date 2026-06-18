@@ -1,6 +1,6 @@
-//! Workload-aware backend routing. [`select_backend`] picks one of
-//! [`super::ScanBackend`] per scan based on hardware caps, workload
-//! size, pattern count, and the optional `KEYHOG_BACKEND` env override.
+//! Workload-aware backend routing. File and batch entry points delegate to one
+//! private workload selector so explicit test overrides, GPU suppression, GPU
+//! thresholds, and CPU-tier fallback cannot drift.
 
 use super::tier::{
     classify_gpu_tier, gpu_min_bytes_for_tier, gpu_pattern_breakeven_for_tier,
@@ -12,25 +12,100 @@ thread_local! {
     pub(crate) static TEST_BACKEND_OVERRIDE: std::cell::RefCell<Option<Option<ScanBackend>>> = const { std::cell::RefCell::new(None) };
 }
 
-pub fn set_test_backend_override(val: Option<ScanBackend>) {
+pub(crate) fn set_test_backend_override(val: Option<ScanBackend>) {
     TEST_BACKEND_OVERRIDE.with(|cell| {
         *cell.borrow_mut() = Some(val);
     });
 }
 
-pub fn clear_test_backend_override() {
+pub(crate) fn clear_test_backend_override() {
     TEST_BACKEND_OVERRIDE.with(|cell| {
         *cell.borrow_mut() = None;
     });
+}
+
+/// The CPU-only backend tier for this hardware: `SimdCpu` when Hyperscan is
+/// compiled in OR the CPU has an accelerated SIMD ISA (AVX-512 / AVX2 / NEON),
+/// else the pure-scalar `CpuFallback`. This is the SINGLE source of truth for
+/// the "no GPU in play" decision — every router that needs a non-GPU backend
+/// (`select_backend`, `select_backend_for_file`, `select_backend_for_batch`,
+/// and the CLI's measured
+/// autoroute default) routes through here so the four-way ladder can never
+/// drift between sites.
+#[must_use]
+pub fn cpu_tier_backend(caps: &HardwareCaps) -> ScanBackend {
+    if caps.hyperscan_available || caps.has_avx512 || caps.has_avx2 || caps.has_neon {
+        ScanBackend::SimdCpu
+    } else {
+        ScanBackend::CpuFallback
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct BackendWorkload {
+    bytes: u64,
+    pattern_count: usize,
+    large_chunk_bytes: Option<u64>,
+}
+
+impl BackendWorkload {
+    fn file(bytes: u64, pattern_count: usize) -> Self {
+        Self {
+            bytes,
+            pattern_count,
+            large_chunk_bytes: None,
+        }
+    }
+
+    fn batch(bytes: u64, pattern_count: usize, large_chunk_bytes: u64) -> Self {
+        Self {
+            bytes,
+            pattern_count,
+            large_chunk_bytes: Some(large_chunk_bytes),
+        }
+    }
+
+    fn gpu_dominates_dispatch_cost(self) -> bool {
+        match self.large_chunk_bytes {
+            None => true,
+            Some(large_chunk_bytes) => {
+                large_chunk_bytes > 0 && large_chunk_bytes.saturating_mul(2) >= self.bytes
+            }
+        }
+    }
+}
+
+fn select_backend_for_workload(caps: &HardwareCaps, workload: BackendWorkload) -> ScanBackend {
+    if let Some(forced) = test_backend_override() {
+        return forced;
+    }
+
+    // CI runners have no discrete GPU. Skip GPU consideration here so
+    // the routing decision matches what the GPU init paths will
+    // actually do (env_no_gpu() returns true on CI, so any GPU choice
+    // we make here gets degraded back to SIMD anyway, but at a 250 ms
+    // cold-start cost). This branch saves that round trip. Honours
+    // KEYHOG_NO_GPU=0 as the self-hosted-GPU-runner override.
+    if crate::gpu::env_no_gpu() {
+        return cpu_tier_backend(caps);
+    }
+
+    if workload.gpu_dominates_dispatch_cost()
+        && gpu_could_engage(caps, workload.bytes, workload.pattern_count)
+    {
+        return ScanBackend::Gpu;
+    }
+
+    cpu_tier_backend(caps)
 }
 
 /// Auto-route a scan to the best backend for this hardware + workload.
 ///
 /// Routing rules (highest-priority match wins):
 ///
-/// 0. **Env override** - `KEYHOG_BACKEND={gpu,simd,cpu}` forces a specific
-///    backend. Used by benchmarks and CI to assert routing decisions.
-///    Invalid values fall through to the auto-selection rules below.
+/// 0. **Test override** - scanner tests may force a backend through the
+///    race-free testing facade. Shipped CLI scans pass explicit `--backend`
+///    choices directly to `scan_with_backend` instead of mutating process env.
 /// 1. **GPU** - discrete non-software adapter is present AND the workload is
 ///    large enough to amortize device-dispatch overhead AND we have either
 ///    enough patterns to benefit from massively-parallel literal matching, OR
@@ -50,40 +125,33 @@ pub fn select_backend(
     workload_bytes: u64,
     pattern_count: usize,
 ) -> ScanBackend {
-    if let Some(forced) = backend_env_override() {
-        return forced;
-    }
-
-    // CI runners have no discrete GPU. Skip GPU consideration here so
-    // the routing decision matches what the GPU init paths will
-    // actually do (env_no_gpu() returns true on CI, so any GPU choice
-    // we make here gets degraded back to SIMD anyway, but at a 250 ms
-    // cold-start cost). This branch saves that round trip. Honours
-    // KEYHOG_NO_GPU=0 as the self-hosted-GPU-runner override.
-    if crate::gpu::env_no_gpu() {
-        if caps.hyperscan_available || caps.has_avx512 || caps.has_avx2 || caps.has_neon {
-            return ScanBackend::SimdCpu;
-        }
-        return ScanBackend::CpuFallback;
-    }
-
-    if gpu_could_engage(caps, workload_bytes, pattern_count) {
-        return ScanBackend::Gpu;
-    }
-
-    if caps.hyperscan_available {
-        return ScanBackend::SimdCpu;
-    }
-
-    if caps.has_avx512 || caps.has_avx2 || caps.has_neon {
-        return ScanBackend::SimdCpu;
-    }
-
-    ScanBackend::CpuFallback
+    select_backend_for_workload(caps, BackendWorkload::file(workload_bytes, pattern_count))
 }
 
-/// Batch-aware backend routing. Identical to [`select_backend`] for the CPU
-/// tiers, but adds a structural guard before the GPU branch: `large_chunk_bytes`
+#[must_use]
+pub(crate) fn select_backend_for_file(
+    caps: &HardwareCaps,
+    file_bytes: u64,
+    pattern_count: usize,
+) -> ScanBackend {
+    select_backend_for_workload(caps, BackendWorkload::file(file_bytes, pattern_count))
+}
+
+/// Batch-aware backend routing — a pure, hardware-only library router.
+///
+/// NOTE on the live CLI path: the shipped scan dispatcher does NOT call this;
+/// it uses the measured, parity-checked `MeasuredBackendRouter`
+/// (`crates/cli/src/orchestrator/dispatch/backend.rs`), which benchmarks the
+/// candidate backends on a real sample and gates the GPU behind
+/// `KEYHOG_GPU_AUTOROUTE` (the megakernel is slower than SIMD on keyhog's
+/// workload at every measured size). This function is the deterministic,
+/// side-effect-free dominance heuristic used by the `keyhog backend` report and
+/// by callers that want a backend decision without running the scanner — it
+/// shares [`cpu_tier_backend`] and [`gpu_could_engage`] with the live router so
+/// the CPU-tier verdict never diverges.
+///
+/// Identical to [`select_backend`] for the CPU tiers, but adds a structural
+/// guard before the GPU branch: `large_chunk_bytes`
 /// is the number of bytes in the batch that live in *large* chunks - chunks at
 /// or above the tier's `gpu_min_bytes` floor (the per-file size below which a
 /// chunk can never carry its share of the device-dispatch cost).
@@ -112,49 +180,21 @@ pub fn select_backend(
 /// would still route to GPU. The robust signal is DOMINANCE - GPU engages only
 /// when large-chunk bytes are at least half the batch, so a tiny-file swarm
 /// never qualifies no matter how the large files cluster, while a batch that is
-/// mostly big-file data still gets the device. An explicit `KEYHOG_BACKEND`
-/// override still wins (forced/diagnostic GPU path unchanged), and benchmarks
-/// pin `KEYHOG_BACKEND=simd`, so this only changes the *default* routing for
-/// many-small-file trees - the common real-world scan.
+/// mostly big-file data still gets the device. An explicit CLI backend override
+/// still wins (forced/diagnostic GPU path unchanged), and benchmarks should pin
+/// `--backend simd`, so this only changes the *default* routing for many-small-
+/// file trees - the common real-world scan.
 #[must_use]
-pub fn select_backend_for_batch(
+pub(crate) fn select_backend_for_batch(
     caps: &HardwareCaps,
     workload_bytes: u64,
     pattern_count: usize,
     large_chunk_bytes: u64,
 ) -> ScanBackend {
-    if let Some(forced) = backend_env_override() {
-        return forced;
-    }
-
-    if crate::gpu::env_no_gpu() {
-        if caps.hyperscan_available || caps.has_avx512 || caps.has_avx2 || caps.has_neon {
-            return ScanBackend::SimdCpu;
-        }
-        return ScanBackend::CpuFallback;
-    }
-
-    // Structural guard: GPU only when large-chunk bytes DOMINATE the batch
-    // (>= half the total). The device cost is paid on the whole coalesced
-    // buffer, so it pays off only when most of those bytes are genuinely
-    // large-file data the GPU can accelerate - not tiny files riding along.
-    // A swarm of small files can never clear this no matter how a few large
-    // files cluster in the walk; a big-file-dominated batch still does.
-    let large_dominates =
-        large_chunk_bytes > 0 && large_chunk_bytes.saturating_mul(2) >= workload_bytes;
-    if large_dominates && gpu_could_engage(caps, workload_bytes, pattern_count) {
-        return ScanBackend::Gpu;
-    }
-
-    if caps.hyperscan_available {
-        return ScanBackend::SimdCpu;
-    }
-
-    if caps.has_avx512 || caps.has_avx2 || caps.has_neon {
-        return ScanBackend::SimdCpu;
-    }
-
-    ScanBackend::CpuFallback
+    select_backend_for_workload(
+        caps,
+        BackendWorkload::batch(workload_bytes, pattern_count, large_chunk_bytes),
+    )
 }
 
 /// Cheap, side-effect-free pre-check: could a scan of `workload_bytes` over
@@ -168,9 +208,9 @@ pub fn select_backend_for_batch(
 /// On a many-tiny-file corpus the per-batch byte total never reaches the
 /// high-tier 2 MiB floor (see [`super::thresholds`]), so this returns `false`
 /// and the caller can skip paying for a device no chunk will ever touch.
-/// It does **not** consult `KEYHOG_BACKEND` or `KEYHOG_NO_GPU`; callers that
-/// need the env override should check [`forced_backend_from_env`] /
-/// [`crate::gpu::env_no_gpu`] separately, matching `select_backend`'s order.
+/// It does **not** consult explicit backend overrides or `KEYHOG_NO_GPU`;
+/// callers that need an override should pass it through their own resolved
+/// config before falling back to this hardware-only predicate.
 #[must_use]
 pub fn gpu_could_engage(caps: &HardwareCaps, workload_bytes: u64, pattern_count: usize) -> bool {
     if !caps.gpu_available || caps.gpu_is_software {
@@ -183,70 +223,23 @@ pub fn gpu_could_engage(caps: &HardwareCaps, workload_bytes: u64, pattern_count:
     workload_bytes >= solo || (workload_bytes >= min && pattern_count >= pattern_floor)
 }
 
-/// Parse `KEYHOG_BACKEND` env var into a forced [`ScanBackend`].
-/// Recognized values: `gpu`, `mega-scan`, `simd`, `cpu` (case-
-/// insensitive). `mega-scan` selects the regex-NFA pipeline
-/// (`RulePipeline`) instead of the literal-set engine.
-pub fn forced_backend_from_env() -> Option<ScanBackend> {
-    backend_env_override()
+/// Test-only forced backend override.
+pub(crate) fn forced_backend_override_for_test() -> Option<ScanBackend> {
+    test_backend_override()
 }
 
-/// Like [`forced_backend_from_env`] but bypasses the process-lifetime cache.
-///
-/// Callers that read the env exactly once at scan startup (e.g. the CLI's
-/// `explicit_backend_override`) should prefer this. The cache exists for the
-/// per-file hot path inside [`select_backend`]; cold-path callers don't need
-/// it, and bypassing it lets integration tests change `KEYHOG_BACKEND`
-/// between cases inside a single test binary without the first observed
-/// value freezing the rest.
-pub fn forced_backend_from_env_uncached() -> Option<ScanBackend> {
-    parse_backend_env()
-}
-
-pub(super) fn backend_env_override() -> Option<ScanBackend> {
-    let is_test = cfg!(test)
-        || std::env::var("CARGO_MANIFEST_DIR").is_ok()
-        || std::env::current_exe()
-            .ok()
-            .and_then(|p| p.to_str().map(|s| s.contains("/deps/")))
-            .unwrap_or(false);
-
-    if is_test {
-        parse_backend_env()
-    } else {
-        // Cached at process start outside of test builds. `select_backend`
-        // is called per-file on multi-thousand-file scans, so reading the
-        // env var inside every call was a measurable syscall tax on Apple
-        // Silicon (~3% scan throughput hit measured against 30k-file linux
-        // clone). The env is process-global and the operator can't
-        // sensibly change it mid-run anyway. Cache once, read forever.
-        //
-        // Tests need the unchecked path because the hw_probe test suite
-        // sets/unsets KEYHOG_BACKEND inside individual cases to verify the
-        // override semantics; a cache from the first test would freeze
-        // those checks. `cfg!(test)` swaps in the uncached variant only
-        // when this crate's own tests compile.
-        static CACHED: std::sync::OnceLock<Option<ScanBackend>> = std::sync::OnceLock::new();
-        *CACHED.get_or_init(parse_backend_env)
+pub(super) fn test_backend_override() -> Option<ScanBackend> {
+    match TEST_BACKEND_OVERRIDE.with(|cell| *cell.borrow()) {
+        Some(backend) => backend,
+        None => None,
     }
 }
 
-pub(super) fn parse_backend_env() -> Option<ScanBackend> {
-    if let Some(forced) = TEST_BACKEND_OVERRIDE.with(|cell| *cell.borrow()) {
-        return forced;
-    }
-    let raw = std::env::var("KEYHOG_BACKEND").ok()?;
-    parse_backend_str(&raw)
-}
-
-/// Pure `KEYHOG_BACKEND` value → [`ScanBackend`] mapping, with no env or
+/// Pure backend string → [`ScanBackend`] mapping, with no env or
 /// thread-local override read. Tests that only verify the string→backend
-/// mapping MUST call this directly rather than mutating the process-global
-/// `KEYHOG_BACKEND` env var: a global mutation to a GPU value races with every
-/// concurrent scan in the parallel `all_tests` pool, and `gpu_forced` reacts to
-/// a forced-but-unavailable GPU by exiting the whole process — turning a parse
-/// test into a harness-wide abort. Keeping the mapping pure removes that hazard
-/// while staying the single source of truth (`parse_backend_env` calls it).
+/// mapping MUST call this directly rather than mutating global process state.
+/// Keeping the mapping pure removes parallel-test hazards while staying the
+/// single source of truth for CLI/config backend parsing.
 pub fn parse_backend_str(raw: &str) -> Option<ScanBackend> {
     match raw.trim().to_ascii_lowercase().as_str() {
         "gpu" | "gpu-zero-copy" | "literal-set" => Some(ScanBackend::Gpu),

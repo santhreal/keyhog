@@ -25,10 +25,11 @@ fn explicit_backend_does_not_load_stale_autoroute_cache() {
             "--backend",
             "cpu",
         ])
+        .arg("--autoroute-cache")
+        .arg(&cache)
         .arg(&fixture)
         .env_remove("KEYHOG_BACKEND")
         .env_remove("KEYHOG_AUTOROUTE_CALIBRATE")
-        .env("KEYHOG_AUTOROUTE_CACHE", &cache)
         .output()
         .expect("spawn keyhog scan");
 
@@ -45,5 +46,8 @@ fn explicit_backend_does_not_load_stale_autoroute_cache() {
     );
     let findings: Vec<serde_json::Value> =
         serde_json::from_slice(&output.stdout).expect("stdout is JSON findings");
-    assert!(findings.is_empty(), "clean fixture should stay clean: {findings:?}");
+    assert!(
+        findings.is_empty(),
+        "clean fixture should stay clean: {findings:?}"
+    );
 }

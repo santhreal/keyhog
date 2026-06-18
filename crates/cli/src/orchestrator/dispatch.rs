@@ -12,8 +12,8 @@ use crate::orchestrator_config::autoroute_config_digest;
 mod backend;
 mod fused;
 use anyhow::Result;
+pub use backend::backend_requires_coalesced_batch_pipeline_for_test;
 pub(crate) use backend::CachedBackendRouter;
-pub use backend::{backend_requires_coalesced_batch_pipeline_for_test, explicit_backend_override};
 use backend::{AutorouteRoutingError, MeasuredBackendRouter};
 use keyhog_core::{RawMatch, Source};
 use std::sync::Arc;
@@ -139,7 +139,7 @@ impl ScanOrchestrator {
         );
 
         // Auto-route every batch through the persisted calibration router when
-        // the user has not pinned KEYHOG_BACKEND. Normal scans do not benchmark
+        // the user has not pinned `--backend`. Normal scans do not benchmark
         // candidates and do not apply hardware-name thresholds: every selected
         // backend must come from an installer/maintenance calibration record
         // keyed by this binary, detector digest, resolved config, host profile,
@@ -156,6 +156,8 @@ impl ScanOrchestrator {
         let config_digest = autoroute_config_digest(&self.effective_config);
         let rules_digest =
             keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&self.detectors));
+        let autoroute_cache_path = Ok(self.effective_config.autoroute_cache_path.clone());
+        let explicit_backend = self.effective_config.backend_override;
 
         let scanner_thread = std::thread::spawn(
             move || -> std::result::Result<Vec<RawMatch>, AutorouteRoutingError> {
@@ -164,13 +166,14 @@ impl ScanOrchestrator {
                     Explicit(keyhog_scanner::hw_probe::ScanBackend),
                     Measured(MeasuredBackendRouter),
                 }
-                let mut router = match explicit_backend_override() {
+                let mut router = match explicit_backend {
                     Some(backend) => BatchBackendRouter::Explicit(backend),
                     None => BatchBackendRouter::Measured(MeasuredBackendRouter::new(
                         hw_caps,
                         pattern_count,
                         rules_digest,
                         config_digest,
+                        autoroute_cache_path,
                         scanner.as_ref(),
                     )),
                 };

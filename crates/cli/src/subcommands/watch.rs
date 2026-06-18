@@ -36,6 +36,7 @@ const DEDUP_WINDOW: Duration = Duration::from_millis(750);
 
 pub fn run(args: WatchArgs) -> Result<()> {
     crate::backend_env::validate_scan_runtime_env()?;
+    crate::orchestrator_config::configure_hyperscan_cache_dir(args.cache_dir.clone())?;
 
     let watch_root = std::fs::canonicalize(&args.path)
         .with_context(|| format!("canonicalize {}", args.path.display()))?;
@@ -222,10 +223,7 @@ fn scan_file(
             decoded_span: None,
         },
     };
-    let backend = match router.choose(
-        crate::orchestrator::explicit_backend_override(),
-        std::slice::from_ref(&chunk),
-    ) {
+    let backend = match router.choose(None, std::slice::from_ref(&chunk)) {
         Ok(backend) => backend,
         Err(error) => {
             eprintln!("✗ keyhog watch: {error}");

@@ -1236,26 +1236,6 @@ run_autoroute_scan_probe() {
 }
 
 autoroute_cache_path_for_install() {
-    if [ "${KEYHOG_AUTOROUTE_CACHE+x}" = "x" ]; then
-        kh_cache_env_trim="$(printf '%s' "$KEYHOG_AUTOROUTE_CACHE" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-        kh_cache_env_lc="$(printf '%s' "$kh_cache_env_trim" | tr '[:upper:]' '[:lower:]')"
-        case "$kh_cache_env_lc" in
-            ""|0|off)
-                return 1
-                ;;
-        esac
-        case "$kh_cache_env_trim" in
-            /*)
-                printf '%s\n' "$kh_cache_env_trim"
-                return 0
-                ;;
-            *)
-                warn "Autoroute cache summary cannot use KEYHOG_AUTOROUTE_CACHE=$kh_cache_env_trim; the binary requires an absolute cache path."
-                return 1
-                ;;
-        esac
-    fi
-
     if [ "$OS" = "darwin" ]; then
         printf '%s/Library/Caches/keyhog/autoroute.json\n' "$HOME"
     elif [ -n "${XDG_CACHE_HOME:-}" ]; then
@@ -1270,7 +1250,7 @@ show_autoroute_calibration_summary() {
     calibration_started_s="$2"
     cache_path="$(autoroute_cache_path_for_install || true)"
     if [ -z "$cache_path" ]; then
-        warn "Autoroute calibration summary unavailable: persistent autoroute cache is disabled or invalid."
+        warn "Autoroute calibration summary unavailable: platform cache directory is unavailable."
         return 1
     fi
     if [ ! -s "$cache_path" ] || [ ! -r "$cache_path" ]; then

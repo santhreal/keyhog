@@ -19,7 +19,7 @@
 //! case-sensitive literal automaton). It asserts the GPU and SIMD finding sets
 //! are byte-for-byte equal.
 //!
-//! On a host without a usable GPU, `KEYHOG_BACKEND=gpu` degrades to SIMD, so
+//! On a host without a usable GPU, `--backend gpu` fails closed, so
 //! both runs are SIMD and the test trivially passes (it can never falsely
 //! FAIL). On a GPU host it genuinely exercises the GPU engine — the case this
 //! gate exists for. CLAUDE.md Law 8: on a known-GPU host a green here means
@@ -44,8 +44,9 @@ fn findings(path: &str, backend: &str, no_gpu: bool) -> BTreeSet<(String, String
         "--show-secrets",
         "--no-suppress-test-fixtures",
         "--no-daemon",
+        "--backend",
+        backend,
     ]);
-    cmd.env("KEYHOG_BACKEND", backend);
     if no_gpu {
         cmd.env("KEYHOG_NO_GPU", "1");
     } else {

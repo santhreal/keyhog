@@ -8,7 +8,6 @@ use crate::exit_codes::{
     EXIT_FINDINGS, EXIT_LIVE_CREDENTIALS, EXIT_REQUIRE_GPU_UNMET, EXIT_SCANNER_PANIC,
     EXIT_SOURCE_FAILED,
 };
-use crate::orchestrator_config::print_effective_config_if_requested;
 use anyhow::Result;
 use keyhog_core::{VerificationResult, VerifiedFinding};
 use std::io::IsTerminal;
@@ -17,6 +16,7 @@ use std::time::Instant;
 impl ScanOrchestrator {
     pub async fn run(self) -> Result<std::process::ExitCode> {
         let start = Instant::now();
+        let wall_start = chrono::Utc::now();
         let stderr_is_tty = std::io::stderr().is_terminal();
         let show_progress = self.args.progress || stderr_is_tty;
         let progress_ansi = stderr_is_tty && std::env::var_os("NO_COLOR").is_none();
@@ -25,17 +25,7 @@ impl ScanOrchestrator {
             keyhog_scanner::telemetry::enable_dogfood();
         }
 
-        if let Some(backend) = self.args.backend.as_deref() {
-            unsafe {
-                std::env::set_var("KEYHOG_BACKEND", backend);
-            }
-        }
-
-        if print_effective_config_if_requested(&self.effective_config) {
-            return Ok(std::process::ExitCode::SUCCESS);
-        }
-
-        let hardening = keyhog_core::hardening::apply_default_protections();
+        let hardening = keyhog_core::hardening::apply_protections(false);
         if !hardening.failures.is_empty() {
             tracing::warn!(
                 failures = ?hardening.failures,
@@ -115,7 +105,8 @@ impl ScanOrchestrator {
         }
 
         let hw = keyhog_scanner::hw_probe::probe_hardware();
-        let preferred_backend = self.scanner.preferred_backend_label();
+        let scanner_status = self.scanner.runtime_status();
+        let preferred_backend = scanner_status.preferred_backend;
         tracing::info!(
             backend = preferred_backend,
             gpu_available = hw.gpu_available,
@@ -127,26 +118,28 @@ impl ScanOrchestrator {
             "scan backend selected"
         );
         if show_progress {
-            let _ = keyhog_core::banner::print_banner(
+            if let Err(error) = crate::write_banner(
                 &mut std::io::stderr(),
                 progress_ansi,
                 true,
                 self.detectors.len(),
-            );
-            let gpu_label = self.scanner.gpu_backend_label().unwrap_or("none");
+            ) {
+                tracing::debug!(%error, "banner write error");
+            }
+            let gpu_label = scanner_status.gpu_backend.unwrap_or("none"); // LAW10: absent name/label => display default; reporting-only, recall-safe
             eprintln!(
                 "⚡ {} | backend={preferred_backend} | gpu={gpu_label}",
                 keyhog_scanner::hw_probe::startup_banner(
                     hw,
                     self.detectors.len(),
-                    self.scanner.pattern_count(),
+                    scanner_status.pattern_count,
                 )
             );
         }
 
         // Require-GPU preflight, independent of backend routing. When
         // KEYHOG_REQUIRE_GPU=1 and no usable GPU adapter is present (or the GPU
-        // self-test fails), fail closed with the documented exit code 2 BEFORE
+        // self-test fails), fail closed with the dedicated scan exit code BEFORE
         // we warm a backend or scan a byte. This is the no-GPU path the flag
         // exists for: the scanner library's hard-fail only lives inside the
         // GPU-selected dispatch paths, which a no-GPU host never reaches
@@ -158,19 +151,35 @@ impl ScanOrchestrator {
             return Ok(std::process::ExitCode::from(EXIT_REQUIRE_GPU_UNMET));
         }
 
-        let preferred = self.scanner.select_backend_for_file(0);
-        let warm_started = Instant::now();
-        let warmed = self.scanner.warm_backend(preferred);
-        let warm_ms = warm_started.elapsed().as_millis();
-        tracing::debug!(
-            target: "keyhog::routing",
-            backend = preferred.label(),
-            warmed,
-            elapsed_ms = warm_ms as u64,
-            "backend warmed"
-        );
+        let calibration_mode = std::env::var_os("KEYHOG_AUTOROUTE_CALIBRATE").is_some();
+        if calibration_mode {
+            tracing::debug!(
+                target: "keyhog::routing",
+                "backend prewarm skipped during autoroute calibration"
+            );
+        } else {
+            let preferred = match self.effective_config.backend_override {
+                Some(backend) => backend,
+                None => {
+                    keyhog_scanner::hw_probe::select_backend(hw, 0, scanner_status.pattern_count)
+                }
+            };
+            let warm_started = Instant::now();
+            let warmed = self.scanner.warm_backend(preferred);
+            let warm_ms = warm_started.elapsed().as_millis();
+            tracing::debug!(
+                target: "keyhog::routing",
+                backend = preferred.label(),
+                warmed,
+                elapsed_ms = warm_ms as u64,
+                "backend warmed"
+            );
+        }
 
         if self.args.benchmark {
+            // Name the GPU that produced the GPU row so the operator can tell
+            // which adapter the throughput figures came from.
+            eprintln!("benchmark | gpu={}", crate::benchmark::format_gpu_summary());
             let results = crate::benchmark::run_benchmark(&self)?;
             let baseline_mb = results
                 .iter()
@@ -211,11 +220,11 @@ impl ScanOrchestrator {
         )?;
         if sources.is_empty() {
             anyhow::bail!(
-                "no input source specified. Use --path, --stdin, --git, --git-diff, --git-history, --github-org, --s3-bucket, or --docker-image"
+                "no input source specified. Use --path, --stdin, --git, --git-diff, --git-history, --github-org, --gitlab-group, --bitbucket-workspace, --s3-bucket, --gcs-bucket, --azure-container-url, or --docker-image"
             );
         }
 
-        let all_matches = self.scan_sources(sources, show_progress, merkle);
+        let all_matches = self.scan_sources(sources, show_progress, merkle)?;
         let filtered = self.filter_and_resolve(all_matches, &allowlist);
         let findings_pre_rules = self.finalize(filtered).await?;
 
@@ -258,13 +267,12 @@ impl ScanOrchestrator {
             return Ok(std::process::ExitCode::from(EXIT_SOURCE_FAILED));
         }
 
-        if show_progress && !rule_suppressor.is_empty() {
+        if show_progress {
             let dropped = pre_rule_count - findings.len() - client_safe_dropped;
             if dropped > 0 {
                 eprintln!(
-                    "\n  Suppressed {} finding(s) via .keyhogignore.toml ({} rule(s) loaded)",
-                    dropped,
-                    rule_suppressor.len()
+                    "\n  Suppressed {} finding(s) via .keyhogignore.toml",
+                    dropped
                 );
             }
         }
@@ -334,11 +342,22 @@ impl ScanOrchestrator {
             super::reporting::stream_report_previews(&report_findings);
         }
 
-        crate::reporting::report_findings(&report_findings, &self.args)?;
+        let report_metadata =
+            crate::reporting::ReportMetadata::from_scan_times(wall_start, chrono::Utc::now());
+        crate::reporting::report_findings_with_metadata(
+            &report_findings,
+            &self.args,
+            &report_metadata,
+        )?;
 
         let elapsed = start.elapsed().as_secs_f64();
         if show_progress {
-            report_completion_summary(report_findings.len(), elapsed, progress_ansi);
+            report_completion_summary(
+                report_findings.len(),
+                elapsed,
+                progress_ansi,
+                self.effective_config.backend_override,
+            );
         } else {
             report_skip_summary(false);
         }

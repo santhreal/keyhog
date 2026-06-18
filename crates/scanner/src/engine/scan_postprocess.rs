@@ -1,6 +1,6 @@
 use super::CompiledScanner;
 use crate::types::*;
-use keyhog_core::{Chunk, RawMatch};
+use keyhog_core::{Chunk, RawMatch, SensitiveString};
 use std::collections::HashSet;
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::Arc;
@@ -13,13 +13,13 @@ use std::sync::Arc;
 // ENABLE/override toggle now lives on the per-scanner `ScannerTuning`
 // (`self.tuning.confirmed_suffix_gate_enabled()`); only the gate BUILDER remains
 // in the suffix-gate satellite.
+pub use super::scan_postprocess_profile::decode_profile_dump;
+pub(crate) use super::scan_postprocess_profile::ml_batch_profile_dump;
 use super::scan_postprocess_profile::{
     confirmed_prof_enabled, confirmed_prof_vecs, decode_prof_enabled, ml_batch_prof_enabled,
     ml_batch_record, DECODE_GEN_NS, DECODE_PARENTS, DECODE_SCAN_NS, DECODE_SUBCHUNKS,
     DECODE_SUBCHUNK_BYTES,
 };
-pub use super::scan_postprocess_profile::decode_profile_dump;
-pub(crate) use super::scan_postprocess_profile::ml_batch_profile_dump;
 pub(crate) use super::scan_postprocess_suffix_gate::build_confirmed_suffix_gate;
 
 impl CompiledScanner {
@@ -44,12 +44,12 @@ impl CompiledScanner {
         #[cfg(feature = "decode")]
         if chunk.data.len() <= self.config.max_decode_bytes {
             let prof_decode = decode_prof_enabled();
-            // Dedup keys reuse the existing `Arc<str>` from `RawMatch` instead
-            // of cloning to `String`. For 50+ pre-existing matches per chunk
-            // this saves ~10-30 µs of allocator pressure per call.
-            let mut seen: HashSet<(Arc<str>, Arc<str>)> = matches
+            // Dedup keys reuse the shared zeroizing credential from `RawMatch`
+            // instead of cloning to `String`. For 50+ pre-existing matches per
+            // chunk this saves ~10-30 µs of allocator pressure per call.
+            let mut seen: HashSet<(Arc<str>, SensitiveString)> = matches
                 .iter()
-                .map(|m| (Arc::clone(&m.detector_id), Arc::clone(&m.credential)))
+                .map(|m| (Arc::clone(&m.detector_id), m.credential.clone()))
                 .collect();
             let gen_start = prof_decode.then(std::time::Instant::now);
             let decoded_chunks = {
@@ -114,7 +114,7 @@ impl CompiledScanner {
                     // sliced out of the outer chunk). NEVER route them
                     // to the GPU literal-set: per-dispatch overhead
                     // (driver init + queue submit + sync) is 10-100 ms,
-                    // and `KEYHOG_BACKEND=gpu` would otherwise force
+                    // and `--backend gpu` would otherwise force
                     // every decoded chunk through that path. On a
                     // 64 MiB chunk that decodes into 1 000 sub-chunks
                     // that's a 50-second tax - exactly the wall-clock
@@ -139,7 +139,7 @@ impl CompiledScanner {
                 }
                 for m in decoded_matches {
                     if crate::context::is_known_example_credential(&m.credential)
-                        && chunk.data.as_str().contains(m.credential.as_ref())
+                        && chunk.data.as_ref().contains(m.credential.as_ref())
                     {
                         continue;
                     }
@@ -175,7 +175,7 @@ impl CompiledScanner {
             // alias as before.
             decoded_candidates.sort_by_key(|m| m.location.offset);
             for m in decoded_candidates {
-                let key = (Arc::clone(&m.detector_id), Arc::clone(&m.credential));
+                let key = (Arc::clone(&m.detector_id), m.credential.clone());
                 if seen.insert(key) {
                     matches.push(m);
                 }
@@ -387,7 +387,11 @@ impl CompiledScanner {
             .map(|pending| (pending.credential.as_str(), pending.ml_context.as_str()))
             .collect();
 
-        let scores = crate::gpu::batch_ml_inference(&candidates, &self.config);
+        let scores = crate::gpu::batch_ml_inference_with_timeout(
+            &candidates,
+            &self.config,
+            self.tuning.gpu_moe_timeout(),
+        );
         let pending_matches: Vec<_> = scan_state.ml_pending.drain(..).collect();
         for (pending, ml_conf) in pending_matches.into_iter().zip(scores) {
             // Honour the runtime `--ml-weight` / `ml_weight` knob instead

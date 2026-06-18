@@ -1,4 +1,4 @@
-//! KH-GAP-002: explicit failure when `KEYHOG_BACKEND` forces GPU but stack unavailable.
+//! KH-GAP-002: explicit failure when the selected GPU backend is unavailable.
 //!
 //! Also: one-shot loud warning on runtime GPU dispatch failure that
 //! degrades to CPU. The hardware probe + compile-time visibility
@@ -8,7 +8,7 @@
 //! the no-silent-fallback rule, the user needs to know the scan
 //! didn't actually use the GPU they thought was active.
 
-use crate::hw_probe::{forced_backend_from_env, ScanBackend};
+use crate::hw_probe::ScanBackend;
 
 use super::CompiledScanner;
 
@@ -16,16 +16,9 @@ use super::CompiledScanner;
 /// per process, not once per scan or once per chunk.
 static RUNTIME_DEGRADE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
 
-/// Same one-shot guard, scoped to the MegaScan rule-pipeline degrade
-/// path. The two paths fail for different reasons (literal-set: bad
-/// gpu_backend / matcher; MegaScan: regex compile reject) so we want
-/// each to surface independently rather than have one silence the
-/// other.
-static MEGASCAN_DEGRADE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
-
 /// Read KEYHOG_NO_GPU / KEYHOG_REQUIRE_GPU exactly once per process.
-/// Both `deny_silent_gpu_degrade` and `deny_silent_megascan_degrade`
-/// can be invoked per chunk on multi-thousand-chunk scans; un-cached
+/// `deny_silent_gpu_degrade` can be invoked per chunk on multi-thousand-chunk
+/// scans; un-cached
 /// `std::env::var` is a 200ns+ syscall per call. The values are
 /// process-global and can't change mid-run anyway, so a OnceLock is
 /// exact.
@@ -51,10 +44,6 @@ pub fn gpu_forced_unavailable_message(
     scanner: &CompiledScanner,
     backend: ScanBackend,
 ) -> Option<String> {
-    let forced = forced_backend_from_env()?;
-    if !matches!(forced, ScanBackend::Gpu | ScanBackend::MegaScan) {
-        return None;
-    }
     if !matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan) {
         return None;
     }
@@ -62,9 +51,9 @@ pub fn gpu_forced_unavailable_message(
         return None;
     }
     Some(format!(
-        "KEYHOG_BACKEND={} but GPU stack unavailable (gpu_literals={}, gpu_backend={}, gpu_matcher={}) - \
-         silent CPU fallback is forbidden; unset KEYHOG_BACKEND or install a compatible GPU adapter",
-        forced.label(),
+        "{} selected but GPU stack unavailable (gpu_literals={}, gpu_backend={}, gpu_matcher={}) - \
+         silent CPU fallback is forbidden; choose --backend simd/auto or install a compatible GPU adapter",
+        backend.label(),
         scanner.gpu_literals.is_some(),
         scanner.gpu_backend.is_some(),
         scanner.gpu_matcher().is_some(),
@@ -85,15 +74,15 @@ pub fn gpu_forced_unavailable_message(
 /// `orchestrator::run` before any scan) which returns the documented
 /// `ExitCode` through the CLI - no library `process::exit`, so embedders
 /// stay alive. This function's hard exit covers a *different*, narrower
-/// case: `KEYHOG_BACKEND=gpu`/`mega-scan` FORCED a per-chunk GPU dispatch
+/// case: `--backend gpu`/`mega-scan` FORCED a per-chunk GPU dispatch
 /// that then found the stack unusable, deep inside the parallel scan loop
 /// where there is no `Result` channel back to the caller (it runs under
 /// `par_iter` map closures returning `Vec<RawMatch>`). For that forced-
 /// dispatch contract the no-silent-fallback rule requires an immediate
 /// stop, and the only correct stop signal from inside that closure is the
 /// process exit. The hazard for embedders is bounded: it fires only when
-/// the embedder explicitly forced `KEYHOG_BACKEND=gpu` (or set
-/// `KEYHOG_REQUIRE_GPU=1`) AND reached GPU dispatch with a broken stack -
+/// the embedder explicitly forced a GPU backend (or set `KEYHOG_REQUIRE_GPU=1`)
+/// AND reached GPU dispatch with a broken stack -
 /// not on the ordinary no-GPU auto-routing path, which the CLI preflight
 /// now owns.
 pub fn deny_silent_gpu_degrade(scanner: &CompiledScanner, backend: ScanBackend) {
@@ -155,43 +144,5 @@ line for the underlying message). Set KEYHOG_NO_GPU=1 to silence, or \
 KEYHOG_REQUIRE_GPU=1 to hard-fail next time."
             );
         }
-    }
-}
-
-/// Signal the MegaScan degrade-to-literal-set path. The literal-set
-/// fallback is still a legitimate degradation (same recall, slower on
-/// large pattern sets) but the user asked for the regex-NFA pipeline
-/// explicitly. We respect KEYHOG_REQUIRE_GPU (hard-fail) and emit a
-/// one-shot stderr warning otherwise. KEYHOG_NO_GPU silences it.
-///
-/// `reason` is a human-readable cause string passed by the caller
-/// (regex pipeline compile failed, batch over `MEGASCAN_INPUT_LEN`,
-/// no GPU backend handle). It surfaces in the warning so the operator
-/// can see *why* MegaScan dispatched as literal-set.
-pub fn deny_silent_megascan_degrade(reason: &str) {
-    let (no_gpu, require_gpu) = cached_gpu_env_flags();
-    if require_gpu {
-        eprintln!(
-            "keyhog: KEYHOG_REQUIRE_GPU=1 but MegaScan rule-pipeline dispatch failed ({reason}). \
-Refusing to silently fall back to literal-set."
-        );
-        std::process::exit(2);
-    }
-    if no_gpu {
-        return;
-    }
-    if MEGASCAN_DEGRADE_WARNED.set(()).is_ok() {
-        eprintln!(
-            "keyhog: MegaScan rule-pipeline unavailable ({reason}); this scan and any \
-subsequent ones in this process degrade to the literal-set GPU dispatch. \
-Set KEYHOG_NO_GPU=1 to silence, or KEYHOG_REQUIRE_GPU=1 to hard-fail next time."
-        );
-    }
-}
-
-impl CompiledScanner {
-    /// True when literals, backend handle, and compiled matcher are all present.
-    pub(crate) fn gpu_stack_usable(&self) -> bool {
-        self.gpu_literals.is_some() && self.gpu_backend.is_some() && self.gpu_matcher().is_some()
     }
 }

@@ -35,6 +35,30 @@ pub(crate) const MAX_THREADS_CAP: usize = 256;
 /// fix for a dead `--ml-threshold` does not silently change default behaviour.
 pub(crate) const ML_THRESHOLD_DEFAULT: f64 = 0.5;
 
+pub(crate) fn parse_backend_override(
+    raw: Option<&str>,
+) -> Result<Option<keyhog_scanner::ScanBackend>> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("auto") {
+        return Ok(None);
+    }
+    keyhog_scanner::hw_probe::parse_backend_str(trimmed)
+        .map(Some)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "invalid --backend value {:?}. Supported values: auto, gpu, mega-scan, megascan, simd, cpu.",
+                raw
+            )
+        })
+}
+
+pub(crate) fn backend_override_label(backend: Option<keyhog_scanner::ScanBackend>) -> &'static str {
+    backend.map_or("auto", keyhog_scanner::ScanBackend::label)
+}
+
 pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) {
     // Resolution order: --threads CLI arg > KEYHOG_THREADS env > physical core
     // count. Physical (not logical) is the right default for CPU-bound regex
@@ -87,6 +111,40 @@ pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) {
     }
 }
 
+pub(crate) fn configure_hyperscan_cache_dir(cache_dir: Option<PathBuf>) -> Result<()> {
+    if let Some(path) = cache_dir.as_ref() {
+        if !path.is_absolute() {
+            anyhow::bail!(
+                "Hyperscan cache dir '{}' must be absolute. Fix: pass an absolute path under \
+                 your home directory or the per-user keyhog temp cache root.",
+                path.display()
+            );
+        }
+    }
+
+    #[cfg(feature = "simd")]
+    {
+        if let Some(path) = cache_dir.as_ref() {
+            keyhog_scanner::validate_hyperscan_cache_dir(path).map_err(|error| {
+                anyhow::anyhow!("{error}. Configure with --cache-dir or [system].cache_dir")
+            })?;
+        }
+        keyhog_scanner::set_hyperscan_cache_dir(cache_dir);
+    }
+
+    #[cfg(not(feature = "simd"))]
+    {
+        if cache_dir.is_some() {
+            anyhow::bail!(
+                "--cache-dir / [system].cache_dir requires a keyhog build with the simd \
+                 feature; this binary has no Hyperscan cache to configure"
+            );
+        }
+    }
+
+    Ok(())
+}
+
 /// Clamp a user-supplied thread count to a sane range. Logs a
 /// warning when the value was outside the accepted bounds so an
 /// operator who passed `--threads 0` or `--threads 999999` sees what
@@ -123,19 +181,6 @@ fn sanitise_thread_count(requested: usize, physical_cores: usize, source: &'stat
 pub(crate) fn auto_discover_detectors(path: &Path) -> Result<PathBuf> {
     if path != Path::new("detectors") {
         return Ok(path.to_path_buf());
-    }
-
-    if let Some(env_path) = std::env::var_os("KEYHOG_DETECTORS") {
-        let p = PathBuf::from(&env_path);
-        if p.is_dir() {
-            return Ok(p);
-        }
-        anyhow::bail!(
-            "KEYHOG_DETECTORS points at '{}', but it is not an existing detector directory. \
-             Fix: unset KEYHOG_DETECTORS, set it to an existing detector directory, or pass \
-             --detectors <path> explicitly.",
-            p.display()
-        );
     }
 
     if path == Path::new("detectors") && !path.exists() {
@@ -479,7 +524,7 @@ fn load_detectors_embedded_or_fail(path: &Path) -> Result<Vec<DetectorSpec>> {
     if keyhog_core::embedded_detector_count() == 0 {
         anyhow::bail!(
             "detectors directory '{}' not found and no embedded detectors available. \
-             Fix: specify --detectors <path> or set KEYHOG_DETECTORS env var",
+             Fix: specify --detectors <path> or install a binary with embedded detectors",
             path.display()
         );
     }
@@ -628,9 +673,12 @@ pub(crate) fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
 /// `!no_ml`. Two floors meant the value the operator set, the value the engine
 /// applied, and the value postprocess applied could all disagree. Resolving
 /// once and handing the live worker this struct makes "what runs" a single,
-/// printable answer (see `KEYHOG_PRINT_EFFECTIVE_CONFIG=1`).
+/// printable answer (see `keyhog config --effective`).
 #[derive(Debug, Clone)]
 pub(crate) struct ResolvedScanConfig {
+    /// Explicit backend selected by `--backend`. `None` means autoroute/cache
+    /// decides; shipped scans do not read backend selection from ambient env.
+    pub(crate) backend_override: Option<keyhog_scanner::ScanBackend>,
     /// Engine-side config consumed by `CompiledScanner::with_config`.
     pub(crate) scanner: ScannerConfig,
     /// The global post-scan confidence floor a finding must clear to be
@@ -654,6 +702,15 @@ pub(crate) struct ResolvedScanConfig {
     pub(crate) require_lockdown: bool,
     /// Resolved regex lazy-DFA cache cap applied before scanner compilation.
     pub(crate) regex_dfa_limit: Option<usize>,
+    /// Resolved Hyperscan compiled-database cache directory.
+    pub(crate) hyperscan_cache_dir: Option<PathBuf>,
+    /// Resolved persistent autoroute calibration cache file. `None` means
+    /// persistence is explicitly disabled.
+    pub(crate) autoroute_cache_path: Option<PathBuf>,
+    /// Extra AWS canary/knockoff account IDs supplied by `.keyhog.toml`.
+    pub(crate) aws_canary_accounts: Vec<String>,
+    /// Explicit scanner route tuning supplied by `.keyhog.toml`.
+    pub(crate) scanner_tuning: keyhog_scanner::ScannerTuningConfig,
     /// Resolved source byte/count limits applied while constructing sources.
     pub(crate) source_limits: keyhog_sources::SourceLimits,
 }
@@ -677,6 +734,18 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
             outcome.config_errors.join("\n")
         );
     }
+    keyhog_core::safe_bin::set_extra_trusted_dirs(outcome.trusted_bin_dirs.clone());
+    let mut aws_canary_accounts = outcome.aws_canary_accounts;
+    aws_canary_accounts.sort();
+    aws_canary_accounts.dedup();
+    let aws_canary_set = aws_canary_accounts.iter().cloned().collect();
+    keyhog_core::aws::set_extra_canary_accounts(aws_canary_set);
+    configure_hyperscan_cache_dir(args.cache_dir.clone())?;
+    let autoroute_cache_path =
+        crate::autoroute_cache_path::resolve_autoroute_cache_path(args.autoroute_cache.as_deref())
+            .map_err(anyhow::Error::msg)?;
+    let backend_override = parse_backend_override(args.backend.as_deref())?;
+    let scanner_tuning = outcome.scanner_tuning;
     let scanner = build_scanner_config(args);
     // The post-scan floor is the SAME value the engine resolved - read it back
     // off the built config rather than re-deriving from `args`, so the two can
@@ -684,6 +753,7 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
     let min_confidence = scanner.min_confidence;
     let ml_enabled = scanner.ml_enabled;
     Ok(ResolvedScanConfig {
+        backend_override,
         scanner,
         min_confidence,
         ml_enabled,
@@ -691,6 +761,10 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
         disabled_detectors: outcome.disabled_detectors.into_iter().collect(),
         require_lockdown: outcome.require_lockdown,
         regex_dfa_limit: args.regex_dfa_limit,
+        hyperscan_cache_dir: args.cache_dir.clone(),
+        autoroute_cache_path,
+        aws_canary_accounts,
+        scanner_tuning,
         source_limits: args.limits.to_source_limits(),
     })
 }
@@ -699,6 +773,7 @@ pub(crate) fn resolved_scan_config_for_scanner(scanner: ScannerConfig) -> Resolv
     let min_confidence = scanner.min_confidence;
     let ml_enabled = scanner.ml_enabled;
     ResolvedScanConfig {
+        backend_override: None,
         scanner,
         min_confidence,
         ml_enabled,
@@ -706,31 +781,16 @@ pub(crate) fn resolved_scan_config_for_scanner(scanner: ScannerConfig) -> Resolv
         disabled_detectors: std::collections::HashSet::new(),
         require_lockdown: false,
         regex_dfa_limit: None,
+        hyperscan_cache_dir: None,
+        autoroute_cache_path: None,
+        aws_canary_accounts: Vec::new(),
+        scanner_tuning: keyhog_scanner::ScannerTuningConfig::default(),
         source_limits: keyhog_sources::SourceLimits::default(),
     }
 }
 
-/// Hidden effective-config surface: the coherence oracle. Returns
-/// `true` when the dump was requested (the caller should then print-and-exit
-/// SUCCESS without scanning), `false` for a normal scan.
-///
-/// Triggered today by the `KEYHOG_PRINT_EFFECTIVE_CONFIG=1` env var, matching
-/// the existing env-or-flag precedent (`KEYHOG_BACKEND`/`--backend`,
-/// `KEYHOG_THREADS`/`--threads`). Writes the rendered block to stdout so it is
-/// captured by the same `--output`-less stdout path the formatted report uses.
-pub(crate) fn print_effective_config_if_requested(resolved: &ResolvedScanConfig) -> bool {
-    let requested = std::env::var("KEYHOG_PRINT_EFFECTIVE_CONFIG")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false); // LAW10: empty/absent => documented numeric default, recall-safe
-    if !requested {
-        return false;
-    }
-    print!("{}", render_effective_config(resolved));
-    true
-}
-
 /// Render the resolved scan config as a stable, human + machine readable block
-/// for the hidden env-var coherence oracle. It
+/// for `keyhog config --effective`. It
 /// answers "what will actually run?" in one place: the resolved engine config
 /// AND the post-scan floors, so a test (or an operator) can assert that the
 /// tuned value, the benched value, and the shipped value are the same number.
@@ -742,6 +802,10 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
     let s = &resolved.scanner;
     let mut out = String::new();
     out.push_str("[effective-config]\n");
+    out.push_str(&format!(
+        "backend = {}\n",
+        backend_override_label(resolved.backend_override)
+    ));
     out.push_str(&format!("min_confidence = {}\n", resolved.min_confidence));
     out.push_str(&format!("ml_enabled = {}\n", resolved.ml_enabled));
     out.push_str(&format!("ml_weight = {}\n", s.ml_weight));
@@ -821,6 +885,75 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         "disabled_detectors = {}\n",
         resolved.disabled_detectors.len()
     ));
+    let cache_dir = resolved
+        .hyperscan_cache_dir
+        .as_ref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "<platform default>".to_string()); // LAW10: reporting-only label for an unset optional cache-dir; scan compilation still resolves and validates the platform default before use.
+    out.push_str(&format!("hyperscan_cache_dir = {cache_dir}\n"));
+    let autoroute_cache_path = resolved
+        .autoroute_cache_path
+        .as_ref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "<disabled>".to_string()); // LAW10: reporting-only label for explicit disabled autoroute persistence; scan either has a path or fails before benchmarking.
+    out.push_str(&format!("autoroute_cache_path = {autoroute_cache_path}\n"));
+    out.push_str(&format!(
+        "aws_canary_accounts = {}\n",
+        resolved.aws_canary_accounts.len()
+    ));
+    let tuning = &resolved.scanner_tuning;
+    out.push_str(&format!(
+        "tuning_fallback_hs = {}\n",
+        tuning.fallback_hs_effective()
+    ));
+    out.push_str(&format!(
+        "tuning_hs_prefilter_max_len = {}\n",
+        tuning.hs_prefilter_max_len_effective()
+    ));
+    out.push_str(&format!(
+        "tuning_fallback_anchor = {}\n",
+        tuning.fallback_anchor_effective()
+    ));
+    out.push_str(&format!(
+        "tuning_homoglyph_gate = {}\n",
+        tuning.homoglyph_gate_effective()
+    ));
+    out.push_str(&format!(
+        "tuning_homoglyph_ascii_skip = {}\n",
+        tuning.homoglyph_ascii_skip_effective()
+    ));
+    out.push_str(&format!(
+        "tuning_fallback_reverse = {}\n",
+        tuning.fallback_reverse_effective()
+    ));
+    out.push_str(&format!(
+        "tuning_prefilter_truncate = {}\n",
+        tuning.prefilter_truncate_effective()
+    ));
+    out.push_str(&format!(
+        "tuning_fallback_prefix_gate = {}\n",
+        tuning.fallback_prefix_gate_effective()
+    ));
+    out.push_str(&format!(
+        "tuning_decode_focus = {}\n",
+        tuning.decode_focus_effective()
+    ));
+    out.push_str(&format!(
+        "tuning_confirmed_suffix_gate = {}\n",
+        tuning.confirmed_suffix_gate_effective()
+    ));
+    out.push_str(&format!(
+        "tuning_no_candidate_gate = {}\n",
+        tuning.no_candidate_gate_effective()
+    ));
+    out.push_str(&format!(
+        "tuning_fallback_localizer = {}\n",
+        tuning.fallback_localizer_effective()
+    ));
+    out.push_str(&format!(
+        "tuning_gpu_moe_timeout_ms = {}\n",
+        tuning.gpu_moe_timeout_ms_effective()
+    ));
     out.push_str(&format!("known_prefixes = {}\n", s.known_prefixes.len()));
     out.push_str(&format!("secret_keywords = {}\n", s.secret_keywords.len()));
     out.push_str(&format!("test_keywords = {}\n", s.test_keywords.len()));
@@ -881,7 +1014,11 @@ pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
         id.hash(&mut h);
     }
     resolved.require_lockdown.hash(&mut h);
+    backend_override_label(resolved.backend_override).hash(&mut h);
     resolved.regex_dfa_limit.hash(&mut h);
+    resolved.hyperscan_cache_dir.hash(&mut h);
+    resolved.aws_canary_accounts.hash(&mut h);
+    resolved.scanner_tuning.hash(&mut h);
     resolved.source_limits.hash(&mut h);
     hash_autoroute_runtime_env(&mut h);
     h.finish()
@@ -904,20 +1041,7 @@ fn hash_autoroute_runtime_env(h: &mut impl std::hash::Hasher) {
         "KEYHOG_GPU_AUTOROUTE",
         "KEYHOG_GPU_RECALL_FLOOR",
         "KEYHOG_GPU_PARITY",
-        "KEYHOG_GPU_KERNEL",
-        "KEYHOG_GPU_MOE_TIMEOUT_MS",
         "KEYHOG_SHARD_TARGET",
-        "KEYHOG_FALLBACK_HS",
-        "KEYHOG_FALLBACK_HS_MAX_LEN",
-        "KEYHOG_FALLBACK_ANCHOR",
-        "KEYHOG_HOMOGLYPH_GATE",
-        "KEYHOG_HOMOGLYPH_ASCII_SKIP",
-        "KEYHOG_FALLBACK_REVERSE",
-        "KEYHOG_PREFILTER_TRUNCATE",
-        "KEYHOG_FALLBACK_PREFIX_GATE",
-        "KEYHOG_DECODE_FOCUS",
-        "KEYHOG_CONFIRMED_GATE",
-        "KEYHOG_NO_CANDIDATE_GATE",
         "KEYHOG_PER_CHUNK_TIMEOUT_MS",
     ];
     ROUTING_ENV.len().hash(h);
@@ -961,6 +1085,16 @@ pub mod testing {
         super::build_scanner_config(args)
     }
 
+    pub fn resolve_scan_config(args: &mut ScanArgs) -> anyhow::Result<()> {
+        super::resolve_scan_config(args).map(|_| ())
+    }
+
+    pub fn resolve_scan_config_aws_canary_accounts(
+        args: &mut ScanArgs,
+    ) -> anyhow::Result<Vec<String>> {
+        super::resolve_scan_config(args).map(|resolved| resolved.aws_canary_accounts)
+    }
+
     pub fn render_effective_config_for_scanner(scanner: ScannerConfig) -> String {
         let resolved = resolved_config_for_scanner(scanner);
         super::render_effective_config(&resolved)
@@ -975,6 +1109,7 @@ pub mod testing {
         let min_confidence = scanner.min_confidence;
         let ml_enabled = scanner.ml_enabled;
         super::ResolvedScanConfig {
+            backend_override: None,
             scanner,
             min_confidence,
             ml_enabled,
@@ -982,6 +1117,10 @@ pub mod testing {
             disabled_detectors: std::collections::HashSet::new(),
             require_lockdown: false,
             regex_dfa_limit: None,
+            hyperscan_cache_dir: None,
+            autoroute_cache_path: None,
+            aws_canary_accounts: Vec::new(),
+            scanner_tuning: keyhog_scanner::ScannerTuningConfig::default(),
             source_limits: keyhog_sources::SourceLimits::default(),
         }
     }

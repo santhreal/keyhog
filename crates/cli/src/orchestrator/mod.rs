@@ -8,9 +8,9 @@ mod run;
 
 use crate::args::ScanArgs;
 use crate::orchestrator_config::{
-    ResolvedScanConfig, auto_discover_detectors, autoroute_config_digest, configure_threads,
-    load_detectors_no_cache, load_detectors_with_cache, resolve_scan_config,
-    resolved_scan_config_for_scanner,
+    auto_discover_detectors, autoroute_config_digest, configure_threads, load_detectors_no_cache,
+    load_detectors_with_cache, parse_backend_override, resolve_scan_config,
+    resolved_scan_config_for_scanner, ResolvedScanConfig,
 };
 use anyhow::{Context, Result};
 use keyhog_core::{DetectorSpec, RawMatch, Source};
@@ -37,7 +37,7 @@ fn default_incremental_cache_path() -> Option<PathBuf> {
 pub(crate) use postprocess::offline_finding_metadata;
 
 #[doc(hidden)]
-pub use dispatch::{backend_requires_coalesced_batch_pipeline_for_test, explicit_backend_override};
+pub use dispatch::backend_requires_coalesced_batch_pipeline_for_test;
 
 pub(crate) use dispatch::CachedBackendRouter;
 
@@ -50,12 +50,24 @@ pub(crate) fn cached_autoroute_router_for_default_config(
     let rules_digest = keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(detectors));
     let resolved = resolved_scan_config_for_scanner(keyhog_scanner::ScannerConfig::default());
     let config_digest = autoroute_config_digest(&resolved);
-    CachedBackendRouter::new(hw_caps, pattern_count, rules_digest, config_digest, scanner)
+    CachedBackendRouter::new(
+        hw_caps,
+        pattern_count,
+        rules_digest,
+        config_digest,
+        crate::autoroute_cache_path::resolve_autoroute_cache_path(None),
+        scanner,
+    )
 }
 
 #[doc(hidden)]
 pub fn gpu_init_policy_for_args_for_test(args: &ScanArgs) -> GpuInitPolicy {
     gpu_init_policy_for_args(args)
+}
+
+#[doc(hidden)]
+pub fn explicit_backend_override(raw: Option<&str>) -> Result<Option<keyhog_scanner::ScanBackend>> {
+    parse_backend_override(raw)
 }
 
 #[doc(hidden)]
@@ -188,7 +200,7 @@ impl ScanOrchestrator {
         // surfaced LOUDLY (once per process) rather than silently applied — the
         // operator must be able to see why their effective decode window is
         // smaller than what they set. The capped values are also what the
-        // `KEYHOG_PRINT_EFFECTIVE_CONFIG=1` oracle prints (this mutation lands in
+        // `keyhog config --effective` prints (this mutation lands in
         // `effective_config` before it is handed to the orchestrator), so "what
         // runs" stays a single auditable answer.
         if let Some(mem_mb) = hw.total_memory_mb {
@@ -206,8 +218,8 @@ impl ScanOrchestrator {
                             "keyhog: low-RAM host ({mem_mb} MiB < 4096) — capping scan limits to \
                              avoid OOM: max_decode_bytes {prev_decode} → {new_decode}, \
                              max_matches_per_chunk {prev_matches} → {new_matches}. Set these \
-                             explicitly in .keyhog.toml or via flags to override; run with \
-                             KEYHOG_PRINT_EFFECTIVE_CONFIG=1 to see the full resolved config."
+                             explicitly in .keyhog.toml or via flags to override; run \
+                             `keyhog config --effective` to see the full resolved config."
                         );
                     }
                 }
@@ -236,7 +248,8 @@ impl ScanOrchestrator {
                 .with_context(|| {
                     format!("compiling scanner from {} detector specs", detectors.len())
                 })?
-                .with_config(effective_config.scanner.clone()),
+                .with_config(effective_config.scanner.clone())
+                .with_tuning_config(effective_config.scanner_tuning.clone()),
         );
 
         // Detector regexes compile lazily on first use. Warm the whole set in
@@ -331,30 +344,7 @@ impl ScanOrchestrator {
         show_progress: bool,
         merkle: Option<Arc<keyhog_core::merkle_index::MerkleIndex>>,
     ) -> Result<Vec<RawMatch>> {
-        let prior_backend = std::env::var_os("KEYHOG_BACKEND");
-        if prior_backend.is_none() {
-            // SAFETY: this test-only entry point runs synchronously before the
-            // dispatch workers are created. It pins deterministic SIMD routing
-            // so pipeline unit tests exercise scanner behavior without needing
-            // installer autoroute calibration artifacts.
-            unsafe {
-                std::env::set_var("KEYHOG_BACKEND", "simd");
-            }
-        }
-        let result = self.scan_sources(sources, show_progress, merkle);
-        match prior_backend {
-            Some(value) => unsafe {
-                // SAFETY: test-only restoration after dispatch workers have
-                // joined; no scanner thread is still reading KEYHOG_BACKEND.
-                std::env::set_var("KEYHOG_BACKEND", value);
-            },
-            None => unsafe {
-                // SAFETY: test-only restoration after dispatch workers have
-                // joined; no scanner thread is still reading KEYHOG_BACKEND.
-                std::env::remove_var("KEYHOG_BACKEND");
-            },
-        }
-        result
+        self.scan_sources(sources, show_progress, merkle)
     }
 
     /// Test-only constructor bypassing detector-cache and lockdown gating.
@@ -375,6 +365,7 @@ impl ScanOrchestrator {
             disabled_detectors: std::collections::HashSet::new(),
             detector_min_confidence: std::collections::HashMap::new(),
             effective_config: ResolvedScanConfig {
+                backend_override: Some(keyhog_scanner::ScanBackend::SimdCpu),
                 scanner: keyhog_scanner::ScannerConfig::default(),
                 min_confidence: keyhog_scanner::ScannerConfig::default().min_confidence,
                 ml_enabled: keyhog_scanner::ScannerConfig::default().ml_enabled,
@@ -382,6 +373,10 @@ impl ScanOrchestrator {
                 disabled_detectors: std::collections::HashSet::new(),
                 require_lockdown: false,
                 regex_dfa_limit: None,
+                hyperscan_cache_dir: None,
+                autoroute_cache_path: None,
+                aws_canary_accounts: Vec::new(),
+                scanner_tuning: keyhog_scanner::ScannerTuningConfig::default(),
                 source_limits: keyhog_sources::SourceLimits::default(),
             },
         }
@@ -390,12 +385,9 @@ impl ScanOrchestrator {
 
 fn gpu_init_policy_for_args(args: &ScanArgs) -> GpuInitPolicy {
     // GPU init (which acquires the wgpu backend the megakernel needs) follows the
-    // selected backend: an explicit `--backend gpu`/`KEYHOG_BACKEND=gpu`, or the
-    // measured backend-selection policy below.
+    // selected backend: an explicit `--backend gpu`, or the measured
+    // backend-selection policy below.
     if let Some(policy) = backend_name_gpu_policy(args.backend.as_deref()) {
-        return policy;
-    }
-    if let Some(policy) = explicit_backend_override().map(backend_gpu_policy) {
         return policy;
     }
     if filesystem_auto_scan_cannot_route_gpu(args)

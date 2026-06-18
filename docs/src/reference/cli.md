@@ -12,20 +12,25 @@ user error, `3` system error, `10` live credential, `11` scanner panic,
 | Flag                          | Effect                                         |
 |-------------------------------|------------------------------------------------|
 | `<PATH>`                      | Positional path. File or directory.            |
-| `--stdin`                     | Read from stdin instead. 10 MiB cap.           |
+| `--stdin`                     | Read from stdin instead. Default 10 MiB cap; tune with `--limit-stdin-bytes`. |
 | `--exclude-paths <GLOB>...`   | Skip files matching glob. Space-separated list, repeatable. |
 | `--git-staged`                | Scan git-staged files only (pre-commit mode).  |
 | `--git-history <PATH>`        | Walk commits added-line patches (default: HEAD only). |
 | `--git-diff <BASE_REF>`       | Scan only added lines since `BASE_REF`.        |
 | `--docker-image <IMAGE>`      | Scan a saved Docker image archive.             |
+| `--github-org <ORG>`          | Clone and scan every repository in a GitHub organization. Requires `--github-token`. |
+| `--gitlab-group <GROUP>`      | Clone and scan every project in a GitLab group, including subgroups. Requires `--gitlab-token`; use `--gitlab-endpoint` for self-managed GitLab. |
+| `--bitbucket-workspace <WORKSPACE>` | Clone and scan every repository in a Bitbucket Cloud workspace. Requires `--bitbucket-username` and `--bitbucket-token` app password. |
 | `--s3-bucket <BUCKET>`        | Scan an S3 bucket. Use `--s3-prefix` to narrow. |
+| `--gcs-bucket <BUCKET>`       | Scan a Google Cloud Storage bucket. Use `--gcs-prefix` to narrow. |
+| `--azure-container-url <URL>` | Scan an Azure Blob container URL. Include a SAS query string for private containers; use `--azure-prefix` to narrow. |
 | `--url <URL>...`              | Fetch + scan one or more HTTPS URLs (JS/source-map/WASM/text). |
 
 ### Output
 
 | Flag                          | Effect                                         |
 |-------------------------------|------------------------------------------------|
-| `--format <text\|json\|jsonl\|sarif>` | Output format. Default `text`. The machine formats (`json`/`jsonl`/`sarif`) are findings-only: the banner/summary go to stderr (or are omitted), so stdout stays a clean parseable document. |
+| `--format <text\|json\|jsonl\|sarif\|csv\|github-annotations\|gitlab-sast\|html\|junit>` | Output format. Default `text`. The machine formats (`json`/`jsonl`/`sarif`/`csv`/`github-annotations`/`gitlab-sast`/`junit`) are findings-only: the banner/summary go to stderr (or are omitted), so stdout stays a clean parseable artifact. |
 | `--output <FILE>`             | Write the report to `FILE` instead of stdout.  |
 | `--stream`                    | Stream a one-line redacted preview per finding to stderr as they're found; the full formatted report still lands on stdout/`--output` after verification. |
 | `--show-secrets`              | Show full credentials. Default redacts.        |
@@ -37,8 +42,8 @@ user error, `3` system error, `10` live credential, `11` scanner panic,
 | Flag                          | Effect                                         |
 |-------------------------------|------------------------------------------------|
 | `--verify`                    | Call each detector's verify endpoint.          |
-| `--proxy <URL>`               | Route verifier traffic through a proxy (`http://burp:8080`, `socks5://...`). `off` disables all proxying (incl. env). |
-| `--insecure`                  | Skip TLS cert verification on verifier traffic (don't use outside a lab). Env: `KEYHOG_INSECURE_TLS=1`. |
+| `--proxy <URL>`               | Route verifier traffic through a proxy (`http://burp:8080`, `socks5://...`). `off` disables all proxying. |
+| `--insecure`                  | Skip TLS cert verification on verifier traffic (don't use outside a lab). |
 
 ### Performance
 
@@ -49,11 +54,25 @@ user error, `3` system error, `10` live credential, `11` scanner panic,
 | `--no-daemon`                 | Force in-process scan even if daemon is up.    |
 | `--timeout <SECONDS>`         | Hard per-scan deadline.                        |
 
+### Source Limits
+
+Every limit below also has a `[limits]` key in `.keyhog.toml` with the same name
+minus the `limit-` prefix and with dashes changed to underscores.
+
+| Flag | Effect |
+|------|--------|
+| `--limit-stdin-bytes <SIZE>` | Maximum bytes read from `--stdin`. |
+| `--limit-web-response-bytes <SIZE>` | Maximum bytes fetched for one `--url` response. |
+| `--limit-s3-object-bytes <SIZE>` / `--limit-gcs-object-bytes <SIZE>` / `--limit-azure-blob-bytes <SIZE>` | Maximum bytes downloaded for one cloud object/blob. |
+| `--limit-docker-tar-entry-bytes <SIZE>` / `--limit-docker-image-config-bytes <SIZE>` / `--limit-docker-tar-total-bytes <SIZE>` | Docker/OCI archive and manifest/config ceilings. |
+| `--limit-git-line-bytes <SIZE>` / `--limit-git-total-bytes <SIZE>` / `--limit-git-blob-bytes <SIZE>` / `--limit-git-chunks <N>` | Git stdout-line, aggregate, per-blob, and chunk-count ceilings. |
+| `--limit-binary-read-bytes <SIZE>` / `--limit-binary-decompiled-bytes <SIZE>` | Binary strings and Ghidra output ceilings. |
+
 ### Detector tuning
 
 | Flag                          | Effect                                         |
 |-------------------------------|------------------------------------------------|
-| `--detectors <DIR>`           | Use the detector TOMLs in `DIR` instead of the embedded corpus. To run a curated subset, copy the detector TOMLs you want into a directory and point `--detectors` at it (there is no per-ID enable/disable flag). Env: `KEYHOG_DETECTORS`. |
+| `--detectors <DIR>`           | Use the detector TOMLs in `DIR` instead of the embedded corpus. To run a curated subset, copy the detector TOMLs you want into a directory and point `--detectors` at it (there is no per-ID enable/disable flag). |
 | `--no-suppress-test-fixtures` | Show findings on bundled example credentials.  |
 | `--baseline <FILE>`           | Compare against a prior scan; show only new.   |
 | `--hide-client-safe`          | Drop every `CLIENT-SAFE` finding (Sentry DSN, Stripe `pk_*`, Mapbox `pk.`, PostHog `phc_`, etc.) before reporting. Use this for bug-bounty / exfiltration-impact workflows where keys public by design are noise. |
@@ -62,13 +81,34 @@ user error, `3` system error, `10` live credential, `11` scanner panic,
 
 | Variable                              | Effect                                                                |
 |---------------------------------------|-----------------------------------------------------------------------|
-| `KEYHOG_BACKEND=gpu\|simd\|cpu\|auto`  | Force a scan backend instead of letting the auto-router choose.        |
+| `keyhog scan --backend gpu\|simd\|cpu\|auto` | Force a scan backend instead of using automatic backend selection. |
 | `KEYHOG_NO_GPU=1`                     | Short-circuit GPU init at hardware-probe time. The scanner runs as if no GPU adapter existed. Use this when Metal / CUDA init blocks on a given host (Apple Silicon Mac configurations have reproduced this) and you want predictable startup. |
-| `KEYHOG_GPU_MOE_TIMEOUT_MS=<MS>`       | Bound one GPU MoE confidence readback. Default `30000`; timeout falls back to CPU MoE for that batch. |
 | `KEYHOG_PER_CHUNK_TIMEOUT_MS=<MS>`    | Attach an `Instant` deadline to every chunk scan. Default unset = no timeout (original behaviour). Recommend `30000` for production scans where bounded latency matters more than scan completeness. |
 | `KEYHOG_THREADS=<N>`                  | Pin the rayon worker count. Default = physical-core count.            |
-| `KEYHOG_DETECTORS=<DIR>`              | Override the auto-discovered detector directory.                       |
-| `KEYHOG_CACHE_DIR=<DIR>`              | Override the regex / database cache location (must sit under `$HOME` or `/tmp/keyhog-cache-<uid>` for safety).                 |
+
+Hyperscan database cache location is explicit scan configuration: use
+`keyhog scan --cache-dir <DIR>` or `.keyhog.toml` `[system].cache_dir`.
+Autoroute calibration evidence is also explicit scan configuration: use
+`keyhog scan --autoroute-cache <PATH|off>` or `.keyhog.toml`
+`[system].autoroute_cache`.
+GPU MoE readback timeout is explicit scanner tuning:
+`.keyhog.toml` `[tuning].gpu_moe_timeout_ms`.
+
+## `keyhog config --effective [SCAN FLAGS]`
+
+Prints the resolved scan configuration and exits without scanning. This is the
+operator-visible way to prove what the scanner would run after compiled
+defaults, `.keyhog.toml`, and CLI overrides are merged.
+
+`config --effective` accepts the same config-affecting flags as `scan`, including
+`--config`, `--fast`, `--deep`, `--precision`, source limits, detector paths,
+confidence floors, and the positional path shorthand.
+
+```sh
+keyhog config --effective
+keyhog config --effective --config .keyhog.toml --precision .
+keyhog config --effective --limit-stdin-bytes 32MB --no-ml
+```
 
 ## `keyhog detectors`
 
@@ -78,7 +118,7 @@ Lists every detector in the embedded corpus.
 keyhog detectors                  # human-readable, grouped by service
 keyhog detectors --json           # one JSON object per detector
 keyhog detectors --json | jq length
-899
+902
 ```
 
 ## `keyhog explain <DETECTOR_ID>`
@@ -100,28 +140,6 @@ keyhog watch src/                 # watch the source tree
 keyhog watch                      # watch the current directory
 ```
 
-## `keyhog tui [PATH]`
-
-Interactive ratatui dashboard. Streams findings in a severity-colored
-list while a status panel reports files scanned, throughput, GPU
-backend, and pattern count. `q` or `Esc` to quit; any keypress exits
-once the scan completes.
-
-```sh
-keyhog tui .                          # live dashboard on CWD
-keyhog tui demo --throttle-ms 200     # paced scan for demo recordings
-keyhog tui --feed-depth 500 .         # keep more findings in the feed
-keyhog tui --max-files 20 src/        # short fixed-duration loops
-```
-
-| Flag                   | Default | Effect                                           |
-|------------------------|---------|--------------------------------------------------|
-| `--max-files N`        | 0       | Stop after scanning N files. 0 = unlimited.      |
-| `--feed-depth N`       | 200     | Rolling window of recent findings shown.         |
-| `--throttle-ms MS`     | 0       | Sleep MS between files; demo / recording knob.   |
-
-Exit code matches `keyhog scan`: 0 clean, 1 findings present.
-
 ## `keyhog hook <install|uninstall>`
 
 Manages the git pre-commit hook. See
@@ -137,6 +155,10 @@ IDE-save invocations skip the ~3 s cold start.
 | `daemon start`     | Bind the Unix socket, accept connections.           |
 | `daemon stop`      | Tell the running daemon to shut down.               |
 | `daemon status`    | Print uptime, scans served, active scans.           |
+
+`daemon start --request-timeout-secs <N>` sets how long one client connection
+may sit without completing a request frame before the daemon closes it and
+reclaims the connection slot. Default: `300`.
 
 Default socket path: `$XDG_RUNTIME_DIR/keyhog.sock`, or
 `~/.cache/keyhog/server.sock` if `XDG_RUNTIME_DIR` is unset.
@@ -221,6 +243,7 @@ These work on any subcommand:
 | Flag             | Effect                                              |
 |------------------|-----------------------------------------------------|
 | `--version`      | Print version + build info, exit.                   |
+| `--full`         | With `--version`, include the hardware probe.       |
 | `--help`         | Print help for the current subcommand.              |
 | `--verbose`      | More log output to stderr.                          |
 | `--no-color`     | Disable ANSI colors. Auto-detects TTY otherwise.    |

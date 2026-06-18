@@ -8,11 +8,22 @@ pub fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
+pub fn keyhog_command(args: &[&str]) -> Command {
+    let mut cmd = Command::new(binary());
+    apply_default_scan_backend(&mut cmd, args);
+    cmd
+}
+
+pub fn apply_default_scan_backend(cmd: &mut Command, args: &[&str]) {
+    if args.first() == Some(&"scan") && !args.iter().any(|arg| *arg == "--backend") {
+        cmd.arg("scan").args(["--backend", "simd"]).args(&args[1..]);
+    } else {
+        cmd.args(args);
+    }
+}
+
 pub fn run(args: &[&str]) -> Output {
-    Command::new(binary())
-        .args(args)
-        .output()
-        .expect("spawn keyhog")
+    keyhog_command(args).output().expect("spawn keyhog")
 }
 
 pub fn workspace_detectors() -> PathBuf {
@@ -33,6 +44,8 @@ pub fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Op
         "--no-daemon".into(),
         "--format".into(),
         "json".into(),
+        "--backend".into(),
+        "simd".into(),
     ];
     for arg in extra_args {
         cmd_args.push((*arg).into());
@@ -59,7 +72,14 @@ pub fn write_temp_file(name: &str, content: &str) -> (TempDir, PathBuf) {
 }
 
 pub fn scan_path(path: &Path, extra_args: &[&str]) -> Output {
-    let mut args = vec!["scan", "--no-daemon", "--format", "json"];
+    let mut args = vec![
+        "scan",
+        "--no-daemon",
+        "--format",
+        "json",
+        "--backend",
+        "simd",
+    ];
     args.extend(extra_args);
     args.push(path.to_str().expect("utf-8 path"));
     Command::new(binary())
@@ -77,14 +97,21 @@ pub struct DaemonGuard {
 #[cfg(unix)]
 impl DaemonGuard {
     pub fn start() -> Self {
+        Self::start_with_env(&[])
+    }
+
+    pub fn start_with_env(envs: &[(&str, &str)]) -> Self {
         use std::process::Stdio;
         use std::time::{Duration, Instant};
 
         let runtime = TempDir::new().expect("runtime dir");
         let detectors = workspace_detectors();
-        let child = Command::new(binary())
-            .env("XDG_RUNTIME_DIR", runtime.path())
-            .env("KEYHOG_BACKEND", "simd")
+        let mut cmd = Command::new(binary());
+        cmd.env("XDG_RUNTIME_DIR", runtime.path());
+        for (key, value) in envs {
+            cmd.env(key, value);
+        }
+        let child = cmd
             .args([
                 "daemon",
                 "start",

@@ -1,13 +1,11 @@
 //! Backend override parsing and calibrated batch backend selection.
 
-mod cache_path;
 mod calibration;
 mod evidence;
 mod host;
 mod store;
 mod workload;
 
-use self::cache_path::autoroute_cache_path;
 use self::calibration::calibrate_fastest_correct_backend;
 use self::evidence::AutorouteDecision;
 use self::host::AutorouteHostProfile;
@@ -23,25 +21,6 @@ use std::path::PathBuf;
 pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 16;
 pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 3;
 pub(super) const AUTOROUTE_GPU_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
-
-/// Returns the backend the user explicitly forced via `KEYHOG_BACKEND`
-/// or `--backend <name>`.
-///
-/// Thin re-export over `keyhog_scanner::hw_probe::forced_backend_from_env`
-/// so the orchestrator and the scanner agree on the parsed override
-/// set (including aliases like `literal-set` and `regex-nfa`). The
-/// previous hand-rolled match here drifted from the scanner-side
-/// match table; consolidating means new aliases only need to land in
-/// one place.
-pub fn explicit_backend_override() -> Option<keyhog_scanner::hw_probe::ScanBackend> {
-    // Use the uncached parser. This is called once per scan startup, not
-    // per-file, so the per-file cache that `forced_backend_from_env` shares
-    // with `select_backend` is unnecessary here - and using it would have a
-    // subtle side effect: integration tests that flip `KEYHOG_BACKEND`
-    // between cases in a single test binary would all observe the first
-    // value the cache locked in.
-    keyhog_scanner::hw_probe::forced_backend_from_env_uncached()
-}
 
 /// Persistent calibrated backend router.
 ///
@@ -144,6 +123,7 @@ impl CachedBackendRouter {
         pattern_count: usize,
         rules_digest: String,
         config_digest: u64,
+        autoroute_cache_path: Result<Option<PathBuf>, String>,
         scanner: &CompiledScanner,
     ) -> Self {
         let runtime_status = scanner.runtime_status();
@@ -154,6 +134,7 @@ impl CachedBackendRouter {
             &rules_digest,
             config_digest,
             &host_profile,
+            autoroute_cache_path,
         );
 
         Self {
@@ -194,6 +175,7 @@ impl MeasuredBackendRouter {
         pattern_count: usize,
         rules_digest: String,
         config_digest: u64,
+        autoroute_cache_path: Result<Option<PathBuf>, String>,
         scanner: &CompiledScanner,
     ) -> Self {
         let runtime_status = scanner.runtime_status();
@@ -204,6 +186,7 @@ impl MeasuredBackendRouter {
             &rules_digest,
             config_digest,
             &host_profile,
+            autoroute_cache_path,
         );
 
         Self {
@@ -285,7 +268,7 @@ impl MeasuredBackendRouter {
         let Some(path) = self.cache_path.as_deref() else {
             let reason = match self.cache_load_error.as_deref() {
                 Some(error) => error,
-                None => "KEYHOG_AUTOROUTE_CACHE disables the autoroute cache",
+                None => "--autoroute-cache off / [system].autoroute_cache = \"off\" disables the autoroute cache",
             };
             return Err(AutorouteRoutingError::calibration_not_persisted(reason));
         };
@@ -310,12 +293,13 @@ fn load_persistent_autoroute_decisions(
     rules_digest: &str,
     config_digest: u64,
     host_profile: &AutorouteHostProfile,
+    cache_path: Result<Option<PathBuf>, String>,
 ) -> (
     Option<PathBuf>,
     HashMap<WorkloadKey, AutorouteDecision>,
     Option<String>,
 ) {
-    let cache_path = match autoroute_cache_path() {
+    let cache_path = match cache_path {
         Ok(cache_path) => cache_path,
         Err(error) => {
             return (None, HashMap::new(), Some(error));
@@ -377,7 +361,7 @@ fn autoroute_cache_state(
             path.display()
         ),
         Some(path) => format!("No autoroute cache file exists at {}", path.display()),
-        None => "KEYHOG_AUTOROUTE_CACHE disables the autoroute cache".to_string(),
+        None => "--autoroute-cache off / [system].autoroute_cache = \"off\" disables the autoroute cache".to_string(),
     }
 }
 

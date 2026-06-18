@@ -1,13 +1,114 @@
 //! Scanner configuration and scan state types.
 
-use std::cmp::Reverse;
 use std::collections::{BinaryHeap, HashSet};
-#[cfg(feature = "ml")]
-use std::collections::{HashMap, VecDeque};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 
 use keyhog_core::config::ScanConfig;
+use keyhog_core::SensitiveString;
+
+/// Explicit per-scanner performance-route tuning.
+///
+/// Each field is optional: `None` means the compiled shipped default, while
+/// `Some(value)` is an explicit config override. These knobs choose
+/// recall-equivalent routes inside the scanner (prefilter engine, anchor
+/// localization, no-candidate gates, decode focus), so they must be part of the
+/// resolved scan config and autoroute cache identity instead of ambient process
+/// environment.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+pub struct ScannerTuningConfig {
+    pub fallback_hs: Option<bool>,
+    pub hs_prefilter_max_len: Option<usize>,
+    pub fallback_anchor: Option<bool>,
+    pub homoglyph_gate: Option<bool>,
+    pub homoglyph_ascii_skip: Option<bool>,
+    pub fallback_reverse: Option<bool>,
+    pub prefilter_truncate: Option<bool>,
+    pub fallback_prefix_gate: Option<bool>,
+    pub decode_focus: Option<bool>,
+    pub confirmed_suffix_gate: Option<bool>,
+    pub no_candidate_gate: Option<bool>,
+    pub fallback_localizer: Option<bool>,
+    pub gpu_moe_timeout_ms: Option<u64>,
+}
+
+impl ScannerTuningConfig {
+    pub const FALLBACK_HS_DEFAULT: bool = true;
+    pub const HS_PREFILTER_MAX_LEN_DEFAULT: usize = 4096;
+    pub const FALLBACK_ANCHOR_DEFAULT: bool = true;
+    pub const HOMOGLYPH_GATE_DEFAULT: bool = true;
+    pub const HOMOGLYPH_ASCII_SKIP_DEFAULT: bool = true;
+    pub const FALLBACK_REVERSE_DEFAULT: bool = false;
+    pub const PREFILTER_TRUNCATE_DEFAULT: bool = true;
+    pub const FALLBACK_PREFIX_GATE_DEFAULT: bool = false;
+    pub const DECODE_FOCUS_DEFAULT: bool = true;
+    pub const CONFIRMED_SUFFIX_GATE_DEFAULT: bool = true;
+    pub const NO_CANDIDATE_GATE_DEFAULT: bool = true;
+    pub const FALLBACK_LOCALIZER_DEFAULT: bool = false;
+    pub const GPU_MOE_TIMEOUT_MS_DEFAULT: u64 = 30_000;
+
+    pub fn fallback_hs_effective(&self) -> bool {
+        self.fallback_hs.unwrap_or(Self::FALLBACK_HS_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
+    }
+
+    pub fn hs_prefilter_max_len_effective(&self) -> usize {
+        self.hs_prefilter_max_len
+            .unwrap_or(Self::HS_PREFILTER_MAX_LEN_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
+    }
+
+    pub fn fallback_anchor_effective(&self) -> bool {
+        self.fallback_anchor
+            .unwrap_or(Self::FALLBACK_ANCHOR_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
+    }
+
+    pub fn homoglyph_gate_effective(&self) -> bool {
+        self.homoglyph_gate.unwrap_or(Self::HOMOGLYPH_GATE_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
+    }
+
+    pub fn homoglyph_ascii_skip_effective(&self) -> bool {
+        self.homoglyph_ascii_skip
+            .unwrap_or(Self::HOMOGLYPH_ASCII_SKIP_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
+    }
+
+    pub fn fallback_reverse_effective(&self) -> bool {
+        self.fallback_reverse
+            .unwrap_or(Self::FALLBACK_REVERSE_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
+    }
+
+    pub fn prefilter_truncate_effective(&self) -> bool {
+        self.prefilter_truncate
+            .unwrap_or(Self::PREFILTER_TRUNCATE_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
+    }
+
+    pub fn fallback_prefix_gate_effective(&self) -> bool {
+        self.fallback_prefix_gate
+            .unwrap_or(Self::FALLBACK_PREFIX_GATE_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
+    }
+
+    pub fn decode_focus_effective(&self) -> bool {
+        self.decode_focus.unwrap_or(Self::DECODE_FOCUS_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
+    }
+
+    pub fn confirmed_suffix_gate_effective(&self) -> bool {
+        self.confirmed_suffix_gate
+            .unwrap_or(Self::CONFIRMED_SUFFIX_GATE_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
+    }
+
+    pub fn no_candidate_gate_effective(&self) -> bool {
+        self.no_candidate_gate
+            .unwrap_or(Self::NO_CANDIDATE_GATE_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
+    }
+
+    pub fn fallback_localizer_effective(&self) -> bool {
+        self.fallback_localizer
+            .unwrap_or(Self::FALLBACK_LOCALIZER_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
+    }
+
+    pub fn gpu_moe_timeout_ms_effective(&self) -> u64 {
+        self.gpu_moe_timeout_ms
+            .unwrap_or(Self::GPU_MOE_TIMEOUT_MS_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
+    }
+}
 
 /// Scanner-side configuration: the canonical [`ScanConfig`] — the single owned
 /// source of truth for every shared detection knob (decode depth, entropy, ML,
@@ -28,11 +129,11 @@ use keyhog_core::config::ScanConfig;
 /// `From<ScanConfig>` impl below is a structural wrap, never a hand-maintained
 /// field-by-field copy.
 ///
-/// `ScanConfig`'s `min_secret_len` / `max_file_size` / `dedup` fields are
-/// reachable through the deref but are NOT consumed by the scan engine — they
-/// are enforced elsewhere (the source walker and the verifier) and carry that
-/// caveat in their own doc comments on `ScanConfig`. Their presence here is the
-/// wrapped truth, not a second silent copy.
+/// `ScanConfig`'s `max_file_size` / `dedup` fields are reachable through the
+/// deref but are NOT consumed by the scan engine — they are enforced elsewhere
+/// (the source walker and the verifier) and carry that caveat in their own doc
+/// comments on `ScanConfig`. Their presence here is the wrapped truth, not a
+/// second silent copy. `min_secret_len` is consumed by the entropy fallback.
 #[derive(Debug, Clone)]
 pub struct ScannerConfig {
     /// The canonical shared detection config — single source of truth for every
@@ -210,17 +311,17 @@ impl From<ScanConfig> for ScannerConfig {
 /// Queued ML match waiting for batch inference at the end of a scan.
 #[cfg(feature = "ml")]
 #[derive(Debug, Clone)]
-pub struct MlPendingMatch {
+pub(crate) struct MlPendingMatch {
     /// The raw match built with heuristic confidence only.
-    pub raw_match: keyhog_core::RawMatch,
+    pub(crate) raw_match: keyhog_core::RawMatch,
     /// Heuristic confidence before ML blending.
-    pub heuristic_conf: f64,
+    pub(crate) heuristic_conf: f64,
     /// Inferred code context for post-ML adjustments.
-    pub code_context: crate::context::CodeContext,
+    pub(crate) code_context: crate::context::CodeContext,
     /// Credential text for feature extraction.
-    pub credential: String,
+    pub(crate) credential: String,
     /// Surrounding context passed to the ML scorer.
-    pub ml_context: String,
+    pub(crate) ml_context: String,
     /// When true, the MoE score is AUTHORITATIVE for this candidate: the final
     /// confidence is the model score directly, NOT `max(heuristic, ml)`. Set for
     /// entropy-fallback candidates, whose "heuristic" is bare entropy magnitude -
@@ -229,17 +330,61 @@ pub struct MlPendingMatch {
     /// detector path does, where the regex IS positive evidence) would defeat the
     /// model's ability to suppress those FPs. Detector/generic matches set this
     /// false and keep the heuristic floor. See `apply_ml_batch_scores`.
-    pub model_authoritative: bool,
+    pub(crate) model_authoritative: bool,
+}
+
+/// Borrowed ordering key for a `RawMatch` candidate.
+///
+/// Hot emitters can decide whether a candidate can enter the capped match heap
+/// before constructing the owned `RawMatch`, avoiding detector metadata
+/// refcount bumps for candidates that would be immediately discarded.
+pub(crate) struct RawMatchPriority<'a> {
+    pub(crate) confidence: Option<f64>,
+    pub(crate) severity: keyhog_core::Severity,
+    pub(crate) detector_id: &'a str,
+    pub(crate) credential: &'a str,
+    pub(crate) offset: usize,
+    pub(crate) line: Option<usize>,
+}
+
+impl RawMatchPriority<'_> {
+    fn cmp_raw_match(&self, other: &keyhog_core::RawMatch) -> std::cmp::Ordering {
+        let self_conf = self.confidence.unwrap_or(0.0); // LAW10: absent confidence => 0.0 for capped-heap ordering only; finding remains eligible
+        let other_conf = other.confidence.unwrap_or(0.0); // LAW10: absent confidence => 0.0 for capped-heap ordering only; finding remains eligible
+
+        match other_conf.total_cmp(&self_conf) {
+            std::cmp::Ordering::Equal => {}
+            ord => return ord,
+        }
+        match other.severity.cmp(&self.severity) {
+            std::cmp::Ordering::Equal => {}
+            ord => return ord,
+        }
+        match self.detector_id.cmp(other.detector_id.as_ref()) {
+            std::cmp::Ordering::Equal => {}
+            ord => return ord,
+        }
+        match self.credential.cmp(other.credential.as_ref()) {
+            std::cmp::Ordering::Equal => {}
+            ord => return ord,
+        }
+        match self.offset.cmp(&other.location.offset) {
+            std::cmp::Ordering::Equal => self.line.cmp(&other.location.line),
+            ord => ord,
+        }
+    }
 }
 
 /// Internal state for a single scan operation (tracks matches and ML cache).
 #[derive(Default)]
-pub struct ScanState {
+pub(crate) struct ScanState {
     /// Matches collected for this chunk, prioritized by confidence.
-    /// Uses Reverse to make it a min-heap so we can easily pop the LOWEST confidence.
-    pub matches: BinaryHeap<Reverse<keyhog_core::RawMatch>>,
+    /// `RawMatch::Ord` sorts best findings first (`best < worst`), so the
+    /// BinaryHeap root is the worst retained finding and can be replaced when a
+    /// better candidate arrives after the cap is full.
+    pub(crate) matches: BinaryHeap<keyhog_core::RawMatch>,
     /// Interner for credentials found in this chunk to save memory on duplicates.
-    pub credential_interner: HashSet<Arc<str>>,
+    pub(crate) credential_interner: HashSet<SensitiveString>,
     /// Static string cache for detector metadata. Uses
     /// `HashSet<Arc<str>>` (not `HashMap<String, Arc<str>>`) so a
     /// cache miss allocates ONLY the `Arc<str>` - the prior shape
@@ -251,31 +396,25 @@ pub struct ScanState {
     /// `StaticInterner` (vyre CHD perfect hash) handles every
     /// `(detector_id, detector_name, service, source_type)` lookup
     /// without per-scan allocation.
-    pub metadata_interner: HashSet<Arc<str>>,
+    pub(crate) metadata_interner: HashSet<Arc<str>>,
     /// Optional reference to the scanner's frozen static-string
     /// interner. When `Some`, `intern_metadata` checks here first
     /// before falling through to the per-scan `metadata_interner`.
     /// Lock-free on read so concurrent rayon workers share one
     /// instance without contention.
-    pub static_intern: Option<Arc<crate::static_intern::StaticInterner>>,
-    #[cfg(feature = "ml")]
-    pub ml_score_cache: HashMap<(String, String), f64>,
-    #[cfg(feature = "ml")]
-    pub ml_cache_order: VecDeque<(String, String)>,
-    #[cfg(feature = "ml")]
-    pub ml_cache_bytes: usize,
-    #[cfg(feature = "ml")]
+    pub(crate) static_intern: Option<Arc<crate::static_intern::StaticInterner>>,
     /// Detector matches queued for batch ML scoring at the end of the scan.
-    pub ml_pending: Vec<MlPendingMatch>,
+    #[cfg(feature = "ml")]
+    pub(crate) ml_pending: Vec<MlPendingMatch>,
 }
 
 impl ScanState {
-    /// Intern a credential string, returning an `Arc<str>`.
-    pub fn intern_credential(&mut self, s: &str) -> Arc<str> {
+    /// Intern a credential string, returning a shared zeroizing allocation.
+    pub(crate) fn intern_credential(&mut self, s: &str) -> SensitiveString {
         if let Some(existing) = self.credential_interner.get(s) {
             existing.clone()
         } else {
-            let shared: Arc<str> = Arc::from(s);
+            let shared = SensitiveString::from(s);
             self.credential_interner.insert(shared.clone());
             shared
         }
@@ -289,7 +428,7 @@ impl ScanState {
     ///      O(1), no allocation, no lock contention.
     ///   2. Per-scan `metadata_interner` `HashSet` for dynamic strings
     ///      (file paths, commit SHAs, author names, dates).
-    pub fn intern_metadata(&mut self, s: &str) -> Arc<str> {
+    pub(crate) fn intern_metadata(&mut self, s: &str) -> Arc<str> {
         if let Some(intern) = self.static_intern.as_ref() {
             if let Some(arc) = intern.lookup(s) {
                 return arc;
@@ -307,7 +446,7 @@ impl ScanState {
     /// interner first. Use this from any path that has a
     /// `&CompiledScanner` in scope; falls back to `default()` for
     /// stand-alone unit tests.
-    pub fn with_static_intern(intern: Arc<crate::static_intern::StaticInterner>) -> Self {
+    pub(crate) fn with_static_intern(intern: Arc<crate::static_intern::StaticInterner>) -> Self {
         Self {
             static_intern: Some(intern),
             ..Self::default()
@@ -316,12 +455,38 @@ impl ScanState {
 
     /// Push a match to the state, maintaining priority and capacity.
     /// High-confidence secrets will displace lower-confidence findings.
-    pub fn push_match(&mut self, m: keyhog_core::RawMatch, limit: usize) {
+    pub(crate) fn push_match(&mut self, m: keyhog_core::RawMatch, limit: usize) {
         if self.matches.len() < limit {
-            self.matches.push(Reverse(m));
-        } else if let Some(mut lowest) = self.matches.peek_mut() {
-            if m > lowest.0 {
-                *lowest = Reverse(m);
+            self.matches.push(m);
+        } else if let Some(mut worst) = self.matches.peek_mut() {
+            if m < *worst {
+                *worst = m;
+            }
+        }
+    }
+
+    pub(crate) fn push_match_lazy<F>(
+        &mut self,
+        priority: RawMatchPriority<'_>,
+        limit: usize,
+        build: F,
+    ) where
+        F: FnOnce(&mut Self) -> keyhog_core::RawMatch,
+    {
+        if self.matches.len() < limit {
+            let m = build(self);
+            self.matches.push(m);
+            return;
+        }
+
+        let admit = self
+            .matches
+            .peek()
+            .is_some_and(|worst| priority.cmp_raw_match(worst).is_lt());
+        if admit {
+            let m = build(self);
+            if let Some(mut worst) = self.matches.peek_mut() {
+                *worst = m;
             }
         }
     }
@@ -332,10 +497,10 @@ impl ScanState {
     /// literal hit + homoglyph fallback variant both fire on plain ASCII
     /// because the homoglyph char-class includes the original char). The
     /// caller only wants one of them in the result set.
-    pub fn into_matches(self) -> Vec<keyhog_core::RawMatch> {
-        let mut matches: Vec<_> = self.matches.into_iter().map(|r| r.0).collect();
-        // Sort descending by confidence for final output
-        matches.sort_by(|a, b| b.cmp(a));
+    pub(crate) fn into_matches(self) -> Vec<keyhog_core::RawMatch> {
+        let mut matches: Vec<_> = self.matches.into_iter().collect();
+        // Sort by RawMatch's best-first order for final output.
+        matches.sort();
         // Dedup identical findings (same detector + credential + offset).
         // 0 or 1 match cannot contain a duplicate, so skip all dedup work -
         // no HashSet alloc, no refcount traffic - on the overwhelmingly
@@ -346,11 +511,11 @@ impl ScanState {
         // For small N a sort-based adjacent dedup beats a HashSet: it adds
         // no allocation and no `Arc::clone` (two atomics per match) - it
         // only borrows the identity fields for comparison. The Vec is
-        // already sorted confidence-descending above; `sort_by` is a STABLE
-        // sort, so grouping by (detector_id, credential, offset) preserves
-        // that confidence-descending order within each identity group. The
+        // already sorted best-first above; `sort_by` is a STABLE sort, so
+        // grouping by (detector_id, credential, offset) preserves that
+        // best-first order within each identity group. The
         // first element of each run is therefore the highest-confidence
-        // entry, which `dedup_by` keeps. A final `b.cmp(a)` restores the
+        // entry, which `dedup_by` keeps. A final `sort()` restores the
         // canonical output order. Same result as the HashSet path, no alloc.
         if matches.len() <= 64 {
             matches.sort_by(|a, b| {
@@ -364,22 +529,121 @@ impl ScanState {
                     && a.credential == b.credential
                     && a.location.offset == b.location.offset
             });
-            // Restore confidence-descending order for output.
-            matches.sort_by(|a, b| b.cmp(a));
+            // Restore best-first order for output.
+            matches.sort();
             return matches;
         }
         // Large N: HashSet dedup amortises better than repeated sorts.
         // Stable: keeps the highest-confidence entry of any duplicate set
         // thanks to the confidence sort above.
-        let mut seen: std::collections::HashSet<(std::sync::Arc<str>, std::sync::Arc<str>, usize)> =
+        let mut seen: std::collections::HashSet<(std::sync::Arc<str>, SensitiveString, usize)> =
             std::collections::HashSet::with_capacity(matches.len());
         matches.retain(|m| {
             seen.insert((
                 std::sync::Arc::clone(&m.detector_id),
-                std::sync::Arc::clone(&m.credential),
+                m.credential.clone(),
                 m.location.offset,
             ))
         });
         matches
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use keyhog_core::{MatchLocation, RawMatch, Severity};
+    use std::collections::HashMap;
+
+    fn raw_match(confidence: f64, credential: &'static str, offset: usize) -> RawMatch {
+        RawMatch {
+            detector_id: Arc::from("gate"),
+            detector_name: Arc::from("Gate"),
+            service: Arc::from("test"),
+            severity: Severity::High,
+            credential: credential.into(),
+            credential_hash: [0u8; 32],
+            companions: HashMap::new(),
+            location: MatchLocation {
+                source: Arc::from("unit"),
+                file_path: Some(Arc::from("unit.env")),
+                line: Some(offset + 1),
+                offset,
+                commit: None,
+                author: None,
+                date: None,
+            },
+            entropy: None,
+            confidence: Some(confidence),
+        }
+    }
+
+    #[test]
+    fn push_match_keeps_highest_confidence_when_capped() {
+        let mut state = ScanState::default();
+        state.push_match(raw_match(0.10, "low", 1), 2);
+        state.push_match(raw_match(0.90, "high", 2), 2);
+        state.push_match(raw_match(0.50, "mid", 3), 2);
+
+        let kept: Vec<_> = state
+            .into_matches()
+            .into_iter()
+            .map(|m| m.credential.to_string())
+            .collect();
+        assert_eq!(kept, ["high", "mid"]);
+    }
+
+    #[test]
+    fn push_match_lazy_builds_only_for_admitted_candidates() {
+        let mut state = ScanState::default();
+        state.push_match(raw_match(0.90, "retained", 1), 1);
+
+        let mut rejected_built = false;
+        state.push_match_lazy(
+            RawMatchPriority {
+                confidence: Some(0.10),
+                severity: Severity::High,
+                detector_id: "gate",
+                credential: "rejected",
+                offset: 2,
+                line: Some(2),
+            },
+            1,
+            |_| {
+                rejected_built = true;
+                raw_match(0.10, "rejected", 2)
+            },
+        );
+        assert!(
+            !rejected_built,
+            "lazy admission must not build a RawMatch for rejected candidates"
+        );
+
+        let mut admitted_built = false;
+        state.push_match_lazy(
+            RawMatchPriority {
+                confidence: Some(0.99),
+                severity: Severity::High,
+                detector_id: "gate",
+                credential: "admitted",
+                offset: 3,
+                line: Some(3),
+            },
+            1,
+            |_| {
+                admitted_built = true;
+                raw_match(0.99, "admitted", 3)
+            },
+        );
+        assert!(
+            admitted_built,
+            "lazy admission must build exactly when the candidate enters the heap"
+        );
+        let kept: Vec<_> = state
+            .into_matches()
+            .into_iter()
+            .map(|m| m.credential.to_string())
+            .collect();
+        assert_eq!(kept, ["admitted"]);
     }
 }

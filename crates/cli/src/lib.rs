@@ -113,6 +113,7 @@ pub fn write_banner<W: Write>(
 }
 
 pub mod args;
+pub mod autoroute_cache_path;
 pub mod backend_env;
 pub mod baseline;
 pub mod benchmark;

@@ -2,7 +2,7 @@
 //! [`select_backend`] cell. Auto-generates ~200 cells from data tables
 //! covering:
 //!
-//!   * `KEYHOG_BACKEND` env override (every recognized value + invalid)
+//!   * explicit backend override mapping (every recognized value + invalid)
 //!   * GPU adapter-name → [`GpuTier`] classification
 //!   * Per-tier byte/pattern thresholds (boundary + below + above)
 //!   * Software-GPU rejection (llvmpipe / lavapipe / swiftshader)
@@ -14,16 +14,15 @@
 //! lock the documented routing contract so a refactor of the thresholds
 //! or the tier table can't silently flip prod routing.
 //!
-//! Every cell that goes through `KEYHOG_BACKEND` must serialize on
-//! [`ENV_LOCK`] - the env var is process-global so concurrent tests
-//! would race and produce non-deterministic results. The lock-guard
-//! pattern matches the prior `hw_probe` env-touching tests.
+//! Every cell that goes through the test override serializes on [`ENV_LOCK`] so
+//! the thread-local override is restored deterministically around each case.
 
-use keyhog_scanner::hw_probe::{
+use keyhog_scanner::hw_probe::testing::{
     classify_gpu_tier, gpu_min_bytes_for_tier, gpu_pattern_breakeven_for_tier,
-    gpu_solo_bytes_for_tier, select_backend, select_backend_for_batch, GpuTier, HardwareCaps,
-    ScanBackend,
+    gpu_solo_bytes_for_tier, parse_backend_str, select_backend, select_backend_for_batch, GpuTier,
+    HardwareCaps, ScanBackend,
 };
+use keyhog_scanner::testing::{clear_test_backend_override, set_test_backend_override};
 use std::sync::Mutex;
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -38,6 +37,7 @@ fn caps_with_gpu(name: &str, hyperscan: bool, simd: bool) -> HardwareCaps {
         gpu_available: true,
         gpu_name: Some(name.into()),
         gpu_vram_mb: Some(24 * 1024),
+        gpu_runtime_identity: Some(format!("test-runtime:{name}")),
         gpu_is_software: name.to_ascii_lowercase().contains("llvmpipe")
             || name.to_ascii_lowercase().contains("lavapipe")
             || name.to_ascii_lowercase().contains("swiftshader"),
@@ -57,6 +57,7 @@ fn caps_no_gpu(hyperscan: bool, simd: bool) -> HardwareCaps {
         gpu_available: false,
         gpu_name: None,
         gpu_vram_mb: None,
+        gpu_runtime_identity: None,
         gpu_is_software: false,
         total_memory_mb: Some(64 * 1024),
         io_uring_available: true,
@@ -64,32 +65,24 @@ fn caps_no_gpu(hyperscan: bool, simd: bool) -> HardwareCaps {
     }
 }
 
-/// Run `body` with `KEYHOG_BACKEND` set to `value` (or unset when None).
-/// Restores the prior value on exit so the next test sees a clean env.
+/// Run `body` with a race-free test backend override derived from `value`.
 fn with_env<R>(value: Option<&str>, body: impl FnOnce() -> R) -> R {
     let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let prior = std::env::var("KEYHOG_BACKEND").ok();
-    unsafe {
-        match value {
-            Some(v) => std::env::set_var("KEYHOG_BACKEND", v),
-            None => std::env::remove_var("KEYHOG_BACKEND"),
-        }
+    if let Some(value) = value {
+        set_test_backend_override(parse_backend_str(value));
+    } else {
+        clear_test_backend_override();
     }
     let out = body();
-    unsafe {
-        match prior {
-            Some(v) => std::env::set_var("KEYHOG_BACKEND", v),
-            None => std::env::remove_var("KEYHOG_BACKEND"),
-        }
-    }
+    clear_test_backend_override();
     out
 }
 
 // ────────────────────────────────────────────────────────────────────
-// CELL 1: env override
+// CELL 1: explicit test override
 // ────────────────────────────────────────────────────────────────────
 
-/// `KEYHOG_BACKEND=gpu` must force `Gpu` even when no GPU is detected
+/// An explicit GPU override must force `Gpu` even when no GPU is detected
 /// at all - the override is a contract for benchmarks and CI assertions,
 /// not a "best-effort" hint. The default routing rules cannot override it.
 #[test]
@@ -100,7 +93,7 @@ fn env_override_gpu_forces_gpu_regardless_of_hardware() {
             assert_eq!(
                 select_backend(&caps, 1 << 30, 10_000),
                 ScanBackend::Gpu,
-                "env={alias} must force Gpu"
+                "backend={alias} must force Gpu"
             );
         });
     }
@@ -644,7 +637,7 @@ fn batch_dominance_boundary_is_inclusive() {
     });
 }
 
-/// Env override still wins: KEYHOG_BACKEND=gpu forces GPU even with zero
+/// Explicit override still wins: GPU forces GPU even with zero
 /// large-chunk bytes (diagnostic/forced path is unchanged).
 #[test]
 fn batch_env_override_gpu_wins_over_dominance_guard() {
@@ -653,7 +646,7 @@ fn batch_env_override_gpu_wins_over_dominance_guard() {
         assert_eq!(
             select_backend_for_batch(&caps, 1024, 10, 0),
             ScanBackend::Gpu,
-            "explicit KEYHOG_BACKEND=gpu overrides the dominance guard"
+            "explicit GPU override bypasses the dominance guard"
         );
     });
 }

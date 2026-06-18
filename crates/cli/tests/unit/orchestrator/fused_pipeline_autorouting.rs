@@ -35,9 +35,9 @@ fn dispatch_autoroute_calibrates_missing_buckets_and_persists() {
     .expect("dispatch/backend/store.rs readable");
     let cache_path = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/src/orchestrator/dispatch/backend/cache_path.rs"
+        "/src/autoroute_cache_path.rs"
     ))
-    .expect("dispatch/backend/cache_path.rs readable");
+    .expect("autoroute_cache_path.rs readable");
 
     assert!(
         dispatch.contains("MeasuredBackendRouter::new"),
@@ -46,8 +46,8 @@ fn dispatch_autoroute_calibrates_missing_buckets_and_persists() {
     assert!(
         fused.contains("MeasuredBackendRouter::new")
             && fused.contains("CachedBackendRouter::new")
-            && fused.contains(".choose(explicit_backend, &batch)")
-            && fused.contains("router.choose(scanner_ref, explicit_backend, &batch)")
+            && fused.contains("router.choose(None, &batch)")
+            && fused.contains("router.choose(scanner_ref, None, &batch)")
             && fused.contains("routing_error")
             && !fused.contains("has_gpu_decision()")
             && !fused.contains("let backend = keyhog_scanner::hw_probe::ScanBackend::SimdCpu;"),
@@ -89,7 +89,7 @@ fn dispatch_autoroute_calibrates_missing_buckets_and_persists() {
     assert!(
         backend.contains("detector_digest")
             && backend.contains("AutorouteHostProfile")
-            && cache_path.contains("KEYHOG_AUTOROUTE_CACHE")
+            && cache_path.contains("--autoroute-cache <PATH|off>")
             && store.contains("load_autoroute_cache")
             && store.contains("save_autoroute_cache")
             && store.contains("AutorouteCache"),
@@ -101,7 +101,7 @@ fn dispatch_autoroute_calibrates_missing_buckets_and_persists() {
         "autoroute cache must be flushed when the router is dropped"
     );
     assert!(
-        cache_path.contains("KEYHOG_AUTOROUTE_CACHE"),
-        "autoroute cache path must be overridable/disablable via KEYHOG_AUTOROUTE_CACHE"
+        cache_path.contains("[system].autoroute_cache"),
+        "autoroute cache path must be overridable/disablable via explicit CLI/TOML config"
     );
 }

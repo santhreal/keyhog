@@ -22,7 +22,7 @@
 //!
 //! There is exactly ONE on-GPU detection engine: the megakernel
 //! ([`megakernel`] + [`megakernel_dispatch`]). Selecting a GPU backend
-//! (`--backend gpu` / `KEYHOG_BACKEND=gpu`) routes the batch path through it;
+//! (`--backend gpu`) routes the batch path through it;
 //! the default backend is the CPU Hyperscan path. The GPU path degrades LOUDLY
 //! to CPU on any failure (never a silent empty result — Law 10).
 //!
@@ -62,18 +62,18 @@ mod fallback_anchor_scan;
 mod fallback_compiled;
 mod fallback_compiled_anchored;
 mod fallback_entropy;
-mod fallback_entropy_gates;
-mod fallback_entropy_helpers;
-mod fallback_generic;
+pub(crate) mod fallback_generic;
 mod fallback_generic_shape;
 #[cfg(feature = "simd")]
 mod fallback_hs;
 mod fallback_prefilter;
-mod tuning;
 pub(crate) mod fallback_truncate;
+mod generic_keyword_owner;
 mod gpu_cache;
 mod gpu_forced;
 mod gpu_lazy;
+mod gpu_stack;
+mod hot_patterns;
 #[cfg(feature = "gpu")]
 pub(crate) mod megakernel;
 #[cfg(feature = "gpu")]
@@ -83,10 +83,9 @@ mod megakernel_dispatch;
 /// catalog build/dispatch responsibility.
 #[cfg(feature = "gpu")]
 mod megakernel_wire;
-mod hot_patterns;
 mod process;
 pub(crate) mod profile;
-mod rule_pipeline;
+pub(crate) mod rule_pipeline;
 mod scan;
 mod scan_filters;
 mod scan_inner_profile;
@@ -95,9 +94,10 @@ mod scan_postprocess_fragments;
 mod scan_postprocess_profile;
 mod scan_postprocess_suffix_gate;
 mod scoring;
-pub mod segment_attribution;
+pub(crate) mod segment_attribution;
 mod trigger_bitmap;
 mod windowed;
+mod windowed_support;
 
 // `build_simd_scanner` only exists under the `simd` (Hyperscan) feature; its
 // sole call site in compile.rs is `#[cfg(feature = "simd")]` too. Gate the
@@ -106,17 +106,14 @@ mod windowed;
 #[cfg(feature = "simd")]
 pub(crate) use backend_prepared::build_simd_scanner;
 pub(crate) use backend_prepared::PreparedChunk;
-pub use fallback::{fallback_gate_stats_dump, ScannerTuning};
-pub use rule_pipeline::{
-    build_rule_pipeline, megascan_input_len, rule_pipeline_cached, AC_GPU_MAX_MATCHES_PER_DISPATCH,
-    MEGASCAN_INPUT_LEN, MEGASCAN_INPUT_LEN_DEFAULT,
-};
+pub use fallback::{fallback_gate_stats_dump, fallback_mark_stats, fallback_mark_stats_reset};
 pub use profile::{dump as profile_dump, reset as profile_reset};
+pub use rule_pipeline::megascan_input_len;
 pub use scan_inner_profile::scan_inner_profile_dump;
 pub use scan_postprocess::decode_profile_dump;
-pub use windowed::{
-    floor_char_boundary, line_number_for_offset, next_window_offset, record_window_match,
-    window_chunk, window_end_offset,
+pub(crate) use windowed_support::{
+    ceil_char_boundary, floor_char_boundary, line_number_for_offset, next_window_offset,
+    record_window_match, window_chunk, window_end_offset,
 };
 
 use crate::compiler::*;
@@ -129,34 +126,6 @@ use std::sync::Arc;
 use std::sync::OnceLock;
 
 pub use vyre_libs::scan::LiteralMatch;
-
-/// Read `KEYHOG_PER_CHUNK_TIMEOUT_MS` and turn it into a per-chunk
-/// deadline `Instant`. Returns `None` when the env var is unset or
-/// malformed - the historical "scan until done" behavior.
-///
-/// Wired into the public `scan` / `scan_with_backend` entry points
-/// so a hostile or pathological input (e.g. the Apple Silicon
-/// regex-DFA construction stall surfaced during cross-platform
-/// dogfood - a single 171-byte line with `var token = identifier.Flag(...)`
-/// shape spends minutes inside the multiline preprocessor) bails
-/// after the configured budget instead of hanging the entire
-/// `keyhog scan <repo>` run. The CLI orchestrator path runs scans
-/// in parallel via rayon; a stuck worker would otherwise keep one
-/// core pinned at 100% indefinitely.
-///
-/// Default unset (no timeout) preserves prior behavior. Recommend
-/// `export KEYHOG_PER_CHUNK_TIMEOUT_MS=30000` (30 s) for production
-/// scans where bounded latency matters more than scan completeness.
-fn env_per_chunk_deadline() -> Option<std::time::Instant> {
-    static MS: std::sync::OnceLock<Option<u64>> = std::sync::OnceLock::new();
-    let ms = *MS.get_or_init(|| {
-        std::env::var("KEYHOG_PER_CHUNK_TIMEOUT_MS")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .filter(|&v| v > 0)
-    });
-    ms.map(|ms| std::time::Instant::now() + std::time::Duration::from_millis(ms))
-}
 
 pub enum MlScoreResult<'a> {
     /// Score is final and the match can be pushed immediately.
@@ -177,7 +146,6 @@ pub enum MlScoreResult<'a> {
     #[doc(hidden)]
     _Lifetime(std::marker::PhantomData<&'a ()>),
 }
-
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GpuInitPolicy {
@@ -211,10 +179,8 @@ pub struct CompiledScanner {
     /// so the caller degrades loudly.
     #[cfg(feature = "gpu")]
     pub(crate) megakernel_catalog: OnceLock<megakernel::MegakernelCatalog>,
-    pub(crate) ac_gpu_program: OnceLock<Option<vyre::Program>>,
     pub(crate) gpu_last_degrade_reason: std::sync::Mutex<Option<String>>,
     pub(crate) gpu_degrade_count: std::sync::atomic::AtomicU64,
-    pub(crate) rule_pipeline: OnceLock<Option<vyre_libs::scan::RulePipeline>>,
     pub(crate) static_intern: Arc<crate::static_intern::StaticInterner>,
     /// Per-detector interned `(id, name, service)` metadata triple, indexed by
     /// `detector_index`. Built ONCE at scanner construction from the same
@@ -225,12 +191,30 @@ pub struct CompiledScanner {
     /// field). The strings are byte-identical to `static_intern.lookup(...)`
     /// because they ARE its arena entries — see `perf_locality_intern.rs`.
     pub(crate) metadata_by_index: Vec<(Arc<str>, Arc<str>, Arc<str>)>,
+    /// Per-detector `detector_weak_anchor(spec)`, indexed by `detector_index`.
+    /// The weak-anchor classification is a function of the detector SPEC ONLY
+    /// (its id prefix, `min_confidence`, and a regex-string scan over every
+    /// pattern for a broad-identifier capture), so it is constant across every
+    /// candidate that detector produces. `process_match` used to recompute it
+    /// per surviving candidate — on a hot detector firing thousands of matches
+    /// per chunk that re-ran `has_broad_identifier_capture` (a per-pattern regex
+    /// string walk) thousands of times for an unchanging value. Resolved ONCE at
+    /// construction; the per-match path indexes by `entry.detector_index`. Same
+    /// pattern as `metadata_by_index`. Byte-identical to
+    /// `crate::pipeline::detector_weak_anchor(&detectors[i])`.
+    pub(crate) detector_weak_anchor_by_index: Vec<bool>,
+    /// Normalized assignment-key names owned by service-specific named
+    /// detectors, e.g. `segment_write_key`. The generic assignment bridge uses
+    /// this to avoid emitting a weaker generic finding for an LHS that a loaded
+    /// named detector explicitly owns.
+    pub(crate) generic_named_assignment_keywords: Vec<Arc<str>>,
     /// Per-`ac_map` regex byte upper bound for GPU hit-local validation. `None`
     /// means the detector regex is unbounded or unparsable by the AST bounder,
-    /// so GPU validation keeps the full prepared-chunk oracle.
+    /// so GPU validation must keep the full prepared-chunk oracle.
     #[cfg(feature = "gpu")]
     pub(crate) ac_match_upper_bounds: Vec<Option<usize>>,
     pub(crate) ac_map: Vec<CompiledPattern>,
+    pub(crate) pattern_boundary_context: boundary::BoundaryContextBytes,
     /// Confirmed-pass suffix gate: AC over ac_map patterns' required suffix
     /// literals (every match ends with one). `ac_suffix_gate[i]` are pattern
     /// i's literal ids; a triggered pattern whose suffix literals are all absent
@@ -258,9 +242,10 @@ pub struct CompiledScanner {
     pub(crate) fallback_anchor_index: Option<fallback_anchor::FallbackAnchorIndex>,
     /// Per-scanner performance route tuning (HS vs RegexSet, anchor
     /// localization, prefilter truncation, decode focus, confirmed-suffix gate,
-    /// …). Resolved from the `KEYHOG_*` env defaults; differential parity tests
-    /// override one route on THIS scanner via [`CompiledScanner::tuning`] without
-    /// touching any global state. See [`fallback::ScannerTuning`].
+    /// …). Resolved from compiled defaults plus explicit per-scanner config;
+    /// differential parity tests override one route on THIS scanner via
+    /// [`CompiledScanner::tuning`] without touching any global state. See
+    /// [`fallback::ScannerTuning`].
     pub(crate) tuning: fallback::ScannerTuning,
     #[cfg(feature = "simd")]
     pub(crate) simd_prefilter: Option<crate::simd::backend::HsScanner>,
@@ -293,11 +278,21 @@ pub struct CompiledScanner {
     #[cfg(feature = "entropy")]
     pub(crate) entropy_metadata_by_index: [(Arc<str>, Arc<str>, Arc<str>); 4],
     pub config: ScannerConfig,
-    pub alphabet_screen: Option<crate::alphabet_filter::AlphabetScreen>,
+    pub(crate) alphabet_screen: Option<crate::alphabet_filter::AlphabetScreen>,
     pub(crate) bigram_bloom: crate::bigram_bloom::BigramBloom,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct CompiledScannerRuntime {
+    pub detector_count: usize,
+    pub pattern_count: usize,
+    pub detector_digest: u64,
+    pub preferred_backend: &'static str,
+    pub gpu_backend: Option<&'static str>,
+    pub gpu_degrade_count: u64,
 }
 
 const _: () = {
     const fn assert_send_sync<T: Send + Sync>() {}
-    let _ = assert_send_sync::<CompiledScanner>;
+    let _ = assert_send_sync::<CompiledScanner>; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
 };

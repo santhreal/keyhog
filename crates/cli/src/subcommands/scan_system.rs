@@ -202,6 +202,7 @@ pub mod testing {
 
 pub fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     crate::backend_env::validate_scan_runtime_env()?;
+    crate::orchestrator_config::configure_hyperscan_cache_dir(args.cache_dir.clone())?;
 
     if args.space == 0 {
         anyhow::bail!("scan-system --space must be greater than zero bytes");
@@ -524,10 +525,7 @@ fn scan_mount(
             }
         };
         bytes_scanned.fetch_add(chunk.data.len() as u64, Ordering::Relaxed);
-        let backend = router.choose(
-            crate::orchestrator::explicit_backend_override(),
-            std::slice::from_ref(&chunk),
-        )?;
+        let backend = router.choose(None, std::slice::from_ref(&chunk))?;
         // Convert + drop raw matches per chunk so plaintext-bearing RawMatch
         // entries are never accumulated (audit: memory).
         out.absorb(scanner.scan_with_backend(&chunk, backend));
@@ -568,10 +566,7 @@ fn scan_git_history(
                 }
             };
             bytes_scanned.fetch_add(chunk.data.len() as u64, Ordering::Relaxed);
-            let backend = router.choose(
-                crate::orchestrator::explicit_backend_override(),
-                std::slice::from_ref(&chunk),
-            )?;
+            let backend = router.choose(None, std::slice::from_ref(&chunk))?;
             // Convert + drop raw matches per chunk (audit: memory).
             out.absorb(scanner.scan_with_backend(&chunk, backend));
         }

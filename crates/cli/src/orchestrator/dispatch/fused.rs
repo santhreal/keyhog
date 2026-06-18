@@ -1,8 +1,7 @@
 //! Fused filesystem read+scan dispatch path.
 
 use super::backend::{
-    backend_requires_coalesced_batch_pipeline, explicit_backend_override, CachedBackendRouter,
-    MeasuredBackendRouter,
+    backend_requires_coalesced_batch_pipeline, CachedBackendRouter, MeasuredBackendRouter,
 };
 use crate::orchestrator::ScanOrchestrator;
 use crate::orchestrator_config::autoroute_config_digest;
@@ -38,7 +37,7 @@ impl ScanOrchestrator {
         if std::env::var_os("KEYHOG_BATCH_PIPELINE").is_some() {
             return false;
         }
-        let explicit = explicit_backend_override();
+        let explicit = self.effective_config.backend_override;
         // Explicit GPU runs on the coalesced batch pipeline for diagnostics and
         // large-buffer parity. Auto GPU is a per-batch autoroute decision inside
         // the fused path, never a global switch based on another bucket.
@@ -58,6 +57,7 @@ impl ScanOrchestrator {
             pattern_count,
             rules_digest,
             config_digest,
+            Ok(self.effective_config.autoroute_cache_path.clone()),
             self.scanner.as_ref(),
         )
     }
@@ -69,6 +69,7 @@ impl ScanOrchestrator {
             pattern_count,
             rules_digest,
             config_digest,
+            Ok(self.effective_config.autoroute_cache_path.clone()),
             self.scanner.as_ref(),
         )
     }
@@ -119,7 +120,7 @@ impl ScanOrchestrator {
 
         let incremental_path = self.incremental_cache_path();
         let scanner = Arc::clone(&self.scanner);
-        let explicit_backend = explicit_backend_override();
+        let explicit_backend = self.effective_config.backend_override;
         let calibration_mode = std::env::var_os("KEYHOG_AUTOROUTE_CALIBRATE").is_some();
         let active_router = if let Some(backend) = explicit_backend {
             ActiveBackendRouter::Explicit(backend)

@@ -845,7 +845,6 @@ fn start_daemon() -> (TempDir, std::process::Child) {
     let detectors = workspace_detectors();
     let daemon = Command::new(binary())
         .env("XDG_RUNTIME_DIR", runtime.path())
-        .env("KEYHOG_BACKEND", "cpu")
         .args([
             "daemon",
             "start",

@@ -12,7 +12,7 @@ detectors = "detectors"
 # Minimum severity to report: info, low, medium, high, critical
 severity = "medium"
 
-# Output format: text, json, jsonl, sarif
+# Output format: text, json, jsonl, sarif, csv, github-annotations, gitlab-sast, html, junit
 format = "text"
 
 # Number of parallel scanning threads (default: number of CPU cores)
@@ -76,6 +76,10 @@ entropy_source_files = false
 # - 4.5: Balanced (default)
 # - 5.5: Conservative (fewer findings, fewer false positives)
 entropy_threshold = 4.5
+
+# Minimum credential length for entropy-fallback candidates (default: 16).
+# Named detectors keep their own shape-specific length gates.
+min_secret_len = 16
 
 # Admit credential-keyword-anchored values (PASSWORD=, *_PASS=, secret:,
 # api_key= ...) on a far lower entropy floor than the bare generic gate. The
@@ -144,6 +148,28 @@ rate = 5
 max_commits = 1000
 
 # ============================================================================
+# SOURCE LIMITS
+# ============================================================================
+
+# Source byte/count ceilings. CLI flags with the matching `--limit-*` name
+# override these values. Defaults are in `keyhog_sources::SourceLimits`.
+[limits]
+stdin_bytes = "10MB"
+web_response_bytes = "10MB"
+s3_object_bytes = "10MB"
+gcs_object_bytes = "10MB"
+azure_blob_bytes = "10MB"
+docker_tar_entry_bytes = "128MB"
+docker_image_config_bytes = "16MB"
+docker_tar_total_bytes = "8GB"
+git_line_bytes = "10MB"
+git_total_bytes = "256MB"
+git_blob_bytes = "10MB"
+git_chunks = 500000
+binary_read_bytes = "64MB"
+binary_decompiled_bytes = "50MB"
+
+# ============================================================================
 # OUTPUT OPTIONS
 # ============================================================================
 
@@ -164,6 +190,53 @@ show_secrets = false
 # Default cache path: `~/.cache/keyhog/merkle.idx` (platform-aware via `dirs`).
 # incremental = false
 # incremental_cache = "~/.cache/keyhog/merkle.idx"
+
+# ============================================================================
+# HOST INTEGRATION
+# ============================================================================
+
+# Extra trusted binary roots for git/docker on non-standard distros, the
+# Hyperscan compiled-database cache directory, and the autoroute calibration
+# evidence file. Paths must be absolute; cache_dir must live under the user's
+# home directory or the per-user keyhog temp cache root. CLI overrides:
+# `--cache-dir <DIR>` and `--autoroute-cache <PATH|off>`.
+[system]
+trusted_bin_dirs = []
+# cache_dir = "/home/alice/.cache/keyhog"
+# autoroute_cache = "/home/alice/.cache/keyhog/autoroute.json"
+
+# ============================================================================
+# AWS CANARY ISSUER EXTENSIONS
+# ============================================================================
+
+# Extra 12-digit AWS account IDs treated as canary-token issuers when an
+# AKIA/ASIA access-key ID decodes to that account. Invalid IDs fail closed.
+[aws]
+canary_accounts = []
+knockoff_accounts = []
+
+# ============================================================================
+# SCANNER ROUTE TUNING
+# ============================================================================
+
+# Detection/recall route gates. These defaults are compiled into the scanner,
+# resolved through explicit config, included in autoroute's config digest, and
+# printed by `keyhog config --effective`. Legacy KEYHOG_* tuning env vars are
+# ignored so ambient shell state cannot change recall.
+[tuning]
+fallback_hs = true
+hs_prefilter_max_len = 4096
+fallback_anchor = true
+homoglyph_gate = true
+homoglyph_ascii_skip = true
+fallback_reverse = false
+prefilter_truncate = true
+fallback_prefix_gate = false
+decode_focus = true
+confirmed_suffix_gate = true
+no_candidate_gate = true
+fallback_localizer = false
+gpu_moe_timeout_ms = 30000
 
 # ============================================================================
 # BAYESIAN CALIBRATION (v0.3.0+)

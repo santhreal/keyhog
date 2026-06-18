@@ -77,7 +77,7 @@ fn ml_split_prof_enabled() -> bool {
 
 /// Print + reset the feature-vs-score split. Folded into the unified profiler:
 /// called from [`crate::engine::profile_dump`] (early-returns when no data).
-pub fn ml_split_profile_dump() {
+pub(crate) fn ml_split_profile_dump() {
     use std::sync::atomic::Ordering::Relaxed;
     let f = MOE_FEATURE_NS.swap(0, Relaxed) as f64 / 1e6;
     let s = MOE_SCORE_NS.swap(0, Relaxed) as f64 / 1e6;
@@ -94,6 +94,20 @@ only this fraction is GPU-offloadable) ===",
 pub fn batch_ml_inference(
     candidates: &[(&str, &str)],
     config: &crate::types::ScannerConfig,
+) -> Vec<f64> {
+    batch_ml_inference_with_timeout(
+        candidates,
+        config,
+        std::time::Duration::from_millis(
+            crate::scanner_config::ScannerTuningConfig::GPU_MOE_TIMEOUT_MS_DEFAULT,
+        ),
+    )
+}
+
+pub(crate) fn batch_ml_inference_with_timeout(
+    candidates: &[(&str, &str)],
+    config: &crate::types::ScannerConfig,
+    gpu_moe_timeout: std::time::Duration,
 ) -> Vec<f64> {
     if candidates.is_empty() {
         return Vec::new();
@@ -170,7 +184,8 @@ pub fn batch_ml_inference(
         let scores = {
             #[cfg(feature = "gpu")]
             {
-                if let Some(mut scores) = backend::batch_score_features(&features) {
+                if let Some(mut scores) = backend::batch_score_features(&features, gpu_moe_timeout)
+                {
                     for ((text, _ctx), score) in candidates.iter().zip(scores.iter_mut()) {
                         if text.is_empty() {
                             *score = 0.0;
@@ -217,8 +232,9 @@ pub fn batch_ml_inference(
 
     #[cfg(not(feature = "ml"))]
     {
-        let _ = candidates;
-        let _ = config;
+        let _ = candidates; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
+        let _ = config; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
+        let _ = gpu_moe_timeout; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
         Vec::new()
     }
 }
@@ -240,6 +256,17 @@ pub fn gpu_available() -> bool {
     #[cfg(not(feature = "gpu"))]
     {
         false
+    }
+}
+
+pub(crate) fn gpu_runtime_identity() -> Option<String> {
+    #[cfg(feature = "gpu")]
+    {
+        backend::gpu_runtime_identity()
+    }
+    #[cfg(not(feature = "gpu"))]
+    {
+        None
     }
 }
 
@@ -292,8 +319,13 @@ pub fn gpu_self_test() -> Result<GpuSelfTest, String> {
             })?;
 
             let features = [[0.0_f32; crate::ml_scorer::NUM_FEATURES]; SELF_TEST_BATCH];
-            let scores = backend::batch_score_features(&features)
-                .ok_or_else(|| "GPU dispatch produced no result".to_string())?;
+            let scores = backend::batch_score_features(
+                &features,
+                std::time::Duration::from_millis(
+                    crate::scanner_config::ScannerTuningConfig::GPU_MOE_TIMEOUT_MS_DEFAULT,
+                ),
+            )
+            .ok_or_else(|| "GPU dispatch produced no result".to_string())?;
 
             if scores.len() != SELF_TEST_BATCH {
                 return Err(format!(

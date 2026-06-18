@@ -12,52 +12,53 @@ documented here with default, effect, and a typical use case.
 | `KEYHOG_VARIANT`    | `auto` (`cuda` on hosts with the full CUDA toolkit, `cpu` otherwise) | Force the `cuda` or `cpu` variant of the Linux build during install. `cpu` is the WGPU + SIMD default which already dispatches on any compatible adapter via Vulkan; `cuda` adds the native-CUDA backend on hosts with libcuda + the matching toolkit. |
 | `GITHUB_TOKEN`      | (unset)                                       | Optional token used only for the fallback GitHub releases API lookup. The default latest-asset redirect path does not read it. |
 
-## Cache
-
-| Variable            | Default                                       | Effect                                |
-|---------------------|-----------------------------------------------|---------------------------------------|
-| `KEYHOG_CACHE_DIR`  | `~/.cache/keyhog` (Linux) / `~/Library/Caches/keyhog` (macOS) | Where the Hyperscan compiled database is cached across runs. Must be a user-owned dir; cold start (~3 s) becomes warm start (~150 ms) when the cache hits. |
-
-## Version output
-
-| Variable                  | Default | Effect                                                |
-|---------------------------|---------|-------------------------------------------------------|
-| `KEYHOG_VERSION_FULL`     | (unset) | Set to `1` to make `keyhog --version` also print the full hardware probe (SIMD ISA, GPU adapter, CUDA / WGPU availability). Hidden by default because the probe initializes wgpu/Vulkan (~200 ms + a 134 MB MAP_SHARED segment), which makes `keyhog --version` 9× slower than `keyhog --help`. The same probe runs unconditionally for `keyhog backend`. |
-
 ## Backend selection
 
 | Variable            | Default     | Effect                                                |
 |---------------------|-------------|-------------------------------------------------------|
-| `KEYHOG_BACKEND`    | `auto`      | One of `auto`, `cpu_fallback`, `simd_cpu`, `gpu`, `megascan`. Overrides hardware-probe selection. Mostly useful for benchmarking. |
 | `KEYHOG_NO_GPU`     | (unset)     | If set to `1`, skip the GPU probe entirely. Useful for CI where the runner reports a software-rendered GPU and you'd rather force CPU. Mirrored by `CI=true`/`GITHUB_ACTIONS=true` auto-detection. |
+| `KEYHOG_GPU_AUTOROUTE` | (unset)  | If set (any value), allow autoroute calibration to probe the GPU megakernel for eligible workload buckets. This is calibration eligibility, not a fallback policy. GPU, Hyperscan/SIMD, scalar CPU, and new engines are peer candidates; autoroute selects whichever backend is fastest after parity is proven for the exact scan class. |
+| `KEYHOG_AUTOROUTE_CALIBRATE` | (unset) | Installer/maintenance knob. When set, a cache miss may run bounded repeated backend probes, require parity with the reference path, and persist the fastest proven backend under the autoroute cache keyed by binary, detector corpus, resolved scan config, backend-affecting runtime env, host, and workload shape. Installers set it only during the visible calibration phase; normal scans leave it unset and do not benchmark inside production work: they must find a valid persisted fastest-correct decision, or report an invalid autoroute state. Invalid/stale cache records are rejected. A missing/stale/incomplete decision is not permission to silently run SIMD/CPU/GPU as a substitute. Rerun `install.sh --calibrate` or `install.ps1 -Calibrate` to replace persisted calibration records. |
+| `KEYHOG_GPU_RECALL_FLOOR` | (unset) | If set, force the GPU megakernel path to also compute the full SIMD/Hyperscan trigger net and recover any GPU under-fire before phase 2. This is a parity/debug knob, not the production speed path; `KH_PERF=1` reports `full_recall_floor=true` when this cost is paid. Host-only detectors still use CPU coverage automatically and are reported separately as `host_floor=true`. |
 | `KEYHOG_REQUIRE_GPU` | (unset)    | If set to `1`, refuse to run when no usable GPU adapter is detected. Useful for self-hosted runners where a regression on GPU initialization should fail loudly, not silently fall back to CPU. |
-| `KEYHOG_GPU_KERNEL` | `auto`      | Override the GPU dispatch kernel pick. Mostly a development knob for benchmarking individual kernel implementations. |
-| `KEYHOG_GPU_MOE_TIMEOUT_MS` | `30000` | Deadline for one GPU MoE confidence readback. On timeout KeyHog falls back to CPU MoE for that batch instead of parking a scan worker forever. |
 
 ## Threading + chunking
 
 | Variable                     | Default            | Effect                                       |
 |------------------------------|--------------------|----------------------------------------------|
 | `KEYHOG_THREADS`             | physical-core count | Pin the rayon worker pool. Positive integer only; malformed or zero values are printed to stderr and fall back to the physical-core default, while values above the hard cap are printed to stderr and clamped. Useful inside containers where `available_parallelism()` reports the wrong value. |
-| `KEYHOG_PER_CHUNK_TIMEOUT_MS` | (unset)            | Hard deadline per chunk scan in milliseconds. Recommended `30000` for production scans where bounded latency matters more than scan completeness. |
-| `KEYHOG_DETECTORS`           | (workspace default) | Override the auto-discovered detector directory path. |
-| `KEYHOG_TRUSTED_BIN_DIR`     | (unset)            | Restrict which binary paths the daemon will execute when forking for sub-scans (defense-in-depth knob). |
+| `KEYHOG_READER_THREADS`      | scan-pool-derived, capped `4` | Filesystem read-worker count. Positive integer only; malformed or zero values are printed to stderr and fall back to the scan-pool-derived default, then clamp to the scan pool size. |
+| `KEYHOG_PER_CHUNK_TIMEOUT_MS` | (unset)            | Hard deadline per chunk scan in milliseconds. Recommended `30000` for production scans where bounded latency matters more than scan completeness. Malformed or non-positive values are printed to stderr and treated as unset, not silently ignored. |
+| `KEYHOG_FUSED_BATCH`         | `32`               | Filesystem fused-pipeline chunk batch size. Positive integer only; malformed or zero values are printed to stderr and fall back to `32`. |
+| `KEYHOG_FUSED_DEPTH`         | worker-count-derived, clamped `2..8` | Filesystem fused-pipeline bounded channel depth. Positive integer only; malformed or zero values are printed to stderr and fall back to the worker-count-derived default. |
+| `KEYHOG_SHARD_TARGET`        | `80`               | Hyperscan compile patterns-per-shard target. Positive integer only; malformed or zero values are printed to stderr and fall back to `80`. |
+Trusted external binary directories and the Hyperscan compiled-database cache
+directory are configured through `.keyhog.toml` `[system]` or explicit CLI
+flags, not environment variables.
+AWS canary/knockoff issuer account extensions are configured through
+`.keyhog.toml` `[aws]`.
+Detection/recall route tuning is configured through `.keyhog.toml` `[tuning]`;
+legacy `KEYHOG_*` tuning variables are ignored so scan recall is not changed
+by ambient shell state.
+GPU MoE readback timeout is configured through `.keyhog.toml` `[tuning]`
+`gpu_moe_timeout_ms`.
 
 ## Daemon (Unix only)
 
 | Variable            | Default                                       | Effect                                |
 |---------------------|-----------------------------------------------|---------------------------------------|
 | `XDG_RUNTIME_DIR`   | (set by login session)                        | Daemon socket location: `$XDG_RUNTIME_DIR/keyhog.sock`. Fallback is `~/.cache/keyhog/server.sock`. |
-| `KEYHOG_DOGFOOD`    | (unset)                                       | Enable dogfood telemetry capture in the daemon. Equivalent to passing `--dogfood` on every connecting client. |
-| `KEYHOG_DAEMON_REQUEST_TIMEOUT_SECS` | `300` | Max wall-clock time a single client request may take to fully arrive before the daemon closes that connection and reclaims its slot. Bounds a half-frame / slow client so one stuck connection can't starve other same-uid clients. Positive integer only; malformed or zero values are printed to stderr and fall back to `300`. Raise it for very large pre-warmed scan batches. |
 
-## Verification
+Daemon request timeout is configured explicitly with
+`keyhog daemon start --request-timeout-secs <N>`.
+
+## Remote source auth
 
 | Variable            | Default     | Effect                                                |
 |---------------------|-------------|-------------------------------------------------------|
-| `HTTPS_PROXY`       | (unset)     | Standard env var. Routes verifier traffic through a proxy. `keyhog scan --proxy <URL>` overrides. |
-| `KEYHOG_PROXY`      | `auto`      | `off` disables proxy resolution entirely (useful for air-gapped builds where `HTTPS_PROXY` is set but no proxy is reachable). Also disables DNS pinning when off, so don't set it to `off` casually. |
-| `NO_PROXY`          | (unset)     | Standard env var. Hostnames to bypass the proxy on. |
+| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, `AWS_REGION`, `AWS_DEFAULT_REGION` | (unset) | Optional S3 ListObjectsV2 / object GET signing for AWS-owned endpoints. Custom `--s3-endpoint` hosts never receive ambient AWS credentials unless `--allow-s3-credential-forward` is passed. |
+| `GOOGLE_OAUTH_ACCESS_TOKEN`, `GCS_BEARER_TOKEN` | (unset) | Optional bearer token for `--gcs-bucket` JSON API listing/object downloads. The Google token variable wins when both are set. Custom `--gcs-endpoint` hosts never receive the token unless `--allow-gcs-token-forward` is passed. |
+| GitHub/GitLab/Bitbucket tokens | (CLI only) | Repository-collection scans require explicit `--github-token`, `--gitlab-token`, or `--bitbucket-token` flags. KeyHog does not read ambient forge tokens for these sources. |
 
 ## Logging
 
@@ -70,9 +71,6 @@ documented here with default, effect, and a typical use case.
 
 | Variable                  | Default | Effect                                                |
 |---------------------------|---------|-------------------------------------------------------|
-| `KEYHOG_INSECURE_TLS`     | (unset) | If set, accept self-signed TLS certs on verifier traffic. Equivalent to `--insecure`. Use only in lab environments. |
-| `KEYHOG_ALLOW_SCRIPT_VERIFY` | (unset) | Permit the `script:` verifier kind (which would otherwise be refused as a remote-execution risk). Opt-in for trusted detector corpora only. |
-| `KEYHOG_AWS_CANARY_ACCOUNTS` | (unset) | Path to a TOML extension file with `[canary].accounts` / `[knockoff].accounts` 12-digit AWS account IDs. Unreadable, empty, malformed, or non-UTF-8 values fail closed before scans or AWS verification, because ignoring this file would remove operator-supplied canary protection. |
 | `KEYHOG_LIVE_VERIFY`      | (unset) | Internal: enables a special live-verify mode used by the end-to-end test harness. |
 | `KEYHOG_LIVE_AWS_ACCESS_KEY_ID`, `KEYHOG_LIVE_AWS_SECRET_ACCESS_KEY`, `KEYHOG_LIVE_GITHUB_PAT` | (unset) | Test-only credentials the verifier integration tests probe against real upstream services. Never set these outside the maintainer test environment. |
 
@@ -98,24 +96,43 @@ documented here with default, effect, and a typical use case.
 - `KEYHOG_*` flags for changing detector behavior. Detector tuning is
   via `.keyhog.toml` only, so the same scan reproduces across
   developer machines without env-var contamination.
+- Old cache-dir environment overrides. Configure the Hyperscan
+  compiled-database cache with `keyhog scan --cache-dir <DIR>` or
+  `.keyhog.toml` `[system].cache_dir`.
+- Old autoroute-cache environment overrides in the keyhog binary. Configure the
+  persisted autoroute calibration evidence file with
+  `keyhog scan --autoroute-cache <PATH|off>` or `.keyhog.toml`
+  `[system].autoroute_cache`.
+- Old AWS canary extension environment overrides. Configure site-local canary
+  and knockoff issuer account IDs with `.keyhog.toml` `[aws]`.
 - Ambient remote-source targets such as `SLACK_TOKEN`, `S3_BUCKET`,
   `GCS_BUCKET`, or `AZURE_BLOB_CONTAINER_URL`. Use explicit source flags
   (`--source slack:TOKEN`, `--s3-bucket`, `--gcs-bucket`,
   `--azure-container-url`) so target selection is visible in the command
   and captured by config/audit logs.
+- Ambient verifier/source HTTP policy variables such as `HTTPS_PROXY`,
+  `HTTP_PROXY`, `ALL_PROXY`, `NO_PROXY`, `KEYHOG_PROXY`, and
+  `KEYHOG_INSECURE_TLS`. Use explicit `keyhog scan --proxy <URL>` /
+  `--proxy off` and `--insecure`, or the matching TOML fields. When no
+  proxy is configured, KeyHog disables reqwest's ambient proxy detection
+  so shell or CI environment cannot silently reroute secret-bearing
+  verification traffic or disable TLS verification.
 - Anything named `KEYHOG_API_KEY` / `KEYHOG_TOKEN`. The scanner never
   reports findings upstream; there's no service to authenticate to.
 - `KEYHOG_TELEMETRY_*`. There is no telemetry. Findings stay local.
 
 ## Precedence
 
-When two sources disagree:
+For scanner options that have both CLI and TOML forms, CLI wins over
+`.keyhog.toml`, and the compiled default applies when neither is set.
+The environment variables documented above are explicit install,
+diagnostic, credential, or host-integration exceptions; they are not a
+general override tier.
 
-1. CLI flag (`--proxy <URL>`)
-2. `.keyhog.toml` in the repo root
-3. Environment variable
-4. Compiled default
+For verifier/source HTTP policy specifically, the order is:
 
-So `keyhog scan --proxy http://a` beats `HTTPS_PROXY=http://b` beats
-`KEYHOG_PROXY=off`. The lowest-precedence wins only when nothing
-above it is set.
+1. CLI flag (`--proxy <URL>`, `--proxy off`, `--insecure`)
+2. `.keyhog.toml`
+3. Compiled default (`no proxy`, strict TLS)
+
+No proxy or TLS environment variable participates in that order.

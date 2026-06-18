@@ -118,6 +118,14 @@ pub(crate) struct ConfigFile {
     pub lockdown: Option<LockdownSection>,
     /// `[limits]` - source byte/count ceilings.
     pub limits: Option<LimitsSection>,
+    /// `[system]` - host integration paths and other non-scan behavior.
+    pub system: Option<SystemSection>,
+    /// `[aws]` - AWS-specific offline safety metadata.
+    pub aws: Option<AwsSection>,
+    /// `[tuning]` - recall-equivalent scanner route tuning.
+    pub tuning: Option<TuningSection>,
+    /// Top-level compatibility alias for `[system].trusted_bin_dirs`.
+    pub trusted_bin_dirs: Option<Vec<PathBuf>>,
 }
 
 /// `[scan]` nested table. Fields here map 1:1 to the flat top-level
@@ -196,6 +204,52 @@ pub(crate) struct LimitsSection {
     pub binary_decompiled_bytes: Option<String>,
 }
 
+/// `[system]` host integration settings.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default)]
+pub(crate) struct SystemSection {
+    /// Absolute directories allowed by `keyhog_core::safe_bin` in addition to
+    /// the compiled system defaults. Used for Nix/Guix and other non-standard
+    /// binary roots without an environment-variable trust escape hatch.
+    pub trusted_bin_dirs: Option<Vec<PathBuf>>,
+    /// Absolute Hyperscan compiled-database cache directory. CLI `--cache-dir`
+    /// wins over this value.
+    pub cache_dir: Option<PathBuf>,
+    /// Absolute autoroute calibration cache file, or `off` to disable.
+    /// CLI `--autoroute-cache` wins over this value.
+    pub autoroute_cache: Option<String>,
+}
+
+/// `[aws]` offline AWS safety metadata.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default)]
+pub(crate) struct AwsSection {
+    /// Extra 12-digit AWS account IDs treated as canary-token issuers.
+    pub canary_accounts: Option<Vec<String>>,
+    /// Extra 12-digit AWS account IDs treated as off-brand canary issuers.
+    pub knockoff_accounts: Option<Vec<String>>,
+}
+
+/// `[tuning]` scanner performance-route overrides. Each key is optional; absent
+/// keys use the compiled shipped default.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default)]
+pub(crate) struct TuningSection {
+    pub fallback_hs: Option<bool>,
+    pub hs_prefilter_max_len: Option<usize>,
+    pub fallback_anchor: Option<bool>,
+    pub homoglyph_gate: Option<bool>,
+    pub homoglyph_ascii_skip: Option<bool>,
+    pub fallback_reverse: Option<bool>,
+    pub prefilter_truncate: Option<bool>,
+    pub fallback_prefix_gate: Option<bool>,
+    pub decode_focus: Option<bool>,
+    pub confirmed_suffix_gate: Option<bool>,
+    pub no_candidate_gate: Option<bool>,
+    pub fallback_localizer: Option<bool>,
+    pub gpu_moe_timeout_ms: Option<u64>,
+}
+
 /// Compiled-in Tier-A per-detector confidence floors that ship inside the
 /// binary, independent of any on-disk `.keyhog.toml`. This is the fix for the
 /// "tuned != benched != shipped" leak: `[detector.<id>] min_confidence`
@@ -240,6 +294,9 @@ fn shipped_config_outcome() -> ConfigOutcome {
             .map(|(id, floor)| ((*id).to_string(), *floor))
             .collect(),
         config_errors: Vec::new(),
+        trusted_bin_dirs: Vec::new(),
+        aws_canary_accounts: Vec::new(),
+        scanner_tuning: keyhog_scanner::ScannerTuningConfig::default(),
     }
 }
 
@@ -522,6 +579,12 @@ pub(crate) struct ConfigOutcome {
     /// force routing back through the in-process path where the error is
     /// surfaced exactly once.
     pub config_errors: Vec<String>,
+    /// Absolute extra binary directories trusted by `keyhog_core::safe_bin`.
+    pub trusted_bin_dirs: Vec<PathBuf>,
+    /// Extra AWS canary/knockoff account IDs supplied by `.keyhog.toml`.
+    pub aws_canary_accounts: Vec<String>,
+    /// Explicit scanner route tuning supplied by `.keyhog.toml`.
+    pub scanner_tuning: keyhog_scanner::ScannerTuningConfig,
 }
 
 /// Load and merge a `.keyhog.toml` config file into the parsed `ScanArgs`.
@@ -610,6 +673,93 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
 
     tracing::debug!(path = %config_path.display(), "loaded .keyhog.toml");
     let mut config_errors = Vec::new();
+    let mut trusted_bin_dirs = Vec::new();
+    let mut aws_canary_accounts = Vec::new();
+    let mut scanner_tuning = keyhog_scanner::ScannerTuningConfig::default();
+
+    let mut collect_trusted_bin_dirs = |field: &str, dirs: Option<Vec<PathBuf>>| {
+        if let Some(dirs) = dirs {
+            for dir in dirs {
+                if dir.is_absolute() {
+                    trusted_bin_dirs.push(dir);
+                } else {
+                    config_errors.push(format!(
+                        "- {field}: trusted binary directory {} must be absolute",
+                        dir.display()
+                    ));
+                }
+            }
+        }
+    };
+    collect_trusted_bin_dirs("trusted_bin_dirs", config.trusted_bin_dirs.clone());
+    collect_trusted_bin_dirs(
+        "[system].trusted_bin_dirs",
+        config
+            .system
+            .as_ref()
+            .and_then(|system| system.trusted_bin_dirs.clone()),
+    );
+    if let Some(cache_dir) = config
+        .system
+        .as_ref()
+        .and_then(|system| system.cache_dir.clone())
+    {
+        if cache_dir.is_absolute() {
+            if args.cache_dir.is_none() {
+                args.cache_dir = Some(cache_dir);
+            }
+        } else {
+            config_errors.push(format!(
+                "- [system].cache_dir: Hyperscan cache directory {} must be absolute",
+                cache_dir.display()
+            ));
+        }
+    }
+    if let Some(autoroute_cache) = config
+        .system
+        .as_ref()
+        .and_then(|system| system.autoroute_cache.clone())
+    {
+        if args.autoroute_cache.is_none() {
+            args.autoroute_cache = Some(autoroute_cache);
+        }
+    }
+    if let Some(aws) = config.aws.as_ref() {
+        if let Some(accounts) = aws.canary_accounts.clone() {
+            match keyhog_core::aws::parse_canary_account_ids(accounts.iter().map(String::as_str)) {
+                Ok(parsed) => aws_canary_accounts.extend(parsed),
+                Err(error) => config_errors.push(format!("- [aws].canary_accounts: {error}")),
+            }
+        }
+        if let Some(accounts) = aws.knockoff_accounts.clone() {
+            match keyhog_core::aws::parse_canary_account_ids(accounts.iter().map(String::as_str)) {
+                Ok(parsed) => aws_canary_accounts.extend(parsed),
+                Err(error) => config_errors.push(format!("- [aws].knockoff_accounts: {error}")),
+            }
+        }
+    }
+    if let Some(tuning) = config.tuning {
+        scanner_tuning.fallback_hs = tuning.fallback_hs;
+        scanner_tuning.hs_prefilter_max_len = tuning.hs_prefilter_max_len;
+        scanner_tuning.fallback_anchor = tuning.fallback_anchor;
+        scanner_tuning.homoglyph_gate = tuning.homoglyph_gate;
+        scanner_tuning.homoglyph_ascii_skip = tuning.homoglyph_ascii_skip;
+        scanner_tuning.fallback_reverse = tuning.fallback_reverse;
+        scanner_tuning.prefilter_truncate = tuning.prefilter_truncate;
+        scanner_tuning.fallback_prefix_gate = tuning.fallback_prefix_gate;
+        scanner_tuning.decode_focus = tuning.decode_focus;
+        scanner_tuning.confirmed_suffix_gate = tuning.confirmed_suffix_gate;
+        scanner_tuning.no_candidate_gate = tuning.no_candidate_gate;
+        scanner_tuning.fallback_localizer = tuning.fallback_localizer;
+        if let Some(timeout_ms) = tuning.gpu_moe_timeout_ms {
+            if timeout_ms == 0 {
+                config_errors
+                    .push("- [tuning].gpu_moe_timeout_ms: expected an integer >= 1".to_string());
+            } else {
+                scanner_tuning.gpu_moe_timeout_ms = Some(timeout_ms);
+            }
+        }
+    }
 
     // Apply config values only when no explicit CLI flag was given.
     if let Some(ref detectors_str) = config.detectors {
@@ -974,6 +1124,9 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         require_lockdown,
         detector_min_confidence,
         config_errors,
+        trusted_bin_dirs,
+        aws_canary_accounts,
+        scanner_tuning,
     }
 }
 

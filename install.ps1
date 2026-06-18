@@ -336,19 +336,6 @@ function Clear-MarkOfTheWeb {
 }
 
 function Get-AutorouteCachePathForInstall {
-    $raw = [Environment]::GetEnvironmentVariable('KEYHOG_AUTOROUTE_CACHE')
-    if ($null -ne $raw) {
-        $trimmed = $raw.Trim()
-        if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed.ToLowerInvariant() -in @('0', 'off')) {
-            return $null
-        }
-        if ($trimmed -match '^[A-Za-z]:[\\/]' -or $trimmed -match '^\\\\') {
-            return $trimmed
-        }
-        Warn "Autoroute cache summary cannot use KEYHOG_AUTOROUTE_CACHE=$trimmed; the binary requires an absolute cache path."
-        return $null
-    }
-
     $root = $env:LOCALAPPDATA
     if (-not $root) {
         $root = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
@@ -388,7 +375,7 @@ function Show-AutorouteCalibrationSummary {
     param([int]$ProbeCount, [datetime]$StartedAt)
     $cachePath = Get-AutorouteCachePathForInstall
     if (-not $cachePath) {
-        Warn "Autoroute calibration summary unavailable: persistent autoroute cache is disabled or invalid."
+        Warn "Autoroute calibration summary unavailable: platform cache directory is unavailable."
         return $false
     }
     if (-not (Test-Path -PathType Leaf $cachePath)) {

@@ -37,7 +37,7 @@ impl CompiledScanner {
                 // the line's offset; value_match.start() is offset within
                 // `line`. Used below to give reassembled findings a REAL
                 // source-file position instead of the synthetic
-                // dummy_chunk offset (which used to read ~19 - the length
+                // synthetic chunk offset (which used to read ~19 - the length
                 // of the `reassembled_key = "` prefix). Synthetic offsets
                 // broke the chunk-boundary recall invariant (proptest
                 // gpu_proptest_invariants P3): identical credentials got
@@ -76,22 +76,22 @@ impl CompiledScanner {
                         continue;
                     }
 
-                    let mut dummy_data = String::with_capacity(candidate.len() + 24);
-                    dummy_data.push_str("reassembled_key = \"");
-                    dummy_data.push_str(candidate.as_str());
-                    dummy_data.push('"');
-                    let dummy_chunk = Chunk {
-                        data: dummy_data.into(),
+                    let mut synthetic_data = String::with_capacity(candidate.len() + 24);
+                    synthetic_data.push_str("reassembled_key = \"");
+                    synthetic_data.push_str(candidate.as_str());
+                    synthetic_data.push('"');
+                    let synthetic_chunk = Chunk {
+                        data: synthetic_data.into(),
                         metadata: chunk.metadata.clone(),
                     };
 
                     // Tiny synthesized chunk - NEVER dispatch through
-                    // GPU even if `KEYHOG_BACKEND=gpu` is set; the
+                    // GPU even if `--backend gpu` is set; the
                     // per-dispatch overhead (~10-100 ms) is orders of
                     // magnitude larger than scanning ~50 bytes on the
                     // CPU. The previous flow leaked the env override
                     // into `select_backend_for_file` and turned a
-                    // 64 MiB messy-corpus scan into ~60 s of dummy
+                    // 64 MiB messy-corpus scan into ~60 s of synthetic
                     // GPU launches.
                     let backend = {
                         #[cfg(feature = "simd")]
@@ -103,15 +103,16 @@ impl CompiledScanner {
                             crate::hw_probe::ScanBackend::CpuFallback
                         }
                     };
-                    let mut reassembled_matches = self.scan_inner(&dummy_chunk, backend, deadline);
+                    let mut reassembled_matches =
+                        self.scan_inner(&synthetic_chunk, backend, deadline);
                     for m in &mut reassembled_matches {
                         m.detector_id = format!("{}:reassembled", m.detector_id).into();
                         // Stamp the finding's path from the CONTRIBUTING
-                        // fragment, not the synthetic `dummy_chunk` (which
+                        // fragment, not the synthetic chunk (which
                         // cloned the outer chunk's metadata). A candidate can
                         // be glued from a fragment recorded by an earlier
                         // chunk plus this trigger fragment; inheriting the
-                        // dummy chunk's path mis-attributed the reassembled
+                        // synthetic chunk's path mis-attributed the reassembled
                         // finding to whatever chunk happened to be scanning
                         // when reassembly fired - the cross-file attribution
                         // mangling that produced `:reassembled` FPs. Reassembly
@@ -122,7 +123,7 @@ impl CompiledScanner {
                         // line AND byte offset in the source chunk.
                         // Previously offset was the synthetic position
                         // inside `"reassembled_key = \"…\""` (~19 bytes
-                        // from dummy_chunk start), which broke the
+                        // from synthetic chunk start), which broke the
                         // chunk-boundary recall invariant since the
                         // same credential got different synthetic
                         // offsets depending on chunk topology.

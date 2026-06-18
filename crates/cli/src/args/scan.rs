@@ -1,13 +1,12 @@
 //! `keyhog scan` CLI arguments.
 //!
-//! Split out of `args.rs` so the parent module stays under the 500-line
-//! modularity cap (the scan subcommand has the largest flag surface of
-//! any subcommand by a wide margin).
+//! Split out of `args.rs` because the scan subcommand has the largest flag
+//! surface and needs its own validation boundary.
 
 use clap::Parser;
 use std::path::PathBuf;
 
-use super::{CliDedupScope, OutputFormat, SeverityFilter};
+use super::{CliDedupScope, OutputFormat, SeverityFilter, SourceLimitArgs};
 
 #[derive(Parser, Clone)]
 pub struct ScanArgs {
@@ -67,6 +66,49 @@ pub struct ScanArgs {
     #[arg(long, requires = "github_org", value_name = "PAT")]
     pub github_token: Option<String>,
 
+    /// Scan all projects in a GitLab group, including subgroups
+    #[cfg(feature = "gitlab")]
+    #[arg(long, requires = "gitlab_token", value_name = "GROUP")]
+    pub gitlab_group: Option<String>,
+
+    /// GitLab personal access token for --gitlab-group
+    #[cfg(feature = "gitlab")]
+    #[arg(long, requires = "gitlab_group", value_name = "PAT")]
+    pub gitlab_token: Option<String>,
+
+    /// GitLab API endpoint root, for example https://gitlab.example.com
+    #[cfg(feature = "gitlab")]
+    #[arg(long, requires = "gitlab_group", default_value = "https://gitlab.com")]
+    pub gitlab_endpoint: String,
+
+    /// Scan all repositories in a Bitbucket Cloud workspace
+    #[cfg(feature = "bitbucket")]
+    #[arg(
+        long,
+        requires_all = ["bitbucket_username", "bitbucket_token"],
+        value_name = "WORKSPACE"
+    )]
+    pub bitbucket_workspace: Option<String>,
+
+    /// Bitbucket username for --bitbucket-workspace
+    #[cfg(feature = "bitbucket")]
+    #[arg(long, requires = "bitbucket_workspace", value_name = "USERNAME")]
+    pub bitbucket_username: Option<String>,
+
+    /// Bitbucket app password for --bitbucket-workspace
+    #[cfg(feature = "bitbucket")]
+    #[arg(long, requires = "bitbucket_workspace", value_name = "APP_PASSWORD")]
+    pub bitbucket_token: Option<String>,
+
+    /// Bitbucket Cloud API endpoint root
+    #[cfg(feature = "bitbucket")]
+    #[arg(
+        long,
+        requires = "bitbucket_workspace",
+        default_value = "https://api.bitbucket.org/2.0"
+    )]
+    pub bitbucket_endpoint: String,
+
     /// Scan a public or path-style S3 bucket via ListObjectsV2
     #[cfg(feature = "s3")]
     #[arg(long, value_name = "BUCKET")]
@@ -82,6 +124,47 @@ pub struct ScanArgs {
     #[arg(long, requires = "s3_bucket", value_name = "URL")]
     pub s3_endpoint: Option<String>,
 
+    /// Forward ambient AWS credentials to a custom S3 endpoint you trust.
+    /// Off by default; AWS-owned endpoints do not need this. This flag is
+    /// intentionally explicit because it can send AWS identity material to a
+    /// third-party host.
+    #[cfg(feature = "s3")]
+    #[arg(long, requires = "s3_endpoint")]
+    pub allow_s3_credential_forward: bool,
+
+    /// Scan a Google Cloud Storage bucket via the JSON API
+    #[cfg(feature = "gcs")]
+    #[arg(long, value_name = "BUCKET")]
+    pub gcs_bucket: Option<String>,
+
+    /// Optional GCS object prefix to limit the scan
+    #[cfg(feature = "gcs")]
+    #[arg(long, requires = "gcs_bucket", value_name = "PREFIX")]
+    pub gcs_prefix: Option<String>,
+
+    /// Optional GCS endpoint override for compatible APIs or tests
+    #[cfg(feature = "gcs")]
+    #[arg(long, requires = "gcs_bucket", value_name = "URL")]
+    pub gcs_endpoint: Option<String>,
+
+    /// Forward the ambient GCS bearer token to a custom GCS endpoint you trust.
+    /// Off by default; googleapis.com endpoints do not need this. This flag is
+    /// intentionally explicit because it can send a bearer token to a
+    /// third-party host.
+    #[cfg(feature = "gcs")]
+    #[arg(long, requires = "gcs_endpoint")]
+    pub allow_gcs_token_forward: bool,
+
+    /// Scan an Azure Blob Storage container URL. Include a SAS query string for private containers.
+    #[cfg(feature = "azure")]
+    #[arg(long, value_name = "URL")]
+    pub azure_container_url: Option<String>,
+
+    /// Optional Azure Blob prefix to limit the scan
+    #[cfg(feature = "azure")]
+    #[arg(long, requires = "azure_container_url", value_name = "PREFIX")]
+    pub azure_prefix: Option<String>,
+
     /// Scan a Docker image by unpacking `docker image save`
     #[cfg(feature = "docker")]
     #[arg(long, value_name = "IMAGE")]
@@ -93,20 +176,39 @@ pub struct ScanArgs {
     pub url: Option<Vec<String>>,
 
     /// Route outbound HTTP through a proxy (`http://burp:8080`,
-    /// `socks5://127.0.0.1:9050`, etc.). When unset, falls back to
-    /// `KEYHOG_PROXY` env var, then reqwest's built-in handling of
-    /// `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` / `NO_PROXY`. Pass
-    /// `off` to disable proxying entirely (including env inheritance)
-    /// for air-gapped scans.
-    #[cfg(any(feature = "web", feature = "github", feature = "s3"))]
+    /// `socks5://127.0.0.1:9050`, etc.). This flag (or its TOML
+    /// equivalent) is the ONLY way to set a proxy: no environment
+    /// variable is consulted, and ambient `HTTPS_PROXY` / `HTTP_PROXY`
+    /// / `ALL_PROXY` is ignored, so a stray env proxy can never silently
+    /// reroute secret-bearing traffic. When unset, no proxy is used.
+    /// Pass `off` to make that explicit for air-gapped scans.
+    #[cfg(any(
+        feature = "web",
+        feature = "github",
+        feature = "gitlab",
+        feature = "bitbucket",
+        feature = "s3",
+        feature = "gcs",
+        feature = "azure"
+    ))]
     #[arg(long, value_name = "URL")]
     pub proxy: Option<String>,
 
     /// Skip TLS certificate verification for every outbound HTTP
     /// request. Needed when scanning through Burp / mitmproxy /
     /// corporate-MITM CAs that present self-signed certificates.
-    /// Off by default; equivalent env var: `KEYHOG_INSECURE_TLS=1`.
-    #[cfg(any(feature = "web", feature = "github", feature = "s3"))]
+    /// Off by default. This flag (or its TOML equivalent) is the ONLY
+    /// way to disable verification: no environment variable can turn it
+    /// off, so an ambient toggle can't silently expose secrets to a MITM.
+    #[cfg(any(
+        feature = "web",
+        feature = "github",
+        feature = "gitlab",
+        feature = "bitbucket",
+        feature = "s3",
+        feature = "gcs",
+        feature = "azure"
+    ))]
     #[arg(long)]
     pub insecure: bool,
 
@@ -175,6 +277,22 @@ pub struct ScanArgs {
     #[arg(long, value_name = "PATH", requires = "incremental")]
     pub incremental_cache: Option<PathBuf>,
 
+    /// Override the Hyperscan compiled-database cache directory.
+    ///
+    /// This is explicit CLI/TOML configuration, not an environment variable:
+    /// pass an absolute path under your home directory or the per-user keyhog
+    /// temp cache root. Config: `[system].cache_dir` in `.keyhog.toml`; this
+    /// flag overrides it.
+    #[arg(long, value_name = "DIR")]
+    pub cache_dir: Option<PathBuf>,
+
+    /// Override the persistent autoroute calibration cache file.
+    ///
+    /// Use an absolute path, or `off` to disable persistence. Config:
+    /// `[system].autoroute_cache` in `.keyhog.toml`; this flag overrides it.
+    #[arg(long, value_name = "PATH|off")]
+    pub autoroute_cache: Option<String>,
+
     /// Output format
     #[arg(long, default_value = "text", value_enum)]
     pub format: OutputFormat,
@@ -194,11 +312,8 @@ pub struct ScanArgs {
     #[arg(long)]
     pub stream: bool,
 
-    /// Force a specific scan backend instead of letting the auto-router
-    /// choose. Same effect as `KEYHOG_BACKEND=<value>` but visible in
-    /// the CLI and harder to forget. Values: `gpu`, `mega-scan`, `simd`,
-    /// `cpu`. The CLI flag takes precedence over the env var when both
-    /// are set.
+    /// Force a specific scan backend instead of using persisted autoroute.
+    /// Values: `gpu`, `mega-scan`, `simd`, `cpu`, or `auto`.
     #[arg(
         long,
         value_name = "BACKEND",
@@ -282,6 +397,13 @@ pub struct ScanArgs {
     #[arg(long, requires = "verify")]
     pub verify_batch: bool,
 
+    /// Permit detector `script:` verification for trusted detector corpora.
+    /// Off by default because scripts execute verifier-supplied code with
+    /// credential-adjacent context. Prints an explicit warning when active.
+    #[cfg(feature = "verify")]
+    #[arg(long, requires = "verify")]
+    pub allow_script_verify: bool,
+
     /// Min severity to report: info, low, medium, high, critical
     #[arg(short, long, value_enum)]
     pub severity: Option<SeverityFilter>,
@@ -305,6 +427,9 @@ pub struct ScanArgs {
     /// `regex_dfa_limit` in `.keyhog.toml`; this flag overrides it.
     #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
     pub regex_dfa_limit: Option<usize>,
+
+    #[command(flatten)]
+    pub limits: SourceLimitArgs,
 
     /// Custom input sources to enable (pluggable).
     #[arg(long, value_name = "NAME")]
@@ -335,7 +460,7 @@ pub struct ScanArgs {
     pub precision: bool,
 
     /// Lockdown mode: maximum security at the cost of throughput. Enables
-    /// every protection in `keyhog_core::hardening::apply_lockdown_protections`
+    /// every protection in `keyhog_core::hardening::apply_protections(true)`
     /// (mlock, refuse-on-coredump-leak, refuse-on-disk-cache), forces
     /// HTTPS-only verifier, refuses to write any cache to disk, and
     /// hard-aborts if any protection fails to take. Use this when keyhog
@@ -447,6 +572,11 @@ pub struct ScanArgs {
     #[arg(long, value_name = "BITS")]
     pub entropy_threshold: Option<f64>,
 
+    /// Minimum credential length for entropy-fallback candidates (default: 16).
+    /// Named detectors keep their own shape-specific length gates.
+    #[arg(long, value_name = "N", value_parser = crate::value_parsers::parse_min_secret_len)]
+    pub min_secret_len: Option<usize>,
+
     /// Disable Unicode normalization (not recommended).
     #[arg(long)]
     pub no_unicode_norm: bool,
@@ -545,6 +675,6 @@ impl ScanArgs {
         if self.no_daemon {
             return super::DaemonMode::Off;
         }
-        self.daemon.unwrap_or(super::DaemonMode::Auto)
+        self.daemon.unwrap_or(super::DaemonMode::Auto) // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
     }
 }
