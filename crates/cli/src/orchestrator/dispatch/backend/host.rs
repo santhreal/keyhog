@@ -46,9 +46,32 @@ impl AutorouteHostProfile {
 
     pub(super) fn require_exact_identity(&self) -> Result<(), &'static str> {
         match self.cpu_model.as_deref().map(str::trim) {
-            Some(model) if !model.is_empty() => Ok(()),
-            _ => Err("CPU model string is unavailable"),
+            Some(model) if !model.is_empty() => {}
+            _ => return Err("CPU model string is unavailable"),
         }
+        if self.physical_cores == 0
+            || self.logical_cores == 0
+            || self.logical_cores < self.physical_cores
+        {
+            return Err("CPU core topology is unavailable");
+        }
+        match self.total_memory_mb {
+            Some(memory_mb) if memory_mb > 0 => {}
+            _ => return Err("system memory size is unavailable"),
+        }
+        if self.gpu_name.is_some() && !self.gpu_is_software {
+            match self.gpu_runtime_backend.as_deref().map(str::trim) {
+                Some(backend) if !backend.is_empty() => {}
+                _ => return Err("GPU runtime backend identity is unavailable"),
+            }
+        }
+        if self.gpu_name.is_some() || self.gpu_runtime_backend.is_some() {
+            match self.gpu_driver_runtime_identity.as_deref().map(str::trim) {
+                Some(identity) if !identity.is_empty() => {}
+                _ => return Err("GPU driver/runtime identity is unavailable"),
+            }
+        }
+        Ok(())
     }
 }
 

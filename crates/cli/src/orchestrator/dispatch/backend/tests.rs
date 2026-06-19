@@ -500,6 +500,169 @@ fn autoroute_cache_rejects_missing_cpu_model_identity() {
 }
 
 #[test]
+fn autoroute_cache_rejects_missing_core_topology_identity() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_missing_core_topology_{}.json",
+        std::process::id()
+    ));
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let key = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        key,
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
+    );
+
+    let mut missing_cores = test_host(None);
+    missing_cores.physical_cores = 0;
+    let saved = save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &missing_cores,
+        &decisions,
+    );
+    assert!(
+        saved
+            .expect_err("missing core count must reject cache save")
+            .to_string()
+            .contains("CPU core topology is unavailable"),
+        "autoroute calibration must not persist without exact CPU core topology"
+    );
+
+    let mut impossible_topology = test_host(None);
+    impossible_topology.physical_cores = 16;
+    impossible_topology.logical_cores = 8;
+    let saved = save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &impossible_topology,
+        &decisions,
+    );
+    assert!(
+        saved
+            .expect_err("impossible core topology must reject cache save")
+            .to_string()
+            .contains("CPU core topology is unavailable"),
+        "logical cores below physical cores cannot be trusted as a persistent host identity"
+    );
+
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
+fn autoroute_cache_rejects_missing_memory_identity() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_missing_memory_{}.json",
+        std::process::id()
+    ));
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let key = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        key,
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
+    );
+
+    let mut missing_memory = test_host(None);
+    missing_memory.total_memory_mb = None;
+    let saved = save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &missing_memory,
+        &decisions,
+    );
+    assert!(
+        saved
+            .expect_err("missing memory size must reject cache save")
+            .to_string()
+            .contains("system memory size is unavailable"),
+        "autoroute calibration must not persist without exact RAM identity"
+    );
+
+    let mut zero_memory = test_host(None);
+    zero_memory.total_memory_mb = Some(0);
+    let saved = save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &zero_memory,
+        &decisions,
+    );
+    assert!(
+        saved
+            .expect_err("zero memory size must reject cache save")
+            .to_string()
+            .contains("system memory size is unavailable"),
+        "zero RAM is not a physically valid host identity for persisted calibration"
+    );
+
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
+fn autoroute_cache_rejects_missing_gpu_runtime_identity() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_missing_gpu_identity_{}.json",
+        std::process::id()
+    ));
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let key = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        key,
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, Some(40)),
+    );
+
+    let mut missing_backend = test_host(Some("NVIDIA GeForce RTX 5090"));
+    missing_backend.gpu_runtime_backend = None;
+    let saved = save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &missing_backend,
+        &decisions,
+    );
+    assert!(
+        saved
+            .expect_err("missing GPU runtime backend must reject cache save")
+            .to_string()
+            .contains("GPU runtime backend identity is unavailable"),
+        "a GPU-capable autoroute profile must record which runtime backend was calibrated"
+    );
+
+    let mut missing_driver = test_host(Some("NVIDIA GeForce RTX 5090"));
+    missing_driver.gpu_driver_runtime_identity = None;
+    let saved = save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &missing_driver,
+        &decisions,
+    );
+    assert!(
+        saved
+            .expect_err("missing GPU driver/runtime identity must reject cache save")
+            .to_string()
+            .contains("GPU driver/runtime identity is unavailable"),
+        "a GPU-capable autoroute profile must record the driver/runtime identity used for timing"
+    );
+
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
 fn autoroute_cache_rejects_selected_backend_without_timing_evidence() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_autoroute_missing_timing_{}.json",
