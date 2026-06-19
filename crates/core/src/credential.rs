@@ -10,9 +10,9 @@
 //!    allocator request, swap, or post-mortem core dump.
 //! 2. Refuses `Debug` / `Display` printing - every leak path through `{:?}`
 //!    or `{}` becomes `<redacted N bytes>` instead of the bytes themselves.
-//!    To get the bytes you must call `expose_secret()` explicitly, which
-//!    grep'ing the codebase for can audit every credential touch site.
-//! 3. Is `Clone` and serializable via `serde` (uses the `expose_secret()`
+//!    Raw byte access stays crate-internal; integration tests reach it only
+//!    through the hidden `testing` facade.
+//! 3. Is `Clone` and serializable via `serde` (uses the inner zeroizing
 //!    bytes for `Serialize`, decodes back to a fresh `Credential` for
 //!    `Deserialize`). The serialization channel is the responsibility of
 //!    the caller - find emitters that go to disk/JSON and either redact
@@ -69,7 +69,7 @@ impl Credential {
     /// Returns a `&[u8]` rather than `&str` because credentials may be
     /// non-UTF-8 (binary-encoded keys, raw private-key bytes, etc).
     #[must_use]
-    pub fn expose_secret(&self) -> &[u8] {
+    pub(crate) fn expose_secret(&self) -> &[u8] {
         &self.inner
     }
 
@@ -250,17 +250,6 @@ impl SensitiveString {
         Self {
             inner: Arc::new(Zeroizing::new(s)),
         }
-    }
-
-    pub fn join(parts: &[SensitiveString], sep: &str) -> Self {
-        let mut s = String::new();
-        for (i, p) in parts.iter().enumerate() {
-            if i > 0 {
-                s.push_str(sep);
-            }
-            s.push_str(p.as_str());
-        }
-        Self::new(s)
     }
 
     pub(crate) fn as_str(&self) -> &str {

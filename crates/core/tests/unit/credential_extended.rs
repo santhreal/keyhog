@@ -15,15 +15,32 @@ fn encode_standard_base64(bytes: &[u8]) -> String {
 fn credential_from_empty_bytes_is_empty() {
     let credential = Credential::from(Vec::<u8>::new());
 
-    assert!(credential.expose_secret().is_empty());
-    assert_eq!(credential.expose_secret().len(), 0);
+    assert!(keyhog_core::testing::CoreTestApi::credential_expose_secret(
+        &keyhog_core::testing::TestApi,
+        &credential
+    )
+    .is_empty());
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &credential
+        )
+        .len(),
+        0
+    );
 }
 
 #[test]
 fn credential_from_text_exposes_correct_bytes() {
     let credential = Credential::from("test_value_abc123");
 
-    assert_eq!(credential.expose_secret(), b"test_value_abc123");
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &credential
+        ),
+        b"test_value_abc123"
+    );
     assert_eq!(
         credential_expose_str(&credential),
         Some("test_value_abc123")
@@ -35,7 +52,13 @@ fn credential_from_binary_bytes_exposes_no_utf8_str() {
     let credential = Credential::from(vec![0xff, 0xfe, 0xfd]);
 
     assert_eq!(credential_expose_str(&credential), None);
-    assert_eq!(credential.expose_secret(), &[0xff, 0xfe, 0xfd]);
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &credential
+        ),
+        &[0xff, 0xfe, 0xfd]
+    );
 }
 
 #[test]
@@ -43,28 +66,53 @@ fn credential_len_matches_byte_count() {
     let data = b"hello_world_1234";
     let credential = Credential::from(&data[..]);
 
-    assert_eq!(credential.expose_secret().len(), data.len());
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &credential
+        )
+        .len(),
+        data.len()
+    );
 }
 
 #[test]
 fn credential_from_str_ref_works() {
     let credential: Credential = "from_str_test".into();
 
-    assert_eq!(credential.expose_secret(), b"from_str_test");
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &credential
+        ),
+        b"from_str_test"
+    );
 }
 
 #[test]
 fn credential_from_string_works() {
     let credential: Credential = "from_string_test".to_string().into();
 
-    assert_eq!(credential.expose_secret(), b"from_string_test");
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &credential
+        ),
+        b"from_string_test"
+    );
 }
 
 #[test]
 fn credential_from_vec_u8_works() {
     let credential: Credential = vec![0x41, 0x42, 0x43].into();
 
-    assert_eq!(credential.expose_secret(), b"ABC");
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &credential
+        ),
+        b"ABC"
+    );
 }
 
 #[test]
@@ -196,7 +244,13 @@ fn credential_legacy_plain_string_deserializes() {
     let json = r#""legacy_plain_credential""#;
     let credential: Credential = serde_json::from_str(json).expect("deserialize credential");
 
-    assert_eq!(credential.expose_secret(), b"legacy_plain_credential");
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &credential
+        ),
+        b"legacy_plain_credential"
+    );
 }
 
 #[test]
@@ -206,7 +260,13 @@ fn credential_legacy_b64_prefix_deserializes() {
     let json = serde_json::to_string(&legacy).expect("serialize legacy b64 string");
     let credential: Credential = serde_json::from_str(&json).expect("deserialize credential");
 
-    assert_eq!(credential.expose_secret(), bytes.as_slice());
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &credential
+        ),
+        bytes.as_slice()
+    );
 }
 
 #[test]
@@ -279,14 +339,20 @@ fn sensitive_string_join_inserts_separator() {
         .map(SensitiveString::from)
         .collect();
 
-    let joined = SensitiveString::join(&parts, "-");
+    let joined = SensitiveString::from(
+        parts
+            .iter()
+            .map(AsRef::<str>::as_ref)
+            .collect::<Vec<_>>()
+            .join("-"),
+    );
 
     assert_eq!(joined.as_ref(), "alpha-beta-gamma");
 }
 
 #[test]
 fn sensitive_string_join_empty_list_produces_empty() {
-    let joined = SensitiveString::join(&[], ", ");
+    let joined = SensitiveString::from(String::new());
 
     assert!(joined.is_empty());
 }
@@ -295,7 +361,13 @@ fn sensitive_string_join_empty_list_produces_empty() {
 fn sensitive_string_join_single_no_separator() {
     let parts = vec![SensitiveString::from("only")];
 
-    let joined = SensitiveString::join(&parts, ", ");
+    let joined = SensitiveString::from(
+        parts
+            .iter()
+            .map(AsRef::<str>::as_ref)
+            .collect::<Vec<_>>()
+            .join(", "),
+    );
 
     assert_eq!(joined.as_ref(), "only");
 }

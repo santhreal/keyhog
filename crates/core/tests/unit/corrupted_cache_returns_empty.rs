@@ -10,6 +10,9 @@ fn corrupted_cache_returns_empty() {
         strict.to_string().contains("not valid JSON"),
         "strict load must name the parse failure; got {strict}"
     );
-    let loaded = Calibration::load(&path);
+    let loaded = keyhog_core::testing::CoreTestApi::calibration_load_tolerant(
+        &keyhog_core::testing::TestApi,
+        &path,
+    );
     assert_eq!(loaded.entries().len(), 0);
 }

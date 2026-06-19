@@ -274,14 +274,15 @@ fn variant_use_sites(root: &Path, variant: &str) -> usize {
 /// Recursively collect `.rs` files under a directory.
 fn walk_rs(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    if let Ok(rd) = std::fs::read_dir(dir) {
-        for e in rd.flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                out.extend(walk_rs(&p));
-            } else if p.extension().and_then(|x| x.to_str()) == Some("rs") {
-                out.push(p);
-            }
+    let entries = std::fs::read_dir(dir)
+        .unwrap_or_else(|e| panic!("read Rust source dir {}: {e}", dir.display()));
+    for e in entries {
+        let e = e.unwrap_or_else(|e| panic!("read Rust source dir entry {}: {e}", dir.display()));
+        let p = e.path();
+        if p.is_dir() {
+            out.extend(walk_rs(&p));
+        } else if p.extension().and_then(|x| x.to_str()) == Some("rs") {
+            out.push(p);
         }
     }
     out
@@ -368,17 +369,29 @@ fn workspace_members_and_excludes(root: &Path) -> (Vec<String>, Vec<String>) {
         .get("workspace")
         .and_then(|w| w.as_table())
         .expect("[workspace] table present");
-    let to_vec = |key: &str| -> Vec<String> {
-        ws.get(key)
-            .and_then(|v| v.as_array())
-            .map(|a| {
-                a.iter()
-                    .filter_map(|x| x.as_str().map(str::to_string))
-                    .collect()
+    let to_vec = |key: &str, required: bool| -> Vec<String> {
+        let Some(value) = ws.get(key) else {
+            if required {
+                panic!("[workspace].{key} must be present in root Cargo.toml");
+            }
+            return Vec::new();
+        };
+        value
+            .as_array()
+            .unwrap_or_else(|| panic!("[workspace].{key} must be an array in root Cargo.toml"))
+            .iter()
+            .enumerate()
+            .map(|(index, value)| {
+                value
+                    .as_str()
+                    .unwrap_or_else(|| {
+                        panic!("[workspace].{key}[{index}] must be a string in root Cargo.toml")
+                    })
+                    .to_string()
             })
-            .unwrap_or_default()
+            .collect()
     };
-    (to_vec("members"), to_vec("exclude"))
+    (to_vec("members", true), to_vec("exclude", false))
 }
 
 fn assert_snapshot_absent(snapshot: &str) {
@@ -530,8 +543,10 @@ fn org_install_scenarios_are_os_addressable() {
     }
 
     let flat_scripts: Vec<String> = std::fs::read_dir(&install)
-        .expect("read tests/install")
-        .filter_map(Result::ok)
+        .unwrap_or_else(|e| panic!("read tests/install {}: {e}", install.display()))
+        .map(|entry| {
+            entry.unwrap_or_else(|e| panic!("read tests/install entry {}: {e}", install.display()))
+        })
         .filter(|entry| entry.path().extension().and_then(|ext| ext.to_str()) == Some("sh"))
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
         .collect();
@@ -588,17 +603,24 @@ fn org_install_scenarios_are_os_addressable() {
 fn gate_scripts(root: &Path) -> Vec<String> {
     let dir = root.join("scripts/gates");
     let mut out = Vec::new();
-    if let Ok(rd) = std::fs::read_dir(&dir) {
-        for e in rd.flatten() {
-            let p = e.path();
-            let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("");
-            let ext = p.extension().and_then(|x| x.to_str()).unwrap_or("");
-            if name == "run_all.sh" {
-                continue; // the entrypoint itself
-            }
-            if ext == "py" || ext == "sh" {
-                out.push(name.to_string());
-            }
+    let entries =
+        std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("read gate dir {}: {e}", dir.display()));
+    for e in entries {
+        let e = e.unwrap_or_else(|e| panic!("read gate dir entry {}: {e}", dir.display()));
+        let p = e.path();
+        let name = p
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or_else(|| panic!("gate filename must be UTF-8: {}", p.display()));
+        let ext = p.extension().map(|x| {
+            x.to_str()
+                .unwrap_or_else(|| panic!("gate extension must be UTF-8: {}", p.display()))
+        });
+        if name == "run_all.sh" {
+            continue; // the entrypoint itself
+        }
+        if ext == Some("py") || ext == Some("sh") {
+            out.push(name.to_string());
         }
     }
     out.sort();

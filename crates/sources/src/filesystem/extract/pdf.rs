@@ -103,7 +103,7 @@ fn emit_non_pdf_extension_fallback(
                 return;
             }
             (
-                keyhog_core::SensitiveString::join(&strings, "\n"),
+                crate::strings::join_sensitive_strings(&strings, "\n"),
                 "filesystem:binary-strings",
             )
         }

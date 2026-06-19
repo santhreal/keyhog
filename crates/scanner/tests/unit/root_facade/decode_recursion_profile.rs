@@ -99,7 +99,7 @@ fn decode_recursion_profile_mirror() {
     let total_ms = t.elapsed().as_secs_f64() * 1000.0;
 
     let _ = crate::engine::phase2_gate_stats_dump();
-    keyhog_scanner::scan_inner_profile_dump();
+    crate::engine::scan_inner_profile_dump();
     keyhog_scanner::decode::decoder_profile_dump();
     keyhog_scanner::decode::extract_profile_dump();
     crate::profile_dump("mirror (parents + decode sub-chunks; see decode% column)");

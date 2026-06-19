@@ -13,26 +13,26 @@ use std::path::{Path, PathBuf};
 /// Count of `.rs` files (excluding `mod.rs`) in `dir` that contain at least one
 /// `#[test]` attribute (covers plain unit tests and `proptest!`/`#[test]` bodies).
 fn test_bearing_files(dir: &Path) -> Vec<String> {
-    let mut files = std::fs::read_dir(dir)
-        .map(|rd| {
-            rd.filter_map(Result::ok)
-                .filter_map(|e| {
-                    let path = e.path();
-                    let is_rs = path.extension().is_some_and(|x| x == "rs");
-                    let is_mod = e.file_name() == "mod.rs";
-                    if !is_rs || is_mod {
-                        return None;
-                    }
-                    let src = std::fs::read_to_string(&path).unwrap_or_default();
-                    if src.contains("#[test]") {
-                        path.file_stem().map(|s| s.to_string_lossy().into_owned())
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>()
+    let entries =
+        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read test dir {}: {e}", dir.display()));
+    let mut files = entries
+        .map(|entry| entry.unwrap_or_else(|e| panic!("read test dir entry {}: {e}", dir.display())))
+        .filter_map(|e| {
+            let path = e.path();
+            let is_rs = path.extension().is_some_and(|x| x == "rs");
+            let is_mod = e.file_name() == "mod.rs";
+            if !is_rs || is_mod {
+                return None;
+            }
+            let src = std::fs::read_to_string(&path)
+                .unwrap_or_else(|e| panic!("read test module {}: {e}", path.display()));
+            if src.contains("#[test]") {
+                path.file_stem().map(|s| s.to_string_lossy().into_owned())
+            } else {
+                None
+            }
         })
-        .unwrap_or_default();
+        .collect::<Vec<_>>();
     files.sort();
     files
 }
@@ -51,7 +51,8 @@ fn declaration_manifest(base: &Path, category: &str) -> PathBuf {
 /// Count of module declarations in the category manifest (matches `pub mod x;`
 /// and `mod x;`).
 fn declared_mods(manifest: &Path) -> Vec<String> {
-    let src = std::fs::read_to_string(manifest).unwrap_or_default();
+    let src = std::fs::read_to_string(manifest)
+        .unwrap_or_else(|e| panic!("read test module manifest {}: {e}", manifest.display()));
     let mut mods: Vec<String> = src
         .lines()
         .filter_map(|line| {
@@ -111,7 +112,9 @@ fn no_test_category_has_orphaned_files() {
     let base = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
     let mut offenders: Vec<String> = Vec::new();
     let entries = std::fs::read_dir(&base).expect("read tests/ dir");
-    for entry in entries.filter_map(Result::ok) {
+    for entry in entries.map(|entry| {
+        entry.unwrap_or_else(|e| panic!("read tests/ dir entry {}: {e}", base.display()))
+    }) {
         let dir = entry.path();
         if !dir.is_dir() {
             continue;

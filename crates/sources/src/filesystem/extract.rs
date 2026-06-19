@@ -428,7 +428,7 @@ pub(super) fn process_entry(
                     "file is not valid text; scanning printable strings only"
                 );
                 (
-                    keyhog_core::SensitiveString::join(&strings, "\n"),
+                    crate::strings::join_sensitive_strings(&strings, "\n"),
                     "filesystem:binary-strings",
                 )
             }

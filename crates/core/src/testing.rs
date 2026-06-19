@@ -6,7 +6,7 @@ use crate::allowlist::Allowlist;
 use crate::calibration::{BetaCounters, Calibration};
 use crate::config::ScanConfig;
 use crate::credential::Credential;
-use crate::merkle_index::MerkleIndex;
+use crate::merkle_index::{MerkleIndex, MerkleLoadReport};
 use crate::registry::{CustomVerifier, SourceRegistry, VerifierRegistry};
 use crate::{
     DetectorSpec, RawMatch, RuleSuppressor, RuleSuppressorError, Severity, SpecError,
@@ -24,8 +24,10 @@ pub trait CoreTestApi {
     ) -> f64;
     fn beta_posterior_mean(&self, counters: &BetaCounters) -> f64;
     fn beta_observations(&self, counters: &BetaCounters) -> u32;
+    fn credential_expose_secret<'a>(&self, credential: &'a Credential) -> &'a [u8];
     fn credential_expose_str<'a>(&self, credential: &'a Credential) -> Option<&'a str>;
     fn encode_standard_base64(&self, input: &[u8]) -> String;
+    fn calibration_load_tolerant(&self, path: &Path) -> Calibration;
     fn calibration_record_true_positive(&self, calibration: &Calibration, detector_id: &str);
     fn calibration_record_false_positive(&self, calibration: &Calibration, detector_id: &str);
     fn load_detectors_with_gate(
@@ -40,6 +42,8 @@ pub trait CoreTestApi {
     fn merkle_with_max_entries(&self, max_entries: usize) -> MerkleIndex;
     fn merkle_max_entries(&self, index: &MerkleIndex) -> usize;
     fn merkle_load(&self, path: &Path) -> MerkleIndex;
+    fn merkle_load_report(&self, path: &Path) -> MerkleLoadReport;
+    fn merkle_load_with_spec(&self, path: &Path, expected_spec_hash: &[u8; 32]) -> MerkleIndex;
     fn merkle_save(&self, index: &MerkleIndex, path: &Path) -> std::io::Result<()>;
     fn merkle_lookup(&self, index: &MerkleIndex, path: &Path) -> Option<(u64, u64, [u8; 32])>;
     fn merkle_record(&self, index: &MerkleIndex, path: PathBuf, content_hash: [u8; 32]);
@@ -75,6 +79,7 @@ pub trait CoreTestApi {
     fn allowlist_is_raw_hash_ignored(&self, allowlist: &Allowlist, hash_hex: &str) -> bool;
     fn rule_suppressor_parse(&self, toml_text: &str)
         -> Result<RuleSuppressor, RuleSuppressorError>;
+    fn rule_suppressor_load(&self, path: &Path) -> Result<RuleSuppressor, RuleSuppressorError>;
     fn raw_match_sanitize_floats(&self, raw_match: RawMatch) -> RawMatch;
     fn raw_match_deduplication_key<'a>(&self, raw_match: &'a RawMatch) -> (&'a str, &'a str);
     fn dedup_lost_singleton_load(&self, ordering: std::sync::atomic::Ordering) -> u64;
@@ -162,12 +167,20 @@ impl CoreTestApi for TestApi {
         counters.observations()
     }
 
+    fn credential_expose_secret<'a>(&self, credential: &'a Credential) -> &'a [u8] {
+        credential.expose_secret()
+    }
+
     fn credential_expose_str<'a>(&self, credential: &'a Credential) -> Option<&'a str> {
         credential.expose_str()
     }
 
     fn encode_standard_base64(&self, input: &[u8]) -> String {
         crate::encoding::encode_standard_base64(input)
+    }
+
+    fn calibration_load_tolerant(&self, path: &Path) -> Calibration {
+        Calibration::load(path)
     }
 
     fn calibration_record_true_positive(&self, calibration: &Calibration, detector_id: &str) {
@@ -212,6 +225,14 @@ impl CoreTestApi for TestApi {
 
     fn merkle_load(&self, path: &Path) -> MerkleIndex {
         MerkleIndex::load(path)
+    }
+
+    fn merkle_load_report(&self, path: &Path) -> MerkleLoadReport {
+        MerkleIndex::load_report(path)
+    }
+
+    fn merkle_load_with_spec(&self, path: &Path, expected_spec_hash: &[u8; 32]) -> MerkleIndex {
+        MerkleIndex::load_with_spec(path, expected_spec_hash)
     }
 
     fn merkle_save(&self, index: &MerkleIndex, path: &Path) -> std::io::Result<()> {
@@ -303,6 +324,10 @@ impl CoreTestApi for TestApi {
         toml_text: &str,
     ) -> Result<RuleSuppressor, RuleSuppressorError> {
         RuleSuppressor::parse(toml_text)
+    }
+
+    fn rule_suppressor_load(&self, path: &Path) -> Result<RuleSuppressor, RuleSuppressorError> {
+        RuleSuppressor::load(path)
     }
 
     fn raw_match_sanitize_floats(&self, raw_match: RawMatch) -> RawMatch {

@@ -31,7 +31,7 @@ pub(crate) fn load_allowlist(
             )
         })
     } else {
-        Ok(keyhog_core::Allowlist::empty())
+        Ok(keyhog_core::Allowlist::default())
     }
 }
 
@@ -46,7 +46,17 @@ pub(crate) fn load_rule_suppressor(
         .map(allowlist_root)
         .unwrap_or_else(|| PathBuf::from(".")); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
     let toml_path = base_path.join(".keyhogignore.toml");
-    match keyhog_core::RuleSuppressor::load(&toml_path) {
+    if !toml_path.exists() {
+        return Ok(keyhog_core::RuleSuppressor::default());
+    }
+    let raw = std::fs::read_to_string(&toml_path).with_context(|| {
+        format!(
+            "failed to read {}. Fix file permissions or remove the file; refusing to scan \
+             with silently ignored suppression rules.",
+            toml_path.display()
+        )
+    })?;
+    match raw.parse::<keyhog_core::RuleSuppressor>() {
         Ok(s) => {
             tracing::debug!(
                 file = %toml_path.display(),

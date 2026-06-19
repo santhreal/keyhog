@@ -34,7 +34,7 @@ fn declared_modules(decl_file: &str) -> BTreeSet<String> {
 fn files_on_disk(dir: &str) -> BTreeSet<String> {
     std::fs::read_dir(dir)
         .unwrap_or_else(|e| panic!("test dir {dir} readable: {e}"))
-        .filter_map(|e| e.ok())
+        .map(|e| e.unwrap_or_else(|e| panic!("test dir {dir} entry readable: {e}")))
         .filter_map(|e| {
             let name = e.file_name().into_string().ok()?;
             let stem = name.strip_suffix(".rs")?;

@@ -1,5 +1,4 @@
 //! Migrated from `src/merkle_index.rs` inline tests.
-use keyhog_core::MerkleIndex;
 use std::path::{Path, PathBuf};
 fn sample_hash(s: &[u8]) -> [u8; 32] {
     keyhog_core::testing::CoreTestApi::merkle_hash_content(&keyhog_core::testing::TestApi, s)
@@ -39,7 +38,11 @@ fn save_drops_stale_spec_entries_on_disk() {
 
     // After saving with the new spec, only the new-spec entry
     // is present. The old-spec entry was dropped at save time.
-    let loaded = MerkleIndex::load_with_spec(&cache_path, &[2u8; 32]);
+    let loaded = keyhog_core::testing::CoreTestApi::merkle_load_with_spec(
+        &keyhog_core::testing::TestApi,
+        &cache_path,
+        &[2u8; 32],
+    );
     assert_eq!(
         keyhog_core::testing::CoreTestApi::merkle_len(&keyhog_core::testing::TestApi, &loaded),
         1

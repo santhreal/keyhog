@@ -30,6 +30,17 @@ pub(crate) fn extract_printable_strings(bytes: &[u8], min_len: usize) -> Vec<Sen
     strings
 }
 
+pub(crate) fn join_sensitive_strings(parts: &[SensitiveString], sep: &str) -> SensitiveString {
+    let mut joined = String::new();
+    for (index, part) in parts.iter().enumerate() {
+        if index > 0 {
+            joined.push_str(sep);
+        }
+        joined.push_str(part.as_ref());
+    }
+    SensitiveString::from(joined)
+}
+
 /// Append UTF-16LE printable runs (`X 00 Y 00 …`) of at least `min_len` decoded
 /// chars to `out`. On a non-matching code unit the scan re-aligns by one byte,
 /// so wide runs starting at an odd offset are still recovered. Pure-ASCII

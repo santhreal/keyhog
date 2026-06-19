@@ -71,7 +71,7 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
                         );
                         if !strings.is_empty() {
                             chunks.push(Chunk {
-                                data: keyhog_core::SensitiveString::join(&strings, "\n"),
+                                data: crate::strings::join_sensitive_strings(&strings, "\n"),
                                 metadata: ChunkMetadata {
                                     base_offset: 0,
                                     base_line: 0,
@@ -123,7 +123,7 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
                         );
                         if !strings.is_empty() {
                             chunks.push(Chunk {
-                                data: keyhog_core::SensitiveString::join(&strings, "\n"),
+                                data: crate::strings::join_sensitive_strings(&strings, "\n"),
                                 metadata: ChunkMetadata {
                                     base_offset: 0,
                                     base_line: 0,
@@ -184,7 +184,7 @@ pub(crate) fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<Chunk>> {
                             );
                             if !strings.is_empty() {
                                 chunks.push(Chunk {
-                                    data: keyhog_core::SensitiveString::join(&strings, "\n"),
+                                    data: crate::strings::join_sensitive_strings(&strings, "\n"),
                                     metadata: ChunkMetadata {
                                         base_offset: 0,
                                         base_line: 0,

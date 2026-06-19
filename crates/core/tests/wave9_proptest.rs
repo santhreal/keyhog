@@ -33,7 +33,7 @@ fn raw(cred: &str) -> RawMatch {
     }
 }
 proptest! {
-#[test] fn prop_credential_len_matches(cred in "[A-Za-z0-9]{0,200}") { let c=Credential::from(cred.as_str()); prop_assert_eq!(c.expose_secret().len(), cred.len()); }
+#[test] fn prop_credential_len_matches(cred in "[A-Za-z0-9]{0,200}") { let c=Credential::from(cred.as_str()); prop_assert_eq!(keyhog_core::testing::CoreTestApi::credential_expose_secret(&keyhog_core::testing::TestApi, &c).len(), cred.len()); }
 #[test] fn prop_credential_no_panic(cred in ".*") { let _=Credential::from(cred.as_str()); }
 #[test] fn prop_dedup_none_preserves_count(n in 0usize..20) { let ms: Vec<_>=(0..n).map(|i| raw(&format!("c{}",i))).collect(); prop_assert_eq!(dedup_matches(ms, &DedupScope::None).len(), n); }
 #[test] fn prop_dedup_credential_merges_dup(cred in "[a-z]{1,40}") { let ms=vec![raw(&cred), raw(&cred)]; prop_assert_eq!(dedup_matches(ms, &DedupScope::Credential).len(), 1); }
@@ -43,10 +43,10 @@ proptest! {
         prop_assert!(!dbg.contains(&cred));
     }
 #[test] fn prop_hash_nonempty(cred in "[a-z]{1,20}") { let d=dedup_matches(vec![raw(&cred)], &DedupScope::Credential); prop_assert!(!d[0].credential_hash.is_empty()); }
-#[test] fn prop_empty_credential(cred in "") { let c=Credential::from(cred.as_str()); prop_assert!(c.expose_secret().is_empty()); }
+#[test] fn prop_empty_credential(cred in "") { let c=Credential::from(cred.as_str()); prop_assert!(keyhog_core::testing::CoreTestApi::credential_expose_secret(&keyhog_core::testing::TestApi, &c).is_empty()); }
 #[test] fn prop_clone_eq(cred in "[A-Za-z0-9]{1,50}") { let a=Credential::from(cred.as_str()); let b=a.clone(); prop_assert_eq!(a, b); }
 #[test] fn prop_dedup_file_scope_same_file(cred in "secret") { let ms=vec![raw(&cred), raw(&cred)]; prop_assert_eq!(dedup_matches(ms, &DedupScope::File).len(), 1); }
-#[test] fn prop_expose_secret_roundtrip(cred in "[A-Za-z0-9]{1,80}") { let c=Credential::from(cred.as_str()); prop_assert_eq!(c.expose_secret(), cred.as_bytes()); }
+#[test] fn prop_expose_secret_roundtrip(cred in "[A-Za-z0-9]{1,80}") { let c=Credential::from(cred.as_str()); prop_assert_eq!(keyhog_core::testing::CoreTestApi::credential_expose_secret(&keyhog_core::testing::TestApi, &c), cred.as_bytes()); }
 #[test] fn prop_dedup_empty_input(_ in 0u8..5) { prop_assert!(dedup_matches(vec![], &DedupScope::Credential).is_empty()); }
 #[test] fn prop_credential_from_bytes_no_panic(bytes in prop::collection::vec(any::<u8>(), 0..64)) { let _=Credential::from(bytes.as_slice()); }
 #[test] fn prop_dedup_additional_locs(n in 2usize..10) { let cred="x"; let ms: Vec<_>=(0..n).map(|_| raw(cred)).collect(); let d=dedup_matches(ms, &DedupScope::Credential); prop_assert_eq!(d.len(), 1); prop_assert_eq!(d[0].additional_locations.len(), n-1); }

@@ -163,7 +163,7 @@ impl Calibration {
         }))
     }
 
-    pub fn load(path: &Path) -> Self {
+    pub(crate) fn load(path: &Path) -> Self {
         match Self::try_load(path) {
             Ok(Some(calibration)) => calibration,
             Ok(None) => Self::empty(),

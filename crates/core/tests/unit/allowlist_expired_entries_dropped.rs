@@ -19,7 +19,8 @@ fn allowlist_load_with_expired_entry_fails_loudly() {
     let path = dir.path().join(".keyhogignore");
     std::fs::write(&path, "detector:foo ; expires=1970-01-01\n").expect("write allowlist");
 
-    let err = Allowlist::load(&path).expect_err("expired policy must fail load");
+    let err = Allowlist::load_with_metadata_policy(&path, false, false, None)
+        .expect_err("expired policy must fail load");
     let msg = err.to_string();
     assert!(
         msg.contains(".keyhogignore")

@@ -46,12 +46,23 @@ fn raw(cred: &str) -> RawMatch {
 }
 w9_edge!(w9_kh_01, {
     let c = Credential::from("secret");
-    assert_eq!(c.expose_secret().len(), 6);
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &c
+        )
+        .len(),
+        6
+    );
 });
 
 w9_edge!(w9_kh_02, {
     let c = Credential::from("");
-    assert!(c.expose_secret().is_empty());
+    assert!(keyhog_core::testing::CoreTestApi::credential_expose_secret(
+        &keyhog_core::testing::TestApi,
+        &c
+    )
+    .is_empty());
 });
 
 w9_edge!(w9_kh_03, {
@@ -106,7 +117,13 @@ w9_edge!(w9_kh_11, {
 
 w9_edge!(w9_kh_12, {
     let c = Credential::from("tok");
-    assert_eq!(c.expose_secret(), b"tok");
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &c
+        ),
+        b"tok"
+    );
 });
 
 w9_edge!(w9_kh_13, {
@@ -155,7 +172,13 @@ w9_edge!(w9_kh_20, {
 
 w9_edge!(w9_kh_21, {
     let c = Credential::from("abc");
-    assert!(!c.expose_secret().is_empty());
+    assert!(
+        !keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &c
+        )
+        .is_empty()
+    );
 });
 
 w9_edge!(w9_kh_22, {

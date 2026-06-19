@@ -40,7 +40,7 @@ use glob::{normalize_path, PathGlobIndex};
 ///     std::process::id()
 /// ));
 /// std::fs::write(&path, "detector:demo-token\npath:**/*.md\n")?;
-/// let allowlist = Allowlist::load(&path)?;
+/// let allowlist = Allowlist::load_with_metadata_policy(&path, false, false, None)?;
 /// std::fs::remove_file(&path)?;
 /// assert!(allowlist.ignored_detectors.contains("demo-token"));
 /// # Ok(()) }
@@ -109,10 +109,10 @@ impl Allowlist {
     /// ```rust
     /// use keyhog_core::Allowlist;
     ///
-    /// let allowlist = Allowlist::empty();
+    /// let allowlist = Allowlist::default();
     /// assert!(allowlist.ignored_paths.is_empty());
     /// ```
-    pub fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Self {
             credential_hashes: HashSet::new(),
             ignored_detectors: HashSet::new(),
@@ -121,22 +121,6 @@ impl Allowlist {
             expired_entries: Vec::new(),
             policy_violations: Vec::new(),
         }
-    }
-
-    /// Load from a .keyhogignore file.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,no_run
-    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// use keyhog_core::Allowlist;
-    /// use std::path::Path;
-    ///
-    /// let _allowlist = Allowlist::load(Path::new(".keyhogignore"))?;
-    /// # Ok(()) }
-    /// ```
-    pub fn load(path: &Path) -> Result<Self, std::io::Error> {
-        Self::load_with_policy(path, AllowlistMetadataPolicy::default())
     }
 
     /// Load from a `.keyhogignore` file and enforce metadata governance.
@@ -184,7 +168,7 @@ impl Allowlist {
     ///     std::process::id()
     /// ));
     /// std::fs::write(&path, "path:**/.env\ndetector:demo-token\n")?;
-    /// let allowlist = Allowlist::load(&path)?;
+    /// let allowlist = Allowlist::load_with_metadata_policy(&path, false, false, None)?;
     /// std::fs::remove_file(&path)?;
     /// assert!(allowlist.is_path_ignored("app/.env"));
     /// # Ok(()) }
@@ -501,7 +485,7 @@ impl Allowlist {
     ///     std::process::id()
     /// ));
     /// std::fs::write(&path, "detector:demo-token\npath:src/*.rs\n")?;
-    /// let allowlist = Allowlist::load(&path)?;
+    /// let allowlist = Allowlist::load_with_metadata_policy(&path, false, false, None)?;
     /// std::fs::remove_file(&path)?;
     /// assert!(allowlist.ignored_detectors.contains("demo-token"));
     /// assert!(allowlist.is_path_ignored("src/main.rs"));
@@ -533,7 +517,7 @@ impl Allowlist {
     ///     std::process::id()
     /// ));
     /// std::fs::write(&path, "hash:0000000000000000000000000000000000000000000000000000000000000000\n")?;
-    /// let allowlist = Allowlist::load(&path)?;
+    /// let allowlist = Allowlist::load_with_metadata_policy(&path, false, false, None)?;
     /// std::fs::remove_file(&path)?;
     /// assert!(allowlist.credential_hashes.contains(&[0u8; 32]));
     /// # Ok(()) }
@@ -560,7 +544,7 @@ impl Allowlist {
     ///     std::process::id()
     /// ));
     /// std::fs::write(&path, "path:**/*.md\n")?;
-    /// let allowlist = Allowlist::load(&path)?;
+    /// let allowlist = Allowlist::load_with_metadata_policy(&path, false, false, None)?;
     /// std::fs::remove_file(&path)?;
     /// assert!(allowlist.is_path_ignored("docs/README.md"));
     /// # Ok(()) }
@@ -593,6 +577,12 @@ impl Allowlist {
         // file is often committed by accident; that path is intentionally gone,
         // see audit release-2026-04-26.)
         self.credential_hashes.contains(hash)
+    }
+}
+
+impl Default for Allowlist {
+    fn default() -> Self {
+        Self::empty()
     }
 }
 

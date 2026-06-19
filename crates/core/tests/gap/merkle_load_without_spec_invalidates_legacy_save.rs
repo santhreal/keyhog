@@ -1,6 +1,5 @@
 //! KH-GAP-015: legacy save() cache must not satisfy load_with_spec gate.
 
-use keyhog_core::MerkleIndex;
 use std::path::PathBuf;
 
 #[test]
@@ -25,7 +24,11 @@ fn merkle_load_with_spec_rejects_legacy_save_without_spec() {
         &cache_path,
     )
     .expect("save legacy");
-    let loaded = MerkleIndex::load_with_spec(&cache_path, &[1u8; 32]);
+    let loaded = keyhog_core::testing::CoreTestApi::merkle_load_with_spec(
+        &keyhog_core::testing::TestApi,
+        &cache_path,
+        &[1u8; 32],
+    );
     assert!(
         keyhog_core::testing::CoreTestApi::merkle_is_empty(&keyhog_core::testing::TestApi, &loaded),
         "legacy save must not satisfy spec-gated load"

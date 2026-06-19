@@ -286,9 +286,12 @@ fn every_detector_severity_is_a_known_tier() {
 /// right comparand for the embedded set; `load_detectors` applies the gate and
 /// may drop a gate-rejected detector, so it is a (possibly proper) subset.
 fn on_disk_toml_count() -> usize {
-    std::fs::read_dir(detector_dir())
-        .expect("detectors/ dir readable")
-        .filter_map(|e| e.ok())
+    let dir = detector_dir();
+    std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("detectors/ dir readable at {}: {e}", dir.display()))
+        .map(|e| {
+            e.unwrap_or_else(|e| panic!("detectors/ dir entry readable at {}: {e}", dir.display()))
+        })
         .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("toml"))
         .count()
 }

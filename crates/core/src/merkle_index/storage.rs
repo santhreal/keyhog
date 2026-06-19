@@ -88,7 +88,7 @@ impl MerkleIndex {
     }
 
     /// Load the index from `path` and report whether it cold-started.
-    pub fn load_report(path: &Path) -> MerkleLoadReport {
+    pub(crate) fn load_report(path: &Path) -> MerkleLoadReport {
         sweep_stale_tmp_files(path);
         let (index, status) = Self::load_with_spec_inner(path, None);
         MerkleLoadReport { index, status }
@@ -96,7 +96,7 @@ impl MerkleIndex {
 
     /// Load the index, gated on a matching detector-spec hash. This prevents an
     /// added detector from leaving unchanged files skipped forever.
-    pub fn load_with_spec(path: &Path, expected_spec_hash: &[u8; 32]) -> Self {
+    pub(crate) fn load_with_spec(path: &Path, expected_spec_hash: &[u8; 32]) -> Self {
         Self::load_with_spec_report(path, expected_spec_hash).into_index()
     }
 

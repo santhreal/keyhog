@@ -2,7 +2,7 @@ use keyhog_core::Allowlist;
 
 #[test]
 fn allowlist_path_traversal_attack() {
-    let mut al = Allowlist::empty();
+    let mut al = Allowlist::default();
     al.ignored_paths.push("safe/**".into());
 
     // Attacker tries to use traversal to match a safe rule
@@ -16,7 +16,7 @@ fn allowlist_path_traversal_attack() {
 
 #[test]
 fn allowlist_null_byte_attack() {
-    let mut al = Allowlist::empty();
+    let mut al = Allowlist::default();
     al.ignored_paths.push("safe/*".into());
 
     // Null bytes should be handled like any other character and NOT bypass the rule.

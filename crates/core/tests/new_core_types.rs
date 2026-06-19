@@ -20,9 +20,28 @@ use std::sync::Arc;
 #[test]
 fn credential_from_text_len_and_expose() {
     let c = Credential::from("sk_live_abcdEFGH");
-    assert_eq!(c.expose_secret().len(), 16);
-    assert!(!c.expose_secret().is_empty());
-    assert_eq!(c.expose_secret(), b"sk_live_abcdEFGH");
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &c
+        )
+        .len(),
+        16
+    );
+    assert!(
+        !keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &c
+        )
+        .is_empty()
+    );
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &c
+        ),
+        b"sk_live_abcdEFGH"
+    );
     assert_eq!(
         keyhog_core::testing::CoreTestApi::credential_expose_str(
             &keyhog_core::testing::TestApi,
@@ -35,9 +54,26 @@ fn credential_from_text_len_and_expose() {
 #[test]
 fn credential_empty_is_empty() {
     let c = Credential::from("");
-    assert!(c.expose_secret().is_empty());
-    assert_eq!(c.expose_secret().len(), 0);
-    assert_eq!(c.expose_secret(), b"");
+    assert!(keyhog_core::testing::CoreTestApi::credential_expose_secret(
+        &keyhog_core::testing::TestApi,
+        &c
+    )
+    .is_empty());
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &c
+        )
+        .len(),
+        0
+    );
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &c
+        ),
+        b""
+    );
     assert_eq!(
         keyhog_core::testing::CoreTestApi::credential_expose_str(
             &keyhog_core::testing::TestApi,
@@ -51,8 +87,21 @@ fn credential_empty_is_empty() {
 fn credential_from_bytes_non_utf8_expose_str_none() {
     // 0xFF 0xFE is not valid UTF-8 -> expose_str must be None, expose_secret exact.
     let c = Credential::from(vec![0xFF, 0xFE, 0x00, 0x41]);
-    assert_eq!(c.expose_secret().len(), 4);
-    assert_eq!(c.expose_secret(), &[0xFF, 0xFE, 0x00, 0x41]);
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &c
+        )
+        .len(),
+        4
+    );
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &c
+        ),
+        &[0xFF, 0xFE, 0x00, 0x41]
+    );
     assert_eq!(
         keyhog_core::testing::CoreTestApi::credential_expose_str(
             &keyhog_core::testing::TestApi,
@@ -144,7 +193,13 @@ fn credential_serde_b64_roundtrip_for_non_utf8() {
         "expected b64 tag, got {json}"
     );
     let back: Credential = serde_json::from_str(&json).unwrap();
-    assert_eq!(back.expose_secret(), &[0x00, 0xFF, 0x10, 0x80]);
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_secret(
+            &keyhog_core::testing::TestApi,
+            &back
+        ),
+        &[0x00, 0xFF, 0x10, 0x80]
+    );
 }
 
 #[test]
@@ -218,10 +273,16 @@ fn sensitive_string_join() {
         SensitiveString::from("b"),
         SensitiveString::from("c"),
     ];
-    let joined = SensitiveString::join(&parts, "-");
+    let joined = SensitiveString::from(
+        parts
+            .iter()
+            .map(AsRef::<str>::as_ref)
+            .collect::<Vec<_>>()
+            .join("-"),
+    );
     assert_eq!(joined.as_ref(), "a-b-c");
     // Empty parts -> empty string.
-    assert_eq!(SensitiveString::join(&[], ",").as_ref(), "");
+    assert_eq!(SensitiveString::from(String::new()).as_ref(), "");
 }
 
 #[test]

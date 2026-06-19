@@ -1492,12 +1492,12 @@ where
 
 #[cfg(test)]
 pub(crate) fn looks_reversible(candidate: &str) -> bool {
-    crate::decode::looks_reversible(candidate)
+    crate::decode::reverse::looks_reversible(candidate)
 }
 
 #[cfg(test)]
 pub(crate) fn reverse_str(s: &str) -> String {
-    crate::decode::reverse_str(s)
+    crate::decode::reverse::reverse_str(s)
 }
 
 /// Shannon entropy of `chunk` in bits/byte.

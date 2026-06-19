@@ -23,12 +23,12 @@
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::decode::hex::find_hex_strings;
-use keyhog_scanner::decode::reverse::{looks_reversible, reverse_str};
 use keyhog_scanner::decode::{base64_decode, find_base64_strings, hex_decode, z85_decode};
 use keyhog_scanner::testing::decode_caesar::{
     caesar_shift, is_source_code_path, looks_credential_shaped,
 };
 use keyhog_scanner::testing::{decode_chunk, AlphabetScreen};
+use keyhog_scanner::testing::{looks_reversible, reverse_str};
 
 // ---------------------------------------------------------------------------
 // Helpers

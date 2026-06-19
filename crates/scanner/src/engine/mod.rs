@@ -124,7 +124,8 @@ pub use profile::{
     dump as profile_dump, reset as profile_reset, set_perf_trace_enabled, set_profile_enabled,
 };
 pub use rule_pipeline::megascan_input_len;
-pub use scan_inner_profile::scan_inner_profile_dump;
+#[cfg(test)]
+pub(crate) use scan_inner_profile::scan_inner_profile_dump;
 #[cfg(test)]
 pub(crate) use scan_postprocess::decode_profile_dump;
 pub(crate) use windowed_support::{ceil_char_boundary, floor_char_boundary};

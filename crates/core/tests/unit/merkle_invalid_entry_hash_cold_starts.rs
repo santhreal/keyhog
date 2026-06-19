@@ -1,4 +1,4 @@
-use keyhog_core::{MerkleIndex, MerkleLoadStatus};
+use keyhog_core::MerkleLoadStatus;
 
 #[test]
 fn merkle_invalid_entry_hash_cold_starts_with_status() {
@@ -21,7 +21,10 @@ fn merkle_invalid_entry_hash_cold_starts_with_status() {
     )
     .expect("write bad cache");
 
-    let report = MerkleIndex::load_report(&cache_path);
+    let report = keyhog_core::testing::CoreTestApi::merkle_load_report(
+        &keyhog_core::testing::TestApi,
+        &cache_path,
+    );
     assert!(matches!(
         report.status(),
         MerkleLoadStatus::InvalidEntryHash {

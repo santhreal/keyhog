@@ -114,7 +114,7 @@ impl RuleSuppressor {
     /// Load from a TOML path. Returns `Ok(empty())` when the file
     /// is missing (matches the legacy `.keyhogignore` behaviour) so
     /// callers don't need to gate on existence.
-    pub fn load(path: &Path) -> Result<Self, RuleSuppressorError> {
+    pub(crate) fn load(path: &Path) -> Result<Self, RuleSuppressorError> {
         if !path.exists() {
             return Ok(Self::empty());
         }
@@ -167,6 +167,14 @@ impl RuleSuppressor {
             credential_hash: &credential_hash_hex,
         };
         self.rules.iter().any(|rule| evaluate_formula(rule, &ctx))
+    }
+}
+
+impl std::str::FromStr for RuleSuppressor {
+    type Err = RuleSuppressorError;
+
+    fn from_str(toml_text: &str) -> Result<Self, Self::Err> {
+        Self::parse(toml_text)
     }
 }
 

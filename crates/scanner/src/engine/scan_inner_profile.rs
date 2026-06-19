@@ -17,7 +17,7 @@ pub(super) fn scan_inner_prof_enabled() -> bool {
 }
 
 /// Print + reset the prepare/phase-1 overhead counters.
-pub fn scan_inner_profile_dump() {
+pub(crate) fn scan_inner_profile_dump() {
     use std::sync::atomic::Ordering::Relaxed;
     let prep = SCAN_PREPARE_NS.swap(0, Relaxed) as f64 / 1e6;
     let p1 = SCAN_PHASE1_NS.swap(0, Relaxed) as f64 / 1e6;

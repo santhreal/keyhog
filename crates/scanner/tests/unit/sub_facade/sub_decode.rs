@@ -6,12 +6,12 @@
 //! — never `is_ok`/`is_empty` decoration.
 
 use keyhog_scanner::decode::hex::find_hex_strings;
-use keyhog_scanner::decode::reverse::{looks_reversible, reverse_str};
 use keyhog_scanner::decode::{base64_decode, find_base64_strings, hex_decode, z85_decode};
 use keyhog_scanner::testing::decode_caesar::{
     caesar_shift, candidate_shape_invariant, is_source_code_path, looks_credential_shaped,
     matched_caesar_shifts, MIN_CAESAR_LEN,
 };
+use keyhog_scanner::testing::{looks_reversible, reverse_str};
 
 // ---------------------------------------------------------------------------
 // base64_decode — exact bytes, variant handling, reject on malformed

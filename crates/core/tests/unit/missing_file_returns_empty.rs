@@ -1,5 +1,5 @@
 //! Migrated from `src/rule_filter.rs` inline tests.
-use keyhog_core::{MatchLocation, RuleSuppressor, Severity, VerificationResult, VerifiedFinding};
+use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
 use std::collections::HashMap;
 use std::sync::Arc;
 fn finding(
@@ -40,7 +40,11 @@ fn finding(
 #[test]
 fn missing_file_returns_empty() {
     let path = std::path::PathBuf::from("/nonexistent/.keyhogignore.toml");
-    let s = RuleSuppressor::load(&path).expect("load");
+    let s = keyhog_core::testing::CoreTestApi::rule_suppressor_load(
+        &keyhog_core::testing::TestApi,
+        &path,
+    )
+    .expect("load");
     assert!(!s.matches(&finding(
         "aws-access-key",
         "aws",

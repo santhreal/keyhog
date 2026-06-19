@@ -1,5 +1,4 @@
 //! Migrated from `src/merkle_index.rs` inline tests.
-use keyhog_core::MerkleIndex;
 use std::path::PathBuf;
 fn sample_hash(s: &[u8]) -> [u8; 32] {
     keyhog_core::testing::CoreTestApi::merkle_hash_content(&keyhog_core::testing::TestApi, s)
@@ -26,7 +25,11 @@ fn load_with_spec_when_disk_has_no_spec_invalidates() {
         &cache_path,
     )
     .unwrap();
-    let loaded = MerkleIndex::load_with_spec(&cache_path, &[1u8; 32]);
+    let loaded = keyhog_core::testing::CoreTestApi::merkle_load_with_spec(
+        &keyhog_core::testing::TestApi,
+        &cache_path,
+        &[1u8; 32],
+    );
     assert!(keyhog_core::testing::CoreTestApi::merkle_is_empty(
         &keyhog_core::testing::TestApi,
         &loaded

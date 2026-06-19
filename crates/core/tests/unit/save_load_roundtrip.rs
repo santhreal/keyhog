@@ -11,7 +11,10 @@ fn save_load_roundtrip() {
     c.record_outcome("github-pat", true);
     c.save(&path).unwrap();
 
-    let loaded = Calibration::load(&path);
+    let loaded = keyhog_core::testing::CoreTestApi::calibration_load_tolerant(
+        &keyhog_core::testing::TestApi,
+        &path,
+    );
     let aws = loaded.counters("aws-access-key");
     assert_eq!(aws.alpha, 2);
     assert_eq!(aws.beta, 2);

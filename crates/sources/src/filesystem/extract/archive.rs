@@ -168,7 +168,7 @@ pub(super) fn extract_openpack_archive(
                                         None
                                     } else {
                                         Some(Ok(Chunk {
-                                            data: keyhog_core::SensitiveString::join(
+                                            data: crate::strings::join_sensitive_strings(
                                                 &strings, "\n",
                                             ),
                                             metadata: ChunkMetadata {
@@ -251,7 +251,7 @@ pub(super) fn chunk_from_archive_content(
                 None
             } else {
                 Some(Ok(Chunk {
-                    data: keyhog_core::SensitiveString::join(&strings, "\n"),
+                    data: crate::strings::join_sensitive_strings(&strings, "\n"),
                     metadata: ChunkMetadata {
                         source_type: "filesystem/archive-binary".into(),
                         path: Some(entry_path()),

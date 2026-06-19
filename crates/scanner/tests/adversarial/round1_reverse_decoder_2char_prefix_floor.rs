@@ -22,7 +22,7 @@
 //! over a 1k sample of random base64 catches a fix that re-admits short
 //! prefixes regardless of which specific decoy I picked.
 
-use keyhog_scanner::decode::reverse::looks_reversible;
+use keyhog_scanner::testing::looks_reversible;
 use proptest::prelude::*;
 
 // 3+ char known prefix list mirrors `KNOWN_PREFIXES` after the

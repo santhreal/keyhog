@@ -20,7 +20,6 @@ pub use hex::{find_hex_strings, hex_decode};
 pub(crate) use pipeline::decode_chunk;
 pub use pipeline::register_decoder;
 pub(crate) use pipeline::{decoder_profile_dump, extract_profile_dump};
-pub use reverse::{looks_reversible, reverse_str, ReverseDecoder};
 #[cfg(test)]
 pub(crate) use util::take_hex_digits;
 

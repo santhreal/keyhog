@@ -109,26 +109,6 @@ pub fn resolve_safe_bin(name: &str) -> Option<PathBuf> {
     None
 }
 
-/// Compatibility shim for old downstream callers that expected
-/// `Command::new(name)` semantics when no trusted absolute binary was found.
-///
-/// Keyhog production code must use `resolve_safe_bin` directly and refuse on
-/// `None`, even for host probes. PATH fallback lets caller-controlled process
-/// state select an executable and is not an acceptable production routing path.
-#[deprecated(
-    note = "PATH fallback is compatibility-only; production code must call resolve_safe_bin and fail closed on None"
-)]
-pub fn resolve_or_fallback(name: &str) -> PathBuf {
-    if let Some(p) = resolve_safe_bin(name) {
-        return p;
-    }
-    tracing::warn!(
-        "keyhog: '{name}' not found in trusted system bin dirs; falling back to PATH lookup. \
-         Configure [system].trusted_bin_dirs in .keyhog.toml if running on a non-standard distro."
-    );
-    PathBuf::from(name)
-}
-
 fn in_trusted_dir(p: &Path) -> bool {
     let parent = match p.parent() {
         Some(p) => p,

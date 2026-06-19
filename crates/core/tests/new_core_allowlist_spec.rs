@@ -52,7 +52,7 @@ fn finding(detector_id: &str, file: &str, hash: [u8; 32]) -> VerifiedFinding {
 
 #[test]
 fn allowlist_empty_suppresses_nothing() {
-    let al = Allowlist::empty();
+    let al = Allowlist::default();
     assert!(al.ignored_paths.is_empty());
     assert!(al.ignored_detectors.is_empty());
     assert!(al.credential_hashes.is_empty());
@@ -145,7 +145,7 @@ fn allowlist_single_star_does_not_cross_segment() {
 fn allowlist_mutating_ignored_paths_directly_rebuilds_index() {
     // Public field mutation after construction must still be honored
     // (length-mismatch rebuild path).
-    let mut al = Allowlist::empty();
+    let mut al = Allowlist::default();
     al.ignored_paths.push("secret/**".to_string());
     assert!(
         al.is_path_ignored("secret/keys/id_rsa"),

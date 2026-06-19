@@ -220,7 +220,7 @@ pub(super) fn emit_tar_entries(
                     None
                 } else {
                     Some(Ok(Chunk {
-                        data: keyhog_core::SensitiveString::join(&strings, "\n"),
+                        data: crate::strings::join_sensitive_strings(&strings, "\n"),
                         metadata: ChunkMetadata {
                             source_type: "filesystem/archive-binary".into(),
                             path: Some(entry_path),
@@ -324,7 +324,7 @@ pub(super) fn extract_compressed_chunks(
                 return;
             }
             (
-                keyhog_core::SensitiveString::join(&strings, "\n"),
+                crate::strings::join_sensitive_strings(&strings, "\n"),
                 "filesystem/compressed-binary",
             )
         }

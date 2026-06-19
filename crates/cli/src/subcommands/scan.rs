@@ -658,14 +658,20 @@ fn daemon_allowlist_root(args: &ScanArgs) -> PathBuf {
 fn load_daemon_allowlist(args: &ScanArgs) -> Result<keyhog_core::Allowlist> {
     let ignore_path = daemon_allowlist_root(args).join(".keyhogignore");
     if ignore_path.exists() {
-        keyhog_core::Allowlist::load(&ignore_path).with_context(|| {
+        keyhog_core::Allowlist::load_with_metadata_policy(
+            &ignore_path,
+            false,
+            false,
+            None,
+        )
+        .with_context(|| {
             format!(
                 "daemon route: failed to load {}. Fix or remove the allowlist; refusing to scan with silently ignored policy.",
                 ignore_path.display()
             )
         })
     } else {
-        Ok(keyhog_core::Allowlist::empty())
+        Ok(keyhog_core::Allowlist::default())
     }
 }
 
@@ -674,7 +680,17 @@ fn load_daemon_allowlist(args: &ScanArgs) -> Result<keyhog_core::Allowlist> {
 #[cfg(unix)]
 fn load_daemon_rule_suppressor(args: &ScanArgs) -> Result<RuleSuppressor> {
     let toml_path = daemon_allowlist_root(args).join(".keyhogignore.toml");
-    match RuleSuppressor::load(&toml_path) {
+    if !toml_path.exists() {
+        return Ok(RuleSuppressor::default());
+    }
+    let raw = std::fs::read_to_string(&toml_path).with_context(|| {
+        format!(
+            "daemon route: failed to read {}. Fix file permissions or remove the file; refusing \
+             to scan with silently ignored suppression rules.",
+            toml_path.display()
+        )
+    })?;
+    match raw.parse::<RuleSuppressor>() {
         Ok(s) => Ok(s),
         Err(e) => anyhow::bail!(
             "daemon route: failed to load {}: {e}. Fix the TOML schema \

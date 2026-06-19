@@ -20,6 +20,7 @@ fn allowlist_load_with_future_dated_entry_succeeds() {
     )
     .expect("write allowlist");
 
-    let al = Allowlist::load(&path).expect("future-dated policy must load");
+    let al = Allowlist::load_with_metadata_policy(&path, false, false, None)
+        .expect("future-dated policy must load");
     assert!(al.ignored_detectors.contains("bar"));
 }

@@ -14,6 +14,9 @@ fn schema_mismatch_returns_empty() {
         strict.to_string().contains("schema version 99"),
         "strict load must name the schema mismatch; got {strict}"
     );
-    let loaded = Calibration::load(&path);
+    let loaded = keyhog_core::testing::CoreTestApi::calibration_load_tolerant(
+        &keyhog_core::testing::TestApi,
+        &path,
+    );
     assert_eq!(loaded.entries().len(), 0);
 }

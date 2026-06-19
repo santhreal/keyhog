@@ -11,7 +11,7 @@ use keyhog_core::Chunk;
 /// emits a decoded chunk when the candidate is at least 16 chars long; below
 /// that, reversed strings collide with normal text and produce too many
 /// useless chunks for the scanner to dedup.
-pub struct ReverseDecoder;
+pub(crate) struct ReverseDecoder;
 
 const MIN_REVERSE_LEN: usize = 16;
 
@@ -37,7 +37,7 @@ impl Decoder for ReverseDecoder {
     }
 }
 
-pub fn reverse_str(s: &str) -> String {
+pub(crate) fn reverse_str(s: &str) -> String {
     s.chars().rev().collect()
 }
 
@@ -52,7 +52,7 @@ pub fn reverse_str(s: &str) -> String {
 ///    passes the alphanumeric-run gate, and gets emitted as a decoy chunk
 ///    on every chunk that contains a long alphanumeric word - pure noise
 ///    that hammers the dedup layer. Kimi-decode audit finding #4.
-pub fn looks_reversible(candidate: &str) -> bool {
+pub(crate) fn looks_reversible(candidate: &str) -> bool {
     let bytes = candidate.as_bytes();
     let mut run = 0usize;
     let mut saw_long_run = false;

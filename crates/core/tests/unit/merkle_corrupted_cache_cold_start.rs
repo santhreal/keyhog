@@ -7,7 +7,7 @@ fn merkle_corrupted_cache_treated_as_cold_start() {
     let dir = tempfile::tempdir().expect("tempdir");
     let cache_path = dir.path().join("merkle.idx");
     std::fs::write(&cache_path, b"this is not json").expect("write garbage");
-    let report = MerkleIndex::load_report(&cache_path);
+    let report = keyhog_core::testing::CoreTestApi::merkle_load_report(&keyhog_core::testing::TestApi, &cache_path);
     assert!(matches!(
         report.status(),
         MerkleLoadStatus::ParseFailed { path, error }

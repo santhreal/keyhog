@@ -57,7 +57,7 @@ path:*.example
 
 #[test]
 fn empty_allowlist_allows_nothing() {
-    let al = Allowlist::empty();
+    let al = Allowlist::default();
     assert!(
         !keyhog_core::testing::CoreTestApi::allowlist_is_hash_allowed(
             &keyhog_core::testing::TestApi,
@@ -69,14 +69,14 @@ fn empty_allowlist_allows_nothing() {
 
 #[test]
 fn normalized_paths_still_match_globs() {
-    let mut al = Allowlist::empty();
+    let mut al = Allowlist::default();
     al.ignored_paths.push("tests/**".into());
     assert!(al.is_path_ignored("./tests/fixtures/../fixtures/config.env"));
 }
 
 #[test]
 fn is_allowed_checks_detector_and_path_rules_consistently() {
-    let mut al = Allowlist::empty();
+    let mut al = Allowlist::default();
     al.ignored_detectors.insert("aws".into());
     al.ignored_paths.push("tests/**".into());
 
@@ -248,7 +248,7 @@ hash:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 
 #[test]
 fn gitleaks_windows_backslash_normalized() {
-    let mut al = Allowlist::empty();
+    let mut al = Allowlist::default();
     al.ignored_paths.push("tests/**".into());
     assert!(al.is_path_ignored("tests\\fixtures\\config.env"));
     assert!(al.is_path_ignored(".\\tests\\fixtures\\test.txt"));

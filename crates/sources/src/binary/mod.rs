@@ -330,7 +330,7 @@ impl BinarySource {
         let strings = extract_printable_strings(&bytes, MIN_STRING_LEN);
         if !strings.is_empty() {
             chunks.push(Chunk {
-                data: keyhog_core::SensitiveString::join(&strings, "\n"),
+                data: crate::strings::join_sensitive_strings(&strings, "\n"),
                 metadata: ChunkMetadata {
                     base_offset: 0,
                     base_line: 0,
