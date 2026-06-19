@@ -224,60 +224,7 @@ pub(super) fn load_autoroute_cache(
     }
     let mut out = HashMap::with_capacity(cache.decisions.len());
     for (key, decision) in cache.decisions {
-        validate_decision_calibration_evidence(&decision)?;
-        let Some(selected_backend) = decision.backend() else {
-            return Err(format!(
-                "cache contains unsupported backend decision {:?}",
-                decision.backend
-            )
-            .into());
-        };
-        if decision.trials < AUTOROUTE_CALIBRATION_TRIALS {
-            return Err("cache was produced with insufficient calibration trials".into());
-        }
-        if decision.calibrated_at_unix_ms == 0 {
-            return Err("cache decision is missing a calibration timestamp".into());
-        }
-        if !decision
-            .simd_timing
-            .is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS)
-            || decision.simd_ms != decision.simd_timing.best_ms()
-        {
-            return Err("cache decision has invalid SIMD timing evidence".into());
-        }
-        if let Some(cpu_timing) = decision.cpu_timing.as_ref() {
-            if !cpu_timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS)
-                || decision.cpu_ms != Some(cpu_timing.best_ms())
-            {
-                return Err("cache decision has invalid CPU timing evidence".into());
-            }
-        }
-        if let Some(gpu_timing) = decision.gpu_timing.as_ref() {
-            if !gpu_timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS)
-                || decision.gpu_ms != Some(gpu_timing.best_ms())
-            {
-                return Err("cache decision has invalid GPU timing evidence".into());
-            }
-        }
-        validate_gpu_cold_warm_cache_evidence(&decision)?;
-        let Some(selected_timing) = decision.timing_for_backend(selected_backend) else {
-            return Err("selected backend is missing timing evidence".into());
-        };
-        if !selected_timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS) {
-            return Err("selected backend timing evidence is invalid".into());
-        }
-        let candidates = decision.route_candidates();
-        let Some((fastest_backend, _)) = candidates.iter().min_by_key(|(_, ns)| *ns).copied()
-        else {
-            return Err("cache decision has no route timing evidence".into());
-        };
-        if fastest_backend != selected_backend {
-            return Err("selected backend is not the fastest persisted timing evidence".into());
-        }
-        let expected_margin = selected_backend_margin_ns(selected_backend, &candidates);
-        if decision.selected_margin_ns != expected_margin {
-            return Err("cache decision has invalid selected backend margin".into());
-        }
+        validate_decision_route_evidence(&decision)?;
         if out.contains_key(&key) {
             return Err(format!(
                 "cache contains duplicate autoroute workload decision for {key:?}"
@@ -287,6 +234,65 @@ pub(super) fn load_autoroute_cache(
         out.insert(key, decision);
     }
     Ok(out)
+}
+
+fn validate_decision_route_evidence(
+    decision: &AutorouteDecision,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    validate_decision_calibration_evidence(decision)?;
+    let Some(selected_backend) = decision.backend() else {
+        return Err(format!(
+            "cache contains unsupported backend decision {:?}",
+            decision.backend
+        )
+        .into());
+    };
+    if decision.trials < AUTOROUTE_CALIBRATION_TRIALS {
+        return Err("cache was produced with insufficient calibration trials".into());
+    }
+    if decision.calibrated_at_unix_ms == 0 {
+        return Err("cache decision is missing a calibration timestamp".into());
+    }
+    if !decision
+        .simd_timing
+        .is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS)
+        || decision.simd_ms != decision.simd_timing.best_ms()
+    {
+        return Err("cache decision has invalid SIMD timing evidence".into());
+    }
+    if let Some(cpu_timing) = decision.cpu_timing.as_ref() {
+        if !cpu_timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS)
+            || decision.cpu_ms != Some(cpu_timing.best_ms())
+        {
+            return Err("cache decision has invalid CPU timing evidence".into());
+        }
+    }
+    if let Some(gpu_timing) = decision.gpu_timing.as_ref() {
+        if !gpu_timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS)
+            || decision.gpu_ms != Some(gpu_timing.best_ms())
+        {
+            return Err("cache decision has invalid GPU timing evidence".into());
+        }
+    }
+    validate_gpu_cold_warm_cache_evidence(decision)?;
+    let Some(selected_timing) = decision.timing_for_backend(selected_backend) else {
+        return Err("selected backend is missing timing evidence".into());
+    };
+    if !selected_timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS) {
+        return Err("selected backend timing evidence is invalid".into());
+    }
+    let candidates = decision.route_candidates();
+    let Some((fastest_backend, _)) = candidates.iter().min_by_key(|(_, ns)| *ns).copied() else {
+        return Err("cache decision has no route timing evidence".into());
+    };
+    if fastest_backend != selected_backend {
+        return Err("selected backend is not the fastest persisted timing evidence".into());
+    }
+    let expected_margin = selected_backend_margin_ns(selected_backend, &candidates);
+    if decision.selected_margin_ns != expected_margin {
+        return Err("cache decision has invalid selected backend margin".into());
+    }
+    Ok(())
 }
 
 fn validate_decision_calibration_evidence(
@@ -340,6 +346,12 @@ pub(super) fn save_autoroute_cache(
     decisions: &HashMap<WorkloadKey, AutorouteDecision>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     host_profile.require_exact_identity()?;
+    if decisions.is_empty() {
+        return Err("autoroute cache contains no workload decisions".into());
+    }
+    for decision in decisions.values() {
+        validate_decision_route_evidence(decision)?;
+    }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }

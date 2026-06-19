@@ -37,6 +37,58 @@ fn test_workload_key() -> WorkloadKey {
     }
 }
 
+fn write_tampered_decision_cache(
+    path: &std::path::Path,
+    digest: u64,
+    config_digest: u64,
+    host: &AutorouteHostProfile,
+    key: WorkloadKey,
+    bad_decision: AutorouteDecision,
+    expected_error: &str,
+) {
+    let mut bad_decisions = HashMap::new();
+    bad_decisions.insert(key, bad_decision.clone());
+    let save_error = save_autoroute_cache(
+        path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        host,
+        &bad_decisions,
+    )
+    .expect_err("cache writer must reject invalid autoroute decision evidence")
+    .to_string();
+    assert!(
+        save_error.contains(expected_error),
+        "cache writer error should contain {expected_error:?}, got {save_error:?}"
+    );
+
+    let mut valid_decisions = HashMap::new();
+    valid_decisions.insert(
+        key,
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
+    );
+    save_autoroute_cache(
+        path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        host,
+        &valid_decisions,
+    )
+    .expect("valid autoroute cache should be writable before tampering");
+    let mut cache: AutorouteCache =
+        serde_json::from_slice(&std::fs::read(path).expect("autoroute cache JSON"))
+            .expect("cache should deserialize before tampering");
+    cache.decisions.clear();
+    cache.decisions.push((key, bad_decision));
+    std::fs::write(
+        path,
+        serde_json::to_vec_pretty(&cache).expect("tampered cache serializes"),
+    )
+    .expect("tampered cache writable");
+}
+
 fn test_rules_digest() -> &'static str {
     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 }
@@ -798,18 +850,15 @@ fn autoroute_cache_rejects_selected_backend_without_timing_evidence() {
     );
     bad.cpu_timing = None;
     bad.cpu_ms = None;
-    let mut decisions = HashMap::new();
-    decisions.insert(key, bad);
-
-    save_autoroute_cache(
+    write_tampered_decision_cache(
         &path,
         digest,
-        test_rules_digest(),
         config_digest,
         &host,
-        &decisions,
-    )
-    .unwrap();
+        key,
+        bad,
+        "selected backend is missing timing evidence",
+    );
     let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
     assert!(
         loaded
@@ -835,18 +884,15 @@ fn autoroute_cache_rejects_missing_calibration_sample_evidence() {
     let mut bad = AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None);
     bad.sample_bytes = 0;
     bad.sample_chunks = 0;
-    let mut decisions = HashMap::new();
-    decisions.insert(key, bad);
-
-    save_autoroute_cache(
+    write_tampered_decision_cache(
         &path,
         digest,
-        test_rules_digest(),
         config_digest,
         &host,
-        &decisions,
-    )
-    .unwrap();
+        key,
+        bad,
+        "missing calibration sample evidence",
+    );
     let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
     assert!(
         loaded
@@ -873,18 +919,15 @@ fn autoroute_cache_rejects_zero_duration_timing_evidence() {
     bad.simd_timing =
         super::evidence::BackendTimingEvidence::constant_ms(0, AUTOROUTE_CALIBRATION_TRIALS);
     bad.simd_ms = 0;
-    let mut decisions = HashMap::new();
-    decisions.insert(key, bad);
-
-    save_autoroute_cache(
+    write_tampered_decision_cache(
         &path,
         digest,
-        test_rules_digest(),
         config_digest,
         &host,
-        &decisions,
-    )
-    .unwrap();
+        key,
+        bad,
+        "invalid SIMD timing evidence",
+    );
     let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
     assert!(
         loaded
@@ -942,18 +985,15 @@ fn autoroute_cache_rejects_missing_correctness_digest() {
     let key = test_workload_key();
     let mut bad = AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None);
     bad.correctness_digest = 0;
-    let mut decisions = HashMap::new();
-    decisions.insert(key, bad);
-
-    save_autoroute_cache(
+    write_tampered_decision_cache(
         &path,
         digest,
-        test_rules_digest(),
         config_digest,
         &host,
-        &decisions,
-    )
-    .unwrap();
+        key,
+        bad,
+        "missing correctness digest",
+    );
     let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
     assert!(
         loaded
@@ -978,18 +1018,15 @@ fn autoroute_cache_rejects_gpu_cold_warm_evidence_mismatch() {
     let key = test_workload_key();
     let mut bad = AutorouteDecision::new(ScanBackend::Gpu, 8 * 1024 * 1024, 1, 12, None, Some(5));
     bad.gpu_cold_ns = bad.gpu_cold_ns.map(|ns| ns.saturating_add(1));
-    let mut decisions = HashMap::new();
-    decisions.insert(key, bad);
-
-    save_autoroute_cache(
+    write_tampered_decision_cache(
         &path,
         digest,
-        test_rules_digest(),
         config_digest,
         &host,
-        &decisions,
-    )
-    .unwrap();
+        key,
+        bad,
+        "mismatched GPU cold/warm route evidence",
+    );
     let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
     assert!(
         loaded
@@ -1012,21 +1049,15 @@ fn autoroute_cache_rejects_selected_backend_that_is_not_fastest() {
     let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
     let host = test_host(None);
     let key = test_workload_key();
-    let mut decisions = HashMap::new();
-    decisions.insert(
-        key,
-        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, Some(10), None),
-    );
-
-    save_autoroute_cache(
+    write_tampered_decision_cache(
         &path,
         digest,
-        test_rules_digest(),
         config_digest,
         &host,
-        &decisions,
-    )
-    .unwrap();
+        key,
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, Some(10), None),
+        "selected backend is not the fastest persisted timing evidence",
+    );
     let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
     assert!(
         loaded
