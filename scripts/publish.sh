@@ -23,6 +23,7 @@
 set -euo pipefail
 
 WAIT_BETWEEN_PUBLISH="${WAIT_BETWEEN_PUBLISH:-45}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Pull the version out of the workspace Cargo.toml so the echo lines
 # stay accurate without a per-release edit. `awk` over the [workspace.package]
@@ -30,9 +31,10 @@ WAIT_BETWEEN_PUBLISH="${WAIT_BETWEEN_PUBLISH:-45}"
 VERSION=$(awk -F'"' '
     /^\[workspace\.package\]/ { in_pkg = 1; next }
     in_pkg && /^version[[:space:]]*=/ { print $2; exit }
-' "$(dirname "$0")/../Cargo.toml" 2>/dev/null)
+' "$ROOT/Cargo.toml")
 if [[ -z "${VERSION}" ]]; then
-    VERSION="unknown"
+    echo "error: missing workspace.package.version in $ROOT/Cargo.toml" >&2
+    exit 2
 fi
 
 publish() {

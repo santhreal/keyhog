@@ -157,6 +157,24 @@ else
   fail=1
 fi
 
+PUB="$ROOT/scripts/publish.sh"
+if [ -f "$PUB" ]; then
+  if grep -qE 'VERSION="unknown"|Cargo\.toml" 2>/dev/null' "$PUB"; then
+    echo "FAIL scripts/publish.sh must fail closed when workspace version resolution fails; never publish/tag guidance as vunknown."
+    grep -nE 'VERSION="unknown"|Cargo\.toml" 2>/dev/null' "$PUB" | sed 's/^/    /'
+    fail=1
+  elif grep -q 'missing workspace.package.version' "$PUB" \
+     && grep -q 'exit 2' "$PUB"; then
+    note "OK   publish entrypoint: workspace version resolution fails closed"
+  else
+    echo "FAIL scripts/publish.sh must emit a clear error and exit 2 when workspace.package.version is missing."
+    fail=1
+  fi
+else
+  echo "FAIL scripts/publish.sh missing - crates.io publish path cannot be audited."
+  fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "integration entry-point gate: PASS"
 else
