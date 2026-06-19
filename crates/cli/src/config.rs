@@ -345,6 +345,22 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
             args.autoroute_cache = Some(autoroute_cache);
         }
     }
+    if let Some(calibration_cache) = config
+        .system
+        .as_ref()
+        .and_then(|system| system.calibration_cache.clone())
+    {
+        if calibration_cache.is_absolute() {
+            if args.calibration_cache.is_none() {
+                args.calibration_cache = Some(calibration_cache);
+            }
+        } else {
+            config_errors.push(format!(
+                "- [system].calibration_cache: calibration cache path {} must be absolute",
+                calibration_cache.display()
+            ));
+        }
+    }
     if let Some(batch_pipeline) = config
         .system
         .as_ref()

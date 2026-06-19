@@ -126,7 +126,20 @@ pub mod confidence {
 
     #[cfg(test)]
     pub(crate) fn apply_calibration_multiplier(score: f64, detector_id: &str) -> f64 {
-        crate::confidence::penalties::apply_calibration_multiplier(score, detector_id)
+        crate::confidence::penalties::apply_calibration_multiplier(score, detector_id, None)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn apply_calibration_multiplier_with_store(
+        score: f64,
+        detector_id: &str,
+        calibration: &keyhog_core::Calibration,
+    ) -> f64 {
+        crate::confidence::penalties::apply_calibration_multiplier(
+            score,
+            detector_id,
+            Some(calibration),
+        )
     }
 
     #[cfg(test)]

@@ -5,8 +5,7 @@ use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use keyhog_core::ScanConfig;
-use keyhog_core::SensitiveString;
+use keyhog_core::{Calibration, ScanConfig, SensitiveString};
 
 /// Explicit per-scanner performance-route tuning.
 ///
@@ -204,6 +203,11 @@ pub struct ScannerConfig {
     pub profile: bool,
     /// Emit low-level phase timing traces for GPU/perf investigation.
     pub perf_trace: bool,
+    /// Explicit per-detector Bayesian calibration store. Absent means the scan
+    /// is hermetic and score-stable; the scanner never reads a default disk
+    /// cache on its own because that would make findings depend on stray host
+    /// state.
+    pub calibration: Option<Arc<Calibration>>,
 }
 
 impl Deref for ScannerConfig {
@@ -346,6 +350,11 @@ impl ScannerConfig {
             self.per_chunk_timeout_ms = None;
         }
     }
+
+    pub fn with_calibration(mut self, calibration: Arc<Calibration>) -> Self {
+        self.calibration = Some(calibration);
+        self
+    }
 }
 
 impl From<ScanConfig> for ScannerConfig {
@@ -369,6 +378,7 @@ impl From<ScanConfig> for ScannerConfig {
             per_chunk_timeout_ms: None,
             profile: false,
             perf_trace: false,
+            calibration: None,
         };
         // Defensive clamp + NaN scrub on every user-influenced numeric field
         // (applied to the wrapped `ScanConfig` via `DerefMut`). Idempotent.

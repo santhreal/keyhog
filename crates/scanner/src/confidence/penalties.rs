@@ -253,34 +253,22 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
     finalize_confidence(adjusted)
 }
 
-/// Apply the Bayesian calibration multiplier for `detector_id`.
+/// Apply the explicitly supplied Bayesian calibration multiplier for
+/// `detector_id`.
 ///
-/// Reads the persisted Beta(α, β) counters at process startup (lazy via
-/// `OnceLock`) and multiplies the score by the posterior mean. Fresh /
-/// uncalibrated detectors return 0.5 (uniform prior) - we DON'T penalize
-/// uncalibrated detectors below 0.5 because the prior is symmetric, so
-/// 0.5 × score keeps the previous behavior approximately stable until
-/// observations accumulate. Detectors with a long clean record (posterior
-/// > 0.5) get amplified; chronic FP-emitters get muted.
-///
-/// Tier-B moat innovation #4 (live integration). The data layer +
-/// `keyhog calibrate` CLI ship the counters; this function pipes the
-/// value into the actual scoring path.
-///
-/// Bypass when no calibration cache exists: returns `score` unchanged so
-/// the scanner stays usable on a fresh install.
+/// The scanner never discovers a calibration cache from disk on its own: a
+/// persisted Beta(α, β) store changes confidence and therefore must come from
+/// resolved CLI/TOML state. Fresh / uncalibrated detectors return 0.5 (uniform
+/// prior) - we don't penalize uncalibrated detectors below 0.5 because the
+/// prior is symmetric, so 0.5 × score keeps previous behavior approximately
+/// stable until observations accumulate. Detectors with a long clean record
+/// (posterior > 0.5) get amplified; chronic FP-emitters get muted.
 #[cfg(any(feature = "ml", test))]
-pub(crate) fn apply_calibration_multiplier(score: f64, detector_id: &str) -> f64 {
-    use keyhog_core::Calibration;
-    use std::sync::OnceLock;
-    static CALIBRATION: OnceLock<Option<Calibration>> = OnceLock::new();
-    let calibration = CALIBRATION.get_or_init(|| {
-        let path = keyhog_core::calibration_default_cache_path()?;
-        if !path.exists() {
-            return None;
-        }
-        Some(Calibration::load(&path))
-    });
+pub(crate) fn apply_calibration_multiplier(
+    score: f64,
+    detector_id: &str,
+    calibration: Option<&keyhog_core::Calibration>,
+) -> f64 {
     let Some(calibration) = calibration else {
         // Even the bypass path runs through finalize_confidence so a
         // NaN entering this function (from an upstream GPU leak)

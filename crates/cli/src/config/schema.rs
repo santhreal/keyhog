@@ -173,6 +173,8 @@ pub(super) struct SystemSection {
     pub cache_dir: Option<PathBuf>,
     /// Absolute autoroute calibration cache file, or `off` to disable.
     pub autoroute_cache: Option<String>,
+    /// Absolute per-detector Bayesian calibration cache file for scan scoring.
+    pub calibration_cache: Option<PathBuf>,
     /// Force the coalesced batch scan pipeline.
     pub batch_pipeline: Option<bool>,
     /// GPU runtime policy: auto, off, or required.

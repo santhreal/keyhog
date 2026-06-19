@@ -21,7 +21,16 @@ pub(crate) fn run(args: CalibrateArgs) -> Result<()> {
         );
     }
 
-    let calibration = Calibration::load(&cache_path);
+    let calibration = match Calibration::try_load(&cache_path) {
+        Ok(Some(calibration)) => calibration,
+        Ok(None) => Calibration::default(),
+        Err(error) => {
+            anyhow::bail!(
+                "{error}. Fix: repair or remove the cache, or pass --cache <PATH> to a valid \
+                 calibration file. No calibration counters were changed."
+            );
+        }
+    };
 
     if args.show && args.tp.is_empty() && args.fp.is_empty() {
         print_show(&calibration, &cache_path);

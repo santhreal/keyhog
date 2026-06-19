@@ -13,8 +13,11 @@
 //!     posterior mean = α / (α + β)  ∈ [0, 1].
 //!
 //! Storage: JSON at `$XDG_CACHE_HOME/keyhog/calibration.json` with a schema
-//! version field. Load returns an empty store on miss / corrupted JSON /
-//! schema mismatch - never poison the cache from a damaged artifact.
+//! version field. [`Calibration::try_load`] distinguishes a missing cache from
+//! a damaged artifact so operator commands can fail closed instead of
+//! overwriting corrupt state as if it were a clean first run. The legacy
+//! [`Calibration::load`] API remains tolerant for compatibility; production
+//! operator paths must use the strict loader when the cache is explicit.
 //!
 //! Coherence contract (audit organization/coherence finding): this module is
 //! the DATA layer, but it is now LIVE - the scanner's confidence-scoring path
@@ -34,6 +37,7 @@ use std::path::{Path, PathBuf};
 
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 /// A detector's running Beta posterior counters. Always ≥1 each (Beta(1,1)
 /// uniform prior baseline) to avoid posterior_mean undefined when a detector
@@ -89,6 +93,33 @@ struct OnDisk {
 
 const SCHEMA_VERSION: u32 = 1;
 
+/// Error returned when an existing calibration cache cannot be trusted.
+#[derive(Debug, Error)]
+pub enum CalibrationLoadError {
+    /// The cache file exists but could not be read.
+    #[error("calibration cache '{}' could not be read: {source}", path.display())]
+    Read {
+        path: PathBuf,
+        source: std::io::Error,
+    },
+    /// The cache file exists but is not valid JSON for the calibration schema.
+    #[error("calibration cache '{}' is not valid JSON: {source}", path.display())]
+    Parse {
+        path: PathBuf,
+        source: serde_json::Error,
+    },
+    /// The cache JSON has a version this binary does not understand.
+    #[error(
+        "calibration cache '{}' has schema version {found}; expected {expected}",
+        path.display()
+    )]
+    SchemaVersion {
+        path: PathBuf,
+        found: u32,
+        expected: u32,
+    },
+}
+
 /// Process-wide calibration store. Concurrent updates are serialized via
 /// a single `RwLock` because update events are rare (one per `keyhog
 /// calibrate` invocation or per verifier outcome) and the locked region is
@@ -104,41 +135,46 @@ impl Calibration {
         Self::default()
     }
 
-    pub fn load(path: &Path) -> Self {
+    pub fn try_load(path: &Path) -> Result<Option<Self>, CalibrationLoadError> {
         let bytes = match std::fs::read(path) {
             Ok(b) => b,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Self::empty(),
-            Err(e) => {
-                tracing::warn!(
-                    cache = %path.display(),
-                    error = %e,
-                    "calibration file read failed; treating as cold start"
-                );
-                return Self::empty();
+            Err(source) if source.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(source) => {
+                return Err(CalibrationLoadError::Read {
+                    path: path.to_path_buf(),
+                    source,
+                });
             }
         };
-        let on_disk: OnDisk = match serde_json::from_slice(&bytes) {
-            Ok(d) => d,
-            Err(e) => {
-                tracing::warn!(
-                    cache = %path.display(),
-                    error = %e,
-                    "calibration parse failed; treating as cold start"
-                );
-                return Self::empty();
-            }
-        };
+        let on_disk: OnDisk =
+            serde_json::from_slice(&bytes).map_err(|source| CalibrationLoadError::Parse {
+                path: path.to_path_buf(),
+                source,
+            })?;
         if on_disk.version != SCHEMA_VERSION {
-            tracing::warn!(
-                cache = %path.display(),
-                version = on_disk.version,
-                expected = SCHEMA_VERSION,
-                "calibration schema mismatch; treating as cold start"
-            );
-            return Self::empty();
+            return Err(CalibrationLoadError::SchemaVersion {
+                path: path.to_path_buf(),
+                found: on_disk.version,
+                expected: SCHEMA_VERSION,
+            });
         }
-        Self {
+        Ok(Some(Self {
             inner: RwLock::new(on_disk.detectors),
+        }))
+    }
+
+    pub fn load(path: &Path) -> Self {
+        match Self::try_load(path) {
+            Ok(Some(calibration)) => calibration,
+            Ok(None) => Self::empty(),
+            Err(error) => {
+                tracing::warn!(
+                    cache = %path.display(),
+                    error = %error,
+                    "calibration cache could not be loaded; treating as cold start"
+                );
+                Self::empty()
+            }
         }
     }
 

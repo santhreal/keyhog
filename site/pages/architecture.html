@@ -111,9 +111,11 @@ naive line-by-line scanners. keyhog runs a lightweight join pass on:</p>
   on labeled true/false positives) re-scores the candidate against
   surrounding code context. Disabled with <code>--fast</code>.</li>
   <li><strong>Bayesian Beta(α,β) calibration.</strong> Per-detector
-  posterior mean from <code>keyhog calibrate</code> feedback. Tells you
-  "this detector is 0.8 of the time wrong in YOUR codebase" and damps
-  accordingly.</li>
+  posterior mean from <code>keyhog calibrate</code> feedback, used only
+  when <code>--calibration-cache</code> or
+  <code>[system].calibration_cache</code> explicitly supplies the cache.
+  Tells you "this detector is 0.8 of the time wrong in YOUR codebase" and
+  damps accordingly.</li>
 </ul>
 
 <h2>Hardware backends</h2>

@@ -9,9 +9,9 @@ use keyhog_scanner::confidence::{
     known_prefix_confidence_floor, ConfidenceSignals, KNOWN_PREFIXES,
 };
 use keyhog_scanner::testing::confidence::{
-    apply_calibration_multiplier, apply_path_confidence_penalties, apply_post_ml_penalties,
-    char_diversity, contains_placeholder_word, finalize_confidence, max_repeat_run,
-    placeholder_words,
+    apply_calibration_multiplier, apply_calibration_multiplier_with_store,
+    apply_path_confidence_penalties, apply_post_ml_penalties, char_diversity,
+    contains_placeholder_word, finalize_confidence, max_repeat_run, placeholder_words,
 };
 
 fn all_false_signals() -> ConfidenceSignals {
@@ -284,7 +284,7 @@ fn path_penalty_none_path_is_nan_safe() {
 
 #[test]
 fn calibration_is_nan_safe() {
-    // Regardless of whether a calibration cache exists, NaN must finalize to 0.
+    // Regardless of whether a calibration store is configured, NaN must finalize to 0.
     assert_eq!(
         apply_calibration_multiplier(f64::NAN, "some-unlikely-detector-id-xyz"),
         0.0
@@ -298,6 +298,46 @@ fn calibration_output_in_unit_range() {
         (0.0..=1.0).contains(&out),
         "calibrated score out of range: {out}"
     );
+}
+
+#[test]
+fn calibration_only_applies_when_store_is_explicit() {
+    let calibration = keyhog_core::Calibration::default();
+    calibration.record_outcome("det-explicit-calibration", false);
+    calibration.record_outcome("det-explicit-calibration", false);
+    calibration.record_outcome("det-explicit-calibration", false);
+
+    let unconfigured = apply_calibration_multiplier(0.9, "det-explicit-calibration");
+    assert!(
+        (unconfigured - 0.9).abs() < 1e-9,
+        "absent explicit calibration store must leave score unchanged, got {unconfigured}"
+    );
+
+    let configured =
+        apply_calibration_multiplier_with_store(0.9, "det-explicit-calibration", &calibration);
+    assert!(
+        configured < 0.5,
+        "explicit false-positive history must damp the score, got {configured}"
+    );
+}
+
+#[test]
+fn calibration_multiplier_has_no_ambient_default_cache_probe() {
+    let source = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/confidence/penalties.rs"
+    ))
+    .expect("read penalties source");
+    for forbidden in [
+        "calibration_default_cache_path",
+        "OnceLock<Option<Calibration>>",
+        "Calibration::load(&path)",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "scanner confidence must not discover calibration from ambient disk state: {forbidden}"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------

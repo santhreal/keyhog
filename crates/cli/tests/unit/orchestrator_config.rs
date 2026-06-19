@@ -174,6 +174,43 @@ fn cli_cache_dir_wins_over_system_cache_dir() {
 }
 
 #[test]
+fn system_calibration_cache_reaches_scan_args() {
+    let dir = TempDir::new().expect("tempdir");
+    let cache_path = dir.path().join("calibration.json");
+    let args = args_for_config(&format!(
+        "[system]\ncalibration_cache = {}\n",
+        toml::Value::String(cache_path.to_string_lossy().to_string())
+    ));
+
+    assert_eq!(
+        args.calibration_cache.as_deref(),
+        Some(cache_path.as_path()),
+        "[system].calibration_cache must reach the scan args consumed before scanner compilation"
+    );
+}
+
+#[test]
+fn cli_calibration_cache_wins_over_system_calibration_cache() {
+    let dir = TempDir::new().expect("tempdir");
+    let config_cache = dir.path().join("config-calibration.json");
+    let cli_cache = dir.path().join("cli-calibration.json");
+    let cli_cache_arg = cli_cache.to_string_lossy().to_string();
+    let args = args_for_config_with_extra(
+        &format!(
+            "[system]\ncalibration_cache = {}\n",
+            toml::Value::String(config_cache.to_string_lossy().to_string())
+        ),
+        &["--calibration-cache", &cli_cache_arg],
+    );
+
+    assert_eq!(
+        args.calibration_cache.as_deref(),
+        Some(cli_cache.as_path()),
+        "--calibration-cache must override [system].calibration_cache"
+    );
+}
+
+#[test]
 fn relative_system_trusted_bin_dir_is_config_error() {
     let _guard = global_config_state_lock();
     let dir = TempDir::new().expect("tempdir");
@@ -218,6 +255,30 @@ fn relative_system_cache_dir_is_config_error() {
             "[system].cache_dir: Hyperscan cache directory relative-cache must be absolute"
         ),
         "relative cache dirs must fail closed with an actionable config error: {error}"
+    );
+}
+
+#[test]
+fn relative_system_calibration_cache_is_config_error() {
+    let _guard = global_config_state_lock();
+    let dir = TempDir::new().expect("tempdir");
+    std::fs::write(
+        dir.path().join(".keyhog.toml"),
+        "[system]\ncalibration_cache = \"relative-calibration.json\"\n",
+    )
+    .expect("write config");
+
+    let path = dir.path().to_string_lossy().to_string();
+    let mut args = ScanArgs::try_parse_from(["scan", "--path", &path]).expect("parse scan args");
+    let error = API
+        .resolve_scan_config(&mut args)
+        .expect_err("relative calibration cache must fail");
+
+    assert!(
+        error.to_string().contains(
+            "[system].calibration_cache: calibration cache path relative-calibration.json must be absolute"
+        ),
+        "relative calibration cache paths must fail closed with an actionable config error: {error}"
     );
 }
 

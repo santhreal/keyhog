@@ -1,7 +1,8 @@
 use crate::args::ScanArgs;
 use anyhow::Result;
 use keyhog_scanner::ScannerConfig;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 mod detectors;
 mod effective;
@@ -143,6 +144,67 @@ pub(crate) fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
     config
 }
 
+fn calibration_store_digest(calibration: &keyhog_core::Calibration) -> u64 {
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let entries = calibration.entries();
+    entries.len().hash(&mut hasher);
+    for (id, counters) in entries {
+        id.hash(&mut hasher);
+        counters.alpha.hash(&mut hasher);
+        counters.beta.hash(&mut hasher);
+    }
+    hasher.finish()
+}
+
+fn load_explicit_scan_calibration(
+    path: Option<&Path>,
+) -> Result<(
+    Option<PathBuf>,
+    Option<Arc<keyhog_core::Calibration>>,
+    usize,
+    u64,
+)> {
+    let Some(path) = path else {
+        return Ok((None, None, 0, 0));
+    };
+    if path.is_dir() {
+        anyhow::bail!(
+            "calibration cache path '{}' is a directory. \
+             Fix: pass a file path or remove --calibration-cache for a hermetic scan.",
+            path.display()
+        );
+    }
+    let calibration = match keyhog_core::Calibration::try_load(path) {
+        Ok(Some(calibration)) => calibration,
+        Ok(None) => {
+            anyhow::bail!(
+                "calibration cache '{}' does not exist. \
+                 Fix: run `keyhog calibrate --cache '{}' --tp <detector-id>` or remove \
+                 --calibration-cache for a hermetic scan.",
+                path.display(),
+                path.display()
+            );
+        }
+        Err(error) => {
+            anyhow::bail!(
+                "{error}. Fix: repair or remove the cache, rerun `keyhog calibrate --cache '{}'`, \
+                 or remove --calibration-cache for a hermetic scan.",
+                path.display()
+            );
+        }
+    };
+    let entry_count = calibration.entries().len();
+    let digest = calibration_store_digest(&calibration);
+    Ok((
+        Some(path.to_path_buf()),
+        Some(Arc::new(calibration)),
+        entry_count,
+        digest,
+    ))
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct ResolvedAllowlistConfig {
     pub(crate) file: Option<PathBuf>,
@@ -220,6 +282,13 @@ pub(crate) struct ResolvedScanConfig {
     /// Resolved persistent autoroute calibration cache file. `None` means
     /// persistence is explicitly disabled.
     pub(crate) autoroute_cache_path: Option<PathBuf>,
+    /// Resolved explicit per-detector Bayesian calibration cache file. `None`
+    /// means confidence scoring is hermetic and does not read disk state.
+    pub(crate) calibration_cache_path: Option<PathBuf>,
+    /// Number of detector counters loaded from the explicit calibration cache.
+    pub(crate) calibration_entry_count: usize,
+    /// Stable digest of the loaded calibration counters for config identity.
+    pub(crate) calibration_digest: u64,
     /// Extra AWS canary/knockoff account IDs supplied by `.keyhog.toml`.
     pub(crate) aws_canary_accounts: Vec<String>,
     /// Explicit scanner route tuning supplied by `.keyhog.toml`.
@@ -269,7 +338,12 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
     let autoroute_gpu = args.autoroute_gpu && !args.no_autoroute_gpu;
     let autoroute_calibration = args.autoroute_calibrate;
     let scanner_tuning = outcome.scanner_tuning;
-    let scanner = build_scanner_config(args);
+    let mut scanner = build_scanner_config(args);
+    let (calibration_cache_path, calibration_store, calibration_entry_count, calibration_digest) =
+        load_explicit_scan_calibration(args.calibration_cache.as_deref())?;
+    if let Some(calibration_store) = calibration_store {
+        scanner = scanner.with_calibration(calibration_store);
+    }
     // The post-scan floor is the SAME value the engine resolved - read it back
     // off the built config rather than re-deriving from `args`, so the two can
     // never drift. `ScannerConfig::from`/`sanitise` already clamped NaN/range.
@@ -294,6 +368,9 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
         regex_dfa_limit: args.regex_dfa_limit,
         hyperscan_cache_dir: args.cache_dir.clone(),
         autoroute_cache_path,
+        calibration_cache_path,
+        calibration_entry_count,
+        calibration_digest,
         aws_canary_accounts,
         scanner_tuning,
         allowlist: ResolvedAllowlistConfig {
@@ -328,6 +405,9 @@ pub(crate) fn resolved_scan_config_for_scanner(scanner: ScannerConfig) -> Resolv
         regex_dfa_limit: None,
         hyperscan_cache_dir: None,
         autoroute_cache_path: None,
+        calibration_cache_path: None,
+        calibration_entry_count: 0,
+        calibration_digest: 0,
         aws_canary_accounts: Vec::new(),
         scanner_tuning: keyhog_scanner::ScannerTuningConfig::default(),
         allowlist: ResolvedAllowlistConfig {

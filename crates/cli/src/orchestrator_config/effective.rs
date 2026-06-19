@@ -141,6 +141,22 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         .map(|path| path.display().to_string())
         .unwrap_or_else(|| "<disabled>".to_string()); // LAW10: reporting-only label for explicit disabled autoroute persistence; scan either has a path or fails before benchmarking.
     out.push_str(&format!("autoroute_cache_path = {autoroute_cache_path}\n"));
+    let calibration_cache_path = resolved
+        .calibration_cache_path
+        .as_ref()
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| "<disabled>".to_string()); // LAW10: reporting-only label for absent explicit calibration cache; scanner config carries None and does not read disk.
+    out.push_str(&format!(
+        "calibration_cache_path = {calibration_cache_path}\n"
+    ));
+    out.push_str(&format!(
+        "calibration_entries = {}\n",
+        resolved.calibration_entry_count
+    ));
+    out.push_str(&format!(
+        "calibration_digest = {:016x}\n",
+        resolved.calibration_digest
+    ));
     out.push_str(&format!(
         "aws_canary_accounts = {}\n",
         resolved.aws_canary_accounts.len()
@@ -291,6 +307,8 @@ pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
     resolved.autoroute_gpu.hash(&mut h);
     resolved.regex_dfa_limit.hash(&mut h);
     resolved.hyperscan_cache_dir.hash(&mut h);
+    resolved.calibration_cache_path.hash(&mut h);
+    resolved.calibration_digest.hash(&mut h);
     resolved.aws_canary_accounts.hash(&mut h);
     resolved.scanner_tuning.hash(&mut h);
     resolved.allowlist.file.hash(&mut h);

@@ -16,9 +16,13 @@ fn binary() -> PathBuf {
 /// and exits with 0. Output should be human-readable or JSON.
 #[test]
 fn calibrate_show_returns_exit_zero_and_displays_counters() {
+    let dir = TempDir::new().expect("tempdir");
+    let cache = dir.path().join("missing-calibration.json");
     let output = Command::new(binary())
         .arg("calibrate")
         .arg("--show")
+        .arg("--cache")
+        .arg(&cache)
         .output()
         .expect("spawn keyhog calibrate --show");
 
@@ -180,5 +184,65 @@ fn calibrate_show_with_tp_flag_exits_two() {
     assert!(
         stderr.contains("cannot be used with") || stderr.to_lowercase().contains("conflict"),
         "clap usage error should name the conflict; stderr: {stderr}"
+    );
+}
+
+#[test]
+fn calibrate_show_corrupt_cache_exits_two() {
+    let dir = TempDir::new().expect("tempdir");
+    let cache = dir.path().join("calibration.json");
+    std::fs::write(&cache, "not-json").expect("write corrupt cache");
+
+    let output = Command::new(binary())
+        .arg("calibrate")
+        .arg("--show")
+        .arg("--cache")
+        .arg(&cache)
+        .output()
+        .expect("spawn keyhog calibrate --show corrupt cache");
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "corrupt calibration cache must fail closed; stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("not valid JSON")
+            && stderr.contains("No calibration counters were changed")
+            && stderr.contains("--cache"),
+        "stderr must name the corrupt cache and repair path; stderr={stderr}"
+    );
+}
+
+#[test]
+fn calibrate_update_corrupt_cache_does_not_overwrite() {
+    let dir = TempDir::new().expect("tempdir");
+    let cache = dir.path().join("calibration.json");
+    let original = "not-json";
+    std::fs::write(&cache, original).expect("write corrupt cache");
+
+    let output = Command::new(binary())
+        .arg("calibrate")
+        .arg("--tp")
+        .arg("aws-access-key")
+        .arg("--cache")
+        .arg(&cache)
+        .output()
+        .expect("spawn keyhog calibrate --tp corrupt cache");
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "corrupt calibration update must fail closed; stdout={}, stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let after = std::fs::read_to_string(&cache).expect("read cache after failed update");
+    assert_eq!(
+        after, original,
+        "failed calibrate update must not overwrite a corrupt existing cache"
     );
 }

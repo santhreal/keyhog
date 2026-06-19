@@ -201,9 +201,12 @@ keyhog scan . --min-confidence 0.7          # filter low-confidence hits
 ```
 
 Each `--fp` lowers that detector's Bayesian confidence multiplier
-(persisted under `$XDG_DATA_HOME/keyhog/`), so repeated FPs steadily
-push its findings below your `--min-confidence` floor. To suppress
-*specific* findings rather than a whole detector, use a
+(persisted under the platform cache directory, normally
+`$XDG_CACHE_HOME/keyhog/calibration.json`). Scans use those counters only when
+you pass `--calibration-cache <PATH>` or set `[system].calibration_cache`, so
+repeated FPs steadily push that detector below your `--min-confidence` floor
+without hidden host-state drift. To suppress *specific* findings rather than a
+whole detector, use a
 [`.keyhogignore`](./suppressions.md), the `[allowlist]` config, or a
 `--baseline`.
 

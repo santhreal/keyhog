@@ -489,13 +489,15 @@ impl CompiledScanner {
                 final_score
             };
 
-            // Bayesian calibration multiplier (Tier-B #4). No-op when no
-            // calibration cache exists or the detector has zero recorded
-            // observations beyond the Beta(1,1) prior. Detectors with a
-            // long clean track get amplified; chronic FP-emitters muted.
+            // Bayesian calibration multiplier (Tier-B #4). No-op unless the
+            // resolved scan config explicitly supplied a calibration store, or
+            // when the detector has zero recorded observations beyond the
+            // Beta(1,1) prior. Detectors with a long clean track get amplified;
+            // chronic FP-emitters muted.
             let final_score = crate::confidence::apply_calibration_multiplier(
                 final_score,
                 &pending.raw_match.detector_id,
+                self.config.calibration.as_deref(),
             );
 
             // Embedded-checksum adjudication - the FINAL confidence step so a

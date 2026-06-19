@@ -63,6 +63,7 @@ Each row is the same knob across all three layers. Defaults are
 | Incremental cache | off | `incremental` / `incremental_cache` | `--incremental` / `--incremental-cache` | BLAKE3 Merkle skip-cache; 10–100× on CI re-runs. |
 | Hyperscan cache dir | platform cache dir | `[system] cache_dir` | `--cache-dir` | Compiled-database cache directory. Must be an absolute user-owned path under the home directory or per-user keyhog temp cache root. |
 | Autoroute cache file | platform cache file | `[system] autoroute_cache` | `--autoroute-cache` | Persisted fastest-correct backend decisions. Use an absolute file path or `off` to disable persistence and force auto-route cache misses to fail loudly. |
+| Bayesian calibration cache | off | `[system] calibration_cache` | `--calibration-cache` | Explicit per-detector confidence calibration file written by `keyhog calibrate`. Missing or damaged explicit files fail closed before scanning. |
 | GPU runtime policy | `auto` | `[system] gpu` | `--no-gpu` / `--require-gpu` | `auto` probes when routing can use GPU, `off` skips GPU init, and `required` fails closed when no usable GPU stack is available. Printed by `keyhog config --effective` and included in autoroute scan identity. |
 | Autoroute GPU candidates | off | `[system] autoroute_gpu` | `--autoroute-gpu` / `--no-autoroute-gpu` | Allows calibration to include GPU candidates for eligible workload buckets. Normal scans still require persisted fastest-correct evidence; this never benchmarks during production scans. |
 | Coalesced batch pipeline | off | `[system] batch_pipeline` | `--batch-pipeline` / `--no-batch-pipeline` | Diagnostic/calibration route that bypasses the fused filesystem pipeline. Printed by `keyhog config --effective` and included in autoroute scan identity. |
@@ -196,6 +197,7 @@ the [`scan --help` output](./cli.md) for the current `--lockdown` checks.
 trusted_bin_dirs = ["/nix/store/example-system-bin/bin"]
 cache_dir = "/home/alice/.cache/keyhog"
 autoroute_cache = "/home/alice/.cache/keyhog/autoroute.json"
+calibration_cache = "/home/alice/.cache/keyhog/calibration.json"
 gpu = "auto"
 autoroute_gpu = false
 batch_pipeline = false
@@ -216,6 +218,13 @@ It uses the same precedence as scan flags: compiled platform default, then TOML,
 then `--autoroute-cache`. The value must be an absolute file path or `off`.
 The cache path is printed by `keyhog config --effective`; it is storage
 configuration, not part of the scan identity digest.
+
+`calibration_cache` opts a scan into per-detector Bayesian confidence
+calibration written by `keyhog calibrate`. The scanner never reads the default
+calibration file implicitly. The value must be an absolute file path in TOML;
+missing, unreadable, corrupt, or schema-incompatible explicit files fail closed
+before scanning. The resolved path, entry count, and digest are printed by
+`keyhog config --effective`.
 
 `gpu` resolves GPU init policy. `auto` leaves GPU available to autoroute and
 explicit GPU backends, `off` behaves like `--no-gpu`, and `required` behaves

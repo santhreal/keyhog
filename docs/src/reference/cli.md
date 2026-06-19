@@ -193,18 +193,20 @@ keyhog diff baseline.json pr.json
 
 Show or update the per-detector Bayesian (Beta-α/β) calibration
 counters. Used to teach the scorer that detector X has produced N
-true positives and M false positives in your environment so its
-confidence is adjusted on future scans.
+true positives and M false positives in your environment. Scans use the
+counters only when `--calibration-cache <PATH>` or
+`[system].calibration_cache` explicitly points at the file.
 
 ```sh
 keyhog calibrate --show                       # print current counters
 keyhog calibrate --tp stripe-secret-key       # record one TP
 keyhog calibrate --fp generic-api-key         # record one FP
-keyhog calibrate --tp aws-access-key --show   # record + print
 ```
 
 Pass `--cache <PATH>` to point at a non-default counter file (the
-default lives under `$XDG_DATA_HOME/keyhog/`).
+default lives under the platform cache directory, normally
+`$XDG_CACHE_HOME/keyhog/calibration.json`). Existing corrupted or
+schema-incompatible cache files fail closed and are not overwritten.
 
 ## `keyhog backend`
 

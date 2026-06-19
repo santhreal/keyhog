@@ -58,8 +58,8 @@ lefthook recipes: [`docs/DROP_IN_USAGE.md`](docs/DROP_IN_USAGE.md).
 ### How it works
 
 keyhog compiles its 902 detectors into a single Hyperscan NFA database,
-decodes nested encodings before matching, and calibrates confidence per
-detector via Bayesian Beta(α,β) feedback. Hardware acceleration is an
+decodes nested encodings before matching, and can apply explicit per-detector
+Bayesian Beta(α,β) confidence calibration. Hardware acceleration is an
 explicit backend selection layer; every selected backend must preserve the
 same detector ids and findings contract:
 
@@ -315,8 +315,9 @@ loads all 902 with severity + service + keyword filter.
   and the `[scan] min_confidence` example below) filters low-quality
   matches without hiding real secrets.
 - **Bayesian per-detector calibration.** `keyhog calibrate --fp generic-api-key`
-  feeds a Beta(α,β) posterior that damps detectors that fire wrongly in
-  your codebase, sharpening over time without manual rule tuning.
+  writes a Beta(α,β) posterior. Scans use it only when `--calibration-cache`
+  or `[system].calibration_cache` points at that file, so confidence tuning is
+  explicit and reproducible instead of depending on stray host cache state.
 
 ## Performance
 
@@ -585,6 +586,7 @@ require = true                 # refuse to run unless --lockdown is passed
 
 [system]
 autoroute_cache = "/home/alice/.cache/keyhog/autoroute.json"  # or "off"
+calibration_cache = "/home/alice/.cache/keyhog/calibration.json"
 batch_pipeline = false                                       # true only for diagnostics/calibration
 gpu = "auto"                                                 # auto | off | required
 autoroute_gpu = false                                        # true only for calibration candidates
@@ -657,7 +659,7 @@ Two-phase coalesced scan:
    via rayon. 95 %+ of files have no hits and pay zero cost.
 2. **Phase 2** . full extraction on hits only: regex capture groups,
    companion matching, checksum validation, entropy gating, ML
-   confidence + Bayesian damping.
+   confidence + explicit Bayesian damping when configured.
 
 Result: a multi-GB monorepo scans in seconds. Determinism is part of
 the contract . same input → same output, byte-exact, every time.
@@ -675,6 +677,7 @@ keyhog diff before.json after.json           # NEW / RESOLVED / UNCHANGED for CI
 keyhog calibrate --tp aws-access-key         # record a true positive
 keyhog calibrate --fp generic-api-key        # record a false positive
 keyhog calibrate --show                      # posterior-mean bar chart per detector
+keyhog scan . --calibration-cache ~/.cache/keyhog/calibration.json
 keyhog backend                               # detected hardware + routing matrix
 keyhog completion zsh                        # shell completions (bash/zsh/fish/powershell/elvish)
 ```

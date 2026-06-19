@@ -10,6 +10,7 @@ pub use crate::aws::{
 };
 pub use crate::calibration::{
     default_cache_path as calibration_default_cache_path, BetaCounters, Calibration,
+    CalibrationLoadError,
 };
 pub use crate::config::*;
 pub use crate::credential::{Credential, SensitiveString};

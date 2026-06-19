@@ -293,6 +293,15 @@ pub struct ScanArgs {
     #[arg(long, value_name = "PATH|off")]
     pub autoroute_cache: Option<String>,
 
+    /// Explicit per-detector Bayesian calibration cache for confidence scoring.
+    ///
+    /// Normal scans are hermetic and ignore any default `keyhog calibrate`
+    /// cache unless this flag or `[system].calibration_cache` supplies a path.
+    /// The file must already exist and parse cleanly; damaged or missing
+    /// explicit caches fail before scanning so score changes are reproducible.
+    #[arg(long, value_name = "PATH")]
+    pub calibration_cache: Option<PathBuf>,
+
     /// Run this scan as an explicit autoroute calibration probe: benchmark
     /// parity-checked backend candidates and persist the fastest-correct
     /// decision for each workload bucket. Normal scans never benchmark on cache

@@ -35,6 +35,16 @@ fn home_temp_cache_dir(name: &str) -> (TempDir, String) {
     (root, cache_dir)
 }
 
+fn write_calibration_cache(dir: &TempDir, name: &str, detector_id: &str) -> String {
+    let cache = dir.path().join(name);
+    std::fs::write(
+        &cache,
+        format!(r#"{{"version":1,"detectors":{{"{detector_id}":{{"alpha":2,"beta":1}}}}}}"#),
+    )
+    .expect("write calibration cache");
+    cache.to_string_lossy().to_string()
+}
+
 #[test]
 fn configuration_doc_states_malformed_config_fails_closed() {
     let doc = include_str!(concat!(
@@ -93,6 +103,8 @@ fn config_effective_prints_and_exits_without_source() {
         "max_decode_bytes = 524288",
         "per_chunk_timeout_ms = off",
         "disabled_detectors = ",
+        "calibration_cache_path = <disabled>",
+        "calibration_entries = 0",
     ] {
         assert!(
             stdout.contains(required),
@@ -419,6 +431,37 @@ fn config_effective_prints_autoroute_cache_and_cli_overrides_toml() {
     assert!(
         stdout.contains("autoroute_cache_path = <disabled>"),
         "--autoroute-cache off must visibly disable autoroute persistence; stdout={stdout}"
+    );
+}
+
+#[test]
+fn config_effective_prints_calibration_cache_and_cli_overrides_toml() {
+    let config_root = TempDir::new().expect("config tempdir");
+    let cli_root = TempDir::new().expect("cli tempdir");
+    let config_cache =
+        write_calibration_cache(&config_root, "config-calibration.json", "config-id");
+    let cli_cache = write_calibration_cache(&cli_root, "cli-calibration.json", "cli-id");
+    let dir = TempDir::new().expect("tempdir");
+    let config_path = dir.path().join(".keyhog.toml");
+    std::fs::write(
+        &config_path,
+        format!(
+            "[system]\ncalibration_cache = {}\n",
+            toml::Value::String(config_cache)
+        ),
+    )
+    .expect("write config");
+
+    let config_path = config_path.to_string_lossy();
+    let (stdout, stderr, code) =
+        effective_config(&["--config", &config_path, "--calibration-cache", &cli_cache]);
+
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains(&format!("calibration_cache_path = {cli_cache}"))
+            && stdout.contains("calibration_entries = 1")
+            && stdout.contains("calibration_digest = "),
+        "--calibration-cache must be visible in effective config and override TOML; stdout={stdout}"
     );
 }
 

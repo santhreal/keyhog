@@ -1,6 +1,7 @@
 pub mod action_ci_contract;
 pub mod backend_prints_selected_backend;
 pub mod calibrate_show_header;
+pub mod calibration_cache_strict;
 pub mod cli_precision_boundaries;
 pub mod cli_precision_engine_config;
 pub mod cli_precision_mode;

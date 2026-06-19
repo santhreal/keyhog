@@ -399,6 +399,9 @@ impl ScanOrchestrator {
                 regex_dfa_limit: None,
                 hyperscan_cache_dir: None,
                 autoroute_cache_path: None,
+                calibration_cache_path: None,
+                calibration_entry_count: 0,
+                calibration_digest: 0,
                 aws_canary_accounts: Vec::new(),
                 scanner_tuning: keyhog_scanner::ScannerTuningConfig::default(),
                 allowlist: crate::orchestrator_config::ResolvedAllowlistConfig {

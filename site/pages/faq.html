@@ -41,8 +41,9 @@ fallback.</p>
 findings at adoption (often already-rotated leaks in git history), which
 they resolve with a <a href="baseline.html">baseline</a>, and then
 ~5 false positives per 100k LOC scanned thereafter. Calibrate with
-<code>keyhog calibrate</code> to drop per-detector confidence in your
-codebase further.</p>
+<code>keyhog calibrate</code>, then pass <code>--calibration-cache</code>
+or set <code>[system].calibration_cache</code>, to drop per-detector confidence
+in your codebase further.</p>
 
 <h2>What about secrets I want to allowlist (test fixtures, examples)?</h2>
 
