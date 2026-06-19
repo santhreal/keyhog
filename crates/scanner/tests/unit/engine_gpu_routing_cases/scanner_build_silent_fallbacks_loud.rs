@@ -24,12 +24,18 @@ fn phase2_prefilter_compile_failures_warn() {
     );
     assert!(
         src.contains("phase-2 RegexSet batch received out-of-range pattern index")
+            && src.contains("phase-2 always-active prefilter received out-of-range pattern index")
+            && src.contains("ASCII-folded phase-2 RegexSet received out-of-range pattern index")
             && src.contains("let mut valid_indices = Vec::with_capacity(chunk.len())")
             && src.contains("phase2_indices: valid_indices")
             && !src.contains(
                 ".filter_map(|&i| phase2_patterns.get(i).map(|(p, _)| p.regex.as_str()))"
             ),
         "RegexSet batch source entries and stored phase-2 indices must stay aligned"
+    );
+    assert!(
+        !src.contains(".filter_map(|&i| phase2_patterns.get(i))"),
+        "ASCII-folded alternate RegexSets must not filter-map corrupt indices out of alignment"
     );
     assert!(
         src.contains("truncated phase-2 RegexSet batch failed to compile"),
@@ -42,6 +48,18 @@ fn phase2_prefilter_compile_failures_warn() {
     assert!(
         src.contains("ASCII-folded phase-2 RegexSet failed to compile"),
         "ASCII-folded RegexSet compile failure must warn"
+    );
+    let phase2_hs = engine_src("phase2_hs.rs");
+    assert!(
+        phase2_hs.contains("HS always-active prefilter received out-of-range phase-2 index"),
+        "Hyperscan always-active prefilter must warn before ignoring corrupt phase-2 indices"
+    );
+    let phase2_gpu_dfa = engine_src("phase2_gpu_dfa.rs");
+    assert!(
+        phase2_gpu_dfa.contains(
+            "phase-2 GPU regex-DFA admission received out-of-range always-active pattern index"
+        ),
+        "GPU regex-DFA admission must warn before ignoring corrupt always-active indices"
     );
     // Every warn site must use tracing::warn!, not debug!/silent drop.
     assert!(

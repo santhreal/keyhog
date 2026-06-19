@@ -21,6 +21,11 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // those helpers private instead of widening the scanner API for white-box
     // source assertions.
     "engine/gpu_region_dispatch.rs",
+    // GPU regex-DFA admission tests exercise private catalog packing, replay,
+    // region attribution, and shader-program selection helpers. Keeping those
+    // tests co-located preserves the crate boundary instead of making GPU
+    // admission internals pub(crate) solely for test placement.
+    "engine/phase2_gpu_dfa.rs",
 ];
 
 /// True iff `path` ends with an allowlisted `src/`-relative path (component-wise,

@@ -30,22 +30,41 @@ impl Phase2AlwaysActivePrefilter {
         if always_active_indices.is_empty() {
             return None;
         }
-        // HS covers small chunks; RegexSet batches cover large/no-simd chunks.
-        #[cfg(feature = "simd")]
-        let hs = Phase2HsEngine::build(phase2_patterns, always_active_indices);
         // Keep batches homogeneous by case flags and homoglyph-variant status.
         let mut ci: Vec<usize> = Vec::new();
         let mut plain_homoglyph: Vec<usize> = Vec::new();
         let mut plain_other: Vec<usize> = Vec::new();
+        let mut valid_always_active_indices: Vec<usize> =
+            Vec::with_capacity(always_active_indices.len());
         for &index in always_active_indices {
             match phase2_patterns.get(index) {
-                Some((pattern, _)) if pattern.regex.is_case_insensitive() => ci.push(index),
-                Some((pattern, _)) if pattern.homoglyph_variant => plain_homoglyph.push(index),
-                Some(_) => plain_other.push(index),
-                // Out-of-range index (shouldn't happen): run it unconditionally.
-                None => {}
+                Some((pattern, _)) if pattern.regex.is_case_insensitive() => {
+                    valid_always_active_indices.push(index);
+                    ci.push(index);
+                }
+                Some((pattern, _)) if pattern.homoglyph_variant => {
+                    valid_always_active_indices.push(index);
+                    plain_homoglyph.push(index);
+                }
+                Some(_) => {
+                    valid_always_active_indices.push(index);
+                    plain_other.push(index);
+                }
+                None => {
+                    tracing::warn!(
+                        index,
+                        patterns = phase2_patterns.len(),
+                        "phase-2 always-active prefilter received out-of-range pattern index; invalid index ignored before batch construction"
+                    );
+                }
             }
         }
+        if valid_always_active_indices.is_empty() {
+            return None;
+        }
+        // HS covers small chunks; RegexSet batches cover large/no-simd chunks.
+        #[cfg(feature = "simd")]
+        let hs = Phase2HsEngine::build(phase2_patterns, &valid_always_active_indices);
         let mut batches = Vec::new();
         let mut ungated_indices = Vec::new();
         let mut ci_gate_lits: Vec<Vec<u8>> = Vec::new();
@@ -77,8 +96,11 @@ impl Phase2AlwaysActivePrefilter {
             &mut ungated_indices,
             &mut plain_gate_lits,
         );
-        let combined_gate =
-            Self::build_combined_gate(phase2_patterns, always_active_indices, &ungated_indices);
+        let combined_gate = Self::build_combined_gate(
+            phase2_patterns,
+            &valid_always_active_indices,
+            &ungated_indices,
+        );
         Some(Self {
             batches,
             ungated_indices,
@@ -442,14 +464,7 @@ impl Phase2AlwaysActivePrefilter {
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         indices: &[usize],
     ) -> Option<regex::RegexSet> {
-        let folded: Vec<String> = indices
-            .iter()
-            .filter_map(|&i| phase2_patterns.get(i))
-            .map(|(p, _)| p.regex.as_str().chars().filter(char::is_ascii).collect())
-            .collect();
-        if folded.len() != indices.len() {
-            return None;
-        }
+        let folded = Self::ascii_folded_sources(phase2_patterns, indices, false)?;
         match regex::RegexSetBuilder::new(&folded)
             .case_insensitive(false)
             .size_limit(Self::BATCH_SIZE_LIMIT_BYTES)
@@ -476,17 +491,7 @@ impl Phase2AlwaysActivePrefilter {
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         indices: &[usize],
     ) -> Option<regex::RegexSet> {
-        let folded: Vec<String> = indices
-            .iter()
-            .filter_map(|&i| phase2_patterns.get(i))
-            .map(|(p, _)| {
-                let f: String = p.regex.as_str().chars().filter(char::is_ascii).collect();
-                truncate_for_prefilter(&f).unwrap_or(f) // LAW10: truncation is a prefilter perf-opt over a SUPERSET; un-truncatable => full form, recall-safe (never under-matches)
-            })
-            .collect();
-        if folded.len() != indices.len() {
-            return None;
-        }
+        let folded = Self::ascii_folded_sources(phase2_patterns, indices, true)?;
         match regex::RegexSetBuilder::new(&folded)
             .case_insensitive(false)
             .size_limit(Self::BATCH_SIZE_LIMIT_BYTES)
@@ -503,6 +508,37 @@ impl Phase2AlwaysActivePrefilter {
                 None
             }
         }
+    }
+
+    fn ascii_folded_sources(
+        phase2_patterns: &[(CompiledPattern, Vec<String>)],
+        indices: &[usize],
+        truncate: bool,
+    ) -> Option<Vec<String>> {
+        let mut folded = Vec::with_capacity(indices.len());
+        for &index in indices {
+            let Some((pattern, _)) = phase2_patterns.get(index) else {
+                tracing::warn!(
+                    index,
+                    patterns = phase2_patterns.len(),
+                    truncate,
+                    "ASCII-folded phase-2 RegexSet received out-of-range pattern index; folded alternate disabled"
+                );
+                return None;
+            };
+            let source: String = pattern
+                .regex
+                .as_str()
+                .chars()
+                .filter(char::is_ascii)
+                .collect();
+            if truncate {
+                folded.push(truncate_for_prefilter(&source).unwrap_or(source)); // LAW10: truncation is a prefilter perf-opt over a SUPERSET; un-truncatable => full form, recall-safe (never under-matches)
+            } else {
+                folded.push(source);
+            }
+        }
+        Some(folded)
     }
 
     /// Mark every always-active phase-2 pattern whose regex can match `match_text`.

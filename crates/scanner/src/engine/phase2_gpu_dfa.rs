@@ -273,15 +273,22 @@ fn prefixless_always_active_candidates(
     phase2_patterns: &[(CompiledPattern, Vec<String>)],
     always_active_indices: &[usize],
 ) -> Vec<usize> {
-    always_active_indices
-        .iter()
-        .copied()
-        .filter(|&idx| {
-            phase2_patterns
-                .get(idx)
-                .is_some_and(|(pattern, _)| gate_prefix_literals(pattern.regex.as_str()).is_none())
-        })
-        .collect()
+    let mut candidates = Vec::with_capacity(always_active_indices.len());
+    for &idx in always_active_indices {
+        let Some((pattern, _)) = phase2_patterns.get(idx) else {
+            tracing::warn!(
+                target: "keyhog::gpu",
+                index = idx,
+                patterns = phase2_patterns.len(),
+                "phase-2 GPU regex-DFA admission received out-of-range always-active pattern index; invalid index ignored and CPU admission remains authoritative"
+            );
+            continue;
+        };
+        if gate_prefix_literals(pattern.regex.as_str()).is_none() {
+            candidates.push(idx);
+        }
+    }
+    candidates
 }
 
 fn prioritized_phase2_gpu_dfa_candidates(
