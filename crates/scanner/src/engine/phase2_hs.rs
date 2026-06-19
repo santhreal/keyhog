@@ -78,11 +78,19 @@ impl Phase2HsEngine {
         }
         // `unsupported` indexes `refs`; map back to fallback indices and keep
         // each on its own compiled regex (the LOUD host path, Law 10).
-        let dropped: Vec<(usize, LazyRegex)> = unsupported
-            .iter()
-            .filter_map(|&i| refs.get(i).map(|r| r.0))
-            .map(|phase2_idx| (phase2_idx, phase2_patterns[phase2_idx].0.regex.clone()))
-            .collect();
+        let mut dropped = Vec::new();
+        for &i in &unsupported {
+            let Some((phase2_idx, _, _, _)) = refs.get(i).copied() else {
+                tracing::warn!(
+                    target: "keyhog::phase2",
+                    unsupported_id = i,
+                    refs = refs.len(),
+                    "HS always-active prefilter returned unsupported pattern id outside refs; using RegexSet path",
+                );
+                return None;
+            };
+            dropped.push((phase2_idx, phase2_patterns[phase2_idx].0.regex.clone()));
+        }
         if !dropped.is_empty() {
             tracing::warn!(
                 target: "keyhog::phase2",

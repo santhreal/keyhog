@@ -91,12 +91,18 @@ pub(crate) fn build_simd_scanner(
             // Map the unsupported hs_ids back to the ac_map indices that
             // share each dropped regex. These never match under HS, so the
             // caller reroutes them to the keyword fallback.
-            let unsupported_ac: Vec<usize> = unsupported
-                .iter()
-                .filter_map(|&hs_id| index_map.get(hs_id))
-                .flatten()
-                .copied()
-                .collect();
+            let mut unsupported_ac = Vec::new();
+            for &hs_id in &unsupported {
+                let Some(indices) = index_map.get(hs_id) else {
+                    tracing::warn!(
+                        hs_id,
+                        unique = hs_patterns.len(),
+                        "HS compile returned unsupported pattern id outside the deduped AC table; disabling SIMD prefilter"
+                    );
+                    return None;
+                };
+                unsupported_ac.extend(indices.iter().copied());
+            }
             tracing::info!(
                 compiled = scanner.pattern_count(),
                 unsupported = unsupported.len(),

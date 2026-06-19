@@ -8,6 +8,11 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
     let backend =
         std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/simd/backend.rs"))
             .expect("simd backend source readable");
+    let engine_backend_prepared = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/backend_prepared.rs"
+    ))
+    .expect("engine backend_prepared source readable");
     let engine_scan = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/engine/scan_coalesced.rs"
@@ -45,6 +50,16 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
             && backend.contains("Vec::with_capacity(scratch_count)")
             && backend.contains("scratch_pool.push("),
         "Hyperscan scratches must be preallocated per shard instead of allocated opportunistically during scan coverage"
+    );
+    assert!(
+        engine_backend_prepared
+            .contains("HS compile returned unsupported pattern id outside the deduped AC table")
+            && !engine_backend_prepared.contains(".filter_map(|&hs_id| index_map.get(hs_id))")
+            && phase2_hs.contains(
+                "HS always-active prefilter returned unsupported pattern id outside refs"
+            )
+            && !phase2_hs.contains(".filter_map(|&i| refs.get(i).map(|r| r.0))"),
+        "Hyperscan unsupported-id mapping must fail closed instead of silently dropping unmappable backend ids"
     );
     assert!(
         scan.contains("static SCRATCH_TLS")
