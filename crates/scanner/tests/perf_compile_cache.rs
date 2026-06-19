@@ -18,7 +18,7 @@
 //! (~5 ms measured); ~99.7% of the cold compile is the serial Hyperscan C-side
 //! NFA/DFA build.
 //!
-//! ## Measured (release-fast, 32-core 9950X, KEYHOG_NO_GPU=1, HS disk cache cleared)
+//! ## Measured (release-fast, 32-core 9950X, GPU policy off, HS disk cache cleared)
 //!
 //!   build_compile_state (rayon, parallel) .......   ~5 ms   (already fast)
 //!   serial Builder::build over 899 patterns ..... ~1600 ms  (the defect)
@@ -72,6 +72,7 @@
 mod support;
 use support::paths::detector_dir;
 
+use keyhog_scanner::gpu::{gpu_runtime_policy, set_gpu_runtime_policy, GpuRuntimePolicy};
 use keyhog_scanner::CompiledScanner;
 use std::time::{Duration, Instant};
 
@@ -88,7 +89,7 @@ const MAX_FULL_OVER_HALF_RATIO: f64 = 1.4;
 const MIN_CORES_FOR_RATIO: usize = 4;
 
 fn isolated_cache_dir(tag: &str) -> std::path::PathBuf {
-    // simd.rs validates that KEYHOG_CACHE_DIR lives under $HOME; anchor the
+    // The SIMD backend validates explicit cache dirs under $HOME; anchor the
     // isolated dir there so the cache-clear-per-iteration logic below is the
     // ONLY thing controlling cold vs warm.
     let home = std::env::var_os("HOME").expect("HOME must be set to run this perf test");
@@ -106,14 +107,31 @@ fn best_of<F: FnMut() -> Duration>(k: usize, mut f: F) -> Duration {
     (0..k).map(|_| f()).min().expect("k >= 1")
 }
 
+struct GpuPolicyGuard(GpuRuntimePolicy);
+
+impl GpuPolicyGuard {
+    fn set(policy: GpuRuntimePolicy) -> Self {
+        let prior = gpu_runtime_policy();
+        set_gpu_runtime_policy(policy);
+        Self(prior)
+    }
+}
+
+impl Drop for GpuPolicyGuard {
+    fn drop(&mut self) {
+        set_gpu_runtime_policy(self.0);
+    }
+}
+
 #[test]
 fn cold_compile_must_parallelize_across_pattern_shards() {
     // Force the CPU/SIMD path: this tripwire is about the Hyperscan compile,
-    // not GPU init. KEYHOG_NO_GPU=1 keeps `compile()` from touching CUDA/wgpu.
-    std::env::set_var("KEYHOG_NO_GPU", "1");
+    // not GPU init. The explicit disabled policy keeps `compile()` from
+    // touching CUDA/wgpu.
+    let _gpu_policy = GpuPolicyGuard::set(GpuRuntimePolicy::Disabled);
 
     let dir = isolated_cache_dir("shard-ratio");
-    std::env::set_var("KEYHOG_CACHE_DIR", &dir);
+    keyhog_scanner::set_hyperscan_cache_dir(Some(dir.clone()));
 
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
     let n = detectors.len();
@@ -168,8 +186,11 @@ fn cold_compile_must_parallelize_across_pattern_shards() {
             "perf_compile_cache: SKIP ratio assertion - {cores} cores (< {MIN_CORES_FOR_RATIO}); \
              parallel shard compile cannot show a speedup on this machine."
         );
+        keyhog_scanner::set_hyperscan_cache_dir(None);
         return;
     }
+
+    keyhog_scanner::set_hyperscan_cache_dir(None);
 
     assert!(
         ratio <= MAX_FULL_OVER_HALF_RATIO,

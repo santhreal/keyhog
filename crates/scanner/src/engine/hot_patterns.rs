@@ -6,6 +6,8 @@ use crate::context;
 use keyhog_core::{MatchLocation, RawMatch, Severity};
 #[cfg(feature = "simdsieve")]
 use std::collections::HashMap;
+#[cfg(feature = "simdsieve")]
+use std::sync::Arc;
 
 #[cfg(feature = "simdsieve")]
 impl CompiledScanner {
@@ -35,10 +37,6 @@ impl CompiledScanner {
         };
 
         for offset in sieve {
-            if scan_state.matches.len() >= self.config.max_matches_per_chunk {
-                break;
-            }
-
             // First-byte (plus one disambiguating byte) dispatch instead of
             // an O(8) linear re-compare against every HOT_PATTERNS entry at
             // every sieve hit. SimdSieve already located the hit but only
@@ -95,9 +93,9 @@ impl CompiledScanner {
                             || byte == b'}'
                             || byte < 0x20
                     })
-                    .unwrap_or(candidate.len());
+                    .unwrap_or(candidate.len()); // LAW10: search/boundary miss => span end (whole remainder), recall-safe boundary default
 
-                let credential = std::str::from_utf8(&candidate[..cred_end]).unwrap_or("");
+                let credential = std::str::from_utf8(&candidate[..cred_end]).unwrap_or(""); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
 
                 // Precise-regex gate. The literal-prefix hit + length floor
                 // below is a fast prefilter, NOT proof of a real token: a
@@ -174,7 +172,7 @@ impl CompiledScanner {
                 // chars) cleared. 26-floor leaves the first-segment
                 // shape intact while killing the JS-property FP.
                 const PER_PATTERN_MIN_LEN: &[usize] = &[40, 20, 20, 20, 26, 16, 16, 16];
-                let min_len = PER_PATTERN_MIN_LEN.get(pattern_idx).copied().unwrap_or(8);
+                let min_len = PER_PATTERN_MIN_LEN.get(pattern_idx).copied().unwrap_or(8); // LAW10: bounds-checked lookup; out-of-range => documented default (total fn), recall-safe
                 if credential.len() < min_len
                     || crate::pipeline::should_suppress_known_example_credential_with_source(
                         credential,
@@ -237,14 +235,7 @@ impl CompiledScanner {
                     {
                         return true;
                     }
-                    // `/` AND `\\` for Windows paths - keeps the
-                    // hot-pattern base64 filename gate working when
-                    // the scanner runs against a Windows checkout.
-                    let basename = bytes
-                        .iter()
-                        .rposition(|&b| b == b'/' || b == b'\\')
-                        .map(|i| &bytes[i + 1..])
-                        .unwrap_or(bytes);
+                    let basename = crate::platform_compat::path_basename_bytes(bytes);
                     (crate::ascii_ci::starts_with_ignore_ascii_case(basename, b"base64_")
                         || crate::ascii_ci::ci_find(basename, b"base64_string"))
                         && !crate::ascii_ci::ends_with_ignore_ascii_case(basename, b".json")
@@ -267,7 +258,7 @@ impl CompiledScanner {
                 // keeps the prefix floor. Done before the metadata interning
                 // below so a dropped token pays for none of it.
                 let base_confidence =
-                    crate::confidence::known_prefix_confidence_floor(credential).unwrap_or(0.7);
+                    crate::confidence::known_prefix_confidence_floor(credential).unwrap_or(0.7); // LAW10: empty/absent => documented numeric/sentinel default, recall-safe
                 let Some(confidence) =
                     crate::checksum::checksum_adjusted_confidence(base_confidence, credential)
                 else {
@@ -276,69 +267,77 @@ impl CompiledScanner {
 
                 let line = crate::pipeline::match_line_number(preprocessed, line_offsets, offset);
 
-                // Clone the pre-interned metadata triple by slot index instead
-                // of re-hashing the three `&'static str` constants through the
-                // CHD interner on every hot hit (PERF-locality_intern-1). The
-                // table is built once at construction (compile.rs) from these
-                // same constants via `static_intern.lookup`, so the emitted
-                // Arc<str>s are byte-identical to the old `intern_metadata`
-                // results. Index-parallel with HOT_PATTERN_NAMES; the parallel-
-                // array invariant is locked by unit tests in the parent module.
-                let (detector_id, detector_name, service) = {
-                    let m = &self.hot_metadata_by_index[pattern_idx];
-                    (m.0.clone(), m.1.clone(), m.2.clone())
-                };
-                let credential_shared = scan_state.intern_credential(credential);
-                let source = scan_state.intern_metadata(&chunk.metadata.source_type);
-                let file_path = chunk
-                    .metadata
-                    .path
-                    .as_ref()
-                    .map(|path| scan_state.intern_metadata(path));
-                let commit = chunk
-                    .metadata
-                    .commit
-                    .as_ref()
-                    .map(|commit| scan_state.intern_metadata(commit));
-                let author = chunk
-                    .metadata
-                    .author
-                    .as_ref()
-                    .map(|author| scan_state.intern_metadata(author));
-                let date = chunk
-                    .metadata
-                    .date
-                    .as_ref()
-                    .map(|date| scan_state.intern_metadata(date));
-
-                scan_state.push_match(
-                    RawMatch {
-                        credential_hash: crate::sha256_hash(credential),
-                        detector_id,
-                        detector_name,
-                        service,
-                        severity: Severity::Critical,
-                        credential: credential_shared,
-                        companions: HashMap::new(),
-                        location: MatchLocation {
-                            source,
-                            file_path,
-                            // Absolute file coordinates: window-local line +
-                            // chunk base line, window-local offset + chunk
-                            // base offset. The hot-pattern fast path emits
-                            // directly (no build_raw_match), so it must apply
-                            // both bases itself like every other emit site;
-                            // both are 0 on non-windowed chunks.
-                            line: Some(line + chunk.metadata.base_line),
-                            offset: offset + chunk.metadata.base_offset,
-                            commit,
-                            author,
-                            date,
-                        },
-                        entropy: None,
+                let metadata = &self.hot_metadata_by_index[pattern_idx];
+                let absolute_line = line + chunk.metadata.base_line;
+                let absolute_offset = offset + chunk.metadata.base_offset;
+                scan_state.push_match_lazy(
+                    crate::scanner_config::RawMatchPriority {
                         confidence: Some(confidence),
+                        severity: Severity::Critical,
+                        detector_id: metadata.0.as_ref(),
+                        credential,
+                        offset: absolute_offset,
+                        line: Some(absolute_line),
                     },
                     self.config.max_matches_per_chunk,
+                    |scan_state| {
+                        // Clone the pre-interned metadata triple only after
+                        // heap admission. Capped hot scans can fire many more
+                        // candidates than they retain; rejected candidates must
+                        // not still pay three metadata refcount bumps.
+                        let detector_id = Arc::clone(&metadata.0);
+                        let detector_name = Arc::clone(&metadata.1);
+                        let service = Arc::clone(&metadata.2);
+                        let credential_shared = scan_state.intern_credential(credential);
+                        let source = scan_state.intern_metadata(&chunk.metadata.source_type);
+                        let file_path = chunk
+                            .metadata
+                            .path
+                            .as_ref()
+                            .map(|path| scan_state.intern_metadata(path));
+                        let commit = chunk
+                            .metadata
+                            .commit
+                            .as_ref()
+                            .map(|commit| scan_state.intern_metadata(commit));
+                        let author = chunk
+                            .metadata
+                            .author
+                            .as_ref()
+                            .map(|author| scan_state.intern_metadata(author));
+                        let date = chunk
+                            .metadata
+                            .date
+                            .as_ref()
+                            .map(|date| scan_state.intern_metadata(date));
+
+                        RawMatch {
+                            credential_hash: crate::sha256_hash(credential),
+                            detector_id,
+                            detector_name,
+                            service,
+                            severity: Severity::Critical,
+                            credential: credential_shared,
+                            companions: HashMap::new(),
+                            location: MatchLocation {
+                                source,
+                                file_path,
+                                // Absolute file coordinates: window-local line +
+                                // chunk base line, window-local offset + chunk
+                                // base offset. The hot-pattern fast path emits
+                                // directly (no build_raw_match), so it must apply
+                                // both bases itself like every other emit site;
+                                // both are 0 on non-windowed chunks.
+                                line: Some(absolute_line),
+                                offset: absolute_offset,
+                                commit,
+                                author,
+                                date,
+                            },
+                            entropy: None,
+                            confidence: Some(confidence),
+                        }
+                    },
                 );
                 // A single sieve offset can match at most one hot literal
                 // (the 8 are mutually-exclusive prefixes), so there is no

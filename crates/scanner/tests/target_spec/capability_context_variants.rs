@@ -1,0 +1,347 @@
+//! CAPABILITY TARGET-SPEC: per-detector context-variant recall.
+//!
+//! For EVERY credential-sufficient detector in the contract corpus this lane
+//! takes the canonical credential and re-plants it in the surrounding contexts
+//! real leaks live in — an env assignment, a YAML value, a JSON field, inside a
+//! line of source code, wrapped in single/double quotes, padded with leading
+//! whitespace — then asserts the SAME credential still surfaces under the real
+//! scan path. The contract proved the credential fires in ONE context; the
+//! product claim is that it fires in the contexts an operator actually scans.
+//!
+//! Each (detector, variant) that does NOT surface is a tracked recall gap. A
+//! large fraction are expected RED today: many detectors anchor on a single
+//! quoting/keyword shape and miss the others. Those reds are the worklist; they
+//! MUST NOT be weakened to pass (Law 9). The lane is sound because every variant
+//! is a BYTE-PRESERVING re-context of a credential-sufficient token — the
+//! credential bytes are untouched, so a disappearance is a context-sensitivity
+//! hole, never a fixture artifact (see mod.rs sufficiency partition).
+
+use crate::target_spec::{
+    join_capped, load_canonicals, scan, sufficient_canonicals, surfaces, Canonical,
+};
+
+/// One named context variant: given a raw credential, produce a body that
+/// embeds it, plus the logical path the body would live at.
+struct Variant {
+    name: &'static str,
+    build: fn(&str) -> (String, String),
+}
+
+/// The realistic-context variant battery. Each must preserve the credential
+/// bytes verbatim (no truncation, no case change) so the lane stays sound.
+fn variants() -> Vec<Variant> {
+    vec![
+        Variant {
+            name: "env-export",
+            build: |cred| {
+                (
+                    format!("export SERVICE_API_TOKEN={cred}\n"),
+                    "deploy/.env".to_string(),
+                )
+            },
+        },
+        Variant {
+            name: "env-quoted",
+            build: |cred| {
+                (
+                    format!("SERVICE_API_TOKEN=\"{cred}\"\n"),
+                    "deploy/.env".to_string(),
+                )
+            },
+        },
+        Variant {
+            name: "yaml-value",
+            build: |cred| {
+                (
+                    format!("config:\n  service:\n    api_token: {cred}\n"),
+                    "k8s/values.yaml".to_string(),
+                )
+            },
+        },
+        Variant {
+            name: "yaml-quoted",
+            build: |cred| {
+                (
+                    format!("config:\n  service:\n    api_token: \"{cred}\"\n"),
+                    "k8s/values.yaml".to_string(),
+                )
+            },
+        },
+        Variant {
+            name: "json-field",
+            build: |cred| {
+                (
+                    format!("{{\n  \"service\": {{\n    \"apiToken\": \"{cred}\"\n  }}\n}}\n"),
+                    "settings/config.json".to_string(),
+                )
+            },
+        },
+        Variant {
+            name: "code-assignment",
+            build: |cred| {
+                (
+                    format!("const client = new Client({{ token: \"{cred}\" }});\n"),
+                    "src/client.js".to_string(),
+                )
+            },
+        },
+        Variant {
+            name: "code-call-arg",
+            build: |cred| {
+                (
+                    format!(
+                        "    response = requests.get(url, headers={{'Authorization': '{cred}'}})\n"
+                    ),
+                    "src/fetch.py".to_string(),
+                )
+            },
+        },
+        Variant {
+            name: "single-quoted",
+            build: |cred| (format!("token = '{cred}'\n"), "src/config.rb".to_string()),
+        },
+        Variant {
+            name: "leading-whitespace",
+            build: |cred| (format!("\t\t  {cred}\n"), "notes/scratch.txt".to_string()),
+        },
+        Variant {
+            name: "ini-section",
+            build: |cred| {
+                (
+                    format!("[credentials]\napi_token = {cred}\n"),
+                    "app.ini".to_string(),
+                )
+            },
+        },
+    ]
+}
+
+/// Recall floor across the whole sufficient set: the fraction of (detector,
+/// variant) pairs that surface the credential. This is the TARGET — keyhog
+/// SHOULD recover a credential-sufficient token in every realistic context, so
+/// the target ratio is 1.0. It is measured against the real engine and is
+/// expected BELOW 1.0 today; the assertion fails until the gap closes.
+///
+/// The exact ratio is printed so the integrator can watch it climb as detectors
+/// widen. We pin the TARGET (>= 0.99), not today's number — that is the whole
+/// point of a target-spec test (Law 6): it stays red until the product meets the
+/// bar, and is never lowered to match the current value (Law 9).
+const TARGET_CONTEXT_RECALL: f64 = 0.99;
+
+#[test]
+fn every_sufficient_detector_recovers_credential_in_every_context() {
+    let all = load_canonicals();
+    let sufficient = sufficient_canonicals(&all);
+    assert!(
+        sufficient.len() >= 150,
+        "expected >= 150 credential-sufficient detectors to context-vary, found {} \
+         (the contract corpus or sufficiency partition shrank)",
+        sufficient.len()
+    );
+
+    let variants = variants();
+    let mut total = 0usize;
+    let mut surfaced = 0usize;
+    let mut failures: Vec<String> = Vec::new();
+
+    for canon in &sufficient {
+        for variant in &variants {
+            let (body, path) = (variant.build)(&canon.credential);
+            // Soundness guard: the credential bytes MUST survive the re-context
+            // verbatim, else a miss would be an artifact of the variant, not a
+            // detector hole.
+            assert!(
+                body.contains(&canon.credential),
+                "variant {} mangled the credential bytes for {}",
+                variant.name,
+                canon.detector_id
+            );
+            let matches = scan(&body, &path);
+            total += 1;
+            if surfaces(&matches, &canon.credential) {
+                surfaced += 1;
+            } else {
+                failures.push(format!(
+                    "{} :: variant `{}` lost the credential (path {path})",
+                    canon.detector_id, variant.name
+                ));
+            }
+        }
+    }
+
+    let ratio = surfaced as f64 / total.max(1) as f64;
+    println!(
+        "context-variant recall: {surfaced}/{total} = {ratio:.4} \
+         ({} sufficient detectors x {} variants); {} failing pairs",
+        sufficient.len(),
+        variants.len(),
+        failures.len()
+    );
+
+    assert!(
+        ratio >= TARGET_CONTEXT_RECALL,
+        "context-variant recall {surfaced}/{total} = {ratio:.4} is below the target \
+         {TARGET_CONTEXT_RECALL:.2}; {} (detector,variant) pairs lose a credential-sufficient \
+         token when it is re-contexted into realistic env/yaml/json/code shapes. Each is a \
+         narrow-detector recall gap to close (widen the keyword set / quoting tolerance), \
+         NOT a test to weaken:\n  - {}",
+        failures.len(),
+        join_capped(&failures, 60)
+    );
+}
+
+/// Rotated-key variant: a credential that is structurally the same shape as the
+/// canonical one but with a freshly-randomised body (a "rotated" key) must still
+/// fire. A detector that only matches the EXACT canonical bytes (an over-fit
+/// regex or an accidental literal) is broken — real keys rotate. We rotate only
+/// the high-entropy alphanumeric run inside the credential, preserving every
+/// structural/prefix character, so the rotated token stays the same detector's
+/// shape.
+#[test]
+fn every_sufficient_detector_fires_on_a_rotated_key() {
+    let all = load_canonicals();
+    let sufficient = sufficient_canonicals(&all);
+
+    let mut total = 0usize;
+    let mut surfaced = 0usize;
+    let mut failures: Vec<String> = Vec::new();
+
+    for canon in &sufficient {
+        let Some(rotated) = rotate_body(&canon.credential) else {
+            // No rotatable alphanumeric run of length >= 8 — e.g. a pure
+            // structural token. Skip: there is nothing to rotate without
+            // changing the shape. (Counted in `skipped`.)
+            continue;
+        };
+        // Plant the rotated token in the SAME minimal context the contract used,
+        // so only the body bytes differ from the proven-firing case.
+        let body = canon.canonical_text.replace(&canon.credential, &rotated);
+        if !body.contains(&rotated) {
+            continue; // credential not a literal substring of its own text; skip.
+        }
+        let matches = scan(&body, "rotated/secret.env");
+        total += 1;
+        if surfaces(&matches, &rotated) {
+            surfaced += 1;
+        } else {
+            failures.push(format!(
+                "{} :: rotated body `{}` lost (canonical fired, rotated did not)",
+                canon.detector_id, rotated
+            ));
+        }
+    }
+
+    let ratio = surfaced as f64 / total.max(1) as f64;
+    println!(
+        "rotated-key recall: {surfaced}/{total} = {ratio:.4}; {} failing detectors",
+        failures.len()
+    );
+    assert!(
+        total >= 150,
+        "expected >= 150 rotatable credential-sufficient detectors, ran {total}"
+    );
+    assert!(
+        ratio >= TARGET_CONTEXT_RECALL,
+        "rotated-key recall {surfaced}/{total} = {ratio:.4} below target {TARGET_CONTEXT_RECALL:.2}; \
+         these detectors fail on a rotated key (over-fit to the canonical body — a real key \
+         rotation would slip past keyhog):\n  - {}",
+        join_capped(&failures, 60)
+    );
+}
+
+/// Replace the longest alphanumeric run (>= 8 chars) inside `cred` with a body
+/// of the SAME length drawn from the same character classes, deterministically
+/// (a fixed pseudo-random shift) so the test is reproducible. Returns `None`
+/// when there is no rotatable run. Preserves prefixes/suffixes/separators so the
+/// detector's structural anchor is untouched.
+fn rotate_body(cred: &str) -> Option<String> {
+    let bytes = cred.as_bytes();
+    let mut best: Option<(usize, usize)> = None; // (start, len)
+    let mut run_start = None;
+    for (i, b) in bytes.iter().enumerate() {
+        let alnum = b.is_ascii_alphanumeric();
+        match (alnum, run_start) {
+            (true, None) => run_start = Some(i),
+            (false, Some(s)) => {
+                let len = i - s;
+                if best.map_or(true, |(_, bl)| len > bl) {
+                    best = Some((s, len));
+                }
+                run_start = None;
+            }
+            _ => {}
+        }
+    }
+    if let Some(s) = run_start {
+        let len = bytes.len() - s;
+        if best.map_or(true, |(_, bl)| len > bl) {
+            best = Some((s, len));
+        }
+    }
+    let (start, len) = best?;
+    if len < 8 {
+        return None;
+    }
+    let mut out = cred.as_bytes().to_vec();
+    for (k, b) in out[start..start + len].iter_mut().enumerate() {
+        // Deterministic rotation within the same class so digits stay digits,
+        // upper stays upper, lower stays lower (preserves shape constraints).
+        let shift = ((k * 7 + 3) % 23) as u8;
+        if b.is_ascii_digit() {
+            *b = b'0' + ((*b - b'0' + shift) % 10);
+        } else if b.is_ascii_uppercase() {
+            *b = b'A' + ((*b - b'A' + shift) % 26);
+        } else if b.is_ascii_lowercase() {
+            *b = b'a' + ((*b - b'a' + shift) % 26);
+        }
+    }
+    // Guarantee the rotated body actually differs from the original.
+    let rotated = String::from_utf8(out).ok()?;
+    (rotated != cred).then_some(rotated)
+}
+
+/// Population floor + visibility: how many detectors are credential-sufficient
+/// at all. A detector that is NOT sufficient (needs a companion/keyword anchor)
+/// is a separate, weaker class — this prints the partition so the integrator
+/// sees how much of the 900-detector set ships a self-firing shape.
+#[test]
+fn sufficiency_partition_is_reported_and_bounded() {
+    let all = load_canonicals();
+    let sufficient = sufficient_canonicals(&all);
+    let total = all.len();
+    let suff = sufficient.len();
+    let ratio = suff as f64 / total.max(1) as f64;
+
+    let insufficient: Vec<&Canonical> = all
+        .iter()
+        .filter(|c| !sufficient.iter().any(|s| s.detector_id == c.detector_id))
+        .collect();
+
+    println!(
+        "credential-sufficient: {suff}/{total} = {ratio:.4}; \
+         {} detectors NEED surrounding context to fire on their own canonical credential",
+        insufficient.len()
+    );
+
+    // TARGET: a strong secret scanner's detectors should be majority
+    // credential-sufficient (distinctive prefix/shape, no anchor needed). The
+    // target is 0.75; today it is lower because ~half the corpus is
+    // keyword-anchored generic shapes (uuid/hex/base64 bodies) that only fire
+    // next to a `key=` token — exactly the CredData generation gap. This pins
+    // that as a visible target, not a passing fact.
+    assert!(
+        ratio >= 0.75,
+        "only {suff}/{total} = {ratio:.4} of detectors fire on their canonical credential \
+         WITHOUT surrounding context; target is 0.75. The {} context-dependent detectors are \
+         the CredData generation gap (keyword-anchored hex/uuid/base64 bodies that never \
+         produce a candidate on their own bytes):\n  - {}",
+        insufficient.len(),
+        join_capped(
+            &insufficient
+                .iter()
+                .map(|c| c.detector_id.clone())
+                .collect::<Vec<_>>(),
+            80
+        )
+    );
+}

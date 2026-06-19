@@ -15,7 +15,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use keyhog_scanner::engine::segment_attribution::{
+use keyhog_scanner::testing::segment_attribution::{
     map_offsets_to_segments, GlobalMatch, Segment, SegmentAttributionError,
 };
 
@@ -98,7 +98,7 @@ fn gpu_dispatch_failures_preserve_operator_visible_reasons() {
 fn gpu_self_test_can_report_recorded_degrade_reason() {
     let engine = engine_src("src/engine/mod.rs");
     let api = engine_src("src/engine/compiled_api.rs");
-    let gpu = engine_src("src/gpu.rs");
+    let gpu_self_test = engine_src("src/gpu/self_test.rs");
     assert!(
         engine.contains("gpu_last_degrade_reason"),
         "engine must hold the gpu_last_degrade_reason slot"
@@ -108,22 +108,24 @@ fn gpu_self_test_can_report_recorded_degrade_reason() {
         "a public last_gpu_degrade_reason() accessor must expose the recorded reason"
     );
     assert!(
-        gpu.contains("last_gpu_degrade_reason()"),
+        gpu_self_test.contains("last_gpu_degrade_reason()"),
         "the GPU self-test must read the reason via last_gpu_degrade_reason(), not stderr"
     );
 }
 
-/// Unchanged from the pre-consolidation gate: the AC GPU plain-append triple
-/// program (still built in `gpu_lazy.rs`) must bind its atomic slot once so
-/// pattern/start/end land in the same match slot.
+/// The stale AC GPU bounded-ranges builder was deleted as a dead route. Keep
+/// this gate pointed at the current live invariant: `gpu_lazy.rs` owns only the
+/// GpuLiteralSet cache path, while the megakernel owns batched on-GPU AC.
 #[test]
-fn gpu_ac_plain_append_binds_one_atomic_slot_for_triple() {
+fn gpu_lazy_keeps_removed_ac_program_dead_and_literal_set_live() {
     let lazy = engine_src("src/engine/gpu_lazy.rs");
     assert!(
-        lazy.contains("fn append_match_bound_slot")
-            && lazy.contains("Node::let_bind(\n            slot_name,\n            Expr::atomic_add")
-            && lazy.contains("Expr::var(slot_name)")
-            && lazy.contains("build_ac_bounded_ranges_program_bound_atomic"),
-        "AC GPU plain append must bind atomic_add once so pattern/start/end are written to the same match slot"
+        lazy.contains("GpuLiteralSet::compile")
+            && lazy.contains("cached_load_or_compile")
+            && lazy.contains("ac_gpu_program")
+            && lazy.contains("removed as dead")
+            && !lazy.contains("build_ac_bounded_ranges_program_bound_atomic")
+            && !lazy.contains("fn append_match_bound_slot"),
+        "gpu_lazy.rs must keep the old bounded-ranges AC program dead and expose only the live GpuLiteralSet cache path"
     );
 }

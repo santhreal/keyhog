@@ -3,7 +3,7 @@ use super::ExtractedPair;
 /// Parse Terraform / HCL `variable "<name>" { default = "<value>" }`
 /// blocks, flat `.tfvars` assignments, and simple `locals { x = "v" }`
 /// assignment shapes into `(context, value)` pairs.
-pub fn parse_hcl(text: &str) -> Vec<ExtractedPair> {
+pub(crate) fn parse_hcl(text: &str) -> Vec<ExtractedPair> {
     let mut pairs = Vec::new();
     let lines: Vec<&str> = text.lines().collect();
     let mut index = 0;

@@ -1,21 +1,51 @@
 //! Pre-decoding extraction of encoded values (Base64, Hex, URL, etc.).
 
-/// MEASUREMENT (env `KEYHOG_PROFILE_EXTRACT=1`): call count + total bytes + wall
-/// time of `extract_encoded_values`, to size the redundant-extraction lever
-/// (it's called ~5-6× per chunk on identical input by base64/hex/url/caesar/
-/// reverse). `extract_profile_dump()` prints + resets. Zero-cost unset.
+/// MEASUREMENT (`keyhog scan --profile`): call count + total bytes + wall time of
+/// `extract_encoded_values`, to size the redundant-extraction lever. Folded
+/// into the unified scanner profiler so profiling has one env owner.
 static EXTRACT_CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static EXTRACT_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static EXTRACT_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-fn extract_prof_enabled() -> bool {
-    static EN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *EN.get_or_init(|| std::env::var("KEYHOG_PROFILE_EXTRACT").as_deref() == Ok("1"))
+
+#[derive(Clone, Debug)]
+pub(crate) struct ExtractedValue {
+    pub(crate) value: String,
+    pub(crate) start: Option<usize>,
+    pub(crate) end: Option<usize>,
 }
-pub fn extract_profile_dump() {
+
+impl ExtractedValue {
+    pub(crate) fn new(value: String, start: usize, end: usize) -> Self {
+        Self {
+            value,
+            start: Some(start),
+            end: Some(end),
+        }
+    }
+
+    pub(crate) fn synthetic(value: String) -> Self {
+        Self {
+            value,
+            start: None,
+            end: None,
+        }
+    }
+
+    pub(crate) fn span(&self) -> Option<(usize, usize)> {
+        Some((self.start?, self.end?))
+    }
+}
+fn extract_prof_enabled() -> bool {
+    crate::engine::profile::enabled()
+}
+pub(crate) fn extract_profile_dump() {
     use std::sync::atomic::Ordering::Relaxed;
     let calls = EXTRACT_CALLS.swap(0, Relaxed);
     let bytes = EXTRACT_BYTES.swap(0, Relaxed);
     let ms = EXTRACT_NS.swap(0, Relaxed) as f64 / 1e6;
+    if calls == 0 && bytes == 0 && ms == 0.0 {
+        return;
+    }
     eprintln!(
         "extract_encoded_values: calls={calls} bytes={bytes} time={ms:.1}ms ({:.2} µs/call)",
         if calls > 0 {
@@ -34,7 +64,7 @@ thread_local! {
     /// 5-6× per chunk on the same input). Keyed by the chunk text's (ptr,len) and
     /// cleared per item, so a per-line call (different ptr) or a later chunk
     /// (different ptr) never reads a stale result.
-    static SHARED_CANDIDATES: std::cell::RefCell<Option<(usize, usize, Vec<String>)>> =
+    static SHARED_CANDIDATES: std::cell::RefCell<Option<(usize, usize, Vec<ExtractedValue>)>> =
         const { std::cell::RefCell::new(None) };
 }
 
@@ -42,7 +72,7 @@ thread_local! {
 /// decoders. Call once per item before the decoder loop; pair with
 /// [`clear_shared_candidates`] after.
 pub(super) fn prime_shared_candidates(text: &str) {
-    let cands = extract_encoded_values_raw(text);
+    let cands = extract_encoded_value_spans_raw(text);
     SHARED_CANDIDATES.with(|c| {
         *c.borrow_mut() = Some((text.as_ptr() as usize, text.len(), cands));
     });
@@ -59,15 +89,26 @@ pub(super) fn clear_shared_candidates() {
 /// calls compute fresh. The result is identical either way (pure function), so
 /// sharing is recall-preserving.
 pub(crate) fn extract_encoded_values(text: &str) -> Vec<String> {
+    extract_encoded_value_spans(text)
+        .into_iter()
+        .map(|candidate| candidate.value)
+        .collect()
+}
+
+pub(crate) fn extract_encoded_value_spans(text: &str) -> Vec<ExtractedValue> {
     let hit = SHARED_CANDIDATES.with(|c| {
         c.borrow().as_ref().and_then(|(ptr, len, cands)| {
             (*ptr == text.as_ptr() as usize && *len == text.len()).then(|| cands.clone())
         })
     });
-    hit.unwrap_or_else(|| extract_encoded_values_raw(text))
+    // Law 10: recall-safe — a thread-local cache MISS recomputes the IDENTICAL
+    // candidate set via `extract_encoded_values_raw` (a pure function of `text`,
+    // see the cache contract above). The cache is a perf optimization for the
+    // re-scan-same-buffer case; missing it changes timing, never the result.
+    hit.unwrap_or_else(|| extract_encoded_value_spans_raw(text)) // LAW10: offset/owned/group absent => documented default (original chunk / first group); recall-safe
 }
 
-fn extract_encoded_values_raw(text: &str) -> Vec<String> {
+fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
     let _prof = extract_prof_enabled().then(|| {
         use std::sync::atomic::Ordering::Relaxed;
         EXTRACT_CALLS.fetch_add(1, Relaxed);
@@ -89,6 +130,8 @@ fn extract_encoded_values_raw(text: &str) -> Vec<String> {
     let mut values = Vec::new();
     // Base64 block accumulator - collected in the SAME pass as quoted/assigned values.
     let mut b64_block = String::new();
+    let mut b64_start: Option<usize> = None;
+    let mut b64_end = 0usize;
     // Percent-encoded run accumulator - picks up freestanding `%41%57…`
     // blobs that don't sit immediately after `=`/`:` (e.g.
     // `Authorization: Bearer %41%57…` where the b64 accumulator
@@ -98,10 +141,11 @@ fn extract_encoded_values_raw(text: &str) -> Vec<String> {
     // credential lived past a non-trivial prefix word. Tracked by
     // `encoding_explosion_runner` url-percent floor.
     let mut pct_block = String::new();
+    let mut pct_start: Option<usize> = None;
+    let mut pct_end = 0usize;
 
-    let is_b64_char = |ch: char| -> bool {
-        ch.is_ascii_alphanumeric() || ch == '+' || ch == '/' || ch == '=' || ch == '-' || ch == '_'
-    };
+    let is_b64_char =
+        |ch: char| -> bool { ch.is_ascii() && crate::decode::is_base64_candidate_byte(ch as u8) };
     // Members of a percent-run AFTER the leading `%`: hex digits + the
     // `%` itself (which restarts a fresh triplet). Anything else
     // terminates the run.
@@ -110,7 +154,34 @@ fn extract_encoded_values_raw(text: &str) -> Vec<String> {
     // Flush a pending percent run if it covers at least 2 triplets
     // (6 chars). Shorter runs are usually printf/URL noise; 2 triplets
     // is enough for compact percent-encoded dev IDs in contracts.
-    fn flush_pct(values: &mut Vec<String>, pct_block: &mut String) {
+    fn flush_b64(
+        values: &mut Vec<ExtractedValue>,
+        b64_block: &mut String,
+        b64_start: &mut Option<usize>,
+        b64_end: usize,
+    ) {
+        if b64_block.len() >= 16 {
+            if let Some(start) = b64_start.take() {
+                values.push(ExtractedValue::new(
+                    std::mem::take(b64_block),
+                    start,
+                    b64_end,
+                ));
+            } else {
+                b64_block.clear();
+            }
+        } else {
+            b64_block.clear();
+            *b64_start = None;
+        }
+    }
+
+    fn flush_pct(
+        values: &mut Vec<ExtractedValue>,
+        pct_block: &mut String,
+        pct_start: &mut Option<usize>,
+        pct_end: usize,
+    ) {
         // Two triplets (6 decoded bytes) covers short numeric dev IDs and
         // other compact secrets that `encoding_explosion_runner` percent-
         // encodes wholesale. Three triplets remains the default bar for
@@ -119,41 +190,58 @@ fn extract_encoded_values_raw(text: &str) -> Vec<String> {
         if pct_block.len() >= MIN_PCT_TRIPLETS * 3
             && pct_block.matches('%').count() >= MIN_PCT_TRIPLETS
         {
-            values.push(std::mem::take(pct_block));
+            if let Some(start) = pct_start.take() {
+                values.push(ExtractedValue::new(
+                    std::mem::take(pct_block),
+                    start,
+                    pct_end,
+                ));
+            } else {
+                pct_block.clear();
+            }
+        } else {
+            *pct_start = None;
         }
         pct_block.clear();
     }
 
     // Single-pass char-level iteration. Safe for UTF-8 (no mid-codepoint splits).
     let mut chars = text.char_indices().peekable();
-    while let Some(&(_, ch)) = chars.peek() {
+    while let Some(&(idx, ch)) = chars.peek() {
         // ── Quoted strings ──────────────────────────────────────────
         if ch == '"' || ch == '\'' || ch == '`' {
             // Flush any pending b64 block
-            if b64_block.len() >= 16 {
-                values.push(std::mem::take(&mut b64_block));
-            }
-            b64_block.clear();
-            flush_pct(&mut values, &mut pct_block);
+            flush_b64(&mut values, &mut b64_block, &mut b64_start, b64_end);
+            flush_pct(&mut values, &mut pct_block, &mut pct_start, pct_end);
 
             let quote = ch;
             chars.next();
             let mut escaping = false;
             let mut cleaned = String::with_capacity(32);
+            let mut value_start: Option<usize> = None;
+            let mut value_end = idx + ch.len_utf8();
 
-            while let Some(&(_, current)) = chars.peek() {
+            while let Some(&(current_idx, current)) = chars.peek() {
                 chars.next();
                 if escaping {
+                    value_start.get_or_insert(current_idx.saturating_sub(1));
+                    value_end = current_idx + current.len_utf8();
                     cleaned.push(current);
                     escaping = false;
                 } else if current == '\\' {
+                    value_start.get_or_insert(current_idx);
+                    value_end = current_idx + current.len_utf8();
                     escaping = true;
                 } else if current == quote {
                     if cleaned.len() >= 4 {
-                        values.push(cleaned);
+                        if let Some(start) = value_start {
+                            values.push(ExtractedValue::new(cleaned, start, value_end));
+                        }
                     }
                     break;
                 } else if !current.is_ascii_whitespace() {
+                    value_start.get_or_insert(current_idx);
+                    value_end = current_idx + current.len_utf8();
                     cleaned.push(current);
                 }
             }
@@ -162,11 +250,8 @@ fn extract_encoded_values_raw(text: &str) -> Vec<String> {
 
         // ── Assignment values (key=value / key: value) ──────────────
         if ch == ':' || ch == '=' {
-            if b64_block.len() >= 16 {
-                values.push(std::mem::take(&mut b64_block));
-            }
-            b64_block.clear();
-            flush_pct(&mut values, &mut pct_block);
+            flush_b64(&mut values, &mut b64_block, &mut b64_start, b64_end);
+            flush_pct(&mut values, &mut pct_block, &mut pct_start, pct_end);
 
             chars.next();
             // Skip whitespace after delimiter
@@ -174,7 +259,9 @@ fn extract_encoded_values_raw(text: &str) -> Vec<String> {
                 chars.next();
             }
             let mut cleaned = String::with_capacity(32);
-            while let Some(&(_, c)) = chars.peek() {
+            let mut value_start: Option<usize> = None;
+            let mut value_end = idx + ch.len_utf8();
+            while let Some(&(current_idx, c)) = chars.peek() {
                 if c.is_ascii_whitespace()
                     || c == ';'
                     || c == ','
@@ -184,11 +271,15 @@ fn extract_encoded_values_raw(text: &str) -> Vec<String> {
                 {
                     break;
                 }
+                value_start.get_or_insert(current_idx);
+                value_end = current_idx + c.len_utf8();
                 cleaned.push(c);
                 chars.next();
             }
             if cleaned.len() >= 4 {
-                values.push(cleaned);
+                if let Some(start) = value_start {
+                    values.push(ExtractedValue::new(cleaned, start, value_end));
+                }
             }
             continue;
         }
@@ -205,6 +296,8 @@ fn extract_encoded_values_raw(text: &str) -> Vec<String> {
             if pct_block.is_empty() && ch != '%' {
                 // fallthrough to b64 accumulator below
             } else {
+                pct_start.get_or_insert(idx);
+                pct_end = idx + ch.len_utf8();
                 pct_block.push(ch);
                 // Don't fall into the b64 accumulator branch on the
                 // same char; `%` and the hex digits are still valid
@@ -216,17 +309,18 @@ fn extract_encoded_values_raw(text: &str) -> Vec<String> {
                 continue;
             }
         } else if !pct_block.is_empty() {
-            flush_pct(&mut values, &mut pct_block);
+            flush_pct(&mut values, &mut pct_block, &mut pct_start, pct_end);
         }
 
         // ── Base64 block accumulation (merged from old second pass) ─
         if is_b64_char(ch) {
+            b64_start.get_or_insert(idx);
+            b64_end = idx + ch.len_utf8();
             b64_block.push(ch);
         } else if !ch.is_whitespace() {
-            if b64_block.len() >= 16 {
-                values.push(std::mem::take(&mut b64_block));
-            }
-            b64_block.clear();
+            flush_b64(&mut values, &mut b64_block, &mut b64_start, b64_end);
+        } else if b64_start.is_some() {
+            b64_end = idx + ch.len_utf8();
         }
         // else: whitespace inside b64 blocks is allowed (line continuations)
 
@@ -234,10 +328,8 @@ fn extract_encoded_values_raw(text: &str) -> Vec<String> {
     }
 
     // Flush trailing b64 block
-    if b64_block.len() >= 16 {
-        values.push(b64_block);
-    }
-    flush_pct(&mut values, &mut pct_block);
+    flush_b64(&mut values, &mut b64_block, &mut b64_start, b64_end);
+    flush_pct(&mut values, &mut pct_block, &mut pct_start, pct_end);
 
     values
 }

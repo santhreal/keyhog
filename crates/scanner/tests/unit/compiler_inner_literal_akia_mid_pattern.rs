@@ -1,6 +1,6 @@
 //! Inner literal extractor finds mid-pattern AWS anchor.
 
-use keyhog_scanner::compiler::extract_inner_literals;
+use keyhog_scanner::testing::extract_inner_literals;
 
 #[test]
 fn compiler_inner_literal_akia_mid_pattern() {

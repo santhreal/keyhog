@@ -2,7 +2,7 @@
 //! = false`) must clear the path-keyed confidence haircut on the
 //! **generic-secret fallback** too, not only on the named-detector / ML paths.
 //!
-//! The bug: `engine/fallback_generic.rs` historically baked the test-context
+//! The bug: `engine/phase2_generic.rs` historically baked the test-context
 //! base confidence (0.25 for `TestCode`, 0.30 for `Documentation`) into
 //! `base_conf` UNCONDITIONALLY — it consulted `scan_comments` for the Comment
 //! arm but never `penalize_test_paths`. So a generic high-entropy secret in a
@@ -41,8 +41,7 @@ fn detector_dir() -> PathBuf {
 /// alphanumerics → entropy well above the generic floor, length well above the
 /// 16-char minimum, no `+`/`/`/`=` punctuation that would trip the
 /// random-base64-blob gate.
-const GENERIC_SECRET_LINE: &str =
-    "api_secret = \"Zx9Kq2Wm7Lp4Rn8Tv3Yb6Hc1Df5Gj0Ks2Md4Pw7Qz9Xa3B\"";
+const GENERIC_SECRET_LINE: &str = "api_secret = \"Zx9Kq2Wm7Lp4Rn8Tv3Yb6Hc1Df5Gj0Ks2Md4Pw7Qz9Xa3B\"";
 const GENERIC_VALUE: &str = "Zx9Kq2Wm7Lp4Rn8Tv3Yb6Hc1Df5Gj0Ks2Md4Pw7Qz9Xa3B";
 
 fn scanner_with(penalize_test_paths: bool) -> CompiledScanner {
@@ -70,7 +69,7 @@ fn generic_confidence(scanner: &CompiledScanner, path: &str) -> Option<f64> {
     matches
         .iter()
         // Pin the `generic-secret` fallback specifically — that is the
-        // `engine/fallback_generic.rs` path whose `base_conf` MC-15 fixed.
+        // `engine/phase2_generic.rs` path whose `base_conf` MC-15 fixed.
         // (`generic-password` / `entropy-api-key` also fire on this value via
         // other paths and would mask the haircut if we took the max over all.)
         .filter(|m| {
@@ -78,7 +77,9 @@ fn generic_confidence(scanner: &CompiledScanner, path: &str) -> Option<f64> {
                 && m.credential.as_ref().contains(GENERIC_VALUE)
         })
         .filter_map(|m| m.confidence)
-        .fold(None, |acc: Option<f64>, c| Some(acc.map_or(c, |a| a.max(c))))
+        .fold(None, |acc: Option<f64>, c| {
+            Some(acc.map_or(c, |a| a.max(c)))
+        })
 }
 
 const FIXTURE_PATH: &str = "project/fixtures/app.env";

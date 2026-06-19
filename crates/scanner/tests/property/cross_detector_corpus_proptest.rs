@@ -110,8 +110,7 @@ static SCANNER: LazyLock<CompiledScanner> = LazyLock::new(|| {
 /// Returned as `Vec<String>` so the proptest sampler can index into
 /// it cheaply without borrowing across the proptest macro boundary.
 static PATTERN_REGEX_SRCS: LazyLock<Vec<String>> = LazyLock::new(|| {
-    SCANNER
-        .pattern_regex_strs()
+    keyhog_scanner::testing::pattern_regex_strs(&SCANNER)
         .into_iter()
         .map(String::from)
         .collect()

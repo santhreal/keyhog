@@ -16,45 +16,45 @@ fn engine_src(name: &str) -> String {
 }
 
 #[test]
-fn fallback_prefilter_compile_failures_warn() {
-    let src = engine_src("fallback_prefilter.rs");
+fn phase2_prefilter_compile_failures_warn() {
+    let src = engine_src("phase2_prefilter.rs");
     assert!(
-        src.contains("fallback RegexSet batch compile failed"),
+        src.contains("phase-2 RegexSet batch compile failed"),
         "RegexSet batch compile failure must warn"
     );
     assert!(
-        src.contains("truncated fallback RegexSet batch failed to compile"),
+        src.contains("truncated phase-2 RegexSet batch failed to compile"),
         "truncated RegexSet batch compile failure must warn"
     );
     assert!(
-        src.contains("fallback prefix-gate Aho-Corasick build failed"),
+        src.contains("phase-2 prefix-gate Aho-Corasick build failed"),
         "combined prefix-gate AC build failure must warn"
     );
     assert!(
-        src.contains("ASCII-folded fallback RegexSet failed to compile"),
+        src.contains("ASCII-folded phase-2 RegexSet failed to compile"),
         "ASCII-folded RegexSet compile failure must warn"
     );
     // Every warn site must use tracing::warn!, not debug!/silent drop.
     assert!(
         src.contains("tracing::warn!("),
-        "fallback_prefilter.rs must contain tracing::warn! calls"
+        "phase2_prefilter.rs must contain tracing::warn! calls"
     );
 }
 
 #[test]
-fn fallback_anchor_ac_build_failures_warn() {
-    let src = engine_src("fallback_anchor.rs");
+fn phase2_anchor_ac_build_failures_warn() {
+    let src = engine_src("phase2_anchor.rs");
     assert!(
-        src.contains("fallback shared-anchor Aho-Corasick build failed"),
+        src.contains("phase-2 shared-anchor Aho-Corasick build failed"),
         "shared-anchor AC build failure must warn"
     );
     assert!(
-        src.contains("fallback plain-anchor Aho-Corasick build failed"),
+        src.contains("phase-2 plain-anchor Aho-Corasick build failed"),
         "plain-anchor AC build failure must warn"
     );
     assert!(
         src.contains("tracing::warn!("),
-        "fallback_anchor.rs must contain tracing::warn! calls"
+        "phase2_anchor.rs must contain tracing::warn! calls"
     );
 }
 
@@ -73,7 +73,7 @@ fn confirmed_suffix_gate_build_failure_warns() {
 
 #[test]
 fn prefilter_truncation_parse_failures_warn() {
-    let src = engine_src("fallback_truncate.rs");
+    let src = engine_src("phase2_truncate.rs");
     assert!(
         src.contains("prefilter regex truncation parse failed"),
         "truncation parse failure must warn"
@@ -84,7 +84,7 @@ fn prefilter_truncation_parse_failures_warn() {
     );
     assert!(
         src.contains("tracing::warn!("),
-        "fallback_truncate.rs must contain tracing::warn! calls"
+        "phase2_truncate.rs must contain tracing::warn! calls"
     );
 }
 
@@ -107,11 +107,11 @@ fn core_src(name: &str) -> String {
 }
 
 #[test]
-fn fallback_keyword_ac_build_failure_warns() {
+fn phase2_keyword_ac_build_failure_warns() {
     let src = scanner_src("compiler/compiler_compile.rs");
     assert!(
-        src.contains("fallback keyword Aho-Corasick build failed"),
-        "fallback keyword AC build failure must warn"
+        src.contains("phase-2 keyword Aho-Corasick build failed"),
+        "phase-2 keyword AC build failure must warn"
     );
     assert!(
         src.contains("tracing::warn!"),
@@ -195,38 +195,33 @@ fn structured_parser_parse_failures_warn() {
 }
 
 #[test]
-fn backend_affecting_env_parse_failures_are_loud() {
-    let env_config = scanner_src("env_config.rs");
-    let core_env_config = core_src("env_config.rs");
+fn backend_affecting_config_parse_failures_are_loud() {
+    let core_env_config =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../core/src/env_config.rs");
+    let core_lib = core_src("lib.rs");
     assert!(
-        core_env_config.contains("invalid {name}={raw:?}")
-            && core_env_config.contains("invalid non-UTF-8 {name}")
-            && core_env_config.contains("expected an integer >=")
-            && env_config.contains("per_chunk_deadline")
-            && env_config.contains(
-                "keyhog_core::env_config::optional_u64_at_least(\"KEYHOG_PER_CHUNK_TIMEOUT_MS\", 1)",
-            ),
-        "scanner env parsing must warn visibly on malformed backend-affecting knobs"
+        !core_env_config.exists() && !core_lib.contains("env_config"),
+        "numeric env parser helpers must not exist in production; config is explicit TOML/CLI"
     );
 
     let engine = engine_src("compiled_api.rs");
+    let scanner_config = scanner_src("scanner_config.rs");
     assert!(
-        engine
-            .matches("crate::env_config::per_chunk_deadline()")
-            .count()
-            == 2
-            && !engine.contains("env_per_chunk_deadline"),
-        "scan entry points must use the centralized loud env parser for per-chunk deadlines"
+        engine.matches("self.config.per_chunk_deadline()").count() == 2
+            && scanner_config.contains("pub per_chunk_timeout_ms: Option<u64>")
+            && scanner_config.contains("per_chunk_deadline(&self)")
+            && !engine.contains("crate::env_config::per_chunk_deadline")
+            && !scanner_config.contains("KEYHOG_PER_CHUNK_TIMEOUT_MS"),
+        "per-chunk deadlines must be explicit scanner config, not ambient env"
     );
 
     let tuning = scanner_src("tuning.rs");
-    let scanner_config = scanner_src("scanner_config.rs");
     assert!(
         tuning.contains("ScannerTuningConfig::HS_PREFILTER_MAX_LEN_DEFAULT")
             && tuning.contains("apply_config")
             && !tuning.contains("std::env::var")
             && scanner_config.contains("pub hs_prefilter_max_len: Option<usize>")
-            && scanner_config.contains("pub const HS_PREFILTER_MAX_LEN_DEFAULT: usize = 4096"),
+            && scanner_config.contains("const HS_PREFILTER_MAX_LEN_DEFAULT: usize = 4096"),
         "HS prefilter max-length must be explicit scanner tuning config, not ambient env"
     );
 
@@ -237,17 +232,20 @@ fn backend_affecting_env_parse_failures_are_loud() {
             && !gpu.contains("KEYHOG_GPU_MOE_TIMEOUT_MS")
             && !gpu.contains("u64_at_least_or_default")
             && scanner_config.contains("pub gpu_moe_timeout_ms: Option<u64>")
-            && scanner_config.contains("pub const GPU_MOE_TIMEOUT_MS_DEFAULT: u64 = 30_000")
+            && scanner_config.contains("const GPU_MOE_TIMEOUT_MS_DEFAULT: u64 = 30_000")
             && tuning.contains("set_gpu_moe_timeout_ms")
             && tuning.contains("gpu_moe_timeout(&self) -> Duration"),
         "GPU MoE timeout must be explicit scanner tuning config, not ambient env"
     );
 
     let simd = scanner_src("simd/backend.rs");
+    let backend_prepared = scanner_src("engine/backend_prepared.rs");
     assert!(
-        simd.contains("keyhog_core::env_config::usize_at_least_or_default")
-            && simd.contains("\"KEYHOG_SHARD_TARGET\"")
-            && !simd.contains("KEYHOG_SHARD_TARGET\") {\n            Ok(raw) => match raw.parse"),
-        "Hyperscan shard-target env parse failures must be loud"
+        !simd.contains("KEYHOG_SHARD_TARGET")
+            && !simd.contains("keyhog_core::env_config")
+            && backend_prepared.contains("shard_target: tuning.hs_shard_target")
+            && scanner_config.contains("pub hs_shard_target: Option<usize>")
+            && scanner_config.contains("const HS_SHARD_TARGET_DEFAULT: usize = 80"),
+        "Hyperscan shard target must be explicit compile tuning config, not ambient env"
     );
 }

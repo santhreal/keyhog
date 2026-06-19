@@ -5,7 +5,7 @@
 //! over a sweep of misaligned offsets/lengths) lives here rather than inline,
 //! per the Santh folder contract (KH-GAP-004).
 
-use keyhog_scanner::entropy::fast::{shannon_entropy_scalar, shannon_entropy_simd};
+use keyhog_scanner::testing::entropy_fast::{shannon_entropy_scalar, shannon_entropy_simd};
 
 /// Reference Shannon entropy (bits/byte). Deliberately naive (a fresh
 /// 256-bin histogram, no unrolling) so it cannot share a bug with the

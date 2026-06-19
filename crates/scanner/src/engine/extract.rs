@@ -1,8 +1,7 @@
 //! Pattern-level extraction loops.
 //!
-//! Extracted from `scan.rs` to keep individual files under the 500-line
-//! cap. Houses the four entry points the scanner uses to walk each
-//! triggered pattern's regex over the prepared chunk:
+//! Houses the four entry points the scanner uses to walk each triggered
+//! pattern's regex over the prepared chunk:
 //!
 //! * `extract_matches` - public wrapper preserving the legacy
 //!   no-cursor-range call shape.
@@ -162,15 +161,13 @@ impl CompiledScanner {
         // termination. We still let a match *end* past `cursor_end`
         // because credentials are typically longer than the literal
         // prefix that anchored them.
-        let (mut cursor, cursor_end) = match cursor_range {
+        let (cursor, cursor_end) = match cursor_range {
             Some((start, end)) => (start.min(bytes_total), end.min(bytes_total)),
             None => (0usize, bytes_total),
         };
-        while cursor < cursor_end && cursor > 0 && !search_text.is_char_boundary(cursor) {
-            cursor -= 1;
-        }
+        let mut cursor = super::floor_char_boundary(search_text, cursor);
         // Inner-loop deadline check counter. Same `is_multiple_of(64)`
-        // cadence as `scan_fallback_patterns`: frequent enough that
+        // cadence as `scan_phase2_patterns`: frequent enough that
         // a hung pattern aborts within a few ms, infrequent enough
         // that the `Instant::now()` syscall isn't a hot-path tax.
         // Without this, a single regex producing 100k+ matches on an
@@ -214,14 +211,12 @@ impl CompiledScanner {
             // Advance the cursor up front so any `continue` below keeps the
             // loop progressing. Zero-width matches bump by one byte (and
             // align onto a UTF-8 boundary) to avoid an infinite loop.
-            let mut next = if full_end == cursor {
+            let next = if full_end == cursor {
                 full_end + 1
             } else {
                 full_end
             };
-            while next < bytes_total && !search_text.is_char_boundary(next) {
-                next += 1;
-            }
+            let next = super::ceil_char_boundary(search_text, next);
             cursor = next;
 
             // Skip zero-width matches without surfacing them. The previous
@@ -237,7 +232,7 @@ impl CompiledScanner {
             // Resolve the configured capture group, falling back to the full
             // match when the group didn't participate (e.g. a top-level
             // alternation where one branch lacks the inner group).
-            let credential_range = locs.get(group).unwrap_or((full_start, full_end));
+            let mut credential_range = locs.get(group).unwrap_or((full_start, full_end)); // LAW10: bounds-checked lookup; out-of-range => documented default (total fn), recall-safe
             let mut credential = &search_text[credential_range.0..credential_range.1];
 
             // Variable-name heuristic: if the captured group looks like a
@@ -252,6 +247,7 @@ impl CompiledScanner {
                     if let Some((s, e)) = locs.get(g) {
                         let candidate_str = &search_text[s..e];
                         if !looks_like_variable_name(candidate_str) && candidate_str.len() >= 8 {
+                            credential_range = (s, e);
                             credential = candidate_str;
                             break;
                         }
@@ -259,8 +255,8 @@ impl CompiledScanner {
                 }
             }
 
-            let &(keyword_nearby, sensitive_file) =
-                signals.get_or_init(|| super::scan_filters::compute_pattern_signals(detector, chunk));
+            let &(keyword_nearby, sensitive_file) = signals
+                .get_or_init(|| super::scan_filters::compute_pattern_signals(detector, chunk));
             self.process_match(
                 entry,
                 detector,
@@ -272,8 +268,8 @@ impl CompiledScanner {
                 chunk,
                 scan_state,
                 credential,
-                full_start,
-                full_end,
+                credential_range.0,
+                credential_range.1,
                 base_line,
                 base_offset,
                 keyword_nearby,
@@ -352,14 +348,12 @@ impl CompiledScanner {
             }
             // Advance cursor before any early-continue so zero-width
             // matches don't loop forever.
-            let mut next = if matched.end() == cursor {
+            let next = if matched.end() == cursor {
                 matched.end() + 1
             } else {
                 matched.end()
             };
-            while next < bytes_total && !search_text.is_char_boundary(next) {
-                next += 1;
-            }
+            let next = super::ceil_char_boundary(search_text, next);
             cursor = next;
             match_count += 1;
             // Skip zero-width matches without surfacing them: same
@@ -372,8 +366,8 @@ impl CompiledScanner {
             if matched.end() == matched.start() {
                 continue;
             }
-            let &(keyword_nearby, sensitive_file) =
-                signals.get_or_init(|| super::scan_filters::compute_pattern_signals(detector, chunk));
+            let &(keyword_nearby, sensitive_file) = signals
+                .get_or_init(|| super::scan_filters::compute_pattern_signals(detector, chunk));
             self.process_match(
                 entry,
                 detector,

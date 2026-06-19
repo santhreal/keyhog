@@ -2,7 +2,9 @@
 //! double-base64 (k8s `data:`) shape gates (KH-GAP-004).
 
 use base64::Engine as _;
-use keyhog_scanner::decode_structure::{decoded_is_base64_blob, looks_like_uniform_base64_blob};
+use keyhog_scanner::testing::decode_structure::{
+    decoded_is_base64_blob, decodes_to_printable_text, looks_like_uniform_base64_blob,
+};
 
 // Round 1 FP-killer: base64-protobuf cause #1, #2, #4, #7. Pure-alphanumeric
 // base64 in [44, 80] without +/ punct must hit the gate via the high-diversity
@@ -88,5 +90,27 @@ fn decoded_is_base64_blob_rejects_random_secret_bytes() {
         !decoded_is_base64_blob(&outer),
         "base64 of random secret bytes must NOT be flagged as a \
          double-b64 blob (real secrets must stay live)",
+    );
+}
+
+#[test]
+fn decodes_to_printable_text_accepts_base64_wrapped_secret_text() {
+    let encoded =
+        base64::engine::general_purpose::STANDARD.encode(b"hello-world-this-is-a-secret-value");
+    assert!(
+        decodes_to_printable_text(&encoded),
+        "credential-keyword-anchored base64 text must be distinguishable from random binary blobs",
+    );
+}
+
+#[test]
+fn decodes_to_printable_text_rejects_binary_bytes() {
+    let raw: [u8; 12] = [
+        0x00, 0x01, 0x02, 0xff, 0xfe, 0x80, 0x7f, 0x10, 0x11, 0x12, 0x13, 0x14,
+    ];
+    let encoded = base64::engine::general_purpose::STANDARD.encode(raw);
+    assert!(
+        !decodes_to_printable_text(&encoded),
+        "binary base64 payloads must stay in the blob/data-envelope class",
     );
 }

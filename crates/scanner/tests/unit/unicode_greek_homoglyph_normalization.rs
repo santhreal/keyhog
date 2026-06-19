@@ -1,4 +1,4 @@
-use keyhog_scanner::unicode_hardening::*;
+use keyhog_scanner::testing::unicode_hardening::*;
 
 /// Proving test: Greek homoglyphs normalize to Latin equivalents.
 /// Contract: normalize_homoglyphs("sk_αbc") produces "sk_abc" (Greek α U+03B1 → 'a').

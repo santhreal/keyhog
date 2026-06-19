@@ -1,9 +1,5 @@
 //! LR1-A2 hand-written unit tests (one `#[test]` per file).
 
-mod ac_gpu_max_matches_one_million;
-mod build_rule_pipeline_rejects_backreference;
-mod build_rule_pipeline_rejects_lookahead;
-mod build_rule_pipeline_simple_literal;
 mod clear_fragment_cache_idempotent;
 mod compile_rejects_invalid_regex;
 mod compiled_scanner_detector_count;
@@ -14,11 +10,10 @@ mod floor_char_boundary_past_end;
 mod line_number_at_eof;
 mod line_number_first_line;
 mod line_number_second_line;
-mod megascan_input_len_is_256mb;
 mod next_window_offset_applies_overlap;
 mod next_window_offset_at_text_end;
 mod next_window_offset_zero_overlap;
-mod pattern_regex_strs_includes_ac_and_fallback;
+mod pattern_regex_strs_includes_ac_and_phase2;
 mod preferred_backend_label_nonempty;
 mod record_window_match_adjusts_offset;
 mod record_window_match_dedups;

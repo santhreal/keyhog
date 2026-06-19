@@ -1,6 +1,6 @@
 //! Migrated from src/compiler.rs & src/compiler/compiler_prefix.rs
 
-use keyhog_scanner::compiler::{
+use keyhog_scanner::testing::{
     extract_inner_literals, extract_literal_prefixes, rewrite_alternation_prefix,
     split_leading_inline_flag,
 };
@@ -156,22 +156,19 @@ fn inner_literal_corpus_coverage() {
     let mut promoted_patterns = 0usize;
     let mut total_inner_literals = 0usize;
     let mut total_patterns = 0usize;
-    for (_, toml_str) in keyhog_core::embedded_detector_tomls() {
-        let Ok(detectors) = keyhog_core::load_detectors_from_str(toml_str) else {
-            continue;
-        };
-        for d in &detectors {
-            for p in &d.patterns {
-                total_patterns += 1;
-                let prefixes = extract_literal_prefixes(&p.regex);
-                if !prefixes.is_empty() {
-                    continue; // Already AC-eligible via prefix.
-                }
-                let inner = extract_inner_literals(&p.regex);
-                if !inner.is_empty() {
-                    promoted_patterns += 1;
-                    total_inner_literals += inner.len();
-                }
+    for d in
+        keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus must load")
+    {
+        for p in &d.patterns {
+            total_patterns += 1;
+            let prefixes = extract_literal_prefixes(&p.regex);
+            if !prefixes.is_empty() {
+                continue; // Already AC-eligible via prefix.
+            }
+            let inner = extract_inner_literals(&p.regex);
+            if !inner.is_empty() {
+                promoted_patterns += 1;
+                total_inner_literals += inner.len();
             }
         }
     }

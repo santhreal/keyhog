@@ -5,13 +5,9 @@ use super::{ChecksumResult, ChecksumValidator};
 ///
 /// New-format npm tokens follow the same design as GitHub tokens:
 /// `npm_` + 30-character entropy + 6-character base62 CRC32 checksum.
-pub struct NpmTokenValidator;
+pub(crate) struct NpmTokenValidator;
 
 impl ChecksumValidator for NpmTokenValidator {
-    fn validator_id(&self) -> &str {
-        "npm-access-token"
-    }
-
     fn validate(&self, credential: &str) -> ChecksumResult {
         let payload = match credential.strip_prefix("npm_") {
             Some(p) => p,
@@ -40,13 +36,9 @@ impl ChecksumValidator for NpmTokenValidator {
 /// verify the macaroon's HMAC signature without PyPI's secret key, but we can
 /// confirm that the payload is well-formed base64 and decodes to a non-trivial
 /// binary blob.
-pub struct PypiTokenValidator;
+pub(crate) struct PypiTokenValidator;
 
 impl ChecksumValidator for PypiTokenValidator {
-    fn validator_id(&self) -> &str {
-        "pypi-api-token"
-    }
-
     fn validate(&self, credential: &str) -> ChecksumResult {
         let payload = match credential.strip_prefix("pypi-") {
             Some(p) => p,
@@ -73,7 +65,7 @@ impl ChecksumValidator for PypiTokenValidator {
         match decoded {
             Ok(bytes) if bytes.len() >= 32 => ChecksumResult::Valid,
             Ok(_) => ChecksumResult::Invalid,
-            Err(_) => ChecksumResult::Invalid,
+            Err(_) => ChecksumResult::Invalid, // LAW10: decode failure => Invalid; structural precision gate (a matched-shape payload that will not decode is not the real token), fail-closed
         }
     }
 }

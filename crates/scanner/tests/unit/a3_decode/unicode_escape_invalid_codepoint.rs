@@ -1,7 +1,7 @@
 //! Unicode escape `\uXXXX` decoder must reject invalid/surrogate codepoints.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn unicode_escape_surrogate_pair_unpaired() {
@@ -15,9 +15,9 @@ fn unicode_escape_surrogate_pair_unpaired() {
     let decoded = decode_chunk(&chunk, 2, false, None, None);
     // No decoded chunk with "unicode-escape" should exist, OR if it exists,
     // it must NOT contain the surrogate or any decoded form.
-    let has_surrogate_chunk = decoded.iter().any(|c| {
-        c.metadata.source_type.contains("unicode-escape") && c.data.contains("suffix")
-    });
+    let has_surrogate_chunk = decoded
+        .iter()
+        .any(|c| c.metadata.source_type.contains("unicode-escape") && c.data.contains("suffix"));
     assert!(
         !has_surrogate_chunk,
         "unicode escape with unpaired surrogate \\uD800 must not produce valid decoded chunk"
@@ -38,9 +38,9 @@ fn unicode_escape_out_of_range_codepoint() {
     };
     let decoded = decode_chunk(&chunk, 2, false, None, None);
     // U+FFFF is a valid (though rarely-used) Unicode character.
-    let has_valid = decoded.iter().any(|c| {
-        c.metadata.source_type.contains("unicode-escape")
-    });
+    let has_valid = decoded
+        .iter()
+        .any(|c| c.metadata.source_type.contains("unicode-escape"));
     assert!(
         has_valid,
         "\\uFFFF (max 4-digit Unicode) must decode successfully"
@@ -58,7 +58,9 @@ fn unicode_escape_truncated_hex_sequence() {
     let decoded = decode_chunk(&chunk, 2, false, None, None);
     // Truncated sequence should NOT decode.
     assert!(
-        !decoded.iter().any(|c| c.metadata.source_type.contains("unicode-escape")),
+        !decoded
+            .iter()
+            .any(|c| c.metadata.source_type.contains("unicode-escape")),
         "truncated \\uXX (only 2 hex digits) must not decode"
     );
 }

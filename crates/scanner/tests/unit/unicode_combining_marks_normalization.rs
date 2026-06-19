@@ -1,4 +1,4 @@
-use keyhog_scanner::unicode_hardening::*;
+use keyhog_scanner::testing::unicode_hardening::*;
 
 /// Proving test: Combining diacritical marks are removed from credential.
 /// Contract: "e\u{0301}" (é decomposed) normalizes to just "e".

@@ -5,24 +5,16 @@
 #![cfg(feature = "simd")]
 
 use keyhog_scanner::testing::HsScanner;
-use keyhog_scanner::types::REGEX_SIZE_LIMIT_BYTES;
+use keyhog_scanner::testing::REGEX_SIZE_LIMIT_BYTES;
 
 #[test]
 fn no_embedded_detector_pattern_silently_drops_at_hyperscan_compile() {
-    let mut specs = Vec::new();
-    for (name, toml_text) in keyhog_core::embedded_detector_tomls() {
-        match keyhog_core::load_detectors_from_str(toml_text) {
-            Ok(parsed) => specs.extend(parsed),
-            Err(err) => panic!(
-                "embedded detector `{name}` failed to parse — fix the TOML \
-                 first. Inner: {err}"
-            ),
-        }
-    }
+    let specs =
+        keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus must load");
     assert!(
         !specs.is_empty(),
-        "embedded_detector_tomls() returned empty after parse — build.rs \
-         likely skipped embedding; rebuild keyhog-core from a clean target/."
+        "embedded detector corpus is empty — build.rs likely skipped embedding; \
+         rebuild keyhog-core from a clean target/."
     );
 
     let mut dropped: Vec<(String, String, String)> = Vec::new();

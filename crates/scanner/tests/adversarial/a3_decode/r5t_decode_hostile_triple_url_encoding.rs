@@ -1,7 +1,7 @@
 //! R5-T decode hostile: triple url encoding bounded.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 use std::time::{Duration, Instant};
 
 #[test]

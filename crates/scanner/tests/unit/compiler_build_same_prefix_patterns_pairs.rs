@@ -1,6 +1,6 @@
 //! Duplicate literals map to sibling pattern indices.
 
-use keyhog_scanner::compiler::build_same_prefix_patterns;
+use keyhog_scanner::testing::build_same_prefix_patterns;
 
 #[test]
 fn compiler_build_same_prefix_patterns_pairs() {

@@ -10,28 +10,44 @@
 //! of chunk A and the head of chunk B, scans it, and reports any matches
 //! that genuinely straddle the seam.
 //!
-//! The boundary buffer is bounded (`MAX_BOUNDARY` bytes per side) so the
-//! cost is independent of chunk size: at most ~2 KiB of data per pair of
-//! adjacent chunks. With N chunks per file, that's `(N-1) * 2 KiB` of
-//! boundary data - negligible next to the per-chunk scan cost.
+//! For bounded detector regexes, the boundary buffer width is derived from the
+//! scanner's compiled pattern sources. If an active generation path is unbounded
+//! for this pair (an unbounded detector regex or entropy fallback), the scanner
+//! uses the full adjacent chunks instead of pretending a fixed seam width is a
+//! guarantee.
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use regex_syntax::ast::{Ast, RepetitionKind, RepetitionRange};
 
 use super::{floor_char_boundary, CompiledScanner};
+use crate::types::CompiledPattern;
 
-/// How much of each chunk's edge to include in a boundary buffer.
-///
-/// Picked to comfortably cover every secret shape in the embedded
-/// detector corpus (longest is the JWT shape at ~600 chars; everything
-/// else is < 200). 1024 bytes per side gives a 2 KiB boundary buffer
-/// that fits any realistic credential plus surrounding keyword context.
-const MAX_BOUNDARY: usize = 1024;
+/// Scanner-derived cross-seam context requirement for compiled detector regexes.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum BoundaryContextBytes {
+    /// Every compiled detector regex has a finite maximum match width.
+    Bounded(usize),
+    /// At least one active detector regex can match an arbitrary-width span.
+    FullAdjacentChunks,
+}
+
+pub(crate) fn derive_pattern_boundary_context<'a>(
+    patterns: impl IntoIterator<Item = &'a CompiledPattern>,
+) -> BoundaryContextBytes {
+    let mut max_bound = 0usize;
+    for pattern in patterns {
+        let Some(bound) = regex_match_byte_upper_bound(pattern.regex.as_str()) else {
+            return BoundaryContextBytes::FullAdjacentChunks;
+        };
+        max_bound = max_bound.max(bound);
+    }
+    BoundaryContextBytes::Bounded(max_bound)
+}
 
 pub(crate) fn regex_match_byte_upper_bound(source: &str) -> Option<usize> {
     let ast = match regex_syntax::ast::parse::Parser::new().parse(source) {
         Ok(ast) => ast,
-        Err(_) => return None,
+        Err(_) => return None, // LAW10: regex bound parse failure => full adjacent-pair seam scan, recall-preserving
     };
     ast_match_byte_upper_bound(&ast)
 }
@@ -84,7 +100,7 @@ fn ast_match_byte_upper_bound(ast: &Ast) -> Option<usize> {
 /// Mutates `per_chunk_results` in place. Boundary findings are dedup'd
 /// against (offset, credential_hash) entries already in the chunks'
 /// own results so the same secret isn't reported twice.
-pub fn scan_chunk_boundaries(
+pub(crate) fn scan_chunk_boundaries(
     scanner: &CompiledScanner,
     chunks: &[Chunk],
     per_chunk_results: &mut [Vec<RawMatch>],
@@ -155,14 +171,22 @@ fn scan_one_pair(
         return;
     }
 
-    // Pull the trailing slice of A and the leading slice of B, snapped to
-    // UTF-8 boundaries since `Chunk.data` is `&str`-shaped (we splice
-    // bytes back into a String below).
-    let tail_start = a_bytes.len().saturating_sub(MAX_BOUNDARY);
+    let path = b.metadata.path.as_deref().or(a.metadata.path.as_deref());
+    let context = boundary_context_for_pair(scanner, path);
+
+    // Pull the trailing slice of A and the leading slice of B, snapped to UTF-8
+    // boundaries since `Chunk.data` is `&str`-shaped (we splice bytes back into
+    // a String below). For unbounded active generators, use the whole adjacent
+    // pair and scan the synthetic buffer as one unit below.
+    let context_bytes = match context {
+        BoundaryContextBytes::Bounded(bytes) => bytes,
+        BoundaryContextBytes::FullAdjacentChunks => usize::MAX,
+    };
+    let tail_start = a_bytes.len().saturating_sub(context_bytes);
     let tail_start = floor_char_boundary(a.data.as_ref(), tail_start);
     let tail = &a.data.as_ref()[tail_start..];
 
-    let head_end = b_bytes.len().min(MAX_BOUNDARY);
+    let head_end = b_bytes.len().min(context_bytes);
     let head_end = floor_char_boundary(b.data.as_ref(), head_end);
     let head = &b.data.as_ref()[..head_end];
 
@@ -208,19 +232,40 @@ fn scan_one_pair(
         },
     };
 
-    let boundary_matches = scanner.scan(&boundary_chunk);
+    let boundary_matches = scan_boundary_chunk_whole(scanner, &boundary_chunk);
     let Some(seam_file_offset) = boundary_base_offset.checked_add(seam_local) else {
         return;
     };
 
     for m in boundary_matches {
-        // Keep only matches that genuinely straddle the seam - i.e. the
-        // match starts in A's tail (file_offset < seam) and ends in
-        // B's head (file_offset + len > seam). Anything fully on one
-        // side is already covered by that chunk's own scan.
+        // Accept any match from the boundary buffer that is not already
+        // covered by in-chunk scanning of either A or B.  The previous
+        // "straddle" check (`credential.start < seam && credential.end >
+        // seam`) was too strict: for context-anchored detectors
+        // (e.g. `HEROKU_API_KEY=<uuid>`, `DD_API_KEY=<hex32>`) the regex
+        // anchor prefix can be split across the seam while the captured
+        // credential group lives entirely in B's region.  In that case
+        // `credential.start >= seam_file_offset`, the straddle check fired
+        // false, and the finding was silently dropped — a recall loss.
+        //
+        // The straddle check's original purpose (avoid double-counting
+        // matches already visible inside chunk A or B on their own) is
+        // fully served by the `already_seen` dedup below: for any match
+        // entirely within A's tail or B's head the in-chunk scanner
+        // already produced it at the identical (offset, detector_id,
+        // credential_hash) triple, and `already_seen` suppresses the
+        // duplicate.  No extra position filter is needed.
+        //
+        // We retain a single exclusion: matches whose credential ends at
+        // or before the seam are fully inside A's contribution to the
+        // buffer and would have been caught by A's own in-chunk scan.
+        // While `already_seen` would suppress them too, the early
+        // continue keeps the dedup loop tight.
         let start = m.location.offset;
         let end = start.saturating_add(m.credential.as_ref().len());
-        if !(start < seam_file_offset && end > seam_file_offset) {
+        if end <= seam_file_offset {
+            // Entirely inside A's tail region – A's own in-chunk scan has
+            // this; skip without consulting `already_seen`.
             continue;
         }
 
@@ -252,4 +297,32 @@ fn scan_one_pair(
 
         per_chunk_results[bi].push(m);
     }
+}
+
+fn boundary_context_for_pair(
+    scanner: &CompiledScanner,
+    path: Option<&str>,
+) -> BoundaryContextBytes {
+    if matches!(
+        scanner.pattern_boundary_context,
+        BoundaryContextBytes::FullAdjacentChunks
+    ) {
+        return BoundaryContextBytes::FullAdjacentChunks;
+    }
+
+    if scanner.config.entropy_enabled
+        && crate::entropy::is_entropy_appropriate(path, scanner.config.entropy_in_source_files)
+    {
+        return BoundaryContextBytes::FullAdjacentChunks;
+    }
+
+    scanner.pattern_boundary_context
+}
+
+fn scan_boundary_chunk_whole(scanner: &CompiledScanner, chunk: &Chunk) -> Vec<RawMatch> {
+    let backend = scanner.select_backend_for_file(chunk.data.len() as u64);
+    super::gpu_forced::deny_silent_gpu_degrade(scanner, backend);
+    let mut matches = scanner.scan_inner(chunk, backend, None);
+    scanner.post_process_matches(chunk, &mut matches, None);
+    matches
 }

@@ -1,7 +1,7 @@
 //! Base64 decode-through splices decoded secret back into parent context.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn base64_splice_preserves_companion_anchor() {

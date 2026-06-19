@@ -8,22 +8,22 @@ use super::compiler_prefix::{extract_inner_literals, extract_literal_prefixes};
 
 use super::compiler_compile::{compile_detector_companions, compile_pattern};
 
-pub struct CompileState {
-    pub ac_literals: Vec<String>,
-    pub ac_map: Vec<CompiledPattern>,
-    pub fallback: Vec<(CompiledPattern, Vec<String>)>,
-    pub companions: Vec<Vec<CompiledCompanion>>,
-    pub quality_warnings: Vec<String>,
+pub(crate) struct CompileState {
+    pub(crate) ac_literals: Vec<String>,
+    pub(crate) ac_map: Vec<CompiledPattern>,
+    pub(crate) phase2_patterns: Vec<(CompiledPattern, Vec<String>)>,
+    pub(crate) companions: Vec<Vec<CompiledCompanion>>,
+    pub(crate) quality_warnings: Vec<String>,
 }
 
-pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
+pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
     use rayon::prelude::*;
 
     // De-duplicate identical regex strings BEFORE compilation. The 888-
     // detector corpus has ~6-15% duplicate patterns (e.g. multiple
     // google-* detectors share the `AIza` regex shape). Compiling each
     // once cuts startup-compile time and RAM proportionally - see
-    // audits/legendary-2026-04-26.
+    // docs/EXECUTION_PLAN.md.
     //
     // The count is informational only (one debug log line), so gate the
     // whole computation behind the DEBUG level check and borrow the regex
@@ -175,7 +175,7 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
     Ok(CompileState {
         ac_literals,
         ac_map,
-        fallback,
+        phase2_patterns: fallback,
         companions,
         quality_warnings,
     })
@@ -191,7 +191,7 @@ pub fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileState> {
 /// from inside `(?:ghp_|github_pat_)`, the homoglyph compiler needs the
 /// matching surgical rewrite to splice the expanded prefix into the
 /// regex without losing the trailing body constraint.
-pub fn rewrite_alternation_prefix(
+pub(crate) fn rewrite_alternation_prefix(
     regex: &str,
     prefix: &str,
     expanded_prefix: &str,
@@ -294,7 +294,7 @@ fn split_top_level_alternatives(group: &str) -> Vec<&str> {
     alts
 }
 
-pub fn split_leading_inline_flag(s: &str) -> (&str, &str) {
+pub(crate) fn split_leading_inline_flag(s: &str) -> (&str, &str) {
     if !s.starts_with("(?") {
         return ("", s);
     }

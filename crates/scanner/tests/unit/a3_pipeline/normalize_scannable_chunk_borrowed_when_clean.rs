@@ -1,5 +1,5 @@
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::normalize_scannable_chunk;
+use keyhog_scanner::testing::normalize_scannable_chunk;
 
 #[test]
 fn clean_ascii_chunk_borrowed() {
@@ -9,7 +9,7 @@ fn clean_ascii_chunk_borrowed() {
     };
     let mut owned = None;
     let out = normalize_scannable_chunk(&chunk, &mut owned);
-    assert_eq!(out.data.as_str(), "plain_ascii");
+    assert_eq!(out.data.as_ref(), "plain_ascii");
     let _ = out;
     assert!(owned.is_none());
 }

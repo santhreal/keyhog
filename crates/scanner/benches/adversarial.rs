@@ -29,9 +29,10 @@
 //!   chains (`"AK" + "IA" + "EXAMPLE…"`). Stresses multiline
 //!   reassembly + the proximity-aware fragment cache.
 
-use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
+use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use keyhog_core::{load_detectors, Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
+use std::hint::black_box;
 use std::path::PathBuf;
 use std::time::Duration;
 

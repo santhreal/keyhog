@@ -7,9 +7,9 @@
 //! passwords are admitted at 3.5 threshold. Pure alphanumeric values keep 4.5
 //! regardless of context.
 
-use keyhog_scanner::entropy::{
-    keywords::{is_secret_plausible_with_context, is_secret_plausible},
-    shannon_entropy,
+use keyhog_scanner::entropy::shannon_entropy;
+use keyhog_scanner::testing::entropy_keywords::{
+    is_secret_plausible, is_secret_plausible_with_context,
 };
 
 #[test]
@@ -19,16 +19,14 @@ fn symbolic_password_3_5_with_context_accepted() {
     let symbolic_pwd = "Y6NPMwS*rWGUv!JQnSG6a#D14";
     let entropy = shannon_entropy(symbolic_pwd.as_bytes());
     assert!(entropy >= 3.5 && entropy < 4.5, "entropy: {}", entropy);
-    assert!(symbolic_pwd
-        .bytes()
-        .any(|b| !b.is_ascii_alphanumeric()));
+    assert!(symbolic_pwd.bytes().any(|b| !b.is_ascii_alphanumeric()));
     // In credential context (is_credential_context = true), should be accepted
     // at the 3.5 floor.
     let placeholder_keywords = vec![];
     assert!(is_secret_plausible_with_context(
         symbolic_pwd,
         &placeholder_keywords,
-        true  // is_credential_context = true
+        true // is_credential_context = true
     ));
 }
 
@@ -39,15 +37,13 @@ fn symbolic_password_3_5_without_context_rejected() {
     let symbolic_pwd = "Y6NPMwS*rWGUv!JQnSG6a#D14";
     let entropy = shannon_entropy(symbolic_pwd.as_bytes());
     assert!(entropy >= 3.5 && entropy < 4.5, "entropy: {}", entropy);
-    assert!(symbolic_pwd
-        .bytes()
-        .any(|b| !b.is_ascii_alphanumeric()));
+    assert!(symbolic_pwd.bytes().any(|b| !b.is_ascii_alphanumeric()));
     // Outside credential context, rejected because entropy < 4.5.
     let placeholder_keywords = vec![];
     assert!(!is_secret_plausible_with_context(
         symbolic_pwd,
         &placeholder_keywords,
-        false  // is_credential_context = false
+        false // is_credential_context = false
     ));
 }
 
@@ -65,7 +61,7 @@ fn pure_alphanumeric_3_5_with_context_still_rejected() {
     assert!(!is_secret_plausible_with_context(
         alphanumeric,
         &placeholder_keywords,
-        true  // is_credential_context = true (but no symbols)
+        true // is_credential_context = true (but no symbols)
     ));
 }
 
@@ -78,9 +74,7 @@ fn symbolic_password_boundary_3_5_exact_entropy() {
     let borderline = "1E1B3b4Ho$U4kYBi";
     let entropy = shannon_entropy(borderline.as_bytes());
     assert!(entropy > 3.5 && entropy < 4.5, "entropy: {}", entropy);
-    assert!(borderline
-        .bytes()
-        .any(|b| !b.is_ascii_alphanumeric()));
+    assert!(borderline.bytes().any(|b| !b.is_ascii_alphanumeric()));
     // With credential context, should be accepted.
     let placeholder_keywords = vec![];
     assert!(is_secret_plausible_with_context(
@@ -95,7 +89,13 @@ fn symbolic_password_with_single_symbol_relaxation_applies() {
     // Must have "at least one symbolic (non-alphanumeric) character".
     // Even a single symbol should trigger the relaxation.
     let almost_alnum = "abc123def456ghi789jk*";
-    assert_eq!(almost_alnum.chars().filter(|c| !c.is_ascii_alphanumeric()).count(), 1);
+    assert_eq!(
+        almost_alnum
+            .chars()
+            .filter(|c| !c.is_ascii_alphanumeric())
+            .count(),
+        1
+    );
     let entropy = shannon_entropy(almost_alnum.as_bytes());
     // If entropy >= 3.5 and has a symbol, it should pass with credential context.
     let placeholder_keywords = vec![];
@@ -114,9 +114,7 @@ fn symbolic_password_multiple_symbols_entropy_relaxation() {
     // even if it were 3.5-4.5, it should pass with credential context.
     let multi_symbol = "P@ssw0rd!#$%^&*";
     let entropy = shannon_entropy(multi_symbol.as_bytes());
-    assert!(multi_symbol
-        .bytes()
-        .any(|b| !b.is_ascii_alphanumeric()));
+    assert!(multi_symbol.bytes().any(|b| !b.is_ascii_alphanumeric()));
     // In credential context, admitted if entropy >= 3.5.
     let placeholder_keywords = vec![];
     if entropy >= 3.5 {
@@ -133,7 +131,9 @@ fn pure_alphanumeric_4_5_accepted_without_context() {
     // Pure alphanumeric >= 4.5 is accepted regardless of context.
     // This is the default entropy floor.
     let high_entropy_alnum = "Xk7mP2qL9wR5tY8uI0oAs3Dg";
-    assert!(high_entropy_alnum.bytes().all(|b| b.is_ascii_alphanumeric()));
+    assert!(high_entropy_alnum
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric()));
     let entropy = shannon_entropy(high_entropy_alnum.as_bytes());
     assert!(entropy >= 4.5, "entropy: {}", entropy);
     // Accepted even without credential context.
@@ -150,9 +150,7 @@ fn symbolic_password_no_symbols_detected_fails_relaxation() {
     // If the value has no symbols but was somehow marked as symbolic,
     // the gate should not apply relaxation. Verify: bytes.any(|b| !b.is_ascii_alphanumeric()).
     let pure_alnum = "abc123def456ghi789";
-    assert!(!pure_alnum
-        .bytes()
-        .any(|b| !b.is_ascii_alphanumeric()));
+    assert!(!pure_alnum.bytes().any(|b| !b.is_ascii_alphanumeric()));
     let entropy = shannon_entropy(pure_alnum.as_bytes());
     if entropy >= 3.5 && entropy < 4.5 {
         // Even with credential context, should be rejected (no symbols).

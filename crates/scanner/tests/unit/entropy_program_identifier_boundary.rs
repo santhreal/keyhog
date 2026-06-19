@@ -9,7 +9,7 @@
 //! by checking: (1) underscore + all-lowercase OR (2) camelCase/PascalCase
 //! with 1+ internal case transitions. This test pins the exact boundary.
 
-use keyhog_scanner::entropy::keywords::is_secret_plausible;
+use keyhog_scanner::testing::entropy_keywords::is_secret_plausible;
 
 #[test]
 fn program_identifier_snake_case_with_underscores_rejected() {

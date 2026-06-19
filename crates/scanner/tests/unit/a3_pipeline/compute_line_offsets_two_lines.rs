@@ -1,4 +1,4 @@
-use keyhog_scanner::compute_line_offsets;
+use keyhog_scanner::testing::compute_line_offsets;
 
 #[test]
 fn two_line_file_has_two_starts() {

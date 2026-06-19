@@ -1,7 +1,8 @@
 /// Extended context tests: is_known_example_credential edge cases,
 /// confidence multiplier ordering invariants, and hard-suppress boundary
 /// conditions.
-use keyhog_scanner::context::{infer_context, is_known_example_credential, CodeContext};
+use keyhog_scanner::context::{infer_context, CodeContext};
+use keyhog_scanner::testing::context::is_known_example_credential;
 
 // ── is_known_example_credential ───────────────────────────────────────────────
 

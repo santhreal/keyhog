@@ -3,6 +3,7 @@
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
 
+#[cfg(test)]
 use crate::entropy::fast::shannon_entropy_scalar;
 
 /// AArch64 entropy: shared multi-stream histogram + shared exact reduction.
@@ -13,7 +14,7 @@ use crate::entropy::fast::shannon_entropy_scalar;
 /// through the one definition keeps this path bit-identical to scalar/AVX2/SSE2
 /// (KH-25, KH-28, KH-34).
 #[cfg(target_arch = "aarch64")]
-pub fn shannon_entropy_neon(data: &[u8]) -> f64 {
+pub(crate) fn shannon_entropy_neon(data: &[u8]) -> f64 {
     if data.is_empty() {
         return 0.0;
     }
@@ -23,7 +24,15 @@ pub fn shannon_entropy_neon(data: &[u8]) -> f64 {
 }
 
 /// Vectorized unique character checks using Neon (KH-21, KH-30)
+///
+/// # Safety
+/// Caller must run on an aarch64 target with NEON (baseline on every
+/// Rust-supported aarch64 target, guaranteed by the `#[cfg]` gate). The
+/// body's only raw load is the single `vld1q_u8` 16-byte read below, proven
+/// in-bounds by the `len < 16` early return + the offset math in its
+/// SAFETY comment; every other op is a pure register intrinsic.
 #[cfg(target_arch = "aarch64")]
+#[cfg(test)]
 #[allow(unsafe_op_in_unsafe_fn)]
 pub(crate) unsafe fn has_high_entropy_fast_neon(data: &[u8], threshold: f64) -> bool {
     let len = data.len();
@@ -31,6 +40,12 @@ pub(crate) unsafe fn has_high_entropy_fast_neon(data: &[u8], threshold: f64) -> 
         return shannon_entropy_scalar(data) >= threshold;
     }
 
+    // SAFETY: the 16-byte `vld1q_u8` reads `[off, off+16)` where
+    // `off = mid - min(mid, 8)` and `mid = len/2`. With `len >= 16` we have
+    // `mid >= 8`, so `off = mid - 8` and the read spans `[mid-8, mid+8)`.
+    // `mid+8 = len/2 + 8 <= len` exactly when `len >= 16`, which holds here —
+    // so the whole 16-byte load stays within `data`. The pointer derives from
+    // `data.as_ptr()` (valid for `len` bytes) and the load is unaligned-safe.
     let mid = len / 2;
     let ptr = data.as_ptr().add(mid.saturating_sub(8));
     let v = vld1q_u8(ptr);

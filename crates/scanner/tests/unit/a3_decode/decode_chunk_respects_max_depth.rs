@@ -1,7 +1,7 @@
 //! decode_chunk stops recursing once max_depth is reached.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn max_depth_zero_yields_no_recursive_layers() {

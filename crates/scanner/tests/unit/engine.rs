@@ -1,9 +1,11 @@
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
-use keyhog_scanner::engine::{
-    build_rule_pipeline, floor_char_boundary, line_number_for_offset, next_window_offset,
-    window_chunk, window_end_offset, CompiledScanner,
+use keyhog_scanner::engine::CompiledScanner;
+use keyhog_scanner::hw_probe::testing::ScanBackend;
+use keyhog_scanner::testing::{
+    floor_char_boundary, line_number_for_offset, next_window_offset, window_chunk,
+    window_end_offset,
 };
-use keyhog_scanner::hw_probe::ScanBackend;
+use keyhog_scanner::ScannerConfig;
 
 fn demo_detector() -> DetectorSpec {
     DetectorSpec {
@@ -31,6 +33,25 @@ fn chunk(data: &str) -> Chunk {
         data: data.into(),
         metadata: ChunkMetadata::default(),
     }
+}
+
+fn file_chunk(data: String, path: &str, base_offset: usize) -> Chunk {
+    Chunk {
+        data: data.into(),
+        metadata: ChunkMetadata {
+            source_type: "unit-boundary".into(),
+            path: Some(path.into()),
+            base_offset,
+            ..Default::default()
+        },
+    }
+}
+
+fn repeated_alnum(len: usize) -> String {
+    const ALPHABET: &[u8] = b"Ab3Cd4Ef5Gh6Jk7Lm8Np9Qr0StUvWxYz";
+    (0..len)
+        .map(|idx| ALPHABET[idx % ALPHABET.len()] as char)
+        .collect()
 }
 
 // ── engine/windowed.rs ──────────────────────────────────────────────
@@ -87,7 +108,7 @@ fn line_number_for_offset_counts_newlines() {
     assert_eq!(line_number_for_offset(text, text.len()), 3);
 }
 
-// ── engine/mod.rs - compile + rule pipeline ─────────────────────────
+// ── engine/mod.rs - compile ─────────────────────────────────────────
 
 #[test]
 fn compiled_scanner_compile_happy_path() {
@@ -102,18 +123,6 @@ fn compiled_scanner_compile_rejects_invalid_regex() {
     let mut detector = demo_detector();
     detector.patterns[0].regex = "(unclosed".into();
     assert!(CompiledScanner::compile(vec![detector]).is_err());
-}
-
-#[test]
-fn build_rule_pipeline_compiles_simple_pattern() {
-    let _pipeline = build_rule_pipeline(&["abc"], 1024).unwrap();
-}
-
-#[test]
-fn build_rule_pipeline_rejects_unsupported_regex_features() {
-    // Lookahead is outside the byte-NFA frontend.
-    let err = build_rule_pipeline(&["(?=abc)"], 1024).unwrap_err();
-    let _ = err.to_string();
 }
 
 // ── engine/scan.rs + fallback paths (via scan) ──────────────────────
@@ -149,7 +158,7 @@ fn backend_scan_with_backend_empty_chunk_returns_empty() {
         .is_empty());
 }
 
-// ── engine/fallback.rs + fallback_entropy.rs + fallback_generic.rs ─
+// ── engine/phase2.rs + phase2_entropy.rs + phase2_generic.rs ─
 
 #[test]
 fn fallback_pattern_fires_on_keyword_chunk() {
@@ -169,6 +178,140 @@ fn fallback_pattern_skips_plaintext_without_keyword() {
     detector.keywords = vec!["ghp_".into()];
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
     assert!(scanner.scan(&chunk("the quick brown fox")).is_empty());
+}
+
+#[test]
+fn entropy_fallback_honors_min_secret_len_config() {
+    let value = "aK7xP9mQ2wE5rT8yU1iO3pA6sD4fG0hJ";
+    assert_eq!(value.len(), 32);
+    let mut config = ScannerConfig::default();
+    config.entropy_in_source_files = true;
+    config.entropy_threshold = 3.0;
+    config.min_confidence = 0.0;
+    config.ml_enabled = false;
+    config.entropy_ml_authoritative = false;
+    config.secret_keywords = vec!["MARKER".into()];
+    config.test_keywords.clear();
+    config.placeholder_keywords.clear();
+
+    let scanner = CompiledScanner::compile(Vec::new())
+        .unwrap()
+        .with_config(config.clone());
+    let matches = scanner.scan(&chunk(&format!("MARKER = \"{value}\"")));
+    assert!(
+        matches.iter().any(|m| {
+            m.credential.as_ref() == value && m.detector_id.as_ref().starts_with("entropy-")
+        }),
+        "min_secret_len=32 should admit the entropy candidate; got {matches:?}"
+    );
+
+    config.min_secret_len = 33;
+    let scanner = CompiledScanner::compile(Vec::new())
+        .unwrap()
+        .with_config(config);
+    let matches = scanner.scan(&chunk(&format!("MARKER = \"{value}\"")));
+    assert!(
+        !matches.iter().any(|m| {
+            m.credential.as_ref() == value && m.detector_id.as_ref().starts_with("entropy-")
+        }),
+        "min_secret_len=33 should reject the 32-byte entropy candidate; got {matches:?}"
+    );
+}
+
+#[test]
+fn entropy_fallback_precheck_admits_symbolic_password_runs() {
+    let value = "1E1B3b4Ho$U4kYBi";
+    assert_eq!(value.len(), 16);
+    let mut config = ScannerConfig::default();
+    config.entropy_in_source_files = true;
+    config.entropy_threshold = 3.0;
+    config.min_confidence = 0.0;
+    config.ml_enabled = false;
+    config.entropy_ml_authoritative = false;
+    config.secret_keywords = vec!["SECRET".into()];
+    config.test_keywords.clear();
+    config.placeholder_keywords.clear();
+
+    let scanner = CompiledScanner::compile(Vec::new())
+        .unwrap()
+        .with_config(config);
+    let matches = scanner.scan(&chunk(&format!("SECRET = \"{value}\"")));
+    assert!(
+        matches.iter().any(|m| {
+            m.credential.as_ref() == value && m.detector_id.as_ref().starts_with("entropy-")
+        }),
+        "credential-context symbolic password should reach entropy fallback; got {matches:?}"
+    );
+}
+
+#[test]
+fn boundary_scan_uses_bounded_detector_match_width_past_1024_bytes() {
+    let mut detector = demo_detector();
+    detector.patterns[0].regex = r"LONG_[A-Za-z0-9]{1500}_END".into();
+    detector.keywords = vec!["LONG_".into()];
+    let mut config = ScannerConfig::default();
+    config.entropy_enabled = false;
+    config.ml_enabled = false;
+    config.min_confidence = 0.0;
+    let scanner = CompiledScanner::compile(vec![detector])
+        .unwrap()
+        .with_config(config);
+
+    let secret = format!("LONG_{}_END", repeated_alnum(1500));
+    let split_at = 1200;
+    let mut left = "prefix\n".to_string();
+    left.push_str(&secret[..split_at]);
+    let left_len = left.len();
+    let mut right = secret[split_at..].to_string();
+    right.push_str("\n");
+
+    let chunks = vec![
+        file_chunk(left, "long-boundary.txt", 0),
+        file_chunk(right, "long-boundary.txt", left_len),
+    ];
+    let matches = scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback);
+    assert!(
+        matches
+            .iter()
+            .flatten()
+            .any(|m| m.credential.as_ref() == secret),
+        "bounded detector match starting more than 1024 bytes before the seam must surface"
+    );
+}
+
+#[test]
+fn boundary_scan_uses_full_pair_for_unbounded_detector_regex() {
+    let mut detector = demo_detector();
+    detector.patterns[0].regex = r"LONG_[A-Za-z0-9]+_END".into();
+    detector.keywords = vec!["LONG_".into()];
+    let mut config = ScannerConfig::default();
+    config.entropy_enabled = false;
+    config.ml_enabled = false;
+    config.min_confidence = 0.0;
+    let scanner = CompiledScanner::compile(vec![detector])
+        .unwrap()
+        .with_config(config);
+
+    let secret = format!("LONG_{}_END", repeated_alnum(1500));
+    let split_at = 1200;
+    let mut left = "prefix\n".to_string();
+    left.push_str(&secret[..split_at]);
+    let left_len = left.len();
+    let mut right = secret[split_at..].to_string();
+    right.push_str("\n");
+
+    let chunks = vec![
+        file_chunk(left, "unbounded-boundary.txt", 0),
+        file_chunk(right, "unbounded-boundary.txt", left_len),
+    ];
+    let matches = scanner.scan_chunks_with_backend(&chunks, ScanBackend::CpuFallback);
+    assert!(
+        matches
+            .iter()
+            .flatten()
+            .any(|m| m.credential.as_ref() == secret),
+        "unbounded detector regex must scan the full adjacent seam pair"
+    );
 }
 
 // ── engine/scan_gpu.rs + hot_patterns.rs (via warm_backend) ─────────
@@ -283,7 +426,7 @@ fn generic_keyword_low_entropy_knob_gates_low_entropy_values() {
     let relaxed = CompiledScanner::compile(vec![demo_detector()])
         .unwrap()
         .with_config(keyhog_scanner::ScannerConfig {
-            scan: keyhog_core::config::ScanConfig {
+            scan: keyhog_core::ScanConfig {
                 generic_keyword_low_entropy: true,
                 ml_enabled: false,
                 min_confidence: 0.0,
@@ -303,7 +446,7 @@ fn generic_keyword_low_entropy_knob_gates_low_entropy_values() {
     let strict = CompiledScanner::compile(vec![demo_detector()])
         .unwrap()
         .with_config(keyhog_scanner::ScannerConfig {
-            scan: keyhog_core::config::ScanConfig {
+            scan: keyhog_core::ScanConfig {
                 generic_keyword_low_entropy: false,
                 ml_enabled: false,
                 min_confidence: 0.0,

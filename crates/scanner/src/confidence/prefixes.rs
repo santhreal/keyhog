@@ -15,7 +15,7 @@
 /// `xoxs-`, `vercel_`, `sbp_`, `0x`, `rk_test_`, `sk-`; the inference
 /// copies missed `PRIVATE KEY`, `-----BEGIN`, `TESTKEY_`). Consolidated
 /// here (kimi-dedup audit rows #12-13).
-pub const KNOWN_PREFIXES: &[&str] = &[
+pub(crate) const KNOWN_PREFIXES: &[&str] = &[
     // GitHub PATs (every documented variant)
     "ghp_",
     "gho_",
@@ -97,7 +97,7 @@ pub const KNOWN_PREFIXES: &[&str] = &[
 /// `is_degenerate_repeat` skip (CredData dogfood 2026-06-03) closes that hole
 /// the same way - a 10+ identical-char run is never a real key body.
 #[must_use]
-pub fn known_prefix_confidence_floor(credential: &str) -> Option<f64> {
+pub(crate) fn known_prefix_confidence_floor(credential: &str) -> Option<f64> {
     if super::penalties::contains_placeholder_word(credential)
         || crate::decode_structure::decoded_contains_placeholder(credential)
         || super::penalties::is_degenerate_repeat(credential)

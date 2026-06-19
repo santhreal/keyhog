@@ -1,6 +1,7 @@
 //! Markdown code fences mark enclosed lines as documentation.
 
-use keyhog_scanner::context::{documentation_line_flags, infer_context, CodeContext};
+use keyhog_scanner::context::{infer_context, CodeContext};
+use keyhog_scanner::testing::context::documentation_line_flags;
 
 #[test]
 fn context_markdown_fence_marks_documentation() {

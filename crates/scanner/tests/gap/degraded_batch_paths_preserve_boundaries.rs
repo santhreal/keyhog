@@ -32,7 +32,7 @@ fn gpu_degrade_batch_path_runs_boundary_reassembly() {
 
 #[test]
 fn missing_simd_prefilter_batch_path_runs_boundary_reassembly() {
-    let source = scanner_source("engine/scan.rs");
+    let source = scanner_source("engine/scan_coalesced.rs");
     let fallback = source
         .split("let Some(scanner) = &self.simd_prefilter else")
         .nth(1)

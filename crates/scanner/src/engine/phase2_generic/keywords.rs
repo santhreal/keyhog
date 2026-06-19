@@ -1,0 +1,118 @@
+//! Keyword and strong-key classification helpers for the generic assignment bridge.
+
+/// Normalize assignment-key spellings used by detector TOML keywords and by the
+/// generic bridge's captured LHS (`SEGMENT_WRITE_KEY`, `segment-write-key`,
+/// `segment.write.key`) into one comparable token.
+pub(crate) fn normalize_assignment_keyword(keyword: &str) -> Option<String> {
+    let mut normalized = String::with_capacity(keyword.len());
+    let mut last_was_sep = false;
+    for byte in keyword.bytes() {
+        if byte.is_ascii_alphanumeric() {
+            normalized.push(byte.to_ascii_lowercase() as char);
+            last_was_sep = false;
+        } else if matches!(byte, b'_' | b'-' | b'.') && !normalized.is_empty() && !last_was_sep {
+            normalized.push('_');
+            last_was_sep = true;
+        }
+    }
+    if normalized.ends_with('_') {
+        normalized.pop();
+    }
+    (!normalized.is_empty()).then_some(normalized)
+}
+
+/// True for assignment-key names whose suffix claims a credential slot, not a
+/// bare service marker like `segment`.
+pub(crate) fn normalized_assignment_keyword_has_secret_suffix(normalized: &str) -> bool {
+    matches!(
+        normalized.rsplit('_').next(),
+        Some("key" | "secret" | "token" | "password" | "passwd" | "pwd")
+    ) || normalized.ends_with("key")
+        || normalized.ends_with("secret")
+        || normalized.ends_with("token")
+        || normalized.ends_with("password")
+}
+
+/// Whole-word left boundary for the generic bridge, including camelCase hinges
+/// while rejecting substring tails such as `bypass` and `xtoken`.
+pub(crate) fn keyword_has_word_boundary(line: &str, kw_start: usize) -> bool {
+    if kw_start == 0 {
+        return true;
+    }
+    let bytes = line.as_bytes();
+    let prev = bytes[kw_start - 1];
+    if !prev.is_ascii_alphabetic() {
+        return true;
+    }
+    // `prev` is a letter: the only legitimate in-word start is a camelCase
+    // hinge - a lowercase byte immediately followed by the (uppercase) keyword.
+    let kw_first = bytes[kw_start];
+    prev.is_ascii_lowercase() && kw_first.is_ascii_uppercase()
+}
+
+/// True iff the bridge captured a complete 32/48-byte hex key under a strong
+/// cryptographic keyword. Other placeholder and hash-shape gates still run.
+pub(crate) fn is_strong_keyword_anchored_hex_key(keyword: &str, value: &str) -> bool {
+    if !matches!(value.len(), 32 | 48) {
+        return false;
+    }
+    if !value.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return false;
+    }
+    // Canonicalize the captured keyword: case-fold and drop `_`/`-`/`.` so
+    // `API_KEY`, `api-key`, `encryption_key`, `clientSecret` all normalize to a
+    // single token, then match the STRONG cryptographic-key family ONLY.
+    // Deliberately EXCLUDES the weaker / more ambiguous bridge anchors
+    // (`token`, `pass*`, `auth*`, `credential`, `license_key`, `passphrase`),
+    // whose hex captures are not as cleanly real on CredData.
+    let canon: String = keyword
+        .bytes()
+        .filter(|b| !matches!(b, b'_' | b'-' | b'.'))
+        .map(|b| b.to_ascii_lowercase() as char)
+        .collect();
+    if matches!(
+        canon.as_str(),
+        "secret"
+            | "apikey"
+            | "privatekey"
+            | "encryptionkey"
+            | "signingkey"
+            | "accesskey"
+            | "clientsecret"
+            | "appsecret"
+            | "masterkey"
+    ) {
+        return true;
+    }
+    // Vendor-prefixed `*_key` / `*_secret` anchors are strong except known weak
+    // product/license names.
+    const SUFFIX_EXCLUDED_CANONS: &[&str] = &["licensekey"];
+    if SUFFIX_EXCLUDED_CANONS.contains(&canon.as_str()) {
+        return false;
+    }
+    canon.ends_with("key") || canon.ends_with("secret")
+}
+
+/// True for a generic assignment where the key is a strong credential anchor
+/// and the value is an encoded printable text secret rather than a binary/base64
+/// data envelope. This lets `password: <base64("SuperSecret...")>` reach the
+/// scorer while keeping random protobuf/base64 blobs suppressed.
+pub(crate) fn is_strong_keyword_anchored_encoded_text_secret(keyword: &str, value: &str) -> bool {
+    if value.contains('.') || value.len() < 24 {
+        return false;
+    }
+    let Some(normalized) = normalize_assignment_keyword(keyword) else {
+        return false;
+    };
+    let compact: String = normalized
+        .bytes()
+        .filter(|b| *b != b'_')
+        .map(|b| b.to_ascii_lowercase() as char)
+        .collect();
+    let strong_anchor = normalized_assignment_keyword_has_secret_suffix(&normalized)
+        || matches!(
+            compact.as_str(),
+            "password" | "passwd" | "pwd" | "passphrase" | "token" | "secret" | "credential"
+        );
+    strong_anchor && crate::decode_structure::decodes_to_printable_text(value)
+}

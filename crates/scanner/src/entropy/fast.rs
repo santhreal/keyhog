@@ -23,7 +23,7 @@ pub(crate) fn get_log2_table() -> &'static [f64; 256] {
 /// Fast entropy calculation using unrolled scalar accumulation.
 /// Processes data in 32-byte chunks with 8 parallel accumulators on x86_64.
 #[cfg(target_arch = "x86_64")]
-pub fn shannon_entropy_simd(data: &[u8]) -> f64 {
+pub(crate) fn shannon_entropy_simd(data: &[u8]) -> f64 {
     if data.is_empty() {
         return 0.0;
     }
@@ -64,13 +64,13 @@ pub fn shannon_entropy_simd(data: &[u8]) -> f64 {
 
 /// AArch64 true Neon SIMD parallel histogram calculations.
 #[cfg(target_arch = "aarch64")]
-pub fn shannon_entropy_simd(data: &[u8]) -> f64 {
+pub(crate) fn shannon_entropy_simd(data: &[u8]) -> f64 {
     crate::entropy::fast_neon::shannon_entropy_neon(data)
 }
 
 /// Generic fallback for all other architectures.
 #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
-pub fn shannon_entropy_simd(data: &[u8]) -> f64 {
+pub(crate) fn shannon_entropy_simd(data: &[u8]) -> f64 {
     shannon_entropy_scalar(data)
 }
 
@@ -204,7 +204,7 @@ pub(crate) fn entropy_from_histogram(counts: &[u32; 256], active_len: usize) -> 
 /// Counts through [`histogram_8way`] (the shared null contract), then reduces
 /// through the shared exact [`entropy_from_histogram`].
 #[inline]
-pub fn shannon_entropy_scalar(data: &[u8]) -> f64 {
+pub(crate) fn shannon_entropy_scalar(data: &[u8]) -> f64 {
     if data.is_empty() {
         return 0.0;
     }
@@ -218,10 +218,14 @@ pub fn shannon_entropy_scalar(data: &[u8]) -> f64 {
 ///
 /// Features vectorized unique checks and expanded sampling threshold optimizations
 /// (KH-21, KH-26, KH-30).
-pub fn has_high_entropy_fast(data: &[u8], threshold: f64) -> bool {
+#[cfg(test)]
+pub(crate) fn has_high_entropy_fast(data: &[u8], threshold: f64) -> bool {
     #[cfg(target_arch = "x86_64")]
     {
         if is_x86_feature_detected!("sse2") {
+            // SAFETY: the `is_x86_feature_detected!("sse2")` guard immediately
+            // above proves the CPU supports `sse2`, the only feature the callee's
+            // `#[target_feature(enable = "sse2")]` requires.
             unsafe {
                 return crate::entropy::fast_x86::has_high_entropy_fast_x86(data, threshold);
             }
@@ -229,6 +233,9 @@ pub fn has_high_entropy_fast(data: &[u8], threshold: f64) -> bool {
     }
     #[cfg(target_arch = "aarch64")]
     {
+        // SAFETY: NEON is baseline on every Rust-supported aarch64 target, so the
+        // callee's NEON requirement is always satisfied under this `#[cfg]`; the
+        // single raw 16-byte load inside is bounds-proven in its own SAFETY note.
         unsafe {
             return crate::entropy::fast_neon::has_high_entropy_fast_neon(data, threshold);
         }
@@ -250,6 +257,7 @@ pub fn has_high_entropy_fast(data: &[u8], threshold: f64) -> bool {
 /// bit-for-bit — a tiny sample could miss a constant run hiding a high-entropy
 /// remainder (false negative) or simply look at different bytes per arch.
 #[inline]
+#[cfg(test)]
 pub(crate) fn distinct_byte_count(data: &[u8]) -> u32 {
     let mut seen = [0u64; 4];
     for &b in data {
@@ -260,6 +268,7 @@ pub(crate) fn distinct_byte_count(data: &[u8]) -> u32 {
 
 /// Scalar fallback for has_high_entropy_fast
 #[inline]
+#[cfg(test)]
 fn has_high_entropy_fast_scalar(data: &[u8], threshold: f64) -> bool {
     if data.is_empty() {
         return shannon_entropy_scalar(data) >= threshold;

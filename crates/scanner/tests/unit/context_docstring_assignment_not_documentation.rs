@@ -1,6 +1,6 @@
 //! Docstring opened by assignment must not be flagged documentation.
 
-use keyhog_scanner::context::documentation_line_flags;
+use keyhog_scanner::testing::context::documentation_line_flags;
 
 #[test]
 fn context_docstring_assignment_not_documentation() {

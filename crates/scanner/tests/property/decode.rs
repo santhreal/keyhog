@@ -1,5 +1,5 @@
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 use proptest::prelude::*;
 
 proptest! {

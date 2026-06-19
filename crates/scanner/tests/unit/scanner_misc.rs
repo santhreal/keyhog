@@ -1,14 +1,18 @@
 use base64::Engine;
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
-use keyhog_scanner::compiler::{
-    build_ac_pattern_set, build_compile_state, extract_literal_prefix, is_escaped_literal,
-};
-use keyhog_scanner::decode::decode_chunk;
 use keyhog_scanner::engine::CompiledScanner;
-use keyhog_scanner::jwt::{analyze, looks_like_jwt};
-use keyhog_scanner::telemetry::{drain_events, enable_dogfood, record_example_suppression, reset};
+use keyhog_scanner::telemetry::{
+    drain_events, enable_dogfood, record_example_suppression, testing::reset,
+};
+use keyhog_scanner::testing::decode_chunk;
+use keyhog_scanner::testing::jwt::{analyze, looks_like_jwt};
+use keyhog_scanner::testing::{build_ac_pattern_set, extract_literal_prefix, is_escaped_literal};
+use keyhog_scanner::testing::{compile_state_ac_literals, compile_state_is_ok};
 use keyhog_scanner::types::ScannerConfig;
-use keyhog_scanner::{bigram_bloom::BigramBloom, ScanError};
+use keyhog_scanner::{testing::BigramBloom, ScanError};
+use std::sync::Mutex;
+
+static TELEMETRY_LOCK: Mutex<()> = Mutex::new(());
 
 // ── bigram_bloom.rs ─────────────────────────────────────────────────
 
@@ -46,12 +50,9 @@ fn build_compile_state_collects_literals_for_detector() {
         min_confidence: None,
         ..Default::default()
     }];
-    let state = build_compile_state(&detectors).unwrap();
-    assert!(!state.ac_literals.is_empty());
-    assert_eq!(
-        build_ac_pattern_set(&state.ac_literals).unwrap().is_some(),
-        true
-    );
+    let ac_literals = compile_state_ac_literals(&detectors).unwrap();
+    assert!(!ac_literals.is_empty());
+    assert_eq!(build_ac_pattern_set(&ac_literals).unwrap().is_some(), true);
 }
 
 #[test]
@@ -80,7 +81,7 @@ fn build_compile_state_errors_on_invalid_regex() {
         min_confidence: None,
         ..Default::default()
     }];
-    assert!(build_compile_state(&detectors).is_err());
+    assert!(!compile_state_is_ok(&detectors));
 }
 
 // ── decode/* (caesar, json, reverse, url, pipeline, mod) ────────────
@@ -232,6 +233,7 @@ fn structured_env_preprocessing_surfaces_key_value_via_scan() {
 
 #[test]
 fn telemetry_records_example_suppression_when_dogfood_enabled() {
+    let _guard = TELEMETRY_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     reset();
     enable_dogfood();
     record_example_suppression("demo", None, "ghp_EXAMPLE", "ends_with_EXAMPLE");
@@ -242,6 +244,7 @@ fn telemetry_records_example_suppression_when_dogfood_enabled() {
 
 #[test]
 fn telemetry_reset_clears_dogfood_state() {
+    let _guard = TELEMETRY_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     reset();
     enable_dogfood();
     reset();

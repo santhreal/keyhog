@@ -38,8 +38,8 @@ fn main() -> Result<(), keyhog_scanner::ScanError> {
 
     println!(
         "detectors={} patterns={}",
-        scanner.detector_count(),
-        scanner.pattern_count()
+        scanner.runtime_status().detector_count,
+        scanner.runtime_status().pattern_count
     );
     println!("matches={}", matches.len());
     Ok(())

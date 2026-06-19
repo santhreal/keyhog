@@ -1,4 +1,4 @@
-use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec};
+use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
 use regex::Regex;
 use std::path::PathBuf;

@@ -1,6 +1,6 @@
 //! Alternation prefix extractor handles nested groups in regex head.
 
-use keyhog_scanner::compiler::extract_literal_prefixes;
+use keyhog_scanner::testing::extract_literal_prefixes;
 
 #[test]
 fn compiler_alternation_rewrite_nested_groups() {

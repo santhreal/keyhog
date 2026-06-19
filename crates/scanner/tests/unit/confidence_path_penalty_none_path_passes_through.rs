@@ -1,6 +1,6 @@
 //! Missing path still sanitizes but preserves finite score.
 
-use keyhog_scanner::confidence::apply_path_confidence_penalties;
+use keyhog_scanner::testing::confidence::apply_path_confidence_penalties;
 
 #[test]
 fn confidence_path_penalty_none_path_passes_through() {

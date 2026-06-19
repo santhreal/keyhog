@@ -6,7 +6,7 @@ mod json;
 mod line;
 mod yaml;
 
-pub use env::parse_env;
-pub use hcl::parse_hcl;
-pub use json::{parse_jupyter, parse_tfstate};
-pub use yaml::{parse_docker_compose, parse_k8s_secret};
+pub(crate) use env::parse_env;
+pub(crate) use hcl::parse_hcl;
+pub(crate) use json::{parse_jupyter, parse_tfstate};
+pub(crate) use yaml::{parse_docker_compose, parse_k8s_secret};

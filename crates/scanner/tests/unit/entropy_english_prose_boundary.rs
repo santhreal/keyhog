@@ -5,7 +5,7 @@
 //! mode rejects strings 16+ chars of pure lowercase as prose. This test pins
 //! the exact length boundary and ensures mixed-case/digit strings bypass the gate.
 
-use keyhog_scanner::entropy::keywords::is_secret_plausible;
+use keyhog_scanner::testing::entropy_keywords::is_secret_plausible;
 
 #[test]
 fn prose_detection_boundary_15_char_pure_lowercase_accepted() {
@@ -48,9 +48,9 @@ fn prose_detection_multiword_prose_with_spaces_rejected() {
     let multiword = "the quick brown fox jumps";
     let tokens: Vec<&str> = multiword.split_whitespace().collect();
     assert!(tokens.len() >= 2);
-    assert!(tokens.iter().all(|t| {
-        t.len() >= 2 && t.bytes().all(|b| b.is_ascii_alphabetic())
-    }));
+    assert!(tokens
+        .iter()
+        .all(|t| { t.len() >= 2 && t.bytes().all(|b| b.is_ascii_alphabetic()) }));
     assert!(!is_secret_plausible(multiword, &[]));
 }
 

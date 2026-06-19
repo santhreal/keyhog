@@ -276,7 +276,6 @@ fn scanner_config_sanitise_nan_min_confidence() {
 #[test]
 fn high_precision_threshold_boundary() {
     let floor = 0.85;
-    let per_detector_floors: HashMap<String, f64> = HashMap::new();
 
     // Test just below
     let match_below = make_match("test", "Test", "test", Some(0.849999));

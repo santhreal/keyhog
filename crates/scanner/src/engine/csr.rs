@@ -8,8 +8,8 @@
 /// `Vec<Vec<usize>>` whose rows are pattern/literal indices.
 ///
 /// The detector-side index maps (`prefix_propagation`, `same_prefix_patterns`,
-/// `fallback_keyword_to_patterns`, and the simd `hs_index_map`) are each
-/// indexed parallel to the ~1000+ AC literals / fallback patterns. Stored as
+/// `phase2_keyword_to_patterns`, and the simd `hs_index_map`) are each
+/// indexed parallel to the ~1000+ AC literals / phase-2 patterns. Stored as
 /// `Vec<Vec<usize>>` that is ~1000+ separate heap allocations per table, each
 /// inner `Vec` carrying a 24-byte (ptr+len+cap) header plus capacity slack -
 /// even for the overwhelmingly common empty or single-element row. That

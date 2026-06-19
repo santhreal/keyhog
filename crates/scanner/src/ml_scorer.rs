@@ -1,14 +1,16 @@
 //! ML-based secret scoring with a tiny mixture-of-experts network.
 //!
-//! Architecture: gate Linear(41,6) → Softmax plus 6 experts of
-//! Linear(41,32) → ReLU → Linear(32,16) → ReLU → Linear(16,1), then
-//! a weighted logit sum followed by Sigmoid. Model weights are embedded in
-//! `ml_weights.rs` as little-endian f32 values.
+//! Architecture: gate Linear(D,6) → Softmax plus 6 experts of
+//! Linear(D,32) → ReLU → Linear(32,16) → ReLU → Linear(16,1), then
+//! a weighted logit sum followed by Sigmoid, where `D = NUM_FEATURES` (42).
+//! Model weights are embedded in `ml_weights.rs` as little-endian f32 values.
 //! Inference: typically under ~100μs per prediction on the test hardware
 //!
-//! The 41 input features capture everything our heuristics know:
-//! length, entropy, char diversity, known prefixes, context keywords,
-//! placeholder patterns, structural signals, and coarse file-type cues.
+//! The 42 input features capture everything our heuristics know: length,
+//! entropy, char diversity, known prefixes, context keywords, placeholder
+//! patterns, structural signals, coarse file-type cues, and the decode-structure
+//! verdict (feature #41, base64/hex → magic-bytes/protobuf), the single feature
+//! that drove the base64-of-binary false-flag rate to 0%.
 
 // Submodules live in `ml_scorer/` (native path resolution), matching the
 // `foo.rs` + `foo/` layout used across the workspace (e.g. sources/filesystem).
@@ -17,8 +19,10 @@ pub(crate) mod ml_weights;
 use std::cell::RefCell;
 
 mod ml_features;
+#[cfg(test)]
+pub(crate) use ml_features::compute_features_public;
 pub use ml_features::compute_features_with_config;
-pub use ml_features::{compute_features_public, NUM_FEATURES};
+pub(crate) use ml_features::NUM_FEATURES;
 
 /// Batch-size crossover for ML scoring. Below this, `batch_ml_inference` scores
 /// serially (a fused feature->score loop) because it already runs inside the
@@ -27,7 +31,8 @@ pub use ml_features::{compute_features_public, NUM_FEATURES};
 /// extraction parallelizes and the GPU MoE dispatch becomes worthwhile. Single
 /// source of truth: the GPU backend's dispatch gate references this same const
 /// so the serial/parallel boundary and the GPU-engage boundary can never drift.
-pub const GPU_BATCH_THRESHOLD: usize = 64;
+#[cfg(any(feature = "gpu", feature = "ml"))]
+pub(crate) const GPU_BATCH_THRESHOLD: usize = 64;
 
 /// Number of mixture-of-experts specialists. Each expert sees the same input
 /// but learns different aspects (one may specialize in cloud credentials,
@@ -38,12 +43,12 @@ const EXPERT_HIDDEN_LAYER_1: usize = 32;
 const EXPERT_HIDDEN_LAYER_2: usize = 16;
 
 /// Score a candidate secret and its surrounding context using default (empty) heuristic lists.
-pub fn score(text: &str, context: &str) -> f64 {
+pub(crate) fn score(text: &str, context: &str) -> f64 {
     score_with_config(text, context, &[], &[], &[], &[])
 }
 
 /// Score a candidate secret and its surrounding context with provided heuristic lists.
-pub fn score_with_config(
+pub(crate) fn score_with_config(
     text: &str,
     context: &str,
     known_prefixes: &[String],
@@ -98,6 +103,7 @@ pub fn score_with_config(
 }
 
 /// Score precomputed model features without recomputing text/context signals.
+#[cfg(feature = "ml")]
 pub(crate) fn score_features(features: &[f32; NUM_FEATURES]) -> f64 {
     forward_pass(features) as f64
 }

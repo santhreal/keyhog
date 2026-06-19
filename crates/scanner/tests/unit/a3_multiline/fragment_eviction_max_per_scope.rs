@@ -3,7 +3,7 @@
 //! exceeds 8 fragments despite multiple record calls, and eviction doesn't
 //! affect join semantics of remaining fragments.
 
-use keyhog_scanner::fragment_cache::{FragmentCache, SecretFragment};
+use keyhog_scanner::testing::fragment_cache::{FragmentCache, SecretFragment};
 use std::sync::Arc;
 use zeroize::Zeroizing;
 

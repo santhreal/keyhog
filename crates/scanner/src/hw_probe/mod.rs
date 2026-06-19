@@ -27,7 +27,7 @@ pub(crate) mod thresholds;
 
 pub use banner::startup_banner;
 pub(crate) use select::select_backend_for_file;
-pub use select::{cpu_tier_backend, gpu_could_engage, parse_backend_str, select_backend};
+pub use select::{gpu_could_engage, parse_backend_str, select_backend};
 pub use tier::{gpu_routing_profile, gpu_routing_profiles, GpuRoutingProfile};
 
 /// Scan execution backend selected for a given workload.
@@ -157,11 +157,12 @@ pub fn probe_hardware() -> &'static HardwareCaps {
     })
 }
 
+#[cfg(test)]
 #[doc(hidden)]
 pub mod testing {
     pub use super::{
-        cpu_tier_backend, gpu_could_engage, parse_backend_str, probe_hardware, select_backend,
-        startup_banner, HardwareCaps, ScanBackend,
+        gpu_could_engage, parse_backend_str, probe_hardware, select_backend, startup_banner,
+        HardwareCaps, ScanBackend,
     };
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -185,6 +186,10 @@ pub mod testing {
             GpuTier::Mid => super::tier::GpuTier::Mid,
             GpuTier::Low => super::tier::GpuTier::Low,
         }
+    }
+
+    pub fn cpu_tier_backend(caps: &HardwareCaps) -> ScanBackend {
+        super::select::cpu_tier_backend(caps)
     }
 
     pub fn classify_gpu_tier(adapter_name: Option<&str>) -> GpuTier {

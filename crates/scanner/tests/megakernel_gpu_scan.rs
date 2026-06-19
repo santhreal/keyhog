@@ -6,7 +6,7 @@
 //! the `HitRecord`s correctly identify (file, rule=detector, byte offset).
 //! Proves the existing vyre engine scans keyhog patterns end-to-end on hardware
 //! — the foundation the fallback/confirmed passes wire onto
-//! (`docs/GPU_DETECTION_REWRITE.md` step 5). Modeled on
+//! (`docs/EXECUTION_PLAN.md` step 5). Modeled on
 //! vyre `vyre-driver-wgpu/tests/megakernel_telemetry_contracts.rs`.
 //!
 //! Run: cargo test -p keyhog-scanner --features gpu --test megakernel_gpu_scan -- --ignored --nocapture

@@ -8,19 +8,19 @@ use thiserror::Error;
 
 /// A logical input range inside one coalesced scanner buffer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Segment {
+pub(crate) struct Segment {
     /// Caller-defined stable identifier for the logical input.
-    pub id: u32,
+    pub(crate) id: u32,
     /// Inclusive global byte offset where the segment starts.
-    pub start: u32,
+    pub(crate) start: u32,
     /// Segment length in bytes.
-    pub len: u32,
+    pub(crate) len: u32,
 }
 
 impl Segment {
     /// Create a segment descriptor.
     #[must_use]
-    pub const fn new(id: u32, start: u32, len: u32) -> Self {
+    pub(crate) const fn new(id: u32, start: u32, len: u32) -> Self {
         Self { id, start, len }
     }
 
@@ -37,19 +37,19 @@ impl Segment {
 
 /// A scanner match using global byte offsets in the coalesced buffer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct GlobalMatch {
+pub(crate) struct GlobalMatch {
     /// Pattern identifier emitted by the scanner.
-    pub pattern_id: u32,
+    pub(crate) pattern_id: u32,
     /// Inclusive global match start.
-    pub start: u32,
+    pub(crate) start: u32,
     /// Exclusive global match end.
-    pub end: u32,
+    pub(crate) end: u32,
 }
 
 impl GlobalMatch {
     /// Create a global scanner match.
     #[must_use]
-    pub const fn new(pattern_id: u32, start: u32, end: u32) -> Self {
+    pub(crate) const fn new(pattern_id: u32, start: u32, end: u32) -> Self {
         Self {
             pattern_id,
             start,
@@ -60,21 +60,26 @@ impl GlobalMatch {
 
 /// A match rewritten into segment-local byte offsets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct AttributedMatch {
+pub(crate) struct AttributedMatch {
     /// Identifier copied from the containing segment.
-    pub segment_id: u32,
+    pub(crate) segment_id: u32,
     /// Identifier copied from the original match.
-    pub pattern_id: u32,
+    pub(crate) pattern_id: u32,
     /// Inclusive byte offset inside the containing segment.
-    pub local_start: u32,
+    pub(crate) local_start: u32,
     /// Exclusive byte offset inside the containing segment.
-    pub local_end: u32,
+    pub(crate) local_end: u32,
 }
 
 impl AttributedMatch {
     /// Create a segment-local match.
     #[must_use]
-    pub const fn new(segment_id: u32, pattern_id: u32, local_start: u32, local_end: u32) -> Self {
+    pub(crate) const fn new(
+        segment_id: u32,
+        pattern_id: u32,
+        local_start: u32,
+        local_end: u32,
+    ) -> Self {
         Self {
             segment_id,
             pattern_id,
@@ -86,7 +91,7 @@ impl AttributedMatch {
 
 /// Validation error returned while attributing matches to segments.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
-pub enum SegmentAttributionError {
+pub(crate) enum SegmentAttributionError {
     /// A segment's `start + len` exceeded `u32::MAX`.
     #[error("segment {segment_index} overflows: start {start} + len {len}")]
     SegmentEndOverflow {
@@ -144,7 +149,7 @@ struct NormalizedSegment {
 ///
 /// Matches that land in gaps or cross a segment boundary are omitted. Output
 /// order follows the caller-provided match order.
-pub fn map_offsets_to_segments(
+pub(crate) fn map_offsets_to_segments(
     segments: &[Segment],
     matches: &[GlobalMatch],
 ) -> Result<Vec<AttributedMatch>, SegmentAttributionError> {

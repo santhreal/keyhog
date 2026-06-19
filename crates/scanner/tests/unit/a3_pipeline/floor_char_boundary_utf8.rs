@@ -1,4 +1,4 @@
-use keyhog_scanner::floor_char_boundary;
+use keyhog_scanner::testing::floor_char_boundary;
 
 #[test]
 fn floor_char_boundary_never_splits_utf8_codepoint() {

@@ -1,6 +1,6 @@
 //! Wire the dead `tests/data/corpus/evasion/*` fixtures into `cargo test`.
 //!
-//! Per `audits/release-2026-04-26/adversarial_audit.md`, eight evasion fixtures
+//! Per `docs/EXECUTION_PLAN.md`, eight evasion fixtures
 //! shipped under `tests/data/corpus/evasion/` but had no strict Rust coverage.
 //! Each evasion class gets a **positive** (real planted secret must fire) and a
 //! **negative twin** (same transport shape, known-example fake must not surface).

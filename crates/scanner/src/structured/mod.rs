@@ -8,11 +8,11 @@
 
 use crate::types::ScannerPreprocessedText;
 
-pub mod parsers;
+pub(crate) mod parsers;
 
 const MAX_STRUCTURED_PARSE_BYTES: usize = 2 * 1024 * 1024;
 
-pub struct ExtractedPair {
+pub(crate) struct ExtractedPair {
     pub context: String,
     pub value: String,
     pub line: usize,
@@ -22,7 +22,10 @@ pub struct ExtractedPair {
 /// Returns `None` when the file is not a recognised structured format, when it
 /// exceeds the size limit, or when no pairs could be extracted.
 /// Pre-process structured configuration files to extract key-value pairs.
-pub fn preprocess<'a>(text: &str, path: Option<&str>) -> Option<ScannerPreprocessedText<'a>> {
+pub(crate) fn preprocess<'a>(
+    text: &str,
+    path: Option<&str>,
+) -> Option<ScannerPreprocessedText<'a>> {
     if text.len() > MAX_STRUCTURED_PARSE_BYTES {
         return None;
     }
@@ -37,7 +40,7 @@ fn detect_and_parse(text: &str, path: Option<&str>) -> Option<Vec<ExtractedPair>
     // ASCII case-insensitive byte compares - every chunk runs through this
     // detector to decide whether a structured parser applies. The previous
     // flow built a fully-lowercased copy of the path on every call.
-    let path_bytes = path.map(str::as_bytes).unwrap_or(&[]);
+    let path_bytes = path.map(str::as_bytes).unwrap_or(&[]); // LAW10: empty/absent => documented numeric/sentinel default, recall-safe
     let ends_ci = |suffix: &[u8]| -> bool {
         path_bytes.len() >= suffix.len()
             && path_bytes[path_bytes.len() - suffix.len()..].eq_ignore_ascii_case(suffix)
@@ -46,7 +49,7 @@ fn detect_and_parse(text: &str, path: Option<&str>) -> Option<Vec<ExtractedPair>
         .iter()
         .rposition(|&b| b == b'/' || b == b'\\')
         .map(|i| i + 1)
-        .unwrap_or(0);
+        .unwrap_or(0); // LAW10: empty/absent => documented numeric/sentinel default, recall-safe
     let file_bytes = &path_bytes[last_sep..];
     let file_starts_ci = |prefix: &[u8]| -> bool {
         file_bytes.len() >= prefix.len() && file_bytes[..prefix.len()].eq_ignore_ascii_case(prefix)

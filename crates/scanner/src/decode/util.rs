@@ -14,7 +14,10 @@
 /// digits available", and every caller just falls back to the raw text, so a
 /// richer error type would be ceremony with no consumer.
 #[allow(clippy::result_unit_err)]
-pub fn take_hex_digits<I>(chars: &mut std::iter::Peekable<I>, count: usize) -> Result<u32, ()>
+pub(crate) fn take_hex_digits<I>(
+    chars: &mut std::iter::Peekable<I>,
+    count: usize,
+) -> Result<u32, ()>
 where
     I: Iterator<Item = char>,
 {

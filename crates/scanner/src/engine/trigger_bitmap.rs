@@ -1,7 +1,7 @@
 //! Shared dense trigger-bitmap primitives.
 //!
 //! A *trigger bitmap* is a `Vec<u64>` with one bit per pattern index (AC literal
-//! + fallback regex): bit `i` set means "pattern `i` may match this chunk, run
+//! + phase-2 regex): bit `i` set means "pattern `i` may match this chunk, run
 //! its extraction". The same three operations — allocate `n_patterns.div_ceil(64)`
 //! zeroed words, set bit `i`, and walk every set bit — were open-coded across
 //! `backend_triggered` and `scan_postprocess`. Funneling

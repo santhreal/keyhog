@@ -82,10 +82,20 @@ pub(crate) fn build_confirmed_suffix_gate(
     if literals.is_empty() {
         return (None, per_pattern);
     }
-    let ac = aho_corasick::AhoCorasickBuilder::new()
+    let ac = match aho_corasick::AhoCorasickBuilder::new()
         .match_kind(aho_corasick::MatchKind::Standard)
         .ascii_case_insensitive(true)
         .build(&literals)
-        .ok();
+    {
+        Ok(ac) => Some(ac),
+        Err(error) => {
+            tracing::warn!(
+                literals = literals.len(),
+                %error,
+                "confirmed-pass suffix-gate Aho-Corasick build failed; suffix-gate optimization disabled (recall preserved)"
+            );
+            None
+        }
+    };
     (ac, per_pattern)
 }

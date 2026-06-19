@@ -1,6 +1,6 @@
 //! Three-part JWT-looking strings are rejected as secrets.
 
-use keyhog_scanner::entropy::keywords::is_secret_plausible;
+use keyhog_scanner::testing::entropy_keywords::is_secret_plausible;
 
 #[test]
 fn entropy_jwt_shape_rejected() {

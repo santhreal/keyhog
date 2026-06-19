@@ -9,11 +9,7 @@
 //!   Per-detector floor lookup and application
 //! - scanner.min_confidence default (0.40) and high_precision override (0.85)
 
-use keyhog_core::{Chunk, ChunkMetadata, MatchLocation, RawMatch, Severity};
-use keyhog_scanner::CompiledScanner;
-
-mod support;
-use support::paths::detector_dir;
+use keyhog_core::{MatchLocation, RawMatch, Severity};
 
 /// Build a minimal RawMatch for testing confidence floors.
 fn make_match(detector_id: &str, detector_name: &str, service: &str, confidence: f64) -> RawMatch {
@@ -45,25 +41,6 @@ fn make_match(detector_id: &str, detector_name: &str, service: &str, confidence:
 /// when no per-detector floor overrides it.
 #[test]
 fn global_confidence_floor_below_threshold_filtered() {
-    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors loaded");
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compiled");
-
-    let text = "slack_bot_token = \"xoxb-1234567890-1234567890-abcdefghijklmnopqrst\"";
-    let chunk = Chunk {
-        data: text.into(),
-        metadata: ChunkMetadata {
-            source_type: "test".into(),
-            path: Some("secrets.env".into()),
-            ..Default::default()
-        },
-    };
-
-    let matches = scanner.scan(&chunk);
-    let slack_matches: Vec<_> = matches
-        .iter()
-        .filter(|m| m.detector_id.contains("slack") && m.confidence.is_some())
-        .collect();
-
     // Manually create a match below 0.40 to test the floor logic.
     let below_floor = make_match("test-detector", "Test Detector", "test-service", 0.35);
     let matches_vec = vec![below_floor];

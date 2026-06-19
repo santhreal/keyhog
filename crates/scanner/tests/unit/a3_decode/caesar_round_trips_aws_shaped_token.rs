@@ -1,7 +1,7 @@
 //! Caesar +1 ciphertext round-trips to AKIA-shaped plaintext.
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn caesar_shift_surfaces_aws_access_key_plaintext() {

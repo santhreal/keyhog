@@ -1,29 +1,44 @@
+#[cfg(feature = "multiline")]
 use regex::Regex;
+#[cfg(feature = "multiline")]
 use std::sync::LazyLock;
 
+#[cfg(feature = "multiline")]
 const MAX_MULTILINE_PREPROCESS_BYTES: usize = 2 * 1024 * 1024;
+#[cfg(feature = "multiline")]
 const MAX_MULTILINE_LINE_BYTES: usize = 64 * 1024;
 
+#[cfg(feature = "multiline")]
 static VAR_REF_CONCAT_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
-    Regex::new(
+    match Regex::new(
         r#"(?i)^\s*[a-z0-9_\-\.]{2,64}\s*[:=]\s*[a-z0-9_\-]{2,32}(?:\s*\+\s*[a-z0-9_\-]{2,32}){1,8}\s*;?\s*$"#,
-    )
-    .ok()
+    ) {
+        Ok(re) => Some(re),
+        Err(error) => {
+            crate::prefilter_degrade::warn_prefilter_disabled(
+                "multiline variable-reference concatenation regex (VAR_REF_CONCAT_RE)",
+                &error,
+            );
+            None
+        }
+    }
 });
 
+#[cfg(feature = "multiline")]
 pub(crate) fn warm_runtime_regexes() {
-    let _ = VAR_REF_CONCAT_RE.as_ref();
+    let _ = VAR_REF_CONCAT_RE.as_ref(); // LAW10: forces lazy-static/regex eager init (warm-up); not a fallback
 }
 
 /// A mapping from an offset in the joined text back to the original line number.
+#[cfg(feature = "multiline")]
 #[derive(Debug, Clone)]
-pub struct LineMapping {
+pub(crate) struct LineMapping {
     /// Start offset in the joined text (inclusive).
-    pub start_offset: usize,
+    pub(crate) start_offset: usize,
     /// End offset in the joined text (exclusive).
-    pub end_offset: usize,
+    pub(crate) end_offset: usize,
     /// Original line number (1-indexed).
-    pub line_number: usize,
+    pub(crate) line_number: usize,
 }
 
 /// Result of preprocessing text for multi-line concatenation.
@@ -36,17 +51,19 @@ pub struct LineMapping {
 /// structured-config key/value reassembly, homoglyph normalization — own a
 /// `String` via `Cow::Owned`. Downstream consumers read `text` as `&str` via
 /// `Deref`, so the borrow is internal to preprocessing.
+#[cfg(feature = "multiline")]
 #[derive(Debug, Clone)]
-pub struct PreprocessedText<'a> {
+pub(crate) struct PreprocessedText<'a> {
     /// Original text (borrowed for passthrough) plus, for the synthesizing
     /// paths, appended multiline-joined / structured segments (owned).
-    pub text: std::borrow::Cow<'a, str>,
+    pub(crate) text: std::borrow::Cow<'a, str>,
     /// Byte offset where appended joined segments start.
-    pub original_end: usize,
+    pub(crate) original_end: usize,
     /// Mapping from offsets in `text` to original line numbers.
-    pub mappings: Vec<LineMapping>,
+    pub(crate) mappings: Vec<LineMapping>,
 }
 
+#[cfg(feature = "multiline")]
 impl<'a> PreprocessedText<'a> {
     /// Map a byte offset in preprocessed text back to an original line number.
     ///
@@ -56,7 +73,7 @@ impl<'a> PreprocessedText<'a> {
     /// `O(log L)` instead of the prior `O(L)` linear scan. On a
     /// 10 000-line file with ~100 matches that's 10 000 × 100 = 1 M
     /// pointer compares cut to ~1 400.
-    pub fn line_for_offset(&self, offset: usize) -> Option<usize> {
+    pub(crate) fn line_for_offset(&self, offset: usize) -> Option<usize> {
         let idx = self.mappings.partition_point(|m| m.start_offset <= offset);
         if idx == 0 {
             return None;
@@ -76,7 +93,7 @@ impl<'a> PreprocessedText<'a> {
     /// the chunk body) while a normalization-rewritten chunk passes its already-
     /// owned `String` through as `Cow::Owned`. Only the per-line `mappings`
     /// bookkeeping (size-independent of the body bytes) is allocated either way.
-    pub fn passthrough(text: impl Into<std::borrow::Cow<'a, str>>) -> Self {
+    pub(crate) fn passthrough(text: impl Into<std::borrow::Cow<'a, str>>) -> Self {
         let text: std::borrow::Cow<'a, str> = text.into();
         let mut mappings = Vec::new();
         let mut offset = 0;
@@ -129,6 +146,7 @@ impl Default for MultilineConfig {
 }
 
 /// Check if text contains any concatenation indicators.
+#[cfg(feature = "multiline")]
 pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
     let trimmed = text.trim_start();
     if trimmed.starts_with('{')
@@ -226,10 +244,12 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
 /// literals on the RHS). The structural reassembly pass resolves these
 /// via `resolve_concat_reference`; without this indicator the multiline
 /// preprocessor passthroughs and the split credential never surfaces.
+#[cfg(feature = "multiline")]
 fn has_var_ref_concatenation(text: &str) -> bool {
     text.lines().any(has_var_ref_concat_line)
 }
 
+#[cfg(feature = "multiline")]
 fn has_var_ref_concat_line(line: &str) -> bool {
     // Cheap precheck: var-ref concatenation REQUIRES at least one `+`
     // separator between two identifiers. Lines without one cannot
@@ -252,6 +272,7 @@ fn has_var_ref_concat_line(line: &str) -> bool {
         .is_some_and(|re| re.is_match(line))
 }
 
+#[cfg(feature = "multiline")]
 pub(crate) fn should_passthrough(text: &str) -> bool {
     text.len() > MAX_MULTILINE_PREPROCESS_BYTES
         || text

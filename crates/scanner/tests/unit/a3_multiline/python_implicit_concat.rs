@@ -1,7 +1,7 @@
 //! Multi-line plus concatenation joins split secret literals across lines.
 
-use keyhog_scanner::fragment_cache::FragmentCache;
-use keyhog_scanner::multiline::{preprocess_multiline, MultilineConfig};
+use keyhog_scanner::testing::fragment_cache::FragmentCache;
+use keyhog_scanner::testing::multiline::{preprocess_multiline, MultilineConfig};
 
 #[test]
 fn multiline_plus_concat_joins_split_secret() {

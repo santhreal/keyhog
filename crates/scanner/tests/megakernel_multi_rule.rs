@@ -2,12 +2,12 @@
 //! Megakernel fallback port — slice 3: multi-rule, multi-file dispatch + the
 //! rule→detector decode mapping.
 //!
-//! This is the core the live `scan_fallback_patterns` replacement uses: many
+//! This is the core the live `scan_phase2_patterns` replacement uses: many
 //! detector DFAs as one resident rule catalog, a batch of files, one GPU
 //! dispatch, and `HitRecord{file_idx, rule_idx, match_offset}` decoded back to
 //! (which file, which DETECTOR, where). Proves the mapping is correct — every
 //! secret-bearing file fires its detector's rule and only that rule; clean files
-//! fire nothing. (`docs/GPU_DETECTION_REWRITE.md` step 5.)
+//! fire nothing. (`docs/EXECUTION_PLAN.md` step 5.)
 //!
 //! Run: cargo test -p keyhog-scanner --features gpu --test megakernel_multi_rule -- --ignored --nocapture
 

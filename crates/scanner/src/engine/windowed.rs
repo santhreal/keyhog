@@ -1,3 +1,6 @@
+use super::windowed_support::{
+    next_window_offset, record_window_match, window_chunk, window_end_offset,
+};
 use super::*;
 use std::collections::{HashSet, VecDeque};
 
@@ -11,7 +14,7 @@ impl CompiledScanner {
         if chunk_text.len() > 512 * 1024 * 1024 {
             tracing::warn!(
                 "Chunk from {} exceeds 512MB limit ({} bytes), skipping to prevent OOM.",
-                chunk.metadata.path.as_deref().unwrap_or("unknown"),
+                chunk.metadata.path.as_deref().unwrap_or("unknown"), // LAW10: absent path/field => display placeholder; reporting-only, recall-safe
                 chunk_text.len()
             );
             return Vec::new();
@@ -97,79 +100,4 @@ impl CompiledScanner {
             extract()
         }
     }
-}
-
-pub fn window_end_offset(text: &str, start: usize, max_len: usize) -> usize {
-    let mut end = (start + max_len).min(text.len());
-    while end < text.len() && !text.is_char_boundary(end) {
-        end += 1;
-    }
-    end
-}
-
-pub fn next_window_offset(text: &str, current_end: usize, overlap: usize) -> usize {
-    let mut next = current_end.saturating_sub(overlap);
-    while next < text.len() && !text.is_char_boundary(next) {
-        next += 1;
-    }
-    next
-}
-
-pub fn window_chunk(chunk: &Chunk, start: usize, end: usize) -> Chunk {
-    Chunk {
-        data: chunk.data.as_str()[start..end].to_string().into(),
-        metadata: chunk.metadata.clone(),
-    }
-}
-
-pub fn record_window_match(
-    line_offsets: &[usize],
-    window_offset: usize,
-    m: &mut RawMatch,
-    seen: &mut HashSet<(Arc<str>, Arc<str>, usize)>,
-    seen_order: &mut VecDeque<(Arc<str>, Arc<str>, usize)>,
-) -> bool {
-    m.location.offset += window_offset;
-    if m.location.line.is_some() {
-        // `line_offsets` holds each line-start byte offset in ascending order
-        // (offset 0 first). The count of starts `<= offset` IS the 1-based line
-        // number — identical to counting newlines before `offset` and adding 1
-        // (what `line_number_for_offset` does the slow way), but O(log L) per
-        // match instead of O(offset).
-        m.location.line = Some(line_offsets.partition_point(|&lo| lo <= m.location.offset));
-    }
-
-    let key = (
-        m.detector_id.clone(),
-        m.credential.clone(),
-        m.location.offset,
-    );
-    if seen.contains(&key) {
-        return false;
-    }
-
-    if seen.len() >= MAX_WINDOW_DEDUP_ENTRIES {
-        if let Some(oldest) = seen_order.pop_front() {
-            seen.remove(&oldest);
-        }
-    }
-    seen.insert(key.clone());
-    seen_order.push_back(key);
-    true
-}
-
-pub fn line_number_for_offset(text: &str, offset: usize) -> usize {
-    let safe_offset = floor_char_boundary(text, offset.min(text.len()));
-    text[..safe_offset].chars().filter(|&ch| ch == '\n').count() + 1
-}
-
-pub fn floor_char_boundary(text: &str, index: usize) -> usize {
-    if index >= text.len() {
-        return text.len();
-    }
-    let mut i = index;
-    while i > 0 && !text.is_char_boundary(i) {
-        i -= 1;
-    }
-    i
 }

@@ -7,7 +7,7 @@
 
 /// A 256-bit mask representing the presence of all ASCII characters.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct AlphabetMask {
+pub(crate) struct AlphabetMask {
     mask: [u64; 4],
 }
 
@@ -25,11 +25,11 @@ impl AlphabetMask {
     /// under `-C target-cpu`. The `from_bytes_{avx2,sse2,neon}` variants are
     /// retained for the prefilter-robustness differential proptest, which
     /// asserts each SIMD-gated body matches the scalar fallback.
-    pub fn from_bytes(bytes: &[u8]) -> Self {
+    pub(crate) fn from_bytes(bytes: &[u8]) -> Self {
         Self::from_bytes_scalar(bytes)
     }
 
-    pub fn from_bytes_scalar(bytes: &[u8]) -> Self {
+    pub(crate) fn from_bytes_scalar(bytes: &[u8]) -> Self {
         let mut mask = [0u64; 4];
         for &b in bytes {
             mask[(b / 64) as usize] |= 1 << (b % 64);
@@ -47,7 +47,7 @@ impl AlphabetMask {
     /// NEON is baseline on every Rust-supported aarch64 target so the
     /// second is trivially true. The body is otherwise safe Rust.
     #[cfg(target_arch = "aarch64")]
-    pub unsafe fn from_bytes_neon(bytes: &[u8]) -> Self {
+    pub(crate) unsafe fn from_bytes_neon(bytes: &[u8]) -> Self {
         let mut mask = [0u64; 4];
         let chunks = bytes.chunks_exact(16);
         let remainder = chunks.remainder();
@@ -75,7 +75,7 @@ impl AlphabetMask {
     /// caller obligation; invoking on a non-AVX2 host is UB.
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2")]
-    pub unsafe fn from_bytes_avx2(bytes: &[u8]) -> Self {
+    pub(crate) unsafe fn from_bytes_avx2(bytes: &[u8]) -> Self {
         let mut mask = [0u64; 4];
 
         let chunks = bytes.chunks_exact(4);
@@ -106,7 +106,7 @@ impl AlphabetMask {
     /// formalizes the caller obligation.
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "sse2")]
-    pub unsafe fn from_bytes_sse2(bytes: &[u8]) -> Self {
+    pub(crate) unsafe fn from_bytes_sse2(bytes: &[u8]) -> Self {
         let mut mask = [0u64; 4];
         for &b in bytes {
             mask[(b / 64) as usize] |= 1 << (b % 64);
@@ -115,12 +115,12 @@ impl AlphabetMask {
     }
 
     /// Create a mask from a string.
-    pub fn from_text(s: &str) -> Self {
+    pub(crate) fn from_text(s: &str) -> Self {
         Self::from_bytes(s.as_bytes())
     }
 
     /// Check if two masks have any common bits set.
-    pub fn intersects(&self, other: &Self) -> bool {
+    pub(crate) fn intersects(&self, other: &Self) -> bool {
         (self.mask[0] & other.mask[0]) != 0
             || (self.mask[1] & other.mask[1]) != 0
             || (self.mask[2] & other.mask[2]) != 0
@@ -128,7 +128,7 @@ impl AlphabetMask {
     }
 
     /// Union two masks together.
-    pub fn union(&mut self, other: &Self) {
+    pub(crate) fn union(&mut self, other: &Self) {
         self.mask[0] |= other.mask[0];
         self.mask[1] |= other.mask[1];
         self.mask[2] |= other.mask[2];
@@ -138,8 +138,8 @@ impl AlphabetMask {
 
 /// A pre-filter that uses an [`AlphabetMask`] to quickly skip chunks.
 #[derive(Clone, Debug, Default)]
-pub struct AlphabetScreen {
-    pub target_mask: AlphabetMask,
+pub(crate) struct AlphabetScreen {
+    pub(crate) target_mask: AlphabetMask,
 }
 
 impl AlphabetScreen {
@@ -152,7 +152,7 @@ impl AlphabetScreen {
     /// claims Unicode case-folding correctness (`to_lowercase()` on the
     /// String path didn't either: it operated on chars yet collected into
     /// a String whose bytes were still scanned as bytes here).
-    pub fn new(targets: &[String]) -> Self {
+    pub(crate) fn new(targets: &[String]) -> Self {
         let mut mask = [0u64; 4];
         for target in targets {
             for &b in target.as_bytes() {
@@ -169,7 +169,7 @@ impl AlphabetScreen {
     }
 
     /// Quick screen of a data chunk.
-    pub fn screen(&self, data: &[u8]) -> bool {
+    pub(crate) fn screen(&self, data: &[u8]) -> bool {
         if data.is_empty() {
             return false;
         }
@@ -197,7 +197,7 @@ impl AlphabetScreen {
     /// caller obligation; invoking on a non-AVX2 host is UB.
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2")]
-    pub unsafe fn screen_avx2(&self, data: &[u8]) -> bool {
+    pub(crate) unsafe fn screen_avx2(&self, data: &[u8]) -> bool {
         use std::arch::x86_64::*;
 
         // SAFETY: `target_mask.mask` is `[u64; 4]` (32 bytes total). Slicing

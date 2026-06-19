@@ -5,7 +5,7 @@
 //! NOT the true logistic `1/(1+exp(-x))`. The two diverge by ~0.05 in the
 //! mid-range, far wider than the near-floor band, so a shader using the
 //! logistic systematically flips findings between the GPU and the benched
-//! CPU/SIMD path (the swing that forced `KEYHOG_NO_GPU=1` to be pinned).
+//! CPU/SIMD path (the swing that forced deterministic CPU benchmarking).
 //!
 //! This reads the shader SOURCE rather than the `gpu`-gated `MOE_SHADER`
 //! constant so it runs in every CI config (the in-crate gpu module only
@@ -14,8 +14,11 @@
 //! hardware.
 
 fn shader_src() -> String {
-    std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu/gpu_shader.rs"))
-        .expect("read gpu_shader.rs")
+    std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/gpu/gpu_shader.rs"
+    ))
+    .expect("read gpu_shader.rs")
 }
 
 #[test]

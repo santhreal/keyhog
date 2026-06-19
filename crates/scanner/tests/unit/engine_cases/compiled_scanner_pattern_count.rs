@@ -29,5 +29,5 @@ fn compiled_scanner_pattern_count() {
         ..Default::default()
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();
-    assert!(s.pattern_count() >= 2);
+    assert!(s.runtime_status().pattern_count >= 2);
 }

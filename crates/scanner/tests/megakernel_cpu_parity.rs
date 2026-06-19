@@ -4,9 +4,9 @@
 //! Scans real mirror-corpus files with BOTH (a) the megakernel batched DFA rule
 //! catalog on the GPU and (b) the CPU `regex` crate, then asserts the set of
 //! `(file, detector)` firings is IDENTICAL. This is the parity gate the live
-//! `scan_fallback_patterns` replacement must pass: the GPU path may not drop or
+//! `scan_phase2_patterns` replacement must pass: the GPU path may not drop or
 //! invent a detector firing relative to the CPU reference (Law 10 — no silent
-//! recall change). (`docs/GPU_DETECTION_REWRITE.md` step 5 gate.)
+//! recall change). (`docs/EXECUTION_PLAN.md` step 5 gate.)
 //!
 //! Run: cargo test -p keyhog-scanner --features gpu --test megakernel_cpu_parity -- --ignored --nocapture
 

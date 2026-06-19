@@ -1,20 +1,8 @@
-use keyhog_scanner::alphabet_filter::{AlphabetMask, AlphabetScreen};
-use keyhog_scanner::bigram_bloom::BigramBloom;
+use keyhog_scanner::testing::BigramBloom;
+use keyhog_scanner::testing::{
+    assert_alphabet_prefilter_backend_parity, AlphabetMask, AlphabetScreen,
+};
 use proptest::prelude::*;
-
-trait AlphabetScreenExt {
-    fn screen_scalar_fallback(&self, data: &[u8]) -> bool;
-}
-
-impl AlphabetScreenExt for AlphabetScreen {
-    fn screen_scalar_fallback(&self, data: &[u8]) -> bool {
-        if data.is_empty() {
-            return false;
-        }
-        self.target_mask
-            .intersects(&AlphabetMask::from_bytes_scalar(data))
-    }
-}
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(1000))]
@@ -84,73 +72,13 @@ proptest! {
             );
         }
 
-        // 2. Parity validation between Scalar and SIMD
-        // Check AlphabetMask parity:
-        let mask_scalar = AlphabetMask::from_bytes_scalar(&chunk_bytes);
-        let mask_auto = AlphabetMask::from_bytes(&chunk_bytes);
-        assert_eq!(mask_scalar, mask_auto, "AlphabetMask auto vs scalar parity failed");
-
-        #[cfg(target_arch = "x86_64")]
-        {
-            if is_x86_feature_detected!("avx2") {
-                // SAFETY: We just checked AVX2 detection.
-                let mask_avx2 = unsafe { AlphabetMask::from_bytes_avx2(&chunk_bytes) };
-                assert_eq!(mask_scalar, mask_avx2, "AVX2 AlphabetMask parity failed");
-            }
-            if is_x86_feature_detected!("sse2") {
-                // SAFETY: We just checked SSE2 detection.
-                let mask_sse2 = unsafe { AlphabetMask::from_bytes_sse2(&chunk_bytes) };
-                assert_eq!(mask_scalar, mask_sse2, "SSE2 AlphabetMask parity failed");
-            }
-        }
-
-        #[cfg(target_arch = "aarch64")]
-        {
-            // NEON is always supported on aarch64.
-            // SAFETY: Neon code path.
-            let mask_neon = unsafe { AlphabetMask::from_bytes_neon(&chunk_bytes) };
-            assert_eq!(mask_scalar, mask_neon, "NEON AlphabetMask parity failed");
-        }
-
-        // Check AlphabetScreen parity:
+        // 2. Parity validation between Scalar and SIMD.
         let literals = vec![literal.clone(), "test".to_string(), "SECRET".to_string()];
-        let screen = AlphabetScreen::new(&literals);
-
-        let screen_result_auto = screen.screen(&chunk_bytes);
-        let screen_result_scalar = screen.screen_scalar_fallback(&chunk_bytes);
-        assert_eq!(
-            screen_result_auto,
-            screen_result_scalar,
-            "AlphabetScreen auto vs scalar parity failed"
-        );
-
-        #[cfg(target_arch = "x86_64")]
-        {
-            if is_x86_feature_detected!("avx2") {
-                // SAFETY: We just checked AVX2 detection.
-                let screen_result_avx2 = unsafe { screen.screen_avx2(&chunk_bytes) };
-                assert_eq!(
-                    screen_result_scalar,
-                    screen_result_avx2,
-                    "AVX2 AlphabetScreen parity failed"
-                );
-            }
-        }
+        assert_alphabet_prefilter_backend_parity(&literals, &chunk_bytes);
 
         // 3. Strictly high entropy or non-ASCII / high-entropy validation
         if !high_entropy_bytes.is_empty() {
-            let mask_he_scalar = AlphabetMask::from_bytes_scalar(&high_entropy_bytes);
-            let mask_he_auto = AlphabetMask::from_bytes(&high_entropy_bytes);
-            assert_eq!(mask_he_scalar, mask_he_auto);
-
-            #[cfg(target_arch = "x86_64")]
-            {
-                if is_x86_feature_detected!("avx2") {
-                    // SAFETY: We checked AVX2.
-                    let mask_he_avx2 = unsafe { AlphabetMask::from_bytes_avx2(&high_entropy_bytes) };
-                    assert_eq!(mask_he_scalar, mask_he_avx2);
-                }
-            }
+            assert_alphabet_prefilter_backend_parity(&literals, &high_entropy_bytes);
         }
     }
 }

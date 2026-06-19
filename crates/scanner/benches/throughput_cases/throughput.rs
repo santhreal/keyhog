@@ -59,7 +59,8 @@ fn benchmark_throughput_base64_decode(c: &mut Criterion) {
     group.bench_function("decode_100kb", |b| {
         let chunk = make_chunk(&data, Some("config.env"));
         b.iter(|| {
-            let decoded = decode::decode_chunk(black_box(&chunk), 2, false, None, None);
+            let decoded =
+                keyhog_scanner::testing::decode_chunk(black_box(&chunk), 2, false, None, None);
             black_box(decoded)
         });
     });
@@ -69,7 +70,7 @@ fn benchmark_throughput_base64_decode(c: &mut Criterion) {
         let chunk = make_chunk(&data, Some("config.env"));
         b.iter(|| {
             let mut matches = scanner.scan(&chunk);
-            for decoded in decode::decode_chunk(&chunk, 2, false, None, None) {
+            for decoded in keyhog_scanner::testing::decode_chunk(&chunk, 2, false, None, None) {
                 matches.extend(scanner.scan(&decoded));
             }
             black_box(matches)

@@ -9,7 +9,7 @@
 //!     `engine/backend_triggered.rs`); HS only UNIONS extra candidates that the
 //!     full regex confirmation then re-filters, so the emitted set is identical.
 //!   * The keyword/entropy fallback (`scan_entropy_fallback`,
-//!     `scan_fallback_patterns`, `scan_generic_assignments`) runs in
+//!     `scan_phase2_patterns`, `scan_generic_assignments`) runs in
 //!     `scan_prepared_with_triggered` REGARDLESS of backend, so its findings are
 //!     backend-invariant.
 //!   * Chunk-boundary splits (`engine/boundary.rs`) must not lose matches: a

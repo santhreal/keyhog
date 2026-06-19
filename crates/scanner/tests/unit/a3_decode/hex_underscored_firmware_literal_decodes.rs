@@ -1,7 +1,8 @@
 //! Hex decoder recognizes underscore-separated firmware-style literals.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::{decode_chunk, hex_decode};
+use keyhog_scanner::decode::hex_decode;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn underscored_hex_literal_decodes_to_bytes() {

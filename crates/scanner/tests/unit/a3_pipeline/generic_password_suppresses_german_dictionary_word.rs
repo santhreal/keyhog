@@ -1,5 +1,5 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::pipeline::should_suppress_named_detector_finding;
+use keyhog_scanner::testing::should_suppress_named_detector_finding;
 
 #[test]
 fn german_dictionary_word_in_i18n_properties_suppressed() {

@@ -1,0 +1,266 @@
+//! LANE-4 detection-truth: every detector that ships an inline `[[detector.tests]]`
+//! fixture must (a) FIRE on its `test_positive` under its OWN detector id, and
+//! (b) NOT fire under its own id on its `test_negative` twin — driven through
+//! the REAL `CompiledScanner::scan` production path, asserting the EXACT
+//! detector id (Law 6, never `!is_empty`).
+//!
+//! The contract corpus (`contracts_runner.rs`) drives the hand-written
+//! `tests/contracts/<id>.toml` fixtures; the inline `[[detector.tests]]` block
+//! is a SEPARATE, author-shipped fixture living INSIDE the detector TOML
+//! (Tier-B self-test data) and was only pinned by `all_detectors_self_validate`
+//! at the structural level ("has a contract OR is deferred"). This suite pins
+//! the inline fixtures' SCAN BEHAVIOUR directly: the positive the author wrote
+//! into the detector MUST surface that detector, and the negative MUST NOT — so
+//! a regex edit that breaks the author's own example flips a named case red.
+//!
+//! Plus a per-detector REGISTRY-CARDINALITY lane: every one of the ~900
+//! embedded detector ids must be present, exactly once, in the scanner the
+//! binary actually compiles — a per-id assertion (the registry truth matrix
+//! pins only aggregate counts), so a single dropped/shadowed id is caught by
+//! name.
+//!
+//! Deterministic + host-independent (no GPU env dependency; the CPU/SIMD path
+//! is exercised). The detector tree is loaded from `CARGO_MANIFEST_DIR` so the
+//! suite is cwd-stable under `cargo test` / `nextest` / remote runners.
+
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
+use keyhog_core::{Chunk, ChunkMetadata, DetectorFile};
+use keyhog_scanner::CompiledScanner;
+
+/// Absolute path to the on-disk `detectors/` TOML tree (cwd-stable).
+fn detector_dir() -> PathBuf {
+    let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    d.pop();
+    d.pop();
+    d.push("detectors");
+    d
+}
+
+/// One inline self-test fixture extracted from a detector TOML.
+struct InlineCase {
+    detector_id: String,
+    toml_file: String,
+    positive: Option<String>,
+    negative: Option<String>,
+}
+
+/// Read every `detectors/*.toml`, returning the id + inline `[[detector.tests]]`
+/// fixtures for the detectors that ship them. Fails LOUDLY on a parse error —
+/// a malformed detector TOML is a source bug, never a silently-skipped file
+/// (Law 10).
+fn load_inline_cases() -> Vec<InlineCase> {
+    let dir = detector_dir();
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("detectors/ must be readable ({}): {e}", dir.display()))
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("toml"))
+        .collect();
+    files.sort();
+
+    let mut cases = Vec::new();
+    for path in &files {
+        let text = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let file: DetectorFile = toml::from_str(&text)
+            .unwrap_or_else(|e| panic!("malformed detector TOML {}: {e}", path.display()));
+        let stem = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("<unknown>")
+            .to_string();
+        for t in &file.detector.tests {
+            cases.push(InlineCase {
+                detector_id: file.detector.id.clone(),
+                toml_file: stem.clone(),
+                positive: t.test_positive.clone(),
+                negative: t.test_negative.clone(),
+            });
+        }
+    }
+    cases
+}
+
+/// The on-disk corpus, compiled into ONE scanner exactly as the binary builds
+/// it. Fails loudly if the tree can't load.
+fn scanner() -> CompiledScanner {
+    let detectors = keyhog_core::load_detectors(&detector_dir())
+        .unwrap_or_else(|e| panic!("detectors/ must load into the scanner: {e}"));
+    CompiledScanner::compile(detectors).expect("on-disk corpus must compile into one scanner")
+}
+
+fn make_chunk(text: &str) -> Chunk {
+    Chunk {
+        data: text.into(),
+        metadata: ChunkMetadata {
+            source_type: "inline-test".into(),
+            path: Some("inline_test.txt".into()),
+            ..Default::default()
+        },
+    }
+}
+
+/// FLOOR: the inline-test feature is actually wired — at least the known
+/// authored set ships. If this collapses to 0 the per-case assertions below
+/// pass vacuously, so pin a concrete floor (11 detectors ship inline tests as
+/// of this writing; new ones only raise it).
+#[test]
+fn inline_test_fixtures_are_present() {
+    let cases = load_inline_cases();
+    let with_positive = cases.iter().filter(|c| c.positive.is_some()).count();
+    assert!(
+        with_positive >= 11,
+        "expected >= 11 detectors shipping an inline test_positive, found {with_positive} \
+         — the inline `[[detector.tests]]` self-test corpus shrank (or the loader broke)"
+    );
+}
+
+/// Every inline `test_positive` MUST surface its OWN detector id through the
+/// real scan path. The author wrote this example into the detector; if the
+/// detector's regex no longer fires on it, the example is decoration and the
+/// detector has a recall hole on its own canonical shape.
+#[test]
+fn every_inline_positive_fires_its_own_detector() {
+    let scanner = scanner();
+    let cases = load_inline_cases();
+    let mut failures: Vec<String> = Vec::new();
+    let mut checked = 0usize;
+
+    for case in &cases {
+        let Some(positive) = &case.positive else {
+            continue;
+        };
+        // Isolate cross-file fragment-reassembly state between fixtures (the
+        // scanner accumulates it across scan() calls — see contracts_runner).
+        scanner.clear_fragment_cache();
+        let matches = scanner.scan(&make_chunk(positive));
+        let fired = matches
+            .iter()
+            .any(|m| m.detector_id.as_ref() == case.detector_id);
+        if !fired {
+            let saw: Vec<&str> = matches.iter().map(|m| m.detector_id.as_ref()).collect();
+            failures.push(format!(
+                "{} ({}): inline test_positive {:?} did NOT fire detector {:?}; scanner saw {:?}",
+                case.detector_id, case.toml_file, positive, case.detector_id, saw
+            ));
+        }
+        checked += 1;
+    }
+
+    assert!(
+        failures.is_empty(),
+        "{} of {checked} inline positives failed to fire their own detector:\n  - {}",
+        failures.len(),
+        failures.join("\n  - ")
+    );
+    assert!(
+        checked >= 11,
+        "expected >= 11 inline positive cases, ran {checked}"
+    );
+}
+
+/// Every inline `test_negative` MUST NOT fire its own detector — the author's
+/// negative twin proves the regex isn't over-broad. (Another detector may fire
+/// on the same text; we only assert THIS detector stays silent, mirroring the
+/// contract-runner negative semantics.)
+#[test]
+fn every_inline_negative_does_not_fire_its_own_detector() {
+    let scanner = scanner();
+    let cases = load_inline_cases();
+    let mut failures: Vec<String> = Vec::new();
+    let mut checked = 0usize;
+
+    for case in &cases {
+        let Some(negative) = &case.negative else {
+            continue;
+        };
+        scanner.clear_fragment_cache();
+        let matches = scanner.scan(&make_chunk(negative));
+        let wrongly_fired: Vec<&str> = matches
+            .iter()
+            .filter(|m| m.detector_id.as_ref() == case.detector_id)
+            .map(|m| m.credential.as_ref())
+            .collect();
+        if !wrongly_fired.is_empty() {
+            failures.push(format!(
+                "{} ({}): inline test_negative {:?} WRONGLY fired detector {:?} on {:?}",
+                case.detector_id, case.toml_file, negative, case.detector_id, wrongly_fired
+            ));
+        }
+        checked += 1;
+    }
+
+    assert!(
+        failures.is_empty(),
+        "{} of {checked} inline negatives wrongly fired their own detector:\n  - {}",
+        failures.len(),
+        failures.join("\n  - ")
+    );
+    assert!(
+        checked >= 11,
+        "expected >= 11 inline negative cases, ran {checked}"
+    );
+}
+
+/// Per-detector cardinality: EVERY embedded detector id appears EXACTLY ONCE in
+/// the on-disk tree (a per-id assertion, not just an aggregate count). A
+/// copy-paste that duplicates an id, or a stale embed that drops one, is caught
+/// by name here. The registry truth matrix pins the aggregate counts; this pins
+/// the SET membership per id so the offending id is named.
+#[test]
+fn every_embedded_id_is_present_exactly_once_on_disk() {
+    let embedded = keyhog_core::load_embedded_detectors_or_fail()
+        .expect("embedded corpus must parse (baked in by build.rs)");
+
+    // Count on-disk occurrences of each id (parse every TOML).
+    let dir = detector_dir();
+    let mut on_disk: BTreeMap<String, usize> = BTreeMap::new();
+    for entry in std::fs::read_dir(&dir)
+        .expect("detectors/ readable")
+        .flatten()
+    {
+        let path = entry.path();
+        if path.extension().and_then(|s| s.to_str()) != Some("toml") {
+            continue;
+        }
+        let text = std::fs::read_to_string(&path).expect("read detector toml");
+        let file: DetectorFile = toml::from_str(&text)
+            .unwrap_or_else(|e| panic!("malformed detector TOML {}: {e}", path.display()));
+        *on_disk.entry(file.detector.id).or_insert(0) += 1;
+    }
+
+    let mut missing: Vec<String> = Vec::new();
+    let mut dup: Vec<String> = Vec::new();
+    for d in &embedded {
+        match on_disk.get(d.id.as_str()).copied().unwrap_or(0) {
+            0 => missing.push(d.id.clone()),
+            1 => {}
+            n => dup.push(format!("{} (x{n})", d.id)),
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "embedded id(s) absent from the on-disk detectors/ tree (stale embed): {missing:?}"
+    );
+    assert!(
+        dup.is_empty(),
+        "id(s) declared by more than one on-disk TOML (one silently shadows the other): {dup:?}"
+    );
+    // Exact cardinality pin: embedded set and the distinct on-disk id set are
+    // the SAME size (every embedded id mapped to exactly one TOML above).
+    assert_eq!(
+        embedded.len(),
+        on_disk.len(),
+        "embedded detector count ({}) must equal the distinct on-disk id count ({})",
+        embedded.len(),
+        on_disk.len()
+    );
+    // And a population floor so a near-empty load can't pass vacuously.
+    assert!(
+        embedded.len() >= 800,
+        "embedded detector population collapsed to {} (<800)",
+        embedded.len()
+    );
+}

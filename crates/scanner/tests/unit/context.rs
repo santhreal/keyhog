@@ -1,4 +1,5 @@
-use keyhog_scanner::context::*;
+use keyhog_scanner::context::{infer_context, CodeContext};
+use keyhog_scanner::testing::context::is_false_positive_context;
 
 #[test]
 fn assignment_context() {

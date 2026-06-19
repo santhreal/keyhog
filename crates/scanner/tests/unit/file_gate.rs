@@ -621,7 +621,7 @@ fn engine_scan_error() {
 
 #[test]
 fn engine_scan_reassembly_uses_synthetic_naming() {
-    let src = include_str!("../../src/engine/scan.rs");
+    let src = include_str!("../../src/engine/scan_no_hit_reassembly.rs");
     assert!(
         src.contains("synthetic_data")
             && src.contains("synthetic_metadata")
@@ -633,7 +633,7 @@ fn engine_scan_reassembly_uses_synthetic_naming() {
             && !src.contains("dummy_metadata")
             && !src.contains("dummy_chunk")
             && !src.contains("dummy chunk"),
-        "engine/scan.rs must not regress to dummy naming for shipped reassembly internals"
+        "engine/scan_no_hit_reassembly.rs must not regress to dummy naming for shipped reassembly internals"
     );
 }
 

@@ -1,38 +1,38 @@
-//! Static fail-closed guard: the GPU megakernel path must UNION its DFA firings on
-//! top of the full CPU Hyperscan prefilter (`compute_coalesced_triggers`, which
-//! covers every `ac_map` pattern — host-only detectors included). That makes the
-//! trigger set provably ⊇ the default coalesced scan, so GPU literal-set drift can
-//! never drop a raw detector match the CPU path would fire. The old
-//! `backend_pattern_hits.rs` union site was folded into `megakernel_dispatch.rs`;
-//! this guard tracks the invariant at its new home (Law 10).
+//! Static fail-closed guard: the GPU megakernel fast path must not secretly run
+//! the full CPU Hyperscan trigger net. Full CPU recall floor is explicit
+//! parity/debug behavior; host-only detectors still require CPU coverage.
 
 use std::fs;
 use std::path::PathBuf;
 
 #[test]
-fn megakernel_unions_cpu_hyperscan_net_before_extraction() {
+fn megakernel_cpu_floor_is_explicit_not_default() {
     let mk = fs::read_to_string(
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/engine/megakernel_dispatch.rs"),
     )
     .expect("megakernel_dispatch.rs readable");
 
-    // (1) The recall-safe base: the full CPU Hyperscan prefilter is computed first.
     assert!(
-        mk.contains("self.compute_coalesced_triggers(chunks, scanner)"),
-        "megakernel must seed the trigger set from the full CPU Hyperscan net so \
-         host-only / un-lowerable detectors are never dropped"
+        mk.contains("self.tuning.gpu_recall_floor_enabled()")
+            && !mk.contains("KEYHOG_GPU_RECALL_FLOOR")
+            && !mk.contains("KEYHOG_GPU_PARITY"),
+        "full CPU recall floor must be explicit scanner tuning, not ambient env"
     );
 
-    // (2) The GPU firings are OR'd ON TOP of that net (union, not replace), so the
-    //     result is a strict superset of the CPU-only trigger set.
     assert!(
-        mk.contains("slot[f.detector / 64] |= 1u64 << (f.detector % 64);"),
-        "megakernel must union DFA firings into the CPU net bitmap, never replace it"
+        mk.contains("let host_floor = !catalog.host_detectors().is_empty();"),
+        "host-only detectors must remain an explicit CPU coverage reason"
     );
 
-    // (3) The fail-closed intent must stay documented at the union site.
     assert!(
-        mk.contains("can never drop a detector the CPU path fires"),
-        "megakernel union must remain provably ⊇ the default coalesced scan"
+        mk.contains("if full_recall_floor || host_floor")
+            && mk.contains("None if host_floor")
+            && mk.contains("None => None"),
+        "megakernel must compute the CPU trigger net only for explicit floor or host coverage"
+    );
+
+    assert!(
+        mk.contains("full_recall_floor={}") && mk.contains("host_floor={}"),
+        "--perf-trace output must expose whether the scan paid for the CPU trigger floor"
     );
 }

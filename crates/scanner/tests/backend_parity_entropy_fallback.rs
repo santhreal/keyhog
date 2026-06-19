@@ -1,6 +1,6 @@
 //! Backend parity for entropy-fallback scoring paths.
 //!
-//! The entropy-fallback codepath (`fallback_entropy.rs`) scores high-entropy
+//! The entropy-fallback codepath (`phase2_entropy.rs`) scores high-entropy
 //! tokens that don't match any literal-prefix detector. Entropy scoring may
 //! diverge between SIMD, CpuFallback, and GPU paths if:
 //!
@@ -77,22 +77,15 @@ fn entropy_fallback_parity_high_entropy_no_literal_prefix() {
         ScanBackend::MegaScan,
     ];
 
+    scanner.clear_fragment_cache();
     let simd_results = scanner.scan_chunks_with_backend(&[fixture.clone()], ScanBackend::SimdCpu);
     let simd_keys = collect_entropy_findings(&simd_results);
 
     let mut failures = Vec::new();
     for backend in &backends[1..] {
+        scanner.clear_fragment_cache();
         let results = scanner.scan_chunks_with_backend(&[fixture.clone()], *backend);
         let keys = collect_entropy_findings(&results);
-
-        // GPU/MegaScan can silently degrade to SIMD if no adapter; skip on empty.
-        if matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan)
-            && keys.is_empty()
-            && !simd_keys.is_empty()
-        {
-            eprintln!("SKIP: {backend:?} (no adapter, silent SIMD degrade)");
-            continue;
-        }
 
         if keys != simd_keys {
             let only_simd: Vec<_> = simd_keys.difference(&keys).take(3).collect();
@@ -141,9 +134,11 @@ fn entropy_fallback_with_keyword_prefilter_active() {
         "config.ts",
     );
 
+    scanner.clear_fragment_cache();
     let simd_results = scanner.scan_chunks_with_backend(&[fixture.clone()], ScanBackend::SimdCpu);
     let simd_keys = collect_entropy_findings(&simd_results);
 
+    scanner.clear_fragment_cache();
     let fallback_results =
         scanner.scan_chunks_with_backend(&[fixture.clone()], ScanBackend::CpuFallback);
     let fallback_keys = collect_entropy_findings(&fallback_results);

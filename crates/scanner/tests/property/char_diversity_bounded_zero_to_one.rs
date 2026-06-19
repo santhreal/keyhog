@@ -1,6 +1,6 @@
 //! char_diversity ratio stays within [0, 1].
 
-use keyhog_scanner::confidence::char_diversity;
+use keyhog_scanner::testing::confidence::char_diversity;
 use proptest::prelude::*;
 
 #[test]

@@ -1,4 +1,4 @@
-use keyhog_scanner::match_entropy;
+use keyhog_scanner::testing::match_entropy;
 
 #[test]
 fn two_symbol_uniform_is_one_bit() {

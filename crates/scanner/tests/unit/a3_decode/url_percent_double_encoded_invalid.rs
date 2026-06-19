@@ -1,7 +1,7 @@
 //! URL percent-decoder must handle truncated and double-percent sequences correctly.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn url_percent_truncated_triplet_at_eof() {
@@ -14,7 +14,9 @@ fn url_percent_truncated_triplet_at_eof() {
     let decoded = decode_chunk(&chunk, 1, false, None, None);
     // Truncated triplet must NOT decode as URL.
     assert!(
-        !decoded.iter().any(|c| c.metadata.source_type.contains("url")),
+        !decoded
+            .iter()
+            .any(|c| c.metadata.source_type.contains("url")),
         "truncated percent triplet %2 must not trigger URL decode"
     );
 }
@@ -29,7 +31,9 @@ fn url_percent_single_char_after_percent() {
     };
     let decoded = decode_chunk(&chunk, 1, false, None, None);
     assert!(
-        !decoded.iter().any(|c| c.metadata.source_type.contains("url")),
+        !decoded
+            .iter()
+            .any(|c| c.metadata.source_type.contains("url")),
         "%2G (second char not hex) must not decode"
     );
 }
@@ -46,7 +50,9 @@ fn url_percent_valid_then_invalid() {
     // The decoder must try to decode but bail on the incomplete second triplet.
     // The result should NOT contain a decoded chunk or should contain only the
     // first byte ('A') on a best-effort basis (decoder returns Err on incomplete).
-    let has_url = decoded.iter().any(|c| c.metadata.source_type.contains("url"));
+    let has_url = decoded
+        .iter()
+        .any(|c| c.metadata.source_type.contains("url"));
     // Most robust: bail on the entire candidate if it has a truncated triplet.
     assert!(
         !has_url,
@@ -64,7 +70,9 @@ fn url_percent_bare_percent_not_escape() {
     };
     let decoded = decode_chunk(&chunk, 1, false, None, None);
     assert!(
-        !decoded.iter().any(|c| c.metadata.source_type.contains("url")),
+        !decoded
+            .iter()
+            .any(|c| c.metadata.source_type.contains("url")),
         "bare % without hex digits must not decode"
     );
 }
@@ -84,7 +92,7 @@ fn url_percent_valid_double_encoding_decodes_twice() {
     let decoded_strings: Vec<_> = decoded
         .iter()
         .filter(|c| c.metadata.source_type.contains("url"))
-        .map(|c| c.data.as_str())
+        .map(|c| c.data.as_ref())
         .collect();
     // At minimum, one should be `%2F` (single decode).
     assert!(

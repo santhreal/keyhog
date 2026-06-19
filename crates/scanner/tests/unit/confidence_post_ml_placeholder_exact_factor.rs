@@ -1,6 +1,6 @@
 //! Placeholder word applies 0.05 multiplier to ML score.
 
-use keyhog_scanner::confidence::apply_post_ml_penalties;
+use keyhog_scanner::testing::confidence::apply_post_ml_penalties;
 
 #[test]
 fn confidence_post_ml_placeholder_exact_factor() {

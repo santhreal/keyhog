@@ -134,7 +134,7 @@ fn splice_windows_context_instead_of_whole_parent() {
     // test proves both halves of that contract: chunks are bounded (perf) AND
     // the companion anchor still rides along (recall).
     use keyhog_core::Chunk;
-    use keyhog_scanner::decode::decode_chunk;
+    use keyhog_scanner::testing::decode_chunk;
 
     // base64("AKIAIOSFODNN7EXAMPLE")
     let b64_secret = "QUtJQUlPU0ZPRE5ON0VYQU1QTEU=";
@@ -176,7 +176,7 @@ fn splice_windows_context_instead_of_whole_parent() {
     // co-occur in some chunk so companion-anchored detectors still fire.
     assert!(
         decoded.iter().any(|c| {
-            let s = c.data.as_str();
+            let s = c.data.as_ref();
             s.contains("AKIAIOSFODNN7EXAMPLE") && s.contains("aws_secret_access_key")
         }),
         "decoded secret must keep its companion anchor adjacent after windowing"

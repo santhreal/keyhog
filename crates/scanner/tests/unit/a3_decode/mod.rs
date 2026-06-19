@@ -11,6 +11,7 @@ mod caesar_skips_source_code_paths;
 mod decode_chunk_base64_splice_consumes_padding;
 mod decode_chunk_base64_splices_companion_anchor;
 mod decode_chunk_dedups_identical_outputs;
+mod decode_chunk_duplicate_base64_splices_each_occurrence;
 mod decode_chunk_empty_input;
 mod decode_chunk_hex_splices_companion_anchor;
 mod decode_chunk_html_entity_splice;

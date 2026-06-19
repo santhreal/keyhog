@@ -1,5 +1,5 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::pipeline::should_suppress_named_detector_finding;
+use keyhog_scanner::testing::should_suppress_named_detector_finding;
 
 #[test]
 fn powershell_verb_noun_pattern_suppressed_for_generic_detectors() {

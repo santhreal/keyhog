@@ -29,7 +29,8 @@ fn readme_detector_count_matches_disk() {
         .len();
 
     assert_eq!(
-        disk_count, loaded,
+        disk_count,
+        loaded,
         "loader drift: {disk_count} *.toml files on disk in {} but the loader \
          returned {loaded} detectors. A detector TOML is being silently dropped \
          (bad id, duplicate, parse-skip) — every on-disk detector must load.",

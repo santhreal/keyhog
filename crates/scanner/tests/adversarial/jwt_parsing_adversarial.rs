@@ -2,7 +2,7 @@
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use keyhog_scanner::jwt::{analyze, looks_like_jwt, JwtAnomaly};
+use keyhog_scanner::testing::jwt::{analyze, looks_like_jwt, JwtAnomaly};
 
 fn make_jwt(header: &str, payload: &str, sig: &str) -> String {
     let h_b64 = URL_SAFE_NO_PAD.encode(header);

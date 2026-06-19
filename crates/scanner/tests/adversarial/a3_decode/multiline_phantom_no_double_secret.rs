@@ -1,7 +1,7 @@
 //! Adversarial: passthrough .env line must not duplicate secret text in appended region.
 
-use keyhog_scanner::fragment_cache::FragmentCache;
-use keyhog_scanner::multiline::{preprocess_multiline, MultilineConfig};
+use keyhog_scanner::testing::fragment_cache::FragmentCache;
+use keyhog_scanner::testing::multiline::{preprocess_multiline, MultilineConfig};
 
 #[test]
 fn env_single_line_secret_not_duplicated_in_text() {

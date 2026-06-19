@@ -31,7 +31,7 @@ struct GpuParams {
     _pad: [u32; 3],
 }
 
-pub(super) struct GpuContext {
+pub(crate) struct GpuContext {
     /// Shared device+queue from vyre - NOT a second device.
     device_queue: std::sync::Arc<(wgpu::Device, wgpu::Queue)>,
     adapter_info: wgpu::AdapterInfo,
@@ -46,13 +46,13 @@ impl GpuContext {
     /// Maximum single storage-buffer size the device will accept, in MiB.
     /// Clamped to 256 GiB because some drivers report the full 64-bit
     /// virtual address space as `max_buffer_size`.
-    pub fn vram_mb(&self) -> Option<u64> {
+    pub(crate) fn vram_mb(&self) -> Option<u64> {
         const SANE_CAP_MB: u64 = 256 * 1024;
         Some((self.device_limits.max_buffer_size / (1024 * 1024)).min(SANE_CAP_MB))
     }
 
     /// Human-readable GPU name from the adapter.
-    pub fn gpu_name(&self) -> &str {
+    pub(crate) fn gpu_name(&self) -> &str {
         &self.adapter_info.name
     }
 
@@ -239,7 +239,7 @@ fn bgl_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
 /// use keyhog_scanner::gpu::get_gpu;
 /// let _ = get_gpu();
 /// ```
-pub fn get_gpu() -> Option<&'static GpuContext> {
+pub(crate) fn get_gpu() -> Option<&'static GpuContext> {
     GPU.get_or_init(|| match init_gpu() {
         Ok(ctx) => {
             tracing::info!("GPU MoE inference initialized (shared device)");
@@ -250,14 +250,13 @@ pub fn get_gpu() -> Option<&'static GpuContext> {
             // can't use it, they need to know - otherwise they'll
             // sit at CPU throughput and assume that's what
             // "GPU-accelerated keyhog" means.
-            // env_no_gpu() covers both the explicit env var AND
-            // the auto-detected CI environment - on CI the GPU
-            // probe was guaranteed to fail and the warning would
-            // be noise.
+            // env_no_gpu() is the legacy-named wrapper for the resolved GPU
+            // runtime policy. When GPU is explicitly disabled, this path stays
+            // quiet because CPU/SIMD is the requested route.
             let no_gpu = super::env_no_gpu();
-            let require_gpu = std::env::var("KEYHOG_REQUIRE_GPU").as_deref() == Ok("1");
+            let require_gpu = super::env_require_gpu();
             if require_gpu {
-                eprintln!("keyhog: KEYHOG_REQUIRE_GPU=1 but GPU MoE init failed: {e}");
+                eprintln!("keyhog: --require-gpu requested but GPU MoE init failed: {e}");
                 std::process::exit(2);
             }
             // Only surface the CPU-fallback notice when a GPU is physically
@@ -271,7 +270,7 @@ pub fn get_gpu() -> Option<&'static GpuContext> {
             if !no_gpu && gpu_present {
                 eprintln!(
                     "keyhog: a GPU was detected but could not be initialized; using the \
-CPU/SIMD scan path. Set KEYHOG_NO_GPU=1 to silence this, or KEYHOG_REQUIRE_GPU=1 to fail instead."
+CPU/SIMD scan path. Use --no-gpu to silence this, or --require-gpu to fail instead."
                 );
             }
             tracing::debug!("GPU MoE init failed, using CPU fallback: {e}"); // LAW10: NOT the sole surface — the degrade is loud at line ~230 (eprintln when a GPU is actually present) + the MOE_RUNTIME_DEGRADE_WARNED once-guard; CPU MoE is recall-preserving. This debug line is supplementary detail only.
@@ -298,23 +297,23 @@ static MOE_NONFINITE_WARNED: OnceLock<()> = OnceLock::new();
 /// posture exactly so the MoE path is coherent with the literal-set/MegaScan
 /// paths under the no-silent-fallback rule:
 ///
-///   * `KEYHOG_REQUIRE_GPU=1` -> hard-fail (`exit(2)`). The init-time check in
+///   * `--require-gpu` -> hard-fail (`exit(2)`). The init-time check in
 ///     [`get_gpu`] cannot catch this: acquisition succeeded, then a *specific
 ///     dispatch* (driver timeout, lost device, map_async error) failed deep in
 ///     the scan. Without this, `REQUIRE_GPU` silently degraded to CPU per batch.
 ///   * ordinary run -> a single loud stderr line (the scores are numerically
 ///     identical to GPU, but the operator who believes the scan is
 ///     GPU-accelerated must know it isn't, since throughput collapses).
-///   * `KEYHOG_NO_GPU` / CI -> stay quiet (CPU is the right path there).
+///   * `--no-gpu` -> stay quiet (CPU is the requested path there).
 ///
 /// Distinct from the below-threshold `None` (a legitimate routing choice, not a
 /// failure) and from init failure (already handled loudly in [`get_gpu`]).
 fn moe_runtime_degrade(reason: &str) {
     let no_gpu = super::env_no_gpu();
-    let require_gpu = std::env::var("KEYHOG_REQUIRE_GPU").as_deref() == Ok("1");
+    let require_gpu = super::env_require_gpu();
     if require_gpu {
         eprintln!(
-            "keyhog: KEYHOG_REQUIRE_GPU=1 but the GPU MoE dispatch failed at runtime \
+            "keyhog: --require-gpu requested but the GPU MoE dispatch failed at runtime \
 ({reason}). Refusing to silently degrade to the CPU MoE."
         );
         std::process::exit(2);
@@ -326,7 +325,7 @@ fn moe_runtime_degrade(reason: &str) {
         eprintln!(
             "keyhog: GPU MoE dispatch failed at runtime ({reason}); affected batches in \
 this scan are scored on the CPU MoE (identical scores, lower throughput). Set \
-KEYHOG_NO_GPU=1 to silence, or KEYHOG_REQUIRE_GPU=1 to hard-fail next time."
+--no-gpu to silence, or --require-gpu to hard-fail next time."
         );
     }
 }
@@ -338,16 +337,16 @@ KEYHOG_NO_GPU=1 to silence, or KEYHOG_REQUIRE_GPU=1 to hard-fail next time."
 /// boundary (so downstream `confidence` math never sees NaN and the finding
 /// still surfaces on its heuristic score), but Law 10 forbids doing that
 /// silently: the operator must be told their GPU produced garbage. Gating
-/// mirrors [`moe_runtime_degrade`] — hard-fail under `KEYHOG_REQUIRE_GPU=1` (a
-/// GPU emitting NaN is exactly the malfunction that flag exists to catch), one
-/// loud stderr line on an ordinary run, and quiet under `KEYHOG_NO_GPU` / CI
-/// where the CPU MoE is the intended path anyway.
+/// mirrors [`moe_runtime_degrade`] — hard-fail under `--require-gpu` (a GPU
+/// emitting NaN is exactly the malfunction that flag exists to catch), one loud
+/// stderr line on an ordinary run, and quiet under `--no-gpu` where the CPU MoE
+/// is the intended path anyway.
 fn moe_nonfinite_degrade(nonfinite: usize, total: usize) {
     let no_gpu = super::env_no_gpu();
-    let require_gpu = std::env::var("KEYHOG_REQUIRE_GPU").as_deref() == Ok("1");
+    let require_gpu = super::env_require_gpu();
     if require_gpu {
         eprintln!(
-            "keyhog: KEYHOG_REQUIRE_GPU=1 but the GPU MoE returned {nonfinite}/{total} \
+            "keyhog: --require-gpu requested but the GPU MoE returned {nonfinite}/{total} \
 non-finite (NaN/Inf) confidence score(s) — a GPU driver/shader/weights malfunction. \
 Refusing to silently sanitize and continue."
         );
@@ -361,7 +360,7 @@ Refusing to silently sanitize and continue."
             "keyhog: GPU MoE produced {nonfinite}/{total} non-finite (NaN/Inf) confidence \
 score(s); each was sanitized to a neutral 0.5 so the finding still surfaces on its \
 heuristic score, but this indicates a GPU driver/shader/weights bug worth investigating. \
-Set KEYHOG_NO_GPU=1 to score on the CPU MoE, or KEYHOG_REQUIRE_GPU=1 to hard-fail next time."
+Use --no-gpu to score on the CPU MoE, or --require-gpu to hard-fail next time."
         );
     }
 }
@@ -374,7 +373,7 @@ Set KEYHOG_NO_GPU=1 to score on the CPU MoE, or KEYHOG_REQUIRE_GPU=1 to hard-fai
 /// use keyhog_scanner::gpu::batch_score_features;
 /// let _ = batch_score_features(&[[0.0; 42]], std::time::Duration::from_millis(30_000));
 /// ```
-pub fn batch_score_features(
+pub(crate) fn batch_score_features(
     features: &[[f32; INPUT_DIM]],
     readback_timeout: Duration,
 ) -> Option<Vec<f64>> {
@@ -547,7 +546,7 @@ pub fn batch_score_features(
     staging_buf.unmap();
 
     // Law 10: never sanitize NaN/Inf silently. If the GPU emitted any non-finite
-    // score, surface it (hard-fail under KEYHOG_REQUIRE_GPU, one loud line
+    // score, surface it (hard-fail under --require-gpu, one loud line
     // otherwise) so a driver/shader/weights bug is visible, not invisible.
     if nonfinite > 0 {
         moe_nonfinite_degrade(nonfinite, result.len());

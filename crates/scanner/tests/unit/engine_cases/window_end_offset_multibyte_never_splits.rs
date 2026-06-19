@@ -1,4 +1,4 @@
-use keyhog_scanner::engine::window_end_offset;
+use keyhog_scanner::testing::window_end_offset;
 #[test]
 fn window_end_offset_multibyte_never_splits() {
     let text = "αβγδ";

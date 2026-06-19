@@ -64,7 +64,7 @@ pub enum JwtAnomaly {
 
 /// Render anomalies into a `metadata` map suitable for SARIF properties or
 /// the text reporter. Returns `None` when there are no anomalies.
-pub fn anomalies_to_metadata(analysis: &JwtAnalysis) -> Option<BTreeMap<String, String>> {
+pub(crate) fn anomalies_to_metadata(analysis: &JwtAnalysis) -> Option<BTreeMap<String, String>> {
     if analysis.anomalies.is_empty() {
         return None;
     }
@@ -139,7 +139,7 @@ pub fn finding_metadata(credential: &str) -> Option<std::collections::HashMap<St
 
 /// Returns `true` when `s` looks like a JWT (three base64url segments).
 /// Cheap shape check - does NOT decode.
-pub fn looks_like_jwt(s: &str) -> bool {
+pub(crate) fn looks_like_jwt(s: &str) -> bool {
     let s = s.trim();
     const MAX_JWT_SEGMENT_LEN: usize = 16 * 1024; // 16KB limit per segment
 
@@ -173,7 +173,7 @@ pub fn looks_like_jwt(s: &str) -> bool {
 /// the issuer's public key, which we don't have. Structural validation is
 /// the high-recall layer; the verifier crate handles cryptographic checks
 /// for services that expose them.
-pub fn analyze(s: &str) -> Option<JwtAnalysis> {
+pub(crate) fn analyze(s: &str) -> Option<JwtAnalysis> {
     let s = s.trim();
     if !looks_like_jwt(s) {
         return None;
@@ -191,15 +191,15 @@ pub fn analyze(s: &str) -> Option<JwtAnalysis> {
         return None;
     }
 
-    let header: JwtHeader = serde_json::from_slice(&header_json).ok()?;
-    let mut payload: JwtPayload = serde_json::from_slice(&payload_json).ok()?;
+    let header: JwtHeader = serde_json::from_slice(&header_json).ok()?; // LAW10: malformed input => None (fail-closed at the boundary; not a valid value), recall-safe
+    let mut payload: JwtPayload = serde_json::from_slice(&payload_json).ok()?; // LAW10: malformed input => None (fail-closed at the boundary; not a valid value), recall-safe
     let aud = payload.take_aud();
     let iss = payload.iss.take();
     let sub = payload.sub.take();
 
     let mut anomalies = Vec::new();
 
-    let alg = header.alg.unwrap_or_else(|| "<missing>".to_string());
+    let alg = header.alg.unwrap_or_else(|| "<missing>".to_string()); // LAW10: absent path/field => display placeholder; reporting-only, recall-safe
     if alg.eq_ignore_ascii_case("none") {
         anomalies.push(JwtAnomaly::AlgNone);
     } else if !is_known_alg(&alg) {
@@ -222,7 +222,7 @@ pub fn analyze(s: &str) -> Option<JwtAnalysis> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs() as i64)
-            .unwrap_or(0);
+            .unwrap_or(0); // LAW10: empty/absent => documented numeric/sentinel default, recall-safe
         let is_expired = now >= exp_val;
         if is_expired {
             anomalies.push(JwtAnomaly::Expired);
@@ -253,7 +253,7 @@ fn decode_b64url(s: &str) -> Option<Vec<u8>> {
     use base64::Engine;
     // Strip any padding the input might have (base64url is unpadded by spec).
     let trimmed = s.trim_end_matches('=');
-    URL_SAFE_NO_PAD.decode(trimmed).ok()
+    URL_SAFE_NO_PAD.decode(trimmed).ok() // LAW10: malformed input => None (fail-closed at the boundary; not a valid value), recall-safe
 }
 
 fn is_known_alg(alg: &str) -> bool {

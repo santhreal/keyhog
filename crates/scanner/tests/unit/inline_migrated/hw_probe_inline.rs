@@ -1,9 +1,10 @@
 //! Migrated from src/hw_probe.rs
 
-use keyhog_scanner::hw_probe::{
-    classify_gpu_tier, clear_test_backend_override, gpu_could_engage, parse_backend_str,
-    select_backend, set_test_backend_override, thresholds, GpuTier, HardwareCaps, ScanBackend,
+use keyhog_scanner::hw_probe::testing::{
+    classify_gpu_tier, gpu_could_engage, parse_backend_str, select_backend, GpuTier, HardwareCaps,
+    ScanBackend,
 };
+use keyhog_scanner::testing::{clear_test_backend_override, set_test_backend_override, thresholds};
 
 // NOTE: these tests deliberately do NOT mutate the process-global
 // `KEYHOG_BACKEND` env var. A global set to a GPU/MegaScan value races with
@@ -23,6 +24,7 @@ fn caps_with(gpu: bool, soft: bool, hs: bool, avx2: bool) -> HardwareCaps {
         gpu_available: gpu,
         gpu_name: gpu.then(|| "Test GPU".to_string()),
         gpu_vram_mb: gpu.then_some(8192),
+        gpu_runtime_identity: gpu.then(|| "test-runtime:Test GPU".to_string()),
         gpu_is_software: soft,
         total_memory_mb: Some(32_768),
         io_uring_available: false,
@@ -200,6 +202,7 @@ fn caps_with_named_gpu(name: &str) -> HardwareCaps {
         gpu_available: true,
         gpu_name: Some(name.to_string()),
         gpu_vram_mb: Some(8192),
+        gpu_runtime_identity: Some(format!("test-runtime:{name}")),
         gpu_is_software: false,
         total_memory_mb: Some(32_768),
         io_uring_available: false,

@@ -1,6 +1,7 @@
 pub mod char_diversity_bounded_zero_to_one;
 pub mod compute_confidence_always_in_unit_interval;
 pub mod decode;
+pub mod dedup_invariants_proptest;
 pub mod is_known_example_never_panics;
 pub mod normalized_entropy_bounded_zero_to_one;
 pub mod scanner_fuzz;

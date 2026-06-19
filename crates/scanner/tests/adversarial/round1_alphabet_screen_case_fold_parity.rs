@@ -15,7 +15,7 @@
 //! If the new path silently drops a case-related bit, this test fails on
 //! the first input where the screen disagrees.
 
-use keyhog_scanner::alphabet_filter::{AlphabetMask, AlphabetScreen};
+use keyhog_scanner::testing::{AlphabetMask, AlphabetScreen};
 use proptest::prelude::*;
 
 fn legacy_screen(target: &str) -> AlphabetMask {

@@ -1,7 +1,7 @@
 //! R5-T decode hostile: base64 64-col wrap bounded.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 use std::time::{Duration, Instant};
 
 #[test]

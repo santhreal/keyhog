@@ -1,9 +1,9 @@
 //! `CompiledScanner` match-scoring / confidence methods.
 //!
-//! Extracted verbatim from `fallback.rs` (which had grown past 2.2k lines) to
+//! Extracted from the phase-2 scanner tail to
 //! separate the fallback-*scanning* path from the match-*scoring* path. These
 //! are satellite `impl CompiledScanner` methods: the struct lives in `mod.rs`,
-//! and the same `use super::*` glob `fallback.rs` relies on brings every
+//! and the same `use super::*` glob the phase-2 modules rely on brings every
 //! referenced symbol (`CompiledPattern`, `MlScoreResult`, `find_companion`,
 //! `extract_literal_prefix`, `local_context_window`, `ML_CONTEXT_RADIUS_LINES`)
 //! into scope here unchanged. Pure move — no behaviour change.
@@ -71,7 +71,12 @@ impl CompiledScanner {
     ) -> Option<MlScoreResult<'a>> {
         let raw_conf =
             crate::confidence::compute_confidence(&crate::confidence::ConfidenceSignals {
-                has_literal_prefix: extract_literal_prefix(entry.regex.as_str()).is_some(),
+                // Per-PATTERN constant, memoized on the `LazyRegex` (see
+                // `LazyRegex::has_literal_prefix`): the prior inline
+                // `extract_literal_prefix(entry.regex.as_str()).is_some()`
+                // re-ran the allocating prefix parser on every surviving
+                // candidate. Identical value, computed at most once.
+                has_literal_prefix: entry.regex.has_literal_prefix(),
                 has_context_anchor: entry.group.is_some(),
                 entropy,
                 keyword_nearby,
@@ -147,7 +152,7 @@ impl CompiledScanner {
     ) -> Option<MlScoreResult<'a>> {
         #[cfg(not(feature = "ml"))]
         {
-            let _ = (context, credential, data, line, chunk, is_named_detector);
+            let _ = (context, credential, data, line, chunk, is_named_detector); // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
             Some(MlScoreResult::Final(heuristic_conf))
         }
 

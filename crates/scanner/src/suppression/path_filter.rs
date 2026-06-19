@@ -93,11 +93,7 @@ pub(crate) fn looks_like_vendored_minified_path(path: Option<&str>) -> bool {
         || p.contains("/vendor/javascripts/")
         || p.contains("\\vendor\\javascripts\\")
     {
-        // `rsplit(['/', '\\'])` so Windows-style paths still collapse
-        // to the bare filename - the prefix list below would otherwise
-        // never match on Windows checkouts. No allocation: we match
-        // case-insensitively against the borrowed `&str` directly.
-        let basename = p.rsplit(['/', '\\']).next().unwrap_or(p);
+        let basename = crate::platform_compat::path_basename(p);
         let basename_bytes = basename.as_bytes();
         const VENDORED_JS_PREFIXES: &[&[u8]] = &[
             b"bootstrap",

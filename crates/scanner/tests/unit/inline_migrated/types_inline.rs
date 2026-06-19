@@ -1,16 +1,16 @@
 //! Migrated from src/types.rs
 
-use keyhog_core::config::ScanConfig;
-use keyhog_scanner::multiline::MultilineConfig;
+use keyhog_core::ScanConfig;
+use keyhog_scanner::testing::multiline::MultilineConfig;
 use keyhog_scanner::ScannerConfig;
 
 mod sanitise_tests {
     use super::*;
 
     fn baseline_config() -> ScannerConfig {
-        // MC-01: ScannerConfig is now a thin newtype wrapping the canonical
-        // ScanConfig plus the two scanner-local knobs. Shared knobs live on
-        // `.scan`; the asserts below reach them via Deref (`c.min_confidence`).
+        // MC-01: ScannerConfig wraps the canonical ScanConfig plus
+        // scanner-local knobs. Shared knobs live on `.scan`; the asserts below
+        // reach them via Deref (`c.min_confidence`).
         ScannerConfig {
             scan: ScanConfig {
                 max_decode_depth: 5,
@@ -35,6 +35,8 @@ mod sanitise_tests {
             },
             multiline: MultilineConfig::default(),
             penalize_test_paths: true,
+            per_chunk_timeout_ms: None,
+            ..ScannerConfig::default()
         }
     }
 
@@ -84,7 +86,9 @@ mod sanitise_tests {
         c.sanitise();
         assert_eq!(
             c.max_decode_depth,
-            keyhog_core::testing::max_decode_depth_limit(),
+            keyhog_core::testing::CoreTestApi::max_decode_depth_limit(
+                &keyhog_core::testing::TestApi,
+            ),
             "scanner sanitise must use the same decode-depth ceiling as CLI/TOML"
         );
     }

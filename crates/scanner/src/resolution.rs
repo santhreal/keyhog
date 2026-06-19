@@ -37,7 +37,7 @@ fn suppress_entropy_matches_near_named_detectors(matches: &mut Vec<RawMatch>) {
                 .location
                 .file_path
                 .clone()
-                .unwrap_or_else(|| Arc::from(""));
+                .unwrap_or_else(|| Arc::from("")); // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
             m.location.line.map(|line| (path, line))
         })
         .collect();
@@ -49,7 +49,7 @@ fn suppress_entropy_matches_near_named_detectors(matches: &mut Vec<RawMatch>) {
             .location
             .file_path
             .clone()
-            .unwrap_or_else(|| Arc::from(""));
+            .unwrap_or_else(|| Arc::from("")); // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
         if let Some(line) = m.location.line {
             for offset in 0..=ADJACENT_LINE_DISTANCE {
                 if named_lines.contains(&(Arc::clone(&path), line.saturating_sub(offset)))
@@ -85,8 +85,8 @@ fn resolve_match_groups(mut matches: Vec<RawMatch>) -> Vec<RawMatch> {
             .location
             .file_path
             .clone()
-            .unwrap_or_else(|| Arc::from(""));
-        let line = m.location.line.unwrap_or(0);
+            .unwrap_or_else(|| Arc::from("")); // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
+        let line = m.location.line.unwrap_or(0); // LAW10: line not located => placeholder line for REPORTING only; finding still emitted, recall-safe
         groups.entry((file, line)).or_default().push(m);
     }
     // Iterate groups in a deterministic key order. `HashMap::into_values` yields

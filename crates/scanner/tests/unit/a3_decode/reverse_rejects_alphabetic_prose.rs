@@ -1,7 +1,7 @@
 //! Long alphabetic runs without prefix reversal must not reverse-decode.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn alphabetic_prose_emits_no_reverse_chunks() {

@@ -13,7 +13,7 @@
 //! Encoding the credential and asking whether keyhog re-derives it is a decode
 //! RECALL RATE over a corpus; detection-accuracy rates are owned by the
 //! differential bench (`benchmarks/bench`), never asserted in `cargo test`
-//! (`backlog/testing.md` T-01). It is also not a sound all-or-nothing contract:
+//! (`docs/EXECUTION_PLAN.md` T-01). It is also not a sound all-or-nothing contract:
 //! the decode pipeline decides whether to recurse from what each decoded layer
 //! looks like, so a given two-layer pair legitimately may or may not round-trip
 //! without that being a bug. Single-layer decode BEHAVIOR on known inputs is
@@ -108,7 +108,9 @@ fn two_layer_decode_sweep() {
                     let text = wrap_with_encoded_cred(&p.text, &p.credential, &outer_encoded);
                     let chunk = make_chunk(&text, SOURCE_TYPE, "compound.txt");
                     let hit = surfaces(&scanner, &chunk, &p.credential);
-                    let bucket = per_pair.entry((outer.label(), inner.label())).or_insert((0, 0));
+                    let bucket = per_pair
+                        .entry((outer.label(), inner.label()))
+                        .or_insert((0, 0));
                     bucket.0 += 1;
                     total_runs += 1;
                     if hit {

@@ -1,7 +1,7 @@
 //! A lone triple-quote buried in regular-quote noise must NOT open a docstring
 //! and silently suppress every credential on the lines below it.
 
-use keyhog_scanner::context::documentation_line_flags;
+use keyhog_scanner::testing::context::documentation_line_flags;
 
 #[test]
 fn context_quote_noise_does_not_open_docstring() {
@@ -32,6 +32,9 @@ fn context_real_docstring_opener_still_flags_body() {
     // The opener line itself is not flagged (consistent with the markdown-fence
     // contract: the delimiter line is code, the enclosed body is documentation).
     // What matters is that a genuine opener still suppresses its interior.
-    assert!(flags[1], "docstring body line must be flagged documentation");
+    assert!(
+        flags[1],
+        "docstring body line must be flagged documentation"
+    );
     assert!(flags[2], "docstring closer line stays in documentation");
 }

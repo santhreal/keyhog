@@ -15,156 +15,12 @@
 //! default fast path when every detector lowered to GPU; it is enabled only for
 //! explicit parity/debug runs or when host-only detectors need CPU coverage.
 
+#[cfg(all(feature = "gpu", test))]
+use super::megakernel_triggers::validation_window_range;
+#[cfg(feature = "gpu")]
+use super::megakernel_triggers::{merge_validated_triggers, validate_detector_match};
 use super::*;
 use crate::hw_probe::ScanBackend;
-
-/// Output of [`merge_validated_triggers`]: the per-chunk phase-2 trigger bitmap
-/// plus the over-firing / under-firing accounting the dispatch surfaces loudly.
-///
-/// Gated on `gpu` (not `simd`): it is reachable only from the megakernel
-/// dispatch, and references `super::megakernel::Firing` which exists only under
-/// `gpu`. `gpu` implies `simd`, so the CPU-trigger helpers it consumes are also
-/// present.
-#[cfg(feature = "gpu")]
-pub(crate) struct MergedTriggers {
-    /// Per-chunk trigger bitmap fed straight to `scan_coalesced_phase2`. A bit
-    /// for `(chunk, detector)` is set iff the validation oracle confirmed a real
-    /// detector match in that chunk (validated GPU firing) OR the detector is a
-    /// host_detector the CPU net fired on, OR the CPU floor recovered a GPU
-    /// under-fire (also validated). Never a raw, unvalidated GPU firing.
-    pub triggers: Vec<Option<Vec<u64>>>,
-    /// Distinct `(chunk, detector)` firing pairs the GPU produced, pre-validation.
-    pub raw_pairs: usize,
-    /// Pairs the validation oracle REJECTED (pure GPU over-fire — the unanchored
-    /// DFA named a chunk with no real anchored match). Dropped from phase-2.
-    pub gpu_overfire_dropped: usize,
-    /// Pairs the CPU recall floor RECOVERED (the CPU fired, the GPU did not, and
-    /// the oracle confirmed a real match). A GPU under-fire — a vyre recall bug
-    /// the floor papers over; surfaced loudly by the caller (Law 10).
-    pub gpu_underfire_recovered: usize,
-}
-
-#[cfg(feature = "gpu")]
-fn gpu_recall_floor_enabled() -> bool {
-    std::env::var_os("KEYHOG_GPU_RECALL_FLOOR").is_some()
-        || std::env::var_os("KEYHOG_GPU_PARITY").is_some()
-}
-
-/// Build the validated phase-2 trigger bitmap from raw GPU firings + CPU triggers.
-///
-/// Pure transform (no GPU, no scanner internals) so its accounting is unit-testable.
-#[cfg(feature = "gpu")]
-pub(crate) fn merge_validated_triggers(
-    chunk_count: usize,
-    words: usize,
-    ac_len: usize,
-    firings: &[super::megakernel::Firing],
-    cpu_triggers: Option<&[Option<Vec<u64>>]>,
-    host_dets: &[usize],
-    mut validate: impl FnMut(usize, usize, Option<usize>) -> bool,
-) -> MergedTriggers {
-    use std::collections::{HashMap, HashSet};
-
-    type PairSet = HashSet<(usize, usize), ahash::RandomState>;
-    type PairOffsetMap = HashMap<(usize, usize), usize, ahash::RandomState>;
-
-    let mut candidate_offsets: PairOffsetMap =
-        HashMap::with_capacity_and_hasher(firings.len(), ahash::RandomState::new());
-    for f in firings {
-        if f.file_index < chunk_count && f.detector < ac_len {
-            candidate_offsets
-                .entry((f.file_index, f.detector))
-                .or_insert(f.match_offset);
-        }
-    }
-    let raw_pairs = candidate_offsets.len();
-
-    let mut triggers: Vec<Option<Vec<u64>>> = vec![None; chunk_count];
-    let set_bit = |triggers: &mut Vec<Option<Vec<u64>>>, ci: usize, det: usize| {
-        let slot = triggers[ci].get_or_insert_with(|| vec![0u64; words]);
-        if slot.len() < words {
-            slot.resize(words, 0);
-        }
-        slot[det / 64] |= 1u64 << (det % 64);
-    };
-
-    let mut gpu_validated: PairSet =
-        HashSet::with_capacity_and_hasher(candidate_offsets.len(), ahash::RandomState::new());
-    let mut gpu_overfire_dropped = 0usize;
-    for (&(ci, det), &match_offset) in &candidate_offsets {
-        if validate(ci, det, Some(match_offset)) {
-            set_bit(&mut triggers, ci, det);
-            gpu_validated.insert((ci, det));
-        } else {
-            gpu_overfire_dropped += 1;
-        }
-    }
-
-    let mut host_mask = vec![0u64; words];
-    for &d in host_dets {
-        if d < ac_len {
-            host_mask[d / 64] |= 1u64 << (d % 64);
-        }
-    }
-    let mut gpu_underfire_recovered = 0usize;
-    if let Some(cpu_triggers) = cpu_triggers {
-        for (ci, cpu_opt) in cpu_triggers.iter().enumerate() {
-            let Some(cpu_bits) = cpu_opt else { continue };
-            if ci >= chunk_count {
-                break;
-            }
-            for w in 0..words {
-                let bits = cpu_bits.get(w).copied().unwrap_or(0); // LAW10: bounds-checked lookup; out-of-range => documented default (total fn), recall-safe
-                if bits == 0 {
-                    continue;
-                }
-                let mut rest = bits;
-                while rest != 0 {
-                    let lo = rest.trailing_zeros() as usize;
-                    rest &= rest - 1;
-                    let det = w * 64 + lo;
-                    if det >= ac_len {
-                        continue;
-                    }
-                    if (host_mask[w] >> lo) & 1 == 1 {
-                        // host_detector: CPU is the only source — set it straight.
-                        set_bit(&mut triggers, ci, det);
-                        continue;
-                    }
-                    if gpu_validated.contains(&(ci, det)) {
-                        continue;
-                    }
-                    if validate(ci, det, None) {
-                        set_bit(&mut triggers, ci, det);
-                        gpu_underfire_recovered += 1;
-                    }
-                }
-            }
-        }
-    }
-
-    MergedTriggers {
-        triggers,
-        raw_pairs,
-        gpu_overfire_dropped,
-        gpu_underfire_recovered,
-    }
-}
-
-#[cfg(feature = "gpu")]
-fn validation_window_range(
-    text: &str,
-    match_offset: usize,
-    max_match_width: usize,
-) -> Option<(usize, usize)> {
-    if text.is_empty() || max_match_width == 0 {
-        return None;
-    }
-    let hit = match_offset.min(text.len());
-    let start = super::floor_char_boundary(text, hit.saturating_sub(max_match_width));
-    let end = super::ceil_char_boundary(text, hit.saturating_add(max_match_width).min(text.len()));
-    (start < end).then_some((start, end))
-}
 
 impl CompiledScanner {
     /// The megakernel rule catalog, built once from `ac_map` (or loaded from the
@@ -285,7 +141,7 @@ impl CompiledScanner {
         // function would fail to compile rather than silently lose its tail.
         #[cfg(feature = "simd")]
         {
-            let kh = std::env::var_os("KH_PERF").is_some();
+            let kh = super::profile::perf_trace_enabled();
             let t_cat = std::time::Instant::now();
             let Some(catalog) = self.megakernel_catalog() else {
                 return degrade("catalog: no ac_map pattern lowered to a GPU DFA".to_string());
@@ -298,38 +154,21 @@ impl CompiledScanner {
             let words = self.ac_map.len().div_ceil(64).max(1);
 
             // Step 1: GPU dispatch — the raw firing set (over-fires + possibly
-            // a dropped firing).
+            // a dropped firing). The catalog owns the reusable lowercase
+            // staging buffers so this dispatch path does not allocate one
+            // fresh haystack `Vec` per chunk per batch.
             let t_co = std::time::Instant::now();
-            // ASCII-lowercase the haystack: the GPU catalog rules are the
-            // lowercased literal anchors (`gpu_literals` / `megakernel_catalog`),
-            // and Hyperscan matches CASELESS, so the GPU must fold the haystack to
-            // the same lowercase to find an uppercase occurrence of a lowercase
-            // literal (`GHP_…` vs rule `ghp_`). ASCII fold is position-preserving
-            // (1 byte → 1 byte, only A–Z affected), so firing offsets map back to
-            // the original bytes unchanged and the validate gate / phase 2 re-confirm
-            // on the original mixed-case text with the caseless regex. Without this
-            // the GPU silently drops every mixed-case match SIMD finds (the PERF-07
-            // gpu_parity class).
-            let files: Vec<(u64, Vec<u8>)> = chunks
-                .iter()
-                .enumerate()
-                .map(|(i, c)| {
-                    let mut bytes = c.data.as_bytes().to_vec();
-                    bytes.make_ascii_lowercase();
-                    (i as u64, bytes)
-                })
-                .collect();
             let co_s = t_co.elapsed();
 
             let t_dis = std::time::Instant::now();
-            let firings = match catalog.scan(backend, files) {
+            let firings = match catalog.scan(backend, chunks) {
                 Ok(f) => f,
                 Err(error) => return degrade(format!("dispatch error: {error}")),
             };
             let dis_s = t_dis.elapsed();
 
             let t_val = std::time::Instant::now();
-            let full_recall_floor = gpu_recall_floor_enabled();
+            let full_recall_floor = self.tuning.gpu_recall_floor_enabled();
             let host_floor = !catalog.host_detectors().is_empty();
             let cpu_triggers = if full_recall_floor || host_floor {
                 match self.simd_prefilter.as_ref() {
@@ -368,18 +207,12 @@ impl CompiledScanner {
                         .to_string()
                 });
                 let rx = self.ac_map[det].regex.get();
-                if let Some(match_offset) = match_offset {
-                    if let Some(Some(max_match_width)) = self.ac_match_upper_bounds.get(det) {
-                        if let Some((start, end)) =
-                            validation_window_range(text, match_offset, *max_match_width)
-                        {
-                            if rx.is_match(&text[start..end]) {
-                                return true;
-                            }
-                        }
-                    }
-                }
-                rx.is_match(text.as_str())
+                validate_detector_match(
+                    text.as_str(),
+                    rx,
+                    match_offset,
+                    self.ac_match_upper_bounds.get(det).copied().flatten(),
+                )
             };
             let merged = merge_validated_triggers(
                 chunks.len(),
@@ -406,7 +239,7 @@ impl CompiledScanner {
                 if UNDERFIRE_WARNED.set(()).is_ok() {
                     eprintln!(
                         "keyhog: GPU megakernel under-fired on {gpu_underfire_recovered} \
-                         (chunk, detector) pair(s) recovered by KEYHOG_GPU_RECALL_FLOOR/host \
+                         (chunk, detector) pair(s) recovered by gpu_recall_floor/host \
                          coverage — fix the vyre DFA path before treating GPU-only as parity-safe."
                     );
                 }
@@ -430,7 +263,7 @@ impl CompiledScanner {
             let results = self.scan_coalesced_phase2(chunks, triggers);
             if kh {
                 eprintln!(
-                    "KH_PERF megakernel: chunks={} catalog={:.3}s coalesce={:.3}s dispatch={:.3}s validate={:.3}s phase2={:.3}s firings={} raw_pairs={} overfire_dropped={} underfire_recovered={} trigger_bits={} gpu_rules={} host_only={} full_recall_floor={} host_floor={}",
+                    "perf-trace megakernel: chunks={} catalog={:.3}s coalesce={:.3}s dispatch={:.3}s validate={:.3}s phase2={:.3}s firings={} raw_pairs={} overfire_dropped={} underfire_recovered={} trigger_bits={} gpu_rules={} host_only={} full_recall_floor={} host_floor={}",
                     chunks.len(),
                     cat_s.as_secs_f64(),
                     co_s.as_secs_f64(),
@@ -458,9 +291,9 @@ impl CompiledScanner {
             // Diagnostic: dump the phase-2 leaf breakdown (Confirmed / FbPrefilter /
             // Generic / Entropy / Ml …) so the localizable-vs-whole-chunk cost split
             // is visible — the data Part B (localized phase 2) is designed against.
-            // Gated on KEYHOG_PROFILE (the profiler only records then anyway), so
-            // it is zero-cost in production.
-            if std::env::var_os("KEYHOG_PROFILE").is_some() {
+            // Gated through the single profiler owner, so dispatch does not grow
+            // a second environment-control path.
+            if super::profile::enabled() {
                 super::profile::dump("megakernel-phase2");
             }
             results
@@ -524,5 +357,54 @@ mod tests {
         assert!(text.is_char_boundary(start));
         assert!(text.is_char_boundary(end));
         assert!(text[start..end].contains("ghp"));
+    }
+
+    #[test]
+    fn bounded_gpu_firing_rejects_window_miss_without_full_chunk_scan() {
+        let rx = regex::Regex::new(r"SECRET-[0-9]{4}").expect("regex");
+        let text = "prefix bait hit here\n\nlots of filler\n\nSECRET-1234";
+        let distant_match_offset = text.find("SECRET-1234").expect("match");
+
+        assert!(
+            validate_detector_match(
+                text,
+                &rx,
+                Some(distant_match_offset),
+                Some("SECRET-1234".len())
+            ),
+            "bounded validator must accept a real local match"
+        );
+        assert!(
+            !validate_detector_match(text, &rx, Some(0), Some("SECRET-1234".len())),
+            "bounded GPU over-fire validation must not fall back to a full-chunk \
+             regex scan after the local window misses"
+        );
+    }
+
+    #[test]
+    fn unbounded_and_cpu_floor_validation_keep_full_chunk_oracle() {
+        let rx = regex::Regex::new(r"SECRET=.*END").expect("regex");
+        let text = "prefix bait hit here\nSECRET=abc123END";
+
+        assert!(
+            validate_detector_match(text, &rx, Some(0), None),
+            "unbounded detector validation keeps the full prepared-chunk oracle"
+        );
+        assert!(
+            validate_detector_match(text, &rx, None, Some(8)),
+            "CPU recall-floor validation has no GPU offset, so it keeps the full \
+             prepared-chunk oracle"
+        );
+    }
+
+    #[test]
+    fn bounded_validation_source_has_no_old_full_chunk_fallback() {
+        let src = include_str!("megakernel_dispatch.rs");
+        let old_full_chunk_regex_scan = ["rx.is_match", "(text.as_str())"].concat();
+        assert!(
+            !src.contains(&old_full_chunk_regex_scan),
+            "bounded GPU firing validation must not fall back to a full prepared-chunk \
+             regex scan after its local proof window misses"
+        );
     }
 }

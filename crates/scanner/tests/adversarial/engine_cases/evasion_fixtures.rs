@@ -1,6 +1,6 @@
 //! Wire the dead `tests/data/corpus/evasion/*` fixtures into `cargo test`.
 //!
-//! Per the audit at `audits/release-2026-04-26/adversarial_audit.md`, ten
+//! Per the audit at `docs/EXECUTION_PLAN.md`, ten
 //! evasion fixtures shipped under `tests/data/corpus/evasion/` but no Rust
 //! test referenced them. An evasion that breaks the engine would not fail
 //! `cargo test`. This module fixes that.

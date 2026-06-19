@@ -17,10 +17,11 @@
 //!   expose how dispatch overhead amortizes.
 
 use criterion::{
-    black_box, criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode, Throughput,
+    criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode, Throughput,
 };
-use keyhog_core::{Chunk, ChunkMetadata, DetectorFile, DetectorSpec};
+use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec};
 use keyhog_scanner::CompiledScanner;
+use std::hint::black_box;
 
 const SIZES: &[usize] = &[
     4 * 1024,         // 4 KB - well below GPU break-even
@@ -36,17 +37,11 @@ const PATTERN_COUNTS: &[usize] = &[10, 100, 500];
 /// list to give a heterogeneous slice (mix of regex shapes), not just the
 /// first n alphabetically.
 fn first_n_detectors(n: usize) -> Vec<DetectorSpec> {
-    let embedded = keyhog_core::embedded_detector_tomls();
-    let mut out = Vec::with_capacity(n);
-    for (_name, body) in embedded.iter().take(n) {
-        if let Ok(f) = toml::from_str::<DetectorFile>(body) {
-            out.push(f.detector);
-        }
-        if out.len() >= n {
-            break;
-        }
-    }
-    out
+    keyhog_core::load_embedded_detectors_or_fail()
+        .expect("embedded detector corpus must load")
+        .into_iter()
+        .take(n)
+        .collect()
 }
 
 /// Generate `size` bytes of plausible source code with a few real-looking

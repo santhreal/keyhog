@@ -2,8 +2,7 @@
 //!
 //! Loads the full detector corpus (894 rules) and runs the synthetic
 //! worst-case fixture set from `backend_parity_matrix` plus chunk-boundary
-//! straddle cases on SimdCpu (reference), CpuFallback, and GPU when
-//! available. Megakernel parity is waived under KH-GAP-043 until expiry.
+//! straddle cases on SimdCpu (reference), CpuFallback, GPU, and MegaScan.
 //! Contract recall on every positive lives in `contracts_runner.rs`; this
 //! harness gates cross-backend finding-set parity on adversarial shapes.
 
@@ -167,7 +166,6 @@ fn full_corpus_multi_backend_worst_case_parity() {
     ];
 
     let mut total_cells = 0usize;
-    let mut skipped = 0usize;
     let mut failures: Vec<String> = Vec::new();
 
     for (name, chunks) in &fixtures {
@@ -180,22 +178,6 @@ fn full_corpus_multi_backend_worst_case_parity() {
         {
             total_cells += 1;
             let keys = scan_fixture(&scanner, chunks, backend);
-
-            if matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan) {
-                if keys.is_empty() && !reference_keys.is_empty() {
-                    skipped += 1;
-                    continue;
-                }
-                // GPU literal-set parity is environment-sensitive; only hard-fail
-                // when CI mandates a GPU adapter (`KEYHOG_REQUIRE_GPU=1`).
-                if keys != reference_keys && std::env::var("KEYHOG_REQUIRE_GPU").is_err() {
-                    skipped += 1;
-                    eprintln!(
-                        "SKIP: {backend:?} mismatch on {name} in non-mandatory GPU environment"
-                    );
-                    continue;
-                }
-            }
 
             if keys != reference_keys {
                 let only_ref: Vec<_> = reference_keys.difference(&keys).take(3).collect();
@@ -211,11 +193,10 @@ fn full_corpus_multi_backend_worst_case_parity() {
     }
 
     eprintln!(
-        "worst_case_backend_parity: detectors={} fixtures={} cells={} skipped={} failed={}",
-        scanner.detector_count(),
+        "worst_case_backend_parity: detectors={} fixtures={} cells={} failed={}",
+        scanner.runtime_status().detector_count,
         fixtures.len(),
         total_cells,
-        skipped,
         failures.len()
     );
 

@@ -1,7 +1,7 @@
 //! Reverse decoder emits chunk when reversed text contains known prefix.
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn reversed_aws_access_key_id_decoded() {

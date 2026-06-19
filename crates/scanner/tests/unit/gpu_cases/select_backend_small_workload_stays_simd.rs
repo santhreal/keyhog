@@ -1,4 +1,4 @@
-use keyhog_scanner::hw_probe::{select_backend, HardwareCaps, ScanBackend};
+use keyhog_scanner::hw_probe::testing::{select_backend, HardwareCaps, ScanBackend};
 #[test]
 fn select_backend_small_workload_stays_simd() {
     let caps = HardwareCaps {
@@ -10,6 +10,7 @@ fn select_backend_small_workload_stays_simd() {
         gpu_available: true,
         gpu_name: Some("NVIDIA GeForce RTX 4090".into()),
         gpu_vram_mb: Some(8192),
+        gpu_runtime_identity: Some("test-runtime:NVIDIA GeForce RTX 4090".to_string()),
         gpu_is_software: false,
         total_memory_mb: Some(16384),
         io_uring_available: false,

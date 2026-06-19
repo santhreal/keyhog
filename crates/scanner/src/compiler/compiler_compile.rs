@@ -6,9 +6,7 @@ use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
 use keyhog_core::{CompanionSpec, DetectorSpec, PatternSpec};
 use regex::Regex;
 
-use super::compiler_prefix::extract_literal_prefixes;
-
-pub fn build_ac_pattern_set(literals: &[String]) -> Result<Option<AhoCorasick>> {
+pub(crate) fn build_ac_pattern_set(literals: &[String]) -> Result<Option<AhoCorasick>> {
     if literals.is_empty() {
         return Ok(None);
     }
@@ -19,7 +17,7 @@ pub fn build_ac_pattern_set(literals: &[String]) -> Result<Option<AhoCorasick>> 
     // finding divergence visible in proptest gpu_proptest_invariants
     // P1b. Detector keywords also rely on caseless matching for env-var
     // shapes like `AWS_KEY_ID` vs `aws_key_id` - the existing
-    // fallback_keyword_ac at build_fallback_keyword_ac (this file)
+    // phase2_keyword_ac at build_phase2_keyword_ac (this file)
     // already uses ascii_case_insensitive(true) for the same reason.
     Ok(Some(
         AhoCorasickBuilder::new()
@@ -30,7 +28,8 @@ pub fn build_ac_pattern_set(literals: &[String]) -> Result<Option<AhoCorasick>> 
 
 /// Keep GPU literal inputs in Keyhog order so Vyre match pattern IDs map back
 /// to `ac_map` without an adapter table.
-pub fn build_gpu_literals(ac_literals: &[String]) -> Option<std::sync::Arc<Vec<Vec<u8>>>> {
+#[cfg(feature = "gpu")]
+pub(crate) fn build_gpu_literals(ac_literals: &[String]) -> Option<std::sync::Arc<Vec<Vec<u8>>>> {
     if ac_literals.iter().any(String::is_empty) {
         tracing::warn!("GPU literal set contains an empty literal; disabling GPU literal scan");
         return None;
@@ -63,7 +62,7 @@ pub fn build_gpu_literals(ac_literals: &[String]) -> Option<std::sync::Arc<Vec<V
     }
 }
 
-pub fn build_same_prefix_patterns(literals: &[String]) -> Vec<Vec<usize>> {
+pub(crate) fn build_same_prefix_patterns(literals: &[String]) -> Vec<Vec<usize>> {
     let mut groups: std::collections::HashMap<&str, Vec<usize>> = std::collections::HashMap::new();
     for (i, lit) in literals.iter().enumerate() {
         groups.entry(lit.as_str()).or_default().push(i);
@@ -79,11 +78,11 @@ pub fn build_same_prefix_patterns(literals: &[String]) -> Vec<Vec<usize>> {
     map
 }
 
-pub fn build_prefix_propagation(literals: &[String]) -> Vec<Vec<usize>> {
+pub(crate) fn build_prefix_propagation(literals: &[String]) -> Vec<Vec<usize>> {
     crate::prefix_trie::build_propagation_table(literals)
 }
 
-pub fn build_fallback_keyword_ac(
+pub(crate) fn build_phase2_keyword_ac(
     fallback: &[(CompiledPattern, Vec<String>)],
 ) -> (Option<AhoCorasick>, Vec<Vec<usize>>) {
     let mut all_keywords = Vec::new();
@@ -119,82 +118,39 @@ pub fn build_fallback_keyword_ac(
         return (None, Vec::new());
     }
 
-    let ac = AhoCorasickBuilder::new()
+    let keyword_count = all_keywords.len();
+    let ac = match AhoCorasickBuilder::new()
         .ascii_case_insensitive(true)
         .build(all_keywords)
-        .ok();
+    {
+        Ok(ac) => Some(ac),
+        Err(error) => {
+            tracing::warn!(
+                keywords = keyword_count,
+                %error,
+                "phase-2 keyword Aho-Corasick build failed; keyword-gate optimization disabled (recall preserved)"
+            );
+            None
+        }
+    };
 
     (ac, keyword_to_patterns)
 }
 
-pub fn log_quality_warnings(warnings: &[String]) {
+pub(crate) fn log_quality_warnings(warnings: &[String]) {
     for warning in warnings {
         tracing::warn!(target: "keyhog::scanner::quality", "{}", warning);
     }
 }
 
-pub fn compile_detector_companions(detector: &DetectorSpec) -> Result<Vec<CompiledCompanion>> {
+pub(crate) fn compile_detector_companions(
+    detector: &DetectorSpec,
+) -> Result<Vec<CompiledCompanion>> {
     detector
         .companions
         .iter()
         .map(|companion| compile_companion(companion, &detector.id))
         .collect()
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn compile_detector_pattern(
-    detector_index: usize,
-    detector: &DetectorSpec,
-    pattern_index: usize,
-    pattern: &PatternSpec,
-    ac_literals: &mut Vec<String>,
-    ac_map: &mut Vec<CompiledPattern>,
-    fallback: &mut Vec<(CompiledPattern, Vec<String>)>,
-    quality_warnings: &mut Vec<String>,
-) -> Result<()> {
-    let detector_id = &detector.id;
-    let compiled = compile_pattern(detector_index, pattern_index, pattern, detector_id)?;
-
-    // Prefix extraction for Aho-Corasick prefiltering
-    let prefixes = extract_literal_prefixes(&pattern.regex);
-
-    // Proactive Homoglyph Expansion:
-    // kimi-decode audit: the previous flow here built a fallback regex
-    // shaped `^<expanded_prefix>` with NO body constraint, which would
-    // match any string starting with the homoglyph variant of the
-    // prefix - the exact same flutterwave-FP bug the production path
-    // (`compile_pattern`, earlier in this file) was already fixed for
-    // via `rewrite_alternation_prefix`. Since this `compile_detector_pattern`
-    // entry point has zero internal call sites and is only retained as
-    // a `pub` surface for hypothetical external consumers, the safe
-    // move is to skip the prefix-only homoglyph fallback here entirely.
-    // Callers needing homoglyph defense should route through the live
-    // CompiledScanner::compile pipeline which applies the validated
-    // rewrite + full-body anchoring.
-
-    if !prefixes.is_empty() {
-        tracing::debug!(
-            detector_id,
-            ?prefixes,
-            mode = "AC",
-            "compiled detector pattern"
-        );
-        for prefix in prefixes {
-            ac_literals.push(prefix);
-            ac_map.push(compiled.clone());
-        }
-    } else {
-        // No literal prefix. With Hyperscan, these will be compiled directly
-        // into the HS database alongside the AC-prefix patterns. Without
-        // Hyperscan, they go to the keyword-gated regex fallback.
-        if detector.keywords.is_empty() {
-            quality_warnings.push(format!(
-                "Detector {detector_id} pattern {pattern_index} has no literal prefix and no keywords."
-            ));
-        }
-        fallback.push((compiled, detector.keywords.clone()));
-    }
-    Ok(())
 }
 
 /// Process-wide set of regex source strings already proven syntactically
@@ -221,7 +177,7 @@ fn validated_regex_sources(
         .get_or_init(|| parking_lot::Mutex::new(std::collections::HashSet::new()))
 }
 
-pub fn compile_pattern(
+pub(crate) fn compile_pattern(
     detector_index: usize,
     pattern_index: usize,
     spec: &PatternSpec,
@@ -251,7 +207,7 @@ pub fn compile_pattern(
             // matcher-build cost here is irrelevant since we're erroring out.
             let source = regex::Regex::new(&spec.regex)
                 .err()
-                .unwrap_or_else(|| regex::Error::Syntax(spec.regex.clone()));
+                .unwrap_or_else(|| regex::Error::Syntax(spec.regex.clone())); // LAW10: constructs the fallback Error value for reporting; not a swallow
             return Err(ScanError::RegexCompile {
                 detector_id: detector_id.to_string(),
                 index: pattern_index,
@@ -276,7 +232,7 @@ pub fn compile_pattern(
 }
 
 /// Number of independently-locked shards in the process-wide regex cache.
-/// Mirrors `multiline::fragment_cache::SHARD_COUNT` so the regex cache and the
+/// Mirrors `fragment_cache::SHARD_COUNT` so the regex cache and the
 /// fragment cache share the same contention profile under rayon.
 const REGEX_CACHE_SHARDS: usize = 64;
 
@@ -299,7 +255,7 @@ static REGEX_CACHE: std::sync::OnceLock<Box<[RegexCacheShard]>> = std::sync::Onc
 fn regex_cache() -> &'static [RegexCacheShard] {
     REGEX_CACHE.get_or_init(|| {
         let per_shard = (REGEX_CACHE_CAPACITY / REGEX_CACHE_SHARDS).max(1);
-        let nz = std::num::NonZeroUsize::new(per_shard).unwrap_or(std::num::NonZeroUsize::MIN);
+        let nz = std::num::NonZeroUsize::new(per_shard).unwrap_or(std::num::NonZeroUsize::MIN); // LAW10: zero => NonZeroUsize::MIN floor; shard/size knob, perf-only
         (0..REGEX_CACHE_SHARDS)
             .map(|_| parking_lot::Mutex::new(lru::LruCache::new(nz)))
             .collect::<Vec<_>>()
@@ -318,7 +274,7 @@ fn regex_cache_shard(pattern: &str) -> &'static RegexCacheShard {
     &regex_cache()[idx]
 }
 
-pub fn shared_regex_compile(
+pub(crate) fn shared_regex_compile(
     pattern: &str,
 ) -> std::result::Result<std::sync::Arc<Regex>, regex::Error> {
     let regex = regex::RegexBuilder::new(pattern)
@@ -330,28 +286,14 @@ pub fn shared_regex_compile(
     Ok(std::sync::Arc::new(regex))
 }
 
-pub fn warm_shared_regex_cache(
-    compiled: Vec<(
-        String,
-        std::result::Result<std::sync::Arc<Regex>, regex::Error>,
-    )>,
-) {
-    for (pattern, res) in compiled {
-        if let Ok(arc) = res {
-            regex_cache_shard(&pattern).lock().put(pattern, arc);
-        }
-    }
-}
-
 /// Compile a regex once per unique source string and share the compiled
 /// `Arc<Regex>` across every detector that uses it. The embedded corpus
 /// has ~6-15% duplicate regexes (Google, JWT, Slack shapes); this collapses
 /// each duplicate set into a single compiled instance, cutting startup
-/// compile time and resident memory proportionally - see audits/legendary-
-/// 2026-04-26 sources_verifier_detectors_legendary.md.
+/// compile time and resident memory proportionally - see docs/EXECUTION_PLAN.md.
 ///
 /// The cache is process-wide and bounded: a sharded `parking_lot::Mutex<
-/// lru::LruCache<...>>` (mirroring `multiline::fragment_cache`) caps total
+/// lru::LruCache<...>>` (mirroring `fragment_cache`) caps total
 /// retained entries at `REGEX_CACHE_CAPACITY` and evicts least-recently-used
 /// patterns. This keeps the dedup win for the fixed corpus while bounding the
 /// daemon/watch paths, which recompile a fresh scanner per job and would
@@ -379,7 +321,10 @@ pub(crate) fn shared_regex(
     Ok(arc)
 }
 
-pub fn compile_companion(spec: &CompanionSpec, detector_id: &str) -> Result<CompiledCompanion> {
+pub(crate) fn compile_companion(
+    spec: &CompanionSpec,
+    detector_id: &str,
+) -> Result<CompiledCompanion> {
     let regex = regex::RegexBuilder::new(&spec.regex)
         .size_limit(REGEX_SIZE_LIMIT_BYTES)
         .dfa_size_limit(regex_dfa_limit())

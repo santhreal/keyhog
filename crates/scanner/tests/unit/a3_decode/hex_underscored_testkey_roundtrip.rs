@@ -1,7 +1,8 @@
 //! Underscore-grouped TESTKEY hex survives extract + decode.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::{decode_chunk, hex_decode};
+use keyhog_scanner::decode::hex_decode;
+use keyhog_scanner::testing::decode_chunk;
 
 const VALID_CREDENTIAL: &str = "TESTKEY_aK7xP9mQ2wE5rT8yU1iO";
 

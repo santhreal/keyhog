@@ -1,4 +1,4 @@
-use keyhog_scanner::normalize_chunk_data;
+use keyhog_scanner::testing::normalize_chunk_data;
 
 #[test]
 fn clean_ascii_text_unchanged_by_normalize() {

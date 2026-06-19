@@ -1,4 +1,4 @@
-use keyhog_scanner::engine::segment_attribution::{
+use keyhog_scanner::testing::segment_attribution::{
     map_offsets_to_segments, AttributedMatch, GlobalMatch, Segment, SegmentAttributionError,
 };
 

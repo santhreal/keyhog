@@ -6,7 +6,7 @@
 //! symbols ($, *, !, #, ...) or other entropy structure. This test ensures the
 //! exact shape (2+ dash-separated alphanumeric segments) is rejected.
 
-use keyhog_scanner::entropy::keywords::is_secret_plausible;
+use keyhog_scanner::testing::entropy_keywords::is_secret_plausible;
 
 #[test]
 fn dash_segmented_5x5_license_serial_rejected() {

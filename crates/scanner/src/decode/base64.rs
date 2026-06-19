@@ -1,4 +1,6 @@
-use super::pipeline::{extract_encoded_values, push_decoded_text_chunk_spliced};
+use super::pipeline::{
+    extract_encoded_value_spans, push_decoded_text_chunk_spliced_at, ExtractedValue,
+};
 use super::{Decoder, EncodedString};
 use keyhog_core::Chunk;
 
@@ -14,7 +16,7 @@ impl Decoder for Base64Decoder {
         // Floor lowered from 20→12 so short contract credentials (7–15
         // chars) survive encode-through in `encoding_explosion_runner`.
         // `extract_encoded_values` already rejects noise shorter than 4.
-        for b64_match in find_base64_strings(&chunk.data, 12) {
+        for b64_match in find_base64_string_spans(&chunk.data, 12) {
             if let Ok(decoded) = base64_decode(&b64_match.value) {
                 if let Ok(text) = String::from_utf8(decoded) {
                     // Splice the decoded text back over the original
@@ -23,9 +25,10 @@ impl Decoder for Base64Decoder {
                     // decoded credential. Without this the decoded
                     // chunk is bare-bytes-only and every detector
                     // anchored on an adjacent keyword misses.
-                    push_decoded_text_chunk_spliced(
+                    push_decoded_text_chunk_spliced_at(
                         &mut decoded_chunks,
                         chunk,
+                        b64_match.span(),
                         &b64_match.value,
                         text,
                         self.name(),
@@ -46,12 +49,13 @@ impl Decoder for Z85Decoder {
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
         let mut decoded_chunks = Vec::new();
-        for z_match in find_z85_strings(&chunk.data, 20) {
+        for z_match in find_z85_string_spans(&chunk.data, 20) {
             if let Ok(decoded) = z85_decode(&z_match.value) {
                 if let Ok(text) = String::from_utf8(decoded) {
-                    push_decoded_text_chunk_spliced(
+                    push_decoded_text_chunk_spliced_at(
                         &mut decoded_chunks,
                         chunk,
+                        z_match.span(),
                         &z_match.value,
                         text.trim_end_matches('\0').to_string(),
                         self.name(),
@@ -71,18 +75,76 @@ enum Base64Variant {
     UrlSafeNoPad,
 }
 
-pub fn find_base64_strings(text: &str, min_length: usize) -> Vec<EncodedString> {
-    let mut results = Vec::new();
-    let b64_chars = |ch: char| {
-        ch.is_ascii_alphanumeric() || ch == '+' || ch == '/' || ch == '=' || ch == '-' || ch == '_'
-    };
+#[derive(Clone, Copy)]
+pub(crate) struct StandardBase64Shape {
+    pub(crate) has_padding: bool,
+    pub(crate) length_multiple_of_four: bool,
+    pub(crate) has_plus: bool,
+    pub(crate) has_slash: bool,
+    pub(crate) distinct_alnum: u32,
+}
 
-    for candidate in extract_encoded_values(text) {
-        if candidate.len() >= min_length
-            && candidate.chars().all(b64_chars)
-            && classify_base64(&candidate).is_some()
+pub(crate) fn is_base64_candidate_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=' | b'-' | b'_')
+}
+
+pub(crate) fn is_standard_base64_byte(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=')
+}
+
+pub(crate) fn standard_base64_shape(candidate: &str) -> Option<StandardBase64Shape> {
+    match classify_base64(candidate)? {
+        Base64Variant::Standard | Base64Variant::StandardNoPad => {}
+        Base64Variant::UrlSafe | Base64Variant::UrlSafeNoPad => return None,
+    }
+
+    let mut has_plus = false;
+    let mut has_slash = false;
+    let mut seen = [false; 256];
+    let mut distinct_alnum = 0u32;
+
+    for byte in candidate.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' => {
+                if !seen[byte as usize] {
+                    seen[byte as usize] = true;
+                    distinct_alnum += 1;
+                }
+            }
+            b'+' => has_plus = true,
+            b'/' => has_slash = true,
+            b'=' => {}
+            _ => return None,
+        }
+    }
+
+    Some(StandardBase64Shape {
+        has_padding: candidate.ends_with('='),
+        length_multiple_of_four: candidate.len().is_multiple_of(4),
+        has_plus,
+        has_slash,
+        distinct_alnum,
+    })
+}
+
+pub fn find_base64_strings(text: &str, min_length: usize) -> Vec<EncodedString> {
+    find_base64_string_spans(text, min_length)
+        .into_iter()
+        .map(|candidate| EncodedString {
+            value: candidate.value,
+        })
+        .collect()
+}
+
+fn find_base64_string_spans(text: &str, min_length: usize) -> Vec<ExtractedValue> {
+    let mut results = Vec::new();
+
+    for candidate in extract_encoded_value_spans(text) {
+        if candidate.value.len() >= min_length
+            && candidate.value.bytes().all(is_base64_candidate_byte)
+            && classify_base64(&candidate.value).is_some()
         {
-            results.push(EncodedString { value: candidate });
+            results.push(candidate);
         }
     }
     results
@@ -107,11 +169,7 @@ fn classify_base64(candidate: &str) -> Option<Base64Variant> {
             Base64Variant::Standard
         }),
         (_, true, _) => None,
-        (_, false, 1) => Some(if has_urlsafe {
-            Base64Variant::UrlSafeNoPad
-        } else {
-            Base64Variant::StandardNoPad
-        }),
+        (_, false, 1) => None,
         (true, false, _) => Some(Base64Variant::UrlSafeNoPad),
         (false, false, 0) => Some(Base64Variant::Standard),
         (false, false, _) => Some(Base64Variant::StandardNoPad),
@@ -132,7 +190,7 @@ fn has_valid_base64_padding(candidate: &str) -> bool {
 }
 
 /// Maximum base64 input length we'll decode (prevents OOM from malicious input).
-const MAX_BASE64_INPUT_LEN: usize = 16 * 1024 * 1024; // 16 MB -> ~12 MB decoded
+pub(crate) const MAX_BASE64_INPUT_LEN: usize = 16 * 1024 * 1024; // 16 MB -> ~12 MB decoded
 
 #[allow(clippy::result_unit_err)]
 pub fn base64_decode(input: &str) -> Result<Vec<u8>, ()> {
@@ -152,18 +210,26 @@ pub fn base64_decode(input: &str) -> Result<Vec<u8>, ()> {
     .map_err(|_| ())
 }
 
-fn find_z85_strings(text: &str, min_length: usize) -> Vec<EncodedString> {
+fn find_z85_string_spans(text: &str, min_length: usize) -> Vec<ExtractedValue> {
     let mut results = Vec::new();
     let is_z85_char =
         |ch: char| ch.is_ascii_alphanumeric() || ".-:+=^!/*?&<>()[]{}@%$#".contains(ch);
 
-    for candidate in extract_encoded_values(text) {
-        let cleaned: String = candidate.chars().filter(|ch| !ch.is_whitespace()).collect();
+    for candidate in extract_encoded_value_spans(text) {
+        let cleaned: String = candidate
+            .value
+            .chars()
+            .filter(|ch| !ch.is_whitespace())
+            .collect();
         if cleaned.len() >= min_length
             && cleaned.len().is_multiple_of(5)
             && cleaned.chars().all(is_z85_char)
         {
-            results.push(EncodedString { value: cleaned });
+            results.push(ExtractedValue {
+                value: cleaned,
+                start: candidate.start,
+                end: candidate.end,
+            });
         }
     }
     results

@@ -1,8 +1,9 @@
 use super::inference::surrounding_line_window;
 use crate::ascii_ci::ci_find;
+use std::collections::BTreeSet;
 
 /// Returns `true` if the match is in a context that indicates a false positive.
-pub fn is_false_positive_match_context(
+pub(crate) fn is_false_positive_match_context(
     text: &str,
     match_start: usize,
     file_path: Option<&str>,
@@ -12,7 +13,7 @@ pub fn is_false_positive_match_context(
 
 /// Same as `is_false_positive_match_context` but accepts a pre-lowered path
 /// to avoid re-allocating the lowercase path string on every match.
-pub fn is_false_positive_match_context_with_path(
+pub(crate) fn is_false_positive_match_context_with_path(
     text: &str,
     match_start: usize,
     _file_path: Option<&str>,
@@ -50,31 +51,55 @@ pub fn is_false_positive_match_context_with_path(
 /// list out of source code lets the community PR new phrases
 /// without touching Rust - the moat under CLAUDE.md's Tier-B rule.
 static DISCLAIMER_PHRASES: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    #[derive(serde::Deserialize)]
-    struct DisclaimerFile {
-        phrases: Vec<String>,
-    }
-    let raw = include_str!("../../data/disclaimer-phrases.toml");
-    // Soft-fail to an empty phrase list rather than panicking the
-    // scanner worker. A corrupted-binary / broken-build state should
-    // degrade detection precision, not crash. The `tracing::warn!`
-    // surfaces the regression in logs so CI catches it.
-    match toml::from_str::<DisclaimerFile>(raw) {
-        Ok(parsed) => parsed
-            .phrases
-            .into_iter()
-            .map(|p| p.to_ascii_lowercase())
-            .collect(),
-        Err(e) => {
-            tracing::warn!(
-                error = %e,
-                "disclaimer-phrases.toml failed to parse; falling back to empty phrase list \
-                 (test-file disclaimers will not be suppressed this run)",
-            );
-            Vec::new()
+    match parse_disclaimer_phrases(include_str!("../../data/disclaimer-phrases.toml")) {
+        Ok(phrases) => phrases,
+        Err(error) => {
+            panic!(
+                "crates/scanner/data/disclaimer-phrases.toml is invalid: {error}. \
+                 Fix the bundled Tier-B disclaimer phrases; refusing to run without \
+                 disclaimer suppression truth."
+            )
         }
     }
 });
+
+#[derive(serde::Deserialize)]
+struct DisclaimerFile {
+    schema_version: u32,
+    phrases: Vec<String>,
+}
+
+pub(crate) fn parse_disclaimer_phrases(raw: &str) -> Result<Vec<String>, String> {
+    let parsed: DisclaimerFile =
+        toml::from_str(raw).map_err(|error| format!("invalid disclaimer-phrases.toml: {error}"))?;
+    if parsed.schema_version != 1 {
+        return Err(format!(
+            "unsupported disclaimer phrase schema_version {}",
+            parsed.schema_version
+        ));
+    }
+    let mut seen = BTreeSet::new();
+    let mut phrases = Vec::with_capacity(parsed.phrases.len());
+    for raw_phrase in parsed.phrases {
+        let phrase = raw_phrase.trim();
+        if phrase.is_empty() {
+            return Err("disclaimer phrase entries must not be empty".to_string());
+        }
+        if !phrase.is_ascii() || phrase != phrase.to_ascii_lowercase() {
+            return Err(format!(
+                "disclaimer phrase {phrase:?} must be lowercase ASCII"
+            ));
+        }
+        if !seen.insert(phrase.to_string()) {
+            return Err(format!("duplicate disclaimer phrase {phrase:?}"));
+        }
+        phrases.push(phrase.to_string());
+    }
+    if phrases.is_empty() {
+        return Err("disclaimer phrases must contain at least one entry".to_string());
+    }
+    Ok(phrases)
+}
 
 /// Case-insensitive variant that avoids lowering the haystack. The needles
 /// (comment markers + disclaimer phrases) are all ASCII lowercase already,
@@ -110,14 +135,18 @@ fn has_disclaimer_comment_bytes(bytes: &[u8]) -> bool {
 /// `ends_with_ignore_ascii_case`, so callers no longer need to pre-lower
 /// it. The `_with_path` form kept as a stable alias for downstream
 /// consumers that already passed a lowered path through.
-pub fn is_false_positive_context(lines: &[&str], line_idx: usize, file_path: Option<&str>) -> bool {
+pub(crate) fn is_false_positive_context(
+    lines: &[&str],
+    line_idx: usize,
+    file_path: Option<&str>,
+) -> bool {
     is_false_positive_context_with_path(lines, line_idx, file_path)
 }
 
 /// Same as [`is_false_positive_context`]. Retained for source compatibility
 /// with callers that historically pre-lowered the path; the body no longer
 /// requires a lowered string thanks to byte-wise case-insensitive checks.
-pub fn is_false_positive_context_with_path(
+fn is_false_positive_context_with_path(
     lines: &[&str],
     line_idx: usize,
     path_lower: Option<&str>,
@@ -214,7 +243,7 @@ fn is_http_cache_header_bytes(bytes: &[u8]) -> bool {
     let trimmed_start = bytes
         .iter()
         .position(|b| !b.is_ascii_whitespace())
-        .unwrap_or(bytes.len());
+        .unwrap_or(bytes.len()); // LAW10: search/boundary miss => span end (whole remainder), recall-safe boundary default
     let trimmed = &bytes[trimmed_start..];
     trimmed
         .get(..4)

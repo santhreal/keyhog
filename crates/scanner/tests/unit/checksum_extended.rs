@@ -3,10 +3,9 @@
 /// The existing `checksum.rs` covers happy-path and basic negative paths.
 /// This file adds: off-by-one lengths, non-alphanumeric bodies, empty strings,
 /// very long payloads, stripe boundary cases, and gitlab token coverage.
-use keyhog_scanner::checksum::{
-    ChecksumResult, ChecksumValidator, GithubClassicPatValidator, GithubFineGrainedPatValidator,
-    GitlabTokenValidator, NpmTokenValidator, PypiTokenValidator, SlackTokenValidator,
-    StripeTokenValidator,
+use keyhog_scanner::testing::checksum::{
+    ChecksumResult, GithubClassicPatValidator, GithubFineGrainedPatValidator, GitlabTokenValidator,
+    NpmTokenValidator, PypiTokenValidator, SlackTokenValidator, StripeTokenValidator,
 };
 
 // ── GitHub classic PAT boundaries ─────────────────────────────────────────────

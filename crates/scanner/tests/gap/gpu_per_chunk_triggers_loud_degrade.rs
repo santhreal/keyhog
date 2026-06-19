@@ -2,8 +2,8 @@
 //! the `scan_inner` entry) must never SILENTLY swap to SIMD/CPU. Every path off the
 //! GPU — missing matcher, missing backend handle, or a failed presence dispatch —
 //! must record a concrete reason in `gpu_last_degrade_reason` AND route through
-//! `deny_silent_gpu_degrade_with_reason` (which hard-fails under forced
-//! KEYHOG_BACKEND / KEYHOG_REQUIRE_GPU and otherwise emits the one-shot warning).
+//! `deny_silent_gpu_degrade_with_reason` (which hard-fails under forced backend
+//! or require-GPU policy and otherwise emits the one-shot warning).
 //!
 //! The pre-fix code returned `self.collect_triggered_patterns_simd(text)` directly
 //! on a missing backend and merely `tracing::debug!`'d a failed dispatch before
@@ -66,7 +66,8 @@ fn per_chunk_gpu_has_no_silent_simd_swap() {
     // The ONLY `collect_triggered_patterns_simd` call must be inside the `degrade`
     // closure (after the loud helper). A second, bare call would be a silent swap.
     assert_eq!(
-        func.matches("self.collect_triggered_patterns_simd(text)").count(),
+        func.matches("self.collect_triggered_patterns_simd(text)")
+            .count(),
         1,
         "the per-chunk GPU path must call collect_triggered_patterns_simd exactly once \
          (inside the loud degrade closure) — a bare early call is a silent fallback"

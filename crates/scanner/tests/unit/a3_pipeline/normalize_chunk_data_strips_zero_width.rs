@@ -1,4 +1,4 @@
-use keyhog_scanner::normalize_chunk_data;
+use keyhog_scanner::testing::normalize_chunk_data;
 
 #[test]
 fn zero_width_char_stripped_from_credential_body() {

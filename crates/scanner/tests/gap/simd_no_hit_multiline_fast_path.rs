@@ -6,8 +6,8 @@ fn scanner_root() -> PathBuf {
 
 #[test]
 fn simd_no_hit_multiline_branch_does_not_reenter_full_scan() {
-    let src = std::fs::read_to_string(scanner_root().join("src/engine/scan.rs"))
-        .expect("scan source readable");
+    let src = std::fs::read_to_string(scanner_root().join("src/engine/scan_coalesced.rs"))
+        .expect("coalesced scan source readable");
     // The SIMD-coalesced phase-2 no-hit branch: a chunk that fired no phase-1
     // trigger but was admitted by `should_scan_no_hit_chunk`. The old code had
     // two separate branches (a "Multiline fallback" branch + a "Task #69
@@ -20,12 +20,15 @@ fn simd_no_hit_multiline_branch_does_not_reenter_full_scan() {
     // `scan_prepared_with_triggered`, gated by the raw-vs-preprocessed drift
     // check.
     let start = src
-        .find("No phase-1 trigger fired.")
+        .find("if !self.should_scan_no_hit_chunk(chunk)")
         .expect("SIMD no-hit branch must exist");
     let end = src
-        .find("Cross-chunk reassembly:")
+        .find("let phase2_elapsed = phase2_start.elapsed();")
         .expect("phase-2 boundary-reassembly tail must follow the no-hit branch");
-    assert!(start < end, "no-hit branch must precede the reassembly tail");
+    assert!(
+        start < end,
+        "no-hit branch must precede the reassembly tail"
+    );
     let branch = &src[start..end];
 
     assert!(

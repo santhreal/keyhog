@@ -21,5 +21,5 @@ fn compiled_scanner_detector_count() {
         ..Default::default()
     };
     let s = CompiledScanner::compile(vec![d.clone(), d]).unwrap();
-    assert_eq!(s.detector_count(), 2);
+    assert_eq!(s.runtime_status().detector_count, 2);
 }

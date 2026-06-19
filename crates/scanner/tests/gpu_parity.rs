@@ -3,8 +3,8 @@
 //! at the same offsets.
 //!
 //! Hard-fail parity: adapter/init failure or divergence panics -
-//! no silent skip, no WARN-only downgrade. Set `KEYHOG_REQUIRE_GPU=1`
-//! in CI to mandate a compatible adapter.
+//! no silent skip, no WARN-only downgrade. Run under the explicit require-GPU
+//! runtime policy in CI to mandate a compatible adapter.
 
 #[path = "support/mod.rs"]
 mod support;

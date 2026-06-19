@@ -73,7 +73,7 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use keyhog_core::{Chunk, ChunkMetadata, DetectorFile};
+use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
 
 /// Counts total bytes requested via `alloc` while `COUNTING` is enabled.
@@ -108,16 +108,7 @@ unsafe impl GlobalAlloc for CountingAlloc {
 static ALLOC: CountingAlloc = CountingAlloc;
 
 fn load_embedded_detectors() -> Vec<keyhog_core::DetectorSpec> {
-    let embedded = keyhog_core::embedded_detector_tomls();
-    assert!(
-        !embedded.is_empty(),
-        "no embedded detectors - rebuild keyhog-core with detectors directory"
-    );
-    embedded
-        .iter()
-        .filter_map(|(_, toml)| toml::from_str::<DetectorFile>(toml).ok())
-        .map(|f| f.detector)
-        .collect()
+    keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus must load")
 }
 
 /// A passthrough-shaped chunk: realistic source bytes so the alphabet/bigram

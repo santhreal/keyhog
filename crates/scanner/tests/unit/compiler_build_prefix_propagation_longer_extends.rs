@@ -1,6 +1,6 @@
 //! Shorter literal prefix propagates to longer literals.
 
-use keyhog_scanner::compiler::build_prefix_propagation;
+use keyhog_scanner::testing::build_prefix_propagation;
 
 #[test]
 fn compiler_build_prefix_propagation_longer_extends() {

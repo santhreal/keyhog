@@ -1,11 +1,14 @@
 //! SIMD-accelerated prefilter for the top N most common secret patterns.
 //!
-//! `simdsieve` provides 50+ GB/s scanning for up to 8 patterns using AVX-512/AVX2.
+//! `simdsieve` checks keyhog's 8 hot prefixes in a single AVX-512/AVX2/NEON
+//! pass. (The crate's 50+ GB/s headline is its single-byte-prefix peak;
+//! multi-byte prefixes like these run lower — throughput scales down with
+//! prefix length — but still far faster than running AC/regex on every byte.)
 //! This module integrates it as Layer 1 of the scanning pipeline:
 //! hot patterns are checked first, and if found, we can often skip AC/Regex.
 
 /// Common high-value secret prefixes that trigger Layer 1 SIMD.
-pub const HOT_PATTERNS: &[&[u8]] = &[
+pub(crate) const HOT_PATTERNS: &[&[u8]] = &[
     b"ghp_",
     b"sk-proj-",
     b"AKIA",
@@ -26,7 +29,7 @@ pub const HOT_PATTERNS: &[&[u8]] = &[
 /// a cross-platform id divergence. Emitting canonical identity here makes all
 /// platforms agree and matches what `keyhog explain` already resolves hot ids
 /// to. Index-parallel with HOT_PATTERNS / the two arrays below.
-pub const HOT_PATTERN_NAMES: &[&str] = &[
+pub(crate) const HOT_PATTERN_NAMES: &[&str] = &[
     "github", "openai", "aws", "aws", "sendgrid", "slack", "slack", "square",
 ];
 
@@ -47,7 +50,7 @@ pub const HOT_PATTERN_NAMES: &[&str] = &[
 /// mapping mis-attributed every `ASIA` key ID and (once the hot path gained
 /// precise-regex validation) would have rejected them outright, since the
 /// session-token regex can never match an `ASIA…` literal.
-pub const HOT_PATTERN_DETECTOR_IDS: &[&str] = &[
+pub(crate) const HOT_PATTERN_DETECTOR_IDS: &[&str] = &[
     "github-classic-pat",
     "openai-api-key",
     "aws-access-key",
@@ -61,7 +64,7 @@ pub const HOT_PATTERN_DETECTOR_IDS: &[&str] = &[
 /// Canonical human-readable detector name per hot pattern (matches the `name`
 /// field of the corresponding `detectors/*.toml`). Square has no canonical
 /// detector, so it carries a plain "Square Secret" label.
-pub const HOT_PATTERN_DISPLAY_NAMES: &[&str] = &[
+pub(crate) const HOT_PATTERN_DISPLAY_NAMES: &[&str] = &[
     "GitHub Classic PAT",
     "OpenAI API Key",
     "AWS Access Key",
@@ -75,7 +78,7 @@ pub const HOT_PATTERN_DISPLAY_NAMES: &[&str] = &[
 /// Build a precise-regex validator for each hot-pattern slot, index-parallel
 /// with [`HOT_PATTERNS`].
 ///
-/// The hot path is a literal-prefix prefilter: a 50+ GB/s SIMD sieve finds
+/// The hot path is a literal-prefix prefilter: a single-pass SIMD sieve finds
 /// `ghp_`/`xoxp-`/`AKIA`/… and historically emitted a `Critical` finding
 /// gated ONLY by a per-prefix length floor (`PER_PATTERN_MIN_LEN` in
 /// `engine/hot_patterns.rs`). A length floor is a crude proxy for the
@@ -98,7 +101,7 @@ pub const HOT_PATTERN_DISPLAY_NAMES: &[&str] = &[
 /// `engine::compile` are both gated on `feature = "simdsieve"`, so whenever
 /// this function is compiled its caller is too: no `#[allow(dead_code)]` is
 /// needed.
-pub fn build_hot_pattern_validators(
+pub(crate) fn build_hot_pattern_validators(
     detectors: &[keyhog_core::DetectorSpec],
 ) -> crate::error::Result<Vec<Option<regex::Regex>>> {
     HOT_PATTERN_DETECTOR_IDS

@@ -2,7 +2,7 @@ use crate::types::MIN_LITERAL_PREFIX_CHARS;
 
 /// Extract literal prefixes from a regex pattern for Aho-Corasick.
 /// Handles simple literals and top-level groups like (AKIA|ASIA).
-pub fn extract_literal_prefixes(pattern: &str) -> Vec<String> {
+pub(crate) fn extract_literal_prefixes(pattern: &str) -> Vec<String> {
     // Strip leading inline flags like (?i), (?m), (?s), (?x), (?im), etc.
     // These set regex modes but don't consume input.
     let pattern = strip_leading_inline_flags(pattern);
@@ -101,7 +101,7 @@ pub fn extract_literal_prefixes(pattern: &str) -> Vec<String> {
 /// literal token in the following group can be pulled into the AC set.
 /// Returns `None` if the leading group is anything else (so a normal
 /// alternation like `(AKIA|ASIA)` is untouched).
-pub fn strip_leading_boundary_guard(pattern: &str) -> Option<&str> {
+pub(crate) fn strip_leading_boundary_guard(pattern: &str) -> Option<&str> {
     let body = pattern.strip_prefix("(?:")?;
     // Find the matching ')' for this group at depth 0, skipping escapes
     // and the interior of `[...]` classes (a `]`-less `)` inside a class
@@ -181,7 +181,7 @@ pub fn strip_leading_boundary_guard(pattern: &str) -> Option<&str> {
 
 /// Strip leading inline flags like `(?i)`, `(?m)`, `(?ims)` from a regex.
 /// These set modes for the rest of the pattern but don't produce a group.
-pub fn strip_leading_inline_flags(pattern: &str) -> &str {
+pub(crate) fn strip_leading_inline_flags(pattern: &str) -> &str {
     if !pattern.starts_with("(?") {
         return pattern;
     }
@@ -205,7 +205,7 @@ pub fn strip_leading_inline_flags(pattern: &str) -> &str {
     }
 }
 
-pub fn extract_literal_prefix(pattern: &str) -> Option<String> {
+pub(crate) fn extract_literal_prefix(pattern: &str) -> Option<String> {
     let mut prefix = String::new();
     let mut chars = pattern.chars().peekable();
     while let Some(ch) = chars.next() {
@@ -269,7 +269,7 @@ fn extract_group_alternatives(s: &str) -> Option<Vec<String>> {
         .strip_prefix("?:")
         .or_else(|| s.strip_prefix("?i:"))
         .or_else(|| s.strip_prefix("?im:"))
-        .unwrap_or(s);
+        .unwrap_or(s); // LAW10: no non-capturing prefix present => use the group source unchanged (intended), recall-safe
 
     let mut depth = 0i32;
     let mut end = None;
@@ -335,7 +335,7 @@ fn extract_group_alternatives(s: &str) -> Option<Vec<String>> {
     }
 }
 
-pub fn is_escaped_literal(ch: char) -> bool {
+pub(crate) fn is_escaped_literal(ch: char) -> bool {
     matches!(
         ch,
         '[' | ']' | '(' | ')' | '.' | '*' | '+' | '?' | '{' | '}' | '\\' | '|' | '^' | '$'
@@ -351,7 +351,7 @@ pub fn is_escaped_literal(ch: char) -> bool {
 /// chunks getting promoted to regex confirmation. The 3-char prefix
 /// threshold remains for `extract_literal_prefix` because a 3-char prefix
 /// is positionally anchored and far more discriminative.
-pub const MIN_INNER_LITERAL_CHARS: usize = 4;
+pub(crate) const MIN_INNER_LITERAL_CHARS: usize = 4;
 
 /// Extract literal substrings from anywhere in a regex pattern (not just
 /// the start), suitable as Aho-Corasick prefilter triggers for fallback
@@ -371,7 +371,7 @@ pub const MIN_INNER_LITERAL_CHARS: usize = 4;
 ///   `(?:secret|api_key)\s*=\s*[a-z0-9]{32}` → `["secret", "api_key"]`
 ///   `[a-f0-9]{32}` → `[]`
 ///   `wx[a-f0-9]{16}` → `[]` (the `wx` prefix is below the 4-char floor)
-pub fn extract_inner_literals(pattern: &str) -> Vec<String> {
+pub(crate) fn extract_inner_literals(pattern: &str) -> Vec<String> {
     use regex_syntax::ast::parse::Parser;
     let Ok(ast) = Parser::new().parse(pattern) else {
         return Vec::new();

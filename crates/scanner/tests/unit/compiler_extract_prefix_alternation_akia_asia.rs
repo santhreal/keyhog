@@ -1,6 +1,6 @@
 //! Alternation prefix extractor returns both AWS key prefixes.
 
-use keyhog_scanner::compiler::extract_literal_prefixes;
+use keyhog_scanner::testing::extract_literal_prefixes;
 
 #[test]
 fn compiler_extract_prefix_alternation_akia_asia() {

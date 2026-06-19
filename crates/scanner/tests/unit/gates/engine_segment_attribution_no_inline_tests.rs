@@ -8,7 +8,7 @@ fn engine_segment_attribution_no_inline_tests() {
     );
     let src = std::fs::read_to_string(path).expect("source readable");
     assert!(
-        !src.contains("#[cfg(test)]"),
+        !super::inline_gate::contains_inline_test_module_or_function(&src),
         "engine::segment_attribution: move inline tests to crates/scanner/tests/"
     );
 }

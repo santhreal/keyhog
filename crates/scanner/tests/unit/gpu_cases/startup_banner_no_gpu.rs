@@ -1,4 +1,4 @@
-use keyhog_scanner::hw_probe::{startup_banner, HardwareCaps};
+use keyhog_scanner::hw_probe::testing::{startup_banner, HardwareCaps};
 #[test]
 fn startup_banner_no_gpu() {
     let caps = HardwareCaps {
@@ -10,6 +10,7 @@ fn startup_banner_no_gpu() {
         gpu_available: false,
         gpu_name: None,
         gpu_vram_mb: None,
+        gpu_runtime_identity: None,
         gpu_is_software: false,
         total_memory_mb: Some(8192),
         io_uring_available: false,

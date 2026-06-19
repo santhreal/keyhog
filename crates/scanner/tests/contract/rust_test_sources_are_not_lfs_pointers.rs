@@ -47,7 +47,10 @@ fn fixture_sources(dir: &Path, out: &mut Vec<PathBuf>) {
         // `*.proptest-regressions` has no conventional extension split, so match
         // on the file name suffix rather than Path::extension.
         let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-        if FIXTURE_EXTS.iter().any(|ext| name.ends_with(&format!(".{ext}"))) {
+        if FIXTURE_EXTS
+            .iter()
+            .any(|ext| name.ends_with(&format!(".{ext}")))
+        {
             out.push(path);
         }
     }
@@ -68,9 +71,9 @@ fn no_test_source_or_fixture_is_an_lfs_pointer() {
     let pointers: Vec<&PathBuf> = sources
         .iter()
         .filter(|p| {
-            std::fs::read_to_string(p)
-                .map(|s| s.starts_with(LFS_POINTER_SIGNATURE))
-                .unwrap_or(false)
+            let source = std::fs::read_to_string(p)
+                .unwrap_or_else(|e| panic!("failed to read Rust test source {}: {e}", p.display()));
+            source.starts_with(LFS_POINTER_SIGNATURE)
         })
         .collect();
 

@@ -145,7 +145,9 @@ fn credential_sufficient_secrets_survive_noise_padding() {
                         ));
                     }
                 } else {
-                    let bucket = companion_combo.entry((size, kind.label())).or_insert((0, 0));
+                    let bucket = companion_combo
+                        .entry((size, kind.label()))
+                        .or_insert((0, 0));
                     bucket.0 += 1;
                     if hit {
                         bucket.1 += 1;

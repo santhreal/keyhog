@@ -9,11 +9,22 @@ impl CompiledScanner {
         detectors: Vec<DetectorSpec>,
         gpu_policy: GpuInitPolicy,
     ) -> Result<Self> {
-        // `state` is only mutated under `feature = "simd"` (the
-        // Hyperscan-reject reroute below). Lean builds would lint it
-        // unused-mut otherwise.
-        #[cfg_attr(not(feature = "simd"), allow(unused_mut))]
-        let mut state = build_compile_state(&detectors)?;
+        Self::compile_with_gpu_policy_and_tuning(
+            detectors,
+            gpu_policy,
+            &crate::scanner_config::ScannerTuningConfig::default(),
+        )
+    }
+
+    pub fn compile_with_gpu_policy_and_tuning(
+        detectors: Vec<DetectorSpec>,
+        gpu_policy: GpuInitPolicy,
+        tuning_config: &crate::scanner_config::ScannerTuningConfig,
+    ) -> Result<Self> {
+        // LAW10: cfg-only Hyperscan tuning marker; no runtime effect.
+        #[cfg(not(feature = "simd"))]
+        let _tuning_config = tuning_config;
+        let state = build_compile_state(&detectors)?;
         let ac = build_ac_pattern_set(&state.ac_literals)?;
         // GPU is unconditional in the build; runtime probe decides whether to
         // actually use it. `gpu_available` is set by hw_probe based on adapter
@@ -30,14 +41,9 @@ impl CompiledScanner {
         // `acquire()` returns Err and we fall through to wgpu so
         // nothing regresses on non-CUDA hosts.
         // `crate::gpu::env_no_gpu()` is the single source of truth for
-        // "skip every GPU init path". Explicit KEYHOG_NO_GPU wins both
-        // directions; in its absence the helper auto-detects CI runners
-        // (CI=true + a dozen platform-specific markers) and returns
-        // true, since CI runners have no discrete GPU - the wgpu probe
-        // would enumerate llvmpipe, get rejected as software, and the
-        // operator would see a confusing "GPU MoE init failed" warning
-        // after burning ~250ms on cold-start. Set KEYHOG_NO_GPU=0 in CI
-        // to opt back in on self-hosted GPU runners.
+        // "skip every GPU init path". The name is legacy; the value now comes
+        // from the resolved scanner runtime policy set by the CLI/TOML layer,
+        // not ambient process environment.
         let gpu_disabled = match gpu_policy {
             GpuInitPolicy::FromEnvironment => crate::gpu::env_no_gpu(),
             GpuInitPolicy::ForceEnabled => false,
@@ -45,24 +51,15 @@ impl CompiledScanner {
         };
         if gpu_disabled {
             let disabled_by_policy = matches!(gpu_policy, GpuInitPolicy::ForceDisabled);
-            let in_ci = !disabled_by_policy
-                && crate::gpu::is_ci_environment()
-                && std::env::var("KEYHOG_NO_GPU").is_err();
             if disabled_by_policy {
                 tracing::info!(
                     target: "keyhog::routing",
                     "GPU init bypassed by caller policy; scanner will use CPU/SIMD paths"
                 );
-            } else if in_ci {
-                tracing::info!(
-                    target: "keyhog::routing",
-                    "CI environment detected (CI= or platform-specific marker set); bypassing CUDA/wgpu init. \
-                     Set KEYHOG_NO_GPU=0 to force GPU on self-hosted GPU runners."
-                );
             } else {
                 tracing::info!(
                     target: "keyhog::routing",
-                    "KEYHOG_NO_GPU set: bypassing CUDA/wgpu init, routing every chunk through the CPU/SIMD path"
+                    "GPU init bypassed by resolved scanner policy; routing every chunk through the CPU/SIMD path"
                 );
             }
         }
@@ -98,7 +95,7 @@ impl CompiledScanner {
                         // the wgpu `BatchDispatcher`, so acquire wgpu ALONGSIDE
                         // CUDA whenever GPU init runs — CUDA still serves any other
                         // GPU primitives via `gpu_backend`.
-                        let wgpu_for_mk = vyre_driver_wgpu::WgpuBackend::shared().ok();
+                        let wgpu_for_mk = vyre_driver_wgpu::WgpuBackend::shared().ok(); // LAW10: GPU lower/acquire failure => host path (recall-preserving, counted host_lower_failed + surfaced via tracing::info/last_gpu_degrade_reason)
                         (literals, Some(cuda), wgpu_for_mk)
                     }
                     None => match vyre_driver_wgpu::WgpuBackend::shared() {
@@ -122,7 +119,7 @@ impl CompiledScanner {
 
         // Lean (no-`gpu`) build: never link the wgpu / CUDA drivers, never
         // probe Vulkan at startup. The hw_probe still reports its findings so
-        // downstream routing surfaces `KEYHOG_NO_GPU` semantics, but no
+        // downstream routing surfaces resolved GPU-policy semantics, but no
         // backend is acquired. `gpu_disabled` stays read so the cfg-aware
         // dead-code warning is suppressed without an `_ =` decoration.
         #[cfg(not(feature = "gpu"))]
@@ -130,7 +127,7 @@ impl CompiledScanner {
             Option<Arc<Vec<Vec<u8>>>>,
             Option<Arc<dyn vyre::VyreBackend>>,
         ) = {
-            let _ = gpu_disabled;
+            let _ = gpu_disabled; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
             (None, None)
         };
         let prefix_propagation = CsrU32::from(build_prefix_propagation(&state.ac_literals));
@@ -148,29 +145,31 @@ impl CompiledScanner {
         // contracts_runner recall hole on line/paloalto/tower/keystonejs/
         // snowflake/bandwidth and the matching adversarial-wrapper misses.
         #[cfg(feature = "simd")]
+        let mut state = state;
+        #[cfg(feature = "simd")]
         let (simd_prefilter, hs_index_map) =
-            match super::build_simd_scanner(&state.ac_map, &state.fallback) {
+            match super::build_simd_scanner(&state.ac_map, &state.phase2_patterns, tuning_config) {
                 Some((scanner, index_map, unsupported_ac)) => {
                     for ac_idx in unsupported_ac {
                         let pattern = state.ac_map[ac_idx].clone();
                         let keywords = detectors[pattern.detector_index].keywords.clone();
-                        state.fallback.push((pattern, keywords));
+                        state.phase2_patterns.push((pattern, keywords));
                     }
                     (Some(scanner), CsrU32::from(index_map))
                 }
                 None => (None, CsrU32::default()),
             };
 
-        let (fallback_keyword_ac, fallback_keyword_to_patterns) =
-            build_fallback_keyword_ac(&state.fallback);
-        let fallback_keyword_to_patterns = CsrU32::from(fallback_keyword_to_patterns);
-        // Precompute always-active fallback indices so the per-chunk hot path
+        let (phase2_keyword_ac, phase2_keyword_to_patterns) =
+            build_phase2_keyword_ac(&state.phase2_patterns);
+        let phase2_keyword_to_patterns = CsrU32::from(phase2_keyword_to_patterns);
+        // Precompute always-active phase-2 indices so the per-chunk hot path
         // seeds the sparse active set without scanning the full fallback table.
-        let fallback_always_active_indices: Vec<usize> = state
-            .fallback
+        let phase2_always_active_indices: Vec<usize> = state
+            .phase2_patterns
             .iter()
             .enumerate()
-            // Mirrors `compiler::build_fallback_keyword_ac`'s
+            // Mirrors `compiler::build_phase2_keyword_ac`'s
             // 4-char floor - see the rationale comment there. The
             // experimental 3-char floor measured a net F1 regression
             // on SecretBench-medium, so both checks stay at 4.
@@ -180,18 +179,18 @@ impl CompiledScanner {
             .collect();
 
         // Shared-anchor localization index: one Aho-Corasick over every
-        // fallback pattern's regex-REQUIRED prefix literals, so a single chunk
+        // phase-2 pattern's regex-REQUIRED prefix literals, so a single chunk
         // pass yields candidate positions for all eligible patterns instead of
         // each pattern scanning the chunk for its own literal. `None` when no
-        // pattern is anchor-eligible. Recall-identical (see `fallback_anchor`).
+        // pattern is anchor-eligible. Recall-identical (see `phase2_anchor`).
         // Built BEFORE the prefilter so eligible always-active patterns can be
         // removed from it (the prefilter, not extraction, is ~90% of fallback).
-        let fallback_anchor_index = fallback_anchor::FallbackAnchorIndex::build(
-            &state.fallback,
-            &fallback_always_active_indices,
+        let phase2_anchor_index = phase2_anchor::Phase2AnchorIndex::build(
+            &state.phase2_patterns,
+            &phase2_always_active_indices,
         );
 
-        // Combined-RegexSet prefilter over EVERY always-active fallback. The
+        // Combined-RegexSet prefilter over EVERY always-active phase-2 pattern. The
         // plain (homoglyph-variant) batches carry a fast ASCII-folded alternate
         // RegexSet (the homoglyph regex with non-ASCII stripped); on a pure-ASCII
         // chunk it is match-equivalent to the slow unicode-class form, so the
@@ -199,17 +198,17 @@ impl CompiledScanner {
         // active-set order unchanged — but far faster (the homoglyph unicode
         // RegexSet was measured at ~90% of fallback time). `None` on build
         // failure runs them all (recall-safe).
-        let fallback_always_active_prefilter = fallback::AlwaysActiveFallbackPrefilter::build(
-            &state.fallback,
-            &fallback_always_active_indices,
+        let phase2_always_active_prefilter = phase2::Phase2AlwaysActivePrefilter::build(
+            &state.phase2_patterns,
+            &phase2_always_active_indices,
         );
         tracing::debug!(
-            eligible = fallback_anchor_index
+            eligible = phase2_anchor_index
                 .as_ref()
                 .map_or(0, |i| i.eligible_count()),
-            total = state.fallback.len(),
-            always_active = fallback_always_active_indices.len(),
-            "fallback prefilter built with homoglyph ASCII-folded fast path"
+            total = state.phase2_patterns.len(),
+            always_active = phase2_always_active_indices.len(),
+            "phase-2 prefilter built with homoglyph ASCII-folded fast path"
         );
 
         // Confirmed-pass suffix gate (one AC over required suffix literals) so a
@@ -227,7 +226,7 @@ impl CompiledScanner {
         log_quality_warnings(&state.quality_warnings);
 
         let mut alphabet_targets = state.ac_literals.clone();
-        for (_, keywords) in &state.fallback {
+        for (_, keywords) in &state.phase2_patterns {
             alphabet_targets.extend(keywords.clone());
         }
         let alphabet_screen = if alphabet_targets.is_empty() {
@@ -274,17 +273,36 @@ impl CompiledScanner {
                 (
                     static_intern
                         .lookup(&d.id)
-                        .unwrap_or_else(|| Arc::from(d.id.as_str())),
+                        .unwrap_or_else(|| Arc::from(d.id.as_str())), // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
                     static_intern
                         .lookup(&d.name)
-                        .unwrap_or_else(|| Arc::from(d.name.as_str())),
+                        .unwrap_or_else(|| Arc::from(d.name.as_str())), // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
                     static_intern
                         .lookup(&d.service)
-                        .unwrap_or_else(|| Arc::from(d.service.as_str())),
+                        .unwrap_or_else(|| Arc::from(d.service.as_str())), // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
                 )
             })
             .collect();
 
+        // Pre-resolve the per-detector weak-anchor classification once, indexed
+        // by detector_index. `detector_weak_anchor` runs a regex-string scan
+        // (`has_broad_identifier_capture`) over the detector's patterns; the
+        // result depends ONLY on the spec, so the per-match path in
+        // `process_match` would otherwise recompute it for every surviving
+        // candidate. Built here (before `detectors` is moved into the struct).
+        let detector_weak_anchor_by_index: Vec<bool> = detectors
+            .iter()
+            .map(crate::pipeline::detector_weak_anchor)
+            .collect();
+        let generic_named_assignment_keywords =
+            generic_keyword_owner::build_generic_named_assignment_keywords(&detectors);
+
+        let pattern_boundary_context = boundary::derive_pattern_boundary_context(
+            state
+                .ac_map
+                .iter()
+                .chain(state.phase2_patterns.iter().map(|(pattern, _)| pattern)),
+        );
         #[cfg(feature = "gpu")]
         let ac_match_upper_bounds: Vec<Option<usize>> = state
             .ac_map
@@ -300,17 +318,17 @@ impl CompiledScanner {
         // values are byte-identical to the prior `intern_metadata` results.
         #[cfg(feature = "entropy")]
         let entropy_metadata_by_index: [(Arc<str>, Arc<str>, Arc<str>); 4] = {
-            use crate::engine::fallback_entropy_helpers::ENTROPY_DETECTOR_METADATA;
+            use crate::engine::phase2_entropy::helpers::ENTROPY_DETECTOR_METADATA;
             std::array::from_fn(|i| {
                 let (id, name, service) = ENTROPY_DETECTOR_METADATA[i];
                 (
-                    static_intern.lookup(id).unwrap_or_else(|| Arc::from(id)),
+                    static_intern.lookup(id).unwrap_or_else(|| Arc::from(id)), // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
                     static_intern
                         .lookup(name)
-                        .unwrap_or_else(|| Arc::from(name)),
+                        .unwrap_or_else(|| Arc::from(name)), // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
                     static_intern
                         .lookup(service)
-                        .unwrap_or_else(|| Arc::from(service)),
+                        .unwrap_or_else(|| Arc::from(service)), // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
                 )
             })
         };
@@ -343,13 +361,13 @@ impl CompiledScanner {
                     let name = HOT_PATTERN_DISPLAY_NAMES[i];
                     let service = HOT_PATTERN_NAMES[i];
                     (
-                        static_intern.lookup(id).unwrap_or_else(|| Arc::from(id)),
+                        static_intern.lookup(id).unwrap_or_else(|| Arc::from(id)), // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
                         static_intern
                             .lookup(name)
-                            .unwrap_or_else(|| Arc::from(name)),
+                            .unwrap_or_else(|| Arc::from(name)), // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
                         static_intern
                             .lookup(service)
-                            .unwrap_or_else(|| Arc::from(service)),
+                            .unwrap_or_else(|| Arc::from(service)), // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
                     )
                 })
                 .collect()
@@ -364,29 +382,29 @@ impl CompiledScanner {
             gpu_matcher: OnceLock::new(),
             #[cfg(feature = "gpu")]
             megakernel_catalog: OnceLock::new(),
-            ac_gpu_program: OnceLock::new(),
             gpu_last_degrade_reason: std::sync::Mutex::new(None),
             gpu_degrade_count: std::sync::atomic::AtomicU64::new(0),
-
-            rule_pipeline: OnceLock::new(),
             static_intern,
             metadata_by_index,
+            detector_weak_anchor_by_index,
+            generic_named_assignment_keywords,
             #[cfg(feature = "gpu")]
             ac_match_upper_bounds,
             suffix_gate_ac,
             ac_suffix_gate,
             ac_map: state.ac_map,
+            pattern_boundary_context,
             prefix_propagation,
-            fallback: state.fallback,
+            phase2_patterns: state.phase2_patterns,
             companions: state.companions,
             detectors,
             same_prefix_patterns,
-            fallback_keyword_ac,
-            fallback_keyword_to_patterns,
-            fallback_always_active_indices,
-            fallback_always_active_prefilter,
-            fallback_anchor_index,
-            tuning: fallback::ScannerTuning::from_env(),
+            phase2_keyword_ac,
+            phase2_keyword_to_patterns,
+            phase2_always_active_indices,
+            phase2_always_active_prefilter,
+            phase2_anchor_index,
+            tuning: phase2::ScannerTuning::from_defaults(),
             #[cfg(feature = "simd")]
             simd_prefilter,
             #[cfg(feature = "simd")]
@@ -408,7 +426,15 @@ impl CompiledScanner {
 
     /// Apply a custom configuration to the compiled scanner.
     pub fn with_config(mut self, config: ScannerConfig) -> Self {
+        profile::set_profile_enabled(config.profile);
+        profile::set_perf_trace_enabled(config.perf_trace);
         self.config = config;
+        self
+    }
+
+    /// Apply explicit performance-route tuning to this compiled scanner.
+    pub fn with_tuning_config(self, config: crate::scanner_config::ScannerTuningConfig) -> Self {
+        self.tuning.apply_config(&config);
         self
     }
 }
@@ -426,18 +452,18 @@ static CUDA_FALLBACK_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new(
 /// path); we DO want to warn when the user is on an NVIDIA box with
 /// libcuda.so or /proc/driver/nvidia present, because in that case
 /// they paid for the CUDA stack and we just dropped them onto the
-/// 5-10x slower wgpu path silently. KEYHOG_REQUIRE_GPU=1 turns the
-/// warning into a hard exit, matching the contract used by the MoE
-/// init and the scan dispatch paths.
+/// 5-10x slower wgpu path silently. `--require-gpu` turns the warning into a
+/// hard exit, matching the contract used by the MoE init and the scan dispatch
+/// paths.
 #[cfg(all(target_os = "linux", feature = "gpu"))]
 fn surface_cuda_acquisition_failure(error: &dyn std::fmt::Display) {
     let on_nvidia_host = nvidia_userland_present();
-    let require_gpu = std::env::var("KEYHOG_REQUIRE_GPU").as_deref() == Ok("1");
-    let no_gpu = std::env::var("KEYHOG_NO_GPU").as_deref() == Ok("1");
+    let require_gpu = crate::gpu::env_require_gpu();
+    let no_gpu = crate::gpu::env_no_gpu();
 
     if require_gpu && on_nvidia_host {
         eprintln!(
-            "keyhog: KEYHOG_REQUIRE_GPU=1 but CUDA backend acquisition failed on \
+            "keyhog: --require-gpu requested but CUDA backend acquisition failed on \
 an NVIDIA host: {error}. Refusing to fall back to WGPU."
         );
         std::process::exit(2);
@@ -452,7 +478,7 @@ an NVIDIA host: {error}. Refusing to fall back to WGPU."
             "keyhog: CUDA backend unavailable on this NVIDIA host ({error}); \
 falling back to WGPU (typically 5-10x slower than CUDA on the same hardware). \
 This is usually a libcuda.so version mismatch or a driver upgrade pending a \
-reboot. Set KEYHOG_NO_GPU=1 to silence this warning, or KEYHOG_REQUIRE_GPU=1 \
+reboot. Use --no-gpu to silence this warning, or --require-gpu \
 to hard-fail next time."
         );
     }

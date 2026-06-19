@@ -154,7 +154,7 @@ fn dedup_suppresses_same_file_same_line_additional_location() {
         detector_name: Arc::from("Test Detector"),
         service: Arc::from("test"),
         severity: Severity::High,
-        credential: Arc::from("creds"),
+        credential: keyhog_core::SensitiveString::from("creds"),
         companions: HashMap::new(),
         location: MatchLocation {
             source: Arc::from("filesystem"),

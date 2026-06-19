@@ -52,13 +52,9 @@ pub(super) fn base62_encode_u32(mut value: u32, width: usize) -> String {
 ///
 /// Format: `ghp_` + 30-character entropy + 6-character base62 CRC32 checksum.
 /// The CRC32 is computed over the 30-character entropy portion only.
-pub struct GithubClassicPatValidator;
+pub(crate) struct GithubClassicPatValidator;
 
 impl ChecksumValidator for GithubClassicPatValidator {
-    fn validator_id(&self) -> &str {
-        "github-classic-pat"
-    }
-
     fn validate(&self, credential: &str) -> ChecksumResult {
         let payload = match credential.strip_prefix("ghp_") {
             Some(p) => p,
@@ -91,7 +87,7 @@ impl ChecksumValidator for GithubClassicPatValidator {
 /// Validates GitHub fine-grained personal access tokens.
 ///
 /// Format: `github_pat_` + 22 alphanumeric chars + `_` + 59 alphanumeric chars.
-pub struct GithubFineGrainedPatValidator;
+pub(crate) struct GithubFineGrainedPatValidator;
 
 impl GithubFineGrainedPatValidator {
     fn try_payload(payload: &str) -> ChecksumResult {
@@ -110,10 +106,6 @@ impl GithubFineGrainedPatValidator {
 }
 
 impl ChecksumValidator for GithubFineGrainedPatValidator {
-    fn validator_id(&self) -> &str {
-        "github-fine-grained-pat"
-    }
-
     fn validate(&self, credential: &str) -> ChecksumResult {
         let Some(payload) = credential.strip_prefix("github_pat_") else {
             return ChecksumResult::NotApplicable;

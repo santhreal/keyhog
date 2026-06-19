@@ -14,7 +14,7 @@
 /// Case-insensitive `ends_with`. Returns true when the last `suffix.len()`
 /// bytes of `bytes` compare equal to `suffix` ignoring ASCII case.
 #[inline]
-pub fn ends_with_ignore_ascii_case(bytes: &[u8], suffix: &[u8]) -> bool {
+pub(crate) fn ends_with_ignore_ascii_case(bytes: &[u8], suffix: &[u8]) -> bool {
     if suffix.len() > bytes.len() {
         return false;
     }
@@ -24,7 +24,8 @@ pub fn ends_with_ignore_ascii_case(bytes: &[u8], suffix: &[u8]) -> bool {
 
 /// Case-insensitive `starts_with`.
 #[inline]
-pub fn starts_with_ignore_ascii_case(bytes: &[u8], prefix: &[u8]) -> bool {
+#[cfg(any(feature = "entropy", feature = "simdsieve"))]
+pub(crate) fn starts_with_ignore_ascii_case(bytes: &[u8], prefix: &[u8]) -> bool {
     bytes
         .get(..prefix.len())
         .is_some_and(|p| p.eq_ignore_ascii_case(prefix))
@@ -39,7 +40,7 @@ pub fn starts_with_ignore_ascii_case(bytes: &[u8], prefix: &[u8]) -> bool {
 /// Skim cost is one `memchr2` SIMD pass; full compare runs only at each
 /// candidate first-byte position.
 #[inline]
-pub fn ci_find(haystack: &[u8], needle_lower: &[u8]) -> bool {
+pub(crate) fn ci_find(haystack: &[u8], needle_lower: &[u8]) -> bool {
     if needle_lower.is_empty() {
         return true;
     }
@@ -70,7 +71,7 @@ pub fn ci_find(haystack: &[u8], needle_lower: &[u8]) -> bool {
 /// times per match before this fix would otherwise allocate two `String`
 /// needles per call (`/seg/` and `\seg\`) at ~50 bytes each.
 #[inline]
-pub fn contains_path_segment(path: &str, segment: &str) -> bool {
+pub(crate) fn contains_path_segment(path: &str, segment: &str) -> bool {
     let bytes = path.as_bytes();
     let seg = segment.as_bytes();
     let n = seg.len();
@@ -95,7 +96,7 @@ pub fn contains_path_segment(path: &str, segment: &str) -> bool {
 
 /// Two-segment variant: matches `/a/b/` (POSIX) or `\a\b\` (Windows).
 #[inline]
-pub fn contains_path_segment_two(path: &str, a: &str, b: &str) -> bool {
+pub(crate) fn contains_path_segment_two(path: &str, a: &str, b: &str) -> bool {
     let bytes = path.as_bytes();
     let a_b = a.as_bytes();
     let b_b = b.as_bytes();

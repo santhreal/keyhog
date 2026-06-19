@@ -1,4 +1,4 @@
-use keyhog_scanner::engine::floor_char_boundary;
+use keyhog_scanner::testing::floor_char_boundary;
 #[test]
 fn floor_char_boundary_past_end() {
     let text = "hi";

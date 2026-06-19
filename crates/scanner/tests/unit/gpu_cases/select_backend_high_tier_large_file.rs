@@ -1,4 +1,4 @@
-use keyhog_scanner::hw_probe::{
+use keyhog_scanner::hw_probe::testing::{
     classify_gpu_tier, gpu_could_engage, gpu_solo_bytes_for_tier, GpuTier, HardwareCaps,
 };
 #[test]
@@ -15,6 +15,7 @@ fn select_backend_high_tier_large_file() {
         gpu_available: true,
         gpu_name: Some(name.into()),
         gpu_vram_mb: Some(24576),
+        gpu_runtime_identity: Some(format!("test-runtime:{name}")),
         gpu_is_software: false,
         total_memory_mb: Some(65536),
         io_uring_available: true,

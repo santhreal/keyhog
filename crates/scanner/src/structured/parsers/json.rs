@@ -1,7 +1,7 @@
 use super::{line::find_line_number, ExtractedPair};
 
 /// Parse Terraform state JSON and recursively extract `value` fields.
-pub fn parse_tfstate(text: &str) -> Vec<ExtractedPair> {
+pub(crate) fn parse_tfstate(text: &str) -> Vec<ExtractedPair> {
     let mut pairs = Vec::new();
     let value: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
@@ -11,7 +11,7 @@ pub fn parse_tfstate(text: &str) -> Vec<ExtractedPair> {
             // Count it so the scan surfaces the coverage gap; keep the debug log
             // for the `-v` error detail.
             crate::telemetry::record_structured_parse_failure();
-            tracing::debug!(target: "keyhog::structured", %error, "tfstate JSON parse failed");
+            tracing::warn!(target: "keyhog::structured", %error, "tfstate JSON parse failed; value fields will not be decoded-through");
             return pairs;
         }
     };
@@ -43,7 +43,7 @@ fn extract_tfstate_values(
                         _ => String::new(),
                     };
                     if !val_str.is_empty() {
-                        let line = find_line_number(text, &val_str).unwrap_or(1);
+                        let line = find_line_number(text, &val_str).unwrap_or(1); // LAW10: line not located => placeholder line for REPORTING only; finding still emitted, recall-safe
                         pairs.push(ExtractedPair {
                             context: "tfstate-value".to_string(),
                             value: val_str,
@@ -64,7 +64,7 @@ fn extract_tfstate_values(
 }
 
 /// Parse Jupyter notebook JSON and extract code cell sources.
-pub fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
+pub(crate) fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
     let mut pairs = Vec::new();
     let value: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
@@ -73,7 +73,7 @@ pub fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
             // decode-through (secrets pasted into notebook cells never become
             // scannable lines). Count + keep the debug detail.
             crate::telemetry::record_structured_parse_failure();
-            tracing::debug!(target: "keyhog::structured", %error, "Jupyter notebook JSON parse failed");
+            tracing::warn!(target: "keyhog::structured", %error, "Jupyter notebook JSON parse failed; code cells will not be decoded-through");
             return pairs;
         }
     };
@@ -82,7 +82,7 @@ pub fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
         _ => return pairs,
     };
     for (idx, cell) in cells.iter().enumerate() {
-        let cell_type = cell.get("cell_type").and_then(|c| c.as_str()).unwrap_or("");
+        let cell_type = cell.get("cell_type").and_then(|c| c.as_str()).unwrap_or(""); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
         if cell_type != "code" {
             continue;
         }
@@ -92,7 +92,7 @@ pub fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
         };
         let (source_text, line) = match source {
             serde_json::Value::String(s) => {
-                let line = find_line_number(text, s).unwrap_or(1);
+                let line = find_line_number(text, s).unwrap_or(1); // LAW10: line not located => placeholder line for REPORTING only; finding still emitted, recall-safe
                 (s.clone(), line)
             }
             serde_json::Value::Array(arr) => {
@@ -111,8 +111,8 @@ pub fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
                             Some(trimmed_end.to_string())
                         }
                     })
-                    .unwrap_or_else(|| joined.clone());
-                let line = find_line_number(text, &anchor).unwrap_or(1);
+                    .unwrap_or_else(|| joined.clone()); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
+                let line = find_line_number(text, &anchor).unwrap_or(1); // LAW10: line not located => placeholder line for REPORTING only; finding still emitted, recall-safe
                 (joined, line)
             }
             _ => continue,

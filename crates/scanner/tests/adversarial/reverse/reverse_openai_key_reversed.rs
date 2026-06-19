@@ -1,7 +1,7 @@
 //! R5-T-SCAN reverse decode must surface `openai-api-key`.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn reverse_openai_key_reversed() {

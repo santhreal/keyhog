@@ -1,5 +1,5 @@
-use keyhog_scanner::fragment_cache::FragmentCache;
-use keyhog_scanner::multiline::{preprocess_multiline, MultilineConfig};
+use keyhog_scanner::testing::fragment_cache::FragmentCache;
+use keyhog_scanner::testing::multiline::{preprocess_multiline, MultilineConfig};
 
 #[test]
 fn json_object_passthrough_without_append() {

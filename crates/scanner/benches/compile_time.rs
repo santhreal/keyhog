@@ -1,6 +1,7 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use keyhog_core::load_detectors;
 use keyhog_scanner::CompiledScanner;
+use std::hint::black_box;
 use std::path::Path;
 
 fn bench_compile_time(c: &mut Criterion) {
@@ -16,7 +17,7 @@ fn bench_compile_time(c: &mut Criterion) {
             |b, dets| {
                 b.iter(|| {
                     let scanner = CompiledScanner::compile(dets.clone()).expect("compile");
-                    criterion::black_box(scanner);
+                    black_box(scanner);
                 });
             },
         );

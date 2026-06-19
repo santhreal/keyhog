@@ -1,6 +1,6 @@
 //! Migrated from src/jwt.rs
 
-use keyhog_scanner::jwt::{analyze, looks_like_jwt, JwtAnomaly};
+use keyhog_scanner::testing::jwt::{analyze, looks_like_jwt, JwtAnomaly};
 
 /// Standard HS256 JWT, payload `{"sub":"1234567890","name":"John Doe","iat":1516239022}`,
 /// signed with HMAC `your-256-bit-secret`.

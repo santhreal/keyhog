@@ -7,7 +7,7 @@ use super::{ChecksumResult, ChecksumValidator};
 /// Slack tokens do not expose a public checksum algorithm, but their format is
 /// highly regular. This validator performs strict structural matching and
 /// rejects tokens that violate known segment rules.
-pub struct SlackTokenValidator;
+pub(crate) struct SlackTokenValidator;
 
 // Compile once, reuse across all validate() calls.
 //
@@ -25,15 +25,35 @@ pub struct SlackTokenValidator;
 // keeps the wider validator superset of the detector while still anchoring (`$`)
 // and rejecting wrong character classes and too-short/too-long segments.
 static SLACK_BOT_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
-    regex::Regex::new(r"^xoxb-[0-9]{10,15}(?:-[0-9]{10,15})?-[a-zA-Z0-9]{15,40}$").ok()
+    match regex::Regex::new(r"^xoxb-[0-9]{10,15}(?:-[0-9]{10,15})?-[a-zA-Z0-9]{15,40}$") {
+        Ok(re) => Some(re),
+        Err(error) => {
+            crate::prefilter_degrade::warn_prefilter_disabled(
+                "slack bot-token checksum regex (SLACK_BOT_RE)",
+                &error,
+            );
+            None
+        }
+    }
 });
 static SLACK_USER_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
-    regex::Regex::new(r"^xoxp-[0-9]{10,15}-[0-9]{10,15}(?:-[0-9]{10,13})?-[a-zA-Z0-9]{24,40}$").ok()
+    match regex::Regex::new(
+        r"^xoxp-[0-9]{10,15}-[0-9]{10,15}(?:-[0-9]{10,13})?-[a-zA-Z0-9]{24,40}$",
+    ) {
+        Ok(re) => Some(re),
+        Err(error) => {
+            crate::prefilter_degrade::warn_prefilter_disabled(
+                "slack user-token checksum regex (SLACK_USER_RE)",
+                &error,
+            );
+            None
+        }
+    }
 });
 
 pub(crate) fn warm_runtime_regexes() {
-    let _ = SLACK_BOT_RE.as_ref();
-    let _ = SLACK_USER_RE.as_ref();
+    let _ = SLACK_BOT_RE.as_ref(); // LAW10: forces lazy-static/regex eager init (warm-up); not a fallback
+    let _ = SLACK_USER_RE.as_ref(); // LAW10: forces lazy-static/regex eager init (warm-up); not a fallback
 }
 
 impl SlackTokenValidator {
@@ -51,10 +71,6 @@ impl SlackTokenValidator {
 }
 
 impl ChecksumValidator for SlackTokenValidator {
-    fn validator_id(&self) -> &str {
-        "slack-token"
-    }
-
     fn validate(&self, credential: &str) -> ChecksumResult {
         if credential.starts_with("xoxb-") {
             if Self::is_valid_slack_bot(credential) {

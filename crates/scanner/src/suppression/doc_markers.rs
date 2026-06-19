@@ -1,7 +1,7 @@
 //! Doc / placeholder / instructional marker substring scans. Extracted
-//! from `should_suppress_inner` (the giant decision tree) so the per-file
-//! line cap stays manageable. Returns a tri-state verdict that the
-//! decision tree consumes verbatim - `Allow` means "this is a known
+//! from `should_suppress_inner` so documentation-marker handling has one
+//! focused boundary. Returns a tri-state verdict that the decision tree consumes
+//! verbatim - `Allow` means "this is a known
 //! service-prefixed token, do NOT suppress and skip the shape gates";
 //! `Suppress` means "this is a documentation specimen, suppress now";
 //! `KeepChecking` means "fall through to the rest of the decision tree".
@@ -38,6 +38,16 @@ pub(super) fn upper_contains_token(upper: &str, token: &str) -> bool {
     })
 }
 
+fn upper_contains_placeholder_marker(upper: &str, token: &str) -> bool {
+    upper.match_indices(token).any(|(idx, _)| {
+        let before = upper[..idx].chars().next_back();
+        let after = upper[idx + token.len()..].chars().next();
+        let left_boundary = before.is_none_or(|c| !c.is_alphanumeric());
+        let right_boundary = after.is_none_or(|c| !c.is_alphanumeric());
+        left_boundary || right_boundary
+    })
+}
+
 /// Run the doc/placeholder/marker pre-checks against `credential`. Caller
 /// passes `upper` (already uppercased credential) to avoid re-allocating
 /// and `from_evasion_decoder` so EXAMPLE-suppression can be skipped when
@@ -51,9 +61,11 @@ pub(super) fn check_markers(
     path: Option<&str>,
 ) -> MarkerVerdict {
     // ── 1. Universal placeholder keywords (case-insensitive) ──
-    const PLACEHOLDER_WORDS: &[&str] = &["DUMMY", "PLACEHOLDER", "FAKE", "MOCK", "SAMPLE"];
-    for word in PLACEHOLDER_WORDS {
-        if upper_contains_token(upper, word) {
+    for word in crate::placeholder_words::words() {
+        if word.is_example() {
+            continue;
+        }
+        if upper_contains_placeholder_marker(upper, word.upper()) {
             crate::telemetry::record_shape_suppression(path, credential, "placeholder_word");
             return MarkerVerdict::Suppress;
         }
@@ -63,21 +75,23 @@ pub(super) fn check_markers(
     // Skip entirely when the credential arrived through an evasion decoder
     // (see fn-doc): an attacker reversing/ROTating an EXAMPLE-suffixed AWS
     // test key is exactly the kind of leak the engine should report.
-    if !from_evasion_decoder
-        && (upper_contains_token(upper, "EXAMPLE")
-            || upper.ends_with("EXAMPLE")
-            || upper_contains_token(upper, "EXAMPLEKEY")
-            || upper.ends_with("EXAMPLEKEY"))
-        && !credential.contains("example.com")
-        && !credential.contains("example.org")
-    {
-        crate::telemetry::record_example_suppression(
-            "pipeline",
-            path,
-            credential,
-            "contains_EXAMPLE_token",
-        );
-        return MarkerVerdict::Suppress;
+    if let Some(example) = crate::placeholder_words::example_word() {
+        if !from_evasion_decoder
+            && (upper_contains_token(upper, example.upper())
+                || upper.ends_with(example.upper())
+                || upper_contains_token(upper, "EXAMPLEKEY")
+                || upper.ends_with("EXAMPLEKEY"))
+            && !credential.contains("example.com")
+            && !credential.contains("example.org")
+        {
+            crate::telemetry::record_example_suppression(
+                "pipeline",
+                path,
+                credential,
+                "contains_EXAMPLE_token",
+            );
+            return MarkerVerdict::Suppress;
+        }
     }
 
     // ── 2. Common instructional fragments ──
@@ -190,7 +204,11 @@ pub(super) fn check_markers(
                 {
                     continue;
                 }
-                crate::telemetry::record_shape_suppression(path, credential, "doc_marker_substring");
+                crate::telemetry::record_shape_suppression(
+                    path,
+                    credential,
+                    "doc_marker_substring",
+                );
                 return MarkerVerdict::Suppress;
             }
         }
@@ -207,7 +225,11 @@ pub(super) fn check_markers(
     let known_prefix_body = known_prefix_body(credential);
     if let Some(body) = known_prefix_body {
         if looks_like_prefixed_masked_sequence(body) {
-            crate::telemetry::record_shape_suppression(path, credential, "prefixed_masked_sequence");
+            crate::telemetry::record_shape_suppression(
+                path,
+                credential,
+                "prefixed_masked_sequence",
+            );
             return MarkerVerdict::Suppress;
         }
         if !credential.starts_with("TESTKEY_") {

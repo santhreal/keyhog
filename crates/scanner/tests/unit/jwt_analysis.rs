@@ -3,7 +3,7 @@
 /// Covers: looks_like_jwt (shape), analyze (full structural decode),
 /// anomaly classification (alg=none, unknown alg, non-standard typ, expiry),
 /// anomalies_to_metadata, hostile inputs (empty segments, oversized, non-b64url).
-use keyhog_scanner::jwt::{analyze, anomalies_to_metadata, looks_like_jwt, JwtAnomaly};
+use keyhog_scanner::testing::jwt::{analyze, anomalies_to_metadata, looks_like_jwt, JwtAnomaly};
 
 // Pre-encoded JWT fragments for tests. Using base64url encoding of known JSON.
 // header: {"alg":"HS256","typ":"JWT"}

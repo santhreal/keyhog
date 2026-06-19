@@ -2,19 +2,23 @@
 
 // Submodules live in `compiler/` (native resolution), matching the
 // `foo.rs` + `foo/` layout used across the workspace. Names unchanged.
-pub mod compiler_build;
-pub mod compiler_compile;
-pub mod compiler_prefix;
+pub(crate) mod compiler_build;
+pub(crate) mod compiler_compile;
+pub(crate) mod compiler_prefix;
 
-pub use compiler_build::{
-    build_compile_state, rewrite_alternation_prefix, split_leading_inline_flag, CompileState,
+pub(crate) use compiler_build::build_compile_state;
+#[cfg(test)]
+pub(crate) use compiler_build::{rewrite_alternation_prefix, split_leading_inline_flag};
+#[cfg(feature = "gpu")]
+pub(crate) use compiler_compile::build_gpu_literals;
+pub(crate) use compiler_compile::build_phase2_keyword_ac;
+pub(crate) use compiler_compile::log_quality_warnings;
+pub(crate) use compiler_compile::{
+    build_ac_pattern_set, build_prefix_propagation, build_same_prefix_patterns,
 };
-pub use compiler_compile::{
-    build_ac_pattern_set, build_fallback_keyword_ac, build_gpu_literals, build_prefix_propagation,
-    build_same_prefix_patterns, compile_companion, compile_detector_companions,
-    compile_detector_pattern, compile_pattern, log_quality_warnings, shared_regex_compile,
-    warm_shared_regex_cache,
-};
-pub use compiler_prefix::{
-    extract_inner_literals, extract_literal_prefix, extract_literal_prefixes, is_escaped_literal,
+#[cfg(test)]
+pub(crate) use compiler_prefix::is_escaped_literal;
+#[cfg(test)]
+pub(crate) use compiler_prefix::{
+    extract_inner_literals, extract_literal_prefix, extract_literal_prefixes,
 };

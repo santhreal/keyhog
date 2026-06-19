@@ -4,7 +4,7 @@ const DOCSTRING_TOGGLE_REMAINDER: usize = 2;
 const DOCSTRING_TOGGLE_MATCH: usize = 1;
 
 /// Mark lines that appear to be documentation or docstrings.
-pub fn documentation_line_flags(lines: &[&str]) -> Vec<bool> {
+pub(crate) fn documentation_line_flags(lines: &[&str]) -> Vec<bool> {
     let mut flags = vec![false; lines.len()];
     let mut in_markdown_code_block = false;
     let mut in_docstring = false;

@@ -1,6 +1,6 @@
 //! Wire the dead `tests/data/recall/kh_challenging/*` fixtures into `cargo test`.
 //!
-//! Per `audits/release-2026-04-26/adversarial_audit.md`, nine challenging recall
+//! Per `docs/EXECUTION_PLAN.md`, nine challenging recall
 //! fixtures shipped under `tests/data/recall/kh_challenging/` but no Rust test
 //! referenced them. Each test loads the embedded detector corpus via
 //! [`CompiledScanner`], scans the full fixture, and asserts planted secrets

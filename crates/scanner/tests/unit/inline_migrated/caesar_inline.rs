@@ -1,6 +1,5 @@
 //! Migrated from src/decode/caesar.rs
 
-use keyhog_scanner::decode::Decoder;
 use keyhog_scanner::testing::{
     caesar_shift, is_source_code_path, looks_credential_shaped, CaesarDecoder,
 };
@@ -78,7 +77,7 @@ fn decode_chunk_round_trips_aws_shaped_token() {
     assert!(
         decoded
             .iter()
-            .any(|c| c.data.as_str() == concat!("AK", "IAQR4DEFGHIJKL2345")),
+            .any(|c| c.data.as_ref() == concat!("AK", "IAQR4DEFGHIJKL2345")),
         "Caesar decoder did not surface the round-trip plaintext among {} variants. \
          Got: {:?}",
         decoded.len(),

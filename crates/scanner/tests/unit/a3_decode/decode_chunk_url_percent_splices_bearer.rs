@@ -1,7 +1,7 @@
 //! URL percent decode splices Bearer-prefixed percent runs.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn url_percent_splice_preserves_bearer_context() {

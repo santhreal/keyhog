@@ -1,4 +1,4 @@
-use keyhog_scanner::unicode_hardening::*;
+use keyhog_scanner::testing::unicode_hardening::*;
 use std::borrow::Cow;
 
 /// Proving test: ASCII-only input with no evasion returns borrowed Cow.

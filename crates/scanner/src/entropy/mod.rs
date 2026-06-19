@@ -3,16 +3,16 @@
 //! Real secrets have high entropy (4.5+), while hashes, UUIDs, and placeholders
 //! have characteristic entropy profiles that help separate true positives.
 
-pub mod keywords;
+pub(crate) mod keywords;
 pub(crate) mod scanner;
 
 // Fast Shannon-entropy primitives, relocated here from the crate root so all
 // entropy code shares one home. `fast` is the scalar dispatcher that routes to
 // the SIMD impls by runtime capability; the impls are arch-gated.
-/// Fast scalar entropy dispatcher (routes to the SIMD impls below).
-pub mod fast;
 /// AVX-512 optimized entropy calculation.
 pub(crate) mod avx512;
+/// Fast scalar entropy dispatcher (routes to the SIMD impls below).
+pub(crate) mod fast;
 #[cfg(target_arch = "aarch64")]
 pub(crate) mod fast_neon;
 #[cfg(target_arch = "x86_64")]
@@ -184,7 +184,7 @@ fn is_entropy_appropriate_inner(
         .iter()
         .rposition(|&b| b == b'/' || b == b'\\')
         .map(|i| i + 1)
-        .unwrap_or(0);
+        .unwrap_or(0); // LAW10: empty/absent => documented numeric/sentinel default, recall-safe
     let filename = &bytes[last_sep..];
 
     // Package-manifest exclusion: Cargo.toml / package.json / pyproject.toml

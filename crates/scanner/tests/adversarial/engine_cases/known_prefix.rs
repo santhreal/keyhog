@@ -57,7 +57,7 @@ fn resolution_prefers_specific_detector_over_generic_for_known_prefix() {
             detector_name: Arc::from(detector_id),
             service: Arc::from("test"),
             severity: Severity::High,
-            credential: Arc::from(credential),
+            credential: keyhog_core::SensitiveString::from(credential),
             credential_hash: credential_hash(credential),
             companions: HashMap::new(),
             location: MatchLocation {

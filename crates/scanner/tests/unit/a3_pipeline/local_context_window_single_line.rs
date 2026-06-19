@@ -1,4 +1,4 @@
-use keyhog_scanner::pipeline::local_context_window;
+use keyhog_scanner::testing::local_context_window;
 
 #[test]
 fn radius_zero_returns_single_line() {

@@ -1,17 +1,9 @@
-use keyhog_core::{Chunk, ChunkMetadata, DetectorFile};
-use keyhog_scanner::{match_entropy, CompiledScanner};
+use keyhog_core::{Chunk, ChunkMetadata};
+use keyhog_scanner::{entropy::shannon_entropy, CompiledScanner};
 use std::time::Instant;
 
 fn load_embedded_detectors() -> Vec<keyhog_core::DetectorSpec> {
-    let embedded = keyhog_core::embedded_detector_tomls();
-    if embedded.is_empty() {
-        panic!("no embedded detectors - rebuild keyhog-core with detectors directory");
-    }
-    embedded
-        .iter()
-        .filter_map(|(_, toml)| toml::from_str::<DetectorFile>(toml).ok())
-        .map(|f| f.detector)
-        .collect()
+    keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus must load")
 }
 
 fn make_chunk(data: &str) -> Chunk {
@@ -103,7 +95,7 @@ fn pattern_compilation_under_500ms() {
         elapsed.as_millis()
     );
     assert!(
-        scanner.detector_count() > 800,
+        scanner.runtime_status().detector_count > 800,
         "Expected ~892 detectors loaded"
     );
 }
@@ -114,7 +106,7 @@ fn entropy_1000_chars_under_1ms() {
     let data: String = (0..1000).map(|i| ((i % 62) + 48) as u8 as char).collect();
 
     let start = Instant::now();
-    let entropy = match_entropy(data.as_bytes());
+    let entropy = shannon_entropy(data.as_bytes());
     let elapsed = start.elapsed();
 
     assert!(

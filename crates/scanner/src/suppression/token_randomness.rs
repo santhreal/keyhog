@@ -112,7 +112,9 @@ pub(crate) fn mean_bigram_logprob(value: &str) -> Option<f32> {
 pub(crate) fn is_random_token(value: &str) -> bool {
     match mean_bigram_logprob(value) {
         // Improbable-under-English AND diverse enough to be a real random token.
-        Some(score) => score <= RANDOM_LOGPROB_THRESHOLD && distinct_letters(value) >= MIN_DISTINCT_LETTERS,
+        Some(score) => {
+            score <= RANDOM_LOGPROB_THRESHOLD && distinct_letters(value) >= MIN_DISTINCT_LETTERS
+        }
         None => false,
     }
 }
@@ -135,7 +137,7 @@ fn distinct_letters(value: &str) -> usize {
 /// (KH-L-0413): keep the gate engaged (`true` ⇒ the value stays suppressed)
 /// UNLESS the value reads as a random token, in which case lift it (`false` ⇒
 /// recover the value). The single source of truth for the gate so the scan-time
-/// generic bridge (`fallback_generic_shape`) and the post-process weak-anchor
+/// generic bridge (`phase2_generic_shape`) and the post-process weak-anchor
 /// path (`suppression::api::should_suppress_named_detector_finding_weak`) agree
 /// byte-for-byte — both wrap the SAME `is_random_token`, never a second copy.
 ///

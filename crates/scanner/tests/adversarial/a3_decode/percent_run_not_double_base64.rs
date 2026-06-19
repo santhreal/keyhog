@@ -1,5 +1,5 @@
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn percent_encoded_blob_not_also_decoded_as_spurious_base64() {

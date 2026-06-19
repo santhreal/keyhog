@@ -1,7 +1,7 @@
 //! LR1-A8 replacement gate: `decode/unicode_escape.rs` hex escapes decode to sk.
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn unicode_escape_hex_sequence_decodes_sk_prefix() {

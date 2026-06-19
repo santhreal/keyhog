@@ -518,10 +518,8 @@ fn every_contract_readme_claim_present() {
 /// (real id `nih-pubmed-api-key`) this way.
 #[test]
 fn every_contract_detector_id_resolves() {
-    let detectors =
-        keyhog_core::load_detectors(&detector_dir()).expect("detectors loadable");
-    let ids: std::collections::HashSet<&str> =
-        detectors.iter().map(|d| d.id.as_str()).collect();
+    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors loadable");
+    let ids: std::collections::HashSet<&str> = detectors.iter().map(|d| d.id.as_str()).collect();
 
     let contracts = load_contracts();
     let mut orphans: Vec<String> = Vec::new();

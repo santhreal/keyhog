@@ -1,5 +1,5 @@
 use super::{shannon_entropy, HIGH_ENTROPY_THRESHOLD};
-use crate::engine::fallback_generic::keywords::normalize_assignment_keyword;
+use crate::engine::phase2_generic::keywords::normalize_assignment_keyword;
 
 pub(crate) struct KeywordContext {
     pub(crate) keyword: String,
@@ -456,6 +456,7 @@ fn has_low_alnum_ratio(value: &str) -> bool {
 /// they don't contain multiple whitespace-delimited words.
 ///
 /// Returns true if `value` should be treated as English prose.
+#[cfg(any(feature = "entropy", test))]
 pub(crate) fn looks_like_english_prose(value: &str) -> bool {
     let bytes = value.as_bytes();
     if bytes.len() < 16 {
@@ -508,6 +509,7 @@ pub(crate) fn looks_like_english_prose(value: &str) -> bool {
 /// when the value would be classified as English prose; the emit-path
 /// uses this to tighten plausibility when no strong credential keyword
 /// anchor is adjacent.
+#[cfg(any(feature = "entropy", test))]
 pub(crate) fn entropy_value_looks_like_prose(value: &str) -> bool {
     looks_like_english_prose(value)
 }
@@ -668,6 +670,7 @@ fn second_half_entropy(value: &str) -> f64 {
     shannon_entropy(&value.as_bytes()[half_start..])
 }
 
+#[cfg(test)]
 pub(crate) fn is_candidate_plausible(value: &str, placeholder_keywords: &[String]) -> bool {
     passes_plausibility_checks(
         value,
@@ -695,6 +698,7 @@ pub(crate) fn is_secret_plausible(value: &str, placeholder_keywords: &[String]) 
 /// In that case the hex-digest blacklist is skipped so md5/sha1/sha256-shaped
 /// values can surface as candidates - the credential keyword anchor provides
 /// the positive evidence that they're secrets, not digests.
+#[cfg(test)]
 pub(crate) fn is_candidate_plausible_with_context(
     value: &str,
     placeholder_keywords: &[String],
@@ -725,6 +729,7 @@ pub(super) fn is_candidate_plausible_with_lift(
 }
 
 /// Credential-context-aware plausibility check (Strict mode, for quoted values).
+#[cfg(test)]
 pub(crate) fn is_secret_plausible_with_context(
     value: &str,
     placeholder_keywords: &[String],

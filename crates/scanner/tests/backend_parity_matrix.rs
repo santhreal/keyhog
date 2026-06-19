@@ -12,11 +12,9 @@
 //! synthetic so the test runs in milliseconds; real-corpus parity
 //! lives in `gpu_parity.rs` (boundary) and the differential bench.
 //!
-//! The matrix skips GPU/MegaScan when no compatible adapter is
-//! present (CI without `--features gpu`, headless containers,
-//! software-only adapters that routing rejects). Skip is explicit
-//! via `eprintln!` so a "no GPU" pass doesn't pretend to have
-//! validated the GPU path.
+//! GPU/MegaScan are not allowed to return an all-zero finding set on
+//! secret-bearing fixtures. If a host cannot run the GPU path, the scanner must
+//! fail loud or take a recall-preserving backend path before this assertion.
 
 mod support;
 use support::contracts::test_chunk as make_chunk;
@@ -144,31 +142,15 @@ fn build_fixtures() -> Vec<Fixture> {
     ]
 }
 
-/// Run one (backend × fixture) cell. Returns `Some(keys)` on success,
-/// `None` to signal SKIP (GPU adapter unavailable).
+/// Run one backend x fixture cell with backend-local scanner state.
 fn run_cell(
     scanner: &CompiledScanner,
     backend: ScanBackend,
     fixture: &Fixture,
-    reference_keys: &BTreeSet<FindingKey>,
-) -> Option<BTreeSet<FindingKey>> {
+) -> BTreeSet<FindingKey> {
+    scanner.clear_fragment_cache();
     let results = scanner.scan_chunks_with_backend(&fixture.chunks, backend);
-    let keys = collect_keys(&results);
-
-    // SKIP heuristic: GPU/MegaScan returning empty while SIMD found
-    // anything is almost certainly a no-adapter fallback (the helper
-    // silently falls back to SIMD inside scan_chunks_with_backend on
-    // GPU init failure - that case prints zeros here). Don't flag
-    // that as a parity failure; the routing layer's own job is to
-    // pick a real backend, and the `gpu_smoke` test asserts the
-    // adapter is present when expected.
-    if matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan)
-        && keys.is_empty()
-        && !reference_keys.is_empty()
-    {
-        return None;
-    }
-    Some(keys)
+    collect_keys(&results)
 }
 
 #[test]
@@ -191,21 +173,18 @@ fn backend_parity_matrix_all_fixtures_all_backends() {
     ];
 
     let mut total_cells = 0usize;
-    let mut skipped = 0usize;
     let mut failures: Vec<String> = Vec::new();
 
     for fixture in &fixtures {
         // SimdCpu is the reference for this fixture.
+        scanner.clear_fragment_cache();
         let reference_results =
             scanner.scan_chunks_with_backend(&fixture.chunks, ScanBackend::SimdCpu);
         let reference_keys = collect_keys(&reference_results);
 
         for backend in backends {
             total_cells += 1;
-            let Some(keys) = run_cell(&scanner, backend, fixture, &reference_keys) else {
-                skipped += 1;
-                continue;
-            };
+            let keys = run_cell(&scanner, backend, fixture);
 
             if keys != reference_keys {
                 let only_ref: Vec<_> = reference_keys.difference(&keys).take(3).collect();
@@ -225,9 +204,8 @@ fn backend_parity_matrix_all_fixtures_all_backends() {
     }
 
     eprintln!(
-        "backend_parity_matrix: cells={} skipped={} failed={}",
+        "backend_parity_matrix: cells={} failed={}",
         total_cells,
-        skipped,
         failures.len()
     );
 
@@ -264,7 +242,9 @@ fn determinism_each_backend_each_fixture_runs_twice_matches() {
     let mut failures = Vec::new();
     for fixture in &fixtures {
         for backend in backends {
+            scanner.clear_fragment_cache();
             let a = collect_keys(&scanner.scan_chunks_with_backend(&fixture.chunks, backend));
+            scanner.clear_fragment_cache();
             let b = collect_keys(&scanner.scan_chunks_with_backend(&fixture.chunks, backend));
             if a != b {
                 failures.push(format!(

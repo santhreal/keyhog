@@ -1,8 +1,9 @@
 //! Migrated from src/telemetry.rs
 
 use keyhog_scanner::telemetry::{
-    DogfoodEvent, ScanTelemetry, drain_events, enable_dogfood, example_suppression_count,
-    record_example_suppression, reset, reset_example_suppression_count, with_scan_telemetry,
+    drain_events, enable_dogfood, example_suppression_count, record_example_suppression,
+    reset_example_suppression_count, testing::reset, with_scan_telemetry, DogfoodEvent,
+    ScanTelemetry,
 };
 use std::sync::{Arc, Barrier, Mutex};
 

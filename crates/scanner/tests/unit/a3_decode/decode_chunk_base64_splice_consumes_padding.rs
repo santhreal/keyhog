@@ -2,7 +2,7 @@
 //! unpadded prefix first.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn base64_splice_consumes_padding_from_parent() {

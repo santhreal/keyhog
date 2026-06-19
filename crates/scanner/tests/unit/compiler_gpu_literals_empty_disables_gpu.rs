@@ -1,6 +1,6 @@
 //! Empty literal in AC set disables GPU literal preparation.
 
-use keyhog_scanner::compiler::build_gpu_literals;
+use keyhog_scanner::testing::build_gpu_literals;
 
 #[test]
 fn compiler_gpu_literals_empty_disables_gpu() {

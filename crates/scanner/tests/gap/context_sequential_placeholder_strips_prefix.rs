@@ -1,6 +1,6 @@
 //! KH-GAP-018: sequential placeholder detection must strip known prefixes first.
 
-use keyhog_scanner::context::is_known_example_credential;
+use keyhog_scanner::testing::context::is_known_example_credential;
 
 #[test]
 fn context_sequential_placeholder_strips_prefix() {

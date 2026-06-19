@@ -14,11 +14,6 @@ pub fn pattern_regex_strs(scanner: &crate::CompiledScanner) -> Vec<&str> {
 }
 
 #[cfg(test)]
-pub(crate) fn last_gpu_degrade_reason(scanner: &crate::CompiledScanner) -> Option<String> {
-    scanner.last_gpu_degrade_reason()
-}
-
-#[cfg(test)]
 pub(crate) fn scan_with_deadline(
     scanner: &crate::CompiledScanner,
     chunk: &Chunk,
@@ -301,9 +296,11 @@ pub(crate) mod multiline {
     }
 }
 
+#[cfg(all(test, feature = "gpu"))]
+pub(crate) use crate::compiler::build_gpu_literals;
 #[cfg(test)]
 pub(crate) use crate::compiler::{
-    build_ac_pattern_set, build_gpu_literals, build_prefix_propagation, build_same_prefix_patterns,
+    build_ac_pattern_set, build_prefix_propagation, build_same_prefix_patterns,
     extract_inner_literals, extract_literal_prefix, extract_literal_prefixes, is_escaped_literal,
     rewrite_alternation_prefix, split_leading_inline_flag,
 };
@@ -445,14 +442,10 @@ pub(crate) mod thresholds {
         crate::hw_probe::thresholds::GPU_PATTERN_BREAKEVEN;
     pub(crate) const GPU_PATTERN_BREAKEVEN_HIGH_TIER: usize =
         crate::hw_probe::thresholds::GPU_PATTERN_BREAKEVEN_HIGH_TIER;
-    pub(crate) const GPU_PATTERN_BREAKEVEN_MID_TIER: usize =
-        crate::hw_probe::thresholds::GPU_PATTERN_BREAKEVEN_MID_TIER;
     pub(crate) const GPU_BYTES_BREAKEVEN_SOLO: u64 =
         crate::hw_probe::thresholds::GPU_BYTES_BREAKEVEN_SOLO;
     pub(crate) const GPU_BYTES_BREAKEVEN_SOLO_HIGH_TIER: u64 =
         crate::hw_probe::thresholds::GPU_BYTES_BREAKEVEN_SOLO_HIGH_TIER;
-    pub(crate) const GPU_BYTES_BREAKEVEN_SOLO_MID_TIER: u64 =
-        crate::hw_probe::thresholds::GPU_BYTES_BREAKEVEN_SOLO_MID_TIER;
 }
 
 #[cfg(test)]
@@ -520,11 +513,6 @@ pub(crate) fn set_confirmed_suffix_gate(
 #[cfg(test)]
 pub(crate) fn set_no_candidate_gate(scanner: &crate::engine::CompiledScanner, mode: Option<bool>) {
     scanner.tuning().set_no_candidate_gate(mode);
-}
-
-#[cfg(test)]
-pub(crate) fn set_phase2_localizer(scanner: &crate::engine::CompiledScanner, mode: Option<bool>) {
-    scanner.tuning().set_phase2_localizer(mode);
 }
 
 /// SWE-101 perf probe: directly time `mark_matches` on a no-candidate text,
@@ -597,33 +585,6 @@ pub(crate) mod entropy_scanner {
             entropy,
             &context.inner,
             placeholder_keywords,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn find_entropy_secrets_with_canonical_lift(
-        text: &str,
-        min_length: usize,
-        context_lines: usize,
-        entropy_threshold: f64,
-        keyword_free_threshold: f64,
-        secret_keywords: &[String],
-        test_keywords: &[String],
-        placeholder_keywords: &[String],
-        skip_lines: Option<&std::collections::HashSet<usize>>,
-        allow_canonical_lift: bool,
-    ) -> Vec<crate::entropy::EntropyMatch> {
-        crate::entropy::scanner::find_entropy_secrets_with_canonical_lift(
-            text,
-            min_length,
-            context_lines,
-            entropy_threshold,
-            keyword_free_threshold,
-            secret_keywords,
-            test_keywords,
-            placeholder_keywords,
-            skip_lines,
-            allow_canonical_lift,
         )
     }
 
@@ -869,10 +830,6 @@ impl StaticInterner {
     pub(crate) fn len(&self) -> usize {
         self.0.len()
     }
-
-    pub(crate) fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
 }
 
 #[cfg(test)]
@@ -888,26 +845,26 @@ impl AlphabetMask {
         Self(crate::alphabet_filter::AlphabetMask::from_bytes(bytes))
     }
 
-    pub(crate) fn from_bytes_scalar(bytes: &[u8]) -> Self {
+    pub fn from_bytes_scalar(bytes: &[u8]) -> Self {
         Self(crate::alphabet_filter::AlphabetMask::from_bytes_scalar(
             bytes,
         ))
     }
 
     #[cfg(target_arch = "aarch64")]
-    pub(crate) unsafe fn from_bytes_neon(bytes: &[u8]) -> Self {
+    pub unsafe fn from_bytes_neon(bytes: &[u8]) -> Self {
         Self(unsafe { crate::alphabet_filter::AlphabetMask::from_bytes_neon(bytes) })
     }
 
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2")]
-    pub(crate) unsafe fn from_bytes_avx2(bytes: &[u8]) -> Self {
+    pub unsafe fn from_bytes_avx2(bytes: &[u8]) -> Self {
         Self(unsafe { crate::alphabet_filter::AlphabetMask::from_bytes_avx2(bytes) })
     }
 
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "sse2")]
-    pub(crate) unsafe fn from_bytes_sse2(bytes: &[u8]) -> Self {
+    pub unsafe fn from_bytes_sse2(bytes: &[u8]) -> Self {
         Self(unsafe { crate::alphabet_filter::AlphabetMask::from_bytes_sse2(bytes) })
     }
 
@@ -919,7 +876,7 @@ impl AlphabetMask {
         self.0.intersects(&other.0)
     }
 
-    pub(crate) fn union(&mut self, other: &Self) {
+    pub fn union(&mut self, other: &Self) {
         self.0.union(&other.0);
     }
 }
@@ -936,7 +893,7 @@ impl AlphabetScreen {
         self.0.screen(data)
     }
 
-    pub(crate) fn screen_scalar_fallback(&self, data: &[u8]) -> bool {
+    pub fn screen_scalar_fallback(&self, data: &[u8]) -> bool {
         if data.is_empty() {
             return false;
         }
@@ -949,13 +906,12 @@ impl AlphabetScreen {
 
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2")]
-    pub(crate) unsafe fn screen_avx2(&self, data: &[u8]) -> bool {
+    pub unsafe fn screen_avx2(&self, data: &[u8]) -> bool {
         unsafe { self.0.screen_avx2(data) }
     }
 }
 
-#[cfg(test)]
-pub(crate) fn assert_alphabet_prefilter_backend_parity(targets: &[String], data: &[u8]) -> bool {
+pub fn assert_alphabet_prefilter_backend_parity(targets: &[String], data: &[u8]) -> bool {
     let mask_scalar = AlphabetMask::from_bytes_scalar(data);
     let mask_auto = AlphabetMask::from_bytes(data);
     assert_eq!(
@@ -1105,13 +1061,11 @@ pub(crate) mod unicode_hardening {
     }
 }
 
-#[cfg(test)]
 #[derive(Clone)]
-pub(crate) struct BigramBloom(crate::bigram_bloom::BigramBloom);
+pub struct BigramBloom(crate::bigram_bloom::BigramBloom);
 
-#[cfg(test)]
 impl BigramBloom {
-    pub(crate) fn empty() -> Self {
+    pub fn empty() -> Self {
         Self(crate::bigram_bloom::BigramBloom::empty())
     }
 
@@ -1133,15 +1087,15 @@ impl BigramBloom {
         self.0.popcount()
     }
 
-    pub(crate) fn is_saturated(&self) -> bool {
+    pub fn is_saturated(&self) -> bool {
         self.0.is_saturated()
     }
 
-    pub(crate) fn scalar_overlaps_reference(&self, chunk: &[u8]) -> bool {
+    pub fn scalar_overlaps_reference(&self, chunk: &[u8]) -> bool {
         self.0.scalar_overlaps_reference(chunk)
     }
 
-    pub(crate) fn saturated_for_test() -> Self {
+    pub fn saturated_for_test() -> Self {
         Self(crate::bigram_bloom::BigramBloom::saturated_for_test())
     }
 }
@@ -1150,6 +1104,18 @@ impl BigramBloom {
 pub(crate) fn looks_like_standard_base64_blob(credential: &str) -> bool {
     crate::suppression::shape_gates::looks_like_standard_base64_blob(credential)
 }
+
+#[cfg(all(test, feature = "entropy"))]
+pub(crate) mod phase2_entropy_helpers {
+    pub(crate) fn keyword_is_credential_anchor(keyword: &str) -> bool {
+        crate::engine::phase2_entropy::helpers::keyword_is_credential_anchor(keyword)
+    }
+
+    pub(crate) fn entropy_path_looks_like_random_base64_blob(value: &str) -> bool {
+        crate::engine::phase2_entropy::helpers::entropy_path_looks_like_random_base64_blob(value)
+    }
+}
+
 #[cfg(test)]
 pub(crate) fn hash_fast(data: &[u8]) -> u64 {
     crate::util_hash::hash_fast(data)
@@ -1501,18 +1467,6 @@ pub(crate) fn reverse_str(s: &str) -> String {
     crate::decode::reverse_str(s)
 }
 
-#[cfg(test)]
-pub(crate) struct ReverseDecoder;
-
-#[cfg(test)]
-impl ReverseDecoder {
-    pub(crate) fn decode_chunk(&self, chunk: &keyhog_core::Chunk) -> Vec<keyhog_core::Chunk> {
-        use crate::decode::Decoder;
-        let inner = crate::decode::ReverseDecoder;
-        inner.decode_chunk(chunk)
-    }
-}
-
 /// Shannon entropy of `chunk` in bits/byte.
 ///
 /// # Safety
@@ -1567,13 +1521,6 @@ pub(crate) fn cache_dir_under_allowed_root(
 #[cfg(all(test, feature = "simd"))]
 pub(crate) fn set_hyperscan_cache_dir(path: Option<std::path::PathBuf>) {
     crate::set_hyperscan_cache_dir(path);
-}
-
-#[cfg(all(test, feature = "simd"))]
-pub(crate) fn validate_hyperscan_cache_dir(
-    path: &std::path::Path,
-) -> std::result::Result<(), String> {
-    crate::validate_hyperscan_cache_dir(path)
 }
 
 #[cfg(all(test, feature = "simdsieve"))]

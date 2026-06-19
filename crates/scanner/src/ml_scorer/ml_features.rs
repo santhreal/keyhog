@@ -12,7 +12,7 @@ use crate::entropy::shannon_entropy;
 /// bytes) or a full protobuf-wire message, else 0.0. Training showed it lifts
 /// held-out F1 0.924 -> 0.964 and drives the base64-of-binary false-flag rate
 /// from 18% to 0% with no recall loss (see ml/train_classifier.py).
-pub const NUM_FEATURES: usize = 42;
+pub(crate) const NUM_FEATURES: usize = 42;
 
 /// Offset into the feature vector where the one-hot file-type encoding starts.
 const FILE_TYPE_OFFSET: usize = 32;
@@ -124,8 +124,9 @@ const CONFIG_MARKERS: &[&str] = &[
     ".ini",
 ];
 
-/// Public entry point for feature extraction (used by GPU batch inference).
-pub fn compute_features_public(text: &str, context: &str) -> [f32; NUM_FEATURES] {
+/// Entry point for feature-extraction unit tests.
+#[cfg(test)]
+pub(crate) fn compute_features_public(text: &str, context: &str) -> [f32; NUM_FEATURES] {
     if text.is_empty() {
         return [0.0f32; NUM_FEATURES];
     }
@@ -465,7 +466,7 @@ fn longest_known_prefix(text: &str, known_prefixes: &[String]) -> usize {
         .filter(|prefix| text.starts_with(*prefix))
         .map(|prefix| prefix.len())
         .max()
-        .unwrap_or(0)
+        .unwrap_or(0) // LAW10: empty/absent => documented numeric/sentinel default, recall-safe
 }
 
 struct TextSummary {

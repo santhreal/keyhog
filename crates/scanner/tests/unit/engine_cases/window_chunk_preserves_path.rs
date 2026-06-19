@@ -1,5 +1,5 @@
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::engine::window_chunk;
+use keyhog_scanner::testing::window_chunk;
 #[test]
 fn window_chunk_preserves_path() {
     let mut meta = ChunkMetadata::default();

@@ -16,11 +16,9 @@
 //! <https://trufflesecurity.com/blog/research-uncovers-aws-account-numbers-hidden-in-access-keys>
 //! / <https://trufflesecurity.com/blog/canaries>.
 
-pub use keyhog_core::aws::{
-    account_is_canary, aws_account_from_key_id, finding_metadata, key_id_is_canary, CANARY_MESSAGE,
-};
+pub use keyhog_core::finding_metadata;
 
 // No tests here on purpose: this module only re-exports `keyhog_core::aws`, and
-// `core/src` must stay free of inline `#[cfg(test)]` (KH-GAP-004). The decode /
+// `core/src` must stay free of inline test modules (KH-GAP-004). The decode /
 // canary behaviour is covered once, at the source of truth, in
 // `crates/core/tests/unit/aws.rs`.

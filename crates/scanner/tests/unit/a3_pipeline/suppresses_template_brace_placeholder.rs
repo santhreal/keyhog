@@ -1,5 +1,5 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::should_suppress_known_example_credential;
+use keyhog_scanner::testing::should_suppress_known_example_credential;
 
 #[test]
 fn brace_template_suppressed() {

@@ -1,6 +1,6 @@
 //! Production paths must not alter confidence.
 
-use keyhog_scanner::confidence::apply_path_confidence_penalties;
+use keyhog_scanner::testing::confidence::apply_path_confidence_penalties;
 
 #[test]
 fn confidence_path_penalty_preserves_production_path() {

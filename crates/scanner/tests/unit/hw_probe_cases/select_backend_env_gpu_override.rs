@@ -1,7 +1,5 @@
-use keyhog_scanner::hw_probe::{
-    clear_test_backend_override, select_backend, set_test_backend_override, HardwareCaps,
-    ScanBackend,
-};
+use keyhog_scanner::hw_probe::testing::{select_backend, HardwareCaps, ScanBackend};
+use keyhog_scanner::testing::{clear_test_backend_override, set_test_backend_override};
 #[test]
 fn select_backend_env_gpu_override() {
     set_test_backend_override(Some(ScanBackend::Gpu));
@@ -14,6 +12,7 @@ fn select_backend_env_gpu_override() {
         gpu_available: false,
         gpu_name: None,
         gpu_vram_mb: None,
+        gpu_runtime_identity: None,
         gpu_is_software: false,
         total_memory_mb: Some(8192),
         io_uring_available: false,

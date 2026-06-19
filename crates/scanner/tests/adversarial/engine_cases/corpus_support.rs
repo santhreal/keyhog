@@ -16,14 +16,7 @@ pub fn corpus_fixture_path(subdir: &str, rel: &str) -> PathBuf {
 }
 
 pub fn load_embedded_detectors() -> Vec<DetectorSpec> {
-    let mut detectors = Vec::new();
-    for (path, body) in keyhog_core::embedded_detector_tomls() {
-        match keyhog_core::load_detectors_from_str(body) {
-            Ok(mut parsed) => detectors.append(&mut parsed),
-            Err(e) => panic!("embedded detector {path} failed to parse: {e}"),
-        }
-    }
-    detectors
+    keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus must load")
 }
 
 pub fn production_scanner() -> &'static CompiledScanner {

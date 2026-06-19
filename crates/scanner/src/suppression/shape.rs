@@ -122,7 +122,7 @@ pub(crate) fn looks_like_word_separated_identifier(value: &str) -> bool {
     // Max word length ≤ 10. Real credentials concentrate randomness in one
     // long suffix (e.g. `sk_live_<24-char-base58>`); programmer identifiers
     // are short dictionary fragments throughout.
-    let max_word_len = words.iter().map(|w| w.len()).max().unwrap_or(0);
+    let max_word_len = words.iter().map(|w| w.len()).max().unwrap_or(0); // LAW10: empty/absent => documented numeric/sentinel default, recall-safe
     if max_word_len > 10 {
         return false;
     }
@@ -179,7 +179,7 @@ pub(crate) fn looks_like_scheme_prefixed_uri(value: &str) -> bool {
     // Common content-addressable hash schemes - `sha256:<hex>`, `sha1:<hex>`,
     // `md5:<hex>`. These are integrity digests, not credentials; the generic
     // regex captures them when an `image: sha256:<hex>` config line appears.
-    let scheme_str = std::str::from_utf8(scheme).unwrap_or("");
+    let scheme_str = std::str::from_utf8(scheme).unwrap_or(""); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
     if matches!(
         scheme_str,
         "sha256" | "sha512" | "sha1" | "md5" | "blake3" | "blake2"
@@ -326,7 +326,7 @@ pub(crate) fn contains_uuid_v4_substring(value: &str) -> bool {
 /// apply universally (Tier A). Shapes that CAN legitimately appear as a
 /// credential body (`/`-led base64, `!`-led / `!`-trailed secrets) live in
 /// [`looks_like_credential_colliding_punctuation`] and must be Tier-B gated.
-pub fn looks_like_syntactic_punctuation_marker(value: &str) -> bool {
+pub(crate) fn looks_like_syntactic_punctuation_marker(value: &str) -> bool {
     if value.is_empty() {
         return false;
     }
@@ -384,7 +384,7 @@ pub fn looks_like_syntactic_punctuation_marker(value: &str) -> bool {
 /// already matched `snowflake.password=<value>`) has proven the bytes are the
 /// credential, so this filter must NOT fire there - doing so silently killed
 /// snowflake / sourcetree / paloalto / line / keystonejs / tower positives.
-pub fn looks_like_credential_colliding_punctuation(value: &str) -> bool {
+pub(crate) fn looks_like_credential_colliding_punctuation(value: &str) -> bool {
     if value.is_empty() {
         return false;
     }
@@ -423,11 +423,11 @@ fn looks_like_ts_non_null_identifier(bytes: &[u8]) -> bool {
 }
 
 /// Combined Tier-A + body-collision punctuation filter. Retained for the
-/// generic/entropy fallback callers ([`fallback_generic`], [`fallback_entropy`]),
+/// generic/entropy fallback callers ([`phase2_generic`], [`phase2_entropy`]),
 /// which are unanchored by construction and so want the full (stricter) set.
 /// Named-detector suppression must use the split functions so the body-
 /// collision half stays Tier-B gated.
-pub fn looks_like_punctuation_decorated_identifier(value: &str) -> bool {
+pub(crate) fn looks_like_punctuation_decorated_identifier(value: &str) -> bool {
     looks_like_syntactic_punctuation_marker(value)
         || looks_like_credential_colliding_punctuation(value)
 }

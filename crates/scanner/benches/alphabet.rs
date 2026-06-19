@@ -1,5 +1,6 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use keyhog_scanner::alphabet_filter::{AlphabetMask, AlphabetScreen};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
+use keyhog_scanner::testing::{AlphabetMask, AlphabetScreen};
+use std::hint::black_box;
 
 fn bench_alphabet_mask_building(c: &mut Criterion) {
     let mut group = c.benchmark_group("alphabet_mask_building");

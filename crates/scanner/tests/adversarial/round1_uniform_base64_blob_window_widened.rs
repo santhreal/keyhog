@@ -20,7 +20,7 @@
 //!   (below the new 44 floor) must NOT be flagged - this protects every
 //!   short service-anchored secret that doesn't carry +/.
 
-use keyhog_scanner::decode_structure::looks_like_uniform_base64_blob;
+use keyhog_scanner::testing::decode_structure::looks_like_uniform_base64_blob;
 use proptest::prelude::*;
 
 proptest! {

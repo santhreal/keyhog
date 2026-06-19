@@ -1,8 +1,12 @@
 use super::CompiledScanner;
 use crate::types::*;
-use keyhog_core::{Chunk, RawMatch, SensitiveString};
+#[cfg(feature = "decode")]
+use keyhog_core::SensitiveString;
+use keyhog_core::{Chunk, RawMatch};
+#[cfg(feature = "decode")]
 use std::collections::HashSet;
 use std::sync::atomic::Ordering::Relaxed;
+#[cfg(feature = "decode")]
 use std::sync::Arc;
 
 // Profiling + suffix-gate machinery and the cross-chunk fragment scan were
@@ -13,13 +17,16 @@ use std::sync::Arc;
 // ENABLE/override toggle now lives on the per-scanner `ScannerTuning`
 // (`self.tuning.confirmed_suffix_gate_enabled()`); only the gate BUILDER remains
 // in the suffix-gate satellite.
-pub use super::scan_postprocess_profile::decode_profile_dump;
+pub(crate) use super::scan_postprocess_profile::decode_profile_dump;
 pub(crate) use super::scan_postprocess_profile::ml_batch_profile_dump;
+use super::scan_postprocess_profile::{confirmed_prof_enabled, confirmed_prof_vecs};
+#[cfg(feature = "decode")]
 use super::scan_postprocess_profile::{
-    confirmed_prof_enabled, confirmed_prof_vecs, decode_prof_enabled, ml_batch_prof_enabled,
-    ml_batch_record, DECODE_GEN_NS, DECODE_PARENTS, DECODE_SCAN_NS, DECODE_SUBCHUNKS,
+    decode_prof_enabled, DECODE_GEN_NS, DECODE_PARENTS, DECODE_SCAN_NS, DECODE_SUBCHUNKS,
     DECODE_SUBCHUNK_BYTES,
 };
+#[cfg(feature = "ml")]
+use super::scan_postprocess_profile::{ml_batch_prof_enabled, ml_batch_record};
 pub(crate) use super::scan_postprocess_suffix_gate::build_confirmed_suffix_gate;
 
 impl CompiledScanner {
@@ -259,7 +266,7 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
     ) {
         let prof = confirmed_prof_enabled();
-        let total = self.ac_map.len() + self.fallback.len();
+        let total = self.ac_map.len() + self.phase2_patterns.len();
         // Suffix gate: one AC pass marks which required-suffix literals are
         // present in the chunk; a triggered pattern whose suffix literals are
         // ALL absent cannot match (every match ends with one of them), so its
@@ -291,11 +298,11 @@ impl CompiledScanner {
             let entry = if pat_idx < self.ac_map.len() {
                 &self.ac_map[pat_idx]
             } else {
-                let fallback_idx = pat_idx - self.ac_map.len();
-                if fallback_idx >= self.fallback.len() {
+                let phase2_idx = pat_idx - self.ac_map.len();
+                if phase2_idx >= self.phase2_patterns.len() {
                     continue;
                 }
-                &self.fallback[fallback_idx].0
+                &self.phase2_patterns[phase2_idx].0
             };
             let t0 = if prof {
                 Some(std::time::Instant::now())
@@ -325,8 +332,8 @@ impl CompiledScanner {
     }
 
     /// Print and reset the per-pattern confirmed-pass profile (top 30 by time).
-    pub fn confirmed_profile_dump(&self, label: &str) {
-        let total = self.ac_map.len() + self.fallback.len();
+    pub(crate) fn confirmed_profile_dump(&self, label: &str) {
+        let total = self.ac_map.len() + self.phase2_patterns.len();
         let (ns, runs) = confirmed_prof_vecs(total);
         let mut rows: Vec<(usize, u64, u64)> = (0..total)
             .map(|i| (i, ns[i].swap(0, Relaxed), runs[i].swap(0, Relaxed)))
@@ -343,7 +350,10 @@ impl CompiledScanner {
             let src = if *i < self.ac_map.len() {
                 self.ac_map[*i].regex.as_str()
             } else {
-                self.fallback[*i - self.ac_map.len()].0.regex.as_str()
+                self.phase2_patterns[*i - self.ac_map.len()]
+                    .0
+                    .regex
+                    .as_str()
             };
             let per = if *r > 0 { *n / *r } else { 0 };
             let s: String = src.chars().take(60).collect();

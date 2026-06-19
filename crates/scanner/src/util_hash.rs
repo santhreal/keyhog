@@ -29,7 +29,7 @@ const FNV_PRIME: u64 = 0x100000001b3;
 /// every cache that keys on this depends on the value being identical.
 #[inline]
 #[must_use]
-pub fn hash_fast(data: &[u8]) -> u64 {
+pub(crate) fn hash_fast(data: &[u8]) -> u64 {
     let mut h = FnvHasher::new();
     h.write(data);
     h.finish()
@@ -43,7 +43,7 @@ pub fn hash_fast(data: &[u8]) -> u64 {
 /// Shares the SINGLE seed/prime ([`FNV_OFFSET_BASIS`] / [`FNV_PRIME`]) with
 /// [`hash_fast`], so a single-slice `FnvHasher` and `hash_fast` agree (MC-12).
 #[derive(Clone, Copy)]
-pub struct FnvHasher {
+pub(crate) struct FnvHasher {
     hash: u64,
 }
 
@@ -58,7 +58,7 @@ impl FnvHasher {
     /// New hasher seeded at the FNV-1a offset basis.
     #[inline]
     #[must_use]
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Self {
             hash: FNV_OFFSET_BASIS,
         }
@@ -66,7 +66,7 @@ impl FnvHasher {
 
     /// Fold `data` into the running hash (FNV-1a: xor-then-multiply per byte).
     #[inline]
-    pub fn write(&mut self, data: &[u8]) {
+    pub(crate) fn write(&mut self, data: &[u8]) {
         let mut hash = self.hash;
         for &byte in data {
             hash ^= u64::from(byte);
@@ -78,14 +78,14 @@ impl FnvHasher {
     /// The accumulated 64-bit content key.
     #[inline]
     #[must_use]
-    pub fn finish(&self) -> u64 {
+    pub(crate) fn finish(&self) -> u64 {
         self.hash
     }
 }
 
 /// Default ceiling for [`memoize_by_hash`] caches: cleared wholesale when this
 /// many distinct keys accumulate, bounding memory under adversarial input.
-pub const DEFAULT_MAX_CACHE_ENTRIES: usize = 4096;
+pub(crate) const DEFAULT_MAX_CACHE_ENTRIES: usize = 4096;
 
 /// Look up `key` in a thread-local `HashMap<u64, T>`, computing and inserting
 /// the value via `compute` on a miss.
@@ -102,7 +102,7 @@ pub const DEFAULT_MAX_CACHE_ENTRIES: usize = 4096;
 /// kind never collide with another. `T: Copy` keeps the value cheap to return
 /// without re-borrowing the map.
 #[inline]
-pub fn memoize_by_hash<T: Copy>(
+pub(crate) fn memoize_by_hash<T: Copy>(
     cache: &'static std::thread::LocalKey<RefCell<HashMap<u64, T>>>,
     key: u64,
     max_entries: usize,

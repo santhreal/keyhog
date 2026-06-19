@@ -6,7 +6,7 @@
 //! generic-detector confidence penalty never suppresses a real credential.
 
 use base64::Engine;
-use keyhog_scanner::decode_structure::{
+use keyhog_scanner::testing::decode_structure::{
     analyze, decoded_contains_placeholder, is_encoded_binary, looks_like_uniform_base64_blob,
     DecodeStructure,
 };
@@ -111,6 +111,16 @@ fn non_encoded_text_is_not_decodable() {
     assert!(!a.is_binary_payload());
 }
 
+#[test]
+fn impossible_base64_length_does_not_decode_through_shape_analysis() {
+    // Same impossible len%4==1 base64 shape as the decode primitive test. This
+    // verifies decode-structure analysis imports the scanner decoder contract
+    // instead of padding/reclassifying candidates privately.
+    let a = analyze("QUtJQUlPU0ZPRE5ON");
+    assert!(!a.decodable);
+    assert!(!a.is_binary_payload());
+}
+
 // ---- decoded_contains_placeholder -------------------------------------
 
 #[test]
@@ -124,6 +134,20 @@ fn base64_wrapping_stripe_placeholder_is_caught() {
     // base64("sk_live_PLACEHOLDER_NOT_A_REAL_KEY")
     let s = base64::engine::general_purpose::STANDARD.encode("sk_live_PLACEHOLDER_NOT_A_REAL_KEY");
     assert!(decoded_contains_placeholder(&s));
+}
+
+#[test]
+fn base64_wrapping_shared_placeholder_words_is_caught() {
+    for raw in [
+        "MOCK_API_TOKEN_for_unit_tests_4",
+        "service_CHANGEME_token_1234",
+    ] {
+        let encoded = base64::engine::general_purpose::STANDARD.encode(raw);
+        assert!(
+            decoded_contains_placeholder(&encoded),
+            "decoded placeholder-word detection must catch shared Tier-B word in {raw:?}"
+        );
+    }
 }
 
 #[test]

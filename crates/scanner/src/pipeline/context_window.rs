@@ -1,5 +1,7 @@
 use crate::types::*;
+#[cfg(test)]
 use keyhog_core::Chunk;
+#[cfg(test)]
 use std::borrow::Cow;
 
 /// Borrow the `[line - radius, line + radius]` window directly out of `text`.
@@ -10,7 +12,8 @@ use std::borrow::Cow;
 /// line). We locate the two byte boundaries with `memchr` newline scans -
 /// O(window) for the start instead of O(file) - and slice once. Callers that
 /// need ownership call `.to_string()` (still one alloc total, down from two).
-pub fn local_context_window(text: &str, line: usize, radius: usize) -> &str {
+#[cfg(any(feature = "ml", test))]
+pub(crate) fn local_context_window(text: &str, line: usize, radius: usize) -> &str {
     let bytes = text.as_bytes();
     // Byte offset where the first window line begins. Walk forward over the
     // `(line - radius - 1)` newlines that precede the window; if `line` is so
@@ -67,10 +70,8 @@ pub fn local_context_window(text: &str, line: usize, radius: usize) -> &str {
     }
     // `start` sits at a line boundary (offset 0 or just past a `\n`) and `end`
     // at a `\n` or `bytes.len()` on the normal path; only the byte-cap path can
-    // land mid-codepoint, so snap `end` down to a char boundary before slicing.
-    while end > start && !text.is_char_boundary(end) {
-        end -= 1;
-    }
+    // land mid-codepoint, so snap `end` down through the engine boundary owner.
+    let end = crate::engine::floor_char_boundary(text, end);
     &text[start..end]
 }
 
@@ -78,7 +79,7 @@ pub fn local_context_window(text: &str, line: usize, radius: usize) -> &str {
 ///
 /// Uses `memchr` for SIMD-accelerated newline scanning (~4x faster
 /// than `str::match_indices` on inputs > 1 KiB).
-pub fn compute_line_offsets(text: &str) -> Vec<usize> {
+pub(crate) fn compute_line_offsets(text: &str) -> Vec<usize> {
     let bytes = text.as_bytes();
     // Pre-size: average line length ~40 chars is typical for source code.
     let estimated_lines = bytes.len() / 40 + 1;
@@ -92,35 +93,42 @@ pub fn compute_line_offsets(text: &str) -> Vec<usize> {
     offsets
 }
 
-pub fn match_line_number(
+pub(crate) fn match_line_number(
     preprocessed: &ScannerPreprocessedText<'_>,
     line_offsets: &[usize],
     offset: usize,
 ) -> usize {
-    preprocessed.line_for_offset(offset).unwrap_or_else(|| {
-        // `line_offsets` holds the byte offset of each line start in
-        // ascending order. The first offset strictly greater than
-        // `offset` is its line index - which is what
-        // `partition_point` returns directly. Binary search collapses
-        // the prior O(L) `position()` walk into O(log L); on a 10k-
-        // line file with N matches we go from N × 10k compares to
-        // N × ~14.
-        line_offsets.partition_point(|&lo| lo <= offset)
-    })
+    match preprocessed.line_for_offset(offset) {
+        Some(line) => line,
+        None => {
+            // `line_offsets` holds the byte offset of each line start in
+            // ascending order. The first offset strictly greater than
+            // `offset` is its line index - which is what
+            // `partition_point` returns directly. Binary search collapses
+            // the prior O(L) `position()` walk into O(log L); on a 10k-
+            // line file with N matches we go from N x 10k compares to
+            // N x ~14.
+            line_offsets.partition_point(|&lo| lo <= offset)
+        }
+    }
 }
-pub fn normalize_scannable_chunk<'a>(chunk: &'a Chunk, owned: &'a mut Option<Chunk>) -> &'a Chunk {
+#[cfg(test)]
+pub(crate) fn normalize_scannable_chunk<'a>(
+    chunk: &'a Chunk,
+    owned: &'a mut Option<Chunk>,
+) -> &'a Chunk {
     let normalized = crate::normalize_chunk_data(&chunk.data);
     if let Cow::Owned(data) = normalized {
         *owned = Some(Chunk {
             data: data.into(),
             metadata: chunk.metadata.clone(),
         });
-        owned.as_ref().unwrap_or(chunk)
+        owned.as_ref().unwrap_or(chunk) // LAW10: offset/owned/group absent => documented default (original chunk / first group); recall-safe
     } else {
         chunk
     }
 }
-pub fn find_companion(
+pub(crate) fn find_companion(
     preprocessed: &ScannerPreprocessedText<'_>,
     primary_line: usize,
     companion: &CompiledCompanion,
@@ -142,7 +150,7 @@ pub fn find_companion(
     // cleanly instead of panicking on a `&str[..]` slice - a single
     // bogus companion lookup must never crash a worker.
     let haystack = preprocessed.text.get(window_start..window_end)?;
-    let group = companion.capture_group.unwrap_or(FIRST_CAPTURE_GROUP_INDEX);
+    let group = companion.capture_group.unwrap_or(FIRST_CAPTURE_GROUP_INDEX); // LAW10: offset/owned/group absent => documented default (original chunk / first group); recall-safe
     let line_range = start..=end;
 
     // Capture-group fast path: when the regex has no groups, `find_iter` is
@@ -182,14 +190,12 @@ pub fn find_companion(
         // and we then align onto a UTF-8 boundary - `captures_read_at`'s
         // behavior is unspecified at non-boundary positions, so we must
         // never feed it one.
-        let mut next = if whole.end() == cursor {
+        let next = if whole.end() == cursor {
             cursor + 1
         } else {
             whole.end()
         };
-        while next < bytes_total && !haystack.is_char_boundary(next) {
-            next += 1;
-        }
+        let next = crate::engine::ceil_char_boundary(haystack, next);
         let prev_cursor = cursor;
         cursor = next;
 
@@ -202,7 +208,7 @@ pub fn find_companion(
                 }
             }
         }
-        let _ = prev_cursor; // borrowck scope marker; cursor is already updated
+        let _ = prev_cursor; // borrowck scope marker; cursor is already updated  // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
     }
     None
 }
@@ -241,7 +247,7 @@ pub fn find_companion(
 /// tail hit on the END side always supersedes a prefix hit (tail follows
 /// prefix). On the dominant path (passthrough / non-`multiline`) there is no
 /// tail and this is a pure `O(log L)` lookup.
-pub fn line_window_offsets(
+pub(crate) fn line_window_offsets(
     preprocessed: &ScannerPreprocessedText<'_>,
     start_line: usize,
     end_line: usize,

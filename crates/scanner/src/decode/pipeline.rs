@@ -13,13 +13,12 @@ use std::collections::{HashSet, VecDeque};
 
 static DECODERS: std::sync::OnceLock<Vec<Box<dyn Decoder>>> = std::sync::OnceLock::new();
 
-/// Per-decoder wall-time profiler (env-gated, measurement only). Set
-/// `KEYHOG_PROFILE_DECODERS=1` to accumulate, per registry decoder index, the
-/// time its `decode_chunk` spends across a full scan — to find which of the 14
-/// decoders dominates the ~22%-of-scan decode-generation cost. Zero-cost unset.
+/// Per-decoder wall-time profiler (measurement only). Enabled by the single
+/// scanner profiler switch (`keyhog scan --profile`) so profiling has one runtime
+/// owner instead of one env knob per pass. Records which decoder dominates
+/// decode generation. Zero-cost unset.
 fn decoder_prof_enabled() -> bool {
-    static EN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *EN.get_or_init(|| std::env::var("KEYHOG_PROFILE_DECODERS").as_deref() == Ok("1"))
+    crate::engine::profile::enabled()
 }
 static DECODER_NS: [std::sync::atomic::AtomicU64; 16] = {
     const Z: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -34,11 +33,10 @@ static DECODER_PRODUCED: [std::sync::atomic::AtomicU64; 16] = {
 };
 
 /// Print and reset the accumulated per-decoder times (paired with registry
-/// names). Call after a `KEYHOG_PROFILE_DECODERS=1` run.
-pub fn decoder_profile_dump() {
+/// names). Folded into the unified scanner profile dump.
+pub(crate) fn decoder_profile_dump() {
     use std::sync::atomic::Ordering::Relaxed;
     let names: Vec<&str> = get_decoders().iter().map(|d| d.name()).collect();
-    eprintln!("=== per-decoder decode_chunk time ===");
     let mut rows: Vec<(String, f64)> = (0..names.len().min(16))
         .map(|i| {
             (
@@ -49,17 +47,21 @@ pub fn decoder_profile_dump() {
         .collect();
     rows.sort_by(|a, b| b.1.total_cmp(&a.1));
     let total: f64 = rows.iter().map(|r| r.1).sum();
+    let mut prod: Vec<(String, u64)> = (0..names.len().min(16))
+        .map(|i| (names[i].to_string(), DECODER_PRODUCED[i].swap(0, Relaxed)))
+        .collect();
+    prod.sort_by(|a, b| b.1.cmp(&a.1));
+    let prod_total: u64 = prod.iter().map(|r| r.1).sum();
+    if total == 0.0 && prod_total == 0 {
+        return;
+    }
+    eprintln!("=== per-decoder decode_chunk time ===");
     for (name, ms) in &rows {
         let pct = if total > 0.0 { 100.0 * ms / total } else { 0.0 };
         eprintln!("  {name:<18}: {ms:>8.1} ms ({pct:>5.1}%)");
     }
     eprintln!("  {:<18}: {total:>8.1} ms", "TOTAL");
     eprintln!("=== per-decoder sub-chunks EMITTED (pre-dedup/screen) ===");
-    let mut prod: Vec<(String, u64)> = (0..names.len().min(16))
-        .map(|i| (names[i].to_string(), DECODER_PRODUCED[i].swap(0, Relaxed)))
-        .collect();
-    prod.sort_by(|a, b| b.1.cmp(&a.1));
-    let prod_total: u64 = prod.iter().map(|r| r.1).sum();
     for (name, n) in &prod {
         let pct = if prod_total > 0 {
             100.0 * *n as f64 / prod_total as f64
@@ -116,7 +118,9 @@ pub fn register_decoder(decoder: Box<dyn Decoder>) {
     // After initialization, the decoder list is immutable for lock-free reads.
     // Custom decoders must be registered before the first scan.
     if DECODERS.get().is_some() {
-        tracing::warn!("register_decoder called after initialization: decoder ignored. Fix: register custom decoders before scanning.");
+        tracing::warn!(
+            "register_decoder called after initialization: decoder ignored. Fix: register custom decoders before scanning."
+        );
         return;
     }
     // KEEP THIS LIST IN SYNC with `get_decoders()` above - they're
@@ -140,10 +144,10 @@ pub fn register_decoder(decoder: Box<dyn Decoder>) {
         Box::new(CaesarDecoder),
     ];
     decoders.push(decoder);
-    let _ = DECODERS.set(decoders);
+    let _ = DECODERS.set(decoders); // LAW10: OnceLock::set; Err => already initialized (same value), idempotent init
 }
 
-pub fn decode_chunk(
+pub(crate) fn decode_chunk(
     chunk: &Chunk,
     max_depth: usize,
     validate: bool,
@@ -200,6 +204,7 @@ pub fn decode_chunk(
                 budget_ms = DEFAULT_DECODE_WALL_BUDGET_MS,
                 "decode budget exhausted; stopping decode-through"
             );
+            crate::telemetry::record_decode_truncation();
             break;
         }
         if depth >= max_depth {
@@ -226,6 +231,8 @@ pub fn decode_chunk(
                     budget_ms = DEFAULT_DECODE_WALL_BUDGET_MS,
                     "decode budget exhausted mid-fan-out; stopping decode-through"
                 );
+                crate::telemetry::record_decode_truncation();
+                extractor::clear_shared_candidates();
                 return decoded_chunks;
             }
             let dec_t0 = prof_dec.then(std::time::Instant::now);
@@ -236,8 +243,10 @@ pub fn decode_chunk(
                         t0.elapsed().as_nanos() as u64,
                         std::sync::atomic::Ordering::Relaxed,
                     );
-                    DECODER_PRODUCED[dec_i]
-                        .fetch_add(decoded_out.len() as u64, std::sync::atomic::Ordering::Relaxed);
+                    DECODER_PRODUCED[dec_i].fetch_add(
+                        decoded_out.len() as u64,
+                        std::sync::atomic::Ordering::Relaxed,
+                    );
                 }
             }
             for decoded in decoded_out {
@@ -263,6 +272,8 @@ pub fn decode_chunk(
                         "decode budget exhausted while consuming decoder output; \
                          stopping decode-through"
                     );
+                    crate::telemetry::record_decode_truncation();
+                    extractor::clear_shared_candidates();
                     return decoded_chunks;
                 }
                 if seen.insert(hash_fast(decoded.data.as_bytes())) {
@@ -303,6 +314,8 @@ pub fn decode_chunk(
                             path = ?chunk.metadata.path,
                             "decode depth/size cap reached: chunk truncated to limit"
                         );
+                        crate::telemetry::record_decode_truncation();
+                        extractor::clear_shared_candidates();
                         return decoded_chunks;
                     }
 
@@ -358,6 +371,24 @@ pub(super) fn push_decoded_text_chunk_spliced(
     text: String,
     decoder_name: &str,
 ) {
+    push_decoded_text_chunk_spliced_at(
+        decoded_chunks,
+        chunk,
+        None,
+        original_encoded,
+        text,
+        decoder_name,
+    );
+}
+
+pub(super) fn push_decoded_text_chunk_spliced_at(
+    decoded_chunks: &mut Vec<Chunk>,
+    chunk: &Chunk,
+    original_span: Option<(usize, usize)>,
+    original_encoded: &str,
+    text: String,
+    decoder_name: &str,
+) {
     // Fast ASCII check: control chars are always in 0x00-0x1F range.
     // Byte-level iteration avoids UTF-8 decode overhead.
     let bytes = text.as_bytes();
@@ -378,12 +409,20 @@ pub(super) fn push_decoded_text_chunk_spliced(
     // `decoded_span` is the [start,end) byte range of the decoded text WITHIN
     // `payload` — the only genuinely new bytes a decode sub-chunk adds over its
     // already-scanned parent context. The self-contained passes restrict their
-    // rescan to a focus window around it (see `scan_fallback_patterns` focus).
+    // rescan to a focus window around it (see `scan_phase2_patterns` focus).
     let text_len = text.len();
     let (base_offset, payload, decoded_span) = if !original_encoded.is_empty()
         && chunk.data.len() <= MAX_SPLICE_PARENT_BYTES
     {
-        match splice_decoded_payload(chunk.data.as_str(), original_encoded, &text, decoder_name) {
+        let spliced = match original_span {
+            Some((start, end)) => {
+                splice_decoded_payload_at(chunk.data.as_ref(), start, end, &text, decoder_name)
+            }
+            None => {
+                splice_decoded_payload(chunk.data.as_ref(), original_encoded, &text, decoder_name)
+            }
+        };
+        match spliced {
             // The decoded credential now sits `win_start` bytes into the
             // windowed payload's parent slice, so shift base_offset to keep
             // the reported file offset anchored to the real position.
@@ -455,29 +494,6 @@ pub(super) fn push_decoded_text_chunk_spliced(
 /// anchor.
 const SPLICE_CONTEXT_WINDOW: usize = 512;
 
-/// Round `idx` down to the nearest UTF-8 char boundary in `s` (stable-Rust
-/// stand-in for the unstable `str::floor_char_boundary`). Used to snap the
-/// splice context window so it never slices a multi-byte codepoint.
-fn floor_char_boundary(s: &str, mut idx: usize) -> usize {
-    if idx >= s.len() {
-        return s.len();
-    }
-    while idx > 0 && !s.is_char_boundary(idx) {
-        idx -= 1;
-    }
-    idx
-}
-
-fn ceil_char_boundary(s: &str, mut idx: usize) -> usize {
-    if idx >= s.len() {
-        return s.len();
-    }
-    while idx < s.len() && !s.is_char_boundary(idx) {
-        idx += 1;
-    }
-    idx
-}
-
 /// Returns `(window_start, payload, decoded_at)` where `window_start` is the
 /// byte offset in `parent` at which `payload` begins (so the caller can keep the
 /// reported finding offset anchored to the real file position), and `decoded_at`
@@ -490,15 +506,35 @@ fn splice_decoded_payload(
     decoder_name: &str,
 ) -> Option<(usize, String, usize)> {
     let start = parent.find(original_encoded)?;
-    let mut end = start + original_encoded.len();
+    let end = start + original_encoded.len();
+
+    splice_decoded_payload_at(parent, start, end, decoded_text, decoder_name)
+}
+
+fn splice_decoded_payload_at(
+    parent: &str,
+    start: usize,
+    end: usize,
+    decoded_text: &str,
+    decoder_name: &str,
+) -> Option<(usize, String, usize)> {
+    if start > end || end > parent.len() {
+        return None;
+    }
+    if !parent.is_char_boundary(start) || !parent.is_char_boundary(end) {
+        return None;
+    }
+    let mut end = end;
 
     if decoder_name == "base64" {
         end = consume_adjacent_base64_padding(parent.as_bytes(), end);
     }
 
     // Keep only a bounded window of parent context around the encoded blob.
-    let win_start = floor_char_boundary(parent, start.saturating_sub(SPLICE_CONTEXT_WINDOW));
-    let win_end = ceil_char_boundary(parent, end.saturating_add(SPLICE_CONTEXT_WINDOW));
+    let win_start =
+        crate::engine::floor_char_boundary(parent, start.saturating_sub(SPLICE_CONTEXT_WINDOW));
+    let win_end =
+        crate::engine::ceil_char_boundary(parent, end.saturating_add(SPLICE_CONTEXT_WINDOW));
 
     let mut payload =
         String::with_capacity((win_end - win_start) - (end - start) + decoded_text.len());
@@ -527,6 +563,26 @@ fn consume_adjacent_base64_padding(parent: &[u8], start: usize) -> usize {
 pub(super) fn decode_candidates<F>(
     chunk: &Chunk,
     candidates: Vec<String>,
+    decode: F,
+    decoder_name: &str,
+) -> Vec<Chunk>
+where
+    F: FnMut(&str) -> Result<String, ()>,
+{
+    decode_candidate_spans(
+        chunk,
+        candidates
+            .into_iter()
+            .map(ExtractedValue::synthetic)
+            .collect(),
+        decode,
+        decoder_name,
+    )
+}
+
+pub(super) fn decode_candidate_spans<F>(
+    chunk: &Chunk,
+    candidates: Vec<ExtractedValue>,
     mut decode: F,
     decoder_name: &str,
 ) -> Vec<Chunk>
@@ -535,7 +591,7 @@ where
 {
     let mut decoded_chunks = Vec::new();
     for candidate in candidates {
-        if let Ok(text) = decode(&candidate) {
+        if let Ok(text) = decode(&candidate.value) {
             // Splice each decoded value back over its original
             // candidate string in the parent - keeps companion
             // context (assignment keys, format-specific anchors)
@@ -544,7 +600,32 @@ where
             push_decoded_text_chunk_spliced(
                 &mut decoded_chunks,
                 chunk,
-                &candidate,
+                &candidate.value,
+                text,
+                decoder_name,
+            );
+        }
+    }
+    decoded_chunks
+}
+
+pub(super) fn decode_candidate_spans_exact<F>(
+    chunk: &Chunk,
+    candidates: Vec<ExtractedValue>,
+    mut decode: F,
+    decoder_name: &str,
+) -> Vec<Chunk>
+where
+    F: FnMut(&str) -> Result<String, ()>,
+{
+    let mut decoded_chunks = Vec::new();
+    for candidate in candidates {
+        if let Ok(text) = decode(&candidate.value) {
+            push_decoded_text_chunk_spliced_at(
+                &mut decoded_chunks,
+                chunk,
+                candidate.span(),
+                &candidate.value,
                 text,
                 decoder_name,
             );
@@ -554,5 +635,7 @@ where
 }
 
 mod extractor;
-pub use extractor::extract_profile_dump;
-pub(super) use extractor::{extract_encoded_values, hash_fast};
+pub(crate) use extractor::extract_profile_dump;
+pub(super) use extractor::{
+    extract_encoded_value_spans, extract_encoded_values, hash_fast, ExtractedValue,
+};

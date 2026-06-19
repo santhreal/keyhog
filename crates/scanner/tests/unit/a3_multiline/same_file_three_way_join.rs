@@ -2,7 +2,7 @@
 //! Contract: cluster size 3 with same path and line distances < 100 produces
 //! 6 ordered pairwise joins (A+B, B+A, A+C, C+A, B+C, C+B).
 
-use keyhog_scanner::fragment_cache::{FragmentCache, SecretFragment};
+use keyhog_scanner::testing::fragment_cache::{FragmentCache, SecretFragment};
 use std::sync::Arc;
 use zeroize::Zeroizing;
 

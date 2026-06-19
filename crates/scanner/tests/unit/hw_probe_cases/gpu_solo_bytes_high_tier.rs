@@ -1,4 +1,5 @@
-use keyhog_scanner::hw_probe::{gpu_solo_bytes_for_tier, thresholds, GpuTier};
+use keyhog_scanner::hw_probe::testing::{gpu_solo_bytes_for_tier, GpuTier};
+use keyhog_scanner::testing::thresholds;
 #[test]
 fn gpu_solo_bytes_high_tier() {
     assert_eq!(

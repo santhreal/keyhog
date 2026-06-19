@@ -3,8 +3,9 @@
 use std::collections::{BinaryHeap, HashSet};
 use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
-use keyhog_core::config::ScanConfig;
+use keyhog_core::ScanConfig;
 use keyhog_core::SensitiveString;
 
 /// Explicit per-scanner performance-route tuning.
@@ -17,9 +18,10 @@ use keyhog_core::SensitiveString;
 /// environment.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct ScannerTuningConfig {
-    pub fallback_hs: Option<bool>,
+    pub phase2_hs: Option<bool>,
     pub hs_prefilter_max_len: Option<usize>,
-    pub fallback_anchor: Option<bool>,
+    pub hs_shard_target: Option<usize>,
+    pub phase2_anchor: Option<bool>,
     pub homoglyph_gate: Option<bool>,
     pub homoglyph_ascii_skip: Option<bool>,
     pub fallback_reverse: Option<bool>,
@@ -29,85 +31,136 @@ pub struct ScannerTuningConfig {
     pub confirmed_suffix_gate: Option<bool>,
     pub no_candidate_gate: Option<bool>,
     pub fallback_localizer: Option<bool>,
+    pub gpu_recall_floor: Option<bool>,
     pub gpu_moe_timeout_ms: Option<u64>,
 }
 
 impl ScannerTuningConfig {
-    pub const FALLBACK_HS_DEFAULT: bool = true;
-    pub const HS_PREFILTER_MAX_LEN_DEFAULT: usize = 4096;
-    pub const FALLBACK_ANCHOR_DEFAULT: bool = true;
-    pub const HOMOGLYPH_GATE_DEFAULT: bool = true;
-    pub const HOMOGLYPH_ASCII_SKIP_DEFAULT: bool = true;
-    pub const FALLBACK_REVERSE_DEFAULT: bool = false;
-    pub const PREFILTER_TRUNCATE_DEFAULT: bool = true;
-    pub const FALLBACK_PREFIX_GATE_DEFAULT: bool = false;
-    pub const DECODE_FOCUS_DEFAULT: bool = true;
-    pub const CONFIRMED_SUFFIX_GATE_DEFAULT: bool = true;
-    pub const NO_CANDIDATE_GATE_DEFAULT: bool = true;
-    pub const FALLBACK_LOCALIZER_DEFAULT: bool = false;
-    pub const GPU_MOE_TIMEOUT_MS_DEFAULT: u64 = 30_000;
+    pub(crate) const FALLBACK_HS_DEFAULT: bool = true;
+    pub(crate) const HS_PREFILTER_MAX_LEN_DEFAULT: usize = 4096;
+    pub(crate) const HS_SHARD_TARGET_DEFAULT: usize = 80;
+    pub(crate) const FALLBACK_ANCHOR_DEFAULT: bool = true;
+    pub(crate) const HOMOGLYPH_GATE_DEFAULT: bool = true;
+    pub(crate) const HOMOGLYPH_ASCII_SKIP_DEFAULT: bool = true;
+    pub(crate) const FALLBACK_REVERSE_DEFAULT: bool = false;
+    pub(crate) const PREFILTER_TRUNCATE_DEFAULT: bool = true;
+    pub(crate) const FALLBACK_PREFIX_GATE_DEFAULT: bool = false;
+    pub(crate) const DECODE_FOCUS_DEFAULT: bool = true;
+    pub(crate) const CONFIRMED_SUFFIX_GATE_DEFAULT: bool = true;
+    pub(crate) const NO_CANDIDATE_GATE_DEFAULT: bool = true;
+    pub(crate) const FALLBACK_LOCALIZER_DEFAULT: bool = false;
+    pub(crate) const GPU_RECALL_FLOOR_DEFAULT: bool = false;
+    pub(crate) const GPU_MOE_TIMEOUT_MS_DEFAULT: u64 = 30_000;
 
-    pub fn fallback_hs_effective(&self) -> bool {
-        self.fallback_hs.unwrap_or(Self::FALLBACK_HS_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
+    pub fn effective(&self) -> ResolvedScannerTuningConfig {
+        ResolvedScannerTuningConfig {
+            fallback_hs: self.fallback_hs_effective(),
+            hs_prefilter_max_len: self.hs_prefilter_max_len_effective(),
+            hs_shard_target: self.hs_shard_target_effective(),
+            fallback_anchor: self.fallback_anchor_effective(),
+            homoglyph_gate: self.homoglyph_gate_effective(),
+            homoglyph_ascii_skip: self.homoglyph_ascii_skip_effective(),
+            fallback_reverse: self.fallback_reverse_effective(),
+            prefilter_truncate: self.prefilter_truncate_effective(),
+            fallback_prefix_gate: self.fallback_prefix_gate_effective(),
+            decode_focus: self.decode_focus_effective(),
+            confirmed_suffix_gate: self.confirmed_suffix_gate_effective(),
+            no_candidate_gate: self.no_candidate_gate_effective(),
+            fallback_localizer: self.fallback_localizer_effective(),
+            gpu_recall_floor: self.gpu_recall_floor_effective(),
+            gpu_moe_timeout_ms: self.gpu_moe_timeout_ms_effective(),
+        }
     }
 
-    pub fn hs_prefilter_max_len_effective(&self) -> usize {
+    pub(crate) fn fallback_hs_effective(&self) -> bool {
+        self.phase2_hs.unwrap_or(Self::FALLBACK_HS_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
+    }
+
+    pub(crate) fn hs_prefilter_max_len_effective(&self) -> usize {
         self.hs_prefilter_max_len
             .unwrap_or(Self::HS_PREFILTER_MAX_LEN_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
     }
 
-    pub fn fallback_anchor_effective(&self) -> bool {
-        self.fallback_anchor
-            .unwrap_or(Self::FALLBACK_ANCHOR_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
+    pub(crate) fn hs_shard_target_effective(&self) -> usize {
+        self.hs_shard_target
+            .unwrap_or(Self::HS_SHARD_TARGET_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner compile tuning, recall-safe.
     }
 
-    pub fn homoglyph_gate_effective(&self) -> bool {
+    pub(crate) fn fallback_anchor_effective(&self) -> bool {
+        self.phase2_anchor.unwrap_or(Self::FALLBACK_ANCHOR_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
+    }
+
+    pub(crate) fn homoglyph_gate_effective(&self) -> bool {
         self.homoglyph_gate.unwrap_or(Self::HOMOGLYPH_GATE_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
     }
 
-    pub fn homoglyph_ascii_skip_effective(&self) -> bool {
+    pub(crate) fn homoglyph_ascii_skip_effective(&self) -> bool {
         self.homoglyph_ascii_skip
             .unwrap_or(Self::HOMOGLYPH_ASCII_SKIP_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
     }
 
-    pub fn fallback_reverse_effective(&self) -> bool {
+    pub(crate) fn fallback_reverse_effective(&self) -> bool {
         self.fallback_reverse
             .unwrap_or(Self::FALLBACK_REVERSE_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
     }
 
-    pub fn prefilter_truncate_effective(&self) -> bool {
+    pub(crate) fn prefilter_truncate_effective(&self) -> bool {
         self.prefilter_truncate
             .unwrap_or(Self::PREFILTER_TRUNCATE_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
     }
 
-    pub fn fallback_prefix_gate_effective(&self) -> bool {
+    pub(crate) fn fallback_prefix_gate_effective(&self) -> bool {
         self.fallback_prefix_gate
             .unwrap_or(Self::FALLBACK_PREFIX_GATE_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
     }
 
-    pub fn decode_focus_effective(&self) -> bool {
+    pub(crate) fn decode_focus_effective(&self) -> bool {
         self.decode_focus.unwrap_or(Self::DECODE_FOCUS_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
     }
 
-    pub fn confirmed_suffix_gate_effective(&self) -> bool {
+    pub(crate) fn confirmed_suffix_gate_effective(&self) -> bool {
         self.confirmed_suffix_gate
             .unwrap_or(Self::CONFIRMED_SUFFIX_GATE_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
     }
 
-    pub fn no_candidate_gate_effective(&self) -> bool {
+    pub(crate) fn no_candidate_gate_effective(&self) -> bool {
         self.no_candidate_gate
             .unwrap_or(Self::NO_CANDIDATE_GATE_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
     }
 
-    pub fn fallback_localizer_effective(&self) -> bool {
+    pub(crate) fn fallback_localizer_effective(&self) -> bool {
         self.fallback_localizer
             .unwrap_or(Self::FALLBACK_LOCALIZER_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
     }
 
-    pub fn gpu_moe_timeout_ms_effective(&self) -> u64 {
+    pub(crate) fn gpu_recall_floor_effective(&self) -> bool {
+        self.gpu_recall_floor
+            .unwrap_or(Self::GPU_RECALL_FLOOR_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
+    }
+
+    pub(crate) fn gpu_moe_timeout_ms_effective(&self) -> u64 {
         self.gpu_moe_timeout_ms
             .unwrap_or(Self::GPU_MOE_TIMEOUT_MS_DEFAULT) // LAW10: documented default; unset/absent config means shipped scanner tuning, recall-safe.
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ResolvedScannerTuningConfig {
+    pub fallback_hs: bool,
+    pub hs_prefilter_max_len: usize,
+    pub hs_shard_target: usize,
+    pub fallback_anchor: bool,
+    pub homoglyph_gate: bool,
+    pub homoglyph_ascii_skip: bool,
+    pub fallback_reverse: bool,
+    pub prefilter_truncate: bool,
+    pub fallback_prefix_gate: bool,
+    pub decode_focus: bool,
+    pub confirmed_suffix_gate: bool,
+    pub no_candidate_gate: bool,
+    pub fallback_localizer: bool,
+    pub gpu_recall_floor: bool,
+    pub gpu_moe_timeout_ms: u64,
 }
 
 /// Scanner-side configuration: the canonical [`ScanConfig`] — the single owned
@@ -145,6 +198,12 @@ pub struct ScannerConfig {
     /// Apply test/example path confidence and hard-suppression heuristics.
     /// The CLI disables this for `--no-suppress-test-fixtures`.
     pub penalize_test_paths: bool,
+    /// Optional caller-resolved per-chunk scan deadline in milliseconds.
+    pub per_chunk_timeout_ms: Option<u64>,
+    /// Emit the scanner-owned hierarchical profile report to stderr.
+    pub profile: bool,
+    /// Emit low-level phase timing traces for GPU/perf investigation.
+    pub perf_trace: bool,
 }
 
 impl Deref for ScannerConfig {
@@ -230,6 +289,11 @@ impl ScannerConfig {
         self
     }
 
+    pub(crate) fn per_chunk_deadline(&self) -> Option<Instant> {
+        self.per_chunk_timeout_ms
+            .map(|ms| Instant::now() + Duration::from_millis(ms))
+    }
+
     /// Clamp every float field into its valid range and replace any
     /// NaN with a safe default. A user-supplied
     /// `--min-confidence=-5.0` or a corrupt config TOML feeding
@@ -248,7 +312,7 @@ impl ScannerConfig {
         // NaN fallbacks READ FROM `ScanConfig::default()` rather than repeating
         // a literal, so a corrupt-config scrub can never fork from the shipped
         // floor (currently ml_weight 0.5, min_confidence 0.40) - one source.
-        let canon = keyhog_core::config::ScanConfig::default();
+        let canon = keyhog_core::ScanConfig::default();
         if !self.ml_weight.is_finite() {
             self.ml_weight = canon.ml_weight;
         } else {
@@ -268,7 +332,7 @@ impl ScannerConfig {
         }
         // Recursion-depth + chunk-size caps. The decode-depth ceiling is the
         // same contract used by CLI parsing and TOML validation.
-        let max_decode_depth = keyhog_core::config::max_decode_depth_limit();
+        let max_decode_depth = keyhog_core::max_decode_depth_limit();
         if self.max_decode_depth > max_decode_depth {
             self.max_decode_depth = max_decode_depth;
         }
@@ -277,6 +341,9 @@ impl ScannerConfig {
         }
         if self.max_matches_per_chunk == 0 {
             self.max_matches_per_chunk = 1000;
+        }
+        if self.per_chunk_timeout_ms == Some(0) {
+            self.per_chunk_timeout_ms = None;
         }
     }
 }
@@ -299,6 +366,9 @@ impl From<ScanConfig> for ScannerConfig {
             scan,
             multiline: crate::multiline::MultilineConfig::default(),
             penalize_test_paths: true,
+            per_chunk_timeout_ms: None,
+            profile: false,
+            perf_trace: false,
         };
         // Defensive clamp + NaN scrub on every user-influenced numeric field
         // (applied to the wrapped `ScanConfig` via `DerefMut`). Idempotent.
@@ -324,7 +394,7 @@ pub(crate) struct MlPendingMatch {
     pub(crate) ml_context: String,
     /// When true, the MoE score is AUTHORITATIVE for this candidate: the final
     /// confidence is the model score directly, NOT `max(heuristic, ml)`. Set for
-    /// entropy-fallback candidates, whose "heuristic" is bare entropy magnitude -
+    /// entropy phase-2 candidates, whose "heuristic" is bare entropy magnitude -
     /// exactly the signal that mislabels high-entropy non-secrets (FQDNs, git
     /// SHAs, base64 blobs) as findings. Flooring by that heuristic (as the
     /// detector path does, where the regex IS positive evidence) would defeat the
@@ -338,6 +408,7 @@ pub(crate) struct MlPendingMatch {
 /// Hot emitters can decide whether a candidate can enter the capped match heap
 /// before constructing the owned `RawMatch`, avoiding detector metadata
 /// refcount bumps for candidates that would be immediately discarded.
+#[cfg(any(feature = "entropy", feature = "simdsieve"))]
 pub(crate) struct RawMatchPriority<'a> {
     pub(crate) confidence: Option<f64>,
     pub(crate) severity: keyhog_core::Severity,
@@ -347,6 +418,7 @@ pub(crate) struct RawMatchPriority<'a> {
     pub(crate) line: Option<usize>,
 }
 
+#[cfg(any(feature = "entropy", feature = "simdsieve"))]
 impl RawMatchPriority<'_> {
     fn cmp_raw_match(&self, other: &keyhog_core::RawMatch) -> std::cmp::Ordering {
         let self_conf = self.confidence.unwrap_or(0.0); // LAW10: absent confidence => 0.0 for capped-heap ordering only; finding remains eligible
@@ -465,6 +537,7 @@ impl ScanState {
         }
     }
 
+    #[cfg(any(feature = "entropy", feature = "simdsieve"))]
     pub(crate) fn push_match_lazy<F>(
         &mut self,
         priority: RawMatchPriority<'_>,
@@ -546,104 +619,5 @@ impl ScanState {
             ))
         });
         matches
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use keyhog_core::{MatchLocation, RawMatch, Severity};
-    use std::collections::HashMap;
-
-    fn raw_match(confidence: f64, credential: &'static str, offset: usize) -> RawMatch {
-        RawMatch {
-            detector_id: Arc::from("gate"),
-            detector_name: Arc::from("Gate"),
-            service: Arc::from("test"),
-            severity: Severity::High,
-            credential: credential.into(),
-            credential_hash: [0u8; 32],
-            companions: HashMap::new(),
-            location: MatchLocation {
-                source: Arc::from("unit"),
-                file_path: Some(Arc::from("unit.env")),
-                line: Some(offset + 1),
-                offset,
-                commit: None,
-                author: None,
-                date: None,
-            },
-            entropy: None,
-            confidence: Some(confidence),
-        }
-    }
-
-    #[test]
-    fn push_match_keeps_highest_confidence_when_capped() {
-        let mut state = ScanState::default();
-        state.push_match(raw_match(0.10, "low", 1), 2);
-        state.push_match(raw_match(0.90, "high", 2), 2);
-        state.push_match(raw_match(0.50, "mid", 3), 2);
-
-        let kept: Vec<_> = state
-            .into_matches()
-            .into_iter()
-            .map(|m| m.credential.to_string())
-            .collect();
-        assert_eq!(kept, ["high", "mid"]);
-    }
-
-    #[test]
-    fn push_match_lazy_builds_only_for_admitted_candidates() {
-        let mut state = ScanState::default();
-        state.push_match(raw_match(0.90, "retained", 1), 1);
-
-        let mut rejected_built = false;
-        state.push_match_lazy(
-            RawMatchPriority {
-                confidence: Some(0.10),
-                severity: Severity::High,
-                detector_id: "gate",
-                credential: "rejected",
-                offset: 2,
-                line: Some(2),
-            },
-            1,
-            |_| {
-                rejected_built = true;
-                raw_match(0.10, "rejected", 2)
-            },
-        );
-        assert!(
-            !rejected_built,
-            "lazy admission must not build a RawMatch for rejected candidates"
-        );
-
-        let mut admitted_built = false;
-        state.push_match_lazy(
-            RawMatchPriority {
-                confidence: Some(0.99),
-                severity: Severity::High,
-                detector_id: "gate",
-                credential: "admitted",
-                offset: 3,
-                line: Some(3),
-            },
-            1,
-            |_| {
-                admitted_built = true;
-                raw_match(0.99, "admitted", 3)
-            },
-        );
-        assert!(
-            admitted_built,
-            "lazy admission must build exactly when the candidate enters the heap"
-        );
-        let kept: Vec<_> = state
-            .into_matches()
-            .into_iter()
-            .map(|m| m.credential.to_string())
-            .collect();
-        assert_eq!(kept, ["admitted"]);
     }
 }

@@ -1,7 +1,8 @@
 //! Post-match processing: raw match construction and placeholder suppression.
 
+#[cfg(feature = "entropy")]
+pub(crate) use crate::suppression::{contains_uuid_v4_substring, looks_like_email_address};
 pub(crate) use crate::suppression::{
-    contains_uuid_v4_substring, looks_like_email_address,
     looks_like_punctuation_decorated_identifier, looks_like_pure_identifier,
     looks_like_regex_literal_tail, looks_like_scheme_prefixed_uri, looks_like_url_or_path_segment,
     looks_like_vendored_minified_path, looks_like_word_separated_identifier,
@@ -11,10 +12,14 @@ pub(crate) use crate::suppression::{
 // build without an #[allow] evasion.
 #[cfg(feature = "simdsieve")]
 pub(crate) use crate::suppression::looks_like_secret_scanner_source;
-pub use crate::suppression::{
-    detector_weak_anchor, should_suppress_known_example_credential,
-    should_suppress_known_example_credential_with_source, should_suppress_named_detector_finding,
-    should_suppress_named_detector_finding_weak,
+#[cfg(any(feature = "entropy", feature = "simdsieve", test))]
+pub(crate) use crate::suppression::should_suppress_known_example_credential_with_source;
+pub(crate) use crate::suppression::{
+    detector_weak_anchor, should_suppress_named_detector_finding_weak,
+};
+#[cfg(test)]
+pub(crate) use crate::suppression::{
+    should_suppress_known_example_credential, should_suppress_named_detector_finding,
 };
 
 use crate::types::*;
@@ -23,7 +28,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 #[allow(clippy::too_many_arguments)]
-pub fn build_raw_match(
+pub(crate) fn build_raw_match(
     detector: &keyhog_core::DetectorSpec,
     // Pre-interned (detector_id, detector_name, service) for this detector,
     // cloned by index from `CompiledScanner::metadata_by_index` instead of

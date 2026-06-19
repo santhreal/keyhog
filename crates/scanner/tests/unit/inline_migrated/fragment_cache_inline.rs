@@ -1,7 +1,7 @@
-//! Migrated from src/multiline/fragment_cache.rs — cross-file/window
+//! Migrated from src/fragment_cache.rs — cross-file/window
 //! reassembly gates and the shard-hash drift invariant (KH-GAP-004).
 
-use keyhog_scanner::multiline::fragment_cache::{
+use keyhog_scanner::testing::fragment_cache::{
     shard_index_drift_probe, FragmentCache, SecretFragment,
 };
 use std::sync::Arc;

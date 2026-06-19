@@ -3,7 +3,7 @@
 //! anchor (first) fragment's path and line, allowing downstream attribution
 //! to the file that actually supplied the prefix part of the credential.
 
-use keyhog_scanner::fragment_cache::{FragmentCache, SecretFragment};
+use keyhog_scanner::testing::fragment_cache::{FragmentCache, SecretFragment};
 use std::sync::Arc;
 use zeroize::Zeroizing;
 

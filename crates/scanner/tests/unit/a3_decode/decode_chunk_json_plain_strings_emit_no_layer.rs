@@ -1,7 +1,7 @@
 //! Plain JSON strings do not need a decode layer.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn json_plain_strings_emit_no_decoded_layer() {

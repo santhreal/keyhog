@@ -1,7 +1,7 @@
 //! Invalid JSON `\u` escapes must not produce decoded chunks.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn json_unicode_escape_rejects_invalid_hex() {

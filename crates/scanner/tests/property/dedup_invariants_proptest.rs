@@ -5,14 +5,12 @@
 //! 3. Windowed Match Deduplication (sliding window Seen LRU eviction cache, global offset & line mapping).
 //! 4. Seam Boundary Match Deduplication (cross-chunk boundary seam reassembly & defensive deduplication).
 
-use keyhog_core::{Chunk, ChunkMetadata, RawMatch, MatchLocation, Severity};
-use keyhog_scanner::types::ScanState;
-use keyhog_scanner::static_intern::StaticInterner;
-use keyhog_scanner::engine::{
-    floor_char_boundary, line_number_for_offset, scan_chunk_boundaries,
-};
+use crate::engine::scan_chunk_boundaries;
+use keyhog_core::{Chunk, ChunkMetadata, MatchLocation, RawMatch, Severity};
+use keyhog_scanner::testing::scan_state_drain_with_static_intern;
+use keyhog_scanner::testing::{floor_char_boundary, line_number_for_offset};
 use proptest::prelude::*;
-use std::collections::{HashSet, VecDeque, HashMap};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::Arc;
 
 // --- Helper Functions for In-Place Coalescing (duplicated from GPU scanning modules) ---
@@ -64,7 +62,7 @@ fn arb_raw_match() -> impl Strategy<Value = RawMatch> {
             detector_name: Arc::from(det.as_str()),
             service: Arc::from("mock_service"),
             severity: Severity::Medium,
-            credential: Arc::from(cred.as_str()),
+            credential: keyhog_core::SensitiveString::from(cred.as_str()),
             credential_hash: [0u8; 32],
             companions: HashMap::new(),
             location: MatchLocation {
@@ -83,9 +81,8 @@ fn arb_raw_match() -> impl Strategy<Value = RawMatch> {
 
 /// Strategy to generate a random LiteralMatch for span coalescing.
 fn arb_literal_match() -> impl Strategy<Value = vyre_libs::scan::LiteralMatch> {
-    (0..10u32, 0..10_000u32, 1..50u32).prop_map(|(pid, start, len)| {
-        vyre_libs::scan::LiteralMatch::new(pid, start, start + len)
-    })
+    (0..10u32, 0..10_000u32, 1..50u32)
+        .prop_map(|(pid, start, len)| vyre_libs::scan::LiteralMatch::new(pid, start, start + len))
 }
 
 proptest! {
@@ -96,7 +93,7 @@ proptest! {
     // =========================================================================
     #[test]
     fn test_inplace_span_coalescing(
-        mut input_matches in prop::collection::vec(arb_literal_match(), 0..100)
+        input_matches in prop::collection::vec(arb_literal_match(), 0..100)
     ) {
         // Run our target coalescing logic
         let mut coalesced = input_matches.clone();
@@ -158,15 +155,9 @@ proptest! {
         input_matches in prop::collection::vec(arb_raw_match(), 0..100)
     ) {
         let limit = 200; // Large enough capacity to not drop any by limit
-        let interner = Arc::new(StaticInterner::default());
-        let mut state = ScanState::with_static_intern(interner);
-
-        for m in &input_matches {
-            state.push_match(m.clone(), limit);
-        }
 
         // Drain matches
-        let drained = state.into_matches();
+        let drained = scan_state_drain_with_static_intern(input_matches.clone(), limit);
 
         // Invariant 2A: Output must be sorted descending by confidence
         for idx in 1..drained.len() {
@@ -366,7 +357,7 @@ fn test_boundary_defensive_dedup_prevents_duplicate_reports() {
         detector_name: Arc::from("dummy_detector"),
         service: Arc::from("dummy_service"),
         severity: Severity::Medium,
-        credential: Arc::from("mock_credential"),
+        credential: keyhog_core::SensitiveString::from("mock_credential"),
         credential_hash: [0u8; 32],
         companions: HashMap::new(),
         location: MatchLocation {

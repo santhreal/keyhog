@@ -1,6 +1,6 @@
 //! KH-GAP-016: uncalibrated detectors must not halve confidence on fresh install.
 
-use keyhog_scanner::confidence::apply_calibration_multiplier;
+use keyhog_scanner::testing::confidence::apply_calibration_multiplier;
 
 #[test]
 fn confidence_calibration_uncalibrated_passthrough() {

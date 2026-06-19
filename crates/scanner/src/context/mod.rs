@@ -8,15 +8,17 @@
 mod documentation;
 mod false_positive;
 mod inference;
+mod placeholder;
 
-pub use documentation::documentation_line_flags;
-pub use false_positive::{
-    is_false_positive_context, is_false_positive_context_with_path, is_false_positive_match_context,
-};
-pub use inference::{
-    infer_context, infer_context_with_documentation, infer_context_with_regions,
-    is_known_example_credential, is_sequential_placeholder, ContextRegions,
-};
+pub(crate) use documentation::documentation_line_flags;
+#[cfg(test)]
+pub(crate) use false_positive::parse_disclaimer_phrases;
+pub(crate) use false_positive::{is_false_positive_context, is_false_positive_match_context};
+pub use inference::infer_context;
+pub(crate) use inference::infer_context_with_documentation;
+pub(crate) use placeholder::is_known_example_credential;
+#[cfg(test)]
+pub(crate) use placeholder::is_sequential_placeholder;
 
 const ASSIGNMENT_CONFIDENCE_MULTIPLIER: f64 = 1.0;
 const STRING_LITERAL_CONFIDENCE_MULTIPLIER: f64 = 0.9;

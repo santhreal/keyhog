@@ -1,11 +1,9 @@
 //! `process_match`: the per-match post-processing chain.
 //!
-//! Extracted from `scan.rs` to keep both files under the 500-line cap.
-//! Runs the suppression chain, companion-required gate, entropy + camel-
-//! shape filters for generic detectors, checksum validation, and finally
-//! ML / heuristic scoring. Outputs either a `Final` finding into
-//! `scan_state.matches` or queues an `MlPendingMatch` for the post-scan
-//! ML batch.
+//! Runs the suppression chain, companion-required gate, entropy + camel-shape
+//! filters for generic detectors, checksum validation, and finally ML /
+//! heuristic scoring. Outputs either a `Final` finding into `scan_state.matches`
+//! or queues an `MlPendingMatch` for the post-scan ML batch.
 
 use super::scan_filters::*;
 use super::CompiledScanner;
@@ -29,15 +27,15 @@ impl CompiledScanner {
         chunk: &Chunk,
         scan_state: &mut ScanState,
         credential: &str,
-        match_start: usize,
-        match_end: usize,
+        credential_start: usize,
+        credential_end: usize,
         base_line: usize,
         base_offset: usize,
         keyword_nearby: bool,
         sensitive_file: bool,
     ) {
         let (credential, match_end) =
-            extend_known_prefix_credential(data, credential, match_start, match_end);
+            extend_known_prefix_credential(data, credential, credential_end);
         if detector.id == "aws-access-key" && credential.len() != 20 {
             return;
         }
@@ -49,8 +47,8 @@ impl CompiledScanner {
                 }
             }
         }
-        let line = match_line_number(preprocessed, line_offsets, match_start);
-        if is_within_hex_context(data, match_start, match_end) {
+        let line = match_line_number(preprocessed, line_offsets, credential_start);
+        if is_within_hex_context(data, credential_start, match_end) {
             crate::telemetry::record_shape_suppression(
                 chunk.metadata.path.as_deref(),
                 credential,
@@ -68,7 +66,7 @@ impl CompiledScanner {
         // substring). Real 32-hex keys (Twilio auth token, Datadog, Algolia,
         // Azure subscription) are delimiter-bounded (before==after==0) and are
         // never suppressed here, so recall is preserved.
-        if is_hex_digest_fragment(data, match_start, match_end, credential) {
+        if is_hex_digest_fragment(data, credential_start, match_end, credential) {
             crate::telemetry::record_shape_suppression(
                 chunk.metadata.path.as_deref(),
                 credential,
@@ -97,7 +95,7 @@ impl CompiledScanner {
             chunk.metadata.path.as_deref(),
         ) || context::is_false_positive_match_context(
             data,
-            match_start,
+            credential_start,
             chunk.metadata.path.as_deref(),
         ) {
             crate::telemetry::record_shape_suppression(
@@ -114,7 +112,20 @@ impl CompiledScanner {
             chunk.metadata.path.as_deref(),
             documentation_lines,
         );
-        let weak_anchor = crate::pipeline::detector_weak_anchor(detector);
+        // Per-detector constant, resolved once at scanner construction
+        // (`detector_weak_anchor_by_index`) instead of re-running
+        // `detector_weak_anchor`'s regex-string scan for every surviving
+        // candidate. `.get(...).copied().unwrap_or_else(...)` falls back to the
+        // live computation only if the index is somehow out of range (it never
+        // is — the vec is index-parallel with `detectors` — but the fallback
+        // keeps this byte-identical to the prior inline call rather than
+        // panicking on a malformed index, matching the resilience the extract
+        // path already applies to `detector_index`).
+        let weak_anchor = self
+            .detector_weak_anchor_by_index
+            .get(entry.detector_index)
+            .copied()
+            .unwrap_or_else(|| crate::pipeline::detector_weak_anchor(detector)); // LAW10: bounds-checked lookup; out-of-range => documented default (total fn), recall-safe
         if crate::pipeline::should_suppress_named_detector_finding_weak(
             credential,
             chunk.metadata.path.as_deref(),
@@ -267,7 +278,7 @@ impl CompiledScanner {
                     chunk,
                     credential,
                     companions,
-                    match_start + base_offset,
+                    credential_start + base_offset,
                     line + base_line,
                     entropy,
                     confidence,
@@ -290,7 +301,7 @@ impl CompiledScanner {
                     chunk,
                     credential,
                     companions,
-                    match_start + base_offset,
+                    credential_start + base_offset,
                     line + base_line,
                     entropy,
                     heuristic_conf,

@@ -35,6 +35,8 @@ mod backend;
 
 mod env;
 pub use env::*;
+mod self_test;
+pub use self_test::*;
 
 /// Score multiple (credential, context) pairs in a single batch.
 ///
@@ -64,15 +66,11 @@ pub use env::*;
 static MOE_FEATURE_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static MOE_SCORE_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// Gated by the UNIFIED `KEYHOG_PROFILE=1` switch (dumped as part of
-/// [`crate::engine::profile_dump`]); the legacy `KEYHOG_PROFILE_MLBATCH=1` is
-/// still honoured for the older standalone workflow.
+/// Gated by the unified scanner profile switch and dumped as part of
+/// [`crate::engine::profile_dump`].
+#[cfg(feature = "ml")]
 fn ml_split_prof_enabled() -> bool {
-    static EN: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *EN.get_or_init(|| {
-        crate::engine::profile::enabled()
-            || std::env::var("KEYHOG_PROFILE_MLBATCH").as_deref() == Ok("1")
-    })
+    crate::engine::profile::enabled()
 }
 
 /// Print + reset the feature-vs-score split. Folded into the unified profiler:
@@ -91,7 +89,8 @@ only this fraction is GPU-offloadable) ===",
     );
 }
 
-pub fn batch_ml_inference(
+#[cfg(test)]
+pub(crate) fn batch_ml_inference(
     candidates: &[(&str, &str)],
     config: &crate::types::ScannerConfig,
 ) -> Vec<f64> {
@@ -104,6 +103,7 @@ pub fn batch_ml_inference(
     )
 }
 
+#[cfg(any(feature = "ml", test))]
 pub(crate) fn batch_ml_inference_with_timeout(
     candidates: &[(&str, &str)],
     config: &crate::types::ScannerConfig,
@@ -116,9 +116,11 @@ pub(crate) fn batch_ml_inference_with_timeout(
     #[cfg(feature = "ml")]
     {
         use rayon::prelude::*;
+        #[cfg(not(feature = "gpu"))]
+        let _ = gpu_moe_timeout; // LAW10: cfg-only GPU timeout marker; ML CPU scoring ignores GPU dispatch timeout by construction
         let prof = ml_split_prof_enabled();
 
-        // Measurement (`KEYHOG_PROFILE_MLBATCH=1`, regime B): batch sizes average
+        // Measurement (`keyhog scan --profile`, regime B): batch sizes average
         // 0.5 candidates/call and 90% of calls are empty; only 0.2% reach the
         // GPU's 64-candidate threshold. `batch_ml_inference` runs INSIDE the
         // already-parallel coalesced/per-chunk scan (rayon outer loop), so a
@@ -268,236 +270,4 @@ pub(crate) fn gpu_runtime_identity() -> Option<String> {
     {
         None
     }
-}
-
-/// Result from an explicit GPU adapter and dispatch self-test.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct GpuSelfTest {
-    /// Human-readable adapter name reported by wgpu.
-    pub adapter_name: String,
-    /// Approximate storage-buffer capability in MiB when available.
-    pub vram_mb: Option<u64>,
-    /// Number of scores produced by the compute dispatch.
-    pub scores: usize,
-}
-
-/// Result from an explicit vyre GPU scanner self-test.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct VyreGpuSelfTest {
-    /// Number of direct GPU matches produced by `GpuLiteralSet::scan`.
-    pub direct_matches: usize,
-    /// Number of matches produced by one coalesced scanner GPU dispatch.
-    pub coalesced_matches: usize,
-}
-
-#[cfg(feature = "gpu")]
-static GPU_SELF_TEST_CACHE: std::sync::OnceLock<std::result::Result<GpuSelfTest, String>> =
-    std::sync::OnceLock::new();
-
-/// Force a GPU compute dispatch and validate the returned scores.
-///
-/// This is stricter than [`gpu_available`]: it proves that a non-fallback wgpu
-/// adapter initialized and that the MoE compute shader can run at least one
-/// production-sized batch.
-pub fn gpu_self_test() -> Result<GpuSelfTest, String> {
-    #[cfg(not(feature = "gpu"))]
-    {
-        return Err(
-            "GPU support not compiled in (lean ci build). Rebuild with `--features gpu` \
-             (or the default profile) to exercise the wgpu/CUDA path."
-                .to_string(),
-        );
-    }
-    #[cfg(feature = "gpu")]
-    GPU_SELF_TEST_CACHE
-        .get_or_init(|| {
-            const SELF_TEST_BATCH: usize = 64;
-
-            let gpu = backend::get_gpu().ok_or_else(|| {
-                "GPU adapter unavailable; install or enable a non-software GPU adapter and driver"
-                    .to_string()
-            })?;
-
-            let features = [[0.0_f32; crate::ml_scorer::NUM_FEATURES]; SELF_TEST_BATCH];
-            let scores = backend::batch_score_features(
-                &features,
-                std::time::Duration::from_millis(
-                    crate::scanner_config::ScannerTuningConfig::GPU_MOE_TIMEOUT_MS_DEFAULT,
-                ),
-            )
-            .ok_or_else(|| "GPU dispatch produced no result".to_string())?;
-
-            if scores.len() != SELF_TEST_BATCH {
-                return Err(format!(
-                    "GPU dispatch returned {} scores for {SELF_TEST_BATCH} inputs",
-                    scores.len()
-                ));
-            }
-
-            if let Some((index, score)) = scores
-                .iter()
-                .enumerate()
-                .find(|(_, score)| !score.is_finite() || !(0.0..=1.0).contains(*score))
-            {
-                return Err(format!(
-                    "GPU dispatch returned invalid score {score} at index {index}"
-                ));
-            }
-
-            Ok(GpuSelfTest {
-                adapter_name: gpu.gpu_name().to_string(),
-                vram_mb: gpu.vram_mb(),
-                scores: scores.len(),
-            })
-        })
-        .clone()
-}
-
-/// Force the vyre GPU scanner and coalesced scanner paths.
-///
-/// Proves the scanner-side GPU dependency is available independently from
-/// Keyhog's MoE GPU scorer. Both `direct_matches` and `coalesced_matches` are
-/// populated from real GPU scans - see audit release-2026-04-26 for the prior
-/// rigged-test bug where `coalesced_matches` was hardcoded.
-#[cfg(not(feature = "gpu"))]
-pub fn vyre_gpu_self_test() -> Result<VyreGpuSelfTest, String> {
-    Err(
-        "vyre GPU self-test not available in the lean ci build (no wgpu driver compiled in). \
-         Rebuild with `--features gpu`."
-            .to_string(),
-    )
-}
-
-#[cfg(feature = "gpu")]
-pub fn vyre_gpu_self_test() -> Result<VyreGpuSelfTest, String> {
-    use vyre_driver_wgpu::WgpuBackend;
-    use vyre_libs::scan::GpuLiteralSet;
-
-    let patterns: Vec<Vec<u8>> = vec![b"needle".to_vec()];
-    let pattern_refs: Vec<&[u8]> = patterns.iter().map(Vec::as_slice).collect();
-
-    let backend = WgpuBackend::shared().map_err(|e| format!("failed to init wgpu backend: {e}"))?;
-    let scanner = GpuLiteralSet::compile(&pattern_refs);
-
-    let direct = scanner
-        .scan(backend.as_ref(), b"needle", 100)
-        .map_err(|error| format!("vyre direct GPU scan failed: {error}"))?;
-    if direct.len() != 1 || direct[0].pattern_id != 0 || direct[0].start != 0 {
-        return Err(format!(
-            "vyre direct GPU scan returned unexpected matches: {direct:?}"
-        ));
-    }
-
-    // Coalesced: 100 needles concatenated; expect 100 real matches.
-    let items: Vec<Vec<u8>> = (0..100)
-        .map(|index| format!("id-{index:03}-needle").into_bytes())
-        .collect();
-    let mut buffer = Vec::with_capacity(items.iter().map(Vec::len).sum());
-    for item in &items {
-        buffer.extend_from_slice(item);
-    }
-
-    let coalesced = scanner
-        .scan(backend.as_ref(), &buffer, 10_000)
-        .map_err(|error| format!("vyre coalesced GPU scan failed: {error}"))?;
-
-    Ok(VyreGpuSelfTest {
-        direct_matches: direct.len(),
-        coalesced_matches: coalesced.len(),
-    })
-}
-
-/// Status report from the AC-kernel GPU self-test. Returned by
-/// [`vyre_ac_kernel_self_test`] so the diagnostic CLI can display
-/// the active backend and match count rather than just PASS/FAIL.
-pub struct VyreAcKernelSelfTest {
-    /// Number of GPU phase-1 match triples emitted.
-    pub matches: usize,
-    /// `VyreBackend::id()` of the backend that ran the test, e.g.
-    /// `"cuda"` or `"wgpu"`. Lets the caller surface "PASS via cuda"
-    /// vs "PASS via wgpu" so an operator can tell which driver was
-    /// actually exercised.
-    pub backend_id: &'static str,
-}
-
-/// Build a minimal one-detector `CompiledScanner` and dispatch a
-/// scan through the AC-kernel GPU phase-1 path. This is the GPU
-/// scan path the production flow uses (the literal-set program is
-/// rejected by vyre's canonical pre-emit lowering until the IR
-/// gap is closed). A PASS here means the GPU scan path is healthy
-/// end to end on this host: device acquired, AC program compiled
-/// and lowered successfully, dispatch executed, hits returned to
-/// the host.
-///
-/// # Errors
-///
-/// Returns `Err` when GPU acquisition didn't happen during
-/// compile, when phase-1 returned the CPU-degrade variant, or when
-/// the dispatch returned zero hits for the planted literal.
-#[cfg(not(feature = "gpu"))]
-pub fn vyre_ac_kernel_self_test() -> Result<VyreAcKernelSelfTest, String> {
-    Err(
-        "vyre AC-kernel self-test not available in the lean ci build. \
-         Rebuild with `--features gpu` to exercise the GPU AC phase-1 path."
-            .to_string(),
-    )
-}
-
-#[cfg(feature = "gpu")]
-pub fn vyre_ac_kernel_self_test() -> Result<VyreAcKernelSelfTest, String> {
-    use crate::engine::CompiledScanner;
-    use crate::hw_probe::ScanBackend;
-    use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
-
-    let detector = DetectorSpec {
-        tests: Vec::new(),
-        id: "kh-gpu-self-test".into(),
-        name: "GPU self-test".into(),
-        service: "test".into(),
-        severity: Severity::Low,
-        patterns: vec![PatternSpec {
-            regex: "needle".into(),
-            description: None,
-            group: None,
-            client_safe: false,
-        }],
-        keywords: vec!["needle".into()],
-        min_confidence: None,
-        ..Default::default()
-    };
-
-    let scanner = CompiledScanner::compile(vec![detector])
-        .map_err(|e| format!("CompiledScanner::compile failed during self-test: {e}"))?;
-
-    let backend_id = scanner
-        .gpu_backend_label()
-        .ok_or_else(|| "no GPU backend acquired during self-test compile".to_string())?;
-
-    let chunk = Chunk {
-        data: "the quick brown needle jumps over the lazy fox".into(),
-        metadata: ChunkMetadata::default(),
-    };
-
-    // Drive the LIVE on-GPU detection path: the batched-DFA megakernel (the
-    // single GPU engine; the old GpuLiteralSet/AC two-phase path was retired).
-    // It degrades LOUDLY to SIMD/CPU on any GPU failure, recording the reason —
-    // so a degrade is distinguishable here from a genuine GPU run.
-    let results = scanner.scan_chunks_with_backend(&[chunk], ScanBackend::Gpu);
-    if let Some(detail) = scanner.last_gpu_degrade_reason() {
-        return Err(format!(
-            "megakernel degraded to SIMD/CPU at runtime despite an acquired GPU stack: {detail}"
-        ));
-    }
-    let total: usize = results.iter().map(Vec::len).sum();
-    if total == 0 {
-        return Err(
-            "megakernel ran on GPU but reported zero matches for the planted 'needle' literal. \
-Indicates a catalog-lowering regression or a dispatch/workgroup-size mismatch."
-                .to_string(),
-        );
-    }
-    Ok(VyreAcKernelSelfTest {
-        matches: total,
-        backend_id,
-    })
 }

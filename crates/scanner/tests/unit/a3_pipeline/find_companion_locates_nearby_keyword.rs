@@ -1,4 +1,4 @@
-use keyhog_scanner::find_companion;
+use keyhog_scanner::testing::find_companion;
 use keyhog_scanner::types::CompiledCompanion;
 use keyhog_scanner::types::ScannerPreprocessedText;
 

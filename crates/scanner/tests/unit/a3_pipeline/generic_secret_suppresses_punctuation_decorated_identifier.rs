@@ -1,5 +1,5 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::pipeline::should_suppress_named_detector_finding;
+use keyhog_scanner::testing::should_suppress_named_detector_finding;
 
 #[test]
 fn cli_flag_pointer_ref_sql_bind_label_suppressed() {

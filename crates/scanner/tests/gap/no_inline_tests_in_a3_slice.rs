@@ -16,10 +16,7 @@ fn scan_rust_sources(dir: &Path, offenders: &mut Vec<PathBuf>) {
         }
         let content = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read {} failed: {e}", path.display()));
-        if content
-            .lines()
-            .any(|line| line.trim().starts_with("#[cfg(test)]"))
-        {
+        if super::inline_gate::contains_inline_test_module_or_function(&content) {
             offenders.push(path);
         }
     }

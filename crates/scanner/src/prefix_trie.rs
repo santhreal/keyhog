@@ -28,12 +28,12 @@ struct TrieNode {
 /// # Examples
 ///
 /// ```rust
-/// use keyhog_scanner::prefix_trie::build_propagation_table;
+/// use keyhog_scanner::testing::build_propagation_table;
 ///
 /// let table = build_propagation_table(&["gh".into(), "ghp_".into()]);
 /// assert_eq!(table.len(), 2);
 /// ```
-pub fn build_propagation_table(prefixes: &[String]) -> Vec<Vec<usize>> {
+pub(crate) fn build_propagation_table(prefixes: &[String]) -> Vec<Vec<usize>> {
     let mut root = TrieNode::default();
     for (idx, prefix) in prefixes.iter().enumerate() {
         let mut node = &mut root;

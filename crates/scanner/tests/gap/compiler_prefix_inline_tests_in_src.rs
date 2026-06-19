@@ -7,7 +7,7 @@ fn compiler_prefix_inline_tests_in_src() {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/compiler/compiler_prefix.rs");
     let src = std::fs::read_to_string(&path).expect("read compiler_prefix.rs");
     assert!(
-        !src.contains("#[cfg(test)]"),
+        !super::inline_gate::contains_inline_test_module_or_function(&src),
         "inner literal corpus tests must migrate to tests/unit/"
     );
 }

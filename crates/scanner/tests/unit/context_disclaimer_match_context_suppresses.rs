@@ -1,6 +1,6 @@
 //! Disclaimer comments in match window suppress via match context.
 
-use keyhog_scanner::context::is_false_positive_match_context;
+use keyhog_scanner::testing::context::is_false_positive_match_context;
 
 #[test]
 fn context_disclaimer_match_context_suppresses() {

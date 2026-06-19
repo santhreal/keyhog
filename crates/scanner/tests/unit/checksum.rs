@@ -1,5 +1,5 @@
 use base64::Engine;
-use keyhog_scanner::checksum::*;
+use keyhog_scanner::testing::checksum::*;
 
 #[test]
 fn github_classic_valid() {

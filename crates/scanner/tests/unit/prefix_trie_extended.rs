@@ -3,7 +3,7 @@
 /// Covers: empty input, single prefix, disjoint prefixes, prefix-of-prefix
 /// (superstring propagation), multiple prefixes sharing a common stem, and
 /// large input stability.
-use keyhog_scanner::prefix_trie::build_propagation_table;
+use keyhog_scanner::testing::build_propagation_table;
 
 #[test]
 fn empty_prefixes_returns_empty_table() {

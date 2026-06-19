@@ -1,7 +1,7 @@
 //! Regression: single-line input with trailing newline must not duplicate text past EOF.
 
-use keyhog_scanner::fragment_cache::FragmentCache;
-use keyhog_scanner::multiline::{preprocess_multiline, MultilineConfig};
+use keyhog_scanner::testing::fragment_cache::FragmentCache;
+use keyhog_scanner::testing::multiline::{preprocess_multiline, MultilineConfig};
 
 #[test]
 fn single_line_trailing_newline_no_phantom_append() {

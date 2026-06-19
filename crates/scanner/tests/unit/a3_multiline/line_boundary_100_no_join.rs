@@ -2,7 +2,7 @@
 //! Contract: same-path fragments with |f1.line - f2.line| >= 100 must NOT reassemble
 //! since the contract is (f1.line as isize - f2.line as isize).abs() < 100 (strict less-than).
 
-use keyhog_scanner::fragment_cache::{FragmentCache, SecretFragment};
+use keyhog_scanner::testing::fragment_cache::{FragmentCache, SecretFragment};
 use std::sync::Arc;
 use zeroize::Zeroizing;
 

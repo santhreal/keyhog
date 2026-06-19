@@ -1,5 +1,5 @@
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::pipeline::normalize_scannable_chunk;
+use keyhog_scanner::testing::normalize_scannable_chunk;
 
 #[test]
 fn evasion_char_forces_owned_chunk_allocation() {

@@ -11,7 +11,7 @@ fn benchmark_memory_detector_loading(c: &mut Criterion) {
         b.iter(|| {
             let scanner =
                 CompiledScanner::compile(black_box(detectors.clone())).expect("Failed to compile");
-            black_box(scanner.detector_count());
+            black_box(scanner.runtime_status().detector_count);
         });
     });
 

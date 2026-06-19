@@ -1,4 +1,6 @@
-use super::pipeline::{extract_encoded_values, push_decoded_text_chunk_spliced};
+use super::pipeline::{
+    extract_encoded_value_spans, push_decoded_text_chunk_spliced_at, ExtractedValue,
+};
 use super::{Decoder, EncodedString};
 use keyhog_core::Chunk;
 
@@ -13,16 +15,17 @@ impl Decoder for HexDecoder {
         let mut decoded_chunks = Vec::new();
         // Floor lowered from 32→16 hex chars (8 decoded bytes) so
         // short API keys encode-through in `encoding_explosion_runner`.
-        for hex_match in find_hex_strings(&chunk.data, 16) {
+        for hex_match in find_hex_string_spans(&chunk.data, 16) {
             let cleaned: String = hex_match.value.chars().filter(|c| *c != '_').collect();
             if let Ok(decoded) = hex_decode(&cleaned) {
                 if let Ok(text) = String::from_utf8(decoded) {
                     // Splice over the *original* encoded blob (with `_` if present)
                     // so companion context survives - passing the cleaned form
                     // misses the parent substring and drops the anchor.
-                    push_decoded_text_chunk_spliced(
+                    push_decoded_text_chunk_spliced_at(
                         &mut decoded_chunks,
                         chunk,
+                        hex_match.span(),
                         &hex_match.value,
                         text,
                         self.name(),
@@ -35,18 +38,27 @@ impl Decoder for HexDecoder {
 }
 
 pub fn find_hex_strings(text: &str, min_length: usize) -> Vec<EncodedString> {
+    find_hex_string_spans(text, min_length)
+        .into_iter()
+        .map(|candidate| EncodedString {
+            value: candidate.value,
+        })
+        .collect()
+}
+
+fn find_hex_string_spans(text: &str, min_length: usize) -> Vec<ExtractedValue> {
     let mut results = Vec::new();
-    for candidate in extract_encoded_values(text) {
+    for candidate in extract_encoded_value_spans(text) {
         // Hex literals in firmware dumps and config files commonly use `_`
         // every 2/4/8 chars for readability (`A1_B2_C3_...`). Strip those
         // before validating - audit class #5 (release-2026-04-26) noted
         // the previous all-hex check missed this evasion entirely.
-        let cleaned: String = candidate.chars().filter(|c| *c != '_').collect();
+        let cleaned: String = candidate.value.chars().filter(|c| *c != '_').collect();
         if cleaned.len() >= min_length
             && cleaned.len().is_multiple_of(2)
             && cleaned.chars().all(|ch| ch.is_ascii_hexdigit())
         {
-            results.push(EncodedString { value: candidate });
+            results.push(candidate);
         }
     }
     results

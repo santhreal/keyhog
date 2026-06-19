@@ -1,4 +1,5 @@
-use keyhog_scanner::ml_scorer::{compute_features_public, score_with_config};
+use keyhog_scanner::ml_scorer::score_with_config;
+use keyhog_scanner::testing::compute_features_public;
 
 const FILE_TYPE_OFFSET: usize = 32;
 const CONFIG_FILE_TYPE_INDEX: usize = FILE_TYPE_OFFSET;

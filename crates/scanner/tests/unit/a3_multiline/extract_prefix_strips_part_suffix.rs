@@ -1,7 +1,7 @@
 //! Variable-reference concat reassembles split credentials via structural pass.
 
-use keyhog_scanner::fragment_cache::FragmentCache;
-use keyhog_scanner::multiline::{preprocess_multiline, MultilineConfig};
+use keyhog_scanner::testing::fragment_cache::FragmentCache;
+use keyhog_scanner::testing::multiline::{preprocess_multiline, MultilineConfig};
 
 #[test]
 fn head_tail_var_ref_reassembles_testkey() {

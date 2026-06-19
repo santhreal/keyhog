@@ -1,6 +1,9 @@
 use super::base64::base64_decode;
 use super::hex::hex_val;
-use super::pipeline::{decode_candidates, extract_encoded_values};
+use super::pipeline::{
+    decode_candidate_spans_exact, decode_candidates, extract_encoded_value_spans,
+    extract_encoded_values, ExtractedValue,
+};
 use super::unicode_escape::unicode_escape_decode;
 use super::Decoder;
 use crate::context;
@@ -21,9 +24,9 @@ impl Decoder for UrlDecoder {
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-        let mut candidates = extract_encoded_values(&chunk.data)
+        let mut candidates = extract_encoded_value_spans(&chunk.data)
             .into_iter()
-            .filter(|candidate| candidate.contains('%'))
+            .filter(|candidate| candidate.value.contains('%'))
             .collect::<Vec<_>>();
         // Also pick up percent-only assignment tails the pct_block accumulator
         // can miss when the `%` run abuts a quote or delimiter mid-chunk.
@@ -33,18 +36,18 @@ impl Decoder for UrlDecoder {
                     .into_iter()
                     .filter(|(l, _)| !l.contains("://") && !l.starts_with("http")),
             ) {
-                let _ = lhs;
+                let _ = lhs; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
                 let rhs = rhs.trim().trim_matches('"').trim_matches('\'');
                 if rhs.starts_with('%')
                     && rhs.len() >= 6
                     && contains_percent_escape(rhs)
-                    && !candidates.iter().any(|c| c.as_str() == rhs)
+                    && !candidates.iter().any(|c| c.value.as_str() == rhs)
                 {
-                    candidates.push(rhs.to_string());
+                    candidates.push(ExtractedValue::synthetic(rhs.to_string()));
                 }
             }
         }
-        decode_candidates(chunk, candidates, url_decode, self.name())
+        decode_candidate_spans_exact(chunk, candidates, url_decode, self.name())
     }
 }
 
@@ -117,16 +120,16 @@ macro_rules! simple_decoder {
             }
 
             fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-                let mut candidates = extract_encoded_values(&chunk.data);
+                let mut candidates = extract_encoded_value_spans(&chunk.data);
                 let trimmed = chunk.data.trim();
                 if ($filter)(trimmed) && !trimmed.is_empty() {
-                    candidates.push(trimmed.to_string());
+                    candidates.push(ExtractedValue::synthetic(trimmed.to_string()));
                 }
-                decode_candidates(
+                decode_candidate_spans_exact(
                     chunk,
                     candidates
                         .into_iter()
-                        .filter(|candidate| ($filter)(candidate))
+                        .filter(|candidate| ($filter)(candidate.value.as_str()))
                         .collect(),
                     $decode,
                     self.name(),

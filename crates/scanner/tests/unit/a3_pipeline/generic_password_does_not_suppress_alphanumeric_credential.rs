@@ -1,5 +1,5 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::pipeline::should_suppress_named_detector_finding;
+use keyhog_scanner::testing::should_suppress_named_detector_finding;
 
 #[test]
 fn real_password_with_digits_not_suppressed_by_camelcase_filter() {

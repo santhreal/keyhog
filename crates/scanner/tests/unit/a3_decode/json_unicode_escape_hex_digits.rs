@@ -1,7 +1,7 @@
 //! JSON `\u` unescape exercises shared take_hex_digits helper.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn json_unicode_escape_decodes_uppercase_hex() {

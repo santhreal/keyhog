@@ -1,6 +1,6 @@
 //! Robustness tests for sequential placeholder detection logic.
 
-use keyhog_scanner::context::is_sequential_placeholder;
+use keyhog_scanner::testing::context::is_sequential_placeholder;
 
 #[test]
 fn test_is_sequential_placeholder_robustness() {

@@ -162,6 +162,7 @@ pub(crate) mod shared_regexes;
 
 pub use api::*;
 
+#[cfg(test)]
 use std::borrow::Cow;
 
 /// Configure the Hyperscan compiled-database cache directory for this process.
@@ -183,6 +184,7 @@ pub fn validate_hyperscan_cache_dir(path: &std::path::Path) -> std::result::Resu
 }
 
 /// Normalize scannable text by removing evasion characters and handling homoglyphs.
+#[cfg(test)]
 pub(crate) fn normalize_chunk_data(data: &str) -> Cow<'_, str> {
     if data.is_ascii() {
         return Cow::Borrowed(data);

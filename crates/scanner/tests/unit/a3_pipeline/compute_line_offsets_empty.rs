@@ -1,4 +1,4 @@
-use keyhog_scanner::compute_line_offsets;
+use keyhog_scanner::testing::compute_line_offsets;
 
 #[test]
 fn empty_string_yields_single_zero_offset() {

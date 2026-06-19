@@ -1,10 +1,7 @@
 pub mod a3_decode;
 pub mod a3_multiline;
 pub mod a3_pipeline;
-// a4_lr2: requires `keyhog_scanner::testing` which needs `simd` feature.
-// Wiring these to the default build requires feature-gating the module.
-// TODO: gate behind #[cfg(feature = "simd")] when CI enables it.
-// pub mod a4_lr2;
+pub mod a4_lr2;
 pub mod alphabet_filter;
 pub mod ascii_ci;
 pub mod bigram_bloom;
@@ -16,10 +13,11 @@ pub mod compiler_build_prefix_propagation_longer_extends;
 pub mod compiler_build_same_prefix_patterns_pairs;
 pub mod compiler_extract_prefix_alternation_akia_asia;
 pub mod compiler_extract_prefix_inline_flag_strip;
-pub mod compiler_fallback_keyword_skips_short;
+#[cfg(feature = "gpu")]
 pub mod compiler_gpu_literals_empty_disables_gpu;
 pub mod compiler_inner_literal_akia_mid_pattern;
 pub mod compiler_is_escaped_literal_bracket;
+pub mod compiler_phase2_keyword_skips_short;
 pub mod compiler_tests;
 pub mod confidence;
 pub mod confidence_char_diversity_low_penalty;
@@ -63,15 +61,16 @@ pub mod context_quote_noise_not_docstring;
 pub mod context_rust_test_file_suffix;
 pub mod context_string_literal_detects_quotes;
 pub mod context_test_directory_component;
+pub mod context_tier_b_disclaimer_parser;
 pub mod context_tokio_test_attribute;
 pub mod context_unknown_no_quotes_no_assignment;
 pub mod decode;
 pub mod decode_caesar_shift_selection;
 pub mod decode_structure;
 pub mod engine;
-pub mod engine_a2_cases;
 pub mod engine_backend;
 pub mod engine_cases;
+pub mod engine_gpu_routing_cases;
 pub mod entropy;
 pub mod entropy_cargo_toml_not_appropriate;
 pub mod entropy_credentials_env_exact_or_config;
@@ -79,18 +78,19 @@ pub mod entropy_data_uri_rejected;
 pub mod entropy_env_staging_prefix_match;
 pub mod entropy_fast;
 pub mod entropy_fast_extended;
+pub mod entropy_hex_digest_context_gate;
 pub mod entropy_jwt_shape_rejected;
 pub mod entropy_package_lock_not_appropriate;
 pub mod entropy_placeholder_upper_example;
 pub mod entropy_secrets_rs_not_appropriate;
 pub mod entropy_secrets_yaml_is_appropriate;
 pub mod entropy_shannon_cache_matches_uncached;
-pub mod fallback_truncate_prefilter;
 pub mod file_gate;
 pub mod flaw_investigation;
 pub mod gates;
 pub mod gpu_cases;
 pub mod gpu_shader_activation;
+pub mod phase2_truncate_prefilter;
 // gpu_regex_dfa_basic: requires `keyhog_scanner::engine::{build_regex_dfa, RegexDfaError}`
 // which are not publicly exported. Needs engine API export or test restructuring.
 // pub mod gpu_regex_dfa_basic;
@@ -101,18 +101,23 @@ pub mod is_sequential_placeholder_robustness;
 pub mod jwt_analysis;
 pub mod ml_scorer;
 pub mod multiline;
+pub mod phase2_entropy_helpers;
 pub mod pipeline;
 pub mod prefix_trie;
 pub mod prefix_trie_extended;
 pub mod resolution;
 pub mod resolution_extended;
+pub mod root_facade;
+pub mod scanner_config_state;
 pub mod scanner_misc;
 pub mod segment_attribution;
 // shape_gates: uses `std::borrow::Cow` import that triggers a warning,
 // and has type issues. Fixed separately.
 pub mod shape_gates;
 pub mod structured_parsers;
+pub mod sub_facade;
 pub mod unicode_combining_marks_normalization;
+pub mod unicode_evasion_anchor_parser;
 pub mod unicode_fast_path_borrowed;
 pub mod unicode_greek_homoglyph_normalization;
 pub mod unicode_hardening;

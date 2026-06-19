@@ -8,11 +8,11 @@
 //!
 //! ```text
 //!   files ─▶ phase 1: trigger production         (swappable backend)
-//!           ├─ CPU: compute_coalesced_triggers   (Hyperscan prefilter)   scan.rs
+//!           ├─ CPU: compute_coalesced_triggers   (Hyperscan prefilter)   scan_coalesced.rs
 //!           └─ GPU: scan_coalesced_megakernel    (batched-DFA megakernel) megakernel_dispatch.rs
 //!                       │  one bitmap per chunk: "which detectors may match here"
 //!                       ▼
-//!           phase 2: scan_coalesced_phase2       (THE shared tail)        scan.rs
+//!           phase 2: scan_coalesced_phase2       (THE shared tail)        scan_coalesced.rs
 //!             • windowing (scan_chunk_or_window, >1 MiB)                   windowed.rs
 //!             • per-chunk extraction (scan_prepared_with_triggered)        backend_triggered.rs
 //!                 confirmed → fallback → generic → entropy → ML
@@ -32,14 +32,16 @@
 //! directory by responsibility. To find a method, look here first:
 //!
 //! - `scan` / `scan_with_backend` / `scan_with_deadline*` ............ mod.rs (public entry)
-//! - `scan_coalesced` / `compute_coalesced_triggers` / `scan_coalesced_phase2` / `scan_inner` .. scan.rs
+//! - `scan_inner` ................................................................................ scan.rs
+//! - `scan_coalesced` / `compute_coalesced_triggers` / `scan_coalesced_phase2` .................. scan_coalesced.rs
+//! - no-hit fragment reassembly for the shared tail .............................................. scan_no_hit_reassembly.rs
 //! - `scan_chunks_with_backend_internal` (CPU-vs-GPU batch routing) .. backend_dispatch.rs
 //! - `scan_coalesced_megakernel` (GPU trigger production) ............ megakernel_dispatch.rs
 //! - `MegakernelCatalog` (DFA catalog build + cache + dispatch) ...... megakernel.rs
 //! - `scan_prepared_with_triggered` / `collect_triggered_patterns_*` . backend_triggered.rs
 //! - `scan_chunk_or_window` / `scan_windowed` (the windowing contract) windowed.rs
 //! - confirmed-pattern extraction ................................... extract.rs
-//! - fallback prefilter + keyword/anchor/generic/entropy passes ..... fallback*.rs
+//! - phase-2 prefilter + keyword/anchor/generic/entropy passes ...... phase2*.rs
 //! - hot-pattern fast path (simdsieve) ............................. hot_patterns.rs
 //! - post-process (suppression, dedup, confidence, decode recursion). scan_postprocess.rs, process.rs
 //! - cross-chunk seam reassembly ................................... boundary.rs
@@ -50,24 +52,12 @@ mod backend;
 mod backend_dispatch;
 mod backend_prepared;
 mod backend_triggered;
-pub mod boundary;
+mod boundary;
 mod compile;
 mod compiled_api;
 mod csr;
 pub(crate) use csr::CsrU32;
 mod extract;
-pub(crate) mod fallback;
-mod fallback_anchor;
-mod fallback_anchor_scan;
-mod fallback_compiled;
-mod fallback_compiled_anchored;
-mod fallback_entropy;
-pub(crate) mod fallback_generic;
-mod fallback_generic_shape;
-#[cfg(feature = "simd")]
-mod fallback_hs;
-mod fallback_prefilter;
-pub(crate) mod fallback_truncate;
 mod generic_keyword_owner;
 mod gpu_cache;
 mod gpu_forced;
@@ -78,22 +68,39 @@ mod hot_patterns;
 pub(crate) mod megakernel;
 #[cfg(feature = "gpu")]
 mod megakernel_dispatch;
+#[cfg(feature = "gpu")]
+mod megakernel_triggers;
 /// Catalog cache wire (de)serialization for [`megakernel::MegakernelCatalog`],
 /// split out of `megakernel.rs` (Law 5) — a stable boundary independent of the
 /// catalog build/dispatch responsibility.
 #[cfg(feature = "gpu")]
 mod megakernel_wire;
+pub(crate) mod phase2;
+mod phase2_anchor;
+mod phase2_anchor_scan;
+mod phase2_compiled;
+mod phase2_compiled_anchored;
+pub(crate) mod phase2_entropy;
+pub(crate) mod phase2_generic;
+mod phase2_generic_shape;
+#[cfg(feature = "simd")]
+mod phase2_hs;
+mod phase2_prefilter;
+pub(crate) mod phase2_truncate;
 mod process;
 pub(crate) mod profile;
 pub(crate) mod rule_pipeline;
 mod scan;
+mod scan_coalesced;
 mod scan_filters;
 mod scan_inner_profile;
+mod scan_no_hit_reassembly;
 mod scan_postprocess;
 mod scan_postprocess_fragments;
 mod scan_postprocess_profile;
 mod scan_postprocess_suffix_gate;
 mod scoring;
+#[cfg(test)]
 pub(crate) mod segment_attribution;
 mod trigger_bitmap;
 mod windowed;
@@ -106,15 +113,24 @@ mod windowed_support;
 #[cfg(feature = "simd")]
 pub(crate) use backend_prepared::build_simd_scanner;
 pub(crate) use backend_prepared::PreparedChunk;
-pub use fallback::{fallback_gate_stats_dump, fallback_mark_stats, fallback_mark_stats_reset};
-pub use profile::{dump as profile_dump, reset as profile_reset};
+#[cfg(test)]
+pub(crate) use boundary::scan_chunk_boundaries;
+#[cfg(test)]
+pub(crate) use gpu_forced::gpu_forced_unavailable_message;
+#[cfg(test)]
+pub(crate) use phase2::{phase2_gate_stats_dump, phase2_mark_stats, phase2_mark_stats_reset};
+pub use profile::{
+    dump as profile_dump, reset as profile_reset, set_perf_trace_enabled, set_profile_enabled,
+};
 pub use rule_pipeline::megascan_input_len;
 pub use scan_inner_profile::scan_inner_profile_dump;
-pub use scan_postprocess::decode_profile_dump;
-pub(crate) use windowed_support::{
-    ceil_char_boundary, floor_char_boundary, line_number_for_offset, next_window_offset,
-    record_window_match, window_chunk, window_end_offset,
-};
+#[cfg(test)]
+pub(crate) use scan_postprocess::decode_profile_dump;
+pub(crate) use windowed_support::{ceil_char_boundary, floor_char_boundary};
+#[cfg(test)]
+pub(crate) use windowed_support::{line_number_for_offset, record_window_match};
+#[cfg(test)]
+pub(crate) use windowed_support::{next_window_offset, window_chunk, window_end_offset};
 
 use crate::compiler::*;
 use crate::error::Result;
@@ -125,9 +141,7 @@ use keyhog_core::{Chunk, DetectorSpec, RawMatch};
 use std::sync::Arc;
 use std::sync::OnceLock;
 
-pub use vyre_libs::scan::LiteralMatch;
-
-pub enum MlScoreResult<'a> {
+pub(crate) enum MlScoreResult<'a> {
     /// Score is final and the match can be pushed immediately.
     Final(f64),
     #[cfg(feature = "ml")]
@@ -149,10 +163,10 @@ pub enum MlScoreResult<'a> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GpuInitPolicy {
-    /// Honor KEYHOG_NO_GPU / CI auto-disable.
+    /// Honor the resolved GPU runtime policy.
     FromEnvironment,
-    /// Acquire a GPU backend when hardware is present, regardless of
-    /// KEYHOG_NO_GPU. Used when the operator explicitly forces GPU.
+    /// Acquire a GPU backend when hardware is present, regardless of the
+    /// disabled-GPU policy. Used when the operator explicitly forces GPU.
     ForceEnabled,
     /// Skip CUDA/wgpu acquisition. Used when the selected CLI path cannot
     /// route to GPU, avoiding startup and RSS overhead without changing scan
@@ -222,31 +236,31 @@ pub struct CompiledScanner {
     pub(crate) suffix_gate_ac: Option<AhoCorasick>,
     pub(crate) ac_suffix_gate: Vec<Vec<u32>>,
     pub(crate) prefix_propagation: CsrU32,
-    pub(crate) fallback: Vec<(CompiledPattern, Vec<String>)>,
+    pub(crate) phase2_patterns: Vec<(CompiledPattern, Vec<String>)>,
     pub(crate) companions: Vec<Vec<CompiledCompanion>>,
     pub(crate) detectors: Vec<DetectorSpec>,
     pub(crate) same_prefix_patterns: CsrU32,
-    pub(crate) fallback_keyword_ac: Option<AhoCorasick>,
-    pub(crate) fallback_keyword_to_patterns: CsrU32,
-    pub(crate) fallback_always_active_indices: Vec<usize>,
-    /// Combined-RegexSet prefilter over `fallback_always_active_indices`. When
+    pub(crate) phase2_keyword_ac: Option<AhoCorasick>,
+    pub(crate) phase2_keyword_to_patterns: CsrU32,
+    pub(crate) phase2_always_active_indices: Vec<usize>,
+    /// Combined-RegexSet prefilter over `phase2_always_active_indices`. When
     /// present, the per-chunk fallback scan runs one linear set pass instead of
     /// every always-active pattern's regex over the whole chunk. `None` falls
     /// back to running them all (recall-identical, just slower).
-    pub(crate) fallback_always_active_prefilter: Option<fallback::AlwaysActiveFallbackPrefilter>,
-    /// Shared-anchor localization index over the fallback set. When present,
-    /// eligible fallback patterns are verified anchored at candidate positions
+    pub(crate) phase2_always_active_prefilter: Option<phase2::Phase2AlwaysActivePrefilter>,
+    /// Shared-anchor localization index over the phase-2 set. When present,
+    /// eligible phase-2 patterns are verified anchored at candidate positions
     /// from one shared Aho-Corasick pass instead of each walking the whole
     /// chunk; non-eligible patterns keep the whole-chunk path. `None` when no
-    /// pattern is anchor-eligible. Recall-identical (see `fallback_anchor`).
-    pub(crate) fallback_anchor_index: Option<fallback_anchor::FallbackAnchorIndex>,
+    /// pattern is anchor-eligible. Recall-identical (see `phase2_anchor`).
+    pub(crate) phase2_anchor_index: Option<phase2_anchor::Phase2AnchorIndex>,
     /// Per-scanner performance route tuning (HS vs RegexSet, anchor
     /// localization, prefilter truncation, decode focus, confirmed-suffix gate,
     /// …). Resolved from compiled defaults plus explicit per-scanner config;
     /// differential parity tests override one route on THIS scanner via
     /// [`CompiledScanner::tuning`] without touching any global state. See
-    /// [`fallback::ScannerTuning`].
-    pub(crate) tuning: fallback::ScannerTuning,
+    /// [`phase2::ScannerTuning`].
+    pub(crate) tuning: phase2::ScannerTuning,
     #[cfg(feature = "simd")]
     pub(crate) simd_prefilter: Option<crate::simd::backend::HsScanner>,
     #[cfg(feature = "simd")]

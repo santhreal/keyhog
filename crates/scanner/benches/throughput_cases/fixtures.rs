@@ -1,9 +1,10 @@
 use base64::{engine::general_purpose, Engine};
 use criterion::{
-    black_box, criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode, Throughput,
+    criterion_group, criterion_main, BenchmarkId, Criterion, SamplingMode, Throughput,
 };
 use keyhog_core::{load_detectors, Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::{entropy, CompiledScanner};
+use std::hint::black_box;
 use std::path::Path;
 
 // TEST DATA GENERATORS

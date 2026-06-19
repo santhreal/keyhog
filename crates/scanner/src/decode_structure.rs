@@ -29,31 +29,29 @@
 //! Tests live in `tests/unit/decode_structure*.rs` (Santh no-inline-tests
 //! contract).
 
-use base64::Engine;
-
 /// Structured view of what a candidate decodes to. Carried as-is into the ML
 /// feature vector once the model is retrained; consumed today by
 /// [`is_encoded_binary`].
 #[derive(Debug, Clone, Default, PartialEq)]
-pub struct DecodeStructure {
+pub(crate) struct DecodeStructure {
     /// The candidate is a syntactically valid base64 (standard or url-safe) or
     /// hex string of a length worth decoding.
-    pub decodable: bool,
+    pub(crate) decodable: bool,
     /// Number of bytes the candidate decoded to (0 when not decodable).
-    pub decoded_len: usize,
+    pub(crate) decoded_len: usize,
     /// Fraction of decoded bytes that are printable ASCII (incl. tab/newline).
-    pub printable_ratio: f32,
+    pub(crate) printable_ratio: f32,
     /// Identified container/format from the decoded magic bytes, if any.
-    pub magic: Option<&'static str>,
+    pub(crate) magic: Option<&'static str>,
     /// The decoded bytes parse end-to-end as a multi-field protobuf wire stream.
-    pub protobuf_wire: bool,
+    pub(crate) protobuf_wire: bool,
 }
 
 impl DecodeStructure {
     /// True when the decoded bytes are an identifiable binary asset or a
     /// serialized protobuf message - i.e. data, not a credential.
     #[must_use]
-    pub fn is_binary_payload(&self) -> bool {
+    pub(crate) fn is_binary_payload(&self) -> bool {
         self.magic.is_some() || (self.protobuf_wire && self.decoded_len >= 8)
     }
 }
@@ -75,7 +73,7 @@ const MIN_DECODE_LEN: usize = 16;
 /// `entropy::shannon_entropy`. The verdict is a pure function of `candidate`,
 /// so caching by content hash is always correct.
 #[must_use]
-pub fn is_encoded_binary(candidate: &str) -> bool {
+pub(crate) fn is_encoded_binary(candidate: &str) -> bool {
     use std::cell::RefCell;
     use std::collections::HashMap;
 
@@ -95,31 +93,11 @@ pub fn is_encoded_binary(candidate: &str) -> bool {
     )
 }
 
-/// Placeholder words that mark a credential as a documentation sample, not a
-/// real secret. The single source of truth for the lowercase byte-slice
-/// placeholder set: consumed for the SURFACE form by
-/// `confidence::penalties::contains_placeholder_word` and for the BASE64 / HEX
-/// decoded form by this module's [`decoded_contains_placeholder`] (so a
-/// base64-wrapped `AKIAEXAMPLEEXAMPLE12` = `QUtJQUVYQU1QTEVFWEFNUExFMTI=` is
-/// still caught).
-///
-/// Excludes ambiguous tokens by design: `test` (real Stripe `sk_test_` keys),
-/// `password` (connection strings `redis://user:password@host`), `admin` /
-/// `root` (legitimate credentials), `qwerty` (weak but real password).
-pub const PLACEHOLDER_WORDS: &[&[u8]] = &[
-    b"example",
-    b"dummy",
-    b"fake",
-    b"sample",
-    b"placeholder",
-    b"changeme",
-];
-
 /// Unified shape-only gate for the "uniform random base64 blob" class - the
 /// single parameterized definition behind every base64-protobuf-decoy gate in
 /// the scanner. Reconciles two previously-divergent copies (this module's
 /// penalty-path [`looks_like_uniform_base64_blob`] and the entropy-path's
-/// `engine::fallback_entropy_helpers::entropy_path_looks_like_random_base64_blob`)
+/// `engine::phase2_entropy::helpers::entropy_path_looks_like_random_base64_blob`)
 /// so their length/diversity bands are tuned in one place and can never drift
 /// in opposite directions un-benched again.
 ///
@@ -139,12 +117,12 @@ pub const PLACEHOLDER_WORDS: &[&[u8]] = &[
 /// padding then qualify). The two penalty-path callers that share THIS gate are
 /// [`looks_like_uniform_base64_blob`] (44..=600, diversity 32) and
 /// `suppression::shape_gates::looks_like_standard_base64_blob` (40..=80,
-/// diversity 32). The *emit-drop* fallback paths need a stricter admit (BOTH
+/// diversity 32). The emit/drop scanner paths need a stricter admit (BOTH
 /// `+` AND `/`), so they share the separate [`is_byte_distribution_base64_blob`]
 /// skeleton instead of this one — see that function for why the two admit
 /// policies cannot be one over-parameterised gate.
 #[must_use]
-pub fn is_random_base64_blob(
+pub(crate) fn is_random_base64_blob(
     value: &str,
     min_len: usize,
     max_len: usize,
@@ -153,26 +131,11 @@ pub fn is_random_base64_blob(
     if !(min_len..=max_len).contains(&value.len()) {
         return false;
     }
-    let has_padding = value.ends_with("==") || value.ends_with('=');
-    let length_mult_4 = value.len().is_multiple_of(4);
-    if !has_padding && !length_mult_4 {
+    let Some(shape) = crate::decode::standard_base64_shape(value) else {
         return false;
-    }
-    let mut has_b64_punct = false;
-    let mut seen = [false; 256];
-    let mut distinct_alnum: u32 = 0;
-    for b in value.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' => {
-                if !seen[b as usize] {
-                    seen[b as usize] = true;
-                    distinct_alnum += 1;
-                }
-            }
-            b'=' => {}
-            b'+' | b'/' => has_b64_punct = true,
-            _ => return false,
-        }
+    };
+    if !shape.has_padding && !shape.length_multiple_of_four {
+        return false;
     }
     // Admit clauses:
     //   * +/  punctuation in standard base64 alphabet, OR
@@ -182,9 +145,12 @@ pub fn is_random_base64_blob(
     //     distinct alphanumeric chars (random bytes encoded; placeholders /
     //     words never reach this diversity at the band floor). A zero
     //     `min_diversity` disables this admit (punct / padding only).
-    has_b64_punct
-        || has_padding
-        || (min_diversity != 0 && length_mult_4 && distinct_alnum >= min_diversity)
+    shape.has_plus
+        || shape.has_slash
+        || shape.has_padding
+        || (min_diversity != 0
+            && shape.length_multiple_of_four
+            && shape.distinct_alnum >= min_diversity)
 }
 
 /// Shape-only check: does `value` look like a uniform base64 blob with no
@@ -209,13 +175,13 @@ pub fn is_random_base64_blob(
 /// (lacking +/) is also slammed - 14+ FPs in the corpus relied on the
 /// gap.
 #[must_use]
-pub fn looks_like_uniform_base64_blob(value: &str) -> bool {
+pub(crate) fn looks_like_uniform_base64_blob(value: &str) -> bool {
     is_random_base64_blob(value, 44, 600, 32)
 }
 
 /// Stricter sibling of [`is_random_base64_blob`] for the **emit-drop** fallback
-/// paths (`engine::fallback_entropy_helpers::entropy_path_looks_like_random_base64_blob`
-/// and `engine::fallback_generic::generic_path_looks_like_random_base64_blob`).
+/// paths (`engine::phase2_entropy::helpers::entropy_path_looks_like_random_base64_blob`
+/// and `engine::phase2_generic::generic_path_looks_like_random_base64_blob`).
 /// Same band + padding/mult-4 + standard-base64 alphabet skeleton, but the admit
 /// clause demands a genuine **byte-distribution** signal: BOTH `+` AND `/`
 /// present, or trailing `=` padding with at least one of them.
@@ -235,29 +201,23 @@ pub fn looks_like_uniform_base64_blob(value: &str) -> bool {
 /// shared *skeleton* (this function) is the single source of truth and each
 /// caller composes its own band (and the generic path its entropy cutoff) on top.
 #[must_use]
-pub fn is_byte_distribution_base64_blob(value: &str, min_len: usize, max_len: usize) -> bool {
+pub(crate) fn is_byte_distribution_base64_blob(
+    value: &str,
+    min_len: usize,
+    max_len: usize,
+) -> bool {
     if !(min_len..=max_len).contains(&value.len()) {
         return false;
     }
-    let has_padding = value.ends_with("==") || value.ends_with('=');
-    let length_mult_4 = value.len().is_multiple_of(4);
-    if !has_padding && !length_mult_4 {
+    let Some(shape) = crate::decode::standard_base64_shape(value) else {
+        return false;
+    };
+    if !shape.has_padding && !shape.length_multiple_of_four {
         return false;
     }
-    let mut has_plus = false;
-    let mut has_slash = false;
-    for b in value.bytes() {
-        match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'=' => {}
-            b'+' => has_plus = true,
-            b'/' => has_slash = true,
-            // Any other byte (incl. UTF-8 continuation bytes of a non-ASCII
-            // char) rejects, identical to the prior `chars()` loops.
-            _ => return false,
-        }
-    }
     // Byte-distribution admit: both punctuation marks, or padded with one.
-    (has_plus && has_slash) || (has_padding && (has_plus || has_slash))
+    (shape.has_plus && shape.has_slash)
+        || (shape.has_padding && (shape.has_plus || shape.has_slash))
 }
 
 /// True when `value` base64-decodes to bytes that are themselves all in
@@ -274,7 +234,7 @@ pub fn is_byte_distribution_base64_blob(value: &str, min_len: usize, max_len: us
 /// Memoized via the same FNV-1a hash + thread-local cache pattern as the
 /// other decode-through helpers.
 #[must_use]
-pub fn decoded_is_base64_blob(candidate: &str) -> bool {
+pub(crate) fn decoded_is_base64_blob(candidate: &str) -> bool {
     use std::cell::RefCell;
     use std::collections::HashMap;
 
@@ -293,6 +253,17 @@ pub fn decoded_is_base64_blob(candidate: &str) -> bool {
     )
 }
 
+/// True when a base64/base64url/hex-shaped candidate decodes to ordinary
+/// printable text, not a binary asset or protobuf envelope.
+#[must_use]
+pub(crate) fn decodes_to_printable_text(candidate: &str) -> bool {
+    let structure = analyze(candidate);
+    structure.decodable
+        && structure.decoded_len >= 8
+        && structure.printable_ratio >= 0.85
+        && !structure.is_binary_payload()
+}
+
 fn compute_decoded_is_base64_blob(candidate: &str) -> bool {
     let trimmed = candidate.trim();
     if trimmed.len() < MIN_DECODE_LEN {
@@ -306,7 +277,7 @@ fn compute_decoded_is_base64_blob(candidate: &str) -> bool {
     }
     bytes
         .iter()
-        .all(|&b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'='))
+        .all(|&b| crate::decode::is_standard_base64_byte(b))
 }
 
 /// Decode `candidate` (base64 / url-safe-base64 / hex) and check whether the
@@ -319,7 +290,7 @@ fn compute_decoded_is_base64_blob(candidate: &str) -> bool {
 /// of AKIA...EXAMPLE...12) collapsed by this gate. Memoized to match the
 /// existing `is_encoded_binary` call cadence.
 #[must_use]
-pub fn decoded_contains_placeholder(candidate: &str) -> bool {
+pub(crate) fn decoded_contains_placeholder(candidate: &str) -> bool {
     use std::cell::RefCell;
     use std::collections::HashMap;
 
@@ -349,18 +320,14 @@ fn compute_decoded_contains_placeholder(candidate: &str) -> bool {
     if bytes.is_empty() {
         return false;
     }
-    PLACEHOLDER_WORDS.iter().any(|word| {
-        bytes
-            .windows(word.len())
-            .any(|window| window.eq_ignore_ascii_case(word))
-    })
+    crate::placeholder_words::bytes_contain_placeholder_word(&bytes)
 }
 
 /// Decode `candidate` (base64 standard, base64 url-safe, or hex) and describe
 /// the resulting bytes. Returns a default (non-decodable) structure when the
 /// candidate is too short or not a clean encoding.
 #[must_use]
-pub fn analyze(candidate: &str) -> DecodeStructure {
+pub(crate) fn analyze(candidate: &str) -> DecodeStructure {
     let trimmed = candidate.trim();
     if trimmed.len() < MIN_DECODE_LEN {
         return DecodeStructure::default();
@@ -388,24 +355,12 @@ pub fn analyze(candidate: &str) -> DecodeStructure {
 /// failing that, as an even-length all-hex string. Only accepts clean,
 /// whole-string decodes so a stray match does not masquerade as binary.
 fn decode_candidate(s: &str) -> Option<Vec<u8>> {
-    // base64 alphabets are a superset of hex's, so try base64 first and only
-    // fall back to hex for strings that are NOT valid base64.
-    let looks_b64 = s
-        .bytes()
-        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'+' | b'/' | b'-' | b'_' | b'='));
-    if looks_b64 {
-        // Pad to a multiple of 4 so unpadded blobs decode.
-        let mut padded = s.to_string();
-        let rem = padded.len() % 4;
-        if rem != 0 {
-            padded.push_str(&"=".repeat(4 - rem));
-        }
-        if let Ok(b) = base64::engine::general_purpose::STANDARD.decode(padded.as_bytes()) {
-            return Some(b);
-        }
-        if let Ok(b) = base64::engine::general_purpose::URL_SAFE.decode(padded.as_bytes()) {
-            return Some(b);
-        }
+    // Base64 alphabets are a superset of hex's, so try the scanner's canonical
+    // base64 decoder first and only fall back to hex for strings that are NOT
+    // valid base64 under the same padding/alphabet contract used by decode
+    // through and suppression rechecks.
+    if let Ok(bytes) = crate::decode::base64_decode(s) {
+        return Some(bytes);
     }
     if s.len() >= MIN_DECODE_LEN && s.len() % 2 == 0 && s.bytes().all(|b| b.is_ascii_hexdigit()) {
         let mut out = Vec::with_capacity(s.len() / 2);

@@ -63,7 +63,7 @@ pub(crate) const SEED_SOURCE_TYPES: &[&str] = &[
 /// `ahash` hasher gives a single fast (8-byte-word, hardware-mixed) hash per
 /// lookup instead of the CHD perfect hash's three per-byte hash passes.
 #[derive(Default)]
-pub struct StaticInterner {
+pub(crate) struct StaticInterner {
     arena: Vec<Arc<str>>,
     index: std::collections::HashMap<Arc<str>, u32, ahash::RandomState>,
 }
@@ -72,7 +72,7 @@ impl StaticInterner {
     /// Build an interner from the universe of stable strings: detector
     /// metadata fields + the seed source-type list. Duplicates are
     /// collapsed automatically (the map keeps one entry per distinct key).
-    pub fn from_detector_strings<I, S>(detector_strings: I) -> Self
+    pub(crate) fn from_detector_strings<I, S>(detector_strings: I) -> Self
     where
         I: IntoIterator<Item = S>,
         S: AsRef<str>,
@@ -109,7 +109,7 @@ impl StaticInterner {
     /// key plus a bucket compare - no second hash, no separate verify pass.
     /// `Arc<str>: Borrow<str>` makes `get(s)` allocation-free on hits.
     #[inline]
-    pub fn lookup(&self, s: &str) -> Option<Arc<str>> {
+    pub(crate) fn lookup(&self, s: &str) -> Option<Arc<str>> {
         let &idx = self.index.get(s)?;
         // The index can only hold valid arena slots (populated from arena
         // above), but keep the bounds-checked `get` for a total function.
@@ -117,15 +117,13 @@ impl StaticInterner {
     }
 
     /// Number of pre-interned strings.
-    pub fn len(&self) -> usize {
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
         self.arena.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.arena.is_empty()
     }
 }
 
-pub fn seed_source_type_count() -> usize {
+#[cfg(test)]
+pub(crate) fn seed_source_type_count() -> usize {
     SEED_SOURCE_TYPES.len()
 }

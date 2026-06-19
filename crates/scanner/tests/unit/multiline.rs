@@ -1,5 +1,5 @@
-use keyhog_scanner::fragment_cache::FragmentCache;
-use keyhog_scanner::multiline::{preprocess_multiline, MultilineConfig};
+use keyhog_scanner::testing::fragment_cache::FragmentCache;
+use keyhog_scanner::testing::multiline::{preprocess_multiline, MultilineConfig};
 
 #[test]
 fn test_python_backslash_continuation() {
@@ -137,7 +137,7 @@ fn split_string_testkey_concat_reassembly() {
 
 #[test]
 fn two_fragments_same_dir_join() {
-    use keyhog_scanner::fragment_cache::SecretFragment;
+    use keyhog_scanner::testing::fragment_cache::SecretFragment;
     use std::sync::Arc;
     use zeroize::Zeroizing;
 
@@ -178,7 +178,7 @@ fn two_fragments_same_dir_join() {
 
 #[test]
 fn fragments_in_different_directories_do_not_join() {
-    use keyhog_scanner::fragment_cache::SecretFragment;
+    use keyhog_scanner::testing::fragment_cache::SecretFragment;
     use std::sync::Arc;
     use zeroize::Zeroizing;
 
@@ -211,7 +211,7 @@ fn fragments_in_different_directories_do_not_join() {
 
 #[test]
 fn three_fragments_emit_all_pairwise_joins() {
-    use keyhog_scanner::fragment_cache::SecretFragment;
+    use keyhog_scanner::testing::fragment_cache::SecretFragment;
     use std::sync::Arc;
     use zeroize::Zeroizing;
 

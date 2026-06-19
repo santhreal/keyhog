@@ -48,7 +48,7 @@ fn pure_placeholder_not_flagged() {
 #[test]
 fn example_suppression_is_recorded_in_telemetry() {
     let _guard = telemetry_lock().lock().unwrap_or_else(|e| e.into_inner());
-    keyhog_scanner::telemetry::reset();
+    keyhog_scanner::telemetry::testing::reset();
     let detector = DetectorSpec {
         tests: Vec::new(),
         id: "aws-key".into(),
@@ -82,7 +82,7 @@ fn example_suppression_is_recorded_in_telemetry() {
 #[test]
 fn dogfood_captures_redacted_event() {
     let _guard = telemetry_lock().lock().unwrap_or_else(|e| e.into_inner());
-    keyhog_scanner::telemetry::reset();
+    keyhog_scanner::telemetry::testing::reset();
     keyhog_scanner::telemetry::enable_dogfood();
     let detector = DetectorSpec {
         tests: Vec::new(),
@@ -142,7 +142,7 @@ fn dogfood_captures_redacted_event() {
         redacted.ends_with("MPLE"),
         "redacted output should retain trailing bytes for verification: {redacted}"
     );
-    keyhog_scanner::telemetry::reset();
+    keyhog_scanner::telemetry::testing::reset();
 }
 
 #[test]
@@ -176,7 +176,7 @@ fn github_pat_example_suppressed() {
 #[test]
 fn placeholder_keywords_suppressed() {
     use keyhog_scanner::context::CodeContext;
-    use keyhog_scanner::pipeline::should_suppress_known_example_credential;
+    use keyhog_scanner::testing::should_suppress_known_example_credential;
 
     let placeholders = vec![
         "my_example_key",
@@ -197,7 +197,7 @@ fn placeholder_keywords_suppressed() {
 #[test]
 fn instructional_fragments_suppressed() {
     use keyhog_scanner::context::CodeContext;
-    use keyhog_scanner::pipeline::should_suppress_known_example_credential;
+    use keyhog_scanner::testing::should_suppress_known_example_credential;
 
     let examples = vec![
         "your_api_key_here",
@@ -217,7 +217,7 @@ fn instructional_fragments_suppressed() {
 #[test]
 fn repetitive_masking_suppressed() {
     use keyhog_scanner::context::CodeContext;
-    use keyhog_scanner::pipeline::should_suppress_known_example_credential;
+    use keyhog_scanner::testing::should_suppress_known_example_credential;
 
     let examples = vec![
         "ghp_xxx123456789012345678901234567890",
@@ -236,7 +236,7 @@ fn repetitive_masking_suppressed() {
 #[test]
 fn fake_sequences_suppressed() {
     use keyhog_scanner::context::CodeContext;
-    use keyhog_scanner::pipeline::should_suppress_known_example_credential;
+    use keyhog_scanner::testing::should_suppress_known_example_credential;
 
     let examples = vec![
         "prefix_1234567890_suffix",
@@ -254,7 +254,7 @@ fn fake_sequences_suppressed() {
 #[test]
 fn todo_fixme_suppressed() {
     use keyhog_scanner::context::CodeContext;
-    use keyhog_scanner::pipeline::should_suppress_known_example_credential;
+    use keyhog_scanner::testing::should_suppress_known_example_credential;
 
     assert!(
         should_suppress_known_example_credential(
@@ -273,7 +273,7 @@ fn todo_fixme_suppressed() {
 #[test]
 fn real_credentials_not_suppressed() {
     use keyhog_scanner::context::CodeContext;
-    use keyhog_scanner::pipeline::should_suppress_known_example_credential;
+    use keyhog_scanner::testing::should_suppress_known_example_credential;
 
     assert!(
         !should_suppress_known_example_credential(
@@ -332,7 +332,7 @@ fn null_padded_binaryish_chunk_is_safe() {
 #[test]
 fn dogfood_records_engine_probabilistic_gate_drop() {
     let _guard = telemetry_lock().lock().unwrap_or_else(|e| e.into_inner());
-    keyhog_scanner::telemetry::reset();
+    keyhog_scanner::telemetry::testing::reset();
     keyhog_scanner::telemetry::enable_dogfood();
     let detector = DetectorSpec {
         tests: Vec::new(),
@@ -370,7 +370,9 @@ fn dogfood_records_engine_probabilistic_gate_drop() {
         })
         .collect();
     assert!(
-        reasons.iter().any(|r| r == "probabilistic_gate_not_promising"),
+        reasons
+            .iter()
+            .any(|r| r == "probabilistic_gate_not_promising"),
         "the generic-detector probabilistic engine-gate drop must be traced \
          (KH-L-0409); got reasons {reasons:?}"
     );

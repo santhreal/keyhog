@@ -144,6 +144,9 @@ pub(crate) struct MegakernelCatalog {
     pub(super) host_detectors: Vec<usize>,
     pub(super) dispatcher: std::sync::Mutex<Option<BatchDispatcher>>,
     pub(super) resident_batch: std::sync::Mutex<Option<FileBatch>>,
+    /// Reusable host staging for the ASCII-folded haystacks required by the
+    /// current vyre `BatchFile` API. Buffers are zeroed before being retained.
+    pub(super) lowercase_staging: std::sync::Mutex<Vec<Vec<u8>>>,
     /// Catalog synchronization-distance overlap, computed once (lazily) from
     /// `rules`: `Some(o)` is the minimum warm-up that keeps intra-file
     /// segmentation byte-identical to a whole-file scan; `None` means some rule
@@ -151,6 +154,34 @@ pub(crate) struct MegakernelCatalog {
     /// because the per-rule product-automaton analysis is far too costly to
     /// repeat per scan.
     pub(super) segment_overlap: std::sync::OnceLock<Option<u32>>,
+}
+
+struct LowercaseBatch<'a> {
+    files: Vec<BatchFile>,
+    scratch: std::sync::MutexGuard<'a, Vec<Vec<u8>>>,
+}
+
+impl LowercaseBatch<'_> {
+    fn len(&self) -> usize {
+        self.files.len()
+    }
+
+    fn total_bytes(&self) -> usize {
+        self.files.iter().map(|file| file.bytes.len()).sum()
+    }
+}
+
+impl Drop for LowercaseBatch<'_> {
+    fn drop(&mut self) {
+        self.scratch.clear();
+        self.scratch.reserve(self.files.len());
+        for file in self.files.drain(..) {
+            let mut bytes = file.bytes;
+            bytes.fill(0);
+            bytes.clear();
+            self.scratch.push(bytes);
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -255,9 +286,16 @@ impl MegakernelCatalog {
                     let split = if combined.is_some() {
                         Vec::new()
                     } else {
-                        chunk.iter().map(|(esc, _, _)| lower(std::slice::from_ref(esc))).collect()
+                        chunk
+                            .iter()
+                            .map(|(esc, _, _)| lower(std::slice::from_ref(esc)))
+                            .collect()
                     };
-                    GroupBuilt { combined, lits, split }
+                    GroupBuilt {
+                        combined,
+                        lits,
+                        split,
+                    }
                 })
                 .collect()
         };
@@ -277,14 +315,19 @@ impl MegakernelCatalog {
         let mut group_literals: Vec<Vec<(Vec<u8>, Vec<usize>)>> = Vec::new();
         let mut host_detectors = Vec::new();
         let mut host_lower_failed = 0usize; // DFA build / BatchRuleProgram failure
-        // Law 10: a DFA that lowered but fails BatchRuleProgram shape validation, or
-        // that never lowered, routes its anchors to the loud host path — never
-        // dropped. Host runs that set anyway, so the cost is a rounding error.
+                                            // Law 10: a DFA that lowered but fails BatchRuleProgram shape validation, or
+                                            // that never lowered, routes its anchors to the loud host path — never
+                                            // dropped. Host runs that set anyway, so the cost is a rounding error.
         let to_host = |anchors: Vec<usize>, host: &mut Vec<usize>, failed: &mut usize| {
             *failed += anchors.len();
             host.extend(anchors);
         };
-        for GroupBuilt { combined, lits, split } in groups {
+        for GroupBuilt {
+            combined,
+            lits,
+            split,
+        } in groups
+        {
             match combined {
                 Some((t, a, sc)) => {
                     let anchors: Vec<usize> =
@@ -295,7 +338,9 @@ impl MegakernelCatalog {
                             rule_to_detectors.push(anchors);
                             group_literals.push(lits);
                         }
-                        Err(_error) => to_host(anchors, &mut host_detectors, &mut host_lower_failed),
+                        Err(_error) => {
+                            to_host(anchors, &mut host_detectors, &mut host_lower_failed)
+                        }
                     }
                 }
                 // Combined DFA didn't lower: one rule per literal (or host).
@@ -309,9 +354,11 @@ impl MegakernelCatalog {
                                         rule_to_detectors.push(anchors.clone());
                                         group_literals.push(vec![(raw, anchors)]);
                                     }
-                                    Err(_error) => {
-                                        to_host(anchors, &mut host_detectors, &mut host_lower_failed)
-                                    }
+                                    Err(_error) => to_host(
+                                        anchors,
+                                        &mut host_detectors,
+                                        &mut host_lower_failed,
+                                    ),
                                 }
                             }
                             None => to_host(anchors, &mut host_detectors, &mut host_lower_failed),
@@ -339,7 +386,7 @@ impl MegakernelCatalog {
                 }
             }
         }
-        if std::env::var_os("KH_PERF").is_some() {
+        if super::profile::perf_trace_enabled() {
             // Dedup ceiling: how many of the GPU rules are DISTINCT pattern strings.
             // The kernel cost is ~linear in rule_count x files, so collapsing
             // duplicate literal rules (many detectors share a prefix like `key`) to
@@ -350,7 +397,7 @@ impl MegakernelCatalog {
             let grouped_rules = group_literals.iter().filter(|g| !g.is_empty()).count();
             let grouped_lits: usize = group_literals.iter().map(Vec::len).sum();
             eprintln!(
-                "KH_PERF megakernel classify: gpu_rules={} (grouped={} carrying {} literals, target_groups={}) unique_patterns={}/{} | host: lower_failed={host_lower_failed}",
+                "perf-trace megakernel classify: gpu_rules={} (grouped={} carrying {} literals, target_groups={}) unique_patterns={}/{} | host: lower_failed={host_lower_failed}",
                 rules.len(),
                 grouped_rules,
                 grouped_lits,
@@ -389,7 +436,7 @@ impl MegakernelCatalog {
             group_literals.clear();
             rules.clear();
         }
-        if std::env::var_os("KH_PERF").is_some() {
+        if super::profile::perf_trace_enabled() {
             let bytes_of = |r: &BatchRuleProgram| {
                 (r.transitions.len() + r.accept.len()) * std::mem::size_of::<u32>()
             };
@@ -410,13 +457,13 @@ impl MegakernelCatalog {
                 mib[b] += bytes_of(r) as f64 / (1024.0 * 1024.0);
             }
             eprintln!(
-                "KH_PERF megakernel catalog: {} gpu rules, {} host, {:.1} MiB total",
+                "perf-trace megakernel catalog: {} gpu rules, {} host, {:.1} MiB total",
                 rules.len(),
                 host_detectors.len(),
                 (words * std::mem::size_of::<u32>()) as f64 / (1024.0 * 1024.0),
             );
             eprintln!(
-                "KH_PERF megakernel states: <=512: {} rules {:.0}MiB | <=2048: {} {:.0}MiB | <=8192: {} {:.0}MiB | >8192: {} {:.0}MiB",
+                "perf-trace megakernel states: <=512: {} rules {:.0}MiB | <=2048: {} {:.0}MiB | <=8192: {} {:.0}MiB | >8192: {} {:.0}MiB",
                 cnt[0], mib[0], cnt[1], mib[1], cnt[2], mib[2], cnt[3], mib[3],
             );
         }
@@ -427,6 +474,7 @@ impl MegakernelCatalog {
             host_detectors,
             dispatcher: std::sync::Mutex::new(None),
             resident_batch: std::sync::Mutex::new(None),
+            lowercase_staging: std::sync::Mutex::new(Vec::new()),
             segment_overlap: std::sync::OnceLock::new(),
         }
     }
@@ -457,10 +505,10 @@ impl MegakernelCatalog {
         self.rules.len()
     }
 
-    /// Scan a coalesced batch of files on the GPU, returning detection firings.
+    /// Scan a coalesced batch of chunks on the GPU, returning detection firings.
     ///
-    /// `files[i]` is `(path_hash, bytes)`; the returned `Firing.file_index`
-    /// indexes `files`. One device dispatch covers the whole batch. Errors
+    /// The returned `Firing.file_index` indexes `chunks`. One device dispatch
+    /// covers the whole batch. Errors
     /// (upload / dispatch / readback) propagate so the caller fails CLOSED
     /// rather than silently returning an empty result.
     ///
@@ -470,26 +518,19 @@ impl MegakernelCatalog {
     pub(crate) fn scan(
         &self,
         backend: &Arc<WgpuBackend>,
-        files: Vec<(u64, Vec<u8>)>,
+        chunks: &[keyhog_core::Chunk],
     ) -> Result<Vec<Firing>, String> {
-        if files.is_empty() || self.rules.is_empty() {
+        if chunks.is_empty() || self.rules.is_empty() {
             return Ok(Vec::new());
         }
-        let file_count = files.len();
-        // Total coalesced bytes (before `files` is consumed into `batch_files`),
-        // used to size the intra-file segment width below.
-        let total_bytes: usize = files.iter().map(|(_, bytes)| bytes.len()).sum();
+        let batch_files = self.lowercase_batch(chunks)?;
+        let file_count = batch_files.len();
+        let total_bytes = batch_files.total_bytes();
 
         // Fixed hit-ring capacity (see MEGAKERNEL_HIT_CAPACITY): the batch ring
         // and the reused dispatcher's compiled pipeline MUST agree on capacity,
         // and a stable value keeps it to a single compiled pipeline variant.
         let hit_capacity = MEGAKERNEL_HIT_CAPACITY;
-
-        let batch_files: Vec<BatchFile> = files
-            .into_iter()
-            .enumerate()
-            .map(|(i, (hash, bytes))| BatchFile::new(hash ^ i as u64, 0, bytes))
-            .collect();
 
         // Resident GPU batch: upload once, then REFRESH in place every scan.
         // `FileBatch::upload` allocates all six GPU buffers (haystack, offsets,
@@ -506,13 +547,13 @@ impl MegakernelCatalog {
             .map_err(|e| format!("megakernel batch mutex poisoned: {e}"))?;
         match batch_guard.as_mut() {
             Some(batch) => batch
-                .refresh(&batch_files, self.rules.len() as u32, hit_capacity)
+                .refresh(&batch_files.files, self.rules.len() as u32, hit_capacity)
                 .map_err(|e| format!("megakernel FileBatch refresh: {e:?}"))?,
             None => {
                 *batch_guard = Some(
                     FileBatch::upload(
                         backend.device_queue(),
-                        &batch_files,
+                        &batch_files.files,
                         self.rules.len() as u32,
                         hit_capacity,
                     )
@@ -545,9 +586,9 @@ impl MegakernelCatalog {
                             "megakernel set_segmentation(seg_len={seg_len}, overlap={overlap}): {e:?}"
                         )
                     })?;
-                    if std::env::var_os("KH_PERF").is_some() {
+                    if super::profile::perf_trace_enabled() {
                         eprintln!(
-                            "KH_PERF mk-segment: total_bytes={total_bytes} rules={} seg_len={seg_len} overlap={overlap} segments~={}",
+                            "perf-trace mk-segment: total_bytes={total_bytes} rules={} seg_len={seg_len} overlap={overlap} segments~={}",
                             self.rules.len(),
                             (total_bytes as u64).div_ceil(u64::from(seg_len.max(1)))
                         );
@@ -602,10 +643,10 @@ impl MegakernelCatalog {
         let summary = dispatcher
             .dispatch_into(batch, &self.rules, &mut hits)
             .map_err(|e| format!("megakernel dispatch: {e:?}"))?;
-        if std::env::var_os("KH_PERF").is_some() {
+        if super::profile::perf_trace_enabled() {
             let t = &summary.telemetry;
             eprintln!(
-                "KH_PERF mk-dispatch: files={} rules={} kernel_wall={:.3}s items={} hits={} occupancy_bps={} bytes_up={} bytes_back={} launches={}",
+                "perf-trace mk-dispatch: files={} rules={} kernel_wall={:.3}s items={} hits={} occupancy_bps={} bytes_up={} bytes_back={} launches={}",
                 file_count,
                 self.rules.len(),
                 summary.wall_time.as_secs_f64(),
@@ -618,8 +659,8 @@ impl MegakernelCatalog {
             );
         }
 
-        // LAW 10: published Vyre 0.6.2 caps the device hit counter at the ring
-        // capacity and does not expose a separate dropped-hit counter. An exact
+        // LAW 10: the published Vyre megakernel API caps the device hit counter
+        // at ring capacity and does not expose a separate dropped-hit counter. An exact
         // full ring is therefore ambiguous: it may be exactly full or it may have
         // saturated. Fail CLOSED and let the caller run the complete CPU scan for
         // this batch rather than returning a potentially truncated firing set.
@@ -658,7 +699,10 @@ impl MegakernelCatalog {
                 // implies at least one literal byte-matches; every fanned anchor is
                 // still re-confirmed against its own full regex in validate.
                 Some(lits) if !lits.is_empty() => {
-                    let bytes = batch_files.get(file_index).map(|f| f.bytes.as_slice());
+                    let bytes = batch_files
+                        .files
+                        .get(file_index)
+                        .map(|f| f.bytes.as_slice());
                     let end = match_offset.saturating_add(1);
                     for (lit, anchors) in lits {
                         let len = lit.len();
@@ -667,7 +711,11 @@ impl MegakernelCatalog {
                         }
                         if bytes.and_then(|b| b.get(end - len..end)) == Some(lit.as_slice()) {
                             for &detector in anchors {
-                                firings.push(Firing { file_index, detector, match_offset });
+                                firings.push(Firing {
+                                    file_index,
+                                    detector,
+                                    match_offset,
+                                });
                             }
                         }
                     }
@@ -677,13 +725,49 @@ impl MegakernelCatalog {
                 _ => {
                     if let Some(dets) = self.rule_to_detectors.get(rule_idx) {
                         for &detector in dets {
-                            firings.push(Firing { file_index, detector, match_offset });
+                            firings.push(Firing {
+                                file_index,
+                                detector,
+                                match_offset,
+                            });
                         }
                     }
                 }
             }
         }
         Ok(firings)
+    }
+
+    fn lowercase_batch(&self, chunks: &[keyhog_core::Chunk]) -> Result<LowercaseBatch<'_>, String> {
+        let mut scratch = self
+            .lowercase_staging
+            .lock()
+            .map_err(|e| format!("megakernel lowercase staging mutex poisoned: {e}"))?;
+        let mut files: Vec<BatchFile> = Vec::with_capacity(chunks.len());
+        for (i, chunk) in chunks.iter().enumerate() {
+            let mut bytes = match scratch.pop() {
+                Some(bytes) => bytes,
+                None => Vec::new(),
+            };
+            bytes.clear();
+            let haystack = chunk.data.as_bytes();
+            if let Err(error) = bytes.try_reserve(haystack.len()) {
+                bytes.fill(0);
+                bytes.clear();
+                scratch.push(bytes);
+                for file in files.drain(..) {
+                    let mut bytes = file.bytes;
+                    bytes.fill(0);
+                    bytes.clear();
+                    scratch.push(bytes);
+                }
+                return Err(format!("megakernel lowercase staging reserve: {error}"));
+            }
+            bytes.extend_from_slice(haystack);
+            bytes.make_ascii_lowercase();
+            files.push(BatchFile::new((i as u64) ^ (i as u64), 0, bytes));
+        }
+        Ok(LowercaseBatch { files, scratch })
     }
 }
 
@@ -766,8 +850,12 @@ mod tests {
             ("AIza[A-Za-z0-9_-]{35}".to_string(), 3), // host (state explosion)
         ];
         let catalog = MegakernelCatalog::build(&patterns);
-        let gpu: BTreeSet<usize> =
-            catalog.rule_to_detectors.iter().flatten().copied().collect();
+        let gpu: BTreeSet<usize> = catalog
+            .rule_to_detectors
+            .iter()
+            .flatten()
+            .copied()
+            .collect();
         let host: BTreeSet<usize> = catalog.host_detectors.iter().copied().collect();
 
         // Disjoint: no detector is on both paths (no double-counting).
@@ -816,10 +904,18 @@ mod tests {
             catalog.rule_count()
         );
         // Every anchor still covered exactly once across the fan-out lists.
-        let mut covered: Vec<usize> =
-            catalog.rule_to_detectors.iter().flatten().copied().collect();
+        let mut covered: Vec<usize> = catalog
+            .rule_to_detectors
+            .iter()
+            .flatten()
+            .copied()
+            .collect();
         covered.sort_unstable();
-        assert_eq!(covered, vec![0, 1, 2], "dedup dropped or duplicated an anchor");
+        assert_eq!(
+            covered,
+            vec![0, 1, 2],
+            "dedup dropped or duplicated an anchor"
+        );
         // The shared literal's rule fans out to BOTH anchors that used it.
         let key_rule = catalog
             .rule_to_detectors
@@ -842,8 +938,16 @@ mod tests {
         // Round-trip: escape(lit) then unescape == lit, including metacharacter bytes
         // that `regex::escape` backslash-protects (`.`, `+`, `-`).
         for lit in [
-            "ghp_", "AKIA", "xoxb-", "glpat-", "sk-ant-api03", "tok_123", "v1/secret",
-            "key.value", "a+b", "name@host",
+            "ghp_",
+            "AKIA",
+            "xoxb-",
+            "glpat-",
+            "sk-ant-api03",
+            "tok_123",
+            "v1/secret",
+            "key.value",
+            "a+b",
+            "name@host",
         ] {
             let escaped = regex::escape(lit);
             assert_eq!(
@@ -879,8 +983,7 @@ mod tests {
         const N: usize = 200;
         // Distinct pure-literal patterns (no metacharacters ⇒ all groupable), anchor
         // i ↦ literal `tok{i:03}`.
-        let patterns: Vec<(String, usize)> =
-            (0..N).map(|i| (format!("tok{i:03}"), i)).collect();
+        let patterns: Vec<(String, usize)> = (0..N).map(|i| (format!("tok{i:03}"), i)).collect();
         let catalog = MegakernelCatalog::build(&patterns);
 
         // Grouped: far fewer rules than literals, bounded by the group target.
@@ -895,37 +998,66 @@ mod tests {
             "grouping did not happen: {} rules for {N} literals",
             catalog.rule_count()
         );
-        assert!(catalog.host_detectors().is_empty(), "no literal should fall to host");
+        assert!(
+            catalog.host_detectors().is_empty(),
+            "no literal should fall to host"
+        );
 
         // Every anchor covered exactly once via rule_to_detectors.
-        let mut covered: Vec<usize> =
-            catalog.rule_to_detectors.iter().flatten().copied().collect();
+        let mut covered: Vec<usize> = catalog
+            .rule_to_detectors
+            .iter()
+            .flatten()
+            .copied()
+            .collect();
         covered.sort_unstable();
-        assert_eq!(covered, (0..N).collect::<Vec<_>>(), "anchor coverage gap/dup");
+        assert_eq!(
+            covered,
+            (0..N).collect::<Vec<_>>(),
+            "anchor coverage gap/dup"
+        );
 
         // Every rule carries a non-empty byte-check table (all rules here are grouped
         // literals), and rule_to_detectors[r] == the union of that rule's group anchors.
         for (r, lits) in catalog.group_literals.iter().enumerate() {
-            assert!(!lits.is_empty(), "grouped rule {r} has an empty disambiguation table");
+            assert!(
+                !lits.is_empty(),
+                "grouped rule {r} has an empty disambiguation table"
+            );
             let mut from_lits: Vec<usize> =
                 lits.iter().flat_map(|(_, a)| a.iter().copied()).collect();
             from_lits.sort_unstable();
             let mut from_rtd = catalog.rule_to_detectors[r].clone();
             from_rtd.sort_unstable();
-            assert_eq!(from_lits, from_rtd, "rule {r}: group_literals anchors != rule_to_detectors");
+            assert_eq!(
+                from_lits, from_rtd,
+                "rule {r}: group_literals anchors != rule_to_detectors"
+            );
         }
 
         // Each literal maps to its own anchor with the exact lowercased bytes.
         let mut seen = std::collections::BTreeSet::new();
         for lits in &catalog.group_literals {
             for (lit, anchors) in lits {
-                assert_eq!(anchors.len(), 1, "each distinct test literal has exactly one anchor");
+                assert_eq!(
+                    anchors.len(),
+                    1,
+                    "each distinct test literal has exactly one anchor"
+                );
                 let anchor = anchors[0];
-                assert_eq!(lit, format!("tok{anchor:03}").as_bytes(), "literal↔anchor mismatch");
+                assert_eq!(
+                    lit,
+                    format!("tok{anchor:03}").as_bytes(),
+                    "literal↔anchor mismatch"
+                );
                 assert!(seen.insert(anchor), "anchor {anchor} appears in two groups");
             }
         }
-        assert_eq!(seen.len(), N, "every literal must appear in exactly one group");
+        assert_eq!(
+            seen.len(),
+            N,
+            "every literal must appear in exactly one group"
+        );
     }
 
     /// `choose_seg_len` must split a large batch into a saturating number of

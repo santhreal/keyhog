@@ -11,7 +11,7 @@ fn gpu_moe_readback_uses_bounded_polling() {
 
     assert!(
         config.contains("pub gpu_moe_timeout_ms: Option<u64>")
-            && config.contains("pub const GPU_MOE_TIMEOUT_MS_DEFAULT: u64 = 30_000"),
+            && config.contains("const GPU_MOE_TIMEOUT_MS_DEFAULT: u64 = 30_000"),
         "GPU MoE readback timeout must be explicit scanner tuning with a bounded compiled default"
     );
     assert!(

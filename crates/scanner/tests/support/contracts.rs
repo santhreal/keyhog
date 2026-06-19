@@ -11,7 +11,7 @@
 //!   * the *credential-sufficiency* partition that turns a transform test into
 //!     a SOUND all-or-nothing BEHAVIOR contract instead of an accuracy RATE.
 //!
-//! T-01 contract (see `backlog/testing.md`): these runners assert a sound
+//! T-01 contract (see `docs/EXECUTION_PLAN.md`): these runners assert a sound
 //! PROPERTY — a credential that fires on its own bytes alone cannot be removed
 //! by a byte-preserving transform — never a recall/precision/F1 *rate* over a
 //! corpus. Aggregate accuracy rates live ONLY in the differential bench
@@ -19,7 +19,7 @@
 
 use std::path::PathBuf;
 
-use keyhog_core::config::ScanConfig;
+use keyhog_core::ScanConfig;
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
 use serde::Deserialize;
@@ -120,7 +120,7 @@ pub fn make_chunk(text: &str, source_type: &str, path: &str) -> Chunk {
 /// Convenience over [`make_chunk`] for the common case: a `source_type = "test"`
 /// chunk where only the text and path vary. Collapses the byte-identical
 /// 2-arg `make_chunk` copies that several runners (`backend_parity_matrix`,
-/// `gpu_parity`, `diagnose_sb_divergence`, `fallback_no_hit_branch_recall`)
+/// `gpu_parity`, `diagnose_sb_divergence`, `phase2_no_hit_branch_recall`)
 /// previously each defined locally.
 pub fn test_chunk(text: &str, path: &str) -> Chunk {
     make_chunk(text, "test", path)
@@ -161,7 +161,11 @@ pub fn surfaces(scanner: &CompiledScanner, chunk: &Chunk, credential: &str) -> b
 /// needs a keyword anchor nearby) legitimately depend on surrounding context a
 /// transform may perturb; how well they survive is an accuracy RATE owned by
 /// the bench, so they are recorded for visibility but never gated.
-pub fn credential_sufficient(scanner: &CompiledScanner, source_type: &str, primary: &Primary) -> bool {
+pub fn credential_sufficient(
+    scanner: &CompiledScanner,
+    source_type: &str,
+    primary: &Primary,
+) -> bool {
     let chunk = make_chunk(&primary.credential, source_type, "sufficiency-probe.txt");
     surfaces(scanner, &chunk, &primary.credential)
 }

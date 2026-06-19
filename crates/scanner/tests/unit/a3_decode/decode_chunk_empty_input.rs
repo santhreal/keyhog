@@ -1,7 +1,7 @@
 //! Empty chunk produces no decoded outputs.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn empty_chunk_yields_empty_decode_list() {

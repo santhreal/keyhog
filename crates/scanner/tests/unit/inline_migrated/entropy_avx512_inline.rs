@@ -1,7 +1,7 @@
 //! Migrated from src/entropy/avx512.rs
 
-use keyhog_scanner::entropy::fast::shannon_entropy_scalar;
 use keyhog_scanner::testing::calculate_shannon_entropy;
+use keyhog_scanner::testing::entropy_fast::shannon_entropy_scalar;
 
 /// Reference Shannon entropy for test validation.
 fn reference_entropy(data: &[u8]) -> f64 {

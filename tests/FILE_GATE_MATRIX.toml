@@ -61,6 +61,9 @@ path = "crates/cli/src/inline_suppression.rs"
 path = "crates/cli/src/installer.rs"
 
 [[module]]
+path = "crates/cli/src/installer/release.rs"
+
+[[module]]
 path = "crates/cli/src/lib.rs"
 
 [[module]]
@@ -142,6 +145,9 @@ path = "crates/cli/src/subcommands/calibrate.rs"
 path = "crates/cli/src/subcommands/completion.rs"
 
 [[module]]
+path = "crates/cli/src/subcommands/config.rs"
+
+[[module]]
 path = "crates/cli/src/subcommands/daemon.rs"
 
 [[module]]
@@ -177,7 +183,6 @@ path = "crates/cli/src/subcommands/scan_system.rs"
 [[module]]
 path = "crates/cli/src/subcommands/scan_system/mounts.rs"
 
-
 [[module]]
 path = "crates/cli/src/subcommands/uninstall.rs"
 
@@ -200,16 +205,19 @@ path = "crates/cli/src/value_parsers.rs"
 path = "crates/core/src/allowlist.rs"
 
 [[module]]
+path = "crates/core/src/allowlist/glob.rs"
+
+[[module]]
 path = "crates/core/src/allowlist/metadata.rs"
+
+[[module]]
+path = "crates/core/src/api.rs"
 
 [[module]]
 path = "crates/core/src/auto_fix.rs"
 
 [[module]]
 path = "crates/core/src/aws.rs"
-
-[[module]]
-path = "crates/core/src/banner.rs"
 
 [[module]]
 path = "crates/core/src/calibration.rs"
@@ -222,6 +230,9 @@ path = "crates/core/src/credential.rs"
 
 [[module]]
 path = "crates/core/src/dedup.rs"
+
+[[module]]
+path = "crates/core/src/display.rs"
 
 [[module]]
 path = "crates/core/src/encoding.rs"
@@ -239,6 +250,12 @@ path = "crates/core/src/lib.rs"
 path = "crates/core/src/merkle_index.rs"
 
 [[module]]
+path = "crates/core/src/merkle_index/storage.rs"
+
+[[module]]
+path = "crates/core/src/merkle_index/tmp_hygiene.rs"
+
+[[module]]
 path = "crates/core/src/merkle_spec_hash.rs"
 
 [[module]]
@@ -252,6 +269,12 @@ path = "crates/core/src/report/banner.rs"
 
 [[module]]
 path = "crates/core/src/report/csv.rs"
+
+[[module]]
+path = "crates/core/src/report/github_annotations.rs"
+
+[[module]]
+path = "crates/core/src/report/gitlab_sast.rs"
 
 [[module]]
 path = "crates/core/src/report/html.rs"
@@ -273,6 +296,9 @@ path = "crates/core/src/report/sarif_types.rs"
 
 [[module]]
 path = "crates/core/src/report/sarif_uri.rs"
+
+[[module]]
+path = "crates/core/src/report/style.rs"
 
 [[module]]
 path = "crates/core/src/report/text.rs"
@@ -297,6 +323,9 @@ path = "crates/core/src/spec/validate.rs"
 
 [[module]]
 path = "crates/core/src/spec/validate_regex.rs"
+
+[[module]]
+path = "crates/core/src/testing.rs"
 
 [[module]]
 path = "crates/scanner/src/alphabet_filter.rs"
@@ -407,9 +436,6 @@ path = "crates/scanner/src/engine/backend.rs"
 path = "crates/scanner/src/engine/backend_dispatch.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/backend_pattern_hits.rs"
-
-[[module]]
 path = "crates/scanner/src/engine/backend_prepared.rs"
 
 [[module]]
@@ -425,64 +451,25 @@ path = "crates/scanner/src/engine/compile.rs"
 path = "crates/scanner/src/engine/extract.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/fallback.rs"
+path = "crates/scanner/src/engine/phase2.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/fallback_anchor.rs"
+path = "crates/scanner/src/engine/phase2_anchor.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/fallback_entropy.rs"
+path = "crates/scanner/src/engine/phase2_entropy.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/fallback_entropy_helpers.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/fallback_generic.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/gpu_ac_phase1.rs"
+path = "crates/scanner/src/engine/phase2_generic.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/gpu_cache.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/gpu_coalesce.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/gpu_decode_scan.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/gpu_dispatch.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/gpu_forced.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/gpu_lazy.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/gpu_literal_phase1.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/gpu_megascan.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/gpu_phase2.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/gpu_postprocess.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/gpu_region_presence.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/gpu_program_fusion.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/gpu_regex_dfa.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/gpu_scan_wrappers.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/hot_patterns.rs"
@@ -509,10 +496,16 @@ path = "crates/scanner/src/engine/rule_pipeline.rs"
 path = "crates/scanner/src/engine/scan.rs"
 
 [[module]]
+path = "crates/scanner/src/engine/scan_coalesced.rs"
+
+[[module]]
 path = "crates/scanner/src/engine/scan_filters.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/scan_inner_profile.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/scan_no_hit_reassembly.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/scan_postprocess.rs"
@@ -560,6 +553,9 @@ path = "crates/scanner/src/gpu/backend.rs"
 path = "crates/scanner/src/gpu/gpu_shader.rs"
 
 [[module]]
+path = "crates/scanner/src/gpu/self_test.rs"
+
+[[module]]
 path = "crates/scanner/src/homoglyph.rs"
 
 [[module]]
@@ -599,7 +595,7 @@ path = "crates/scanner/src/ml_scorer/ml_weights.rs"
 path = "crates/scanner/src/multiline/config.rs"
 
 [[module]]
-path = "crates/scanner/src/multiline/fragment_cache.rs"
+path = "crates/scanner/src/fragment_cache.rs"
 
 [[module]]
 path = "crates/scanner/src/multiline/mod.rs"
@@ -620,13 +616,7 @@ path = "crates/scanner/src/pipeline/mod.rs"
 path = "crates/scanner/src/pipeline/postprocess/mod.rs"
 
 [[module]]
-path = "crates/scanner/src/pipeline/postprocess/raw_match.rs"
-
-[[module]]
 path = "crates/scanner/src/pipeline/scan_loop.rs"
-
-[[module]]
-path = "crates/scanner/src/platform_compat/io.rs"
 
 [[module]]
 path = "crates/scanner/src/platform_compat/mod.rs"
@@ -708,6 +698,9 @@ path = "crates/scanner/src/suppression/token_randomness.rs"
 
 [[module]]
 path = "crates/scanner/src/telemetry.rs"
+
+[[module]]
+path = "crates/scanner/src/testing.rs"
 
 [[module]]
 path = "crates/scanner/src/types.rs"
@@ -902,6 +895,9 @@ path = "crates/verifier/src/rate_limit.rs"
 path = "crates/verifier/src/ssrf.rs"
 
 [[module]]
+path = "crates/verifier/src/sigv4.rs"
+
+[[module]]
 path = "crates/verifier/src/verify/auth.rs"
 
 [[module]]
@@ -932,34 +928,31 @@ path = "crates/scanner/src/engine/compiled_api.rs"
 path = "crates/scanner/src/engine/csr.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/fallback_anchor_scan.rs"
+path = "crates/scanner/src/engine/phase2_anchor_scan.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/fallback_compiled.rs"
+path = "crates/scanner/src/engine/phase2_compiled.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/fallback_compiled_anchored.rs"
+path = "crates/scanner/src/engine/phase2_compiled_anchored.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/fallback_entropy_gates.rs"
+path = "crates/scanner/src/engine/phase2_generic_shape.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/fallback_generic_shape.rs"
+path = "crates/scanner/src/engine/phase2_hs.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/fallback_hs.rs"
+path = "crates/scanner/src/engine/phase2_prefilter.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/fallback_prefilter.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/tuning.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/fallback_truncate.rs"
+path = "crates/scanner/src/engine/phase2_truncate.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/megakernel_dispatch.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/megakernel_triggers.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/scan_postprocess_fragments.rs"
@@ -978,3 +971,45 @@ path = "crates/scanner/src/engine/trigger_bitmap.rs"
 
 [[module]]
 path = "crates/scanner/src/prefilter_degrade.rs"
+
+[[module]]
+path = "crates/scanner/src/api.rs"
+
+[[module]]
+path = "crates/scanner/src/context/placeholder.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_entropy/gates.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_entropy/helpers.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_generic/keywords.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_generic/shape_helpers.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/generic_keyword_owner.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/gpu_stack.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/windowed_support.rs"
+
+[[module]]
+path = "crates/scanner/src/multiline/string_extract.rs"
+
+[[module]]
+path = "crates/scanner/src/placeholder_words.rs"
+
+[[module]]
+path = "crates/scanner/src/simd/backend.rs"
+
+[[module]]
+path = "crates/scanner/src/simd/backend/scan.rs"
+
+[[module]]
+path = "crates/scanner/src/tuning.rs"

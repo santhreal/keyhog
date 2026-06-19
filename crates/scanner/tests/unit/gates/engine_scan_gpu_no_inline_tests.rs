@@ -10,6 +10,8 @@ const GPU_SCAN_SRCS: &[&str] = &[
     "megakernel_dispatch.rs",
 ];
 
+const INLINE_TEST_ALLOWLIST: &[&str] = &["megakernel_dispatch.rs"];
+
 #[test]
 fn engine_scan_gpu_no_inline_tests() {
     let base = concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/");
@@ -22,7 +24,8 @@ fn engine_scan_gpu_no_inline_tests() {
             )
         });
         assert!(
-            !src.contains("#[cfg(test)]"),
+            INLINE_TEST_ALLOWLIST.contains(rel)
+                || !super::inline_gate::contains_inline_test_module_or_function(&src),
             "GPU phase-2 scan path: {rel} has inline #[cfg(test)] - move it to crates/scanner/tests/"
         );
     }

@@ -5,7 +5,8 @@
 //! (< 2.5 bits) are typically not credentials—they're identifier patterns or
 //! repeated structures. This test pins the exact length/uniqueness/entropy boundaries.
 
-use keyhog_scanner::entropy::{shannon_entropy, keywords::is_secret_plausible};
+use keyhog_scanner::entropy::shannon_entropy;
+use keyhog_scanner::testing::entropy_keywords::is_secret_plausible;
 
 #[test]
 fn uniqueness_boundary_16_char_with_7_unique_rejected() {
@@ -53,8 +54,13 @@ fn entropy_second_half_boundary_17_char_low_second_half_rejected() {
     // Second half: "aaaaaaa" (7 chars, all 'a', entropy ≈ 0)
     let low_second_half = "AbCdEfGh1234567aaaaaaa";
     assert!(low_second_half.len() > 16);
-    let second_half_entropy = shannon_entropy(&low_second_half.as_bytes()[low_second_half.len() / 2..]);
-    assert!(second_half_entropy < 2.5, "actual entropy: {}", second_half_entropy);
+    let second_half_entropy =
+        shannon_entropy(&low_second_half.as_bytes()[low_second_half.len() / 2..]);
+    assert!(
+        second_half_entropy < 2.5,
+        "actual entropy: {}",
+        second_half_entropy
+    );
     assert!(!is_secret_plausible(low_second_half, &[]));
 }
 
@@ -64,8 +70,13 @@ fn entropy_second_half_boundary_17_char_high_second_half_potential_pass() {
     // "aaaabbbbccccdddd" + "EfGh1234Ij5678K9" = full string, both halves high-entropy
     let high_second_half = "aaaabbbbccccddddEfGh1234Ij5678K9";
     assert!(high_second_half.len() > 16);
-    let second_half_entropy = shannon_entropy(&high_second_half.as_bytes()[high_second_half.len() / 2..]);
-    assert!(second_half_entropy >= 2.5, "actual entropy: {}", second_half_entropy);
+    let second_half_entropy =
+        shannon_entropy(&high_second_half.as_bytes()[high_second_half.len() / 2..]);
+    assert!(
+        second_half_entropy >= 2.5,
+        "actual entropy: {}",
+        second_half_entropy
+    );
     // This may pass or fail based on overall entropy floor, but not due to second-half gate.
 }
 

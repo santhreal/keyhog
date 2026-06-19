@@ -1,5 +1,6 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use keyhog_scanner::testing::confidence::{compute_confidence, ConfidenceSignals};
+use std::hint::black_box;
 
 fn bench_confidence(c: &mut Criterion) {
     let signals = vec![
@@ -44,7 +45,7 @@ fn bench_confidence(c: &mut Criterion) {
     let mut group = c.benchmark_group("confidence");
     for (name, sig) in &signals {
         group.bench_with_input(BenchmarkId::new("compute", *name), sig, |b, s| {
-            b.iter(|| criterion::black_box(compute_confidence(criterion::black_box(s))));
+            b.iter(|| black_box(compute_confidence(black_box(s))));
         });
     }
     group.finish();

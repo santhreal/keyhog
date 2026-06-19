@@ -53,7 +53,7 @@ fn homoglyph_map() -> &'static HashMap<char, Vec<char>> {
 
 /// Expand a regex pattern to include homoglyphs.
 /// e.g. "ghp_" -> "[gｇ][hнｈ][pрｐ]_"
-pub fn expand_homoglyphs(pattern: &str) -> String {
+pub(crate) fn expand_homoglyphs(pattern: &str) -> String {
     let map = homoglyph_map();
     let mut expanded = String::new();
 

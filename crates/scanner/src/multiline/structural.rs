@@ -1,25 +1,43 @@
 use super::config::LineMapping;
-use super::preprocessor::extract_prefix;
+use super::string_extract::extract_prefix;
 use crate::fragment_cache::FragmentCache;
 use crate::shared_regexes::ASSIGN_RE;
 use regex::Regex;
 use std::sync::LazyLock;
 
 static CONCAT_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
-    Regex::new(
+    match Regex::new(
         r#"(?i)^\s*[a-z0-9_\-\.]{2,64}\s*[:=]\s*([a-z0-9_\-]{2,32}(?:\s*\+\s*[a-z0-9_\-]{2,32}){1,8})\s*;?\s*$"#,
-    )
-    .ok()
+    ) {
+        Ok(re) => Some(re),
+        Err(error) => {
+            crate::prefilter_degrade::warn_prefilter_disabled(
+                "multiline concatenation regex (CONCAT_RE)",
+                &error,
+            );
+            None
+        }
+    }
 });
 
 static TVAR_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
-    Regex::new(r#"(?i)([a-z0-9_$]{1,32})\s*[:=]\s*["'`]([a-zA-Z0-9/+=_\-\.]{2,})["'`]\s*;?\s*$"#)
-        .ok()
+    match Regex::new(
+        r#"(?i)([a-z0-9_$]{1,32})\s*[:=]\s*["'`]([a-zA-Z0-9/+=_\-\.]{2,})["'`]\s*;?\s*$"#,
+    ) {
+        Ok(re) => Some(re),
+        Err(error) => {
+            crate::prefilter_degrade::warn_prefilter_disabled(
+                "multiline template-variable regex (TVAR_RE)",
+                &error,
+            );
+            None
+        }
+    }
 });
 
 pub(super) fn warm_runtime_regexes() {
-    let _ = CONCAT_RE.as_ref();
-    let _ = TVAR_RE.as_ref();
+    let _ = CONCAT_RE.as_ref(); // LAW10: forces lazy-static/regex eager init (warm-up); not a fallback
+    let _ = TVAR_RE.as_ref(); // LAW10: forces lazy-static/regex eager init (warm-up); not a fallback
 }
 
 pub(super) fn collect_structural_fragments(

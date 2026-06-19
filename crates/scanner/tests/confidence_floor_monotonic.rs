@@ -19,7 +19,7 @@
 //! match carries is computed with no reference to `min_confidence` (the value
 //! never enters `confidence::apply_post_ml_penalties`, the entropy/length
 //! boosts, or the checksum policy), and both gates that consult it
-//! (`engine/fallback_generic.rs` scan-time, `orchestrator/postprocess.rs`
+//! (`engine/phase2_generic.rs` scan-time, `orchestrator/postprocess.rs`
 //! post-scan) are pure `confidence < floor` comparisons. Raising a threshold
 //! that does not feed back into the value it thresholds can only remove
 //! matches, never add them.
@@ -91,10 +91,7 @@ fn corpus() -> Vec<keyhog_core::Chunk> {
             "SESSION_KEY=aGVsbG8td29ybGQtc2Vzc2lvbi1rZXktMTIz\n",
             "config/f.env",
         ),
-        make_chunk(
-            "secret = \"shortish-1234567890abcd\"\n",
-            "config/g.toml",
-        ),
+        make_chunk("secret = \"shortish-1234567890abcd\"\n", "config/g.toml"),
     ]
 }
 
@@ -158,7 +155,9 @@ fn finding_set_is_nested_and_non_increasing_as_floor_rises() {
     // And the widest floor must find the high-confidence named tokens at all,
     // proving the corpus is live (not an empty-scan false pass).
     assert!(
-        widest.iter().any(|(id, _, _)| id == "aws-access-key" || id == "hot-aws_key"),
+        widest
+            .iter()
+            .any(|(id, _, _)| id == "aws-access-key" || id == "hot-aws_key"),
         "expected the planted AKIA token in the unfiltered (floor 0.0) finding set; got {widest:?}",
     );
 }

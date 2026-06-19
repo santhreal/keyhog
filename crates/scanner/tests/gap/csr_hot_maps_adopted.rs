@@ -6,7 +6,7 @@ fn csr_u32_is_adopted_for_hot_index_maps() {
     for field in [
         "prefix_propagation: CsrU32",
         "same_prefix_patterns: CsrU32",
-        "fallback_keyword_to_patterns: CsrU32",
+        "phase2_keyword_to_patterns: CsrU32",
         "hs_index_map: CsrU32",
     ] {
         assert!(
@@ -18,7 +18,7 @@ fn csr_u32_is_adopted_for_hot_index_maps() {
     for dense_field in [
         "prefix_propagation: Vec<Vec<usize>>",
         "same_prefix_patterns: Vec<Vec<usize>>",
-        "fallback_keyword_to_patterns: Vec<Vec<usize>>",
+        "phase2_keyword_to_patterns: Vec<Vec<usize>>",
         "hs_index_map: Vec<Vec<usize>>",
     ] {
         assert!(

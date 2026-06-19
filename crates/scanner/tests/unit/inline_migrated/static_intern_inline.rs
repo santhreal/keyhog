@@ -1,7 +1,6 @@
 //! Migrated from src/static_intern.rs
 
-use keyhog_scanner::static_intern::StaticInterner;
-use keyhog_scanner::testing::seed_source_type_count;
+use keyhog_scanner::testing::{seed_source_type_count, StaticInterner};
 use std::sync::Arc;
 
 #[test]

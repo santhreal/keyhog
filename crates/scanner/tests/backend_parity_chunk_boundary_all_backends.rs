@@ -1,9 +1,10 @@
 //! Chunk boundary straddle parity across all backends (module-pair test).
 //!
-//! The chunk-boundary reassembly path (`engine/boundary.rs`) synthesises
-//! a 2 KiB buffer from the tail of one chunk and the head of the next,
-//! rescans it, and appends straddle findings to the results. This path is
-//! ONLY exercised when the backend is `SimdCpu` or `CpuFallback`
+//! The chunk-boundary reassembly path (`engine/boundary.rs`) synthesises a
+//! seam buffer from adjacent chunks, using a scanner-derived bounded width or
+//! the full adjacent pair for unbounded generators, then appends straddle
+//! findings to the results. This path is ONLY exercised when the backend is
+//! `SimdCpu` or `CpuFallback`
 //! (`backend_dispatch.rs` shows GPU paths call `scan_chunk_boundaries`
 //! after their own dispatch).
 //!
@@ -96,24 +97,17 @@ fn boundary_straddle_parity_aws_key_split_across_chunks() {
         ScanBackend::MegaScan,
     ];
 
+    scanner.clear_fragment_cache();
     let simd_results =
         scanner.scan_chunks_with_backend(&[chunk_a.clone(), chunk_b.clone()], ScanBackend::SimdCpu);
     let simd_keys = collect_boundary_findings(&simd_results);
 
     let mut failures = Vec::new();
     for backend in &backends[1..] {
+        scanner.clear_fragment_cache();
         let results =
             scanner.scan_chunks_with_backend(&[chunk_a.clone(), chunk_b.clone()], *backend);
         let keys = collect_boundary_findings(&results);
-
-        // GPU/MegaScan silently degrade to SIMD on no adapter.
-        if matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan)
-            && keys.is_empty()
-            && !simd_keys.is_empty()
-        {
-            eprintln!("SKIP: {backend:?} (no adapter, silent SIMD degrade)");
-            continue;
-        }
 
         if keys != simd_keys {
             let only_simd: Vec<_> = simd_keys.difference(&keys).take(3).collect();
@@ -152,7 +146,7 @@ fn boundary_straddle_parity_github_pat_split_across_chunks() {
 
     // GitHub Personal Access Token: ghp_ + 36 base62 chars. The github detector
     // verifies the trailing CRC32 checksum, so a fabricated token with a random
-    // tail is silently dropped (memory: checksum-invalidates-fabricated-token-
+    // tail is correctly rejected (memory: checksum-invalidates-fabricated-token-
     // fixtures). Use the valid-checksum token from the sibling coalesced-parity
     // test so the SIMD precondition (and the boundary reassembly it gates) holds.
     let secret = "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";
@@ -172,6 +166,7 @@ fn boundary_straddle_parity_github_pat_split_across_chunks() {
     let chunk_a = make_chunk(&data_a, "github_boundary.py", 0);
     let chunk_b = make_chunk(&data_b, "github_boundary.py", len_a);
 
+    scanner.clear_fragment_cache();
     let simd_results =
         scanner.scan_chunks_with_backend(&[chunk_a.clone(), chunk_b.clone()], ScanBackend::SimdCpu);
     let simd_findings: Vec<_> = simd_results
@@ -185,6 +180,7 @@ fn boundary_straddle_parity_github_pat_split_across_chunks() {
         "boundary straddle test setup failed: SIMD must find the split secret"
     );
 
+    scanner.clear_fragment_cache();
     let fallback_results =
         scanner.scan_chunks_with_backend(&[chunk_a, chunk_b], ScanBackend::CpuFallback);
     let fallback_findings: Vec<_> = fallback_results

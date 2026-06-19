@@ -1,10 +1,6 @@
 use super::{CONFIDENCE_MAX, CONFIDENCE_MIN};
-// Single source of truth for the placeholder-word set. Previously this module
-// kept a byte-identical local copy of `decode_structure`'s array (the same six
-// lowercase words, the same "NOT included" exclusions); the two drifted apart
-// is exactly the duplication this consolidation removes. The surface-form and
-// decoded-form placeholder checks now read the one exported const.
-use crate::decode_structure::PLACEHOLDER_WORDS;
+#[cfg(any(feature = "ml", test))]
+use keyhog_core::BetaCounters;
 
 /// Sanitize a confidence value so a NaN or infinity entering the
 /// pipeline can never reach the final finding.
@@ -22,7 +18,7 @@ use crate::decode_structure::PLACEHOLDER_WORDS;
 /// returned `None`). Treat +/-Inf the same way the original clamp would
 /// have, since clamp handles infinities correctly.
 #[inline]
-pub fn finalize_confidence(score: f64) -> f64 {
+pub(crate) fn finalize_confidence(score: f64) -> f64 {
     if score.is_nan() {
         return CONFIDENCE_MIN;
     }
@@ -31,17 +27,10 @@ pub fn finalize_confidence(score: f64) -> f64 {
 
 /// Check if a credential contains a known placeholder word (case-insensitive).
 ///
-/// Delegates to the crate's canonical SIMD-skimming substring search
-/// (`ascii_ci::ci_find`, a `memchr2` first-byte skim) instead of the naive
-/// `windows().any(eq_ignore_ascii_case)` scan this module used to re-implement.
-/// Every entry of `PLACEHOLDER_WORDS` is an ASCII-lowercase byte literal, which
-/// is exactly `ci_find`'s "needle already lowercase" contract, so no per-call
-/// lowering is needed and the hot path pays one `memchr2` skim per word.
-pub fn contains_placeholder_word(credential: &str) -> bool {
-    let haystack = credential.as_bytes();
-    PLACEHOLDER_WORDS
-        .iter()
-        .any(|word| crate::ascii_ci::ci_find(haystack, word))
+/// Delegates to the shared Tier-B placeholder-word loader so surface-form,
+/// decoded-form, and doc-marker suppression cannot drift.
+pub(crate) fn contains_placeholder_word(credential: &str) -> bool {
+    crate::placeholder_words::contains_placeholder_word(credential)
 }
 
 fn has_credential_url_userinfo_without_placeholder(credential: &str) -> bool {
@@ -60,7 +49,7 @@ fn has_credential_url_userinfo_without_placeholder(credential: &str) -> bool {
         .find(|ch: char| {
             matches!(ch, '/' | '?' | '#' | '"' | '\'' | '<' | '>' | ')' | '(') || ch.is_whitespace()
         })
-        .unwrap_or(authority.len());
+        .unwrap_or(authority.len()); // LAW10: search/boundary miss => span end (whole remainder), recall-safe boundary default
     let authority = &authority[..authority_end];
     let Some(at) = authority.rfind('@') else {
         return false;
@@ -73,7 +62,7 @@ fn has_credential_url_userinfo_without_placeholder(credential: &str) -> bool {
 }
 
 /// Compute the ratio of unique bytes to total bytes.
-pub fn char_diversity(credential: &str) -> f64 {
+pub(crate) fn char_diversity(credential: &str) -> f64 {
     let len = credential.len();
     if len == 0 {
         return 1.0;
@@ -118,7 +107,7 @@ fn longest_repeat_run_len(credential: &str) -> usize {
 }
 
 /// Compute the length of the longest run of identical characters divided by the total length.
-pub fn max_repeat_run(credential: &str) -> f64 {
+pub(crate) fn max_repeat_run(credential: &str) -> f64 {
     let len = credential.len();
     if len == 0 {
         return 0.0;
@@ -168,7 +157,17 @@ pub(crate) fn is_service_anchored_detector(detector_id: &str) -> bool {
 /// anchor already proved it is real. The placeholder-WORD penalty still
 /// applies to everything (a named token literally containing "EXAMPLE" /
 /// "placeholder" is a doc sample regardless of which detector fired).
-pub fn apply_post_ml_penalties(score: f64, credential: &str, is_named: bool) -> f64 {
+#[cfg(any(feature = "entropy", feature = "ml", test))]
+pub(crate) fn apply_post_ml_penalties(score: f64, credential: &str, is_named: bool) -> f64 {
+    apply_post_ml_penalties_with_encoded_text_lift(score, credential, is_named, false)
+}
+
+pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
+    score: f64,
+    credential: &str,
+    is_named: bool,
+    allow_encoded_text_secret: bool,
+) -> f64 {
     if credential.is_empty() {
         return score;
     }
@@ -236,7 +235,9 @@ pub fn apply_post_ml_penalties(score: f64, credential: &str, is_named: bool) -> 
         // service that publishes a 44+ char raw-base64 secret WITHOUT a
         // service-specific prefix; if it has one, a named detector would
         // have matched it instead of generic-*.
-        if crate::decode_structure::looks_like_uniform_base64_blob(credential) {
+        if !allow_encoded_text_secret
+            && crate::decode_structure::looks_like_uniform_base64_blob(credential)
+        {
             adjusted *= 0.02;
         }
         // Double-base64 wrapper (k8s `data:` shape: outer base64 decodes to
@@ -244,7 +245,8 @@ pub fn apply_post_ml_penalties(score: f64, credential: &str, is_named: bool) -> 
         // >= 32). The inner bytes are the user-supplied content; the outer
         // wrapper is categorically a data envelope, not a credential. Mirror
         // v32 had 7 such FPs concentrated in yaml/k8s-secret fixtures.
-        if crate::decode_structure::decoded_is_base64_blob(credential) {
+        if !allow_encoded_text_secret && crate::decode_structure::decoded_is_base64_blob(credential)
+        {
             adjusted *= 0.02;
         }
     }
@@ -267,12 +269,13 @@ pub fn apply_post_ml_penalties(score: f64, credential: &str, is_named: bool) -> 
 ///
 /// Bypass when no calibration cache exists: returns `score` unchanged so
 /// the scanner stays usable on a fresh install.
-pub fn apply_calibration_multiplier(score: f64, detector_id: &str) -> f64 {
-    use keyhog_core::calibration::Calibration;
+#[cfg(any(feature = "ml", test))]
+pub(crate) fn apply_calibration_multiplier(score: f64, detector_id: &str) -> f64 {
+    use keyhog_core::Calibration;
     use std::sync::OnceLock;
     static CALIBRATION: OnceLock<Option<Calibration>> = OnceLock::new();
     let calibration = CALIBRATION.get_or_init(|| {
-        let path = keyhog_core::calibration::default_cache_path()?;
+        let path = keyhog_core::calibration_default_cache_path()?;
         if !path.exists() {
             return None;
         }
@@ -291,18 +294,41 @@ pub fn apply_calibration_multiplier(score: f64, detector_id: &str) -> f64 {
     // history, the multiplier diverges from 0.5 and meaningfully shapes
     // the score.
     let counters = calibration.counters(detector_id);
-    if counters.observations() == 0 {
+    if calibration_observations(counters) == 0 {
         return finalize_confidence(score);
     }
-    let multiplier = counters.posterior_mean();
+    let multiplier = calibration_posterior_mean(counters);
     finalize_confidence(score * multiplier)
 }
 
-/// Apply path-based confidence penalties for matches in test, example, or dummy directories.
+#[cfg(any(feature = "ml", test))]
+fn calibration_posterior_mean(counters: BetaCounters) -> f64 {
+    let total = counters.alpha as f64 + counters.beta as f64;
+    if total == 0.0 {
+        0.5
+    } else {
+        counters.alpha as f64 / total
+    }
+}
+
+#[cfg(any(feature = "ml", test))]
+fn calibration_observations(counters: BetaCounters) -> u32 {
+    counters
+        .alpha
+        .saturating_sub(1)
+        .saturating_add(counters.beta.saturating_sub(1))
+}
+
+/// Apply path-based confidence penalties for matches in test or placeholder directories.
 ///
 /// `penalize = false` is the scanner side of `--no-suppress-test-fixtures`.
 /// The NaN-safety barrier still runs in every branch.
-pub fn apply_path_confidence_penalties(score: f64, path: Option<&str>, penalize: bool) -> f64 {
+#[cfg(any(feature = "ml", test))]
+pub(crate) fn apply_path_confidence_penalties(
+    score: f64,
+    path: Option<&str>,
+    penalize: bool,
+) -> f64 {
     // Even when there's no path to inspect, the score must still pass
     // through the NaN-safety barrier - a NaN entering this function
     // would otherwise propagate verbatim into the final finding.
@@ -312,18 +338,17 @@ pub fn apply_path_confidence_penalties(score: f64, path: Option<&str>, penalize:
     if !penalize {
         return finalize_confidence(score);
     }
-    // Per-segment ASCII-case-insensitive compare - no full-path
-    // lowercase allocation per match.
-    let is_test_like = path.split(['/', '\\']).any(|component| {
-        component.eq_ignore_ascii_case("test")
-            || component.eq_ignore_ascii_case("tests")
-            || component.eq_ignore_ascii_case("example")
-            || component.eq_ignore_ascii_case("examples")
-            || component.eq_ignore_ascii_case("sample")
-            || component.eq_ignore_ascii_case("samples")
-            || component.eq_ignore_ascii_case("dummy")
+    const FIXTURE_COMPONENTS: &[&str] =
+        &["test", "tests", "example", "examples", "sample", "samples"];
+    let is_fixture_like = crate::platform_compat::path_component_matches(path, |component| {
+        FIXTURE_COMPONENTS
+            .iter()
+            .any(|fixture| component.eq_ignore_ascii_case(fixture))
+            || crate::placeholder_words::words()
+                .iter()
+                .any(|word| component.eq_ignore_ascii_case(word.lower()))
     });
 
-    let adjusted = if is_test_like { score * 0.5 } else { score };
+    let adjusted = if is_fixture_like { score * 0.5 } else { score };
     finalize_confidence(adjusted)
 }

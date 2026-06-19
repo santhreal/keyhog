@@ -1,5 +1,5 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::pipeline::should_suppress_named_detector_finding;
+use keyhog_scanner::testing::should_suppress_named_detector_finding;
 
 // KH-L-0414: the post-process weak-anchor suppressor
 // (`should_suppress_named_detector_finding_weak`) applied the SAME

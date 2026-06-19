@@ -105,8 +105,9 @@ pub fn assert_detector_fires(detector_id: &str, text: &str, credential: &str) {
     // containment), so it can only turn brittle false-failures into passes.
     assert!(
         matches.iter().any(|m| {
-            let normalized =
-                keyhog_scanner::unicode_hardening::normalize_homoglyphs(m.credential.as_ref());
+            let normalized = keyhog_scanner::testing::unicode_hardening::normalize_homoglyphs(
+                m.credential.as_ref(),
+            );
             normalized.contains(credential)
         }),
         "{detector_id} must fire on positive oracle; credential={credential:?} all={:?}",

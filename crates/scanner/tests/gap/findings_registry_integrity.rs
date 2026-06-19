@@ -1,40 +1,29 @@
-//! Validates GAP_FINDINGS.toml registry: every open finding has a test file on disk.
+//! Validates the single internal planning contract.
 
 use std::path::PathBuf;
 
 #[test]
-fn gap_findings_registry_matches_test_files() {
+fn only_execution_plan_is_the_internal_plan() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let repo = manifest
         .parent()
         .and_then(|p| p.parent())
         .expect("repo root");
-    let registry = repo.join("GAP_FINDINGS.toml");
-    let raw = std::fs::read_to_string(&registry).expect("GAP_FINDINGS.toml readable");
-
-    let mut ids = Vec::new();
-    let mut tests = Vec::new();
-    for line in raw.lines() {
-        let line = line.trim();
-        if let Some(rest) = line.strip_prefix("id = ") {
-            ids.push(rest.trim_matches('"').to_string());
-        }
-        if let Some(rest) = line.strip_prefix("test = ") {
-            tests.push(rest.trim_matches('"').to_string());
-        }
-    }
-    assert_eq!(
-        ids.len(),
-        tests.len(),
-        "each finding must have id + test path"
+    assert!(
+        repo.join("docs/EXECUTION_PLAN.md").is_file(),
+        "docs/EXECUTION_PLAN.md is the single internal plan"
     );
-
-    for (id, test_path) in ids.iter().zip(tests.iter()) {
-        let path = repo.join(test_path);
+    for retired in [
+        "GAP_FINDINGS.toml",
+        "docs/legendary",
+        "docs/ALL_VECTORS_GAPS.md",
+        "docs/GPU_DETECTION_REWRITE.md",
+        "docs/GPU_OOM_INNOVATION_CATALOG.md",
+        "benchmarks/docs/RECALL_GAP.md",
+    ] {
         assert!(
-            path.is_file(),
-            "{id}: registered test missing at {}",
-            path.display()
+            !repo.join(retired).exists(),
+            "retired planning artifact must stay absent: {retired}"
         );
     }
 }

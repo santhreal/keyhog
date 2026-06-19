@@ -19,7 +19,7 @@
 //! base64(random_bytes_with_non_alphabet_bytes) MUST NOT be flagged.
 
 use base64::Engine as _;
-use keyhog_scanner::decode_structure::decoded_is_base64_blob;
+use keyhog_scanner::testing::decode_structure::decoded_is_base64_blob;
 use proptest::prelude::*;
 
 proptest! {

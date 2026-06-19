@@ -1,7 +1,7 @@
 //! Underscore-only quoted blobs must not decode as hex.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn underscore_only_string_produces_no_hex_decoded_chunks() {

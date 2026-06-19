@@ -1,5 +1,5 @@
-use keyhog_scanner::entropy::keywords::{is_candidate_plausible, is_secret_plausible};
 use keyhog_scanner::entropy::*;
+use keyhog_scanner::testing::entropy_keywords::{is_candidate_plausible, is_secret_plausible};
 
 fn find_secrets(
     text: &str,
@@ -287,7 +287,13 @@ fn special_character_placeholders_are_rejected() {
 #[test]
 fn large_input_preserves_line_and_offset_for_match() {
     let filler = "abcd1234\n".repeat(2000);
-    let secret = "QwErTy123!@#ZxCvBn456$%^AsDfGh789&*(YuIoP0)_+LmNoPqRsTuV";
+    // The prior fixture contained `&`, which clean_candidate_value treats as a
+    // truncation boundary (stops at whitespace | `&` | `<`), so the extracted
+    // candidate was the prefix up to `&` rather than the full secret string.
+    // This fixture uses `!` instead of `&` so the whole 56-char value is
+    // extracted and the line/offset assertions can verify large-input tracking.
+    let secret = "QwErTy123!@#ZxCvBn456$%^AsDfGh789!*(YuIoP0)_+LmNoPqRsTuV";
+    assert_eq!(secret.len(), 56, "test invariant: 56-char secret");
     let text = format!("{filler}API_KEY={secret}\n");
     let matches = find_secrets(&text, 16, 0, HIGH_ENTROPY_THRESHOLD);
     assert_eq!(matches.len(), 1);
@@ -389,9 +395,31 @@ fn keyword_free_uses_custom_threshold() {
 }
 
 #[test]
+fn credential_keyword_context_honors_conservative_entropy_threshold() {
+    let value = "aAbBcCdDeEfFgGhH12345678";
+    let text = format!("api_key = \"{value}\"\n");
+
+    let default_matches = find_secrets(&text, 16, 1, HIGH_ENTROPY_THRESHOLD);
+    assert_eq!(default_matches.len(), 1);
+    assert_eq!(default_matches[0].value, value);
+
+    let conservative = find_secrets(&text, 16, 1, 6.0);
+    assert!(
+        conservative.is_empty(),
+        "credential-keyword entropy context must honor raised entropy_threshold; got {conservative:?}"
+    );
+
+    let maximum = find_secrets(&text, 16, 1, 8.0);
+    assert!(
+        maximum.is_empty(),
+        "threshold 8.0 must suppress moderate-entropy keyword-anchored values; got {maximum:?}"
+    );
+}
+
+#[test]
 fn entropy_simd_agreement() {
     use keyhog_scanner::entropy::shannon_entropy as shannon_entropy_scalar;
-    use keyhog_scanner::entropy::fast::shannon_entropy_simd;
+    use keyhog_scanner::testing::entropy_fast::shannon_entropy_simd;
     use proptest::prelude::*;
 
     let mut runner = proptest::test_runner::TestRunner::default();

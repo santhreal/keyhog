@@ -21,5 +21,5 @@ fn preferred_backend_label_nonempty() {
         ..Default::default()
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();
-    assert!(!s.preferred_backend_label().is_empty());
+    assert!(!s.runtime_status().preferred_backend.is_empty());
 }

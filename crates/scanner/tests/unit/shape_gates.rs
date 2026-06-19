@@ -1,6 +1,6 @@
 /// Unit tests for shape-gate heuristics exercised through the public
 /// `keyhog_scanner::jwt` module (which is truly public) and through
-/// `keyhog_scanner::normalize_chunk_data` / `should_suppress_known_example_credential`.
+/// `keyhog_scanner::testing::normalize_chunk_data` / `should_suppress_known_example_credential`.
 ///
 /// The individual shape-gate functions (`looks_like_dashed_serial_key`, etc.)
 /// are `pub(crate)` so they cannot be accessed from integration tests.
@@ -13,7 +13,7 @@
 /// For each gate, at least one positive (should suppress) and one negative
 /// (should NOT suppress) case is present.
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::{normalize_chunk_data, should_suppress_known_example_credential};
+use keyhog_scanner::testing::{normalize_chunk_data, should_suppress_known_example_credential};
 
 // ── placeholder / example credential suppression ──────────────────────────────
 

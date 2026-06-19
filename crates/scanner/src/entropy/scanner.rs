@@ -1,5 +1,6 @@
 use super::{
-    keywords::*, shannon_entropy, EntropyMatch, LOW_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD,
+    keywords::*, shannon_entropy, EntropyMatch, HIGH_ENTROPY_THRESHOLD, LOW_ENTROPY_THRESHOLD,
+    VERY_HIGH_ENTROPY_THRESHOLD,
 };
 
 const CREDENTIAL_CONTEXT_MIN_LEN: usize = 8;
@@ -14,12 +15,28 @@ const KEYWORD_FREE_LABEL: &str = "none (high-entropy)";
 /// canonical-shape tests in `tests/unit/inline_migrated/` can build the same
 /// context the scanner uses, without leaking the private length constant.
 #[doc(hidden)]
-pub fn credential_keyword_context(keyword: &str) -> KeywordContext {
+#[cfg(test)]
+pub(crate) fn credential_keyword_context(keyword: &str) -> KeywordContext {
+    credential_keyword_context_with_lift(keyword, false)
+}
+
+/// Lift-aware sibling of [`credential_keyword_context`]: builds the same
+/// production credential anchor but with `allow_canonical_shapes` set to
+/// `allow_canonical_lift`. Exposed (doc-hidden, via `testing::entropy_scanner`)
+/// so the CredData recall-lane unit tests can drive `candidate_is_plausible`
+/// through both the strict gate and the model-arbitrated lift.
+#[doc(hidden)]
+#[cfg(test)]
+pub(crate) fn credential_keyword_context_with_lift(
+    keyword: &str,
+    allow_canonical_lift: bool,
+) -> KeywordContext {
     KeywordContext {
         keyword: keyword.to_string(),
         threshold: LOW_ENTROPY_THRESHOLD,
         min_len: CREDENTIAL_CONTEXT_MIN_LEN,
         is_credential_context: true,
+        allow_canonical_shapes: allow_canonical_lift,
     }
 }
 
@@ -80,6 +97,55 @@ pub fn find_entropy_secrets_with_threshold(
     placeholder_keywords: &[String],
     skip_lines: Option<&std::collections::HashSet<usize>>,
 ) -> Vec<EntropyMatch> {
+    // Stable public signature: defaults `allow_canonical_lift = false` so the
+    // non-ML / no-model behaviour (and every caller pinned to this 9-arg form)
+    // is byte-identical. The production scanner uses the lift-aware entry point
+    // below when the MoE is authoritative.
+    find_entropy_secrets_with_canonical_lift(
+        text,
+        min_length,
+        context_lines,
+        entropy_threshold,
+        keyword_free_threshold,
+        secret_keywords,
+        test_keywords,
+        placeholder_keywords,
+        skip_lines,
+        false,
+    )
+}
+
+/// CredData recall lane (candidate GENERATION). Identical to
+/// [`find_entropy_secrets_with_threshold`] but with an explicit
+/// `allow_canonical_lift` switch: when `true`, a STRONG credential-anchored line
+/// (`is_credential_context`) is allowed to GENERATE a candidate whose value is a
+/// canonical hash/UUID/serial shape, so the downstream MoE can arbitrate it.
+///
+/// This closes the root candidate-generation gap for the CredData `UUID` and
+/// `hex64` (AES-256 key) miss classes, where the value is dropped at the
+/// generation source by [`is_canonical_non_secret_shape`] before any candidate
+/// is produced — so no amount of downstream model authority can recover it.
+///
+/// `allow_canonical_lift` is wired from `ml_enabled && entropy_ml_authoritative`
+/// at the call site (`engine::phase2_entropy`). With it `false` (the default,
+/// the non-ML path, the high-precision preset) the behaviour is byte-identical
+/// to the strict gate — the SecretBench-mirror precision is preserved because
+/// the lift never engages without the model that earns it. The keyword-FREE
+/// candidate path NEVER lifts: a value with no credential anchor has no positive
+/// evidence, so canonical hash/UUID shapes stay suppressed at the source there.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn find_entropy_secrets_with_canonical_lift(
+    text: &str,
+    min_length: usize,
+    context_lines: usize,
+    entropy_threshold: f64,
+    keyword_free_threshold: f64,
+    secret_keywords: &[String],
+    test_keywords: &[String],
+    placeholder_keywords: &[String],
+    skip_lines: Option<&std::collections::HashSet<usize>>,
+    allow_canonical_lift: bool,
+) -> Vec<EntropyMatch> {
     let lines: Vec<&str> = text.lines().collect();
     let line_offsets = cumulative_line_offsets(&lines);
     let mut matches = Vec::new();
@@ -99,6 +165,7 @@ pub fn find_entropy_secrets_with_threshold(
         test_keywords,
         placeholder_keywords,
         skip_lines,
+        allow_canonical_lift,
     );
     scan_keyword_free_candidates(
         &lines,
@@ -113,6 +180,7 @@ pub fn find_entropy_secrets_with_threshold(
     matches
 }
 
+#[allow(clippy::too_many_arguments)]
 fn scan_keyword_contexts(
     lines: &[&str],
     line_offsets: &[usize],
@@ -126,9 +194,16 @@ fn scan_keyword_contexts(
     _test_keywords: &[String],
     placeholder_keywords: &[String],
     skip_lines: Option<&std::collections::HashSet<usize>>,
+    allow_canonical_lift: bool,
 ) {
     for (keyword_line_index, keyword_line) in keyword_lines {
-        let context = keyword_context(keyword_line, min_length, entropy_threshold, secret_keywords);
+        let context = keyword_context(
+            keyword_line,
+            min_length,
+            entropy_threshold,
+            secret_keywords,
+            allow_canonical_lift,
+        );
         let start = keyword_line_index.saturating_sub(context_lines);
         let end = (*keyword_line_index + context_lines + 1).min(lines.len());
         for line_idx in start..end {
@@ -166,6 +241,10 @@ fn scan_keyword_free_candidates(
         threshold: effective_keyword_free_threshold,
         min_len: KEYWORD_FREE_MIN_LEN,
         is_credential_context: false,
+        // Keyword-FREE: no credential anchor ⇒ no positive evidence ⇒ the
+        // canonical hash/UUID-shape gate stays strict here unconditionally,
+        // regardless of model authority. The lift is anchor-gated.
+        allow_canonical_shapes: false,
     };
     for (line_idx, line) in lines.iter().enumerate() {
         if let Some(skip) = skip_lines {
@@ -203,6 +282,7 @@ fn collect_line_candidates(
         context.min_len,
         placeholder_keywords,
         context.is_credential_context,
+        context.allow_canonical_shapes,
     ) {
         let entropy = shannon_entropy(candidate.as_bytes());
         if !candidate_is_plausible(&candidate, entropy, context, placeholder_keywords)
@@ -220,7 +300,7 @@ fn collect_line_candidates(
     }
 }
 
-pub fn candidate_is_plausible(
+pub(crate) fn candidate_is_plausible(
     candidate: &str,
     entropy: f64,
     context: &KeywordContext,
@@ -241,7 +321,20 @@ pub fn candidate_is_plausible(
         // override a perfect canonical shape. Drop the EXACT canonical shapes
         // even with the anchor; a real high-entropy key under a service anchor
         // is matched by its detector regex, not this generic entropy path.
-        if is_canonical_non_secret_shape(candidate) {
+        //
+        // CredData recall lane: when `allow_canonical_shapes` is set — i.e. the
+        // MoE is the runtime precision authority AND a strong credential keyword
+        // anchors this line — GENERATE the canonical-shape candidate anyway so
+        // the model can arbitrate it. The CredData `UUID` and `hex64` (AES-256
+        // key) miss classes are dropped HERE at the generation source; with the
+        // model in scope the strict drop trades real recall (the value never
+        // reaches the scorer) for a precision the MoE already provides. With the
+        // flag unset (non-ML path) this is the byte-identical strict gate, so
+        // the SecretBench-mirror precision — where `TOKEN=<32-hex>` is BOTH a
+        // positive and a sha256/git-sha/k8s-uid negative — is unchanged.
+        let canonical_lift = context.allow_canonical_shapes
+            && canonical_shape_lift_allowed(candidate, &context.keyword);
+        if !canonical_lift && is_canonical_non_secret_shape(candidate) {
             return false;
         }
         return candidate.len() >= MIN_PASSWORD_LEN;
@@ -255,7 +348,7 @@ pub fn candidate_is_plausible(
 /// regardless of any surrounding credential keyword, so a generic entropy
 /// anchor must not re-admit them. Service-specific detector regexes (not this
 /// path) own the rare case where such a shape really is a credential.
-pub fn is_canonical_non_secret_shape(value: &str) -> bool {
+pub(crate) fn is_canonical_non_secret_shape(value: &str) -> bool {
     let len = value.len();
 
     // 8-4-4-4-12 UUID / k8s-resource-uid (36 chars, hex groups split by `-`).
@@ -280,11 +373,7 @@ pub fn is_canonical_non_secret_shape(value: &str) -> bool {
     // npm Subresource Integrity: `sha512-<base64>` / `sha384-` / `sha256-`.
     for prefix in ["sha512-", "sha384-", "sha256-"] {
         if let Some(body) = value.strip_prefix(prefix) {
-            if !body.is_empty()
-                && body
-                    .bytes()
-                    .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'=')
-            {
+            if !body.is_empty() && crate::decode::standard_base64_shape(body).is_some() {
                 return true;
             }
         }
@@ -308,6 +397,95 @@ pub fn is_canonical_non_secret_shape(value: &str) -> bool {
     false
 }
 
+/// True iff the model-authoritative canonical-shape lift may release this exact
+/// value shape under this exact keyword. The lift is intentionally narrower than
+/// "credential context": mirror negatives wrap sha1/git SHAs in `api_key=` and
+/// `secret=`, so hex40 must never lift, and sha256-length hex64 only lifts under
+/// explicit cryptographic-key anchors where an AES-256/key-material value is a
+/// plausible credential.
+pub(crate) fn canonical_shape_lift_allowed(value: &str, keyword: &str) -> bool {
+    if is_uuid_shape(value) {
+        return true;
+    }
+    if !value.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return false;
+    }
+    match value.len() {
+        // 32-hex key material is a documented recall surface under explicit
+        // key-material anchors (`api_key`, `access_key`, ...), but broad
+        // `token=` remains too weak and stays suppressed.
+        32 => keyword_is_key_material(keyword),
+        // 64-hex is sha256-shaped unless the keyword explicitly names key
+        // material. `secret=` / `api_key=` are too broad and stay suppressed.
+        64 => keyword_is_crypto_key_material(keyword),
+        // 40 is sha1/git-commit SHA. 128 is sha512. Both stay canonical
+        // non-secret shapes even under the model-authoritative lift.
+        _ => false,
+    }
+}
+
+fn is_uuid_shape(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    value.len() == 36
+        && bytes[8] == b'-'
+        && bytes[13] == b'-'
+        && bytes[18] == b'-'
+        && bytes[23] == b'-'
+        && value.bytes().all(|b| b == b'-' || b.is_ascii_hexdigit())
+}
+
+fn keyword_is_crypto_key_material(keyword: &str) -> bool {
+    let compact = compact_keyword(keyword);
+    [
+        "encryptionkey",
+        "masterkey",
+        "signingkey",
+        "privatekey",
+        "secretkey",
+        "sessionkey",
+        "hmacsecret",
+        "hmacsalt",
+        "hmacseed",
+        "passwordsalt",
+        "salt",
+        "nonce",
+        "seed",
+    ]
+    .iter()
+    .any(|needle| compact.contains(needle))
+}
+
+fn keyword_is_key_material(keyword: &str) -> bool {
+    let compact = compact_keyword(keyword);
+    [
+        "apikey",
+        "accesskey",
+        "authkey",
+        "privatekey",
+        "signingkey",
+        "encryptionkey",
+        "masterkey",
+        "secretkey",
+        "sessionkey",
+        "hmacsalt",
+        "hmacseed",
+        "passwordsalt",
+        "salt",
+        "nonce",
+        "seed",
+    ]
+    .iter()
+    .any(|needle| compact.contains(needle))
+}
+
+fn compact_keyword(keyword: &str) -> String {
+    keyword
+        .bytes()
+        .filter(|b| !matches!(b, b'_' | b'-' | b'.'))
+        .map(|b| b.to_ascii_lowercase() as char)
+        .collect()
+}
+
 fn cumulative_line_offsets(lines: &[&str]) -> Vec<usize> {
     let mut offsets = Vec::with_capacity(lines.len());
     let mut current = 0usize;
@@ -323,6 +501,7 @@ fn keyword_context(
     min_length: usize,
     entropy_threshold: f64,
     secret_keywords: &[String],
+    allow_canonical_lift: bool,
 ) -> KeywordContext {
     const CREDENTIAL_KEYWORDS: &[&str] = &[
         "password",
@@ -357,16 +536,33 @@ fn keyword_context(
             .windows(needle.len())
             .any(|w| w.eq_ignore_ascii_case(needle))
     }
-    let keyword = secret_keywords
-        .iter()
-        .find(|keyword| contains_ci(line_bytes, keyword.as_bytes()))
-        .map(|keyword| keyword.as_str())
-        .unwrap_or("unknown");
-    let is_credential_context = CREDENTIAL_KEYWORDS
-        .iter()
-        .any(|credential_keyword| contains_ci(line_bytes, credential_keyword.as_bytes()));
+    let exact_assignment_keyword =
+        crate::entropy::keywords::assignment_keyword_for_line(keyword_line);
+    let keyword = exact_assignment_keyword
+        .as_deref()
+        .or_else(|| {
+            secret_keywords
+                .iter()
+                .find(|keyword| contains_ci(line_bytes, keyword.as_bytes()))
+                .map(|keyword| keyword.as_str())
+        })
+        .unwrap_or("unknown"); // LAW10: absent path/field => display placeholder; reporting-only, recall-safe
+    let is_exact_credential_context = exact_assignment_keyword
+        .as_deref()
+        .is_some_and(crate::entropy::keywords::normalized_assignment_keyword_is_credential);
+    let is_credential_context = is_exact_credential_context
+        || CREDENTIAL_KEYWORDS
+            .iter()
+            .any(|credential_keyword| contains_ci(line_bytes, credential_keyword.as_bytes()));
 
-    let base_threshold = entropy_threshold.min(LOW_ENTROPY_THRESHOLD);
+    let base_threshold =
+        if entropy_threshold.is_finite() && entropy_threshold > HIGH_ENTROPY_THRESHOLD {
+            entropy_threshold
+        } else if entropy_threshold.is_finite() {
+            entropy_threshold.min(LOW_ENTROPY_THRESHOLD)
+        } else {
+            LOW_ENTROPY_THRESHOLD
+        };
 
     KeywordContext {
         keyword: keyword.to_string(),
@@ -377,5 +573,10 @@ fn keyword_context(
             min_length
         },
         is_credential_context,
+        // The canonical-shape generation lift engages ONLY when the MoE is the
+        // runtime precision authority AND a strong credential keyword anchors
+        // the line — both must hold, so a non-credential line never lifts even
+        // under the model.
+        allow_canonical_shapes: allow_canonical_lift && is_credential_context,
     }
 }

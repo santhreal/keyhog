@@ -1,11 +1,11 @@
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::pipeline::{
+use keyhog_scanner::testing::{
     compute_line_offsets, is_within_hex_context, local_context_window, match_entropy,
     match_line_number, normalize_scannable_chunk, should_suppress_known_example_credential,
 };
+use keyhog_scanner::testing::{find_companion, normalize_chunk_data};
 use keyhog_scanner::types::ScannerPreprocessedText;
-use keyhog_scanner::{find_companion, normalize_chunk_data};
 
 // ── Happy path ──────────────────────────────────────────────────────
 

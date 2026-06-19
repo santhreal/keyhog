@@ -33,7 +33,7 @@ use support::contracts::{
 
 use std::collections::BTreeMap;
 
-use keyhog_core::config::ScanConfig;
+use keyhog_core::ScanConfig;
 
 const SOURCE_TYPE: &str = "comment-embed";
 

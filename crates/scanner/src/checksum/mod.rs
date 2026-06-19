@@ -4,17 +4,17 @@
 //! false positives without network requests. This module implements
 //! validators for several well-documented token families.
 
-mod github;
-mod gitlab;
-mod npm;
-mod slack;
-mod stripe;
+pub(crate) mod github;
+pub(crate) mod gitlab;
+pub(crate) mod npm;
+pub(crate) mod slack;
+pub(crate) mod stripe;
 
-pub use github::{GithubClassicPatValidator, GithubFineGrainedPatValidator};
-pub use gitlab::GitlabTokenValidator;
-pub use npm::{NpmTokenValidator, PypiTokenValidator};
-pub use slack::SlackTokenValidator;
-pub use stripe::StripeTokenValidator;
+use github::{GithubClassicPatValidator, GithubFineGrainedPatValidator};
+use gitlab::GitlabTokenValidator;
+use npm::{NpmTokenValidator, PypiTokenValidator};
+use slack::SlackTokenValidator;
+use stripe::StripeTokenValidator;
 
 use std::sync::LazyLock;
 
@@ -31,10 +31,7 @@ pub enum ChecksumResult {
 }
 
 /// A validator that can check whether a credential's embedded checksum is correct.
-pub trait ChecksumValidator: Send + Sync {
-    /// Identifier for this validator (used for diagnostics and registry lookups).
-    fn validator_id(&self) -> &str;
-
+pub(crate) trait ChecksumValidator: Send + Sync {
     /// Validate the checksum embedded in `credential`.
     ///
     /// Returns [`ChecksumResult::NotApplicable`] when the credential does not
@@ -66,6 +63,21 @@ pub fn validate_checksum(credential: &str) -> ChecksumResult {
         }
     }
     ChecksumResult::NotApplicable
+}
+
+#[cfg(test)]
+pub(crate) fn standard_crc32(data: &[u8]) -> u32 {
+    github::crc32(data)
+}
+
+#[cfg(test)]
+pub(crate) fn base62_encode_u32(value: u32, width: usize) -> String {
+    github::base62_encode_u32(value, width)
+}
+
+#[cfg(test)]
+pub(crate) fn crc32_base62_suffix(data: &[u8], width: usize) -> String {
+    base62_encode_u32(standard_crc32(data), width)
 }
 
 /// Confidence floor applied to a credential whose embedded checksum is `Valid`.

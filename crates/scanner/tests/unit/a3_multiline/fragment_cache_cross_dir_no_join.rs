@@ -1,6 +1,6 @@
 //! Cross-directory fragments must not reassemble even with matching prefix.
 
-use keyhog_scanner::fragment_cache::{FragmentCache, SecretFragment};
+use keyhog_scanner::testing::fragment_cache::{FragmentCache, SecretFragment};
 use std::sync::Arc;
 use zeroize::Zeroizing;
 

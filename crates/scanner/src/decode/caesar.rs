@@ -24,9 +24,9 @@ use std::sync::LazyLock;
 /// a codebase just hallucinates detector matches from random letter runs
 /// (helicone-api-key on a `//! Source trait` doc comment was the original
 /// reproducer; see dogfood-2026-05-21.md finding #5).
-pub struct CaesarDecoder;
+pub(crate) struct CaesarDecoder;
 
-pub const MIN_CAESAR_LEN: usize = 16;
+pub(crate) const MIN_CAESAR_LEN: usize = 16;
 const MIN_ALNUM_RUN: usize = 8;
 
 /// Aho-Corasick over the "rotated known-prefix" needle set: for every
@@ -83,7 +83,7 @@ const SOURCE_CODE_EXTENSIONS: &[&str] = &[
 
 const SOURCE_CODE_FILENAMES: &[&str] = &["kconfig", "makefile", "cmakelists.txt"];
 
-pub fn is_source_code_path(path: Option<&str>) -> bool {
+pub(crate) fn is_source_code_path(path: Option<&str>) -> bool {
     let Some(p) = path else { return false };
     let lower = p.replace('\\', "/").to_ascii_lowercase();
     if let Some(file_name) = lower.rsplit('/').next() {
@@ -128,7 +128,7 @@ pub(crate) fn line_has_credential_url(line: &str) -> bool {
     // `@` so we only match URLs with embedded passwords.
     let userinfo_end = rest
         .find(|c: char| c == '/' || c == '?' || c == '#' || c.is_ascii_whitespace())
-        .unwrap_or(rest.len());
+        .unwrap_or(rest.len()); // LAW10: search/boundary miss => span end (whole remainder), recall-safe boundary default
     let userinfo = &rest[..userinfo_end];
     let Some(at_pos) = userinfo.find('@') else {
         return false;
@@ -247,7 +247,7 @@ impl Decoder for CaesarDecoder {
 /// precision-EXACT: every shift that could pass is included, and the dead 22–24
 /// shifts (84% of all decode sub-chunks come from Caesar's fan-out) are dropped.
 /// Falls back to all 25 shifts if the AC failed to build.
-pub fn matched_caesar_shifts(candidate: &str) -> [bool; 26] {
+pub(crate) fn matched_caesar_shifts(candidate: &str) -> [bool; 26] {
     let mut try_shift = [false; 26];
     match ROTATED_PREFIX_AC.as_ref() {
         Some(ac) => {
@@ -282,7 +282,7 @@ pub fn matched_caesar_shifts(candidate: &str) -> [bool; 26] {
 /// recall-preserving. It deliberately does NOT pre-check the KNOWN_PREFIXES
 /// substring - that is the one gate a shift CAN newly satisfy by rotating
 /// letters into a prefix (e.g. `BLJB`+25 -> `AKIA`), so it stays in the loop.
-pub fn candidate_shape_invariant(s: &str) -> bool {
+pub(crate) fn candidate_shape_invariant(s: &str) -> bool {
     let bytes = s.as_bytes();
     if !bytes.iter().any(|b| b.is_ascii_digit()) {
         return false;
@@ -305,7 +305,7 @@ pub fn candidate_shape_invariant(s: &str) -> bool {
     false
 }
 
-pub fn caesar_shift(input: &str, shift: u8) -> String {
+pub(crate) fn caesar_shift(input: &str, shift: u8) -> String {
     let mut out = String::with_capacity(input.len());
     for ch in input.chars() {
         let shifted = match ch {
@@ -326,7 +326,7 @@ pub fn caesar_shift(input: &str, shift: u8) -> String {
     out
 }
 
-pub fn looks_credential_shaped(s: &str) -> bool {
+pub(crate) fn looks_credential_shaped(s: &str) -> bool {
     let bytes = s.as_bytes();
     if !bytes.iter().any(|b| b.is_ascii_digit()) {
         return false;

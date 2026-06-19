@@ -12,14 +12,14 @@ use super::ExtractedPair;
 /// `.env` files: `DB_PASS=p4ssw0rd # rotate quarterly` -> value = `p4ssw0rd`.
 /// Quoted values keep `#` because the user has explicitly opted into the
 /// literal string including the hash.
-pub fn parse_env(text: &str) -> Vec<ExtractedPair> {
+pub(crate) fn parse_env(text: &str) -> Vec<ExtractedPair> {
     let mut pairs = Vec::new();
     for (line_idx, line) in text.lines().enumerate() {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        let after_export = trimmed.strip_prefix("export ").unwrap_or(trimmed);
+        let after_export = trimmed.strip_prefix("export ").unwrap_or(trimmed); // LAW10: no prefix/suffix to strip => value unchanged (intended), recall-safe
         if let Some((key, value)) = after_export.split_once('=') {
             let key = key.trim();
             let value = value.trim();

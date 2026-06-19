@@ -1,4 +1,4 @@
-use keyhog_scanner::hw_probe::{classify_gpu_tier, GpuTier};
+use keyhog_scanner::hw_probe::testing::{classify_gpu_tier, GpuTier};
 #[test]
 fn classify_gpu_tier_intel_arc_mid() {
     assert_eq!(

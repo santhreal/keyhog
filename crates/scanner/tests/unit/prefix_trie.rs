@@ -1,4 +1,4 @@
-use keyhog_scanner::prefix_trie::build_propagation_table;
+use keyhog_scanner::testing::build_propagation_table;
 
 #[test]
 fn basic_propagation() {

@@ -1,4 +1,4 @@
-use keyhog_scanner::match_entropy;
+use keyhog_scanner::testing::match_entropy;
 
 #[test]
 fn uniform_single_byte_has_zero_entropy() {

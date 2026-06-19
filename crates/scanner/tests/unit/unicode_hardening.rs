@@ -1,4 +1,4 @@
-use keyhog_scanner::unicode_hardening::*;
+use keyhog_scanner::testing::unicode_hardening::*;
 #[test]
 fn test_detect_cyrillic_homoglyph() {
     let text = "ghp_секрет"; // Cyrillic с and е

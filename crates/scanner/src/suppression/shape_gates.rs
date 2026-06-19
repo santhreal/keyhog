@@ -19,35 +19,7 @@ pub(crate) fn looks_like_dashed_serial_key(credential: &str) -> bool {
         .all(|p| p.len() == 5 && p.chars().all(|c| c.is_ascii_alphanumeric()))
 }
 
-/// True if `credential` is a bare cryptographic hash digest
-/// (MD5/SHA1/SHA256/SHA512) or an RFC-4122 UUID-v4. These are the
-/// dominant false-positive class in the SecretBench mirror corpus.
-///
-/// Strictness: the entire credential must be only hex (or, for UUIDs,
-/// hex + dashes in the canonical 8-4-4-4-12 shape with version-4
-/// nibble). Mixed-case is tolerated only when uniform - `Abcd1234`
-/// in a real secret would NOT match because it's not all-lower or
-/// all-upper hex. A scanner that already coincidentally classifies
-/// the credential as a known-prefix secret (AKIA…, ghp_… etc.) has
-/// already returned `false` upstream of this function.
-// Retained for test scaffolding asserting the pre-split combined-
-// shape behaviour. Production paths call `is_uuid_v4_shape` and
-// `looks_like_hash_digest` individually because the UUID arm is gated
-// by `bypass_shape_gates` while the hash arm is always-on.
-#[allow(dead_code)]
-pub(crate) fn looks_like_pure_hash_digest_or_uuid(credential: &str) -> bool {
-    is_uuid_v4_shape(credential) || looks_like_hash_digest(credential)
-}
-
-/// Hash-digest sub-check of [`looks_like_pure_hash_digest_or_uuid`].
-/// Always safe to apply (real secrets at these lengths use base64, not
-/// uniform hex). Exposed so the named-detector path can apply it
-/// without the UUID arm.
-pub(crate) fn looks_like_hash_digest(credential: &str) -> bool {
-    looks_like_prefixed_hash_digest(credential) || looks_like_bare_hex_digest(credential)
-}
-
-/// Algo-labelled hash-digest sub-shape of [`looks_like_hash_digest`]:
+/// Algo-labelled hash-digest sub-shape:
 /// docker (`sha256:<64-hex>`), npm package-lock integrity
 /// (`sha512-<base64>`), python requirements (`sha256:<64-hex>`), git-LFS
 /// pointers (`sha256:<64-hex>`). The `sha256:` / `sha512-` label is a
@@ -78,7 +50,7 @@ pub(crate) fn looks_like_prefixed_hash_digest(credential: &str) -> bool {
     false
 }
 
-/// Bare uniform-hex digest arm of [`looks_like_hash_digest`]. AMBIGUOUS
+/// Bare uniform-hex digest arm. AMBIGUOUS
 /// with real service-anchored hex keys (Algolia admin 32-hex, New Relic
 /// 40-hex, Redis Labs 64-hex), so the decision tree keeps this arm gated
 /// on `!bypass_shape_gates`: a service-fingerprinted detector that
@@ -135,8 +107,7 @@ fn looks_like_base64_blob_with_padding(s: &str) -> bool {
     if !(s.ends_with("==") || s.ends_with('=')) {
         return false;
     }
-    s.chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
+    crate::decode::standard_base64_shape(s).is_some_and(|shape| shape.has_padding)
 }
 
 /// True if `credential` is a standard-base64-encoded arbitrary-bytes
@@ -178,7 +149,7 @@ fn looks_like_base64_blob_with_padding(s: &str) -> bool {
 /// key sits OUTSIDE the [40, 80] window so recall is preserved.
 /// AWS secret keys are 40 chars base62 with diversity typically
 /// < 32, so the diversity clause does not bite them.
-pub fn looks_like_standard_base64_blob(credential: &str) -> bool {
+pub(crate) fn looks_like_standard_base64_blob(credential: &str) -> bool {
     // Single source of truth for the random-base64-blob shape: the
     // parameterized `decode_structure::is_random_base64_blob`. This caller
     // pins the [40, 80] length band and the diversity floor of 32 distinct

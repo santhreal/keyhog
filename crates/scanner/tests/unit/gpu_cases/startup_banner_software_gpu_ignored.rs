@@ -1,4 +1,4 @@
-use keyhog_scanner::hw_probe::{startup_banner, HardwareCaps};
+use keyhog_scanner::hw_probe::testing::{startup_banner, HardwareCaps};
 #[test]
 fn startup_banner_software_gpu_ignored() {
     let caps = HardwareCaps {
@@ -10,6 +10,7 @@ fn startup_banner_software_gpu_ignored() {
         gpu_available: true,
         gpu_name: Some("llvmpipe".into()),
         gpu_vram_mb: None,
+        gpu_runtime_identity: Some("test-runtime:llvmpipe".to_string()),
         gpu_is_software: true,
         total_memory_mb: None,
         io_uring_available: false,

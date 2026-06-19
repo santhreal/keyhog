@@ -17,9 +17,19 @@ use std::sync::LazyLock;
 /// adjustment had to land in two places or the two scan paths would
 /// diverge silently. Single source now (kimi-dedup audit row #9).
 pub(crate) static ASSIGN_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
-    Regex::new(r#"(?i)([a-z0-9_-]{2,32})\s*[:=]\s*["'`]([a-zA-Z0-9/+=_-]{4,})["'`](?:;|,)?$"#).ok()
+    match Regex::new(r#"(?i)([a-z0-9_-]{2,32})\s*[:=]\s*["'`]([a-zA-Z0-9/+=_-]{4,})["'`](?:;|,)?$"#)
+    {
+        Ok(re) => Some(re),
+        Err(error) => {
+            crate::prefilter_degrade::warn_prefilter_disabled(
+                "shared assignment regex (ASSIGN_RE)",
+                &error,
+            );
+            None
+        }
+    }
 });
 
 pub(crate) fn warm_runtime_regexes() {
-    let _ = ASSIGN_RE.as_ref();
+    let _ = ASSIGN_RE.as_ref(); // LAW10: forces lazy-static/regex eager init (warm-up); not a fallback
 }

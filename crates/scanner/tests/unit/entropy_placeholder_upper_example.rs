@@ -1,6 +1,6 @@
 //! UPPER EXAMPLE placeholder tokens are rejected by plausibility.
 
-use keyhog_scanner::entropy::keywords::is_secret_plausible;
+use keyhog_scanner::testing::entropy_keywords::is_secret_plausible;
 
 #[test]
 fn entropy_placeholder_upper_example() {

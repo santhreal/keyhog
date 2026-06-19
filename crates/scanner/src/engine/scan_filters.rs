@@ -12,7 +12,7 @@
 //
 // `any(simd, gpu)`: invoked only from `should_scan_no_hit_chunk`, the
 // no-phase-1-trigger admission gate on the coalesced (`simd`) / megakernel
-// (`gpu`) phase-2 tail. The no-`simd`-no-`gpu` AC+fallback path scans every
+// (`gpu`) phase-2 tail. The no-`simd`-no-`gpu` AC+phase-2 path scans every
 // chunk whole and never routes through that gate, so this filter has no caller
 // there — gated to match (Law 11).
 #[cfg(any(feature = "simd", feature = "gpu"))]
@@ -94,7 +94,7 @@ pub(super) const GENERIC_ASSIGNMENT_KEYWORDS: &[&str] = &[
     "pwd",
     // Bare `pass` (covers `*_PASS=`, the dominant CredData credential-env
     // pattern). This is only the line PREFILTER; the GENERIC_RE bridge in
-    // fallback_generic.rs applies a whole-word left boundary so `bypass=` /
+    // phase2_generic.rs applies a whole-word left boundary so `bypass=` /
     // `compass=` are not promoted to findings. `pass` substring-covers the
     // `password`/`passwd`/`passphrase` lines above too — those entries are kept
     // for self-documentation.
@@ -175,8 +175,8 @@ pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
     AC.as_ref().is_none_or(|ac| ac.find(data).is_some())
 }
 
-/// Single-pass scan for a contiguous run of base62-style bytes (including
-/// common secret-token separators).
+/// Single-pass scan for a contiguous run of credential-value bytes (including
+/// common token separators and symbolic password punctuation).
 /// of length >= `MIN_ENTROPY_RUN`. The keyword-gated fallback drop in
 /// `scan_coalesced` (no-HS-hit branch) historically required the chunk
 /// to contain a generic-assignment / secret keyword before routing
@@ -189,24 +189,32 @@ pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
 /// chars, UUIDs are 36 chars *with dashes* (longest base62 run = 12),
 /// and the longest English word is 28 chars. Real secrets at this
 /// threshold are credentials (32-char hex APIs, 40-char base62 tokens,
-/// 64-char SHA hex, base64 blobs). Hash/UUID-shaped FPs are still
-/// suppressed downstream by `looks_like_hash_digest` /
-/// `is_uuid_v4_shape`, so trip-firing the gate does NOT add FPs - it
-/// just admits the chunk to the entropy fallback for inspection.
+/// symbolic passwords, 64-char SHA hex, base64 blobs). Hash/UUID-shaped FPs
+/// are still suppressed downstream by the bare/prefixed hash gates and
+/// `is_uuid_v4_shape`, so trip-firing the gate does NOT add FPs - it just
+/// admits the chunk to the entropy fallback for inspection.
 //
 // `any(simd, gpu)`: both callers live behind these features — the
 // `should_scan_no_hit_chunk` admission gate (`any(simd, gpu)`) and the entropy
-// fallback's cheap precheck (`#[cfg(simd)]` in `fallback_entropy.rs`). Their
+// fallback's cheap precheck (`#[cfg(simd)]` in `phase2_entropy.rs`). Their
 // union is `any(simd, gpu)`; the no-`simd`-no-`gpu` path has neither, so gating
 // here keeps that profile warning-clean (Law 11).
 #[cfg(any(feature = "simd", feature = "gpu"))]
 pub(super) fn has_high_entropy_run_fast(data: &[u8]) -> bool {
-    const MIN_ENTROPY_RUN: usize = 32;
+    has_high_entropy_run_at_least(data, DEFAULT_ENTROPY_RUN_BYTES)
+}
+
+#[cfg(any(feature = "simd", feature = "gpu"))]
+pub(super) const DEFAULT_ENTROPY_RUN_BYTES: usize = 32;
+
+#[cfg(any(feature = "simd", feature = "gpu"))]
+pub(super) fn has_high_entropy_run_at_least(data: &[u8], min_run: usize) -> bool {
+    let min_run = min_run.max(1);
     let mut run = 0usize;
     for &b in data {
-        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'+' | b'/' | b'=') {
+        if is_entropy_candidate_byte(b) {
             run += 1;
-            if run >= MIN_ENTROPY_RUN {
+            if run >= min_run {
                 return true;
             }
         } else {
@@ -216,8 +224,30 @@ pub(super) fn has_high_entropy_run_fast(data: &[u8]) -> bool {
     false
 }
 
+#[cfg(any(feature = "simd", feature = "gpu"))]
+fn is_entropy_candidate_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric()
+        || matches!(
+            b,
+            b'-' | b'_'
+                | b'+'
+                | b'/'
+                | b'='
+                | b'.'
+                | b':'
+                | b'!'
+                | b'@'
+                | b'#'
+                | b'$'
+                | b'%'
+                | b'^'
+                | b'&'
+                | b'*'
+        )
+}
+
 /// The compiled default for the Tier-A `entropy_threshold` knob
-/// (`keyhog_core::config::ScanConfig::default().entropy_threshold == 4.5`,
+/// (`keyhog_core::ScanConfig::default().entropy_threshold == 4.5`,
 /// documented in `crates/cli/src/config.rs` and `.keyhog.toml.example`).
 ///
 /// At this resolved value the generic gate uses ONLY the per-detector /
@@ -254,7 +284,7 @@ const DEFAULT_GENERIC_ENTROPY_THRESHOLD: f64 = 4.5;
 ///
 /// This is the ONE function both the named-detector generic path
 /// (`engine/process.rs`) and the `generic-secret` fallback
-/// (`engine/fallback_generic.rs`) call, replacing the two divergent hardcoded
+/// (`engine/phase2_generic.rs`) call, replacing the two divergent hardcoded
 /// floor tables that previously encoded the same decision with different magic
 /// numbers and ignored the knob entirely.
 pub(super) fn generic_entropy_floor(
@@ -276,8 +306,8 @@ pub(super) fn generic_entropy_floor(
         "generic-password" => 2.5,
         // Database connection strings have structure
         "generic-database-url" => 2.0,
-        // `generic-secret` (the `SECRET_NAME = "value"` fallback). These three
-        // per-length floors are the values the fallback path historically baked
+        // `generic-secret` (the `SECRET_NAME = "value"` phase-2 bridge). These three
+        // per-length floors are the values the phase-2 path historically baked
         // in (2.8 / 3.2 / 3.5); kept identical so default behavior is unchanged.
         "generic-secret" if credential_len <= 24 => 2.8,
         "generic-secret" if credential_len <= 40 => 3.2,
@@ -322,7 +352,6 @@ pub(super) fn looks_like_variable_name(s: &str) -> bool {
 pub(super) fn extend_known_prefix_credential<'a>(
     data: &'a str,
     credential: &'a str,
-    match_start: usize,
     match_end: usize,
 ) -> (&'a str, usize) {
     let (credential, match_end) = if crate::confidence::known_prefix_confidence_floor(credential)
@@ -338,11 +367,9 @@ pub(super) fn extend_known_prefix_credential<'a>(
             (credential, match_end)
         } else {
             // Slice from the CREDENTIAL's own start, not `match_start`. For a
-            // grouped detector `KEYWORD[=:\s"']+(VALUE)` the caller passes the
-            // whole-match start (the keyword) as `match_start`, so
-            // `data[match_start..end]` would prepend `apikey=` to the captured
-            // token (credential corruption). `credential` is a subslice of
-            // `data` (extract.rs builds it as `&search_text[range]`, and
+            // grouped detector `KEYWORD[=:\s"']+(VALUE)` the whole regex span
+            // starts at the keyword, not the secret. `credential` is a subslice
+            // of `data` (extract.rs builds it as `&search_text[range]`, and
             // `data == search_text` here), so its byte offset within `data` is
             // the pointer delta. Fall back to the unextended credential if that
             // invariant ever fails to hold (defensive; never on the real path).
@@ -357,7 +384,7 @@ pub(super) fn extend_known_prefix_credential<'a>(
         (credential, match_end)
     };
 
-    extend_base64_padding(data, match_start, credential, match_end)
+    extend_base64_padding(data, credential, match_end)
 }
 
 /// Swallow up to two trailing `=` when the captured body is base64-shaped.
@@ -365,16 +392,12 @@ pub(super) fn extend_known_prefix_credential<'a>(
 /// char on values like `YWJj…vcA==` - `splitio-api-key` and friends.
 fn extend_base64_padding<'a>(
     data: &'a str,
-    // Retained for call-site symmetry with `extend_known_prefix_credential`; the
-    // slice start is now derived from the credential's own offset (see below), so
-    // the whole-match start is no longer read here.
-    _match_start: usize,
     credential: &'a str,
     match_end: usize,
 ) -> (&'a str, usize) {
     if !credential
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '/' | '-' | '_' | '='))
+        .bytes()
+        .all(crate::decode::is_base64_candidate_byte)
     {
         return (credential, match_end);
     }
@@ -386,9 +409,9 @@ fn extend_base64_padding<'a>(
         pad += 1;
     }
     if pad > 0 && data.is_char_boundary(end) {
-        // Slice from the credential's own start (subslice of `data`), not
-        // `match_start` (the whole-match/keyword start) — otherwise base64 padding
-        // recovery on a grouped detector prepends the keyword to the credential.
+        // Slice from the credential's own start (subslice of `data`) so base64
+        // padding recovery on a grouped detector never prepends the keyword to
+        // the credential.
         let cred_start = (credential.as_ptr() as usize).wrapping_sub(data.as_ptr() as usize);
         if cred_start <= match_end && data.is_char_boundary(cred_start) {
             (&data[cred_start..end], end)
@@ -422,6 +445,6 @@ pub(super) fn compute_pattern_signals(
         .path
         .as_deref()
         .map(crate::confidence::is_sensitive_path)
-        .unwrap_or(false);
+        .unwrap_or(false); // LAW10: empty/absent => documented numeric/sentinel default, recall-safe
     (kw, sf)
 }

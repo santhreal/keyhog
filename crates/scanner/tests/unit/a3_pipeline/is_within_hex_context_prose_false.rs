@@ -1,4 +1,4 @@
-use keyhog_scanner::is_within_hex_context;
+use keyhog_scanner::testing::is_within_hex_context;
 
 #[test]
 fn hex_in_prose_is_false() {

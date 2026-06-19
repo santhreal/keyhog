@@ -1,7 +1,7 @@
 //! HTML named entity decode splices unescaped value into parent.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn html_entity_decode_splices_into_parent() {

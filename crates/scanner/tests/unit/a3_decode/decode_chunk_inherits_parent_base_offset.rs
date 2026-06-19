@@ -1,7 +1,7 @@
 //! Decoded chunks inherit parent base_offset for location anchoring.
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn decoded_chunk_inherits_base_offset() {

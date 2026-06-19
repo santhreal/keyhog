@@ -80,21 +80,15 @@ fn whitespace_only_chunk_all_backends_produce_zero_findings() {
     ];
 
     let mut failures = Vec::new();
+    scanner.clear_fragment_cache();
     let simd_results =
         scanner.scan_chunks_with_backend(&[whitespace_chunk.clone()], ScanBackend::SimdCpu);
     let simd_count: usize = simd_results.iter().map(|chunk| chunk.len()).sum();
 
     for backend in &backends[1..] {
+        scanner.clear_fragment_cache();
         let results = scanner.scan_chunks_with_backend(&[whitespace_chunk.clone()], *backend);
         let count: usize = results.iter().map(|chunk| chunk.len()).sum();
-
-        // GPU/MegaScan can silently degrade; skip on empty.
-        if matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan)
-            && count == 0
-            && simd_count == 0
-        {
-            continue;
-        }
 
         if count != simd_count {
             failures.push(format!(
@@ -131,6 +125,7 @@ fn single_byte_chunk_no_panic_all_backends() {
     ];
 
     for backend in backends {
+        scanner.clear_fragment_cache();
         // Should not panic on single-byte input.
         let results = scanner.scan_chunks_with_backend(&[single_byte_chunk.clone()], backend);
         let _total_findings: usize = results.iter().map(|chunk| chunk.len()).sum();
@@ -169,21 +164,15 @@ fn mixed_empty_and_nonempty_chunks_coalesced_dispatch_parity() {
         ScanBackend::MegaScan,
     ];
 
+    scanner.clear_fragment_cache();
     let simd_results = scanner.scan_chunks_with_backend(&chunks, ScanBackend::SimdCpu);
     let simd_counts: Vec<usize> = simd_results.iter().map(|chunk| chunk.len()).collect();
 
     let mut failures = Vec::new();
     for backend in &backends[1..] {
+        scanner.clear_fragment_cache();
         let results = scanner.scan_chunks_with_backend(&chunks, *backend);
         let counts: Vec<usize> = results.iter().map(|chunk| chunk.len()).collect();
-
-        // GPU/MegaScan can silently degrade.
-        if matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan) {
-            if counts == vec![0; chunks.len()] && simd_counts != vec![0; chunks.len()] {
-                eprintln!("SKIP: {backend:?} (no adapter, silent SIMD degrade)");
-                continue;
-            }
-        }
 
         if counts != simd_counts {
             failures.push(format!(

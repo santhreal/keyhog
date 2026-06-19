@@ -60,7 +60,7 @@ gpu = [
     "dep:vyre-driver-cuda",
     # Persistent batch megakernel: the DFA rule-catalog dispatcher
     # (BatchDispatcher / FileBatch / HitRecord) on both the runtime and the wgpu
-    # driver. This is the on-GPU detection path (see docs/GPU_DETECTION_REWRITE.md).
+    # driver. This is the on-GPU detection path (see docs/EXECUTION_PLAN.md).
     "vyre-driver-wgpu/megakernel-batch",
 ]
 # CUDA acquisition lives inside the `gpu` feature and is exercised on Linux
@@ -152,6 +152,10 @@ md5 = "0.7"
 # loader in src/context/false_positive.rs.
 
 [[bench]]
+name = "gpu_vs_hs_8mib"
+harness = false
+
+[[bench]]
 name = "scan_throughput"
 harness = false
 
@@ -170,3 +174,28 @@ path = "tests/property/prefilter_robustness_proptest.rs"
 [[test]]
 name = "cross_detector_corpus_proptest"
 path = "tests/property/cross_detector_corpus_proptest.rs"
+
+# TARGET-SPEC perf worklist (FAILING-BY-DESIGN): the 10x goal expressed as
+# executable contracts. RED until batched-GPU phase-2 verify lands; each red
+# line is one tracked gap. Subdir files need explicit [[test]] paths to be
+# discovered as their own test binaries (same wiring as the property/* tests).
+[[test]]
+name = "target_spec_perf_10x_fullscan"
+path = "tests/target_spec/perf_10x_fullscan.rs"
+
+[[test]]
+name = "target_spec_perf_10x_phase2_batch"
+path = "tests/target_spec/perf_10x_phase2_batch.rs"
+
+[[test]]
+name = "target_spec_perf_10x_backend_matrix"
+path = "tests/target_spec/perf_10x_backend_matrix.rs"
+
+# TARGET-SPEC recall worklist (FAILING-BY-DESIGN): the candidate-GENERATION gap
+# expressed as executable contracts — prefix-free real-world secret shapes the
+# shipped scanner does not surface. RED until keyword/shape generation lands;
+# each red is one tracked recall miss (Law 6). Subdir file needs an explicit
+# [[test]] path to be discovered as its own test binary.
+[[test]]
+name = "target_spec_recall_generation_gap"
+path = "tests/target_spec/recall_generation_gap.rs"

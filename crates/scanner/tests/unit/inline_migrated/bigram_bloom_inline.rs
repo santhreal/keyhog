@@ -1,6 +1,6 @@
 //! Migrated from src/bigram_bloom.rs
 
-use keyhog_scanner::bigram_bloom::BigramBloom;
+use keyhog_scanner::testing::BigramBloom;
 
 #[test]
 fn empty_bloom_skips_everything() {

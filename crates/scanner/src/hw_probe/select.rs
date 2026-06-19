@@ -12,12 +12,14 @@ thread_local! {
     pub(crate) static TEST_BACKEND_OVERRIDE: std::cell::RefCell<Option<Option<ScanBackend>>> = const { std::cell::RefCell::new(None) };
 }
 
+#[cfg(test)]
 pub(crate) fn set_test_backend_override(val: Option<ScanBackend>) {
     TEST_BACKEND_OVERRIDE.with(|cell| {
         *cell.borrow_mut() = Some(val);
     });
 }
 
+#[cfg(test)]
 pub(crate) fn clear_test_backend_override() {
     TEST_BACKEND_OVERRIDE.with(|cell| {
         *cell.borrow_mut() = None;
@@ -33,7 +35,7 @@ pub(crate) fn clear_test_backend_override() {
 /// autoroute default) routes through here so the four-way ladder can never
 /// drift between sites.
 #[must_use]
-pub fn cpu_tier_backend(caps: &HardwareCaps) -> ScanBackend {
+pub(crate) fn cpu_tier_backend(caps: &HardwareCaps) -> ScanBackend {
     if caps.hyperscan_available || caps.has_avx512 || caps.has_avx2 || caps.has_neon {
         ScanBackend::SimdCpu
     } else {
@@ -57,6 +59,7 @@ impl BackendWorkload {
         }
     }
 
+    #[cfg(test)]
     fn batch(bytes: u64, pattern_count: usize, large_chunk_bytes: u64) -> Self {
         Self {
             bytes,
@@ -80,12 +83,9 @@ fn select_backend_for_workload(caps: &HardwareCaps, workload: BackendWorkload) -
         return forced;
     }
 
-    // CI runners have no discrete GPU. Skip GPU consideration here so
-    // the routing decision matches what the GPU init paths will
-    // actually do (env_no_gpu() returns true on CI, so any GPU choice
-    // we make here gets degraded back to SIMD anyway, but at a 250 ms
-    // cold-start cost). This branch saves that round trip. Honours
-    // KEYHOG_NO_GPU=0 as the self-hosted-GPU-runner override.
+    // Skip GPU consideration when the resolved scanner runtime policy disables
+    // GPU init, so the routing decision matches what the GPU init paths will
+    // actually do.
     if crate::gpu::env_no_gpu() {
         return cpu_tier_backend(caps);
     }
@@ -142,9 +142,9 @@ pub(crate) fn select_backend_for_file(
 /// NOTE on the live CLI path: the shipped scan dispatcher does NOT call this;
 /// it uses the measured, parity-checked `MeasuredBackendRouter`
 /// (`crates/cli/src/orchestrator/dispatch/backend.rs`), which benchmarks the
-/// candidate backends on a real sample and gates the GPU behind
-/// `KEYHOG_GPU_AUTOROUTE` (the megakernel is slower than SIMD on keyhog's
-/// workload at every measured size). This function is the deterministic,
+/// candidate backends on a real sample and gates the GPU behind explicit
+/// `--autoroute-gpu` calibration eligibility (the megakernel is slower than
+/// SIMD on keyhog's workload at every measured size). This function is the deterministic,
 /// side-effect-free dominance heuristic used by the `keyhog backend` report and
 /// by callers that want a backend decision without running the scanner — it
 /// shares [`cpu_tier_backend`] and [`gpu_could_engage`] with the live router so
@@ -185,6 +185,7 @@ pub(crate) fn select_backend_for_file(
 /// `--backend simd`, so this only changes the *default* routing for many-small-
 /// file trees - the common real-world scan.
 #[must_use]
+#[cfg(test)]
 pub(crate) fn select_backend_for_batch(
     caps: &HardwareCaps,
     workload_bytes: u64,
@@ -208,7 +209,7 @@ pub(crate) fn select_backend_for_batch(
 /// On a many-tiny-file corpus the per-batch byte total never reaches the
 /// high-tier 2 MiB floor (see [`super::thresholds`]), so this returns `false`
 /// and the caller can skip paying for a device no chunk will ever touch.
-/// It does **not** consult explicit backend overrides or `KEYHOG_NO_GPU`;
+/// It does **not** consult explicit backend overrides or `--no-gpu`;
 /// callers that need an override should pass it through their own resolved
 /// config before falling back to this hardware-only predicate.
 #[must_use]
@@ -224,6 +225,7 @@ pub fn gpu_could_engage(caps: &HardwareCaps, workload_bytes: u64, pattern_count:
 }
 
 /// Test-only forced backend override.
+#[cfg(test)]
 pub(crate) fn forced_backend_override_for_test() -> Option<ScanBackend> {
     test_backend_override()
 }

@@ -1,4 +1,4 @@
-use keyhog_scanner::engine::{next_window_offset, window_end_offset};
+use keyhog_scanner::testing::{next_window_offset, window_end_offset};
 #[test]
 fn next_window_offset_applies_overlap() {
     let text = "abcdefghijklmnopqrstuvwxyz";

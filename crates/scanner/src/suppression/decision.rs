@@ -41,14 +41,14 @@ pub(super) fn should_suppress_inner(
     // `{32,48}` regexes, never on a complete bridge capture). All other gates —
     // prefixed-hash-digest, UUID, repetitive/placeholder/fake-sequence — stay.
     allow_canonical_hex_key: bool,
+    allow_encoded_text_secret: bool,
 ) -> bool {
     let from_evasion_decoder =
         source_type.is_some_and(|s| s.contains("/reverse") || s.contains("/caesar"));
     let upper = credential.to_uppercase();
 
     // ── 1-2. Doc / placeholder / instructional / RFC7519 / known-prefix /
-    //         DOC_MARKER substring scans. Extracted to `doc_markers` to
-    //         keep this file under the 500-line cap.
+    //         DOC_MARKER substring scans.
     match check_markers(credential, &upper, from_evasion_decoder, path) {
         MarkerVerdict::Suppress => return true,
         MarkerVerdict::Allow => return false,
@@ -361,6 +361,7 @@ pub(super) fn should_suppress_inner(
     // dropped as a protobuf-shaped blob).
     if !bypass_shape_gates
         && !high_entropy_base64_candidate
+        && !allow_encoded_text_secret
         && looks_like_standard_base64_blob(credential)
     {
         return suppress(path, credential, "base64_blob");
@@ -406,16 +407,11 @@ pub(super) fn should_suppress_inner(
 
     // ── 8. Path-based heuristic ──
     if let Some(path) = path {
-        // ASCII case-insensitive segment compare - no per-call lowercase
-        // alloc of the full path. Hot path during placeholder rejection.
-        let is_example_path = path.split(['/', '\\']).any(|component| {
-            component.eq_ignore_ascii_case("example")
-                || component.eq_ignore_ascii_case("examples")
-                || component.eq_ignore_ascii_case("test")
-                || component.eq_ignore_ascii_case("tests")
-                || component.eq_ignore_ascii_case("fixture")
-                || component.eq_ignore_ascii_case("fixtures")
-        });
+        const EXAMPLE_PATH_COMPONENTS: &[&str] = &[
+            "example", "examples", "test", "tests", "fixture", "fixtures",
+        ];
+        let is_example_path =
+            crate::platform_compat::path_has_any_component(path, EXAMPLE_PATH_COMPONENTS);
         if is_example_path && super::doc_markers::upper_contains_token(&upper, "EXAMPLE") {
             return suppress(Some(path), credential, "example_path_marker");
         }
@@ -443,7 +439,7 @@ pub(super) fn should_suppress_inner(
     //          when called from a previously-decoded payload.
     //          SecretBench-medium 15k seed-0: estimated 3000-5000 of
     //          the 14k FPs come from this exact path.
-    if !skip_b64_decode_recheck {
+    if !skip_b64_decode_recheck && !allow_encoded_text_secret {
         if let Some(decoded) = try_decode_b64_to_utf8(credential) {
             // Sanity bound: the decoded text must look like a sensible
             // payload (printable, not too long, not empty). Random
@@ -463,6 +459,7 @@ pub(super) fn should_suppress_inner(
                     bypass_shape_gates,
                     None,
                     allow_canonical_hex_key,
+                    false,
                 )
             {
                 return true;

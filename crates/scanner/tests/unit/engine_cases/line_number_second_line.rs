@@ -1,4 +1,4 @@
-use keyhog_scanner::engine::line_number_for_offset;
+use keyhog_scanner::testing::line_number_for_offset;
 #[test]
 fn line_number_second_line() {
     let text = "line1

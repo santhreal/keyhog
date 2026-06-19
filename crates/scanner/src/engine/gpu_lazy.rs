@@ -33,7 +33,7 @@ impl CompiledScanner {
     /// `keyhog scan` / `scan-system` runs that re-launch repeatedly.
     /// Cache misses (no file, version-mismatch, corrupt blob) silently
     /// recompile and re-cache.
-    pub fn gpu_matcher(&self) -> Option<&vyre_libs::scan::GpuLiteralSet> {
+    pub(crate) fn gpu_matcher(&self) -> Option<&vyre_libs::scan::GpuLiteralSet> {
         self.gpu_matcher
             .get_or_init(|| {
                 let Some(literals) = &self.gpu_literals else {

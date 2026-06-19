@@ -95,11 +95,11 @@ impl ScanTelemetry {
         Self::default()
     }
 
-    pub fn example_suppression_count(&self) -> usize {
+    fn example_suppression_count(&self) -> usize {
         self.example_suppressions.load(Ordering::Relaxed)
     }
 
-    pub fn drain_events(&self) -> Vec<DogfoodEvent> {
+    fn drain_events(&self) -> Vec<DogfoodEvent> {
         drain_event_buffers(&self.events, &self.emitted_suppression_events)
     }
 
@@ -164,19 +164,51 @@ static GPU_DISPATCHES: AtomicUsize = AtomicUsize::new(0);
 /// is filtered out at default verbosity) so the scan can surface the coverage
 /// gap loudly at completion (Law 10).
 static STRUCTURED_PARSE_FAILURES: AtomicUsize = AtomicUsize::new(0);
+/// Decode-through work was truncated by a safety budget/cap. The raw chunk is
+/// still scanned, but secrets only reachable after an omitted recursive decode
+/// layer may be missed, so the CLI must surface this as a coverage gap.
+static DECODE_TRUNCATIONS: AtomicUsize = AtomicUsize::new(0);
+
+/// Scanner coverage gap recorded when a scanner-owned transform did not run to
+/// full coverage. These are not source skips: raw bytes still flow through the
+/// scanner, but structured/decode-only secrets may be missed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ScannerCoverageGapEvent {
+    StructuredParseFailure,
+    DecodeTruncation,
+}
+
+impl ScannerCoverageGapEvent {
+    fn counter(self) -> &'static AtomicUsize {
+        match self {
+            Self::StructuredParseFailure => &STRUCTURED_PARSE_FAILURES,
+            Self::DecodeTruncation => &DECODE_TRUNCATIONS,
+        }
+    }
+}
+
+/// Receipt proving a scanner coverage gap passed through the typed recorder.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[must_use = "scanner coverage gaps must be recorded through the typed recorder so partial coverage remains surfaced"]
+pub(crate) struct RecordedScannerCoverageGap {
+    event: ScannerCoverageGapEvent,
+    previous: usize,
+    delta: usize,
+}
+
+pub(crate) fn record_scanner_coverage_gap(
+    event: ScannerCoverageGapEvent,
+) -> RecordedScannerCoverageGap {
+    let previous = event.counter().fetch_add(1, Ordering::Relaxed);
+    RecordedScannerCoverageGap {
+        event,
+        previous,
+        delta: 1,
+    }
+}
 
 // Global static dogfood capability flag for fast opt-in checking (KH-120)
 static DOGFOOD_ENABLED: AtomicBool = AtomicBool::new(false);
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
-pub struct TelemetrySnapshot {
-    pub files_scanned: usize,
-    pub bytes_scanned: usize,
-    pub skipped_files: usize,
-    pub total_matches: usize,
-    pub gpu_dispatches: usize,
-    pub example_suppressions: usize,
-}
 
 fn cell() -> &'static Telemetry {
     static CELL: OnceLock<Telemetry> = OnceLock::new();
@@ -279,7 +311,7 @@ fn mark_suppression_event_emitted(
     let key = format!("{}\0{}", path.unwrap_or(""), credential_hash); // LAW10: absent path/field => display placeholder; reporting-only, recall-safe
     match emitted_suppression_events.lock() {
         Ok(mut emitted) => emitted.insert(key),
-        Err(_) => true,
+        Err(_) => true, // LAW10: poisoned lock => emit the telemetry event anyway (fail-toward-visible); recall-irrelevant suppression-event dedup
     }
 }
 
@@ -292,7 +324,7 @@ fn mark_suppression_event_emitted(
 /// the reporter's "N example keys suppressed" summary stays example-only; shape
 /// drops are a `--dogfood`-only diagnostic. Dedup reuses the shared seen-set
 /// (keyed with a `shape\0` prefix so it can't collide with example keys).
-pub fn record_shape_suppression(path: Option<&str>, credential: &str, reason: &'static str) {
+pub(crate) fn record_shape_suppression(path: Option<&str>, credential: &str, reason: &'static str) {
     // Cheap atomic first - the common (no-dogfood) scan pays nothing beyond this.
     if !is_dogfood_enabled() {
         return;
@@ -353,7 +385,8 @@ pub fn example_suppression_count() -> usize {
 /// enable-flag or any in-flight events. Used by the daemon between
 /// scan requests so per-request counts don't accumulate across
 /// clients - the count we ship over the wire belongs to one scan.
-pub fn reset_example_suppression_count() {
+#[cfg(test)]
+pub(crate) fn reset_example_suppression_count() {
     cell().example_suppressions.store(0, Ordering::Relaxed);
 }
 
@@ -370,13 +403,24 @@ pub fn add_example_suppressions(n: usize) {
 /// [`struct@STRUCTURED_PARSE_FAILURES`]). Always counts (not dogfood-gated): this
 /// is a recall-coverage fact the reporter surfaces unconditionally, like the
 /// walker skip counters.
-pub fn record_structured_parse_failure() {
-    STRUCTURED_PARSE_FAILURES.fetch_add(1, Ordering::Relaxed);
+pub(crate) fn record_structured_parse_failure() {
+    let _receipt = record_scanner_coverage_gap(ScannerCoverageGapEvent::StructuredParseFailure);
 }
 
 /// Count of files that matched a structured format but failed to parse this scan.
 pub fn structured_parse_failure_count() -> usize {
     STRUCTURED_PARSE_FAILURES.load(Ordering::Relaxed)
+}
+
+/// Record that recursive decode-through stopped before exhausting all available
+/// decoder output because a safety budget/cap fired.
+pub(crate) fn record_decode_truncation() {
+    let _receipt = record_scanner_coverage_gap(ScannerCoverageGapEvent::DecodeTruncation);
+}
+
+/// Count of decode roots truncated by safety budgets/caps this scan.
+pub fn decode_truncation_count() -> usize {
+    DECODE_TRUNCATIONS.load(Ordering::Relaxed)
 }
 
 /// Append events into the per-process buffer without going through the
@@ -415,38 +459,25 @@ fn drain_event_buffers(
 }
 
 // Telemetry recording helpers (KH-116)
-pub fn record_file_scanned(bytes: usize) {
+pub(crate) fn record_file_scanned(bytes: usize) {
     FILES_SCANNED.fetch_add(1, Ordering::Relaxed);
     BYTES_SCANNED.fetch_add(bytes, Ordering::Relaxed);
 }
 
-pub fn record_file_skipped() {
+pub(crate) fn record_file_skipped() {
     SKIPPED_FILES.fetch_add(1, Ordering::Relaxed);
 }
 
-pub fn record_match_found() {
+pub(crate) fn record_match_found() {
     TOTAL_MATCHES.fetch_add(1, Ordering::Relaxed);
 }
 
-pub fn record_gpu_dispatch() {
+pub(crate) fn record_gpu_dispatch() {
     GPU_DISPATCHES.fetch_add(1, Ordering::Relaxed);
 }
 
-// KH-122: Expose telemetry counters through static memory structures to avoid allocation during sweeps
-pub fn get_telemetry_snapshot() -> TelemetrySnapshot {
-    TelemetrySnapshot {
-        files_scanned: FILES_SCANNED.load(Ordering::Relaxed),
-        bytes_scanned: BYTES_SCANNED.load(Ordering::Relaxed),
-        skipped_files: SKIPPED_FILES.load(Ordering::Relaxed),
-        total_matches: TOTAL_MATCHES.load(Ordering::Relaxed),
-        gpu_dispatches: GPU_DISPATCHES.load(Ordering::Relaxed),
-        example_suppressions: example_suppression_count(),
-    }
-}
-
-/// Reset all state. For tests only.
-#[doc(hidden)]
-pub fn reset() {
+#[cfg(test)]
+fn reset_state() {
     let t = cell();
     DOGFOOD_ENABLED.store(false, Ordering::Relaxed);
     t.dogfood_enabled.store(false, Ordering::Relaxed);
@@ -457,6 +488,7 @@ pub fn reset() {
     TOTAL_MATCHES.store(0, Ordering::Relaxed);
     GPU_DISPATCHES.store(0, Ordering::Relaxed);
     STRUCTURED_PARSE_FAILURES.store(0, Ordering::Relaxed);
+    DECODE_TRUNCATIONS.store(0, Ordering::Relaxed);
     if let Ok(mut events) = t.events.lock() {
         events.clear();
     }
@@ -466,4 +498,13 @@ pub fn reset() {
     CURRENT_SCAN_TELEMETRY.with(|slot| {
         *slot.borrow_mut() = None;
     });
+}
+
+#[cfg(test)]
+#[doc(hidden)]
+pub mod testing {
+    /// Reset all telemetry state. Test-only facade for integration tests.
+    pub fn reset() {
+        super::reset_state();
+    }
 }

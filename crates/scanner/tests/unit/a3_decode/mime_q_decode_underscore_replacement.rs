@@ -1,7 +1,7 @@
 //! MIME Q-decode must correctly replace `_` with space and handle hex escapes.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn mime_q_underscore_becomes_space() {
@@ -39,7 +39,10 @@ fn mime_q_hex_escape_sequence() {
         .filter(|c| c.metadata.source_type.contains("mime-encoded-word"))
         .collect();
     // At minimum, should not panic and should emit a chunk.
-    assert!(!mime_chunks.is_empty(), "MIME Q with hex escape must decode");
+    assert!(
+        !mime_chunks.is_empty(),
+        "MIME Q with hex escape must decode"
+    );
 }
 
 #[test]
@@ -55,7 +58,10 @@ fn mime_q_mixed_underscores_and_escapes() {
     let has_mime = decoded
         .iter()
         .any(|c| c.metadata.source_type.contains("mime-encoded-word"));
-    assert!(has_mime, "MIME Q with mixed escapes and underscores must decode");
+    assert!(
+        has_mime,
+        "MIME Q with mixed escapes and underscores must decode"
+    );
 }
 
 #[test]

@@ -1,6 +1,6 @@
 //! Long repeat run applies 0.1 multiplier.
 
-use keyhog_scanner::confidence::apply_post_ml_penalties;
+use keyhog_scanner::testing::confidence::apply_post_ml_penalties;
 
 #[test]
 fn confidence_max_repeat_run_penalty() {

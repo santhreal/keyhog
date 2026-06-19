@@ -1,6 +1,6 @@
 use crate::types::*;
 
-pub fn is_within_hex_context(data: &str, match_start: usize, match_end: usize) -> bool {
+pub(crate) fn is_within_hex_context(data: &str, match_start: usize, match_end: usize) -> bool {
     if !valid_match_bounds(data, match_start, match_end) {
         return false;
     }
@@ -55,11 +55,8 @@ fn surrounding_hex_context(data: &str, match_start: usize, match_end: usize) -> 
         match_start.saturating_sub(HEX_CONTEXT_RADIUS_CHARS),
     );
     let context_end = {
-        let mut end = (match_end + HEX_CONTEXT_RADIUS_CHARS).min(data.len());
-        while end < data.len() && !data.is_char_boundary(end) {
-            end += 1;
-        }
-        end.min(data.len())
+        let end = (match_end + HEX_CONTEXT_RADIUS_CHARS).min(data.len());
+        crate::engine::ceil_char_boundary(data, end)
     };
     (
         &data[context_start..match_start],
@@ -90,7 +87,7 @@ fn formatted_hex_run(iter: impl Iterator<Item = char>) -> usize {
     hex_digits
 }
 
-pub fn match_entropy(data: &[u8]) -> f64 {
+pub(crate) fn match_entropy(data: &[u8]) -> f64 {
     #[cfg(feature = "entropy")]
     {
         crate::entropy::shannon_entropy(data)
@@ -98,12 +95,12 @@ pub fn match_entropy(data: &[u8]) -> f64 {
 
     #[cfg(not(feature = "entropy"))]
     {
-        fallback_entropy(data)
+        phase2_entropy(data)
     }
 }
 
 #[cfg(not(feature = "entropy"))]
-fn fallback_entropy(data: &[u8]) -> f64 {
+fn phase2_entropy(data: &[u8]) -> f64 {
     // Delegate to the maintained 8-way scalar histogram (with null-run
     // fast-path + log2-table). entropy_fast is feature-independent, so this
     // avoids carrying a stale, less-optimized fork of the same algorithm.

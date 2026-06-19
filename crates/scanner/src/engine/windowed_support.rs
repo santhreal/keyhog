@@ -1,0 +1,84 @@
+//! Window slicing and dedup helpers for the engine windowing contract.
+
+use super::*;
+use keyhog_core::SensitiveString;
+use std::collections::{HashSet, VecDeque};
+
+pub(crate) fn window_end_offset(text: &str, start: usize, max_len: usize) -> usize {
+    ceil_char_boundary(text, start.saturating_add(max_len).min(text.len()))
+}
+
+pub(crate) fn next_window_offset(text: &str, current_end: usize, overlap: usize) -> usize {
+    ceil_char_boundary(text, current_end.saturating_sub(overlap))
+}
+
+pub(crate) fn window_chunk(chunk: &Chunk, start: usize, end: usize) -> Chunk {
+    Chunk {
+        data: chunk.data.as_ref()[start..end].to_string().into(),
+        metadata: chunk.metadata.clone(),
+    }
+}
+
+pub(crate) fn record_window_match(
+    line_offsets: &[usize],
+    window_offset: usize,
+    m: &mut RawMatch,
+    seen: &mut HashSet<(Arc<str>, SensitiveString, usize)>,
+    seen_order: &mut VecDeque<(Arc<str>, SensitiveString, usize)>,
+) -> bool {
+    m.location.offset += window_offset;
+    if m.location.line.is_some() {
+        // `line_offsets` holds each line-start byte offset in ascending order
+        // (offset 0 first). The count of starts `<= offset` IS the 1-based line
+        // number - identical to counting newlines before `offset` and adding 1
+        // (what `line_number_for_offset` does the slow way), but O(log L) per
+        // match instead of O(offset).
+        m.location.line = Some(line_offsets.partition_point(|&lo| lo <= m.location.offset));
+    }
+
+    let key = (
+        m.detector_id.clone(),
+        m.credential.clone(),
+        m.location.offset,
+    );
+    if seen.contains(&key) {
+        return false;
+    }
+
+    if seen.len() >= MAX_WINDOW_DEDUP_ENTRIES {
+        if let Some(oldest) = seen_order.pop_front() {
+            seen.remove(&oldest);
+        }
+    }
+    seen.insert(key.clone());
+    seen_order.push_back(key);
+    true
+}
+
+#[cfg(test)]
+pub(crate) fn line_number_for_offset(text: &str, offset: usize) -> usize {
+    let safe_offset = floor_char_boundary(text, offset.min(text.len()));
+    text[..safe_offset].chars().filter(|&ch| ch == '\n').count() + 1
+}
+
+pub(crate) fn floor_char_boundary(text: &str, index: usize) -> usize {
+    if index >= text.len() {
+        return text.len();
+    }
+    let mut i = index;
+    while i > 0 && !text.is_char_boundary(i) {
+        i -= 1;
+    }
+    i
+}
+
+pub(crate) fn ceil_char_boundary(text: &str, index: usize) -> usize {
+    if index >= text.len() {
+        return text.len();
+    }
+    let mut i = index;
+    while i < text.len() && !text.is_char_boundary(i) {
+        i += 1;
+    }
+    i
+}

@@ -1,7 +1,7 @@
 //! JSON decoder must handle unterminated escape sequences gracefully.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn json_escape_at_string_end() {
@@ -15,7 +15,9 @@ fn json_escape_at_string_end() {
     let decoded = decode_chunk(&chunk, 1, false, None, None);
     // Should not produce a JSON decoder chunk (malformed string).
     assert!(
-        !decoded.iter().any(|c| c.metadata.source_type.contains("json")),
+        !decoded
+            .iter()
+            .any(|c| c.metadata.source_type.contains("json")),
         "unterminated string with escape at end must be skipped"
     );
 }
@@ -32,7 +34,9 @@ fn json_unicode_escape_truncated() {
     // The JSON unescape must reject the invalid `\u` sequence and return Err.
     // As a result, no JSON decoded chunk should be emitted.
     assert!(
-        !decoded.iter().any(|c| c.metadata.source_type.contains("json")),
+        !decoded
+            .iter()
+            .any(|c| c.metadata.source_type.contains("json")),
         "JSON with truncated \\uXX must not decode"
     );
 }
@@ -48,7 +52,9 @@ fn json_unicode_escape_at_string_end() {
     let decoded = decode_chunk(&chunk, 2, false, None, None);
     // Must not panic and must not emit a JSON chunk (malformed).
     assert!(
-        !decoded.iter().any(|c| c.metadata.source_type.contains("json")),
+        !decoded
+            .iter()
+            .any(|c| c.metadata.source_type.contains("json")),
         "JSON string ending with \\u must be rejected"
     );
 }
@@ -64,7 +70,9 @@ fn json_valid_unicode_escape() {
     let decoded = decode_chunk(&chunk, 2, false, None, None);
     // Should produce a JSON decoded chunk with the unescaped character.
     assert!(
-        decoded.iter().any(|c| c.metadata.source_type.contains("json") && c.data.contains("preAfix")),
+        decoded
+            .iter()
+            .any(|c| c.metadata.source_type.contains("json") && c.data.contains("preAfix")),
         "valid JSON \\uXXXX must decode to character"
     );
 }
@@ -80,7 +88,9 @@ fn json_escaped_quote_inside_string() {
     let decoded = decode_chunk(&chunk, 2, false, None, None);
     // Should decode successfully, converting `\"` to `"`.
     assert!(
-        decoded.iter().any(|c| c.metadata.source_type.contains("json")),
+        decoded
+            .iter()
+            .any(|c| c.metadata.source_type.contains("json")),
         "JSON with escaped quotes must decode"
     );
 }
@@ -96,7 +106,9 @@ fn json_backslash_at_end_of_string() {
     let decoded = decode_chunk(&chunk, 2, false, None, None);
     // `\\` is valid JSON escape, should decode.
     assert!(
-        decoded.iter().any(|c| c.metadata.source_type.contains("json")),
+        decoded
+            .iter()
+            .any(|c| c.metadata.source_type.contains("json")),
         "JSON with escaped backslash must decode"
     );
 }

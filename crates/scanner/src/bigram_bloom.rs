@@ -41,7 +41,7 @@
 /// `Box<[u64; 1024]>` (not inline) keeps the `CompiledScanner` struct compact:
 /// the scanner is moved during compile, and 8 KB inline would force stack
 /// spill on every move.
-pub struct BigramBloom {
+pub(crate) struct BigramBloom {
     bits: Box<[u64; 1024]>,
     /// `true` once the table is so densely populated that `maybe_overlaps`
     /// would return `true` for essentially every real chunk - i.e. the
@@ -74,7 +74,7 @@ impl Clone for BigramBloom {
 }
 
 impl BigramBloom {
-    pub fn empty() -> Self {
+    pub(crate) fn empty() -> Self {
         Self {
             bits: Box::new([0; 1024]),
             saturated: false,
@@ -86,7 +86,7 @@ impl BigramBloom {
     /// Refreshes the saturation flag so a table built directly through this
     /// public entry point (rather than [`Self::from_literal_prefixes`]) keeps
     /// `maybe_overlaps`'s short-circuit consistent with its bit population.
-    pub fn insert_all(&mut self, bytes: &[u8]) {
+    pub(crate) fn insert_all(&mut self, bytes: &[u8]) {
         for window in bytes.windows(2) {
             self.insert(window[0], window[1]);
         }
@@ -120,7 +120,7 @@ impl BigramBloom {
     /// (so we accept secrets that *start* with the prefix and continue with
     /// any byte). The "extension" widening keeps the table sound under
     /// truncated prefixes (`ghp` matches `ghp_AB...`).
-    pub fn from_literal_prefixes(literals: &[String]) -> Self {
+    pub(crate) fn from_literal_prefixes(literals: &[String]) -> Self {
         let mut bloom = Self::empty();
         for literal in literals {
             let bytes = literal.as_bytes();
@@ -179,7 +179,7 @@ impl BigramBloom {
     /// Apple M-series. This mirrors the 4-wide unroll the alphabet filter's
     /// AVX2 body uses; a true 64 KB SIMD gather offers no win because the
     /// table exceeds a single shuffle register.
-    pub fn maybe_overlaps(&self, chunk: &[u8]) -> bool {
+    pub(crate) fn maybe_overlaps(&self, chunk: &[u8]) -> bool {
         if chunk.len() < 2 {
             return true;
         }
@@ -224,24 +224,24 @@ impl BigramBloom {
     /// `saturated` short-circuit ([`Self::recompute_saturation`]): a near-full
     /// table makes `maybe_overlaps` always return true and the prefilter
     /// provides zero filtering value, so the hot path skips its O(L) walk.
-    pub fn popcount(&self) -> u32 {
+    pub(crate) fn popcount(&self) -> u32 {
         self.bits.iter().map(|w| w.count_ones()).sum()
     }
 
     /// Whether the table is saturated enough that `maybe_overlaps`
     /// short-circuits to `true`. Exposed for diagnostics and tests.
-    pub fn is_saturated(&self) -> bool {
+    pub(crate) fn is_saturated(&self) -> bool {
         self.saturated
     }
 
     /// Test-only naive reference: "does any bigram of `chunk` have its bit
     /// set", with NO saturation short-circuit and NO unrolling. The unrolled,
     /// saturation-aware [`maybe_overlaps`](Self::maybe_overlaps) must agree
-    /// with this on every non-saturated table. Exposed (doc-hidden) so the
-    /// differential test in `tests/unit/bigram_bloom.rs` can reach the private
-    /// `bits`/`bigram_slot` internals it must compare against.
-    #[doc(hidden)]
-    pub fn scalar_overlaps_reference(&self, chunk: &[u8]) -> bool {
+    /// with this on every non-saturated table. Exposed through
+    /// `testing::BigramBloom` so the differential test in
+    /// `tests/unit/bigram_bloom.rs` can compare against the private
+    /// `bits`/`bigram_slot` internals.
+    pub(crate) fn scalar_overlaps_reference(&self, chunk: &[u8]) -> bool {
         if chunk.len() < 2 {
             return true;
         }
@@ -255,8 +255,7 @@ impl BigramBloom {
     /// the saturation threshold), so the external suite can exercise the
     /// short-circuit path without reaching the private `insert_row` /
     /// `recompute_saturation` mutators.
-    #[doc(hidden)]
-    pub fn saturated_for_test() -> Self {
+    pub(crate) fn saturated_for_test() -> Self {
         let mut bloom = Self::empty();
         // 158 full rows * 256 slots = 40448 set bits > the 3/5 threshold.
         for a in 0u16..158 {

@@ -1,4 +1,4 @@
-use keyhog_scanner::pipeline::match_line_number;
+use keyhog_scanner::testing::match_line_number;
 use keyhog_scanner::types::ScannerPreprocessedText;
 
 #[test]

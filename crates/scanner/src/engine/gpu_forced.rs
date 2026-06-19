@@ -16,31 +16,26 @@ use super::CompiledScanner;
 /// per process, not once per scan or once per chunk.
 static RUNTIME_DEGRADE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
 
-/// Read KEYHOG_NO_GPU / KEYHOG_REQUIRE_GPU exactly once per process.
+/// Read the resolved GPU runtime policy exactly once per process.
 /// `deny_silent_gpu_degrade` can be invoked per chunk on multi-thousand-chunk
-/// scans; un-cached
-/// `std::env::var` is a 200ns+ syscall per call. The values are
-/// process-global and can't change mid-run anyway, so a OnceLock is
-/// exact.
+/// scans. The values are process-global and can't change mid-run anyway, so a
+/// OnceLock is exact.
 ///
-/// The `no_gpu` flag is true when EITHER the user set
-/// `KEYHOG_NO_GPU=1` OR we auto-detected a CI runner (see
-/// `crate::gpu::env_no_gpu`). The degrade-warning paths consume this
-/// to suppress the "GPU dispatch failed" message that CI runs would
-/// otherwise emit on every scan - on a CI runner there is no GPU,
-/// the CPU path is the right path, and no warning is needed.
-fn cached_gpu_env_flags() -> (bool, bool) {
+/// The `no_gpu` flag is true when the resolved policy disables GPU. The
+/// degrade-warning paths consume this to suppress the "GPU dispatch failed"
+/// message when CPU/SIMD was explicitly requested.
+fn cached_gpu_runtime_policy_flags() -> (bool, bool) {
     static FLAGS: std::sync::OnceLock<(bool, bool)> = std::sync::OnceLock::new();
     *FLAGS.get_or_init(|| {
         let no_gpu = crate::gpu::env_no_gpu();
-        let require_gpu = std::env::var("KEYHOG_REQUIRE_GPU").as_deref() == Ok("1");
+        let require_gpu = crate::gpu::env_require_gpu();
         (no_gpu, require_gpu)
     })
 }
 
-/// Error message when env forces GPU/MegaScan but the scanner cannot dispatch.
+/// Error message when routing forces GPU/MegaScan but the scanner cannot dispatch.
 #[must_use]
-pub fn gpu_forced_unavailable_message(
+pub(crate) fn gpu_forced_unavailable_message(
     scanner: &CompiledScanner,
     backend: ScanBackend,
 ) -> Option<String> {
@@ -60,16 +55,15 @@ pub fn gpu_forced_unavailable_message(
     ))
 }
 
-/// Exit with an explicit message when env forces GPU and the stack
+/// Exit with an explicit message when policy forces GPU and the stack
 /// is down. Otherwise, when the scanner asked for GPU but is about
 /// to degrade to CPU at runtime, emit a one-shot stderr warning so
-/// the user sees the silent fallback they didn't ask for. Set
-/// KEYHOG_NO_GPU=1 to silence the warning, or KEYHOG_REQUIRE_GPU=1
-/// to exit (2) instead.
+/// the user sees the silent fallback they didn't ask for. Use
+/// `--no-gpu` to silence the warning, or `--require-gpu` to exit (2) instead.
 ///
 /// ## Why a `std::process::exit(2)` survives in the library here (M12)
 ///
-/// The clean fail-closed path for `KEYHOG_REQUIRE_GPU=1` on a no-GPU host
+/// The clean fail-closed path for `--require-gpu` on a no-GPU host
 /// is the CLI preflight ([`crate::gpu::require_gpu_preflight`], called from
 /// `orchestrator::run` before any scan) which returns the documented
 /// `ExitCode` through the CLI - no library `process::exit`, so embedders
@@ -81,15 +75,15 @@ pub fn gpu_forced_unavailable_message(
 /// dispatch contract the no-silent-fallback rule requires an immediate
 /// stop, and the only correct stop signal from inside that closure is the
 /// process exit. The hazard for embedders is bounded: it fires only when
-/// the embedder explicitly forced a GPU backend (or set `KEYHOG_REQUIRE_GPU=1`)
+/// the embedder explicitly forced a GPU backend (or the policy required GPU)
 /// AND reached GPU dispatch with a broken stack -
 /// not on the ordinary no-GPU auto-routing path, which the CLI preflight
 /// now owns.
-pub fn deny_silent_gpu_degrade(scanner: &CompiledScanner, backend: ScanBackend) {
+pub(crate) fn deny_silent_gpu_degrade(scanner: &CompiledScanner, backend: ScanBackend) {
     deny_silent_gpu_degrade_with_reason(scanner, backend, None);
 }
 
-pub fn deny_silent_gpu_degrade_with_reason(
+pub(crate) fn deny_silent_gpu_degrade_with_reason(
     scanner: &CompiledScanner,
     backend: ScanBackend,
     reason: Option<&str>,
@@ -104,11 +98,11 @@ pub fn deny_silent_gpu_degrade_with_reason(
     if reason.is_none() && scanner.gpu_stack_usable() {
         return;
     }
-    let (no_gpu, require_gpu) = cached_gpu_env_flags();
+    let (no_gpu, require_gpu) = cached_gpu_runtime_policy_flags();
     if require_gpu {
         if let Some(reason) = reason {
             eprintln!(
-                "keyhog: KEYHOG_REQUIRE_GPU=1 but the GPU dispatch failed at runtime \
+                "keyhog: --require-gpu requested but the GPU dispatch failed at runtime \
 ({reason}) (literals={}, backend={}, matcher={}). Refusing to silently degrade.",
                 scanner.gpu_literals.is_some(),
                 scanner.gpu_backend.is_some(),
@@ -116,7 +110,7 @@ pub fn deny_silent_gpu_degrade_with_reason(
             );
         } else {
             eprintln!(
-                "keyhog: KEYHOG_REQUIRE_GPU=1 but the GPU dispatch failed at runtime \
+                "keyhog: --require-gpu requested but the GPU dispatch failed at runtime \
 (literals={}, backend={}, matcher={}). Refusing to silently degrade.",
                 scanner.gpu_literals.is_some(),
                 scanner.gpu_backend.is_some(),
@@ -132,16 +126,16 @@ pub fn deny_silent_gpu_degrade_with_reason(
         if let Some(reason) = reason {
             eprintln!(
                 "keyhog: GPU dispatch failed at runtime ({reason}); this scan and any subsequent \
-ones in this process degrade to CPU/SIMD. Set KEYHOG_NO_GPU=1 to silence, or \
-KEYHOG_REQUIRE_GPU=1 to hard-fail next time."
+ones in this process degrade to CPU/SIMD. Use --no-gpu to silence, or \
+--require-gpu to hard-fail next time."
             );
         } else {
             eprintln!(
                 "keyhog: GPU dispatch failed at runtime; this scan and any subsequent \
 ones in this process degrade to CPU/SIMD. Often a transient driver issue or a \
 program the GPU lowering pipeline rejects (check the preceding tracing::error \
-line for the underlying message). Set KEYHOG_NO_GPU=1 to silence, or \
-KEYHOG_REQUIRE_GPU=1 to hard-fail next time."
+line for the underlying message). Use --no-gpu to silence, or \
+--require-gpu to hard-fail next time."
             );
         }
     }

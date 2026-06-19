@@ -12,7 +12,7 @@
 //! base32/hex/base64 secret, whose longest natural run is ~2-3) closes the hole
 //! without touching low-diversity-but-legit named keys (64-hex PATs, UUIDs).
 
-use keyhog_scanner::confidence::apply_post_ml_penalties;
+use keyhog_scanner::testing::confidence::apply_post_ml_penalties;
 
 #[test]
 fn named_detector_all_x_placeholder_is_crushed() {

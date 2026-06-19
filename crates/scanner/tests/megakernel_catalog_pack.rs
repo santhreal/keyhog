@@ -2,7 +2,7 @@
 //! Megakernel fallback port — slice 1: host-side catalog construction.
 //!
 //! Proves keyhog's real detector regexes compile into the vyre megakernel's
-//! batched DFA rule catalog (`docs/GPU_DETECTION_REWRITE.md` step 5):
+//! batched DFA rule catalog (`docs/EXECUTION_PLAN.md` step 5):
 //!   regex → `build_regex_dfa_pipeline` (compile_regex_set → nfa_to_dfa, a FULL
 //!   dense `state*256` DFA) → `CompiledDfa` → `BatchRuleProgram` (direct field
 //!   map) → `pack_rule_catalog`.

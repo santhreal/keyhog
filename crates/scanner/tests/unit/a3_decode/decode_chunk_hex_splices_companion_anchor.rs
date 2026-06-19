@@ -1,7 +1,7 @@
 //! Hex decode-through splices decoded bytes into parent assignment context.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn hex_splice_preserves_companion_anchor() {

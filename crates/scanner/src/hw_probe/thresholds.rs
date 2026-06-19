@@ -1,5 +1,6 @@
-//! Routing crossover thresholds. Public so benchmarks and the
-//! `keyhog backend` debug subcommand can reference the same numbers.
+//! Routing crossover thresholds. Internal constants feed the tier lookup
+//! functions; CLI/reporting consumes those functions instead of duplicating
+//! raw threshold values.
 //!
 //! Thresholds are **GPU-tier-aware** instead of one-size-fits-all.
 //! The legacy single-value `GPU_MIN_BYTES` / `GPU_BYTES_BREAKEVEN_SOLO`
@@ -25,31 +26,31 @@
 /// we'll dispatch to GPU. Top-tier GPUs (RTX 40/50, A100/H100,
 /// M-series Max) get the much lower [`GPU_MIN_BYTES_HIGH_TIER`]
 /// threshold instead.
-pub const GPU_MIN_BYTES: u64 = 64 * 1024 * 1024;
+pub(crate) const GPU_MIN_BYTES: u64 = 64 * 1024 * 1024;
 /// Mid-tier (RTX 20/30, GTX 16, Intel Arc, M-series base): 16 MiB.
-pub const GPU_MIN_BYTES_MID_TIER: u64 = 16 * 1024 * 1024;
+pub(crate) const GPU_MIN_BYTES_MID_TIER: u64 = 16 * 1024 * 1024;
 /// High-tier (RTX 40/50, A100/H100, M-series Max): 2 MiB.
 /// At ~100 µs dispatch latency on these GPUs vs Hyperscan's
 /// 3 GB/s, breakeven workload is ~300 KB; 2 MiB gives headroom
 /// for the per-batch parallel-CPU contention that Hyperscan
 /// benefits from.
-pub const GPU_MIN_BYTES_HIGH_TIER: u64 = 2 * 1024 * 1024;
+pub(crate) const GPU_MIN_BYTES_HIGH_TIER: u64 = 2 * 1024 * 1024;
 /// Pattern count above which GPU literal matching becomes worthwhile
 /// regardless of buffer size - many patterns saturate Hyperscan's
 /// scratch space and serial AC. Conservative (low-tier) default;
 /// see [`super::gpu_pattern_breakeven_for_tier`] for the tier-aware value.
-pub const GPU_PATTERN_BREAKEVEN: usize = 2_000;
+pub(crate) const GPU_PATTERN_BREAKEVEN: usize = 2_000;
 /// High-tier GPUs (RTX 40/50, A100/H100, M-Max) win on as few as
 /// 100 patterns once dispatch overhead is sub-millisecond.
-pub const GPU_PATTERN_BREAKEVEN_HIGH_TIER: usize = 100;
+pub(crate) const GPU_PATTERN_BREAKEVEN_HIGH_TIER: usize = 100;
 /// Mid-tier crossover: 500 patterns.
-pub const GPU_PATTERN_BREAKEVEN_MID_TIER: usize = 500;
+pub(crate) const GPU_PATTERN_BREAKEVEN_MID_TIER: usize = 500;
 /// Single-file size that justifies GPU even at low pattern counts.
 /// One device dispatch beats saturating one CPU core with Hyperscan
 /// when the file alone is this big.
-pub const GPU_BYTES_BREAKEVEN_SOLO: u64 = 256 * 1024 * 1024;
+pub(crate) const GPU_BYTES_BREAKEVEN_SOLO: u64 = 256 * 1024 * 1024;
 /// High-tier solo cap: 16 MiB single file already justifies GPU
 /// dispatch on a 5090-class adapter.
-pub const GPU_BYTES_BREAKEVEN_SOLO_HIGH_TIER: u64 = 16 * 1024 * 1024;
+pub(crate) const GPU_BYTES_BREAKEVEN_SOLO_HIGH_TIER: u64 = 16 * 1024 * 1024;
 /// Mid-tier solo cap: 64 MiB.
-pub const GPU_BYTES_BREAKEVEN_SOLO_MID_TIER: u64 = 64 * 1024 * 1024;
+pub(crate) const GPU_BYTES_BREAKEVEN_SOLO_MID_TIER: u64 = 64 * 1024 * 1024;

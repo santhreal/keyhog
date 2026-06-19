@@ -1,4 +1,4 @@
-use keyhog_scanner::unicode_hardening::*;
+use keyhog_scanner::testing::unicode_hardening::*;
 
 /// Proving test: Multiple zero-width characters are all removed.
 /// Contract: "token=abcd\u{200B}\u{200C}\u{200D}efgh" normalizes to "token=abcdefgh".

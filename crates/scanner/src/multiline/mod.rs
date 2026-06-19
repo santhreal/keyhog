@@ -5,17 +5,26 @@
 //! concatenation syntaxes.
 
 mod config;
-pub mod fragment_cache;
+#[cfg(feature = "multiline")]
 mod preprocessor;
+mod string_extract;
+#[cfg(feature = "multiline")]
 mod structural;
 
-#[allow(unused_imports)]
+#[cfg(feature = "multiline")]
 pub(crate) use config::has_concatenation_indicators;
-pub use config::{LineMapping, MultilineConfig, PreprocessedText};
-pub(crate) use preprocessor::extract_prefix;
-pub use preprocessor::preprocess_multiline;
+pub use config::MultilineConfig;
+#[cfg(feature = "multiline")]
+pub(crate) use config::{LineMapping, PreprocessedText};
+#[cfg(feature = "multiline")]
+pub(crate) use preprocessor::preprocess_multiline;
+pub(crate) use string_extract::extract_prefix;
 
+#[cfg(feature = "multiline")]
 pub(crate) fn warm_runtime_regexes() {
     config::warm_runtime_regexes();
     structural::warm_runtime_regexes();
 }
+
+#[cfg(not(feature = "multiline"))]
+pub(crate) fn warm_runtime_regexes() {}

@@ -45,6 +45,7 @@ impl<'a> PreparedChunk<'a> {
 pub(crate) fn build_simd_scanner(
     ac_map: &[CompiledPattern],
     _fallback: &[(CompiledPattern, Vec<String>)],
+    tuning: &crate::scanner_config::ScannerTuningConfig,
 ) -> Option<(crate::simd::backend::HsScanner, Vec<Vec<usize>>, Vec<usize>)> {
     use std::collections::HashMap;
 
@@ -81,7 +82,11 @@ pub(crate) fn build_simd_scanner(
         "compiling deduplicated AC regexes into Hyperscan"
     );
 
-    match crate::simd::backend::HsScanner::compile(&pattern_refs) {
+    let opts = crate::simd::backend::HsCompileOpts {
+        shard_target: tuning.hs_shard_target,
+        ..Default::default()
+    };
+    match crate::simd::backend::HsScanner::compile_with_opts(&pattern_refs, opts) {
         Ok((scanner, unsupported)) => {
             // Map the unsupported hs_ids back to the ac_map indices that
             // share each dropped regex. These never match under HS, so the

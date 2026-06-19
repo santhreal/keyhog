@@ -68,8 +68,25 @@ fn uuid_dropped_under_secret_anchor() {
 #[test]
 fn npm_sha512_integrity_dropped_under_anchor() {
     // npm-lock-integrity `integrity: "sha512-<base64>"`.
+    // A valid sha512 integrity string: `sha512-` prefix + 88-char base64 body
+    // (64 SHA-512 bytes → 88 base64 chars with `==` padding, 88 % 4 == 0).
+    // The prior fixture used a 75-char body (75 % 4 == 3) which classify_base64
+    // correctly rejected as invalid padded base64, so standard_base64_shape
+    // returned None and is_canonical_non_secret_shape returned false.
+    // This fixture is the sha512 digest of b"test_input_0" encoded in standard base64.
     let integrity =
-        "sha512-Z+Pm5Wd0RfQVq2A9KzWfYBceZ8xQk1aTfLmN0pXyZ2cD3eF4gH5iJ6kL7mN8oP9qR0sT1uV2w==";
+        "sha512-Nn+Gk5B3l3p8osBOmDvJiO2mzOZGsDo3jKKykfYRX3wd5Ig5/NRCuXisx2EXI7eQrQNLgxFO2eh1x0r+aK9U+w==";
+    let body = &integrity["sha512-".len()..];
+    assert_eq!(
+        body.len(),
+        88,
+        "test invariant: sha512 base64 body must be 88 chars"
+    );
+    assert_eq!(
+        body.len() % 4,
+        0,
+        "test invariant: valid padded base64 requires len%4==0"
+    );
     assert!(is_canonical_non_secret_shape(integrity));
     let e = shannon_entropy(integrity.as_bytes());
     assert!(!candidate_is_plausible(

@@ -15,7 +15,7 @@ use super::{ChecksumResult, ChecksumValidator};
 ///   - anything else (too short / absurdly long to model)        → `NotApplicable`
 /// so we only ever DROP on a positively-malformed body, never on an
 /// unrecognised-but-plausible length.
-pub struct GitlabTokenValidator;
+pub(crate) struct GitlabTokenValidator;
 
 /// Real-world GitLab token body lengths: classic PAT is 20; routable 16.x+
 /// tokens run longer (random + base64 CRC trailer). 64 is a generous ceiling
@@ -36,10 +36,6 @@ fn gitlab_body_charset_ok(payload: &str) -> bool {
 }
 
 impl ChecksumValidator for GitlabTokenValidator {
-    fn validator_id(&self) -> &str {
-        "gitlab-token"
-    }
-
     fn validate(&self, credential: &str) -> ChecksumResult {
         if let Some(payload) = credential.strip_prefix("glpat-") {
             if !gitlab_body_charset_ok(payload) {

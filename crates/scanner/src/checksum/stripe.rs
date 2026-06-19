@@ -5,13 +5,9 @@ use super::{ChecksumResult, ChecksumValidator};
 /// Stripe keys follow the format: `{prefix}_{mode}_{24+ alphanumeric chars}`
 /// where prefix is sk/pk/rk and mode is live/test.
 /// No public checksum algorithm, but strict structural validation.
-pub struct StripeTokenValidator;
+pub(crate) struct StripeTokenValidator;
 
 impl ChecksumValidator for StripeTokenValidator {
-    fn validator_id(&self) -> &str {
-        "stripe-api-key"
-    }
-
     fn validate(&self, credential: &str) -> ChecksumResult {
         let prefixes = [
             "sk_live_", "sk_test_", "pk_live_", "pk_test_", "rk_live_", "rk_test_",

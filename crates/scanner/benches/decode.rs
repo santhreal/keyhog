@@ -1,6 +1,7 @@
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
+use std::hint::black_box;
 
 fn make_chunk(data: &str) -> Chunk {
     Chunk {
@@ -30,15 +31,7 @@ fn bench_decode(c: &mut Criterion) {
         BenchmarkId::new("base64", "1kb"),
         &base64_input,
         |b, chk| {
-            b.iter(|| {
-                criterion::black_box(decode_chunk(
-                    criterion::black_box(chk),
-                    3,
-                    false,
-                    None,
-                    None,
-                ))
-            });
+            b.iter(|| black_box(decode_chunk(black_box(chk), 3, false, None, None)));
         },
     );
 
@@ -46,30 +39,14 @@ fn bench_decode(c: &mut Criterion) {
         "secret=\"736b2d6c6976652d78787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878787878\"",
     );
     group.bench_with_input(BenchmarkId::new("hex", "1kb"), &hex_input, |b, chk| {
-        b.iter(|| {
-            criterion::black_box(decode_chunk(
-                criterion::black_box(chk),
-                3,
-                false,
-                None,
-                None,
-            ))
-        });
+        b.iter(|| black_box(decode_chunk(black_box(chk), 3, false, None, None)));
     });
 
     let url_input = make_chunk(
         "token=%73%6b%2d%6c%69%76%65%2d%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78%78",
     );
     group.bench_with_input(BenchmarkId::new("url", "1kb"), &url_input, |b, chk| {
-        b.iter(|| {
-            criterion::black_box(decode_chunk(
-                criterion::black_box(chk),
-                3,
-                false,
-                None,
-                None,
-            ))
-        });
+        b.iter(|| black_box(decode_chunk(black_box(chk), 3, false, None, None)));
     });
 
     group.finish();

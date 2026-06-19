@@ -1,11 +1,10 @@
-//! Unified scan profiler — one switch, one hierarchical dump.
+//! Unified scan profiler: one explicit switch, one hierarchical dump.
 //!
-//! Replaces the nine scattered `KEYHOG_PROFILE_{PHASE2,FALLBACK,CONFIRMED,
-//! SCANINNER,DECODE,DECODERS,EXTRACT,MLBATCH}=1` atomic-counter hacks (each in a
-//! different file, each with its own incompatible dump) with a SINGLE
-//! `KEYHOG_PROFILE=1` that captures the whole pipeline in one run and emits one
-//! tree showing where every microsecond goes — including *inside* the so-called
-//! fallback pass and how much of the cost is decode-recursion.
+//! Replaces the old scattered per-pass atomic-counter hacks (each in a different
+//! file, each with its own incompatible dump) with one scanner-owned switch set
+//! explicitly by the CLI/library caller. It captures the whole pipeline in one
+//! run and emits one tree showing where every microsecond goes, including inside
+//! the phase-2 pass and how much of the cost is decode-recursion.
 //!
 //! Model: only LEAF passes are timed directly (via the [`span`] RAII guard);
 //! parent rows (scan / phase2 / fallback) are SUMS of their leaves in [`dump`].
@@ -19,8 +18,7 @@
 //! `Instant::now()` is taken on the hot path.
 
 use std::cell::Cell;
-use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering::Relaxed};
 use std::time::Instant;
 
 /// Leaf timing points. The ONLY spans measured directly; the hierarchy in
@@ -33,7 +31,7 @@ pub(crate) enum P {
     Hot,
     Confirmed,
     /// Always-active RegexSet prefilter — the anchorless detectors that run on
-    /// EVERY chunk (the cost the "fallback" label hides).
+    /// EVERY chunk (the cost the old label hid).
     FbPrefilter,
     /// Keyword Aho-Corasick prefilter (gates keyword-anchored fallbacks).
     FbKeywordAc,
@@ -97,10 +95,32 @@ static CALLS: [AtomicU64; N] = zeros!();
 static NS_DECODE: [AtomicU64; N] = zeros!();
 static ROOT_BYTES: AtomicU64 = AtomicU64::new(0);
 static ROOT_FILES: AtomicU64 = AtomicU64::new(0);
+static PROFILE_ENABLED: AtomicBool = AtomicBool::new(false);
+static PERF_TRACE_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// Enable or disable the scanner profile collector for this process.
+///
+/// The profiler is process-wide because the underlying counters aggregate work
+/// across rayon workers and decode rescans. Call this before compiling/scanning.
+pub fn set_profile_enabled(enabled: bool) {
+    PROFILE_ENABLED.store(enabled, Relaxed);
+}
+
+/// Enable or disable low-level phase timing traces for this process.
+///
+/// This is the explicit replacement for the old ambient environment hook used by
+/// GPU/perf benches and dispatch diagnostics.
+pub fn set_perf_trace_enabled(enabled: bool) {
+    PERF_TRACE_ENABLED.store(enabled, Relaxed);
+}
 
 pub(crate) fn enabled() -> bool {
-    static EN: OnceLock<bool> = OnceLock::new();
-    *EN.get_or_init(|| std::env::var("KEYHOG_PROFILE").as_deref() == Ok("1"))
+    PROFILE_ENABLED.load(Relaxed)
+}
+
+#[cfg(any(feature = "simd", feature = "gpu"))]
+pub(crate) fn perf_trace_enabled() -> bool {
+    PERF_TRACE_ENABLED.load(Relaxed)
 }
 
 thread_local! {
@@ -111,6 +131,7 @@ thread_local! {
 
 /// Mark/unmark the current thread as inside a decode sub-chunk rescan; returns
 /// the previous value so the caller can restore it (decode recursion nests).
+#[cfg(feature = "decode")]
 pub(crate) fn set_in_decode(on: bool) -> bool {
     IN_DECODE.with(|c| c.replace(on))
 }
@@ -128,7 +149,11 @@ pub(crate) struct Guard {
 pub(crate) fn span(p: P) -> Guard {
     Guard {
         p: p as usize,
-        start: if enabled() { Some(Instant::now()) } else { None },
+        start: if enabled() {
+            Some(Instant::now())
+        } else {
+            None
+        },
     }
 }
 
@@ -171,7 +196,7 @@ fn read_reset() -> ([u64; N], [u64; N], [u64; N], u64, u64) {
 
 /// Discard all accumulated counters without printing (warm-up between runs).
 pub fn reset() {
-    let _ = read_reset();
+    let _ = read_reset(); // LAW10: intentionally discards the swapped-out profiling counters (reset side-effect, warm-up between runs); telemetry-only, recall-irrelevant
 }
 
 const FB_LEAVES: [usize; 5] = [
@@ -198,7 +223,7 @@ const PHASE2_LEAVES: [usize; 9] = [
 /// (prints a single "disabled" line).
 pub fn dump(label: &str) {
     if !enabled() {
-        eprintln!("[profile {label}] KEYHOG_PROFILE!=1 — no data (set KEYHOG_PROFILE=1)");
+        eprintln!("[profile {label}] scanner profile switch is off; no data");
         return;
     }
     let (ns, calls, ns_decode, bytes, files) = read_reset();
@@ -261,7 +286,7 @@ pub fn dump(label: &str) {
     parent("phase2", phase2_ns, "  ");
     leaf(P::Hot as usize, phase2_ns, "    ");
     leaf(P::Confirmed as usize, phase2_ns, "    ");
-    parent("fallback", fb_ns, "    ");
+    parent("phase2", fb_ns, "    ");
     for &i in &FB_LEAVES {
         leaf(i, fb_ns, "      ");
     }
@@ -278,5 +303,10 @@ pub fn dump(label: &str) {
 
     // Fold in the auxiliary histograms recorded on the hot path. Each early-returns
     // when its counters are empty, so an unrelated run prints nothing extra.
+    super::scan_inner_profile::scan_inner_profile_dump();
+    super::scan_postprocess::decode_profile_dump();
+    crate::decode::extract_profile_dump();
+    crate::decode::decoder_profile_dump();
     super::scan_postprocess::ml_batch_profile_dump();
+    crate::gpu::ml_split_profile_dump();
 }

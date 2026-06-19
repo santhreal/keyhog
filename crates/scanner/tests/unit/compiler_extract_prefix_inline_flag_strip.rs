@@ -1,6 +1,6 @@
 //! Inline (?i) flag is stripped before prefix extraction.
 
-use keyhog_scanner::compiler::extract_literal_prefixes;
+use keyhog_scanner::testing::extract_literal_prefixes;
 
 #[test]
 fn compiler_extract_prefix_inline_flag_strip() {

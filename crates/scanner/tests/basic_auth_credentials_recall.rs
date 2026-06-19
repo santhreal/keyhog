@@ -49,7 +49,10 @@ fn basic_auth_in_curl_command_surfaces() {
     // The shape as it appears in real shell/CI scripts.
     let cred = "YWRtaW46aHVudGVyMnN1cGVyc2VjcmV0MTIzNDU2";
     assert!(
-        fires(&format!("curl -H \"Authorization: Basic {cred}\" https://api.example.com"), cred),
+        fires(
+            &format!("curl -H \"Authorization: Basic {cred}\" https://api.example.com"),
+            cred
+        ),
         "Basic-auth blob inside a curl command must surface"
     );
 }

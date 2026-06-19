@@ -1,12 +1,12 @@
-use keyhog_scanner::alphabet_filter::{AlphabetMask, AlphabetScreen};
+use keyhog_scanner::testing::{
+    assert_alphabet_prefilter_backend_parity, AlphabetMask, AlphabetScreen,
+};
 use proptest::prelude::*;
 
 proptest! {
     #[test]
     fn proptest_mask_correctness(bytes in proptest::collection::vec(any::<u8>(), 0..1024)) {
-        let scalar_mask = AlphabetMask::from_bytes_scalar(&bytes);
-        let simd_mask = AlphabetMask::from_bytes(&bytes);
-        assert_eq!(scalar_mask, simd_mask, "SIMD mask must match scalar mask exactly");
+        assert_alphabet_prefilter_backend_parity(&["AKIA".to_string(), "ghp_".to_string()], &bytes);
     }
 }
 

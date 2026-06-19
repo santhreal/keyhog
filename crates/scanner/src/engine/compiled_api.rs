@@ -1,9 +1,3 @@
-//! `impl CompiledScanner` public-API surface — accessors (detector/pattern
-//! counts, backend labels, diagnostics) and the `scan*` entry points —
-//! extracted from `engine/mod.rs` (Law 5, 500-LOC ceiling). The struct and its
-//! private helpers (`env_per_chunk_deadline`, `MAX_SCAN_CHUNK_BYTES`) stay in
-//! `mod.rs` and are reached through `use super::*`. Pure move, no behaviour
-//! change.
 use super::*;
 
 impl CompiledScanner {
@@ -33,7 +27,7 @@ impl CompiledScanner {
     }
 
     /// Number of loaded detectors.
-    pub fn detector_count(&self) -> usize {
+    pub(crate) fn detector_count(&self) -> usize {
         self.detectors.len()
     }
 
@@ -53,27 +47,27 @@ impl CompiledScanner {
     }
 
     /// Total number of patterns (AC + fallback).
-    pub fn pattern_count(&self) -> usize {
-        self.ac_map.len() + self.fallback.len()
+    pub(crate) fn pattern_count(&self) -> usize {
+        self.ac_map.len() + self.phase2_patterns.len()
     }
 
-    /// This scanner's performance route tuning. Differential parity tests flip a
-    /// route on ONE scanner — e.g. `scanner.tuning().set_fallback_hs(Some(false))`
-    /// — to drive a single input down both code paths without any process-global
-    /// state; production code never calls the setters, so every override stays at
-    /// "follow env". See [`fallback::ScannerTuning`].
-    pub fn tuning(&self) -> &fallback::ScannerTuning {
+    /// This scanner's performance route tuning. Differential parity tests use
+    /// `keyhog_scanner::testing` helpers to flip a route on one scanner and
+    /// drive a single input down both code paths without process-global state.
+    #[cfg(test)]
+    pub(crate) fn tuning(&self) -> &phase2::ScannerTuning {
         &self.tuning
     }
 
     /// Diagnostic: `(fallback_total, always_active, always_active_eligible)` —
     /// how much the shared-anchor index shrinks the RegexSet prefilter. The
     /// prefilter cost scales with `always_active - always_active_eligible`.
-    pub fn fallback_anchor_stats(&self) -> (usize, usize, usize) {
-        let total = self.fallback.len();
-        let always_active = self.fallback_always_active_indices.len();
-        let aae = self.fallback_anchor_index.as_ref().map_or(0, |idx| {
-            self.fallback_always_active_indices
+    #[cfg(test)]
+    pub(crate) fn phase2_anchor_stats(&self) -> (usize, usize, usize) {
+        let total = self.phase2_patterns.len();
+        let always_active = self.phase2_always_active_indices.len();
+        let aae = self.phase2_anchor_index.as_ref().map_or(0, |idx| {
+            self.phase2_always_active_indices
                 .iter()
                 .filter(|&&i| idx.is_always_active_eligible(i))
                 .count()
@@ -81,14 +75,43 @@ impl CompiledScanner {
         (total, always_active, aae)
     }
 
+    /// Benchmark helper: directly time `mark_matches` on a no-candidate text
+    /// without the phase-1 HS scan overhead. Returns the mean nanoseconds per
+    /// `mark_matches` call over `n_calls` iterations on `text`.
+    ///
+    /// Used by `fallback_no_candidate_gate_perf` to assert the isolated gate
+    /// path (bloom → AC early-exit → return) is well below the 30931 ns/call
+    /// pre-fix baseline. The method bypasses the whole scan pipeline
+    /// (`scan_chunks_with_backend`) so only the `mark_matches` body is timed.
+    #[cfg(test)]
+    pub(crate) fn mark_matches_gate_ns_per_call(&self, text: &str, n_calls: u32) -> f64 {
+        let Some(prefilter) = &self.phase2_always_active_prefilter else {
+            return 0.0;
+        };
+        let tuning = self.tuning();
+        // Warm: one call to initialise any thread-local state before timing.
+        let mut scratch = phase2::ActivePatternsScratch::new();
+        scratch.begin(self.phase2_patterns.len());
+        prefilter.mark_matches(text, &mut scratch, false, tuning);
+        // Timed loop.
+        let t0 = std::time::Instant::now();
+        for _ in 0..n_calls {
+            scratch.begin(self.phase2_patterns.len());
+            prefilter.mark_matches(text, &mut scratch, false, tuning);
+        }
+        let elapsed_ns = t0.elapsed().as_nanos() as f64;
+        elapsed_ns / n_calls as f64
+    }
+
     /// Diagnostic: `(regex_source, keywords)` for every keyword-gated fallback
     /// pattern, in `fallback` order. These are the no-literal-prefix detectors
-    /// that `scan_fallback_patterns` runs over the whole chunk once their
+    /// that `scan_phase2_patterns` runs over the whole chunk once their
     /// keyword fires. Used by anchor-localization analysis to classify which
     /// carry a regex-required literal that can drive a windowed (rather than
     /// whole-chunk) scan. Diagnostic surface only — not part of the scan path.
-    pub fn fallback_pattern_diagnostics(&self) -> Vec<(String, Vec<String>)> {
-        self.fallback
+    #[cfg(test)]
+    pub(crate) fn phase2_pattern_diagnostics(&self) -> Vec<(String, Vec<String>)> {
+        self.phase2_patterns
             .iter()
             .map(|(p, kw)| (p.regex.as_str().to_string(), kw.clone()))
             .collect()
@@ -121,30 +144,71 @@ impl CompiledScanner {
             "} /* comment */ // trailing\n\t<xml attr='v'>text</xml> {\"json\":true,\"n\":42}"
         );
         self.ac_map.par_iter().for_each(|p| {
-            let _ = p.regex.get().find(WARM_SAMPLE);
+            let _ = p.regex.get().find(WARM_SAMPLE); // LAW10: forces lazy-static/regex eager init (warm-up); not a fallback
         });
-        self.fallback.par_iter().for_each(|(p, _)| {
-            let _ = p.regex.get().find(WARM_SAMPLE);
+        self.phase2_patterns.par_iter().for_each(|(p, _)| {
+            let _ = p.regex.get().find(WARM_SAMPLE); // LAW10: forces lazy-static/regex eager init (warm-up); not a fallback
         });
         crate::shared_regexes::warm_runtime_regexes();
-        fallback_generic::warm_generic_assignment_runtime();
+        phase2_generic::warm_generic_assignment_runtime();
         crate::multiline::warm_runtime_regexes();
         crate::checksum::warm_runtime_regexes();
     }
 
     /// Iterator over the FINAL regex source strings (post anchoring /
     /// group extraction / normalization) the scanner uses.
-    pub fn pattern_regex_strs(&self) -> Vec<&str> {
-        let mut out = Vec::with_capacity(self.ac_map.len() + self.fallback.len());
+    pub(crate) fn pattern_regex_strs(&self) -> Vec<&str> {
+        let mut out = Vec::with_capacity(self.ac_map.len() + self.phase2_patterns.len());
         out.extend(self.ac_map.iter().map(|p| p.regex.as_str()));
-        out.extend(self.fallback.iter().map(|(p, _)| p.regex.as_str()));
+        out.extend(self.phase2_patterns.iter().map(|(p, _)| p.regex.as_str()));
         out
+    }
+
+    /// Stable scanner runtime status for CLI reporting and autoroute cache
+    /// invalidation. This is the public diagnostics boundary; raw corpus
+    /// inspection helpers stay crate-private so tests do not grow a second
+    /// production API around internal matcher layout.
+    pub fn runtime_status(&self) -> CompiledScannerRuntime {
+        CompiledScannerRuntime {
+            detector_count: self.detector_count(),
+            pattern_count: self.pattern_count(),
+            detector_digest: self.detector_digest(),
+            preferred_backend: self.preferred_backend_label(),
+            gpu_backend: self.gpu_backend_label(),
+            gpu_degrade_count: self
+                .gpu_degrade_count
+                .load(std::sync::atomic::Ordering::Relaxed),
+        }
+    }
+
+    /// Dump and reset every scanner-owned profile stream collected under the
+    /// unified explicit profile switch. This is the only public
+    /// boundary the CLI needs; it prevents CLI/orchestrator code from growing
+    /// its own env reads for individual profiler shards.
+    pub fn dump_profile_reports(&self, label: &str) {
+        if !profile::enabled() {
+            return;
+        }
+        profile::dump(label);
+        self.phase2_profile_dump(label);
+        self.confirmed_profile_dump(label);
+    }
+
+    pub(crate) fn detector_digest(&self) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+
+        let mut hasher = DefaultHasher::new();
+        for src in self.pattern_regex_strs() {
+            src.hash(&mut hasher);
+        }
+        hasher.finish()
     }
 
     /// Return the preferred backend for a file of the given size.
     #[must_use]
-    pub fn select_backend_for_file(&self, file_size: u64) -> crate::hw_probe::ScanBackend {
-        crate::hw_probe::select_backend(
+    pub(crate) fn select_backend_for_file(&self, file_size: u64) -> crate::hw_probe::ScanBackend {
+        crate::hw_probe::select_backend_for_file(
             crate::hw_probe::probe_hardware(),
             file_size,
             self.pattern_count(),
@@ -159,39 +223,38 @@ impl CompiledScanner {
     /// headline 5-10x faster path on NVIDIA hardware) or the WGPU
     /// fallback, rather than just "Gpu" which collapses both.
     #[must_use]
-    pub fn gpu_backend_label(&self) -> Option<&'static str> {
+    pub(crate) fn gpu_backend_label(&self) -> Option<&'static str> {
         self.gpu_backend.as_ref().map(|b| b.id())
     }
 
     /// Most recent concrete GPU runtime-degrade reason for this compiled
     /// scanner, if one has occurred. Used by health probes to emit
     /// machine-readable failure causes without scraping stderr.
-    pub fn last_gpu_degrade_reason(&self) -> Option<String> {
+    #[cfg(feature = "gpu")]
+    pub(crate) fn last_gpu_degrade_reason(&self) -> Option<String> {
         self.gpu_last_degrade_reason
             .lock()
-            .ok()
+            .ok() // LAW10: poisoned lock => None; read-only health/diagnostic accessor, recall-irrelevant
             .and_then(|guard| guard.clone())
     }
 
     /// Return the steady-state backend label used for startup reporting.
     #[must_use]
-    pub fn preferred_backend_label(&self) -> &'static str {
+    pub(crate) fn preferred_backend_label(&self) -> &'static str {
         self.select_backend_for_file(0).label()
     }
 
     /// Warm backend resources that are initialized lazily during scanning.
     pub fn warm_backend(&self, backend: crate::hw_probe::ScanBackend) -> bool {
+        // `Gpu` and `MegaScan` are the SAME live on-GPU engine now (the
+        // megakernel — see backend_dispatch.rs / dispatch.rs / fused.rs, which
+        // all route a selected `MegaScan` batch through `ScanBackend::Gpu`). The
+        // separate `RulePipeline` regex-NFA engine `MegaScan` once warmed was a
+        // dead route (its `scan` was never invoked) and was removed, so warming
+        // both arms is exactly "is the GPU megakernel stack usable".
         let ready = match backend {
-            crate::hw_probe::ScanBackend::Gpu => self.gpu_stack_usable(),
-            crate::hw_probe::ScanBackend::MegaScan => {
-                let pipeline_ready = self.rule_pipeline().is_some();
-                let stack_ready = self.gpu_stack_usable();
-                if !pipeline_ready && stack_ready {
-                    gpu_forced::deny_silent_megascan_degrade(
-                        "regex pipeline compile rejected the detector set",
-                    );
-                }
-                pipeline_ready && stack_ready
+            crate::hw_probe::ScanBackend::Gpu | crate::hw_probe::ScanBackend::MegaScan => {
+                self.gpu_stack_usable()
             }
             crate::hw_probe::ScanBackend::SimdCpu | crate::hw_probe::ScanBackend::CpuFallback => {
                 true
@@ -205,7 +268,7 @@ impl CompiledScanner {
 
     /// Scan a chunk of text and return all raw credential matches.
     pub fn scan(&self, chunk: &Chunk) -> Vec<RawMatch> {
-        self.scan_with_deadline(chunk, env_per_chunk_deadline())
+        self.scan_with_deadline(chunk, self.config.per_chunk_deadline())
     }
 
     /// Scan a chunk using a caller-selected backend.
@@ -214,7 +277,7 @@ impl CompiledScanner {
         chunk: &Chunk,
         backend: crate::hw_probe::ScanBackend,
     ) -> Vec<RawMatch> {
-        self.scan_with_deadline_and_backend(chunk, env_per_chunk_deadline(), Some(backend))
+        self.scan_with_deadline_and_backend(chunk, self.config.per_chunk_deadline(), Some(backend))
     }
 
     /// Scan multiple chunks using a caller-selected backend.
@@ -235,7 +298,7 @@ impl CompiledScanner {
     }
 
     /// Scan a chunk of text against all compiled detectors.
-    pub fn scan_with_deadline(
+    pub(crate) fn scan_with_deadline(
         &self,
         chunk: &Chunk,
         deadline: Option<std::time::Instant>,
@@ -243,7 +306,7 @@ impl CompiledScanner {
         self.scan_with_deadline_and_backend(chunk, deadline, None)
     }
 
-    pub fn scan_with_deadline_and_backend(
+    pub(crate) fn scan_with_deadline_and_backend(
         &self,
         chunk: &Chunk,
         deadline: Option<std::time::Instant>,
@@ -251,14 +314,14 @@ impl CompiledScanner {
     ) -> Vec<RawMatch> {
         // Direct-match prefilters: skip chunks that carry none of any
         // detector's literal bytes (`AlphabetScreen`) or bigrams (bloom). A
-        // FULLY-ENCODED secret (e.g. `data = "<base64-of-ghp_…>"`) carries none
-        // of those - its plaintext prefix only appears AFTER decoding - so the
-        // prefilters would drop it before decode-through could recover it,
-        // silently defeating the decode-through feature on the encoded-only
-        // case. When the prefilter rejects but decode is enabled AND the chunk
-        // carries a long base64/hex run, fall through to a DECODE-ONLY pass
-        // instead of skipping. Bounded: only encoded-looking rejected chunks
-        // pay the decode cost, so normal traffic keeps the fast skip.
+        // FULLY-ENCODED secret carries none of those - its plaintext prefix
+        // only appears AFTER decoding - so the prefilters would drop it before
+        // decode-through could recover it, silently defeating the
+        // decode-through feature on encoded-only inputs. When the prefilter
+        // rejects but the chunk carries a decode-shaped payload, fall through
+        // to a DECODE-ONLY pass instead of skipping. Bounded: only
+        // encoded-looking rejected chunks pay the decode cost, so normal
+        // traffic keeps the fast skip.
         let alphabet_ok = self
             .alphabet_screen
             .as_ref()
@@ -266,11 +329,7 @@ impl CompiledScanner {
         let bigram_ok =
             chunk.data.len() < 64 || self.bigram_bloom.maybe_overlaps(chunk.data.as_bytes());
         if !(alphabet_ok && bigram_ok) {
-            #[cfg(feature = "decode")]
-            if self.config.max_decode_depth > 0
-                && chunk.data.len() <= self.config.max_decode_bytes
-                && crate::decode::has_decodable_payload(chunk.data.as_bytes())
-            {
+            if self.chunk_needs_decode_postprocess(chunk) {
                 // Direct scan is skipped (the outer bytes match nothing); only
                 // the decoded sub-chunks are scanned, inside post_process.
                 let mut matches = Vec::new();
@@ -282,7 +341,7 @@ impl CompiledScanner {
         }
 
         let selected_backend =
-            backend.unwrap_or_else(|| self.select_backend_for_file(chunk.data.len() as u64));
+            backend.unwrap_or_else(|| self.select_backend_for_file(chunk.data.len() as u64)); // LAW10: backend choice is recall-invariant (parity contract); default selection, not a degrade
         gpu_forced::deny_silent_gpu_degrade(self, selected_backend);
         tracing::trace!(
             target: "keyhog::routing",

@@ -1,6 +1,6 @@
 //! Empty literal list yields None AC automaton.
 
-use keyhog_scanner::compiler::build_ac_pattern_set;
+use keyhog_scanner::testing::build_ac_pattern_set;
 
 #[test]
 fn compiler_build_ac_empty_returns_none() {

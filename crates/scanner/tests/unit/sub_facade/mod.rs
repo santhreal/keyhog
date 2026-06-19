@@ -1,0 +1,11 @@
+mod sub_alphabet_filter;
+mod sub_bigram_bloom;
+mod sub_checksum;
+mod sub_confidence;
+mod sub_decode;
+mod sub_entropy;
+mod sub_jwt;
+mod sub_prefix_trie;
+mod sub_structured_parsers;
+mod sub_suppression;
+mod sub_unicode_hardening;

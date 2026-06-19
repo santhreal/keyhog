@@ -12,10 +12,10 @@
 //!   * The backend-specific path for re-scanning decoded sub-chunks
 //!     that the original GPU-batched-dispatch refactor broke (task #16).
 //!
-//! Each (decoder, backend) cell scans a small chunk that embeds the
-//! encoded form of a known AKIA secret and asserts the decoded
-//! credential surfaces. GPU/MegaScan cells silently SKIP when no
-//! compatible adapter is present.
+//! Each (decoder, backend) cell scans a small chunk that embeds the encoded
+//! form of a known AKIA secret and asserts the decoded credential surfaces.
+//! GPU/MegaScan cells must fail loudly or take a recall-preserving path before
+//! this assertion; an empty secret-bearing result is a failure.
 
 mod support;
 use support::paths::detector_dir;
@@ -56,15 +56,13 @@ const ALL_BACKENDS: &[ScanBackend] = &[
 // key, recognized by the aws-access-key-id detector.
 const SECRET: &str = concat!("AK", "IAQYLPMN5HFIQR7XYA");
 
-/// Returns true if any backend ran and found the secret. SKIPs (no GPU)
-/// don't count as failures but DO mean we don't trust the layer for
-/// that backend slot.
+/// Require every backend to surface the decoded secret for this layer.
 fn check_decoder_cells(decoder_label: &str, fixture: &Chunk) {
     let scanner = scanner();
     let mut failed = Vec::new();
-    let mut skipped = Vec::new();
 
     for backend in ALL_BACKENDS {
+        scanner.clear_fragment_cache();
         let results = scanner.scan_chunks_with_backend(std::slice::from_ref(fixture), *backend);
         let found = results
             .iter()
@@ -72,28 +70,18 @@ fn check_decoder_cells(decoder_label: &str, fixture: &Chunk) {
             .any(|m| m.credential.as_ref().contains(SECRET));
 
         if !found {
-            // GPU/MegaScan no-adapter SKIP: treat empty-results-on-the-
-            // GPU-path as a skip, not a failure. SimdCpu/CpuFallback
-            // empty is a real fail (no GPU dependency on those).
-            if matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan)
-                && results.iter().all(|chunk| chunk.is_empty())
-            {
-                skipped.push(format!("{backend:?}"));
-            } else {
-                let credentials: Vec<String> = results
-                    .iter()
-                    .flatten()
-                    .map(|m| m.credential.as_ref().to_string())
-                    .collect();
-                failed.push(format!("{backend:?}: saw {credentials:?}"));
-            }
+            let credentials: Vec<String> = results
+                .iter()
+                .flatten()
+                .map(|m| m.credential.as_ref().to_string())
+                .collect();
+            failed.push(format!("{backend:?}: saw {credentials:?}"));
         }
     }
 
     eprintln!(
-        "[decode_backend_matrix:{decoder_label}] backends={} skipped={} failed={}",
+        "[decode_backend_matrix:{decoder_label}] backends={} failed={}",
         ALL_BACKENDS.len(),
-        skipped.len(),
         failed.len()
     );
     assert!(

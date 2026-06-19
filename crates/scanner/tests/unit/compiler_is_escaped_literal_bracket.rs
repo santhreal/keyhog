@@ -1,6 +1,6 @@
 //! Bracket metacharacters escaped in prefix are literal.
 
-use keyhog_scanner::compiler::is_escaped_literal;
+use keyhog_scanner::testing::is_escaped_literal;
 
 #[test]
 fn compiler_is_escaped_literal_bracket() {

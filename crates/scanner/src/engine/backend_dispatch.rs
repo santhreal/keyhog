@@ -10,7 +10,7 @@ impl CompiledScanner {
     ) -> Vec<Vec<RawMatch>> {
         // Non-GPU backends (and empty batches) run the parallel CPU path. rayon's
         // global pool is configured by the CLI orchestrator (--threads /
-        // KEYHOG_THREADS / physical cores); Hyperscan + AC scans are CPU-bound
+        // [scan].threads / physical cores); Hyperscan + AC scans are CPU-bound
         // and independent per-chunk, so par_iter() saturates cores. The
         // `scan_chunk_boundaries` pass reassembles secrets straddling the seam
         // between adjacent gapless chunks of the same file (a per-chunk scan sees

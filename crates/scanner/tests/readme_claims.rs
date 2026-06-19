@@ -56,9 +56,7 @@ fn readme_claim_detector_count() {
     // The banner SVG is the other human-facing surface; pin it to the loader
     // too so an added detector can't leave a stale number on the front-page
     // image. Skipped silently only when the asset is absent (export tree).
-    if let Ok(banner) =
-        std::fs::read_to_string(repo_root().join("docs/assets/keyhog-banner.svg"))
-    {
+    if let Ok(banner) = std::fs::read_to_string(repo_root().join("docs/assets/keyhog-banner.svg")) {
         let banner_claim = format!("{n} detectors");
         assert!(
             banner.contains(&banner_claim),

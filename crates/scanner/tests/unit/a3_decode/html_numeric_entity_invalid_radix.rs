@@ -1,7 +1,7 @@
 //! HTML numeric entity decoder must reject invalid radix usage and out-of-range codepoints.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn html_numeric_entity_decimal_overflow() {
@@ -14,7 +14,9 @@ fn html_numeric_entity_decimal_overflow() {
     let decoded = decode_chunk(&chunk, 1, false, None, None);
     // Should NOT produce an html-numeric-entity chunk; the decode fails gracefully.
     assert!(
-        !decoded.iter().any(|c| c.metadata.source_type.contains("html-numeric-entity")),
+        !decoded
+            .iter()
+            .any(|c| c.metadata.source_type.contains("html-numeric-entity")),
         "invalid codepoint &#99999999 must be rejected"
     );
 }
@@ -29,7 +31,9 @@ fn html_numeric_entity_hex_incomplete() {
     };
     let decoded = decode_chunk(&chunk, 1, false, None, None);
     assert!(
-        !decoded.iter().any(|c| c.metadata.source_type.contains("html-numeric-entity")),
+        !decoded
+            .iter()
+            .any(|c| c.metadata.source_type.contains("html-numeric-entity")),
         "&#x; (no hex digits) must not decode"
     );
 }
@@ -44,7 +48,9 @@ fn html_numeric_entity_hex_valid() {
     };
     let decoded = decode_chunk(&chunk, 1, false, None, None);
     assert!(
-        decoded.iter().any(|c| c.metadata.source_type.contains("html-numeric-entity")),
+        decoded
+            .iter()
+            .any(|c| c.metadata.source_type.contains("html-numeric-entity")),
         "valid &#xNN entity must decode"
     );
 }

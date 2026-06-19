@@ -4,12 +4,12 @@
 //! like UUIDs, hashes, and base64-encoded binary that doesn't look like a secret.
 
 /// A tiny statistical gate for fast candidate rejection.
-pub struct ProbabilisticGate;
+pub(crate) struct ProbabilisticGate;
 
 impl ProbabilisticGate {
     /// Returns true if the candidate string looks like a potential secret.
     /// Returns false if it's almost certainly noise (UUID, hash, etc).
-    pub fn looks_promising(s: &str) -> bool {
+    pub(crate) fn looks_promising(s: &str) -> bool {
         if s.len() < 16 {
             return true; // Too short for reliable gating
         }

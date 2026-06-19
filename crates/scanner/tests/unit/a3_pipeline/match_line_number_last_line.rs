@@ -1,5 +1,5 @@
+use keyhog_scanner::testing::{compute_line_offsets, match_line_number};
 use keyhog_scanner::types::ScannerPreprocessedText;
-use keyhog_scanner::{compute_line_offsets, match_line_number};
 
 #[test]
 fn last_line_offset_resolves_correctly() {

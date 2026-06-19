@@ -3,7 +3,7 @@
 //! identical fragment already exists in the cluster, the cluster size
 //! must not increment (checked against MAX_FRAGMENTS_PER_SCOPE eviction).
 
-use keyhog_scanner::fragment_cache::{FragmentCache, SecretFragment};
+use keyhog_scanner::testing::fragment_cache::{FragmentCache, SecretFragment};
 use std::sync::Arc;
 use zeroize::Zeroizing;
 

@@ -1,4 +1,4 @@
-use keyhog_scanner::unicode_hardening::*;
+use keyhog_scanner::testing::unicode_hardening::*;
 
 /// Proving test: Right-to-Left Override (U+202E) is removed.
 /// Contract: "ghp_\u{202E}secret" normalizes to "ghp_secret".

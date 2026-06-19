@@ -141,7 +141,10 @@ fn classify_fallback_gpu_coverage() {
             )
         })
         .collect();
-    let anchored = explode.iter().filter(|p| literal_anchor(p).is_some()).count();
+    let anchored = explode
+        .iter()
+        .filter(|p| literal_anchor(p).is_some())
+        .count();
     eprintln!(
         "\nat budget {big}: {} patterns still explode — {} hybrid-eligible (literal anchor >=3B), \
          {} anchorless (need a different lever)",

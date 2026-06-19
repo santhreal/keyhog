@@ -3,7 +3,7 @@
 //! Covers: construction, lookup, edge cases, popcount diagnostics,
 //! and the invariant that false negatives never occur.
 
-use keyhog_scanner::bigram_bloom::BigramBloom;
+use keyhog_scanner::testing::BigramBloom;
 
 // ── Construction ─────────────────────────────────────────────────────
 

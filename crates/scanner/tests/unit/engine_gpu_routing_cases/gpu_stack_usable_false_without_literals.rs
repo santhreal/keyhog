@@ -22,7 +22,15 @@ fn gpu_stack_usable_false_without_literals() {
         ..Default::default()
     };
     let s = CompiledScanner::compile(vec![d]).unwrap();
-    // `warm_backend(Gpu)` may return false on headless hosts without panicking;
-    // scan-time GPU dispatch must still fail loudly before substituting CPU.
-    let _ = s.warm_backend(ScanBackend::Gpu);
+    let message = crate::engine::gpu_forced_unavailable_message(&s, ScanBackend::Gpu)
+        .expect("GPU without literals must produce an explicit forced-backend error");
+    assert!(
+        message.contains("gpu-zero-copy selected but GPU stack unavailable"),
+        "forced GPU message must name the selected backend and stack state, got {message:?}"
+    );
+    assert!(
+        message.contains("silent CPU fallback is forbidden")
+            && message.contains("choose --backend simd/auto"),
+        "forced GPU message must name the operator controls, got {message:?}"
+    );
 }

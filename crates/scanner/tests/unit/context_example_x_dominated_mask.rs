@@ -1,6 +1,6 @@
 //! x/X-dominated strings ≥16 chars are placeholder masks.
 
-use keyhog_scanner::context::is_known_example_credential;
+use keyhog_scanner::testing::context::is_known_example_credential;
 
 #[test]
 fn context_example_x_dominated_mask() {

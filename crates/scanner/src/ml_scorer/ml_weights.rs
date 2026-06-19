@@ -133,7 +133,7 @@ pub(crate) fn model() -> &'static MoeModel {
     MODEL.get_or_init(|| {
         // Touch the parsed buffer once so the per-layer accessors below resolve
         // against an initialized `&'static [f32]`.
-        let _ = all_weights();
+        let _ = all_weights(); // LAW10: forces lazy-static/regex eager init (warm-up); not a fallback
         let experts = std::array::from_fn(|expert_idx| ExpertWeights {
             fc1_weight_t: transpose_static(
                 expert_fc1_weight(expert_idx),
@@ -159,45 +159,18 @@ pub(crate) fn model() -> &'static MoeModel {
 }
 
 /// Return the full flattened weight buffer (used by GPU batch inference).
-///
-/// Only the GPU MoE backend consumes the flat buffer. The CPU path uses the
-/// per-layer accessors below, so leaving this symbol exported in the lean
-/// build would surface as dead code. Gating it on `feature = "gpu"` keeps
-/// the build clean without an `#[allow(dead_code)]` evasion.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// use keyhog_scanner::ml_weights::all_weights_slice;
-/// assert!(!all_weights_slice().is_empty());
-/// ```
 #[cfg(feature = "gpu")]
-pub fn all_weights_slice() -> &'static [f32] {
+pub(crate) fn all_weights_slice() -> &'static [f32] {
     all_weights()
 }
 
-/// Return the gate-layer weight matrix as a flat row-major slice.
 /// Return the gate-layer weight matrix.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// use keyhog_scanner::ml_weights::gate_weight;
-/// assert!(!gate_weight().is_empty());
-/// ```
-pub fn gate_weight() -> &'static [f32] {
+pub(crate) fn gate_weight() -> &'static [f32] {
     load_f32_slice(GATE_W_OFF, GATE_W_COUNT)
 }
 
 /// Return the gate-layer bias vector.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// use keyhog_scanner::ml_weights::gate_bias;
-/// assert!(!gate_bias().is_empty());
-/// ```
-pub fn gate_bias() -> &'static [f32] {
+pub(crate) fn gate_bias() -> &'static [f32] {
     load_f32_slice(GATE_B_OFF, GATE_B_COUNT)
 }
 
@@ -207,53 +180,25 @@ fn expert_base_offset(expert_idx: usize) -> usize {
 }
 
 /// Return the first dense-layer weights for `expert_idx`.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// use keyhog_scanner::ml_weights::expert_fc1_weight;
-/// assert!(!expert_fc1_weight(0).is_empty());
-/// ```
-pub fn expert_fc1_weight(expert_idx: usize) -> &'static [f32] {
+pub(crate) fn expert_fc1_weight(expert_idx: usize) -> &'static [f32] {
     let base = expert_base_offset(expert_idx);
     load_f32_slice(base, EXPERT_FC1_W_COUNT)
 }
 
 /// Return the first dense-layer bias vector for `expert_idx`.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// use keyhog_scanner::ml_weights::expert_fc1_bias;
-/// assert!(!expert_fc1_bias(0).is_empty());
-/// ```
-pub fn expert_fc1_bias(expert_idx: usize) -> &'static [f32] {
+pub(crate) fn expert_fc1_bias(expert_idx: usize) -> &'static [f32] {
     let base = expert_base_offset(expert_idx) + EXPERT_FC1_W_COUNT;
     load_f32_slice(base, EXPERT_FC1_B_COUNT)
 }
 
 /// Return the second dense-layer weights for `expert_idx`.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// use keyhog_scanner::ml_weights::expert_fc2_weight;
-/// assert!(!expert_fc2_weight(0).is_empty());
-/// ```
-pub fn expert_fc2_weight(expert_idx: usize) -> &'static [f32] {
+pub(crate) fn expert_fc2_weight(expert_idx: usize) -> &'static [f32] {
     let base = expert_base_offset(expert_idx) + EXPERT_FC1_W_COUNT + EXPERT_FC1_B_COUNT;
     load_f32_slice(base, EXPERT_FC2_W_COUNT)
 }
 
 /// Return the second dense-layer bias vector for `expert_idx`.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// use keyhog_scanner::ml_weights::expert_fc2_bias;
-/// assert!(!expert_fc2_bias(0).is_empty());
-/// ```
-pub fn expert_fc2_bias(expert_idx: usize) -> &'static [f32] {
+pub(crate) fn expert_fc2_bias(expert_idx: usize) -> &'static [f32] {
     let base = expert_base_offset(expert_idx)
         + EXPERT_FC1_W_COUNT
         + EXPERT_FC1_B_COUNT
@@ -262,14 +207,7 @@ pub fn expert_fc2_bias(expert_idx: usize) -> &'static [f32] {
 }
 
 /// Return the output-layer weights for `expert_idx`.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// use keyhog_scanner::ml_weights::expert_fc3_weight;
-/// assert!(!expert_fc3_weight(0).is_empty());
-/// ```
-pub fn expert_fc3_weight(expert_idx: usize) -> &'static [f32] {
+pub(crate) fn expert_fc3_weight(expert_idx: usize) -> &'static [f32] {
     let base = expert_base_offset(expert_idx)
         + EXPERT_FC1_W_COUNT
         + EXPERT_FC1_B_COUNT
@@ -279,14 +217,7 @@ pub fn expert_fc3_weight(expert_idx: usize) -> &'static [f32] {
 }
 
 /// Return the output-layer bias for `expert_idx`.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// use keyhog_scanner::ml_weights::expert_fc3_bias;
-/// assert!(!expert_fc3_bias(0).is_empty());
-/// ```
-pub fn expert_fc3_bias(expert_idx: usize) -> &'static [f32] {
+pub(crate) fn expert_fc3_bias(expert_idx: usize) -> &'static [f32] {
     let base = expert_base_offset(expert_idx)
         + EXPERT_FC1_W_COUNT
         + EXPERT_FC1_B_COUNT

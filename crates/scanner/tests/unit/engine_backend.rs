@@ -35,8 +35,10 @@ fn backend_does_not_report_matches_across_chunk_boundaries() {
     let scanner = demo_scanner();
     let chunks = vec![chunk("ab"), chunk("c")];
 
-    let matches = scanner
-        .scan_chunks_with_backend(&chunks, keyhog_scanner::hw_probe::ScanBackend::CpuFallback);
+    let matches = scanner.scan_chunks_with_backend(
+        &chunks,
+        keyhog_scanner::hw_probe::testing::ScanBackend::CpuFallback,
+    );
 
     assert!(matches.iter().all(Vec::is_empty));
 }
@@ -47,7 +49,7 @@ fn backend_reports_matches_inside_a_single_chunk() {
 
     let matches = scanner.scan_with_backend(
         &chunk("abc"),
-        keyhog_scanner::hw_probe::ScanBackend::CpuFallback,
+        keyhog_scanner::hw_probe::testing::ScanBackend::CpuFallback,
     );
 
     assert_eq!(matches.len(), 1);
@@ -56,7 +58,7 @@ fn backend_reports_matches_inside_a_single_chunk() {
 
 #[test]
 fn coalesced_missing_simd_prefilter_path_stays_off_auto_selection() {
-    let source = include_str!("../../src/engine/scan.rs");
+    let source = include_str!("../../src/engine/scan_coalesced.rs");
 
     assert!(
         !source.contains("map(|c| self.scan(c))"),

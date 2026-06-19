@@ -1,20 +1,25 @@
 //! Confidence scoring: combines multiple signals into a 0.0–1.0 score.
 //! Higher confidence means more likely to be a real secret.
 
-pub mod penalties;
+pub(crate) mod penalties;
 mod prefixes;
 mod signals;
 
-pub use penalties::apply_calibration_multiplier;
-pub use penalties::apply_path_confidence_penalties;
-pub use penalties::apply_post_ml_penalties;
-pub use prefixes::{known_prefix_confidence_floor, KNOWN_PREFIXES};
-pub use signals::ConfidenceSignals;
+pub(crate) use prefixes::{known_prefix_confidence_floor, KNOWN_PREFIXES};
+pub(crate) use signals::ConfidenceSignals;
 
 use crate::entropy::{HIGH_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD};
+#[cfg(feature = "ml")]
+pub(crate) use penalties::apply_calibration_multiplier;
+#[cfg(feature = "ml")]
+pub(crate) use penalties::apply_path_confidence_penalties;
+#[cfg(any(feature = "entropy", feature = "ml"))]
+pub(crate) use penalties::apply_post_ml_penalties;
+pub(crate) use penalties::apply_post_ml_penalties_with_encoded_text_lift;
+#[cfg(feature = "entropy")]
+pub(crate) use penalties::contains_placeholder_word;
 pub(crate) use penalties::is_service_anchored_detector;
-pub use penalties::{char_diversity, contains_placeholder_word, max_repeat_run};
-pub use signals::is_sensitive_path;
+pub(crate) use signals::is_sensitive_path;
 
 const SCORE_ZERO: f64 = 0.0;
 const CONFIDENCE_MIN: f64 = 0.0;
@@ -46,16 +51,16 @@ const VERY_HIGH_ENTROPY_MARGIN: f64 = VERY_HIGH_ENTROPY_THRESHOLD - HIGH_ENTROPY
 /// Prefer [`compute_confidence_with_threshold`] on the named-detector hot
 /// path so the resolved `ScannerConfig.entropy_threshold` drives the scoring
 /// floor; this wrapper exists for callers that have no config in scope.
-pub fn compute_confidence(signals: &ConfidenceSignals) -> f64 {
+pub(crate) fn compute_confidence(signals: &ConfidenceSignals) -> f64 {
     compute_confidence_with_threshold(signals, HIGH_ENTROPY_THRESHOLD)
 }
 
 /// Compute a confidence score from `0.0` to `1.0`, anchoring the entropy
 /// scoring tiers to the resolved `entropy_threshold` (the same knob honored by
-/// the generic entropy fallback) rather than a hardcoded const. The "high"
+/// the generic entropy path) rather than a hardcoded const. The "high"
 /// tier fires at `entropy_threshold`; the "very high" tier (full
 /// [`ENTROPY_WEIGHT`]) fires at `entropy_threshold + VERY_HIGH_ENTROPY_MARGIN`.
-pub fn compute_confidence_with_threshold(
+pub(crate) fn compute_confidence_with_threshold(
     signals: &ConfidenceSignals,
     entropy_threshold: f64,
 ) -> f64 {

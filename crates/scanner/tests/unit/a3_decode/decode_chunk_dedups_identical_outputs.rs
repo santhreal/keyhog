@@ -1,7 +1,7 @@
 //! Single encoded blob in one assignment yields one spliced decode output.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn single_assignment_yields_one_spliced_decode() {

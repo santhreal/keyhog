@@ -4,7 +4,7 @@
 //! Contract: fragments from /repo/config/a.py and /repo/lib/b.py scoped by
 //! their full paths (not parent directory) must never cluster together.
 
-use keyhog_scanner::fragment_cache::{FragmentCache, SecretFragment};
+use keyhog_scanner::testing::fragment_cache::{FragmentCache, SecretFragment};
 use std::sync::Arc;
 use zeroize::Zeroizing;
 

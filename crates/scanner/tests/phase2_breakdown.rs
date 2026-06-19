@@ -1,5 +1,5 @@
 //! Real-corpus phase-2 per-pass breakdown for the small-file regime that the
-//! on-GPU detection rewrite targets (`docs/GPU_DETECTION_REWRITE.md`). Scans the
+//! on-GPU detection rewrite targets (`docs/EXECUTION_PLAN.md`). Scans the
 //! mirror corpus (15k real secret-detection fixtures, ~138-byte median) plus a
 //! 16 KiB-concatenated variant, and dumps the accumulated [hot, confirmed,
 //! fallback, generic, entropy, ml] split. CPU backend — phase-2 is
@@ -7,14 +7,16 @@
 //! the CPU work the rewrite must move to the GPU.
 //!
 //! Run:
-//!   KEYHOG_PROFILE=1 cargo test --profile release-fast -p keyhog-scanner \
+//!   cargo test --profile release-fast -p keyhog-scanner \
 //!     --features gpu --test phase2_breakdown -- --ignored --nocapture
 
 mod support;
 use support::paths::{corpus_dir, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::{profile_dump, profile_reset, CompiledScanner, ScanBackend};
+use keyhog_scanner::{
+    profile_dump, profile_reset, set_profile_enabled, CompiledScanner, ScanBackend,
+};
 use std::path::PathBuf;
 
 fn collect_files(root: &PathBuf, limit: usize) -> Vec<Vec<u8>> {
@@ -54,8 +56,9 @@ fn chunk_of(bytes: Vec<u8>, label: &str) -> Chunk {
 }
 
 #[test]
-#[ignore = "measurement; set KEYHOG_PROFILE_PHASE2=1 and run with --ignored --nocapture"]
+#[ignore = "measurement; run with --ignored --nocapture"]
 fn phase2_breakdown_mirror() {
+    set_profile_enabled(true);
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
     let scanner = CompiledScanner::compile(detectors).expect("compile");
 

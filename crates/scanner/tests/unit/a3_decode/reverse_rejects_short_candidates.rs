@@ -1,7 +1,7 @@
 //! Reverse decoder ignores short or punctuated candidates.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn short_and_punctuated_strings_emit_no_reverse_chunks() {

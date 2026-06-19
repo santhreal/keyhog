@@ -1,4 +1,4 @@
-use keyhog_scanner::hw_probe::probe_hardware;
+use keyhog_scanner::hw_probe::testing::probe_hardware;
 #[test]
 fn probe_hardware_reports_cores() {
     let caps = probe_hardware();

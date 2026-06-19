@@ -16,7 +16,7 @@ mod support;
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 use support::paths::detector_dir;
 
 type FindingKey = (String, usize);
@@ -67,6 +67,7 @@ fn batch_dispatch_equals_sum_of_per_chunk_results_all_backends() {
     ];
 
     for backend in backends {
+        scanner.clear_fragment_cache();
         let batch_results = scanner.scan_chunks_with_backend(&chunks, backend);
         let batch_findings: BTreeSet<FindingKey> = batch_results
             .iter()
@@ -78,21 +79,13 @@ fn batch_dispatch_equals_sum_of_per_chunk_results_all_backends() {
             .collect();
 
         // Now scan each chunk individually and collect findings.
+        scanner.clear_fragment_cache();
         let mut individual_findings: BTreeSet<FindingKey> = BTreeSet::new();
-        for (idx, chunk) in chunks.iter().enumerate() {
+        for chunk in &chunks {
             let results = scanner.scan_chunks_with_backend(std::slice::from_ref(chunk), backend);
             for m in results.iter().flat_map(|r| r.iter()) {
                 individual_findings.insert((m.credential.as_ref().to_string(), m.location.offset));
             }
-        }
-
-        // GPU/MegaScan can silently degrade to SIMD on no adapter.
-        if matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan)
-            && batch_findings.is_empty()
-            && individual_findings.is_empty()
-        {
-            eprintln!("SKIP: {backend:?} (no adapter, silent SIMD degrade)");
-            continue;
         }
 
         if batch_findings != individual_findings {
@@ -148,6 +141,7 @@ fn per_chunk_order_preserved_coalesced_dispatch() {
     ];
 
     for backend in backends {
+        scanner.clear_fragment_cache();
         let results = scanner.scan_chunks_with_backend(&chunks, backend);
 
         // Verify results vector has the same length as chunks vector.
@@ -163,14 +157,6 @@ fn per_chunk_order_preserved_coalesced_dispatch() {
         // findings per chunk. Chunk 0 and 2 should have 0 findings,
         // chunks 1 and 3 should have findings.
         let finding_counts: Vec<usize> = results.iter().map(|chunk| chunk.len()).collect();
-
-        // GPU/MegaScan silently degrade to all-zeros; skip verification if that happens.
-        if matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan) {
-            if finding_counts == vec![0; chunks.len()] {
-                eprintln!("SKIP: {backend:?} (no adapter, silent SIMD degrade)");
-                continue;
-            }
-        }
 
         assert_eq!(
             finding_counts[0], 0,

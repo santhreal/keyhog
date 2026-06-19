@@ -1,4 +1,4 @@
-use keyhog_scanner::pipeline::line_window_offsets;
+use keyhog_scanner::testing::line_window_offsets;
 use keyhog_scanner::types::ScannerPreprocessedText;
 
 #[test]

@@ -1,7 +1,7 @@
 //! Decoded chunk source_type includes decoder name suffix.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn decoded_chunk_source_type_contains_decoder_name() {

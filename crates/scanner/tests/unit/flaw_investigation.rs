@@ -1,5 +1,5 @@
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
-use keyhog_scanner::alphabet_filter::AlphabetScreen;
+use keyhog_scanner::testing::AlphabetScreen;
 use keyhog_scanner::CompiledScanner;
 
 #[test]

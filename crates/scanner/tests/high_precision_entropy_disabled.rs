@@ -32,7 +32,7 @@ fn high_precision_entropy_disabled() {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors loaded");
 
     // Default config has entropy enabled
-    let mut default_config = keyhog_scanner::ScannerConfig::default();
+    let default_config = keyhog_scanner::ScannerConfig::default();
     assert!(
         default_config.entropy_enabled,
         "default ScannerConfig should have entropy_enabled = true"

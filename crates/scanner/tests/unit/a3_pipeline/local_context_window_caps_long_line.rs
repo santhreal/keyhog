@@ -1,4 +1,4 @@
-use keyhog_scanner::pipeline::local_context_window;
+use keyhog_scanner::testing::local_context_window;
 
 // Regression: a line with no `\n` for hundreds of KiB (a minified bundle, or
 // a file that is one long run of credential-shaped tokens) must NOT return the

@@ -1,5 +1,5 @@
 /// Confidence signals for a potential match.
-pub struct ConfidenceSignals {
+pub(crate) struct ConfidenceSignals {
     /// Pattern has a distinctive literal prefix (e.g., `sk-proj-`, `ghp_`).
     pub has_literal_prefix: bool,
     /// Pattern uses a capture group with context anchoring.
@@ -22,7 +22,7 @@ pub struct ConfidenceSignals {
 /// Check if a file path suggests a sensitive file using Aho-Corasick.
 ///
 /// Single AC automaton replaces O(n*m) nested loop with O(n) scan.
-pub fn is_sensitive_path(path: &str) -> bool {
+pub(crate) fn is_sensitive_path(path: &str) -> bool {
     use std::sync::OnceLock;
 
     static AC: OnceLock<Option<aho_corasick::AhoCorasick>> = OnceLock::new();

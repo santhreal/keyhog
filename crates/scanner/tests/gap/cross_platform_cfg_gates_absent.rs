@@ -1,49 +1,83 @@
-//! KH-GAP-121: Cross-platform cfg gates essentially absent in scanner src.
+//! KH-GAP-121: scanner path compatibility must be wired into production paths.
 //!
-//! STANDARD.md / TESTING_PROGRAM §2 require boundary + adversarial micro coverage
-//! per source file. Scanner has decorative `platform_compat.rs` (string replace
-//! only) and no gap oracle for Windows/macOS path semantics in `src/`.
+//! A previous test counted `cfg` markers in `src/`, which allowed an unreachable
+//! `platform_compat` module and a decorative string-replace test. This contract
+//! pins the actual owner: all path component/basename decisions used by context,
+//! confidence, and base64 raw-file suppression must call `platform_compat`.
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-fn scan_platform_cfg_files(dir: &Path, count: &mut usize) {
-    for entry in
-        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read_dir({}) failed: {e}", dir.display()))
-    {
-        let entry = entry.unwrap();
-        let path = entry.path();
-        if path.is_dir() {
-            scan_platform_cfg_files(&path, count);
-            continue;
-        }
-        if path.extension().and_then(|s| s.to_str()) != Some("rs") {
-            continue;
-        }
-        let content = std::fs::read_to_string(&path).expect("read src");
-        let has_platform_cfg = content.contains("target_os = \"windows\"")
-            || content.contains("target_os = \"macos\"")
-            || content.contains("cfg!(windows)")
-            || content.contains("cfg!(unix)")
-            || content.contains("#[cfg(windows)]")
-            || content.contains("#[cfg(unix)]");
-        if has_platform_cfg {
-            *count += 1;
-        }
+fn src(path: &str) -> String {
+    let full = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(path);
+    std::fs::read_to_string(&full).unwrap_or_else(|error| {
+        panic!("read {} failed: {error}", full.display());
+    })
+}
+
+#[test]
+fn scanner_path_compat_owner_is_declared_and_used() {
+    let lib = src("src/lib.rs");
+    assert!(
+        lib.contains("pub(crate) mod platform_compat;"),
+        "scanner path owner must be declared in src/lib.rs"
+    );
+
+    let path_owner = src("src/platform_compat/path.rs");
+    assert!(path_owner.contains("fn path_basename("));
+    assert!(path_owner.contains("fn path_basename_bytes("));
+    assert!(path_owner.contains("fn path_component_matches("));
+
+    let context = src("src/context/inference.rs");
+    assert!(
+        context.contains("platform_compat::path_basename")
+            && context.contains("platform_compat::path_has_any_component"),
+        "context test-file detection must use the platform path owner"
+    );
+
+    let confidence = src("src/confidence/penalties.rs");
+    assert!(
+        confidence.contains("platform_compat::path_component_matches"),
+        "path confidence penalties must use the platform path owner"
+    );
+
+    for file in [
+        "src/suppression/api.rs",
+        "src/engine/hot_patterns.rs",
+        "src/engine/phase2_entropy/gates.rs",
+    ] {
+        let body = src(file);
+        assert!(
+            body.contains("platform_compat::path_basename_bytes"),
+            "{file} must use the shared byte-basename owner"
+        );
+        assert!(
+            !body.contains("rposition(|&b| b == b'/' || b == b'\\\\')"),
+            "{file} reintroduced local byte basename extraction"
+        );
+    }
+
+    for file in [
+        "src/context/inference.rs",
+        "src/confidence/penalties.rs",
+        "src/suppression/decision.rs",
+    ] {
+        let body = src(file);
+        assert!(
+            !body.contains("split(['/', '\\\\']).any"),
+            "{file} reintroduced local path-component splitting"
+        );
+        assert!(
+            !body.contains("rsplit(['/', '\\\\']).next"),
+            "{file} reintroduced local basename extraction"
+        );
     }
 }
 
 #[test]
-fn scanner_src_has_meaningful_cross_platform_cfg_gates() {
-    let src = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src");
-    let mut platform_cfg_files = 0usize;
-    scan_platform_cfg_files(&src, &mut platform_cfg_files);
-
-    // R4-SCAN: 24 files touch `cfg!`/`#[cfg(` but almost all are SIMD/GPU arch —
-    // not path/line-ending/IO semantics. Require at least one dedicated cross-platform
-    // module under src/ (not tests/) with both windows + unix arms.
+fn scanner_path_compat_has_no_orphan_line_ending_module() {
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/platform_compat");
     assert!(
-        platform_cfg_files >= 3,
-        "KH-GAP-121: scanner/src has {platform_cfg_files} files with platform cfg — \
-         expected dedicated cross-platform path/IO gates (windows + unix + tests)"
+        !root.join("io.rs").exists(),
+        "platform_compat/io.rs was decorative and unreachable; line offsets are owned by pipeline"
     );
 }

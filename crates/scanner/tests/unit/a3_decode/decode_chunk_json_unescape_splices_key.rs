@@ -1,7 +1,7 @@
 //! JSON unescape decoder splices unescaped value while preserving JSON key.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn json_unescape_splice_preserves_key_anchor() {

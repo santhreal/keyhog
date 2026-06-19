@@ -14,7 +14,8 @@ use super::token_randomness::{keep_identifier_gate, keep_word_separated_gate};
 use crate::context;
 
 /// Check if a credential should be suppressed (e.g., if it is a known example token).
-pub fn should_suppress_known_example_credential(
+#[cfg(test)]
+pub(crate) fn should_suppress_known_example_credential(
     credential: &str,
     path: Option<&str>,
     context: context::CodeContext,
@@ -32,13 +33,24 @@ pub fn should_suppress_known_example_credential(
 /// Other decoders (base64, hex, URL) decode legitimate transport encodings
 /// where EXAMPLE-suppression remains appropriate, so we don't blanket-bypass
 /// the rule on every decoder origin.
-pub fn should_suppress_known_example_credential_with_source(
+#[cfg(any(feature = "entropy", feature = "simdsieve", test))]
+pub(crate) fn should_suppress_known_example_credential_with_source(
     credential: &str,
     path: Option<&str>,
     context: context::CodeContext,
     source_type: Option<&str>,
 ) -> bool {
-    should_suppress_inner(credential, path, context, source_type, false, false, None, false)
+    should_suppress_inner(
+        credential,
+        path,
+        context,
+        source_type,
+        false,
+        false,
+        None,
+        false,
+        false,
+    )
 }
 
 /// Entropy-aware variant for high-entropy generic/entropy fallbacks.
@@ -54,6 +66,7 @@ pub(crate) fn should_suppress_known_example_credential_with_source_and_entropy(
     source_type: Option<&str>,
     entropy: f64,
     allow_canonical_hex_key: bool,
+    allow_encoded_text_secret: bool,
 ) -> bool {
     should_suppress_inner(
         credential,
@@ -64,6 +77,7 @@ pub(crate) fn should_suppress_known_example_credential_with_source_and_entropy(
         false,
         Some(entropy),
         allow_canonical_hex_key,
+        allow_encoded_text_secret,
     )
 }
 
@@ -74,7 +88,8 @@ pub(crate) fn should_suppress_known_example_credential_with_source_and_entropy(
 /// evidence - a 32-hex value after `ALGOLIA_ADMIN_KEY=` is an Algolia key,
 /// NOT an MD5. Use ONLY from detector paths whose regex requires a
 /// service-keyword anchor in the alternation list.
-pub fn should_suppress_named_detector_finding(
+#[cfg(test)]
+pub(crate) fn should_suppress_named_detector_finding(
     credential: &str,
     path: Option<&str>,
     context: context::CodeContext,
@@ -101,7 +116,7 @@ pub fn should_suppress_named_detector_finding(
 /// fallbacks stay engaged instead of being bypassed. The id-only public
 /// wrapper above passes `false` for callers that have not computed the
 /// structural classification.
-pub fn should_suppress_named_detector_finding_weak(
+pub(crate) fn should_suppress_named_detector_finding_weak(
     credential: &str,
     path: Option<&str>,
     context: context::CodeContext,
@@ -156,7 +171,7 @@ pub fn should_suppress_named_detector_finding_weak(
     // (mirrors the generic-bridge path): the English bigram model mis-scores
     // acronym fragments (`d2i_PKCS7_bio`, `curlx_memdup0`) as random, so the lift
     // is trusted only for all-lowercase-letter random tokens. See the matching
-    // note in `fallback_generic_shape::generic_value_shape_rejected`.
+    // note in `phase2_generic_shape::generic_value_shape_rejected`.
     if apply_tier_b
         && keep_word_separated_gate(credential)
         && looks_like_word_separated_identifier(credential)
@@ -294,14 +309,7 @@ pub fn should_suppress_named_detector_finding_weak(
         {
             return true;
         }
-        // Both `/` and `\` so Windows paths (`C:\foo\base64_x.txt`)
-        // collapse to the same basename. Same rationale as the
-        // fallback_entropy path-gate sibling.
-        let basename = bytes
-            .iter()
-            .rposition(|&b| b == b'/' || b == b'\\')
-            .map(|i| &bytes[i + 1..])
-            .unwrap_or(bytes);
+        let basename = crate::platform_compat::path_basename_bytes(bytes);
         basename
             .get(..7)
             .is_some_and(|p| p.eq_ignore_ascii_case(b"base64_"))
@@ -341,6 +349,8 @@ pub fn should_suppress_named_detector_finding_weak(
         && !detector_id.starts_with("entropy-")
         && !weak_anchor
         && detector_id != "private-key";
+    let allow_encoded_text_secret = detector_id.starts_with("generic-")
+        && crate::decode_structure::decodes_to_printable_text(credential);
     should_suppress_inner(
         credential,
         path,
@@ -350,6 +360,7 @@ pub fn should_suppress_named_detector_finding_weak(
         bypass_shape_gates,
         None,
         false,
+        allow_encoded_text_secret,
     )
 }
 
@@ -406,11 +417,11 @@ const RESIDUAL_WEAK_ANCHORED: &[&str] = &[
 /// every present and future detector with this shape is covered - this
 /// replaces a hand-maintained ID allowlist that drifted out of sync with
 /// the detector corpus. The broad-identifier class (Category C of
-/// `FP_AUDIT_REPORT.md`: a `[a-zA-Z0-9_-]`-style capture with a small
+/// `docs/EXECUTION_PLAN.md`: a `[a-zA-Z0-9_-]`-style capture with a small
 /// minimum length that matches any short identifier) is derived here; the
 /// pure-hex class, which is shape-indistinguishable from real hex keys,
 /// stays in [`RESIDUAL_WEAK_ANCHORED`].
-pub fn detector_weak_anchor(spec: &keyhog_core::DetectorSpec) -> bool {
+pub(crate) fn detector_weak_anchor(spec: &keyhog_core::DetectorSpec) -> bool {
     let id = spec.id.as_str();
     if id.starts_with("generic-") || id.starts_with("entropy-") || id == "private-key" {
         return false;
@@ -429,7 +440,7 @@ pub fn detector_weak_anchor(spec: &keyhog_core::DetectorSpec) -> bool {
 /// full-alphabet identifier character class (`[a-zA-Z0-9_-]` and close
 /// variants, NOT hex-only `[a-f0-9]`) with a minimum repeat of 0 or 1
 /// (`+`, `*`, `{0,..}`, `{1,..}`, `{1}`). That is the broad-identifier
-/// false-positive shape from Category C of `FP_AUDIT_REPORT.md`: a
+/// false-positive shape from Category C of `docs/EXECUTION_PLAN.md`: a
 /// minimum length of one means the capture matches ANY short identifier
 /// (function name, variable, kwarg default) sitting after the detector's
 /// keyword anchor. Higher minimums (e.g. `{8,}`, `{16}`) describe real
@@ -467,7 +478,7 @@ fn group_capture_min_len(after: &str) -> Option<usize> {
             if after.as_bytes().get(close + 1) != Some(&b')') {
                 return None;
             }
-            after[1..close].split(',').next()?.parse::<usize>().ok()
+            after[1..close].split(',').next()?.parse::<usize>().ok() // LAW10: malformed input => None (fail-closed at the boundary; not a valid value), recall-safe
         }
         _ => None,
     }

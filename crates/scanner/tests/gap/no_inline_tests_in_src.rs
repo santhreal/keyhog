@@ -29,6 +29,14 @@ const INLINE_TEST_ALLOWLIST: &[&str] = &[
     // rationale as megakernel.rs: external `tests/` would force exposing the
     // catalog internals as `pub`.
     "engine/megakernel_wire.rs",
+    // `merge_validated_triggers` and `validation_window_range` are `pub(crate)`
+    // dispatch helpers whose tests assert on private result fields
+    // (`raw_pairs`, `gpu_overfire_dropped`, `gpu_underfire_recovered`,
+    // `triggers`).  Moving them to `tests/` would require making those fields
+    // `pub`, violating the minimal-surface law (Law 1).  The inline module is
+    // gated `#[cfg(all(test, feature = "gpu"))]` — same white-box rationale as
+    // megakernel.rs / megakernel_wire.rs above.
+    "engine/megakernel_dispatch.rs",
 ];
 
 /// True iff `path` ends with an allowlisted `src/`-relative path (component-wise,
@@ -53,10 +61,7 @@ fn scan_rust_sources(dir: &Path, offenders: &mut Vec<PathBuf>) {
         }
         let content = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read {} failed: {e}", path.display()));
-        let has_inline_test = content.lines().any(|line| {
-            let trimmed = line.trim();
-            trimmed.starts_with("#[cfg(test)]")
-        });
+        let has_inline_test = super::inline_gate::contains_inline_test_module_or_function(&content);
         if has_inline_test {
             offenders.push(path);
         }

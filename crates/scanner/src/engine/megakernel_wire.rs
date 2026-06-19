@@ -204,6 +204,7 @@ impl vyre_libs::scan::MatchEngineCache for MegakernelCatalog {
             host_detectors,
             dispatcher: std::sync::Mutex::new(None),
             resident_batch: std::sync::Mutex::new(None),
+            lowercase_staging: std::sync::Mutex::new(Vec::new()),
             segment_overlap: std::sync::OnceLock::new(),
         })
     }

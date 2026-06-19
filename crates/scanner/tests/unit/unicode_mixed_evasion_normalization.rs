@@ -1,4 +1,4 @@
-use keyhog_scanner::unicode_hardening::*;
+use keyhog_scanner::testing::unicode_hardening::*;
 
 /// Proving test: Cyrillic + zero-width characters together normalize correctly.
 /// Contract: "ghp_\u{0430}bc\u{200B}def" normalizes to "ghp_abcdef".

@@ -9,11 +9,15 @@
 //!
 //! This module detects these attacks and provides normalized forms for scanning.
 
+use std::collections::BTreeSet;
+
+#[cfg(test)]
 use unicode_normalization::UnicodeNormalization;
 
 /// Types of Unicode evasion attacks detected
+#[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub enum EvasionKind {
+pub(crate) enum EvasionKind {
     /// Cyrillic characters that look like Latin (homoglyphs)
     CyrillicHomoglyph,
     /// Greek characters that look like Latin
@@ -30,24 +34,10 @@ pub enum EvasionKind {
     Suspicious,
 }
 
-impl EvasionKind {
-    /// Get a human-readable description
-    pub fn description(&self) -> &'static str {
-        match self {
-            Self::CyrillicHomoglyph => "Cyrillic lookalike character",
-            Self::GreekHomoglyph => "Greek lookalike character",
-            Self::Fullwidth => "Fullwidth ASCII variant",
-            Self::ZeroWidth => "Zero-width character",
-            Self::RTLOverride => "Right-to-left override",
-            Self::Decomposed => "Decomposed Unicode form",
-            Self::Suspicious => "Suspicious Unicode usage",
-        }
-    }
-}
-
 /// Detected Unicode evasion attempt
+#[cfg(test)]
 #[derive(Debug, Clone)]
-pub struct EvasionMatch {
+pub(crate) struct EvasionMatch {
     /// Byte position in original text
     pub position: usize,
     /// Type of evasion
@@ -59,7 +49,8 @@ pub struct EvasionMatch {
 }
 
 /// Detect Unicode evasion attempts in text
-pub fn detect_unicode_attacks(text: &str) -> Vec<EvasionMatch> {
+#[cfg(test)]
+pub(crate) fn detect_unicode_attacks(text: &str) -> Vec<EvasionMatch> {
     let mut matches = Vec::new();
 
     for (byte_pos, ch) in text.char_indices() {
@@ -152,7 +143,7 @@ pub fn detect_unicode_attacks(text: &str) -> Vec<EvasionMatch> {
 /// Fast path: pure-ASCII inputs (the vast majority of source code) are
 /// returned `Cow::Borrowed` with no allocation. Only inputs containing actual
 /// homoglyphs/zero-width/RTL characters take the slow per-char-rebuild path.
-pub fn normalize_homoglyphs(text: &str) -> std::borrow::Cow<'_, str> {
+pub(crate) fn normalize_homoglyphs(text: &str) -> std::borrow::Cow<'_, str> {
     if text.is_ascii() && !contains_ascii_evasion(text.as_bytes()) {
         return std::borrow::Cow::Borrowed(text);
     }
@@ -187,32 +178,53 @@ pub fn normalize_homoglyphs(text: &str) -> std::borrow::Cow<'_, str> {
 }
 
 /// Full Unicode normalization (NFC + homoglyph replacement)
-pub fn full_normalize(text: &str) -> String {
+#[cfg(test)]
+pub(crate) fn full_normalize(text: &str) -> String {
     let nfc: String = text.nfc().collect();
     normalize_homoglyphs(&nfc).into_owned()
 }
 
+#[derive(serde::Deserialize)]
+struct EvasionAnchorFile {
+    anchors: Vec<String>,
+}
+
 /// Structured-credential anchor prefixes (Tier-B, community-extensible via
-/// `data/evasion-anchors.toml`). Loaded once. Soft-fails to an empty list so a
-/// corrupted build degrades evasion recall rather than crashing the scanner.
+/// `data/evasion-anchors.toml`). Loaded once. Malformed bundled data is a broken
+/// build; do not continue with evasion normalization weakened.
 static EVASION_ANCHORS: std::sync::LazyLock<Vec<String>> = std::sync::LazyLock::new(|| {
-    #[derive(serde::Deserialize)]
-    struct AnchorFile {
-        anchors: Vec<String>,
-    }
-    let raw = include_str!("../data/evasion-anchors.toml");
-    match toml::from_str::<AnchorFile>(raw) {
-        Ok(parsed) => parsed.anchors,
-        Err(e) => {
-            tracing::warn!(
-                error = %e,
-                "evasion-anchors.toml failed to parse; prefix-anchored interior-control \
-                 strip disabled this run (split-credential evasion will not be normalized)",
-            );
-            Vec::new()
+    match parse_evasion_anchors(include_str!("../data/evasion-anchors.toml")) {
+        Ok(anchors) => anchors,
+        Err(error) => {
+            panic!(
+                "crates/scanner/data/evasion-anchors.toml is invalid: {error}. \
+                 Fix the bundled Tier-B evasion anchors; refusing to run without \
+                 split-credential evasion normalization truth."
+            )
         }
     }
 });
+
+pub(crate) fn parse_evasion_anchors(raw: &str) -> Result<Vec<String>, String> {
+    let parsed: EvasionAnchorFile =
+        toml::from_str(raw).map_err(|error| format!("invalid evasion-anchors.toml: {error}"))?;
+    let mut seen = BTreeSet::new();
+    let mut anchors = Vec::with_capacity(parsed.anchors.len());
+    for raw_anchor in parsed.anchors {
+        let anchor = raw_anchor.trim();
+        if anchor.is_empty() {
+            return Err("evasion anchor entries must not be empty".to_string());
+        }
+        if !seen.insert(anchor.to_string()) {
+            return Err(format!("duplicate evasion anchor {anchor:?}"));
+        }
+        anchors.push(anchor.to_string());
+    }
+    if anchors.is_empty() {
+        return Err("evasion anchors must contain at least one entry".to_string());
+    }
+    Ok(anchors)
+}
 
 /// Single Aho-Corasick automaton over all anchors — one O(n) pass to find every
 /// prefix occurrence, instead of one search per anchor.
@@ -222,7 +234,16 @@ static EVASION_ANCHOR_AC: std::sync::LazyLock<Option<aho_corasick::AhoCorasick>>
         if anchors.is_empty() {
             return None;
         }
-        aho_corasick::AhoCorasick::new(anchors).ok()
+        match aho_corasick::AhoCorasick::new(anchors) {
+            Ok(ac) => Some(ac),
+            Err(error) => {
+                crate::prefilter_degrade::warn_prefilter_disabled(
+                    "evasion-anchor Aho-Corasick (EVASION_ANCHOR_AC)",
+                    &error,
+                );
+                None
+            }
+        }
     });
 
 #[inline]
@@ -246,7 +267,7 @@ fn is_interior_control(b: u8) -> bool {
 ///
 /// Returns [`std::borrow::Cow::Borrowed`] unless an actual prefix-anchored
 /// interior control is present, so the hot scan path stays zero-allocation.
-pub fn strip_interior_evasion_controls(text: &str) -> std::borrow::Cow<'_, str> {
+pub(crate) fn strip_interior_evasion_controls(text: &str) -> std::borrow::Cow<'_, str> {
     let bytes = text.as_bytes();
     if bytes.len() < 3 {
         return std::borrow::Cow::Borrowed(text);
@@ -313,16 +334,22 @@ pub fn strip_interior_evasion_controls(text: &str) -> std::borrow::Cow<'_, str> 
     }
     String::from_utf8(out)
         .map(std::borrow::Cow::Owned)
-        .unwrap_or(std::borrow::Cow::Borrowed(text))
+        .unwrap_or(std::borrow::Cow::Borrowed(text)) // LAW10: no transform / invalid codepoint => original text/char unchanged; recall-safe identity
 }
 
 /// Check if text contains potential evasion
-pub fn contains_evasion(text: &str) -> bool {
+pub(crate) fn contains_evasion(text: &str) -> bool {
     contains_ascii_evasion(text.as_bytes())
-        || !detect_unicode_attacks(text).is_empty()
-        || text
-            .chars()
-            .any(|ch| is_unicode_separator_evasion(ch) || is_combining_mark(ch))
+        || text.chars().any(|ch| {
+            cyrillic_to_latin(ch).is_some()
+                || greek_to_latin(ch).is_some()
+                || is_fullwidth(ch)
+                || is_zero_width(ch)
+                || is_rtl_override(ch)
+                || is_unicode_separator_evasion(ch)
+                || is_combining_mark(ch)
+                || is_ascii_evasion_control(ch)
+        })
 }
 
 fn contains_ascii_evasion(bytes: &[u8]) -> bool {
@@ -419,7 +446,7 @@ fn fullwidth_to_ascii(ch: char) -> char {
         // The offset is 0xFEE0 (FF01 - 0021 = FE00, roughly)
         let code = ch as u32;
         if (0xFF01..=0xFF5E).contains(&code) {
-            std::char::from_u32(code - 0xFEE0).unwrap_or(ch)
+            std::char::from_u32(code - 0xFEE0).unwrap_or(ch) // LAW10: no transform / invalid codepoint => original text/char unchanged; recall-safe identity
         } else {
             ch
         }
@@ -429,7 +456,8 @@ fn fullwidth_to_ascii(ch: char) -> char {
 }
 
 /// Check if a character is a Unicode evasion character (zero-width or RTL override)
-pub fn is_evasion_char(ch: char) -> bool {
+#[cfg(test)]
+pub(crate) fn is_evasion_char(ch: char) -> bool {
     is_zero_width(ch) || is_rtl_override(ch)
 }
 

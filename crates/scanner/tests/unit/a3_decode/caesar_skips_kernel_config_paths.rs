@@ -1,7 +1,7 @@
 //! Caesar decoder must not run on source/config paths that lack common extensions.
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 use keyhog_scanner::testing::is_source_code_path;
 
 #[test]

@@ -11,8 +11,8 @@ fn scanner_root() -> std::path::PathBuf {
 
 #[test]
 fn coalesced_phase2_empty_hits_skip_uninteresting_chunks_before_prepare() {
-    let src = std::fs::read_to_string(scanner_root().join("src/engine/scan.rs"))
-        .expect("engine/scan.rs source readable");
+    let src = std::fs::read_to_string(scanner_root().join("src/engine/scan_coalesced.rs"))
+        .expect("engine/scan_coalesced.rs source readable");
 
     let empty_hit_gate = src
         .find("if !self.should_scan_no_hit_chunk(chunk)")
@@ -40,6 +40,6 @@ fn coalesced_phase2_empty_hits_skip_uninteresting_chunks_before_prepare() {
             && src.contains("has_secret_keyword_fast(data)")
             && src.contains("has_high_entropy_run_fast(data)")
             && src.contains("crate::entropy::is_entropy_appropriate"),
-        "no-hit fallback gate must match the keyword/entropy admission policy"
+        "no-hit phase-2 gate must match the keyword/entropy admission policy"
     );
 }

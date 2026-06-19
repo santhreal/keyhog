@@ -1,7 +1,7 @@
 //! Caesar decoder must not run on source-code file paths.
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::decode::decode_chunk;
+use keyhog_scanner::testing::decode_chunk;
 
 #[test]
 fn rust_source_comment_produces_no_caesar_chunks() {

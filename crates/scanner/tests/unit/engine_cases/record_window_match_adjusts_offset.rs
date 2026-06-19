@@ -1,6 +1,6 @@
 use keyhog_core::{MatchLocation, RawMatch, Severity};
-use keyhog_scanner::compute_line_offsets;
-use keyhog_scanner::engine::record_window_match;
+use keyhog_scanner::testing::compute_line_offsets;
+use keyhog_scanner::testing::record_window_match;
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 
@@ -14,7 +14,7 @@ fn record_window_match_adjusts_offset() {
         detector_name: Arc::from("demo"),
         service: Arc::from("test"),
         severity: Severity::Low,
-        credential: Arc::from("345"),
+        credential: keyhog_core::SensitiveString::from("345"),
         credential_hash: [3u8; 32],
         companions: std::collections::HashMap::new(),
         location: MatchLocation {

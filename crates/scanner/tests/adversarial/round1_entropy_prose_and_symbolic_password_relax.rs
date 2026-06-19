@@ -4,7 +4,7 @@
 //! entropy ceiling when the credential is anchored by a strong keyword.
 //!
 //! Investigator finding (097673e4, entropy/keywords.rs +
-//! engine/fallback_entropy.rs):
+//! engine/phase2_entropy.rs):
 //!   * `looks_like_english_prose` lowered length floor 24 -> 16 and
 //!     added a multi-token whitespace-alphabetic branch.
 //!   * `passes_strict_secret_checks` relaxed in credential-anchored

@@ -1,6 +1,7 @@
 use base64::Engine as _;
-use keyhog_scanner::confidence::{
+use keyhog_scanner::testing::confidence::{
     apply_post_ml_penalties, char_diversity, contains_placeholder_word, max_repeat_run,
+    parse_placeholder_words_for_test,
 };
 #[test]
 fn placeholder_words_detected_case_insensitive() {
@@ -8,8 +9,37 @@ fn placeholder_words_detected_case_insensitive() {
     assert!(!contains_placeholder_word("MY_TEST_KEY")); // "test" not a placeholder
     assert!(contains_placeholder_word("dummy_value"));
     assert!(contains_placeholder_word("fake_token"));
+    assert!(contains_placeholder_word("mock_value"));
     assert!(contains_placeholder_word("sample_secret"));
+    assert!(contains_placeholder_word("changeme_secret"));
     assert!(!contains_placeholder_word("ghp_real_key_123"));
+}
+
+#[test]
+fn placeholder_word_tier_b_parser_rejects_invalid_vocabularies() {
+    let empty = parse_placeholder_words_for_test("[placeholder_words]\nwords = []\n")
+        .expect_err("empty placeholder vocabulary must fail closed");
+    assert!(
+        empty.contains("at least one entry"),
+        "unexpected empty-vocabulary error: {empty}"
+    );
+
+    let uppercase =
+        parse_placeholder_words_for_test("[placeholder_words]\nwords = [\"Example\"]\n")
+            .expect_err("uppercase placeholder word must fail closed");
+    assert!(
+        uppercase.contains("lowercase ASCII"),
+        "unexpected uppercase-vocabulary error: {uppercase}"
+    );
+
+    let duplicate = parse_placeholder_words_for_test(
+        "[placeholder_words]\nwords = [\"example\", \"example\"]\n",
+    )
+    .expect_err("duplicate placeholder word must fail closed");
+    assert!(
+        duplicate.contains("duplicate placeholder word"),
+        "unexpected duplicate-vocabulary error: {duplicate}"
+    );
 }
 
 #[test]

@@ -12,200 +12,6 @@ pub fn infer_context(lines: &[&str], line_idx: usize, file_path: Option<&str>) -
     infer_context_with_documentation(lines, line_idx, file_path, &documentation_lines)
 }
 
-/// Detect example/placeholder credentials using ONLY algorithmic heuristics.
-/// No hardcoded credential lists - every suppression is based on a structural
-/// property that generalizes to all credentials of that shape.
-pub fn is_known_example_credential(credential: &str) -> bool {
-    let upper = credential.to_uppercase();
-
-    // EXAMPLE/EXAMPLEKEY is a universal documentation convention.
-    if upper.ends_with("EXAMPLE") || upper.ends_with("EXAMPLEKEY") {
-        return true;
-    }
-
-    // x/X-dominated values are masking filler.
-    let body = credential.as_bytes();
-    let x_count = body.iter().filter(|&&b| b == b'x' || b == b'X').count();
-    if body.len() >= 16 && x_count > body.len() * 3 / 4 {
-        return true;
-    }
-
-    // Ascending hex pairs are documentation placeholders.
-    if is_hex_sequential_placeholder(credential) {
-        return true;
-    }
-
-    // These appear in integrity checks, not as secrets.
-    if is_empty_input_hash(credential) {
-        return true;
-    }
-
-    // Monotonic or repetitive bodies remain placeholders after stripping prefixes.
-    is_sequential_placeholder(credential)
-}
-
-/// Returns true if the credential is the hash of an empty input (common in
-/// integrity/checksum fields, never a real secret).
-fn is_empty_input_hash(credential: &str) -> bool {
-    let lower = credential.to_ascii_lowercase();
-    // Only match exact lengths to avoid false positives on substrings.
-    match lower.len() {
-        32 => lower == "d41d8cd98f00b204e9800998ecf8427e", // MD5("")
-        40 => lower == "da39a3ee5e6b4b0d3255bfef95601890afd80709", // SHA1("")
-        64 => lower == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", // SHA256("")
-        _ => false,
-    }
-}
-
-pub fn is_sequential_placeholder(credential: &str) -> bool {
-    // Strip ALL known service prefixes before checking for sequential/placeholder patterns.
-    // Single source of truth: crate::confidence::KNOWN_PREFIXES.
-    // Missing a prefix here = false positive (placeholder not suppressed).
-    let body = crate::confidence::KNOWN_PREFIXES
-        .iter()
-        .find_map(|prefix| credential.strip_prefix(prefix))
-        .unwrap_or(credential);
-    if body.len() < 8 {
-        return false;
-    }
-
-    let bytes = body.as_bytes();
-    if bytes.iter().all(|&byte| byte == bytes[0]) {
-        return true;
-    }
-    if bytes.len() >= 8 {
-        let pair = &bytes[..2];
-        if bytes
-            .chunks(2)
-            .all(|chunk| chunk == pair || (chunk.len() < 2 && chunk[0] == pair[0]))
-        {
-            return true;
-        }
-    }
-    false
-}
-
-fn is_hex_sequential_placeholder(credential: &str) -> bool {
-    // Same canonical prefix list as is_sequential_placeholder. Strip the
-    // prefix before the hex-sequence check so e.g. `ghp_0123456789abcdef`
-    // still trips the "monotonic hex" suppression on the BODY.
-    let body = crate::confidence::KNOWN_PREFIXES
-        .iter()
-        .find_map(|prefix| credential.strip_prefix(prefix))
-        .unwrap_or(credential);
-
-    if body.len() < 16 || !body.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return false;
-    }
-
-    let bytes: Vec<u8> = body.bytes().collect();
-
-    // Single-byte monotonic sequences such as 0123456789abcdef or fedcba9876543210.
-    if bytes.len() >= 16 {
-        let ascending = bytes
-            .windows(2)
-            .filter(|w| {
-                w[1] == w[0] + 1 || (w[0] == b'9' && w[1] == b'a') || (w[0] == b'f' && w[1] == b'0')
-            })
-            .count();
-        let descending = bytes
-            .windows(2)
-            .filter(|w| {
-                w[1] + 1 == w[0] || (w[0] == b'a' && w[1] == b'9') || (w[0] == b'0' && w[1] == b'f')
-            })
-            .count();
-        let threshold = (bytes.len() - 1) * 9 / 10;
-        if ascending > threshold || descending > threshold {
-            return true;
-        }
-    }
-
-    let pairs: Vec<&[u8]> = bytes.chunks(2).filter(|chunk| chunk.len() == 2).collect();
-    if pairs.len() < 8 {
-        return false;
-    }
-
-    let first_chars: Vec<u8> = pairs
-        .iter()
-        .map(|pair| pair[0].to_ascii_lowercase())
-        .collect();
-    let ascending = first_chars
-        .windows(2)
-        .filter(|window| {
-            window[1] == window[0] + 1
-                || (window[0] == b'f' && window[1] == b'a')
-                || (window[0] == b'9' && window[1] == b'a')
-                || (window[0] == b'9' && window[1] == b'0')
-        })
-        .count();
-
-    let second_chars: Vec<u8> = pairs
-        .iter()
-        .map(|pair| pair[1].to_ascii_lowercase())
-        .collect();
-    let ascending2 = second_chars
-        .windows(2)
-        .filter(|window| {
-            window[1] == window[0] + 1
-                || (window[0] == b'f' && window[1] == b'0')
-                || (window[0] == b'9' && window[1] == b'0')
-                || (window[0] == b'9' && window[1] == b'a')
-        })
-        .count();
-
-    let threshold = pairs.len() * 9 / 10;
-    ascending > threshold && ascending2 > threshold
-}
-
-/// Per-line region membership precomputed once per chunk.
-///
-/// `is_in_encrypted_block` and `is_in_test_function` both depend only on the
-/// surrounding lines, so when many matches land in the same function the
-/// per-match 10/100-line backward walks recompute identical answers. Building
-/// these flags in a single forward pass turns the per-match work into an O(1)
-/// lookup, converting O(matches * 100) line scans into O(lines) once per chunk.
-pub struct ContextRegions {
-    encrypted: Vec<bool>,
-    test_function: Vec<bool>,
-}
-
-impl ContextRegions {
-    /// Build the region table in a single forward pass over `lines`.
-    pub fn new(lines: &[&str]) -> Self {
-        ContextRegions {
-            encrypted: encrypted_block_flags(lines),
-            test_function: test_function_flags(lines),
-        }
-    }
-
-    fn is_encrypted(&self, line_idx: usize) -> bool {
-        self.encrypted.get(line_idx).copied().unwrap_or(false)
-    }
-
-    fn is_test_function(&self, line_idx: usize) -> bool {
-        self.test_function.get(line_idx).copied().unwrap_or(false)
-    }
-}
-
-/// Forward-pass equivalent of `is_in_encrypted_block` for every line.
-///
-/// A line is "in" an encrypted block if any of the preceding
-/// `ENCRYPTED_BLOCK_LOOKBACK_LINES` lines (or itself) starts an encrypted
-/// marker. Tracking the distance since the last marker line reproduces the
-/// per-line backward window in one sweep.
-fn encrypted_block_flags(lines: &[&str]) -> Vec<bool> {
-    let mut flags = vec![false; lines.len()];
-    let mut lines_since_marker = ENCRYPTED_BLOCK_LOOKBACK_LINES + 1;
-    for (idx, line) in lines.iter().enumerate() {
-        if is_encrypted_marker_line(line.trim()) {
-            lines_since_marker = 0;
-        }
-        flags[idx] = lines_since_marker <= ENCRYPTED_BLOCK_LOOKBACK_LINES;
-        lines_since_marker = lines_since_marker.saturating_add(1);
-    }
-    flags
-}
-
 fn is_encrypted_marker_line(trimmed: &str) -> bool {
     trimmed.starts_with("$ANSIBLE_VAULT")
         || trimmed.starts_with("ENC[")
@@ -215,113 +21,8 @@ fn is_encrypted_marker_line(trimmed: &str) -> bool {
         || trimmed.starts_with("-----BEGIN AGE ENCRYPTED")
 }
 
-/// One line of the test-function backward scan, classified independently.
-#[derive(Clone, Copy, PartialEq)]
-enum TestScanMark {
-    /// A test-function/test-attribute start: a match here means "in a test".
-    TestStart,
-    /// A non-test function/class boundary: a match here means "not in a test".
-    Boundary,
-    /// Neither - keep walking back.
-    Neither,
-}
-
-/// Forward-pass equivalent of `is_in_test_function` for every line.
-///
-/// `is_in_test_function` walks back up to `TEST_FUNCTION_LOOKBACK_LINES`,
-/// returning on the first `TestStart`/`Boundary` it sees. Classifying each
-/// line once and then tracking the index of the most recent non-`Neither`
-/// line reproduces that "nearest interesting line within the window decides"
-/// behaviour in a single O(lines) sweep.
-fn test_function_flags(lines: &[&str]) -> Vec<bool> {
-    let marks: Vec<TestScanMark> = (0..lines.len())
-        .map(|idx| classify_test_scan_line(lines, idx))
-        .collect();
-
-    let mut flags = vec![false; lines.len()];
-    // Index of the most recent line whose mark is not `Neither`, if any.
-    let mut last_interesting: Option<usize> = None;
-    for line_idx in 0..lines.len() {
-        if let Some(prev_idx) = last_interesting {
-            if line_idx - prev_idx <= TEST_FUNCTION_LOOKBACK_LINES {
-                flags[line_idx] = marks[prev_idx] == TestScanMark::TestStart;
-            }
-        }
-        // The next line scans back through this one, so update after deciding
-        // the current line (the original scans the range `start..line_idx`,
-        // i.e. it never inspects its own line).
-        if marks[line_idx] != TestScanMark::Neither {
-            last_interesting = Some(line_idx);
-        }
-    }
-    flags
-}
-
-/// Classify a single line for the test-function backward scan, mirroring the
-/// per-line decisions in `is_in_test_function` (including the 3-line attribute
-/// lookback for bare Rust `fn` declarations).
-fn classify_test_scan_line(lines: &[&str], candidate_line_idx: usize) -> TestScanMark {
-    let trimmed = lines[candidate_line_idx].trim();
-
-    if trimmed.starts_with("def test_")
-        || trimmed.starts_with("class Test")
-        || trimmed.starts_with("it(")
-        || trimmed.starts_with("describe(")
-        || trimmed.starts_with("test(")
-        || trimmed == "#[test]"
-        || trimmed == concat!("#[cfg(", "test)]")
-        || trimmed.starts_with("#[tokio::test")
-        || trimmed.starts_with("func Test")
-        || trimmed == "@Test"
-    {
-        return TestScanMark::TestStart;
-    }
-
-    // Stop looking back when we hit a non-test class or function boundary.
-    if trimmed.starts_with("class ") {
-        return TestScanMark::Boundary;
-    }
-
-    if (trimmed.starts_with("def ") || trimmed.starts_with("async def "))
-        && !trimmed.contains("def test_")
-    {
-        return TestScanMark::Boundary;
-    }
-
-    if trimmed.starts_with("func ") && !trimmed.contains("func Test") {
-        return TestScanMark::Boundary;
-    }
-
-    if (trimmed.starts_with("fn ")
-        || trimmed.starts_with("pub fn ")
-        || trimmed.starts_with("async fn ")
-        || trimmed.starts_with("pub async fn "))
-        && !trimmed.contains("fn test_")
-    {
-        let pre_start = candidate_line_idx.saturating_sub(3);
-        for pre_line in &lines[pre_start..candidate_line_idx] {
-            let pre_trimmed = pre_line.trim();
-            if pre_trimmed == "#[test]"
-                || pre_trimmed == concat!("#[cfg(", "test)]")
-                || pre_trimmed.starts_with("#[tokio::test")
-                || pre_trimmed.starts_with("#[test")
-                || pre_trimmed == "@Test"
-            {
-                return TestScanMark::TestStart;
-            }
-        }
-        return TestScanMark::Boundary;
-    }
-
-    if trimmed.starts_with("function ") && !trimmed.contains("function test") {
-        return TestScanMark::Boundary;
-    }
-
-    TestScanMark::Neither
-}
-
 /// Infer context when documentation-line flags have already been computed.
-pub fn infer_context_with_documentation(
+pub(crate) fn infer_context_with_documentation(
     lines: &[&str],
     line_idx: usize,
     file_path: Option<&str>,
@@ -346,7 +47,12 @@ pub fn infer_context_with_documentation(
     if is_comment_line(trimmed) {
         return CodeContext::Comment;
     }
-    if documentation_lines.get(line_idx).copied().unwrap_or(false) {
+    if documentation_lines
+        .get(line_idx)
+        .copied()
+        .is_some_and(|v| v)
+    {
+        // Law 10: bounds-checked lookup; out-of-range => documented default (total fn), recall-safe
         return CodeContext::Documentation;
     }
     if is_in_test_function(lines, line_idx) {
@@ -358,50 +64,11 @@ pub fn infer_context_with_documentation(
     infer_default_context(trimmed)
 }
 
-/// Like `infer_context_with_documentation`, but reads encrypted-block and
-/// test-function membership from a `ContextRegions` table precomputed once per
-/// chunk instead of re-walking up to 100 lines backward per match.
-pub fn infer_context_with_regions(
-    lines: &[&str],
-    line_idx: usize,
-    file_path: Option<&str>,
-    documentation_lines: &[bool],
-    regions: &ContextRegions,
-) -> CodeContext {
-    if line_idx >= lines.len() {
-        return CodeContext::Unknown;
-    }
-
-    let trimmed = lines[line_idx].trim();
-
-    if file_path.is_some_and(is_test_file) {
-        return CodeContext::TestCode;
-    }
-    if regions.is_encrypted(line_idx) {
-        return CodeContext::Encrypted;
-    }
-    if is_commented_assignment_line(trimmed) {
-        return CodeContext::Assignment;
-    }
-    if is_comment_line(trimmed) {
-        return CodeContext::Comment;
-    }
-    if documentation_lines.get(line_idx).copied().unwrap_or(false) {
-        return CodeContext::Documentation;
-    }
-    if regions.is_test_function(line_idx) {
-        return CodeContext::TestCode;
-    }
-    if is_assignment_line(trimmed) {
-        return CodeContext::Assignment;
-    }
-    infer_default_context(trimmed)
-}
-
 fn is_test_file(path: &str) -> bool {
-    // Split on both / and \ for cross-platform compatibility.
-    let filename = path.rsplit(['/', '\\']).next().unwrap_or(path);
-    let stem = filename.split('.').next().unwrap_or(filename);
+    const TEST_PATH_COMPONENTS: &[&str] =
+        &["test", "tests", "__tests__", "fixtures", "testdata", "spec"];
+    let filename = crate::platform_compat::path_basename(path);
+    let stem = filename.split('.').next().unwrap_or(filename); // LAW10: split yields >=1 element; unwrap_or is the never-taken total default, recall-safe
 
     stem.len() > TEST_PREFIX_LEN
         && stem
@@ -419,14 +86,7 @@ fn is_test_file(path: &str) -> bool {
         || filename.ends_with(".test.ts")
         || filename.ends_with(".spec.js")
         || filename.ends_with(".spec.ts")
-        || path.split(['/', '\\']).any(|component| {
-            component.eq_ignore_ascii_case("test")
-                || component.eq_ignore_ascii_case("tests")
-                || component.eq_ignore_ascii_case("__tests__")
-                || component.eq_ignore_ascii_case("fixtures")
-                || component.eq_ignore_ascii_case("testdata")
-                || component.eq_ignore_ascii_case("spec")
-        })
+        || crate::platform_compat::path_has_any_component(path, TEST_PATH_COMPONENTS)
 }
 
 fn infer_default_context(trimmed: &str) -> CodeContext {
@@ -635,11 +295,10 @@ pub(crate) fn surrounding_line_window(text: &str, offset: usize, radius: usize) 
         end += 1;
     }
 
-    while start < text.len() && !text.is_char_boundary(start) {
-        start += 1;
-    }
-    while end > start && !text.is_char_boundary(end) {
-        end -= 1;
+    let start = crate::engine::ceil_char_boundary(text, start);
+    let mut end = crate::engine::floor_char_boundary(text, end);
+    if end < start {
+        end = start;
     }
     &text[start..end]
 }

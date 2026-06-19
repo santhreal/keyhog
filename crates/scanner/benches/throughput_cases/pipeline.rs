@@ -18,7 +18,7 @@ fn benchmark_combined_full_pipeline(c: &mut Criterion) {
             let mut matches = scanner.scan(&chunk);
 
             // Decode-through scanning
-            for decoded in decode::decode_chunk(&chunk, 2, false, None, None) {
+            for decoded in keyhog_scanner::testing::decode_chunk(&chunk, 2, false, None, None) {
                 matches.extend(scanner.scan(&decoded));
             }
 

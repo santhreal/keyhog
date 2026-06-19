@@ -1,7 +1,7 @@
 //! LR1-A8 replacement gate: `compiler.rs` valid regex compiles.
 
 use keyhog_core::{DetectorSpec, PatternSpec, Severity};
-use keyhog_scanner::compiler::build_compile_state;
+use keyhog_scanner::testing::compile_state_error;
 
 #[test]
 fn build_compile_state_accepts_valid_detector() {
@@ -23,10 +23,9 @@ fn build_compile_state_accepts_valid_detector() {
         min_confidence: None,
         ..Default::default()
     };
-    let state = build_compile_state(&[det]);
+    let error = compile_state_error(&[det]);
     assert!(
-        state.is_ok(),
-        "valid detector regex must compile: {:?}",
-        state.err()
+        error.is_none(),
+        "valid detector regex must compile: {error:?}"
     );
 }

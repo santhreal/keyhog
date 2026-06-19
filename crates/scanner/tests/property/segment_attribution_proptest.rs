@@ -1,11 +1,11 @@
-use keyhog_scanner::engine::segment_attribution::{
+use keyhog_scanner::testing::segment_attribution::{
     map_offsets_to_segments, AttributedMatch, GlobalMatch, Segment, SegmentAttributionError,
 };
 use proptest::prelude::*;
 
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(500))]
-    
+
     #[test]
     fn test_valid_and_invalid_matches(
         initial_start in 0..1000u32,
@@ -51,7 +51,7 @@ proptest! {
                     }
                     let m_start = segment.start + min_val;
                     let m_end = segment.start + max_val;
-                    
+
                     let pattern_id = i as u32 * 10;
                     global_matches.push(GlobalMatch::new(pattern_id, m_start, m_end));
                     expected_attributed.push(AttributedMatch::new(segment.id, pattern_id, min_val, max_val));
@@ -127,7 +127,7 @@ proptest! {
 
         // Run the mapping and verify behavior
         let result = map_offsets_to_segments(&segments, &global_matches);
-        
+
         let attributed = result.unwrap();
 
         // Verify that every expected match is in the output and correct
@@ -140,7 +140,7 @@ proptest! {
         for m in &attributed {
             prop_assert!(m.pattern_id < 9999, "Invalid match with pattern_id {} was attributed: {:?}", m.pattern_id, m);
         }
-        
+
         // Verify total length of attributed matches is exactly expected_attributed.len()
         prop_assert_eq!(attributed.len(), expected_attributed.len());
     }
@@ -152,7 +152,7 @@ proptest! {
     ) {
         let segment = Segment::new(1, start, len);
         let segments = vec![segment];
-        
+
         let result = map_offsets_to_segments(&segments, &[]);
         let end_overflows = start.checked_add(len).is_none();
         if end_overflows {
@@ -183,7 +183,7 @@ proptest! {
             Segment::new(1, start1, len1),
             Segment::new(2, start2, len2),
         ];
-        
+
         let result = map_offsets_to_segments(&segments, &[]);
         if let Err(err) = result {
             match err {
@@ -224,7 +224,7 @@ proptest! {
         }).collect();
 
         let result = map_offsets_to_segments(&segments, &global_matches);
-        
+
         if let Ok(attributed) = result {
             for m in attributed {
                 let seg = segments.iter().find(|s| s.id == m.segment_id).unwrap();

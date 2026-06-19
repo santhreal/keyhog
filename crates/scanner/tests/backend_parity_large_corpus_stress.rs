@@ -98,6 +98,7 @@ fn large_corpus_many_simultaneous_detector_fires() {
         ScanBackend::MegaScan,
     ];
 
+    scanner.clear_fragment_cache();
     let simd_results = scanner.scan_chunks_with_backend(&[fixture.clone()], ScanBackend::SimdCpu);
     let simd_findings = collect_findings(&simd_results);
 
@@ -108,17 +109,9 @@ fn large_corpus_many_simultaneous_detector_fires() {
 
     let mut failures = Vec::new();
     for backend in &backends[1..] {
+        scanner.clear_fragment_cache();
         let results = scanner.scan_chunks_with_backend(&[fixture.clone()], *backend);
         let findings = collect_findings(&results);
-
-        // GPU/MegaScan can silently degrade.
-        if matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan)
-            && findings.is_empty()
-            && !simd_findings.is_empty()
-        {
-            eprintln!("SKIP: {backend:?} (no adapter, silent SIMD degrade)");
-            continue;
-        }
 
         if findings != simd_findings {
             let only_simd: Vec<_> = simd_findings.difference(&findings).take(5).collect();
@@ -156,7 +149,7 @@ fn detector_count_preserved_after_compile() {
 
     let original_count = detectors.len();
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
-    let compiled_count = scanner.detector_count();
+    let compiled_count = scanner.runtime_status().detector_count;
 
     assert_eq!(
         compiled_count, original_count,
