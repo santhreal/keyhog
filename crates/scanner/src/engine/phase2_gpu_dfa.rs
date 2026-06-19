@@ -188,14 +188,28 @@ impl Phase2GpuDfaCatalog {
         })
     }
 
-    pub(crate) fn scan_admission(
+    pub(crate) fn scan_admission_refs(
         &self,
         backend: &dyn vyre::VyreBackend,
-        chunks: &[keyhog_core::Chunk],
+        chunks: &[&keyhog_core::Chunk],
     ) -> std::result::Result<Phase2GpuDfaAdmission, String> {
-        if chunks.is_empty() || self.shards.is_empty() {
+        self.scan_admission_with_builder(backend, chunks.len(), |scratch| {
+            build_raw_region_batch_refs(chunks, scratch)
+        })
+    }
+
+    fn scan_admission_with_builder<F>(
+        &self,
+        backend: &dyn vyre::VyreBackend,
+        chunk_count: usize,
+        build_batch: F,
+    ) -> std::result::Result<Phase2GpuDfaAdmission, String>
+    where
+        F: FnOnce(&mut Phase2GpuDfaScratch) -> std::result::Result<(), String>,
+    {
+        if chunk_count == 0 || self.shards.is_empty() {
             return Ok(Phase2GpuDfaAdmission {
-                admitted: vec![false; chunks.len()],
+                admitted: vec![false; chunk_count],
                 complete: true,
                 matches_seen: 0,
             });
@@ -208,8 +222,8 @@ impl Phase2GpuDfaCatalog {
                         .to_string()
                 })?;
                 let zero_on_drop = ZeroPhase2GpuDfaScratch::new(&mut scratch);
-                build_raw_region_batch(chunks, zero_on_drop.scratch)?;
-                self.scan_admission_with_scratch(backend, zero_on_drop.scratch, chunks.len())
+                build_batch(zero_on_drop.scratch)?;
+                self.scan_admission_with_scratch(backend, zero_on_drop.scratch, chunk_count)
             })
             .map_err(|_| {
                 "phase-2 GPU regex-DFA scratch unavailable during thread shutdown".to_string()
@@ -584,12 +598,31 @@ fn regex_dfa_source_for_pattern(pattern: &CompiledPattern) -> Cow<'_, str> {
     }
 }
 
+#[cfg(test)]
 fn build_raw_region_batch(
     chunks: &[keyhog_core::Chunk],
     scratch: &mut Phase2GpuDfaScratch,
 ) -> std::result::Result<(), String> {
-    let mut total = chunks.len().saturating_sub(1);
-    for chunk in chunks {
+    build_raw_region_batch_iter(chunks.iter(), chunks.len(), scratch)
+}
+
+fn build_raw_region_batch_refs(
+    chunks: &[&keyhog_core::Chunk],
+    scratch: &mut Phase2GpuDfaScratch,
+) -> std::result::Result<(), String> {
+    build_raw_region_batch_iter(chunks.iter().copied(), chunks.len(), scratch)
+}
+
+fn build_raw_region_batch_iter<'a, I>(
+    chunks: I,
+    chunk_count: usize,
+    scratch: &mut Phase2GpuDfaScratch,
+) -> std::result::Result<(), String>
+where
+    I: Clone + Iterator<Item = &'a keyhog_core::Chunk>,
+{
+    let mut total = chunk_count.saturating_sub(1);
+    for chunk in chunks.clone() {
         total = total.checked_add(chunk.data.len()).ok_or_else(|| {
             "phase-2 GPU regex-DFA coalesced batch length overflows host usize".to_string()
         })?;
@@ -607,15 +640,15 @@ fn build_raw_region_batch(
         .map_err(|error| format!("phase-2 GPU regex-DFA haystack reserve failed: {error}"))?;
     scratch
         .region_starts
-        .try_reserve(chunks.len())
+        .try_reserve(chunk_count)
         .map_err(|error| format!("phase-2 GPU regex-DFA region-start reserve failed: {error}"))?;
-    for (idx, chunk) in chunks.iter().enumerate() {
+    for (idx, chunk) in chunks.enumerate() {
         let start = u32::try_from(scratch.haystack.len()).map_err(|_| {
             "phase-2 GPU regex-DFA region start exceeds the u32 GPU ABI".to_string()
         })?;
         scratch.region_starts.push(start);
         scratch.haystack.extend_from_slice(chunk.data.as_bytes());
-        if idx + 1 != chunks.len() {
+        if idx + 1 != chunk_count {
             scratch.haystack.push(0);
         }
     }

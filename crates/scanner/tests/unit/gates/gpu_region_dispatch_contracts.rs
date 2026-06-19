@@ -44,6 +44,18 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
             && dispatch_src.contains("CPU admission remains authoritative"),
         "region dispatch must wire phase-2 GPU regex-DFA admission visibly, with CPU admission authoritative on failure"
     );
+    assert!(
+        dispatch_src.contains("build_phase2_gpu_admission_workload")
+            && dispatch_src.contains("phase2_gpu_workload.chunks.as_slice()")
+            && dispatch_src.contains("scan_admission_refs")
+            && !dispatch_src.contains("catalog.scan_admission(&**backend, chunks)"),
+        "phase-2 GPU DFA admission must scan only no-trigger chunks; chunks with phase-1 trigger bits already enter the shared phase-2 tail"
+    );
+    assert!(
+        dispatch_src.contains("validate_phase2_gpu_trigger_rows")
+            && dispatch_src.contains("refusing to run mismatched phase-2 admission"),
+        "region dispatch must fail loud before phase-2 if trigger row count drifts from chunk count"
+    );
     let engine_mod_src =
         std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/mod.rs"))
             .expect("engine mod readable");
