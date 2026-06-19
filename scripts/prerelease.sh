@@ -120,11 +120,10 @@ check "bench gate" bash -c "cd benchmarks && python3 -m bench gate \
   --baseline baselines/mirror-keyhog-baseline.json --epsilon 0.005"
 
 # ── 2. coherence gates ───────────────────────────────────────────────────────
-# README bench tables must be regenerable-identical (needs a full leaderboard in
-# results/); informational on a partial host, so warn instead of hard-fail.
-step "coherence: README bench tables fresh (informational)"
-if make -C benchmarks report-check >/dev/null 2>&1; then echo "  PASS README tables up to date"
-else echo "  WARN README tables differ from results/ (run 'make -C benchmarks report' on a full-scanner host)"; fi
+# README bench tables must be regenerable-identical. A prerelease gate with
+# stale generated claims is not release evidence.
+step "coherence: README bench tables fresh"
+check "README bench tables up to date" make -C benchmarks report-check
 
 # ── 3. Rust test gates (CI-faithful) ─────────────────────────────────────────
 if [ "$SKIP_RUST" != "1" ]; then
