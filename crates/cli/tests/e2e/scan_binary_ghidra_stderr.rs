@@ -6,33 +6,9 @@ use crate::e2e::support::binary;
 #[cfg(feature = "binary")]
 #[test]
 fn scan_binary_ghidra_failure_includes_stderr_excerpt() {
-    if default_system_analyze_headless_exists() {
-        eprintln!(
-            "SKIP (loud): a default trusted system analyzeHeadless exists ahead of \
-             configured test dirs; keeping the system-first safe-bin contract"
-        );
+    let Some(fixture) = failing_ghidra_fixture() else {
         return;
-    }
-
-    let dir = tempfile::TempDir::new().expect("tempdir");
-    let bin_dir = dir.path().join("trusted-bin");
-    std::fs::create_dir_all(&bin_dir).expect("create trusted-bin");
-    write_fake_ghidra(&bin_dir);
-
-    let config_path = dir.path().join(".keyhog.toml");
-    let trusted_dir = bin_dir.to_string_lossy().replace('\\', "\\\\");
-    std::fs::write(
-        &config_path,
-        format!("[system]\ntrusted_bin_dirs = [\"{trusted_dir}\"]\n"),
-    )
-    .expect("write config");
-
-    let target = dir.path().join("fixture.bin");
-    std::fs::write(
-        &target,
-        concat!("\0\0AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\0\0"),
-    )
-    .expect("write binary fixture");
+    };
 
     let output = std::process::Command::new(binary())
         .args([
@@ -45,9 +21,9 @@ fn scan_binary_ghidra_failure_includes_stderr_excerpt() {
             "--show-secrets",
             "--config",
         ])
-        .arg(&config_path)
+        .arg(&fixture.config_path)
         .arg("--binary")
-        .arg(&target)
+        .arg(&fixture.target)
         .output()
         .expect("spawn keyhog scan");
 
@@ -71,6 +47,97 @@ fn scan_binary_ghidra_failure_includes_stderr_excerpt() {
             && stdout.contains("binary:strings"),
         "scan should still report the strings-mode finding; stdout={stdout}; stderr={stderr}"
     );
+}
+
+#[cfg(feature = "binary")]
+#[test]
+fn scan_binary_ghidra_degradation_is_visible_in_sarif_notifications() {
+    let Some(fixture) = failing_ghidra_fixture() else {
+        return;
+    };
+
+    let output = std::process::Command::new(binary())
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--format",
+            "sarif",
+            "--config",
+        ])
+        .arg(&fixture.config_path)
+        .arg("--binary")
+        .arg(&fixture.target)
+        .output()
+        .expect("spawn keyhog scan");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "binary strings fallback should still surface the planted AWS key; stderr={stderr}"
+    );
+    let sarif: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("SARIF stdout must be JSON");
+    let notifications = sarif["runs"][0]["invocations"][0]["toolExecutionNotifications"]
+        .as_array()
+        .expect("Ghidra degradation must create SARIF coverage notifications");
+    assert!(
+        notifications.iter().any(|notification| {
+            notification["descriptor"]["id"].as_str() == Some("keyhog/coverage-gap")
+                && notification["properties"]["reason"].as_str()
+                    == Some(
+                        "binary deep analysis degraded to strings-only (Ghidra failed or output too large)",
+                    )
+                && notification["properties"]["count"].as_u64() == Some(1)
+        }),
+        "SARIF notifications must include the binary deep-analysis degradation; sarif={sarif}; stderr={stderr}"
+    );
+}
+
+#[cfg(feature = "binary")]
+struct FailingGhidraFixture {
+    _dir: tempfile::TempDir,
+    config_path: std::path::PathBuf,
+    target: std::path::PathBuf,
+}
+
+#[cfg(feature = "binary")]
+fn failing_ghidra_fixture() -> Option<FailingGhidraFixture> {
+    if default_system_analyze_headless_exists() {
+        eprintln!(
+            "SKIP (loud): a default trusted system analyzeHeadless exists ahead of \
+             configured test dirs; keeping the system-first safe-bin contract"
+        );
+        return None;
+    }
+
+    let dir = tempfile::TempDir::new().expect("tempdir");
+    let bin_dir = dir.path().join("trusted-bin");
+    std::fs::create_dir_all(&bin_dir).expect("create trusted-bin");
+    write_fake_ghidra(&bin_dir);
+
+    let config_path = dir.path().join(".keyhog.toml");
+    let trusted_dir = bin_dir.to_string_lossy().replace('\\', "\\\\");
+    std::fs::write(
+        &config_path,
+        format!("[system]\ntrusted_bin_dirs = [\"{trusted_dir}\"]\n"),
+    )
+    .expect("write config");
+
+    let target = dir.path().join("fixture.bin");
+    std::fs::write(
+        &target,
+        concat!("\0\0AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\0\0"),
+    )
+    .expect("write binary fixture");
+
+    Some(FailingGhidraFixture {
+        _dir: dir,
+        config_path,
+        target,
+    })
 }
 
 #[cfg(all(feature = "binary", unix))]

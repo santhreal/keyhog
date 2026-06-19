@@ -39,7 +39,7 @@ pub enum ReportFormat {
     Jsonl,
     /// SARIF output.
     Sarif {
-        /// Operator-visible scan skip summary entries.
+        /// Operator-visible scan coverage-gap summary entries.
         skip_summary: Vec<(String, usize)>,
     },
     /// CSV output.

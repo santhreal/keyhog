@@ -102,33 +102,48 @@ fn format_gitlab_time(time: DateTime<Utc>) -> String {
 /// scan's coverage gaps (unreadable files especially — those are unknowns).
 fn sarif_skip_summary() -> Vec<(String, usize)> {
     let c = keyhog_sources::skip_counts();
-    [
-        ("exceeded --max-file-size", c.over_max_size),
-        ("binary (extension or content sniff)", c.binary),
+    let summary = vec![
+        ("exceeded --max-file-size".to_string(), c.over_max_size),
         (
-            "default-exclusion list (lock/minified/vendored)",
+            "binary (extension or content sniff)".to_string(),
+            c.binary,
+        ),
+        (
+            "default-exclusion list (lock/minified/vendored)".to_string(),
             c.excluded,
         ),
-        ("unreadable (permission denied or I/O error)", c.unreadable),
         (
-            "archive extraction truncated by decompression-bomb guard (remaining entries not scanned)",
+            "unreadable (permission denied or I/O error)".to_string(),
+            c.unreadable,
+        ),
+        (
+            "archive extraction truncated by decompression-bomb guard (remaining entries not scanned)".to_string(),
             c.archive_truncated,
         ),
         (
-            "binary section name unresolved (corrupt section-name string table; section may be unscanned)",
+            "binary section name unresolved (corrupt section-name string table; section may be unscanned)".to_string(),
             c.binary_section_name_unresolved,
         ),
         (
-            "source scan truncated by aggregate source cap (remaining input not scanned)",
+            "source scan truncated by aggregate source cap (remaining input not scanned)".to_string(),
             c.source_truncated,
         ),
         (
-            "structured source parse failed (raw text scanned; derived chunks not expanded)",
+            "structured source parse failed (raw text scanned; derived chunks not expanded)".to_string(),
             c.structured_source_parse_failures,
         ),
-    ]
-    .into_iter()
-    .filter(|(_, n)| *n > 0)
-    .map(|(reason, n)| (reason.to_string(), n))
-    .collect()
+    ];
+
+    #[cfg(feature = "binary")]
+    let summary = {
+        let mut summary = summary;
+        summary.push((
+            "binary deep analysis degraded to strings-only (Ghidra failed or output too large)"
+                .to_string(),
+            keyhog_sources::binary_degraded_to_strings(),
+        ));
+        summary
+    };
+
+    summary.into_iter().filter(|(_, n)| *n > 0).collect()
 }

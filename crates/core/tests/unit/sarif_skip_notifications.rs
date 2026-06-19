@@ -1,4 +1,4 @@
-//! SARIF coverage transparency: skipped files surface as
+//! SARIF coverage transparency: skipped and partially covered inputs surface as
 //! `runs[0].invocations[].toolExecutionNotifications` so a consuming platform
 //! knows the scan did not cover the whole tree (a "no results" run with skips is
 //! not a clean bill of health). Zero-count categories are omitted; an all-clean
@@ -60,17 +60,14 @@ fn sarif_skip_summary_emits_tool_execution_notifications() {
 
     for n in notes {
         assert_eq!(n["level"].as_str(), Some("note"));
-        assert_eq!(
-            n["descriptor"]["id"].as_str(),
-            Some("keyhog/files-not-scanned")
-        );
+        assert_eq!(n["descriptor"]["id"].as_str(), Some("keyhog/coverage-gap"));
     }
     assert!(
         notes.iter().any(|n| n["message"]["text"]
             .as_str()
             .unwrap()
-            .contains("5 file(s) not scanned: binary")),
-        "notification text must state the count and reason"
+            .contains("5 coverage gap(s): binary")),
+        "notification text must state the count and coverage-gap reason"
     );
 }
 

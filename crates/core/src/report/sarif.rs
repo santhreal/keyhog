@@ -32,13 +32,15 @@ pub(crate) struct SarifReporter<W: Write + Send> {
     prefix_written: bool,
     /// Tracks whether at least one result has been emitted (for comma logic).
     any_result: bool,
-    /// `(reason, count)` pairs of files the scan did NOT analyze (oversize,
-    /// binary, default-excluded, unreadable). Surfaced as SARIF
+    /// `(reason, count)` pairs of scan coverage gaps: whole-file skips
+    /// (oversize, binary, default-excluded, unreadable) and partial-coverage
+    /// degradations (truncated source scans, structured parse fallbacks, binary
+    /// deep-analysis degradation). Surfaced as SARIF
     /// `invocations[].toolExecutionNotifications` so a consuming platform can
-    /// interpret coverage correctly — "no results" is not "clean" if files were
-    /// skipped. Empty = no notifications block. Set by the caller (which owns the
-    /// source-layer counters) via [`Self::with_skip_summary`]; kept as plain
-    /// `(String, usize)` so `core` takes no dependency on the sources crate.
+    /// interpret coverage correctly. Empty = no notifications block. Set by the
+    /// caller (which owns the source-layer counters) via [`Self::with_skip_summary`];
+    /// kept as plain `(String, usize)` so `core` takes no dependency on the
+    /// sources crate.
     skip_summary: Vec<(String, usize)>,
 }
 
@@ -59,7 +61,7 @@ impl<W: Write + Send> SarifReporter<W> {
         }
     }
 
-    /// Attach a skipped-file summary, surfaced as SARIF
+    /// Attach scan coverage-gap summary entries, surfaced as SARIF
     /// `invocations[].toolExecutionNotifications`. Each `(reason, count)` with a
     /// non-zero count becomes one `note`-level notification. No-op for empty
     /// input. See [`Self::skip_summary`].
@@ -415,11 +417,12 @@ impl<W: Write + Send> Reporter for SarifReporter<W> {
         write!(self.writer, ",\"taxonomies\":")?;
         serde_json::to_writer(&mut self.writer, &sarif_taxonomies_json())?;
 
-        // Coverage transparency: report files the scan did not analyze as SARIF
-        // tool-execution notifications, so a platform consuming the run knows the
-        // tree was not fully covered (a "no results" run with skips is not a clean
-        // bill of health). `executionSuccessful` stays true — skipping is expected,
-        // not a failure.
+        // Coverage transparency: report whole-file skips and partial scan
+        // degradations as SARIF tool-execution notifications, so a platform
+        // consuming the run knows the tree was not fully covered. A "no results"
+        // run with coverage gaps is not a clean bill of health.
+        // `executionSuccessful` stays true: these notifications describe scan
+        // coverage, not a reporter failure.
         if !self.skip_summary.is_empty() {
             let notifications: Vec<serde_json::Value> = self
                 .skip_summary
@@ -427,8 +430,8 @@ impl<W: Write + Send> Reporter for SarifReporter<W> {
                 .map(|(reason, count)| {
                     serde_json::json!({
                         "level": "note",
-                        "message": { "text": format!("{count} file(s) not scanned: {reason}") },
-                        "descriptor": { "id": "keyhog/files-not-scanned" },
+                        "message": { "text": format!("{count} coverage gap(s): {reason}") },
+                        "descriptor": { "id": "keyhog/coverage-gap" },
                         "properties": { "count": count, "reason": reason },
                     })
                 })
