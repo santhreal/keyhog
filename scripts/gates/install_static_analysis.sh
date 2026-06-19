@@ -41,6 +41,17 @@ shell_dialect() {
     esac
 }
 
+installer_release_api_gate() {
+    if grep -nE 'releases_json=.*2>/dev/null[[:space:]]*\|\|[[:space:]]*true' install.sh; then
+        echo "install.sh must surface release API lookup failures; do not hide them with 2>/dev/null || true." >&2
+        return 1
+    fi
+    if ! grep -q 'GitHub API error:' install.sh; then
+        echo "install.sh must print the first release API error line for operator triage." >&2
+        return 1
+    fi
+}
+
 shellcheck_targets=(install.sh)
 shfmt_parse_targets=(install.sh)
 shfmt_diff_targets=(scripts/gates/install_static_analysis.sh)
@@ -51,6 +62,8 @@ for file in "${shellcheck_targets[@]}"; do
         bash) run "bash syntax: ${file}" bash -n "$file" ;;
     esac
 done
+
+run "Installer release API error surfacing" installer_release_api_gate
 
 if need_tool shellcheck; then
     for file in "${shellcheck_targets[@]}"; do

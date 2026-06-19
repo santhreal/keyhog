@@ -490,7 +490,10 @@ case "$url" in
   *api.github.com*releases*)
     : > "$HOME/github-api-called"
     case " $* " in *"Authorization: Bearer "*) : > "$HOME/github-api-auth" ;; esac
-    if [ "${MOCK_RELEASES:-DOWN}" = "DOWN" ]; then exit 22; fi
+    if [ "${MOCK_RELEASES:-DOWN}" = "DOWN" ]; then
+      echo "mock GitHub API down" >&2
+      exit 22
+    fi
     emit < "$MOCK_RELEASES"; exit 0 ;;
   *.sha256)
     case "${MOCK_SHA:-absent}" in
@@ -613,10 +616,11 @@ expect_status "2.10 all-empty exits 1" 1 "$st"
 rm -rf "$h"; h=$(newhome)
 out=$(MOCK_LATEST_ASSET=404 run_install "$sb" "$h" -- --no-prompt); st=$?    # MOCK_RELEASES unset => DOWN
 expect_match  "2.11 API down errors clearly after latest miss" "Could not query GitHub releases API" "$out"
-expect_status "2.12 API down exits 1" 1 "$st"
+expect_match  "2.12 API down surfaces curl detail" "GitHub API error: mock GitHub API down" "$out"
+expect_status "2.13 API down exits 1" 1 "$st"
 rm -rf "$h"; h=$(newhome)
 out=$(KEYHOG_VERSION=v1.2.3 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt)
-expect_match  "2.13 --version pin skips API" "Release tag:   v1.2.3" "$out"
+expect_match  "2.14 --version pin skips API" "Release tag:   v1.2.3" "$out"
 rm -rf "$h"; h=$(newhome)
 # A bare semver (no leading v) must normalise to the v-prefixed tag. keyhog
 # tags are all vX.Y.Z, so `--version=9.9.9` building a download URL from the
@@ -624,8 +628,8 @@ rm -rf "$h"; h=$(newhome)
 # (the smoke passed "0.5.37", not "v0.5.37"). Assert the resolved tag is v-fixed
 # AND the install completes, so the 404 can never come back silently.
 out=$(KEYHOG_VERSION=9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match  "2.14 bare semver normalises to v-prefixed tag" "Release tag:   v9.9.9" "$out"
-expect_status "2.15 bare-semver install exits 0" 0 "$st"
+expect_match  "2.15 bare semver normalises to v-prefixed tag" "Release tag:   v9.9.9" "$out"
+expect_status "2.16 bare-semver install exits 0" 0 "$st"
 rm -rf "$sb" "$h"
 
 # ======================================================================

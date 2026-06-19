@@ -392,9 +392,21 @@ resolve_tag_from_api() {
     # /releases (most-recent first) and pick the newest tag that has
     # ANY asset attached. This survives a one-off release-workflow
     # failure without forcing the operator to pass --version manually.
-    releases_json=$(github_api_get "https://api.github.com/repos/$REPO/releases?per_page=10" 2>/dev/null || true)
+    releases_api_err=$(mktemp "${TMPDIR:-/tmp}/keyhog-releases-api.XXXXXX")
+    if ! releases_json=$(github_api_get "https://api.github.com/repos/$REPO/releases?per_page=10" 2>"$releases_api_err"); then
+        releases_api_msg=$(sed -n '1p' "$releases_api_err")
+        rm -f "$releases_api_err"
+        err "Could not query GitHub releases API."
+        if [ -n "$releases_api_msg" ]; then
+            err "GitHub API error: $releases_api_msg"
+        fi
+        err "Try --version=v0.5.37 (or another known tag) explicitly."
+        exit 1
+    fi
+    rm -f "$releases_api_err"
     if [ -z "$releases_json" ]; then
         err "Could not query GitHub releases API."
+        err "GitHub releases API returned an empty response."
         err "Try --version=v0.5.37 (or another known tag) explicitly."
         exit 1
     fi
