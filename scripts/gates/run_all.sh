@@ -173,9 +173,9 @@ else
 fi
 echo
 
-echo "== ML feature parity: Rust dump_features vs ml/features.py =="
+echo "== ML feature parity: Rust dump_features vs ml/feature_parity.py =="
 # parity_check.py compares the Rust serve-path feature extractor against the
-# Python trainer port. It needs the Rust extractor: a prebuilt $KEYHOG_DUMP_FEATURES
+# Python parity/debug port. It needs the Rust extractor: a prebuilt $KEYHOG_DUMP_FEATURES
 # binary (what CI builds once and exports) — we do NOT trigger a cargo build from
 # this fast entrypoint. Absent the script entirely, or the prebuilt binary, we
 # loud-skip.

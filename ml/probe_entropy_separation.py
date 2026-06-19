@@ -4,7 +4,7 @@
 Reconstructs the SHIPPED model (crates/scanner/src/weights.bin) forward pass in
 numpy — byte-identical layout to ml_weights.rs / train_classifier.serialize —
 and scores a battery of (a) real high-entropy SECRETS and (b) structured
-high-entropy NON-secrets, using the parity-confirmed feature port (features.py).
+high-entropy NON-secrets, using the Rust serve-path feature extractor.
 
 If the shipped model scores the TP cluster well above the FP cluster, routing
 the entropy fallback through the MoE will suppress entropy FPs while preserving
@@ -16,15 +16,16 @@ currently can't".
 """
 import struct
 import sys
+from pathlib import Path
 
 import numpy as np
 
 import config_lists
-import features as featmod
+import rust_features
 
-D = featmod.NUM_FEATURES  # 42
+D = rust_features.NUM_FEATURES  # 42
 EXPERT_COUNT, FC1, FC2 = 6, 32, 16
-WEIGHTS = "../crates/scanner/src/weights.bin"
+WEIGHTS = Path(__file__).resolve().parents[1] / "crates/scanner/src/weights.bin"
 
 
 def load_weights(path):
@@ -74,13 +75,10 @@ def forward(x, gate_w, gate_b, experts):
     return float(fast_sigmoid((gp * logits).sum()))
 
 
-def score(text, context, model):
+def feature_vectors(cases):
     kp, sk, tk, pk = config_lists.DEFAULT_LISTS
-    vec = np.asarray(
-        featmod.compute_features(text, context, kp, sk, tk, pk, with_decode=True),
-        dtype=np.float64,
-    )
-    return forward(vec, *model)
+    records = [{"text": text, "context": context} for text, context in cases]
+    return rust_features.compute_feature_matrix(records, (kp, sk, tk, pk), D).astype(np.float64)
 
 
 # Real high-entropy SECRETS that reach the entropy fallback (expect HIGH).
@@ -110,16 +108,18 @@ FP = [
 
 def main():
     model = load_weights(WEIGHTS)
+    tp_vectors = feature_vectors(TP)
+    fp_vectors = feature_vectors(FP)
     print(f"shipped model: D={D}, {EXPERT_COUNT} experts\n")
     tp_scores, fp_scores = [], []
     print("== TP (real secrets — want HIGH) ==")
-    for t, c in TP:
-        s = score(t, c, model)
+    for (t, _c), vec in zip(TP, tp_vectors):
+        s = forward(vec, *model)
         tp_scores.append(s)
         print(f"  {s:.3f}  {t[:42]}")
     print("\n== FP (structured non-secrets — want LOW) ==")
-    for t, c in FP:
-        s = score(t, c, model)
+    for (t, _c), vec in zip(FP, fp_vectors):
+        s = forward(vec, *model)
         fp_scores.append(s)
         print(f"  {s:.3f}  {t[:42]}")
     tp = np.array(tp_scores)

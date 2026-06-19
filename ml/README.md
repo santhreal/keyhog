@@ -91,11 +91,12 @@ direct copy.
 | file | role |
 |------|------|
 | `decode_structure.py` | byte-exact port of `decode_structure.rs` (feature #41 + corpus oracle) |
-| `features.py` | byte-exact port of `ml_features.rs` (the 42-dim feature vector) |
+| `rust_features.py` | training feature source; batches records through Rust `dump_features` |
+| `feature_parity.py` | parity/debug port of `ml_features.rs` (not used for training features) |
 | `config_lists.py` | serve-path detector keyword lists, mirror of `config.rs` |
 | `corpus.py` | labeled training corpus generator (heavy base64-of-binary negatives) |
 | `train_classifier.py` | trains the MoE, evaluates, serializes `weights.bin` |
-| `parity_check.py` | asserts `features.py` == the Rust serve-path extractor |
+| `parity_check.py` | asserts the Python debug port still matches the Rust serve-path extractor |
 
 ## Retraining
 
@@ -109,10 +110,12 @@ KEYHOG_DUMP_FEATURES=$(find "$CARGO_TARGET_DIR" -path '*examples/dump_features' 
 # 2. generate the corpus
 python3 ml/corpus.py --out ml/data/corpus.jsonl
 
-# 3. train + install (backs up the existing weights.bin to .bak, refuses to
-#    write if held-out F1 < --min-f1). --compare also reports the 41-feature
-#    baseline on the same split.
-python3 ml/train_classifier.py --corpus ml/data/corpus.jsonl \
+# 3. train + install. Training reads the same Rust serve-path feature extractor
+#    via KEYHOG_DUMP_FEATURES, backs up the existing weights.bin to .bak, and
+#    refuses to write if held-out F1 < --min-f1. --compare also reports the
+#    41-feature baseline on the same split.
+KEYHOG_DUMP_FEATURES=$(find "$CARGO_TARGET_DIR" -path '*examples/dump_features' -type f | head -1) \
+  python3 ml/train_classifier.py --corpus ml/data/corpus.jsonl \
     --features 42 --compare --write --out crates/scanner/src/weights.bin
 
 # 4. rebuild and run the scanner ML tests against the new weights
@@ -121,10 +124,12 @@ cargo test -p keyhog-scanner ml_scorer
 
 ## Parity contract
 
-`features.py` and `decode_structure.py` must compute byte-identical results to
-their Rust counterparts; `parity_check.py` enforces this across an input battery
-(41/42 features). The one tolerated gap is the continuous entropy feature
+Training features come from Rust `dump_features`, not a Python port; that keeps
+the trainer and scanner on one extractor. `feature_parity.py` and
+`decode_structure.py` remain debug/parity ports and must compute byte-identical
+results to their Rust counterparts; `parity_check.py` enforces this across an
+input battery (41/42 features). The one tolerated gap is the continuous entropy feature
 (#4): the serve path uses an x86 SIMD entropy kernel that accumulates in f32
 (~0.2% vs the exact f64 value), so feature #4 is checked to 5e-3 while the
 entropy threshold features (#5,#6,#7) and every other feature are exact. A
-mismatch anywhere else is train/serve skew and blocks a retrain.
+mismatch anywhere else means the debug oracle is stale and blocks a retrain.

@@ -37,7 +37,7 @@ import sys
 import numpy as np
 
 import config_lists
-import features as featmod
+import rust_features
 
 EXPERT_COUNT = 6
 FC1 = 32
@@ -52,21 +52,18 @@ def fast_sigmoid(x):
 
 def load_corpus(path: str, num_features: int):
     kp, sk, tk, pk = config_lists.DEFAULT_LISTS
-    with_decode = num_features == featmod.NUM_FEATURES
-    X, y, kinds = [], [], []
+    records, y, kinds = [], [], []
     with open(path) as fh:
         for line in fh:
             line = line.strip()
             if not line:
                 continue
             rec = json.loads(line)
-            vec = featmod.compute_features(
-                rec["text"], rec["context"], kp, sk, tk, pk, with_decode=with_decode
-            )
-            X.append(vec)
+            records.append(rec)
             y.append(float(rec["label"]))
             kinds.append(rec.get("kind", ""))
-    return np.asarray(X, dtype=np.float32), np.asarray(y, dtype=np.float32), kinds
+    X = rust_features.compute_feature_matrix(records, (kp, sk, tk, pk), num_features)
+    return X, np.asarray(y, dtype=np.float32), kinds
 
 
 def build_model(num_features: int):
@@ -170,23 +167,19 @@ def load_real_corpus(path, num_features):
     """Load harvested real records {text, context, label, kind, source_file}.
     Returns (X, y, kinds, files); `files` drives the no-leakage grouped split."""
     kp, sk, tk, pk = config_lists.DEFAULT_LISTS
-    with_decode = num_features == featmod.NUM_FEATURES
-    X, y, kinds, files = [], [], [], []
+    records, y, kinds, files = [], [], [], []
     with open(path) as fh:
         for line in fh:
             line = line.strip()
             if not line:
                 continue
             rec = json.loads(line)
-            X.append(
-                featmod.compute_features(
-                    rec["text"], rec["context"], kp, sk, tk, pk, with_decode=with_decode
-                )
-            )
+            records.append(rec)
             y.append(float(rec["label"]))
             kinds.append(rec.get("kind", ""))
             files.append(rec.get("source_file", ""))
-    return np.asarray(X, dtype=np.float32), np.asarray(y, dtype=np.float32), kinds, files
+    X = rust_features.compute_feature_matrix(records, (kp, sk, tk, pk), num_features)
+    return X, np.asarray(y, dtype=np.float32), kinds, files
 
 
 def _group_split(files, seed, fracs=(0.70, 0.15, 0.15)):
@@ -301,7 +294,6 @@ def probe(model, num_features: int):
     import torch
 
     kp, sk, tk, pk = config_lists.DEFAULT_LISTS
-    with_decode = num_features == featmod.NUM_FEATURES
     png = base64.b64encode(b"\x89PNG\r\n\x1a\n" + bytes(range(24))).decode()
     # Fragment-assembled so this source file carries no full token literal.
     ghp = "gh" + "p_" + "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij"
@@ -327,9 +319,10 @@ def probe(model, num_features: int):
     ]
     model.eval()
     out = {}
+    records = [{"text": text, "context": ctx} for _name, text, ctx, _want in cases]
+    vectors = rust_features.compute_feature_matrix(records, (kp, sk, tk, pk), num_features)
     with torch.no_grad():
-        for name, text, ctx, want in cases:
-            vec = featmod.compute_features(text, ctx, kp, sk, tk, pk, with_decode=with_decode)
+        for (name, _text, _ctx, want), vec in zip(cases, vectors):
             s = float(model(torch.tensor([vec], dtype=torch.float32))[0])
             out[name] = {"score": round(s, 3), "want": want}
     return out

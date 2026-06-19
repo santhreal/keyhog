@@ -1,11 +1,10 @@
-"""Byte-exact Python port of `crates/scanner/src/ml_scorer/ml_features.rs`.
+"""Python parity/debug port of `crates/scanner/src/ml_scorer/ml_features.rs`.
 
-This is the single most parity-critical file in the ML pipeline: a model
-trained on features computed here is only valid if these features match what
-the Rust scanner computes at serve time. The parity harness
-(`ml/parity_check.py`) drives a battery of inputs through both the Rust
+Training uses `ml/rust_features.py`, which calls the Rust `dump_features`
+serve-path extractor. This file exists only as a parity/debug oracle:
+`ml/parity_check.py` drives a battery of inputs through both the Rust
 `compute_features_with_config` and this module and asserts agreement to within
-1e-5; any drift here silently corrupts a retrained model (train/serve skew).
+1e-5.
 
 Base layout (indices, mirrors the Rust comment "37 base + 4 padding = 41"):
   0-3   length        4-7   entropy        8-11  char class

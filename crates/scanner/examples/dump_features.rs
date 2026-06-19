@@ -1,8 +1,8 @@
 //! Feature-parity oracle for the ML training pipeline.
 //!
 //! Reads one record per stdin line and prints the scanner's serve-path feature
-//! vector for it, so `ml/parity_check.py` can assert the Python port in
-//! `ml/features.py` computes byte-identical features. Without this check a
+//! vector for it, so `ml/parity_check.py` can assert the Python parity port in
+//! `ml/feature_parity.py` computes byte-identical features. Without this check a
 //! retrained model silently inherits train/serve skew.
 //!
 //! Line protocol (avoids a JSON dependency): six space-separated base64

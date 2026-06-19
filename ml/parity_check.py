@@ -2,7 +2,7 @@
 """Assert the Python feature port matches the Rust serve-path extractor.
 
 Generates an input battery that stresses every feature group, runs both the
-Rust `dump_features` example and `ml/features.py`, and fails loudly on any
+Rust `dump_features` example and `ml/feature_parity.py`, and fails loudly on any
 per-feature disagreement > TOL. This gate must pass before any retrained
 weights.bin is trusted: a mismatch here is train/serve skew.
 
@@ -12,20 +12,18 @@ prebuilt `dump_features` binary), else `cargo run --example dump_features`.
 
 from __future__ import annotations
 
-import base64
-import os
-import subprocess
 import sys
 
 import config_lists
-import features
+import feature_parity
+import rust_features
 
 TOL = 1e-5
 
 # Feature 4 is the only CONTINUOUS entropy feature (Shannon entropy / 8.0). At
 # serve time the scanner computes entropy through an x86 SIMD kernel that
 # accumulates in f32, so it carries ~0.2% error vs the mathematically exact
-# f64 value `features.py` computes (verified: true log2(5)=2.321928, Rust
+# f64 value `feature_parity.py` computes (verified: true log2(5)=2.321928, Rust
 # SIMD=2.31768). This is a normalized input feature and the high-signal entropy
 # THRESHOLD features (5,6,7) are exact, so the residual is below model noise.
 # Bound it explicitly rather than hide it.
@@ -102,51 +100,14 @@ def build_battery() -> list[tuple[str, str, tuple]]:
     return records
 
 
-def encode_line(text: str, context: str, lists: tuple) -> str:
-    def b64(s: str) -> str:
-        if not s:
-            return ""
-        return base64.b64encode(s.encode("utf-8")).decode("ascii")
-
-    kp, sk, tk, pk = lists
-    fields = [
-        b64(text),
-        b64(context),
-        b64("\n".join(kp)),
-        b64("\n".join(sk)),
-        b64("\n".join(tk)),
-        b64("\n".join(pk)),
-    ]
-    return " ".join(fields)
-
-
-def run_rust(lines: list[str]) -> list[list[float]]:
-    binpath = os.environ.get("KEYHOG_DUMP_FEATURES")
-    if binpath:
-        cmd = [binpath]
-    else:
-        # Default features (the lean --no-default-features path is a separate
-        # in-flight build fix); compute_features_with_config is feature-agnostic.
-        cmd = [
-            "cargo", "run", "-q", "-p", "keyhog-scanner",
-            "--example", "dump_features",
-        ]
-    proc = subprocess.run(
-        cmd,
-        input="\n".join(lines).encode("utf-8"),
-        capture_output=True,
-    )
-    if proc.returncode != 0:
-        sys.stderr.write(proc.stderr.decode("utf-8", "replace"))
-        raise SystemExit(f"rust dump_features failed (exit {proc.returncode})")
-    out = proc.stdout.decode("utf-8").strip().splitlines()
-    return [[float(x) for x in line.split()] for line in out]
-
-
 def main() -> int:
     battery = build_battery()
-    lines = [encode_line(t, c, l) for (t, c, l) in battery]
-    rust_vectors = run_rust(lines)
+    lines = [rust_features.encode_record(t, c, l) for (t, c, l) in battery]
+    try:
+        rust_vectors = rust_features.run_dump_features(lines)
+    except RuntimeError as error:
+        sys.stderr.write(f"{error}\n")
+        return 1
 
     if len(rust_vectors) != len(battery):
         raise SystemExit(f"row count mismatch: rust={len(rust_vectors)} py={len(battery)}")
@@ -155,7 +116,7 @@ def main() -> int:
     for idx, ((text, context, lists), rv) in enumerate(zip(battery, rust_vectors)):
         kp, sk, tk, pk = lists
         # Compare the full 42-feature vector (includes decode-structure #41).
-        pv = features.compute_features(text, context, kp, sk, tk, pk, with_decode=True)
+        pv = feature_parity.compute_features(text, context, kp, sk, tk, pk, with_decode=True)
         if len(rv) != len(pv):
             print(f"[row {idx}] WIDTH mismatch rust={len(rv)} py={len(pv)} text={text!r}")
             fails += 1
@@ -177,9 +138,9 @@ def main() -> int:
                 )
                 fails += 1
 
-    total = len(battery) * features.NUM_FEATURES
+    total = len(battery) * feature_parity.NUM_FEATURES
     if fails == 0:
-        print(f"PARITY OK: {len(battery)} records x {features.NUM_FEATURES} features "
+        print(f"PARITY OK: {len(battery)} records x {feature_parity.NUM_FEATURES} features "
               f"= {total} values match within {TOL}")
         return 0
     print(f"PARITY FAILED: {fails} mismatched values")

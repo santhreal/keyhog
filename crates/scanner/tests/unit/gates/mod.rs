@@ -148,6 +148,7 @@ pub mod ml_score_cardinality;
 pub mod ml_scorer_no_inline_tests;
 pub mod ml_scorer_no_unwrap_expect;
 pub mod ml_scorer_non_empty;
+pub mod ml_training_feature_source;
 pub mod ml_weights_no_inline_tests;
 pub mod ml_weights_no_unwrap_expect;
 pub mod ml_weights_non_empty;
