@@ -14,7 +14,7 @@ use self::workload::{workload_key, WorkloadClassificationError, WorkloadKey};
 use keyhog_core::Chunk;
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
 use keyhog_scanner::CompiledScanner;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
 
@@ -37,6 +37,7 @@ pub(super) struct MeasuredBackendRouter {
     calibration_mode: bool,
     host_profile: AutorouteHostProfile,
     decisions: HashMap<WorkloadKey, AutorouteDecision>,
+    measured_this_run: HashSet<WorkloadKey>,
     cache_path: Option<PathBuf>,
     cache_load_error: Option<String>,
     cache_dirty: bool,
@@ -239,6 +240,7 @@ impl MeasuredBackendRouter {
             calibration_mode,
             host_profile,
             decisions,
+            measured_this_run: HashSet::new(),
             cache_path,
             cache_load_error,
             cache_dirty: false,
@@ -256,10 +258,8 @@ impl MeasuredBackendRouter {
         }
         let key = workload_key(batch, self.pattern_count)
             .map_err(AutorouteRoutingError::incomplete_workload_evidence)?;
-        if let Some(decision) = self.decisions.get(&key) {
-            if let Some(backend) = decision.backend() {
-                return Ok(backend);
-            }
+        if let Some(backend) = self.reusable_decision_backend(&key) {
+            return Ok(backend);
         }
 
         if !self.calibration_mode {
@@ -290,9 +290,17 @@ impl MeasuredBackendRouter {
             }
         };
         self.decisions.insert(key, decision);
+        self.measured_this_run.insert(key);
         self.cache_dirty = true;
         self.save_cache()?;
         Ok(backend)
+    }
+
+    fn reusable_decision_backend(&self, key: &WorkloadKey) -> Option<ScanBackend> {
+        if self.calibration_mode && !self.measured_this_run.contains(key) {
+            return None;
+        }
+        self.decisions.get(key).and_then(AutorouteDecision::backend)
     }
 
     fn save_cache(&mut self) -> Result<(), AutorouteRoutingError> {

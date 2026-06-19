@@ -500,6 +500,7 @@ fn measured_router_clears_dirty_after_successful_cache_save() {
         calibration_mode: true,
         host_profile: host,
         decisions,
+        measured_this_run: HashSet::new(),
         cache_path: Some(path.clone()),
         cache_load_error: None,
         cache_dirty: true,
@@ -517,6 +518,65 @@ fn measured_router_clears_dirty_after_successful_cache_save() {
         .expect("clean autoroute cache save should be a no-op");
 
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
+fn calibration_mode_remeasures_loaded_cache_decisions_before_reuse() {
+    let host = test_host(None);
+    let key = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        key,
+        AutorouteDecision::new(
+            ScanBackend::CpuFallback,
+            8 * 1024 * 1024,
+            1,
+            12,
+            Some(8),
+            None,
+        ),
+    );
+    let mut router = MeasuredBackendRouter {
+        hw_caps: keyhog_scanner::hw_probe::HardwareCaps {
+            physical_cores: 8,
+            logical_cores: 16,
+            has_avx2: true,
+            has_avx512: false,
+            has_neon: false,
+            gpu_available: false,
+            gpu_name: None,
+            gpu_vram_mb: None,
+            gpu_runtime_identity: None,
+            gpu_is_software: false,
+            total_memory_mb: Some(65_536),
+            io_uring_available: false,
+            hyperscan_available: true,
+        },
+        pattern_count: 902,
+        detector_digest: 0x1234_5678_9ABC_DEF0,
+        rules_digest: test_rules_digest().to_string(),
+        config_digest: 0xA55A_D00D_CAFE_BEEF,
+        autoroute_gpu: false,
+        calibration_mode: true,
+        host_profile: host,
+        decisions,
+        measured_this_run: HashSet::new(),
+        cache_path: None,
+        cache_load_error: None,
+        cache_dirty: false,
+    };
+
+    assert_eq!(
+        router.reusable_decision_backend(&key),
+        None,
+        "calibration mode must not reuse a persisted cache row before this run remeasures the bucket"
+    );
+    router.measured_this_run.insert(key);
+    assert_eq!(
+        router.reusable_decision_backend(&key),
+        Some(ScanBackend::CpuFallback),
+        "once the bucket is measured during this calibration run, duplicate batches may reuse the new in-memory decision"
+    );
 }
 
 #[test]
