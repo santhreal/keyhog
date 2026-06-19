@@ -921,11 +921,21 @@ mod tests {
             "embedded detector corpus must include prefixless always-active phase-2 candidates \
              for KH-VYRE-5 GPU regex-DFA coverage"
         );
-        let selected_len = candidates.len().min(8);
+        let selected = prioritized_phase2_gpu_dfa_candidates(
+            &scanner.phase2_patterns,
+            &candidates,
+            PHASE2_GPU_DFA_MAX_CANDIDATES,
+        );
+        assert_eq!(
+            selected.len(),
+            candidates.len().min(PHASE2_GPU_DFA_MAX_CANDIDATES),
+            "production GPU DFA selection must fill the configured shard budget when the embedded corpus has enough candidates"
+        );
+        let selected_len = selected.len().min(8);
         let catalog = Phase2GpuDfaCatalog::build_from_selected_candidates(
             &scanner.phase2_patterns,
             candidates.len(),
-            &candidates[..selected_len],
+            &selected[..selected_len],
             Phase2GpuDfaProgramKind::CudaCompatible,
         )
         .expect("selected embedded prefixless phase-2 candidates must lower to at least one GPU DFA shard");
