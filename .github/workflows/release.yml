@@ -176,20 +176,16 @@ jobs:
           set -euo pipefail
           tag="$KEYHOG_RELEASE_TAG"
           asset="$KEYHOG_RELEASE_ASSET"
-          # Create the release if it doesn't already exist; `|| true`
-          # silently no-ops the create when the tag-trigger has already
-          # produced a draft release.
-          # Two matrix jobs (linux + macos) race here. If both see "release
-          # does not exist" they BOTH call `gh release create`; the second
-          # one fails with "already_exists" and the shell aborts on
-          # `set -euo pipefail`, dropping the upload for that matrix arm.
-          # The trailing `|| true` on the create swallows the "second to
-          # try wins" no-op so both arms reach the upload step.
-          gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 || \
-            gh release create "$tag" \
+          # Two matrix jobs can race on release creation. If create loses that
+          # race, prove the release now exists; any other failure stays fatal.
+          if ! gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if ! gh release create "$tag" \
               --repo "$GITHUB_REPOSITORY" \
               --title "$tag" \
-              --notes "Prebuilt keyhog binaries for $tag. See CHANGELOG.md." || true
+              --notes "Prebuilt keyhog binaries for $tag. See CHANGELOG.md."; then
+              gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null
+            fi
+          fi
           gh release upload "$tag" \
             "$asset" \
             "$asset.sha256" \

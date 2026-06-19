@@ -2125,6 +2125,28 @@ fn release_workflow_validates_manual_tag_before_shell_outputs() {
 }
 
 #[test]
+fn release_upload_create_race_fails_closed() {
+    let workflow = fs::read_to_string(release_workflow()).expect("read release.yml");
+    let upload = workflow
+        .split("- name: Upload to release")
+        .nth(1)
+        .and_then(|tail| tail.split("# Sign every uploaded binary").next())
+        .expect("release upload step exists");
+    assert!(
+        upload.contains("if ! gh release create"),
+        "release upload must handle matrix create races explicitly"
+    );
+    assert!(
+        upload.contains("gh release view \"$tag\" --repo \"$GITHUB_REPOSITORY\" >/dev/null"),
+        "release upload must prove the release exists after a failed create"
+    );
+    assert!(
+        !upload.contains("|| true"),
+        "release upload must not hide release-create failures behind `|| true`"
+    );
+}
+
+#[test]
 fn action_wires_verify_baseline_and_paths_as_single_arguments() {
     let dir = TempDir::new().expect("tempdir");
     let args_path = dir.path().join("args.txt");
