@@ -258,8 +258,8 @@ fn run_fix(args: &DetectorArgs) -> Result<ExitCode> {
     }
 
     let mut total_files = 0usize;
-    let mut files_changed = 0usize;
-    let mut total_rewrites = 0usize;
+    let mut planned_rewrites: Vec<(PathBuf, String, usize)> = Vec::new();
+    let mut invalid_rewrites: Vec<(PathBuf, String)> = Vec::new();
 
     for entry in entries {
         total_files += 1;
@@ -270,19 +270,39 @@ fn run_fix(args: &DetectorArgs) -> Result<ExitCode> {
             continue;
         }
         // Re-validate by parsing the rewritten content. If serde rejects
-        // it (we corrupted the TOML), back off rather than save garbage.
-        if toml::from_str::<DetectorFile>(&rewritten).is_err() {
-            eprintln!(
-                "warn: skipping {}: rewrite produced invalid TOML; please file a bug",
-                entry.display()
-            );
+        // it (or the input detector was already malformed), abort before
+        // writing any file. A mutation command exiting 0 after skipping a
+        // rewrite makes the operator believe the directory was fixed.
+        if let Err(error) = toml::from_str::<DetectorFile>(&rewritten) {
+            invalid_rewrites.push((entry, error.to_string()));
             continue;
         }
-        files_changed += 1;
-        total_rewrites += count;
+        planned_rewrites.push((entry, rewritten, count));
+    }
+
+    if !invalid_rewrites.is_empty() {
+        let details = invalid_rewrites
+            .iter()
+            .map(|(path, error)| format!("  - {}: {error}", path.display()))
+            .collect::<Vec<_>>()
+            .join("\n");
+        anyhow::bail!(
+            "--fix could not safely rewrite {} detector file(s); no files were written.\n{details}\n\
+             Fix the detector TOML or file a bug with the rewrite candidate.",
+            invalid_rewrites.len()
+        );
+    }
+
+    let files_changed = planned_rewrites.len();
+    let total_rewrites = planned_rewrites
+        .iter()
+        .map(|(_, _, count)| *count)
+        .sum::<usize>();
+
+    for (entry, rewritten, count) in planned_rewrites {
         if args.dry_run {
             println!(
-                "would fix {}: {} single-brace → double-brace rewrite(s)",
+                "would fix {}: {} single-brace -> double-brace rewrite(s)",
                 entry.display(),
                 count
             );

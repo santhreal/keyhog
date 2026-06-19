@@ -8,6 +8,7 @@ pub mod cli_surface;
 pub mod daemon_route_forced_contract;
 pub mod daemon_scan_path_utf16;
 pub mod daemon_status_no_running_daemon;
+pub mod detectors_fix_invalid_rewrite;
 pub mod detectors_format_flag_matches_json_alias;
 pub mod detectors_json_nonempty;
 pub mod detectors_search_aws;
