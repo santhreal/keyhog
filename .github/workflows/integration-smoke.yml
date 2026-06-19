@@ -154,17 +154,38 @@ jobs:
           keyhog hook install
           test -x .git/hooks/pre-commit || { echo "FAIL: pre-commit not installed"; exit 1; }
 
-      - name: Daemon start/status/stop (best-effort, do not fail)
+      - name: Daemon start/status/stop
         shell: bash
         env:
           NO_COLOR: "1"
         run: |
-          set +e
+          set -euo pipefail
           keyhog daemon start &
-          sleep 2
-          keyhog daemon status
+          daemon_pid=$!
+          cleanup() {
+            set +e
+            keyhog daemon stop >/dev/null 2>&1
+            kill "$daemon_pid" >/dev/null 2>&1
+            wait "$daemon_pid" 2>/dev/null
+          }
+          trap cleanup EXIT
+
+          ready=0
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            if keyhog daemon status; then
+              ready=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ready" != "1" ]; then
+            echo "FAIL: daemon did not become ready"
+            exit 1
+          fi
+
           keyhog daemon stop
-          echo "(daemon path is best-effort; failure logged, not fatal)"
+          wait "$daemon_pid"
+          trap - EXIT
 
       - name: Backend probe
         shell: bash

@@ -90,6 +90,13 @@ fn differential_bench_workflow() -> PathBuf {
         .expect("differential-bench.yml exists")
 }
 
+fn integration_smoke_workflow() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../.github/workflows/integration-smoke.yml")
+        .canonicalize()
+        .expect("integration-smoke.yml exists")
+}
+
 fn keyhog_binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
@@ -2144,6 +2151,41 @@ fn release_upload_create_race_fails_closed() {
         !upload.contains("|| true"),
         "release upload must not hide release-create failures behind `|| true`"
     );
+}
+
+#[test]
+fn integration_smoke_daemon_path_fails_closed() {
+    let workflow =
+        fs::read_to_string(integration_smoke_workflow()).expect("read integration-smoke.yml");
+    let daemon = workflow
+        .split("- name: Daemon start/status/stop")
+        .nth(1)
+        .and_then(|tail| tail.split("- name: Backend probe").next())
+        .expect("daemon smoke step exists");
+    assert!(
+        daemon.contains("set -euo pipefail"),
+        "daemon smoke step must fail the workflow on command failures"
+    );
+    assert!(
+        daemon.contains("keyhog daemon start &") && daemon.contains("daemon_pid=$!"),
+        "daemon smoke step must manage the foreground daemon process explicitly"
+    );
+    assert!(
+        daemon.contains("if keyhog daemon status; then")
+            && daemon.contains("FAIL: daemon did not become ready")
+            && daemon.contains("exit 1"),
+        "daemon smoke step must fail if status never succeeds"
+    );
+    assert!(
+        daemon.contains("keyhog daemon stop") && daemon.contains("wait \"$daemon_pid\""),
+        "daemon smoke step must prove stop and daemon process exit"
+    );
+    for retired in ["best-effort", "do not fail", "failure logged, not fatal"] {
+        assert!(
+            !daemon.contains(retired),
+            "daemon smoke step must not advertise advisory daemon coverage: {retired}"
+        );
+    }
 }
 
 #[test]
