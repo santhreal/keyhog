@@ -16,6 +16,12 @@ path = "crates/cli/src/benchmark.rs"
 path = "crates/cli/src/config.rs"
 
 [[module]]
+path = "crates/cli/src/config/limits.rs"
+
+[[module]]
+path = "crates/cli/src/config/schema.rs"
+
+[[module]]
 path = "crates/cli/src/daemon/client.rs"
 
 [[module]]
