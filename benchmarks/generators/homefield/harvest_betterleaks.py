@@ -28,15 +28,14 @@ Output (split layout the bench loader reads):
 """
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import pathlib
 import re
 import sys
 
-BL = pathlib.Path(
-    "/home/mukund-thiru/go/pkg/mod/github.com/betterleaks/betterleaks@v1.1.1"
-)
-RULES_DIR = BL / "cmd" / "generate" / "config" / "rules"
+BETTERLEAKS_MODULE = "github.com/betterleaks/betterleaks@v1.1.1"
 # Split layout under the canonical corpus home: answer key at
 # <home>/manifest.jsonl, neutrally-named scan tree at <home>/corpus/ — see
 # bench.corpora.homefield / bench.corpora.mirror for why the manifest must
@@ -44,7 +43,6 @@ RULES_DIR = BL / "cmd" / "generate" / "config" / "rules"
 _HOME = (
     pathlib.Path(__file__).resolve().parents[2] / "corpora" / "homefield" / "betterleaks"
 )
-OUT = _HOME / "corpus"
 
 # A Go double-quoted string that is the WHOLE element (optionally trailed by
 # a comma): the line, stripped, is exactly "..." or "...",. Anchored so a
@@ -54,6 +52,39 @@ _DQUOTE_ELEM = re.compile(r'^"((?:[^"\\]|\\.)*)"\s*,?$')
 # Raw (backtick) string element on a single line.
 _RAW_ELEM = re.compile(r"^`([^`]*)`\s*,?$")
 _RULEID = re.compile(r'RuleID:\s*"([^"]+)"')
+
+
+def _candidate_roots(explicit: str | None = None) -> list[pathlib.Path]:
+    roots: list[pathlib.Path] = []
+    if explicit:
+        roots.append(pathlib.Path(explicit).expanduser())
+    if os.environ.get("BETTERLEAKS_ROOT"):
+        roots.append(pathlib.Path(os.environ["BETTERLEAKS_ROOT"]).expanduser())
+    if os.environ.get("GOMODCACHE"):
+        roots.append(pathlib.Path(os.environ["GOMODCACHE"]).expanduser() / BETTERLEAKS_MODULE)
+    gopaths = os.environ.get("GOPATH")
+    if gopaths:
+        for entry in gopaths.split(os.pathsep):
+            if entry:
+                roots.append(
+                    pathlib.Path(entry).expanduser() / "pkg" / "mod" / BETTERLEAKS_MODULE
+                )
+    else:
+        roots.append(pathlib.Path.home() / "go" / "pkg" / "mod" / BETTERLEAKS_MODULE)
+    return roots
+
+
+def resolve_betterleaks_root(explicit: str | None = None) -> pathlib.Path:
+    tried: list[pathlib.Path] = []
+    for root in _candidate_roots(explicit):
+        tried.append(root)
+        if (root / "cmd" / "generate" / "config" / "rules").is_dir():
+            return root
+    attempts = "\n  - ".join(str(p) for p in tried)
+    raise FileNotFoundError(
+        "betterleaks rules dir not found. Pass --betterleaks-root or set "
+        f"BETTERLEAKS_ROOT. Tried:\n  - {attempts}"
+    )
 
 
 def _unescape_go(s: str) -> str:
@@ -103,10 +134,10 @@ def _extract_block(lines: list[str], start: int) -> tuple[list[str], int]:
     return vals, i
 
 
-def harvest() -> list[dict]:
+def harvest(rules_dir: pathlib.Path) -> list[dict]:
     records: list[dict] = []
     counter = 0
-    go_files = sorted(RULES_DIR.glob("*.go"))
+    go_files = sorted(rules_dir.glob("*.go"))
     for gf in go_files:
         text = gf.read_text(errors="replace")
         lines = text.splitlines()
@@ -149,32 +180,51 @@ def harvest() -> list[dict]:
     return records
 
 
-def write_corpus(records: list[dict]) -> None:
-    OUT.mkdir(parents=True, exist_ok=True)
-    manifest = _HOME / "manifest.jsonl"
+def write_corpus(records: list[dict], home: pathlib.Path = _HOME) -> pathlib.Path:
+    out_dir = home / "corpus"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    manifest = home / "manifest.jsonl"
     with open(manifest, "w") as mf:
         for rec in records:
             shard = rec["id"][-2:]
-            (OUT / shard).mkdir(exist_ok=True)
+            (out_dir / shard).mkdir(exist_ok=True)
             rel = f"{shard}/{rec['id']}.txt"
-            (OUT / rel).write_text(rec["value"])
+            (out_dir / rel).write_text(rec["value"])
             out = {k: v for k, v in rec.items() if k != "value"}
             out["on_disk_path"] = rel
             mf.write(json.dumps(out) + "\n")
+    return out_dir
 
 
 def main() -> int:
-    if not RULES_DIR.is_dir():
-        print(f"betterleaks rules dir not found: {RULES_DIR}", file=sys.stderr)
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument(
+        "--betterleaks-root",
+        default=None,
+        help="checkout or Go module-cache root for github.com/betterleaks/betterleaks@v1.1.1 "
+             "(also accepted via BETTERLEAKS_ROOT)",
+    )
+    ap.add_argument(
+        "--out-home",
+        type=pathlib.Path,
+        default=_HOME,
+        help="homefield output directory that will receive manifest.jsonl and corpus/",
+    )
+    args = ap.parse_args()
+    try:
+        root = resolve_betterleaks_root(args.betterleaks_root)
+    except FileNotFoundError as exc:
+        print(str(exc), file=sys.stderr)
         return 1
-    records = harvest()
+    rules_dir = root / "cmd" / "generate" / "config" / "rules"
+    records = harvest(rules_dir)
     pos = sum(1 for r in records if r["label"])
     neg = len(records) - pos
     cats = len({r["category"] for r in records})
-    write_corpus(records)
+    out_dir = write_corpus(records, args.out_home)
     print(
         f"harvested {len(records)} fixtures from betterleaks "
-        f"({pos} tps / {neg} fps) across {cats} rules → {OUT}"
+        f"({pos} tps / {neg} fps) across {cats} rules → {out_dir}"
     )
     return 0
 

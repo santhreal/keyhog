@@ -26,7 +26,8 @@ Harvest (sources must be present locally) — writes the split-layout corpus to
 `benchmarks/corpora/<turf>/` (`manifest.jsonl` + neutral `corpus/` scan tree):
 
 ```sh
-python3 harvest_betterleaks.py   # reads the betterleaks go-module cache
+python3 harvest_betterleaks.py --betterleaks-root /path/to/betterleaks
+# or set BETTERLEAKS_ROOT; without either, the harvester checks GOMODCACHE and GOPATH.
 python3 harvest_kingfisher.py    # reads a kingfisher checkout
 ```
 
