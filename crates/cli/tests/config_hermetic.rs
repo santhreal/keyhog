@@ -103,6 +103,8 @@ fn config_and_no_config_conflict_is_a_user_error() {
 
     let output = Command::new(binary())
         .arg("scan")
+        .arg("--backend")
+        .arg("simd")
         .arg("--no-config")
         .arg("--config")
         .arg(&cfg_path)
