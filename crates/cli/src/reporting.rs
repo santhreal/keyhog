@@ -96,8 +96,8 @@ fn format_gitlab_time(time: DateTime<Utc>) -> String {
     time.format("%Y-%m-%dT%H:%M:%S").to_string()
 }
 
-/// Build the SARIF skipped-file summary from the source-layer skip counters.
-/// Each non-zero category becomes one `(reason, count)` pair the SARIF reporter
+/// Build the SARIF coverage-gap summary from source and scanner counters. Each
+/// non-zero category becomes one `(reason, count)` pair the SARIF reporter
 /// surfaces as a tool-execution notification, so a consuming platform sees the
 /// scan's coverage gaps (unreadable files especially — those are unknowns).
 fn sarif_skip_summary() -> Vec<(String, usize)> {
@@ -131,6 +131,14 @@ fn sarif_skip_summary() -> Vec<(String, usize)> {
         (
             "structured source parse failed (raw text scanned; derived chunks not expanded)".to_string(),
             c.structured_source_parse_failures,
+        ),
+        (
+            "scanner structured parse failed (raw text scanned; encoded structured values not decoded)".to_string(),
+            keyhog_scanner::telemetry::structured_parse_failure_count(),
+        ),
+        (
+            "scanner decode-through truncated by budget/cap (raw bytes scanned; deeper encoded layers not expanded)".to_string(),
+            keyhog_scanner::telemetry::decode_truncation_count(),
         ),
     ];
 

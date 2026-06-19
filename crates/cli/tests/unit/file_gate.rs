@@ -10,8 +10,9 @@ use keyhog::testing::{CliTestApi as _, API};
 use keyhog::daemon::default_socket_path;
 #[cfg(unix)]
 use keyhog::daemon::protocol::{Request, Response, MAX_FRAME_BYTES, WIRE_VERSION};
-use keyhog_core::{MatchLocation, RawMatch, Severity};
+use keyhog_core::{Chunk, ChunkMetadata, MatchLocation, RawMatch, SensitiveString, Severity};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 // ── crates/cli/src/lib.rs ─────────────────────────────────────────────
 #[test]
@@ -298,6 +299,48 @@ fn path_validation_error() {
 fn reporting_error() {
     let args = ScanArgs::try_parse_from(["scan", ".", "--output", "/"]).unwrap();
     assert!(API.report_findings(&[], &args).is_err());
+}
+
+#[test]
+fn reporting_sarif_includes_scanner_decode_truncation_gap() {
+    API.reset_scan_runtime_state_for_test();
+    let chunk = Chunk {
+        data: SensitiveString::from("plain inert text"),
+        metadata: ChunkMetadata {
+            path: Some("encoded/audit.txt".to_string()),
+            ..Default::default()
+        },
+    };
+    let past_deadline = Instant::now() - Duration::from_millis(1);
+    let _decoded =
+        keyhog_scanner::testing::decode_chunk(&chunk, 1, false, Some(past_deadline), None);
+    assert!(
+        API.scan_runtime_snapshot().decode_truncations > 0,
+        "test setup must create a real scanner decode-through truncation"
+    );
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let out = dir.path().join("report.sarif");
+    let out_s = out.to_string_lossy().into_owned();
+    let args = ScanArgs::try_parse_from(["scan", ".", "--format", "sarif", "--output", &out_s])
+        .expect("parse sarif output args");
+    API.report_findings(&[], &args)
+        .expect("write SARIF report with scanner coverage gap");
+
+    let sarif: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&out).expect("read SARIF")).expect("SARIF JSON");
+    let notifications = sarif["runs"][0]["invocations"][0]["toolExecutionNotifications"]
+        .as_array()
+        .expect("scanner decode truncation must create SARIF notifications");
+    assert!(
+        notifications.iter().any(|notification| {
+            notification["properties"]["reason"].as_str()
+                == Some("scanner decode-through truncated by budget/cap (raw bytes scanned; deeper encoded layers not expanded)")
+                && notification["properties"]["count"].as_u64().is_some_and(|count| count >= 1)
+        }),
+        "SARIF notifications must include the scanner decode truncation gap; sarif={sarif}"
+    );
+    API.reset_scan_runtime_state_for_test();
 }
 
 // ── crates/cli/src/sources.rs ───────────────────────────────────────

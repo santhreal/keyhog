@@ -44,6 +44,49 @@ fn scan_malformed_k8s_secret_warns_about_lost_decode_through() {
 }
 
 #[test]
+fn scan_malformed_k8s_secret_sarif_reports_lost_decode_through() {
+    let (_dir, path) = write_temp_file(
+        "secret.yaml",
+        "apiVersion: v1\nkind: Secret\ndata:\n  api-key: [unclosed\n",
+    );
+    let output = Command::new(binary())
+        .args([
+            "scan",
+            "--backend",
+            "simd",
+            "--no-daemon",
+            "--format",
+            "sarif",
+        ])
+        .arg(&path)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .expect("spawn");
+
+    assert!(
+        output.status.success(),
+        "malformed k8s Secret raw-text scan should complete cleanly; status={:?} stderr={}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let sarif: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("SARIF stdout must be JSON");
+    let notifications = sarif["runs"][0]["invocations"][0]["toolExecutionNotifications"]
+        .as_array()
+        .expect("scanner structured parse gap must create SARIF notifications");
+    assert!(
+        notifications.iter().any(|notification| {
+            notification["properties"]["reason"].as_str()
+                == Some("scanner structured parse failed (raw text scanned; encoded structured values not decoded)")
+                && notification["properties"]["count"].as_u64() == Some(1)
+        }),
+        "SARIF notifications must include the scanner structured parse gap; sarif={sarif}"
+    );
+}
+
+#[test]
 fn scan_valid_k8s_secret_does_not_warn() {
     // Negative twin: a well-formed Secret parses cleanly, so the decode-through
     // gap warning must NOT fire (no false coverage alarm on healthy files).
