@@ -191,6 +191,9 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
         backend.contains("AUTOROUTE_CALIBRATION_TRIALS")
             && backend.contains("measure_reference_simd")
             && backend.contains("measure_candidate_backend")
+            && backend.contains("tempfile::NamedTempFile::new_in(parent)")
+            && backend.contains("tmp.as_file().sync_all()")
+            && backend.contains("tmp.persist(path)")
             && backend.contains("backend rejected by autoroute parity check")
             && backend.contains("autoroute cache ignored")
             && backend.contains("scan config digest mismatch")
@@ -201,8 +204,10 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("cache decision has mismatched GPU cold/warm route evidence")
             && backend.contains("backend rejected by autoroute GPU degrade check")
             && backend.contains("cache decision is missing a calibration timestamp")
-            && !backend.contains("load_autoroute_cache(path, detector_digest, &host_profile).ok()"),
-        "autoroute calibration must use repeated parity-checked trials and must not silently ignore invalid existing cache state"
+            && !backend.contains("load_autoroute_cache(path, detector_digest, &host_profile).ok()")
+            && !backend.contains("std::fs::rename(&tmp, path)")
+            && !backend.contains("path.with_extension(format!(\"tmp.\""),
+        "autoroute calibration must use repeated parity-checked trials, sync and atomically persist cache replacement, and must not silently ignore invalid existing cache state"
     );
     assert!(
         run.contains("backend prewarm skipped during autoroute calibration")

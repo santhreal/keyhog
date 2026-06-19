@@ -205,6 +205,34 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
         load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host).unwrap();
     assert_eq!(loaded, decisions);
 
+    let mut replacement = HashMap::new();
+    replacement.insert(
+        key,
+        AutorouteDecision::new(
+            ScanBackend::CpuFallback,
+            8 * 1024 * 1024,
+            1,
+            12,
+            Some(8),
+            Some(40),
+        ),
+    );
+    save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &replacement,
+    )
+    .unwrap();
+    let replaced =
+        load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host).unwrap();
+    assert_eq!(
+        replaced, replacement,
+        "autoroute recalibration must atomically replace an existing cache path"
+    );
+
     let wrong = load_autoroute_cache(
         &path,
         digest.wrapping_add(1),

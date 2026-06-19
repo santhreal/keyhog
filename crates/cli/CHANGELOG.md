@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Replace autoroute cache writes through a synced same-directory temporary file
+  so recalibration atomically replaces an existing cache path across supported
+  operating systems.
 - Refuse autoroute calibration on empty or zero-byte samples before timing so
   calibration cannot persist route decisions that the cache loader would later
   reject as missing sample evidence.

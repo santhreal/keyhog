@@ -1,6 +1,7 @@
 //! Persistent autoroute calibration cache schema and validation.
 
 use std::collections::HashMap;
+use std::io::Write;
 
 use serde::{Deserialize, Serialize};
 
@@ -349,8 +350,15 @@ pub(super) fn save_autoroute_cache(
             .map(|(&key, decision)| (key, decision.clone()))
             .collect(),
     };
-    let tmp = path.with_extension(format!("tmp.{}", std::process::id()));
-    std::fs::write(&tmp, serde_json::to_vec_pretty(&cache)?)?;
-    std::fs::rename(&tmp, path)?;
+    let serialized = serde_json::to_vec_pretty(&cache)?;
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new(".")); // LAW10: parentless cache paths preserve the exact target in '.', recall-safe.
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
+    tmp.write_all(&serialized)?;
+    tmp.flush()?;
+    tmp.as_file().sync_all()?;
+    tmp.persist(path).map_err(|e| e.error)?;
     Ok(())
 }
