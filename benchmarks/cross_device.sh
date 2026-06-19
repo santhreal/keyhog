@@ -66,8 +66,9 @@ echo "host: \$OS \$ARCH" >&2
 
 # 1. keyhog: prefer an installed binary; else install from the repo via the
 #    real install flow (cargo install), not a bare dev build.
-KH="\$(command -v keyhog || true)"
-if [ -z "\$KH" ]; then
+if KH="\$(command -v keyhog)"; then
+  :
+else
   KH_FEAT="$KEYHOG_INSTALL_FEATURES"
   if [ -z "\$KH_FEAT" ]; then
     case "\$OS" in
@@ -76,12 +77,12 @@ if [ -z "\$KH" ]; then
     esac
   fi
   echo "installing keyhog (cargo install --path crates/cli \$KH_FEAT)..." >&2
-  cargo install --path crates/cli --root "$REMOTE_TMP/kh" \$KH_FEAT --quiet --locked 2>&1 | tail -5 >&2 || \
-    cargo install --path crates/cli --root "$REMOTE_TMP/kh" \$KH_FEAT --quiet 2>&1 | tail -5 >&2
+  cargo install --path crates/cli --root "$REMOTE_TMP/kh" \$KH_FEAT --quiet --locked >&2
   KH="$REMOTE_TMP/kh/bin/keyhog"
 fi
 [ -x "\$KH" ] || { echo "keyhog install failed (no binary at \$KH)" >&2; exit 5; }
-echo "keyhog: \$KH (\$("\$KH" --version 2>/dev/null || echo '?'))" >&2
+KH_VERSION="\$("\$KH" --version)"
+echo "keyhog: \$KH (\$KH_VERSION)" >&2
 
 # 2. corpus on LOCAL disk.
 export KEYHOG_BENCH_MIRROR="$REMOTE_TMP/corpus-$CORPUS"

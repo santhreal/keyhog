@@ -175,6 +175,25 @@ else
   fail=1
 fi
 
+CROSS_DEVICE="$ROOT/benchmarks/cross_device.sh"
+if [ -f "$CROSS_DEVICE" ]; then
+  if grep -qE 'command -v keyhog \|\| true|--version 2>/dev/null \|\| echo|cargo install .* \|\|[[:space:]]*\\$? *cargo install' "$CROSS_DEVICE"; then
+    echo "FAIL benchmarks/cross_device.sh must fail closed on keyhog discovery/version/install; no unknown-version or unlocked cargo-install fallback."
+    grep -nE 'command -v keyhog \|\| true|--version 2>/dev/null \|\| echo|cargo install .* \|\|[[:space:]]*\\$? *cargo install' "$CROSS_DEVICE" | sed 's/^/    /'
+    fail=1
+  elif grep -q 'if KH="\\$(command -v keyhog)"' "$CROSS_DEVICE" \
+     && grep -q 'KH_VERSION="\\$("\\$KH" --version)"' "$CROSS_DEVICE" \
+     && grep -q -- '--locked >&2' "$CROSS_DEVICE"; then
+    note "OK   cross-device benchmark entrypoint: keyhog discovery/version/install fail closed"
+  else
+    echo "FAIL benchmarks/cross_device.sh must use explicit keyhog discovery, loud version proof, and locked cargo install."
+    fail=1
+  fi
+else
+  echo "FAIL benchmarks/cross_device.sh missing - cross-device benchmark truth cannot be audited."
+  fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "integration entry-point gate: PASS"
 else
