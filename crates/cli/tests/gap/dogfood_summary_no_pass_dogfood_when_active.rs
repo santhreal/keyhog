@@ -14,9 +14,17 @@ fn repo_root() -> PathBuf {
 
 #[test]
 fn dogfood_active_summary_does_not_tell_user_to_pass_dogfood_again() {
-    let demo = repo_root().join("demo-secret.env");
+    let demo = repo_root().join("demo/config/demo-secret.env");
     let out = Command::new(binary())
-        .args(["scan", "--no-daemon", "--dogfood", "--format", "text"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--dogfood",
+            "--format",
+            "text",
+        ])
         .arg(&demo)
         .output()
         .expect("spawn");

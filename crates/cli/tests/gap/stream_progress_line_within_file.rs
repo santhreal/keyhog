@@ -18,7 +18,10 @@ fn stream_progress_lines_stay_within_file_line_count() {
         .expect("read fixture")
         .lines()
         .count();
-    assert_eq!(line_count, 2, "fixture must stay two lines for this regression");
+    assert_eq!(
+        line_count, 2,
+        "fixture must stay two lines for this regression"
+    );
 
     let output = Command::new(binary())
         .args([
