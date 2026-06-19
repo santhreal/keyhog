@@ -73,6 +73,34 @@ fn sources_testing_facade_is_direct_module_reexport() {
 }
 
 #[test]
+fn filesystem_binary_strings_empty_branches_are_counted() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let extract = std::fs::read_to_string(root.join("src/filesystem/extract.rs"))
+        .expect("read filesystem extract owner");
+    assert!(
+        extract.contains("fn record_binary_without_printable_strings")
+            && extract.contains("SourceSkipEvent::Binary"),
+        "filesystem extraction must own one binary-without-strings skip counter helper"
+    );
+
+    for rel in [
+        "src/filesystem/extract.rs",
+        "src/filesystem/extract/archive.rs",
+        "src/filesystem/extract/compressed.rs",
+        "src/filesystem/extract/seven_zip.rs",
+    ] {
+        let src = std::fs::read_to_string(root.join(rel)).expect("read filesystem extractor");
+        for (idx, _) in src.match_indices("if strings.is_empty()") {
+            let tail = &src[idx..src.len().min(idx + 180)];
+            assert!(
+                tail.contains("record_binary_without_printable_strings"),
+                "{rel} has a binary strings-empty branch that does not count skipped binary coverage"
+            );
+        }
+    }
+}
+
+#[test]
 fn cloud_object_fetch_pool_is_single_shared_owner() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let cloud = std::fs::read_to_string(root.join("src/cloud/mod.rs")).expect("read cloud owner");

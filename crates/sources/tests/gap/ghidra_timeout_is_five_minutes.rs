@@ -1,5 +1,6 @@
 //! Ghidra subprocess wall clock must match shared timeouts module.
 
+#[cfg(feature = "binary")]
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 #[cfg(feature = "binary")]
 #[test]

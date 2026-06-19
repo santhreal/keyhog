@@ -34,6 +34,7 @@
 //! code rather than to codewalk internals.
 
 use keyhog_core::Source;
+use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{reset_skipped_over_max_size, skip_counts, FilesystemSource};
 use std::fs;
 use std::path::Path;
@@ -673,7 +674,9 @@ fn high_nul_density_binary_falls_back_to_printable_strings() {
 fn binary_with_only_short_runs_yields_no_chunk() {
     // extract_printable_strings uses min_len 8. A binary file whose printable
     // runs are all < 8 chars yields an empty strings vec -> process_entry
-    // returns with no chunk.
+    // returns with no chunk, and must count that unscannable binary as a
+    // coverage gap.
+    TestApi.reset_skip_counters();
     let dir = tempfile::tempdir().unwrap();
     // Each printable run ("abc", "de") is < 8 chars, separated by NULs.
     let bytes = b"abc\x00de\x00f\x00gh\x00ij\x00".to_vec();
@@ -687,6 +690,10 @@ fn binary_with_only_short_runs_yields_no_chunk() {
             .iter()
             .map(|c| c.metadata.source_type.clone())
             .collect::<Vec<_>>()
+    );
+    assert!(
+        skip_counts().binary >= 1,
+        "binary files with no printable scan chunk must be counted as skipped binary coverage"
     );
 }
 

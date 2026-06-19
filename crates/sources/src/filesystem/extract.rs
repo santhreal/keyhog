@@ -27,6 +27,14 @@ fn is_symlink(path: &Path) -> bool {
         .unwrap_or(false) // LAW10: empty/absent => documented numeric default, recall-safe
 }
 
+pub(super) fn record_binary_without_printable_strings(path: &str) {
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+    tracing::warn!(
+        path,
+        "binary content yielded no printable strings; NOT scanned"
+    );
+}
+
 /// Minimum file size to use memory mapping. The crossover point is
 /// platform-specific:
 ///
@@ -412,6 +420,7 @@ pub(super) fn process_entry(
             Ok(bytes) => {
                 let strings = crate::strings::extract_printable_strings(&bytes, 8);
                 if strings.is_empty() {
+                    record_binary_without_printable_strings(&display_path(&path));
                     return;
                 }
                 tracing::info!(

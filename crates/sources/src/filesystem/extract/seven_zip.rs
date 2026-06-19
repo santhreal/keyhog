@@ -1,6 +1,6 @@
 //! 7z archive extraction for filesystem entries.
 
-use super::{display_path, is_symlink, read};
+use super::{display_path, is_symlink, read, record_binary_without_printable_strings};
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
 use sevenz_rust2::{ArchiveReader, EncoderMethod, Password};
 use std::io::{Cursor, Read};
@@ -153,6 +153,7 @@ fn chunk_from_entry_content(
             let bytes = error.into_bytes();
             let strings = crate::strings::extract_printable_strings(&bytes, 8);
             if strings.is_empty() {
+                record_binary_without_printable_strings(&entry_path);
                 None
             } else {
                 Some(Ok(Chunk {

@@ -1,6 +1,6 @@
 //! Zip/APK/IPA/CRX/JAR + OOXML/ODF office-document archive extraction.
 
-use super::{display_path, is_symlink};
+use super::{display_path, is_symlink, record_binary_without_printable_strings};
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
 use std::path::{Component, Path};
 
@@ -164,6 +164,7 @@ pub(super) fn extract_openpack_archive(
                                     let strings =
                                         crate::strings::extract_printable_strings(&content, 8);
                                     if strings.is_empty() {
+                                        record_binary_without_printable_strings(&entry_path());
                                         None
                                     } else {
                                         Some(Ok(Chunk {
@@ -246,6 +247,7 @@ pub(super) fn chunk_from_archive_content(
             let content = error.into_bytes();
             let strings = crate::strings::extract_printable_strings(&content, 8);
             if strings.is_empty() {
+                record_binary_without_printable_strings(&entry_path());
                 None
             } else {
                 Some(Ok(Chunk {
