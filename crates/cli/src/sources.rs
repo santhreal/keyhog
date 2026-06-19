@@ -68,10 +68,12 @@ pub(crate) fn build_sources(
 ) -> Result<Vec<Box<dyn Source>>> {
     let mut sources: Vec<Box<dyn Source>> = Vec::new();
     let source_limits = args.limits.to_source_limits();
+    let scan_path = args.path.as_ref().or(args.input.as_ref());
+    validate_source_flag_combinations(args, scan_path.is_some())?;
 
     #[cfg(feature = "git")]
     let mut staged_files = if args.git_staged {
-        get_staged_files(args.path.as_deref())?
+        get_staged_files(scan_path.map(PathBuf::as_path))?
     } else {
         Vec::new()
     };
@@ -82,7 +84,7 @@ pub(crate) fn build_sources(
 
     let merged_ignore_paths = merge_scan_ignore_paths(args, ignore_paths);
 
-    if let Some(ref path) = args.path {
+    if let Some(path) = scan_path {
         crate::path_validation::validate_cli_path_arg(path, "scan path")?;
         let mut fs_source = keyhog_sources::FilesystemSource::new(path.clone())
             .with_ignore_paths(merged_ignore_paths)
@@ -317,6 +319,168 @@ pub(crate) fn build_sources(
     }
 
     Ok(sources)
+}
+
+#[cfg(any(
+    feature = "binary",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket",
+    feature = "s3",
+    feature = "gcs",
+    feature = "azure"
+))]
+fn validate_source_flag_combinations(args: &ScanArgs, has_path_source: bool) -> Result<()> {
+    #[cfg(feature = "binary")]
+    if args.binary && !has_path_source {
+        anyhow::bail!(
+            "--binary was requested, but no filesystem path source was provided. \
+             Fix: pass --path <PATH> or a positional PATH with --binary, or remove --binary."
+        );
+    }
+
+    #[cfg(feature = "github")]
+    validate_all_or_none_source_flags(
+        "GitHub organization source",
+        &[
+            ("--github-org", args.github_org.is_some()),
+            ("--github-token", args.github_token.is_some()),
+        ],
+    )?;
+
+    #[cfg(feature = "gitlab")]
+    validate_all_or_none_source_flags(
+        "GitLab group source",
+        &[
+            ("--gitlab-group", args.gitlab_group.is_some()),
+            ("--gitlab-token", args.gitlab_token.is_some()),
+        ],
+    )?;
+
+    #[cfg(feature = "bitbucket")]
+    validate_all_or_none_source_flags(
+        "Bitbucket workspace source",
+        &[
+            ("--bitbucket-workspace", args.bitbucket_workspace.is_some()),
+            ("--bitbucket-username", args.bitbucket_username.is_some()),
+            ("--bitbucket-token", args.bitbucket_token.is_some()),
+        ],
+    )?;
+
+    #[cfg(feature = "s3")]
+    {
+        validate_primary_source_flag(
+            "--s3-bucket",
+            args.s3_bucket.is_some(),
+            &[
+                ("--s3-prefix", args.s3_prefix.is_some()),
+                ("--s3-endpoint", args.s3_endpoint.is_some()),
+                (
+                    "--allow-s3-credential-forward",
+                    args.allow_s3_credential_forward,
+                ),
+            ],
+        )?;
+        if args.allow_s3_credential_forward && args.s3_endpoint.is_none() {
+            anyhow::bail!(
+                "--allow-s3-credential-forward requires --s3-endpoint. \
+                 Fix: pass the trusted S3-compatible endpoint explicitly or remove \
+                 --allow-s3-credential-forward."
+            );
+        }
+    }
+
+    #[cfg(feature = "gcs")]
+    {
+        validate_primary_source_flag(
+            "--gcs-bucket",
+            args.gcs_bucket.is_some(),
+            &[
+                ("--gcs-prefix", args.gcs_prefix.is_some()),
+                ("--gcs-endpoint", args.gcs_endpoint.is_some()),
+                ("--allow-gcs-token-forward", args.allow_gcs_token_forward),
+            ],
+        )?;
+        if args.allow_gcs_token_forward && args.gcs_endpoint.is_none() {
+            anyhow::bail!(
+                "--allow-gcs-token-forward requires --gcs-endpoint. \
+                 Fix: pass the trusted GCS-compatible endpoint explicitly or remove \
+                 --allow-gcs-token-forward."
+            );
+        }
+    }
+
+    #[cfg(feature = "azure")]
+    validate_primary_source_flag(
+        "--azure-container-url",
+        args.azure_container_url.is_some(),
+        &[("--azure-prefix", args.azure_prefix.is_some())],
+    )?;
+
+    Ok(())
+}
+
+#[cfg(not(any(
+    feature = "binary",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket",
+    feature = "s3",
+    feature = "gcs",
+    feature = "azure"
+)))]
+fn validate_source_flag_combinations(_args: &ScanArgs, _has_path_source: bool) -> Result<()> {
+    Ok(())
+}
+
+#[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
+fn validate_all_or_none_source_flags(
+    source_name: &str,
+    flags: &[(&'static str, bool)],
+) -> Result<()> {
+    let any_present = flags.iter().any(|(_, present)| *present);
+    let all_present = flags.iter().all(|(_, present)| *present);
+    if !any_present || all_present {
+        return Ok(());
+    }
+    let missing = flags
+        .iter()
+        .filter_map(|(flag, present)| (!*present).then_some(*flag))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let present = flags
+        .iter()
+        .filter_map(|(flag, present)| (*present).then_some(*flag))
+        .collect::<Vec<_>>()
+        .join(", ");
+    anyhow::bail!(
+        "incomplete {source_name} configuration: {present} was provided but {missing} \
+         is missing. Fix: provide the complete source flag set or remove the partial \
+         source configuration."
+    );
+}
+
+#[cfg(any(feature = "s3", feature = "gcs", feature = "azure"))]
+fn validate_primary_source_flag(
+    primary_flag: &'static str,
+    primary_present: bool,
+    companions: &[(&'static str, bool)],
+) -> Result<()> {
+    if primary_present {
+        return Ok(());
+    }
+    let present = companions
+        .iter()
+        .filter_map(|(flag, present)| (*present).then_some(*flag))
+        .collect::<Vec<_>>();
+    if present.is_empty() {
+        return Ok(());
+    }
+    anyhow::bail!(
+        "{} requires {primary_flag}. Fix: pass {primary_flag} or remove {}.",
+        present.join(", "),
+        present.join(", ")
+    );
 }
 
 #[cfg(feature = "git")]

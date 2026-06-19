@@ -16,6 +16,7 @@ use crate::style;
 use anyhow::{Context, Result};
 use keyhog_core::{DetectorSpec, MerkleLoadStatus, RawMatch, Source};
 use keyhog_scanner::{CompiledScanner, GpuInitPolicy};
+#[cfg(feature = "git")]
 use std::path::PathBuf;
 use std::sync::Arc;
 
