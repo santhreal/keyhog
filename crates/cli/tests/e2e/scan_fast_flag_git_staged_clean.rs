@@ -47,6 +47,8 @@ fn scan_fast_flag_git_staged_clean() {
     let output = Command::new(binary())
         .args([
             "scan",
+            "--backend",
+            "simd",
             "--no-daemon",
             "--fast",
             "--git-staged",

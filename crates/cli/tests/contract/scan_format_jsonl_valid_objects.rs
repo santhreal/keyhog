@@ -10,6 +10,8 @@ fn scan_format_jsonl_valid_objects() {
         .args([
             "scan",
             "--no-daemon",
+            "--backend",
+            "simd",
             "--format",
             "jsonl",
             "--no-suppress-test-fixtures",

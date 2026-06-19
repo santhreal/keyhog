@@ -12,8 +12,8 @@ fn repo_root() -> PathBuf {
 
 #[test]
 fn load_rs_warn_text_does_not_cite_phantom_detectors_list_subcommand() {
-    let src = std::fs::read_to_string(repo_root().join("crates/core/src/spec/load.rs"))
-        .expect("load.rs");
+    let src =
+        std::fs::read_to_string(repo_root().join("crates/core/src/spec/load.rs")).expect("load.rs");
     assert!(
         !src.contains("detectors list"),
         "load.rs must not cite phantom `keyhog detectors list`; use `keyhog detectors`"

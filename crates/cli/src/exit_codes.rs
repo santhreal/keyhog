@@ -90,6 +90,6 @@ pub const HELP: &str = "EXIT CODES:\n  \
 4   Health/self-test failure (doctor unhealthy / repair could not restore a working binary / backend --self-test failed)\n  \
 10  Live credentials found (requires --verify)\n  \
 11  Scanner thread panicked mid-scan (state is unreliable)\n  \
-12  Required GPU unavailable (--require-gpu / KEYHOG_REQUIRE_GPU)\n  \
+12  Required GPU unavailable (--require-gpu)\n  \
 13  Requested source failed before producing scan data\n  \
 130 Interrupted (SIGINT / Ctrl-C)";

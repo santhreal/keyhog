@@ -8,7 +8,9 @@ fn adversarial_suite_covers_non_scan_subcommands() {
     let mut combined = String::new();
     for entry in std::fs::read_dir(&dir).expect("adversarial dir") {
         let path = entry.expect("entry").path();
-        if path.extension().is_some_and(|e| e == "rs") && path.file_name() != Some("mod.rs".as_ref()) {
+        if path.extension().is_some_and(|e| e == "rs")
+            && path.file_name() != Some("mod.rs".as_ref())
+        {
             combined.push_str(&std::fs::read_to_string(path).expect("read"));
         }
     }

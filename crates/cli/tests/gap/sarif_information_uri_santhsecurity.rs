@@ -13,9 +13,16 @@ fn repo_root() -> PathBuf {
 
 #[test]
 fn sarif_information_uri_is_santhsecurity_keyhog() {
-    let demo = repo_root().join("demo-secret.env");
+    let demo = repo_root().join("demo/config/demo-secret.env");
     let out = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "sarif"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--format",
+            "sarif",
+        ])
         .arg(&demo)
         .output()
         .expect("spawn sarif scan");
@@ -26,8 +33,7 @@ fn sarif_information_uri_is_santhsecurity_keyhog() {
         .as_str()
         .expect("informationUri");
     assert_eq!(
-        uri,
-        "https://github.com/santhsecurity/keyhog",
+        uri, "https://github.com/santhsecurity/keyhog",
         "SARIF informationUri must match the published repo"
     );
 }

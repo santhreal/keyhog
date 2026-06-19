@@ -10,7 +10,16 @@ fn scan_dedup_none_reports_all_occurrences() {
     let fixture = format!("AWS_ACCESS_KEY_ID = \"{key}\"\nGH_TOKEN = \"{gh}\"\n",);
     let (_dir, path) = write_temp_file("multi.txt", &fixture);
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "json", "--dedup", "none"])
+        .args([
+            "scan",
+            "--backend",
+            "simd",
+            "--no-daemon",
+            "--format",
+            "json",
+            "--dedup",
+            "none",
+        ])
         .arg(&path)
         .output()
         .expect("spawn");

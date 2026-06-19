@@ -88,7 +88,7 @@ tool, add this to `.pre-commit-config.yaml`:
 ```yaml
 repos:
   - repo: https://github.com/santhsecurity/keyhog
-    rev: v0.5.37
+    rev: v0.5.40
     hooks:
       - id: keyhog
         name: keyhog secret scan (staged)
@@ -139,7 +139,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.37
+      - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
         with:
           path: .
           severity: high
@@ -403,18 +403,14 @@ corpus; there is no separate `keyhog-detectors` crate.)
 Minimal scan:
 
 ```rust
-use keyhog_core::{load_detectors_from_str, Chunk, ChunkMetadata};
+use keyhog_core::{load_detectors, Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Built-in embedded detectors - no disk I/O. Each entry is
-    // (filename, toml_text); parse them all into a flat Vec<DetectorSpec>.
-    let mut specs = Vec::new();
-    for (_name, toml_text) in keyhog_core::embedded_detector_tomls() {
-        specs.extend(load_detectors_from_str(toml_text)?);
-    }
+    // Built-in embedded detectors - no disk I/O, fail-closed on corrupt bundled TOML.
+    let specs = keyhog_core::load_embedded_detectors_or_fail()?;
     // …or load from a directory of TOMLs:
-    // let specs = keyhog_core::load_detectors(std::path::Path::new("detectors"))?;
+    // let specs = load_detectors(std::path::Path::new("detectors"))?;
 
     let scanner = CompiledScanner::compile(specs)?;
 

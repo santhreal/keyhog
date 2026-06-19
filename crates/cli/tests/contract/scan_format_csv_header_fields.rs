@@ -7,7 +7,14 @@ use std::process::Command;
 fn scan_format_csv_header_fields() {
     let (_dir, path) = write_temp_file("clean.txt", "no secrets here\n");
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "csv"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--format",
+            "csv",
+        ])
         .arg(&path)
         .output()
         .expect("spawn");

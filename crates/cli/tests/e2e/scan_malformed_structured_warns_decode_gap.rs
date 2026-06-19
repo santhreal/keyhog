@@ -16,7 +16,15 @@ fn scan_malformed_k8s_secret_warns_about_lost_decode_through() {
         "apiVersion: v1\nkind: Secret\ndata:\n  api-key: [unclosed\n",
     );
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--progress", "--format", "json"])
+        .args([
+            "scan",
+            "--backend",
+            "simd",
+            "--no-daemon",
+            "--progress",
+            "--format",
+            "json",
+        ])
         .arg(&path)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -44,7 +52,15 @@ fn scan_valid_k8s_secret_does_not_warn() {
         "apiVersion: v1\nkind: Secret\nmetadata:\n  name: s\ndata:\n  api-key: YWJjMTIz\n",
     );
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--progress", "--format", "json"])
+        .args([
+            "scan",
+            "--backend",
+            "simd",
+            "--no-daemon",
+            "--progress",
+            "--format",
+            "json",
+        ])
         .arg(&path)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())

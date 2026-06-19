@@ -19,6 +19,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
 
+use crate::e2e::support::apply_default_scan_backend;
+#[cfg(unix)]
+use crate::e2e::support::DaemonGuard;
 use serde::Deserialize;
 use tempfile::TempDir;
 
@@ -94,7 +97,24 @@ fn materialize(corpus_file: &Path) -> std::io::Result<String> {
     Ok(content)
 }
 
-fn run_scenario(path: &Path) -> Result<(), String> {
+fn daemon_eligible_single_file_scan(args: &[String]) -> bool {
+    if args.first().map(String::as_str) != Some("scan") {
+        return false;
+    }
+    if args
+        .iter()
+        .any(|arg| arg == "--no-daemon" || arg == "--daemon" || arg.starts_with("--daemon="))
+    {
+        return false;
+    }
+    let Some(path_arg) = args.last() else {
+        return false;
+    };
+    let path = Path::new(path_arg);
+    path.is_file()
+}
+
+fn run_scenario(path: &Path, daemon_runtime_dir: Option<&Path>) -> Result<(), String> {
     let raw = std::fs::read_to_string(path).map_err(|e| format!("read: {e}"))?;
     let sc: Scenario = toml::from_str(&raw).map_err(|e| format!("parse: {e}"))?;
 
@@ -107,15 +127,23 @@ fn run_scenario(path: &Path) -> Result<(), String> {
         std::fs::write(tmp.path().join(f), content).map_err(|e| format!("write {f}: {e}"))?;
     }
     let corpus_dir = tmp.path().to_string_lossy().into_owned();
-    let args: Vec<String> = sc
+    let mut args: Vec<String> = sc
         .args
         .iter()
         .map(|a| a.replace("{corpus}", &corpus_dir))
         .collect();
+    if daemon_runtime_dir.is_some() && daemon_eligible_single_file_scan(&args) {
+        args.insert(1, "--daemon=on".to_string());
+    }
 
     let start = Instant::now();
-    let out = Command::new(binary())
-        .args(&args)
+    let mut cmd = Command::new(binary());
+    if let Some(runtime_dir) = daemon_runtime_dir {
+        cmd.env("XDG_RUNTIME_DIR", runtime_dir);
+    }
+    let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    apply_default_scan_backend(&mut cmd, &arg_refs);
+    let out = cmd
         .current_dir(tmp.path())
         .output()
         .map_err(|e| format!("spawn: {e}"))?;
@@ -204,6 +232,13 @@ fn run_scenario(path: &Path) -> Result<(), String> {
 
 #[test]
 fn dogfood_release_gate() {
+    #[cfg(unix)]
+    let daemon = DaemonGuard::start();
+    #[cfg(unix)]
+    let daemon_runtime_dir = Some(daemon.runtime_dir().to_path_buf());
+    #[cfg(not(unix))]
+    let daemon_runtime_dir: Option<PathBuf> = None;
+
     let scen_dir = dogfood_dir().join("scenarios");
     let mut files: Vec<PathBuf> = std::fs::read_dir(&scen_dir)
         .unwrap_or_else(|e| panic!("read scenarios dir {scen_dir:?}: {e}"))
@@ -219,7 +254,7 @@ fn dogfood_release_gate() {
     let mut failures = Vec::new();
     for f in &files {
         let name = f.file_stem().unwrap().to_string_lossy().into_owned();
-        if let Err(why) = run_scenario(f) {
+        if let Err(why) = run_scenario(f, daemon_runtime_dir.as_deref()) {
             failures.push(format!("[{name}] {why}"));
         }
     }

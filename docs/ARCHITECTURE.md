@@ -30,19 +30,12 @@ everything else is data, tooling, docs, or eval harness.
 | `fuzz/` | `cargo-fuzz` targets (structure-aware, one sink per target). |
 | `tools/` | Build-time generators (`gen_contracts.py`, `gen_companion_contracts.py`) that emit test fixtures. (Also holds a large *gitignored* SecretBench corpus.) |
 | `scripts/` | Dev/ops scripts: dogfood-all-os, prerelease, audit, triage. |
-| `docs/` | Markdown docs. This file; the [`legendary/`](legendary/) execution plan + ledger; `GPU_DETECTION_REWRITE.md`; `OOB.md`; etc. |
+| `docs/` | Markdown docs. This file, mdBook source, execution plan, and deep technical references. |
 | `site/` | The published documentation website (HTML). `architecture.html` is the long-form, diagram-rich version of this page. |
 | `demo/` | A self-contained demo deployment (app + infra + scripts). |
-| `vendor/` | **Read-only** vendored snapshots (`vyre`, `bogon`). NEVER edit — the build pins the published crate; fix the source repo and re-vendor. |
-| `backlog/`, `audits/`, `metrics/` | Working notes: thematic backlogs, audit plans, star metrics. Planning, not shipped artifacts. |
-| `coordination/` | *Gitignored* multi-agent scratch (review rounds, spec waivers). Not part of the build. |
+| `metrics/` | Star and project-health metrics. |
 
-Two planning trees coexist with different jobs: **`backlog/`** is the **flaw
-tracker** — concrete defects with `file:line` evidence and a fix recipe, grouped
-by theme (detection / performance / testing / coherence). **`docs/legendary/`**
-is the **structured perfection plan + execution ledger**;
-`docs/legendary/99_LEDGER.md` is the authoritative record of what has *landed*.
-File a found defect in `backlog/`; track planned/landed work in `docs/legendary/`.
+Internal execution planning lives in one file: `docs/EXECUTION_PLAN.md`.
 
 ---
 
@@ -77,7 +70,7 @@ by Cargo and must stay acyclic (domain logic never imports CLI/transport/UI).
 |-------|------|------------------|
 | **`core`** | Detector loading/registry, the `Finding`/`Credential`/`Spec` types, reporters (text/JSON/SARIF), dedup, allowlists, the merkle incremental-scan cache, calibration. | `crates/core/src/lib.rs`, `registry.rs`, `finding.rs`, `report/` |
 | **`scanner`** | The detection engine: hardware routing, prefilter, compile, scan, decode-through, entropy, ML confidence, multiline, suppression. | `crates/scanner/src/engine/mod.rs` (the flow), `pipeline/`, `lib.rs` |
-| **`sources`** | Where bytes come from: filesystem, git (staged/diff/history), stdin, Docker, S3, GitHub-org, web, HAR, strings. | `crates/sources/src/lib.rs` |
+| **`sources`** | Where bytes come from: filesystem, git (staged/diff/history), stdin, Docker, S3, GCS, Azure Blob, GitHub-org, web, HAR, strings, binary. | `crates/sources/src/lib.rs` |
 | **`verifier`** | Turning a *candidate* into a *verified-live* credential: per-detector verify endpoints, SSRF/bogon guards, OOB, rate limiting. | `crates/verifier/src/lib.rs`, `verify/`, `ssrf.rs` |
 | **`cli`** | The user-facing binary: argument parsing, the scan orchestrator, daemon/watch, baselines, calibrate, hook installer, output formatting. | `crates/cli/src/main.rs`, `args/`, `orchestrator/` |
 
@@ -91,7 +84,10 @@ it. The scan engine's own header doc
 method-level version of steps 2–4.
 
 1. **Acquire bytes** — a source yields file-path + content chunks.
-   `sources/` (`filesystem/`, `git/`, `stdin`, `docker`, `s3`, `github_org/`, `web/`).
+   `sources/` (`filesystem/`, `git/`, `stdin`, `docker`, `s3/`, `gcs.rs`,
+   `cloud/azure_blob.rs`, `github_org.rs`, `gitlab_group.rs`,
+   `bitbucket_workspace.rs`, `hosted_git.rs`, `web/`, `har.rs`, `strings.rs`,
+   `binary/`).
 2. **Phase 1 — trigger production** (which detectors *could* fire, and where).
    Swappable backend: CPU Hyperscan prefilter (`engine/scan.rs`) or the GPU
    batched-DFA megakernel (`engine/megakernel_dispatch.rs`). Produces one
@@ -107,7 +103,7 @@ method-level version of steps 2–4.
    seam reassembly (`engine/scan_postprocess.rs`, `engine/process.rs`,
    `engine/boundary.rs`). Confidence + ML scoring: `confidence/`, `ml_scorer.rs`
    + `ml_scorer/` (`ml_features`, `ml_weights`); context inference: `context/`.
-5. **Verify (optional)** — for the ~341 detectors with a `[detector.verify]`
+5. **Verify (optional)** — for the 344 detectors with a `[detector.verify]`
    endpoint, turn a candidate into verified-live, behind SSRF/bogon/rate guards.
    `verifier/`.
 6. **Report** — dedup, allowlist, emit text/JSON/SARIF; diff against a baseline
@@ -153,7 +149,7 @@ a rebuild — which is why `--verify` rebuilds before benching.
 | Add live verification for a detector | `[detector.verify]` in the TOML + `crates/verifier/src/verify/` |
 | Change output format / exit codes | `crates/cli/src/format.rs`, `reporting.rs` |
 | Add a benchmark / change the gate | `benchmarks/bench/` |
-| See what's planned / landed | `docs/legendary/99_LEDGER.md` (newest last) |
+| See the internal execution plan | `docs/EXECUTION_PLAN.md` |
 | Verify a perf or detection claim | `benchmarks/` (the README numbers regenerate from here) |
 
 ---

@@ -253,8 +253,7 @@ pub async fn cli_main() -> ExitCode {
         Some(args::Command::Daemon(_args)) => Err(anyhow::anyhow!(
             "`keyhog daemon` is a unix-only command (it serves scans over a \
              Unix-domain socket). On Windows, run scans in-process: \
-             `keyhog scan <path>`. Daemon-mode Windows support (via named \
-             pipes) is tracked but not yet implemented."
+             `keyhog scan <path>`. No Windows daemon transport ships."
         )),
         None => {
             let mut cmd = args::command();

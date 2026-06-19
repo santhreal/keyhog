@@ -25,7 +25,7 @@
 //!   * README no longer claims a `0.3` default confidence floor (the canonical
 //!     default is `0.40`).
 //!   * docs/src/reference/env.md lists the `KEYHOG_BACKEND` values the parser
-//!     actually accepts and documents `KEYHOG_GPU_AUTOROUTE`.
+//!     actually accepts and documents `--autoroute-gpu`.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -131,6 +131,184 @@ fn scan_has_no_quiet_flag() {
         "output-formats.md still claims a `--quiet` flag suppresses output, but \
          `keyhog scan --quiet` exits 2 (no such flag)."
     );
+}
+
+fn normalize_surface_text(text: &str) -> String {
+    text.replace("<code>", " ")
+        .replace("</code>", " ")
+        .replace('`', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_ascii_lowercase()
+}
+
+#[test]
+fn consumer_surfaces_do_not_publish_roadmap_deferrals() {
+    let surfaces = [
+        (
+            "README.md",
+            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../README.md")),
+        ),
+        (
+            "docs/src/install.md",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../docs/src/install.md"
+            )),
+        ),
+        (
+            "docs/src/reference/cli.md",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../docs/src/reference/cli.md"
+            )),
+        ),
+        (
+            "docs/src/http-wire.md",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../docs/src/http-wire.md"
+            )),
+        ),
+        (
+            "site/pages/faq.html",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../site/pages/faq.html"
+            )),
+        ),
+        (
+            "site/faq.html",
+            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../site/faq.html")),
+        ),
+        (
+            "site/pages/daemon.html",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../site/pages/daemon.html"
+            )),
+        ),
+        (
+            "site/daemon.html",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../site/daemon.html"
+            )),
+        ),
+        (
+            "install.sh",
+            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../install.sh")),
+        ),
+        (
+            "install.ps1",
+            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../install.ps1")),
+        ),
+        (
+            "crates/cli/src/lib.rs",
+            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs")),
+        ),
+        (
+            "crates/cli/src/daemon/trust.rs",
+            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/daemon/trust.rs")),
+        ),
+    ];
+    let banned = [
+        "roadmap",
+        "not yet shipped",
+        "not yet implemented",
+        "coming soon",
+        "queued for a later release",
+        "no promises on timeline",
+        "tracked but not yet",
+    ];
+
+    for (path, raw) in surfaces {
+        let normalized = normalize_surface_text(raw);
+        for phrase in banned {
+            assert!(
+                !normalized.contains(phrase),
+                "{path} still publishes deferral wording instead of a current operator contract: {phrase:?}"
+            );
+        }
+    }
+}
+
+#[test]
+fn site_pages_do_not_resurrect_retired_behavior_env_controls() {
+    let surfaces = [
+        (
+            "site/pages/scan.html",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../site/pages/scan.html"
+            )),
+        ),
+        (
+            "site/scan.html",
+            include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../site/scan.html")),
+        ),
+        (
+            "site/pages/config.html",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../site/pages/config.html"
+            )),
+        ),
+        (
+            "site/config.html",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../site/config.html"
+            )),
+        ),
+        (
+            "site/pages/system.html",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../site/pages/system.html"
+            )),
+        ),
+        (
+            "site/system.html",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../site/system.html"
+            )),
+        ),
+        (
+            "site/pages/lockdown.html",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../site/pages/lockdown.html"
+            )),
+        ),
+        (
+            "site/lockdown.html",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../site/lockdown.html"
+            )),
+        ),
+    ];
+    let stale_claims = [
+        "env keyhog_detectors",
+        "env: keyhog_detectors",
+        "environment variables keyhog_*",
+        "keyhog_cache_dir relocates",
+        "keyhog_lockdown_require=1",
+        "unset keyhog_lockdown_require",
+    ];
+
+    for (path, raw) in surfaces {
+        let normalized = normalize_surface_text(raw);
+        for claim in stale_claims {
+            assert!(
+                !normalized.contains(claim),
+                "{path} still advertises retired behavior-env configuration: {claim:?}"
+            );
+        }
+    }
 }
 
 // ─────────────────────────── COHERENCE (vector 10) ───────────────────────────
@@ -303,9 +481,10 @@ fn docs_keep_backend_override_on_explicit_cli_surface() {
         "configuration docs must document the explicit --backend surface"
     );
     assert!(
-        env_doc.contains("`KEYHOG_GPU_AUTOROUTE`"),
-        "env.md must document the operator-facing KEYHOG_GPU_AUTOROUTE opt-in (the scan \
-         summary recommends it when a GPU is present but auto-routing chose SIMD)."
+        !env_doc.contains("`KEYHOG_GPU_AUTOROUTE`")
+            && config_doc.contains("`--autoroute-gpu`")
+            && config_doc.contains("`[system] autoroute_gpu`"),
+        "autoroute GPU opt-in must be documented as explicit CLI/TOML config, not env"
     );
 }
 

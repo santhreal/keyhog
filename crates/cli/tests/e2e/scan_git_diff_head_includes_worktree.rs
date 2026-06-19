@@ -48,6 +48,8 @@ fn scan_git_diff_head_includes_uncommitted_worktree_changes() {
     let output = Command::new(binary())
         .args([
             "scan",
+            "--backend",
+            "simd",
             "--no-daemon",
             "--git-diff",
             "HEAD",

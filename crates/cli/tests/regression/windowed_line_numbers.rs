@@ -24,6 +24,7 @@ use std::io::Write;
 use std::path::PathBuf;
 use std::process::Command;
 
+use crate::e2e::support::apply_default_scan_backend;
 use tempfile::TempDir;
 
 fn binary() -> PathBuf {
@@ -89,11 +90,17 @@ fn windowed_file_reports_absolute_line_numbers() {
         f.write_all(content.as_bytes()).expect("write fixture");
     }
 
-    let output = Command::new(binary())
-        .arg("scan")
-        .arg("--no-daemon")
-        .arg("--no-suppress-test-fixtures")
-        .arg("--detectors")
+    let mut cmd = Command::new(binary());
+    apply_default_scan_backend(
+        &mut cmd,
+        &[
+            "scan",
+            "--no-daemon",
+            "--no-suppress-test-fixtures",
+            "--detectors",
+        ],
+    );
+    let output = cmd
         .arg(workspace_detectors())
         .arg("--format")
         .arg("json")
@@ -102,8 +109,8 @@ fn windowed_file_reports_absolute_line_numbers() {
         .expect("run keyhog scan");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    let parsed: serde_json::Value =
-        serde_json::from_str(&stdout).unwrap_or_else(|e| panic!("scan stdout was not JSON: {e}\n{stdout}"));
+    let parsed: serde_json::Value = serde_json::from_str(&stdout)
+        .unwrap_or_else(|e| panic!("scan stdout was not JSON: {e}\n{stdout}"));
     let findings = parsed
         .get("findings")
         .and_then(|f| f.as_array())

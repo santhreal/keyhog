@@ -5,12 +5,12 @@
 //! daemon fast path: when `--daemon=auto` sees a live socket, eligible
 //! stdin / single-file scans go through the running `keyhog daemon`
 //! and skip the ~3 s `CompiledScanner::compile` cold start. The daemon
-//! path is deliberately narrow - directory walks, git-staged scans,
-//! archive decoding, baseline filtering, merkle skip cache, and
-//! verification all still go through the orchestrator. `--daemon=on`
-//! is a hard contract: if the daemon cannot honor the requested scan
-//! exactly, the command fails instead of silently running a different
-//! path.
+//! path is deliberately narrow - it can honor stdin and a single regular
+//! file through the source-owned filesystem expansion path; directory
+//! walks, git-staged scans, baseline filtering, merkle skip cache, and
+//! verification still go through the orchestrator. `--daemon=on` is a hard
+//! contract: if the daemon cannot honor the requested scan exactly, the
+//! command fails instead of silently running a different path.
 
 use crate::args::{DaemonMode, ScanArgs};
 #[cfg(unix)]
@@ -222,7 +222,7 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
     if primary_sources != 1 || has_daemon_incompatible_extra_sources(args) {
         if let Some(route) = reject_forced_daemon(
             forced_on,
-            "the daemon only supports exactly one source: --stdin or a single regular file; directories, archives, git, remote, binary, dynamic, and multi-source scans require the in-process scanner",
+            "the daemon only supports exactly one source: --stdin or a single regular file; directories, git, remote, binary, dynamic, and multi-source scans require the in-process scanner",
         ) {
             return route;
         }
@@ -402,13 +402,6 @@ fn effective_single_file_path(args: &ScanArgs) -> Option<&Path> {
     let raw = args.path.as_deref().or(args.input.as_deref())?;
     let meta = std::fs::metadata(raw).ok()?; // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
     if !meta.is_file() {
-        return None;
-    }
-    if raw
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("har"))
-    {
         return None;
     }
     Some(raw)

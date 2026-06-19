@@ -23,6 +23,8 @@ fn unreadable_dir_warns_scan_continues_exit_one() {
         .args([
             "scan",
             "--no-daemon",
+            "--backend",
+            "simd",
             "--format",
             "json",
             "--no-suppress-test-fixtures",

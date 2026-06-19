@@ -8,7 +8,15 @@ use std::process::Command;
 fn scan_dogfood_dedupes_example_suppression_events() {
     let (_dir, path) = write_temp_file("demo.env", "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n");
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--dogfood", "--format", "text"])
+        .args([
+            "scan",
+            "--backend",
+            "simd",
+            "--no-daemon",
+            "--dogfood",
+            "--format",
+            "text",
+        ])
         .arg(&path)
         .output()
         .expect("spawn");

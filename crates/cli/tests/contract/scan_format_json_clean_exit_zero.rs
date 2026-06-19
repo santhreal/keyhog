@@ -7,7 +7,14 @@ use std::process::Command;
 fn scan_format_json_clean_exit_zero() {
     let (_dir, path) = write_temp_file("clean.txt", "hello world\n");
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "json"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--format",
+            "json",
+        ])
         .arg(&path)
         .output()
         .expect("spawn");

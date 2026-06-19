@@ -6,7 +6,7 @@ artifact for download. The job summary shows the scan path, severity floor,
 report name, raw exit code, finding count, and scan duration for fast PR triage.
 
 ```yaml
-- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.37
+- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
 ```
 
 That's it. Defaults: scan the whole repo, fail on `high` or above, output
@@ -19,7 +19,7 @@ also keep the artifact so the failed job is still diagnosable.
 ## Full reference
 
 ```yaml
-- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.37
+- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
   with:
     path: .                     # file or directory to scan
     severity: high              # info | low | medium | high | critical
@@ -44,7 +44,7 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 ```
 
 ```yaml
-- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.37
+- uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
   with:
     baseline: keyhog-baseline.json
 ```
@@ -53,7 +53,7 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 
 ```yaml
 - id: keyhog
-  uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.37
+  uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
   with:
     fail-on-findings: 'false'
 
@@ -94,9 +94,9 @@ auto-installed Hyperscan shared library on Linux.
 | Windows | * | no | manual, see DROP_IN_USAGE.md |
 
 Release tags and explicit `version:` inputs require a matching prebuilt binary
-and checksum; missing or unverifiable release assets fail the workflow instead
-of silently source-building different code. Branch and SHA action refs may build
-from source. macOS builds (both prebuilt and branch/SHA source builds) ship
+and checksum; missing or unverifiable release assets fail closed instead of
+silently source-building different code. Branch/SHA action refs may build from
+source. macOS builds (both prebuilt and branch/SHA source builds) ship
 without Hyperscan because there is no `libhyperscan-dev` package in homebrew;
 everything else (entropy, multiline reassembly, ML scoring, decode-through, all
 source backends) is included.

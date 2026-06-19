@@ -338,8 +338,9 @@ fn platform_connected_peer_uid(stream: &tokio::net::UnixStream) -> Result<libc::
 )))]
 fn platform_connected_peer_uid(_stream: &tokio::net::UnixStream) -> Result<libc::uid_t> {
     bail!(
-        "daemon client: peer credential verification is not implemented on this Unix platform; \
-         refusing to use the daemon path"
+        "daemon client: this Unix target has no supported peer-credential API; refusing to \
+         send scan paths or content over the daemon socket. Run `keyhog scan --no-daemon ...` \
+         or use Linux/macOS/BSD for daemon mode."
     )
 }
 

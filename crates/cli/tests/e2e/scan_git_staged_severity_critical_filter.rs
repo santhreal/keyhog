@@ -51,6 +51,8 @@ fn scan_git_staged_severity_critical_filter() {
     let output = Command::new(binary())
         .args([
             "scan",
+            "--backend",
+            "simd",
             "--no-daemon",
             "--git-staged",
             "--severity",

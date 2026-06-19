@@ -19,7 +19,7 @@ Adds the [keyhog](https://github.com/santhsecurity/keyhog) secret
 scanner to PR + push CI. Findings upload to GitHub code-scanning as
 SARIF; the job fails the build only on high-severity findings.
 
-**What it catches.** 899 service-specific detectors (AWS, GitHub,
+**What it catches.** 902 service-specific detectors (AWS, GitHub,
 Stripe, Slack, OpenAI, Anthropic, GCP, Azure, plus 880 more) over
 the full surface area of this repo, including:
 - base64- and hex-encoded secrets (decode-through),
@@ -101,7 +101,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0   # full history; drop if you only scan working tree
-      - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.37
+      - uses: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
         with:
           path: .
           severity: high
@@ -120,7 +120,7 @@ binary so each run avoids the ~20 MB fetch:
         uses: actions/cache@v4
         with:
           path: ~/.local/bin/keyhog
-          key: keyhog-${{ runner.os }}-v0.5.37
+          key: keyhog-${{ runner.os }}-v0.5.40
 ```
 
 Place this step before the keyhog action; the composite action's

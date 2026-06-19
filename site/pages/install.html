@@ -34,7 +34,9 @@ and adds it to your <code>PATH</code>.</p>
 runs SIMD on the CPU path. If you have the full CUDA toolkit installed
 (<code>nvcc</code> on PATH or <code>$CUDA_HOME</code> set), pass
 <code>--variant=cuda</code> to install.sh for the native-CUDA build. See
-<a href="performance.html">Performance →</a>.</p>
+<a href="performance.html">Performance →</a>. An explicit CUDA request fails
+closed if the CUDA release asset is missing; only auto-selected CUDA hosts may
+fall back to the WGPU + SIMD asset.</p>
 
 <h3>Minimal source build (no SIMD, no ML)</h3>
 
@@ -82,15 +84,13 @@ root runs the unmodified binary against your tree.</p>
 <h2>Verify the install</h2>
 
 <pre><code><span class="prompt">$</span> keyhog --version
-<span class="a">keyhog v0.5.37</span>
+<span class="a">keyhog v0.5.40</span>
 
 <span class="prompt">$</span> keyhog backend
-<span class="a">keyhog v0.5.37 | 16 cores | SIMD: AVX-512 | Hyperscan | 899 detectors</span>
-<span class="a">  routing matrix:</span>
-<span class="a">    &lt; 64 MiB         → simd-regex (Hyperscan)</span>
-<span class="a">    ≥ 64 MiB, &gt;2k pat → gpu-zero-copy</span>
-<span class="a">    ≥ 256 MiB        → gpu-zero-copy</span>
-<span class="a">    no SIMD          → cpu-fallback</span></code></pre>
+<span class="a">keyhog v0.5.40 | 16 cores | SIMD: AVX-512 | Hyperscan | 902 detectors</span>
+<span class="a">  autoroute calibration: fresh</span>
+<span class="a">    small-tree/default-detectors → simd-regex</span>
+<span class="a">    large-file/default-detectors → gpu-zero-copy</span></code></pre>
 
 <h2>Shell completions</h2>
 

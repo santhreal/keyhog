@@ -85,10 +85,10 @@ hash:5e88…42d8 ; reason="published OAuth client_id" ; expires=2026-12-31 ; app
 ```
 
 An entry whose `expires` date is in the past is dropped at load time with a
-warning, so short-lived approvals self-clean. (The `require_reason` /
-`require_approved_by` / `max_expires_days` governance *enforcement* flags under
-`[allowlist]` in `.keyhog.toml` are parsed but not yet enforced — do not rely on
-them to reject un-annotated entries.)
+fail-closed operator error, so short-lived approvals force a deliberate renewal.
+The `require_reason` / `require_approved_by` / `max_expires_days` governance
+flags under `[allowlist]` in `.keyhog.toml` are enforced before any suppression
+is active; missing required metadata or an overlong expiry stops the scan.
 
 ### `.keyhogignore.toml` — declarative rule allowlist (opt-in, composable)
 
@@ -116,8 +116,8 @@ credential_hash = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d154
 
 A `[[suppress]]` table with no conditions is rejected (it would silently drop
 every finding); write `literal_true = true` if you truly mean "drop all". A
-malformed file is reported via a warning and skipped — it never silently
-narrows the report.
+malformed present `.keyhogignore.toml` is a policy failure and stops the scan
+instead of being treated as an empty suppressor.
 
 ### Inline directives — suppress at the source line
 

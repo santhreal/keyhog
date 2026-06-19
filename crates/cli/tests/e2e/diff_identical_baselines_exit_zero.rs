@@ -13,7 +13,13 @@ fn diff_identical_baselines_exit_zero() {
     );
     let baseline = dir.path().join("baseline.json");
     let create = Command::new(binary())
-        .args(["scan", "--no-daemon", "--create-baseline"])
+        .args([
+            "scan",
+            "--backend",
+            "simd",
+            "--no-daemon",
+            "--create-baseline",
+        ])
         .arg(baseline.to_str().unwrap())
         .arg("--format")
         .arg("json")

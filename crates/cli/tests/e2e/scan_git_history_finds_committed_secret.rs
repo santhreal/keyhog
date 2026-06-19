@@ -56,6 +56,8 @@ fn scan_git_history_finds_committed_secret() {
     let output = Command::new(binary())
         .args([
             "scan",
+            "--backend",
+            "simd",
             "--no-daemon",
             "--git-history",
             ".",

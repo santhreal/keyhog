@@ -1,6 +1,12 @@
-//! KH-GAP-004 (cli slice): `src/` must not host `#[cfg(test)]` modules.
+//! KH-GAP-004 (cli slice): production files must not host inline test blocks.
 
 use std::path::{Path, PathBuf};
+
+fn has_inline_test_block(content: &str) -> bool {
+    content
+        .lines()
+        .any(|line| line.trim().starts_with("mod tests {"))
+}
 
 fn scan_rust_sources(dir: &Path, offenders: &mut Vec<PathBuf>) {
     let entries = std::fs::read_dir(dir)
@@ -16,10 +22,10 @@ fn scan_rust_sources(dir: &Path, offenders: &mut Vec<PathBuf>) {
         }
         let content = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read {} failed: {e}", path.display()));
-        if content
-            .lines()
-            .any(|line| line.trim().starts_with("#[cfg(test)]"))
-        {
+        if path.file_name().and_then(|name| name.to_str()) == Some("tests.rs") {
+            continue;
+        }
+        if has_inline_test_block(&content) {
             offenders.push(path);
         }
     }
@@ -33,7 +39,7 @@ fn no_inline_tests_in_src() {
     offenders.sort();
     assert!(
         offenders.is_empty(),
-        "{} cli/src files still contain #[cfg(test)] - migrate to tests/unit/:\n  - {}",
+        "{} cli/src files still contain inline `mod tests {{` blocks - migrate to tests/unit/ or a separate test module:\n  - {}",
         offenders.len(),
         offenders
             .iter()

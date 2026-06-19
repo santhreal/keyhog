@@ -1,7 +1,7 @@
 [book]
 title = "KeyHog"
 authors = ["Santh Project"]
-description = "The fastest, most accurate secret scanner."
+description = "Secret scanning for source trees, history, archives, and remote sources."
 language = "en"
 src = "src"
 

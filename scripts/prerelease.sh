@@ -176,7 +176,7 @@ step "verdict"
 if [ "$fail" = "0" ]; then
   echo "  PRERELEASE OK${BUMP:+ — bumped to $BUMP}"
   echo "  Next (human): review git diff, commit, tag v${BUMP:-$CUR}, push;"
-  echo "  watch lanes: ci · bench-nightly · differential-bench · runners-nightly · vendor-vyre"
+  echo "  watch lanes: ci · bench-nightly · differential-bench · runners-nightly"
 else
   echo "  PRERELEASE BLOCKED — ${#FAILED[@]} gate(s) failed: ${FAILED[*]}"
 fi

@@ -2,7 +2,7 @@
 //! registry can't resolve.
 //!
 //! DF-02 hit `keyhog explain aws-access-key-id` → exit 2 "no detector with id":
-//! `FP_AUDIT_REPORT.md` cited an id (`aws-access-key-id`) that had drifted from
+//! `docs/EXECUTION_PLAN.md` cited an id (`aws-access-key-id`) that had drifted from
 //! the canonical registry id (`aws-access-key`). A doc that names a non-resolving
 //! detector is a coherence bug — a reader who copies the id into `keyhog explain`
 //! gets an error, and an audit keyed on a dead id silently audits nothing.
@@ -27,36 +27,37 @@ fn repo_root() -> PathBuf {
 
 /// Canonical detector ids from the embedded corpus (what `explain` resolves).
 fn embedded_ids() -> BTreeSet<String> {
-    #[derive(serde::Deserialize)]
-    struct DetectorFile {
-        detector: Detector,
-    }
-    #[derive(serde::Deserialize)]
-    struct Detector {
-        id: String,
-    }
-    let mut ids = BTreeSet::new();
-    for (name, toml_content) in keyhog_core::embedded_detector_tomls() {
-        let file: DetectorFile = toml::from_str(toml_content)
-            .unwrap_or_else(|e| panic!("embedded detector {name} parses: {e}"));
-        ids.insert(file.detector.id);
-    }
-    assert!(ids.len() > 100, "embedded corpus must be populated; got {}", ids.len());
+    let ids: BTreeSet<String> = keyhog_core::load_embedded_detectors_or_fail()
+        .expect("embedded detectors load")
+        .into_iter()
+        .map(|detector| detector.id.to_string())
+        .collect();
+    assert!(
+        ids.len() > 100,
+        "embedded corpus must be populated; got {}",
+        ids.len()
+    );
     ids
 }
 
-/// Every `detectors/<stem>.toml` reference found in `text`.
+/// Every shipped `detectors/<stem>.toml` reference found in `text`.
 fn referenced_stems(text: &str) -> BTreeSet<String> {
     let mut stems = BTreeSet::new();
     let mut rest = text;
     while let Some(pos) = rest.find("detectors/") {
+        let is_repo_relative = pos == 0
+            || !matches!(
+                rest[..pos].as_bytes().last().copied(),
+                Some(b'/') | Some(b'\\')
+            );
         let after = &rest[pos + "detectors/".len()..];
         // Read the stem up to `.toml`.
         if let Some(dot) = after.find(".toml") {
             let stem = &after[..dot];
             // A real id is kebab/alnum; reject if the slice ran across a path
             // separator or whitespace (a non-`detectors/<file>` coincidence).
-            if !stem.is_empty()
+            if is_repo_relative
+                && !stem.is_empty()
                 && stem
                     .bytes()
                     .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_' || b == b'.')
@@ -71,24 +72,45 @@ fn referenced_stems(text: &str) -> BTreeSet<String> {
     stems
 }
 
+fn shipped_markdown_docs(root: &std::path::Path) -> Vec<PathBuf> {
+    let mut docs = vec![root.join("README.md")];
+    let mut stack = vec![root.join("docs")];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "md") {
+                docs.push(path);
+            }
+        }
+    }
+    docs.sort();
+    docs
+}
+
 #[test]
 fn fp_audit_report_detector_ids_resolve() {
     let root = repo_root();
-    let report = root.join("FP_AUDIT_REPORT.md");
-    let text = std::fs::read_to_string(&report)
-        .unwrap_or_else(|e| panic!("FP_AUDIT_REPORT.md readable at {}: {e}", report.display()));
-
     let ids = embedded_ids();
-    let stems = referenced_stems(&text);
+    let mut stems = BTreeSet::new();
+    for doc in shipped_markdown_docs(&root) {
+        let text = std::fs::read_to_string(&doc)
+            .unwrap_or_else(|e| panic!("shipped markdown doc readable at {}: {e}", doc.display()));
+        stems.extend(referenced_stems(&text));
+    }
     assert!(
         !stems.is_empty(),
-        "FP_AUDIT_REPORT.md must reference detectors by detectors/<id>.toml path"
+        "shipped docs must contain at least one detectors/<id>.toml reference for the coherence gate"
     );
 
     let unresolved: Vec<&String> = stems.iter().filter(|s| !ids.contains(*s)).collect();
     assert!(
         unresolved.is_empty(),
-        "FP_AUDIT_REPORT.md names detector files that do NOT resolve to a canonical \
+        "shipped docs name detector files that do NOT resolve to a canonical \
          registry id (a reader running `keyhog explain <id>` on these gets exit 2): {unresolved:?}. \
          Fix the doc to cite the canonical id (the .toml file stem == the detector's `id`)."
     );

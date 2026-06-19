@@ -41,6 +41,8 @@ fn scan_git_history_clean_repo_exits_zero() {
     let output = Command::new(binary())
         .args([
             "scan",
+            "--backend",
+            "simd",
             "--no-daemon",
             "--git-history",
             ".",

@@ -16,11 +16,15 @@ fn site_api_pages_use_embedded_detector_tomls_not_phantom_fn() {
         let html = std::fs::read_to_string(repo_root().join(rel)).expect(rel);
         assert!(
             !html.contains("embedded_detectors()"),
-            "{rel} must not document phantom embedded_detectors(); use embedded_detector_tomls()"
+            "{rel} must not document phantom embedded_detectors(); use load_embedded_detectors_or_fail()"
         );
         assert!(
-            html.contains("embedded_detector_tomls()"),
-            "{rel} must show embedded_detector_tomls() loader"
+            !html.contains("embedded_detector_tomls()"),
+            "{rel} must not show private embedded_detector_tomls() loader"
+        );
+        assert!(
+            html.contains("load_embedded_detectors_or_fail()"),
+            "{rel} must show fail-closed embedded detector loader"
         );
     }
 }

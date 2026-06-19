@@ -5,8 +5,9 @@
 # Unlike scenarios.sh (which only drives --diagnose with KEYHOG_VERSION
 # pinned so the network is never touched), this harness mocks the ENTIRE
 # surface install.sh depends on - curl (releases API, asset download,
-# .sha256), uname, nvidia-smi, ldconfig, ldd, and the downloaded binary
-# itself - so the full install -> verify_checksum -> stage -> verify_install
+# .minisig, .sha256), minisign, uname, nvidia-smi, ldconfig, ldd, and the
+# downloaded binary itself - so the full install -> verify_release_signature
+# -> verify_checksum -> stage -> verify_install
 # path runs offline and deterministically. Every documented mode, flag,
 # detection branch, and failure path gets a real assertion against the
 # real script. These are the tests that would have caught the resolve_tag
@@ -142,19 +143,11 @@ JSON
 cat > "$FIX_DIR/fake_keyhog_healthy" <<'SH'
 #!/bin/sh
 write_mock_autoroute_cache() {
-  case "${KEYHOG_AUTOROUTE_CACHE:-}" in
-    0|off|OFF|Off) return 0 ;;
-    /*) cache="${KEYHOG_AUTOROUTE_CACHE}" ;;
-    *)
-      if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
-        cache="$HOME/Library/Caches/keyhog/autoroute.json"
-      elif [ -n "${XDG_CACHE_HOME:-}" ]; then
-        cache="$XDG_CACHE_HOME/keyhog/autoroute.json"
-      else
-        cache="$HOME/.cache/keyhog/autoroute.json"
-      fi
-      ;;
-  esac
+  if [ "$(uname -s 2>/dev/null)" = "Darwin" ]; then
+    cache="$HOME/Library/Caches/keyhog/autoroute.json"
+  else
+    cache="${XDG_CACHE_HOME:-$HOME/.cache}/keyhog/autoroute.json"
+  fi
   mkdir -p "$(dirname "$cache")" || exit 1
   cat > "$cache" <<'JSON'
 {
@@ -199,7 +192,7 @@ case "$1" in
   scan)
     case "${2:-}" in
       --help) echo "Usage: keyhog scan [--no-config]" ;;
-      *) [ -n "${KEYHOG_AUTOROUTE_CALIBRATE:-}" ] && write_mock_autoroute_cache ;;
+      *) case " $* " in *" --autoroute-calibrate "*) write_mock_autoroute_cache ;; esac ;;
     esac
     exit 0
     ;;
@@ -248,7 +241,7 @@ case "$1" in
   scan)
     case "${2:-}" in
       --help) echo "Usage: keyhog scan [--no-config]" ;;
-      *) [ -n "${KEYHOG_AUTOROUTE_CALIBRATE:-}" ] && write_mock_autoroute_cache ;;
+      *) case " $* " in *" --autoroute-calibrate "*) write_mock_autoroute_cache ;; esac ;;
     esac
     exit 0
     ;;
@@ -296,7 +289,7 @@ case "$1" in
   scan)
     case "$2" in
       --help) echo "Usage: keyhog scan [--docker-image IMAGE]" ;;
-      *) [ -n "${KEYHOG_AUTOROUTE_CALIBRATE:-}" ] && write_mock_autoroute_cache ;;
+      *) case " $* " in *" --autoroute-calibrate "*) write_mock_autoroute_cache ;; esac ;;
     esac
     exit 0
     ;;
@@ -377,7 +370,7 @@ case "$1" in
   scan)
     case "${2:-}" in
       --help) echo "Usage: keyhog scan [--no-config]" ;;
-      *) [ -n "${KEYHOG_AUTOROUTE_CALIBRATE:-}" ] && write_mock_autoroute_cache ;;
+      *) case " $* " in *" --autoroute-calibrate "*) write_mock_autoroute_cache ;; esac ;;
     esac
     exit 0
     ;;
@@ -397,6 +390,7 @@ sha_of() {
 #   MOCK_ASSET      - path to the binary to serve, or "404"
 #   MOCK_LATEST_ASSET - path served by /releases/latest/download, or "404"
 #   MOCK_FALLBACK   - path to serve for the *fallback* asset, or "404"
+#   MOCK_SIG        - "match" | "invalid" | "absent"
 #   MOCK_SHA        - "match" | "mismatch" | "absent"
 #   MOCK_LDD        - "ok" | path-to-missing-lib-name (e.g. "libhyperscan.so.5")
 build_sandbox() {
@@ -467,6 +461,35 @@ esac
 EOF
     chmod +x "$sb/bin/ldd"
 
+    # Mock minisign: validates that the installer downloaded a non-empty
+    # signature file and honors MOCK_SIG for success/failure cases.
+    cat > "$sb/bin/minisign" <<'EOF'
+#!/bin/sh
+sigfile=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -x) shift; sigfile="${1:-}" ;;
+  esac
+  shift || break
+done
+case "${MOCK_SIG:-match}" in
+  match)
+    [ -s "$sigfile" ] || { echo "missing signature file" >&2; exit 1; }
+    echo "Signature and comment signature verified"
+    exit 0
+    ;;
+  invalid)
+    echo "Signature verification failed" >&2
+    exit 1
+    ;;
+  *)
+    echo "unexpected mock signature mode: ${MOCK_SIG:-}" >&2
+    exit 1
+    ;;
+esac
+EOF
+    chmod +x "$sb/bin/minisign"
+
     # The mock curl: URL-dispatched, scenario-driven.
     cat > "$sb/bin/curl" <<EOF
 #!/bin/sh
@@ -495,6 +518,12 @@ case "$url" in
       exit 22
     fi
     emit < "$MOCK_RELEASES"; exit 0 ;;
+  *.minisig)
+    case "${MOCK_SIG:-match}" in
+      absent)  exit 22 ;;
+      invalid) printf 'invalid mock minisig\n' | emit; exit 0 ;;
+      match)   printf 'trusted mock minisig\n' | emit; exit 0 ;;
+    esac ;;
   *.sha256)
     case "${MOCK_SHA:-absent}" in
       absent)   exit 22 ;;
@@ -545,6 +574,7 @@ run_install() {
         MOCK_ASSET="${MOCK_ASSET:-404}" \
         MOCK_LATEST_ASSET="${MOCK_LATEST_ASSET:-${MOCK_ASSET:-404}}" \
         MOCK_FALLBACK="${MOCK_FALLBACK:-404}" \
+        MOCK_SIG="${MOCK_SIG:-match}" \
         MOCK_SHA="${MOCK_SHA:-absent}" \
         MOCK_LDD="${MOCK_LDD:-ok}" \
         KEYHOG_VARIANT="${KEYHOG_VARIANT:-auto}" \
@@ -563,7 +593,7 @@ echo " install.sh edge-case battery"
 echo "=============================================================="
 
 reset_mocks() {
-    unset MOCK_RELEASES MOCK_ASSET MOCK_LATEST_ASSET MOCK_FALLBACK MOCK_SHA MOCK_LDD \
+    unset MOCK_RELEASES MOCK_ASSET MOCK_LATEST_ASSET MOCK_FALLBACK MOCK_SIG MOCK_SHA MOCK_LDD \
           KEYHOG_VARIANT KEYHOG_VERSION KEYHOG_INSTALL_OVERRIDE GITHUB_TOKEN
 }
 
@@ -734,11 +764,54 @@ out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=m
 expect_status "6.1 healthy install exits 0" 0 "$st"
 expect_match  "6.2 reports installed version" "KeyHog v9.9.9" "$out"
 expect_match  "6.3 SHA256 verified line"      "SHA256 verified" "$out"
+expect_match  "6.3a minisign verified line"   "Minisign signature verified" "$out"
 expect_exec   "6.4 binary is executable"      "$h/.local/bin/keyhog"
 expect_match  "6.4a calibration summary table printed" "Autoroute calibration decisions" "$out"
 expect_match  "6.4b calibration summary reports persisted decision count" "decisions persisted: 2" "$out"
 expect_match  "6.4c calibration summary shows backend margin" "gpu-zero-copy.*7\\.0ms" "$out"
 rm -rf "$h"
+# 6.4d missing .minisig refuses by default.
+h=$(newhome)
+out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SIG=absent MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
+expect_match  "6.4d absent .minisig refuses unverified install" "No \\.minisig signature|Refusing to install an unverified" "$out"
+expect_status "6.4e absent .minisig exits 1" 1 "$st"
+expect_nofile "6.4f no binary written without signature" "$h/.local/bin/keyhog"
+rm -rf "$h"
+# 6.4g missing .minisig with --insecure is loud and still requires checksum.
+h=$(newhome)
+out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SIG=absent MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --insecure); st=$?
+expect_match  "6.4g absent .minisig insecure override is loud" "INSECURE" "$out"
+expect_match  "6.4h absent .minisig insecure override still checks checksum" "SHA256 verified" "$out"
+expect_status "6.4i absent .minisig insecure override installs" 0 "$st"
+expect_exec   "6.4j binary present after signature bypass" "$h/.local/bin/keyhog"
+rm -rf "$h"
+# 6.4k invalid signatures are known-bad proof and cannot be bypassed.
+h=$(newhome)
+out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SIG=invalid MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
+expect_match  "6.4k invalid .minisig refuses" "Minisign signature verification failed" "$out"
+expect_status "6.4l invalid .minisig exits 1" 1 "$st"
+expect_nofile "6.4m no binary written after invalid signature" "$h/.local/bin/keyhog"
+rm -rf "$h"
+h=$(newhome)
+out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SIG=invalid MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --insecure); st=$?
+expect_match  "6.4n invalid .minisig still refuses with insecure" "Minisign signature verification failed" "$out"
+expect_status "6.4o invalid .minisig insecure exits 1" 1 "$st"
+expect_nofile "6.4p no binary written after invalid signature with insecure" "$h/.local/bin/keyhog"
+rm -rf "$h"
+# 6.4q missing minisign verifier fails closed unless explicitly insecure.
+sb_no_minisign=$(build_sandbox Linux x86_64 no no no); rm -f "$sb_no_minisign/bin/minisign"
+h=$(newhome)
+out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb_no_minisign" "$h" -- --no-prompt); st=$?
+expect_match  "6.4q no minisign tool refuses" "minisign is not installed|Refusing to install an unverified" "$out"
+expect_status "6.4r no minisign tool exits 1" 1 "$st"
+expect_nofile "6.4s no binary written without minisign" "$h/.local/bin/keyhog"
+rm -rf "$h"
+h=$(newhome)
+out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb_no_minisign" "$h" -- --no-prompt --insecure); st=$?
+expect_match  "6.4t no minisign tool insecure override is loud" "INSECURE" "$out"
+expect_status "6.4u no minisign tool insecure override installs" 0 "$st"
+expect_exec   "6.4v binary present after verifier-tool bypass" "$h/.local/bin/keyhog"
+rm -rf "$sb_no_minisign" "$h"
 # 6.5 checksum mismatch refuses + no install
 h=$(newhome)
 out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=mismatch run_install "$sb" "$h" -- --no-prompt); st=$?
@@ -1172,11 +1245,13 @@ else
 fi
 if grep -q 'while kill -0 "$pid"' install.sh \
    && grep -q 'calibration_probe_pid="$pid"' install.sh \
-   && grep -q 'sleep 0.15' install.sh; then
+   && grep -q 'sleep 0.15' install.sh \
+   && grep -q 'elapsed_ms_since "$probe_started_ms"' install.sh \
+   && grep -q 'PASS %s (%sms)' install.sh; then
     _record_pass "19.14b install.sh calibration probes have live spinner progress"
 else
     _record_fail "19.14b install.sh calibration probes have live spinner progress" \
-        "probe loop must keep an active pid and update progress while it runs"
+        "probe loop must keep an active pid, update progress while it runs, and print per-probe elapsed ms"
 fi
 reset_mocks
 sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
@@ -1271,19 +1346,21 @@ if [ -f install.ps1 ]; then
     fi
     if grep -q 'Show-AutorouteCalibrationSummary -ProbeCount' install.ps1 \
        && grep -q 'ConvertFrom-Json -ErrorAction Stop' install.ps1 \
-       && grep -q 'selected backend margin' install.ps1; then
+       && grep -q 'selected backend margin' install.ps1 \
+       && grep -q 'TotalMilliseconds' install.ps1 \
+       && grep -q 'PASS {0} ({1}ms)' install.ps1; then
         _record_pass "19.25 install.ps1 renders persisted autoroute calibration decisions"
     else
         _record_fail "19.25 install.ps1 renders persisted autoroute calibration decisions" \
-            "PowerShell calibration must read the cache JSON and print selected backend margins"
+            "PowerShell calibration must read the cache JSON, print selected backend margins, and show per-probe elapsed ms"
     fi
     if grep -q 'Get-AutorouteCachePathForInstall' install.ps1 \
-       && grep -q 'KEYHOG_AUTOROUTE_CACHE' install.ps1 \
-       && grep -q 'LocalApplicationData' install.ps1; then
+       && grep -q 'LocalApplicationData' install.ps1 \
+       && ! grep -q 'KEYHOG_.*AUTOROUTE_CACHE' install.ps1; then
         _record_pass "19.26 install.ps1 resolves the same persistent autoroute cache path"
     else
         _record_fail "19.26 install.ps1 resolves the same persistent autoroute cache path" \
-            "missing KEYHOG_AUTOROUTE_CACHE override or LocalApplicationData default"
+            "missing LocalApplicationData default or stale autoroute cache env override remains"
     fi
 fi
 

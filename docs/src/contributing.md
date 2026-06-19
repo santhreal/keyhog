@@ -22,16 +22,15 @@ keyhog/
   crates/
     core/             # Detector spec, raw match types, severity, embed
     scanner/          # The scanner engine itself
-    sources/          # Filesystem, git, web, docker, S3 backends
+    sources/          # Filesystem, git, web, docker, S3/GCS/Azure Blob, hosted-git backends
     verifier/         # Live credential verification
     cli/              # The `keyhog` binary, subcommand dispatch
-  detectors/          # 899 service-specific detector TOMLs
+  detectors/          # 902 service-specific detector TOMLs
   crates/cli/data/
     suppressions/     # Test-fixture suppression list, baked into the binary
   docs/               # This documentation (mdBook source)
   install.sh          # Linux/macOS install script
   install.ps1         # Windows install script
-  vendor/vyre/        # GPU literal-set scanner (vendored, separate repo)
 ```
 
 The Rust workspace is at the root; each `crate/` member is a

@@ -18,6 +18,8 @@ fn exclude_paths_flag_suppresses_matching_files() {
         .args([
             "scan",
             "--no-daemon",
+            "--backend",
+            "simd",
             "--format",
             "json",
             "--exclude-paths",

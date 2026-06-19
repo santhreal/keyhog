@@ -13,7 +13,7 @@ fn allowlist_policy_load_errors_fail_closed() {
 
     assert!(
         allowlist.contains("fn load_allowlist")
-            && allowlist.contains("Result<keyhog_core::allowlist::Allowlist>")
+            && allowlist.contains("Result<keyhog_core::Allowlist>")
             && allowlist.contains("refusing to scan with silently ignored policy")
             && !allowlist.contains("Allowlist::load(&ignore_path)\n            .unwrap_or_else"),
         ".keyhogignore load errors must not become an empty allowlist"
@@ -27,11 +27,11 @@ fn allowlist_policy_load_errors_fail_closed() {
     );
     assert!(
         scan.contains("fn load_daemon_allowlist")
-            && scan.contains("Result<keyhog_core::allowlist::Allowlist>")
+            && scan.contains("Result<keyhog_core::Allowlist>")
             && scan.contains("fn load_daemon_rule_suppressor")
             && scan.contains("Result<RuleSuppressor>")
             && scan.contains("daemon route: failed to load")
-            && !scan.contains("unwrap_or_else(|_| keyhog_core::allowlist::Allowlist::empty())"),
+            && !scan.contains("unwrap_or_else(|_| keyhog_core::Allowlist::empty())"),
         "daemon scan route must share the same fail-closed policy loading contract"
     );
 }

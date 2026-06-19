@@ -10,7 +10,14 @@ fn scan_sarif_has_runs() {
         "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n",
     );
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "sarif"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--format",
+            "sarif",
+            "--backend",
+            "simd",
+        ])
         .arg(&path)
         .output()
         .expect("spawn");

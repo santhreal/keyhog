@@ -35,7 +35,12 @@ By default, output is human-readable:
 
 ```text
 $ keyhog scan .
-keyhog v0.5.37 │ 899 detectors │ 1666 patterns │ avx-512 + hyperscan
+K E Y H O G
+───────────
+v0.5.40 · secret scanner · 902 detectors
+by santh
+
+⚡ 16 cores | GPU: NVIDIA GeForce RTX 5090 | SIMD: AVX-512 | Hyperscan | 902 detectors (5872 patterns) io_uring | backend=simd-regex | gpu=none
 
 src/config/staging.env:14:12  HIGH  stripe-secret-key
                               sk_live_4eC39H…Tcd3Hc (redacted, last 6)
@@ -45,11 +50,12 @@ scanned 12,841 files in 1.4 s
 1 finding · 0 verified live · 1041 example fixtures suppressed
 ```
 
-The header tells you the binary version, the detector count, and which
-hardware acceleration is active (AVX-512, Hyperscan/Vectorscan SIMD,
-CUDA, etc.). The body lists each finding with its location, severity,
-detector, redacted credential, and confidence. The footer summarizes
-counts and runtime.
+The banner tells you the binary version and detector count. With
+`--progress`, the capability line also shows the current host's CPU/GPU
+labels, scanner engine, compiled pattern count, selected backend, and GPU
+engagement result. The body lists each finding with its location,
+severity, detector, redacted credential, and confidence. The footer
+summarizes counts and runtime.
 
 ## Default suppressions
 
@@ -118,29 +124,15 @@ Common patterns the default walk **already** skips: `.git/`,
 `.min.js`, `.min.css`, `.bak`, `.swp`. To see the full list, look at
 `is_default_excluded` in `crates/sources/src/filesystem.rs`.
 
-## Interactive TUI dashboard
-
-For an interactive scan with a live finding feed, current-file
-banner, and stats panel showing throughput and backend choice:
-
-```sh
-keyhog tui .                       # scan CWD with live dashboard
-keyhog tui src/ --throttle-ms 200  # paced scan, good for demos/recordings
-keyhog tui . --feed-depth 500      # keep last 500 findings in feed
-```
-
-The TUI builds on the same scanner core; `q` or `Esc` quits, and a
-non-zero exit code is returned when any findings are surfaced. Useful
-for sitting next to a developer demoing keyhog, or recording a vhs
-GIF for a README or talk.
-
 ## Going further
 
 Once the basic scan works:
 
 - [Output formats](./output-formats.md) - JSON, SARIF, plain text.
 - [Verification](./verification.md) - `--verify` makes API calls to
-  confirm credentials are live, downgrades dead ones to severity LOW.
+  confirm credentials are live; a dead credential is downgraded one
+  severity tier (`critical` → `high`, …), never collapsed to a fixed
+  level.
 - [Pre-commit hook](./workflows/precommit.md) - block leaked creds
   before they hit the repo.
 - [CI integration](./workflows/ci.md) - GitHub Actions, GitLab CI,

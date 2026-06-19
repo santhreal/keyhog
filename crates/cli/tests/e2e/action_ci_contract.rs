@@ -62,6 +62,15 @@ fn github_workflow_paths() -> Vec<PathBuf> {
     paths
 }
 
+fn normalize_doc_text(text: &str) -> String {
+    text.replace("<code>", " ")
+        .replace("</code>", " ")
+        .replace('`', " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn release_workflow() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("../../.github/workflows/release.yml")
@@ -1624,6 +1633,63 @@ fn composite_action_verifies_downloaded_release_asset() {
         manifest.contains("refusing source-build fallback for a required release"),
         "missing required release assets/checksums must fail closed instead of source-building silently"
     );
+}
+
+#[test]
+fn consumer_docs_state_release_assets_fail_closed_before_source_build() {
+    let repo = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .canonicalize()
+        .expect("repo root exists");
+    let docs = [
+        repo.join("README.md"),
+        repo.join(".github/actions/keyhog/README.md"),
+        repo.join("site/pages/ci.html"),
+        repo.join("site/ci.html"),
+        repo.join("site/pages/quickstart.html"),
+        repo.join("site/quickstart.html"),
+    ];
+    let retired_claims = [
+        "Auto-downloads a prebuilt binary; falls back to cargo build when no release asset matches",
+        "falls back to source build if no prebuilt binary matches",
+        "Auto-built binaries with source fallback",
+        "falls back to a cargo build when no asset matches the host triple",
+    ];
+
+    for path in docs {
+        let raw = fs::read_to_string(&path).unwrap_or_else(|err| {
+            panic!("read {}: {err}", path.display());
+        });
+        let normalized = normalize_doc_text(&raw);
+        let lower = normalized.to_ascii_lowercase();
+        for claim in retired_claims {
+            assert!(
+                !lower.contains(&claim.to_ascii_lowercase()),
+                "{} still advertises the retired source-build fallback claim: {claim}",
+                path.display()
+            );
+        }
+        assert!(
+            lower.contains("release tags"),
+            "{} must describe release-tag behavior",
+            path.display()
+        );
+        assert!(
+            lower.contains("fail closed"),
+            "{} must say missing release assets fail closed",
+            path.display()
+        );
+        assert!(
+            lower.contains("branch/sha"),
+            "{} must scope source builds to branch/SHA action refs",
+            path.display()
+        );
+        assert!(
+            lower.contains("build from source") || lower.contains("source builds"),
+            "{} must still document the allowed branch/SHA source-build path",
+            path.display()
+        );
+    }
 }
 
 #[test]

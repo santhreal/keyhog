@@ -8,10 +8,7 @@ fn hook_install_subcommand_is_selected() {
     let cli = Cli::try_parse_from(["keyhog", "hook", "install"]).unwrap();
     match cli.command {
         Some(Command::Hook { command }) => {
-            assert!(matches!(
-                command,
-                keyhog::subcommands::hook::HookCommand::Install { .. }
-            ));
+            assert!(matches!(command, keyhog::args::HookCommand::Install { .. }));
         }
         _ => panic!("expected Hook subcommand"),
     }

@@ -16,7 +16,14 @@ pub fn oracle_unicode_path_scan() {
     let dir = TempDir::new().expect("tempdir");
     std::fs::write(dir.path().join("café.txt"), "hello\n").unwrap();
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "json"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--format",
+            "json",
+        ])
         .arg(dir.path())
         .output()
         .expect("spawn");
@@ -27,7 +34,14 @@ pub fn oracle_unicode_path_scan() {
 pub fn oracle_pipe_stdout_json_valid() {
     let (_dir, path) = write_temp_file("clean.txt", "hello\n");
     let child = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "json"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--format",
+            "json",
+        ])
         .arg(&path)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -50,7 +64,14 @@ pub fn oracle_concurrent_four_scans_json() {
             std::fs::write(dir.path().join("a.txt"), "hello\n").unwrap();
             b.wait();
             let output = Command::new(binary())
-                .args(["scan", "--no-daemon", "--format", "json"])
+                .args([
+                    "scan",
+                    "--no-daemon",
+                    "--backend",
+                    "simd",
+                    "--format",
+                    "json",
+                ])
                 .arg(dir.path())
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
@@ -81,7 +102,14 @@ pub fn oracle_invalid_utf8_filename_rejected() {
     std::fs::write(&path, b"hello\n").expect("write");
 
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "json"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--format",
+            "json",
+        ])
         .arg(&path)
         .output()
         .expect("spawn");

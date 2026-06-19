@@ -58,6 +58,17 @@ fn bundled_parser_rejects_invalid_suppression_files() {
         blank_substring.contains("substring suppression needles"),
         "unexpected blank substring error: {blank_substring}"
     );
+
+    let blank_exact_metadata = API
+        .test_fixture_suppressions_from_toml(
+            "schema_version = 1\n\
+         [[exact]]\ncredential = \"API_KEY_EXAMPLE\"\nservice = \"  \"\n",
+        )
+        .expect_err("blank exact suppression metadata must fail closed");
+    assert!(
+        blank_exact_metadata.contains("metadata field service"),
+        "unexpected blank metadata error: {blank_exact_metadata}"
+    );
 }
 
 #[test]

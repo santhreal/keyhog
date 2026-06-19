@@ -3,7 +3,7 @@
 //! the robustness guarantees:
 //!   * start -> status -> stop, with the socket created 0600 and removed on stop;
 //!   * the idle-request timeout reclaims a half-frame / slowloris connection so
-//!     one stuck client cannot deadlock the daemon (KEYHOG_DAEMON_REQUEST_TIMEOUT_SECS);
+//!     one stuck client cannot deadlock the daemon (`--request-timeout-secs`);
 //!   * a frame body that exceeds MAX_FRAME_BYTES is rejected (recv-buffer bound).
 
 #![cfg(unix)]
@@ -21,16 +21,14 @@ fn binary() -> PathBuf {
 
 /// Start `keyhog daemon start --socket <sock>` and wait until the socket is a
 /// live listener. Returns the child + socket path; the caller stops it.
-fn start_daemon(dir: &Path, extra_env: &[(&str, &str)]) -> (Child, PathBuf) {
+fn start_daemon(dir: &Path, extra_args: &[&str]) -> (Child, PathBuf) {
     let socket = dir.join("d.sock");
     let mut cmd = Command::new(binary());
     cmd.args(["daemon", "start", "--socket"])
         .arg(&socket)
+        .args(extra_args)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null());
-    for (k, v) in extra_env {
-        cmd.env(k, v);
-    }
     let child = cmd.spawn().expect("spawn daemon");
     // Wait for a real listener (connect succeeds), not just file existence.
     let deadline = Instant::now() + Duration::from_secs(30);
@@ -106,8 +104,7 @@ fn daemon_reclaims_stuck_half_frame_connection() {
     let dir = TempDir::new().unwrap();
     // 1-second request timeout so the test is fast. A real client does one
     // round-trip; a connection idle past this is stuck and must be reclaimed.
-    let (mut child, socket) =
-        start_daemon(dir.path(), &[("KEYHOG_DAEMON_REQUEST_TIMEOUT_SECS", "1")]);
+    let (mut child, socket) = start_daemon(dir.path(), &["--request-timeout-secs", "1"]);
 
     // Open a connection, announce a frame length, then send NOTHING — the
     // classic half-frame / slowloris stall that would otherwise hold a

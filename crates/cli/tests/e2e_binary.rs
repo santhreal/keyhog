@@ -25,6 +25,22 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
+fn repo_root() -> PathBuf {
+    let mut root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    root.pop();
+    root.pop();
+    root
+}
+
+fn detector_dir() -> PathBuf {
+    repo_root().join("detectors")
+}
+
+fn doc_text(rel: &str) -> String {
+    std::fs::read_to_string(repo_root().join(rel))
+        .unwrap_or_else(|error| panic!("read {rel} for doc/banner coherence contract: {error}"))
+}
+
 /// One-line helper: write a temp file with given content, scan it
 /// with `--format json`, return (stdout, stderr, exit-code).
 fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Option<i32>) {
@@ -46,6 +62,60 @@ fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Option
         String::from_utf8_lossy(&output.stderr).into_owned(),
         output.status.code(),
     )
+}
+
+fn forced_simd_progress_banner() -> String {
+    let dir = TempDir::new().expect("tempdir");
+    let path = dir.path().join("clean.txt");
+    std::fs::write(&path, "hello world\n").expect("write fixture");
+
+    let output = Command::new(binary())
+        .args([
+            "scan",
+            "--no-daemon",
+            "--progress",
+            "--format",
+            "json",
+            "--backend",
+            "simd",
+        ])
+        .arg(&path)
+        .output()
+        .expect("spawn keyhog scan --progress");
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "clean progress scan should exit 0; stderr={}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    stderr
+        .lines()
+        .find(|line| {
+            line.contains("detectors (") && line.contains("patterns)") && line.contains("backend=")
+        })
+        .unwrap_or_else(|| panic!("progress banner missing from stderr:\n{stderr}"))
+        .to_owned()
+}
+
+fn parse_banner_counts(line: &str) -> (usize, usize) {
+    let marker = " detectors (";
+    let detector_end = line
+        .find(marker)
+        .unwrap_or_else(|| panic!("progress banner missing detector marker: {line}"));
+    let detector_count = line[..detector_end]
+        .split_whitespace()
+        .last()
+        .unwrap_or_else(|| panic!("progress banner missing detector count: {line}"))
+        .parse()
+        .unwrap_or_else(|error| panic!("progress banner detector count is not numeric: {error}"));
+    let pattern_count = line[detector_end + marker.len()..]
+        .split_whitespace()
+        .next()
+        .unwrap_or_else(|| panic!("progress banner missing pattern count: {line}"))
+        .parse()
+        .unwrap_or_else(|error| panic!("progress banner pattern count is not numeric: {error}"));
+    (detector_count, pattern_count)
 }
 
 #[test]
@@ -237,14 +307,7 @@ fn scan_json_schema_carries_required_fields() {
 /// `scanner/tests/readme_claims.rs`).
 #[test]
 fn readme_banner_counts_match_loaded_corpus() {
-    // repo_root/detectors — CARGO_MANIFEST_DIR is crates/cli.
-    let detector_dir = {
-        let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        d.pop();
-        d.pop();
-        d.push("detectors");
-        d
-    };
+    let detector_dir = detector_dir();
     let specs = keyhog_core::load_detectors(&detector_dir).expect("load detectors/ corpus");
     let expected_detectors = specs.len();
     let expected_patterns: usize = specs.iter().map(|d| d.patterns.len()).sum();
@@ -280,6 +343,71 @@ fn readme_banner_counts_match_loaded_corpus() {
         "binary advertises {actual_patterns} patterns but the on-disk corpus has \
          {expected_patterns}. Binary/corpus pattern drift.",
     );
+}
+
+#[test]
+fn docs_scan_banners_match_live_binary_banner_contract() {
+    let detector_dir = detector_dir();
+    let specs = keyhog_core::load_detectors(&detector_dir).expect("load detectors/ corpus");
+    let expected_detectors = specs.len();
+
+    let version_output = Command::new(binary())
+        .arg("--version")
+        .output()
+        .expect("spawn keyhog --version");
+    assert_eq!(
+        version_output.status.code(),
+        Some(0),
+        "--version must exit 0; stderr={}",
+        String::from_utf8_lossy(&version_output.stderr)
+    );
+    let version_stdout = String::from_utf8_lossy(&version_output.stdout);
+    assert!(
+        version_stdout.contains(env!("CARGO_PKG_VERSION")),
+        "--version output must expose the workspace version {}; got {version_stdout}",
+        env!("CARGO_PKG_VERSION")
+    );
+
+    let progress_banner = forced_simd_progress_banner();
+    let (banner_detectors, banner_patterns) = parse_banner_counts(&progress_banner);
+    assert_eq!(
+        banner_detectors, expected_detectors,
+        "live progress banner detector count drifted from loaded corpus; banner={progress_banner}"
+    );
+    assert!(
+        banner_patterns >= banner_detectors,
+        "compiled pattern count must not be smaller than detector count; banner={progress_banner}"
+    );
+
+    let version_fragment = format!(
+        "v{} · secret scanner · {expected_detectors} detectors",
+        env!("CARGO_PKG_VERSION")
+    );
+    let compiled_count_fragment =
+        format!("{expected_detectors} detectors ({banner_patterns} patterns)");
+    for rel in ["docs/src/introduction.md", "docs/src/first-scan.md"] {
+        let doc = doc_text(rel);
+        assert!(
+            doc.contains("K E Y H O G") && doc.contains("by santh"),
+            "{rel} must show the real multi-line KeyHog banner"
+        );
+        assert!(
+            doc.contains(&version_fragment),
+            "{rel} must use the live --version/detector banner `{version_fragment}`"
+        );
+        assert!(
+            doc.contains(&compiled_count_fragment),
+            "{rel} must pin the live compiled scanner pattern count `{compiled_count_fragment}`"
+        );
+        assert!(
+            doc.contains("backend=") && doc.contains("gpu="),
+            "{rel} must show operator-visible backend/gpu decision fields"
+        );
+        assert!(
+            !doc.contains("AVX-512 + Hyperscan + CUDA") && !doc.contains("1666 patterns"),
+            "{rel} still contains the stale one-line fabricated banner"
+        );
+    }
 }
 
 #[test]
@@ -665,6 +793,8 @@ fn git_staged_scan_finds_only_staged_secret() {
             "scan",
             "--git-staged",
             "--no-daemon",
+            "--backend",
+            "simd",
             "--format",
             "json",
             "--path",
@@ -717,6 +847,8 @@ fn baseline_suppresses_acknowledged_findings_on_rescan() {
         .args([
             "scan",
             "--no-daemon",
+            "--backend",
+            "simd",
             "--create-baseline",
             baseline_path.to_str().unwrap(),
             "--format",
@@ -737,6 +869,8 @@ fn baseline_suppresses_acknowledged_findings_on_rescan() {
         .args([
             "scan",
             "--no-daemon",
+            "--backend",
+            "simd",
             "--baseline",
             baseline_path.to_str().unwrap(),
             "--format",
@@ -778,6 +912,8 @@ fn lockdown_bails_on_verify_flag() {
         .args([
             "scan",
             "--no-daemon",
+            "--backend",
+            "simd",
             "--lockdown",
             "--verify",
             "--format",
@@ -790,6 +926,8 @@ fn lockdown_bails_on_verify_flag() {
             .args([
                 "scan",
                 "--no-daemon",
+                "--backend",
+                "simd",
                 "--lockdown",
                 "--verify",
                 "--format",
@@ -848,6 +986,8 @@ fn start_daemon() -> (TempDir, std::process::Child) {
         .args([
             "daemon",
             "start",
+            "--backend",
+            "simd",
             "--detectors",
             detectors.to_str().unwrap(),
         ])
@@ -898,7 +1038,7 @@ fn daemon_wire_scan_path_finds_planted_secret() {
 
     let scan = Command::new(binary())
         .env("XDG_RUNTIME_DIR", runtime.path())
-        .args(["scan", "--daemon", "--format", "json"])
+        .args(["scan", "--daemon", "--backend", "simd", "--format", "json"])
         .arg(&fixture)
         .output()
         .expect("daemon scan");
@@ -1075,7 +1215,7 @@ fn daemon_status_reports_payload_after_live_scan() {
     // non-zero in the status payload below.
     let scan = Command::new(binary())
         .env("XDG_RUNTIME_DIR", runtime.path())
-        .args(["scan", "--daemon", "--format", "json"])
+        .args(["scan", "--daemon", "--backend", "simd", "--format", "json"])
         .arg(&fixture)
         .output()
         .expect("daemon scan before status");
@@ -1127,7 +1267,6 @@ fn doctor_reports_corpus_and_passes_scan_self_test() {
     // report reflects reality, not a hardcoded banner number.
     let output = Command::new(binary())
         .arg("doctor")
-        .env("KEYHOG_NO_GPU", "1")
         .output()
         .expect("run keyhog doctor");
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -1244,7 +1383,14 @@ fn scan_dir_with_config(
     std::fs::write(dir.path().join("planted.txt"), content).expect("write fixture");
     std::fs::write(dir.path().join(".keyhog.toml"), config).expect("write config");
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "json"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--format",
+            "json",
+        ])
         .args(extra)
         .arg(dir.path())
         .output()

@@ -10,6 +10,8 @@ fn scan_format_junit_testcase_structure() {
         .args([
             "scan",
             "--no-daemon",
+            "--backend",
+            "simd",
             "--format",
             "junit",
             "--no-suppress-test-fixtures",

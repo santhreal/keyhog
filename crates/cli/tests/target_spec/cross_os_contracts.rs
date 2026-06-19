@@ -122,15 +122,25 @@ fn main_defines_exit_user_error_two_for_windows_uninstall_path() {
 /// the Windows guidance and leave Windows users with an opaque failure.
 #[test]
 fn daemon_is_unix_only_with_explicit_windows_guidance() {
-    let src = read("crates/cli/src/main.rs");
+    let src = read("crates/cli/src/lib.rs");
     assert!(
         src.contains("#[cfg(unix)]")
-            && src.contains("Some(Command::Daemon(args)) => subcommands::daemon::run(args)"),
-        "main.rs must route `daemon` only under #[cfg(unix)]"
+            && src.contains(
+                "Some(args::Command::Daemon(args)) => subcommands::daemon::run(args).await"
+            ),
+        "lib.rs must route `daemon` only under #[cfg(unix)]"
     );
     assert!(
-        src.contains("#[cfg(not(unix))]") && src.contains("`keyhog daemon` is a unix-only command"),
-        "main.rs must give Windows an explicit unix-only daemon error, not a missing command"
+        src.contains("#[cfg(not(unix))]")
+            && src.contains("Some(args::Command::Daemon(_args))")
+            && src.contains("`keyhog daemon` is a unix-only command")
+            && src.contains("No Windows daemon transport ships")
+            && src.contains("keyhog scan <path>"),
+        "lib.rs must give Windows an explicit unix-only daemon error, not a missing command"
+    );
+    assert!(
+        !src.contains("not yet implemented") && !src.contains("tracked but not yet"),
+        "the Windows daemon guidance must state the current shipped contract, not roadmap language"
     );
 }
 

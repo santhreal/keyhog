@@ -12,7 +12,7 @@ Each fragment starts with a small TOML-style header followed by `---`:
 Run from site/ root: `python3 build.py` → writes *.html to site/ root.
 """
 from __future__ import annotations
-import re, sys
+import re, sys, tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).parent
@@ -49,7 +49,12 @@ NAV = [
     ]),
 ]
 
-VERSION = "v0.5.37"
+def workspace_version() -> str:
+    cargo = tomllib.loads((ROOT.parent / "Cargo.toml").read_text())
+    return f"v{cargo['workspace']['package']['version']}"
+
+
+VERSION = workspace_version()
 
 def sidebar() -> str:
     out = ['<aside class="sidebar">']

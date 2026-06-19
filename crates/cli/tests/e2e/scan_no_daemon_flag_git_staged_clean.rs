@@ -45,7 +45,7 @@ fn scan_no_daemon_flag_git_staged_clean() {
         .status()
         .expect("git add staged clean");
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--git-staged"])
+        .args(["scan", "--backend", "simd", "--no-daemon", "--git-staged"])
         .current_dir(repo)
         .arg(".")
         .output()

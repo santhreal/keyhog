@@ -149,6 +149,12 @@ pub enum DaemonAction {
         /// Override the Hyperscan compiled-database cache directory.
         #[arg(long, value_name = "DIR")]
         cache_dir: Option<PathBuf>,
+        /// Force a daemon scan backend instead of using persisted autoroute.
+        ///
+        /// The default `auto` mode requires install-time calibration. Use an
+        /// explicit backend for diagnostics and hermetic daemon tests.
+        #[arg(long, value_name = "auto|simd|cpu|gpu|megascan")]
+        backend: Option<String>,
         /// Max seconds a client connection may sit without completing one
         /// request frame before the daemon closes it and reclaims the slot.
         #[arg(

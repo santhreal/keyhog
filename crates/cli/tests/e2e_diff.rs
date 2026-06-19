@@ -12,67 +12,53 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
+fn baseline_json(entries: &str) -> String {
+    format!(
+        r#"{{
+            "version": 1,
+            "created": "test",
+            "entries": [
+                {entries}
+            ]
+        }}"#
+    )
+}
+
+fn entry_json(detector_id: &str, credential_hash: &str, file_path: &str, line: usize) -> String {
+    format!(
+        r#"{{
+            "detector_id": "{detector_id}",
+            "credential_hash": "{credential_hash}",
+            "file_path": "{file_path}",
+            "line": {line},
+            "status": "acknowledged"
+        }}"#
+    )
+}
+
 /// `keyhog diff baseline1.json baseline2.json` compares two JSON files
-/// and returns exit 0 with a text summary of NEW, RESOLVED, and UNCHANGED.
+/// and exits 1 when NEW entries are present.
 #[test]
 fn diff_two_baselines_returns_exit_zero_with_summary() {
     let dir = TempDir::new().expect("tempdir");
 
     // Create a baseline with one finding.
     let baseline1 = dir.path().join("baseline1.json");
-    let json1 = r#"[
-        {
-            "detector_id": "aws-access-key",
-            "detector_name": "AWS Access Key",
-            "service": "aws",
-            "severity": "Critical",
-            "credential_redacted": "AKIA...XYA",
-            "credential_hash": "abc123",
-            "location": {
-                "source": "test",
-                "file_path": "/path/to/file.txt",
-                "line": 1,
-                "offset": 0
-            },
-            "verification": {"verified": false}
-        }
-    ]"#;
+    let json1 = baseline_json(&entry_json(
+        "aws-access-key",
+        "abc123",
+        "/path/to/file.txt",
+        1,
+    ));
     std::fs::write(&baseline1, json1).expect("write baseline1");
 
     // Create a baseline with two findings (one old, one new).
     let baseline2 = dir.path().join("baseline2.json");
-    let json2 = r#"[
-        {
-            "detector_id": "aws-access-key",
-            "detector_name": "AWS Access Key",
-            "service": "aws",
-            "severity": "Critical",
-            "credential_redacted": "AKIA...XYA",
-            "credential_hash": "abc123",
-            "location": {
-                "source": "test",
-                "file_path": "/path/to/file.txt",
-                "line": 1,
-                "offset": 0
-            },
-            "verification": {"verified": false}
-        },
-        {
-            "detector_id": "github-pat",
-            "detector_name": "GitHub PAT",
-            "service": "github",
-            "severity": "Critical",
-            "credential_redacted": "ghp_...ST",
-            "credential_hash": "def456",
-            "location": {
-                "source": "test",
-                "file_path": "/path/to/other.txt",
-                "line": 5,
-                "offset": 0
-            },
-            "verification": {"verified": false}
-        }
-    ]"#;
+    let json2 = baseline_json(&format!(
+        "{},{}",
+        entry_json("aws-access-key", "abc123", "/path/to/file.txt", 1),
+        entry_json("github-pat", "def456", "/path/to/other.txt", 5)
+    ));
     std::fs::write(&baseline2, json2).expect("write baseline2");
 
     let output = Command::new(binary())
@@ -84,12 +70,16 @@ fn diff_two_baselines_returns_exit_zero_with_summary() {
 
     assert_eq!(
         output.status.code(),
-        Some(0),
-        "diff with valid baselines should exit 0; stderr={}",
+        Some(1),
+        "diff with a new baseline entry should exit 1; stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("keyhog diff") && stdout.contains("FAIL 1") && stdout.contains("PASS 0"),
+        "diff summary must use the shared PASS/FAIL word vocabulary; got: {stdout}"
+    );
     // The output should mention at least one finding category.
     assert!(
         stdout.to_lowercase().contains("new")
@@ -106,27 +96,10 @@ fn diff_json_flag_emits_structured_output() {
     let dir = TempDir::new().expect("tempdir");
 
     let baseline1 = dir.path().join("baseline1.json");
-    let json1 = r#"[]"#;
-    std::fs::write(&baseline1, json1).expect("write empty baseline1");
+    std::fs::write(&baseline1, baseline_json("")).expect("write empty baseline1");
 
     let baseline2 = dir.path().join("baseline2.json");
-    let json2 = r#"[
-        {
-            "detector_id": "aws-access-key",
-            "detector_name": "AWS Access Key",
-            "service": "aws",
-            "severity": "Critical",
-            "credential_redacted": "AKIA...XYA",
-            "credential_hash": "hash1",
-            "location": {
-                "source": "test",
-                "file_path": "/file.txt",
-                "line": 1,
-                "offset": 0
-            },
-            "verification": {"verified": false}
-        }
-    ]"#;
+    let json2 = baseline_json(&entry_json("aws-access-key", "hash1", "/file.txt", 1));
     std::fs::write(&baseline2, json2).expect("write baseline2");
 
     let output = Command::new(binary())
@@ -137,7 +110,11 @@ fn diff_json_flag_emits_structured_output() {
         .output()
         .expect("spawn keyhog diff --json");
 
-    assert_eq!(output.status.code(), Some(0), "diff --json should exit 0");
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "diff --json should exit 1 when NEW entries exist"
+    );
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let parsed: serde_json::Value =
@@ -158,24 +135,8 @@ fn diff_hide_unchanged_flag_suppresses_unchanged_section() {
 
     // Baseline with one unchanged finding.
     let baseline1 = dir.path().join("baseline1.json");
-    let json = r#"[
-        {
-            "detector_id": "aws-access-key",
-            "detector_name": "AWS Access Key",
-            "service": "aws",
-            "severity": "Critical",
-            "credential_redacted": "AKIA...XYA",
-            "credential_hash": "same",
-            "location": {
-                "source": "test",
-                "file_path": "/file.txt",
-                "line": 1,
-                "offset": 0
-            },
-            "verification": {"verified": false}
-        }
-    ]"#;
-    std::fs::write(&baseline1, json).expect("write baseline1");
+    let json = baseline_json(&entry_json("aws-access-key", "same", "/file.txt", 1));
+    std::fs::write(&baseline1, &json).expect("write baseline1");
     std::fs::write(dir.path().join("baseline2.json"), json).expect("write baseline2");
 
     let output = Command::new(binary())
@@ -207,7 +168,7 @@ fn diff_missing_before_file_exits_two_with_error() {
     let dir = TempDir::new().expect("tempdir");
     let missing = dir.path().join("does-not-exist.json");
     let after = dir.path().join("baseline2.json");
-    std::fs::write(&after, "[]").expect("write after");
+    std::fs::write(&after, baseline_json("")).expect("write after");
 
     let output = Command::new(binary())
         .arg("diff")
@@ -224,9 +185,7 @@ fn diff_missing_before_file_exits_two_with_error() {
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.to_lowercase().contains("not found")
-            || stderr.to_lowercase().contains("cannot open")
-            || stderr.contains("before"),
+        stderr.contains("does not exist") && stderr.contains("does-not-exist.json"),
         "error must identify the missing file; got: {stderr}"
     );
 }

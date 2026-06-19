@@ -1,10 +1,9 @@
-use keyhog_core::allowlist::Allowlist;
 use keyhog_core::{
-    load_detectors_with_gate, redact, validate_detector, DetectorSpec, PatternSpec, Severity,
+    load_detectors, redact, validate_detector, Allowlist, DetectorSpec, PatternSpec, Severity,
 };
 use std::path::Path;
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let detector = DetectorSpec {
         tests: Vec::new(),
         id: "demo-token".into(),
@@ -23,8 +22,11 @@ fn main() {
     };
 
     let issues = validate_detector(&detector);
-    let allowlist = Allowlist::parse("path:**/*.md\n");
-    let maybe_detectors = load_detectors_with_gate(Path::new("detectors"), true).ok();
+    let ignore_path = std::env::temp_dir().join("keyhog-core-standalone.keyhogignore");
+    std::fs::write(&ignore_path, "path:**/*.md\n")?;
+    let allowlist = Allowlist::load(&ignore_path)?;
+    let _ = std::fs::remove_file(&ignore_path);
+    let maybe_detectors = load_detectors(Path::new("detectors")).ok();
 
     println!("detector={} issues={}", detector.id, issues.len());
     println!("redacted={}", redact("demo_ABC12345"));
@@ -36,4 +38,5 @@ fn main() {
         "workspace_detectors_loaded={}",
         maybe_detectors.as_ref().map_or(0, Vec::len)
     );
+    Ok(())
 }

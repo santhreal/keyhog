@@ -19,6 +19,7 @@ use filter::walker_config;
 pub(crate) use path::display_path;
 pub(crate) use read::decode_text_file;
 
+#[cfg(feature = "git")]
 pub(crate) fn is_default_excluded_path(path: &str) -> bool {
     filter::is_default_excluded(path)
 }

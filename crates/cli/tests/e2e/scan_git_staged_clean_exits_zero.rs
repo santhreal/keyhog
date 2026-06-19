@@ -45,7 +45,15 @@ fn scan_git_staged_clean_exits_zero() {
         .status()
         .expect("git add staged clean");
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--git-staged", "--format", "json"])
+        .args([
+            "scan",
+            "--backend",
+            "simd",
+            "--no-daemon",
+            "--git-staged",
+            "--format",
+            "json",
+        ])
         .current_dir(repo)
         .arg(".")
         .output()

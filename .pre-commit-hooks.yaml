@@ -1,6 +1,6 @@
 - id: keyhog
   name: KeyHog Secret Scanner
-  entry: keyhog scan --fast --git-staged
+  entry: keyhog scan --fast --git-staged --backend simd
   # `language: system` runs the keyhog already on PATH. Install it first via
   # the one-line installer (see README). The previous `language: rust` had
   # pre-commit `cargo install` keyhog with default features, which links

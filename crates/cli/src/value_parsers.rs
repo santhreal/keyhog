@@ -95,6 +95,7 @@ pub(crate) fn parse_positive_thread_count(s: &str) -> Result<usize, String> {
     }
 }
 
+#[cfg(feature = "git")]
 pub(crate) fn parse_positive_limit_count(s: &str) -> Result<usize, String> {
     let val: usize = s
         .parse()
@@ -291,56 +292,5 @@ pub(crate) fn parse_dedup_scope(s: &str) -> Option<crate::args::CliDedupScope> {
         "file" => Some(D::File),
         "none" => Some(D::None),
         _ => None,
-    }
-}
-
-#[doc(hidden)]
-pub(crate) mod testing {
-    pub(crate) fn parse_min_confidence(s: &str) -> Result<f64, String> {
-        super::parse_min_confidence(s)
-    }
-
-    pub(crate) fn parse_verify_rate(s: &str) -> Result<f64, String> {
-        super::parse_verify_rate(s)
-    }
-
-    pub(crate) fn parse_ml_threshold(s: &str) -> Result<f64, String> {
-        super::parse_ml_threshold(s)
-    }
-
-    pub(crate) fn parse_decode_depth(s: &str) -> Result<usize, String> {
-        super::parse_decode_depth(s)
-    }
-
-    pub(crate) fn parse_min_secret_len(s: &str) -> Result<usize, String> {
-        super::parse_min_secret_len(s)
-    }
-
-    pub(crate) fn parse_positive_thread_count(s: &str) -> Result<usize, String> {
-        super::parse_positive_thread_count(s)
-    }
-
-    pub(crate) fn parse_positive_usize(s: &str) -> Result<usize, String> {
-        super::parse_positive_usize(s)
-    }
-
-    pub(crate) fn parse_byte_size(s: &str) -> Result<usize, String> {
-        super::parse_byte_size(s)
-    }
-
-    pub(crate) fn parse_detectors_verb(s: &str) -> Result<String, String> {
-        super::parse_detectors_verb(s)
-    }
-
-    pub(crate) fn parse_severity_filter(s: &str) -> Option<crate::args::SeverityFilter> {
-        super::parse_severity_filter(s)
-    }
-
-    pub(crate) fn parse_output_format(s: &str) -> Option<crate::args::OutputFormat> {
-        super::parse_output_format(s)
-    }
-
-    pub(crate) fn parse_dedup_scope(s: &str) -> Option<crate::args::CliDedupScope> {
-        super::parse_dedup_scope(s)
     }
 }

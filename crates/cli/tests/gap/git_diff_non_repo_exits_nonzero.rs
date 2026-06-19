@@ -12,7 +12,13 @@ fn git_diff_on_non_repository_exits_nonzero_without_clean_summary() {
     std::fs::write(dir.path().join("plain.txt"), "hello\n").expect("write");
 
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--git-diff", "HEAD", "--git-diff-path"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--git-diff",
+            "HEAD",
+            "--git-diff-path",
+        ])
         .arg(dir.path())
         .output()
         .expect("spawn");

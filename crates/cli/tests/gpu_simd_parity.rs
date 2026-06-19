@@ -48,9 +48,7 @@ fn findings(path: &str, backend: &str, no_gpu: bool) -> BTreeSet<(String, String
         backend,
     ]);
     if no_gpu {
-        cmd.env("KEYHOG_NO_GPU", "1");
-    } else {
-        cmd.env_remove("KEYHOG_NO_GPU");
+        cmd.arg("--no-gpu");
     }
     let out = cmd.output().expect("keyhog binary runs");
     let stdout = String::from_utf8_lossy(&out.stdout);

@@ -12,7 +12,7 @@
   <a href="index.html" class="brand">
     <span class="mark">k</span>
     keyhog
-    <span class="v">v0.5.37</span>
+    <span class="v">v0.5.40</span>
   </a>
   <nav class="top">
     <a href="detectors.html">Detectors</a>
@@ -151,15 +151,13 @@ for the SARIF outputs.</p>
 
 <h2>Can I run keyhog on Windows?</h2>
 
-<p>Yes — Linux/macOS/Windows all supported. On Windows the SIMD path
-is opt-in today (<code>--features simd</code>) because vcpkg/MSVC build
-of Hyperscan is required; the AVX2 regex fallback works out of the box
-and is ~5–10× slower per pattern. Native Windows Hyperscan via vendored
-build profile is on the roadmap.</p>
+<p>Yes — Linux/macOS/Windows all supported. On Windows the portable release
+uses the AVX2 regex path out of the box. Native Windows Hyperscan is not part
+of the shipped release profile.</p>
 
 <h2>Does keyhog support custom detectors written in Rust?</h2>
 
-<p>Not as a stable extension API today. The supported way to add detectors
+<p>No stable Rust extension API ships. The supported way to add detectors
 is TOML — see <a href="detectors.html#adding-a-new-detector">Detector catalog →</a>.
 For complex logic that doesn't fit TOML's regex + companion model,
 filing an issue with the use case is the path; many "needs custom Rust"

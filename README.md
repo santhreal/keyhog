@@ -65,7 +65,7 @@ same detector ids and findings contract:
 
 | Layer / Backend | When | How |
 |---|---|---|
-| `simdsieve` prefilter | AVX-512 / AVX2 / NEON | Layer 1: skims every file for the 8 highest-value secret prefixes (AWS `AKIA`/`ASIA`, GitHub `ghp_`, OpenAI `sk-proj-`, Slack `xoxb-`/`xoxp-`, SendGrid `SG.`, Square `sq0csp-`) at up to **50 GB/s**, before the regex backend runs |
+| `simdsieve` prefilter | AVX-512 / AVX2 / NEON | Layer 1: skims every file for the 8 highest-value secret prefixes (AWS `AKIA`/`ASIA`, GitHub `ghp_`, OpenAI `sk-proj-`, Slack `xoxb-`/`xoxp-`, SendGrid `SG.`, Square `sq0csp-`) in a single SIMD pass, before the regex backend runs |
 | `gpu-zero-copy` | discrete GPU + ≥256 MiB scan | vyre AC automaton on GPU via WGPU (cross-platform) or optional CUDA backend |
 | `simd-regex` | AVX-512 / AVX2 / NEON + Hyperscan | parallel multi-pattern NFA at ~500 MB/s |
 | `cpu-fallback` | no SIMD, no GPU | Aho-Corasick prefix + Rust `regex` extraction |
@@ -94,8 +94,9 @@ class:
 
 The selected decision must be explainable and reproducible. Any cached routing
 decision is keyed by binary version, OS/arch, CPU features, GPU identity,
-detector digest, resolved scan-config digest, backend-affecting runtime env
-knobs, calibration schema, and workload-shape buckets; changing any of those
+detector digest, resolved scan-config digest including batch-pipeline route,
+explicit calibration controls, calibration schema, and workload-shape buckets;
+changing any of those
 invalidates the decision and requires a fresh calibration probe during install
 or explicit recalibration. Invalid existing cache records are rejected instead
 of being silently trusted. The installer runs a visible autoroute calibration
@@ -159,16 +160,18 @@ backend, with a smaller binary and no `libcuda.so` runtime dependency.
 The dedicated `keyhog-linux-x86_64-cuda` variant is only auto-picked
 when the full CUDA toolkit is present (nvcc on PATH, `$CUDA_HOME` set,
 or `/usr/local/cuda` exists) - the signal that you actively run a CUDA
-development setup, not just an NVIDIA driver. Apple Silicon hosts get
-an explicit "Metal GPU acceleration coming soon" note. Each download
-is SHA256-verified against the release-side checksum file before
-install.
+development setup, not just an NVIDIA driver. macOS release assets run
+SIMD on CPU plus the WGPU GPU path on compatible adapters. Each download
+is SHA256-verified against the release-side checksum file before install.
 
 Override the variant with `KEYHOG_VARIANT=cuda` (force the native CUDA
 build, requires `libcuda.so` at runtime) or `KEYHOG_VARIANT=cpu` (force
 the default WGPU + SIMD build, skip GPU detection entirely). Pin a
 version with `KEYHOG_VERSION=v0.5.40`. Change the install dir with
-`KEYHOG_INSTALL=/usr/local/bin`.
+`KEYHOG_INSTALL=/usr/local/bin`. An explicit CUDA variant request requires
+the `keyhog-linux-x86_64-cuda` release asset and fails closed if that asset
+is missing; only auto-selected CUDA hosts may fall back to the WGPU + SIMD
+asset.
 
 Three diagnostic modes ship with the same script:
 ```bash
@@ -399,22 +402,19 @@ backend/cache/daemon/OS/GPU matrix.
     baseline: .keyhog-baseline.json   # block only NEW findings
 ```
 
-Auto-downloads a prebuilt binary; falls back to `cargo build` when no
-release asset matches the host triple. SARIF carries CWE-798 + OWASP
-A07:2021 taxa on every finding.
+Release tags and explicit `version:` inputs require a matching prebuilt
+binary plus checksum and fail closed if the asset is missing or unverifiable.
+Branch/SHA action refs may build from source with Cargo. SARIF carries
+CWE-798 + OWASP A07:2021 taxa on every finding.
 
 ### CI never needs a GPU
 
-**keyhog runs pure CPU/SIMD in CI - no GPU, no drivers, no CUDA toolkit.**
-keyhog auto-detects hosted CI runners (`CI=true` plus a dozen
-provider-specific markers) and skips every GPU init path, routing all
-work through the SIMD/CPU engine. There is nothing to configure: the
-GPU is for interactive desktop scans on machines that have one, never a
-requirement. Detection results are identical on CPU and GPU - the GPU
-only changes throughput, never which secrets are found.
-
-Self-hosted runner with a real GPU and want to use it? Set
-`KEYHOG_NO_GPU=0` to opt back in.
+**Hosted CI should run pure CPU/SIMD unless it has a real GPU.**
+Use `keyhog scan --no-gpu` or `.keyhog.toml` `[system] gpu = "off"` on
+hosted runners. Use `--require-gpu` or `[system] gpu = "required"` on
+self-hosted GPU runners where a driver regression must fail closed.
+Detection results are identical on CPU and GPU - the GPU only changes
+throughput, never which secrets are found.
 
 Building keyhog from source in CI (rather than the prebuilt binary)?
 Use the `portable` feature - every detection feature, no system-library
@@ -527,15 +527,11 @@ keyhog binary can't be coredumped or ptraced.
 ## Library API
 
 ```rust
-use keyhog_core::{Chunk, ChunkMetadata, DetectorFile};
+use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
 
-// build.rs embeds every detectors/*.toml as a (name, toml-body) pair.
-let detectors: Vec<_> = keyhog_core::embedded_detector_tomls()
-    .iter()
-    .filter_map(|(_name, body)| toml::from_str::<DetectorFile>(body).ok())
-    .map(|file| file.detector)
-    .collect();
+// Built-in embedded detectors, parsed through the fail-closed loader.
+let detectors = keyhog_core::load_embedded_detectors_or_fail()?;
 let scanner = CompiledScanner::compile(detectors)?;
 
 let findings = scanner.scan(&Chunk {
@@ -579,6 +575,9 @@ require = true                 # refuse to run unless --lockdown is passed
 
 [system]
 autoroute_cache = "/home/alice/.cache/keyhog/autoroute.json"  # or "off"
+batch_pipeline = false                                       # true only for diagnostics/calibration
+gpu = "auto"                                                 # auto | off | required
+autoroute_gpu = false                                        # true only for calibration candidates
 
 [aws]
 canary_accounts = []           # extra 12-digit canary issuer accounts
@@ -587,9 +586,11 @@ knockoff_accounts = []         # treated the same way: do not live-verify
 [tuning]
 fallback_hs = true             # scanner recall-route defaults; printed by config --effective
 hs_prefilter_max_len = 4096
+hs_shard_target = 80
 decode_focus = true
 confirmed_suffix_gate = true
 no_candidate_gate = true
+gpu_recall_floor = false
 gpu_moe_timeout_ms = 30000
 ```
 
@@ -617,7 +618,8 @@ detector:demo-token
 path:**/fixtures/*.env
 ```
 
-Entries past `expires` are silently dropped on load with a WARN.
+Entries past `expires` fail allowlist load with an actionable error, forcing the
+approval to be renewed or removed before the scan can proceed.
 
 ## Architecture
 

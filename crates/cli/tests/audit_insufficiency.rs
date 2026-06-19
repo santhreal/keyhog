@@ -1,13 +1,12 @@
 //! Adversarial audit — VECTOR 5 (INSUFFICIENCY) + VECTOR 11 (UTILIZATION).
 //!
 //! These are black-box CLI tests: they spawn the real `keyhog` binary and use
-//! the project's own documented coherence oracle — the
-//! `KEYHOG_PRINT_EFFECTIVE_CONFIG=1` env var, implemented in
-//! `crates/cli/src/orchestrator_config.rs::print_effective_config_if_requested`
-//! / `render_effective_config`. That surface exists precisely to answer "what
-//! will ACTUALLY run?" so a test (or an operator) can assert the tuned value,
-//! the benched value, and the shipped value are the same number. We assert that
-//! the value the engine receives for two numeric knobs is the value
+//! the project's own documented coherence surface: `keyhog config --effective`,
+//! backed by `crates/cli/src/orchestrator_config.rs::render_effective_config`.
+//! That surface exists precisely to answer "what will ACTUALLY run?" so a test
+//! (or an operator) can assert the tuned value, the benched value, and the
+//! shipped value are the same number. We assert that the value the engine
+//! receives for two numeric knobs is the value
 //! `ScannerConfig::sanitise` is documented to enforce.
 //!
 //! FINDING (shared root cause):
@@ -72,28 +71,29 @@ fn binary() -> PathBuf {
     cargo_bin
 }
 
-/// Spawn `keyhog scan <extra_args> <file>` with `KEYHOG_PRINT_EFFECTIVE_CONFIG=1`
-/// and return the rendered `[effective-config]` block from stdout.
+/// Spawn `keyhog config --effective <extra_args> <file>` and return the
+/// rendered `[effective-config]` block from stdout.
 ///
 /// The effective-config path prints-and-exits SUCCESS without scanning, so the
 /// file just has to exist and be readable.
 fn effective_config(extra_args: &[&str], target: &std::path::Path) -> String {
-    let mut args: Vec<String> = vec!["scan".to_string()];
+    let mut args: Vec<String> = vec![
+        "config".to_string(),
+        "--effective".to_string(),
+        "--no-gpu".to_string(),
+    ];
     args.extend(extra_args.iter().map(|s| s.to_string()));
     args.push(target.display().to_string());
 
     let out = Command::new(binary())
         .args(&args)
-        .env("KEYHOG_PRINT_EFFECTIVE_CONFIG", "1")
-        // Pin off the GPU so the oracle path is identical on every host.
-        .env("KEYHOG_NO_GPU", "1")
         .output()
         .expect("spawn keyhog");
 
     let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
     assert!(
         stdout.contains("[effective-config]"),
-        "expected the KEYHOG_PRINT_EFFECTIVE_CONFIG oracle block on stdout; \
+        "expected the effective config block on stdout; \
          got stdout={stdout:?} stderr={:?} args={args:?}",
         String::from_utf8_lossy(&out.stderr),
     );

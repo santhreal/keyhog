@@ -41,6 +41,8 @@ fn scan_git_history_max_commits_one_clean_top() {
     let output = Command::new(binary())
         .args([
             "scan",
+            "--backend",
+            "simd",
             "--no-daemon",
             "--git-history",
             ".",

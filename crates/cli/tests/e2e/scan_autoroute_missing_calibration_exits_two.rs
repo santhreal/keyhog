@@ -25,7 +25,6 @@ fn scan_autoroute_missing_calibration_exits_two() {
         .arg(&missing_cache)
         .arg(&fixture)
         .env_remove("KEYHOG_BACKEND")
-        .env_remove("KEYHOG_AUTOROUTE_CALIBRATE")
         .output()
         .expect("spawn keyhog scan");
 
@@ -63,7 +62,6 @@ fn scan_autoroute_relative_cache_path_exits_two() {
         .args(["--autoroute-cache", "relative-autoroute-cache.json"])
         .arg(&fixture)
         .env_remove("KEYHOG_BACKEND")
-        .env_remove("KEYHOG_AUTOROUTE_CALIBRATE")
         .output()
         .expect("spawn keyhog scan");
 

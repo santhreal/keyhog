@@ -27,6 +27,40 @@ pub(crate) fn merge_scan_ignore_paths(
     merged
 }
 
+#[cfg(any(
+    feature = "web",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket",
+    feature = "s3",
+    feature = "gcs",
+    feature = "azure"
+))]
+fn source_http_config(args: &ScanArgs, ua_suffix: &str) -> keyhog_sources::http::HttpClientConfig {
+    keyhog_sources::http::HttpClientConfig {
+        proxy: args.proxy.clone(),
+        insecure_tls: args.insecure,
+        ua_suffix: Some(ua_suffix.to_owned()),
+        ..Default::default()
+    }
+}
+
+#[cfg(not(any(
+    feature = "web",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket",
+    feature = "s3",
+    feature = "gcs",
+    feature = "azure"
+)))]
+fn source_http_config(_args: &ScanArgs, ua_suffix: &str) -> keyhog_sources::http::HttpClientConfig {
+    keyhog_sources::http::HttpClientConfig {
+        ua_suffix: Some(ua_suffix.to_owned()),
+        ..Default::default()
+    }
+}
+
 pub(crate) fn build_sources(
     args: &ScanArgs,
     ignore_paths: Vec<String>,
@@ -113,29 +147,13 @@ pub(crate) fn build_sources(
         ));
     }
 
-    // Build a fresh HttpClientConfig from the global --proxy /
-    // --insecure flags, parameterized only by the per-source UA suffix.
-    // Used by every network-facing source so the proxy + TLS policy
-    // reaches all of them, not just WebSource.
-    #[allow(unused_macros)] // some feature combos compile no consumers
-    macro_rules! http_cfg {
-        ($ua:expr) => {
-            keyhog_sources::http::HttpClientConfig {
-                proxy: args.proxy.clone(),
-                insecure_tls: args.insecure,
-                ua_suffix: Some(($ua).into()),
-                ..Default::default()
-            }
-        };
-    }
-
     #[cfg(feature = "github")]
     if let (Some(org), Some(token)) = (&args.github_org, &args.github_token) {
         let params = format!("{org}\n{token}");
         sources.push(keyhog_sources::create_source_with_http_config(
             "github-org",
             Some(&params),
-            http_cfg!("github-org"),
+            source_http_config(args, "github-org"),
         )?);
     }
 
@@ -145,7 +163,7 @@ pub(crate) fn build_sources(
         sources.push(keyhog_sources::create_source_with_http_config(
             "gitlab-group",
             Some(&params),
-            http_cfg!("gitlab-group"),
+            source_http_config(args, "gitlab-group"),
         )?);
     }
 
@@ -162,7 +180,7 @@ pub(crate) fn build_sources(
         sources.push(keyhog_sources::create_source_with_http_config(
             "bitbucket-workspace",
             Some(&params),
-            http_cfg!("bitbucket-workspace"),
+            source_http_config(args, "bitbucket-workspace"),
         )?);
     }
 
@@ -173,16 +191,22 @@ pub(crate) fn build_sources(
                 "warning: --allow-s3-credential-forward is active; ambient AWS credentials may be sent to the configured non-AWS S3 endpoint"
             );
         }
+        let s3_prefix = match args.s3_prefix.as_deref() {
+            Some(prefix) => prefix,
+            None => "",
+        };
+        let s3_endpoint = match args.s3_endpoint.as_deref() {
+            Some(endpoint) => endpoint,
+            None => "",
+        };
         let params = format!(
             "{bucket}\n{}\n{}\n{}",
-            args.s3_prefix.as_deref().unwrap_or(""),
-            args.s3_endpoint.as_deref().unwrap_or(""),
-            args.allow_s3_credential_forward
+            s3_prefix, s3_endpoint, args.allow_s3_credential_forward
         );
         sources.push(keyhog_sources::create_source_with_http_config_and_limits(
             "s3",
             Some(&params),
-            http_cfg!("s3"),
+            source_http_config(args, "s3"),
             source_limits,
         )?);
     }
@@ -194,30 +218,37 @@ pub(crate) fn build_sources(
                 "warning: --allow-gcs-token-forward is active; ambient GCS bearer tokens may be sent to the configured non-Google GCS endpoint"
             );
         }
+        let gcs_prefix = match args.gcs_prefix.as_deref() {
+            Some(prefix) => prefix,
+            None => "",
+        };
+        let gcs_endpoint = match args.gcs_endpoint.as_deref() {
+            Some(endpoint) => endpoint,
+            None => "",
+        };
         let params = format!(
             "{bucket}\n{}\n{}\n{}",
-            args.gcs_prefix.as_deref().unwrap_or(""),
-            args.gcs_endpoint.as_deref().unwrap_or(""),
-            args.allow_gcs_token_forward
+            gcs_prefix, gcs_endpoint, args.allow_gcs_token_forward
         );
         sources.push(keyhog_sources::create_source_with_http_config_and_limits(
             "gcs",
             Some(&params),
-            http_cfg!("gcs"),
+            source_http_config(args, "gcs"),
             source_limits,
         )?);
     }
 
     #[cfg(feature = "azure")]
     if let Some(container_url) = &args.azure_container_url {
-        let params = format!(
-            "{container_url}\n{}",
-            args.azure_prefix.as_deref().unwrap_or("")
-        );
+        let azure_prefix = match args.azure_prefix.as_deref() {
+            Some(prefix) => prefix,
+            None => "",
+        };
+        let params = format!("{container_url}\n{azure_prefix}");
         sources.push(keyhog_sources::create_source_with_http_config_and_limits(
             "azure_blob",
             Some(&params),
-            http_cfg!("azure-blob"),
+            source_http_config(args, "azure-blob"),
             source_limits,
         )?);
     }
@@ -227,7 +258,7 @@ pub(crate) fn build_sources(
         sources.push(keyhog_sources::create_source_with_http_config_and_limits(
             "docker",
             Some(image),
-            http_cfg!("docker"),
+            source_http_config(args, "docker"),
             source_limits,
         )?);
     }
@@ -242,7 +273,7 @@ pub(crate) fn build_sources(
         sources.push(keyhog_sources::create_source_with_http_config_and_limits(
             "web",
             Some(&params),
-            http_cfg!("web"),
+            source_http_config(args, "web"),
             source_limits,
         )?);
     }
@@ -258,7 +289,7 @@ pub(crate) fn build_sources(
             match keyhog_sources::create_source_with_http_config_and_limits(
                 source_name,
                 params,
-                http_cfg!(source_name),
+                source_http_config(args, source_name),
                 source_limits,
             ) {
                 Ok(s) => {

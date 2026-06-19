@@ -68,6 +68,16 @@ impl HttpClientConfig {
     /// behavior). Ambient `HTTP(S)_PROXY` is separately neutralized in the
     /// builders via `.no_proxy()` so a stray CI/shell proxy can't silently
     /// reroute the secret-verification traffic. `Some("off")` disables proxying.
+    #[cfg(any(
+        feature = "azure",
+        feature = "web",
+        feature = "github",
+        feature = "gitlab",
+        feature = "bitbucket",
+        feature = "slack",
+        feature = "s3",
+        feature = "gcs"
+    ))]
     pub(crate) fn effective_proxy(&self) -> Option<String> {
         self.proxy.clone()
     }
@@ -77,6 +87,16 @@ impl HttpClientConfig {
     /// environment variable can disable certificate verification. An ambient
     /// toggle must never be able to switch off the only thing protecting
     /// exfiltrated secrets from a MITM on the verifier's outbound calls.
+    #[cfg(any(
+        feature = "azure",
+        feature = "web",
+        feature = "github",
+        feature = "gitlab",
+        feature = "bitbucket",
+        feature = "slack",
+        feature = "s3",
+        feature = "gcs"
+    ))]
     pub(crate) fn effective_insecure_tls(&self) -> bool {
         self.insecure_tls
     }

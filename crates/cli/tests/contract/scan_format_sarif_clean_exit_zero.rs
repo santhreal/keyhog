@@ -7,7 +7,14 @@ use std::process::Command;
 fn scan_format_sarif_clean_exit_zero() {
     let (_dir, path) = write_temp_file("clean.txt", "hello world\n");
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "sarif"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--format",
+            "sarif",
+        ])
         .arg(&path)
         .output()
         .expect("spawn");

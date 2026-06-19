@@ -73,13 +73,6 @@ pub(crate) fn run_benchmark(orchestrator: &ScanOrchestrator) -> Result<Vec<Backe
     Ok(results)
 }
 
-#[doc(hidden)]
-pub(crate) mod testing {
-    pub(crate) fn format_gpu_summary() -> String {
-        super::format_gpu_summary()
-    }
-}
-
 fn build_benchmark_corpus() -> Vec<Chunk> {
     let mut chunks = Vec::with_capacity(BENCHMARK_CHUNKS);
     for index in 0..BENCHMARK_CHUNKS {

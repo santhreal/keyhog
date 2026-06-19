@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     # Per-job permissions: this repo rejects dispatch of any workflow that
     # declares a TOP-LEVEL `permissions:` block (1-3s exit, 0 jobs -- see
-    # health-check.yml / keyhog.yml / vendor-vyre.yml). Per-job is equivalent
+    # health-check.yml / keyhog.yml). Per-job is equivalent
     # and dispatch-safe, so the daily star snapshot actually runs.
     permissions:
       contents: write

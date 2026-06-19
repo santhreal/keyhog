@@ -13,7 +13,15 @@ fn scan_output_writes_file() {
     );
     let out_path = scan_dir.path().join("findings.json");
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "json", "--output"])
+        .args([
+            "scan",
+            "--backend",
+            "simd",
+            "--no-daemon",
+            "--format",
+            "json",
+            "--output",
+        ])
         .arg(out_path.to_str().unwrap())
         .arg(&path)
         .output()

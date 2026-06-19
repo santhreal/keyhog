@@ -48,6 +48,8 @@ fn scan_git_diff_path_override_outside_cwd() {
     let output = Command::new(binary())
         .args([
             "scan",
+            "--backend",
+            "simd",
             "--no-daemon",
             "--git-diff",
             "HEAD",

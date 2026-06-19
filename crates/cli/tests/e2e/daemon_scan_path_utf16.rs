@@ -20,8 +20,7 @@ fn daemon_scan_path_decodes_utf16le_file() {
 
     let output = Command::new(binary())
         .env("XDG_RUNTIME_DIR", daemon.runtime_dir())
-        .env("KEYHOG_BACKEND", "simd")
-        .args(["scan", "--daemon", "--format", "json"])
+        .args(["scan", "--daemon=on", "--format", "json"])
         .arg(&fixture)
         .output()
         .expect("daemon scan");

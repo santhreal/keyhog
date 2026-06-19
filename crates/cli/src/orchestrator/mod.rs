@@ -19,8 +19,6 @@ use keyhog_scanner::{CompiledScanner, GpuInitPolicy};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-pub(crate) use crate::exit_codes::{EXIT_LIVE_CREDENTIALS, EXIT_SCANNER_PANIC};
-
 fn default_incremental_cache_path() -> Option<PathBuf> {
     dirs::cache_dir().map(|d| d.join("keyhog").join("merkle.idx"))
 }
@@ -401,14 +399,14 @@ impl ScanOrchestrator {
                 regex_dfa_limit: None,
                 hyperscan_cache_dir: None,
                 autoroute_cache_path: None,
+                aws_canary_accounts: Vec::new(),
+                scanner_tuning: keyhog_scanner::ScannerTuningConfig::default(),
                 allowlist: crate::orchestrator_config::ResolvedAllowlistConfig {
                     file: None,
                     require_reason: false,
                     require_approved_by: false,
                     max_expires_days: None,
                 },
-                aws_canary_accounts: Vec::new(),
-                scanner_tuning: keyhog_scanner::ScannerTuningConfig::default(),
                 source_limits: keyhog_sources::SourceLimits::default(),
             },
         }

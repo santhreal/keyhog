@@ -77,11 +77,11 @@ fn dispatch_autoroute_calibrates_missing_buckets_and_persists() {
         "dispatch paths must not use fixed-threshold backend selection"
     );
     assert!(
-        fused.contains("keyhog_core::env_config::usize_at_least_or_default")
-            && fused.contains("KEYHOG_FUSED_BATCH")
-            && fused.contains("KEYHOG_FUSED_DEPTH")
-            && !fused.contains("and_then(|v| v.parse::<usize>().ok())"),
-        "fused pipeline tuning env parse failures must be visible instead of silently falling back"
+        !fused.contains("KEYHOG_FUSED_BATCH")
+            && !fused.contains("KEYHOG_FUSED_DEPTH")
+            && fused.contains("self.effective_config.fused_batch")
+            && fused.contains("fused_depth_default(rayon::current_num_threads())"),
+        "fused pipeline tuning must come from explicit resolved config instead of ambient env"
     );
 
     // Persistent idempotent autoroute cache: calibrated decisions are written to

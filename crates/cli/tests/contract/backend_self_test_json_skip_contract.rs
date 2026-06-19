@@ -10,8 +10,7 @@ fn binary() -> PathBuf {
 #[test]
 fn backend_self_test_json_skip_contract() {
     let output = Command::new(binary())
-        .args(["backend", "--self-test", "--json"])
-        .env("KEYHOG_NO_GPU", "1")
+        .args(["backend", "--self-test", "--json", "--no-gpu"])
         .output()
         .expect("spawn backend --self-test --json");
 

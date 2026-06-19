@@ -12,6 +12,8 @@ fn scan_format_sarif_rules_indexed() {
         .args([
             "scan",
             "--no-daemon",
+            "--backend",
+            "simd",
             "--format",
             "sarif",
             "--no-suppress-test-fixtures",

@@ -41,6 +41,8 @@ fn scan_git_diff_clean_range_exits_zero() {
     let output = Command::new(binary())
         .args([
             "scan",
+            "--backend",
+            "simd",
             "--no-daemon",
             "--git-diff",
             "HEAD",

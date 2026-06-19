@@ -34,7 +34,7 @@
 //!   KEYHOG_BIGTREE_TIMEOUT_SECS watchdog deadline    (default 300)
 //! The default catches gross regressions on any multicore CI box; nightly /
 //! strict runners crank `KEYHOG_BIGTREE_FILES` to ~94_000 for the full-scale
-//! stress. The backend is pinned to SIMD (`KEYHOG_NO_GPU=1`) for determinism —
+//! stress. The backend is pinned to SIMD (`--no-gpu`) for determinism —
 //! PERF-01 reproduced under BOTH backends, so the channel-topology guard is
 //! backend-independent and SIMD keeps the test runnable on GPU-less CI.
 
@@ -107,10 +107,20 @@ fn build_wide_tree(total: usize) -> (TempDir, std::collections::BTreeSet<String>
 /// (with a PERF-01 message) if the scan does not finish before `deadline`.
 fn scan_with_watchdog(root: &Path, out: &Path, deadline: Duration) -> i32 {
     let mut child = Command::new(binary())
-        .args(["scan", "--no-daemon", "--dedup", "none", "--format", "json", "--output"])
+        .args([
+            "scan",
+            "--backend",
+            "simd",
+            "--no-gpu",
+            "--no-daemon",
+            "--dedup",
+            "none",
+            "--format",
+            "json",
+            "--output",
+        ])
         .arg(out)
         .arg(root)
-        .env("KEYHOG_NO_GPU", "1")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -177,7 +187,11 @@ fn bigtree_scan_completes_under_deadline_with_full_recall() {
         .iter()
         .filter_map(|f| f.get("location").and_then(|l| l.get("file_path")))
         .filter_map(|p| p.as_str())
-        .filter_map(|p| Path::new(p).file_name().map(|n| n.to_string_lossy().into_owned()))
+        .filter_map(|p| {
+            Path::new(p)
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+        })
         .collect();
 
     let recalled = planted.intersection(&found_paths).count();

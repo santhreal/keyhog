@@ -16,6 +16,8 @@ fn scan_exclude_paths_suppresses_file() {
         .args([
             "scan",
             "--no-daemon",
+            "--backend",
+            "simd",
             "--format",
             "json",
             "--exclude-paths",

@@ -47,6 +47,8 @@ fn scan_git_diff_format_jsonl_one_object_per_line() {
     let output = Command::new(binary())
         .args([
             "scan",
+            "--backend",
+            "simd",
             "--no-daemon",
             "--git-diff",
             "HEAD",

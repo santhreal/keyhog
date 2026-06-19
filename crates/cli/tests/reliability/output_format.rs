@@ -21,9 +21,8 @@ fn scan(content: &str, fmt: &str) -> (Option<i32>, String, String) {
 
 fn scan_path(p: &Path, fmt: &str) -> (Option<i32>, String, String) {
     let out = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", fmt])
+        .args(["scan", "--no-daemon", "--backend", "simd", "--format", fmt])
         .arg(p)
-        .env("KEYHOG_RELEASE_API_BASE", "http://127.0.0.1:9")
         .output()
         .expect("spawn keyhog");
     (
@@ -141,11 +140,17 @@ fn json_stays_clean_under_clicolor_force() {
     let p = d.path().join("planted.txt");
     std::fs::write(&p, PLANTED_AWS).unwrap();
     let out = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "json"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--format",
+            "json",
+        ])
         .arg(&p)
         .env("CLICOLOR_FORCE", "1")
         .env_remove("NO_COLOR")
-        .env("KEYHOG_RELEASE_API_BASE", "http://127.0.0.1:9")
         .output()
         .unwrap();
     assert!(

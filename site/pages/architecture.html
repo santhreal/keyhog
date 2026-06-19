@@ -1,9 +1,9 @@
 title = "Architecture"
-description = "How keyhog compiles 899 detectors into a single Hyperscan database and routes scans to the fastest backend."
+description = "How keyhog compiles 902 detectors, scans sources, and uses persisted calibrated backend routing."
 ---
 <h1>Architecture</h1>
 <p class="lede">
-  keyhog is a two-phase coalesced scanner with a hardware-routed backend.
+  keyhog is a two-phase coalesced scanner with calibrated backend routing.
   This page traces what happens between <code>keyhog scan .</code> and the
   first finding on your terminal.
 </p>
@@ -12,7 +12,7 @@ description = "How keyhog compiles 899 detectors into a single Hyperscan databas
 
 <pre><code>crates/
   core/      Detector loading, findings types, reporting, allowlists
-  scanner/   Hardware routing, Hyperscan, GPU, decode-through, entropy, ML, multiline
+  scanner/   Calibrated routing, Hyperscan, GPU, decode-through, entropy, ML, multiline
   sources/   File system, git (staged/diff/history), stdin, Docker, S3, GitHub org, web
   verifier/  Live credential verification against service APIs
   cli/       CLI binary, orchestration, baselines, benchmarks</code></pre>
@@ -20,24 +20,25 @@ description = "How keyhog compiles 899 detectors into a single Hyperscan databas
 <h2>Startup</h2>
 
 <ol>
-  <li><strong>Hardware probe.</strong> <code>cpufeatures</code> for SIMD,
-  <code>wgpu::Instance::enumerate_adapters</code> for GPUs.
-  Result cached for the process lifetime.</li>
-  <li><strong>Detector load.</strong> 899 TOML files compiled in at build
+  <li><strong>Hardware probe.</strong> <code>cpufeatures</code> for SIMD and
+  accelerator discovery for GPU-capable builds. Probe facts are cached for the
+  process lifetime and are inputs to calibration, not a per-scan guess.</li>
+  <li><strong>Detector load.</strong> 902 TOML files compiled in at build
   time via the <code>build.rs</code> embedding (auto-bundled in <code>keyhog-core</code>; no feature flag). Disk-resident
   <code>detectors/</code> overrides the embedded set when present.</li>
   <li><strong>Database compile.</strong> All regexes feed into
   <code>hs_compile_multi</code>; the resulting NFA serializes to
   <code>~/.cache/keyhog/db.bin</code> with a SHA-256 over the detector
   set. Subsequent runs <code>mmap</code> the cached DB in &lt;5 ms.</li>
-  <li><strong>Backend selection.</strong> The router picks GPU / SIMD / CPU
-  per scan based on input size + pattern count (matrix in
-  <a href="performance.html">Performance →</a>).</li>
+  <li><strong>Backend selection.</strong> Normal scans consume persisted
+  autoroute calibration keyed by workload shape, detector set, host, platform,
+  and backend feature set. Missing or stale calibration is surfaced as an
+  operator-visible error; diagnostic overrides can still force a backend.</li>
 </ol>
 
 <h2>Two-phase coalesced scan</h2>
 
-<p>Naive multi-pattern regex blows up at 899 detectors. The trick is to
+<p>Naive multi-pattern regex blows up at 902 detectors. The trick is to
 split the work:</p>
 
 <p><strong>Phase 1 — broad-spectrum NFA over all files.</strong> Hyperscan
@@ -121,16 +122,17 @@ naive line-by-line scanners. keyhog runs a lightweight join pass on:</p>
 <table>
   <thead><tr><th>Backend</th><th>How it works</th></tr></thead>
   <tbody>
-    <tr><td><code>gpu-zero-copy</code></td><td>vyre AC automaton on GPU cores. <code>cudagrep</code> NVMe → VRAM DMA bypasses the host CPU entirely for files &gt; 256 MiB.</td></tr>
-    <tr><td><code>simd-regex</code></td><td>Hyperscan / Vectorscan NFA over AVX-512 / AVX2 / NEON. ~500 MB/s on a 16-core box.</td></tr>
+    <tr><td><code>gpu-zero-copy</code></td><td>vyre-backed GPU detection path for calibrated large-workload classes.</td></tr>
+    <tr><td><code>simd-regex</code></td><td>Hyperscan / Vectorscan NFA over AVX-512 / AVX2 / NEON.</td></tr>
     <tr><td><code>cpu-fallback</code></td><td>Aho-Corasick prefix filter + Rust <code>regex</code> for the survivors. Always available; correctness floor.</td></tr>
     <tr><td><code>mega-scan</code></td><td>Single 256 MiB GPU shard for streaming large single files (HAR, log dumps).</td></tr>
   </tbody>
 </table>
 </div>
 
-<p>Selection is automatic. The router probes once at startup, caches the
-result, and picks per scan based on input size and pattern count.</p>
+<p>Selection is cache-backed. The installer or <code>keyhog calibrate</code>
+records the measured decision, and runtime scans either use that decision or
+fail loud with the calibration fix to run.</p>
 
 <h2>Memory + I/O profile</h2>
 

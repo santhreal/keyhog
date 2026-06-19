@@ -12,7 +12,7 @@
   <a href="index.html" class="brand">
     <span class="mark">k</span>
     keyhog
-    <span class="v">v0.5.37</span>
+    <span class="v">v0.5.40</span>
   </a>
   <nav class="top">
     <a href="detectors.html">Detectors</a>
@@ -101,7 +101,7 @@ be combined in one invocation; findings stream as they fire.</p>
   <tbody>
     <tr><td><code>--severity LEVEL</code></td><td><code>info</code></td><td>Drop findings below LEVEL (<code>info|low|medium|high|critical</code>)</td></tr>
     <tr><td><code>--min-confidence F</code></td><td>—</td><td>Drop findings below confidence score F (0.0-1.0)</td></tr>
-    <tr><td><code>--detectors DIR</code></td><td><code>detectors</code></td><td>Load detector TOMLs from DIR (env <code>KEYHOG_DETECTORS</code>). To run a subset, point this at a directory holding only the detectors you want — there is no per-ID enable/disable flag.</td></tr>
+    <tr><td><code>--detectors DIR</code></td><td><code>detectors</code></td><td>Load detector TOMLs from DIR. To run a subset, point this at a directory holding only the detectors you want — there is no per-ID enable/disable flag.</td></tr>
     <tr><td><code>--exclude-paths GLOB ...</code></td><td>—</td><td>Skip paths matching glob (space-separated, repeatable)</td></tr>
     <tr><td><code>--max-file-size BYTES</code></td><td>—</td><td>Skip files above size; summary line at the end</td></tr>
     <tr><td><code>--baseline FILE</code></td><td>—</td><td>Only report findings NOT in the baseline</td></tr>
@@ -144,12 +144,13 @@ be combined in one invocation; findings stream as they fire.</p>
 
 <h2>Backend control</h2>
 
-<p>keyhog routes automatically. Override only if you have a reason.</p>
+<p>keyhog routes through persisted calibration evidence. Override only if you
+need a diagnostic run.</p>
 
-<pre><code><span class="prompt">$</span> KEYHOG_BACKEND=gpu  keyhog scan .   <span class="c"># force GPU zero-copy</span>
-<span class="prompt">$</span> KEYHOG_BACKEND=simd keyhog scan .   <span class="c"># force Hyperscan</span>
-<span class="prompt">$</span> KEYHOG_BACKEND=cpu  keyhog scan .   <span class="c"># force CPU fallback</span>
-<span class="prompt">$</span> KEYHOG_THREADS=8    keyhog scan .   <span class="c"># pin rayon worker count</span></code></pre>
+<pre><code><span class="prompt">$</span> keyhog scan --backend gpu .   <span class="c"># force GPU zero-copy</span>
+<span class="prompt">$</span> keyhog scan --backend simd .  <span class="c"># force SIMD/Hyperscan path</span>
+<span class="prompt">$</span> keyhog scan --backend cpu .   <span class="c"># force scalar CPU path</span>
+<span class="prompt">$</span> keyhog scan --threads 8 .   <span class="c"># pin rayon worker count</span></code></pre>
 
 <p>Inspect the routing matrix at any time:</p>
 

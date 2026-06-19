@@ -293,6 +293,14 @@ pub struct ScanArgs {
     #[arg(long, value_name = "PATH|off")]
     pub autoroute_cache: Option<String>,
 
+    /// Run this scan as an explicit autoroute calibration probe: benchmark
+    /// parity-checked backend candidates and persist the fastest-correct
+    /// decision for each workload bucket. Normal scans never benchmark on cache
+    /// miss; they require persisted installer calibration or an explicit
+    /// `--backend`.
+    #[arg(long)]
+    pub autoroute_calibrate: bool,
+
     /// Output format
     #[arg(long, default_value = "text", value_enum)]
     pub format: OutputFormat,
@@ -312,6 +320,14 @@ pub struct ScanArgs {
     #[arg(long)]
     pub stream: bool,
 
+    /// Emit the scanner-owned hierarchical profile report to stderr at scan end.
+    #[arg(long)]
+    pub profile: bool,
+
+    /// Emit low-level scan/GPU phase timing traces to stderr.
+    #[arg(long)]
+    pub perf_trace: bool,
+
     /// Force a specific scan backend instead of using persisted autoroute.
     /// Values: `gpu`, `mega-scan`, `simd`, `cpu`, or `auto`.
     #[arg(
@@ -327,6 +343,37 @@ pub struct ScanArgs {
         ])
     )]
     pub backend: Option<String>,
+
+    /// Disable GPU probing and GPU backend acquisition for this scan.
+    #[arg(long, conflicts_with = "require_gpu")]
+    pub no_gpu: bool,
+
+    /// Require a usable GPU stack before scanning; fail closed if GPU init or
+    /// self-test is unavailable.
+    #[arg(long, conflicts_with = "no_gpu")]
+    pub require_gpu: bool,
+
+    /// Allow autoroute calibration to include GPU candidates for eligible
+    /// workload buckets. Normal scans still use persisted calibration only.
+    #[arg(long, conflicts_with = "no_autoroute_gpu")]
+    pub autoroute_gpu: bool,
+
+    /// Keep GPU candidates out of autoroute calibration even when TOML enables
+    /// them.
+    #[arg(long, conflicts_with = "autoroute_gpu")]
+    pub no_autoroute_gpu: bool,
+
+    /// Force the coalesced batch scan pipeline instead of the fused filesystem
+    /// pipeline. This is an explicit calibration/diagnostic control, not an
+    /// ambient environment switch. Config: `[system].batch_pipeline`; this flag
+    /// overrides it.
+    #[arg(long, conflicts_with = "no_batch_pipeline")]
+    pub batch_pipeline: bool,
+
+    /// Keep the fused filesystem pipeline even when `[system].batch_pipeline`
+    /// is true.
+    #[arg(long, conflicts_with = "batch_pipeline")]
+    pub no_batch_pipeline: bool,
 
     /// Daemon routing: `auto` (default — use a live daemon if one is up, else
     /// scan in-process), `on` (force the daemon route; fail if none is up), or
@@ -460,7 +507,7 @@ pub struct ScanArgs {
     pub precision: bool,
 
     /// Lockdown mode: maximum security at the cost of throughput. Enables
-    /// every protection in `keyhog_core::hardening::apply_protections(true)`
+    /// every protection in `keyhog_core::apply_protections(true)`
     /// (mlock, refuse-on-coredump-leak, refuse-on-disk-cache), forces
     /// HTTPS-only verifier, refuses to write any cache to disk, and
     /// hard-aborts if any protection fails to take. Use this when keyhog
@@ -515,8 +562,25 @@ pub struct ScanArgs {
     pub min_confidence: Option<f64>,
 
     /// Number of parallel scanning threads (default: number of CPU cores)
-    #[arg(long, value_name = "N")]
+    #[arg(long, value_name = "N", value_parser = crate::value_parsers::parse_positive_thread_count)]
     pub threads: Option<usize>,
+
+    /// Dedicated filesystem reader threads. Default derives from the scan worker pool.
+    #[arg(long, value_name = "N", value_parser = crate::value_parsers::parse_positive_usize)]
+    pub reader_threads: Option<usize>,
+
+    /// Fused filesystem pipeline chunk batch size.
+    #[arg(long, value_name = "N", value_parser = crate::value_parsers::parse_positive_usize)]
+    pub fused_batch: Option<usize>,
+
+    /// Fused filesystem pipeline channel depth.
+    #[arg(long, value_name = "N", value_parser = crate::value_parsers::parse_positive_usize)]
+    pub fused_depth: Option<usize>,
+
+    /// Hard deadline per chunk scan in milliseconds. Default unset = no
+    /// operator deadline; decode still has its internal bomb guard.
+    #[arg(long, value_name = "MS", value_parser = crate::value_parsers::parse_positive_millis)]
+    pub per_chunk_timeout_ms: Option<u64>,
 
     /// Deduplication scope for findings.
     #[arg(long, default_value = "credential", value_enum)]

@@ -35,8 +35,9 @@ Append one row to `SCENARIOS` in `scenarios.sh`:
 name | env | args | want_exit | grep_contains | grep_forbids
 ```
 
-- `env` — space-separated `KEY=VAL` spoof vars (e.g. `KEYHOG_NO_GPU=1`,
-  `KEYHOG_REQUIRE_GPU=1`, `KEYHOG_THREADS=1`), or `-`.
+- `env` — space-separated `KEY=VAL` spoof vars (for supported env-only test toggles), or
+  `-`. GPU policy is an explicit scan argument (`--no-gpu` /
+  `--require-gpu`) or `.keyhog.toml` `[system].gpu`.
 - `args` — arguments passed to `keyhog` in the container.
 - `want_exit` — expected process exit code.
 - `grep_contains` / `grep_forbids` — substrings that must / must not appear in

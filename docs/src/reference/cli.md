@@ -53,6 +53,8 @@ user error, `3` system error, `10` live credential, `11` scanner panic,
 | `--daemon`                    | Force daemon route. Unix only.                 |
 | `--no-daemon`                 | Force in-process scan even if daemon is up.    |
 | `--timeout <SECONDS>`         | Hard per-scan deadline.                        |
+| `--profile`                   | Emit the scanner-owned hierarchical profile report to stderr at scan end. |
+| `--perf-trace`                | Emit low-level scan/GPU phase timing traces to stderr. |
 
 ### Source Limits
 
@@ -82,9 +84,16 @@ minus the `limit-` prefix and with dashes changed to underscores.
 | Variable                              | Effect                                                                |
 |---------------------------------------|-----------------------------------------------------------------------|
 | `keyhog scan --backend gpu\|simd\|cpu\|auto` | Force a scan backend instead of using automatic backend selection. |
-| `KEYHOG_NO_GPU=1`                     | Short-circuit GPU init at hardware-probe time. The scanner runs as if no GPU adapter existed. Use this when Metal / CUDA init blocks on a given host (Apple Silicon Mac configurations have reproduced this) and you want predictable startup. |
-| `KEYHOG_PER_CHUNK_TIMEOUT_MS=<MS>`    | Attach an `Instant` deadline to every chunk scan. Default unset = no timeout (original behaviour). Recommend `30000` for production scans where bounded latency matters more than scan completeness. |
-| `KEYHOG_THREADS=<N>`                  | Pin the rayon worker count. Default = physical-core count.            |
+| `keyhog scan --no-gpu`                | Short-circuit GPU init at hardware-probe time. The scanner runs as if no GPU adapter existed. |
+| `keyhog scan --require-gpu`           | Fail closed with exit `12` when no usable GPU stack is available. |
+| `keyhog scan --autoroute-calibrate`   | Installer/maintenance mode: benchmark parity-checked autoroute candidates and persist fastest-correct decisions. Normal scans do not use this mode. |
+| `keyhog scan --autoroute-gpu`         | Allow calibration mode to include GPU candidates for eligible workload buckets. Normal scans still require persisted fastest-correct evidence. |
+| `keyhog scan --no-autoroute-gpu`      | Override TOML `autoroute_gpu = true` for a single run. |
+| `keyhog scan --per-chunk-timeout-ms <MS>` | Attach an `Instant` deadline to every chunk scan. Default unset = no operator deadline; `[scan].per_chunk_timeout_ms` provides the persistent default. |
+| `keyhog scan --threads <N>`           | Pin the rayon worker count for this run. `.keyhog.toml` `[scan].threads` provides the persistent default. |
+| `keyhog scan --reader-threads <N>`    | Pin dedicated filesystem reader threads. `.keyhog.toml` `[scan].reader_threads` provides the persistent default. |
+| `keyhog scan --fused-batch <N>`       | Pin fused filesystem pipeline batch size. `.keyhog.toml` `[scan].fused_batch` provides the persistent default. |
+| `keyhog scan --fused-depth <N>`       | Pin fused filesystem pipeline channel depth. `.keyhog.toml` `[scan].fused_depth` provides the persistent default. |
 
 Hyperscan database cache location is explicit scan configuration: use
 `keyhog scan --cache-dir <DIR>` or `.keyhog.toml` `[system].cache_dir`.
@@ -92,7 +101,8 @@ Autoroute calibration evidence is also explicit scan configuration: use
 `keyhog scan --autoroute-cache <PATH|off>` or `.keyhog.toml`
 `[system].autoroute_cache`.
 GPU MoE readback timeout is explicit scanner tuning:
-`.keyhog.toml` `[tuning].gpu_moe_timeout_ms`.
+`.keyhog.toml` `[tuning].gpu_moe_timeout_ms`. GPU megakernel parity/debug
+recall-floor runs use `.keyhog.toml` `[tuning].gpu_recall_floor = true`.
 
 ## `keyhog config --effective [SCAN FLAGS]`
 
@@ -164,8 +174,8 @@ Default socket path: `$XDG_RUNTIME_DIR/keyhog.sock`, or
 `~/.cache/keyhog/server.sock` if `XDG_RUNTIME_DIR` is unset.
 
 On Windows: every `daemon` subcommand prints "daemon mode is
-unix-only" and exits non-zero. Daemon support via named pipes is
-tracked but not yet implemented.
+unix-only" and exits non-zero. No Windows daemon transport ships; use
+`keyhog scan <path>` for in-process scans on Windows.
 
 ## `keyhog diff <FILE_A> <FILE_B>`
 

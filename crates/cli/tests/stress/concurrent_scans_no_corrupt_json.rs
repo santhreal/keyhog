@@ -17,7 +17,7 @@ fn concurrent_scans_no_corrupt_json() {
         handles.push(thread::spawn(move || {
             b.wait();
             let output = Command::new(binary())
-                .args(["scan", "--no-daemon", "--format", "json"])
+                .args(["scan", "--no-daemon", "--backend", "simd", "--format", "json"])
                 .arg(&path)
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())

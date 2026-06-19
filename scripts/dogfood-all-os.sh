@@ -11,8 +11,9 @@
 # #[cfg(unix)] routes, mmap windowing, native-dep builds, the install + doctor
 # path) that a single-Linux unit gate never sees.
 #
-# Unreachable machines are SKIPPED *loudly* with a reason -- never silently
-# dropped, so "all green" cannot hide a box that was simply down.
+# Unreachable machines fail the required matrix by default. Set ALLOW_OS_SKIP=1
+# only for an explicit diagnostic run where missing machines are not release
+# evidence.
 #
 #   scripts/dogfood-all-os.sh                  # every machine
 #   scripts/dogfood-all-os.sh work-linux win   # a subset (names below)
@@ -31,6 +32,7 @@ set -uo pipefail
 
 PROFILE="${PROFILE:-release-fast}"
 CONNECT_TIMEOUT="${CONNECT_TIMEOUT:-8}"
+ALLOW_OS_SKIP="${ALLOW_OS_SKIP:-0}"
 SSH=(ssh -o BatchMode=yes -o "ConnectTimeout=${CONNECT_TIMEOUT}")
 NFS_TREE="/media/mukund-thiru/SanthData/Santh/software/keyhog"
 ALL=(work-linux santhserver macbook win)
@@ -227,7 +229,16 @@ worst=0
 for name in "${TARGETS[@]}"; do
   printf "  %-12s %s\n" "$name" "${RESULT[$name]:-?}"
   case "${RESULT[$name]:-}" in FAIL*) worst=1 ;; esac
+  case "${RESULT[$name]:-}" in SKIP*) [ "$ALLOW_OS_SKIP" = "1" ] || worst=1 ;; esac
 done
 echo "========================================================="
-[ $worst -eq 0 ] && echo "RESULT: OK (no reachable machine failed)" || echo "RESULT: FAIL (a reachable machine failed)"
+if [ $worst -eq 0 ]; then
+  if [ "$ALLOW_OS_SKIP" = "1" ]; then
+    echo "RESULT: OK (diagnostic mode allowed skipped machines)"
+  else
+    echo "RESULT: OK (every required machine passed)"
+  fi
+else
+  echo "RESULT: FAIL (required machine failed or was skipped)"
+fi
 exit $worst

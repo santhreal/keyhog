@@ -51,6 +51,8 @@ fn scan_exclude_paths_with_git_staged() {
     let output = Command::new(binary())
         .args([
             "scan",
+            "--backend",
+            "simd",
             "--no-daemon",
             "--git-staged",
             "--format",

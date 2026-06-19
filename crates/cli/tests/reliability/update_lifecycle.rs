@@ -1,7 +1,7 @@
 //! Installer/update lifecycle under a HOSTILE GitHub: malformed JSON, 500s,
 //! empty release lists, asset-less releases, missing pinned tags. Drives the
 //! REAL binary's release-resolution path (`keyhog update --check`) against an
-//! httpmock server via the `KEYHOG_RELEASE_API_BASE` seam, with zero network.
+//! httpmock server via the hidden `--release-api-base` test seam, with zero network.
 //!
 //! `--check` is used exclusively: it resolves + compares versions but NEVER
 //! downloads or self-replaces, so the test binary is never overwritten. The
@@ -32,11 +32,10 @@ fn releases_body(tag: &str) -> String {
 }
 
 fn run_update(base: &str, extra: &[&str]) -> (Option<i32>, String, String) {
-    let mut args: Vec<&str> = vec!["update"];
+    let mut args: Vec<&str> = vec!["update", "--release-api-base", base];
     args.extend_from_slice(extra);
     let out = Command::new(binary())
         .args(&args)
-        .env("KEYHOG_RELEASE_API_BASE", base)
         .output()
         .expect("spawn keyhog update");
     (

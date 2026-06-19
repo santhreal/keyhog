@@ -4,8 +4,8 @@ description = "GitHub Actions, GitLab, CircleCI, Drone, BuildKite, Jenkins recip
 <h1>CI / SARIF</h1>
 <p class="lede">
   One-line GitHub Actions integration. Native SARIF for GitHub Advanced
-  Security. Drop-in YAML for every major CI. Auto-built binaries with
-  source fallback.
+  Security. Drop-in YAML for every major CI. Verified release assets with
+  branch/SHA source builds.
 </p>
 
 <h2>GitHub Actions</h2>
@@ -22,7 +22,7 @@ description = "GitHub Actions, GitLab, CircleCI, Drone, BuildKite, Jenkins recip
       - <span class="k">uses</span>: actions/checkout@v4
         <span class="k">with</span>:
           <span class="k">fetch-depth</span>: 0      <span class="c"># needed for --git-history</span>
-      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.37
+      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
         <span class="k">with</span>:
           <span class="k">path</span>: .
           <span class="k">severity</span>: high        <span class="c"># info | low | medium | high | critical</span>
@@ -30,14 +30,15 @@ description = "GitHub Actions, GitLab, CircleCI, Drone, BuildKite, Jenkins recip
           <span class="k">verify</span>: <span class="s">'false'</span>         <span class="c"># live-verify findings against vendor APIs</span></code></pre>
 
 <p>The action auto-downloads a prebuilt linux-x86_64 / macos-aarch64 binary
-attached to the matching release tag and falls back to a
-<code>cargo build</code> when no asset matches the host triple (Windows
-runners, untagged refs). SARIF is auto-uploaded to GitHub code scanning
-when <code>format: sarif</code>.</p>
+attached to the matching release tag. Release tags and explicit version inputs
+require a matching asset plus checksum and fail closed if the release asset is
+missing or unverifiable. Branch/SHA action refs may build from source with
+Cargo. SARIF is auto-uploaded to GitHub code scanning when
+<code>format: sarif</code>.</p>
 
 <h3>Block PRs on new findings only</h3>
 
-<pre><code>      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.37
+<pre><code>      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
         <span class="k">with</span>:
           <span class="k">path</span>: .
           <span class="k">baseline</span>: .keyhog-baseline.json
@@ -51,7 +52,7 @@ findings (not in the baseline) fire. See <a href="baseline.html">Baselines →</
 
 <pre><code>      - <span class="k">name</span>: build image
         <span class="k">run</span>: docker build -t app:${{ github.sha }} .
-      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.37
+      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
         <span class="k">with</span>:
           <span class="k">image</span>: app:${{ github.sha }}
           <span class="k">format</span>: sarif</code></pre>
@@ -148,7 +149,7 @@ findings (not in the baseline) fire. See <a href="baseline.html">Baselines →</
 
 <h2>Optional: live verification in CI</h2>
 
-<pre><code>      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.37
+<pre><code>      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
         <span class="k">with</span>:
           <span class="k">path</span>: .
           <span class="k">verify</span>: <span class="s">'true'</span>
@@ -177,7 +178,7 @@ findings (not in the baseline) fire. See <a href="baseline.html">Baselines →</
   PR base, instead of the whole tree.</li>
 </ul>
 
-<pre><code>      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.37
+<pre><code>      - <span class="k">uses</span>: santhsecurity/keyhog/.github/actions/keyhog@v0.5.40
         <span class="k">with</span>:
           <span class="k">git-diff</span>: ${{ github.event.pull_request.base.sha }}
           <span class="k">incremental</span>: <span class="s">'true'</span></code></pre>

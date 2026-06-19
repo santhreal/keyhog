@@ -7,7 +7,15 @@ use std::process::{Command, Stdio};
 #[test]
 fn scan_stdin_finds_secret() {
     let mut child = Command::new(binary())
-        .args(["scan", "--stdin", "--no-daemon", "--format", "json"])
+        .args([
+            "scan",
+            "--stdin",
+            "--no-daemon",
+            "--format",
+            "json",
+            "--backend",
+            "simd",
+        ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

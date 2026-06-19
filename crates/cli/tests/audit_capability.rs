@@ -85,7 +85,15 @@ AAAAAAAAtzc2gtZWQyNTUxOQAAACBabcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQR
 /// host. Returns the parsed JSON array of findings.
 fn scan_json(path: &std::path::Path) -> Vec<serde_json::Value> {
     let out = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "json", "--path"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--format",
+            "json",
+            "--path",
+        ])
         .arg(path)
         .output()
         .expect("spawn keyhog scan");

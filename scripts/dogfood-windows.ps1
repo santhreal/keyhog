@@ -111,5 +111,25 @@ if (Test-Path $installScript) {
   Write-Output "  SKIP install (install.ps1 not found beside source)"
 }
 
+# 5. `uninstall` exit-code contract -- the ONE deliberate cross-OS divergence.
+#    On Unix the kernel unlinks a running executable, so `uninstall --yes` exits
+#    0 and the file is gone (proven on macOS). Windows refuses to delete a
+#    running .exe, so `remove_binary` FAILS CLOSED with an anyhow error that
+#    main.rs maps to EXIT_USER_ERROR = 2, and the binary STAYS. We assert that
+#    Windows contract here on a throwaway COPY (so the real build survives).
+#    crates/cli/tests/target_spec/cross_os_contracts.rs pins the same divergence
+#    at the source level; this is the live end-to-end proof.
+$ut = Join-Path $env:TEMP ("kh-uninst-" + [System.IO.Path]::GetRandomFileName())
+New-Item -ItemType Directory -Force $ut | Out-Null
+try {
+  $copy = Join-Path $ut 'keyhog-copy.exe'
+  Copy-Item $kh $copy
+  cmd /c "`"$copy`" uninstall >nul 2>nul";        Check "uninstall dry-run -> exit 0"               ($LASTEXITCODE -eq 0)
+  cmd /c "`"$copy`" uninstall --yes >nul 2>nul";  Check "uninstall --yes -> exit 2 (Windows fail-closed)" ($LASTEXITCODE -eq 2)
+  Check "uninstall --yes leaves the running .exe in place (Windows)" (Test-Path $copy)
+} finally {
+  Remove-Item $ut -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 if ($script:fail -ne 0) { Write-Output "WINDOWS DOGFOOD: FAIL"; exit 1 }
 Write-Output "WINDOWS DOGFOOD: PASS"; exit 0

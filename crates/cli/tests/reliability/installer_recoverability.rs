@@ -19,6 +19,8 @@ use std::path::{Path, PathBuf};
 use keyhog::testing::{CliTestApi as _, API};
 use tempfile::TempDir;
 
+use crate::reliability::harness::subprocess_slot;
+
 /// A fake install dir holding a fake "current" binary with given contents.
 fn staged_exe(contents: &[u8]) -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("tempdir");
@@ -140,6 +142,7 @@ fn verify_runs_against_the_newly_installed_bytes() {
 
 #[test]
 fn release_tag_version_mismatch_rolls_back_to_the_working_binary() {
+    let _slot = subprocess_slot();
     let original = b"OLD-WORKING-BINARY";
     let (_dir, exe) = staged_exe(original);
     let candidate = version_script("0.5.39");
@@ -164,6 +167,7 @@ fn release_tag_version_mismatch_rolls_back_to_the_working_binary() {
 
 #[test]
 fn older_candidate_version_requires_an_explicit_pin() {
+    let _slot = subprocess_slot();
     let candidate = version_script("0.5.39");
     let (_dir, exe) = staged_exe(&candidate);
 

@@ -12,7 +12,7 @@
   <a href="index.html" class="brand">
     <span class="mark">k</span>
     keyhog
-    <span class="v">v0.5.37</span>
+    <span class="v">v0.5.40</span>
   </a>
   <nav class="top">
     <a href="detectors.html">Detectors</a>
@@ -160,10 +160,10 @@ directories. Run under <code>sudo</code> for true machine-wide coverage:</p>
 <pre><code><span class="prompt">$</span> sudo keyhog scan-system --space 50G --output /tmp/triage.json</code></pre>
 
 <p>keyhog never writes anywhere except the output path you specify and the
-on-disk cache under <code>~/.cache/keyhog/</code> (which
-<code>--lockdown</code> refuses to populate, and
-<code>KEYHOG_CACHE_DIR</code> relocates). Inspect it directly - it is a plain
-directory.</p>
+on-disk cache under <code>~/.cache/keyhog/</code> (or the explicit
+<code>[system] cache_dir</code> / <code>--cache-dir</code> location).
+<code>--lockdown</code> refuses to populate persistence caches. Inspect the
+cache directly - it is a plain directory.</p>
 
 <h2>Use cases</h2>
 

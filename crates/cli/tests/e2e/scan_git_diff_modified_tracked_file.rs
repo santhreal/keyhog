@@ -46,6 +46,8 @@ fn scan_git_diff_modified_tracked_file() {
     let output = Command::new(binary())
         .args([
             "scan",
+            "--backend",
+            "simd",
             "--no-daemon",
             "--git-diff",
             "HEAD",

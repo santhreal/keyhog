@@ -22,9 +22,9 @@ compiled defaults  →  .keyhog.toml  →  CLI flags
 - **`.keyhog.toml`** is discovered by walking up from the scan path to the
   filesystem root (first one found wins). Copy
   [`.keyhog.toml.example`](https://github.com/santhsecurity/keyhog/blob/main/.keyhog.toml.example)
-  to your repo root and delete what you don't need. A malformed file warns
-  and is ignored (the scan still runs on defaults) — it never silently
-  changes behaviour.
+  to your repo root and delete what you don't need. A malformed `.keyhog.toml`
+  fails closed with the path and TOML error before any scan output is written.
+  Use `--no-config` when you intentionally want compiled defaults.
 - **CLI flags** always override the file. A flag left unset falls through to
   the file, then to the compiled default.
 
@@ -51,6 +51,10 @@ Each row is the same knob across all three layers. Defaults are
 | Unicode norm | on | `no_unicode_norm = true` disables | `--no-unicode-norm` | Normalise homoglyphs before matching (anti-evasion). |
 | Scan comments | off | — | `--scan-comments` | Treat secrets in code comments at full confidence (default downgrades them). |
 | Threads | #cores | `threads` | `--threads` | Parallel scan workers. |
+| Reader threads | scan-pool-derived | `reader_threads` | `--reader-threads` | Dedicated filesystem read workers. |
+| Fused batch | `32` | `fused_batch` | `--fused-batch` | Chunk batch size for the fused filesystem pipeline. |
+| Fused depth | worker-count-derived | `fused_depth` | `--fused-depth` | Bounded channel depth for fused filesystem batches. |
+| Per-chunk timeout | off | `per_chunk_timeout_ms` | `--per-chunk-timeout-ms` | Optional hard deadline per chunk scan in milliseconds. |
 | Dedup scope | `credential` | `dedup` | `--dedup` | `credential` / `file` / `none`. |
 | Max file size | 10 MB | `max_file_size` | `--max-file-size` | Walker skips files larger than this. |
 | Severity floor | (all) | `severity` | `--severity` | Minimum severity to report: info/low/medium/high/critical. |
@@ -59,6 +63,9 @@ Each row is the same knob across all three layers. Defaults are
 | Incremental cache | off | `incremental` / `incremental_cache` | `--incremental` / `--incremental-cache` | BLAKE3 Merkle skip-cache; 10–100× on CI re-runs. |
 | Hyperscan cache dir | platform cache dir | `[system] cache_dir` | `--cache-dir` | Compiled-database cache directory. Must be an absolute user-owned path under the home directory or per-user keyhog temp cache root. |
 | Autoroute cache file | platform cache file | `[system] autoroute_cache` | `--autoroute-cache` | Persisted fastest-correct backend decisions. Use an absolute file path or `off` to disable persistence and force auto-route cache misses to fail loudly. |
+| GPU runtime policy | `auto` | `[system] gpu` | `--no-gpu` / `--require-gpu` | `auto` probes when routing can use GPU, `off` skips GPU init, and `required` fails closed when no usable GPU stack is available. Printed by `keyhog config --effective` and included in autoroute scan identity. |
+| Autoroute GPU candidates | off | `[system] autoroute_gpu` | `--autoroute-gpu` / `--no-autoroute-gpu` | Allows calibration to include GPU candidates for eligible workload buckets. Normal scans still require persisted fastest-correct evidence; this never benchmarks during production scans. |
+| Coalesced batch pipeline | off | `[system] batch_pipeline` | `--batch-pipeline` / `--no-batch-pipeline` | Diagnostic/calibration route that bypasses the fused filesystem pipeline. Printed by `keyhog config --effective` and included in autoroute scan identity. |
 | AWS canary issuer extensions | embedded baseline | `[aws] canary_accounts` / `knockoff_accounts` | — | Extra 12-digit AWS account IDs treated as canary-token issuers during offline access-key metadata classification and verification suppression. |
 | Scanner tuning | compiled scanner defaults | `[tuning]` | — | Detection/recall route gates that affect engine work selection. These are explicit config so autoroute calibration identity includes them; ambient `KEYHOG_*` tuning env vars are ignored. |
 | Backend | `auto` | — | `--backend` | `auto`/`simd`/`cpu`/`gpu`/`megascan`. Auto uses a persisted installer-calibrated fastest-correct decision for the exact workload bucket; missing/stale/incomplete calibration is an error, not permission to substitute another backend. |
@@ -122,8 +129,12 @@ set a value, the flat form wins.
 
 ### `[scan]`
 
-Mirrors the flat scalars (`severity`, `min_confidence`, `decode_depth`, `format`,
-`exclude`, `threads`, `dedup`) — the shape the rest of the docs use as canonical.
+A readable grouping for the scan scalars (`severity`, `min_confidence`,
+`decode_depth`, `format`, `exclude`, `threads`, `reader_threads`, `fused_batch`,
+`fused_depth`, `per_chunk_timeout_ms`, `dedup`) — exactly equivalent to setting
+each one flat at the top level, and the form the rest of the docs show for
+readability. Pick one form per key: if the same key is set both ways, the flat
+top-level value wins (per [Nested tables](#nested-tables) above).
 
 ```toml
 [scan]
@@ -131,6 +142,11 @@ severity = "high"
 min_confidence = 0.40       # raise toward 0.85 for fewer false positives
 decode_depth = 10           # 1-10, same ceiling as --decode-depth
 exclude = ["**/test/fixtures/**", "vendor/"]
+threads = 8
+reader_threads = 2
+fused_batch = 32
+fused_depth = 4
+per_chunk_timeout_ms = 30000
 ```
 
 ### `[detector.<id>]` — per-detector overrides
@@ -180,6 +196,9 @@ the [`scan --help` output](./cli.md) for the current `--lockdown` checks.
 trusted_bin_dirs = ["/nix/store/example-system-bin/bin"]
 cache_dir = "/home/alice/.cache/keyhog"
 autoroute_cache = "/home/alice/.cache/keyhog/autoroute.json"
+gpu = "auto"
+autoroute_gpu = false
+batch_pipeline = false
 ```
 
 `trusted_bin_dirs` extends the absolute directory allowlist used for external
@@ -197,6 +216,21 @@ It uses the same precedence as scan flags: compiled platform default, then TOML,
 then `--autoroute-cache`. The value must be an absolute file path or `off`.
 The cache path is printed by `keyhog config --effective`; it is storage
 configuration, not part of the scan identity digest.
+
+`gpu` resolves GPU init policy. `auto` leaves GPU available to autoroute and
+explicit GPU backends, `off` behaves like `--no-gpu`, and `required` behaves
+like `--require-gpu`. The resolved value is printed by
+`keyhog config --effective` and is part of the autoroute scan identity.
+
+`autoroute_gpu` controls whether calibration runs may include GPU candidates
+for eligible workload buckets. It is off by default; installers pass
+`--autoroute-gpu` during the visible calibration phase. Normal scans never
+benchmark from this value; they consume persisted fastest-correct decisions.
+
+`batch_pipeline` forces the coalesced batch pipeline. Leave it `false` for the
+default fused filesystem route; set it only for calibration, diagnostics, or
+pipeline parity checks. The resolved value is printed by
+`keyhog config --effective` and is part of the autoroute scan identity.
 
 ### `[aws]`
 
@@ -219,6 +253,7 @@ running daemon cannot consume client-local `[aws]` config.
 [tuning]
 fallback_hs = true
 hs_prefilter_max_len = 4096
+hs_shard_target = 80
 fallback_anchor = true
 homoglyph_gate = true
 homoglyph_ascii_skip = true
@@ -229,6 +264,7 @@ decode_focus = true
 confirmed_suffix_gate = true
 no_candidate_gate = true
 fallback_localizer = false
+gpu_recall_floor = false
 gpu_moe_timeout_ms = 30000
 ```
 
@@ -236,16 +272,21 @@ These keys tune scanner-internal detection and recall route gates. They are
 operator-visible resolved config, included in the autoroute config digest, and
 printed by `keyhog config --effective`. They do not have CLI flags because
 per-run hidden recall changes would invalidate installer calibration.
+`hs_shard_target` controls Hyperscan patterns-per-shard during compile; changing
+it affects compile/cache shape and autoroute identity but not detector recall.
+`gpu_recall_floor` forces the GPU megakernel path to compute the full CPU
+trigger net during parity/debug scans and report any GPU under-fire it recovers.
 `gpu_moe_timeout_ms` bounds one GPU MoE confidence readback; on timeout KeyHog
 surfaces the GPU fault and scores the same candidates on CPU MoE.
 
-### `[allowlist]` (parse-only)
+### `[allowlist]`
 
-`file` / `require_reason` / `require_approved_by` / `max_expires_days` parse
-as compatibility fields, but the governance flags do not affect scan
-behaviour. Suppression itself works via `.keyhogignore` — see
-[Suppressions](../suppressions.md). This table is documented as parse-only so
-nobody assumes governance enforcement from these fields.
+`file` selects the line-based allowlist file (default `.keyhogignore` at the
+scan root). `require_reason`, `require_approved_by`, and `max_expires_days`
+enforce governance before any suppression is active. Missing required metadata,
+expired entries, malformed entries, or expiry windows beyond the configured
+limit fail closed with an operator-visible config error. See
+[Suppressions](../suppressions.md).
 
 ## Where the numbers live
 

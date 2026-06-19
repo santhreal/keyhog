@@ -6,7 +6,12 @@ credentials.
 
 ```text
 $ keyhog scan .
-keyhog v0.5.37 │ 899 detectors │ 1666 patterns │ avx-512 + hyperscan + cuda
+K E Y H O G
+───────────
+v0.5.40 · secret scanner · 902 detectors
+by santh
+
+⚡ 16 cores | GPU: NVIDIA GeForce RTX 5090 | SIMD: AVX-512 | Hyperscan | 902 detectors (5872 patterns) io_uring | backend=simd-regex | gpu=none
 
 scanned 12,841 files in 1.4 s
 3 findings · 0 verified live · 1041 example fixtures suppressed
@@ -14,8 +19,8 @@ scanned 12,841 files in 1.4 s
 
 ## What it does
 
-Walks files - your working tree, your git history, a docker image, an S3
-bucket, a list of URLs - and reports leaked credentials. Every finding
+Walks files - your working tree, your git history, a docker image, GitHub/GitLab/Bitbucket
+repository collections, an S3, GCS, or Azure Blob bucket, a list of URLs - and reports leaked credentials. Every finding
 has:
 
 - a **detector** that fired (`stripe-secret-key`, `aws-access-key`, …)
@@ -23,7 +28,7 @@ has:
 - an **entropy score** + **confidence**
 - an optional **live verification** result if you pass `--verify`
 
-The list of detectors ships in TOML files under `detectors/`. There are 899
+The list of detectors ships in TOML files under `detectors/`. There are 902
 of them today, covering ~750 distinct services. Anyone can add or override
 them without touching Rust code.
 

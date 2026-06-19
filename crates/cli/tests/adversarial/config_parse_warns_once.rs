@@ -21,7 +21,14 @@ fn malformed_config_fails_closed_with_one_operator_error() {
     std::fs::write(dir.path().join("code.txt"), "nothing secret here\n").unwrap();
 
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "json"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--format",
+            "json",
+        ])
         .arg(dir.path())
         .output()
         .expect("spawn keyhog");

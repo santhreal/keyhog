@@ -254,46 +254,11 @@ impl Baseline {
 
 #[doc(hidden)]
 pub(crate) mod testing {
-    use anyhow::Result;
-    use keyhog_core::VerifiedFinding;
-    use std::path::Path;
-
     pub(crate) fn baseline_version() -> u32 {
         super::BASELINE_VERSION
     }
 
     pub(crate) fn looks_like_findings_report(content: &str) -> bool {
         super::looks_like_findings_report(content)
-    }
-
-    pub(crate) fn empty() -> super::Baseline {
-        super::Baseline::empty()
-    }
-
-    pub(crate) fn load(path: &Path) -> Result<super::Baseline> {
-        super::Baseline::load(path)
-    }
-
-    pub(crate) fn save(baseline: &super::Baseline, path: &Path) -> Result<()> {
-        baseline.save(path)
-    }
-
-    pub(crate) fn from_findings(findings: &[VerifiedFinding]) -> super::Baseline {
-        super::Baseline::from_findings(findings)
-    }
-
-    pub(crate) fn merge(baseline: &mut super::Baseline, findings: &[VerifiedFinding]) {
-        baseline.merge(findings);
-    }
-
-    pub(crate) fn contains(baseline: &super::Baseline, finding: &VerifiedFinding) -> bool {
-        baseline.contains(finding)
-    }
-
-    pub(crate) fn filter_new(
-        baseline: &super::Baseline,
-        findings: &[VerifiedFinding],
-    ) -> Vec<VerifiedFinding> {
-        baseline.filter_new(findings)
     }
 }

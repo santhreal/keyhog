@@ -24,7 +24,6 @@ pub(crate) struct TestFixtureSuppressions {
 
 #[derive(Debug, Deserialize)]
 struct SuppressionFile {
-    #[allow(dead_code)]
     schema_version: u32,
     #[serde(default)]
     exact: Vec<ExactEntry>,
@@ -35,9 +34,7 @@ struct SuppressionFile {
 #[derive(Debug, Deserialize)]
 struct ExactEntry {
     credential: String,
-    #[allow(dead_code)]
     service: Option<String>,
-    #[allow(dead_code)]
     source: Option<String>,
 }
 
@@ -77,9 +74,25 @@ impl TestFixtureSuppressions {
 
         let mut exact = HashSet::with_capacity(parsed.exact.len());
         for entry in parsed.exact {
-            let credential = entry.credential;
+            let ExactEntry {
+                credential,
+                service,
+                source,
+            } = entry;
             if credential.trim().is_empty() {
                 return Err("exact suppression credentials must not be empty".to_string());
+            }
+            for (field, value) in [
+                ("service", service.as_deref()),
+                ("source", source.as_deref()),
+            ] {
+                if let Some(value) = value {
+                    if value.trim().is_empty() {
+                        return Err(format!(
+                            "exact suppression metadata field {field} must not be empty"
+                        ));
+                    }
+                }
             }
             if !exact.insert(credential.clone()) {
                 return Err(format!(
@@ -141,28 +154,5 @@ impl TestFixtureSuppressions {
     #[must_use]
     pub(crate) fn exact_count(&self) -> usize {
         self.exact.len()
-    }
-}
-
-#[doc(hidden)]
-pub(crate) mod testing {
-    pub(crate) fn bundled() -> super::TestFixtureSuppressions {
-        super::TestFixtureSuppressions::bundled()
-    }
-
-    pub(crate) fn empty() -> super::TestFixtureSuppressions {
-        super::TestFixtureSuppressions::empty()
-    }
-
-    pub(crate) fn suppresses(suppressions: &super::TestFixtureSuppressions, cred: &str) -> bool {
-        suppressions.suppresses(cred)
-    }
-
-    pub(crate) fn exact_count(suppressions: &super::TestFixtureSuppressions) -> usize {
-        suppressions.exact_count()
-    }
-
-    pub(crate) fn from_toml(raw: &str) -> Result<super::TestFixtureSuppressions, String> {
-        super::TestFixtureSuppressions::from_toml(raw)
     }
 }

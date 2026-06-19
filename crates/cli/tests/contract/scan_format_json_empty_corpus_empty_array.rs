@@ -8,7 +8,14 @@ fn scan_format_json_empty_corpus_empty_array() {
     // Write a file with no secrets and scan it
     let (_dir, path) = write_temp_file("clean.txt", "plain text, no secrets\n");
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "json"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--format",
+            "json",
+        ])
         .arg(&path)
         .output()
         .expect("spawn");

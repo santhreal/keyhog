@@ -2,6 +2,8 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
+#[cfg(unix)]
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use tempfile::TempDir;
 
 pub fn binary() -> PathBuf {
@@ -90,8 +92,18 @@ pub fn scan_path(path: &Path, extra_args: &[&str]) -> Output {
 
 #[cfg(unix)]
 pub struct DaemonGuard {
+    _slot: MutexGuard<'static, ()>,
     runtime: TempDir,
     child: std::process::Child,
+}
+
+#[cfg(unix)]
+fn daemon_slot() -> MutexGuard<'static, ()> {
+    static DAEMON_SLOT: OnceLock<Mutex<()>> = OnceLock::new();
+    DAEMON_SLOT
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 #[cfg(unix)]
@@ -104,6 +116,7 @@ impl DaemonGuard {
         use std::process::Stdio;
         use std::time::{Duration, Instant};
 
+        let slot = daemon_slot();
         let runtime = TempDir::new().expect("runtime dir");
         let detectors = workspace_detectors();
         let mut cmd = Command::new(binary());
@@ -111,29 +124,53 @@ impl DaemonGuard {
         for (key, value) in envs {
             cmd.env(key, value);
         }
-        let child = cmd
+        let mut child = cmd
             .args([
                 "daemon",
                 "start",
+                "--backend",
+                "simd",
                 "--detectors",
                 detectors.to_str().expect("detectors path"),
             ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .spawn()
             .expect("spawn keyhog daemon");
 
         let socket = runtime.path().join("keyhog.sock");
-        let deadline = Instant::now() + Duration::from_secs(30);
+        let deadline = Instant::now() + Duration::from_secs(120);
         while !socket.exists() {
-            assert!(
-                Instant::now() < deadline,
-                "daemon socket did not appear in time"
-            );
+            if Instant::now() >= deadline {
+                let output = child
+                    .wait_with_output()
+                    .expect("collect timed-out daemon output");
+                panic!(
+                    "daemon socket did not appear in time; status={:?}; stdout={}; stderr={}",
+                    output.status.code(),
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            if let Some(status) = child.try_wait().expect("poll daemon startup") {
+                let output = child
+                    .wait_with_output()
+                    .expect("collect exited daemon output");
+                panic!(
+                    "daemon exited before binding socket; status={:?}; stdout={}; stderr={}",
+                    status.code(),
+                    String::from_utf8_lossy(&output.stdout),
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
             std::thread::sleep(Duration::from_millis(50));
         }
 
-        Self { runtime, child }
+        Self {
+            _slot: slot,
+            runtime,
+            child,
+        }
     }
 
     pub fn runtime_dir(&self) -> &Path {

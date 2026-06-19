@@ -68,20 +68,22 @@ turn an `--url` invocation into a metadata-service IAM exfil.
 
 ## Proxy and TLS
 
-Everything outbound - `--url`, `--github-org`, `--s3-bucket`,
-`--verify`'s API calls - runs through one HTTP client builder.
+Everything outbound - `--url`, `--github-org`, `--gitlab-group`,
+`--bitbucket-workspace`, `--s3-bucket`, `--gcs-bucket`,
+`--azure-container-url`, `--verify`'s API calls - runs through one HTTP client builder.
 Policy:
 
 | Source                       | Effect                                            |
 |------------------------------|---------------------------------------------------|
-| `--proxy http://burp:8080`   | Explicit. Wins over everything.                   |
-| `--proxy off`                | Disable proxying entirely, ignore env vars.       |
-| `KEYHOG_PROXY` env var       | Same as `--proxy`. Useful inside CI containers.   |
-| `HTTPS_PROXY` / `HTTP_PROXY` | reqwest's default. Last resort.                   |
+| `--proxy http://burp:8080`   | Explicit. Routes all KeyHog HTTP traffic through the proxy. |
+| `--proxy off`                | Disable proxying entirely, including any TOML proxy. |
+| `.keyhog.toml` proxy         | Used when no CLI proxy flag is set.               |
+| Proxy environment variables  | Ignored; shell/CI state cannot silently reroute secret-bearing traffic. |
 | `--insecure`                 | Accept any TLS cert (self-signed Burp CA, etc.).  |
-| `KEYHOG_INSECURE_TLS=1`      | Same as `--insecure`.                             |
+| TLS environment toggles      | Ignored; use `--insecure` or TOML explicitly.     |
 
-Order: explicit flag → KEYHOG_PROXY → standard env vars.
+Order: explicit flag -> `.keyhog.toml` -> compiled default (`no proxy`,
+strict TLS). There is no environment fallback for proxy or TLS policy.
 
 `User-Agent: keyhog/<version>` is always set so you can grep your
 proxy logs for keyhog traffic without guessing.
@@ -159,7 +161,7 @@ column in the finding gives the byte offset within the capture, and
 the surrounding context (line ±2) is enough to tell whether it was
 a header or a body.
 
-What KeyHog does **not** do today:
+Unsupported behavior:
 
 - Parse the HTTP wire format and emit `header:Authorization`
   vs `body:json:$.token` provenance fields.
@@ -167,44 +169,35 @@ What KeyHog does **not** do today:
   (one is being sent OUT, one is being sent IN - different threat
   model).
 
-Those land in the roadmap below.
+## Unsupported Wire Features
 
-## Roadmap
-
-The wire-scanning surface is intentionally narrow today. Items
-queued for a later release, with their issue links:
+The wire-scanning surface is intentionally narrow. These features are
+not part of the shipped HTTP-wire contract:
 
 1. **mitmproxy `.mitm` flow-dump support.** Same shape as HAR but
    binary-framed. Use the `mitmproxy-rs` crate to decode.
 
-2. **Header / body / URL-param provenance.** HAR expansion lands
-   one chunk per request and one chunk per response today. The
-   next step is attaching `wire_location: header:<name> | body | query`
-   to each finding so the JSON consumer can filter
+2. **Header / body / URL-param provenance.** HAR expansion emits
+   one chunk per request and one chunk per response. It does not attach
+   `wire_location: header:<name> | body | query` to each finding, so the
+   JSON consumer cannot filter
    `wire_location == "header:Authorization"` for the highest-
    signal subset (intentional auth tokens vs accidental body
    leaks vs URL-logged secrets).
 
-3. **Live proxy mode.** Run `keyhog proxy --listen :8080` and have
-   it act as an HTTP proxy that scans every flow inline, writing
-   findings to stdout. The use case is recording a browsing
-   session against a target and getting a single report of every
-   credential the site shipped to the client.
+3. **Live proxy mode.** KeyHog does not ship `keyhog proxy --listen :8080`
+   or an inline HTTP proxy that scans flows while forwarding them.
 
-4. **WebSocket frame scanning.** HAR files don't include WebSocket
-   payloads. mitmproxy dumps do. Frame-level scanning would catch
-   tokens passed over upgraded connections (Slack, Discord,
-   collaborative editors).
-
-No promises on timeline - track via
-[github.com/santhsecurity/keyhog/issues](https://github.com/santhsecurity/keyhog/issues).
+4. **WebSocket frame scanning.** HAR files do not include WebSocket
+   payloads, and KeyHog does not parse mitmproxy frame dumps as a
+   WebSocket source.
 
 ## Why this matters for bug bounties
 
 A modern SPA bundle on a typical SaaS app can ship 200+ npm
 dependencies and a sourcemap that exposes every server-side env
 var the build process touched. Manual code review of one
-`main.js.map` against the 899-detector corpus is hours; running
+`main.js.map` against the 902-detector corpus is hours; running
 `keyhog scan --url https://app.target.com/static/main.js.map`
 takes seconds.
 

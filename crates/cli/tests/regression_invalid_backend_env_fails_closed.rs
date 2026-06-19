@@ -23,7 +23,6 @@ fn legacy_keyhog_backend_env_is_ignored_by_explicit_backend_flag() {
         ])
         .arg(&target)
         .env("KEYHOG_BACKEND", "not-a-real-backend")
-        .env_remove("KEYHOG_GPU_AUTOROUTE")
         .output()
         .expect("spawn keyhog scan");
 

@@ -31,7 +31,10 @@ fn gate_dir_files_are_wired_and_meet_floor() {
     let mut declared: Vec<String> = mod_src
         .lines()
         .map(str::trim)
-        .filter_map(|l| l.strip_prefix("pub mod ").or_else(|| l.strip_prefix("mod ")))
+        .filter_map(|l| {
+            l.strip_prefix("pub mod ")
+                .or_else(|| l.strip_prefix("mod "))
+        })
         .map(|rest| rest.trim_end_matches(';').trim().to_string())
         .collect();
     declared.sort();

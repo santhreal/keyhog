@@ -29,7 +29,6 @@ fn explicit_backend_does_not_load_stale_autoroute_cache() {
         .arg(&cache)
         .arg(&fixture)
         .env_remove("KEYHOG_BACKEND")
-        .env_remove("KEYHOG_AUTOROUTE_CALIBRATE")
         .output()
         .expect("spawn keyhog scan");
 

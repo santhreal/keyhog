@@ -1,13 +1,8 @@
-# R1-D1 stress tests
+# CLI Stress Tests
 
-Hand-written regressions from R1-D1 dogfood. Wire into `crates/cli/tests/all_tests.rs`:
-
-```rust
-pub mod stress;
-```
-
-Copy this directory to `crates/cli/tests/stress/` and append `GAP_FINDINGS_append.toml`
-to `GAP_FINDINGS.toml`.
+Hand-written dogfood regressions for CLI worst-case behavior. This directory is
+already wired through `crates/cli/tests/all_tests.rs` via `pub mod stress;`;
+new files must be added to `crates/cli/tests/stress/mod.rs`.
 
 Run:
 
@@ -15,4 +10,5 @@ Run:
 cargo test -p keyhog --test all_tests stress::
 ```
 
-Expected: tests **fail** while gaps KH-GAP-081..084 remain open (intentional red gates).
+Expected: the wired stress shard passes. A new failing stress case is a product
+finding until the underlying behavior is fixed.

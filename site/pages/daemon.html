@@ -3,9 +3,10 @@ description = "Amortize the ~3 s scanner-compile cost across many invocations ov
 ---
 <h1>Daemon mode</h1>
 <p class="lede">
-  Every keyhog invocation pays a ~3 s cold start to compile 899 detectors into
+  Every keyhog invocation pays a cold-start compile of 902 detectors into
   a single Hyperscan database. Run keyhog as a long-lived daemon and that
-  cost is paid once per host — every scan after is ~7 ms.
+  cost is paid once per host; latency claims are reported by the daemon
+  benchmark artifacts.
 </p>
 
 <h2>Start the daemon</h2>
@@ -24,14 +25,16 @@ description = "Amortize the ~3 s scanner-compile cost across many invocations ov
 
 <h2>Use it from any scan</h2>
 
-<pre><code><span class="prompt">$</span> keyhog scan --stdin --daemon &lt; .env
-<span class="prompt">$</span> keyhog scan . --daemon
-<span class="prompt">$</span> keyhog scan --git-staged --daemon</code></pre>
+<pre><code><span class="prompt">$</span> keyhog scan --stdin --daemon=on &lt; .env
+<span class="prompt">$</span> keyhog scan ./one-file.env --daemon=on
+<span class="prompt">$</span> keyhog scan --stdin --daemon=auto &lt; .env</code></pre>
 
-<p>If the daemon is running, the client opens the socket, ships the scan
-request, and returns findings. If it isn't running, the client falls back
-to an in-process scan (with a one-line WARN noting the daemon wasn't
-reachable). The same binary handles both — there is no separate client.</p>
+<p><code>--daemon=on</code> (and bare <code>--daemon</code>) is a hard
+contract: if the daemon is not running or cannot honor the exact scan, the
+command exits with an actionable error. Use <code>--daemon=auto</code> to
+opportunistically use a live daemon and otherwise run the in-process scanner, or
+<code>--daemon=off</code> / <code>--no-daemon</code> to force the in-process
+path. The same binary handles both — there is no separate client.</p>
 
 <h2>Measured speedup</h2>
 
@@ -108,11 +111,11 @@ hooks and IDE save handlers are the killer use cases.</p>
 <pre><code><span class="prompt">$</span> curl -fsSL https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.sh | sh
 <span class="prompt">$</span> keyhog daemon stop &amp;&amp; keyhog daemon start
 <span class="a">keyhog daemon stopped</span>
-<span class="a">keyhog daemon started · loaded 899 detectors</span></code></pre>
+<span class="a">keyhog daemon started · loaded 902 detectors</span></code></pre>
 
-<p>There is no single <code>daemon restart</code> verb yet (tracked in the
-roadmap). <code>stop &amp;&amp; start</code> drops the old socket, recompiles
-the detector database under the new binary, and binds a fresh socket.
+<p>KeyHog does not ship a single <code>daemon restart</code> verb.
+<code>stop &amp;&amp; start</code> drops the old socket, recompiles the detector
+database under the new binary, and binds a fresh socket.
 Inflight scans on the old daemon complete normally before the old process
 exits.</p>
 

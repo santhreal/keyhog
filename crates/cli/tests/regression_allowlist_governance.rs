@@ -7,6 +7,24 @@ use tempfile::TempDir;
 
 const PLANTED_AWS: &str = concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n");
 
+const README: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../README.md"));
+const SUPPRESSIONS_DOC: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../docs/src/suppressions.md"
+));
+const CONFIG_DOC: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../docs/src/reference/configuration.md"
+));
+const SITE_IGNORE_SOURCE: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../site/pages/ignore.html"
+));
+const SITE_IGNORE_BUILT: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../site/ignore.html"
+));
+
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
@@ -38,6 +56,50 @@ fn fixture_dir(config: &str, allowlist: &str) -> TempDir {
     std::fs::write(dir.path().join(".keyhogignore"), allowlist).expect("write allowlist");
     std::fs::write(dir.path().join("secret.env"), PLANTED_AWS).expect("write fixture");
     dir
+}
+
+#[test]
+fn docs_state_allowlist_governance_and_expiry_fail_closed() {
+    let docs = [
+        ("README.md", README),
+        ("docs/src/suppressions.md", SUPPRESSIONS_DOC),
+        ("docs/src/reference/configuration.md", CONFIG_DOC),
+        ("site/pages/ignore.html", SITE_IGNORE_SOURCE),
+        ("site/ignore.html", SITE_IGNORE_BUILT),
+    ];
+    for (path, doc) in docs {
+        for stale in [
+            "silently dropped on load",
+            "parsed but not yet enforced",
+            "parse-only",
+            "reported via a warning and skipped",
+        ] {
+            assert!(
+                !doc.contains(stale),
+                "{path} must not advertise the retired allowlist warning/parse-only contract: {stale:?}"
+            );
+        }
+    }
+
+    assert!(
+        SUPPRESSIONS_DOC.contains("governance")
+            && SUPPRESSIONS_DOC.contains("are enforced before any suppression")
+            && SUPPRESSIONS_DOC.contains("is active")
+            && SUPPRESSIONS_DOC.contains("stops the scan"),
+        "suppressions.md must state allowlist governance and malformed suppressor fail-closed behavior"
+    );
+    assert!(
+        CONFIG_DOC.contains("`require_reason`, `require_approved_by`, and `max_expires_days`")
+            && CONFIG_DOC.contains("enforce governance")
+            && CONFIG_DOC.contains("fail closed"),
+        "configuration.md must state [allowlist] governance is enforced"
+    );
+    assert!(
+        README.contains("Entries past `expires` fail allowlist load")
+            && SITE_IGNORE_SOURCE.contains("fail allowlist load")
+            && SITE_IGNORE_BUILT.contains("fail allowlist load"),
+        "README and ignore site pages must state expired allowlist entries fail closed"
+    );
 }
 
 #[test]

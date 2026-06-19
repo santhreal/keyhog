@@ -12,7 +12,7 @@
   <a href="index.html" class="brand">
     <span class="mark">k</span>
     keyhog
-    <span class="v">v0.5.37</span>
+    <span class="v">v0.5.40</span>
   </a>
   <nav class="top">
     <a href="detectors.html">Detectors</a>
@@ -149,15 +149,15 @@ hardenings.</p>
 
 <h2>Enforce lockdown in CI</h2>
 
-<p>Set the config or env to make lockdown mandatory:</p>
+<p>Set the repo config to make lockdown mandatory:</p>
 
 <pre><code><span class="k">[lockdown]</span>
 require = <span class="k">true</span>           <span class="c"># in .keyhog.toml — refuse to run without --lockdown</span></code></pre>
 
-<pre><code><span class="prompt">$</span> KEYHOG_LOCKDOWN_REQUIRE=1 keyhog scan .
+<pre><code><span class="prompt">$</span> keyhog scan .
 <span class="a">ERROR: lockdown is required by configuration but --lockdown was not passed</span>
 <span class="a">  rerun with: keyhog scan . --lockdown</span>
-<span class="a">  to disable enforcement: unset KEYHOG_LOCKDOWN_REQUIRE / remove [lockdown] require</span></code></pre>
+<span class="a">  to disable enforcement: remove [lockdown] require from .keyhog.toml</span></code></pre>
 
 <p>Pair with <code>--baseline</code> + <code>--format sarif</code> so the
 sealed environment still produces actionable CI artifacts:</p>

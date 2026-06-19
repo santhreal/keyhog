@@ -27,6 +27,7 @@ const BASE_SUBCOMMANDS: &[&str] = &[
     "backend",
     "calibrate",
     "completion",
+    "config",
     "daemon",
     "detectors",
     "diff",
@@ -58,9 +59,14 @@ fn expected_subcommands() -> BTreeSet<String> {
 /// here (or in the matching cfg block) on purpose. A rename shows up as one
 /// removal + one addition, so churn is caught too.
 const BASE_SCAN_LONG_FLAGS: &[&str] = &[
+    "autoroute-cache",
+    "autoroute-calibrate",
+    "autoroute-gpu",
     "backend",
     "baseline",
+    "batch-pipeline",
     "benchmark",
+    "cache-dir",
     "config",
     "create-baseline",
     "daemon",
@@ -75,18 +81,24 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "exclude-paths",
     "fast",
     "format",
+    "fused-batch",
+    "fused-depth",
     "hide-client-safe",
     "incremental",
     "incremental-cache",
+    "limit-stdin-bytes",
     "lockdown",
     "max-file-size",
     "min-confidence",
+    "min-secret-len",
     "ml-threshold",
     "ml-weight",
     // `--no-config`: hermetic run on the compiled-in Tier-A shipped defaults,
     // rejecting ambient `.keyhog.toml` discovery (conflicts_with = "config";
     // backlog MC-07). Unconditional — not feature-gated.
     "no-config",
+    "no-autoroute-gpu",
+    "no-batch-pipeline",
     "no-daemon",
     "no-decode",
     "no-default-excludes",
@@ -94,14 +106,20 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
     "no-entropy-ml-scoring",
     "no-keyword-low-entropy",
     "no-ml",
+    "no-gpu",
     "no-suppress-test-fixtures",
     "no-unicode-norm",
     "output",
     "path",
+    "per-chunk-timeout-ms",
+    "perf-trace",
     "precision",
+    "profile",
     "progress",
     "rate",
     "regex-dfa-limit",
+    "reader-threads",
+    "require-gpu",
     "scan-comments",
     "severity",
     "show-secrets",
@@ -115,8 +133,8 @@ const BASE_SCAN_LONG_FLAGS: &[&str] = &[
 
 /// Build the expected `scan` long-flag set for the CURRENTLY-COMPILED feature
 /// selection. Mirrors every `#[cfg(feature = ...)]` on a `ScanArgs` field
-/// (`args/scan.rs`): `git`/`github`/`s3`/`docker`/`web` source flags, the
-/// `any(web,github,s3)` network knobs (`proxy`/`insecure`), the `verify` cluster,
+/// (`args/scan.rs`): `git`/`github`/`s3`/`gcs`/`azure`/`docker`/`web` source flags, the
+/// network knobs (`proxy`/`insecure`), the `verify` cluster,
 /// and the opt-in `binary` (Ghidra) flag. Keeping these gates in lockstep with
 /// the args is what makes the snapshot pass under `default`, `full`, AND `ci`.
 fn expected_scan_long_flags() -> BTreeSet<String> {
@@ -131,6 +149,10 @@ fn expected_scan_long_flags() -> BTreeSet<String> {
         add("git-diff-path");
         add("git-history");
         add("git-staged");
+        add("limit-git-blob-bytes");
+        add("limit-git-chunks");
+        add("limit-git-line-bytes");
+        add("limit-git-total-bytes");
         add("max-commits");
     }
     #[cfg(feature = "github")]
@@ -138,23 +160,75 @@ fn expected_scan_long_flags() -> BTreeSet<String> {
         add("github-org");
         add("github-token");
     }
+    #[cfg(feature = "gitlab")]
+    {
+        add("gitlab-endpoint");
+        add("gitlab-group");
+        add("gitlab-token");
+    }
+    #[cfg(feature = "bitbucket")]
+    {
+        add("bitbucket-endpoint");
+        add("bitbucket-token");
+        add("bitbucket-username");
+        add("bitbucket-workspace");
+    }
+    #[cfg(feature = "gcs")]
+    {
+        add("allow-gcs-token-forward");
+        add("gcs-bucket");
+        add("gcs-endpoint");
+        add("gcs-prefix");
+        add("limit-gcs-object-bytes");
+    }
+    #[cfg(feature = "azure")]
+    {
+        add("azure-container-url");
+        add("azure-prefix");
+        add("limit-azure-blob-bytes");
+    }
     #[cfg(feature = "s3")]
     {
+        add("allow-s3-credential-forward");
+        add("limit-s3-object-bytes");
         add("s3-bucket");
         add("s3-endpoint");
         add("s3-prefix");
     }
     #[cfg(feature = "docker")]
-    add("docker-image");
+    {
+        add("docker-image");
+        add("limit-docker-image-config-bytes");
+        add("limit-docker-tar-entry-bytes");
+        add("limit-docker-tar-total-bytes");
+    }
     #[cfg(feature = "web")]
-    add("url");
-    #[cfg(any(feature = "web", feature = "github", feature = "s3"))]
+    {
+        add("limit-web-response-bytes");
+        add("url");
+    }
+    #[cfg(feature = "binary")]
+    {
+        add("binary");
+        add("limit-binary-decompiled-bytes");
+        add("limit-binary-read-bytes");
+    }
+    #[cfg(any(
+        feature = "web",
+        feature = "github",
+        feature = "gitlab",
+        feature = "bitbucket",
+        feature = "s3",
+        feature = "gcs",
+        feature = "azure"
+    ))]
     {
         add("proxy");
         add("insecure");
     }
     #[cfg(feature = "verify")]
     {
+        add("allow-script-verify");
         add("verify");
         add("verify-batch");
         add("verify-oob");
@@ -162,8 +236,6 @@ fn expected_scan_long_flags() -> BTreeSet<String> {
         add("oob-server");
         add("oob-timeout");
     }
-    #[cfg(feature = "binary")]
-    add("binary");
     // Silence the unused-closure warning when no source/verify feature is on
     // (e.g. `--features ci`): `add` is only invoked inside cfg blocks.
     let _ = &mut add;
@@ -200,7 +272,12 @@ fn top_level_subcommand_set_matches_pinned_snapshot() {
         .filter(|name| name != "help")
         .collect();
     let expected = expected_subcommands();
-    assert_eq!(actual, expected, "{}", diff_message("subcommand", &expected, &actual));
+    assert_eq!(
+        actual,
+        expected,
+        "{}",
+        diff_message("subcommand", &expected, &actual)
+    );
 }
 
 #[test]
@@ -217,5 +294,10 @@ fn scan_long_flag_set_matches_pinned_snapshot() {
         .filter(|long| long != "help")
         .collect();
     let expected = expected_scan_long_flags();
-    assert_eq!(actual, expected, "{}", diff_message("scan flag", &expected, &actual));
+    assert_eq!(
+        actual,
+        expected,
+        "{}",
+        diff_message("scan flag", &expected, &actual)
+    );
 }

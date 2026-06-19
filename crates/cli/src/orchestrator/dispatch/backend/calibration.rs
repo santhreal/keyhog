@@ -17,6 +17,7 @@ pub(super) fn calibrate_fastest_correct_backend(
     hw_caps: &HardwareCaps,
     pattern_count: usize,
     batch: &[Chunk],
+    autoroute_gpu: bool,
 ) -> Result<AutorouteDecision, AutorouteRoutingError> {
     let sample = sample_batch(batch);
 
@@ -38,8 +39,7 @@ pub(super) fn calibrate_fastest_correct_backend(
     let mut gpu_cold_ns = None;
     let mut gpu_warm_timing = None;
     let mut gpu_route_ns = None;
-    let gpu_autoroute_optin = std::env::var_os("KEYHOG_GPU_AUTOROUTE").is_some();
-    if gpu_autoroute_optin && gpu_could_engage(hw_caps, sample_bytes, pattern_count) {
+    if autoroute_gpu && gpu_could_engage(hw_caps, sample_bytes, pattern_count) {
         if let Some(measured_gpu_timing) =
             measure_candidate_backend(scanner, &sample, ScanBackend::Gpu, &reference_key)
         {
@@ -79,7 +79,7 @@ pub(super) fn calibrate_fastest_correct_backend(
         sample_bytes,
         simd_ms = simd_timing.best_ms(),
         cpu_ms = cpu_timing.as_ref().map(BackendTimingEvidence::best_ms),
-        gpu_considered = gpu_autoroute_optin,
+        gpu_considered = autoroute_gpu,
         gpu_ms = gpu_timing.as_ref().map(BackendTimingEvidence::best_ms),
         gpu_cold_ms = gpu_cold_ns.map(|ns| ns / 1_000_000),
         gpu_warm_ms = gpu_warm_timing.as_ref().map(BackendTimingEvidence::best_ms),

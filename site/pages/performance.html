@@ -1,38 +1,31 @@
 title = "Performance"
-description = "Throughput and latency numbers vs every major secret scanner. Routing matrix. How to verify on your hardware."
+description = "How keyhog records benchmark evidence, validates autoroute calibration, and reproduces throughput checks."
 ---
 <h1>Performance</h1>
 <p class="lede">
-  Numbers measured on the same hardware (16-core AVX-512 Ryzen, NVIDIA RTX
-  4090, NVMe SSD) against the same corpora. Reproduce them with the
-  benchmark harness in <code>benches/</code>.
+  Performance claims are generated from committed benchmark artifacts and
+  reproducible harnesses. The website does not carry hand-written leaderboard
+  numbers because stale benchmark tables are worse than no benchmark table.
 </p>
 
-<h2>Head-to-head</h2>
+<h2>Benchmark evidence</h2>
 
 <div class="table-wrap">
 <table>
   <thead>
-    <tr><th></th><th>keyhog</th><th>Gitleaks</th><th>BetterLeaks</th><th>TruffleHog</th><th>Titus</th></tr>
+    <tr><th>Artifact</th><th>Contract</th></tr>
   </thead>
   <tbody>
-    <tr><td><strong>Recall</strong> <small>(25-secret benchmark)</small></td>
-        <td><strong>96 %</strong></td><td>72 %</td><td>72 %</td><td>28 %</td><td>32 %</td></tr>
-    <tr><td><strong>False positives</strong> <small>(Django, 0 real secrets)</small></td>
-        <td><strong>1</strong></td><td>0</td><td>0</td><td>0</td><td>17 481</td></tr>
-    <tr><td><strong>Speed</strong> <small>(86 MB Django tree)</small></td>
-        <td><strong>0.5 s</strong></td><td>0.3 s</td><td>0.2 s</td><td>1.4 s</td><td>2.3 s</td></tr>
-    <tr><td><strong>Speed</strong> <small>(397 MB Kubernetes tree)</small></td>
-        <td><strong>1.1 s</strong></td><td>—</td><td>—</td><td>—</td><td>3.5 s</td></tr>
-    <tr><td><strong>Speed</strong> <small>(large monorepo, 4.2 GB)</small></td>
-        <td><strong>2.5 s</strong></td><td>—</td><td>—</td><td>—</td><td>252 s</td></tr>
+    <tr><td><code>benchmarks/reports/leaderboard.md</code></td><td>Generated competitor comparison, not edited by hand.</td></tr>
+    <tr><td><code>benchmarks/reports/perf.md</code></td><td>Generated throughput and latency report for the current binary.</td></tr>
+    <tr><td><code>benchmarks/results/*.json</code></td><td>Machine-readable inputs consumed by the source gate and CI bench gate.</td></tr>
+    <tr><td><code>scripts/gates/run_all.sh</code></td><td>Runs the source gates and loud-skips asset gates when benchmark inputs are absent.</td></tr>
   </tbody>
 </table>
 </div>
 
-<p>keyhog finds <strong>33% more real secrets</strong> than the next-best
-tool while keeping false positives in single digits across multi-GB
-trees.</p>
+<p>Release claims should come from those generated files. If the reports are
+absent, stale, or missing a competitor, the claim is not made here.</p>
 
 <h2>Throughput</h2>
 
@@ -40,10 +33,10 @@ trees.</p>
 <table>
   <thead><tr><th>Workload</th><th>Backend</th><th>Throughput</th></tr></thead>
   <tbody>
-    <tr><td>1 GB of pure text (HAR / log dump)</td><td><code>simd-regex</code></td><td>~500 MB/s</td></tr>
-    <tr><td>1 GB of mixed code + data (monorepo)</td><td><code>simd-regex</code></td><td>~1.6 GB/s effective <small>(95% files skip post-process)</small></td></tr>
-    <tr><td>10 GB on NVMe direct-DMA path</td><td><code>gpu-zero-copy</code></td><td>~2.8 GB/s end-to-end</td></tr>
-    <tr><td>500 KB tiny file, daemon hot</td><td><code>simd-regex</code></td><td>~7 ms cold start, 0.6 ms scan</td></tr>
+    <tr><td>Pure text stream</td><td><code>simd-regex</code> or <code>gpu-zero-copy</code></td><td>Reported by the benchmark harness.</td></tr>
+    <tr><td>Mixed code + data tree</td><td>Calibrated autoroute decision</td><td>Reported by the benchmark harness.</td></tr>
+    <tr><td>Large single file</td><td>Calibrated autoroute decision</td><td>Reported by the benchmark harness.</td></tr>
+    <tr><td>Tiny hot daemon scan</td><td><code>simd-regex</code></td><td>Reported by daemon latency tests.</td></tr>
   </tbody>
 </table>
 </div>
@@ -54,63 +47,61 @@ trees.</p>
 <table>
   <thead><tr><th>Operation</th><th>Time</th></tr></thead>
   <tbody>
-    <tr><td>Cold start (compile 899 detectors, no cache)</td><td>~3.0 s</td></tr>
-    <tr><td>Cold start (compile cache hit, mmap DB)</td><td>~120 ms</td></tr>
-    <tr><td>Daemon-served scan, 32-byte input</td><td><strong>7 ms</strong></td></tr>
-    <tr><td>Daemon-served scan, 1 MB input</td><td>~12 ms</td></tr>
-    <tr><td>Pre-commit hook (typical staged diff)</td><td>~85 ms</td></tr>
+    <tr><td>Cold start (compile 902 detectors, no cache)</td><td>Reported by <code>cold_start</code> benchmarks.</td></tr>
+    <tr><td>Cold start (compile cache hit, mmap DB)</td><td>Reported by <code>cold_start</code> benchmarks.</td></tr>
+    <tr><td>Daemon-served stdin scan</td><td>Reported by daemon latency tests.</td></tr>
+    <tr><td>Pre-commit hook staged diff</td><td>Reported by e2e CLI tests and benchmark reports.</td></tr>
   </tbody>
 </table>
 </div>
 
-<h2>Backend routing matrix</h2>
+<h2 id="autoroute-contract">Autoroute contract</h2>
 
-<p>The router picks per scan based on input size and pattern count:</p>
+<p>Autoroute is a persisted calibration contract, not a hardcoded size table.
+Installation or <code>keyhog calibrate</code> measures the available backends
+for workload classes, stores the winning correct backend with hardware and
+detector-set fingerprints, and normal scans use that record with no per-scan
+probing.</p>
 
 <div class="table-wrap">
 <table>
-  <thead><tr><th>Input size</th><th>Pattern count</th><th>Routed to</th></tr></thead>
+  <thead><tr><th>State</th><th>Runtime behavior</th></tr></thead>
   <tbody>
-    <tr><td>&lt; 64 MiB</td><td>any</td><td><code>simd-regex</code> (Hyperscan)</td></tr>
-    <tr><td>≥ 64 MiB</td><td>≥ 2 000</td><td><code>gpu-zero-copy</code></td></tr>
-    <tr><td>≥ 256 MiB</td><td>any</td><td><code>gpu-zero-copy</code></td></tr>
-    <tr><td>any</td><td>any (no GPU / software adapter)</td><td><code>simd-regex</code></td></tr>
-    <tr><td>any</td><td>any (no SIMD / no Hyperscan)</td><td><code>cpu-fallback</code></td></tr>
+    <tr><td>Fresh calibration matches host + detector set + workload class</td><td>Use the persisted backend decision.</td></tr>
+    <tr><td>Calibration missing, stale, or cannot be read</td><td>Exit with a visible calibration error and the command to repair it.</td></tr>
+    <tr><td>Backend forced for diagnostics</td><td>Honor the explicit override and report the decision inputs.</td></tr>
+    <tr><td>Backend cannot return equivalent findings</td><td>Do not select it for autoroute.</td></tr>
   </tbody>
 </table>
 </div>
 
-<p>Override with <code>KEYHOG_BACKEND={gpu|simd|cpu|mega-scan}</code>.
-Per-OS GPU backend preference: Windows → DX12, macOS/iOS → Metal,
-Linux/BSD → Vulkan.</p>
+<p>Override with <code>keyhog scan --backend {gpu|simd|cpu|mega-scan}</code> for
+diagnostic runs. Production routing depends on calibration evidence.</p>
 
-<h2>Inspect the matrix on your hardware</h2>
+<h2>Inspect calibration on your hardware</h2>
 
 <pre><code><span class="prompt">$</span> keyhog backend
-<span class="a">keyhog v0.5.37 | 16 cores | SIMD: AVX-512 | Hyperscan | 899 detectors</span>
+<span class="a">keyhog v0.5.40 | 16 cores | SIMD: AVX-512 | Hyperscan | 902 detectors</span>
 <span class="a">  cpu: AMD Ryzen 9 7950X · 16c/32t · AVX-512 + AVX2 + SSE4.2</span>
 <span class="a">  gpu: NVIDIA RTX 4090 · 24 GB · CUDA + Vulkan</span>
-<span class="a">  routing matrix:</span>
-<span class="a">    &lt; 64 MiB         → simd-regex</span>
-<span class="a">    ≥ 64 MiB, ≥2k    → gpu-zero-copy</span>
-<span class="a">    ≥ 256 MiB        → gpu-zero-copy</span>
+<span class="a">  autoroute calibration: fresh</span>
+<span class="a">    small-tree/default-detectors → simd-regex</span>
+<span class="a">    large-file/default-detectors → gpu-zero-copy</span>
 
 <span class="prompt">$</span> keyhog backend --probe-bytes $((300 * 1024 * 1024))
-<span class="a">at 300 MiB / 899 patterns → gpu-zero-copy</span></code></pre>
+<span class="a">300 MiB probe class uses persisted calibration → gpu-zero-copy</span></code></pre>
 
 <h2>Reproduce the benchmarks</h2>
 
 <pre><code><span class="prompt">$</span> git clone https://github.com/santhsecurity/keyhog.git
 <span class="prompt">$</span> cd keyhog
-<span class="prompt">$</span> cargo bench --bench scan_throughput
-<span class="prompt">$</span> cargo bench --bench cold_start
-<span class="prompt">$</span> cargo bench --bench daemon_latency</code></pre>
+<span class="prompt">$</span> make -C benchmarks bench
+<span class="prompt">$</span> make -C benchmarks report</code></pre>
 
-<p>The Django / Kubernetes / monorepo numbers come from the
-<code>benchmark-harness/</code> directory. Run
-<code>./benchmark-harness/run.sh</code> to reproduce; the script vendors
-the comparison corpora, runs every tool with their best-effort flags, and
-emits a Markdown table.</p>
+<p>The benchmark harness records machine-readable results under
+<code>benchmarks/results/</code> and renders reports under
+<code>benchmarks/reports/</code>. The prevention gate consumes those files
+instead of trusting hand-written site numbers.</p>
 
 <h2>Profiling tips</h2>
 
@@ -128,11 +119,9 @@ emits a Markdown table.</p>
   cold start, not the scan.</li>
 </ul>
 
-<h2>What "fastest" actually means</h2>
+<h2>What the comparison means</h2>
 
-<p>"Fastest secret scanner" is a benchmark trap — Gitleaks scans 86 MB in
-0.3 s because it only checks ~50 patterns. keyhog scans the same tree
-in 0.5 s with 899 patterns, catches 33% more real secrets, and pulls
-ahead on every dataset above ~200 MB (where the two-phase NFA wins big
-over linear regex). The right comparison is throughput per pattern at
-scale, not latency on a tiny tree.</p>
+<p>Secret-scanner speed is only meaningful when the compared tools scan the
+same corpus, use their strongest available path, and return equivalent findings.
+keyhog's benchmark gate treats recall, false positives, throughput, and
+autoroute correctness as one contract.</p>

@@ -6,8 +6,8 @@ use crate::daemon::protocol::{Request, Response, WIRE_VERSION};
 use crate::daemon::trust;
 use crate::style;
 use anyhow::{Context, Result};
-use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, RawMatch};
-use keyhog_scanner::CompiledScanner;
+use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, RawMatch, Source};
+use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -69,6 +69,7 @@ struct ServerState {
     shutdown: Arc<Notify>,
     detector_count: usize,
     request_read_timeout: Duration,
+    backend_override: Option<ScanBackend>,
     // Caps concurrent in-flight client connections. Without this,
     // every accepted socket spawns an unbounded tokio task that in
     // turn unboundedly spawn_blocks a scanner thread. A burst of
@@ -87,6 +88,7 @@ impl ServerState {
         shutdown: Arc<Notify>,
         detector_count: usize,
         options: ServerOptions,
+        backend_override: Option<ScanBackend>,
     ) -> Self {
         let cores = std::thread::available_parallelism()
             .map(|n| n.get())
@@ -101,6 +103,7 @@ impl ServerState {
             shutdown,
             detector_count,
             request_read_timeout: options.request_read_timeout,
+            backend_override,
             connection_limit: Arc::new(Semaphore::new(max_conns)),
         }
     }
@@ -118,6 +121,15 @@ pub async fn run(
     socket_path: PathBuf,
     detectors: Vec<DetectorSpec>,
     options: ServerOptions,
+) -> Result<()> {
+    run_with_backend_override(socket_path, detectors, options, None).await
+}
+
+pub(crate) async fn run_with_backend_override(
+    socket_path: PathBuf,
+    detectors: Vec<DetectorSpec>,
+    options: ServerOptions,
+    backend_override: Option<ScanBackend>,
 ) -> Result<()> {
     let detector_count = detectors.len();
     let scanner = CompiledScanner::compile(detectors.clone())
@@ -152,6 +164,7 @@ pub async fn run(
         shutdown.clone(),
         detector_count,
         options,
+        backend_override,
     ));
 
     eprintln!(
@@ -338,6 +351,7 @@ async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> R
     state.active_scans.fetch_add(1, Ordering::Relaxed);
     let scanner = state.scanner.clone();
     let router = state.router.clone();
+    let backend_override = state.backend_override;
     let chunk_path = path.clone();
     let telemetry = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
     // Hand the actual scan to a blocking thread - calibrated backend scanning
@@ -356,7 +370,7 @@ async fn scan_text(state: &ServerState, path: Option<String>, text: String) -> R
                         ..Default::default()
                     },
                 };
-                let backend = router.choose(None, std::slice::from_ref(&chunk))?;
+                let backend = router.choose(backend_override, std::slice::from_ref(&chunk))?;
                 Ok(scanner.scan_with_backend(&chunk, backend))
             },
         )?;
@@ -395,6 +409,7 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
     state.active_scans.fetch_add(1, Ordering::Relaxed);
     let scanner = state.scanner.clone();
     let router = state.router.clone();
+    let backend_override = state.backend_override;
     let resolved_owned = resolved.clone();
     let telemetry = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
     type ScanOutput = (
@@ -403,26 +418,21 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
         Vec<keyhog_scanner::telemetry::DogfoodEvent>,
     );
     let res = tokio::task::spawn_blocking(move || -> Result<ScanOutput> {
-        let bytes = std::fs::read(&resolved_owned)
-            .with_context(|| format!("daemon: reading {}", resolved_owned.display()))?;
-        let Some(text) = keyhog_sources::decode_file_bytes(&bytes) else {
+        let chunks = daemon_scan_path_chunks(&resolved_owned)?;
+        if chunks.is_empty() {
             let (engine_example_suppressions, dogfood_events) =
                 drain_daemon_scan_telemetry(&telemetry);
             return Ok((Vec::new(), engine_example_suppressions, dogfood_events));
-        };
+        }
         let matches = keyhog_scanner::telemetry::with_scan_telemetry(
             &telemetry,
             || -> Result<Vec<RawMatch>> {
-                let chunk = Chunk {
-                    data: text.into(),
-                    metadata: ChunkMetadata {
-                        source_type: "filesystem".into(),
-                        path: Some(resolved_owned.to_string_lossy().into_owned()),
-                        ..Default::default()
-                    },
-                };
-                let backend = router.choose(None, std::slice::from_ref(&chunk))?;
-                Ok(scanner.scan_with_backend(&chunk, backend))
+                let backend = router.choose(backend_override, &chunks)?;
+                Ok(scanner
+                    .scan_chunks_with_backend(&chunks, backend)
+                    .into_iter()
+                    .flatten()
+                    .collect())
             },
         )?;
         let (engine_example_suppressions, dogfood_events) = drain_daemon_scan_telemetry(&telemetry);
@@ -446,6 +456,28 @@ async fn scan_path(state: &ServerState, path: String, working_dir: Option<String
             message: format!("daemon: scan task panicked or was cancelled: {e:#}"),
         },
     }
+}
+
+fn daemon_scan_path_chunks(path: &Path) -> Result<Vec<Chunk>> {
+    let source = keyhog_sources::FilesystemSource::new(path.to_path_buf());
+    let mut chunks = Vec::new();
+    for chunk in source.chunks() {
+        let chunk = chunk.with_context(|| {
+            format!("daemon: expanding filesystem source for {}", path.display())
+        })?;
+        if chunk.data.len() > 512 * 1024 * 1024 {
+            let chunk_path = match chunk.metadata.path.as_deref() {
+                Some(path) => path.to_owned(),
+                None => path.display().to_string(),
+            };
+            anyhow::bail!(
+                "daemon: refusing chunk over 512 MiB from {}. Pass --no-daemon to use the full in-process scanner.",
+                chunk_path
+            );
+        }
+        chunks.push(chunk);
+    }
+    Ok(chunks)
 }
 
 fn drain_daemon_scan_telemetry(

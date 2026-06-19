@@ -33,7 +33,10 @@ fn file_gate_matrix_cli_rows_mark_hostile_coverage() {
             unmarked += 1;
         }
     }
-    assert!(cli_rows >= 31, "expected >=31 CLI matrix rows, got {cli_rows}");
+    assert!(
+        cli_rows >= 31,
+        "expected >=31 CLI matrix rows, got {cli_rows}"
+    );
     assert_eq!(
         unmarked, 0,
         "CLI matrix rows must not leave boundary/adversarial/e2e_linked false when suites exist; unmarked={unmarked}"

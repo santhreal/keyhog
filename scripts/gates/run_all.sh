@@ -14,6 +14,7 @@
 #   #4 surface_coverage      — a subcommand with no real-process test
 #   #5 complexity_budget     — engine grew a new lane/backend/file past budget
 #   org_audit.py             — stale claims, generated LOC-cap bloat, evidence wiring
+#   install_static_analysis  — install.sh/install.ps1 lint/static parser coverage
 #   cli_claims_check.sh      — no hallucinated CLI flags in docs/site
 #   entrypoints_check.sh     — pre-commit hook + composite Action stay wired
 #
@@ -97,6 +98,8 @@ run "Vyre pin consistency: 5 crates lockstep, registry pins, no vendor build-pat
   python3 scripts/gates/vyre_pin_consistency.py
 run "Org audit: stale claims / LOC-cap bloat / evidence wiring" \
   python3 scripts/org_audit.py
+run "Install static analysis: shell + PowerShell parser/linter coverage" \
+  bash scripts/gates/install_static_analysis.sh
 run "Docs CLI-claim gate: no hallucinated flags in docs/site" \
   bash tests/docs/cli_claims_check.sh
 run "Integration entry-point gate: pre-commit hook + Action wired" \

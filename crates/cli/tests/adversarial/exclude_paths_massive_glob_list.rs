@@ -9,8 +9,15 @@ fn exclude_paths_massive_glob_list() {
     let dir = TempDir::new().expect("tempdir");
     std::fs::write(dir.path().join("visible.txt"), "hello\n").unwrap();
     let mut cmd = Command::new(binary());
-    cmd.args(["scan", "--no-daemon", "--format", "json"])
-        .arg(dir.path());
+    cmd.args([
+        "scan",
+        "--no-daemon",
+        "--backend",
+        "simd",
+        "--format",
+        "json",
+    ])
+    .arg(dir.path());
     for _ in 0..50 {
         cmd.arg("--exclude-paths").arg("**/vendor/**");
     }

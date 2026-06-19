@@ -1,4 +1,5 @@
 pub mod args_parse_space_bytes;
+pub mod autoroute_cache_path;
 pub mod baseline;
 pub mod cli_misc;
 // daemon module + wire tests are unix-only (Unix-domain sockets).
@@ -6,6 +7,7 @@ pub mod cli_misc;
 pub mod daemon_trust;
 #[cfg(unix)]
 pub mod daemon_wire;
+pub mod detectors_brace_fix;
 pub mod file_gate;
 pub mod format;
 pub mod gates;

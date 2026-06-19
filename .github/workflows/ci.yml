@@ -18,6 +18,39 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # Prevention-gate aggregator. `scripts/gates/run_all.sh` is the ONE entrypoint
+  # that invokes every audit keyhog has: the 3 source/org prevention gates
+  # (no_silent_fallbacks #1, surface_coverage #4, complexity_budget #5), the vyre
+  # pin-consistency gate, org_audit.py, the docs CLI-claim + integration
+  # entry-point shell gates, cargo audit, and (when their corpus/results/binary
+  # assets are present) the backend-parity + recall-floor pytests, the
+  # differential bench gate, and the ML feature-parity gate. Before this job the
+  # 3 source prevention gates ran ONLY in the pre-commit hook / locally — a
+  # contributor without the hook could land a new silent fallback, an
+  # untested subcommand, or an over-budget engine file with green CI. This is
+  # the gate that turns "I ran the gates on my box" into "green in CI on every
+  # push". The asset-bearing gates LOUD-SKIP here (this runner has no CredData
+  # corpus, no competitor binaries, no results/, no prebuilt dump_features) — the
+  # full asset run lives in bench-nightly.yml / differential-bench.yml. cargo
+  # audit DOES run (the advisory DB is fetched), centralizing what the separate
+  # `audit` job does. Pure Python + shell + cargo-audit: no Rust build, ~1 min.
+  audit-gates:
+    name: Prevention gates (run_all.sh)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.11'
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@b8cecb83565409bcc297b2df6e77f030b2a468d5 # v2
+        with:
+          tool: cargo-audit
+      - name: Run all prevention gates
+        run: bash scripts/gates/run_all.sh
+
   # PR gate: the four highest-signal contract multipliers in strict mode.
   # The remaining ~10 runners run nightly (runners-nightly.yml) because
   # the full matrix is ~100k+ cases and would stack ~45+ minutes on
@@ -143,6 +176,14 @@ jobs:
         run: cargo test -p keyhog-verifier --test all_tests --profile release-fast
       - name: cli all_tests
         run: cargo test -p keyhog --test all_tests --no-default-features --features ci-lean --profile release-fast
+      # Coherence test binaries: standalone (not in all_tests) so they stay
+      # bounded; each drives the real keyhog binary + reads the committed
+      # docs/README to pin doc<->binary coherence (format set, exit codes,
+      # verify flags, verify-block count). ci-lean includes `verify` so the
+      # --verify* flags exist. Named explicitly because nothing else runs these
+      # standalone targets in CI.
+      - name: cli coherence binaries
+        run: cargo test -p keyhog --no-default-features --features ci-lean --profile release-fast --test coherence_wiring_lane7 --test lane10_verification_doc_coherence --test coherence_verify_count
       # Property (proptest) suite - its own bounded binary (was orphaned: empty
       # property/mod.rs + missing proptest dep, so it never compiled or ran).
       - name: cli property
@@ -223,7 +264,7 @@ jobs:
       # manual + installs a published release; this is the only gate that proves
       # current-source -> install -> working binary on macOS, every push.
       - name: install-from-build proof (macOS)
-        run: bash tests/install/install_from_local_build.sh target/release/keyhog
+        run: bash tests/install/macos/install_from_local_build.sh target/release/keyhog
 
   feature-matrix:
     name: Feature matrix sanity check
@@ -309,9 +350,11 @@ jobs:
           }
           Write-Host "install.ps1 parsed cleanly ($($tokens.Count) tokens)."
       - name: Detection-path scenarios
-        run: bash tests/install/scenarios.sh
+        run: bash tests/install/linux/scenarios.sh
       - name: Edge-case battery (incl. recoverability matrix)
-        run: bash tests/install/edge_cases.sh
+        run: bash tests/install/linux/edge_cases.sh
+      - name: Calibration probe flag-compat + error surfacing (Law 10)
+        run: bash tests/install/linux/calibration_probe_flag_compat.sh
       - name: Docs CLI-claim gate (no hallucinated flags in docs/site)
         run: bash tests/docs/cli_claims_check.sh
       - name: Integration entry-point gate (pre-commit hook + Action)
@@ -335,10 +378,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: rustfmt
-      # Scope fmt to keyhog's own crates. The vendored vyre tree under
-      # vendor/vyre/ has tests/ subtrees excluded by keyhog's root
-      # .gitignore — cargo fmt --all walks those `mod tests;` decls and
-      # fails on missing files. vyre's own CI formats vyre.
+      # Scope fmt to keyhog's own crates so fmt remains tied to this workspace's
+      # public build surface and does not pick up generated or fixture trees.
       - run: cargo fmt -p keyhog-core -p keyhog-scanner -p keyhog -p keyhog-verifier -p keyhog-sources -- --check
 
   deny:
@@ -426,7 +467,7 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends expect
-          bash tests/install/install_from_local_build.sh target/release-fast/keyhog
+          bash tests/install/linux/install_from_local_build.sh target/release-fast/keyhog
 
       # Dogfood gate: keyhog must find nothing alarming on its OWN repo. The
       # committed test/benchmark fixtures and credential-shape documentation are
@@ -440,12 +481,8 @@ jobs:
     # Clippy is intentionally NOT a publish gate (it is advisory; see the
     # clippy job). Release correctness is gated by test/strict-runners/fmt/build.
     needs: [test, strict-runners, fmt, build]
-    # Only attempt publish on an explicit `v*` tag push. Running on
-    # every main push churned the CI red because keyhog-core depends
-    # on the vendored vyre-libs (not yet on crates.io), so `cargo
-    # publish` fails the "Updating crates.io index" step. Tag-gating
-    # also matches the conventional release flow: bump the version,
-    # tag, push the tag, publish.
+    # Only attempt publish on an explicit `v*` tag push. Tag-gating matches the
+    # release flow: bump the version, tag, push the tag, publish.
     if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:

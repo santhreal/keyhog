@@ -7,9 +7,9 @@
 #
 #   1. INVARIANT matrix - a clear-cut real secret must be found (and clean /
 #      placeholder input must stay clean) IDENTICALLY across every hardware /
-#      backend / strictness env profile. This is a strong correctness property:
-#      detection must not diverge by GPU/SIMD/AC backend, thread count, or any
-#      *_STRICT toggle. Coverage = INVARIANTS x ENV_PROFILES.
+#      strictness profile. This is a strong correctness property: detection
+#      must not diverge under any *_STRICT toggle.
+#      Coverage = INVARIANTS x ENV_PROFILES.
 #   2. SURFACE battery - per-subcommand / per-format / edge-case checks run
 #      once under the default env.
 #
@@ -52,10 +52,6 @@ echo "== docker integration matrix: $IMAGE =="
 # A profile that breaks an invariant is a real backend/strictness bug.
 ENV_PROFILES=(
   "default|-"
-  "no-gpu|KEYHOG_NO_GPU=1"
-  "threads-1|KEYHOG_THREADS=1"
-  "threads-64|KEYHOG_THREADS=64"
-  "backend-ac|KEYHOG_BACKEND=ac"
   "entropy-strict|KEYHOG_ENTROPY_STRICT=1"
   "noise-strict|KEYHOG_NOISE_STRICT=1"
   "unicode-strict|KEYHOG_UNICODE_STRICT=1"
@@ -90,9 +86,13 @@ SURFACES=(
   "scan-sarif|-|scan --format sarif /test/corpus/aws_leak.env|1|2.1.0|-"
   "scan-dir|-|scan --format json /test/corpus|1|aws-access-key|-"
   "scan-min-confidence|-|scan --min-confidence 0.0 --format json /test/corpus/aws_leak.env|1|aws-access-key|-"
-  "require-gpu-fails-closed|KEYHOG_REQUIRE_GPU=1|scan /test/corpus/aws_leak.env|2|-|-"
+  "scan-backend-simd|-|scan --backend simd --format json /test/corpus/aws_leak.env|1|aws-access-key|-"
+  "scan-no-gpu|-|scan --no-gpu --format json /test/corpus/aws_leak.env|1|aws-access-key|-"
+  "scan-threads-1|-|scan --threads 1 --format json /test/corpus/aws_leak.env|1|aws-access-key|-"
+  "scan-threads-64|-|scan --threads 64 --format json /test/corpus/aws_leak.env|1|aws-access-key|-"
+  "require-gpu-fails-closed|-|scan --require-gpu /test/corpus/aws_leak.env|12|-|-"
   "doctor-self-test|-|doctor|0|PASS|-"
-  "detectors-count|-|detectors|0|Loaded 899 detectors|-"
+  "detectors-count|-|detectors|0|Loaded 902 detectors|-"
   "explain-detector|-|explain aws-access-key|0|AWS Access Key|-"
   "completion-bash|-|completion bash|0|_keyhog|-"
   "completion-zsh|-|completion zsh|0|#compdef|-"

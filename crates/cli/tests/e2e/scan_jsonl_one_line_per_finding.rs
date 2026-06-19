@@ -10,7 +10,14 @@ fn scan_jsonl_one_line_per_finding() {
         "AWS_ACCESS_KEY.error_id = \"AKIAQYLPMN5HFIQR7XYA\"\n",
     );
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "jsonl"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--format",
+            "jsonl",
+            "--backend",
+            "simd",
+        ])
         .arg(&path)
         .output()
         .expect("spawn");

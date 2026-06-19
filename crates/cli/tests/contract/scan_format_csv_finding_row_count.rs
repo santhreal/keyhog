@@ -11,6 +11,8 @@ fn scan_format_csv_finding_row_count() {
         .args([
             "scan",
             "--no-daemon",
+            "--backend",
+            "simd",
             "--format",
             "csv",
             "--no-suppress-test-fixtures",

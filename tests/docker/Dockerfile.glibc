@@ -14,8 +14,8 @@
 # the exact feature set `ci.yml`'s integration-tests job already builds, so the
 # two stay coherent. This leg's UNIQUE value vs the musl leg is the **Hyperscan**
 # path (a C lib that links on glibc, not musl) - `ci-lean` keeps `simd`, so that
-# is still exercised. The scenario battery (scan/doctor/format/`KEYHOG_NO_GPU`/
-# `KEYHOG_REQUIRE_GPU` fail-closed) is GPU-less by construction - it ALREADY
+# is still exercised. The scenario battery (scan/doctor/format/`--no-gpu`/
+# `--require-gpu` fail-closed) is GPU-less by construction - it ALREADY
 # passes on the musl `--features portable` (no-GPU) image, proving none of it
 # needs the GPU feature compiled in. GPU build validation belongs to the
 # release-build + runners-nightly (real-GPU) workflows, not a wall-clock-bounded

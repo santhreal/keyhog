@@ -8,6 +8,7 @@ use crate::exit_codes::{
     EXIT_FINDINGS, EXIT_LIVE_CREDENTIALS, EXIT_REQUIRE_GPU_UNMET, EXIT_SCANNER_PANIC,
     EXIT_SOURCE_FAILED,
 };
+use crate::style;
 use anyhow::Result;
 use keyhog_core::{VerificationResult, VerifiedFinding};
 use std::io::IsTerminal;
@@ -25,7 +26,7 @@ impl ScanOrchestrator {
             keyhog_scanner::telemetry::enable_dogfood();
         }
 
-        let hardening = keyhog_core::hardening::apply_protections(false);
+        let hardening = keyhog_core::apply_protections(false);
         if !hardening.failures.is_empty() {
             tracing::warn!(
                 failures = ?hardening.failures,
@@ -49,7 +50,7 @@ impl ScanOrchestrator {
                 );
             }
 
-            let lockdown = keyhog_core::hardening::apply_protections_with_persistence_paths(
+            let lockdown = keyhog_core::apply_protections_with_persistence_paths(
                 true,
                 self.lockdown_persistence_cache_paths(),
             );
@@ -63,7 +64,11 @@ impl ScanOrchestrator {
                 mlocked = lockdown.mlocked,
                 "lockdown mode active: mlocked + coredump-blocked + cache-free"
             );
-            eprintln!("🔒 LOCKDOWN MODE: no findings cache on disk, mlocked, no live verifier");
+            let palette = style::for_stderr();
+            eprintln!(
+                "{} LOCKDOWN MODE: no findings cache on disk, mlocked, no live verifier",
+                style::info("INFO", &palette)
+            );
 
             if self.args.no_default_excludes {
                 anyhow::bail!(
@@ -138,20 +143,17 @@ impl ScanOrchestrator {
         }
 
         // Require-GPU preflight, independent of backend routing. When
-        // KEYHOG_REQUIRE_GPU=1 and no usable GPU adapter is present (or the GPU
-        // self-test fails), fail closed with the dedicated scan exit code BEFORE
-        // we warm a backend or scan a byte. This is the no-GPU path the flag
-        // exists for: the scanner library's hard-fail only lives inside the
-        // GPU-selected dispatch paths, which a no-GPU host never reaches
-        // (routing degrades to SimdCpu). Routing the failure through the CLI
-        // ExitCode here - rather than a scanner-lib process::exit - keeps the
-        // exit contract in the CLI layer.
+        // `--require-gpu` is resolved and no usable GPU adapter is present (or
+        // the GPU self-test fails), fail closed with the dedicated scan exit
+        // code BEFORE warming a backend or scanning a byte. Routing the failure
+        // through the CLI ExitCode here - rather than a scanner-lib
+        // process::exit - keeps the exit contract in the CLI layer.
         if let Err(diagnostic) = keyhog_scanner::gpu::require_gpu_preflight() {
             eprintln!("keyhog: {diagnostic}");
             return Ok(std::process::ExitCode::from(EXIT_REQUIRE_GPU_UNMET));
         }
 
-        let calibration_mode = std::env::var_os("KEYHOG_AUTOROUTE_CALIBRATE").is_some();
+        let calibration_mode = self.effective_config.autoroute_calibration;
         if calibration_mode {
             tracing::debug!(
                 target: "keyhog::routing",

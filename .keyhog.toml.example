@@ -18,6 +18,16 @@ format = "text"
 # Number of parallel scanning threads (default: number of CPU cores)
 threads = 8
 
+# Dedicated filesystem reader threads (default: derived from scan workers)
+# reader_threads = 2
+
+# Fused filesystem pipeline batch shape (defaults: batch 32, depth auto)
+# fused_batch = 32
+# fused_depth = 4
+
+# Optional hard deadline per chunk scan in milliseconds (default: off)
+per_chunk_timeout_ms = 30000
+
 # Deduplication scope: credential, file, none
 dedup = "credential"
 
@@ -196,14 +206,21 @@ show_secrets = false
 # ============================================================================
 
 # Extra trusted binary roots for git/docker on non-standard distros, the
-# Hyperscan compiled-database cache directory, and the autoroute calibration
-# evidence file. Paths must be absolute; cache_dir must live under the user's
-# home directory or the per-user keyhog temp cache root. CLI overrides:
-# `--cache-dir <DIR>` and `--autoroute-cache <PATH|off>`.
+# Hyperscan compiled-database cache directory, the autoroute calibration
+# evidence file, the GPU runtime policy, GPU candidate calibration eligibility,
+# and the explicit coalesced batch-pipeline diagnostic route.
+# Paths must be absolute; cache_dir must live under the user's home directory
+# or the per-user keyhog temp cache root. CLI overrides: `--cache-dir <DIR>`,
+# `--autoroute-cache <PATH|off>`, `--no-gpu`, `--require-gpu`,
+# `--autoroute-gpu`, `--no-autoroute-gpu`, `--batch-pipeline`, and
+# `--no-batch-pipeline`.
 [system]
 trusted_bin_dirs = []
 # cache_dir = "/home/alice/.cache/keyhog"
 # autoroute_cache = "/home/alice/.cache/keyhog/autoroute.json"
+# gpu = "auto" # auto | off | required
+# autoroute_gpu = false
+# batch_pipeline = false
 
 # ============================================================================
 # AWS CANARY ISSUER EXTENSIONS
@@ -226,6 +243,7 @@ knockoff_accounts = []
 [tuning]
 fallback_hs = true
 hs_prefilter_max_len = 4096
+hs_shard_target = 80
 fallback_anchor = true
 homoglyph_gate = true
 homoglyph_ascii_skip = true
@@ -236,6 +254,7 @@ decode_focus = true
 confirmed_suffix_gate = true
 no_candidate_gate = true
 fallback_localizer = false
+gpu_recall_floor = false
 gpu_moe_timeout_ms = 30000
 
 # ============================================================================
@@ -280,6 +299,10 @@ gpu_moe_timeout_ms = 30000
 # format = "sarif"
 # exclude = ["**/test/fixtures/**", "vendor/"]
 # threads = 8
+# reader_threads = 2
+# fused_batch = 32
+# fused_depth = 4
+# per_chunk_timeout_ms = 30000
 # dedup = "credential"
 
 # [detector.<id>] — per-detector overrides keyed by detector id

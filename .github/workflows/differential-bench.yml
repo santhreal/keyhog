@@ -1,10 +1,10 @@
 name: differential-bench
 
 # Differential precision / recall / speed gate: run the unified benchmark
-# package (benchmarks/bench) over the synthetic mirror corpus with keyhog +
-# trufflehog, then assert keyhog leads on F1. `bench gate` exits non-zero
-# unless keyhog's F1 is STRICTLY better than every available competitor's, so
-# a regression turns this workflow red and lights the badge in README.
+# package (benchmarks/bench) over the synthetic mirror corpus with keyhog plus
+# required competitors, then assert keyhog leads on F1. `bench gate` exits
+# non-zero unless BetterLeaks and Kingfisher both produce usable rows and
+# keyhog's F1 is STRICTLY better.
 #
 # This replaces the retired tools/diff_bench runner: the bench package's
 # scanner adapters + canonical scorer + `gate` subcommand are the single
@@ -30,7 +30,7 @@ on:
 
 jobs:
   gate:
-    name: keyhog vs trufflehog (F1 gate)
+    name: keyhog vs required competitors (F1 gate)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # Per-job permissions — see keyhog.yml header note. Top-level
@@ -75,10 +75,20 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \
             | sh -s -- -b "$HOME/.local/bin"
 
+      - name: install required competitors
+        run: |
+          set -euo pipefail
+          go install github.com/betterleaks/betterleaks@latest
+          cargo install --locked --git https://github.com/mongodb/kingfisher kingfisher
+          cp "$HOME/go/bin/betterleaks" "$HOME/.local/bin/betterleaks"
+          cp "$HOME/.cargo/bin/kingfisher" "$HOME/.local/bin/kingfisher"
+
       - name: scanner versions
         run: |
           set -euo pipefail
           keyhog --version
+          betterleaks --version
+          kingfisher --version
           trufflehog --version
 
       - name: keyhog smoke check (broken binary != F1 regression)
@@ -139,13 +149,12 @@ jobs:
           cd benchmarks && python3 -m bench.corpora.mirror --ensure \
             --positives "$POSITIVES" --negatives "$NEGATIVES" --seed 0
 
-      - name: run leaderboard (keyhog + trufflehog)
-        # keyhog + trufflehog are both on $HOME/.local/bin (added to
-        # $GITHUB_PATH above); the scanner adapters resolve them from PATH.
+      - name: run leaderboard (keyhog + required competitors)
+        # Scanner adapters resolve binaries from PATH.
         run: |
           set -euo pipefail
           cd benchmarks && python3 -m bench leaderboard \
-            --corpus mirror --scanners keyhog,trufflehog --out results
+            --corpus mirror --scanners keyhog,betterleaks,kingfisher --out results
 
       - name: differential + regression gate (keyhog must lead and not regress)
         # Fails red if a competitor overtakes keyhog on F1 OR keyhog's F1 drops
@@ -154,6 +163,7 @@ jobs:
           set -euo pipefail
           cd benchmarks && python3 -m bench gate \
             --corpus mirror --results results \
+            --require-competitors betterleaks,kingfisher \
             --baseline baselines/mirror-keyhog-baseline.json --epsilon 0.005
 
       - name: upload results artifact

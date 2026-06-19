@@ -10,8 +10,7 @@
 //! `scan-system`, live `daemon`) are exercised only on their offline-safe
 //! paths (`--check` short-circuits, dry runs, status with no daemon).
 
-use crate::e2e::support::{binary, run};
-use std::process::Command;
+use crate::e2e::support::{keyhog_command, run};
 use tempfile::TempDir;
 
 // ── helpers ────────────────────────────────────────────────────────────
@@ -29,8 +28,7 @@ fn out(args: &[&str]) -> (String, String, Option<i32>) {
 /// Run with `stdin_data` piped in.
 fn out_stdin(args: &[&str], stdin_data: &str) -> (String, String, Option<i32>) {
     use std::io::Write;
-    let mut child = Command::new(binary())
-        .args(args)
+    let mut child = keyhog_command(args)
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())

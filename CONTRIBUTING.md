@@ -21,12 +21,13 @@ adversarial test alongside the proving test.
 - `crates/verifier/` - live credential probes (auth/identity
   endpoints) for `--verify`.
 - `crates/cli/` - the `keyhog` binary, subcommands, args, daemon.
-- `detectors/` - 899 TOML detector specs, the project's moat. No
+- `detectors/` - 902 TOML detector specs, the project's moat. No
   Rust code touched when you add one.
-- `vendor/vyre/` - vendored AC/GPU primitives. Path-dep only,
-  pinned per-release.
-- `tests/`, `fuzz/`, `metrics/` - corpus, fuzz harnesses, perf
-  dashboards.
+- `fuzz/` - cargo-fuzz harnesses, one target per parser/scanner sink.
+- `ml/` - Python model training and Rust/Python feature-parity checks
+  for the scanner's embedded MoE weights.
+- `tests/`, `metrics/` - repo-level integration tests, corpus gates,
+  and perf dashboards.
 - `.github/actions/keyhog/` - the in-tree composite action
   consumers reference as
   `santhsecurity/keyhog/.github/actions/keyhog@<tag>`.
@@ -63,13 +64,20 @@ Run the in-tree validation gate before committing:
 cargo test -p keyhog-core --test all_tests detector_
 ```
 
-Then run the full scan against the keyhog repo to confirm the
-detector fires on a fixture you added and does not fire on the
-existing corpus:
+Then add a per-detector contract under
+`crates/scanner/tests/contracts/<detector-id>.toml` with at least one
+`[[positive]]`, one `[[negative]]`, and one `[[evasion]]` entry, and
+run the contract runner:
 
 ```bash
-cargo run --release -- scan tests/fixtures
-cargo run --release -- scan .   # zero new findings expected on a clean repo
+cargo test -p keyhog-scanner --test contracts_runner
+```
+
+Finally, dogfood the scanner on the repo itself. Zero new findings
+are expected on a clean tree:
+
+```bash
+cargo run --release -- scan .
 ```
 
 ## How to add a new source backend
@@ -120,15 +128,14 @@ commonly-used commands:
 cargo test --workspace                      # full test suite
 cargo test -p keyhog-scanner                # only the engine
 cargo test -p keyhog-core --test all_tests  # core invariants
-cargo clippy --workspace --all-targets -- -D warnings
+cargo clippy --workspace --all-targets      # advisory lint visibility (not a hard gate)
 cargo build --release -p keyhog             # production binary
 cargo run --release -- scan .               # dogfood
 cargo bench -p keyhog-scanner               # microbenchmarks
 ```
 
 For the multi-hour adversarial / corpus suites, see
-`tests/README.md` (when present) or the workflows under
-`.github/workflows/`.
+`tests/README.md` or the workflows under `.github/workflows/`.
 
 ## Code style
 

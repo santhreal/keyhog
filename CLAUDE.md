@@ -12,6 +12,7 @@
 - No “deferred” or “future” language for unresolved findings.
 - GPU exists in the deployment class; avoid treating missing GPU as a hard stop.
 - No logging of credentials.
+- Autoroute is not a fallback hierarchy and not a preferred-backend policy. It is a persisted, proof-backed selector over all eligible backends. GPU, Hyperscan/SIMD, scalar CPU, and new engines are candidates; the winner is the fastest measured-correct backend for the exact scan class. Missing/stale/incomplete calibration is an invalid autoroute state that must be surfaced, never silently replaced with SIMD/CPU/GPU.
 
 # Key principles
 

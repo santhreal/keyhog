@@ -14,14 +14,21 @@ fn workspace_detectors() -> PathBuf {
 }
 
 #[test]
-fn invalid_keyhog_detectors_env_exits_two_instead_of_embedded_fallback() {
+fn legacy_keyhog_detectors_env_is_ignored() {
     let dir = TempDir::new().expect("tempdir");
     let target = dir.path().join("clean.txt");
     let missing = dir.path().join("missing-detectors");
     std::fs::write(&target, "clean fixture\n").expect("write clean fixture");
 
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--backend", "cpu", "--format", "json"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "cpu",
+            "--format",
+            "json",
+        ])
         .arg(&target)
         .env("KEYHOG_DETECTORS", &missing)
         .output()
@@ -29,23 +36,21 @@ fn invalid_keyhog_detectors_env_exits_two_instead_of_embedded_fallback() {
 
     assert_eq!(
         output.status.code(),
-        Some(2),
-        "bad KEYHOG_DETECTORS must not silently fall back to embedded/default detectors; stdout={} stderr={}",
+        Some(0),
+        "legacy KEYHOG_DETECTORS must not control detector loading; stdout={} stderr={}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("KEYHOG_DETECTORS points at")
-            && stderr.contains("missing-detectors")
-            && stderr.contains("Fix: unset KEYHOG_DETECTORS"),
-        "diagnostic must name the bad detector env and the fix; stderr={stderr}"
+        !stderr.contains("KEYHOG_DETECTORS"),
+        "legacy detector env must not affect operator-visible behavior; stderr={stderr}"
     );
 }
 
 #[test]
-fn explicit_detectors_path_overrides_invalid_keyhog_detectors_env() {
+fn explicit_detectors_path_works_with_legacy_keyhog_detectors_env_present() {
     let dir = TempDir::new().expect("tempdir");
     let target = dir.path().join("clean.txt");
     let missing = dir.path().join("missing-detectors");
@@ -53,7 +58,15 @@ fn explicit_detectors_path_overrides_invalid_keyhog_detectors_env() {
     let detectors = workspace_detectors();
 
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--backend", "cpu", "--format", "json", "--detectors"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "cpu",
+            "--format",
+            "json",
+            "--detectors",
+        ])
         .arg(&detectors)
         .arg(&target)
         .env("KEYHOG_DETECTORS", &missing)
@@ -63,7 +76,7 @@ fn explicit_detectors_path_overrides_invalid_keyhog_detectors_env() {
     assert_eq!(
         output.status.code(),
         Some(0),
-        "explicit --detectors must win over KEYHOG_DETECTORS; stdout={} stderr={}",
+        "explicit --detectors must work even when legacy KEYHOG_DETECTORS is present; stdout={} stderr={}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );

@@ -8,6 +8,52 @@ use std::process::{Command, Stdio};
 use tempfile::TempDir;
 
 #[test]
+fn daemon_site_docs_do_not_claim_forced_daemon_fallback() {
+    let docs = [
+        (
+            "site/pages/daemon.html",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../site/pages/daemon.html"
+            )),
+        ),
+        (
+            "site/daemon.html",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/../../site/daemon.html"
+            )),
+        ),
+    ];
+    for (path, doc) in docs {
+        for stale in [
+            "client falls back",
+            "falls back\nto an in-process scan",
+            "daemon wasn't\nreachable",
+        ] {
+            assert!(
+                !doc.contains(stale),
+                "{path} must not advertise a fallback for forced daemon mode: {stale:?}"
+            );
+        }
+        for required in [
+            "--daemon=on",
+            "hard\ncontract",
+            "actionable error",
+            "--daemon=auto",
+            "opportunistically use a live daemon",
+            "--daemon=off",
+            "--no-daemon",
+        ] {
+            assert!(
+                doc.contains(required),
+                "{path} must distinguish forced daemon mode from opportunistic daemon mode; missing {required:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn forced_daemon_rejects_directory_without_in_process_fallback() {
     let work = TempDir::new().expect("work dir");
     std::fs::write(work.path().join("leak.env"), aws_key_line()).expect("write fixture");
@@ -133,6 +179,32 @@ fn forced_daemon_rejects_scan_mode_flags() {
 }
 
 #[test]
+fn forced_daemon_scan_path_expands_har_base64_response() {
+    let daemon = DaemonGuard::start();
+    let work = TempDir::new().expect("work dir");
+    let path = work.path().join("capture.har");
+    std::fs::write(&path, har_with_base64_response_body()).expect("write har fixture");
+
+    let out = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", daemon.runtime_dir())
+        .args(["scan", "--daemon=on", "--format", "json"])
+        .arg(&path)
+        .output()
+        .expect("spawn keyhog scan");
+
+    let combined = combined_output(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(1),
+        "forced daemon HAR scan must detect the decoded response body; output={combined}"
+    );
+    assert!(
+        combined.contains("\"detector_id\":\"aws-access-key\""),
+        "daemon HAR route must use the filesystem source expander, not raw text scan; output={combined}"
+    );
+}
+
+#[test]
 fn forced_daemon_stdin_honors_cli_byte_limit() {
     let daemon = DaemonGuard::start();
 
@@ -234,6 +306,35 @@ fn aws_key_line() -> String {
 
 fn aws_key() -> String {
     concat!("AKIA", "QYLPMN5HFIQR7XYA").to_string()
+}
+
+fn har_with_base64_response_body() -> String {
+    r#"{
+        "log": {
+            "version": "1.2",
+            "creator": {"name": "keyhog-test", "version": "1"},
+            "entries": [
+                {
+                    "request": {
+                        "method": "GET",
+                        "url": "https://api.example.invalid/secret",
+                        "headers": [],
+                        "queryString": []
+                    },
+                    "response": {
+                        "status": 200,
+                        "statusText": "OK",
+                        "headers": [],
+                        "content": {
+                            "text": "QVdTX0FDQ0VTU19LRVlfSUQ9QUtJQVFZTFBNTjVIRklRUjdYWUEK",
+                            "encoding": "base64"
+                        }
+                    }
+                }
+            ]
+        }
+    }"#
+    .to_string()
 }
 
 fn daemon_stdin_scan(

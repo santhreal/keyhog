@@ -10,7 +10,14 @@ fn scan_demo_example_not_clean_summary() {
         "AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE\n",
     );
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "text"])
+        .args([
+            "scan",
+            "--backend",
+            "simd",
+            "--no-daemon",
+            "--format",
+            "text",
+        ])
         .arg(&path)
         .output()
         .expect("spawn");

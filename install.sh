@@ -29,8 +29,8 @@
 #                       + verify (`keyhog doctor`) + rollback path. Requires a
 #                       sibling PATH.sha256 unless --insecure is explicit.
 #   --yes / -y          non-interactive: accept defaults, no prompts
-#   --insecure          allow an install only when checksum proof is unavailable;
-#                       checksum mismatches still fail
+#   --insecure          allow an install only when release signature/checksum
+#                       proof is unavailable; fetched mismatches still fail
 #   --no-color          disable ANSI colors
 #   --help / -h         show this help and exit
 #
@@ -41,6 +41,7 @@
 set -eu
 
 REPO="santhsecurity/keyhog"
+RELEASE_PUBLIC_KEY="RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go"
 INSTALL_DIR="${KEYHOG_INSTALL:-$HOME/.local/bin}"
 VERSION="${KEYHOG_VERSION:-}"
 VARIANT="${KEYHOG_VARIANT:-auto}"
@@ -73,12 +74,54 @@ setup_colors() {
     fi
 }
 
-say()  { printf '%s\n' "$*"; }
-info() { printf '%s%s%s\n' "$C_CYAN" "$*" "$C_RESET"; }
-ok()   { printf '%s%s%s\n' "$C_GREEN" "$*" "$C_RESET"; }
-warn() { printf '%s%s%s\n' "$C_YELLOW" "$*" "$C_RESET"; }
-err()  { printf '%s%s%s\n' "$C_RED" "$*" "$C_RESET" >&2; }
+say() { printf '%s\n' "$*"; }
+status() {
+    kh_status_label="$1"
+    kh_status_color="$2"
+    shift 2
+    printf '%s%s%s %s\n' "$kh_status_color" "$kh_status_label" "$C_RESET" "$*"
+}
+status_err() {
+    kh_status_label="$1"
+    kh_status_color="$2"
+    shift 2
+    printf '%s%s%s %s\n' "$kh_status_color" "$kh_status_label" "$C_RESET" "$*" >&2
+}
+info() { status INFO "$C_CYAN" "$*"; }
+ok()   { status PASS "$C_GREEN" "$*"; }
+warn() { status WARN "$C_YELLOW" "$*"; }
+err()  { status_err FAIL "$C_RED" "$*"; }
 dim()  { printf '%s%s%s\n' "$C_DIM" "$*" "$C_RESET"; }
+
+now_ms() {
+    kh_now_ms="$(date +%s%3N 2>/dev/null || true)"
+    case "$kh_now_ms" in
+        ''|*[!0123456789]*)
+            kh_now_s="$(date +%s 2>/dev/null || printf '0')"
+            printf '%s000\n' "$kh_now_s"
+            ;;
+        *)
+            printf '%s\n' "$kh_now_ms"
+            ;;
+    esac
+}
+
+elapsed_ms_since() {
+    kh_elapsed_start_ms="$1"
+    kh_elapsed_end_ms="$(now_ms)"
+    case "$kh_elapsed_start_ms:$kh_elapsed_end_ms" in
+        *[!0123456789:]*|:*|*:)
+            printf '0\n'
+            ;;
+        *)
+            if [ "$kh_elapsed_end_ms" -ge "$kh_elapsed_start_ms" ]; then
+                printf '%s\n' "$((kh_elapsed_end_ms - kh_elapsed_start_ms))"
+            else
+                printf '0\n'
+            fi
+            ;;
+    esac
+}
 
 banner() {
     if [ "$INTERACTIVE" = "1" ]; then
@@ -339,11 +382,11 @@ resolve_asset() {
         ;;
       darwin-arm64|darwin-aarch64)
         ASSET="keyhog-macos-aarch64"
-        GPU_NOTE="Apple Silicon. Native Metal GPU acceleration is on the roadmap; the current build runs SIMD on CPU + the WGPU GPU path (slower than a CUDA build on equivalent NVIDIA hardware, fine for typical use)."
+        GPU_NOTE="Apple Silicon. Current macOS build runs SIMD on CPU + the WGPU GPU path on compatible adapters; no separate native Metal release asset ships."
         ;;
       darwin-x86_64|darwin-amd64)
         ASSET="keyhog-macos-x86_64"
-        GPU_NOTE="Intel Mac. Current build runs SIMD on CPU + WGPU on a compatible discrete adapter. Metal GPU acceleration is on the roadmap."
+        GPU_NOTE="Intel Mac. Current macOS build runs SIMD on CPU + WGPU on a compatible discrete adapter; no separate native Metal release asset ships."
         ;;
       *)
         err "Unsupported platform: $OS-$ARCH"
@@ -495,13 +538,42 @@ allow_unverified_install() {
     reason="$1"
     if [ "$INSECURE_INSTALL" = "1" ]; then
         warn "  INSECURE: $reason"
-        warn "  Proceeding without checksum verification because --insecure is set."
+        warn "  Proceeding without full release verification because --insecure is set."
         return 0
     fi
     err "$reason"
     err "Refusing to install an unverified keyhog binary."
-    err "Fix: provide the .sha256 file and ensure sha256sum or shasum is installed."
+    err "Fix: ensure the .minisig and .sha256 files are published, minisign is installed, and sha256sum or shasum is available."
     err "Only for emergency/local diagnostics, rerun with --insecure to accept an unverified binary."
+    return 1
+}
+
+# Verify the release minisign signature of $1 against the pinned keyhog release
+# public key. Missing proof/tooling fails closed unless the operator explicitly
+# chooses --insecure. A fetched signature that does not verify is always fatal.
+verify_release_signature() {
+    binary="$1"
+    asset_name="$2"
+    sigfile=$(mktemp)
+
+    if ! download_asset "$asset_name.minisig" "$sigfile" 2>/dev/null || [ ! -s "$sigfile" ]; then
+        rm -f "$sigfile"
+        allow_unverified_install "No .minisig signature was published for $asset_name at $TAG."
+        return $?
+    fi
+    if ! command -v minisign >/dev/null 2>&1; then
+        rm -f "$sigfile"
+        allow_unverified_install "minisign is not installed, so the $asset_name release signature cannot be verified."
+        return $?
+    fi
+    if minisign -Vm "$binary" -P "$RELEASE_PUBLIC_KEY" -x "$sigfile" >/dev/null 2>&1; then
+        rm -f "$sigfile"
+        ok "Minisign signature verified."
+        return 0
+    fi
+    rm -f "$sigfile"
+    err "Minisign signature verification failed for $asset_name."
+    err "Refusing to install. The release asset may have been tampered with or signed by the wrong key."
     return 1
 }
 
@@ -658,10 +730,11 @@ stage_and_install() {
         exit 1
     fi
 
-    # Checksum is verified BEFORE we overwrite, so a corrupt artifact can never
-    # replace a working binary. Downloads check against the release's per-asset
-    # .sha256; a --from-file install requires a sibling PATH.sha256 unless the
-    # operator explicitly accepts an unverified local artifact.
+    # Release verification happens BEFORE we overwrite, so a corrupt or unsigned
+    # artifact can never replace a working binary. Downloads check the release's
+    # per-asset .minisig and .sha256; a --from-file install requires a sibling
+    # PATH.sha256 unless the operator explicitly accepts an unverified local
+    # artifact.
     if [ -n "$FROM_FILE" ]; then
         if [ -f "$FROM_FILE.sha256" ]; then
             if ! verify_local_checksum "$tmp" "$FROM_FILE.sha256"; then
@@ -676,10 +749,17 @@ stage_and_install() {
                 exit 1
             fi
         fi
-    elif ! verify_checksum "$tmp" "$ASSET"; then
-        rm -f "$tmp"
-        trap - EXIT INT TERM
-        exit 1
+    else
+        if ! verify_release_signature "$tmp" "$ASSET"; then
+            rm -f "$tmp"
+            trap - EXIT INT TERM
+            exit 1
+        fi
+        if ! verify_checksum "$tmp" "$ASSET"; then
+            rm -f "$tmp"
+            trap - EXIT INT TERM
+            exit 1
+        fi
     fi
 
     mkdir -p "$INSTALL_DIR"
@@ -875,7 +955,7 @@ prime_autoroute_cache() {
 
     # Pick the config-isolation flag the INSTALLED binary actually accepts. A
     # released binary that predates `--no-config` only has `--config <PATH>`;
-    # passing `--no-config` to it makes clap exit 2 and every probe "FAILED"
+    # passing `--no-config` to it makes clap exit 2 and every probe fail
     # for a reason the old `>/dev/null 2>&1` hid (Law 10: a swallowed installer
     # error reads as a broken product). Detect once, never guess.
     scan_help_err="$tmpdir/scan-help.err"
@@ -978,7 +1058,7 @@ prime_autoroute_cache() {
     err="$tmpdir/err-stdin-64kib.txt"
     label="stdin 64 KiB workload"
     if ! make_calibration_probe_kib "$probe" 64; then
-        printf '  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
+        printf '  [%s/%s] FAIL %s\n' "$idx" "$total" "$label"
         err "Could not create 64 KiB stdin autoroute calibration probe at $probe."
         failed=1
     elif ! run_autoroute_stdin_probe "$idx" "$total" "$label" "$probe" "$out" "$err"; then
@@ -992,7 +1072,7 @@ prime_autoroute_cache() {
         err="$tmpdir/err-${kib}kib.txt"
         label="${kib} KiB workload"
         if ! make_calibration_probe_kib "$probe" "$kib"; then
-            printf '  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
+            printf '  [%s/%s] FAIL %s\n' "$idx" "$total" "$label"
             err "Could not create ${kib} KiB autoroute calibration probe at $probe."
             failed=1
             continue
@@ -1009,7 +1089,7 @@ prime_autoroute_cache() {
         err="$tmpdir/err-${mib}mib.txt"
         label="${mib} MiB workload"
         if ! make_calibration_probe "$probe" "$mib"; then
-            printf '  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
+            printf '  [%s/%s] FAIL %s\n' "$idx" "$total" "$label"
             err "Could not create ${mib} MiB autoroute calibration probe at $probe."
             failed=1
             continue
@@ -1025,7 +1105,7 @@ prime_autoroute_cache() {
     err="$tmpdir/err-decode-heavy-256kib.txt"
     label="decode-heavy 256 KiB workload"
     if ! make_decode_heavy_calibration_probe_kib "$probe" 256; then
-        printf '  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
+        printf '  [%s/%s] FAIL %s\n' "$idx" "$total" "$label"
         err "Could not create decode-heavy autoroute calibration probe at $probe."
         failed=1
     elif ! run_autoroute_probe "$idx" "$total" "$label" "$probe" "$out" "$err"; then
@@ -1038,7 +1118,7 @@ prime_autoroute_cache() {
     err="$tmpdir/err-many-4k.txt"
     label="32 x 4 KiB files workload"
     if ! make_calibration_tree_kib "$probe_dir" 32 4; then
-        printf '  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
+        printf '  [%s/%s] FAIL %s\n' "$idx" "$total" "$label"
         err "Could not create many-file autoroute calibration probe at $probe_dir."
         failed=1
     elif ! run_autoroute_probe "$idx" "$total" "$label" "$probe_dir" "$out" "$err"; then
@@ -1087,11 +1167,11 @@ prime_autoroute_cache() {
         err="$tmpdir/err-web-url.txt"
         label="web URL 4 KiB source workload"
         if ! make_calibration_web_fixture "$web_dir"; then
-            printf '  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
+            printf '  [%s/%s] FAIL %s\n' "$idx" "$total" "$label"
             err "Could not create Web URL autoroute calibration fixture at $web_dir."
             failed=1
         elif ! start_calibration_web_server "$web_dir" "$web_port_file" "$web_pid_file" "$web_log" "$python_bin"; then
-            printf '  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
+            printf '  [%s/%s] FAIL %s\n' "$idx" "$total" "$label"
             stop_calibration_web_server "$web_pid_file"
             web_pid_file=""
             real_err="$(head -n 1 "$web_log" 2>/dev/null)"
@@ -1117,7 +1197,7 @@ prime_autoroute_cache() {
         err="$tmpdir/err-docker-image.txt"
         label="docker image 4 KiB source workload"
         if ! make_calibration_docker_image "$docker_dir" "$docker_image" "$docker_bin" 2>"$err"; then
-            printf '  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
+            printf '  [%s/%s] FAIL %s\n' "$idx" "$total" "$label"
             real_err="$(head -n 1 "$err" 2>/dev/null)"
             [ -n "$real_err" ] && dim "    reason: $real_err"
             err "Could not create Docker image autoroute calibration probe at $docker_image."
@@ -1183,9 +1263,9 @@ run_autoroute_docker_image_probe() {
 
 run_keyhog_calibration_scan() {
     if [ "$cfg_flag" = "--no-config" ]; then
-        "$bin" "$@" --no-config
+        exec "$bin" "$@" --no-config
     else
-        "$bin" "$@" --config "$cfg_file"
+        exec "$bin" "$@" --config "$cfg_file"
     fi
 }
 
@@ -1197,35 +1277,29 @@ run_autoroute_scan_probe() {
     probe="$5"
     out="$6"
     errfile="$7"
+    probe_started_ms="$(now_ms)"
     printf '  [%s/%s] %s ' "$idx" "$total" "$label"
     case "$mode" in
         path)
-            KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                run_keyhog_calibration_scan scan "$probe" --format json -o "$out" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate "$probe" --batch-pipeline --autoroute-gpu --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         stdin)
-            KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                run_keyhog_calibration_scan scan --stdin --format json -o "$out" < "$probe" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate --stdin --batch-pipeline --autoroute-gpu --format json -o "$out" < "$probe" >/dev/null 2>"$errfile" &
             ;;
         git-history)
-            KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                run_keyhog_calibration_scan scan --git-history "$probe" --max-commits 1 --format json -o "$out" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate --git-history "$probe" --max-commits 1 --batch-pipeline --autoroute-gpu --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         git-blobs)
-            KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                run_keyhog_calibration_scan scan --git-blobs "$probe" --max-commits 2 --format json -o "$out" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate --git-blobs "$probe" --max-commits 2 --batch-pipeline --autoroute-gpu --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         git-diff)
-            KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                run_keyhog_calibration_scan scan --git-diff HEAD --git-diff-path "$probe" --format json -o "$out" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate --git-diff HEAD --git-diff-path "$probe" --batch-pipeline --autoroute-gpu --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         url)
-            KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                run_keyhog_calibration_scan scan --url "$probe" --format json -o "$out" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate --url "$probe" --batch-pipeline --autoroute-gpu --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         docker-image)
-            KEYHOG_AUTOROUTE_CALIBRATE=1 KEYHOG_BATCH_PIPELINE=1 KEYHOG_GPU_AUTOROUTE=1 \
-                run_keyhog_calibration_scan scan --docker-image "$probe" --format json -o "$out" >/dev/null 2>"$errfile" &
+            run_keyhog_calibration_scan scan --autoroute-calibrate --docker-image "$probe" --batch-pipeline --autoroute-gpu --format json -o "$out" >/dev/null 2>"$errfile" &
             ;;
         *)
             (
@@ -1241,17 +1315,19 @@ run_autoroute_scan_probe() {
     while kill -0 "$pid" 2>/dev/null; do
         n=$(( (n + 1) % 4 ))
         c=$(printf '%s' "$spin" | cut -c $((n + 1)))
-        printf '\r  [%s/%s] %s %s' "$idx" "$total" "$label" "$c"
+        printf '\r  [%s/%s] INFO %s %s' "$idx" "$total" "$label" "$c"
         sleep 0.15
     done
     if wait "$pid"; then
         calibration_probe_pid=""
-        printf '\r  [%s/%s] %s OK\n' "$idx" "$total" "$label"
+        probe_elapsed_ms="$(elapsed_ms_since "$probe_started_ms")"
+        printf '\r  [%s/%s] PASS %s (%sms)\n' "$idx" "$total" "$label" "$probe_elapsed_ms"
         return 0
     fi
     calibration_probe_pid=""
-    printf '\r  [%s/%s] %s FAILED\n' "$idx" "$total" "$label"
-    # Surface the REAL reason, not a blind "FAILED" (Law 10). One line is
+    probe_elapsed_ms="$(elapsed_ms_since "$probe_started_ms")"
+    printf '\r  [%s/%s] FAIL %s (%sms)\n' "$idx" "$total" "$label" "$probe_elapsed_ms"
+    # Surface the real reason, not a blind failure label (Law 10). One line is
     # enough to tell a flag mismatch from a GPU/driver fault.
     real_err="$(head -n 1 "$errfile" 2>/dev/null)"
     [ -n "$real_err" ] && dim "    reason: $real_err"
@@ -1631,7 +1707,7 @@ post_install_wizard() {
         install_completions
     fi
 
-    # Claude Code / Cursor agent-hook wiring is roadmap, not shipped.
+    # Claude Code / Cursor agent-hook wiring has no shipped CLI flag.
     # The previous prompt called `keyhog hook install --agent claude-code`
     # which never existed as a flag, so the wizard always graceful-
     # failed with a misleading "upgrade" message. Drop the prompt until

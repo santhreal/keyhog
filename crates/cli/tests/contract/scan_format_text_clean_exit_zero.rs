@@ -7,7 +7,14 @@ use std::process::Command;
 fn scan_format_text_clean_exit_zero() {
     let (_dir, path) = write_temp_file("clean.txt", "hello world\n");
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "text"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--format",
+            "text",
+        ])
         .arg(&path)
         .output()
         .expect("spawn");

@@ -12,7 +12,7 @@
   <a href="index.html" class="brand">
     <span class="mark">k</span>
     keyhog
-    <span class="v">v0.5.37</span>
+    <span class="v">v0.5.40</span>
   </a>
   <nav class="top">
     <a href="detectors.html">Detectors</a>
@@ -106,27 +106,19 @@ fn main() -&gt; anyhow::Result&lt;()&gt; {
 publishing lands:</p>
 
 <pre><code><span class="k">[dependencies]</span>
-keyhog-core    = { <span class="k">git</span> = <span class="s">"https://github.com/santhsecurity/keyhog"</span>, <span class="k">tag</span> = <span class="s">"v0.5.37"</span> }
-keyhog-scanner = { <span class="k">git</span> = <span class="s">"https://github.com/santhsecurity/keyhog"</span>, <span class="k">tag</span> = <span class="s">"v0.5.37"</span> }</code></pre>
+keyhog-core    = { <span class="k">git</span> = <span class="s">"https://github.com/santhsecurity/keyhog"</span>, <span class="k">tag</span> = <span class="s">"v0.5.40"</span> }
+keyhog-scanner = { <span class="k">git</span> = <span class="s">"https://github.com/santhsecurity/keyhog"</span>, <span class="k">tag</span> = <span class="s">"v0.5.40"</span> }</code></pre>
 
 <h2>Embedded detectors (no detectors/ directory)</h2>
 
 <p>For library users who don't want to ship a <code>detectors/</code>
 directory alongside their binary, the embedded set is always
 compiled into <code>keyhog-core</code> by <code>build.rs</code>; no
-feature flag required. Wrap the parse step in a helper so the
-subsequent examples can call it inline:</p>
+feature flag required. Use the fail-closed embedded loader so corrupt bundled
+TOML stops the scan instead of silently dropping detectors:</p>
 
-<pre><code><span class="c">// (name, toml_string) tuples for every detector in detectors/.</span>
-fn parse_embedded() -&gt; Vec&lt;keyhog_core::DetectorSpec&gt; {
-    keyhog_core::embedded_detector_tomls()
-        .iter()
-        .filter_map(|(_name, body)| toml::from_str::&lt;keyhog_core::DetectorFile&gt;(body).ok())
-        .map(|file| file.detector)
-        .collect()
-}
-
-let scanner = CompiledScanner::compile(parse_embedded())?;</code></pre>
+<pre><code>let detectors = keyhog_core::load_embedded_detectors_or_fail()?;
+let scanner = CompiledScanner::compile(detectors)?;</code></pre>
 
 <h2>Custom detectors</h2>
 

@@ -25,6 +25,7 @@ fn scan_with_args(fixture: &str, args: &[&str]) -> (String, String, Option<i32>)
 
     let output = Command::new(binary())
         .arg("scan")
+        .args(["--backend", "simd"])
         .args(args)
         .arg("--format")
         .arg("json")
@@ -198,7 +199,7 @@ fn precision_mode_whitespace_only_exits_zero() {
 fn precision_mode_composes_with_verify_flag() {
     let fixture = "aws_secret_access_key = \"kP8xQ2mNvR7tZ4wL9bYsH3jD6fG1cA0eXuViK5oT\"\n";
 
-    let (out, err, code) = scan_with_args(fixture, &["--precision", "--verify"]);
+    let (_out, err, code) = scan_with_args(fixture, &["--precision", "--verify"]);
 
     // --verify causes the credential check to run. The AWS secret won't be
     // valid in a test environment (no real AWS credentials), so it will be

@@ -45,7 +45,15 @@ fn scan_git_staged_format_sarif_has_schema() {
         .status()
         .expect("git add staged clean");
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--git-staged", "--format", "sarif"])
+        .args([
+            "scan",
+            "--backend",
+            "simd",
+            "--no-daemon",
+            "--git-staged",
+            "--format",
+            "sarif",
+        ])
         .current_dir(repo)
         .arg(".")
         .output()

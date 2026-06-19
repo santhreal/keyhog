@@ -32,6 +32,8 @@ Specialized chunkers run too:
 - Docker images → one chunk per layer × file
 - Web URLs → one chunk per response body / sourcemap / WASM strings
 - S3 buckets → one chunk per object body
+- GCS buckets → one chunk per object body
+- Azure Blob containers → one chunk per blob body
 
 ## Stage 2 - prefilter (the cheap pass)
 

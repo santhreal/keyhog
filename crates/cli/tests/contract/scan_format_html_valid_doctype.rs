@@ -7,7 +7,14 @@ use std::process::Command;
 fn scan_format_html_valid_doctype() {
     let (_dir, path) = write_temp_file("clean.txt", "plaintext\n");
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "html"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--format",
+            "html",
+        ])
         .arg(&path)
         .output()
         .expect("spawn");

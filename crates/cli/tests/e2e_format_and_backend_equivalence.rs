@@ -47,7 +47,6 @@ fn run(path: &PathBuf, format: &str, backend: Option<&str>) -> (Option<i32>, Str
     cmd.args(["scan", "--no-daemon", "--format", format]);
     cmd.args(["--backend", backend.unwrap_or("simd")]);
     cmd.arg(path);
-    cmd.env_remove("KEYHOG_GPU_AUTOROUTE");
     let output = cmd.output().expect("spawn keyhog scan");
     (
         output.status.code(),

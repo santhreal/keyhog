@@ -25,6 +25,7 @@ fn scan_with_args(fixture: &str, args: &[&str]) -> (String, String, Option<i32>)
 
     let output = Command::new(binary())
         .arg("scan")
+        .args(["--backend", "simd"])
         .args(args)
         .arg("--no-daemon")
         .arg(&path)
@@ -109,7 +110,15 @@ fn precision_mode_single_layer_decode_depth_one() {
     .expect("write fixture");
 
     let output = Command::new(binary())
-        .args(["scan", "--precision", "--format", "json", "--no-daemon"])
+        .args([
+            "scan",
+            "--backend",
+            "simd",
+            "--precision",
+            "--format",
+            "json",
+            "--no-daemon",
+        ])
         .arg(&path)
         .output()
         .expect("spawn keyhog scan");
@@ -127,8 +136,8 @@ fn precision_mode_single_layer_decode_depth_one() {
 }
 
 /// Effective config dump with `--precision` shows the correct floor.
-/// The env var `KEYHOG_PRINT_EFFECTIVE_CONFIG=1` triggers a debug output that shows
-/// what config values will run. For `--precision`, it must show:
+/// `keyhog config --effective` shows what config values will run. For
+/// `--precision`, it must show:
 /// - min_confidence = 0.85
 /// - entropy_enabled = false
 /// - max_decode_depth = 1
@@ -139,13 +148,12 @@ fn precision_mode_effective_config_shows_0_85_floor() {
     std::fs::write(&path, "ordinary content\n").expect("write fixture");
 
     let output = Command::new(binary())
-        .arg("scan")
+        .arg("config")
+        .arg("--effective")
         .arg("--precision")
-        .arg("--no-daemon")
-        .env("KEYHOG_PRINT_EFFECTIVE_CONFIG", "1")
         .arg(&path)
         .output()
-        .expect("spawn keyhog scan");
+        .expect("spawn keyhog config --effective");
 
     let stdout = String::from_utf8_lossy(&output.stdout);
 
@@ -236,7 +244,15 @@ fn precision_mode_uses_highest_floor_global_vs_per_detector() {
     std::fs::write(dir.path().join(".keyhog.toml"), config).expect("write config");
 
     let output = Command::new(binary())
-        .args(["scan", "--precision", "--format", "json", "--no-daemon"])
+        .args([
+            "scan",
+            "--backend",
+            "simd",
+            "--precision",
+            "--format",
+            "json",
+            "--no-daemon",
+        ])
         .arg(dir.path())
         .output()
         .expect("spawn precision scan with high per-detector floor");

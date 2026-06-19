@@ -30,6 +30,7 @@ fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Option
 
     let output = Command::new(binary())
         .arg("scan")
+        .args(["--backend", "simd"])
         .args(extra_args)
         .arg("--format")
         .arg("json")
@@ -176,7 +177,15 @@ fn precision_mode_clamps_detector_floor_up_to_0_85() {
     std::fs::write(dir.path().join(".keyhog.toml"), config).expect("write config");
 
     let output = Command::new(binary())
-        .args(["scan", "--precision", "--format", "json", "--no-daemon"])
+        .args([
+            "scan",
+            "--backend",
+            "simd",
+            "--precision",
+            "--format",
+            "json",
+            "--no-daemon",
+        ])
         .arg(dir.path())
         .output()
         .expect("spawn precision scan with config");

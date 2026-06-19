@@ -10,7 +10,14 @@ fn scan_jsonl_format_valid_objects() {
         "AWS_ACCESS_KEY_ID = \"AKIAQYLPMN5HFIQR7XYA\"\n",
     );
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "jsonl"])
+        .args([
+            "scan",
+            "--backend",
+            "simd",
+            "--no-daemon",
+            "--format",
+            "jsonl",
+        ])
         .arg(&path)
         .output()
         .expect("spawn");

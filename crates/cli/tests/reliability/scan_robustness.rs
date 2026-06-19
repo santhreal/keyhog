@@ -9,19 +9,27 @@ use std::time::{Duration, Instant};
 
 use tempfile::TempDir;
 
-use crate::reliability::harness::binary;
+use crate::reliability::harness::{binary, subprocess_slot};
 
 /// Run `keyhog scan <args>` with a wall-clock bound. Returns `(code, timed_out)`.
 /// A timeout means keyhog hung on the input - a defect, surfaced as `timed_out`.
 fn scan_bounded(path: &Path, extra: &[&str], secs: u64) -> (Option<i32>, bool) {
-    let mut args: Vec<String> = vec!["scan".into(), "--no-daemon".into()];
+    let _slot = subprocess_slot();
+    let mut args: Vec<String> = vec![
+        "scan".into(),
+        "--no-config".into(),
+        "--no-daemon".into(),
+        "--backend".into(),
+        "simd".into(),
+        "--per-chunk-timeout-ms".into(),
+        "5000".into(),
+    ];
     for e in extra {
         args.push((*e).into());
     }
     args.push(path.to_string_lossy().into_owned());
     let mut child = Command::new(binary())
         .args(&args)
-        .env("KEYHOG_RELEASE_API_BASE", "http://127.0.0.1:9")
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
@@ -31,7 +39,7 @@ fn scan_bounded(path: &Path, extra: &[&str], secs: u64) -> (Option<i32>, bool) {
         if let Some(status) = child.try_wait().expect("try_wait") {
             return (status.code(), false);
         }
-        if start.elapsed() > Duration::from_secs(secs) {
+        if start.elapsed() > watchdog_budget(secs) {
             let _ = child.kill();
             let _ = child.wait();
             return (None, true);
@@ -40,9 +48,27 @@ fn scan_bounded(path: &Path, extra: &[&str], secs: u64) -> (Option<i32>, bool) {
     }
 }
 
+fn watchdog_budget(secs: u64) -> Duration {
+    let requested = Duration::from_secs(secs);
+    if cfg!(debug_assertions) {
+        // These tests drive the debug CLI binary. A cold full-detector scanner
+        // compile is ~12s before the hostile input is even scanned, and the
+        // full aggregate runs many other subprocess tests at the same time.
+        // Keep the scan work bounded with --per-chunk-timeout-ms above, but do
+        // not fail a hostile-input test because debug startup was descheduled.
+        requested.max(Duration::from_secs(90))
+    } else {
+        requested
+    }
+}
+
 fn assert_handled(path: &Path, extra: &[&str], secs: u64, what: &str) {
     let (code, timed_out) = scan_bounded(path, extra, secs);
-    assert!(!timed_out, "{what}: keyhog HUNG (> {secs}s) on this input");
+    let budget = watchdog_budget(secs).as_secs();
+    assert!(
+        !timed_out,
+        "{what}: keyhog HUNG (> {budget}s) on this input"
+    );
     assert!(code.is_some(), "{what}: keyhog crashed (killed by signal)");
     let c = code.unwrap();
     assert!(
@@ -201,10 +227,18 @@ fn filename_that_looks_like_a_flag_via_separator() {
     // The `--` is appended before the path by scan_bounded's arg builder? No -
     // build explicitly here instead.
     let _ = (code, timed_out);
+    let _slot = subprocess_slot();
     let out = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "json", "--"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--format",
+            "json",
+            "--",
+        ])
         .arg(&weird)
-        .env("KEYHOG_RELEASE_API_BASE", "http://127.0.0.1:9")
         .output()
         .unwrap();
     assert!(

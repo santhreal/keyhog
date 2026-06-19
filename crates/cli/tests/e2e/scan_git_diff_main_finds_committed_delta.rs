@@ -56,6 +56,8 @@ fn scan_git_diff_main_finds_committed_delta() {
     let output = Command::new(binary())
         .args([
             "scan",
+            "--backend",
+            "simd",
             "--no-daemon",
             "--git-diff",
             "HEAD~1",

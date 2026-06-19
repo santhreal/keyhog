@@ -46,6 +46,8 @@ fn scan_git_staged_excludes_unstaged_secret() {
     let output = Command::new(binary())
         .args([
             "scan",
+            "--backend",
+            "simd",
             "--no-daemon",
             "--git-staged",
             "--format",

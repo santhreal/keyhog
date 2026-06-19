@@ -8,7 +8,7 @@ use tempfile::TempDir;
 fn empty_corpus_json_array_exit_zero() {
     let dir = TempDir::new().expect("tempdir");
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--format", "json"])
+        .args(["scan", "--no-daemon", "--backend", "simd", "--format", "json"])
         .arg(dir.path())
         .output()
         .expect("spawn");

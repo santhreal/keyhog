@@ -1,18 +1,17 @@
-//! e2e: the GPU is NOT auto-selected without `KEYHOG_GPU_AUTOROUTE`
+//! e2e: the GPU is NOT auto-selected without `--autoroute-gpu`
 //! (TESTING vector 12, lane 9) — the MEASURED-FACT contract, end to end.
 //!
 //! MEASURED FACT (today, RTX 5090): the GPU megakernel is 1.7–6× SLOWER than
 //! SIMD at every size for keyhog's detector set (catalog upload ~1 GB one-time,
 //! per-rule-DFA kernel ~18 MiB/s, phase-2 on CPU regardless). So auto-routing
-//! must NEVER pick the GPU on its own; the operator opts in with
-//! `KEYHOG_GPU_AUTOROUTE=1`, and `--backend gpu` still forces it for
+//! must NEVER pick the GPU on its own; the operator opts in during calibration
+//! with `--autoroute-gpu`, and `--backend gpu` still forces it for
 //! parity/research.
 //!
-//! The opt-in gate lives in a private CLI function
-//! (`dispatch/backend.rs::measure_fastest_correct_backend`); the scanner-side
+//! The opt-in gate lives in the private measured router calibration path; the scanner-side
 //! pure-fn inputs it consults are pinned in
 //! `crates/scanner/tests/autoroute_gpu_optin_contract.rs`. THIS test pins the
-//! operator-visible end: the `⚙ backend:` rationale line the real binary prints
+//! operator-visible end: the `INFO backend:` rationale line the real binary prints
 //! to stderr.
 //!
 //! Why these assertions hold on EVERY host (deterministic, machine-independent):
@@ -59,16 +58,11 @@ fn large_clean_file() -> (TempDir, PathBuf) {
 
 /// Run a scan and return (exit_code, stderr). `--progress` forces the routing
 /// rationale line to be emitted on the completion summary.
-fn scan(path: &PathBuf, env: &[(&str, &str)], extra: &[&str]) -> (Option<i32>, String) {
+fn scan(path: &PathBuf, extra: &[&str]) -> (Option<i32>, String) {
     let mut cmd = Command::new(binary());
     cmd.args(["scan", "--no-daemon", "--progress", "--format", "json"]);
     cmd.args(extra);
     cmd.arg(path);
-    // Strip any ambient routing env so the test is hermetic, then apply ours.
-    cmd.env_remove("KEYHOG_GPU_AUTOROUTE");
-    for (k, v) in env {
-        cmd.env(k, v);
-    }
     let output = cmd.output().expect("spawn keyhog scan");
     (
         output.status.code(),
@@ -79,11 +73,11 @@ fn scan(path: &PathBuf, env: &[(&str, &str)], extra: &[&str]) -> (Option<i32>, S
 #[test]
 fn without_optin_a_large_scan_never_reports_gpu_auto_selected() {
     let (_dir, path) = large_clean_file();
-    let (code, stderr) = scan(&path, &[], &[]);
+    let (code, stderr) = scan(&path, &[]);
 
     if code == Some(0) {
         assert!(
-            stderr.contains("⚙ backend:"),
+            stderr.contains("INFO backend:"),
             "scan must emit the routing rationale line; stderr={stderr}"
         );
         assert!(
@@ -105,11 +99,11 @@ fn forcing_backend_gpu_reports_a_forced_line_not_an_auto_selection() {
     // `--backend gpu` forces the device path. A GPU host completes and reports
     // the forced backend; a no-GPU host must fail closed rather than silently
     // substituting SIMD.
-    let (code, stderr) = scan(&path, &[], &["--backend", "gpu"]);
+    let (code, stderr) = scan(&path, &["--backend", "gpu"]);
 
     if code == Some(0) {
         assert!(
-            stderr.contains("⚙ backend:"),
+            stderr.contains("INFO backend:"),
             "forced-GPU scan must emit the routing rationale line; stderr={stderr}"
         );
         assert!(
@@ -122,7 +116,7 @@ fn forcing_backend_gpu_reports_a_forced_line_not_an_auto_selection() {
             matches!(code, Some(2) | Some(12))
                 && (stderr.contains("selected but GPU stack unavailable")
                     || stderr.contains("Required GPU unavailable")
-                    || stderr.contains("KEYHOG_REQUIRE_GPU")),
+                    || stderr.contains("--require-gpu")),
             "--backend gpu without a usable GPU must fail closed with a visible \
              diagnostic; code={code:?} stderr={stderr}"
         );
@@ -130,16 +124,16 @@ fn forcing_backend_gpu_reports_a_forced_line_not_an_auto_selection() {
 }
 
 #[test]
-fn optin_env_is_accepted_and_does_not_break_a_clean_scan() {
+fn autoroute_gpu_flag_is_accepted_and_does_not_break_a_clean_scan() {
     // With the opt-in set, calibration is allowed to include GPU candidates, but
     // a normal production scan still must not benchmark or guess without a
     // persisted decision.
     let (_dir, path) = large_clean_file();
-    let (code, stderr) = scan(&path, &[("KEYHOG_GPU_AUTOROUTE", "1")], &[]);
+    let (code, stderr) = scan(&path, &["--autoroute-gpu"]);
 
     assert!(
         code == Some(0) || (code == Some(2) && stderr.contains("autoroute calibration required")),
-        "KEYHOG_GPU_AUTOROUTE=1 must either use valid persisted calibration or fail loudly; \
+        "--autoroute-gpu must either use valid persisted calibration or fail loudly; \
          code={code:?} stderr={stderr}"
     );
 }

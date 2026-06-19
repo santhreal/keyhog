@@ -56,6 +56,8 @@ fn scan_max_commits_limits_git_history() {
     let output = Command::new(binary())
         .args([
             "scan",
+            "--backend",
+            "simd",
             "--no-daemon",
             "--git-history",
             ".",

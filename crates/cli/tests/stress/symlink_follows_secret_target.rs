@@ -20,6 +20,8 @@ fn symlink_follows_secret_target_exit_one() {
         .args([
             "scan",
             "--no-daemon",
+            "--backend",
+            "simd",
             "--format",
             "json",
             "--no-suppress-test-fixtures",

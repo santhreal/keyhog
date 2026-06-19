@@ -12,7 +12,7 @@
   <a href="index.html" class="brand">
     <span class="mark">k</span>
     keyhog
-    <span class="v">v0.5.37</span>
+    <span class="v">v0.5.40</span>
   </a>
   <nav class="top">
     <a href="detectors.html">Detectors</a>
@@ -71,13 +71,15 @@
 
 <pre><code><span class="prompt">$</span> keyhog scan .</code></pre>
 
-<p>keyhog probes your hardware, picks the fastest backend, walks the tree
-(respecting <code>.gitignore</code>), and prints findings as they fire.
-Default output is human-readable text, redacted credentials, severity-sorted.</p>
+<p>keyhog uses the persisted autoroute calibration for the workload, walks the
+tree (respecting <code>.gitignore</code>), and prints findings as they fire.
+If calibration is missing or stale, the scan exits with an actionable error
+instead of guessing. Default output is human-readable text, redacted
+credentials, severity-sorted.</p>
 
 <h3>What you'll see</h3>
 
-<pre><code><span class="a">keyhog v0.5.37 | 16 cores | SIMD: AVX-512 | Hyperscan | 899 detectors</span>
+<pre><code><span class="a">keyhog v0.5.40 | 16 cores | SIMD: AVX-512 | Hyperscan | 902 detectors</span>
 <span class="a">scanning 1,247 files…</span>
 
 <span class="c">.env.production:3</span>
@@ -98,7 +100,7 @@ unsupported argument).</p>
 <pre><code><span class="prompt">$</span> keyhog scan . --severity high            <span class="c"># medium+ ignored</span>
 <span class="prompt">$</span> keyhog scan . --min-confidence 0.7       <span class="c"># raise the ML floor</span>
 <span class="prompt">$</span> keyhog scan . --exclude-paths '**/test/**' <span class="c"># skip test trees</span>
-<span class="prompt">$</span> keyhog scan . --fast                     <span class="c"># pattern-only, fastest</span></code></pre>
+<span class="prompt">$</span> keyhog scan . --fast                     <span class="c"># pattern-only scan path</span></code></pre>
 
 <p>Severity is one of <code>info · low · medium · high · critical</code>.
 Combine flags freely — they AND together.</p>
@@ -122,8 +124,8 @@ Security Dashboard, or any SARIF-aware tool.</p>
   </a>
   <a href="ci.html" class="card">
     <h3>GitHub Actions</h3>
-    <p>One <code>uses:</code> line. Auto-uploads SARIF to code scanning,
-    falls back to source build if no prebuilt binary matches.</p>
+    <p>One <code>uses:</code> line. Auto-uploads SARIF to code scanning.
+    Release tags fail closed; branch/SHA refs may build from source.</p>
   </a>
   <a href="baseline.html" class="card">
     <h3>Adopt an existing repo</h3>
@@ -181,7 +183,7 @@ with <code>[unverified]</code>; live ones get <code>[verified ✓]</code>.</p>
   <li><a href="scan.html">Scan command reference</a> — every flag with defaults and shape.</li>
   <li><a href="output.html">Output formats</a> — text / JSON / JSONL / SARIF spec.</li>
   <li><a href="config.html">Configuration</a> — <code>.keyhog.toml</code> for shared team defaults.</li>
-  <li><a href="detectors.html">Detector catalog</a> — all 899 detectors, filterable.</li>
+  <li><a href="detectors.html">Detector catalog</a> — all 902 detectors, filterable.</li>
 </ul>
 </article>
 </main>

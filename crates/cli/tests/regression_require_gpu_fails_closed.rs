@@ -1,11 +1,11 @@
-//! Regression: `KEYHOG_REQUIRE_GPU=1` must FAIL CLOSED (exit 12) on the
+//! Regression: `--require-gpu` must FAIL CLOSED (exit 12) on the
 //! no-GPU path, independent of backend routing (findings C0 / C1).
 //!
 //! Before the fix the require-GPU hard-fail only lived inside the
 //! GPU-SELECTED dispatch paths. On a host with no discrete GPU, routing
 //! degraded to SimdCpu, those paths were never reached, and the scan
 //! completed on CPU exiting 0/1/10 instead of the documented exit 12 - the
-//! literal `require-gpu-fails-closed|KEYHOG_REQUIRE_GPU=1|...|12` docker
+//! literal `require-gpu-fails-closed|--require-gpu|...|12` docker
 //! scenario (tests/docker/scenarios.sh) and the env.md contract
 //! ("refuse to run when no usable GPU adapter is detected").
 //!
@@ -34,35 +34,30 @@ fn aws_leak_fixture() -> (TempDir, PathBuf) {
     (dir, path)
 }
 
-/// Deterministic, host-independent core of the contract: when the operator
-/// both REQUIRES a GPU and forbids GPU init (`KEYHOG_NO_GPU=1`), no usable
-/// GPU can possibly be present, so the preflight must fail closed with the
-/// documented exit code 12 - on any host, GPU box or not. This pins the
-/// fail-closed behavior without depending on the CI runner lacking a GPU.
+/// Deterministic, host-independent guard for the invalid contradiction:
+/// the operator cannot both require and disable GPU init in one command.
+/// clap must reject that before routing or scanning.
 #[test]
-fn require_gpu_with_no_gpu_forced_exits_twelve() {
+fn require_gpu_and_no_gpu_flags_conflict() {
     let (_dir, path) = aws_leak_fixture();
 
     let output = Command::new(binary())
-        .arg("scan")
+        .args(["scan", "--require-gpu", "--no-gpu"])
         .arg(&path)
-        .env("KEYHOG_REQUIRE_GPU", "1")
-        .env("KEYHOG_NO_GPU", "1")
         .output()
         .expect("spawn keyhog scan");
 
     assert_eq!(
         output.status.code(),
-        Some(12),
-        "KEYHOG_REQUIRE_GPU=1 with no usable GPU must exit 12 (fail closed), \
-         not silently scan on CPU; stderr={}",
+        Some(2),
+        "--require-gpu and --no-gpu must be rejected as conflicting flags; stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("KEYHOG_REQUIRE_GPU"),
-        "exit-12 diagnostic should name KEYHOG_REQUIRE_GPU; stderr={stderr}"
+        stderr.contains("--require-gpu") && stderr.contains("--no-gpu"),
+        "conflict diagnostic should name both GPU policy flags; stderr={stderr}"
     );
 }
 
@@ -83,14 +78,13 @@ fn host_has_usable_gpu() -> bool {
     !gpu_line.contains("not detected") && !gpu_line.contains("software renderer")
 }
 
-/// The literal docker scenario: `KEYHOG_REQUIRE_GPU=1 keyhog scan <leak>`
+/// The literal docker scenario: `keyhog scan --require-gpu <leak>`
 /// with nothing else set. On a no-GPU host (CI runners always set
 /// CI=true/GITHUB_ACTIONS=true, which previously auto-skipped the GPU and
 /// masked the requirement - finding C1) this must still exit 12. The
-/// require flag now forces `env_no_gpu()` to return false so the CI
-/// auto-skip cannot defeat the gate. On a real GPU host the scan proceeds
-/// normally, so we only assert the strict exit 12 when no usable GPU is
-/// detected.
+/// require flag keeps GPU probing open so the CI auto-skip cannot defeat the
+/// gate. On a real GPU host the scan proceeds normally, so we only assert the
+/// strict exit 12 when no usable GPU is detected.
 #[test]
 fn require_gpu_on_no_gpu_host_exits_twelve() {
     if host_has_usable_gpu() {
@@ -104,17 +98,15 @@ fn require_gpu_on_no_gpu_host_exits_twelve() {
     let (_dir, path) = aws_leak_fixture();
 
     let output = Command::new(binary())
-        .arg("scan")
+        .args(["scan", "--require-gpu"])
         .arg(&path)
-        .env("KEYHOG_REQUIRE_GPU", "1")
-        .env_remove("KEYHOG_NO_GPU")
         .output()
         .expect("spawn keyhog scan");
 
     assert_eq!(
         output.status.code(),
         Some(12),
-        "on a no-GPU host KEYHOG_REQUIRE_GPU=1 must fail closed with exit 12 \
+        "on a no-GPU host --require-gpu must fail closed with exit 12 \
          (the CI auto-skip must not mask the requirement); stderr={}",
         String::from_utf8_lossy(&output.stderr)
     );

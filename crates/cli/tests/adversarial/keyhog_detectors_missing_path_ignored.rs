@@ -1,4 +1,4 @@
-//! Adversarial: KEYHOG_DETECTORS pointing at missing dir falls back safely.
+//! Adversarial: legacy KEYHOG_DETECTORS is ignored.
 
 use crate::support::{binary, write_temp_file};
 use std::process::Command;
@@ -11,7 +11,14 @@ fn keyhog_detectors_missing_path_ignored() {
             "KEYHOG_DETECTORS",
             "/nonexistent/keyhog-detectors-adversarial",
         )
-        .args(["scan", "--no-daemon", "--format", "json"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "cpu",
+            "--format",
+            "json",
+        ])
         .arg(&path)
         .output()
         .expect("spawn");

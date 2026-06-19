@@ -22,14 +22,18 @@ fn scan_file(content: &str, extra: &[&str]) -> (Option<i32>, String, String) {
 }
 
 fn run_scan(path: &Path, extra: &[&str]) -> (Option<i32>, String, String) {
-    let mut args: Vec<String> = vec!["scan".into(), "--no-daemon".into()];
+    let mut args: Vec<String> = vec![
+        "scan".into(),
+        "--no-daemon".into(),
+        "--backend".into(),
+        "simd".into(),
+    ];
     for e in extra {
         args.push((*e).into());
     }
     args.push(path.to_string_lossy().into_owned());
     let out = Command::new(binary())
         .args(&args)
-        .env("KEYHOG_RELEASE_API_BASE", "http://127.0.0.1:9")
         .output()
         .expect("spawn keyhog scan");
     (

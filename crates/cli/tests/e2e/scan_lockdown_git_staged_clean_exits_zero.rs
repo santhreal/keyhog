@@ -52,6 +52,8 @@ fn scan_lockdown_git_staged_clean_exits_zero() {
     let output = Command::new(binary())
         .args([
             "scan",
+            "--backend",
+            "simd",
             "--no-daemon",
             "--lockdown",
             "--git-staged",

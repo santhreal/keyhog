@@ -49,7 +49,7 @@ async fn daemon_scan_text_roundtrip_carries_matches() {
         detector_name: Arc::from("AWS Access Key"),
         service: Arc::from("aws"),
         severity: Severity::Critical,
-        credential: Arc::from(concat!("AK", "IAQYLPMN5HFIQR7XYA")),
+        credential: keyhog_core::SensitiveString::from(concat!("AK", "IAQYLPMN5HFIQR7XYA")),
         credential_hash: [7u8; 32],
         companions: Default::default(),
         location: MatchLocation {

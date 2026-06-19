@@ -158,8 +158,8 @@ struct PollResponse {
     /// Each entry is base64( AES-256-CFB( IV[16] || ciphertext ) ).
     data: Vec<String>,
     /// Auxiliary metadata; ignored.
-    #[allow(dead_code)]
-    extra: Vec<String>,
+    #[serde(rename = "extra")]
+    _extra: Vec<String>,
     /// Base64( RSA-OAEP-SHA256( 32-byte AES key ) ). Server omits when there
     /// are no interactions; in that case `data` is also empty.
     aes_key: Option<String>,

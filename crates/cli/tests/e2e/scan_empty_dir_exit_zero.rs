@@ -1,6 +1,6 @@
 //! E2E: scanning an empty directory exits 0.
 
-use crate::e2e::support::{binary, scan_path};
+use crate::e2e::support::scan_path;
 use tempfile::TempDir;
 
 #[test]

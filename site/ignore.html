@@ -12,7 +12,7 @@
   <a href="index.html" class="brand">
     <span class="mark">k</span>
     keyhog
-    <span class="v">v0.5.37</span>
+    <span class="v">v0.5.40</span>
   </a>
   <nav class="top">
     <a href="detectors.html">Detectors</a>
@@ -125,14 +125,13 @@ path:**/fixtures/*.env \
 
 <h2>Expiration</h2>
 
-<p>Entries with <code>expires</code> in the past are silently dropped on load
-with a WARN line. This is the mechanism for "this is allowlisted for now,
-but force me to revisit it by Q3." If the allowlist auto-expires and the
-finding comes back, you can either re-allowlist with a new expiry or fix
-the underlying leak.</p>
+<p>Entries with <code>expires</code> in the past fail allowlist load with an
+actionable error. This is the mechanism for "this is allowlisted for now, but
+force me to revisit it by Q3." Renew the expiry, remove the stale entry, or fix
+the underlying leak before the scan proceeds.</p>
 
 <pre><code><span class="prompt">$</span> keyhog scan .
-<span class="a">WARN: .keyhogignore:14: entry expired on 2026-04-01 — dropping</span>
+<span class="a">ERROR: .keyhogignore contains expired allowlist policy at line 14: expired on 2026-04-01 — refusing to scan</span>
 <span class="a">  hash:9d6060e2…782a8a676a  ; reason="…"  ; expires=2026-04-01</span></code></pre>
 
 <h2>Approval audit</h2>

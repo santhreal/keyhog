@@ -40,7 +40,15 @@ fn scan_git_staged_no_staged_files_exits_two() {
         .expect("git commit");
     std::fs::write(repo.join("dirty.txt"), "changed\n").unwrap();
     let output = Command::new(binary())
-        .args(["scan", "--no-daemon", "--git-staged", "--format", "json"])
+        .args([
+            "scan",
+            "--backend",
+            "simd",
+            "--no-daemon",
+            "--git-staged",
+            "--format",
+            "json",
+        ])
         .current_dir(repo)
         .arg(".")
         .output()

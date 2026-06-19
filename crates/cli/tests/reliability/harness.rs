@@ -10,12 +10,25 @@
 
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 use tempfile::TempDir;
 
 /// The freshly-built binary under test (cargo points this at target/<p>/keyhog).
 pub fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
+}
+
+/// Shared slot for reliability tests that spawn timeout-sensitive subprocesses.
+/// The matrix intentionally fans out many lightweight CLI invocations in
+/// parallel, but heavy scan watchdogs and installer release verifiers should
+/// not compete with each other for process scheduling and produce false policy
+/// failures.
+pub fn subprocess_slot() -> MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("reliability subprocess slot")
 }
 
 /// The full list of CLI subcommands. Kept here as the single source the matrix
@@ -151,12 +164,6 @@ impl Outcome {
 }
 
 fn apply_profile(profile: Profile, cmd: &mut Command) -> Option<TempDir> {
-    // Always neutralize the release endpoint so update/repair fail FAST and
-    // offline instead of reaching api.github.com (flaky, slow, non-hermetic).
-    // 127.0.0.1:9 (discard) is closed on a normal host -> a clean connect
-    // error, exercising the graceful-offline-failure path.
-    cmd.env("KEYHOG_RELEASE_API_BASE", "http://127.0.0.1:9");
-
     match profile {
         Profile::Plain => {}
         Profile::NoColor => {
@@ -218,10 +225,26 @@ fn apply_profile(profile: Profile, cmd: &mut Command) -> Option<TempDir> {
     None
 }
 
+fn offline_release_args(args: &[&str]) -> Vec<String> {
+    let mut out: Vec<String> = args.iter().map(|arg| (*arg).to_string()).collect();
+    if matches!(args.first().copied(), Some("update" | "repair"))
+        && !args.iter().any(|arg| *arg == "--release-api-base")
+    {
+        // Always neutralize the release endpoint for update/repair so surface
+        // tests fail FAST and offline instead of reaching api.github.com. This
+        // is an explicit argv-only test seam; production code ignores ambient
+        // KEYHOG_RELEASE_API_BASE by design.
+        out.push("--release-api-base".into());
+        out.push("http://127.0.0.1:9".into());
+    }
+    out
+}
+
 /// Run `keyhog <args>` under `profile`, feeding `stdin`, capturing everything.
 pub fn run_stdin(profile: Profile, args: &[&str], stdin: &[u8]) -> Outcome {
     let mut cmd = Command::new(binary());
-    cmd.args(args)
+    let effective_args = offline_release_args(args);
+    cmd.args(&effective_args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -244,7 +267,11 @@ pub fn run_stdin(profile: Profile, args: &[&str], stdin: &[u8]) -> Outcome {
         stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
         stdout_raw: out.stdout,
         stderr_raw: out.stderr,
-        what: format!("`keyhog {}` [{}]", args.join(" "), profile.label()),
+        what: format!(
+            "`keyhog {}` [{}]",
+            effective_args.join(" "),
+            profile.label()
+        ),
     }
 }
 

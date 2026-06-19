@@ -17,7 +17,14 @@ fn concurrent_json_output_integrity() {
         handles.push(thread::spawn(move || {
             b.wait();
             let output = Command::new(binary())
-                .args(["scan", "--no-daemon", "--format", "json"])
+                .args([
+                    "scan",
+                    "--no-daemon",
+                    "--backend",
+                    "simd",
+                    "--format",
+                    "json",
+                ])
                 .arg(&path)
                 .env(format!("KEYHOG_ADVERSARIAL_{id}"), "1")
                 .stdout(Stdio::piped())

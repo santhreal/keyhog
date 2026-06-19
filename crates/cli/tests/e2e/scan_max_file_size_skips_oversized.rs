@@ -14,6 +14,8 @@ fn scan_max_file_size_skips_oversized_file() {
     let output = Command::new(binary())
         .args([
             "scan",
+            "--backend",
+            "simd",
             "--no-daemon",
             "--format",
             "json",

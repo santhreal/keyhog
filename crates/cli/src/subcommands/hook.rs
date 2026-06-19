@@ -21,7 +21,9 @@ use std::process::ExitCode;
 /// `--git-staged`: self-discovers staged blobs and scans their STAGED
 /// content, taking no positional filename (the framework otherwise appends
 /// changed filenames, and `keyhog scan` accepts only ONE positional PATH).
-const CANONICAL_SCAN_ARGS: &str = "scan --fast --git-staged";
+/// `--backend simd`: hooks are diagnostic local checks and must not require
+/// install-time autoroute calibration to let a clean commit proceed.
+const CANONICAL_SCAN_ARGS: &str = "scan --fast --git-staged --backend simd";
 
 #[doc(hidden)]
 const HOOK_CONTENT: &str = concat!(
@@ -41,7 +43,7 @@ const HOOK_CONTENT: &str = concat!(
     "    exit 0\n",
     "fi\n",
     "exec keyhog ",
-    "scan --fast --git-staged", // == CANONICAL_SCAN_ARGS; asserted by hook_template_embeds_canonical_scan_args
+    "scan --fast --git-staged --backend simd", // == CANONICAL_SCAN_ARGS; asserted by hook_template_embeds_canonical_scan_args
     "\n",
 );
 

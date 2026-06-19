@@ -36,6 +36,36 @@ fn home_temp_cache_dir(name: &str) -> (TempDir, String) {
 }
 
 #[test]
+fn configuration_doc_states_malformed_config_fails_closed() {
+    let doc = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../docs/src/reference/configuration.md"
+    ));
+    for stale in [
+        "malformed file warns",
+        "warns and is ignored",
+        "scan still runs on defaults",
+        "is ignored (the scan still runs on defaults)",
+    ] {
+        assert!(
+            !doc.contains(stale),
+            "configuration.md must not advertise the retired warning-and-defaults config fallback: {stale:?}"
+        );
+    }
+    for required in [
+        "malformed `.keyhog.toml`",
+        "fails closed",
+        "before any scan output is written",
+        "`--no-config`",
+    ] {
+        assert!(
+            doc.contains(required),
+            "configuration.md must state the fail-closed malformed-config contract; missing {required:?}"
+        );
+    }
+}
+
+#[test]
 fn config_effective_prints_and_exits_without_source() {
     let (stdout, stderr, code) = effective_config(&[]);
 
@@ -47,10 +77,21 @@ fn config_effective_prints_and_exits_without_source() {
     for required in [
         "[effective-config]",
         "backend = auto",
+        "batch_pipeline = false",
+        "threads = auto",
+        "reader_threads = auto",
+        "fused_batch = 32",
+        "fused_depth = auto",
+        "gpu = auto",
+        "autoroute_gpu = false",
+        "autoroute_calibration = false",
+        "profile = false",
+        "perf_trace = false",
         "min_confidence = 0.4",
         "ml_enabled = true",
         "max_decode_depth = 10",
         "max_decode_bytes = 524288",
+        "per_chunk_timeout_ms = off",
         "disabled_detectors = ",
     ] {
         assert!(
@@ -58,6 +99,196 @@ fn config_effective_prints_and_exits_without_source() {
             "effective config missing `{required}`; stdout={stdout}"
         );
     }
+}
+
+#[test]
+fn config_effective_prints_explicit_diagnostic_flags() {
+    let (stdout, stderr, code) = effective_config(&["--profile", "--perf-trace"]);
+
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("profile = true"),
+        "--profile must be visible in resolved config; stdout={stdout}"
+    );
+    assert!(
+        stdout.contains("perf_trace = true"),
+        "--perf-trace must be visible in resolved config; stdout={stdout}"
+    );
+}
+
+#[test]
+fn config_effective_prints_batch_pipeline_cli_and_toml() {
+    let (stdout, stderr, code) = effective_config(&["--batch-pipeline"]);
+
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("batch_pipeline = true"),
+        "--batch-pipeline must be visible in resolved config; stdout={stdout}"
+    );
+
+    let (stdout, stderr, code) = effective_config_with_toml("[system]\nbatch_pipeline = true\n");
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("batch_pipeline = true"),
+        "[system].batch_pipeline must reach resolved config; stdout={stdout}"
+    );
+
+    let dir = TempDir::new().expect("tempdir");
+    let config_path = dir.path().join(".keyhog.toml");
+    std::fs::write(&config_path, "[system]\nbatch_pipeline = true\n").expect("write config");
+    let config_path = config_path.to_string_lossy();
+    let (stdout, stderr, code) =
+        effective_config(&["--config", &config_path, "--no-batch-pipeline"]);
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("batch_pipeline = false"),
+        "--no-batch-pipeline must visibly override TOML; stdout={stdout}"
+    );
+}
+
+#[test]
+fn config_effective_prints_gpu_policy_cli_and_toml() {
+    let (stdout, stderr, code) = effective_config(&["--no-gpu"]);
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("gpu = off"),
+        "--no-gpu must be visible in resolved config; stdout={stdout}"
+    );
+
+    let (stdout, stderr, code) = effective_config(&["--require-gpu"]);
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("gpu = required"),
+        "--require-gpu must be visible in resolved config; stdout={stdout}"
+    );
+
+    let (stdout, stderr, code) = effective_config_with_toml("[system]\ngpu = \"required\"\n");
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("gpu = required"),
+        "[system].gpu must reach resolved config; stdout={stdout}"
+    );
+
+    let dir = TempDir::new().expect("tempdir");
+    let config_path = dir.path().join(".keyhog.toml");
+    std::fs::write(&config_path, "[system]\ngpu = \"required\"\n").expect("write config");
+    let config_path = config_path.to_string_lossy();
+    let (stdout, stderr, code) = effective_config(&["--config", &config_path, "--no-gpu"]);
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("gpu = off"),
+        "--no-gpu must visibly override TOML; stdout={stdout}"
+    );
+}
+
+#[test]
+fn config_effective_prints_autoroute_gpu_cli_and_toml() {
+    let (stdout, stderr, code) = effective_config(&["--autoroute-gpu"]);
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("autoroute_gpu = true"),
+        "--autoroute-gpu must be visible in resolved config; stdout={stdout}"
+    );
+
+    let (stdout, stderr, code) = effective_config_with_toml("[system]\nautoroute_gpu = true\n");
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("autoroute_gpu = true"),
+        "[system].autoroute_gpu must reach resolved config; stdout={stdout}"
+    );
+
+    let dir = TempDir::new().expect("tempdir");
+    let config_path = dir.path().join(".keyhog.toml");
+    std::fs::write(&config_path, "[system]\nautoroute_gpu = true\n").expect("write config");
+    let config_path = config_path.to_string_lossy();
+    let (stdout, stderr, code) =
+        effective_config(&["--config", &config_path, "--no-autoroute-gpu"]);
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("autoroute_gpu = false"),
+        "--no-autoroute-gpu must visibly override TOML; stdout={stdout}"
+    );
+}
+
+#[test]
+fn config_effective_prints_per_chunk_timeout_cli_and_toml() {
+    let (stdout, stderr, code) = effective_config(&["--per-chunk-timeout-ms", "1234"]);
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("per_chunk_timeout_ms = 1234"),
+        "--per-chunk-timeout-ms must be visible in resolved config; stdout={stdout}"
+    );
+
+    let (stdout, stderr, code) = effective_config_with_toml("per_chunk_timeout_ms = 5678\n");
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("per_chunk_timeout_ms = 5678"),
+        "top-level per_chunk_timeout_ms must reach resolved config; stdout={stdout}"
+    );
+
+    let (stdout, stderr, code) =
+        effective_config_with_toml("[scan]\nper_chunk_timeout_ms = 9012\n");
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("per_chunk_timeout_ms = 9012"),
+        "[scan].per_chunk_timeout_ms must reach resolved config; stdout={stdout}"
+    );
+}
+
+#[test]
+fn config_effective_prints_threading_chunking_cli_and_toml() {
+    let (stdout, stderr, code) = effective_config(&[
+        "--threads",
+        "2",
+        "--reader-threads",
+        "1",
+        "--fused-batch",
+        "17",
+        "--fused-depth",
+        "3",
+    ]);
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    for required in [
+        "threads = 2",
+        "reader_threads = 1",
+        "fused_batch = 17",
+        "fused_depth = 3",
+    ] {
+        assert!(
+            stdout.contains(required),
+            "CLI threading/chunking config missing `{required}`; stdout={stdout}"
+        );
+    }
+
+    let (stdout, stderr, code) = effective_config_with_toml(
+        "[scan]\n\
+         threads = 4\n\
+         reader_threads = 2\n\
+         fused_batch = 23\n\
+         fused_depth = 5\n",
+    );
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    for required in [
+        "threads = 4",
+        "reader_threads = 2",
+        "fused_batch = 23",
+        "fused_depth = 5",
+    ] {
+        assert!(
+            stdout.contains(required),
+            "[scan] threading/chunking config missing `{required}`; stdout={stdout}"
+        );
+    }
+}
+
+#[test]
+fn config_effective_prints_autoroute_calibration_cli() {
+    let (stdout, stderr, code) = effective_config(&["--autoroute-calibrate"]);
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("autoroute_calibration = true"),
+        "--autoroute-calibrate must be visible in resolved config; stdout={stdout}"
+    );
 }
 
 #[test]
@@ -212,6 +443,7 @@ fn config_effective_prints_scanner_tuning_from_toml() {
         "[tuning]\n\
          fallback_hs = false\n\
          hs_prefilter_max_len = 8192\n\
+         hs_shard_target = 41\n\
          fallback_anchor = false\n\
          homoglyph_gate = false\n\
          homoglyph_ascii_skip = false\n\
@@ -222,6 +454,7 @@ fn config_effective_prints_scanner_tuning_from_toml() {
          confirmed_suffix_gate = false\n\
          no_candidate_gate = false\n\
          fallback_localizer = true\n\
+         gpu_recall_floor = true\n\
          gpu_moe_timeout_ms = 12345\n",
     );
 
@@ -229,6 +462,7 @@ fn config_effective_prints_scanner_tuning_from_toml() {
     for required in [
         "tuning_fallback_hs = false",
         "tuning_hs_prefilter_max_len = 8192",
+        "tuning_hs_shard_target = 41",
         "tuning_fallback_anchor = false",
         "tuning_homoglyph_gate = false",
         "tuning_homoglyph_ascii_skip = false",
@@ -239,6 +473,7 @@ fn config_effective_prints_scanner_tuning_from_toml() {
         "tuning_confirmed_suffix_gate = false",
         "tuning_no_candidate_gate = false",
         "tuning_fallback_localizer = true",
+        "tuning_gpu_recall_floor = true",
         "tuning_gpu_moe_timeout_ms = 12345",
     ] {
         assert!(
@@ -274,6 +509,7 @@ fn config_effective_ignores_legacy_detection_tuning_env() {
     for required in [
         "tuning_fallback_hs = true",
         "tuning_hs_prefilter_max_len = 4096",
+        "tuning_hs_shard_target = 80",
         "tuning_fallback_anchor = true",
         "tuning_homoglyph_gate = true",
         "tuning_homoglyph_ascii_skip = true",
@@ -455,13 +691,22 @@ fn config_effective_rejects_invalid_config_enums_and_min_length() {
          dedup = \"global\"\n\
          decode_depth = 11\n\
          min_secret_len = 0\n\
+         reader_threads = 0\n\
+         fused_batch = 0\n\
+         fused_depth = 0\n\
+         per_chunk_timeout_ms = 0\n\
          [scan]\n\
          format = \"xml\"\n\
          severity = \"panic\"\n\
          dedup = \"all\"\n\
          decode_depth = 0\n\
          min_secret_len = 0\n\
+         reader_threads = 0\n\
+         fused_batch = 0\n\
+         fused_depth = 0\n\
+         per_chunk_timeout_ms = 0\n\
          [tuning]\n\
+         hs_shard_target = 0\n\
          gpu_moe_timeout_ms = 0\n",
     );
 
@@ -476,11 +721,20 @@ fn config_effective_rejects_invalid_config_enums_and_min_length() {
         "dedup = \"global\"",
         "decode_depth = 11",
         "min_secret_len = 0",
+        "reader_threads = 0",
+        "fused_batch = 0",
+        "fused_depth = 0",
+        "per_chunk_timeout_ms = 0",
         "[scan].format = \"xml\"",
         "[scan].severity = \"panic\"",
         "[scan].dedup = \"all\"",
         "[scan].decode_depth = 0",
         "[scan].min_secret_len = 0",
+        "[scan].reader_threads = 0",
+        "[scan].fused_batch = 0",
+        "[scan].fused_depth = 0",
+        "[scan].per_chunk_timeout_ms = 0",
+        "[tuning].hs_shard_target",
         "[tuning].gpu_moe_timeout_ms",
     ] {
         assert!(

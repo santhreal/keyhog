@@ -271,7 +271,7 @@ jobs:
   # keyhog:<ver>` (and `:latest`) works - the third consumption mode alongside
   # the prebuilt binary and `cargo install`. Standalone (not in any `needs`):
   # a registry hiccup must not block the binary release. Builds from the
-  # repo Dockerfile (multi-stage, non-root runtime, KEYHOG_DETECTORS baked in).
+  # repo Dockerfile (multi-stage, non-root runtime, embedded detector corpus).
   docker:
     name: Publish container image (GHCR)
     runs-on: ubuntu-latest

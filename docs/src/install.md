@@ -24,10 +24,9 @@ toolkit) stays on the WGPU build, since the native-CUDA dispatch
 saves only single-digit percent on typical repo scans and the
 binary footprint + runtime dependency are not worth it for the
 non-CUDA-developer case. Pass `--variant=cuda` (or set
-`KEYHOG_VARIANT=cuda`) to force the CUDA build anyway. Apple
-Silicon hosts get an explicit "Metal GPU acceleration coming soon"
-note; until that lands, Apple Silicon runs SIMD on CPU plus WGPU
-on the integrated GPU.
+`KEYHOG_VARIANT=cuda`) to force the CUDA build anyway. macOS
+release assets run SIMD on CPU plus the WGPU GPU path on compatible
+adapters; no separate native Metal release asset ships.
 
 ## Interactive mode (recommended for first install)
 
@@ -54,10 +53,9 @@ Then it prompts (default in brackets):
 - Wire keyhog as a git pre-commit hook in this dir? `[y/N]`
 
 Each prompt is opt-in. Nothing in your `.bashrc` / `.zshrc` / git
-hooks dir is touched without an explicit "y". Claude Code / Cursor
-agent-hook integration is on the roadmap but not yet shipped; the
-prompt was removed in v0.5.34 once it became clear the underlying
-`keyhog hook install --agent <name>` flag wasn't real yet.
+hooks dir is touched without an explicit "y". There is no shipped
+Claude Code / Cursor agent-hook prompt or `keyhog hook install --agent
+<name>` flag; the prompt was removed in v0.5.34.
 
 ## One-liner: Windows
 
@@ -68,9 +66,8 @@ iwr https://raw.githubusercontent.com/santhsecurity/keyhog/main/install.ps1 -use
 ```
 
 Drops the binary in `%LOCALAPPDATA%\keyhog\bin\keyhog.exe`. Detects
-your GPU (informational only: a dedicated CUDA-on-Windows variant is
-on the roadmap but not yet shipped, so today every Windows host gets
-the same WGPU + SIMD binary).
+your GPU for diagnostics; the Windows installer ships the WGPU + SIMD
+binary, and there is no separate CUDA-on-Windows release asset.
 
 For the interactive flow:
 
@@ -100,21 +97,25 @@ The installer auto-detects, but you can override:
 | `--yes` / `-y`                          | Non-interactive: accept all defaults, no prompts.             |
 | `--no-color`                            | Disable ANSI colors (e.g. for log capture).                   |
 
-### Runtime env vars (consumed by the `keyhog` binary itself)
+### Runtime GPU controls
 
-| Env var                  | Effect                                                                                                                                                                                                                                       |
+| Control                  | Effect                                                                                                                                                                                                                                       |
 |--------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `KEYHOG_NO_GPU=1`        | Force the CPU + SIMD path; skip every GPU init (saves ~250 ms of cold-start on hosts with no usable GPU).                                                                                                                                    |
-| `KEYHOG_NO_GPU=0`        | Force GPU init even when CI auto-detection would otherwise skip it. Useful on self-hosted GitHub / GitLab runners with a real GPU.                                                                                                            |
-| `KEYHOG_REQUIRE_GPU=1`   | Hard-fail (`exit 12`) when the GPU stack is unavailable. This is a diagnostic/CI assertion, separate from autoroute. Autoroute itself is not a fallback hierarchy: it selects the fastest measured-correct backend from all eligible candidates. |
+| `keyhog scan --no-gpu`   | Force the CPU + SIMD path; skip every GPU init (saves cold-start on hosts with no usable GPU).                                                                                                                                               |
+| `keyhog scan --require-gpu` | Hard-fail (`exit 12`) when the GPU stack is unavailable. This is a diagnostic/CI assertion, separate from autoroute. Autoroute itself is not a fallback hierarchy: it selects the fastest measured-correct backend from all eligible candidates. |
+| `.keyhog.toml [system] gpu = "off"` | Persist the CPU/SIMD-only policy for a repository. Use `"required"` for self-hosted GPU runners where a GPU regression must fail closed.                                                                                         |
 | `keyhog scan --backend gpu\|mega-scan\|simd\|cpu` | Force a specific scan backend regardless of autoroute. Diagnostic and benchmark override only; it does not prove autoroute correctness.                                                                                                  |
 
-**CI auto-detect.** When `CI=true` is set (or any of `GITHUB_ACTIONS`, `GITLAB_CI`, `CIRCLECI`, `TRAVIS`, `JENKINS_URL`, `TF_BUILD`, `BUILDKITE`, `DRONE`, `APPVEYOR`, `TEAMCITY_VERSION`, `CODEBUILD_BUILD_ID`, `BITBUCKET_BUILD_NUMBER`, `WERCKER`, `SEMAPHORE`), keyhog skips the GPU probe entirely and goes straight to the SIMD + CPU path. The savings: ~250 ms of cold-start per `keyhog` invocation, plus no confusing "GPU MoE init failed" warning when the runner's only GPU is `llvmpipe`. Override with `KEYHOG_NO_GPU=0` on self-hosted GPU runners.
+Hosted CI runners normally have no useful GPU. Use `--no-gpu` or
+`[system] gpu = "off"` there. On self-hosted GPU runners, use
+`--require-gpu` or `[system] gpu = "required"` so a driver regression fails
+closed instead of running as a CPU-only scan.
 
-When a CUDA variant asset isn't published for the resolved release
-tag yet, the installer logs the fallback and downloads the default
-WGPU + SIMD asset instead. You can rerun with `--variant=cuda` once
-a tag with the CUDA variant lands.
+An explicit `--variant=cuda` / `KEYHOG_VARIANT=cuda` request requires the
+`keyhog-linux-x86_64-cuda` release asset and fails closed if that asset is
+missing. The portable WGPU + SIMD fallback is allowed only when the installer
+auto-selected CUDA from host detection; in that case the installer made the
+accelerator choice and logs the fallback before installing the default asset.
 
 ## Repair, diagnose, uninstall
 
@@ -204,10 +205,9 @@ keyhog detectors | head     # smoke-test the embedded detector corpus
 keyhog scan README.md       # scan a single file; exit 0 = clean
 ```
 
-If `keyhog --version` reports the latest release (currently
-`0.5.34` from prebuilt assets, or `0.5.35` from a source build of
-`main`) and `keyhog detectors` lists hundreds of detectors, you're
-set. Move on to [Your first scan](./first-scan.md).
+If `keyhog --version` reports a recent release and `keyhog detectors`
+lists hundreds of detectors, you're set. Move on to
+[Your first scan](./first-scan.md).
 
 You can also run the installer in diagnostic mode at any time to
 print a full status report:

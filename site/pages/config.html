@@ -1,5 +1,5 @@
 title = "Configuration"
-description = "Per-repo defaults via .keyhog.toml. Environment variables. Precedence."
+description = "Per-repo defaults via .keyhog.toml. Precedence."
 ---
 <h1>Configuration</h1>
 <p class="lede">
@@ -17,7 +17,6 @@ description = "Per-repo defaults via .keyhog.toml. Environment variables. Preced
   <li>Compiled-in defaults.</li>
   <li>Repo config: the nearest <code>.keyhog.toml</code> found by walking up
     from the scanned path (or an explicit <code>--config &lt;path&gt;</code>).</li>
-  <li>Environment variables (<code>KEYHOG_*</code>).</li>
   <li>CLI flags.</li>
 </ol>
 
@@ -25,13 +24,16 @@ description = "Per-repo defaults via .keyhog.toml. Environment variables. Preced
 
 <pre><code><span class="c"># Scan defaults — flat top-level keys are the canonical form. Every key</span>
 <span class="c"># mirrors a `keyhog scan` flag; the CLI flag overrides it.</span>
-detectors        = <span class="s">"detectors"</span>     <span class="c"># detector TOML directory (env: KEYHOG_DETECTORS)</span>
+detectors        = <span class="s">"detectors"</span>     <span class="c"># detector TOML directory; --detectors overrides</span>
 severity         = <span class="s">"high"</span>          <span class="c"># info | low | medium | high | critical</span>
 min_confidence   = 0.5                <span class="c"># 0.0 - 1.0</span>
 format           = <span class="s">"text"</span>          <span class="c"># text | json | jsonl | sarif</span>
 fast             = false              <span class="c"># pattern-only, fastest</span>
 deep             = false              <span class="c"># every feature, max recall</span>
 threads          = 0                  <span class="c"># omit for auto (one per physical core)</span>
+<span class="c"># reader_threads = 2              # omit for scan-pool-derived default</span>
+fused_batch      = 32                 <span class="c"># fused filesystem batch size</span>
+<span class="c"># fused_depth = 4                 # omit for worker-derived default</span>
 dedup            = <span class="s">"credential"</span>    <span class="c"># credential | file | none</span>
 show_secrets     = false
 exclude_paths    = [<span class="s">"**/test/fixtures/**"</span>, <span class="s">"vendor/"</span>]
@@ -55,6 +57,9 @@ min_confidence  = 0.5
 format          = <span class="s">"text"</span>
 exclude         = [<span class="s">"vendor/"</span>]
 threads         = 0
+<span class="c"># reader_threads = 2</span>
+fused_batch     = 32
+<span class="c"># fused_depth = 4</span>
 dedup           = <span class="s">"credential"</span>
 
 <span class="c"># Per-detector overrides, keyed by the id from `keyhog detectors`</span>
@@ -75,20 +80,26 @@ require = true                <span class="c"># refuse to run unless --lockdown 
 <code>; reason="..."; expires=YYYY-MM-DD; approved_by="..."</code> metadata
 (expired entries are dropped automatically). See the Allowlists page.</p>
 
-<h2>Environment variables</h2>
+<h2>Runtime controls</h2>
 
 <div class="table-wrap">
 <table>
-  <thead><tr><th>Variable</th><th>Effect</th></tr></thead>
+  <thead><tr><th>Control</th><th>Effect</th></tr></thead>
   <tbody>
-    <tr><td><code>KEYHOG_BACKEND</code></td><td>Force a backend (<code>gpu|simd|cpu|auto</code>)</td></tr>
-    <tr><td><code>KEYHOG_DETECTORS</code></td><td>Override the detector TOML directory</td></tr>
-    <tr><td><code>KEYHOG_THREADS</code></td><td>Pin rayon worker count</td></tr>
-    <tr><td><code>KEYHOG_CACHE_DIR</code></td><td>Override <code>~/.cache/keyhog/</code></td></tr>
-    <tr><td><code>KEYHOG_NO_GPU</code></td><td>Skip GPU init — run as if no adapter existed</td></tr>
-    <tr><td><code>KEYHOG_PER_CHUNK_TIMEOUT_MS</code></td><td>Per-chunk scan deadline (ms)</td></tr>
-    <tr><td><code>KEYHOG_PROXY</code></td><td>Proxy for verifier / network traffic (<code>off</code> to disable)</td></tr>
-    <tr><td><code>KEYHOG_INSECURE_TLS</code></td><td>Accept self-signed TLS certs (lab only; same as <code>--insecure</code>)</td></tr>
+    <tr><td><code>--backend</code></td><td>Force a backend (<code>gpu|simd|cpu|auto|mega-scan</code>)</td></tr>
+    <tr><td><code>--detectors</code> / <code>detectors</code></td><td>Override the detector TOML directory</td></tr>
+    <tr><td><code>[scan].threads</code></td><td>Pin rayon worker count</td></tr>
+    <tr><td><code>[scan].reader_threads</code></td><td>Pin dedicated filesystem reader threads</td></tr>
+    <tr><td><code>[scan].fused_batch</code></td><td>Pin fused filesystem batch size</td></tr>
+    <tr><td><code>[scan].fused_depth</code></td><td>Pin fused filesystem channel depth</td></tr>
+    <tr><td><code>[system].cache_dir</code></td><td>Override <code>~/.cache/keyhog/</code></td></tr>
+    <tr><td><code>--no-gpu</code></td><td>Skip GPU init — run as if no adapter existed</td></tr>
+    <tr><td><code>--require-gpu</code></td><td>Fail closed when no usable GPU stack is available</td></tr>
+    <tr><td><code>--autoroute-gpu</code></td><td>Allow calibration to include GPU candidates</td></tr>
+    <tr><td><code>--no-autoroute-gpu</code></td><td>Override TOML GPU candidate calibration for one run</td></tr>
+    <tr><td><code>[scan].per_chunk_timeout_ms</code></td><td>Per-chunk scan deadline (ms)</td></tr>
+    <tr><td><code>--proxy</code> / <code>[http].proxy</code></td><td>Explicit proxy for verifier / network traffic</td></tr>
+    <tr><td><code>--insecure</code> / <code>[http].insecure_tls</code></td><td>Accept self-signed TLS certs for lab traffic only</td></tr>
     <tr><td><code>NO_COLOR</code></td><td>Disable ANSI output</td></tr>
     <tr><td><code>RUST_LOG</code></td><td>Log filter, e.g. <code>RUST_LOG=keyhog=debug</code></td></tr>
   </tbody>

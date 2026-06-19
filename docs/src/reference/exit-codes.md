@@ -7,12 +7,12 @@ consumers (CI gates, pre-commit hooks, IDE plugins) can rely on them.
 |------|--------------------------------------------------------------------|
 | `0`  | Scan completed, zero findings.                                     |
 | `1`  | Findings present, NONE confirmed live (unverified, or verified-dead). |
-| `2`  | User error (bad input/config): unknown CLI flag, `.keyhog.toml` parse failure, a missing path or invalid `--baseline` file, or a detector TOML that failed to load. Also any not-found / permission-denied I/O error. |
+| `2`  | User error (bad input/config): unknown CLI flag, `.keyhog.toml` parse failure, a missing path or invalid `--baseline` file, a detector TOML that failed to load, or missing/stale/incomplete autoroute calibration for `--backend auto`. Also any not-found / permission-denied I/O error. |
 | `3`  | System error: the local environment failed in a way no flag change fixes — a low-level I/O failure that is *not* not-found / permission-denied, or a hardware / GPU **init** failure. Retry or route differently from `2`. |
 | `4`  | Health/self-test failure: `keyhog doctor` unhealthy, `keyhog repair` could not restore a working binary, `keyhog backend` self-test failed. |
 | `10` | **LIVE credentials confirmed** (a `--verify` scan where the vendor API accepted a found secret) - the highest-severity gate. Also returned by `keyhog update --check` when a newer release exists. |
 | `11` | Scanner thread panicked. The finding count is NOT trustworthy - investigate, don't ship. Distinct from `2`/`3` so CI can tell a code bug from a config error. |
-| `12` | Required GPU unavailable: `--require-gpu` / `KEYHOG_REQUIRE_GPU=1` was set but no usable GPU path was available. |
+| `12` | Required GPU unavailable: `--require-gpu` was set but no usable GPU path was available. |
 | `13` | A requested source failed before producing scan data, so the scan did not actually run for that source. |
 | `130`| Interrupted (SIGINT / Ctrl-C).                                     |
 
@@ -55,6 +55,9 @@ Things that exit `2`:
 - Detector load failure for a specific TOML (with a stderr warning;
   the rest of the scan continues but exits 2 at the end).
 - `--baseline <FILE>` where FILE doesn't exist or isn't valid JSON.
+- Missing, stale, invalid, or incomplete autoroute calibration for an
+  automatic backend decision. Rerun `install.sh --calibrate` or
+  `install.ps1 -Calibrate`, or pass an explicit `--backend` for diagnostics.
 - Network error during `--verify` is NOT a `2`; it's a `verification-error`
   marker per finding and the scan exits `1` if any unverified-live
   findings exist.
@@ -113,9 +116,9 @@ The reason this is `11` rather than `2`:
 ## `12` (required GPU unavailable)
 
 Returned before scanning when the operator explicitly required GPU execution
-(`--require-gpu` or `KEYHOG_REQUIRE_GPU=1`) but the host cannot provide a usable
-GPU path. This is distinct from `2` so CI can tell "bad input" from "GPU runner
-regressed or was scheduled on the wrong host" without scraping stderr.
+(`--require-gpu` or `[system] gpu = "required"`) but the host cannot provide a
+usable GPU path. This is distinct from `2` so CI can tell "bad input" from "GPU
+runner regressed or was scheduled on the wrong host" without scraping stderr.
 
 ## `13` (requested source failed)
 
