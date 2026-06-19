@@ -99,6 +99,11 @@ pub(super) fn decrypt_entry(
         raw.unique_id
     };
     if unique_id.is_empty() {
+        warn!(
+            target: "keyhog::oob",
+            "interactsh interaction carried no full-id or unique-id; skipping this \
+             interaction — an OOB callback may be missed"
+        );
         return Ok(None);
     }
     // Prefer raw_request; fall back to raw_response then q_type so DNS-only

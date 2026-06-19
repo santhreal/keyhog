@@ -379,7 +379,7 @@ impl InteractshClient {
         for entry in parsed.data {
             match super::decrypt::decrypt_entry(&aes_key, &entry) {
                 Ok(Some(interaction)) => out.push(interaction),
-                Ok(None) => {} // unparseable JSON - skip, don't fail the batch
+                Ok(None) => {} // decrypt_entry already warned for the dropped interaction
                 Err(e) => {
                     warn!(target: "keyhog::oob", error = %e, "interactsh entry decrypt failed; skipping")
                 }

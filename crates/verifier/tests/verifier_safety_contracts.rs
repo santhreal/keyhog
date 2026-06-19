@@ -629,11 +629,12 @@ fn oob_decrypt_entry_drops_are_surfaced_loudly_not_silently() {
     let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/oob/decrypt.rs"))
         .expect("oob/decrypt.rs must be readable");
 
-    // Both skip paths must warn and mention the missed-callback consequence.
+    // Every skip path must warn and mention the missed-callback consequence:
+    // non-UTF-8 decrypt, malformed JSON, and parsed JSON with no interaction id.
     let warn_count = src.matches("warn!(").count();
     assert!(
-        warn_count >= 2,
-        "both OOB drop paths (non-UTF-8 decrypt + JSON parse) must warn!; found {warn_count}"
+        warn_count >= 3,
+        "all OOB drop paths (non-UTF-8 decrypt + JSON parse + missing id) must warn!; found {warn_count}"
     );
     // The warning must state the recall consequence so the operator notices.
     // (`may be missed` appears contiguously in both warn! messages; the full
@@ -660,6 +661,19 @@ fn oob_decrypt_entry_drops_are_surfaced_loudly_not_silently() {
     assert!(
         utf8_err_arm.contains("warn!("),
         "the non-UTF-8 decrypt drop must warn! before returning Ok(None)"
+    );
+    let missing_id_arm = src
+        .split("if unique_id.is_empty()")
+        .nth(1)
+        .expect("the missing-id drop site");
+    let missing_id_before_return = missing_id_arm
+        .split("return Ok(None);")
+        .next()
+        .expect("missing-id arm before return");
+    assert!(
+        missing_id_before_return.contains("warn!(")
+            && missing_id_before_return.contains("full-id or unique-id"),
+        "a decrypted interaction without an id must warn before it is dropped"
     );
 }
 
