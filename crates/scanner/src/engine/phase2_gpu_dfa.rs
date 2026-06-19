@@ -17,7 +17,10 @@ use std::sync::OnceLock;
 const PHASE2_GPU_DFA_MAX_MATCHES: u32 = 1 << 20;
 const PHASE2_GPU_DFA_MAX_STATES: usize = 16_384;
 const PHASE2_GPU_DFA_TARGET_SHARD_PATTERNS: usize = 16;
-const PHASE2_GPU_DFA_MAX_SHARDS: usize = 16;
+// This catalog is still lazy-built on the scan path. Keep breadth bounded by
+// shard count here; selection quality comes from detector-breadth ordering, not
+// from letting first-use regex-DFA compilation consume the operator's scan.
+const PHASE2_GPU_DFA_MAX_SHARDS: usize = 4;
 const PHASE2_GPU_DFA_MAX_CANDIDATES: usize =
     PHASE2_GPU_DFA_TARGET_SHARD_PATTERNS * PHASE2_GPU_DFA_MAX_SHARDS;
 const MATCH_TRIPLE_BYTES: usize = 12;
