@@ -1,6 +1,6 @@
 //! TARGET-SPEC - Vyre registry pin and no repository vendor tree.
 //!
-//! Vyre 0.6.2 is published with the megakernel APIs Keyhog imports, so Keyhog's
+//! Vyre 0.6.3 is published with the megakernel APIs Keyhog imports, so Keyhog's
 //! active build must resolve the Vyre runtime fleet from crates.io exact pins.
 //! The old repository-level `vendor/` snapshots must not exist.
 
@@ -29,7 +29,7 @@ const VYRE_DEPS: &[&str] = &[
 ];
 
 #[test]
-fn vyre_runtime_fleet_is_published_0_6_2_without_path_overrides() {
+fn vyre_runtime_fleet_is_published_0_6_3_without_path_overrides() {
     let cargo = root_cargo();
     let deps = cargo
         .get("workspace")
@@ -57,7 +57,7 @@ fn vyre_runtime_fleet_is_published_0_6_2_without_path_overrides() {
         };
 
         assert_eq!(
-            version, "=0.6.2",
+            version, "=0.6.3",
             "{dep} must pin the published Vyre release that carries Keyhog's megakernel APIs"
         );
         assert_eq!(

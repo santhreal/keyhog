@@ -56,7 +56,7 @@ gate, missing-file error path, and the `expect`-driven interactive wizard.
 The Santh NFS share is **not** mounted on Windows (`Test-Path Z:\... = False`),
 so the only build path is an offline source ship. The previous source package
 failed there because the Vyre dependencies escaped the repo tree; this is now
-resolved by exact crates.io `=0.6.2` Vyre pins. The last full Windows dogfood
+resolved by exact crates.io `=0.6.3` Vyre pins. The last full Windows dogfood
 build recorded below was run before that pin cleanup:
 
 Build: `cargo build --profile release-fast -p keyhog --no-default-features
@@ -118,7 +118,7 @@ Caused by:
 ```
 
 Resolved 2026-06-17: the root `Cargo.toml` now pins all five runtime `vyre*`
-crates to exact `=0.6.2` crates.io versions. That keeps
+crates to exact `=0.6.3` crates.io versions. That keeps
 `vyre_libs::scan::build_regex_dfa_unanchored` available without requiring the
 Santh NFS share or any local Vyre source mirror, so an offline source
 distribution can build on a share-less host.

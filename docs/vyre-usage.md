@@ -7,7 +7,7 @@ catalogues every crate it ships so future wires don't have to
 re-discover the surface.
 
 Updated 2026-06-17. The workspace pins all five runtime `vyre*` crates at
-`=0.6.2` from crates.io (root `Cargo.toml`, `[workspace.dependencies]`). That
+`=0.6.3` (vyre v0.6.3) from crates.io (root `Cargo.toml`, `[workspace.dependencies]`). That
 release carries the megakernel scan APIs Keyhog imports, including
 `vyre_libs::scan::build_regex_dfa_unanchored` (`engine/megakernel.rs`). The
 repository carries no `vendor/` source tree; the exact crates.io pins are the
@@ -108,7 +108,7 @@ The SPIR-V backend (Vulkan-only path). Same surface as wgpu.
 ### vyre-driver-cuda
 
 CUDA backend, shipped through the workspace `cuda` feature via
-`vyre-driver-cuda = 0.6.2`.
+`vyre-driver-cuda = 0.6.3`.
 
 ### vyre-driver-reference
 
@@ -270,7 +270,7 @@ by primitive authors.
 | `fuse_programs` decode+scan          | ⏳ pending  | needs source/scanner restructure (entry below)         |
 | `nn::moe` replacing gpu.rs MoE       | ⏳ pending  | parity work against existing weights (entry below)     |
 | `GpuMappedBuffer` zero-copy I/O      | ⏳ pending  | Linux-only + lifetime work (entry below)               |
-| Vyre crate upgrade                   | current     | crates.io latest verified as `0.6.2` on 2026-06-17    |
+| Vyre crate upgrade                   | current     | crates.io latest verified as `0.6.3` on 2026-06-17    |
 
 ## Innovation lane
 
@@ -278,8 +278,8 @@ The performance path that can dominate competitors is not more regexes; it is
 fewer host/device round trips and less CPU post-processing after a GPU prefilter
 hit. The lane is:
 
-1. Make GPU routing non-silent on known GPU hosts through
-   `KEYHOG_REQUIRE_GPU=1` gates and benchmark backend traces.
+1. Make GPU routing non-silent on known GPU hosts through `--require-gpu`
+   gates and benchmark backend traces.
 2. Keep the current sharded `GpuLiteralSet` path as the production floor.
 3. Upgrade Vyre as soon as a published release exposes per-pattern hit reporting
    for the megakernel DFA path.
@@ -478,11 +478,17 @@ are estimable. Listed best-bang-for-buck first.
 
 ## Megakernel wiring - status + architectural finding
 
-`crates/scanner/src/engine/megakernel_dispatch.rs` ships a working
+`crates/scanner/src/engine/megakernel_dispatch.rs` ships the
 end-to-end wire (DFA-per-literal compile + `BatchDispatcher` init +
-`dispatch_triggers` returning per-chunk per-pattern triggers),
-gated behind `KEYHOG_USE_MEGAKERNEL=1` and routed through
-`scan_coalesced_megakernel` in `engine/scan_gpu.rs`.
+`dispatch_triggers` returning per-chunk per-pattern triggers) for the
+planned `scan_coalesced_megakernel` route in `engine/scan_gpu.rs`.
+**This route is not live:** the engine deliberately reads no
+`KEYHOG_USE_MEGAKERNEL` env var, so the intended activation knob
+`KEYHOG_USE_MEGAKERNEL=1` is a documented no-op and the megakernel path
+stays dormant until the CPU-parity contract
+(`tests/megakernel_cpu_parity.rs`) is promoted to a continuous gate.
+The architectural mismatch below is why it is not yet the default GPU
+backend.
 
 **Architectural mismatch found in testing on RTX 5090:** vyre's
 `BatchDispatcher` is built for "many files × few rules" (small
@@ -614,7 +620,7 @@ megakernel via `OpcodeHandler`s for entropy + regex eval.
   Megakernel fusion (item 8) is the right fix.
 
 - **vyre regex/frontend release cadence.** crates.io's latest published Vyre
-  release used by Keyhog is `0.6.2`. The workspace resolves the five runtime
+  release used by Keyhog is `0.6.3`. The workspace resolves the five runtime
   `vyre*` crates from exact registry pins, and the megakernel scan path imports
   `vyre_libs::scan::build_regex_dfa_unanchored` from that release. Future
   upgrades bump the workspace pins, run

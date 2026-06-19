@@ -111,10 +111,11 @@ notify = "=8.0.0"
 
 # Performance libraries
 simdsieve = "=0.1.1"
-# vyre 0.6.2 is published to crates.io and carries the megakernel APIs keyhog
-# imports (`vyre_libs::scan::build_regex_dfa_unanchored`, etc.). Keyhog consumes
-# the five runtime vyre crates through exact registry pins only: no path
-# overrides, no Santh NFS dependency, and no repository `vendor/` tree.
+# vyre 0.6.3 is published to crates.io and carries the megakernel + segmentation
+# APIs keyhog imports (`vyre_driver_wgpu::megakernel::segmentation`,
+# `vyre_libs::scan::build_regex_dfa_unanchored`, etc.). Keyhog consumes the five
+# runtime vyre crates through exact registry pins only: no path overrides, no
+# Santh NFS dependency, and no repository `vendor/` tree.
 # CUDA backend is wired in keyhog-scanner behind the `cuda` feature
 # (default on). On hosts without libcuda.so the backend's `acquire()`
 # call fails cleanly and the scanner falls back to wgpu.

@@ -1,6 +1,6 @@
 # crates.io publishing
 
-> Status (2026-06-17): the Keyhog workspace is pinned to published Vyre `0.6.2`
+> Status (2026-06-17): the Keyhog workspace is pinned to published Vyre `0.6.3`
 > registry crates. `vyre-debug` is not a Keyhog dependency and does not block the
 > Keyhog publish chain. The last public Keyhog cut remains `0.5.37` until the
 > package publish steps below run.
@@ -15,7 +15,7 @@
 | `keyhog-sources` | 0.5.37 |
 | `keyhog-verifier`| 0.5.37 |
 
-Current source builds against published `vyre 0.6.2` plus the supporting Vyre
+Current source builds against published `vyre 0.6.3` plus the supporting Vyre
 crates Keyhog needs: `vyre-spec`, `vyre-foundation`, `vyre-lower`,
 `vyre-primitives`, `vyre-self-substrate`, `vyre-driver`, `vyre-emit-naga`,
 `vyre-runtime`, `vyre-emit-ptx`, `vyre-driver-cuda`, `vyre-driver-wgpu`,
@@ -24,9 +24,9 @@ crates Keyhog needs: `vyre-spec`, `vyre-foundation`, `vyre-lower`,
 ## Publish chain (for the next cut)
 
 The keyhog workspace pins all five runtime `vyre*` crates (`vyre`, `vyre-libs`,
-`vyre-driver-wgpu`, `vyre-driver-cuda`, `vyre-runtime`) at `=0.6.2` from
-crates.io. The `vendor/vyre/` snapshot is a read-only reference copy
-(`vendor/README.md`, MC-11); nothing in the build resolves through it.
+`vyre-driver-wgpu`, `vyre-driver-cuda`, `vyre-runtime`) at `=0.6.3` from
+crates.io. The repository carries no Vyre source snapshot and nothing in the
+build resolves through a repository vendor tree.
 To cut a new Keyhog release:
 
 1. **Bump the workspace version** in `Cargo.toml` (`[workspace.package] version`).
@@ -50,7 +50,7 @@ repo first, then bump the five Keyhog `vyre*` pins in root `Cargo.toml`, run
 
 ## Rate limits
 
-crates.io enforces new-crate burst limits. The Vyre `0.6.2` cut hit those limits
+crates.io enforces new-crate burst limits. The Vyre `0.6.3` cut hit those limits
 while publishing optional/support crates; Keyhog only needs the already-published
 runtime crates listed above.
 
