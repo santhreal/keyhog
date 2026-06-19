@@ -29,7 +29,9 @@ impl Drop for ZeroGpuLiteralScratch<'_> {
 
 fn zero_gpu_literal_scratch(scratch: &mut vyre_libs::scan::dispatch_io::ScanDispatchScratch) {
     scratch.haystack_bytes.fill(0);
+    scratch.haystack_bytes.clear();
     scratch.hit_bytes.fill(0);
+    scratch.hit_bytes.clear();
 }
 
 fn with_gpu_literal_scratch<R>(
