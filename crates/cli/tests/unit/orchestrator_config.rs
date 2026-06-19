@@ -1,7 +1,15 @@
 use clap::Parser;
 use keyhog::args::ScanArgs;
 use keyhog::testing::{CliTestApi as _, API};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use tempfile::TempDir;
+
+fn global_config_state_lock() -> MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .expect("global config state lock")
+}
 
 fn args_for_config(contents: &str) -> ScanArgs {
     args_for_config_with_extra(contents, &[])
@@ -98,6 +106,7 @@ fn cli_limit_stdin_bytes_wins_over_config_limit() {
 
 #[test]
 fn system_trusted_bin_dirs_reach_safe_bin_resolver() {
+    let _guard = global_config_state_lock();
     let dir = TempDir::new().expect("tempdir");
     let bin_dir = dir.path().join("bin");
     std::fs::create_dir_all(&bin_dir).expect("mkdir bin");
@@ -166,6 +175,7 @@ fn cli_cache_dir_wins_over_system_cache_dir() {
 
 #[test]
 fn relative_system_trusted_bin_dir_is_config_error() {
+    let _guard = global_config_state_lock();
     let dir = TempDir::new().expect("tempdir");
     std::fs::write(
         dir.path().join(".keyhog.toml"),
@@ -189,6 +199,7 @@ fn relative_system_trusted_bin_dir_is_config_error() {
 
 #[test]
 fn relative_system_cache_dir_is_config_error() {
+    let _guard = global_config_state_lock();
     let dir = TempDir::new().expect("tempdir");
     std::fs::write(
         dir.path().join(".keyhog.toml"),
@@ -212,6 +223,7 @@ fn relative_system_cache_dir_is_config_error() {
 
 #[test]
 fn aws_canary_accounts_reach_resolved_scan_config() {
+    let _guard = global_config_state_lock();
     let dir = TempDir::new().expect("tempdir");
     std::fs::write(
         dir.path().join(".keyhog.toml"),
@@ -235,6 +247,7 @@ fn aws_canary_accounts_reach_resolved_scan_config() {
 
 #[test]
 fn invalid_aws_canary_accounts_are_config_errors() {
+    let _guard = global_config_state_lock();
     let dir = TempDir::new().expect("tempdir");
     std::fs::write(
         dir.path().join(".keyhog.toml"),
