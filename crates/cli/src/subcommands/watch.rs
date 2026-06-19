@@ -113,8 +113,8 @@ pub(crate) fn run(args: WatchArgs) -> Result<()> {
                 // (a recall loss). On Linux an inotify queue overflow
                 // (`Error::Generic` / ENOSPC under heavy churn) is the common
                 // case: events are coalesced/lost and the daemon's recall silently
-                // degrades. A `tracing::warn!` here is invisible without RUST_LOG,
-                // so surface it LOUDLY on stderr and tell the operator what to do.
+                // degrades. A trace-only warning is invisible without RUST_LOG, so
+                // surface it LOUDLY on stderr and tell the operator what to do.
                 eprintln!(
                     "{} keyhog watch: filesystem watcher error ({e}); one or more change \
                      events were DROPPED and those files were NOT re-scanned. \

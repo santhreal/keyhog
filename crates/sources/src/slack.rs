@@ -11,11 +11,11 @@ use serde::Deserialize;
 pub struct SlackSource {
     token: String,
     lookback_messages: usize,
-    /// Shared HTTP policy (proxy, insecure_tls, ua_suffix, timeout). Defaults
-    /// to `HttpClientConfig::default()` (env-var fallbacks honored). Set via
-    /// `with_http_config` so the CLI's `--proxy` / `--insecure` reach this
-    /// source. Without this every Slack API call would silently bypass the
-    /// configured corporate proxy and the operator'"'"'s Burp interception.
+    /// Shared HTTP policy (proxy, insecure_tls, ua_suffix, timeout). Defaults to
+    /// the explicit-only `HttpClientConfig` policy; no environment variable can
+    /// reroute Slack API calls. Set via `with_http_config` so the CLI's
+    /// `--proxy` / `--insecure` reach this source instead of bypassing the
+    /// configured corporate proxy or the operator's Burp interception.
     http: crate::http::HttpClientConfig,
 }
 

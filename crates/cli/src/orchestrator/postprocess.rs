@@ -1,7 +1,9 @@
 //! Post-scan filtering, deduplication, and optional live verification.
 
 use super::ScanOrchestrator;
-use anyhow::{Context, Result};
+#[cfg(feature = "verify")]
+use anyhow::Context;
+use anyhow::Result;
 #[cfg(feature = "verify")]
 use keyhog_core::DedupedMatch;
 use keyhog_core::{dedup_matches, RawMatch, VerificationResult, VerifiedFinding};
@@ -23,7 +25,7 @@ use keyhog_core::{dedup_matches, RawMatch, VerificationResult, VerifiedFinding};
 pub(crate) fn offline_finding_metadata(
     credential: &str,
 ) -> std::collections::HashMap<String, String> {
-    let mut meta = keyhog_scanner::jwt::finding_metadata(credential).unwrap_or_default();
+    let mut meta = keyhog_scanner::jwt::finding_metadata(credential).unwrap_or_default(); // LAW10: missing/non-string field => empty/placeholder; recall-safe
     if let Some(aws_meta) = keyhog_scanner::aws::finding_metadata(credential) {
         meta.extend(aws_meta);
     }
@@ -49,7 +51,7 @@ fn keyhog_repo_root() -> Option<&'static std::path::Path> {
     static CACHED: std::sync::OnceLock<Option<std::path::PathBuf>> = std::sync::OnceLock::new();
     CACHED
         .get_or_init(|| {
-            let mut dir = std::env::current_dir().ok()?;
+            let mut dir = std::env::current_dir().ok()?; // LAW10: optional env/cwd probe; absent => None (intended config/probe), recall-irrelevant
             loop {
                 let cargo = dir.join("Cargo.toml");
                 if cargo.is_file() {
@@ -63,7 +65,10 @@ fn keyhog_repo_root() -> Option<&'static std::path::Path> {
                             && head.contains("crates/cli")
                             && head.contains("\"keyhog")
                         {
-                            return std::fs::canonicalize(&dir).ok().or(Some(dir));
+                            return Some(match std::fs::canonicalize(&dir) {
+                                Ok(canonical) => canonical,
+                                Err(_) => dir, // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
+                            });
                         }
                     }
                 }
@@ -84,7 +89,7 @@ fn finding_inside_keyhog_repo(file_path: &str) -> bool {
         return false;
     };
     let canonical =
-        std::fs::canonicalize(file_path).unwrap_or_else(|_| std::path::PathBuf::from(file_path));
+        std::fs::canonicalize(file_path).unwrap_or_else(|_| std::path::PathBuf::from(file_path)); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
     canonical.starts_with(root)
 }
 
@@ -92,7 +97,7 @@ impl ScanOrchestrator {
     pub(crate) fn filter_and_resolve(
         &self,
         matches: Vec<RawMatch>,
-        allowlist: &keyhog_core::allowlist::Allowlist,
+        allowlist: &keyhog_core::Allowlist,
     ) -> Vec<RawMatch> {
         let mut filtered = matches
             .into_iter()
@@ -271,7 +276,7 @@ impl ScanOrchestrator {
         const MIN_VERIFY_CONFIDENCE: f64 = 0.3;
         let (verify_candidates, skip_candidates): (Vec<_>, Vec<_>) = groups
             .into_iter()
-            .partition(|m| m.confidence.unwrap_or(0.0) >= MIN_VERIFY_CONFIDENCE);
+            .partition(|m| m.confidence.unwrap_or(0.0) >= MIN_VERIFY_CONFIDENCE); // LAW10: absent confidence => 0.0 for sort/partition ordering only; recall-safe
 
         let skipped_count = skip_candidates.len();
         if skipped_count > 0 {
@@ -279,6 +284,11 @@ impl ScanOrchestrator {
                 skipped = skipped_count,
                 threshold = MIN_VERIFY_CONFIDENCE,
                 "skipping low-confidence findings from verification"
+            );
+            eprintln!(
+                "warning: --verify skipped {skipped_count} low-confidence finding(s) below \
+                 verifier confidence floor {MIN_VERIFY_CONFIDENCE:.2}; they remain in output \
+                 as verification=skipped."
             );
         }
 
@@ -298,6 +308,11 @@ impl ScanOrchestrator {
         } else {
             self.args.rate
         };
+        if self.args.allow_script_verify {
+            eprintln!(
+                "warning: --allow-script-verify is active; trusted detector scripts may execute during verification"
+            );
+        }
 
         let mut verifier = VerificationEngine::new(
             &self.detectors,
@@ -306,6 +321,7 @@ impl ScanOrchestrator {
                 max_concurrent_per_service: per_service_concurrency,
                 proxy: self.args.proxy.clone(),
                 insecure_tls: self.args.insecure,
+                allow_script_verify: self.args.allow_script_verify,
                 ..Default::default()
             },
         )
@@ -326,6 +342,12 @@ impl ScanOrchestrator {
                     "OOB verification unavailable: collector handshake failed; \
                      detectors that require [detector.verify.oob] will return \
                      verification errors while non-OOB detectors continue"
+                );
+                eprintln!(
+                    "warning: --verify-oob collector handshake failed for {}: {e}; \
+                     detectors that require OOB verification will report verification errors \
+                     while non-OOB detectors continue.",
+                    self.args.oob_server
                 );
             }
         }

@@ -624,7 +624,7 @@ fn scan_git_history(
                                                              // history of a discovered repo cannot be scanned — those commits are
                                                              // unscanned bytes (a recall loss), not "nothing to do". The banner above
                                                              // announced "git history: yes" and "discovered N git repo(s)", so a
-                                                             // silent `tracing::warn!` skip would let a partial audit look complete.
+                                                             // trace-only skip would let a partial audit look complete.
                                                              // Surface it LOUDLY on stderr AND count it as a skipped chunk so the
                                                              // final summary's "did NOT cover everything" warning fires.
         let palette = style::for_stderr();

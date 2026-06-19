@@ -4,15 +4,39 @@
 documented verification endpoint with the captured credential.
 The response tells you if the credential is live.
 
-```sh
-$ keyhog scan . --verify
-src/config/staging.env:14:12  CRITICAL  stripe-secret-key
-                              sk_live_4eC39H...Tcd3Hc
-                              entropy 5.21 | confidence 0.999 | verified-live
-src/old/legacy.env:8:5        LOW       stripe-secret-key   (downgraded)
-                              sk_live_oldKEy...xyz12
-                              verified-dead | originally CRITICAL
+The text reporter renders each finding as a bordered box. With
+`--verify`, the verification verdict is appended to the `Confidence:`
+line in parentheses: `(LIVE)` for an active credential, `(dead)` for
+one the provider rejected, `(revoked)`, `(limited)` (rate-limited), or
+`(error)`. A `dead` or `revoked` credential is downgraded one severity
+tier (see the table below), so its box header drops accordingly
+(`CRITICAL` → `HIGH`).
+
+```text
+  ┌    CRITICAL ─── Stripe Secret Key
+  │ Secret:     sk_live_...d3Hc
+  │ Location:   src/config/staging.env:14
+  │ Confidence: ■■■■■■  99%  (LIVE)
+  │ Action:     Revoke immediately and rotate.
+  └─────────────────────────────────────────────
+
+  ┌    HIGH ─── Stripe Secret Key
+  │ Secret:     sk_live_...yz12
+  │ Location:   src/old/legacy.env:8
+  │ Confidence: ■■■■■■  99%  (dead)
+  │ Action:     Revoke immediately and rotate.
+  └─────────────────────────────────────────────
 ```
+
+The second finding's header reads `HIGH`, not its declared
+`CRITICAL`: a `dead` credential is downgraded one tier (see "Severity
+shift on verification" below). The verdict words shown here (`LIVE`,
+`dead`, `revoked`, `limited`, `error`) are the *text-reporter*
+labels. The machine-readable `--format json` value is the lowercase
+`VerificationResult` variant instead — `"live"`, `"dead"`,
+`"revoked"`, `"rate_limited"`, `"unverifiable"`, `"skipped"`, or an
+`{"error": "..."}` object — never the `verified-live`/`verified-dead`
+strings. See [Output formats](./output-formats.md#combining-with-verify).
 
 ## What "live" means
 
@@ -33,23 +57,37 @@ The verifier:
 4. Compares the response status (and optionally body) to the success
    criteria
 
-If the criteria match: `verified-live`. If not: `verified-dead`. If
-the request times out or DNS fails: `verification-error` (treated as
-unverified, severity unchanged).
+If the criteria match: `live`. If not: `dead`. If the provider says
+the credential was explicitly disabled: `revoked`. If it returns a
+rate-limit error (e.g. HTTP 429): `rate_limited`. If the request times
+out or DNS fails: an `error` (treated as unverified, severity
+unchanged).
 
 ## Severity shift on verification
 
+The verdict is the lowercase `VerificationResult` variant (the JSON
+value; the text reporter prints the same word upper/lower-cased in the
+`Confidence:` line's `(...)` suffix).
+
 | Verification result | Severity action                                  |
 |---------------------|--------------------------------------------------|
-| `verified-live`     | Unchanged (it really is what it claims to be)    |
-| `verified-dead`     | Downgrade one tier (`critical` -> `high`, `high` -> `medium`, ...) |
-| `verification-error` | Unchanged, treated as unverified                |
+| `live`              | Unchanged (it really is what it claims to be)    |
+| `dead`              | Downgrade one tier (`critical` -> `high`, `high` -> `medium`, ...) |
+| `revoked`           | Downgrade one tier (same as `dead`)              |
+| `rate_limited`      | Unchanged, treated as unverified                 |
+| `error`             | Unchanged, treated as unverified                 |
+| `unverifiable` (detector has no `verify` block) | Unchanged            |
 | `skipped` (no `--verify` flag) | Unchanged                              |
 
-A dead credential is still a leak (developer typed it into a file
-once), so KeyHog doesn't drop it entirely. The downgrade just means
-"this is less urgent than a credential someone could authenticate
-with right now."
+The one-tier downgrade is the canonical `Severity::downgrade_one`
+step (`critical` -> `high` -> `medium` -> `low` -> `client-safe` ->
+`info`); it never collapses to a fixed level. A dead or revoked
+credential is still a leak (developer typed it into a file once), so
+KeyHog doesn't drop it entirely. The downgrade just means "this is
+less urgent than a credential someone could authenticate with right
+now." A credential found only in non-HEAD git history is downgraded
+once on that axis too, so a `dead` credential in git history drops two
+tiers.
 
 ## Network behavior
 
@@ -57,9 +95,14 @@ with right now."
 talks to:
 
 - `--proxy <url>` -- route all verification through an HTTPS proxy.
-  Useful in corp networks. Same as `HTTPS_PROXY` env var.
+  Useful in corp networks and interception labs. When unset, no proxy
+  is used; ambient `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` /
+  `NO_PROXY` variables are ignored so shell or CI state cannot silently
+  reroute secret-bearing verifier traffic. Use `--proxy off` to force a
+  direct connection when TOML configured a proxy.
 - `--insecure` -- accept self-signed certs. ONLY use against
-  internal endpoints you control. The default is strict TLS verify.
+  internal endpoints you control. The default is strict TLS verify, and
+  no environment variable can disable certificate verification.
 
 The verifier never follows redirects (SSRF defense -- a 302 to a
 private IP could otherwise leak the credential to an internal
@@ -75,25 +118,47 @@ Outbound destinations are filtered at the client level:
 - No cloud-metadata IPs (`169.254.169.254` AWS/Azure/GCP).
 
 These rules are enforced for every detector even if its TOML
-specifies a localhost URL by mistake. Set `KEYHOG_PROXY=off` to
-disable proxy resolution (useful for air-gapped builds where the
-proxy env vars are set but no proxy is actually reachable).
+specifies a localhost URL by mistake. If a project configures a proxy
+but a particular run must be direct, pass `--proxy off`; shell proxy
+variables are ignored by design.
+
+## Out-of-band callbacks
+
+`--verify-oob` enables callback-style verification for detectors that
+need an external collector. If the collector handshake fails, keyhog
+prints a stderr warning naming the `--verify-oob` server and the
+handshake error. Detectors that require OOB verification then report
+verification errors, while detectors with normal HTTP verification
+continue through their usual path.
 
 ## Rate limits
 
-Verification is sequential per-finding within a single `keyhog scan`
-invocation, with a 100 ms gap between calls to the same hostname.
+Verification is rate-limited per-service within a single `keyhog scan`
+invocation. The default is 5 requests/second per service (a 200 ms gap
+between calls to the same service), tunable with `--verify-rate <RPS>`.
 That's slow enough to avoid tripping vendor rate limits for typical
-scans (dozens of findings) and fast enough to feel interactive.
+scans (dozens of findings) and fast enough to feel interactive. Pass
+`--verify-batch` to additionally serialise calls per service (one
+in-flight at a time) on top of the rate cap.
 
 If you have hundreds of candidates and want parallelism, the right
 approach is to scan first WITHOUT `--verify` to get the candidate
 list, then verify in batches with a script that respects each
 service's documented rate limit.
 
+## Low-confidence candidates
+
+`--verify` only sends findings that meet the verifier confidence floor
+to external services. Findings below that floor still appear in every
+output format, but their `verification` field stays `skipped`. When
+that happens, keyhog prints a stderr warning naming how many findings
+were skipped and the verifier confidence floor that caused it, so a
+partial verification pass cannot look complete.
+
 ## Detectors without verification
 
-Not every detector has a `verify` block. About 60% do. The rest are:
+Not every detector has a `verify` block. 344 of the 902 detectors do
+(about 38%). The rest are:
 
 - Format-only detectors (private keys, certificates, JWTs) where the
   credential itself has provable structure but no service to call.

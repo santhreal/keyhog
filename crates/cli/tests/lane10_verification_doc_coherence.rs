@@ -19,6 +19,7 @@
 //!     `Confidence:`-line suffix the text reporter emits.
 //!   * verification.md's severity table lists every real `VerificationResult`
 //!     variant and states the canonical one-tier `dead`/`revoked` downgrade.
+//!   * low-confidence `--verify` skips are surfaced on stderr and documented.
 
 use std::path::PathBuf;
 use std::process::Command;
@@ -81,6 +82,11 @@ fn scan_file(content: &str, extra: &[&str]) -> (Option<i32>, String, String) {
     let p = path.to_string_lossy().into_owned();
     args.push(&p);
     run(&args)
+}
+
+fn cli_source(rel: &str) -> String {
+    std::fs::read_to_string(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel))
+        .unwrap_or_else(|error| panic!("read {rel}: {error}"))
 }
 
 /// The verification flags verification.md advertises must be real `scan` flags:
@@ -205,6 +211,85 @@ fn verification_doc_severity_table_lists_real_variants() {
         VERIFICATION_DOC.contains("downgrade_one"),
         "verification.md must reference the canonical `Severity::downgrade_one` step so the \
          doc names the exact behavior the verifier wires."
+    );
+}
+
+#[test]
+fn verification_doc_discloses_low_confidence_verify_skips() {
+    assert!(
+        VERIFICATION_DOC.contains("## Low-confidence candidates"),
+        "verification.md must document that --verify can leave low-confidence \
+         findings unverified"
+    );
+    assert!(
+        VERIFICATION_DOC.contains("verifier confidence floor")
+            && VERIFICATION_DOC.contains("stderr warning")
+            && VERIFICATION_DOC.contains("verification` field stays `skipped`"),
+        "verification.md must disclose the stderr warning and JSON result for \
+         low-confidence verify skips"
+    );
+}
+
+#[test]
+fn low_confidence_verify_skips_are_operator_visible() {
+    let source = cli_source("src/orchestrator/postprocess.rs");
+    let block = source
+        .split("skipping low-confidence findings from verification")
+        .nth(1)
+        .expect("verify path must classify low-confidence verification skips");
+    let block = block
+        .split("let rate = self.args.verify_rate")
+        .next()
+        .unwrap_or(block);
+    assert!(
+        block.contains("eprintln!"),
+        "`--verify` low-confidence skips must reach stderr, not only tracing"
+    );
+    assert!(
+        block.contains("--verify skipped")
+            && block.contains("verifier confidence floor")
+            && block.contains("verification=skipped"),
+        "the stderr warning must name the requested verify mode, the threshold \
+         reason, and the machine-visible result"
+    );
+}
+
+#[test]
+fn oob_handshake_failure_is_operator_visible() {
+    let source = cli_source("src/orchestrator/postprocess.rs");
+    let block = source
+        .split("OOB verification unavailable: collector handshake failed")
+        .nth(1)
+        .expect("verify-oob path must classify collector handshake failure");
+    let block = block
+        .split("let mut findings = verifier.verify_all")
+        .next()
+        .unwrap_or(block);
+    assert!(
+        block.contains("eprintln!"),
+        "`--verify-oob` handshake failures must reach stderr, not only tracing"
+    );
+    assert!(
+        block.contains("--verify-oob collector handshake failed")
+            && block.contains("detectors that require OOB verification")
+            && block.contains("verification errors"),
+        "the stderr warning must name the requested OOB mode and explain the \
+         partial-verification result"
+    );
+}
+
+#[test]
+fn verification_doc_discloses_oob_handshake_failures() {
+    assert!(
+        VERIFICATION_DOC.contains("## Out-of-band callbacks"),
+        "verification.md must document --verify-oob callback behavior"
+    );
+    assert!(
+        VERIFICATION_DOC.contains("collector handshake fails")
+            && VERIFICATION_DOC.contains("stderr warning")
+            && VERIFICATION_DOC.contains("verification errors"),
+        "verification.md must disclose the operator-visible OOB handshake \
+         failure contract"
     );
 }
 
