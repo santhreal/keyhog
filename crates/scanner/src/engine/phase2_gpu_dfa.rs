@@ -240,10 +240,10 @@ impl Phase2GpuDfaCatalog {
         let mut complete = self.uncovered_patterns == 0;
         let mut matches_seen = 0usize;
         for shard in &self.shards {
-            let overflowed =
+            let shard_incomplete =
                 shard.scan_admission_into(backend, scratch, haystack_len, &mut admitted)?;
             matches_seen = matches_seen.saturating_add(scratch.matches.len());
-            if overflowed {
+            if shard_incomplete {
                 complete = false;
             }
         }
@@ -447,6 +447,7 @@ impl Phase2GpuDfaShard {
         )
         .map_err(|error| error.to_string())?;
 
+        let mut unattributed_matches = 0usize;
         for m in &scratch.matches {
             if self.phase2_indices.get(m.pattern_id as usize).is_none() {
                 return Err(format!(
@@ -464,6 +465,8 @@ impl Phase2GpuDfaShard {
                 if let Some(slot) = admitted.get_mut(region) {
                     *slot = true;
                 }
+            } else {
+                unattributed_matches = unattributed_matches.saturating_add(1);
             }
         }
         if overflowed {
@@ -474,7 +477,14 @@ impl Phase2GpuDfaShard {
                 "phase-2 GPU regex-DFA admission hit cap; decoded hits can admit chunks, misses still consult CPU admission"
             );
         }
-        Ok(overflowed)
+        if unattributed_matches > 0 {
+            tracing::warn!(
+                target: "keyhog::gpu",
+                unattributed = unattributed_matches,
+                "phase-2 GPU regex-DFA admission saw unattributed hit(s); decoded hits can admit chunks, misses still consult CPU admission"
+            );
+        }
+        Ok(overflowed || unattributed_matches > 0)
     }
 }
 

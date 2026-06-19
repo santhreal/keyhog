@@ -74,9 +74,16 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
     assert!(
         phase2_scan_admission.contains("pack_haystack_u32_into")
             && phase2_scan_admission.contains("scan_guard(")
+            && phase2_scan_admission.contains("let shard_incomplete")
+            && phase2_scan_admission.contains("complete = false")
             && !phase2_shard_dispatch.contains("pack_haystack_u32_into")
             && !phase2_shard_dispatch.contains("scan_guard("),
-        "phase-2 GPU DFA shard dispatch must reuse the batch-packed haystack bytes"
+        "phase-2 GPU DFA shard dispatch must reuse the batch-packed haystack bytes and propagate incomplete shard evidence"
+    );
+    assert!(
+        phase2_shard_dispatch.contains("unattributed_matches")
+            && phase2_shard_dispatch.contains("Ok(overflowed || unattributed_matches > 0)"),
+        "phase-2 GPU DFA admission must mark separator/cross-region unattributed hits as incomplete, not report complete GPU evidence"
     );
     assert!(
         dispatch_src.contains("presence.len() != expected_presence_words"),
