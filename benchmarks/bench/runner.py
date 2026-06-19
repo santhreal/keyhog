@@ -31,6 +31,7 @@ class _ScannerAdapter(Protocol):
         root: pathlib.Path,
         cfg: ScannerConfig,
         output: pathlib.Path | None = None,
+        timeout: int = 3600,
     ) -> tuple[list[Finding], RunStats]: ...
 
 

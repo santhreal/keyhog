@@ -30,13 +30,11 @@ Requirements (both checked, both LOUD on absence — never a silent green):
 
 from __future__ import annotations
 
-import os
-import pathlib
-
 import pytest
 
 from bench.corpora.creddata import CredDataCorpus
-from bench.scanners.keyhog import KeyhogScanner, _freshly_built_keyhog
+from bench.keyhog_version import KeyhogVersionError, assert_keyhog_binary_current
+from bench.scanners.keyhog import KeyhogScanner, resolve_keyhog_binary
 from bench.schema import ScannerConfig
 from bench.score import found_record_ids, score
 
@@ -50,25 +48,6 @@ _RECORDS = _CORPUS.records() if _AVAILABLE else []
 _POSITIVES = [r for r in _RECORDS if r.label and not r.ignore]
 
 
-def _resolve_binary() -> str | None:
-    """KEYHOG_BIN, else the freshly-built release binary, else a release /
-    release-fast binary in either known cargo target dir. Returns None if no
-    real binary can be found (the fixture turns that into a loud failure)."""
-    env = os.environ.get("KEYHOG_BIN")
-    if env and pathlib.Path(env).exists():
-        return env
-    fresh = _freshly_built_keyhog()
-    if fresh:
-        return fresh
-    for base in ("/mnt/FlareTraining/santh-archive/cargo-target",
-                 str(pathlib.Path(__file__).resolve().parents[3] / "target")):
-        for profile in ("release", "release-fast"):
-            cand = pathlib.Path(base) / profile / "keyhog"
-            if cand.exists():
-                return str(cand)
-    return None
-
-
 # ── one scan, shared by every case ────────────────────────────────────
 
 
@@ -79,12 +58,16 @@ def scan_result():
     findings, or whose recall hit-set disagrees with the canonical
     :func:`score`, is a harness failure (broken/wrong binary) and fails LOUD —
     it must never masquerade as a corpus-wide recall miss."""
-    binary = _resolve_binary()
+    binary = resolve_keyhog_binary()
     if binary is None:
         pytest.fail(
             "no keyhog binary found (set KEYHOG_BIN, or build a release binary "
             "with `cargo build --release`); refusing to report every CredData "
             "secret as missed off a binary that never ran")
+    try:
+        assert_keyhog_binary_current(binary)
+    except KeyhogVersionError as exc:
+        pytest.fail(f"{exc}; refusing to score CredData recall with a stale binary")
 
     cfg = ScannerConfig(backend="simd", cache="off", daemon="off", mode="full")
     findings, _stats = KeyhogScanner(binary=binary).run(_CORPUS.scan_root, cfg)
@@ -159,3 +142,26 @@ def test_creddata_category_is_not_entirely_blind(category, scan_result):
         f"{category!r} secrets — the shipped scanner is wholly blind to this "
         f"credential class, not just missing hard individuals. This is a "
         f"detector-coverage finding, not a tuning miss.")
+
+
+# ── recall-floor ratchet (the aggregate regression guard) ─────────────
+# The single number a recall regression hides inside. Pinned to the measured
+# recall on 2026-06-15 (the simd/deterministic backend). It is a RATCHET: when
+# recall improves, RAISE this floor in the same commit so the gain can never
+# silently regress away. CI fails the moment a change drops a previously-found
+# secret below the line. This is what makes "recall quietly fell from 2504 to
+# 2490" impossible to merge.
+_RECALL_FLOOR = 2504
+
+@pytest.mark.skipif(not _AVAILABLE, reason="CredData corpus not on disk — recall floor cannot run")
+def test_creddata_recall_does_not_regress_below_floor(scan_result):
+    recalled = len(scan_result)
+    assert recalled >= _RECALL_FLOOR, (
+        f"CredData recall REGRESSED: {recalled} secrets recalled, floor is "
+        f"{_RECALL_FLOOR} (of {len(_POSITIVES)} positives). A change dropped "
+        f"{_RECALL_FLOOR - recalled} previously-found real secret(s). Fix the "
+        f"candidate/suppression regression; do not weaken the floor to make this "
+        f"run green.")
+    if recalled > _RECALL_FLOOR:
+        print(f"\nNOTE: recall improved to {recalled} (floor {_RECALL_FLOOR}). "
+              f"Raise _RECALL_FLOOR to {recalled} to lock in the gain.")

@@ -11,6 +11,14 @@ severity = "critical"
 keywords = ["sk-ant-", "anthropic"]
 
 [[detector.patterns]]
+# The `regex` crate has no lookahead/lookbehind, so a pure non-consuming boundary
+# anchor is not possible. The length cap `{80,120}` provides a soft boundary:
+# a key body longer than 120 chars would be caught only up to 120 chars, which
+# is still a valid-looking api03 key. The risk is negligible because the prefix
+# `sk-ant-api03-` is a vendor-specific 13-char literal with no documented
+# collisions; the verifier would fail on a truncated key. The modern sk-ant-
+# pattern below excludes api03- bodies, so both patterns together give full
+# coverage without overlap.
 regex = 'sk-ant-api03-[A-Za-z0-9_-]{80,120}'
 description = "Anthropic API key (sk-ant-api03-... legacy form, kept for forward compat)"
 group = 0

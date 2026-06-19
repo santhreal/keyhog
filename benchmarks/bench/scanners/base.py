@@ -24,7 +24,7 @@ from __future__ import annotations
 import os
 import pathlib
 import re
-import resource
+import signal
 import shutil
 import subprocess
 import sys
@@ -34,6 +34,11 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 from ..schema import ScannerConfig
+
+try:
+    import resource
+except ImportError:  # pragma: no cover - Windows has no resource module.
+    resource = None
 
 Finding = dict
 
@@ -97,6 +102,15 @@ def _has_gnu_time() -> bool:
     return _GNU_TIME is not None
 
 
+def _child_maxrss_kb() -> int | None:
+    if resource is None:
+        return None
+    rss = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+    if sys.platform == "darwin":
+        rss //= 1024
+    return int(rss)
+
+
 def run_measured(
     cmd: list[str],
     *,
@@ -120,15 +134,32 @@ def run_measured(
         assert _GNU_TIME is not None
         run_cmd = [_GNU_TIME, "-v", "-o", rss_file.name, *cmd]
 
-    rusage_before = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
+    rusage_before = _child_maxrss_kb()
     t0 = time.perf_counter()
     timed_out = False
     try:
-        completed = subprocess.run(
-            run_cmd, capture_output=True, text=True, check=False,
-            timeout=timeout, env=full_env, cwd=cwd,
+        popen_kwargs = {}
+        if os.name == "nt":
+            popen_kwargs["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        else:
+            popen_kwargs["start_new_session"] = True
+        process = subprocess.Popen(
+            run_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=full_env,
+            cwd=cwd,
+            **popen_kwargs,
         )
-        stdout, stderr, rc = completed.stdout, completed.stderr, completed.returncode
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+            rc = process.returncode
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            _kill_process_tree(process)
+            stdout, stderr = process.communicate()
+            rc = -1
     except subprocess.TimeoutExpired as exc:
         stdout = exc.stdout.decode() if isinstance(exc.stdout, bytes) else (exc.stdout or "")
         stderr = exc.stderr.decode() if isinstance(exc.stderr, bytes) else (exc.stderr or "")
@@ -151,15 +182,36 @@ def run_measured(
             except OSError:
                 pass
     if peak_rss_kb == 0:
-        # Fallback: RUSAGE_CHILDREN ru_maxrss. Linux reports kB; macOS bytes.
-        after = resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss
-        delta = max(after - rusage_before, after)
-        if sys.platform == "darwin":
-            delta //= 1024
-        peak_rss_kb = int(delta)
+        # Fallback: RUSAGE_CHILDREN ru_maxrss. Windows has no resource module,
+        # so peak RSS stays 0 unless GNU time is available.
+        after = _child_maxrss_kb()
+        if after is not None:
+            before = rusage_before or 0
+            peak_rss_kb = max(after - before, after)
 
     return stdout, stderr, RunStats(
         wall_ms=wall_ms, peak_rss_kb=peak_rss_kb, exit_code=rc, timed_out=timed_out)
+
+
+def _kill_process_tree(process: subprocess.Popen) -> None:
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+            return
+        except (OSError, ValueError):
+            pass
+        process.kill()
+        return
+
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        pass
 
 
 # ── version probe (verbatim intent from score.py::scanner_version) ────

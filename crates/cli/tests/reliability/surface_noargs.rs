@@ -4,8 +4,8 @@
 //! they would scan the cwd or run forever; their no-arg behavior is covered by
 //! dedicated tests with bounded inputs.)
 //!
-//! This is the "does the command even start on a weird box" sweep. 11 × 16 =
-//! 176 distinct tests.
+//! This is the "does the command even start on a weird box" sweep. 12 x 16 =
+//! 192 distinct tests.
 
 use crate::reliability::harness::{
     assert_clean_exit, assert_documented_exit, assert_no_ansi, assert_no_panic, run, Profile,
@@ -27,6 +27,7 @@ crate::kh_matrix!(
     explain => "explain",
     diff => "diff",
     calibrate => "calibrate",
+    config => "config",
     completion => "completion",
     backend => "backend",
     doctor => "doctor",

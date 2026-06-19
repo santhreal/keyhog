@@ -52,7 +52,7 @@ Both were proven against the live keyhog binary, not assumed:
    keyhog applies a path-context test-fixture confidence penalty under
    "fixtures"-shaped paths that `--no-suppress-test-fixtures` does *not*
    override — the same 15k files scored 1880 findings under `fixtures/` vs 2484
-   under a neutral name (tracked as MC-15 in `../backlog/macro-coherence.md`).
+   under a neutral name (tracked in `../docs/EXECUTION_PLAN.md`).
 
 On the fair mirror keyhog ranks **#1, well ahead of every competitor** on F1
 at near-top precision. The exact figures are not hand-written here — they
@@ -165,11 +165,11 @@ POSIX-incompatible with this script — drive the ThinkPad via PowerShell.
 
 ## Reproducibility
 
-Scoring pins `KEYHOG_NO_GPU=1` for the deterministic SIMD path on the default
-`simd-*` configs; the `gpu`/`auto` configs set `KEYHOG_NO_GPU=0` to dogfood the
-GPU path, and explicit `gpu`/`megascan` benchmark rows also set
-`KEYHOG_REQUIRE_GPU=1` so they fail instead of timing a CPU fallback. GPU↔SIMD
-parity is a separate release gate. The CredData corpus is
+Scoring passes `--no-gpu` for the deterministic SIMD path on the default
+`simd-*` configs; the `gpu`/`auto` configs dogfood the GPU path, and explicit
+`gpu`/`megascan` benchmark rows also pass `--require-gpu` so they fail instead
+of timing a CPU fallback. GPU↔SIMD parity is a separate release gate. The
+CredData corpus is
 pinned to an exact commit so a score is reproducible against a fixed dataset
 revision. The scorer is bit-identical to the now-retired
 `tools/secretbench/scoring/score.py` it replaced (its attribution + per-category

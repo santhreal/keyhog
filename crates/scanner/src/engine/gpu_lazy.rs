@@ -31,8 +31,10 @@ impl CompiledScanner {
     /// On a cache hit the matcher is loaded from disk and the GPU
     /// recompile is skipped entirely - biggest cold-start win on
     /// `keyhog scan` / `scan-system` runs that re-launch repeatedly.
-    /// Cache misses (no file, version-mismatch, corrupt blob) silently
-    /// recompile and re-cache.
+    /// The blob is a pure-optimization cache, never a detection input: a miss
+    /// (no file, version-mismatch, corrupt blob) recompiles the IDENTICAL
+    /// matcher and re-caches, so a miss costs only the recompile and changes no
+    /// match result — it is not a Law-10 fallback to a weaker path.
     pub(crate) fn gpu_matcher(&self) -> Option<&vyre_libs::scan::GpuLiteralSet> {
         self.gpu_matcher
             .get_or_init(|| {

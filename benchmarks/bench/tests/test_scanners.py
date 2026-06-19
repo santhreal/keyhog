@@ -1,11 +1,67 @@
 import json
+import os
 import sqlite3
 import sys
+import time
+
+import pytest
 
 from bench import scanners
 from bench.scanners import keyhog as keyhog_adapter
 from bench.scanners import base
 from bench.schema import ScannerConfig
+
+
+def _pid_running(pid: int) -> bool:
+    proc_stat = f"/proc/{pid}/stat"
+    try:
+        stat = open(proc_stat, encoding="utf-8").read()
+        if ") Z " in stat:
+            return False
+    except OSError:
+        pass
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+@pytest.mark.skipif(
+    os.name != "posix" or not os.path.isdir("/proc"),
+    reason="process-group child liveness assertion requires POSIX /proc",
+)
+def test_run_measured_timeout_kills_wrapped_child_process_group(tmp_path):
+    pid_file = tmp_path / "child.pid"
+    script = f"""
+import pathlib
+import subprocess
+import sys
+import time
+
+child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+pathlib.Path({str(pid_file)!r}).write_text(str(child.pid))
+time.sleep(60)
+"""
+
+    _stdout, _stderr, stats = base.run_measured(
+        [sys.executable, "-c", script],
+        timeout=1,
+    )
+
+    assert stats.timed_out
+    deadline = time.time() + 5
+    while not pid_file.exists() and time.time() < deadline:
+        time.sleep(0.05)
+    assert pid_file.exists(), "parent process must write the child pid before timeout"
+    child_pid = int(pid_file.read_text())
+    while _pid_running(child_pid) and time.time() < deadline:
+        time.sleep(0.05)
+    assert not _pid_running(child_pid), (
+        "run_measured timeout must kill the scanner child process group, not only "
+        "the /usr/bin/time wrapper")
 
 
 def test_keyhog_normalizer_reads_json_array_shape():
@@ -170,25 +226,30 @@ def test_scanner_exit_contracts_distinguish_findings_from_failures():
     assert scanners.resolve_scanner("kingfisher").exit_success(200)
 
 
-def test_keyhog_gpu_benchmark_rows_require_real_gpu():
+def test_keyhog_gpu_benchmark_rows_use_explicit_gpu_policy(tmp_path):
     scanner = scanners.KeyhogScanner()
 
-    assert scanner._env(ScannerConfig(backend="gpu")) == {
-        "KEYHOG_NO_GPU": "0",
-        "KEYHOG_REQUIRE_GPU": "1",
-    }
-    assert scanner._env(ScannerConfig(backend="megascan")) == {
-        "KEYHOG_NO_GPU": "0",
-        "KEYHOG_REQUIRE_GPU": "1",
-    }
-    assert scanner._env(ScannerConfig(backend="auto")) == {
-        "KEYHOG_NO_GPU": "1",
-        "KEYHOG_REQUIRE_GPU": "0",
-    }
-    assert scanner._env(ScannerConfig(backend="simd")) == {
-        "KEYHOG_NO_GPU": "1",
-        "KEYHOG_REQUIRE_GPU": "0",
-    }
+    gpu_cmd = scanner._cmd(
+        tmp_path, ScannerConfig(backend="gpu"), tmp_path / "gpu.json", None
+    )
+    megascan_cmd = scanner._cmd(
+        tmp_path,
+        ScannerConfig(backend="megascan"),
+        tmp_path / "megascan.json",
+        None,
+    )
+    auto_cmd = scanner._cmd(
+        tmp_path, ScannerConfig(backend="auto"), tmp_path / "auto.json", None
+    )
+    simd_cmd = scanner._cmd(
+        tmp_path, ScannerConfig(backend="simd"), tmp_path / "simd.json", None
+    )
+
+    assert "--require-gpu" in gpu_cmd
+    assert "--require-gpu" in megascan_cmd
+    assert "--no-gpu" in auto_cmd
+    assert "--no-gpu" in simd_cmd
+    assert scanner._env(ScannerConfig(backend="gpu")) == {}
 
 
 def test_keyhog_min_confidence_floor_is_harvest_only(tmp_path):

@@ -257,6 +257,27 @@ CANDIDATES: dict[str, list[re.Pattern]] = {
     "basic_auth": [
         re.compile(r"(?i)basic\s+([A-Za-z0-9+/]{16,}={0,2})")
     ],
+    # The current shipped `jwt-token` named detector anchors on the literal
+    # `eyJhbGci` prefix (base64url of `{"alg":`). A JWT whose JSON header puts
+    # `typ` or `jwk` BEFORE `alg` begins `eyJ0eXAi` (`{"typ":`) / `eyJqd2si`
+    # (`{"jwk":`) and is MISSED. This candidate measures the recall+precision of
+    # anchoring on the structural JWT shape (any `eyJ`-header base64url triple)
+    # instead of the single header-field-order prefix.
+    "jwt_any_header": [
+        re.compile(
+            r"\b(eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})"
+        )
+    ],
+    # The header-order-broadened JWT the shipped regex misses: a JWT whose first
+    # header field is NOT `alg` (so it does not start `eyJhbGci`). Isolates the
+    # exact incremental recall the detector broadening recovers, with its own
+    # precision.
+    "jwt_non_alg_first": [
+        re.compile(
+            r"\b(eyJ(?!hbGci)[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}"
+            r"\.[A-Za-z0-9_-]{10,})"
+        )
+    ],
 }
 
 

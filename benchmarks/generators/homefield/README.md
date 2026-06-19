@@ -39,8 +39,8 @@ python3 -m bench leaderboard --corpus homefield-betterleaks --scanners keyhog,tr
 python3 -m bench leaderboard --corpus homefield-kingfisher  --scanners keyhog,trufflehog,betterleaks,kingfisher
 ```
 
-keyhog is pinned to the deterministic SIMD backend (`KEYHOG_NO_GPU=1`) so the
-score is reproducible and independent of GPU auto-routing.
+keyhog is pinned to the deterministic SIMD backend (`--no-gpu`) so the
+score is reproducible and independent of GPU backend selection.
 
 ## Reading the numbers
 

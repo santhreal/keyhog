@@ -12,7 +12,7 @@ CLI = os.path.join(ROOT, "crates/cli/tests")
 SCAN_ADV = os.path.join(ROOT, "crates/scanner/tests/adversarial")
 SCAN_CONTRACTS = os.path.join(ROOT, "crates/scanner/tests/contracts")
 SRC_ADV = os.path.join(ROOT, "crates/sources/tests/adversarial")
-COORD = os.path.join(ROOT, "coordination/rounds")
+GENERATED_METRICS = os.path.join(ROOT, "metrics/generated")
 
 
 def rust_str(s: str) -> str:
@@ -1615,8 +1615,8 @@ env -u CC cargo test -p keyhog-sources --test all_tests adversarial:: 2>&1 | tai
 | Scanner decode hostile | yes | {created['scan_decode']} |
 | Sources git/archive/http | yes | {created['src_adv']} |
 """
-    os.makedirs(COORD, exist_ok=True)
-    with open(os.path.join(COORD, "R5-T.md"), "w", encoding="utf-8") as f:
+    os.makedirs(GENERATED_METRICS, exist_ok=True)
+    with open(os.path.join(GENERATED_METRICS, "R5-T.md"), "w", encoding="utf-8") as f:
         f.write(ledger)
 
 

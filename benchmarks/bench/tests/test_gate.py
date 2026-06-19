@@ -1,18 +1,22 @@
+import json
+
 import pytest
 
 from bench import gate
+from bench.keyhog_version import workspace_keyhog_version
 from bench.schema import CorpusInfo, Detection, DetectorStat, Outcome, RunResult
 from bench.schema import Scanner as ScannerRecord
 from bench.schema import ScannerConfig
 
 
 def _row(scanner: str, tp: int, fp: int, fn: int, *, available: bool = True,
-         error: str = "", per_detector: dict[str, int] | None = None) -> RunResult:
+         error: str = "", per_detector: dict[str, int] | None = None,
+         version: str = "test") -> RunResult:
     detectors = {
         det: DetectorStat(fp=fp_count) for det, fp_count in (per_detector or {}).items()
     }
     return RunResult(
-        scanner=ScannerRecord(name=scanner, version="test", config=ScannerConfig()),
+        scanner=ScannerRecord(name=scanner, version=version, config=ScannerConfig()),
         corpus=CorpusInfo(name="mirror", fixture_count=10, labeled_positives=tp + fn),
         detection=Detection(overall=Outcome(tp=tp, fp=fp, fn=fn),
                             per_detector=detectors),
@@ -58,6 +62,19 @@ def test_unavailable_competitor_is_ignored():
         _row("kingfisher", tp=5, fp=0, fn=0, available=False, error="binary not found"),
     ]
     assert gate.evaluate(rows) == []
+
+
+def test_required_competitor_missing_or_unavailable_fails():
+    rows = [
+        _row("keyhog", tp=5, fp=0, fn=0),
+        _row("kingfisher", tp=5, fp=0, fn=0, available=False, error="binary not found"),
+    ]
+    violations = gate.evaluate(
+        rows,
+        required_competitors={"betterleaks", "kingfisher"},
+    )
+    assert "required competitor 'betterleaks' produced no usable result" in violations
+    assert "required competitor 'kingfisher' produced no usable result" in violations
 
 
 def test_floor_violations_are_reported_independently():
@@ -170,3 +187,38 @@ def test_unavailable_keyhog_is_undecidable():
     rows = [_row("keyhog", tp=0, fp=0, fn=0, available=False, error="build failed")]
     with pytest.raises(gate.GateError):
         gate.evaluate(rows)
+
+
+def test_run_gate_rejects_stale_keyhog_result_artifacts(tmp_path):
+    stale = _row("keyhog", tp=5, fp=0, fn=0, version="KeyHog v0.0.0 Build Target: test")
+    (tmp_path / "mirror-keyhog-default.json").write_text(json.dumps(stale.to_json()))
+
+    rc = gate.run_gate(
+        "mirror",
+        ["keyhog"],
+        results_dir=tmp_path,
+        beat_competitors=False,
+    )
+
+    assert rc == 2
+
+
+def test_run_gate_accepts_current_keyhog_result_artifacts(tmp_path):
+    current_version = workspace_keyhog_version()
+    current = _row(
+        "keyhog",
+        tp=5,
+        fp=0,
+        fn=0,
+        version=f"KeyHog v{current_version} Build Target: test",
+    )
+    (tmp_path / "mirror-keyhog-default.json").write_text(json.dumps(current.to_json()))
+
+    rc = gate.run_gate(
+        "mirror",
+        ["keyhog"],
+        results_dir=tmp_path,
+        beat_competitors=False,
+    )
+
+    assert rc == 0

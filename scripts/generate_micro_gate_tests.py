@@ -15,8 +15,6 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent
 CRATES = ["core", "scanner", "sources", "verifier", "cli"]
 SKIP = {"lib.rs", "mod.rs"}
-FILE_CAP = 500
-
 
 def slug(parts: tuple[str, ...]) -> str:
     s = "_".join(parts)
@@ -80,20 +78,6 @@ fn {fn}() {{
     );
 }}
 """
-    elif kind == "file_size_cap":
-        body = f"""//! Gate `{mod}`: modularity file cap ({FILE_CAP} LOC, advisory warn).
-
-#[test]
-fn {fn}() {{
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/{rel}");
-    let src = std::fs::read_to_string(path).expect("source readable");
-    let lines = src.lines().count();
-    // Advisory cap (Santh STANDARD.md): warn, do not fail CI.
-    if lines > {FILE_CAP} {{
-        eprintln!("{mod}: {{lines}} lines exceeds {FILE_CAP}-line cap - split module");
-    }}
-}}
-"""
     elif kind == "no_unwrap_expect":
         body = f"""//! Gate `{mod}`: no .unwrap( / .expect( in production source lines.
 
@@ -128,7 +112,7 @@ def main() -> None:
     parser.add_argument("--write", action="store_true")
     args = parser.parse_args()
 
-    kinds = ("non_empty", "no_inline_tests", "file_size_cap", "no_unwrap_expect")
+    kinds = ("non_empty", "no_inline_tests", "no_unwrap_expect")
     planned: list[tuple[Path, str]] = []
     for crate in CRATES:
         for src in source_files(crate):

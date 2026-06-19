@@ -2,17 +2,38 @@
 # Format: base64url-encoded header.payload.signature (3 dot-separated segments)
 # Verify: Decode header to check algorithm, decode payload to check claims
 # Prefix: eyJ (base64url of '{"')
+#
+# Header-field-order coverage (KH recall lane, CredData-measured):
+#   The prior pattern anchored on the literal `eyJhbGci` — base64url of the
+#   EXACT 8 bytes `{"alg":`. That requires `alg` to be the FIRST header field.
+#   A spec-valid JWT whose JSON header serializes `typ` or `jwk` first begins
+#   `eyJ0eXAi` (`{"typ":`) / `eyJqd2si` (`{"jwk":`) and was MISSED. On the full
+#   CredData tree (value-overlap scored) that header-order miss class is 52
+#   labeled positives the `eyJhbGci` anchor never generated a candidate for.
+#   Anchoring on the structural JWT shape instead — `eyJ`-headed base64url
+#   header `.` `eyJ`-headed base64url payload `.` base64url signature — recovers
+#   them: the broadened form measures +54 TP for +2 NEW FP over the old anchor
+#   (jwt_non_alg_first candidate, precision 0.964), because both the header and
+#   the payload segments starting `eyJ` (base64url of `{"`, the start of every
+#   JWT's JSON object) is itself a strong two-point structural anchor. `eyJ` is
+#   >= MIN_LITERAL_PREFIX_CHARS (3), so it remains a first-class AC-literal /
+#   Hyperscan trigger — no fallback-only regression.
 
 [detector]
 id = "jwt-token"
 name = "JSON Web Token"
 service = "jwt"
 severity = "high"
-keywords = ["eyJhbGci", "bearer", "authorization", "jwt"]
+# `eyJ` is the base64url of `{"` — the first two bytes of EVERY JWT header's
+# JSON object, regardless of which claim serializes first — so it triggers on
+# any header field order. The prior `eyJhbGci` keyword only fired when `alg`
+# came first; the bare-`eyJ` shape, the alternate spellings, and the
+# semantic anchors (bearer/authorization/jwt) keep the prefilter recall-safe.
+keywords = ["eyJ", "bearer", "authorization", "jwt"]
 
 [[detector.patterns]]
-regex = "eyJhbGci[a-zA-Z0-9_-]{5,256}\\.eyJ[a-zA-Z0-9_-]{10,1000}\\.[a-zA-Z0-9_-]{10,512}"
-description = "JWT with standard alg header (eyJhbGci = base64url of {\"alg\":)"
+regex = "eyJ[a-zA-Z0-9_-]{8,256}\\.eyJ[a-zA-Z0-9_-]{10,1000}\\.[a-zA-Z0-9_-]{10,512}"
+description = "JWT structural shape: eyJ-headed base64url header.payload.signature (eyJ = base64url of {\")"
 
 [detector.verify]
 method = "GET"

@@ -11,7 +11,7 @@ ROOT = "/mnt/santh-desktop/software/keyhog/crates/scanner/tests"
 ADV = os.path.join(ROOT, "adversarial")
 GAP = os.path.join(ROOT, "gap")
 CONTRACTS = os.path.join(ROOT, "contracts")
-COORD = "/mnt/santh-desktop/software/keyhog/coordination/rounds"
+GENERATED_METRICS = "/mnt/santh-desktop/software/keyhog/metrics/generated"
 
 
 def read_contract(det_id: str) -> dict | None:
@@ -1012,8 +1012,8 @@ env -u CC cargo test -p keyhog-scanner --test per_detector_hostile_near_miss_run
 - Handwritten `top50_*` twins complement bulk runner for high-priority detectors still lacking dedicated files.
 - Gap floors KH-GAP-143..162 registered as coverage oracles (mostly green post-expansion).
 """
-    os.makedirs(COORD, exist_ok=True)
-    with open(os.path.join(COORD, "R5-T-SCAN.md"), "w", encoding="utf-8") as f:
+    os.makedirs(GENERATED_METRICS, exist_ok=True)
+    with open(os.path.join(GENERATED_METRICS, "R5-T-SCAN.md"), "w", encoding="utf-8") as f:
         f.write(ledger)
 
     print("created:", created)

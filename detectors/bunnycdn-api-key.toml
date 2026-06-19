@@ -8,7 +8,7 @@ id = "bunnycdn-api-key"
 name = "BunnyCDN API Key"
 service = "bunnycdn"
 severity = "critical"
-keywords = ["BUNNYCDN", "bunnycdn", "BUNNY", "bunny", "AccessKey", "AccessKey"]
+keywords = ["BUNNYCDN", "bunnycdn", "BUNNY", "bunny", "AccessKey"]
 
 [[detector.patterns]]
 regex = "(?:BUNNYCDN|bunnycdn|BUNNY|bunny)(?:_API)?[_-]?(?:KEY|key|TOKEN|token)[=:\\s\"']+([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})"

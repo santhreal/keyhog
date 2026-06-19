@@ -41,6 +41,7 @@ pub const SUBCOMMANDS: &[&str] = &[
     "explain",
     "diff",
     "calibrate",
+    "config",
     "watch",
     "completion",
     "backend",

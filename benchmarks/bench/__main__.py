@@ -155,7 +155,28 @@ def _gate(args: argparse.Namespace) -> int:
         baseline=args.baseline,
         epsilon=args.epsilon,
         corpus_root=args.corpus_root,
+        required_competitors={s.strip() for s in args.require_competitors.split(",") if s.strip()} or None,
     )
+
+
+def _cross_device(args: argparse.Namespace) -> int:
+    from . import cross_compare
+
+    rows = cross_compare.rows_for(args.root, args.corpus, None)
+    if args.dominance_gate:
+        required_oses = tuple(s.strip().lower() for s in args.required_oses.split(",") if s.strip())
+        verdict = cross_compare.evaluate_dominance(
+            rows,
+            factor=args.factor,
+            required_oses=required_oses,
+        )
+        print(cross_compare.render_dominance(verdict))
+        return 0 if verdict.ok else 1
+    filtered = rows
+    if args.scanner:
+        filtered = [(device, r) for device, r in rows if r.scanner.name == args.scanner]
+    print(cross_compare.render(filtered))
+    return 0 if filtered else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -231,6 +252,20 @@ def main(argv: list[str] | None = None) -> int:
     gate.add_argument("--epsilon", type=float, default=0.0)
     gate.add_argument("--no-beat-competitors", action="store_true",
                       help="regression-only gate (skip the beat-competitors check)")
+    gate.add_argument("--require-competitors", default="",
+                      help="comma-separated competitor names that must produce usable results")
+
+    cross_device = sub.add_parser(
+        "cross-device",
+        help="Render or gate cross-device benchmark results.")
+    cross_device.add_argument("--root", type=pathlib.Path,
+                              default=pathlib.Path("results-cross-device"))
+    cross_device.add_argument("--corpus", default="mirror")
+    cross_device.add_argument("--scanner", default=None)
+    cross_device.add_argument("--dominance-gate", action="store_true",
+                              help="require keyhog to beat BetterLeaks and Kingfisher fastest paths by the configured factor on every required OS")
+    cross_device.add_argument("--factor", type=float, default=10.0)
+    cross_device.add_argument("--required-oses", default="linux,macos,windows")
 
     args = parser.parse_args(argv)
     if args.cmd == "host":
@@ -249,6 +284,8 @@ def main(argv: list[str] | None = None) -> int:
         return _analyze(args)
     if args.cmd == "gate":
         return _gate(args)
+    if args.cmd == "cross-device":
+        return _cross_device(args)
     parser.error(f"unknown command {args.cmd}")
     return 2
 

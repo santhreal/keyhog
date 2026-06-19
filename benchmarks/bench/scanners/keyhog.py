@@ -3,9 +3,9 @@
 Maps a :class:`ScannerConfig` to keyhog CLI flags:
 
 * **backend** -> ``--backend {simd,cpu,gpu,auto,megascan}``. ``simd``/``cpu``/
-  ``auto`` pin ``KEYHOG_NO_GPU=1`` for the bit-deterministic filesystem path
-  the leaderboard is scored on; ``gpu``/``megascan`` set ``KEYHOG_NO_GPU=0``
-  and ``KEYHOG_REQUIRE_GPU=1`` so they fail instead of timing a CPU fallback.
+  ``auto`` pass ``--no-gpu`` for the bit-deterministic filesystem path the
+  leaderboard is scored on; ``gpu``/``megascan`` pass ``--require-gpu`` so they
+  fail instead of timing a CPU fallback.
 * **cache** -> ``--incremental`` (merkle skip-cache). ``on`` measures the
   *warm* re-run: the adapter populates the index once, then times the second
   pass — that's the 10-100x monorepo-re-run speedup, measured honestly.
@@ -73,6 +73,29 @@ def _freshly_built_keyhog() -> str | None:
         candidate = target / profile / "keyhog"
         if candidate.exists():
             return str(candidate)
+    return None
+
+
+def resolve_keyhog_binary(explicit: str | None = None) -> str | None:
+    """Canonical keyhog-binary locator shared by the bench AND the gate tests
+    (recall matrix, backend-parity) so there is ONE resolution order, not
+    several that drift: explicit arg / `KEYHOG_BIN` env, else the freshly-built
+    release binary, else a `release`/`release-fast` binary in either known cargo
+    target dir. Returns None if no real binary exists (callers fail LOUDLY —
+    never silently treat 'no binary' as 'no findings')."""
+    import pathlib as _pl
+    cand = explicit or os.environ.get("KEYHOG_BIN")
+    if cand and _pl.Path(cand).exists():
+        return cand
+    fresh = _freshly_built_keyhog()
+    if fresh:
+        return fresh
+    for base in ("/mnt/FlareTraining/santh-archive/cargo-target",
+                 str(_REPO_ROOT / "target")):
+        for profile in ("release", "release-fast"):
+            p = _pl.Path(base) / profile / "keyhog"
+            if p.exists():
+                return str(p)
     return None
 
 
@@ -207,6 +230,10 @@ class KeyhogScanner(Scanner):
         cmd += ["--daemon"] if cfg.daemon == "on" else ["--no-daemon"]
         if cfg.mode == "fast":
             cmd.append("--fast")
+        if cfg.backend in _DETERMINISTIC_BACKENDS:
+            cmd.append("--no-gpu")
+        elif cfg.backend in _REQUIRE_GPU_BACKENDS:
+            cmd.append("--require-gpu")
         if cfg.cache == "on":
             cmd.append("--incremental")
             if incremental_cache is not None:
@@ -215,15 +242,15 @@ class KeyhogScanner(Scanner):
         return cmd
 
     def _env(self, cfg: ScannerConfig) -> dict:
-        return {
-            "KEYHOG_NO_GPU": "1" if cfg.backend in _DETERMINISTIC_BACKENDS else "0",
-            "KEYHOG_REQUIRE_GPU": "1" if cfg.backend in _REQUIRE_GPU_BACKENDS else "0",
-        }
+        return {}
 
     # ── run ────────────────────────────────────────────────────────────
 
     def run(self, root: pathlib.Path, cfg: ScannerConfig,
-            output: pathlib.Path | None = None) -> tuple[list[Finding], RunStats]:
+            output: pathlib.Path | None = None,
+            extra_env: dict[str, str] | None = None,
+            extra_args: list[str] | None = None,
+            timeout: int = 3600) -> tuple[list[Finding], RunStats]:
         tmp_out = None
         if output is None:
             tmp_out = tempfile.NamedTemporaryFile(suffix=".json", delete=False)
@@ -231,6 +258,8 @@ class KeyhogScanner(Scanner):
             output = pathlib.Path(tmp_out.name)
 
         env = self._env(cfg)
+        if extra_env:
+            env.update(extra_env)
         inc_cache = None
         if cfg.cache == "on":
             # Dedicated index per config so concurrent matrix rows don't share
@@ -240,14 +269,23 @@ class KeyhogScanner(Scanner):
             warm_out = pathlib.Path(tempfile.gettempdir()) / \
                 f"keyhog-bench-warm-{cfg.config_id}.json"
             run_measured(self._cmd(root, cfg, warm_out, inc_cache),
-                         env=env, timeout=3600)
+                         env=env, timeout=timeout)
             try:
                 warm_out.unlink()
             except OSError:
                 pass
 
         cmd = self._cmd(root, cfg, output, inc_cache)
-        _stdout, _stderr, stats = run_measured(cmd, env=env, timeout=3600)
+        if extra_args:
+            cmd = [*cmd[:-1], *extra_args, cmd[-1]]
+        stdout, stderr, stats = run_measured(cmd, env=env, timeout=timeout)
+        if not self.exit_success(stats.exit_code):
+            detail = (stderr or stdout or "").strip()
+            if len(detail) > 1200:
+                detail = detail[-1200:]
+            raise RuntimeError(
+                f"keyhog exited {stats.exit_code} for {cfg.config_id}: {detail}"
+            )
 
         findings = self._parse(output)
         if tmp_out is not None:

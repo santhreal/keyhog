@@ -91,13 +91,13 @@ fi
 
 # ── bench-verify helpers ────────────────────────────────────────────────────
 # A leaderboard run for one corpus into a results dir, scored on an EXPLICIT
-# binary (KEYHOG_NO_GPU=1 = the deterministic filesystem path the gate baselines
-# were captured on). The binary is passed in, never the ambient KEYHOG_BIN, so
+# binary (`--no-gpu` = the deterministic filesystem path the gate baselines were
+# captured on). The binary is passed in, never the ambient KEYHOG_BIN, so
 # the candidate bench provably scores the freshly-rebuilt VERIFY_BIN. Run from
 # benchmarks/ so `bench` and each corpus adapter's default root resolve.
 _bench_into() {  # bin, corpus, out_dir
   ( cd "${REPO_ROOT}/benchmarks" \
-    && KEYHOG_BIN="$1" KEYHOG_NO_GPU=1 \
+    && KEYHOG_BIN="$1" \
        python3 -m bench leaderboard --corpus "$2" --scanners keyhog --out "$3" )
 }
 _rebuild() {  # rebuild VERIFY_BIN from the current weights.bin

@@ -32,6 +32,7 @@ import pathlib
 import sys
 import tempfile
 
+from .keyhog_version import KeyhogVersionError, assert_version_matches_workspace
 from .report import canonical_leaderboard, load_results
 from .schema import DetectorStat, RunResult
 
@@ -57,6 +58,25 @@ def _keyhog_row(rows: list[RunResult]) -> RunResult | None:
         if r.scanner.name == "keyhog":
             return r
     return None
+
+
+def _assert_keyhog_results_current(rows: list[RunResult]) -> None:
+    """Reject stale keyhog result artifacts before scoring a benchmark gate.
+
+    The gate may consume existing JSON under benchmarks/results. Those files are
+    useful only if they came from the same keyhog version as the workspace being
+    gated; otherwise an old leaderboard can make a new tree look green.
+    """
+    for row in rows:
+        if row.scanner.name != "keyhog":
+            continue
+        try:
+            assert_version_matches_workspace(
+                row.scanner.version,
+                what="keyhog benchmark result",
+            )
+        except KeyhogVersionError as exc:
+            raise GateError(f"{exc}; rerun `make leaderboard` with the current binary") from exc
 
 
 def _baseline_keyhog_row(baseline: pathlib.Path, corpus: str) -> RunResult:
@@ -129,6 +149,7 @@ def evaluate(
     baseline_detectors: dict[str, DetectorStat] | None = None,
     max_detector_fp_abs: int = DEFAULT_DETECTOR_FP_ABS,
     max_detector_fp_rel: float = DEFAULT_DETECTOR_FP_REL,
+    required_competitors: set[str] | None = None,
 ) -> list[str]:
     """Return the list of human-readable violations (empty == pass).
 
@@ -162,6 +183,15 @@ def evaluate(
     if baseline_detectors is not None:
         violations.extend(_detector_fp_regressions(
             keyhog, baseline_detectors, max_detector_fp_abs, max_detector_fp_rel))
+
+    if required_competitors:
+        available = {
+            r.scanner.name
+            for r in rows
+            if r.scanner.name != "keyhog" and r.available
+        }
+        for name in sorted(required_competitors - available):
+            violations.append(f"required competitor {name!r} produced no usable result")
 
     if beat_competitors:
         for r in rows:
@@ -208,6 +238,7 @@ def run_gate(
     detector_fp_regression: bool = True,
     max_detector_fp_abs: int = DEFAULT_DETECTOR_FP_ABS,
     max_detector_fp_rel: float = DEFAULT_DETECTOR_FP_REL,
+    required_competitors: set[str] | None = None,
 ) -> int:
     """Run (or load) a leaderboard, evaluate the gate, print the verdict.
 
@@ -230,6 +261,11 @@ def run_gate(
         print(f"GATE UNDECIDABLE: no results for corpus {corpus!r}", file=sys.stderr)
         return 2
     _print_table(rows)
+    try:
+        _assert_keyhog_results_current(rows)
+    except GateError as exc:
+        print(f"\nGATE UNDECIDABLE: {exc}", file=sys.stderr)
+        return 2
 
     baseline_f1: float | None = None
     baseline_detectors: dict[str, DetectorStat] | None = None
@@ -250,6 +286,7 @@ def run_gate(
             baseline_detectors=baseline_detectors,
             max_detector_fp_abs=max_detector_fp_abs,
             max_detector_fp_rel=max_detector_fp_rel,
+            required_competitors=required_competitors,
         )
     except GateError as exc:
         print(f"\nGATE UNDECIDABLE: {exc}", file=sys.stderr)
@@ -300,8 +337,11 @@ def _main(argv: list[str] | None = None) -> int:
                     default=DEFAULT_DETECTOR_FP_REL,
                     help="relative per-detector FP increase (fraction of baseline) "
                          "tolerated vs baseline; a spike must clear BOTH to fail")
+    ap.add_argument("--require-competitors", default="",
+                    help="comma-separated competitor names that must produce usable results")
     args = ap.parse_args(argv)
     scanners = [s.strip() for s in args.scanners.split(",") if s.strip()]
+    required_competitors = {s.strip() for s in args.require_competitors.split(",") if s.strip()}
     return run_gate(
         args.corpus,
         scanners,
@@ -316,6 +356,7 @@ def _main(argv: list[str] | None = None) -> int:
         detector_fp_regression=not args.no_detector_fp_regression,
         max_detector_fp_abs=args.max_detector_fp_abs,
         max_detector_fp_rel=args.max_detector_fp_rel,
+        required_competitors=required_competitors or None,
     )
 
 

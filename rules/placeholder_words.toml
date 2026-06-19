@@ -1,0 +1,27 @@
+# Tier-B data: documentation / placeholder words that mark a value as a sample,
+# not a production secret.
+#
+# Schema:
+#   [placeholder_words]
+#   words = ["lowercase-ascii-word", ...]
+#
+# Semantics:
+# - The list is consumed by the scanner's surface-form, decoded-form, and
+#   doc-marker suppression paths through one loader.
+# - Entries must be lowercase ASCII alphanumeric words. Do not add ambiguous
+#   operational words such as "test", "password", "admin", "root", or "qwerty":
+#   those can appear in real credentials and need context-specific handling.
+# - "example" is part of the shared vocabulary, but URL domains under
+#   example.com / example.org remain guarded by the doc-marker path so reserved
+#   documentation domains do not suppress unrelated URL-shaped findings.
+
+[placeholder_words]
+words = [
+  "example",
+  "dummy",
+  "fake",
+  "mock",
+  "sample",
+  "placeholder",
+  "changeme",
+]

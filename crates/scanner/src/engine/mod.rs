@@ -96,8 +96,11 @@ mod scan_filters;
 mod scan_inner_profile;
 mod scan_no_hit_reassembly;
 mod scan_postprocess;
+#[path = "scan_postprocess/fragments.rs"]
 mod scan_postprocess_fragments;
+#[path = "scan_postprocess/profile.rs"]
 mod scan_postprocess_profile;
+#[path = "scan_postprocess/suffix_gate.rs"]
 mod scan_postprocess_suffix_gate;
 mod scoring;
 #[cfg(test)]
