@@ -103,7 +103,63 @@ fn write_stub(dir: &TempDir, body: &str) -> PathBuf {
     path
 }
 
-fn run_action_with_path_prefix(dir: &TempDir, path_prefix: &str, envs: &[(&str, &str)]) -> Output {
+fn push_script_arg(args: &mut Vec<String>, flag: &str, value: &str) {
+    args.push(flag.to_string());
+    args.push(value.to_string());
+}
+
+fn action_script_args(script_args: &[&str], inputs: &[(&str, &str)]) -> Vec<String> {
+    let mut args = Vec::new();
+    push_script_arg(&mut args, "--path", ".");
+    push_script_arg(&mut args, "--severity", "high");
+    push_script_arg(&mut args, "--format", "sarif");
+    push_script_arg(&mut args, "--output", "keyhog-results.sarif");
+    push_script_arg(&mut args, "--verify", "false");
+    push_script_arg(&mut args, "--fail-on-findings", "true");
+    push_script_arg(&mut args, "--upload-sarif", "true");
+
+    for (key, value) in inputs {
+        match *key {
+            "ACTION_INPUT_SCAN_PATH" => push_script_arg(&mut args, "--path", value),
+            "ACTION_INPUT_SEVERITY" => push_script_arg(&mut args, "--severity", value),
+            "ACTION_INPUT_FORMAT" => push_script_arg(&mut args, "--format", value),
+            "ACTION_INPUT_OUTPUT" => push_script_arg(&mut args, "--output", value),
+            "ACTION_INPUT_VERIFY" => push_script_arg(&mut args, "--verify", value),
+            "ACTION_INPUT_BASELINE" => push_script_arg(&mut args, "--baseline", value),
+            "ACTION_INPUT_BACKEND" => push_script_arg(&mut args, "--backend", value),
+            "ACTION_INPUT_FAIL_ON_FINDINGS" => {
+                push_script_arg(&mut args, "--fail-on-findings", value)
+            }
+            "ACTION_INPUT_UPLOAD_SARIF" => push_script_arg(&mut args, "--upload-sarif", value),
+            _ => {}
+        }
+    }
+
+    args.extend(script_args.iter().map(|arg| (*arg).to_string()));
+    args
+}
+
+fn is_action_input_key(key: &str) -> bool {
+    matches!(
+        key,
+        "ACTION_INPUT_SCAN_PATH"
+            | "ACTION_INPUT_SEVERITY"
+            | "ACTION_INPUT_FORMAT"
+            | "ACTION_INPUT_OUTPUT"
+            | "ACTION_INPUT_VERIFY"
+            | "ACTION_INPUT_BASELINE"
+            | "ACTION_INPUT_BACKEND"
+            | "ACTION_INPUT_FAIL_ON_FINDINGS"
+            | "ACTION_INPUT_UPLOAD_SARIF"
+    )
+}
+
+fn run_action_with_script_args_and_path_prefix(
+    dir: &TempDir,
+    script_args: &[&str],
+    path_prefix: &str,
+    envs: &[(&str, &str)],
+) -> Output {
     let output_path = dir.path().join("github-output.txt");
     let summary_path = dir.path().join("summary.md");
     let path = format!(
@@ -113,27 +169,71 @@ fn run_action_with_path_prefix(dir: &TempDir, path_prefix: &str, envs: &[(&str, 
         env::var("PATH").expect("PATH is set")
     );
 
+    let script_args = action_script_args(script_args, envs);
     let mut cmd = Command::new("bash");
     cmd.arg(action_script())
+        .args(&script_args)
         .current_dir(dir.path())
         .env("PATH", path)
         .env("GITHUB_OUTPUT", &output_path)
-        .env("GITHUB_STEP_SUMMARY", &summary_path)
-        .env("KEYHOG_SCAN_PATH", ".")
-        .env("KEYHOG_SEVERITY", "high")
-        .env("KEYHOG_FORMAT", "sarif")
-        .env("KEYHOG_VERIFY", "false")
-        .env("KEYHOG_OUTPUT", "keyhog-results.sarif");
+        .env("GITHUB_STEP_SUMMARY", &summary_path);
 
     for (key, value) in envs {
-        cmd.env(key, value);
+        if !is_action_input_key(key) {
+            cmd.env(key, value);
+        }
     }
 
     cmd.output().expect("run action script")
 }
 
+fn run_action_with_path_prefix(dir: &TempDir, path_prefix: &str, envs: &[(&str, &str)]) -> Output {
+    run_action_with_script_args_and_path_prefix(dir, &[], path_prefix, envs)
+}
+
+fn run_action_with_script_args(
+    dir: &TempDir,
+    script_args: &[&str],
+    envs: &[(&str, &str)],
+) -> Output {
+    run_action_with_script_args_and_path_prefix(
+        dir,
+        script_args,
+        dir.path().to_str().expect("utf-8 tempdir"),
+        envs,
+    )
+}
+
 fn run_action(dir: &TempDir, envs: &[(&str, &str)]) -> Output {
     run_action_with_path_prefix(dir, dir.path().to_str().expect("utf-8 tempdir"), envs)
+}
+
+fn run_action_raw_with_script_args(
+    dir: &TempDir,
+    script_args: &[&str],
+    envs: &[(&str, &str)],
+) -> Output {
+    let output_path = dir.path().join("github-output.txt");
+    let summary_path = dir.path().join("summary.md");
+    let path = format!(
+        "{}:{}",
+        dir.path().display(),
+        env::var("PATH").expect("PATH is set")
+    );
+
+    let mut cmd = Command::new("bash");
+    cmd.arg(action_script())
+        .args(script_args)
+        .current_dir(dir.path())
+        .env("PATH", path)
+        .env("GITHUB_OUTPUT", &output_path)
+        .env("GITHUB_STEP_SUMMARY", &summary_path);
+
+    for (key, value) in envs {
+        cmd.env(key, value);
+    }
+
+    cmd.output().expect("run raw action script")
 }
 
 fn output_file(dir: &TempDir) -> String {
@@ -424,10 +524,11 @@ fn action_runs_real_keyhog_and_counts_sarif_findings() {
         &dir,
         binary_dir,
         &[
-            ("KEYHOG_SCAN_PATH", "repo"),
-            ("KEYHOG_FORMAT", "sarif"),
-            ("KEYHOG_OUTPUT", "real-keyhog.sarif"),
-            ("KEYHOG_SEVERITY", "high"),
+            ("ACTION_INPUT_SCAN_PATH", "repo"),
+            ("ACTION_INPUT_FORMAT", "sarif"),
+            ("ACTION_INPUT_OUTPUT", "real-keyhog.sarif"),
+            ("ACTION_INPUT_SEVERITY", "high"),
+            ("ACTION_INPUT_BACKEND", "simd"),
         ],
     );
     assert_eq!(
@@ -476,10 +577,11 @@ fn action_runs_real_keyhog_and_counts_text_findings() {
         &dir,
         binary_dir,
         &[
-            ("KEYHOG_SCAN_PATH", "repo"),
-            ("KEYHOG_FORMAT", "text"),
-            ("KEYHOG_OUTPUT", "real-keyhog.txt"),
-            ("KEYHOG_SEVERITY", "high"),
+            ("ACTION_INPUT_SCAN_PATH", "repo"),
+            ("ACTION_INPUT_FORMAT", "text"),
+            ("ACTION_INPUT_OUTPUT", "real-keyhog.txt"),
+            ("ACTION_INPUT_SEVERITY", "high"),
+            ("ACTION_INPUT_BACKEND", "simd"),
         ],
     );
     assert_eq!(
@@ -578,7 +680,8 @@ fn action_prints_effective_config_before_real_scan_when_enabled() {
         &dir,
         r#"#!/usr/bin/env bash
 set -euo pipefail
-printf '%s\n' "${KEYHOG_PRINT_EFFECTIVE_CONFIG:-unset}" >> "$CALLS_FILE"
+cmd="${1:-}"
+printf '%s\n' "$cmd" >> "$CALLS_FILE"
 out=""
 while [[ "$#" -gt 0 ]]; do
   if [[ "$1" == "--output" ]]; then
@@ -587,12 +690,12 @@ while [[ "$#" -gt 0 ]]; do
   fi
   shift || true
 done
-if [[ "${KEYHOG_PRINT_EFFECTIVE_CONFIG:-}" == "1" ]]; then
+if [[ "$cmd" == "config" ]]; then
   printf '[effective-config]\nmin_confidence = 0.4\n'
   exit 0
 fi
-if [[ "${KEYHOG_PRINT_EFFECTIVE_CONFIG:-}" != "0" ]]; then
-  echo "real scan must clear KEYHOG_PRINT_EFFECTIVE_CONFIG; got ${KEYHOG_PRINT_EFFECTIVE_CONFIG:-unset}" >&2
+if [[ "$cmd" != "scan" ]]; then
+  echo "expected scan command after preflight, got $cmd" >&2
   exit 42
 fi
 cat > "$out" <<'JSON'
@@ -603,12 +706,10 @@ exit 0
     );
 
     let calls_path = calls.to_string_lossy().into_owned();
-    let output = run_action(
+    let output = run_action_with_script_args(
         &dir,
-        &[
-            ("CALLS_FILE", calls_path.as_str()),
-            ("KEYHOG_PRINT_EFFECTIVE_CONFIG", "1"),
-        ],
+        &["--print-effective-config"],
+        &[("CALLS_FILE", calls_path.as_str())],
     );
     assert_eq!(
         output.status.code(),
@@ -623,8 +724,8 @@ exit 0
     );
     assert_eq!(
         fs::read_to_string(&calls).expect("read calls"),
-        "1\n0\n",
-        "action must run print-only preflight first, then real scan with print disabled"
+        "config\nscan\n",
+        "action must run print-only preflight first, then the real scan"
     );
     assert!(
         output_file(&dir).contains("findings=0"),
@@ -640,6 +741,7 @@ fn action_effective_config_preflight_is_advisory_and_never_verifies() {
         &dir,
         r#"#!/usr/bin/env bash
 set -euo pipefail
+cmd="${1:-}"
 out=""
 has_verify=false
 while [[ "$#" -gt 0 ]]; do
@@ -654,17 +756,17 @@ while [[ "$#" -gt 0 ]]; do
   esac
   shift || true
 done
-printf '%s verify=%s\n' "${KEYHOG_PRINT_EFFECTIVE_CONFIG:-unset}" "$has_verify" >> "$CALLS_FILE"
-if [[ "${KEYHOG_PRINT_EFFECTIVE_CONFIG:-}" == "1" ]]; then
+printf '%s verify=%s\n' "$cmd" "$has_verify" >> "$CALLS_FILE"
+if [[ "$cmd" == "config" ]]; then
   if [[ "$has_verify" == "true" ]]; then
     echo "preflight must not run live verification" >&2
     exit 43
   fi
-  echo "legacy binary ignored effective-config env and returned findings" >&2
+  echo "config preflight failed" >&2
   exit 1
 fi
-if [[ "${KEYHOG_PRINT_EFFECTIVE_CONFIG:-}" != "0" ]]; then
-  echo "real scan must clear KEYHOG_PRINT_EFFECTIVE_CONFIG; got ${KEYHOG_PRINT_EFFECTIVE_CONFIG:-unset}" >&2
+if [[ "$cmd" != "scan" ]]; then
+  echo "expected scan command after preflight, got $cmd" >&2
   exit 42
 fi
 if [[ "$has_verify" != "true" ]]; then
@@ -679,12 +781,12 @@ exit 0
     );
 
     let calls_path = calls.to_string_lossy().into_owned();
-    let output = run_action(
+    let output = run_action_with_script_args(
         &dir,
+        &["--print-effective-config"],
         &[
             ("CALLS_FILE", calls_path.as_str()),
-            ("KEYHOG_PRINT_EFFECTIVE_CONFIG", "1"),
-            ("KEYHOG_VERIFY", "true"),
+            ("ACTION_INPUT_VERIFY", "true"),
         ],
     );
     let combined = combined_output(&output);
@@ -700,7 +802,7 @@ exit 0
     );
     assert_eq!(
         fs::read_to_string(&calls).expect("read calls"),
-        "1 verify=false\n0 verify=true\n",
+        "config verify=false\nscan verify=true\n",
         "preflight must skip --verify, while the real scan preserves it"
     );
     assert!(
@@ -710,7 +812,7 @@ exit 0
 }
 
 #[test]
-fn action_effective_config_preflight_report_cannot_mask_real_scan_missing_report() {
+fn action_effective_config_preflight_cannot_mask_real_scan_missing_report() {
     let dir = TempDir::new().expect("tempdir");
     let runner_temp = dir.path().join("runner-temp");
     fs::create_dir(&runner_temp).expect("runner temp");
@@ -719,6 +821,7 @@ fn action_effective_config_preflight_report_cannot_mask_real_scan_missing_report
         &dir,
         r#"#!/usr/bin/env bash
 set -euo pipefail
+cmd="${1:-}"
 out=""
 while [[ "$#" -gt 0 ]]; do
   if [[ "$1" == "--output" ]]; then
@@ -727,15 +830,16 @@ while [[ "$#" -gt 0 ]]; do
   fi
   shift || true
 done
-printf '%s output=%s\n' "${KEYHOG_PRINT_EFFECTIVE_CONFIG:-unset}" "$out" >> "$CALLS_FILE"
-if [[ "${KEYHOG_PRINT_EFFECTIVE_CONFIG:-}" == "1" ]]; then
-  cat > "$out" <<'JSON'
-{"runs":[{"results":[]}]}
-JSON
+printf '%s output=%s\n' "$cmd" "$out" >> "$CALLS_FILE"
+if [[ "$cmd" == "config" ]]; then
+  if [[ -n "$out" ]]; then
+    echo "config preflight must not receive --output" >&2
+    exit 43
+  fi
   exit 0
 fi
-if [[ "${KEYHOG_PRINT_EFFECTIVE_CONFIG:-}" != "0" ]]; then
-  echo "real scan must clear KEYHOG_PRINT_EFFECTIVE_CONFIG; got ${KEYHOG_PRINT_EFFECTIVE_CONFIG:-unset}" >&2
+if [[ "$cmd" != "scan" ]]; then
+  echo "expected scan command after preflight, got $cmd" >&2
   exit 42
 fi
 exit 1
@@ -744,12 +848,12 @@ exit 1
 
     let calls_path = calls.to_string_lossy().into_owned();
     let runner_temp_path = runner_temp.to_string_lossy().into_owned();
-    let output = run_action(
+    let output = run_action_with_script_args(
         &dir,
+        &["--print-effective-config"],
         &[
             ("CALLS_FILE", calls_path.as_str()),
             ("RUNNER_TEMP", runner_temp_path.as_str()),
-            ("KEYHOG_PRINT_EFFECTIVE_CONFIG", "1"),
         ],
     );
     let combined = combined_output(&output);
@@ -771,20 +875,13 @@ exit 1
         lines.next().is_none(),
         "action should invoke exactly one preflight and one real scan; calls={calls_text}"
     );
-    let preflight_output = preflight
-        .strip_prefix("1 output=")
-        .expect("preflight output path recorded");
-    assert_ne!(
-        preflight_output, "keyhog-results.sarif",
-        "preflight must not use the final report path"
+    assert_eq!(
+        preflight, "config output=",
+        "config preflight must not receive any report output path"
     );
     assert_eq!(
-        real_scan, "0 output=keyhog-results.sarif",
+        real_scan, "scan output=keyhog-results.sarif",
         "real scan must own the final report path"
-    );
-    assert!(
-        !Path::new(preflight_output).exists(),
-        "preflight scratch report should be removed"
     );
     assert!(
         !dir.path().join("keyhog-results.sarif").exists(),
@@ -914,8 +1011,8 @@ exit 0
     let output = run_action(
         &dir,
         &[
-            ("KEYHOG_FORMAT", "json"),
-            ("KEYHOG_OUTPUT", "keyhog-results.json"),
+            ("ACTION_INPUT_FORMAT", "json"),
+            ("ACTION_INPUT_OUTPUT", "keyhog-results.json"),
         ],
     );
     assert_eq!(
@@ -1017,7 +1114,7 @@ exit 0
         ),
     );
 
-    let output = run_action(&dir, &[("KEYHOG_FORMAT", "xml")]);
+    let output = run_action(&dir, &[("ACTION_INPUT_FORMAT", "xml")]);
     assert_eq!(
         output.status.code(),
         Some(2),
@@ -1046,7 +1143,10 @@ exit 0
         ),
     );
 
-    for (key, value) in [("KEYHOG_SEVERITY", "emergency"), ("KEYHOG_VERIFY", "yes")] {
+    for (key, value) in [
+        ("ACTION_INPUT_SEVERITY", "emergency"),
+        ("ACTION_INPUT_VERIFY", "yes"),
+    ] {
         let output = run_action(&dir, &[(key, value)]);
         assert_eq!(
             output.status.code(),
@@ -1078,8 +1178,8 @@ exit 0
     );
 
     for (key, value) in [
-        ("KEYHOG_FAIL_ON_FINDINGS", "maybe"),
-        ("KEYHOG_UPLOAD_SARIF", "maybe"),
+        ("ACTION_INPUT_FAIL_ON_FINDINGS", "maybe"),
+        ("ACTION_INPUT_UPLOAD_SARIF", "maybe"),
     ] {
         let output = run_action(&dir, &[(key, value)]);
         assert_eq!(
@@ -1093,6 +1193,77 @@ exit 0
             "{key}={value} must fail before running keyhog"
         );
     }
+}
+
+#[test]
+fn action_ignores_removed_keyhog_env_transport() {
+    let dir = TempDir::new().expect("tempdir");
+    write_stub(
+        &dir,
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+out=""
+while [[ "$#" -gt 0 ]]; do
+  if [[ "$1" == "--output" ]]; then
+    shift
+    out="$1"
+  fi
+  shift || true
+done
+printf '[]\n' > "$out"
+exit 0
+"#,
+    );
+
+    let output = run_action_raw_with_script_args(
+        &dir,
+        &[
+            "--path",
+            ".",
+            "--severity",
+            "high",
+            "--format",
+            "json",
+            "--output",
+            "explicit.json",
+            "--verify",
+            "false",
+            "--fail-on-findings",
+            "true",
+            "--upload-sarif",
+            "true",
+        ],
+        &[
+            ("KEYHOG_SCAN_PATH", "wrong-path"),
+            ("KEYHOG_SEVERITY", "emergency"),
+            ("KEYHOG_FORMAT", "xml"),
+            ("KEYHOG_OUTPUT", "env-selected.json"),
+            ("KEYHOG_VERIFY", "yes"),
+            ("KEYHOG_BASELINE", "env-baseline.json"),
+            ("KEYHOG_BACKEND", "broken"),
+            ("KEYHOG_FAIL_ON_FINDINGS", "maybe"),
+            ("KEYHOG_UPLOAD_SARIF", "maybe"),
+        ],
+    );
+
+    let combined = combined_output(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "removed KEYHOG_* transport env must not affect the action wrapper; output={combined}"
+    );
+    assert!(
+        dir.path().join("explicit.json").is_file(),
+        "explicit argv report path must be used"
+    );
+    assert!(
+        !dir.path().join("env-selected.json").exists(),
+        "removed KEYHOG_OUTPUT env must not select the report path"
+    );
+    assert!(
+        output_file(&dir).contains("findings=0"),
+        "clean explicit JSON report must be parsed through GITHUB_OUTPUT"
+    );
 }
 
 #[test]
@@ -1112,7 +1283,7 @@ exit 0
     );
 
     let injected = "bad\n::warning title=Owned::forged";
-    let output = run_action(&dir, &[("KEYHOG_SEVERITY", injected)]);
+    let output = run_action(&dir, &[("ACTION_INPUT_SEVERITY", injected)]);
     let combined = combined_output(&output);
     assert_eq!(
         output.status.code(),
@@ -1137,16 +1308,24 @@ exit 0
 fn composite_action_passes_policy_inputs_to_scanner_script() {
     let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
     assert!(
-        manifest.contains("KEYHOG_FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}"),
+        manifest.contains("ACTION_FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}"),
         "composite action must validate fail-on-findings in the tested script"
     );
     assert!(
-        manifest.contains("KEYHOG_UPLOAD_SARIF: ${{ inputs.upload-sarif }}"),
+        manifest.contains("ACTION_UPLOAD_SARIF: ${{ inputs.upload-sarif }}"),
         "composite action must validate upload-sarif in the tested script"
     );
     assert!(
-        manifest.contains("KEYHOG_PRINT_EFFECTIVE_CONFIG: \"1\""),
+        manifest.contains("--print-effective-config"),
         "composite action must print the resolved scanner config before the real scan"
+    );
+    assert!(
+        manifest.contains("--fail-on-findings \"$ACTION_FAIL_ON_FINDINGS\""),
+        "fail-on-findings must reach the tested script through argv"
+    );
+    assert!(
+        manifest.contains("--upload-sarif \"$ACTION_UPLOAD_SARIF\""),
+        "upload-sarif must reach the tested script through argv"
     );
 }
 
@@ -1223,7 +1402,7 @@ fn composite_action_live_credentials_fail_even_when_findings_are_advisory() {
         "verified-live credentials must fail the composite Action even when fail-on-findings is false"
     );
     assert!(
-        manifest.contains("KEYHOG_EXIT_CODE: ${{ steps.scan.outputs.exit-code }}"),
+        manifest.contains("ACTION_EXIT_CODE: ${{ steps.scan.outputs.exit-code }}"),
         "fail step must receive the raw scanner exit code through env"
     );
     assert!(
@@ -1264,9 +1443,9 @@ fn composite_action_fail_step_exits_ten_for_live_credentials() {
     let output = run_manifest_bash_step(
         "Fail when findings reported",
         &[
-            ("KEYHOG_FINDINGS", "1"),
-            ("KEYHOG_EXIT_CODE", "10"),
-            ("KEYHOG_SEVERITY", "high"),
+            ("ACTION_FINDINGS", "1"),
+            ("ACTION_EXIT_CODE", "10"),
+            ("ACTION_SEVERITY", "high"),
         ],
     );
     let combined = combined_output(&output);
@@ -1290,9 +1469,9 @@ fn composite_action_fail_step_exits_one_for_advisory_findings() {
     let output = run_manifest_bash_step(
         "Fail when findings reported",
         &[
-            ("KEYHOG_FINDINGS", "2"),
-            ("KEYHOG_EXIT_CODE", "1"),
-            ("KEYHOG_SEVERITY", "critical"),
+            ("ACTION_FINDINGS", "2"),
+            ("ACTION_EXIT_CODE", "1"),
+            ("ACTION_SEVERITY", "critical"),
         ],
     );
     let combined = combined_output(&output);
@@ -1313,9 +1492,9 @@ fn composite_action_fail_step_rejects_invalid_exit_code_without_reflection() {
     let output = run_manifest_bash_step(
         "Fail when findings reported",
         &[
-            ("KEYHOG_FINDINGS", "1"),
-            ("KEYHOG_EXIT_CODE", injected),
-            ("KEYHOG_SEVERITY", "high"),
+            ("ACTION_FINDINGS", "1"),
+            ("ACTION_EXIT_CODE", injected),
+            ("ACTION_SEVERITY", "high"),
         ],
     );
     let combined = combined_output(&output);
@@ -1355,7 +1534,7 @@ fn composite_action_shell_blocks_do_not_inline_untrusted_expressions() {
 fn composite_action_version_output_is_validated_before_github_output() {
     let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
     assert!(
-        manifest.contains("KEYHOG_ACTION_VERSION: ${{ inputs.version }}"),
+        manifest.contains("ACTION_VERSION: ${{ inputs.version }}"),
         "version input must enter shell through env"
     );
     assert!(
@@ -1384,7 +1563,7 @@ fn composite_action_version_output_is_validated_before_github_output() {
 fn composite_action_error_commands_do_not_reflect_untrusted_env_values() {
     let manifest = fs::read_to_string(action_manifest()).expect("read action.yml");
     assert!(
-        !manifest.contains("Invalid findings output '${KEYHOG_FINDINGS:-}'"),
+        !manifest.contains("Invalid findings output '${ACTION_FINDINGS:-}'"),
         "fail step must not echo an invalid findings output into a workflow command"
     );
     assert!(
@@ -1529,9 +1708,9 @@ chmod +x target/release/keyhog
         "Build keyhog from source (fallback)",
         &[
             ("PATH", path.as_str()),
-            ("KEYHOG_ACTION_SOURCE_ROOT", source_root_str.as_str()),
+            ("ACTION_SOURCE_ROOT", source_root_str.as_str()),
             ("RUNNER_TEMP", runner_temp_str.as_str()),
-            ("KEYHOG_ASSET_NAME", "keyhog-linux-x86_64-cuda"),
+            ("ACTION_ASSET_NAME", "keyhog-linux-x86_64-cuda"),
             ("CARGO_ARGS_FILE", cargo_args_str.as_str()),
         ],
     );
@@ -1642,8 +1821,8 @@ exit 0
             ("PATH", path.as_str()),
             ("GITHUB_OUTPUT", output_path_str.as_str()),
             ("RUNNER_TEMP", runner_temp_str.as_str()),
-            ("KEYHOG_ASSET_NAME", "keyhog-windows-x86_64.exe"),
-            ("KEYHOG_RESOLVED_VERSION", "0.5.37"),
+            ("ACTION_ASSET_NAME", "keyhog-windows-x86_64.exe"),
+            ("ACTION_RESOLVED_VERSION", "0.5.37"),
         ],
     );
     let combined = combined_output(&output);
@@ -1770,11 +1949,11 @@ exit 0
         &dir,
         &[
             ("KEYHOG_STUB_ARGS", args_path.to_str().expect("utf-8 path")),
-            ("KEYHOG_SCAN_PATH", "src path/with space"),
-            ("KEYHOG_FORMAT", "json"),
-            ("KEYHOG_OUTPUT", "report.json"),
-            ("KEYHOG_VERIFY", "true"),
-            ("KEYHOG_BASELINE", "baseline path/with space.json"),
+            ("ACTION_INPUT_SCAN_PATH", "src path/with space"),
+            ("ACTION_INPUT_FORMAT", "json"),
+            ("ACTION_INPUT_OUTPUT", "report.json"),
+            ("ACTION_INPUT_VERIFY", "true"),
+            ("ACTION_INPUT_BASELINE", "baseline path/with space.json"),
         ],
     );
     assert_eq!(
@@ -1824,8 +2003,8 @@ exit 1
     let output = run_action(
         &dir,
         &[
-            ("KEYHOG_FORMAT", "text"),
-            ("KEYHOG_OUTPUT", "keyhog-results.txt"),
+            ("ACTION_INPUT_FORMAT", "text"),
+            ("ACTION_INPUT_OUTPUT", "keyhog-results.txt"),
         ],
     );
     assert_eq!(
@@ -1867,8 +2046,8 @@ exit 1
     let output = run_action(
         &dir,
         &[
-            ("KEYHOG_FORMAT", "jsonl"),
-            ("KEYHOG_OUTPUT", "keyhog-results.jsonl"),
+            ("ACTION_INPUT_FORMAT", "jsonl"),
+            ("ACTION_INPUT_OUTPUT", "keyhog-results.jsonl"),
         ],
     );
     assert_eq!(
@@ -1906,8 +2085,8 @@ exit 0
     let output = run_action(
         &dir,
         &[
-            ("KEYHOG_FORMAT", "jsonl"),
-            ("KEYHOG_OUTPUT", "keyhog-results.jsonl"),
+            ("ACTION_INPUT_FORMAT", "jsonl"),
+            ("ACTION_INPUT_OUTPUT", "keyhog-results.jsonl"),
         ],
     );
     assert_eq!(
@@ -1941,8 +2120,8 @@ exit 0
     let output = run_action(
         &dir,
         &[
-            ("KEYHOG_FORMAT", "jsonl"),
-            ("KEYHOG_OUTPUT", "keyhog-results.jsonl"),
+            ("ACTION_INPUT_FORMAT", "jsonl"),
+            ("ACTION_INPUT_OUTPUT", "keyhog-results.jsonl"),
         ],
     );
     assert_eq!(
@@ -1981,8 +2160,8 @@ exit 1
     let output = run_action(
         &dir,
         &[
-            ("KEYHOG_FORMAT", "jsonl"),
-            ("KEYHOG_OUTPUT", "keyhog-results.jsonl"),
+            ("ACTION_INPUT_FORMAT", "jsonl"),
+            ("ACTION_INPUT_OUTPUT", "keyhog-results.jsonl"),
         ],
     );
     assert_eq!(
@@ -2020,10 +2199,10 @@ exit 0
     let output = run_action(
         &dir,
         &[
-            ("KEYHOG_FORMAT", "json"),
-            ("KEYHOG_OUTPUT", "report.json"),
-            ("KEYHOG_SCAN_PATH", "src|`name\nsecond"),
-            ("KEYHOG_BASELINE", "base|`line\nthird"),
+            ("ACTION_INPUT_FORMAT", "json"),
+            ("ACTION_INPUT_OUTPUT", "report.json"),
+            ("ACTION_INPUT_SCAN_PATH", "src|`name\nsecond"),
+            ("ACTION_INPUT_BASELINE", "base|`line\nthird"),
         ],
     );
     assert_eq!(

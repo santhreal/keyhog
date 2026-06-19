@@ -42,6 +42,11 @@ inputs:
       job blocks only NEW secrets. This is the standard way to adopt keyhog in
       a repo that already has findings, without a noisy failing first run.
     default: ''
+  backend:
+    description: |
+      Optional explicit scan backend for diagnostics: auto | simd | cpu | gpu | megascan.
+      Leave unset to use the installed binary's persisted autoroute calibration.
+    default: ''
 
 outputs:
   findings:
@@ -64,11 +69,11 @@ runs:
       id: version
       shell: bash
       env:
-        KEYHOG_ACTION_VERSION: ${{ inputs.version }}
+        ACTION_VERSION: ${{ inputs.version }}
       run: |
         set -euo pipefail
-        if [[ -n "${KEYHOG_ACTION_VERSION:-}" ]]; then
-          v="$KEYHOG_ACTION_VERSION"
+        if [[ -n "${ACTION_VERSION:-}" ]]; then
+          v="$ACTION_VERSION"
         else
           # GITHUB_ACTION_REF is e.g. "v0.5.12", "main", a SHA, or a branch.
           # Tagged refs: strip the leading "v"; everything else falls
@@ -146,12 +151,12 @@ runs:
       id: download
       shell: bash
       env:
-        KEYHOG_ASSET_NAME: ${{ steps.asset.outputs.name }}
-        KEYHOG_RESOLVED_VERSION: ${{ steps.version.outputs.version }}
+        ACTION_ASSET_NAME: ${{ steps.asset.outputs.name }}
+        ACTION_RESOLVED_VERSION: ${{ steps.version.outputs.version }}
       run: |
         set -euo pipefail
-        asset="${KEYHOG_ASSET_NAME:-}"
-        version="${KEYHOG_RESOLVED_VERSION:-}"
+        asset="${ACTION_ASSET_NAME:-}"
+        version="${ACTION_RESOLVED_VERSION:-}"
         if [[ -z "$asset" ]] || [[ -z "$version" ]]; then
           echo "no asset name / version - skipping download"
           echo "found=false" >> "$GITHUB_OUTPUT"
@@ -200,11 +205,11 @@ runs:
       if: steps.download.outputs.found != 'true'
       shell: bash
       env:
-        KEYHOG_ACTION_SOURCE_ROOT: ${{ github.action_path }}/../../..
-        KEYHOG_ASSET_NAME: ${{ steps.asset.outputs.name }}
+        ACTION_SOURCE_ROOT: ${{ github.action_path }}/../../..
+        ACTION_ASSET_NAME: ${{ steps.asset.outputs.name }}
       run: |
         set -euo pipefail
-        cd "$KEYHOG_ACTION_SOURCE_ROOT"
+        cd "$ACTION_SOURCE_ROOT"
         # Only Linux ships keyhog's default `simd` feature (libhyperscan-dev).
         # macOS has no homebrew formula for libhyperscan; Windows has no
         # libhyperscan at all. Both fall to the `portable` feature subset
@@ -213,7 +218,7 @@ runs:
         # source-build path crashed at link time on a missing `-lhs`.
         case "$(uname -s)" in
           Linux*)
-            if [[ "${KEYHOG_ASSET_NAME:-}" == "keyhog-linux-x86_64-cuda" ]]; then
+            if [[ "${ACTION_ASSET_NAME:-}" == "keyhog-linux-x86_64-cuda" ]]; then
               cargo build --release -p keyhog --features cuda
             else
               cargo build --release -p keyhog
@@ -235,11 +240,11 @@ runs:
       id: outfile
       shell: bash
       env:
-        KEYHOG_ACTION_FORMAT: ${{ inputs.format }}
+        ACTION_FORMAT: ${{ inputs.format }}
       run: |
         set -euo pipefail
         ext="json"
-        case "${KEYHOG_ACTION_FORMAT:-sarif}" in
+        case "${ACTION_FORMAT:-sarif}" in
           sarif) ext="sarif" ;;
           jsonl) ext="jsonl" ;;
           text)  ext="txt" ;;
@@ -250,30 +255,47 @@ runs:
       id: scan
       shell: bash
       env:
-        KEYHOG_SCAN_PATH: ${{ inputs.path }}
-        KEYHOG_SEVERITY: ${{ inputs.severity }}
-        KEYHOG_FORMAT: ${{ inputs.format }}
-        KEYHOG_VERIFY: ${{ inputs.verify }}
-        KEYHOG_BASELINE: ${{ inputs.baseline }}
-        KEYHOG_OUTPUT: ${{ steps.outfile.outputs.name }}
-        KEYHOG_FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
-        KEYHOG_UPLOAD_SARIF: ${{ inputs.upload-sarif }}
-        KEYHOG_PRINT_EFFECTIVE_CONFIG: "1"
+        ACTION_SCAN_PATH: ${{ inputs.path }}
+        ACTION_SEVERITY: ${{ inputs.severity }}
+        ACTION_FORMAT: ${{ inputs.format }}
+        ACTION_VERIFY: ${{ inputs.verify }}
+        ACTION_BASELINE: ${{ inputs.baseline }}
+        ACTION_BACKEND: ${{ inputs.backend }}
+        ACTION_OUTPUT: ${{ steps.outfile.outputs.name }}
+        ACTION_FAIL_ON_FINDINGS: ${{ inputs.fail-on-findings }}
+        ACTION_UPLOAD_SARIF: ${{ inputs.upload-sarif }}
       run: |
-        bash "${{ github.action_path }}/run-scan.sh"
+        set -euo pipefail
+        args=(
+          --print-effective-config
+          --path "$ACTION_SCAN_PATH"
+          --severity "$ACTION_SEVERITY"
+          --format "$ACTION_FORMAT"
+          --output "$ACTION_OUTPUT"
+          --verify "$ACTION_VERIFY"
+          --fail-on-findings "$ACTION_FAIL_ON_FINDINGS"
+          --upload-sarif "$ACTION_UPLOAD_SARIF"
+        )
+        if [[ -n "${ACTION_BASELINE:-}" ]]; then
+          args+=(--baseline "$ACTION_BASELINE")
+        fi
+        if [[ -n "${ACTION_BACKEND:-}" ]]; then
+          args+=(--backend "$ACTION_BACKEND")
+        fi
+        bash "${{ github.action_path }}/run-scan.sh" "${args[@]}"
 
     - name: Check report exists before SARIF upload
       id: report-check
       if: always()
       shell: bash
       env:
-        KEYHOG_REPORT_NAME: ${{ steps.outfile.outputs.name }}
+        ACTION_REPORT_NAME: ${{ steps.outfile.outputs.name }}
       run: |
-        if [[ -f "$KEYHOG_REPORT_NAME" ]]; then
+        if [[ -f "$ACTION_REPORT_NAME" ]]; then
           echo "exists=true" >> "$GITHUB_OUTPUT"
         else
           echo "exists=false" >> "$GITHUB_OUTPUT"
-          echo "::warning title=KeyHog::Scan report '$KEYHOG_REPORT_NAME' missing; skipping SARIF + artifact upload."
+          echo "::warning title=KeyHog::Scan report '$ACTION_REPORT_NAME' missing; skipping SARIF + artifact upload."
         fi
 
     - name: Upload SARIF to code-scanning
@@ -303,30 +325,30 @@ runs:
       if: steps.scan.outputs.findings != '' && steps.scan.outputs.exit-code != '' && ((inputs.fail-on-findings == 'true' && steps.scan.outputs.findings != '0') || steps.scan.outputs.exit-code == '10')
       shell: bash
       env:
-        KEYHOG_FINDINGS: ${{ steps.scan.outputs.findings }}
-        KEYHOG_EXIT_CODE: ${{ steps.scan.outputs.exit-code }}
-        KEYHOG_SEVERITY: ${{ inputs.severity }}
+        ACTION_FINDINGS: ${{ steps.scan.outputs.findings }}
+        ACTION_EXIT_CODE: ${{ steps.scan.outputs.exit-code }}
+        ACTION_SEVERITY: ${{ inputs.severity }}
       run: |
-        case "${KEYHOG_FINDINGS:-}" in
+        case "${ACTION_FINDINGS:-}" in
           "" | *[!0-9]*)
             echo "::error title=KeyHog::Invalid findings output."
             exit 3
             ;;
         esac
-        case "${KEYHOG_EXIT_CODE:-}" in
+        case "${ACTION_EXIT_CODE:-}" in
           0 | 1 | 10) ;;
           "" | *[!0-9]*)
             echo "::error title=KeyHog::Invalid exit-code output."
             exit 3
             ;;
           *)
-            echo "::error title=KeyHog::Unexpected scan exit code ${KEYHOG_EXIT_CODE}."
-            exit "$KEYHOG_EXIT_CODE"
+            echo "::error title=KeyHog::Unexpected scan exit code ${ACTION_EXIT_CODE}."
+            exit "$ACTION_EXIT_CODE"
             ;;
         esac
-        if [[ "$KEYHOG_EXIT_CODE" == "10" ]]; then
+        if [[ "$ACTION_EXIT_CODE" == "10" ]]; then
           echo "::error title=KeyHog::LIVE credential(s) confirmed by --verify (exit 10)."
           exit 10
         fi
-        echo "::error title=KeyHog::${KEYHOG_FINDINGS} finding(s) at or above '${KEYHOG_SEVERITY}' severity. Set fail-on-findings:false to ignore."
+        echo "::error title=KeyHog::${ACTION_FINDINGS} finding(s) at or above '${ACTION_SEVERITY}' severity. Set fail-on-findings:false to ignore."
         exit 1

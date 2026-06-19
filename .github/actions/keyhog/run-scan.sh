@@ -1,15 +1,16 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
-scan_path="${KEYHOG_SCAN_PATH:-.}"
-severity="${KEYHOG_SEVERITY:-high}"
-format="${KEYHOG_FORMAT:-sarif}"
-report="${KEYHOG_OUTPUT:-keyhog-results.sarif}"
-verify="${KEYHOG_VERIFY:-false}"
-baseline="${KEYHOG_BASELINE:-}"
-fail_on_findings="${KEYHOG_FAIL_ON_FINDINGS:-true}"
-upload_sarif="${KEYHOG_UPLOAD_SARIF:-true}"
-print_effective_config="${KEYHOG_PRINT_EFFECTIVE_CONFIG:-false}"
+scan_path="."
+severity="high"
+format="sarif"
+report="keyhog-results.sarif"
+verify="false"
+baseline=""
+backend=""
+fail_on_findings="true"
+upload_sarif="true"
+print_effective_config=false
 
 gha_escape() {
   local value="$1"
@@ -30,6 +31,91 @@ gha_warning() {
 gha_notice() {
   printf '::notice title=KeyHog::%s\n' "$(gha_escape "$1")"
 }
+
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --path)
+      if [[ "$#" -lt 2 ]]; then
+        gha_error "Missing value for run-scan.sh argument: --path"
+        exit 2
+      fi
+      scan_path="$2"
+      shift 2
+      ;;
+    --severity)
+      if [[ "$#" -lt 2 ]]; then
+        gha_error "Missing value for run-scan.sh argument: --severity"
+        exit 2
+      fi
+      severity="$2"
+      shift 2
+      ;;
+    --format)
+      if [[ "$#" -lt 2 ]]; then
+        gha_error "Missing value for run-scan.sh argument: --format"
+        exit 2
+      fi
+      format="$2"
+      shift 2
+      ;;
+    --output)
+      if [[ "$#" -lt 2 ]]; then
+        gha_error "Missing value for run-scan.sh argument: --output"
+        exit 2
+      fi
+      report="$2"
+      shift 2
+      ;;
+    --verify)
+      if [[ "$#" -lt 2 ]]; then
+        gha_error "Missing value for run-scan.sh argument: --verify"
+        exit 2
+      fi
+      verify="$2"
+      shift 2
+      ;;
+    --baseline)
+      if [[ "$#" -lt 2 ]]; then
+        gha_error "Missing value for run-scan.sh argument: --baseline"
+        exit 2
+      fi
+      baseline="$2"
+      shift 2
+      ;;
+    --backend)
+      if [[ "$#" -lt 2 ]]; then
+        gha_error "Missing value for run-scan.sh argument: --backend"
+        exit 2
+      fi
+      backend="$2"
+      shift 2
+      ;;
+    --fail-on-findings)
+      if [[ "$#" -lt 2 ]]; then
+        gha_error "Missing value for run-scan.sh argument: --fail-on-findings"
+        exit 2
+      fi
+      fail_on_findings="$2"
+      shift 2
+      ;;
+    --upload-sarif)
+      if [[ "$#" -lt 2 ]]; then
+        gha_error "Missing value for run-scan.sh argument: --upload-sarif"
+        exit 2
+      fi
+      upload_sarif="$2"
+      shift 2
+      ;;
+    --print-effective-config)
+      print_effective_config=true
+      shift
+      ;;
+    *)
+      gha_error "Unknown run-scan.sh argument: $1"
+      exit 2
+      ;;
+  esac
+done
 
 now_ms() {
   if [[ -n "${EPOCHREALTIME:-}" ]]; then
@@ -74,6 +160,14 @@ case "$verify" in
     ;;
 esac
 
+case "$backend" in
+  "" | auto | simd | cpu | gpu | megascan) ;;
+  *)
+    gha_error "Invalid backend '$backend'. Use one of: auto, simd, cpu, gpu, megascan."
+    exit 2
+    ;;
+esac
+
 case "$fail_on_findings" in
   true | false) ;;
   *)
@@ -90,25 +184,13 @@ case "$upload_sarif" in
     ;;
 esac
 
-case "$print_effective_config" in
-  1 | true | TRUE | True)
-    print_effective_config=true
-    ;;
-  0 | false | FALSE | False)
-    print_effective_config=false
-    ;;
-  *)
-    gha_error "Invalid KEYHOG_PRINT_EFFECTIVE_CONFIG '$print_effective_config'. Use '1', '0', 'true', or 'false'."
-    exit 2
-    ;;
-esac
-
 args=(scan
   --path "$scan_path"
   --severity "$severity"
   --format "$format"
   --output "$report")
-config_args=(scan
+config_args=(config
+  --effective
   --path "$scan_path"
   --severity "$severity"
   --format "$format")
@@ -117,24 +199,20 @@ if [[ "$verify" == "true" ]]; then
   args+=(--verify)
 fi
 
+if [[ -n "$backend" ]]; then
+  args+=(--backend "$backend")
+fi
+
 if [[ -n "$baseline" ]]; then
   args+=(--baseline "$baseline")
   config_args+=(--baseline "$baseline")
 fi
 
 if [[ "$print_effective_config" == "true" ]]; then
-  preflight_dir="${RUNNER_TEMP:-.}"
-  if [[ ! -d "$preflight_dir" || ! -w "$preflight_dir" ]]; then
-    preflight_dir="."
-  fi
-  preflight_report="$(mktemp "$preflight_dir/keyhog-effective-config-preflight.XXXXXX" 2>/dev/null || printf '%s\n' "$preflight_dir/keyhog-effective-config-preflight-$$.$format")"
-  rm -f -- "$preflight_report"
-  config_args+=(--output "$preflight_report")
   set +e
-  KEYHOG_PRINT_EFFECTIVE_CONFIG=1 keyhog "${config_args[@]}"
+  keyhog "${config_args[@]}"
   config_exit=$?
   set -e
-  rm -f -- "$preflight_report"
   if [[ "$config_exit" != "0" ]]; then
     gha_warning "keyhog effective-config preflight exited $config_exit; continuing with the real scan so reports and SARIF are still produced."
   fi
@@ -142,7 +220,7 @@ fi
 
 scan_start_ms="$(now_ms)"
 set +e
-KEYHOG_PRINT_EFFECTIVE_CONFIG=0 keyhog "${args[@]}"
+keyhog "${args[@]}"
 keyhog_exit=$?
 set -e
 scan_end_ms="$(now_ms)"
