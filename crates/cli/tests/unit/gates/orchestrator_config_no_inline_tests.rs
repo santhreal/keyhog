@@ -12,6 +12,10 @@ fn orchestrator_config_no_inline_tests() {
             env!("CARGO_MANIFEST_DIR"),
             "/src/orchestrator_config/effective.rs"
         ),
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/orchestrator_config/runtime.rs"
+        ),
     ] {
         let src = std::fs::read_to_string(path).expect("source readable");
         assert!(

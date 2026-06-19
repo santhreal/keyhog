@@ -1,0 +1,168 @@
+use crate::args::ScanArgs;
+use anyhow::Result;
+use std::path::PathBuf;
+
+/// Hard ceiling on the worker thread count. Requested values above this are
+/// clamped by [`sanitise_thread_count`]; spawning thousands of threads thrashes
+/// the OS scheduler without speeding the scan up.
+pub(crate) const MAX_THREADS_CAP: usize = 256;
+
+/// Canonical default for `--ml-threshold` (`ScanArgs::ml_threshold`).
+pub(crate) const ML_THRESHOLD_DEFAULT: f64 = 0.5;
+
+/// Default chunk batch size for the fused filesystem read+scan pipeline.
+pub(crate) const FUSED_BATCH_DEFAULT: usize = 32;
+
+/// Default bounded-channel depth for fused filesystem batches.
+pub(crate) fn fused_depth_default(worker_threads: usize) -> usize {
+    worker_threads
+        .saturating_add(3)
+        .saturating_div(4)
+        .clamp(2, 8)
+}
+
+pub(crate) fn parse_backend_override(
+    raw: Option<&str>,
+) -> Result<Option<keyhog_scanner::ScanBackend>> {
+    let Some(raw) = raw else {
+        return Ok(None);
+    };
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("auto") {
+        return Ok(None);
+    }
+    keyhog_scanner::hw_probe::parse_backend_str(trimmed)
+        .map(Some)
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "invalid --backend value {:?}. Supported values: auto, gpu, mega-scan, megascan, simd, cpu.",
+                raw
+            )
+        })
+}
+
+pub(crate) fn backend_override_label(backend: Option<keyhog_scanner::ScanBackend>) -> &'static str {
+    backend.map_or("auto", keyhog_scanner::ScanBackend::label)
+}
+
+pub(crate) fn gpu_runtime_policy_from_args(
+    args: &ScanArgs,
+) -> keyhog_scanner::gpu::GpuRuntimePolicy {
+    if args.require_gpu {
+        keyhog_scanner::gpu::GpuRuntimePolicy::Required
+    } else if args.no_gpu {
+        keyhog_scanner::gpu::GpuRuntimePolicy::Disabled
+    } else {
+        keyhog_scanner::gpu::GpuRuntimePolicy::Auto
+    }
+}
+
+pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) {
+    // Resolution order: --threads / [scan].threads > physical core count.
+    // Physical cores are the right default for CPU-bound regex: SMT siblings
+    // share execution units, so doubling threads mostly doubles cache pressure.
+    let (n, source) = if let Some(t) = threads {
+        (
+            sanitise_thread_count(t, physical_cores, "cli-arg"),
+            "cli-arg",
+        )
+    } else {
+        (physical_cores.max(1), "physical-cores")
+    };
+
+    let builder = rayon::ThreadPoolBuilder::new()
+        .num_threads(n)
+        .stack_size(8 * 1024 * 1024)
+        .thread_name(|i| format!("keyhog-worker-{i}"));
+
+    if let Err(error) = builder.build_global() {
+        tracing::warn!(
+            requested_threads = n,
+            source,
+            "failed to configure rayon thread pool: {error}"
+        );
+    } else {
+        tracing::info!(
+            threads = n,
+            source,
+            physical_cores,
+            "rayon thread pool configured"
+        );
+    }
+}
+
+pub(crate) fn configure_hyperscan_cache_dir(cache_dir: Option<PathBuf>) -> Result<()> {
+    if let Some(path) = cache_dir.as_ref() {
+        if !path.is_absolute() {
+            anyhow::bail!(
+                "Hyperscan cache dir '{}' must be absolute. Fix: pass an absolute path under \
+                 your home directory or the per-user keyhog temp cache root.",
+                path.display()
+            );
+        }
+    }
+
+    #[cfg(feature = "simd")]
+    {
+        if let Some(path) = cache_dir.as_ref() {
+            keyhog_scanner::validate_hyperscan_cache_dir(path).map_err(|error| {
+                anyhow::anyhow!("{error}. Configure with --cache-dir or [system].cache_dir")
+            })?;
+        }
+        keyhog_scanner::set_hyperscan_cache_dir(cache_dir);
+    }
+
+    #[cfg(not(feature = "simd"))]
+    {
+        if cache_dir.is_some() {
+            anyhow::bail!(
+                "--cache-dir / [system].cache_dir requires a keyhog build with the simd \
+                 feature; this binary has no Hyperscan cache to configure"
+            );
+        }
+    }
+
+    Ok(())
+}
+
+/// Clamp a user-supplied thread count to a sane range. Logs a warning when the
+/// value was outside the accepted bounds so an operator sees what was used.
+fn sanitise_thread_count(requested: usize, physical_cores: usize, source: &'static str) -> usize {
+    let safe_default = physical_cores.max(1);
+    if requested == 0 {
+        eprintln!(
+            "keyhog: invalid {source} thread count 0; expected an integer >= 1; using {safe_default}"
+        );
+        tracing::warn!(
+            source,
+            requested = 0,
+            using = safe_default,
+            "thread count of 0 is not meaningful; falling back to physical-cores"
+        );
+        return safe_default;
+    }
+    if requested > MAX_THREADS_CAP {
+        eprintln!(
+            "keyhog: {source} thread count {requested} exceeds cap {MAX_THREADS_CAP}; using {MAX_THREADS_CAP}"
+        );
+        tracing::warn!(
+            source,
+            requested,
+            cap = MAX_THREADS_CAP,
+            "requested thread count exceeds cap; clamping"
+        );
+        return MAX_THREADS_CAP;
+    }
+    requested
+}
+
+#[doc(hidden)]
+pub(crate) mod testing {
+    pub(crate) fn sanitise_thread_count(
+        requested: usize,
+        physical_cores: usize,
+        source: &'static str,
+    ) -> usize {
+        super::sanitise_thread_count(requested, physical_cores, source)
+    }
+}

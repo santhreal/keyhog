@@ -5,190 +5,18 @@ use std::path::PathBuf;
 
 mod detectors;
 mod effective;
+mod runtime;
 
 pub(crate) use detectors::{
     auto_discover_detectors, detector_compile_failed, load_detectors_no_cache,
     load_detectors_or_embedded, load_detectors_with_cache,
 };
 pub(crate) use effective::{autoroute_config_digest, render_effective_config};
-
-/// Hard ceiling on the parallel thread count. Above this, thread
-/// creation overhead + scheduler contention dominates any throughput
-/// gain on CPU-bound work. Matches the cap the rayon docs recommend
-/// for general-purpose pools and protects against `--threads 9999999`
-/// misconfiguration that would either OOM-on-spawn or thrash the
-/// scheduler on a 4-core box.
-/// Hard ceiling on the worker thread count. Requested values above this are
-/// clamped (and logged) by [`sanitise_thread_count`]; spawning thousands of
-/// threads thrashes the OS scheduler without speeding the scan up.
-pub(crate) const MAX_THREADS_CAP: usize = 256;
-
-/// Canonical default for `--ml-threshold` (`ScanArgs::ml_threshold`). Single
-/// source of truth for the flag's declared default: the clap `default_value`
-/// literal in `args/scan.rs` stringifies this same value, and
-/// [`build_scanner_config`] compares the parsed flag against it to decide
-/// whether the operator actually moved the knob. An unset flag (value equal to
-/// this default) must leave the canonical confidence floor untouched, so the
-/// fix for a dead `--ml-threshold` does not silently change default behaviour.
-pub(crate) const ML_THRESHOLD_DEFAULT: f64 = 0.5;
-
-/// Default chunk batch size for the fused filesystem read+scan pipeline.
-pub(crate) const FUSED_BATCH_DEFAULT: usize = 32;
-
-/// Default bounded-channel depth for fused filesystem batches.
-pub(crate) fn fused_depth_default(worker_threads: usize) -> usize {
-    worker_threads
-        .saturating_add(3)
-        .saturating_div(4)
-        .clamp(2, 8)
-}
-
-pub(crate) fn parse_backend_override(
-    raw: Option<&str>,
-) -> Result<Option<keyhog_scanner::ScanBackend>> {
-    let Some(raw) = raw else {
-        return Ok(None);
-    };
-    let trimmed = raw.trim();
-    if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("auto") {
-        return Ok(None);
-    }
-    keyhog_scanner::hw_probe::parse_backend_str(trimmed)
-        .map(Some)
-        .ok_or_else(|| {
-            anyhow::anyhow!(
-                "invalid --backend value {:?}. Supported values: auto, gpu, mega-scan, megascan, simd, cpu.",
-                raw
-            )
-        })
-}
-
-pub(crate) fn backend_override_label(backend: Option<keyhog_scanner::ScanBackend>) -> &'static str {
-    backend.map_or("auto", keyhog_scanner::ScanBackend::label)
-}
-
-pub(crate) fn gpu_runtime_policy_from_args(
-    args: &ScanArgs,
-) -> keyhog_scanner::gpu::GpuRuntimePolicy {
-    if args.require_gpu {
-        keyhog_scanner::gpu::GpuRuntimePolicy::Required
-    } else if args.no_gpu {
-        keyhog_scanner::gpu::GpuRuntimePolicy::Disabled
-    } else {
-        keyhog_scanner::gpu::GpuRuntimePolicy::Auto
-    }
-}
-
-pub(crate) fn configure_threads(threads: Option<usize>, physical_cores: usize) {
-    // Resolution order: --threads / [scan].threads > physical core count.
-    // Physical (not logical) is the right default for CPU-bound regex: SMT /
-    // Hyperthreading siblings share execution units, so 2x the threads yields
-    // ~1.1x the throughput while doubling cache pressure.
-    //
-    // Each source is sanitised through `sanitise_thread_count`, which:
-    //   * rejects 0 (rayon would silently use its own default - confusing)
-    //   * caps at `MAX_THREADS_CAP` (avoids spawn failures + scheduler thrash)
-    // Both paths log a warning so an operator who fat-fingered the value
-    // sees what was actually used.
-    let (n, source) = if let Some(t) = threads {
-        (
-            sanitise_thread_count(t, physical_cores, "cli-arg"),
-            "cli-arg",
-        )
-    } else {
-        (physical_cores.max(1), "physical-cores")
-    };
-
-    let builder = rayon::ThreadPoolBuilder::new()
-        .num_threads(n)
-        .stack_size(8 * 1024 * 1024)
-        // Cross-OS thread name so external profilers (perf, dtrace,
-        // Activity Monitor, htop) can group keyhog workers separately
-        // from the calling process. Previously macOS-only.
-        .thread_name(|i| format!("keyhog-worker-{i}"));
-
-    if let Err(error) = builder.build_global() {
-        tracing::warn!(
-            requested_threads = n,
-            source,
-            "failed to configure rayon thread pool: {error}"
-        );
-    } else {
-        tracing::info!(
-            threads = n,
-            source,
-            physical_cores,
-            "rayon thread pool configured"
-        );
-    }
-}
-
-pub(crate) fn configure_hyperscan_cache_dir(cache_dir: Option<PathBuf>) -> Result<()> {
-    if let Some(path) = cache_dir.as_ref() {
-        if !path.is_absolute() {
-            anyhow::bail!(
-                "Hyperscan cache dir '{}' must be absolute. Fix: pass an absolute path under \
-                 your home directory or the per-user keyhog temp cache root.",
-                path.display()
-            );
-        }
-    }
-
-    #[cfg(feature = "simd")]
-    {
-        if let Some(path) = cache_dir.as_ref() {
-            keyhog_scanner::validate_hyperscan_cache_dir(path).map_err(|error| {
-                anyhow::anyhow!("{error}. Configure with --cache-dir or [system].cache_dir")
-            })?;
-        }
-        keyhog_scanner::set_hyperscan_cache_dir(cache_dir);
-    }
-
-    #[cfg(not(feature = "simd"))]
-    {
-        if cache_dir.is_some() {
-            anyhow::bail!(
-                "--cache-dir / [system].cache_dir requires a keyhog build with the simd \
-                 feature; this binary has no Hyperscan cache to configure"
-            );
-        }
-    }
-
-    Ok(())
-}
-
-/// Clamp a user-supplied thread count to a sane range. Logs a
-/// warning when the value was outside the accepted bounds so an
-/// operator who passed `--threads 0` or `--threads 999999` sees what
-/// the scanner actually used.
-fn sanitise_thread_count(requested: usize, physical_cores: usize, source: &'static str) -> usize {
-    let safe_default = physical_cores.max(1);
-    if requested == 0 {
-        eprintln!(
-            "keyhog: invalid {source} thread count 0; expected an integer >= 1; using {safe_default}"
-        );
-        tracing::warn!(
-            source,
-            requested = 0,
-            using = safe_default,
-            "thread count of 0 is not meaningful; falling back to physical-cores"
-        );
-        return safe_default;
-    }
-    if requested > MAX_THREADS_CAP {
-        eprintln!(
-            "keyhog: {source} thread count {requested} exceeds cap {MAX_THREADS_CAP}; using {MAX_THREADS_CAP}"
-        );
-        tracing::warn!(
-            source,
-            requested,
-            cap = MAX_THREADS_CAP,
-            "requested thread count exceeds cap; clamping"
-        );
-        return MAX_THREADS_CAP;
-    }
-    requested
-}
+pub(crate) use runtime::{
+    backend_override_label, configure_hyperscan_cache_dir, configure_threads, fused_depth_default,
+    gpu_runtime_policy_from_args, parse_backend_override, FUSED_BATCH_DEFAULT, MAX_THREADS_CAP,
+    ML_THRESHOLD_DEFAULT,
+};
 
 pub(crate) fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
     // The preset (`--fast` / `--deep`) is a BASE, not a terminal state. It
@@ -501,7 +329,7 @@ pub(crate) mod testing {
         physical_cores: usize,
         source: &'static str,
     ) -> usize {
-        super::sanitise_thread_count(requested, physical_cores, source)
+        super::runtime::testing::sanitise_thread_count(requested, physical_cores, source)
     }
 
     pub(crate) fn load_detectors_from_dir_with_cache(
