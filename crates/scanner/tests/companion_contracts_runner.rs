@@ -108,17 +108,18 @@ fn load_companion_contracts() -> Vec<(PathBuf, CompanionContract)> {
     let mut out = Vec::new();
     let entries = match std::fs::read_dir(&dir) {
         Ok(e) => e,
-        Err(_) => return out,
+        Err(e) => panic!("read companion contracts dir {}: {e}", dir.display()),
     };
-    for entry in entries.flatten() {
+    for entry in entries {
+        let entry = entry.unwrap_or_else(|e| {
+            panic!("read companion contracts dir entry {}: {e}", dir.display())
+        });
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
         }
-        let text = match std::fs::read_to_string(&path) {
-            Ok(t) => t,
-            Err(_) => continue,
-        };
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read companion contract {}: {e}", path.display()));
         let contract: CompanionContract = match toml::from_str(&text) {
             Ok(c) => c,
             Err(e) => panic!("malformed companion contract {}: {e}", path.display()),

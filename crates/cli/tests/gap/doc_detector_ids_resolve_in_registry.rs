@@ -76,10 +76,11 @@ fn shipped_markdown_docs(root: &std::path::Path) -> Vec<PathBuf> {
     let mut docs = vec![root.join("README.md")];
     let mut stack = vec![root.join("docs")];
     while let Some(dir) = stack.pop() {
-        let Ok(entries) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in entries.flatten() {
+        let entries = std::fs::read_dir(&dir)
+            .unwrap_or_else(|e| panic!("read docs dir {}: {e}", dir.display()));
+        for entry in entries {
+            let entry =
+                entry.unwrap_or_else(|e| panic!("read docs dir entry {}: {e}", dir.display()));
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);

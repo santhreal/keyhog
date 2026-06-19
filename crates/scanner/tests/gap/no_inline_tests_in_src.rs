@@ -13,6 +13,9 @@
 
 use std::path::{Path, PathBuf};
 
+#[path = "inline_gate.rs"]
+mod inline_gate;
+
 /// Crate-private modules permitted to keep co-located `#[cfg(test)]` white-box
 /// tests. Paths are relative to `src/`. Keep this list SHORT and justified.
 const INLINE_TEST_ALLOWLIST: &[&str] = &[
@@ -39,7 +42,9 @@ fn is_allowlisted(path: &Path) -> bool {
 fn scan_rust_sources(dir: &Path, offenders: &mut Vec<PathBuf>) {
     let entries = std::fs::read_dir(dir)
         .unwrap_or_else(|e| panic!("read_dir({}) failed: {e}", dir.display()));
-    for entry in entries.flatten() {
+    for entry in entries {
+        let entry =
+            entry.unwrap_or_else(|e| panic!("read_dir({}) entry failed: {e}", dir.display()));
         let path = entry.path();
         if path.is_dir() {
             scan_rust_sources(&path, offenders);
@@ -50,7 +55,7 @@ fn scan_rust_sources(dir: &Path, offenders: &mut Vec<PathBuf>) {
         }
         let content = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("read {} failed: {e}", path.display()));
-        let has_inline_test = super::inline_gate::contains_inline_test_module_or_function(&content);
+        let has_inline_test = inline_gate::contains_inline_test_module_or_function(&content);
         if has_inline_test {
             offenders.push(path);
         }

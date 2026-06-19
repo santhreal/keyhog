@@ -186,6 +186,14 @@ path = "tests/gap/execution_plan_hunt_inventory.rs"
 name = "gpu_tests_fail_not_skip"
 path = "tests/gap/gpu_tests_fail_not_skip.rs"
 
+[[test]]
+name = "gap_no_inline_tests_in_src"
+path = "tests/gap/no_inline_tests_in_src.rs"
+
+[[test]]
+name = "gap_no_inline_tests_in_a3_slice"
+path = "tests/gap/no_inline_tests_in_a3_slice.rs"
+
 # TARGET-SPEC perf worklist (FAILING-BY-DESIGN): the 10x goal expressed as
 # executable contracts. RED until batched-GPU phase-2 verify lands; each red
 # line is one tracked gap. Subdir files need explicit [[test]] paths to be

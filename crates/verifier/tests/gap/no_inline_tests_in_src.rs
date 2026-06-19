@@ -3,7 +3,8 @@
 
 fn walk_rs_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
     let entries = std::fs::read_dir(dir).unwrap_or_else(|e| panic!("read {}: {e}", dir.display()));
-    for entry in entries.flatten() {
+    for entry in entries {
+        let entry = entry.unwrap_or_else(|e| panic!("read {} directory entry: {e}", dir.display()));
         let path = entry.path();
         if path.is_dir() {
             walk_rs_files(&path, out);

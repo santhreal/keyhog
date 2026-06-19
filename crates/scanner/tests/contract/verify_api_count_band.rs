@@ -10,7 +10,11 @@ fn verify_enabled_detector_count_is_stable() {
     d.push("detectors");
 
     let mut with_verify = 0usize;
-    for entry in std::fs::read_dir(&d).expect("detectors").flatten() {
+    let entries =
+        std::fs::read_dir(&d).unwrap_or_else(|e| panic!("read detectors dir {}: {e}", d.display()));
+    for entry in entries {
+        let entry =
+            entry.unwrap_or_else(|e| panic!("read detectors dir entry {}: {e}", d.display()));
         let p = entry.path();
         if p.extension().and_then(|s| s.to_str()) != Some("toml") {
             continue;

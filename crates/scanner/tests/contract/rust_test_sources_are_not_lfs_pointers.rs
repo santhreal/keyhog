@@ -35,10 +35,12 @@ fn scanner_tests_dir() -> PathBuf {
 
 /// Collect every text source/fixture under `dir`, recursively.
 fn fixture_sources(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
+    let entries = std::fs::read_dir(dir)
+        .unwrap_or_else(|e| panic!("read scanner test fixture dir {}: {e}", dir.display()));
+    for entry in entries {
+        let entry = entry.unwrap_or_else(|e| {
+            panic!("read scanner test fixture dir entry {}: {e}", dir.display())
+        });
         let path = entry.path();
         if path.is_dir() {
             fixture_sources(&path, out);

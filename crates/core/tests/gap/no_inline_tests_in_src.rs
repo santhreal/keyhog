@@ -6,7 +6,9 @@ use std::path::{Path, PathBuf};
 fn scan_rust_sources(dir: &Path, offenders: &mut Vec<PathBuf>) {
     let entries = std::fs::read_dir(dir)
         .unwrap_or_else(|e| panic!("read_dir({}) failed: {e}", dir.display()));
-    for entry in entries.flatten() {
+    for entry in entries {
+        let entry =
+            entry.unwrap_or_else(|e| panic!("read_dir({}) entry failed: {e}", dir.display()));
         let path = entry.path();
         if path.is_dir() {
             scan_rust_sources(&path, offenders);

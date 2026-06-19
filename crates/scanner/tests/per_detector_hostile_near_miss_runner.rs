@@ -46,17 +46,18 @@ fn contracts_dir() -> PathBuf {
 
 fn load_contracts() -> Vec<(PathBuf, Contract)> {
     let mut out = Vec::new();
-    let Ok(entries) = std::fs::read_dir(contracts_dir()) else {
-        return out;
-    };
-    for entry in entries.flatten() {
+    let dir = contracts_dir();
+    let entries = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read contracts dir {}: {e}", dir.display()));
+    for entry in entries {
+        let entry =
+            entry.unwrap_or_else(|e| panic!("read contracts dir entry {}: {e}", dir.display()));
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue;
-        };
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read contract {}: {e}", path.display()));
         let contract: Contract = toml::from_str(&text)
             .unwrap_or_else(|e| panic!("malformed contract {}: {e}", path.display()));
         out.push((path, contract));

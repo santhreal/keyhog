@@ -120,7 +120,9 @@ static CONTRACTS: LazyLock<Vec<ContractFile>> = LazyLock::new(|| {
     let dir = contracts_dir();
     let entries = std::fs::read_dir(&dir).expect("contracts dir readable");
     let mut out = Vec::new();
-    for entry in entries.flatten() {
+    for entry in entries {
+        let entry =
+            entry.unwrap_or_else(|e| panic!("read contracts dir entry {}: {e}", dir.display()));
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
