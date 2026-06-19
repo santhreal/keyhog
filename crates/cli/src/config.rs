@@ -876,16 +876,3 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         allowlist_max_expires_days,
     }
 }
-
-#[doc(hidden)]
-pub(crate) mod testing {
-    use std::path::{Path, PathBuf};
-
-    pub(crate) fn apply_config_file_quiet(args: &mut crate::args::ScanArgs) {
-        let _outcome = super::apply_config_file_quiet(args);
-    }
-
-    pub(crate) fn find_config_file(start: Option<&Path>) -> Option<PathBuf> {
-        super::find_config_file(start)
-    }
-}

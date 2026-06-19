@@ -5,6 +5,8 @@ use std::io::Write;
 use std::sync::Arc;
 use std::time::Instant;
 
+use crate::style::{terminal_clear_line_prefix, terminal_palette};
+
 /// Emit one redacted `[stream]` preview line per REPORTED finding.
 ///
 /// Wired to the resolved `VerifiedFinding` stream — the same findings the
@@ -58,7 +60,7 @@ pub(crate) fn stream_report_previews(findings: &[VerifiedFinding]) {
 /// gathered so far AND sets `SCANNER_PANICKED` + a dedicated `EXIT_SCANNER_PANIC`
 /// exit code, but the only terminal output was a `tracing::error!` — filtered
 /// out at the default verbosity, exactly like the `tracing::debug!` drops this
-/// sweep replaced. So a crashed scan still printed "✨ Scan complete! Found 0
+/// sweep replaced. So a crashed scan still printed "Scan complete. Found 0
 /// secrets" as its last word and read as a clean tree. This surfaces the crash
 /// unconditionally on stderr so "0 secrets" can never be mistaken for clean.
 pub(crate) fn scanner_panic_notice(panicked: bool) -> Option<String> {
@@ -78,38 +80,24 @@ pub(crate) fn report_completion_summary(
     ansi: bool,
     backend_override: Option<keyhog_scanner::ScanBackend>,
 ) {
+    let palette = terminal_palette(ansi, false);
     // Surface a mid-scan crash FIRST, before the "Scan complete!" line, so the
     // incompleteness frames everything below it (Law 10).
     if let Some(notice) =
         scanner_panic_notice(crate::SCANNER_PANICKED.load(std::sync::atomic::Ordering::Relaxed))
     {
-        if ansi {
-            eprintln!("\x1b[1;31m⚠ {notice}\x1b[0m");
-        } else {
-            eprintln!("⚠ {notice}");
-        }
+        eprintln!("{}FAIL{} {notice}", palette.red, palette.reset);
     }
     if count == 0 {
-        if ansi {
-            eprintln!(
-                "\n✨ Scan complete! Found \x1b[1;32m0\x1b[0m secrets in \x1b[33m{:.2}s\x1b[0m.",
-                elapsed
-            );
-        } else {
-            eprintln!("\n✨ Scan complete! Found 0 secrets in {:.2}s.", elapsed);
-        }
+        eprintln!(
+            "\nScan complete. Found {}0{} secrets in {}{:.2}s{}.",
+            palette.green, palette.reset, palette.yellow, elapsed, palette.reset
+        );
     } else {
-        if ansi {
-            eprintln!(
-                "\n✨ Scan complete! Found \x1b[1;31m{}\x1b[0m secrets in \x1b[33m{:.2}s\x1b[0m.",
-                count, elapsed
-            );
-        } else {
-            eprintln!(
-                "\n✨ Scan complete! Found {} secrets in {:.2}s.",
-                count, elapsed
-            );
-        }
+        eprintln!(
+            "\nScan complete. Found {}{}{} secrets in {}{:.2}s{}.",
+            palette.red, count, palette.reset, palette.yellow, elapsed, palette.reset
+        );
     }
     report_skip_summary(ansi);
     report_backend_summary(ansi, backend_override);
@@ -165,18 +153,15 @@ pub(crate) fn report_backend_summary(
              prefilter - while the per-candidate extraction that dominates a scan \
              runs on the CPU regardless. So SIMD wins for this detector set at every \
              size we measured. Force the device path with --backend gpu (parity \
-             / research), let auto probe it with KEYHOG_GPU_AUTOROUTE=1 (e.g. a \
+             / research), include it in calibration with --autoroute-gpu (e.g. a \
              long-lived daemon that amortizes the upload), or run `keyhog backend`."
         )
     } else {
         "backend: simd-regex (no GPU available on this host)".to_string()
     };
 
-    if ansi {
-        eprintln!("\x1b[36m⚙ {line}\x1b[0m");
-    } else {
-        eprintln!("⚙ {line}");
-    }
+    let palette = terminal_palette(ansi, false);
+    eprintln!("{}INFO{} {line}", palette.cyan, palette.reset);
 }
 
 /// Live progress ticker - overwrites the previous line via CR every
@@ -196,9 +181,10 @@ pub(crate) fn progress_ticker(done: Arc<std::sync::atomic::AtomicBool>, started:
         let findings = crate::FINDINGS_COUNT.load(Ordering::Relaxed);
         let elapsed = started.elapsed().as_secs_f64();
         let mut err = std::io::stderr().lock();
+        let clear = terminal_clear_line_prefix(true);
         if let Err(error) = write!(
             err,
-            "\x1b[2K\rscanning {scanned}/{total} chunks · {findings} findings · {elapsed:.1}s"
+            "{clear}scanning {scanned}/{total} chunks · {findings} findings · {elapsed:.1}s"
         ) {
             tracing::debug!(%error, "progress redraw write error");
         }
@@ -207,7 +193,7 @@ pub(crate) fn progress_ticker(done: Arc<std::sync::atomic::AtomicBool>, started:
         std::thread::sleep(tick);
     }
     let mut err = std::io::stderr().lock();
-    let _ = write!(err, "\x1b[2K\r"); // LAW10: unused-binding marker; no runtime effect, not a fallback
+    let _ = write!(err, "{}", terminal_clear_line_prefix(true)); // LAW10: unused-binding marker; no runtime effect, not a fallback
     let _ = err.flush(); // LAW10: unused-binding marker; no runtime effect, not a fallback
 }
 
@@ -228,11 +214,8 @@ pub(crate) fn report_skip_summary(ansi: bool) {
              decoded. The raw text was still scanned. Fix the file syntax to scan their \
              encoded contents."
         );
-        if ansi {
-            eprintln!("\x1b[33m{msg}\x1b[0m");
-        } else {
-            eprintln!("{msg}");
-        }
+        let palette = terminal_palette(ansi, false);
+        eprintln!("{}WARN{} {msg}", palette.yellow, palette.reset);
     }
 
     let decode_truncations = keyhog_scanner::telemetry::decode_truncation_count();
@@ -243,11 +226,8 @@ pub(crate) fn report_skip_summary(ansi: bool) {
              expanded. Re-scan the affected corpus with a narrower target or tuned \
              decode limits to prove encoded coverage."
         );
-        if ansi {
-            eprintln!("\x1b[33m{msg}\x1b[0m");
-        } else {
-            eprintln!("{msg}");
-        }
+        let palette = terminal_palette(ansi, false);
+        eprintln!("{}WARN{} {msg}", palette.yellow, palette.reset);
     }
 
     let c = keyhog_sources::skip_counts();
@@ -384,12 +364,13 @@ pub(crate) fn report_skip_summary(ansi: bool) {
         }
     }
     for (msg, warn) in lines {
-        if ansi {
-            let color = if warn { "\x1b[31m" } else { "\x1b[33m" };
-            eprintln!("{color}{msg}\x1b[0m");
+        let palette = terminal_palette(ansi, false);
+        let (label, color) = if warn {
+            ("FAIL", palette.red)
         } else {
-            eprintln!("{msg}");
-        }
+            ("WARN", palette.yellow)
+        };
+        eprintln!("{color}{label}{} {msg}", palette.reset);
     }
 }
 

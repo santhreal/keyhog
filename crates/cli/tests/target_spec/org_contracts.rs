@@ -21,6 +21,7 @@
 //!     the one entrypoint is a dead route.
 //!   * No TODO/FIXME/XXX/HACK marker or `todo!()`/`unimplemented!()` in shipped
 //!     (non-test) source.
+//!   * No `#[allow(dead_code)]` or `#[allow(unused...)]` in shipped source.
 //!   * No engine source file mixing more than one top-level responsibility
 //!     (multiple distinct `impl CompiledScanner` blocks + free `pub fn` groups
 //!     in one file is a god-file smell).
@@ -814,6 +815,52 @@ fn org_cli_shipped_source_has_no_todo_markers() {
 #[test]
 fn org_verifier_shipped_source_has_no_todo_markers() {
     assert_no_markers("verifier");
+}
+
+// ── No dead/unused allowances in shipped source (1 recurrence gate) ────────
+
+fn dead_or_unused_allow_hits_in_crate(root: &Path, krate: &str) -> Vec<String> {
+    let mut hits = Vec::new();
+    let src_dir = root.join("crates").join(krate).join("src");
+    for file in walk_rs(&src_dir) {
+        if is_test_only_file(&file) {
+            continue;
+        }
+        let src = read(&file);
+        for (i, line) in src.lines().enumerate() {
+            let trimmed = line.trim_start();
+            if !(trimmed.starts_with("#[allow(") || trimmed.starts_with("#[cfg_attr(")) {
+                continue;
+            }
+            let compact: String = trimmed.chars().filter(|c| !c.is_whitespace()).collect();
+            let bans_dead_code = compact.contains("dead_code");
+            let bans_unused = compact.contains("allow(unused") || compact.contains("allow(unused_");
+            if bans_dead_code || bans_unused {
+                hits.push(format!(
+                    "crates/{krate}/src/{}:{}: {}",
+                    file.strip_prefix(&src_dir).unwrap().display(),
+                    i + 1,
+                    trimmed,
+                ));
+            }
+        }
+    }
+    hits
+}
+
+#[test]
+fn org_shipped_source_has_no_dead_or_unused_allowances() {
+    let root = repo_root();
+    let mut hits = Vec::new();
+    for krate in CRATES {
+        hits.extend(dead_or_unused_allow_hits_in_crate(&root, krate));
+    }
+    assert!(
+        hits.is_empty(),
+        "ORG GAP [utilization]: shipped source must not carry dead-code or unused-item \
+         allowances. Use the item, make the cfg boundary explicit, or remove it:\n{}",
+        hits.join("\n"),
+    );
 }
 
 // ── No engine file mixing >1 responsibility (per-file, dynamic count) ───────
