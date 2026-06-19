@@ -6,7 +6,7 @@ use super::ScanOrchestrator;
 use crate::baseline::Baseline;
 use crate::exit_codes::{
     EXIT_FINDINGS, EXIT_LIVE_CREDENTIALS, EXIT_REQUIRE_GPU_UNMET, EXIT_SCANNER_PANIC,
-    EXIT_SOURCE_FAILED,
+    EXIT_SOURCE_FAILED, EXIT_SYSTEM_ERROR,
 };
 use crate::style;
 use anyhow::Result;
@@ -376,12 +376,16 @@ impl ScanOrchestrator {
         );
 
         let scanner_panicked = crate::SCANNER_PANICKED.load(std::sync::atomic::Ordering::Relaxed);
+        let incremental_cache_failed =
+            crate::INCREMENTAL_CACHE_ERRORS.load(std::sync::atomic::Ordering::Relaxed) > 0;
         Ok(if has_live_credentials {
             std::process::ExitCode::from(EXIT_LIVE_CREDENTIALS)
         } else if scanner_panicked {
             std::process::ExitCode::from(EXIT_SCANNER_PANIC)
         } else if has_new_entries {
             std::process::ExitCode::from(EXIT_FINDINGS)
+        } else if incremental_cache_failed {
+            std::process::ExitCode::from(EXIT_SYSTEM_ERROR)
         } else {
             std::process::ExitCode::SUCCESS
         })

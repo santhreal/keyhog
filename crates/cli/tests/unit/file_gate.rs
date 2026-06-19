@@ -48,10 +48,16 @@ fn lib_scan_failure_counters_have_typed_owner() {
         assert!(
             !source.contains("SOURCE_ERRORS.fetch_add")
                 && !source.contains("FAILED_SOURCES.fetch_add")
+                && !source.contains("INCREMENTAL_CACHE_ERRORS.fetch_add")
                 && !source.contains("SCANNER_PANICKED.store"),
             "{name} must not mutate scan-failure counters directly"
         );
     }
+    assert!(
+        dispatch.contains("record_incremental_cache_persist_failed()")
+            && dispatch.contains("could not be persisted"),
+        "incremental cache persistence failures must go through the typed failure owner and stderr"
+    );
     assert!(
         fused.contains("fused source drain thread panicked")
             && fused.contains("record_scanner_panic()")
@@ -71,6 +77,7 @@ fn scan_runtime_reset_clears_process_global_scan_state() {
             && seeded.gpu_scanned_chunks > 0
             && seeded.source_errors > 0
             && seeded.failed_sources > 0
+            && seeded.incremental_cache_errors > 0
             && seeded.scanner_panicked
             && seeded.dogfood_enabled
             && seeded.example_suppressions > 0,
@@ -111,6 +118,7 @@ fn scan_runtime_reset_runs_before_dogfood_enablement() {
         "GPU_SCANNED_CHUNKS.store(0",
         "SOURCE_ERRORS.store(0",
         "FAILED_SOURCES.store(0",
+        "INCREMENTAL_CACHE_ERRORS.store(0",
         "SCANNER_PANICKED.store(false",
         "keyhog_scanner::telemetry::reset_for_scan()",
     ] {

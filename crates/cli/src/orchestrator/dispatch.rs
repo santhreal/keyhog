@@ -444,6 +444,13 @@ impl ScanOrchestrator {
             let spec_hash = keyhog_core::compute_spec_hash(&self.detectors);
             if let Err(e) = idx.save_with_spec(path, &spec_hash) {
                 tracing::warn!(error = %e, "failed to persist merkle index");
+                eprintln!(
+                    "warning: incremental cache {} could not be persisted: {e}; \
+                     this scan completed, but unchanged files will be re-scanned \
+                     until the cache path is fixed",
+                    path.display()
+                );
+                let _receipt = crate::record_incremental_cache_persist_failed();
             }
         }
     }

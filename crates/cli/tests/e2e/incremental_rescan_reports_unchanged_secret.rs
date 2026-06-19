@@ -95,3 +95,37 @@ fn incremental_corrupt_explicit_cache_warns_and_rewrites() {
         "successful cold-start scan must rewrite the damaged cache; cache={rewritten}"
     );
 }
+
+#[test]
+fn incremental_cache_persist_failure_is_visible_and_nonzero_on_clean_scan() {
+    let dir = TempDir::new().expect("tempdir");
+    std::fs::write(
+        dir.path().join("ok.txt"),
+        "just ordinary source code, nothing sensitive here\n",
+    )
+    .expect("write clean file");
+    let blocker = dir.path().join("not-a-directory");
+    std::fs::write(&blocker, b"regular file").expect("write cache parent blocker");
+    let cache = blocker.join("merkle.idx");
+    let cache_arg = cache.to_str().unwrap();
+    let args = ["--incremental", "--incremental-cache", cache_arg];
+
+    let output = scan_path(dir.path(), &args);
+    assert_eq!(
+        output.status.code(),
+        Some(3),
+        "clean incremental scan whose cache cannot be persisted must not exit 0"
+    );
+    assert!(
+        output.stdout.is_empty() || String::from_utf8_lossy(&output.stdout).trim() == "[]",
+        "clean scan must still produce clean report output; stdout={}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("warning: incremental cache")
+            && stderr.contains("could not be persisted")
+            && stderr.contains("cache path is fixed"),
+        "incremental cache persistence failure must be operator-visible; stderr={stderr}"
+    );
+}

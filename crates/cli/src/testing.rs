@@ -41,6 +41,7 @@ pub struct ScanRuntimeSnapshot {
     pub gpu_scanned_chunks: usize,
     pub source_errors: usize,
     pub failed_sources: usize,
+    pub incremental_cache_errors: usize,
     pub scanner_panicked: bool,
     pub dogfood_enabled: bool,
     pub example_suppressions: usize,
@@ -723,6 +724,7 @@ impl CliTestApi for TestApi {
         crate::GPU_SCANNED_CHUNKS.store(19, Relaxed);
         let _source_error_receipt = crate::record_source_error();
         let _failed_source_receipt = crate::record_failed_source();
+        let _incremental_cache_receipt = crate::record_incremental_cache_persist_failed();
         let _scanner_panic_receipt = crate::record_scanner_panic();
         keyhog_scanner::telemetry::enable_dogfood();
         keyhog_scanner::telemetry::add_example_suppressions(23);
@@ -742,6 +744,7 @@ impl CliTestApi for TestApi {
             gpu_scanned_chunks: crate::GPU_SCANNED_CHUNKS.load(Relaxed),
             source_errors: crate::SOURCE_ERRORS.load(Relaxed),
             failed_sources: crate::FAILED_SOURCES.load(Relaxed),
+            incremental_cache_errors: crate::INCREMENTAL_CACHE_ERRORS.load(Relaxed),
             scanner_panicked: crate::SCANNER_PANICKED.load(Relaxed),
             dogfood_enabled: keyhog_scanner::telemetry::is_dogfood_enabled(),
             example_suppressions: keyhog_scanner::telemetry::example_suppression_count(),

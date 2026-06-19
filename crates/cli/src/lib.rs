@@ -56,6 +56,10 @@ pub(crate) static SOURCE_ERRORS: AtomicUsize = AtomicUsize::new(0);
 /// partial failure — a tree with some unreadable files that still produced
 /// chunks — does NOT count: that source produced data.
 pub(crate) static FAILED_SOURCES: AtomicUsize = AtomicUsize::new(0);
+/// Number of times a requested incremental cache could not be persisted after
+/// a scan. Findings are still reported, but a clean scan with a failed cache
+/// write must not exit 0: the requested stateful speed path was not honored.
+pub(crate) static INCREMENTAL_CACHE_ERRORS: AtomicUsize = AtomicUsize::new(0);
 /// Set to `true` if the scanner thread panicked during `scan_sources`.
 /// Read at the end of `run()` so a crashed scanner exits with a
 /// non-zero code instead of silently reporting "no findings, all
@@ -68,6 +72,7 @@ pub(crate) static SCANNER_PANICKED: AtomicBool = AtomicBool::new(false);
 pub(crate) enum ScanFailureEvent {
     SourceError,
     FailedSource,
+    IncrementalCachePersistFailed,
     ScannerPanicked,
 }
 
@@ -84,6 +89,9 @@ pub(crate) fn record_scan_failure(event: ScanFailureEvent) -> RecordedScanFailur
     let previous = match event {
         ScanFailureEvent::SourceError => SOURCE_ERRORS.fetch_add(1, Ordering::Relaxed),
         ScanFailureEvent::FailedSource => FAILED_SOURCES.fetch_add(1, Ordering::Relaxed),
+        ScanFailureEvent::IncrementalCachePersistFailed => {
+            INCREMENTAL_CACHE_ERRORS.fetch_add(1, Ordering::Relaxed)
+        }
         ScanFailureEvent::ScannerPanicked => {
             let was_panicked = SCANNER_PANICKED.swap(true, Ordering::Relaxed);
             usize::from(was_panicked)
@@ -100,6 +108,10 @@ pub(crate) fn record_failed_source() -> RecordedScanFailureEvent {
     record_scan_failure(ScanFailureEvent::FailedSource)
 }
 
+pub(crate) fn record_incremental_cache_persist_failed() -> RecordedScanFailureEvent {
+    record_scan_failure(ScanFailureEvent::IncrementalCachePersistFailed)
+}
+
 pub(crate) fn record_scanner_panic() -> RecordedScanFailureEvent {
     record_scan_failure(ScanFailureEvent::ScannerPanicked)
 }
@@ -111,6 +123,7 @@ pub(crate) fn reset_scan_runtime_state() {
     GPU_SCANNED_CHUNKS.store(0, Ordering::Relaxed);
     SOURCE_ERRORS.store(0, Ordering::Relaxed);
     FAILED_SOURCES.store(0, Ordering::Relaxed);
+    INCREMENTAL_CACHE_ERRORS.store(0, Ordering::Relaxed);
     SCANNER_PANICKED.store(false, Ordering::Relaxed);
     keyhog_scanner::telemetry::reset_for_scan();
 }
