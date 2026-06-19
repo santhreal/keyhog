@@ -9,8 +9,8 @@ credential = "anyscale_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7RmKp"
 reason = "Anyscale API key (anyscale_ prefix + 30 alnum body)."
 
 [[positive]]
-text = "ANYSCALE_API_KEY=anyscale_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3LpVk"
-credential = "anyscale_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3LpVk"
+text = "ANYSCALE_API_KEY=anyscale_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3LpVkQx"
+credential = "anyscale_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3LpVkQx"
 reason = "Env-var wrap around prefix detector."
 
 [[negative]]

@@ -9,9 +9,9 @@ credential = "cu_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Q"
 reason = "Uppercase CHECKLY_API_KEY prefix with cu_ plus 24 alnum chars."
 
 [[positive]]
-text = "checkly_api_key=\"cu_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3L\""
-credential = "cu_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3L"
-reason = "Lowercase checkly_api_key prefix with quoted cu_ plus 24 alnum chars."
+text = "checkly_api_key=\"cu_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3\""
+credential = "cu_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3"
+reason = "Lowercase checkly_api_key prefix with quoted cu_ plus exactly 24 alnum chars."
 
 [[negative]]
 text = "cu_short"
