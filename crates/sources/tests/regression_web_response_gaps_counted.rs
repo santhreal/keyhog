@@ -142,6 +142,69 @@ fn malformed_sourcemap_is_raw_scanned_and_counted_partial() {
 }
 
 #[test]
+fn partially_malformed_sourcemap_scans_decoded_entries_and_raw_map() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let parsed_marker = "sourcemap_decoded_marker_f711ab";
+    let raw_marker = "sourcemap_malformed_embedded_marker_b91a22";
+    let _map = server.mock(|when, then| {
+        when.method(httpmock::Method::GET).path("/mixed.js.map");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(format!(
+                r#"{{
+                    "version": 3,
+                    "sources": ["app.ts", "generated.ts"],
+                    "sourcesContent": [
+                        "const parsed = '{parsed_marker}';",
+                        {{"text":"const hidden = '{raw_marker}';"}}
+                    ]
+                }}"#
+            ));
+    });
+
+    let chunks: Vec<_> = loopback_calibration_source(server.url("/mixed.js.map"))
+        .chunks()
+        .collect();
+    let ok: Vec<_> = chunks
+        .into_iter()
+        .filter_map(|result| result.ok())
+        .collect();
+    assert_eq!(
+        ok.len(),
+        2,
+        "mixed source map must emit the valid decoded entry plus one raw fallback chunk"
+    );
+    assert!(
+        ok.iter()
+            .any(|chunk| chunk.metadata.source_type == "web:sourcemap"
+                && chunk.data.contains(parsed_marker)),
+        "valid sourcesContent string must still be decoded and scanned"
+    );
+    assert!(
+        ok.iter()
+            .any(|chunk| chunk.metadata.source_type == "web:sourcemap:raw"
+                && chunk.data.contains(raw_marker)),
+        "malformed sourcesContent object must be covered by raw-map scanning"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.structured_source_parse_failures - before.structured_source_parse_failures,
+        1,
+        "mixed malformed source maps must surface a partial expansion coverage gap"
+    );
+    assert_eq!(
+        after.total(),
+        before.total(),
+        "source-map partial expansion is raw-scanned partial coverage, not a whole-file skip"
+    );
+}
+
+#[test]
 fn over_cap_content_length_is_error_and_counted_over_max_size() {
     let _guard = counter_guard();
     TestApi.reset_skip_counters();

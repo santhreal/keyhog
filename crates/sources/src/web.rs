@@ -292,21 +292,7 @@ fn handle_sourcemap(
             let _event =
                 crate::record_skip_event(crate::SourceSkipEvent::StructuredSourceParseFailure);
             tracing::warn!(url = %redact_url(url), err = %e, "failed to parse source map JSON");
-            return vec![Ok(Chunk {
-                data: body.into(),
-                metadata: ChunkMetadata {
-                    base_offset: 0,
-                    base_line: 0,
-                    source_type: "web:sourcemap:raw".to_string(),
-                    path: Some(url.to_string()),
-                    commit: None,
-                    author: None,
-                    date: None,
-                    mtime_ns: None,
-                    size_bytes: None,
-                    decoded_span: None,
-                },
-            })];
+            return vec![Ok(sourcemap_raw_chunk(body, url))];
         }
     };
 
@@ -317,10 +303,37 @@ fn handle_sourcemap(
         .filter_map(|v| v.as_str().map(String::from))
         .collect();
 
-    let contents: Vec<Option<String>> = map["sourcesContent"]
-        .as_array()
-        .map(|arr| arr.iter().map(|v| v.as_str().map(String::from)).collect())
-        .unwrap_or_default(); // LAW10: missing/non-string field => empty/placeholder; recall-safe
+    let mut malformed_sources_content = false;
+    let contents: Vec<Option<String>> = match map.get("sourcesContent") {
+        Some(value) => match value.as_array() {
+            Some(arr) => arr
+                .iter()
+                .map(|entry| match entry.as_str() {
+                    Some(text) => Some(text.to_string()),
+                    None => {
+                        if !entry.is_null() {
+                            malformed_sources_content = true;
+                        }
+                        None
+                    }
+                })
+                .collect(),
+            None => {
+                if !value.is_null() {
+                    malformed_sources_content = true;
+                }
+                Vec::new()
+            }
+        },
+        None => Vec::new(),
+    };
+    if malformed_sources_content {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::StructuredSourceParseFailure);
+        tracing::warn!(
+            url = %redact_url(url),
+            "source map sourcesContent contains non-string entry; scanning raw map alongside decoded entries"
+        );
+    }
 
     let mut chunks = Vec::new();
 
@@ -351,26 +364,31 @@ fn handle_sourcemap(
         }
     }
 
-    // If no sourcesContent, treat the raw map as scannable text
-    if chunks.is_empty() {
-        chunks.push(Ok(Chunk {
-            data: body.into(),
-            metadata: ChunkMetadata {
-                base_offset: 0,
-                base_line: 0,
-                source_type: "web:sourcemap:raw".to_string(),
-                path: Some(url.to_string()),
-                commit: None,
-                author: None,
-                date: None,
-                mtime_ns: None,
-                size_bytes: None,
-                decoded_span: None,
-            },
-        }));
+    // If no sourcesContent, treat the raw map as scannable text. If only some
+    // entries were malformed, scan raw too so malformed embedded code is covered.
+    if chunks.is_empty() || malformed_sources_content {
+        chunks.push(Ok(sourcemap_raw_chunk(body, url)));
     }
 
     chunks
+}
+
+fn sourcemap_raw_chunk(body: String, url: &str) -> Chunk {
+    Chunk {
+        data: body.into(),
+        metadata: ChunkMetadata {
+            base_offset: 0,
+            base_line: 0,
+            source_type: "web:sourcemap:raw".to_string(),
+            path: Some(url.to_string()),
+            commit: None,
+            author: None,
+            date: None,
+            mtime_ns: None,
+            size_bytes: None,
+            decoded_span: None,
+        },
+    }
 }
 
 /// Handle a WASM binary: extract printable strings and scan as text.
