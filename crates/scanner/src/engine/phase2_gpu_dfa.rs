@@ -639,6 +639,11 @@ fn match_region(region_starts: &[u32], haystack_len: usize, start: u32, end: u32
     let next_start = region_starts
         .get(start_region + 1)
         .map_or(haystack_len, |&offset| offset as usize);
+    let region_end = if start_region + 1 < region_starts.len() {
+        next_start.saturating_sub(1)
+    } else {
+        haystack_len
+    };
     let start_usize = match usize::try_from(start) {
         Ok(value) => value,
         Err(error) => {
@@ -651,7 +656,19 @@ fn match_region(region_starts: &[u32], haystack_len: usize, start: u32, end: u32
             return None;
         }
     };
-    if start_usize < next_start {
+    let end_usize = match usize::try_from(end) {
+        Ok(value) => value,
+        Err(error) => {
+            tracing::warn!(
+                target: "keyhog::gpu",
+                end,
+                %error,
+                "phase-2 GPU regex-DFA match end does not fit host usize; ignoring admission hit"
+            );
+            return None;
+        }
+    };
+    if start_usize < region_end && end_usize <= region_end {
         Some(start_region)
     } else {
         tracing::warn!(
@@ -660,7 +677,8 @@ fn match_region(region_starts: &[u32], haystack_len: usize, start: u32, end: u32
             end,
             region = start_region,
             next_start,
-            "phase-2 GPU regex-DFA match starts outside its coalesced region; ignoring admission hit"
+            region_end,
+            "phase-2 GPU regex-DFA match touches a coalesced separator/outside span; ignoring admission hit"
         );
         None
     }
@@ -778,6 +796,42 @@ mod tests {
         assert_eq!(match_region(&starts, 14, 5, 8), Some(1));
         assert_eq!(match_region(&starts, 14, 2, 2), None);
         assert_eq!(match_region(&starts, 14, 4, 6), None);
+    }
+
+    #[test]
+    fn match_region_rejects_separator_only_and_separator_touching_hits() {
+        let chunks = [
+            keyhog_core::Chunk::from("abcd"),
+            keyhog_core::Chunk::from("wxyz"),
+        ];
+        let mut scratch = Phase2GpuDfaScratch::default();
+        build_raw_region_batch(&chunks, &mut scratch).expect("region batch");
+        assert_eq!(scratch.haystack, b"abcd\0wxyz");
+        assert_eq!(scratch.region_starts, &[0, 5]);
+
+        assert_eq!(
+            match_region(&scratch.region_starts, scratch.haystack.len(), 0, 4),
+            Some(0)
+        );
+        assert_eq!(
+            match_region(&scratch.region_starts, scratch.haystack.len(), 5, 9),
+            Some(1)
+        );
+        assert_eq!(
+            match_region(&scratch.region_starts, scratch.haystack.len(), 4, 5),
+            None,
+            "the separator byte between regions must not admit the previous chunk"
+        );
+        assert_eq!(
+            match_region(&scratch.region_starts, scratch.haystack.len(), 3, 5),
+            None,
+            "a match that includes the separator tail must not admit a chunk"
+        );
+        assert_eq!(
+            match_region(&scratch.region_starts, scratch.haystack.len(), 4, 6),
+            None,
+            "a match that spans the separator into the next chunk must not admit either chunk"
+        );
     }
 
     #[test]
