@@ -39,6 +39,23 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
             && dispatch_src.contains("CPU admission remains authoritative"),
         "region dispatch must wire phase-2 GPU regex-DFA admission visibly, with CPU admission authoritative on failure"
     );
+    let engine_mod_src =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/mod.rs"))
+            .expect("engine mod readable");
+    let gpu_dfa_src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/phase2_gpu_dfa.rs"
+    ))
+    .expect("phase2 gpu dfa readable");
+    assert!(
+        engine_mod_src.contains("Phase2GpuDfaCatalogCache")
+            && !engine_mod_src.contains("OnceLock<Option<phase2_gpu_dfa::Phase2GpuDfaCatalog>>")
+            && gpu_dfa_src.contains("subgroup: OnceLock<Option<Phase2GpuDfaCatalog>>")
+            && gpu_dfa_src.contains("cuda: OnceLock<Option<Phase2GpuDfaCatalog>>")
+            && gpu_dfa_src.contains("Phase2GpuDfaProgramKind::for_backend_id")
+            && gpu_dfa_src.contains("Some(\"cuda\") => Self::CudaCompatible"),
+        "phase-2 GPU regex-DFA cache must be keyed by backend program shape, not first backend to touch the scanner"
+    );
     assert!(
         dispatch_src.contains("presence.len() != expected_presence_words"),
         "region dispatch must fail loud when GPU readback size differs from the chunk x word contract"

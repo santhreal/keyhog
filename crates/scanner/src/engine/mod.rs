@@ -237,12 +237,13 @@ pub struct CompiledScanner {
     /// chunk; non-eligible patterns keep the whole-chunk path. `None` when no
     /// pattern is anchor-eligible. Recall-identical (see `phase2_anchor`).
     pub(crate) phase2_anchor_index: Option<phase2_anchor::Phase2AnchorIndex>,
-    /// GPU regex-DFA admission catalog for prefixless always-active phase-2
-    /// patterns. Used only by the coalesced GPU route: a hit admits the chunk to
-    /// the shared phase-2 tail, while misses/errors continue through CPU
-    /// admission so uncovered patterns cannot be silently skipped.
+    /// Backend-shaped GPU regex-DFA admission catalogs for prefixless
+    /// always-active phase-2 patterns. Used only by the coalesced GPU route: a
+    /// hit admits the chunk to the shared phase-2 tail, while misses/errors
+    /// continue through CPU admission so uncovered patterns cannot be silently
+    /// skipped.
     #[cfg(feature = "gpu")]
-    pub(crate) phase2_gpu_dfa: OnceLock<Option<phase2_gpu_dfa::Phase2GpuDfaCatalog>>,
+    pub(crate) phase2_gpu_dfa: phase2_gpu_dfa::Phase2GpuDfaCatalogCache,
     /// Per-scanner performance route tuning (HS vs RegexSet, anchor
     /// localization, prefilter truncation, decode focus, confirmed-suffix gate,
     /// …). Resolved from compiled defaults plus explicit per-scanner config;

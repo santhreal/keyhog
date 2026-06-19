@@ -10,6 +10,7 @@
 use super::phase2::gate_prefix_literals;
 use super::*;
 use std::cell::RefCell;
+use std::sync::OnceLock;
 
 const PHASE2_GPU_DFA_MAX_MATCHES: u32 = 1 << 20;
 const PHASE2_GPU_DFA_MAX_STATES: usize = 16_384;
@@ -21,6 +22,38 @@ const MATCH_TRIPLE_BYTES: usize = 12;
 pub(crate) struct Phase2GpuDfaCatalog {
     shards: Vec<Phase2GpuDfaShard>,
     uncovered_patterns: usize,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct Phase2GpuDfaCatalogCache {
+    subgroup: OnceLock<Option<Phase2GpuDfaCatalog>>,
+    cuda: OnceLock<Option<Phase2GpuDfaCatalog>>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Phase2GpuDfaProgramKind {
+    SubgroupCoalesced,
+    CudaCompatible,
+}
+
+impl Phase2GpuDfaProgramKind {
+    fn for_backend_id(backend_id: Option<&'static str>) -> Self {
+        match backend_id {
+            Some("cuda") => Self::CudaCompatible,
+            _ => Self::SubgroupCoalesced,
+        }
+    }
+
+    fn use_subgroup_coalesce(self) -> bool {
+        matches!(self, Self::SubgroupCoalesced)
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::SubgroupCoalesced => "subgroup-coalesced",
+            Self::CudaCompatible => "cuda-compatible",
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -66,10 +99,10 @@ impl Drop for ZeroPhase2GpuDfaScratch<'_> {
 }
 
 impl Phase2GpuDfaCatalog {
-    pub(crate) fn build(
+    fn build(
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         always_active_indices: &[usize],
-        backend_id: Option<&'static str>,
+        program_kind: Phase2GpuDfaProgramKind,
     ) -> Option<Self> {
         let all_candidates: Vec<usize> = always_active_indices
             .iter()
@@ -86,7 +119,7 @@ impl Phase2GpuDfaCatalog {
             return None;
         }
 
-        let use_subgroup_coalesce = backend_id != Some("cuda");
+        let use_subgroup_coalesce = program_kind.use_subgroup_coalesce();
         let mut shards = Vec::new();
         let mut uncovered_patterns = all_candidates.len().saturating_sub(candidates.len());
         if uncovered_patterns > 0 {
@@ -124,16 +157,12 @@ impl Phase2GpuDfaCatalog {
                 "phase-2 GPU regex-DFA admission has uncovered prefixless pattern(s); GPU hits can admit chunks, misses still consult CPU admission"
             );
         }
-        let backend_label = match backend_id {
-            Some(id) => id,
-            None => "unspecified", // LAW10: reporting_only; backend label is trace metadata, not routing input.
-        };
         tracing::debug!(
             target: "keyhog::gpu",
             shards = shards.len(),
             covered = covered_patterns,
             uncovered = uncovered_patterns,
-            backend = backend_label,
+            program = program_kind.label(),
             "phase-2 GPU regex-DFA admission catalog built"
         );
         Some(Self {
@@ -194,20 +223,35 @@ impl Phase2GpuDfaCatalog {
     }
 }
 
+impl Phase2GpuDfaCatalogCache {
+    pub(crate) fn catalog(
+        &self,
+        phase2_patterns: &[(CompiledPattern, Vec<String>)],
+        always_active_indices: &[usize],
+        backend_id: Option<&'static str>,
+    ) -> Option<&Phase2GpuDfaCatalog> {
+        let program_kind = Phase2GpuDfaProgramKind::for_backend_id(backend_id);
+        let cell = match program_kind {
+            Phase2GpuDfaProgramKind::SubgroupCoalesced => &self.subgroup,
+            Phase2GpuDfaProgramKind::CudaCompatible => &self.cuda,
+        };
+        cell.get_or_init(|| {
+            Phase2GpuDfaCatalog::build(phase2_patterns, always_active_indices, program_kind)
+        })
+        .as_ref()
+    }
+}
+
 impl CompiledScanner {
     pub(crate) fn phase2_gpu_dfa_catalog(
         &self,
         backend_id: Option<&'static str>,
     ) -> Option<&Phase2GpuDfaCatalog> {
-        self.phase2_gpu_dfa
-            .get_or_init(|| {
-                Phase2GpuDfaCatalog::build(
-                    &self.phase2_patterns,
-                    &self.phase2_always_active_indices,
-                    backend_id,
-                )
-            })
-            .as_ref()
+        self.phase2_gpu_dfa.catalog(
+            &self.phase2_patterns,
+            &self.phase2_always_active_indices,
+            backend_id,
+        )
     }
 }
 
@@ -539,5 +583,23 @@ mod tests {
         assert_eq!(match_region(&starts, 14, 5, 8), Some(1));
         assert_eq!(match_region(&starts, 14, 2, 2), None);
         assert_eq!(match_region(&starts, 14, 4, 6), None);
+    }
+
+    #[test]
+    fn program_kind_is_backend_keyed() {
+        assert_eq!(
+            Phase2GpuDfaProgramKind::for_backend_id(Some("cuda")),
+            Phase2GpuDfaProgramKind::CudaCompatible
+        );
+        assert_eq!(
+            Phase2GpuDfaProgramKind::for_backend_id(Some("vulkan")),
+            Phase2GpuDfaProgramKind::SubgroupCoalesced
+        );
+        assert_eq!(
+            Phase2GpuDfaProgramKind::for_backend_id(None),
+            Phase2GpuDfaProgramKind::SubgroupCoalesced
+        );
+        assert!(!Phase2GpuDfaProgramKind::CudaCompatible.use_subgroup_coalesce());
+        assert!(Phase2GpuDfaProgramKind::SubgroupCoalesced.use_subgroup_coalesce());
     }
 }
