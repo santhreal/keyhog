@@ -282,6 +282,42 @@ fn docker_manifest_missing_config_fails_loud() {
 
 #[cfg(feature = "docker")]
 #[test]
+fn docker_manifest_missing_layers_fails_loud() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("root");
+    std::fs::create_dir_all(&root).expect("mkdir root");
+    std::fs::write(
+        root.join("manifest.json"),
+        r#"[{"Config":"config.json","RepoTags":["keyhog:test"]}]"#,
+    )
+    .expect("write manifest");
+
+    let err = TestApi.docker_manifest_layer_archives(&root).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("invalid docker manifest.json") && msg.contains("Layers"),
+        "missing Docker manifest Layers must fail loud, got {msg:?}"
+    );
+}
+
+#[cfg(feature = "docker")]
+#[test]
+fn docker_manifest_empty_entries_fail_loud() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("root");
+    std::fs::create_dir_all(&root).expect("mkdir root");
+    std::fs::write(root.join("manifest.json"), "[]").expect("write manifest");
+
+    let err = TestApi.docker_manifest_layer_archives(&root).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("manifest.json") && msg.contains("no image entries"),
+        "empty Docker manifest entry list must fail loud, got {msg:?}"
+    );
+}
+
+#[cfg(feature = "docker")]
+#[test]
 fn oci_image_layout_yields_config_and_layer_chunks() {
     use flate2::{write::GzEncoder, Compression};
     use keyhog_core::Source;
@@ -461,6 +497,24 @@ fn oci_image_manifest_missing_config_fails_loud() {
 
 #[cfg(feature = "docker")]
 #[test]
+fn oci_image_index_without_manifests_fails_loud() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().join("root");
+    std::fs::create_dir_all(root.join("blobs").join("sha256")).expect("mkdir blobs");
+    std::fs::write(root.join("oci-layout"), r#"{"imageLayoutVersion":"1.0.0"}"#)
+        .expect("write oci-layout");
+    std::fs::write(root.join("index.json"), r#"{"schemaVersion":2}"#).expect("write index");
+
+    let err = TestApi.docker_manifest_layer_archives(&root).unwrap_err();
+    let msg = err.to_string();
+    assert!(
+        msg.contains("OCI image index") && msg.contains("no manifests"),
+        "OCI index without manifests must fail loud, got {msg:?}"
+    );
+}
+
+#[cfg(feature = "docker")]
+#[test]
 fn oci_image_layout_rejects_unsafe_manifest_digest() {
     let dir = tempfile::tempdir().expect("tempdir");
     let root = dir.path().join("root");
@@ -535,6 +589,18 @@ fn docker_manifest_missing_config_fails_loud() {
 
 #[cfg(not(feature = "docker"))]
 #[test]
+fn docker_manifest_missing_layers_fails_loud() {
+    assert!(!cfg!(feature = "docker"));
+}
+
+#[cfg(not(feature = "docker"))]
+#[test]
+fn docker_manifest_empty_entries_fail_loud() {
+    assert!(!cfg!(feature = "docker"));
+}
+
+#[cfg(not(feature = "docker"))]
+#[test]
 fn oci_image_layout_yields_config_and_layer_chunks() {
     assert!(!cfg!(feature = "docker"));
 }
@@ -542,6 +608,12 @@ fn oci_image_layout_yields_config_and_layer_chunks() {
 #[cfg(not(feature = "docker"))]
 #[test]
 fn oci_image_manifest_missing_config_fails_loud() {
+    assert!(!cfg!(feature = "docker"));
+}
+
+#[cfg(not(feature = "docker"))]
+#[test]
+fn oci_image_index_without_manifests_fails_loud() {
     assert!(!cfg!(feature = "docker"));
 }
 

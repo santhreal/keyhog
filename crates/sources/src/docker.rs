@@ -361,8 +361,24 @@ fn find_layer_archives(
 struct DockerArchiveManifestEntry {
     #[serde(rename = "Config")]
     config: String,
-    #[serde(rename = "Layers", default)]
-    layers: Option<Vec<String>>,
+    #[serde(rename = "Layers", deserialize_with = "deserialize_docker_layers")]
+    layers: Vec<String>,
+}
+
+fn deserialize_docker_layers<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let layers = <Option<Vec<String>> as serde::Deserialize>::deserialize(deserializer)?;
+    match layers {
+        Some(layers) => Ok(layers),
+        None => {
+            // LAW10: intended default for explicit JSON null as the Docker
+            // manifest's zero-layer marker; missing `Layers` still fails closed
+            // before this deserializer runs.
+            Ok(Vec::new())
+        }
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -409,12 +425,20 @@ fn load_manifest_entries(
         "docker manifest",
         limits.docker_image_config_bytes,
     )?;
-    serde_json::from_slice(&manifest).map_err(|error| {
-        SourceError::Other(format!(
-            "invalid docker manifest.json at '{}': {error}",
+    let entries: Vec<DockerArchiveManifestEntry> =
+        serde_json::from_slice(&manifest).map_err(|error| {
+            SourceError::Other(format!(
+                "invalid docker manifest.json at '{}': {error}",
+                manifest_path.display()
+            ))
+        })?;
+    if entries.is_empty() {
+        return Err(SourceError::Other(format!(
+            "docker manifest.json at '{}' contains no image entries",
             manifest_path.display()
-        ))
-    })
+        )));
+    }
+    Ok(entries)
 }
 
 fn find_manifest_config_chunks(
@@ -477,11 +501,7 @@ fn find_manifest_layer_archives(
     let entries = load_manifest_entries(root_path, limits)?;
     let mut layers = Vec::new();
     for entry in entries {
-        let entry_layers = match entry.layers {
-            Some(layers) => layers,
-            None => Vec::new(),
-        };
-        for layer in entry_layers {
+        for layer in entry.layers {
             let layer_path = resolve_manifest_member_path(root_path, "layer", &layer)?;
             if !layer_path.is_file() {
                 return Err(SourceError::Other(format!(
@@ -523,6 +543,12 @@ fn load_oci_image_manifests(
             index_path.display()
         ))
     })?;
+    if index.manifests.is_empty() {
+        return Err(SourceError::Other(format!(
+            "OCI image index '{}' contains no manifests",
+            index_path.display()
+        )));
+    }
 
     let mut manifests = Vec::new();
     for (idx, descriptor) in index.manifests.into_iter().enumerate() {
