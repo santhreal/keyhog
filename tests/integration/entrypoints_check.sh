@@ -138,6 +138,25 @@ else
   fail=1
 fi
 
+DOG="$ROOT/scripts/dogfood-all-os.sh"
+if [ -f "$DOG" ]; then
+  if grep -qE 'tests/install/install_from_local_build\.sh|scan "\\$t/leak\.env" --format json 2>/dev/null|grep -q aws-access-key|>/dev/null 2>&1; check "clean tree|>/dev/null 2>&1; check "git-history|scan --stdin >/dev/null 2>&1' "$DOG"; then
+    echo "FAIL scripts/dogfood-all-os.sh must use OS-specific install proofs and JSON/log-backed scan checks."
+    grep -nE 'tests/install/install_from_local_build\.sh|scan "\\$t/leak\.env" --format json 2>/dev/null|grep -q aws-access-key|>/dev/null 2>&1; check "clean tree|>/dev/null 2>&1; check "git-history|scan --stdin >/dev/null 2>&1' "$DOG" | sed 's/^/    /'
+    fail=1
+  elif grep -q 'expect_aws_json' "$DOG" \
+     && grep -q 'tests/install/linux/install_from_local_build.sh' "$DOG" \
+     && grep -q 'tests/install/macos/install_from_local_build.sh' "$DOG"; then
+    note "OK   cross-OS dogfood entrypoint: parses JSON and uses OS install proofs"
+  else
+    echo "FAIL scripts/dogfood-all-os.sh must parse planted-secret JSON and call Linux/macOS install proof wrappers."
+    fail=1
+  fi
+else
+  echo "FAIL scripts/dogfood-all-os.sh missing - cross-OS dogfood cannot be audited."
+  fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "integration entry-point gate: PASS"
 else

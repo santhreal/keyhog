@@ -56,19 +56,88 @@ unix_payload() {
   cat <<'PAYLOAD'
 set -uo pipefail
 KH="$1"; fail=0
-check() { if eval "$2"; then echo "  PASS $1"; else echo "  FAIL $1"; fail=1; fi; }
+pass() { echo "  PASS $1"; }
+fail_check() {
+  echo "  FAIL $1"
+  [ $# -gt 1 ] && printf '    %s\n' "$2"
+  fail=1
+}
+expect_rc() {
+  label="$1"; actual="$2"; expected="$3"; log="${4:-}"
+  if [ "$actual" -eq "$expected" ]; then
+    pass "$label"
+  else
+    fail_check "$label" "exit $actual, expected $expected"
+    [ -n "$log" ] && sed -n '1,30p' "$log" | sed 's/^/    stderr: /'
+  fi
+}
+expect_version() {
+  out="$1"; rc="$2"; log="$3"
+  if [ "$rc" -eq 0 ] && printf '%s' "$out" | grep -q KeyHog; then
+    pass "version"
+  else
+    fail_check "version" "version command exit $rc or unexpected output"
+    sed -n '1,20p' "$log" | sed 's/^/    stderr: /'
+  fi
+}
+expect_aws_json() {
+  report="$1"
+  python3 - "$report" <<'PY'
+import json
+import pathlib
+import sys
+
+report = pathlib.Path(sys.argv[1])
+try:
+    data = json.loads(report.read_text())
+except Exception as exc:
+    print(f"parse failed for {report}: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+
+if isinstance(data, list):
+    findings = data
+elif isinstance(data, dict):
+    findings = data.get("findings", [])
+else:
+    print(f"unexpected JSON root {type(data).__name__}", file=sys.stderr)
+    raise SystemExit(1)
+
+for finding in findings:
+    if not isinstance(finding, dict):
+        continue
+    detector = str(finding.get("detector_id", "")).lower()
+    credential = str(finding.get("credential_redacted", "")).lower()
+    if detector == "aws-access-key" or "akiaz4rnvt5qw3mxk7pd" in credential:
+        raise SystemExit(0)
+
+print(f"no planted AWS finding in {report}", file=sys.stderr)
+raise SystemExit(1)
+PY
+}
 t="$(mktemp -d)"; trap 'rm -rf "$t"' EXIT
 printf 'aws_access_key_id = AKIAZ4RNVT5QW3MXK7PD\ngithub_token = ghp_0123456789abcdefghijklmnopqrstuvwxyz\n' > "$t/leak.env"
 printf 'nothing secret here, just prose\n' > "$t/clean.txt"
 
-"$KH" --version >/dev/null 2>&1; check "version" '[ $? -eq 0 ]' || true
-out="$("$KH" scan "$t/leak.env" --format json 2>/dev/null)"; rc=$?
-check "planted secret -> exit 1"                       "[ $rc -eq 1 ]"
-check "planted secret -> aws-access-key detector"      "echo \"\$out\" | grep -q aws-access-key"
-"$KH" scan "$t/clean.txt" >/dev/null 2>&1; check "clean tree -> exit 0"               "[ \$? -eq 0 ]"
-"$KH" scan --git-history "$t" >/dev/null 2>&1; check "git-history non-repo -> exit 2 (fail-closed)" "[ \$? -eq 2 ]"
-printf '\x00\x01aws_access_key_id = AKIAZ4RNVT5QW3MXK7PD\n' | "$KH" scan --stdin >/dev/null 2>&1
-check "binary stdin (lossy) -> exit 1"                 "[ \$? -eq 1 ]"
+version_out="$("$KH" --version 2>"$t/version.err")"; version_rc=$?
+expect_version "$version_out" "$version_rc" "$t/version.err"
+
+"$KH" scan "$t/leak.env" --backend simd --format json --output "$t/leak.json" >"$t/leak.out" 2>"$t/leak.err"
+rc=$?
+expect_rc "planted secret -> exit 1" "$rc" 1 "$t/leak.err"
+if expect_aws_json "$t/leak.json" 2>"$t/leak.parse.err"; then
+  pass "planted secret -> aws-access-key detector"
+else
+  fail_check "planted secret -> aws-access-key detector" "$(cat "$t/leak.parse.err")"
+fi
+
+"$KH" scan "$t/clean.txt" --backend simd >"$t/clean.out" 2>"$t/clean.err"
+expect_rc "clean tree -> exit 0" "$?" 0 "$t/clean.err"
+
+"$KH" scan --git-history "$t" --backend simd >"$t/history.out" 2>"$t/history.err"
+expect_rc "git-history non-repo -> exit 2 (fail-closed)" "$?" 2 "$t/history.err"
+
+printf '\x00\x01aws_access_key_id = AKIAZ4RNVT5QW3MXK7PD\n' | "$KH" scan --stdin --backend simd >"$t/stdin.out" 2>"$t/stdin.err"
+expect_rc "binary stdin (lossy) -> exit 1" "$?" 1 "$t/stdin.err"
 exit $fail
 PAYLOAD
 }
@@ -77,8 +146,8 @@ PAYLOAD
 # Run a command on a unix machine, locally or over ssh depending on transport.
 on_unix() { local host="$1"; shift; if [ "$host" = local ]; then bash -c "$*"; else "${SSH[@]}" "$host" "$*"; fi; }
 
-run_unix() {  # $1 name  $2 host(or 'local')  $3 tree  $4 target  $5 features
-  local name="$1" host="$2" tree="$3" tgt="$4" feats="$5"
+run_unix() {  # $1 name  $2 host(or 'local')  $3 os  $4 tree  $5 target  $6 features
+  local name="$1" host="$2" os="$3" tree="$4" tgt="$5" feats="$6"
   echo "----- $name ($host, unix) -----"
   if [ "$host" = local ]; then
     [ -d "$tree" ] || { echo "  local tree missing ($tree) -- run this on the work-linux hub"; return 64; }
@@ -90,9 +159,15 @@ run_unix() {  # $1 name  $2 host(or 'local')  $3 tree  $4 target  $5 features
     echo "  unreachable (or auth timed out)"; return 64
   fi
   echo "  building (profile=$PROFILE ${feats:-default})..."
-  if ! on_unix "$host" "cd '$tree' && CARGO_TARGET_DIR='$tgt' cargo build --profile '$PROFILE' -p keyhog $feats" >/dev/null 2>&1; then
-    echo "  FAIL build"; return 1
+  local build_log
+  build_log="$(mktemp)"
+  if ! on_unix "$host" "cd '$tree' && CARGO_TARGET_DIR='$tgt' cargo build --profile '$PROFILE' -p keyhog $feats" >"$build_log" 2>&1; then
+    echo "  FAIL build"
+    sed -n '1,80p' "$build_log" | sed 's/^/    /'
+    rm -f "$build_log"
+    return 1
   fi
+  rm -f "$build_log"
   # cargo's `dev` profile emits to target/debug; custom profiles use their own name.
   local pdir="$PROFILE"; [ "$PROFILE" = dev ] && pdir=debug
   local bin="$tgt/$pdir/keyhog"
@@ -110,7 +185,9 @@ run_unix() {  # $1 name  $2 host(or 'local')  $3 tree  $4 target  $5 features
   # -> seeded scan -> SARIF -> rollback). Same script every OS runs in CI, so
   # the dogfood exercises the exact installer users get, not a parallel copy.
   echo "  [install]"
-  on_unix "$host" "bash '$tree/tests/install/install_from_local_build.sh' '$bin'" || rc=1
+  local install_script="tests/install/linux/install_from_local_build.sh"
+  [ "$os" = macos ] && install_script="tests/install/macos/install_from_local_build.sh"
+  on_unix "$host" "bash '$tree/$install_script' '$bin'" || rc=1
 
   return $rc
 }
@@ -136,7 +213,7 @@ for name in "${TARGETS[@]}"; do
   cfg="$(config_for "$name")"
   if [ -z "$cfg" ]; then echo "unknown machine: $name (known: ${ALL[*]})"; continue; fi
   IFS='|' read -r host os tree tgt feats <<<"$cfg"
-  if [ "$os" = "windows" ]; then run_win; rc=$?; else run_unix "$name" "$host" "$tree" "$tgt" "$feats"; rc=$?; fi
+  if [ "$os" = "windows" ]; then run_win; rc=$?; else run_unix "$name" "$host" "$os" "$tree" "$tgt" "$feats"; rc=$?; fi
   case $rc in
     0)  RESULT[$name]="PASS" ;;
     64) RESULT[$name]="SKIP (unreachable)" ;;
