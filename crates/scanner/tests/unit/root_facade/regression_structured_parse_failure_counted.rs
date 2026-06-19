@@ -9,7 +9,9 @@
 //! parallel `all_tests` pool — the assertions are exact counts, not deltas.
 
 use keyhog_scanner::telemetry::{structured_parse_failure_count, testing::reset};
-use keyhog_scanner::testing::{parse_docker_compose, parse_k8s_secret, parse_tfstate};
+use keyhog_scanner::testing::{
+    parse_docker_compose, parse_jupyter, parse_k8s_secret, parse_tfstate,
+};
 
 #[test]
 fn malformed_structured_files_are_counted_valid_ones_are_not() {
@@ -49,6 +51,20 @@ fn malformed_structured_files_are_counted_valid_ones_are_not() {
         "a malformed docker-compose YAML must also be counted"
     );
 
+    let mixed_jupyter = r#"{"cells":[{"cell_type":"code","source":["token = ","ghp_abcdefghij0123456789",{"bad":true}]}]}"#;
+    let mixed_pairs = parse_jupyter(mixed_jupyter);
+    assert_eq!(
+        mixed_pairs.len(),
+        1,
+        "valid Jupyter source fragments must still be decoded-through"
+    );
+    assert_eq!(mixed_pairs[0].value, "token = ghp_abcdefghij0123456789");
+    assert_eq!(
+        structured_parse_failure_count(),
+        4,
+        "a mixed-type Jupyter source array loses one decode-through fragment and must be counted"
+    );
+
     // A VALID k8s Secret parses cleanly: the counter must NOT move, so the
     // warning only fires on genuine coverage gaps, never on healthy files.
     let good_k8s =
@@ -60,7 +76,7 @@ fn malformed_structured_files_are_counted_valid_ones_are_not() {
     );
     assert_eq!(
         structured_parse_failure_count(),
-        3,
+        4,
         "a successfully-parsed structured file must NOT increment the failure \
          counter (no false coverage-gap warning)"
     );

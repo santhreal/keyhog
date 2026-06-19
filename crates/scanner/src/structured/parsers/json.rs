@@ -96,10 +96,22 @@ pub(crate) fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
                 (s.clone(), line)
             }
             serde_json::Value::Array(arr) => {
-                let parts: Vec<String> = arr
-                    .iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect();
+                let mut malformed_source_fragment = false;
+                let mut parts = Vec::with_capacity(arr.len());
+                for fragment in arr {
+                    match fragment.as_str() {
+                        Some(text) => parts.push(text.to_string()),
+                        None => malformed_source_fragment = true,
+                    }
+                }
+                if malformed_source_fragment {
+                    crate::telemetry::record_structured_parse_failure();
+                    tracing::warn!(
+                        target: "keyhog::structured",
+                        cell = idx,
+                        "Jupyter notebook code cell source array contains a non-string fragment; valid fragments will be decoded-through"
+                    );
+                }
                 let joined = parts.join("");
                 let anchor = parts
                     .iter()
@@ -115,7 +127,15 @@ pub(crate) fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
                 let line = find_line_number(text, &anchor).unwrap_or(1); // LAW10: line not located => placeholder line for REPORTING only; finding still emitted, recall-safe
                 (joined, line)
             }
-            _ => continue,
+            _ => {
+                crate::telemetry::record_structured_parse_failure();
+                tracing::warn!(
+                    target: "keyhog::structured",
+                    cell = idx,
+                    "Jupyter notebook code cell source has unsupported shape; code cell will not be decoded-through"
+                );
+                continue;
+            }
         };
         if !source_text.trim().is_empty() {
             pairs.push(ExtractedPair {
