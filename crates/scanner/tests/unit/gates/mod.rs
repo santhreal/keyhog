@@ -202,3 +202,4 @@ pub mod types_non_empty;
 pub mod unicode_hardening_no_inline_tests;
 pub mod unicode_hardening_no_unwrap_expect;
 pub mod unicode_hardening_non_empty;
+pub mod unit_gate_modules_all_wired;
