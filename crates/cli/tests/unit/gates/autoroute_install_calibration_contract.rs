@@ -61,6 +61,11 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
         "/src/orchestrator_config.rs"
     ))
     .expect("orchestrator config source readable");
+    let effective_config = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator_config/effective.rs"
+    ))
+    .expect("effective config source readable");
     let orchestrator_mod = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/orchestrator/mod.rs"
@@ -229,15 +234,17 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && scanner_gpu_backend.contains("runtime_identity")
             && scanner_gpu_backend.contains("adapter_info.driver")
             && dispatch.contains("scanner.as_ref()")
-            && config.contains("pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64")
+            && config.contains("pub(crate) use effective::{autoroute_config_digest, render_effective_config}")
+            && effective_config.contains("pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64")
             && !config.contains("hash_autoroute_runtime_env")
             && !config.contains("KEYHOG_SHARD_TARGET")
-            && config.contains("per_chunk_timeout_ms")
-            && config.contains("resolved.scanner_tuning.hash(&mut h)")
-            && config.contains("tuning_hs_shard_target")
-            && config.contains("tuning_gpu_recall_floor")
-            && config.contains("detector_min_confidence")
-            && config.contains("disabled_detectors"),
+            && !effective_config.contains("KEYHOG_SHARD_TARGET")
+            && effective_config.contains("per_chunk_timeout_ms")
+            && effective_config.contains("resolved.scanner_tuning.hash(&mut h)")
+            && effective_config.contains("tuning_hs_shard_target")
+            && effective_config.contains("tuning_gpu_recall_floor")
+            && effective_config.contains("detector_min_confidence")
+            && effective_config.contains("disabled_detectors"),
         "autoroute cache identity must include the fully resolved scan config and runtime backend knobs, not only hardware and detector corpus"
     );
     assert!(

@@ -8,6 +8,10 @@ fn orchestrator_config_non_empty() {
             env!("CARGO_MANIFEST_DIR"),
             "/src/orchestrator_config/detectors.rs"
         ),
+        concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/orchestrator_config/effective.rs"
+        ),
     ] {
         let src = std::fs::read_to_string(path).expect("source readable");
         assert!(
