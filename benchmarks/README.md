@@ -156,11 +156,13 @@ so a partial-scanner run can never degrade the committed leaderboard. The
 installs keyhog via its per-OS build (Linux: Hyperscan SIMD; macOS:
 `--features portable`, the system-lib-free vyre CPU path), generates the corpus
 on the device's local disk, runs the leaderboard there, and pulls the per-host
-RunResult into `results-cross-device/<device>/` — kept **out** of `results/` so
-a remote host's row can never shadow the canonical README numbers (the README
-report's `canonical_leaderboard` picks newest-per-scanner across everything it
-loads). Compare every host with `python -m bench.cross_compare`; the committed
-snapshot is [`reports/cross-device.md`](reports/cross-device.md). Windows is
+RunResult into `results-cross-device/<device>/`. The remote driver always
+installs from the synced tree and never treats a `keyhog` found on PATH as
+current-code evidence. Results stay **out** of `results/` so a remote host's row
+can never shadow the canonical README numbers (the README report's
+`canonical_leaderboard` picks newest-per-scanner across everything it loads).
+Compare every host with `python -m bench.cross_compare`; the committed snapshot
+is [`reports/cross-device.md`](reports/cross-device.md). Windows is
 POSIX-incompatible with this script — drive the ThinkPad via PowerShell.
 
 ## Reproducibility

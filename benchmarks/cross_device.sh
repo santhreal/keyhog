@@ -11,9 +11,11 @@
 #   DEVICE=santhserver POSITIVES=15000 NEGATIVES=80000 ./cross_device.sh
 #
 # Requirements on the remote: an SSH alias that logs in non-interactively, a
-# POSIX shell, python3 (>=3.8), and a Rust toolchain (cargo) OR a prebuilt
-# keyhog on PATH. The corpus is generated locally on the device (NFS is far too
-# slow for a 15k-file scan); only the small result JSON crosses the network.
+# POSIX shell, python3 (>=3.8), and a Rust toolchain (cargo). The harness
+# installs keyhog from the synced current repo on every run; a stale keyhog on
+# PATH is never benchmark evidence. The corpus is generated locally on the
+# device (NFS is far too slow for a 15k-file scan); only the small result JSON
+# crosses the network.
 #
 # Windows devices are NOT handled here (POSIX-only); use the PowerShell sibling
 # flow for the ThinkPad — see benchmarks/README.md.
@@ -64,22 +66,18 @@ mkdir -p "$REMOTE_TMP" "\$CARGO_TARGET_DIR"
 OS="\$(uname -s)"; ARCH="\$(uname -m)"
 echo "host: \$OS \$ARCH" >&2
 
-# 1. keyhog: prefer an installed binary; else install from the repo via the
-#    real install flow (cargo install), not a bare dev build.
-if KH="\$(command -v keyhog)"; then
-  :
-else
-  KH_FEAT="$KEYHOG_INSTALL_FEATURES"
-  if [ -z "\$KH_FEAT" ]; then
-    case "\$OS" in
-      Darwin*) KH_FEAT="--no-default-features --features portable" ;;  # no system libs
-      *)       KH_FEAT="" ;;                                            # Linux: Hyperscan SIMD
-    esac
-  fi
-  echo "installing keyhog (cargo install --path crates/cli \$KH_FEAT)..." >&2
-  cargo install --path crates/cli --root "$REMOTE_TMP/kh" \$KH_FEAT --quiet --locked >&2
-  KH="$REMOTE_TMP/kh/bin/keyhog"
+# 1. keyhog: install from the synced current repo via the real install flow
+#    (cargo install), not a bare dev build and never PATH.
+KH_FEAT="$KEYHOG_INSTALL_FEATURES"
+if [ -z "\$KH_FEAT" ]; then
+  case "\$OS" in
+    Darwin*) KH_FEAT="--no-default-features --features portable" ;;  # no system libs
+    *)       KH_FEAT="" ;;                                            # Linux: Hyperscan SIMD
+  esac
 fi
+echo "installing keyhog (cargo install --path crates/cli \$KH_FEAT)..." >&2
+cargo install --path crates/cli --root "$REMOTE_TMP/kh" \$KH_FEAT --quiet --locked >&2
+KH="$REMOTE_TMP/kh/bin/keyhog"
 [ -x "\$KH" ] || { echo "keyhog install failed (no binary at \$KH)" >&2; exit 5; }
 KH_VERSION="\$("\$KH" --version)"
 echo "keyhog: \$KH (\$KH_VERSION)" >&2
