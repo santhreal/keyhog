@@ -239,13 +239,13 @@ runs:
         case "$(uname -s)" in
           Linux*)
             if [[ "${ACTION_ASSET_NAME:-}" == "keyhog-linux-x86_64-cuda" ]]; then
-              cargo build --release -p keyhog --features cuda
+              cargo build --locked --release -p keyhog --features cuda
             else
-              cargo build --release -p keyhog
+              cargo build --locked --release -p keyhog
             fi
             ;;
           *)
-            cargo build --release -p keyhog --no-default-features --features portable
+            cargo build --locked --release -p keyhog --no-default-features --features portable
             ;;
         esac
         bin="target/release/keyhog"

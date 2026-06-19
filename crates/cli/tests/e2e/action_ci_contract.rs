@@ -1830,6 +1830,10 @@ chmod +x target/release/keyhog
     );
     let args = fs::read_to_string(&cargo_args).expect("read cargo args");
     assert!(
+        args.contains("--locked\n"),
+        "source fallback must build against the committed lockfile; args={args}"
+    );
+    assert!(
         args.contains("--features\ncuda\n"),
         "CUDA source fallback must preserve the requested CUDA feature; args={args}"
     );
