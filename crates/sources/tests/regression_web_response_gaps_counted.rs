@@ -94,6 +94,54 @@ fn non_success_status_is_error_and_counted_unreadable() {
 }
 
 #[test]
+fn malformed_sourcemap_is_raw_scanned_and_counted_partial() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let raw_marker = "sourcemap_raw_fallback_marker_2c7f7a";
+    let _map = server.mock(|when, then| {
+        when.method(httpmock::Method::GET).path("/app.js.map");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(format!(
+                r#"{{"version":3,"sources":["app.ts"],"sourcesContent":["const token = '{raw_marker}';"]"#
+            ));
+    });
+
+    let chunks: Vec<_> = loopback_calibration_source(server.url("/app.js.map"))
+        .chunks()
+        .collect();
+    let ok: Vec<_> = chunks
+        .into_iter()
+        .filter_map(|result| result.ok())
+        .collect();
+    assert_eq!(
+        ok.len(),
+        1,
+        "malformed source map should still produce one raw fallback chunk"
+    );
+    assert_eq!(ok[0].metadata.source_type, "web:sourcemap:raw");
+    assert!(
+        ok[0].data.contains(raw_marker),
+        "raw fallback chunk must retain the malformed source map body"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.structured_source_parse_failures - before.structured_source_parse_failures,
+        1,
+        "malformed WebSource source maps must surface a partial expansion coverage gap"
+    );
+    assert_eq!(
+        after.total(),
+        before.total(),
+        "source-map parse failure is partial coverage because raw text was scanned"
+    );
+}
+
+#[test]
 fn over_cap_content_length_is_error_and_counted_over_max_size() {
     let _guard = counter_guard();
     TestApi.reset_skip_counters();

@@ -289,8 +289,9 @@ fn handle_sourcemap(
     let map: serde_json::Value = match serde_json::from_str(&body) {
         Ok(v) => v,
         Err(e) => {
+            let _event =
+                crate::record_skip_event(crate::SourceSkipEvent::StructuredSourceParseFailure);
             tracing::warn!(url = %redact_url(url), err = %e, "failed to parse source map JSON");
-            // Fall back to treating it as plain JS text
             return vec![Ok(Chunk {
                 data: body.into(),
                 metadata: ChunkMetadata {
