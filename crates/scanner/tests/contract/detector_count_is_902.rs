@@ -1,4 +1,4 @@
-//! Contract: shipped detector count is exactly 894.
+//! Contract: shipped detector count is exactly 902.
 
 use std::path::PathBuf;
 
@@ -11,11 +11,11 @@ fn detector_dir() -> PathBuf {
 }
 
 #[test]
-fn detector_count_is_891() {
-    const EXPECTED: usize = 894;
+fn detector_count_is_902() {
+    const EXPECTED: usize = 902;
 
-    let detectors = keyhog_core::load_detectors(&detector_dir())
-        .expect("detectors directory must load");
+    let detectors =
+        keyhog_core::load_detectors(&detector_dir()).expect("detectors directory must load");
     assert_eq!(
         detectors.len(),
         EXPECTED,

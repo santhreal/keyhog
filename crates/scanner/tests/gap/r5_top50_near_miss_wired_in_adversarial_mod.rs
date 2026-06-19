@@ -8,7 +8,9 @@ fn r5_top50_near_miss_wired_in_adversarial_mod() {
     let mod_rs = std::fs::read_to_string(tests.join("mod.rs")).expect("mod.rs");
     let missing: Vec<String> = std::fs::read_dir(&tests)
         .expect("read_dir")
-        .filter_map(|e| e.ok())
+        .map(|e| {
+            e.unwrap_or_else(|err| panic!("read_dir({}) entry failed: {err}", tests.display()))
+        })
         .map(|e| e.path())
         .filter(|p| {
             let name = p.file_name().and_then(|s| s.to_str()).unwrap_or("");

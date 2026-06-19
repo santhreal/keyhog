@@ -20,7 +20,9 @@ fn readme_detector_count_matches_disk() {
     let dir = detectors_dir();
     let disk_count = std::fs::read_dir(&dir)
         .expect("detectors/")
-        .flatten()
+        .map(|entry| {
+            entry.unwrap_or_else(|e| panic!("read detectors dir entry {}: {e}", dir.display()))
+        })
         .filter(|e| e.path().extension().and_then(|s| s.to_str()) == Some("toml"))
         .count();
 

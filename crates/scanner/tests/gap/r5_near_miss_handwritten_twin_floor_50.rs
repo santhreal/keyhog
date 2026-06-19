@@ -5,7 +5,7 @@ use std::path::PathBuf;
 fn count_top50_near_miss(adv: &PathBuf) -> usize {
     std::fs::read_dir(adv)
         .expect("adversarial dir")
-        .filter_map(|e| e.ok())
+        .map(|e| e.unwrap_or_else(|err| panic!("read_dir({}) entry failed: {err}", adv.display())))
         .filter(|e| {
             let name = e.file_name().to_string_lossy().into_owned();
             name.starts_with("top50_") && name.contains("_near_miss") && name.ends_with(".rs")

@@ -50,7 +50,9 @@ fn aws_access_key_fires_on_canonical_shape() {
     );
 
     assert!(
-        aws_hits.iter().any(|m| m.credential.as_ref() == CANONICAL_CREDENTIAL),
+        aws_hits
+            .iter()
+            .any(|m| m.credential.as_ref() == CANONICAL_CREDENTIAL),
         "aws-access-key credential bytes must be exactly {:?}; got {:?}",
         CANONICAL_CREDENTIAL,
         aws_hits

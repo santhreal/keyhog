@@ -11,8 +11,8 @@ fn repo_root() -> PathBuf {
 
 #[test]
 fn readme_performance_section_lists_reproduce_command() {
-    let readme = std::fs::read_to_string(repo_root().join("README.md"))
-        .expect("root README.md readable");
+    let readme =
+        std::fs::read_to_string(repo_root().join("README.md")).expect("root README.md readable");
 
     assert!(
         readme.contains("## Performance"),

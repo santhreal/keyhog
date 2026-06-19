@@ -7,7 +7,7 @@ fn r5_chunk_boundary_adversarial_floor_12() {
     let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/adversarial/chunk_boundary");
     let count = std::fs::read_dir(&dir)
         .expect("chunk_boundary")
-        .filter_map(|e| e.ok())
+        .map(|e| e.unwrap_or_else(|err| panic!("read_dir({}) entry failed: {err}", dir.display())))
         .filter(|e| {
             e.file_name()
                 .to_string_lossy()

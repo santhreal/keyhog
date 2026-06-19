@@ -32,6 +32,16 @@ text = "git push https://oauth2:github_pat_KhYxNqJ4pVbZ7Lm5RfWcGs_9X3kQp7VbT2hYR
 credential = "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"
 reason = "URL-embedded credential — common shell-history leak shape."
 
+[[positive]]
+text = "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"
+credential = "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"
+reason = "Alias-contract bare fine-grained PAT fixture retained after filename consolidation."
+
+[[positive]]
+text = "GH_TOKEN=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"
+credential = "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"
+reason = "Alias-contract GH_TOKEN env-var wrap retained after filename consolidation."
+
 # ---- NEGATIVES (precision) ------------------------------------------
 
 [[negative]]
@@ -50,6 +60,10 @@ reason = "Same widths as the positive fixture, but the last 6 chars are not a va
 text = "the github_pat_ prefix is described in github's docs"
 reason = "Prose mentioning the prefix with no token body."
 
+[[negative]]
+text = "github_pat_short"
+reason = "Alias-contract short-token negative retained after filename consolidation."
+
 # ---- EVASIONS (adversarial) -----------------------------------------
 
 [[evasion]]
@@ -61,6 +75,11 @@ reason = "HTML comment wrapper."
 text = "Authorization: token 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"
 credential = "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"
 reason = "Legacy `token` auth header — GitHub still accepts it."
+
+[[evasion]]
+text = "Authorization: Bearer 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"
+credential = "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"
+reason = "Alias-contract Bearer-header wrap retained after filename consolidation."
 
 # ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
 

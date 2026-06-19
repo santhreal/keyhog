@@ -12,7 +12,7 @@ fn r5_handwritten_twin_gap_vs_detector_load() {
     let adv = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/adversarial");
     let handwritten = std::fs::read_dir(&adv)
         .expect("adversarial")
-        .filter_map(|e| e.ok())
+        .map(|e| e.unwrap_or_else(|err| panic!("read_dir({}) entry failed: {err}", adv.display())))
         .filter(|e| {
             let name = e.file_name().to_string_lossy().into_owned();
             name.starts_with("top50_") && name.contains("_near_miss")

@@ -20,10 +20,7 @@ fn parse_id(path: &PathBuf) -> String {
             }
         }
     }
-    path.file_stem()
-        .unwrap()
-        .to_string_lossy()
-        .into_owned()
+    path.file_stem().unwrap().to_string_lossy().into_owned()
 }
 
 #[test]

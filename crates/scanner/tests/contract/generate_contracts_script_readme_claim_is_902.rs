@@ -10,13 +10,13 @@ fn repo_root() -> PathBuf {
 }
 
 #[test]
-fn generate_contracts_script_readme_claim_is_891() {
+fn generate_contracts_script_readme_claim_is_902() {
     let script = repo_root().join("scripts/generate_contracts.py");
     let text = std::fs::read_to_string(&script)
         .unwrap_or_else(|e| panic!("read {}: {e}", script.display()));
 
     assert!(
-        text.contains("README_CLAIM = \"899 service-specific detectors\""),
-        "generate_contracts.py must pin README_CLAIM to 894 - stale 889 poisons new contract TOMLs"
+        text.contains("README_CLAIM = \"902 service-specific detectors\""),
+        "generate_contracts.py must pin README_CLAIM to 902 - stale counts poison new contract TOMLs"
     );
 }
