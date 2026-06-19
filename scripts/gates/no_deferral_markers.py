@@ -16,6 +16,7 @@ ROOTS = [
     "crates/sources/src",
     "crates/verifier/src",
     "scripts",
+    "benchmarks/README.md",
     "benchmarks/bench",
     "benchmarks/generators",
     "ml",

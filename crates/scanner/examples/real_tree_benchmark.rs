@@ -3,6 +3,7 @@ use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -19,7 +20,7 @@ const SOURCE_NAMES: &[&str] = &[
     "COPYING",
 ];
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = env::args().skip(1);
     let root = args
         .next()
@@ -45,7 +46,7 @@ fn main() {
     let started = Instant::now();
     let mut chunks = Vec::new();
     let mut loaded_lines = 0usize;
-    collect_chunks(&root, &mut chunks, max_lines, &mut loaded_lines);
+    collect_chunks(&root, &mut chunks, max_lines, &mut loaded_lines)?;
     let read_elapsed = started.elapsed();
     let bytes: usize = chunks.iter().map(|chunk| chunk.data.len()).sum();
     let lines: usize = chunks
@@ -90,6 +91,7 @@ fn main() {
         );
         print_top_detectors(backend, &detector_counts);
     }
+    Ok(())
 }
 
 fn parse_backend(name: &str) -> Option<ScanBackend> {
@@ -126,37 +128,70 @@ fn collect_chunks(
     chunks: &mut Vec<Chunk>,
     max_lines: Option<usize>,
     loaded_lines: &mut usize,
-) {
+) -> io::Result<()> {
     if max_lines.is_some_and(|limit| *loaded_lines >= limit) {
-        return;
+        return Ok(());
     }
-    let Ok(metadata) = fs::symlink_metadata(path) else {
-        return;
-    };
+    let metadata = fs::symlink_metadata(path).map_err(|source| {
+        io::Error::new(
+            source.kind(),
+            format!(
+                "read metadata for benchmark path {}: {source}",
+                path.display()
+            ),
+        )
+    })?;
     if metadata.is_dir() {
         if should_skip_dir(path) {
-            return;
+            return Ok(());
         }
-        let Ok(entries) = fs::read_dir(path) else {
-            return;
-        };
-        for entry in entries.flatten() {
-            collect_chunks(&entry.path(), chunks, max_lines, loaded_lines);
+        let entries = fs::read_dir(path).map_err(|source| {
+            io::Error::new(
+                source.kind(),
+                format!("read benchmark directory {}: {source}", path.display()),
+            )
+        })?;
+        for entry in entries {
+            let entry = entry.map_err(|source| {
+                io::Error::new(
+                    source.kind(),
+                    format!("read directory entry under {}: {source}", path.display()),
+                )
+            })?;
+            collect_chunks(&entry.path(), chunks, max_lines, loaded_lines)?;
+            if max_lines.is_some_and(|limit| *loaded_lines >= limit) {
+                break;
+            }
         }
-        return;
+        return Ok(());
     }
     if !metadata.is_file() || !is_source_file(path) {
-        return;
+        return Ok(());
     }
-    let Ok(data) = fs::read(path) else {
-        return;
-    };
+    let data = fs::read(path).map_err(|source| {
+        io::Error::new(
+            source.kind(),
+            format!("read benchmark source file {}: {source}", path.display()),
+        )
+    })?;
     if data.contains(&0) {
-        return;
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "benchmark source file {} contains a NUL byte; use a text corpus or exclude the path",
+                path.display()
+            ),
+        ));
     }
-    let Ok(data) = String::from_utf8(data) else {
-        return;
-    };
+    let data = String::from_utf8(data).map_err(|source| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!(
+                "benchmark source file {} is not valid UTF-8: {source}; use a text corpus or exclude the path",
+                path.display()
+            ),
+        )
+    })?;
     *loaded_lines += data.bytes().filter(|byte| *byte == b'\n').count();
     chunks.push(Chunk {
         data: data.into(),
@@ -173,6 +208,7 @@ fn collect_chunks(
             ..Default::default()
         },
     });
+    Ok(())
 }
 
 fn should_skip_dir(path: &Path) -> bool {
