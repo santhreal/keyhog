@@ -11,12 +11,15 @@ use super::phase2::gate_prefix_literals;
 use super::*;
 use std::borrow::Cow;
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::sync::OnceLock;
 
 const PHASE2_GPU_DFA_MAX_MATCHES: u32 = 1 << 20;
 const PHASE2_GPU_DFA_MAX_STATES: usize = 16_384;
 const PHASE2_GPU_DFA_TARGET_SHARD_PATTERNS: usize = 16;
-const PHASE2_GPU_DFA_MAX_CANDIDATES: usize = 64;
+const PHASE2_GPU_DFA_MAX_SHARDS: usize = 16;
+const PHASE2_GPU_DFA_MAX_CANDIDATES: usize =
+    PHASE2_GPU_DFA_TARGET_SHARD_PATTERNS * PHASE2_GPU_DFA_MAX_SHARDS;
 const MATCH_TRIPLE_BYTES: usize = 12;
 
 #[derive(Debug)]
@@ -107,12 +110,15 @@ impl Phase2GpuDfaCatalog {
     ) -> Option<Self> {
         let all_candidates =
             prefixless_always_active_candidates(phase2_patterns, always_active_indices);
-        let selected_len = all_candidates.len().min(PHASE2_GPU_DFA_MAX_CANDIDATES);
-        let candidates = &all_candidates[..selected_len];
+        let candidates = prioritized_phase2_gpu_dfa_candidates(
+            phase2_patterns,
+            &all_candidates,
+            PHASE2_GPU_DFA_MAX_CANDIDATES,
+        );
         Self::build_from_selected_candidates(
             phase2_patterns,
             all_candidates.len(),
-            candidates,
+            &candidates,
             program_kind,
         )
     }
@@ -244,6 +250,80 @@ fn prefixless_always_active_candidates(
                 .is_some_and(|(pattern, _)| gate_prefix_literals(pattern.regex.as_str()).is_none())
         })
         .collect()
+}
+
+fn prioritized_phase2_gpu_dfa_candidates(
+    phase2_patterns: &[(CompiledPattern, Vec<String>)],
+    candidates: &[usize],
+    max_candidates: usize,
+) -> Vec<usize> {
+    let mut selected = Vec::with_capacity(candidates.len().min(max_candidates));
+    let mut selected_indices = HashSet::new();
+    let mut base_detectors = HashSet::new();
+    let mut homoglyph_detectors = HashSet::new();
+
+    append_phase2_gpu_dfa_candidates(
+        phase2_patterns,
+        candidates,
+        max_candidates,
+        &mut selected,
+        &mut selected_indices,
+        |pattern| !pattern.homoglyph_variant && base_detectors.insert(pattern.detector_index),
+    );
+    append_phase2_gpu_dfa_candidates(
+        phase2_patterns,
+        candidates,
+        max_candidates,
+        &mut selected,
+        &mut selected_indices,
+        |pattern| !pattern.homoglyph_variant,
+    );
+    append_phase2_gpu_dfa_candidates(
+        phase2_patterns,
+        candidates,
+        max_candidates,
+        &mut selected,
+        &mut selected_indices,
+        |pattern| pattern.homoglyph_variant && homoglyph_detectors.insert(pattern.detector_index),
+    );
+    append_phase2_gpu_dfa_candidates(
+        phase2_patterns,
+        candidates,
+        max_candidates,
+        &mut selected,
+        &mut selected_indices,
+        |_| true,
+    );
+
+    selected
+}
+
+fn append_phase2_gpu_dfa_candidates<F>(
+    phase2_patterns: &[(CompiledPattern, Vec<String>)],
+    candidates: &[usize],
+    max_candidates: usize,
+    selected: &mut Vec<usize>,
+    selected_indices: &mut HashSet<usize>,
+    mut accepts: F,
+) where
+    F: FnMut(&CompiledPattern) -> bool,
+{
+    if selected.len() >= max_candidates {
+        return;
+    }
+    for &idx in candidates {
+        if selected.len() >= max_candidates {
+            return;
+        }
+        let Some((pattern, _)) = phase2_patterns.get(idx) else {
+            continue;
+        };
+        if selected_indices.contains(&idx) || !accepts(pattern) {
+            continue;
+        }
+        selected.push(idx);
+        selected_indices.insert(idx);
+    }
 }
 
 impl Phase2GpuDfaCatalogCache {
@@ -597,17 +677,26 @@ mod tests {
     use super::*;
 
     fn test_pattern(src: &str, case_insensitive: bool) -> CompiledPattern {
+        test_pattern_with_shape(src, case_insensitive, 0, false)
+    }
+
+    fn test_pattern_with_shape(
+        src: &str,
+        case_insensitive: bool,
+        detector_index: usize,
+        homoglyph_variant: bool,
+    ) -> CompiledPattern {
         let regex = if case_insensitive {
             LazyRegex::detector(src)
         } else {
             LazyRegex::plain(src)
         };
         CompiledPattern {
-            detector_index: 0,
+            detector_index,
             regex,
             group: None,
             client_safe: false,
-            homoglyph_variant: false,
+            homoglyph_variant,
         }
     }
 
@@ -704,6 +793,44 @@ mod tests {
         );
         assert!(!Phase2GpuDfaProgramKind::CudaCompatible.use_subgroup_coalesce());
         assert!(Phase2GpuDfaProgramKind::SubgroupCoalesced.use_subgroup_coalesce());
+    }
+
+    #[test]
+    fn gpu_dfa_candidate_selection_prefers_base_detector_breadth() {
+        let patterns = vec![
+            (
+                test_pattern_with_shape("glyph0[0-9]{2}", false, 0, true),
+                Vec::new(),
+            ),
+            (
+                test_pattern_with_shape("base0[0-9]{2}", true, 0, false),
+                Vec::new(),
+            ),
+            (
+                test_pattern_with_shape("glyph1[0-9]{2}", false, 1, true),
+                Vec::new(),
+            ),
+            (
+                test_pattern_with_shape("base2[0-9]{2}", true, 2, false),
+                Vec::new(),
+            ),
+            (
+                test_pattern_with_shape("base2b[0-9]{2}", true, 2, false),
+                Vec::new(),
+            ),
+        ];
+        let candidates = [0, 1, 2, 3, 4];
+
+        assert_eq!(
+            prioritized_phase2_gpu_dfa_candidates(&patterns, &candidates, 3),
+            vec![1, 3, 4],
+            "bounded GPU DFA admission must spend slots on base detector regexes before generated homoglyph variants"
+        );
+        assert_eq!(
+            prioritized_phase2_gpu_dfa_candidates(&patterns, &candidates, 5),
+            vec![1, 3, 4, 0, 2],
+            "homoglyph variants stay eligible after the base-pattern breadth pass"
+        );
     }
 
     #[test]
