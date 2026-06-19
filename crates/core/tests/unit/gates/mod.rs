@@ -4,6 +4,7 @@ pub mod allowlist_non_empty;
 pub mod auto_fix_no_inline_tests;
 pub mod auto_fix_no_unwrap_expect;
 pub mod auto_fix_non_empty;
+pub mod build_script_detector_embedding_fail_closed;
 pub mod calibration_no_inline_tests;
 pub mod calibration_no_unwrap_expect;
 pub mod calibration_non_empty;

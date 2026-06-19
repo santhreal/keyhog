@@ -18,30 +18,28 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // and lets the bench fail-closed when it scores a stale build.
     stamp_git_hash(Path::new(&manifest_dir));
 
-    let candidates = [
-        Path::new(&manifest_dir).join("detectors"),
-        Path::new(&manifest_dir)
-            .parent()
-            .and_then(|p| p.parent())
-            .map(|p| p.join("detectors"))
-            .unwrap_or_default(),
-    ];
+    let manifest_dir = Path::new(&manifest_dir);
+    let mut candidates = vec![manifest_dir.join("detectors")];
+    if let Some(workspace_root) = manifest_dir.parent().and_then(|p| p.parent()) {
+        candidates.push(workspace_root.join("detectors"));
+    }
 
     let detectors_dir = candidates
         .iter()
         .find(|path| path.exists() && path.is_dir());
     let Some(detectors_dir) = detectors_dir else {
-        println!("cargo:warning=detectors/ directory not found, embedded detectors will be empty");
-        // Always emit the digest, even for the empty set, so consumers can
-        // rely on `env!("KEYHOG_DETECTOR_DIGEST")` existing unconditionally and
-        // the bench can fail-closed on a binary that baked in zero detectors
-        // instead of hitting a missing-env compile error.
-        println!(
-            "cargo:rustc-env=KEYHOG_DETECTOR_DIGEST={}",
-            detector_set_digest(&[])
-        );
-        write_embedded_detectors(&output_path, &[])?;
-        return Ok(());
+        let searched = candidates
+            .iter()
+            .map(|path| path.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(io::Error::new(
+            io::ErrorKind::NotFound,
+            format!(
+                "detectors/ directory not found; searched: {searched}. Fix: build from the keyhog workspace, keep crates/core/detectors pointed at ../../detectors, or package the detector TOMLs with keyhog-core"
+            ),
+        )
+        .into());
     };
 
     let entries = read_detector_entries(detectors_dir)?;
