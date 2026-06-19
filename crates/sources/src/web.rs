@@ -296,12 +296,37 @@ fn handle_sourcemap(
         }
     };
 
-    let sources: Vec<String> = map["sources"]
-        .as_array()
-        .unwrap_or(&vec![]) // LAW10: a sourcemap with no `sources` array yields empty NAMES; the loop below still scans every `sourcesContent` entry (named `source_{i}`), so no code is dropped
-        .iter()
-        .filter_map(|v| v.as_str().map(String::from))
-        .collect();
+    let mut malformed_sources = false;
+    let sources: Vec<Option<String>> = match map.get("sources") {
+        Some(value) => match value.as_array() {
+            Some(arr) => arr
+                .iter()
+                .map(|entry| match entry.as_str() {
+                    Some(name) => Some(name.to_string()),
+                    None => {
+                        if !entry.is_null() {
+                            malformed_sources = true;
+                        }
+                        None
+                    }
+                })
+                .collect(),
+            None => {
+                if !value.is_null() {
+                    malformed_sources = true;
+                }
+                Vec::new()
+            }
+        },
+        None => Vec::new(),
+    };
+    if malformed_sources {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::StructuredSourceParseFailure);
+        tracing::warn!(
+            url = %redact_url(url),
+            "source map sources array contains non-string entry; decoded content keeps synthetic names for malformed entries"
+        );
+    }
 
     let mut malformed_sources_content = false;
     let contents: Vec<Option<String>> = match map.get("sourcesContent") {
@@ -344,7 +369,7 @@ fn handle_sourcemap(
             }
             let source_name = sources
                 .get(i)
-                .cloned()
+                .and_then(|name| name.clone())
                 .unwrap_or_else(|| format!("source_{i}")); // LAW10: synthetic label for an unnamed sourcemap entry; the content is still scanned
             chunks.push(Ok(Chunk {
                 data: code.clone().into(),

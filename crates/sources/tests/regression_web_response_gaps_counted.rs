@@ -205,6 +205,80 @@ fn partially_malformed_sourcemap_scans_decoded_entries_and_raw_map() {
 }
 
 #[test]
+fn malformed_sourcemap_source_names_keep_index_alignment_and_count_gap() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let first_marker = "sourcemap_first_source_marker_c83211";
+    let second_marker = "sourcemap_second_source_marker_f61790";
+    let _map = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/bad-sources.js.map");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(format!(
+                r#"{{
+                    "version": 3,
+                    "sources": [{{"bad":"name"}}, "app.ts"],
+                    "sourcesContent": [
+                        "const first = '{first_marker}';",
+                        "const second = '{second_marker}';"
+                    ]
+                }}"#
+            ));
+    });
+
+    let chunks: Vec<_> = loopback_calibration_source(server.url("/bad-sources.js.map"))
+        .chunks()
+        .collect();
+    let ok: Vec<_> = chunks
+        .into_iter()
+        .filter_map(|result| result.ok())
+        .collect();
+    assert_eq!(
+        ok.len(),
+        2,
+        "malformed source names must not force raw-only sourcemap scanning"
+    );
+    assert!(
+        ok.iter().any(|chunk| {
+            chunk.data.contains(first_marker)
+                && chunk
+                    .metadata
+                    .path
+                    .as_deref()
+                    .is_some_and(|path| path.ends_with("!source_0"))
+        }),
+        "the malformed first source name must keep its own synthetic index instead of stealing app.ts"
+    );
+    assert!(
+        ok.iter().any(|chunk| {
+            chunk.data.contains(second_marker)
+                && chunk
+                    .metadata
+                    .path
+                    .as_deref()
+                    .is_some_and(|path| path.ends_with("!app.ts"))
+        }),
+        "later valid source names must stay aligned with their original sourcesContent index"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.structured_source_parse_failures - before.structured_source_parse_failures,
+        1,
+        "malformed source-name metadata must be visible as a structured parse gap"
+    );
+    assert_eq!(
+        after.total(),
+        before.total(),
+        "source-name metadata gaps do not represent a whole-file skip"
+    );
+}
+
+#[test]
 fn over_cap_content_length_is_error_and_counted_over_max_size() {
     let _guard = counter_guard();
     TestApi.reset_skip_counters();
