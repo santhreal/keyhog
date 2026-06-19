@@ -330,9 +330,9 @@ pub(crate) fn build_sources(
     feature = "gcs",
     feature = "azure"
 ))]
-fn validate_source_flag_combinations(args: &ScanArgs, has_path_source: bool) -> Result<()> {
+fn validate_source_flag_combinations(args: &ScanArgs, _has_path_source: bool) -> Result<()> {
     #[cfg(feature = "binary")]
-    if args.binary && !has_path_source {
+    if args.binary && !_has_path_source {
         anyhow::bail!(
             "--binary was requested, but no filesystem path source was provided. \
              Fix: pass --path <PATH> or a positional PATH with --binary, or remove --binary."

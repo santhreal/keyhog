@@ -464,6 +464,62 @@ fn autoroute_cache_rejects_empty_decision_set() {
 }
 
 #[test]
+fn measured_router_clears_dirty_after_successful_cache_save() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_dirty_clear_{}.json",
+        std::process::id()
+    ));
+    let host = test_host(None);
+    let key = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        key,
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
+    );
+    let mut router = MeasuredBackendRouter {
+        hw_caps: keyhog_scanner::hw_probe::HardwareCaps {
+            physical_cores: 8,
+            logical_cores: 16,
+            has_avx2: true,
+            has_avx512: false,
+            has_neon: false,
+            gpu_available: false,
+            gpu_name: None,
+            gpu_vram_mb: None,
+            gpu_runtime_identity: None,
+            gpu_is_software: false,
+            total_memory_mb: Some(65_536),
+            io_uring_available: false,
+            hyperscan_available: true,
+        },
+        pattern_count: 902,
+        detector_digest: 0x1234_5678_9ABC_DEF0,
+        rules_digest: test_rules_digest().to_string(),
+        config_digest: 0xA55A_D00D_CAFE_BEEF,
+        autoroute_gpu: false,
+        calibration_mode: true,
+        host_profile: host,
+        decisions,
+        cache_path: Some(path.clone()),
+        cache_load_error: None,
+        cache_dirty: true,
+    };
+
+    router
+        .save_cache()
+        .expect("dirty autoroute cache should save");
+    assert!(
+        !router.cache_dirty,
+        "successful autoroute cache save must clear the dirty bit so Drop does not rewrite it"
+    );
+    router
+        .save_cache()
+        .expect("clean autoroute cache save should be a no-op");
+
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
 fn autoroute_cache_rejects_missing_cpu_model_identity() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_autoroute_missing_cpu_model_{}.json",

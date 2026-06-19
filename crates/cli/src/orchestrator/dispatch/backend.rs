@@ -295,7 +295,7 @@ impl MeasuredBackendRouter {
         Ok(backend)
     }
 
-    fn save_cache(&self) -> Result<(), AutorouteRoutingError> {
+    fn save_cache(&mut self) -> Result<(), AutorouteRoutingError> {
         if !self.cache_dirty {
             return Ok(());
         }
@@ -308,7 +308,9 @@ impl MeasuredBackendRouter {
             &self.host_profile,
             &self.decisions,
         )
-        .map_err(AutorouteRoutingError::calibration_not_persisted)
+        .map_err(AutorouteRoutingError::calibration_not_persisted)?;
+        self.cache_dirty = false;
+        Ok(())
     }
 
     fn persist_cache_path(&self) -> Result<&std::path::Path, AutorouteRoutingError> {
