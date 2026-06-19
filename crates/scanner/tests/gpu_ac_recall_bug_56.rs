@@ -17,7 +17,8 @@
 //! Skipped when:
 //! - the bench corpus isn't present (CI image without the persisted
 //!   corpus volume; the `build_corpora.sh` script provisions it but
-//!   it lives outside the repo so a fresh clone won't have it),
+//!   it lives outside the repo so a fresh clone won't have it; set
+//!   `KEYHOG_GPU_AC_RECALL_CORPUS=/path/to/big_with_secrets.txt`),
 //! - no compatible wgpu adapter is detected.
 //!
 //! When the bug is fixed this test stops being a skip-on-no-corpus
@@ -28,13 +29,31 @@
 mod support;
 use support::paths::detector_dir;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 
+const GPU_AC_RECALL_CORPUS_ENV: &str = "KEYHOG_GPU_AC_RECALL_CORPUS";
+const GPU_AC_RECALL_CORPUS_REPO_REL: &str = "benchmarks/corpora/gpu_ac_recall/big_with_secrets.txt";
+
 fn bench_corpus_path() -> PathBuf {
-    PathBuf::from("/media/mukund-thiru/SanthData/keyhog-bench-corpora/big_with_secrets.txt")
+    if let Some(path) = std::env::var_os(GPU_AC_RECALL_CORPUS_ENV) {
+        return PathBuf::from(path);
+    }
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    path.pop();
+    path.pop();
+    path.push(GPU_AC_RECALL_CORPUS_REPO_REL);
+    path
+}
+
+fn print_missing_corpus_skip(path: &Path) {
+    eprintln!(
+        "SKIP: bench corpus not present at {}. Set {GPU_AC_RECALL_CORPUS_ENV}=\
+         /path/to/big_with_secrets.txt to run this GPU AC recall regression.",
+        path.display()
+    );
 }
 
 /// Offset of the `sb_4bZ39EnIvgTAxogqQ1wam7az` credential in
@@ -89,10 +108,7 @@ fn finds_stackblitz(matches: &[keyhog_core::RawMatch]) -> bool {
 #[test]
 fn baseline_simd_finds_stackblitz_token() {
     let Some(window) = read_window() else {
-        eprintln!(
-            "SKIP: bench corpus not present at {:?}",
-            bench_corpus_path()
-        );
+        print_missing_corpus_skip(&bench_corpus_path());
         return;
     };
     // Sanity: the window must actually contain the planted token,
@@ -132,10 +148,7 @@ fn baseline_simd_finds_stackblitz_token() {
 #[test]
 fn gpu_ac_kernel_finds_stackblitz_token_in_narrow_window() {
     let Some(window) = read_window() else {
-        eprintln!(
-            "SKIP: bench corpus not present at {:?}",
-            bench_corpus_path()
-        );
+        print_missing_corpus_skip(&bench_corpus_path());
         return;
     };
     let detectors = match keyhog_core::load_detectors(&detector_dir()) {
@@ -191,7 +204,7 @@ fn gpu_ac_kernel_finds_stackblitz_token_in_narrow_window() {
 fn bisect_gpu_ac_recall_by_window_size() {
     let path = bench_corpus_path();
     if !path.exists() {
-        eprintln!("SKIP: bench corpus not present at {:?}", path);
+        print_missing_corpus_skip(&path);
         return;
     }
     let bytes = match std::fs::read(&path) {
@@ -318,7 +331,7 @@ fn bisect_gpu_ac_recall_by_window_size() {
 fn gpu_ac_kernel_must_find_stackblitz_token_on_full_corpus() {
     let path = bench_corpus_path();
     if !path.exists() {
-        eprintln!("SKIP: bench corpus not present at {:?}", path);
+        print_missing_corpus_skip(&path);
         return;
     }
     let bytes = match std::fs::read(&path) {

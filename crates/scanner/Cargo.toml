@@ -182,6 +182,10 @@ path = "tests/property/cross_detector_corpus_proptest.rs"
 name = "execution_plan_hunt_inventory"
 path = "tests/gap/execution_plan_hunt_inventory.rs"
 
+[[test]]
+name = "gpu_tests_fail_not_skip"
+path = "tests/gap/gpu_tests_fail_not_skip.rs"
+
 # TARGET-SPEC perf worklist (FAILING-BY-DESIGN): the 10x goal expressed as
 # executable contracts. RED until batched-GPU phase-2 verify lands; each red
 # line is one tracked gap. Subdir files need explicit [[test]] paths to be
