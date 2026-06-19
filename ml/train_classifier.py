@@ -167,10 +167,13 @@ def train(X, y, num_features, epochs, seed, kinds):
 
 
 def load_real_corpus(path, num_features):
-    """Load harvested real records {text, context, label, kind, source_file}.
-    Returns (X, y, kinds, files); `files` drives the no-leakage grouped split."""
+    """Load harvested real records.
+
+    Returns (X, y, classes, detectors, files); `files` drives the no-leakage
+    grouped split, while classes/detectors drive model-card tail metrics.
+    """
     kp, sk, tk, pk = config_lists.DEFAULT_LISTS
-    records, y, kinds, files = [], [], [], []
+    records, y, classes, detectors, files = [], [], [], [], []
     with open(path) as fh:
         for line in fh:
             line = line.strip()
@@ -179,10 +182,16 @@ def load_real_corpus(path, num_features):
             rec = json.loads(line)
             records.append(rec)
             y.append(float(rec["label"]))
-            kinds.append(rec.get("kind", ""))
+            classes.append(
+                rec.get("class")
+                or rec.get("secret_class")
+                or rec.get("category")
+                or rec.get("kind", "")
+            )
+            detectors.append(rec.get("detector_id") or rec.get("detector") or "unknown")
             files.append(rec.get("source_file", ""))
     X = rust_features.compute_feature_matrix(records, (kp, sk, tk, pk), num_features)
-    return X, np.asarray(y, dtype=np.float32), kinds, files
+    return X, np.asarray(y, dtype=np.float32), classes, detectors, files
 
 
 def _group_split(files, seed, fracs=(0.70, 0.15, 0.15)):
@@ -245,7 +254,7 @@ def per_class_eval(probs, labels, kinds, thr=0.5, floor=REAL_RECALL_FLOOR):
     return out
 
 
-def real_eval(probs, labels, kinds, thr=0.5):
+def real_eval(probs, labels, classes, detectors=None, thr=0.5):
     """Held-out real-distribution metrics. The headline is recall on real
     positives clearing the 0.40 report floor — the number the synthetic-only
     model failed (it scored real ambiguous secrets ~0.02)."""
@@ -257,7 +266,7 @@ def real_eval(probs, labels, kinds, thr=0.5):
         if pos
         else float("nan")
     )
-    return {
+    out = {
         "real_f1": round(f1, 4),
         "real_precision": round(prec, 4),
         "real_recall": round(rec, 4),
@@ -267,11 +276,32 @@ def real_eval(probs, labels, kinds, thr=0.5):
         "pos_mean_score": round(float(np.mean(pos)), 4) if pos else None,
         "neg_mean_score": round(float(np.mean(neg)), 4) if neg else None,
         "real_pos_recall_at_0.40_floor": round(floor_recall, 4),
-        "per_class": per_class_eval(probs, labels, kinds, thr, REAL_RECALL_FLOOR),
+        "per_class": per_class_eval(probs, labels, classes, thr, REAL_RECALL_FLOOR),
     }
+    if detectors is not None:
+        out["per_detector"] = per_class_eval(
+            probs,
+            labels,
+            detectors,
+            thr,
+            REAL_RECALL_FLOOR,
+        )
+    return out
 
 
-def train_blended(Xs, ys, kinds_s, Xr, yr, kinds_r, files_r, num_features, epochs, seed):
+def train_blended(
+    Xs,
+    ys,
+    kinds_s,
+    Xr,
+    yr,
+    classes_r,
+    detectors_r,
+    files_r,
+    num_features,
+    epochs,
+    seed,
+):
     """Train on synthetic (breadth) + real-TRAIN, select on synthetic-val +
     real-val, and report on a real-TEST held out by file (no leakage). Returns
     (model, synthetic_val_metrics, real_heldout_metrics)."""
@@ -295,7 +325,12 @@ def train_blended(Xs, ys, kinds_s, Xr, yr, kinds_r, files_r, num_features, epoch
         real_te_p = model(torch.from_numpy(Xr[r_te])).numpy() if len(r_te) else np.array([])
     syn_metrics = report(syn_val_p, ys[s_va], [kinds_s[i] for i in s_va])
     real_metrics = (
-        real_eval(real_te_p, yr[r_te], [kinds_r[i] for i in r_te])
+        real_eval(
+            real_te_p,
+            yr[r_te],
+            [classes_r[i] for i in r_te],
+            [detectors_r[i] for i in r_te],
+        )
         if len(r_te)
         else {"note": "no real test split"}
     )
@@ -444,6 +479,11 @@ def write_model_card(blob: bytes, args, metrics, real_metrics=None) -> None:
             "REFUSING to write: real held-out metrics must include per_class "
             "precision/recall for model_card.json"
         )
+    if args.write and not isinstance(real_card.get("per_detector"), dict):
+        raise SystemExit(
+            "REFUSING to write: real held-out metrics must include per_detector "
+            "precision/recall for model_card.json"
+        )
     card = {
         "schema_version": 2 if args.write else 1,
         "model_version": f"moe-v1-{digest}",
@@ -517,14 +557,27 @@ def main() -> int:
         # (so breadth coverage cannot silently regress); the real held-out is
         # the recall number that matters and is reported alongside.
         Xs, ys, kinds_s = load_corpus(args.corpus, args.features)
-        Xr, yr, kinds_r, files_r = load_real_corpus(args.real_corpus, args.features)
+        Xr, yr, classes_r, detectors_r, files_r = load_real_corpus(
+            args.real_corpus,
+            args.features,
+        )
         sys.stderr.write(
             f"[BLEND] synthetic={len(ys)} real={len(yr)} "
             f"(real pos={int(yr.sum())} neg={int((yr == 0).sum())}, "
             f"files={len(set(files_r))})\n"
         )
         model, metrics, real_metrics = train_blended(
-            Xs, ys, kinds_s, Xr, yr, kinds_r, files_r, args.features, args.epochs, args.seed
+            Xs,
+            ys,
+            kinds_s,
+            Xr,
+            yr,
+            classes_r,
+            detectors_r,
+            files_r,
+            args.features,
+            args.epochs,
+            args.seed,
         )
         sys.stderr.write(f"[BLENDED syn-val {args.features}f] {json.dumps(metrics)}\n")
         sys.stderr.write(f"[BLENDED real-held-out] {json.dumps(real_metrics)}\n")
@@ -596,6 +649,11 @@ def _write_weights(blob: bytes, args, metrics, real_metrics=None) -> None:
         if not isinstance(real.get("per_class"), dict):
             raise SystemExit(
                 "REFUSING to write: real held-out metrics must include per_class "
+                "precision/recall before weights.bin is touched"
+            )
+        if not isinstance(real.get("per_detector"), dict):
+            raise SystemExit(
+                "REFUSING to write: real held-out metrics must include per_detector "
                 "precision/recall before weights.bin is touched"
             )
         if os.path.exists(args.out):

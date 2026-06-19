@@ -41,16 +41,19 @@ which runs:
 
 1. **harvest** (`harvest_corpus.py`) — scan the real corpora (CredData) with
    keyhog, label each candidate via the bench's ground-truth overlap
-   (`benchmarks/bench/score.py`), and emit `{text, context, label, kind}` where
-   `context` is the byte-exact serve ml_context (`file:{path}\n{±5-line window}`).
+   (`benchmarks/bench/score.py`), and emit `{text, context, label, kind, class,
+   detector_id, source_file}` where `context` is the byte-exact serve ml_context
+   (`file:{path}\n{±5-line window}`), `class` is the scorer category, and
+   `detector_id` is the keyhog detector that fired.
 2. **retrain** (`train_classifier.py --real-corpus`) — blend synthetic (random
    85/15) + real (split **by file**, never randomly — a repo's secrets must not
    span train/test) and report metrics on a leakage-free real held-out.
 3. **gate** — `--write` refuses unless synthetic held-out F1 ≥ `--min-f1`, real
-   held-out recall@0.40-floor ≥ `--min-real-recall`, and every positive-bearing
+   held-out recall@0.40-floor ≥ `--min-real-recall`, every positive-bearing
    real held-out class clears `--min-real-class-recall` without regressing versus
-   the existing model card when class metrics are present. Aggregate recall is
-   not allowed to hide a failed tail class.
+   the existing model card when class metrics are present, and the model card
+   carries both per-class and per-detector held-out breakdowns. Aggregate recall
+   is not allowed to hide a failed tail class or detector family.
 
 Measured impact of one loop (CredData): real held-out recall@floor 0 → **0.76**,
 synthetic F1 held at 0.96, and on the never-trained-on mirror corpus precision

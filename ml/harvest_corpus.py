@@ -10,7 +10,8 @@ non-secret" from synthetic negatives. Feeding it the real distribution — the
 actual candidates keyhog surfaces, labelled by ground truth — is the
 categorical fix.
 
-For each keyhog finding we emit a corpus record `{text, context, label, kind}`
+For each keyhog finding we emit a corpus record
+`{text, context, label, kind, class, detector_id}`
 matching `ml/corpus.py`'s schema:
   - text    : the finding's credential value (what the model scores)
   - context : the SERVE ml_context — "file:{path}\n{±5-line window}" — a
@@ -20,6 +21,9 @@ matching `ml/corpus.py`'s schema:
               0 = on a known file overlapping no positive). `ignore`/template
               records are dropped (neither class).
   - kind    : provenance, e.g. `real-creddata-pos` / `real-homefield-neg`.
+  - class   : ground-truth secret category used by per-class retrain gates.
+  - detector_id: keyhog detector that produced the candidate, used by the
+              per-detector model-card breakdown.
 
 Run:
   python3 ml/harvest_corpus.py --corpora creddata homefield \
@@ -44,7 +48,7 @@ sys.path.insert(0, str(BENCH))
 
 from bench.corpora.base import resolve_corpus  # noqa: E402
 from bench.scanners.base import resolve_scanner  # noqa: E402
-from bench.score import _build_file_index, _resolve_finding_file, overlap  # noqa: E402
+from bench.score import _build_file_index, _file_category, _resolve_finding_file, overlap  # noqa: E402
 
 # Mirror of crate::types::ML_CONTEXT_RADIUS_LINES.
 ML_CONTEXT_RADIUS_LINES = 5
@@ -69,6 +73,26 @@ def serve_context(file_label: str, abs_path: pathlib.Path, line: int) -> str:
         return prefix  # window underflow → Rust returns ""
     window = "\n".join(lines[lines_before : lines_before + (2 * ML_CONTEXT_RADIUS_LINES + 1)])
     return prefix + window
+
+
+def classify_finding(recs, value: str) -> tuple[int, str, bool]:
+    """Label a candidate and return (label, class, ignored).
+
+    This mirrors the scorer's attribution rule: overlap with a positive record
+    is a training positive; overlap with an ignore/template record is dropped;
+    anything else on a known file is a negative attributed to that file's
+    scorer category.
+    """
+    matched = [
+        r for r in recs
+        if r.label and not r.ignore and overlap(value, r.secret)
+    ]
+    if matched:
+        return 1, (matched[0].category or "unknown"), False
+    category = _file_category(recs)
+    if any(r.ignore and overlap(value, r.secret) for r in recs):
+        return 0, category, True
+    return 0, category, False
 
 
 def harvest(corpus_name: str, keyhog_bin: str | None, floor: float) -> list[dict]:
@@ -105,18 +129,20 @@ def harvest(corpus_name: str, keyhog_bin: str | None, floor: float) -> list[dict
             skipped_no_record += 1
             continue  # no ground-truth record on this file → can't label
         recs = by_key[key]
-        is_pos = any(r.label and not r.ignore and overlap(value, r.secret) for r in recs)
-        if not is_pos and any(r.ignore and overlap(value, r.secret) for r in recs):
+        label, secret_class, ignored = classify_finding(recs, value)
+        if ignored:
             skipped_ignore += 1
             continue  # template/placeholder ground truth → neither class
-        label = 1 if is_pos else 0
         line = f.get("line") or 0
+        detector_id = f.get("detector") or f.get("detector_id") or "unknown"
         out.append(
             {
                 "text": value,
                 "context": serve_context(fpath, pathlib.Path(key), line),
                 "label": label,
                 "kind": f"real-{corpus_name}-{'pos' if label else 'neg'}",
+                "class": secret_class,
+                "detector_id": detector_id,
                 # provenance for the no-leakage group split downstream
                 "source_file": key,
             }

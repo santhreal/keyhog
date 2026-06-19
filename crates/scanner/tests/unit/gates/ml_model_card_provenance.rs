@@ -89,8 +89,9 @@ fn trainer_and_build_script_keep_model_card_fail_closed() {
             && train.contains("recall_at_0_40_floor before weights.bin is touched")
             && train.contains("def per_class_eval")
             && train.contains("per_class_gate_error")
-            && train.contains("--min-real-class-recall"),
-        "train_classifier.py must update model_card.json with weights hash plus aggregate/per-class real held-out recall before shipped writes"
+            && train.contains("--min-real-class-recall")
+            && train.contains("per_detector"),
+        "train_classifier.py must update model_card.json with weights hash plus aggregate/per-class/per-detector real held-out recall before shipped writes"
     );
 
     let build = read(&root, "crates/scanner/build.rs");

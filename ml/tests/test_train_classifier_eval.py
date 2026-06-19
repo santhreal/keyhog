@@ -11,6 +11,7 @@ def test_real_eval_reports_per_class_truth():
         np.asarray([0.90, 0.20, 0.60, 0.30, 0.45], dtype=np.float32),
         np.asarray([1, 1, 0, 1, 0], dtype=np.float32),
         ["aws", "aws", "aws", "git", "noise"],
+        ["aws-access-key", "aws-access-key", "generic", "github-pat", "generic"],
     )
 
     assert metrics["real_pos_recall_at_0.40_floor"] == 0.3333
@@ -28,6 +29,8 @@ def test_real_eval_reports_per_class_truth():
     }
     assert metrics["per_class"]["git"]["recall_at_0_40_floor"] == 0.0
     assert metrics["per_class"]["noise"]["recall_at_0_40_floor"] is None
+    assert metrics["per_detector"]["aws-access-key"]["recall_at_0_40_floor"] == 0.5
+    assert metrics["per_detector"]["generic"]["n_neg"] == 2
 
 
 def test_per_class_gate_rejects_weak_tail_and_baseline_regression(tmp_path):
