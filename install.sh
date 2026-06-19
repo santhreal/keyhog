@@ -878,7 +878,19 @@ prime_autoroute_cache() {
     # passing `--no-config` to it makes clap exit 2 and every probe "FAILED"
     # for a reason the old `>/dev/null 2>&1` hid (Law 10: a swallowed installer
     # error reads as a broken product). Detect once, never guess.
-    scan_help="$("$bin" scan --help 2>/dev/null || true)"
+    scan_help_err="$tmpdir/scan-help.err"
+    if ! scan_help="$("$bin" scan --help 2>"$scan_help_err")"; then
+        real_err="$(head -n 1 "$scan_help_err" 2>/dev/null)"
+        err "Could not inspect installed keyhog scan --help before autoroute calibration."
+        if [ -n "$real_err" ]; then
+            err "scan --help error: $real_err"
+        fi
+        return 1
+    fi
+    if [ -z "$scan_help" ]; then
+        err "Installed keyhog scan --help returned no output; refusing to guess calibration flags."
+        return 1
+    fi
     if printf '%s' "$scan_help" | grep -q -- '--no-config'; then
         cfg_flag="--no-config"
         cfg_file=""

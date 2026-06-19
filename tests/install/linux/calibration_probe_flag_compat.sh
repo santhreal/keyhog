@@ -1,0 +1,125 @@
+#!/usr/bin/env bash
+#
+# Regression: install.sh autoroute-calibration probe must (1) work against a
+# released binary that predates `--no-config` (it only has `--config <PATH>`),
+# and (2) surface the real reason when a probe fails instead of a blind failure label.
+#
+# Dogfood origin: a clean `sh install.sh` of the published v0.5.40 CUDA build
+# ran the calibration with `keyhog scan <probe> --no-config ...`; that binary
+# rejects `--no-config` (clap: "unexpected argument '--no-config'"), so all
+# three probes failed and the installer swallowed the cause with
+# `>/dev/null 2>&1` (Law 10) - the install read as a broken product. The fix
+# detects the binary's actual config flag via `--help` and prints the real
+# stderr line on failure.
+#
+# This test mocks the published binary (rejects --no-config, accepts --config)
+# and a hard-failing binary, drives `install.sh --calibrate` against each, and
+# asserts the PASS / surfaced-reason behavior. Offline, deterministic, no network.
+
+set -u
+ROOT="$(cd "$(dirname "$0")/../../.." && pwd)"
+INSTALL_SH="$ROOT/install.sh"
+pass=0; fail=0; failed=""
+_pass() { printf '  [PASS] %s\n' "$1"; pass=$((pass + 1)); }
+_fail() { printf '  [FAIL] %s\n     %s\n' "$1" "$2"; fail=$((fail + 1)); failed="$failed\n  - $1"; }
+
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+
+# --- mock A: a "published" binary that has --config but NOT --no-config -------
+mkdir -p "$work/binA"
+cat > "$work/binA/keyhog" <<'EOF'
+#!/usr/bin/env sh
+# Mimic a released keyhog: `scan --config <PATH>` exists, `--no-config` does not.
+# `scan --help` advertises ONLY --config (no --no-config) so detection picks it.
+if [ "$1 $2" = "scan --help" ] || [ "$1" = "--help" ]; then
+    printf '%s\n' "Usage: keyhog scan --config <PATH> <PATH>"
+    exit 0
+fi
+if [ "$1" = "scan" ]; then
+    shift
+    for a in "$@"; do
+        case "$a" in
+            --no-config) echo "error: unexpected argument '--no-config' found" >&2; exit 2 ;;
+        esac
+    done
+    exit 0
+fi
+case "$1" in
+    --version) echo "keyhog 0.5.40" ;;
+    scan) : ;;
+esac
+exit 0
+EOF
+chmod +x "$work/binA/keyhog"
+
+# --- mock B: a binary that ALWAYS fails the scan with a distinct reason -------
+mkdir -p "$work/binB"
+cat > "$work/binB/keyhog" <<'EOF'
+#!/usr/bin/env sh
+if [ "$1" = "scan" ]; then
+    case " $* " in *" --help "*) echo "Usage: keyhog scan --no-config <PATH>"; exit 0;; esac
+    echo "error: GPU adapter request failed (mock driver fault)" >&2
+    exit 1
+fi
+[ "$1" = "--version" ] && echo "keyhog 0.5.40"
+exit 0
+EOF
+chmod +x "$work/binB/keyhog"
+
+run_calibrate() { # $1=install-dir-with-keyhog
+    env -i PATH="/usr/bin:/bin" HOME="$work/home" TMPDIR="$work/tmp" \
+        KEYHOG_INSTALL="$1" NO_COLOR=1 \
+        sh "$INSTALL_SH" --calibrate 2>&1
+}
+mkdir -p "$work/home" "$work/tmp"
+
+# 1. Released-style binary (no --no-config): calibration must succeed, not fail.
+outA="$(run_calibrate "$work/binA")"
+if printf '%s' "$outA" | grep -q 'PASS .*MiB workload' && ! printf '%s' "$outA" | grep -q 'FAIL .*MiB workload'; then
+    _pass "released binary without --no-config calibrates PASS (flag auto-detected)"
+else
+    _fail "released binary without --no-config calibrates PASS" "got: $(printf '%s' "$outA" | grep -i 'MiB workload' | tr '\n' '|')"
+fi
+
+# 2. The installer must NOT pass --no-config blindly: no probe may print the
+#    'unexpected argument --no-config' clap error.
+if printf '%s' "$outA" | grep -q "unexpected argument '--no-config'"; then
+    _fail "installer never passes --no-config to a binary lacking it" "clap rejection leaked into calibration"
+else
+    _pass "installer never passes --no-config to a binary lacking it"
+fi
+
+# 3. A genuinely failing probe must SURFACE the real reason (Law 10), not swallow it.
+outB="$(KEYHOG_INSTALL="$work/binB" run_calibrate "$work/binB")"
+if printf '%s' "$outB" | grep -q 'mock driver fault'; then
+    _pass "failing probe surfaces the real reason (no silent swallow)"
+else
+    _fail "failing probe surfaces the real reason" "expected 'mock driver fault' in output; got: $(printf '%s' "$outB" | tr '\n' '|' | tail -c 300)"
+fi
+
+# 4. Structural guard: the probe redirect must capture stderr to a file, never
+#    discard it with `2>&1`-to-null on the scan invocation.
+if grep -q '2>"\$err"' "$INSTALL_SH"; then
+    _pass "calibration probe captures stderr to a file (not /dev/null)"
+else
+    _fail "calibration probe captures stderr to a file" "expected 2>\"\$err\" in install.sh prime_autoroute_cache"
+fi
+
+# 5. Structural guard: help inspection must not discard failure and guess.
+if grep -q 'scan --help 2>/dev/null || true' "$INSTALL_SH"; then
+    _fail "calibration help inspection fails loud" "found retired scan --help suppression"
+elif grep -q 'scan --help 2>"\$scan_help_err"' "$INSTALL_SH" \
+     && grep -q 'refusing to guess calibration flags' "$INSTALL_SH"; then
+    _pass "calibration help inspection fails loud"
+else
+    _fail "calibration help inspection fails loud" "expected captured scan_help_err and no-output refusal"
+fi
+
+total=$((pass + fail))
+printf '\n--------------------------------------------------------------\n'
+if [ "$fail" -eq 0 ]; then
+    printf '\033[32m%d / %d passed.\033[0m\n' "$pass" "$total"; exit 0
+else
+    printf '\033[31m%d failed, %d passed (of %d).\033[0m%b\n' "$fail" "$pass" "$total" "$failed"; exit 1
+fi
