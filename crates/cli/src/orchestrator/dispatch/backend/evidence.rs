@@ -238,9 +238,12 @@ impl BackendTimingEvidence {
 
     pub(super) fn is_valid_for_trials(&self, min_trials: usize) -> bool {
         self.trials_ns.len() >= min_trials
+            && self.best_ns > 0
+            && self.min_ns > 0
             && self.best_ns == self.min_ns
             && self.min_ns <= self.mean_ns
             && self.mean_ns <= self.max_ns
+            && self.trials_ns.iter().all(|&trial| trial > 0)
             && self.trials_ns.iter().all(|&trial| trial >= self.min_ns)
             && self.trials_ns.iter().all(|&trial| trial <= self.max_ns)
             && self.confidence_interval_95_ns.low_ns <= self.confidence_interval_95_ns.high_ns

@@ -184,6 +184,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("trials_ns")
             && backend.contains("confidence_interval_95_ns")
             && backend.contains("selected_margin_ns")
+            && backend.contains("trial > 0")
             && backend.contains("config_digest")
             && backend.contains("source_class_hash")
             && backend.contains("AUTOROUTE_CACHE_VERSION: u32 = 16")
