@@ -174,13 +174,24 @@ def main() -> int:
         ap.error(f"--harvest-floor must be in [0.0, 1.0], got {args.harvest_floor}")
 
     all_rows: list[dict] = []
+    failures: list[str] = []
     for name in args.corpora:
         try:
             all_rows.extend(harvest(name, args.keyhog_bin, args.harvest_floor))
         except SystemExit:
             raise
-        except Exception as exc:  # a single corpus failing must not lose the rest
+        except Exception as exc:
+            failure = f"{name}: {exc}"
+            failures.append(failure)
             print(f"[{name}] harvest FAILED: {exc}", file=sys.stderr)
+
+    if failures:
+        print(
+            "not writing real-corpus output because requested corpus harvest failed: "
+            + "; ".join(failures),
+            file=sys.stderr,
+        )
+        return 1
 
     out_path = pathlib.Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
