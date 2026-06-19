@@ -1,6 +1,7 @@
 # FILE_GATE_MATRIX (LR2-A8 audit artifact)
 #
-# One [[module]]
+# One [[module]] table per Rust source file listed below.
+[[module]]
 path = "crates/cli/src/args.rs"
 
 [[module]]
@@ -8,6 +9,9 @@ path = "crates/cli/src/args/limits.rs"
 
 [[module]]
 path = "crates/cli/src/args/scan.rs"
+
+[[module]]
+path = "crates/cli/src/atomic_file.rs"
 
 [[module]]
 path = "crates/cli/src/autoroute_cache_path.rs"
@@ -953,15 +957,6 @@ path = "crates/scanner/src/engine/phase2_prefilter.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_truncate.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/scan_postprocess_fragments.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/scan_postprocess_profile.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/scan_postprocess_suffix_gate.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/scan_postprocess/fragments.rs"

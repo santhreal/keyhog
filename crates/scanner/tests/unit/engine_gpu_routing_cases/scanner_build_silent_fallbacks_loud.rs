@@ -60,14 +60,14 @@ fn phase2_anchor_ac_build_failures_warn() {
 
 #[test]
 fn confirmed_suffix_gate_build_failure_warns() {
-    let src = engine_src("scan_postprocess_suffix_gate.rs");
+    let src = engine_src("scan_postprocess/suffix_gate.rs");
     assert!(
         src.contains("confirmed-pass suffix-gate Aho-Corasick build failed"),
         "suffix-gate AC build failure must warn"
     );
     assert!(
         src.contains("tracing::warn!("),
-        "scan_postprocess_suffix_gate.rs must contain tracing::warn! calls"
+        "scan_postprocess/suffix_gate.rs must contain tracing::warn! calls"
     );
 }
 
