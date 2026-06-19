@@ -222,11 +222,26 @@ impl Phase2GpuDfaCatalog {
         scratch: &mut Phase2GpuDfaScratch,
         chunk_count: usize,
     ) -> std::result::Result<Phase2GpuDfaAdmission, String> {
+        use vyre_libs::scan::dispatch_io;
+
+        let haystack_len = dispatch_io::scan_guard(
+            &scratch.haystack,
+            "phase2_gpu_regex_dfa",
+            dispatch_io::DEFAULT_MAX_SCAN_BYTES,
+        )
+        .map_err(|error| error.to_string())?;
+        dispatch_io::pack_haystack_u32_into(
+            &scratch.haystack,
+            &mut scratch.dispatch.haystack_bytes,
+        )
+        .map_err(|error| error.to_string())?;
+
         let mut admitted = vec![false; chunk_count];
         let mut complete = self.uncovered_patterns == 0;
         let mut matches_seen = 0usize;
         for shard in &self.shards {
-            let overflowed = shard.scan_admission_into(backend, scratch, &mut admitted)?;
+            let overflowed =
+                shard.scan_admission_into(backend, scratch, haystack_len, &mut admitted)?;
             matches_seen = matches_seen.saturating_add(scratch.matches.len());
             if overflowed {
                 complete = false;
@@ -366,21 +381,11 @@ impl Phase2GpuDfaShard {
         &self,
         backend: &dyn vyre::VyreBackend,
         scratch: &mut Phase2GpuDfaScratch,
+        haystack_len: u32,
         admitted: &mut [bool],
     ) -> std::result::Result<bool, String> {
         use vyre_libs::scan::dispatch_io;
 
-        let haystack_len = dispatch_io::scan_guard(
-            &scratch.haystack,
-            "phase2_gpu_regex_dfa",
-            dispatch_io::DEFAULT_MAX_SCAN_BYTES,
-        )
-        .map_err(|error| error.to_string())?;
-        dispatch_io::pack_haystack_u32_into(
-            &scratch.haystack,
-            &mut scratch.dispatch.haystack_bytes,
-        )
-        .map_err(|error| error.to_string())?;
         let transition_bytes = dispatch_io::u32_words_as_le_bytes(&self.pipeline.dfa.transitions);
         let output_offset_bytes =
             dispatch_io::u32_words_as_le_bytes(&self.pipeline.dfa.output_offsets);

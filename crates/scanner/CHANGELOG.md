@@ -67,6 +67,9 @@
 - Tighten GPU phase-2 DFA coalesced-region attribution so matches on or through
   the synthetic NUL separator between chunks cannot over-admit a neighboring
   chunk into the CPU phase-2 tail.
+- Pack the GPU phase-2 DFA coalesced haystack once per batch and reuse it across
+  DFA shards, removing duplicate O(input) host staging work from sharded
+  admission dispatch.
 - Keep high-entropy base64-like secrets with internal `+`/`/` punctuation through generic and entropy fallbacks by bypassing binary-decoy suppression on the punctuation payload class, closing `encoded_binary`-driven false negatives.
 - Add adversarial coverage for the base64 punctuated high-entropy class and a fixed-token regression for `TVo...+...` shape that previously dropped at `is_encoded_binary`.
 

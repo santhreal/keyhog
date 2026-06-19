@@ -56,6 +56,28 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
             && gpu_dfa_src.contains("Some(\"cuda\") => Self::CudaCompatible"),
         "phase-2 GPU regex-DFA cache must be keyed by backend program shape, not first backend to touch the scanner"
     );
+    let phase2_scan_admission = gpu_dfa_src
+        .split("fn scan_admission_with_scratch")
+        .nth(1)
+        .and_then(|tail| tail.split("fn prefixless_always_active_candidates").next())
+        .expect("phase-2 GPU DFA batch admission owner present");
+    let phase2_shard_dispatch = gpu_dfa_src
+        .split("fn scan_admission_into")
+        .nth(1)
+        .and_then(|tail| tail.split("pub(crate) struct Phase2GpuDfaAdmission").next())
+        .expect("phase-2 GPU DFA shard dispatch owner present");
+    assert_eq!(
+        gpu_dfa_src.matches("pack_haystack_u32_into").count(),
+        1,
+        "phase-2 GPU DFA admission must pack the coalesced haystack once per batch, not once per shard"
+    );
+    assert!(
+        phase2_scan_admission.contains("pack_haystack_u32_into")
+            && phase2_scan_admission.contains("scan_guard(")
+            && !phase2_shard_dispatch.contains("pack_haystack_u32_into")
+            && !phase2_shard_dispatch.contains("scan_guard("),
+        "phase-2 GPU DFA shard dispatch must reuse the batch-packed haystack bytes"
+    );
     assert!(
         dispatch_src.contains("presence.len() != expected_presence_words"),
         "region dispatch must fail loud when GPU readback size differs from the chunk x word contract"
