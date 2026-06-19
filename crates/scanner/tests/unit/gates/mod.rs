@@ -27,6 +27,7 @@ pub mod compiler_non_empty;
 pub mod compiler_prefix_no_inline_tests;
 pub mod compiler_prefix_no_unwrap_expect;
 pub mod compiler_prefix_non_empty;
+pub mod compiler_regex_cache_hash_owner;
 pub mod confidence_penalties_no_inline_tests;
 pub mod confidence_penalties_no_unwrap_expect;
 pub mod confidence_penalties_non_empty;

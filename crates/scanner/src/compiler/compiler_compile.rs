@@ -265,12 +265,10 @@ fn regex_cache() -> &'static [RegexCacheShard] {
 
 /// Pick the shard for a pattern from a hash of its source bytes, so the same
 /// pattern always lands in the same shard (consistent dedup) and the load
-/// spreads evenly across shards under parallel compile.
+/// spreads evenly across shards under parallel compile. Uses the scanner's
+/// shared cache-key hash owner instead of a second standard-library hash path.
 fn regex_cache_shard(pattern: &str) -> &'static RegexCacheShard {
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    pattern.hash(&mut hasher);
-    let idx = (hasher.finish() as usize) % REGEX_CACHE_SHARDS;
+    let idx = (crate::util_hash::hash_fast(pattern.as_bytes()) as usize) % REGEX_CACHE_SHARDS;
     &regex_cache()[idx]
 }
 
