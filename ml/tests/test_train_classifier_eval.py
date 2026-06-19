@@ -2,8 +2,74 @@ import json
 import types
 
 import numpy as np
+import pytest
 
 import train_classifier
+
+
+def test_load_real_corpus_rejects_missing_tail_provenance_before_feature_dump(
+    tmp_path,
+    monkeypatch,
+):
+    corpus = tmp_path / "real.jsonl"
+    corpus.write_text(
+        json.dumps({
+            "text": "secret",
+            "context": "api_key = secret",
+            "label": 1,
+            "kind": "real-creddata-pos",
+            "source_file": "repo/a.py",
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+    def fail_feature_dump(*_args, **_kwargs):
+        raise AssertionError("feature dump must not run for an invalid real corpus")
+
+    monkeypatch.setattr(
+        train_classifier.rust_features,
+        "compute_feature_matrix",
+        fail_feature_dump,
+    )
+    with pytest.raises(ValueError, match="missing required `class`"):
+        train_classifier.load_real_corpus(str(corpus), 42)
+
+
+def test_load_real_corpus_requires_explicit_class_detector_and_source_file(
+    tmp_path,
+    monkeypatch,
+):
+    corpus = tmp_path / "real.jsonl"
+    corpus.write_text(
+        json.dumps({
+            "text": "secret",
+            "context": "api_key = secret",
+            "label": 1,
+            "kind": "real-creddata-pos",
+            "class": "authentication-key",
+            "detector_id": "generic-api-key",
+            "source_file": "repo/a.py",
+        }) + "\n",
+        encoding="utf-8",
+    )
+
+    def fake_feature_dump(records, _lists, num_features):
+        assert [rec["class"] for rec in records] == ["authentication-key"]
+        assert [rec["detector_id"] for rec in records] == ["generic-api-key"]
+        return np.zeros((len(records), num_features), dtype=np.float32)
+
+    monkeypatch.setattr(
+        train_classifier.rust_features,
+        "compute_feature_matrix",
+        fake_feature_dump,
+    )
+    X, y, classes, detectors, files = train_classifier.load_real_corpus(str(corpus), 42)
+
+    assert X.shape == (1, 42)
+    assert y.tolist() == [1.0]
+    assert classes == ["authentication-key"]
+    assert detectors == ["generic-api-key"]
+    assert files == ["repo/a.py"]
 
 
 def test_real_eval_reports_per_class_truth():

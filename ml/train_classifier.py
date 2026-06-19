@@ -175,23 +175,29 @@ def load_real_corpus(path, num_features):
     kp, sk, tk, pk = config_lists.DEFAULT_LISTS
     records, y, classes, detectors, files = [], [], [], [], []
     with open(path) as fh:
-        for line in fh:
+        for line_no, line in enumerate(fh, start=1):
             line = line.strip()
             if not line:
                 continue
             rec = json.loads(line)
             records.append(rec)
             y.append(float(rec["label"]))
-            classes.append(
-                rec.get("class")
-                or rec.get("secret_class")
-                or rec.get("category")
-                or rec.get("kind", "")
-            )
-            detectors.append(rec.get("detector_id") or rec.get("detector") or "unknown")
-            files.append(rec.get("source_file", ""))
+            classes.append(_required_real_corpus_field(path, line_no, rec, "class"))
+            detectors.append(_required_real_corpus_field(path, line_no, rec, "detector_id"))
+            files.append(_required_real_corpus_field(path, line_no, rec, "source_file"))
     X = rust_features.compute_feature_matrix(records, (kp, sk, tk, pk), num_features)
     return X, np.asarray(y, dtype=np.float32), classes, detectors, files
+
+
+def _required_real_corpus_field(path, line_no, record, field):
+    value = record.get(field)
+    if isinstance(value, str) and value.strip():
+        return value
+    raise ValueError(
+        f"{path}:{line_no}: real-corpus record missing required `{field}`; "
+        "regenerate with ml/harvest_corpus.py so the grouped split and "
+        "per-class/per-detector gates measure real provenance"
+    )
 
 
 def _group_split(files, seed, fracs=(0.70, 0.15, 0.15)):
