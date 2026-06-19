@@ -24,8 +24,8 @@ fn select_backend_high_tier_large_file() {
     let solo = gpu_solo_bytes_for_tier(tier);
     // A high-tier solo-cap workload clears the GPU crossover. Asserted on the
     // side-effect-free `gpu_could_engage` predicate rather than `select_backend`:
-    // the router additionally degrades a GPU choice to SIMD on a GPU-less host
-    // (`gpu::env_no_gpu()`), so `select_backend(..) == Gpu` is green on a GPU dev
+    // the router additionally degrades a GPU choice to SIMD when runtime policy
+    // disables GPU, so `select_backend(..) == Gpu` is green on a GPU dev
     // box but red on a GPU-less CI runner. The crossover math is host-independent.
     assert!(gpu_could_engage(&caps, solo, 1));
 }

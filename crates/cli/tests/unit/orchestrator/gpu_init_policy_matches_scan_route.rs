@@ -48,7 +48,7 @@ fn filesystem_auto_scan_skips_gpu_compile() {
 }
 
 #[test]
-fn batch_pipeline_filesystem_auto_keeps_environment_gpu_policy() {
+fn batch_pipeline_filesystem_auto_keeps_runtime_gpu_policy() {
     with_route_policy_lock(|| {
         let args = scan_args(&[
             "scan",
@@ -60,18 +60,18 @@ fn batch_pipeline_filesystem_auto_keeps_environment_gpu_policy() {
         ]);
         assert_eq!(
             API.gpu_init_policy_for_args_for_test(&args),
-            GpuInitPolicy::FromEnvironment
+            GpuInitPolicy::FromRuntimePolicy
         );
     });
 }
 
 #[test]
-fn stdin_auto_scan_keeps_environment_gpu_policy() {
+fn stdin_auto_scan_keeps_runtime_gpu_policy() {
     with_route_policy_lock(|| {
         let args = scan_args(&["scan", "--backend", "auto", "--stdin"]);
         assert_eq!(
             API.gpu_init_policy_for_args_for_test(&args),
-            GpuInitPolicy::FromEnvironment
+            GpuInitPolicy::FromRuntimePolicy
         );
     });
 }
@@ -104,7 +104,7 @@ fn require_gpu_flag_keeps_auto_filesystem_gpu_policy_open() {
         let args = scan_args(&["scan", "--backend", "auto", "--require-gpu", "--path", "."]);
         assert_eq!(
             API.gpu_init_policy_for_args_for_test(&args),
-            GpuInitPolicy::FromEnvironment
+            GpuInitPolicy::FromRuntimePolicy
         );
     });
 }

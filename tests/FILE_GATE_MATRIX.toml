@@ -17,7 +17,7 @@ path = "crates/cli/src/atomic_file.rs"
 path = "crates/cli/src/autoroute_cache_path.rs"
 
 [[module]]
-path = "crates/cli/src/backend_env.rs"
+path = "crates/cli/src/runtime_preflight.rs"
 
 [[module]]
 path = "crates/cli/src/baseline.rs"
@@ -554,7 +554,7 @@ path = "crates/scanner/src/error.rs"
 path = "crates/scanner/src/gpu.rs"
 
 [[module]]
-path = "crates/scanner/src/gpu/env.rs"
+path = "crates/scanner/src/gpu/policy.rs"
 
 [[module]]
 path = "crates/scanner/src/gpu/backend.rs"

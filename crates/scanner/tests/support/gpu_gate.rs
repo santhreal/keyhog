@@ -3,7 +3,7 @@
 /// When the explicit GPU runtime policy requires a GPU, panic if no compatible
 /// adapter is present.
 pub fn require_gpu_or_panic(context: &str) {
-    if !keyhog_scanner::gpu::env_require_gpu() {
+    if !keyhog_scanner::gpu::gpu_required_by_policy() {
         return;
     }
     if !keyhog_scanner::gpu::gpu_available() {

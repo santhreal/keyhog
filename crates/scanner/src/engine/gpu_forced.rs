@@ -27,8 +27,8 @@ static RUNTIME_DEGRADE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::ne
 fn cached_gpu_runtime_policy_flags() -> (bool, bool) {
     static FLAGS: std::sync::OnceLock<(bool, bool)> = std::sync::OnceLock::new();
     *FLAGS.get_or_init(|| {
-        let no_gpu = crate::gpu::env_no_gpu();
-        let require_gpu = crate::gpu::env_require_gpu();
+        let no_gpu = crate::gpu::gpu_disabled_by_policy();
+        let require_gpu = crate::gpu::gpu_required_by_policy();
         (no_gpu, require_gpu)
     })
 }

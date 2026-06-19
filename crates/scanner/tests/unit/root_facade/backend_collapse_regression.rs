@@ -258,7 +258,7 @@ fn workload_selector_is_the_single_branch_owner() {
     let owner = function_body(&select_code, "fn select_backend_for_workload(");
     for required in [
         "test_backend_override()",
-        "crate::gpu::env_no_gpu()",
+        "crate::gpu::gpu_disabled_by_policy()",
         "gpu_could_engage(",
         "cpu_tier_backend(caps)",
     ] {
@@ -286,7 +286,7 @@ fn workload_selector_is_the_single_branch_owner() {
         );
         for forbidden in [
             "test_backend_override()",
-            "crate::gpu::env_no_gpu()",
+            "crate::gpu::gpu_disabled_by_policy()",
             "gpu_could_engage(",
             "cpu_tier_backend(caps)",
         ] {

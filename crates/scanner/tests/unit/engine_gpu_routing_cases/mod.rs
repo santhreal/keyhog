@@ -1,8 +1,8 @@
 //! Engine GPU-routing and forced-backend unit cases.
 
-mod forced_backend_env_combined;
-mod forced_backend_gpu_env;
-mod forced_backend_megascan_env;
+mod forced_backend_gpu_parser;
+mod forced_backend_megascan_parser;
+mod forced_backend_parser_combined;
 mod forced_backend_unset_is_none;
 mod gpu_backend_internal_denies_forced_degrade;
 mod gpu_forced_message_mentions_controls;

@@ -34,7 +34,7 @@ async fn start(
     backend: Option<String>,
     request_timeout_secs: u64,
 ) -> Result<ExitCode> {
-    crate::backend_env::validate_scan_runtime_env()?;
+    crate::runtime_preflight::validate_scan_runtime_config()?;
     crate::orchestrator_config::configure_hyperscan_cache_dir(cache_dir)?;
     let backend_override = crate::orchestrator_config::parse_backend_override(backend.as_deref())?;
 

@@ -250,11 +250,11 @@ pub(crate) fn get_gpu() -> Option<&'static GpuContext> {
             // can't use it, they need to know - otherwise they'll
             // sit at CPU throughput and assume that's what
             // "GPU-accelerated keyhog" means.
-            // env_no_gpu() is the legacy-named wrapper for the resolved GPU
-            // runtime policy. When GPU is explicitly disabled, this path stays
+            // gpu_disabled_by_policy() is the resolved GPU runtime policy.
+            // When GPU is explicitly disabled, this path stays
             // quiet because CPU/SIMD is the requested route.
-            let no_gpu = super::env_no_gpu();
-            let require_gpu = super::env_require_gpu();
+            let no_gpu = super::gpu_disabled_by_policy();
+            let require_gpu = super::gpu_required_by_policy();
             if require_gpu {
                 eprintln!("keyhog: --require-gpu requested but GPU MoE init failed: {e}");
                 std::process::exit(2);
@@ -309,8 +309,8 @@ static MOE_NONFINITE_WARNED: OnceLock<()> = OnceLock::new();
 /// Distinct from the below-threshold `None` (a legitimate routing choice, not a
 /// failure) and from init failure (already handled loudly in [`get_gpu`]).
 fn moe_runtime_degrade(reason: &str) {
-    let no_gpu = super::env_no_gpu();
-    let require_gpu = super::env_require_gpu();
+    let no_gpu = super::gpu_disabled_by_policy();
+    let require_gpu = super::gpu_required_by_policy();
     if require_gpu {
         eprintln!(
             "keyhog: --require-gpu requested but the GPU MoE dispatch failed at runtime \
@@ -342,8 +342,8 @@ this scan are scored on the CPU MoE (identical scores, lower throughput). Set \
 /// stderr line on an ordinary run, and quiet under `--no-gpu` where the CPU MoE
 /// is the intended path anyway.
 fn moe_nonfinite_degrade(nonfinite: usize, total: usize) {
-    let no_gpu = super::env_no_gpu();
-    let require_gpu = super::env_require_gpu();
+    let no_gpu = super::gpu_disabled_by_policy();
+    let require_gpu = super::gpu_required_by_policy();
     if require_gpu {
         eprintln!(
             "keyhog: --require-gpu requested but the GPU MoE returned {nonfinite}/{total} \

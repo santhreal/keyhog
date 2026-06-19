@@ -15,5 +15,5 @@ mod scan_backend_label_cpu_fallback;
 mod scan_backend_label_gpu;
 mod scan_backend_label_megascan;
 mod scan_backend_label_simd;
-mod select_backend_env_gpu_override;
 mod select_backend_rejects_software_gpu;
+mod select_backend_test_gpu_override;

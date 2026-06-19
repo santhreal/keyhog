@@ -48,7 +48,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 pub(crate) async fn run(args: ScanArgs) -> Result<ExitCode> {
-    crate::backend_env::validate_scan_runtime_env()?;
+    crate::runtime_preflight::validate_scan_runtime_config()?;
 
     // On Windows, the daemon route is never available (the `crate::daemon`
     // module is cfg(unix)). If the user explicitly passed `--daemon`,

@@ -477,12 +477,12 @@ fn gpu_init_policy_for_args(args: &ScanArgs) -> GpuInitPolicy {
     if filesystem_auto_scan_cannot_route_gpu(args) && !args.require_gpu {
         return GpuInitPolicy::ForceDisabled;
     }
-    GpuInitPolicy::FromEnvironment
+    GpuInitPolicy::FromRuntimePolicy
 }
 
 fn backend_name_gpu_policy(name: Option<&str>) -> Option<GpuInitPolicy> {
     let name = name?.trim();
-    // "auto" is the explicit defer-to-routing choice (FromEnvironment), and is
+    // "auto" is the explicit defer-to-routing choice (FromRuntimePolicy), and is
     // not a backend `parse_backend_str` recognizes.
     if name.eq_ignore_ascii_case("auto") {
         return None;
@@ -503,7 +503,7 @@ fn backend_gpu_policy(backend: keyhog_scanner::ScanBackend) -> GpuInitPolicy {
         keyhog_scanner::ScanBackend::SimdCpu | keyhog_scanner::ScanBackend::CpuFallback => {
             GpuInitPolicy::ForceDisabled
         }
-        _ => GpuInitPolicy::FromEnvironment,
+        _ => GpuInitPolicy::FromRuntimePolicy,
     }
 }
 

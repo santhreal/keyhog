@@ -3,7 +3,7 @@
 //! Split out of `gpu.rs` (Law 5 / 500-LOC modularity cap): these are the
 //! explicit runtime-policy readers plus the `require-GPU` preflight that fails
 //! closed when a GPU is demanded but absent. Re-exported from `gpu` via
-//! `pub use env::*`.
+//! `pub use policy::*`.
 
 #[cfg(feature = "gpu")]
 use super::backend;
@@ -65,7 +65,7 @@ pub fn gpu_runtime_policy() -> GpuRuntimePolicy {
 /// "scanner starts like every other CPU-only tool".
 #[must_use]
 pub(crate) fn gpu_probe() -> (bool, Option<String>, Option<u64>) {
-    if env_no_gpu() {
+    if gpu_disabled_by_policy() {
         return (false, None, None);
     }
     #[cfg(feature = "gpu")]
@@ -78,7 +78,7 @@ pub(crate) fn gpu_probe() -> (bool, Option<String>, Option<u64>) {
 /// True when the resolved runtime policy demands a usable GPU and a silent CPU
 /// fallback is forbidden.
 #[must_use]
-pub fn env_require_gpu() -> bool {
+pub fn gpu_required_by_policy() -> bool {
     gpu_runtime_policy() == GpuRuntimePolicy::Required
 }
 
@@ -97,7 +97,7 @@ pub fn env_require_gpu() -> bool {
 /// `std::process::exit` from the library - keeps embedders alive (finding
 /// M12).
 pub fn require_gpu_preflight() -> Result<(), String> {
-    if !env_require_gpu() {
+    if !gpu_required_by_policy() {
         return Ok(());
     }
 
@@ -132,6 +132,6 @@ pub fn require_gpu_preflight() -> Result<(), String> {
     Ok(())
 }
 
-pub(crate) fn env_no_gpu() -> bool {
+pub(crate) fn gpu_disabled_by_policy() -> bool {
     matches!(gpu_runtime_policy(), GpuRuntimePolicy::Disabled)
 }

@@ -86,7 +86,7 @@ fn select_backend_for_workload(caps: &HardwareCaps, workload: BackendWorkload) -
     // Skip GPU consideration when the resolved scanner runtime policy disables
     // GPU init, so the routing decision matches what the GPU init paths will
     // actually do.
-    if crate::gpu::env_no_gpu() {
+    if crate::gpu::gpu_disabled_by_policy() {
         return cpu_tier_backend(caps);
     }
 

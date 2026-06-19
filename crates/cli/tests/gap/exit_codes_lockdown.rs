@@ -25,10 +25,10 @@
 //!   - anyhow errors that are NOT `io::Error` map to `EXIT_USER_ERROR = 2`;
 //!     all the lockdown `anyhow::bail!`s are plain string errors -> exit 2.
 //!   - clap parse failures exit 2 (clap's standard usage-error code).
-//! * `crates/scanner/src/gpu/env.rs`
+//! * `crates/scanner/src/gpu/policy.rs`
 //!   - `require_gpu_preflight` is a no-op (Ok) unless resolved GPU policy is
 //!     `required`.
-//!   - `env_no_gpu` is the legacy-named wrapper for resolved GPU policy `off`.
+//!   - `gpu_disabled_by_policy` reflects resolved GPU policy `off`.
 //!   - `--require-gpu` on a no-GPU host exits 12 before scanning.
 //!   - the exit-12 diagnostic text contains `--require-gpu`.
 //!

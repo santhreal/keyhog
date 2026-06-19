@@ -1,7 +1,8 @@
 //! Migrated from src/gpu.rs
 
 use keyhog_scanner::gpu::{
-    env_no_gpu, env_require_gpu, gpu_runtime_policy, set_gpu_runtime_policy, GpuRuntimePolicy,
+    gpu_disabled_by_policy, gpu_required_by_policy, gpu_runtime_policy, set_gpu_runtime_policy,
+    GpuRuntimePolicy,
 };
 
 // SAFETY rationale: these tests mutate process-global env state and the scanner
@@ -9,10 +10,10 @@ use keyhog_scanner::gpu::{
 // reads the policy. Rust's test harness runs `#[test]`s in the same module on
 // separate threads by default; we serialize by putting all env/policy-touching
 // tests behind a single Mutex guard.
-static ENV_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
+static POLICY_ENV_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn with_clean_env<F: FnOnce()>(test: F) {
-    let _guard = ENV_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = POLICY_ENV_GUARD.lock().unwrap_or_else(|e| e.into_inner());
     let saved_policy = gpu_runtime_policy();
     let saved = [
         ("CI", std::env::var("CI").ok()),
@@ -47,8 +48,8 @@ fn with_clean_env<F: FnOnce()>(test: F) {
 fn empty_env_no_ci_no_gpu_skip() {
     with_clean_env(|| {
         assert!(
-            !env_no_gpu(),
-            "env_no_gpu with no env vars set should be false"
+            !gpu_disabled_by_policy(),
+            "clean process env must not disable GPU without explicit policy"
         );
     });
 }
@@ -58,7 +59,7 @@ fn ci_true_does_not_change_gpu_policy() {
     with_clean_env(|| {
         unsafe { std::env::set_var("CI", "true") };
         assert!(
-            !env_no_gpu(),
+            !gpu_disabled_by_policy(),
             "CI=true must not change GPU policy without explicit --no-gpu"
         );
     });
@@ -70,7 +71,7 @@ fn disabled_policy_skips_gpu_even_with_ci_set() {
         unsafe { std::env::set_var("CI", "true") };
         set_gpu_runtime_policy(GpuRuntimePolicy::Disabled);
         assert!(
-            env_no_gpu(),
+            gpu_disabled_by_policy(),
             "GpuRuntimePolicy::Disabled must disable GPU regardless of CI"
         );
     });
@@ -80,8 +81,14 @@ fn disabled_policy_skips_gpu_even_with_ci_set() {
 fn required_policy_does_not_skip_gpu() {
     with_clean_env(|| {
         set_gpu_runtime_policy(GpuRuntimePolicy::Required);
-        assert!(!env_no_gpu(), "required policy must keep GPU probing open");
-        assert!(env_require_gpu(), "required policy must arm require-gpu");
+        assert!(
+            !gpu_disabled_by_policy(),
+            "required policy must keep GPU probing open"
+        );
+        assert!(
+            gpu_required_by_policy(),
+            "required policy must arm require-gpu"
+        );
     });
 }
 
@@ -90,7 +97,7 @@ fn github_actions_marker_does_not_change_gpu_policy() {
     with_clean_env(|| {
         unsafe { std::env::set_var("GITHUB_ACTIONS", "true") };
         assert!(
-            !env_no_gpu(),
+            !gpu_disabled_by_policy(),
             "GITHUB_ACTIONS should not change GPU policy without --no-gpu"
         );
     });
@@ -100,6 +107,9 @@ fn github_actions_marker_does_not_change_gpu_policy() {
 fn ci_false_does_not_trigger_skip() {
     with_clean_env(|| {
         unsafe { std::env::set_var("CI", "false") };
-        assert!(!env_no_gpu(), "CI=false should not imply env_no_gpu");
+        assert!(
+            !gpu_disabled_by_policy(),
+            "CI=false should not disable GPU policy"
+        );
     });
 }

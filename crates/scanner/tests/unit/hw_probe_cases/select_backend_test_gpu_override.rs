@@ -1,7 +1,7 @@
 use keyhog_scanner::hw_probe::testing::{select_backend, HardwareCaps, ScanBackend};
 use keyhog_scanner::testing::{clear_test_backend_override, set_test_backend_override};
 #[test]
-fn select_backend_env_gpu_override() {
+fn select_backend_test_gpu_override() {
     set_test_backend_override(Some(ScanBackend::Gpu));
     let caps = HardwareCaps {
         physical_cores: 4,

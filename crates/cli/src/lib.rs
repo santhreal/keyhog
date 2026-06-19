@@ -391,13 +391,13 @@ fn print_version_info(full: bool) {
 pub mod args;
 pub(crate) mod atomic_file;
 pub(crate) mod autoroute_cache_path;
-pub(crate) mod backend_env;
 pub(crate) mod baseline;
 pub(crate) mod benchmark;
 pub(crate) mod config;
 pub mod exit_codes;
 pub(crate) mod format;
 pub(crate) mod installer;
+pub(crate) mod runtime_preflight;
 // Daemon uses Unix-domain sockets (`tokio::net::UnixListener` and
 // `std::os::unix::net`). Windows lacks both surfaces in the form
 // this server uses, and named pipes have a totally different

@@ -2,7 +2,7 @@ use super::*;
 
 impl CompiledScanner {
     pub fn compile(detectors: Vec<DetectorSpec>) -> Result<Self> {
-        Self::compile_with_gpu_policy(detectors, GpuInitPolicy::FromEnvironment)
+        Self::compile_with_gpu_policy(detectors, GpuInitPolicy::FromRuntimePolicy)
     }
 
     pub fn compile_with_gpu_policy(
@@ -40,12 +40,12 @@ impl CompiledScanner {
         // failures: if libcuda.so is missing or the driver refuses,
         // `acquire()` returns Err and we fall through to wgpu so
         // nothing regresses on non-CUDA hosts.
-        // `crate::gpu::env_no_gpu()` is the single source of truth for
-        // "skip every GPU init path". The name is legacy; the value now comes
-        // from the resolved scanner runtime policy set by the CLI/TOML layer,
-        // not ambient process environment.
+        // `crate::gpu::gpu_disabled_by_policy()` is the single source of truth
+        // for "skip every GPU init path". The value comes from the resolved
+        // scanner runtime policy set by the CLI/TOML layer, not ambient process
+        // environment.
         let gpu_disabled = match gpu_policy {
-            GpuInitPolicy::FromEnvironment => crate::gpu::env_no_gpu(),
+            GpuInitPolicy::FromRuntimePolicy => crate::gpu::gpu_disabled_by_policy(),
             GpuInitPolicy::ForceEnabled => false,
             GpuInitPolicy::ForceDisabled => true,
         };
@@ -449,8 +449,8 @@ static CUDA_FALLBACK_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new(
 #[cfg(all(target_os = "linux", feature = "gpu"))]
 fn surface_cuda_acquisition_failure(error: &dyn std::fmt::Display) {
     let on_nvidia_host = nvidia_userland_present();
-    let require_gpu = crate::gpu::env_require_gpu();
-    let no_gpu = crate::gpu::env_no_gpu();
+    let require_gpu = crate::gpu::gpu_required_by_policy();
+    let no_gpu = crate::gpu::gpu_disabled_by_policy();
 
     if require_gpu && on_nvidia_host {
         eprintln!(

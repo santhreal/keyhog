@@ -166,7 +166,7 @@ pub(crate) enum MlScoreResult<'a> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GpuInitPolicy {
     /// Honor the resolved GPU runtime policy.
-    FromEnvironment,
+    FromRuntimePolicy,
     /// Acquire a GPU backend when hardware is present, regardless of the
     /// disabled-GPU policy. Used when the operator explicitly forces GPU.
     ForceEnabled,

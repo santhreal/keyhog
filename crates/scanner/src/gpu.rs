@@ -24,7 +24,7 @@
 // They only exist in `gpu`-on builds; the public API in this module
 // short-circuits to "no GPU" via the `cfg` arms below when off.
 // Submodules live in `gpu/` (native resolution), matching the `foo.rs` + `foo/`
-// layout used across the workspace. Module names (gpu_shader/backend/env) are
+// layout used across the workspace. Module names (gpu_shader/backend/policy) are
 // unchanged; only the files moved (and gpu_moe_backend.rs/gpu_env.rs were
 // renamed to match their module names).
 #[cfg(feature = "gpu")]
@@ -33,8 +33,8 @@ mod gpu_shader;
 #[cfg(feature = "gpu")]
 mod backend;
 
-mod env;
-pub use env::*;
+mod policy;
+pub use policy::*;
 mod self_test;
 pub use self_test::*;
 

@@ -155,6 +155,56 @@ fn production_env_reads_stay_on_the_allowlist() {
 }
 
 #[test]
+fn production_gpu_policy_names_do_not_resurrect_retired_env_model() {
+    let root = repo_root();
+    for retired_path in [
+        "crates/cli/src/backend_env.rs",
+        "crates/scanner/src/gpu/env.rs",
+    ] {
+        assert!(
+            !root.join(retired_path).exists(),
+            "{retired_path} must stay removed; scan/GPU behavior is resolved policy, not env"
+        );
+    }
+
+    let mut files = Vec::new();
+    for rel in ["crates/cli/src", "crates/scanner/src"] {
+        collect_rs_files(&root.join(rel), &mut files);
+    }
+
+    let forbidden = [
+        "backend_env",
+        "validate_scan_runtime_env",
+        "env_no_gpu",
+        "env_require_gpu",
+        "FromEnvironment",
+    ];
+    let mut offenders = Vec::new();
+    for path in files {
+        let rel_path = path
+            .strip_prefix(&root)
+            .unwrap_or_else(|error| panic!("strip repo root from {}: {error}", path.display()))
+            .to_string_lossy()
+            .replace('\\', "/");
+        let src = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("read production source {}: {error}", path.display()));
+        for retired in forbidden {
+            if src.contains(retired) {
+                offenders.push(format!(
+                    "{rel_path} contains retired env-policy name {retired}"
+                ));
+            }
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "production GPU/runtime policy names must not imply ambient-env control:\n{}",
+        offenders.join("\n")
+    );
+}
+
+#[test]
 fn docker_surfaces_do_not_reintroduce_retired_detector_env() {
     let root = repo_root();
     for rel in [

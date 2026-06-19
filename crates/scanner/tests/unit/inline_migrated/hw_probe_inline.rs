@@ -44,7 +44,7 @@ fn gpu_picked_when_workload_huge_solo() {
     // Low-tier solo threshold, low pattern count -> still clears the GPU crossover
     // (solo cap). Asserted on the side-effect-free `gpu_could_engage` predicate
     // rather than `select_backend`: the router additionally degrades a GPU
-    // choice to SIMD on a GPU-less host (`gpu::env_no_gpu()`), so a `== Gpu`
+    // choice to SIMD when runtime policy disables GPU, so a `== Gpu`
     // assertion is host-dependent — green on a GPU dev box, red on a GPU-less CI
     // runner. `gpu_could_engage` is exactly the GPU branch condition, factored
     // out, and depends only on the passed caps.

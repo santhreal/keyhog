@@ -205,7 +205,7 @@ pub(crate) mod testing {
 }
 
 pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
-    crate::backend_env::validate_scan_runtime_env()?;
+    crate::runtime_preflight::validate_scan_runtime_config()?;
     crate::orchestrator_config::configure_hyperscan_cache_dir(args.cache_dir.clone())?;
 
     if args.space == 0 {

@@ -1,7 +1,7 @@
 use keyhog_scanner::hw_probe::testing::{parse_backend_str, ScanBackend};
 
 #[test]
-fn forced_backend_megascan_env() {
+fn forced_backend_megascan_parser() {
     // Pure mapping — no global `KEYHOG_BACKEND` mutation (see parse_backend_str
     // docs: a global GPU/MegaScan value races with concurrent scans and trips
     // gpu_forced's process-exit, aborting the whole harness).

@@ -36,7 +36,7 @@ use std::time::{Duration, Instant};
 const DEDUP_WINDOW: Duration = Duration::from_millis(750);
 
 pub(crate) fn run(args: WatchArgs) -> Result<()> {
-    crate::backend_env::validate_scan_runtime_env()?;
+    crate::runtime_preflight::validate_scan_runtime_config()?;
     crate::orchestrator_config::configure_hyperscan_cache_dir(args.cache_dir.clone())?;
 
     let watch_root = std::fs::canonicalize(&args.path)
