@@ -369,6 +369,23 @@ impl CompiledScanner {
     }
 
     #[cfg(feature = "ml")]
+    fn score_ml_pending_cpu(&self, pending_matches: &[MlPendingMatch]) -> Vec<f64> {
+        pending_matches
+            .iter()
+            .map(|pending| {
+                crate::ml_scorer::score_with_config(
+                    pending.credential.as_str(),
+                    pending.ml_context.as_str(),
+                    &self.config.known_prefixes,
+                    &self.config.secret_keywords,
+                    &self.config.test_keywords,
+                    &self.config.placeholder_keywords,
+                )
+            })
+            .collect()
+    }
+
+    #[cfg(feature = "ml")]
     pub(crate) fn apply_ml_batch_scores(&self, scan_state: &mut ScanState) {
         if ml_batch_prof_enabled() {
             ml_batch_record(scan_state.ml_pending.len());
@@ -403,7 +420,17 @@ impl CompiledScanner {
             self.tuning.gpu_moe_timeout(),
         );
         let pending_matches: Vec<_> = scan_state.ml_pending.drain(..).collect();
-        for (pending, ml_conf) in pending_matches.into_iter().zip(scores) {
+        let scores = if scores.len() == pending_matches.len() {
+            scores
+        } else {
+            tracing::warn!(
+                pending = pending_matches.len(),
+                scores = scores.len(),
+                "ML score count mismatch; recomputing CPU MoE scores before confidence blending"
+            );
+            self.score_ml_pending_cpu(&pending_matches)
+        };
+        for (pending, ml_conf) in pending_matches.into_iter().zip(scores.into_iter()) {
             // Honour the runtime `--ml-weight` / `ml_weight` knob instead
             // of the compile-time ML_WEIGHT/HEURISTIC_WEIGHT consts: the
             // blend is `w·ml + (1-w)·heuristic` with `w` already clamped to

@@ -516,6 +516,17 @@ pub(crate) fn batch_score_features(
     }
     let data = slice.get_mapped_range();
     let scores: &[f32] = bytemuck::cast_slice(&data);
+    if scores.len() != batch_size {
+        tracing::warn!(
+            expected = batch_size,
+            actual = scores.len(),
+            "GPU MoE score count mismatch; routing batch to CPU MoE for this scan"
+        );
+        moe_runtime_degrade("score count mismatch");
+        drop(data);
+        staging_buf.unmap();
+        return None;
+    }
     // kimi-confidence audit: a GPU driver bug, shader miscompile, or
     // adversarial weights buffer can produce NaN/Inf in the f32
     // staging buffer. The previous flow forwarded those values

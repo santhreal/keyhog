@@ -144,6 +144,7 @@ pub mod jwt_non_empty;
 pub mod ml_features_no_inline_tests;
 pub mod ml_features_no_unwrap_expect;
 pub mod ml_features_non_empty;
+pub mod ml_score_cardinality;
 pub mod ml_scorer_no_inline_tests;
 pub mod ml_scorer_no_unwrap_expect;
 pub mod ml_scorer_non_empty;

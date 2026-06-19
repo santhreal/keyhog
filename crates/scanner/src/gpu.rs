@@ -183,44 +183,45 @@ pub(crate) fn batch_ml_inference_with_timeout(
         }
 
         let t_score = prof.then(std::time::Instant::now);
+        let score_features_on_cpu = || -> Vec<f64> {
+            candidates
+                .par_iter()
+                .zip(features.par_iter())
+                .map(|((text, _ctx), features)| {
+                    if text.is_empty() {
+                        0.0
+                    } else {
+                        crate::ml_scorer::score_features(features)
+                    }
+                })
+                .collect()
+        };
         let scores = {
             #[cfg(feature = "gpu")]
             {
-                if let Some(mut scores) = backend::batch_score_features(&features, gpu_moe_timeout)
-                {
-                    for ((text, _ctx), score) in candidates.iter().zip(scores.iter_mut()) {
-                        if text.is_empty() {
-                            *score = 0.0;
-                        }
-                    }
-                    scores
-                } else {
-                    candidates
-                        .par_iter()
-                        .zip(features.par_iter())
-                        .map(|((text, _ctx), features)| {
+                match backend::batch_score_features(&features, gpu_moe_timeout) {
+                    Some(mut scores) if scores.len() == candidates.len() => {
+                        for ((text, _ctx), score) in candidates.iter().zip(scores.iter_mut()) {
                             if text.is_empty() {
-                                0.0
-                            } else {
-                                crate::ml_scorer::score_features(features)
+                                *score = 0.0;
                             }
-                        })
-                        .collect()
+                        }
+                        scores
+                    }
+                    Some(scores) => {
+                        tracing::warn!(
+                            candidates = candidates.len(),
+                            scores = scores.len(),
+                            "GPU MoE score count mismatch; recomputing CPU MoE scores for this batch"
+                        );
+                        score_features_on_cpu()
+                    }
+                    None => score_features_on_cpu(),
                 }
             }
             #[cfg(not(feature = "gpu"))]
             {
-                candidates
-                    .par_iter()
-                    .zip(features.par_iter())
-                    .map(|((text, _ctx), features)| {
-                        if text.is_empty() {
-                            0.0
-                        } else {
-                            crate::ml_scorer::score_features(features)
-                        }
-                    })
-                    .collect()
+                score_features_on_cpu()
             }
         };
         if let Some(t) = t_score {
