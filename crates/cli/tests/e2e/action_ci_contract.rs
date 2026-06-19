@@ -2030,6 +2030,37 @@ fn differential_bench_smoke_fails_closed_before_scoring() {
 }
 
 #[test]
+fn differential_bench_installs_verified_keyhog_release_binary() {
+    let workflow =
+        fs::read_to_string(differential_bench_workflow()).expect("read differential-bench.yml");
+    let install = workflow
+        .split("- name: install keyhog (release binary)")
+        .nth(1)
+        .and_then(|tail| tail.split("- name: install trufflehog").next())
+        .expect("keyhog release install step exists");
+    assert!(
+        install.contains("asset=\"keyhog-linux-x86_64\""),
+        "differential bench must name the release asset once and verify that exact file"
+    );
+    assert!(
+        install.contains("\"$url.sha256\""),
+        "differential bench must download the matching release checksum"
+    );
+    assert!(
+        install.contains("sha256sum -c \"$asset.sha256\""),
+        "differential bench must verify the release checksum before PATH install"
+    );
+    assert!(
+        install.contains("install -m 0755 \"$RUNNER_TEMP/$asset\" \"$HOME/.local/bin/keyhog\""),
+        "differential bench must install only the verified temporary asset"
+    );
+    assert!(
+        !install.contains("-o \"$HOME/.local/bin/keyhog\""),
+        "differential bench must not curl a release binary straight into PATH"
+    );
+}
+
+#[test]
 fn release_workflow_validates_manual_tag_before_shell_outputs() {
     let workflow = fs::read_to_string(release_workflow()).expect("read release.yml");
     let mut offenders = Vec::new();

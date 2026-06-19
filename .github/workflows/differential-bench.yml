@@ -57,11 +57,16 @@ jobs:
           tag=$(curl -fsSL https://api.github.com/repos/santhsecurity/keyhog/releases/latest | \
                 python3 -c 'import json,sys;print(json.load(sys.stdin)["tag_name"])')
           echo "using keyhog $tag"
+          asset="keyhog-linux-x86_64"
+          url="https://github.com/santhsecurity/keyhog/releases/download/${tag}/${asset}"
           curl --proto '=https' --tlsv1.2 --retry 5 --retry-connrefused \
                --location --silent --show-error --fail \
-               -o "$HOME/.local/bin/keyhog" \
-               "https://github.com/santhsecurity/keyhog/releases/download/${tag}/keyhog-linux-x86_64"
-          chmod +x "$HOME/.local/bin/keyhog"
+               -o "$RUNNER_TEMP/$asset" "$url"
+          curl --proto '=https' --tlsv1.2 --retry 5 --retry-connrefused \
+               --location --silent --show-error --fail \
+               -o "$RUNNER_TEMP/$asset.sha256" "$url.sha256"
+          (cd "$RUNNER_TEMP" && sha256sum -c "$asset.sha256")
+          install -m 0755 "$RUNNER_TEMP/$asset" "$HOME/.local/bin/keyhog"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: install trufflehog
