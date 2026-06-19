@@ -3,9 +3,9 @@
 //! This is the ONLY GPU primitive built here. The batch on-GPU detection
 //! engine also routes through the same [`GpuLiteralSet`] via
 //! `scan_presence_by_region_with_scratch`; the retired per-rule megakernel
-//! catalog stays in `megakernel.rs` for isolated catalog tests, not trigger
-//! production. The matcher is a literal-presence prefilter, not a final matcher;
-//! downstream phase-2 extraction confirms every candidate via its full regex.
+//! catalog is not a production engine module. The matcher is a literal-presence
+//! prefilter, not a final matcher; downstream phase-2 extraction confirms every
+//! candidate via its full regex.
 //!
 //! Two parallel GPU dispatch builders that once lived here were removed as dead
 //! routes (DEDUP / INSUFFICIENCY):
@@ -13,9 +13,9 @@
 //!     zero callers; `GpuLiteralSet` is the single on-GPU AC trigger engine.
 //!   * `rule_pipeline` (the `RulePipeline` regex-NFA "MegaScan" engine) — its
 //!     `scan` was never invoked; `--backend mega-scan`
-//!     routes to the SAME megakernel as `--backend gpu`. The cached wrapper,
-//!     its diagnostic builder, and fixed-size aliases were deleted as dead
-//!     surface; only adaptive byte-budget sizing remains in
+//!     routes to the SAME region-presence backend as `--backend gpu`. The
+//!     cached wrapper, its diagnostic builder, and fixed-size aliases were
+//!     deleted as dead surface; only adaptive byte-budget sizing remains in
 //!     [`super::rule_pipeline`].
 //! [`GpuLiteralSet`]: vyre_libs::scan::GpuLiteralSet
 

@@ -11,6 +11,24 @@
 //! using `memchr::memchr2_iter` to skim past chunks where the first byte
 //! of the needle is absent.
 
+/// Append `src` to `dst` while ASCII-lowercasing bytes in one pass.
+///
+/// This is for hot paths that must materialize a lowercase byte buffer for an
+/// external engine. It preserves non-ASCII bytes exactly, matching
+/// [`[u8]::make_ascii_lowercase`] semantics without first copying the original
+/// bytes and then walking them again to fold case.
+#[inline]
+pub(crate) fn extend_ascii_lowercase_from(dst: &mut Vec<u8>, src: &[u8]) {
+    for &byte in src {
+        let folded = if byte.is_ascii_uppercase() {
+            byte | 0x20
+        } else {
+            byte
+        };
+        dst.push(folded);
+    }
+}
+
 /// Case-insensitive `ends_with`. Returns true when the last `suffix.len()`
 /// bytes of `bytes` compare equal to `suffix` ignoring ASCII case.
 #[inline]

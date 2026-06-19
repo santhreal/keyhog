@@ -1,8 +1,28 @@
 //! Migrated from src/ascii_ci.rs
 
 use keyhog_scanner::testing::ascii_ci::{
-    ci_find, contains_path_segment, contains_path_segment_two,
+    ci_find, contains_path_segment, contains_path_segment_two, extend_ascii_lowercase_from,
 };
+
+#[test]
+fn extend_ascii_lowercase_from_appends_folded_bytes_once() {
+    let mut out = b"prefix:".to_vec();
+    extend_ascii_lowercase_from(&mut out, b"AaZz09_\0\xff");
+
+    assert_eq!(&out, b"prefix:aazz09_\0\xff");
+}
+
+#[test]
+fn extend_ascii_lowercase_from_matches_make_ascii_lowercase_semantics() {
+    let src = b"AbC xyz 123 ! \xc3\x91";
+    let mut expected = src.to_vec();
+    expected.make_ascii_lowercase();
+
+    let mut actual = Vec::new();
+    extend_ascii_lowercase_from(&mut actual, src);
+
+    assert_eq!(actual, expected);
+}
 
 #[test]
 fn ci_find_matches_case_insensitively() {

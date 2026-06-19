@@ -6,14 +6,27 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
     ))
     .expect("gpu_region_dispatch.rs readable");
     assert!(
-        !dispatch_src.contains(".as_bytes().to_vec()"),
-        "region dispatch must not allocate a fresh haystack Vec per chunk"
+        !dispatch_src.contains(".as_bytes().to_vec()")
+            && !dispatch_src.contains("let mut haystack = Vec::new()"),
+        "region dispatch must not allocate a fresh haystack Vec per batch/chunk"
     );
     assert!(
         dispatch_src.contains("build_region_presence_batch")
+            && dispatch_src.contains("REGION_PRESENCE_BATCH_SCRATCH")
             && dispatch_src.contains("region_starts")
-            && dispatch_src.contains("make_ascii_lowercase()"),
-        "region dispatch must build one coalesced folded haystack with one region row per chunk"
+            && dispatch_src.contains("extend_ascii_lowercase_from"),
+        "region dispatch must reuse one coalesced folded haystack scratch with one region row per chunk"
+    );
+    assert!(
+        !dispatch_src.contains("extend_from_slice(chunk.data.as_bytes())")
+            && !dispatch_src.contains("make_ascii_lowercase()"),
+        "region dispatch must not copy chunk bytes and then run a second lowercase pass"
+    );
+    assert!(
+        dispatch_src.contains("haystack.fill(0);")
+            && dispatch_src.contains("haystack.clear();")
+            && dispatch_src.contains("region_starts.clear();"),
+        "retained region-dispatch scratch must zero secret bytes and clear logical lengths"
     );
     assert!(
         dispatch_src.contains("scan_gpu_literal_presence_by_region_with_scratch"),

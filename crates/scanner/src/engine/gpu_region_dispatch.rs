@@ -16,24 +16,59 @@
 
 use super::*;
 use crate::hw_probe::ScanBackend;
+use std::cell::RefCell;
 
 #[cfg(feature = "gpu")]
-struct RegionPresenceBatch {
+#[derive(Default)]
+struct RegionPresenceScratch {
     haystack: Vec<u8>,
     region_starts: Vec<u32>,
 }
 
 #[cfg(feature = "gpu")]
-impl Drop for RegionPresenceBatch {
+thread_local! {
+    static REGION_PRESENCE_BATCH_SCRATCH: RefCell<RegionPresenceScratch> =
+        RefCell::new(RegionPresenceScratch::default());
+}
+
+#[cfg(feature = "gpu")]
+struct ZeroRegionPresenceScratch<'a> {
+    scratch: &'a mut RegionPresenceScratch,
+}
+
+#[cfg(feature = "gpu")]
+impl<'a> ZeroRegionPresenceScratch<'a> {
+    fn new(scratch: &'a mut RegionPresenceScratch) -> Self {
+        Self { scratch }
+    }
+
+    fn as_mut(&mut self) -> &mut RegionPresenceScratch {
+        &mut *self.scratch
+    }
+
+    fn haystack(&self) -> &[u8] {
+        &self.scratch.haystack
+    }
+
+    fn region_starts(&self) -> &[u32] {
+        &self.scratch.region_starts
+    }
+}
+
+#[cfg(feature = "gpu")]
+impl Drop for ZeroRegionPresenceScratch<'_> {
     fn drop(&mut self) {
-        self.haystack.fill(0);
+        self.scratch.haystack.fill(0);
+        self.scratch.haystack.clear();
+        self.scratch.region_starts.clear();
     }
 }
 
 #[cfg(feature = "gpu")]
 fn build_region_presence_batch(
     chunks: &[keyhog_core::Chunk],
-) -> std::result::Result<RegionPresenceBatch, String> {
+    scratch: &mut RegionPresenceScratch,
+) -> std::result::Result<(), String> {
     let mut total = chunks.len().saturating_sub(1);
     for chunk in chunks {
         total = total.checked_add(chunk.data.len()).ok_or_else(|| {
@@ -46,27 +81,48 @@ fn build_region_presence_batch(
         ));
     }
 
-    let mut haystack = Vec::new();
-    haystack
+    scratch.haystack.clear();
+    scratch.region_starts.clear();
+    scratch
+        .haystack
         .try_reserve(total)
         .map_err(|error| format!("coalesced GPU region-presence reserve failed: {error}"))?;
-    let mut region_starts = Vec::with_capacity(chunks.len());
+    scratch
+        .region_starts
+        .try_reserve(chunks.len())
+        .map_err(|error| format!("coalesced GPU region-start reserve failed: {error}"))?;
     for (idx, chunk) in chunks.iter().enumerate() {
-        let start = u32::try_from(haystack.len()).map_err(|_| {
+        let start = u32::try_from(scratch.haystack.len()).map_err(|_| {
             "coalesced GPU region-presence start offset exceeds the u32 GPU ABI".to_string()
         })?;
-        region_starts.push(start);
-        let region_start = haystack.len();
-        haystack.extend_from_slice(chunk.data.as_bytes());
-        haystack[region_start..].make_ascii_lowercase();
+        scratch.region_starts.push(start);
+        crate::ascii_ci::extend_ascii_lowercase_from(&mut scratch.haystack, chunk.data.as_bytes());
         if idx + 1 != chunks.len() {
-            haystack.push(0);
+            scratch.haystack.push(0);
         }
     }
-    Ok(RegionPresenceBatch {
-        haystack,
-        region_starts,
-    })
+    Ok(())
+}
+
+#[cfg(feature = "gpu")]
+fn with_region_presence_batch<R>(
+    chunks: &[keyhog_core::Chunk],
+    f: impl FnOnce(&[u8], &[u32]) -> std::result::Result<R, String>,
+) -> std::result::Result<R, String> {
+    REGION_PRESENCE_BATCH_SCRATCH
+        .try_with(|cell| {
+            let mut scratch = cell.try_borrow_mut().map_err(|_| {
+                "coalesced GPU region-presence scratch already borrowed on this thread; recursive \
+                 GPU batch dispatch is unsupported"
+                    .to_string()
+            })?;
+            let mut zero_on_drop = ZeroRegionPresenceScratch::new(&mut scratch);
+            build_region_presence_batch(chunks, zero_on_drop.as_mut())?;
+            f(zero_on_drop.haystack(), zero_on_drop.region_starts())
+        })
+        .map_err(|_| {
+            "coalesced GPU region-presence scratch unavailable during thread shutdown".to_string()
+        })?
 }
 
 #[cfg(feature = "gpu")]
@@ -198,23 +254,24 @@ impl CompiledScanner {
             let presence_words = self.ac_map.len().div_ceil(32).max(1);
 
             let t_co = std::time::Instant::now();
-            let batch = match build_region_presence_batch(chunks) {
-                Ok(batch) => batch,
+            let mut co_s = std::time::Duration::ZERO;
+            let mut dis_s = std::time::Duration::ZERO;
+            let presence = match with_region_presence_batch(chunks, |haystack, region_starts| {
+                co_s = t_co.elapsed();
+                let t_dis = std::time::Instant::now();
+                let result = super::gpu_lazy::scan_gpu_literal_presence_by_region_with_scratch(
+                    matcher,
+                    &**backend,
+                    haystack,
+                    region_starts,
+                )
+                .map_err(|error| format!("region-presence dispatch error: {error}"));
+                dis_s = t_dis.elapsed();
+                result
+            }) {
+                Ok(presence) => presence,
                 Err(error) => return degrade(error),
             };
-            let co_s = t_co.elapsed();
-
-            let t_dis = std::time::Instant::now();
-            let presence = match super::gpu_lazy::scan_gpu_literal_presence_by_region_with_scratch(
-                matcher,
-                &**backend,
-                &batch.haystack,
-                &batch.region_starts,
-            ) {
-                Ok(presence) => presence,
-                Err(error) => return degrade(format!("region-presence dispatch error: {error}")),
-            };
-            let dis_s = t_dis.elapsed();
 
             let t_floor = std::time::Instant::now();
             let full_recall_floor = self.tuning.gpu_recall_floor_enabled();
@@ -357,6 +414,25 @@ impl CompiledScanner {
 #[cfg(all(test, feature = "gpu"))]
 mod tests {
     use super::*;
+
+    #[test]
+    fn region_presence_batch_lowercases_separates_and_clears_scratch() {
+        let chunks = [
+            keyhog_core::Chunk::from("GhP_TOKEN"),
+            keyhog_core::Chunk::from("Zz9"),
+        ];
+        let mut scratch = RegionPresenceScratch::default();
+
+        {
+            let mut guard = ZeroRegionPresenceScratch::new(&mut scratch);
+            build_region_presence_batch(&chunks, guard.as_mut()).expect("batch");
+            assert_eq!(guard.haystack(), b"ghp_token\0zz9");
+            assert_eq!(guard.region_starts(), &[0, 10]);
+        }
+
+        assert!(scratch.haystack.is_empty());
+        assert!(scratch.region_starts.is_empty());
+    }
 
     #[test]
     fn validation_window_range_preserves_utf8_boundaries() {

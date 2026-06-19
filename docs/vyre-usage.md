@@ -481,10 +481,10 @@ are estimable. Listed best-bang-for-buck first.
 ## Production GPU trigger route
 
 The production batched GPU path is `engine/gpu_region_dispatch.rs`:
-`scan_coalesced_gpu_region_presence` builds one coalesced lowercase
-haystack, records one `region_starts` entry per chunk, calls
-`GpuLiteralSet::scan_presence_by_region_with_scratch`, converts each
-region row through `triggered_patterns_from_gpu_presence`, and then
+`scan_coalesced_gpu_region_presence` reuses one thread-local coalesced
+lowercase haystack scratch, records one `region_starts` entry per chunk,
+calls `GpuLiteralSet::scan_presence_by_region_with_scratch`, converts
+each region row through `triggered_patterns_from_gpu_presence`, and then
 hands the bitmap to the shared `scan_coalesced_phase2` tail.
 
 The retired per-rule megakernel catalog is not a production module.

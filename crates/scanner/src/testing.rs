@@ -1133,6 +1133,10 @@ pub(crate) fn memoize_by_hash<T: Copy>(
 
 #[cfg(test)]
 pub(crate) mod ascii_ci {
+    pub(crate) fn extend_ascii_lowercase_from(dst: &mut Vec<u8>, src: &[u8]) {
+        crate::ascii_ci::extend_ascii_lowercase_from(dst, src)
+    }
+
     pub(crate) fn ci_find(haystack: &[u8], needle_lower: &[u8]) -> bool {
         crate::ascii_ci::ci_find(haystack, needle_lower)
     }
