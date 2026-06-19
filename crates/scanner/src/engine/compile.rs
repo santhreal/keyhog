@@ -64,7 +64,7 @@ impl CompiledScanner {
             }
         }
         #[cfg(feature = "gpu")]
-        let (gpu_literals, gpu_backend, wgpu_backend) =
+        let (gpu_literals, gpu_backend) =
             if !gpu_disabled && crate::hw_probe::probe_hardware().gpu_available {
                 let literals = build_gpu_literals(&state.ac_literals);
                 let cuda_backend: Option<Arc<dyn vyre::VyreBackend>> = {
@@ -90,18 +90,11 @@ impl CompiledScanner {
                     }
                 };
                 match cuda_backend {
-                    Some(cuda) => {
-                        // The megakernel (the single on-GPU detection path) uses
-                        // the wgpu `BatchDispatcher`, so acquire wgpu ALONGSIDE
-                        // CUDA whenever GPU init runs — CUDA still serves any other
-                        // GPU primitives via `gpu_backend`.
-                        let wgpu_for_mk = vyre_driver_wgpu::WgpuBackend::shared().ok(); // LAW10: GPU lower/acquire failure => host path (recall-preserving, counted host_lower_failed + surfaced via tracing::info/last_gpu_degrade_reason)
-                        (literals, Some(cuda), wgpu_for_mk)
-                    }
+                    Some(cuda) => (literals, Some(cuda)),
                     None => match vyre_driver_wgpu::WgpuBackend::shared() {
                         Ok(wgpu) => {
                             let trait_obj: Arc<dyn vyre::VyreBackend> = wgpu.clone();
-                            (literals, Some(trait_obj), Some(wgpu))
+                            (literals, Some(trait_obj))
                         }
                         Err(error) => {
                             tracing::warn!(
@@ -109,12 +102,12 @@ impl CompiledScanner {
                                 %error,
                                 "wgpu backend unavailable; scan will use CPU-only path"
                             );
-                            (literals, None, None)
+                            (literals, None)
                         }
                     },
                 }
             } else {
-                (None, None, None)
+                (None, None)
             };
 
         // Lean (no-`gpu`) build: never link the wgpu / CUDA drivers, never
@@ -376,12 +369,8 @@ impl CompiledScanner {
         let scanner = Self {
             ac,
             gpu_backend,
-            #[cfg(feature = "gpu")]
-            wgpu_backend,
             gpu_literals,
             gpu_matcher: OnceLock::new(),
-            #[cfg(feature = "gpu")]
-            megakernel_catalog: OnceLock::new(),
             gpu_last_degrade_reason: std::sync::Mutex::new(None),
             gpu_degrade_count: std::sync::atomic::AtomicU64::new(0),
             static_intern,

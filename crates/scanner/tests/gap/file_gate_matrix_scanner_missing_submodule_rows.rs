@@ -8,7 +8,7 @@
 //!   crates/scanner/src/engine/phase2_generic/shape_helpers.rs
 //!   crates/scanner/src/engine/generic_keyword_owner.rs
 //!   crates/scanner/src/engine/gpu_stack.rs
-//!   crates/scanner/src/engine/megakernel_triggers.rs
+//!   crates/scanner/src/engine/gpu_region_dispatch.rs
 //!   crates/scanner/src/engine/windowed_support.rs
 //!   crates/scanner/src/multiline/string_extract.rs
 //!   crates/scanner/src/placeholder_words.rs
@@ -59,7 +59,7 @@ const PREVIOUSLY_MISSING: &[&str] = &[
     "crates/scanner/src/engine/phase2_generic/shape_helpers.rs",
     "crates/scanner/src/engine/generic_keyword_owner.rs",
     "crates/scanner/src/engine/gpu_stack.rs",
-    "crates/scanner/src/engine/megakernel_triggers.rs",
+    "crates/scanner/src/engine/gpu_region_dispatch.rs",
     "crates/scanner/src/engine/windowed_support.rs",
     "crates/scanner/src/multiline/string_extract.rs",
     "crates/scanner/src/placeholder_words.rs",

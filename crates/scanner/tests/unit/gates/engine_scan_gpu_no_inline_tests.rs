@@ -7,10 +7,10 @@ const GPU_SCAN_SRCS: &[&str] = &[
     "gpu_forced.rs",
     "gpu_lazy.rs",
     "gpu_cache.rs",
-    "megakernel_dispatch.rs",
+    "gpu_region_dispatch.rs",
 ];
 
-const INLINE_TEST_ALLOWLIST: &[&str] = &["megakernel_dispatch.rs"];
+const INLINE_TEST_ALLOWLIST: &[&str] = &["gpu_region_dispatch.rs"];
 
 #[test]
 fn engine_scan_gpu_no_inline_tests() {

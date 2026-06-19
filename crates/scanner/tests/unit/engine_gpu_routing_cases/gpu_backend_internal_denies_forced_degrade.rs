@@ -21,10 +21,10 @@ fn gpu_backend_internal_denies_forced_degrade() {
         "per-chunk GPU trigger fallback must pass a concrete reason to the loud degrade guard"
     );
 
-    let megakernel_dispatch = std::fs::read_to_string(format!("{engine}megakernel_dispatch.rs"))
-        .expect("megakernel_dispatch.rs readable");
+    let gpu_dispatch = std::fs::read_to_string(format!("{engine}gpu_region_dispatch.rs"))
+        .expect("gpu_region_dispatch.rs readable");
     assert!(
-        megakernel_dispatch.contains("gpu_forced::deny_silent_gpu_degrade(self, ScanBackend::Gpu)"),
-        "coalesced megakernel fallback must hit the loud degrade guard before CPU routing"
+        gpu_dispatch.contains("gpu_forced::deny_silent_gpu_degrade(self, ScanBackend::Gpu)"),
+        "coalesced GPU fallback must hit the loud degrade guard before CPU routing"
     );
 }

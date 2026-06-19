@@ -26,13 +26,14 @@ impl CompiledScanner {
             return results;
         }
 
-        // The batched-DFA megakernel is the SINGLE on-GPU detection path. It
-        // acquires its own wgpu backend and, on any failure, degrades LOUDLY to
-        // the per-chunk SIMD path (Law 10) — never a silent empty result — so it
-        // runs whenever a GPU backend is selected.
+        // The batched region-presence literal set is the SINGLE on-GPU trigger
+        // producer. It acquires the compiled GPU literal matcher and, on any
+        // failure, degrades LOUDLY to the per-chunk SIMD/CPU path (Law 10) -
+        // never a silent empty result - so it runs whenever a GPU backend is
+        // selected.
         #[cfg(feature = "gpu")]
         {
-            self.scan_coalesced_megakernel(chunks)
+            self.scan_coalesced_gpu_region_presence(chunks)
         }
         // GPU compiled out: a Gpu/MegaScan request degrades to the per-chunk SIMD
         // path, preserving cross-chunk boundary recall.

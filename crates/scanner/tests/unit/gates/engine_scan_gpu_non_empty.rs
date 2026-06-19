@@ -7,7 +7,7 @@ const GPU_SCAN_SRCS: &[&str] = &[
     "gpu_forced.rs",
     "gpu_lazy.rs",
     "gpu_cache.rs",
-    "megakernel_dispatch.rs",
+    "gpu_region_dispatch.rs",
 ];
 
 #[test]

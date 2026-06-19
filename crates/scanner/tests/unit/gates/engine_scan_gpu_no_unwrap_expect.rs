@@ -4,12 +4,12 @@
 //! no-unwrap contract follows the code instead of a deleted path.
 
 /// `src/engine/`-relative files that together form the GPU phase-2 scan path
-/// (`scan_coalesced_megakernel` dispatch + GPU stack setup / degrade / cache).
+/// (region-presence dispatch + GPU stack setup / degrade / cache).
 const GPU_SCAN_SRCS: &[&str] = &[
     "gpu_forced.rs",
     "gpu_lazy.rs",
     "gpu_cache.rs",
-    "megakernel_dispatch.rs",
+    "gpu_region_dispatch.rs",
 ];
 
 /// Files permitted to contain a co-located `#[cfg(test)]` (or
@@ -18,14 +18,10 @@ const GPU_SCAN_SRCS: &[&str] = &[
 /// inline tests are the correct choice (same rationale as
 /// `no_inline_tests_in_src::INLINE_TEST_ALLOWLIST`):
 ///
-/// - `megakernel_dispatch.rs`: contains `pub(crate)` dispatch helpers
-///   (`merge_validated_triggers`, `validation_window_range`) whose tests
-///   assert on private result fields.  Moving those tests to an external file
-///   would require making the helpers `pub`, violating the minimal-surface law
-///   (Law 1).  The unwraps/expects on lines 499, 516, 522 are inside the
-///   `#[cfg(all(test, feature = "gpu"))]` mod and are test-assertion helpers,
-///   not production code.
-const INLINE_TEST_ALLOWLIST: &[&str] = &["megakernel_dispatch.rs"];
+/// - `gpu_region_dispatch.rs`: contains crate-private region batching and
+///   bounded-validation helpers. Keeping their white-box tests co-located avoids
+///   widening the public scanner API for source-only assertions.
+const INLINE_TEST_ALLOWLIST: &[&str] = &["gpu_region_dispatch.rs"];
 
 /// Returns `true` when `line` starts a test-cfg annotation that gates an
 /// inline test module — either the plain `#[cfg(test)]` form or the

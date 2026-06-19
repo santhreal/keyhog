@@ -472,13 +472,10 @@ path = "crates/scanner/src/engine/gpu_forced.rs"
 path = "crates/scanner/src/engine/gpu_lazy.rs"
 
 [[module]]
+path = "crates/scanner/src/engine/gpu_region_dispatch.rs"
+
+[[module]]
 path = "crates/scanner/src/engine/hot_patterns.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/megakernel.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/megakernel_wire.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/mod.rs"
@@ -949,12 +946,6 @@ path = "crates/scanner/src/engine/phase2_prefilter.rs"
 path = "crates/scanner/src/engine/phase2_truncate.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/megakernel_dispatch.rs"
-
-[[module]]
-path = "crates/scanner/src/engine/megakernel_triggers.rs"
-
-[[module]]
 path = "crates/scanner/src/engine/scan_postprocess_fragments.rs"
 
 [[module]]
@@ -962,6 +953,15 @@ path = "crates/scanner/src/engine/scan_postprocess_profile.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/scan_postprocess_suffix_gate.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/scan_postprocess/fragments.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/scan_postprocess/profile.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/scan_postprocess/suffix_gate.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/scoring.rs"

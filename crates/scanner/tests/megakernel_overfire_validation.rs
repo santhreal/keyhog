@@ -1,6 +1,6 @@
 #![cfg(feature = "gpu")]
 //! LANE 1 (GPU CORRECTNESS) — live GPU≡SIMD on a real multi-detector corpus,
-//! pinning the wave-2 validated-trigger fix in `engine/megakernel_dispatch.rs`.
+//! pinning the region-presence GPU path in `engine/gpu_region_dispatch.rs`.
 //!
 //! Two contracts the validated trigger production must hold (both Law 10):
 //!
@@ -11,12 +11,11 @@
 //!    recall floor closes that, so neither backend may have a finding the other
 //!    lacks.
 //!
-//! 2. **No over-firing inflation** — the GPU path's findings come ONLY from
-//!    chunks where the anchored detector truly matches. The over-fire-bait chunk
+//! 2. **No over-firing inflation** — the GPU path's user-visible findings come
+//!    ONLY from chunks where the detector truly matches. The over-fire-bait chunk
 //!    (`ghp_` literal, no 36-char body) must produce ZERO findings on BOTH
-//!    backends; a regression that fed raw unanchored firings to phase-2 would
-//!    still extract nothing (phase-2 re-verifies), but the validated path proves
-//!    the bit never reaches phase-2 at all.
+//!    backends. Region presence is allowed to produce a candidate bit; the shared
+//!    phase-2 extractor must reject it.
 //!
 //! These run on a live adapter; gated by the explicit require-GPU runtime policy
 //! to hard-fail in CI that mandates a GPU, else skipped (no silent CPU

@@ -6,30 +6,33 @@ making next. Vyre is a ~30-crate GPU compute framework - this doc
 catalogues every crate it ships so future wires don't have to
 re-discover the surface.
 
-Updated 2026-06-17. The workspace pins all five runtime `vyre*` crates at
+Updated 2026-06-19. The workspace pins all five runtime `vyre*` crates at
 `=0.6.3` (vyre v0.6.3) from crates.io (root `Cargo.toml`, `[workspace.dependencies]`). That
-release carries the megakernel scan APIs Keyhog imports, including
-`vyre_libs::scan::build_regex_dfa_unanchored` (`engine/megakernel.rs`). The
-repository carries no `vendor/` source tree; the exact crates.io pins are the
-only Vyre source for builds.
+release carries the literal-set region APIs Keyhog imports, including
+`GpuLiteralSet::scan_presence_by_region_with_scratch` (`engine/gpu_region_dispatch.rs` via
+`engine/gpu_lazy.rs`). The repository carries no `vendor/` source tree; the
+exact crates.io pins are the only Vyre source for builds.
 
 ## What keyhog uses today
 
 | Vyre symbol                                          | Where keyhog uses it                                                |
 | ---------------------------------------------------- | ------------------------------------------------------------------- |
-| `vyre_libs::scan::GpuLiteralSet`                     | `engine/gpu_lazy.rs::gpu_matcher` - per-chunk literal prefilter     |
-| `vyre_libs::scan::build_regex_dfa_unanchored`        | `engine/megakernel.rs` - lowers detector literals into DFA rules    |
-| `vyre_runtime::megakernel::BatchRuleProgram`         | `engine/megakernel.rs` / `megakernel_wire.rs` - catalog program     |
-| `vyre_driver_wgpu::megakernel::{BatchDispatcher, FileBatch, HitRecord}` | `engine/megakernel.rs` - persistent batched DFA dispatch |
+| `vyre_libs::scan::GpuLiteralSet`                     | `engine/gpu_lazy.rs::gpu_matcher` - literal trigger producer        |
+| `GpuLiteralSet::scan_presence_with_scratch`          | `engine/gpu_lazy.rs` - per-chunk trigger presence without hot-loop scratch allocation |
+| `GpuLiteralSet::scan_presence_by_region_with_scratch` | `engine/gpu_region_dispatch.rs` - one batched region row per chunk |
+| `vyre_libs::scan::build_regex_dfa_unanchored`        | Standalone `tests/megakernel_*.rs` Vyre validation experiments      |
+| `vyre_runtime::megakernel::BatchRuleProgram`         | Standalone `tests/megakernel_*.rs` Vyre validation experiments      |
+| `vyre_driver_wgpu::megakernel::{BatchDispatcher, FileBatch, HitRecord}` | Standalone `tests/megakernel_*.rs` Vyre validation experiments |
 | `vyre_libs::scan::LiteralMatch`                      | Re-exported as `keyhog_scanner::LiteralMatch` for API stability     |
 | `vyre_libs::scan::cached_load_or_compile`            | On-disk cache for compiled GPU literal-set programs                 |
 | `vyre_libs::intern::perfect_hash::PerfectHash`       | `static_intern.rs` - frozen detector-metadata interner              |
 | `vyre_libs::intern::perfect_hash::build_chd`         | Same - built once at scanner construction                           |
-| `vyre_driver_wgpu::WgpuBackend`                      | Persistent wgpu device handle held by `CompiledScanner`             |
+| `vyre_driver_wgpu::WgpuBackend`                      | `engine/compile.rs` acquires it as an `Arc<dyn VyreBackend>` when CUDA is unavailable |
 
-Current scanner consumers are `engine/gpu_lazy.rs`, `engine/megakernel.rs`,
-`engine/megakernel_wire.rs`, `engine/compile.rs`, `gpu.rs`, and
-`static_intern.rs`.
+Current production scanner consumers are `engine/gpu_lazy.rs`,
+`engine/gpu_region_dispatch.rs`, `engine/compile.rs`, `gpu.rs`, and
+`static_intern.rs`. The per-rule megakernel catalog is not a production engine
+module.
 
 ## Full vyre crate surface
 
@@ -262,10 +265,10 @@ by primitive authors.
 | ------------------------------------ | ----------- | ------------------------------------------------------ |
 | `intern::perfect_hash`               | ✅ shipped  | `crates/scanner/src/static_intern.rs` + `engine/mod.rs` |
 | Tier-aware GPU routing (2 MiB)       | ✅ shipped  | `crates/scanner/src/hw_probe.rs`                       |
-| GPU dispatch sharding                | ✅ shipped  | `engine/scan_gpu.rs::scan_coalesced_gpu`               |
+| GPU region-presence dispatch         | ✅ shipped  | `engine/gpu_region_dispatch.rs::scan_coalesced_gpu_region_presence` |
 | `rule` CPU evaluator + `FieldInSet`  | ✅ shipped  | upstream `vyre_libs::rule::cpu_eval` + `ast.rs`        |
 | `.keyhogignore.toml` rule engine     | ✅ shipped  | `crates/core/src/rule_filter.rs` + `orchestrator.rs`   |
-| Megakernel scaffold (gated)          | partial     | `engine/megakernel.rs` (needs vyre per-pattern hits) |
+| Standalone Vyre megakernel probes    | measured    | `crates/scanner/tests/megakernel_*.rs`                 |
 | `cooperative_dfa` alt literal engine | ⏳ pending  | needs keyhog GPU dispatch infrastructure (entry below) |
 | `fuse_programs` decode+scan          | ⏳ pending  | needs source/scanner restructure (entry below)         |
 | `nn::moe` replacing gpu.rs MoE       | ⏳ pending  | parity work against existing weights (entry below)     |
@@ -457,13 +460,12 @@ are estimable. Listed best-bang-for-buck first.
    - `BatchRuleProgram::new(rule_idx, transitions, accept,
      state_count)` - wraps a DFA per detector
 
-   Wiring entry points in keyhog:
-   - `crates/scanner/src/engine/scan_gpu.rs::scan_coalesced_gpu` -
-     replace per-chunk `scan_prepared_with_triggered` loop with one
-     `BatchDispatcher::dispatch` call
-   - Detector regex → DFA: `vyre_libs::matching::dfa::dfa_compile`
-   - Build `FileBatch` from `chunks` + per-chunk offset attribution
-     in scan_gpu.rs's existing `entries` walk
+   Current Keyhog production entry point:
+   - `crates/scanner/src/engine/gpu_region_dispatch.rs::scan_coalesced_gpu_region_presence`
+     uses `GpuLiteralSet::scan_presence_by_region_with_scratch`, not the per-rule
+     `BatchDispatcher` catalog.
+   - Standalone `tests/megakernel_*.rs` targets continue to exercise Vyre's
+     `BatchDispatcher` and `BatchRuleProgram` primitives outside the shipped scan route.
 
    Scope: dispatch hook, per-pattern hit reporting, parity, and benchmark
    threshold update. Biggest single perf win available.
@@ -476,82 +478,29 @@ are estimable. Listed best-bang-for-buck first.
    without GPU work. Scope: AVX-512 implementation, scalar fallback, and criterion
    perf gate.
 
-## Megakernel wiring - status + architectural finding
+## Production GPU trigger route
 
-`crates/scanner/src/engine/megakernel_dispatch.rs` ships the
-end-to-end wire (DFA-per-literal compile + `BatchDispatcher` init +
-`dispatch_triggers` returning per-chunk per-pattern triggers) for the
-planned `scan_coalesced_megakernel` route in `engine/scan_gpu.rs`.
-**This route is not live:** the engine deliberately reads no
-`KEYHOG_USE_MEGAKERNEL` env var, so the intended activation knob
-`KEYHOG_USE_MEGAKERNEL=1` is a documented no-op and the megakernel path
-stays dormant until the CPU-parity contract
-(`tests/megakernel_cpu_parity.rs`) is promoted to a continuous gate.
-The architectural mismatch below is why it is not yet the default GPU
-backend.
+The production batched GPU path is `engine/gpu_region_dispatch.rs`:
+`scan_coalesced_gpu_region_presence` builds one coalesced lowercase
+haystack, records one `region_starts` entry per chunk, calls
+`GpuLiteralSet::scan_presence_by_region_with_scratch`, converts each
+region row through `triggered_patterns_from_gpu_presence`, and then
+hands the bitmap to the shared `scan_coalesced_phase2` tail.
 
-**Architectural mismatch found in testing on RTX 5090:** vyre's
-`BatchDispatcher` is built for "many files × few rules" (small
-curated rule pack against many files). Keyhog's production corpus
-is "few files × many rules" - 6000+ literal patterns scanned across
-~100 file chunks per batch. Modelling each literal as its own
-`BatchRuleProgram` allocates `chunks × rules ≈ 600,000` work items
-inside the persistent kernel for a single batch, which is enough
-to keep the dispatch sleeping for minutes (observed on RTX 5090 -
-the first benchmark run had to be killed after ~25s of wall time
-with the kernel still in S-state waiting on per-rule scratch).
+The retired per-rule megakernel catalog is not a production module.
+`engine/megakernel.rs`, `engine/megakernel_triggers.rs`,
+`engine/megakernel_wire.rs`, the concrete `wgpu_backend` scanner field,
+and the `MegakernelCatalog` dispatch hook were removed. The standalone
+`tests/megakernel_*.rs` targets remain Vyre primitive probes only; they
+do not describe the shipped Keyhog scan route.
 
-**Real megakernel win path (vyre-side feature request):**
-- Pass ALL literals into ONE `dfa_compile(&[&[u8]])` call → ONE
-  multi-pattern DFA → ONE `BatchRuleProgram` per batch
-- vyre `HitRecord` currently has `(file_idx, rule_idx, layer_idx,
-  match_offset)` - no per-pattern field. Need a vyre-side opcode
-  handler set that emits per-pattern hits via the DFA's
-  `output_records` table
-- Then a single dispatch handles all chunks × all literals natively,
-  one kernel launch, full per-pattern attribution
-
-The keyhog-side wiring lands as a one-line swap once vyre exposes
-the per-pattern hit reporting. Until then, default GPU path stays
-on `scan_coalesced_gpu`'s sharded `GpuLiteralSet::scan` (50
-dispatches × 100µs ≈ 5ms overhead for a 100 MiB batch - measured
-with the realistic-corpus benchmark; less of a win than expected
-because per-chunk extraction still dominates).
-
-## Megakernel wiring - original next-session checklist
-
-The scaffolding in `crates/scanner/src/engine/megakernel_dispatch.rs`
-gives a working `MegakernelScanner` (DFA-per-literal compile +
-`BatchDispatcher` init). To complete the wiring:
-
-1. **Build `FileBatch` from chunks** at scan time. API:
-   `FileBatch::upload(device_queue, &[BatchFile], rule_count, hit_capacity)`.
-   Each `BatchFile::new(path_hash, decoded_layer_index, bytes)` wraps
-   one chunk's bytes. `path_hash` can be the chunk index hashed via
-   FNV; `decoded_layer_index = 0` for non-decoded scans.
-2. **Dispatch via `BatchDispatcher::dispatch(&batch, &rules)`**. Returns
-   `BatchDispatchReport { hits: Vec<HitRecord { file_idx, rule_idx,
-   layer_idx, match_offset }>, ... }`.
-3. **Map `HitRecord` → keyhog trigger bitmask**:
-   `per_chunk_triggers[hit.file_idx as usize][hit.rule_idx as usize / 64]
-   |= 1 << (hit.rule_idx % 64)`. Same shape as the existing
-   `scan_coalesced_gpu` post-process.
-4. **Per-chunk extraction phase**: identical to `scan_coalesced_gpu`
-   from line ~277 onwards (par_iter, prepare_chunk,
-   scan_prepared_with_triggered, post_process_matches, boundary scan).
-5. **Wire as a new `ScanBackend` variant or replace `Gpu`'s underlying
-   impl**. Recommend: cache `MegakernelScanner` on `CompiledScanner`
-   via `OnceLock<Option<MegakernelScanner>>` (mirrors `gpu_matcher`
-   and `rule_pipeline`); add `try_with_megakernel()` getter; route
-   `scan_chunks_with_backend_internal` to it when active.
-6. **Parity test against `scan_coalesced_gpu`** - same fixture as
-   `tests/gpu_parity.rs`, assert equal credential sets between
-   sharded GpuLiteralSet and BatchDispatcher paths.
-
-Expected wins on RTX 5090: ~5 ms saved per 100 MiB batch (50 sharded
-dispatches × 100 µs collapsed into 1). Not a 10× win on its own - the
-real prize is step 7, moving per-chunk extraction onto the same
-megakernel via `OpcodeHandler`s for entropy + regex eval.
+Architectural finding from RTX 5090 testing: Vyre's `BatchDispatcher`
+fits "many files × few rules" better than Keyhog's "few files × many
+rules" detector set. Modelling each literal as a separate
+`BatchRuleProgram` created `chunks × rules` work and was the wrong
+production primitive. Region presence uses one literal-set automaton
+pass over the coalesced batch and returns the exact per-chunk trigger
+bitmap Keyhog needs.
 
 ## Remaining Vyre Wires
 

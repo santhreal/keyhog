@@ -4,12 +4,13 @@
 //!
 //! Every scan is the same pipeline. The ONLY thing that varies is *phase 1*
 //! (which detectors could fire where) — produced on the CPU by Hyperscan or on
-//! the GPU by the megakernel. Everything downstream is shared:
+//! the GPU by Vyre's literal region-presence backend. Everything downstream is
+//! shared:
 //!
 //! ```text
 //!   files ─▶ phase 1: trigger production         (swappable backend)
 //!           ├─ CPU: compute_coalesced_triggers   (Hyperscan prefilter)   scan_coalesced.rs
-//!           └─ GPU: scan_coalesced_megakernel    (batched-DFA megakernel) megakernel_dispatch.rs
+//!           └─ GPU: scan_coalesced_gpu_region_presence (batched region-presence) gpu_region_dispatch.rs
 //!                       │  one bitmap per chunk: "which detectors may match here"
 //!                       ▼
 //!           phase 2: scan_coalesced_phase2       (THE shared tail)        scan_coalesced.rs
@@ -20,9 +21,9 @@
 //!             • cross-chunk boundary reassembly (scan_chunk_boundaries)    boundary.rs
 //! ```
 //!
-//! There is exactly ONE on-GPU detection engine: the megakernel
-//! ([`megakernel`] + [`megakernel_dispatch`]). Selecting a GPU backend
-//! (`--backend gpu`) routes the batch path through it;
+//! There is exactly ONE production on-GPU trigger producer: the region-presence
+//! dispatch in [`gpu_region_dispatch`]. Selecting a GPU backend (`--backend gpu`)
+//! routes the batch path through it;
 //! the default backend is the CPU Hyperscan path. The GPU path degrades LOUDLY
 //! to CPU on any failure (never a silent empty result — Law 10).
 //!
@@ -36,8 +37,7 @@
 //! - `scan_coalesced` / `compute_coalesced_triggers` / `scan_coalesced_phase2` .................. scan_coalesced.rs
 //! - no-hit fragment reassembly for the shared tail .............................................. scan_no_hit_reassembly.rs
 //! - `scan_chunks_with_backend_internal` (CPU-vs-GPU batch routing) .. backend_dispatch.rs
-//! - `scan_coalesced_megakernel` (GPU trigger production) ............ megakernel_dispatch.rs
-//! - `MegakernelCatalog` (DFA catalog build + cache + dispatch) ...... megakernel.rs
+//! - `scan_coalesced_gpu_region_presence` (GPU trigger production) ... gpu_region_dispatch.rs
 //! - `scan_prepared_with_triggered` / `collect_triggered_patterns_*` . backend_triggered.rs
 //! - `scan_chunk_or_window` / `scan_windowed` (the windowing contract) windowed.rs
 //! - confirmed-pattern extraction ................................... extract.rs
@@ -62,19 +62,10 @@ mod generic_keyword_owner;
 mod gpu_cache;
 mod gpu_forced;
 mod gpu_lazy;
+#[cfg(feature = "gpu")]
+mod gpu_region_dispatch;
 mod gpu_stack;
 mod hot_patterns;
-#[cfg(feature = "gpu")]
-pub(crate) mod megakernel;
-#[cfg(feature = "gpu")]
-mod megakernel_dispatch;
-#[cfg(feature = "gpu")]
-mod megakernel_triggers;
-/// Catalog cache wire (de)serialization for [`megakernel::MegakernelCatalog`],
-/// split out of `megakernel.rs` (Law 5) — a stable boundary independent of the
-/// catalog build/dispatch responsibility.
-#[cfg(feature = "gpu")]
-mod megakernel_wire;
 pub(crate) mod phase2;
 mod phase2_anchor;
 mod phase2_anchor_scan;
@@ -181,21 +172,8 @@ pub struct CompiledScanner {
     pub(crate) fragment_cache: crate::fragment_cache::FragmentCache,
     pub(crate) ac: Option<AhoCorasick>,
     pub(crate) gpu_backend: Option<Arc<dyn vyre::VyreBackend>>,
-    // Only the `gpu` build holds a concrete wgpu handle — its sole purpose
-    // is to reach `dispatch_borrowed_batch`, which the trait object can't
-    // express. Without the feature, the CUDA / wgpu drivers aren't linked
-    // at all and `gpu_backend` is always None.
-    #[cfg(feature = "gpu")]
-    pub(crate) wgpu_backend: Option<Arc<vyre_driver_wgpu::WgpuBackend>>,
     pub(crate) gpu_literals: Option<Arc<Vec<Vec<u8>>>>,
     pub(crate) gpu_matcher: OnceLock<Option<vyre_libs::scan::GpuLiteralSet>>,
-    /// On-GPU detection rule catalog (the megakernel `BatchDispatcher` path).
-    /// Lazily built (or loaded from the on-disk cache) from `ac_map` on the
-    /// first megakernel scan. The catalog always exists; `rule_count() == 0`
-    /// means no pattern lowered, which `megakernel_catalog()` reports as `None`
-    /// so the caller degrades loudly.
-    #[cfg(feature = "gpu")]
-    pub(crate) megakernel_catalog: OnceLock<megakernel::MegakernelCatalog>,
     pub(crate) gpu_last_degrade_reason: std::sync::Mutex<Option<String>>,
     pub(crate) gpu_degrade_count: std::sync::atomic::AtomicU64,
     pub(crate) static_intern: Arc<crate::static_intern::StaticInterner>,

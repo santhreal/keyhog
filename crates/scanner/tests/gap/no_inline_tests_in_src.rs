@@ -16,27 +16,11 @@ use std::path::{Path, PathBuf};
 /// Crate-private modules permitted to keep co-located `#[cfg(test)]` white-box
 /// tests. Paths are relative to `src/`. Keep this list SHORT and justified.
 const INLINE_TEST_ALLOWLIST: &[&str] = &[
-    // `MegakernelCatalog` is a `pub(crate)` GPU DFA-lowering internal. Its catalog
-    // classification (lowerable-vs-host) tests assert on the `pub(crate)`
-    // build/host_detectors API and the private rule set. No external test can
-    // reach this without making GPU internals `pub`, so white-box co-location is
-    // the correct place for the coverage (Law 1 / minimal public surface).
-    "engine/megakernel.rs",
-    // The catalog cache wire (de)serialization, split out of megakernel.rs
-    // (Law 5). Its round-trip test asserts on the `pub(super)` private fields
-    // (`rules`, `rule_to_detector`, `host_detectors`) and calls `pub(crate)`
-    // build + the `MatchEngineCache` to_bytes/from_bytes — same white-box
-    // rationale as megakernel.rs: external `tests/` would force exposing the
-    // catalog internals as `pub`.
-    "engine/megakernel_wire.rs",
-    // `merge_validated_triggers` and `validation_window_range` are `pub(crate)`
-    // dispatch helpers whose tests assert on private result fields
-    // (`raw_pairs`, `gpu_overfire_dropped`, `gpu_underfire_recovered`,
-    // `triggers`).  Moving them to `tests/` would require making those fields
-    // `pub`, violating the minimal-surface law (Law 1).  The inline module is
-    // gated `#[cfg(all(test, feature = "gpu"))]` — same white-box rationale as
-    // megakernel.rs / megakernel_wire.rs above.
-    "engine/megakernel_dispatch.rs",
+    // Region batch construction and bounded-validation helpers are crate-private
+    // implementation details of the GPU trigger path. The co-located tests keep
+    // those helpers private instead of widening the scanner API for white-box
+    // source assertions.
+    "engine/gpu_region_dispatch.rs",
 ];
 
 /// True iff `path` ends with an allowlisted `src/`-relative path (component-wise,

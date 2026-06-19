@@ -3,9 +3,9 @@
 //! degrade (Law 10).
 //!
 //! The 78046450 consolidation removed `engine/gpu_ac_phase1.rs`: GPU phase-1 is
-//! now POSITIONLESS (a presence bitmap via `scan_presence` plus megakernel
-//! `(file, detector)` firings — see `backend_triggered.rs` / `megakernel_
-//! dispatch.rs`), and all match POSITIONS come from CPU regex in
+//! now POSITIONLESS (a presence bitmap via `scan_presence` or the coalesced
+//! region-presence path — see `backend_triggered.rs` / `gpu_region_dispatch.rs`),
+//! and all match POSITIONS come from CPU regex in
 //! `scan_coalesced_phase2`. So a degenerate GPU position triple can no longer
 //! reach attribution; the surviving structured integrity guard is
 //! `segment_attribution::map_offsets_to_segments`, and the surviving degrade
@@ -57,16 +57,17 @@ fn degenerate_match_ranges_are_rejected_not_silently_attributed() {
 /// two consolidated dispatch sites that replaced `gpu_ac_phase1.rs`.
 #[test]
 fn gpu_dispatch_failures_preserve_operator_visible_reasons() {
-    let dispatch = engine_src("src/engine/megakernel_dispatch.rs");
+    let dispatch = engine_src("src/engine/gpu_region_dispatch.rs");
     let trigger = engine_src("src/engine/backend_triggered.rs");
     for needle in [
-        "catalog: no ac_map pattern lowered to a GPU DFA",
-        "no wgpu backend acquired at compile time",
-        "dispatch error: {error}",
+        "gpu literal matcher not built for coalesced region scan",
+        "no gpu backend acquired for coalesced region dispatch",
+        "region-presence dispatch error: {error}",
+        "region-presence readback length mismatch",
     ] {
         assert!(
             dispatch.contains(needle),
-            "megakernel_dispatch degrade must carry a concrete reason: {needle:?}"
+            "gpu_region_dispatch degrade must carry a concrete reason: {needle:?}"
         );
     }
     for needle in [
@@ -82,7 +83,7 @@ fn gpu_dispatch_failures_preserve_operator_visible_reasons() {
     // Both degrade closures funnel the reason into the recorded slot.
     assert!(
         dispatch.contains("gpu_last_degrade_reason"),
-        "megakernel degrade must record the reason into gpu_last_degrade_reason"
+        "coalesced GPU degrade must record the reason into gpu_last_degrade_reason"
     );
     assert!(
         trigger.contains("gpu_last_degrade_reason"),
@@ -114,8 +115,9 @@ fn gpu_self_test_can_report_recorded_degrade_reason() {
 }
 
 /// The stale AC GPU bounded-ranges builder was deleted as a dead route. Keep
-/// this gate pointed at the current live invariant: `gpu_lazy.rs` owns only the
-/// GpuLiteralSet cache path, while the megakernel owns batched on-GPU AC.
+/// this gate pointed at the current live invariant: `gpu_lazy.rs` owns the
+/// GpuLiteralSet cache/scratch path used by both per-chunk and coalesced GPU
+/// trigger production.
 #[test]
 fn gpu_lazy_keeps_removed_ac_program_dead_and_literal_set_live() {
     let lazy = engine_src("src/engine/gpu_lazy.rs");

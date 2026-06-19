@@ -90,7 +90,7 @@ method-level version of steps 2–4.
    `binary/`).
 2. **Phase 1 — trigger production** (which detectors *could* fire, and where).
    Swappable backend: CPU Hyperscan prefilter (`engine/scan.rs`) or the GPU
-   batched-DFA megakernel (`engine/megakernel_dispatch.rs`). Produces one
+   batched literal region-presence route (`engine/gpu_region_dispatch.rs`). Produces one
    "which detectors may match here" bitmap per chunk. The fast prefilters
    (`simdsieve`, `bigram_bloom`, `alphabet_filter`, `prefix_trie`) live at
    `scanner/src/` top level; the detector→matcher build is `engine/compile.rs`
