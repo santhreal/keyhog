@@ -15,7 +15,7 @@
 #   ml/retrain_loop.sh --write              # ship weights.bin if train-gates pass (+.bak)
 #   ml/retrain_loop.sh --write --verify     # ship, then REBUILD + per-detector FP gate;
 #                                           #   auto-revert weights.bin on any regression
-#   KEYHOG_BIN=/path/to/keyhog ml/retrain_loop.sh
+#   KEYHOG_BIN=/path/to/keyhog ml/retrain_loop.sh   # explicit external harvester
 #   CORPORA="creddata" ml/retrain_loop.sh   # which real corpora to harvest
 #
 # Train-time gates (enforced by train_classifier.py; --write refuses on any miss):
@@ -127,24 +127,36 @@ _restore_and_rebuild() {
 
 # 1) Resolve a keyhog binary to harvest with. In --verify mode the harvest + the
 #    baseline must reflect the EXACT current weights.bin, so we rebuild VERIFY_BIN
-#    first and harvest with it (no stale-sibling ambiguity). Otherwise KEYHOG_BIN
-#    wins, else the freshly-built binary under the resolved target dir.
+#    first and harvest with it (no stale-sibling ambiguity). Outside --verify,
+#    an explicit KEYHOG_BIN is honored; otherwise the loop rebuilds VERIFY_BIN
+#    from the current tree before harvest. It never auto-picks a stale sibling
+#    binary from target/ or PATH.
+USER_KEYHOG_BIN="${KEYHOG_BIN:-}"
 if [[ "${DO_VERIFY}" == "1" ]]; then
   echo "→ [verify] rebuilding the current model so the baseline binary matches weights.bin"
   _rebuild || { echo "error: [verify] pre-ship rebuild failed; aborting before any change" >&2; exit 2; }
   KEYHOG_BIN="${VERIFY_BIN}"
+elif [[ -z "${USER_KEYHOG_BIN}" ]]; then
+  echo "→ rebuilding current keyhog for harvest: ${REBUILD_CMD}"
+  if ! _rebuild; then
+    echo "error: harvest rebuild failed; set KEYHOG_BIN=/path/to/a/current/keyhog" \
+      "only if you intentionally want an external harvester" >&2
+    exit 2
+  fi
+  KEYHOG_BIN="${VERIFY_BIN}"
+else
+  KEYHOG_BIN="${USER_KEYHOG_BIN}"
 fi
-KEYHOG_BIN="${KEYHOG_BIN:-}"
-if [[ -z "${KEYHOG_BIN}" ]]; then
-  for c in \
-      "${TARGET_DIR}/release-fast/keyhog" \
-      "${TARGET_DIR}/release/keyhog" \
-      "$(command -v keyhog || true)"; do
-    [[ -n "${c}" && -x "${c}" ]] && { KEYHOG_BIN="${c}"; break; }
-  done
+if [[ ! -x "${KEYHOG_BIN}" ]]; then
+  echo "error: keyhog binary is not executable: ${KEYHOG_BIN}" >&2
+  exit 2
 fi
-[[ -n "${KEYHOG_BIN}" ]] || { echo "error: no keyhog binary; set KEYHOG_BIN=" >&2; exit 2; }
-echo "→ keyhog: ${KEYHOG_BIN}"
+if ! KEYHOG_VERSION="$("${KEYHOG_BIN}" --version 2>&1)"; then
+  echo "error: keyhog binary failed --version: ${KEYHOG_BIN}" >&2
+  printf '%s\n' "${KEYHOG_VERSION}" >&2
+  exit 2
+fi
+echo "→ keyhog: ${KEYHOG_BIN} (${KEYHOG_VERSION})"
 
 # 2) Harvest the real distribution (labels via the bench's ground-truth overlap).
 echo "→ harvesting real corpus: ${CORPORA}"

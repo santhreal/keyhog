@@ -37,6 +37,10 @@ ml/retrain_loop.sh            # measure only (scratch model, no crate change)
 ml/retrain_loop.sh --write    # ship weights.bin if the gates pass (+.bak)
 ```
 
+Unless `KEYHOG_BIN=/path/to/keyhog` is set explicitly, `retrain_loop.sh`
+rebuilds the current tree before harvesting so stale target/PATH binaries cannot
+define the training distribution.
+
 which runs:
 
 1. **harvest** (`harvest_corpus.py`) — scan the real corpora (CredData) with
@@ -115,13 +119,17 @@ KEYHOG_DUMP_FEATURES=$(find "$CARGO_TARGET_DIR" -path '*examples/dump_features' 
 # 2. generate the corpus
 python3 ml/corpus.py --out ml/data/corpus.jsonl
 
-# 3. harvest real candidates, then train + install. Training reads the same Rust
+# 3. harvest real candidates, then train + install. Build the exact keyhog
+#    binary that harvest receives; a stale scanner changes the training data.
+#    Training reads the same Rust
 #    serve-path feature extractor via KEYHOG_DUMP_FEATURES, backs up the
 #    existing weights.bin/model_card.json to .bak, and refuses to write unless
 #    synthetic F1 plus aggregate and per-class leakage-free real held-out recall
 #    clear the gates.
+cargo build --release -p keyhog --bin keyhog --features simd
 python3 ml/harvest_corpus.py --corpora "$CRED_CORPORA" \
-  --keyhog-bin target/release/keyhog --out ml/data/real_corpus.jsonl
+  --keyhog-bin "${CARGO_TARGET_DIR:-target}/release/keyhog" \
+  --out ml/data/real_corpus.jsonl
 KEYHOG_DUMP_FEATURES=$(find "$CARGO_TARGET_DIR" -path '*examples/dump_features' -type f | head -1) \
   python3 ml/train_classifier.py --corpus ml/data/corpus.jsonl \
     --real-corpus ml/data/real_corpus.jsonl \
