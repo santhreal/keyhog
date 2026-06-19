@@ -140,6 +140,10 @@ fn sarif_skip_summary() -> Vec<(String, usize)> {
             "scanner decode-through truncated by budget/cap (raw bytes scanned; deeper encoded layers not expanded)".to_string(),
             keyhog_scanner::telemetry::decode_truncation_count(),
         ),
+        (
+            "scanner pattern skipped by invalid detector index (scanner invariant violation; scan partial)".to_string(),
+            keyhog_scanner::telemetry::invalid_detector_index_skip_count(),
+        ),
     ];
 
     #[cfg(feature = "binary")]

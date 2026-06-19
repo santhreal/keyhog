@@ -47,6 +47,7 @@ mod regression_entropy_fast_dispatch_and_sample;
 mod regression_entropy_fma3_dispatch;
 mod regression_fragment_cache_determinism;
 mod regression_instructional_fragment_multibyte_boundary;
+mod regression_invalid_detector_index_skip_counted;
 mod regression_multiline_struct_base_and_fstring_prefix;
 mod regression_org_split_multiline_and_context_api;
 mod regression_slack_three_segment;

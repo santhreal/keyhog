@@ -1573,11 +1573,21 @@ fn telemetry_coverage_gap_counters_have_typed_owner() {
         0,
         "decode truncation coverage gaps must route through record_scanner_coverage_gap"
     );
+    assert_eq!(
+        source
+            .matches("INVALID_DETECTOR_INDEX_SKIPS.fetch_add")
+            .count(),
+        0,
+        "invalid detector-index skips must route through record_scanner_coverage_gap"
+    );
     assert!(
         source.contains(
             "record_scanner_coverage_gap(ScannerCoverageGapEvent::StructuredParseFailure"
         ) && source
-            .contains("record_scanner_coverage_gap(ScannerCoverageGapEvent::DecodeTruncation"),
+            .contains("record_scanner_coverage_gap(ScannerCoverageGapEvent::DecodeTruncation")
+            && source.contains(
+                "record_scanner_coverage_gap(ScannerCoverageGapEvent::InvalidDetectorIndexSkip"
+            ),
         "public recorder wrappers must delegate to the typed scanner coverage-gap owner"
     );
 }

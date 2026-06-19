@@ -72,6 +72,7 @@ impl CompiledScanner {
         // invariant whose violation should degrade one finding gracefully
         // rather than crash an entire repository scan.
         let Some(detector) = self.detectors.get(entry.detector_index) else {
+            crate::telemetry::record_invalid_detector_index_skip();
             tracing::warn!(
                 detector_index = entry.detector_index,
                 detectors_len = self.detectors.len(),

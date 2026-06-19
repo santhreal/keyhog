@@ -168,6 +168,11 @@ static STRUCTURED_PARSE_FAILURES: AtomicUsize = AtomicUsize::new(0);
 /// still scanned, but secrets only reachable after an omitted recursive decode
 /// layer may be missed, so the CLI must surface this as a coverage gap.
 static DECODE_TRUNCATIONS: AtomicUsize = AtomicUsize::new(0);
+/// A compiled pattern pointed at a detector index outside the loaded detector
+/// table. That is a scanner invariant violation: the affected pattern cannot
+/// safely emit a finding because metadata lookup would be wrong/panic, so the
+/// scan is partial and the operator must see the count.
+static INVALID_DETECTOR_INDEX_SKIPS: AtomicUsize = AtomicUsize::new(0);
 
 /// Scanner coverage gap recorded when a scanner-owned transform did not run to
 /// full coverage. These are not source skips: raw bytes still flow through the
@@ -176,6 +181,7 @@ static DECODE_TRUNCATIONS: AtomicUsize = AtomicUsize::new(0);
 pub(crate) enum ScannerCoverageGapEvent {
     StructuredParseFailure,
     DecodeTruncation,
+    InvalidDetectorIndexSkip,
 }
 
 impl ScannerCoverageGapEvent {
@@ -183,6 +189,7 @@ impl ScannerCoverageGapEvent {
         match self {
             Self::StructuredParseFailure => &STRUCTURED_PARSE_FAILURES,
             Self::DecodeTruncation => &DECODE_TRUNCATIONS,
+            Self::InvalidDetectorIndexSkip => &INVALID_DETECTOR_INDEX_SKIPS,
         }
     }
 }
@@ -423,6 +430,18 @@ pub fn decode_truncation_count() -> usize {
     DECODE_TRUNCATIONS.load(Ordering::Relaxed)
 }
 
+/// Record that a compiled pattern could not be extracted because its
+/// `detector_index` no longer resolves to a loaded detector.
+pub(crate) fn record_invalid_detector_index_skip() {
+    let _receipt = record_scanner_coverage_gap(ScannerCoverageGapEvent::InvalidDetectorIndexSkip);
+}
+
+/// Count of compiled-pattern extraction attempts skipped by invalid detector
+/// indices this scan.
+pub fn invalid_detector_index_skip_count() -> usize {
+    INVALID_DETECTOR_INDEX_SKIPS.load(Ordering::Relaxed)
+}
+
 /// Append events into the per-process buffer without going through the
 /// `record_example_suppression` path (no counter bump, no dogfood
 /// enable-check). Used by the daemon client to replay events captured
@@ -494,6 +513,7 @@ pub fn reset_for_scan() {
     GPU_DISPATCHES.store(0, Ordering::Relaxed);
     STRUCTURED_PARSE_FAILURES.store(0, Ordering::Relaxed);
     DECODE_TRUNCATIONS.store(0, Ordering::Relaxed);
+    INVALID_DETECTOR_INDEX_SKIPS.store(0, Ordering::Relaxed);
     if let Ok(mut events) = t.events.lock() {
         events.clear();
     }

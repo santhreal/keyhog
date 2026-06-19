@@ -42,6 +42,7 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
     ) {
         let Some(detector) = self.detectors.get(entry.detector_index) else {
+            crate::telemetry::record_invalid_detector_index_skip();
             tracing::warn!(
                 detector_index = entry.detector_index,
                 "extract_anchored: detector_index out of range; skipping pattern"
