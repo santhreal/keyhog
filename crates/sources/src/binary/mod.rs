@@ -53,6 +53,7 @@ use wait_timeout::ChildExt;
 
 /// Minimum printable string length for strings-mode extraction.
 pub(crate) const MIN_STRING_LEN: usize = 8;
+const GHIDRA_STDERR_EXCERPT_BYTES: usize = 4096;
 
 /// Binary analysis source for executables and shared libraries.
 ///
@@ -125,7 +126,7 @@ impl BinarySource {
         let output_path = tmp_dir.path().join("decompiled.c");
         ghidra::write_ghidra_script(&script_path, &output_path)?;
 
-        let status = Command::new(ghidra_bin)
+        let mut child = Command::new(ghidra_bin)
             .arg(&project_dir)
             .arg("keyhog_analysis")
             .arg("-import")
@@ -134,22 +135,43 @@ impl BinarySource {
             .arg(&script_path)
             .arg("-deleteProject")
             .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
             .spawn()
-            .and_then(|mut child| {
-                let timeout = crate::timeouts::GHIDRA_ANALYSIS;
-                match child.wait_timeout(timeout).map_err(std::io::Error::other)? {
-                    Some(status) => Ok(status),
-                    None => {
-                        let _ = child.kill(); // LAW10: unused-binding marker; no runtime effect, not a fallback
-                        let _ = child.wait(); // LAW10: unused-binding marker; no runtime effect, not a fallback
-                        Err(std::io::Error::new(
-                            std::io::ErrorKind::TimedOut,
-                            format!("Ghidra analysis timed out after {}s", timeout.as_secs()),
-                        ))
-                    }
+            .map_err(SourceError::Io)?;
+        let stderr_capture = child.stderr.take().map(capture_ghidra_stderr_excerpt);
+        let timeout = crate::timeouts::GHIDRA_ANALYSIS;
+        let status = match child.wait_timeout(timeout) {
+            Ok(Some(status)) => Ok(status),
+            Ok(None) => {
+                let _ = child.kill(); // LAW10: unused-binding marker; no runtime effect, not a fallback
+                let _ = child.wait(); // LAW10: unused-binding marker; no runtime effect, not a fallback
+                Err(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    format!("Ghidra analysis timed out after {}s", timeout.as_secs()),
+                ))
+            }
+            Err(error) => {
+                let _ = child.kill(); // LAW10: unused-binding marker; no runtime effect, not a fallback
+                let _ = child.wait(); // LAW10: unused-binding marker; no runtime effect, not a fallback
+                Err(std::io::Error::other(format!(
+                    "Ghidra process wait failed: {error}"
+                )))
+            }
+        };
+        let stderr_excerpt = match stderr_capture {
+            Some(handle) => match handle.join() {
+                Ok(excerpt) => excerpt,
+                Err(panic) => {
+                    drop(panic);
+                    eprintln!(
+                        "keyhog: WARNING: internal Ghidra stderr capture failed; \
+                         deep-analysis failure reporting will use process status only."
+                    );
+                    String::new()
                 }
-            });
+            },
+            None => String::new(), // LAW10: stderr was requested as piped; absent handle only removes extra diagnostics, while the status warning below still fires.
+        };
 
         match status {
             Ok(s) if s.success() && output_path.exists() => {
@@ -166,8 +188,13 @@ impl BinarySource {
                     Ok(s) => format!("exited unsuccessfully (status {s}) or produced no output"),
                     Err(e) => e.to_string(),
                 };
+                let diagnostic = if stderr_excerpt.is_empty() {
+                    String::new()
+                } else {
+                    format!("; ghidra stderr: {stderr_excerpt}")
+                };
                 eprintln!(
-                    "keyhog: WARNING: Ghidra decompiler analysis failed for {} ({reason}); \
+                    "keyhog: WARNING: Ghidra decompiler analysis failed for {} ({reason}{diagnostic}); \
                      falling back to shallow strings-only extraction — encoded/split secrets \
                      this binary may carry will NOT be recovered. Re-run after fixing Ghidra to \
                      restore deep analysis.",
@@ -320,6 +347,57 @@ impl BinarySource {
 
         chunks
     }
+}
+
+fn capture_ghidra_stderr_excerpt(
+    mut stderr: std::process::ChildStderr,
+) -> std::thread::JoinHandle<String> {
+    std::thread::spawn(move || {
+        let mut captured = Vec::with_capacity(GHIDRA_STDERR_EXCERPT_BYTES);
+        let mut buffer = [0_u8; 1024];
+        loop {
+            match stderr.read(&mut buffer) {
+                Ok(0) => break,
+                Ok(n) => {
+                    let remaining = GHIDRA_STDERR_EXCERPT_BYTES.saturating_sub(captured.len());
+                    if remaining > 0 {
+                        captured.extend_from_slice(&buffer[..n.min(remaining)]);
+                    }
+                }
+                Err(error) => {
+                    let suffix = format!(" [stderr capture read failed: {error}]");
+                    let remaining = GHIDRA_STDERR_EXCERPT_BYTES.saturating_sub(captured.len());
+                    if remaining > 0 {
+                        let bytes = suffix.as_bytes();
+                        captured.extend_from_slice(&bytes[..bytes.len().min(remaining)]);
+                    }
+                    break;
+                }
+            }
+        }
+        sanitize_ghidra_stderr_excerpt(&captured)
+    })
+}
+
+fn sanitize_ghidra_stderr_excerpt(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes);
+    let mut out = String::new();
+    let mut pending_space = false;
+    for ch in text.chars() {
+        if ch.is_whitespace() {
+            pending_space = !out.is_empty();
+            continue;
+        }
+        if pending_space {
+            out.push(' ');
+            pending_space = false;
+        }
+        if ch.is_control() {
+            continue;
+        }
+        out.push(ch);
+    }
+    out
 }
 
 impl Source for BinarySource {

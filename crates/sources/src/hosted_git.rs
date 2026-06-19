@@ -388,18 +388,10 @@ impl GitAskpassAuth {
 
         let askpass_path = if cfg!(unix) {
             let path = dir.path().join("askpass.sh");
-            std::fs::write(
+            write_askpass_file(
                 &path,
-                "#!/bin/sh\nset -eu\nDIR=\"$(dirname \"$0\")\"\ncase \"$1\" in\n*Username*) exec cat -- \"$DIR/username\" ;;\n*) exec cat -- \"$DIR/token\" ;;\nesac\n",
-            )
-            .map_err(SourceError::Io)?;
-
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700))
-                    .map_err(SourceError::Io)?;
-            }
+                b"#!/bin/sh\nset -eu\nDIR=\"$(dirname \"$0\")\"\ncase \"$1\" in\n*Username*) exec cat -- \"$DIR/username\" ;;\n*) exec cat -- \"$DIR/token\" ;;\nesac\n",
+            )?;
             path
         } else {
             let path = dir.path().join("askpass.bat");
@@ -408,7 +400,7 @@ impl GitAskpassAuth {
                 username_path.display(),
                 token_path.display()
             );
-            std::fs::write(&path, content).map_err(SourceError::Io)?;
+            write_askpass_file(&path, content.as_bytes())?;
             path
         };
 
@@ -420,6 +412,18 @@ impl GitAskpassAuth {
 }
 
 fn write_secret_file(path: &Path, bytes: &[u8]) -> Result<(), SourceError> {
+    write_private_file(path, bytes, 0o600)
+}
+
+fn write_askpass_file(path: &Path, bytes: &[u8]) -> Result<(), SourceError> {
+    write_private_file(path, bytes, 0o700)
+}
+
+fn write_private_file(
+    path: &Path,
+    bytes: &[u8],
+    #[cfg_attr(not(unix), allow(unused_variables))] unix_mode: u32,
+) -> Result<(), SourceError> {
     use std::io::Write;
 
     let mut options = std::fs::OpenOptions::new();
@@ -428,7 +432,7 @@ fn write_secret_file(path: &Path, bytes: &[u8]) -> Result<(), SourceError> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
+        options.mode(unix_mode);
     }
 
     let mut file = options.open(path).map_err(SourceError::Io)?;

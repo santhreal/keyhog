@@ -643,3 +643,28 @@ fn ghidra_discovery_uses_trusted_paths_not_path_which() {
         "Ghidra discovery must not shell through which/PATH to find analyzeHeadless"
     );
 }
+
+#[test]
+fn hosted_git_askpass_uses_private_create_new_files() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let hosted_git = std::fs::read_to_string(root.join("src/hosted_git.rs"))
+        .expect("hosted_git source readable");
+
+    assert!(
+        hosted_git.contains("fn write_private_file(")
+            && hosted_git.contains("options.write(true).create_new(true)")
+            && hosted_git.contains("write_askpass_file(&path"),
+        "hosted Git credentials and askpass scripts must share create_new private-file creation"
+    );
+    assert!(
+        hosted_git.contains("options.mode(unix_mode)")
+            && hosted_git.contains("write_private_file(path, bytes, 0o600)")
+            && hosted_git.contains("write_private_file(path, bytes, 0o700)"),
+        "Unix hosted Git auth files must set secret/script permissions before file creation"
+    );
+    assert!(
+        !hosted_git.contains("std::fs::write(\n                &path")
+            && !hosted_git.contains("std::fs::write(&path"),
+        "hosted Git askpass material must not use plain fs::write"
+    );
+}
