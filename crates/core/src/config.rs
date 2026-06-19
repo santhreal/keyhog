@@ -140,8 +140,8 @@ impl Default for ScanConfig {
             // Bench-tuned floor (SecretBench mirror grid-sweep 2026-05-30):
             // 0.40 maximises F1 (0.8642, P=0.984, FP=37) and is the precision
             // sweet spot. 0.30 admits a low-confidence FP band (FP 174); 0.50
-            // is WORSE on both axes (the floor is non-monotonic in FP - see
-            // the scan-time/ML entanglement bug tracked in backlog DET-08).
+            // is WORSE on both axes because the scan-time/ML confidence
+            // interaction is non-monotonic in FP.
             // This is the canonical tuned == benched == shipped floor; the
             // post-scan gate (orchestrator/postprocess.rs) and the scan-time
             // generic gate (engine/phase2_generic.rs) both resolve to it.

@@ -65,7 +65,7 @@ def _cargo_target_dir() -> pathlib.Path | None:
 def _freshly_built_keyhog() -> str | None:
     """The release binary the current source builds to, so a bare
     ``python -m bench`` scores HEAD, not a stale ``keyhog`` on PATH (the
-    stale-binary footgun that silently reported worse recall; backlog MC-06)."""
+    stale-binary footgun that silently reported worse recall)."""
     target = _cargo_target_dir()
     if target is None:
         return None

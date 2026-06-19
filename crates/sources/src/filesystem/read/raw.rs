@@ -50,9 +50,8 @@ pub(in crate::filesystem) fn read_file_buffered(path: &Path, size_hint: u64) -> 
 /// Open `path` in a symlink-resistant way. POSIX gets `O_NOFOLLOW`;
 /// Windows checks `symlink_metadata` first (small TOCTOU window, but
 /// acceptable for a defensive scanner - the attacker would have to
-/// win a race they don't see initiated). The kernel-level fix on
-/// Windows would route through `CreateFileW` with
-/// `FILE_FLAG_OPEN_REPARSE_POINT`; tracked as backlog.
+/// win a race they don't see initiated). The shipped Windows contract is
+/// explicit refusal of symlink paths before the standard-library open.
 pub(in crate::filesystem) fn open_file_safe(path: &Path) -> std::io::Result<File> {
     let mut options = std::fs::OpenOptions::new();
     options.read(true);
@@ -68,9 +67,8 @@ pub(in crate::filesystem) fn open_file_safe(path: &Path) -> std::io::Result<File
     // window between `symlink_metadata` and `open` - for our defensive-
     // secret-scanning threat model that's an acceptable trade-off; the
     // attacker would need to win a race they don't even see initiated.
-    // The proper kernel-level fix would route through
-    // `windows-sys::Win32::Storage::FileSystem::CreateFileW` with
-    // `FILE_FLAG_OPEN_REPARSE_POINT`; tracked as backlog.
+    // Keep this contract local and explicit: refuse a symlink path before
+    // opening it through the cross-platform standard-library path.
     #[cfg(windows)]
     {
         if let Ok(meta) = std::fs::symlink_metadata(path) {
@@ -94,9 +92,8 @@ pub(in crate::filesystem) fn read_file_safe(
     // around the actual read for any file under ~1 GB. Plain buffered read
     // (and the `mmap` path used by `read_file_mmap`) outperformed it on the
     // standard corpus; see docs/EXECUTION_PLAN.md sources finding.
-    // If io_uring becomes worthwhile again it should batch hundreds of files
-    // through one shared ring - that's a significant rewrite tracked in the
-    // backlog, NOT in this hot-path read.
+    // io_uring belongs in a shared batched owner with benchmark proof, not as
+    // per-file ring setup in this hot-path read.
     let mut file = open_file_safe(path)?;
     // Hint to the kernel: this fd will be read sequentially start-to-end.
     // posix_fadvise(POSIX_FADV_SEQUENTIAL) doubles the readahead window

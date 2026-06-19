@@ -605,7 +605,7 @@ pub struct ScanArgs {
     /// and nothing else. This is the hermetic, reproducible config used by CI
     /// gates and the benchmark harness, so the measured behavior is the shipped
     /// default BY DESIGN and cannot silently drift when a stray `.keyhog.toml`
-    /// appears on an ancestor path (backlog MC-07).
+    /// appears on an ancestor path; the hermetic-config tests pin that contract.
     #[arg(long, conflicts_with = "config")]
     pub no_config: bool,
 
