@@ -51,6 +51,10 @@
 - Fix stale `RawMatch` scanner test fixtures to use the production `[u8; 32]` credential hash contract.
 - Split structured parser implementations by format family and move remaining parser inline tests into the external scanner test harness.
 - Add a GPU phase2 empty-hit fast path matching SIMD coalesced no-hit fallback admission, with a regression gate for the skip-before-prepare contract.
+- Preserve detector regex case-insensitivity when lowering prefixless phase-2
+  admission patterns into the GPU regex-DFA catalog; plain variants stay
+  case-sensitive, and replay tests compare the lowered DFA admission result
+  against the CPU `LazyRegex` policy.
 - Keep high-entropy base64-like secrets with internal `+`/`/` punctuation through generic and entropy fallbacks by bypassing binary-decoy suppression on the punctuation payload class, closing `encoded_binary`-driven false negatives.
 - Add adversarial coverage for the base64 punctuated high-entropy class and a fixed-token regression for `TVo...+...` shape that previously dropped at `is_encoded_binary`.
 

@@ -9,6 +9,7 @@
 
 use super::phase2::gate_prefix_literals;
 use super::*;
+use std::borrow::Cow;
 use std::cell::RefCell;
 use std::sync::OnceLock;
 
@@ -454,10 +455,11 @@ fn build_shard(
         let (pattern, _) = phase2_patterns
             .get(idx)
             .ok_or_else(|| format!("phase-2 index {idx} is out of range"))?;
-        sources.push(pattern.regex.as_str());
+        sources.push(regex_dfa_source_for_pattern(pattern));
     }
+    let source_refs: Vec<&str> = sources.iter().map(|source| source.as_ref()).collect();
     let mut pipeline = vyre_libs::scan::build_regex_dfa_unanchored(
-        &sources,
+        &source_refs,
         PHASE2_GPU_DFA_MAX_MATCHES,
         PHASE2_GPU_DFA_MAX_STATES,
     )
@@ -465,10 +467,10 @@ fn build_shard(
     if !use_subgroup_coalesce {
         pipeline.program = vyre_libs::scan::classic_ac::try_build_ac_bounded_ranges_program_ext(
             &pipeline.dfa,
-            u32::try_from(sources.len()).map_err(|error| {
+            u32::try_from(source_refs.len()).map_err(|error| {
                 format!(
                     "phase-2 GPU regex-DFA shard pattern count {} exceeds u32 ABI: {error}",
-                    sources.len()
+                    source_refs.len()
                 )
             })?,
             PHASE2_GPU_DFA_MAX_MATCHES,
@@ -482,6 +484,19 @@ fn build_shard(
         pipeline,
         phase2_indices: indices.to_vec(),
     })
+}
+
+fn regex_dfa_source_for_pattern(pattern: &CompiledPattern) -> Cow<'_, str> {
+    let source = pattern.regex.as_str();
+    if pattern.regex.is_case_insensitive() {
+        let mut wrapped = String::with_capacity(source.len() + "(?i:)".len());
+        wrapped.push_str("(?i:");
+        wrapped.push_str(source);
+        wrapped.push(')');
+        Cow::Owned(wrapped)
+    } else {
+        Cow::Borrowed(source)
+    }
 }
 
 fn build_raw_region_batch(
@@ -581,6 +596,72 @@ fn region_for_offset(region_starts: &[u32], offset: u32) -> Option<usize> {
 mod tests {
     use super::*;
 
+    fn test_pattern(src: &str, case_insensitive: bool) -> CompiledPattern {
+        let regex = if case_insensitive {
+            LazyRegex::detector(src)
+        } else {
+            LazyRegex::plain(src)
+        };
+        CompiledPattern {
+            detector_index: 0,
+            regex,
+            group: None,
+            client_safe: false,
+            homoglyph_variant: false,
+        }
+    }
+
+    fn replay_catalog_admission(
+        catalog: &Phase2GpuDfaCatalog,
+        chunks: &[keyhog_core::Chunk],
+    ) -> Vec<bool> {
+        let mut scratch = Phase2GpuDfaScratch::default();
+        build_raw_region_batch(chunks, &mut scratch).expect("region batch");
+        let mut admitted = vec![false; chunks.len()];
+        for shard in &catalog.shards {
+            replay_shard_admission(shard, &scratch, &mut admitted);
+        }
+        admitted
+    }
+
+    fn replay_shard_admission(
+        shard: &Phase2GpuDfaShard,
+        scratch: &Phase2GpuDfaScratch,
+        admitted: &mut [bool],
+    ) {
+        let dfa = &shard.pipeline.dfa;
+        let mut state = 0u32;
+        for (pos, &byte) in scratch.haystack.iter().enumerate() {
+            state = dfa.transitions[(state as usize) * 256 + byte as usize];
+            let begin = dfa.output_offsets[state as usize] as usize;
+            let end = dfa.output_offsets[state as usize + 1] as usize;
+            for &pattern_id in &dfa.output_records[begin..end] {
+                let pattern_len = match shard.pipeline.pattern_lengths.get(pattern_id as usize) {
+                    Some(&value) => value,
+                    None => {
+                        panic!(
+                            "replayed GPU DFA emitted pattern id {} outside pattern_lengths len {}",
+                            pattern_id,
+                            shard.pipeline.pattern_lengths.len()
+                        )
+                    }
+                };
+                let end_offset = (pos as u32).saturating_add(1);
+                let start_offset = end_offset.saturating_sub(pattern_len);
+                if let Some(region) = match_region(
+                    &scratch.region_starts,
+                    scratch.haystack.len(),
+                    start_offset,
+                    end_offset,
+                ) {
+                    if let Some(slot) = admitted.get_mut(region) {
+                        *slot = true;
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn raw_region_batch_preserves_case_separates_and_clears() {
         let chunks = [
@@ -623,6 +704,78 @@ mod tests {
         );
         assert!(!Phase2GpuDfaProgramKind::CudaCompatible.use_subgroup_coalesce());
         assert!(Phase2GpuDfaProgramKind::SubgroupCoalesced.use_subgroup_coalesce());
+    }
+
+    #[test]
+    fn regex_dfa_source_preserves_detector_case_policy() {
+        let detector = test_pattern("abc[0-9]{2}", true);
+        let plain = test_pattern("abc[0-9]{2}", false);
+
+        assert_eq!(
+            regex_dfa_source_for_pattern(&detector).as_ref(),
+            "(?i:abc[0-9]{2})",
+            "detector regexes are compiled case-insensitive on the CPU path and must lower the same way for GPU DFA admission"
+        );
+        assert_eq!(
+            regex_dfa_source_for_pattern(&plain).as_ref(),
+            "abc[0-9]{2}",
+            "plain homoglyph variants must stay case-sensitive when lowered"
+        );
+    }
+
+    #[test]
+    fn replayed_gpu_dfa_admission_matches_cpu_regex_case_policy() {
+        let patterns = vec![(test_pattern("abc[0-9]{2}", true), Vec::new())];
+        let catalog = Phase2GpuDfaCatalog::build_from_selected_candidates(
+            &patterns,
+            1,
+            &[0],
+            Phase2GpuDfaProgramKind::CudaCompatible,
+        )
+        .expect("case-insensitive detector pattern should lower");
+        let chunks = [
+            keyhog_core::Chunk::from("prefix ABC12 suffix"),
+            keyhog_core::Chunk::from("prefix abc34 suffix"),
+            keyhog_core::Chunk::from("prefix xyz99 suffix"),
+        ];
+        let gpu_admitted = replay_catalog_admission(&catalog, &chunks);
+        let cpu_admitted: Vec<bool> = chunks
+            .iter()
+            .map(|chunk| patterns[0].0.regex.get().is_match(&chunk.data))
+            .collect();
+
+        assert_eq!(
+            gpu_admitted, cpu_admitted,
+            "GPU regex-DFA admission must mirror the detector LazyRegex case policy"
+        );
+        assert_eq!(gpu_admitted, vec![true, true, false]);
+    }
+
+    #[test]
+    fn replayed_gpu_dfa_admission_keeps_plain_patterns_case_sensitive() {
+        let patterns = vec![(test_pattern("abc[0-9]{2}", false), Vec::new())];
+        let catalog = Phase2GpuDfaCatalog::build_from_selected_candidates(
+            &patterns,
+            1,
+            &[0],
+            Phase2GpuDfaProgramKind::CudaCompatible,
+        )
+        .expect("plain pattern should lower");
+        let chunks = [
+            keyhog_core::Chunk::from("prefix ABC12 suffix"),
+            keyhog_core::Chunk::from("prefix abc34 suffix"),
+        ];
+        let gpu_admitted = replay_catalog_admission(&catalog, &chunks);
+        let cpu_admitted: Vec<bool> = chunks
+            .iter()
+            .map(|chunk| patterns[0].0.regex.get().is_match(&chunk.data))
+            .collect();
+
+        assert_eq!(
+            gpu_admitted, cpu_admitted,
+            "plain phase-2 variants must not become case-insensitive in the GPU DFA catalog"
+        );
+        assert_eq!(gpu_admitted, vec![false, true]);
     }
 
     #[test]
