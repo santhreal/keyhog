@@ -10,6 +10,11 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         "/src/engine/gpu_region_batch.rs"
     ))
     .expect("gpu_region_batch.rs readable");
+    let gpu_dfa_src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/phase2_gpu_dfa.rs"
+    ))
+    .expect("phase2 gpu dfa readable");
     assert!(
         !dispatch_src.contains(".as_bytes().to_vec()")
             && !dispatch_src.contains("let mut haystack = Vec::new()"),
@@ -53,17 +58,12 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
     );
     assert!(
         dispatch_src.contains("validate_phase2_gpu_trigger_rows")
-            && dispatch_src.contains("refusing to run mismatched phase-2 admission"),
+            && gpu_dfa_src.contains("refusing to run mismatched phase-2 admission"),
         "region dispatch must fail loud before phase-2 if trigger row count drifts from chunk count"
     );
     let engine_mod_src =
         std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/mod.rs"))
             .expect("engine mod readable");
-    let gpu_dfa_src = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/engine/phase2_gpu_dfa.rs"
-    ))
-    .expect("phase2 gpu dfa readable");
     assert!(
         engine_mod_src.contains("Phase2GpuDfaCatalogCache")
             && !engine_mod_src.contains("OnceLock<Option<phase2_gpu_dfa::Phase2GpuDfaCatalog>>")
