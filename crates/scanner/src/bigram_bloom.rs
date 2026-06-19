@@ -229,7 +229,8 @@ impl BigramBloom {
     }
 
     /// Whether the table is saturated enough that `maybe_overlaps`
-    /// short-circuits to `true`. Exposed for diagnostics and tests.
+    /// short-circuits to `true`.
+    #[cfg(test)]
     pub(crate) fn is_saturated(&self) -> bool {
         self.saturated
     }
@@ -241,6 +242,7 @@ impl BigramBloom {
     /// `testing::BigramBloom` so the differential test in
     /// `tests/unit/bigram_bloom.rs` can compare against the private
     /// `bits`/`bigram_slot` internals.
+    #[cfg(test)]
     pub(crate) fn scalar_overlaps_reference(&self, chunk: &[u8]) -> bool {
         if chunk.len() < 2 {
             return true;
@@ -255,6 +257,7 @@ impl BigramBloom {
     /// the saturation threshold), so the external suite can exercise the
     /// short-circuit path without reaching the private `insert_row` /
     /// `recompute_saturation` mutators.
+    #[cfg(test)]
     pub(crate) fn saturated_for_test() -> Self {
         let mut bloom = Self::empty();
         // 158 full rows * 256 slots = 40448 set bits > the 3/5 threshold.

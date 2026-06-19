@@ -4,22 +4,22 @@ use super::*;
 use keyhog_core::SensitiveString;
 use std::collections::{HashSet, VecDeque};
 
-pub(crate) fn window_end_offset(text: &str, start: usize, max_len: usize) -> usize {
+pub fn window_end_offset(text: &str, start: usize, max_len: usize) -> usize {
     ceil_char_boundary(text, start.saturating_add(max_len).min(text.len()))
 }
 
-pub(crate) fn next_window_offset(text: &str, current_end: usize, overlap: usize) -> usize {
+pub fn next_window_offset(text: &str, current_end: usize, overlap: usize) -> usize {
     ceil_char_boundary(text, current_end.saturating_sub(overlap))
 }
 
-pub(crate) fn window_chunk(chunk: &Chunk, start: usize, end: usize) -> Chunk {
+pub fn window_chunk(chunk: &Chunk, start: usize, end: usize) -> Chunk {
     Chunk {
         data: chunk.data.as_ref()[start..end].to_string().into(),
         metadata: chunk.metadata.clone(),
     }
 }
 
-pub(crate) fn record_window_match(
+pub fn record_window_match(
     line_offsets: &[usize],
     window_offset: usize,
     m: &mut RawMatch,
@@ -55,13 +55,12 @@ pub(crate) fn record_window_match(
     true
 }
 
-#[cfg(test)]
-pub(crate) fn line_number_for_offset(text: &str, offset: usize) -> usize {
+pub fn line_number_for_offset(text: &str, offset: usize) -> usize {
     let safe_offset = floor_char_boundary(text, offset.min(text.len()));
     text[..safe_offset].chars().filter(|&ch| ch == '\n').count() + 1
 }
 
-pub(crate) fn floor_char_boundary(text: &str, index: usize) -> usize {
+pub fn floor_char_boundary(text: &str, index: usize) -> usize {
     if index >= text.len() {
         return text.len();
     }

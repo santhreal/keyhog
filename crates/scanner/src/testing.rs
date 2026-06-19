@@ -333,17 +333,17 @@ pub(crate) use crate::compiler::{
     extract_inner_literals, extract_literal_prefix, extract_literal_prefixes, is_escaped_literal,
     rewrite_alternation_prefix, split_leading_inline_flag,
 };
-#[cfg(test)]
-pub(crate) use crate::engine::{
+pub use crate::engine::{
     floor_char_boundary, line_number_for_offset, next_window_offset, record_window_match,
     window_chunk, window_end_offset,
 };
 #[cfg(test)]
 pub(crate) use crate::normalize_chunk_data;
+pub use crate::pipeline::compute_line_offsets;
 #[cfg(test)]
 pub(crate) use crate::pipeline::{
-    compute_line_offsets, detector_weak_anchor, is_within_hex_context, local_context_window,
-    match_entropy, normalize_scannable_chunk, should_suppress_known_example_credential,
+    detector_weak_anchor, is_within_hex_context, local_context_window, match_entropy,
+    normalize_scannable_chunk, should_suppress_known_example_credential,
     should_suppress_known_example_credential_with_source, should_suppress_named_detector_finding,
 };
 #[cfg(test)]
@@ -874,7 +874,7 @@ impl AlphabetMask {
         Self(crate::alphabet_filter::AlphabetMask::from_bytes(bytes))
     }
 
-    pub fn from_bytes_scalar(bytes: &[u8]) -> Self {
+    fn from_bytes_scalar(bytes: &[u8]) -> Self {
         Self(crate::alphabet_filter::AlphabetMask::from_bytes_scalar(
             bytes,
         ))
@@ -922,7 +922,7 @@ impl AlphabetScreen {
         self.0.screen(data)
     }
 
-    pub fn screen_scalar_fallback(&self, data: &[u8]) -> bool {
+    fn screen_scalar_fallback(&self, data: &[u8]) -> bool {
         if data.is_empty() {
             return false;
         }
@@ -1094,11 +1094,13 @@ pub(crate) mod unicode_hardening {
 pub struct BigramBloom(crate::bigram_bloom::BigramBloom);
 
 impl BigramBloom {
-    pub fn empty() -> Self {
+    #[cfg(test)]
+    pub(crate) fn empty() -> Self {
         Self(crate::bigram_bloom::BigramBloom::empty())
     }
 
-    pub fn insert_all(&mut self, bytes: &[u8]) {
+    #[cfg(test)]
+    pub(crate) fn insert_all(&mut self, bytes: &[u8]) {
         self.0.insert_all(bytes);
     }
 
@@ -1112,19 +1114,23 @@ impl BigramBloom {
         self.0.maybe_overlaps(chunk)
     }
 
-    pub fn popcount(&self) -> u32 {
+    #[cfg(test)]
+    pub(crate) fn popcount(&self) -> u32 {
         self.0.popcount()
     }
 
-    pub fn is_saturated(&self) -> bool {
+    #[cfg(test)]
+    pub(crate) fn is_saturated(&self) -> bool {
         self.0.is_saturated()
     }
 
-    pub fn scalar_overlaps_reference(&self, chunk: &[u8]) -> bool {
+    #[cfg(test)]
+    pub(crate) fn scalar_overlaps_reference(&self, chunk: &[u8]) -> bool {
         self.0.scalar_overlaps_reference(chunk)
     }
 
-    pub fn saturated_for_test() -> Self {
+    #[cfg(test)]
+    pub(crate) fn saturated_for_test() -> Self {
         Self(crate::bigram_bloom::BigramBloom::saturated_for_test())
     }
 }

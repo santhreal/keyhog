@@ -79,7 +79,7 @@ pub(crate) fn local_context_window(text: &str, line: usize, radius: usize) -> &s
 ///
 /// Uses `memchr` for SIMD-accelerated newline scanning (~4x faster
 /// than `str::match_indices` on inputs > 1 KiB).
-pub(crate) fn compute_line_offsets(text: &str) -> Vec<usize> {
+pub fn compute_line_offsets(text: &str) -> Vec<usize> {
     let bytes = text.as_bytes();
     // Pre-size: average line length ~40 chars is typical for source code.
     let estimated_lines = bytes.len() / 40 + 1;

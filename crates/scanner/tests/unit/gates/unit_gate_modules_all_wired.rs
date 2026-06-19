@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-fn declared_modules(mod_rs_src: &str) -> BTreeSet<String> {
+pub(super) fn declared_modules(mod_rs_src: &str) -> BTreeSet<String> {
     mod_rs_src
         .lines()
         .filter_map(|line| {
@@ -16,7 +16,7 @@ fn declared_modules(mod_rs_src: &str) -> BTreeSet<String> {
         .collect()
 }
 
-fn rs_file_stems(dir: &Path) -> BTreeSet<String> {
+pub(super) fn rs_file_stems(dir: &Path) -> BTreeSet<String> {
     std::fs::read_dir(dir)
         .unwrap_or_else(|e| panic!("read {}: {e}", dir.display()))
         .map(|entry| {

@@ -128,11 +128,11 @@ pub use rule_pipeline::megascan_input_len;
 pub(crate) use scan_inner_profile::scan_inner_profile_dump;
 #[cfg(test)]
 pub(crate) use scan_postprocess::decode_profile_dump;
-pub(crate) use windowed_support::{ceil_char_boundary, floor_char_boundary};
-#[cfg(test)]
-pub(crate) use windowed_support::{line_number_for_offset, record_window_match};
-#[cfg(test)]
-pub(crate) use windowed_support::{next_window_offset, window_chunk, window_end_offset};
+pub(crate) use windowed_support::ceil_char_boundary;
+pub use windowed_support::{
+    floor_char_boundary, line_number_for_offset, next_window_offset, record_window_match,
+    window_chunk, window_end_offset,
+};
 
 use crate::compiler::*;
 use crate::error::Result;
