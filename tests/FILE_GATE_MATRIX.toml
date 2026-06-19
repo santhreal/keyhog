@@ -67,6 +67,9 @@ path = "crates/cli/src/orchestrator/run.rs"
 path = "crates/cli/src/orchestrator_config.rs"
 
 [[module]]
+path = "crates/cli/src/orchestrator_config/detectors.rs"
+
+[[module]]
 path = "crates/cli/src/path_validation.rs"
 
 [[module]]

@@ -275,15 +275,27 @@ fn config_feature_limits_reach_source_limits() {
 
 #[test]
 fn detector_parse_cache_has_single_cli_owner() {
-    let cli_src = include_str!("../../src/orchestrator_config.rs");
+    let cli_src = include_str!("../../src/orchestrator_config/detectors.rs");
+    let parent_src = include_str!("../../src/orchestrator_config.rs");
     let core_src = include_str!("../../../core/src/spec/load.rs");
     assert!(
         cli_src.contains("struct DetectorCacheFile") && cli_src.contains("source_fingerprint"),
         "CLI detector loading owns the XDG parse-cache schema and source fingerprint"
     );
     assert!(
+        parent_src.contains("mod detectors;")
+            && parent_src.contains("pub(crate) use detectors::{"),
+        "orchestrator_config parent must expose the detector owner without keeping the cache implementation"
+    );
+    assert!(
+        !parent_src.contains("struct DetectorCacheFile")
+            && !parent_src.contains("save_detector_cache")
+            && !parent_src.contains("load_detector_cache"),
+        "orchestrator_config parent must not keep a second detector parse-cache schema/parser"
+    );
+    assert!(
         !cli_src.contains("keyhog_core::load_detectors_with_cache("),
-        "orchestrator_config must not call a second core detector-cache owner"
+        "detector owner must not call a second core detector-cache owner"
     );
     assert!(
         !core_src.contains("DetectorCacheFile")
