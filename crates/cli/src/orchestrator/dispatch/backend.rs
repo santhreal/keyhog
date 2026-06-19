@@ -98,6 +98,18 @@ impl AutorouteRoutingError {
         }
     }
 
+    fn insufficient_calibration_sample(sample_chunks: usize, sample_bytes: u64) -> Self {
+        Self {
+            message: format!(
+                "autoroute calibration sample is insufficient: sample_chunks={sample_chunks}, \
+                 sample_bytes={sample_bytes}. Autoroute cannot prove fastest-correct routing \
+                 from an empty or zero-byte calibration sample. Fix the calibration workload so \
+                 it produces non-empty scan bytes, then rerun `install.sh --calibrate` or \
+                 `install.ps1 -Calibrate`."
+            ),
+        }
+    }
+
     fn host_identity_unavailable(error: impl fmt::Display) -> Self {
         Self {
             message: format!(

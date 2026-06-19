@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Refuse autoroute calibration on empty or zero-byte samples before timing so
+  calibration cannot persist route decisions that the cache loader would later
+  reject as missing sample evidence.
 - Add `keyhog config --effective` and keep post-scan confidence filtering on the same resolved floor as the scanner.
 - Update stale unit fixtures for the inline-byte credential-hash contract and removed duplicate startup-summary helper.
 - Keep default `--git-diff HEAD` wired to worktree changes, honor CLI excludes for staged-only scans, and refresh git-mode e2e contracts for clean staged inputs and SARIF schema coherence.

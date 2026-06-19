@@ -20,6 +20,7 @@ pub(super) fn calibrate_fastest_correct_backend(
     autoroute_gpu: bool,
 ) -> Result<AutorouteDecision, AutorouteRoutingError> {
     let sample = sample_batch(batch);
+    let sample_bytes = calibration_sample_bytes(&sample)?;
 
     let (reference_key, simd_timing) = measure_reference_simd(scanner, &sample);
     let mut candidates = vec![(ScanBackend::SimdCpu, simd_timing.best_ns)];
@@ -34,7 +35,6 @@ pub(super) fn calibrate_fastest_correct_backend(
         candidates.push((ScanBackend::CpuFallback, cpu_timing.best_ns));
     }
 
-    let sample_bytes: u64 = sample.iter().map(|c| c.data.len() as u64).sum();
     let mut gpu_timing = None;
     let mut gpu_cold_ns = None;
     let mut gpu_warm_timing = None;
@@ -103,6 +103,17 @@ pub(super) fn calibrate_fastest_correct_backend(
         gpu_warm_timing,
         gpu_route_ns,
     ))
+}
+
+pub(super) fn calibration_sample_bytes(sample: &[Chunk]) -> Result<u64, AutorouteRoutingError> {
+    let sample_bytes: u64 = sample.iter().map(|c| c.data.len() as u64).sum();
+    if sample.is_empty() || sample_bytes == 0 {
+        return Err(AutorouteRoutingError::insufficient_calibration_sample(
+            sample.len(),
+            sample_bytes,
+        ));
+    }
+    Ok(sample_bytes)
 }
 
 fn measure_reference_simd(

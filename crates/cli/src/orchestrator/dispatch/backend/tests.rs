@@ -130,6 +130,26 @@ fn workload_key_rejects_missing_source_class_evidence() {
 }
 
 #[test]
+fn autoroute_calibration_rejects_empty_sample_before_timing() {
+    for sample in [Vec::new(), vec![test_chunk(String::new())]] {
+        let err = calibration::calibration_sample_bytes(&sample)
+            .expect_err("empty/zero-byte calibration sample must be rejected");
+        let text = err.to_string();
+        assert!(
+            text.contains("calibration sample is insufficient")
+                && text.contains("non-empty scan bytes"),
+            "autoroute calibration must fail before timing an invalid sample; got: {text}"
+        );
+    }
+
+    assert_eq!(
+        calibration::calibration_sample_bytes(&[test_chunk("abc".to_string())])
+            .expect("non-empty sample is usable"),
+        3
+    );
+}
+
+#[test]
 fn autoroute_cache_roundtrip_and_digest_invalidation() {
     let path =
         std::env::temp_dir().join(format!("keyhog_autoroute_test_{}.json", std::process::id()));

@@ -109,11 +109,11 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
         "/../scanner/src/engine/mod.rs"
     ))
     .expect("scanner engine source readable");
-    let scanner_megakernel_dispatch = std::fs::read_to_string(concat!(
+    let scanner_gpu_region_dispatch = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../scanner/src/engine/megakernel_dispatch.rs"
+        "/../scanner/src/engine/gpu_region_dispatch.rs"
     ))
-    .expect("scanner megakernel dispatch source readable");
+    .expect("scanner GPU region dispatch source readable");
     let scanner_backend_triggered = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/../scanner/src/engine/backend_triggered.rs"
@@ -164,6 +164,8 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("AUTOROUTE_DECODE_DENSITY_SAMPLE_BYTES")
             && backend.contains("AUTOROUTE_DECODE_MIN_ENCODED_RUN")
             && backend.contains("sample_bytes")
+            && backend.contains("calibration_sample_bytes")
+            && backend.contains("insufficient_calibration_sample")
             && backend.contains("correctness_digest")
             && backend.contains("calibrated_at_unix_ms")
             && backend.contains("simd_ms")
@@ -212,7 +214,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
     );
     assert!(
         scanner_engine.contains("gpu_degrade_count")
-            && scanner_megakernel_dispatch.contains("gpu_degrade_count")
+            && scanner_gpu_region_dispatch.contains("gpu_degrade_count")
             && scanner_backend_triggered.contains("gpu_degrade_count")
             && backend.contains("scanner.runtime_status().gpu_degrade_count")
             && backend.contains("gpu_degrade_count_before")
