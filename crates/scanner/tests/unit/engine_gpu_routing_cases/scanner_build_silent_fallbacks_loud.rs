@@ -23,6 +23,15 @@ fn phase2_prefilter_compile_failures_warn() {
         "RegexSet batch compile failure must warn"
     );
     assert!(
+        src.contains("phase-2 RegexSet batch received out-of-range pattern index")
+            && src.contains("let mut valid_indices = Vec::with_capacity(chunk.len())")
+            && src.contains("phase2_indices: valid_indices")
+            && !src.contains(
+                ".filter_map(|&i| phase2_patterns.get(i).map(|(p, _)| p.regex.as_str()))"
+            ),
+        "RegexSet batch source entries and stored phase-2 indices must stay aligned"
+    );
+    assert!(
         src.contains("truncated phase-2 RegexSet batch failed to compile"),
         "truncated RegexSet batch compile failure must warn"
     );

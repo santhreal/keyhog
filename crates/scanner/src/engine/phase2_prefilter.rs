@@ -292,17 +292,30 @@ impl Phase2AlwaysActivePrefilter {
         ungated_indices: &mut Vec<usize>,
     ) {
         for chunk in indices.chunks(Self::BATCH_SIZE) {
-            let srcs: Vec<&str> = chunk
-                .iter()
-                .filter_map(|&i| phase2_patterns.get(i).map(|(p, _)| p.regex.as_str()))
-                .collect();
+            let mut valid_indices = Vec::with_capacity(chunk.len());
+            let mut srcs = Vec::with_capacity(chunk.len());
+            for &index in chunk {
+                let Some((pattern, _)) = phase2_patterns.get(index) else {
+                    tracing::warn!(
+                        index,
+                        patterns = phase2_patterns.len(),
+                        "phase-2 RegexSet batch received out-of-range pattern index; dropping invalid index before building batch"
+                    );
+                    continue;
+                };
+                valid_indices.push(index);
+                srcs.push(pattern.regex.as_str());
+            }
+            if srcs.is_empty() {
+                continue;
+            }
             let built = Self::compile_set(&srcs, case_insensitive);
             match built {
                 Ok(set) => {
                     let ascii_set = if case_insensitive {
                         None
                     } else {
-                        Self::build_ascii_alternate(phase2_patterns, chunk)
+                        Self::build_ascii_alternate(phase2_patterns, &valid_indices)
                     };
                     // Truncated SUPERSET variants (lazy-DFA-friendly): each entry
                     // through `truncate_for_prefilter` (fallback to verbatim), SAME
@@ -330,12 +343,12 @@ impl Phase2AlwaysActivePrefilter {
                                 Ok(full) => full,
                                 Err(error) => {
                                     tracing::warn!(
-                                        batch_size = chunk.len(),
+                                        batch_size = valid_indices.len(),
                                         case_insensitive,
                                         %error,
                                         "phase-2 RegexSet batch recompile failed; batch will run ungated (recall preserved)"
                                     );
-                                    ungated_indices.extend_from_slice(chunk);
+                                    ungated_indices.extend_from_slice(&valid_indices);
                                     continue;
                                 }
                             }
@@ -343,7 +356,9 @@ impl Phase2AlwaysActivePrefilter {
                     };
                     let ascii_set_trunc = ascii_set
                         .as_ref()
-                        .and_then(|_| Self::build_ascii_alternate_trunc(phase2_patterns, chunk))
+                        .and_then(|_| {
+                            Self::build_ascii_alternate_trunc(phase2_patterns, &valid_indices)
+                        })
                         .or_else(|| ascii_set.clone());
                     // A plain gateable batch needs its folded matcher present for
                     // the (ASCII-path) gate to describe what actually runs. If the
@@ -355,19 +370,19 @@ impl Phase2AlwaysActivePrefilter {
                         ascii_set,
                         set_trunc,
                         ascii_set_trunc,
-                        phase2_indices: chunk.to_vec(),
+                        phase2_indices: valid_indices,
                         gateable: batch_gateable,
                         homoglyph_skippable: homoglyph,
                     });
                 }
                 Err(error) => {
                     tracing::warn!(
-                        batch_size = chunk.len(),
+                        batch_size = valid_indices.len(),
                         case_insensitive,
                         %error,
                         "phase-2 RegexSet batch compile failed; batch will run ungated (recall preserved)"
                     );
-                    ungated_indices.extend_from_slice(chunk);
+                    ungated_indices.extend_from_slice(&valid_indices);
                 }
             }
         }
