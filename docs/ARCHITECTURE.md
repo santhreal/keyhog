@@ -96,8 +96,8 @@ method-level version of steps 2–4.
    `scanner/src/` top level; the detector→matcher build is `engine/compile.rs`
    + `compiler.rs` + `compiler/`.
 3. **Phase 2 — extraction** (the shared tail, identical for CPU and GPU):
-   per-chunk `confirmed → fallback → generic → entropy → ML`
-   (`engine/extract.rs`, `engine/fallback*.rs`, `engine/scan.rs`). Decode-through
+   per-chunk `confirmed → phase2 capture → generic → entropy → ML`
+   (`engine/extract.rs`, `engine/phase2*.rs`, `engine/scan.rs`). Decode-through
    (base64/hex/url/unicode/json) runs here and recurses: `decode/`.
 4. **Post-process** — suppression, dedup, confidence, decode recursion, cross-chunk
    seam reassembly (`engine/scan_postprocess.rs`, `engine/process.rs`,

@@ -2,13 +2,13 @@
 """Gate #5 — COMPLEXITY BUDGET (a ratchet that can only tighten).
 
 The disease behind the silent fallbacks is sprawl: `walk -> match -> emit`
-spread across a dozen `fallback_*` lanes and several divergent backends, each
-re-implementing a slice of the same job, each free to drift and hide its own
-silent drop. Prose ("keep it simple") never stopped that growth. This gate makes
-growth a RED BUILD: the scan engine may not gain a new fallback lane, a new
-backend, or net LOC beyond the pinned budgets without a deliberate edit to the
-budgets below — which shows up in the diff as "I am making this more complex on
-purpose," the exact decision that was never made consciously here.
+spread across phase-2 lanes and several divergent backends, each re-implementing
+a slice of the same job, each free to drift and hide its own silent drop. Prose
+("keep it simple") never stopped that growth. This gate makes growth a RED
+BUILD: the scan engine may not gain a new phase-2 lane, a new backend, or net
+LOC beyond the pinned budgets without a deliberate edit to the budgets below —
+which shows up in the diff as "I am making this more complex on purpose," the
+exact decision that was never made consciously here.
 
 The budgets are a RATCHET: every number is the CURRENT measured value. When you
 collapse a lane, LOWER the matching budget in the same commit. They must only
@@ -30,7 +30,7 @@ SELECT = REPO / "crates" / "scanner" / "src" / "hw_probe" / "select.rs"
 # Pinned to the measured state on 2026-06-15. Lowering one as you simplify is
 # the whole point; raising one must be a conscious, reviewed exception.
 BUDGET = {
-    "fallback_lanes": 12,        # engine/fallback_*.rs files (exact ratchet)
+    "phase2_lanes": 12,          # engine/phase2*.rs files (exact ratchet)
     "scan_backends": 4,          # ScanBackend:: variants (exact ratchet)
     "engine_files": 45,          # *.rs files under engine/ (exact ratchet)
     # LOC carries ~3% headroom so ordinary in-file edits don't trip it; the
@@ -40,8 +40,8 @@ BUDGET = {
 }
 
 
-def count_fallback_lanes() -> int:
-    return len(list(ENGINE.glob("fallback_*.rs")))
+def count_phase2_lanes() -> int:
+    return len(list(ENGINE.glob("phase2*.rs")))
 
 
 def count_scan_backends() -> int:
@@ -70,7 +70,7 @@ def count_engine_files() -> int:
 
 def main() -> int:
     measured = {
-        "fallback_lanes": count_fallback_lanes(),
+        "phase2_lanes": count_phase2_lanes(),
         "scan_backends": count_scan_backends(),
         "engine_loc": count_engine_loc(),
         "engine_files": count_engine_files(),

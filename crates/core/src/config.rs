@@ -144,7 +144,7 @@ impl Default for ScanConfig {
             // the scan-time/ML entanglement bug tracked in backlog DET-08).
             // This is the canonical tuned == benched == shipped floor; the
             // post-scan gate (orchestrator/postprocess.rs) and the scan-time
-            // generic gate (engine/fallback_generic.rs) both resolve to it.
+            // generic gate (engine/phase2_generic.rs) both resolve to it.
             min_confidence: 0.40,
             // Aligned with CLI / scanner defaults (`ScannerConfig` derives from this).
             max_decode_depth: 10,

@@ -29,8 +29,10 @@ here does NOT clear Linux-on-fleet; it is "not run on those hosts this round."
 ## macOS (tt-macbook, Darwin arm64) — REACHED, built, dogfooded
 
 Build: `cargo build --profile release-fast -p keyhog --no-default-features
---features portable` → **rc 0** in 1m10s (only 3 pre-existing dead-code warnings
-in `crates/scanner/src/engine/fallback.rs`). Binary: 22,982,728 bytes.
+--features portable` → **rc 0** in 1m10s. That historical run reported three
+pre-existing warning sites in the phase-2 capture lane before the
+phase-2 owner rename; current warning and organization gates cover the live
+`engine/phase2*.rs` owners. Binary: 22,982,728 bytes.
 
 Operator path (real binary, real temp inputs):
 
