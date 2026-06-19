@@ -2068,6 +2068,29 @@ fn differential_bench_installs_verified_keyhog_release_binary() {
 }
 
 #[test]
+fn differential_bench_scanner_versions_fail_closed() {
+    let workflow =
+        fs::read_to_string(differential_bench_workflow()).expect("read differential-bench.yml");
+    let versions = workflow
+        .split("- name: scanner versions")
+        .nth(1)
+        .and_then(|tail| tail.split("- name: keyhog smoke check").next())
+        .expect("scanner versions step exists");
+    assert!(
+        versions.contains("set -euo pipefail"),
+        "scanner version proof must fail the workflow on command failures"
+    );
+    assert!(
+        versions.contains("keyhog --version") && versions.contains("trufflehog --version"),
+        "scanner version proof must exercise the installed keyhog/trufflehog binaries"
+    );
+    assert!(
+        !versions.contains("set +e") && !versions.contains("|| true"),
+        "scanner version proof must not hide broken competitor installs"
+    );
+}
+
+#[test]
 fn ci_install_from_build_proof_requires_expect_setup() {
     let workflow = fs::read_to_string(ci_workflow()).expect("read ci.yml");
     let install = workflow

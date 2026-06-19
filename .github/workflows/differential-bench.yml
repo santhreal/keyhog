@@ -77,9 +77,9 @@ jobs:
 
       - name: scanner versions
         run: |
-          set +e
+          set -euo pipefail
           keyhog --version
-          trufflehog --version || true
+          trufflehog --version
 
       - name: keyhog smoke check (broken binary != F1 regression)
         # A broken install / unsatisfied libhyperscan runtime makes `keyhog scan`
