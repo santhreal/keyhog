@@ -5,7 +5,7 @@ use crate::contract::support::with_proxy_contract_env;
 use keyhog_verifier::proxy_is_active;
 
 #[test]
-fn proxy_empty_keyhog_proxy_falls_through_to_https_proxy() {
+fn proxy_keyhog_empty_env_and_https_env_ignored() {
     with_proxy_contract_env(|| {
         unsafe {
             std::env::set_var("KEYHOG_PROXY", "");
