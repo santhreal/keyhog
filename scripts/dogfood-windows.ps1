@@ -108,7 +108,7 @@ if (Test-Path $installScript) {
     Remove-Item $prefix -Recurse -Force -ErrorAction SilentlyContinue
   }
 } else {
-  Write-Output "  SKIP install (install.ps1 not found beside source)"
+  Check "install.ps1 present beside source/build" $false
 }
 
 # 5. `uninstall` exit-code contract -- the ONE deliberate cross-OS divergence.

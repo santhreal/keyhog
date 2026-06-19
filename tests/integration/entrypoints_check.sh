@@ -160,6 +160,23 @@ else
   fail=1
 fi
 
+WDOG="$ROOT/scripts/dogfood-windows.ps1"
+if [ -f "$WDOG" ]; then
+  if grep -q 'SKIP install (install.ps1 not found beside source)' "$WDOG"; then
+    echo "FAIL scripts/dogfood-windows.ps1 must fail when install.ps1 is missing; installer dogfood cannot be optional."
+    grep -n 'SKIP install (install.ps1 not found beside source)' "$WDOG" | sed 's/^/    /'
+    fail=1
+  elif grep -q 'Check "install.ps1 present beside source/build" $false' "$WDOG"; then
+    note "OK   Windows dogfood entrypoint: missing install.ps1 fails the dogfood run"
+  else
+    echo "FAIL scripts/dogfood-windows.ps1 must have an explicit failed check when install.ps1 is missing."
+    fail=1
+  fi
+else
+  echo "FAIL scripts/dogfood-windows.ps1 missing - Windows dogfood cannot be audited."
+  fail=1
+fi
+
 PUB="$ROOT/scripts/publish.sh"
 if [ -f "$PUB" ]; then
   if grep -qE 'VERSION="unknown"|Cargo\.toml" 2>/dev/null' "$PUB"; then
