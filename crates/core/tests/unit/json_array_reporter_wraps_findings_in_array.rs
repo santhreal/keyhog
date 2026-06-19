@@ -1,8 +1,7 @@
 //! JSON array reporter wraps emitted findings in a top-level array.
 
-use keyhog_core::{
-    JsonArrayReporter, MatchLocation, Reporter, Severity, VerificationResult, VerifiedFinding,
-};
+use crate::support::reporters::JsonArrayReporter;
+use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
 use std::collections::HashMap;
 use std::sync::Arc;
 

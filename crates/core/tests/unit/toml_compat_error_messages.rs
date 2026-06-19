@@ -1,5 +1,5 @@
 //! Error messages from TOML parsing contain file path and position context.
-use keyhog_core::{load_detectors_from_str, SpecError};
+use keyhog_core::SpecError;
 
 #[test]
 fn toml_compat_error_includes_line_column_info() {
@@ -15,7 +15,10 @@ keywords = ["test"]
 regex = "test_[A-Z0-9]{8}"
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     assert!(matches!(result, Err(SpecError::InvalidToml { .. })));
 
     if let Err(SpecError::InvalidToml { source, .. }) = result {
@@ -35,7 +38,10 @@ fn toml_compat_read_file_error_includes_path() {
     // doesn't use ReadFile path handling (that's for load_detectors)
     let invalid_toml = "not valid [[[[";
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     if let Err(SpecError::InvalidToml { path, source }) = result {
         // Path should be "<string>" for string inputs
         assert_eq!(path.to_string_lossy(), "<string>");
@@ -59,7 +65,10 @@ keywords = ["test"]
 regex = "test_[A-Z0-9]{8}"
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     if let Err(SpecError::InvalidToml { source, .. }) = result {
         let msg = source.to_string();
         // serde missing field error should mention the field
@@ -86,7 +95,10 @@ keywords = ["test"]
 regex = "test_[A-Z0-9]{8}"
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     if let Err(SpecError::InvalidToml { source, .. }) = result {
         let msg = source.to_string();
         assert!(
@@ -101,7 +113,10 @@ regex = "test_[A-Z0-9]{8}"
 fn toml_compat_error_display_format() {
     let invalid_toml = "[[[";
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     if let Err(err) = result {
         let display_msg = format!("{}", err);
         // Display implementation should wrap error info

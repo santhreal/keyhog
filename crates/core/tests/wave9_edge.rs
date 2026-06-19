@@ -2,7 +2,6 @@
 use keyhog_core::dedup_matches;
 use keyhog_core::{Credential, DedupScope, Severity};
 use keyhog_core::{MatchLocation, RawMatch};
-use std::sync::Arc;
 macro_rules! w9_edge {
     ($n:ident, $b:block) => {
         #[test]
@@ -46,13 +45,13 @@ fn raw(cred: &str) -> RawMatch {
     }
 }
 w9_edge!(w9_kh_01, {
-    let c = Credential::from_text("secret");
-    assert_eq!(c.len(), 6);
+    let c = Credential::from("secret");
+    assert_eq!(c.expose_secret().len(), 6);
 });
 
 w9_edge!(w9_kh_02, {
-    let c = Credential::from_text("");
-    assert!(c.is_empty());
+    let c = Credential::from("");
+    assert!(c.expose_secret().is_empty());
 });
 
 w9_edge!(w9_kh_03, {
@@ -75,18 +74,24 @@ w9_edge!(w9_kh_06, {
 });
 
 w9_edge!(w9_kh_07, {
-    let c = Credential::from_bytes(&[0xff, 0xfe]);
-    assert_eq!(c.expose_str(), None);
+    let c = Credential::from(vec![0xff, 0xfe]);
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_str(
+            &keyhog_core::testing::TestApi,
+            &c
+        ),
+        None
+    );
 });
 
 w9_edge!(w9_kh_08, {
-    let dbg = format!("{:?}", Credential::from_text("x"));
+    let dbg = format!("{:?}", Credential::from("x"));
     assert!(dbg.contains("redacted"));
 });
 
 w9_edge!(w9_kh_09, {
-    let c1 = Credential::from_text("same");
-    let c2 = Credential::from_text("same");
+    let c1 = Credential::from("same");
+    let c2 = Credential::from("same");
     assert_eq!(c1, c2);
 });
 
@@ -100,7 +105,7 @@ w9_edge!(w9_kh_11, {
 });
 
 w9_edge!(w9_kh_12, {
-    let c = Credential::from_text("tok");
+    let c = Credential::from("tok");
     assert_eq!(c.expose_secret(), b"tok");
 });
 
@@ -111,7 +116,13 @@ w9_edge!(w9_kh_13, {
 
 w9_edge!(w9_kh_14, {
     let c: Credential = "hello".into();
-    assert_eq!(c.expose_str(), Some("hello"));
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_str(
+            &keyhog_core::testing::TestApi,
+            &c
+        ),
+        Some("hello")
+    );
 });
 
 w9_edge!(w9_kh_15, {
@@ -124,7 +135,7 @@ w9_edge!(w9_kh_16, {
 });
 
 w9_edge!(w9_kh_17, {
-    let c = Credential::from_text("x");
+    let c = Credential::from("x");
     let _ = c.clone();
 });
 
@@ -143,8 +154,8 @@ w9_edge!(w9_kh_20, {
 });
 
 w9_edge!(w9_kh_21, {
-    let c = Credential::from_text("abc");
-    assert!(!c.is_empty());
+    let c = Credential::from("abc");
+    assert!(!c.expose_secret().is_empty());
 });
 
 w9_edge!(w9_kh_22, {
@@ -153,7 +164,7 @@ w9_edge!(w9_kh_22, {
 });
 
 w9_edge!(w9_kh_23, {
-    let c = Credential::from_text("z");
+    let c = Credential::from("z");
     assert_eq!(format!("{}", c), "<redacted 1 bytes>");
 });
 

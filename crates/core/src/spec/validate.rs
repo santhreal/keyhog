@@ -343,7 +343,7 @@ fn check_url_exfil_risk(url: &str, allowed_domains: &[String], issues: &mut Vec<
     let after_scheme = trimmed
         .strip_prefix("https://")
         .or_else(|| trimmed.strip_prefix("http://"))
-        .unwrap_or(trimmed);
+        .unwrap_or(trimmed); // LAW10: no scheme to strip -> analyze the whole URL; deterministic, not a failure
     let host_starts_with_template =
         after_scheme.starts_with("{{") || after_scheme.starts_with("{") || trimmed == "{{match}}";
     if host_starts_with_template && allowed_domains.is_empty() {

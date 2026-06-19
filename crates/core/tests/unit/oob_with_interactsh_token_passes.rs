@@ -1,9 +1,12 @@
 //! Migrated from `src/spec/validate.rs` inline tests.
-use keyhog_core::load_detectors_from_str;
-use keyhog_core::{validate_detector, AuthSpec, QualityIssue};
+use keyhog_core::{validate_detector, QualityIssue};
 
 fn errors_for(toml_src: &str) -> Vec<String> {
-    let detectors = load_detectors_from_str(toml_src).expect("toml parses");
+    let detectors = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        toml_src,
+    )
+    .expect("toml parses");
     let mut errs = Vec::new();
     for d in &detectors {
         for issue in validate_detector(d) {
@@ -15,67 +18,6 @@ fn errors_for(toml_src: &str) -> Vec<String> {
     errs
 }
 
-fn regex_has_capture_group(pattern: &str) -> bool {
-    let bytes = pattern.as_bytes();
-    let mut i = 0;
-    let mut in_class = false;
-    let mut escape = false;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if escape {
-            escape = false;
-            i += 1;
-            continue;
-        }
-        match b {
-            b'\\' => escape = true,
-            b'[' if !in_class => in_class = true,
-            b']' if in_class => in_class = false,
-            b'(' if !in_class => {
-                if i + 1 < bytes.len() && bytes[i + 1] == b'?' {
-                    let after = &bytes[i + 2..];
-                    if after.starts_with(b"P<") {
-                        return true;
-                    }
-                    if after.starts_with(b"<") {
-                        if !(after.starts_with(b"<=") || after.starts_with(b"<!")) {
-                            return true;
-                        }
-                    }
-                } else {
-                    return true;
-                }
-            }
-            _ => {}
-        }
-        i += 1;
-    }
-    false
-}
-
-fn regex_likely_includes_anchor_prefix(pattern: &str) -> bool {
-    let bytes = pattern.as_bytes();
-    let mut i = 0;
-    let mut in_class = false;
-    let mut escape = false;
-    while i < bytes.len() {
-        let b = bytes[i];
-        if escape {
-            escape = false;
-            i += 1;
-            continue;
-        }
-        match b {
-            b'\\' => escape = true,
-            b'[' if !in_class => in_class = true,
-            b']' if in_class => in_class = false,
-            b'=' if !in_class => return true,
-            _ => {}
-        }
-        i += 1;
-    }
-    false
-}
 #[test]
 fn oob_with_interactsh_token_passes() {
     let toml_src = r#"

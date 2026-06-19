@@ -1,7 +1,3 @@
-use keyhog_core::hardening::lockdown_disk_cache_violations_for_paths;
-use keyhog_core::testing::{
-    lockdown_cache_entry_error_is_violation, lockdown_disk_cache_violations,
-};
 use std::ffi::OsString;
 use std::sync::Mutex;
 use tempfile::TempDir;
@@ -47,7 +43,10 @@ fn empty_keyhog_cache_dir_is_not_lockdown_violation() {
         std::fs::create_dir_all(&keyhog_cache).expect("create empty cache dir");
 
         assert!(
-            lockdown_disk_cache_violations().is_empty(),
+            keyhog_core::testing::CoreTestApi::lockdown_disk_cache_violations(
+                &keyhog_core::testing::TestApi,
+            )
+            .is_empty(),
             "empty keyhog cache dir must not fail lockdown"
         );
     });
@@ -65,7 +64,10 @@ fn compiled_hyperscan_cache_file_is_not_lockdown_violation() {
         .expect("write compiled cache");
 
         assert!(
-            lockdown_disk_cache_violations().is_empty(),
+            keyhog_core::testing::CoreTestApi::lockdown_disk_cache_violations(
+                &keyhog_core::testing::TestApi,
+            )
+            .is_empty(),
             "exact-shape compiled Hyperscan cache with KHHS/v1 header must not fail lockdown"
         );
     });
@@ -80,7 +82,9 @@ fn hs_db_without_compiled_cache_header_is_lockdown_violation() {
             .expect("write fake hs cache");
 
         assert_eq!(
-            lockdown_disk_cache_violations(),
+            keyhog_core::testing::CoreTestApi::lockdown_disk_cache_violations(
+                &keyhog_core::testing::TestApi,
+            ),
             vec![keyhog_cache],
             "an hs-named file without the compiled-cache marker must fail lockdown"
         );
@@ -99,7 +103,9 @@ fn loose_hs_db_filename_is_lockdown_violation_even_with_cache_header() {
         .expect("write loose-name cache");
 
         assert_eq!(
-            lockdown_disk_cache_violations(),
+            keyhog_core::testing::CoreTestApi::lockdown_disk_cache_violations(
+                &keyhog_core::testing::TestApi,
+            ),
             vec![keyhog_cache],
             "loose hs-*.db names must not bypass the past-findings cache gate"
         );
@@ -114,7 +120,9 @@ fn non_empty_keyhog_cache_dir_is_lockdown_violation() {
         std::fs::write(keyhog_cache.join("findings.json"), b"[]\n").expect("write cache content");
 
         assert_eq!(
-            lockdown_disk_cache_violations(),
+            keyhog_core::testing::CoreTestApi::lockdown_disk_cache_violations(
+                &keyhog_core::testing::TestApi,
+            ),
             vec![keyhog_cache],
             "non-empty keyhog cache dir must fail lockdown"
         );
@@ -130,7 +138,10 @@ fn configured_incremental_cache_file_is_lockdown_violation() {
         std::fs::write(&custom_cache, b"cached metadata\n").expect("write custom merkle cache");
 
         assert_eq!(
-            lockdown_disk_cache_violations_for_paths([custom_cache.clone()]),
+            keyhog_core::testing::CoreTestApi::lockdown_disk_cache_violations_for_paths(
+                &keyhog_core::testing::TestApi,
+                vec![custom_cache.clone()],
+            ),
             vec![custom_cache],
             "lockdown must inspect configured incremental cache files outside the default root"
         );
@@ -140,7 +151,9 @@ fn configured_incremental_cache_file_is_lockdown_violation() {
 #[test]
 fn cache_entry_read_error_is_lockdown_violation() {
     assert!(
-        lockdown_cache_entry_error_is_violation(),
+        keyhog_core::testing::CoreTestApi::lockdown_cache_entry_error_is_violation(
+            &keyhog_core::testing::TestApi,
+        ),
         "a per-entry read_dir error must fail closed instead of being filtered out"
     );
 }

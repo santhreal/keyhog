@@ -87,7 +87,7 @@ where
 ///
 /// Always safe to call - failures are logged and tallied but do not
 /// abort. The same bits set twice are idempotent.
-pub fn apply_default_protections() -> HardeningReport {
+fn apply_default_protections() -> HardeningReport {
     let mut report = HardeningReport::default();
 
     #[cfg(target_os = "linux")]
@@ -150,7 +150,7 @@ pub fn apply_default_protections() -> HardeningReport {
 /// Returns a report of what took. Callers should treat any `failures`
 /// entry as a hard error in lockdown - it means a protection the user
 /// asked for did not engage.
-pub fn apply_lockdown_protections() -> HardeningReport {
+fn apply_lockdown_protections() -> HardeningReport {
     let mut report = apply_default_protections();
 
     #[cfg(target_os = "linux")]
@@ -252,7 +252,7 @@ pub fn apply_lockdown_protections() -> HardeningReport {
 /// header are trusted as compiled-pattern caches; everything else is a
 /// potential findings-bearing cache and therefore a lockdown violation.
 #[must_use]
-pub fn lockdown_disk_cache_violations() -> Vec<PathBuf> {
+pub(crate) fn lockdown_disk_cache_violations() -> Vec<PathBuf> {
     lockdown_disk_cache_violations_for_paths(std::iter::empty::<PathBuf>())
 }
 
@@ -262,7 +262,7 @@ pub fn lockdown_disk_cache_violations() -> Vec<PathBuf> {
 /// callers pass resolved custom Merkle/incremental cache paths that may live
 /// outside the default root.
 #[must_use]
-pub fn lockdown_disk_cache_violations_for_paths<I, P>(persistence_paths: I) -> Vec<PathBuf>
+pub(crate) fn lockdown_disk_cache_violations_for_paths<I, P>(persistence_paths: I) -> Vec<PathBuf>
 where
     I: IntoIterator<Item = P>,
     P: AsRef<Path>,

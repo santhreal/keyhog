@@ -13,7 +13,7 @@ fn make_match(cred: &str, path: &str, line: usize, offset: usize) -> RawMatch {
         detector_name: Arc::from("det1"),
         service: Arc::from("test"),
         severity: Severity::High,
-        credential: Arc::from(cred),
+        credential: keyhog_core::SensitiveString::from(cred),
         credential_hash: [0; 32],
         companions: HashMap::new(),
         location: MatchLocation {

@@ -13,6 +13,8 @@ pub(super) struct SarifRule {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) help: Option<SarifMessage>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) help_uri: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) properties: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
@@ -20,6 +22,8 @@ pub(super) struct SarifRule {
 #[serde(rename_all = "camelCase")]
 pub(super) struct SarifMessage {
     pub(super) text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) markdown: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

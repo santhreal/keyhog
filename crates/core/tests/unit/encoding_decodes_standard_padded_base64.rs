@@ -1,6 +1,6 @@
 //! Oracle: RFC 4648 padded base64 for "Hello" decodes to known bytes.
 
-use keyhog_core::encoding::decode_standard_base64;
+use keyhog_core::decode_standard_base64;
 
 #[test]
 fn encoding_decodes_standard_padded_base64() {

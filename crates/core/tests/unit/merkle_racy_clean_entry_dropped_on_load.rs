@@ -37,7 +37,8 @@ fn racy_entry_dropped_safe_entry_kept_on_load() {
     });
     std::fs::write(&cache_path, serde_json::to_vec(&on_disk).unwrap()).unwrap();
 
-    let loaded = keyhog_core::testing::merkle_load(&cache_path);
+    let loaded =
+        keyhog_core::testing::CoreTestApi::merkle_load(&keyhog_core::testing::TestApi, &cache_path);
 
     // Both racy entries are gone -> the next scan re-reads + re-hashes them.
     assert!(
@@ -55,7 +56,7 @@ fn racy_entry_dropped_safe_entry_kept_on_load() {
         "entry from a strictly earlier second must be kept for the fast-path skip"
     );
     assert_eq!(
-        keyhog_core::testing::merkle_len(&loaded),
+        keyhog_core::testing::CoreTestApi::merkle_len(&keyhog_core::testing::TestApi, &loaded),
         1,
         "exactly the one safe entry survives the racy-clean load filter"
     );
@@ -78,9 +79,10 @@ fn zero_written_at_marks_every_entry_racy() {
     });
     std::fs::write(&cache_path, serde_json::to_vec(&on_disk).unwrap()).unwrap();
 
-    let loaded = keyhog_core::testing::merkle_load(&cache_path);
+    let loaded =
+        keyhog_core::testing::CoreTestApi::merkle_load(&keyhog_core::testing::TestApi, &cache_path);
     assert!(
-        keyhog_core::testing::merkle_is_empty(&loaded),
+        keyhog_core::testing::CoreTestApi::merkle_is_empty(&keyhog_core::testing::TestApi, &loaded),
         "written_at_ns == 0 must mark every entry racy (fail safe to full re-scan)"
     );
 }

@@ -15,7 +15,7 @@
 //! `keyhog/keyhog` value and PASS once the URI tracks the manifest.
 
 use keyhog_core::{
-    MatchLocation, Reporter, SarifReporter, Severity, VerificationResult, VerifiedFinding,
+    write_report, MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -54,13 +54,19 @@ fn sample_finding() -> VerifiedFinding {
 
 fn render_sarif(with_finding: bool) -> serde_json::Value {
     let mut buf = Vec::new();
-    {
-        let mut reporter = SarifReporter::new(&mut buf);
-        if with_finding {
-            reporter.report(&sample_finding()).expect("report finding");
-        }
-        reporter.finish().expect("finish SARIF document");
-    }
+    let findings = if with_finding {
+        vec![sample_finding()]
+    } else {
+        Vec::new()
+    };
+    write_report(
+        &mut buf,
+        ReportFormat::Sarif {
+            skip_summary: Vec::new(),
+        },
+        &findings,
+    )
+    .expect("finish SARIF document");
     serde_json::from_slice(&buf).expect("SARIF output must parse as JSON")
 }
 
@@ -102,13 +108,19 @@ fn information_uri_is_canonical_repo_on_empty_run() {
 fn buggy_information_uri_never_appears() {
     for with_finding in [false, true] {
         let mut buf = Vec::new();
-        {
-            let mut reporter = SarifReporter::new(&mut buf);
-            if with_finding {
-                reporter.report(&sample_finding()).expect("report finding");
-            }
-            reporter.finish().expect("finish SARIF document");
-        }
+        let findings = if with_finding {
+            vec![sample_finding()]
+        } else {
+            Vec::new()
+        };
+        write_report(
+            &mut buf,
+            ReportFormat::Sarif {
+                skip_summary: Vec::new(),
+            },
+            &findings,
+        )
+        .expect("finish SARIF document");
         let text = String::from_utf8(buf).expect("SARIF output must be valid UTF-8");
         assert!(
             !text.contains(BUGGY_INFORMATION_URI),

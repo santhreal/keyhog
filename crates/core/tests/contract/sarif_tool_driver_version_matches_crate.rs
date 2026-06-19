@@ -1,7 +1,6 @@
 //! Contract: SARIF `tool.driver.version` tracks the keyhog-core crate semver.
 
-use keyhog_core::{Reporter, SarifReporter};
-
+use crate::support::reporters::SarifReporter;
 #[test]
 fn sarif_tool_driver_version_matches_crate() {
     let mut buf = Vec::new();

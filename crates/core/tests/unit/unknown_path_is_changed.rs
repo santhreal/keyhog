@@ -1,14 +1,16 @@
 //! Migrated from `src/merkle_index.rs` inline tests.
-use keyhog_core::compute_spec_hash;
-use keyhog_core::merkle_index::MerkleIndex;
-use keyhog_core::{CompanionSpec, DetectorSpec, PatternSpec, Severity};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 fn sample_hash(s: &[u8]) -> [u8; 32] {
-    MerkleIndex::hash_content(s)
+    keyhog_core::testing::CoreTestApi::merkle_hash_content(&keyhog_core::testing::TestApi, s)
 }
 #[test]
 fn unknown_path_is_changed() {
-    let idx = MerkleIndex::empty();
+    let idx = keyhog_core::testing::CoreTestApi::merkle_empty(&keyhog_core::testing::TestApi);
     let h = sample_hash(b"x");
-    assert!(!idx.unchanged(Path::new("/never/seen"), &h));
+    assert!(!keyhog_core::testing::CoreTestApi::merkle_unchanged(
+        &keyhog_core::testing::TestApi,
+        &idx,
+        Path::new("/never/seen"),
+        &h
+    ));
 }

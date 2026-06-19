@@ -1,5 +1,5 @@
 //! Migrated from `src/safe_bin.rs` inline tests.
-use keyhog_core::safe_bin::resolve_safe_bin;
+use keyhog_core::resolve_safe_bin;
 #[test]
 fn unknown_binary_is_none() {
     // A name that should never exist on any system.

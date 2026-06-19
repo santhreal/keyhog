@@ -5,7 +5,8 @@ use keyhog_core::Allowlist;
 #[test]
 fn allowlist_expired_entries_dropped() {
     let content = "detector:foo ; expires=1970-01-01";
-    let al = keyhog_core::testing::allowlist_parse(content);
+    let al =
+        keyhog_core::testing::CoreTestApi::allowlist_parse(&keyhog_core::testing::TestApi, content);
     assert!(
         !al.ignored_detectors.contains("foo"),
         "expired detector entry must not load"

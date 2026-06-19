@@ -5,11 +5,11 @@
       <h1>🐗 Key<span>Hog</span></h1>
       <p>Developer-first Secret Scanning Report &bull; Verified Findings</p>
     </div>
-    <div class="theme-selector">
-      <button class="theme-btn active" onclick="setTheme('obsidian')">OBSIDIAN</button>
-      <button class="theme-btn" onclick="setTheme('cyberpunk')">CYBERPUNK</button>
-      <button class="theme-btn" onclick="setTheme('win98')">WIN98</button>
-      <button class="theme-btn" onclick="setTheme('matrix')">MATRIX</button>
+    <div class="theme-selector" aria-label="Report theme">
+      <button class="theme-btn active" onclick="setTheme('obsidian')" aria-label="Use Obsidian theme" aria-pressed="true">OBSIDIAN</button>
+      <button class="theme-btn" onclick="setTheme('cyberpunk')" aria-label="Use Cyberpunk theme" aria-pressed="false">CYBERPUNK</button>
+      <button class="theme-btn" onclick="setTheme('win98')" aria-label="Use Windows 98 theme" aria-pressed="false">WIN98</button>
+      <button class="theme-btn" onclick="setTheme('matrix')" aria-label="Use Matrix theme" aria-pressed="false">MATRIX</button>
     </div>
   </header>
 
@@ -46,7 +46,7 @@
       <div class="card">
         <h2>Severity Breakdown</h2>
         <div class="chart-container">
-          <svg class="chart-svg" viewBox="0 0 42 42">
+          <svg class="chart-svg" viewBox="0 0 42 42" aria-hidden="true" focusable="false">
             <circle class="chart-hole" cx="21" cy="21" r="15.91549430918954"></circle>
             <circle class="chart-segment" id="seg-critical" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-critical)"></circle>
             <circle class="chart-segment" id="seg-high" cx="21" cy="21" r="15.91549430918954" stroke="var(--color-high)"></circle>
@@ -86,14 +86,15 @@
         <h2>Findings</h2>
         
         <!-- Search bar -->
-        <input type="text" class="search-input" id="search-box" placeholder="Search by file path, detector ID, service..." oninput="applyFilters()">
+        <input type="text" class="search-input" id="search-box" placeholder="Search by file path, detector ID, service..." aria-label="Search findings by file path, detector, or service" aria-describedby="result-count" oninput="applyFilters()">
+        <div class="result-count" id="result-count" aria-live="polite" aria-atomic="true">Showing 0 findings.</div>
 
         <!-- Status Filter Tabs -->
-        <div class="tabs">
-          <button class="tab-btn active" id="tab-all" onclick="setStatusTab('all')">ALL</button>
-          <button class="tab-btn" id="tab-live" onclick="setStatusTab('live')">LIVE</button>
-          <button class="tab-btn" id="tab-revoked" onclick="setStatusTab('revoked')">REVOKED</button>
-          <button class="tab-btn" id="tab-unverifiable" onclick="setStatusTab('unverifiable')">UNVERIFIABLE</button>
+        <div class="tabs" role="tablist" aria-label="Verification status filter">
+          <button class="tab-btn active" id="tab-all" role="tab" aria-selected="true" onclick="setStatusTab('all')">ALL</button>
+          <button class="tab-btn" id="tab-live" role="tab" aria-selected="false" onclick="setStatusTab('live')">LIVE</button>
+          <button class="tab-btn" id="tab-revoked" role="tab" aria-selected="false" onclick="setStatusTab('revoked')">REVOKED</button>
+          <button class="tab-btn" id="tab-unverifiable" role="tab" aria-selected="false" onclick="setStatusTab('unverifiable')">UNVERIFIABLE</button>
         </div>
 
         <!-- Table view -->
@@ -101,11 +102,11 @@
           <table>
             <thead>
               <tr>
-                <th>Detector</th>
-                <th>Service</th>
-                <th>File Path & Line</th>
-                <th>Severity</th>
-                <th>Verification</th>
+                <th scope="col">Detector</th>
+                <th scope="col">Service</th>
+                <th scope="col">File Path & Line</th>
+                <th scope="col">Severity</th>
+                <th scope="col">Verification</th>
               </tr>
             </thead>
             <tbody id="findings-table-body">

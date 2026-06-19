@@ -1,6 +1,5 @@
-use keyhog_core::{
-    MatchLocation, Reporter, SarifReporter, Severity, VerificationResult, VerifiedFinding,
-};
+use crate::support::reporters::SarifReporter;
+use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
 use std::borrow::Cow;
 use std::collections::HashMap;
 

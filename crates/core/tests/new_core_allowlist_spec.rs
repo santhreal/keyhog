@@ -7,8 +7,7 @@
 //! Assertions check concrete values: which path is suppressed, which detector id
 //! collapses, exact quality-issue variants, the parsed detector id/severity.
 
-use keyhog_core::allowlist::Allowlist;
-use keyhog_core::testing::load_detectors_from_str;
+use keyhog_core::Allowlist;
 use keyhog_core::{
     hex_encode, validate_detector, DetectorSpec, MatchLocation, PatternSpec, QualityIssue,
     Severity, VerificationResult, VerifiedFinding,
@@ -62,14 +61,20 @@ fn allowlist_empty_suppresses_nothing() {
 
 #[test]
 fn allowlist_parse_detector_and_path_buckets() {
-    let al = keyhog_core::testing::allowlist_parse("detector:demo-token\npath:**/*.md\n");
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        "detector:demo-token\npath:**/*.md\n",
+    );
     assert!(al.ignored_detectors.contains("demo-token"));
     assert_eq!(al.ignored_paths, vec!["**/*.md".to_string()]);
 }
 
 #[test]
 fn allowlist_parse_skips_comments_and_blank_lines() {
-    let al = keyhog_core::testing::allowlist_parse("# a comment\n\n  \ndetector:keep\n");
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        "# a comment\n\n  \ndetector:keep\n",
+    );
     assert_eq!(al.ignored_detectors.len(), 1);
     assert!(al.ignored_detectors.contains("keep"));
 }
@@ -80,7 +85,10 @@ fn allowlist_parse_skips_comments_and_blank_lines() {
 
 #[test]
 fn allowlist_path_glob_doublestar_matches_nested() {
-    let al = keyhog_core::testing::allowlist_parse("path:**/*.md\n");
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        "path:**/*.md\n",
+    );
     assert!(al.is_path_ignored("docs/README.md"));
     assert!(al.is_path_ignored("a/b/c/notes.md"));
     assert!(al.is_path_ignored("top.md"));
@@ -89,7 +97,10 @@ fn allowlist_path_glob_doublestar_matches_nested() {
 
 #[test]
 fn allowlist_path_glob_literal_anchor() {
-    let al = keyhog_core::testing::allowlist_parse("path:node_modules/**\n");
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        "path:node_modules/**\n",
+    );
     assert!(al.is_path_ignored("node_modules/left-pad/index.js"));
     assert!(!al.is_path_ignored("src/node_modules_lookalike.js"));
 }
@@ -97,7 +108,10 @@ fn allowlist_path_glob_literal_anchor() {
 #[test]
 fn allowlist_bare_gitignore_style_glob_is_path() {
     // A bare line with no prefix and not a hash is treated as a path glob.
-    let al = keyhog_core::testing::allowlist_parse("*.log\nvendor/**/*.json\n");
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        "*.log\nvendor/**/*.json\n",
+    );
     assert!(al.is_path_ignored("server.log"));
     assert!(al.is_path_ignored("vendor/aws/config.json"));
     assert!(!al.is_path_ignored("server.txt"));
@@ -105,7 +119,10 @@ fn allowlist_bare_gitignore_style_glob_is_path() {
 
 #[test]
 fn allowlist_path_normalizes_backslashes_and_dotdot() {
-    let al = keyhog_core::testing::allowlist_parse("path:a/b.rs\n");
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        "path:a/b.rs\n",
+    );
     // Windows separators normalize to '/'.
     assert!(al.is_path_ignored("a\\b.rs"));
     // `./` and resolvable `..` are normalized away.
@@ -115,7 +132,10 @@ fn allowlist_path_normalizes_backslashes_and_dotdot() {
 
 #[test]
 fn allowlist_single_star_does_not_cross_segment() {
-    let al = keyhog_core::testing::allowlist_parse("path:src/*.rs\n");
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        "path:src/*.rs\n",
+    );
     assert!(al.is_path_ignored("src/main.rs"));
     // `*` is single-segment: it must NOT match a nested path.
     assert!(!al.is_path_ignored("src/sub/main.rs"));
@@ -141,11 +161,18 @@ fn allowlist_mutating_ignored_paths_directly_rebuilds_index() {
 fn allowlist_hash_prefix_entry_suppresses_matching_hash() {
     let h = sha256("AKIAIOSFODNN7EXAMPLE");
     let hex = hex_encode(&h);
-    let al = keyhog_core::testing::allowlist_parse(&format!("hash:{hex}\n"));
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        &format!("hash:{hex}\n"),
+    );
     assert!(al.credential_hashes.contains(&h));
-    assert!(keyhog_core::testing::allowlist_is_raw_hash_ignored(
-        &al, &hex
-    ));
+    assert!(
+        keyhog_core::testing::CoreTestApi::allowlist_is_raw_hash_ignored(
+            &keyhog_core::testing::TestApi,
+            &al,
+            &hex
+        )
+    );
     // A different hash is not suppressed.
     assert!(!al.credential_hashes.contains(&sha256("other")));
 }
@@ -155,7 +182,10 @@ fn allowlist_bare_64hex_treated_as_hash() {
     let h = sha256("some-credential");
     let hex = hex_encode(&h);
     // 64-char hex with no prefix => credential hash, not a path.
-    let al = keyhog_core::testing::allowlist_parse(&format!("{hex}\n"));
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        &format!("{hex}\n"),
+    );
     assert!(al.credential_hashes.contains(&h));
     assert!(al.credential_hashes.contains(&h));
     assert!(al.ignored_paths.is_empty());
@@ -164,7 +194,10 @@ fn allowlist_bare_64hex_treated_as_hash() {
 #[test]
 fn allowlist_invalid_hash_is_not_inserted() {
     // Too-short "hash:" value is rejected (logged), not inserted, and is not a path.
-    let al = keyhog_core::testing::allowlist_parse("hash:deadbeef\n");
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        "hash:deadbeef\n",
+    );
     assert!(al.credential_hashes.is_empty());
     assert!(al.ignored_paths.is_empty());
 }
@@ -173,17 +206,32 @@ fn allowlist_invalid_hash_is_not_inserted() {
 fn allowlist_is_hash_allowed_takes_hex_string() {
     let h = sha256("cred-value");
     let hex = hex_encode(&h);
-    let al = keyhog_core::testing::allowlist_parse(&format!("hash:{hex}\n"));
-    assert!(keyhog_core::testing::allowlist_is_hash_allowed(&al, &hex));
-    assert!(!keyhog_core::testing::allowlist_is_hash_allowed(
-        &al,
-        &hex_encode(&sha256("nope"))
-    ));
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        &format!("hash:{hex}\n"),
+    );
+    assert!(
+        keyhog_core::testing::CoreTestApi::allowlist_is_hash_allowed(
+            &keyhog_core::testing::TestApi,
+            &al,
+            &hex
+        )
+    );
+    assert!(
+        !keyhog_core::testing::CoreTestApi::allowlist_is_hash_allowed(
+            &keyhog_core::testing::TestApi,
+            &al,
+            &hex_encode(&sha256("nope"))
+        )
+    );
     // A non-hex input simply is not allowed (no panic on odd boundaries).
-    assert!(!keyhog_core::testing::allowlist_is_hash_allowed(
-        &al,
-        "not-a-hash"
-    ));
+    assert!(
+        !keyhog_core::testing::CoreTestApi::allowlist_is_hash_allowed(
+            &keyhog_core::testing::TestApi,
+            &al,
+            "not-a-hash"
+        )
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -192,36 +240,72 @@ fn allowlist_is_hash_allowed_takes_hex_string() {
 
 #[test]
 fn allowlist_is_allowed_by_detector() {
-    let al = keyhog_core::testing::allowlist_parse("detector:demo-token\n");
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        "detector:demo-token\n",
+    );
     let f = finding("demo-token", "src/main.rs", sha256("x"));
-    assert!(keyhog_core::testing::allowlist_is_allowed(&al, &f));
+    assert!(keyhog_core::testing::CoreTestApi::allowlist_is_allowed(
+        &keyhog_core::testing::TestApi,
+        &al,
+        &f
+    ));
     let other = finding("keep-me", "src/main.rs", sha256("x"));
-    assert!(!keyhog_core::testing::allowlist_is_allowed(&al, &other));
+    assert!(!keyhog_core::testing::CoreTestApi::allowlist_is_allowed(
+        &keyhog_core::testing::TestApi,
+        &al,
+        &other
+    ));
 }
 
 #[test]
 fn allowlist_is_allowed_by_path() {
-    let al = keyhog_core::testing::allowlist_parse("path:**/*.md\n");
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        "path:**/*.md\n",
+    );
     let f = finding("any", "docs/README.md", sha256("x"));
-    assert!(keyhog_core::testing::allowlist_is_allowed(&al, &f));
+    assert!(keyhog_core::testing::CoreTestApi::allowlist_is_allowed(
+        &keyhog_core::testing::TestApi,
+        &al,
+        &f
+    ));
     let code = finding("any", "src/main.rs", sha256("x"));
-    assert!(!keyhog_core::testing::allowlist_is_allowed(&al, &code));
+    assert!(!keyhog_core::testing::CoreTestApi::allowlist_is_allowed(
+        &keyhog_core::testing::TestApi,
+        &al,
+        &code
+    ));
 }
 
 #[test]
 fn allowlist_is_allowed_by_hash() {
     let h = sha256("leaked-value");
-    let al = keyhog_core::testing::allowlist_parse(&format!("hash:{}\n", hex_encode(&h)));
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        &format!("hash:{}\n", hex_encode(&h)),
+    );
     let f = finding("any", "src/main.rs", h);
-    assert!(keyhog_core::testing::allowlist_is_allowed(&al, &f));
+    assert!(keyhog_core::testing::CoreTestApi::allowlist_is_allowed(
+        &keyhog_core::testing::TestApi,
+        &al,
+        &f
+    ));
     let f2 = finding("any", "src/main.rs", sha256("different"));
-    assert!(!keyhog_core::testing::allowlist_is_allowed(&al, &f2));
+    assert!(!keyhog_core::testing::CoreTestApi::allowlist_is_allowed(
+        &keyhog_core::testing::TestApi,
+        &al,
+        &f2
+    ));
 }
 
 #[test]
 fn allowlist_expired_entry_is_dropped() {
     // An entry whose `expires` is in the past must not be loaded.
-    let al = keyhog_core::testing::allowlist_parse("detector:gone; expires=2000-01-01\n");
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        "detector:gone; expires=2000-01-01\n",
+    );
     assert!(
         !al.ignored_detectors.contains("gone"),
         "past-expiry entry must be dropped"
@@ -230,7 +314,10 @@ fn allowlist_expired_entry_is_dropped() {
 
 #[test]
 fn allowlist_future_expiry_entry_is_kept() {
-    let al = keyhog_core::testing::allowlist_parse("detector:stay; expires=2999-12-31\n");
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        "detector:stay; expires=2999-12-31\n",
+    );
     assert!(al.ignored_detectors.contains("stay"));
 }
 
@@ -345,7 +432,11 @@ keywords = ["mytok_"]
 [[detector.patterns]]
 regex = "mytok_[A-Za-z0-9]{20}"
 "#;
-    let dets = load_detectors_from_str(toml).unwrap();
+    let dets = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        toml,
+    )
+    .unwrap();
     assert_eq!(dets.len(), 1);
     let d = &dets[0];
     assert_eq!(d.id, "my-token");
@@ -374,7 +465,10 @@ bogus_field = true
 [[detector.patterns]]
 regex = "x_[0-9]{5}"
 "#;
-    let err = load_detectors_from_str(toml);
+    let err = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        toml,
+    );
     assert!(
         err.is_err(),
         "unknown field must be rejected by deny_unknown_fields"
@@ -383,7 +477,10 @@ regex = "x_[0-9]{5}"
 
 #[test]
 fn load_detectors_from_str_rejects_bad_toml() {
-    let err = load_detectors_from_str("this is not = valid toml {{{");
+    let err = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        "this is not = valid toml {{{",
+    );
     assert!(err.is_err());
 }
 
@@ -426,7 +523,11 @@ keywords = ["sgp_"]
 [[detector.patterns]]
 regex = "sgp_[0-9a-f]{40}"
 "#;
-    let dets = load_detectors_from_str(toml).unwrap();
+    let dets = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        toml,
+    )
+    .unwrap();
     assert_eq!(dets[0].min_confidence, Some(0.25));
     assert_eq!(dets[0].severity, Severity::Medium);
 }

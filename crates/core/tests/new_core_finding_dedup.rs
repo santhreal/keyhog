@@ -52,7 +52,7 @@ fn raw(
         detector_name: Arc::from(detector_name),
         service: Arc::from(service),
         severity,
-        credential: Arc::from(credential),
+        credential: keyhog_core::SensitiveString::from(credential),
         credential_hash: sha256(credential),
         companions: HashMap::new(),
         location,
@@ -77,7 +77,10 @@ fn raw_match_deduplication_key_is_detector_and_credential() {
         Some(0.9),
     );
     assert_eq!(
-        m.deduplication_key(),
+        keyhog_core::testing::CoreTestApi::raw_match_deduplication_key(
+            &keyhog_core::testing::TestApi,
+            &m
+        ),
         ("aws-access-key", "AKIAIOSFODNN7EXAMPLE")
     );
 }
@@ -142,9 +145,28 @@ fn raw_match_ord_higher_confidence_sorts_first() {
 
 #[test]
 fn raw_match_ord_severity_breaks_confidence_tie() {
-    let crit = raw("d", "D", "s", Severity::Critical, "a", loc("f", 1, 0), Some(0.5));
-    let info = raw("d", "D", "s", Severity::Info, "b", loc("f", 1, 0), Some(0.5));
-    assert!(crit < info, "equal confidence => higher severity sorts first");
+    let crit = raw(
+        "d",
+        "D",
+        "s",
+        Severity::Critical,
+        "a",
+        loc("f", 1, 0),
+        Some(0.5),
+    );
+    let info = raw(
+        "d",
+        "D",
+        "s",
+        Severity::Info,
+        "b",
+        loc("f", 1, 0),
+        Some(0.5),
+    );
+    assert!(
+        crit < info,
+        "equal confidence => higher severity sorts first"
+    );
 }
 
 #[test]
@@ -197,16 +219,30 @@ fn raw_match_sanitize_floats_clears_nan() {
     let mut m = raw("d", "D", "s", Severity::Low, "x", loc("f", 1, 0), None);
     m.entropy = Some(f64::NAN);
     m.confidence = Some(f64::NAN);
-    let cleaned = m.sanitize_floats();
+    let cleaned = keyhog_core::testing::CoreTestApi::raw_match_sanitize_floats(
+        &keyhog_core::testing::TestApi,
+        m,
+    );
     assert_eq!(cleaned.entropy, None);
     assert_eq!(cleaned.confidence, None);
 }
 
 #[test]
 fn raw_match_sanitize_floats_keeps_finite() {
-    let mut m = raw("d", "D", "s", Severity::Low, "x", loc("f", 1, 0), Some(0.42));
+    let mut m = raw(
+        "d",
+        "D",
+        "s",
+        Severity::Low,
+        "x",
+        loc("f", 1, 0),
+        Some(0.42),
+    );
     m.entropy = Some(3.5);
-    let cleaned = m.sanitize_floats();
+    let cleaned = keyhog_core::testing::CoreTestApi::raw_match_sanitize_floats(
+        &keyhog_core::testing::TestApi,
+        m,
+    );
     assert_eq!(cleaned.entropy, Some(3.5));
     assert_eq!(cleaned.confidence, Some(0.42));
 }
@@ -262,9 +298,18 @@ fn match_location_serde_roundtrip_optional_fields_null() {
 
 #[test]
 fn verification_result_serde_unit_variants_snake_case() {
-    assert_eq!(serde_json::to_string(&VerificationResult::Live).unwrap(), r#""live""#);
-    assert_eq!(serde_json::to_string(&VerificationResult::Revoked).unwrap(), r#""revoked""#);
-    assert_eq!(serde_json::to_string(&VerificationResult::Dead).unwrap(), r#""dead""#);
+    assert_eq!(
+        serde_json::to_string(&VerificationResult::Live).unwrap(),
+        r#""live""#
+    );
+    assert_eq!(
+        serde_json::to_string(&VerificationResult::Revoked).unwrap(),
+        r#""revoked""#
+    );
+    assert_eq!(
+        serde_json::to_string(&VerificationResult::Dead).unwrap(),
+        r#""dead""#
+    );
     assert_eq!(
         serde_json::to_string(&VerificationResult::RateLimited).unwrap(),
         r#""rate_limited""#
@@ -273,7 +318,10 @@ fn verification_result_serde_unit_variants_snake_case() {
         serde_json::to_string(&VerificationResult::Unverifiable).unwrap(),
         r#""unverifiable""#
     );
-    assert_eq!(serde_json::to_string(&VerificationResult::Skipped).unwrap(), r#""skipped""#);
+    assert_eq!(
+        serde_json::to_string(&VerificationResult::Skipped).unwrap(),
+        r#""skipped""#
+    );
 }
 
 #[test]
@@ -318,7 +366,10 @@ fn to_redacted_strips_plaintext_keeps_hash_and_preview() {
     assert_eq!(red.severity, Severity::High);
     assert_eq!(red.credential_hash, m.credential_hash);
     // Preview is redact() of the plaintext, never the plaintext itself.
-    assert_eq!(red.credential_redacted, redact("xoxb-1234567890-abcdefghij"));
+    assert_eq!(
+        red.credential_redacted,
+        redact("xoxb-1234567890-abcdefghij")
+    );
     assert!(!red.credential_redacted.contains("1234567890"));
     // Companion values are redacted too.
     let comp = red.companions_redacted.get("secret").unwrap();
@@ -353,8 +404,24 @@ fn redacted_finding_serde_roundtrip_has_no_plaintext() {
 #[test]
 fn dedup_none_keeps_every_match() {
     let matches = vec![
-        raw("d", "D", "s", Severity::Low, "same", loc("a.env", 1, 0), Some(0.5)),
-        raw("d", "D", "s", Severity::Low, "same", loc("b.env", 2, 0), Some(0.5)),
+        raw(
+            "d",
+            "D",
+            "s",
+            Severity::Low,
+            "same",
+            loc("a.env", 1, 0),
+            Some(0.5),
+        ),
+        raw(
+            "d",
+            "D",
+            "s",
+            Severity::Low,
+            "same",
+            loc("b.env", 2, 0),
+            Some(0.5),
+        ),
     ];
     let out = dedup_matches(matches, &DedupScope::None);
     assert_eq!(out.len(), 2, "None scope must not collapse anything");
@@ -367,9 +434,33 @@ fn dedup_none_keeps_every_match() {
 #[test]
 fn dedup_credential_collapses_same_secret_across_files() {
     let matches = vec![
-        raw("d", "D", "s", Severity::Low, "same", loc("a.env", 1, 10), Some(0.5)),
-        raw("d", "D", "s", Severity::Low, "same", loc("b.env", 2, 20), Some(0.5)),
-        raw("d", "D", "s", Severity::Low, "same", loc("c.env", 3, 30), Some(0.5)),
+        raw(
+            "d",
+            "D",
+            "s",
+            Severity::Low,
+            "same",
+            loc("a.env", 1, 10),
+            Some(0.5),
+        ),
+        raw(
+            "d",
+            "D",
+            "s",
+            Severity::Low,
+            "same",
+            loc("b.env", 2, 20),
+            Some(0.5),
+        ),
+        raw(
+            "d",
+            "D",
+            "s",
+            Severity::Low,
+            "same",
+            loc("c.env", 3, 30),
+            Some(0.5),
+        ),
     ];
     let out = dedup_matches(matches, &DedupScope::Credential);
     assert_eq!(out.len(), 1, "Credential scope collapses across files");
@@ -390,16 +481,46 @@ fn dedup_credential_collapses_same_secret_across_files() {
 #[test]
 fn dedup_file_keeps_one_per_file() {
     let matches = vec![
-        raw("d", "D", "s", Severity::Low, "same", loc("a.env", 1, 0), Some(0.5)),
-        raw("d", "D", "s", Severity::Low, "same", loc("a.env", 9, 50), Some(0.5)),
-        raw("d", "D", "s", Severity::Low, "same", loc("b.env", 1, 0), Some(0.5)),
+        raw(
+            "d",
+            "D",
+            "s",
+            Severity::Low,
+            "same",
+            loc("a.env", 1, 0),
+            Some(0.5),
+        ),
+        raw(
+            "d",
+            "D",
+            "s",
+            Severity::Low,
+            "same",
+            loc("a.env", 9, 50),
+            Some(0.5),
+        ),
+        raw(
+            "d",
+            "D",
+            "s",
+            Severity::Low,
+            "same",
+            loc("b.env", 1, 0),
+            Some(0.5),
+        ),
     ];
     let out = dedup_matches(matches, &DedupScope::File);
     // a.env collapses its two lines into one group; b.env is a second group.
     assert_eq!(out.len(), 2, "File scope: one group per file");
     let mut files: Vec<String> = out
         .iter()
-        .map(|d| d.primary_location.file_path.as_deref().unwrap_or("").to_string())
+        .map(|d| {
+            d.primary_location
+                .file_path
+                .as_deref()
+                .unwrap_or("")
+                .to_string()
+        })
         .collect();
     files.sort();
     assert_eq!(files, vec!["a.env".to_string(), "b.env".to_string()]);
@@ -410,8 +531,24 @@ fn dedup_credential_same_file_line_is_not_double_counted() {
     // Two matches at the SAME (file, line) collapse with no additional location:
     // this is the synthetic-preprocessor-alias guard.
     let matches = vec![
-        raw("d", "D", "s", Severity::Low, "same", loc("a.env", 1, 0), Some(0.5)),
-        raw("d", "D", "s", Severity::Low, "same", loc("a.env", 1, 80), Some(0.5)),
+        raw(
+            "d",
+            "D",
+            "s",
+            Severity::Low,
+            "same",
+            loc("a.env", 1, 0),
+            Some(0.5),
+        ),
+        raw(
+            "d",
+            "D",
+            "s",
+            Severity::Low,
+            "same",
+            loc("a.env", 1, 80),
+            Some(0.5),
+        ),
     ];
     let out = dedup_matches(matches, &DedupScope::Credential);
     assert_eq!(out.len(), 1);
@@ -427,21 +564,65 @@ fn dedup_credential_same_file_line_is_not_double_counted() {
 #[test]
 fn dedup_credential_takes_max_confidence() {
     let matches = vec![
-        raw("d", "D", "s", Severity::Low, "same", loc("a.env", 1, 0), Some(0.3)),
-        raw("d", "D", "s", Severity::Low, "same", loc("a.env", 2, 0), Some(0.91)),
+        raw(
+            "d",
+            "D",
+            "s",
+            Severity::Low,
+            "same",
+            loc("a.env", 1, 0),
+            Some(0.3),
+        ),
+        raw(
+            "d",
+            "D",
+            "s",
+            Severity::Low,
+            "same",
+            loc("a.env", 2, 0),
+            Some(0.91),
+        ),
     ];
     let out = dedup_matches(matches, &DedupScope::Credential);
     assert_eq!(out.len(), 1);
-    assert_eq!(out[0].confidence, Some(0.91), "merged group keeps max confidence");
+    assert_eq!(
+        out[0].confidence,
+        Some(0.91),
+        "merged group keeps max confidence"
+    );
 }
 
 #[test]
 fn dedup_output_is_deterministic_across_input_order() {
     let mk = || {
         vec![
-            raw("z-det", "Z", "s", Severity::Low, "v1", loc("z.env", 1, 0), Some(0.5)),
-            raw("a-det", "A", "s", Severity::Low, "v2", loc("a.env", 1, 0), Some(0.5)),
-            raw("m-det", "M", "s", Severity::Low, "v3", loc("m.env", 1, 0), Some(0.5)),
+            raw(
+                "z-det",
+                "Z",
+                "s",
+                Severity::Low,
+                "v1",
+                loc("z.env", 1, 0),
+                Some(0.5),
+            ),
+            raw(
+                "a-det",
+                "A",
+                "s",
+                Severity::Low,
+                "v2",
+                loc("a.env", 1, 0),
+                Some(0.5),
+            ),
+            raw(
+                "m-det",
+                "M",
+                "s",
+                Severity::Low,
+                "v3",
+                loc("m.env", 1, 0),
+                Some(0.5),
+            ),
         ]
     };
     let mut reversed = mk();
@@ -462,11 +643,23 @@ fn dedup_output_is_deterministic_across_input_order() {
 #[test]
 fn cross_detector_singleton_passthrough() {
     let g = dedup_matches(
-        vec![raw("d", "D", "s", Severity::Low, "x", loc("f", 1, 0), Some(0.5))],
+        vec![raw(
+            "d",
+            "D",
+            "s",
+            Severity::Low,
+            "x",
+            loc("f", 1, 0),
+            Some(0.5),
+        )],
         &DedupScope::Credential,
     );
     let out = dedup_cross_detector(g);
-    assert_eq!(out.len(), 1, "single deduped match passes through unchanged");
+    assert_eq!(
+        out.len(),
+        1,
+        "single deduped match passes through unchanged"
+    );
 }
 
 #[test]
@@ -508,15 +701,25 @@ fn cross_detector_folds_same_credential_into_winner() {
         },
     ];
     let out = dedup_cross_detector(deduped);
-    assert_eq!(out.len(), 1, "shared-credential detectors fold to one finding");
+    assert_eq!(
+        out.len(),
+        1,
+        "shared-credential detectors fold to one finding"
+    );
     let winner = &out[0];
-    assert_eq!(&*winner.detector_id, "google-api", "highest confidence wins");
+    assert_eq!(
+        &*winner.detector_id, "google-api",
+        "highest confidence wins"
+    );
     // The loser is recorded as a cross_detector companion mentioning its service.
     let folded = winner
         .companions
         .values()
         .any(|v| v.contains("Google Maps"));
-    assert!(folded, "loser detector must be folded as cross_detector evidence");
+    assert!(
+        folded,
+        "loser detector must be folded as cross_detector evidence"
+    );
 }
 
 #[test]
@@ -524,21 +727,41 @@ fn cross_detector_distinct_credentials_not_folded() {
     let deduped = vec![
         {
             let mut d = dedup_matches(
-                vec![raw("a", "A", "s", Severity::Low, "cred-one", loc("f", 1, 0), Some(0.9))],
+                vec![raw(
+                    "a",
+                    "A",
+                    "s",
+                    Severity::Low,
+                    "cred-one",
+                    loc("f", 1, 0),
+                    Some(0.9),
+                )],
                 &DedupScope::Credential,
             );
             d.remove(0)
         },
         {
             let mut d = dedup_matches(
-                vec![raw("b", "B", "s", Severity::Low, "cred-two", loc("f", 1, 0), Some(0.9))],
+                vec![raw(
+                    "b",
+                    "B",
+                    "s",
+                    Severity::Low,
+                    "cred-two",
+                    loc("f", 1, 0),
+                    Some(0.9),
+                )],
                 &DedupScope::Credential,
             );
             d.remove(0)
         },
     ];
     let out = dedup_cross_detector(deduped);
-    assert_eq!(out.len(), 2, "different credential hashes must stay separate");
+    assert_eq!(
+        out.len(),
+        2,
+        "different credential hashes must stay separate"
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -592,7 +815,9 @@ fn hex_encode_is_64_lowercase_chars() {
     assert_eq!(hex.len(), 64);
     assert!(hex.starts_with("ab"));
     assert!(hex.ends_with("cd"));
-    assert!(hex.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+    assert!(hex
+        .chars()
+        .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
 }
 
 #[test]

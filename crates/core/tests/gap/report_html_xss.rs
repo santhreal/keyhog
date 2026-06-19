@@ -31,13 +31,12 @@
 //!   * `confidence` is `skip_serializing_if = "Option::is_none"`.
 //!   * `credential_hash` serializes as lowercase hex (finding.rs:319).
 
+use crate::support::reporters::HtmlReporter;
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use keyhog_core::{
-    HtmlReporter, MatchLocation, Reporter, Severity, VerificationResult, VerifiedFinding,
-};
+use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
 
 // ---------------------------------------------------------------------------
 // Helpers

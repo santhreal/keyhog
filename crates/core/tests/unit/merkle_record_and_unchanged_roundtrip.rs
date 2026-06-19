@@ -1,15 +1,15 @@
 //! Merkle index records content hash and detects changes.
 
-use keyhog_core::merkle_index::MerkleIndex;
+use keyhog_core::MerkleIndex;
 use std::path::PathBuf;
 
 #[test]
 fn merkle_record_and_unchanged_roundtrip() {
-    let idx = MerkleIndex::empty();
+    let idx = keyhog_core::testing::CoreTestApi::merkle_empty(&keyhog_core::testing::TestApi, );
     let p = PathBuf::from("/tmp/example.env");
-    let h = MerkleIndex::hash_content(b"DB_PASS=secret123");
-    idx.record(p.clone(), h);
-    assert!(idx.unchanged(&p, &h));
-    let h2 = MerkleIndex::hash_content(b"DB_PASS=changed");
-    assert!(!idx.unchanged(&p, &h2));
+    let h = keyhog_core::testing::CoreTestApi::merkle_hash_content(&keyhog_core::testing::TestApi, b"DB_PASS=secret123");
+    keyhog_core::testing::CoreTestApi::merkle_record(&keyhog_core::testing::TestApi, &idx, p.clone(), h);
+    assert!(keyhog_core::testing::CoreTestApi::merkle_unchanged(&keyhog_core::testing::TestApi, &idx, &p, &h));
+    let h2 = keyhog_core::testing::CoreTestApi::merkle_hash_content(&keyhog_core::testing::TestApi, b"DB_PASS=changed");
+    assert!(!keyhog_core::testing::CoreTestApi::merkle_unchanged(&keyhog_core::testing::TestApi, &idx, &p, &h2));
 }

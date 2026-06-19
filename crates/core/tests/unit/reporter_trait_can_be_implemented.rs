@@ -1,5 +1,6 @@
 //! Migrated from `src/report.rs` inline tests.
-use keyhog_core::{MatchLocation, Reporter, Severity, VerificationResult, VerifiedFinding};
+use crate::support::reporters::Reporter;
+use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
 use std::collections::HashMap;
 use std::sync::Arc;
 struct NoopReporter;

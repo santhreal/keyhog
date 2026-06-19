@@ -5,4 +5,7 @@ pub mod gap;
 pub mod integration;
 pub mod property;
 pub mod regression;
+pub mod support {
+    pub mod reporters;
+}
 pub mod unit;

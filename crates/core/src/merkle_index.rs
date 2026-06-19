@@ -53,8 +53,6 @@ use std::path::{Path, PathBuf};
 
 use parking_lot::RwLock;
 
-pub use crate::merkle_spec_hash::compute_spec_hash;
-
 // Disk persistence and stale-tmp hygiene are separate filesystem responsibilities;
 // the root module owns only the live index and calls those owners through methods.
 mod storage;
@@ -331,6 +329,3 @@ impl Default for MerkleIndex {
         Self::empty()
     }
 }
-
-#[doc(hidden)]
-pub mod testing;

@@ -1,8 +1,4 @@
 //! Migrated from `src/merkle_index.rs` inline tests.
-use keyhog_core::compute_spec_hash;
-use keyhog_core::merkle_index::MerkleIndex;
-use keyhog_core::{CompanionSpec, DetectorSpec, PatternSpec, Severity};
-use std::path::{Path, PathBuf};
 
 #[cfg(unix)]
 mod filetime_workaround {
@@ -48,9 +44,6 @@ mod filetime_workaround {
         Err(std::io::ErrorKind::Unsupported.into())
     }
 }
-fn sample_hash(s: &[u8]) -> [u8; 32] {
-    MerkleIndex::hash_content(s)
-}
 #[test]
 fn load_sweeps_stale_tmp_files_left_by_killed_processes() {
     // Plant a fake stale tmp file matching tempfile's pattern,
@@ -80,7 +73,8 @@ fn load_sweeps_stale_tmp_files_left_by_killed_processes() {
     let unrelated = dir.path().join("unrelated.json");
     std::fs::write(&unrelated, b"keep me").unwrap();
 
-    let _ = MerkleIndex::load(&cache_path);
+    let _ =
+        keyhog_core::testing::CoreTestApi::merkle_load(&keyhog_core::testing::TestApi, &cache_path);
 
     // Fresh tmp survives.
     assert!(

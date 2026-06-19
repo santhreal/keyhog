@@ -1,5 +1,5 @@
 //! Boundary cases: edge values, empty collections, malformed enums, etc.
-use keyhog_core::{load_detectors_from_str, SpecError};
+use keyhog_core::SpecError;
 
 #[test]
 fn toml_compat_invalid_severity_enum_errors() {
@@ -15,7 +15,10 @@ keywords = ["test"]
 regex = "test_[A-Z0-9]{8}"
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     assert!(
         matches!(result, Err(SpecError::InvalidToml { .. })),
         "Invalid severity enum must be rejected"
@@ -52,7 +55,10 @@ method = "INVALID_METHOD"
 status = 200
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     assert!(
         matches!(result, Err(SpecError::InvalidToml { .. })),
         "Invalid HTTP method must be rejected"
@@ -74,7 +80,10 @@ min_confidence = -0.5
 regex = "test_[A-Z0-9]{8}"
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     // Parsing itself may succeed, but validation should catch this
     // Check both cases
     if let Ok(specs) = result {
@@ -99,7 +108,10 @@ keywords = ["test"]
 regex = "test_[A-Z0-9]{8}"
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     // Should parse but validation may reject it or allow it depending on the gate
     // Just ensure it doesn't panic
     let _ = result;
@@ -123,7 +135,10 @@ regex = "test_[A-Z0-9]{{8}}"
         long_string
     );
 
-    let result = load_detectors_from_str(&toml_str);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        &toml_str,
+    );
     // Should parse without panic or OOM
     assert!(
         result.is_ok() || matches!(result, Err(SpecError::InvalidToml { .. })),
@@ -145,7 +160,10 @@ keywords = ["test"]
 regex = "test_[A-Z0-9]{8}"
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     // Should parse successfully (Unicode is valid in TOML strings)
     if let Ok(specs) = result {
         assert_eq!(specs.len(), 1);
@@ -172,7 +190,10 @@ regex = "[A-Z0-9]{10}"
 within_lines = 0
 "#;
 
-    let result = load_detectors_from_str(toml_str);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        toml_str,
+    );
     // Should parse (semantics validation is separate)
     assert!(result.is_ok() || matches!(result, Err(SpecError::InvalidToml { .. })));
 }
@@ -200,7 +221,10 @@ regex = "[0-9]{6}-[0-9]{6}"
 group = 0
 "#;
 
-    let result = load_detectors_from_str(toml_str);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        toml_str,
+    );
     if let Ok(specs) = result {
         assert_eq!(specs[0].patterns.len(), 3);
         assert_eq!(

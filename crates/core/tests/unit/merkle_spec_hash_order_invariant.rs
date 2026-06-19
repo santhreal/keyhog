@@ -1,6 +1,6 @@
 //! compute_spec_hash must be order-invariant across detector slice ordering.
 
-use keyhog_core::merkle_index::compute_spec_hash;
+use keyhog_core::compute_spec_hash;
 use keyhog_core::{CompanionSpec, DetectorSpec, PatternSpec, Severity};
 
 fn make(id: &str) -> DetectorSpec {

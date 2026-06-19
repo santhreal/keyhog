@@ -13,13 +13,18 @@
 //!      An embed-time drop or an in-place edit could diverge from what shipped.
 //!
 //! This gate closes both holes at the source crate: it parses the EXACT
-//! embedded slice (`keyhog_core::embedded_detector_tomls()` — the same bytes the
-//! CLI loads) with the SAME `DetectorFile` deserializer the runtime uses, and
+//! embedded slice (exposed to tests through `keyhog_core::testing` — the same
+//! bytes the CLI loads) with the SAME `DetectorFile` deserializer the runtime uses, and
 //! fails — naming every offender by file stem with the toml error — if a single
 //! embedded detector does not parse. A detector that loads but is silently
 //! dropped is decoration; this makes that impossible to ship.
 
-use keyhog_core::{embedded_detector_count, embedded_detector_tomls, DetectorFile};
+use keyhog_core::testing::{CoreTestApi, TestApi};
+use keyhog_core::{embedded_detector_count, DetectorFile};
+
+fn embedded_detector_tomls() -> &'static [(&'static str, &'static str)] {
+    CoreTestApi::embedded_detector_tomls(&TestApi)
+}
 
 #[test]
 fn every_embedded_detector_parses() {

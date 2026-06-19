@@ -11,7 +11,7 @@ fn make_raw(detector: &str, credential: &str, conf: f64) -> RawMatch {
         detector_name: Arc::from(detector),
         service: Arc::from(detector.split('-').next().unwrap_or(detector)),
         severity: Severity::High,
-        credential: Arc::from(credential),
+        credential: keyhog_core::SensitiveString::from(credential),
         credential_hash: [0; 32],
         companions: HashMap::new(),
         location: MatchLocation {

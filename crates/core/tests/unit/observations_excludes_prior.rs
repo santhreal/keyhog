@@ -1,10 +1,22 @@
 //! Migrated from `src/calibration.rs` inline tests.
-use keyhog_core::calibration::Calibration;
+use keyhog_core::Calibration;
 #[test]
 fn observations_excludes_prior() {
-    let c = Calibration::empty();
-    assert_eq!(c.counters("x").observations(), 0);
-    c.record_true_positive("x");
-    c.record_false_positive("x");
-    assert_eq!(c.counters("x").observations(), 2);
+    let c = Calibration::default();
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::beta_observations(
+            &keyhog_core::testing::TestApi,
+            &c.counters("x")
+        ),
+        0
+    );
+    c.record_outcome("x", true);
+    c.record_outcome("x", false);
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::beta_observations(
+            &keyhog_core::testing::TestApi,
+            &c.counters("x")
+        ),
+        2
+    );
 }

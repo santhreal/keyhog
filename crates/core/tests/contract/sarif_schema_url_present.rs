@@ -1,7 +1,6 @@
 //! Contract: SARIF document exposes the OASIS 2.1.0 schema URL in `$schema`.
 
-use keyhog_core::{Reporter, SarifReporter};
-
+use crate::support::reporters::SarifReporter;
 const SARIF_SCHEMA_URL: &str =
     "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1.0/sarif-schema-2.1.0.json";
 

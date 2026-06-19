@@ -4,11 +4,14 @@
 //! a concrete value (bytes, ordering, redacted form, decoded account id), never
 //! just `is_ok()` / `!is_empty()`.
 
-use keyhog_core::aws::{
-    account_is_canary, aws_account_from_key_id, finding_metadata, key_id_is_canary, CANARY_MESSAGE,
+use keyhog_core::decode_standard_base64;
+use keyhog_core::{
+    dedup_matches, redact, Credential, DedupScope, MatchLocation, RawMatch, SensitiveString,
+    Severity,
 };
-use keyhog_core::encoding::{decode_standard_base64, MAX_STANDARD_BASE64_INPUT_BYTES};
-use keyhog_core::{redact, Credential, SensitiveString, Severity};
+use keyhog_core::{finding_metadata, key_id_canary_status};
+use std::collections::HashMap;
+use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
 // Credential
@@ -16,51 +19,69 @@ use keyhog_core::{redact, Credential, SensitiveString, Severity};
 
 #[test]
 fn credential_from_text_len_and_expose() {
-    let c = Credential::from_text("sk_live_abcdEFGH");
-    assert_eq!(c.len(), 16);
-    assert!(!c.is_empty());
+    let c = Credential::from("sk_live_abcdEFGH");
+    assert_eq!(c.expose_secret().len(), 16);
+    assert!(!c.expose_secret().is_empty());
     assert_eq!(c.expose_secret(), b"sk_live_abcdEFGH");
-    assert_eq!(c.expose_str(), Some("sk_live_abcdEFGH"));
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_str(
+            &keyhog_core::testing::TestApi,
+            &c
+        ),
+        Some("sk_live_abcdEFGH")
+    );
 }
 
 #[test]
 fn credential_empty_is_empty() {
-    let c = Credential::from_text("");
-    assert!(c.is_empty());
-    assert_eq!(c.len(), 0);
+    let c = Credential::from("");
+    assert!(c.expose_secret().is_empty());
+    assert_eq!(c.expose_secret().len(), 0);
     assert_eq!(c.expose_secret(), b"");
-    assert_eq!(c.expose_str(), Some(""));
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_str(
+            &keyhog_core::testing::TestApi,
+            &c
+        ),
+        Some("")
+    );
 }
 
 #[test]
 fn credential_from_bytes_non_utf8_expose_str_none() {
     // 0xFF 0xFE is not valid UTF-8 -> expose_str must be None, expose_secret exact.
-    let c = Credential::from_bytes(&[0xFF, 0xFE, 0x00, 0x41]);
-    assert_eq!(c.len(), 4);
+    let c = Credential::from(vec![0xFF, 0xFE, 0x00, 0x41]);
+    assert_eq!(c.expose_secret().len(), 4);
     assert_eq!(c.expose_secret(), &[0xFF, 0xFE, 0x00, 0x41]);
-    assert_eq!(c.expose_str(), None);
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_str(
+            &keyhog_core::testing::TestApi,
+            &c
+        ),
+        None
+    );
 }
 
 #[test]
 fn credential_eq_is_value_based() {
-    let a = Credential::from_text("same-secret-value");
-    let b = Credential::from_text("same-secret-value");
-    let c = Credential::from_text("different");
+    let a = Credential::from("same-secret-value");
+    let b = Credential::from("same-secret-value");
+    let c = Credential::from("different");
     assert_eq!(a, b);
     assert_ne!(a, c);
 }
 
 #[test]
 fn credential_eq_different_lengths_not_equal() {
-    let a = Credential::from_text("abcd");
-    let b = Credential::from_text("abcde");
+    let a = Credential::from("abcd");
+    let b = Credential::from("abcde");
     assert_ne!(a, b);
 }
 
 #[test]
 fn credential_ord_matches_byte_order() {
-    let a = Credential::from_text("aaa");
-    let b = Credential::from_text("aab");
+    let a = Credential::from("aaa");
+    let b = Credential::from("aab");
     assert!(a < b);
     assert!(b > a);
     assert_eq!(a.cmp(&a.clone()), std::cmp::Ordering::Equal);
@@ -70,16 +91,16 @@ fn credential_ord_matches_byte_order() {
 fn credential_hash_matches_for_equal_values() {
     use std::collections::HashSet;
     let mut set = HashSet::new();
-    set.insert(Credential::from_text("dup"));
-    set.insert(Credential::from_text("dup"));
-    set.insert(Credential::from_text("other"));
+    set.insert(Credential::from("dup"));
+    set.insert(Credential::from("dup"));
+    set.insert(Credential::from("other"));
     // Equal credentials collapse in a HashSet; only two distinct remain.
     assert_eq!(set.len(), 2);
 }
 
 #[test]
 fn credential_debug_redacts_bytes() {
-    let c = Credential::from_text("supersecretvalue");
+    let c = Credential::from("supersecretvalue");
     let dbg = format!("{c:?}");
     assert!(
         !dbg.contains("supersecretvalue"),
@@ -90,7 +111,7 @@ fn credential_debug_redacts_bytes() {
 
 #[test]
 fn credential_display_redacts_bytes() {
-    let c = Credential::from_text("supersecretvalue");
+    let c = Credential::from("supersecretvalue");
     let shown = format!("{c}");
     assert!(!shown.contains("supersecretvalue"));
     assert_eq!(shown, "<redacted 16 bytes>");
@@ -98,21 +119,30 @@ fn credential_display_redacts_bytes() {
 
 #[test]
 fn credential_serde_text_roundtrip_tagged() {
-    let c = Credential::from_text("hello-token");
+    let c = Credential::from("hello-token");
     let json = serde_json::to_string(&c).unwrap();
     // Tagged form: {"text":"hello-token"} - never a bare string.
     assert_eq!(json, r#"{"text":"hello-token"}"#);
     let back: Credential = serde_json::from_str(&json).unwrap();
     assert_eq!(back, c);
-    assert_eq!(back.expose_str(), Some("hello-token"));
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_str(
+            &keyhog_core::testing::TestApi,
+            &back
+        ),
+        Some("hello-token")
+    );
 }
 
 #[test]
 fn credential_serde_b64_roundtrip_for_non_utf8() {
-    let c = Credential::from_bytes(&[0x00, 0xFF, 0x10, 0x80]);
+    let c = Credential::from(vec![0x00, 0xFF, 0x10, 0x80]);
     let json = serde_json::to_string(&c).unwrap();
     // Non-UTF-8 must serialize under the "b64" tag, not "text".
-    assert!(json.starts_with(r#"{"b64":"#), "expected b64 tag, got {json}");
+    assert!(
+        json.starts_with(r#"{"b64":"#),
+        "expected b64 tag, got {json}"
+    );
     let back: Credential = serde_json::from_str(&json).unwrap();
     assert_eq!(back.expose_secret(), &[0x00, 0xFF, 0x10, 0x80]);
 }
@@ -121,14 +151,26 @@ fn credential_serde_b64_roundtrip_for_non_utf8() {
 fn credential_deser_legacy_plain_string() {
     // Legacy on-disk form: a bare string with no b64: prefix is plaintext.
     let back: Credential = serde_json::from_str(r#""legacy-plain""#).unwrap();
-    assert_eq!(back.expose_str(), Some("legacy-plain"));
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_str(
+            &keyhog_core::testing::TestApi,
+            &back
+        ),
+        Some("legacy-plain")
+    );
 }
 
 #[test]
 fn credential_deser_legacy_b64_prefixed_string() {
     // "b64:SGVsbG8=" decodes to "Hello".
     let back: Credential = serde_json::from_str(r#""b64:SGVsbG8=""#).unwrap();
-    assert_eq!(back.expose_str(), Some("Hello"));
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_str(
+            &keyhog_core::testing::TestApi,
+            &back
+        ),
+        Some("Hello")
+    );
 }
 
 #[test]
@@ -139,7 +181,7 @@ fn credential_deser_rejects_both_tags() {
 
 #[test]
 fn credential_from_conversions_agree() {
-    let want = Credential::from_text("xyz");
+    let want = Credential::from("xyz");
     assert_eq!(Credential::from("xyz"), want);
     assert_eq!(Credential::from(String::from("xyz")), want);
     assert_eq!(Credential::from(&b"xyz"[..]), want);
@@ -152,10 +194,10 @@ fn credential_from_conversions_agree() {
 
 #[test]
 fn sensitive_string_basic_accessors() {
-    let s = SensitiveString::new("API_KEY=value".to_string());
+    let s = SensitiveString::from("API_KEY=value");
     assert_eq!(s.len(), 13);
     assert!(!s.is_empty());
-    assert_eq!(s.as_str(), "API_KEY=value");
+    assert_eq!(s.as_ref(), "API_KEY=value");
     assert_eq!(s.as_bytes(), b"API_KEY=value");
     // Deref to str.
     assert!(s.contains("API_KEY"));
@@ -166,7 +208,7 @@ fn sensitive_string_default_is_empty() {
     let s = SensitiveString::default();
     assert!(s.is_empty());
     assert_eq!(s.len(), 0);
-    assert_eq!(s.as_str(), "");
+    assert_eq!(s.as_ref(), "");
 }
 
 #[test]
@@ -177,14 +219,14 @@ fn sensitive_string_join() {
         SensitiveString::from("c"),
     ];
     let joined = SensitiveString::join(&parts, "-");
-    assert_eq!(joined.as_str(), "a-b-c");
+    assert_eq!(joined.as_ref(), "a-b-c");
     // Empty parts -> empty string.
-    assert_eq!(SensitiveString::join(&[], ",").as_str(), "");
+    assert_eq!(SensitiveString::join(&[], ",").as_ref(), "");
 }
 
 #[test]
 fn sensitive_string_display_exposes_but_debug_redacts() {
-    let s = SensitiveString::new("leaky-content".to_string());
+    let s = SensitiveString::from("leaky-content");
     // Display intentionally exposes (auditable surface).
     assert_eq!(format!("{s}"), "leaky-content");
     // Debug must NOT leak.
@@ -199,7 +241,45 @@ fn sensitive_string_serde_roundtrip_plain_string() {
     let json = serde_json::to_string(&s).unwrap();
     assert_eq!(json, r#""round-trip""#);
     let back: SensitiveString = serde_json::from_str(&json).unwrap();
-    assert_eq!(back.as_str(), "round-trip");
+    assert_eq!(back.as_ref(), "round-trip");
+}
+
+#[test]
+fn canonical_match_credentials_use_zeroizing_sensitive_string() {
+    fn assert_sensitive_string(_: &SensitiveString) {}
+
+    let raw = RawMatch {
+        detector_id: Arc::from("unit"),
+        detector_name: Arc::from("Unit"),
+        service: Arc::from("unit-service"),
+        severity: Severity::High,
+        credential: SensitiveString::from("live-secret-value"),
+        credential_hash: [7u8; 32],
+        companions: HashMap::new(),
+        location: MatchLocation {
+            source: Arc::from("unit"),
+            file_path: Some(Arc::from("unit.env")),
+            line: Some(1),
+            offset: 4,
+            commit: None,
+            author: None,
+            date: None,
+        },
+        entropy: Some(4.5),
+        confidence: Some(0.95),
+    };
+    assert_sensitive_string(&raw.credential);
+
+    let raw_json = serde_json::to_value(&raw).unwrap();
+    assert_eq!(raw_json["credential"], "live-secret-value");
+
+    let mut deduped = dedup_matches(vec![raw], &DedupScope::None);
+    assert_eq!(deduped.len(), 1);
+    let finding = deduped.pop().unwrap();
+    assert_sensitive_string(&finding.credential);
+
+    let deduped_json = serde_json::to_value(&finding).unwrap();
+    assert_eq!(deduped_json["credential"], "live-secret-value");
 }
 
 // ---------------------------------------------------------------------------
@@ -267,12 +347,12 @@ fn severity_default_is_info() {
 
 #[test]
 fn severity_as_str_and_display_kebab() {
-    assert_eq!(Severity::Info.as_str(), "info");
-    assert_eq!(Severity::ClientSafe.as_str(), "client-safe");
-    assert_eq!(Severity::Low.as_str(), "low");
-    assert_eq!(Severity::Medium.as_str(), "medium");
-    assert_eq!(Severity::High.as_str(), "high");
-    assert_eq!(Severity::Critical.as_str(), "critical");
+    assert_eq!(Severity::Info.to_string(), "info");
+    assert_eq!(Severity::ClientSafe.to_string(), "client-safe");
+    assert_eq!(Severity::Low.to_string(), "low");
+    assert_eq!(Severity::Medium.to_string(), "medium");
+    assert_eq!(Severity::High.to_string(), "high");
+    assert_eq!(Severity::Critical.to_string(), "critical");
     assert_eq!(format!("{}", Severity::ClientSafe), "client-safe");
 }
 
@@ -291,7 +371,10 @@ fn severity_serde_kebab_roundtrip() {
         assert_eq!(back, sev, "roundtrip mismatch for {sev:?}");
     }
     // Wire form check.
-    assert_eq!(serde_json::to_string(&Severity::ClientSafe).unwrap(), r#""client-safe""#);
+    assert_eq!(
+        serde_json::to_string(&Severity::ClientSafe).unwrap(),
+        r#""client-safe""#
+    );
 }
 
 #[test]
@@ -320,7 +403,10 @@ fn severity_downgrade_one_chain() {
 fn base64_decode_known_vectors() {
     assert_eq!(decode_standard_base64("").unwrap(), b"");
     assert_eq!(decode_standard_base64("SGVsbG8=").unwrap(), b"Hello");
-    assert_eq!(decode_standard_base64("SGVsbG8gd29ybGQ=").unwrap(), b"Hello world");
+    assert_eq!(
+        decode_standard_base64("SGVsbG8gd29ybGQ=").unwrap(),
+        b"Hello world"
+    );
     // Without padding still decodes.
     assert_eq!(decode_standard_base64("SGVsbG8").unwrap(), b"Hello");
 }
@@ -349,7 +435,10 @@ fn base64_decode_rejects_truncated_single_char() {
 
 #[test]
 fn base64_decode_oversize_rejected() {
-    let big = "A".repeat(MAX_STANDARD_BASE64_INPUT_BYTES + 1);
+    let cap = keyhog_core::testing::CoreTestApi::max_standard_base64_input_bytes(
+        &keyhog_core::testing::TestApi,
+    );
+    let big = "A".repeat(cap + 1);
     let err = decode_standard_base64(&big);
     assert!(err.is_err());
     assert!(err.unwrap_err().contains("exceeds"));
@@ -363,7 +452,10 @@ fn base64_decode_oversize_rejected() {
 fn aws_account_decode_known_vector() {
     // trufflesecurity reference: AKIASP2TPHJSQH3FJXYZ-style. Use a
     // deterministic well-formed key and assert the 12-digit, zero-padded shape.
-    let acct = aws_account_from_key_id("AKIAIOSFODNN7EXAMPLE");
+    let acct = keyhog_core::testing::CoreTestApi::aws_account_from_key_id(
+        &keyhog_core::testing::TestApi,
+        "AKIAIOSFODNN7EXAMPLE",
+    );
     assert!(acct.is_some(), "well-formed AKIA key must decode");
     let acct = acct.unwrap();
     assert_eq!(acct.len(), 12, "account id must be 12 digits");
@@ -372,40 +464,81 @@ fn aws_account_decode_known_vector() {
 
 #[test]
 fn aws_account_decode_is_deterministic() {
-    let a = aws_account_from_key_id("AKIAIOSFODNN7EXAMPLE").unwrap();
-    let b = aws_account_from_key_id("AKIAIOSFODNN7EXAMPLE").unwrap();
+    let a = keyhog_core::testing::CoreTestApi::aws_account_from_key_id(
+        &keyhog_core::testing::TestApi,
+        "AKIAIOSFODNN7EXAMPLE",
+    )
+    .unwrap();
+    let b = keyhog_core::testing::CoreTestApi::aws_account_from_key_id(
+        &keyhog_core::testing::TestApi,
+        "AKIAIOSFODNN7EXAMPLE",
+    )
+    .unwrap();
     assert_eq!(a, b);
 }
 
 #[test]
 fn aws_account_decode_asia_prefix_works() {
-    let acct = aws_account_from_key_id("ASIAIOSFODNN7EXAMPLE");
+    let acct = keyhog_core::testing::CoreTestApi::aws_account_from_key_id(
+        &keyhog_core::testing::TestApi,
+        "ASIAIOSFODNN7EXAMPLE",
+    );
     assert!(acct.is_some(), "ASIA temporary keys must also decode");
     assert_eq!(acct.unwrap().len(), 12);
 }
 
 #[test]
 fn aws_account_decode_rejects_wrong_length() {
-    assert_eq!(aws_account_from_key_id("AKIASHORT"), None);
-    assert_eq!(aws_account_from_key_id("AKIATOOLONGTOOLONGTOOLONG"), None);
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::aws_account_from_key_id(
+            &keyhog_core::testing::TestApi,
+            "AKIASHORT"
+        ),
+        None
+    );
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::aws_account_from_key_id(
+            &keyhog_core::testing::TestApi,
+            "AKIATOOLONGTOOLONGTOOLONG"
+        ),
+        None
+    );
 }
 
 #[test]
 fn aws_account_decode_rejects_wrong_prefix() {
     // Right length (20), wrong prefix.
-    assert_eq!(aws_account_from_key_id("ZKIAIOSFODNN7EXAMPLE"), None);
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::aws_account_from_key_id(
+            &keyhog_core::testing::TestApi,
+            "ZKIAIOSFODNN7EXAMPLE"
+        ),
+        None
+    );
 }
 
 #[test]
 fn aws_account_decode_rejects_non_base32_body() {
     // '1', '0', '8', '9' are not in the RFC-4648 base32 alphabet.
-    assert_eq!(aws_account_from_key_id("AKIA1111111111111111"), None);
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::aws_account_from_key_id(
+            &keyhog_core::testing::TestApi,
+            "AKIA1111111111111111"
+        ),
+        None
+    );
 }
 
 #[test]
 fn aws_account_decode_trims_whitespace() {
-    let trimmed = aws_account_from_key_id("  AKIAIOSFODNN7EXAMPLE  ");
-    let plain = aws_account_from_key_id("AKIAIOSFODNN7EXAMPLE");
+    let trimmed = keyhog_core::testing::CoreTestApi::aws_account_from_key_id(
+        &keyhog_core::testing::TestApi,
+        "  AKIAIOSFODNN7EXAMPLE  ",
+    );
+    let plain = keyhog_core::testing::CoreTestApi::aws_account_from_key_id(
+        &keyhog_core::testing::TestApi,
+        "AKIAIOSFODNN7EXAMPLE",
+    );
     assert_eq!(trimmed, plain);
     assert!(trimmed.is_some());
 }
@@ -417,7 +550,11 @@ fn aws_finding_metadata_present_for_valid_key() {
     assert_eq!(acct.len(), 12);
     assert_eq!(
         meta.get("account_id").unwrap(),
-        &aws_account_from_key_id("AKIAIOSFODNN7EXAMPLE").unwrap()
+        &keyhog_core::testing::CoreTestApi::aws_account_from_key_id(
+            &keyhog_core::testing::TestApi,
+            "AKIAIOSFODNN7EXAMPLE"
+        )
+        .unwrap()
     );
 }
 
@@ -429,21 +566,30 @@ fn aws_finding_metadata_none_for_non_key() {
 #[test]
 fn aws_canary_message_is_actionable() {
     // The operator-facing message must warn against verifying.
-    assert!(CANARY_MESSAGE.contains("Do NOT verify"));
-    assert!(CANARY_MESSAGE.contains("canary"));
+    assert!(
+        keyhog_core::testing::CoreTestApi::aws_canary_message(&keyhog_core::testing::TestApi,)
+            .contains("Do NOT verify")
+    );
+    assert!(
+        keyhog_core::testing::CoreTestApi::aws_canary_message(&keyhog_core::testing::TestApi,)
+            .contains("canary")
+    );
 }
 
 #[test]
 fn aws_canary_negative_for_random_account() {
     // A clearly-non-canary 12-digit account must classify false (the baseline
     // canary list does not contain arbitrary accounts).
-    assert!(!account_is_canary("000000000001"));
+    assert!(!keyhog_core::testing::CoreTestApi::aws_account_is_canary(
+        &keyhog_core::testing::TestApi,
+        "000000000001"
+    ));
 }
 
 #[test]
 fn aws_key_id_is_canary_false_for_non_canary_key() {
     // The example key's decoded account is not a Thinkst canary.
-    assert!(!key_id_is_canary("AKIAIOSFODNN7EXAMPLE"));
+    assert!(!key_id_canary_status("AKIAIOSFODNN7EXAMPLE").expect("canary status"));
     // A malformed key is never a canary (decode fails closed).
-    assert!(!key_id_is_canary("not-a-key"));
+    assert!(!key_id_canary_status("not-a-key").expect("canary status"));
 }

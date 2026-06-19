@@ -4,8 +4,7 @@
 //! not a clean bill of health). Zero-count categories are omitted; an all-clean
 //! run emits no invocations block.
 
-use keyhog_core::{Reporter, SarifReporter};
-
+use crate::support::reporters::SarifReporter;
 #[test]
 fn sarif_skip_summary_emits_tool_execution_notifications() {
     let mut buf: Vec<u8> = Vec::new();
@@ -13,7 +12,10 @@ fn sarif_skip_summary_emits_tool_execution_notifications() {
         let mut r = SarifReporter::new(&mut buf).with_skip_summary(vec![
             ("binary (extension or content sniff)".to_string(), 5),
             ("unreadable (permission denied or I/O error)".to_string(), 2),
-            ("default-exclusion list (lock/minified/vendored)".to_string(), 0), // dropped
+            (
+                "default-exclusion list (lock/minified/vendored)".to_string(),
+                0,
+            ), // dropped
         ]);
         r.finish().unwrap();
     }
@@ -58,7 +60,10 @@ fn sarif_skip_summary_emits_tool_execution_notifications() {
 
     for n in notes {
         assert_eq!(n["level"].as_str(), Some("note"));
-        assert_eq!(n["descriptor"]["id"].as_str(), Some("keyhog/files-not-scanned"));
+        assert_eq!(
+            n["descriptor"]["id"].as_str(),
+            Some("keyhog/files-not-scanned")
+        );
     }
     assert!(
         notes.iter().any(|n| n["message"]["text"]

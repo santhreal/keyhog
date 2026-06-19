@@ -5,7 +5,8 @@ use keyhog_core::Allowlist;
 #[test]
 fn allowlist_future_dated_entries_load() {
     let content = r#"detector:bar ; expires=9999-12-31 ; reason="long-lived ack""#;
-    let al = keyhog_core::testing::allowlist_parse(content);
+    let al =
+        keyhog_core::testing::CoreTestApi::allowlist_parse(&keyhog_core::testing::TestApi, content);
     assert!(al.ignored_detectors.contains("bar"));
 }
 

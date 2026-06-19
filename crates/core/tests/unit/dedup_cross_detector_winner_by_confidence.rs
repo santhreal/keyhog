@@ -13,7 +13,7 @@ fn make_deduped(detector: &str, conf: Option<f64>, severity: Severity) -> Dedupe
         detector_name: Arc::from(detector),
         service: Arc::from("test"),
         severity,
-        credential: Arc::from("SAME_CREDENTIAL_VALUE_FOR_ALL"),
+        credential: keyhog_core::SensitiveString::from("SAME_CREDENTIAL_VALUE_FOR_ALL"),
         credential_hash: [42; 32],
         companions: HashMap::new(),
         primary_location: MatchLocation {

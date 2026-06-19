@@ -33,7 +33,7 @@ use glob::{normalize_path, PathGlobIndex};
 ///
 /// ```rust
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// use keyhog_core::allowlist::Allowlist;
+/// use keyhog_core::Allowlist;
 ///
 /// let path = std::env::temp_dir().join(format!(
 ///     "keyhog_allowlist_struct_{}.keyhogignore",
@@ -107,7 +107,7 @@ impl Allowlist {
     /// # Examples
     ///
     /// ```rust
-    /// use keyhog_core::allowlist::Allowlist;
+    /// use keyhog_core::Allowlist;
     ///
     /// let allowlist = Allowlist::empty();
     /// assert!(allowlist.ignored_paths.is_empty());
@@ -129,7 +129,7 @@ impl Allowlist {
     ///
     /// ```rust,no_run
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// use keyhog_core::allowlist::Allowlist;
+    /// use keyhog_core::Allowlist;
     /// use std::path::Path;
     ///
     /// let _allowlist = Allowlist::load(Path::new(".keyhogignore"))?;
@@ -177,7 +177,7 @@ impl Allowlist {
     ///
     /// ```rust
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// use keyhog_core::allowlist::Allowlist;
+    /// use keyhog_core::Allowlist;
     ///
     /// let path = std::env::temp_dir().join(format!(
     ///     "keyhog_allowlist_parse_{}.keyhogignore",
@@ -189,7 +189,7 @@ impl Allowlist {
     /// assert!(allowlist.is_path_ignored("app/.env"));
     /// # Ok(()) }
     /// ```
-    pub fn parse(content: &str) -> Self {
+    pub(crate) fn parse(content: &str) -> Self {
         Self::parse_with_policy(content, AllowlistMetadataPolicy::default())
     }
 
@@ -494,7 +494,7 @@ impl Allowlist {
     ///
     /// ```rust
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// use keyhog_core::allowlist::Allowlist;
+    /// use keyhog_core::Allowlist;
     ///
     /// let path = std::env::temp_dir().join(format!(
     ///     "keyhog_allowlist_allowed_{}.keyhogignore",
@@ -507,7 +507,7 @@ impl Allowlist {
     /// assert!(allowlist.is_path_ignored("src/main.rs"));
     /// # Ok(()) }
     /// ```
-    pub fn is_allowed(&self, finding: &VerifiedFinding) -> bool {
+    pub(crate) fn is_allowed(&self, finding: &VerifiedFinding) -> bool {
         let detector_ignored = self.ignored_detectors.contains(&*finding.detector_id);
 
         let path_ignored = finding.location.file_path.as_ref().is_some_and(|path| {
@@ -526,7 +526,7 @@ impl Allowlist {
     ///
     /// ```rust
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// use keyhog_core::allowlist::Allowlist;
+    /// use keyhog_core::Allowlist;
     ///
     /// let path = std::env::temp_dir().join(format!(
     ///     "keyhog_allowlist_hash_{}.keyhogignore",
@@ -538,12 +538,12 @@ impl Allowlist {
     /// assert!(allowlist.credential_hashes.contains(&[0u8; 32]));
     /// # Ok(()) }
     /// ```
-    pub fn is_hash_allowed(&self, credential: &str) -> bool {
+    pub(crate) fn is_hash_allowed(&self, credential: &str) -> bool {
         parse_sha256_hex(credential).is_some_and(|bytes| self.matches_ignored_hash(&bytes))
     }
 
     /// Check if a hex-encoded SHA-256 hash is allowlisted.
-    pub fn is_raw_hash_ignored(&self, hash_hex: &str) -> bool {
+    pub(crate) fn is_raw_hash_ignored(&self, hash_hex: &str) -> bool {
         parse_sha256_hex(hash_hex).is_some_and(|bytes| self.matches_ignored_hash(&bytes))
     }
 
@@ -553,7 +553,7 @@ impl Allowlist {
     ///
     /// ```rust
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// use keyhog_core::allowlist::Allowlist;
+    /// use keyhog_core::Allowlist;
     ///
     /// let path = std::env::temp_dir().join(format!(
     ///     "keyhog_allowlist_path_{}.keyhogignore",

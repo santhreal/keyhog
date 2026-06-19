@@ -5,5 +5,11 @@ use keyhog_core::Credential;
 #[test]
 fn legacy_plain_string_still_deserializes() {
     let back: Credential = serde_json::from_str("\"AKIA1234\"").unwrap();
-    assert_eq!(back.expose_str(), Some("AKIA1234"));
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::credential_expose_str(
+            &keyhog_core::testing::TestApi,
+            &back
+        ),
+        Some("AKIA1234")
+    );
 }

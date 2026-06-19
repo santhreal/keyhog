@@ -8,8 +8,9 @@ fn allowlist_bare_globs_parse_gitignore_style() {
 node_modules/
 vendor/**/*.json
 ";
-    let al = Allowlist::parse(content);
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(&keyhog_core::testing::TestApi, content);
     assert_eq!(al.ignored_paths.len(), 3, "got {:?}", al.ignored_paths);
     assert!(al.is_path_ignored("server.log"));
+    assert!(al.is_path_ignored("node_modules/left-pad/index.js"));
     assert!(al.is_path_ignored("vendor/aws/sdk.json"));
 }

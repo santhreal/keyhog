@@ -1,5 +1,5 @@
 //! Migrated from `src/calibration.rs` inline tests.
-use keyhog_core::calibration::Calibration;
+use keyhog_core::Calibration;
 #[test]
 fn corrupted_cache_returns_empty() {
     let dir = tempfile::tempdir().unwrap();

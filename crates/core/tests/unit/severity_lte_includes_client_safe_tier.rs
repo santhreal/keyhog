@@ -13,7 +13,7 @@
 //! `"client-safe"` (via `Severity::as_str`), so the suppressor's label set must
 //! contain that exact string for the rule to fire.
 
-use keyhog_core::{MatchLocation, RuleSuppressor, Severity, VerificationResult, VerifiedFinding};
+use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -48,7 +48,11 @@ fn severity_lte_low_suppresses_client_safe_and_below() {
 detector = "aws-access-key"
 severity_lte = "low"
 "#;
-    let s = RuleSuppressor::parse(toml).expect("parse");
+    let s = keyhog_core::testing::CoreTestApi::rule_suppressor_parse(
+        &keyhog_core::testing::TestApi,
+        toml,
+    )
+    .expect("parse");
     // Info, ClientSafe, Low rank at or below "low" -> suppressed.
     assert!(s.matches(&finding(Severity::Info)), "info <= low");
     assert!(
@@ -67,8 +71,11 @@ fn severity_eq_client_safe_matches_only_client_safe() {
     for spelling in ["client-safe", "client_safe", "CLIENT-SAFE"] {
         let toml =
             format!("[[suppress]]\ndetector = \"aws-access-key\"\nseverity = \"{spelling}\"\n");
-        let s = RuleSuppressor::parse(&toml)
-            .unwrap_or_else(|e| panic!("spelling {spelling:?} must parse: {e}"));
+        let s = keyhog_core::testing::CoreTestApi::rule_suppressor_parse(
+            &keyhog_core::testing::TestApi,
+            &toml,
+        )
+        .unwrap_or_else(|e| panic!("spelling {spelling:?} must parse: {e}"));
         assert!(
             s.matches(&finding(Severity::ClientSafe)),
             "severity={spelling:?} must match a ClientSafe finding"
@@ -91,7 +98,11 @@ fn severity_lte_client_safe_keeps_low_and_above() {
 detector = "aws-access-key"
 severity_lte = "client-safe"
 "#;
-    let s = RuleSuppressor::parse(toml).expect("parse");
+    let s = keyhog_core::testing::CoreTestApi::rule_suppressor_parse(
+        &keyhog_core::testing::TestApi,
+        toml,
+    )
+    .expect("parse");
     assert!(s.matches(&finding(Severity::Info)), "info <= client-safe");
     assert!(
         s.matches(&finding(Severity::ClientSafe)),

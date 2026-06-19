@@ -45,7 +45,7 @@ impl Credential {
     /// fresh `Zeroizing<Box<[u8]>>` and the input slice is unchanged
     /// (caller is responsible for zeroizing whatever it came from).
     #[must_use]
-    pub fn from_bytes(bytes: &[u8]) -> Self {
+    pub(crate) fn from_bytes(bytes: &[u8]) -> Self {
         Self {
             inner: Arc::new(Zeroizing::new(bytes.to_vec().into_boxed_slice())),
         }
@@ -58,19 +58,8 @@ impl Credential {
     /// distinct from `core::str::FromStr` (which has different error
     /// semantics - we never fail to construct a Credential).
     #[must_use]
-    pub fn from_text(s: &str) -> Self {
+    pub(crate) fn from_text(s: &str) -> Self {
         Self::from_bytes(s.as_bytes())
-    }
-
-    /// Length in bytes.
-    #[must_use]
-    pub fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
     }
 
     /// Expose the underlying bytes. Every call site MUST be auditable -
@@ -88,8 +77,11 @@ impl Credential {
     /// `None`. Most production credentials ARE valid UTF-8 (provider keys,
     /// tokens, base64) so this is the common path.
     #[must_use]
-    pub fn expose_str(&self) -> Option<&str> {
-        std::str::from_utf8(&self.inner).ok()
+    pub(crate) fn expose_str(&self) -> Option<&str> {
+        // The `Option<&str>` return IS the loud surface: a non-UTF-8 credential
+        // (raw key bytes, binary token) maps to `None`, which every caller must
+        // handle, and the raw bytes remain available via `expose_secret()`.
+        std::str::from_utf8(&self.inner).ok() // LAW10: Option return is the surface, raw bytes kept via expose_secret(), see note
     }
 }
 
@@ -192,7 +184,9 @@ impl Serialize for Credential {
         let mut m = serializer.serialize_map(Some(1))?;
         match self.expose_str() {
             Some(s) => m.serialize_entry("text", s)?,
-            None => m.serialize_entry("b64", &base64_encode(&self.inner))?,
+            None => {
+                m.serialize_entry("b64", &crate::encoding::encode_standard_base64(&self.inner))?
+            }
         }
         m.end()
     }
@@ -245,30 +239,6 @@ impl<'de> Deserialize<'de> for Credential {
     }
 }
 
-/// Minimal base64 encoder so this module doesn't need a `base64` crate dep.
-fn base64_encode(input: &[u8]) -> String {
-    const TABLE: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    let mut out = String::with_capacity(input.len().div_ceil(3) * 4);
-    for chunk in input.chunks(3) {
-        let b0 = chunk[0];
-        let b1 = chunk.get(1).copied().unwrap_or(0);
-        let b2 = chunk.get(2).copied().unwrap_or(0);
-        out.push(TABLE[(b0 >> 2) as usize] as char);
-        out.push(TABLE[(((b0 & 0x03) << 4) | (b1 >> 4)) as usize] as char);
-        if chunk.len() > 1 {
-            out.push(TABLE[(((b1 & 0x0F) << 2) | (b2 >> 6)) as usize] as char);
-        } else {
-            out.push('=');
-        }
-        if chunk.len() > 2 {
-            out.push(TABLE[(b2 & 0x3F) as usize] as char);
-        } else {
-            out.push('=');
-        }
-    }
-    out
-}
-
 /// A heap-allocated string that is zeroized on drop.
 #[derive(Clone, Default)]
 pub struct SensitiveString {
@@ -276,7 +246,7 @@ pub struct SensitiveString {
 }
 
 impl SensitiveString {
-    pub fn new(s: String) -> Self {
+    fn new(s: String) -> Self {
         Self {
             inner: Arc::new(Zeroizing::new(s)),
         }
@@ -293,20 +263,8 @@ impl SensitiveString {
         Self::new(s)
     }
 
-    pub fn as_str(&self) -> &str {
+    pub(crate) fn as_str(&self) -> &str {
         self.inner.as_str()
-    }
-
-    pub fn as_bytes(&self) -> &[u8] {
-        self.inner.as_bytes()
-    }
-
-    pub fn len(&self) -> usize {
-        self.inner.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.inner.is_empty()
     }
 }
 
@@ -320,6 +278,38 @@ impl std::ops::Deref for SensitiveString {
 impl AsRef<str> for SensitiveString {
     fn as_ref(&self) -> &str {
         self.as_str()
+    }
+}
+
+impl std::borrow::Borrow<str> for SensitiveString {
+    fn borrow(&self) -> &str {
+        self.as_str()
+    }
+}
+
+impl PartialEq for SensitiveString {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl Eq for SensitiveString {}
+
+impl PartialOrd for SensitiveString {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for SensitiveString {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.as_str().cmp(other.as_str())
+    }
+}
+
+impl Hash for SensitiveString {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.as_str().hash(state);
     }
 }
 

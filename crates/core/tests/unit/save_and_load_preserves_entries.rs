@@ -1,24 +1,42 @@
 //! Migrated from `src/merkle_index.rs` inline tests.
-use keyhog_core::compute_spec_hash;
-use keyhog_core::merkle_index::MerkleIndex;
-use keyhog_core::{CompanionSpec, DetectorSpec, PatternSpec, Severity};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 fn sample_hash(s: &[u8]) -> [u8; 32] {
-    MerkleIndex::hash_content(s)
+    keyhog_core::testing::CoreTestApi::merkle_hash_content(&keyhog_core::testing::TestApi, s)
 }
 #[test]
 fn save_and_load_preserves_entries() {
     let dir = tempfile::tempdir().unwrap();
     let cache_path = dir.path().join("merkle.idx");
 
-    let idx = MerkleIndex::empty();
+    let idx = keyhog_core::testing::CoreTestApi::merkle_empty(&keyhog_core::testing::TestApi);
     let p = PathBuf::from("/tmp/secrets.env");
     let h = sample_hash(b"hello world");
-    idx.record_with_metadata(p.clone(), 12345, 11, h);
-    idx.save(&cache_path).expect("save");
+    keyhog_core::testing::CoreTestApi::merkle_record_with_metadata(
+        &keyhog_core::testing::TestApi,
+        &idx,
+        p.clone(),
+        12345,
+        11,
+        h,
+    );
+    keyhog_core::testing::CoreTestApi::merkle_save(
+        &keyhog_core::testing::TestApi,
+        &idx,
+        &cache_path,
+    )
+    .expect("save");
 
-    let loaded = MerkleIndex::load(&cache_path);
-    assert_eq!(loaded.len(), 1);
-    assert!(loaded.unchanged(&p, &h));
+    let loaded =
+        keyhog_core::testing::CoreTestApi::merkle_load(&keyhog_core::testing::TestApi, &cache_path);
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::merkle_len(&keyhog_core::testing::TestApi, &loaded),
+        1
+    );
+    assert!(keyhog_core::testing::CoreTestApi::merkle_unchanged(
+        &keyhog_core::testing::TestApi,
+        &loaded,
+        &p,
+        &h
+    ));
     assert!(loaded.metadata_unchanged(&p, 12345, 11));
 }

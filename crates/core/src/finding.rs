@@ -5,12 +5,13 @@
 // to `warn`. Public output schema; remove once each carries a doc line.
 #![allow(missing_docs)]
 
-use serde::{Deserialize, Serialize};
+use serde::ser::SerializeStruct;
+use serde::{Deserialize, Serialize, Serializer};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use crate::Severity;
+use crate::{SensitiveString, Severity};
 
 /// A raw pattern match before verification or deduplication.
 ///
@@ -36,8 +37,7 @@ pub struct RawMatch {
     /// Detector severity level.
     pub severity: Severity,
     /// Matched credential bytes before redaction.
-    #[serde(with = "serde_arc_str")]
-    pub credential: Arc<str>,
+    pub credential: SensitiveString,
     /// SHA-256 digest of the credential for allowlisting and deduplication.
     ///
     /// Stored as the raw 32 inline bytes (matching the verifier `CacheKey`),
@@ -62,7 +62,7 @@ impl RawMatch {
     /// Replace NaN floats with `None` so the manual `Eq` impl stays reflexive
     /// and `HashMap`/`BTreeMap` lookups don't trap. Call this on any externally
     /// constructed `RawMatch` (deserialized findings, scanner outputs).
-    pub fn sanitize_floats(mut self) -> Self {
+    pub(crate) fn sanitize_floats(mut self) -> Self {
         if self.entropy.is_some_and(f64::is_nan) {
             self.entropy = None;
         }
@@ -96,7 +96,7 @@ impl Eq for RawMatch {}
 
 impl std::fmt::Debug for RawMatch {
     /// Redacted Debug. Replaces `derive(Debug)` which would print the raw
-    /// `credential: Arc<str>` plaintext. See kimi-wave1 audit finding 1.1.
+    /// credential plaintext. See kimi-wave1 audit finding 1.1.
     /// `credential_hash` is preserved because it's already a one-way SHA-256.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("RawMatch")
@@ -141,8 +141,11 @@ impl PartialOrd for RawMatch {
 impl Ord for RawMatch {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         // Higher confidence first
-        let self_conf = self.confidence.unwrap_or(0.0);
-        let other_conf = other.confidence.unwrap_or(0.0);
+        // LAW10 (both): recall-safe — a `None` confidence sorts as 0.0 (lowest)
+        // for stable display ordering ONLY. Both findings remain in the result
+        // set; sort position never drops a finding.
+        let self_conf = self.confidence.unwrap_or(0.0); // LAW10: absent confidence => 0.0 for sort/partition ordering only; recall-safe
+        let other_conf = other.confidence.unwrap_or(0.0); // LAW10: absent confidence => 0.0 for sort/partition ordering only; recall-safe
 
         match other_conf.total_cmp(&self_conf) {
             std::cmp::Ordering::Equal => {}
@@ -212,7 +215,7 @@ pub struct MatchLocation {
 }
 
 /// A finding after verification - the final output.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct VerifiedFinding {
     /// Stable detector identifier.
     #[serde(with = "serde_arc_str")]
@@ -244,6 +247,36 @@ pub struct VerifiedFinding {
     pub confidence: Option<f64>,
 }
 
+impl Serialize for VerifiedFinding {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let remediation =
+            crate::auto_fix::remediation_for(&self.detector_id, &self.service, self.severity);
+        let mut field_count = 11;
+        if self.confidence.is_some() {
+            field_count += 1;
+        }
+        let mut state = serializer.serialize_struct("VerifiedFinding", field_count)?;
+        state.serialize_field("detector_id", self.detector_id.as_ref())?;
+        state.serialize_field("detector_name", self.detector_name.as_ref())?;
+        state.serialize_field("service", self.service.as_ref())?;
+        state.serialize_field("severity", &self.severity)?;
+        state.serialize_field("credential_redacted", self.credential_redacted.as_ref())?;
+        state.serialize_field("credential_hash", &hex_encode(&self.credential_hash))?;
+        state.serialize_field("location", &self.location)?;
+        state.serialize_field("verification", &self.verification)?;
+        state.serialize_field("metadata", &self.metadata)?;
+        state.serialize_field("additional_locations", &self.additional_locations)?;
+        if let Some(confidence) = self.confidence {
+            state.serialize_field("confidence", &confidence)?;
+        }
+        state.serialize_field("remediation", &remediation)?;
+        state.end()
+    }
+}
+
 /// Result of live verification: whether the credential is active, revoked, or untested.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -266,7 +299,7 @@ pub enum VerificationResult {
 
 impl RawMatch {
     /// Get unique key for deduplication.
-    pub fn deduplication_key(&self) -> (&str, &str) {
+    pub(crate) fn deduplication_key(&self) -> (&str, &str) {
         (&self.detector_id, &self.credential)
     }
 
@@ -344,17 +377,17 @@ pub fn sha256_hash(s: &str) -> [u8; 32] {
 /// lower-case hex string while the in-memory field is raw `[u8; 32]`. This
 /// preserves the documented JSON/JSONL/baseline/SARIF format (`.credential_hash`
 /// consumers, `keyhogignore` `hash:` entries) with zero heap on the hot path.
-pub mod serde_hash_hex {
+pub(crate) mod serde_hash_hex {
     use serde::{Deserialize, Deserializer, Serializer};
 
-    pub fn serialize<S>(val: &[u8; 32], serializer: S) -> Result<S::Ok, S::Error>
+    pub(crate) fn serialize<S>(val: &[u8; 32], serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         serializer.serialize_str(&hex::encode(val))
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
+    pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<[u8; 32], D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -366,18 +399,18 @@ pub mod serde_hash_hex {
     }
 }
 
-pub mod serde_arc_str {
+pub(crate) mod serde_arc_str {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::sync::Arc;
 
-    pub fn serialize<S>(val: &Arc<str>, serializer: S) -> Result<S::Ok, S::Error>
+    pub(crate) fn serialize<S>(val: &Arc<str>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         val.as_ref().serialize(serializer)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Arc<str>, D::Error>
+    pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<Arc<str>, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -385,18 +418,18 @@ pub mod serde_arc_str {
     }
 }
 
-pub mod serde_arc_str_opt {
+pub(crate) mod serde_arc_str_opt {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
     use std::sync::Arc;
 
-    pub fn serialize<S>(val: &Option<Arc<str>>, serializer: S) -> Result<S::Ok, S::Error>
+    pub(crate) fn serialize<S>(val: &Option<Arc<str>>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
         val.as_ref().map(|s| s.as_ref()).serialize(serializer)
     }
 
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Arc<str>>, D::Error>
+    pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<Option<Arc<str>>, D::Error>
     where
         D: Deserializer<'de>,
     {

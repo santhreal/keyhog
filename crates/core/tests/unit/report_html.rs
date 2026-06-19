@@ -1,5 +1,5 @@
 use super::report_common::sample_finding;
-use keyhog_core::{HtmlReporter, Reporter};
+use crate::support::reporters::HtmlReporter;
 
 fn render(finding: &keyhog_core::VerifiedFinding) -> String {
     let mut buf: Vec<u8> = Vec::new();
@@ -55,4 +55,49 @@ fn html_json_escapes_quotes_in_detector_name() {
     // The raw, unescaped angle brackets must NOT appear in the inlined script.
     assert!(!json.contains("<a&b>"));
     assert!(json.contains("\"severity\":\"high\""));
+}
+
+#[test]
+fn html_report_has_accessibility_affordances() {
+    let out = render(&sample_finding());
+
+    assert!(out.contains("aria-label=\"Report theme\""));
+    assert!(out.contains("aria-label=\"Use Obsidian theme\""));
+    assert!(out.contains("aria-pressed=\"true\""));
+    assert!(out.contains("aria-live=\"polite\""));
+    assert!(out.contains("aria-atomic=\"true\""));
+    assert!(out.contains("role=\"tablist\""));
+    assert!(out.contains("role=\"tab\" aria-selected=\"true\""));
+    assert!(out.contains("<th scope=\"col\">Detector</th>"));
+    assert!(out.contains("<th scope=\"col\">Verification</th>"));
+    assert!(out.contains("button:focus-visible"));
+    assert!(out.contains("tbody tr:focus-visible"));
+    assert!(out.contains("btn.setAttribute('aria-pressed', 'true')"));
+    assert!(out.contains("tab.setAttribute('aria-selected', 'true')"));
+    assert!(out.contains("resultCount.innerText = `Showing ${count} of ${total} findings.`"));
+    assert!(out.contains("tr.tabIndex = 0"));
+    assert!(out.contains("tr.setAttribute('role', 'button')"));
+    assert!(out.contains("toggleDetailsFromKeyboard"));
+}
+
+#[test]
+fn html_report_does_not_embed_plaintext_unmask_controls() {
+    let out = render(&sample_finding());
+
+    assert!(
+        !out.contains("toggleMask"),
+        "HTML report must not ship a dead or plaintext-revealing credential toggle"
+    );
+    assert!(
+        !out.contains("data-plaintext"),
+        "HTML report must not embed a plaintext credential copy"
+    );
+    assert!(
+        !out.contains("Show secret"),
+        "HTML report must not promise a plaintext reveal path"
+    );
+    assert!(
+        out.contains("<span id=\"cred-text-${idx}\">${credRedacted}</span>"),
+        "report script should render the redacted credential as static text"
+    );
 }

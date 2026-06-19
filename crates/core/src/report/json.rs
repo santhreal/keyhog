@@ -11,13 +11,14 @@ use super::{ReportError, Reporter, WriterBackedReporter};
 ///
 /// # Examples
 ///
-/// ```rust
-/// use keyhog_core::JsonlReporter;
+/// ```ignore
+/// // Crate-internal reporter; public callers use `write_report`.
+/// use keyhog_core::report::json::JsonlReporter;
 ///
 /// let reporter = JsonlReporter::new(Vec::new());
 /// let _ = reporter;
 /// ```
-pub struct JsonlReporter<W: Write + Send> {
+pub(crate) struct JsonlReporter<W: Write + Send> {
     writer: W,
 }
 
@@ -26,13 +27,14 @@ impl<W: Write + Send> JsonlReporter<W> {
     ///
     /// # Examples
     ///
-    /// ```rust
-    /// use keyhog_core::JsonlReporter;
+    /// ```ignore
+    /// // Crate-internal reporter; public callers use `write_report`.
+    /// use keyhog_core::report::json::JsonlReporter;
     ///
     /// let reporter = JsonlReporter::new(Vec::new());
     /// let _ = reporter;
     /// ```
-    pub fn new(writer: W) -> Self {
+    pub(crate) fn new(writer: W) -> Self {
         Self { writer }
     }
 }
@@ -61,15 +63,16 @@ impl<W: Write + Send> WriterBackedReporter for JsonlReporter<W> {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```ignore
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// use keyhog_core::JsonArrayReporter;
+/// // Crate-internal reporter; public callers use `write_report`.
+/// use keyhog_core::report::json::JsonArrayReporter;
 ///
 /// let reporter = JsonArrayReporter::new(Vec::new())?;
 /// let _ = reporter;
 /// # Ok(()) }
 /// ```
-pub struct JsonArrayReporter<W: Write + Send> {
+pub(crate) struct JsonArrayReporter<W: Write + Send> {
     writer: W,
     first: bool,
 }
@@ -79,15 +82,16 @@ impl<W: Write + Send> JsonArrayReporter<W> {
     ///
     /// # Examples
     ///
-    /// ```rust
+    /// ```ignore
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-    /// use keyhog_core::JsonArrayReporter;
+    /// // Crate-internal reporter; public callers use `write_report`.
+    /// use keyhog_core::report::json::JsonArrayReporter;
     ///
     /// let reporter = JsonArrayReporter::new(Vec::new())?;
     /// let _ = reporter;
     /// # Ok(()) }
     /// ```
-    pub fn new(mut writer: W) -> Result<Self, ReportError> {
+    pub(crate) fn new(mut writer: W) -> Result<Self, ReportError> {
         write!(writer, "[")?;
         Ok(Self {
             writer,
@@ -119,6 +123,3 @@ impl<W: Write + Send> WriterBackedReporter for JsonArrayReporter<W> {
         &mut self.writer
     }
 }
-
-/// Alias for [`JsonArrayReporter`] for standard JSON output.
-pub type JsonReporter<W> = JsonArrayReporter<W>;

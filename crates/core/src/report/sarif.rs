@@ -24,7 +24,7 @@ use sarif_taxonomies::sarif_taxonomies_json;
 ///
 /// SARIF spec is order-agnostic on object keys; we emit `runs[0].results`
 /// before `runs[0].tool` so the streaming write order is legal.
-pub struct SarifReporter<W: Write + Send> {
+pub(crate) struct SarifReporter<W: Write + Send> {
     writer: W,
     rules: HashMap<String, SarifRule>,
     /// Tracks whether the prefix has been emitted; lazy so the writer can
@@ -49,7 +49,7 @@ use sarif_types::*;
 impl<W: Write + Send> SarifReporter<W> {
     /// Construct a streaming SARIF reporter that writes its document to
     /// `writer`. The SARIF prefix is emitted lazily on the first finding.
-    pub fn new(writer: W) -> Self {
+    pub(crate) fn new(writer: W) -> Self {
         Self {
             writer,
             rules: HashMap::new(),
@@ -64,7 +64,7 @@ impl<W: Write + Send> SarifReporter<W> {
     /// non-zero count becomes one `note`-level notification. No-op for empty
     /// input. See [`Self::skip_summary`].
     #[must_use]
-    pub fn with_skip_summary(mut self, summary: Vec<(String, usize)>) -> Self {
+    pub(crate) fn with_skip_summary(mut self, summary: Vec<(String, usize)>) -> Self {
         self.skip_summary = summary.into_iter().filter(|(_, n)| *n > 0).collect();
         self
     }
@@ -83,7 +83,7 @@ impl<W: Write + Send> SarifReporter<W> {
             self.writer,
             r#"{{"version":"2.1.0","$schema":"https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1.0/sarif-schema-2.1.0.json","runs":[{{"results":["#
         )?;
-        let _ = version;
+        let _ = version; // LAW10: unused-binding marker; no runtime effect, not a fallback
         self.prefix_written = true;
         Ok(())
     }
@@ -103,7 +103,7 @@ impl<W: Write + Send> SarifReporter<W> {
             .iter()
             .filter(|loc| {
                 let key = (
-                    loc.file_path.clone().unwrap_or_default().to_string(),
+                    loc.file_path.clone().unwrap_or_default().to_string(), // LAW10: dedup-key formatting of an optional path; finding still emitted
                     loc.line,
                     loc.offset,
                 );
@@ -121,7 +121,7 @@ impl<W: Write + Send> SarifReporter<W> {
             properties.insert(
                 "confidence".to_string(),
                 serde_json::Value::Number(
-                    serde_json::Number::from_f64(confidence).unwrap_or_else(|| 0.into()),
+                    serde_json::Number::from_f64(confidence).unwrap_or_else(|| 0.into()), // LAW10: a non-finite confidence renders as 0 in the SARIF property; finding still emitted
                 ),
             );
         }
@@ -143,6 +143,33 @@ impl<W: Write + Send> SarifReporter<W> {
                 serde_json::Value::String(value.to_string()),
             );
         }
+        let remediation = crate::auto_fix::remediation_for(
+            &finding.detector_id,
+            &finding.service,
+            finding.severity,
+        );
+        properties.insert(
+            "remediation.action".to_string(),
+            serde_json::Value::String(remediation.action.clone()),
+        );
+        if let Some(url) = &remediation.revoke_url {
+            properties.insert(
+                "remediation.revoke_url".to_string(),
+                serde_json::Value::String(url.clone()),
+            );
+        }
+        if let Some(url) = &remediation.docs_url {
+            properties.insert(
+                "remediation.docs_url".to_string(),
+                serde_json::Value::String(url.clone()),
+            );
+        }
+        if let Some(command) = &remediation.revoke_command {
+            properties.insert(
+                "remediation.revoke_command".to_string(),
+                serde_json::Value::String(command.clone()),
+            );
+        }
 
         // Auto-fix suggestion: replace the leaked credential with a
         // ${ENV_VAR_NAME} reference at the same physical location. We emit
@@ -158,6 +185,7 @@ impl<W: Write + Send> SarifReporter<W> {
                     text: format!(
                         "Replace the leaked credential with `{replacement}` and load `{env_name}` from your secret manager."
                     ),
+                    markdown: None,
                 },
                 artifact_changes: vec![SarifArtifactChange {
                     artifact_location: SarifArtifactLocation {
@@ -166,7 +194,7 @@ impl<W: Write + Send> SarifReporter<W> {
                             .file_path
                             .as_deref()
                             .map(super::sarif_uri::file_path_to_sarif_uri)
-                            .unwrap_or_default(),
+                            .unwrap_or_default(), // LAW10: empty URI for a path-less finding; finding still emitted
                         uri_base_id: None,
                     },
                     replacements: vec![SarifReplacement {
@@ -194,6 +222,7 @@ impl<W: Write + Send> SarifReporter<W> {
                     "{} secret detected: {}",
                     finding.service, finding.credential_redacted
                 ),
+                markdown: None,
             },
             locations,
             properties: Some(properties),
@@ -221,24 +250,34 @@ impl<W: Write + Send> SarifReporter<W> {
     }
 
     fn build_rule(finding: &VerifiedFinding) -> SarifRule {
+        let remediation = crate::auto_fix::remediation_for(
+            &finding.detector_id,
+            &finding.service,
+            finding.severity,
+        );
+        let help_uri = remediation
+            .revoke_url
+            .clone()
+            .or_else(|| remediation.docs_url.clone());
         SarifRule {
             id: finding.detector_id.to_string(),
             name: finding.detector_name.to_string(),
             short_description: Some(SarifMessage {
                 text: format!("{} secret detected", finding.service),
+                markdown: None,
             }),
             full_description: Some(SarifMessage {
                 text: format!(
                     "A {} secret was detected by the {} detector",
                     finding.service, finding.detector_name
                 ),
+                markdown: None,
             }),
             help: Some(SarifMessage {
-                text: format!(
-                    "Review and rotate the exposed {} credential.",
-                    finding.service
-                ),
+                text: remediation.action.clone(),
+                markdown: Some(remediation.markdown()),
             }),
+            help_uri,
             properties: Some({
                 let mut props = serde_json::Map::new();
                 props.insert(
@@ -260,7 +299,7 @@ impl<W: Write + Send> SarifReporter<W> {
             .file_path
             .as_ref()
             .map(|p| super::sarif_uri::file_path_to_sarif_uri(p.as_ref()))
-            .unwrap_or_else(|| "stdin".to_string());
+            .unwrap_or_else(|| "stdin".to_string()); // LAW10: path-less finding labels as "stdin"; finding still emitted
 
         let artifact_location = Some(SarifArtifactLocation {
             uri,
@@ -370,7 +409,7 @@ impl<W: Write + Send> Reporter for SarifReporter<W> {
         // SARIF taxonomies block - each entry references a canonical entry in
         // CWE / OWASP. Compliance dashboards (e.g. SonarQube, GitHub Code
         // Scanning, Splunk) resolve `result.properties.cwe = "CWE-798"`
-        // against this block. Tier-B #16 from audits/legendary-2026-04-26.
+        // against this block. Tier-B #16 from docs/EXECUTION_PLAN.md.
         write!(self.writer, ",\"taxonomies\":")?;
         serde_json::to_writer(&mut self.writer, &sarif_taxonomies_json())?;
 

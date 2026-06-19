@@ -10,6 +10,7 @@ use crate::DedupScope;
 
 /// Configuration for a scan run.
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct ScanConfig {
     /// Minimum confidence (0.0 to 1.0) required to report a finding.
     pub min_confidence: f64,
@@ -43,14 +44,11 @@ pub struct ScanConfig {
     pub generic_keyword_low_entropy: bool,
     /// Shannon entropy threshold (typical secrets are 4.5+).
     pub entropy_threshold: f64,
-    /// Minimum length for entropy-based secret detection.
+    /// Minimum credential length for entropy-based secret detection.
     ///
-    /// NOTE: not yet read by the live scan. `From<ScanConfig> for
-    /// ScannerConfig` does not carry this field; the entropy length
-    /// gate currently uses the engine's own length constants. Setting
-    /// it in a deserialized config is a no-op until a reader is wired
-    /// in. See the `From` impl on `ScannerConfig` for the canonical
-    /// list of carried vs uncarried fields.
+    /// Named detectors keep their own shape-specific lengths; this floor is
+    /// consumed by the scanner's entropy fallback (`--min-secret-len` /
+    /// `min_secret_len` in `.keyhog.toml`).
     pub min_secret_len: usize,
     /// Maximum file size to scan (bytes). Large files are skipped or sampled.
     ///
@@ -103,7 +101,7 @@ pub struct ScanConfig {
 }
 
 /// Limits for decoding to prevent infinite recursion or memory exhaustion.
-pub const MAX_DECODE_DEPTH_LIMIT: usize = 10;
+pub(crate) const MAX_DECODE_DEPTH_LIMIT: usize = 10;
 
 /// Maximum recursive decode passes accepted from CLI and TOML config.
 pub const fn max_decode_depth_limit() -> usize {
@@ -126,7 +124,7 @@ fn default_generic_keyword_low_entropy() -> bool {
 
 /// Errors returned while validating a scan configuration.
 #[derive(Debug, Error)]
-pub enum ConfigError {
+pub(crate) enum ConfigError {
     /// `min_confidence` was outside the closed unit interval `[0.0, 1.0]`.
     #[error("min_confidence must be between 0.0 and 1.0, found {0}")]
     InvalidConfidence(f64),
@@ -155,7 +153,7 @@ impl Default for ScanConfig {
             entropy_ml_authoritative: true,
             generic_keyword_low_entropy: true,
             entropy_threshold: 4.5,
-            min_secret_len: 20,
+            min_secret_len: 16,
             max_file_size: 10 * 1024 * 1024, // 10 MB
             dedup: DedupScope::Credential,
             ml_enabled: true,
@@ -191,7 +189,6 @@ impl Default for ScanConfig {
                 "test".into(),
                 "mock".into(),
                 "fake".into(),
-                "dummy".into(),
                 "stub".into(),
                 "fixture".into(),
                 "example".into(),
@@ -228,7 +225,7 @@ impl ScanConfig {
     // stay with the config the engine runs, and there is exactly one preset path.
 
     /// Validate the configuration parameters.
-    pub fn validate(&self) -> Result<(), ConfigError> {
+    pub(crate) fn validate(&self) -> Result<(), ConfigError> {
         if !(0.0..=1.0).contains(&self.min_confidence) {
             return Err(ConfigError::InvalidConfidence(self.min_confidence));
         }
@@ -241,7 +238,7 @@ impl ScanConfig {
 
 /// List of filenames that typically contain secrets (e.g. .env, config.json).
 /// Return a list of filenames that typically contain secrets (e.g., .env, id_rsa).
-pub fn secret_filenames() -> Vec<String> {
+pub(crate) fn secret_filenames() -> Vec<String> {
     vec![
         ".env",
         ".env.local",

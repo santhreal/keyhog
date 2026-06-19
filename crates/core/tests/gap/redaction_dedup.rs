@@ -121,12 +121,14 @@ fn redact_len8_boundary_is_four_stars() {
 }
 
 #[test]
-fn redact_len9_boundary_reveals_first4_dots_last4() {
-    // First length where the preview branch fires: s[..4] + "..." + s[len-4..].
+fn redact_len9_boundary_reveals_scaled_edges() {
+    // First length where the preview branch fires: first 2 + "..." + last 2.
     let out = redact("ABCDEFGHI");
-    assert_eq!(out, "ABCD...FGHI");
+    assert_eq!(out, "AB...HI");
     assert!(matches!(out, Cow::Owned(_)));
-    // The single middle character 'E' (index 4) must NOT appear.
+    // The middle characters must NOT appear.
+    assert!(!out.contains('C'));
+    assert!(!out.contains('D'));
     assert!(!out.contains('E'));
 }
 
@@ -134,15 +136,16 @@ fn redact_len9_boundary_reveals_first4_dots_last4() {
 fn redact_len9_no_middle_exposure_distinct_middle() {
     // Distinct middle byte 'X' is the only char that can't appear in output.
     let out = redact("WXYZ@MNOP");
-    assert_eq!(out, "WXYZ...MNOP");
+    assert_eq!(out, "WX...OP");
     assert!(!out.contains('@'));
 }
 
 #[test]
 fn redact_len10_preview_drops_two_middle_bytes() {
     let out = redact("0123456789");
-    // s[..4]="0123", s[len-4..]="6789"; "45" elided.
-    assert_eq!(out, "0123...6789");
+    assert_eq!(out, "01...89");
+    assert!(!out.contains('2'));
+    assert!(!out.contains('3'));
     assert!(!out.contains('4'));
     assert!(!out.contains('5'));
 }
@@ -150,7 +153,7 @@ fn redact_len10_preview_drops_two_middle_bytes() {
 #[test]
 fn redact_len11_preview() {
     let out = redact("ABCDEFGHIJK");
-    assert_eq!(out, "ABCD...HIJK");
+    assert_eq!(out, "AB...JK");
 }
 
 #[test]
@@ -173,8 +176,13 @@ fn redact_preview_len_is_always_11_for_ascii_over_8() {
         &"Z".repeat(4096),
     ] {
         let out = redact(s);
-        assert_eq!(out.len(), 11, "ascii >8 should redact to first4...last4");
-        assert_eq!(&out[4..7], "...");
+        let edge = (s.len() / 4).clamp(1, 4);
+        assert_eq!(
+            out.len(),
+            (edge * 2) + 3,
+            "ascii >8 should redact to scaled edge windows"
+        );
+        assert!(out.contains("..."));
     }
 }
 
@@ -191,7 +199,7 @@ fn redact_first4_and_last4_match_source_slices_ascii() {
 fn redact_whitespace_and_symbols_preserved_at_edges() {
     // Whitespace at the edges is kept verbatim; redact does not trim.
     let out = redact("  spaces  end!"); // 14 chars
-    assert_eq!(out, "  sp...end!");
+    assert_eq!(out, "  s...nd!");
 }
 
 // --- redact() UTF-8 / multibyte path (char_count, not byte len) ------------
@@ -211,8 +219,9 @@ fn redact_utf8_9_chars_preview_by_char_not_byte() {
     assert!(!s.is_ascii());
     assert_eq!(s.chars().count(), 9);
     let out = redact(s);
-    // first 4 chars + "..." + last 4 chars; middle char 'ε' dropped.
-    assert_eq!(out, "αβγδ...ζηθι");
+    assert_eq!(out, "αβ...θι");
+    assert!(!out.contains('γ'));
+    assert!(!out.contains('δ'));
     assert!(!out.contains('ε'));
 }
 
@@ -1140,10 +1149,11 @@ fn cross_detector_different_files_not_grouped() {
     let out = dedup_cross_detector(deduped);
     // Different file_path keys -> stay separate.
     assert_eq!(out.len(), 2);
-    assert!(out.iter().all(|d| d
-        .companions
-        .keys()
-        .all(|k| !k.starts_with("cross_detector"))));
+    assert!(out.iter().all(|d| {
+        d.companions
+            .keys()
+            .all(|k| !k.starts_with("cross_detector"))
+    }));
 }
 
 #[test]

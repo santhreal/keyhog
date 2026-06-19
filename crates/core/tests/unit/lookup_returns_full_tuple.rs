@@ -1,17 +1,31 @@
 //! Migrated from `src/merkle_index.rs` inline tests.
-use keyhog_core::compute_spec_hash;
-use keyhog_core::merkle_index::MerkleIndex;
-use keyhog_core::{CompanionSpec, DetectorSpec, PatternSpec, Severity};
 use std::path::{Path, PathBuf};
 fn sample_hash(s: &[u8]) -> [u8; 32] {
-    MerkleIndex::hash_content(s)
+    keyhog_core::testing::CoreTestApi::merkle_hash_content(&keyhog_core::testing::TestApi, s)
 }
 #[test]
 fn lookup_returns_full_tuple() {
-    let idx = MerkleIndex::empty();
+    let idx = keyhog_core::testing::CoreTestApi::merkle_empty(&keyhog_core::testing::TestApi);
     let p = PathBuf::from("/tmp/file");
     let h = sample_hash(b"abc");
-    idx.record_with_metadata(p.clone(), 42, 99, h);
-    assert_eq!(idx.lookup(&p), Some((42, 99, h)));
-    assert_eq!(idx.lookup(Path::new("/missing")), None);
+    keyhog_core::testing::CoreTestApi::merkle_record_with_metadata(
+        &keyhog_core::testing::TestApi,
+        &idx,
+        p.clone(),
+        42,
+        99,
+        h,
+    );
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::merkle_lookup(&keyhog_core::testing::TestApi, &idx, &p),
+        Some((42, 99, h))
+    );
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::merkle_lookup(
+            &keyhog_core::testing::TestApi,
+            &idx,
+            Path::new("/missing")
+        ),
+        None
+    );
 }

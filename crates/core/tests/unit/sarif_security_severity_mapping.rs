@@ -2,7 +2,6 @@
 //! rule's `security-severity` (a 0.0-10.0 string). keyhog must map its own
 //! severity onto GitHub's bands (>=9.0 critical, 7.0-8.9 high, 4.0-6.9 medium,
 //! 0.1-3.9 low) or every alert shows a flat default severity, breaking triage.
-use keyhog_core::report::sarif_uri::apply_code_scanning_props;
 use keyhog_core::Severity;
 
 #[test]
@@ -25,7 +24,11 @@ fn sarif_security_severity_mapping() {
         Severity::Info,
     ] {
         let mut props = serde_json::Map::new();
-        apply_code_scanning_props(&mut props, sev);
+        keyhog_core::testing::CoreTestApi::apply_code_scanning_props(
+            &keyhog_core::testing::TestApi,
+            &mut props,
+            sev,
+        );
 
         let score: f64 = props["security-severity"]
             .as_str()

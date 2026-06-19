@@ -16,7 +16,7 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
                 entries.push(format!(
                     "p:{}|g:{}",
                     p.regex,
-                    p.group.map(|g| g.to_string()).unwrap_or_default()
+                    p.group.map(|g| g.to_string()).unwrap_or_default() // LAW10: missing/non-string field => empty/placeholder; recall-safe
                 ));
             }
             for c in &d.companions {

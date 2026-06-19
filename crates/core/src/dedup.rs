@@ -7,9 +7,16 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-use crate::{sha256_hash, MatchLocation, RawMatch, Severity};
+use crate::{sha256_hash, MatchLocation, RawMatch, SensitiveString, Severity};
+
+/// Count of times [`dedup_cross_detector`] reached the (guard-impossible) empty
+/// singleton-group branch, where a finding would otherwise vanish from the
+/// report. Stays 0 in all correct runs; a non-zero value is a recall bug to
+/// investigate.
+pub(crate) static DEDUP_LOST_SINGLETON: AtomicU64 = AtomicU64::new(0);
 
 /// Deduplication scope for grouping findings.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -40,8 +47,7 @@ pub struct DedupedMatch {
     /// Severity preserved from the original match.
     pub severity: Severity,
     /// Unredacted credential for verification.
-    #[serde(with = "crate::finding::serde_arc_str")]
-    pub credential: Arc<str>,
+    pub credential: SensitiveString,
     /// SHA-256 hash of the original credential for internal correlation.
     /// Raw 32 bytes (matching `Finding`/`RawMatch`); hex at the serde boundary.
     #[serde(with = "crate::finding::serde_hash_hex")]
@@ -88,7 +94,7 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
         return matches
             .into_iter()
             .map(|m| {
-                let credential_hash = sha256_hash(&m.credential);
+                let credential_hash = sha256_hash(m.credential.as_ref());
                 DedupedMatch {
                     detector_id: m.detector_id,
                     detector_name: m.detector_name,
@@ -109,8 +115,8 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
     // amortized insert like HashMap PLUS deterministic iteration order
     // (insertion order, which we sort post-pass for cross-run stability).
     // BTreeMap was O(log N) per insert and dominated dedup time on 1M+
-    // matches - see audits/legendary-2026-04-26.
-    type DedupKey = (Arc<str>, Arc<str>, Option<Arc<str>>);
+    // matches - see docs/EXECUTION_PLAN.md.
+    type DedupKey = (Arc<str>, SensitiveString, Option<Arc<str>>);
     let mut groups: IndexMap<DedupKey, DedupedMatch> = IndexMap::new();
 
     // O(1) per-match membership for additional_locations. The duplicate arm
@@ -158,13 +164,13 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
 
     for matched in matches {
         let detector_id_arc = Arc::clone(&matched.detector_id);
-        let credential_arc = Arc::clone(&matched.credential);
+        let credential = matched.credential.clone();
 
         let key: DedupKey = match scope {
-            DedupScope::Credential => (detector_id_arc, credential_arc, None),
+            DedupScope::Credential => (detector_id_arc, credential, None),
             DedupScope::File => {
                 let file = Some(file_scope_identity(&matched.location));
-                (detector_id_arc, credential_arc, file)
+                (detector_id_arc, credential, file)
             }
             DedupScope::None => continue,
         };
@@ -215,7 +221,7 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
                 existing.confidence = max_confidence(existing.confidence, matched.confidence);
             }
             None => {
-                let credential_hash = sha256_hash(&matched.credential);
+                let credential_hash = sha256_hash(matched.credential.as_ref());
                 let mut seen = std::collections::HashSet::new();
                 seen.insert(location_identity(&matched.location));
                 groups.insert(
@@ -283,7 +289,7 @@ fn is_decoder_location(location: &MatchLocation) -> bool {
 /// and folds related detectors into the WINNING DedupedMatch's companions
 /// map under a `cross_detector` namespace, so a reporter sees ONE finding
 /// per credential with the alternate service guesses listed as evidence -
-/// audits/legendary-2026-04-26 innovation #5, "Cuts noise ~30%".
+/// docs/EXECUTION_PLAN.md innovation #5, "Cuts noise ~30%".
 ///
 /// The winning detector is chosen by:
 ///   1. Highest confidence (Some(f64)::total_cmp).
@@ -313,15 +319,21 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
     let mut out: Vec<DedupedMatch> = Vec::with_capacity(groups.len());
     for (_, mut group) in groups {
         if group.len() == 1 {
-            // Safety: the `group.len() == 1` guard above means pop()
-            // `pop()` is None only on an empty group; the
-            // `len() == 1` guard above proves non-empty here. Use
-            // `if let` instead of `.expect()` so a future refactor
-            // of the guard turns this into a silent skip (one lost
-            // dedup pair, no findings emitted twice) rather than a
-            // worker-killing panic on the dedup hot path.
-            if let Some(only) = group.pop() {
-                out.push(only);
+            // Law 10: the `len() == 1` guard proves `pop()` is `Some`, so this is
+            // not a silent drop today. But to be recall-safe against a future
+            // guard refactor, the impossible `None` arm is made LOUD: a lost
+            // dedup group would otherwise silently disappear a finding from the
+            // report. We surface it (eprintln + counter) instead of skipping.
+            match group.pop() {
+                Some(only) => out.push(only),
+                None => {
+                    DEDUP_LOST_SINGLETON.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    eprintln!(
+                        "keyhog: BUG — dedup_cross_detector hit an empty group under \
+                         a len()==1 guard; a finding may have been dropped. Please \
+                         report this with the scanned input shape."
+                    );
+                }
             }
             continue;
         }
@@ -334,8 +346,12 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
         // companion) is decided by input order, which is HashMap-iteration /
         // thread nondeterministic. A total key fixes the primary credential.
         group.sort_by(|a, b| {
-            let ac = a.confidence.unwrap_or(0.0);
-            let bc = b.confidence.unwrap_or(0.0);
+            // A `None` confidence sorts as 0.0 (lowest) for winner selection — a
+            // deterministic ordering choice, not a swallowed value; the
+            // credential/hash/offset tiebreaks below keep the order TOTAL so no
+            // finding is dropped or nondeterministically reordered.
+            let ac = a.confidence.unwrap_or(0.0); // LAW10: sort default, see note above
+            let bc = b.confidence.unwrap_or(0.0); // LAW10: sort default, see note above
             bc.total_cmp(&ac)
                 .then_with(|| b.severity.cmp(&a.severity))
                 .then_with(|| a.detector_id.cmp(&b.detector_id))
@@ -353,7 +369,7 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
                 loser
                     .confidence
                     .map(|c| format!("{c:.2}"))
-                    .unwrap_or_else(|| "n/a".to_string())
+                    .unwrap_or_else(|| "n/a".to_string()) // LAW10: display-only label for absent confidence in cross_detector evidence, no recall impact
             );
             winner.companions.entry(key).or_insert(value);
         }
@@ -396,9 +412,12 @@ fn file_scope_identity(location: &MatchLocation) -> Arc<str> {
     let mut identity = String::new();
     identity.push_str(location.source.as_ref());
     identity.push('\0');
-    identity.push_str(location.file_path.as_deref().unwrap_or("<unknown>"));
+    // A missing file_path/commit folds into a STABLE sentinel so two locations
+    // that both lack the field hash to the same dedup key — a deliberate
+    // identity choice, not a dropped value; `\0` keeps the fields unambiguous.
+    identity.push_str(location.file_path.as_deref().unwrap_or("<unknown>")); // LAW10: stable dedup-key sentinel, see note
     identity.push('\0');
-    identity.push_str(location.commit.as_deref().unwrap_or("<no-commit>"));
+    identity.push_str(location.commit.as_deref().unwrap_or("<no-commit>")); // LAW10: stable dedup-key sentinel, see note
     Arc::from(identity)
 }
 

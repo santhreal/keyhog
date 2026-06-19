@@ -1,14 +1,14 @@
 //! Migrated from `src/calibration.rs` inline tests.
-use keyhog_core::calibration::Calibration;
+use keyhog_core::Calibration;
 #[test]
 fn save_load_roundtrip() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("calibration.json");
 
-    let c = Calibration::empty();
-    c.record_true_positive("aws-access-key");
-    c.record_false_positive("aws-access-key");
-    c.record_true_positive("github-pat");
+    let c = Calibration::default();
+    c.record_outcome("aws-access-key", true);
+    c.record_outcome("aws-access-key", false);
+    c.record_outcome("github-pat", true);
     c.save(&path).unwrap();
 
     let loaded = Calibration::load(&path);

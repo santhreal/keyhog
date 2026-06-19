@@ -1,5 +1,5 @@
 //! Migrated from `src/rule_filter.rs` inline tests.
-use keyhog_core::{MatchLocation, RuleSuppressor, Severity, VerificationResult, VerifiedFinding};
+use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
 use std::collections::HashMap;
 use std::sync::Arc;
 fn finding(
@@ -39,7 +39,11 @@ fn credential_hash_eq_matches() {
 [[suppress]]
 credential_hash = "dededededededededededededededededededededededededededededededede"
 "#;
-    let s = RuleSuppressor::parse(toml).expect("parse");
+    let s = keyhog_core::testing::CoreTestApi::rule_suppressor_parse(
+        &keyhog_core::testing::TestApi,
+        toml,
+    )
+    .expect("parse");
     assert!(s.matches(&finding("x", "x", Severity::High, "p", deadbeef_hash)));
     assert!(!s.matches(&finding("x", "x", Severity::High, "p", feedface_hash)));
 }

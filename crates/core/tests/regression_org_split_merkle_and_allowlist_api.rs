@@ -5,13 +5,11 @@
 //!
 //! These pin the post-split invariant the org refactor promised: every public
 //! function/type stays reachable through its ORIGINAL path
-//! (`keyhog_core::merkle_index::*`, `keyhog_core::allowlist::Allowlist`), and
+//! (`keyhog_core::merkle_index::*`, `keyhog_core::Allowlist`), and
 //! the suppression + caching decisions are byte-for-byte what they were before
 //! the helpers moved into submodules. They assert EXACT values (hashes, glob
 //! verdicts, cache hits), never shapes - a regression here means the split
 //! leaked behavior, which is the whole risk of a responsibility move.
-
-use keyhog_core::testing::default_cache_path;
 
 /// Backdate a file's mtime without pulling in the `filetime` crate, matching
 /// the approach the pre-split sweep test uses. Returns `Err` on platforms where
@@ -61,17 +59,38 @@ fn set_mtime(_path: &std::path::Path, _t: std::time::SystemTime) -> std::io::Res
 fn merkle_index_public_api_reachable_after_storage_split() {
     // Constructors, cap accessor, and the BLAKE3 hasher all stay on
     // `keyhog_core::merkle_index`.
-    let idx = keyhog_core::testing::merkle_empty();
-    assert_eq!(keyhog_core::testing::merkle_len(&idx), 0);
-    assert!(keyhog_core::testing::merkle_is_empty(&idx));
-    assert_eq!(keyhog_core::testing::merkle_max_entries(&idx), 8_000_000);
+    let idx = keyhog_core::testing::CoreTestApi::merkle_empty(&keyhog_core::testing::TestApi);
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::merkle_len(&keyhog_core::testing::TestApi, &idx),
+        0
+    );
+    assert!(keyhog_core::testing::CoreTestApi::merkle_is_empty(
+        &keyhog_core::testing::TestApi,
+        &idx
+    ));
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::merkle_max_entries(&keyhog_core::testing::TestApi, &idx),
+        8_000_000
+    );
 
-    let bounded = keyhog_core::testing::merkle_with_max_entries(3);
-    assert_eq!(keyhog_core::testing::merkle_max_entries(&bounded), 3);
+    let bounded = keyhog_core::testing::CoreTestApi::merkle_with_max_entries(
+        &keyhog_core::testing::TestApi,
+        3,
+    );
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::merkle_max_entries(
+            &keyhog_core::testing::TestApi,
+            &bounded
+        ),
+        3
+    );
 
     // hash_content is the stable public hasher; pin an exact digest so a moved
     // helper that silently changed the algorithm is caught.
-    let h = keyhog_core::testing::merkle_hash_content(b"keyhog-merkle-split-probe");
+    let h = keyhog_core::testing::CoreTestApi::merkle_hash_content(
+        &keyhog_core::testing::TestApi,
+        b"keyhog-merkle-split-probe",
+    );
     assert_eq!(
         h,
         *blake3::hash(b"keyhog-merkle-split-probe").as_bytes(),
@@ -80,19 +99,48 @@ fn merkle_index_public_api_reachable_after_storage_split() {
 
     // record -> unchanged / metadata_unchanged / lookup round-trip.
     let path = std::path::PathBuf::from("/tmp/keyhog-split/a.rs");
-    keyhog_core::testing::merkle_record_with_metadata(&idx, path.clone(), 42, 7, h);
-    assert_eq!(keyhog_core::testing::merkle_len(&idx), 1);
-    assert!(keyhog_core::testing::merkle_unchanged(&idx, &path, &h));
+    keyhog_core::testing::CoreTestApi::merkle_record_with_metadata(
+        &keyhog_core::testing::TestApi,
+        &idx,
+        path.clone(),
+        42,
+        7,
+        h,
+    );
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::merkle_len(&keyhog_core::testing::TestApi, &idx),
+        1
+    );
+    assert!(keyhog_core::testing::CoreTestApi::merkle_unchanged(
+        &keyhog_core::testing::TestApi,
+        &idx,
+        &path,
+        &h
+    ));
     assert!(idx.metadata_unchanged(&path, 42, 7));
     assert!(!idx.metadata_unchanged(&path, 42, 8));
     assert_eq!(
-        keyhog_core::testing::merkle_lookup(&idx, &path),
+        keyhog_core::testing::CoreTestApi::merkle_lookup(
+            &keyhog_core::testing::TestApi,
+            &idx,
+            &path
+        ),
         Some((42, 7, h))
     );
 
     idx.forget(&path);
-    assert_eq!(keyhog_core::testing::merkle_lookup(&idx, &path), None);
-    assert!(keyhog_core::testing::merkle_is_empty(&idx));
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::merkle_lookup(
+            &keyhog_core::testing::TestApi,
+            &idx,
+            &path
+        ),
+        None
+    );
+    assert!(keyhog_core::testing::CoreTestApi::merkle_is_empty(
+        &keyhog_core::testing::TestApi,
+        &idx
+    ));
 }
 
 #[test]
@@ -104,16 +152,21 @@ fn merkle_index_save_load_roundtrip_and_tmp_sweep_after_split() {
     let dir = tempfile::tempdir().unwrap();
     let cache = dir.path().join("merkle.idx");
 
-    let idx = keyhog_core::testing::merkle_empty();
-    let h = keyhog_core::testing::merkle_hash_content(b"persisted");
-    keyhog_core::testing::merkle_record_with_metadata(
+    let idx = keyhog_core::testing::CoreTestApi::merkle_empty(&keyhog_core::testing::TestApi);
+    let h = keyhog_core::testing::CoreTestApi::merkle_hash_content(
+        &keyhog_core::testing::TestApi,
+        b"persisted",
+    );
+    keyhog_core::testing::CoreTestApi::merkle_record_with_metadata(
+        &keyhog_core::testing::TestApi,
         &idx,
         std::path::PathBuf::from("src/persisted.rs"),
         100,
         9,
         h,
     );
-    keyhog_core::testing::merkle_save(&idx, &cache).expect("save must succeed");
+    keyhog_core::testing::CoreTestApi::merkle_save(&keyhog_core::testing::TestApi, &idx, &cache)
+        .expect("save must succeed");
 
     // Plant a stale tmp sibling older than the 1h cutoff. `load` runs the
     // sweep from the new `tmp_hygiene` submodule before reading.
@@ -122,14 +175,19 @@ fn merkle_index_save_load_roundtrip_and_tmp_sweep_after_split() {
     let two_hours_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 60 * 60);
     let backdated = set_mtime(&stale, two_hours_ago).is_ok();
 
-    let loaded = keyhog_core::testing::merkle_load(&cache);
+    let loaded =
+        keyhog_core::testing::CoreTestApi::merkle_load(&keyhog_core::testing::TestApi, &cache);
     assert_eq!(
-        keyhog_core::testing::merkle_len(&loaded),
+        keyhog_core::testing::CoreTestApi::merkle_len(&keyhog_core::testing::TestApi, &loaded),
         1,
         "round-tripped entry count"
     );
     assert_eq!(
-        keyhog_core::testing::merkle_lookup(&loaded, std::path::Path::new("src/persisted.rs")),
+        keyhog_core::testing::CoreTestApi::merkle_lookup(
+            &keyhog_core::testing::TestApi,
+            &loaded,
+            std::path::Path::new("src/persisted.rs")
+        ),
         Some((100, 9, h)),
         "round-tripped entry value must be byte-identical after the split"
     );
@@ -146,7 +204,9 @@ fn merkle_index_save_load_roundtrip_and_tmp_sweep_after_split() {
 #[test]
 fn merkle_default_cache_path_unchanged() {
     // The path helper stays on the merkle_index module surface.
-    if let Some(p) = default_cache_path() {
+    if let Some(p) =
+        keyhog_core::testing::CoreTestApi::default_cache_path(&keyhog_core::testing::TestApi)
+    {
         assert!(
             p.ends_with("keyhog/merkle.idx"),
             "default cache path tail must be keyhog/merkle.idx, got {}",
@@ -201,9 +261,11 @@ fn merkle_storage_split_keeps_spec_gate_and_atomic_persist_owner() {
 
 #[test]
 fn allowlist_public_api_reachable_after_glob_split() {
-    // parse + the public fields stay on `keyhog_core::allowlist::Allowlist`.
-    let al =
-        keyhog_core::testing::allowlist_parse("detector:demo-token\npath:**/*.md\nnode_modules/\n");
+    // parse + the public fields stay on `keyhog_core::Allowlist`.
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        "detector:demo-token\npath:**/*.md\nnode_modules/\n",
+    );
     assert!(al.ignored_detectors.contains("demo-token"));
     assert_eq!(al.ignored_paths, vec!["**/*.md", "node_modules/"]);
 
@@ -220,7 +282,10 @@ fn allowlist_public_api_reachable_after_glob_split() {
 fn allowlist_glob_normalization_and_backslash_paths_after_split() {
     // normalize_path + segment matching moved to `glob.rs`; confirm Windows
     // separators and `.`/`..` normalization still produce identical decisions.
-    let al = keyhog_core::testing::allowlist_parse("path:src/**/secret.txt\n");
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        "path:src/**/secret.txt\n",
+    );
     assert!(al.is_path_ignored("src/a/b/secret.txt"));
     assert!(al.is_path_ignored("src\\a\\b\\secret.txt"));
     assert!(al.is_path_ignored("./src/x/secret.txt"));
@@ -232,22 +297,35 @@ fn allowlist_hash_suppression_unchanged_after_split() {
     // A bare 64-hex line is parsed into the credential-hash set; the hash path
     // did NOT move but must keep working alongside the moved glob path.
     let hash_hex = "a".repeat(64);
-    let al = keyhog_core::testing::allowlist_parse(&format!("{hash_hex}\n"));
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        &format!("{hash_hex}\n"),
+    );
     assert_eq!(al.credential_hashes.len(), 1);
-    assert!(keyhog_core::testing::allowlist_is_raw_hash_ignored(
-        &al, &hash_hex
-    ));
-    assert!(!keyhog_core::testing::allowlist_is_raw_hash_ignored(
-        &al,
-        &"b".repeat(64)
-    ));
+    assert!(
+        keyhog_core::testing::CoreTestApi::allowlist_is_raw_hash_ignored(
+            &keyhog_core::testing::TestApi,
+            &al,
+            &hash_hex
+        )
+    );
+    assert!(
+        !keyhog_core::testing::CoreTestApi::allowlist_is_raw_hash_ignored(
+            &keyhog_core::testing::TestApi,
+            &al,
+            &"b".repeat(64)
+        )
+    );
 }
 
 #[test]
 fn allowlist_directly_mutated_paths_trigger_rebuild_after_split() {
     // The `source_len`-mismatch rebuild path (now `glob::PathGlobIndex::source_len()`)
     // must still fire when `ignored_paths` is mutated directly after parse.
-    let mut al = keyhog_core::testing::allowlist_parse("path:keep/**\n");
+    let mut al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        "path:keep/**\n",
+    );
     assert!(al.is_path_ignored("keep/a.txt"));
     al.ignored_paths.push("added/**".to_string());
     assert!(

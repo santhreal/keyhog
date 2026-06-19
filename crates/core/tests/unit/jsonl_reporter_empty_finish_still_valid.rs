@@ -1,7 +1,6 @@
 //! Finishing a JSONL reporter without findings leaves output empty.
 
-use keyhog_core::{JsonlReporter, Reporter};
-
+use crate::support::reporters::JsonlReporter;
 #[test]
 fn jsonl_reporter_empty_finish_still_valid() {
     let mut buf = Vec::new();

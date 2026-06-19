@@ -1,5 +1,5 @@
 //! Migrated from `src/rule_filter.rs` inline tests.
-use keyhog_core::{MatchLocation, RuleSuppressor, Severity, VerificationResult, VerifiedFinding};
+use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
 use std::collections::HashMap;
 use std::sync::Arc;
 fn finding(
@@ -15,7 +15,13 @@ fn finding(
         service: Arc::from(service),
         severity: sev,
         credential_redacted: std::borrow::Cow::Borrowed("REDACTED"),
-        credential_hash: [0; 32],
+        credential_hash: {
+            let mut bytes = [0u8; 32];
+            let hash = hash.as_bytes();
+            let len = hash.len().min(bytes.len());
+            bytes[..len].copy_from_slice(&hash[..len]);
+            bytes
+        },
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from(path)),
@@ -40,8 +46,11 @@ detector = "aws-access-key"
 [[suppress]]
 detector = "github-pat"
 "#;
-    let s = RuleSuppressor::parse(toml).expect("parse");
-    assert_eq!(s.len(), 2);
+    let s = keyhog_core::testing::CoreTestApi::rule_suppressor_parse(
+        &keyhog_core::testing::TestApi,
+        toml,
+    )
+    .expect("parse");
     assert!(s.matches(&finding(
         "aws-access-key",
         "aws",

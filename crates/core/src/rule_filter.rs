@@ -107,7 +107,7 @@ impl<'a> RuleEvaluationContext for FindingContext<'a> {
 
 impl RuleSuppressor {
     /// Build an empty suppressor - matches no findings.
-    pub fn empty() -> Self {
+    fn empty() -> Self {
         Self::default()
     }
 
@@ -123,7 +123,7 @@ impl RuleSuppressor {
     }
 
     /// Parse a TOML string. Useful for tests.
-    pub fn parse(toml_text: &str) -> Result<Self, RuleSuppressorError> {
+    pub(crate) fn parse(toml_text: &str) -> Result<Self, RuleSuppressorError> {
         #[derive(Deserialize)]
         struct Doc {
             #[serde(default)]
@@ -150,10 +150,14 @@ impl RuleSuppressor {
         if self.rules.is_empty() {
             return false;
         }
-        let path = finding.location.file_path.as_deref().unwrap_or("");
-        // `Finding.credential_hash` is the raw 32 bytes; rule predicates match
-        // against the hex form (see the module-doc example). Hex-encode into a
-        // local that outlives `ctx`'s borrow below.
+        // Law 10: recall-safe (fail-OPEN for suppression) — a finding with no
+        // file_path yields `""`, which a path-scoped suppression rule will not
+        // match, so the finding is LESS likely to be suppressed and MORE likely
+        // to be reported. A missing path can never silently drop a real finding.
+        let path = finding.location.file_path.as_deref().unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
+                                                                        // `Finding.credential_hash` is the raw 32 bytes; rule predicates match
+                                                                        // against the hex form (see the module-doc example). Hex-encode into a
+                                                                        // local that outlives `ctx`'s borrow below.
         let credential_hash_hex = crate::finding::hex_encode(&finding.credential_hash);
         let ctx = FindingContext {
             detector_id: finding.detector_id.as_ref(),
@@ -163,16 +167,6 @@ impl RuleSuppressor {
             credential_hash: &credential_hash_hex,
         };
         self.rules.iter().any(|rule| evaluate_formula(rule, &ctx))
-    }
-
-    /// Number of compiled rules.
-    pub fn len(&self) -> usize {
-        self.rules.len()
-    }
-
-    /// Returns true when no suppression rules are configured.
-    pub fn is_empty(&self) -> bool {
-        self.rules.is_empty()
     }
 }
 
@@ -283,7 +277,7 @@ fn normalise_severity(s: &str) -> Result<String, String> {
         other => {
             return Err(format!(
                 "unknown severity {other:?}; expected info|client-safe|low|medium|high|critical"
-            ))
+            ));
         }
     };
     Ok(canonical.to_string())

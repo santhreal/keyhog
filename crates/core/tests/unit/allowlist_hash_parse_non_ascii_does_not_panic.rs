@@ -8,8 +8,6 @@
 //! `.keyhogignore` line can trivially contain such a value. The byte-wise
 //! decoder rejects any non-hex byte cleanly instead.
 
-use keyhog_core::allowlist::Allowlist;
-
 #[test]
 fn raw_hash_lookup_with_non_ascii_64_bytes_returns_false_not_panic() {
     // 62 ASCII hex chars + one 2-byte UTF-8 char 'é' = 64 bytes, 63 chars.
@@ -23,11 +21,30 @@ fn raw_hash_lookup_with_non_ascii_64_bytes_returns_false_not_panic() {
         "fixture must have an odd-offset multibyte char"
     );
 
-    let allowlist = Allowlist::parse("");
+    let allowlist =
+        keyhog_core::testing::CoreTestApi::allowlist_parse(&keyhog_core::testing::TestApi, "");
     // Must not panic and must not be considered an ignored hash.
-    assert!(!allowlist.is_raw_hash_ignored(&value));
-    assert!(!allowlist.is_raw_hash_ignored(&needle));
-    assert!(!allowlist.is_hash_allowed(&value));
+    assert!(
+        !keyhog_core::testing::CoreTestApi::allowlist_is_raw_hash_ignored(
+            &keyhog_core::testing::TestApi,
+            &allowlist,
+            &value
+        )
+    );
+    assert!(
+        !keyhog_core::testing::CoreTestApi::allowlist_is_raw_hash_ignored(
+            &keyhog_core::testing::TestApi,
+            &allowlist,
+            &needle
+        )
+    );
+    assert!(
+        !keyhog_core::testing::CoreTestApi::allowlist_is_hash_allowed(
+            &keyhog_core::testing::TestApi,
+            &allowlist,
+            &value
+        )
+    );
 }
 
 #[test]
@@ -36,7 +53,8 @@ fn bare_non_ascii_64_byte_line_is_treated_as_path_not_hash() {
     // glob branch. The parse must complete without panicking.
     let line = format!("{}é", "c".repeat(62));
     assert_eq!(line.len(), 64);
-    let allowlist = Allowlist::parse(&line);
+    let allowlist =
+        keyhog_core::testing::CoreTestApi::allowlist_parse(&keyhog_core::testing::TestApi, &line);
     // Not a valid hash -> no credential hash recorded.
     assert!(
         allowlist.credential_hashes.is_empty(),
@@ -52,13 +70,24 @@ fn valid_lowercase_and_uppercase_hex_still_parse() {
     // compares the parsed bytes, so a lookup of the same hex should hit).
     let hash = "5e884898da28047151d0e56f8dc6292773603d0d6aabbdd62a11ef721d1542d8";
     let upper = hash.to_uppercase();
-    let allowlist = Allowlist::parse(&format!("hash:{hash}\n"));
+    let allowlist = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        &format!("hash:{hash}\n"),
+    );
     assert!(
-        allowlist.is_raw_hash_ignored(hash),
+        keyhog_core::testing::CoreTestApi::allowlist_is_raw_hash_ignored(
+            &keyhog_core::testing::TestApi,
+            &allowlist,
+            hash
+        ),
         "lowercase hex hash must match"
     );
     assert!(
-        allowlist.is_raw_hash_ignored(&upper),
+        keyhog_core::testing::CoreTestApi::allowlist_is_raw_hash_ignored(
+            &keyhog_core::testing::TestApi,
+            &allowlist,
+            &upper
+        ),
         "uppercase spelling of the same hash must match (case-insensitive hex)"
     );
 }

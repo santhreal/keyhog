@@ -24,11 +24,11 @@
 //!
 //! Test budget: 10 000 cases per property.
 
+use crate::support::reporters::SarifReporter;
+use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
+use proptest::prelude::*;
 use std::borrow::Cow;
 use std::collections::HashMap;
-
-use keyhog_core::{MatchLocation, SarifReporter, Severity, VerificationResult, VerifiedFinding};
-use proptest::prelude::*;
 
 const CASES: u32 = 10_000;
 
@@ -91,7 +91,6 @@ fn render_to_sarif(finding: &VerifiedFinding) -> Vec<u8> {
     let mut buf = Vec::new();
     {
         let mut rep = SarifReporter::new(&mut buf);
-        use keyhog_core::Reporter;
         rep.report(finding).expect("report");
         rep.finish().expect("finish");
     }

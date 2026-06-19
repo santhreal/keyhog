@@ -1,9 +1,8 @@
 //! SARIF `fixes[].artifactChanges[].artifactLocation.uri` must percent-encode
 //! absolute unicode paths the same way as result `locations[]` URIs.
 
-use keyhog_core::{
-    MatchLocation, Reporter, SarifReporter, Severity, VerificationResult, VerifiedFinding,
-};
+use crate::support::reporters::SarifReporter;
+use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
 use std::borrow::Cow;
 use std::collections::HashMap;
 

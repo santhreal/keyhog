@@ -1,7 +1,7 @@
 //! Auto-fix suggestions: turn each finding into "replace this credential
 //! with `${ENV_VAR_NAME}`" advice.
 //!
-//! Tier-B moat innovation #15 + #17 from audits/legendary-2026-04-26:
+//! Tier-B moat innovation #15 + #17 from docs/EXECUTION_PLAN.md:
 //! moves keyhog from "find" to "fix." We surface the suggestion in SARIF
 //! `result.fixes[]` per the v2.2.0 spec; CLI consumers can apply the edit
 //! interactively or in a pre-commit hook.
@@ -10,56 +10,196 @@
 //! name from service + the `${VAR}` replacement string). Actually rewriting
 //! files belongs in the CLI, where we can prompt the user before clobbering
 //! their working tree.
+//!
+//! The curated `service -> env var` mappings are **Tier-B data**, compiled in
+//! from `data/service-env-vars.toml`. They are NOT a hardcoded `match` arm and
+//! are not extended by ambient process environment; changing the shipped map is
+//! a data-file edit, reviewable in the same diff as the detector corpus.
+
+use std::sync::LazyLock;
+
+use crate::Severity;
+
+/// One curated `service -> env var` mapping, deserialized from the Tier-B
+/// `[[service]]` tables in `data/service-env-vars.toml`.
+#[derive(serde::Deserialize)]
+struct ServiceEnvEntry {
+    /// Lowercase needle tested against the lowercased service string.
+    #[serde(rename = "match")]
+    needle: String,
+    /// The environment-variable name emitted verbatim when the needle matches.
+    env: String,
+    /// When `true`, require the service to START with `needle` (used for the
+    /// `gh-` / `ghp_` GitHub token prefixes); otherwise it is a substring test.
+    #[serde(default)]
+    prefix: bool,
+}
+
+#[derive(serde::Deserialize, Default)]
+struct ServiceEnvFile {
+    #[serde(default)]
+    service: Vec<ServiceEnvEntry>,
+}
+
+/// The compiled-in service map. Ordering within the file is preserved; because
+/// matching takes the first hit, the data file must list more-specific needles
+/// before broader substrings they could otherwise shadow.
+///
+/// A corrupt baseline is a build-time-embedded constant, so a parse failure
+/// there is a hard programming error and we surface it LOUDLY (unconditional
+/// `eprintln!`) and fall back to the screaming-snake derivation rather than
+/// silently producing wrong fix advice.
+static SERVICE_ENV_MAP: LazyLock<Vec<ServiceEnvEntry>> = LazyLock::new(|| {
+    parse_service_env_file(
+        include_str!("../data/service-env-vars.toml"),
+        "<embedded data/service-env-vars.toml>",
+    )
+});
+
+/// Provider-specific remediation advice emitted by text, JSON, SARIF, and HTML
+/// reporters. The values come from Tier-B data, never reporter-side match arms.
+#[derive(Debug, Clone, serde::Serialize)]
+pub(crate) struct Remediation {
+    pub(crate) action: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) revoke_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) docs_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) revoke_command: Option<String>,
+}
+
+impl Remediation {
+    pub(crate) fn markdown(&self) -> String {
+        let mut out = self.action.clone();
+        if let Some(command) = &self.revoke_command {
+            out.push_str("\n\nRevoke command:\n\n```sh\n");
+            out.push_str(command);
+            out.push_str("\n```");
+        }
+        if let Some(url) = self.revoke_url.as_ref().or(self.docs_url.as_ref()) {
+            out.push_str("\n\nReference: ");
+            out.push_str(url);
+        }
+        out
+    }
+}
+
+#[derive(Clone, serde::Deserialize)]
+struct RemediationFields {
+    action: String,
+    #[serde(default)]
+    revoke_url: Option<String>,
+    #[serde(default)]
+    docs_url: Option<String>,
+    #[serde(default)]
+    revoke_command: Option<String>,
+}
+
+impl From<&RemediationFields> for Remediation {
+    fn from(fields: &RemediationFields) -> Self {
+        Self {
+            action: fields.action.clone(),
+            revoke_url: fields.revoke_url.clone(),
+            docs_url: fields.docs_url.clone(),
+            revoke_command: fields.revoke_command.clone(),
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct DetectorRemediationEntry {
+    id: String,
+    #[serde(flatten)]
+    fields: RemediationFields,
+}
+
+#[derive(serde::Deserialize)]
+struct ServiceRemediationEntry {
+    #[serde(rename = "match")]
+    needle: String,
+    #[serde(default)]
+    prefix: bool,
+    #[serde(flatten)]
+    fields: RemediationFields,
+}
+
+#[derive(serde::Deserialize)]
+struct SeverityRemediationEntry {
+    severity: String,
+    #[serde(flatten)]
+    fields: RemediationFields,
+}
+
+#[derive(Default, serde::Deserialize)]
+struct RemediationFile {
+    #[serde(default)]
+    detector: Vec<DetectorRemediationEntry>,
+    #[serde(default)]
+    service: Vec<ServiceRemediationEntry>,
+    #[serde(default)]
+    severity: Vec<SeverityRemediationEntry>,
+}
+
+static REMEDIATION_MAP: LazyLock<RemediationFile> = LazyLock::new(|| {
+    parse_remediation_file(
+        include_str!("../data/remediation.toml"),
+        "<embedded data/remediation.toml>",
+    )
+});
+
+/// Parse one `service-env-vars.toml` document into its entries. On a parse
+/// error we surface the failure LOUDLY (Law 10: no silent fallback) and return
+/// an empty list so the caller degrades to the deterministic screaming-snake
+/// derivation rather than silently dropping curated advice.
+fn parse_service_env_file(raw: &str, origin: &str) -> Vec<ServiceEnvEntry> {
+    match toml::from_str::<ServiceEnvFile>(raw) {
+        Ok(parsed) => parsed.service,
+        Err(e) => {
+            eprintln!(
+                "keyhog: service-env map '{origin}' failed to parse: {e}; \
+                 falling back to <SERVICE>_KEY derivation for all services"
+            );
+            Vec::new()
+        }
+    }
+}
+
+fn parse_remediation_file(raw: &str, origin: &str) -> RemediationFile {
+    match toml::from_str::<RemediationFile>(raw) {
+        Ok(parsed) => parsed,
+        Err(e) => {
+            eprintln!(
+                "keyhog: remediation map '{origin}' failed to parse: {e}; \
+                 falling back to generic rotate/remove advice"
+            );
+            RemediationFile::default()
+        }
+    }
+}
 
 /// Map a detector's `service` string to a conventional environment-variable
 /// name. Falls back to `<UPPER_SERVICE>_KEY` when the service isn't in the
-/// curated map.
+/// curated [Tier-B map](../data/service-env-vars.toml).
 ///
-/// The curated mappings follow community conventions (12-factor, common
-/// SDKs):
-///   aws            → AWS_ACCESS_KEY_ID
-///   github / gh-*  → GITHUB_TOKEN
-///   gitlab         → GITLAB_TOKEN
-///   slack          → SLACK_BOT_TOKEN
-///   openai         → OPENAI_API_KEY
-///   anthropic      → ANTHROPIC_API_KEY
-///   stripe         → STRIPE_SECRET_KEY
-///   twilio         → TWILIO_AUTH_TOKEN
-///   sendgrid       → SENDGRID_API_KEY
-///   google / gcp   → GOOGLE_API_KEY
-///   azure          → AZURE_CLIENT_SECRET
-///   npm            → NPM_TOKEN
-///   pypi           → PYPI_TOKEN
-///   docker         → DOCKER_PASSWORD
-///   datadog        → DATADOG_API_KEY
-///   snowflake      → SNOWFLAKE_PASSWORD
-/// Derive a canonical environment variable name for a service (e.g., "stripe" -> "STRIPE_KEY").
-pub fn env_var_name_for_service(service: &str) -> String {
+/// The curated mappings follow community conventions (12-factor, common SDKs);
+/// see `data/service-env-vars.toml` for the authoritative list.
+pub(crate) fn env_var_name_for_service(service: &str) -> String {
     let lower = service.to_lowercase();
-    let curated = match lower.as_str() {
-        s if s.contains("aws") => Some("AWS_ACCESS_KEY_ID"),
-        s if s.contains("github") || s.starts_with("gh-") || s.starts_with("ghp_") => {
-            Some("GITHUB_TOKEN")
-        }
-        s if s.contains("gitlab") => Some("GITLAB_TOKEN"),
-        s if s.contains("slack") => Some("SLACK_BOT_TOKEN"),
-        s if s.contains("openai") => Some("OPENAI_API_KEY"),
-        s if s.contains("anthropic") => Some("ANTHROPIC_API_KEY"),
-        s if s.contains("stripe") => Some("STRIPE_SECRET_KEY"),
-        s if s.contains("twilio") => Some("TWILIO_AUTH_TOKEN"),
-        s if s.contains("sendgrid") => Some("SENDGRID_API_KEY"),
-        s if s.contains("google") || s.contains("gcp") => Some("GOOGLE_API_KEY"),
-        s if s.contains("azure") => Some("AZURE_CLIENT_SECRET"),
-        s if s.contains("npm") => Some("NPM_TOKEN"),
-        s if s.contains("pypi") => Some("PYPI_TOKEN"),
-        s if s.contains("docker") => Some("DOCKER_PASSWORD"),
-        s if s.contains("datadog") => Some("DATADOG_API_KEY"),
-        s if s.contains("snowflake") => Some("SNOWFLAKE_PASSWORD"),
-        _ => None,
-    };
-    curated
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| service_to_screaming_snake(service))
+    SERVICE_ENV_MAP
+        .iter()
+        .find(|entry| {
+            if entry.prefix {
+                lower.starts_with(&entry.needle)
+            } else {
+                lower.contains(&entry.needle)
+            }
+        })
+        .map(|entry| entry.env.clone())
+        // The default below is not an error fallback — it is the documented
+        // `<SERVICE>_KEY` mapping for any service the curated Tier-B map does not
+        // cover, always producing a deterministic, correct suggestion.
+        .unwrap_or_else(|| service_to_screaming_snake(service)) // LAW10: documented default, not a failure path
 }
 
 fn service_to_screaming_snake(service: &str) -> String {
@@ -77,6 +217,45 @@ fn service_to_screaming_snake(service: &str) -> String {
 /// Render the `${ENV_VAR_NAME}` shell-interpolation replacement string for
 /// a detector. Reporters embed this in their `fixes[]` output.
 /// Return the recommended replacement text for a leaked credential (e.g., "${STRIPE_KEY}").
-pub fn fix_replacement_text(service: &str) -> String {
+pub(crate) fn fix_replacement_text(service: &str) -> String {
     format!("${{{}}}", env_var_name_for_service(service))
+}
+
+pub(crate) fn remediation_for(detector_id: &str, service: &str, severity: Severity) -> Remediation {
+    let data = &*REMEDIATION_MAP;
+    if let Some(entry) = data
+        .detector
+        .iter()
+        .find(|entry| entry.id.as_str() == detector_id)
+    {
+        return Remediation::from(&entry.fields);
+    }
+
+    let service_lower = service.to_lowercase();
+    if let Some(entry) = data.service.iter().find(|entry| {
+        if entry.prefix {
+            service_lower.starts_with(&entry.needle)
+        } else {
+            service_lower.contains(&entry.needle)
+        }
+    }) {
+        return Remediation::from(&entry.fields);
+    }
+
+    let severity_key = format!("{severity:?}").to_lowercase();
+    if let Some(entry) = data
+        .severity
+        .iter()
+        .find(|entry| entry.severity == severity_key)
+    {
+        return Remediation::from(&entry.fields);
+    }
+
+    Remediation {
+        action: "Remove the exposed credential from the codebase and rotate it at the provider."
+            .to_string(),
+        revoke_url: None,
+        docs_url: None,
+        revoke_command: None,
+    }
 }

@@ -14,14 +14,11 @@
 //! Every expected value here is derived by reading
 //! crates/core/src/report/{text,csv,junit}.rs and crates/core/src/finding.rs.
 
+use crate::support::reporters::{CsvReporter, JunitReporter};
+use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
-
-use keyhog_core::{
-    CsvReporter, JunitReporter, MatchLocation, Reporter, Severity, VerificationResult,
-    VerifiedFinding,
-};
 
 const REPL: char = '\u{FFFD}';
 
@@ -58,7 +55,7 @@ fn render_text(finding: &VerifiedFinding) -> String {
     let mut buf: Vec<u8> = Vec::new();
     {
         // color=false: the only ESC bytes in output then come from data, not styling.
-        let mut reporter = keyhog_core::TextReporter::with_color(&mut buf, false);
+        let mut reporter = crate::support::reporters::TextReporter::with_color(&mut buf, false);
         reporter.report(finding).expect("text report");
         reporter.finish().expect("text finish");
     }
@@ -334,8 +331,9 @@ fn text_sanitizes_esc_in_file_path_location() {
 
 #[test]
 fn text_strips_unc_prefix_then_sanitizes() {
-    // strip_unc_prefix removes the literal `\\?\` Win32 prefix BEFORE sanitize;
-    // an ESC after the prefix is still replaced and the prefix itself is gone.
+    // The shared display helper removes the literal `\\?\` Win32 prefix BEFORE
+    // sanitize; an ESC after the prefix is still replaced and the prefix itself
+    // is gone.
     let mut f = base_finding();
     f.location.file_path = Some(Arc::from("\\\\?\\C:\\a\x1b[0mb"));
     f.location.line = None;

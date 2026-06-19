@@ -1,5 +1,5 @@
 //! Forward compatibility: unknown fields in TOML are rejected to prevent silent siloing.
-use keyhog_core::{load_detectors_from_str, SpecError};
+use keyhog_core::SpecError;
 
 #[test]
 fn toml_compat_unknown_detector_field_errors() {
@@ -16,7 +16,10 @@ future_field = "should_not_exist"
 regex = "test_[A-Z0-9]{8}"
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     assert!(
         matches!(result, Err(SpecError::InvalidToml { .. })),
         "Unknown detector field must be rejected (forward-compat gate)"
@@ -47,7 +50,10 @@ regex = "test_[A-Z0-9]{8}"
 future_feature = true
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     assert!(
         matches!(result, Err(SpecError::InvalidToml { .. })),
         "Unknown pattern field must be rejected"
@@ -85,7 +91,10 @@ method = "POST"
 status = 200
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     assert!(
         matches!(result, Err(SpecError::InvalidToml { .. })),
         "Unknown verify field must be rejected"
@@ -112,7 +121,10 @@ within_lines = 5
 future_companion_field = "not_allowed"
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     assert!(
         matches!(result, Err(SpecError::InvalidToml { .. })),
         "Unknown companion field must be rejected"

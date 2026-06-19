@@ -1,6 +1,6 @@
 //! Bayesian Beta(α, β) calibration per detector.
 //!
-//! Tier-B moat innovation #4 from audits/legendary-2026-04-26: surface
+//! Tier-B moat innovation #4 from docs/EXECUTION_PLAN.md: surface
 //! per-detector reliability based on observed true-positive vs false-
 //! positive history rather than a fixed threshold. Detectors with a long
 //! history of clean hits get a higher confidence multiplier; detectors
@@ -53,7 +53,7 @@ impl Default for BetaCounters {
 impl BetaCounters {
     /// Posterior mean: α / (α + β). Falls in [0, 1]; the higher, the more
     /// reliable the detector is historically.
-    pub fn posterior_mean(&self) -> f64 {
+    pub(crate) fn posterior_mean(&self) -> f64 {
         let total = self.alpha as f64 + self.beta as f64;
         if total == 0.0 {
             0.5
@@ -72,7 +72,7 @@ impl BetaCounters {
     /// so the result clamps at `u32::MAX` instead of wrapping. That's
     /// still a frozen counter at saturation, but the posterior mean
     /// stays correct and no detector silently gets disabled.
-    pub fn observations(&self) -> u32 {
+    pub(crate) fn observations(&self) -> u32 {
         // Subtract the Beta(1, 1) prior baseline.
         self.alpha
             .saturating_sub(1)
@@ -100,7 +100,7 @@ pub struct Calibration {
 }
 
 impl Calibration {
-    pub fn empty() -> Self {
+    fn empty() -> Self {
         Self::default()
     }
 
@@ -150,7 +150,7 @@ impl Calibration {
         };
         let serialized = serde_json::to_vec_pretty(&on_disk)
             .map_err(|e| std::io::Error::other(format!("calibration encode: {e}")))?;
-        let parent = path.parent().unwrap_or_else(|| std::path::Path::new("."));
+        let parent = path.parent().unwrap_or_else(|| std::path::Path::new(".")); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
         std::fs::create_dir_all(parent)?;
         // Same atomic-write-via-NamedTempFile pattern used by
         // `merkle_index::save` - see that file's note for rationale.
@@ -161,6 +161,15 @@ impl Calibration {
         Ok(())
     }
 
+    /// Record an operator-confirmed outcome for `detector_id`.
+    pub fn record_outcome(&self, detector_id: &str, true_positive: bool) {
+        if true_positive {
+            self.record_true_positive(detector_id);
+        } else {
+            self.record_false_positive(detector_id);
+        }
+    }
+
     /// Record a true positive for `detector_id` (α += 1).
     ///
     /// kimi-confidence audit: bare `alpha += 1` would panic in debug
@@ -169,7 +178,7 @@ impl Calibration {
     /// reliable detector (posterior mean drops to 0.0/1.0 = 0). Use
     /// `saturating_add` so the worst case is a frozen counter at
     /// `u32::MAX`, which keeps the posterior mean correct.
-    pub fn record_true_positive(&self, detector_id: &str) {
+    pub(crate) fn record_true_positive(&self, detector_id: &str) {
         let mut guard = self.inner.write();
         let entry = guard.entry(detector_id.to_string()).or_default();
         entry.alpha = entry.alpha.saturating_add(1);
@@ -177,7 +186,7 @@ impl Calibration {
 
     /// Record a false positive for `detector_id` (β += 1). Same
     /// `saturating_add` rationale as [`record_true_positive`].
-    pub fn record_false_positive(&self, detector_id: &str) {
+    pub(crate) fn record_false_positive(&self, detector_id: &str) {
         let mut guard = self.inner.write();
         let entry = guard.entry(detector_id.to_string()).or_default();
         entry.beta = entry.beta.saturating_add(1);
@@ -188,12 +197,12 @@ impl Calibration {
     /// detector). The scanner's confidence-scoring path consumes this value,
     /// but only when calibration is explicitly opted in (see the module-level
     /// coherence contract) so default / benchmark scans stay deterministic.
-    pub fn confidence_multiplier(&self, detector_id: &str) -> f64 {
+    pub(crate) fn confidence_multiplier(&self, detector_id: &str) -> f64 {
         self.inner
             .read()
             .get(detector_id)
             .copied()
-            .unwrap_or_default()
+            .unwrap_or_default() // LAW10: missing/non-string field => empty/placeholder; recall-safe
             .posterior_mean()
     }
 
@@ -203,7 +212,7 @@ impl Calibration {
             .read()
             .get(detector_id)
             .copied()
-            .unwrap_or_default()
+            .unwrap_or_default() // LAW10: missing/non-string field => empty/placeholder; recall-safe
     }
 
     /// Iterate every recorded `(detector_id, counters)`. Useful for
@@ -221,7 +230,7 @@ impl Calibration {
 
     /// Test-only hook for saturation oracle tests in `tests/unit/`.
     #[doc(hidden)]
-    pub fn test_seed_counters(&self, id: &str, alpha: u32, beta: u32) {
+    pub(crate) fn test_seed_counters(&self, id: &str, alpha: u32, beta: u32) {
         let mut guard = self.inner.write();
         let entry = guard.entry(id.to_string()).or_default();
         entry.alpha = alpha;

@@ -1,7 +1,6 @@
 //! Migrated from `src/report/sarif.rs` inline tests.
-use keyhog_core::{
-    MatchLocation, Reporter, SarifReporter, Severity, VerificationResult, VerifiedFinding,
-};
+use crate::support::reporters::SarifReporter;
+use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
 use std::collections::HashMap;
 use std::sync::Arc;
 fn synthetic_finding() -> VerifiedFinding {

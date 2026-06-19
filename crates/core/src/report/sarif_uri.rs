@@ -13,7 +13,7 @@ use std::sync::OnceLock;
 /// annotate the PR (the entire point of code-scanning). Paths that are already
 /// relative are kept; absolute paths outside the scan root fall back to a
 /// `file://` uri so they are at least unambiguous.
-pub fn file_path_to_sarif_uri(path: &str) -> String {
+pub(crate) fn file_path_to_sarif_uri(path: &str) -> String {
     if let Some(rel) = relative_to_scan_root(path) {
         return percent_encode_path(&rel);
     }
@@ -32,7 +32,11 @@ pub fn file_path_to_sarif_uri(path: &str) -> String {
 /// the scan, from the same working directory the scan executed in.
 fn scan_root() -> Option<&'static std::path::Path> {
     static ROOT: OnceLock<Option<std::path::PathBuf>> = OnceLock::new();
-    ROOT.get_or_init(|| std::env::current_dir().ok()).as_deref()
+    // When the CWD is unreadable we return `None`, and `file_path_to_sarif_uri`
+    // then emits an unambiguous absolute `file://` URI instead of a repo-relative
+    // one (documented in that fn). The degradation is VISIBLE in the SARIF output
+    // (absolute scheme), never a swallowed failure that loses a finding.
+    ROOT.get_or_init(|| std::env::current_dir().ok()).as_deref() // LAW10: CWD-unreadable -> visible absolute file:// URI, no finding lost
 }
 
 /// If `path` is absolute and lives under the scan root, return it relative to
@@ -48,11 +52,11 @@ fn relative_to_scan_root(path: &str) -> Option<String> {
 /// Pure form: if absolute `path` lives under `root`, return it relative to
 /// `root` (forward-slashed); `None` otherwise. Exposed for testing the
 /// code-scanning relativization without depending on the process CWD.
-pub fn relative_to(path: &str, root: &std::path::Path) -> Option<String> {
+pub(crate) fn relative_to(path: &str, root: &std::path::Path) -> Option<String> {
     let normalised = path.replace('\\', "/");
     std::path::Path::new(&normalised)
         .strip_prefix(root)
-        .ok()
+        .ok() // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
         .map(|r| r.to_string_lossy().replace('\\', "/"))
 }
 
@@ -64,7 +68,7 @@ pub fn relative_to(path: &str, root: &std::path::Path) -> Option<String> {
 /// every keyhog alert shows a flat default severity, breaking triage. The
 /// `security` tag files the rule under security alerts. GitHub bands:
 /// >=9.0 critical, 7.0-8.9 high, 4.0-6.9 medium, 0.1-3.9 low.
-pub fn apply_code_scanning_props(
+pub(crate) fn apply_code_scanning_props(
     props: &mut serde_json::Map<String, serde_json::Value>,
     severity: crate::Severity,
 ) {
@@ -92,7 +96,7 @@ pub fn apply_code_scanning_props(
 /// The raw 32-byte hash is hex-encoded here, at the reporter boundary (the
 /// `Finding` stores raw bytes - see `finding.rs`). An all-zero hash is the
 /// "no credential identity" sentinel and yields `None`.
-pub fn credential_fingerprints(
+pub(crate) fn credential_fingerprints(
     credential_hash: &[u8; 32],
 ) -> Option<std::collections::BTreeMap<String, String>> {
     if credential_hash == &[0u8; 32] {

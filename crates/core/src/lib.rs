@@ -27,51 +27,47 @@
 )]
 
 //! Core types shared across all KeyHog crates.
-pub mod allowlist;
-pub mod api;
+mod allowlist;
+mod api;
 /// Offline AWS account-ID decode + canary-token classification (single source
 /// of truth shared by the scanner's finding metadata and the verifier's
 /// suppress-live-verification-for-canaries gate).
-pub mod aws;
-/// ANSI-colored CLI startup banner with detector counts.
-pub mod banner;
+mod aws;
 /// Configuration system for KeyHog scanning options.
-pub mod config;
+mod config;
 /// Secure credential storage and redaction.
-pub mod credential;
+mod credential;
 mod dedup;
 mod display;
 /// Shared standard Base64 decode (wire / K8s), bounded for DoS safety.
-pub mod encoding;
-/// Shared environment-variable parsing for numeric KeyHog knobs.
-pub mod env_config;
+mod encoding;
 mod finding;
 /// Security hardening: memory zeroization and process isolation helpers.
-pub mod hardening;
+mod hardening;
 /// Structured reporting (JSON, SARIF, Text).
-pub mod report;
+mod report;
 /// Safe absolute-path resolution for external binaries.
-pub mod safe_bin;
+mod safe_bin;
 mod source;
 mod spec;
 use std::borrow::Cow;
 
 /// Global registry for sources and verifiers.
-pub mod registry;
+mod registry;
 
 pub use api::*;
 /// Auto-fix suggestion logic for SARIF output.
-pub mod auto_fix;
+mod auto_fix;
 /// Bayesian confidence calibration for detectors.
-pub mod calibration;
+mod calibration;
 /// Incremental scan state via BLAKE3 Merkle index.
-pub mod merkle_index;
+mod merkle_index;
 mod merkle_spec_hash;
 /// Declarative `.keyhogignore.toml` rule-based finding suppression.
 /// Wraps vyre's CPU rule evaluator with a TOML schema scoped to
 /// keyhog's finding shape (detector / service / severity / path /
 /// credential_hash predicates).
-pub mod rule_filter;
+mod rule_filter;
 
 // Embedded detectors compiled into the binary at build time.
 // These are used when no external detectors directory is found.
@@ -81,7 +77,7 @@ mod embedded {
 
 /// Load detectors from embedded data (compiled into the binary).
 /// Returns detector TOML strings that can be parsed by the spec loader.
-pub fn embedded_detector_tomls() -> &'static [(&'static str, &'static str)] {
+pub(crate) fn embedded_detector_tomls() -> &'static [(&'static str, &'static str)] {
     embedded::EMBEDDED_DETECTORS
 }
 

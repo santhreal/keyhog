@@ -11,7 +11,7 @@ fn cross_detector_single_input_passthrough() {
         detector_name: Arc::from("solo"),
         service: Arc::from("solo"),
         severity: Severity::Low,
-        credential: Arc::from("x"),
+        credential: keyhog_core::SensitiveString::from("x"),
         credential_hash: [0; 32],
         companions: HashMap::new(),
         primary_location: MatchLocation {

@@ -7,13 +7,13 @@ use crate::VerifiedFinding;
 use super::{ReportError, Reporter, WriterBackedReporter};
 
 /// Tabular CSV output.
-pub struct CsvReporter<W: Write + Send> {
+pub(crate) struct CsvReporter<W: Write + Send> {
     writer: W,
 }
 
 impl<W: Write + Send> CsvReporter<W> {
     /// Create a new CSV reporter and write headers.
-    pub fn new(mut writer: W) -> Result<Self, ReportError> {
+    pub(crate) fn new(mut writer: W) -> Result<Self, ReportError> {
         writeln!(
             writer,
             "detector_id,detector_name,service,severity,credential_redacted,credential_hash,source,file_path,line,offset,commit,author,date,verification,confidence"
@@ -24,39 +24,43 @@ impl<W: Write + Send> CsvReporter<W> {
 
 impl<W: Write + Send> Reporter for CsvReporter<W> {
     fn report(&mut self, finding: &VerifiedFinding) -> Result<(), ReportError> {
+        // LAW10 (all six below): recall-safe — these format OPTIONAL fields of an
+        // already-detected `VerifiedFinding` into CSV cells. A `None` becomes an
+        // empty cell; the finding is still emitted in full. No detection happens
+        // here, so nothing can be dropped.
         let line_str = finding
             .location
             .line
             .map(|l| l.to_string())
-            .unwrap_or_default();
+            .unwrap_or_default(); // LAW10: empty CSV cell for an optional field
         let commit_str = finding
             .location
             .commit
             .as_ref()
             .map(|c| c.as_ref())
-            .unwrap_or_default();
+            .unwrap_or_default(); // LAW10: empty CSV cell for an optional field
         let author_str = finding
             .location
             .author
             .as_ref()
             .map(|a| a.as_ref())
-            .unwrap_or_default();
+            .unwrap_or_default(); // LAW10: empty CSV cell for an optional field
         let date_str = finding
             .location
             .date
             .as_ref()
             .map(|d| d.as_ref())
-            .unwrap_or_default();
+            .unwrap_or_default(); // LAW10: empty CSV cell for an optional field
         let file_path_str = finding
             .location
             .file_path
             .as_ref()
             .map(|f| f.as_ref())
-            .unwrap_or_default();
+            .unwrap_or_default(); // LAW10: empty CSV cell for an optional field
         let confidence_str = finding
             .confidence
             .map(|c| c.to_string())
-            .unwrap_or_default();
+            .unwrap_or_default(); // LAW10: empty CSV cell for an optional field
 
         let verification_str = match &finding.verification {
             crate::VerificationResult::Live => "live".to_string(),

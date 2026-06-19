@@ -1,11 +1,11 @@
 //! Migrated from `src/calibration.rs` inline tests.
-use keyhog_core::calibration::Calibration;
+use keyhog_core::Calibration;
 #[test]
 fn entries_returns_sorted() {
-    let c = Calibration::empty();
-    c.record_true_positive("zzz");
-    c.record_true_positive("aaa");
-    c.record_true_positive("mmm");
+    let c = Calibration::default();
+    c.record_outcome("zzz", true);
+    c.record_outcome("aaa", true);
+    c.record_outcome("mmm", true);
     let e = c.entries();
     assert_eq!(e.len(), 3);
     assert_eq!(e[0].0, "aaa");

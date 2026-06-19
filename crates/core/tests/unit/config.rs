@@ -3,7 +3,11 @@ use keyhog_core::ScanConfig;
 #[test]
 fn default_config_valid() {
     let config = ScanConfig::default();
-    assert!(config.validate().is_ok());
+    assert!(keyhog_core::testing::CoreTestApi::scan_config_validate(
+        &keyhog_core::testing::TestApi,
+        &config
+    )
+    .is_ok());
     // Pin the default ScanConfig field values that downstream consumers
     // (CLI, integrations, scanner orchestrator) silently depend on.
     // Without these assertions the test would still pass if Default
@@ -23,7 +27,7 @@ fn default_config_valid() {
     );
     assert_eq!(
         config.max_decode_depth,
-        keyhog_core::testing::max_decode_depth_limit(),
+        keyhog_core::testing::CoreTestApi::max_decode_depth_limit(&keyhog_core::testing::TestApi,),
         "default max_decode_depth must be the canonical 10 (decode-through depth); got {}",
         config.max_decode_depth
     );
@@ -42,6 +46,13 @@ fn default_config_valid() {
         "default max_matches_per_chunk too low: {}",
         config.max_matches_per_chunk
     );
+    assert!(
+        !config
+            .test_keywords
+            .iter()
+            .any(|keyword| keyword.eq_ignore_ascii_case("dummy")),
+        "placeholder words must be owned by rules/placeholder_words.toml, not duplicated in test_keywords"
+    );
 }
 
 #[test]
@@ -50,7 +61,11 @@ fn invalid_depth_rejected() {
         max_decode_depth: 100,
         ..Default::default()
     };
-    assert!(config.validate().is_err());
+    assert!(keyhog_core::testing::CoreTestApi::scan_config_validate(
+        &keyhog_core::testing::TestApi,
+        &config
+    )
+    .is_err());
 }
 
 #[test]
@@ -59,5 +74,9 @@ fn invalid_confidence_rejected() {
         min_confidence: 1.5,
         ..Default::default()
     };
-    assert!(config.validate().is_err());
+    assert!(keyhog_core::testing::CoreTestApi::scan_config_validate(
+        &keyhog_core::testing::TestApi,
+        &config
+    )
+    .is_err());
 }

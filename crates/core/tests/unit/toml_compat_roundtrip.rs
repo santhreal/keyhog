@@ -1,8 +1,5 @@
 //! Detector spec roundtrip: TOML -> DetectorSpec -> JSON -> DetectorSpec (via serde).
-use keyhog_core::{
-    load_detectors_from_str, AuthSpec, CompanionSpec, DetectorFile, DetectorSpec, HeaderSpec,
-    HttpMethod, MetadataSpec, PatternSpec, Severity, SuccessSpec, VerifySpec,
-};
+use keyhog_core::{DetectorFile, HttpMethod, Severity};
 
 #[test]
 fn toml_compat_detector_roundtrip_minimal() {
@@ -18,7 +15,11 @@ keywords = ["prefix_"]
 regex = "prefix_[A-Z0-9]{16}"
 "#;
 
-    let specs = load_detectors_from_str(toml_str).expect("load");
+    let specs = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        toml_str,
+    )
+    .expect("load");
     assert_eq!(specs.len(), 1);
 
     let spec = &specs[0];
@@ -92,7 +93,11 @@ name = "account"
 json_path = "$.account_id"
 "#;
 
-    let specs = load_detectors_from_str(toml_str).expect("load");
+    let specs = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        toml_str,
+    )
+    .expect("load");
     assert_eq!(specs.len(), 1);
 
     let spec = &specs[0];
@@ -149,7 +154,11 @@ keywords = []
 regex = "[0-9]{10}"
 "#;
 
-    let specs = load_detectors_from_str(toml_str).expect("load");
+    let specs = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        toml_str,
+    )
+    .expect("load");
     let spec = &specs[0];
 
     // Verify defaults

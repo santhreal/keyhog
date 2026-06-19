@@ -28,8 +28,10 @@ function setTheme(theme) {
   buttons.forEach(btn => {
     if (btn.innerText.toLowerCase() === theme.toLowerCase()) {
       btn.classList.add('active');
+      btn.setAttribute('aria-pressed', 'true');
     } else {
       btn.classList.remove('active');
+      btn.setAttribute('aria-pressed', 'false');
     }
   });
 }
@@ -42,39 +44,46 @@ function setStatusTab(status) {
   tabs.forEach(tab => {
     if (tab.id === `tab-${status}`) {
       tab.classList.add('active');
+      tab.setAttribute('aria-selected', 'true');
     } else {
       tab.classList.remove('active');
+      tab.setAttribute('aria-selected', 'false');
     }
   });
   
   applyFilters();
 }
 
-function toggleMask(idx, btn) {
-  const span = document.getElementById(`cred-text-${idx}`);
-  const isMasked = span.getAttribute('data-masked') === 'true';
-  
-  if (isMasked) {
-    span.innerText = span.getAttribute('data-plaintext');
-    span.setAttribute('data-masked', 'false');
-    btn.innerHTML = '👁️';
-    btn.setAttribute('title', 'Mask secret');
-  } else {
-    span.innerText = span.getAttribute('data-redacted');
-    span.setAttribute('data-masked', 'true');
-    btn.innerHTML = '🕶️';
-    btn.setAttribute('title', 'Show secret');
-  }
-}
+// Credential reveal controls removed (D-UX-2): the HTML report only ever embeds
+// the REDACTED value. Reports get emailed, committed, and screenshotted, so they
+// must never carry plaintext secrets. The old control promised plaintext while
+// only switching between identical redacted values. Removed rather than made to
+// leak.
 
 function toggleDetails(idx) {
   const detailsRow = document.getElementById(`details-row-${idx}`);
+  const summaryRow = document.getElementById(`finding-row-${idx}`);
   if (detailsRow.classList.contains('active')) {
     detailsRow.classList.remove('active');
+    detailsRow.setAttribute('aria-hidden', 'true');
+    if (summaryRow) summaryRow.setAttribute('aria-expanded', 'false');
   } else {
     // Close other expanded rows first for clean layout
-    document.querySelectorAll('.details-row').forEach(row => row.classList.remove('active'));
+    document.querySelectorAll('.details-row').forEach(row => {
+      row.classList.remove('active');
+      row.setAttribute('aria-hidden', 'true');
+    });
+    document.querySelectorAll('.finding-row').forEach(row => row.setAttribute('aria-expanded', 'false'));
     detailsRow.classList.add('active');
+    detailsRow.setAttribute('aria-hidden', 'false');
+    if (summaryRow) summaryRow.setAttribute('aria-expanded', 'true');
+  }
+}
+
+function toggleDetailsFromKeyboard(event, idx) {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    toggleDetails(idx);
   }
 }
 
@@ -122,10 +131,16 @@ function applyFilters() {
 function renderTable(findings) {
   const tbody = document.getElementById('findings-table-body');
   const emptyView = document.getElementById('empty-view');
+  const resultCount = document.getElementById('result-count');
   
   tbody.innerHTML = '';
+  if (resultCount) {
+    const total = rawFindings.length;
+    const count = findings.length;
+    resultCount.innerText = `Showing ${count} of ${total} findings.`;
+  }
   
-  if (findings.len === 0 || findings.length === 0) {
+  if (findings.length === 0) {
     emptyView.style.display = 'block';
     return;
   }
@@ -134,7 +149,15 @@ function renderTable(findings) {
 
   findings.forEach((finding, idx) => {
     const tr = document.createElement('tr');
+    tr.id = `finding-row-${idx}`;
+    tr.className = 'finding-row';
+    tr.tabIndex = 0;
+    tr.setAttribute('role', 'button');
+    tr.setAttribute('aria-expanded', 'false');
+    tr.setAttribute('aria-controls', `details-row-${idx}`);
+    tr.setAttribute('aria-label', `Show details for ${finding.detector_name} in ${finding.location.file_path || 'unknown file'}`);
     tr.onclick = () => toggleDetails(idx);
+    tr.onkeydown = event => toggleDetailsFromKeyboard(event, idx);
 
     const line = finding.location.line ? `:${finding.location.line}` : '';
     const filePath = finding.location.file_path ? escapeHtml(finding.location.file_path) : '&lt;unknown&gt;';
@@ -177,6 +200,7 @@ function renderTable(findings) {
     const detailsTr = document.createElement('tr');
     detailsTr.id = `details-row-${idx}`;
     detailsTr.className = 'details-row';
+    detailsTr.setAttribute('aria-hidden', 'true');
 
     const commitStr = finding.location.commit ? escapeHtml(finding.location.commit) : 'none';
     const authorStr = finding.location.author ? escapeHtml(finding.location.author) : 'none';
@@ -190,15 +214,9 @@ function renderTable(findings) {
     }
     if (!metadataItems) metadataItems = '<div style="color: var(--text-muted); font-size:12px;">No provider metadata.</div>';
 
-    // Redacted vs Plaintext logic
+    // The report only ever holds the REDACTED credential (never plaintext), so
+    // there is nothing to unmask — render the redacted value as static text.
     const credRedacted = escapeHtml(finding.credential_redacted);
-    const isUnmaskable = finding.credential_redacted.includes('...');
-    let unmaskBtnHtml = '';
-    if (isUnmaskable) {
-      unmaskBtnHtml = `
-        <button class="unmask-btn" onclick="event.stopPropagation(); toggleMask(${idx}, this)" title="Show secret">🕶️</button>
-      `;
-    }
 
     detailsTr.innerHTML = `
       <td colspan="5">
@@ -209,8 +227,7 @@ function renderTable(findings) {
               <div class="details-item">
                 <span class="details-lbl">Credential:</span>
                 <span class="cred-box">
-                  <span id="cred-text-${idx}" data-masked="true" data-redacted="${credRedacted}" data-plaintext="${credRedacted}">${credRedacted}</span>
-                  ${unmaskBtnHtml}
+                  <span id="cred-text-${idx}">${credRedacted}</span>
                 </span>
               </div>
               <div class="details-item"><span class="details-lbl">Credential Hash:</span><span class="details-val">${escapeHtml(finding.credential_hash)}</span></div>

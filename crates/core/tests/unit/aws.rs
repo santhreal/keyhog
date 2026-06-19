@@ -3,14 +3,16 @@
 //! of inline `#[cfg(test)]` modules (KH-GAP-004 / `gap::no_inline_tests_in_src`),
 //! so the shared decode/canary logic is exercised here under `tests/unit/`.
 
-use keyhog_core::aws::{
-    account_is_canary, aws_account_from_key_id, finding_metadata, key_id_is_canary,
-};
+use keyhog_core::{finding_metadata, key_id_canary_status, parse_canary_account_ids};
 
 #[test]
 fn decodes_canonical_truffle_sample() {
     assert_eq!(
-        aws_account_from_key_id("ASIAY34FZKBOKMUTVV7A").as_deref(),
+        keyhog_core::testing::CoreTestApi::aws_account_from_key_id(
+            &keyhog_core::testing::TestApi,
+            "ASIAY34FZKBOKMUTVV7A"
+        )
+        .as_deref(),
         Some("609629065308")
     );
 }
@@ -19,31 +21,118 @@ fn decodes_canonical_truffle_sample() {
 fn decodes_akia_with_leading_zero_account() {
     // canarytokens.org / Thinkst account; the leading zero MUST be kept.
     assert_eq!(
-        aws_account_from_key_id("AKIAAYLPMN5HAAAAAAAA").as_deref(),
+        keyhog_core::testing::CoreTestApi::aws_account_from_key_id(
+            &keyhog_core::testing::TestApi,
+            "AKIAAYLPMN5HAAAAAAAA"
+        )
+        .as_deref(),
         Some("052310077262")
     );
 }
 
 #[test]
 fn rejects_non_aws_and_malformed_ids() {
-    assert_eq!(aws_account_from_key_id("not-an-aws-key"), None);
-    assert_eq!(aws_account_from_key_id("AKIA1234"), None);
-    assert_eq!(aws_account_from_key_id("ZZZZY34FZKBOKMUTVV7A"), None);
-    assert_eq!(aws_account_from_key_id("ASIAy34FZKBOKMUTVV7A"), None);
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::aws_account_from_key_id(
+            &keyhog_core::testing::TestApi,
+            "not-an-aws-key"
+        ),
+        None
+    );
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::aws_account_from_key_id(
+            &keyhog_core::testing::TestApi,
+            "AKIA1234"
+        ),
+        None
+    );
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::aws_account_from_key_id(
+            &keyhog_core::testing::TestApi,
+            "ZZZZY34FZKBOKMUTVV7A"
+        ),
+        None
+    );
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::aws_account_from_key_id(
+            &keyhog_core::testing::TestApi,
+            "ASIAy34FZKBOKMUTVV7A"
+        ),
+        None
+    );
 }
 
 #[test]
 fn canary_account_is_recognised() {
-    assert!(account_is_canary("052310077262"));
-    assert!(account_is_canary("044858866125"));
-    assert!(!account_is_canary("609629065308"));
+    assert!(keyhog_core::testing::CoreTestApi::aws_account_is_canary(
+        &keyhog_core::testing::TestApi,
+        "052310077262"
+    ));
+    assert!(keyhog_core::testing::CoreTestApi::aws_account_is_canary(
+        &keyhog_core::testing::TestApi,
+        "044858866125"
+    ));
+    assert!(!keyhog_core::testing::CoreTestApi::aws_account_is_canary(
+        &keyhog_core::testing::TestApi,
+        "609629065308"
+    ));
+}
+
+#[test]
+fn canary_tier_b_parser_rejects_invalid_account_files() {
+    let malformed = keyhog_core::testing::CoreTestApi::parse_aws_canary_accounts_for_test(
+        &keyhog_core::testing::TestApi,
+        "not = [",
+    )
+    .expect_err("malformed AWS canary TOML must fail closed");
+    assert!(
+        malformed.contains("invalid aws-canary-accounts.toml"),
+        "unexpected malformed error: {malformed}"
+    );
+
+    let blank = keyhog_core::testing::CoreTestApi::parse_aws_canary_accounts_for_test(
+        &keyhog_core::testing::TestApi,
+        "[canary]\naccounts = [\"  \"]\n",
+    )
+    .expect_err("blank AWS canary account must fail closed");
+    assert!(
+        blank.contains("must not be empty"),
+        "unexpected blank-account error: {blank}"
+    );
+
+    let malformed_account = keyhog_core::testing::CoreTestApi::parse_aws_canary_accounts_for_test(
+        &keyhog_core::testing::TestApi,
+        "[canary]\naccounts = [\"1234\"]\n",
+    )
+    .expect_err("short AWS canary account must fail closed");
+    assert!(
+        malformed_account.contains("12-digit AWS account id"),
+        "unexpected malformed-account error: {malformed_account}"
+    );
+}
+
+#[test]
+fn configured_canary_account_parser_accepts_unique_toml_values() {
+    let parsed = parse_canary_account_ids([" 609629065308 ", "609629065308", "000000000001"])
+        .expect("valid configured AWS account IDs");
+
+    assert_eq!(parsed.len(), 2);
+    assert!(parsed.contains("609629065308"));
+    assert!(parsed.contains("000000000001"));
+
+    let invalid = parse_canary_account_ids(["1234"])
+        .expect_err("configured AWS account IDs must be 12 digits");
+    assert!(
+        invalid.contains("12-digit AWS account id"),
+        "unexpected invalid account error: {invalid}"
+    );
 }
 
 #[test]
 fn canary_key_id_round_trips_through_decode() {
-    assert!(key_id_is_canary("AKIAAYLPMN5HAAAAAAAA"));
-    assert!(!key_id_is_canary("ASIAY34FZKBOKMUTVV7A"));
-    assert!(!key_id_is_canary("hunter2"));
+    assert!(key_id_canary_status("AKIAAYLPMN5HAAAAAAAA").expect("canary status"));
+    assert!(!key_id_canary_status("ASIAY34FZKBOKMUTVV7A").expect("canary status"));
+    assert!(!key_id_canary_status("hunter2").expect("canary status"));
 }
 
 #[test]

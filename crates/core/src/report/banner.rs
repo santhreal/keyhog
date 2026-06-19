@@ -118,7 +118,9 @@ fn pack_braille() -> Vec<Vec<(char, f32)>> {
                     }
                 }
             }
-            let ch = char::from_u32(0x2800 + u32::from(bits)).unwrap_or('⠀');
+            // `bits` is a u8, so `0x2800 + bits` is always in `0x2800..=0x28FF`,
+            // every codepoint of which is a valid braille char.
+            let ch = char::from_u32(0x2800 + u32::from(bits)).unwrap_or('⠀'); // LAW10: provably-infallible cosmetic default (banner, not scan path)
             let t = cx as f32 / cell_cols.max(1) as f32;
             row.push((ch, t));
         }
@@ -153,14 +155,15 @@ fn supports_true_color() -> bool {
 ///
 /// # Examples
 ///
-/// ```rust
+/// ```ignore
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// // Crate-internal banner renderer; public CLI code wraps it.
 /// let mut out = Vec::new();
 /// keyhog_core::report::banner::print_banner(&mut out, false, false, 0)?;
 /// assert!(!out.is_empty());
 /// # Ok(()) }
 /// ```
-pub fn print_banner<W: Write>(
+pub(crate) fn print_banner<W: Write>(
     w: &mut W,
     color: bool,
     animate: bool,
@@ -185,10 +188,10 @@ pub fn print_banner<W: Write>(
                 let (r, g, b) = sample_gradient(blended_t);
 
                 if true_color {
-                    write!(w, "\x1b[38;2;{r};{g};{b}m{ch}\x1b[0m")?;
+                    super::style::write_rgb_fg(w, ch, r, g, b)?;
                 } else {
                     let idx = 208 + ((blended_t * 15.0) as u8).min(15);
-                    write!(w, "\x1b[38;5;{idx}m{ch}\x1b[0m")?;
+                    super::style::write_ansi256_fg(w, ch, idx)?;
                 }
             } else {
                 write!(w, "{ch}")?;
@@ -217,17 +220,17 @@ pub fn print_banner<W: Write>(
                 let t = i as f32 / width as f32;
                 let (r, g, b) = sample_gradient(t);
                 if true_color {
-                    write!(w, "\x1b[38;2;{r};{g};{b}m{ch}\x1b[0m")?;
+                    super::style::write_rgb_fg(w, *ch, r, g, b)?;
                 } else {
                     let idx = 208 + ((t * 15.0) as u8).min(15);
-                    write!(w, "\x1b[38;5;{idx}m{ch}\x1b[0m")?;
+                    super::style::write_ansi256_fg(w, *ch, idx)?;
                 }
             } else {
                 write!(w, "{ch}")?;
             }
         }
         writeln!(w)?;
-        writeln!(w, "    \x1b[90m{RULE_LINE}\x1b[0m")?;
+        writeln!(w, "    {}", super::style::dim(RULE_LINE, color))?;
     } else {
         writeln!(w, "    {BRAND_LINE}")?;
         writeln!(w, "    {RULE_LINE}")?;
@@ -238,9 +241,13 @@ pub fn print_banner<W: Write>(
     if color {
         writeln!(
             w,
-            "    \x1b[90mv{version} · secret scanner · {detector_count} detectors\x1b[0m"
+            "    {}",
+            super::style::dim(
+                &format!("v{version} · secret scanner · {detector_count} detectors"),
+                color
+            )
         )?;
-        writeln!(w, "    \x1b[90mby santh\x1b[0m")?;
+        writeln!(w, "    {}", super::style::dim("by santh", color))?;
     } else {
         writeln!(
             w,

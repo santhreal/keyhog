@@ -1,6 +1,6 @@
 //! Adding a keyword must change spec hash to invalidate incremental cache.
 
-use keyhog_core::merkle_index::compute_spec_hash;
+use keyhog_core::compute_spec_hash;
 use keyhog_core::{DetectorSpec, PatternSpec, Severity};
 
 #[test]

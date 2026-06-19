@@ -34,14 +34,14 @@ fn escape_for_script(serialized: &str) -> String {
 }
 
 /// Dynamic themed HTML findings reporter.
-pub struct HtmlReporter<W: Write + Send> {
+pub(crate) struct HtmlReporter<W: Write + Send> {
     writer: W,
     findings: Vec<VerifiedFinding>,
 }
 
 impl<W: Write + Send> HtmlReporter<W> {
     /// Create a new HTML reporter.
-    pub fn new(writer: W) -> Self {
+    pub(crate) fn new(writer: W) -> Self {
         Self {
             writer,
             findings: Vec::new(),

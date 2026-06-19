@@ -1,10 +1,9 @@
 //! Adversarial: comment-only allowlist content yields empty suppressions.
 
-use keyhog_core::Allowlist;
-
 #[test]
 fn allowlist_comment_only_file_is_empty() {
-    let al = Allowlist::parse(
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
         "# just a comment
 # another
 ",

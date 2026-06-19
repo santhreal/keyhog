@@ -1,7 +1,14 @@
 //! Migrated from `src/calibration.rs` inline tests.
-use keyhog_core::calibration::Calibration;
+use keyhog_core::Calibration;
 #[test]
 fn fresh_detector_returns_uniform_prior() {
-    let c = Calibration::empty();
-    assert_eq!(c.confidence_multiplier("never-seen"), 0.5);
+    let c = Calibration::default();
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::calibration_confidence_multiplier(
+            &keyhog_core::testing::TestApi,
+            &c,
+            "never-seen"
+        ),
+        0.5
+    );
 }

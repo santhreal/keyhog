@@ -15,7 +15,10 @@ fn file_gate_matrix_core_rows_mark_error_and_adversarial_coverage() {
     let mut current = None;
     let mut unmarked = Vec::new();
     for line in raw.lines() {
-        if let Some(path) = line.strip_prefix("path = \"").and_then(|p| p.strip_suffix('"')) {
+        if let Some(path) = line
+            .strip_prefix("path = \"")
+            .and_then(|p| p.strip_suffix('"'))
+        {
             current = Some(path.to_string());
         }
         if let Some(path) = &current {

@@ -1,5 +1,5 @@
 //! TOML type mismatches are rejected with clear error messages.
-use keyhog_core::{load_detectors_from_str, SpecError};
+use keyhog_core::SpecError;
 
 #[test]
 fn toml_compat_keywords_as_string_instead_of_array_errors() {
@@ -15,7 +15,10 @@ keywords = "should_be_array"
 regex = "test_[A-Z0-9]{8}"
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     assert!(
         matches!(result, Err(SpecError::InvalidToml { .. })),
         "String keywords must be rejected (should be array)"
@@ -45,7 +48,10 @@ keywords = ["test"]
 regex = "test_[A-Z0-9]{8}"
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     assert!(
         matches!(result, Err(SpecError::InvalidToml { .. })),
         "Integer severity must be rejected"
@@ -66,7 +72,10 @@ keywords = ["test"]
 regex = "test_[A-Z0-9]{8}"
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     assert!(
         matches!(result, Err(SpecError::InvalidToml { .. })),
         "Single [detector.patterns] table must be rejected (should be [[detector.patterns]] array)"
@@ -88,7 +97,10 @@ regex = "test_(.*)"
 group = "should_be_int"
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     assert!(
         matches!(result, Err(SpecError::InvalidToml { .. })),
         "String group must be rejected (should be integer)"

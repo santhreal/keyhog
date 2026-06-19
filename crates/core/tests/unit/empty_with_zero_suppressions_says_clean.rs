@@ -1,5 +1,6 @@
 //! Migrated from `src/report/text.rs` inline tests.
-use keyhog_core::{Reporter, TextReporter};
+
+use crate::support::reporters::TextReporter;
 #[test]
 fn empty_with_zero_suppressions_says_no_secrets_detected() {
     let mut buf = Vec::new();

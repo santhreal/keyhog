@@ -3,161 +3,11 @@
 
 #![allow(clippy::result_large_err)] // SpecError carries a 128-byte toml::de::Error; boxing it would be a breaking API change.
 
-use std::io;
 use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
-use serde::{Deserialize, Serialize};
 
 use super::{validate_detector, DetectorFile, DetectorSpec, QualityIssue, SpecError};
-
-const DETECTOR_CACHE_VERSION: u32 = 2;
-
-#[derive(Serialize, Deserialize)]
-struct DetectorCacheFile {
-    version: u32,
-    detectors: Vec<DetectorSpec>,
-}
-
-/// Save detectors to a JSON cache file for fast subsequent loads.
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// use keyhog_core::{DetectorSpec, save_detector_cache};
-/// use std::path::Path;
-///
-/// let detectors: Vec<DetectorSpec> = Vec::new();
-/// save_detector_cache(&detectors, Path::new(".keyhog-cache.json"))?;
-/// # Ok(()) }
-/// ```
-pub fn save_detector_cache(
-    detectors: &[DetectorSpec],
-    cache_path: &Path,
-) -> Result<(), std::io::Error> {
-    for detector in detectors {
-        let issues = validate_detector(detector);
-        if issues
-            .iter()
-            .any(|issue| matches!(issue, QualityIssue::Error(_)))
-        {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidData,
-                format!(
-                    "refusing to cache invalid detector '{}'. Fix: repair the detector before writing the cache",
-                    detector.id
-                ),
-            ));
-        }
-    }
-
-    let json = serde_json::to_vec(&DetectorCacheFile {
-        version: DETECTOR_CACHE_VERSION,
-        detectors: detectors.to_vec(),
-    })?;
-    // Atomic rename via NamedTempFile - same pattern as merkle index
-    // and baseline. A mid-write crash used to leave a corrupt
-    // `.keyhog-cache.json` that the next run would `tracing::warn!`
-    // on and silently fall back to TOML-load (unbounded slowdown).
-    // tempfile::Drop reaps the tmp on panic; persist atomic-renames
-    // on success.
-    let parent = cache_path.parent().unwrap_or_else(|| Path::new("."));
-    std::fs::create_dir_all(parent)?;
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-    std::io::Write::write_all(&mut tmp, &json)?;
-    tmp.as_file().sync_all()?;
-    tmp.persist(cache_path).map_err(|e| e.error)?;
-    Ok(())
-}
-
-/// Load detectors from a JSON cache file. Returns None if cache is stale or missing.
-///
-/// # Examples
-///
-/// ```rust,no_run
-/// use keyhog_core::load_detector_cache;
-/// use std::path::Path;
-///
-/// let _cached = load_detector_cache(
-///     Path::new(".keyhog-cache.json"),
-///     Path::new("detectors"),
-/// );
-/// ```
-///
-/// # Security
-///
-/// Cached detectors are re-validated through the quality gate to prevent cache
-/// poisoning attacks where a malicious `.keyhog-cache.json` injects evil regex
-/// patterns that bypass the TOML quality gate.
-pub fn load_detector_cache(cache_path: &Path, source_dir: &Path) -> Option<Vec<DetectorSpec>> {
-    let cache_meta = std::fs::metadata(cache_path).ok()?;
-    let cache_mtime = cache_meta.modified().ok()?;
-
-    // Check if any TOML in source_dir is newer than the cache
-    let entries = std::fs::read_dir(source_dir).ok()?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().is_some_and(|ext| ext == "toml") {
-            let is_stale = std::fs::metadata(&path)
-                .and_then(|meta| meta.modified())
-                .is_ok_and(|mtime| mtime > cache_mtime);
-
-            if is_stale {
-                return None; // Cache is stale
-            }
-        }
-    }
-
-    let data = match std::fs::read(cache_path) {
-        Ok(data) => data,
-        Err(error) => {
-            tracing::warn!(
-                "failed to read detector cache {}: {}",
-                cache_path.display(),
-                error
-            );
-            return None;
-        }
-    };
-    let cache: DetectorCacheFile = match serde_json::from_slice(&data) {
-        Ok(cache) => cache,
-        Err(error) => {
-            tracing::warn!(
-                "failed to parse detector cache {}: {}",
-                cache_path.display(),
-                error
-            );
-            return None;
-        }
-    };
-    if cache.version != DETECTOR_CACHE_VERSION {
-        return None;
-    }
-
-    let mut validated = Vec::with_capacity(cache.detectors.len());
-    for spec in cache.detectors {
-        let issues = validate_detector(&spec);
-        if issues
-            .iter()
-            .any(|issue| matches!(issue, QualityIssue::Error(_)))
-        {
-            tracing::warn!(
-                "cached detector '{}' failed quality gate; discarding the entire cache",
-                spec.id
-            );
-            return None;
-        }
-        validated.push(spec);
-    }
-
-    if validated.is_empty() {
-        tracing::warn!("detector cache is empty after validation, falling back to TOML load");
-        return None;
-    }
-
-    Some(validated)
-}
 
 /// Load all detector specs from a directory of TOML files.
 /// Runs the quality gate on each detector and fails closed if any detector
@@ -184,15 +34,16 @@ pub fn load_detectors(dir: &Path) -> Result<Vec<DetectorSpec>, SpecError> {
 ///
 /// # Examples
 ///
-/// ```rust,no_run
+/// ```ignore
 /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
-/// use keyhog_core::load_detectors_with_gate;
+/// // Crate-internal hook for tests and CLI detector-cache owner code.
+/// use keyhog_core::spec::load::load_detectors_with_gate;
 /// use std::path::Path;
 ///
 /// let _detectors = load_detectors_with_gate(Path::new("detectors"), true)?;
 /// # Ok(()) }
 /// ```
-pub fn load_detectors_with_gate(
+pub(crate) fn load_detectors_with_gate(
     dir: &Path,
     enforce_gate: bool,
 ) -> Result<Vec<DetectorSpec>, SpecError> {
@@ -390,8 +241,9 @@ fn should_reject_detector(
 
 /// Load a set of detectors from a TOML string.
 ///
-/// This is primarily used for testing and dynamic detector injection.
-pub fn load_detectors_from_str(toml_str: &str) -> Result<Vec<DetectorSpec>, SpecError> {
+/// This is primarily used for dynamic detector injection and tests that need
+/// an in-memory detector corpus.
+pub(crate) fn load_detectors_from_str(toml_str: &str) -> Result<Vec<DetectorSpec>, SpecError> {
     let file: DetectorFile = toml::from_str(toml_str).map_err(|e| SpecError::InvalidToml {
         path: PathBuf::from("<string>"),
         source: e,

@@ -1,6 +1,6 @@
-//! JsonArrayReporter::new surfaces opening write failures.
+//! Public JSON report writing surfaces opening write failures.
 
-use keyhog_core::JsonArrayReporter;
+use keyhog_core::{write_report, ReportFormat};
 use std::io::{self, Write};
 
 struct FailingWriter;
@@ -16,9 +16,7 @@ impl Write for FailingWriter {
 }
 
 #[test]
-fn json_array_reporter_new_propagates_write_errors() {
-    match JsonArrayReporter::new(FailingWriter) {
-        Ok(_) => panic!("expected write failure"),
-        Err(error) => assert!(error.to_string().contains("write failed")),
-    }
+fn json_array_report_propagates_write_errors() {
+    let error = write_report(FailingWriter, ReportFormat::Json, &[]).unwrap_err();
+    assert!(error.to_string().contains("write failed"));
 }

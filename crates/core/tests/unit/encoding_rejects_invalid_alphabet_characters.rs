@@ -1,6 +1,6 @@
 //! Invalid alphabet characters must be rejected with a descriptive error.
 
-use keyhog_core::encoding::decode_standard_base64;
+use keyhog_core::decode_standard_base64;
 
 #[test]
 fn encoding_rejects_invalid_alphabet_characters() {

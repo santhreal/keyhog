@@ -1,5 +1,5 @@
 //! TOML parsing rejects missing required detector fields with context.
-use keyhog_core::{load_detectors_from_str, SpecError};
+use keyhog_core::SpecError;
 
 #[test]
 fn toml_compat_missing_id_field_errors_with_context() {
@@ -14,7 +14,10 @@ keywords = ["test"]
 regex = "test_[A-Z0-9]{8}"
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     assert!(
         matches!(result, Err(SpecError::InvalidToml { .. })),
         "Must reject TOML with missing 'id' field"
@@ -44,7 +47,10 @@ keywords = ["test"]
 regex = "test_[A-Z0-9]{8}"
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     assert!(
         matches!(result, Err(SpecError::InvalidToml { .. })),
         "Missing severity field must be rejected"
@@ -62,7 +68,10 @@ severity = "high"
 keywords = ["test"]
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     assert!(
         matches!(result, Err(SpecError::InvalidToml { .. })),
         "Missing patterns array must be rejected"

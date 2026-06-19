@@ -6,16 +6,13 @@
 // benefit from a doc line; remove this allow once they all carry one.
 #![allow(missing_docs)]
 
-mod load;
+pub(crate) mod load;
 mod validate;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-pub use load::{
-    load_detector_cache, load_detectors, load_detectors_from_str, load_detectors_with_gate,
-    save_detector_cache,
-};
+pub use load::load_detectors;
 pub use validate::{validate_detector, QualityIssue};
 
 /// Metadata field specification for verification results.
@@ -300,15 +297,6 @@ pub enum AuthSpec {
     },
 }
 
-impl AuthSpec {
-    pub fn service_name(&self) -> Option<&str> {
-        match self {
-            AuthSpec::AwsV4 { service, .. } => Some(service),
-            _ => None,
-        }
-    }
-}
-
 /// Criteria for a successful verification response.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(deny_unknown_fields)]
@@ -359,10 +347,6 @@ pub enum Severity {
 }
 
 impl Severity {
-    pub fn to_severity(&self) -> Self {
-        *self
-    }
-
     /// Step the severity down one tier (Critical → High, High → Medium, …).
     /// `Info` stays at `Info` (no lower bucket).
     ///
@@ -387,7 +371,7 @@ impl Severity {
     /// single source of truth for rendering a severity as text; reporters and
     /// any other surface should go through `Display`/`as_str` rather than
     /// reaching for `format!("{:?}")`, which diverges for `ClientSafe`.
-    pub fn as_str(&self) -> &'static str {
+    pub(crate) fn as_str(&self) -> &'static str {
         match self {
             Severity::Info => "info",
             Severity::ClientSafe => "client-safe",
@@ -439,7 +423,9 @@ pub enum SpecError {
         path: String,
         source: std::io::Error,
     },
-    #[error("invalid TOML in detector {path}: {source}. Fix: repair the TOML syntax in the detector file")]
+    #[error(
+        "invalid TOML in detector {path}: {source}. Fix: repair the TOML syntax in the detector file"
+    )]
     InvalidToml {
         path: std::path::PathBuf,
         source: toml::de::Error,

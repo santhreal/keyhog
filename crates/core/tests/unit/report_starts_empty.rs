@@ -1,5 +1,5 @@
 //! Migrated from `src/hardening.rs` inline tests.
-use keyhog_core::hardening::{apply_default_protections, HardeningReport};
+use keyhog_core::HardeningReport;
 #[test]
 fn report_starts_empty() {
     let r = HardeningReport::default();

@@ -1,7 +1,7 @@
 //! Static SARIF taxonomy metadata (CWE + OWASP).
 
 /// CWE / OWASP taxonomy block for SARIF `runs[0].taxonomies`.
-pub fn sarif_taxonomies_json() -> serde_json::Value {
+pub(crate) fn sarif_taxonomies_json() -> serde_json::Value {
     serde_json::json!([
         {
             "name": "CWE",

@@ -15,7 +15,13 @@ fn finding(
         service: Arc::from(service),
         severity: sev,
         credential_redacted: std::borrow::Cow::Borrowed("REDACTED"),
-        credential_hash: [0; 32],
+        credential_hash: {
+            let mut bytes = [0u8; 32];
+            let hash = hash.as_bytes();
+            let len = hash.len().min(bytes.len());
+            bytes[..len].copy_from_slice(&hash[..len]);
+            bytes
+        },
         location: MatchLocation {
             source: Arc::from("filesystem"),
             file_path: Some(Arc::from(path)),
@@ -33,7 +39,7 @@ fn finding(
 }
 #[test]
 fn empty_suppressor_matches_nothing() {
-    let s = RuleSuppressor::empty();
+    let s = RuleSuppressor::default();
     let f = finding(
         "aws-access-key",
         "aws",

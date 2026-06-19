@@ -6,7 +6,7 @@ fn serialize_utf8_credential_as_tagged_text() {
     // object, NOT a string-with-prefix. The tag eliminates the
     // ambiguity where `"b64:SGVsbG8="` (a literal user-typed string)
     // round-tripped as base64-decoded bytes.
-    let c = Credential::from_text("AKIA1234");
+    let c = Credential::from("AKIA1234");
     let json = serde_json::to_string(&c).unwrap();
     assert_eq!(json, "{\"text\":\"AKIA1234\"}");
 }

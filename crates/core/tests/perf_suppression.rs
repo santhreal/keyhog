@@ -1,6 +1,6 @@
 //! PERF TRIPWIRE — suppression / allowlist per-finding cost.
 //!
-//! HOT PATH: `keyhog_core::allowlist::Allowlist::is_path_ignored`
+//! HOT PATH: `keyhog_core::Allowlist::is_path_ignored`
 //! (crates/core/src/allowlist.rs:267) and its sibling `is_allowed`
 //! (line 215). Both are called once **per finding** in the scanner
 //! post-filter:
@@ -55,7 +55,7 @@
 //! suppression. keyhog-core lib doctests on `Allowlist` (allowlist.rs:88-92,
 //! 264-266) plus `crates/core/tests/*` allowlist coverage must stay green.
 
-use keyhog_core::allowlist::Allowlist;
+use keyhog_core::Allowlist;
 use std::time::Instant;
 
 /// Monorepo-style path globs — the kind a user gets by copying a big
@@ -95,7 +95,10 @@ fn build_allowlist(count: usize) -> Allowlist {
         }
         dir += 1;
     }
-    let al = Allowlist::parse(&content);
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        &content,
+    );
     assert_eq!(
         al.ignored_paths.len(),
         count,
@@ -198,7 +201,8 @@ fn suppression_path_walk_must_scale_sublinearly_in_rule_count() {
 /// even reached.
 #[test]
 fn suppression_recall_guard_exact_decisions() {
-    let al = Allowlist::parse(
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
         "path:**/*.md\n\
          path:node_modules/**\n\
          path:vendor/**/*.json\n\

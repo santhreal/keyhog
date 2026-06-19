@@ -1,8 +1,7 @@
 //! Contract: JSONL reporter emits one parseable object per finding line.
 
-use keyhog_core::{
-    JsonlReporter, MatchLocation, Reporter, Severity, VerificationResult, VerifiedFinding,
-};
+use crate::support::reporters::JsonlReporter;
+use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
 use std::borrow::Cow;
 use std::collections::HashMap;
 

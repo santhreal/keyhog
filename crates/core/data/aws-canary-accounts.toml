@@ -8,17 +8,18 @@
 # planted it. keyhog flags such keys `metadata.is_canary=true` and the verifier
 # REFUSES to send a live probe for them.
 #
-# This list is Tier-B community-extensible data, NOT a CLI knob. Drop additional
-# account IDs here, or point `KEYHOG_AWS_CANARY_ACCOUNTS` at a second file with
-# the same `[canary]`/`[knockoff]` shape to extend the list at runtime without
-# rebuilding. Account IDs are 12-digit, zero-padded strings (the canonical AWS
-# rendering and what `aws_account_from_key_id` returns).
+# This list is Tier-B community-extensible data, NOT a CLI knob. Operators add
+# site-local issuer accounts through `.keyhog.toml` `[aws].canary_accounts` or
+# `[aws].knockoff_accounts`, so shipped binaries keep one embedded baseline and
+# one explicit config extension path. Account IDs are 12-digit, zero-padded
+# strings (the canonical AWS rendering and what `aws_account_from_key_id`
+# returns).
 #
 # Source of the baseline list: Truffle Security's static AWS-canary research
 # (https://trufflesecurity.com/blog/canaries), which enumerated the
 # canarytokens.org / Thinkst issuer accounts and a set of off-brand clones.
 # Thinkst rotates accounts as they hit AWS per-account key limits, so this
-# baseline is a floor, not a closed set — hence the runtime-extension hook.
+# baseline is a floor, not a closed set.
 
 # canarytokens.org / Thinkst first-party canary issuer accounts.
 [canary]

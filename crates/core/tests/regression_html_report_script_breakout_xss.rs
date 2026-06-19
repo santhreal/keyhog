@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use keyhog_core::{
-    HtmlReporter, MatchLocation, Reporter, Severity, VerificationResult, VerifiedFinding,
+    write_report, MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding,
 };
 
 const PAYLOAD: &str = "</script><img src=x onerror=alert(1)>";
@@ -49,11 +49,7 @@ fn poisoned_finding() -> VerifiedFinding {
 
 fn render(finding: &VerifiedFinding) -> String {
     let mut buf: Vec<u8> = Vec::new();
-    {
-        let mut reporter = HtmlReporter::new(&mut buf);
-        reporter.report(finding).expect("report finding");
-        reporter.finish().expect("finish");
-    }
+    write_report(&mut buf, ReportFormat::Html, &[finding.clone()]).expect("finish html report");
     String::from_utf8(buf).expect("utf8 html output")
 }
 

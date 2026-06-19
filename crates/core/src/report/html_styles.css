@@ -184,6 +184,14 @@ header {
   font-family: var(--font-family);
 }
 
+button:focus-visible,
+input:focus-visible,
+tbody tr:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+  box-shadow: var(--accent-glow);
+}
+
 .theme-btn.active {
   background: var(--accent-primary);
   color: #fff;
@@ -385,6 +393,12 @@ header {
   color: var(--text-main);
   font-family: var(--font-family);
   margin-bottom: 16px;
+}
+
+.result-count {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin: -8px 0 16px;
 }
 
 .search-input:focus {
@@ -594,7 +608,7 @@ tbody tr:hover {
   color: #000;
 }
 
-/* Credential Unmasking Toggles */
+/* Credential redaction display */
 .cred-box {
   display: flex;
   align-items: center;
@@ -610,16 +624,6 @@ tbody tr:hover {
   border-style: inset;
   background: #fff;
   border-radius: 0px;
-}
-
-.unmask-btn {
-  background: transparent;
-  border: none;
-  color: var(--accent-primary);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 
 .empty-state {

@@ -3,11 +3,8 @@
 
 #[test]
 fn contract_module_is_wired_in_all_tests() {
-    let src = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/tests/all_tests.rs"
-    ))
-    .expect("all_tests.rs");
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/all_tests.rs"))
+        .expect("all_tests.rs");
 
     assert!(
         src.contains("pub mod contract"),

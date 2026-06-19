@@ -8,7 +8,9 @@ fn config_negative_confidence_rejected() {
         min_confidence: -0.1,
         ..Default::default()
     };
-    config
-        .validate()
-        .expect_err("negative confidence must fail");
+    keyhog_core::testing::CoreTestApi::scan_config_validate(
+        &keyhog_core::testing::TestApi,
+        &config,
+    )
+    .expect_err("negative confidence must fail");
 }

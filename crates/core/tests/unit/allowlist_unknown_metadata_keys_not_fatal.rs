@@ -4,6 +4,9 @@ use keyhog_core::Allowlist;
 
 #[test]
 fn allowlist_unknown_metadata_keys_not_fatal() {
-    let al = Allowlist::parse("detector:bar ; foo=bar; reason=ok ; expires=2099-12-31");
+    let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
+        &keyhog_core::testing::TestApi,
+        "detector:bar ; foo=bar; reason=ok ; expires=2099-12-31",
+    );
     assert!(al.ignored_detectors.contains("bar"));
 }

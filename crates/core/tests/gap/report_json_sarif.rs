@@ -8,10 +8,8 @@
 //! Written as a plain module body (no `fn main`, no wrapping `mod`) for
 //! inclusion via `mod report_json_sarif;` in the `tests/gaps.rs` aggregator.
 
-use keyhog_core::{
-    JsonArrayReporter, JsonReporter, JsonlReporter, MatchLocation, Reporter, SarifReporter,
-    Severity, VerificationResult, VerifiedFinding,
-};
+use crate::support::reporters::{JsonArrayReporter, JsonReporter, JsonlReporter, SarifReporter};
+use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -620,7 +618,15 @@ fn sarif_single_rule_built_from_finding() {
     );
     assert_eq!(
         rule["help"]["text"],
-        "Review and rotate the exposed test credential."
+        "Revoke and rotate the exposed credential, then remove it from the codebase."
+    );
+    assert_eq!(
+        rule["help"]["markdown"],
+        "Revoke and rotate the exposed credential, then remove it from the codebase."
+    );
+    assert!(
+        rule.get("helpUri").is_none(),
+        "synthetic test service should use the Tier-B severity fallback without provider URL"
     );
 }
 
@@ -914,7 +920,7 @@ fn sarif_fix_artifact_uri_matches_finding_path() {
 
 #[test]
 fn sarif_fix_curated_env_var_for_aws() {
-    // env_var_name_for_service("aws") -> AWS_ACCESS_KEY_ID.
+    // keyhog_core::testing::CoreTestApi::auto_fix_env_var_name_for_service(&keyhog_core::testing::TestApi, "aws") -> AWS_ACCESS_KEY_ID.
     let mut f = finding();
     f.service = Arc::from("aws");
     f.detector_id = Arc::from("aws-key");

@@ -1,7 +1,6 @@
 //! Contract: SARIF document version field is exactly 2.1.0.
 
-use keyhog_core::{Reporter, SarifReporter};
-
+use crate::support::reporters::SarifReporter;
 #[test]
 fn sarif_version_is_2_1_0() {
     let mut buf = Vec::new();

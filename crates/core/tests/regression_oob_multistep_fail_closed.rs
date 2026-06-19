@@ -1,4 +1,3 @@
-use keyhog_core::testing::load_detectors_from_str;
 use keyhog_core::{validate_detector, QualityIssue};
 
 #[test]
@@ -31,7 +30,11 @@ protocol = "http"
 policy = "oob_and_http"
 "#;
 
-    let detectors = load_detectors_from_str(toml_src).expect("test detector TOML parses");
+    let detectors = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        toml_src,
+    )
+    .expect("test detector TOML parses");
     let errors: Vec<_> = validate_detector(&detectors[0])
         .into_iter()
         .filter_map(|issue| match issue {

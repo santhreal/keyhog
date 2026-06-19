@@ -1,5 +1,5 @@
 //! TOML parsing detects malformed syntax with line/column context.
-use keyhog_core::{load_detectors_from_str, SpecError};
+use keyhog_core::SpecError;
 
 #[test]
 fn toml_compat_unclosed_table_bracket_errors() {
@@ -8,7 +8,10 @@ fn toml_compat_unclosed_table_bracket_errors() {
 id = "test"
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     assert!(
         matches!(result, Err(SpecError::InvalidToml { .. })),
         "Unclosed bracket must be rejected"
@@ -39,7 +42,10 @@ keywords = ["test"]
 regex = "test_[A-Z0-9]{8}"
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     assert!(
         matches!(result, Err(SpecError::InvalidToml { .. })),
         "Invalid escape sequence must be rejected"
@@ -61,7 +67,10 @@ keywords = ["test"]
 regex = "test_[A-Z0-9]{8}"
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     assert!(
         matches!(result, Err(SpecError::InvalidToml { .. })),
         "Duplicate key must be rejected"
@@ -82,7 +91,10 @@ keywords = ["test"
 regex = "test_[A-Z0-9]{8}"
 "#;
 
-    let result = load_detectors_from_str(invalid_toml);
+    let result = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        invalid_toml,
+    );
     assert!(
         matches!(result, Err(SpecError::InvalidToml { .. })),
         "Unclosed array must be rejected"

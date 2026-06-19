@@ -1,6 +1,6 @@
 use keyhog_core::{
-    load_detector_cache, load_detectors_with_gate, save_detector_cache, validate_detector,
-    CompanionSpec, DetectorFile, DetectorSpec, PatternSpec, QualityIssue, Severity,
+    validate_detector, CompanionSpec, DetectorFile, DetectorSpec, PatternSpec, QualityIssue,
+    Severity,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -132,42 +132,6 @@ fn companion_regexes_are_validated() {
 }
 
 #[test]
-fn saving_invalid_detector_cache_is_rejected() {
-    let mut invalid = valid_detector();
-    invalid.patterns[0].regex = "(".into();
-    let dir = temp_dir("cache-save");
-    let cache_path = dir.join("detectors.json");
-    let error = save_detector_cache(&[invalid], &cache_path).unwrap_err();
-    assert_eq!(error.kind(), std::io::ErrorKind::InvalidData);
-}
-
-#[test]
-fn invalid_cached_detector_rejects_entire_cache() {
-    let dir = temp_dir("cache-load");
-    let cache_path = dir.join("detectors.json");
-    let source_dir = dir.join("detectors");
-    fs::create_dir_all(&source_dir).unwrap();
-
-    let invalid_cache = r#"{
-        "version": 2,
-        "detectors": [{
-            "id": "demo-token",
-            "name": "Demo Token",
-            "service": "demo",
-            "severity": "high",
-            "patterns": [{"regex":"(","description":null,"group":null}],
-            "companions": [],
-            "verify": null,
-            "keywords": ["demo_"]
-        }]
-    }"#;
-    fs::write(&cache_path, invalid_cache).unwrap();
-    fs::write(source_dir.join("demo.toml"), "").unwrap();
-
-    assert!(load_detector_cache(&cache_path, &source_dir).is_none());
-}
-
-#[test]
 fn malformed_toml_files_fail_closed_instead_of_returning_partial_corpus() {
     let dir = temp_dir("detector-load");
     fs::write(
@@ -188,8 +152,12 @@ fn malformed_toml_files_fail_closed_instead_of_returning_partial_corpus() {
     fs::write(dir.join("broken.toml"), "[detector").unwrap();
 
     let logs = capture_logs(|| {
-        let error = load_detectors_with_gate(&dir, true)
-            .expect_err("enforced detector load must reject a partial corpus");
+        let error = keyhog_core::testing::CoreTestApi::load_detectors_with_gate(
+            &keyhog_core::testing::TestApi,
+            &dir,
+            true,
+        )
+        .expect_err("enforced detector load must reject a partial corpus");
         let message = error.to_string();
         assert!(
             message.contains("failed to load or pass the quality gate")

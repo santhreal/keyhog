@@ -1,9 +1,8 @@
 //! Contract: JSON array reporter output is a parseable findings list whose
 //! elements round-trip through the [`VerifiedFinding`] serde schema.
 
-use keyhog_core::{
-    JsonArrayReporter, MatchLocation, Reporter, Severity, VerificationResult, VerifiedFinding,
-};
+use crate::support::reporters::JsonArrayReporter;
+use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
 use std::borrow::Cow;
 use std::collections::HashMap;
 

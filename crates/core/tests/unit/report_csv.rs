@@ -1,5 +1,5 @@
 use super::report_common::sample_finding;
-use keyhog_core::{CsvReporter, Reporter};
+use crate::support::reporters::CsvReporter;
 
 fn render(finding: &keyhog_core::VerifiedFinding) -> String {
     let mut buf: Vec<u8> = Vec::new();

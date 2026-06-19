@@ -1,5 +1,7 @@
-use keyhog_core::{JsonArrayReporter, JsonlReporter, Reporter, SarifReporter, TextReporter};
-use keyhog_core::{MatchLocation, Severity, VerificationResult, VerifiedFinding};
+use crate::support::reporters::{JsonlReporter, SarifReporter, TextReporter};
+use keyhog_core::{
+    write_report, MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding,
+};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::{self, Write};
@@ -31,7 +33,7 @@ fn sample_finding() -> VerifiedFinding {
 #[test]
 fn text_reporter_output() {
     let mut buf = Vec::new();
-    let mut reporter = TextReporter::new(&mut buf);
+    let mut reporter = TextReporter::with_color(&mut buf, false);
     reporter.report(&sample_finding()).unwrap();
     reporter.finish().unwrap();
     let output = String::from_utf8(buf).unwrap();
@@ -267,15 +269,17 @@ impl Write for FailingWriter {
 }
 
 #[test]
-fn json_array_reporter_new_propagates_opening_write_errors() {
-    let result = JsonArrayReporter::new(FailingWriter {
-        fail_on_write: true,
-        fail_on_flush: false,
-    });
-    match result {
-        Ok(_) => panic!("expected JsonArrayReporter::new to fail"),
-        Err(error) => assert!(error.to_string().contains("write failed")),
-    }
+fn json_array_report_propagates_opening_write_errors() {
+    let error = write_report(
+        FailingWriter {
+            fail_on_write: true,
+            fail_on_flush: false,
+        },
+        ReportFormat::Json,
+        &[],
+    )
+    .unwrap_err();
+    assert!(error.to_string().contains("write failed"));
 }
 
 #[test]

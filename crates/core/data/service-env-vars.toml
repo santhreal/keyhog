@@ -1,0 +1,102 @@
+# Tier-B data: curated service -> conventional environment-variable name.
+#
+# Auto-fix turns each finding ("a Stripe key sits in this file") into the advice
+# "replace it with `${STRIPE_SECRET_KEY}`". The variable name follows community
+# convention (12-factor, common SDKs) so the suggestion matches what an operator
+# would actually put in their `.env`. This is the curated half; any service NOT
+# listed here falls back to `<SCREAMING_SNAKE_SERVICE>_KEY`
+# (see `crates/core/src/auto_fix.rs::service_to_screaming_snake`).
+#
+# This is Tier-B community-extensible DATA, NOT a CLI or environment knob. Drop
+# additional entries here and review them as data changes; the shipped binary
+# does not read ambient process environment to change SARIF fix suggestions.
+#
+# Matching: `match` is a lowercase needle tested against the lowercased service
+# string. By default it is a SUBSTRING test; set `prefix = true` to require the
+# service to START with the needle (used for the `gh-` / `ghp_` GitHub token
+# prefixes, which must not match a substring buried mid-name). The FIRST matching
+# entry in file order wins, so order from most-specific to least-specific if two
+# needles could both match. `env` is the variable name emitted verbatim (already
+# SCREAMING_SNAKE).
+#
+# Sources: 12-factor config conventions and the canonical SDK env-var names
+# documented by each provider (AWS CLI `AWS_ACCESS_KEY_ID`, GitHub Actions
+# `GITHUB_TOKEN`, Stripe `STRIPE_SECRET_KEY`, OpenAI `OPENAI_API_KEY`, etc.).
+
+[[service]]
+match = "aws"
+env = "AWS_ACCESS_KEY_ID"
+
+[[service]]
+match = "github"
+env = "GITHUB_TOKEN"
+
+[[service]]
+match = "gh-"
+prefix = true
+env = "GITHUB_TOKEN"
+
+[[service]]
+match = "ghp_"
+prefix = true
+env = "GITHUB_TOKEN"
+
+[[service]]
+match = "gitlab"
+env = "GITLAB_TOKEN"
+
+[[service]]
+match = "slack"
+env = "SLACK_BOT_TOKEN"
+
+[[service]]
+match = "openai"
+env = "OPENAI_API_KEY"
+
+[[service]]
+match = "anthropic"
+env = "ANTHROPIC_API_KEY"
+
+[[service]]
+match = "stripe"
+env = "STRIPE_SECRET_KEY"
+
+[[service]]
+match = "twilio"
+env = "TWILIO_AUTH_TOKEN"
+
+[[service]]
+match = "sendgrid"
+env = "SENDGRID_API_KEY"
+
+[[service]]
+match = "google"
+env = "GOOGLE_API_KEY"
+
+[[service]]
+match = "gcp"
+env = "GOOGLE_API_KEY"
+
+[[service]]
+match = "azure"
+env = "AZURE_CLIENT_SECRET"
+
+[[service]]
+match = "npm"
+env = "NPM_TOKEN"
+
+[[service]]
+match = "pypi"
+env = "PYPI_TOKEN"
+
+[[service]]
+match = "docker"
+env = "DOCKER_PASSWORD"
+
+[[service]]
+match = "datadog"
+env = "DATADOG_API_KEY"
+
+[[service]]
+match = "snowflake"
+env = "SNOWFLAKE_PASSWORD"

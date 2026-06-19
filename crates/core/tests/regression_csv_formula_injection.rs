@@ -11,16 +11,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use keyhog_core::{
-    CsvReporter, MatchLocation, Reporter, Severity, VerificationResult, VerifiedFinding,
+    write_report, MatchLocation, ReportFormat, Severity, VerificationResult, VerifiedFinding,
 };
 
 fn render(finding: &VerifiedFinding) -> String {
     let mut buf: Vec<u8> = Vec::new();
-    {
-        let mut reporter = CsvReporter::new(&mut buf).expect("new csv reporter");
-        reporter.report(finding).expect("report finding");
-        reporter.finish().expect("finish");
-    }
+    write_report(&mut buf, ReportFormat::Csv, &[finding.clone()]).expect("finish csv report");
     String::from_utf8(buf).expect("utf8 csv output")
 }
 

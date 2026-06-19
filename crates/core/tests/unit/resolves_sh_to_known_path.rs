@@ -1,5 +1,5 @@
 //! Migrated from `src/safe_bin.rs` inline tests.
-use keyhog_core::safe_bin::resolve_safe_bin;
+use keyhog_core::resolve_safe_bin;
 #[test]
 #[cfg(unix)]
 fn resolves_sh_to_known_path() {

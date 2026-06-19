@@ -26,8 +26,8 @@
 //! comparing `compute_spec_hash` outputs to one another.
 
 use keyhog_core::{
-    compute_spec_hash, load_detectors_from_str, validate_detector, CompanionSpec, DetectorSpec,
-    PatternSpec, QualityIssue, Severity,
+    compute_spec_hash, validate_detector, CompanionSpec, DetectorSpec, PatternSpec, QualityIssue,
+    Severity,
 };
 
 // ---------------------------------------------------------------------------
@@ -99,7 +99,11 @@ regex = "demo_[A-Z0-9]{8}"
 
 #[test]
 fn valid_toml_parses_into_single_detector() {
-    let dets = load_detectors_from_str(VALID_TOML).expect("valid TOML must parse");
+    let dets = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        VALID_TOML,
+    )
+    .expect("valid TOML must parse");
     assert_eq!(dets.len(), 1, "one [detector] table => one spec");
     let d = &dets[0];
     assert_eq!(d.id, "demo-key");
@@ -115,7 +119,11 @@ fn valid_toml_parses_into_single_detector() {
 fn omitted_default_fields_take_their_defaults() {
     // companions, verify, min_confidence, tests are all `#[serde(default)]` /
     // Option and absent from VALID_TOML.
-    let d = &load_detectors_from_str(VALID_TOML).unwrap()[0];
+    let d = &keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        VALID_TOML,
+    )
+    .unwrap()[0];
     assert!(d.companions.is_empty(), "companions defaults to empty Vec");
     assert!(d.verify.is_none(), "verify defaults to None");
     assert_eq!(d.min_confidence, None, "min_confidence defaults to None");
@@ -129,7 +137,11 @@ fn omitted_default_fields_take_their_defaults() {
 #[test]
 fn missing_id_field_is_parse_error() {
     let toml = VALID_TOML.replace("id = \"demo-key\"\n", "");
-    let err = load_detectors_from_str(&toml).expect_err("missing required `id` must fail");
+    let err = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        &toml,
+    )
+    .expect_err("missing required `id` must fail");
     let msg = err.to_string();
     assert!(
         msg.contains("invalid TOML") || msg.to_lowercase().contains("missing"),
@@ -141,7 +153,11 @@ fn missing_id_field_is_parse_error() {
 fn missing_name_field_is_parse_error() {
     let toml = VALID_TOML.replace("name = \"Demo Key\"\n", "");
     assert!(
-        load_detectors_from_str(&toml).is_err(),
+        keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+            &keyhog_core::testing::TestApi,
+            &toml
+        )
+        .is_err(),
         "missing required `name` must fail to parse"
     );
 }
@@ -150,7 +166,11 @@ fn missing_name_field_is_parse_error() {
 fn missing_service_field_is_parse_error() {
     let toml = VALID_TOML.replace("service = \"demo\"\n", "");
     assert!(
-        load_detectors_from_str(&toml).is_err(),
+        keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+            &keyhog_core::testing::TestApi,
+            &toml
+        )
+        .is_err(),
         "missing required `service` must fail to parse"
     );
 }
@@ -159,7 +179,11 @@ fn missing_service_field_is_parse_error() {
 fn missing_severity_field_is_parse_error() {
     let toml = VALID_TOML.replace("severity = \"high\"\n", "");
     assert!(
-        load_detectors_from_str(&toml).is_err(),
+        keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+            &keyhog_core::testing::TestApi,
+            &toml
+        )
+        .is_err(),
         "missing required `severity` must fail to parse"
     );
 }
@@ -178,7 +202,11 @@ severity = "high"
 keywords = ["demo_"]
 "#;
     assert!(
-        load_detectors_from_str(toml).is_err(),
+        keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+            &keyhog_core::testing::TestApi,
+            toml
+        )
+        .is_err(),
         "patterns is required (no serde default) => parse error when omitted"
     );
 }
@@ -191,7 +219,11 @@ keywords = ["demo_"]
 fn unknown_top_level_detector_field_rejected() {
     // DetectorSpec has #[serde(deny_unknown_fields)] — a typoed field fails.
     let toml = format!("{VALID_TOML}sevrity = \"low\"\n");
-    let err = load_detectors_from_str(&toml).expect_err("unknown field must be rejected");
+    let err = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        &toml,
+    )
+    .expect_err("unknown field must be rejected");
     assert!(
         err.to_string().contains("invalid TOML"),
         "deny_unknown_fields => InvalidToml, got: {err}"
@@ -201,7 +233,11 @@ fn unknown_top_level_detector_field_rejected() {
 #[test]
 fn unknown_field_named_in_error_message() {
     let toml = format!("{VALID_TOML}bogus_field = 1\n");
-    let err = load_detectors_from_str(&toml).unwrap_err();
+    let err = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        &toml,
+    )
+    .unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("bogus_field") || msg.contains("unknown field"),
@@ -214,7 +250,11 @@ fn unknown_pattern_field_rejected() {
     // PatternSpec also has deny_unknown_fields.
     let toml = format!("{VALID_TOML}\n[[detector.patterns]]\nregex = \"x\"\nbogus = true\n");
     assert!(
-        load_detectors_from_str(&toml).is_err(),
+        keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+            &keyhog_core::testing::TestApi,
+            &toml
+        )
+        .is_err(),
         "unknown field on PatternSpec must be rejected"
     );
 }
@@ -225,7 +265,11 @@ fn unknown_companion_field_rejected() {
         "{VALID_TOML}\n[[detector.companions]]\nname = \"c\"\nregex = \"FOO_KEY\"\nwithin_lines = 3\nbogus = 1\n"
     );
     assert!(
-        load_detectors_from_str(&toml).is_err(),
+        keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+            &keyhog_core::testing::TestApi,
+            &toml
+        )
+        .is_err(),
         "unknown field on CompanionSpec must be rejected"
     );
 }
@@ -235,7 +279,11 @@ fn unknown_verify_field_rejected() {
     let toml =
         format!("{VALID_TOML}\n[detector.verify]\nurl = \"https://api.demo.test/v1\"\nbogus = 1\n");
     assert!(
-        load_detectors_from_str(&toml).is_err(),
+        keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+            &keyhog_core::testing::TestApi,
+            &toml
+        )
+        .is_err(),
         "unknown field on VerifySpec must be rejected"
     );
 }
@@ -246,7 +294,11 @@ fn unknown_success_field_rejected() {
         "{VALID_TOML}\n[detector.verify]\nurl = \"https://api.demo.test\"\n[detector.verify.success]\nstatus = 200\nbogus = 1\n"
     );
     assert!(
-        load_detectors_from_str(&toml).is_err(),
+        keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+            &keyhog_core::testing::TestApi,
+            &toml
+        )
+        .is_err(),
         "unknown field on SuccessSpec must be rejected"
     );
 }
@@ -260,7 +312,11 @@ fn severity_wrong_type_is_parse_error() {
     // severity must deserialize as a kebab-case enum string, not an integer.
     let toml = VALID_TOML.replace("severity = \"high\"", "severity = 3");
     assert!(
-        load_detectors_from_str(&toml).is_err(),
+        keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+            &keyhog_core::testing::TestApi,
+            &toml
+        )
+        .is_err(),
         "integer severity must fail (enum expects a string)"
     );
 }
@@ -269,7 +325,11 @@ fn severity_wrong_type_is_parse_error() {
 fn severity_unknown_variant_is_parse_error() {
     let toml = VALID_TOML.replace("severity = \"high\"", "severity = \"supercritical\"");
     assert!(
-        load_detectors_from_str(&toml).is_err(),
+        keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+            &keyhog_core::testing::TestApi,
+            &toml
+        )
+        .is_err(),
         "unknown severity variant must fail to parse"
     );
 }
@@ -279,7 +339,11 @@ fn id_wrong_type_is_parse_error() {
     // id is a String; an integer literal is a type mismatch.
     let toml = VALID_TOML.replace("id = \"demo-key\"", "id = 42");
     assert!(
-        load_detectors_from_str(&toml).is_err(),
+        keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+            &keyhog_core::testing::TestApi,
+            &toml
+        )
+        .is_err(),
         "numeric id must fail (expects String)"
     );
 }
@@ -289,7 +353,11 @@ fn min_confidence_wrong_type_is_parse_error() {
     // min_confidence is Option<f64>; a string is a type mismatch.
     let toml = format!("{VALID_TOML}min_confidence = \"high\"\n");
     assert!(
-        load_detectors_from_str(&toml).is_err(),
+        keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+            &keyhog_core::testing::TestApi,
+            &toml
+        )
+        .is_err(),
         "string min_confidence must fail (expects f64)"
     );
 }
@@ -300,7 +368,11 @@ fn companion_within_lines_wrong_type_is_parse_error() {
         "{VALID_TOML}\n[[detector.companions]]\nname = \"c\"\nregex = \"FOO_KEY\"\nwithin_lines = \"three\"\n"
     );
     assert!(
-        load_detectors_from_str(&toml).is_err(),
+        keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+            &keyhog_core::testing::TestApi,
+            &toml
+        )
+        .is_err(),
         "string within_lines must fail (expects usize)"
     );
 }
@@ -317,7 +389,11 @@ severity = "low"
 patterns = "demo_[A-Z]{8}"
 "#;
     assert!(
-        load_detectors_from_str(toml).is_err(),
+        keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+            &keyhog_core::testing::TestApi,
+            toml
+        )
+        .is_err(),
         "scalar patterns value must fail (expects array of tables)"
     );
 }
@@ -338,8 +414,11 @@ fn severity_kebab_variants_deserialize() {
     ];
     for (wire, expected) in cases {
         let toml = VALID_TOML.replace("severity = \"high\"", &format!("severity = \"{wire}\""));
-        let d = &load_detectors_from_str(&toml)
-            .unwrap_or_else(|e| panic!("severity {wire} should parse: {e}"))[0];
+        let d = &keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+            &keyhog_core::testing::TestApi,
+            &toml,
+        )
+        .unwrap_or_else(|e| panic!("severity {wire} should parse: {e}"))[0];
         assert_eq!(d.severity, expected, "wire {wire} => {expected:?}");
     }
 }
@@ -349,32 +428,36 @@ fn severity_client_safe_alias_deserializes() {
     // Severity::ClientSafe carries #[serde(alias = "client_safe")] in addition
     // to its kebab-case rename "client-safe".
     let toml = VALID_TOML.replace("severity = \"high\"", "severity = \"client_safe\"");
-    let d = &load_detectors_from_str(&toml).expect("client_safe alias must parse")[0];
+    let d = &keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        &toml,
+    )
+    .expect("client_safe alias must parse")[0];
     assert_eq!(d.severity, Severity::ClientSafe);
 }
 
 #[test]
 fn severity_as_str_matches_wire_form() {
     // as_str is the canonical wire string; ClientSafe is "client-safe".
-    assert_eq!(Severity::Info.as_str(), "info");
-    assert_eq!(Severity::ClientSafe.as_str(), "client-safe");
-    assert_eq!(Severity::Low.as_str(), "low");
-    assert_eq!(Severity::Medium.as_str(), "medium");
-    assert_eq!(Severity::High.as_str(), "high");
-    assert_eq!(Severity::Critical.as_str(), "critical");
+    assert_eq!(Severity::Info.to_string(), "info");
+    assert_eq!(Severity::ClientSafe.to_string(), "client-safe");
+    assert_eq!(Severity::Low.to_string(), "low");
+    assert_eq!(Severity::Medium.to_string(), "medium");
+    assert_eq!(Severity::High.to_string(), "high");
+    assert_eq!(Severity::Critical.to_string(), "critical");
 }
 
 #[test]
-fn severity_display_equals_as_str() {
-    for s in [
-        Severity::Info,
-        Severity::ClientSafe,
-        Severity::Low,
-        Severity::Medium,
-        Severity::High,
-        Severity::Critical,
+fn severity_display_uses_canonical_wire_names() {
+    for (severity, expected) in [
+        (Severity::Info, "info"),
+        (Severity::ClientSafe, "client-safe"),
+        (Severity::Low, "low"),
+        (Severity::Medium, "medium"),
+        (Severity::High, "high"),
+        (Severity::Critical, "critical"),
     ] {
-        assert_eq!(format!("{s}"), s.as_str());
+        assert_eq!(format!("{severity}"), expected);
     }
 }
 
@@ -416,7 +499,11 @@ fn detector_with_tests_block_parses() {
     let toml = format!(
         "{VALID_TOML}\n[[detector.tests]]\ntest_positive = \"demo_ABCD1234\"\ntest_negative = \"nope\"\n"
     );
-    let d = &load_detectors_from_str(&toml).expect("tests block must parse")[0];
+    let d = &keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        &toml,
+    )
+    .expect("tests block must parse")[0];
     assert_eq!(d.tests.len(), 1);
     assert_eq!(d.tests[0].test_positive.as_deref(), Some("demo_ABCD1234"));
     assert_eq!(d.tests[0].test_negative.as_deref(), Some("nope"));
@@ -425,7 +512,11 @@ fn detector_with_tests_block_parses() {
 #[test]
 fn detector_test_block_both_fields_optional() {
     let toml = format!("{VALID_TOML}\n[[detector.tests]]\ntest_positive = \"demo_ABCD1234\"\n");
-    let d = &load_detectors_from_str(&toml).unwrap()[0];
+    let d = &keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        &toml,
+    )
+    .unwrap()[0];
     assert_eq!(d.tests.len(), 1);
     assert_eq!(d.tests[0].test_positive.as_deref(), Some("demo_ABCD1234"));
     assert_eq!(d.tests[0].test_negative, None, "omitted negative => None");
@@ -450,7 +541,11 @@ min_confidence = 0.42
 [[detector.patterns]]
 regex = "demo_[A-Z0-9]{8}"
 "#;
-    let d = &load_detectors_from_str(toml).expect("min_confidence float must parse")[0];
+    let d = &keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        toml,
+    )
+    .expect("min_confidence float must parse")[0];
     assert_eq!(d.min_confidence, Some(0.42));
 }
 
@@ -468,7 +563,11 @@ keywords = ["pk_live_"]
 regex = "pk_live_[A-Za-z0-9]{24}"
 client_safe = true
 "#;
-    let d = &load_detectors_from_str(toml).expect("client_safe must parse")[0];
+    let d = &keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        toml,
+    )
+    .expect("client_safe must parse")[0];
     assert!(
         d.patterns[0].client_safe,
         "client_safe = true must round-trip"
@@ -489,7 +588,11 @@ keywords = ["token"]
 regex = "token=([A-Za-z0-9]{20})"
 group = 1
 "#;
-    let d = &load_detectors_from_str(toml).expect("group index must parse")[0];
+    let d = &keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        toml,
+    )
+    .expect("group index must parse")[0];
     assert_eq!(d.patterns[0].group, Some(1));
 }
 
@@ -1364,7 +1467,11 @@ keywords = ["rt_"]
 [[detector.patterns]]
 regex = "rt_[A-Z0-9]{8}"
 "#;
-    let loaded = load_detectors_from_str(toml).expect("rt toml parses");
+    let loaded = keyhog_core::testing::CoreTestApi::load_detectors_from_str(
+        &keyhog_core::testing::TestApi,
+        toml,
+    )
+    .expect("rt toml parses");
     let hand = DetectorSpec {
         id: "rt-key".into(),
         name: "A Different Name".into(),     // not hashed

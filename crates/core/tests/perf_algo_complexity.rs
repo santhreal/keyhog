@@ -78,7 +78,8 @@ fn build_repeated_credential_group(n: usize) -> Vec<RawMatch> {
     let detector_name: Arc<str> = Arc::from("AWS Access Key");
     let service: Arc<str> = Arc::from("aws");
     // One credential value repeated across the whole file.
-    let credential: Arc<str> = Arc::from("AKIAIOSFODNN7EXAMPLEKEYREPEATEDEVERYWHERE");
+    let credential =
+        keyhog_core::SensitiveString::from("AKIAIOSFODNN7EXAMPLEKEYREPEATEDEVERYWHERE");
     let source: Arc<str> = Arc::from("filesystem");
     let file_path: Option<Arc<str>> = Some(Arc::from("generated/credentials_dump.tfvars"));
 
@@ -88,7 +89,7 @@ fn build_repeated_credential_group(n: usize) -> Vec<RawMatch> {
             detector_name: Arc::clone(&detector_name),
             service: Arc::clone(&service),
             severity: Severity::High,
-            credential: Arc::clone(&credential),
+            credential: credential.clone(),
             credential_hash: [0u8; 32],
             companions: std::collections::HashMap::new(),
             location: MatchLocation {

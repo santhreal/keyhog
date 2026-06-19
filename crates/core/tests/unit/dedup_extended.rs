@@ -25,7 +25,7 @@ fn make(detector: &str, cred: &str, file: &str, line: usize, conf: Option<f64>) 
         detector_name: Arc::from(detector),
         service: Arc::from("svc"),
         severity: Severity::High,
-        credential: Arc::from(cred),
+        credential: keyhog_core::SensitiveString::from(cred),
         credential_hash: [0; 32],
         companions: HashMap::new(),
         location: loc(file, line, 0),
