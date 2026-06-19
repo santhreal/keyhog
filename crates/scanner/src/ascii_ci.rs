@@ -18,6 +18,7 @@
 /// [`[u8]::make_ascii_lowercase`] semantics without first copying the original
 /// bytes and then walking them again to fold case.
 #[inline]
+#[cfg(any(feature = "gpu", test))]
 pub(crate) fn extend_ascii_lowercase_from(dst: &mut Vec<u8>, src: &[u8]) {
     let start = dst.len();
     dst.reserve(src.len());
