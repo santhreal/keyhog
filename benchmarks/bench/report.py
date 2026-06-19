@@ -37,6 +37,15 @@ _DISPLAY = {
     "noseyparker": "Nosey Parker",
 }
 
+FULL_DIFFERENTIAL_SCANNERS = (
+    "keyhog",
+    "betterleaks",
+    "kingfisher",
+    "trufflehog",
+    "titus",
+    "noseyparker",
+)
+
 
 def load_results(results_dir: pathlib.Path) -> list[RunResult]:
     """Load every ``*.json`` under ``results_dir`` (recursively) as RunResult.
@@ -150,6 +159,102 @@ def render_perf(results: list[RunResult], corpus: str | None = None) -> str:
     return "\n".join(lines)
 
 
+def _outcome_metrics(outcome: Outcome) -> dict:
+    return {
+        "tp": outcome.tp,
+        "fp": outcome.fp,
+        "fn": outcome.fn,
+        "precision": round(outcome.precision(), 4),
+        "recall": round(outcome.recall(), 4),
+        "f1": round(outcome.f1(), 4),
+    }
+
+
+def class_recall_differential(
+    results: list[RunResult],
+    corpus: str,
+    required_scanners: tuple[str, ...] | None = None,
+) -> dict:
+    """Structured per-category recall differential for benchmark and ML gates."""
+    rows = canonical_leaderboard(results, corpus)
+    by_scanner = {
+        r.scanner.name: r
+        for r in rows
+        if r.available
+    }
+    if required_scanners:
+        missing = [name for name in required_scanners if name not in by_scanner]
+        if missing:
+            raise ValueError(
+                f"missing required scanner result(s) for `{corpus}`: "
+                f"{', '.join(missing)}"
+            )
+        empty = [
+            name
+            for name in required_scanners
+            if not by_scanner[name].detection.per_category
+        ]
+        if empty:
+            raise ValueError(
+                f"scanner result(s) for `{corpus}` lack per-category data: "
+                f"{', '.join(empty)}"
+            )
+
+    kh = by_scanner.get("keyhog")
+    if kh is None:
+        raise ValueError(f"missing available keyhog result for `{corpus}`")
+    cats = set(kh.detection.per_category)
+    for r in by_scanner.values():
+        cats |= set(r.detection.per_category)
+
+    diff_rows = {}
+    for cat in sorted(cats):
+        kh_o = kh.detection.per_category.get(cat) or Outcome()
+        competitors = {}
+        for name, r in sorted(by_scanner.items()):
+            if name == "keyhog":
+                continue
+            o = r.detection.per_category.get(cat)
+            competitors[name] = _outcome_metrics(o or Outcome())
+
+        best_name = None
+        best_metrics = None
+        for name, metrics in competitors.items():
+            key = (metrics["recall"], metrics["f1"], metrics["precision"])
+            if best_metrics is None:
+                best_name, best_metrics = name, metrics
+                continue
+            best_key = (
+                best_metrics["recall"],
+                best_metrics["f1"],
+                best_metrics["precision"],
+            )
+            if key > best_key:
+                best_name, best_metrics = name, metrics
+
+        kh_metrics = _outcome_metrics(kh_o)
+        best_metrics = best_metrics or _outcome_metrics(Outcome())
+        gap = best_metrics["recall"] - kh_metrics["recall"]
+        diff_rows[cat] = {
+            "keyhog": kh_metrics,
+            "best_competitor": {
+                "scanner": best_name or "",
+                **best_metrics,
+            },
+            "recall_gap": round(gap, 4),
+            "competitors": competitors,
+        }
+
+    return {
+        "corpus": corpus,
+        "required_scanners": list(required_scanners or []),
+        "scanners": sorted(by_scanner),
+        "scanner_count": len(by_scanner),
+        "category_count": len(diff_rows),
+        "rows": diff_rows,
+    }
+
+
 def render_recall_gap(results: list[RunResult], corpus: str) -> str:
     """Per-category recall cells where any competitor beats keyhog.
 
@@ -158,43 +263,22 @@ def render_recall_gap(results: list[RunResult], corpus: str) -> str:
     keyhog P/R/F1, TP/FN, and the best competitor's same-category precision and
     recall.
     """
-    rows = canonical_leaderboard(results, corpus)
-    kh = next((r for r in rows if r.scanner.name == "keyhog" and r.available), None)
-    if kh is None:
+    try:
+        diff = class_recall_differential(results, corpus)
+    except ValueError:
         return "_No keyhog result for this corpus yet._"
-    cats = set(kh.detection.per_category)
-    for r in rows:
-        cats |= set(r.detection.per_category)
+
     out_lines = []
-    for cat in sorted(cats):
-        kh_o = kh.detection.per_category.get(cat) or Outcome()
-        kh_recall = kh_o.recall()
-        best = None
-        for r in rows:
-            if r.scanner.name == "keyhog" or not r.available:
-                continue
-            o = r.detection.per_category.get(cat)
-            if (
-                o
-                and o.recall() > kh_recall + 1e-9
-                and (
-                    best is None
-                    or o.recall() > best[1].recall() + 1e-9
-                    or (
-                        abs(o.recall() - best[1].recall()) <= 1e-9
-                        and o.f1() > best[1].f1()
-                    )
-                )
-            ):
-                best = (r.scanner.name, o)
-        if best:
-            best_o = best[1]
+    for cat, row in diff["rows"].items():
+        kh_o = row["keyhog"]
+        best_o = row["best_competitor"]
+        if row["recall_gap"] > 1e-9:
             out_lines.append(
-                f"| `{cat}` | {kh_o.precision():.3f} / {kh_recall:.3f} / "
-                f"{kh_o.f1():.3f} | {kh_o.tp}/{kh_o.fn} | "
-                f"{_name(best[0])} {best_o.precision():.3f} / "
-                f"{best_o.recall():.3f} / {best_o.f1():.3f} | "
-                f"+{best_o.recall()-kh_recall:.3f} |"
+                f"| `{cat}` | {kh_o['precision']:.3f} / {kh_o['recall']:.3f} / "
+                f"{kh_o['f1']:.3f} | {kh_o['tp']}/{kh_o['fn']} | "
+                f"{_name(best_o['scanner'])} {best_o['precision']:.3f} / "
+                f"{best_o['recall']:.3f} / {best_o['f1']:.3f} | "
+                f"+{row['recall_gap']:.3f} |"
             )
     if not out_lines:
         return "_keyhog matches or beats every competitor's recall in every category on " \

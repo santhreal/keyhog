@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from bench import report
 from bench.schema import CorpusInfo, Detection, Outcome, RunResult
 from bench.schema import Scanner as ScannerRecord
@@ -89,3 +91,50 @@ def test_gap_report_shows_category_recall_gap_dashboard():
     assert "KeyHog P/R/F1" in text
     assert "Recall gap" in text
     assert "| `generic` | 1.000 / 0.333 / 0.500 | 1/2 | BetterLeaks 0.750 / 1.000 / 0.857 | +0.667 |" in text
+
+
+def test_class_recall_differential_requires_full_scanner_set():
+    keyhog = _result("keyhog", 3, 20.0)
+    keyhog.detection.per_category = {"generic": Outcome(tp=1, fp=0, fn=2)}
+    better = _result("betterleaks", 2, 10.0)
+    better.detection.per_category = {"generic": Outcome(tp=3, fp=1, fn=0)}
+
+    with pytest.raises(ValueError, match="missing required scanner"):
+        report.class_recall_differential(
+            [keyhog, better],
+            "mirror",
+            report.FULL_DIFFERENTIAL_SCANNERS,
+        )
+
+
+def test_class_recall_differential_records_competitor_map():
+    rows = []
+    for name, tp in [
+        ("keyhog", 1),
+        ("betterleaks", 3),
+        ("kingfisher", 2),
+        ("trufflehog", 1),
+        ("titus", 1),
+        ("noseyparker", 0),
+    ]:
+        result = _result(name, tp, 10.0)
+        result.detection.per_category = {"generic": Outcome(tp=tp, fp=0, fn=3 - tp)}
+        rows.append(result)
+
+    diff = report.class_recall_differential(
+        rows,
+        "mirror",
+        report.FULL_DIFFERENTIAL_SCANNERS,
+    )
+
+    generic = diff["rows"]["generic"]
+    assert diff["scanner_count"] == 6
+    assert set(generic["competitors"]) == {
+        "betterleaks",
+        "kingfisher",
+        "trufflehog",
+        "titus",
+        "noseyparker",
+    }
+    assert generic["best_competitor"]["scanner"] == "betterleaks"
+    assert generic["recall_gap"] == 0.6667

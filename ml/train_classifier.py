@@ -32,6 +32,7 @@ import argparse
 import datetime
 import json
 import os
+import pathlib
 import shutil
 import sys
 
@@ -45,6 +46,9 @@ FC1 = 32
 FC2 = 16
 CURRENT_MODEL_CARD = "crates/scanner/src/model_card.json"
 REAL_RECALL_FLOOR = 0.40
+REPO_ROOT = pathlib.Path(__file__).resolve().parents[1]
+DEFAULT_DIFFERENTIAL_RESULTS = "benchmarks/results"
+DEFAULT_DIFFERENTIAL_CORPUS = "creddata"
 
 
 def fast_sigmoid(x):
@@ -490,8 +494,18 @@ def write_model_card(blob: bytes, args, metrics, real_metrics=None) -> None:
             "REFUSING to write: real held-out metrics must include per_detector "
             "precision/recall for model_card.json"
         )
+    if getattr(args, "real_corpus", None) and not isinstance(
+        real_card.get("six_scanner_differential"),
+        dict,
+    ):
+        raise SystemExit(
+            "REFUSING retrain artifact: real-corpus model cards must include the "
+            "full six-scanner per-class differential comparison"
+        )
     card = {
-        "schema_version": 2 if args.write else 1,
+        "schema_version": 3
+        if isinstance(real_card.get("six_scanner_differential"), dict)
+        else (2 if args.write else 1),
         "model_version": f"moe-v1-{digest}",
         "weights_fnv1a64": digest,
         "architecture": "moe-v1",
@@ -554,6 +568,12 @@ def main() -> int:
                          "regressions during --write")
     ap.add_argument("--max-real-class-recall-drop", type=float, default=0.0,
                     help="allowed per-class recall@0.40 drop vs --baseline-model-card")
+    ap.add_argument("--differential-results", default=DEFAULT_DIFFERENTIAL_RESULTS,
+                    help="benchmark RunResult directory used to compare every "
+                         "positive held-out class against the full six-scanner "
+                         "differential")
+    ap.add_argument("--differential-corpus", default=DEFAULT_DIFFERENTIAL_CORPUS,
+                    help="benchmark corpus name for the six-scanner differential")
     ap.add_argument("--write", action="store_true", help="actually overwrite weights.bin")
     args = ap.parse_args()
 
@@ -606,6 +626,13 @@ def main() -> int:
         if class_gate_error:
             sys.stderr.write(class_gate_error)
             return 1
+        try:
+            differential = six_scanner_differential_comparison(real_metrics, args)
+        except ValueError as error:
+            sys.stderr.write(f"REFUSING retrain artifact: {error}\n")
+            return 1
+        real_metrics = dict(real_metrics)
+        real_metrics["six_scanner_differential"] = differential
         _write_weights(blob, args, metrics, real_metrics)
         return 0
 
@@ -698,6 +725,96 @@ def _load_baseline_per_class(path: str) -> dict:
         .get("per_class", {})
     )
     return per_class if isinstance(per_class, dict) else {}
+
+
+def _repo_path(path: str) -> pathlib.Path:
+    candidate = pathlib.Path(path)
+    return candidate if candidate.is_absolute() else REPO_ROOT / candidate
+
+
+def _bench_report_module():
+    bench_dir = str(REPO_ROOT / "benchmarks")
+    if bench_dir not in sys.path:
+        sys.path.insert(0, bench_dir)
+    from bench import report as bench_report
+
+    return bench_report
+
+
+def six_scanner_differential_comparison(real_metrics: dict, args) -> dict:
+    """Compare every positive held-out class to the benchmark differential."""
+    per_class = real_metrics.get("per_class")
+    if not isinstance(per_class, dict):
+        raise ValueError(
+            "real held-out metrics must include per_class before the "
+            "six-scanner differential can be attached"
+        )
+
+    bench_report = _bench_report_module()
+    results_dir = _repo_path(args.differential_results)
+    results = bench_report.load_results(results_dir)
+    if not results:
+        raise ValueError(
+            f"no benchmark RunResult JSON files found under {results_dir}; "
+            "run the differential benchmark before retraining"
+        )
+    differential = bench_report.class_recall_differential(
+        results,
+        args.differential_corpus,
+        bench_report.FULL_DIFFERENTIAL_SCANNERS,
+    )
+    rows = differential.get("rows") or {}
+
+    missing = []
+    classes = {}
+    for kind, metric in sorted(per_class.items()):
+        if not isinstance(metric, dict):
+            continue
+        n_pos = int(metric.get("n_pos") or 0)
+        if n_pos <= 0:
+            continue
+        row = rows.get(kind)
+        if row is None:
+            missing.append(kind)
+            continue
+        best = row["best_competitor"]
+        classes[kind] = {
+            "heldout_n_pos": n_pos,
+            "heldout_recall_at_0_40_floor": _class_floor(metric),
+            "benchmark_keyhog": row["keyhog"],
+            "benchmark_best_competitor": {
+                "scanner": best["scanner"],
+                "recall": best["recall"],
+                "precision": best["precision"],
+                "f1": best["f1"],
+                "tp": best["tp"],
+                "fn": best["fn"],
+            },
+            "benchmark_recall_gap": row["recall_gap"],
+            "benchmark_competitors": row["competitors"],
+        }
+
+    if missing:
+        raise ValueError(
+            "six-scanner differential is missing positive held-out class(es) "
+            f"for `{args.differential_corpus}`: {', '.join(missing)}"
+        )
+    if not classes:
+        raise ValueError(
+            "real held-out per_class metrics contain no positive-bearing class "
+            "to compare against the six-scanner differential"
+        )
+
+    return {
+        "corpus": differential["corpus"],
+        "results_dir": str(results_dir),
+        "required_scanners": list(bench_report.FULL_DIFFERENTIAL_SCANNERS),
+        "scanners": differential["scanners"],
+        "scanner_count": differential["scanner_count"],
+        "benchmark_category_count": differential["category_count"],
+        "compared_class_count": len(classes),
+        "classes": classes,
+    }
 
 
 def per_class_gate_error(real_metrics: dict, args) -> str:

@@ -7,6 +7,87 @@ import pytest
 import train_classifier
 
 
+def _bench_config(scanner):
+    configs = {
+        "keyhog": {"backend": "simd", "cache": "off", "daemon": "off", "mode": "full"},
+        "betterleaks": {
+            "backend": "default",
+            "cache": "off",
+            "daemon": "off",
+            "mode": "no-validate",
+        },
+        "kingfisher": {
+            "backend": "default",
+            "cache": "off",
+            "daemon": "off",
+            "mode": "low-no-validate",
+        },
+        "trufflehog": {
+            "backend": "default",
+            "cache": "off",
+            "daemon": "off",
+            "mode": "no-verify",
+        },
+        "titus": {
+            "backend": "default",
+            "cache": "off",
+            "daemon": "off",
+            "mode": "no-validate",
+        },
+        "noseyparker": {
+            "backend": "default",
+            "cache": "off",
+            "daemon": "off",
+            "mode": "no-git-history",
+        },
+    }
+    return configs[scanner]
+
+
+def _write_bench_result(results_dir, scanner, category, tp, fn):
+    result = {
+        "generated_at": "2026-06-19T00:00:00Z",
+        "scanner": {
+            "name": scanner,
+            "version": "test",
+            "config": _bench_config(scanner),
+        },
+        "corpus": {
+            "name": "creddata",
+            "fixture_count": 10,
+            "labeled_positives": tp + fn,
+            "bytes": 100,
+        },
+        "detection": {
+            "overall": {"tp": tp, "fp": 0, "fn": fn},
+            "per_category": {
+                category: {"tp": tp, "fp": 0, "fn": fn},
+            },
+            "per_detector": {},
+        },
+        "speed": {"wall_ms": 10.0, "throughput_mb_s": 1.0, "peak_rss_kb": 1024},
+        "finding_count": tp,
+        "available": True,
+    }
+    (results_dir / f"{scanner}.json").write_text(
+        json.dumps(result),
+        encoding="utf-8",
+    )
+
+
+def _write_full_differential(results_dir, category="generic"):
+    rows = {
+        "keyhog": (1, 2),
+        "betterleaks": (3, 0),
+        "kingfisher": (2, 1),
+        "trufflehog": (1, 2),
+        "titus": (1, 2),
+        "noseyparker": (0, 3),
+    }
+    for scanner, (tp, fn) in rows.items():
+        _write_bench_result(results_dir, scanner, category, tp, fn)
+
+
 def test_load_real_corpus_rejects_missing_tail_provenance_before_feature_dump(
     tmp_path,
     monkeypatch,
@@ -133,3 +214,83 @@ def test_per_class_gate_rejects_weak_tail_and_baseline_regression(tmp_path):
 
     assert "git recall@0.40=0.0000 < floor 0.5000" in message
     assert "aws recall@0.40 dropped 0.7500->0.5000" in message
+
+
+def test_six_scanner_differential_attaches_full_class_comparison(tmp_path):
+    results_dir = tmp_path / "results"
+    results_dir.mkdir()
+    _write_full_differential(results_dir)
+    args = types.SimpleNamespace(
+        differential_results=str(results_dir),
+        differential_corpus="creddata",
+    )
+
+    comparison = train_classifier.six_scanner_differential_comparison(
+        {
+            "per_class": {
+                "generic": {
+                    "n_pos": 2,
+                    "recall_at_0_40_floor": 0.5,
+                }
+            }
+        },
+        args,
+    )
+
+    klass = comparison["classes"]["generic"]
+    assert comparison["scanner_count"] == 6
+    assert comparison["compared_class_count"] == 1
+    assert klass["benchmark_best_competitor"]["scanner"] == "betterleaks"
+    assert klass["benchmark_recall_gap"] == 0.6667
+    assert set(klass["benchmark_competitors"]) == {
+        "betterleaks",
+        "kingfisher",
+        "trufflehog",
+        "titus",
+        "noseyparker",
+    }
+
+
+def test_six_scanner_differential_rejects_missing_class(tmp_path):
+    results_dir = tmp_path / "results"
+    results_dir.mkdir()
+    _write_full_differential(results_dir, category="generic")
+    args = types.SimpleNamespace(
+        differential_results=str(results_dir),
+        differential_corpus="creddata",
+    )
+
+    with pytest.raises(ValueError, match="missing positive held-out class"):
+        train_classifier.six_scanner_differential_comparison(
+            {
+                "per_class": {
+                    "aws": {
+                        "n_pos": 1,
+                        "recall_at_0_40_floor": 1.0,
+                    }
+                }
+            },
+            args,
+        )
+
+
+def test_real_corpus_model_card_requires_six_scanner_differential(tmp_path):
+    args = types.SimpleNamespace(
+        write=False,
+        real_corpus="real.jsonl",
+        corpus=str(tmp_path / "corpus.jsonl"),
+        out=str(tmp_path / "weights.bin"),
+        features=42,
+    )
+
+    with pytest.raises(SystemExit, match="six-scanner"):
+        train_classifier.write_model_card(
+            b"weights",
+            args,
+            {"f1": 1.0, "precision": 1.0, "recall": 1.0},
+            {
+                "recall_at_0_40_floor": 1.0,
+                "per_class": {"generic": {"n_pos": 1}},
+                "per_detector": {"generic": {"n_pos": 1}},
+            },
+        )

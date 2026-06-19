@@ -90,8 +90,19 @@ fn trainer_and_build_script_keep_model_card_fail_closed() {
             && train.contains("def per_class_eval")
             && train.contains("per_class_gate_error")
             && train.contains("--min-real-class-recall")
-            && train.contains("per_detector"),
-        "train_classifier.py must update model_card.json with weights hash plus aggregate/per-class/per-detector real held-out recall before shipped writes"
+            && train.contains("per_detector")
+            && train.contains("six_scanner_differential_comparison")
+            && train.contains("--differential-results")
+            && train.contains("six_scanner_differential"),
+        "train_classifier.py must update model_card.json with weights hash plus aggregate/per-class/per-detector real held-out recall and six-scanner class differential before shipped writes"
+    );
+
+    let report = read(&root, "benchmarks/bench/report.py");
+    assert!(
+        report.contains("FULL_DIFFERENTIAL_SCANNERS")
+            && report.contains("def class_recall_differential")
+            && report.contains("required_scanners"),
+        "bench report must own the structured six-scanner class differential consumed by the trainer"
     );
 
     let build = read(&root, "crates/scanner/build.rs");
