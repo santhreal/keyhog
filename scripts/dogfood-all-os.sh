@@ -201,10 +201,19 @@ run_win() {  # ships source from the NFS tree, builds + dogfoods locally on Wind
     echo "  unreachable"; return 64
   fi
   echo "  shipping source + ps1 to C:\\keyhog-dogfood ..."
-  "${SSH[@]}" "$host" 'powershell -NoProfile -Command "New-Item -ItemType Directory -Force C:\keyhog-dogfood\src | Out-Null"' >/dev/null 2>&1
-  tar -C "$NFS_TREE" --exclude=target --exclude=.git -cf - crates detectors Cargo.toml Cargo.lock install.ps1 \
-    | "${SSH[@]}" "$host" 'tar.exe -x -f - -C C:\keyhog-dogfood\src' 2>/dev/null
-  scp -q -o BatchMode=yes "$NFS_TREE/scripts/dogfood-windows.ps1" "$host:C:/keyhog-dogfood/dogfood-windows.ps1" 2>/dev/null
+  if ! "${SSH[@]}" "$host" 'powershell -NoProfile -Command "New-Item -ItemType Directory -Force C:\keyhog-dogfood\src | Out-Null"'; then
+    echo "  FAIL create remote source directory"
+    return 1
+  fi
+  if ! tar -C "$NFS_TREE" --exclude=target --exclude=.git -cf - crates detectors Cargo.toml Cargo.lock install.ps1 \
+    | "${SSH[@]}" "$host" 'tar.exe -x -f - -C C:\keyhog-dogfood\src'; then
+    echo "  FAIL ship source to Windows"
+    return 1
+  fi
+  if ! scp -q -o BatchMode=yes "$NFS_TREE/scripts/dogfood-windows.ps1" "$host:C:/keyhog-dogfood/dogfood-windows.ps1"; then
+    echo "  FAIL copy Windows dogfood payload"
+    return 1
+  fi
   "${SSH[@]}" "$host" "powershell -NoProfile -ExecutionPolicy Bypass -File C:\\keyhog-dogfood\\dogfood-windows.ps1 -Source C:\\keyhog-dogfood\\src -Profile $PROFILE"
 }
 
@@ -213,7 +222,11 @@ TARGETS=("$@"); [ ${#TARGETS[@]} -eq 0 ] && TARGETS=("${ALL[@]}")
 declare -A RESULT
 for name in "${TARGETS[@]}"; do
   cfg="$(config_for "$name")"
-  if [ -z "$cfg" ]; then echo "unknown machine: $name (known: ${ALL[*]})"; continue; fi
+  if [ -z "$cfg" ]; then
+    echo "unknown machine: $name (known: ${ALL[*]})"
+    RESULT[$name]="FAIL (unknown target)"
+    continue
+  fi
   IFS='|' read -r host os tree tgt feats <<<"$cfg"
   if [ "$os" = "windows" ]; then run_win; rc=$?; else run_unix "$name" "$host" "$os" "$tree" "$tgt" "$feats"; rc=$?; fi
   case $rc in

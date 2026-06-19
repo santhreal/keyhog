@@ -140,16 +140,18 @@ fi
 
 DOG="$ROOT/scripts/dogfood-all-os.sh"
 if [ -f "$DOG" ]; then
-  if grep -qE 'tests/install/install_from_local_build\.sh|scan "\\$t/leak\.env" --format json 2>/dev/null|grep -q aws-access-key|>/dev/null 2>&1; check "clean tree|>/dev/null 2>&1; check "git-history|scan --stdin >/dev/null 2>&1' "$DOG"; then
-    echo "FAIL scripts/dogfood-all-os.sh must use OS-specific install proofs and JSON/log-backed scan checks."
-    grep -nE 'tests/install/install_from_local_build\.sh|scan "\\$t/leak\.env" --format json 2>/dev/null|grep -q aws-access-key|>/dev/null 2>&1; check "clean tree|>/dev/null 2>&1; check "git-history|scan --stdin >/dev/null 2>&1' "$DOG" | sed 's/^/    /'
+  if grep -qE 'tests/install/install_from_local_build\.sh|scan "\\$t/leak\.env" --format json 2>/dev/null|grep -q aws-access-key|>/dev/null 2>&1; check "clean tree|>/dev/null 2>&1; check "git-history|scan --stdin >/dev/null 2>&1|unknown machine:.*continue; fi|C:\\keyhog-dogfood\\src.*2>&1|tar .*C:\\keyhog-dogfood\\src.*2>/dev/null|dogfood-windows\.ps1.*2>/dev/null' "$DOG"; then
+    echo "FAIL scripts/dogfood-all-os.sh must use OS-specific install proofs, JSON/log-backed scan checks, and fail-closed target/source shipping."
+    grep -nE 'tests/install/install_from_local_build\.sh|scan "\\$t/leak\.env" --format json 2>/dev/null|grep -q aws-access-key|>/dev/null 2>&1; check "clean tree|>/dev/null 2>&1; check "git-history|scan --stdin >/dev/null 2>&1|unknown machine:.*continue; fi|C:\\keyhog-dogfood\\src.*2>&1|tar .*C:\\keyhog-dogfood\\src.*2>/dev/null|dogfood-windows\.ps1.*2>/dev/null' "$DOG" | sed 's/^/    /'
     fail=1
   elif grep -q 'expect_aws_json' "$DOG" \
      && grep -q 'tests/install/linux/install_from_local_build.sh' "$DOG" \
-     && grep -q 'tests/install/macos/install_from_local_build.sh' "$DOG"; then
-    note "OK   cross-OS dogfood entrypoint: parses JSON and uses OS install proofs"
+     && grep -q 'tests/install/macos/install_from_local_build.sh' "$DOG" \
+     && grep -q 'FAIL (unknown target)' "$DOG" \
+     && grep -q 'FAIL ship source to Windows' "$DOG"; then
+    note "OK   cross-OS dogfood entrypoint: parses JSON, uses OS install proofs, and fails closed on target/source shipping"
   else
-    echo "FAIL scripts/dogfood-all-os.sh must parse planted-secret JSON and call Linux/macOS install proof wrappers."
+    echo "FAIL scripts/dogfood-all-os.sh must parse planted-secret JSON, call Linux/macOS install proof wrappers, and fail closed on target/source shipping."
     fail=1
   fi
 else
@@ -177,16 +179,16 @@ fi
 
 CROSS_DEVICE="$ROOT/benchmarks/cross_device.sh"
 if [ -f "$CROSS_DEVICE" ]; then
-  if grep -qE 'command -v keyhog \|\| true|--version 2>/dev/null \|\| echo|cargo install .* \|\|[[:space:]]*\\$? *cargo install' "$CROSS_DEVICE"; then
-    echo "FAIL benchmarks/cross_device.sh must fail closed on keyhog discovery/version/install; no unknown-version or unlocked cargo-install fallback."
-    grep -nE 'command -v keyhog \|\| true|--version 2>/dev/null \|\| echo|cargo install .* \|\|[[:space:]]*\\$? *cargo install' "$CROSS_DEVICE" | sed 's/^/    /'
+  if grep -qE 'command -v keyhog|--version 2>/dev/null \|\| echo|cargo install .* \|\|[[:space:]]*\\$? *cargo install' "$CROSS_DEVICE"; then
+    echo "FAIL benchmarks/cross_device.sh must install current-tree keyhog and fail closed on version/install; no PATH, unknown-version, or unlocked cargo-install fallback."
+    grep -nE 'command -v keyhog|--version 2>/dev/null \|\| echo|cargo install .* \|\|[[:space:]]*\\$? *cargo install' "$CROSS_DEVICE" | sed 's/^/    /'
     fail=1
-  elif grep -q 'if KH="\\$(command -v keyhog)"' "$CROSS_DEVICE" \
+  elif grep -q 'cargo install --path crates/cli' "$CROSS_DEVICE" \
      && grep -q 'KH_VERSION="\\$("\\$KH" --version)"' "$CROSS_DEVICE" \
      && grep -q -- '--locked >&2' "$CROSS_DEVICE"; then
-    note "OK   cross-device benchmark entrypoint: keyhog discovery/version/install fail closed"
+    note "OK   cross-device benchmark entrypoint: current-tree install/version fail closed"
   else
-    echo "FAIL benchmarks/cross_device.sh must use explicit keyhog discovery, loud version proof, and locked cargo install."
+    echo "FAIL benchmarks/cross_device.sh must install current-tree keyhog, prove version loudly, and use locked cargo install."
     fail=1
   fi
 else
