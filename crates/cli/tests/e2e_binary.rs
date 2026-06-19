@@ -1425,6 +1425,71 @@ fn config_detector_disable_drops_findings() {
 }
 
 #[test]
+fn config_detector_disable_all_loaded_detectors_fails_closed() {
+    let dir = TempDir::new().expect("tempdir");
+    let detectors_dir = dir.path().join("detectors");
+    std::fs::create_dir_all(&detectors_dir).expect("mkdir detectors");
+    std::fs::write(
+        detectors_dir.join("demo-only.toml"),
+        r#"
+        [detector]
+        id = "demo-only"
+        name = "Demo Only"
+        service = "demo"
+        severity = "high"
+        keywords = ["demo_secret_"]
+
+        [[detector.patterns]]
+        regex = "demo_secret_[A-Z0-9]{8}"
+        "#,
+    )
+    .expect("write detector");
+    std::fs::write(
+        dir.path().join("planted.txt"),
+        "token = demo_secret_ABCD1234\n",
+    )
+    .expect("write fixture");
+    std::fs::write(
+        dir.path().join(".keyhog.toml"),
+        "[detector.demo-only]\nenabled = false\n",
+    )
+    .expect("write config");
+
+    let output = Command::new(binary())
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--format",
+            "json",
+            "--detectors",
+        ])
+        .arg(&detectors_dir)
+        .arg(dir.path())
+        .output()
+        .expect("spawn keyhog scan");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "disabling the entire loaded detector corpus must be a user-visible scan error, not a clean no-findings scan.\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}"
+    );
+    assert!(
+        stderr.contains("all 1 loaded detector(s) were disabled")
+            && stderr.contains("demo-only")
+            && stderr.contains("Refusing to scan with no detectors loaded"),
+        "stderr must explain the zero-detector corpus and the disabled id.\n--- stderr ---\n{stderr}"
+    );
+    assert!(
+        !stdout.contains("demo_secret_ABCD1234"),
+        "failed setup must not emit a misleading finding payload after refusing the empty detector corpus"
+    );
+}
+
+#[test]
 fn config_detector_min_confidence_floor_drops_findings() {
     // `[detector.<id>] min_confidence = <f>` is a per-detector confidence
     // floor: a finding from that detector below the floor is dropped, taking

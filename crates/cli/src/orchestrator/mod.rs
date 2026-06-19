@@ -182,6 +182,27 @@ impl ScanOrchestrator {
             detectors.retain(|d| !disabled_detectors.iter().any(|id| id == &d.id));
             let dropped = before - detectors.len();
             if dropped > 0 {
+                if detectors.is_empty() {
+                    let mut disabled_ids: Vec<&str> =
+                        disabled_detectors.iter().map(String::as_str).collect();
+                    disabled_ids.sort_unstable();
+                    let listed = if disabled_ids.len() <= 16 {
+                        disabled_ids.join(", ")
+                    } else {
+                        format!(
+                            "{} ... ({} total)",
+                            disabled_ids[..16].join(", "),
+                            disabled_ids.len()
+                        )
+                    };
+                    anyhow::bail!(
+                        "all {before} loaded detector(s) were disabled by .keyhog.toml \
+                         [detector.<id>] enabled = false ({listed}). Fix: leave at least \
+                         one detector enabled, remove the config, or use .keyhogignore for \
+                         specific finding suppressions. Refusing to scan with no detectors \
+                         loaded."
+                    );
+                }
                 tracing::info!(
                     target: "keyhog::config",
                     dropped,
