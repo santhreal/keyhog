@@ -1858,12 +1858,16 @@ fn keyhog_workflow_dogfoods_local_composite_action() {
         "repo CI should preserve strict-marker gating while still uploading findings"
     );
     assert!(
-        workflow.contains("KEYHOG_FINDINGS: ${{ steps.keyhog.outputs.findings }}"),
+        workflow.contains("ACTION_FINDINGS: ${{ steps.keyhog.outputs.findings }}"),
         "strict-marker step must receive action findings through env"
     );
     assert!(
-        workflow.contains("KEYHOG_EXIT_CODE: ${{ steps.keyhog.outputs.exit-code }}"),
+        workflow.contains("ACTION_EXIT_CODE: ${{ steps.keyhog.outputs.exit-code }}"),
         "strict-marker step must receive action exit code through env"
+    );
+    assert!(
+        !workflow.contains("KEYHOG_FINDINGS") && !workflow.contains("KEYHOG_EXIT_CODE"),
+        "strict-marker workflow must not resurrect KEYHOG_* internal env transport"
     );
 
     let mut offenders = Vec::new();

@@ -56,28 +56,28 @@ jobs:
       - name: fail on findings (opt-in via .keyhog/strict)
         if: steps.keyhog.outputs.findings != '0'
         env:
-          KEYHOG_FINDINGS: ${{ steps.keyhog.outputs.findings }}
-          KEYHOG_EXIT_CODE: ${{ steps.keyhog.outputs.exit-code }}
+          ACTION_FINDINGS: ${{ steps.keyhog.outputs.findings }}
+          ACTION_EXIT_CODE: ${{ steps.keyhog.outputs.exit-code }}
         run: |
           set -euo pipefail
-          case "${KEYHOG_FINDINGS:-}" in
+          case "${ACTION_FINDINGS:-}" in
             "" | *[!0-9]*)
               echo "::error title=KeyHog::Invalid findings output."
               exit 3
               ;;
           esac
-          case "${KEYHOG_EXIT_CODE:-}" in
+          case "${ACTION_EXIT_CODE:-}" in
             0 | 1 | 10) ;;
             "" | *[!0-9]*)
               echo "::error title=KeyHog::Invalid exit-code output."
               exit 3
               ;;
             *)
-              echo "::error title=KeyHog::Unexpected scan exit code ${KEYHOG_EXIT_CODE}."
-              exit "$KEYHOG_EXIT_CODE"
+              echo "::error title=KeyHog::Unexpected scan exit code ${ACTION_EXIT_CODE}."
+              exit "$ACTION_EXIT_CODE"
               ;;
           esac
-          echo "keyhog reported $KEYHOG_FINDINGS finding(s); exit code $KEYHOG_EXIT_CODE"
+          echo "keyhog reported $ACTION_FINDINGS finding(s); exit code $ACTION_EXIT_CODE"
           if [ -f .keyhog/strict ]; then
             echo "  .keyhog/strict present - failing CI on findings"
             exit 1
