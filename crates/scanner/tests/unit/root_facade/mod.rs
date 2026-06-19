@@ -14,6 +14,8 @@ mod decode_recursion_profile;
 mod decode_test;
 mod detector_registry_truth_matrix;
 mod fullscan_throughput;
+#[cfg(feature = "gpu")]
+mod gpu_cache_dir_contract;
 mod gpu_resident_throughput;
 mod homoglyph_ascii_skip_parity;
 mod homoglyph_gate_repro;

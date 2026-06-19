@@ -308,6 +308,12 @@ pub(crate) mod multiline {
 
 #[cfg(all(test, feature = "gpu"))]
 pub(crate) use crate::compiler::build_gpu_literals;
+#[cfg(all(test, feature = "gpu"))]
+pub(crate) fn gpu_matcher_cache_dir_from_base(
+    base: Option<std::path::PathBuf>,
+) -> Result<std::path::PathBuf, String> {
+    crate::engine::gpu_matcher_cache_dir_from_base(base).map_err(|error| error.to_string())
+}
 #[cfg(test)]
 pub(crate) use crate::compiler::{
     build_ac_pattern_set, build_prefix_propagation, build_same_prefix_patterns,

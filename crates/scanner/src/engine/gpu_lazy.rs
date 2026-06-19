@@ -25,14 +25,10 @@ impl CompiledScanner {
     /// Lazily compile the GPU literal-set on first call. Returns `None`
     /// when no compatible adapter was detected at probe time.
     ///
-    /// Persists the compiled matcher to `~/.cache/keyhog/programs/<hash>.bin`.
-    /// On a cache hit the matcher is loaded from disk and the GPU
-    /// recompile is skipped entirely - biggest cold-start win on
-    /// `keyhog scan` / `scan-system` runs that re-launch repeatedly.
-    /// The blob is a pure-optimization cache, never a detection input: a miss
-    /// (no file, version-mismatch, corrupt blob) recompiles the IDENTICAL
-    /// matcher and re-caches, so a miss costs only the recompile and changes no
-    /// match result — it is not a Law-10 fallback to a weaker path.
+    /// Persists the compiled matcher to `~/.cache/keyhog/programs/<hash>.bin`
+    /// when a user cache directory is available. The cache is a pure latency
+    /// optimization: a miss, stale/corrupt blob, or unavailable cache directory
+    /// compiles the identical matcher without changing the selected backend.
     pub(crate) fn gpu_matcher(&self) -> Option<&vyre_libs::scan::GpuLiteralSet> {
         self.gpu_matcher
             .get_or_init(|| {
@@ -40,24 +36,26 @@ impl CompiledScanner {
                     return None;
                 };
                 let literal_refs: Vec<&[u8]> = literals.iter().map(|v| v.as_slice()).collect();
-                let cache_dir = super::gpu_cache::gpu_matcher_cache_dir()?;
                 let cache_key = format!(
                     "lit-{}",
                     super::gpu_cache::gpu_matcher_cache_key(&literal_refs)
                 );
                 let started = std::time::Instant::now();
-                // One-line lego-block cache wiring courtesy of
-                // `vyre_libs::scan::cached_load_or_compile`. The
-                // helper handles atomic-rename, stale-blob deletion,
-                // and silent fall-through on cache-side I/O errors -
-                // every behaviour the previous hand-rolled
-                // load/save pair tried to match. We log compile cost
-                // here so the operator can still see warm-vs-cold
-                // start latency in `--verbose` output.
-                let matcher =
-                    vyre_libs::scan::cached_load_or_compile(&cache_dir, &cache_key, || {
+                let matcher = match super::gpu_cache::gpu_matcher_cache_dir() {
+                    Ok(cache_dir) => vyre_libs::scan::cached_load_or_compile(
+                        &cache_dir,
+                        &cache_key,
+                        || vyre_libs::scan::GpuLiteralSet::compile(&literal_refs),
+                    ),
+                    Err(error) => {
+                        tracing::warn!(
+                            target: "keyhog::routing",
+                            %error,
+                            "GPU matcher disk cache unavailable; compiling literal set without cache"
+                        );
                         vyre_libs::scan::GpuLiteralSet::compile(&literal_refs)
-                    });
+                    }
+                };
                 tracing::debug!(
                     target: "keyhog::routing",
                     patterns = literal_refs.len(),
