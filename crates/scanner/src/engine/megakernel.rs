@@ -744,7 +744,7 @@ impl MegakernelCatalog {
             .lock()
             .map_err(|e| format!("megakernel lowercase staging mutex poisoned: {e}"))?;
         let mut files: Vec<BatchFile> = Vec::with_capacity(chunks.len());
-        for (i, chunk) in chunks.iter().enumerate() {
+        for chunk in chunks {
             let mut bytes = match scratch.pop() {
                 Some(bytes) => bytes,
                 None => Vec::new(),
@@ -765,7 +765,8 @@ impl MegakernelCatalog {
             }
             bytes.extend_from_slice(haystack);
             bytes.make_ascii_lowercase();
-            files.push(BatchFile::new((i as u64) ^ (i as u64), 0, bytes));
+            // BatchFile file_id is unused here; firings are mapped by file_index.
+            files.push(BatchFile::new(0, 0, bytes));
         }
         Ok(LowercaseBatch { files, scratch })
     }

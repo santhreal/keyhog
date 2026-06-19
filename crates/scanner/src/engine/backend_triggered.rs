@@ -2,6 +2,57 @@ use super::*;
 use crate::context;
 use crate::hw_probe::ScanBackend;
 use keyhog_core::RawMatch;
+use std::cell::RefCell;
+
+thread_local! {
+    static GPU_PRESENCE_SCRATCH: RefCell<vyre_libs::scan::dispatch_io::ScanDispatchScratch> =
+        RefCell::new(vyre_libs::scan::dispatch_io::ScanDispatchScratch::default());
+}
+
+struct ZeroGpuPresenceScratch<'a> {
+    scratch: &'a mut vyre_libs::scan::dispatch_io::ScanDispatchScratch,
+}
+
+impl<'a> ZeroGpuPresenceScratch<'a> {
+    fn new(scratch: &'a mut vyre_libs::scan::dispatch_io::ScanDispatchScratch) -> Self {
+        Self { scratch }
+    }
+
+    fn as_mut(&mut self) -> &mut vyre_libs::scan::dispatch_io::ScanDispatchScratch {
+        &mut *self.scratch
+    }
+}
+
+impl Drop for ZeroGpuPresenceScratch<'_> {
+    fn drop(&mut self) {
+        zero_gpu_presence_scratch(self.scratch);
+    }
+}
+
+fn zero_gpu_presence_scratch(scratch: &mut vyre_libs::scan::dispatch_io::ScanDispatchScratch) {
+    scratch.haystack_bytes.fill(0);
+    scratch.hit_bytes.fill(0);
+}
+
+fn scan_gpu_presence_with_scratch(
+    matcher: &vyre_libs::scan::GpuLiteralSet,
+    backend: &dyn vyre::VyreBackend,
+    haystack: &[u8],
+) -> std::result::Result<Vec<u32>, String> {
+    GPU_PRESENCE_SCRATCH
+        .try_with(|cell| {
+            let mut scratch = cell.try_borrow_mut().map_err(|_| {
+                "gpu presence scratch already borrowed on this thread; recursive GPU trigger \
+                 dispatch is unsupported"
+                    .to_string()
+            })?;
+            let mut zero_on_drop = ZeroGpuPresenceScratch::new(&mut scratch);
+            matcher
+                .scan_presence_with_scratch(backend, haystack, zero_on_drop.as_mut())
+                .map_err(|error| error.to_string())
+        })
+        .map_err(|_| "gpu presence scratch unavailable during thread shutdown".to_string())?
+}
 
 impl CompiledScanner {
     pub(crate) fn scan_prepared_with_triggered(
@@ -218,7 +269,7 @@ impl CompiledScanner {
         };
         // Presence bitmap is the phase-1 path: no per-hit triples and no match
         // cap, with the same pattern-id mapping.
-        match matcher.scan_presence(&**gpu_backend, text.as_bytes()) {
+        match scan_gpu_presence_with_scratch(matcher, &**gpu_backend, text.as_bytes()) {
             Ok(presence) => {
                 // Union with AC triggers so the GPU literal matcher is never
                 // the sole gate for context-anchored detectors.

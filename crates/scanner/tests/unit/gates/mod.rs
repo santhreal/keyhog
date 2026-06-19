@@ -125,6 +125,7 @@ pub mod fragment_cache_non_empty;
 pub mod gpu_no_inline_tests;
 pub mod gpu_no_unwrap_expect;
 pub mod gpu_non_empty;
+pub mod gpu_presence_scratch;
 pub mod gpu_shader_no_inline_tests;
 pub mod gpu_shader_no_unwrap_expect;
 pub mod gpu_shader_non_empty;
