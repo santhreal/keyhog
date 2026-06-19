@@ -22,7 +22,7 @@ pub(super) fn calibrate_fastest_correct_backend(
     let sample = sample_batch(batch);
     let sample_bytes = calibration_sample_bytes(&sample)?;
 
-    let (reference_key, simd_timing) = measure_reference_simd(scanner, &sample);
+    let (reference_key, simd_timing) = measure_reference_simd(scanner, &sample)?;
     let mut candidates = vec![(ScanBackend::SimdCpu, simd_timing.best_ns)];
     let mut best = (ScanBackend::SimdCpu, simd_timing.best_ns);
 
@@ -119,29 +119,36 @@ pub(super) fn calibration_sample_bytes(sample: &[Chunk]) -> Result<u64, Autorout
 fn measure_reference_simd(
     scanner: &CompiledScanner,
     sample: &[Chunk],
-) -> (Vec<CanonicalMatch>, BackendTimingEvidence) {
+) -> Result<(Vec<CanonicalMatch>, BackendTimingEvidence), AutorouteRoutingError> {
     scanner.clear_fragment_cache();
     let (reference, first_dur) = timed(|| scanner.scan_coalesced(sample));
     let reference_key = canonical_matches(&reference);
     let mut durations = vec![first_dur];
-    for _ in 1..AUTOROUTE_CALIBRATION_TRIALS {
+    for trial_idx in 1..AUTOROUTE_CALIBRATION_TRIALS {
         scanner.clear_fragment_cache();
         let (matches, dur) = timed(|| scanner.scan_coalesced(sample));
         if canonical_matches(&matches) != reference_key {
-            tracing::warn!(
+            tracing::error!(
                 target: "keyhog::routing",
                 backend = ScanBackend::SimdCpu.label(),
-                "reference backend produced inconsistent calibration results"
+                trial = trial_idx + 1,
+                "reference backend produced inconsistent calibration results; autoroute calibration aborted"
             );
-            continue;
+            scanner.clear_fragment_cache();
+            return Err(AutorouteRoutingError::inconsistent_reference_backend(
+                trial_idx + 1,
+            ));
         }
         durations.push(dur);
     }
     scanner.clear_fragment_cache();
-    (
-        reference_key,
-        BackendTimingEvidence::from_durations(durations),
-    )
+    let timing = BackendTimingEvidence::from_durations(durations);
+    if !timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS) {
+        return Err(AutorouteRoutingError::calibration_not_persisted(
+            "reference SIMD timing evidence was invalid",
+        ));
+    }
+    Ok((reference_key, timing))
 }
 
 fn measure_candidate_backend(

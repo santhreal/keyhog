@@ -133,6 +133,17 @@ impl AutorouteRoutingError {
             ),
         }
     }
+
+    fn inconsistent_reference_backend(trial: usize) -> Self {
+        Self {
+            message: format!(
+                "autoroute calibration reference backend produced inconsistent findings on trial \
+                 {trial}. Autoroute cannot prove fastest-correct routing when the SIMD reference \
+                 is unstable, so no backend decision was persisted. Fix scanner nondeterminism or \
+                 run an explicit `--backend <simd|cpu|gpu|megascan>` diagnostic scan."
+            ),
+        }
+    }
 }
 
 impl fmt::Display for AutorouteRoutingError {

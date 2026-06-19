@@ -782,6 +782,31 @@ fn autoroute_cache_rejects_zero_duration_timing_evidence() {
 }
 
 #[test]
+fn autoroute_reference_inconsistency_aborts_calibration_contract() {
+    let error = AutorouteRoutingError::inconsistent_reference_backend(2).to_string();
+    assert!(
+        error.contains("reference backend produced inconsistent findings")
+            && error.contains("no backend decision was persisted"),
+        "reference inconsistency must be an autoroute calibration failure, got: {error}"
+    );
+
+    let calibration = include_str!("calibration.rs");
+    assert!(
+        calibration.contains("fn measure_reference_simd(")
+            && calibration.contains(
+                "Result<(Vec<CanonicalMatch>, BackendTimingEvidence), AutorouteRoutingError>"
+            )
+            && calibration
+                .contains("return Err(AutorouteRoutingError::inconsistent_reference_backend("),
+        "measure_reference_simd must abort on reference mismatch, not continue with partial proof"
+    );
+    assert!(
+        !calibration.contains("reference backend produced inconsistent calibration results\"\\n            );\\n            continue;"),
+        "old warn-and-continue reference mismatch path must not return"
+    );
+}
+
+#[test]
 fn autoroute_cache_rejects_missing_correctness_digest() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_autoroute_missing_correctness_{}.json",
