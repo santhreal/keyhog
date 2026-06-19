@@ -45,7 +45,9 @@ fn binary_source_extracts_utf16le_wide_string_secret() {
     let source = TestApi.binary_strings_only(tmp.path());
     let found = source
         .chunks()
-        .filter_map(Result::ok)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+        .into_iter()
         .any(|c| c.data.contains(secret));
     assert!(found, "UTF-16LE wide-string secret must be extracted");
 }

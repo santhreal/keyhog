@@ -40,13 +40,10 @@ fn clean_javascript_response_is_scanned_and_counter_clean() {
             .body("const key = 'AKIAQYLPMN5HFIQR7XYA';\n"); // keyhog:ignore detector=aws-access-key
     });
 
-    let chunks: Vec<_> = loopback_calibration_source(server.url("/app.js"))
+    let ok: Vec<_> = loopback_calibration_source(server.url("/app.js"))
         .chunks()
-        .collect();
-    let ok: Vec<_> = chunks
-        .into_iter()
-        .filter_map(|result| result.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(ok.len(), 1, "clean JavaScript URL should produce one chunk");
     assert!(
         ok[0].data.as_ref().contains("AKIAQYLPMN5HFIQR7XYA"), // keyhog:ignore detector=aws-access-key
@@ -110,13 +107,10 @@ fn malformed_sourcemap_is_raw_scanned_and_counted_partial() {
             ));
     });
 
-    let chunks: Vec<_> = loopback_calibration_source(server.url("/app.js.map"))
+    let ok: Vec<_> = loopback_calibration_source(server.url("/app.js.map"))
         .chunks()
-        .collect();
-    let ok: Vec<_> = chunks
-        .into_iter()
-        .filter_map(|result| result.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(
         ok.len(),
         1,
@@ -166,13 +160,10 @@ fn partially_malformed_sourcemap_scans_decoded_entries_and_raw_map() {
             ));
     });
 
-    let chunks: Vec<_> = loopback_calibration_source(server.url("/mixed.js.map"))
+    let ok: Vec<_> = loopback_calibration_source(server.url("/mixed.js.map"))
         .chunks()
-        .collect();
-    let ok: Vec<_> = chunks
-        .into_iter()
-        .filter_map(|result| result.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(
         ok.len(),
         2,
@@ -230,13 +221,10 @@ fn malformed_sourcemap_source_names_keep_index_alignment_and_count_gap() {
             ));
     });
 
-    let chunks: Vec<_> = loopback_calibration_source(server.url("/bad-sources.js.map"))
+    let ok: Vec<_> = loopback_calibration_source(server.url("/bad-sources.js.map"))
         .chunks()
-        .collect();
-    let ok: Vec<_> = chunks
-        .into_iter()
-        .filter_map(|result| result.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(
         ok.len(),
         2,

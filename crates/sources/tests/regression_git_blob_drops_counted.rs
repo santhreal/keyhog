@@ -96,7 +96,9 @@ fn oversized_git_blob_is_counted_over_max_size() {
 
     let chunks: Vec<String> = GitSource::new(repo.to_path_buf())
         .chunks()
-        .filter_map(|r| r.ok())
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+        .into_iter()
         .map(|c| c.data.as_ref().to_string())
         .collect();
 
@@ -146,8 +148,8 @@ fn binary_git_blob_is_counted_binary() {
 
     let _chunks: Vec<_> = GitSource::new(repo.to_path_buf())
         .chunks()
-        .filter_map(|r| r.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
 
     let after = skip_counts();
     assert_eq!(
@@ -184,8 +186,8 @@ fn binary_untracked_git_diff_file_is_counted_binary() {
 
     let chunks: Vec<_> = GitDiffSource::new(repo.to_path_buf(), "HEAD")
         .chunks()
-        .filter_map(|result| result.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert!(
         chunks.is_empty(),
         "binary-only untracked git-diff input yields no scannable chunks"
@@ -222,8 +224,8 @@ fn default_excluded_git_blob_is_counted_excluded() {
     let chunks: Vec<_> = GitSource::new(repo.to_path_buf())
         .with_max_commits(1)
         .chunks()
-        .filter_map(|result| result.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert!(
         chunks
             .iter()

@@ -15,7 +15,7 @@ mod capped {
             .expect("write");
 
         let source = TestApi.binary_strings_only(&path);
-        let chunks: Vec<_> = source.chunks().filter_map(Result::ok).collect();
+        let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
         assert!(
             !chunks.is_empty(),
             "capped binary read must emit chunks for printable-run file"

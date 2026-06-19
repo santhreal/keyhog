@@ -238,7 +238,7 @@ fn filesystem_source_multicore_scaling_floor() {
     // leg pays cold-cache disk I/O (we are measuring CPU-scaling, not disk).
     let materialized: Vec<Chunk> = {
         let src = FilesystemSource::new(root.to_path_buf());
-        src.chunks().filter_map(|c| c.ok()).collect()
+        src.chunks().collect::<Result<Vec<_>, _>>().unwrap()
     };
     assert_eq!(
         materialized.len(),

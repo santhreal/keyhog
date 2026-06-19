@@ -75,7 +75,7 @@ fn broken_utf8_is_handled_gracefully() {
     fs::write(&path, content).unwrap();
 
     let source = FilesystemSource::new(dir.path().to_path_buf());
-    let chunks: Vec<_> = source.chunks().filter_map(|r| r.ok()).collect();
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
 
     assert!(
         !chunks.is_empty(),
@@ -175,7 +175,7 @@ fn unreadable_subtree_does_not_abort_full_scan() {
     .unwrap();
 
     let source = FilesystemSource::new(dir.path().to_path_buf());
-    let chunks: Vec<_> = source.chunks().filter_map(|r| r.ok()).collect();
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
 
     // Restore perms BEFORE assertions so tempdir cleanup works
     // even on assertion failure.

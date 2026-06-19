@@ -92,11 +92,11 @@ fn oversized_listed_object_is_counted_over_max_size() {
         then.status(200).body("PLACEHOLDER_SHOULD_NOT_BE_FETCHED");
     });
 
-    let chunks: Vec<_> = TestApi
+    let ok: Vec<_> = TestApi
         .s3_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
-        .collect();
-    let ok: Vec<_> = chunks.into_iter().filter_map(|r| r.ok()).collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(
         ok.len(),
         0,
@@ -146,11 +146,11 @@ fn binary_content_type_object_is_counted_binary() {
             .body(vec![0u8; 512]);
     });
 
-    let chunks: Vec<_> = TestApi
+    let ok: Vec<_> = TestApi
         .s3_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
-        .collect();
-    let ok: Vec<_> = chunks.into_iter().filter_map(|r| r.ok()).collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(
         ok.len(),
         0,
@@ -194,11 +194,11 @@ fn binary_extension_object_is_counted_binary_without_get() {
         then.status(200).body("SHOULD_NOT_BE_FETCHED");
     });
 
-    let chunks: Vec<_> = TestApi
+    let ok: Vec<_> = TestApi
         .s3_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
-        .collect();
-    let ok: Vec<_> = chunks.into_iter().filter_map(|r| r.ok()).collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(ok.len(), 0, "binary-extension object must not be scanned");
 
     let after = skip_counts();
@@ -239,11 +239,11 @@ fn non_utf8_text_labelled_object_is_counted_unreadable() {
             .body(vec![0xFFu8, 0xFE, 0x00, 0x80]);
     });
 
-    let chunks: Vec<_> = TestApi
+    let ok: Vec<_> = TestApi
         .s3_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
-        .collect();
-    let ok: Vec<_> = chunks.into_iter().filter_map(|r| r.ok()).collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(
         ok.len(),
         0,
@@ -284,11 +284,11 @@ fn non_success_get_is_counted_unreadable() {
         then.status(403).body("AccessDenied");
     });
 
-    let chunks: Vec<_> = TestApi
+    let ok: Vec<_> = TestApi
         .s3_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
-        .collect();
-    let ok: Vec<_> = chunks.into_iter().filter_map(|r| r.ok()).collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(
         ok.len(),
         0,
@@ -344,11 +344,11 @@ fn max_objects_limit_is_counted_source_truncated() {
         then.status(200).body("SHOULD_NOT_BE_FETCHED");
     });
 
-    let chunks: Vec<_> = TestApi
+    let ok: Vec<_> = TestApi
         .s3_source_with_endpoint_max_objects(BUCKET, server.url(""), 1)
         .chunks()
-        .collect();
-    let ok: Vec<_> = chunks.into_iter().filter_map(|r| r.ok()).collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(
         ok.len(),
         1,
@@ -393,11 +393,11 @@ fn truncated_listing_without_token_is_counted_source_truncated() {
             .body("config object\n");
     });
 
-    let chunks: Vec<_> = TestApi
+    let ok: Vec<_> = TestApi
         .s3_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
-        .collect();
-    let ok: Vec<_> = chunks.into_iter().filter_map(|r| r.ok()).collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(
         ok.len(),
         1,
@@ -440,11 +440,11 @@ fn plain_text_object_is_scanned_and_not_counted_as_skipped() {
             .body(object_body);
     });
 
-    let chunks: Vec<_> = TestApi
+    let ok: Vec<_> = TestApi
         .s3_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
-        .collect();
-    let ok: Vec<_> = chunks.into_iter().filter_map(|r| r.ok()).collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(
         ok.len(),
         1,

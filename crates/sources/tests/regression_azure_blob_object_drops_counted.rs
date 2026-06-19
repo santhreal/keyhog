@@ -61,13 +61,10 @@ fn plain_text_blob_is_scanned_and_sas_query_is_preserved() {
             .body("aws_key=AKIAQYLPMN5HFIQR7XYA\n"); // keyhog:ignore detector=aws-access-key
     });
 
-    let chunks: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let ok: Vec<_> = AzureBlobSource::new(container_url(&server))
         .chunks()
-        .collect();
-    let ok: Vec<_> = chunks
-        .into_iter()
-        .filter_map(|result| result.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(ok.len(), 1, "Azure text blob should produce one chunk");
     assert!(
         ok[0].data.as_ref().contains("AKIAQYLPMN5HFIQR7XYA"), // keyhog:ignore detector=aws-access-key
@@ -108,13 +105,10 @@ fn binary_extension_blob_is_counted_binary_without_get() {
         then.status(200).body("SHOULD_NOT_BE_FETCHED");
     });
 
-    let chunks: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let ok: Vec<_> = AzureBlobSource::new(container_url(&server))
         .chunks()
-        .collect();
-    let ok: Vec<_> = chunks
-        .into_iter()
-        .filter_map(|result| result.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(ok.len(), 0, "binary-extension blob must not be scanned");
 
     let after = skip_counts();
@@ -152,13 +146,10 @@ fn non_success_get_is_counted_unreadable() {
         then.status(403).body("AuthorizationFailure");
     });
 
-    let chunks: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let ok: Vec<_> = AzureBlobSource::new(container_url(&server))
         .chunks()
-        .collect();
-    let ok: Vec<_> = chunks
-        .into_iter()
-        .filter_map(|result| result.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(ok.len(), 0, "failed blob GET must not produce a chunk");
 
     let after = skip_counts();
@@ -202,14 +193,11 @@ fn max_objects_limit_is_counted_source_truncated() {
         then.status(200).body("SHOULD_NOT_BE_FETCHED");
     });
 
-    let chunks: Vec<_> = TestApi
+    let ok: Vec<_> = TestApi
         .azure_blob_source_with_max_objects(container_url(&server), 1)
         .chunks()
-        .collect();
-    let ok: Vec<_> = chunks
-        .into_iter()
-        .filter_map(|result| result.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(ok.len(), 1, "first blob within cap should be scanned");
 
     let after = skip_counts();

@@ -29,13 +29,13 @@ fn unreadable_binary_is_counted_not_silently_dropped() {
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("does-not-exist.bin");
 
-    let chunks: Vec<_> = TestApi
+    let bodies: Vec<_> = TestApi
         .binary_strings_only(missing.clone())
         .chunks()
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     // The strings path returns no chunks for an unreadable file (the Source
     // wrapper turns the empty Vec into an empty chunk stream).
-    let bodies: Vec<_> = chunks.into_iter().filter_map(|r| r.ok()).collect();
     assert!(
         bodies.is_empty(),
         "an unreadable binary yields no chunks; got {} chunk(s)",
@@ -73,7 +73,9 @@ fn readable_binary_is_not_counted_as_unreadable() {
     let bodies: Vec<String> = TestApi
         .binary_strings_only(bin.clone())
         .chunks()
-        .filter_map(|r| r.ok())
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap()
+        .into_iter()
         .map(|c| c.data.to_string())
         .collect();
     assert!(
@@ -106,8 +108,8 @@ fn readable_binary_without_printable_strings_is_counted_as_binary_gap() {
     let bodies: Vec<_> = TestApi
         .binary_strings_only(bin.clone())
         .chunks()
-        .filter_map(Result::ok)
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert!(
         bodies.is_empty(),
         "a readable binary with no printable strings yields no chunks"

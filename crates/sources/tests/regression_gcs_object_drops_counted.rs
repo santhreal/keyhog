@@ -46,14 +46,11 @@ fn plain_text_object_is_scanned_and_not_counted_as_skipped() {
             .body("aws_key=AKIAQYLPMN5HFIQR7XYA\n"); // keyhog:ignore detector=aws-access-key
     });
 
-    let chunks: Vec<_> = TestApi
+    let ok: Vec<_> = TestApi
         .gcs_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
-        .collect();
-    let ok: Vec<_> = chunks
-        .into_iter()
-        .filter_map(|result| result.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(ok.len(), 1, "GCS text object should produce one chunk");
     assert!(
         ok[0].data.as_ref().contains("AKIAQYLPMN5HFIQR7XYA"), // keyhog:ignore detector=aws-access-key
@@ -93,14 +90,11 @@ fn binary_extension_object_is_counted_binary_without_get() {
         then.status(200).body("SHOULD_NOT_BE_FETCHED");
     });
 
-    let chunks: Vec<_> = TestApi
+    let ok: Vec<_> = TestApi
         .gcs_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
-        .collect();
-    let ok: Vec<_> = chunks
-        .into_iter()
-        .filter_map(|result| result.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(ok.len(), 0, "binary-extension object must not be scanned");
 
     let after = skip_counts();
@@ -138,14 +132,11 @@ fn non_success_get_is_counted_unreadable() {
         then.status(403).body("AccessDenied");
     });
 
-    let chunks: Vec<_> = TestApi
+    let ok: Vec<_> = TestApi
         .gcs_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
-        .collect();
-    let ok: Vec<_> = chunks
-        .into_iter()
-        .filter_map(|result| result.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(ok.len(), 0, "failed object GET must not produce a chunk");
 
     let after = skip_counts();
@@ -189,14 +180,11 @@ fn max_objects_limit_is_counted_source_truncated() {
         then.status(200).body("SHOULD_NOT_BE_FETCHED");
     });
 
-    let chunks: Vec<_> = TestApi
+    let ok: Vec<_> = TestApi
         .gcs_source_with_endpoint_max_objects(BUCKET, server.url(""), 1)
         .chunks()
-        .collect();
-    let ok: Vec<_> = chunks
-        .into_iter()
-        .filter_map(|result| result.ok())
-        .collect();
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
     assert_eq!(ok.len(), 1, "first object within cap should be scanned");
 
     let after = skip_counts();
