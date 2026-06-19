@@ -444,10 +444,11 @@ pub enum SpecError {
         detail: String,
     },
     #[error(
-        "{failed_count} of {total} detector file(s) from {dir} failed to load or \
-         pass the quality gate; refusing to scan with a partial detector corpus. \
+        "{failed_count} of {total} detector file(s) from {dir} failed to load, \
+         pass the quality gate, or exist at all; refusing to scan without a \
+         complete detector corpus. \
          Offending detector(s):\n{detail}\nFix: repair the named TOML file(s) \
-         and rerun the scan."
+         or add at least one valid `*.toml` detector spec, then rerun the scan."
     )]
     DetectorCorpusRejected {
         dir: String,

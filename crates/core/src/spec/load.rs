@@ -63,6 +63,16 @@ pub(crate) fn load_detectors_with_gate(
             toml_paths.push(path);
         }
     }
+    if enforce_gate && toml_paths.is_empty() {
+        return Err(SpecError::DetectorCorpusRejected {
+            dir: dir.display().to_string(),
+            failed_count: 0,
+            total: 0,
+            detail:
+                "  - no detector TOML files found; add at least one valid `*.toml` detector spec"
+                    .to_string(),
+        });
+    }
 
     // Phase 2: read + parse all TOMLs in parallel
     let parsed: Vec<ReadDetectorOutcome> = toml_paths

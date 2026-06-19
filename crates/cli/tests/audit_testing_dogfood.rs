@@ -14,9 +14,9 @@
 //!                          then SUPPRESSES, so the live stream contradicts the
 //!                          report + exit code (two reproductions: `--min-confidence`
 //!                          floor and the bundled test-fixture suppression list).
-//!   AUD-testing_dogfood-2  the "loaded zero detectors" error tells the operator
-//!                          to run `keyhog detectors list`, but `list` is not a
-//!                          valid subcommand — the suggested fix itself errors.
+//!   AUD-testing_dogfood-2  empty detector directories must fail closed before
+//!                          scanning and must not preserve stale detector-list
+//!                          guidance.
 
 use std::process::Command;
 use tempfile::TempDir;
@@ -178,44 +178,20 @@ fn stream_preview_must_not_show_test_fixture_suppressed_credential() {
     );
 }
 
-/// AUD-testing_dogfood-2 — the "loaded zero detectors" error tells the operator
-/// to run `keyhog detectors list`, but `list` is not a valid subcommand.
+/// AUD-testing_dogfood-2 — an empty detector directory is a hard user error,
+/// not a valid empty corpus that can scan a target and return "no findings".
 ///
-/// FINDING: when a scan resolves zero detectors,
-/// crates/cli/src/orchestrator_config.rs:248 bails with:
-///   "... (run `keyhog detectors list --detectors <DIR>` to see which TOMLs
-///    were rejected, if any) ..."
-/// and crates/core/src/spec/load.rs:302 has the twin message
-///   "(run `keyhog detectors list` for the full skip list)".
-/// But `keyhog detectors` has NO `list` subcommand (its usage is
-/// `keyhog detectors [OPTIONS]`); the directory is the `-d/--detectors` flag.
-/// Following keyhog's own suggested fix yields a SECOND error:
-///   $ keyhog detectors list --detectors <DIR>
-///   error: unexpected argument 'list' found
-///   (exit 2)
-/// This violates the CLAUDE.md Engineering Standard "Error messages include
-/// context and the fix" and the COHERENCE vector (help/examples/errors must
-/// agree): the suggested fix is itself broken.
-///
-/// EXPECTED FIX: change both messages to the valid invocation
-/// `keyhog detectors --detectors <DIR>` (no `list`). After the fix, the command
-/// keyhog suggests runs cleanly instead of erroring on `unexpected argument
-/// 'list'`.
-///
-/// This test asserts BOTH halves of the coherence contract:
-///   (a) the suggested command, run verbatim, must NOT error with
-///       "unexpected argument 'list'";
-///   (b) the error text must therefore not contain the literal
-///       "detectors list".
+/// This also pins the historical detector-list coherence fix: scan errors must
+/// not cite stale `detectors list` guidance, while `keyhog detectors list`
+/// remains a valid compatibility alias for the default detector listing action.
 #[test]
-fn zero_detectors_error_must_suggest_a_valid_command() {
+fn empty_detector_scan_fails_closed_without_phantom_list_guidance() {
     let dir = TempDir::new().expect("tempdir");
     let empty_detectors = dir.path().join("empty_detectors");
     std::fs::create_dir_all(&empty_detectors).unwrap();
     let target = dir.path().join("c.txt");
     std::fs::write(&target, format!("{FIRING_AWS_KEY}\n")).unwrap();
 
-    // 1) Trigger the zero-detectors error.
     let scan = Command::new(binary())
         .args(["scan", "--no-daemon", "-d"])
         .arg(&empty_detectors)
@@ -226,40 +202,33 @@ fn zero_detectors_error_must_suggest_a_valid_command() {
     assert_eq!(
         scan.status.code(),
         Some(2),
-        "precondition: scanning with zero detectors loaded must be a user error (exit 2); stderr={scan_stderr}"
+        "scanning with an empty detector directory must be a user error (exit 2); stderr={scan_stderr}"
     );
     assert!(
-        scan_stderr.contains("loaded zero detectors"),
-        "precondition: expected the zero-detectors guidance; stderr={scan_stderr}"
+        scan_stderr.contains("no detector TOML files")
+            && scan_stderr.contains("refusing to scan"),
+        "empty detector error must explain that no detector corpus exists and the scan was refused; stderr={scan_stderr}"
     );
-
-    // 2) Independently prove `keyhog detectors list ...` is invalid today — the
-    //    exact command the error suggests fails with an arg-parse error.
-    let suggested = Command::new(binary())
-        .args(["detectors", "list", "--detectors"])
-        .arg(&empty_detectors)
-        .output()
-        .expect("spawn keyhog detectors list");
-    let suggested_stderr = String::from_utf8_lossy(&suggested.stderr);
-
-    // The defect manifests as clap rejecting the `list` positional. This assert
-    // FAILS today (the message contains "unexpected argument 'list' found")
-    // and PASSES once the suggested command is corrected to a real one.
     assert!(
-        !suggested_stderr.contains("unexpected argument 'list'"),
-        "VECTOR-10/12 COHERENCE DEFECT: keyhog's zero-detectors error suggests \
-         `keyhog detectors list --detectors <DIR>`, but `list` is not a valid \
-         subcommand — running the suggested fix errors with:\n{suggested_stderr}"
+        !scan_stderr.contains("no findings"),
+        "empty detector scans must not look like clean scans; stderr={scan_stderr}"
     );
-
-    // 3) And the error text itself must not name the bogus `detectors list`
-    //    subcommand. Ties the suggestion string back to the broken command so a
-    //    fix to one without the other still leaves this red.
     assert!(
         !scan_stderr.contains("detectors list"),
-        "VECTOR-10/12 COHERENCE DEFECT: the zero-detectors error tells the user \
-         to run `keyhog detectors list ...`, but no such subcommand exists \
-         (usage is `keyhog detectors [OPTIONS]`, dir via -d/--detectors). \
-         Suggested fix must be a runnable command. stderr was:\n{scan_stderr}"
+        "scan errors must not cite stale detector-list guidance; stderr={scan_stderr}"
+    );
+
+    let detectors_list = Command::new(binary())
+        .args(["detectors", "list"])
+        .output()
+        .expect("spawn keyhog detectors list");
+    let detectors_list_stderr = String::from_utf8_lossy(&detectors_list.stderr);
+    assert!(
+        detectors_list.status.success(),
+        "`keyhog detectors list` must remain a valid alias for the default list action; stderr={detectors_list_stderr}"
+    );
+    assert!(
+        !detectors_list_stderr.contains("unexpected argument 'list'"),
+        "`keyhog detectors list` must not regress into a clap positional error; stderr={detectors_list_stderr}"
     );
 }

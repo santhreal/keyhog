@@ -52,7 +52,7 @@ pub mod jsonl_reporter_emits_one_object_per_line;
 pub mod jsonl_reporter_empty_finish_still_valid;
 pub mod legacy_b64_prefix_still_deserializes;
 pub mod legacy_plain_string_still_deserializes;
-pub mod load_detectors_from_empty_dir_returns_empty;
+pub mod load_detectors_from_empty_dir_rejected;
 pub mod load_detectors_from_str_boundary_empty_keywords;
 pub mod load_detectors_from_str_parses_valid_detector;
 pub mod load_detectors_from_str_rejects_invalid_toml;

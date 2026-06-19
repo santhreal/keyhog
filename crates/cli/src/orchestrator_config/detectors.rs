@@ -258,14 +258,10 @@ pub(crate) fn load_detectors_no_cache(path: &Path) -> Result<Vec<DetectorSpec>> 
     load_detectors_embedded_or_fail(path)
 }
 
-/// Hard-fail when detector loading produces zero specs. The
-/// `load_detectors` path returns `Ok(Vec::new())` for an empty
-/// directory, a directory full of malformed TOMLs that all get
-/// quality-gate rejected, or a typo'd `--detectors` path that
-/// happens to be a directory. Without this gate the scan runs
-/// against zero patterns, finds nothing, and exits SUCCESS - the
-/// user (or their CI) reads "no findings" and assumes the code
-/// is clean. That's the definition of a silent-data-loss bug.
+/// Hard-fail when detector loading produces zero specs. This is a belt-and-
+/// suspenders guard beside `keyhog_core::load_detectors`: older call paths could
+/// run against zero patterns, find nothing, and exit SUCCESS - the user (or
+/// their CI) reads "no findings" and assumes the code is clean.
 ///
 /// `pub(crate)` so subcommands (`watch`, `scan-system`, `explain`)
 /// share the gate. They all have their own `load_detectors`
