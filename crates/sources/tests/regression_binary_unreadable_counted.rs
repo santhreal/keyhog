@@ -91,3 +91,37 @@ fn readable_binary_is_not_counted_as_unreadable() {
         "a readable binary must not increment the shared unreadable skip counter"
     );
 }
+
+#[test]
+fn readable_binary_without_printable_strings_is_counted_as_binary_gap() {
+    let _guard = COUNTER_LOCK.lock().unwrap();
+    reset_binary_counters();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("zeros.bin");
+    std::fs::write(&bin, vec![0u8; 4096]).unwrap();
+
+    let bodies: Vec<_> = TestApi
+        .binary_strings_only(bin.clone())
+        .chunks()
+        .filter_map(Result::ok)
+        .collect();
+    assert!(
+        bodies.is_empty(),
+        "a readable binary with no printable strings yields no chunks"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        binary_unreadable(),
+        0,
+        "a readable no-strings binary must not be misclassified as unreadable"
+    );
+    assert_eq!(
+        after.binary - before.binary,
+        1,
+        "a readable no-strings binary MUST bump SKIPPED_BINARY so the empty stream is not reported as full coverage"
+    );
+}

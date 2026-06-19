@@ -346,6 +346,14 @@ impl BinarySource {
             });
         }
 
+        if chunks.is_empty() {
+            eprintln!(
+                "keyhog: WARNING: binary {} yielded no scannable sections or printable strings; it was NOT scanned for secrets.",
+                self.path.display()
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+        }
+
         chunks
     }
 }

@@ -343,3 +343,41 @@ fn invalid_wasm_magic_is_error_and_counted_unreadable() {
         "invalid WASM WebSource response MUST bump SKIPPED_UNREADABLE"
     );
 }
+
+#[test]
+fn valid_wasm_without_printable_strings_is_counted_binary_gap() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let mut wasm = Vec::from([0x00, 0x61, 0x73, 0x6d]);
+    wasm.extend_from_slice(&[0x01, 0x00, 0x00, 0x00]);
+    wasm.extend_from_slice(&[0x00; 64]);
+    let _module = server.mock(|when, then| {
+        when.method(httpmock::Method::GET).path("/empty.wasm");
+        then.status(200)
+            .header("content-type", "application/wasm")
+            .body(wasm);
+    });
+
+    let chunks: Vec<_> = loopback_calibration_source(server.url("/empty.wasm"))
+        .chunks()
+        .collect();
+    assert!(
+        chunks.is_empty(),
+        "valid WASM with no printable strings yields no scannable chunks"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.binary - before.binary,
+        1,
+        "valid WASM with no printable strings MUST bump SKIPPED_BINARY so the empty stream is not reported as full coverage"
+    );
+    assert_eq!(
+        after.total() - before.total(),
+        1,
+        "WASM no-strings coverage gap must reach total skipped coverage"
+    );
+}

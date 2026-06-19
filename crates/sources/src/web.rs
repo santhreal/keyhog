@@ -439,6 +439,12 @@ fn handle_wasm(
 
     let strings = crate::strings::extract_printable_strings(&bytes, MIN_WASM_STRING_LEN);
     if strings.is_empty() {
+        let safe_url = redact_url(url);
+        tracing::warn!(
+            url = %safe_url,
+            "WASM body yielded no printable strings; body was NOT scanned for secrets"
+        );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
         return Vec::new();
     }
 
