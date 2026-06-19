@@ -205,7 +205,7 @@ fn merkle_index_save_load_roundtrip_and_tmp_sweep_after_split() {
 fn merkle_default_cache_path_unchanged() {
     // The path helper stays on the merkle_index module surface.
     if let Some(p) =
-        keyhog_core::testing::CoreTestApi::default_cache_path(&keyhog_core::testing::TestApi)
+        keyhog_core::testing::CoreTestApi::merkle_default_cache_path(&keyhog_core::testing::TestApi)
     {
         assert!(
             p.ends_with("keyhog/merkle.idx"),

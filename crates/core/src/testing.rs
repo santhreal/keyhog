@@ -63,7 +63,6 @@ pub trait CoreTestApi {
     );
     fn merkle_len(&self, index: &MerkleIndex) -> usize;
     fn merkle_default_cache_path(&self) -> Option<PathBuf>;
-    fn default_cache_path(&self) -> Option<PathBuf>;
     fn lockdown_disk_cache_violations(&self) -> Vec<PathBuf>;
     fn lockdown_disk_cache_violations_for_paths(
         &self,
@@ -265,10 +264,6 @@ impl CoreTestApi for TestApi {
     }
 
     fn merkle_default_cache_path(&self) -> Option<PathBuf> {
-        crate::merkle_index::default_cache_path()
-    }
-
-    fn default_cache_path(&self) -> Option<PathBuf> {
         crate::merkle_index::default_cache_path()
     }
 
