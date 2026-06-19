@@ -21,6 +21,7 @@ pub mod explicit_backend_trim_and_lowercase;
 pub mod explicit_backend_unknown_returns_none;
 pub mod fused_pipeline_autorouting;
 pub mod gpu_init_policy_matches_scan_route;
+pub mod incremental_cache_path_owner;
 pub mod orchestrator_allowlist_module_exists;
 pub mod orchestrator_args_accessor_returns_scan_args;
 pub mod orchestrator_config_module_non_empty;

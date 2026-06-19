@@ -19,10 +19,6 @@ use keyhog_scanner::{CompiledScanner, GpuInitPolicy};
 use std::path::PathBuf;
 use std::sync::Arc;
 
-fn default_incremental_cache_path() -> Option<PathBuf> {
-    dirs::cache_dir().map(|d| d.join("keyhog").join("merkle.idx"))
-}
-
 /// Offline (no-verify, no-network) structural metadata for a finding's
 /// credential. Single source of truth shared by every scan-output route so the
 /// JWT analysis and the offline-decoded AWS account ID never diverge by route.
@@ -343,7 +339,7 @@ impl ScanOrchestrator {
         self.args
             .incremental_cache
             .clone()
-            .or_else(default_incremental_cache_path)
+            .or_else(keyhog_core::merkle_default_cache_path)
     }
 
     pub(crate) fn build_merkle_index(

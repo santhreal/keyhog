@@ -346,7 +346,7 @@ impl MerkleIndex {
 /// Default index location: `$XDG_CACHE_HOME/keyhog/merkle.idx` or
 /// `~/.cache/keyhog/merkle.idx` on Linux, `~/Library/Caches/keyhog/...` on
 /// macOS.
-pub(crate) fn default_cache_path() -> Option<PathBuf> {
+pub fn default_cache_path() -> Option<PathBuf> {
     dirs::cache_dir().map(|dir| dir.join("keyhog").join("merkle.idx"))
 }
 

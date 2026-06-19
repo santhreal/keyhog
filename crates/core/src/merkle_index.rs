@@ -58,7 +58,7 @@ use parking_lot::RwLock;
 mod storage;
 mod tmp_hygiene;
 
-pub(crate) use storage::default_cache_path;
+pub use storage::default_cache_path;
 
 const SCHEMA_VERSION: u32 = 3;
 
