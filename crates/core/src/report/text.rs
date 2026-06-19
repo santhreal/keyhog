@@ -196,8 +196,11 @@ impl<W: Write + Send> Reporter for TextReporter<W> {
             )?;
         }
 
-        // Extra metadata
-        for (key, value) in &finding.metadata {
+        // Extra metadata. Sort HashMap-backed provider fields so text output is
+        // byte-stable across processes and hash seeds.
+        let mut metadata: Vec<_> = finding.metadata.iter().collect();
+        metadata.sort_by(|(left, _), (right, _)| left.cmp(right));
+        for (key, value) in metadata {
             writeln!(
                 self.writer,
                 "  {} {} {}",

@@ -70,3 +70,33 @@ fn version_flag_surfaces_commit_and_detector_provenance() {
         keyhog_core::embedded_detector_count()
     );
 }
+
+#[test]
+fn version_flag_surfaces_ml_model_card() {
+    let bin = env!("CARGO_BIN_EXE_keyhog");
+    let out = Command::new(bin)
+        .arg("--version")
+        .output()
+        .expect("spawn keyhog");
+    assert_eq!(out.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+
+    assert!(
+        stdout.contains("ML Model Version:"),
+        "version must surface the embedded ML model version: {stdout}"
+    );
+    assert!(
+        stdout.contains(keyhog_scanner::ml_scorer::model_version()),
+        "version must print the scanner model hash/version ({}): {stdout}",
+        keyhog_scanner::ml_scorer::model_version()
+    );
+    assert!(
+        stdout.contains("ML Model Card:"),
+        "version must surface the embedded ML model card summary: {stdout}"
+    );
+    assert!(
+        stdout.contains(keyhog_scanner::ml_scorer::model_card_summary()),
+        "version must print the scanner model-card summary ({}): {stdout}",
+        keyhog_scanner::ml_scorer::model_card_summary()
+    );
+}

@@ -95,7 +95,7 @@ direct copy.
 | `feature_parity.py` | parity/debug port of `ml_features.rs` (not used for training features) |
 | `config_lists.py` | serve-path detector keyword lists, mirror of `config.rs` |
 | `corpus.py` | labeled training corpus generator (heavy base64-of-binary negatives) |
-| `train_classifier.py` | trains the MoE, evaluates, serializes `weights.bin` |
+| `train_classifier.py` | trains the MoE, evaluates, serializes `weights.bin` and `model_card.json` |
 | `parity_check.py` | asserts the Python debug port still matches the Rust serve-path extractor |
 
 ## Retraining
@@ -110,17 +110,25 @@ KEYHOG_DUMP_FEATURES=$(find "$CARGO_TARGET_DIR" -path '*examples/dump_features' 
 # 2. generate the corpus
 python3 ml/corpus.py --out ml/data/corpus.jsonl
 
-# 3. train + install. Training reads the same Rust serve-path feature extractor
-#    via KEYHOG_DUMP_FEATURES, backs up the existing weights.bin to .bak, and
-#    refuses to write if held-out F1 < --min-f1. --compare also reports the
-#    41-feature baseline on the same split.
+# 3. harvest real candidates, then train + install. Training reads the same Rust
+#    serve-path feature extractor via KEYHOG_DUMP_FEATURES, backs up the
+#    existing weights.bin/model_card.json to .bak, and refuses to write unless
+#    synthetic F1 and leakage-free real held-out recall clear the gates.
+python3 ml/harvest_corpus.py --corpora "$CRED_CORPORA" \
+  --keyhog-bin target/release/keyhog --out ml/data/real_corpus.jsonl
 KEYHOG_DUMP_FEATURES=$(find "$CARGO_TARGET_DIR" -path '*examples/dump_features' -type f | head -1) \
   python3 ml/train_classifier.py --corpus ml/data/corpus.jsonl \
-    --features 42 --compare --write --out crates/scanner/src/weights.bin
+    --real-corpus ml/data/real_corpus.jsonl \
+    --features 42 --compare --write --out crates/scanner/src/weights.bin \
+    --model-card crates/scanner/src/model_card.json
 
-# 4. rebuild and run the scanner ML tests against the new weights
+# 4. rebuild and run the scanner ML tests against the new weights + card
 cargo test -p keyhog-scanner ml_scorer
 ```
+
+`crates/scanner/build.rs` validates that `model_card.json` names the exact
+FNV-derived `weights.bin` model version before embedding both. A stale or
+missing card fails the build instead of producing an `unknown` model lineage.
 
 ## Parity contract
 

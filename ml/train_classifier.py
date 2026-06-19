@@ -29,6 +29,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import shutil
@@ -42,6 +43,7 @@ import rust_features
 EXPERT_COUNT = 6
 FC1 = 32
 FC2 = 16
+CURRENT_MODEL_CARD = "crates/scanner/src/model_card.json"
 
 
 def fast_sigmoid(x):
@@ -359,6 +361,74 @@ def serialize(model, num_features: int) -> bytes:
     return flat.tobytes()
 
 
+def weights_fnv1a64(blob: bytes) -> str:
+    h = 0xCBF29CE484222325
+    for b in blob:
+        h ^= b
+        h = (h * 0x100000001B3) & 0xFFFFFFFFFFFFFFFF
+    return f"{h:016x}"
+
+
+def write_model_card(blob: bytes, args, metrics, real_metrics=None) -> None:
+    """Write model-card provenance beside the serialized weights.
+
+    Shipped writes require real held-out metrics. A synthetic-only card would be
+    stale the moment the binary is used on real corpora, so `--write` refuses
+    that path before touching `weights.bin`.
+    """
+    if args.write and not real_metrics:
+        raise SystemExit(
+            "REFUSING to write: --write now requires --real-corpus so the shipped "
+            "model_card.json carries leakage-free real held-out recall"
+        )
+
+    digest = weights_fnv1a64(blob)
+    real_card = dict(real_metrics) if real_metrics else {
+        "note": "scratch training only; shipped writes require --real-corpus"
+    }
+    if "real_pos_recall_at_0.40_floor" in real_card:
+        real_card["recall_at_0_40_floor"] = real_card["real_pos_recall_at_0.40_floor"]
+    if args.write and not isinstance(real_card.get("recall_at_0_40_floor"), (float, int)):
+        raise SystemExit(
+            "REFUSING to write: real held-out metrics must include numeric "
+            "recall_at_0_40_floor for model_card.json"
+        )
+    card = {
+        "schema_version": 1,
+        "model_version": f"moe-v1-{digest}",
+        "weights_fnv1a64": digest,
+        "architecture": "moe-v1",
+        "feature_count": args.features,
+        "recorded_date": datetime.date.today().isoformat(),
+        "trainer": "ml/train_classifier.py",
+        "feature_source": "Rust dump_features serve path",
+        "training_inputs": {
+            "synthetic": args.corpus,
+            "real_distribution": args.real_corpus
+            if args.real_corpus
+            else "scratch training only; not shipped",
+        },
+        "metrics": {
+            "synthetic_heldout": metrics,
+            "real_heldout": real_card,
+        },
+    }
+
+    if args.write:
+        path = args.model_card
+        if os.path.exists(path):
+            shutil.copy2(path, path + ".bak")
+            sys.stderr.write(f"backed up existing model card -> {path}.bak\n")
+    else:
+        stem = os.path.splitext(os.path.basename(args.out))[0] or f"weights_{args.features}"
+        path = os.path.join(os.path.dirname(args.corpus) or ".", f"{stem}.model_card.json")
+
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(card, fh, indent=2, sort_keys=True)
+        fh.write("\n")
+    sys.stderr.write(f"wrote {path}\n")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--corpus", default="ml/data/corpus.jsonl")
@@ -366,6 +436,8 @@ def main() -> int:
                     help="harvested real-distribution JSONL to blend in (Stage 2); "
                          "enables the file-grouped real held-out eval")
     ap.add_argument("--out", default="crates/scanner/src/weights.bin")
+    ap.add_argument("--model-card", default=CURRENT_MODEL_CARD,
+                    help="model-card JSON to update with --write; must match weights.bin")
     ap.add_argument("--features", type=int, default=42, choices=[41, 42])
     ap.add_argument("--epochs", type=int, default=60)
     ap.add_argument("--seed", type=int, default=20260529)
@@ -409,8 +481,15 @@ def main() -> int:
                 f"{args.min_real_recall} (a retrain must not regress real-distribution recall)\n"
             )
             return 1
-        _write_weights(blob, args)
+        _write_weights(blob, args, metrics, real_metrics)
         return 0
+
+    if args.write:
+        sys.stderr.write(
+            "REFUSING to write: --write requires --real-corpus so the shipped "
+            "model_card.json carries leakage-free real held-out recall\n"
+        )
+        return 1
 
     if args.compare:
         for d in (41, 42):
@@ -432,15 +511,22 @@ def main() -> int:
         )
         return 1
 
-    _write_weights(blob, args)
+    _write_weights(blob, args, metrics)
     return 0
 
 
-def _write_weights(blob: bytes, args) -> None:
+def _write_weights(blob: bytes, args, metrics, real_metrics=None) -> None:
     """Write the serialized weights: `--write` overwrites the crate's
     `weights.bin` (backing up the old one to `.bak`); otherwise a scratch file
     next to the corpus, never touching the shipped crate."""
     if args.write:
+        real = real_metrics or {}
+        recall = real.get("recall_at_0_40_floor", real.get("real_pos_recall_at_0.40_floor"))
+        if not isinstance(recall, (float, int)):
+            raise SystemExit(
+                "REFUSING to write: real held-out metrics must include numeric "
+                "recall_at_0_40_floor before weights.bin is touched"
+            )
         if os.path.exists(args.out):
             shutil.copy2(args.out, args.out + ".bak")
             sys.stderr.write(f"backed up existing weights -> {args.out}.bak\n")
@@ -453,6 +539,7 @@ def _write_weights(blob: bytes, args) -> None:
         with open(scratch, "wb") as fh:
             fh.write(blob)
         sys.stderr.write(f"wrote {scratch} (pass --write to update {args.out})\n")
+    write_model_card(blob, args, metrics, real_metrics)
 
 
 if __name__ == "__main__":

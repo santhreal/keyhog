@@ -320,6 +320,10 @@ fn print_version_info(full: bool) {
         "ML Model Version: {}",
         keyhog_scanner::ml_scorer::model_version()
     );
+    println!(
+        "ML Model Card: {}",
+        keyhog_scanner::ml_scorer::model_card_summary()
+    );
     if !full {
         return;
     }

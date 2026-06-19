@@ -113,6 +113,16 @@ pub fn model_version() -> &'static str {
     ml_weights::MODEL_VERSION
 }
 
+/// Return a compact embedded model-card summary for diagnostics and CLI output.
+pub fn model_card_summary() -> &'static str {
+    ml_weights::MODEL_CARD_SUMMARY
+}
+
+/// Return the full embedded model-card JSON for provenance-aware tooling.
+pub fn model_card_json() -> &'static str {
+    ml_weights::MODEL_CARD_JSON
+}
+
 /// Forward pass through the MoE model with hardcoded weights.
 ///
 /// Two layered optimizations, both numerically inert:

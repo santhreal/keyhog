@@ -8,7 +8,7 @@
 use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize, Serializer};
 use std::borrow::Cow;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 use crate::{SensitiveString, Severity};
@@ -267,7 +267,12 @@ impl Serialize for VerifiedFinding {
         state.serialize_field("credential_hash", &hex_encode(&self.credential_hash))?;
         state.serialize_field("location", &self.location)?;
         state.serialize_field("verification", &self.verification)?;
-        state.serialize_field("metadata", &self.metadata)?;
+        let sorted_metadata: BTreeMap<&str, &str> = self
+            .metadata
+            .iter()
+            .map(|(key, value)| (key.as_str(), value.as_str()))
+            .collect();
+        state.serialize_field("metadata", &sorted_metadata)?;
         state.serialize_field("additional_locations", &self.additional_locations)?;
         if let Some(confidence) = self.confidence {
             state.serialize_field("confidence", &confidence)?;

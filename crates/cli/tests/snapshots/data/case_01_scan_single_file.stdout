@@ -1,8 +1,13 @@
   ┌    CRITICAL ─── AWS Access Key
   │ Secret:     AKIA...7XYA
   │ Location:   <TMP>/planted.txt:1
-  │ Confidence: ■■■■□□  80%
-  │ Action:     Revoke immediately and rotate.
+  │ Confidence: ■■■■■■ 100%
+  │ account_id: 052310077262
+  │ canary_message: AWS canary token (canarytokens.org / Thinkst-style). Do NOT verify: a verification request alerts whoever planted it. See https://trufflesecurity.com/canaries
+  │ is_canary:  true
+  │ Action:     Disable or delete the exposed IAM access key, then rotate any paired secret access key and session token.
+  │ Command:    aws iam update-access-key --access-key-id {{credential}} --status Inactive
+  │ Docs:       https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html#Using_ManagingAccessKeys
   └─────────────────────────────────────────────
 
   ━━━ Results ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

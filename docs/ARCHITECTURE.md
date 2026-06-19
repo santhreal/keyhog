@@ -133,7 +133,10 @@ ml/retrain_loop.sh     one command: harvest → train → (--write) ship weights
 ```
 
 Because the model is compile-time-embedded, a new model is only observable after
-a rebuild — which is why `--verify` rebuilds before benching.
+a rebuild — which is why `--verify` rebuilds before benching. The adjacent
+`crates/scanner/src/model_card.json` carries the model hash, training inputs,
+and gate metrics; `build.rs` refuses a card/weights mismatch and embeds the
+summary shown by `keyhog --version`.
 
 ---
 

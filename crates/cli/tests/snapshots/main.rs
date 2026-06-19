@@ -189,11 +189,31 @@ struct Captured {
 }
 
 fn run_keyhog(args: &[&str], tempdir_root: &Path) -> Captured {
+    let mut argv = Vec::with_capacity(args.len() + 2);
+    if args.first() == Some(&"scan") && !args.contains(&"--backend") {
+        // Snapshot cases pin output formatting and exit semantics, not
+        // autoroute. Runtime autoroute is calibration-backed and may fail
+        // loudly on an uncalibrated host, so pin a real backend here.
+        argv.push("scan");
+        argv.push("--backend");
+        argv.push("cpu");
+        argv.extend_from_slice(&args[1..]);
+    } else {
+        argv.extend_from_slice(args);
+    }
+
+    let cache_home = tempdir_root.join(".cache");
+    let config_home = tempdir_root.join(".config");
+    let data_home = tempdir_root.join(".local").join("share");
     let output = Command::new(binary())
         // Keep the in-process path: snapshots cannot depend on whether
         // `keyhog daemon` happens to be running on the host.
-        .args(args)
+        .args(&argv)
         .env("NO_COLOR", "1")
+        .env("HOME", tempdir_root)
+        .env("XDG_CACHE_HOME", &cache_home)
+        .env("XDG_CONFIG_HOME", &config_home)
+        .env("XDG_DATA_HOME", &data_home)
         // Silence colour from anything that consults TERM directly.
         .env("TERM", "dumb")
         // Pin the working directory so any relative path the binary
@@ -311,6 +331,7 @@ fn normalize(raw: &str, tempdir_root: &Path) -> String {
     out = rewrite_after_needle(&out, "KeyHog v");
     out = rewrite_after_needle(&out, "Build Target: ");
     out = rewrite_after_needle(&out, "ML Model Version: ");
+    out = rewrite_after_needle(&out, "ML Model Card: ");
     // SARIF tool.driver.version: `"version":"0.5.37"`
     out = rewrite_quoted_after(&out, "\"version\":");
     out = rewrite_quoted_after(&out, "\"semanticVersion\":");
@@ -1028,9 +1049,10 @@ fn csv_format_is_valid_and_row_count_matches_findings() {
 /// `tag` in `xml`. Returns the unescaped attribute text. A tiny, deliberately
 /// boring XML attribute reader (no `quick-xml` dep so this harness keeps zero
 /// failure surface of its own); it locates `<tag ` then the `attr="..."`
-/// inside that start tag.
+/// inside that start tag. The element name match requires a tag boundary so
+/// asking for `testsuite` does not read the parent `<testsuites>` element.
 fn xml_attr(xml: &str, tag: &str, attr: &str) -> Option<String> {
-    let open = format!("<{tag}");
+    let open = format!("<{tag} ");
     let start = xml.find(&open)?;
     let after = &xml[start..];
     let tag_end = after.find('>')?;

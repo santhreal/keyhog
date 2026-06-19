@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "model_version": "moe-v1-8c4d64ffb8fed94e",
+  "weights_fnv1a64": "8c4d64ffb8fed94e",
+  "architecture": "moe-v1",
+  "feature_count": 42,
+  "recorded_date": "2026-06-19",
+  "trainer": "ml/train_classifier.py",
+  "feature_source": "Rust dump_features serve path",
+  "training_inputs": {
+    "synthetic": "ml/corpus.py generated corpus",
+    "real_distribution": "CredData harvested candidates; raw real_corpus files are gitignored"
+  },
+  "metrics": {
+    "synthetic_heldout": {
+      "f1": 0.964,
+      "precision": 0.976,
+      "recall": 0.953,
+      "base64_binary_false_flag_rate": 0.0,
+      "base64_binary_false_flags": "0/537"
+    },
+    "real_heldout": {
+      "recall_at_0_40_floor": 0.76
+    },
+    "mirror_never_trained": {
+      "precision": 0.994,
+      "recall_delta_points": 0.7
+    }
+  }
+}

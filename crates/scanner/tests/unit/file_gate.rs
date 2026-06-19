@@ -9,7 +9,9 @@ use keyhog_scanner::decode::{base64_decode, hex_decode};
 use keyhog_scanner::engine::CompiledScanner;
 use keyhog_scanner::entropy::{shannon_entropy, HIGH_ENTROPY_THRESHOLD};
 use keyhog_scanner::gpu::{batch_ml_inference, gpu_available, gpu_probe};
-use keyhog_scanner::ml_scorer::{model_version, score, score_with_config};
+use keyhog_scanner::ml_scorer::{
+    model_card_json, model_card_summary, model_version, score, score_with_config,
+};
 use keyhog_scanner::resolution::resolve_matches;
 use keyhog_scanner::telemetry::{
     drain_events, enable_dogfood, record_example_suppression, testing::reset,
@@ -1269,6 +1271,8 @@ fn ml_scorer_happy() {
 #[test]
 fn ml_scorer_error() {
     assert!(!model_version().is_empty());
+    assert!(model_card_summary().contains("real recall@0.40"));
+    assert!(model_card_json().contains("\"model_version\""));
 }
 
 // ── crates/scanner/src/ml_scorer/ml_weights.rs ──────────────────────────────────
@@ -1284,6 +1288,7 @@ fn ml_weights_happy() {
 #[test]
 fn ml_weights_error() {
     assert!(!model_version().is_empty());
+    assert!(model_card_summary().contains("synthetic F1"));
 }
 
 // ── crates/scanner/src/multiline/config.rs ────────────────────────────

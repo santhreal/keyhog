@@ -137,7 +137,9 @@ impl<W: Write + Send> SarifReporter<W> {
             "owasp".to_string(),
             serde_json::Value::String("A07:2021".to_string()),
         );
-        for (key, value) in &finding.metadata {
+        let mut metadata: Vec<_> = finding.metadata.iter().collect();
+        metadata.sort_by(|(left, _), (right, _)| left.cmp(right));
+        for (key, value) in metadata {
             properties.insert(
                 format!("metadata.{}", key),
                 serde_json::Value::String(value.to_string()),

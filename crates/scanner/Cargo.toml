@@ -130,6 +130,9 @@ tempfile = { workspace = true }
 # without touching Rust.
 toml = { workspace = true }
 
+[build-dependencies]
+serde_json = { workspace = true }
+
 [target.'cfg(target_os = "linux")'.dependencies]
 io-uring = { workspace = true }
 # CUDA is the primary GPU backend on Linux when the `gpu` feature is on. The
