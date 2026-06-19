@@ -1,7 +1,7 @@
 # Detectors
 
 A **detector** is a single TOML file that teaches KeyHog one shape of
-credential. There are 899 of them in the embedded corpus today,
+credential. There are 902 of them in the embedded corpus today,
 spread across `detectors/*.toml`.
 
 ## Anatomy of a detector
@@ -96,8 +96,8 @@ primary's finding is dropped.
 
 `detector.verify` - optional. If present, `keyhog scan --verify`
 makes the documented API call with the captured credential and:
-- live + valid → keep severity, mark `verification: "verified-live"`
-- live + invalid → downgrade severity one tier, mark `"verified-dead"`
+- live + valid -> keep severity, mark `verification: "live"`
+- live + invalid -> downgrade severity one tier, mark `verification: "dead"`
 
 ## Listing detectors
 
@@ -105,7 +105,7 @@ makes the documented API call with the captured credential and:
 keyhog detectors                  # human-readable list, grouped by service
 keyhog detectors --json           # one JSON object per detector
 keyhog detectors --json | jq length
-899
+902
 ```
 
 Filter by service:
@@ -186,7 +186,7 @@ directory holding only the TOMLs you want:
 ```sh
 mkdir my-detectors
 cp detectors/stripe-secret-key.toml detectors/aws-*.toml my-detectors/
-keyhog scan . --detectors my-detectors/     # or KEYHOG_DETECTORS=my-detectors
+keyhog scan . --detectors my-detectors/
 ```
 
 ## Quieting a noisy detector

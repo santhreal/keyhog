@@ -1,5 +1,5 @@
 use keyhog_core::embedded_detector_count;
-use keyhog_scanner::hw_probe::*;
+use keyhog_scanner::hw_probe::testing::*;
 fn caps() -> HardwareCaps {
     HardwareCaps {
         physical_cores: 8,
@@ -10,6 +10,7 @@ fn caps() -> HardwareCaps {
         gpu_available: false,
         gpu_name: None,
         gpu_vram_mb: None,
+        gpu_runtime_identity: None,
         gpu_is_software: false,
         total_memory_mb: Some(32 * 1024),
         io_uring_available: false,
@@ -66,20 +67,32 @@ fn startup_banner_format() {
 }
 
 #[test]
-fn windows_powershell_fallback() {
-    // The Windows physical-core probe falls through `keyhog_core::safe_bin`
-    // to a powershell or wmic invocation. We can't reach the private
-    // `windows_physical_cores()` symbol from an integration test, so we
-    // exercise it indirectly through `probe_hardware()` and just assert
-    // that a non-zero physical_cores count was discovered. If the
-    // PowerShell fallback panicked or returned None on Windows, this
-    // would fire because the upstream probe returns 1 as a last resort.
+fn hardware_probes_do_not_fall_back_to_path_binaries() {
+    let src = include_str!("../../src/hw_probe/platform.rs");
+    assert!(
+        !src.contains("resolve_or_fallback"),
+        "hardware probes must not execute PATH binaries when trusted resolution misses"
+    );
+    assert!(
+        src.contains(r#"resolve_safe_bin("sysctl")"#)
+            && src.contains(r#"resolve_safe_bin("powershell")"#)
+            && src.contains(r#"resolve_safe_bin("wmic")"#),
+        "hardware probes must resolve platform commands through the trusted absolute binary resolver"
+    );
+}
+
+#[test]
+fn windows_powershell_probe_still_reports_cores() {
+    // We can't reach the private `windows_physical_cores()` symbol from an
+    // integration test, so exercise it indirectly through `probe_hardware()`.
+    // If trusted PowerShell/WMIC probing regresses on Windows, the upstream
+    // probe still returns a conservative >=1 core count rather than panicking.
     #[cfg(target_os = "windows")]
     {
-        let hw = keyhog_scanner::hw_probe::probe_hardware();
+        let hw = keyhog_scanner::hw_probe::testing::probe_hardware();
         assert!(
             hw.physical_cores >= 1,
-            "physical_cores probe returned {}; powershell fallback may have panicked",
+            "physical_cores probe returned {}; trusted PowerShell/WMIC probe may have panicked",
             hw.physical_cores
         );
     }

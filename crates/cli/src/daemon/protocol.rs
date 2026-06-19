@@ -81,13 +81,10 @@ pub enum Response {
     /// example/test keys suppressed") fires even when the suppression
     /// happened on the other side of the socket.
     ///
-    /// `dogfood_events` is non-empty only when the daemon was started
-    /// with `KEYHOG_DOGFOOD=1` in its environment, OR when a
-    /// future protocol lets the client toggle dogfood per-request.
-    /// Today we ship the env-var path because it requires zero
-    /// per-request wire change and `keyhog scan --dogfood` users who
-    /// also need daemon mode can `KEYHOG_DOGFOOD=1 keyhog daemon
-    /// start`.
+    /// `dogfood_events` is reserved for a protocol-owned dogfood mode. The
+    /// shipped CLI currently keeps `--dogfood` on the in-process scanner route
+    /// because daemon scanners are precompiled and cannot honor per-request
+    /// dogfood capture without a protocol-owned request field.
     ScanResults {
         path: Option<String>,
         /// Security: each `RawMatch` carries the *unredacted* plaintext
@@ -106,9 +103,8 @@ pub enum Response {
         /// to 0 for back-compat with v1 servers (serde default).
         #[serde(default)]
         engine_example_suppressions: u64,
-        /// Wire-v2: per-decision dogfood events captured on the
-        /// daemon side. Empty unless the daemon was started with
-        /// `KEYHOG_DOGFOOD=1`.
+        /// Wire-v2: per-decision dogfood events captured on the daemon side.
+        /// Empty until the protocol has an explicit per-request dogfood field.
         #[serde(default)]
         dogfood_events: Vec<DogfoodEvent>,
     },
@@ -124,4 +120,17 @@ pub enum Response {
     /// Acknowledgement for `Shutdown`. The daemon closes the socket
     /// after sending this; the client should not write again.
     Shutdown,
+}
+
+/// One-word kind label for a daemon [`Response`]. Use this in user-facing
+/// protocol errors instead of `Debug`: response payloads can contain scanner
+/// results and therefore credential-shaped data.
+pub(crate) fn response_kind(response: &Response) -> &'static str {
+    match response {
+        Response::Hello { .. } => "Hello",
+        Response::Health { .. } => "Health",
+        Response::ScanResults { .. } => "ScanResults",
+        Response::Shutdown => "Shutdown",
+        Response::Error { .. } => "Error",
+    }
 }

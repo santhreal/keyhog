@@ -61,7 +61,7 @@ fn detect_cpu_model() -> Option<String> {
     }
     #[cfg(target_os = "macos")]
     {
-        let sysctl = keyhog_core::safe_bin::resolve_or_fallback("sysctl");
+        let sysctl = keyhog_core::resolve_safe_bin("sysctl")?;
         if let Some(model) =
             command_first_nonempty_stdout_line(&sysctl, &["-n", "machdep.cpu.brand_string"])
         {
@@ -102,17 +102,19 @@ fn parse_cpuinfo_model(content: &str) -> Option<String> {
 
 #[cfg(target_os = "windows")]
 fn windows_cpu_model() -> Option<String> {
-    let ps = keyhog_core::safe_bin::resolve_or_fallback("powershell");
-    command_first_nonempty_stdout_line(
-        &ps,
-        &[
-            "-NoProfile",
-            "-Command",
-            "(Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty Name)",
-        ],
-    )
-    .or_else(|| {
-        let wmic = keyhog_core::safe_bin::resolve_or_fallback("wmic");
+    keyhog_core::resolve_safe_bin("powershell")
+        .and_then(|ps| {
+            command_first_nonempty_stdout_line(
+                &ps,
+                &[
+                    "-NoProfile",
+                    "-Command",
+                    "(Get-CimInstance Win32_Processor | Select-Object -First 1 -ExpandProperty Name)",
+                ],
+            )
+        })
+        .or_else(|| {
+        let wmic = keyhog_core::resolve_safe_bin("wmic")?;
         command_first_nonempty_stdout_line(&wmic, &["cpu", "get", "Name", "/value"]).and_then(
             |line| {
                 line.strip_prefix("Name=")
@@ -120,7 +122,7 @@ fn windows_cpu_model() -> Option<String> {
                     .map(str::to_string)
             },
         )
-    })
+        })
 }
 
 #[cfg(any(target_os = "macos", target_os = "windows"))]

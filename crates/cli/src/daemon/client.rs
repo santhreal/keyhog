@@ -2,7 +2,7 @@
 //! one request/response pair at a time over a Unix socket.
 
 use crate::daemon::frame;
-use crate::daemon::protocol::{Request, Response, WIRE_VERSION};
+use crate::daemon::protocol::{response_kind, Request, Response, WIRE_VERSION};
 use crate::daemon::trust;
 use anyhow::{bail, Context, Result};
 use std::path::Path;
@@ -103,7 +103,10 @@ async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result
             "daemon wire version mismatch: client expects {WIRE_VERSION}, daemon at {} reports {wire_version} (keyhog {keyhog_version}). Restart the daemon or pass --no-daemon.",
             socket_path.display(),
         ),
-        other => bail!("daemon client: expected Hello reply, got {other:?}"),
+        other => bail!(
+            "daemon client: expected Hello reply, got {}. Restart the daemon or pass --no-daemon.",
+            response_kind(&other)
+        ),
     }
 }
 

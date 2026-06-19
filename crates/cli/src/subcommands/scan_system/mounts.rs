@@ -100,7 +100,7 @@ fn linux_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
             Some(t) => t,
             None => continue,
         };
-        let fstype = fields.next().unwrap_or("");
+        let fstype = fields.next().unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
         if SKIP_FS_TYPES.contains(&fstype) {
             continue;
         }
@@ -167,8 +167,15 @@ fn decode_octal_escapes(s: &str) -> String {
 
 #[cfg(target_os = "macos")]
 fn macos_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
-    // SECURITY (kimi-wave1 audit 3.PATH-mount): use absolute path.
-    let bin = keyhog_core::safe_bin::resolve_or_fallback("mount");
+    // SECURITY (kimi-wave1 audit 3.PATH-mount): use a trusted absolute path.
+    // `scan-system` is an operator-visible audit surface; do not execute an
+    // arbitrary PATH `mount` binary if the safe resolver misses.
+    let bin = keyhog_core::resolve_safe_bin("mount").ok_or_else(|| {
+        anyhow::anyhow!(
+            "scan-system: trusted mount(8) binary not found. Install the system mount tool or \
+             add its absolute directory to [system].trusted_bin_dirs in .keyhog.toml"
+        )
+    })?;
     let output = std::process::Command::new(&bin)
         .output()
         .context("run mount(8)")?;
@@ -180,7 +187,7 @@ fn macos_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
             if let Some(paren_idx) = rest.find(" (") {
                 let path = &rest[..paren_idx];
                 let fs_info = &rest[paren_idx + 2..];
-                let fstype = fs_info.split(',').next().unwrap_or("").trim();
+                let fstype = fs_info.split(',').next().unwrap_or("").trim(); // LAW10: missing/non-string field => empty/placeholder; recall-safe
                 if matches!(fstype, "devfs" | "autofs" | "tmpfs") {
                     continue;
                 }

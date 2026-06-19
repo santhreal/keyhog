@@ -28,6 +28,22 @@ use tokio::net::UnixListener;
 /// with the given wire + keyhog version, then closes. Returns once the listener
 /// is bound so the client connect cannot race ahead of it.
 async fn spawn_mock_daemon(socket: PathBuf, wire_version: u32, keyhog_version: String) {
+    spawn_mock_daemon_response(
+        socket,
+        Response::Hello {
+            wire_version,
+            keyhog_version,
+            detector_count: 902,
+            uptime_secs: 1,
+        },
+    )
+    .await;
+}
+
+/// Spawn a one-shot mock daemon that replies to the client's `Hello` with an
+/// arbitrary response. Used for protocol-mismatch paths where the client must
+/// not dump daemon-controlled payload fields into the operator error.
+async fn spawn_mock_daemon_response(socket: PathBuf, response: Response) {
     if let Some(parent) = socket.parent() {
         std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
             .expect("chmod mock daemon parent 0700");
@@ -45,16 +61,7 @@ async fn spawn_mock_daemon(socket: PathBuf, wire_version: u32, keyhog_version: S
             if !matches!(req, Ok(Some(Request::Hello))) {
                 return;
             }
-            let _ = frame::write_response(
-                &mut writer,
-                &Response::Hello {
-                    wire_version,
-                    keyhog_version,
-                    detector_count: 902,
-                    uptime_secs: 1,
-                },
-            )
-            .await;
+            let _ = frame::write_response(&mut writer, &response).await;
             // Keep the connection alive briefly so the client finishes reading.
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
@@ -165,5 +172,34 @@ async fn connect_still_rejects_wire_version_mismatch() {
     assert!(
         msg.contains("wire version mismatch"),
         "wire-version mismatch must be reported distinctly: {msg}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn connect_protocol_mismatch_does_not_dump_response_payload() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = dir.path().join("wrong-kind.sock");
+    spawn_mock_daemon_response(
+        socket.clone(),
+        Response::Error {
+            message: "daemon-controlled plaintext payload must stay hidden".to_string(),
+        },
+    )
+    .await;
+
+    let res = client::connect(&socket).await;
+    assert!(
+        res.is_err(),
+        "connect must reject a non-Hello handshake response"
+    );
+    let err = res.err().unwrap();
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("expected Hello reply") && msg.contains("Error"),
+        "protocol mismatch should name only the response kind: {msg}"
+    );
+    assert!(
+        !msg.contains("plaintext payload") && !msg.contains("message:"),
+        "daemon client must not Debug-dump daemon-controlled response fields: {msg}"
     );
 }

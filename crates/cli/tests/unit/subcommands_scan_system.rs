@@ -143,3 +143,24 @@ fn git_repo_discovery_does_not_flatten_read_dir_errors() {
         "scan-system repo discovery must warn for per-entry and whole-directory read failures"
     );
 }
+
+#[test]
+fn macos_scan_system_mount_enumeration_does_not_fall_back_to_path() {
+    let src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/subcommands/scan_system/mounts.rs"
+    ))
+    .expect("scan-system mount source readable");
+    assert!(
+        src.contains(r#"resolve_safe_bin("mount")"#),
+        "macOS scan-system mount enumeration must use the trusted absolute binary resolver"
+    );
+    assert!(
+        !src.contains(r#"resolve_or_fallback("mount")"#),
+        "macOS scan-system must not execute an untrusted PATH mount binary when trusted resolution misses"
+    );
+    assert!(
+        src.contains("[system].trusted_bin_dirs"),
+        "trusted mount resolution failure must tell the operator how to configure a non-standard mount path"
+    );
+}
