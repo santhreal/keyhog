@@ -3,39 +3,30 @@
 //! `stackblitz-credentials` finding at offset 1801032 of
 //! `big_with_secrets.txt` while CPU SIMD and GPU literal-set both
 //! find it. The original observation comes from
-//! `.internal/bench/bench_all.sh`, where the scoreboard has long
-//! documented this as a known-broken cell pending a real fix.
+//! `.internal/bench/bench_all.sh`, where the scoreboard exposed a
+//! GPU-vs-CPU recall divergence that must stay executable.
 //!
 //! Reproduction strategy: drive a real `CompiledScanner` (loads the
-//! full 894-detector set, identical to what the binary uses) over
-//! the actual bench-corpus slice that contains the missed secret,
-//! then compare SIMD vs GPU AC findings. The slice is read directly
-//! from the persisted bench corpus on disk so the bug we reproduce
-//! is the same bug the bench surfaces, not a synthetic
-//! approximation.
-//!
-//! Skipped when:
-//! - the bench corpus isn't present (CI image without the persisted
-//!   corpus volume; the `build_corpora.sh` script provisions it but
-//!   it lives outside the repo so a fresh clone won't have it; set
-//!   `KEYHOG_GPU_AC_RECALL_CORPUS=/path/to/big_with_secrets.txt`),
-//! - no compatible wgpu adapter is detected.
-//!
-//! When the bug is fixed this test stops being a skip-on-no-corpus
-//! repro and becomes a regression gate: the SIMD vs GPU finding
-//! sets MUST agree at the stackblitz offset (and globally, on this
-//! slice).
+//! full detector set, identical to what the binary uses) over
+//! a corpus slice that contains the missed secret, then compare SIMD
+//! vs GPU AC findings. If `KEYHOG_GPU_AC_RECALL_CORPUS` is set, the
+//! test reads that exact file and fails on read/drift errors. Without
+//! an override it uses a deterministic generated corpus with the same
+//! token offset, so a fresh checkout still exercises the regression.
 
 mod support;
+use support::gpu_gate::require_gpu_or_panic;
 use support::paths::detector_dir;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 
 const GPU_AC_RECALL_CORPUS_ENV: &str = "KEYHOG_GPU_AC_RECALL_CORPUS";
 const GPU_AC_RECALL_CORPUS_REPO_REL: &str = "benchmarks/corpora/gpu_ac_recall/big_with_secrets.txt";
+const GENERATED_CORPUS_LEN: usize = 33 * 1024 * 1024;
 
 fn bench_corpus_path() -> PathBuf {
     if let Some(path) = std::env::var_os(GPU_AC_RECALL_CORPUS_ENV) {
@@ -48,39 +39,90 @@ fn bench_corpus_path() -> PathBuf {
     path
 }
 
-fn print_missing_corpus_skip(path: &Path) {
-    eprintln!(
-        "SKIP: bench corpus not present at {}. Set {GPU_AC_RECALL_CORPUS_ENV}=\
-         /path/to/big_with_secrets.txt to run this GPU AC recall regression.",
-        path.display()
-    );
-}
-
-/// Offset of the `sb_4bZ39EnIvgTAxogqQ1wam7az` credential in
-/// `big_with_secrets.txt`. The corpus is deterministically built by
-/// `.internal/bench/build_corpora.sh` and this offset is stable
-/// across rebuilds - the planted-secrets section is appended last,
-/// after a fixed-size source-tree prefix.
+/// Offset of the `sb_4bZ39EnIvgTAxogqQ1wam7az` credential in the
+/// external `big_with_secrets.txt` corpus and in the generated fallback
+/// corpus used by fresh checkouts.
 const STACKBLITZ_OFFSET: usize = 1_801_032;
 const STACKBLITZ_TOKEN: &str = "sb_4bZ39EnIvgTAxogqQ1wam7az";
 
-/// Read a window from the bench corpus centered on the stackblitz
+static CORPUS_BYTES: OnceLock<Vec<u8>> = OnceLock::new();
+
+fn read_required_corpus(path: PathBuf) -> Vec<u8> {
+    std::fs::read(&path).unwrap_or_else(|e| {
+        panic!(
+            "read GPU AC recall corpus {}: {e}. Fix the path or unset {GPU_AC_RECALL_CORPUS_ENV} \
+             to use the generated regression corpus.",
+            path.display()
+        )
+    })
+}
+
+fn generated_gpu_ac_recall_corpus() -> Vec<u8> {
+    let mut bytes = vec![b'a'; GENERATED_CORPUS_LEN];
+    for index in (0..bytes.len()).step_by(4096) {
+        bytes[index] = b'\n';
+    }
+
+    let context = b"stackblitz_token = \"";
+    let context_start = STACKBLITZ_OFFSET
+        .checked_sub(context.len())
+        .expect("generated corpus context fits before token offset");
+    bytes[context_start..context_start + context.len()].copy_from_slice(context);
+    bytes[STACKBLITZ_OFFSET..STACKBLITZ_OFFSET + STACKBLITZ_TOKEN.len()]
+        .copy_from_slice(STACKBLITZ_TOKEN.as_bytes());
+    bytes[STACKBLITZ_OFFSET + STACKBLITZ_TOKEN.len()] = b'"';
+    bytes[STACKBLITZ_OFFSET + STACKBLITZ_TOKEN.len() + 1] = b'\n';
+    bytes
+}
+
+fn corpus_bytes() -> &'static [u8] {
+    CORPUS_BYTES.get_or_init(|| {
+        if std::env::var_os(GPU_AC_RECALL_CORPUS_ENV).is_some() {
+            return read_required_corpus(bench_corpus_path());
+        }
+        let path = bench_corpus_path();
+        if path.exists() {
+            return read_required_corpus(path);
+        }
+        generated_gpu_ac_recall_corpus()
+    })
+}
+
+fn require_stackblitz_token(bytes: &[u8]) -> usize {
+    let needle = STACKBLITZ_TOKEN.as_bytes();
+    bytes
+        .windows(needle.len())
+        .position(|w| w == needle)
+        .unwrap_or_else(|| {
+            panic!(
+                "GPU AC recall corpus does not contain planted token {STACKBLITZ_TOKEN}; \
+                 fix {GPU_AC_RECALL_CORPUS_ENV} or the generated fixture"
+            )
+        })
+}
+
+fn wgpu_device_available_or_policy_allows_absence(context: &str) -> bool {
+    match vyre_driver_wgpu::runtime::cached_device() {
+        Ok(_) => true,
+        Err(error) => {
+            require_gpu_or_panic(context);
+            eprintln!(
+                "{context}: GPU AC recall not run because no wgpu adapter is available and GPU runtime policy does not require one: {error}"
+            );
+            false
+        }
+    }
+}
+
+/// Read a window from the recall corpus centered on the stackblitz
 /// offset. 64 KiB is enough to cover the AC's bounded suffix window
 /// many times over while staying small enough that the test runs in
 /// seconds, not minutes.
-fn read_window() -> Option<Vec<u8>> {
-    let path = bench_corpus_path();
-    if !path.exists() {
-        return None;
-    }
-    use std::io::{Read, Seek, SeekFrom};
-    let mut f = std::fs::File::open(&path).ok()?;
+fn read_window() -> Vec<u8> {
+    let bytes = corpus_bytes();
     let win_start = STACKBLITZ_OFFSET.saturating_sub(8 * 1024);
-    f.seek(SeekFrom::Start(win_start as u64)).ok()?;
-    let mut buf = vec![0u8; 64 * 1024];
-    let n = f.read(&mut buf).ok()?;
-    buf.truncate(n);
-    Some(buf)
+    let win_end = (win_start + 64 * 1024).min(bytes.len());
+    bytes[win_start..win_end].to_vec()
 }
 
 fn make_chunk(bytes: Vec<u8>) -> Chunk {
@@ -107,10 +149,7 @@ fn finds_stackblitz(matches: &[keyhog_core::RawMatch]) -> bool {
 /// detector set has drifted, not the AC kernel.
 #[test]
 fn baseline_simd_finds_stackblitz_token() {
-    let Some(window) = read_window() else {
-        print_missing_corpus_skip(&bench_corpus_path());
-        return;
-    };
+    let window = read_window();
     // Sanity: the window must actually contain the planted token,
     // otherwise neither backend would be expected to find it.
     let s = String::from_utf8_lossy(&window);
@@ -120,13 +159,7 @@ fn baseline_simd_finds_stackblitz_token() {
          corpus drift - rebuild via .internal/bench/build_corpora.sh"
     );
 
-    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors unavailable: {e}");
-            return;
-        }
-    };
+    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors load");
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
     let chunk = make_chunk(window);
     let matches = scanner.scan(&chunk);
@@ -147,26 +180,15 @@ fn baseline_simd_finds_stackblitz_token() {
 /// dispatch path below.
 #[test]
 fn gpu_ac_kernel_finds_stackblitz_token_in_narrow_window() {
-    let Some(window) = read_window() else {
-        print_missing_corpus_skip(&bench_corpus_path());
-        return;
-    };
-    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors unavailable: {e}");
-            return;
-        }
-    };
+    let window = read_window();
+    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors load");
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
 
-    // Skip when no GPU adapter is available - we can't claim AC
-    // kernel parity if the kernel can't even run. The skip is loud
-    // (eprintln) so a no-GPU machine doesn't fake-pass.
-    let Ok(_dq) = vyre_driver_wgpu::runtime::cached_device() else {
-        eprintln!("SKIP: no wgpu adapter available");
+    if !wgpu_device_available_or_policy_allows_absence(
+        "gpu_ac_kernel_finds_stackblitz_token_in_narrow_window",
+    ) {
         return;
-    };
+    }
 
     let chunks = [make_chunk(window)];
     // Direct call to the AC dispatch path - independent of the
@@ -202,36 +224,14 @@ fn gpu_ac_kernel_finds_stackblitz_token_in_narrow_window() {
 /// pipeline stage's bound is crossed.
 #[test]
 fn bisect_gpu_ac_recall_by_window_size() {
-    let path = bench_corpus_path();
-    if !path.exists() {
-        print_missing_corpus_skip(&path);
+    let bytes = corpus_bytes();
+    let needle_off = require_stackblitz_token(bytes);
+
+    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors load");
+    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
+    if !wgpu_device_available_or_policy_allows_absence("bisect_gpu_ac_recall_by_window_size") {
         return;
     }
-    let bytes = match std::fs::read(&path) {
-        Ok(b) => b,
-        Err(e) => {
-            eprintln!("SKIP: bench corpus unreadable: {e}");
-            return;
-        }
-    };
-    let needle = STACKBLITZ_TOKEN.as_bytes();
-    let Some(needle_off) = bytes.windows(needle.len()).position(|w| w == needle) else {
-        eprintln!("SKIP: corpus missing planted token");
-        return;
-    };
-
-    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors unavailable: {e}");
-            return;
-        }
-    };
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
-    let Ok(_dq) = vyre_driver_wgpu::runtime::cached_device() else {
-        eprintln!("SKIP: no wgpu adapter available");
-        return;
-    };
 
     const MIB: usize = 1024 * 1024;
     // Sizes around the 1-shard / 2-shard boundary (max single-shard
@@ -316,54 +316,25 @@ fn bisect_gpu_ac_recall_by_window_size() {
     }
 }
 
-/// Full-corpus repro: ingests the entire 64 MiB bench corpus as a
-/// single `Chunk` (mirrors how `keyhog scan big_with_secrets.txt`
-/// chunks it - the default `window_size` is 64 MiB, so a 64-MiB
-/// file is a single chunk by design). This is the dispatch shape
-/// the bench harness measures, so reproducing it in-process gives
-/// a focused unit-of-debug independent of the CLI wrapper.
-///
-/// Expected current behaviour: this test will FAIL - it's the
-/// regression gate for task #56. When the kernel is fixed and the
-/// scoreboard's gpu-ac/big_with_secrets cell's expected count
-/// moves from 14 to 15, this test starts passing.
+/// Full-corpus repro: ingests the entire recall corpus as a single `Chunk`.
+/// With an external 64 MiB `big_with_secrets.txt`, this mirrors the dispatch
+/// shape the bench harness measures. With the generated 33 MiB fallback, it
+/// still crosses the multi-shard GPU dispatch path and keeps the stackblitz
+/// recall assertion executable in a fresh checkout.
 #[test]
 fn gpu_ac_kernel_must_find_stackblitz_token_on_full_corpus() {
-    let path = bench_corpus_path();
-    if !path.exists() {
-        print_missing_corpus_skip(&path);
-        return;
-    }
-    let bytes = match std::fs::read(&path) {
-        Ok(b) => b,
-        Err(e) => {
-            eprintln!("SKIP: bench corpus unreadable: {e}");
-            return;
-        }
-    };
+    let bytes = corpus_bytes().to_vec();
     // Sanity: the planted token must live at the expected offset.
-    let token_bytes = STACKBLITZ_TOKEN.as_bytes();
-    if !bytes.windows(token_bytes.len()).any(|w| w == token_bytes) {
-        eprintln!(
-            "SKIP: bench corpus does not contain planted token \
-             {STACKBLITZ_TOKEN}; rebuild via .internal/bench/build_corpora.sh"
-        );
-        return;
-    }
+    require_stackblitz_token(&bytes);
 
-    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors unavailable: {e}");
-            return;
-        }
-    };
+    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors load");
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
 
-    let Ok(_dq) = vyre_driver_wgpu::runtime::cached_device() else {
-        eprintln!("SKIP: no wgpu adapter available");
+    if !wgpu_device_available_or_policy_allows_absence(
+        "gpu_ac_kernel_must_find_stackblitz_token_on_full_corpus",
+    ) {
         return;
-    };
+    }
 
     let chunks = [make_chunk(bytes)];
 

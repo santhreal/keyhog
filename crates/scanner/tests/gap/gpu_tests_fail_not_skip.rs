@@ -37,4 +37,15 @@ fn gpu_ac_recall_test_does_not_pin_personal_corpus_path() {
         src.contains("benchmarks/corpora/gpu_ac_recall"),
         "gpu AC recall regression must have a repo-relative corpus fallback"
     );
+    assert!(
+        src.contains("generated_gpu_ac_recall_corpus"),
+        "gpu AC recall regression must generate a bounded default corpus instead of passing when the external corpus is absent"
+    );
+    assert!(
+        !src.contains("SKIP: bench corpus")
+            && !src.contains("print_missing_corpus_skip")
+            && !src.contains("SKIP: detectors unavailable")
+            && !src.contains("SKIP: corpus missing planted token"),
+        "gpu AC recall regression must fail loud on corpus/detector drift instead of returning a green skip"
+    );
 }
