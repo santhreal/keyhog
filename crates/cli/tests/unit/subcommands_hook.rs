@@ -71,8 +71,12 @@ fn scripts_pre_commit_matches_canonical_scan_args() {
         );
     }
     assert!(
-        script.contains("keyhog: not found on PATH - skipping"),
-        "scripts/pre-commit must preserve the operator-visible missing-binary skip; found:\n{script}"
+        script.contains("keyhog: not found on PATH - blocking commit"),
+        "scripts/pre-commit must block when the scanner is missing; found:\n{script}"
+    );
+    assert!(
+        !script.contains("skipping the pre-commit secret scan"),
+        "scripts/pre-commit must not silently bypass the installed security control; found:\n{script}"
     );
 }
 
@@ -120,22 +124,27 @@ exit 2
 
 #[cfg(unix)]
 #[test]
-fn scripts_pre_commit_missing_keyhog_skips_loudly() {
+fn scripts_pre_commit_missing_keyhog_blocks_loudly() {
     let dir = TempDir::new().expect("tempdir");
     let output = Command::new(repo_root().join("scripts").join("pre-commit"))
         .env("PATH", dir.path())
         .output()
         .expect("run scripts/pre-commit");
 
-    assert!(
-        output.status.success(),
-        "missing keyhog remains a developer-convenience skip; stdout={} stderr={}",
+    assert_eq!(
+        output.status.code(),
+        Some(127),
+        "missing keyhog must block instead of bypassing the hook; stdout={} stderr={}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("keyhog: not found on PATH - skipping the pre-commit secret scan."),
-        "missing-binary skip must stay operator-visible; stderr={stderr}"
+        stderr.contains("keyhog: not found on PATH - blocking commit because the pre-commit secret scan did not run."),
+        "missing-binary block must stay operator-visible; stderr={stderr}"
+    );
+    assert!(
+        stderr.contains("fix PATH"),
+        "missing-binary block must tell the operator how to repair PATH; stderr={stderr}"
     );
 }

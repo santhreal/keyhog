@@ -443,8 +443,11 @@ keyhog hook install                    # writes .git/hooks/pre-commit
 keyhog hook uninstall                  # removes the keyhog-generated hook
 ```
 
-The installed hook calls `keyhog scan --fast --git-staged` on every
-commit. If `keyhog daemon start` is running, the in-process scan reuses
+The installed hook calls `keyhog scan --fast --git-staged --backend simd`
+on every commit. If `keyhog` is missing from `PATH`, the hook blocks the
+commit because the security scan did not run; install KeyHog, fix `PATH`,
+or remove `.git/hooks/pre-commit` if the repository should not be protected.
+If `keyhog daemon start` is running, the in-process scan reuses
 the daemon's compiled scanner for sub-50 ms latency; otherwise the
 hook pays the ~3 s compile cost on each commit.
 

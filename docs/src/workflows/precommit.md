@@ -13,12 +13,16 @@ keyhog hook install
 ```
 
 That writes a `.git/hooks/pre-commit` script that calls
-`keyhog scan --fast --git-staged` (the same command
+`keyhog scan --fast --git-staged --backend simd` (the same command
 `.pre-commit-hooks.yaml` exposes for the pre-commit framework).
 If a `pre-commit` hook already exists in the repo, `keyhog hook
 install` refuses to overwrite it - remove it (or run
 `keyhog hook uninstall`) and re-install. The next `git commit`
 invokes the hook.
+
+If `keyhog` is missing from `PATH`, the hook blocks the commit because the
+security scan did not run. Install KeyHog, fix `PATH`, or remove
+`.git/hooks/pre-commit` if the repository should not be protected.
 
 If your repo uses [pre-commit](https://pre-commit.com/) instead of
 raw git hooks, add the following to `.pre-commit-config.yaml`:

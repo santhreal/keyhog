@@ -108,15 +108,10 @@ fn dir_of(tool: &str) -> std::path::PathBuf {
 }
 
 #[test]
-fn hook_fails_open_when_keyhog_not_on_path() {
-    // A pre-commit secret scan is best-effort (CI is the real gate). When
-    // keyhog is NOT on PATH the hook must SKIP the scan with a clear message,
-    // not block the commit. The old template was a bare `keyhog scan ...`,
-    // which makes `sh` exit 127 ("keyhog: not found"); git treats any nonzero
-    // hook exit as failure, so EVERY commit - including clean ones - was
-    // bricked with a cryptic error in any environment without keyhog on PATH
-    // (a fresh shell, CI, or a contributor who never installed it). The fixed
-    // hook guards with `command -v keyhog` and exits 0 with guidance.
+fn hook_blocks_when_keyhog_not_on_path() {
+    // An installed pre-commit hook is a security control. If keyhog is NOT on
+    // PATH, the scan did not run and the commit must be blocked with an
+    // actionable error instead of silently landing unscanned content.
     let dir = TempDir::new().expect("tempdir");
     let p = dir.path();
     assert!(git(p, &["init", "-q"]).status.success());
@@ -147,8 +142,8 @@ fn hook_fails_open_when_keyhog_not_on_path() {
         "test setup error: keyhog resolved under the supposedly-minimal PATH"
     );
 
-    // Even a staged real secret must NOT block the commit when keyhog is
-    // absent: the scan is skipped, not failed.
+    // Even with a real staged secret, this test is primarily proving the
+    // missing-binary contract: the hook must block before it can claim coverage.
     std::fs::write(
         p.join("leak.env"),
         "GH_TOKEN=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\n",
@@ -162,18 +157,22 @@ fn hook_fails_open_when_keyhog_not_on_path() {
         .output()
         .expect("git commit");
     assert!(
-        out.status.success(),
-        "commit must succeed (fail-open) when keyhog is not on PATH; stderr: {}",
+        !out.status.success(),
+        "commit must be blocked when keyhog is not on PATH; stderr: {}",
         String::from_utf8_lossy(&out.stderr)
     );
     assert_eq!(
         commit_count(p),
-        1,
-        "the commit must land when the scanner is absent (no bricking)"
+        0,
+        "the commit must not land when the scanner is absent"
     );
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("not found on PATH"),
-        "the hook must explain why it skipped the scan; stderr: {stderr}"
+        stderr.contains("not found on PATH") && stderr.contains("blocking commit"),
+        "the hook must explain why it blocked; stderr: {stderr}"
+    );
+    assert!(
+        stderr.contains("fix PATH"),
+        "the hook must explain how to repair the missing binary; stderr: {stderr}"
     );
 }

@@ -10,10 +10,10 @@
 set -eu
 
 if ! command -v keyhog >/dev/null 2>&1; then
-    echo "keyhog: not found on PATH - skipping the pre-commit secret scan." >&2
-    echo "  Install keyhog (https://github.com/santhsecurity/keyhog) or remove" >&2
-    echo "  .git/hooks/pre-commit to silence this warning." >&2
-    exit 0
+    echo "keyhog: not found on PATH - blocking commit because the pre-commit secret scan did not run." >&2
+    echo "  Install keyhog (https://github.com/santhsecurity/keyhog), fix PATH," >&2
+    echo "  or remove .git/hooks/pre-commit if this repository should not be protected." >&2
+    exit 127
 fi
 
 exec keyhog scan --fast --git-staged --backend simd

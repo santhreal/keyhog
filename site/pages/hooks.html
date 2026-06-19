@@ -11,12 +11,15 @@ description = "Block secrets before they land on disk. Bundled installer or pre-
 
 <pre><code><span class="prompt">$</span> keyhog hook install
 <span class="a">installed .git/hooks/pre-commit</span>
-<span class="a">  on commit: keyhog scan --fast --git-staged</span></code></pre>
+<span class="a">  on commit: keyhog scan --fast --git-staged --backend simd</span></code></pre>
 
 <p>Writes <code>.git/hooks/pre-commit</code> directly. No
 <code>pre-commit</code> framework needed. The hook runs
-<code>keyhog scan --fast --git-staged</code> over the staged blobs
-only, exits non-zero on findings, and the commit aborts. If a
+<code>keyhog scan --fast --git-staged --backend simd</code> over the staged
+blobs only, exits non-zero on findings, and the commit aborts. If
+<code>keyhog</code> is missing from <code>PATH</code>, the hook blocks because
+the scan did not run; install KeyHog, fix <code>PATH</code>, or remove the
+hook if this repository should not be protected. If a
 <code>.git/hooks/pre-commit</code> already exists,
 <code>keyhog hook install</code> refuses to overwrite it; remove
 the existing file (or run <code>keyhog hook uninstall</code>) and
