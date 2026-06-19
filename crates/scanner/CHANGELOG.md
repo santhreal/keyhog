@@ -58,6 +58,9 @@
 - Select bounded GPU regex-DFA admission candidates by detector breadth before
   generated homoglyph variants instead of taking the first source-order slice;
   the catalog budget is now expressed as shard count x shard width.
+- Tighten the GPU region-presence host lowercase staging helper to reserve once
+  and write folded bytes directly into spare vector capacity, preserving
+  `make_ascii_lowercase` semantics without a `Vec::push` per byte.
 - Keep high-entropy base64-like secrets with internal `+`/`/` punctuation through generic and entropy fallbacks by bypassing binary-decoy suppression on the punctuation payload class, closing `encoded_binary`-driven false negatives.
 - Add adversarial coverage for the base64 punctuated high-entropy class and a fixed-token regression for `TVo...+...` shape that previously dropped at `is_encoded_binary`.
 

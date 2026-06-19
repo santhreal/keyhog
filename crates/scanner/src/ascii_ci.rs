@@ -19,13 +19,25 @@
 /// bytes and then walking them again to fold case.
 #[inline]
 pub(crate) fn extend_ascii_lowercase_from(dst: &mut Vec<u8>, src: &[u8]) {
-    for &byte in src {
+    let start = dst.len();
+    dst.reserve(src.len());
+    let out = dst.as_mut_ptr();
+    for (offset, &byte) in src.iter().enumerate() {
         let folded = if byte.is_ascii_uppercase() {
             byte | 0x20
         } else {
             byte
         };
-        dst.push(folded);
+        // SAFETY: `reserve(src.len())` guarantees capacity for every write in
+        // `start..start + src.len()`. The loop body cannot panic, and length is
+        // published only after all initialized bytes are written.
+        unsafe {
+            out.add(start + offset).write(folded);
+        }
+    }
+    // SAFETY: the loop initialized exactly `src.len()` bytes after `start`.
+    unsafe {
+        dst.set_len(start + src.len());
     }
 }
 
