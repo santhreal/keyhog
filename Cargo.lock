@@ -2841,6 +2841,7 @@ dependencies = [
  "aho-corasick",
  "base64",
  "base64-simd",
+ "blake3",
  "bytemuck",
  "chrono",
  "criterion",

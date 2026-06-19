@@ -195,14 +195,17 @@ impl CompiledScanner {
     }
 
     pub(crate) fn detector_digest(&self) -> u64 {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        let mut hasher = DefaultHasher::new();
-        for src in self.pattern_regex_strs() {
-            src.hash(&mut hasher);
+        let patterns = self.pattern_regex_strs();
+        let mut hasher = blake3::Hasher::new();
+        detector_digest_update(&mut hasher, b"domain", b"keyhog-scanner-detector-digest-v1");
+        detector_digest_update_u64(&mut hasher, b"pattern_count", patterns.len() as u64);
+        for src in patterns {
+            detector_digest_update(&mut hasher, b"regex", src.as_bytes());
         }
-        hasher.finish()
+        let digest = hasher.finalize();
+        let mut bytes = [0u8; 8];
+        bytes.copy_from_slice(&digest.as_bytes()[..8]);
+        u64::from_le_bytes(bytes)
     }
 
     /// Return the preferred backend for a file of the given size.
@@ -360,4 +363,15 @@ impl CompiledScanner {
 
         matches
     }
+}
+
+fn detector_digest_update(hasher: &mut blake3::Hasher, tag: &[u8], value: &[u8]) {
+    hasher.update(&(tag.len() as u64).to_le_bytes());
+    hasher.update(tag);
+    hasher.update(&(value.len() as u64).to_le_bytes());
+    hasher.update(value);
+}
+
+fn detector_digest_update_u64(hasher: &mut blake3::Hasher, tag: &[u8], value: u64) {
+    detector_digest_update(hasher, tag, &value.to_le_bytes());
 }
