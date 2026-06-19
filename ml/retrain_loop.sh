@@ -115,13 +115,15 @@ _gate_vs() {  # corpus, results_dir, baseline_dir
 # never embeds a rejected candidate (Law 10 — never silently leave the worse
 # model shipped).
 _restore_and_rebuild() {
-  if [[ -f "${WEIGHTS}.bak" ]]; then
-    cp -f "${WEIGHTS}.bak" "${WEIGHTS}"
-    echo "→ [verify] restored ${WEIGHTS} from .bak; rebuilding the known-good model" >&2
-    _rebuild \
-      || echo "WARNING: rebuild after restore FAILED — ${WEIGHTS} is reverted but the binary may be stale; rebuild manually" >&2
-  else
-    echo "WARNING: no ${WEIGHTS}.bak to restore — ${WEIGHTS} may still hold the rejected candidate; restore manually" >&2
+  if [[ ! -f "${WEIGHTS}.bak" ]]; then
+    echo "error: no ${WEIGHTS}.bak to restore; refusing to leave rejected model state ambiguous" >&2
+    return 1
+  fi
+  cp -f "${WEIGHTS}.bak" "${WEIGHTS}"
+  echo "→ [verify] restored ${WEIGHTS} from .bak; rebuilding the known-good model" >&2
+  if ! _rebuild; then
+    echo "error: rebuild after restore failed; live binary may still embed the rejected candidate" >&2
+    return 1
   fi
 }
 
@@ -194,7 +196,7 @@ if [[ "${DO_WRITE}" == "1" && "${DO_VERIFY}" == "1" ]]; then
   echo "→ [verify] rebuilding keyhog with the shipped candidate model"
   if ! _rebuild; then
     echo "error: [verify] candidate rebuild failed; reverting" >&2
-    _restore_and_rebuild
+    _restore_and_rebuild || exit 2
     exit 1
   fi
   CAND_DIR="$(mktemp -d -t keyhog-verify-cand-XXXXXX)"
@@ -211,7 +213,7 @@ if [[ "${DO_WRITE}" == "1" && "${DO_VERIFY}" == "1" ]]; then
   done
   if [[ "${VERIFY_FAILED}" != "0" ]]; then
     echo "✗ [verify] regression detected — model REJECTED" >&2
-    _restore_and_rebuild
+    _restore_and_rebuild || exit 2
     exit 1
   fi
   echo "✓ [verify] all corpora (${VERIFY_CORPORA}) passed the per-detector FP + F1 gate; candidate kept"
