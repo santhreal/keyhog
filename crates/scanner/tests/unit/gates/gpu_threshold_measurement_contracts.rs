@@ -1,5 +1,3 @@
-use keyhog_scanner::testing::thresholds;
-
 #[derive(serde::Deserialize)]
 struct GpuCrossoverMeasurement {
     schema_version: u32,
@@ -21,9 +19,32 @@ struct CrossoverPoint {
     winner: String,
 }
 
+fn threshold_u64(name: &str) -> u64 {
+    let src = include_str!("../../../src/hw_probe/thresholds.rs");
+    let prefix = format!("pub(crate) const {name}: u64 = ");
+    let line = src
+        .lines()
+        .find(|line| line.trim_start().starts_with(&prefix))
+        .unwrap_or_else(|| panic!("threshold constant {name} must exist"));
+    let expr = line
+        .split_once('=')
+        .map(|(_, rhs)| rhs.trim().trim_end_matches(';'))
+        .unwrap_or_else(|| panic!("threshold constant {name} must have a value"));
+    expr.split('*')
+        .map(|part| {
+            part.trim()
+                .replace('_', "")
+                .parse::<u64>()
+                .unwrap_or_else(|error| panic!("parse {name} term {part:?}: {error}"))
+        })
+        .product()
+}
+
 #[test]
 fn high_tier_gpu_threshold_stays_above_measured_no_win_range() {
     const MIB: u64 = 1024 * 1024;
+    let gpu_min_bytes_high_tier = threshold_u64("GPU_MIN_BYTES_HIGH_TIER");
+    let gpu_bytes_breakeven_solo_high_tier = threshold_u64("GPU_BYTES_BREAKEVEN_SOLO_HIGH_TIER");
     let raw = include_str!(
         "../../../../../benchmarks/baselines/gpu_region_crossover_rtx5090_2026-06-19.toml"
     );
@@ -59,15 +80,15 @@ fn high_tier_gpu_threshold_stays_above_measured_no_win_range() {
 
     let measured_ceiling = measurement.max_measured_mib * MIB;
     assert!(
-        thresholds::GPU_MIN_BYTES_HIGH_TIER > measured_ceiling,
+        gpu_min_bytes_high_tier > measured_ceiling,
         "high-tier heuristic min must stay above the measured no-win ceiling: threshold={} ceiling={}",
-        thresholds::GPU_MIN_BYTES_HIGH_TIER,
+        gpu_min_bytes_high_tier,
         measured_ceiling
     );
     assert!(
-        thresholds::GPU_BYTES_BREAKEVEN_SOLO_HIGH_TIER > measured_ceiling,
+        gpu_bytes_breakeven_solo_high_tier > measured_ceiling,
         "high-tier heuristic solo cap must stay above the measured no-win ceiling: threshold={} ceiling={}",
-        thresholds::GPU_BYTES_BREAKEVEN_SOLO_HIGH_TIER,
+        gpu_bytes_breakeven_solo_high_tier,
         measured_ceiling
     );
 }
