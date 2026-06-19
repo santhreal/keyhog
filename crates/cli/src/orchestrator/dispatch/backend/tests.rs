@@ -417,6 +417,53 @@ fn autoroute_cache_rejects_duplicate_workload_decisions() {
 }
 
 #[test]
+fn autoroute_cache_rejects_empty_decision_set() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_empty_decisions_{}.json",
+        std::process::id()
+    ));
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(None);
+    let key = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        key,
+        AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None),
+    );
+
+    save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &decisions,
+    )
+    .unwrap();
+    let mut cache: AutorouteCache =
+        serde_json::from_slice(&std::fs::read(&path).expect("autoroute cache JSON"))
+            .expect("cache should deserialize before tampering");
+    cache.decisions.clear();
+    std::fs::write(
+        &path,
+        serde_json::to_vec_pretty(&cache).expect("tampered cache serializes"),
+    )
+    .expect("tampered cache writable");
+
+    let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
+    assert!(
+        loaded
+            .expect_err("empty decision set must be rejected")
+            .to_string()
+            .contains("no workload decisions"),
+        "a persisted autoroute cache with no measured workload decisions must not be accepted as calibrated"
+    );
+
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
 fn autoroute_cache_rejects_missing_cpu_model_identity() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_autoroute_missing_cpu_model_{}.json",

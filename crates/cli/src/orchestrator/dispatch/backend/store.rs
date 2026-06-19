@@ -219,6 +219,9 @@ pub(super) fn load_autoroute_cache(
     if &cache.host != host_profile {
         return Err("host profile mismatch; cache is for different hardware".into());
     }
+    if cache.decisions.is_empty() {
+        return Err("autoroute cache contains no workload decisions".into());
+    }
     let mut out = HashMap::with_capacity(cache.decisions.len());
     for (key, decision) in cache.decisions {
         validate_decision_calibration_evidence(&decision)?;
