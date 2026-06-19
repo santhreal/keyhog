@@ -64,3 +64,34 @@ fn incremental_skips_unchanged_clean_file_for_speedup() {
     assert_eq!(scan_path(dir.path(), &args).status.code(), Some(0));
     assert_eq!(scan_path(dir.path(), &args).status.code(), Some(0));
 }
+
+#[test]
+fn incremental_corrupt_explicit_cache_warns_and_rewrites() {
+    let dir = TempDir::new().expect("tempdir");
+    std::fs::write(
+        dir.path().join("ok.txt"),
+        "just ordinary source code, nothing sensitive here\n",
+    )
+    .expect("write clean file");
+    let cache = dir.path().join("merkle.idx");
+    std::fs::write(&cache, b"this is not a merkle cache").expect("write corrupt cache");
+    let cache_arg = cache.to_str().unwrap();
+    let args = ["--incremental", "--incremental-cache", cache_arg];
+
+    let output = scan_path(dir.path(), &args);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "corrupt incremental cache must not prevent the full scan from running"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("warning: incremental cache") && stderr.contains("could not be parsed"),
+        "corrupt explicit incremental cache must be operator-visible; stderr={stderr}"
+    );
+    let rewritten = std::fs::read_to_string(&cache).expect("read rewritten cache");
+    assert!(
+        rewritten.contains("\"version\"") && !rewritten.contains("not a merkle cache"),
+        "successful cold-start scan must rewrite the damaged cache; cache={rewritten}"
+    );
+}

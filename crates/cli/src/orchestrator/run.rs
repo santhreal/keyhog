@@ -215,7 +215,8 @@ impl ScanOrchestrator {
 
         let allowlist =
             load_allowlist(self.args.path.as_deref(), &self.effective_config.allowlist)?;
-        let merkle = self.build_merkle_index();
+        let incremental_cache_path = self.incremental_cache_path()?;
+        let merkle = self.build_merkle_index(incremental_cache_path.as_deref());
 
         let sources = crate::sources::build_sources(
             &self.args,
@@ -228,7 +229,8 @@ impl ScanOrchestrator {
             );
         }
 
-        let all_matches = self.scan_sources(sources, show_progress, merkle)?;
+        let all_matches =
+            self.scan_sources(sources, show_progress, merkle, incremental_cache_path)?;
         let filtered = self.filter_and_resolve(all_matches, &allowlist);
         let findings_pre_rules = self.finalize(filtered).await?;
 

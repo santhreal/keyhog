@@ -21,7 +21,7 @@ pub use crate::finding::*;
 pub use crate::hardening::{
     apply_protections, apply_protections_with_persistence_paths, HardeningReport,
 };
-pub use crate::merkle_index::MerkleIndex;
+pub use crate::merkle_index::{MerkleIndex, MerkleLoadReport, MerkleLoadStatus};
 pub use crate::merkle_spec_hash::compute_spec_hash;
 pub use crate::report::*;
 pub use crate::rule_filter::{RuleSuppressor, RuleSuppressorError};

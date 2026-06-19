@@ -9,7 +9,10 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use super::{tmp_hygiene::sweep_stale_tmp_files, CacheEntry, MerkleIndex, SCHEMA_VERSION};
+use super::{
+    tmp_hygiene::sweep_stale_tmp_files, CacheEntry, MerkleIndex, MerkleLoadReport,
+    MerkleLoadStatus, SCHEMA_VERSION,
+};
 use crate::hex_encode;
 use crate::merkle_spec_hash::hex_to_array;
 
@@ -81,39 +84,75 @@ impl MerkleIndex {
     /// Load the index from `path` without spec-hash gating. Returns an empty
     /// index when the file doesn't exist or cannot be trusted.
     pub(crate) fn load(path: &Path) -> Self {
+        Self::load_report(path).into_index()
+    }
+
+    /// Load the index from `path` and report whether it cold-started.
+    pub fn load_report(path: &Path) -> MerkleLoadReport {
         sweep_stale_tmp_files(path);
-        Self::load_with_spec_inner(path, None)
+        let (index, status) = Self::load_with_spec_inner(path, None);
+        MerkleLoadReport { index, status }
     }
 
     /// Load the index, gated on a matching detector-spec hash. This prevents an
     /// added detector from leaving unchanged files skipped forever.
     pub fn load_with_spec(path: &Path, expected_spec_hash: &[u8; 32]) -> Self {
-        sweep_stale_tmp_files(path);
-        Self::load_with_spec_inner(path, Some(expected_spec_hash))
+        Self::load_with_spec_report(path, expected_spec_hash).into_index()
     }
 
-    fn load_with_spec_inner(path: &Path, expected_spec_hash: Option<&[u8; 32]>) -> Self {
+    /// Load the spec-gated index and report whether the cache was trusted.
+    pub fn load_with_spec_report(path: &Path, expected_spec_hash: &[u8; 32]) -> MerkleLoadReport {
+        sweep_stale_tmp_files(path);
+        let (index, status) = Self::load_with_spec_inner(path, Some(expected_spec_hash));
+        MerkleLoadReport { index, status }
+    }
+
+    fn load_with_spec_inner(
+        path: &Path,
+        expected_spec_hash: Option<&[u8; 32]>,
+    ) -> (Self, MerkleLoadStatus) {
         let bytes = match std::fs::read(path) {
             Ok(bytes) => bytes,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Self::empty(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return (
+                    Self::empty(),
+                    MerkleLoadStatus::Missing {
+                        path: path.to_path_buf(),
+                    },
+                );
+            }
             Err(error) => {
+                let error = error.to_string();
                 tracing::warn!(
                     cache = %path.display(),
                     %error,
                     "merkle index file read failed; treating as cold start"
                 );
-                return Self::empty();
+                return (
+                    Self::empty(),
+                    MerkleLoadStatus::ReadFailed {
+                        path: path.to_path_buf(),
+                        error,
+                    },
+                );
             }
         };
         let on_disk: OnDisk = match serde_json::from_slice(&bytes) {
             Ok(on_disk) => on_disk,
             Err(error) => {
+                let error = error.to_string();
                 tracing::warn!(
                     cache = %path.display(),
                     %error,
                     "merkle index parse failed; treating as cold start"
                 );
-                return Self::empty();
+                return (
+                    Self::empty(),
+                    MerkleLoadStatus::ParseFailed {
+                        path: path.to_path_buf(),
+                        error,
+                    },
+                );
             }
         };
         if on_disk.version != SCHEMA_VERSION {
@@ -123,7 +162,14 @@ impl MerkleIndex {
                 expected = SCHEMA_VERSION,
                 "merkle index schema mismatch; treating as cold start"
             );
-            return Self::empty();
+            return (
+                Self::empty(),
+                MerkleLoadStatus::SchemaMismatch {
+                    path: path.to_path_buf(),
+                    version: on_disk.version,
+                    expected: SCHEMA_VERSION,
+                },
+            );
         }
         if let Some(expected) = expected_spec_hash {
             let stored_match = on_disk
@@ -136,7 +182,12 @@ impl MerkleIndex {
                     cache = %path.display(),
                     "detector spec changed since last scan; cache invalidated"
                 );
-                return Self::empty();
+                return (
+                    Self::empty(),
+                    MerkleLoadStatus::SpecChanged {
+                        path: path.to_path_buf(),
+                    },
+                );
             }
         }
 
@@ -152,12 +203,35 @@ impl MerkleIndex {
         // correct cold re-scan that self-heals on the next save.
         let racy_floor = second_floor(on_disk.written_at_ns);
         let mut racy_dropped = 0usize;
-        for (path, entry) in decode_entries(on_disk.entries) {
+        for (entry_path, entry) in on_disk.entries {
+            let Some(hash) = hex_to_array(&entry.hash) else {
+                let invalid_hash = entry.hash;
+                tracing::warn!(
+                    cache = %path.display(),
+                    entry_path = %entry_path,
+                    hash = %invalid_hash,
+                    "merkle index entry hash is invalid; treating as cold start"
+                );
+                return (
+                    Self::empty(),
+                    MerkleLoadStatus::InvalidEntryHash {
+                        path: path.to_path_buf(),
+                        entry_path,
+                        hash: invalid_hash,
+                    },
+                );
+            };
+            let entry = CacheEntry {
+                mtime_ns: entry.mtime_ns,
+                size: entry.size,
+                hash,
+            };
+            let entry_path = PathBuf::from(entry_path);
             if entry.mtime_ns >= racy_floor {
                 racy_dropped += 1;
                 continue;
             }
-            if !idx.try_insert(path, entry) {
+            if !idx.try_insert(entry_path, entry) {
                 break;
             }
         }
@@ -175,7 +249,14 @@ impl MerkleIndex {
             count = idx.len(),
             "merkle index loaded"
         );
-        idx
+        let entries = idx.len();
+        (
+            idx,
+            MerkleLoadStatus::Loaded {
+                path: path.to_path_buf(),
+                entries,
+            },
+        )
     }
 
     /// Persist the index without binding it to a detector-spec hash.
@@ -267,23 +348,6 @@ impl MerkleIndex {
 /// macOS.
 pub(crate) fn default_cache_path() -> Option<PathBuf> {
     dirs::cache_dir().map(|dir| dir.join("keyhog").join("merkle.idx"))
-}
-
-fn decode_entries(
-    entries: HashMap<String, EntryV2>,
-) -> impl Iterator<Item = (PathBuf, CacheEntry)> {
-    entries.into_iter().filter_map(|(path, entry)| {
-        hex_to_array(&entry.hash).map(|hash| {
-            (
-                PathBuf::from(path),
-                CacheEntry {
-                    mtime_ns: entry.mtime_ns,
-                    size: entry.size,
-                    hash,
-                },
-            )
-        })
-    })
 }
 
 fn encode_entries(entries: &HashMap<PathBuf, CacheEntry>) -> HashMap<String, EntryV2> {

@@ -25,6 +25,7 @@ impl ScanOrchestrator {
         sources: Vec<Box<dyn Source>>,
         show_progress: bool,
         merkle: Option<Arc<keyhog_core::MerkleIndex>>,
+        incremental_path: Option<std::path::PathBuf>,
     ) -> Result<Vec<RawMatch>> {
         use std::sync::atomic::Ordering;
 
@@ -38,7 +39,7 @@ impl ScanOrchestrator {
         // the coalesced batch pipeline (preserves gpu_parity + large-buffer
         // dispatch); see `should_use_fused_pipeline`.
         if self.should_use_fused_pipeline(&sources) {
-            return self.scan_sources_fused(sources, show_progress, merkle);
+            return self.scan_sources_fused(sources, show_progress, merkle, incremental_path);
         }
 
         keyhog_sources::reset_skipped_over_max_size();
@@ -58,8 +59,6 @@ impl ScanOrchestrator {
         } else {
             None
         };
-
-        let incremental_path = self.incremental_cache_path();
 
         const BATCH_CHUNK_LIMIT: usize = 4096;
         // Bytes budget per coalesced batch. Sized to match the

@@ -61,6 +61,7 @@ pub mod load_with_mismatched_spec_invalidates_cache;
 pub mod load_with_spec_when_disk_has_no_spec_invalidates;
 pub mod lockdown_disk_cache_violations;
 pub mod lookup_returns_full_tuple;
+pub mod merkle_invalid_entry_hash_cold_starts;
 pub mod merkle_racy_clean_entry_dropped_on_load;
 pub mod missing_cache_returns_empty;
 pub mod missing_file_returns_empty;

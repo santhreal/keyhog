@@ -14,7 +14,7 @@ use crate::orchestrator_config::{
 };
 use crate::style;
 use anyhow::{Context, Result};
-use keyhog_core::{DetectorSpec, RawMatch, Source};
+use keyhog_core::{DetectorSpec, MerkleLoadStatus, RawMatch, Source};
 use keyhog_scanner::{CompiledScanner, GpuInitPolicy};
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -310,15 +310,24 @@ impl ScanOrchestrator {
         &self.args
     }
 
-    pub(crate) fn incremental_cache_path(&self) -> Option<std::path::PathBuf> {
+    pub(crate) fn incremental_cache_path(&self) -> Result<Option<std::path::PathBuf>> {
         if !self.args.incremental {
-            return None;
+            return Ok(None);
         }
         if self.args.lockdown {
             tracing::warn!("lockdown mode: --incremental disabled (cache writes refused)");
-            return None;
+            eprintln!(
+                "warning: --incremental disabled because --lockdown forbids cache reads/writes; scanning without the incremental cache"
+            );
+            return Ok(None);
         }
-        self.configured_incremental_cache_path()
+        match self.configured_incremental_cache_path() {
+            Some(path) => Ok(Some(path)),
+            None => anyhow::bail!(
+                "--incremental was requested, but no default cache directory is available. \
+                 Fix: set XDG_CACHE_HOME or HOME, or pass --incremental-cache <PATH>."
+            ),
+        }
     }
 
     pub(crate) fn lockdown_persistence_cache_paths(&self) -> Vec<std::path::PathBuf> {
@@ -337,10 +346,17 @@ impl ScanOrchestrator {
             .or_else(default_incremental_cache_path)
     }
 
-    pub(crate) fn build_merkle_index(&self) -> Option<Arc<keyhog_core::MerkleIndex>> {
-        let path = self.incremental_cache_path()?;
+    pub(crate) fn build_merkle_index(
+        &self,
+        path: Option<&std::path::Path>,
+    ) -> Option<Arc<keyhog_core::MerkleIndex>> {
+        let path = path?;
         let spec_hash = keyhog_core::compute_spec_hash(&self.detectors);
-        let idx = keyhog_core::MerkleIndex::load_with_spec(&path, &spec_hash);
+        let report = keyhog_core::MerkleIndex::load_with_spec_report(path, &spec_hash);
+        if let Some(warning) = incremental_cache_warning(report.status()) {
+            eprintln!("{warning}");
+        }
+        let idx = report.into_index();
         tracing::info!("incremental scan: loaded merkle index");
         Some(Arc::new(idx))
     }
@@ -353,7 +369,7 @@ impl ScanOrchestrator {
         show_progress: bool,
         merkle: Option<Arc<keyhog_core::MerkleIndex>>,
     ) -> Result<Vec<RawMatch>> {
-        self.scan_sources(sources, show_progress, merkle)
+        self.scan_sources(sources, show_progress, merkle, None)
     }
 
     /// Test-only constructor bypassing detector-cache and lockdown gating.
@@ -413,6 +429,41 @@ impl ScanOrchestrator {
                 source_limits: keyhog_sources::SourceLimits::default(),
             },
         }
+    }
+}
+
+fn incremental_cache_warning(status: &MerkleLoadStatus) -> Option<String> {
+    match status {
+        MerkleLoadStatus::Missing { .. } | MerkleLoadStatus::Loaded { .. } => None,
+        MerkleLoadStatus::ReadFailed { path, error } => Some(format!(
+            "warning: incremental cache {} could not be read: {error}; starting from an empty cache and rewriting it after this scan",
+            path.display()
+        )),
+        MerkleLoadStatus::ParseFailed { path, error } => Some(format!(
+            "warning: incremental cache {} could not be parsed: {error}; starting from an empty cache and rewriting it after this scan",
+            path.display()
+        )),
+        MerkleLoadStatus::SchemaMismatch {
+            path,
+            version,
+            expected,
+        } => Some(format!(
+            "warning: incremental cache {} uses schema version {version}, expected {expected}; starting from an empty cache and rewriting it after this scan",
+            path.display()
+        )),
+        MerkleLoadStatus::SpecChanged { path } => Some(format!(
+            "warning: incremental cache {} was built for a different detector/config identity; starting from an empty cache and rewriting it after this scan",
+            path.display()
+        )),
+        MerkleLoadStatus::InvalidEntryHash {
+            path,
+            entry_path,
+            hash,
+        } => Some(format!(
+            "warning: incremental cache {} has an invalid hash for entry {} ({hash}); starting from an empty cache and rewriting it after this scan",
+            path.display(),
+            entry_path
+        )),
     }
 }
 

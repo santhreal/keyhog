@@ -86,6 +86,79 @@ const MERKLE_SHARDS: usize = 64;
 /// `forget`-ten, never cached) regardless of the cap.
 const MERKLE_DEFAULT_MAX_ENTRIES: usize = 8_000_000;
 
+/// Result of loading a persisted [`MerkleIndex`] cache.
+#[derive(Debug)]
+pub struct MerkleLoadReport {
+    index: MerkleIndex,
+    status: MerkleLoadStatus,
+}
+
+impl MerkleLoadReport {
+    /// Status describing whether the cache was loaded or why it cold-started.
+    pub fn status(&self) -> &MerkleLoadStatus {
+        &self.status
+    }
+
+    /// Consume the report and return the live in-memory index.
+    pub fn into_index(self) -> MerkleIndex {
+        self.index
+    }
+}
+
+/// Operator-relevant status for a Merkle cache load.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MerkleLoadStatus {
+    /// No cache file exists yet.
+    Missing {
+        /// Cache path that was probed.
+        path: PathBuf,
+    },
+    /// Cache file loaded and contributed `entries` entries.
+    Loaded {
+        /// Cache path that loaded successfully.
+        path: PathBuf,
+        /// Number of entries retained after validation and racy-clean drops.
+        entries: usize,
+    },
+    /// Cache file existed but could not be read.
+    ReadFailed {
+        /// Cache path that could not be read.
+        path: PathBuf,
+        /// Filesystem error message.
+        error: String,
+    },
+    /// Cache file existed but was not valid JSON for the current schema.
+    ParseFailed {
+        /// Cache path that could not be parsed.
+        path: PathBuf,
+        /// JSON/schema parse error message.
+        error: String,
+    },
+    /// Cache file used an incompatible schema version.
+    SchemaMismatch {
+        /// Cache path that used the incompatible schema.
+        path: PathBuf,
+        /// Schema version found in the cache file.
+        version: u32,
+        /// Schema version required by this binary.
+        expected: u32,
+    },
+    /// Cache file was built for a different detector corpus or scan config.
+    SpecChanged {
+        /// Cache path whose stored detector-spec hash did not match.
+        path: PathBuf,
+    },
+    /// One persisted entry carried an invalid BLAKE3 hex digest.
+    InvalidEntryHash {
+        /// Cache path containing the invalid entry.
+        path: PathBuf,
+        /// Persisted source path key for the invalid entry.
+        entry_path: String,
+        /// Invalid hash string from the cache file.
+        hash: String,
+    },
+}
+
 fn shard_index(path: &Path) -> usize {
     let mut h = DefaultHasher::new();
     path.hash(&mut h);

@@ -101,6 +101,7 @@ impl ScanOrchestrator {
         sources: Vec<Box<dyn Source>>,
         show_progress: bool,
         merkle: Option<Arc<keyhog_core::MerkleIndex>>,
+        incremental_path: Option<std::path::PathBuf>,
     ) -> Result<Vec<RawMatch>> {
         use rayon::iter::{ParallelBridge, ParallelIterator};
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -120,7 +121,6 @@ impl ScanOrchestrator {
             None
         };
 
-        let incremental_path = self.incremental_cache_path();
         let scanner = Arc::clone(&self.scanner);
         let explicit_backend = self.effective_config.backend_override;
         let calibration_mode = self.effective_config.autoroute_calibration;
