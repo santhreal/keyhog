@@ -27,7 +27,7 @@ use std::process::Command;
 use std::sync::{Mutex, MutexGuard};
 
 use keyhog_core::Source;
-use keyhog_sources::{skip_counts, GitSource};
+use keyhog_sources::{skip_counts, GitDiffSource, GitSource};
 
 /// `MAX_GIT_BLOB_BYTES` from `git/source.rs`.
 const MAX_GIT_BLOB_BYTES: usize = 10 * 1024 * 1024;
@@ -159,6 +159,43 @@ fn binary_git_blob_is_counted_binary() {
         after.over_max_size - before.over_max_size,
         0,
         "a binary git blob must NOT be miscounted as an over-size skip"
+    );
+}
+
+/// A true-binary untracked worktree file included by `--git-diff HEAD`
+/// semantics is dropped from the diff scan and counted as binary, never a
+/// silent `continue`.
+#[test]
+fn binary_untracked_git_diff_file_is_counted_binary() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let repo = temp.path();
+    init_repo(repo);
+    std::fs::write(repo.join("tracked.txt"), "tracked baseline\n").expect("write tracked");
+    git(repo, &["add", "tracked.txt"]);
+    git(repo, &["commit", "-m", "baseline"]);
+
+    let mut elf = vec![0x7f, b'E', b'L', b'F'];
+    elf.extend_from_slice(&[0u8; 512]);
+    std::fs::write(repo.join("untracked.bin"), &elf).expect("write untracked binary");
+
+    let chunks: Vec<_> = GitDiffSource::new(repo.to_path_buf(), "HEAD")
+        .chunks()
+        .filter_map(|result| result.ok())
+        .collect();
+    assert!(
+        chunks.is_empty(),
+        "binary-only untracked git-diff input yields no scannable chunks"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.binary - before.binary,
+        1,
+        "the untracked ELF-magic git-diff file MUST bump SKIPPED_BINARY exactly once (Law 10)"
     );
 }
 

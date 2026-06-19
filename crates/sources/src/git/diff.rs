@@ -397,6 +397,11 @@ fn list_untracked_worktree_chunks(
             )));
         }
         let Some(text) = crate::filesystem::decode_text_file(&bytes) else {
+            eprintln!(
+                "keyhog: WARNING: git-diff untracked path '{}' decoded as binary/non-text; it was NOT scanned.",
+                rel
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
             continue;
         };
         if text.trim().is_empty() {
