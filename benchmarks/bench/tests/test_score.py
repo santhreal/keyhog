@@ -53,6 +53,35 @@ def test_score_counts_tp_fp_fn_and_ignore_records(tmp_path: pathlib.Path):
     assert "fixture" not in result.per_category
 
 
+def test_shortened_path_attribution_requires_unique_corpus_match(tmp_path: pathlib.Path):
+    root = tmp_path
+    records = [
+        _record("left", "left-secret", True, "left/config.env", "left"),
+        _record("right", "right-secret", True, "right/config.env", "right"),
+        _record("unique", "unique-secret", True, "nested/unique.env", "unique"),
+    ]
+
+    unique = score(
+        records,
+        [{"file": "unique.env", "value": "unique-secret"}],
+        root,
+    )
+    assert unique.overall.tp == 1
+    assert unique.per_category["unique"].tp == 1
+
+    ambiguous = score(
+        records,
+        [{"file": "config.env", "value": "left-secret"}],
+        root,
+    )
+    assert ambiguous.overall.tp == 0
+    assert ambiguous.overall.fn == 3
+    assert ambiguous.overall.fp == 1
+    assert ambiguous.per_category["unknown"].fp == 1
+    assert ambiguous.per_category["left"].fn == 1
+    assert ambiguous.per_category["right"].fn == 1
+
+
 def test_per_category_tp_fn_split_and_conservation(tmp_path: pathlib.Path):
     # Ported from the retired tools/secretbench/scoring/test_attribution.py
     # ::test_per_category_split — the per-category TP/FN split plus the

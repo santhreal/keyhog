@@ -133,16 +133,45 @@ def _resolve_finding_file(
     fpath: str, aliases: dict[str, str]
 ) -> str | None:
     """Map a finding's file path to a canonical record key. Exact first,
-    then the legacy tail-match fallback (a finding path that ends with a
-    known path, or shares the same basename)."""
+    then unique suffix/basename matching for scanners that report shortened
+    paths. Ambiguous shortened paths return None instead of silently crediting
+    a finding to whichever same-basename file appeared first."""
     if fpath in aliases:
         return aliases[fpath]
-    base = fpath.rsplit("/", 1)[-1]
-    for spelling, key in aliases.items():
-        if spelling.endswith(fpath) or fpath.endswith(spelling.rsplit("/", 1)[-1]) \
-                or spelling.rsplit("/", 1)[-1] == base:
-            return key
+    matches = _resolve_finding_file_candidates(fpath, aliases)
+    if len(matches) == 1:
+        return next(iter(matches))
     return None
+
+
+def _normalize_path_spelling(path: str) -> str:
+    return path.replace("\\", "/").rstrip("/")
+
+
+def _resolve_finding_file_candidates(fpath: str, aliases: dict[str, str]) -> set[str]:
+    if fpath in aliases:
+        return {aliases[fpath]}
+    needle = _normalize_path_spelling(fpath)
+    if not needle:
+        return set()
+    tail_matches: set[str] = set()
+    for spelling, key in aliases.items():
+        haystack = _normalize_path_spelling(spelling)
+        if (
+            haystack == needle
+            or haystack.endswith("/" + needle)
+            or needle.endswith("/" + haystack)
+        ):
+            tail_matches.add(key)
+    if tail_matches:
+        return tail_matches
+
+    base = needle.rsplit("/", 1)[-1]
+    return {
+        key
+        for spelling, key in aliases.items()
+        if _normalize_path_spelling(spelling).rsplit("/", 1)[-1] == base
+    }
 
 
 def _file_category(recs: list[LabeledRecord]) -> str:

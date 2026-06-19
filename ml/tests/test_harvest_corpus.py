@@ -1,3 +1,4 @@
+import dataclasses
 import sys
 
 import pytest
@@ -6,13 +7,13 @@ import harvest_corpus
 from bench.corpora.base import LabeledRecord
 
 
-def _record(record_id, secret, label, category, ignore=False):
+def _record(record_id, secret, label, category, ignore=False, file_path="fixture.env"):
     return LabeledRecord(
         id=record_id,
         secret=secret,
         label=label,
         category=category,
-        file_path="fixture.env",
+        file_path=file_path,
         ignore=ignore,
     )
 
@@ -78,6 +79,57 @@ def test_finding_detector_id_rejects_unknown_or_missing_values():
     ):
         with pytest.raises(ValueError, match="missing explicit detector_id"):
             harvest_corpus._finding_detector_id(finding, "creddata:fixture.env")
+
+
+def test_harvest_rejects_ambiguous_finding_paths(tmp_path, monkeypatch):
+    @dataclasses.dataclass
+    class FakeConfig:
+        min_confidence: float = 0.5
+
+    class FakeCorpus:
+        name = "fake"
+        file_root = tmp_path
+        scan_root = tmp_path
+
+        def records(self):
+            return [
+                _record(
+                    "left",
+                    "left-secret",
+                    True,
+                    "left",
+                    file_path="left/fixture.env",
+                ),
+                _record(
+                    "right",
+                    "right-secret",
+                    True,
+                    "right",
+                    file_path="right/fixture.env",
+                ),
+            ]
+
+    class FakeScanner:
+        binary = "keyhog"
+
+        def available(self):
+            return True
+
+        def default_config(self):
+            return FakeConfig()
+
+        def run(self, _root, _cfg):
+            return ([{"file": "fixture.env", "value": "left-secret"}], object())
+
+    monkeypatch.setattr(harvest_corpus, "resolve_corpus", lambda _name: FakeCorpus())
+    monkeypatch.setattr(
+        harvest_corpus,
+        "resolve_scanner",
+        lambda *_args, **_kwargs: FakeScanner(),
+    )
+
+    with pytest.raises(ValueError, match="ambiguous finding path matched 2 corpus files"):
+        harvest_corpus.harvest("fake", None, 0.0)
 
 
 def test_main_fails_closed_without_writing_when_requested_corpus_fails(

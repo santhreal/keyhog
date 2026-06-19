@@ -48,7 +48,13 @@ sys.path.insert(0, str(BENCH))
 
 from bench.corpora.base import resolve_corpus  # noqa: E402
 from bench.scanners.base import resolve_scanner  # noqa: E402
-from bench.score import _build_file_index, _file_category, _resolve_finding_file, overlap  # noqa: E402
+from bench.score import (  # noqa: E402
+    _build_file_index,
+    _file_category,
+    _resolve_finding_file,
+    _resolve_finding_file_candidates,
+    overlap,
+)
 
 # Mirror of crate::types::ML_CONTEXT_RADIUS_LINES.
 ML_CONTEXT_RADIUS_LINES = 5
@@ -159,6 +165,13 @@ def harvest(corpus_name: str, keyhog_bin: str | None, floor: float) -> list[dict
         if not value:
             continue
         fpath = f.get("file") or ""
+        matches = _resolve_finding_file_candidates(fpath, aliases) if fpath else set()
+        if len(matches) > 1:
+            raise ValueError(
+                f"{corpus_name}:{fpath}: ambiguous finding path matched "
+                f"{len(matches)} corpus files; emit exact scan paths before "
+                "harvesting real ML training rows"
+            )
         key = _resolve_finding_file(fpath, aliases) if fpath else None
         if key is None:
             skipped_no_record += 1
