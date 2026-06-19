@@ -1,5 +1,5 @@
 //! Standalone coverage for keyhog-core allowlist + detector-spec public API:
-//! `Allowlist::{empty,parse,is_path_ignored,is_allowed,is_hash_ignored,
+//! `Allowlist::{empty,parse,is_path_ignored,is_allowed,
 //! is_raw_hash_ignored,is_hash_allowed}`, glob normalization edge cases,
 //! `validate_detector` / `QualityIssue`, `load_detectors_from_str`, and
 //! `DetectorSpec` / `PatternSpec` serde + defaults.
@@ -142,12 +142,12 @@ fn allowlist_hash_prefix_entry_suppresses_matching_hash() {
     let h = sha256("AKIAIOSFODNN7EXAMPLE");
     let hex = hex_encode(&h);
     let al = keyhog_core::testing::allowlist_parse(&format!("hash:{hex}\n"));
-    assert!(al.is_hash_ignored(&h));
+    assert!(al.credential_hashes.contains(&h));
     assert!(keyhog_core::testing::allowlist_is_raw_hash_ignored(
         &al, &hex
     ));
     // A different hash is not suppressed.
-    assert!(!al.is_hash_ignored(&sha256("other")));
+    assert!(!al.credential_hashes.contains(&sha256("other")));
 }
 
 #[test]
@@ -157,7 +157,7 @@ fn allowlist_bare_64hex_treated_as_hash() {
     // 64-char hex with no prefix => credential hash, not a path.
     let al = keyhog_core::testing::allowlist_parse(&format!("{hex}\n"));
     assert!(al.credential_hashes.contains(&h));
-    assert!(al.is_hash_ignored(&h));
+    assert!(al.credential_hashes.contains(&h));
     assert!(al.ignored_paths.is_empty());
 }
 

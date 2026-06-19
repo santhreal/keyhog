@@ -3,13 +3,28 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
-pub(crate) fn load_allowlist(scan_path: Option<&Path>) -> Result<keyhog_core::Allowlist> {
+use crate::orchestrator_config::ResolvedAllowlistConfig;
+
+pub(crate) fn load_allowlist(
+    scan_path: Option<&Path>,
+    config: &ResolvedAllowlistConfig,
+) -> Result<keyhog_core::Allowlist> {
     let base_path = scan_path
         .map(allowlist_root)
         .unwrap_or_else(|| PathBuf::from(".")); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
-    let ignore_path = base_path.join(".keyhogignore");
-    if ignore_path.exists() {
-        keyhog_core::Allowlist::load(&ignore_path).with_context(|| {
+    let configured_file = config.file.is_some();
+    let ignore_path = match config.file.as_ref() {
+        Some(path) => path.clone(),
+        None => base_path.join(".keyhogignore"),
+    };
+    if configured_file || ignore_path.exists() {
+        keyhog_core::Allowlist::load_with_metadata_policy(
+            &ignore_path,
+            config.require_reason,
+            config.require_approved_by,
+            config.max_expires_days,
+        )
+        .with_context(|| {
             format!(
                 "failed to load {}. Fix or remove the allowlist; refusing to scan with silently ignored policy.",
                 ignore_path.display()

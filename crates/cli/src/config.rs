@@ -59,6 +59,10 @@ fn shipped_config_outcome() -> ConfigOutcome {
         trusted_bin_dirs: Vec::new(),
         aws_canary_accounts: Vec::new(),
         scanner_tuning: keyhog_scanner::ScannerTuningConfig::default(),
+        allowlist_file: None,
+        allowlist_require_reason: false,
+        allowlist_require_approved_by: false,
+        allowlist_max_expires_days: None,
     }
 }
 
@@ -68,6 +72,20 @@ fn config_file_error(path: &Path, detail: impl std::fmt::Display, fix: &str) -> 
         .config_errors
         .push(format!("- {}: {detail}. Fix: {fix}", path.display()));
     outcome
+}
+
+fn config_relative_path(config_path: &Path, configured: &str) -> PathBuf {
+    let path = PathBuf::from(configured);
+    if path.is_absolute() {
+        return path;
+    }
+    match config_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        Some(parent) => parent.join(path),
+        None => path,
+    }
 }
 
 fn invalid_config_value(field: &str, value: &str, detail: &str) -> String {
@@ -173,6 +191,14 @@ pub(crate) struct ConfigOutcome {
     pub aws_canary_accounts: Vec<String>,
     /// Explicit scanner route tuning supplied by `.keyhog.toml`.
     pub scanner_tuning: keyhog_scanner::ScannerTuningConfig,
+    /// Optional `.keyhogignore` path supplied by `[allowlist].file`.
+    pub allowlist_file: Option<PathBuf>,
+    /// `[allowlist].require_reason`: every active suppression needs a reason.
+    pub allowlist_require_reason: bool,
+    /// `[allowlist].require_approved_by`: every active suppression needs approval metadata.
+    pub allowlist_require_approved_by: bool,
+    /// `[allowlist].max_expires_days`: every active suppression needs a bounded expiry.
+    pub allowlist_max_expires_days: Option<u64>,
 }
 
 /// Load and merge a `.keyhog.toml` config file into the parsed `ScanArgs`.
@@ -267,6 +293,10 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     let mut trusted_bin_dirs = Vec::new();
     let mut aws_canary_accounts = Vec::new();
     let mut scanner_tuning = keyhog_scanner::ScannerTuningConfig::default();
+    let mut allowlist_file = None;
+    let mut allowlist_require_reason = false;
+    let mut allowlist_require_approved_by = false;
+    let mut allowlist_max_expires_days = None;
 
     let mut collect_trusted_bin_dirs = |field: &str, dirs: Option<Vec<PathBuf>>| {
         if let Some(dirs) = dirs {
@@ -364,6 +394,23 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
             match keyhog_core::parse_canary_account_ids(accounts.iter().map(String::as_str)) {
                 Ok(parsed) => aws_canary_accounts.extend(parsed),
                 Err(error) => config_errors.push(format!("- [aws].knockoff_accounts: {error}")),
+            }
+        }
+    }
+    if let Some(allowlist) = config.allowlist.as_ref() {
+        if let Some(require_reason) = allowlist.require_reason {
+            allowlist_require_reason = require_reason;
+        }
+        if let Some(require_approved_by) = allowlist.require_approved_by {
+            allowlist_require_approved_by = require_approved_by;
+        }
+        allowlist_max_expires_days = allowlist.max_expires_days;
+        if let Some(file) = allowlist.file.as_deref() {
+            let file = file.trim();
+            if file.is_empty() {
+                config_errors.push("- [allowlist].file: path must not be empty".to_string());
+            } else {
+                allowlist_file = Some(config_relative_path(&config_path, file));
             }
         }
     }
@@ -823,6 +870,10 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         trusted_bin_dirs,
         aws_canary_accounts,
         scanner_tuning,
+        allowlist_file,
+        allowlist_require_reason,
+        allowlist_require_approved_by,
+        allowlist_max_expires_days,
     }
 }
 

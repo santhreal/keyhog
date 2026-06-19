@@ -66,6 +66,11 @@ pub struct Allowlist {
     /// suppressions; `load` turns them into a user-visible policy error.
     #[serde(skip)]
     expired_entries: Vec<ExpiredAllowlistEntry>,
+    /// Governance-policy violations found while parsing. They are never active
+    /// suppressions; `load_with_policy` turns them into a user-visible policy
+    /// error.
+    #[serde(skip)]
+    policy_violations: Vec<AllowlistPolicyViolation>,
 }
 
 #[derive(Debug, Clone)]
@@ -73,6 +78,27 @@ struct ExpiredAllowlistEntry {
     line_number: usize,
     entry: String,
     expires: String,
+}
+
+#[derive(Debug, Clone, Copy, Default, serde::Serialize)]
+struct AllowlistMetadataPolicy {
+    require_reason: bool,
+    require_approved_by: bool,
+    max_expires_days: Option<u64>,
+}
+
+impl AllowlistMetadataPolicy {
+    fn is_enforced(self) -> bool {
+        self.require_reason || self.require_approved_by || self.max_expires_days.is_some()
+    }
+}
+
+#[derive(Debug, Clone)]
+struct AllowlistPolicyViolation {
+    line_number: usize,
+    entry: String,
+    field: &'static str,
+    detail: String,
 }
 
 impl Allowlist {
@@ -93,6 +119,7 @@ impl Allowlist {
             ignored_paths: Vec::new(),
             path_index: PathGlobIndex::default(),
             expired_entries: Vec::new(),
+            policy_violations: Vec::new(),
         }
     }
 
@@ -109,10 +136,37 @@ impl Allowlist {
     /// # Ok(()) }
     /// ```
     pub fn load(path: &Path) -> Result<Self, std::io::Error> {
+        Self::load_with_policy(path, AllowlistMetadataPolicy::default())
+    }
+
+    /// Load from a `.keyhogignore` file and enforce metadata governance.
+    pub fn load_with_metadata_policy(
+        path: &Path,
+        require_reason: bool,
+        require_approved_by: bool,
+        max_expires_days: Option<u64>,
+    ) -> Result<Self, std::io::Error> {
+        Self::load_with_policy(
+            path,
+            AllowlistMetadataPolicy {
+                require_reason,
+                require_approved_by,
+                max_expires_days,
+            },
+        )
+    }
+
+    fn load_with_policy(
+        path: &Path,
+        policy: AllowlistMetadataPolicy,
+    ) -> Result<Self, std::io::Error> {
         let contents = std::fs::read_to_string(path)?;
-        let allowlist = Self::parse(&contents);
+        let allowlist = Self::parse_with_policy(&contents, policy);
         if !allowlist.expired_entries.is_empty() {
             return Err(allowlist.expired_entries_error(path));
+        }
+        if !allowlist.policy_violations.is_empty() {
+            return Err(allowlist.policy_violations_error(path));
         }
         Ok(allowlist)
     }
@@ -136,8 +190,13 @@ impl Allowlist {
     /// # Ok(()) }
     /// ```
     pub fn parse(content: &str) -> Self {
+        Self::parse_with_policy(content, AllowlistMetadataPolicy::default())
+    }
+
+    fn parse_with_policy(content: &str, policy: AllowlistMetadataPolicy) -> Self {
         let mut al = Self::empty();
-        let today = today_yyyy_mm_dd();
+        let today_days = today_days_since_epoch();
+        let today = yyyy_mm_dd_from_days(today_days);
         for (line_number, raw_line) in content.lines().enumerate() {
             let raw_line = raw_line.trim();
             if raw_line.is_empty() || raw_line.starts_with('#') {
@@ -172,6 +231,15 @@ impl Allowlist {
             if let Some(hash) = entry.strip_prefix("hash:") {
                 let trimmed = hash.trim();
                 if let Some(valid_hash) = parse_sha256_hex(trimmed) {
+                    if !al.metadata_policy_allows(
+                        line_number + 1,
+                        entry,
+                        &parsed_meta,
+                        policy,
+                        today_days,
+                    ) {
+                        continue;
+                    }
                     al.credential_hashes.insert(valid_hash);
                     log_metadata_audit("hash", trimmed, &parsed_meta);
                 } else {
@@ -189,6 +257,15 @@ impl Allowlist {
                         line_number + 1
                     );
                 } else {
+                    if !al.metadata_policy_allows(
+                        line_number + 1,
+                        entry,
+                        &parsed_meta,
+                        policy,
+                        today_days,
+                    ) {
+                        continue;
+                    }
                     al.ignored_detectors.insert(detector.to_string());
                     log_metadata_audit("detector", detector, &parsed_meta);
                 }
@@ -200,6 +277,15 @@ impl Allowlist {
                         line_number + 1
                     );
                 } else {
+                    if !al.metadata_policy_allows(
+                        line_number + 1,
+                        entry,
+                        &parsed_meta,
+                        policy,
+                        today_days,
+                    ) {
+                        continue;
+                    }
                     al.ignored_paths.push(path.to_string());
                     log_metadata_audit("path", path, &parsed_meta);
                 }
@@ -208,6 +294,15 @@ impl Allowlist {
                 // `keyhog scan ... --format jsonl | jq -r '.credential_hash'
                 // >> .keyhogignore` workflow Just Work without users
                 // learning the `hash:` prefix.
+                if !al.metadata_policy_allows(
+                    line_number + 1,
+                    entry,
+                    &parsed_meta,
+                    policy,
+                    today_days,
+                ) {
+                    continue;
+                }
                 al.credential_hashes.insert(bytes);
                 log_metadata_audit("hash", entry, &parsed_meta);
             } else {
@@ -219,6 +314,15 @@ impl Allowlist {
                 // behavior emitted a warning and silently dropped the
                 // line, which is the worst of both worlds: every
                 // `.gitignore` users copied over was dead.
+                if !al.metadata_policy_allows(
+                    line_number + 1,
+                    entry,
+                    &parsed_meta,
+                    policy,
+                    today_days,
+                ) {
+                    continue;
+                }
                 al.ignored_paths.push(entry.to_string());
                 log_metadata_audit("path", entry, &parsed_meta);
             }
@@ -228,6 +332,107 @@ impl Allowlist {
         // re-normalizes each pattern nor sweeps every rule.
         al.path_index = PathGlobIndex::build(&al.ignored_paths);
         al
+    }
+
+    fn metadata_policy_allows(
+        &mut self,
+        line_number: usize,
+        entry: &str,
+        metadata: &InlineMetadata,
+        policy: AllowlistMetadataPolicy,
+        today_days: i64,
+    ) -> bool {
+        if !policy.is_enforced() {
+            return true;
+        }
+        let mut allowed = true;
+        if policy.require_reason && metadata.reason.as_deref().is_none_or(str::is_empty) {
+            self.push_policy_violation(
+                line_number,
+                entry,
+                "reason",
+                "required by [allowlist].require_reason".to_string(),
+            );
+            allowed = false;
+        }
+        if policy.require_approved_by && metadata.approved_by.as_deref().is_none_or(str::is_empty) {
+            self.push_policy_violation(
+                line_number,
+                entry,
+                "approved_by",
+                "required by [allowlist].require_approved_by".to_string(),
+            );
+            allowed = false;
+        }
+        if let Some(max_expires_days) = policy.max_expires_days {
+            match metadata.expires.as_deref() {
+                Some(expires) if !expires.is_empty() => match parse_yyyy_mm_dd_days(expires) {
+                    Some(expires_days) => {
+                        let max_days = match i64::try_from(max_expires_days) {
+                            Ok(days) => days,
+                            Err(error) => {
+                                self.push_policy_violation(
+                                    line_number,
+                                    entry,
+                                    "expires",
+                                    format!(
+                                        "max_expires_days={max_expires_days} is too large to enforce ({error})"
+                                    ),
+                                );
+                                allowed = false;
+                                return allowed;
+                            }
+                        };
+                        if expires_days.saturating_sub(today_days) > max_days {
+                            self.push_policy_violation(
+                                line_number,
+                                entry,
+                                "expires",
+                                format!(
+                                    "expires={expires} is more than {max_expires_days} days out"
+                                ),
+                            );
+                            allowed = false;
+                        }
+                    }
+                    None => {
+                        self.push_policy_violation(
+                            line_number,
+                            entry,
+                            "expires",
+                            "must use YYYY-MM-DD when [allowlist].max_expires_days is set"
+                                .to_string(),
+                        );
+                        allowed = false;
+                    }
+                },
+                _ => {
+                    self.push_policy_violation(
+                        line_number,
+                        entry,
+                        "expires",
+                        "required by [allowlist].max_expires_days".to_string(),
+                    );
+                    allowed = false;
+                }
+            }
+        }
+        allowed
+    }
+
+    fn push_policy_violation(
+        &mut self,
+        line_number: usize,
+        entry: &str,
+        field: &'static str,
+        detail: String,
+    ) {
+        self.policy_violations.push(AllowlistPolicyViolation {
+            line_number,
+            entry: entry.to_string(),
+            field,
+            detail,
+        });
     }
 
     fn expired_entries_error(&self, path: &Path) -> std::io::Error {
@@ -249,6 +454,32 @@ impl Allowlist {
                 first.line_number,
                 first.entry,
                 first.expires,
+                suffix
+            ),
+        )
+    }
+
+    fn policy_violations_error(&self, path: &Path) -> std::io::Error {
+        let first = &self.policy_violations[0];
+        let extra = self.policy_violations.len().saturating_sub(1);
+        let suffix = if extra == 0 {
+            String::new()
+        } else if extra == 1 {
+            " (+1 more policy violation)".to_string()
+        } else {
+            format!(" (+{extra} more policy violations)")
+        };
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "{} violates allowlist governance at line {}: '{}' missing/invalid {} ({}){}. \
+                 Add inline metadata like `; reason=\"...\"; approved_by=\"...\"; expires=YYYY-MM-DD` \
+                 or relax the [allowlist] policy in .keyhog.toml; refusing to scan with unapproved suppressions.",
+                path.display(),
+                first.line_number,
+                first.entry,
+                first.field,
+                first.detail,
                 suffix
             ),
         )
@@ -304,7 +535,7 @@ impl Allowlist {
     /// std::fs::write(&path, "hash:0000000000000000000000000000000000000000000000000000000000000000\n")?;
     /// let allowlist = Allowlist::load(&path)?;
     /// std::fs::remove_file(&path)?;
-    /// assert!(allowlist.is_hash_ignored(&[0u8; 32]));
+    /// assert!(allowlist.credential_hashes.contains(&[0u8; 32]));
     /// # Ok(()) }
     /// ```
     pub fn is_hash_allowed(&self, credential: &str) -> bool {
@@ -314,14 +545,6 @@ impl Allowlist {
     /// Check if a hex-encoded SHA-256 hash is allowlisted.
     pub fn is_raw_hash_ignored(&self, hash_hex: &str) -> bool {
         parse_sha256_hex(hash_hex).is_some_and(|bytes| self.matches_ignored_hash(&bytes))
-    }
-
-    /// Check if a finding's raw 32-byte SHA-256 hash is allowlisted - the
-    /// scan-path entry that takes the `[u8; 32]` form directly (no hex
-    /// round-trip). Siblings `is_hash_allowed` / `is_raw_hash_ignored` accept
-    /// the hex-string form for `.keyhogignore` self-checks and CLI input.
-    pub fn is_hash_ignored(&self, hash: &[u8; 32]) -> bool {
-        self.matches_ignored_hash(hash)
     }
 
     /// Check whether a raw path matches an ignored-path glob.

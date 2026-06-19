@@ -172,7 +172,7 @@ impl ScanOrchestrator {
                         return false;
                     }
                 }
-                if allowlist.is_hash_ignored(&m.credential_hash) {
+                if allowlist.credential_hashes.contains(&m.credential_hash) {
                     return false;
                 }
                 if allowlist.ignored_detectors.contains(&*m.detector_id) {

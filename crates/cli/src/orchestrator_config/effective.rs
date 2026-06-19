@@ -145,6 +145,26 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         "aws_canary_accounts = {}\n",
         resolved.aws_canary_accounts.len()
     ));
+    let allowlist_file = match resolved.allowlist.file.as_ref() {
+        Some(path) => path.display().to_string(),
+        None => "<scan-root>/.keyhogignore".to_string(),
+    };
+    out.push_str(&format!("allowlist_file = {allowlist_file}\n"));
+    out.push_str(&format!(
+        "allowlist_require_reason = {}\n",
+        resolved.allowlist.require_reason
+    ));
+    out.push_str(&format!(
+        "allowlist_require_approved_by = {}\n",
+        resolved.allowlist.require_approved_by
+    ));
+    let max_expires_days = match resolved.allowlist.max_expires_days {
+        Some(days) => days.to_string(),
+        None => "off".to_string(),
+    };
+    out.push_str(&format!(
+        "allowlist_max_expires_days = {max_expires_days}\n"
+    ));
     let tuning = resolved.scanner_tuning.effective();
     out.push_str(&format!("tuning_fallback_hs = {}\n", tuning.fallback_hs));
     out.push_str(&format!(
@@ -273,6 +293,10 @@ pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
     resolved.hyperscan_cache_dir.hash(&mut h);
     resolved.aws_canary_accounts.hash(&mut h);
     resolved.scanner_tuning.hash(&mut h);
+    resolved.allowlist.file.hash(&mut h);
+    resolved.allowlist.require_reason.hash(&mut h);
+    resolved.allowlist.require_approved_by.hash(&mut h);
+    resolved.allowlist.max_expires_days.hash(&mut h);
     resolved.source_limits.hash(&mut h);
     h.finish()
 }

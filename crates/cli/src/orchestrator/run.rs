@@ -210,7 +210,8 @@ impl ScanOrchestrator {
             return Ok(std::process::ExitCode::SUCCESS);
         }
 
-        let allowlist = load_allowlist(self.args.path.as_deref())?;
+        let allowlist =
+            load_allowlist(self.args.path.as_deref(), &self.effective_config.allowlist)?;
         let merkle = self.build_merkle_index();
 
         let sources = crate::sources::build_sources(

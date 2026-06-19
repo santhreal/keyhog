@@ -140,6 +140,10 @@ struct EffectivePolicy {
     /// Extra AWS canary/knockoff account IDs from `.keyhog.toml`. The daemon
     /// process owns its own scanner state and cannot consume per-client config.
     custom_aws_canary_accounts: bool,
+    /// `[allowlist]` file/governance policy from `.keyhog.toml`. The daemon
+    /// route intentionally loads only the default local `.keyhogignore`, so a
+    /// configured allowlist policy must stay in-process.
+    has_allowlist_config: bool,
 }
 
 #[cfg(unix)]
@@ -172,6 +176,10 @@ impl EffectivePolicy {
             require_lockdown: outcome.require_lockdown,
             has_config_errors: !outcome.config_errors.is_empty(),
             custom_aws_canary_accounts: !outcome.aws_canary_accounts.is_empty(),
+            has_allowlist_config: outcome.allowlist_file.is_some()
+                || outcome.allowlist_require_reason
+                || outcome.allowlist_require_approved_by
+                || outcome.allowlist_max_expires_days.is_some(),
         }
     }
 }
@@ -254,11 +262,12 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
         || policy.min_confidence.is_some()
         || policy.has_config_errors
         || policy.custom_aws_canary_accounts
+        || policy.has_allowlist_config
         || args.hide_client_safe
     {
         if let Some(route) = reject_forced_daemon(
             forced_on,
-            "this scan requests filtering, lockdown, secret-output, AWS canary config, or config policy the daemon cannot enforce",
+            "this scan requests filtering, lockdown, secret-output, AWS canary config, allowlist governance, or config policy the daemon cannot enforce",
         ) {
             return route;
         }
@@ -555,7 +564,7 @@ fn finalize_for_report(matches: Vec<RawMatch>, args: &ScanArgs) -> Result<Vec<Ve
                     return false;
                 }
             }
-            if allowlist.is_hash_ignored(&m.credential_hash) {
+            if allowlist.credential_hashes.contains(&m.credential_hash) {
                 return false;
             }
             if allowlist.ignored_detectors.contains(&*m.detector_id) {

@@ -143,6 +143,14 @@ pub(crate) fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
     config
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ResolvedAllowlistConfig {
+    pub(crate) file: Option<PathBuf>,
+    pub(crate) require_reason: bool,
+    pub(crate) require_approved_by: bool,
+    pub(crate) max_expires_days: Option<u64>,
+}
+
 /// The single resolved scan configuration: the END of the precedence chain
 /// `compiled-default -> [scan] table -> flat ConfigFile fields -> CLI flags`,
 /// already merged into the engine's [`ScannerConfig`] PLUS the post-scan policy
@@ -216,6 +224,8 @@ pub(crate) struct ResolvedScanConfig {
     pub(crate) aws_canary_accounts: Vec<String>,
     /// Explicit scanner route tuning supplied by `.keyhog.toml`.
     pub(crate) scanner_tuning: keyhog_scanner::ScannerTuningConfig,
+    /// Resolved allowlist file and governance policy supplied by `.keyhog.toml`.
+    pub(crate) allowlist: ResolvedAllowlistConfig,
     /// Resolved source byte/count limits applied while constructing sources.
     pub(crate) source_limits: keyhog_sources::SourceLimits,
 }
@@ -286,6 +296,12 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
         autoroute_cache_path,
         aws_canary_accounts,
         scanner_tuning,
+        allowlist: ResolvedAllowlistConfig {
+            file: outcome.allowlist_file,
+            require_reason: outcome.allowlist_require_reason,
+            require_approved_by: outcome.allowlist_require_approved_by,
+            max_expires_days: outcome.allowlist_max_expires_days,
+        },
         source_limits: args.limits.to_source_limits(),
     })
 }
@@ -314,6 +330,12 @@ pub(crate) fn resolved_scan_config_for_scanner(scanner: ScannerConfig) -> Resolv
         autoroute_cache_path: None,
         aws_canary_accounts: Vec::new(),
         scanner_tuning: keyhog_scanner::ScannerTuningConfig::default(),
+        allowlist: ResolvedAllowlistConfig {
+            file: None,
+            require_reason: false,
+            require_approved_by: false,
+            max_expires_days: None,
+        },
         source_limits: keyhog_sources::SourceLimits::default(),
     }
 }
