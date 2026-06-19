@@ -9,14 +9,9 @@
 //! related hot-pattern label, and either label is honest evidence the
 //! secret was caught.
 //!
-//! When the directory is empty, the runner passes vacuously. The
-//! hard gate is one file = one binding truth test - every entry
-//! becomes a hard-fail the moment it's added, so the runner
-//! grows teeth incrementally as the CVE corpus is populated.
-//!
-//! OPEN: `tests/cve_replay/` is currently empty; this detector
-//! suite has zero CVE-replay coverage. Each new entry must be a
-//! verbatim public-leak fixture with an auditable `source_url`.
+//! The replay corpus is a hard gate, not a vacuous directory walk:
+//! deleting fixtures, breaking the directory, or adding malformed
+//! TOML fails before scanning.
 
 mod support;
 use support::paths::detector_dir;
@@ -27,20 +22,17 @@ use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
 use serde::Deserialize;
 
+const MIN_CVE_REPLAY_ENTRIES: usize = 4;
+
 #[derive(Debug, Deserialize)]
 struct CveEntry {
-    #[allow(dead_code)]
     schema_version: u32,
     cve_id: String,
-    #[allow(dead_code)]
     source_url: String,
     #[serde(default)]
-    #[allow(dead_code)]
     source_commit: Option<String>,
     detectors: Vec<String>,
-    #[allow(dead_code)]
     service: String,
-    #[allow(dead_code)]
     description: String,
     leaked_text: String,
 }
@@ -55,36 +47,89 @@ fn cve_replay_dir() -> PathBuf {
 fn load_entries() -> Vec<(PathBuf, CveEntry)> {
     let dir = cve_replay_dir();
     let mut out = Vec::new();
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        return out;
-    };
-    for entry in entries.flatten() {
+    let entries = std::fs::read_dir(&dir)
+        .unwrap_or_else(|e| panic!("read cve_replay directory {}: {e}", dir.display()));
+    for entry in entries {
+        let entry = entry
+            .unwrap_or_else(|e| panic!("read cve_replay directory entry {}: {e}", dir.display()));
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
         }
-        let Ok(text) = std::fs::read_to_string(&path) else {
-            continue;
-        };
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read cve_replay entry {}: {e}", path.display()));
         match toml::from_str::<CveEntry>(&text) {
-            Ok(e) => out.push((path, e)),
+            Ok(e) => {
+                validate_entry(&path, &e);
+                out.push((path, e));
+            }
             Err(e) => panic!("malformed cve_replay entry {}: {e}", path.display()),
         }
     }
+    out.sort_by(|(left, _), (right, _)| left.cmp(right));
     out
+}
+
+fn validate_entry(path: &std::path::Path, entry: &CveEntry) {
+    assert_eq!(
+        entry.schema_version,
+        1,
+        "{}: cve_replay schema_version must be 1",
+        path.display()
+    );
+    assert!(
+        !entry.cve_id.trim().is_empty(),
+        "{}: cve_id must be present",
+        path.display()
+    );
+    assert!(
+        entry.source_url.starts_with("https://"),
+        "{}: source_url must be an auditable https URL",
+        path.display()
+    );
+    if let Some(commit) = &entry.source_commit {
+        assert!(
+            !commit.trim().is_empty(),
+            "{}: source_commit must be omitted or non-empty",
+            path.display()
+        );
+    }
+    assert!(
+        !entry.detectors.is_empty(),
+        "{}: at least one expected detector id is required",
+        path.display()
+    );
+    assert!(
+        entry.detectors.iter().all(|d| !d.trim().is_empty()),
+        "{}: detector ids must be non-empty",
+        path.display()
+    );
+    assert!(
+        !entry.service.trim().is_empty(),
+        "{}: service must be present",
+        path.display()
+    );
+    assert!(
+        !entry.description.trim().is_empty(),
+        "{}: description must be present",
+        path.display()
+    );
+    assert!(
+        !entry.leaked_text.trim().is_empty(),
+        "{}: leaked_text must contain the replay fixture",
+        path.display()
+    );
 }
 
 #[test]
 fn every_cve_replay_entry_must_fire() {
     let entries = load_entries();
-    if entries.is_empty() {
-        eprintln!(
-            "CVE replay corpus is empty - vacuous pass. Populate \
-             crates/scanner/tests/cve_replay/*.toml with public leaks \
-             (see README in that directory) to gate recall on known shapes."
-        );
-        return;
-    }
+    assert!(
+        entries.len() >= MIN_CVE_REPLAY_ENTRIES,
+        "CVE replay corpus shrank to {} entries; expected at least \
+         {MIN_CVE_REPLAY_ENTRIES} public-leak fixtures",
+        entries.len()
+    );
 
     let detectors = keyhog_core::load_detectors(&detector_dir())
         .expect("detectors directory loadable from cve_replay_runner");
