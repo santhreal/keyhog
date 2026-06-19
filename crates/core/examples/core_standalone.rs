@@ -1,7 +1,7 @@
 use keyhog_core::{
     load_detectors, redact, validate_detector, Allowlist, DetectorSpec, PatternSpec, Severity,
 };
-use std::path::Path;
+use std::path::PathBuf;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let detector = DetectorSpec {
@@ -25,8 +25,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let ignore_path = std::env::temp_dir().join("keyhog-core-standalone.keyhogignore");
     std::fs::write(&ignore_path, "path:**/*.md\n")?;
     let allowlist = Allowlist::load(&ignore_path)?;
-    let _ = std::fs::remove_file(&ignore_path);
-    let maybe_detectors = load_detectors(Path::new("detectors")).ok();
+    std::fs::remove_file(&ignore_path)?;
+    let detectors_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../detectors");
+    let detectors = load_detectors(&detectors_dir)?;
 
     println!("detector={} issues={}", detector.id, issues.len());
     println!("redacted={}", redact("demo_ABC12345"));
@@ -34,9 +35,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "ignores_docs={}",
         allowlist.is_path_ignored("docs/README.md")
     );
-    println!(
-        "workspace_detectors_loaded={}",
-        maybe_detectors.as_ref().map_or(0, Vec::len)
-    );
+    println!("workspace_detectors_loaded={}", detectors.len());
     Ok(())
 }

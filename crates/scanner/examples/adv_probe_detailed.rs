@@ -3,12 +3,12 @@ use keyhog_scanner::CompiledScanner;
 use regex::Regex;
 use std::path::PathBuf;
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     d.pop();
     d.pop();
     d.push("detectors");
-    let detectors = keyhog_core::load_detectors(&d).unwrap();
+    let detectors = keyhog_core::load_detectors(&d)?;
     let targets = [
         "spotify-client-credentials",
         "reddit-ads-api-credentials",
@@ -31,14 +31,17 @@ fn main() {
                 _ => "",
             };
             if let Some(cap) = re.captures(sample) {
-                println!("    direct regex OK: {:?}", cap.get(p.group.unwrap_or(0)));
+                println!(
+                    "    direct regex OK: {:?}",
+                    cap.get(p.group.unwrap_or(0)) // LAW10: absent detector group means whole-match group 0 by contract
+                );
             } else {
                 println!("    direct regex MISS on {sample}");
             }
         }
     }
 
-    let s = CompiledScanner::compile(detectors).unwrap();
+    let s = CompiledScanner::compile(detectors)?;
     let texts = [
         (
             "datadog-api-key",
@@ -79,4 +82,5 @@ fn main() {
                 .collect::<Vec<_>>()
         );
     }
+    Ok(())
 }

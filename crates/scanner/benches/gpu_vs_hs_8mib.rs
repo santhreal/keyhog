@@ -15,6 +15,8 @@
 
 use keyhog_core::{load_detectors, Chunk, ChunkMetadata};
 use keyhog_scanner::{set_perf_trace_enabled, CompiledScanner, ScanBackend};
+use std::env;
+use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -94,23 +96,47 @@ fn report(label: &str, d: Duration, bytes: usize, hits: usize) {
     println!("{label:<28} {ms:>10.4} ms   {gbps:>8.3} GB/s   hits={hits}",);
 }
 
-fn main() {
-    let perf_trace = std::env::args().any(|arg| arg == "--perf-trace");
+fn env_positive_usize(name: &str, default: usize) -> Result<usize, io::Error> {
+    match env::var(name) {
+        Ok(raw) => {
+            let value = raw.parse::<usize>().map_err(|source| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("{name}={raw:?} must be a positive integer: {source}"),
+                )
+            })?;
+            if value == 0 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("{name} must be greater than zero"),
+                ));
+            }
+            Ok(value)
+        }
+        Err(env::VarError::NotPresent) => Ok(default),
+        Err(env::VarError::NotUnicode(raw)) => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{name} is not valid Unicode: {raw:?}"),
+        )),
+    }
+}
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let perf_trace = env::args().any(|arg| arg == "--perf-trace");
     set_perf_trace_enabled(perf_trace);
 
-    let size: usize = std::env::var("KH_BENCH_SIZE_MIB")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(8)
-        * MIB;
-    let iters: usize = std::env::var("KH_BENCH_ITERS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(20);
+    let size_mib = env_positive_usize("KH_BENCH_SIZE_MIB", 8)?;
+    let size = size_mib.checked_mul(MIB).ok_or_else(|| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{size_mib} MiB overflows usize on this host"),
+        )
+    })?;
+    let iters = env_positive_usize("KH_BENCH_ITERS", 20)?;
 
-    let detectors = load_detectors(&detectors_dir()).expect("load detectors");
+    let detectors = load_detectors(&detectors_dir())?;
     let n_det = detectors.len();
-    let scanner = CompiledScanner::compile(detectors).expect("compile scanner");
+    let scanner = CompiledScanner::compile(detectors)?;
 
     let payload = gen_payload(size);
     let chunk = make_chunk(payload, "src/bench_8mib.rs");
@@ -170,4 +196,5 @@ fn main() {
     {
         println!("(gpu feature OFF — build with --features gpu for the GPU comparison)");
     }
+    Ok(())
 }

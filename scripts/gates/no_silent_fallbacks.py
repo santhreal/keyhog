@@ -5,7 +5,8 @@ Law 10 was written in CLAUDE.md the whole time 66 silent fallbacks accumulated.
 A rule a human has to remember is a rule that gets skipped. This gate makes a
 NEW silent-swallow idiom in the detection crates a RED BUILD.
 
-It scans `crates/{scanner,sources,core,cli,verifier}/src` for TWO idiom classes
+It scans `crates/{scanner,sources,core,cli,verifier}/{src,examples,benches}`
+for TWO idiom classes
 that discard a failure / degrade with no operator-visible surfacing:
   (1) the swallow idioms:
     .ok()              (Result -> Option, error dropped)
@@ -82,14 +83,17 @@ WS = re.compile(r"\s+")
 
 def _iter_src_files():
     for crate in CRATES:
-        root = REPO / "crates" / crate / "src"
-        for f in root.rglob("*.rs"):
-            # Skip in-file unit tests crudely: files that are predominantly tests
-            # still get scanned, but pure test modules under a `tests/` dir are
-            # out of scope (those don't ship in the scan path).
-            if "/tests/" in str(f):
+        for subdir in ("src", "examples", "benches"):
+            root = REPO / "crates" / crate / subdir
+            if not root.exists():
                 continue
-            yield f
+            for f in root.rglob("*.rs"):
+                # Skip in-file unit tests crudely: files that are predominantly tests
+                # still get scanned, but pure test modules under a `tests/` dir are
+                # out of scope (those don't ship in the scan path).
+                if "/tests/" in str(f):
+                    continue
+                yield f
 
 
 def collect() -> set[str]:

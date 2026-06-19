@@ -2,6 +2,7 @@ use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::CompiledScanner;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
+use std::io::{self, ErrorKind};
 use std::path::PathBuf;
 
 #[derive(Debug, Deserialize)]
@@ -51,7 +52,8 @@ impl Wrapper {
         }
     }
     fn wrap(self, text: &str) -> String {
-        let json_escaped = serde_json::to_string(text).unwrap_or_else(|_| String::from("\"\""));
+        let json_escaped =
+            serde_json::to_string(text).expect("serializing a Rust str as JSON cannot fail");
         match self {
             Wrapper::DotEnv => format!("CREDENTIAL_PAYLOAD={text}\n"),
             Wrapper::Json => format!("{{\n  \"payload\": {json_escaped}\n}}\n"),
@@ -65,12 +67,12 @@ impl Wrapper {
     }
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     d.pop();
     d.pop();
     d.push("detectors");
-    let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).unwrap()).unwrap();
+    let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d)?)?;
     let contracts_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/contracts");
     let mut by_detector: HashMap<String, usize> = HashMap::new();
     let mut by_wrapper: HashMap<String, usize> = HashMap::new();
@@ -78,13 +80,21 @@ fn main() {
     let mut partial = 0usize;
     let mut total = 0usize;
     let mut samples: BTreeMap<String, String> = BTreeMap::new();
-    for entry in std::fs::read_dir(&contracts_dir).unwrap().flatten() {
+    for entry in std::fs::read_dir(&contracts_dir)? {
+        let entry = entry?;
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
         }
-        let text = std::fs::read_to_string(&path).unwrap();
-        let c: Contract = toml::from_str(&text).unwrap();
+        let text = std::fs::read_to_string(&path)?;
+        if text.starts_with("version https://git-lfs.github.com/spec/v1") {
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                format!("contract {} is a Git LFS pointer", path.display()),
+            )
+            .into());
+        }
+        let c: Contract = toml::from_str(&text)?;
         for p in &c.positive {
             for wrapper in Wrapper::ALL {
                 total += 1;
@@ -150,4 +160,5 @@ fn main() {
     for (d, s) in samples {
         println!("{d}: {s}");
     }
+    Ok(())
 }

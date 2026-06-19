@@ -3,7 +3,7 @@ use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
-use std::io;
+use std::io::{self, ErrorKind};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -25,20 +25,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let root = args
         .next()
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from("linux"));
+        .unwrap_or_else(|| PathBuf::from("linux")); // LAW10: absent example root uses the documented Linux-tree default; traversal errors still fail closed
     let mut max_lines = None;
-    let mut backend_args = Vec::new();
+    let mut requested_backends = Vec::new();
     while let Some(arg) = args.next() {
         if arg == "--max-lines" {
-            max_lines = args.next().and_then(|value| value.parse::<usize>().ok());
+            let value = args.next().ok_or_else(|| {
+                io::Error::new(ErrorKind::InvalidInput, "--max-lines requires a value")
+            })?;
+            max_lines = Some(value.parse::<usize>().map_err(|source| {
+                io::Error::new(
+                    ErrorKind::InvalidInput,
+                    format!("--max-lines value {value:?} is not a usize: {source}"),
+                )
+            })?);
         } else {
-            backend_args.push(arg);
+            requested_backends.push(parse_backend(&arg).ok_or_else(|| {
+                io::Error::new(
+                    ErrorKind::InvalidInput,
+                    format!(
+                        "unknown backend or argument {arg:?}; expected cpu, cpu-fallback, simd, simd-cpu, gpu, or vyre-gpu"
+                    ),
+                )
+            })?);
         }
     }
-    let requested_backends: Vec<ScanBackend> = backend_args
-        .iter()
-        .filter_map(|arg| parse_backend(arg))
-        .collect();
     let detectors_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../detectors");
     let detectors = load_detectors(&detectors_dir).expect("load detectors");
     let scanner = CompiledScanner::compile(detectors).expect("compile scanner");

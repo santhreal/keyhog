@@ -1,4 +1,5 @@
 //! Probe candidate evasion wrappers for contracts whose evasion DROPPED.
+use std::io::{self, ErrorKind};
 use std::path::PathBuf;
 
 use keyhog_core::{Chunk, ChunkMetadata};
@@ -96,12 +97,12 @@ fn surfaces(scanner: &CompiledScanner, text: &str, credential: &str) -> bool {
         .any(|m| m.credential.as_ref().contains(credential))
 }
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut d = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     d.pop();
     d.pop();
     d.push("detectors");
-    let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d).unwrap()).unwrap();
+    let scanner = CompiledScanner::compile(keyhog_core::load_detectors(&d)?)?;
     let contracts_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/contracts");
 
     let mut fixed = 0usize;
@@ -109,16 +110,21 @@ fn main() {
     let mut pattern_counts: std::collections::BTreeMap<&'static str, usize> =
         std::collections::BTreeMap::new();
 
-    for entry in std::fs::read_dir(&contracts_dir).unwrap().flatten() {
+    for entry in std::fs::read_dir(&contracts_dir)? {
+        let entry = entry?;
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("toml") {
             continue;
         }
-        let text = std::fs::read_to_string(&path).unwrap();
-        let c: Contract = match toml::from_str(&text) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
+        let text = std::fs::read_to_string(&path)?;
+        if text.starts_with("version https://git-lfs.github.com/spec/v1") {
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                format!("contract {} is a Git LFS pointer", path.display()),
+            )
+            .into());
+        }
+        let c: Contract = toml::from_str(&text)?;
         let Some(pos) = c.positive.first() else {
             continue;
         };
@@ -161,4 +167,5 @@ fn main() {
         }
     }
     eprintln!("fixed={fixed} unfixed={unfixed} patterns={pattern_counts:?}");
+    Ok(())
 }
