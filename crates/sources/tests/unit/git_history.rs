@@ -91,6 +91,35 @@ fn git_history_later_commit_addition_carries_absolute_base_line() {
 
 #[cfg(feature = "git")]
 #[test]
+fn git_history_eof_flush_carries_absolute_base_line() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    let clean: String = (1..=100).map(|i| format!("clean_{i} = {i}\n")).collect();
+    commit_file(&repo_path, "f.txt", &clean, "clean base");
+
+    let mut lines: Vec<String> = (1..=100).map(|i| format!("clean_{i} = {i}")).collect();
+    lines[79] = "hist_key = \"AKIAQYLPMN5HFIQR7XYA\"".to_string();
+    commit_file(
+        &repo_path,
+        "f.txt",
+        &(lines.join("\n") + "\n"),
+        "add secret at line 80",
+    );
+
+    let source = GitHistorySource::new(repo_path).with_max_commits(1);
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+    let secret_chunk = chunks
+        .iter()
+        .find(|c| c.data.as_ref().contains("AKIAQYLPMN5HFIQR7XYA"))
+        .expect("history must surface the HEAD hunk before EOF");
+
+    assert_eq!(
+        secret_chunk.metadata.base_line, 79,
+        "EOF flush must preserve the hunk base line instead of resetting final history findings to line 1"
+    );
+}
+
+#[cfg(feature = "git")]
+#[test]
 fn git_history_source_collects_added_files_commit_by_commit() {
     let (_temp_dir, repo_path) = create_test_repo();
     commit_file(&repo_path, "first.txt", "api_key = sk-first", "Add first");

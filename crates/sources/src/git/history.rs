@@ -158,7 +158,7 @@ fn stream_git_history_chunks(
                                     data: current_content.trim().to_string().into(),
                                     metadata: ChunkMetadata {
                                         base_offset: 0,
-                                        base_line: 0,
+                                        base_line: current_base_line,
                                         source_type: "git-history".into(),
                                         path: Some(path.clone()),
                                         commit: Some(commit.clone()),
