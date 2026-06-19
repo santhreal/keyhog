@@ -870,6 +870,7 @@ fn collect_tree_blobs_metadata(
 
         let default_exclude_path = String::from_utf8_lossy(&filepath);
         if crate::filesystem::is_default_excluded_path(default_exclude_path.as_ref()) {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
             continue;
         }
 

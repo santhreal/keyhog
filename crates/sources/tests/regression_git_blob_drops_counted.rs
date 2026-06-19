@@ -199,6 +199,52 @@ fn binary_untracked_git_diff_file_is_counted_binary() {
     );
 }
 
+/// A blob skipped by the shared default-exclude policy is intentionally not
+/// scanned, but it still has to reach the shared excluded coverage counter.
+#[test]
+fn default_excluded_git_blob_is_counted_excluded() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let repo = temp.path();
+    init_repo(repo);
+    std::fs::write(
+        repo.join("Cargo.lock"),
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n", // keyhog:ignore detector=aws-access-key (synthetic excluded fixture)
+    )
+    .expect("write excluded lockfile");
+    std::fs::write(repo.join("keep.env"), "KEEP=visible\n").expect("write keep");
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-m", "excluded lockfile"]);
+
+    let chunks: Vec<_> = GitSource::new(repo.to_path_buf())
+        .with_max_commits(1)
+        .chunks()
+        .filter_map(|result| result.ok())
+        .collect();
+    assert!(
+        chunks
+            .iter()
+            .any(|chunk| chunk.metadata.path.as_deref() == Some("keep.env")),
+        "non-excluded sibling must still be scanned"
+    );
+    assert!(
+        !chunks
+            .iter()
+            .any(|chunk| chunk.metadata.path.as_deref() == Some("Cargo.lock")),
+        "default-excluded Cargo.lock must not be emitted"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.excluded - before.excluded,
+        1,
+        "the default-excluded Git blob MUST bump SKIPPED_EXCLUDED exactly once"
+    );
+}
+
 /// Aggregate history caps stop the source before all remaining blobs are
 /// exhausted. That is a source-level partial-coverage gap, not a clean end of
 /// history and not a per-file size skip.
