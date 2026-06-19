@@ -522,6 +522,13 @@ pub fn create_source_with_http_config_and_limits(
     }
 }
 
+#[cfg(any(
+    feature = "github",
+    feature = "s3",
+    feature = "gcs",
+    feature = "azure",
+    feature = "web"
+))]
 fn source_param_fields(params: &str) -> Vec<&str> {
     params.split('\n').collect()
 }
