@@ -9,8 +9,22 @@ fn backend_subcommand_selects_backend_variant() {
     match cli.command {
         Some(Command::Backend(args)) => {
             assert!(args.probe_bytes.is_none());
-            assert_eq!(args.patterns, 1509);
+            assert_eq!(
+                args.patterns, None,
+                "omitted --patterns must use the live compiled corpus"
+            );
             assert!(!args.self_test);
+        }
+        _ => panic!("expected Backend subcommand"),
+    }
+}
+
+#[test]
+fn backend_patterns_override_parses_as_what_if_value() {
+    let cli = Cli::try_parse_from(["keyhog", "backend", "--patterns", "2048"]).unwrap();
+    match cli.command {
+        Some(Command::Backend(args)) => {
+            assert_eq!(args.patterns, Some(2048));
         }
         _ => panic!("expected Backend subcommand"),
     }

@@ -242,6 +242,7 @@ keyhog scan . --severity high                  # info | low | medium | high | cr
 keyhog scan . --min-confidence 0.5             # raise the ML floor
 keyhog scan . --format sarif -o keyhog.sarif   # GitHub code scanning
 keyhog scan . --verify                         # live-verify against vendor APIs
+keyhog scan . --create-baseline .keyhog-baseline.json
 keyhog scan . --baseline .keyhog-baseline.json # only NEW findings vs snapshot
 keyhog scan . --fast                           # pre-commit speed (skip ML + decode)
 keyhog scan . --deep                           # max detection depth

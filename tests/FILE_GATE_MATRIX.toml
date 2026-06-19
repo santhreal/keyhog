@@ -4,7 +4,16 @@
 path = "crates/cli/src/args.rs"
 
 [[module]]
+path = "crates/cli/src/args/limits.rs"
+
+[[module]]
 path = "crates/cli/src/args/scan.rs"
+
+[[module]]
+path = "crates/cli/src/autoroute_cache_path.rs"
+
+[[module]]
+path = "crates/cli/src/backend_env.rs"
 
 [[module]]
 path = "crates/cli/src/baseline.rs"
@@ -37,6 +46,12 @@ path = "crates/cli/src/daemon/protocol.rs"
 path = "crates/cli/src/daemon/server.rs"
 
 [[module]]
+path = "crates/cli/src/daemon/trust.rs"
+
+[[module]]
+path = "crates/cli/src/exit_codes.rs"
+
+[[module]]
 path = "crates/cli/src/format.rs"
 
 [[module]]
@@ -56,6 +71,30 @@ path = "crates/cli/src/orchestrator/allowlist.rs"
 
 [[module]]
 path = "crates/cli/src/orchestrator/dispatch.rs"
+
+[[module]]
+path = "crates/cli/src/orchestrator/dispatch/backend.rs"
+
+[[module]]
+path = "crates/cli/src/orchestrator/dispatch/backend/calibration.rs"
+
+[[module]]
+path = "crates/cli/src/orchestrator/dispatch/backend/evidence.rs"
+
+[[module]]
+path = "crates/cli/src/orchestrator/dispatch/backend/host.rs"
+
+[[module]]
+path = "crates/cli/src/orchestrator/dispatch/backend/store.rs"
+
+[[module]]
+path = "crates/cli/src/orchestrator/dispatch/backend/tests.rs"
+
+[[module]]
+path = "crates/cli/src/orchestrator/dispatch/backend/workload.rs"
+
+[[module]]
+path = "crates/cli/src/orchestrator/dispatch/fused.rs"
 
 [[module]]
 path = "crates/cli/src/orchestrator/mod.rs"
@@ -138,14 +177,6 @@ path = "crates/cli/src/subcommands/scan_system.rs"
 [[module]]
 path = "crates/cli/src/subcommands/scan_system/mounts.rs"
 
-[[module]]
-path = "crates/cli/src/subcommands/tui/mod.rs"
-
-[[module]]
-path = "crates/cli/src/subcommands/tui/render.rs"
-
-[[module]]
-path = "crates/cli/src/subcommands/tui/worker.rs"
 
 [[module]]
 path = "crates/cli/src/subcommands/uninstall.rs"
@@ -158,6 +189,9 @@ path = "crates/cli/src/subcommands/watch.rs"
 
 [[module]]
 path = "crates/cli/src/test_fixture_suppressions.rs"
+
+[[module]]
+path = "crates/cli/src/testing.rs"
 
 [[module]]
 path = "crates/cli/src/value_parsers.rs"

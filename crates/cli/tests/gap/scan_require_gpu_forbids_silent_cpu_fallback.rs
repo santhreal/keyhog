@@ -1,5 +1,5 @@
 //! R3-D / KH-GAP-041 + KH-GAP-093: when GPU self-test fails, forced GPU scan
-//! with KEYHOG_REQUIRE_GPU=1 must not exit 0 after silent CPU fallback.
+//! with `--require-gpu` must not exit 0 after silent CPU fallback.
 
 use crate::e2e::support::{binary, workspace_detectors};
 use std::process::Command;
@@ -17,10 +17,10 @@ fn scan_require_gpu_forbids_silent_cpu_fallback_on_gpu_backend() {
     }
 
     let output = Command::new(binary())
-        .env("KEYHOG_REQUIRE_GPU", "1")
         .args([
             "scan",
             "--no-daemon",
+            "--require-gpu",
             "--backend",
             "gpu",
             "--format",
@@ -34,10 +34,18 @@ fn scan_require_gpu_forbids_silent_cpu_fallback_on_gpu_backend() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_ne!(
         code, 0,
-        "KEYHOG_REQUIRE_GPU=1 + --backend gpu must not exit 0 when GPU self-test failed; stderr={stderr}"
+        "--require-gpu + --backend gpu must not exit 0 when GPU self-test failed; stderr={stderr}"
+    );
+    assert_eq!(
+        code, 12,
+        "--require-gpu must fail closed with the required-GPU exit code, not a scanner panic or CPU scan; stderr={stderr}"
     );
     assert!(
-        stderr.contains("falling back to CPU") || code == 11,
-        "expected GPU dispatch failure signal (panic exit 11 or fallback log); exit={code} stderr={stderr}"
+        stderr.contains("--require-gpu") || stderr.to_lowercase().contains("gpu"),
+        "required-GPU failure must be operator-visible; exit={code} stderr={stderr}"
+    );
+    assert!(
+        !stderr.contains("falling back to CPU"),
+        "--require-gpu must never present CPU fallback as an acceptable route; stderr={stderr}"
     );
 }

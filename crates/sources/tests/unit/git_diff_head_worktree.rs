@@ -47,10 +47,7 @@ fn git_diff_head_includes_untracked_worktree_file() {
         chunks[0].data.contains("AKIAKPQXRMSNTBVWYZBN"),
         "untracked worktree file must be scanned under --git-diff HEAD semantics"
     );
-    assert_eq!(
-        chunks[0].metadata.path.as_deref(),
-        Some("new-secret.env")
-    );
+    assert_eq!(chunks[0].metadata.path.as_deref(), Some("new-secret.env"));
 }
 
 #[cfg(not(feature = "git"))]

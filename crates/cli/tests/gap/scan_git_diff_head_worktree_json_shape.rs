@@ -44,6 +44,8 @@ fn scan_git_diff_head_worktree_json_shape() {
             "HEAD",
             "--format",
             "json",
+            "--backend",
+            "simd",
             "--no-suppress-test-fixtures",
         ])
         .current_dir(repo)

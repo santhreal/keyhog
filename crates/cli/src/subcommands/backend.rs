@@ -97,7 +97,7 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
         }
     );
 
-    let pat = args.patterns;
+    let pat = effective_pattern_count(args)?;
     println!();
     println!("## routing decision matrix (pattern_count = {pat})");
     // Tier-aware: pull the active GPU's actual thresholds so the
@@ -166,6 +166,17 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
         "Force a scan backend with: keyhog scan --backend {{gpu|mega-scan|simd|cpu|auto}} ..."
     );
     Ok(())
+}
+
+fn effective_pattern_count(args: &BackendArgs) -> Result<usize> {
+    if let Some(patterns) = args.patterns {
+        return Ok(patterns);
+    }
+    let detectors = keyhog_core::load_embedded_detectors_or_fail()
+        .map_err(|error| anyhow::anyhow!("backend: load embedded detectors: {error}"))?;
+    let scanner = keyhog_scanner::CompiledScanner::compile(detectors)
+        .map_err(|error| anyhow::anyhow!("backend: compile embedded scanner: {error}"))?;
+    Ok(scanner.runtime_status().pattern_count)
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]

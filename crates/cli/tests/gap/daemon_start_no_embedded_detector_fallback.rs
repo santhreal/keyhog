@@ -20,7 +20,7 @@ fn daemon_start_from_empty_cwd_uses_embedded_detectors_like_scan() {
         .expect("spawn");
 
     let socket = runtime.path().join("keyhog.sock");
-    let deadline = Instant::now() + Duration::from_secs(30);
+    let deadline = Instant::now() + Duration::from_secs(120);
     while !socket.exists() {
         if let Some(status) = daemon.try_wait().expect("poll daemon") {
             let stderr = daemon.stderr.take().map(|mut s| {

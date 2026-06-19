@@ -8,6 +8,7 @@ pub mod file_gate;
 pub mod filesystem;
 pub mod gates;
 pub mod git_diff;
+pub mod git_diff_head_worktree;
 pub mod git_history;
 pub mod http;
 pub mod internal_contracts;

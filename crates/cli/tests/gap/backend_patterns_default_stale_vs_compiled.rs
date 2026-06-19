@@ -26,9 +26,15 @@ fn backend_default_pattern_count_matches_compiled_scanner_not_stale_1509() {
     );
 
     let repo = repo_root();
-    let demo = repo.join("demo-secret.env");
+    let demo = repo.join("demo/config/demo-secret.env");
     let progress = Command::new(binary())
-        .args(["scan", demo.to_str().unwrap(), "--progress"])
+        .args([
+            "scan",
+            demo.to_str().unwrap(),
+            "--progress",
+            "--backend",
+            "simd",
+        ])
         .current_dir(&repo)
         .output()
         .expect("spawn scan --progress");

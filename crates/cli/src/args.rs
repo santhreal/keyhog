@@ -253,11 +253,10 @@ pub struct BackendArgs {
     /// Compiled pattern count to use for the routing-simulation matrix.
     /// This is a what-if knob: it does not change the loaded corpus, only
     /// the pattern_count fed to the backend-routing thresholds so you can
-    /// probe how a larger/smaller corpus would route. The default is a
-    /// representative full-corpus figure; pass an explicit value to test a
-    /// specific threshold boundary.
-    #[arg(long, default_value_t = 1509)]
-    pub patterns: usize,
+    /// probe how a larger/smaller corpus would route. Omit it to use the live
+    /// compiled embedded corpus.
+    #[arg(long)]
+    pub patterns: Option<usize>,
 
     /// Run the GPU self-tests (MoE compute kernel + vyre literal-set
     /// diagnostic + production AC-kernel dispatch). Prints PASS/FAIL

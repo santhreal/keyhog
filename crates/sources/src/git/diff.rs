@@ -2,7 +2,8 @@
 //! CI/CD pre-commit hooks that should only flag new secrets.
 
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
-use std::path::{Path, PathBuf};
+use std::io::Read;
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 /// Scans only the ADDED lines between two git refs.
@@ -136,11 +137,25 @@ fn stream_added_lines(
     let metadata_commit = head_commit.unwrap_or_else(|| base_commit.clone()); // LAW10: absent verify-spec field => documented default (GET / AuthSpec::None / first); recall-safe
     let author = super::get_commit_author(&repo_arg, &metadata_commit)?;
     let date = super::get_commit_date(&repo_arg, &metadata_commit)?;
+    let mut untracked_chunks = if head_ref.is_none() {
+        list_untracked_worktree_chunks(
+            &repo_arg,
+            &repo_root,
+            &metadata_commit,
+            &author,
+            &date,
+            limits,
+        )?
+    } else {
+        Vec::new()
+    }
+    .into_iter();
 
     let mut current_path: Option<String> = None;
     let mut current_content = String::new();
     let mut in_hunk = false;
     let mut done = false;
+    let mut emit_untracked = false;
     let mut line_buf: Vec<u8> = Vec::new();
     // New-file line BEFORE the current hunk's first added line (i.e. the
     // hunk header's `+new_start - 1`). The scanner counts a match's line
@@ -153,6 +168,9 @@ fn stream_added_lines(
     let mut current_base_line: usize = 0;
 
     Ok(std::iter::from_fn(move || {
+        if emit_untracked {
+            return untracked_chunks.next().map(Ok);
+        }
         if done {
             return None;
         }
@@ -170,6 +188,7 @@ fn stream_added_lines(
                     }
                     Ok(_) => {
                         done = true;
+                        emit_untracked = true;
                         if let Some(ref path) = current_path {
                             if !current_content.trim().is_empty() {
                                 return Some(Ok(Chunk {
@@ -189,7 +208,7 @@ fn stream_added_lines(
                                 }));
                             }
                         }
-                        return None;
+                        return untracked_chunks.next().map(Ok);
                     }
                 };
 
@@ -310,4 +329,114 @@ fn stream_added_lines(
             }
         }
     }))
+}
+
+fn list_untracked_worktree_chunks(
+    repo_arg: &str,
+    repo_root: &Path,
+    metadata_commit: &str,
+    author: &str,
+    date: &str,
+    limits: crate::SourceLimits,
+) -> Result<Vec<Chunk>, SourceError> {
+    let output = Command::new(super::git_bin()?)
+        .args([
+            "-C",
+            repo_arg,
+            "ls-files",
+            "--others",
+            "--exclude-standard",
+            "-z",
+            "--",
+        ])
+        .output()
+        .map_err(SourceError::Io)?;
+    if !output.status.success() {
+        return Err(SourceError::Git(format!(
+            "git ls-files --others failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        )));
+    }
+
+    let mut chunks = Vec::new();
+    for raw in output
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|raw| !raw.is_empty())
+    {
+        let rel = std::str::from_utf8(raw).map_err(|error| {
+            SourceError::Git(format!("git reported non-UTF-8 untracked path: {error}"))
+        })?;
+        validate_untracked_relative_path(rel)?;
+        let full_path = repo_root.join(rel);
+        let metadata = std::fs::symlink_metadata(&full_path).map_err(SourceError::Io)?;
+        if !metadata.file_type().is_file() {
+            return Err(SourceError::Git(format!(
+                "git-diff untracked path '{}' is not a regular file",
+                rel
+            )));
+        }
+        if metadata.len() > limits.git_blob_bytes {
+            return Err(SourceError::Git(format!(
+                "git-diff untracked path '{}' exceeds git_blob_bytes limit ({} > {})",
+                rel,
+                metadata.len(),
+                limits.git_blob_bytes
+            )));
+        }
+        let mut file = std::fs::File::open(&full_path).map_err(SourceError::Io)?;
+        let mut bytes = Vec::new();
+        file.by_ref()
+            .take(limits.git_blob_bytes.saturating_add(1))
+            .read_to_end(&mut bytes)
+            .map_err(SourceError::Io)?;
+        if bytes.len() as u64 > limits.git_blob_bytes {
+            return Err(SourceError::Git(format!(
+                "git-diff untracked path '{}' grew beyond git_blob_bytes limit while reading",
+                rel
+            )));
+        }
+        let Some(text) = crate::filesystem::decode_text_file(&bytes) else {
+            continue;
+        };
+        if text.trim().is_empty() {
+            continue;
+        }
+        chunks.push(Chunk {
+            data: text.into(),
+            metadata: ChunkMetadata {
+                base_offset: 0,
+                base_line: 0,
+                source_type: "git-diff".into(),
+                path: Some(rel.to_string()),
+                commit: Some(metadata_commit.to_string()),
+                author: Some(author.to_string()),
+                date: Some(date.to_string()),
+                mtime_ns: None,
+                size_bytes: Some(metadata.len()),
+                decoded_span: None,
+            },
+        });
+    }
+    Ok(chunks)
+}
+
+fn validate_untracked_relative_path(path: &str) -> Result<(), SourceError> {
+    let path = Path::new(path);
+    if path.is_absolute() {
+        return Err(SourceError::Git(
+            "git reported absolute untracked path for git-diff".into(),
+        ));
+    }
+    if path.components().any(|component| {
+        matches!(
+            component,
+            Component::ParentDir | Component::RootDir | Component::Prefix(_)
+        )
+    }) {
+        return Err(SourceError::Git(
+            "git reported unsafe untracked path for git-diff".into(),
+        ));
+    }
+    Ok(())
 }
