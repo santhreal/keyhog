@@ -126,6 +126,32 @@ fn autoroute_config_digest_includes_gpu_autoroute_opt_in() {
     });
 }
 
+#[test]
+fn autoroute_config_digest_includes_source_limits() {
+    with_route_policy_lock(|| {
+        let mut default_limit = scan_args(&["scan", "--no-config", "--stdin"]);
+        let default_digest = API
+            .autoroute_config_digest_for_args(&mut default_limit)
+            .expect("default resolved config digest");
+
+        let mut smaller_stdin = scan_args(&[
+            "scan",
+            "--no-config",
+            "--stdin",
+            "--limit-stdin-bytes",
+            "1MiB",
+        ]);
+        let smaller_digest = API
+            .autoroute_config_digest_for_args(&mut smaller_stdin)
+            .expect("limited resolved config digest");
+
+        assert_ne!(
+            default_digest, smaller_digest,
+            "autoroute cache identity must include resolved source limits because they change workload bytes and route cost"
+        );
+    });
+}
+
 /// Coherence gate: every value the `--backend` flag ADVERTISES (clap
 /// `PossibleValuesParser`) must be RECOGNIZED by the canonical
 /// `parse_backend_str`, which both the gpu-init policy and the actual scan

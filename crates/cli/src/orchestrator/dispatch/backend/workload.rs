@@ -148,19 +148,18 @@ fn is_decode_trigger_byte(byte: u8) -> bool {
 }
 
 pub(super) fn source_class_hash(batch: &[Chunk]) -> Result<u64, WorkloadClassificationError> {
-    use std::hash::{Hash, Hasher};
     let mut classes: Vec<&str> = Vec::new();
     for chunk in batch {
         classes.push(source_family(chunk)?);
     }
     classes.sort_unstable();
     classes.dedup();
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    classes.len().hash(&mut h);
+    let mut h = crate::stable_hash::StableHasher::new("autoroute-source-class");
+    h.field_usize("classes.len", classes.len());
     for class in classes {
-        class.hash(&mut h);
+        h.field_str("class", class);
     }
-    Ok(h.finish())
+    Ok(h.finish_u64())
 }
 
 fn source_family(chunk: &Chunk) -> Result<&str, WorkloadClassificationError> {

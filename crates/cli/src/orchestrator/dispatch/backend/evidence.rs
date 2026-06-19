@@ -309,9 +309,15 @@ pub(super) fn canonical_matches(matches: &[Vec<RawMatch>]) -> Vec<CanonicalMatch
 }
 
 pub(super) fn canonical_match_digest(matches: &[CanonicalMatch]) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    matches.len().hash(&mut h);
-    matches.hash(&mut h);
-    h.finish()
+    let mut h = crate::stable_hash::StableHasher::new("autoroute-correctness-digest");
+    h.field_usize("matches.len", matches.len());
+    for (chunk_idx, detector_id, credential_hash, file_path, line, offset) in matches {
+        h.field_usize("match.chunk_idx", *chunk_idx);
+        h.field_str("match.detector_id", detector_id);
+        h.field_bytes("match.credential_hash", credential_hash);
+        h.field_option_str("match.file_path", file_path.as_deref());
+        h.field_option_usize("match.line", *line);
+        h.field_usize("match.offset", *offset);
+    }
+    h.finish_u64()
 }

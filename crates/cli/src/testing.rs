@@ -223,6 +223,7 @@ pub trait CliTestApi {
     fn resolve_scan_config(&self, args: &mut ScanArgs) -> Result<()>;
     fn resolve_scan_config_aws_canary_accounts(&self, args: &mut ScanArgs) -> Result<Vec<String>>;
     fn render_effective_config_for_scanner(&self, scanner: ScannerConfig) -> String;
+    fn autoroute_config_digest_for_args(&self, args: &mut ScanArgs) -> Result<u64>;
     fn autoroute_config_digest_for_scanner(&self, scanner: ScannerConfig) -> u64;
     fn autoroute_config_digest_for_scanner_with_autoroute_gpu(
         &self,
@@ -639,6 +640,12 @@ impl CliTestApi for TestApi {
     fn render_effective_config_for_scanner(&self, scanner: ScannerConfig) -> String {
         let resolved = crate::orchestrator_config::resolved_scan_config_for_scanner(scanner);
         crate::orchestrator_config::render_effective_config(&resolved)
+    }
+    fn autoroute_config_digest_for_args(&self, args: &mut ScanArgs) -> Result<u64> {
+        let resolved = crate::orchestrator_config::resolve_scan_config(args)?;
+        Ok(crate::orchestrator_config::autoroute_config_digest(
+            &resolved,
+        ))
     }
     fn autoroute_config_digest_for_scanner(&self, scanner: ScannerConfig) -> u64 {
         let resolved = crate::orchestrator_config::resolved_scan_config_for_scanner(scanner);

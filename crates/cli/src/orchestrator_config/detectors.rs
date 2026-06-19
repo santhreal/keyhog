@@ -229,15 +229,14 @@ fn detector_source_fingerprint(source_dir: &Path) -> std::io::Result<String> {
 /// `.json` is created on first successful parse and revalidated against the
 /// source TOMLs' mtimes by the CLI parse-cache loader.
 fn detector_cache_path(source_dir: &Path) -> Option<std::path::PathBuf> {
-    use std::hash::{Hash, Hasher};
     let canonical = std::fs::canonicalize(source_dir).unwrap_or_else(|_| source_dir.to_path_buf()); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    canonical.hash(&mut hasher);
+    let mut hasher = crate::stable_hash::StableHasher::new("detector-parse-cache-path");
+    hasher.field_path("source_dir", &canonical);
     // Version-scope the key: the embedded/default corpus shape can change
     // across keyhog versions, so a stale cache from an old binary is never
     // reused by a new one.
-    env!("CARGO_PKG_VERSION").hash(&mut hasher);
-    let key = hasher.finish();
+    hasher.field_str("binary_version", env!("CARGO_PKG_VERSION"));
+    let key = hasher.finish_u64();
     Some(
         dirs::cache_dir()?
             .join("keyhog")

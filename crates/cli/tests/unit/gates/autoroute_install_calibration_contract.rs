@@ -31,6 +31,9 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
     let atomic_file =
         std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/atomic_file.rs"))
             .expect("atomic file source readable");
+    let stable_hash =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/stable_hash.rs"))
+            .expect("stable hash source readable");
     let install_sh =
         std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../install.sh"))
             .expect("install.sh readable");
@@ -191,6 +194,8 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("trial > 0")
             && backend.contains("config_digest")
             && backend.contains("source_class_hash")
+            && backend.contains("StableHasher::new(\"autoroute-source-class\")")
+            && backend.contains("StableHasher::new(\"autoroute-correctness-digest\")")
             && backend.contains("AUTOROUTE_CACHE_VERSION: u32 = 16")
             && backend.contains("trials"),
         "autoroute cache must persist binary identity, build feature identity, exact host identity, and measured calibration evidence"
@@ -258,12 +263,20 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && !config.contains("KEYHOG_SHARD_TARGET")
             && !effective_config.contains("KEYHOG_SHARD_TARGET")
             && effective_config.contains("per_chunk_timeout_ms")
-            && effective_config.contains("resolved.scanner_tuning.hash(&mut h)")
+            && effective_config.contains("StableHasher::new(\"autoroute-config-digest\")")
+            && effective_config.contains("hash_scanner_tuning")
+            && stable_hash.contains("blake3::Hasher")
+            && stable_hash.contains("field_name")
+            && stable_hash.contains("finish_u64")
             && effective_config.contains("tuning_hs_shard_target")
             && effective_config.contains("tuning_gpu_recall_floor")
             && effective_config.contains("detector_min_confidence")
-            && effective_config.contains("disabled_detectors"),
-        "autoroute cache identity must include the fully resolved scan config and runtime backend knobs, not only hardware and detector corpus"
+            && effective_config.contains("disabled_detectors")
+            && config.contains("StableHasher::new(\"calibration-store-digest\")")
+            && !backend.contains("DefaultHasher")
+            && !effective_config.contains("DefaultHasher")
+            && !config.contains("DefaultHasher"),
+        "autoroute cache identity must include the fully resolved scan config and runtime backend knobs through stable BLAKE3 hashing, not Rust DefaultHasher state"
     );
     assert!(
         orchestrator_mod.contains("cached_autoroute_router_for_default_config")

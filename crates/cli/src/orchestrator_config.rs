@@ -145,17 +145,15 @@ pub(crate) fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
 }
 
 fn calibration_store_digest(calibration: &keyhog_core::Calibration) -> u64 {
-    use std::hash::{Hash, Hasher};
-
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let mut hasher = crate::stable_hash::StableHasher::new("calibration-store-digest");
     let entries = calibration.entries();
-    entries.len().hash(&mut hasher);
+    hasher.field_usize("entries.len", entries.len());
     for (id, counters) in entries {
-        id.hash(&mut hasher);
-        counters.alpha.hash(&mut hasher);
-        counters.beta.hash(&mut hasher);
+        hasher.field_str("detector.id", &id);
+        hasher.field_u64("detector.alpha", counters.alpha as u64);
+        hasher.field_u64("detector.beta", counters.beta as u64);
     }
-    hasher.finish()
+    hasher.finish_u64()
 }
 
 fn load_explicit_scan_calibration(

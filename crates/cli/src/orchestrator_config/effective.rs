@@ -1,4 +1,5 @@
 use super::{backend_override_label, ResolvedScanConfig};
+use crate::stable_hash::StableHasher;
 
 /// Render the resolved scan config as a stable, human + machine readable block
 /// for `keyhog config --effective`. It answers "what will actually run?" in one
@@ -251,78 +252,196 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
     out
 }
 
-/// Stable-enough fingerprint for autoroute cache identity. It is computed from
+/// Stable fingerprint for autoroute cache identity. It is computed from
 /// the resolved config that actually reaches the engine/postprocess layer, so
 /// `.keyhog.toml`, presets, CLI overrides, and host caps all invalidate routing
 /// together when they change scan cost or candidate volume.
 pub(crate) fn autoroute_config_digest(resolved: &ResolvedScanConfig) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
+    let mut h = StableHasher::new("autoroute-config-digest");
     let s = &resolved.scanner;
-    s.min_confidence.to_bits().hash(&mut h);
-    s.ml_enabled.hash(&mut h);
-    s.ml_weight.to_bits().hash(&mut h);
-    s.entropy_enabled.hash(&mut h);
-    s.entropy_ml_authoritative.hash(&mut h);
-    s.generic_keyword_low_entropy.hash(&mut h);
-    s.entropy_threshold.to_bits().hash(&mut h);
-    s.entropy_in_source_files.hash(&mut h);
-    s.max_decode_depth.hash(&mut h);
-    s.max_decode_bytes.hash(&mut h);
-    s.per_chunk_timeout_ms.hash(&mut h);
-    s.max_matches_per_chunk.hash(&mut h);
-    s.scan_comments.hash(&mut h);
-    s.unicode_normalization.hash(&mut h);
-    s.penalize_test_paths.hash(&mut h);
-    s.multiline.max_join_lines.hash(&mut h);
-    s.multiline.python_implicit.hash(&mut h);
-    s.multiline.backslash_continuation.hash(&mut h);
-    s.multiline.plus_concatenation.hash(&mut h);
-    s.multiline.template_literals.hash(&mut h);
-    hash_strings(&s.known_prefixes, &mut h);
-    hash_strings(&s.secret_keywords, &mut h);
-    hash_strings(&s.test_keywords, &mut h);
-    hash_strings(&s.placeholder_keywords, &mut h);
-    resolved.min_confidence.to_bits().hash(&mut h);
-    resolved.ml_enabled.hash(&mut h);
+    h.field_f64_bits("scanner.min_confidence", s.min_confidence);
+    h.field_bool("scanner.ml_enabled", s.ml_enabled);
+    h.field_f64_bits("scanner.ml_weight", s.ml_weight);
+    h.field_bool("scanner.entropy_enabled", s.entropy_enabled);
+    h.field_bool(
+        "scanner.entropy_ml_authoritative",
+        s.entropy_ml_authoritative,
+    );
+    h.field_bool(
+        "scanner.generic_keyword_low_entropy",
+        s.generic_keyword_low_entropy,
+    );
+    h.field_f64_bits("scanner.entropy_threshold", s.entropy_threshold);
+    h.field_bool("scanner.entropy_in_source_files", s.entropy_in_source_files);
+    h.field_usize("scanner.max_decode_depth", s.max_decode_depth);
+    h.field_usize("scanner.max_decode_bytes", s.max_decode_bytes);
+    h.field_option_u64("scanner.per_chunk_timeout_ms", s.per_chunk_timeout_ms);
+    h.field_usize("scanner.max_matches_per_chunk", s.max_matches_per_chunk);
+    h.field_bool("scanner.scan_comments", s.scan_comments);
+    h.field_bool("scanner.unicode_normalization", s.unicode_normalization);
+    h.field_bool("scanner.penalize_test_paths", s.penalize_test_paths);
+    h.field_usize(
+        "scanner.multiline.max_join_lines",
+        s.multiline.max_join_lines,
+    );
+    h.field_bool(
+        "scanner.multiline.python_implicit",
+        s.multiline.python_implicit,
+    );
+    h.field_bool(
+        "scanner.multiline.backslash_continuation",
+        s.multiline.backslash_continuation,
+    );
+    h.field_bool(
+        "scanner.multiline.plus_concatenation",
+        s.multiline.plus_concatenation,
+    );
+    h.field_bool(
+        "scanner.multiline.template_literals",
+        s.multiline.template_literals,
+    );
+    hash_strings(&mut h, "scanner.known_prefixes", &s.known_prefixes);
+    hash_strings(&mut h, "scanner.secret_keywords", &s.secret_keywords);
+    hash_strings(&mut h, "scanner.test_keywords", &s.test_keywords);
+    hash_strings(
+        &mut h,
+        "scanner.placeholder_keywords",
+        &s.placeholder_keywords,
+    );
+    h.field_f64_bits("resolved.min_confidence", resolved.min_confidence);
+    h.field_bool("resolved.ml_enabled", resolved.ml_enabled);
     let mut floors: Vec<_> = resolved.detector_min_confidence.iter().collect();
     floors.sort_by(|a, b| a.0.cmp(b.0));
+    h.field_usize("detector_min_confidence.len", floors.len());
     for (id, floor) in floors {
-        id.hash(&mut h);
-        floor.to_bits().hash(&mut h);
+        h.field_str("detector_min_confidence.id", id);
+        h.field_f64_bits("detector_min_confidence.floor", *floor);
     }
     let mut disabled: Vec<_> = resolved.disabled_detectors.iter().collect();
     disabled.sort();
+    h.field_usize("disabled_detectors.len", disabled.len());
     for id in disabled {
-        id.hash(&mut h);
+        h.field_str("disabled_detectors.id", id);
     }
-    resolved.require_lockdown.hash(&mut h);
-    backend_override_label(resolved.backend_override).hash(&mut h);
-    resolved.batch_pipeline.hash(&mut h);
-    resolved.threads.hash(&mut h);
-    resolved.reader_threads.hash(&mut h);
-    resolved.fused_batch.hash(&mut h);
-    resolved.fused_depth.hash(&mut h);
-    resolved.gpu_runtime_policy.hash(&mut h);
-    resolved.autoroute_gpu.hash(&mut h);
-    resolved.regex_dfa_limit.hash(&mut h);
-    resolved.hyperscan_cache_dir.hash(&mut h);
-    resolved.calibration_cache_path.hash(&mut h);
-    resolved.calibration_digest.hash(&mut h);
-    resolved.aws_canary_accounts.hash(&mut h);
-    resolved.scanner_tuning.hash(&mut h);
-    resolved.allowlist.file.hash(&mut h);
-    resolved.allowlist.require_reason.hash(&mut h);
-    resolved.allowlist.require_approved_by.hash(&mut h);
-    resolved.allowlist.max_expires_days.hash(&mut h);
-    resolved.source_limits.hash(&mut h);
-    h.finish()
+    h.field_bool("require_lockdown", resolved.require_lockdown);
+    h.field_str(
+        "backend_override",
+        backend_override_label(resolved.backend_override),
+    );
+    h.field_bool("batch_pipeline", resolved.batch_pipeline);
+    h.field_option_usize("threads", resolved.threads);
+    h.field_option_usize("reader_threads", resolved.reader_threads);
+    h.field_usize("fused_batch", resolved.fused_batch);
+    h.field_option_usize("fused_depth", resolved.fused_depth);
+    h.field_str(
+        "gpu_runtime_policy",
+        &resolved.gpu_runtime_policy.to_string(),
+    );
+    h.field_bool("autoroute_gpu", resolved.autoroute_gpu);
+    h.field_option_usize("regex_dfa_limit", resolved.regex_dfa_limit);
+    h.field_option_path(
+        "hyperscan_cache_dir",
+        resolved.hyperscan_cache_dir.as_deref(),
+    );
+    h.field_option_path(
+        "calibration_cache_path",
+        resolved.calibration_cache_path.as_deref(),
+    );
+    h.field_u64("calibration_digest", resolved.calibration_digest);
+    hash_strings(&mut h, "aws_canary_accounts", &resolved.aws_canary_accounts);
+    hash_scanner_tuning(&mut h, &resolved.scanner_tuning);
+    h.field_option_path("allowlist.file", resolved.allowlist.file.as_deref());
+    h.field_bool(
+        "allowlist.require_reason",
+        resolved.allowlist.require_reason,
+    );
+    h.field_bool(
+        "allowlist.require_approved_by",
+        resolved.allowlist.require_approved_by,
+    );
+    h.field_option_u64(
+        "allowlist.max_expires_days",
+        resolved.allowlist.max_expires_days,
+    );
+    hash_source_limits(&mut h, resolved.source_limits);
+    h.finish_u64()
 }
 
-fn hash_strings(strings: &[String], h: &mut impl std::hash::Hasher) {
-    use std::hash::Hash;
-    strings.len().hash(h);
+fn hash_strings(h: &mut StableHasher, field: &str, strings: &[String]) {
+    h.field_usize(&format!("{field}.len"), strings.len());
     for s in strings {
-        s.hash(h);
+        h.field_str(field, s);
     }
+}
+
+fn hash_scanner_tuning(h: &mut StableHasher, tuning: &keyhog_scanner::ScannerTuningConfig) {
+    let tuning = tuning.effective();
+    h.field_bool("scanner_tuning.fallback_hs", tuning.fallback_hs);
+    h.field_usize(
+        "scanner_tuning.hs_prefilter_max_len",
+        tuning.hs_prefilter_max_len,
+    );
+    h.field_usize("scanner_tuning.hs_shard_target", tuning.hs_shard_target);
+    h.field_bool("scanner_tuning.fallback_anchor", tuning.fallback_anchor);
+    h.field_bool("scanner_tuning.homoglyph_gate", tuning.homoglyph_gate);
+    h.field_bool(
+        "scanner_tuning.homoglyph_ascii_skip",
+        tuning.homoglyph_ascii_skip,
+    );
+    h.field_bool("scanner_tuning.fallback_reverse", tuning.fallback_reverse);
+    h.field_bool(
+        "scanner_tuning.prefilter_truncate",
+        tuning.prefilter_truncate,
+    );
+    h.field_bool(
+        "scanner_tuning.fallback_prefix_gate",
+        tuning.fallback_prefix_gate,
+    );
+    h.field_bool("scanner_tuning.decode_focus", tuning.decode_focus);
+    h.field_bool(
+        "scanner_tuning.confirmed_suffix_gate",
+        tuning.confirmed_suffix_gate,
+    );
+    h.field_bool("scanner_tuning.no_candidate_gate", tuning.no_candidate_gate);
+    h.field_bool(
+        "scanner_tuning.fallback_localizer",
+        tuning.fallback_localizer,
+    );
+    h.field_bool("scanner_tuning.gpu_recall_floor", tuning.gpu_recall_floor);
+    h.field_u64(
+        "scanner_tuning.gpu_moe_timeout_ms",
+        tuning.gpu_moe_timeout_ms,
+    );
+}
+
+fn hash_source_limits(h: &mut StableHasher, limits: keyhog_sources::SourceLimits) {
+    h.field_usize("source_limits.stdin_bytes", limits.stdin_bytes);
+    h.field_usize(
+        "source_limits.web_response_bytes",
+        limits.web_response_bytes,
+    );
+    h.field_u64("source_limits.s3_object_bytes", limits.s3_object_bytes);
+    h.field_u64("source_limits.gcs_object_bytes", limits.gcs_object_bytes);
+    h.field_u64("source_limits.azure_blob_bytes", limits.azure_blob_bytes);
+    h.field_u64(
+        "source_limits.docker_tar_entry_bytes",
+        limits.docker_tar_entry_bytes,
+    );
+    h.field_u64(
+        "source_limits.docker_image_config_bytes",
+        limits.docker_image_config_bytes,
+    );
+    h.field_u64(
+        "source_limits.docker_tar_total_bytes",
+        limits.docker_tar_total_bytes,
+    );
+    h.field_usize("source_limits.git_line_bytes", limits.git_line_bytes);
+    h.field_usize("source_limits.git_total_bytes", limits.git_total_bytes);
+    h.field_u64("source_limits.git_blob_bytes", limits.git_blob_bytes);
+    h.field_usize("source_limits.git_chunk_count", limits.git_chunk_count);
+    h.field_usize("source_limits.binary_read_bytes", limits.binary_read_bytes);
+    h.field_u64(
+        "source_limits.binary_decompiled_bytes",
+        limits.binary_decompiled_bytes,
+    );
 }

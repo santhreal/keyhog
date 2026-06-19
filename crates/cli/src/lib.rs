@@ -22,6 +22,8 @@
 //!   [`inline_suppression`], [`test_fixture_suppressions`].
 //! - **Install / health** — [`installer`] (hook installer, `doctor`).
 
+mod stable_hash;
+
 use std::io::Write;
 use std::process::ExitCode;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
