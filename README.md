@@ -334,7 +334,7 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 
 | Rank | Scanner | F1 | Precision | Recall | Findings | Wall | Peak RSS |
 |---|---|---|---|---|---|---|---|
-| 1 | **KeyHog** | **0.9131** | 0.9945 | 0.8440 | 2550 | 1.61s | 1106 MB |
+| 1 | **KeyHog** | **0.9258** | 0.9954 | 0.8653 | 2612 | 1.58s | 1543 MB |
 | 2 | TruffleHog | 0.5265 | 1.0000 | 0.3573 | 1072 | 1.45s | 322 MB |
 | 3 | Kingfisher | 0.4720 | 0.3912 | 0.5947 | 5241 | 3.81s | 502 MB |
 | 4 | Titus | 0.4127 | 0.3318 | 0.5457 | 5159 | 4.13s | 114 MB |
@@ -352,10 +352,12 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 | Nosey Parker | `default-nocache-nodaemon-no-git-history` | mirror | 0.82s | 2.8 MB/s | 534 MB |
 | Nosey Parker | `default-nocache-nodaemon-no-git-history` | creddata | 0.92s | 1056.3 MB/s | 1743 MB |
 | BetterLeaks | `default-nocache-nodaemon-no-validate` | mirror | 1.04s | 2.2 MB/s | 210 MB |
+| KeyHog | `simd-nocache-nodaemon-full` | mirror | 1.27s | 1.8 MB/s | 1137 MB |
+| KeyHog | `simd-nocache-nodaemon-full` | mirror | 1.32s | 1.8 MB/s | 1153 MB |
+| KeyHog | `simd-nocache-nodaemon-full` | mirror | 1.40s | 1.7 MB/s | 1745 MB |
 | TruffleHog | `default-nocache-nodaemon-no-verify` | mirror | 1.45s | 1.6 MB/s | 322 MB |
-| KeyHog | `simd-nocache-nodaemon-full` | mirror | 1.61s | 1.4 MB/s | 1106 MB |
+| KeyHog | `simd-nocache-nodaemon-full` | mirror | 1.58s | 1.5 MB/s | 1543 MB |
 | TruffleHog | `default-nocache-nodaemon-no-verify` | mirror | 1.73s | 1.3 MB/s | 308 MB |
-| KeyHog | `simd-nocache-nodaemon-full` | mirror | 2.12s | 1.1 MB/s | 1085 MB |
 | Titus | `default-nocache-nodaemon-no-validate` | mirror | 2.53s | 0.9 MB/s | 117 MB |
 | BetterLeaks | `default-nocache-nodaemon-no-validate` | creddata | 2.83s | 342.8 MB/s | 252 MB |
 | BetterLeaks | `default-nocache-nodaemon-no-validate` | creddata | 3.07s | 316.5 MB/s | 261 MB |
@@ -365,21 +367,26 @@ Corpus: **mirror** - 15000 fixtures, 3000 labeled positives. Every scanner score
 | KeyHog | `auto-nocache-nodaemon-full` | creddata | 3.52s | 275.9 MB/s | 1850 MB |
 | KeyHog | `megascan-nocache-nodaemon-full` | creddata | 3.70s | 262.7 MB/s | 1952 MB |
 | Kingfisher | `default-nocache-nodaemon-low-no-validate` | mirror | 3.81s | 0.6 MB/s | 502 MB |
+| KeyHog | `simd-nocache-nodaemon-full` | creddata | 3.91s | 248.5 MB/s | 1741 MB |
+| KeyHog | `simd-nocache-nodaemon-full` | creddata | 3.99s | 243.7 MB/s | 1720 MB |
 | KeyHog | `simd-nocache-nodaemon-full` | creddata | 4.02s | 241.7 MB/s | 1962 MB |
+| KeyHog | `simd-nocache-nodaemon-full` | creddata | 4.05s | 240.0 MB/s | 1677 MB |
 | Titus | `default-nocache-nodaemon-no-validate` | mirror | 4.13s | 0.6 MB/s | 114 MB |
 | Kingfisher | `default-nocache-nodaemon-low-no-validate` | mirror | 4.88s | 0.5 MB/s | 421 MB |
 | KeyHog | `gpu-nocache-nodaemon-full` | creddata | 5.12s | 189.7 MB/s | 3562 MB |
+| KeyHog | `simd-nocache-nodaemon-full` | creddata | 5.44s | 178.6 MB/s | 1641 MB |
 | Kingfisher | `default-nocache-nodaemon-low-no-validate` | creddata | 7.36s | 131.9 MB/s | 728 MB |
 | Kingfisher | `default-nocache-nodaemon-low-no-validate` | creddata | 8.13s | 119.4 MB/s | 657 MB |
 | TruffleHog | `default-nocache-nodaemon-no-verify` | creddata | 19.98s | 48.6 MB/s | 644 MB |
 <!-- BENCH:perf:end -->
 
-### Per-category gaps (where a competitor still wins)
+### Per-category recall gaps (where a competitor still wins recall)
 
 <!-- BENCH:gaps:start -->
-| Category | KeyHog F1 | Best competitor | Gap | Competitor overall precision |
+| Category | KeyHog P/R/F1 | KeyHog TP/FN | Best competitor P/R/F1 | Recall gap |
 |---|---|---|---|---|
-| `generic-high-entropy-string` | 0.440 | BetterLeaks 0.893 | +0.453 | 0.231 |
+| `authentication-key` | 1.000 / 0.973 / 0.986 | 498/14 | BetterLeaks 0.893 / 0.977 / 0.933 | +0.004 |
+| `generic-high-entropy-string` | 1.000 / 0.348 / 0.516 | 63/118 | BetterLeaks 1.000 / 0.807 / 0.893 | +0.459 |
 <!-- BENCH:gaps:end -->
 
 Reproduce: `make -C benchmarks bench` runs every scanner on the 15k

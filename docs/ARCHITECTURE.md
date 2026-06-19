@@ -125,7 +125,8 @@ ml/harvest_corpus.py   real labelled candidates (CredData), harvested at a LOW
                        report floor so sub-floor hard negatives are captured
         │
 ml/train_classifier.py blend synthetic + real, file-grouped split (no leakage),
-                       train the 42-feature MoE, gate on held-out F1 + recall
+                       train the 42-feature MoE, gate on held-out F1 plus
+                       aggregate and per-class real recall
         │
 ml/retrain_loop.sh     one command: harvest → train → (--write) ship weights.bin
                        → (--verify) rebuild + per-detector-FP bench gate,

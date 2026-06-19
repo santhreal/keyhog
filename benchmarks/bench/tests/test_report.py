@@ -77,14 +77,15 @@ def test_report_check_does_not_write_stale_reports(tmp_path, capsys):
     assert "Benchmark reports are stale" in capsys.readouterr().err
 
 
-def test_gap_report_shows_competitor_overall_precision_cost():
+def test_gap_report_shows_category_recall_gap_dashboard():
     keyhog = _result("keyhog", 3, 20.0)
     keyhog.detection.per_category = {"generic": Outcome(tp=1, fp=0, fn=2)}
     noisy = _result("betterleaks", 2, 10.0)
     noisy.detection.overall = Outcome(tp=2, fp=8, fn=3)
-    noisy.detection.per_category = {"generic": Outcome(tp=3, fp=0, fn=0)}
+    noisy.detection.per_category = {"generic": Outcome(tp=3, fp=1, fn=0)}
 
     text = report.render_gaps([keyhog, noisy], "mirror")
 
-    assert "Competitor overall precision" in text
-    assert "| `generic` | 0.500 | BetterLeaks 1.000 | +0.500 | 0.200 |" in text
+    assert "KeyHog P/R/F1" in text
+    assert "Recall gap" in text
+    assert "| `generic` | 1.000 / 0.333 / 0.500 | 1/2 | BetterLeaks 0.750 / 1.000 / 0.857 | +0.667 |" in text

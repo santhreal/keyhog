@@ -83,7 +83,7 @@ benchmarks/
     homefield/            competitor home-turf harvesters (harvest_betterleaks.py · harvest_kingfisher.py)
   corpora/                generated data (git-ignored; reproducible via `make mirror` / `make creddata`)
   results/<host>/         one RunResult JSON per run (git-ignored; regenerable)
-  reports/                generated markdown (committed): leaderboard.md · perf.md · gaps.md
+  reports/                generated markdown (committed): leaderboard.md · perf.md · recall-gap.md
   baselines/              committed known-good scoreboard anchors (regression history)
 ```
 

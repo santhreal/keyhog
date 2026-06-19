@@ -46,9 +46,11 @@ which runs:
 2. **retrain** (`train_classifier.py --real-corpus`) — blend synthetic (random
    85/15) + real (split **by file**, never randomly — a repo's secrets must not
    span train/test) and report metrics on a leakage-free real held-out.
-3. **gate** — `--write` refuses unless synthetic held-out F1 ≥ `--min-f1` AND real
-   held-out recall@0.40-floor ≥ `--min-real-recall`, so a retrain can never ship
-   a breadth OR a real-recall regression.
+3. **gate** — `--write` refuses unless synthetic held-out F1 ≥ `--min-f1`, real
+   held-out recall@0.40-floor ≥ `--min-real-recall`, and every positive-bearing
+   real held-out class clears `--min-real-class-recall` without regressing versus
+   the existing model card when class metrics are present. Aggregate recall is
+   not allowed to hide a failed tail class.
 
 Measured impact of one loop (CredData): real held-out recall@floor 0 → **0.76**,
 synthetic F1 held at 0.96, and on the never-trained-on mirror corpus precision
@@ -113,7 +115,8 @@ python3 ml/corpus.py --out ml/data/corpus.jsonl
 # 3. harvest real candidates, then train + install. Training reads the same Rust
 #    serve-path feature extractor via KEYHOG_DUMP_FEATURES, backs up the
 #    existing weights.bin/model_card.json to .bak, and refuses to write unless
-#    synthetic F1 and leakage-free real held-out recall clear the gates.
+#    synthetic F1 plus aggregate and per-class leakage-free real held-out recall
+#    clear the gates.
 python3 ml/harvest_corpus.py --corpora "$CRED_CORPORA" \
   --keyhog-bin target/release/keyhog --out ml/data/real_corpus.jsonl
 KEYHOG_DUMP_FEATURES=$(find "$CARGO_TARGET_DIR" -path '*examples/dump_features' -type f | head -1) \

@@ -86,8 +86,11 @@ fn trainer_and_build_script_keep_model_card_fail_closed() {
             && train.contains("--model-card")
             && train.contains("weights_fnv1a64")
             && train.contains("REFUSING to write: --write requires --real-corpus")
-            && train.contains("recall_at_0_40_floor before weights.bin is touched"),
-        "train_classifier.py must update model_card.json with weights hash and real held-out recall before shipped writes"
+            && train.contains("recall_at_0_40_floor before weights.bin is touched")
+            && train.contains("def per_class_eval")
+            && train.contains("per_class_gate_error")
+            && train.contains("--min-real-class-recall"),
+        "train_classifier.py must update model_card.json with weights hash plus aggregate/per-class real held-out recall before shipped writes"
     );
 
     let build = read(&root, "crates/scanner/build.rs");

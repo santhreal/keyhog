@@ -44,6 +44,7 @@ EXPERT_COUNT = 6
 FC1 = 32
 FC2 = 16
 CURRENT_MODEL_CARD = "crates/scanner/src/model_card.json"
+REAL_RECALL_FLOOR = 0.40
 
 
 def fast_sigmoid(x):
@@ -202,6 +203,48 @@ def _group_split(files, seed, fracs=(0.70, 0.15, 0.15)):
     return tr, va, te
 
 
+def per_class_eval(probs, labels, kinds, thr=0.5, floor=REAL_RECALL_FLOOR):
+    """Per-secret-class held-out metrics for the shipped retrain gate."""
+    out = {}
+    normalized = [k or "unknown" for k in kinds]
+    for kind in sorted(set(normalized)):
+        idx = [i for i, k in enumerate(normalized) if k == kind]
+        if not idx:
+            continue
+        k_probs = probs[idx]
+        k_labels = labels[idx]
+        pred = (k_probs >= thr).astype(np.float32)
+        pos_mask = k_labels >= 0.5
+        neg_mask = ~pos_mask
+        tp = int(((pred == 1) & pos_mask).sum())
+        fp = int(((pred == 1) & neg_mask).sum())
+        fn = int(((pred == 0) & pos_mask).sum())
+        prec = tp / (tp + fp) if tp + fp else 0.0
+        rec = tp / (tp + fn) if tp + fn else 0.0
+        f1 = 2 * prec * rec / (prec + rec) if prec + rec else 0.0
+        pos_probs = k_probs[pos_mask]
+        floor_recall = (
+            float(np.mean((pos_probs >= floor).astype(np.float32)))
+            if len(pos_probs)
+            else None
+        )
+        out[kind] = {
+            "n_test": int(len(idx)),
+            "n_pos": int(pos_mask.sum()),
+            "n_neg": int(neg_mask.sum()),
+            "tp": tp,
+            "fp": fp,
+            "fn": fn,
+            "precision": round(prec, 4),
+            "recall": round(rec, 4),
+            "f1": round(f1, 4),
+            "recall_at_0_40_floor": round(floor_recall, 4)
+            if floor_recall is not None
+            else None,
+        }
+    return out
+
+
 def real_eval(probs, labels, kinds, thr=0.5):
     """Held-out real-distribution metrics. The headline is recall on real
     positives clearing the 0.40 report floor — the number the synthetic-only
@@ -210,7 +253,9 @@ def real_eval(probs, labels, kinds, thr=0.5):
     pos = [float(probs[i]) for i, l in enumerate(labels) if l >= 0.5]
     neg = [float(probs[i]) for i, l in enumerate(labels) if l < 0.5]
     floor_recall = (
-        float(np.mean([1.0 if p >= 0.40 else 0.0 for p in pos])) if pos else float("nan")
+        float(np.mean([1.0 if p >= REAL_RECALL_FLOOR else 0.0 for p in pos]))
+        if pos
+        else float("nan")
     )
     return {
         "real_f1": round(f1, 4),
@@ -222,6 +267,7 @@ def real_eval(probs, labels, kinds, thr=0.5):
         "pos_mean_score": round(float(np.mean(pos)), 4) if pos else None,
         "neg_mean_score": round(float(np.mean(neg)), 4) if neg else None,
         "real_pos_recall_at_0.40_floor": round(floor_recall, 4),
+        "per_class": per_class_eval(probs, labels, kinds, thr, REAL_RECALL_FLOOR),
     }
 
 
@@ -393,8 +439,13 @@ def write_model_card(blob: bytes, args, metrics, real_metrics=None) -> None:
             "REFUSING to write: real held-out metrics must include numeric "
             "recall_at_0_40_floor for model_card.json"
         )
+    if args.write and not isinstance(real_card.get("per_class"), dict):
+        raise SystemExit(
+            "REFUSING to write: real held-out metrics must include per_class "
+            "precision/recall for model_card.json"
+        )
     card = {
-        "schema_version": 1,
+        "schema_version": 2 if args.write else 1,
         "model_version": f"moe-v1-{digest}",
         "weights_fnv1a64": digest,
         "architecture": "moe-v1",
@@ -446,6 +497,17 @@ def main() -> int:
     ap.add_argument("--min-real-recall", type=float, default=0.50,
                     help="with --real-corpus, refuse to write if real held-out recall "
                          "at the 0.40 report floor drops below this (recall-first gate)")
+    ap.add_argument("--min-real-class-recall", type=float, default=0.50,
+                    help="with --real-corpus, refuse to write if any positive-bearing "
+                         "held-out class falls below this recall at the 0.40 report floor")
+    ap.add_argument("--min-real-class-support", type=int, default=1,
+                    help="minimum positive held-out examples for a class to enter the "
+                         "per-class recall gate")
+    ap.add_argument("--baseline-model-card", default=CURRENT_MODEL_CARD,
+                    help="existing model card used to reject per-class real recall "
+                         "regressions during --write")
+    ap.add_argument("--max-real-class-recall-drop", type=float, default=0.0,
+                    help="allowed per-class recall@0.40 drop vs --baseline-model-card")
     ap.add_argument("--write", action="store_true", help="actually overwrite weights.bin")
     args = ap.parse_args()
 
@@ -480,6 +542,10 @@ def main() -> int:
                 f"REFUSING to write: real held-out recall@0.40 {real_floor:.4f} < floor "
                 f"{args.min_real_recall} (a retrain must not regress real-distribution recall)\n"
             )
+            return 1
+        class_gate_error = per_class_gate_error(real_metrics, args)
+        if class_gate_error:
+            sys.stderr.write(class_gate_error)
             return 1
         _write_weights(blob, args, metrics, real_metrics)
         return 0
@@ -527,6 +593,11 @@ def _write_weights(blob: bytes, args, metrics, real_metrics=None) -> None:
                 "REFUSING to write: real held-out metrics must include numeric "
                 "recall_at_0_40_floor before weights.bin is touched"
             )
+        if not isinstance(real.get("per_class"), dict):
+            raise SystemExit(
+                "REFUSING to write: real held-out metrics must include per_class "
+                "precision/recall before weights.bin is touched"
+            )
         if os.path.exists(args.out):
             shutil.copy2(args.out, args.out + ".bak")
             sys.stderr.write(f"backed up existing weights -> {args.out}.bak\n")
@@ -540,6 +611,83 @@ def _write_weights(blob: bytes, args, metrics, real_metrics=None) -> None:
             fh.write(blob)
         sys.stderr.write(f"wrote {scratch} (pass --write to update {args.out})\n")
     write_model_card(blob, args, metrics, real_metrics)
+
+
+def _class_floor(metric: dict) -> float | None:
+    value = metric.get("recall_at_0_40_floor")
+    if isinstance(value, (float, int)):
+        return float(value)
+    return None
+
+
+def _load_baseline_per_class(path: str) -> dict:
+    try:
+        with open(path, encoding="utf-8") as fh:
+            card = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(card, dict):
+        return {}
+    per_class = (
+        card.get("metrics", {})
+        .get("real_heldout", {})
+        .get("per_class", {})
+    )
+    return per_class if isinstance(per_class, dict) else {}
+
+
+def per_class_gate_error(real_metrics: dict, args) -> str:
+    """Return a refusal message when class-level real recall is unsafe."""
+    per_class = real_metrics.get("per_class")
+    if not isinstance(per_class, dict):
+        return (
+            "REFUSING to write: real held-out metrics must include per_class "
+            "precision/recall so aggregate recall cannot hide class failures\n"
+        )
+
+    offenders = []
+    for kind, metric in sorted(per_class.items()):
+        if not isinstance(metric, dict):
+            continue
+        n_pos = int(metric.get("n_pos") or 0)
+        if n_pos < args.min_real_class_support:
+            continue
+        recall = _class_floor(metric)
+        if recall is None or recall < args.min_real_class_recall:
+            shown = "missing" if recall is None else f"{recall:.4f}"
+            offenders.append(
+                f"{kind} recall@0.40={shown} < floor {args.min_real_class_recall:.4f} "
+                f"(n_pos={n_pos})"
+            )
+
+    regressions = []
+    baseline = _load_baseline_per_class(args.baseline_model_card) if args.write else {}
+    for kind, old_metric in sorted(baseline.items()):
+        if kind not in per_class or not isinstance(old_metric, dict):
+            continue
+        new_metric = per_class.get(kind)
+        if not isinstance(new_metric, dict):
+            continue
+        if int(new_metric.get("n_pos") or 0) < args.min_real_class_support:
+            continue
+        old_recall = _class_floor(old_metric)
+        new_recall = _class_floor(new_metric)
+        if old_recall is None or new_recall is None:
+            continue
+        drop = old_recall - new_recall
+        if drop > args.max_real_class_recall_drop + 1e-12:
+            regressions.append(
+                f"{kind} recall@0.40 dropped {old_recall:.4f}->{new_recall:.4f} "
+                f"(allowed {args.max_real_class_recall_drop:.4f})"
+            )
+
+    if not offenders and not regressions:
+        return ""
+    lines = ["REFUSING to write: per-class real held-out recall gate failed"]
+    lines.extend(f"  - {item}" for item in offenders)
+    lines.extend(f"  - {item}" for item in regressions)
+    lines.append("")
+    return "\n".join(lines)
 
 
 if __name__ == "__main__":

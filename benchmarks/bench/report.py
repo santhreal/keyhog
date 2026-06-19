@@ -22,7 +22,7 @@ import json
 import pathlib
 import sys
 
-from .schema import Detection, RunResult
+from .schema import Detection, Outcome, RunResult
 
 _BENCH_ROOT = pathlib.Path(__file__).resolve().parents[1]
 _REPO_ROOT = _BENCH_ROOT.parent
@@ -150,9 +150,14 @@ def render_perf(results: list[RunResult], corpus: str | None = None) -> str:
     return "\n".join(lines)
 
 
-def render_gaps(results: list[RunResult], corpus: str) -> str:
-    """Per-category cells where any competitor's F1 beats keyhog's - the
-    detection gaps left to close."""
+def render_recall_gap(results: list[RunResult], corpus: str) -> str:
+    """Per-category recall cells where any competitor beats keyhog.
+
+    This is the benchmark-side companion to the ML per-class retrain gate:
+    aggregate F1 can hide tail misses, so the report names the exact category,
+    keyhog P/R/F1, TP/FN, and the best competitor's same-category precision and
+    recall.
+    """
     rows = canonical_leaderboard(results, corpus)
     kh = next((r for r in rows if r.scanner.name == "keyhog" and r.available), None)
     if kh is None:
@@ -162,28 +167,47 @@ def render_gaps(results: list[RunResult], corpus: str) -> str:
         cats |= set(r.detection.per_category)
     out_lines = []
     for cat in sorted(cats):
-        kh_f1 = kh.detection.per_category.get(cat)
-        kh_f1v = kh_f1.f1() if kh_f1 else 0.0
+        kh_o = kh.detection.per_category.get(cat) or Outcome()
+        kh_recall = kh_o.recall()
         best = None
         for r in rows:
             if r.scanner.name == "keyhog" or not r.available:
                 continue
             o = r.detection.per_category.get(cat)
-            if o and o.f1() > kh_f1v + 1e-9 and (best is None or o.f1() > best[1]):
-                best = (r.scanner.name, o.f1(), r.detection.overall.precision())
+            if (
+                o
+                and o.recall() > kh_recall + 1e-9
+                and (
+                    best is None
+                    or o.recall() > best[1].recall() + 1e-9
+                    or (
+                        abs(o.recall() - best[1].recall()) <= 1e-9
+                        and o.f1() > best[1].f1()
+                    )
+                )
+            ):
+                best = (r.scanner.name, o)
         if best:
+            best_o = best[1]
             out_lines.append(
-                f"| `{cat}` | {kh_f1v:.3f} | {_name(best[0])} {best[1]:.3f} | "
-                f"+{best[1]-kh_f1v:.3f} | {best[2]:.3f} |"
+                f"| `{cat}` | {kh_o.precision():.3f} / {kh_recall:.3f} / "
+                f"{kh_o.f1():.3f} | {kh_o.tp}/{kh_o.fn} | "
+                f"{_name(best[0])} {best_o.precision():.3f} / "
+                f"{best_o.recall():.3f} / {best_o.f1():.3f} | "
+                f"+{best_o.recall()-kh_recall:.3f} |"
             )
     if not out_lines:
-        return "_keyhog matches or beats every competitor in every category on " \
+        return "_keyhog matches or beats every competitor's recall in every category on " \
                f"`{corpus}`._"
     return "\n".join([
-        "| Category | KeyHog F1 | Best competitor | Gap | Competitor overall precision |",
+        "| Category | KeyHog P/R/F1 | KeyHog TP/FN | Best competitor P/R/F1 | Recall gap |",
         "|---|---|---|---|---|",
         *out_lines,
     ])
+
+
+def render_gaps(results: list[RunResult], corpus: str) -> str:
+    return render_recall_gap(results, corpus)
 
 
 # -- per-detector calibration -------------------------------------------
@@ -303,7 +327,7 @@ def write_reports(results: list[RunResult], corpus: str,
     reports = {
         "leaderboard.md": f"# Leaderboard - {corpus}\n\n{sections['leaderboard']}\n",
         "perf.md": f"# Performance\n\n{sections['perf']}\n",
-        "gaps.md": f"# Per-category gaps - {corpus}\n\n{sections['gaps']}\n",
+        "recall-gap.md": f"# Recall gap dashboard - {corpus}\n\n{sections['gaps']}\n",
     }
     reports_dir.mkdir(parents=True, exist_ok=True)
     for name, body in reports.items():
@@ -319,7 +343,7 @@ def stale_report_paths(
     expected = {
         "leaderboard.md": f"# Leaderboard - {corpus}\n\n{sections['leaderboard']}\n",
         "perf.md": f"# Performance\n\n{sections['perf']}\n",
-        "gaps.md": f"# Per-category gaps - {corpus}\n\n{sections['gaps']}\n",
+        "recall-gap.md": f"# Recall gap dashboard - {corpus}\n\n{sections['gaps']}\n",
     }
     stale = []
     for name, body in expected.items():
