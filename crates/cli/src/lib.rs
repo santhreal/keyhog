@@ -104,6 +104,17 @@ pub(crate) fn record_scanner_panic() -> RecordedScanFailureEvent {
     record_scan_failure(ScanFailureEvent::ScannerPanicked)
 }
 
+pub(crate) fn reset_scan_runtime_state() {
+    SCANNED_CHUNKS.store(0, Ordering::Relaxed);
+    TOTAL_CHUNKS.store(0, Ordering::Relaxed);
+    FINDINGS_COUNT.store(0, Ordering::Relaxed);
+    GPU_SCANNED_CHUNKS.store(0, Ordering::Relaxed);
+    SOURCE_ERRORS.store(0, Ordering::Relaxed);
+    FAILED_SOURCES.store(0, Ordering::Relaxed);
+    SCANNER_PANICKED.store(false, Ordering::Relaxed);
+    keyhog_scanner::telemetry::reset_for_scan();
+}
+
 pub(crate) fn write_banner<W: Write>(
     w: &mut W,
     colors: bool,

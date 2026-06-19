@@ -59,6 +59,67 @@ fn lib_scan_failure_counters_have_typed_owner() {
     );
 }
 
+#[test]
+fn scan_runtime_reset_clears_process_global_scan_state() {
+    API.seed_scan_runtime_state_for_test();
+    let seeded = API.scan_runtime_snapshot();
+    assert!(
+        seeded.scanned_chunks > 0
+            && seeded.total_chunks > 0
+            && seeded.findings_count > 0
+            && seeded.gpu_scanned_chunks > 0
+            && seeded.source_errors > 0
+            && seeded.failed_sources > 0
+            && seeded.scanner_panicked
+            && seeded.dogfood_enabled
+            && seeded.example_suppressions > 0,
+        "test setup must seed every runtime counter that can leak across scans: {seeded:?}"
+    );
+
+    API.reset_scan_runtime_state_for_test();
+
+    assert_eq!(
+        API.scan_runtime_snapshot(),
+        keyhog::testing::ScanRuntimeSnapshot::default(),
+        "per-scan runtime reset must clear CLI totals, failure flags, scanner dogfood state, \
+         suppression counts, and scanner coverage-gap counters"
+    );
+}
+
+#[test]
+fn scan_runtime_reset_runs_before_dogfood_enablement() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let run = std::fs::read_to_string(root.join("src/orchestrator/run.rs")).expect("read run");
+    let lib = std::fs::read_to_string(root.join("src/lib.rs")).expect("read cli lib");
+
+    let reset_pos = run
+        .find("reset_scan_runtime_state();")
+        .expect("run boundary must reset process-global scan state");
+    let dogfood_pos = run
+        .find("enable_dogfood();")
+        .expect("dogfood enablement still happens in run");
+    assert!(
+        reset_pos < dogfood_pos,
+        "reset must happen before --dogfood enablement so stale dogfood state is cleared \
+         without disabling the current scan's requested trace"
+    );
+    for token in [
+        "SCANNED_CHUNKS.store(0",
+        "TOTAL_CHUNKS.store(0",
+        "FINDINGS_COUNT.store(0",
+        "GPU_SCANNED_CHUNKS.store(0",
+        "SOURCE_ERRORS.store(0",
+        "FAILED_SOURCES.store(0",
+        "SCANNER_PANICKED.store(false",
+        "keyhog_scanner::telemetry::reset_for_scan()",
+    ] {
+        assert!(
+            lib.contains(token),
+            "reset_scan_runtime_state must clear {token}"
+        );
+    }
+}
+
 // ── crates/cli/src/main.rs ────────────────────────────────────────────
 #[test]
 fn main_happy() {

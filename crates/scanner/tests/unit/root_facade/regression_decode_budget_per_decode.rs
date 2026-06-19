@@ -37,7 +37,7 @@
 
 use keyhog_core::{Chunk, ChunkMetadata, SensitiveString};
 use keyhog_scanner::decode::{register_decoder, Decoder};
-use keyhog_scanner::telemetry::{decode_truncation_count, testing::reset};
+use keyhog_scanner::telemetry::{decode_truncation_count, reset_for_scan, testing::reset};
 use keyhog_scanner::testing::decode_chunk;
 use std::time::{Duration, Instant};
 
@@ -269,4 +269,15 @@ fn decode_budget_is_enforced_inside_a_single_decoder_fanout() {
             );
         }
     }
+
+    assert!(
+        decode_truncation_count() > 0,
+        "test setup must have recorded real decode truncation telemetry"
+    );
+    reset_for_scan();
+    assert_eq!(
+        decode_truncation_count(),
+        0,
+        "the production per-scan telemetry reset must clear decode coverage-gap counters"
+    );
 }

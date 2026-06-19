@@ -33,6 +33,20 @@ pub struct BaselineEntry {
     pub status: String,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ScanRuntimeSnapshot {
+    pub scanned_chunks: usize,
+    pub total_chunks: usize,
+    pub findings_count: usize,
+    pub gpu_scanned_chunks: usize,
+    pub source_errors: usize,
+    pub failed_sources: usize,
+    pub scanner_panicked: bool,
+    pub dogfood_enabled: bool,
+    pub example_suppressions: usize,
+    pub decode_truncations: usize,
+}
+
 /// Opaque test-fixture suppression wrapper.
 pub struct TestFixtureSuppressions(crate::test_fixture_suppressions::TestFixtureSuppressions);
 
@@ -248,6 +262,9 @@ pub trait CliTestApi {
         merkle: Option<Arc<keyhog_core::MerkleIndex>>,
     ) -> Result<Vec<RawMatch>>;
 
+    fn seed_scan_runtime_state_for_test(&self);
+    fn reset_scan_runtime_state_for_test(&self);
+    fn scan_runtime_snapshot(&self) -> ScanRuntimeSnapshot;
     fn scanned_chunks(&self) -> usize;
     fn scanner_panicked(&self) -> bool;
 }
@@ -695,6 +712,41 @@ impl CliTestApi for TestApi {
         orchestrator
             .0
             .scan_sources_for_test(sources, show_progress, merkle)
+    }
+
+    fn seed_scan_runtime_state_for_test(&self) {
+        use std::sync::atomic::Ordering::Relaxed;
+
+        crate::SCANNED_CHUNKS.store(11, Relaxed);
+        crate::TOTAL_CHUNKS.store(13, Relaxed);
+        crate::FINDINGS_COUNT.store(17, Relaxed);
+        crate::GPU_SCANNED_CHUNKS.store(19, Relaxed);
+        let _source_error_receipt = crate::record_source_error();
+        let _failed_source_receipt = crate::record_failed_source();
+        let _scanner_panic_receipt = crate::record_scanner_panic();
+        keyhog_scanner::telemetry::enable_dogfood();
+        keyhog_scanner::telemetry::add_example_suppressions(23);
+    }
+
+    fn reset_scan_runtime_state_for_test(&self) {
+        crate::reset_scan_runtime_state();
+    }
+
+    fn scan_runtime_snapshot(&self) -> ScanRuntimeSnapshot {
+        use std::sync::atomic::Ordering::Relaxed;
+
+        ScanRuntimeSnapshot {
+            scanned_chunks: crate::SCANNED_CHUNKS.load(Relaxed),
+            total_chunks: crate::TOTAL_CHUNKS.load(Relaxed),
+            findings_count: crate::FINDINGS_COUNT.load(Relaxed),
+            gpu_scanned_chunks: crate::GPU_SCANNED_CHUNKS.load(Relaxed),
+            source_errors: crate::SOURCE_ERRORS.load(Relaxed),
+            failed_sources: crate::FAILED_SOURCES.load(Relaxed),
+            scanner_panicked: crate::SCANNER_PANICKED.load(Relaxed),
+            dogfood_enabled: keyhog_scanner::telemetry::is_dogfood_enabled(),
+            example_suppressions: keyhog_scanner::telemetry::example_suppression_count(),
+            decode_truncations: keyhog_scanner::telemetry::decode_truncation_count(),
+        }
     }
 
     fn scanned_chunks(&self) -> usize {

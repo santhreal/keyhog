@@ -2,7 +2,8 @@ use base64::Engine;
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::engine::CompiledScanner;
 use keyhog_scanner::telemetry::{
-    drain_events, enable_dogfood, record_example_suppression, testing::reset,
+    drain_events, enable_dogfood, example_suppression_count, is_dogfood_enabled,
+    record_example_suppression, reset_for_scan, testing::reset,
 };
 use keyhog_scanner::testing::decode_chunk;
 use keyhog_scanner::testing::jwt::{analyze, looks_like_jwt};
@@ -249,4 +250,33 @@ fn telemetry_reset_clears_dogfood_state() {
     enable_dogfood();
     reset();
     assert!(drain_events().is_empty());
+}
+
+#[test]
+fn production_scan_reset_clears_dogfood_and_suppression_counts() {
+    let _guard = TELEMETRY_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    reset();
+    enable_dogfood();
+    record_example_suppression("demo", None, "ghp_EXAMPLE", "ends_with_EXAMPLE");
+    assert!(is_dogfood_enabled(), "test setup must enable dogfood");
+    assert!(
+        example_suppression_count() > 0,
+        "test setup must seed the process-global suppression counter"
+    );
+
+    reset_for_scan();
+
+    assert!(
+        !is_dogfood_enabled(),
+        "production per-scan reset must clear stale dogfood enablement"
+    );
+    assert_eq!(
+        example_suppression_count(),
+        0,
+        "production per-scan reset must clear stale suppression totals"
+    );
+    assert!(
+        drain_events().is_empty(),
+        "production per-scan reset must clear stale dogfood events"
+    );
 }

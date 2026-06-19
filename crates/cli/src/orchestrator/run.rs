@@ -16,6 +16,7 @@ use std::time::Instant;
 
 impl ScanOrchestrator {
     pub async fn run(self) -> Result<std::process::ExitCode> {
+        crate::reset_scan_runtime_state();
         let start = Instant::now();
         let wall_start = chrono::Utc::now();
         let stderr_is_tty = std::io::stderr().is_terminal();

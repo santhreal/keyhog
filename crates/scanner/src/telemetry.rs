@@ -476,8 +476,13 @@ pub(crate) fn record_gpu_dispatch() {
     GPU_DISPATCHES.fetch_add(1, Ordering::Relaxed);
 }
 
-#[cfg(test)]
-fn reset_state() {
+/// Reset process-global telemetry that is scoped to one scan.
+///
+/// Long-lived callers (CLI library use, daemon-style harnesses, and integration
+/// tests) must not let a previous scan's suppression count, dogfood flag, or
+/// coverage-gap counters change the next scan's report. Scoped daemon telemetry
+/// (`with_scan_telemetry`) remains isolated by its caller-owned handle.
+pub fn reset_for_scan() {
     let t = cell();
     DOGFOOD_ENABLED.store(false, Ordering::Relaxed);
     t.dogfood_enabled.store(false, Ordering::Relaxed);
@@ -505,6 +510,6 @@ fn reset_state() {
 pub mod testing {
     /// Reset all telemetry state. Test-only facade for integration tests.
     pub fn reset() {
-        super::reset_state();
+        super::reset_for_scan();
     }
 }
