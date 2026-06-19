@@ -7,12 +7,15 @@ name: runners-nightly
 
 on:
   schedule:
-    - cron: "0 5 * * *"   # 05:00 UTC daily (before secretbench-nightly)
+    - cron: "0 5 * * *"   # 05:00 UTC daily (before bench-nightly)
   workflow_dispatch:
 
 concurrency:
   group: runners-nightly
   cancel-in-progress: false
+
+env:
+  CC: ""
 
 jobs:
   full-strict-matrix:

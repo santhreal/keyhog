@@ -1,0 +1,12 @@
+[package]
+name = "keyhog-ci-operability"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+# Standalone — NOT part of the keyhog workspace. Reads repo-root
+# workflow/docs files without pulling in keyhog crate dependencies.
+[workspace]
+
+[dev-dependencies]
+chrono = { version = "=0.4.41", default-features = false, features = ["clock"] }

@@ -160,6 +160,7 @@ REQUIRED_REFERENCES = [
     "scripts/audit.sh",
     "tests/docs/cli_claims_check.sh",
     "tests/integration/entrypoints_check.sh",
+    "tools/ci-operability/Cargo.toml",
     "ml/parity_check.py",
     "bench/tests/test_backend_parity.py",
     "bench/tests/test_creddata_recall_matrix.py",

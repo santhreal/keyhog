@@ -29,6 +29,9 @@ on:
         type: number
         default: 0
 
+env:
+  CC: ""
+
 jobs:
   leaderboard:
     runs-on: ubuntu-latest

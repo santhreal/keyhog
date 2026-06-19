@@ -1,0 +1,16 @@
+mod bench_nightly_missing_hyperscan_install;
+mod cargo_rdme_spec_waiver_has_expiry;
+mod ci_yml_not_santh_standard_template;
+mod ci_yml_spec_waiver_has_expiry;
+mod core_cargo_unpinned_deps;
+mod execution_plan_hunt_inventory;
+mod execution_plan_no_retired_registry;
+mod fuzz_not_wired_in_ci;
+mod macos_ci_skips_hyperscan_default_build;
+mod nightly_exports_all_strict_env_vars;
+mod nightly_matrix_has_fourteen_runner_binaries;
+mod no_dogfood_ci_gate;
+mod pr_ci_runs_all_fourteen_strict_runners;
+mod readme_missing_santh_status_badge;
+mod workflows_unset_cc_distcc_guard;
+mod workspace_cargo_metadata_drift;

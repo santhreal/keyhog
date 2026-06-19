@@ -1,0 +1,8 @@
+# SPEC waiver — KH-GAP-111 / readme_missing_santh_status_badge.rs
+# cargo-rdme + mandatory README sections require multi-crate doc migration.
+gap_id = "KH-GAP-111"
+kind = "spec"
+reason = "Workspace crate READMEs are hand stubs pending cargo-rdme wiring and STANDARD mandatory sections across five crates; badge oracle waived until doc pipeline lands."
+expires = "2026-08-15"
+owner = "meta-coordination"
+fix_target = "0.6.0"

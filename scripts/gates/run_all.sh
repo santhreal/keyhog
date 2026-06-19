@@ -17,6 +17,7 @@
 #   install_static_analysis  — install.sh/install.ps1 lint/static parser coverage
 #   cli_claims_check.sh      — no hallucinated CLI flags in docs/site
 #   entrypoints_check.sh     — pre-commit hook + composite Action stay wired
+#   ci-operability           — workflow, metadata, fuzz/dogfood, and pin contracts
 #
 # Gates that need an asset (corpus / built binary / network / cargo-audit DB).
 # These run when their asset is present and LOUD-SKIP (printed, never silent —
@@ -44,6 +45,26 @@ cd "$ROOT"
 rc=0
 STRICT_ASSETS="${STRICT_ASSETS:-0}"
 GATES_SOURCE_ONLY="${GATES_SOURCE_ONLY:-0}"
+
+# Some source-surface tests intentionally run this entrypoint with a stripped
+# environment. rustup/cargo need HOME to find the installed toolchain, so
+# recover it from the account database instead of letting a missing HOME turn
+# the CI-operability gate into an unrelated rustup failure.
+if [ -z "${HOME:-}" ]; then
+  HOME_FROM_PASSWD=""
+  if command -v getent >/dev/null 2>&1; then
+    HOME_FROM_PASSWD="$(getent passwd "$(id -u)" 2>/dev/null | cut -d: -f6 || true)"
+  fi
+  if [ -z "$HOME_FROM_PASSWD" ]; then
+    HOME_FROM_PASSWD="$(cd ~ && pwd)"
+  fi
+  export HOME="$HOME_FROM_PASSWD"
+fi
+CARGO_BIN="${CARGO_BIN:-cargo}"
+if [ "$CARGO_BIN" = "cargo" ] && [ -x "$HOME/.cargo/bin/cargo" ]; then
+  CARGO_BIN="$HOME/.cargo/bin/cargo"
+fi
+
 # GATES_SOURCE_ONLY and STRICT_ASSETS are mutually exclusive: forcing every
 # asset gate to skip while also failing on any skip would be a guaranteed red.
 if [ "$GATES_SOURCE_ONLY" = "1" ] && [ "$STRICT_ASSETS" = "1" ]; then
@@ -104,6 +125,8 @@ run "Docs CLI-claim gate: no hallucinated flags in docs/site" \
   bash tests/docs/cli_claims_check.sh
 run "Integration entry-point gate: pre-commit hook + Action wired" \
   bash tests/integration/entrypoints_check.sh
+run "CI operability: workflow and metadata contracts" \
+  "$CARGO_BIN" test --manifest-path tools/ci-operability/Cargo.toml -- --nocapture
 
 echo "== Gates #2 + #3: backend parity + recall floor (bench pytest) =="
 if [ "$GATES_SOURCE_ONLY" = "1" ]; then

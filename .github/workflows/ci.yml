@@ -16,6 +16,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  CC: ""
 
 jobs:
   # Prevention-gate aggregator. `scripts/gates/run_all.sh` is the ONE entrypoint
@@ -33,7 +34,8 @@ jobs:
   # corpus, no competitor binaries, no results/, no prebuilt dump_features) — the
   # full asset run lives in bench-nightly.yml / differential-bench.yml. cargo
   # audit DOES run (the advisory DB is fetched), centralizing what the separate
-  # `audit` job does. Pure Python + shell + cargo-audit: no Rust build, ~1 min.
+  # `audit` job does. Mostly Python + shell + cargo-audit, plus the lightweight
+  # standalone CI-operability Rust test crate.
   audit-gates:
     name: Prevention gates (run_all.sh)
     runs-on: ubuntu-latest
@@ -51,22 +53,27 @@ jobs:
       - name: Run all prevention gates
         run: bash scripts/gates/run_all.sh
 
-  # PR gate: the four highest-signal contract multipliers in strict mode.
-  # The remaining ~10 runners run nightly (runners-nightly.yml) because
-  # the full matrix is ~100k+ cases and would stack ~45+ minutes on
-  # every push. This job requires `lfs: true` checkout — the contract
-  # corpus and several runner fixtures are LFS-tracked.
+  # PR gate: all strict contract multipliers in strict mode. This job requires
+  # `lfs: true` checkout — the contract corpus and several runner fixtures are
+  # LFS-tracked.
   strict-runners:
     name: Strict adversarial runners
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     # PR + main gate. contracts_runner is always strict (no env var); the
-    # three multiplier runners honor KEYHOG_*_STRICT=1 (see TESTING_PROGRAM.md
-    # §3.1). Remaining strict env vars run nightly in runners-nightly.yml.
+    # multiplier runners honor KEYHOG_*_STRICT=1 (see TESTING_PROGRAM.md §3.1).
     env:
       KEYHOG_ADVERSARIAL_STRICT: "1"
       KEYHOG_ENCODING_STRICT: "1"
       KEYHOG_PATH_SHAPE_STRICT: "1"
+      KEYHOG_NOISE_STRICT: "1"
+      KEYHOG_UNICODE_STRICT: "1"
+      KEYHOG_WHITESPACE_STRICT: "1"
+      KEYHOG_LINE_LEN_STRICT: "1"
+      KEYHOG_ENTROPY_STRICT: "1"
+      KEYHOG_MULTI_STRICT: "1"
+      KEYHOG_COMPOUND_STRICT: "1"
+      KEYHOG_COMMENT_STRICT: "1"
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -85,7 +92,17 @@ jobs:
             --test contracts_runner \
             --test adversarial_explosion_runner \
             --test encoding_explosion_runner \
-            --test path_shape_runner
+            --test path_shape_runner \
+            --test noise_injection_runner \
+            --test unicode_confusable_runner \
+            --test whitespace_normalization_runner \
+            --test line_length_runner \
+            --test entropy_edge_runner \
+            --test compound_encoding_runner \
+            --test multi_secret_runner \
+            --test comment_embed_runner \
+            --test companion_contracts_runner \
+            --test cve_replay_runner
 
   test:
     name: Test
@@ -236,19 +253,17 @@ jobs:
   macos-build:
     name: macOS Build
     runs-on: macos-latest
-    # macOS lacks Vectorscan/Hyperscan in its package repos — vendoring
-    # it would balloon CI minutes for marginal value. We instead run
-    # the no-default-features build path which is the production
-    # configuration on machines without Hyperscan available. The lib
-    # tests here cover the same code paths the Windows/Linux jobs do
-    # except for the simd-feature-gated Hyperscan path.
+    # macOS must exercise both the default Vectorscan/Hyperscan path and the
+    # portable release asset path.
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-      - run: cargo build -p keyhog-core -p keyhog-scanner --no-default-features
+      - name: Install Vectorscan
+        run: brew update && brew install vectorscan pkg-config
+      - run: cargo build -p keyhog-core -p keyhog-scanner
       - run: cargo test -p keyhog-core --lib
-      - run: cargo test -p keyhog-scanner --lib --no-default-features --features "entropy,multiline,ml"
+      - run: cargo test -p keyhog-scanner --lib
       - run: cargo test -p keyhog-sources --lib
       # Lock the EXACT invocation the release workflow uses. The release
       # tag flow runs `cargo build --release -p keyhog --no-default-features
@@ -359,6 +374,25 @@ jobs:
         run: bash tests/docs/cli_claims_check.sh
       - name: Integration entry-point gate (pre-commit hook + Action)
         run: bash tests/integration/entrypoints_check.sh
+
+  fuzz-smoke:
+    name: Fuzz target smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+      - name: Install Vectorscan
+        run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
+      - name: Install nightly toolchain
+        run: rustup toolchain install nightly --profile minimal
+      - name: Install cargo-fuzz
+        run: cargo +nightly install cargo-fuzz --locked
+      - name: Run bounded fuzz smoke
+        run: |
+          cargo +nightly fuzz run decode_target -- -runs=64
+          cargo +nightly fuzz run scanner_target -- -runs=32
 
   fmt:
     name: Format
@@ -474,13 +508,13 @@ jobs:
       # path-suppressed in .keyhogignore; a real leak (or a regression that
       # un-suppresses one) turns this red.
       - name: Dogfood self-scan (exit 0 = clean)
-        run: ./target/release-fast/keyhog scan .
+        run: ./target/release-fast/keyhog scan . --dogfood
 
   publish:
     name: Publish to crates.io
     # Clippy is intentionally NOT a publish gate (it is advisory; see the
-    # clippy job). Release correctness is gated by test/strict-runners/fmt/build.
-    needs: [test, strict-runners, fmt, build]
+    # clippy job). Release correctness is gated by test/strict-runners/fmt/fuzz/build.
+    needs: [test, strict-runners, fmt, fuzz-smoke, build]
     # Only attempt publish on an explicit `v*` tag push. Tag-gating matches the
     # release flow: bump the version, tag, push the tag, publish.
     if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'

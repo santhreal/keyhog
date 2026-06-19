@@ -1,0 +1,8 @@
+# SPEC waiver — KH-GAP-130 / ci_yml_not_santh_standard_template.rs
+# santh-ci shared workflow cannot absorb KeyHog extensions this sprint.
+gap_id = "KH-GAP-130"
+kind = "spec"
+reason = "KeyHog ci.yml extends beyond santh-ci main.yml: (1) LFS checkout on test/fmt/strict-runners — contract corpus and readme_claims.rs are LFS-tracked push-protection fixtures; (2) PR strict-runners job runs all 14 KEYHOG_*_STRICT multiplier binaries per TESTING_PROGRAM §3.1; (3) fuzz job runs cargo-fuzz scanner_target + decode_target smoke. Migration to santh-project/santh-ci reusable workflow is blocked until the shared template exposes LFS + 14-runner matrix + fuzz hooks."
+expires = "2026-08-15"
+owner = "meta-coordination"
+fix_target = "0.6.0"

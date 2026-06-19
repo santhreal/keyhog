@@ -18,6 +18,9 @@ on:
         description: 'Existing tag to build assets for (e.g. v0.5.7). Manual re-run.'
         required: true
 
+env:
+  CC: ""
+
 jobs:
   build:
     name: Build ${{ matrix.asset }}
