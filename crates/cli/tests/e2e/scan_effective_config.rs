@@ -397,6 +397,57 @@ fn config_effective_rejects_invalid_config_byte_sizes() {
 }
 
 #[test]
+fn config_effective_rejects_malformed_toml() {
+    let (stdout, stderr, code) = effective_config_with_toml("this is not = = valid toml [[[\n");
+
+    assert_eq!(code, Some(2), "stdout={stdout}\nstderr={stderr}");
+    assert!(
+        stdout.is_empty(),
+        "malformed config must not print config: {stdout}"
+    );
+    for required in [
+        "invalid .keyhog.toml configuration",
+        ".keyhog.toml",
+        "failed to parse TOML",
+        "Fix: correct the TOML syntax",
+    ] {
+        assert!(
+            stderr.contains(required),
+            "stderr missing `{required}`; stderr={stderr}"
+        );
+    }
+    assert!(
+        !stderr.contains("Failed to parse .keyhog.toml"),
+        "old warning-and-defaults path must not survive; stderr={stderr}"
+    );
+}
+
+#[test]
+fn config_effective_rejects_missing_explicit_config_path() {
+    let dir = TempDir::new().expect("tempdir");
+    let missing = dir.path().join("missing-keyhog.toml");
+    let missing_arg = missing.to_string_lossy();
+    let (stdout, stderr, code) = effective_config(&["--config", &missing_arg]);
+
+    assert_eq!(code, Some(2), "stdout={stdout}\nstderr={stderr}");
+    assert!(
+        stdout.is_empty(),
+        "missing explicit config must not print config: {stdout}"
+    );
+    for required in [
+        "invalid .keyhog.toml configuration",
+        missing_arg.as_ref(),
+        "failed to read config file",
+        "Fix: make the file readable",
+    ] {
+        assert!(
+            stderr.contains(required),
+            "stderr missing `{required}`; stderr={stderr}"
+        );
+    }
+}
+
+#[test]
 fn config_effective_rejects_invalid_config_enums_and_min_length() {
     let (stdout, stderr, code) = effective_config_with_toml(
         "format = \"yaml\"\n\

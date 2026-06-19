@@ -1,11 +1,10 @@
 //! Configuration file handling for the KeyHog CLI.
 
 use crate::args::ScanArgs;
-use crate::style;
 use crate::value_parsers::{
     parse_byte_size, parse_dedup_scope, parse_output_format, parse_severity_filter,
 };
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 mod limits;
 mod schema;
@@ -61,6 +60,14 @@ fn shipped_config_outcome() -> ConfigOutcome {
         aws_canary_accounts: Vec::new(),
         scanner_tuning: keyhog_scanner::ScannerTuningConfig::default(),
     }
+}
+
+fn config_file_error(path: &Path, detail: impl std::fmt::Display, fix: &str) -> ConfigOutcome {
+    let mut outcome = shipped_config_outcome();
+    outcome
+        .config_errors
+        .push(format!("- {}: {detail}. Fix: {fix}", path.display()));
+    outcome
 }
 
 fn invalid_config_value(field: &str, value: &str, detail: &str) -> String {
@@ -227,30 +234,31 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
                     "failed to read .keyhog.toml: {error}"
                 );
             }
-            return shipped_config_outcome();
+            return config_file_error(
+                &config_path,
+                format_args!("failed to read config file: {error}"),
+                "make the file readable, pass a valid --config path, or run with --no-config",
+            );
         }
     };
 
     let config: ConfigFile = match toml::from_str(&raw) {
         Ok(parsed) => parsed,
         Err(error) => {
-            // Emitted exactly once on the real orchestrator merge; the daemon
-            // routing probe passes `emit_diagnostics = false` so a malformed
-            // config does not warn twice (HUNT-2).
+            // The daemon routing probe passes `emit_diagnostics = false` and
+            // inspects `config_errors`; the real orchestrator merge turns the
+            // same error into the single operator-visible CLI failure.
             if emit_diagnostics {
-                let palette = style::for_stderr();
-                eprintln!(
-                    "{} Failed to parse .keyhog.toml at {}: {}",
-                    style::warn("WARN", &palette),
-                    config_path.display(),
-                    error
-                );
                 tracing::warn!(
                     path = %config_path.display(),
                     "failed to parse .keyhog.toml: {error}"
                 );
             }
-            return shipped_config_outcome();
+            return config_file_error(
+                &config_path,
+                format_args!("failed to parse TOML: {error}"),
+                "correct the TOML syntax or run with --no-config for a hermetic default scan",
+            );
         }
     };
 
