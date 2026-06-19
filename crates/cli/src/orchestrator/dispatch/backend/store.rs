@@ -275,6 +275,12 @@ pub(super) fn load_autoroute_cache(
         if decision.selected_margin_ns != expected_margin {
             return Err("cache decision has invalid selected backend margin".into());
         }
+        if out.contains_key(&key) {
+            return Err(format!(
+                "cache contains duplicate autoroute workload decision for {key:?}"
+            )
+            .into());
+        }
         out.insert(key, decision);
     }
     Ok(out)

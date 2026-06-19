@@ -208,6 +208,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("cache decision has mismatched GPU cold/warm route evidence")
             && backend.contains("backend rejected by autoroute GPU degrade check")
             && backend.contains("cache decision is missing a calibration timestamp")
+            && backend.contains("duplicate autoroute workload decision")
             && !backend.contains("load_autoroute_cache(path, detector_digest, &host_profile).ok()")
             && !backend.contains("std::fs::rename(&tmp, path)")
             && !backend.contains("path.with_extension(format!(\"tmp.\""),
