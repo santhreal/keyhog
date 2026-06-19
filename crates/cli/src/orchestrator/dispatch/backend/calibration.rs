@@ -142,7 +142,11 @@ fn measure_reference_simd(
         durations.push(dur);
     }
     scanner.clear_fragment_cache();
-    let timing = BackendTimingEvidence::from_durations(durations);
+    let timing = BackendTimingEvidence::from_durations(durations).ok_or_else(|| {
+        AutorouteRoutingError::calibration_not_persisted(
+            "reference SIMD timing evidence had no recorded trials",
+        )
+    })?;
     if !timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS) {
         return Err(AutorouteRoutingError::calibration_not_persisted(
             "reference SIMD timing evidence was invalid",
@@ -192,7 +196,7 @@ fn measure_candidate_backend(
         durations.push(dur);
     }
     scanner.clear_fragment_cache();
-    Some(BackendTimingEvidence::from_durations(durations))
+    BackendTimingEvidence::from_durations(durations)
 }
 
 fn timed<T>(f: impl FnOnce() -> T) -> (T, Duration) {

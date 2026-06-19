@@ -30,7 +30,7 @@ pub(super) fn gpu_cold_warm_route_evidence(
     if warm_trials.len() < AUTOROUTE_GPU_WARM_TRIALS {
         return None;
     }
-    let warm_timing = BackendTimingEvidence::from_trial_ns(warm_trials.to_vec());
+    let warm_timing = BackendTimingEvidence::from_trial_ns(warm_trials.to_vec())?;
     if !warm_timing.is_valid_for_trials(AUTOROUTE_GPU_WARM_TRIALS) {
         return None;
     }
@@ -190,7 +190,7 @@ pub(super) struct BackendTimingEvidence {
 }
 
 impl BackendTimingEvidence {
-    pub(super) fn from_durations(durations: Vec<Duration>) -> Self {
+    pub(super) fn from_durations(durations: Vec<Duration>) -> Option<Self> {
         let trials_ns = durations.into_iter().map(|dur| dur.as_nanos()).collect();
         Self::from_trial_ns(trials_ns)
     }
@@ -198,11 +198,12 @@ impl BackendTimingEvidence {
     #[cfg(test)]
     pub(super) fn constant_ms(ms: u128, trials: usize) -> Self {
         Self::from_trial_ns(vec![ms.saturating_mul(1_000_000); trials])
+            .expect("test timing evidence must contain at least one trial")
     }
 
-    pub(super) fn from_trial_ns(mut trials_ns: Vec<u128>) -> Self {
+    pub(super) fn from_trial_ns(trials_ns: Vec<u128>) -> Option<Self> {
         if trials_ns.is_empty() {
-            trials_ns.push(0);
+            return None;
         }
         let mut min_ns: Option<u128> = None;
         let mut max_ns: Option<u128> = None;
@@ -222,14 +223,14 @@ impl BackendTimingEvidence {
         };
         let mean_ns = sum / trials_ns.len() as u128;
         let confidence_interval_95_ns = TimingConfidenceInterval::from_trials(&trials_ns);
-        Self {
+        Some(Self {
             trials_ns,
             best_ns: min_ns,
             min_ns,
             max_ns,
             mean_ns,
             confidence_interval_95_ns,
-        }
+        })
     }
 
     pub(super) fn best_ms(&self) -> u128 {

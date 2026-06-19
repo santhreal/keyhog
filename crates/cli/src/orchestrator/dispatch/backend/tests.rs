@@ -898,6 +898,14 @@ fn autoroute_cache_rejects_zero_duration_timing_evidence() {
 }
 
 #[test]
+fn backend_timing_evidence_rejects_empty_trial_sets_at_construction() {
+    assert!(
+        super::evidence::BackendTimingEvidence::from_trial_ns(Vec::new()).is_none(),
+        "autoroute timing evidence must not convert an empty trial set into a zero-duration route"
+    );
+}
+
+#[test]
 fn autoroute_reference_inconsistency_aborts_calibration_contract() {
     let error = AutorouteRoutingError::inconsistent_reference_backend(2).to_string();
     assert!(
