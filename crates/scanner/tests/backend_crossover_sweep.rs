@@ -37,8 +37,8 @@ use std::time::Instant;
 const KIB: usize = 1024;
 const MIB: usize = 1024 * 1024;
 
-/// Benign-sparse sweep points straddling the high-tier floors (2 MiB min,
-/// 16 MiB solo) so we can see where GPU starts winning and how far it leads.
+/// Benign-sparse sweep points covering the required 8 MiB target and the
+/// measured 64 MiB no-win range before the current high-tier heuristic floor.
 const BENIGN_SIZES: &[usize] = &[
     256 * KIB,
     512 * KIB,

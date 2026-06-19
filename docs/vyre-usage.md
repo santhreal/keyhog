@@ -264,7 +264,7 @@ by primitive authors.
 | Wire                                 | Status      | Where                                                  |
 | ------------------------------------ | ----------- | ------------------------------------------------------ |
 | `intern::perfect_hash`               | ✅ shipped  | `crates/scanner/src/static_intern.rs` + `engine/mod.rs` |
-| Tier-aware GPU routing (2 MiB)       | ✅ shipped  | `crates/scanner/src/hw_probe.rs`                       |
+| Measured-safe GPU heuristic routing  | ✅ shipped  | `crates/scanner/src/hw_probe.rs`                       |
 | GPU region-presence dispatch         | ✅ shipped  | `engine/gpu_region_dispatch.rs::scan_coalesced_gpu_region_presence` |
 | `rule` CPU evaluator + `FieldInSet`  | ✅ shipped  | upstream `vyre_libs::rule::cpu_eval` + `ast.rs`        |
 | `.keyhogignore.toml` rule engine     | ✅ shipped  | `crates/core/src/rule_filter.rs` + `orchestrator.rs`   |
@@ -391,13 +391,16 @@ are estimable. Listed best-bang-for-buck first.
    source_type)` from a frozen CHD perfect hash, lock-free, no
    per-scan allocation.
 
-1.5. ✅ **Tier-aware GPU routing + dispatch sharding** - DONE.
+1.5. ✅ **Measured-safe GPU heuristic routing + dispatch sharding** - DONE.
    `select_backend` classifies the active GPU into High/Mid/Low and
-   uses tier-specific thresholds (2 MiB / 16 MiB / 64 MiB).
-   Per-tier pattern-count breakeven (100 / 500 / 2000). GPU dispatch
+   uses conservative tier-specific thresholds (128 MiB / 256 MiB /
+   512 MiB) after the live RTX 5090 region-presence sweep failed to
+   beat CPU/SIMD through 64 MiB. Per-tier pattern-count breakeven
+   remains 100 / 500 / 2000. GPU dispatch
    now shards at 65535 × 32 = ~2 MiB per dispatch to respect the
    wgpu workgroup-per-dimension cap. `keyhog backend` reports the
-   active tier and effective thresholds.
+   active tier and effective heuristic thresholds; install-time
+   autoroute calibration remains the fastest-correct selection path.
 
 2. **`rule` engine for inline-suppression / allowlist.**
    The current allowlist is hand-rolled string matching. Vyre's `rule`

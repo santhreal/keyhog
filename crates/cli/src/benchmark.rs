@@ -6,10 +6,10 @@ use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{probe_hardware, ScanBackend};
 use std::time::Instant;
 
-// Total ≈ 96 MiB. Above the 64 MiB GPU_MIN_BYTES routing threshold so the
-// `keyhog scan --benchmark` results compare GPU and SimdCpu under conditions
-// where measured backend selection would actually pick GPU. Below the 256 MiB
-// GPU_BYTES_BREAKEVEN_SOLO cap to keep CI run-time reasonable.
+// Total ~96 MiB. `keyhog scan --benchmark` compares explicit backend rows;
+// default auto-routing is driven by persisted calibration evidence, not this
+// synthetic corpus size. Kept below the large-file scan ceiling so CI remains
+// bounded.
 const BENCHMARK_CHUNKS: usize = 768;
 const BENCHMARK_CHUNK_BYTES: usize = 128 * 1024;
 

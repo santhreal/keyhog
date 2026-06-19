@@ -1,18 +1,18 @@
 //! e2e: the GPU is NOT auto-selected without `--autoroute-gpu`
 //! (TESTING vector 12, lane 9) — the MEASURED-FACT contract, end to end.
 //!
-//! MEASURED FACT (today, RTX 5090): the GPU megakernel is 1.7–6× SLOWER than
-//! SIMD at every size for keyhog's detector set (catalog upload ~1 GB one-time,
-//! per-rule-DFA kernel ~18 MiB/s, phase-2 on CPU regardless). So auto-routing
-//! must NEVER pick the GPU on its own; the operator opts in during calibration
-//! with `--autoroute-gpu`, and `--backend gpu` still forces it for
+//! MEASURED FACT (2026-06-19, RTX 5090): the live region-presence GPU route
+//! still did not beat best CPU/SIMD through 64 MiB, including the required
+//! 8 MiB cell. So auto-routing must never pick GPU from a fixed heuristic; it
+//! must consume install-time calibration evidence. The operator opts GPU into
+//! calibration with `--autoroute-gpu`, and `--backend gpu` still forces it for
 //! parity/research.
 //!
-//! The opt-in gate lives in the private measured router calibration path; the scanner-side
-//! pure-fn inputs it consults are pinned in
+//! The calibration owner is pinned in `crates/cli/tests/unit/orchestrator/`.
+//! Scanner-side heuristic predicate values are pinned in
 //! `crates/scanner/tests/autoroute_gpu_optin_contract.rs`. THIS test pins the
-//! operator-visible end: the `INFO backend:` rationale line the real binary prints
-//! to stderr.
+//! operator-visible end: the `INFO backend:` rationale line the real binary
+//! prints to stderr.
 //!
 //! Why these assertions hold on EVERY host (deterministic, machine-independent):
 //!   * WITHOUT persisted calibration, the auto path fails with
@@ -25,8 +25,8 @@
 //!
 //! The existing `progress_flag_emits_routing_decision_summary` test only covers
 //! a single tiny file (always SIMD, never clears any GPU floor). This test uses
-//! a multi-megabyte input that WOULD clear the high-tier 2 MiB GPU floor, so it
-//! actually exercises the case the opt-in gate exists to veto.
+//! a multi-megabyte input in the formerly over-eager GPU range, so it exercises
+//! the cache-required auto-routing contract without making the test huge.
 
 use std::io::Write;
 use std::path::PathBuf;
@@ -37,9 +37,9 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
-/// A ~3 MiB clean file: past the high-tier 2 MiB GPU floor, so the routing
-/// decision is non-trivial (a tiny file always trivially routes to SIMD). Clean
-/// content so the scan exits 0 and the assertion is about routing, not findings.
+/// A ~3 MiB clean file: large enough to catch the retired over-eager GPU floor
+/// while still cheap in e2e. Clean content so the scan exits 0 and the
+/// assertion is about routing, not findings.
 fn large_clean_file() -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("tempdir");
     let path = dir.path().join("large_clean.txt");

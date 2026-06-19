@@ -545,10 +545,10 @@ fn scan_backend_labels_are_stable() {
 // ────────────────────────────────────────────────────────────────────
 // CELL N: batch-aware routing - select_backend_for_batch()
 //
-// Locks the structural guard that keeps a tiny-file SWARM off the GPU
-// even when the coalesced batch total clears every byte/pattern floor.
-// The Linux-kernel-tree regression: 94k files, 1.5 GiB, but only 55 files
-// >= 2 MiB (max 22 MiB) sprinkled through the walk. `select_backend`
+// Locks the structural guard that keeps a tiny-file SWARM off the GPU even when
+// the coalesced batch total clears every byte/pattern floor. The
+// Linux-kernel-tree regression: 94k files, 1.5 GiB, but only a small minority
+// of large-file bytes sprinkled through the walk. `select_backend`
 // (total-bytes only) coalesced them into 256 MiB batches and routed every
 // one to the GPU - 2.1x SLOWER than SIMD. The 4th arg is now
 // `large_chunk_bytes` (bytes in chunks at/above the tier floor); GPU
@@ -579,7 +579,7 @@ fn batch_swarm_of_tiny_files_stays_simd_despite_huge_total() {
 }
 
 /// THE REALISTIC REGRESSION: the kernel batch isn't a PURE swarm - a few
-/// large files ride along (e.g. ~30 MiB of >=2 MiB files in a 256 MiB
+/// large files ride along (e.g. ~30 MiB of large-file bytes in a 256 MiB
 /// batch = ~12%). Below the 50% dominance bar -> SIMD. This is the case
 /// the largest-single-chunk guard got wrong (one 22 MiB file -> GPU).
 #[test]

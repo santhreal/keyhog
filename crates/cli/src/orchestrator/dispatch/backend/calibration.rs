@@ -1,7 +1,7 @@
 //! Install-time autoroute calibration measurement.
 
 use keyhog_core::Chunk;
-use keyhog_scanner::hw_probe::{gpu_could_engage, HardwareCaps, ScanBackend};
+use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
 use keyhog_scanner::CompiledScanner;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -15,7 +15,7 @@ use super::{is_gpu_backend, AutorouteRoutingError, AUTOROUTE_CALIBRATION_TRIALS}
 pub(super) fn calibrate_fastest_correct_backend(
     scanner: &CompiledScanner,
     hw_caps: &HardwareCaps,
-    pattern_count: usize,
+    _pattern_count: usize,
     batch: &[Chunk],
     autoroute_gpu: bool,
 ) -> Result<AutorouteDecision, AutorouteRoutingError> {
@@ -39,7 +39,8 @@ pub(super) fn calibrate_fastest_correct_backend(
     let mut gpu_cold_ns = None;
     let mut gpu_warm_timing = None;
     let mut gpu_route_ns = None;
-    if autoroute_gpu && gpu_could_engage(hw_caps, sample_bytes, pattern_count) {
+    let gpu_candidate_allowed = autoroute_gpu && hw_caps.gpu_available && !hw_caps.gpu_is_software;
+    if gpu_candidate_allowed {
         if let Some(measured_gpu_timing) =
             measure_candidate_backend(scanner, &sample, ScanBackend::Gpu, &reference_key)
         {
@@ -79,7 +80,8 @@ pub(super) fn calibrate_fastest_correct_backend(
         sample_bytes,
         simd_ms = simd_timing.best_ms(),
         cpu_ms = cpu_timing.as_ref().map(BackendTimingEvidence::best_ms),
-        gpu_considered = autoroute_gpu,
+        gpu_opt_in = autoroute_gpu,
+        gpu_considered = gpu_candidate_allowed,
         gpu_ms = gpu_timing.as_ref().map(BackendTimingEvidence::best_ms),
         gpu_cold_ms = gpu_cold_ns.map(|ns| ns / 1_000_000),
         gpu_warm_ms = gpu_warm_timing.as_ref().map(BackendTimingEvidence::best_ms),

@@ -72,6 +72,13 @@ fn dispatch_autoroute_calibrates_missing_buckets_and_persists() {
         "autoroute must probe missing buckets only in calibration mode, reject parity-divergent candidates, and persist every measured decision"
     );
     assert!(
+        !calibration.contains("gpu_could_engage")
+            && calibration.contains("gpu_candidate_allowed")
+            && calibration.contains("autoroute_gpu && hw_caps.gpu_available && !hw_caps.gpu_is_software")
+            && calibration.contains("measure_candidate_backend(scanner, &sample, ScanBackend::Gpu"),
+        "explicit autoroute GPU calibration must measure the GPU candidate when opted in and real hardware is present; fixed heuristic thresholds must not decide whether calibration probes GPU"
+    );
+    assert!(
         !dispatch.contains("select_backend_for_batch(")
             && !fused.contains("select_backend_for_batch("),
         "dispatch paths must not use fixed-threshold backend selection"

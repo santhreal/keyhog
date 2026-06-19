@@ -1,0 +1,66 @@
+schema_version = 1
+measured_at = "2026-06-19"
+host = "mukund-linux-main"
+gpu = "NVIDIA GeForce RTX 5090"
+driver = "570.211.01"
+backend = "region-presence"
+payload = "benign-sparse"
+command = "cargo test --release -p keyhog-scanner --test backend_crossover_sweep backend_crossover_sweep -- --ignored --nocapture"
+max_measured_mib = 64
+first_gpu_win_mib = 0
+
+[[points]]
+mib = 1
+cpu_mib_s = 38.81
+simd_mib_s = 26.11
+gpu_mib_s = 38.70
+gpu_best_cpu_ratio = 1.00
+winner = "cpu"
+
+[[points]]
+mib = 2
+cpu_mib_s = 23.49
+simd_mib_s = 23.89
+gpu_mib_s = 22.93
+gpu_best_cpu_ratio = 0.96
+winner = "simd"
+
+[[points]]
+mib = 4
+cpu_mib_s = 23.60
+simd_mib_s = 23.44
+gpu_mib_s = 22.86
+gpu_best_cpu_ratio = 0.97
+winner = "cpu"
+
+[[points]]
+mib = 8
+cpu_mib_s = 23.04
+simd_mib_s = 22.88
+gpu_mib_s = 22.54
+gpu_best_cpu_ratio = 0.98
+winner = "cpu"
+
+[[points]]
+mib = 16
+cpu_mib_s = 22.68
+simd_mib_s = 22.73
+gpu_mib_s = 22.38
+gpu_best_cpu_ratio = 0.98
+winner = "simd"
+
+[[points]]
+mib = 32
+cpu_mib_s = 22.68
+simd_mib_s = 22.68
+gpu_mib_s = 22.42
+gpu_best_cpu_ratio = 0.99
+winner = "simd"
+
+[[points]]
+mib = 64
+cpu_mib_s = 22.68
+simd_mib_s = 22.42
+gpu_mib_s = 22.16
+gpu_best_cpu_ratio = 0.98
+winner = "cpu"

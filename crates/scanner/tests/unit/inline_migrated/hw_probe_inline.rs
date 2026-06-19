@@ -41,7 +41,7 @@ fn clear_env() {
 #[test]
 fn gpu_picked_when_workload_huge_solo() {
     let caps = caps_with(true, false, true, true);
-    // 256 MiB single file, low pattern count → still clears the GPU crossover
+    // Low-tier solo threshold, low pattern count -> still clears the GPU crossover
     // (solo cap). Asserted on the side-effect-free `gpu_could_engage` predicate
     // rather than `select_backend`: the router additionally degrades a GPU
     // choice to SIMD on a GPU-less host (`gpu::env_no_gpu()`), so a `== Gpu`
@@ -58,7 +58,7 @@ fn gpu_picked_when_workload_huge_solo() {
 #[test]
 fn gpu_picked_when_buffer_big_and_many_patterns() {
     let caps = caps_with(true, false, true, true);
-    // 64 MiB + 2K patterns → clears the GPU crossover (see
+    // Low-tier minimum bytes + pattern threshold -> clears the GPU crossover (see
     // `gpu_picked_when_workload_huge_solo` for why this asserts
     // `gpu_could_engage`, not `select_backend == Gpu`).
     assert!(gpu_could_engage(
@@ -72,7 +72,7 @@ fn gpu_picked_when_buffer_big_and_many_patterns() {
 fn gpu_skipped_below_buffer_threshold() {
     clear_env();
     let caps = caps_with(true, false, true, true);
-    // 63 MiB even with 5K patterns → SimdCpu (under MIN_BYTES).
+    // One byte under MIN_BYTES even with 5K patterns -> SimdCpu.
     assert_eq!(
         select_backend(&caps, thresholds::GPU_MIN_BYTES - 1, 5_000),
         ScanBackend::SimdCpu
@@ -263,31 +263,35 @@ fn classify_low_tier_gpus() {
 }
 
 #[test]
-fn high_tier_gpu_activates_at_2mib() {
+fn high_tier_gpu_activates_at_measured_safe_floor() {
     let caps = caps_with_named_gpu("NVIDIA GeForce RTX 5090");
-    // 2 MiB workload + 2K patterns → clears the GPU crossover on an RTX 5090.
+    // High-tier floor + enough patterns clears the heuristic crossover.
     assert!(gpu_could_engage(
         &caps,
-        2 * 1024 * 1024,
+        thresholds::GPU_MIN_BYTES_HIGH_TIER,
         thresholds::GPU_PATTERN_BREAKEVEN
     ));
-    // 2 MiB single file with a low pattern count doesn't reach the high-tier
-    // solo cap (16 MiB), so the crossover stays closed.
-    assert!(!gpu_could_engage(&caps, 2 * 1024 * 1024, 50));
-    // 16 MiB single file → solo cap on high tier → crossover opens.
-    assert!(gpu_could_engage(&caps, 16 * 1024 * 1024, 50));
+    // The required 8 MiB target no longer clears the fixed heuristic because
+    // the live RTX 5090 sweep did not beat CPU/SIMD through 64 MiB.
+    assert!(!gpu_could_engage(&caps, 8 * 1024 * 1024, 5_000));
+    // High-tier solo cap opens even with a low pattern count.
+    assert!(gpu_could_engage(
+        &caps,
+        thresholds::GPU_BYTES_BREAKEVEN_SOLO_HIGH_TIER,
+        50
+    ));
 }
 
 #[test]
-fn mid_tier_gpu_activates_at_16mib() {
+fn mid_tier_gpu_activates_at_measured_safe_floor() {
     let caps = caps_with_named_gpu("NVIDIA GeForce RTX 3070");
-    // 2 MiB on mid-tier is too small — crossover stays closed.
+    // 64 MiB on mid-tier is too small after the measured-safe threshold raise.
     assert!(!gpu_could_engage(
         &caps,
-        2 * 1024 * 1024,
+        64 * 1024 * 1024,
         thresholds::GPU_PATTERN_BREAKEVEN
     ));
-    // 16 MiB + 2K patterns → crossover opens.
+    // Mid-tier floor + enough patterns opens.
     assert!(gpu_could_engage(
         &caps,
         thresholds::GPU_MIN_BYTES_MID_TIER,
@@ -296,11 +300,11 @@ fn mid_tier_gpu_activates_at_16mib() {
 }
 
 #[test]
-fn low_tier_gpu_keeps_legacy_64mib_threshold() {
-    // Unknown adapter name → Low tier → original 64 MiB threshold.
+fn low_tier_gpu_keeps_most_conservative_threshold() {
+    // Unknown adapter name -> Low tier -> most conservative threshold.
     let caps = caps_with_named_gpu("Mystery GPU");
-    // 16 MiB even with many patterns → crossover closed (Low tier needs 64 MiB).
-    assert!(!gpu_could_engage(&caps, 16 * 1024 * 1024, 5_000));
+    // 256 MiB even with many patterns stays closed for low tier.
+    assert!(!gpu_could_engage(&caps, 256 * 1024 * 1024, 5_000));
     assert!(gpu_could_engage(
         &caps,
         thresholds::GPU_MIN_BYTES,

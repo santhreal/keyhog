@@ -9,32 +9,30 @@
 //! [`super::gpu_solo_bytes_for_tier`] to pick the right breakeven for
 //! the actual adapter.
 //!
-//! The tier→threshold map is calibrated against the published dispatch
-//! latency of each GPU class:
+//! The tier→threshold map is conservative because the live region-presence GPU
+//! route is still full-scan limited by host coalescing/readback and the shared
+//! CPU phase-2 tail. The last high-tier RTX 5090 sweep (2026-06-19) did not
+//! beat best CPU/SIMD through 64 MiB, so heuristic GPU routing starts beyond
+//! that measured no-win range. Install-time autoroute calibration is
+//! authoritative and still measures GPU candidates when explicitly opted in.
 //!
-//! | Tier   | Adapter examples                | Dispatch latency | GPU activates at |
-//! |--------|---------------------------------|------------------|-------------------|
-//! | High   | RTX 40/50, A100, H100, M-series Max | 100-300 µs   | **2 MiB**         |
-//! | Mid    | RTX 20/30, GTX 16, Arc, M-series base | 600-1500 µs | 16 MiB            |
-//! | Low    | iGPU (UHD/Iris), Vega, older cards   | 2-5 ms         | 64 MiB            |
-//!
-//! At Hyperscan's typical 3 GB/s, breakeven workload = dispatch_latency × 3 GB/s.
-//! 100 µs × 3000 bytes/µs ≈ 300 KB (round up to 2 MiB for safety margin
-//! + per-batch parallel-CPU contention).
+//! | Tier   | Adapter examples                    | Heuristic starts at |
+//! |--------|-------------------------------------|---------------------|
+//! | High   | RTX 40/50, A100, H100, M-series Max | 128 MiB             |
+//! | Mid    | RTX 20/30, GTX 16, Arc, M-series base | 256 MiB           |
+//! | Low    | iGPU (UHD/Iris), Vega, older cards   | 512 MiB             |
 
 /// **Conservative** (low-tier) minimum total scan-buffer size before
 /// we'll dispatch to GPU. Top-tier GPUs (RTX 40/50, A100/H100,
 /// M-series Max) get the much lower [`GPU_MIN_BYTES_HIGH_TIER`]
 /// threshold instead.
-pub(crate) const GPU_MIN_BYTES: u64 = 64 * 1024 * 1024;
-/// Mid-tier (RTX 20/30, GTX 16, Intel Arc, M-series base): 16 MiB.
-pub(crate) const GPU_MIN_BYTES_MID_TIER: u64 = 16 * 1024 * 1024;
-/// High-tier (RTX 40/50, A100/H100, M-series Max): 2 MiB.
-/// At ~100 µs dispatch latency on these GPUs vs Hyperscan's
-/// 3 GB/s, breakeven workload is ~300 KB; 2 MiB gives headroom
-/// for the per-batch parallel-CPU contention that Hyperscan
-/// benefits from.
-pub(crate) const GPU_MIN_BYTES_HIGH_TIER: u64 = 2 * 1024 * 1024;
+pub(crate) const GPU_MIN_BYTES: u64 = 512 * 1024 * 1024;
+/// Mid-tier (RTX 20/30, GTX 16, Intel Arc, M-series base): 256 MiB.
+pub(crate) const GPU_MIN_BYTES_MID_TIER: u64 = 256 * 1024 * 1024;
+/// High-tier (RTX 40/50, A100/H100, M-series Max): 128 MiB. The live
+/// region-presence route did not beat CPU/SIMD through 64 MiB on RTX 5090, so
+/// fixed heuristic routing must not engage at or below that measured range.
+pub(crate) const GPU_MIN_BYTES_HIGH_TIER: u64 = 128 * 1024 * 1024;
 /// Pattern count above which GPU literal matching becomes worthwhile
 /// regardless of buffer size - many patterns saturate Hyperscan's
 /// scratch space and serial AC. Conservative (low-tier) default;
@@ -45,12 +43,11 @@ pub(crate) const GPU_PATTERN_BREAKEVEN: usize = 2_000;
 pub(crate) const GPU_PATTERN_BREAKEVEN_HIGH_TIER: usize = 100;
 /// Mid-tier crossover: 500 patterns.
 pub(crate) const GPU_PATTERN_BREAKEVEN_MID_TIER: usize = 500;
-/// Single-file size that justifies GPU even at low pattern counts.
-/// One device dispatch beats saturating one CPU core with Hyperscan
-/// when the file alone is this big.
-pub(crate) const GPU_BYTES_BREAKEVEN_SOLO: u64 = 256 * 1024 * 1024;
-/// High-tier solo cap: 16 MiB single file already justifies GPU
-/// dispatch on a 5090-class adapter.
-pub(crate) const GPU_BYTES_BREAKEVEN_SOLO_HIGH_TIER: u64 = 16 * 1024 * 1024;
-/// Mid-tier solo cap: 64 MiB.
-pub(crate) const GPU_BYTES_BREAKEVEN_SOLO_MID_TIER: u64 = 64 * 1024 * 1024;
+/// Single-file size that justifies GPU even at low pattern counts on low-tier
+/// adapters. Kept no more aggressive than the measured no-win high-tier range.
+pub(crate) const GPU_BYTES_BREAKEVEN_SOLO: u64 = 1024 * 1024 * 1024;
+/// High-tier solo cap: 256 MiB. Smaller files require install-time calibration
+/// evidence before GPU can be trusted as fastest.
+pub(crate) const GPU_BYTES_BREAKEVEN_SOLO_HIGH_TIER: u64 = 256 * 1024 * 1024;
+/// Mid-tier solo cap: 512 MiB.
+pub(crate) const GPU_BYTES_BREAKEVEN_SOLO_MID_TIER: u64 = 512 * 1024 * 1024;

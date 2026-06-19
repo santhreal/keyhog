@@ -109,8 +109,8 @@ fn select_backend_for_workload(caps: &HardwareCaps, workload: BackendWorkload) -
 /// 1. **GPU** - discrete non-software adapter is present AND the workload is
 ///    large enough to amortize device-dispatch overhead AND we have either
 ///    enough patterns to benefit from massively-parallel literal matching, OR
-///    a single very large file (>= 256 MiB) where one device dispatch beats
-///    saturating one CPU core with Hyperscan.
+///    a single very large file at or above the tier solo cap where one device
+///    dispatch can beat saturating one CPU core with Hyperscan.
 /// 2. **SimdCpu** - Hyperscan is compiled in and CPU has SIMD (AVX-512/AVX2/
 ///    NEON). This is the default high-throughput path for most deployments.
 /// 3. **SimdCpu (no-Hyperscan)** - bare SIMD prefilter without Hyperscan when
@@ -207,8 +207,8 @@ pub(crate) fn select_backend_for_batch(
 /// tier's GPU floor at all.
 ///
 /// On a many-tiny-file corpus the per-batch byte total never reaches the
-/// high-tier 2 MiB floor (see [`super::thresholds`]), so this returns `false`
-/// and the caller can skip paying for a device no chunk will ever touch.
+/// high-tier measured-safe floor (see [`super::thresholds`]), so this returns
+/// `false` and the caller can skip paying for a device no chunk will ever touch.
 /// It does **not** consult explicit backend overrides or `--no-gpu`;
 /// callers that need an override should pass it through their own resolved
 /// config before falling back to this hardware-only predicate.

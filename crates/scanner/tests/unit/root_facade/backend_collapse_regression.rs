@@ -16,7 +16,7 @@ use keyhog_scanner::hw_probe::testing::{
     cpu_tier_backend, gpu_could_engage, parse_backend_str, select_backend,
     select_backend_for_batch, HardwareCaps, ScanBackend,
 };
-use keyhog_scanner::testing::{clear_test_backend_override, set_test_backend_override};
+use keyhog_scanner::testing::{clear_test_backend_override, set_test_backend_override, thresholds};
 use std::sync::Mutex;
 
 static POLICY_LOCK: Mutex<()> = Mutex::new(());
@@ -52,8 +52,8 @@ fn function_body<'a>(src: &'a str, signature: &str) -> &'a str {
     panic!("unterminated function body for: {signature}");
 }
 
-/// High-tier discrete-GPU caps (RTX 5090 class): clears the 2 MiB high-tier
-/// floor and 16 MiB solo cap. `hyperscan`/`simd` toggle the CPU tier.
+/// High-tier discrete-GPU caps (RTX 5090 class). `hyperscan`/`simd` toggle the
+/// CPU tier.
 fn caps_gpu(hyperscan: bool, simd: bool) -> HardwareCaps {
     HardwareCaps {
         physical_cores: 8,
@@ -108,6 +108,7 @@ fn with_policy<R>(policy: GpuRuntimePolicy, backend: Option<&str>, body: impl Fn
 }
 
 const SIXTEEN_MIB: u64 = 16 * 1024 * 1024;
+const REQUIRED_EIGHT_MIB: u64 = 8 * 1024 * 1024;
 
 // ---------------------------------------------------------------------------
 // 1. `cpu_tier_backend`: the ONE CPU-tier source of truth (DEDUP).
@@ -167,14 +168,24 @@ fn selection_matrix_exact_cells() {
     with_policy(GpuRuntimePolicy::Auto, None, || {
         let gpu = caps_gpu(true, true);
 
-        // High-tier solo cap (16 MiB) at low pattern count: GPU engages on size.
-        assert!(gpu_could_engage(&gpu, SIXTEEN_MIB, 1));
-        assert_eq!(select_backend(&gpu, SIXTEEN_MIB, 1), ScanBackend::Gpu);
-
-        // 2 MiB high-tier min with enough patterns: GPU engages on patterns.
-        assert!(gpu_could_engage(&gpu, 2 * 1024 * 1024, 5_000));
+        // Required 8 MiB and retired 16 MiB cells stay on SIMD until
+        // calibration proves GPU faster for the exact workload.
+        assert!(!gpu_could_engage(&gpu, REQUIRED_EIGHT_MIB, 5_000));
         assert_eq!(
-            select_backend(&gpu, 2 * 1024 * 1024, 5_000),
+            select_backend(&gpu, REQUIRED_EIGHT_MIB, 5_000),
+            ScanBackend::SimdCpu
+        );
+        assert!(!gpu_could_engage(&gpu, SIXTEEN_MIB, 1));
+        assert_eq!(select_backend(&gpu, SIXTEEN_MIB, 1), ScanBackend::SimdCpu);
+
+        // High-tier measured-safe min with enough patterns: GPU engages.
+        assert!(gpu_could_engage(
+            &gpu,
+            thresholds::GPU_MIN_BYTES_HIGH_TIER,
+            5_000
+        ));
+        assert_eq!(
+            select_backend(&gpu, thresholds::GPU_MIN_BYTES_HIGH_TIER, 5_000),
             ScanBackend::Gpu
         );
 
@@ -186,9 +197,13 @@ fn selection_matrix_exact_cells() {
         let mut sw = gpu.clone();
         sw.gpu_is_software = true;
         sw.gpu_name = Some("llvmpipe (LLVM 15)".into());
-        assert!(!gpu_could_engage(&sw, SIXTEEN_MIB, 5_000));
+        assert!(!gpu_could_engage(
+            &sw,
+            thresholds::GPU_MIN_BYTES_HIGH_TIER,
+            5_000
+        ));
         assert_eq!(
-            select_backend(&sw, SIXTEEN_MIB, 5_000),
+            select_backend(&sw, thresholds::GPU_MIN_BYTES_HIGH_TIER, 5_000),
             ScanBackend::SimdCpu
         );
 
@@ -210,8 +225,8 @@ fn batch_dominance_guard_keeps_small_file_swarm_on_cpu() {
         // a small minority (tiny-file swarm) must NOT route to GPU, even though
         // the size-only `select_backend` would. This is the dominance guard that
         // distinguishes the two batch shapes.
-        let total = 64 * 1024 * 1024;
-        let small_large = 1024 * 1024; // 1 MiB of large-chunk bytes out of 64.
+        let total = thresholds::GPU_MIN_BYTES_HIGH_TIER;
+        let small_large = 1024 * 1024; // 1 MiB of large-chunk bytes out of the batch.
         assert_eq!(
             select_backend_for_batch(&gpu, total, 5_000, small_large),
             ScanBackend::SimdCpu,

@@ -11,13 +11,14 @@ use super::thresholds;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum GpuTier {
     /// RTX 40/50-series, A100/H100, M-series Max/Ultra, RX 7900 XTX.
-    /// Sub-300µs dispatch latency.
+    /// Fastest tier, but heuristic routing still stays above the measured
+    /// no-win range until calibration proves a smaller workload.
     High,
     /// RTX 20/30-series, GTX 16, Intel Arc, M-series base/Pro,
-    /// RX 6000-series. ~600-1500µs dispatch latency.
+    /// RX 6000-series. Uses a less aggressive heuristic floor than high tier.
     Mid,
     /// iGPU, older discrete cards, anything we can't classify.
-    /// Multi-millisecond dispatch latency assumed.
+    /// Multi-millisecond dispatch latency assumed; most conservative floor.
     Low,
 }
 

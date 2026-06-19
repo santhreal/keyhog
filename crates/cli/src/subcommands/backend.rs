@@ -1,13 +1,13 @@
 //! `keyhog backend` - inspect backend selection inputs for this hardware.
 //!
 //! Prints detected hardware (cores, SIMD, GPU, Hyperscan, io_uring), the
-//! steady-state backend the orchestrator would pick on this box, and a
-//! routing-decision matrix at the documented crossover thresholds. Useful
-//! for confirming the GPU is actually being routed to on a build where you
-//! expect it (CI matrix, post-install smoke check).
+//! steady-state heuristic backend for this box, and a routing-decision matrix
+//! at the documented crossover thresholds. Normal `scan --backend auto`
+//! consumes persisted install-time calibration evidence rather than this fixed
+//! heuristic table.
 //!
 //! Backend overrides are explicit scan flags (`keyhog scan --backend ...`);
-//! this report shows the automatic hardware/workload matrix.
+//! this report shows the hardware/workload heuristic matrix.
 
 use crate::args::BackendArgs;
 use crate::exit_codes::EXIT_BACKEND_SELF_TEST_FAILED;
@@ -110,12 +110,8 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
         (0, "idle (size=0)"),
         (4 * 1024, "4 KiB single chunk"),
         (1024 * 1024, "1 MiB chunk"),
-        (2 * 1024 * 1024, "2 MiB chunk (high-tier min)"),
-        (4 * 1024 * 1024, "4 MiB chunk"),
-        (
-            16 * 1024 * 1024,
-            "16 MiB chunk (high-tier solo / mid-tier min)",
-        ),
+        (8 * 1024 * 1024, "8 MiB required GPU target"),
+        (64 * 1024 * 1024, "64 MiB measured no-win boundary"),
         (active_min.saturating_sub(1), "just under tier min_bytes"),
         (active_min, "tier min_bytes exactly"),
         (active_solo.saturating_sub(1), "just under tier solo cap"),

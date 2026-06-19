@@ -130,6 +130,7 @@ pub mod gpu_region_dispatch_contracts;
 pub mod gpu_shader_no_inline_tests;
 pub mod gpu_shader_no_unwrap_expect;
 pub mod gpu_shader_non_empty;
+pub mod gpu_threshold_measurement_contracts;
 pub mod homoglyph_no_inline_tests;
 pub mod homoglyph_no_unwrap_expect;
 pub mod homoglyph_non_empty;
