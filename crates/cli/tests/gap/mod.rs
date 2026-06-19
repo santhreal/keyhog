@@ -1,5 +1,7 @@
 pub mod args_rs_exceeds_modularity_cap;
 pub mod backend_self_test_exit_code_four_in_src;
+pub mod cli_after_help_documents_system_exit_three;
+pub mod contract_help_missing_exit_code_four;
 pub mod detectors_audit_exit_code_three_in_src;
 pub mod doc_detector_ids_resolve_in_registry;
 pub mod exclude_paths_flag_not_wired;
@@ -23,3 +25,4 @@ pub mod orchestrator_modularity_cap;
 pub mod scan_system_rs_exceeds_modularity_cap;
 pub mod scan_help_documents_exit_codes;
 pub mod watch_duplicate_findings_on_create;
+pub mod readme_exit_codes_match_cli_contract;
