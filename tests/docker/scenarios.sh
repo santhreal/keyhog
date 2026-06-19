@@ -6,10 +6,10 @@
 # exit code + stdout/stderr. Two layers:
 #
 #   1. INVARIANT matrix - a clear-cut real secret must be found (and clean /
-#      placeholder input must stay clean) IDENTICALLY across every hardware /
-#      strictness profile. This is a strong correctness property: detection
-#      must not diverge under any *_STRICT toggle.
-#      Coverage = INVARIANTS x ENV_PROFILES.
+#      placeholder input must stay clean) IDENTICALLY across explicit backend /
+#      scan-policy profiles. This is a strong correctness property: detection
+#      must not diverge under real CLI controls.
+#      Coverage = INVARIANTS x CLI_PROFILES.
 #   2. SURFACE battery - per-subcommand / per-format / edge-case checks run
 #      once under the default env.
 #
@@ -46,35 +46,33 @@ check() {
 
 echo "== docker integration matrix: $IMAGE =="
 
-# --- Layer 1: detection invariance across hardware/backend/strictness -------
+# --- Layer 1: detection invariance across backend / scan-policy profiles -----
 # Each profile must NOT change the outcome of a clear-cut scan: a real AWS key
 # is always found; ordinary prose and placeholder/example tokens never fire.
 # A profile that breaks an invariant is a real backend/strictness bug.
-ENV_PROFILES=(
-  "default|-"
-  "entropy-strict|KEYHOG_ENTROPY_STRICT=1"
-  "noise-strict|KEYHOG_NOISE_STRICT=1"
-  "unicode-strict|KEYHOG_UNICODE_STRICT=1"
-  "whitespace-strict|KEYHOG_WHITESPACE_STRICT=1"
-  "line-len-strict|KEYHOG_LINE_LEN_STRICT=1"
-  "compound-strict|KEYHOG_COMPOUND_STRICT=1"
-  "encoding-strict|KEYHOG_ENCODING_STRICT=1"
-  "multi-strict|KEYHOG_MULTI_STRICT=1"
-  "path-shape-strict|KEYHOG_PATH_SHAPE_STRICT=1"
-  "comment-strict|KEYHOG_COMMENT_STRICT=1"
-  "adversarial-strict|KEYHOG_ADVERSARIAL_STRICT=1"
+CLI_PROFILES=(
+  "default|"
+  "fast|--fast"
+  "deep|--deep"
+  "precision|--precision"
+  "no-entropy|--no-entropy"
+  "no-ml|--no-ml"
+  "no-gpu|--no-gpu"
+  "backend-cpu|--backend cpu"
+  "backend-simd|--backend simd"
+  "threads-1|--threads 1"
 )
-# name | args | want_exit | grep | forbid
+# name | scan args after profile | want_exit | grep | forbid
 INVARIANTS=(
-  "aws-found|scan --format json /test/corpus/aws_leak.env|1|aws-access-key|-"
-  "clean-clean|scan --format json /test/corpus/clean.txt|0|[]|detector_id"
-  "fp-trap-clean|scan --format json /test/corpus/fp_trap.txt|0|[]|detector_id"
+  "aws-found|--format json /test/corpus/aws_leak.env|1|aws-access-key|-"
+  "clean-clean|--format json /test/corpus/clean.txt|0|[]|detector_id"
+  "fp-trap-clean|--format json /test/corpus/fp_trap.txt|0|[]|detector_id"
 )
-for prof in "${ENV_PROFILES[@]}"; do
-  IFS='|' read -r pname penv <<<"$prof"
+for prof in "${CLI_PROFILES[@]}"; do
+  IFS='|' read -r pname pflags <<<"$prof"
   for inv in "${INVARIANTS[@]}"; do
     IFS='|' read -r iname iargs ix ig if_ <<<"$inv"
-    check "inv:$pname/$iname" "$penv" "$iargs" "$ix" "$ig" "$if_"
+    check "inv:$pname/$iname" "-" "scan $pflags $iargs" "$ix" "$ig" "$if_"
   done
 done
 

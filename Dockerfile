@@ -30,8 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /build/target/release/keyhog /usr/local/bin/keyhog
-COPY --from=builder /build/detectors /opt/keyhog/detectors
-ENV KEYHOG_DETECTORS=/opt/keyhog/detectors
+COPY --from=builder /build/detectors /usr/share/keyhog/detectors
 
 # Default to a non-root uid to avoid the scanner running as root inside
 # containers that mount host volumes read/write.

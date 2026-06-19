@@ -153,3 +153,54 @@ fn production_env_reads_stay_on_the_allowlist() {
         offenders.join("\n")
     );
 }
+
+#[test]
+fn docker_surfaces_do_not_reintroduce_retired_detector_env() {
+    let root = repo_root();
+    for rel in [
+        "Dockerfile",
+        "tests/docker/Dockerfile.glibc",
+        "tests/docker/Dockerfile.musl",
+    ] {
+        let path = root.join(rel);
+        let src = fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("read docker surface {}: {error}", path.display()));
+        assert!(
+            !src.contains("KEYHOG_DETECTORS"),
+            "{rel} must not advertise the retired detector-directory env knob; use the default auto-discovered directory or explicit --detectors"
+        );
+        assert!(
+            src.contains("/usr/share/keyhog/detectors"),
+            "{rel} must place shipped detector TOMLs in the auto-discovered system detector directory"
+        );
+    }
+
+    let scenarios_path = root.join("tests/docker/scenarios.sh");
+    let scenarios = fs::read_to_string(&scenarios_path)
+        .unwrap_or_else(|error| panic!("read {}: {error}", scenarios_path.display()));
+    for retired in [
+        "KEYHOG_ENTROPY_STRICT",
+        "KEYHOG_NOISE_STRICT",
+        "KEYHOG_UNICODE_STRICT",
+        "KEYHOG_WHITESPACE_STRICT",
+        "KEYHOG_LINE_LEN_STRICT",
+        "KEYHOG_COMPOUND_STRICT",
+        "KEYHOG_ENCODING_STRICT",
+        "KEYHOG_MULTI_STRICT",
+        "KEYHOG_PATH_SHAPE_STRICT",
+        "KEYHOG_COMMENT_STRICT",
+        "KEYHOG_ADVERSARIAL_STRICT",
+    ] {
+        assert!(
+            !scenarios.contains(retired),
+            "docker scenario matrix must exercise real CLI/TOML controls, not retired no-op env profile {retired}"
+        );
+    }
+    assert!(
+        scenarios.contains("CLI_PROFILES=(")
+            && scenarios.contains("--backend cpu")
+            && scenarios.contains("--backend simd")
+            && scenarios.contains("--precision"),
+        "docker scenario matrix must keep explicit CLI profile coverage"
+    );
+}

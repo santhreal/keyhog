@@ -18,9 +18,8 @@ RUN cargo build --release -p keyhog --no-default-features --features portable
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates git libgcc
 COPY --from=builder /build/target/release/keyhog /usr/local/bin/keyhog
-COPY --from=builder /build/detectors /opt/keyhog/detectors
+COPY --from=builder /build/detectors /usr/share/keyhog/detectors
 COPY tests/docker/corpus /test/corpus
-ENV KEYHOG_DETECTORS=/opt/keyhog/detectors
 RUN adduser -S -u 1000 keyhog
 USER keyhog
 WORKDIR /test

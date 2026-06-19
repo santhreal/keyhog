@@ -42,9 +42,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates git libhyperscan5 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /build/target/release-fast/keyhog /usr/local/bin/keyhog
-COPY --from=builder /build/detectors /opt/keyhog/detectors
+COPY --from=builder /build/detectors /usr/share/keyhog/detectors
 COPY tests/docker/corpus /test/corpus
-ENV KEYHOG_DETECTORS=/opt/keyhog/detectors
 # Non-root, mirroring the production image: scans of mounted volumes must
 # not require root.
 RUN useradd --system --create-home --uid 1000 keyhog
