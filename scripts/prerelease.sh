@@ -42,6 +42,68 @@ check() {  # check <label> <cmd...>
   else printf '  \033[31mFAIL\033[0m %s\n' "$label"; fail=1; FAILED+=("$label"); fi
 }
 
+installed_version_smoke() {
+  "$1" --version | grep -q KeyHog
+}
+
+installed_detection_smoke() {
+  local bin="$1"
+  local leak="$2"
+  local report="$3"
+  local stdout_log="$4"
+  local stderr_log="$5"
+  local rc
+
+  "$bin" scan --no-daemon --format json --output "$report" "$leak" >"$stdout_log" 2>"$stderr_log"
+  rc=$?
+  case "$rc" in
+    1 | 10) ;;
+    *)
+      echo "installed scan exited $rc; expected findings exit 1 or live-credential exit 10" >&2
+      sed -n '1,40p' "$stderr_log" >&2
+      return 1
+      ;;
+  esac
+
+  python3 - "$report" "$leak" <<'PY'
+import json
+import pathlib
+import sys
+
+report = pathlib.Path(sys.argv[1])
+leak = pathlib.Path(sys.argv[2]).name
+
+try:
+    data = json.loads(report.read_text())
+except Exception as exc:
+    print(f"failed to parse scan JSON report {report}: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+
+if isinstance(data, list):
+    findings = data
+elif isinstance(data, dict):
+    findings = data.get("findings", [])
+else:
+    print(
+        f"scan JSON report {report} must be an array or object, got {type(data).__name__}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+for finding in findings:
+    if not isinstance(finding, dict):
+        continue
+    detector = str(finding.get("detector_id", "")).lower()
+    credential = str(finding.get("credential_redacted", "")).lower()
+    location = finding.get("location") or {}
+    file_path = str(location.get("file_path") or location.get("file") or "")
+    if ("aws" in detector or "akia2e0a8f3b244c9986" in credential) and file_path.endswith(leak):
+        raise SystemExit(0)
+
+print(f"scan report {report} did not contain the planted AWS finding for {leak}", file=sys.stderr)
+raise SystemExit(1)
+PY
+}
+
 CUR="$(grep -m1 '^version = ' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
 step "keyhog prerelease — current ${CUR}${BUMP:+ → ${BUMP}} (profile=$PROFILE, skip_rust=$SKIP_RUST)"
 
@@ -49,18 +111,13 @@ step "keyhog prerelease — current ${CUR}${BUMP:+ → ${BUMP}} (profile=$PROFIL
 step "bench: scorer/gate unit tests"
 check "bench pytest" bash -c 'cd benchmarks && python3 -m pytest -q bench/tests'
 
-# Regression + differential gate needs a keyhog binary + the mirror corpus; run
-# only if both are resolvable, else record SKIP (not a failure on a bare box).
-KH_BIN="${KEYHOG_BIN:-$(command -v keyhog || true)}"
-[ -n "$KH_BIN" ] || KH_BIN="$REPO/target/release/keyhog"
-if [ -x "$KH_BIN" ] && [ -f benchmarks/corpora/mirror/manifest.jsonl ]; then
-  step "bench: regression + differential gate (vs committed baseline)"
-  check "bench gate" bash -c "cd benchmarks && KEYHOG_BIN='$KH_BIN' python3 -m bench gate \
-    --corpus mirror --scanners keyhog --no-beat-competitors \
-    --baseline baselines/mirror-keyhog-baseline.json --epsilon 0.005"
-else
-  echo "  SKIP bench gate (no keyhog binary or mirror corpus on this host)"
-fi
+step "bench: mirror corpus"
+check "mirror corpus available" make -C benchmarks mirror
+
+step "bench: regression + differential gate (vs committed baseline)"
+check "bench gate" bash -c "cd benchmarks && python3 -m bench gate \
+  --corpus mirror --scanners keyhog --no-beat-competitors \
+  --baseline baselines/mirror-keyhog-baseline.json --epsilon 0.005"
 
 # ── 2. coherence gates ───────────────────────────────────────────────────────
 # README bench tables must be regenerable-identical (needs a full leaderboard in
@@ -88,11 +145,11 @@ step "install smoke: cargo install (portable) + version + real detection"
 SMOKE="$(mktemp -d)"
 if cargo install --path crates/cli --root "$SMOKE/kh" --no-default-features --features portable --locked -q 2>"$SMOKE/build.log"; then
   KHS="$SMOKE/kh/bin/keyhog"
-  check "installed --version" bash -c "'$KHS' --version | grep -q KeyHog"
+  check "installed --version" installed_version_smoke "$KHS"
   # A live-shape AWS access-key pair (no checksum class — fires on shape).
   printf 'AWS_ACCESS_KEY_ID=AKIA2E0A8F3B244C9986\nAWS_SECRET_ACCESS_KEY=wJalrXUtnFEMIK7MDENGbPxRfiCYEXAMPLEKEY01\n' > "$SMOKE/leak.env"
-  check "installed binary detects a planted secret" bash -c \
-    "'$KHS' scan --no-daemon '$SMOKE/leak.env' 2>/dev/null | grep -qiE 'AKIA2E0A8F3B244C9986|aws'"
+  check "installed binary detects a planted secret" installed_detection_smoke \
+    "$KHS" "$SMOKE/leak.env" "$SMOKE/report.json" "$SMOKE/scan.stdout" "$SMOKE/scan.stderr"
 else
   printf '  \033[31mFAIL\033[0m cargo install (portable) — tail:\n'; tail -5 "$SMOKE/build.log"; fail=1; FAILED+=("install smoke build")
 fi

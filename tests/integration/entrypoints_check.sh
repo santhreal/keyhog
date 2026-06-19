@@ -119,6 +119,25 @@ else
   fail=1
 fi
 
+PRE="$ROOT/scripts/prerelease.sh"
+if [ -f "$PRE" ]; then
+  if grep -qE 'SKIP bench gate|KEYHOG_BIN:-|target/release/keyhog|scan --no-daemon .*2>/dev/null .*grep|scan --no-daemon .*grep' "$PRE"; then
+    echo "FAIL scripts/prerelease.sh must not skip the bench gate open or prove installed detection with grep/suppressed stderr."
+    grep -nE 'SKIP bench gate|KEYHOG_BIN:-|target/release/keyhog|scan --no-daemon .*2>/dev/null .*grep|scan --no-daemon .*grep' "$PRE" | sed 's/^/    /'
+    fail=1
+  elif grep -q 'make -C benchmarks mirror' "$PRE" \
+     && grep -q 'python3 -m bench gate' "$PRE" \
+     && grep -q 'installed_detection_smoke' "$PRE"; then
+    note "OK   prerelease entrypoint: bench gate fails closed and install smoke parses JSON"
+  else
+    echo "FAIL scripts/prerelease.sh must require the mirror bench gate and JSON-parse the installed scan report."
+    fail=1
+  fi
+else
+  echo "FAIL scripts/prerelease.sh missing - release gate cannot be audited."
+  fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "integration entry-point gate: PASS"
 else
