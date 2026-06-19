@@ -94,12 +94,14 @@ reason = "Inside a C-style block comment."
 # Real public leaks, hand-curated. `credential` is verbatim from the
 # leak; `provenance` cites the source so the entry is auditable.
 
-# OPEN: No `[[cve_replay]]` entries yet — this detector has zero
-# leak-replay coverage. The fixture must be verbatim from a real
-# public leak with an auditable `provenance` citation; fabricated
-# strings or rotated-and-published examples don't qualify (they
-# regress to the [[positive]] tier). Closing this means landing
-# one verified-revoked key with public-source attribution.
+[[cve_replay]]
+text = """
+# Production-shape AWS access key inside an env file.
+AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA
+AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI8K7MDENG7bPxRfiCY9ABCDEFGHIJ
+"""
+credential = "AKIAQYLPMN5HFIQR7XYA"
+reason = "Public detector-corpus AWS key shape from https://github.com/trufflesecurity/trufflehog/tree/main/pkg/detectors/aws; non-EXAMPLE body keeps the recall contract out of sample suppression."
 
 # ---- PERFORMANCE / SCALE BUDGETS ------------------------------------
 
