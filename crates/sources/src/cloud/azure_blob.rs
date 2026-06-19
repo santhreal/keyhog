@@ -34,22 +34,22 @@ impl AzureBlobSource {
         }
     }
 
-    pub fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
+    pub(crate) fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
         self.http = http;
         self
     }
 
-    pub fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
+    pub(crate) fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
         self.limits = limits;
         self
     }
 
-    pub fn with_prefix(mut self, prefix: impl Into<String>) -> Self {
+    pub(crate) fn with_prefix(mut self, prefix: impl Into<String>) -> Self {
         self.prefix = Some(prefix.into());
         self
     }
 
-    pub fn with_max_objects(mut self, max_objects: usize) -> Self {
+    pub(crate) fn with_max_objects(mut self, max_objects: usize) -> Self {
         self.max_objects = max_objects;
         self
     }

@@ -1,4 +1,4 @@
-use keyhog_sources::testing;
+use keyhog_sources::testing::{SourceTestApi, TestApi};
 
 #[cfg(feature = "binary")]
 static BINARY_SECTION_COUNTER_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -58,49 +58,66 @@ fn sources_path_display_has_no_private_windows_verbatim_strip() {
 }
 
 #[test]
+fn sources_testing_facade_is_direct_module_reexport() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lib = std::fs::read_to_string(root.join("src/lib.rs")).expect("read sources lib");
+
+    assert!(
+        lib.contains("pub use testing_facade::testing;"),
+        "sources should expose the testing module directly instead of wrapping a second facade"
+    );
+    assert!(
+        !lib.contains("pub mod testing {\n    pub use crate::testing_facade::testing::*;\n}"),
+        "sources lib.rs must not reintroduce a facade-of-facade testing shell"
+    );
+}
+
+#[test]
 fn http_user_agent_contracts() {
-    let ua = testing::user_agent(None);
+    let ua = TestApi.user_agent(None);
     assert!(ua.starts_with("keyhog/"));
     assert!(ua.contains(env!("CARGO_PKG_VERSION")));
-    assert!(testing::user_agent(Some("web")).contains("(web)"));
+    assert!(TestApi.user_agent(Some("web")).contains("(web)"));
 }
 
 #[cfg(feature = "binary")]
 #[test]
 fn binary_literal_extraction_contracts() {
-    let literal = testing::extract_string_literals(r#"x = "abcdefghij\é klmnop";"#);
+    let literal = TestApi.extract_string_literals(r#"x = "abcdefghij\é klmnop";"#);
     assert_eq!(literal.len(), 1, "expected one literal, got {literal:?}");
     assert!(literal[0].contains("abcdefghij"));
 
     assert_eq!(
-        testing::extract_string_literals(r#"puts("hello\tworld\n");"#),
+        TestApi.extract_string_literals(r#"puts("hello\tworld\n");"#),
         vec!["hello\tworld\n".to_string()]
     );
 
-    assert!(testing::extract_string_literals("\"abc\"").is_empty());
-    assert!(testing::extract_string_literals("").is_empty());
-    assert!(testing::extract_string_literals("\"").is_empty());
-    assert!(testing::extract_string_literals("\"\"").is_empty());
+    assert!(TestApi.extract_string_literals("\"abc\"").is_empty());
+    assert!(TestApi.extract_string_literals("").is_empty());
+    assert!(TestApi.extract_string_literals("\"").is_empty());
+    assert!(TestApi.extract_string_literals("\"\"").is_empty());
 }
 
 #[cfg(feature = "binary")]
 #[test]
 fn binary_section_extraction_rejects_bad_inputs_without_panic() {
-    assert!(testing::extract_sections(&[0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc], "junk.bin").is_none());
-    assert!(testing::extract_sections(&[], "empty.bin").is_none());
+    assert!(TestApi
+        .extract_sections(&[0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc], "junk.bin")
+        .is_none());
+    assert!(TestApi.extract_sections(&[], "empty.bin").is_none());
 
     let mut bytes = vec![0x7f, b'E', b'L', b'F', 2, 1, 1, 0];
     bytes.extend(std::iter::repeat(0xFF).take(120));
-    let _ = testing::extract_sections(&bytes, "trunc.elf");
+    let _ = TestApi.extract_sections(&bytes, "trunc.elf");
 }
 
 #[cfg(feature = "binary")]
 #[test]
 fn binary_unresolvable_section_name_bumps_partial_parse_counter() {
     let _guard = BINARY_SECTION_COUNTER_GUARD.lock().expect("counter guard");
-    keyhog_sources::testing::set_skip_counts(keyhog_sources::SkipCounts::default());
+    TestApi.set_skip_counts(keyhog_sources::SkipCounts::default());
 
-    let name = testing::resolve_binary_section_name(None, 42);
+    let name = TestApi.resolve_binary_section_name(None, 42);
     assert_eq!(name, "", "an unresolvable name yields the empty string");
     assert_eq!(
         keyhog_sources::skip_counts().binary_section_name_unresolved,
@@ -113,9 +130,9 @@ fn binary_unresolvable_section_name_bumps_partial_parse_counter() {
 #[test]
 fn binary_legitimate_unnamed_section_does_not_bump_counter() {
     let _guard = BINARY_SECTION_COUNTER_GUARD.lock().expect("counter guard");
-    keyhog_sources::testing::set_skip_counts(keyhog_sources::SkipCounts::default());
+    TestApi.set_skip_counts(keyhog_sources::SkipCounts::default());
 
-    let name = testing::resolve_binary_section_name(None, 0);
+    let name = TestApi.resolve_binary_section_name(None, 0);
     assert_eq!(name, "");
     assert_eq!(
         keyhog_sources::skip_counts().binary_section_name_unresolved,
@@ -128,9 +145,9 @@ fn binary_legitimate_unnamed_section_does_not_bump_counter() {
 #[test]
 fn binary_resolved_section_name_passes_through_without_counting() {
     let _guard = BINARY_SECTION_COUNTER_GUARD.lock().expect("counter guard");
-    keyhog_sources::testing::set_skip_counts(keyhog_sources::SkipCounts::default());
+    TestApi.set_skip_counts(keyhog_sources::SkipCounts::default());
 
-    let name = testing::resolve_binary_section_name(Some(".rodata"), 7);
+    let name = TestApi.resolve_binary_section_name(Some(".rodata"), 7);
     assert_eq!(name, ".rodata");
     assert_eq!(
         keyhog_sources::skip_counts().binary_section_name_unresolved,
@@ -143,7 +160,7 @@ fn binary_resolved_section_name_passes_through_without_counting() {
 fn github_repo_name_and_clone_url_contracts() {
     for ok in ["santhsecurity", "SanthSecurity", "santh-security", "a0"].into_iter() {
         assert!(
-            testing::validate_org_name(ok).is_ok(),
+            TestApi.validate_org_name(ok).is_ok(),
             "should accept org {ok:?}"
         );
     }
@@ -160,21 +177,21 @@ fn github_repo_name_and_clone_url_contracts() {
         ".dot",
     ] {
         assert!(
-            testing::validate_org_name(bad).is_err(),
+            TestApi.validate_org_name(bad).is_err(),
             "should reject org {bad:?}"
         );
     }
     let too_long_org = "x".repeat(40);
-    assert!(testing::validate_org_name(&too_long_org).is_err());
+    assert!(TestApi.validate_org_name(&too_long_org).is_err());
 
     for ok in ["keyhog", "keyhog.rs", "Cool-Repo_2", "a"].into_iter() {
         assert!(
-            testing::validate_repo_name(ok).is_ok(),
+            TestApi.validate_repo_name(ok).is_ok(),
             "should accept {ok:?}"
         );
     }
     let long_ok = "x".repeat(100);
-    assert!(testing::validate_repo_name(&long_ok).is_ok());
+    assert!(TestApi.validate_repo_name(&long_ok).is_ok());
 
     for bad in [
         "..",
@@ -187,19 +204,19 @@ fn github_repo_name_and_clone_url_contracts() {
         "name with space",
     ] {
         assert!(
-            testing::validate_repo_name(bad).is_err(),
+            TestApi.validate_repo_name(bad).is_err(),
             "should reject {bad:?}"
         );
     }
     let too_long = "x".repeat(101);
-    assert!(testing::validate_repo_name(&too_long).is_err());
+    assert!(TestApi.validate_repo_name(&too_long).is_err());
 
     for ok in [
         "https://github.com/santhsecurity/keyhog.git",
         "https://ghe.example.com/org/repo.git",
     ] {
         assert!(
-            testing::validate_clone_url(ok).is_ok(),
+            TestApi.validate_clone_url(ok).is_ok(),
             "should accept {ok:?}"
         );
     }
@@ -214,7 +231,7 @@ fn github_repo_name_and_clone_url_contracts() {
         "https://example.com/repo\nwith\nnewlines",
     ] {
         assert!(
-            testing::validate_clone_url(bad).is_err(),
+            TestApi.validate_clone_url(bad).is_err(),
             "should reject {bad:?}"
         );
     }
@@ -246,9 +263,9 @@ fn github_org_rewrite_preserves_offsets_and_requires_real_repo_relative_path() {
         },
     };
 
-    let rewritten =
-        testing::github_org_rewrite_chunk_path(chunk, "santhsecurity", "keyhog", dir.path())
-            .expect("rewrite succeeds");
+    let rewritten = TestApi
+        .github_org_rewrite_chunk_path(chunk, "santhsecurity", "keyhog", dir.path())
+        .expect("rewrite succeeds");
     assert_eq!(rewritten.metadata.source_type, "github-org");
     assert_eq!(
         rewritten.metadata.path.as_deref(),
@@ -271,13 +288,9 @@ fn github_org_rewrite_fails_loud_for_missing_or_outside_paths() {
         data: "x".into(),
         metadata: keyhog_core::ChunkMetadata::default(),
     };
-    let err = testing::github_org_rewrite_chunk_path(
-        missing_path_chunk,
-        "santhsecurity",
-        "keyhog",
-        dir.path(),
-    )
-    .expect_err("missing path must be an error");
+    let err = TestApi
+        .github_org_rewrite_chunk_path(missing_path_chunk, "santhsecurity", "keyhog", dir.path())
+        .expect_err("missing path must be an error");
     assert!(
         err.to_string().contains("without a file path"),
         "unexpected missing-path error: {err}"
@@ -290,13 +303,9 @@ fn github_org_rewrite_fails_loud_for_missing_or_outside_paths() {
             ..Default::default()
         },
     };
-    let err = testing::github_org_rewrite_chunk_path(
-        outside_chunk,
-        "santhsecurity",
-        "keyhog",
-        dir.path(),
-    )
-    .expect_err("outside path must be an error");
+    let err = TestApi
+        .github_org_rewrite_chunk_path(outside_chunk, "santhsecurity", "keyhog", dir.path())
+        .expect_err("outside path must be an error");
     assert!(
         err.to_string().contains("outside clone root"),
         "unexpected outside-root error: {err}"
@@ -307,15 +316,16 @@ fn github_org_rewrite_fails_loud_for_missing_or_outside_paths() {
 #[test]
 fn github_org_scan_repo_chunks_propagates_source_errors() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let err = testing::github_org_scan_repo_chunks(
-        vec![Err(keyhog_core::SourceError::Other(
-            "reader exploded".into(),
-        ))],
-        "santhsecurity",
-        "keyhog",
-        dir.path(),
-    )
-    .expect_err("source error must propagate");
+    let err = TestApi
+        .github_org_scan_repo_chunks(
+            vec![Err(keyhog_core::SourceError::Other(
+                "reader exploded".into(),
+            ))],
+            "santhsecurity",
+            "keyhog",
+            dir.path(),
+        )
+        .expect_err("source error must propagate");
     assert!(
         err.to_string().contains("reader exploded"),
         "unexpected propagated error: {err}"
@@ -328,8 +338,8 @@ fn github_org_listing_cap_counts_and_fails_loud() {
     let _guard = GITHUB_SKIP_COUNTER_GUARD
         .lock()
         .expect("github counter guard");
-    keyhog_sources::testing::reset_skip_counters();
-    let err = testing::github_org_listing_truncated_error("santhsecurity", 100_000, 1_000);
+    TestApi.reset_skip_counters();
+    let err = TestApi.github_org_listing_truncated_error("santhsecurity", 100_000, 1_000);
     assert!(
         err.to_string()
             .contains("refusing to scan a partial organization"),
@@ -347,14 +357,14 @@ fn github_org_listing_cap_counts_and_fails_loud() {
 fn gitlab_group_validation_and_listing_cap_contracts() {
     for ok in ["santhsecurity", "platform/sub-group", "a.b_c-d"].into_iter() {
         assert!(
-            testing::validate_gitlab_group_path(ok).is_ok(),
+            TestApi.validate_gitlab_group_path(ok).is_ok(),
             "should accept group {ok:?}"
         );
     }
 
     for bad in ["", "/root", "root/", "root//child", "../root", "root child"] {
         assert!(
-            testing::validate_gitlab_group_path(bad).is_err(),
+            TestApi.validate_gitlab_group_path(bad).is_err(),
             "should reject group {bad:?}"
         );
     }
@@ -362,8 +372,8 @@ fn gitlab_group_validation_and_listing_cap_contracts() {
     let _guard = GITLAB_SKIP_COUNTER_GUARD
         .lock()
         .expect("gitlab counter guard");
-    keyhog_sources::testing::reset_skip_counters();
-    let err = testing::gitlab_group_listing_truncated_error("santhsecurity", 100_000, 1_000);
+    TestApi.reset_skip_counters();
+    let err = TestApi.gitlab_group_listing_truncated_error("santhsecurity", 100_000, 1_000);
     assert!(
         err.to_string()
             .contains("partial group repository collection"),
@@ -381,14 +391,14 @@ fn gitlab_group_validation_and_listing_cap_contracts() {
 fn bitbucket_workspace_validation_and_listing_cap_contracts() {
     for ok in ["santhsecurity", "platform-team", "team_1"].into_iter() {
         assert!(
-            testing::validate_bitbucket_workspace(ok).is_ok(),
+            TestApi.validate_bitbucket_workspace(ok).is_ok(),
             "should accept workspace {ok:?}"
         );
     }
 
     for bad in ["", "/root", "root/repo", "root child", "root?pagelen=1"] {
         assert!(
-            testing::validate_bitbucket_workspace(bad).is_err(),
+            TestApi.validate_bitbucket_workspace(bad).is_err(),
             "should reject workspace {bad:?}"
         );
     }
@@ -396,8 +406,8 @@ fn bitbucket_workspace_validation_and_listing_cap_contracts() {
     let _guard = BITBUCKET_SKIP_COUNTER_GUARD
         .lock()
         .expect("bitbucket counter guard");
-    keyhog_sources::testing::reset_skip_counters();
-    let err = testing::bitbucket_workspace_listing_truncated_error("santhsecurity", 100_000, 1_000);
+    TestApi.reset_skip_counters();
+    let err = TestApi.bitbucket_workspace_listing_truncated_error("santhsecurity", 100_000, 1_000);
     assert!(
         err.to_string()
             .contains("partial workspace repository collection"),
@@ -440,7 +450,7 @@ fn web_host_and_redaction_contracts() {
         "http://%31%32%37%2e%30%2e%30%2e%31/",
     ] {
         assert!(
-            testing::is_disallowed_web_host(blocked),
+            TestApi.is_disallowed_web_host(blocked),
             "should block {blocked:?}"
         );
     }
@@ -451,25 +461,25 @@ fn web_host_and_redaction_contracts() {
         "https://api.github.com/repos/foo/bar",
     ] {
         assert!(
-            !testing::is_disallowed_web_host(allowed),
+            !TestApi.is_disallowed_web_host(allowed),
             "should allow {allowed:?}"
         );
     }
 
     assert_eq!(
-        testing::redact_url("https://user:SECRET@host/path"),
+        TestApi.redact_url("https://user:SECRET@host/path"),
         "https://***@host/path"
     );
     assert_eq!(
-        testing::redact_url("https://user@host/path?q=1"),
+        TestApi.redact_url("https://user@host/path?q=1"),
         "https://***@host/path?q=1"
     );
     assert_eq!(
-        testing::redact_url("http://x:y@example.com:8080/p#frag"),
+        TestApi.redact_url("http://x:y@example.com:8080/p#frag"),
         "http://***@example.com:8080/p#frag"
     );
     let path_at = "https://example.com/orgs/foo/users/@me";
-    assert_eq!(testing::redact_url(path_at), path_at);
+    assert_eq!(TestApi.redact_url(path_at), path_at);
 }
 
 #[cfg(feature = "web")]
@@ -483,6 +493,10 @@ fn web_ssrf_url_classifier_uses_verifier_owner() {
     assert!(
         ssrf.contains("keyhog_verifier::ssrf::is_private_url(url)"),
         "WebSource URL-string SSRF classification must call the verifier owner"
+    );
+    assert!(
+        !ssrf.contains("KEYHOG_AUTOROUTE_CALIBRATE") && !ssrf.contains("std::env::"),
+        "WebSource calibration must be explicit caller state, not an ambient env read"
     );
     assert!(
         !ssrf.contains("url::Host::Domain")
@@ -502,39 +516,36 @@ fn web_ssrf_url_classifier_uses_verifier_owner() {
 fn web_dns_screen_and_proxy_contracts() {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-    assert!(testing::is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(
-        127, 0, 0, 1
-    ))));
-    assert!(testing::is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(
-        10, 0, 0, 5
-    ))));
-    assert!(testing::is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(
-        192, 168, 1, 1
-    ))));
-    assert!(testing::is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(
-        172, 16, 0, 5
-    ))));
-    assert!(testing::is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(
-        169, 254, 169, 254
-    ))));
-    assert!(testing::is_disallowed_ip(IpAddr::V6(Ipv6Addr::LOCALHOST)));
+    assert!(TestApi.is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))));
+    assert!(TestApi.is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 5))));
+    assert!(TestApi.is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))));
+    assert!(TestApi.is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(172, 16, 0, 5))));
+    assert!(TestApi.is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254))));
+    assert!(TestApi.is_disallowed_ip(IpAddr::V6(Ipv6Addr::LOCALHOST)));
     let mapped = "::ffff:127.0.0.1".parse().expect("valid mapped IPv6");
-    assert!(testing::is_disallowed_ip(IpAddr::V6(mapped)));
-    assert!(!testing::is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(
-        1, 1, 1, 1
-    ))));
+    assert!(TestApi.is_disallowed_ip(IpAddr::V6(mapped)));
+    assert!(!TestApi.is_disallowed_ip(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1))));
 
-    let err = testing::resolve_and_screen("127.0.0.1", 80).expect_err("loopback refused");
+    let err = TestApi
+        .resolve_and_screen("127.0.0.1", 80)
+        .expect_err("loopback refused");
     assert!(err.to_string().contains("private / loopback"));
 
-    let addrs = testing::resolve_and_screen("1.1.1.1", 443).expect("public IP must pass");
+    let addrs = TestApi
+        .resolve_and_screen("1.1.1.1", 443)
+        .expect("public IP must pass");
     assert!(!addrs.is_empty(), "must return at least one pinned addr");
-    assert!(addrs.iter().all(|a| !testing::is_disallowed_ip(a.ip())));
+    assert!(addrs.iter().all(|a| !TestApi.is_disallowed_ip(a.ip())));
 
     let cfg = keyhog_sources::http::HttpClientConfig::default();
-    assert!(testing::build_web_client(&cfg, "http://127.0.0.1:9/", false).is_err());
+    assert!(TestApi
+        .build_web_client(&cfg, "http://127.0.0.1:9/", false, false)
+        .is_err());
+    assert!(TestApi
+        .build_web_client(&cfg, "http://127.0.0.1:9/", false, true)
+        .is_ok());
 
-    match testing::build_web_client(&cfg, "https://example.com/app.js", false) {
+    match TestApi.build_web_client(&cfg, "https://example.com/app.js", false, false) {
         Ok(_) => {}
         Err(e) => {
             let message = e.to_string();
@@ -549,7 +560,9 @@ fn web_dns_screen_and_proxy_contracts() {
         proxy: Some("http://127.0.0.1:8080".into()),
         ..Default::default()
     };
-    assert!(testing::build_web_client(&proxied, "http://127.0.0.1:9/", true).is_ok());
+    assert!(TestApi
+        .build_web_client(&proxied, "http://127.0.0.1:9/", true, false)
+        .is_ok());
 }
 
 #[cfg(feature = "s3")]
@@ -605,5 +618,28 @@ fn ghidra_discovery_does_not_flatten_glob_errors() {
         ghidra.contains("Ghidra discovery glob pattern failed")
             && ghidra.contains("Ghidra discovery glob entry failed"),
         "Ghidra discovery must log glob pattern and entry failures"
+    );
+}
+
+#[cfg(feature = "binary")]
+#[test]
+fn ghidra_discovery_uses_trusted_paths_not_path_which() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let ghidra =
+        std::fs::read_to_string(root.join("src/binary/ghidra.rs")).expect("ghidra source readable");
+
+    assert!(
+        ghidra.contains(r#"resolve_safe_bin("analyzeHeadless")"#),
+        "custom Ghidra support dirs must flow through [system].trusted_bin_dirs via resolve_safe_bin"
+    );
+    assert!(
+        !ghidra.contains(r#"std::env::var("GHIDRA_HOME")"#),
+        "GHIDRA_HOME must not alter shipped source extraction behavior; use [system].trusted_bin_dirs"
+    );
+    assert!(
+        !ghidra.contains(r#"resolve_safe_bin("which")"#)
+            && !ghidra.contains(r#"Command::new(&which_bin)"#)
+            && !ghidra.contains(r#".arg("analyzeHeadless")"#),
+        "Ghidra discovery must not shell through which/PATH to find analyzeHeadless"
     );
 }

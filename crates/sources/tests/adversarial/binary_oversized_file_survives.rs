@@ -3,6 +3,7 @@
 #[cfg(feature = "binary")]
 mod capped {
     use keyhog_core::Source;
+    use keyhog_sources::testing::{SourceTestApi, TestApi};
     use std::io::Write;
 
     #[test]
@@ -13,7 +14,7 @@ mod capped {
         f.write_all(&vec![0x41u8; 64 * 1024 * 1024 + 4096])
             .expect("write");
 
-        let source = keyhog_sources::testing::binary_strings_only(&path);
+        let source = TestApi.binary_strings_only(&path);
         let chunks: Vec<_> = source.chunks().filter_map(Result::ok).collect();
         assert!(
             !chunks.is_empty(),

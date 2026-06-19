@@ -1,6 +1,8 @@
 //! Docker save archives with OCI blob layers must produce scan chunks.
 
 #[cfg(feature = "docker")]
+use keyhog_sources::testing::{SourceTestApi, TestApi};
+#[cfg(feature = "docker")]
 #[test]
 fn docker_manifest_gzip_layer_yields_chunks() {
     use flate2::{write::GzEncoder, Compression};
@@ -36,12 +38,14 @@ fn docker_manifest_gzip_layer_yields_chunks() {
     )
     .expect("write manifest");
 
-    let layers = keyhog_sources::testing::docker_manifest_layer_archives(&root).unwrap();
+    let layers = TestApi.docker_manifest_layer_archives(&root).unwrap();
     assert_eq!(layers, vec![layer_path.clone()]);
 
     let unpacked = dir.path().join("unpacked");
     std::fs::create_dir(&unpacked).expect("mkdir unpacked");
-    keyhog_sources::testing::unpack_docker_layer_archive(&layer_path, &unpacked).unwrap();
+    TestApi
+        .unpack_docker_layer_archive(&layer_path, &unpacked)
+        .unwrap();
 
     let chunks: Vec<_> = FilesystemSource::new(unpacked)
         .chunks()
@@ -60,15 +64,16 @@ fn docker_manifest_gzip_layer_yields_chunks() {
 #[test]
 fn docker_layer_filesystem_error_propagates() {
     let dir = tempfile::tempdir().expect("tempdir");
-    let err = keyhog_sources::testing::docker_rewrite_layer_chunks(
-        vec![Err(keyhog_core::SourceError::Other(
-            "layer reader failed".into(),
-        ))],
-        "keyhog:test",
-        dir.path(),
-        "layer.tar",
-    )
-    .expect_err("layer source error must propagate");
+    let err = TestApi
+        .docker_rewrite_layer_chunks(
+            vec![Err(keyhog_core::SourceError::Other(
+                "layer reader failed".into(),
+            ))],
+            "keyhog:test",
+            dir.path(),
+            "layer.tar",
+        )
+        .expect_err("layer source error must propagate");
     assert!(
         err.to_string().contains("layer reader failed"),
         "unexpected docker layer error: {err}"
@@ -98,13 +103,14 @@ fn docker_layer_rewrite_preserves_offsets_and_rejects_bad_paths() {
             ..Default::default()
         },
     };
-    let rewritten = keyhog_sources::testing::docker_rewrite_layer_chunks(
-        vec![Ok(chunk)],
-        "keyhog:test",
-        &layer_root,
-        "blobs/sha256/layer.tar",
-    )
-    .expect("rewrite");
+    let rewritten = TestApi
+        .docker_rewrite_layer_chunks(
+            vec![Ok(chunk)],
+            "keyhog:test",
+            &layer_root,
+            "blobs/sha256/layer.tar",
+        )
+        .expect("rewrite");
     assert_eq!(rewritten.len(), 1);
     let chunk = &rewritten[0];
     assert_eq!(chunk.metadata.source_type, "docker");
@@ -122,13 +128,14 @@ fn docker_layer_rewrite_preserves_offsets_and_rejects_bad_paths() {
         data: "x".into(),
         metadata: keyhog_core::ChunkMetadata::default(),
     };
-    let err = keyhog_sources::testing::docker_rewrite_layer_chunks(
-        vec![Ok(missing_path)],
-        "keyhog:test",
-        &layer_root,
-        "layer.tar",
-    )
-    .expect_err("missing path must fail");
+    let err = TestApi
+        .docker_rewrite_layer_chunks(
+            vec![Ok(missing_path)],
+            "keyhog:test",
+            &layer_root,
+            "layer.tar",
+        )
+        .expect_err("missing path must fail");
     assert!(
         err.to_string().contains("without a file path"),
         "unexpected missing-path error: {err}"
@@ -142,13 +149,14 @@ fn docker_layer_rewrite_preserves_offsets_and_rejects_bad_paths() {
             ..Default::default()
         },
     };
-    let err = keyhog_sources::testing::docker_rewrite_layer_chunks(
-        vec![Ok(outside_chunk)],
-        "keyhog:test",
-        &layer_root,
-        "layer.tar",
-    )
-    .expect_err("outside path must fail");
+    let err = TestApi
+        .docker_rewrite_layer_chunks(
+            vec![Ok(outside_chunk)],
+            "keyhog:test",
+            &layer_root,
+            "layer.tar",
+        )
+        .expect_err("outside path must fail");
     assert!(
         err.to_string().contains("outside layer root"),
         "unexpected outside-root error: {err}"
@@ -167,7 +175,7 @@ fn docker_manifest_rejects_parent_layer_path() {
     )
     .expect("write manifest");
 
-    let err = keyhog_sources::testing::docker_manifest_layer_archives(&root).unwrap_err();
+    let err = TestApi.docker_manifest_layer_archives(&root).unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("unsafe layer path"),
@@ -192,7 +200,7 @@ fn docker_manifest_deduplicates_repeated_layer_content() {
     )
     .expect("write manifest");
 
-    let layers = keyhog_sources::testing::docker_manifest_layer_archives(&root).unwrap();
+    let layers = TestApi.docker_manifest_layer_archives(&root).unwrap();
     assert_eq!(
         layers,
         vec![layer_a],
@@ -226,8 +234,9 @@ fn docker_manifest_config_yields_metadata_chunks() {
     )
     .expect("write manifest");
 
-    let chunks =
-        keyhog_sources::testing::docker_manifest_config_chunks(&root, "keyhog:test").unwrap();
+    let chunks = TestApi
+        .docker_manifest_config_chunks(&root, "keyhog:test")
+        .unwrap();
     assert_eq!(chunks.len(), 1);
     let chunk = &chunks[0];
     assert_eq!(chunk.metadata.source_type, "docker");
@@ -261,8 +270,9 @@ fn docker_manifest_missing_config_fails_loud() {
     )
     .expect("write manifest");
 
-    let err =
-        keyhog_sources::testing::docker_manifest_config_chunks(&root, "keyhog:test").unwrap_err();
+    let err = TestApi
+        .docker_manifest_config_chunks(&root, "keyhog:test")
+        .unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("invalid docker manifest.json") && msg.contains("Config"),
@@ -360,8 +370,9 @@ fn oci_image_layout_yields_config_and_layer_chunks() {
     )
     .expect("write index");
 
-    let chunks =
-        keyhog_sources::testing::docker_manifest_config_chunks(&root, "keyhog:test").unwrap();
+    let chunks = TestApi
+        .docker_manifest_config_chunks(&root, "keyhog:test")
+        .unwrap();
     assert_eq!(chunks.len(), 1);
     assert!(
         chunks[0]
@@ -380,12 +391,14 @@ fn oci_image_layout_yields_config_and_layer_chunks() {
         chunks[0].data
     );
 
-    let layers = keyhog_sources::testing::docker_manifest_layer_archives(&root).unwrap();
+    let layers = TestApi.docker_manifest_layer_archives(&root).unwrap();
     assert_eq!(layers, vec![layer_path]);
 
     let unpacked = dir.path().join("unpacked-oci");
     std::fs::create_dir(&unpacked).expect("mkdir unpacked");
-    keyhog_sources::testing::unpack_docker_layer_archive(&layers[0], &unpacked).unwrap();
+    TestApi
+        .unpack_docker_layer_archive(&layers[0], &unpacked)
+        .unwrap();
     let layer_chunks: Vec<_> = FilesystemSource::new(unpacked)
         .chunks()
         .collect::<Result<Vec<_>, _>>()
@@ -436,8 +449,9 @@ fn oci_image_manifest_missing_config_fails_loud() {
     )
     .expect("write index");
 
-    let err =
-        keyhog_sources::testing::docker_manifest_config_chunks(&root, "keyhog:test").unwrap_err();
+    let err = TestApi
+        .docker_manifest_config_chunks(&root, "keyhog:test")
+        .unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("invalid OCI image manifest") && msg.contains("config"),
@@ -459,7 +473,7 @@ fn oci_image_layout_rejects_unsafe_manifest_digest() {
     )
     .expect("write unsafe index");
 
-    let err = keyhog_sources::testing::docker_manifest_layer_archives(&root).unwrap_err();
+    let err = TestApi.docker_manifest_layer_archives(&root).unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("unsafe digest"),
@@ -479,8 +493,9 @@ fn docker_manifest_rejects_parent_config_path() {
     )
     .expect("write manifest");
 
-    let err =
-        keyhog_sources::testing::docker_manifest_config_chunks(&root, "keyhog:test").unwrap_err();
+    let err = TestApi
+        .docker_manifest_config_chunks(&root, "keyhog:test")
+        .unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("unsafe config path"),

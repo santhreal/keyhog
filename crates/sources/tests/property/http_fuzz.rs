@@ -1,31 +1,32 @@
 //! Property tests for the shared `keyhog_sources::http` module.
 //!
-//! The HTTP client builder is on the critical path for every URL
-//! scan, every GitHub-org enumeration, every verifier round-trip, and
-//! every Slack source pull. A bug in the proxy-resolution precedence
-//! (`--proxy` flag > `KEYHOG_PROXY` env > reqwest auto-detect > off)
-//! silently bypasses the operator's MITM proxy and leaks the scan
-//! target straight to upstream. Same for `insecure_tls` - flipping it
-//! on by accident downgrades every TLS connection.
+//! The HTTP client builder is on the critical path for every URL scan, every
+//! GitHub-org enumeration, every verifier round-trip, and every Slack source
+//! pull. Egress routing (proxy) and TLS verification are security-load-bearing:
+//! the verifier transmits discovered secrets to provider APIs, so anything that
+//! can silently reroute that traffic or disable certificate checking is a
+//! secret-theft vector.
 //!
-//! These tests pin the policy itself, not just one happy-path call.
+//! Policy (config mandate): ONLY explicit config — the `--proxy` / `--insecure`
+//! CLI flags (and TOML) that populate `HttpClientConfig.proxy` /
+//! `.insecure_tls` — may change behavior. NO environment variable does.
+//! `KEYHOG_PROXY` / `KEYHOG_INSECURE_TLS` are NOT read, and the builders call
+//! `.no_proxy()` when none is configured so reqwest's ambient `HTTPS_PROXY` /
+//! `HTTP_PROXY` / `ALL_PROXY` auto-detection cannot silently reroute traffic.
+//! These tests SET those env vars to hostile values and prove they have no
+//! effect.
 //!
-//! Test budget: policy properties run 10 000 cases. Builder properties
-//! run a bounded smoke profile because constructing real reqwest
-//! builders/clients dominates the fast aggregate source gate.
+//! Test budget: policy properties run 10 000 cases. Builder properties run a
+//! bounded smoke profile because constructing real reqwest builders/clients
+//! dominates the fast aggregate source gate.
 
 #![cfg(any(feature = "web", feature = "github", feature = "s3"))]
 
+use keyhog_sources::testing::{SourceTestApi, TestApi};
 use proptest::prelude::*;
 use proptest::test_runner::FileFailurePersistence;
 
-use keyhog_sources::{
-    http::HttpClientConfig,
-    testing::{
-        http_async_client_builder, http_blocking_client_builder, http_effective_insecure_tls,
-        http_effective_proxy,
-    },
-};
+use keyhog_sources::http::HttpClientConfig;
 
 const POLICY_CASES: u32 = 10_000;
 const BUILDER_CASES: u32 = 256;
@@ -63,7 +64,8 @@ fn any_proxy_url() -> impl Strategy<Value = String> {
     ]
 }
 
-/// Arbitrary `KEYHOG_PROXY` env value, including missing / empty.
+/// Arbitrary `KEYHOG_PROXY` env value, including missing / empty. Used to prove
+/// that whatever is in the env, it never changes `effective_proxy`.
 fn any_env_proxy() -> impl Strategy<Value = Option<String>> {
     prop_oneof![Just(None), any_proxy_url().prop_map(Some)]
 }
@@ -72,8 +74,9 @@ fn any_env_proxy() -> impl Strategy<Value = Option<String>> {
 
 /// Test-local HTTP env scope. Rust environment variables are process-global,
 /// while the test harness runs property tests concurrently. Hold one lock
-/// around every case that reads or writes HTTP env knobs so a sibling case
-/// cannot leak proxy/TLS state into the assertion under test.
+/// around every case that writes HTTP env knobs so a sibling case cannot leak
+/// proxy/TLS state into the assertion under test. (The production code no longer
+/// READS these vars; we set them only to prove they are ignored.)
 fn with_http_env<R>(proxy: Option<&str>, insecure_tls: Option<&str>, f: impl FnOnce() -> R) -> R {
     let _guard = ENV_LOCK
         .lock()
@@ -113,49 +116,30 @@ fn http_fuzz_config(cases: u32) -> ProptestConfig {
 proptest! {
     #![proptest_config(http_fuzz_config(POLICY_CASES))]
 
-    /// Explicit `--proxy` always wins over `KEYHOG_PROXY`, regardless
-    /// of what the env says (including "off"). A regression here would
-    /// mean the operator's CLI flag silently has no effect, which is
-    /// the worst kind of bug: scan target leaks to upstream while the
-    /// log says "routing through burp:8080".
+    /// The explicit `--proxy` value is what `effective_proxy` returns, verbatim,
+    /// no matter what `KEYHOG_PROXY` is set to. (The env is ignored entirely;
+    /// this also covers the old "flag wins over env" contract.)
     #[test]
-    fn explicit_proxy_always_wins_over_env(
+    fn explicit_proxy_is_used_verbatim_env_ignored(
         env in any_env_proxy(),
         flag in any_proxy_url(),
     ) {
         with_http_env(env.as_deref(), None, || {
             let cfg = HttpClientConfig { proxy: Some(flag.clone()), ..Default::default() };
-            let resolved = http_effective_proxy(&cfg);
+            let resolved = TestApi.http_effective_proxy(&cfg);
             prop_assert_eq!(resolved.as_deref(), Some(flag.as_str()));
             Ok(())
         })?;
     }
 
-    /// When the flag is unset the env var takes effect verbatim.
+    /// With no explicit `--proxy`, `effective_proxy` is ALWAYS `None` regardless
+    /// of `KEYHOG_PROXY`. No env var may set a proxy (config mandate + security:
+    /// an ambient proxy must not silently reroute secret-verification traffic).
     #[test]
-    fn env_var_resolves_when_flag_unset(env in any_proxy_url()) {
+    fn env_proxy_is_ignored_when_flag_unset(env in any_proxy_url()) {
         with_http_env(Some(&env), None, || {
             let cfg = HttpClientConfig::default();
-            // Empty env strings count as "no env" (matches our
-            // documented behavior - operators sometimes export an
-            // empty var to "clear" a parent shell's setting).
-            if env.is_empty() {
-                prop_assert_eq!(http_effective_proxy(&cfg), None);
-            } else {
-                prop_assert_eq!(http_effective_proxy(&cfg), Some(env.clone()));
-            }
-            Ok(())
-        })?;
-    }
-
-    /// Empty env var must NOT trigger the proxy path - reqwest's
-    /// own fallback (HTTPS_PROXY etc.) should take over instead.
-    #[test]
-    fn empty_env_var_is_treated_as_unset(noise in any::<u8>()) {
-        let _ = noise;
-        with_http_env(Some(""), None, || {
-            let cfg = HttpClientConfig::default();
-            prop_assert!(http_effective_proxy(&cfg).is_none());
+            prop_assert_eq!(TestApi.http_effective_proxy(&cfg), None);
             Ok(())
         })?;
     }
@@ -171,7 +155,7 @@ proptest! {
     fn blocking_builder_handles_every_proxy_url(p in any_proxy_url()) {
         with_http_env(None, None, || {
             let cfg = HttpClientConfig { proxy: Some(p.clone()), ..Default::default() };
-            match http_blocking_client_builder(&cfg) {
+            match TestApi.http_blocking_client_builder(&cfg) {
                 Ok(_) | Err(_) => {} // either is fine; we're proving no-panic
             }
         });
@@ -182,7 +166,7 @@ proptest! {
     fn async_builder_handles_every_proxy_url(p in any_proxy_url()) {
         with_http_env(None, None, || {
             let cfg = HttpClientConfig { proxy: Some(p.clone()), ..Default::default() };
-            match http_async_client_builder(&cfg) {
+            match TestApi.http_async_client_builder(&cfg) {
                 Ok(_) | Err(_) => {}
             }
         });
@@ -198,8 +182,8 @@ proptest! {
     fn default_builder_always_succeeds(insecure in any::<bool>()) {
         with_http_env(None, None, || {
             let cfg = HttpClientConfig { insecure_tls: insecure, ..Default::default() };
-            let blocking = http_blocking_client_builder(&cfg);
-            let r#async = http_async_client_builder(&cfg);
+            let blocking = TestApi.http_blocking_client_builder(&cfg);
+            let r#async = TestApi.http_async_client_builder(&cfg);
             prop_assert!(blocking.is_ok(), "blocking builder must succeed for insecure_tls={insecure}");
             prop_assert!(r#async.is_ok(), "async builder must succeed for insecure_tls={insecure}");
             // Build the actual clients (not just the builders) - a
@@ -211,7 +195,7 @@ proptest! {
                 "async builder must produce a usable client");
             // The insecure flag must round-trip through the cfg
             // accessor - regression check on accessor wiring.
-            prop_assert_eq!(http_effective_insecure_tls(&cfg), insecure);
+            prop_assert_eq!(TestApi.http_effective_insecure_tls(&cfg), insecure);
             Ok(())
         })?;
     }
@@ -220,29 +204,43 @@ proptest! {
 proptest! {
     #![proptest_config(http_fuzz_config(POLICY_CASES))]
 
-    /// `KEYHOG_INSECURE_TLS=1|true|TRUE` enables insecure mode;
-    /// everything else leaves it off. Guards against a typo
-    /// (`KEYHOG_INSECURE_TLS=yes`) silently enabling.
+    /// `effective_insecure_tls` is driven ONLY by the explicit `insecure_tls`
+    /// field. `KEYHOG_INSECURE_TLS` set to ANY value (`1`, `true`, `TRUE`, a
+    /// typo, anything) on a default config leaves verification ON. No env var
+    /// may disable TLS verification.
     #[test]
-    fn insecure_tls_env_var_only_recognizes_1_or_true(value in "[a-zA-Z0-9]{0,12}") {
+    fn insecure_tls_env_var_is_always_ignored(value in "[a-zA-Z0-9]{0,12}") {
         with_http_env(None, Some(&value), || {
             let cfg = HttpClientConfig::default();
-            let expected = matches!(value.as_str(), "1" | "true" | "TRUE");
-            prop_assert_eq!(http_effective_insecure_tls(&cfg), expected);
+            prop_assert!(!TestApi.http_effective_insecure_tls(&cfg),
+                "env KEYHOG_INSECURE_TLS={value:?} must NOT enable insecure TLS");
             Ok(())
         })?;
     }
 
-    /// Explicit `insecure_tls: true` is sticky - env var can't
-    /// disable it. Belt-and-suspenders against a config-loader
-    /// race where the CLI flag is overridden by env defaults.
+    /// Explicit `insecure_tls: true` is honored and the env can't change it
+    /// either way (it isn't read).
     #[test]
-    fn explicit_insecure_tls_cannot_be_overridden_by_env(
+    fn explicit_insecure_tls_is_honored_env_ignored(
         env in "[a-zA-Z0-9]{0,12}",
     ) {
         with_http_env(None, Some(&env), || {
             let cfg = HttpClientConfig { insecure_tls: true, ..Default::default() };
-            prop_assert!(http_effective_insecure_tls(&cfg));
+            prop_assert!(TestApi.http_effective_insecure_tls(&cfg));
+            Ok(())
+        })?;
+    }
+
+    /// The core mandate guarantee: with BOTH `KEYHOG_PROXY` and
+    /// `KEYHOG_INSECURE_TLS` set to hostile/active values, a default
+    /// `HttpClientConfig` still yields no proxy and TLS verification on. Ambient
+    /// authority over egress + TLS is fully severed.
+    #[test]
+    fn ambient_env_cannot_set_proxy_or_disable_tls(proxy in any_proxy_url()) {
+        with_http_env(Some(&proxy), Some("1"), || {
+            let cfg = HttpClientConfig::default();
+            prop_assert_eq!(TestApi.http_effective_proxy(&cfg), None);
+            prop_assert!(!TestApi.http_effective_insecure_tls(&cfg));
             Ok(())
         })?;
     }
@@ -255,8 +253,8 @@ proptest! {
     fn default_config_is_offline_safe(_seed in any::<u32>()) {
         with_http_env(None, None, || {
             let cfg = HttpClientConfig::default();
-            prop_assert_eq!(http_effective_proxy(&cfg), None);
-            prop_assert!(!http_effective_insecure_tls(&cfg));
+            prop_assert_eq!(TestApi.http_effective_proxy(&cfg), None);
+            prop_assert!(!TestApi.http_effective_insecure_tls(&cfg));
             prop_assert!(cfg.ua_suffix.is_none());
             Ok(())
         })?;
@@ -264,7 +262,7 @@ proptest! {
 
     /// Proxy disable sentinels (`off`, `none`, empty) must round-trip
     /// through `effective_proxy` verbatim so builders can call
-    /// `.no_proxy()` - a regression would silently inherit env proxies.
+    /// `.no_proxy()`, regardless of any env value.
     #[test]
     fn proxy_disable_sentinels_are_preserved(flag in prop_oneof![
         Just("off".to_string()),
@@ -276,7 +274,7 @@ proptest! {
                 proxy: Some(flag.clone()),
                 ..Default::default()
             };
-            let resolved = http_effective_proxy(&cfg);
+            let resolved = TestApi.http_effective_proxy(&cfg);
             prop_assert_eq!(resolved.as_deref(), Some(flag.as_str()));
             Ok(())
         })?;
@@ -295,8 +293,8 @@ proptest! {
                 timeout: Some(std::time::Duration::from_secs(secs)),
                 ..Default::default()
             };
-            prop_assert!(http_blocking_client_builder(&cfg).is_ok());
-            prop_assert!(http_async_client_builder(&cfg).is_ok());
+            prop_assert!(TestApi.http_blocking_client_builder(&cfg).is_ok());
+            prop_assert!(TestApi.http_async_client_builder(&cfg).is_ok());
             Ok(())
         })?;
     }
@@ -313,8 +311,8 @@ proptest! {
                 },
                 ..Default::default()
             };
-            prop_assert!(http_blocking_client_builder(&cfg).unwrap().build().is_ok());
-            prop_assert!(http_async_client_builder(&cfg).unwrap().build().is_ok());
+            prop_assert!(TestApi.http_blocking_client_builder(&cfg).unwrap().build().is_ok());
+            prop_assert!(TestApi.http_async_client_builder(&cfg).unwrap().build().is_ok());
             Ok(())
         })?;
     }

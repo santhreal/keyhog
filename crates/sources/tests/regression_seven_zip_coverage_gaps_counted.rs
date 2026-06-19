@@ -1,11 +1,12 @@
 //! 7z archives that cannot be read must increment skip counters.
 
 use keyhog_core::Source;
+use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource};
 
 #[test]
 fn corrupt_seven_zip_counts_as_unreadable() {
-    keyhog_sources::testing::reset_skip_counters();
+    TestApi.reset_skip_counters();
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("broken.7z"), b"not a seven zip archive")
         .expect("write corrupt 7z");

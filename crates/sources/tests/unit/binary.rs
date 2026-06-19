@@ -1,5 +1,6 @@
 #[cfg(feature = "binary")]
 use keyhog_core::Source;
+use keyhog_sources::testing::{SourceTestApi, TestApi};
 
 #[cfg(feature = "binary")]
 #[test]
@@ -11,7 +12,7 @@ fn binary_source_strings_only_mode_extracts_printable_secret_runs() {
     )
     .unwrap();
 
-    let source = keyhog_sources::testing::binary_strings_only(tmp.path());
+    let source = TestApi.binary_strings_only(tmp.path());
     let chunks: Vec<_> = source.chunks().collect();
 
     assert!(!chunks.is_empty());
@@ -40,7 +41,7 @@ fn binary_source_extracts_utf16le_wide_string_secret() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     std::fs::write(tmp.path(), &data).unwrap();
 
-    let source = keyhog_sources::testing::binary_strings_only(tmp.path());
+    let source = TestApi.binary_strings_only(tmp.path());
     let found = source
         .chunks()
         .filter_map(Result::ok)

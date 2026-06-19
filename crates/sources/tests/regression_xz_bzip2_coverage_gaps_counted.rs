@@ -1,7 +1,8 @@
 //! xz/bzip2 decode failures are source coverage gaps, not clean scans.
 
 use keyhog_core::Source;
-use keyhog_sources::{skip_counts, testing::reset_skip_counters, FilesystemSource};
+use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::{skip_counts, FilesystemSource};
 
 fn drain(name: &str, bytes: &[u8]) {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -13,7 +14,7 @@ fn drain(name: &str, bytes: &[u8]) {
 
 #[test]
 fn corrupt_xz_and_bzip2_streams_bump_unreadable_gaps() {
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     drain("bad.xz", b"\xfd7zXZ\x00not-a-valid-xz-stream");
     drain("bad.bz2", b"BZhnot-a-valid-bzip2-stream");
     assert_eq!(

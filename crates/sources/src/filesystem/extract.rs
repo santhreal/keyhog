@@ -1,7 +1,7 @@
 use super::display_path;
 use super::filter::{is_default_excluded, skip_extensions};
 use super::read;
-use keyhog_core::merkle_index::MerkleIndex;
+use keyhog_core::MerkleIndex;
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;

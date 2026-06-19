@@ -4,7 +4,8 @@
 //! `package-lock.json` stayed silently excluded even with the flag set.
 
 use keyhog_core::{Chunk, Source};
-use keyhog_sources::{skip_counts, testing::reset_skip_counters, FilesystemSource};
+use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::{skip_counts, FilesystemSource};
 use std::fs;
 
 static SKIP_COUNTER_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
@@ -86,7 +87,7 @@ fn default_excludes_apply_to_direct_include_paths_by_relative_path() {
     let secret = excluded.join("token.env");
     fs::write(&secret, format!("TOKEN={SENTINEL}\n")).unwrap();
 
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let skipped = FilesystemSource::new(dir.path().to_path_buf())
         .with_include_paths(vec![secret.clone()])
         .chunks()
@@ -102,7 +103,7 @@ fn default_excludes_apply_to_direct_include_paths_by_relative_path() {
         "direct include default-exclude skip must be surfaced through the typed counter"
     );
 
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let included = FilesystemSource::new(dir.path().to_path_buf())
         .with_include_paths(vec![secret])
         .with_default_excludes(false)

@@ -1,7 +1,8 @@
 #![cfg(feature = "web")]
 
 use keyhog_core::Source;
-use keyhog_sources::{skip_counts, testing::reset_skip_counters, WebSource};
+use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::{skip_counts, WebSource};
 use std::sync::{Mutex, MutexGuard};
 
 static COUNTER_LOCK: Mutex<()> = Mutex::new(());
@@ -11,27 +12,24 @@ struct CounterGuard {
 }
 
 impl Drop for CounterGuard {
-    fn drop(&mut self) {
-        unsafe {
-            std::env::remove_var("KEYHOG_AUTOROUTE_CALIBRATE");
-        }
-    }
+    fn drop(&mut self) {}
 }
 
 fn counter_guard() -> CounterGuard {
     let lock = COUNTER_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
-    unsafe {
-        std::env::set_var("KEYHOG_AUTOROUTE_CALIBRATE", "1");
-    }
     CounterGuard { _lock: lock }
+}
+
+fn loopback_calibration_source(url: String) -> WebSource {
+    TestApi.web_source_with_autoroute_loopback_calibration(vec![url], true)
 }
 
 #[test]
 fn clean_javascript_response_is_scanned_and_counter_clean() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
@@ -42,7 +40,7 @@ fn clean_javascript_response_is_scanned_and_counter_clean() {
             .body("const key = 'AKIAQYLPMN5HFIQR7XYA';\n"); // keyhog:ignore detector=aws-access-key
     });
 
-    let chunks: Vec<_> = WebSource::new(vec![server.url("/app.js")])
+    let chunks: Vec<_> = loopback_calibration_source(server.url("/app.js"))
         .chunks()
         .collect();
     let ok: Vec<_> = chunks
@@ -66,7 +64,7 @@ fn clean_javascript_response_is_scanned_and_counter_clean() {
 #[test]
 fn non_success_status_is_error_and_counted_unreadable() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
@@ -75,7 +73,7 @@ fn non_success_status_is_error_and_counted_unreadable() {
         then.status(404).body("not found");
     });
 
-    let chunks: Vec<_> = WebSource::new(vec![server.url("/missing.js")])
+    let chunks: Vec<_> = loopback_calibration_source(server.url("/missing.js"))
         .chunks()
         .collect();
     assert_eq!(chunks.len(), 1, "non-success URL must yield one error");
@@ -98,7 +96,7 @@ fn non_success_status_is_error_and_counted_unreadable() {
 #[test]
 fn over_cap_content_length_is_error_and_counted_over_max_size() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
@@ -107,7 +105,7 @@ fn over_cap_content_length_is_error_and_counted_over_max_size() {
         then.status(200).body(vec![b'x'; 10_485_761]);
     });
 
-    let chunks: Vec<_> = WebSource::new(vec![server.url("/huge.js")])
+    let chunks: Vec<_> = loopback_calibration_source(server.url("/huge.js"))
         .chunks()
         .collect();
     assert_eq!(chunks.len(), 1, "over-cap URL must yield one error");
@@ -130,7 +128,7 @@ fn over_cap_content_length_is_error_and_counted_over_max_size() {
 #[test]
 fn invalid_wasm_magic_is_error_and_counted_unreadable() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
@@ -141,7 +139,7 @@ fn invalid_wasm_magic_is_error_and_counted_unreadable() {
             .body("this is not wasm");
     });
 
-    let chunks: Vec<_> = WebSource::new(vec![server.url("/module.wasm")])
+    let chunks: Vec<_> = loopback_calibration_source(server.url("/module.wasm"))
         .chunks()
         .collect();
     assert_eq!(chunks.len(), 1, "invalid WASM URL must yield one error");

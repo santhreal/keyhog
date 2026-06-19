@@ -52,6 +52,7 @@ pub mod path_validation_no_inline_tests;
 pub mod path_validation_no_unwrap_expect;
 pub mod path_validation_non_empty;
 pub mod reporting_file_size_cap;
+pub mod production_env_read_policy;
 pub mod reporting_no_inline_tests;
 pub mod reporting_no_unwrap_expect;
 pub mod reporting_non_empty;

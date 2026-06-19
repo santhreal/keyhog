@@ -17,7 +17,7 @@ use super::MMAP_TOCTOU_SANITY_CAP_BYTES;
 /// walker-stat-then-grow TOCTOU) must not be able to OOM the buffered path
 /// either. The mmap twin re-stats and refuses; the buffered path bounds the
 /// read with `.take(MAX_BUFFERED_READ_BYTES)`. (KH-GAP-013)
-const MAX_BUFFERED_READ_BYTES: u64 = MMAP_TOCTOU_SANITY_CAP_BYTES;
+pub(super) const MAX_BUFFERED_READ_BYTES: u64 = MMAP_TOCTOU_SANITY_CAP_BYTES;
 
 pub(in crate::filesystem) fn read_file_buffered(path: &Path, size_hint: u64) -> Option<String> {
     // The buffered read already owns its `Vec<u8>`. Hand it to the owning

@@ -15,7 +15,8 @@
 #![cfg(unix)]
 
 use keyhog_core::Source;
-use keyhog_sources::{skip_counts, testing::reset_skip_counters, FilesystemSource};
+use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::{skip_counts, FilesystemSource};
 use std::io::Write as _;
 use std::sync::Mutex;
 
@@ -53,7 +54,7 @@ fn zip_bomb_extraction_is_truncated_and_counted() {
     const MAX: u64 = 64 * 1024;
     let _zip = write_zip_bomb(dir.path(), MAX as usize, 16);
 
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(MAX);
     let chunks: Vec<_> = source.chunks().flatten().collect();
 
@@ -102,7 +103,7 @@ fn healthy_zip_is_not_counted_as_truncated() {
         zip.finish().unwrap();
     }
 
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(1024 * 1024);
     let bodies: Vec<String> = source
         .chunks()
@@ -145,7 +146,7 @@ fn zip_with_unlimited_max_file_size_is_fully_extracted() {
         zip.finish().unwrap();
     }
 
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     // max_file_size = 0 => unlimited per-file cap.
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(0);
     let bodies: Vec<String> = source
@@ -197,7 +198,7 @@ fn symlinked_archive_in_tree_is_not_expanded_and_is_counted() {
     let bait = walked.path().join("evil.zip");
     std::os::unix::fs::symlink(&real_zip, &bait).unwrap();
 
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let source = FilesystemSource::new(walked.path().to_path_buf());
     let bodies: Vec<String> = source
         .chunks()
@@ -237,7 +238,7 @@ fn gzip_single_stream_bomb_is_truncated_and_counted() {
         enc.finish().unwrap();
     }
 
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(MAX);
     let chunks: Vec<_> = source.chunks().flatten().collect();
 

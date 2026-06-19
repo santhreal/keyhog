@@ -1,6 +1,8 @@
 use super::extract::process_entry;
-use keyhog_core::merkle_index::MerkleIndex;
+use keyhog_core::MerkleIndex;
 use keyhog_core::{Chunk, SourceError};
+use std::collections::BTreeMap;
+use std::num::NonZeroUsize;
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 
@@ -23,14 +25,12 @@ const MAX_READER_THREADS: usize = 4;
 
 /// Number of dedicated file-reader threads to run alongside a scan pool of
 /// `scanner_threads`.
-pub(super) fn reader_thread_count(scanner_threads: usize) -> usize {
-    if std::env::var_os("KEYHOG_READER_THREADS").is_some() {
-        let requested = keyhog_core::env_config::usize_at_least_or_default(
-            "KEYHOG_READER_THREADS",
-            1,
-            reader_thread_default(scanner_threads),
-        );
-        return requested.min(scanner_threads.max(1));
+pub(super) fn reader_thread_count(
+    scanner_threads: usize,
+    configured: Option<NonZeroUsize>,
+) -> usize {
+    if let Some(configured) = configured {
+        return configured.get().min(scanner_threads.max(1));
     }
     reader_thread_default(scanner_threads)
 }
@@ -49,15 +49,34 @@ pub(super) fn spawn_chunk_producer(
     window_size: usize,
     window_overlap: usize,
     respect_default_excludes: bool,
+    reader_threads: Option<NonZeroUsize>,
 ) -> std::sync::mpsc::Receiver<Result<Chunk, SourceError>> {
     let (tx, rx) = std::sync::mpsc::sync_channel::<Result<Chunk, SourceError>>(64);
-    let cursor: Arc<Mutex<Box<dyn Iterator<Item = codewalk::FileEntry> + Send>>> =
-        Arc::new(Mutex::new(entries));
-    let reader_count = reader_thread_count(rayon::current_num_threads());
+    let (entry_tx, entry_rx) =
+        std::sync::mpsc::sync_channel::<(usize, Vec<Result<Chunk, SourceError>>)>(64);
+    let cursor: Arc<Mutex<(usize, Box<dyn Iterator<Item = codewalk::FileEntry> + Send>)>> =
+        Arc::new(Mutex::new((0, entries)));
+    let reader_count = reader_thread_count(rayon::current_num_threads(), reader_threads);
+
+    std::thread::spawn(move || {
+        let mut next_seq = 0usize;
+        let mut pending: BTreeMap<usize, Vec<Result<Chunk, SourceError>>> = BTreeMap::new();
+        for (seq, chunks) in entry_rx {
+            pending.insert(seq, chunks);
+            while let Some(chunks) = pending.remove(&next_seq) {
+                for chunk in chunks {
+                    if tx.send(chunk).is_err() {
+                        return;
+                    }
+                }
+                next_seq += 1;
+            }
+        }
+    });
 
     let run_reader =
-        move |cursor: Arc<Mutex<Box<dyn Iterator<Item = codewalk::FileEntry> + Send>>>,
-              tx: std::sync::mpsc::SyncSender<Result<Chunk, SourceError>>,
+        move |cursor: Arc<Mutex<(usize, Box<dyn Iterator<Item = codewalk::FileEntry> + Send>)>>,
+              tx: std::sync::mpsc::SyncSender<(usize, Vec<Result<Chunk, SourceError>>)>,
               merkle: Option<Arc<MerkleIndex>>,
               skipped: Arc<AtomicUsize>| {
             loop {
@@ -72,17 +91,21 @@ pub(super) fn spawn_chunk_producer(
                             return;
                         }
                     };
-                    guard.next()
+                    let (next_seq, entries) = &mut *guard;
+                    entries.next().map(|entry| {
+                        let seq = *next_seq;
+                        *next_seq = next_seq.saturating_add(1);
+                        (seq, entry)
+                    })
                 };
-                let Some(entry) = entry else {
+                let Some((seq, entry)) = entry else {
                     return;
                 };
 
-                let mut sender_alive = true;
+                let mut chunks = Vec::new();
                 let mut emit = |chunk: Result<Chunk, SourceError>| {
-                    let ok = tx.send(chunk).is_ok();
-                    sender_alive = ok;
-                    ok
+                    chunks.push(chunk);
+                    true
                 };
                 process_entry(
                     entry,
@@ -95,7 +118,7 @@ pub(super) fn spawn_chunk_producer(
                     respect_default_excludes,
                     &mut emit,
                 );
-                if !sender_alive {
+                if tx.send((seq, chunks)).is_err() {
                     return;
                 }
             }
@@ -104,7 +127,7 @@ pub(super) fn spawn_chunk_producer(
     let mut spawned = 0usize;
     for i in 0..reader_count {
         let cursor = Arc::clone(&cursor);
-        let tx = tx.clone();
+        let tx = entry_tx.clone();
         let merkle = merkle.clone();
         let skipped = skipped.clone();
         let run_reader = run_reader.clone();
@@ -125,7 +148,7 @@ pub(super) fn spawn_chunk_producer(
 
     if spawned == 0 {
         let cursor_fb = Arc::clone(&cursor);
-        let tx_fb = tx.clone();
+        let tx_fb = entry_tx.clone();
         let merkle_fb = merkle.clone();
         let skipped_fb = skipped.clone();
         let run_reader_fb = run_reader.clone();
@@ -134,10 +157,10 @@ pub(super) fn spawn_chunk_producer(
             .spawn(move || run_reader_fb(cursor_fb, tx_fb, merkle_fb, skipped_fb))
             .is_err()
         {
-            run_reader(cursor, tx.clone(), merkle.clone(), skipped.clone());
+            run_reader(cursor, entry_tx.clone(), merkle.clone(), skipped.clone());
         }
     }
 
-    drop(tx);
+    drop(entry_tx);
     rx
 }

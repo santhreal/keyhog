@@ -1,7 +1,8 @@
 #![cfg(feature = "azure")]
 
 use keyhog_core::Source;
-use keyhog_sources::{skip_counts, testing::reset_skip_counters, AzureBlobSource};
+use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::{skip_counts, AzureBlobSource};
 use std::sync::{Mutex, MutexGuard};
 
 static COUNTER_LOCK: Mutex<()> = Mutex::new(());
@@ -35,7 +36,7 @@ fn container_url(server: &httpmock::MockServer) -> String {
 #[test]
 fn plain_text_blob_is_scanned_and_sas_query_is_preserved() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
@@ -88,7 +89,7 @@ fn plain_text_blob_is_scanned_and_sas_query_is_preserved() {
 #[test]
 fn binary_extension_blob_is_counted_binary_without_get() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
@@ -132,7 +133,7 @@ fn binary_extension_blob_is_counted_binary_without_get() {
 #[test]
 fn non_success_get_is_counted_unreadable() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
@@ -171,7 +172,7 @@ fn non_success_get_is_counted_unreadable() {
 #[test]
 fn max_objects_limit_is_counted_source_truncated() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
@@ -201,8 +202,8 @@ fn max_objects_limit_is_counted_source_truncated() {
         then.status(200).body("SHOULD_NOT_BE_FETCHED");
     });
 
-    let chunks: Vec<_> = AzureBlobSource::new(container_url(&server))
-        .with_max_objects(1)
+    let chunks: Vec<_> = TestApi
+        .azure_blob_source_with_max_objects(container_url(&server), 1)
         .chunks()
         .collect();
     let ok: Vec<_> = chunks

@@ -1,338 +1,786 @@
 //! Hidden test facade for source crate internals.
 
 pub mod testing {
-    pub fn set_skip_counts(counts: crate::SkipCounts) {
-        use std::sync::atomic::Ordering::Relaxed;
+    pub struct TestApi;
 
-        crate::SKIPPED_OVER_MAX_SIZE.store(counts.over_max_size, Relaxed);
-        crate::SKIPPED_BINARY.store(counts.binary, Relaxed);
-        crate::SKIPPED_EXCLUDED.store(counts.excluded, Relaxed);
-        crate::SKIPPED_UNREADABLE.store(counts.unreadable, Relaxed);
-        crate::SKIPPED_ARCHIVE_TRUNCATED.store(counts.archive_truncated, Relaxed);
-        crate::BINARY_SECTION_NAME_UNRESOLVED.store(counts.binary_section_name_unresolved, Relaxed);
-        crate::SOURCE_TRUNCATED.store(counts.source_truncated, Relaxed);
-        crate::STRUCTURED_SOURCE_PARSE_FAILURES
-            .store(counts.structured_source_parse_failures, Relaxed);
+    pub trait SourceTestApi {
+        fn set_skip_counts(&self, counts: crate::SkipCounts);
+        fn reset_skip_counters(&self);
+        fn bump_skipped_over_max_size(&self, delta: usize);
+        fn reader_pool_thread_count(&self, scanner_threads: usize) -> usize;
+        fn configured_reader_pool_thread_count(
+            &self,
+            scanner_threads: usize,
+            configured: std::num::NonZeroUsize,
+        ) -> usize;
+        fn filesystem_with_window_config(
+            &self,
+            root: std::path::PathBuf,
+            window_size: usize,
+            overlap: usize,
+        ) -> crate::FilesystemSource;
+        fn filesystem_skipped_count(&self, source: &crate::FilesystemSource) -> usize;
+        fn max_buffered_read_bytes(&self) -> u64;
+        fn read_file_safe_capped(
+            &self,
+            path: &std::path::Path,
+            cap: u64,
+        ) -> std::io::Result<Vec<u8>>;
+        fn read_file_for_compressed_input(
+            &self,
+            path: &std::path::Path,
+            size_cap: u64,
+        ) -> Option<Vec<u8>>;
+        fn slice_into_windows(
+            &self,
+            bytes: &[u8],
+            window_size: usize,
+            overlap: usize,
+        ) -> Vec<String>;
+        fn decode_utf16(&self, bytes: &[u8]) -> Option<String>;
+        fn looks_binary(&self, bytes: &[u8]) -> bool;
+
+        #[cfg(any(
+            feature = "azure",
+            feature = "web",
+            feature = "slack",
+            feature = "s3",
+            feature = "github",
+            feature = "gitlab",
+            feature = "bitbucket",
+            feature = "gcs"
+        ))]
+        fn http_request_timeout(&self) -> std::time::Duration;
+        #[cfg(any(
+            feature = "azure",
+            feature = "web",
+            feature = "slack",
+            feature = "s3",
+            feature = "github",
+            feature = "gitlab",
+            feature = "bitbucket",
+            feature = "gcs"
+        ))]
+        fn http_effective_proxy(&self, http: &crate::http::HttpClientConfig) -> Option<String>;
+        #[cfg(any(
+            feature = "azure",
+            feature = "web",
+            feature = "slack",
+            feature = "s3",
+            feature = "github",
+            feature = "gitlab",
+            feature = "bitbucket",
+            feature = "gcs"
+        ))]
+        fn http_effective_insecure_tls(&self, http: &crate::http::HttpClientConfig) -> bool;
+        #[cfg(any(
+            feature = "azure",
+            feature = "web",
+            feature = "slack",
+            feature = "s3",
+            feature = "github",
+            feature = "gitlab",
+            feature = "bitbucket",
+            feature = "gcs"
+        ))]
+        fn http_blocking_client_builder(
+            &self,
+            http: &crate::http::HttpClientConfig,
+        ) -> Result<reqwest::blocking::ClientBuilder, String>;
+        #[cfg(any(
+            feature = "azure",
+            feature = "web",
+            feature = "slack",
+            feature = "s3",
+            feature = "github",
+            feature = "gitlab",
+            feature = "bitbucket",
+            feature = "gcs"
+        ))]
+        fn http_async_client_builder(
+            &self,
+            http: &crate::http::HttpClientConfig,
+        ) -> Result<reqwest::ClientBuilder, String>;
+
+        #[cfg(feature = "gcs")]
+        fn gcs_endpoint_is_google(&self, endpoint: &str) -> bool;
+        #[cfg(feature = "gcs")]
+        fn gcs_credential_forward_allowed(&self, allow_explicit: bool) -> bool;
+        #[cfg(feature = "gcs")]
+        fn gcs_source_with_endpoint<B, E>(&self, bucket: B, endpoint: E) -> crate::GcsSource
+        where
+            B: Into<String>,
+            E: Into<String>;
+        #[cfg(feature = "gcs")]
+        fn gcs_source_with_endpoint_max_objects<B, E>(
+            &self,
+            bucket: B,
+            endpoint: E,
+            max_objects: usize,
+        ) -> crate::GcsSource
+        where
+            B: Into<String>,
+            E: Into<String>;
+        #[cfg(feature = "s3")]
+        fn s3_endpoint_is_aws(&self, endpoint: &str) -> bool;
+        #[cfg(feature = "s3")]
+        fn s3_credential_forward_allowed(&self, allow_explicit: bool) -> bool;
+        #[cfg(feature = "s3")]
+        fn s3_source_with_endpoint<B, E>(&self, bucket: B, endpoint: E) -> crate::S3Source
+        where
+            B: Into<String>,
+            E: Into<String>;
+        #[cfg(feature = "s3")]
+        fn s3_source_with_endpoint_max_objects<B, E>(
+            &self,
+            bucket: B,
+            endpoint: E,
+            max_objects: usize,
+        ) -> crate::S3Source
+        where
+            B: Into<String>,
+            E: Into<String>;
+        #[cfg(feature = "git")]
+        fn record_git_history_cap_for_test(&self, total_bytes: usize, chunk_count: usize) -> bool;
+        #[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
+        fn git_clone_timeout(&self) -> std::time::Duration;
+        #[cfg(feature = "binary")]
+        fn ghidra_analysis_timeout(&self) -> std::time::Duration;
+        #[cfg(feature = "binary")]
+        fn binary_strings_only<P>(&self, path: P) -> crate::BinarySource
+        where
+            P: Into<std::path::PathBuf>;
+
+        fn user_agent(&self, suffix: Option<&str>) -> String;
+
+        #[cfg(feature = "binary")]
+        fn extract_string_literals(&self, line: &str) -> Vec<String>;
+        #[cfg(feature = "binary")]
+        fn extract_sections(&self, bytes: &[u8], path: &str) -> Option<Vec<keyhog_core::Chunk>>;
+        #[cfg(feature = "binary")]
+        fn resolve_binary_section_name<'a>(
+            &self,
+            resolved: Option<&'a str>,
+            sh_name: usize,
+        ) -> &'a str;
+
+        #[cfg(feature = "github")]
+        fn validate_repo_name(&self, name: &str) -> Result<(), keyhog_core::SourceError>;
+        #[cfg(feature = "github")]
+        fn validate_org_name(&self, name: &str) -> Result<(), keyhog_core::SourceError>;
+        #[cfg(feature = "github")]
+        fn validate_clone_url(&self, url: &str) -> Result<(), keyhog_core::SourceError>;
+        #[cfg(feature = "github")]
+        fn github_org_rewrite_chunk_path(
+            &self,
+            chunk: keyhog_core::Chunk,
+            org: &str,
+            repo_name: &str,
+            clone_path: &std::path::Path,
+        ) -> Result<keyhog_core::Chunk, keyhog_core::SourceError>;
+        #[cfg(feature = "github")]
+        fn github_org_scan_repo_chunks<I>(
+            &self,
+            chunks: I,
+            org: &str,
+            repo_name: &str,
+            clone_path: &std::path::Path,
+        ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError>
+        where
+            I: IntoIterator<Item = Result<keyhog_core::Chunk, keyhog_core::SourceError>>;
+        #[cfg(feature = "github")]
+        fn github_org_listing_truncated_error(
+            &self,
+            org: &str,
+            repo_count: usize,
+            max_pages: usize,
+        ) -> keyhog_core::SourceError;
+
+        #[cfg(feature = "gitlab")]
+        fn validate_gitlab_group_path(&self, group: &str) -> Result<(), keyhog_core::SourceError>;
+        #[cfg(feature = "gitlab")]
+        fn gitlab_group_listing_truncated_error(
+            &self,
+            group: &str,
+            repo_count: usize,
+            max_pages: usize,
+        ) -> keyhog_core::SourceError;
+
+        #[cfg(feature = "bitbucket")]
+        fn validate_bitbucket_workspace(
+            &self,
+            workspace: &str,
+        ) -> Result<(), keyhog_core::SourceError>;
+        #[cfg(feature = "bitbucket")]
+        fn bitbucket_workspace_listing_truncated_error(
+            &self,
+            workspace: &str,
+            repo_count: usize,
+            max_pages: usize,
+        ) -> keyhog_core::SourceError;
+
+        #[cfg(feature = "docker")]
+        fn docker_manifest_layer_archives(
+            &self,
+            root_path: &std::path::Path,
+        ) -> Result<Vec<std::path::PathBuf>, keyhog_core::SourceError>;
+        #[cfg(feature = "docker")]
+        fn docker_manifest_config_chunks(
+            &self,
+            root_path: &std::path::Path,
+            image: &str,
+        ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError>;
+        #[cfg(feature = "docker")]
+        fn unpack_docker_layer_archive(
+            &self,
+            archive_path: &std::path::Path,
+            destination: &std::path::Path,
+        ) -> Result<(), keyhog_core::SourceError>;
+        #[cfg(feature = "docker")]
+        fn docker_rewrite_layer_chunks<I>(
+            &self,
+            chunks: I,
+            image: &str,
+            layer_root: &std::path::Path,
+            layer_name: &str,
+        ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError>
+        where
+            I: IntoIterator<Item = Result<keyhog_core::Chunk, keyhog_core::SourceError>>;
+        #[cfg(feature = "docker")]
+        fn validate_docker_tar_archive(
+            &self,
+            archive_path: &std::path::Path,
+        ) -> Result<(), keyhog_core::SourceError>;
+        #[cfg(feature = "docker")]
+        fn validate_docker_tar_archive_with_total_cap(
+            &self,
+            archive_path: &std::path::Path,
+            total_cap: u64,
+        ) -> Result<(), keyhog_core::SourceError>;
+
+        #[cfg(feature = "azure")]
+        fn azure_blob_source_with_max_objects<U>(
+            &self,
+            container_url: U,
+            max_objects: usize,
+        ) -> crate::AzureBlobSource
+        where
+            U: Into<String>;
+
+        #[cfg(feature = "web")]
+        fn redact_url(&self, url: &str) -> String;
+        #[cfg(feature = "web")]
+        fn is_disallowed_web_host(&self, url: &str) -> bool;
+        #[cfg(feature = "web")]
+        fn is_disallowed_ip(&self, ip: std::net::IpAddr) -> bool;
+        #[cfg(feature = "web")]
+        fn resolve_and_screen(
+            &self,
+            host: &str,
+            port: u16,
+        ) -> Result<Vec<std::net::SocketAddr>, keyhog_core::SourceError>;
+        #[cfg(feature = "web")]
+        fn build_web_client(
+            &self,
+            http: &crate::http::HttpClientConfig,
+            original_url: &str,
+            use_proxy: bool,
+            allow_autoroute_loopback_calibration_url: bool,
+        ) -> Result<reqwest::blocking::Client, keyhog_core::SourceError>;
+        #[cfg(feature = "web")]
+        fn web_source_with_autoroute_loopback_calibration(
+            &self,
+            urls: Vec<String>,
+            allow: bool,
+        ) -> crate::WebSource;
     }
 
-    pub fn reset_skip_counters() {
-        crate::reset_skip_counters();
-    }
+    impl SourceTestApi for TestApi {
+        fn set_skip_counts(&self, counts: crate::SkipCounts) {
+            use std::sync::atomic::Ordering::Relaxed;
 
-    pub fn bump_skipped_over_max_size(delta: usize) {
-        let _event = crate::record_skip_events(crate::SourceSkipEvent::OverMaxSize, delta);
-    }
+            crate::SKIPPED_OVER_MAX_SIZE.store(counts.over_max_size, Relaxed);
+            crate::SKIPPED_BINARY.store(counts.binary, Relaxed);
+            crate::SKIPPED_EXCLUDED.store(counts.excluded, Relaxed);
+            crate::SKIPPED_UNREADABLE.store(counts.unreadable, Relaxed);
+            crate::SKIPPED_ARCHIVE_TRUNCATED.store(counts.archive_truncated, Relaxed);
+            crate::BINARY_SECTION_NAME_UNRESOLVED
+                .store(counts.binary_section_name_unresolved, Relaxed);
+            crate::SOURCE_TRUNCATED.store(counts.source_truncated, Relaxed);
+            crate::STRUCTURED_SOURCE_PARSE_FAILURES
+                .store(counts.structured_source_parse_failures, Relaxed);
+        }
 
-    pub fn reader_pool_thread_count(scanner_threads: usize) -> usize {
-        crate::filesystem::reader_pool_thread_count_for_test(scanner_threads)
-    }
+        fn reset_skip_counters(&self) {
+            crate::reset_skip_counters();
+        }
 
-    pub fn filesystem_with_window_config(
-        root: std::path::PathBuf,
-        window_size: usize,
-        overlap: usize,
-    ) -> crate::FilesystemSource {
-        crate::FilesystemSource::new(root).with_window_config(window_size, overlap)
-    }
+        fn bump_skipped_over_max_size(&self, delta: usize) {
+            let _event = crate::record_skip_events(crate::SourceSkipEvent::OverMaxSize, delta);
+        }
 
-    pub fn filesystem_skipped_count(source: &crate::FilesystemSource) -> usize {
-        source
-            .skipped_counter()
-            .load(std::sync::atomic::Ordering::Relaxed)
-    }
+        fn reader_pool_thread_count(&self, scanner_threads: usize) -> usize {
+            crate::filesystem::reader_pool_thread_count_for_test(scanner_threads)
+        }
 
-    #[cfg(any(
-        feature = "azure",
-        feature = "web",
-        feature = "slack",
-        feature = "s3",
-        feature = "github",
-        feature = "gitlab",
-        feature = "bitbucket",
-        feature = "gcs"
-    ))]
-    pub fn http_request_timeout() -> std::time::Duration {
-        crate::timeouts::HTTP_REQUEST
-    }
+        fn configured_reader_pool_thread_count(
+            &self,
+            scanner_threads: usize,
+            configured: std::num::NonZeroUsize,
+        ) -> usize {
+            crate::filesystem::reader_pool_thread_count_with_config_for_test(
+                scanner_threads,
+                configured,
+            )
+        }
 
-    #[cfg(any(
-        feature = "azure",
-        feature = "web",
-        feature = "slack",
-        feature = "s3",
-        feature = "github",
-        feature = "gitlab",
-        feature = "bitbucket",
-        feature = "gcs"
-    ))]
-    pub fn http_effective_proxy(http: &crate::http::HttpClientConfig) -> Option<String> {
-        http.effective_proxy()
-    }
+        fn filesystem_with_window_config(
+            &self,
+            root: std::path::PathBuf,
+            window_size: usize,
+            overlap: usize,
+        ) -> crate::FilesystemSource {
+            crate::FilesystemSource::new(root).with_window_config(window_size, overlap)
+        }
 
-    #[cfg(any(
-        feature = "azure",
-        feature = "web",
-        feature = "slack",
-        feature = "s3",
-        feature = "github",
-        feature = "gitlab",
-        feature = "bitbucket",
-        feature = "gcs"
-    ))]
-    pub fn http_effective_insecure_tls(http: &crate::http::HttpClientConfig) -> bool {
-        http.effective_insecure_tls()
-    }
+        fn filesystem_skipped_count(&self, source: &crate::FilesystemSource) -> usize {
+            source
+                .skipped_counter()
+                .load(std::sync::atomic::Ordering::Relaxed)
+        }
 
-    #[cfg(any(
-        feature = "azure",
-        feature = "web",
-        feature = "slack",
-        feature = "s3",
-        feature = "github",
-        feature = "gitlab",
-        feature = "bitbucket",
-        feature = "gcs"
-    ))]
-    pub fn http_blocking_client_builder(
-        http: &crate::http::HttpClientConfig,
-    ) -> Result<crate::reqwest::blocking::ClientBuilder, String> {
-        crate::http::blocking_client_builder(http)
-    }
+        fn max_buffered_read_bytes(&self) -> u64 {
+            crate::filesystem::max_buffered_read_bytes_for_test()
+        }
 
-    #[cfg(any(
-        feature = "azure",
-        feature = "web",
-        feature = "slack",
-        feature = "s3",
-        feature = "github",
-        feature = "gitlab",
-        feature = "bitbucket",
-        feature = "gcs"
-    ))]
-    pub fn http_async_client_builder(
-        http: &crate::http::HttpClientConfig,
-    ) -> Result<crate::reqwest::ClientBuilder, String> {
-        crate::http::async_client_builder(http)
-    }
+        fn read_file_safe_capped(
+            &self,
+            path: &std::path::Path,
+            cap: u64,
+        ) -> std::io::Result<Vec<u8>> {
+            crate::filesystem::read_file_safe_capped_for_test(path, cap)
+        }
 
-    #[cfg(feature = "gcs")]
-    pub fn gcs_endpoint_is_google(endpoint: &str) -> bool {
-        crate::gcs::endpoint_is_google(endpoint)
-    }
+        fn read_file_for_compressed_input(
+            &self,
+            path: &std::path::Path,
+            size_cap: u64,
+        ) -> Option<Vec<u8>> {
+            crate::filesystem::read_file_for_compressed_input_for_test(path, size_cap)
+        }
 
-    #[cfg(feature = "gcs")]
-    pub fn gcs_credential_forward_allowed() -> bool {
-        crate::gcs::credential_forward_allowed()
-    }
+        fn slice_into_windows(
+            &self,
+            bytes: &[u8],
+            window_size: usize,
+            overlap: usize,
+        ) -> Vec<String> {
+            crate::filesystem::slice_into_windows_for_test(bytes, window_size, overlap)
+        }
 
-    #[cfg(feature = "s3")]
-    pub fn s3_endpoint_is_aws(endpoint: &str) -> bool {
-        crate::s3::endpoint_is_aws(endpoint)
-    }
+        fn decode_utf16(&self, bytes: &[u8]) -> Option<String> {
+            crate::filesystem::decode_utf16_for_test(bytes)
+        }
 
-    #[cfg(feature = "s3")]
-    pub fn s3_credential_forward_allowed() -> bool {
-        crate::s3::credential_forward_allowed()
-    }
+        fn looks_binary(&self, bytes: &[u8]) -> bool {
+            crate::filesystem::looks_binary_for_test(bytes)
+        }
 
-    #[cfg(feature = "git")]
-    pub fn record_git_history_cap_for_test(total_bytes: usize, chunk_count: usize) -> bool {
-        crate::git::record_git_history_cap_for_test(total_bytes, chunk_count)
-    }
+        #[cfg(any(
+            feature = "azure",
+            feature = "web",
+            feature = "slack",
+            feature = "s3",
+            feature = "github",
+            feature = "gitlab",
+            feature = "bitbucket",
+            feature = "gcs"
+        ))]
+        fn http_request_timeout(&self) -> std::time::Duration {
+            crate::timeouts::HTTP_REQUEST
+        }
 
-    #[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
-    pub fn git_clone_timeout() -> std::time::Duration {
-        crate::timeouts::GIT_CLONE
-    }
+        #[cfg(any(
+            feature = "azure",
+            feature = "web",
+            feature = "slack",
+            feature = "s3",
+            feature = "github",
+            feature = "gitlab",
+            feature = "bitbucket",
+            feature = "gcs"
+        ))]
+        fn http_effective_proxy(&self, http: &crate::http::HttpClientConfig) -> Option<String> {
+            http.effective_proxy()
+        }
 
-    #[cfg(feature = "binary")]
-    pub fn ghidra_analysis_timeout() -> std::time::Duration {
-        crate::timeouts::GHIDRA_ANALYSIS
-    }
+        #[cfg(any(
+            feature = "azure",
+            feature = "web",
+            feature = "slack",
+            feature = "s3",
+            feature = "github",
+            feature = "gitlab",
+            feature = "bitbucket",
+            feature = "gcs"
+        ))]
+        fn http_effective_insecure_tls(&self, http: &crate::http::HttpClientConfig) -> bool {
+            http.effective_insecure_tls()
+        }
 
-    #[cfg(feature = "binary")]
-    pub fn binary_strings_only(path: impl Into<std::path::PathBuf>) -> crate::BinarySource {
-        crate::BinarySource::strings_only(path)
-    }
+        #[cfg(any(
+            feature = "azure",
+            feature = "web",
+            feature = "slack",
+            feature = "s3",
+            feature = "github",
+            feature = "gitlab",
+            feature = "bitbucket",
+            feature = "gcs"
+        ))]
+        fn http_blocking_client_builder(
+            &self,
+            http: &crate::http::HttpClientConfig,
+        ) -> Result<reqwest::blocking::ClientBuilder, String> {
+            crate::http::blocking_client_builder(http)
+        }
 
-    pub fn user_agent(suffix: Option<&str>) -> String {
-        crate::http::user_agent(suffix)
-    }
+        #[cfg(any(
+            feature = "azure",
+            feature = "web",
+            feature = "slack",
+            feature = "s3",
+            feature = "github",
+            feature = "gitlab",
+            feature = "bitbucket",
+            feature = "gcs"
+        ))]
+        fn http_async_client_builder(
+            &self,
+            http: &crate::http::HttpClientConfig,
+        ) -> Result<reqwest::ClientBuilder, String> {
+            crate::http::async_client_builder(http)
+        }
 
-    #[cfg(feature = "binary")]
-    pub fn extract_string_literals(line: &str) -> Vec<String> {
-        let mut out = Vec::new();
-        crate::binary::literals::extract_string_literals(line, &mut out);
-        out
-    }
+        #[cfg(feature = "gcs")]
+        fn gcs_endpoint_is_google(&self, endpoint: &str) -> bool {
+            crate::gcs::endpoint_is_google(endpoint)
+        }
 
-    #[cfg(feature = "binary")]
-    pub fn extract_sections(bytes: &[u8], path: &str) -> Option<Vec<keyhog_core::Chunk>> {
-        crate::binary::sections::extract_sections(bytes, path)
-    }
+        #[cfg(feature = "gcs")]
+        fn gcs_credential_forward_allowed(&self, allow_explicit: bool) -> bool {
+            crate::gcs::credential_forward_allowed(allow_explicit)
+        }
 
-    #[cfg(feature = "binary")]
-    pub fn resolve_binary_section_name<'a>(resolved: Option<&'a str>, sh_name: usize) -> &'a str {
-        crate::binary::sections::resolve_section_name(resolved, sh_name)
-    }
+        #[cfg(feature = "gcs")]
+        fn gcs_source_with_endpoint<B, E>(&self, bucket: B, endpoint: E) -> crate::GcsSource
+        where
+            B: Into<String>,
+            E: Into<String>,
+        {
+            crate::GcsSource::new(bucket).with_endpoint(endpoint)
+        }
 
-    #[cfg(feature = "github")]
-    pub fn validate_repo_name(name: &str) -> Result<(), keyhog_core::SourceError> {
-        crate::github_org::validate_repo_name(name)
-    }
+        #[cfg(feature = "gcs")]
+        fn gcs_source_with_endpoint_max_objects<B, E>(
+            &self,
+            bucket: B,
+            endpoint: E,
+            max_objects: usize,
+        ) -> crate::GcsSource
+        where
+            B: Into<String>,
+            E: Into<String>,
+        {
+            crate::GcsSource::new(bucket)
+                .with_endpoint(endpoint)
+                .with_max_objects(max_objects)
+        }
 
-    #[cfg(feature = "github")]
-    pub fn validate_org_name(name: &str) -> Result<(), keyhog_core::SourceError> {
-        crate::github_org::validate_org_name(name)
-    }
+        #[cfg(feature = "s3")]
+        fn s3_endpoint_is_aws(&self, endpoint: &str) -> bool {
+            crate::s3::endpoint_is_aws(endpoint)
+        }
 
-    #[cfg(feature = "github")]
-    pub fn validate_clone_url(url: &str) -> Result<(), keyhog_core::SourceError> {
-        crate::github_org::validate_clone_url(url)
-    }
+        #[cfg(feature = "s3")]
+        fn s3_credential_forward_allowed(&self, allow_explicit: bool) -> bool {
+            crate::s3::credential_forward_allowed(allow_explicit)
+        }
 
-    #[cfg(feature = "github")]
-    pub fn github_org_rewrite_chunk_path(
-        chunk: keyhog_core::Chunk,
-        org: &str,
-        repo_name: &str,
-        clone_path: &std::path::Path,
-    ) -> Result<keyhog_core::Chunk, keyhog_core::SourceError> {
-        crate::github_org::rewrite_chunk_path_for_test(chunk, org, repo_name, clone_path)
-    }
+        #[cfg(feature = "s3")]
+        fn s3_source_with_endpoint<B, E>(&self, bucket: B, endpoint: E) -> crate::S3Source
+        where
+            B: Into<String>,
+            E: Into<String>,
+        {
+            crate::S3Source::new(bucket).with_endpoint(endpoint)
+        }
 
-    #[cfg(feature = "github")]
-    pub fn github_org_scan_repo_chunks<I>(
-        chunks: I,
-        org: &str,
-        repo_name: &str,
-        clone_path: &std::path::Path,
-    ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError>
-    where
-        I: IntoIterator<Item = Result<keyhog_core::Chunk, keyhog_core::SourceError>>,
-    {
-        crate::github_org::scan_repo_chunks_for_test(chunks, org, repo_name, clone_path)
-    }
+        #[cfg(feature = "s3")]
+        fn s3_source_with_endpoint_max_objects<B, E>(
+            &self,
+            bucket: B,
+            endpoint: E,
+            max_objects: usize,
+        ) -> crate::S3Source
+        where
+            B: Into<String>,
+            E: Into<String>,
+        {
+            crate::S3Source::new(bucket)
+                .with_endpoint(endpoint)
+                .with_max_objects(max_objects)
+        }
 
-    #[cfg(feature = "github")]
-    pub fn github_org_listing_truncated_error(
-        org: &str,
-        repo_count: usize,
-        max_pages: usize,
-    ) -> keyhog_core::SourceError {
-        crate::github_org::github_listing_truncated_error_for_test(org, repo_count, max_pages)
-    }
+        #[cfg(feature = "git")]
+        fn record_git_history_cap_for_test(&self, total_bytes: usize, chunk_count: usize) -> bool {
+            crate::git::record_git_history_cap_for_test(total_bytes, chunk_count)
+        }
 
-    #[cfg(feature = "gitlab")]
-    pub fn validate_gitlab_group_path(group: &str) -> Result<(), keyhog_core::SourceError> {
-        crate::gitlab_group::validate_group_path(group)
-    }
+        #[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
+        fn git_clone_timeout(&self) -> std::time::Duration {
+            crate::timeouts::GIT_CLONE
+        }
 
-    #[cfg(feature = "gitlab")]
-    pub fn gitlab_group_listing_truncated_error(
-        group: &str,
-        repo_count: usize,
-        max_pages: usize,
-    ) -> keyhog_core::SourceError {
-        crate::gitlab_group::listing_truncated_error_for_test(group, repo_count, max_pages)
-    }
+        #[cfg(feature = "binary")]
+        fn ghidra_analysis_timeout(&self) -> std::time::Duration {
+            crate::timeouts::GHIDRA_ANALYSIS
+        }
 
-    #[cfg(feature = "bitbucket")]
-    pub fn validate_bitbucket_workspace(workspace: &str) -> Result<(), keyhog_core::SourceError> {
-        crate::bitbucket_workspace::validate_workspace(workspace)
-    }
+        #[cfg(feature = "binary")]
+        fn binary_strings_only<P>(&self, path: P) -> crate::BinarySource
+        where
+            P: Into<std::path::PathBuf>,
+        {
+            crate::BinarySource::strings_only(path)
+        }
 
-    #[cfg(feature = "bitbucket")]
-    pub fn bitbucket_workspace_listing_truncated_error(
-        workspace: &str,
-        repo_count: usize,
-        max_pages: usize,
-    ) -> keyhog_core::SourceError {
-        crate::bitbucket_workspace::listing_truncated_error_for_test(
-            workspace, repo_count, max_pages,
-        )
-    }
+        fn user_agent(&self, suffix: Option<&str>) -> String {
+            crate::http::user_agent(suffix)
+        }
 
-    #[cfg(feature = "docker")]
-    pub fn docker_manifest_layer_archives(
-        root_path: &std::path::Path,
-    ) -> Result<Vec<std::path::PathBuf>, keyhog_core::SourceError> {
-        crate::docker::manifest_layer_archives_for_test(root_path)
-    }
+        #[cfg(feature = "binary")]
+        fn extract_string_literals(&self, line: &str) -> Vec<String> {
+            let mut out = Vec::new();
+            crate::binary::literals::extract_string_literals(line, &mut out);
+            out
+        }
 
-    #[cfg(feature = "docker")]
-    pub fn docker_manifest_config_chunks(
-        root_path: &std::path::Path,
-        image: &str,
-    ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError> {
-        crate::docker::manifest_config_chunks_for_test(root_path, image)
-    }
+        #[cfg(feature = "binary")]
+        fn extract_sections(&self, bytes: &[u8], path: &str) -> Option<Vec<keyhog_core::Chunk>> {
+            crate::binary::sections::extract_sections(bytes, path)
+        }
 
-    #[cfg(feature = "docker")]
-    pub fn unpack_docker_layer_archive(
-        archive_path: &std::path::Path,
-        destination: &std::path::Path,
-    ) -> Result<(), keyhog_core::SourceError> {
-        crate::docker::unpack_layer_archive_for_test(archive_path, destination)
-    }
+        #[cfg(feature = "binary")]
+        fn resolve_binary_section_name<'a>(
+            &self,
+            resolved: Option<&'a str>,
+            sh_name: usize,
+        ) -> &'a str {
+            crate::binary::sections::resolve_section_name(resolved, sh_name)
+        }
 
-    #[cfg(feature = "docker")]
-    pub fn docker_rewrite_layer_chunks<I>(
-        chunks: I,
-        image: &str,
-        layer_root: &std::path::Path,
-        layer_name: &str,
-    ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError>
-    where
-        I: IntoIterator<Item = Result<keyhog_core::Chunk, keyhog_core::SourceError>>,
-    {
-        crate::docker::rewrite_layer_chunks_for_test(chunks, image, layer_root, layer_name)
-    }
+        #[cfg(feature = "github")]
+        fn validate_repo_name(&self, name: &str) -> Result<(), keyhog_core::SourceError> {
+            crate::github_org::validate_repo_name(name)
+        }
 
-    #[cfg(feature = "docker")]
-    pub fn validate_docker_tar_archive(
-        archive_path: &std::path::Path,
-    ) -> Result<(), keyhog_core::SourceError> {
-        crate::docker::validate_tar_archive_for_test(archive_path)
-    }
+        #[cfg(feature = "github")]
+        fn validate_org_name(&self, name: &str) -> Result<(), keyhog_core::SourceError> {
+            crate::github_org::validate_org_name(name)
+        }
 
-    #[cfg(feature = "docker")]
-    pub fn validate_docker_tar_archive_with_total_cap(
-        archive_path: &std::path::Path,
-        total_cap: u64,
-    ) -> Result<(), keyhog_core::SourceError> {
-        crate::docker::validate_tar_archive_with_total_cap_for_test(archive_path, total_cap)
-    }
+        #[cfg(feature = "github")]
+        fn validate_clone_url(&self, url: &str) -> Result<(), keyhog_core::SourceError> {
+            crate::github_org::validate_clone_url(url)
+        }
 
-    #[cfg(feature = "web")]
-    pub fn redact_url(url: &str) -> String {
-        crate::web::redact_url(url).into_owned()
-    }
+        #[cfg(feature = "github")]
+        fn github_org_rewrite_chunk_path(
+            &self,
+            chunk: keyhog_core::Chunk,
+            org: &str,
+            repo_name: &str,
+            clone_path: &std::path::Path,
+        ) -> Result<keyhog_core::Chunk, keyhog_core::SourceError> {
+            crate::github_org::rewrite_chunk_path_for_test(chunk, org, repo_name, clone_path)
+        }
 
-    #[cfg(feature = "web")]
-    pub fn is_disallowed_web_host(url: &str) -> bool {
-        crate::web::is_disallowed_web_host(url)
-    }
+        #[cfg(feature = "github")]
+        fn github_org_scan_repo_chunks<I>(
+            &self,
+            chunks: I,
+            org: &str,
+            repo_name: &str,
+            clone_path: &std::path::Path,
+        ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError>
+        where
+            I: IntoIterator<Item = Result<keyhog_core::Chunk, keyhog_core::SourceError>>,
+        {
+            crate::github_org::scan_repo_chunks_for_test(chunks, org, repo_name, clone_path)
+        }
 
-    #[cfg(feature = "web")]
-    pub fn is_disallowed_ip(ip: std::net::IpAddr) -> bool {
-        crate::web::is_disallowed_ip(ip)
-    }
+        #[cfg(feature = "github")]
+        fn github_org_listing_truncated_error(
+            &self,
+            org: &str,
+            repo_count: usize,
+            max_pages: usize,
+        ) -> keyhog_core::SourceError {
+            crate::github_org::github_listing_truncated_error_for_test(org, repo_count, max_pages)
+        }
 
-    #[cfg(feature = "web")]
-    pub fn resolve_and_screen(
-        host: &str,
-        port: u16,
-    ) -> Result<Vec<std::net::SocketAddr>, keyhog_core::SourceError> {
-        crate::web::resolve_and_screen(host, port)
-    }
+        #[cfg(feature = "gitlab")]
+        fn validate_gitlab_group_path(&self, group: &str) -> Result<(), keyhog_core::SourceError> {
+            crate::gitlab_group::validate_group_path(group)
+        }
 
-    #[cfg(feature = "web")]
-    pub fn build_web_client(
-        http: &crate::http::HttpClientConfig,
-        original_url: &str,
-        use_proxy: bool,
-    ) -> Result<crate::reqwest::blocking::Client, keyhog_core::SourceError> {
-        crate::web::build_web_client(http, original_url, use_proxy)
+        #[cfg(feature = "gitlab")]
+        fn gitlab_group_listing_truncated_error(
+            &self,
+            group: &str,
+            repo_count: usize,
+            max_pages: usize,
+        ) -> keyhog_core::SourceError {
+            crate::gitlab_group::listing_truncated_error_for_test(group, repo_count, max_pages)
+        }
+
+        #[cfg(feature = "bitbucket")]
+        fn validate_bitbucket_workspace(
+            &self,
+            workspace: &str,
+        ) -> Result<(), keyhog_core::SourceError> {
+            crate::bitbucket_workspace::validate_workspace(workspace)
+        }
+
+        #[cfg(feature = "bitbucket")]
+        fn bitbucket_workspace_listing_truncated_error(
+            &self,
+            workspace: &str,
+            repo_count: usize,
+            max_pages: usize,
+        ) -> keyhog_core::SourceError {
+            crate::bitbucket_workspace::listing_truncated_error_for_test(
+                workspace, repo_count, max_pages,
+            )
+        }
+
+        #[cfg(feature = "docker")]
+        fn docker_manifest_layer_archives(
+            &self,
+            root_path: &std::path::Path,
+        ) -> Result<Vec<std::path::PathBuf>, keyhog_core::SourceError> {
+            crate::docker::manifest_layer_archives_for_test(root_path)
+        }
+
+        #[cfg(feature = "docker")]
+        fn docker_manifest_config_chunks(
+            &self,
+            root_path: &std::path::Path,
+            image: &str,
+        ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError> {
+            crate::docker::manifest_config_chunks_for_test(root_path, image)
+        }
+
+        #[cfg(feature = "docker")]
+        fn unpack_docker_layer_archive(
+            &self,
+            archive_path: &std::path::Path,
+            destination: &std::path::Path,
+        ) -> Result<(), keyhog_core::SourceError> {
+            crate::docker::unpack_layer_archive_for_test(archive_path, destination)
+        }
+
+        #[cfg(feature = "docker")]
+        fn docker_rewrite_layer_chunks<I>(
+            &self,
+            chunks: I,
+            image: &str,
+            layer_root: &std::path::Path,
+            layer_name: &str,
+        ) -> Result<Vec<keyhog_core::Chunk>, keyhog_core::SourceError>
+        where
+            I: IntoIterator<Item = Result<keyhog_core::Chunk, keyhog_core::SourceError>>,
+        {
+            crate::docker::rewrite_layer_chunks_for_test(chunks, image, layer_root, layer_name)
+        }
+
+        #[cfg(feature = "docker")]
+        fn validate_docker_tar_archive(
+            &self,
+            archive_path: &std::path::Path,
+        ) -> Result<(), keyhog_core::SourceError> {
+            crate::docker::validate_tar_archive_for_test(archive_path)
+        }
+
+        #[cfg(feature = "docker")]
+        fn validate_docker_tar_archive_with_total_cap(
+            &self,
+            archive_path: &std::path::Path,
+            total_cap: u64,
+        ) -> Result<(), keyhog_core::SourceError> {
+            crate::docker::validate_tar_archive_with_total_cap_for_test(archive_path, total_cap)
+        }
+
+        #[cfg(feature = "azure")]
+        fn azure_blob_source_with_max_objects<U>(
+            &self,
+            container_url: U,
+            max_objects: usize,
+        ) -> crate::AzureBlobSource
+        where
+            U: Into<String>,
+        {
+            crate::AzureBlobSource::new(container_url).with_max_objects(max_objects)
+        }
+
+        #[cfg(feature = "web")]
+        fn redact_url(&self, url: &str) -> String {
+            crate::web::redact_url(url).into_owned()
+        }
+
+        #[cfg(feature = "web")]
+        fn is_disallowed_web_host(&self, url: &str) -> bool {
+            crate::web::is_disallowed_web_host(url)
+        }
+
+        #[cfg(feature = "web")]
+        fn is_disallowed_ip(&self, ip: std::net::IpAddr) -> bool {
+            crate::web::is_disallowed_ip(ip)
+        }
+
+        #[cfg(feature = "web")]
+        fn resolve_and_screen(
+            &self,
+            host: &str,
+            port: u16,
+        ) -> Result<Vec<std::net::SocketAddr>, keyhog_core::SourceError> {
+            crate::web::resolve_and_screen(host, port)
+        }
+
+        #[cfg(feature = "web")]
+        fn build_web_client(
+            &self,
+            http: &crate::http::HttpClientConfig,
+            original_url: &str,
+            use_proxy: bool,
+            allow_autoroute_loopback_calibration_url: bool,
+        ) -> Result<reqwest::blocking::Client, keyhog_core::SourceError> {
+            crate::web::build_web_client(
+                http,
+                original_url,
+                use_proxy,
+                allow_autoroute_loopback_calibration_url,
+            )
+        }
+
+        #[cfg(feature = "web")]
+        fn web_source_with_autoroute_loopback_calibration(
+            &self,
+            urls: Vec<String>,
+            allow: bool,
+        ) -> crate::WebSource {
+            crate::WebSource::new(urls).with_autoroute_loopback_calibration(allow)
+        }
     }
 }

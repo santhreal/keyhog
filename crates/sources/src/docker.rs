@@ -48,7 +48,7 @@ impl DockerImageSource {
         }
     }
 
-    pub fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
+    pub(crate) fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
         self.limits = limits;
         self
     }
@@ -94,10 +94,11 @@ fn collect_docker_chunks(
     // to a trusted-system-bin absolute path so a hostile $PATH cannot
     // substitute a binary that receives the image name + archive output
     // location and ships them to an attacker.
-    let docker_bin = keyhog_core::safe_bin::resolve_safe_bin("docker").ok_or_else(|| {
+    let docker_bin = keyhog_core::resolve_safe_bin("docker").ok_or_else(|| {
         SourceError::Other(
             "docker binary not found in trusted system bin dirs (refusing to use $PATH lookup); \
-             install docker via your package manager or set KEYHOG_TRUSTED_BIN_DIR"
+             install docker via your package manager or add its absolute directory to \
+             [system].trusted_bin_dirs in .keyhog.toml"
                 .into(),
         )
     })?;
@@ -853,14 +854,12 @@ fn create_private_directory_all(path: &Path) -> Result<(), SourceError> {
     builder.create(path).map_err(SourceError::Io)
 }
 
-#[doc(hidden)]
 pub(crate) fn manifest_layer_archives_for_test(
     root_path: &Path,
 ) -> Result<Vec<PathBuf>, SourceError> {
     find_layer_archives(root_path, crate::SourceLimits::default())
 }
 
-#[doc(hidden)]
 pub(crate) fn manifest_config_chunks_for_test(
     root_path: &Path,
     image: &str,
@@ -868,7 +867,6 @@ pub(crate) fn manifest_config_chunks_for_test(
     find_manifest_config_chunks(root_path, image, crate::SourceLimits::default())
 }
 
-#[doc(hidden)]
 pub(crate) fn unpack_layer_archive_for_test(
     archive_path: &Path,
     destination: &Path,
@@ -876,7 +874,6 @@ pub(crate) fn unpack_layer_archive_for_test(
     unpack_layer_archive(archive_path, destination, crate::SourceLimits::default())
 }
 
-#[doc(hidden)]
 pub(crate) fn rewrite_layer_chunks_for_test<I>(
     chunks: I,
     image: &str,
@@ -889,7 +886,6 @@ where
     rewrite_layer_chunks(chunks, image, layer_root, layer_name)
 }
 
-#[doc(hidden)]
 pub(crate) fn validate_tar_archive_for_test(archive_path: &Path) -> Result<(), SourceError> {
     validate_tar_archive_with_total_cap_for_test(
         archive_path,
@@ -897,7 +893,6 @@ pub(crate) fn validate_tar_archive_for_test(archive_path: &Path) -> Result<(), S
     )
 }
 
-#[doc(hidden)]
 pub(crate) fn validate_tar_archive_with_total_cap_for_test(
     archive_path: &Path,
     total_cap: u64,

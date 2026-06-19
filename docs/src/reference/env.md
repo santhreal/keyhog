@@ -14,34 +14,46 @@ documented here with default, effect, and a typical use case.
 
 ## Backend selection
 
-| Variable            | Default     | Effect                                                |
-|---------------------|-------------|-------------------------------------------------------|
-| `KEYHOG_NO_GPU`     | (unset)     | If set to `1`, skip the GPU probe entirely. Useful for CI where the runner reports a software-rendered GPU and you'd rather force CPU. Mirrored by `CI=true`/`GITHUB_ACTIONS=true` auto-detection. |
-| `KEYHOG_GPU_AUTOROUTE` | (unset)  | If set (any value), allow autoroute calibration to probe the GPU megakernel for eligible workload buckets. This is calibration eligibility, not a fallback policy. GPU, Hyperscan/SIMD, scalar CPU, and new engines are peer candidates; autoroute selects whichever backend is fastest after parity is proven for the exact scan class. |
-| `KEYHOG_AUTOROUTE_CALIBRATE` | (unset) | Installer/maintenance knob. When set, a cache miss may run bounded repeated backend probes, require parity with the reference path, and persist the fastest proven backend under the autoroute cache keyed by binary, detector corpus, resolved scan config, backend-affecting runtime env, host, and workload shape. Installers set it only during the visible calibration phase; normal scans leave it unset and do not benchmark inside production work: they must find a valid persisted fastest-correct decision, or report an invalid autoroute state. Invalid/stale cache records are rejected. A missing/stale/incomplete decision is not permission to silently run SIMD/CPU/GPU as a substitute. Rerun `install.sh --calibrate` or `install.ps1 -Calibrate` to replace persisted calibration records. |
-| `KEYHOG_GPU_RECALL_FLOOR` | (unset) | If set, force the GPU megakernel path to also compute the full SIMD/Hyperscan trigger net and recover any GPU under-fire before phase 2. This is a parity/debug knob, not the production speed path; `KH_PERF=1` reports `full_recall_floor=true` when this cost is paid. Host-only detectors still use CPU coverage automatically and are reported separately as `host_floor=true`. |
-| `KEYHOG_REQUIRE_GPU` | (unset)    | If set to `1`, refuse to run when no usable GPU adapter is detected. Useful for self-hosted runners where a regression on GPU initialization should fail loudly, not silently fall back to CPU. |
+No backend-selection `KEYHOG_*` environment variable changes scan routing.
+Autoroute calibration mode is explicit CLI behavior: installers run
+`keyhog scan --autoroute-calibrate` during the visible calibration phase.
+Normal scans never benchmark on cache miss; they require persisted
+fastest-correct decisions or an explicit `--backend`.
+
+Autoroute GPU candidate eligibility is explicit scan configuration: use
+`keyhog scan --autoroute-gpu` for calibration runs, `--no-autoroute-gpu` to
+override TOML, or `.keyhog.toml` `[system] autoroute_gpu = true`.
+
+GPU probe policy is explicit scan configuration: use `keyhog scan --no-gpu`,
+`keyhog scan --require-gpu`, or `.keyhog.toml` `[system] gpu = "off"` /
+`"required"`.
 
 ## Threading + chunking
 
-| Variable                     | Default            | Effect                                       |
-|------------------------------|--------------------|----------------------------------------------|
-| `KEYHOG_THREADS`             | physical-core count | Pin the rayon worker pool. Positive integer only; malformed or zero values are printed to stderr and fall back to the physical-core default, while values above the hard cap are printed to stderr and clamped. Useful inside containers where `available_parallelism()` reports the wrong value. |
-| `KEYHOG_READER_THREADS`      | scan-pool-derived, capped `4` | Filesystem read-worker count. Positive integer only; malformed or zero values are printed to stderr and fall back to the scan-pool-derived default, then clamp to the scan pool size. |
-| `KEYHOG_PER_CHUNK_TIMEOUT_MS` | (unset)            | Hard deadline per chunk scan in milliseconds. Recommended `30000` for production scans where bounded latency matters more than scan completeness. Malformed or non-positive values are printed to stderr and treated as unset, not silently ignored. |
-| `KEYHOG_FUSED_BATCH`         | `32`               | Filesystem fused-pipeline chunk batch size. Positive integer only; malformed or zero values are printed to stderr and fall back to `32`. |
-| `KEYHOG_FUSED_DEPTH`         | worker-count-derived, clamped `2..8` | Filesystem fused-pipeline bounded channel depth. Positive integer only; malformed or zero values are printed to stderr and fall back to the worker-count-derived default. |
-| `KEYHOG_SHARD_TARGET`        | `80`               | Hyperscan compile patterns-per-shard target. Positive integer only; malformed or zero values are printed to stderr and fall back to `80`. |
+Filesystem reader threads and fused-pipeline batch shape are explicit scan
+configuration: use `keyhog scan --reader-threads <N>`,
+`--fused-batch <N>`, `--fused-depth <N>`, or the matching `.keyhog.toml`
+`[scan]` keys. They are printed by `keyhog config --effective` and included in
+autoroute scan identity.
+
+Hyperscan compile sharding is also explicit scanner tuning:
+`.keyhog.toml` `[tuning].hs_shard_target`.
+
 Trusted external binary directories and the Hyperscan compiled-database cache
 directory are configured through `.keyhog.toml` `[system]` or explicit CLI
 flags, not environment variables.
 AWS canary/knockoff issuer account extensions are configured through
 `.keyhog.toml` `[aws]`.
 Detection/recall route tuning is configured through `.keyhog.toml` `[tuning]`;
-legacy `KEYHOG_*` tuning variables are ignored so scan recall is not changed
+use `[tuning].gpu_recall_floor = true` for explicit GPU parity/debug runs.
+Legacy `KEYHOG_*` tuning variables are ignored so scan recall is not changed
 by ambient shell state.
+Scanner profiling and low-level timing are explicit scan flags:
+`keyhog scan --profile` and `keyhog scan --perf-trace`.
 GPU MoE readback timeout is configured through `.keyhog.toml` `[tuning]`
 `gpu_moe_timeout_ms`.
+Per-chunk scan timeout is configured with `keyhog scan --per-chunk-timeout-ms
+<MS>` or `.keyhog.toml` `[scan].per_chunk_timeout_ms`.
 
 ## Daemon (Unix only)
 
@@ -125,8 +137,8 @@ Daemon request timeout is configured explicitly with
 
 For scanner options that have both CLI and TOML forms, CLI wins over
 `.keyhog.toml`, and the compiled default applies when neither is set.
-The environment variables documented above are explicit install,
-diagnostic, credential, or host-integration exceptions; they are not a
+The environment variables documented above are explicit install, credential,
+host-integration, logging, or test/development exceptions; they are not a
 general override tier.
 
 For verifier/source HTTP policy specifically, the order is:

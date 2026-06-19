@@ -21,16 +21,17 @@
 //!
 //! Policy summary
 //! --------------
-//! * **Proxy resolution.** Explicit config (`HttpClientConfig::proxy`,
-//!   set by the `--proxy` CLI flag) wins. Otherwise the
-//!   `KEYHOG_PROXY` env var, then reqwest's built-in handling of
-//!   `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` / `NO_PROXY`. To
-//!   disable proxying entirely (e.g. an air-gapped scan that must not
-//!   leak), set `--proxy off` or `KEYHOG_PROXY=off`.
-//! * **TLS verification.** On by default. `--insecure` (or
-//!   `KEYHOG_INSECURE_TLS=1`) accepts any certificate - needed for
-//!   Burp / mitmproxy interception where the proxy MITMs HTTPS with a
-//!   self-signed CA.
+//! * **Proxy resolution.** ONLY explicit config (`HttpClientConfig::proxy`,
+//!   set by the `--proxy` CLI flag / TOML) is honored. No environment
+//!   variable sets or changes the proxy, and the builders call `.no_proxy()`
+//!   when none is configured so reqwest's ambient `HTTPS_PROXY` /
+//!   `HTTP_PROXY` / `ALL_PROXY` auto-detection can't silently reroute
+//!   secret-bearing traffic. `--proxy off` disables proxying entirely.
+//! * **TLS verification.** On by default. ONLY `--insecure` (CLI / TOML)
+//!   accepts an invalid certificate - needed for Burp / mitmproxy
+//!   interception. No environment variable can disable verification: an
+//!   ambient toggle must never turn off the protection guarding exfiltrated
+//!   secrets from a MITM.
 //! * **Body-bomb defenses.** Auto-decompression OFF (the per-site
 //!   chunk handlers opt in where they need it). 5-hop redirect cap.
 //!   30 s connect / per-request timeout default.
@@ -61,29 +62,23 @@ pub struct HttpClientConfig {
 }
 
 impl HttpClientConfig {
-    /// Resolve proxy from env vars when no explicit value was set.
-    /// Returns `Some("off")` if the operator disabled proxying.
+    /// The configured proxy, or `None`. ONLY the explicit `proxy` field (set by
+    /// the `--proxy` CLI flag / TOML) is honored — no environment variable can
+    /// change egress routing (config-policy mandate: env never overrides
+    /// behavior). Ambient `HTTP(S)_PROXY` is separately neutralized in the
+    /// builders via `.no_proxy()` so a stray CI/shell proxy can't silently
+    /// reroute the secret-verification traffic. `Some("off")` disables proxying.
     pub(crate) fn effective_proxy(&self) -> Option<String> {
-        if let Some(p) = &self.proxy {
-            return Some(p.clone());
-        }
-        if let Ok(p) = std::env::var("KEYHOG_PROXY") {
-            if !p.is_empty() {
-                return Some(p);
-            }
-        }
-        None
+        self.proxy.clone()
     }
 
-    /// Resolve insecure-TLS from env when not set explicitly.
+    /// Whether to accept invalid / self-signed TLS certs. ONLY the explicit
+    /// `insecure_tls` field (set by `--insecure` / TOML) is honored — no
+    /// environment variable can disable certificate verification. An ambient
+    /// toggle must never be able to switch off the only thing protecting
+    /// exfiltrated secrets from a MITM on the verifier's outbound calls.
     pub(crate) fn effective_insecure_tls(&self) -> bool {
-        if self.insecure_tls {
-            return true;
-        }
-        matches!(
-            std::env::var("KEYHOG_INSECURE_TLS").as_deref(),
-            Ok("1") | Ok("true") | Ok("TRUE")
-        )
+        self.insecure_tls
     }
 }
 
@@ -149,12 +144,15 @@ pub(crate) fn blocking_client_builder(
         }
         Some(url) => {
             let proxy = reqwest::Proxy::all(url)
-                .map_err(|e| format!("invalid --proxy / KEYHOG_PROXY URL {url:?}: {e}"))?;
+                .map_err(|e| format!("invalid --proxy URL {url:?}: {e}"))?;
             builder = builder.proxy(proxy);
         }
         None => {
-            // reqwest auto-detects HTTPS_PROXY / HTTP_PROXY /
-            // ALL_PROXY / NO_PROXY by default; nothing to do.
+            // No explicit proxy configured. Disable reqwest's ambient
+            // HTTPS_PROXY / HTTP_PROXY / ALL_PROXY auto-detection so a stray env
+            // proxy in a CI runner or shell profile can't silently reroute
+            // secret-bearing verification traffic. Only `--proxy` / TOML sets one.
+            builder = builder.no_proxy();
         }
     }
 
@@ -187,10 +185,14 @@ pub(crate) fn async_client_builder(
         }
         Some(url) => {
             let proxy = reqwest::Proxy::all(url)
-                .map_err(|e| format!("invalid --proxy / KEYHOG_PROXY URL {url:?}: {e}"))?;
+                .map_err(|e| format!("invalid --proxy URL {url:?}: {e}"))?;
             builder = builder.proxy(proxy);
         }
-        None => {}
+        None => {
+            // See the blocking builder: neutralize ambient HTTP(S)_PROXY so only
+            // an explicit `--proxy` / TOML proxy is ever used.
+            builder = builder.no_proxy();
+        }
     }
 
     Ok(builder)

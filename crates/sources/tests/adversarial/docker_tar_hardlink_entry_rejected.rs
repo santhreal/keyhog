@@ -1,6 +1,8 @@
 //! Docker tar hardlink entries must be rejected.
 
 #[cfg(feature = "docker")]
+use keyhog_sources::testing::{SourceTestApi, TestApi};
+#[cfg(feature = "docker")]
 #[test]
 fn docker_tar_hardlink_entry_rejected() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -16,7 +18,7 @@ fn docker_tar_hardlink_entry_rejected() {
     builder.append(&header, &[] as &[u8]).expect("append");
     builder.finish().expect("finish tar");
 
-    let err = keyhog_sources::testing::validate_docker_tar_archive(&tar_path).unwrap_err();
+    let err = TestApi.validate_docker_tar_archive(&tar_path).unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("forbidden link"),

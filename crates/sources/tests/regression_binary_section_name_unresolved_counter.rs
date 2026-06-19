@@ -17,11 +17,12 @@
 
 #![cfg(feature = "binary")]
 
-use keyhog_sources::{skip_counts, testing::reset_skip_counters};
+use keyhog_sources::skip_counts;
+use keyhog_sources::testing::{SourceTestApi, TestApi};
 
 #[test]
 fn binary_section_name_unresolved_is_a_public_resettable_counter() {
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let c = skip_counts();
     assert_eq!(
         c.binary_section_name_unresolved, 0,

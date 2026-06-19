@@ -1,6 +1,8 @@
 //! Docker tar absolute paths must be rejected.
 
 #[cfg(feature = "docker")]
+use keyhog_sources::testing::{SourceTestApi, TestApi};
+#[cfg(feature = "docker")]
 #[test]
 fn docker_tar_absolute_path_rejected() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -17,7 +19,7 @@ fn docker_tar_absolute_path_rejected() {
     builder.append(&header, payload.as_slice()).expect("append");
     builder.finish().expect("finish tar");
 
-    let err = keyhog_sources::testing::validate_docker_tar_archive(&tar_path).unwrap_err();
+    let err = TestApi.validate_docker_tar_archive(&tar_path).unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("unsafe path"),

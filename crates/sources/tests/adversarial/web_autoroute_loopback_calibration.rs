@@ -2,14 +2,10 @@
 
 #[cfg(feature = "web")]
 #[test]
-fn web_loopback_fetch_requires_autoroute_calibration_env() {
+fn web_loopback_fetch_requires_explicit_autoroute_calibration() {
     use keyhog_core::Source;
+    use keyhog_sources::testing::{SourceTestApi, TestApi};
     use keyhog_sources::WebSource;
-
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    let _guard = ENV_LOCK.lock().expect("env lock");
-    let old = std::env::var_os("KEYHOG_AUTOROUTE_CALIBRATE");
-    std::env::remove_var("KEYHOG_AUTOROUTE_CALIBRATE");
 
     let server = httpmock::MockServer::start();
     let probe = server.mock(|when, then| {
@@ -34,9 +30,10 @@ fn web_loopback_fetch_requires_autoroute_calibration_env() {
         "normal loopback block must happen before HTTP"
     );
 
-    std::env::set_var("KEYHOG_AUTOROUTE_CALIBRATE", "1");
-    let allowed: Vec<_> = WebSource::new(vec![url]).chunks().collect();
-    restore_env(old);
+    let allowed: Vec<_> = TestApi
+        .web_source_with_autoroute_loopback_calibration(vec![url], true)
+        .chunks()
+        .collect();
 
     let chunks: Vec<_> = allowed.into_iter().flatten().collect();
     assert!(
@@ -48,15 +45,20 @@ fn web_loopback_fetch_requires_autoroute_calibration_env() {
 }
 
 #[cfg(feature = "web")]
-fn restore_env(old: Option<std::ffi::OsString>) {
-    match old {
-        Some(value) => std::env::set_var("KEYHOG_AUTOROUTE_CALIBRATE", value),
-        None => std::env::remove_var("KEYHOG_AUTOROUTE_CALIBRATE"),
-    }
+#[test]
+fn web_autoroute_calibration_does_not_read_legacy_env() {
+    let source = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/web/ssrf.rs"),
+    )
+    .expect("web SSRF owner source is readable");
+    assert!(
+        !source.contains("KEYHOG_AUTOROUTE_CALIBRATE") && !source.contains("std::env::"),
+        "WebSource loopback calibration must be explicit; no ambient env reads are allowed"
+    );
 }
 
 #[cfg(not(feature = "web"))]
 #[test]
-fn web_loopback_fetch_requires_autoroute_calibration_env() {
+fn web_loopback_fetch_requires_explicit_autoroute_calibration() {
     assert!(!cfg!(feature = "web"));
 }

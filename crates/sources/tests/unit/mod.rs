@@ -1,3 +1,7 @@
+#[path = "a5_lr2/http_proxy_flag_overrides_env.rs"]
+mod a5_lr2_http_proxy_flag_overrides_env;
+#[path = "a5_lr2/http_proxy_off_preserved.rs"]
+mod a5_lr2_http_proxy_off_preserved;
 pub mod basic_sources;
 pub mod binary;
 pub mod file_gate;

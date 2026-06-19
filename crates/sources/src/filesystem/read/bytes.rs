@@ -51,7 +51,7 @@ impl FileBytes {
     }
 
     #[cfg(test)]
-    pub fn len(&self) -> usize {
+    pub(in crate::filesystem) fn len(&self) -> usize {
         self.as_slice().len()
     }
 }

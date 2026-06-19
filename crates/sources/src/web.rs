@@ -53,6 +53,7 @@ pub struct WebSource {
     urls: Vec<String>,
     http: crate::http::HttpClientConfig,
     limits: crate::SourceLimits,
+    allow_autoroute_loopback_calibration: bool,
 }
 
 impl WebSource {
@@ -75,13 +76,14 @@ impl WebSource {
                 ..Default::default()
             },
             limits: crate::SourceLimits::default(),
+            allow_autoroute_loopback_calibration: false,
         }
     }
 
     /// Override the default HTTP policy (proxy, insecure-TLS,
     /// timeout). Construct from `HttpClientConfig` directly when the
     /// caller already has CLI-derived flags to thread through.
-    pub fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
+    pub(crate) fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
         // Preserve the per-source UA suffix so the operator's proxy
         // logs still tag this traffic as `keyhog/<ver> (web)`.
         let mut http = http;
@@ -92,8 +94,16 @@ impl WebSource {
         self
     }
 
-    pub fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
+    pub(crate) fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
         self.limits = limits;
+        self
+    }
+
+    /// Allow the installer/maintenance autoroute calibration scan to fetch its
+    /// numeric loopback HTTP fixture. Normal WebSource scans must leave this
+    /// false so SSRF loopback blocks remain fail-closed.
+    pub(crate) fn with_autoroute_loopback_calibration(mut self, allow: bool) -> Self {
+        self.allow_autoroute_loopback_calibration = allow;
         self
     }
 
@@ -115,12 +125,14 @@ impl WebSource {
         let mut results = Vec::new();
 
         for url in &self.urls {
+            let allow_calibration_url = self.allow_autoroute_loopback_calibration
+                && is_autoroute_loopback_calibration_url(url);
             // SSRF defense (host pre-filter): the verifier already has this
             // gate via bogon for live verifications; WebSource was the
             // missing surface. Without it,
             // `WebSource::new(vec!["http://169.254.169.254/latest/meta-data/iam/..."])`
             // would fetch the cloud metadata endpoint and extract IAM creds.
-            if is_disallowed_web_host(url) && !is_autoroute_loopback_calibration_url(url) {
+            if is_disallowed_web_host(url) && !allow_calibration_url {
                 let safe_url = redact_url(url);
                 results.push(Err(SourceError::Other(format!(
                     "refusing to fetch {safe_url}: host resolves to a private / \
@@ -130,15 +142,21 @@ impl WebSource {
                 continue;
             }
 
-            let client = match build_web_client(&self.http, url, proxy_in_use) {
-                Ok(c) => c,
-                Err(e) => {
-                    results.push(Err(e));
-                    continue;
-                }
-            };
+            let client =
+                match build_web_client(&self.http, url, proxy_in_use, allow_calibration_url) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        results.push(Err(e));
+                        continue;
+                    }
+                };
 
-            let chunks = fetch_url(&client, url, self.limits.web_response_bytes);
+            let chunks = fetch_url(
+                &client,
+                url,
+                self.limits.web_response_bytes,
+                allow_calibration_url,
+            );
             results.extend(chunks);
         }
 
@@ -181,6 +199,7 @@ fn fetch_url(
     client: &reqwest::blocking::Client,
     url: &str,
     max_response_bytes: usize,
+    allow_autoroute_loopback_calibration_url: bool,
 ) -> Vec<Result<Chunk, SourceError>> {
     // SSRF defense (host pre-filter): the verifier already has this gate via
     // bogon for live verifications; WebSource was the missing surface.
@@ -189,7 +208,7 @@ fn fetch_url(
     // would fetch the cloud metadata endpoint and extract IAM credentials.
     // The redirect-target and DNS-rebinding bypasses of this gate are closed
     // in `build_web_client`. Kimi sources-audit web-source SSRF finding.
-    if is_disallowed_web_host(url) && !is_autoroute_loopback_calibration_url(url) {
+    if is_disallowed_web_host(url) && !allow_autoroute_loopback_calibration_url {
         let safe_url = redact_url(url);
         return vec![Err(SourceError::Other(format!(
             "refusing to fetch {safe_url}: host resolves to a private / \

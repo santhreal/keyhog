@@ -706,7 +706,31 @@ path = "crates/sources/src/filesystem.rs"
 path = "crates/sources/src/filesystem/extract.rs"
 
 [[module]]
+path = "crates/sources/src/filesystem/extract/archive.rs"
+
+[[module]]
+path = "crates/sources/src/filesystem/extract/archive/zip_scan.rs"
+
+[[module]]
+path = "crates/sources/src/filesystem/extract/archive/zip_scan/duplicates.rs"
+
+[[module]]
+path = "crates/sources/src/filesystem/extract/compressed.rs"
+
+[[module]]
+path = "crates/sources/src/filesystem/extract/pdf.rs"
+
+[[module]]
+path = "crates/sources/src/filesystem/extract/rar.rs"
+
+[[module]]
+path = "crates/sources/src/filesystem/extract/seven_zip.rs"
+
+[[module]]
 path = "crates/sources/src/filesystem/filter.rs"
+
+[[module]]
+path = "crates/sources/src/filesystem/path.rs"
 
 [[module]]
 path = "crates/sources/src/filesystem/read/bytes.rs"
@@ -727,6 +751,21 @@ path = "crates/sources/src/filesystem/read/tests.rs"
 path = "crates/sources/src/filesystem/read/window.rs"
 
 [[module]]
+path = "crates/sources/src/filesystem/reader.rs"
+
+[[module]]
+path = "crates/sources/src/api.rs"
+
+[[module]]
+path = "crates/sources/src/cloud/mod.rs"
+
+[[module]]
+path = "crates/sources/src/cloud/azure_blob.rs"
+
+[[module]]
+path = "crates/sources/src/gcs.rs"
+
+[[module]]
 path = "crates/sources/src/git/diff.rs"
 
 [[module]]
@@ -742,10 +781,16 @@ path = "crates/sources/src/git/source.rs"
 path = "crates/sources/src/github_org.rs"
 
 [[module]]
-path = "crates/sources/src/github_org/redact.rs"
+path = "crates/sources/src/hosted_git.rs"
 
 [[module]]
-path = "crates/sources/src/github_org/sanitize.rs"
+path = "crates/sources/src/hosted_git/sanitize.rs"
+
+[[module]]
+path = "crates/sources/src/gitlab_group.rs"
+
+[[module]]
+path = "crates/sources/src/bitbucket_workspace.rs"
 
 [[module]]
 path = "crates/sources/src/har.rs"
@@ -755,6 +800,12 @@ path = "crates/sources/src/http.rs"
 
 [[module]]
 path = "crates/sources/src/lib.rs"
+
+[[module]]
+path = "crates/sources/src/limits.rs"
+
+[[module]]
+path = "crates/sources/src/testing_facade.rs"
 
 [[module]]
 path = "crates/sources/src/s3/auth.rs"

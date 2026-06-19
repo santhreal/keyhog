@@ -1,9 +1,10 @@
 use keyhog_core::Source;
-use keyhog_sources::{skip_counts, testing::reset_skip_counters, FilesystemSource};
+use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::{skip_counts, FilesystemSource};
 
 #[test]
 fn malformed_har_shape_counts_partial_parse_gap_and_scans_raw_text() {
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
 
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("broken.har");
@@ -45,5 +46,5 @@ fn malformed_har_shape_counts_partial_parse_gap_and_scans_raw_text() {
         "structured-source parse failure is partial coverage because raw text was scanned"
     );
 
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
 }

@@ -1,7 +1,6 @@
 //! Contract test for issue #4: S3 source MUST NOT forward ambient
 //! `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` to non-AWS endpoints
-//! unless the operator explicitly opts in via
-//! `KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD=1`.
+//! unless the operator explicitly opts in via a caller-supplied flag.
 //!
 //! The negative property: "for any S3 endpoint outside `*.amazonaws.com`,
 //! no SigV4 `Authorization` header is attached." This is the kind of
@@ -20,7 +19,7 @@
 //! Wire-format verification lives in unit tests under
 //! `crates/sources/src/s3/auth.rs`.
 
-use keyhog_sources::testing::{s3_credential_forward_allowed, s3_endpoint_is_aws};
+use keyhog_sources::testing::{SourceTestApi, TestApi};
 
 /// AWS-owned endpoints: every shape `aws s3 endpoint-url` documents.
 /// Pre-fix: trivially true (everything got creds). Post-fix: these stay
@@ -37,7 +36,7 @@ fn aws_owned_endpoints_are_recognized_as_aws() {
         "https://s3.us-gov-east-1.amazonaws.com",
     ] {
         assert!(
-            s3_endpoint_is_aws(endpoint),
+            TestApi.s3_endpoint_is_aws(endpoint),
             "AWS-owned endpoint {endpoint} must be recognized as AWS",
         );
     }
@@ -71,7 +70,7 @@ fn non_aws_endpoints_do_not_pass_aws_gate() {
         "https://eu-central-1.linodeobjects.com",
     ] {
         assert!(
-            !s3_endpoint_is_aws(endpoint),
+            !TestApi.s3_endpoint_is_aws(endpoint),
             "non-AWS endpoint {endpoint} must NOT be recognized as AWS \
              (would forward AWS_ACCESS_KEY_ID + AWS_SESSION_TOKEN to a \
              third party). Issue #4.",
@@ -79,15 +78,11 @@ fn non_aws_endpoints_do_not_pass_aws_gate() {
     }
 }
 
-/// Opt-in policy: `KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD` must be a
-/// truthy env value. Empty / unset / "false" / "0" / "no" must all
-/// produce `false`. Without these tests a refactor could change the
-/// parsing and silently flip the default to "forward."
+/// Opt-in policy: forwarding must be explicit caller state, never ambient env.
+/// Without this test a refactor could reintroduce an env knob and silently flip
+/// the default to "forward."
 #[test]
-fn credential_forward_opt_in_requires_truthy_env() {
-    // Save and restore the env var around the test so the suite stays
-    // hermetic. std::env mutation is process-global; mutexed away from
-    // any concurrent test runners that touch the same var.
+fn credential_forward_opt_in_ignores_ambient_env() {
     let saved = std::env::var("KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD").ok();
     struct Restore(Option<String>);
     impl Drop for Restore {
@@ -103,36 +98,16 @@ fn credential_forward_opt_in_requires_truthy_env() {
     }
     let _restore = Restore(saved);
 
-    let set = |v: Option<&str>| {
-        // SAFETY: this test is the sole writer of this env var while it runs;
-        // the Restore guard above puts it back on exit.
-        unsafe {
-            match v {
-                Some(v) => std::env::set_var("KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD", v),
-                None => std::env::remove_var("KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD"),
-            }
-        }
-    };
-
-    // Default = off
-    set(None);
-    assert!(!s3_credential_forward_allowed(), "unset must be off");
-
-    // Falsy values
-    for v in ["", "0", "false", "no", "off", "FALSE", " "] {
-        set(Some(v));
-        assert!(
-            !s3_credential_forward_allowed(),
-            "value {v:?} must NOT enable credential forwarding",
-        );
+    unsafe {
+        std::env::set_var("KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD", "1");
     }
 
-    // Truthy values
-    for v in ["1", "true", "yes", "on"] {
-        set(Some(v));
-        assert!(
-            s3_credential_forward_allowed(),
-            "value {v:?} must enable credential forwarding",
-        );
-    }
+    assert!(
+        !TestApi.s3_credential_forward_allowed(false),
+        "ambient KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD must not enable forwarding"
+    );
+    assert!(
+        TestApi.s3_credential_forward_allowed(true),
+        "explicit caller opt-in must enable forwarding"
+    );
 }

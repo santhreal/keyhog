@@ -1,7 +1,7 @@
 //! Windowed scan of large files must populate base_offset metadata.
 
 use keyhog_core::Source;
-use keyhog_sources::testing;
+use keyhog_sources::testing::{SourceTestApi, TestApi};
 
 #[test]
 fn windowed_large_file_emits_base_offset() {
@@ -9,7 +9,7 @@ fn windowed_large_file_emits_base_offset() {
     let payload = "OFFSET_MARKER=".to_string() + &"y".repeat(9000);
     std::fs::write(dir.path().join("wide.txt"), payload).expect("write");
 
-    let source = testing::filesystem_with_window_config(dir.path().to_path_buf(), 4096, 512);
+    let source = TestApi.filesystem_with_window_config(dir.path().to_path_buf(), 4096, 512);
     let chunks: Vec<_> = source.chunks().flatten().collect();
     assert!(
         chunks.len() >= 2,

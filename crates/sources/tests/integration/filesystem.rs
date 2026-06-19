@@ -1,6 +1,7 @@
 use keyhog_core::testing as core_testing;
 use keyhog_core::Source;
-use keyhog_sources::{testing, FilesystemSource};
+use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::FilesystemSource;
 use std::fs;
 use std::sync::Arc;
 
@@ -318,14 +319,23 @@ fn merkle_skip_avoids_reading_unchanged_files() {
     let size = fs::metadata(&canonical).unwrap().len();
     let m = mtime_ns(&canonical);
 
-    let idx = Arc::new(core_testing::merkle_empty());
-    core_testing::merkle_record_with_metadata(&idx, canonical.clone(), m, size, [0u8; 32]);
+    let idx = Arc::new(core_testing::CoreTestApi::merkle_empty(
+        &core_testing::TestApi,
+    ));
+    core_testing::CoreTestApi::merkle_record_with_metadata(
+        &core_testing::TestApi,
+        &idx,
+        canonical.clone(),
+        m,
+        size,
+        [0u8; 32],
+    );
 
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_merkle_skip(idx.clone());
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
 
     assert!(chunks.is_empty(), "unchanged file should not yield a chunk");
-    assert_eq!(testing::filesystem_skipped_count(&source), 1);
+    assert_eq!(TestApi.filesystem_skipped_count(&source), 1);
 }
 
 #[test]
@@ -337,15 +347,24 @@ fn merkle_skip_does_not_fire_when_size_drifts() {
     let canonical = p.canonicalize().unwrap();
     let m = mtime_ns(&canonical);
 
-    let idx = Arc::new(core_testing::merkle_empty());
+    let idx = Arc::new(core_testing::CoreTestApi::merkle_empty(
+        &core_testing::TestApi,
+    ));
     // Record with a deliberately wrong size so the fast-path must miss.
-    core_testing::merkle_record_with_metadata(&idx, canonical, m, /*size=*/ 1, [0u8; 32]);
+    core_testing::CoreTestApi::merkle_record_with_metadata(
+        &core_testing::TestApi,
+        &idx,
+        canonical,
+        m,
+        /*size=*/ 1,
+        [0u8; 32],
+    );
 
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_merkle_skip(idx);
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
 
     assert_eq!(chunks.len(), 1, "size mismatch must force a re-read");
-    assert_eq!(testing::filesystem_skipped_count(&source), 0);
+    assert_eq!(TestApi.filesystem_skipped_count(&source), 0);
 }
 
 #[test]
@@ -362,7 +381,7 @@ fn windowed_path_emits_multiple_chunks_with_overlap() {
 
     // window=128 overlap=32 → for len=200 we get exactly 2 windows
     // (matches the secret-straddling-cut test in read.rs).
-    let source = testing::filesystem_with_window_config(dir.path().to_path_buf(), 128, 32);
+    let source = TestApi.filesystem_with_window_config(dir.path().to_path_buf(), 128, 32);
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
 
     assert_eq!(chunks.len(), 2, "expected 2 windowed chunks for 200B file");
@@ -422,7 +441,7 @@ fn windowed_path_finds_secret_in_overlap_region() {
     content[100..100 + secret.len()].copy_from_slice(secret);
     fs::write(&p, &content).unwrap();
 
-    let source = testing::filesystem_with_window_config(dir.path().to_path_buf(), 128, 32);
+    let source = TestApi.filesystem_with_window_config(dir.path().to_path_buf(), 128, 32);
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(chunks.len(), 2);
     let s = std::str::from_utf8(secret).unwrap();
@@ -453,7 +472,7 @@ fn windowed_path_finds_post_cut_secret_in_second_window_only() {
     content[120..120 + secret.len()].copy_from_slice(secret);
     fs::write(&p, &content).unwrap();
 
-    let source = testing::filesystem_with_window_config(dir.path().to_path_buf(), 128, 32);
+    let source = TestApi.filesystem_with_window_config(dir.path().to_path_buf(), 128, 32);
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(chunks.len(), 2);
     let s = std::str::from_utf8(secret).unwrap();
@@ -478,7 +497,7 @@ fn windowed_path_single_chunk_for_file_at_exactly_window_size() {
     let content: Vec<u8> = (b'a'..=b'z').cycle().take(128).collect();
     fs::write(&p, &content).unwrap();
 
-    let source = testing::filesystem_with_window_config(dir.path().to_path_buf(), 128, 32);
+    let source = TestApi.filesystem_with_window_config(dir.path().to_path_buf(), 128, 32);
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(chunks.len(), 1);
     assert_ne!(
@@ -498,7 +517,7 @@ fn windowed_path_single_chunk_when_only_one_window_above_threshold() {
     let content: Vec<u8> = (b'a'..=b'z').cycle().take(65).collect();
     fs::write(&p, &content).unwrap();
 
-    let source = testing::filesystem_with_window_config(dir.path().to_path_buf(), 64, 8);
+    let source = TestApi.filesystem_with_window_config(dir.path().to_path_buf(), 64, 8);
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
     assert_eq!(chunks.len(), 2);
     // Window 0: 0..64 = 64 bytes; window 1: 56..65 = 9 bytes.
@@ -518,7 +537,7 @@ fn windowed_path_offsets_strictly_monotonic() {
     let content: Vec<u8> = (b'a'..=b'z').cycle().take(2000).collect();
     fs::write(&p, &content).unwrap();
 
-    let source = testing::filesystem_with_window_config(dir.path().to_path_buf(), 256, 32);
+    let source = TestApi.filesystem_with_window_config(dir.path().to_path_buf(), 256, 32);
     let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
     assert!(
         chunks.len() >= 5,

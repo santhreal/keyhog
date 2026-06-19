@@ -5,7 +5,8 @@
 //! without racing unrelated source tests in the same process.
 
 use keyhog_core::Source;
-use keyhog_sources::{skip_counts, testing::reset_skip_counters, FilesystemSource};
+use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::{skip_counts, FilesystemSource};
 
 fn write_pdf(bytes: &[u8]) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -22,7 +23,7 @@ fn drain_pdf(bytes: &[u8]) {
 
 #[test]
 fn pdf_extraction_failures_bump_unreadable_gaps() {
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     drain_pdf(b"%PDF-1.7\ntrailer\n<< /Encrypt 2 0 R >>\n%%EOF\n");
     drain_pdf(
         b"%PDF-1.7\n1 0 obj\n<< /Length 17 /Filter /FlateDecode >>\nstream\nnot-a-flate-stream\nendstream\nendobj\n%%EOF\n",

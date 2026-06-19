@@ -17,6 +17,7 @@ pub struct GcsSource {
     max_objects: usize,
     limits: crate::SourceLimits,
     http: crate::http::HttpClientConfig,
+    allow_token_forward: bool,
 }
 
 impl GcsSource {
@@ -31,30 +32,39 @@ impl GcsSource {
                 ua_suffix: Some("gcs".into()),
                 ..Default::default()
             },
+            allow_token_forward: false,
         }
     }
 
-    pub fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
+    pub(crate) fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
         self.http = http;
         self
     }
 
-    pub fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
+    /// Allow forwarding ambient GCS bearer tokens to a non-Google custom
+    /// endpoint. This is intentionally caller-explicit; no keyhog env var can
+    /// weaken the credential-forwarding policy.
+    pub(crate) fn with_allow_token_forward(mut self, allow: bool) -> Self {
+        self.allow_token_forward = allow;
+        self
+    }
+
+    pub(crate) fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
         self.limits = limits;
         self
     }
 
-    pub fn with_prefix(mut self, prefix: impl Into<String>) -> Self {
+    pub(crate) fn with_prefix(mut self, prefix: impl Into<String>) -> Self {
         self.prefix = Some(prefix.into());
         self
     }
 
-    pub fn with_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+    pub(crate) fn with_endpoint(mut self, endpoint: impl Into<String>) -> Self {
         self.endpoint = endpoint.into();
         self
     }
 
-    pub fn with_max_objects(mut self, max_objects: usize) -> Self {
+    pub(crate) fn with_max_objects(mut self, max_objects: usize) -> Self {
         self.max_objects = max_objects;
         self
     }
@@ -76,6 +86,7 @@ impl Source for GcsSource {
                         self.max_objects,
                         self.limits,
                         &self.http,
+                        self.allow_token_forward,
                     )
                 })
                 .join()
@@ -131,6 +142,7 @@ fn collect_gcs_chunks(
     max_objects: usize,
     limits: crate::SourceLimits,
     http: &crate::http::HttpClientConfig,
+    allow_token_forward: bool,
 ) -> Result<Vec<Chunk>, SourceError> {
     let bucket = validate_bucket_name(bucket)?;
     let endpoint = validate_endpoint(endpoint)?;
@@ -142,7 +154,7 @@ fn collect_gcs_chunks(
         .map_err(SourceError::Other)?
         .build()
         .map_err(|error| SourceError::Other(format!("failed to build GCS client: {error}")))?;
-    let bearer = gcs_bearer_token(&endpoint);
+    let bearer = gcs_bearer_token(&endpoint, allow_token_forward);
     let mut page_token = None::<String>;
     let mut chunks = Vec::new();
     let mut listed_objects = 0usize;
@@ -453,25 +465,20 @@ pub(crate) fn endpoint_is_google(endpoint: &str) -> bool {
     host == "googleapis.com" || host.ends_with(".googleapis.com")
 }
 
-pub(crate) fn credential_forward_allowed() -> bool {
-    matches!(
-        std::env::var("KEYHOG_GCS_ALLOW_TOKEN_FORWARD")
-            .ok() // LAW10: unset opt-in env is the intended default; credential forwarding remains fail-closed.
-            .as_deref(),
-        Some("1") | Some("true") | Some("yes") | Some("on")
-    )
+pub(crate) fn credential_forward_allowed(allow_explicit: bool) -> bool {
+    allow_explicit
 }
 
-fn gcs_bearer_token(endpoint: &str) -> Option<String> {
+fn gcs_bearer_token(endpoint: &str, allow_token_forward: bool) -> Option<String> {
     let token = std::env::var("GOOGLE_OAUTH_ACCESS_TOKEN")
         .or_else(|_| std::env::var("GCS_BEARER_TOKEN"))
         .ok()?; // LAW10: absent bearer env is an intended default for anonymous GCS; listing/fetch failures still surface normally.
-    if endpoint_is_google(endpoint) || credential_forward_allowed() {
+    if endpoint_is_google(endpoint) || credential_forward_allowed(allow_token_forward) {
         return Some(token);
     }
     tracing::warn!(
         endpoint,
-        "GCS bearer token present but endpoint is not googleapis.com; refusing to forward. Set KEYHOG_GCS_ALLOW_TOKEN_FORWARD=1 to opt in."
+        "GCS bearer token present but endpoint is not googleapis.com; refusing to forward. Pass the explicit GCS token-forwarding flag only for endpoints you trust."
     );
     None
 }

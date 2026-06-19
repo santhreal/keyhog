@@ -21,12 +21,13 @@
 
 #![cfg(feature = "git")]
 
+use keyhog_sources::testing::{SourceTestApi, TestApi};
 use std::path::Path;
 use std::process::Command;
 use std::sync::{Mutex, MutexGuard};
 
 use keyhog_core::Source;
-use keyhog_sources::{skip_counts, testing::reset_skip_counters, GitSource};
+use keyhog_sources::{skip_counts, GitSource};
 
 /// `MAX_GIT_BLOB_BYTES` from `git/source.rs`.
 const MAX_GIT_BLOB_BYTES: usize = 10 * 1024 * 1024;
@@ -62,7 +63,7 @@ fn init_repo(repo: &Path) {
 #[test]
 fn oversized_git_blob_is_counted_over_max_size() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let temp = tempfile::tempdir().expect("tempdir");
@@ -124,7 +125,7 @@ fn oversized_git_blob_is_counted_over_max_size() {
 #[test]
 fn binary_git_blob_is_counted_binary() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let temp = tempfile::tempdir().expect("tempdir");
@@ -167,11 +168,11 @@ fn binary_git_blob_is_counted_binary() {
 #[test]
 fn aggregate_git_history_cap_is_counted_source_truncated() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     assert!(
-        keyhog_sources::testing::record_git_history_cap_for_test(0, 500_000),
+        TestApi.record_git_history_cap_for_test(0, 500_000),
         "chunk cap boundary should record a source truncation"
     );
 

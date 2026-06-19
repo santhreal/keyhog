@@ -22,7 +22,7 @@ const DEFAULT_MAX_OBJECTS: usize = 100_000;
 /// use keyhog_core::Source;
 /// use keyhog_sources::S3Source;
 ///
-/// let source = S3Source::new("bucket-name").with_prefix("configs/");
+/// let source = S3Source::new("bucket-name");
 /// assert_eq!(source.name(), "s3");
 /// ```
 pub struct S3Source {
@@ -32,10 +32,11 @@ pub struct S3Source {
     max_objects: usize,
     limits: crate::SourceLimits,
     /// Shared HTTP policy (proxy, insecure_tls, ua_suffix, timeout). Defaults
-    /// to `HttpClientConfig::default()` (env-var fallbacks honored). Set via
+    /// to `HttpClientConfig::default()` (no ambient proxy/TLS env). Set via
     /// `with_http_config` so the CLI's `--proxy` / `--insecure` reach this
     /// source instead of silently bypassing it.
     http: crate::http::HttpClientConfig,
+    allow_credential_forward: bool,
 }
 
 impl S3Source {
@@ -61,6 +62,7 @@ impl S3Source {
                 ua_suffix: Some("s3".into()),
                 ..Default::default()
             },
+            allow_credential_forward: false,
         }
     }
 
@@ -68,60 +70,39 @@ impl S3Source {
     /// per-request timeout). Used by the CLI to thread `--proxy` /
     /// `--insecure` through to the S3 client; without this every S3 fetch
     /// would silently bypass the configured proxy and corp-mandated MITM CA.
-    pub fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
+    pub(crate) fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
         self.http = http;
         self
     }
 
-    pub fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
+    /// Allow forwarding ambient AWS credentials to a non-AWS S3-compatible
+    /// endpoint. This is intentionally caller-explicit; no keyhog env var can
+    /// weaken the credential-forwarding policy.
+    pub(crate) fn with_allow_credential_forward(mut self, allow: bool) -> Self {
+        self.allow_credential_forward = allow;
+        self
+    }
+
+    pub(crate) fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
         self.limits = limits;
         self
     }
 
     /// Limit scanning to objects whose keys start with `prefix`.
     ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use keyhog_core::Source;
-    /// use keyhog_sources::S3Source;
-    ///
-    /// let source = S3Source::new("bucket-name").with_prefix("configs/");
-    /// assert_eq!(source.name(), "s3");
-    /// ```
-    pub fn with_prefix(mut self, prefix: impl Into<String>) -> Self {
+    pub(crate) fn with_prefix(mut self, prefix: impl Into<String>) -> Self {
         self.prefix = Some(prefix.into());
         self
     }
 
     /// Override the S3 endpoint, for example for MinIO or other S3-compatible APIs.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use keyhog_core::Source;
-    /// use keyhog_sources::S3Source;
-    ///
-    /// let source = S3Source::new("bucket-name").with_endpoint("https://minio.example.com");
-    /// assert_eq!(source.name(), "s3");
-    /// ```
-    pub fn with_endpoint(mut self, endpoint: impl Into<String>) -> Self {
+    pub(crate) fn with_endpoint(mut self, endpoint: impl Into<String>) -> Self {
         self.endpoint = Some(endpoint.into());
         self
     }
 
     /// Limit the number of objects listed from the bucket before stopping.
-    ///
-    /// # Examples
-    ///
-    /// ```rust
-    /// use keyhog_core::Source;
-    /// use keyhog_sources::S3Source;
-    ///
-    /// let source = S3Source::new("bucket-name").with_max_objects(25);
-    /// assert_eq!(source.name(), "s3");
-    /// ```
-    pub fn with_max_objects(mut self, max_objects: usize) -> Self {
+    pub(crate) fn with_max_objects(mut self, max_objects: usize) -> Self {
         self.max_objects = max_objects;
         self
     }
@@ -147,6 +128,7 @@ impl Source for S3Source {
                         self.max_objects,
                         self.limits,
                         &self.http,
+                        self.allow_credential_forward,
                     )
                 })
                 .join()
@@ -172,6 +154,7 @@ fn collect_s3_chunks(
     max_objects: usize,
     limits: crate::SourceLimits,
     http: &crate::http::HttpClientConfig,
+    allow_credential_forward: bool,
 ) -> Result<Vec<Chunk>, SourceError> {
     let bucket = validate_bucket_name(bucket)?;
     // Honor the shared HTTP policy (proxy, insecure TLS, UA). Falls back to
@@ -195,21 +178,20 @@ fn collect_s3_chunks(
     // and attaching a signed `Authorization` header to that request hands
     // the developer's AWS identity material to a third party they never
     // explicitly opted into. Default policy: refuse to forward ambient
-    // creds to custom endpoints. The operator opts in via
-    // `KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD=1` (env-only, no CLI surface
-    // so it can't be set accidentally by shell history) when they've
-    // verified the endpoint and accept the credential-leak exposure.
+    // creds to custom endpoints. The operator opts in only through an
+    // explicit caller-supplied flag after verifying the endpoint and accepting
+    // the credential-leak exposure.
     let endpoint_is_aws_host = match endpoint {
         Some(value) => endpoint_is_aws(value),
         None => true,
     };
     let aws_auth = if endpoint_is_aws_host {
         AwsSigV4Config::from_env(&base_url)
-    } else if credential_forward_allowed() {
+    } else if credential_forward_allowed(allow_credential_forward) {
         tracing::warn!(
             endpoint = %endpoint.unwrap_or(""),  // LAW10: missing/non-string field => empty/placeholder; recall-safe
-            "KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD=1: forwarding ambient AWS \
-             credentials to non-AWS endpoint. Verify you trust this host."
+            "explicit S3 credential-forwarding override active: forwarding \
+             ambient AWS credentials to non-AWS endpoint. Verify you trust this host."
         );
         AwsSigV4Config::from_env(&base_url)
     } else {
@@ -217,7 +199,8 @@ fn collect_s3_chunks(
             tracing::warn!(
                 endpoint = %endpoint.unwrap_or(""),  // LAW10: missing/non-string field => empty/placeholder; recall-safe
                 "AWS credentials present but endpoint is non-AWS; refusing to \
-                 forward. Set KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD=1 to opt in."
+                 forward. Pass the explicit S3 credential-forwarding flag only \
+                 for endpoints you trust."
             );
         }
         None
@@ -526,17 +509,11 @@ pub(crate) fn endpoint_is_aws(endpoint: &str) -> bool {
         || host.ends_with(".amazonaws.com.cn")
 }
 
-/// True iff the operator has explicitly opted into forwarding ambient
-/// AWS credentials to non-AWS endpoints. `KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD`
-/// is env-only (no CLI surface) so it can't be silently set by shell
-/// history or a stale `--flag` in someone's notes.
-pub(crate) fn credential_forward_allowed() -> bool {
-    matches!(
-        std::env::var("KEYHOG_S3_ALLOW_CREDENTIAL_FORWARD")
-            .ok() // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
-            .as_deref(),
-        Some("1") | Some("true") | Some("yes") | Some("on")
-    )
+/// True iff the caller explicitly opted into forwarding ambient AWS
+/// credentials to non-AWS endpoints. This must stay parameter-driven: a keyhog
+/// env var cannot weaken this policy.
+pub(crate) fn credential_forward_allowed(allow_explicit: bool) -> bool {
+    allow_explicit
 }
 
 fn build_base_url(bucket: &str, endpoint: Option<&str>) -> Result<String, SourceError> {

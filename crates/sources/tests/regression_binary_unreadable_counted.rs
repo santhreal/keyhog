@@ -12,7 +12,8 @@
 #![cfg(all(unix, feature = "binary"))]
 
 use keyhog_core::Source;
-use keyhog_sources::{binary_unreadable, reset_binary_counters, testing::binary_strings_only};
+use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::{binary_unreadable, reset_binary_counters};
 use std::sync::Mutex;
 
 /// Serialises process-global binary-counter assertions in this test binary.
@@ -27,7 +28,10 @@ fn unreadable_binary_is_counted_not_silently_dropped() {
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("does-not-exist.bin");
 
-    let chunks: Vec<_> = binary_strings_only(missing.clone()).chunks().collect();
+    let chunks: Vec<_> = TestApi
+        .binary_strings_only(missing.clone())
+        .chunks()
+        .collect();
     // The strings path returns no chunks for an unreadable file (the Source
     // wrapper turns the empty Vec into an empty chunk stream).
     let bodies: Vec<_> = chunks.into_iter().filter_map(|r| r.ok()).collect();
@@ -58,7 +62,8 @@ fn readable_binary_is_not_counted_as_unreadable() {
     bytes.extend_from_slice(&[0u8; 16]);
     std::fs::write(&bin, &bytes).unwrap();
 
-    let bodies: Vec<String> = binary_strings_only(bin.clone())
+    let bodies: Vec<String> = TestApi
+        .binary_strings_only(bin.clone())
         .chunks()
         .filter_map(|r| r.ok())
         .map(|c| c.data.to_string())

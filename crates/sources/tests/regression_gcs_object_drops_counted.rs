@@ -1,7 +1,8 @@
 #![cfg(feature = "gcs")]
 
 use keyhog_core::Source;
-use keyhog_sources::{skip_counts, testing::reset_skip_counters, GcsSource};
+use keyhog_sources::skip_counts;
+use keyhog_sources::testing::{SourceTestApi, TestApi};
 use std::sync::{Mutex, MutexGuard};
 
 const BUCKET: &str = "regression-bucket";
@@ -24,7 +25,7 @@ fn listing(objects: &str) -> String {
 #[test]
 fn plain_text_object_is_scanned_and_not_counted_as_skipped() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
@@ -45,8 +46,8 @@ fn plain_text_object_is_scanned_and_not_counted_as_skipped() {
             .body("aws_key=AKIAQYLPMN5HFIQR7XYA\n"); // keyhog:ignore detector=aws-access-key
     });
 
-    let chunks: Vec<_> = GcsSource::new(BUCKET)
-        .with_endpoint(server.url(""))
+    let chunks: Vec<_> = TestApi
+        .gcs_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
         .collect();
     let ok: Vec<_> = chunks
@@ -74,7 +75,7 @@ fn plain_text_object_is_scanned_and_not_counted_as_skipped() {
 #[test]
 fn binary_extension_object_is_counted_binary_without_get() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
@@ -92,8 +93,8 @@ fn binary_extension_object_is_counted_binary_without_get() {
         then.status(200).body("SHOULD_NOT_BE_FETCHED");
     });
 
-    let chunks: Vec<_> = GcsSource::new(BUCKET)
-        .with_endpoint(server.url(""))
+    let chunks: Vec<_> = TestApi
+        .gcs_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
         .collect();
     let ok: Vec<_> = chunks
@@ -118,7 +119,7 @@ fn binary_extension_object_is_counted_binary_without_get() {
 #[test]
 fn non_success_get_is_counted_unreadable() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
@@ -137,8 +138,8 @@ fn non_success_get_is_counted_unreadable() {
         then.status(403).body("AccessDenied");
     });
 
-    let chunks: Vec<_> = GcsSource::new(BUCKET)
-        .with_endpoint(server.url(""))
+    let chunks: Vec<_> = TestApi
+        .gcs_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
         .collect();
     let ok: Vec<_> = chunks
@@ -158,7 +159,7 @@ fn non_success_get_is_counted_unreadable() {
 #[test]
 fn max_objects_limit_is_counted_source_truncated() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
@@ -188,9 +189,8 @@ fn max_objects_limit_is_counted_source_truncated() {
         then.status(200).body("SHOULD_NOT_BE_FETCHED");
     });
 
-    let chunks: Vec<_> = GcsSource::new(BUCKET)
-        .with_endpoint(server.url(""))
-        .with_max_objects(1)
+    let chunks: Vec<_> = TestApi
+        .gcs_source_with_endpoint_max_objects(BUCKET, server.url(""), 1)
         .chunks()
         .collect();
     let ok: Vec<_> = chunks
@@ -214,13 +214,37 @@ fn max_objects_limit_is_counted_source_truncated() {
 
 #[test]
 fn custom_endpoint_is_not_treated_as_google_for_token_forwarding() {
-    assert!(keyhog_sources::testing::gcs_endpoint_is_google(
-        "https://storage.googleapis.com"
-    ));
-    assert!(!keyhog_sources::testing::gcs_endpoint_is_google(
-        "https://storage.googleapis.com.attacker.example"
-    ));
-    assert!(!keyhog_sources::testing::gcs_endpoint_is_google(
-        "https://minio.example.test"
-    ));
+    assert!(TestApi.gcs_endpoint_is_google("https://storage.googleapis.com"));
+    assert!(!TestApi.gcs_endpoint_is_google("https://storage.googleapis.com.attacker.example"));
+    assert!(!TestApi.gcs_endpoint_is_google("https://minio.example.test"));
+}
+
+#[test]
+fn gcs_token_forward_opt_in_ignores_ambient_env() {
+    let saved = std::env::var("KEYHOG_GCS_ALLOW_TOKEN_FORWARD").ok();
+    struct Restore(Option<String>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            unsafe {
+                match &self.0 {
+                    Some(v) => std::env::set_var("KEYHOG_GCS_ALLOW_TOKEN_FORWARD", v),
+                    None => std::env::remove_var("KEYHOG_GCS_ALLOW_TOKEN_FORWARD"),
+                }
+            }
+        }
+    }
+    let _restore = Restore(saved);
+
+    unsafe {
+        std::env::set_var("KEYHOG_GCS_ALLOW_TOKEN_FORWARD", "1");
+    }
+
+    assert!(
+        !TestApi.gcs_credential_forward_allowed(false),
+        "ambient KEYHOG_GCS_ALLOW_TOKEN_FORWARD must not enable forwarding"
+    );
+    assert!(
+        TestApi.gcs_credential_forward_allowed(true),
+        "explicit caller opt-in must enable forwarding"
+    );
 }

@@ -8,11 +8,8 @@
 //! bare `is_ok()` / `!is_empty()`.
 
 use keyhog_core::{Chunk, Source};
-use keyhog_sources::{
-    skip_counts,
-    testing::{reset_skip_counters, set_skip_counts},
-    FilesystemSource, SkipCounts,
-};
+use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::{skip_counts, FilesystemSource, SkipCounts};
 use std::fs;
 use std::path::Path;
 
@@ -131,7 +128,7 @@ fn include_paths_restricts_to_listed_files() {
 
 #[test]
 fn max_file_size_skips_oversize_file_and_bumps_counter() {
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let dir = tempfile::tempdir().unwrap();
     // 2 KiB file with a sentinel; cap at 100 bytes => skipped.
     let big = format!("{}sentinel_over_cap\n", "x".repeat(2048));
@@ -329,7 +326,7 @@ fn skip_counts_default_is_all_zero() {
 
 #[test]
 fn reset_skip_counters_zeroes_every_category() {
-    set_skip_counts(SkipCounts {
+    TestApi.set_skip_counts(SkipCounts {
         over_max_size: 11,
         binary: 22,
         excluded: 33,
@@ -340,7 +337,7 @@ fn reset_skip_counters_zeroes_every_category() {
         structured_source_parse_failures: 77,
     });
 
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
 
     let snap = skip_counts();
     assert_eq!(snap.over_max_size, 0);
@@ -364,14 +361,14 @@ fn reset_skip_counters_zeroes_every_category() {
 
 #[test]
 fn skip_counts_reads_live_counters() {
-    reset_skip_counters();
-    set_skip_counts(SkipCounts {
+    TestApi.reset_skip_counters();
+    TestApi.set_skip_counts(SkipCounts {
         binary: 9,
         ..SkipCounts::default()
     });
     let snap = skip_counts();
     assert_eq!(snap.binary, 9, "snapshot must read the live atomic value");
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
 }
 
 // ---------------------------------------------------------------------------

@@ -2,6 +2,8 @@
 //! must be rejected before unpack (zip-bomb defense).
 
 #[cfg(feature = "docker")]
+use keyhog_sources::testing::{SourceTestApi, TestApi};
+#[cfg(feature = "docker")]
 #[test]
 fn docker_tar_aggregate_cap_enforced() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -21,7 +23,8 @@ fn docker_tar_aggregate_cap_enforced() {
     }
     builder.finish().expect("finish tar");
 
-    let err = keyhog_sources::testing::validate_docker_tar_archive_with_total_cap(&tar_path, 1_000)
+    let err = TestApi
+        .validate_docker_tar_archive_with_total_cap(&tar_path, 1_000)
         .unwrap_err();
     let msg = err.to_string();
     assert!(

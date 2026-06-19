@@ -2,9 +2,9 @@
 //! respects `.gitignore`, and yields chunks for scanning.
 
 use codewalk::CodeWalker;
-use keyhog_core::merkle_index::MerkleIndex;
+use keyhog_core::MerkleIndex;
 use keyhog_core::{Chunk, Source, SourceError};
-use std::collections::HashSet;
+use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
@@ -24,7 +24,48 @@ pub(crate) fn is_default_excluded_path(path: &str) -> bool {
 }
 
 pub(crate) fn reader_pool_thread_count_for_test(scanner_threads: usize) -> usize {
-    reader::reader_thread_count(scanner_threads)
+    reader::reader_thread_count(scanner_threads, None)
+}
+
+pub(crate) fn reader_pool_thread_count_with_config_for_test(
+    scanner_threads: usize,
+    configured: NonZeroUsize,
+) -> usize {
+    reader::reader_thread_count(scanner_threads, Some(configured))
+}
+
+pub(crate) fn max_buffered_read_bytes_for_test() -> u64 {
+    read::max_buffered_read_bytes_for_test()
+}
+
+pub(crate) fn read_file_safe_capped_for_test(
+    path: &std::path::Path,
+    cap: u64,
+) -> std::io::Result<Vec<u8>> {
+    read::read_file_safe_capped_for_test(path, cap)
+}
+
+pub(crate) fn read_file_for_compressed_input_for_test(
+    path: &std::path::Path,
+    size_cap: u64,
+) -> Option<Vec<u8>> {
+    read::read_file_for_compressed_input_for_test(path, size_cap)
+}
+
+pub(crate) fn slice_into_windows_for_test(
+    bytes: &[u8],
+    window_size: usize,
+    overlap: usize,
+) -> Vec<String> {
+    read::slice_into_windows_for_test(bytes, window_size, overlap)
+}
+
+pub(crate) fn decode_utf16_for_test(bytes: &[u8]) -> Option<String> {
+    read::decode_utf16_for_test(bytes)
+}
+
+pub(crate) fn looks_binary_for_test(bytes: &[u8]) -> bool {
+    read::looks_binary_for_test(bytes)
 }
 
 /// Scans files in a directory tree.
@@ -64,6 +105,9 @@ pub struct FilesystemSource {
     /// the flag only reached the codewalk glob layer, NOT this in-process
     /// filter, so the lock/vendored files stayed silently excluded.
     respect_default_excludes: bool,
+    /// Explicit filesystem reader thread count. `None` keeps the source-derived
+    /// default tied to the configured scan worker pool.
+    reader_threads: Option<NonZeroUsize>,
 }
 
 impl FilesystemSource {
@@ -83,6 +127,7 @@ impl FilesystemSource {
             window_size: reader::DEFAULT_WINDOW_SIZE,
             window_overlap: reader::DEFAULT_WINDOW_OVERLAP,
             respect_default_excludes: true,
+            reader_threads: None,
         }
     }
 
@@ -149,6 +194,12 @@ impl FilesystemSource {
         self.respect_gitignore = respect;
         self
     }
+
+    /// Override the dedicated filesystem reader thread count.
+    pub fn with_reader_threads(mut self, threads: NonZeroUsize) -> Self {
+        self.reader_threads = Some(threads);
+        self
+    }
 }
 
 impl Source for FilesystemSource {
@@ -162,48 +213,37 @@ impl Source for FilesystemSource {
         if !self.respect_gitignore {
             config = config.respect_gitignore(false);
         }
-        // Stream the walk through `walk_parallel` instead of `.collect()`-ing
-        // it into a `Vec<FileEntry>` up front. The old flow drained the entire
-        // directory walk into a Vec before the reader pool touched a byte: on a
-        // multi-million-file tree that paid the whole enumeration latency with
-        // the rayon pool idle AND held one PathBuf (+ size + flag) per file
-        // resident before a single read - hundreds of MB for a 10M-file
-        // monorepo / whole-disk scan-system walk. `walk_parallel` fans the walk
-        // across background threads and pushes `FileEntry`s into a bounded
-        // (8192-entry) channel AS THEY ARE DISCOVERED; `par_bridge()` below
-        // pulls from that channel into the reader pool, so file reads start on
-        // the first enumerated entry, directory-traversal syscalls overlap file
-        // I/O, and resident entry memory is bounded by the channel depth, not
-        // O(file_count).
-        //
-        // Per-entry errors (EACCES on a chmod-000 sub-tree, a racing unlink)
-        // are logged and skipped, never propagated - one unreadable sibling
-        // must not short-circuit the walk and hand the user ZERO findings (the
-        // failure mode of `walk()`/`.collect()` on a `Result` iterator). The
-        // channel `Receiver` is owned and `'static`, so the iterator can move
-        // into the producer thread without borrowing a stack-local walker.
-        //
-        // threads=0 lets `ignore` pick the logical-CPU count, matching its own
-        // `build_parallel` default.
-        fn forward_entries(
-            rx: std::sync::mpsc::Receiver<codewalk::error::Result<codewalk::FileEntry>>,
-        ) -> impl Iterator<Item = codewalk::FileEntry> + Send {
-            rx.into_iter().filter_map(|result| match result {
-                Ok(entry) => Some(entry),
-                Err(error) => {
-                    // An unreadable entry is an UNKNOWN, not a clean file: count it
-                    // so end-of-scan surfacing can tell the operator the tree was
-                    // not fully covered (Law 10 — a permission-denied subtree must
-                    // not read as "clean"). The warn! line is debug-level noise at
-                    // the default log level; the counter is the durable signal.
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                    tracing::warn!(
-                        %error,
-                        "skipping unreadable filesystem entry; scan continues"
-                    );
-                    None
-                }
-            })
+        // Autoroute calibration and replay bucket the fused pipeline by chunk
+        // batch shape. A parallel walker can emit the same tree in different
+        // orders across runs, which changes which files land in a 32-chunk
+        // batch and makes a freshly calibrated cache miss on replay. Collecting
+        // and sorting FileEntry metadata by path keeps batch identity stable;
+        // the heavier file reads still flow through the existing reader pool
+        // below. Per-entry errors are counted and skipped, never propagated,
+        // so one unreadable sibling cannot turn a partial scan into zero
+        // findings.
+        fn sorted_entries(walker: CodeWalker) -> Vec<codewalk::FileEntry> {
+            let mut entries: Vec<_> = walker
+                .walk_iter()
+                .filter_map(|result| match result {
+                    Ok(entry) => Some(entry),
+                    Err(error) => {
+                        // An unreadable entry is an UNKNOWN, not a clean file: count it
+                        // so end-of-scan surfacing can tell the operator the tree was
+                        // not fully covered (Law 10 — a permission-denied subtree must
+                        // not read as "clean"). The warn! line is debug-level noise at
+                        // the default log level; the counter is the durable signal.
+                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                        tracing::warn!(
+                            %error,
+                            "skipping unreadable filesystem entry; scan continues"
+                        );
+                        None
+                    }
+                })
+                .collect();
+            entries.sort_by(|left, right| left.path.cmp(&right.path));
+            entries
         }
 
         let entries: Box<dyn Iterator<Item = codewalk::FileEntry> + Send> = if !self
@@ -215,7 +255,7 @@ impl Source for FilesystemSource {
             // small (user-supplied include list); the directory walks it
             // spawns stream lazily via `flat_map`, and explicitly-named
             // single files are stat'd directly without a walk.
-            let allowed: HashSet<PathBuf> = self
+            let mut allowed: Vec<PathBuf> = self
                     .include_paths
                     .iter()
                     .filter(|p| {
@@ -266,10 +306,12 @@ impl Source for FilesystemSource {
                     })
                     .map(|p| p.canonicalize().unwrap_or_else(|_| p.clone()))  // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
                     .collect();
+            allowed.sort();
+            allowed.dedup();
             Box::new(allowed.into_iter().flat_map(move |path| {
                 let inner: Box<dyn Iterator<Item = codewalk::FileEntry> + Send> = if path.is_dir() {
                     let sub_walker = CodeWalker::new(&path, config.clone());
-                    Box::new(forward_entries(sub_walker.walk_parallel(0)))
+                    Box::new(sorted_entries(sub_walker).into_iter())
                 } else if path.is_file() {
                     match std::fs::metadata(&path) {
                         Ok(meta) => Box::new(std::iter::once(codewalk::FileEntry {
@@ -322,7 +364,7 @@ impl Source for FilesystemSource {
             }))
         } else {
             let walker = CodeWalker::new(&self.root, config);
-            Box::new(forward_entries(walker.walk_parallel(0)))
+            Box::new(sorted_entries(walker).into_iter())
         };
 
         let merkle = self.merkle.clone();
@@ -330,6 +372,7 @@ impl Source for FilesystemSource {
         let window_size = self.window_size;
         let window_overlap = self.window_overlap;
         let respect_default_excludes = self.respect_default_excludes;
+        let reader_threads = self.reader_threads;
 
         let rx = reader::spawn_chunk_producer(
             entries,
@@ -340,6 +383,7 @@ impl Source for FilesystemSource {
             window_size,
             window_overlap,
             respect_default_excludes,
+            reader_threads,
         );
         Box::new(rx.into_iter())
     }

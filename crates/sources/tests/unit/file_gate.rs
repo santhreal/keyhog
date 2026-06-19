@@ -1,6 +1,7 @@
 //! FILE_GATE micro tests for sources crate src files.
 
 use keyhog_core::Source;
+use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{create_source, reset_skipped_over_max_size, FilesystemSource, StdinSource};
 
 // ── crates/sources/src/lib.rs ─────────────────────────────────────────
@@ -50,7 +51,7 @@ fn filesystem_read_error() {
 #[cfg(any(feature = "web", feature = "slack", feature = "s3", feature = "github"))]
 #[test]
 fn timeouts_happy() {
-    assert!(keyhog_sources::testing::http_request_timeout().as_secs() > 0);
+    assert!(TestApi.http_request_timeout().as_secs() > 0);
 }
 #[cfg(not(any(feature = "web", feature = "slack", feature = "s3", feature = "github")))]
 #[test]
@@ -65,12 +66,12 @@ fn timeouts_happy() {
 #[test]
 fn timeouts_error() {
     #[cfg(feature = "binary")]
-    assert!(keyhog_sources::testing::ghidra_analysis_timeout().as_secs() >= 60);
+    assert!(TestApi.ghidra_analysis_timeout().as_secs() >= 60);
     #[cfg(all(
         not(feature = "binary"),
         any(feature = "web", feature = "slack", feature = "s3", feature = "github")
     ))]
-    assert!(keyhog_sources::testing::http_request_timeout().as_secs() < 3600);
+    assert!(TestApi.http_request_timeout().as_secs() < 3600);
     #[cfg(all(
         not(feature = "binary"),
         not(any(feature = "web", feature = "slack", feature = "s3", feature = "github"))
@@ -135,8 +136,7 @@ fn binary_ghidra_happy() {
 #[cfg(feature = "binary")]
 #[test]
 fn binary_literals_happy() {
-    let literals =
-        keyhog_sources::testing::extract_string_literals(r#"puts("TOKEN=abcdefghijklmnop");"#);
+    let literals = TestApi.extract_string_literals(r#"puts("TOKEN=abcdefghijklmnop");"#);
     assert_eq!(literals, vec!["TOKEN=abcdefghijklmnop".to_string()]);
 }
 #[cfg(feature = "binary")]

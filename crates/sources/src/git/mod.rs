@@ -15,10 +15,10 @@ mod source;
 /// receives blob bytes that go through scanning, so a substituted git
 /// could exfil credentials directly.
 pub(crate) fn git_bin() -> Result<PathBuf, SourceError> {
-    keyhog_core::safe_bin::resolve_safe_bin("git").ok_or_else(|| {
+    keyhog_core::resolve_safe_bin("git").ok_or_else(|| {
         SourceError::Other(
             "git binary not found in trusted system bin dirs (refusing $PATH lookup); \
-             install git or set KEYHOG_TRUSTED_BIN_DIR"
+             install git or add its absolute directory to [system].trusted_bin_dirs in .keyhog.toml"
                 .into(),
         )
     })

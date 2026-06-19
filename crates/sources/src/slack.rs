@@ -34,7 +34,7 @@ impl SlackSource {
 
     /// Override the shared HTTP policy. Threads CLI `--proxy` / `--insecure`
     /// into the Slack API client.
-    pub fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
+    pub(crate) fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
         self.http = http;
         self
     }

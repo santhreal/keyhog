@@ -1,11 +1,12 @@
 //! RAR archives that cannot be read must increment skip counters.
 
 use keyhog_core::Source;
+use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource};
 
 #[test]
 fn corrupt_rar_counts_as_unreadable() {
-    keyhog_sources::testing::reset_skip_counters();
+    TestApi.reset_skip_counters();
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("broken.rar"), b"not a rar archive").expect("write corrupt RAR");
 

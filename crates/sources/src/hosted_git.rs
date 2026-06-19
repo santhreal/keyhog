@@ -266,7 +266,7 @@ fn clone_repo(
     })?;
     let auth_material = GitAskpassAuth::create(platform, token_username, token_secret)?;
 
-    let git_bin = keyhog_core::safe_bin::resolve_safe_bin("git").ok_or_else(|| {
+    let git_bin = keyhog_core::resolve_safe_bin("git").ok_or_else(|| {
         SourceError::Other(
             "git binary not found in trusted system bin dirs (refusing $PATH lookup)".into(),
         )

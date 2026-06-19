@@ -1,10 +1,11 @@
 //! Micro gate for `sources/timeouts.rs` - shared HTTP/subprocess budgets.
 
+use keyhog_sources::testing::{SourceTestApi, TestApi};
 #[cfg(any(feature = "web", feature = "slack", feature = "s3", feature = "github"))]
 #[test]
 fn http_request_timeout_is_thirty_seconds() {
     assert_eq!(
-        keyhog_sources::testing::http_request_timeout(),
+        TestApi.http_request_timeout(),
         std::time::Duration::from_secs(30),
         "HTTP_REQUEST must stay aligned with http.rs DEFAULT_TIMEOUT"
     );
@@ -14,7 +15,7 @@ fn http_request_timeout_is_thirty_seconds() {
 #[test]
 fn git_clone_timeout_is_five_minutes() {
     assert_eq!(
-        keyhog_sources::testing::git_clone_timeout(),
+        TestApi.git_clone_timeout(),
         std::time::Duration::from_secs(300)
     );
 }
@@ -23,7 +24,7 @@ fn git_clone_timeout_is_five_minutes() {
 #[test]
 fn ghidra_analysis_timeout_is_five_minutes() {
     assert_eq!(
-        keyhog_sources::testing::ghidra_analysis_timeout(),
+        TestApi.ghidra_analysis_timeout(),
         std::time::Duration::from_secs(300)
     );
 }

@@ -9,7 +9,8 @@
 //! isolated from the parallel integration pool and can assert exact counts.
 
 use keyhog_core::Source;
-use keyhog_sources::{skip_counts, testing::reset_skip_counters, FilesystemSource};
+use keyhog_sources::testing::{SourceTestApi, TestApi};
+use keyhog_sources::{skip_counts, FilesystemSource};
 
 #[test]
 fn explicitly_included_unreadable_path_is_counted_not_silently_dropped() {
@@ -18,7 +19,7 @@ fn explicitly_included_unreadable_path_is_counted_not_silently_dropped() {
     // An explicitly-included path that does not exist: `canonicalize` fails so
     // the original path is kept, and it is then neither a file nor a directory,
     // hitting the include walk's `else` arm. It MUST bump the unreadable count.
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let missing = dir.path().join("does-not-exist.env");
     let n: usize = FilesystemSource::new(dir.path().to_path_buf())
         .with_include_paths(vec![missing])
@@ -36,7 +37,7 @@ fn explicitly_included_unreadable_path_is_counted_not_silently_dropped() {
 
     // Negative twin: a real, readable included file is scanned and must NOT be
     // counted as unreadable (no false coverage-gap alarm on healthy files).
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let real = dir.path().join("real.env");
     std::fs::write(&real, b"AWS=AKIAQYLPMN5HFIQR7XYA\n").expect("write");
     let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())

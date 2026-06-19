@@ -60,13 +60,13 @@
 //! top — exactly as the bogon docs require. Once both call sites resolve to the
 //! one canonical predicate, every assertion below passes.
 //!
-//! Tests use only the public, feature-gated `keyhog_sources::testing::is_disallowed_ip`
+//! Tests use only the public, feature-gated `TestApi.is_disallowed_ip`
 //! API (the `web` feature is on by default). They assert the concrete canonical
 //! contract, not `bogon` internals.
 
 #![cfg(feature = "web")]
 
-use keyhog_sources::testing::is_disallowed_ip;
+use keyhog_sources::testing::{SourceTestApi, TestApi};
 use std::net::{IpAddr, Ipv4Addr};
 
 /// AUD-dedup-1 — Carrier-Grade NAT (100.64.0.0/10) must be refused.
@@ -77,13 +77,13 @@ use std::net::{IpAddr, Ipv4Addr};
 /// `Ipv4Addr::is_private()`, which excludes CGN, so it returns `false` and the
 /// WebSource SSRF gate would happily fetch `http://100.64.0.1/...`.
 ///
-/// FAILS NOW: `is_disallowed_ip(100.64.0.1)` returns `false`.
+/// FAILS NOW: `TestApi.is_disallowed_ip(100.64.0.1)` returns `false`.
 /// PASSES once `is_disallowed_ip` delegates to the canonical bogon predicate.
 #[test]
 fn cgn_100_64_is_refused_like_canonical_bogon() {
     let cgn = IpAddr::V4(Ipv4Addr::new(100, 64, 0, 1));
     assert!(
-        is_disallowed_ip(cgn),
+        TestApi.is_disallowed_ip(cgn),
         "WebSource SSRF gate accepted CGN address {cgn} that the canonical \
          bogon predicate refuses (100.64.0.0/10, RFC 6598). The sources gate \
          is a forked copy of bogon that dropped this range — it must delegate \
@@ -125,7 +125,7 @@ fn forked_gate_matches_canonical_on_reserved_ranges() {
 
     let leaked: Vec<&str> = must_refuse
         .iter()
-        .filter(|(ip, _)| !is_disallowed_ip(IpAddr::V4(*ip)))
+        .filter(|(ip, _)| !TestApi.is_disallowed_ip(IpAddr::V4(*ip)))
         .map(|(_, why)| *why)
         .collect();
 
@@ -152,7 +152,7 @@ fn forked_gate_matches_canonical_on_reserved_ranges() {
 fn public_address_remains_allowed() {
     let public = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
     assert!(
-        !is_disallowed_ip(public),
+        !TestApi.is_disallowed_ip(public),
         "public address {public} must remain fetchable; the canonical bogon \
          predicate allows it, so delegating to bogon must not block it."
     );

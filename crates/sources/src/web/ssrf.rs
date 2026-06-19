@@ -30,9 +30,6 @@ pub(crate) fn is_disallowed_web_host(url: &str) -> bool {
 }
 
 pub(crate) fn is_autoroute_loopback_calibration_url(url: &str) -> bool {
-    if std::env::var_os("KEYHOG_AUTOROUTE_CALIBRATE").is_none() {
-        return false;
-    }
     let Ok(parsed) = reqwest::Url::parse(url) else {
         return false;
     };
@@ -107,13 +104,14 @@ pub(crate) fn build_web_client(
     cfg: &crate::http::HttpClientConfig,
     url: &str,
     proxy_in_use: bool,
+    allow_autoroute_loopback_calibration_url: bool,
 ) -> Result<reqwest::blocking::Client, SourceError> {
     let mut builder = crate::http::blocking_client_builder(cfg)
         .map_err(SourceError::Other)?
         .timeout(crate::timeouts::HTTP_REQUEST)
         .redirect(ssrf_revalidating_redirect_policy());
 
-    if !proxy_in_use && !is_autoroute_loopback_calibration_url(url) {
+    if !proxy_in_use && !allow_autoroute_loopback_calibration_url {
         let parsed = reqwest::Url::parse(url)
             .map_err(|e| SourceError::Other(format!("invalid URL: {e}")))?;
         if let Some(host) = parsed.host_str() {

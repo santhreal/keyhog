@@ -23,7 +23,8 @@
 #![cfg(feature = "s3")]
 
 use keyhog_core::Source;
-use keyhog_sources::{skip_counts, testing::reset_skip_counters, S3Source};
+use keyhog_sources::skip_counts;
+use keyhog_sources::testing::{SourceTestApi, TestApi};
 use std::sync::{Mutex, MutexGuard};
 
 const BUCKET: &str = "regression-bucket";
@@ -71,7 +72,7 @@ const MAX_S3_OBJECT_BYTES: u64 = 10 * 1024 * 1024;
 #[test]
 fn oversized_listed_object_is_counted_over_max_size() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
@@ -91,8 +92,8 @@ fn oversized_listed_object_is_counted_over_max_size() {
         then.status(200).body("PLACEHOLDER_SHOULD_NOT_BE_FETCHED");
     });
 
-    let chunks: Vec<_> = S3Source::new(BUCKET)
-        .with_endpoint(server.url(""))
+    let chunks: Vec<_> = TestApi
+        .s3_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
         .collect();
     let ok: Vec<_> = chunks.into_iter().filter_map(|r| r.ok()).collect();
@@ -122,7 +123,7 @@ fn oversized_listed_object_is_counted_over_max_size() {
 #[test]
 fn binary_content_type_object_is_counted_binary() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
@@ -145,8 +146,8 @@ fn binary_content_type_object_is_counted_binary() {
             .body(vec![0u8; 512]);
     });
 
-    let chunks: Vec<_> = S3Source::new(BUCKET)
-        .with_endpoint(server.url(""))
+    let chunks: Vec<_> = TestApi
+        .s3_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
         .collect();
     let ok: Vec<_> = chunks.into_iter().filter_map(|r| r.ok()).collect();
@@ -175,7 +176,7 @@ fn binary_content_type_object_is_counted_binary() {
 #[test]
 fn binary_extension_object_is_counted_binary_without_get() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
@@ -193,8 +194,8 @@ fn binary_extension_object_is_counted_binary_without_get() {
         then.status(200).body("SHOULD_NOT_BE_FETCHED");
     });
 
-    let chunks: Vec<_> = S3Source::new(BUCKET)
-        .with_endpoint(server.url(""))
+    let chunks: Vec<_> = TestApi
+        .s3_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
         .collect();
     let ok: Vec<_> = chunks.into_iter().filter_map(|r| r.ok()).collect();
@@ -218,7 +219,7 @@ fn binary_extension_object_is_counted_binary_without_get() {
 #[test]
 fn non_utf8_text_labelled_object_is_counted_unreadable() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
@@ -238,8 +239,8 @@ fn non_utf8_text_labelled_object_is_counted_unreadable() {
             .body(vec![0xFFu8, 0xFE, 0x00, 0x80]);
     });
 
-    let chunks: Vec<_> = S3Source::new(BUCKET)
-        .with_endpoint(server.url(""))
+    let chunks: Vec<_> = TestApi
+        .s3_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
         .collect();
     let ok: Vec<_> = chunks.into_iter().filter_map(|r| r.ok()).collect();
@@ -265,7 +266,7 @@ fn non_utf8_text_labelled_object_is_counted_unreadable() {
 #[test]
 fn non_success_get_is_counted_unreadable() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
@@ -283,8 +284,8 @@ fn non_success_get_is_counted_unreadable() {
         then.status(403).body("AccessDenied");
     });
 
-    let chunks: Vec<_> = S3Source::new(BUCKET)
-        .with_endpoint(server.url(""))
+    let chunks: Vec<_> = TestApi
+        .s3_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
         .collect();
     let ok: Vec<_> = chunks.into_iter().filter_map(|r| r.ok()).collect();
@@ -314,7 +315,7 @@ fn non_success_get_is_counted_unreadable() {
 #[test]
 fn max_objects_limit_is_counted_source_truncated() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
@@ -343,9 +344,8 @@ fn max_objects_limit_is_counted_source_truncated() {
         then.status(200).body("SHOULD_NOT_BE_FETCHED");
     });
 
-    let chunks: Vec<_> = S3Source::new(BUCKET)
-        .with_endpoint(server.url(""))
-        .with_max_objects(1)
+    let chunks: Vec<_> = TestApi
+        .s3_source_with_endpoint_max_objects(BUCKET, server.url(""), 1)
         .chunks()
         .collect();
     let ok: Vec<_> = chunks.into_iter().filter_map(|r| r.ok()).collect();
@@ -373,7 +373,7 @@ fn max_objects_limit_is_counted_source_truncated() {
 #[test]
 fn truncated_listing_without_token_is_counted_source_truncated() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
@@ -393,8 +393,8 @@ fn truncated_listing_without_token_is_counted_source_truncated() {
             .body("config object\n");
     });
 
-    let chunks: Vec<_> = S3Source::new(BUCKET)
-        .with_endpoint(server.url(""))
+    let chunks: Vec<_> = TestApi
+        .s3_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
         .collect();
     let ok: Vec<_> = chunks.into_iter().filter_map(|r| r.ok()).collect();
@@ -418,7 +418,7 @@ fn truncated_listing_without_token_is_counted_source_truncated() {
 #[test]
 fn plain_text_object_is_scanned_and_not_counted_as_skipped() {
     let _guard = counter_guard();
-    reset_skip_counters();
+    TestApi.reset_skip_counters();
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
@@ -440,8 +440,8 @@ fn plain_text_object_is_scanned_and_not_counted_as_skipped() {
             .body(object_body);
     });
 
-    let chunks: Vec<_> = S3Source::new(BUCKET)
-        .with_endpoint(server.url(""))
+    let chunks: Vec<_> = TestApi
+        .s3_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
         .collect();
     let ok: Vec<_> = chunks.into_iter().filter_map(|r| r.ok()).collect();
