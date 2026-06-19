@@ -125,7 +125,7 @@ fn compiled_scanner_compile_rejects_invalid_regex() {
     assert!(CompiledScanner::compile(vec![detector]).is_err());
 }
 
-// ── engine/scan.rs + fallback paths (via scan) ──────────────────────
+// ── engine/scan.rs paths (via scan) ─────────────────────────────────
 
 #[test]
 fn scan_empty_chunk_returns_no_matches() {

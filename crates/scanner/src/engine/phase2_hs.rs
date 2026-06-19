@@ -37,7 +37,7 @@ impl Phase2HsEngine {
             let Some((pat, _)) = phase2_patterns.get(idx) else {
                 continue;
             };
-            // det_idx slot carries the fallback index back through `pattern_info`.
+            // det_idx slot carries the phase-2 index back through `pattern_info`.
             refs.push((idx, 0, pat.regex.as_str(), false));
             caseless.push(pat.regex.is_case_insensitive());
         }
@@ -76,7 +76,7 @@ impl Phase2HsEngine {
                 hs_to_phase2[hs_id] = fb;
             }
         }
-        // `unsupported` indexes `refs`; map back to fallback indices and keep
+        // `unsupported` indexes `refs`; map back to phase-2 indices and keep
         // each on its own compiled regex (the LOUD host path, Law 10).
         let mut dropped = Vec::new();
         for &i in &unsupported {

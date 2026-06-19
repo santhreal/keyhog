@@ -23,7 +23,7 @@ fn scanner_source(path: &str) -> String {
 }
 
 #[test]
-fn no_hit_admission_consults_active_fallback_set() {
+fn no_hit_admission_consults_active_phase2_set() {
     let scan = scanner_source("engine/scan_coalesced.rs");
 
     // The shared no-hit admission gate must consult the real active phase-2 set
@@ -49,7 +49,7 @@ fn no_hit_admission_consults_active_fallback_set() {
          shared tail; a GPU miss must still consult CPU admission"
     );
 
-    // The active-set probe must stay shared with the production fallback scanner.
+    // The active-set probe must stay shared with the production phase-2 scanner.
     // The phase-2 scan impl was split out of the old fallback module into
     // `phase2_compiled.rs` under the 500-LOC ceiling (Law 5); the probe now
     // lives there, still `pub(crate)` and still the one the no-hit gate calls.

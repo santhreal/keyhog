@@ -230,12 +230,12 @@ unsafe impl Sync for HsScanner {}
 ///
 /// The legacy phase-1 [`HsScanner::compile`] path compiles every pattern
 /// `CASELESS` and reports every match (no `SINGLEMATCH`). The always-active
-/// fallback PREFILTER wants the opposite on both axes: it needs each
+/// phase-2 prefilter wants the opposite on both axes: it needs each
 /// pattern's OWN case sensitivity (a plain homoglyph variant is
 /// case-sensitive; a detector regex is not) so the marked set matches the
 /// `regex` reference exactly, and it only needs to know "did pattern P match
 /// at all" — so `SINGLEMATCH` fires each pattern once and stops, removing the
-/// broad-pattern callback storm that is why the fallback never used HS.
+/// broad-pattern callback storm that is why the phase-2 prefilter never used HS.
 #[derive(Clone, Copy, Default)]
 pub(crate) struct HsCompileOpts<'a> {
     /// Set `HS_FLAG_SINGLEMATCH` on every pattern (fire once, then retire).
@@ -335,7 +335,7 @@ impl HsScanner {
                         pattern_index = i,
                         "pattern rejected by hyperscan; caller reroutes it through keyword phase-2 path"
                     );
-                    // Law 10: unsupported HS pattern id is returned to the caller and rerouted through the keyword fallback.
+                    // Law 10: unsupported HS pattern id is returned to the caller and rerouted through the phase-2 keyword lane.
                     unsupported.push(i);
                 }
             }
@@ -483,7 +483,7 @@ impl HsScanner {
 
         // Compile (or cache-load) every shard concurrently. Returns the
         // built database and the global ids the shard had to drop (over-long
-        // / unsupported constructs) for the keyword-fallback reroute.
+        // / unsupported constructs) for the phase-2 keyword reroute.
         use rayon::prelude::*;
         let shard_results: Vec<Result<(BlockDatabase, Vec<usize>), String>> = shard_pats
             .into_par_iter()
@@ -597,7 +597,7 @@ impl HsScanner {
     /// Build one shard's `BlockDatabase`, returning the database and the
     /// GLOBAL pattern ids it had to drop (over-long or an unsupported
     /// construct Hyperscan rejects only at build time). The dropped ids are
-    /// rerouted into the keyword fallback by the caller so the pattern is
+    /// rerouted into the phase-2 keyword lane by the caller so the pattern is
     /// never silently lost. Because sharding makes each shard far smaller
     /// than the old single combined database, the size-limit retry below
     /// almost never fires now - which strictly REDUCES the set of patterns
@@ -611,7 +611,7 @@ impl HsScanner {
             match Builder::build::<BlockMode>(&patterns_obj) {
                 Ok(db) => break db,
                 Err(_) if patterns_obj.0.len() > 100 => {
-                    // Law 10: compile retry records dropped ids and caller reroutes them to keyword fallback.
+                    // Law 10: compile retry records dropped ids and caller reroutes them to the phase-2 keyword lane.
                     // Reclaim ownership for the next attempt.
                     attempts = patterns_obj.0;
                     attempts.sort_by_key(|p| std::cmp::Reverse(p.expression.len()));

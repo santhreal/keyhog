@@ -16,7 +16,7 @@
 //!           phase 2: scan_coalesced_phase2       (THE shared tail)        scan_coalesced.rs
 //!             • windowing (scan_chunk_or_window, >1 MiB)                   windowed.rs
 //!             • per-chunk extraction (scan_prepared_with_triggered)        backend_triggered.rs
-//!                 confirmed → fallback → generic → entropy → ML
+//!                 confirmed → phase2 capture → generic → entropy → ML
 //!             • post-process: suppression, dedup, confidence, decode       scan_postprocess.rs
 //!             • cross-chunk boundary reassembly (scan_chunk_boundaries)    boundary.rs
 //! ```
@@ -230,7 +230,7 @@ pub struct CompiledScanner {
     pub(crate) phase2_keyword_to_patterns: CsrU32,
     pub(crate) phase2_always_active_indices: Vec<usize>,
     /// Combined-RegexSet prefilter over `phase2_always_active_indices`. When
-    /// present, the per-chunk fallback scan runs one linear set pass instead of
+    /// present, the per-chunk phase-2 capture scan runs one linear set pass instead of
     /// every always-active pattern's regex over the whole chunk. `None` falls
     /// back to running them all (recall-identical, just slower).
     pub(crate) phase2_always_active_prefilter: Option<phase2::Phase2AlwaysActivePrefilter>,

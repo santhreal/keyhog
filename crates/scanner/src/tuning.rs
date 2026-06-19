@@ -227,7 +227,7 @@ impl ScannerTuning {
     /// (skip ≡ fold over the mirror corpus + 20k synthetic ASCII inputs). On the
     /// mirror corpus this also corrects an overlap-suppression cascade
     /// (`MAILGUN_API_KEY=key-…` was mislabelled Webhook-Signing-Key when the
-    /// variant ran) and is ~13% faster (`fb:prefilter` is 55% of scan).
+    /// variant ran) and is ~13% faster (`phase2:prefilter` is 55% of scan).
     /// Explicit config can force the legacy fold-every-variant path.
     pub(crate) fn homoglyph_ascii_skip_enabled(&self) -> bool {
         match self.homoglyph_ascii_skip.load(Relaxed) {

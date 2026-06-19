@@ -38,13 +38,12 @@ impl<'a> PreparedChunk<'a> {
 /// list of ac_map indices whose regex Hyperscan could NOT compile
 /// (over-long, or an unsupported construct like a large `{100,200}`
 /// bounded repeat). Those patterns produce zero HS matches, so the caller
-/// MUST route them into the backend-independent keyword fallback or they
+/// MUST route them into the backend-independent phase-2 keyword lane or they
 /// are silently dead in every HS-backed scan. Before this was returned,
 /// ~10 context-anchored detectors (line/paloalto/tower/keystonejs/...)
 /// never fired on their own positives. See contracts_runner.
 pub(crate) fn build_simd_scanner(
     ac_map: &[CompiledPattern],
-    _fallback: &[(CompiledPattern, Vec<String>)],
     tuning: &crate::scanner_config::ScannerTuningConfig,
 ) -> Option<(crate::simd::backend::HsScanner, Vec<Vec<usize>>, Vec<usize>)> {
     use std::collections::HashMap;
@@ -90,7 +89,7 @@ pub(crate) fn build_simd_scanner(
         Ok((scanner, unsupported)) => {
             // Map the unsupported hs_ids back to the ac_map indices that
             // share each dropped regex. These never match under HS, so the
-            // caller reroutes them to the keyword fallback.
+            // caller reroutes them to the phase-2 keyword lane.
             let mut unsupported_ac = Vec::new();
             for &hs_id in &unsupported {
                 let Some(indices) = index_map.get(hs_id) else {

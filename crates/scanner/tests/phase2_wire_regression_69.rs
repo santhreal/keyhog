@@ -1,4 +1,4 @@
-//! Regression gate for #69 - every fallback-bucket detector (asana-pat
+//! Regression gate for #69 - every phase-2 bucket detector (asana-pat
 //! and ~3100 similar prefix-less / unicode-rejected detectors) was
 //! silently dead because the SIMD/GPU hot path never called
 //! `scan_phase2_patterns`. Fix: the call now runs after

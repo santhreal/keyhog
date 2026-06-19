@@ -114,10 +114,10 @@ pub(crate) fn phase2_pattern_prof_record(len: usize, index: usize, nanos: u64) {
 
 /// Per-thread scratch for computing the active phase-2 set of a chunk.
 ///
-/// Previously this was a dense `Vec<bool>` of `fallback.len()` (~1000) that
+/// Previously this was a dense `Vec<bool>` of `phase2_patterns.len()` (~1000) that
 /// was zero-filled, `copy_from_slice`-seeded, and then fully iterated by the
 /// caller every chunk - O(F) per chunk even when only a handful of patterns
-/// fire. We now carry a SPARSE list of active fallback indices instead, so
+/// fire. We now carry a SPARSE list of active phase-2 indices instead, so
 /// callers visit only the active patterns. Two pieces:
 ///   * `active`: the sparse index list, refilled (not reallocated) per chunk.
 ///   * `stamp` + `generation`: a versioned "seen" set used to dedup a pattern
@@ -199,8 +199,8 @@ thread_local! {
 /// so the set reports a pattern iff that pattern's regex matches. No real match
 /// is ever skipped (recall-preserving); only dead work is removed. It MUST run
 /// over the same text the extraction uses (`preprocessed.text`).
-/// One compiled RegexSet batch plus the fallback indices its set entries map
-/// back to (`phase2_indices[set_pattern_id] == fallback index`).
+/// One compiled RegexSet batch plus the phase-2 indices its set entries map
+/// back to (`phase2_indices[set_pattern_id] == phase-2 pattern index`).
 pub(crate) struct PrefilterBatch {
     pub(crate) set: regex::RegexSet,
     /// For PLAIN (homoglyph-variant) batches: an ASCII-folded RegexSet (the
@@ -248,8 +248,8 @@ pub(crate) struct PrefilterBatch {
 /// fire, so the expensive HS / RegexSet body is skipped; the few non-anchorable
 /// patterns are checked PRECISELY with their OWN compiled regexes (`non_anchorable`)
 /// and only the ones that actually match are marked. Findings stay byte-identical
-/// to the full body (validated by `fallback_prefilter_hs_findings_parity` and
-/// `fallback_no_candidate_zero_work`), but the per-chunk cost drops from a
+/// to the full body (validated by `phase2_prefilter_hs_findings_parity` and
+/// `phase2_no_candidate_zero_work`), but the per-chunk cost drops from a
 /// ~2,700-pattern scan to one AC `is_match` plus a handful of per-pattern checks.
 pub(crate) struct CombinedNoCandidateGate {
     /// `ascii_case_insensitive` Aho-Corasick over the anchorable always-active
@@ -257,7 +257,7 @@ pub(crate) struct CombinedNoCandidateGate {
     /// a pure-ASCII chunk proves none of those patterns can match.
     pub(crate) anchor_ac: AhoCorasick,
     /// The non-anchorable always-active patterns (those with NO required prefix
-    /// literal), as `(fallback_index, regex)`. Empty when every always-active
+    /// literal), as `(phase2_index, regex)`. Empty when every always-active
     /// pattern is anchorable (the ideal — the gate then does a pure AC `is_match`
     /// and nothing else on the skip path). Each regex is the pattern's OWN compiled
     /// `LazyRegex` (cloned `Arc`, shared compile cache), so checking it on the skip
@@ -448,9 +448,9 @@ pub(crate) struct Phase2AlwaysActivePrefilter {
     /// and enabled (`phase2_hs_enabled`), `mark_matches` uses it instead of the
     /// `regex::RegexSet` batches above: one SIMD multi-pattern scan with
     /// `SINGLEMATCH` (fire-once = "does P match") replaces the ~2,679-pattern
-    /// whole-chunk RegexSet pass — the measured #1 scan cost (`fb:prefilter`),
-    /// ~1000x faster (`fallback_prefilter_hs_vs_regexset`) and findings-identical
-    /// (`fallback_prefilter_hs_findings_parity`). `None` when the `simd` feature
+    /// whole-chunk RegexSet pass — the measured #1 scan cost (`phase2:prefilter`),
+    /// ~1000x faster (`phase2_prefilter_hs_vs_regexset`) and findings-identical
+    /// (`phase2_prefilter_hs_findings_parity`). `None` when the `simd` feature
     /// is off or HS failed to compile (then the RegexSet batches are the path).
     #[cfg(feature = "simd")]
     pub(crate) hs: Option<Phase2HsEngine>,
@@ -470,7 +470,7 @@ pub(crate) const DECODE_FOCUS_MARGIN: usize = 64;
 // companion-anchored detector can therefore fire on spliced context arbitrarily
 // far from the decoded span where the parent — which saw the still-encoded bytes
 // — did not, so the "outside the decoded span is a parent duplicate" theorem that
-// makes the fallback focus sound does NOT hold for confirmed detectors. A
+// makes the phase-2 focus sound does NOT hold for confirmed detectors. A
 // symmetric `[ds-M, de+M]` window with M=256 still dropped real cloudflare-api-token
 // and mysql-connection-string findings on the mirror corpus; the only provably
 // safe M equals the full splice context (zero savings). Do not re-add it.

@@ -65,7 +65,7 @@ fn kubernetes_bootstrap_token_fires_in_coalesced_no_hit_branch() {
     // detector's literal prefix (no ghp_, sk-, AKIA, etc.). The phase 1
     // literal-set walk will find ZERO hits, routing this through the
     // no-hit branch of scan_coalesced. The keyword "TOKEN" passes
-    // has_generic_assignment_keyword which gates the fallback path.
+    // has_generic_assignment_keyword which gates the phase-2 path.
     let chunk = make_chunk(
         "KUBERNETES_BOOTSTRAP_TOKEN=k3m9zq.4r8w2nq3p6vt5b1z\n",
         "k8s-bootstrap.env",
@@ -81,7 +81,7 @@ fn kubernetes_bootstrap_token_fires_in_coalesced_no_hit_branch() {
     assert!(
         bootstrap_fired,
         "kubernetes-bootstrap-token must fire on canonical k8s env line via scan_coalesced \
-         no-hit branch (regression for prefix-less fallback detectors silently dead when \
+         no-hit branch (regression for prefix-less phase-2 detectors silently dead when \
          phase 1 produces 0 literal-prefix hits). Matches: {:?}",
         matches
             .iter()

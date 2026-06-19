@@ -7,7 +7,8 @@
 //! the phase-2 pass and how much of the cost is decode-recursion.
 //!
 //! Model: only LEAF passes are timed directly (via the [`span`] RAII guard);
-//! parent rows (scan / phase2 / fallback) are SUMS of their leaves in [`dump`].
+//! parent rows (scan / phase2 / phase2-capture) are SUMS of their leaves in
+//! [`dump`].
 //! Leaf passes never nest within each other (decode recursion re-enters as fresh
 //! leaf recordings that aggregate into the same leaves), so the totals are the
 //! true CPU-time-per-pass summed across all rayon workers and all decode depths —
@@ -32,15 +33,15 @@ pub(crate) enum P {
     Confirmed,
     /// Always-active RegexSet prefilter — the anchorless detectors that run on
     /// EVERY chunk (the cost the old label hid).
-    FbPrefilter,
-    /// Keyword Aho-Corasick prefilter (gates keyword-anchored fallbacks).
-    FbKeywordAc,
+    Phase2Prefilter,
+    /// Keyword Aho-Corasick prefilter (gates keyword-anchored phase-2 patterns).
+    Phase2KeywordAc,
     /// Shared-anchor candidate scan (one AC over required-prefix literals).
-    FbSharedAc,
+    Phase2SharedAc,
     /// Anchored verification of shared-anchor candidates.
-    FbAnchoredVerify,
+    Phase2AnchoredVerify,
     /// Whole-chunk extraction for active patterns with no usable anchor.
-    FbWholeChunk,
+    Phase2WholeChunk,
     Generic,
     Entropy,
     Ml,
@@ -57,11 +58,11 @@ const NAMES: [&str; N] = [
     "phase1",
     "hot",
     "confirmed",
-    "fb:prefilter",
-    "fb:keyword-ac",
-    "fb:shared-ac",
-    "fb:verify",
-    "fb:whole-chunk",
+    "phase2:prefilter",
+    "phase2:keyword-ac",
+    "phase2:shared-ac",
+    "phase2:verify",
+    "phase2:whole-chunk",
     "generic",
     "entropy",
     "ml",
@@ -199,25 +200,25 @@ pub fn reset() {
     let _ = read_reset(); // LAW10: intentionally discards the swapped-out profiling counters (reset side-effect, warm-up between runs); telemetry-only, recall-irrelevant
 }
 
-const FB_LEAVES: [usize; 5] = [
-    P::FbPrefilter as usize,
-    P::FbKeywordAc as usize,
-    P::FbSharedAc as usize,
-    P::FbAnchoredVerify as usize,
-    P::FbWholeChunk as usize,
+const PHASE2_CAPTURE_LEAVES: [usize; 5] = [
+    P::Phase2Prefilter as usize,
+    P::Phase2KeywordAc as usize,
+    P::Phase2SharedAc as usize,
+    P::Phase2AnchoredVerify as usize,
+    P::Phase2WholeChunk as usize,
 ];
 const PHASE2_LEAVES: [usize; 9] = [
     P::Hot as usize,
     P::Confirmed as usize,
-    P::FbPrefilter as usize,
-    P::FbKeywordAc as usize,
-    P::FbSharedAc as usize,
-    P::FbAnchoredVerify as usize,
-    P::FbWholeChunk as usize,
+    P::Phase2Prefilter as usize,
+    P::Phase2KeywordAc as usize,
+    P::Phase2SharedAc as usize,
+    P::Phase2AnchoredVerify as usize,
+    P::Phase2WholeChunk as usize,
     P::Generic as usize,
     P::Entropy as usize,
 ];
-// `ml` is a phase-2 leaf too, listed separately so the fallback sub-leaves group.
+// `ml` is a phase-2 leaf too, listed separately so capture sub-leaves group.
 
 /// Print and reset the unified profile tree. Safe to call when profiling was off
 /// (prints a single "disabled" line).
@@ -231,7 +232,7 @@ pub fn dump(label: &str) {
     let sum = |ids: &[usize]| ids.iter().map(|&i| ns[i]).sum::<u64>();
 
     let phase2_ns = sum(&PHASE2_LEAVES) + ns[P::Ml as usize];
-    let fb_ns = sum(&FB_LEAVES);
+    let capture_ns = sum(&PHASE2_CAPTURE_LEAVES);
     let scan_ns = ns[P::Preprocess as usize]
         + ns[P::Phase1Triggers as usize]
         + phase2_ns
@@ -286,9 +287,9 @@ pub fn dump(label: &str) {
     parent("phase2", phase2_ns, "  ");
     leaf(P::Hot as usize, phase2_ns, "    ");
     leaf(P::Confirmed as usize, phase2_ns, "    ");
-    parent("phase2", fb_ns, "    ");
-    for &i in &FB_LEAVES {
-        leaf(i, fb_ns, "      ");
+    parent("phase2-capture", capture_ns, "    ");
+    for &i in &PHASE2_CAPTURE_LEAVES {
+        leaf(i, capture_ns, "      ");
     }
     leaf(P::Generic as usize, phase2_ns, "    ");
     leaf(P::Entropy as usize, phase2_ns, "    ");

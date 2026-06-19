@@ -1,4 +1,4 @@
-//! `impl CompiledScanner` fallback/prefilter scan methods, extracted from
+//! `impl CompiledScanner` phase-2 capture/prefilter scan methods, extracted from
 //! `phase2.rs`. The `CompiledScanner` struct is defined in `mod.rs`; this is a
 //! satellite impl block reached via `use super::*`. Shared toggle/profiling
 //! helpers and `ActivePatternsScratch` live in `phase2.rs` (pub(crate)) and are
@@ -72,9 +72,9 @@ impl CompiledScanner {
             &chunk.data,
             &preprocessed.text,
             |this, active_patterns| {
-                // `active_patterns` is the SPARSE list of active fallback indices,
+                // `active_patterns` is the SPARSE list of active phase-2 indices,
                 // so we touch only the patterns that can fire on this chunk rather
-                // than the full `fallback.len()` vector.
+                // than the full `phase2_patterns.len()` vector.
                 for (tested, &index) in active_patterns.iter().enumerate() {
                     if let Some(deadline) = deadline {
                         if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
@@ -111,7 +111,7 @@ impl CompiledScanner {
     /// sub-chunk is a small window of already-scanned parent context with the
     /// freshly decoded text spliced in at `focus = (start, end)`. Everything
     /// outside `[start,end)` was scanned (and any finding deduped against
-    /// `seen`) when the parent chunk was scanned, so the only NEW fallback
+    /// `seen`) when the parent chunk was scanned, so the only NEW phase-2
     /// matches are those that touch the decoded text.
     ///
     /// This windows the two expensive parts of the phase-2 pass — the
@@ -244,9 +244,9 @@ impl CompiledScanner {
     /// caller's closure with a borrow of the SPARSE active-index list, and
     /// return whatever the closure returns. The scratch is reset (not freed)
     /// on entry, so the next chunk the same worker handles reuses the
-    /// allocation. The closure receives `&[usize]` - the fallback indices
+    /// allocation. The closure receives `&[usize]` - the phase-2 indices
     /// that are active for this chunk, so it visits only those patterns
-    /// rather than the full `fallback.len()` vector.
+    /// rather than the full `phase2_patterns.len()` vector.
     /// `data` seeds the keyword-AC prefilter (raw chunk bytes, as before).
     /// `match_text` is the text the always-active RegexSet prefilter runs on and
     /// MUST be the same text per-pattern extraction uses (`preprocessed.text`)
@@ -274,7 +274,7 @@ impl CompiledScanner {
     /// least one pattern — i.e. the always-active RegexSet prefilter marks a
     /// pattern OR a phase-2 keyword occurs in `data`.
     ///
-    /// This is the EXACT, cheap necessary condition for a fallback match and is
+    /// This is the EXACT, cheap necessary condition for a phase-2 match and is
     /// the recall-load-bearing admission gate for no-Hyperscan-hit chunks (see
     /// `should_scan_no_hit_chunk`): without it, a chunk that fires no literal
     /// prefix but contains a prefix-less / keyword-less detector (asana-pat and
@@ -311,12 +311,12 @@ impl CompiledScanner {
         // `match_text == data` — admission runs on the raw chunk before any
         // structured preprocessing), but each side EARLY-EXITS at its first hit
         // instead of building the full marked set. Building that set is the
-        // measured #1 scan cost (`fb:prefilter`), and extraction rebuilds it
+        // measured #1 scan cost (`phase2:prefilter`), and extraction rebuilds it
         // when the chunk is admitted — so the gate's own marked set was pure
         // redundant work. The cheap keyword AC is tried first, so a
         // keyword-admitted chunk skips the prefilter scan entirely.
         {
-            let _g = super::profile::span(super::profile::P::FbKeywordAc);
+            let _g = super::profile::span(super::profile::P::Phase2KeywordAc);
             for mat in keyword_ac.find_iter(data) {
                 let keyword_idx = mat.pattern().as_usize();
                 if self
@@ -328,7 +328,7 @@ impl CompiledScanner {
                 }
             }
         }
-        let _g = super::profile::span(super::profile::P::FbPrefilter);
+        let _g = super::profile::span(super::profile::P::Phase2Prefilter);
         match &self.phase2_always_active_prefilter {
             Some(prefilter) => prefilter.any_active_match(data, &self.tuning),
             // No always-active prefilter compiled (degraded build): there is no
@@ -398,7 +398,7 @@ impl CompiledScanner {
             {
                 // The anchorless always-active RegexSet — the detectors that run
                 // on EVERY chunk. This span is the cost the old vague label hid.
-                let _g = super::profile::span(super::profile::P::FbPrefilter);
+                let _g = super::profile::span(super::profile::P::Phase2Prefilter);
                 match &self.phase2_always_active_prefilter {
                     Some(prefilter) => {
                         prefilter.mark_matches(match_text, scratch, localize_plain, &self.tuning)
@@ -418,7 +418,7 @@ impl CompiledScanner {
             }
             let t1 = if prof { Some(Instant::now()) } else { None };
             {
-                let _g = super::profile::span(super::profile::P::FbKeywordAc);
+                let _g = super::profile::span(super::profile::P::Phase2KeywordAc);
                 for mat in keyword_ac.find_iter(data) {
                     let keyword_idx = mat.pattern().as_usize();
                     if let Some(pattern_indices) = self.phase2_keyword_to_patterns.get(keyword_idx)
@@ -454,10 +454,10 @@ impl CompiledScanner {
     ) {
         let prof = phase2_pattern_prof_enabled();
         self.with_active_phase2_patterns(&chunk.data, &preprocessed.text, |this, active_set| {
-            // `active_set` is the sparse list of active fallback indices, so
+            // `active_set` is the sparse list of active phase-2 indices, so
             // we iterate only the patterns that can fire - no second
             // `Vec<&CompiledPattern>` collect and no scan over the inactive
-            // entries of the full fallback vector.
+            // entries of the full phase-2 vector.
             for (tested, &index) in active_set.iter().enumerate() {
                 if let Some(deadline) = deadline {
                     if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
@@ -489,9 +489,9 @@ impl CompiledScanner {
         });
     }
 
-    /// Print and reset the per-pattern fallback profile (top 30 by time). Call
+    /// Print and reset the per-pattern phase-2 profile (top 30 by time). Call
     /// after a unified profile run (`keyhog scan --profile`). Each line is the
-    /// fallback detector's regex, total ms, run count, and ns/run, plus whether
+    /// phase-2 detector's regex, total ms, run count, and ns/run, plus whether
     /// it carries a regex-required prefix anchor (the localization candidate).
     pub(crate) fn phase2_profile_dump(&self, label: &str) {
         let len = self.phase2_patterns.len();
@@ -505,7 +505,7 @@ impl CompiledScanner {
         let prefilter_ms = POPULATE_PREFILTER_NS.swap(0, Relaxed) as f64 / 1e6;
         let keyword_ms = POPULATE_KEYWORD_NS.swap(0, Relaxed) as f64 / 1e6;
         eprintln!(
-            "=== FALLBACK per-pattern profile [{label}] ===\n  populate: always-active RegexSet prefilter={prefilter_ms:.1} ms, keyword-AC={keyword_ms:.1} ms\n  extract: {:.1} ms over {} active patterns",
+            "=== PHASE2 per-pattern profile [{label}] ===\n  populate: always-active RegexSet prefilter={prefilter_ms:.1} ms, keyword-AC={keyword_ms:.1} ms\n  extract: {:.1} ms over {} active patterns",
             grand as f64 / 1e6,
             rows.len()
         );

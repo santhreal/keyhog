@@ -1,5 +1,5 @@
 #![cfg(feature = "gpu")]
-//! Megakernel fallback port — slice 3: multi-rule, multi-file dispatch + the
+//! Megakernel phase-2 port — slice 3: multi-rule, multi-file dispatch + the
 //! rule→detector decode mapping.
 //!
 //! This is the core the live `scan_phase2_patterns` replacement uses: many

@@ -1,5 +1,5 @@
 #![cfg(feature = "gpu")]
-//! Megakernel fallback port — slice 4: end-to-end GPU≡CPU parity on real files.
+//! Megakernel phase-2 port — slice 4: end-to-end GPU≡CPU parity on real files.
 //!
 //! Scans real mirror-corpus files with BOTH (a) the megakernel batched DFA rule
 //! catalog on the GPU and (b) the CPU `regex` crate, then asserts the set of

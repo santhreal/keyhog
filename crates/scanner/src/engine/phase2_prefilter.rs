@@ -535,7 +535,7 @@ impl Phase2AlwaysActivePrefilter {
         // NON-anchorable set (patterns that can match with no required literal) is
         // checked, each with its OWN regex, marking exactly those that match — the
         // same active set the full body would produce for them. Findings are
-        // unchanged (recall-neutral), pinned by `fallback_no_candidate_zero_work` +
+        // unchanged (recall-neutral), pinned by `phase2_no_candidate_zero_work` +
         // the HS/RegexSet findings-parity gates. ASCII-only: the folded plain literals
         // describe the homoglyph matcher only on ASCII text. A non-ASCII chunk, a
         // degraded build (`None`), or a real candidate fall through to the full
@@ -627,7 +627,7 @@ impl Phase2AlwaysActivePrefilter {
             // the sole matcher for e.g. generic-password on `client_secret="…"`. A
             // chunk with no non-ASCII bytes has no homoglyph for the variant to
             // catch, so on ASCII it adds nothing the base AC doesn't. This removes
-            // the dominant `fb:prefilter` cost on all-ASCII source (~13% of scan).
+            // the dominant `phase2:prefilter` cost on all-ASCII source (~13% of scan).
             // Proven recall-neutral by `homoglyph_ascii_skip_parity_default` (now a
             // live gate, not `#[ignore]`). Generic/case-sensitive plain fallbacks
             // (no base AC) are in non-skippable batches and are unaffected.

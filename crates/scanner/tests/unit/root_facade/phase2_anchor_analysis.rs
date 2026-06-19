@@ -80,13 +80,13 @@ fn phase2_anchor_prize() {
          always_active_eligible={aae} prefilter_remaining={}",
         always_active - aae
     );
-    let fallback = phase2_pattern_diagnostics(&scanner);
+    let phase2_patterns = phase2_pattern_diagnostics(&scanner);
 
     let mut t = Tally::default();
-    t.total = fallback.len();
+    t.total = phase2_patterns.len();
     let mut sample_anchorable: Vec<String> = Vec::new();
 
-    for (src, _keywords) in &fallback {
+    for (src, _keywords) in &phase2_patterns {
         match classify(src) {
             None => t.parse_fail += 1,
             Some((prefix_ok, suffix_ok, bounded, max_len, _min_len)) => {

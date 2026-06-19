@@ -3,7 +3,7 @@
 //! The user's flagship issue: "a fallback must NEVER eat runtime — not
 //! 0.000000001s." The combined no-candidate gate (`phase2_no_candidate_zero_work`)
 //! removes the per-pattern marking work on no-candidate chunks, but the SWE-101
-//! TARGET is stricter: the always-active fallback prefilter (`fb:prefilter`) must
+//! TARGET is stricter: the always-active phase-2 prefilter (`phase2:prefilter`) must
 //! cost **< 1µs per chunk** end-to-end on a representative no-candidate corpus.
 //!
 //! This test measures the real per-chunk wall cost of the prefilter path
@@ -27,7 +27,7 @@ use std::time::Instant;
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 
-/// The SWE-101 per-chunk cost target for the always-active fallback prefilter.
+/// The SWE-101 per-chunk cost target for the always-active phase-2 prefilter.
 const TARGET_NS_PER_CHUNK: f64 = 1_000.0;
 
 /// Build N distinct no-candidate chunks (ordinary source/prose with no credential
@@ -56,7 +56,7 @@ fn no_candidate_chunks(n: usize) -> Vec<Chunk> {
 }
 
 #[test]
-#[ignore = "SWE-101 target spec: EXPECTED RED until fb:prefilter < 1µs/chunk; run --release --ignored"]
+#[ignore = "SWE-101 target spec: EXPECTED RED until phase2:prefilter < 1µs/chunk; run --release --ignored"]
 fn fb_prefilter_under_one_microsecond_per_chunk() {
     let detectors = match keyhog_core::load_detectors(&detector_dir()) {
         Ok(d) => d,
@@ -88,12 +88,12 @@ fn fb_prefilter_under_one_microsecond_per_chunk() {
 
     let per_chunk_ns = elapsed.as_nanos() as f64 / chunks.len() as f64;
     eprintln!(
-        "SWE-101 fb:prefilter end-to-end no-candidate cost: {per_chunk_ns:.1} ns/chunk \
+        "SWE-101 phase2:prefilter end-to-end no-candidate cost: {per_chunk_ns:.1} ns/chunk \
          (target < {TARGET_NS_PER_CHUNK:.0} ns)"
     );
 
     // NOTE: this measures the WHOLE scan path per no-candidate chunk, not the
-    // isolated prefilter span, so it is a strict upper bound on `fb:prefilter`. It
+    // isolated prefilter span, so it is a strict upper bound on `phase2:prefilter`. It
     // stays RED until the residual no-candidate per-chunk cost is under the target.
     assert!(
         per_chunk_ns < TARGET_NS_PER_CHUNK,

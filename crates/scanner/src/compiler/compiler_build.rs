@@ -62,7 +62,7 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
     // Phase 2: Assemble results sequentially (fast, no regex compilation).
     let mut ac_literals = Vec::new();
     let mut ac_map = Vec::new();
-    let mut fallback = Vec::new();
+    let mut phase2_patterns = Vec::new();
     let mut companions = Vec::with_capacity(detectors.len());
     let mut quality_warnings = Vec::new();
 
@@ -84,10 +84,10 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
             // Homoglyph expansion for high-confidence patterns: catches
             // tokens where the literal prefix has been visually spoofed
             // with Cyrillic/Greek/full-width lookalikes. Earlier code
-            // dropped just the expanded PREFIX into fallback as
+            // dropped just the expanded PREFIX into phase-2 as
             // `Regex::new("^[hh][ff]_")` - anchored to start, but with
             // NO body constraint, so any string beginning with the
-            // prefix would match. Combined with the task #69 fallback
+            // prefix would match. Combined with the task #69 phase-2
             // wire fix that finally runs these patterns, that turned
             // every prefix-anchored detector into "fires on `<prefix>*`."
             // Fix: substitute the expanded prefix into the FULL regex so
@@ -112,7 +112,7 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
                         // the leading `(?:...)` with the expanded prefix so the
                         // homoglyph variant still requires the rest of the pattern
                         // to match. Without this, every alternation-prefix detector
-                        // silently skipped its homoglyph fallback - leaving
+                        // silently skipped its homoglyph phase-2 variant - leaving
                         // Cyrillic/full-width spoofed credentials of the form
                         // `[ɡ̅р][hн]p_<body>` invisible to the scanner.
                         rewritten
@@ -129,7 +129,7 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
                 // lazy path's never-match fallback covers a non-compiling
                 // variant instead, so a bad expansion simply never fires
                 // rather than being silently dropped at build.
-                fallback.push((
+                phase2_patterns.push((
                     CompiledPattern {
                         detector_index,
                         regex: LazyRegex::plain(full_homoglyph_regex),
@@ -148,10 +148,10 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
                 }
             } else {
                 // Prefix extraction failed - try the AST-walking inner-literal
-                // extractor before falling back. Patterns like
+                // extractor before routing through phase 2. Patterns like
                 // `[a-zA-Z0-9]{20}_AKIA[A-Z0-9]{16}` have no leading literal
                 // but contain `_AKIA` mid-pattern; pulling that into the AC
-                // moves the detector out of the O(m × n) fallback loop and
+                // moves the detector out of the O(m × n) phase-2 loop and
                 // into the O(n) prefilter path.
                 let inner = extract_inner_literals(&pattern.regex);
                 if !inner.is_empty() {
@@ -166,7 +166,7 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
                             detector.id
                         ));
                     }
-                    fallback.push((compiled, detector.keywords.clone()));
+                    phase2_patterns.push((compiled, detector.keywords.clone()));
                 }
             }
         }
@@ -175,7 +175,7 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
     Ok(CompileState {
         ac_literals,
         ac_map,
-        phase2_patterns: fallback,
+        phase2_patterns,
         companions,
         quality_warnings,
     })

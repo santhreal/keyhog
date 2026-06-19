@@ -1,11 +1,11 @@
 #![cfg(feature = "gpu")]
-//! Throughput measurement for the GPU fallback offload (`docs/EXECUTION_PLAN.md`):
-//! GPU megakernel dispatch of the always-active fallback DFA catalog over a
+//! Throughput measurement for the GPU phase-2 offload (`docs/EXECUTION_PLAN.md`):
+//! GPU megakernel dispatch of the always-active phase-2 DFA catalog over a
 //! 16 KB-file batch vs the equivalent SINGLE-THREAD CPU `RegexSet` work, at the
 //! low- and high-density size class. This is the honest answer to "how many ×
 //! faster than one CPU thread is the GPU at 16 KB scanning" — measured, release.
 //!
-//! "Always-active" mirrors `engine/compile.rs`: a fallback pattern whose detector
+//! "Always-active" mirrors `engine/compile.rs`: a phase-2 pattern whose detector
 //! has NO keyword >= 4 chars runs its regex over the WHOLE chunk on every scan
 //! (the `Phase2AlwaysActivePrefilter` RegexSet path), which profiling put at
 //! 58-74% of phase-2. That is the set this offload targets.
@@ -33,7 +33,7 @@ const HIT_CAPACITY: u32 = 1 << 20;
 const WARMUP: usize = 2;
 const ITERS: usize = 8;
 
-/// Collect the always-active fallback regexes: detector has no >= 4-char keyword.
+/// Collect the always-active phase-2 regexes: detector has no >= 4-char keyword.
 fn always_active_regexes() -> Option<Vec<String>> {
     let detectors = keyhog_core::load_detectors(&detector_dir()).ok()?;
     let mut out = Vec::new();
@@ -129,7 +129,7 @@ fn phase2_gpu_vs_single_thread_cpu_16k() {
     };
     let backend = WgpuBackend::new().expect("Fix: live GPU required for the throughput gate");
 
-    eprintln!("always-active fallback patterns: {}", regexes.len());
+    eprintln!("always-active phase-2 patterns: {}", regexes.len());
     let (rules, host_path) = build_catalog(&regexes);
     eprintln!(
         "megakernel catalog: {} GPU rules packed, {} host-path (state-cap/un-lowerable)",

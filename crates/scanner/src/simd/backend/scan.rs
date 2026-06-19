@@ -93,7 +93,7 @@ impl HsScanner {
     /// that has an active pattern this returns after the first one - the
     /// admission gate (`has_active_phase2_patterns_for_chunk`) needs only
     /// "is anything active?", never the full marked set, and building that
-    /// set is the measured #1 scan cost (`fb:prefilter`).
+    /// set is the measured #1 scan cost (`phase2:prefilter`).
     pub(crate) fn any_match_result(&self, text: &[u8]) -> Result<bool, String> {
         for (shard_idx, shard) in self.shards.iter().enumerate() {
             let scratch = take_scratch(self.scanner_id, shard_idx, shard)?;

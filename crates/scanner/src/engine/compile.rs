@@ -126,14 +126,14 @@ impl CompiledScanner {
         let prefix_propagation = CsrU32::from(build_prefix_propagation(&state.ac_literals));
         let same_prefix_patterns = CsrU32::from(build_same_prefix_patterns(&state.ac_literals));
 
-        // Build the Hyperscan scanner BEFORE the keyword fallback so we
+        // Build the Hyperscan scanner BEFORE the phase-2 keyword lane so we
         // learn which ac_map patterns Hyperscan rejected (over-long, or an
         // unsupported construct like a large `{100,200}` bounded repeat).
         // A rejected pattern produces zero HS matches, and because it took
         // the literal-prefix (ac_map) branch in build_compile_state it is
-        // NOT in the keyword fallback either - so it is silently dead under
+        // NOT in the phase-2 keyword lane either - so it is silently dead under
         // the HS backend (the default on Linux/CI). Reroute each one into
-        // the keyword fallback, gated by its detector's keywords, so it
+        // the phase-2 keyword lane, gated by its detector's keywords, so it
         // fires via the backend-independent regex sweep. Closes the
         // contracts_runner recall hole on line/paloalto/tower/keystonejs/
         // snowflake/bandwidth and the matching adversarial-wrapper misses.
@@ -141,7 +141,7 @@ impl CompiledScanner {
         let mut state = state;
         #[cfg(feature = "simd")]
         let (simd_prefilter, hs_index_map) =
-            match super::build_simd_scanner(&state.ac_map, &state.phase2_patterns, tuning_config) {
+            match super::build_simd_scanner(&state.ac_map, tuning_config) {
                 Some((scanner, index_map, unsupported_ac)) => {
                     for ac_idx in unsupported_ac {
                         let pattern = state.ac_map[ac_idx].clone();
@@ -157,7 +157,7 @@ impl CompiledScanner {
             build_phase2_keyword_ac(&state.phase2_patterns);
         let phase2_keyword_to_patterns = CsrU32::from(phase2_keyword_to_patterns);
         // Precompute always-active phase-2 indices so the per-chunk hot path
-        // seeds the sparse active set without scanning the full fallback table.
+        // seeds the sparse active set without scanning the full phase-2 table.
         let phase2_always_active_indices: Vec<usize> = state
             .phase2_patterns
             .iter()
@@ -177,7 +177,7 @@ impl CompiledScanner {
         // each pattern scanning the chunk for its own literal. `None` when no
         // pattern is anchor-eligible. Recall-identical (see `phase2_anchor`).
         // Built BEFORE the prefilter so eligible always-active patterns can be
-        // removed from it (the prefilter, not extraction, is ~90% of fallback).
+        // removed from it (the prefilter, not extraction, is ~90% of phase-2 cost).
         let phase2_anchor_index = phase2_anchor::Phase2AnchorIndex::build(
             &state.phase2_patterns,
             &phase2_always_active_indices,
@@ -189,7 +189,7 @@ impl CompiledScanner {
         // chunk it is match-equivalent to the slow unicode-class form, so the
         // prefilter marks the IDENTICAL set in the IDENTICAL order — recall and
         // active-set order unchanged — but far faster (the homoglyph unicode
-        // RegexSet was measured at ~90% of fallback time). `None` on build
+        // RegexSet was measured at ~90% of phase-2 time). `None` on build
         // failure runs them all (recall-safe).
         let phase2_always_active_prefilter = phase2::Phase2AlwaysActivePrefilter::build(
             &state.phase2_patterns,

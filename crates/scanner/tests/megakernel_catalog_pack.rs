@@ -1,5 +1,5 @@
 #![cfg(feature = "gpu")]
-//! Megakernel fallback port — slice 1: host-side catalog construction.
+//! Megakernel phase-2 port — slice 1: host-side catalog construction.
 //!
 //! Proves keyhog's real detector regexes compile into the vyre megakernel's
 //! batched DFA rule catalog (`docs/EXECUTION_PLAN.md` step 5):
@@ -10,7 +10,7 @@
 //! Reports how many patterns fit the DFA state budget (one rule each) vs how
 //! many exceed it / can't lower — those take a LOUD host path in the real port,
 //! never a silent drop (Law 10). This is the empirical answer to "does the
-//! existing engine carry keyhog's fallback set", not a guess.
+//! existing engine carry keyhog's phase-2 set", not a guess.
 //!
 //! Run: cargo test -p keyhog-scanner --features gpu --test megakernel_catalog_pack -- --ignored --nocapture
 
@@ -34,7 +34,7 @@ const PER_RULE_MAX_DFA_STATES: usize = 1024;
 
 #[test]
 #[ignore = "measurement/feasibility; run with --ignored --nocapture"]
-fn fallback_patterns_pack_into_megakernel_rule_catalog() {
+fn phase2_patterns_pack_into_megakernel_rule_catalog() {
     let detectors = match keyhog_core::load_detectors(&detector_dir()) {
         Ok(d) => d,
         Err(e) => {
@@ -47,7 +47,7 @@ fn fallback_patterns_pack_into_megakernel_rule_catalog() {
         .flat_map(|d| d.patterns.iter().map(|p| p.regex.clone()))
         .collect();
 
-    // UNANCHORED (find-anywhere) catalog — the production fallback contract.
+    // UNANCHORED (find-anywhere) catalog — the production phase-2 contract.
     // `build_regex_dfa_unanchored` adds the implicit `.*` via an NFA-table
     // start-self-loop (O(256)/pattern), so this builds at the full 1668-pattern
     // scale WITHOUT the OOM that the `(?s).*?`-in-regex approach hit. Built in
@@ -79,7 +79,7 @@ fn fallback_patterns_pack_into_megakernel_rule_catalog() {
     let rules: Vec<BatchRuleProgram> = built.into_iter().flatten().collect();
     let total_states: u64 = rules.iter().map(|r| u64::from(r.state_count)).sum();
 
-    let packed = pack_rule_catalog(&rules).expect("pack the fallback DFA rule catalog");
+    let packed = pack_rule_catalog(&rules).expect("pack the phase-2 DFA rule catalog");
     eprintln!(
         "megakernel catalog: {} patterns | {} rules packed | {} host-path (budget/un-lowerable) | \
          {} total DFA states | catalog: {} transition words, {} accept words, {} rejected",
@@ -96,6 +96,6 @@ fn fallback_patterns_pack_into_megakernel_rule_catalog() {
     // take the LOUD host path (never silently dropped).
     assert!(
         !rules.is_empty(),
-        "no fallback pattern compiled into a megakernel DFA rule — engine/compile path is broken"
+        "no phase-2 pattern compiled into a megakernel DFA rule — engine/compile path is broken"
     );
 }

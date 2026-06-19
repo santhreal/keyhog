@@ -1,7 +1,7 @@
 //! Differential recall gate for the homoglyph ASCII-SKIP optimization.
 //!
 //! On a pure-ASCII chunk, the always-active homoglyph (plain) fallback variants
-//! are skipped entirely instead of folded-and-run — the dominant `fb:prefilter`
+//! are skipped entirely instead of folded-and-run — the dominant `phase2:prefilter`
 //! cost (~43% of scan on all-ASCII source). This is sound ONLY if skipping them
 //! drops no finding: a homoglyph variant exists for a detector whose BASE literal
 //! prefix is ALSO in the AC/confirmed path (`compiler_build.rs` pushes both), and

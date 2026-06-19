@@ -393,8 +393,8 @@ pub(crate) fn phase2_keyword_ac_summary(regex: &str, keywords: Vec<String>) -> (
         client_safe: false,
         homoglyph_variant: false,
     };
-    let fallback = vec![(pattern, keywords)];
-    let (ac, mapping) = crate::compiler::build_phase2_keyword_ac(&fallback);
+    let phase2_patterns = vec![(pattern, keywords)];
+    let (ac, mapping) = crate::compiler::build_phase2_keyword_ac(&phase2_patterns);
     (ac.is_some(), mapping.len())
 }
 

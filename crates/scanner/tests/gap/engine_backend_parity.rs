@@ -8,8 +8,9 @@
 //!     `collect_triggered_patterns_simd` / `collect_triggered_patterns_cpu` in
 //!     `engine/backend_triggered.rs`); HS only UNIONS extra candidates that the
 //!     full regex confirmation then re-filters, so the emitted set is identical.
-//!   * The keyword/entropy fallback (`scan_entropy_fallback`,
-//!     `scan_phase2_patterns`, `scan_generic_assignments`) runs in
+//!   * The phase-2 keyword lane, entropy fallback, and generic assignment pass
+//!     (`scan_entropy_fallback`, `scan_phase2_patterns`,
+//!     `scan_generic_assignments`) run in
 //!     `scan_prepared_with_triggered` REGARDLESS of backend, so its findings are
 //!     backend-invariant.
 //!   * Chunk-boundary splits (`engine/boundary.rs`) must not lose matches: a

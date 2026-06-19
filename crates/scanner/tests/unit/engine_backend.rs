@@ -62,7 +62,7 @@ fn coalesced_missing_simd_prefilter_path_stays_off_auto_selection() {
 
     assert!(
         !source.contains("map(|c| self.scan(c))"),
-        "scan_coalesced fallback paths must use an explicit backend, not auto selection"
+        "scan_coalesced missing-SIMD path must use an explicit backend, not auto selection"
     );
     assert!(
         source.contains("scan_with_backend(c, crate::hw_probe::ScanBackend::SimdCpu)"),

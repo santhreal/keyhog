@@ -3,7 +3,7 @@
 //! SIMD finds `sb_4bZ39EnIvgTAxogqQ1wam7az` in the `payload: …` chunk,
 //! GPU does not. The literal `sb_` doesn't appear in any test chunk
 //! we feed in, so the finding is being synthesised by some
-//! detector/decode/fallback path.
+//! detector/decode/phase-2 path.
 //!
 //! This test prints every finding from both backends with detector
 //! ID and credential so we can see which detector is producing it and

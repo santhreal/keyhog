@@ -83,20 +83,20 @@ pub(crate) fn build_prefix_propagation(literals: &[String]) -> Vec<Vec<usize>> {
 }
 
 pub(crate) fn build_phase2_keyword_ac(
-    fallback: &[(CompiledPattern, Vec<String>)],
+    phase2_patterns: &[(CompiledPattern, Vec<String>)],
 ) -> (Option<AhoCorasick>, Vec<Vec<usize>>) {
     let mut all_keywords = Vec::new();
     let mut keyword_to_patterns = Vec::new();
     let mut keyword_map: std::collections::HashMap<String, usize> =
         std::collections::HashMap::new();
 
-    for (pattern_idx, (_, keywords)) in fallback.iter().enumerate() {
+    for (pattern_idx, (_, keywords)) in phase2_patterns.iter().enumerate() {
         for kw in keywords {
             // Floor stays at 4: lowering it to 3 to admit
             // mailchimp's `-us`/`-eu`/`-uk` and openai/anthropic's
             // `sk-`/`sk-ant-`/`pk-` measured a NET F1 regression
             // (-67 TP, +28 FP) on SecretBench-medium 15k seed-0
-            // because (a) too-broad fallback detectors like
+            // because (a) too-broad phase-2 detectors like
             // helicone-api-key `sk-[a-zA-Z0-9]{20,}` fired
             // wrongly on neighboring lines and (b) the recall
             // gain on mailchimp was small. The right fix for

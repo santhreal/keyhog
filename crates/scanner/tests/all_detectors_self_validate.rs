@@ -1,7 +1,7 @@
 //! Per-detector self-validation: every TOML in `detectors/` must
 //! (a) load via keyhog_core, (b) compile its regex(es) via the
 //! Hyperscan / regex backend, (c) declare at least one keyword
-//! ≥ 4 chars (the AC fallback prefilter floor), and (d) have at
+//! ≥ 4 chars (the phase-2 keyword prefilter floor), and (d) have at
 //! least one canonical-shape positive that fires.
 //!
 //! The "canonical-shape positive" comes from the auto-generator
@@ -152,7 +152,7 @@ fn every_detector_compiles_into_scanner() {
 
 /// Every detector must declare at least one keyword whose length is
 /// >= 3 chars. Hyperscan handles 3-char prefix anchors (e.g. `hf_`,
-/// `re_`, `r8_`) on its own; the fallback Aho-Corasick prefilter
+/// `re_`, `r8_`) on its own; the phase-2 Aho-Corasick prefilter
 /// drops keywords shorter than 4, but Hyperscan is the primary
 /// matching path and the 4-char floor only matters when Hyperscan is
 /// unavailable. Three chars is the absolute floor: a detector with

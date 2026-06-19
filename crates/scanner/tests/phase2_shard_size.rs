@@ -1,7 +1,7 @@
-//! Feasibility measurement for the GPU fallback port (`docs/EXECUTION_PLAN.md`
+//! Feasibility measurement for the GPU phase-2 port (`docs/EXECUTION_PLAN.md`
 //! step 1): how many real detector regexes pack into one `RulePipeline` NFA
 //! before the subgroup state cap (LANES_PER_SUBGROUP×32 = 1024), and therefore
-//! how many shards the ~2,700 always-active fallback patterns need. Also counts
+//! how many shards the ~2,700 always-active phase-2 patterns need. Also counts
 //! patterns the byte-NFA frontend cannot lower (lookaround/backref/unicode) —
 //! those need a loud host path, never a silent drop (Law 10).
 //!
@@ -75,7 +75,7 @@ fn measure_nfa_shard_size() {
         refs.len()
     );
     eprintln!(
-        "  → GPU fallback port: {shards} resident RulePipeline dispatches per coalesced batch \
+        "  → GPU phase-2 port: {shards} resident RulePipeline dispatches per coalesced batch \
          (+ {unsupported} host-path patterns)."
     );
 }

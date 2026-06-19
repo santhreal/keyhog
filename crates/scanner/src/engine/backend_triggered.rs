@@ -16,7 +16,7 @@ impl CompiledScanner {
         let code_lines: Vec<&str> = prepared.chunk.data.lines().collect();
         let mut scan_state = ScanState::with_static_intern(self.static_intern.clone());
 
-        // Unified profiler; fallback has its own internal sub-spans.
+        // Unified profiler; phase-2 capture has its own internal sub-spans.
         {
             let _g = profile::span(profile::P::Hot);
             #[cfg(feature = "simdsieve")]
@@ -30,14 +30,14 @@ impl CompiledScanner {
         }
 
         let expanded_patterns = self.expand_triggered_patterns(&triggered_patterns);
-        // Needed by fallback on both trigger and no-trigger paths.
+        // Needed by phase-2 capture on both trigger and no-trigger paths.
         let documentation_lines = context::documentation_line_flags(&code_lines);
 
         // No-trigger fast path: when no AC pattern fired, the entire
         // confirmed-pattern extraction pipeline is dead work. Skip
         // building the `confirmed_patterns: Vec<usize>` (allocation saved)
         // and the `extract_confirmed_patterns` call. The downstream
-        // fallbacks (`scan_phase2_patterns`, `scan_generic_assignments`,
+        // phase-2 lanes (`scan_phase2_patterns`, `scan_generic_assignments`,
         // `scan_entropy_fallback`, `apply_ml_batch_scores`) run unchanged
         // since they have their own input shapes.
         //
@@ -52,7 +52,7 @@ impl CompiledScanner {
         // ("outside the span is a parent duplicate") therefore does NOT hold for
         // confirmed detectors; windowing it dropped real findings on the mirror
         // corpus (the `confirmed_focus_parity` differential rejected M=256). It
-        // holds for fallback because those detectors are self-contained at the
+        // holds for phase-2 capture because those detectors are self-contained at the
         // decoded credential itself.
         if expanded_patterns.iter().any(|&w| w != 0) {
             let _g = profile::span(profile::P::Confirmed);
@@ -80,7 +80,7 @@ impl CompiledScanner {
             );
         }
 
-        // Fallback patterns (no usable literal prefix; e.g. asana-pat
+        // Phase-2 capture patterns (no usable literal prefix; e.g. asana-pat
         // shaped `1/[0-9]{16,20}/...`) never enter the AC-trigger
         // bitmap, so they would never extract via the path above.
         // Task #69 - these detectors were silently dead in EVERY hot

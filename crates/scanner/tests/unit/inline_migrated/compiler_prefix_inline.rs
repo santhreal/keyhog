@@ -23,7 +23,7 @@ fn simple_literal_prefix_extracts() {
 fn boundary_guard_idiom_extracts_the_inner_literal() {
     // `(?:^|[^...])(LITERAL...)` is the helicone/deepnote shape: the guard
     // carries no literal, but the captured token's prefix must still reach
-    // the AC set or the detector falls dead to the keyword fallback.
+    // the AC set or the detector falls dead to the phase-2 keyword lane.
     assert_eq!(
         extract_literal_prefixes("(?:^|[^A-Za-z0-9_])(sk-[a-zA-Z0-9]{20,})"),
         vec!["sk-".to_string()]

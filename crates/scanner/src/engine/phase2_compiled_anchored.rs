@@ -1,8 +1,8 @@
-//! Shared-anchor localized fallback scan, extracted from `phase2_compiled.rs`
+//! Shared-anchor localized phase-2 scan, extracted from `phase2_compiled.rs`
 //! (Law 5). `scan_phase2_with_anchors` (+ its anchor-only scratch helper
 //! `with_active_phase2_scratch`) collapses the per-pattern whole-chunk walks
 //! into one Aho-Corasick pass plus anchored verification; recall is identical to
-//! the legacy active-set loop (`fallback_anchor_parity`). Reached via the same
+//! the legacy active-set loop (`phase2_anchor_parity`). Reached via the same
 //! `use super::*` / `use super::phase2::*` globs the parent uses.
 use super::phase2::*;
 use super::*;
@@ -32,7 +32,7 @@ impl CompiledScanner {
         })
     }
 
-    /// Shared-anchor fallback scan. Computes the active set once, then:
+    /// Shared-anchor phase-2 scan. Computes the active set once, then:
     ///   1. runs ONE Aho-Corasick pass over the chunk for every eligible
     ///      pattern's required-prefix literals, collecting `(pattern, pos)`
     ///      candidates for the patterns that are active;
@@ -42,7 +42,7 @@ impl CompiledScanner {
     ///      whole-chunk path.
     /// The union of (2) and (3) is exactly the active set the legacy loop would
     /// have scanned, producing an identical match set (asserted by
-    /// `fallback_anchor_parity`).
+    /// `phase2_anchor_parity`).
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn scan_phase2_with_anchors(
         &self,
@@ -70,7 +70,7 @@ impl CompiledScanner {
             None => &preprocessed.text,
         };
         let shift = focus.map_or(0u32, |(fs, _)| fs as u32);
-        // `cursor_range` for the whole-chunk extraction fallbacks: restrict match
+        // `cursor_range` for whole-chunk phase-2 extraction: restrict match
         // STARTS to the focus window (matches still extend right freely).
         let cursor = focus;
         // Keyword AC still seeds from the FULL chunk bytes so a keyword in far
@@ -79,7 +79,7 @@ impl CompiledScanner {
             ANCHOR_CANDIDATES.with(|cell| {
                 let mut cands = cell.borrow_mut();
                 {
-                    let _g = super::profile::span(super::profile::P::FbSharedAc);
+                    let _g = super::profile::span(super::profile::P::Phase2SharedAc);
                     anchor_idx.collect_candidates(
                         scan_text,
                         |pat| scratch.is_active(pat),
@@ -97,7 +97,7 @@ impl CompiledScanner {
                 // Candidates are sorted by (pattern, pos); verify each
                 // pattern's contiguous run together so its per-pattern
                 // signal cache is built at most once.
-                let _verify_g = super::profile::span(super::profile::P::FbAnchoredVerify);
+                let _verify_g = super::profile::span(super::profile::P::Phase2AnchoredVerify);
                 let mut i = 0usize;
                 while i < cands.len() {
                     if let Some(deadline) = deadline {
@@ -258,7 +258,7 @@ impl CompiledScanner {
 
             // Active patterns with no required-literal anchor: whole-chunk
             // (windowed to the focus cursor when focus-restricting).
-            let _wholechunk_g = super::profile::span(super::profile::P::FbWholeChunk);
+            let _wholechunk_g = super::profile::span(super::profile::P::Phase2WholeChunk);
             for (tested, &index) in scratch.active.iter().enumerate() {
                 if anchor_idx.is_eligible(index) {
                     continue;

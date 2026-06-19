@@ -1,11 +1,11 @@
 #![cfg(feature = "gpu")]
-//! Megakernel fallback port — slice 2: end-to-end GPU scan.
+//! Megakernel phase-2 port — slice 2: end-to-end GPU scan.
 //!
 //! Dispatches a keyhog detector regex (compiled to a megakernel DFA rule) over a
 //! batch of files on the GPU via the persistent batch megakernel, and asserts
 //! the `HitRecord`s correctly identify (file, rule=detector, byte offset).
 //! Proves the existing vyre engine scans keyhog patterns end-to-end on hardware
-//! — the foundation the fallback/confirmed passes wire onto
+//! — the foundation the phase-2 and confirmed passes wire onto
 //! (`docs/EXECUTION_PLAN.md` step 5). Modeled on
 //! vyre `vyre-driver-wgpu/tests/megakernel_telemetry_contracts.rs`.
 //!
@@ -35,7 +35,7 @@ fn megakernel_scans_a_keyhog_pattern_end_to_end() {
     // GitHub classic PAT: ghp_ + 36 alphanumerics (regex-level; checksum is a
     // keyhog post-process, not the DFA's job).
     // Unanchored (find-anywhere) via the NFA-table start-self-loop transform —
-    // the keyhog fallback contract (secrets occur anywhere in a chunk, not at
+    // the keyhog phase-2 contract (secrets occur anywhere in a chunk, not at
     // byte 0). Bare pattern; the helper does the unanchoring (no `(?s).*?` text
     // hack, which OOMs at scale).
     let pipe = build_regex_dfa_unanchored(&["ghp_[A-Za-z0-9]{36}"], MAX_MATCHES, MAX_DFA_STATES)
@@ -106,7 +106,7 @@ fn megakernel_scans_a_keyhog_pattern_end_to_end() {
     }
 
     // File 0 (index 0) must produce a hit for rule 0 at the secret offset; file 1
-    // (clean) must not. This is the recall contract the fallback port inherits.
+    // (clean) must not. This is the recall contract the phase-2 port inherits.
     let file0_hits: Vec<&HitRecord> = hits.iter().filter(|h| h.file_idx == 0).collect();
     let file1_hits: Vec<&HitRecord> = hits.iter().filter(|h| h.file_idx == 1).collect();
     assert!(

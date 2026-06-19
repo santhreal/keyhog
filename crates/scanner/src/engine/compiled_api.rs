@@ -46,7 +46,7 @@ impl CompiledScanner {
         (Arc::clone(id), Arc::clone(name), Arc::clone(service))
     }
 
-    /// Total number of patterns (AC + fallback).
+    /// Total number of patterns (AC + phase-2 capture).
     pub(crate) fn pattern_count(&self) -> usize {
         self.ac_map.len() + self.phase2_patterns.len()
     }
@@ -59,7 +59,7 @@ impl CompiledScanner {
         &self.tuning
     }
 
-    /// Diagnostic: `(fallback_total, always_active, always_active_eligible)` —
+    /// Diagnostic: `(phase2_total, always_active, always_active_eligible)` —
     /// how much the shared-anchor index shrinks the RegexSet prefilter. The
     /// prefilter cost scales with `always_active - always_active_eligible`.
     #[cfg(test)]
@@ -79,7 +79,7 @@ impl CompiledScanner {
     /// without the phase-1 HS scan overhead. Returns the mean nanoseconds per
     /// `mark_matches` call over `n_calls` iterations on `text`.
     ///
-    /// Used by `fallback_no_candidate_gate_perf` to assert the isolated gate
+    /// Used by `phase2_no_candidate_gate_perf` to assert the isolated gate
     /// path (bloom → AC early-exit → return) is well below the 30931 ns/call
     /// pre-fix baseline. The method bypasses the whole scan pipeline
     /// (`scan_chunks_with_backend`) so only the `mark_matches` body is timed.
@@ -103,8 +103,8 @@ impl CompiledScanner {
         elapsed_ns / n_calls as f64
     }
 
-    /// Diagnostic: `(regex_source, keywords)` for every keyword-gated fallback
-    /// pattern, in `fallback` order. These are the no-literal-prefix detectors
+    /// Diagnostic: `(regex_source, keywords)` for every keyword-gated phase-2
+    /// pattern, in phase-2 order. These are the no-literal-prefix detectors
     /// that `scan_phase2_patterns` runs over the whole chunk once their
     /// keyword fires. Used by anchor-localization analysis to classify which
     /// carry a regex-required literal that can drive a windowed (rather than

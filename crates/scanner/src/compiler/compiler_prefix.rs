@@ -12,14 +12,14 @@ pub(crate) fn extract_literal_prefixes(pattern: &str) -> Vec<String> {
     // match requires start-of-line or a non-word char before the token
     // (helicone `(?:^|[^A-Za-z0-9_])(sk-…{20,})`, deepnote `(…)(dn_…{20,})`).
     // The guard carries no literal, so prefix extraction returned nothing
-    // and the detector fell to the keyword-gated fallback - where a bare
+    // and the detector fell to the keyword-gated phase-2 lane - where a bare
     // token positive (`sk-…`, `dn_…`) whose only ≥4-char keyword is absent
     // never fired (contracts_runner: helicone / deepnote MISSED). Strip the
     // guard and extract the prefix from what follows. The full regex (guard
     // included) still confirms at extraction time, so AC only GAINS the
     // trigger literal - precision is held by the `{20,}` body, and routing
     // via the full-regex AC path is strictly more precise than the keyword
-    // fallback this replaces.
+    // phase-2 keyword route this replaces.
     if let Some(rest) = strip_leading_boundary_guard(pattern) {
         let inner = extract_literal_prefixes(rest);
         if !inner.is_empty() {
@@ -354,8 +354,8 @@ pub(crate) fn is_escaped_literal(ch: char) -> bool {
 pub(crate) const MIN_INNER_LITERAL_CHARS: usize = 4;
 
 /// Extract literal substrings from anywhere in a regex pattern (not just
-/// the start), suitable as Aho-Corasick prefilter triggers for fallback
-/// patterns whose start is a character class.
+/// the start), suitable as Aho-Corasick prefilter triggers for phase-2 patterns
+/// whose start is a character class.
 ///
 /// Walks the parsed regex AST and collects every contiguous run of
 /// `Literal` nodes inside a `Concat`. Alternation branches are walked

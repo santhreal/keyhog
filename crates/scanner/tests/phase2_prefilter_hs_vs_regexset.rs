@@ -1,11 +1,11 @@
 //! DECISION GATE: can Hyperscan replace the `regex::RegexSet` always-active
-//! fallback prefilter — the measured #1 scan cost (`fb:prefilter` ≈ 44% of scan
+//! phase-2 prefilter — the measured #1 scan cost (`phase2:prefilter` ≈ 44% of scan
 //! in the small-file regime, ~35µs/call) — at a real speedup AND without
 //! changing the matched-pattern set (soundness)?
 //!
 //! `build_simd_scanner` compiles ONLY the keyword-triggered `ac_map` into
-//! Hyperscan; its `_fallback` argument is ignored, so every always-active
-//! fallback pattern runs through `regex::RegexSet` instead. Hyperscan is built
+//! Hyperscan; every always-active phase-2 pattern runs through `regex::RegexSet`
+//! instead. Hyperscan is built
 //! for thousands of patterns at multi-GB/s, and `SINGLEMATCH` (fire each pattern
 //! at most once) is exactly "does pattern P match at all" — the prefilter's
 //! question, with no broad-pattern callback storm.

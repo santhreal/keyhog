@@ -319,7 +319,7 @@ impl CompiledScanner {
                     full_recall_floor,
                 );
             }
-            // Diagnostic: dump the phase-2 leaf breakdown (Confirmed / FbPrefilter /
+            // Diagnostic: dump the phase-2 leaf breakdown (confirmed / phase2:prefilter /
             // Generic / Entropy / Ml …) so the localizable-vs-whole-chunk cost split
             // is visible — the data Part B (localized phase 2) is designed against.
             // Gated through the single profiler owner, so dispatch does not grow
@@ -407,13 +407,13 @@ mod tests {
     }
 
     #[test]
-    fn bounded_validation_source_has_no_old_full_chunk_fallback() {
+    fn bounded_validation_source_has_no_old_full_chunk_regex_scan() {
         let src = include_str!("gpu_region_dispatch.rs");
         let old_full_chunk_regex_scan = ["rx.is_match", "(text.as_str())"].concat();
         assert!(
             !src.contains(&old_full_chunk_regex_scan),
-            "bounded GPU firing validation must not fall back to a full prepared-chunk \
-             regex scan after its local proof window misses"
+            "bounded GPU firing validation must not run a full prepared-chunk regex \
+             scan after its local proof window misses"
         );
     }
 

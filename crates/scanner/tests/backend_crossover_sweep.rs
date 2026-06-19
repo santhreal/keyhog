@@ -3,9 +3,9 @@
 //! `select_backend` (see `hw_probe::thresholds`) routes a scan to GPU once the
 //! coalesced buffer clears a tier floor. Those floors must reflect where the GPU
 //! *actually* overtakes the CPU paths on real hardware — a number that moved
-//! after the always-active fallback-prefilter fix made the common per-chunk CPU
+//! after the always-active phase-2 prefilter fix made the common per-chunk CPU
 //! path much cheaper (the old `1–2.5 MiB/s` regime in `perf_floor_matrix` was
-//! dominated by 2,730 per-scan fallback regexes, now collapsed to one RegexSet
+//! dominated by 2,730 per-scan phase-2 regexes, now collapsed to one RegexSet
 //! pass). This test re-measures the crossover so the thresholds track data.
 //!
 //! **Why two payload regimes.** The GPU backend accelerates only *phase 1* —

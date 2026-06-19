@@ -1,4 +1,4 @@
-//! Megakernel GPU-coverage CLASSIFIER — what actually keeps fallback patterns
+//! Megakernel GPU-coverage CLASSIFIER — what actually keeps phase-2 patterns
 //! off the GPU, and how to fix each class.
 //!
 //! `megakernel_catalog_pack` reports "1261/1668 packed, 407 host-path" at a
@@ -63,7 +63,7 @@ fn literal_anchor(pattern: &str) -> Option<String> {
 
 #[test]
 #[ignore = "measurement over the real detector set; run with --ignored --nocapture"]
-fn classify_fallback_gpu_coverage() {
+fn classify_phase2_gpu_coverage() {
     let detectors = match keyhog_core::load_detectors(&detector_dir()) {
         Ok(d) => d,
         Err(e) => {
@@ -75,7 +75,7 @@ fn classify_fallback_gpu_coverage() {
         .iter()
         .flat_map(|d| d.patterns.iter().map(|p| p.regex.clone()))
         .collect();
-    eprintln!("classifying {} fallback patterns\n", regexes.len());
+    eprintln!("classifying {} phase-2 patterns\n", regexes.len());
 
     for &budget in BUDGETS {
         use rayon::prelude::*;

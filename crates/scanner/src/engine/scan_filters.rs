@@ -2,7 +2,7 @@
 /// Used to gate the multiline fallback - only files that mention
 /// secret/key/token/password are worth reassembling.
 ///
-/// Used by coalesced SIMD and GPU phase2 no-hit routing to avoid full fallback
+/// Used by coalesced SIMD and GPU phase2 no-hit routing to avoid full phase-2
 /// scans on chunks that cannot plausibly contain split or prefix-known secrets.
 ///
 /// Single-pass Aho-Corasick over all distinctive prefixes - replaces the
