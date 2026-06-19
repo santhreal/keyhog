@@ -78,7 +78,7 @@ git add keyhog-baseline.json && git commit -m "chore: keyhog baseline"
 | Per-file scan throughput | ~500 MB/s on hosted runners (AVX-512 SIMD + Hyperscan) |
 | Wall-clock for a 5k-file repo | typically under 10 s end-to-end |
 | Runtime dependencies | `libhyperscan5` (auto-installed via apt on Ubuntu runners); none on macOS/Windows |
-| Toolchains required | none for the prebuilt path; Rust only for the source-build fallback |
+| Toolchains required | none for release-tag prebuilts; Rust only for branch/SHA source builds |
 | GPU | not required on hosted runners (auto-disabled; SIMD + Hyperscan path is the default everywhere) |
 
 No Python, no JVM, no Docker daemon. Single static binary plus the
@@ -86,19 +86,20 @@ auto-installed Hyperscan shared library on Linux.
 
 ## Platforms
 
-| OS | arch | Prebuilt binary | Source-build fallback |
+| OS | arch | Prebuilt binary | Branch/SHA source build |
 | --- | --- | --- | --- |
 | Linux | x86_64 | yes (full features) | yes |
 | macOS | aarch64 | yes (no Hyperscan) | yes (`portable` feature) |
 | macOS | x86_64 | yes (no Hyperscan) | yes (`portable` feature) |
 | Windows | * | no | manual, see DROP_IN_USAGE.md |
 
-The action tries the prebuilt binary first and only falls back to a
-source build when the release asset or checksum is missing. macOS builds (both
-prebuilt and source fallback) ship without Hyperscan because there is
-no `libhyperscan-dev` package in homebrew; everything else (entropy,
-multiline reassembly, ML scoring, decode-through, all source backends)
-is included.
+Release tags and explicit `version:` inputs require a matching prebuilt binary
+and checksum; missing or unverifiable release assets fail the workflow instead
+of silently source-building different code. Branch and SHA action refs may build
+from source. macOS builds (both prebuilt and branch/SHA source builds) ship
+without Hyperscan because there is no `libhyperscan-dev` package in homebrew;
+everything else (entropy, multiline reassembly, ML scoring, decode-through, all
+source backends) is included.
 
 ## Recipes
 

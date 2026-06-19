@@ -1561,6 +1561,16 @@ fn composite_action_version_output_is_validated_before_github_output() {
         "version resolver must write a single validated output line"
     );
     assert!(
+        manifest.contains(
+            "printf 'release_required=%s\\n' \"$release_required\" >> \"$GITHUB_OUTPUT\""
+        ),
+        "version resolver must expose whether source-build fallback is allowed"
+    );
+    assert!(
+        manifest.contains("ACTION_RELEASE_REQUIRED: ${{ steps.version.outputs.release_required }}"),
+        "download step must receive the release-required decision through env"
+    );
+    assert!(
         !manifest.contains("echo \"version=$v\" >> \"$GITHUB_OUTPUT\""),
         "version resolver must not echo an unvalidated output assignment"
     );
@@ -1604,8 +1614,99 @@ fn composite_action_verifies_downloaded_release_asset() {
         "prebuilt download must verify the checksum before adding keyhog to PATH"
     );
     assert!(
-        manifest.contains("Release asset or checksum missing"),
-        "missing checksum must fall back to source build instead of running an unchecked binary"
+        manifest.contains("refusing source-build fallback for a required release"),
+        "missing required release assets/checksums must fail closed instead of source-building silently"
+    );
+}
+
+#[test]
+fn composite_action_required_release_download_failure_fails_closed() {
+    let dir = TempDir::new().expect("tempdir");
+    let fake_bin = dir.path().join("bin");
+    fs::create_dir(&fake_bin).expect("create fake bin");
+    write_executable(
+        &fake_bin.join("curl"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+exit 22
+"#,
+    );
+    let output_path = dir.path().join("github-output.txt");
+    let output_path_str = output_path.to_string_lossy().into_owned();
+    let runner_temp = dir.path().join("runner-temp");
+    fs::create_dir(&runner_temp).expect("create runner temp");
+    let runner_temp_str = runner_temp.to_string_lossy().into_owned();
+    let path = format!(
+        "{}:{}",
+        fake_bin.display(),
+        env::var("PATH").expect("PATH is set")
+    );
+    let output = run_manifest_bash_step(
+        "Try downloading prebuilt binary",
+        &[
+            ("PATH", path.as_str()),
+            ("GITHUB_OUTPUT", output_path_str.as_str()),
+            ("RUNNER_TEMP", runner_temp_str.as_str()),
+            ("ACTION_ASSET_NAME", "keyhog-linux-x86_64"),
+            ("ACTION_RESOLVED_VERSION", "0.5.37"),
+            ("ACTION_RELEASE_REQUIRED", "true"),
+        ],
+    );
+    let combined = combined_output(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "required release download miss must fail closed; output={combined}"
+    );
+    assert!(
+        combined.contains("refusing source-build fallback for a required release"),
+        "failure must explain that source-build fallback is forbidden for release refs; output={combined}"
+    );
+}
+
+#[test]
+fn composite_action_branch_ref_download_failure_allows_source_build() {
+    let dir = TempDir::new().expect("tempdir");
+    let fake_bin = dir.path().join("bin");
+    fs::create_dir(&fake_bin).expect("create fake bin");
+    write_executable(
+        &fake_bin.join("curl"),
+        r#"#!/usr/bin/env bash
+set -euo pipefail
+exit 22
+"#,
+    );
+    let output_path = dir.path().join("github-output.txt");
+    let output_path_str = output_path.to_string_lossy().into_owned();
+    let runner_temp = dir.path().join("runner-temp");
+    fs::create_dir(&runner_temp).expect("create runner temp");
+    let runner_temp_str = runner_temp.to_string_lossy().into_owned();
+    let path = format!(
+        "{}:{}",
+        fake_bin.display(),
+        env::var("PATH").expect("PATH is set")
+    );
+    let output = run_manifest_bash_step(
+        "Try downloading prebuilt binary",
+        &[
+            ("PATH", path.as_str()),
+            ("GITHUB_OUTPUT", output_path_str.as_str()),
+            ("RUNNER_TEMP", runner_temp_str.as_str()),
+            ("ACTION_ASSET_NAME", "keyhog-linux-x86_64"),
+            ("ACTION_RESOLVED_VERSION", "main"),
+            ("ACTION_RELEASE_REQUIRED", "false"),
+        ],
+    );
+    let combined = combined_output(&output);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "branch/SHA download miss may continue to source build; output={combined}"
+    );
+    let github_output = fs::read_to_string(&output_path).expect("read GITHUB_OUTPUT");
+    assert!(
+        github_output.contains("found=false"),
+        "branch/SHA miss must advertise source-build path; output={github_output}"
     );
 }
 
