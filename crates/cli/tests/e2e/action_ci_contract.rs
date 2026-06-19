@@ -83,6 +83,13 @@ fn ci_workflow() -> PathBuf {
         .expect("ci.yml exists")
 }
 
+fn differential_bench_workflow() -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../.github/workflows/differential-bench.yml")
+        .canonicalize()
+        .expect("differential-bench.yml exists")
+}
+
 fn keyhog_binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
@@ -1882,6 +1889,39 @@ fn keyhog_workflow_dogfoods_local_composite_action() {
         offenders.is_empty(),
         "keyhog workflow shell blocks must receive action outputs through env, not direct interpolation: {offenders:#?}"
     );
+}
+
+#[test]
+fn differential_bench_smoke_fails_closed_before_scoring() {
+    let workflow =
+        fs::read_to_string(differential_bench_workflow()).expect("read differential-bench.yml");
+    let smoke = workflow
+        .split("- name: keyhog smoke check (broken binary != F1 regression)")
+        .nth(1)
+        .and_then(|tail| tail.split("- name: generate mirror corpus").next())
+        .expect("keyhog smoke step exists");
+    assert!(
+        smoke.contains("--format json --output \"$report\""),
+        "smoke scan must write a parseable report artifact"
+    );
+    assert!(
+        smoke.contains("case \"$rc\" in") && smoke.contains("1 | 10) ;;"),
+        "smoke scan must accept only findings/live-findings exit codes"
+    );
+    assert!(
+        smoke.contains("json.loads(report.read_text())"),
+        "smoke scan must parse JSON directly from the report file"
+    );
+    for retired in [
+        "|| echo 0",
+        "2>/dev/null || true",
+        "d=json.loads(t) if t else []",
+    ] {
+        assert!(
+            !smoke.contains(retired),
+            "smoke scan must not convert scanner/report failures into zero findings: {retired}"
+        );
+    }
 }
 
 #[test]
