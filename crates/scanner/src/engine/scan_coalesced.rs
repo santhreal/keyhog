@@ -216,6 +216,20 @@ impl CompiledScanner {
         chunks: &[keyhog_core::Chunk],
         triggers: Vec<Option<Vec<u64>>>,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
+        self.scan_coalesced_phase2_with_admission(chunks, triggers, None)
+    }
+
+    /// [`scan_coalesced_phase2`](Self::scan_coalesced_phase2) with an optional
+    /// producer-side phase-2 admission bitmap. A `true` bit only admits a
+    /// no-trigger chunk to the shared tail; a `false` bit is never trusted as a
+    /// skip proof because GPU regex-DFA coverage may be partial or capped.
+    #[cfg(feature = "simd")]
+    pub(crate) fn scan_coalesced_phase2_with_admission(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+        triggers: Vec<Option<Vec<u64>>>,
+        phase2_admission: Option<&[bool]>,
+    ) -> Vec<Vec<keyhog_core::RawMatch>> {
         use crate::hw_probe::ScanBackend;
         use rayon::prelude::*;
 
@@ -223,7 +237,8 @@ impl CompiledScanner {
         let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
             .par_iter()
             .zip(triggers.into_par_iter())
-            .map(|(chunk, triggered_opt)| {
+            .enumerate()
+            .map(|(chunk_index, (chunk, triggered_opt))| {
                 if let Some(triggered) = triggered_opt {
                     let mut matches = self.scan_chunk_or_window(chunk, None, || {
                         let prepared = self.prepare_chunk(chunk);
@@ -237,7 +252,12 @@ impl CompiledScanner {
                     self.post_process_coalesced_matches(chunk, &mut matches);
                     return matches;
                 }
-                if !self.should_scan_no_hit_chunk(chunk) {
+                let admitted_by_phase2_gpu =
+                    match phase2_admission.and_then(|admission| admission.get(chunk_index)) {
+                        Some(&admitted) => admitted,
+                        None => false, // LAW10: recall_preserving; absent GPU admission never skips CPU admission.
+                    };
+                if !admitted_by_phase2_gpu && !self.should_scan_no_hit_chunk(chunk) {
                     if let Some(matches) = self.decode_only_coalesced_matches(chunk) {
                         return matches;
                     }

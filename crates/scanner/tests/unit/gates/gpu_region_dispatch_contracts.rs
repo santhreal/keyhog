@@ -33,6 +33,13 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         "region dispatch must use Vyre's batched region-presence scratch API"
     );
     assert!(
+        dispatch_src.contains("phase2_gpu_dfa")
+            && dispatch_src.contains("scan_coalesced_phase2_with_admission")
+            && dispatch_src.contains("phase2_gpu_admitted")
+            && dispatch_src.contains("CPU admission remains authoritative"),
+        "region dispatch must wire phase-2 GPU regex-DFA admission visibly, with CPU admission authoritative on failure"
+    );
+    assert!(
         dispatch_src.contains("presence.len() != expected_presence_words"),
         "region dispatch must fail loud when GPU readback size differs from the chunk x word contract"
     );

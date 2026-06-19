@@ -375,6 +375,23 @@ impl CompiledScanner {
                 );
             }
 
+            let t_phase2_gpu = std::time::Instant::now();
+            let phase2_gpu_admission = match self.phase2_gpu_dfa_catalog(Some(backend.id())) {
+                Some(catalog) => match catalog.scan_admission(&**backend, chunks) {
+                    Ok(admission) => Some(admission),
+                    Err(error) => {
+                        tracing::warn!(
+                            target: "keyhog::gpu",
+                            %error,
+                            "phase-2 GPU regex-DFA admission failed; CPU admission remains authoritative"
+                        );
+                        None
+                    }
+                },
+                None => None,
+            };
+            let phase2_gpu_s = t_phase2_gpu.elapsed();
+
             let trigger_bits: usize = triggers
                 .iter()
                 .filter_map(|t| t.as_ref())
@@ -382,19 +399,38 @@ impl CompiledScanner {
                 .sum();
 
             let t_p2 = std::time::Instant::now();
-            let results = self.scan_coalesced_phase2(chunks, triggers);
+            let phase2_gpu_admitted = phase2_gpu_admission.as_ref().map_or(0usize, |admission| {
+                admission.admitted.iter().filter(|&&v| v).count()
+            });
+            let phase2_gpu_matches = phase2_gpu_admission
+                .as_ref()
+                .map_or(0usize, |admission| admission.matches_seen);
+            let phase2_gpu_complete = phase2_gpu_admission
+                .as_ref()
+                .is_some_and(|admission| admission.complete);
+            let results = self.scan_coalesced_phase2_with_admission(
+                chunks,
+                triggers,
+                phase2_gpu_admission
+                    .as_ref()
+                    .map(|admission| admission.admitted.as_slice()),
+            );
             if kh {
                 eprintln!(
-                    "perf-trace gpu-region-presence: chunks={} matcher={:.3}s coalesce={:.3}s dispatch={:.3}s floor={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} full_recall_floor={}",
+                    "perf-trace gpu-region-presence: chunks={} matcher={:.3}s coalesce={:.3}s dispatch={:.3}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_matches={} phase2_gpu_complete={} full_recall_floor={}",
                     chunks.len(),
                     matcher_s.as_secs_f64(),
                     co_s.as_secs_f64(),
                     dis_s.as_secs_f64(),
                     floor_s.as_secs_f64(),
+                    phase2_gpu_s.as_secs_f64(),
                     t_p2.elapsed().as_secs_f64(),
                     gpu_presence_bits,
                     gpu_underfire_recovered,
                     trigger_bits,
+                    phase2_gpu_admitted,
+                    phase2_gpu_matches,
+                    phase2_gpu_complete,
                     full_recall_floor,
                 );
             }

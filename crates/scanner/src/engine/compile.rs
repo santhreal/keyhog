@@ -393,6 +393,8 @@ impl CompiledScanner {
             phase2_always_active_indices,
             phase2_always_active_prefilter,
             phase2_anchor_index,
+            #[cfg(feature = "gpu")]
+            phase2_gpu_dfa: OnceLock::new(),
             tuning: phase2::ScannerTuning::from_defaults(),
             #[cfg(feature = "simd")]
             simd_prefilter,

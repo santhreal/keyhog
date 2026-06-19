@@ -41,6 +41,13 @@ fn no_hit_admission_consults_active_fallback_set() {
         "scan_coalesced_phase2's no-hit branch must gate on should_scan_no_hit_chunk \
          so CPU and GPU producers share one recall-load-bearing admission policy"
     );
+    assert!(
+        scan.contains("scan_coalesced_phase2_with_admission")
+            && scan.contains("admitted_by_phase2_gpu")
+            && scan.contains("!admitted_by_phase2_gpu && !self.should_scan_no_hit_chunk(chunk)"),
+        "GPU phase-2 regex-DFA admission may only force a no-hit chunk into the \
+         shared tail; a GPU miss must still consult CPU admission"
+    );
 
     // The active-set probe must stay shared with the production fallback scanner.
     // The phase-2 scan impl was split out of the old fallback module into
@@ -50,5 +57,14 @@ fn no_hit_admission_consults_active_fallback_set() {
     assert!(
         phase2.contains("pub(crate) fn has_active_phase2_patterns_for_chunk"),
         "phase-2 active-set probe must stay shared with the production phase-2 scanner"
+    );
+
+    let gpu_dfa = scanner_source("engine/phase2_gpu_dfa.rs");
+    assert!(
+        gpu_dfa.contains("build_regex_dfa_unanchored")
+            && gpu_dfa.contains("gate_prefix_literals")
+            && gpu_dfa.contains("CPU admission remains authoritative"),
+        "phase-2 GPU admission must be a real Vyre regex-DFA path for prefixless \
+         always-active patterns, with CPU admission authoritative for uncovered/error cases"
     );
 }
