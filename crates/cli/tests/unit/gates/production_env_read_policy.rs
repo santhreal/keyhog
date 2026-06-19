@@ -21,7 +21,12 @@ fn collect_rs_files(root: &Path, out: &mut Vec<PathBuf>) {
 }
 
 fn env_call_name(line: &str) -> Option<Option<String>> {
-    for call in ["std::env::var(", "std::env::var_os("] {
+    for call in [
+        "std::env::var(",
+        "std::env::var_os(",
+        "env::var(",
+        "env::var_os(",
+    ] {
         let Some(start) = line.find(call) else {
             continue;
         };
@@ -38,27 +43,69 @@ fn env_call_name(line: &str) -> Option<Option<String>> {
 }
 
 fn allowed_env_read(rel: &str, name: &str) -> bool {
-    const EXTERNAL_ENV: &[&str] = &[
-        "PATH",
-        "NO_COLOR",
-        "TERM",
-        "COLORTERM",
-        "XDG_RUNTIME_DIR",
-        "AWS_ACCESS_KEY_ID",
-        "AWS_SECRET_ACCESS_KEY",
-        "AWS_REGION",
-        "AWS_DEFAULT_REGION",
-        "AWS_SESSION_TOKEN",
-        "GOOGLE_OAUTH_ACCESS_TOKEN",
-        "GCS_BEARER_TOKEN",
-    ];
-
-    if EXTERNAL_ENV.contains(&name) {
-        return true;
+    match name {
+        "PATH" => rel == "crates/cli/src/subcommands/doctor.rs",
+        "NO_COLOR" => matches!(
+            rel,
+            "crates/cli/src/lib.rs"
+                | "crates/cli/src/style.rs"
+                | "crates/cli/src/orchestrator/run.rs"
+        ),
+        "TERM" | "COLORTERM" => rel == "crates/core/src/report/banner.rs",
+        "XDG_RUNTIME_DIR" => rel == "crates/cli/src/daemon/server.rs",
+        "AWS_ACCESS_KEY_ID"
+        | "AWS_SECRET_ACCESS_KEY"
+        | "AWS_REGION"
+        | "AWS_DEFAULT_REGION"
+        | "AWS_SESSION_TOKEN" => rel.starts_with("crates/sources/src/s3/"),
+        "GOOGLE_OAUTH_ACCESS_TOKEN" | "GCS_BEARER_TOKEN" => rel == "crates/sources/src/gcs.rs",
+        _ => false,
     }
+}
 
-    let _ = rel; // keep the signature useful for future path-scoped external allowances.
-    false
+#[test]
+fn env_policy_parser_catches_aliases_and_dynamic_names() {
+    assert_eq!(
+        env_call_name(r#"let path = std::env::var("PATH");"#),
+        Some(Some("PATH".to_string()))
+    );
+    assert_eq!(
+        env_call_name(r#"let color = std::env::var_os("NO_COLOR");"#),
+        Some(Some("NO_COLOR".to_string()))
+    );
+    assert_eq!(
+        env_call_name(r#"let path = env::var("PATH");"#),
+        Some(Some("PATH".to_string()))
+    );
+    assert_eq!(
+        env_call_name(r#"let dynamic = env::var(name);"#),
+        Some(None)
+    );
+}
+
+#[test]
+fn env_policy_allowlist_is_path_scoped() {
+    assert!(allowed_env_read(
+        "crates/cli/src/subcommands/doctor.rs",
+        "PATH"
+    ));
+    assert!(!allowed_env_read("crates/scanner/src/lib.rs", "PATH"));
+    assert!(allowed_env_read(
+        "crates/sources/src/s3/auth.rs",
+        "AWS_ACCESS_KEY_ID"
+    ));
+    assert!(!allowed_env_read(
+        "crates/sources/src/http.rs",
+        "AWS_ACCESS_KEY_ID"
+    ));
+    assert!(allowed_env_read(
+        "crates/core/src/report/banner.rs",
+        "COLORTERM"
+    ));
+    assert!(!allowed_env_read(
+        "crates/cli/src/orchestrator/run.rs",
+        "COLORTERM"
+    ));
 }
 
 #[test]
