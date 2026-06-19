@@ -145,6 +145,36 @@ fn always_active_finding_survives_the_gate() {
 }
 
 #[test]
+fn boolean_admission_honors_homoglyph_ascii_skip() {
+    let _guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let scanner = compile();
+    let prefilter = scanner
+        .phase2_always_active_prefilter
+        .as_ref()
+        .expect("embedded detectors must build the always-active phase-2 prefilter");
+    let text = "stripe = \"rk_live_2S2FrlCUpmb2ou955jvUlPSH\"\n";
+
+    keyhog_scanner::testing::set_phase2_hs(&scanner, Some(false));
+    keyhog_scanner::testing::set_homoglyph_ascii_skip(&scanner, Some(false));
+    let fold_path_admits = prefilter.any_active_match(text, scanner.tuning());
+
+    keyhog_scanner::testing::set_homoglyph_ascii_skip(&scanner, Some(true));
+    let skip_path_admits = prefilter.any_active_match(text, scanner.tuning());
+    keyhog_scanner::testing::set_phase2_hs(&scanner, None);
+    keyhog_scanner::testing::set_homoglyph_ascii_skip(&scanner, None);
+
+    assert!(
+        fold_path_admits,
+        "control path must prove the ASCII text was admitted only by the folded homoglyph batch"
+    );
+    assert!(
+        !skip_path_admits,
+        "boolean no-hit admission must mirror mark_matches' proven ASCII homoglyph skip \
+         instead of over-admitting pure-ASCII chunks through generated variants"
+    );
+}
+
+#[test]
 fn gate_is_recall_neutral_findings_byte_identical() {
     let _guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let scanner = compile();

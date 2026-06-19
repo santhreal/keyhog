@@ -668,9 +668,9 @@ impl Phase2AlwaysActivePrefilter {
     /// the full set; no prune applies), so admission and extraction share one
     /// contract. It never applies the optional measurement-only prunes
     /// (`phase2_prefix_gate` / `homoglyph_ascii_skip`), so it answers over the
-    /// marking SUPERSET — sound (it can never reject a chunk the scan would mark, so
-    /// no finding is lost), at most over-admitting an inert chunk to the extraction
-    /// that already filters it.
+    /// marking SUPERSET except for the proven homoglyph ASCII skip — sound (it can
+    /// never reject a chunk the scan would mark, so no finding is lost), at most
+    /// over-admitting an inert chunk to the extraction that already filters it.
     ///
     /// Like `mark_matches`, it consults the cheap SWE-101 `combined_gate` first: on
     /// a pure-ASCII chunk where the combined required-literal AC finds nothing, NO
@@ -719,8 +719,12 @@ impl Phase2AlwaysActivePrefilter {
         // set is non-empty iff some batch's set matches. `is_match` early-exits
         // at the first matching pattern within the batch.
         let truncate = tuning.prefilter_truncate_enabled();
-        let use_ascii = tuning.homoglyph_gate_enabled() && match_text.is_ascii();
+        let ascii = match_text.is_ascii();
+        let use_ascii = tuning.homoglyph_gate_enabled() && ascii;
         for batch in &self.batches {
+            if batch.homoglyph_skippable && ascii && tuning.homoglyph_ascii_skip_enabled() {
+                continue;
+            }
             let set = match (
                 truncate,
                 use_ascii,

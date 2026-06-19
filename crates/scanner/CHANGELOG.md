@@ -61,6 +61,9 @@
 - Tighten the GPU region-presence host lowercase staging helper to reserve once
   and write folded bytes directly into spare vector capacity, preserving
   `make_ascii_lowercase` semantics without a `Vec::push` per byte.
+- Make the boolean no-hit phase-2 admission gate honor the proven ASCII
+  homoglyph-variant skip, avoiding extra phase-2 work on pure-ASCII chunks that
+  are already covered by the base AC path.
 - Keep high-entropy base64-like secrets with internal `+`/`/` punctuation through generic and entropy fallbacks by bypassing binary-decoy suppression on the punctuation payload class, closing `encoded_binary`-driven false negatives.
 - Add adversarial coverage for the base64 punctuated high-entropy class and a fixed-token regression for `TVo...+...` shape that previously dropped at `is_encoded_binary`.
 
