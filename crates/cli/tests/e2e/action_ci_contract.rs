@@ -2061,6 +2061,15 @@ exit 1
         output_file(&dir).contains("findings=2"),
         "text report count must use stable field labels"
     );
+    let scan = fs::read_to_string(action_script()).expect("read run-scan.sh");
+    assert!(
+        !scan.contains("grep -c 'Secret:' \"$report_path\" 2>/dev/null || true"),
+        "text report counter must not turn grep/read errors into zero findings"
+    );
+    assert!(
+        scan.contains("grep_status=$?") && scan.contains("0 | 1)"),
+        "text report counter must distinguish no matches from grep/read errors"
+    );
 }
 
 #[test]

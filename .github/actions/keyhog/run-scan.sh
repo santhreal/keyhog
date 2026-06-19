@@ -308,7 +308,20 @@ PY
       fi
       ;;
     text)
-      grep -c 'Secret:' "$report_path" 2>/dev/null || true
+      local text_count
+      local grep_status
+      set +e
+      text_count="$(grep -c 'Secret:' "$report_path")"
+      grep_status=$?
+      set -e
+      case "$grep_status" in
+        0 | 1)
+          printf '%s\n' "${text_count:-0}"
+          ;;
+        *)
+          return "$grep_status"
+          ;;
+      esac
       ;;
   esac
 }
