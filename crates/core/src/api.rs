@@ -12,5 +12,8 @@ pub use crate::finding::*;
 pub use crate::merkle_spec_hash::compute_spec_hash;
 pub use crate::report::*;
 pub use crate::rule_filter::{RuleSuppressor, RuleSuppressorError};
+#[allow(deprecated)]
+pub use crate::safe_bin::resolve_or_fallback;
+pub use crate::safe_bin::{resolve_safe_bin, set_extra_trusted_dirs};
 pub use crate::source::*;
 pub use crate::spec::*;

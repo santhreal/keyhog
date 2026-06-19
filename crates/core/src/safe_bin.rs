@@ -8,16 +8,15 @@
 //! keyhog feeds the binary credential bytes (via env vars / argv / stdin
 //! during git scans), that's a credential-exfil pivot.
 //!
-//! This module enumerates a hardcoded allowlist of system binary
-//! directories and returns the FIRST match. Anything not in those dirs
-//! is refused. The allowlist is intentionally narrow - distro-shipped
-//! binaries only. If your environment legitimately needs a different
-//! path, set the `KEYHOG_TRUSTED_BIN_DIR` env var (colon-separated on
-//! Unix, semicolon-separated on Windows) - but be aware that anyone
-//! who can set that env var can already inject anyway, so the env-var
-//! path exists for ops convenience, not as a security boundary.
+//! This module enumerates a hardcoded allowlist of system binary directories
+//! plus caller-configured trusted directories loaded from `.keyhog.toml`.
+//! Anything not in those dirs is refused. The allowlist is intentionally narrow
+//! - distro-shipped binaries by default. Environments with Nix/Guix or other
+//! non-standard binary roots must configure explicit trusted dirs through the
+//! CLI config layer; no environment variable can expand this trust boundary.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::{OnceLock, RwLock};
 
 #[cfg(unix)]
 const SYSTEM_BIN_DIRS: &[&str] = &[
@@ -46,6 +45,44 @@ const EXE_SUFFIXES: &[&str] = &[""];
 #[cfg(windows)]
 const EXE_SUFFIXES: &[&str] = &[".exe", ".com", ".bat", ".cmd"];
 
+static EXTRA_TRUSTED_BIN_DIRS: OnceLock<RwLock<Vec<PathBuf>>> = OnceLock::new();
+
+/// Replace the caller-configured trusted binary directories.
+///
+/// Only absolute paths are retained. Relative paths would make the trust
+/// boundary depend on the process working directory, reopening the PATH-style
+/// ambiguity this module exists to avoid.
+pub fn set_extra_trusted_dirs(dirs: Vec<PathBuf>) {
+    let filtered = dirs
+        .into_iter()
+        .filter(|dir| dir.is_absolute())
+        .collect::<Vec<_>>();
+    let lock = EXTRA_TRUSTED_BIN_DIRS.get_or_init(|| RwLock::new(Vec::new()));
+    match lock.write() {
+        Ok(mut guard) => *guard = filtered,
+        Err(poisoned) => {
+            let mut guard = poisoned.into_inner();
+            *guard = filtered;
+        }
+    }
+}
+
+fn configured_trusted_dirs() -> Vec<PathBuf> {
+    let Some(lock) = EXTRA_TRUSTED_BIN_DIRS.get() else {
+        return Vec::new();
+    };
+    match lock.read() {
+        Ok(guard) => guard.clone(),
+        Err(poisoned) => poisoned.into_inner().clone(),
+    }
+}
+
+fn trusted_dirs() -> Vec<PathBuf> {
+    let mut dirs: Vec<PathBuf> = SYSTEM_BIN_DIRS.iter().map(PathBuf::from).collect();
+    dirs.extend(configured_trusted_dirs());
+    dirs
+}
+
 /// Resolve `name` to an absolute path inside one of the trusted system
 /// binary directories. Returns `None` if not found in any trusted dir
 /// (do NOT fall back to `Command::new(name)` - that's exactly the bug).
@@ -61,15 +98,7 @@ pub fn resolve_safe_bin(name: &str) -> Option<PathBuf> {
         return None;
     }
 
-    let mut search_dirs: Vec<PathBuf> = SYSTEM_BIN_DIRS.iter().map(PathBuf::from).collect();
-    if let Ok(extra) = std::env::var("KEYHOG_TRUSTED_BIN_DIR") {
-        let sep = if cfg!(windows) { ';' } else { ':' };
-        for dir in extra.split(sep).filter(|s| !s.is_empty()) {
-            search_dirs.push(PathBuf::from(dir));
-        }
-    }
-
-    for dir in &search_dirs {
+    for dir in trusted_dirs() {
         for suffix in EXE_SUFFIXES {
             let candidate = dir.join(format!("{name}{suffix}"));
             if candidate.is_file() {
@@ -80,31 +109,30 @@ pub fn resolve_safe_bin(name: &str) -> Option<PathBuf> {
     None
 }
 
-/// Resolve `name` or fall back to `Command::new(name)` semantics if
-/// nothing trusted was found. Intended for read-only / probe sites
-/// (hardware detection, version queries) where blocking the command
-/// would degrade UX more than the marginal risk warrants. Logs a
-/// warning so the operator knows the unsafe fallback fired.
+/// Compatibility shim for old downstream callers that expected
+/// `Command::new(name)` semantics when no trusted absolute binary was found.
 ///
-/// For sites that handle credential bytes (git scans, docker pulls),
-/// use `resolve_safe_bin` directly and refuse on `None`.
+/// Keyhog production code must use `resolve_safe_bin` directly and refuse on
+/// `None`, even for host probes. PATH fallback lets caller-controlled process
+/// state select an executable and is not an acceptable production routing path.
+#[deprecated(
+    note = "PATH fallback is compatibility-only; production code must call resolve_safe_bin and fail closed on None"
+)]
 pub fn resolve_or_fallback(name: &str) -> PathBuf {
     if let Some(p) = resolve_safe_bin(name) {
         return p;
     }
     tracing::warn!(
         "keyhog: '{name}' not found in trusted system bin dirs; falling back to PATH lookup. \
-         Set KEYHOG_TRUSTED_BIN_DIR if running on a non-standard distro."
+         Configure [system].trusted_bin_dirs in .keyhog.toml if running on a non-standard distro."
     );
     PathBuf::from(name)
 }
 
-fn in_trusted_dir(p: &std::path::Path) -> bool {
+fn in_trusted_dir(p: &Path) -> bool {
     let parent = match p.parent() {
         Some(p) => p,
         None => return false,
     };
-    SYSTEM_BIN_DIRS
-        .iter()
-        .any(|d| parent == std::path::Path::new(d))
+    trusted_dirs().iter().any(|dir| parent == dir.as_path())
 }
