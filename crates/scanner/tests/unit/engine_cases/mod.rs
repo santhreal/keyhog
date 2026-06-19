@@ -18,6 +18,8 @@ mod preferred_backend_label_nonempty;
 mod record_window_match_adjusts_offset;
 mod record_window_match_dedups;
 mod scan_chunks_preserves_chunk_count;
+#[cfg(feature = "simd")]
+mod scan_coalesced_phase2_trigger_rows;
 mod scan_cpu_fallback_finds_match;
 mod scan_does_not_cross_chunk_boundary;
 mod scan_simd_cpu_empty_chunk;

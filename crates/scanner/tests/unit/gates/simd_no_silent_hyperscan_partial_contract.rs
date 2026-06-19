@@ -70,4 +70,11 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
             ),
         "production engine callers must use fallible SIMD helpers and route failures to conservative explicit paths"
     );
+    assert!(
+        engine_scan.contains("normalize_coalesced_phase2_triggers")
+            && engine_scan.contains("coalesced phase-2 trigger row count mismatch")
+            && engine_scan.contains("collect_triggered_patterns_for_backend(")
+            && engine_scan.contains("ScanBackend::SimdCpu"),
+        "shared coalesced phase-2 must normalize trigger rows before zipping, so cardinality drift cannot silently truncate scanned chunks"
+    );
 }

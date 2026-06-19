@@ -13,6 +13,16 @@ pub fn pattern_regex_strs(scanner: &crate::CompiledScanner) -> Vec<&str> {
     scanner.pattern_regex_strs()
 }
 
+#[cfg(feature = "simd")]
+pub fn scan_coalesced_phase2_with_admission_for_test(
+    scanner: &crate::CompiledScanner,
+    chunks: &[keyhog_core::Chunk],
+    triggers: Vec<Option<Vec<u64>>>,
+    phase2_admission: Option<&[bool]>,
+) -> Vec<Vec<keyhog_core::RawMatch>> {
+    scanner.scan_coalesced_phase2_with_admission(chunks, triggers, phase2_admission)
+}
+
 #[cfg(test)]
 pub(crate) fn scan_with_deadline(
     scanner: &crate::CompiledScanner,

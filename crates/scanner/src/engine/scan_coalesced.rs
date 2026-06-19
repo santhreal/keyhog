@@ -219,6 +219,43 @@ impl CompiledScanner {
         self.scan_coalesced_phase2_with_admission(chunks, triggers, None)
     }
 
+    #[cfg(feature = "simd")]
+    fn normalize_coalesced_phase2_triggers(
+        &self,
+        chunks: &[keyhog_core::Chunk],
+        mut triggers: Vec<Option<Vec<u64>>>,
+    ) -> Vec<Option<Vec<u64>>> {
+        let chunk_count = chunks.len();
+        let trigger_count = triggers.len();
+        if trigger_count == chunk_count {
+            return triggers;
+        }
+
+        tracing::warn!(
+            chunks = chunk_count,
+            trigger_rows = trigger_count,
+            "coalesced phase-2 trigger row count mismatch; normalizing rows before shared phase-2"
+        );
+        if trigger_count > chunk_count {
+            triggers.truncate(chunk_count);
+            return triggers;
+        }
+
+        triggers.reserve(chunk_count - trigger_count);
+        for chunk in chunks.iter().skip(trigger_count) {
+            let triggered = self.collect_triggered_patterns_for_backend(
+                &chunk.data,
+                crate::hw_probe::ScanBackend::SimdCpu,
+            );
+            if triggered.iter().any(|&word| word != 0) {
+                triggers.push(Some(triggered));
+            } else {
+                triggers.push(None);
+            }
+        }
+        triggers
+    }
+
     /// [`scan_coalesced_phase2`](Self::scan_coalesced_phase2) with an optional
     /// producer-side phase-2 admission bitmap. A `true` bit only admits a
     /// no-trigger chunk to the shared tail; a `false` bit is never trusted as a
@@ -233,6 +270,7 @@ impl CompiledScanner {
         use crate::hw_probe::ScanBackend;
         use rayon::prelude::*;
 
+        let triggers = self.normalize_coalesced_phase2_triggers(chunks, triggers);
         let phase2_start = std::time::Instant::now();
         let mut results: Vec<Vec<keyhog_core::RawMatch>> = chunks
             .par_iter()
