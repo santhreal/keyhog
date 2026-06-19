@@ -1,5 +1,7 @@
 import sys
 
+import pytest
+
 import harvest_corpus
 from bench.corpora.base import LabeledRecord
 
@@ -26,16 +28,56 @@ def test_classify_finding_preserves_scorer_category_and_ignore_semantics():
         "authentication-key",
         False,
     )
-    assert harvest_corpus.classify_finding(records, "YOUR_API_KEY_HERE") == (
-        0,
-        "authentication-key",
-        True,
+    label, _secret_class, ignored = harvest_corpus.classify_finding(
+        records,
+        "YOUR_API_KEY_HERE",
     )
+    assert (label, ignored) == (0, True)
     assert harvest_corpus.classify_finding(records, "not-the-secret") == (
         0,
         "authentication-key",
         False,
     )
+
+
+def test_classify_finding_rejects_unknown_provenance_labels():
+    with pytest.raises(ValueError, match="positive record pos: missing explicit class"):
+        harvest_corpus.classify_finding(
+            [_record("pos", "AKIAQYLPMN5HFIQR7XYA", True, "unknown")],
+            "AKIAQYLPMN5HFIQR7XYA",
+            "creddata:fixture.env",
+        )
+
+    with pytest.raises(ValueError, match="false-positive file: missing explicit class"):
+        harvest_corpus.classify_finding(
+            [_record("neg", "", False, "unknown")],
+            "not-the-secret",
+            "creddata:fixture.env",
+        )
+
+
+def test_finding_detector_id_rejects_unknown_or_missing_values():
+    assert harvest_corpus._finding_detector_id(
+        {"detector": "aws-access-key"},
+        "creddata:fixture.env",
+    ) == "aws-access-key"
+    assert harvest_corpus._finding_detector_id(
+        {"detector_id": "github-classic-pat"},
+        "creddata:fixture.env",
+    ) == "github-classic-pat"
+    assert harvest_corpus._finding_detector_id(
+        {"detector": "unknown", "detector_id": "github-classic-pat"},
+        "creddata:fixture.env",
+    ) == "github-classic-pat"
+
+    for finding in (
+        {},
+        {"detector": "unknown"},
+        {"detector_id": " "},
+        {"detector": "n/a"},
+    ):
+        with pytest.raises(ValueError, match="missing explicit detector_id"):
+            harvest_corpus._finding_detector_id(finding, "creddata:fixture.env")
 
 
 def test_main_fails_closed_without_writing_when_requested_corpus_fails(

@@ -75,7 +75,34 @@ def serve_context(file_label: str, abs_path: pathlib.Path, line: int) -> str:
     return prefix + window
 
 
-def classify_finding(recs, value: str) -> tuple[int, str, bool]:
+UNKNOWN_PROVENANCE_LABELS = {"", "unknown", "none", "null", "n/a", "na"}
+
+
+def _required_provenance_label(value: object, field: str, context: str) -> str:
+    if isinstance(value, str):
+        label = value.strip()
+        if label and label.lower() not in UNKNOWN_PROVENANCE_LABELS:
+            return label
+    raise ValueError(
+        f"{context}: missing explicit {field}; fix corpus/finding provenance "
+        "before harvesting real ML training rows"
+    )
+
+
+def _finding_detector_id(finding: dict, context: str) -> str:
+    for field in ("detector", "detector_id"):
+        value = finding.get(field)
+        if isinstance(value, str):
+            label = value.strip()
+            if label and label.lower() not in UNKNOWN_PROVENANCE_LABELS:
+                return label
+    raise ValueError(
+        f"{context}: missing explicit detector_id; fix corpus/finding provenance "
+        "before harvesting real ML training rows"
+    )
+
+
+def classify_finding(recs, value: str, context: str = "finding") -> tuple[int, str, bool]:
     """Label a candidate and return (label, class, ignored).
 
     This mirrors the scorer's attribution rule: overlap with a positive record
@@ -88,10 +115,18 @@ def classify_finding(recs, value: str) -> tuple[int, str, bool]:
         if r.label and not r.ignore and overlap(value, r.secret)
     ]
     if matched:
-        return 1, (matched[0].category or "unknown"), False
-    category = _file_category(recs)
+        return 1, _required_provenance_label(
+            matched[0].category,
+            "class",
+            f"{context}: positive record {matched[0].id}",
+        ), False
     if any(r.ignore and overlap(value, r.secret) for r in recs):
-        return 0, category, True
+        return 0, "", True
+    category = _required_provenance_label(
+        _file_category(recs),
+        "class",
+        f"{context}: false-positive file",
+    )
     return 0, category, False
 
 
@@ -129,12 +164,13 @@ def harvest(corpus_name: str, keyhog_bin: str | None, floor: float) -> list[dict
             skipped_no_record += 1
             continue  # no ground-truth record on this file → can't label
         recs = by_key[key]
-        label, secret_class, ignored = classify_finding(recs, value)
+        context = f"{corpus_name}:{fpath or '<missing-file>'}"
+        label, secret_class, ignored = classify_finding(recs, value, context)
         if ignored:
             skipped_ignore += 1
             continue  # template/placeholder ground truth → neither class
         line = f.get("line") or 0
-        detector_id = f.get("detector") or f.get("detector_id") or "unknown"
+        detector_id = _finding_detector_id(f, context)
         out.append(
             {
                 "text": value,
