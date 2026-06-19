@@ -2,15 +2,11 @@ name: keyhog
 
 # Run keyhog secret scanner on every push + PR through the bundled composite
 # Action. Runtime errors fail the job. Findings upload to Code Scanning and
-# fail only when `.keyhog/strict` is present.
+# fail only when `.github/keyhog-strict` is present.
 #
-# GitHub Actions runners set CI=true and GITHUB_ACTIONS=true, both of
-# which keyhog auto-detects to skip its GPU adapter probe (CI runners
-# have no usable GPU; the probe would enumerate llvmpipe, get rejected
-# as software, and cost ~250 ms of cold-start per invocation). The
-# SIMD + Hyperscan path runs at ~500 MB/s on hosted runners which is
-# already fast for most repos. Self-hosted runners with a real GPU
-# can override with `env: { KEYHOG_NO_GPU: "0" }`.
+# Hosted GitHub runners have no usable GPU. Use explicit scan arguments such as
+# `--no-gpu` for CPU/SIMD-only hosted CI, or `--require-gpu` on self-hosted GPU
+# runners where a driver regression should fail closed.
 
 on:
   push:
@@ -53,7 +49,7 @@ jobs:
           upload-sarif: 'true'
           fail-on-findings: 'false'
 
-      - name: fail on findings (opt-in via .keyhog/strict)
+      - name: fail on findings (opt-in via .github/keyhog-strict)
         if: steps.keyhog.outputs.findings != '0'
         env:
           ACTION_FINDINGS: ${{ steps.keyhog.outputs.findings }}
@@ -78,9 +74,9 @@ jobs:
               ;;
           esac
           echo "keyhog reported $ACTION_FINDINGS finding(s); exit code $ACTION_EXIT_CODE"
-          if [ -f .keyhog/strict ]; then
-            echo "  .keyhog/strict present - failing CI on findings"
+          if [ -f .github/keyhog-strict ]; then
+            echo "  .github/keyhog-strict present - failing CI on findings"
             exit 1
           fi
-          echo "  .keyhog/strict absent - findings visible in Code Scanning"
-          echo "  (touch .keyhog/strict to make findings block CI)"
+          echo "  .github/keyhog-strict absent - findings visible in Code Scanning"
+          echo "  (touch .github/keyhog-strict to make findings block CI)"

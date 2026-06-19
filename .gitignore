@@ -9,6 +9,7 @@ crates/scanner/src/weights.bin.bak
 # IDE / editor noise
 .vscode/
 .idea/
+.claude/
 *.swp
 *.swo
 .DS_Store
@@ -22,6 +23,7 @@ docs/book/
 *.local
 *.dogfood
 dogfood-output*.json
+metrics/generated/
 
 # Generated benchmark corpora; reproducible with `make -C benchmarks mirror`
 # and full of synthetic secret-shaped fixtures.
@@ -39,17 +41,17 @@ tools/secretbench/
 tools/diff_bench/
 
 # Pre-existing local-noise paths
-__pycache__/
+**/__pycache__/
+**/.pytest_cache/
+*.pyc
 .keyhog-cache.json
 detectors/.keyhog-cache.json
 # Stray ImageMagick render misdirected into a top-level path (12 MB .ps named
 # "pathlib"); generated junk, never part of the source tree.
 /pathlib
 
-# Local coordination scratch — agent handoffs, dispatch notes, dogfood
-# corpora paths. Never published to santhsecurity/keyhog. (STANDARD.md:
-# prod-repo doc bleed rule.)
-coordination/
+# Accidental root-level scratch belongs outside this standalone prod repo.
+/coordination/
 
 # Bazel scaffolding — currently a PoC stub (every per-crate BUILD.bazel
 # is comment-only, MODULE.bazel pinned to 0.5.7 while we're shipping
@@ -66,28 +68,24 @@ MODULE.bazel.lock
 WORKSPACE
 WORKSPACE.bazel
 # Top-level scratch/audit/plan files that belong in the backup monorepo
-# (santhsecurity/Santh) and `.audits/`, not in the standalone prod repo.
-# NB: GAP_FINDINGS.toml is intentionally tracked (not ignored) — six contract
-# tests across core/sources/scanner/cli read it as a source-of-truth registry,
-# mirroring tests/FILE_GATE_MATRIX.toml, which was promoted out of this list for
-# the same reason.
-ROUNDS.md
-TODO.md
-TESTING_PROGRAM.md
-KEYHOG_LINUX_QUALITY_PROGRAM.md
-WAVE*_AGENT_PUSH.md
-WAVE*.md
-*_AUDIT*.md
-*_AUDIT*.toml
-FP_AUDIT_REPORT.md
-*_PROGRAM.md
-KIMI_AUDIT_*.md
-CURSOR_AUDIT_*.md
-CLAUDE_AUDIT_*.md
-plan.md
-PLAN.md
+# (santhsecurity/Santh) and local audit scratch, not in the standalone prod repo.
+/ROUNDS.md
+/TODO.md
+/TESTING_PROGRAM.md
+/KEYHOG_LINUX_QUALITY_PROGRAM.md
+/WAVE*_AGENT_PUSH.md
+/WAVE*.md
+/*_AUDIT*.md
+/*_AUDIT*.toml
+/FP_AUDIT_REPORT.md
+/*_PROGRAM.md
+/KIMI_AUDIT_*.md
+/CURSOR_AUDIT_*.md
+/CLAUDE_AUDIT_*.md
+/plan.md
+/PLAN.md
 plans/
-.audits/
+.audits
 
 # Runtime vyre JIT/PTX + pipeline caches written next to the binary during scans.
 .cache/

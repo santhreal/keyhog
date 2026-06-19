@@ -27,7 +27,7 @@ import tomllib
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 ROOT_CARGO = REPO / "Cargo.toml"
-REQUIRED_VERSION = "0.6.2"
+REQUIRED_VERSION = "0.6.3"
 
 # Logical dep key in [workspace.dependencies] -> published crate name.
 VYRE_DEPS: dict[str, str] = {
@@ -40,7 +40,7 @@ VYRE_DEPS: dict[str, str] = {
 
 
 def _strip_version_op(v: str) -> str:
-    """`=0.6.2` -> `0.6.2`; `0.6.2` -> `0.6.2`."""
+    """`=0.6.3` -> `0.6.3`; `0.6.3` -> `0.6.3`."""
     return v.lstrip("=").strip()
 
 
@@ -160,7 +160,7 @@ def check() -> list[str]:
         if retired_mirror_re.search(text):
             violations.append(
                 f"{rel} declares a Cargo path dependency into retired third_party/vyre. "
-                "Use the crates.io `=0.6.2` Vyre pins."
+                f"Use the crates.io `={REQUIRED_VERSION}` Vyre pins."
             )
         if live_tree_re.search(text):
             violations.append(
