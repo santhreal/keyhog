@@ -154,6 +154,8 @@ fn collect_azure_blob_chunks(
     let mut chunks = Vec::new();
     let mut listed_objects = 0usize;
     let mut source_truncated_reported = false;
+    use rayon::prelude::*;
+    let fetch_pool = crate::cloud::object_fetch_pool("azure_blob")?;
 
     loop {
         if listed_objects >= max_objects {
@@ -185,12 +187,7 @@ fn collect_azure_blob_chunks(
         let page: Vec<_> = listing.blobs.blob.into_iter().take(remaining).collect();
         listed_objects += page.len();
 
-        use rayon::prelude::*;
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(16)
-            .build()
-            .map_err(|error| SourceError::Other(format!("rayon pool build: {error}")))?;
-        let page_chunks: Vec<Result<Option<Chunk>, SourceError>> = pool.install(|| {
+        let page_chunks: Vec<Result<Option<Chunk>, SourceError>> = fetch_pool.install(|| {
             page.par_iter()
                 .map(|blob| -> Result<Option<Chunk>, SourceError> {
                     let listed_size = blob.properties.content_length;

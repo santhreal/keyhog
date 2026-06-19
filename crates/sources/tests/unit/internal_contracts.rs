@@ -73,6 +73,29 @@ fn sources_testing_facade_is_direct_module_reexport() {
 }
 
 #[test]
+fn cloud_object_fetch_pool_is_single_shared_owner() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let cloud = std::fs::read_to_string(root.join("src/cloud/mod.rs")).expect("read cloud owner");
+    assert!(
+        cloud.contains("OBJECT_FETCH_THREADS") && cloud.contains("fn object_fetch_pool"),
+        "cloud/mod.rs must own the shared cloud object-fetch pool and thread cap"
+    );
+
+    for rel in ["src/s3/mod.rs", "src/gcs.rs", "src/cloud/azure_blob.rs"] {
+        let source = std::fs::read_to_string(root.join(rel)).expect("read cloud source");
+        assert!(
+            source.contains("object_fetch_pool("),
+            "{rel} must use the shared cloud object-fetch pool"
+        );
+        assert_eq!(
+            source.matches("ThreadPoolBuilder::new()").count(),
+            0,
+            "{rel} must not rebuild a Rayon pool inside its pagination loop"
+        );
+    }
+}
+
+#[test]
 fn http_user_agent_contracts() {
     let ua = TestApi.user_agent(None);
     assert!(ua.starts_with("keyhog/"));

@@ -209,6 +209,8 @@ fn collect_s3_chunks(
     let mut chunks = Vec::new();
     let mut listed_objects = 0usize;
     let mut source_truncated_reported = false;
+    use rayon::prelude::*;
+    let fetch_pool = crate::cloud::object_fetch_pool("s3")?;
 
     loop {
         if listed_objects >= max_objects {
@@ -251,17 +253,12 @@ fn collect_s3_chunks(
         let page: Vec<_> = listing.contents.into_iter().take(remaining).collect();
         listed_objects += page.len();
 
-        // Concurrent per-page fetcher. S3 is designed for massive concurrent
+        // Concurrent object fetcher. S3 is designed for massive concurrent
         // GETs; the previous sequential loop wasted 90%+ of wall-clock on
         // large buckets. We use rayon (the workspace's parallelism primitive)
         // bounded to 16 in-flight downloads - high enough to saturate
         // reasonable bandwidth, low enough to avoid hammering small buckets.
-        use rayon::prelude::*;
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(16)
-            .build()
-            .map_err(|e| SourceError::Other(format!("rayon pool build: {e}")))?;
-        let page_chunks: Vec<Result<Option<Chunk>, SourceError>> = pool.install(|| {
+        let page_chunks: Vec<Result<Option<Chunk>, SourceError>> = fetch_pool.install(|| {
             page.par_iter()
                 .map(|object| -> Result<Option<Chunk>, SourceError> {
                     if object.size == 0 {

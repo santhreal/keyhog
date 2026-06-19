@@ -159,6 +159,8 @@ fn collect_gcs_chunks(
     let mut chunks = Vec::new();
     let mut listed_objects = 0usize;
     let mut source_truncated_reported = false;
+    use rayon::prelude::*;
+    let fetch_pool = crate::cloud::object_fetch_pool("gcs")?;
 
     loop {
         if listed_objects >= max_objects {
@@ -202,12 +204,7 @@ fn collect_gcs_chunks(
         let page: Vec<_> = listing.items.into_iter().take(remaining).collect();
         listed_objects += page.len();
 
-        use rayon::prelude::*;
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(16)
-            .build()
-            .map_err(|error| SourceError::Other(format!("rayon pool build: {error}")))?;
-        let page_chunks: Vec<Result<Option<Chunk>, SourceError>> = pool.install(|| {
+        let page_chunks: Vec<Result<Option<Chunk>, SourceError>> = fetch_pool.install(|| {
             page.par_iter()
                 .map(|object| -> Result<Option<Chunk>, SourceError> {
                     let listed_size = object.size_bytes()?;
