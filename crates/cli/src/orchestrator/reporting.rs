@@ -235,10 +235,14 @@ pub(crate) fn report_skip_summary(ansi: bool) {
     // run whose ONLY coverage gap is a Ghidra fallback / unreadable binary (with
     // zero file-walk skips) still emits its summary line below.
     #[cfg(feature = "binary")]
-    let binary_gap =
-        keyhog_sources::binary_degraded_to_strings() > 0 || keyhog_sources::binary_unreadable() > 0;
+    let binary_degraded = keyhog_sources::binary_degraded_to_strings();
     #[cfg(not(feature = "binary"))]
-    let binary_gap = false;
+    let binary_degraded = 0;
+    #[cfg(feature = "binary")]
+    let binary_unreadable = keyhog_sources::binary_unreadable();
+    #[cfg(not(feature = "binary"))]
+    let binary_unreadable = 0;
+    let binary_gap = binary_degraded > 0 || binary_unreadable > 0;
     // `binary_section_name_unresolved`, `source_truncated`, and
     // `structured_source_parse_failures` are partial-coverage signals and are
     // deliberately NOT part of `c.total()` (a file-skip total), so they are
@@ -285,13 +289,14 @@ pub(crate) fn report_skip_summary(ansi: bool) {
             false,
         ));
     }
-    if c.unreadable > 0 {
+    let non_binary_unreadable = c.unreadable.saturating_sub(binary_unreadable);
+    if non_binary_unreadable > 0 {
         // `warn` = true: this one is highlighted because an unreadable file is an
         // unknown, not a clean file — the scan did not cover it.
         lines.push((
             format!(
                 "{} file(s) NOT scanned: unreadable (permission denied or I/O error). These were NOT checked for secrets.",
-                c.unreadable
+                non_binary_unreadable
             ),
             true,
         ));
@@ -344,20 +349,18 @@ pub(crate) fn report_skip_summary(ansi: bool) {
     // alongside the other coverage gaps. Only compiled when the binary source is.
     #[cfg(feature = "binary")]
     {
-        let degraded = keyhog_sources::binary_degraded_to_strings();
-        if degraded > 0 {
+        if binary_degraded > 0 {
             lines.push((
                 format!(
-                    "{degraded} binary(ies) only SHALLOWLY scanned: Ghidra deep decompiler analysis failed or was too large, so only strings-mode extraction ran. Encoded/split secrets may have been missed."
+                    "{binary_degraded} binary(ies) only SHALLOWLY scanned: Ghidra deep decompiler analysis failed or was too large, so only strings-mode extraction ran. Encoded/split secrets may have been missed."
                 ),
                 true,
             ));
         }
-        let unreadable_bins = keyhog_sources::binary_unreadable();
-        if unreadable_bins > 0 {
+        if binary_unreadable > 0 {
             lines.push((
                 format!(
-                    "{unreadable_bins} binary(ies) NOT scanned: unreadable (permission denied or I/O error). These were NOT checked for secrets."
+                    "{binary_unreadable} binary(ies) NOT scanned: unreadable (permission denied or I/O error). These were NOT checked for secrets."
                 ),
                 true,
             ));

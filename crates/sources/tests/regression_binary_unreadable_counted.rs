@@ -13,7 +13,7 @@
 
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
-use keyhog_sources::{binary_unreadable, reset_binary_counters};
+use keyhog_sources::{binary_unreadable, reset_binary_counters, skip_counts};
 use std::sync::Mutex;
 
 /// Serialises process-global binary-counter assertions in this test binary.
@@ -23,6 +23,7 @@ static COUNTER_LOCK: Mutex<()> = Mutex::new(());
 fn unreadable_binary_is_counted_not_silently_dropped() {
     let _guard = COUNTER_LOCK.lock().unwrap();
     reset_binary_counters();
+    TestApi.reset_skip_counters();
 
     // A path that does not exist: `read_binary_capped` -> `File::open` fails.
     let dir = tempfile::tempdir().unwrap();
@@ -46,12 +47,19 @@ fn unreadable_binary_is_counted_not_silently_dropped() {
         "an unreadable binary must be counted as dropped-from-scan (Law 10), so a \
          'no secrets' result is not mistaken for full coverage of that file"
     );
+    assert_eq!(
+        skip_counts().unreadable,
+        1,
+        "binary unreadable drops must also flow through the shared skip snapshot \
+         so JSON/SARIF/operator summaries see the same coverage gap"
+    );
 }
 
 #[test]
 fn readable_binary_is_not_counted_as_unreadable() {
     let _guard = COUNTER_LOCK.lock().unwrap();
     reset_binary_counters();
+    TestApi.reset_skip_counters();
 
     let dir = tempfile::tempdir().unwrap();
     let bin = dir.path().join("app.bin");
@@ -76,5 +84,10 @@ fn readable_binary_is_not_counted_as_unreadable() {
         binary_unreadable(),
         0,
         "a readable binary must NOT be counted as unreadable"
+    );
+    assert_eq!(
+        skip_counts().unreadable,
+        0,
+        "a readable binary must not increment the shared unreadable skip counter"
     );
 }

@@ -309,6 +309,7 @@ impl BinarySource {
                     "keyhog: WARNING: cannot read binary {} ({error}); it was NOT scanned for secrets.",
                     self.path.display()
                 );
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
                 BINARY_UNREADABLE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 return Vec::new();
             }

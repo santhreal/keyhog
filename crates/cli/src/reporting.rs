@@ -122,6 +122,10 @@ fn sarif_skip_summary() -> Vec<(String, usize)> {
             "source scan truncated by aggregate source cap (remaining input not scanned)",
             c.source_truncated,
         ),
+        (
+            "structured source parse failed (raw text scanned; derived chunks not expanded)",
+            c.structured_source_parse_failures,
+        ),
     ]
     .into_iter()
     .filter(|(_, n)| *n > 0)
