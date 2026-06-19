@@ -226,7 +226,17 @@ impl CompiledScanner {
 
             let mut triggers: Vec<Option<Vec<u64>>> = Vec::with_capacity(chunks.len());
             let mut gpu_presence_bits = 0usize;
-            for row in presence.chunks_exact(presence_words).take(chunks.len()) {
+            for (row_idx, row) in presence
+                .chunks_exact(presence_words)
+                .take(chunks.len())
+                .enumerate()
+            {
+                if let Some((word_idx, stray_bits)) = self.gpu_presence_stray_tail_bits(row) {
+                    return degrade(format!(
+                        "region-presence readback row {row_idx} has out-of-range detector bit(s): word {word_idx} bits 0x{stray_bits:08x} beyond {} literal(s)",
+                        self.ac_map.len()
+                    ));
+                }
                 gpu_presence_bits += row
                     .iter()
                     .map(|word| word.count_ones() as usize)

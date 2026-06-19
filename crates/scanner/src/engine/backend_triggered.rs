@@ -232,6 +232,12 @@ impl CompiledScanner {
                         expected_presence_words
                     ));
                 }
+                if let Some((word_idx, stray_bits)) = self.gpu_presence_stray_tail_bits(&presence) {
+                    return degrade(format!(
+                        "per-chunk GPU presence readback has out-of-range detector bit(s): word {word_idx} bits 0x{stray_bits:08x} beyond {} literal(s)",
+                        self.ac_map.len()
+                    ));
+                }
                 // Union with AC triggers so the GPU literal matcher is never
                 // the sole gate for context-anchored detectors.
                 let mut triggered = self.collect_triggered_patterns_cpu(text);
@@ -326,6 +332,22 @@ impl CompiledScanner {
     /// occurred. Maps each set bit through `mark_triggered_pattern` — the compact
     /// per-pattern counterpart of consuming per-hit match triples (the triple path
     /// was removed; see `collect_triggered_patterns_gpu`).
+    pub(super) fn gpu_presence_stray_tail_bits(&self, presence: &[u32]) -> Option<(usize, u32)> {
+        let literal_count = self.ac_map.len();
+        let used_tail_bits = literal_count % 32;
+        if literal_count != 0 && used_tail_bits == 0 {
+            return None;
+        }
+        let tail_word_idx = literal_count / 32;
+        let valid_mask = if used_tail_bits == 0 {
+            0
+        } else {
+            (1u32 << used_tail_bits) - 1
+        };
+        let stray_bits = *presence.get(tail_word_idx)? & !valid_mask;
+        (stray_bits != 0).then_some((tail_word_idx, stray_bits))
+    }
+
     pub(super) fn triggered_patterns_from_gpu_presence(&self, presence: &[u32]) -> Vec<u64> {
         let mut triggered = super::trigger_bitmap::new_trigger_bitmap(self.ac_map.len());
         for (word_idx, &word) in presence.iter().enumerate() {

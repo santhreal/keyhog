@@ -30,6 +30,11 @@ fn per_chunk_gpu_presence_reuses_and_zeroes_scratch() {
         "per-chunk GPU trigger production must fail loud when device readback word count differs from the AC presence contract"
     );
     assert!(
+        triggered_src.contains("gpu_presence_stray_tail_bits")
+            && triggered_src.contains("per-chunk GPU presence readback has out-of-range detector bit(s)"),
+        "per-chunk GPU trigger production must fail loud when device readback sets impossible detector bits"
+    );
+    assert!(
         scratch_src.contains("zero_gpu_literal_scratch")
             && scratch_src.contains("scratch.haystack_bytes.fill(0);")
             && scratch_src.contains("scratch.hit_bytes.fill(0);"),

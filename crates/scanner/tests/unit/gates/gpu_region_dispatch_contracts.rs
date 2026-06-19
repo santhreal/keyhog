@@ -106,6 +106,13 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         dispatch_src.contains("presence.len() != expected_presence_words"),
         "region dispatch must fail loud when GPU readback size differs from the chunk x word contract"
     );
+    assert!(
+        dispatch_src.contains("gpu_presence_stray_tail_bits")
+            && dispatch_src.contains(
+                "region-presence readback row {row_idx} has out-of-range detector bit(s)"
+            ),
+        "region dispatch must fail loud when GPU readback sets impossible detector bits in a row"
+    );
 }
 
 #[test]
