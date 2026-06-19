@@ -24,6 +24,12 @@ fn per_chunk_gpu_presence_reuses_and_zeroes_scratch() {
         "per-chunk GPU trigger production must not use the allocating scan_presence wrapper"
     );
     assert!(
+        triggered_src.contains("expected_presence_words")
+            && triggered_src.contains("presence.len() != expected_presence_words")
+            && triggered_src.contains("per-chunk GPU presence readback length mismatch"),
+        "per-chunk GPU trigger production must fail loud when device readback word count differs from the AC presence contract"
+    );
+    assert!(
         scratch_src.contains("zero_gpu_literal_scratch")
             && scratch_src.contains("scratch.haystack_bytes.fill(0);")
             && scratch_src.contains("scratch.hit_bytes.fill(0);"),

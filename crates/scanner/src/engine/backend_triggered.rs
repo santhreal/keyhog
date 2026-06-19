@@ -224,6 +224,14 @@ impl CompiledScanner {
             text.as_bytes(),
         ) {
             Ok(presence) => {
+                let expected_presence_words = self.ac_map.len().div_ceil(32).max(1);
+                if presence.len() != expected_presence_words {
+                    return degrade(format!(
+                        "per-chunk GPU presence readback length mismatch: got {} u32 word(s), need {}",
+                        presence.len(),
+                        expected_presence_words
+                    ));
+                }
                 // Union with AC triggers so the GPU literal matcher is never
                 // the sole gate for context-anchored detectors.
                 let mut triggered = self.collect_triggered_patterns_cpu(text);
