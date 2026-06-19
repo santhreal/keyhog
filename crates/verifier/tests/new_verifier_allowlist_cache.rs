@@ -13,12 +13,10 @@
 //! formatted timestamp string. No `is_ok()` / `!is_empty()` decoration.
 
 use keyhog_core::{VerificationResult, VerifySpec};
-use keyhog_verifier::cache::VerificationCache;
-use keyhog_verifier::domain_allowlist::{
-    builtin_service_domains, check_url_against_spec, effective_allowlist, host_is_allowed,
-};
 use keyhog_verifier::rate_limit::RateLimiter;
-use keyhog_verifier::testing::format_sigv4_timestamps;
+use keyhog_verifier::testing::{
+    TestApi, TestVerificationCache as VerificationCache, VerifierTestApi, VerifierTestCache,
+};
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -36,15 +34,18 @@ fn spec(service: &str, allowed: &[&str]) -> VerifySpec {
 
 #[test]
 fn builtin_map_has_known_providers() {
-    let m = builtin_service_domains();
-    assert_eq!(m.get("github").copied(), Some(&["github.com", "githubusercontent.com", "githubapp.com"][..]));
+    let m = TestApi.builtin_service_domains();
+    assert_eq!(
+        m.get("github").copied(),
+        Some(&["github.com", "githubusercontent.com", "githubapp.com"][..])
+    );
     assert_eq!(m.get("stripe").copied(), Some(&["stripe.com"][..]));
     assert_eq!(m.get("gitlab").copied(), Some(&["gitlab.com"][..]));
 }
 
 #[test]
 fn builtin_map_network_excluded_services_are_empty() {
-    let m = builtin_service_domains();
+    let m = TestApi.builtin_service_domains();
     // jwt + generic are structural-only — empty allowlist => never network verify.
     assert_eq!(m.get("jwt").copied(), Some(&[][..]));
     assert_eq!(m.get("generic").copied(), Some(&[][..]));
@@ -53,8 +54,8 @@ fn builtin_map_network_excluded_services_are_empty() {
 #[test]
 fn builtin_map_is_stable_across_calls() {
     // OnceLock-backed: same pointer / same data both times.
-    let a = builtin_service_domains();
-    let b = builtin_service_domains();
+    let a = TestApi.builtin_service_domains();
+    let b = TestApi.builtin_service_domains();
     assert_eq!(a.len(), b.len());
     assert!(a.contains_key("aws"));
 }
@@ -66,7 +67,9 @@ fn builtin_map_is_stable_across_calls() {
 #[test]
 fn effective_allowlist_explicit_overrides_builtin() {
     let s = spec("github", &["myhost.example", "https://other.example"]);
-    let got = effective_allowlist(&s).expect("explicit list is non-empty");
+    let got = TestApi
+        .effective_allowlist(&s)
+        .expect("explicit list is non-empty");
     // Scheme stripped, lowercased; builtin github.com NOT present.
     assert_eq!(got, vec!["myhost.example", "other.example"]);
 }
@@ -74,7 +77,9 @@ fn effective_allowlist_explicit_overrides_builtin() {
 #[test]
 fn effective_allowlist_falls_back_to_builtin() {
     let s = spec("stripe", &[]);
-    let got = effective_allowlist(&s).expect("builtin stripe entry");
+    let got = TestApi
+        .effective_allowlist(&s)
+        .expect("builtin stripe entry");
     assert_eq!(got, vec!["stripe.com"]);
 }
 
@@ -82,7 +87,7 @@ fn effective_allowlist_falls_back_to_builtin() {
 fn effective_allowlist_unknown_service_is_none() {
     let s = spec("totally-unknown-service-xyz", &[]);
     assert!(
-        effective_allowlist(&s).is_none(),
+        TestApi.effective_allowlist(&s).is_none(),
         "unknown service with no explicit list must refuse (None)"
     );
 }
@@ -90,14 +95,16 @@ fn effective_allowlist_unknown_service_is_none() {
 #[test]
 fn effective_allowlist_empty_service_is_none() {
     let s = spec("", &[]);
-    assert!(effective_allowlist(&s).is_none());
+    assert!(TestApi.effective_allowlist(&s).is_none());
 }
 
 #[test]
 fn effective_allowlist_jwt_service_is_empty_list_not_none() {
     // jwt maps to an empty slice — Some(vec![]) (a list exists, just empty).
     let s = spec("jwt", &[]);
-    let got = effective_allowlist(&s).expect("jwt has an (empty) builtin entry");
+    let got = TestApi
+        .effective_allowlist(&s)
+        .expect("jwt has an (empty) builtin entry");
     assert!(got.is_empty());
 }
 
@@ -107,45 +114,42 @@ fn effective_allowlist_jwt_service_is_empty_list_not_none() {
 
 #[test]
 fn host_exact_match_allowed() {
-    assert!(host_is_allowed("github.com", &["github.com".to_string()]));
+    assert!(TestApi.host_is_allowed("github.com", &["github.com".to_string()]));
 }
 
 #[test]
 fn host_subdomain_match_allowed() {
-    assert!(host_is_allowed("api.github.com", &["github.com".to_string()]));
-    assert!(host_is_allowed("a.b.github.com", &["github.com".to_string()]));
+    assert!(TestApi.host_is_allowed("api.github.com", &["github.com".to_string()]));
+    assert!(TestApi.host_is_allowed("a.b.github.com", &["github.com".to_string()]));
 }
 
 #[test]
 fn host_sibling_domain_refused() {
     // notgithub.com must NOT match github.com (suffix, not substring).
-    assert!(!host_is_allowed("notgithub.com", &["github.com".to_string()]));
+    assert!(!TestApi.host_is_allowed("notgithub.com", &["github.com".to_string()]));
     // evilgithub.com.attacker.com must NOT match.
-    assert!(!host_is_allowed(
-        "github.com.attacker.com",
-        &["github.com".to_string()]
-    ));
+    assert!(!TestApi.host_is_allowed("github.com.attacker.com", &["github.com".to_string()]));
 }
 
 #[test]
 fn host_empty_allowlist_is_fail_closed() {
-    assert!(!host_is_allowed("github.com", &[]));
+    assert!(!TestApi.host_is_allowed("github.com", &[]));
 }
 
 #[test]
 fn host_empty_host_refused() {
-    assert!(!host_is_allowed("", &["github.com".to_string()]));
+    assert!(!TestApi.host_is_allowed("", &["github.com".to_string()]));
 }
 
 #[test]
 fn host_trailing_dot_normalized() {
     // FQDN trailing dot is stripped before comparison.
-    assert!(host_is_allowed("api.github.com.", &["github.com".to_string()]));
+    assert!(TestApi.host_is_allowed("api.github.com.", &["github.com".to_string()]));
 }
 
 #[test]
 fn host_case_insensitive() {
-    assert!(host_is_allowed("API.GitHub.COM", &["github.com".to_string()]));
+    assert!(TestApi.host_is_allowed("API.GitHub.COM", &["github.com".to_string()]));
 }
 
 // ===========================================================================
@@ -155,13 +159,16 @@ fn host_case_insensitive() {
 #[test]
 fn check_url_allows_builtin_service_host() {
     let s = spec("github", &[]);
-    assert!(check_url_against_spec("https://api.github.com/user", &s).is_ok());
+    assert!(TestApi
+        .check_url_against_spec("https://api.github.com/user", &s)
+        .is_ok());
 }
 
 #[test]
 fn check_url_blocks_offlist_host() {
     let s = spec("github", &[]);
-    let err = check_url_against_spec("https://evil.attacker.com/", &s)
+    let err = TestApi
+        .check_url_against_spec("https://evil.attacker.com/", &s)
         .expect_err("off-allowlist host must be blocked");
     assert!(
         err.contains("not in the allowlist") && err.contains("evil.attacker.com"),
@@ -172,7 +179,8 @@ fn check_url_blocks_offlist_host() {
 #[test]
 fn check_url_blocks_unknown_service_no_allowlist() {
     let s = spec("unknown-svc-xyz", &[]);
-    let err = check_url_against_spec("https://anything.example/", &s)
+    let err = TestApi
+        .check_url_against_spec("https://anything.example/", &s)
         .expect_err("unknown service must be refused");
     assert!(
         err.contains("no domain allowlist"),
@@ -183,16 +191,22 @@ fn check_url_blocks_unknown_service_no_allowlist() {
 #[test]
 fn check_url_blocks_invalid_url() {
     let s = spec("github", &[]);
-    let err = check_url_against_spec("::: not a url", &s).expect_err("invalid URL must be blocked");
+    let err = TestApi
+        .check_url_against_spec("::: not a url", &s)
+        .expect_err("invalid URL must be blocked");
     assert!(err.contains("invalid verify URL"), "error: {err}");
 }
 
 #[test]
 fn check_url_explicit_allowlist_permits_custom_host() {
     let s = spec("custom", &["my-enterprise.example.com"]);
-    assert!(check_url_against_spec("https://my-enterprise.example.com/v/x", &s).is_ok());
+    assert!(TestApi
+        .check_url_against_spec("https://my-enterprise.example.com/v/x", &s)
+        .is_ok());
     // But a host NOT in the explicit list is refused even for the same service.
-    assert!(check_url_against_spec("https://github.com/x", &s).is_err());
+    assert!(TestApi
+        .check_url_against_spec("https://github.com/x", &s)
+        .is_err());
 }
 
 // ===========================================================================
@@ -256,7 +270,10 @@ fn cache_evict_expired_clears_stale_entries() {
     cache.put("a", "d", VerificationResult::Live, HashMap::new());
     cache.put("b", "d", VerificationResult::Dead, HashMap::new());
     cache.evict_expired();
-    assert!(cache.is_empty(), "evict_expired must drop all expired entries");
+    assert!(
+        cache.is_empty(),
+        "evict_expired must drop all expired entries"
+    );
 }
 
 #[test]
@@ -264,7 +281,12 @@ fn cache_respects_max_entries_bound() {
     // Bound at 2; insert 5 distinct — never exceed the bound.
     let cache = VerificationCache::with_max_entries(Duration::from_secs(300), 2);
     for i in 0..5 {
-        cache.put(&format!("cred{i}"), "det", VerificationResult::Live, HashMap::new());
+        cache.put(
+            &format!("cred{i}"),
+            "det",
+            VerificationResult::Live,
+            HashMap::new(),
+        );
     }
     assert!(
         cache.len() <= 2,
@@ -370,7 +392,7 @@ async fn rate_limiter_update_limit_sets_per_service_override() {
 
 #[test]
 fn sigv4_epoch_zero() {
-    let (date, amz) = format_sigv4_timestamps(0);
+    let (date, amz) = TestApi.format_sigv4_timestamps(0);
     assert_eq!(date, "19700101");
     assert_eq!(amz, "19700101T000000Z");
 }
@@ -378,7 +400,7 @@ fn sigv4_epoch_zero() {
 #[test]
 fn sigv4_known_timestamp() {
     // 2021-08-12T12:34:56Z == 1628771696
-    let (date, amz) = format_sigv4_timestamps(1_628_771_696);
+    let (date, amz) = TestApi.format_sigv4_timestamps(1_628_771_696);
     assert_eq!(date, "20210812");
     assert_eq!(amz, "20210812T123456Z");
 }
@@ -386,7 +408,7 @@ fn sigv4_known_timestamp() {
 #[test]
 fn sigv4_leap_day() {
     // 2020-02-29T00:00:00Z == 1582934400
-    let (date, amz) = format_sigv4_timestamps(1_582_934_400);
+    let (date, amz) = TestApi.format_sigv4_timestamps(1_582_934_400);
     assert_eq!(date, "20200229");
     assert_eq!(amz, "20200229T000000Z");
 }
@@ -394,7 +416,7 @@ fn sigv4_leap_day() {
 #[test]
 fn sigv4_year_boundary() {
     // 2019-12-31T23:59:59Z == 1577836799
-    let (date, amz) = format_sigv4_timestamps(1_577_836_799);
+    let (date, amz) = TestApi.format_sigv4_timestamps(1_577_836_799);
     assert_eq!(date, "20191231");
     assert_eq!(amz, "20191231T235959Z");
 }

@@ -1,5 +1,5 @@
 use keyhog_core::VerifySpec;
-use keyhog_verifier::domain_allowlist::check_url_against_spec;
+use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 
 #[test]
 fn domain_subdomain_match_works() {
@@ -8,5 +8,7 @@ fn domain_subdomain_match_works() {
         allowed_domains: vec![],
         ..Default::default()
     };
-    assert!(check_url_against_spec("https://lambda.us-east-1.amazonaws.com/x", &spec).is_ok());
+    assert!(TestApi
+        .check_url_against_spec("https://lambda.us-east-1.amazonaws.com/x", &spec)
+        .is_ok());
 }

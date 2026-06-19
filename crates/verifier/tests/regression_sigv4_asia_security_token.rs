@@ -55,18 +55,15 @@
 //!   contract and would fail against the pre-fix `("…", "host;x-amz-date")`
 //!   header pair.
 
-use keyhog_verifier::testing::format_sigv4_timestamps;
+use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 
 // ---------------------------------------------------------------------------
 // Constants lifted verbatim from `aws.rs`.
 // ---------------------------------------------------------------------------
 
-/// `aws.rs::build_aws_probe` line ~66: the STS GetCallerIdentity request body.
-const STS_BODY: &str = "Action=GetCallerIdentity&Version=2011-06-15";
-
-/// `hex::encode(Sha256::digest(STS_BODY.as_bytes()))` — the payload hash the
-/// signer puts on the last line of the canonical request (`aws.rs` line ~136).
-/// Code-derived: `printf '%s' '<STS_BODY>' | sha256sum`.
+/// `hex::encode(Sha256::digest(b"Action=GetCallerIdentity&Version=2011-06-15"))`
+/// — the payload hash the signer puts on the last line of the canonical
+/// request (`aws.rs` line ~136).
 const STS_BODY_SHA256: &str = "ab821ae955788b0e33ebd34c208442ccfc2d406e2edc5e7a39bd6458fbb4f843";
 
 // ---------------------------------------------------------------------------
@@ -126,7 +123,7 @@ fn mirror_auth_header(
 #[test]
 fn asia_signed_headers_include_security_token_exact_bytes() {
     // Real timestamp from the reachable formatter: 2024-01-01T00:00:00Z.
-    let (_date, amz_date) = format_sigv4_timestamps(1_704_067_200);
+    let (_date, amz_date) = TestApi.format_sigv4_timestamps(1_704_067_200);
     assert_eq!(amz_date, "20240101T000000Z");
 
     let token = "FwoGZXIvYXdzEXAMPLEtoken==";
@@ -150,7 +147,7 @@ fn asia_signed_headers_include_security_token_exact_bytes() {
 #[test]
 fn asia_canonical_request_full_bytes_with_real_payload_hash() {
     // 2024-02-29T12:34:56Z (leap day) from the real formatter.
-    let (_date, amz_date) = format_sigv4_timestamps(1_709_210_096);
+    let (_date, amz_date) = TestApi.format_sigv4_timestamps(1_709_210_096);
     assert_eq!(amz_date, "20240229T123456Z");
 
     let token = "ASIAtempSESSIONtoken+slash/and==pad";
@@ -195,7 +192,7 @@ fn asia_canonical_request_full_bytes_with_real_payload_hash() {
 #[test]
 fn asia_signed_headers_are_lexicographically_sorted() {
     // SigV4 requires SignedHeaders sorted lowercase, ';'-joined.
-    let (_date, amz_date) = format_sigv4_timestamps(1_704_067_200);
+    let (_date, amz_date) = TestApi.format_sigv4_timestamps(1_704_067_200);
     let (_canon, signed) = mirror_signed_headers("h", &amz_date, Some("tok"));
     let parts: Vec<&str> = signed.split(';').collect();
     assert_eq!(parts, vec!["host", "x-amz-date", "x-amz-security-token"]);
@@ -207,7 +204,7 @@ fn asia_signed_headers_are_lexicographically_sorted() {
 #[test]
 fn asia_token_rides_request_header_not_authorization_header() {
     // The token is NOT in the Authorization header — only SignedHeaders grows.
-    let (date_stamp, _amz) = format_sigv4_timestamps(1_704_067_200);
+    let (date_stamp, _amz) = TestApi.format_sigv4_timestamps(1_704_067_200);
     let scope = mirror_credential_scope(&date_stamp, "us-east-1", "sts");
     assert_eq!(scope, "20240101/us-east-1/sts/aws4_request");
 
@@ -238,7 +235,7 @@ fn asia_token_rides_request_header_not_authorization_header() {
 
 #[test]
 fn akia_long_lived_creds_do_not_sign_security_token() {
-    let (_date, amz_date) = format_sigv4_timestamps(1_704_067_200);
+    let (_date, amz_date) = TestApi.format_sigv4_timestamps(1_704_067_200);
     let (canon, signed) = mirror_signed_headers("sts.us-east-1.amazonaws.com", &amz_date, None);
 
     assert_eq!(signed, "host;x-amz-date");
@@ -265,7 +262,7 @@ fn akia_long_lived_creds_do_not_sign_security_token() {
 fn akia_vs_asia_differ_only_by_token_header_and_signed_list() {
     // The ONLY difference the fix introduces is the extra signed header line +
     // the extra ';x-amz-security-token' suffix. Prove the diff is exactly that.
-    let (_date, amz_date) = format_sigv4_timestamps(1_704_067_200);
+    let (_date, amz_date) = TestApi.format_sigv4_timestamps(1_704_067_200);
     let (akia_canon, akia_signed) = mirror_signed_headers("h.example", &amz_date, None);
     let (asia_canon, asia_signed) =
         mirror_signed_headers("h.example", &amz_date, Some("the-token"));
@@ -297,7 +294,7 @@ fn akia_vs_asia_differ_only_by_token_header_and_signed_list() {
 
 #[test]
 fn empty_token_string_still_appends_signed_token_line() {
-    let (_date, amz_date) = format_sigv4_timestamps(1_704_067_200);
+    let (_date, amz_date) = TestApi.format_sigv4_timestamps(1_704_067_200);
     let (canon, signed) = mirror_signed_headers("h", &amz_date, Some(""));
     assert_eq!(signed, "host;x-amz-date;x-amz-security-token");
     assert_eq!(
@@ -314,7 +311,7 @@ fn empty_token_string_still_appends_signed_token_line() {
 
 #[test]
 fn token_with_base64_special_chars_embedded_verbatim() {
-    let (_date, amz_date) = format_sigv4_timestamps(1_704_067_200);
+    let (_date, amz_date) = TestApi.format_sigv4_timestamps(1_704_067_200);
     let token = "IQoJb3JpZ2luX2VjE+abc/def==+slash/here==";
     let (canon, signed) =
         mirror_signed_headers("sts.us-east-1.amazonaws.com", &amz_date, Some(token));
@@ -331,7 +328,7 @@ fn token_with_embedded_newline_does_not_silently_split_a_clean_token() {
     // Defensive structural check: a clean token yields exactly one token line.
     // (Header-value sanitization for control bytes is handled on the request
     // side; here we pin that a well-formed token never produces a stray line.)
-    let (_date, amz_date) = format_sigv4_timestamps(1_704_067_200);
+    let (_date, amz_date) = TestApi.format_sigv4_timestamps(1_704_067_200);
     let clean = "FwoGZXIvYXdzEDEaDExAMPLE0123456789==";
     let (canon, _signed) = mirror_signed_headers("h", &amz_date, Some(clean));
     let token_lines: Vec<&str> = canon
@@ -365,7 +362,7 @@ fn property_asia_invariants_over_sweep() {
         "Zm9vYmFyYmF6cXV4MTIzNDU2Nzg5MA==",
     ];
     for &secs in &timestamps {
-        let (_date, amz_date) = format_sigv4_timestamps(secs);
+        let (_date, amz_date) = TestApi.format_sigv4_timestamps(secs);
         // amz_date is the fixed-width 16-char form the signer relies on.
         assert_eq!(amz_date.len(), 16, "amz_date width at {secs}");
         for tok in &tokens {
@@ -409,7 +406,7 @@ fn property_asia_invariants_over_sweep() {
 #[test]
 fn reference_timestamp_flows_into_canonical_header_verbatim() {
     // AWS docs canonical example timestamp: 20150830T123600Z (epoch 1_440_938_160).
-    let (date_stamp, amz_date) = format_sigv4_timestamps(1_440_938_160);
+    let (date_stamp, amz_date) = TestApi.format_sigv4_timestamps(1_440_938_160);
     assert_eq!(date_stamp, "20150830");
     assert_eq!(amz_date, "20150830T123600Z");
 

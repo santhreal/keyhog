@@ -83,8 +83,8 @@ pub(crate) async fn resolved_client_for_url(
     // connect uses the IP we already accepted - the second lookup never
     // happens.
     let mut pinned_addrs: Vec<std::net::SocketAddr> = Vec::new();
-    let host = url.host_str().unwrap_or_default().to_string();
-    let port = url.port_or_known_default().unwrap_or(443);
+    let host = url.host_str().unwrap_or_default().to_string(); // LAW10: missing/non-string field => empty/placeholder; recall-safe
+    let port = url.port_or_known_default().unwrap_or(443); // LAW10: no explicit port => scheme default (443); recall-irrelevant
 
     if !host.is_empty() {
         // Skip DNS for raw IP literals - `lookup_host` handles them, but
@@ -104,10 +104,11 @@ pub(crate) async fn resolved_client_for_url(
                 }
                 pinned_addrs = addrs;
             }
-            Err(_) => {
-                return Err(VerificationResult::Error(
-                    "blocked: DNS resolution failed".into(),
-                ));
+            Err(error) => {
+                // Law 10: failure => fail-closed error (blocked/refused), never proceeds; security guard
+                return Err(VerificationResult::Error(format!(
+                    "blocked: DNS resolution failed: {error}"
+                )));
             }
         }
     }
@@ -134,16 +135,39 @@ pub(crate) async fn resolved_client_for_url(
         match Client::builder()
             .timeout(timeout)
             .danger_accept_invalid_certs(insecure_tls)
+            // Mirror the base client's decompression-bomb posture: the DNS-pinned
+            // rebuild is the client that actually serves the request on the
+            // direct (no-proxy) path, so it MUST also refuse auto-inflate or the
+            // 1 MB streaming cap in `read_response_body` would measure inflated
+            // bytes on this path even though the base client measures wire bytes.
+            // No-op today (the crate ships without the gzip/brotli/zstd/deflate
+            // features) but load-bearing if a future Cargo.toml edit — or a
+            // transitive dep's feature union — enables one.
+            .no_gzip()
+            .no_brotli()
+            .no_zstd()
+            .no_deflate()
             .redirect(reqwest::redirect::Policy::none())
             .resolve_to_addrs(&host, &pinned_addrs)
             .build()
         {
             Ok(c) => c,
-            Err(_) => {
-                // Fall back to the shared client. We already validated the
-                // resolved IPs above; this path is best-effort.
-                let _ = base_client;
-                base_client.clone()
+            Err(e) => {
+                // LAW 10 — NO SILENT FALLBACK. Earlier this branch cloned the
+                // unpinned `base_client` and called it "best-effort". That
+                // reopened the DNS-rebinding window the pin exists to close:
+                // the base client re-resolves `host` through the system
+                // resolver at connect time, so an attacker DNS server that
+                // returned a public IP for the pre-connect SSRF check could
+                // return 127.0.0.1 / 169.254.169.254 for the actual connect.
+                // The pin build failing is not a license to drop the
+                // protection silently — fail CLOSED with a loud, blocked
+                // result the operator can see in the finding. (KH-GAP-120.)
+                return Err(VerificationResult::Error(format!(
+                    "blocked: DNS pin client build failed ({e}); refusing to \
+                     fall back to an unpinned client (would reopen the \
+                     DNS-rebinding window). Fix: report this verifier build"
+                )));
             }
         }
     } else {
@@ -161,10 +185,17 @@ pub(crate) async fn build_request_for_step(
     credential: &str,
     companions: &HashMap<String, String>,
     timeout: Duration,
+    allow_script_verify: bool,
 ) -> RequestBuildResult {
     let request = request_for_method(client, method, url).timeout(timeout);
     crate::verify::auth::build_request_for_auth(
-        request, auth, credential, companions, timeout, client,
+        request,
+        auth,
+        credential,
+        companions,
+        timeout,
+        client,
+        allow_script_verify,
     )
     .await
 }

@@ -1,7 +1,7 @@
 //! LR1-A8 replacement gate: `verify/mod.rs` allowed domain check.
 
 use keyhog_core::{HttpMethod, VerifySpec};
-use keyhog_verifier::domain_allowlist::check_url_against_spec;
+use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 
 #[test]
 fn check_url_against_spec_accepts_allowed_github_api() {
@@ -12,7 +12,7 @@ fn check_url_against_spec_accepts_allowed_github_api() {
         allowed_domains: vec!["api.github.com".into()],
         ..Default::default()
     };
-    let result = check_url_against_spec("https://api.github.com/user", &spec);
+    let result = TestApi.check_url_against_spec("https://api.github.com/user", &spec);
     assert!(
         result.is_ok(),
         "github API URL must pass allowlist: {:?}",

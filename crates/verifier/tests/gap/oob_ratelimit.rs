@@ -27,6 +27,7 @@ use keyhog_verifier::oob::{
     OobAccept, OobConfig, OobObservation, OobSession,
 };
 use keyhog_verifier::rate_limit::{get_rate_limiter, set_global_default_rps, RateLimiter};
+use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 
 // ------------------------------------------------------------------------
 // Helpers
@@ -34,12 +35,16 @@ use keyhog_verifier::rate_limit::{get_rate_limiter, set_global_default_rps, Rate
 
 /// Construct a `for_test` client against a server string; unwrap the Result.
 fn test_client(server: &str) -> Arc<InteractshClient> {
-    Arc::new(InteractshClient::for_test(server).expect("for_test RSA keygen must succeed"))
+    Arc::new(
+        TestApi
+            .interactsh_client_for_test(server)
+            .expect("for_test RSA keygen must succeed"),
+    )
 }
 
 /// Build a session with the default OOB config and a `for_test` client.
 fn test_session(server: &str) -> Arc<OobSession> {
-    OobSession::for_test(test_client(server), OobConfig::default())
+    TestApi.oob_session_for_test(test_client(server), OobConfig::default())
 }
 
 fn interaction(id: &str, proto: InteractionProtocol, remote: &str) -> Interaction {
@@ -806,14 +811,17 @@ async fn backpressure_clears_after_enough_successes() {
 #[test]
 fn client_for_test_correlation_id_is_fixed_20_chars() {
     let client = test_client("oast.fun");
-    assert_eq!(client.correlation_id(), "abcdefghijklmnopqrst");
-    assert_eq!(client.correlation_id().len(), 20);
+    assert_eq!(
+        TestApi.interactsh_client_correlation_id(&client),
+        "abcdefghijklmnopqrst"
+    );
+    assert_eq!(TestApi.interactsh_client_correlation_id(&client).len(), 20);
 }
 
 #[test]
 fn mint_url_unique_id_is_33_chars_corr_plus_13_suffix() {
     let client = test_client("oast.fun");
-    let minted = client.mint_url();
+    let minted = TestApi.interactsh_client_mint_url(&client);
     assert_eq!(minted.unique_id.len(), 33, "20 corr + 13 suffix = 33");
     assert!(
         minted.unique_id.starts_with("abcdefghijklmnopqrst"),
@@ -833,7 +841,7 @@ fn mint_url_unique_id_is_33_chars_corr_plus_13_suffix() {
 #[test]
 fn mint_url_host_and_url_compose_from_server_host() {
     let client = test_client("oast.fun");
-    let minted = client.mint_url();
+    let minted = TestApi.interactsh_client_mint_url(&client);
     let expected_host = format!("{}.oast.fun", minted.unique_id);
     assert_eq!(minted.host, expected_host);
     assert_eq!(minted.url, format!("https://{expected_host}"));
@@ -851,7 +859,7 @@ fn mint_url_normalizes_https_scheme_and_strips_trailing_slash() {
         "  example.test  ",
     ] {
         let client = test_client(server);
-        let minted = client.mint_url();
+        let minted = TestApi.interactsh_client_mint_url(&client);
         assert!(
             minted.host.ends_with(".example.test"),
             "{server:?} -> host {:?} should end with .example.test",
@@ -871,7 +879,7 @@ fn mint_url_force_upgrades_http_to_https() {
     // normalize_server force-upgrades http:// to https://; the host portion
     // is still example.test and the url is https://.
     let client = test_client("http://example.test");
-    let minted = client.mint_url();
+    let minted = TestApi.interactsh_client_mint_url(&client);
     assert!(minted.host.ends_with(".example.test"));
     assert!(
         minted.url.starts_with("https://"),
@@ -884,8 +892,8 @@ fn mint_url_force_upgrades_http_to_https() {
 #[test]
 fn mint_url_two_mints_differ_in_suffix() {
     let client = test_client("oast.fun");
-    let a = client.mint_url();
-    let b = client.mint_url();
+    let a = TestApi.interactsh_client_mint_url(&client);
+    let b = TestApi.interactsh_client_mint_url(&client);
     assert_eq!(
         &a.unique_id[..20],
         &b.unique_id[..20],
@@ -900,7 +908,7 @@ fn mint_url_two_mints_differ_in_suffix() {
 #[test]
 fn session_mint_delegates_to_client_mint_url() {
     let session = test_session("oast.fun");
-    let minted = session.mint();
+    let minted = TestApi.oob_session_mint(&session);
     assert_eq!(minted.unique_id.len(), 33);
     assert!(minted.unique_id.starts_with("abcdefghijklmnopqrst"));
     assert_eq!(minted.host, format!("{}.oast.fun", minted.unique_id));
@@ -914,7 +922,10 @@ fn session_mint_delegates_to_client_mint_url() {
 async fn wait_for_returns_observed_when_stored_before_wait() {
     let session = test_session("https://example.test");
     let id = "abcdefghijklmnopqrstaaaaaaaaaaaaa";
-    session.store_and_notify_for_test(interaction(id, InteractionProtocol::Dns, "9.9.9.9"));
+    TestApi.oob_session_store_and_notify(
+        &session,
+        interaction(id, InteractionProtocol::Dns, "9.9.9.9"),
+    );
     let obs = session
         .wait_for(id, OobAccept::Dns, Duration::from_secs(2))
         .await;
@@ -956,7 +967,10 @@ async fn wait_for_protocol_filter_rejects_wrong_protocol_then_times_out() {
     // NotObserved after timeout (negative twin of the Observed case).
     let session = test_session("https://example.test");
     let id = "abcdefghijklmnopqrstccccccccccccc";
-    session.store_and_notify_for_test(interaction(id, InteractionProtocol::Dns, "1.1.1.1"));
+    TestApi.oob_session_store_and_notify(
+        &session,
+        interaction(id, InteractionProtocol::Dns, "1.1.1.1"),
+    );
     let obs = session
         .wait_for(id, OobAccept::Http, Duration::from_millis(150))
         .await;
@@ -970,7 +984,10 @@ async fn wait_for_protocol_filter_rejects_wrong_protocol_then_times_out() {
 async fn wait_for_any_accepts_first_stored_regardless_of_protocol() {
     let session = test_session("https://example.test");
     let id = "abcdefghijklmnopqrstddddddddddddd";
-    session.store_and_notify_for_test(interaction(id, InteractionProtocol::Other, "2.2.2.2"));
+    TestApi.oob_session_store_and_notify(
+        &session,
+        interaction(id, InteractionProtocol::Other, "2.2.2.2"),
+    );
     let obs = session
         .wait_for(id, OobAccept::Any, Duration::from_secs(2))
         .await;
@@ -993,8 +1010,14 @@ async fn wait_for_earliest_matching_protocol_wins() {
     // order). Confirms the documented "earliest-matching-protocol wins".
     let session = test_session("https://example.test");
     let id = "abcdefghijklmnopqrsteeeeeeeeeeeee";
-    session.store_and_notify_for_test(interaction(id, InteractionProtocol::Http, "first-addr"));
-    session.store_and_notify_for_test(interaction(id, InteractionProtocol::Http, "second-addr"));
+    TestApi.oob_session_store_and_notify(
+        &session,
+        interaction(id, InteractionProtocol::Http, "first-addr"),
+    );
+    TestApi.oob_session_store_and_notify(
+        &session,
+        interaction(id, InteractionProtocol::Http, "second-addr"),
+    );
     let obs = session
         .wait_for(id, OobAccept::Http, Duration::from_secs(2))
         .await;
@@ -1012,8 +1035,14 @@ async fn wait_for_picks_matching_protocol_even_when_not_first() {
     // and return the HTTP one (regression guard: multi-protocol storage).
     let session = test_session("https://example.test");
     let id = "abcdefghijklmnopqrstfffffffffffff";
-    session.store_and_notify_for_test(interaction(id, InteractionProtocol::Dns, "dns-addr"));
-    session.store_and_notify_for_test(interaction(id, InteractionProtocol::Http, "http-addr"));
+    TestApi.oob_session_store_and_notify(
+        &session,
+        interaction(id, InteractionProtocol::Dns, "dns-addr"),
+    );
+    TestApi.oob_session_store_and_notify(
+        &session,
+        interaction(id, InteractionProtocol::Http, "http-addr"),
+    );
     let obs = session
         .wait_for(id, OobAccept::Http, Duration::from_secs(2))
         .await;
@@ -1033,7 +1062,7 @@ async fn wait_for_picks_matching_protocol_even_when_not_first() {
 #[tokio::test]
 async fn wait_for_returns_disabled_after_abort_poller_for_drop() {
     let session = test_session("https://example.test");
-    session.abort_poller_for_drop();
+    TestApi.oob_session_abort_poller_for_drop(&session);
     let id = "abcdefghijklmnopqrstggggggggggggg";
     let obs = session
         .wait_for(id, OobAccept::Any, Duration::from_secs(5))
@@ -1049,7 +1078,7 @@ async fn wait_for_returns_disabled_after_abort_poller_for_drop() {
 #[tokio::test]
 async fn wait_for_disabled_is_immediate_not_blocked_to_timeout() {
     let session = test_session("https://example.test");
-    session.abort_poller_for_drop();
+    TestApi.oob_session_abort_poller_for_drop(&session);
     let id = "abcdefghijklmnopqrsthhhhhhhhhhhhh";
     let t0 = Instant::now();
     let _ = session
@@ -1065,9 +1094,9 @@ async fn wait_for_disabled_is_immediate_not_blocked_to_timeout() {
 #[tokio::test]
 async fn abort_poller_for_drop_is_idempotent() {
     let session = test_session("https://example.test");
-    session.abort_poller_for_drop();
+    TestApi.oob_session_abort_poller_for_drop(&session);
     // Second call is a no-op (swap returns true) and must not panic.
-    session.abort_poller_for_drop();
+    TestApi.oob_session_abort_poller_for_drop(&session);
     let obs = session
         .wait_for(
             "abcdefghijklmnopqrstiiiiiiiiiiiii",
@@ -1082,11 +1111,14 @@ async fn abort_poller_for_drop_is_idempotent() {
 async fn wait_for_no_match_for_unrelated_id_times_out() {
     // Store under one id; wait on a different id -> NotObserved (no cross-talk).
     let session = test_session("https://example.test");
-    session.store_and_notify_for_test(interaction(
-        "abcdefghijklmnopqrstjjjjjjjjjjjjj",
-        InteractionProtocol::Http,
-        "x",
-    ));
+    TestApi.oob_session_store_and_notify(
+        &session,
+        interaction(
+            "abcdefghijklmnopqrstjjjjjjjjjjjjj",
+            InteractionProtocol::Http,
+            "x",
+        ),
+    );
     let obs = session
         .wait_for(
             "abcdefghijklmnopqrstkkkkkkkkkkkkk",
@@ -1101,7 +1133,10 @@ async fn wait_for_no_match_for_unrelated_id_times_out() {
 async fn config_default_timeout_matches_oob_config_default() {
     let session = test_session("https://example.test");
     // OobConfig::default().default_timeout == 30s.
-    assert_eq!(session.config_default_timeout(), Duration::from_secs(30));
+    assert_eq!(
+        TestApi.oob_session_default_timeout(&session),
+        Duration::from_secs(30)
+    );
 }
 
 #[test]

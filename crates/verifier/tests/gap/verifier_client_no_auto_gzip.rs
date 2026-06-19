@@ -2,11 +2,8 @@
 
 #[test]
 fn verifier_client_no_auto_gzip() {
-    let src = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/verify/mod.rs"
-    ))
-    .expect("verify/mod.rs");
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/verify/mod.rs"))
+        .expect("verify/mod.rs");
     let new_fn = src
         .split("pub fn new(")
         .nth(1)

@@ -8,8 +8,8 @@
 //! No `is_ok()` / `!is_empty()` decoration. These are pure functions, so the
 //! oracle is the RFC range each address falls in.
 
-use keyhog_verifier::bogon::ip_addr_is_bogon;
 use keyhog_verifier::ssrf::{is_private_ip_addr, is_private_ip_addr_fast, is_private_url};
+use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 fn v4(a: u8, b: u8, c: u8, d: u8) -> IpAddr {
@@ -26,98 +26,98 @@ fn v6(s: &str) -> IpAddr {
 
 #[test]
 fn bogon_v4_rfc1918_private_a() {
-    assert!(ip_addr_is_bogon(v4(10, 0, 0, 1)));
-    assert!(ip_addr_is_bogon(v4(10, 255, 255, 255)));
+    assert!(TestApi.ip_addr_is_bogon(v4(10, 0, 0, 1)));
+    assert!(TestApi.ip_addr_is_bogon(v4(10, 255, 255, 255)));
 }
 
 #[test]
 fn bogon_v4_rfc1918_private_b() {
-    assert!(ip_addr_is_bogon(v4(172, 16, 0, 1)));
-    assert!(ip_addr_is_bogon(v4(172, 31, 255, 254)));
+    assert!(TestApi.ip_addr_is_bogon(v4(172, 16, 0, 1)));
+    assert!(TestApi.ip_addr_is_bogon(v4(172, 31, 255, 254)));
     // 172.15 and 172.32 are OUTSIDE the /12 — must be allowed.
-    assert!(!ip_addr_is_bogon(v4(172, 15, 0, 1)));
-    assert!(!ip_addr_is_bogon(v4(172, 32, 0, 1)));
+    assert!(!TestApi.ip_addr_is_bogon(v4(172, 15, 0, 1)));
+    assert!(!TestApi.ip_addr_is_bogon(v4(172, 32, 0, 1)));
 }
 
 #[test]
 fn bogon_v4_rfc1918_private_c() {
-    assert!(ip_addr_is_bogon(v4(192, 168, 0, 1)));
-    assert!(ip_addr_is_bogon(v4(192, 168, 255, 254)));
+    assert!(TestApi.ip_addr_is_bogon(v4(192, 168, 0, 1)));
+    assert!(TestApi.ip_addr_is_bogon(v4(192, 168, 255, 254)));
 }
 
 #[test]
 fn bogon_v4_loopback() {
-    assert!(ip_addr_is_bogon(v4(127, 0, 0, 1)));
-    assert!(ip_addr_is_bogon(v4(127, 255, 255, 254)));
+    assert!(TestApi.ip_addr_is_bogon(v4(127, 0, 0, 1)));
+    assert!(TestApi.ip_addr_is_bogon(v4(127, 255, 255, 254)));
 }
 
 #[test]
 fn bogon_v4_link_local_and_imds() {
     // 169.254.0.0/16 link-local, incl. the cloud metadata endpoint.
-    assert!(ip_addr_is_bogon(v4(169, 254, 0, 1)));
+    assert!(TestApi.ip_addr_is_bogon(v4(169, 254, 0, 1)));
     assert!(
-        ip_addr_is_bogon(v4(169, 254, 169, 254)),
+        TestApi.ip_addr_is_bogon(v4(169, 254, 169, 254)),
         "the AWS/GCP/Azure IMDS endpoint must be a bogon"
     );
 }
 
 #[test]
 fn bogon_v4_broadcast() {
-    assert!(ip_addr_is_bogon(v4(255, 255, 255, 255)));
+    assert!(TestApi.ip_addr_is_bogon(v4(255, 255, 255, 255)));
 }
 
 #[test]
 fn bogon_v4_documentation_test_nets() {
     // TEST-NET-1/2/3 (RFC 5737).
-    assert!(ip_addr_is_bogon(v4(192, 0, 2, 1)));
-    assert!(ip_addr_is_bogon(v4(198, 51, 100, 1)));
-    assert!(ip_addr_is_bogon(v4(203, 0, 113, 1)));
+    assert!(TestApi.ip_addr_is_bogon(v4(192, 0, 2, 1)));
+    assert!(TestApi.ip_addr_is_bogon(v4(198, 51, 100, 1)));
+    assert!(TestApi.ip_addr_is_bogon(v4(203, 0, 113, 1)));
 }
 
 #[test]
 fn bogon_v4_this_network_zero_octet() {
     // 0.0.0.0/8 "this network" — not just 0.0.0.0.
-    assert!(ip_addr_is_bogon(v4(0, 0, 0, 0)));
-    assert!(ip_addr_is_bogon(v4(0, 0, 0, 1)));
-    assert!(ip_addr_is_bogon(v4(0, 255, 1, 2)));
+    assert!(TestApi.ip_addr_is_bogon(v4(0, 0, 0, 0)));
+    assert!(TestApi.ip_addr_is_bogon(v4(0, 0, 0, 1)));
+    assert!(TestApi.ip_addr_is_bogon(v4(0, 255, 1, 2)));
 }
 
 #[test]
 fn bogon_v4_carrier_grade_nat() {
     // 100.64.0.0/10.
-    assert!(ip_addr_is_bogon(v4(100, 64, 0, 1)));
-    assert!(ip_addr_is_bogon(v4(100, 127, 255, 254)));
+    assert!(TestApi.ip_addr_is_bogon(v4(100, 64, 0, 1)));
+    assert!(TestApi.ip_addr_is_bogon(v4(100, 127, 255, 254)));
     // 100.63 and 100.128 are OUTSIDE the /10.
-    assert!(!ip_addr_is_bogon(v4(100, 63, 255, 255)));
-    assert!(!ip_addr_is_bogon(v4(100, 128, 0, 1)));
+    assert!(!TestApi.ip_addr_is_bogon(v4(100, 63, 255, 255)));
+    assert!(!TestApi.ip_addr_is_bogon(v4(100, 128, 0, 1)));
 }
 
 #[test]
 fn bogon_v4_ietf_protocol_assignment() {
     // 192.0.0.0/24.
-    assert!(ip_addr_is_bogon(v4(192, 0, 0, 1)));
-    assert!(ip_addr_is_bogon(v4(192, 0, 0, 255)));
+    assert!(TestApi.ip_addr_is_bogon(v4(192, 0, 0, 1)));
+    assert!(TestApi.ip_addr_is_bogon(v4(192, 0, 0, 255)));
     // 192.0.1.0 is outside the /24.
-    assert!(!ip_addr_is_bogon(v4(192, 0, 1, 1)));
+    assert!(!TestApi.ip_addr_is_bogon(v4(192, 0, 1, 1)));
 }
 
 #[test]
 fn bogon_v4_benchmark_range() {
     // 198.18.0.0/15.
-    assert!(ip_addr_is_bogon(v4(198, 18, 0, 1)));
-    assert!(ip_addr_is_bogon(v4(198, 19, 255, 254)));
+    assert!(TestApi.ip_addr_is_bogon(v4(198, 18, 0, 1)));
+    assert!(TestApi.ip_addr_is_bogon(v4(198, 19, 255, 254)));
     // 198.17 and 198.20 are outside the /15.
-    assert!(!ip_addr_is_bogon(v4(198, 17, 0, 1)));
-    assert!(!ip_addr_is_bogon(v4(198, 20, 0, 1)));
+    assert!(!TestApi.ip_addr_is_bogon(v4(198, 17, 0, 1)));
+    assert!(!TestApi.ip_addr_is_bogon(v4(198, 20, 0, 1)));
 }
 
 #[test]
 fn bogon_v4_public_addresses_are_allowed() {
     // Well-known public resolvers / hosts must NOT be bogons.
-    assert!(!ip_addr_is_bogon(v4(8, 8, 8, 8)));
-    assert!(!ip_addr_is_bogon(v4(1, 1, 1, 1)));
-    assert!(!ip_addr_is_bogon(v4(93, 184, 216, 34))); // example.com era
-    assert!(!ip_addr_is_bogon(v4(140, 82, 121, 4))); // github.com era
+    assert!(!TestApi.ip_addr_is_bogon(v4(8, 8, 8, 8)));
+    assert!(!TestApi.ip_addr_is_bogon(v4(1, 1, 1, 1)));
+    assert!(!TestApi.ip_addr_is_bogon(v4(93, 184, 216, 34))); // example.com era
+    assert!(!TestApi.ip_addr_is_bogon(v4(140, 82, 121, 4))); // github.com era
 }
 
 // ===========================================================================
@@ -128,80 +128,80 @@ fn bogon_v4_public_addresses_are_allowed() {
 fn bogon_v6_loopback_regression() {
     // The historic `::1` escape bug — must be a bogon.
     assert!(
-        ip_addr_is_bogon(v6("::1")),
+        TestApi.ip_addr_is_bogon(v6("::1")),
         "::1 must be refused (the documented donor-copy regression)"
     );
-    assert!(ip_addr_is_bogon(IpAddr::V6(Ipv6Addr::LOCALHOST)));
+    assert!(TestApi.ip_addr_is_bogon(IpAddr::V6(Ipv6Addr::LOCALHOST)));
 }
 
 #[test]
 fn bogon_v6_unspecified() {
-    assert!(ip_addr_is_bogon(v6("::")));
-    assert!(ip_addr_is_bogon(IpAddr::V6(Ipv6Addr::UNSPECIFIED)));
+    assert!(TestApi.ip_addr_is_bogon(v6("::")));
+    assert!(TestApi.ip_addr_is_bogon(IpAddr::V6(Ipv6Addr::UNSPECIFIED)));
 }
 
 #[test]
 fn bogon_v6_unique_local_and_link_local() {
-    assert!(ip_addr_is_bogon(v6("fc00::1"))); // unique-local fc00::/7
-    assert!(ip_addr_is_bogon(v6("fd12:3456::1"))); // unique-local
-    assert!(ip_addr_is_bogon(v6("fe80::1"))); // link-local fe80::/10
+    assert!(TestApi.ip_addr_is_bogon(v6("fc00::1"))); // unique-local fc00::/7
+    assert!(TestApi.ip_addr_is_bogon(v6("fd12:3456::1"))); // unique-local
+    assert!(TestApi.ip_addr_is_bogon(v6("fe80::1"))); // link-local fe80::/10
 }
 
 #[test]
 fn bogon_v6_multicast() {
-    assert!(ip_addr_is_bogon(v6("ff02::1")));
+    assert!(TestApi.ip_addr_is_bogon(v6("ff02::1")));
 }
 
 #[test]
 fn bogon_v6_documentation() {
     // 2001:db8::/32 (RFC 3849).
-    assert!(ip_addr_is_bogon(v6("2001:db8::1")));
-    assert!(ip_addr_is_bogon(v6("2001:db8:dead:beef::1")));
+    assert!(TestApi.ip_addr_is_bogon(v6("2001:db8::1")));
+    assert!(TestApi.ip_addr_is_bogon(v6("2001:db8:dead:beef::1")));
 }
 
 #[test]
 fn bogon_v6_teredo() {
     // 2001:0000::/32 (RFC 4380).
-    assert!(ip_addr_is_bogon(v6("2001:0:1234::1")));
+    assert!(TestApi.ip_addr_is_bogon(v6("2001:0:1234::1")));
 }
 
 #[test]
 fn bogon_v6_orchidv2() {
     // 2001:20::/28 (RFC 7343).
-    assert!(ip_addr_is_bogon(v6("2001:20::1")));
-    assert!(ip_addr_is_bogon(v6("2001:2f::1")));
+    assert!(TestApi.ip_addr_is_bogon(v6("2001:20::1")));
+    assert!(TestApi.ip_addr_is_bogon(v6("2001:2f::1")));
 }
 
 #[test]
 fn bogon_v6_discard_prefix() {
     // 100::/64 (RFC 6666).
-    assert!(ip_addr_is_bogon(v6("100::1")));
+    assert!(TestApi.ip_addr_is_bogon(v6("100::1")));
 }
 
 #[test]
 fn bogon_v6_6to4_wrapping_bogon_v4() {
     // 2002::/16 wrapping 10.0.0.1 -> 2002:0a00:0001::
     assert!(
-        ip_addr_is_bogon(v6("2002:0a00:0001::1")),
+        TestApi.ip_addr_is_bogon(v6("2002:0a00:0001::1")),
         "6to4 wrapping a private v4 must be refused"
     );
     // 6to4 wrapping a PUBLIC v4 (8.8.8.8 -> 2002:0808:0808::) should NOT be a
     // bogon — it decodes to a routable address.
-    assert!(!ip_addr_is_bogon(v6("2002:0808:0808::1")));
+    assert!(!TestApi.ip_addr_is_bogon(v6("2002:0808:0808::1")));
 }
 
 #[test]
 fn bogon_v6_ipv4_mapped_private() {
     // ::ffff:10.0.0.1 maps to a private v4 -> bogon.
-    assert!(ip_addr_is_bogon(v6("::ffff:10.0.0.1")));
+    assert!(TestApi.ip_addr_is_bogon(v6("::ffff:10.0.0.1")));
     // ::ffff:8.8.8.8 maps to public -> not a bogon.
-    assert!(!ip_addr_is_bogon(v6("::ffff:8.8.8.8")));
+    assert!(!TestApi.ip_addr_is_bogon(v6("::ffff:8.8.8.8")));
 }
 
 #[test]
 fn bogon_v6_public_is_allowed() {
     // Public IPv6 (Google DNS) must be allowed.
-    assert!(!ip_addr_is_bogon(v6("2001:4860:4860::8888")));
+    assert!(!TestApi.ip_addr_is_bogon(v6("2001:4860:4860::8888")));
 }
 
 // ===========================================================================

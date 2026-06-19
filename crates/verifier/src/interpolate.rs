@@ -6,7 +6,7 @@ use std::collections::HashMap;
 /// - "match" → the primary credential
 /// - `companion.<name>` -> the companion credential with given name
 /// - anything else → literal string
-pub fn resolve_field(
+pub(crate) fn resolve_field(
     field: &str,
     credential: &str,
     companions: &HashMap<String, String>,
@@ -15,7 +15,7 @@ pub fn resolve_field(
         "match" => credential.to_string(),
         s if s.starts_with("companion.") => {
             let name = &s["companion.".len()..];
-            companions.get(name).cloned().unwrap_or_default()
+            companions.get(name).cloned().unwrap_or_default() // LAW10: missing/non-string field => empty/placeholder; recall-safe
         }
         "" => String::new(),
         other => other.to_string(),
@@ -49,7 +49,7 @@ fn url_encode(s: &str) -> String {
 ///
 /// Exposed via `testing::sanitize_oob_value` for the charset unit test migrated
 /// out of this module (KH-GAP-004).
-pub fn sanitize_oob_value(s: &str) -> String {
+pub(crate) fn sanitize_oob_value(s: &str) -> String {
     s.chars()
         .filter_map(|c| {
             let lc = c.to_ascii_lowercase();
@@ -72,11 +72,9 @@ pub fn sanitize_oob_value(s: &str) -> String {
 /// Real credentials never contain control bytes, so dropping them is
 /// safe and removes the entire attack surface.
 ///
-/// Exposed via `testing::sanitize_raw_value` (`#[doc(hidden)]`, test-only — not
-/// part of the rendered public API) for the control-byte unit tests migrated
-/// out of this module.
-#[doc(hidden)]
-pub fn sanitize_raw_value(s: &str) -> String {
+/// Exposed via `testing::sanitize_raw_value` for the control-byte integration
+/// tests migrated out of this module.
+pub(crate) fn sanitize_raw_value(s: &str) -> String {
     s.chars()
         .filter(|c| {
             // Allow tab (0x09) - some legitimate JWT segments / Basic
@@ -90,7 +88,7 @@ pub fn sanitize_raw_value(s: &str) -> String {
 }
 
 /// Replace `{{match}}` and `{{companion.*}}` placeholders in a template string.
-pub fn interpolate(
+pub(crate) fn interpolate(
     template: &str,
     credential: &str,
     companions: &HashMap<String, String>,
@@ -105,7 +103,11 @@ pub fn interpolate(
         && template.matches("{{").count() == 1
     {
         let name = &template["{{companion.".len()..template.len() - 2];
-        return sanitize_raw_value(companions.get(name).map(String::as_str).unwrap_or(""));
+        let raw = match companions.get(name) {
+            Some(value) => value.as_str(),
+            None => "",
+        };
+        return sanitize_raw_value(raw);
     }
 
     let mut interpolated = template.replace("{{match}}", &url_encode(credential));
@@ -133,11 +135,11 @@ pub fn interpolate(
         ("{{interactsh}}", "__keyhog_oob_host"),
     ] {
         if interpolated.contains(token) {
-            let raw = companions.get(key).map(String::as_str).unwrap_or("");
-            // The url variant carries a leading scheme (`https://`) that the
-            // hostname charset would strip; sanitize only the host portion
-            // and re-prepend the (fixed, trusted) scheme so the value stays a
-            // well-formed URL while the operator-influenced host is cleaned.
+            let raw = companions.get(key).map(String::as_str).unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
+                                                                             // The url variant carries a leading scheme (`https://`) that the
+                                                                             // hostname charset would strip; sanitize only the host portion
+                                                                             // and re-prepend the (fixed, trusted) scheme so the value stays a
+                                                                             // well-formed URL while the operator-influenced host is cleaned.
             let value = match raw.split_once("://") {
                 Some((scheme, host)) if scheme.chars().all(|c| c.is_ascii_alphabetic()) => {
                     format!("{scheme}://{}", sanitize_oob_value(host))
@@ -159,7 +161,7 @@ pub fn interpolate(
             let name_start = start + "{{companion.".len();
             let name_end = start + end_offset;
             let name = &interpolated[name_start..name_end];
-            let replacement = url_encode(companions.get(name).map(String::as_str).unwrap_or(""));
+            let replacement = url_encode(companions.get(name).map(String::as_str).unwrap_or("")); // LAW10: missing/non-string field => empty/placeholder; recall-safe
 
             let end = start + end_offset + 2;
             interpolated = format!(
@@ -181,14 +183,14 @@ pub fn interpolate(
 /// the existing interpolation surface without changing every call site's
 /// signature. `__keyhog_oob_*` names are reserved - detectors that try to
 /// declare companions with these names will be rejected at validation.
-pub const OOB_COMPANION_URL: &str = "__keyhog_oob_url";
-pub const OOB_COMPANION_HOST: &str = "__keyhog_oob_host";
-pub const OOB_COMPANION_ID: &str = "__keyhog_oob_id";
+pub(crate) const OOB_COMPANION_URL: &str = "__keyhog_oob_url";
+pub(crate) const OOB_COMPANION_HOST: &str = "__keyhog_oob_host";
+pub(crate) const OOB_COMPANION_ID: &str = "__keyhog_oob_id";
 
 /// Inject the OOB minted URL into a companions map for downstream
 /// interpolation. Returns an owned map; callers pass the result wherever
 /// a `&HashMap<String, String>` was previously taken.
-pub fn companions_with_oob(
+pub(crate) fn companions_with_oob(
     base: &HashMap<String, String>,
     minted_host: &str,
     minted_url: &str,

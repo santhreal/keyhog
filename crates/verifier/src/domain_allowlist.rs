@@ -25,7 +25,7 @@ use std::collections::HashMap;
 /// Keep this list tight: every entry is a license to send a credential
 /// somewhere. Add domains only after confirming they belong to the service
 /// owner.
-pub fn builtin_service_domains() -> &'static HashMap<&'static str, &'static [&'static str]> {
+pub(crate) fn builtin_service_domains() -> &'static HashMap<&'static str, &'static [&'static str]> {
     use std::sync::OnceLock;
     static MAP: OnceLock<HashMap<&'static str, &'static [&'static str]>> = OnceLock::new();
     MAP.get_or_init(|| {
@@ -154,7 +154,7 @@ pub fn builtin_service_domains() -> &'static HashMap<&'static str, &'static [&'s
 
 /// Resolve the effective allowlist for a `VerifySpec`. Returns `None` when
 /// the verifier MUST refuse the request.
-pub fn effective_allowlist(spec: &keyhog_core::VerifySpec) -> Option<Vec<String>> {
+pub(crate) fn effective_allowlist(spec: &keyhog_core::VerifySpec) -> Option<Vec<String>> {
     if !spec.allowed_domains.is_empty() {
         return Some(
             spec.allowed_domains
@@ -180,7 +180,7 @@ pub fn effective_allowlist(spec: &keyhog_core::VerifySpec) -> Option<Vec<String>
 
 /// Check that `host` is on `allowlist` (exact or subdomain match). Empty
 /// allowlist is a fail-closed reject. `host` is matched lowercased.
-pub fn host_is_allowed(host: &str, allowlist: &[String]) -> bool {
+pub(crate) fn host_is_allowed(host: &str, allowlist: &[String]) -> bool {
     if host.is_empty() || allowlist.is_empty() {
         return false;
     }
@@ -194,10 +194,13 @@ pub fn host_is_allowed(host: &str, allowlist: &[String]) -> bool {
 /// Top-level guard: parse `raw_url`, look up the allowlist for `spec`, and
 /// reject if the host is not allowed. Returns `Ok(())` on pass, `Err(reason)`
 /// to feed straight into a `VerificationResult::Error`.
-pub fn check_url_against_spec(raw_url: &str, spec: &keyhog_core::VerifySpec) -> Result<(), String> {
+pub(crate) fn check_url_against_spec(
+    raw_url: &str,
+    spec: &keyhog_core::VerifySpec,
+) -> Result<(), String> {
     let url =
         reqwest::Url::parse(raw_url).map_err(|e| format!("blocked: invalid verify URL: {e}"))?;
-    let host = url.host_str().unwrap_or("");
+    let host = url.host_str().unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
     let Some(allowlist) = effective_allowlist(spec) else {
         return Err(format!(
             "blocked: detector service '{}' has no domain allowlist (set verify.allowed_domains in the detector TOML)",

@@ -1,3 +1,11 @@
+pub mod proxy_all_proxy_env_is_active;
+pub mod proxy_empty_keyhog_proxy_falls_through_to_https_proxy;
+pub mod proxy_explicit_none_disables_https_proxy;
+pub mod proxy_explicit_off_overrides_all_proxy;
+pub mod proxy_explicit_socks5_url_is_active;
+pub mod proxy_http_proxy_env_is_active;
+pub mod proxy_keyhog_off_disables_https_proxy;
+pub mod proxy_whitespace_https_proxy_not_active;
 pub mod ssrf_blocks_127_shorthand;
 pub mod ssrf_blocks_aws_metadata_integer;
 pub mod ssrf_blocks_decimal_integer_localhost;

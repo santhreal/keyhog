@@ -53,3 +53,4 @@ serde = { workspace = true, features = ["derive"] }
 rusty-fork = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
 toml = { workspace = true }
+fs2 = { workspace = true }

@@ -1,4 +1,4 @@
-use keyhog_verifier::testing::format_sigv4_timestamps;
+use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 
 #[test]
 fn sigv4_timestamp_century_leap_year_2000() {
@@ -7,7 +7,7 @@ fn sigv4_timestamp_century_leap_year_2000() {
     // Unix epoch seconds: 951_868_800
 
     let unix_secs = 951_782_400u64;
-    let (date_stamp, amz_date) = format_sigv4_timestamps(unix_secs);
+    let (date_stamp, amz_date) = TestApi.format_sigv4_timestamps(unix_secs);
 
     assert_eq!(
         date_stamp, "20000229",
@@ -32,7 +32,7 @@ fn sigv4_timestamp_century_non_leap_year_1900() {
     // Instead, test that 2100 (another century year that's NOT a leap year) works correctly:
     // February 28, 2100 at 23:59:59 UTC
     let unix_secs = 4_107_542_399u64;
-    let (date_stamp, amz_date) = format_sigv4_timestamps(unix_secs);
+    let (date_stamp, amz_date) = TestApi.format_sigv4_timestamps(unix_secs);
 
     assert_eq!(
         date_stamp, "21000228",
@@ -45,7 +45,7 @@ fn sigv4_timestamp_century_non_leap_year_1900() {
 
     // March 1, 2100 at 00:00:00 UTC (next day - no Feb 29 in 2100)
     let unix_secs = 4_107_542_400u64;
-    let (date_stamp, amz_date) = format_sigv4_timestamps(unix_secs);
+    let (date_stamp, amz_date) = TestApi.format_sigv4_timestamps(unix_secs);
 
     assert_eq!(
         date_stamp, "21000301",

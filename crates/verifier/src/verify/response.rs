@@ -126,7 +126,7 @@ fn json_value_is_truthy_error(value: &serde_json::Value) -> bool {
     match value {
         serde_json::Value::Null => false,
         serde_json::Value::Bool(b) => *b,
-        serde_json::Value::Number(n) => n.as_f64().map(|f| f != 0.0).unwrap_or(true),
+        serde_json::Value::Number(n) => n.as_f64().map(|f| f != 0.0).unwrap_or(true), // LAW10: non-f64-representable number => treated as a present error (true), conservative; never misses a real error signal
         serde_json::Value::String(s) => !s.is_empty(),
         serde_json::Value::Array(a) => !a.is_empty(),
         serde_json::Value::Object(o) => !o.is_empty(),

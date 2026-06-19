@@ -3,8 +3,7 @@
 //! hostile `--oob-server` cannot escape a JSON/URL/header template, while a
 //! legal host passes through unchanged.
 
-use keyhog_verifier::interpolate::{companions_with_oob, interpolate};
-use keyhog_verifier::testing::sanitize_oob_value;
+use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 use std::collections::HashMap;
 
 // disc audit (security.LOW.interpolate): a hostile `--oob-server` whose host
@@ -16,14 +15,14 @@ fn oob_host_structural_chars_stripped() {
     // Operator-supplied collector host carrying a path-break, query, and quote
     // that would otherwise escape the JSON string / URL structure.
     let hostile_host = "abc123.evil.com/x?q=1\"";
-    let comps = companions_with_oob(
+    let comps = TestApi.companions_with_oob(
         &HashMap::new(),
         hostile_host,
         &format!("https://{hostile_host}"),
         "abc123",
     );
 
-    let body = interpolate("{\"u\":\"https://{{interactsh}}/cb\"}", "cred", &comps);
+    let body = TestApi.interpolate("{\"u\":\"https://{{interactsh}}/cb\"}", "cred", &comps);
     // No structural byte from the hostile host survives into the output.
     assert!(!body.contains('?'), "query separator leaked: {body}");
     assert!(!body.contains("?q=1"), "query string leaked: {body}");
@@ -41,7 +40,7 @@ fn oob_host_structural_chars_stripped() {
         "legit host bytes dropped: {body}"
     );
 
-    let url = interpolate("{{interactsh.url}}/cb", "cred", &comps);
+    let url = TestApi.interpolate("{{interactsh.url}}/cb", "cred", &comps);
     // Scheme preserved; the host is sanitized to the DNS charset by DROPPING
     // out-of-set bytes (not truncating - see sanitize_oob_value_charset), so the
     // injected `/x?q=1"` collapses to harmless host bytes and the template's own
@@ -62,26 +61,26 @@ fn oob_host_structural_chars_stripped() {
 // path unchanged (sanitization is identity on legal input).
 #[test]
 fn oob_legit_host_passes_through() {
-    let comps = companions_with_oob(
+    let comps = TestApi.companions_with_oob(
         &HashMap::new(),
         "deadbeefcafe0.oast.fun",
         "https://deadbeefcafe0.oast.fun",
         "deadbeefcafe0",
     );
     assert_eq!(
-        interpolate("h={{interactsh.host}}", "cred", &comps),
+        TestApi.interpolate("h={{interactsh.host}}", "cred", &comps),
         "h=deadbeefcafe0.oast.fun"
     );
     assert_eq!(
-        interpolate("u={{interactsh.url}}", "cred", &comps),
+        TestApi.interpolate("u={{interactsh.url}}", "cred", &comps),
         "u=https://deadbeefcafe0.oast.fun"
     );
     assert_eq!(
-        interpolate("id={{interactsh.id}}", "cred", &comps),
+        TestApi.interpolate("id={{interactsh.id}}", "cred", &comps),
         "id=deadbeefcafe0"
     );
     assert_eq!(
-        interpolate("https://{{interactsh}}/p", "cred", &comps),
+        TestApi.interpolate("https://{{interactsh}}/p", "cred", &comps),
         "https://deadbeefcafe0.oast.fun/p"
     );
 }
@@ -89,10 +88,10 @@ fn oob_legit_host_passes_through() {
 #[test]
 fn sanitize_oob_value_charset() {
     // Folds case, keeps `[a-z0-9.-]`, drops everything else.
-    assert_eq!(sanitize_oob_value("AbC-1.2_x/y@z "), "abc-1.2xyz");
+    assert_eq!(TestApi.sanitize_oob_value("AbC-1.2_x/y@z "), "abc-1.2xyz");
     assert_eq!(
-        sanitize_oob_value("good.host-1.oast.fun"),
+        TestApi.sanitize_oob_value("good.host-1.oast.fun"),
         "good.host-1.oast.fun"
     );
-    assert_eq!(sanitize_oob_value("\u{0}\u{7f}<>'\""), "");
+    assert_eq!(TestApi.sanitize_oob_value("\u{0}\u{7f}<>'\""), "");
 }

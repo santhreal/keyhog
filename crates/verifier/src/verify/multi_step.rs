@@ -22,6 +22,7 @@ pub(crate) async fn verify_multi_step(
     allow_http: bool,
     proxy_in_use: bool,
     insecure_tls: bool,
+    allow_script_verify: bool,
 ) -> VerificationAttempt {
     let mut all_metadata = HashMap::new();
     let mut current_companions = companions.clone();
@@ -71,6 +72,7 @@ pub(crate) async fn verify_multi_step(
             credential,
             &current_companions,
             step_timeout,
+            allow_script_verify,
         )
         .await;
 
@@ -100,7 +102,7 @@ pub(crate) async fn verify_multi_step(
             request = request.body(body);
         }
 
-        let service = step.auth.service_name().unwrap_or("unknown");
+        let service = auth_service_name(&step.auth).unwrap_or("unknown"); // LAW10: absent name/label => display default; reporting-only, recall-safe
         crate::rate_limit::get_rate_limiter().wait(service).await;
 
         let response = match execute_request(request).await {
@@ -157,5 +159,12 @@ pub(crate) async fn verify_multi_step(
         result: last_result,
         metadata: all_metadata,
         transient: false,
+    }
+}
+
+fn auth_service_name(auth: &keyhog_core::AuthSpec) -> Option<&str> {
+    match auth {
+        keyhog_core::AuthSpec::AwsV4 { service, .. } => Some(service),
+        _ => None,
     }
 }

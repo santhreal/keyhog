@@ -34,7 +34,7 @@ async fn test_ssrf_integer_ips() {
         detector_name: Arc::from("ssrf"),
         service: Arc::from("test"),
         severity: Severity::Critical,
-        credential: Arc::from("secret"),
+        credential: keyhog_core::SensitiveString::from("secret"),
         credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),
@@ -112,7 +112,7 @@ async fn test_ssrf_integer_ips() {
             detector_name: Arc::from("ssrf"),
             service: Arc::from("test"),
             severity: Severity::Critical,
-            credential: Arc::from("secret"),
+            credential: keyhog_core::SensitiveString::from("secret"),
             credential_hash: [0u8; 32],
             primary_location: MatchLocation {
                 source: Arc::from(""),
@@ -199,7 +199,7 @@ async fn test_ssrf_malformed_urls() {
             detector_name: Arc::from("ssrf"),
             service: Arc::from("test"),
             severity: Severity::Critical,
-            credential: Arc::from("secret"),
+            credential: keyhog_core::SensitiveString::from("secret"),
             credential_hash: [0u8; 32],
             primary_location: MatchLocation {
                 source: Arc::from(""),
@@ -275,7 +275,7 @@ async fn test_ssrf_blocks_link_local_and_metadata_hosts() {
             detector_name: Arc::from("ssrf"),
             service: Arc::from("test"),
             severity: Severity::Critical,
-            credential: Arc::from("secret"),
+            credential: keyhog_core::SensitiveString::from("secret"),
             credential_hash: [0u8; 32],
             primary_location: MatchLocation {
                 source: Arc::from(""),
@@ -336,7 +336,7 @@ async fn test_ssrf_domain_allowlist_blocks_attacker_host() {
         detector_name: Arc::from("ssrf"),
         service: Arc::from("test"),
         severity: Severity::Critical,
-        credential: Arc::from("secret"),
+        credential: keyhog_core::SensitiveString::from("secret"),
         credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),

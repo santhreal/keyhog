@@ -1,5 +1,5 @@
 use keyhog_core::VerifySpec;
-use keyhog_verifier::domain_allowlist::check_url_against_spec;
+use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 
 #[test]
 fn domain_lookalike_does_not_match() {
@@ -8,5 +8,7 @@ fn domain_lookalike_does_not_match() {
         allowed_domains: vec![],
         ..Default::default()
     };
-    assert!(check_url_against_spec("https://evilgithub.com/x", &spec).is_err());
+    assert!(TestApi
+        .check_url_against_spec("https://evilgithub.com/x", &spec)
+        .is_err());
 }

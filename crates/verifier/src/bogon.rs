@@ -85,16 +85,16 @@ use core::net::IpAddr;
 ///
 /// ```
 /// use core::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-/// use keyhog_verifier::bogon::ip_addr_is_bogon;
+/// use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 ///
-/// assert!(ip_addr_is_bogon(IpAddr::V4(Ipv4Addr::LOCALHOST)));
-/// assert!(ip_addr_is_bogon(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))));
-/// assert!(ip_addr_is_bogon(IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254))));
-/// assert!(ip_addr_is_bogon(IpAddr::V6(Ipv6Addr::LOCALHOST)));
-/// assert!(!ip_addr_is_bogon(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))));
+/// assert!(TestApi.ip_addr_is_bogon(IpAddr::V4(Ipv4Addr::LOCALHOST)));
+/// assert!(TestApi.ip_addr_is_bogon(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))));
+/// assert!(TestApi.ip_addr_is_bogon(IpAddr::V4(Ipv4Addr::new(169, 254, 169, 254))));
+/// assert!(TestApi.ip_addr_is_bogon(IpAddr::V6(Ipv6Addr::LOCALHOST)));
+/// assert!(!TestApi.ip_addr_is_bogon(IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8))));
 /// ```
 #[must_use]
-pub fn ip_addr_is_bogon(ip: IpAddr) -> bool {
+pub(crate) fn ip_addr_is_bogon(ip: IpAddr) -> bool {
     match ip {
         IpAddr::V4(v) => {
             if v.is_private()

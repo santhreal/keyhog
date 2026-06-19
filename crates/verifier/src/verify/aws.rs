@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::time::Duration;
 
-use hmac::{Hmac, Mac};
 use keyhog_core::VerificationResult;
 use reqwest::Client;
 use sha2::{Digest, Sha256};
@@ -37,9 +36,9 @@ pub(crate) async fn build_aws_probe(
     // operator learns why. Uses the fleet-canonical classifier in
     // `keyhog_core::aws` (same decode + list the scanner attaches as metadata),
     // so there is exactly one canary source of truth.
-    match keyhog_core::aws::key_id_canary_status(&access_key) {
+    match keyhog_core::key_id_canary_status(&access_key) {
         Ok(true) => {
-            let metadata = match keyhog_core::aws::finding_metadata(&access_key) {
+            let metadata = match keyhog_core::finding_metadata(&access_key) {
                 Some(metadata) => metadata,
                 None => HashMap::from([("is_canary".to_string(), "true".to_string())]),
             }; // LAW10: canary classifier already matched; fallback preserves the canary marker if metadata enrichment is unavailable
@@ -153,37 +152,22 @@ async fn build_sigv4_request(
         .duration_since(UNIX_EPOCH)
         .map_err(|e| e.to_string())?
         .as_secs();
-    let (date_stamp, amz_date) = format_sigv4_timestamps(now_secs);
-    let date_stamp = &date_stamp;
-    let amz_date = &amz_date;
-
     let canonical_uri = "/";
-    let canonical_querystring = "";
-    // Temporary (STS / ASIA) credentials carry a session token that MUST be part
-    // of the signed canonical headers, otherwise AWS replies SignatureDoesNotMatch
-    // (HTTP 403) and a live credential is misverified as Dead. Mirror the known-good
-    // S3 signer in crates/sources/src/s3/auth.rs which signs x-amz-security-token.
-    let (canonical_headers, signed_headers) = aws_signed_headers(host, amz_date, session_token);
     let payload_hash = hex::encode(Sha256::digest(body.as_bytes()));
-    let canonical_request = format!(
-        "POST\n{canonical_uri}\n{canonical_querystring}\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
-    );
-
-    let algorithm = "AWS4-HMAC-SHA256";
-    let credential_scope = format!("{date_stamp}/{region}/{service}/aws4_request");
-    let string_to_sign = format!(
-        "{algorithm}\n{amz_date}\n{credential_scope}\n{}",
-        hex::encode(Sha256::digest(canonical_request.as_bytes()))
-    );
-
-    let signing_key = get_signature_key(secret_key, date_stamp, region, service)?;
-    let signature = hex::encode(hmac_sha256(&signing_key, &string_to_sign)?);
-
-    // The session token is NOT part of the Authorization header grammar; it travels
-    // only as the (now-signed) x-amz-security-token request header set below.
-    let auth_header = format!(
-        "{algorithm} Credential={access_key}/{credential_scope}, SignedHeaders={signed_headers}, Signature={signature}"
-    );
+    let (auth_header, amz_date, _) = crate::sigv4::sign_request_authorization(
+        access_key,
+        secret_key,
+        session_token,
+        region,
+        service,
+        "POST",
+        canonical_uri,
+        &[],
+        host,
+        &payload_hash,
+        now_secs,
+        &[],
+    )?;
 
     let mut request = client
         .post(url)
@@ -220,12 +204,24 @@ async fn build_sigv4_request(
             if let Some(arn) =
                 json.pointer("/GetCallerIdentityResponse/GetCallerIdentityResult/Arn")
             {
-                metadata.insert("arn".into(), arn.as_str().unwrap_or("").into());
+                if let Some(arn) = arn.as_str() {
+                    metadata.insert("arn".into(), arn.into());
+                } else {
+                    tracing::warn!(
+                        "AWS STS GetCallerIdentity Arn field was not a string; omitting metadata field"
+                    );
+                }
             }
             if let Some(account) =
                 json.pointer("/GetCallerIdentityResponse/GetCallerIdentityResult/Account")
             {
-                metadata.insert("account_id".into(), account.as_str().unwrap_or("").into());
+                if let Some(account) = account.as_str() {
+                    metadata.insert("account_id".into(), account.into());
+                } else {
+                    tracing::warn!(
+                        "AWS STS GetCallerIdentity Account field was not a string; omitting metadata field"
+                    );
+                }
             }
         }
         Ok((VerificationResult::Live, metadata, false))
@@ -234,73 +230,4 @@ async fn build_sigv4_request(
     } else {
         Ok((VerificationResult::RateLimited, HashMap::new(), true))
     }
-}
-
-/// Build the SigV4 `(canonical_headers, signed_headers)` pair for the STS probe.
-///
-/// `host` and `x-amz-date` are always signed. When a `session_token` is present
-/// (temporary / STS `ASIA…` credentials) `x-amz-security-token` is appended to
-/// both, keeping the headers lexicographically sorted (`host` < `x-amz-date` <
-/// `x-amz-security-token`). Signing the token is mandatory for temporary
-/// credentials; omitting it makes AWS return `SignatureDoesNotMatch` (HTTP 403),
-/// which the probe would otherwise misread as a dead key. Mirrors the
-/// known-good S3 signer in `crates/sources/src/s3/auth.rs`.
-pub fn aws_signed_headers(
-    host: &str,
-    amz_date: &str,
-    session_token: Option<&str>,
-) -> (String, String) {
-    let mut canonical_headers = format!("host:{host}\nx-amz-date:{amz_date}\n");
-    let mut signed_headers = String::from("host;x-amz-date");
-    if let Some(token) = session_token {
-        canonical_headers.push_str(&format!("x-amz-security-token:{token}\n"));
-        signed_headers.push_str(";x-amz-security-token");
-    }
-    (canonical_headers, signed_headers)
-}
-
-fn hmac_sha256(key: &[u8], data: &str) -> std::result::Result<Vec<u8>, String> {
-    type HmacSha256 = Hmac<sha2::Sha256>;
-    let mut mac = HmacSha256::new_from_slice(key)
-        .map_err(|error| format!("failed to create AWS HMAC signer: {error}"))?;
-    mac.update(data.as_bytes());
-    Ok(mac.finalize().into_bytes().to_vec())
-}
-
-fn get_signature_key(
-    key: &str,
-    date_stamp: &str,
-    region_name: &str,
-    service_name: &str,
-) -> std::result::Result<Vec<u8>, String> {
-    let k_date = hmac_sha256(format!("AWS4{key}").as_bytes(), date_stamp)?;
-    let k_region = hmac_sha256(&k_date, region_name)?;
-    let k_service = hmac_sha256(&k_region, service_name)?;
-    hmac_sha256(&k_service, "aws4_request")
-}
-
-/// Format the SigV4 timestamps from a Unix epoch second value.
-/// Returns `(date_stamp = "YYYYMMDD", amz_date = "YYYYMMDDTHHMMSSZ")`.
-pub fn format_sigv4_timestamps(unix_secs: u64) -> (String, String) {
-    // Civil-from-days, after Howard Hinnant's date algorithm.
-    let days = (unix_secs / 86_400) as i64;
-    let secs_of_day = (unix_secs % 86_400) as u32;
-    let z = days + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = (z - era * 146_097) as u32; // 0..=146096
-    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100); // 0..=365
-    let mp = (5 * doy + 2) / 153; // 0..=11
-    let d = doy - (153 * mp + 2) / 5 + 1; // 1..=31
-    let m = if mp < 10 { mp + 3 } else { mp - 9 }; // 1..=12
-    let year = y + i64::from(m <= 2);
-
-    let hour = secs_of_day / 3600;
-    let minute = (secs_of_day % 3600) / 60;
-    let second = secs_of_day % 60;
-
-    let date_stamp = format!("{year:04}{m:02}{d:02}");
-    let amz_date = format!("{year:04}{m:02}{d:02}T{hour:02}{minute:02}{second:02}Z");
-    (date_stamp, amz_date)
 }

@@ -142,88 +142,105 @@ pub fn is_private_ip_addr(ip: &IpAddr) -> bool {
 pub fn is_private_url(url_str: &str) -> bool {
     let url = match url::Url::parse(url_str) {
         Ok(u) => u,
-        Err(_) => return true, // Block malformed URLs
+        // Law 10: fail CLOSED — an unparseable URL is treated as private/blocked
+        // (`return true`), never allowed through. This is the loud security
+        // decision, not a swallowed error: the verifier refuses the request.
+        Err(_) => return true, // LAW10: fail-CLOSED — unparseable URL is blocked, never allowed
     };
 
-    if let Some(host) = url.host() {
-        match host {
-            url::Host::Ipv4(ip) => {
+    if !matches!(url.scheme(), "http" | "https") {
+        return true; // LAW10: fail-CLOSED — verifier/web fetch SSRF gates only allow DNS-screenable http(s) URLs
+    }
+
+    let Some(host) = url.host() else {
+        return true; // LAW10: fail-CLOSED — hostless URLs cannot be DNS-screened, so they are blocked
+    };
+
+    match host {
+        url::Host::Ipv4(ip) => {
+            if is_private_ip_addr_fast(&IpAddr::V4(ip))
+                || crate::bogon::ip_addr_is_bogon(IpAddr::V4(ip))
+            {
+                return true;
+            }
+        }
+        url::Host::Ipv6(ip) => {
+            if is_private_ip_addr_fast(&IpAddr::V6(ip))
+                || crate::bogon::ip_addr_is_bogon(IpAddr::V6(ip))
+            {
+                return true;
+            }
+        }
+        url::Host::Domain(d) => {
+            if d == "localhost"
+                || d.ends_with(".local")
+                || d.ends_with(".internal")
+                || d.ends_with(".localdomain")
+            {
+                return true;
+            }
+
+            // Block integer-encoded IP addresses across every radix
+            // a permissive resolver might canonicalize:
+            //
+            //   - Decimal:  http://2130706433/                  → 127.0.0.1
+            //   - Hex:      http://0x7f000001/                  → 127.0.0.1
+            //   - Octal:    http://017700000001/                → 127.0.0.1
+            //   - Dotted:   http://127.0.0.1/                   (Ipv4Addr::parse)
+            //
+            // glibc's getaddrinfo + several musl-based resolvers
+            // accept all four. Blocking only the decimal form
+            // (the pre-fix behavior) left an SSRF bypass via the
+            // hex variant - VRF-001 from the kimi review. The
+            // explicit `0x`-prefixed `from_str_radix(16)` covers
+            // that gap; the leading-zero radix-8 parse covers the
+            // octal variant for completeness.
+            let maybe_ip = if let Some(hex) = d.strip_prefix("0x").or_else(|| d.strip_prefix("0X"))
+            {
+                // Law 10: a `None` here is NOT a swallowed block-decision — it
+                // only means "this token is not a parseable hex integer-IP",
+                // so `maybe_ip` stays `None` and the host is treated as a real
+                // domain. That domain still gets DNS-resolved and re-screened
+                // against `is_private_ip_addr` post-resolution (rebinding
+                // defense), AND `looks_like_malformed_ip` below independently
+                // blocks octet-shaped evasion. No SSRF target is let through.
+                u32::from_str_radix(hex, 16).ok().map(Ipv4Addr::from) // LAW10: fail-open to domain (see above) — post-resolution veto still gates it
+            } else if d.starts_with('0') && d.len() > 1 && d.chars().all(|c| c.is_ascii_digit()) {
+                // Law 10: see above — a failed octal parse yields `None`
+                // (treat as domain), not an allow; post-resolution veto +
+                // `looks_like_malformed_ip` still gate it.
+                u32::from_str_radix(d, 8).ok().map(Ipv4Addr::from) // LAW10: fail-open to domain (see above) — post-resolution veto still gates it
+            } else if let Ok(n) = d.parse::<u32>() {
+                Some(Ipv4Addr::from(n))
+            } else if let Ok(ip) = d.parse::<Ipv4Addr>() {
+                Some(ip)
+            } else {
+                // Abbreviated dotted forms that glibc/getaddrinfo accept but
+                // `Ipv4Addr::parse` rejects (it requires exactly 4 octets):
+                //
+                //   - 2-part:  http://127.1        → 127.0.0.1
+                //   - 3-part:  http://172.16.1     → 172.16.0.1
+                //
+                // In classic inet_aton semantics the final field packs into
+                // the trailing low bytes, so the previous octets are the high
+                // bytes and the last field fills the remainder. Without this
+                // the URL-string SSRF gate let `https://127.1/` through, and
+                // on the proxy path (which skips the post-resolution IP veto)
+                // that was the only gate.
+                canonicalize_short_form_ipv4(d)
+            };
+            if let Some(ip) = maybe_ip {
                 if is_private_ip_addr_fast(&IpAddr::V4(ip))
                     || crate::bogon::ip_addr_is_bogon(IpAddr::V4(ip))
                 {
                     return true;
                 }
             }
-            url::Host::Ipv6(ip) => {
-                if is_private_ip_addr_fast(&IpAddr::V6(ip))
-                    || crate::bogon::ip_addr_is_bogon(IpAddr::V6(ip))
-                {
-                    return true;
-                }
-            }
-            url::Host::Domain(d) => {
-                if d == "localhost"
-                    || d.ends_with(".local")
-                    || d.ends_with(".internal")
-                    || d.ends_with(".localdomain")
-                {
-                    return true;
-                }
 
-                // Block integer-encoded IP addresses across every radix
-                // a permissive resolver might canonicalize:
-                //
-                //   - Decimal:  http://2130706433/                  → 127.0.0.1
-                //   - Hex:      http://0x7f000001/                  → 127.0.0.1
-                //   - Octal:    http://017700000001/                → 127.0.0.1
-                //   - Dotted:   http://127.0.0.1/                   (Ipv4Addr::parse)
-                //
-                // glibc's getaddrinfo + several musl-based resolvers
-                // accept all four. Blocking only the decimal form
-                // (the pre-fix behavior) left an SSRF bypass via the
-                // hex variant - VRF-001 from the kimi review. The
-                // explicit `0x`-prefixed `from_str_radix(16)` covers
-                // that gap; the leading-zero radix-8 parse covers the
-                // octal variant for completeness.
-                let maybe_ip = if let Some(hex) =
-                    d.strip_prefix("0x").or_else(|| d.strip_prefix("0X"))
-                {
-                    u32::from_str_radix(hex, 16).ok().map(Ipv4Addr::from)
-                } else if d.starts_with('0') && d.len() > 1 && d.chars().all(|c| c.is_ascii_digit())
-                {
-                    u32::from_str_radix(d, 8).ok().map(Ipv4Addr::from)
-                } else if let Ok(n) = d.parse::<u32>() {
-                    Some(Ipv4Addr::from(n))
-                } else if let Ok(ip) = d.parse::<Ipv4Addr>() {
-                    Some(ip)
-                } else {
-                    // Abbreviated dotted forms that glibc/getaddrinfo accept but
-                    // `Ipv4Addr::parse` rejects (it requires exactly 4 octets):
-                    //
-                    //   - 2-part:  http://127.1        → 127.0.0.1
-                    //   - 3-part:  http://172.16.1     → 172.16.0.1
-                    //
-                    // In classic inet_aton semantics the final field packs into
-                    // the trailing low bytes, so the previous octets are the high
-                    // bytes and the last field fills the remainder. Without this
-                    // the URL-string SSRF gate let `https://127.1/` through, and
-                    // on the proxy path (which skips the post-resolution IP veto)
-                    // that was the only gate.
-                    canonicalize_short_form_ipv4(d)
-                };
-                if let Some(ip) = maybe_ip {
-                    if is_private_ip_addr_fast(&IpAddr::V4(ip))
-                        || crate::bogon::ip_addr_is_bogon(IpAddr::V4(ip))
-                    {
-                        return true;
-                    }
-                }
-
-                // Block domains that look like malformed IPs (negative octets, too many dots, etc.)
-                // These are likely evasion attempts.
-                if looks_like_malformed_ip(d) {
-                    return true;
-                }
+            // Block domains that look like malformed IPs (negative octets, too many dots, etc.)
+            // These are likely evasion attempts.
+            if looks_like_malformed_ip(d) {
+                return true;
             }
         }
     }
@@ -286,11 +303,18 @@ fn parse_ip_field(part: &str) -> Option<u32> {
         if hex.is_empty() {
             return None;
         }
-        u32::from_str_radix(hex, 16).ok()
+        // Law 10: a `None` field-parse is recall/security-safe — it aborts
+        // short-form IPv4 canonicalization (so the host is treated as a domain,
+        // not silently allowed). The caller's `looks_like_malformed_ip` +
+        // post-resolution `is_private_ip_addr` veto still block evasion forms.
+        u32::from_str_radix(hex, 16).ok() // LAW10: fail-open field-parse (see above) — never an allow
     } else if part.len() > 1 && part.starts_with('0') {
-        u32::from_str_radix(part, 8).ok()
+        // Law 10: see above — failed octal field-parse aborts canonicalization
+        // to `None`, never an allow.
+        u32::from_str_radix(part, 8).ok() // LAW10: fail-open field-parse (see above) — never an allow
     } else {
-        part.parse::<u32>().ok()
+        // Law 10: see above — failed decimal field-parse aborts to `None`.
+        part.parse::<u32>().ok() // LAW10: fail-open field-parse (see above) — never an allow
     }
 }
 

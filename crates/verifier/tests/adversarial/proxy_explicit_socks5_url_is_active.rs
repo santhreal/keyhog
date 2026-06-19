@@ -1,7 +1,7 @@
 //! Verifier proxy edge: explicit socks5 proxy URL is active
 
-use keyhog_verifier::proxy_is_active;
 use crate::contract::support::with_proxy_contract_env;
+use keyhog_verifier::proxy_is_active;
 
 #[test]
 fn proxy_explicit_socks5_url_is_active() {

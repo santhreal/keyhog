@@ -35,7 +35,7 @@ fn group_for(detector_id: &str) -> DedupedMatch {
         detector_name: Arc::from(detector_id),
         service: Arc::from("test"),
         severity: Severity::Critical,
-        credential: Arc::from("secret-value"),
+        credential: keyhog_core::SensitiveString::from("secret-value"),
         credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from("fs"),

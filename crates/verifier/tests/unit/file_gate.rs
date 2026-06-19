@@ -6,14 +6,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use keyhog_core::{
-    AuthSpec, DetectorSpec, HttpMethod, MatchLocation, RawMatch, Severity, StepSpec, SuccessSpec,
-    VerifySpec,
+    AuthSpec, HttpMethod, MatchLocation, RawMatch, Severity, StepSpec, SuccessSpec, VerifySpec,
 };
-use keyhog_verifier::domain_allowlist::{check_url_against_spec, host_is_allowed};
-use keyhog_verifier::interpolate::{interpolate, resolve_field};
 use keyhog_verifier::oob::{InteractionProtocol, OobConfig};
 use keyhog_verifier::rate_limit::RateLimiter;
 use keyhog_verifier::ssrf::{is_private_ip_addr, is_private_url};
+use keyhog_verifier::testing::{TestApi, VerifierTestApi, VerifierTestCache};
 
 fn demo_match() -> RawMatch {
     RawMatch {
@@ -21,7 +19,7 @@ fn demo_match() -> RawMatch {
         detector_name: Arc::from("Demo"),
         service: Arc::from("demo"),
         severity: Severity::High,
-        credential: Arc::from("secret"),
+        credential: keyhog_core::SensitiveString::from("secret"),
         credential_hash: [0u8; 32],
         companions: Default::default(),
         location: MatchLocation {
@@ -44,30 +42,30 @@ fn demo_match() -> RawMatch {
 // ── crates/verifier/src/cache.rs ────────────────────────────────────────
 #[test]
 fn cache_happy() {
-    let cache = keyhog_verifier::cache::VerificationCache::new(Duration::from_secs(60));
+    let cache = keyhog_verifier::testing::TestVerificationCache::new(Duration::from_secs(60));
     assert!(cache.is_empty());
 }
 
 // ── crates/verifier/src/domain_allowlist.rs ─────────────────────────────
 #[test]
 fn domain_allowlist_happy() {
-    assert!(host_is_allowed("api.github.com", &["github.com".into()]));
+    assert!(TestApi.host_is_allowed("api.github.com", &["github.com".into()]));
 }
 #[test]
 fn domain_allowlist_error() {
-    assert!(!host_is_allowed("evil.example", &["github.com".into()]));
+    assert!(!TestApi.host_is_allowed("evil.example", &["github.com".into()]));
 }
 
 // ── crates/verifier/src/interpolate.rs ──────────────────────────────────
 #[test]
 fn interpolate_happy() {
-    let out = interpolate("https://example.com/{{match}}", "secret", &HashMap::new());
+    let out = TestApi.interpolate("https://example.com/{{match}}", "secret", &HashMap::new());
     assert!(out.contains("secret"));
 }
 #[test]
 fn interpolate_error() {
     assert_eq!(
-        resolve_field("literal", "secret", &HashMap::new()),
+        TestApi.resolve_field("literal", "secret", &HashMap::new()),
         "literal"
     );
 }
@@ -134,7 +132,9 @@ fn verify_mod_error() {
         service: "unknown".into(),
         ..Default::default()
     };
-    assert!(check_url_against_spec("https://evil.example/", &spec).is_err());
+    assert!(TestApi
+        .check_url_against_spec("https://evil.example/", &spec)
+        .is_err());
 }
 
 // ── crates/verifier/src/verify/auth.rs ──────────────────────────────────
@@ -195,7 +195,9 @@ fn verify_request_happy() {
         allowed_domains: vec!["example.com".into()],
         ..Default::default()
     };
-    assert!(check_url_against_spec("https://example.com/path", &spec).is_ok());
+    assert!(TestApi
+        .check_url_against_spec("https://example.com/path", &spec)
+        .is_ok());
 }
 #[test]
 fn verify_request_error() {
@@ -205,7 +207,9 @@ fn verify_request_error() {
         allowed_domains: vec!["example.com".into()],
         ..Default::default()
     };
-    assert!(check_url_against_spec("https://other.example/path", &spec).is_err());
+    assert!(TestApi
+        .check_url_against_spec("https://other.example/path", &spec)
+        .is_err());
 }
 
 // ── crates/verifier/src/verify/response.rs ──────────────────────────────

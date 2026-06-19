@@ -1,5 +1,5 @@
 use keyhog_core::VerifySpec;
-use keyhog_verifier::domain_allowlist::check_url_against_spec;
+use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 
 #[test]
 fn domain_explicit_allowlist_overrides_builtin() {
@@ -8,6 +8,10 @@ fn domain_explicit_allowlist_overrides_builtin() {
         allowed_domains: vec!["only-this.example.com".into()],
         ..Default::default()
     };
-    assert!(check_url_against_spec("https://only-this.example.com/x", &spec).is_ok());
-    assert!(check_url_against_spec("https://api.github.com/x", &spec).is_err());
+    assert!(TestApi
+        .check_url_against_spec("https://only-this.example.com/x", &spec)
+        .is_ok());
+    assert!(TestApi
+        .check_url_against_spec("https://api.github.com/x", &spec)
+        .is_err());
 }

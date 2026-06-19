@@ -3,9 +3,7 @@
 //! Contract: resolve_dns_cached must respect 60-second TTL and evict stale entries
 //! to prevent cache poisoning by attacker-influenced DNS (e.g., wildcard hosts).
 
-use keyhog_verifier::ssrf::resolve_dns_cached;
 use std::time::Duration;
-use tokio::time::sleep;
 
 #[tokio::test]
 async fn ssrf_dns_cache_ttl_entry_not_evicted_under_limit() {

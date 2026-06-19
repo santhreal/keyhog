@@ -1,16 +1,14 @@
 //! AES-256-CFB decrypt of a single interactsh-server poll entry.
 //!
-//! Extracted from `oob/client.rs` so the client module stays under the
-//! 500-line modularity cap. The split is along the natural seam: the
-//! client owns RSA key state + HTTP I/O, and this file owns the per-
-//! entry symmetric-decrypt path that turns each base64 ciphertext into
-//! an `Interaction`.
+//! Extracted from `oob/client.rs` because the client owns RSA key state +
+//! HTTP I/O, and this file owns the per-entry symmetric-decrypt path that
+//! turns each base64 ciphertext into an `Interaction`.
 
 use aes::Aes256;
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
 use cfb_mode::cipher::{AsyncStreamCipher, KeyIvInit};
 use serde::Deserialize;
-use tracing::debug;
+use tracing::warn;
 
 use super::client::{Interaction, InteractionProtocol, InteractshError};
 
@@ -65,14 +63,33 @@ pub(super) fn decrypt_entry(
     Aes256CfbDec::new_from_slices(aes_key, iv)
         .map_err(|e| InteractshError::Decrypt(format!("cfb init: {e}")))?
         .decrypt(&mut buf);
+    // LAW 10 — a dropped OOB interaction is NOT silent. Skipping a malformed
+    // entry is the right call (one bad entry must not abort the whole poll
+    // batch), but the drop is recall-affecting: a missed callback can flip an
+    // exfil-capable credential from Live to Dead. Surface every drop LOUDLY at
+    // `warn` (not `debug`) so the operator can see the OOB signal was lost.
     let json = match std::str::from_utf8(&buf) {
         Ok(s) => s,
-        Err(_) => return Ok(None), // server hiccup; don't blow up the poll
+        Err(e) => {
+            warn!(
+                target: "keyhog::oob",
+                error = %e,
+                "interactsh entry decrypted to non-UTF-8 bytes (wrong AES key or \
+                 corrupt ciphertext); skipping this interaction — an OOB callback \
+                 may be missed"
+            );
+            return Ok(None);
+        }
     };
     let raw: InteractionRaw = match serde_json::from_str(json) {
         Ok(v) => v,
         Err(e) => {
-            debug!(target: "keyhog::oob", error = %e, "interactsh JSON parse failed; skipping entry");
+            warn!(
+                target: "keyhog::oob",
+                error = %e,
+                "interactsh JSON parse failed; skipping this interaction — an OOB \
+                 callback may be missed"
+            );
             return Ok(None);
         }
     };

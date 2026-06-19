@@ -1,4 +1,4 @@
-use keyhog_verifier::testing::format_sigv4_timestamps;
+use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 
 #[test]
 fn sigv4_timestamp_midnight_exact_boundaries() {
@@ -16,7 +16,7 @@ fn sigv4_timestamp_midnight_exact_boundaries() {
     ];
 
     for (unix_secs, expected_d, expected_a) in midnight_dates {
-        let (d, a) = format_sigv4_timestamps(unix_secs);
+        let (d, a) = TestApi.format_sigv4_timestamps(unix_secs);
         assert_eq!(
             d, expected_d,
             "midnight date_stamp at unix_secs={} must be exact",
@@ -44,7 +44,7 @@ fn sigv4_timestamp_one_second_before_midnight() {
 
     // Dec 31, 2023 at 23:59:59 UTC
     let unix_secs = 1_704_067_199u64;
-    let (d, a) = format_sigv4_timestamps(unix_secs);
+    let (d, a) = TestApi.format_sigv4_timestamps(unix_secs);
 
     assert_eq!(
         d, "20231231",
@@ -63,7 +63,7 @@ fn sigv4_timestamp_one_second_after_midnight() {
 
     // Jan 1, 2024 at 00:00:01 UTC
     let unix_secs = 1_704_067_201u64;
-    let (d, a) = format_sigv4_timestamps(unix_secs);
+    let (d, a) = TestApi.format_sigv4_timestamps(unix_secs);
 
     assert_eq!(d, "20240101", "one second after midnight shows next day");
     assert_eq!(

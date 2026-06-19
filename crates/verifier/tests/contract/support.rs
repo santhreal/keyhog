@@ -3,6 +3,47 @@ use std::fs::OpenOptions;
 use std::sync::Mutex;
 
 static PROXY_CONTRACT_PROCESS_LOCK: Mutex<()> = Mutex::new(());
+const PROXY_ENV_VARS: &[&str] = &[
+    "KEYHOG_PROXY",
+    "HTTPS_PROXY",
+    "https_proxy",
+    "HTTP_PROXY",
+    "http_proxy",
+    "ALL_PROXY",
+    "all_proxy",
+    "NO_PROXY",
+    "no_proxy",
+];
+
+struct ProxyEnvSnapshot(Vec<(&'static str, Option<String>)>);
+
+impl ProxyEnvSnapshot {
+    fn capture_and_clear() -> Self {
+        let saved = PROXY_ENV_VARS
+            .iter()
+            .map(|var| (*var, std::env::var(var).ok()))
+            .collect::<Vec<_>>();
+        for var in PROXY_ENV_VARS {
+            unsafe {
+                std::env::remove_var(var);
+            }
+        }
+        Self(saved)
+    }
+}
+
+impl Drop for ProxyEnvSnapshot {
+    fn drop(&mut self) {
+        for (var, value) in self.0.drain(..) {
+            unsafe {
+                match value {
+                    Some(value) => std::env::set_var(var, value),
+                    None => std::env::remove_var(var),
+                }
+            }
+        }
+    }
+}
 
 fn lock_path() -> std::path::PathBuf {
     std::env::temp_dir().join("keyhog-proxy-contract-env.lock")
@@ -22,6 +63,7 @@ pub fn with_proxy_contract_env<R>(f: impl FnOnce() -> R) -> R {
         .expect("open proxy contract env lock file");
     file.lock_exclusive()
         .expect("acquire fleet-wide proxy contract env lock");
+    let _env = ProxyEnvSnapshot::capture_and_clear();
     let result = f();
     file.unlock()
         .expect("release fleet-wide proxy contract env lock");
@@ -30,8 +72,6 @@ pub fn with_proxy_contract_env<R>(f: impl FnOnce() -> R) -> R {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn proxy_contract_env_lock_uses_cross_process_file_lock() {
         let src = include_str!("support.rs");

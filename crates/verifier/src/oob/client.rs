@@ -46,6 +46,8 @@ pub enum InteractshError {
     KeyEncode(String),
     #[error("interactsh register failed (HTTP {status}): {body}")]
     Register { status: u16, body: String },
+    #[error("interactsh deregister failed (HTTP {status}): {body}")]
+    Deregister { status: u16, body: String },
     #[error("interactsh poll failed (HTTP {status}): {body}")]
     Poll { status: u16, body: String },
     #[error("interactsh response shape unexpected: {0}")]
@@ -123,7 +125,7 @@ impl InteractshClient {
     /// off the no-panic-in-production gate and matches the rest of the
     /// `InteractshError` surface. Test callers wrap with `.unwrap()` at
     /// the test boundary.
-    pub fn for_test(server: &str) -> Result<Self, InteractshError> {
+    pub(crate) fn for_test(server: &str) -> Result<Self, InteractshError> {
         let private_key = RsaPrivateKey::new(&mut OsRng, 1024)
             .map_err(|e| InteractshError::KeyGen(e.to_string()))?;
         Ok(Self {
@@ -296,7 +298,7 @@ impl InteractshClient {
         // Drain (and discard) the register success body under a cap. Some
         // interactsh deployments echo registration metadata; we don't need
         // it but must not let the connection sit half-read indefinitely.
-        let _ = read_capped_bytes(resp, ERROR_BODY_CAP).await;
+        let _ = read_capped_bytes(resp, ERROR_BODY_CAP).await; // LAW10: unused-binding marker; no runtime effect, not a fallback
         debug!(target: "keyhog::oob", correlation_id = %correlation_id, server = %server, "registered with interactsh collector");
 
         Ok(Self {
@@ -313,7 +315,7 @@ impl InteractshClient {
     /// subdomain is returned (unique-id) plus the host the service should
     /// hit. Caller is responsible for embedding it where the credential's
     /// API will follow.
-    pub fn mint_url(&self) -> MintedUrl {
+    pub(crate) fn mint_url(&self) -> MintedUrl {
         let suffix: String = OsRng
             .sample_iter(&Alphanumeric)
             .take(self.suffix_len)
@@ -401,7 +403,7 @@ impl InteractshClient {
         crate::rate_limit::get_rate_limiter()
             .wait(OOB_SERVICE)
             .await;
-        let _ = self
+        let resp = self
             .http
             .post(format!("{}/deregister", self.server))
             .json(&DeregisterRequest {
@@ -410,10 +412,34 @@ impl InteractshClient {
             })
             .send()
             .await?;
+        let status = resp.status();
+        if !status.is_success() {
+            // Cap the diagnostic body exactly like register/poll. An uncapped
+            // `resp.text()` here let a hostile or misbehaving collector force an
+            // unbounded allocation by returning a multi-GiB body on a
+            // deregister-failure status (the one error path that previously
+            // skipped the shared `read_capped_text` budget). We only display
+            // the first 256 chars in the error anyway.
+            let body: String = read_capped_text(resp, ERROR_BODY_CAP)
+                .await
+                .chars()
+                .take(256)
+                .collect();
+            warn!(target: "keyhog::oob", status = %status, body = %body, "interactsh deregister failed");
+            return Err(InteractshError::Deregister {
+                status: status.as_u16(),
+                body,
+            });
+        }
+        // Drain (and discard) the success body under a cap, exactly like
+        // `register`. Some interactsh deployments echo deregister metadata;
+        // leaving the connection half-read can poison it for the next pooled
+        // request on the same host.
+        let _ = read_capped_bytes(resp, ERROR_BODY_CAP).await; // LAW10: unused-binding marker; no runtime effect, not a fallback
         Ok(())
     }
 
-    pub fn correlation_id(&self) -> &str {
+    pub(crate) fn correlation_id(&self) -> &str {
         &self.correlation_id
     }
 
@@ -423,7 +449,7 @@ impl InteractshClient {
         self.server
             .split_once("://")
             .map(|(_, rest)| rest)
-            .unwrap_or(&self.server)
+            .unwrap_or(&self.server) // LAW10: absent name/label => display default; reporting-only, recall-safe
             .trim_end_matches('/')
     }
 
@@ -484,14 +510,15 @@ async fn ssrf_check_collector(server: &str) -> Result<(), InteractshError> {
         Ok(u) => u,
         // `normalize_server` cannot produce an unparseable URL, but if it
         // somehow does, refuse rather than fall through to an unchecked POST.
-        Err(_) => {
+        Err(_error) => {
+            // Law 10: failure => fail-closed error (blocked/refused), never proceeds; security guard
             return Err(InteractshError::BlockedCollector(format!(
                 "{server} is not a parseable collector URL"
-            )))
+            )));
         }
     };
     if let Some(host) = url.host_str() {
-        let port = url.port_or_known_default().unwrap_or(443);
+        let port = url.port_or_known_default().unwrap_or(443); // LAW10: no explicit port => scheme default (443); recall-irrelevant
         if let Ok(addrs) = crate::ssrf::resolve_dns_cached(&format!("{host}:{port}")).await {
             if addrs
                 .iter()

@@ -26,7 +26,7 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 use keyhog_verifier::ssrf::{is_private_ip_addr, is_private_ip_addr_fast, is_private_url};
-use keyhog_verifier::testing::ip_addr_is_bogon;
+use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 
 // --- small derivation helpers (not tests) ----------------------------------
 
@@ -246,7 +246,7 @@ fn fast_v6_public_addresses_allowed() {
 fn bogon_only_v4_protocol_assignment_192_0_0_slash24() {
     // 192.0.0.0/24 is bogon (IETF protocol assignment) but NOT in the fast path.
     assert!(!is_private_ip_addr_fast(&v4(192, 0, 0, 1)));
-    assert!(ip_addr_is_bogon(v4(192, 0, 0, 1)));
+    assert!(TestApi.ip_addr_is_bogon(v4(192, 0, 0, 1)));
     assert!(is_private_ip_addr(&v4(192, 0, 0, 1)));
 }
 
@@ -255,11 +255,11 @@ fn bogon_only_v4_benchmark_198_18_slash15() {
     // 198.18.0.0/15 benchmark range: bogon but not fast.
     assert!(!is_private_ip_addr_fast(&v4(198, 18, 0, 1)));
     assert!(!is_private_ip_addr_fast(&v4(198, 19, 255, 255)));
-    assert!(ip_addr_is_bogon(v4(198, 18, 0, 1)));
-    assert!(ip_addr_is_bogon(v4(198, 19, 255, 255)));
+    assert!(TestApi.ip_addr_is_bogon(v4(198, 18, 0, 1)));
+    assert!(TestApi.ip_addr_is_bogon(v4(198, 19, 255, 255)));
     assert!(is_private_ip_addr(&v4(198, 18, 0, 1)));
     // 198.20.x is outside the /15 and is public on both layers.
-    assert!(!ip_addr_is_bogon(v4(198, 20, 0, 0)));
+    assert!(!TestApi.ip_addr_is_bogon(v4(198, 20, 0, 0)));
     assert!(!is_private_ip_addr(&v4(198, 20, 0, 0)));
 }
 
@@ -268,7 +268,7 @@ fn bogon_only_v4_documentation_test_nets() {
     // RFC5737 TEST-NET-1/2/3 are documentation => bogon, not fast.
     for ip in [v4(192, 0, 2, 1), v4(198, 51, 100, 1), v4(203, 0, 113, 1)] {
         assert!(!is_private_ip_addr_fast(&ip), "fast must NOT flag {ip}");
-        assert!(ip_addr_is_bogon(ip), "bogon must flag {ip}");
+        assert!(TestApi.ip_addr_is_bogon(ip), "bogon must flag {ip}");
         assert!(is_private_ip_addr(&ip), "combined must flag {ip}");
     }
 }
@@ -277,7 +277,7 @@ fn bogon_only_v4_documentation_test_nets() {
 fn bogon_v4_broadcast_255() {
     // Limited broadcast: both layers agree (fast via 240/4, bogon via is_broadcast).
     assert!(is_private_ip_addr_fast(&v4(255, 255, 255, 255)));
-    assert!(ip_addr_is_bogon(v4(255, 255, 255, 255)));
+    assert!(TestApi.ip_addr_is_bogon(v4(255, 255, 255, 255)));
     assert!(is_private_ip_addr(&v4(255, 255, 255, 255)));
 }
 
@@ -288,28 +288,28 @@ fn bogon_v4_broadcast_255() {
 #[test]
 fn bogon_v6_ipv4_mapped_loopback() {
     // ::ffff:127.0.0.1 decomposes to v4 loopback => bogon.
-    assert!(ip_addr_is_bogon(v6("::ffff:127.0.0.1")));
+    assert!(TestApi.ip_addr_is_bogon(v6("::ffff:127.0.0.1")));
     assert!(is_private_ip_addr(&v6("::ffff:127.0.0.1")));
 }
 
 #[test]
 fn bogon_v6_ipv4_mapped_public_allowed() {
     // ::ffff:8.8.8.8 maps to a PUBLIC v4 => not bogon.
-    assert!(!ip_addr_is_bogon(v6("::ffff:8.8.8.8")));
+    assert!(!TestApi.ip_addr_is_bogon(v6("::ffff:8.8.8.8")));
     assert!(!is_private_ip_addr(&v6("::ffff:8.8.8.8")));
 }
 
 #[test]
 fn bogon_v6_ipv4_compat_loopback() {
     // ::127.0.0.1 (deprecated compat form). to_ipv4() => 127.0.0.1 => bogon.
-    assert!(ip_addr_is_bogon(v6("::127.0.0.1")));
+    assert!(TestApi.ip_addr_is_bogon(v6("::127.0.0.1")));
     assert!(is_private_ip_addr(&v6("::127.0.0.1")));
 }
 
 #[test]
 fn bogon_v6_documentation_2001_db8_slash32() {
-    assert!(ip_addr_is_bogon(v6("2001:db8::1")));
-    assert!(ip_addr_is_bogon(v6("2001:db8:dead:beef::1")));
+    assert!(TestApi.ip_addr_is_bogon(v6("2001:db8::1")));
+    assert!(TestApi.ip_addr_is_bogon(v6("2001:db8:dead:beef::1")));
     assert!(is_private_ip_addr(&v6("2001:db8::1")));
     // Fast path does not cover documentation.
     assert!(!is_private_ip_addr_fast(&v6("2001:db8::1")));
@@ -318,42 +318,42 @@ fn bogon_v6_documentation_2001_db8_slash32() {
 #[test]
 fn bogon_v6_teredo_2001_0000_slash32() {
     // 2001:0000::/32 Teredo.
-    assert!(ip_addr_is_bogon(v6("2001:0:abcd:ef01::1")));
+    assert!(TestApi.ip_addr_is_bogon(v6("2001:0:abcd:ef01::1")));
     assert!(is_private_ip_addr(&v6("2001:0:abcd:ef01::1")));
 }
 
 #[test]
 fn bogon_v6_orchidv2_2001_20_slash28() {
     // 2001:20::/28 => segs[1] & 0xfff0 == 0x0020.
-    assert!(ip_addr_is_bogon(v6("2001:20::1")));
-    assert!(ip_addr_is_bogon(v6("2001:2f::1"))); // 0x2f & 0xfff0 == 0x20
+    assert!(TestApi.ip_addr_is_bogon(v6("2001:20::1")));
+    assert!(TestApi.ip_addr_is_bogon(v6("2001:2f::1"))); // 0x2f & 0xfff0 == 0x20
     assert!(is_private_ip_addr(&v6("2001:20::1")));
     // 2001:30:: => 0x30 & 0xfff0 == 0x30 != 0x20, and not docs/teredo => public.
-    assert!(!ip_addr_is_bogon(v6("2001:30::1")));
+    assert!(!TestApi.ip_addr_is_bogon(v6("2001:30::1")));
 }
 
 #[test]
 fn bogon_v6_discard_prefix_100_slash64() {
     // 100::/64 discard prefix (RFC6666): segs[0..4] == 0x0100,0,0,0.
-    assert!(ip_addr_is_bogon(v6("100::1")));
+    assert!(TestApi.ip_addr_is_bogon(v6("100::1")));
     assert!(is_private_ip_addr(&v6("100::1")));
     // 100:0:0:1:: has a non-zero 4th segment => outside the /64 discard prefix.
-    assert!(!ip_addr_is_bogon(v6("100:0:0:1::1")));
+    assert!(!TestApi.ip_addr_is_bogon(v6("100:0:0:1::1")));
 }
 
 #[test]
 fn bogon_v6_6to4_wrapping_bogon_v4() {
     // 2002::/16 with embedded v4 = 10.0.0.1 (0x0a00.0001 -> segs[1]=0x0a00, segs[2]=0x0001).
-    assert!(ip_addr_is_bogon(v6("2002:a00:1::")));
+    assert!(TestApi.ip_addr_is_bogon(v6("2002:a00:1::")));
     assert!(is_private_ip_addr(&v6("2002:a00:1::")));
     // 6to4 wrapping a PUBLIC v4 (8.8.8.8 -> 0x0808:0808) is not a bogon.
-    assert!(!ip_addr_is_bogon(v6("2002:808:808::")));
+    assert!(!TestApi.ip_addr_is_bogon(v6("2002:808:808::")));
 }
 
 #[test]
 fn bogon_v6_public_allowed() {
-    assert!(!ip_addr_is_bogon(v6("2606:4700:4700::1111")));
-    assert!(!ip_addr_is_bogon(v6("2001:4860:4860::8888")));
+    assert!(!TestApi.ip_addr_is_bogon(v6("2606:4700:4700::1111")));
+    assert!(!TestApi.ip_addr_is_bogon(v6("2001:4860:4860::8888")));
     assert!(!is_private_ip_addr(&v6("2606:4700:4700::1111")));
 }
 
@@ -366,10 +366,10 @@ fn bogon_v6_public_allowed() {
 fn bogon_v6_loopback_regression_not_via_v4_fallback() {
     // ::1 -> to_ipv4() == 0.0.0.1 which is NOT 127/8; the is_loopback()
     // short-circuit is the load-bearing check.
-    assert!(ip_addr_is_bogon(v6("::1")));
+    assert!(TestApi.ip_addr_is_bogon(v6("::1")));
     assert!(is_private_ip_addr(&v6("::1")));
     // ...but 0.0.0.1 itself, as a real v4 address, is caught by 0/8 anyway.
-    assert!(ip_addr_is_bogon(v4(0, 0, 0, 1)));
+    assert!(TestApi.ip_addr_is_bogon(v4(0, 0, 0, 1)));
 }
 
 // ===========================================================================

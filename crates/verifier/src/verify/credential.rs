@@ -87,6 +87,7 @@ pub(crate) async fn verify_with_retry(
     allow_http: bool,
     proxy_in_use: bool,
     insecure_tls: bool,
+    allow_script_verify: bool,
     oob_session: Option<&Arc<OobSession>>,
 ) -> (VerificationResult, HashMap<String, String>) {
     retry_loop(MAX_VERIFY_ATTEMPTS, RETRY_DELAY_MS, |_| {
@@ -100,6 +101,7 @@ pub(crate) async fn verify_with_retry(
             allow_http,
             proxy_in_use,
             insecure_tls,
+            allow_script_verify,
             oob_session,
         )
     })
@@ -139,12 +141,27 @@ where
         last_attempt = Some((result.result, result.metadata));
     }
 
-    last_attempt.unwrap_or_else(|| {
-        (
+    match last_attempt {
+        Some(attempt) => attempt,
+        None => (
             VerificationResult::Error("max retries exceeded".into()),
             HashMap::new(),
-        )
+        ),
+    }
+}
+
+pub(crate) async fn retry_loop_preserves_metadata_on_exhaustion_for_test(
+) -> (VerificationResult, HashMap<String, String>) {
+    retry_loop(2, 0, |_| async {
+        let mut metadata = HashMap::new();
+        metadata.insert("oob_id".to_string(), "abc".to_string());
+        VerificationAttempt {
+            result: VerificationResult::Error("transient verifier failure".into()),
+            metadata,
+            transient: true,
+        }
     })
+    .await
 }
 
 pub(crate) async fn verify_credential(
@@ -157,6 +174,7 @@ pub(crate) async fn verify_credential(
     allow_http: bool,
     proxy_in_use: bool,
     insecure_tls: bool,
+    allow_script_verify: bool,
     oob_session: Option<&Arc<OobSession>>,
 ) -> VerificationAttempt {
     if !spec.steps.is_empty() {
@@ -173,6 +191,7 @@ pub(crate) async fn verify_credential(
             allow_http,
             proxy_in_use,
             insecure_tls,
+            allow_script_verify,
         )
         .await;
     }
@@ -208,9 +227,9 @@ pub(crate) async fn verify_credential(
         None => companions,
     };
 
-    let url_template = spec.url.as_deref().unwrap_or("");
-    let method = spec.method.as_ref().unwrap_or(&HttpMethod::Get);
-    let auth = spec.auth.as_ref().unwrap_or(&AuthSpec::None);
+    let url_template = spec.url.as_deref().unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
+    let method = spec.method.as_ref().unwrap_or(&HttpMethod::Get); // LAW10: absent verify-spec field => documented default (GET / AuthSpec::None / first); recall-safe
+    let auth = spec.auth.as_ref().unwrap_or(&AuthSpec::None); // LAW10: absent verify-spec field => documented default (GET / AuthSpec::None / first); recall-safe
     let success = spec.success.as_ref();
 
     let is_self_constructing_auth = matches!(auth, AuthSpec::AwsV4 { .. });
@@ -246,6 +265,7 @@ pub(crate) async fn verify_credential(
             credential,
             companions_ref,
             timeout,
+            allow_script_verify,
         )
         .await
     } else {
@@ -286,6 +306,7 @@ pub(crate) async fn verify_credential(
             credential,
             companions_ref,
             timeout,
+            allow_script_verify,
         )
         .await
     };
@@ -398,7 +419,7 @@ async fn combine_oob(
         .spec
         .timeout_secs
         .map(Duration::from_secs)
-        .unwrap_or(ctx.session.config_default_timeout());
+        .unwrap_or(ctx.session.config_default_timeout()); // LAW10: absent per-spec timeout => session/config default; Tier-A knob, recall-irrelevant
     let observation = ctx
         .session
         .wait_for(&ctx.unique_id, ctx.spec.protocol.into(), timeout)
@@ -459,5 +480,5 @@ pub(crate) fn verification_timeout(
 ) -> Duration {
     spec.timeout_ms
         .map(Duration::from_millis)
-        .unwrap_or(default_timeout)
+        .unwrap_or(default_timeout) // LAW10: absent per-spec timeout => session/config default; Tier-A knob, recall-irrelevant
 }

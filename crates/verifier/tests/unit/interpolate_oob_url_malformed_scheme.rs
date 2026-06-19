@@ -1,4 +1,4 @@
-use keyhog_verifier::interpolate::{companions_with_oob, interpolate};
+use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 use std::collections::HashMap;
 
 #[test]
@@ -12,9 +12,10 @@ fn interpolate_oob_url_malformed_scheme() {
     // (whole value runs through sanitize_oob_value) while still letting us
     // assert the valid host bytes survive and the structural chars are stripped.
     let minted_url = "host.example.com/x?y=1";
-    let comps = companions_with_oob(&HashMap::new(), "host.example.com", minted_url, "id123");
+    let comps =
+        TestApi.companions_with_oob(&HashMap::new(), "host.example.com", minted_url, "id123");
 
-    let body = interpolate("{\"url\":\"{{interactsh.url}}\"}", "cred", &comps);
+    let body = TestApi.interpolate("{\"url\":\"{{interactsh.url}}\"}", "cred", &comps);
 
     // The malformed URL (lacking ://) gets treated as a raw host string,
     // so all structural chars (/ ? =) are stripped by sanitize_oob_value.

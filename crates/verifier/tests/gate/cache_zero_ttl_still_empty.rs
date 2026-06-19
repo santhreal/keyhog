@@ -1,6 +1,6 @@
 //! LR1-A8 replacement gate: `cache.rs` zero TTL still starts empty.
 
-use keyhog_verifier::cache::VerificationCache;
+use keyhog_verifier::testing::{TestVerificationCache as VerificationCache, VerifierTestCache};
 use std::time::Duration;
 
 #[test]

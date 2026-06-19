@@ -72,7 +72,7 @@ async fn test_verify_json_path_exhaustion() {
         detector_name: Arc::from("det_json"),
         service: Arc::from("test"),
         severity: Severity::Critical,
-        credential: Arc::from("secret"),
+        credential: keyhog_core::SensitiveString::from("secret"),
         credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),
@@ -168,7 +168,7 @@ async fn test_verify_aws_sigv4_empty_keys() {
         detector_name: Arc::from("det_aws"),
         service: Arc::from("aws"),
         severity: Severity::Critical,
-        credential: Arc::from(""), // empty
+        credential: keyhog_core::SensitiveString::from(""), // empty
         credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),
@@ -244,7 +244,7 @@ async fn test_verify_aws_sigv4_null_bytes() {
         detector_name: Arc::from("det_aws"),
         service: Arc::from("aws"),
         severity: Severity::Critical,
-        credential: Arc::from("AKIA\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"),
+        credential: keyhog_core::SensitiveString::from("AKIA\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0"),
         credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),
@@ -316,7 +316,7 @@ async fn test_verify_bad_header_templates() {
         detector_name: Arc::from("det_headers"),
         service: Arc::from("test"),
         severity: Severity::Critical,
-        credential: Arc::from("val\r\nInjected-Header: 1\r\n\0"),
+        credential: keyhog_core::SensitiveString::from("val\r\nInjected-Header: 1\r\n\0"),
         credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),

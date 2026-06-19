@@ -4,18 +4,10 @@ use keyhog_verifier::proxy_is_active;
 
 #[test]
 fn proxy_explicit_off_overrides_env() {
-    let _guard = crate::common::proxy_env_lock();
-    let saved = std::env::var("HTTPS_PROXY").ok();
-    unsafe {
-        std::env::set_var("HTTPS_PROXY", "http://corp-burp:8080");
-    }
-    assert!(!proxy_is_active(Some("off")));
-    match saved {
-        Some(v) => unsafe {
-            std::env::set_var("HTTPS_PROXY", v);
-        },
-        None => unsafe {
-            std::env::remove_var("HTTPS_PROXY");
-        },
-    }
+    super::support::with_proxy_contract_env(|| {
+        unsafe {
+            std::env::set_var("HTTPS_PROXY", "http://corp-burp:8080");
+        }
+        assert!(!proxy_is_active(Some("off")));
+    });
 }

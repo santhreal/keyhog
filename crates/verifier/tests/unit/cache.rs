@@ -1,5 +1,5 @@
 use keyhog_core::VerificationResult;
-use keyhog_verifier::cache::VerificationCache;
+use keyhog_verifier::testing::{TestVerificationCache as VerificationCache, VerifierTestCache};
 use std::collections::HashMap;
 use std::time::Duration;
 
@@ -81,6 +81,31 @@ fn evicts_oldest_entry_when_cache_hits_capacity() {
     assert!(cache.get("cred2", "det").is_some());
     assert!(cache.get("cred3", "det").is_some());
     assert_eq!(cache.len(), 2);
+}
+
+#[test]
+fn eviction_queue_stays_bounded_when_ttl_keeps_entry_map_under_capacity() {
+    let cache = VerificationCache::with_max_entries(Duration::from_secs(0), 10_000);
+
+    for idx in 0..512 {
+        cache.put(
+            &format!("cred-{idx}"),
+            "det",
+            VerificationResult::Dead,
+            HashMap::new(),
+        );
+    }
+
+    assert!(
+        cache.len() <= 64,
+        "zero-TTL map should stay under one eviction interval; got {} live entries",
+        cache.len()
+    );
+    assert!(
+        cache.queue_len() <= 64,
+        "eviction queue must stay bounded with expired entries; got {} queued keys",
+        cache.queue_len()
+    );
 }
 
 #[test]

@@ -20,7 +20,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use dashmap::DashMap;
-use keyhog_core::{VerificationResult, VerifiedFinding};
+use futures_util::FutureExt;
+use keyhog_core::{SensitiveString, VerificationResult, VerifiedFinding};
 use reqwest::Client;
 use tokio::sync::{Notify, Semaphore};
 use tokio::task::JoinSet;
@@ -29,8 +30,9 @@ use crate::cache;
 use crate::{into_finding, DedupedMatch, VerificationEngine, VerifyConfig, VerifyError};
 
 pub(crate) use aws::build_aws_probe;
-pub use aws::format_sigv4_timestamps;
-pub(crate) use credential::{verify_with_retry, VerificationAttempt};
+pub(crate) use credential::{
+    retry_loop_preserves_metadata_on_exhaustion_for_test, verify_with_retry, VerificationAttempt,
+};
 pub(crate) use request::{
     build_request_for_step, execute_request, resolved_client_for_url, RequestBuildResult,
 };
@@ -48,7 +50,7 @@ struct VerifyTaskShared {
     detectors: Arc<HashMap<Arc<str>, keyhog_core::DetectorSpec>>,
     timeout: Duration,
     cache: Arc<cache::VerificationCache>,
-    inflight: Arc<DashMap<(Arc<str>, Arc<str>), Arc<Notify>>>,
+    inflight: Arc<DashMap<(Arc<str>, SensitiveString), Arc<Notify>>>,
     max_inflight_keys: usize,
     danger_allow_private_ips: bool,
     danger_allow_http: bool,
@@ -59,6 +61,7 @@ struct VerifyTaskShared {
     /// the rebuild path rejects them - the flag silently does nothing
     /// for direct (non-proxy) connections. 2026-05-26.
     insecure_tls: bool,
+    allow_script_verify: bool,
     /// `true` when the engine'"'"'s base client was built with a proxy. The
     /// per-request DNS-pinned client rebuild path in
     /// `resolved_client_for_url` MUST NOT fire when a proxy is in use,
@@ -70,8 +73,8 @@ struct VerifyTaskShared {
 }
 
 struct InflightGuard {
-    key: (Arc<str>, Arc<str>),
-    inflight: Arc<DashMap<(Arc<str>, Arc<str>), Arc<Notify>>>,
+    key: (Arc<str>, SensitiveString),
+    inflight: Arc<DashMap<(Arc<str>, SensitiveString), Arc<Notify>>>,
     notify: Arc<Notify>,
 }
 
@@ -86,13 +89,83 @@ impl Drop for InflightGuard {
     }
 }
 
+async fn verify_group_task_safe(shared: VerifyTaskShared, group: DedupedMatch) -> VerifiedFinding {
+    let group_for_error = group.clone();
+    match std::panic::AssertUnwindSafe(verify_group_task(shared, group))
+        .catch_unwind()
+        .await
+    {
+        Ok(finding) => finding,
+        Err(e) => {
+            // Law 10: verifier task panic is converted into an operator-visible verification error finding
+            // Law 10: scanner-thread panic => LOUD tracing::error + SCANNER_PANICKED flag (results marked incomplete + surfaced); allowed loud+recorded degrade
+            let reason = e
+                .downcast_ref::<&str>()
+                .map(|s| format!("verification task panicked: {s}"))
+                .unwrap_or_else(|| "verification task panicked".to_string()); // LAW10: missing/non-string field => empty/placeholder; recall-safe
+            tracing::error!(reason);
+            into_finding(
+                group_for_error,
+                VerificationResult::Error(reason),
+                HashMap::new(),
+            )
+        }
+    }
+}
+
+/// Drain every task from `join_set`, and after each completion pull the next
+/// task (if any) from `next` and spawn it, until the set is empty. Returns the
+/// collected outputs in completion order.
+///
+/// A `JoinError` (the task was cancelled, or the runtime is shutting down) is
+/// surfaced via `tracing::error!` and SKIPPED — the drain CONTINUES rather than
+/// breaking, so one lost task never truncates the still-pending work. Callers'
+/// per-task bodies catch their own panics (`verify_group_task_safe`), so in
+/// normal operation the error arm is unreachable; it exists to fail
+/// loud-and-complete, never silent-and-truncated, on abnormal termination. The
+/// loop is generic so it is unit-testable with controllable tasks (an aborted
+/// task must not drop the others) — see `drain_join_set_continues_past_cancel`.
+// `pub` only so the `#[doc(hidden)] crate::testing` facade can re-export it for
+// the tests/ drain-continuation gate (verifier src forbids inline test modules,
+// KH-GAP-004); `mod verify` is private, so it is not otherwise reachable — same
+// pattern as `format_sigv4_timestamps`.
+pub async fn drain_join_set<T, F, Fut>(
+    mut join_set: JoinSet<T>,
+    capacity: usize,
+    mut next: F,
+) -> Vec<T>
+where
+    T: Send + 'static,
+    F: FnMut() -> Option<Fut>,
+    Fut: std::future::Future<Output = T> + Send + 'static,
+{
+    let mut out = Vec::with_capacity(capacity);
+    while let Some(result) = join_set.join_next().await {
+        match result {
+            Ok(value) => out.push(value),
+            Err(join_error) => {
+                tracing::error!(
+                    %join_error,
+                    "a verification task failed to join (cancelled or runtime \
+                     shutting down); continuing the drain so the remaining tasks \
+                     still complete"
+                );
+            }
+        }
+        if let Some(fut) = next() {
+            join_set.spawn(fut);
+        }
+    }
+    out
+}
+
 async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> VerifiedFinding {
     let global = shared.global_semaphore;
     let service_sem = shared
         .service_semaphores
         .get(&*group.service)
         .cloned()
-        .unwrap_or_else(|| Arc::new(Semaphore::new(DEFAULT_SERVICE_CONCURRENCY)));
+        .unwrap_or_else(|| Arc::new(Semaphore::new(DEFAULT_SERVICE_CONCURRENCY))); // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
     let client = shared.client;
     let detector = shared.detectors.get(&*group.detector_id).cloned();
     let timeout = shared.timeout;
@@ -158,32 +231,27 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
         }
     };
 
-    let (verification, metadata) = if let Some(custom_verifier) =
-        keyhog_core::registry::get_verifier_registry().get(&group.detector_id)
-    {
-        custom_verifier.verify(&group).await
-    } else {
-        match &detector {
-            Some(det) => match &det.verify {
-                Some(verify_spec) => {
-                    verify_with_retry(
-                        &client,
-                        verify_spec,
-                        &group.credential,
-                        &group.companions,
-                        timeout,
-                        shared.danger_allow_private_ips,
-                        shared.danger_allow_http,
-                        shared.proxy_in_use,
-                        shared.insecure_tls,
-                        shared.oob_session.as_ref(),
-                    )
-                    .await
-                }
-                None => (VerificationResult::Unverifiable, HashMap::new()),
-            },
+    let (verification, metadata) = match &detector {
+        Some(det) => match &det.verify {
+            Some(verify_spec) => {
+                verify_with_retry(
+                    &client,
+                    verify_spec,
+                    &group.credential,
+                    &group.companions,
+                    timeout,
+                    shared.danger_allow_private_ips,
+                    shared.danger_allow_http,
+                    shared.proxy_in_use,
+                    shared.insecure_tls,
+                    shared.allow_script_verify,
+                    shared.oob_session.as_ref(),
+                )
+                .await
+            }
             None => (VerificationResult::Unverifiable, HashMap::new()),
-        }
+        },
+        None => (VerificationResult::Unverifiable, HashMap::new()),
     };
 
     cache.put(
@@ -205,9 +273,25 @@ impl VerificationEngine {
         let mut builder = Client::builder()
             .timeout(config.timeout)
             // Cert validation: ON by default, escape hatch ONLY through the
-            // explicit `VerifyConfig.insecure_tls` knob (or `KEYHOG_INSECURE_TLS`
-            // via CLI). Production paths never flip this.
+            // explicit `VerifyConfig.insecure_tls` knob (set by the `--insecure`
+            // flag or `.keyhog.toml`; no env var can flip it — config mandate).
+            // Production paths never flip this.
             .danger_accept_invalid_certs(config.insecure_tls)
+            // Decompression-bomb defense-in-depth: the 1 MB streaming cap in
+            // `read_response_body` only measures REAL wire bytes if reqwest
+            // never inflates a `Content-Encoding: gzip|br|deflate` body before
+            // our cap counts a byte. The crate is already compiled without the
+            // `gzip`/`brotli`/`deflate` features (pinned by
+            // `verifier_reqwest_has_no_auto_decompression_feature`), so today
+            // these are no-ops — but calling them explicitly makes the
+            // guarantee load-bearing AT THE CALL SITE: if a future Cargo.toml
+            // edit turns a decompression feature on, auto-inflate stays OFF
+            // here and the cap keeps measuring wire bytes. Belt-and-suspenders,
+            // not a substitute for the feature pin.
+            .no_gzip()
+            .no_brotli()
+            .no_zstd()
+            .no_deflate()
             .redirect(reqwest::redirect::Policy::none());
         builder = crate::apply_proxy_config(builder, config.proxy.as_deref())
             .map_err(VerifyError::ProxyConfig)?;
@@ -240,21 +324,19 @@ impl VerificationEngine {
             danger_allow_private_ips: config.danger_allow_private_ips,
             danger_allow_http: config.danger_allow_http,
             insecure_tls: config.insecure_tls,
-            // Issue #2 + #3 fix: don't conflate "configured to set a proxy
-            // policy" with "a proxy is actively routing traffic."
-            // `proxy_is_active` resolves the documented `KEYHOG_PROXY` sentinels
-            // (`off`/`none`/empty) AND accounts for reqwest's standard
-            // `HTTPS_PROXY` / `HTTP_PROXY` / `ALL_PROXY` env vars that the
-            // shared client honors via reqwest defaults. proxy_in_use gates
-            // DNS-pinning rebuild in resolved_client_for_url(); a wrong value
-            // either:
-            //   #2: disables DNS pinning when no proxy is actually active
-            //       (KEYHOG_PROXY=off counted as active → rebuild skipped
-            //       → DNS-rebinding protection silently removed)
-            //   #3: keeps DNS pinning on a path that drops env-proxy +
-            //       insecure_tls config (HTTPS_PROXY invisible to the
-            //       rebuild branch → verifier connects direct → operator
-            //       interception/audit bypassed)
+            allow_script_verify: config.allow_script_verify,
+            // Don't conflate "configured to set a proxy policy" with "a proxy is
+            // actively routing traffic." `proxy_is_active` is true ONLY for an
+            // explicit `--proxy` URL (the `off`/`none`/empty sentinels and an
+            // unset proxy are inactive); no environment variable is consulted,
+            // and ambient proxy-env detection is neutralized via `.no_proxy()`.
+            // `proxy_in_use` gates the DNS-pinning rebuild in
+            // resolved_client_for_url(): false → pin (SSRF / DNS-rebinding
+            // protection on the direct connection); true → skip pinning because
+            // the explicit proxy resolves DNS. Because an ambient proxy can no
+            // longer exist, the prior hazard of the pinned rebuild silently
+            // dropping an env-proxy (and connecting direct, past the operator's
+            // interception) cannot occur.
             proxy_in_use: crate::proxy_is_active(config.proxy.as_deref()),
             oob_session: None,
         })
@@ -276,6 +358,7 @@ impl VerificationEngine {
             danger_allow_private_ips: self.danger_allow_private_ips,
             danger_allow_http: self.danger_allow_http,
             insecure_tls: self.insecure_tls,
+            allow_script_verify: self.allow_script_verify,
             proxy_in_use: self.proxy_in_use,
             oob_session: self.oob_session.clone(),
         };
@@ -286,21 +369,22 @@ impl VerificationEngine {
             let Some(group) = pending.next() else {
                 break;
             };
-            join_set.spawn(verify_group_task(shared.clone(), group));
+            join_set.spawn(verify_group_task_safe(shared.clone(), group));
         }
 
-        let mut findings = Vec::with_capacity(total);
-        while let Some(result) = join_set.join_next().await {
-            match result {
-                Ok(finding) => findings.push(finding),
-                Err(e) => tracing::error!("verification task panicked: {}", e),
-            }
-
-            if let Some(group) = pending.next() {
-                join_set.spawn(verify_group_task(shared.clone(), group));
-            }
-        }
-        findings
+        // Drain every task, refilling from `pending` after each completion. The
+        // drain is extracted into `drain_join_set` so its `JoinError` arm — only
+        // reachable on task cancellation / runtime shutdown, since the per-task
+        // body is panic-safe via `catch_unwind` — is unit-testable: one lost
+        // task must never truncate the remaining work. The previous
+        // `while let Some(Ok(_))` silently dropped every still-`pending` group on
+        // the first such error.
+        drain_join_set(join_set, total, move || {
+            pending
+                .next()
+                .map(|group| verify_group_task_safe(shared.clone(), group))
+        })
+        .await
     }
 
     /// Enable out-of-band callback verification for detectors with

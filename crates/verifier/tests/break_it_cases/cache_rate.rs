@@ -1,5 +1,7 @@
 use keyhog_core::VerificationResult;
-use keyhog_verifier::cache::VerificationCache;
+use keyhog_verifier::testing::{
+    TestVerificationCache as VerificationCache, VerifierTestCache,
+};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;

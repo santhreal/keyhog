@@ -104,7 +104,7 @@ impl RateLimiter {
     }
 
     pub fn record_success(&self) {
-        let _ = self
+        let _ = self // LAW10: unused-binding marker; no runtime effect, not a fallback
             .global_error_count
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
                 Some(n.saturating_sub(1))

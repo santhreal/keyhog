@@ -22,3 +22,4 @@ pub mod ssrf_engine_blocks_malformed_negative_octets;
 pub mod ssrf_engine_blocks_malformed_too_many_octets;
 pub mod ssrf_engine_blocks_rfc1918_10;
 pub mod ssrf_engine_blocks_url_encoded_ip;
+pub mod support;

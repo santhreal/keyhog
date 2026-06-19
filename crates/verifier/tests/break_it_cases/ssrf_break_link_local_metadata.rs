@@ -32,7 +32,7 @@ async fn ssrf_break_link_local_metadata() {
         detector_name: Arc::from("ssrf"),
         service: Arc::from("test"),
         severity: Severity::Critical,
-        credential: Arc::from("secret"),
+        credential: keyhog_core::SensitiveString::from("secret"),
         credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),

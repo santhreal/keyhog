@@ -1,5 +1,5 @@
 use keyhog_core::VerifySpec;
-use keyhog_verifier::domain_allowlist::check_url_against_spec;
+use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 
 #[test]
 fn domain_unknown_service_refused() {
@@ -8,5 +8,7 @@ fn domain_unknown_service_refused() {
         allowed_domains: vec![],
         ..Default::default()
     };
-    assert!(check_url_against_spec("https://anything.com/x", &spec).is_err());
+    assert!(TestApi
+        .check_url_against_spec("https://anything.com/x", &spec)
+        .is_err());
 }

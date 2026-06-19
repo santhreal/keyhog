@@ -26,7 +26,7 @@
 //! asserted against the real timestamps, locking the documented behavior in
 //! `aws.rs::build_sigv4_request` / `aws.rs::aws_signed_headers`.
 
-use keyhog_verifier::testing::format_sigv4_timestamps;
+use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 
 // ---------------------------------------------------------------------------
 // Contract-mirror helpers: byte-for-byte copies of the pure string builders in
@@ -101,7 +101,7 @@ fn mirror_auth_header(
 fn sigv4_reference_vector_20150830_123600() {
     // AWS docs canonical example: request timestamp 20150830T123600Z,
     // date value 20150830. Unix epoch 1_440_938_160.
-    let (date_stamp, amz_date) = format_sigv4_timestamps(1_440_938_160);
+    let (date_stamp, amz_date) = TestApi.format_sigv4_timestamps(1_440_938_160);
     assert_eq!(date_stamp, "20150830");
     assert_eq!(amz_date, "20150830T123600Z");
 }
@@ -110,7 +110,7 @@ fn sigv4_reference_vector_20150830_123600() {
 fn sigv4_reference_vector_credential_scope_us_east_1_iam() {
     // The AWS reference example signs against scope:
     // 20150830/us-east-1/iam/aws4_request.
-    let (date_stamp, _amz) = format_sigv4_timestamps(1_440_938_160);
+    let (date_stamp, _amz) = TestApi.format_sigv4_timestamps(1_440_938_160);
     let scope = mirror_credential_scope(&date_stamp, "us-east-1", "iam");
     assert_eq!(scope, "20150830/us-east-1/iam/aws4_request");
 }
@@ -123,7 +123,7 @@ fn sigv4_reference_vector_string_to_sign_first_three_lines() {
     // not a dev-dep), so we assert only the three deterministic lines that come
     // straight from `format_sigv4_timestamps` + the scope template. Using a
     // sentinel for the hash keeps the asserted value fully code-derived.
-    let (date_stamp, amz_date) = format_sigv4_timestamps(1_440_938_160);
+    let (date_stamp, amz_date) = TestApi.format_sigv4_timestamps(1_440_938_160);
     let scope = mirror_credential_scope(&date_stamp, "us-east-1", "iam");
     let sts = mirror_string_to_sign(&amz_date, &scope, "<cr-hash>");
     let lines: Vec<&str> = sts.split('\n').collect();
@@ -136,7 +136,7 @@ fn sigv4_reference_vector_string_to_sign_first_three_lines() {
 
 #[test]
 fn sigv4_reference_second_example_20240119_145542() {
-    let (date_stamp, amz_date) = format_sigv4_timestamps(1_705_676_142);
+    let (date_stamp, amz_date) = TestApi.format_sigv4_timestamps(1_705_676_142);
     assert_eq!(date_stamp, "20240119");
     assert_eq!(amz_date, "20240119T145542Z");
     // Component positions used by the signer.
@@ -161,7 +161,7 @@ fn sigv4_date_stamp_always_8_ascii_digits() {
         1_709_210_096,
         4_107_542_400,
     ] {
-        let (d, _) = format_sigv4_timestamps(secs);
+        let (d, _) = TestApi.format_sigv4_timestamps(secs);
         assert_eq!(d.len(), 8, "date_stamp len for {secs}");
         assert!(d.chars().all(|c| c.is_ascii_digit()), "date digits {secs}");
     }
@@ -176,7 +176,7 @@ fn sigv4_amz_date_always_16_chars_t_and_z_anchored() {
         1_709_210_096,
         4_107_542_400,
     ] {
-        let (_, a) = format_sigv4_timestamps(secs);
+        let (_, a) = TestApi.format_sigv4_timestamps(secs);
         assert_eq!(a.len(), 16, "amz_date len for {secs}");
         assert_eq!(&a[8..9], "T", "T anchor for {secs}");
         assert_eq!(&a[15..16], "Z", "Z anchor for {secs}");
@@ -205,7 +205,7 @@ fn sigv4_amz_date_first_eight_equal_date_stamp() {
         2_147_483_647,
         4_294_967_295,
     ] {
-        let (d, a) = format_sigv4_timestamps(secs);
+        let (d, a) = TestApi.format_sigv4_timestamps(secs);
         assert_eq!(&a[0..8], d.as_str(), "amz/date agreement for {secs}");
     }
 }
@@ -217,14 +217,14 @@ fn sigv4_amz_date_first_eight_equal_date_stamp() {
 #[test]
 fn sigv4_leap_year_2024_feb_29_midnight() {
     // 2024 divisible by 4, not 100 -> leap. Feb 29 exists.
-    let (d, a) = format_sigv4_timestamps(1_709_164_800);
+    let (d, a) = TestApi.format_sigv4_timestamps(1_709_164_800);
     assert_eq!(d, "20240229");
     assert_eq!(a, "20240229T000000Z");
 }
 
 #[test]
 fn sigv4_leap_year_2024_feb_29_with_time() {
-    let (d, a) = format_sigv4_timestamps(1_709_210_096);
+    let (d, a) = TestApi.format_sigv4_timestamps(1_709_210_096);
     assert_eq!(d, "20240229");
     assert_eq!(a, "20240229T123456Z");
 }
@@ -232,30 +232,30 @@ fn sigv4_leap_year_2024_feb_29_with_time() {
 #[test]
 fn sigv4_leap_year_2024_feb_28_to_29_to_mar_1_progression() {
     // Last second of Feb 28.
-    let (d0, a0) = format_sigv4_timestamps(1_709_164_799);
+    let (d0, a0) = TestApi.format_sigv4_timestamps(1_709_164_799);
     assert_eq!((d0.as_str(), a0.as_str()), ("20240228", "20240228T235959Z"));
     // First second of Feb 29 (the leap day).
-    let (d1, a1) = format_sigv4_timestamps(1_709_164_800);
+    let (d1, a1) = TestApi.format_sigv4_timestamps(1_709_164_800);
     assert_eq!((d1.as_str(), a1.as_str()), ("20240229", "20240229T000000Z"));
     // First second of Mar 1 (one full leap day later).
-    let (d2, a2) = format_sigv4_timestamps(1_709_251_200);
+    let (d2, a2) = TestApi.format_sigv4_timestamps(1_709_251_200);
     assert_eq!((d2.as_str(), a2.as_str()), ("20240301", "20240301T000000Z"));
 }
 
 #[test]
 fn sigv4_century_leap_year_2000_feb_29() {
     // 2000 divisible by 400 -> leap. Feb 29 exists.
-    let (d, a) = format_sigv4_timestamps(951_782_400);
+    let (d, a) = TestApi.format_sigv4_timestamps(951_782_400);
     assert_eq!(d, "20000229");
     assert_eq!(a, "20000229T000000Z");
     // Preceding second is Feb 28 23:59:59.
-    let (dp, ap) = format_sigv4_timestamps(951_782_399);
+    let (dp, ap) = TestApi.format_sigv4_timestamps(951_782_399);
     assert_eq!((dp.as_str(), ap.as_str()), ("20000228", "20000228T235959Z"));
 }
 
 #[test]
 fn sigv4_leap_year_2004_feb_29_with_time() {
-    let (d, a) = format_sigv4_timestamps(1_078_036_215);
+    let (d, a) = TestApi.format_sigv4_timestamps(1_078_036_215);
     assert_eq!(d, "20040229");
     assert_eq!(a, "20040229T063015Z");
 }
@@ -263,17 +263,17 @@ fn sigv4_leap_year_2004_feb_29_with_time() {
 #[test]
 fn sigv4_non_leap_century_2100_no_feb_29() {
     // 2100 divisible by 100, not by 400 -> NOT a leap year. Feb 28 -> Mar 1.
-    let (d0, a0) = format_sigv4_timestamps(4_107_542_399);
+    let (d0, a0) = TestApi.format_sigv4_timestamps(4_107_542_399);
     assert_eq!((d0.as_str(), a0.as_str()), ("21000228", "21000228T235959Z"));
-    let (d1, a1) = format_sigv4_timestamps(4_107_542_400);
+    let (d1, a1) = TestApi.format_sigv4_timestamps(4_107_542_400);
     assert_eq!((d1.as_str(), a1.as_str()), ("21000301", "21000301T000000Z"));
 }
 
 #[test]
 fn sigv4_non_leap_year_2023_feb_28_to_mar_1() {
-    let (d0, a0) = format_sigv4_timestamps(1_677_542_400);
+    let (d0, a0) = TestApi.format_sigv4_timestamps(1_677_542_400);
     assert_eq!((d0.as_str(), a0.as_str()), ("20230228", "20230228T000000Z"));
-    let (d1, a1) = format_sigv4_timestamps(1_677_628_800);
+    let (d1, a1) = TestApi.format_sigv4_timestamps(1_677_628_800);
     assert_eq!((d1.as_str(), a1.as_str()), ("20230301", "20230301T000000Z"));
 }
 
@@ -283,14 +283,14 @@ fn sigv4_non_leap_year_2023_feb_28_to_mar_1() {
 
 #[test]
 fn sigv4_midnight_exact_2020_01_01() {
-    let (d, a) = format_sigv4_timestamps(1_577_836_800);
+    let (d, a) = TestApi.format_sigv4_timestamps(1_577_836_800);
     assert_eq!(d, "20200101");
     assert_eq!(a, "20200101T000000Z");
 }
 
 #[test]
 fn sigv4_one_second_before_midnight_2019_12_31() {
-    let (d, a) = format_sigv4_timestamps(1_577_836_799);
+    let (d, a) = TestApi.format_sigv4_timestamps(1_577_836_799);
     assert_eq!(d, "20191231");
     assert_eq!(a, "20191231T235959Z");
 }
@@ -298,7 +298,7 @@ fn sigv4_one_second_before_midnight_2019_12_31() {
 #[test]
 fn sigv4_one_second_after_midnight() {
     // 2020-01-01 00:00:01.
-    let (d, a) = format_sigv4_timestamps(1_577_836_801);
+    let (d, a) = TestApi.format_sigv4_timestamps(1_577_836_801);
     assert_eq!(d, "20200101");
     assert_eq!(a, "20200101T000001Z");
 }
@@ -306,7 +306,7 @@ fn sigv4_one_second_after_midnight() {
 #[test]
 fn sigv4_exact_noon() {
     // 2024-06-30 12:00:00.
-    let (d, a) = format_sigv4_timestamps(1_719_748_800);
+    let (d, a) = TestApi.format_sigv4_timestamps(1_719_748_800);
     assert_eq!(d, "20240630");
     assert_eq!(a, "20240630T120000Z");
 }
@@ -314,7 +314,7 @@ fn sigv4_exact_noon() {
 #[test]
 fn sigv4_hour_rollover_at_3600_within_epoch_day() {
     // 1970-01-01 01:00:00.
-    let (d, a) = format_sigv4_timestamps(3_600);
+    let (d, a) = TestApi.format_sigv4_timestamps(3_600);
     assert_eq!(d, "19700101");
     assert_eq!(a, "19700101T010000Z");
 }
@@ -322,7 +322,7 @@ fn sigv4_hour_rollover_at_3600_within_epoch_day() {
 #[test]
 fn sigv4_minute_rollover_at_60() {
     // 1970-01-01 00:01:00.
-    let (d, a) = format_sigv4_timestamps(60);
+    let (d, a) = TestApi.format_sigv4_timestamps(60);
     assert_eq!(d, "19700101");
     assert_eq!(a, "19700101T000100Z");
 }
@@ -330,7 +330,7 @@ fn sigv4_minute_rollover_at_60() {
 #[test]
 fn sigv4_last_second_of_first_epoch_day() {
     // 86399 -> 1970-01-01 23:59:59 (still epoch day 0).
-    let (d, a) = format_sigv4_timestamps(86_399);
+    let (d, a) = TestApi.format_sigv4_timestamps(86_399);
     assert_eq!(d, "19700101");
     assert_eq!(a, "19700101T235959Z");
 }
@@ -338,7 +338,7 @@ fn sigv4_last_second_of_first_epoch_day() {
 #[test]
 fn sigv4_first_second_of_second_epoch_day() {
     // 86400 -> 1970-01-02 00:00:00.
-    let (d, a) = format_sigv4_timestamps(86_400);
+    let (d, a) = TestApi.format_sigv4_timestamps(86_400);
     assert_eq!(d, "19700102");
     assert_eq!(a, "19700102T000000Z");
 }
@@ -349,7 +349,7 @@ fn sigv4_first_second_of_second_epoch_day() {
 
 #[test]
 fn sigv4_epoch_zero_1970_01_01() {
-    let (d, a) = format_sigv4_timestamps(0);
+    let (d, a) = TestApi.format_sigv4_timestamps(0);
     assert_eq!(d, "19700101");
     assert_eq!(a, "19700101T000000Z");
 }
@@ -357,25 +357,25 @@ fn sigv4_epoch_zero_1970_01_01() {
 #[test]
 fn sigv4_year_boundary_2023_to_2024() {
     // Last second of 2023.
-    let (d0, a0) = format_sigv4_timestamps(1_704_067_199);
+    let (d0, a0) = TestApi.format_sigv4_timestamps(1_704_067_199);
     assert_eq!((d0.as_str(), a0.as_str()), ("20231231", "20231231T235959Z"));
     // First second of 2024.
-    let (d1, a1) = format_sigv4_timestamps(1_704_067_200);
+    let (d1, a1) = TestApi.format_sigv4_timestamps(1_704_067_200);
     assert_eq!((d1.as_str(), a1.as_str()), ("20240101", "20240101T000000Z"));
 }
 
 #[test]
 fn sigv4_year_boundary_2099_to_2100() {
-    let (d0, a0) = format_sigv4_timestamps(4_102_444_799);
+    let (d0, a0) = TestApi.format_sigv4_timestamps(4_102_444_799);
     assert_eq!((d0.as_str(), a0.as_str()), ("20991231", "20991231T235959Z"));
-    let (d1, a1) = format_sigv4_timestamps(4_102_444_800);
+    let (d1, a1) = TestApi.format_sigv4_timestamps(4_102_444_800);
     assert_eq!((d1.as_str(), a1.as_str()), ("21000101", "21000101T000000Z"));
 }
 
 #[test]
 fn sigv4_signed_32bit_epoch_2038() {
     // i32::MAX seconds = 2038-01-19 03:14:07. The fn takes u64, so no overflow.
-    let (d, a) = format_sigv4_timestamps(2_147_483_647);
+    let (d, a) = TestApi.format_sigv4_timestamps(2_147_483_647);
     assert_eq!(d, "20380119");
     assert_eq!(a, "20380119T031407Z");
 }
@@ -383,7 +383,7 @@ fn sigv4_signed_32bit_epoch_2038() {
 #[test]
 fn sigv4_unsigned_32bit_epoch_2106() {
     // u32::MAX seconds = 2106-02-07 06:28:15.
-    let (d, a) = format_sigv4_timestamps(4_294_967_295);
+    let (d, a) = TestApi.format_sigv4_timestamps(4_294_967_295);
     assert_eq!(d, "21060207");
     assert_eq!(a, "21060207T062815Z");
 }
@@ -465,7 +465,7 @@ fn sigv4_canonical_headers_count_matches_signed_headers_count() {
 fn sigv4_canonical_headers_use_actual_amz_date_from_formatter() {
     // Wire the real timestamp formatter into the canonical headers, proving the
     // signer's amz_date feeds the x-amz-date header verbatim.
-    let (_, amz_date) = format_sigv4_timestamps(1_440_938_160);
+    let (_, amz_date) = TestApi.format_sigv4_timestamps(1_440_938_160);
     let (canon, _) = mirror_signed_headers("sts.us-east-1.amazonaws.com", &amz_date, None);
     assert_eq!(
         canon,
@@ -524,14 +524,14 @@ fn sigv4_canonical_request_structure_with_security_token() {
 #[test]
 fn sigv4_credential_scope_sts_service_for_get_caller_identity() {
     // The STS probe signs with service "sts".
-    let (date_stamp, _) = format_sigv4_timestamps(1_704_067_200);
+    let (date_stamp, _) = TestApi.format_sigv4_timestamps(1_704_067_200);
     let scope = mirror_credential_scope(&date_stamp, "us-east-1", "sts");
     assert_eq!(scope, "20240101/us-east-1/sts/aws4_request");
 }
 
 #[test]
 fn sigv4_credential_scope_region_varies() {
-    let (date_stamp, _) = format_sigv4_timestamps(1_709_210_096);
+    let (date_stamp, _) = TestApi.format_sigv4_timestamps(1_709_210_096);
     for region in [
         "us-east-1",
         "eu-central-1",
@@ -547,7 +547,7 @@ fn sigv4_credential_scope_region_varies() {
 
 #[test]
 fn sigv4_string_to_sign_four_lines_with_algorithm_first() {
-    let (date_stamp, amz_date) = format_sigv4_timestamps(1_705_676_142);
+    let (date_stamp, amz_date) = TestApi.format_sigv4_timestamps(1_705_676_142);
     let scope = mirror_credential_scope(&date_stamp, "us-east-1", "sts");
     let sts = mirror_string_to_sign(&amz_date, &scope, "deadbeef");
     let lines: Vec<&str> = sts.split('\n').collect();
@@ -562,7 +562,7 @@ fn sigv4_string_to_sign_four_lines_with_algorithm_first() {
 fn sigv4_string_to_sign_uses_amz_date_not_date_stamp_on_line_two() {
     // Line 2 must be the full amz_date (16 chars), line 3 scope starts with the
     // 8-char date_stamp. A common bug is swapping them.
-    let (date_stamp, amz_date) = format_sigv4_timestamps(1_704_067_200);
+    let (date_stamp, amz_date) = TestApi.format_sigv4_timestamps(1_704_067_200);
     let scope = mirror_credential_scope(&date_stamp, "us-east-1", "sts");
     let sts = mirror_string_to_sign(&amz_date, &scope, "h");
     let lines: Vec<&str> = sts.split('\n').collect();
@@ -577,7 +577,7 @@ fn sigv4_string_to_sign_uses_amz_date_not_date_stamp_on_line_two() {
 
 #[test]
 fn sigv4_auth_header_grammar_for_akia() {
-    let (date_stamp, _) = format_sigv4_timestamps(1_704_067_200);
+    let (date_stamp, _) = TestApi.format_sigv4_timestamps(1_704_067_200);
     let scope = mirror_credential_scope(&date_stamp, "us-east-1", "sts");
     let auth = mirror_auth_header(
         "AKIAIOSFODNN7EXAMPLE",
@@ -596,7 +596,7 @@ fn sigv4_auth_header_for_asia_does_not_carry_session_token() {
     // For ASIA temp creds the SignedHeaders list grows, but the session token
     // itself never appears in the Authorization header — it rides the
     // x-amz-security-token request header only.
-    let (date_stamp, _) = format_sigv4_timestamps(1_704_067_200);
+    let (date_stamp, _) = TestApi.format_sigv4_timestamps(1_704_067_200);
     let scope = mirror_credential_scope(&date_stamp, "us-east-1", "sts");
     let token = "FwoSESSIONTOKENvalue==";
     let auth = mirror_auth_header(
@@ -638,8 +638,8 @@ fn sigv4_auth_header_field_order_credential_signedheaders_signature() {
 fn sigv4_timestamps_deterministic_repeat() {
     // Same input -> identical output, always (no hidden clock dependency).
     for secs in [0u64, 1, 86_399, 1_440_938_160, 4_294_967_295] {
-        let a = format_sigv4_timestamps(secs);
-        let b = format_sigv4_timestamps(secs);
+        let a = TestApi.format_sigv4_timestamps(secs);
+        let b = TestApi.format_sigv4_timestamps(secs);
         assert_eq!(a, b, "non-deterministic at {secs}");
     }
 }
@@ -652,7 +652,7 @@ fn sigv4_timestamps_monotonic_lexicographic_over_range() {
     let mut prev: Option<(u64, String)> = None;
     let mut secs = 0u64;
     while secs <= 4_294_967_295 {
-        let (_, a) = format_sigv4_timestamps(secs);
+        let (_, a) = TestApi.format_sigv4_timestamps(secs);
         if let Some((psecs, p)) = &prev {
             assert!(
                 a.as_str() >= p.as_str(),
@@ -670,7 +670,7 @@ fn sigv4_property_components_in_valid_calendar_ranges() {
     // legal ranges. Catches any civil-from-days arithmetic regression.
     let mut secs = 0u64;
     while secs < 6_000_000_000 {
-        let (d, a) = format_sigv4_timestamps(secs);
+        let (d, a) = TestApi.format_sigv4_timestamps(secs);
         let month: u32 = d[4..6].parse().unwrap();
         let day: u32 = d[6..8].parse().unwrap();
         let hour: u32 = a[9..11].parse().unwrap();
@@ -704,7 +704,7 @@ fn sigv4_property_seconds_of_day_decompose_exactly() {
         1_440_938_160,
         4_294_967_295,
     ] {
-        let (_, a) = format_sigv4_timestamps(secs);
+        let (_, a) = TestApi.format_sigv4_timestamps(secs);
         let hour: u64 = a[9..11].parse().unwrap();
         let minute: u64 = a[11..13].parse().unwrap();
         let second: u64 = a[13..15].parse().unwrap();
@@ -768,7 +768,7 @@ fn sigv4_host_value_embedded_verbatim_for_regional_endpoint() {
 fn sigv4_full_first_day_hour_marks() {
     // Walk each hour mark of 1970-01-01 and assert exact HH0000Z formatting.
     for h in 0u64..24 {
-        let (d, a) = format_sigv4_timestamps(h * 3_600);
+        let (d, a) = TestApi.format_sigv4_timestamps(h * 3_600);
         assert_eq!(d, "19700101", "date stays Jan 1 at hour {h}");
         assert_eq!(a, format!("19700101T{h:02}0000Z"), "hour {h}");
     }
@@ -777,7 +777,7 @@ fn sigv4_full_first_day_hour_marks() {
 #[test]
 fn sigv4_minute_and_second_zero_padding() {
     // 1970-01-01 00:05:09 — verifies single-digit minute/second are zero-padded.
-    let (d, a) = format_sigv4_timestamps(5 * 60 + 9);
+    let (d, a) = TestApi.format_sigv4_timestamps(5 * 60 + 9);
     assert_eq!(d, "19700101");
     assert_eq!(a, "19700101T000509Z");
 }
@@ -787,7 +787,7 @@ fn sigv4_single_digit_month_and_day_zero_padded() {
     // 1970-02-03 (Feb is month 2, padded "02"; day 3 padded "03").
     // Feb 3 1970 00:00:00 = 31 (Jan) + 2 days -> 33 days * 86400.
     let secs = 33 * 86_400;
-    let (d, a) = format_sigv4_timestamps(secs);
+    let (d, a) = TestApi.format_sigv4_timestamps(secs);
     assert_eq!(d, "19700203");
     assert_eq!(a, "19700203T000000Z");
 }

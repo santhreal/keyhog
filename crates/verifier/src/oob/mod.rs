@@ -43,5 +43,13 @@ mod client;
 mod decrypt;
 mod session;
 
+pub(crate) use client::MintedUrl;
 pub use client::{Interaction, InteractionProtocol, InteractshClient, InteractshError};
 pub use session::{redact_interactsh_error, OobAccept, OobConfig, OobObservation, OobSession};
+
+pub(crate) fn decrypt_entry_for_test(
+    aes_key: &[u8],
+    b64: &str,
+) -> Result<Option<Interaction>, InteractshError> {
+    decrypt::decrypt_entry(aes_key, b64)
+}

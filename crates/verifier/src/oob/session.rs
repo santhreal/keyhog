@@ -172,14 +172,14 @@ impl OobSession {
     /// Mint a URL for a finding-in-flight. Returns the host and full URL the
     /// caller should embed in the verification probe, plus the `unique_id`
     /// to pass to `wait_for`.
-    pub fn mint(&self) -> super::client::MintedUrl {
+    pub(crate) fn mint(&self) -> super::client::MintedUrl {
         self.client.mint_url()
     }
 
     /// Default per-finding wait timeout. Detector specs override this via
     /// `[detector.verify.oob].timeout_secs`; the value is also clamped to
     /// `max_timeout` inside `wait_for`.
-    pub fn config_default_timeout(&self) -> Duration {
+    pub(crate) fn config_default_timeout(&self) -> Duration {
         self.config.default_timeout
     }
 
@@ -286,7 +286,7 @@ impl OobSession {
         let handle = self.poller_handle.lock().take();
         if let Some(h) = handle {
             h.abort();
-            let _ = h.await;
+            let _ = h.await; // LAW10: unused-binding marker; no runtime effect, not a fallback
         }
         if let Err(e) = self.client.deregister().await {
             debug!(target: "keyhog::oob", error = %e, "deregister failed (non-fatal)");
@@ -303,7 +303,7 @@ impl OobSession {
     ///
     /// Idempotent. Once called, subsequent `wait_for` invocations return
     /// `Disabled("session shut down")`.
-    pub fn abort_poller_for_drop(&self) {
+    pub(crate) fn abort_poller_for_drop(&self) {
         if self.shutdown.swap(true, Ordering::AcqRel) {
             return;
         }
@@ -363,9 +363,9 @@ impl OobSession {
     fn gc(&self) {
         let cutoff = Instant::now()
             .checked_sub(self.config.max_observation_age)
-            .unwrap_or_else(Instant::now);
-        // Drop stale per-id entries (Vec inside the map) first, then evict
-        // any id whose Vec is now empty.
+            .unwrap_or_else(Instant::now); // LAW10: absent prior instant => now() (timing baseline); recall-irrelevant
+                                           // Drop stale per-id entries (Vec inside the map) first, then evict
+                                           // any id whose Vec is now empty.
         self.observations.retain(|_, entries| {
             entries.retain(|stored| stored.received_at >= cutoff);
             !entries.is_empty()
@@ -374,7 +374,7 @@ impl OobSession {
 
     /// Test-only constructor that bypasses both the network registration and
     /// the background poller.
-    pub fn for_test(client: Arc<InteractshClient>, config: OobConfig) -> Arc<Self> {
+    pub(crate) fn for_test(client: Arc<InteractshClient>, config: OobConfig) -> Arc<Self> {
         Arc::new(Self {
             client,
             config,
@@ -386,7 +386,7 @@ impl OobSession {
     }
 
     /// Test-only accessor for driving notify paths from integration tests.
-    pub fn store_and_notify_for_test(&self, interaction: super::client::Interaction) {
+    pub(crate) fn store_and_notify_for_test(&self, interaction: super::client::Interaction) {
         self.store_and_notify(interaction);
     }
 }

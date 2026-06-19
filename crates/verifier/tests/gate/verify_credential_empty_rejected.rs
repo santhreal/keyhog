@@ -10,7 +10,7 @@ fn empty_credential_match_has_zero_len_secret() {
         detector_name: Arc::from("Demo"),
         service: Arc::from("demo"),
         severity: Severity::High,
-        credential: Arc::from(""),
+        credential: keyhog_core::SensitiveString::from(""),
         credential_hash: [0u8; 32],
         companions: Default::default(),
         location: MatchLocation {

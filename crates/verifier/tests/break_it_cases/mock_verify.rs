@@ -78,7 +78,7 @@ async fn test_verify_large_payload() {
         detector_name: Arc::from("det1"),
         service: Arc::from("test"),
         severity: Severity::Critical,
-        credential: Arc::from("secret"),
+        credential: keyhog_core::SensitiveString::from("secret"),
         credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from("fs"),
@@ -160,7 +160,7 @@ async fn test_verify_malformed_response() {
         detector_name: Arc::from("det2"),
         service: Arc::from("test"),
         severity: Severity::Critical,
-        credential: Arc::from("secret"),
+        credential: keyhog_core::SensitiveString::from("secret"),
         credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from("fs"),
@@ -224,7 +224,7 @@ async fn test_verify_zero_concurrency() {
         detector_name: Arc::from("det_zero"),
         service: Arc::from("test"),
         severity: Severity::Critical,
-        credential: Arc::from("secret"),
+        credential: keyhog_core::SensitiveString::from("secret"),
         credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),
@@ -301,7 +301,7 @@ async fn test_verify_inflight_deadlock_on_duplicates() {
             detector_name: Arc::from("det_dup"),
             service: Arc::from("test"),
             severity: Severity::Critical,
-            credential: Arc::from("same_secret"),
+            credential: keyhog_core::SensitiveString::from("same_secret"),
             credential_hash: [0u8; 32],
             primary_location: MatchLocation {
                 source: Arc::from(""),
@@ -367,7 +367,7 @@ async fn test_verify_slow_loris_timeout() {
         detector_name: Arc::from("det_slow"),
         service: Arc::from("test"),
         severity: Severity::Critical,
-        credential: Arc::from("secret"),
+        credential: keyhog_core::SensitiveString::from("secret"),
         credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),
@@ -413,7 +413,7 @@ async fn test_verify_max_inflight_keys() {
         detector_name: Arc::from("det_none"),
         service: Arc::from("test"),
         severity: Severity::Critical,
-        credential: Arc::from("secret"),
+        credential: keyhog_core::SensitiveString::from("secret"),
         credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from(""),
@@ -519,7 +519,7 @@ async fn verifier_routes_through_configured_proxy() {
         detector_name: Arc::from("proxy-flow-test"),
         service: Arc::from("test"),
         severity: Severity::Critical,
-        credential: Arc::from("secret"),
+        credential: keyhog_core::SensitiveString::from("secret"),
         credential_hash: [0u8; 32],
         primary_location: MatchLocation {
             source: Arc::from("fs"),

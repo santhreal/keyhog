@@ -1,4 +1,4 @@
-use keyhog_verifier::testing::format_sigv4_timestamps;
+use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 
 #[test]
 fn sigv4_timestamp_format_always_8_digits_date() {
@@ -13,7 +13,7 @@ fn sigv4_timestamp_format_always_8_digits_date() {
     ];
 
     for (unix_secs, expected_date) in test_cases {
-        let (d, _) = format_sigv4_timestamps(unix_secs);
+        let (d, _) = TestApi.format_sigv4_timestamps(unix_secs);
         assert_eq!(
             d.len(),
             8,
@@ -40,7 +40,7 @@ fn sigv4_timestamp_format_always_16_chars_amz_date() {
     ];
 
     for (unix_secs, expected_amz) in test_cases {
-        let (_, a) = format_sigv4_timestamps(unix_secs);
+        let (_, a) = TestApi.format_sigv4_timestamps(unix_secs);
         assert_eq!(
             a.len(),
             16,
@@ -59,7 +59,7 @@ fn sigv4_timestamp_format_consistency_for_range() {
     // formatting functions are stable and always produce valid output.
 
     for unix_secs in (0u64..1_000_000u64).step_by(100_000) {
-        let (d, a) = format_sigv4_timestamps(unix_secs);
+        let (d, a) = TestApi.format_sigv4_timestamps(unix_secs);
 
         assert_eq!(
             d.len(),

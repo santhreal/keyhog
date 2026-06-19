@@ -14,6 +14,7 @@ pub(crate) async fn build_request_for_auth(
     companions: &HashMap<String, String>,
     timeout: Duration,
     client: &Client,
+    allow_script_verify: bool,
 ) -> RequestBuildResult {
     match auth {
         AuthSpec::None => RequestBuildResult::Ready(request),
@@ -72,16 +73,15 @@ pub(crate) async fn build_request_for_auth(
             // path runs operator-supplied script source (from a detector
             // TOML) inside `codewalk::sandbox` with `companions` (which
             // can include credential-adjacent fields) in scope. The
-            // sandbox's isolation guarantees are not re-audited inside
-            // keyhog. Refuse by default; require an explicit opt-in env
-            // var on the host running keyhog. This is NOT a feature flag
-            // - it's an admin policy switch, not surfaced via CLI.
-            if std::env::var("KEYHOG_ALLOW_SCRIPT_VERIFY").as_deref() != Ok("1") {
+            // sandbox's isolation guarantees are not re-audited inside keyhog.
+            // Refuse by default; require an explicit runtime opt-in carried by
+            // the caller. This is an admin policy switch, not ambient env.
+            if !allow_script_verify {
                 return RequestBuildResult::Final {
                     result: VerificationResult::Error(
-                        "blocked: AuthSpec::Script verification disabled (set \
-                         KEYHOG_ALLOW_SCRIPT_VERIFY=1 to enable; sandbox isolation \
-                         is not re-audited inside keyhog)"
+                        "blocked: AuthSpec::Script verification disabled (pass \
+                         --allow-script-verify with trusted detector corpora; \
+                         sandbox isolation is not re-audited inside keyhog)"
                             .to_string(),
                     ),
                     metadata: HashMap::new(),

@@ -18,17 +18,19 @@ use sha2::{Digest, Sha256};
 /// # Examples
 ///
 /// ```rust
-/// use keyhog_verifier::cache::VerificationCache;
+/// use keyhog_verifier::testing::{
+///     TestVerificationCache as VerificationCache, VerifierTestCache,
+/// };
 /// use std::time::Duration;
 ///
 /// let cache = VerificationCache::new(Duration::from_secs(60));
 /// assert!(cache.is_empty());
 /// ```
-pub struct VerificationCache {
+pub(crate) struct VerificationCache {
     /// Sharded concurrent map. DashMap (per-shard locking, default 64 shards
     /// based on parallelism) replaces the previous single global RwLock so
     /// concurrent `get`/`put` calls touch different shards and never block
-    /// each other on cacheline bouncing - see audits/legendary-2026-04-26.
+    /// each other on cacheline bouncing - see docs/EXECUTION_PLAN.md.
     entries: DashMap<CacheKey, CacheEntry>,
     inserts: AtomicUsize,
     max_entries: usize,
@@ -66,13 +68,15 @@ impl VerificationCache {
     /// # Examples
     ///
     /// ```rust
-    /// use keyhog_verifier::cache::VerificationCache;
+    /// use keyhog_verifier::testing::{
+    ///     TestVerificationCache as VerificationCache, VerifierTestCache,
+    /// };
     /// use std::time::Duration;
     ///
     /// let cache = VerificationCache::new(Duration::from_secs(60));
     /// assert!(cache.is_empty());
     /// ```
-    pub fn new(ttl: Duration) -> Self {
+    pub(crate) fn new(ttl: Duration) -> Self {
         Self::with_max_entries(ttl, Self::DEFAULT_MAX_ENTRIES)
     }
 
@@ -81,13 +85,15 @@ impl VerificationCache {
     /// # Examples
     ///
     /// ```rust
-    /// use keyhog_verifier::cache::VerificationCache;
+    /// use keyhog_verifier::testing::{
+    ///     TestVerificationCache as VerificationCache, VerifierTestCache,
+    /// };
     /// use std::time::Duration;
     ///
     /// let cache = VerificationCache::with_max_entries(Duration::from_secs(60), 32);
     /// assert!(cache.is_empty());
     /// ```
-    pub fn with_max_entries(ttl: Duration, max_entries: usize) -> Self {
+    pub(crate) fn with_max_entries(ttl: Duration, max_entries: usize) -> Self {
         Self {
             entries: DashMap::new(),
             inserts: AtomicUsize::new(0),
@@ -102,12 +108,14 @@ impl VerificationCache {
     /// # Examples
     ///
     /// ```rust
-    /// use keyhog_verifier::cache::VerificationCache;
+    /// use keyhog_verifier::testing::{
+    ///     TestVerificationCache as VerificationCache, VerifierTestCache,
+    /// };
     ///
     /// let cache = VerificationCache::default_ttl();
     /// assert!(cache.is_empty());
     /// ```
-    pub fn default_ttl() -> Self {
+    pub(crate) fn default_ttl() -> Self {
         Self::new(Duration::from_secs(Self::DEFAULT_TTL_SECS))
     }
 
@@ -117,7 +125,9 @@ impl VerificationCache {
     ///
     /// ```rust
     /// use keyhog_core::VerificationResult;
-    /// use keyhog_verifier::cache::VerificationCache;
+    /// use keyhog_verifier::testing::{
+    ///     TestVerificationCache as VerificationCache, VerifierTestCache,
+    /// };
     /// use std::collections::HashMap;
     /// use std::time::Duration;
     ///
@@ -125,7 +135,7 @@ impl VerificationCache {
     /// cache.put("secret", "detector", VerificationResult::Live, HashMap::new());
     /// assert!(cache.get("secret", "detector").is_some());
     /// ```
-    pub fn get(
+    pub(crate) fn get(
         &self,
         credential: &str,
         detector_id: &str,
@@ -161,7 +171,9 @@ impl VerificationCache {
     ///
     /// ```rust
     /// use keyhog_core::VerificationResult;
-    /// use keyhog_verifier::cache::VerificationCache;
+    /// use keyhog_verifier::testing::{
+    ///     TestVerificationCache as VerificationCache, VerifierTestCache,
+    /// };
     /// use std::collections::HashMap;
     /// use std::time::Duration;
     ///
@@ -169,7 +181,7 @@ impl VerificationCache {
     /// cache.put("secret", "detector", VerificationResult::Live, HashMap::new());
     /// assert_eq!(cache.len(), 1);
     /// ```
-    pub fn put(
+    pub(crate) fn put(
         &self,
         credential: &str,
         detector_id: &str,
@@ -180,26 +192,38 @@ impl VerificationCache {
 
         let insert_count = self.inserts.fetch_add(1, Ordering::Relaxed) + 1;
         if insert_count.is_multiple_of(Self::EVICTION_INTERVAL) {
-            // SAFETY: cache bounded by MAX_CACHE_ENTRIES, eviction runs on every 64th
-            // insert. In this implementation MAX_CACHE_ENTRIES is the configured
-            // max_entries bound, and we also trim back to that bound after each insert.
+            // Every `EVICTION_INTERVAL`-th insert, sweep TTL-expired entries and
+            // reconcile the FIFO queue (drop now-dead keys, trim to `max_entries`).
+            // Plain periodic bookkeeping, not a memory-safety invariant - the hard
+            // `max_entries` ceiling is enforced unconditionally by the eviction
+            // loop after every insert below.
             self.evict_expired();
         }
 
-        let key_clone = key.clone();
-        self.entries.insert(
-            key,
-            CacheEntry {
-                result,
-                metadata: sanitize_metadata(metadata),
-                expires_at: Instant::now() + self.ttl,
-            },
-        );
-        self.queue.lock().push_back(key_clone);
+        let replaced = self
+            .entries
+            .insert(
+                key.clone(),
+                CacheEntry {
+                    result,
+                    metadata: sanitize_metadata(metadata),
+                    expires_at: Instant::now() + self.ttl,
+                },
+            )
+            .is_some();
+        if !replaced {
+            self.queue.lock().push_back(key);
+        }
 
-        if self.entries.len() > self.max_entries {
+        while self.entries.len() > self.max_entries {
             self.evict_one_oldest();
         }
+    }
+
+    /// Number of live or pending FIFO keys. Test-only visibility through the
+    /// verifier facade proves the eviction queue stays bounded alongside the map.
+    pub(crate) fn queue_len(&self) -> usize {
+        self.queue.lock().len()
     }
 
     /// Number of cached entries.
@@ -207,13 +231,15 @@ impl VerificationCache {
     /// # Examples
     ///
     /// ```rust
-    /// use keyhog_verifier::cache::VerificationCache;
+    /// use keyhog_verifier::testing::{
+    ///     TestVerificationCache as VerificationCache, VerifierTestCache,
+    /// };
     /// use std::time::Duration;
     ///
     /// let cache = VerificationCache::new(Duration::from_secs(60));
     /// assert_eq!(cache.len(), 0);
     /// ```
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.entries.len()
     }
 
@@ -222,13 +248,15 @@ impl VerificationCache {
     /// # Examples
     ///
     /// ```rust
-    /// use keyhog_verifier::cache::VerificationCache;
+    /// use keyhog_verifier::testing::{
+    ///     TestVerificationCache as VerificationCache, VerifierTestCache,
+    /// };
     /// use std::time::Duration;
     ///
     /// let cache = VerificationCache::new(Duration::from_secs(60));
     /// assert!(cache.is_empty());
     /// ```
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }
 
@@ -237,16 +265,31 @@ impl VerificationCache {
     /// # Examples
     ///
     /// ```rust
-    /// use keyhog_verifier::cache::VerificationCache;
+    /// use keyhog_verifier::testing::{
+    ///     TestVerificationCache as VerificationCache, VerifierTestCache,
+    /// };
     /// use std::time::Duration;
     ///
     /// let cache = VerificationCache::new(Duration::from_secs(60));
     /// cache.evict_expired();
     /// assert!(cache.is_empty());
     /// ```
-    pub fn evict_expired(&self) {
+    pub(crate) fn evict_expired(&self) {
         let now = Instant::now();
         self.entries.retain(|_, entry| now < entry.expires_at);
+        self.reconcile_queue_with_entries();
+    }
+
+    fn reconcile_queue_with_entries(&self) {
+        let mut queue = self.queue.lock();
+        queue.retain(|key| self.entries.contains_key(key));
+        while queue.len() > self.max_entries {
+            if let Some(key) = queue.pop_front() {
+                self.entries.remove(&key);
+            } else {
+                break;
+            }
+        }
     }
 
     fn evict_one_oldest(&self) {

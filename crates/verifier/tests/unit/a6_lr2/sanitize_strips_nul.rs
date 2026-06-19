@@ -1,4 +1,6 @@
+use keyhog_verifier::testing::{TestApi, VerifierTestApi};
+
 #[test]
 fn sanitize_strips_nul() {
-    assert!(!keyhog_verifier::testing::sanitize_raw_value("a\0b").contains('\0'));
+    assert!(!TestApi.sanitize_raw_value("a\0b").contains('\0'));
 }

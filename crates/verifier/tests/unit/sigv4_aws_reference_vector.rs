@@ -1,4 +1,4 @@
-use keyhog_verifier::testing::format_sigv4_timestamps;
+use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 
 #[test]
 fn sigv4_aws_reference_vector_example_from_docs() {
@@ -13,7 +13,7 @@ fn sigv4_aws_reference_vector_example_from_docs() {
     // August 30, 2015 at 12:36:00 UTC
     // Unix epoch: 1440930960
     let unix_secs = 1_440_938_160u64;
-    let (date_stamp, amz_date) = format_sigv4_timestamps(unix_secs);
+    let (date_stamp, amz_date) = TestApi.format_sigv4_timestamps(unix_secs);
 
     // AWS docs specify this exact date and timestamp in canonical request
     assert_eq!(
@@ -33,7 +33,7 @@ fn sigv4_aws_reference_vector_second_example() {
     // This tests that the implementation handles various dates correctly.
 
     let unix_secs = 1_705_676_142u64;
-    let (date_stamp, amz_date) = format_sigv4_timestamps(unix_secs);
+    let (date_stamp, amz_date) = TestApi.format_sigv4_timestamps(unix_secs);
 
     // Verify the date and time components are correctly extracted
     assert_eq!(date_stamp, "20240119", "date_stamp month/day correct");
