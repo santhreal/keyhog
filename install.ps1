@@ -21,13 +21,13 @@
 #                         Requires a sibling PATH.sha256 unless -Insecure is explicit.
 #   -InstallDir PATH      override $env:KEYHOG_INSTALL
 #   -Yes                  non-interactive: accept defaults, no prompts
-#   -Insecure             allow install only when checksum proof is unavailable;
-#                         checksum mismatches still fail
+#   -Insecure             allow install only when release signature/checksum
+#                         proof is unavailable; fetched mismatches still fail
 #   -NoColor              disable ANSI colors
 #
 # Env overrides:
 #   $env:KEYHOG_VERSION, $env:KEYHOG_FROM_FILE, $env:KEYHOG_INSTALL,
-#   $env:NO_COLOR
+#   $env:GITHUB_TOKEN, $env:NO_COLOR
 
 [CmdletBinding()]
 param(
@@ -45,6 +45,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $Repo = 'santhsecurity/keyhog'
+$Script:ReleasePublicKey = 'RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 $Script:InsecureInstall = [bool]$Insecure
 
 # ============================================================
@@ -58,10 +59,11 @@ function Use-Color { param($Text, $Color)
     if ($Script:UseColor) { Write-Host $Text -ForegroundColor $Color } else { Write-Host $Text }
 }
 function Say  { param($t) Write-Host $t }
-function Info { param($t) Use-Color $t 'Cyan' }
-function Ok   { param($t) Use-Color $t 'Green' }
-function Warn { param($t) Use-Color $t 'Yellow' }
-function Err  { param($t) Use-Color $t 'Red' }
+function Write-Status { param($Label, $Text, $Color) Use-Color "$Label $Text" $Color }
+function Info { param($t) Write-Status 'INFO' $t 'Cyan' }
+function Ok   { param($t) Write-Status 'PASS' $t 'Green' }
+function Warn { param($t) Write-Status 'WARN' $t 'Yellow' }
+function Err  { param($t) Write-Status 'FAIL' $t 'Red' }
 function Dim  { param($t) Use-Color $t 'DarkGray' }
 
 function Show-Banner {
@@ -124,6 +126,80 @@ function Warn-WizardCommandFailure {
     }
 }
 
+function Invoke-InstalledBinaryUninstall {
+    param([string]$BinPath)
+    if (-not (Test-Path -PathType Leaf $BinPath)) { return }
+    $errFile = [System.IO.Path]::GetTempFileName()
+    try {
+        & $BinPath uninstall --yes 2> $errFile
+        if ($LASTEXITCODE -eq 0) { return }
+        $reason = Get-FirstErrorLine $errFile ""
+        if (Test-WizardCommandUnavailable $reason) {
+            Warn "  installed keyhog has no uninstall subcommand; removing installer-owned files directly."
+        } elseif ($reason) {
+            Warn "  keyhog uninstall --yes failed: $reason"
+        } else {
+            Warn "  keyhog uninstall --yes failed without stderr; removing installer-owned files directly."
+        }
+    } catch {
+        Warn "  keyhog uninstall --yes failed: $($_.Exception.Message)"
+    } finally {
+        Remove-Item -Force $errFile -ErrorAction SilentlyContinue
+    }
+}
+
+function Normalize-PathForUserPath {
+    param([string]$Path)
+    try {
+        return ([System.IO.Path]::GetFullPath($Path)).TrimEnd('\')
+    } catch {
+        return $Path.TrimEnd('\')
+    }
+}
+
+function Remove-UserPathEntry {
+    param([string]$Path)
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if (-not $userPath) { return }
+    $target = Normalize-PathForUserPath $Path
+    $kept = New-Object System.Collections.Generic.List[string]
+    $removed = $false
+    foreach ($entry in ($userPath -split ';')) {
+        if ([string]::IsNullOrWhiteSpace($entry)) { continue }
+        $current = Normalize-PathForUserPath $entry
+        if ([string]::Equals($current, $target, [StringComparison]::OrdinalIgnoreCase)) {
+            $removed = $true
+        } else {
+            $kept.Add($entry)
+        }
+    }
+    if ($removed) {
+        [Environment]::SetEnvironmentVariable("Path", ($kept -join ';'), "User")
+        Ok "  Removed $Path from User PATH."
+    }
+}
+
+function Remove-InstallerOwnedPowerShellCompletion {
+    $paths = @(
+        (Join-Path $env:USERPROFILE 'Documents\PowerShell\Completions\keyhog.ps1'),
+        (Join-Path $env:USERPROFILE 'Documents\WindowsPowerShell\Completions\keyhog.ps1')
+    )
+    foreach ($path in $paths) {
+        if (-not (Test-Path $path)) { continue }
+        try {
+            Remove-Item -Force $path
+            Ok "  Removed PowerShell completion: $path"
+        } catch {
+            Warn "  Could not remove PowerShell completion ${path}: $($_.Exception.Message)"
+        }
+    }
+}
+
+function Remove-WindowsInstallerOwnedIntegrations {
+    Remove-UserPathEntry -Path $InstallDir
+    Remove-InstallerOwnedPowerShellCompletion
+}
+
 # ============================================================
 # detection
 # ============================================================
@@ -157,7 +233,7 @@ function Resolve-Asset {
     $gpus = Get-GpuInfo
     $nv = $gpus | Where-Object { $_ -match 'NVIDIA' } | Select-Object -First 1
     if ($nv) {
-        $Script:GpuNote = "Detected NVIDIA GPU ($nv). Installing the WGPU + SIMD Windows build. A dedicated CUDA-on-Windows variant (significantly faster on large scans) is on the roadmap."
+        $Script:GpuNote = "Detected NVIDIA GPU ($nv). Installing the WGPU + SIMD Windows build. No separate CUDA-on-Windows release asset ships."
     } elseif ($gpus.Count -gt 0) {
         $Script:GpuNote = "Detected non-NVIDIA GPU(s): $($gpus -join ', '). Installing the WGPU + SIMD Windows build."
     } else {
@@ -176,12 +252,29 @@ function Resolve-Tag {
         if ($Version -match '^[0-9]') { $Script:Tag = "v$Version" } else { $Script:Tag = $Version }
         return
     }
+    $Script:Tag = 'latest'
+}
+
+function Invoke-GitHubApi {
+    param([string]$Uri)
+    $headers = @{}
+    if ($env:GITHUB_TOKEN) {
+        $headers['Authorization'] = "Bearer $env:GITHUB_TOKEN"
+        $headers['X-GitHub-Api-Version'] = '2022-11-28'
+    }
+    if ($headers.Count -gt 0) {
+        return Invoke-RestMethod -Uri $Uri -Headers $headers -ErrorAction Stop
+    }
+    return Invoke-RestMethod -Uri $Uri -ErrorAction Stop
+}
+
+function Resolve-TagFromApi {
     # /releases/latest can return a release with zero assets (a release
     # workflow that built but failed to upload). Walk the recent
     # releases list, take the newest tag whose assets array is non-empty.
-    # This is the Windows mirror of install.sh's resolve_tag fallback.
+    # This is the Windows mirror of install.sh's resolve_tag_from_api fallback.
     try {
-        $releases = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases?per_page=10"
+        $releases = Invoke-GitHubApi -Uri "https://api.github.com/repos/$Repo/releases?per_page=10"
     } catch {
         Err "Could not query GitHub releases API: $_"
         Err "Try -Version v0.5.37 (or another known tag) explicitly."
@@ -196,6 +289,14 @@ function Resolve-Tag {
     Err "No GitHub release in the last 10 has any assets uploaded."
     Err "Try -Version v0.5.37 (or another known tag) explicitly."
     exit 1
+}
+
+function Get-ReleaseAssetUrl {
+    param([string]$Name)
+    if ($Script:Tag -eq 'latest') {
+        return "https://github.com/$Repo/releases/latest/download/$Name"
+    }
+    return "https://github.com/$Repo/releases/download/$($Script:Tag)/$Name"
 }
 
 function Get-CurrentBinary {
@@ -218,7 +319,7 @@ function Get-CurrentVersion {
 
 function Download-Asset {
     param($Name, $OutPath)
-    $url = "https://github.com/$Repo/releases/download/$($Script:Tag)/$Name"
+    $url = Get-ReleaseAssetUrl -Name $Name
     if ($Script:Interactive) { Info "Downloading $Name from $($Script:Tag)..." }
     else { Say "keyhog: downloading $url" }
     # Retry transient network failures. GitHub's CDN occasionally drops a
@@ -229,7 +330,7 @@ function Download-Asset {
     $attempts = 5
     for ($i = 1; $i -le $attempts; $i++) {
         try {
-            Invoke-WebRequest -Uri $url -OutFile $OutPath -UseBasicParsing
+            Invoke-WebRequest -Uri $url -OutFile $OutPath -UseBasicParsing -ErrorAction Stop
             return
         } catch {
             if ($i -ge $attempts) { throw }
@@ -245,19 +346,60 @@ function Allow-UnverifiedInstall {
     param([string]$Reason)
     if ($Script:InsecureInstall) {
         Warn "  INSECURE: $Reason"
-        Warn "  Proceeding without checksum verification because -Insecure is set."
+        Warn "  Proceeding without full release verification because -Insecure is set."
         return $true
     }
     Err $Reason
     Err "Refusing to install an unverified keyhog binary."
-    Err "Fix: provide the .sha256 file and ensure Get-FileHash is available."
+    Err "Fix: ensure the .minisig and .sha256 files are published, minisign is installed, and Get-FileHash is available."
     Err "Only for emergency/local diagnostics, rerun with -Insecure to accept an unverified binary."
     return $false
 }
 
+function Find-Minisign {
+    $cmd = Get-Command minisign.exe -ErrorAction SilentlyContinue
+    if (-not $cmd) {
+        $cmd = Get-Command minisign -ErrorAction SilentlyContinue
+    }
+    if ($cmd) { return $cmd.Source }
+    return $null
+}
+
+function Verify-ReleaseSignature {
+    param($BinaryPath, $AssetName)
+    $sigPath = [System.IO.Path]::GetTempFileName()
+    try {
+        try {
+            Download-Asset -Name "$AssetName.minisig" -OutPath $sigPath
+        } catch {
+            return (Allow-UnverifiedInstall "No .minisig signature was published for $AssetName at $($Script:Tag).")
+        }
+        if ((Get-Item $sigPath).Length -eq 0) {
+            return (Allow-UnverifiedInstall "No .minisig signature was published for $AssetName at $($Script:Tag).")
+        }
+
+        $minisign = Find-Minisign
+        if (-not $minisign) {
+            return (Allow-UnverifiedInstall "minisign is not installed, so the $AssetName release signature cannot be verified.")
+        }
+
+        $output = & $minisign -Vm $BinaryPath -P $Script:ReleasePublicKey -x $sigPath 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            Ok "Minisign signature verified."
+            return $true
+        }
+        Err "Minisign signature verification failed for $AssetName."
+        if ($output) { Err "  $output" }
+        Err "Refusing to install. The release asset may have been tampered with or signed by the wrong key."
+        return $false
+    } finally {
+        Remove-Item -Force $sigPath -ErrorAction SilentlyContinue
+    }
+}
+
 function Verify-Checksum {
     param($BinaryPath, $AssetName)
-    $checksumUrl = "https://github.com/$Repo/releases/download/$($Script:Tag)/$AssetName.sha256"
+    $checksumUrl = Get-ReleaseAssetUrl -Name "$AssetName.sha256"
     $expected = $null
     try {
         $line = Invoke-RestMethod -Uri $checksumUrl -ErrorAction Stop
@@ -436,17 +578,30 @@ function Invoke-AutorouteCalibration {
         Info "Autoroute calibration"
         Dim "  visible install phase; persistent until you run install.ps1 -Calibrate again"
         $calibrationStartedAt = Get-Date
-        $oldCal = $env:KEYHOG_AUTOROUTE_CALIBRATE
-        $oldBatch = $env:KEYHOG_BATCH_PIPELINE
-        $oldGpu = $env:KEYHOG_GPU_AUTOROUTE
         $failed = $false
         $dockerImagesToRemove = @()
         $webJobsToStop = @()
         try {
-            $env:KEYHOG_AUTOROUTE_CALIBRATE = '1'
-            $env:KEYHOG_BATCH_PIPELINE = '1'
-            $env:KEYHOG_GPU_AUTOROUTE = '1'
-            $scanHelp = try { (& $BinPath scan --help 2>$null | Out-String) } catch { '' }
+            $scanHelpErr = Join-Path $tmpDir 'scan-help.err'
+            $scanHelpException = $null
+            try {
+                $scanHelp = (& $BinPath scan --help 2> $scanHelpErr | Out-String)
+                $scanHelpExit = $LASTEXITCODE
+            } catch {
+                $scanHelp = ''
+                $scanHelpExit = 1
+                $scanHelpException = $_.Exception.Message
+            }
+            if ($scanHelpExit -ne 0) {
+                $realErr = Get-FirstErrorLine $scanHelpErr $scanHelpException
+                Err "Could not inspect installed keyhog scan --help before autoroute calibration."
+                if ($realErr) { Err "scan --help error: $realErr" }
+                return $false
+            }
+            if ([string]::IsNullOrWhiteSpace($scanHelp)) {
+                Err "Installed keyhog scan --help returned no output; refusing to guess calibration flags."
+                return $false
+            }
             $configArgs = if ($scanHelp -match '--no-config') {
                 @('--no-config')
             } else {
@@ -454,6 +609,7 @@ function Invoke-AutorouteCalibration {
                 New-Item -ItemType File -Force -Path $emptyConfig | Out-Null
                 @('--config', $emptyConfig)
             }
+            $batchArgs = @('--autoroute-calibrate', '--batch-pipeline', '--autoroute-gpu')
             $unavailableCalibrations = @()
             $gitCalibration = $false
             $gitPath = $null
@@ -611,25 +767,25 @@ function Invoke-AutorouteCalibration {
                 $label = "  [{0}/{1}] {2}" -f ($i + 1), $workloads.Count, $workload.Label
                 switch ($workload.Mode) {
                     'stdin' {
-                        $args = @('scan', '--stdin') + $configArgs + @('--format', 'json', '-o', $workload.Out)
+                        $args = @('scan', '--stdin') + $batchArgs + $configArgs + @('--format', 'json', '-o', $workload.Out)
                     }
                     'path' {
-                        $args = @('scan', $workload.Target) + $configArgs + @('--format', 'json', '-o', $workload.Out)
+                        $args = @('scan', $workload.Target) + $batchArgs + $configArgs + @('--format', 'json', '-o', $workload.Out)
                     }
                     'git-history' {
-                        $args = @('scan', '--git-history', $workload.Target, '--max-commits', '1') + $configArgs + @('--format', 'json', '-o', $workload.Out)
+                        $args = @('scan', '--git-history', $workload.Target, '--max-commits', '1') + $batchArgs + $configArgs + @('--format', 'json', '-o', $workload.Out)
                     }
                     'git-blobs' {
-                        $args = @('scan', '--git-blobs', $workload.Target, '--max-commits', '2') + $configArgs + @('--format', 'json', '-o', $workload.Out)
+                        $args = @('scan', '--git-blobs', $workload.Target, '--max-commits', '2') + $batchArgs + $configArgs + @('--format', 'json', '-o', $workload.Out)
                     }
                     'git-diff' {
-                        $args = @('scan', '--git-diff', 'HEAD', '--git-diff-path', $workload.Target) + $configArgs + @('--format', 'json', '-o', $workload.Out)
+                        $args = @('scan', '--git-diff', 'HEAD', '--git-diff-path', $workload.Target) + $batchArgs + $configArgs + @('--format', 'json', '-o', $workload.Out)
                     }
                     'url' {
-                        $args = @('scan', '--url', $workload.Target) + $configArgs + @('--format', 'json', '-o', $workload.Out)
+                        $args = @('scan', '--url', $workload.Target) + $batchArgs + $configArgs + @('--format', 'json', '-o', $workload.Out)
                     }
                     'docker-image' {
-                        $args = @('scan', '--docker-image', $workload.Target) + $configArgs + @('--format', 'json', '-o', $workload.Out)
+                        $args = @('scan', '--docker-image', $workload.Target) + $batchArgs + $configArgs + @('--format', 'json', '-o', $workload.Out)
                     }
                     default {
                         throw "unsupported autoroute calibration mode: $($workload.Mode)"
@@ -647,20 +803,22 @@ function Invoke-AutorouteCalibration {
                 if ($workload.Mode -eq 'stdin') {
                     $startArgs.RedirectStandardInput = $workload.Target
                 }
+                $probeStartedAt = Get-Date
                 $proc = Start-Process @startArgs
                 $frames = @('-', '\', '|', '/')
                 $frame = 0
                 while (-not $proc.HasExited) {
-                    Write-Host ("`r{0} {1}" -f $label, $frames[$frame]) -NoNewline
+                    Write-Host ("`rINFO {0} {1}" -f $label, $frames[$frame]) -NoNewline
                     $frame = ($frame + 1) % $frames.Count
                     Start-Sleep -Milliseconds 150
                     $proc.Refresh()
                 }
                 $proc.WaitForExit()
+                $elapsedMs = [int][math]::Max(0, [math]::Round(((Get-Date) - $probeStartedAt).TotalMilliseconds))
                 if ($proc.ExitCode -eq 0) {
-                    Write-Host ("`r{0} OK" -f $label)
+                    Write-Host ("`rPASS {0} ({1}ms)" -f $label, $elapsedMs)
                 } else {
-                    Write-Host ("`r{0} FAILED" -f $label)
+                    Write-Host ("`rFAIL {0} ({1}ms)" -f $label, $elapsedMs)
                     $reason = Get-FirstNonEmptyLine -Paths @($workload.Stderr, $workload.Stdout)
                     if ($reason) { Dim "    reason: $reason" }
                     Err "Autoroute calibration probe failed for $($workload.Label)."
@@ -694,9 +852,6 @@ function Invoke-AutorouteCalibration {
                     }
                 }
             }
-            if ($null -eq $oldCal) { Remove-Item Env:KEYHOG_AUTOROUTE_CALIBRATE -ErrorAction SilentlyContinue } else { $env:KEYHOG_AUTOROUTE_CALIBRATE = $oldCal }
-            if ($null -eq $oldBatch) { Remove-Item Env:KEYHOG_BATCH_PIPELINE -ErrorAction SilentlyContinue } else { $env:KEYHOG_BATCH_PIPELINE = $oldBatch }
-            if ($null -eq $oldGpu) { Remove-Item Env:KEYHOG_GPU_AUTOROUTE -ErrorAction SilentlyContinue } else { $env:KEYHOG_GPU_AUTOROUTE = $oldGpu }
         }
     } catch {
         Err "Autoroute calibration probe failed: $_"
@@ -906,6 +1061,22 @@ function Stage-Install {
             Remove-Item -Force $tmp -ErrorAction SilentlyContinue
             exit 1
         }
+    } elseif (-not $Version -and $Script:Tag -eq 'latest') {
+        try {
+            Download-Asset -Name $Script:Asset -OutPath $tmp
+        } catch {
+            Warn "Latest release asset redirect did not provide $($Script:Asset); checking recent releases for the newest tag with assets."
+            Resolve-TagFromApi
+            Say "  Release tag: $($Script:Tag)"
+            try {
+                Download-Asset -Name $Script:Asset -OutPath $tmp
+            } catch {
+                Err "Download failed. Is the release published yet? Browse https://github.com/$Repo/releases"
+                Err "Underlying error: $_"
+                Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+                exit 1
+            }
+        }
     } else {
         try {
             Download-Asset -Name $Script:Asset -OutPath $tmp
@@ -929,10 +1100,11 @@ function Stage-Install {
         Remove-Item -Force $tmp -ErrorAction SilentlyContinue
         exit 1
     }
-    # Checksum is verified BEFORE we overwrite, so a corrupt artifact can never
-    # replace a working binary. Downloads check against the release's per-asset
-    # .sha256; a -FromFile install requires a sibling PATH.sha256 unless the
-    # operator explicitly accepts an unverified local artifact.
+    # Release verification happens BEFORE we overwrite, so a corrupt or unsigned
+    # artifact can never replace a working binary. Downloads check the release's
+    # per-asset .minisig and .sha256; a -FromFile install requires a sibling
+    # PATH.sha256 unless the operator explicitly accepts an unverified local
+    # artifact.
     if ($FromFile) {
         $localSum = "$FromFile.sha256"
         if (Test-Path -PathType Leaf $localSum) {
@@ -946,9 +1118,15 @@ function Stage-Install {
                 exit 1
             }
         }
-    } elseif (-not (Verify-Checksum -BinaryPath $tmp -AssetName $Script:Asset)) {
-        Remove-Item -Force $tmp -ErrorAction SilentlyContinue
-        exit 1
+    } else {
+        if (-not (Verify-ReleaseSignature -BinaryPath $tmp -AssetName $Script:Asset)) {
+            Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+            exit 1
+        }
+        if (-not (Verify-Checksum -BinaryPath $tmp -AssetName $Script:Asset)) {
+            Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+            exit 1
+        }
     }
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
     $dest = Join-Path $InstallDir 'keyhog.exe'
@@ -1247,9 +1425,18 @@ function Do-Uninstall {
     $bin = Get-CurrentBinary
     if (-not $bin) { Warn "No keyhog binary found. Nothing to remove."; return }
     if (-not (Confirm-Choice "Remove $bin?" 'Y')) { Warn "Aborted."; return }
-    Remove-Item -Force $bin
+    Invoke-InstalledBinaryUninstall -BinPath $bin
+    try {
+        if (Test-Path $bin) {
+            Remove-Item -Force $bin
+        }
+    } catch {
+        Err "Could not remove $bin: $($_.Exception.Message)"
+        Err "Fix: close running keyhog processes or shells using keyhog.exe, then rerun install.ps1 -Uninstall."
+        exit 1
+    }
     Ok "Removed $bin"
-    Dim "  (Shell profile entries and completions, if any, are left in place.)"
+    Remove-WindowsInstallerOwnedIntegrations
 }
 
 function Do-Calibrate {
