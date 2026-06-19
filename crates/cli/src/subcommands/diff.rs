@@ -18,6 +18,7 @@
 
 use crate::args::DiffArgs;
 use crate::baseline::Baseline;
+use crate::exit_codes::EXIT_FINDINGS;
 use anyhow::Result;
 use std::process::ExitCode;
 
@@ -82,7 +83,7 @@ pub(crate) fn run(args: DiffArgs) -> Result<ExitCode> {
     if new_entries.is_empty() {
         Ok(ExitCode::SUCCESS)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(ExitCode::from(EXIT_FINDINGS))
     }
 }
 

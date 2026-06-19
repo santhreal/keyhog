@@ -259,7 +259,7 @@ pub async fn cli_main() -> ExitCode {
         None => {
             let mut cmd = args::command();
             let _ = cmd.print_help(); // LAW10: unused-binding marker; no runtime effect, not a fallback
-            return ExitCode::from(0);
+            return ExitCode::SUCCESS;
         }
     };
 

@@ -14,6 +14,7 @@
 mod mounts;
 
 use crate::args::ScanSystemArgs;
+use crate::exit_codes::EXIT_FINDINGS;
 use crate::format::format_bytes;
 use crate::style;
 use anyhow::{Context, Result};
@@ -428,7 +429,7 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
     if sink.is_empty() {
         Ok(ExitCode::SUCCESS)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(ExitCode::from(EXIT_FINDINGS))
     }
 }
 
