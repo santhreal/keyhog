@@ -35,7 +35,7 @@
 //! - **Specialized validators** — [`checksum`], [`jwt`], [`aws`],
 //!   `homoglyph`, [`unicode_hardening`].
 //! - **Cross-cutting** — `platform_compat`, `placeholder_words`,
-//!   [`telemetry`], `util_hash`.
+//!   `process_exit`, [`telemetry`], `util_hash`.
 //!
 //! Most single-file modules are one responsibility each; the multi-file engine
 //! is the exception and carries its own internal map in `engine::mod`.
@@ -97,6 +97,7 @@ pub mod ml_scorer;
 pub(crate) mod multiline;
 pub(crate) mod placeholder_words;
 pub(crate) mod platform_compat;
+pub(crate) mod process_exit;
 /// Match resolution and deduplication.
 pub mod resolution;
 /// Scanner configuration and state.

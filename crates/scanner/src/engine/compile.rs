@@ -453,11 +453,10 @@ fn surface_cuda_acquisition_failure(error: &dyn std::fmt::Display) {
     let no_gpu = crate::gpu::gpu_disabled_by_policy();
 
     if require_gpu && on_nvidia_host {
-        eprintln!(
-            "keyhog: --require-gpu requested but CUDA backend acquisition failed on \
+        crate::process_exit::require_gpu_unmet(format!(
+            "--require-gpu requested but CUDA backend acquisition failed on \
 an NVIDIA host: {error}. Refusing to fall back to WGPU."
-        );
-        std::process::exit(2);
+        ));
     }
 
     if no_gpu {

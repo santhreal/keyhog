@@ -256,8 +256,9 @@ pub(crate) fn get_gpu() -> Option<&'static GpuContext> {
             let no_gpu = super::gpu_disabled_by_policy();
             let require_gpu = super::gpu_required_by_policy();
             if require_gpu {
-                eprintln!("keyhog: --require-gpu requested but GPU MoE init failed: {e}");
-                std::process::exit(2);
+                crate::process_exit::require_gpu_unmet(format!(
+                    "--require-gpu requested but GPU MoE init failed: {e}"
+                ));
             }
             // Only surface the CPU-fallback notice when a GPU is physically
             // PRESENT but unusable - that's the actionable case (driver/init
@@ -297,7 +298,7 @@ static MOE_NONFINITE_WARNED: OnceLock<()> = OnceLock::new();
 /// posture exactly so the MoE path is coherent with the literal-set/MegaScan
 /// paths under the no-silent-fallback rule:
 ///
-///   * `--require-gpu` -> hard-fail (`exit(2)`). The init-time check in
+///   * `--require-gpu` -> hard-fail (`exit 12`). The init-time check in
 ///     [`get_gpu`] cannot catch this: acquisition succeeded, then a *specific
 ///     dispatch* (driver timeout, lost device, map_async error) failed deep in
 ///     the scan. Without this, `REQUIRE_GPU` silently degraded to CPU per batch.
@@ -312,11 +313,10 @@ fn moe_runtime_degrade(reason: &str) {
     let no_gpu = super::gpu_disabled_by_policy();
     let require_gpu = super::gpu_required_by_policy();
     if require_gpu {
-        eprintln!(
-            "keyhog: --require-gpu requested but the GPU MoE dispatch failed at runtime \
+        crate::process_exit::require_gpu_unmet(format!(
+            "--require-gpu requested but the GPU MoE dispatch failed at runtime \
 ({reason}). Refusing to silently degrade to the CPU MoE."
-        );
-        std::process::exit(2);
+        ));
     }
     if no_gpu {
         return;
@@ -345,12 +345,11 @@ fn moe_nonfinite_degrade(nonfinite: usize, total: usize) {
     let no_gpu = super::gpu_disabled_by_policy();
     let require_gpu = super::gpu_required_by_policy();
     if require_gpu {
-        eprintln!(
-            "keyhog: --require-gpu requested but the GPU MoE returned {nonfinite}/{total} \
+        crate::process_exit::require_gpu_unmet(format!(
+            "--require-gpu requested but the GPU MoE returned {nonfinite}/{total} \
 non-finite (NaN/Inf) confidence score(s) — a GPU driver/shader/weights malfunction. \
 Refusing to silently sanitize and continue."
-        );
-        std::process::exit(2);
+        ));
     }
     if no_gpu {
         return;

@@ -42,16 +42,19 @@ fn help_text_names_every_owned_exit_code() {
 
 #[test]
 fn production_code_does_not_construct_numeric_exit_codes_inline() {
-    let src_root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let roots = [manifest.join("src"), manifest.join("../scanner/src")];
     let mut violations = Vec::new();
-    for path in rust_sources(&src_root) {
-        let rel = path.strip_prefix(&src_root).unwrap_or(&path);
-        let text = fs::read_to_string(&path).unwrap_or_else(|err| {
-            panic!("read {} for exit-code owner check: {err}", path.display())
-        });
-        for (line_idx, line) in text.lines().enumerate() {
-            if contains_inline_numeric_exit_code(line) {
-                violations.push(format!("{}:{}", rel.display(), line_idx + 1));
+    for src_root in roots {
+        for path in rust_sources(&src_root) {
+            let rel = path.strip_prefix(manifest).unwrap_or(&path);
+            let text = fs::read_to_string(&path).unwrap_or_else(|err| {
+                panic!("read {} for exit-code owner check: {err}", path.display())
+            });
+            for (line_idx, line) in text.lines().enumerate() {
+                if contains_inline_numeric_exit_code(line) {
+                    violations.push(format!("{}:{}", rel.display(), line_idx + 1));
+                }
             }
         }
     }
@@ -60,6 +63,41 @@ fn production_code_does_not_construct_numeric_exit_codes_inline() {
         violations.is_empty(),
         "production code constructs numeric exit codes outside exit_codes.rs: {}",
         violations.join(", ")
+    );
+}
+
+#[test]
+fn scanner_require_gpu_hard_exit_matches_cli_exit_contract() {
+    let scanner_src = Path::new(env!("CARGO_MANIFEST_DIR")).join("../scanner/src");
+    let helper_path = scanner_src.join("process_exit.rs");
+    let helper = fs::read_to_string(&helper_path)
+        .unwrap_or_else(|err| panic!("read {}: {err}", helper_path.display()));
+    assert!(
+        helper.contains(&format!(
+            "REQUIRE_GPU_UNMET_EXIT_CODE: i32 = {}",
+            EXIT_REQUIRE_GPU_UNMET
+        )),
+        "scanner require-GPU hard exit must match keyhog::exit_codes::EXIT_REQUIRE_GPU_UNMET"
+    );
+
+    let mut offenders = Vec::new();
+    for path in rust_sources(&scanner_src) {
+        if path == helper_path {
+            continue;
+        }
+        let rel = path.strip_prefix(&scanner_src).unwrap_or(&path);
+        let text = fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("read scanner source {}: {err}", path.display()));
+        for (line_idx, line) in text.lines().enumerate() {
+            if line.contains("std::process::exit(") || line.contains("process::exit(") {
+                offenders.push(format!("{}:{}", rel.display(), line_idx + 1));
+            }
+        }
+    }
+    assert!(
+        offenders.is_empty(),
+        "scanner hard exits must go through process_exit.rs: {}",
+        offenders.join(", ")
     );
 }
 

@@ -59,9 +59,9 @@ pub(crate) fn gpu_forced_unavailable_message(
 /// is down. Otherwise, when the scanner asked for GPU but is about
 /// to degrade to CPU at runtime, emit a one-shot stderr warning so
 /// the user sees the silent fallback they didn't ask for. Use
-/// `--no-gpu` to silence the warning, or `--require-gpu` to exit (2) instead.
+/// `--no-gpu` to silence the warning, or `--require-gpu` to exit 12 instead.
 ///
-/// ## Why a `std::process::exit(2)` survives in the library here (M12)
+/// ## Why a scanner hard exit survives in the library here (M12)
 ///
 /// The clean fail-closed path for `--require-gpu` on a no-GPU host
 /// is the CLI preflight ([`crate::gpu::require_gpu_preflight`], called from
@@ -89,8 +89,7 @@ pub(crate) fn deny_silent_gpu_degrade_with_reason(
     reason: Option<&str>,
 ) {
     if let Some(msg) = gpu_forced_unavailable_message(scanner, backend) {
-        eprintln!("keyhog: {msg}");
-        std::process::exit(2);
+        crate::process_exit::require_gpu_unmet(msg);
     }
     if !matches!(backend, ScanBackend::Gpu | ScanBackend::MegaScan) {
         return;
@@ -101,23 +100,22 @@ pub(crate) fn deny_silent_gpu_degrade_with_reason(
     let (no_gpu, require_gpu) = cached_gpu_runtime_policy_flags();
     if require_gpu {
         if let Some(reason) = reason {
-            eprintln!(
-                "keyhog: --require-gpu requested but the GPU dispatch failed at runtime \
+            crate::process_exit::require_gpu_unmet(format!(
+                "--require-gpu requested but the GPU dispatch failed at runtime \
 ({reason}) (literals={}, backend={}, matcher={}). Refusing to silently degrade.",
                 scanner.gpu_literals.is_some(),
                 scanner.gpu_backend.is_some(),
                 scanner.gpu_matcher().is_some(),
-            );
+            ));
         } else {
-            eprintln!(
-                "keyhog: --require-gpu requested but the GPU dispatch failed at runtime \
+            crate::process_exit::require_gpu_unmet(format!(
+                "--require-gpu requested but the GPU dispatch failed at runtime \
 (literals={}, backend={}, matcher={}). Refusing to silently degrade.",
                 scanner.gpu_literals.is_some(),
                 scanner.gpu_backend.is_some(),
                 scanner.gpu_matcher().is_some(),
-            );
+            ));
         }
-        std::process::exit(2);
     }
     if no_gpu {
         return;

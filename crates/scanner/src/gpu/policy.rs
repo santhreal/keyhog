@@ -93,7 +93,7 @@ pub fn gpu_required_by_policy() -> bool {
 /// Returns `Err(diagnostic)` when a GPU is required but the host has no
 /// non-software adapter, or the GPU self-test (adapter init + one real MoE
 /// compute dispatch) fails. The caller (CLI run loop) maps that to the
-/// documented exit code 2. Returning an `Err` here - rather than calling
+/// documented exit code 12. Returning an `Err` here - rather than calling
 /// `std::process::exit` from the library - keeps embedders alive (finding
 /// M12).
 pub fn require_gpu_preflight() -> Result<(), String> {

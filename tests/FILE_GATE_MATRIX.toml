@@ -641,6 +641,9 @@ path = "crates/scanner/src/prefix_trie.rs"
 path = "crates/scanner/src/probabilistic_gate.rs"
 
 [[module]]
+path = "crates/scanner/src/process_exit.rs"
+
+[[module]]
 path = "crates/scanner/src/resolution.rs"
 
 [[module]]
