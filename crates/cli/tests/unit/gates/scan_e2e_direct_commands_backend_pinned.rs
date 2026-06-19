@@ -10,13 +10,28 @@ fn scan_e2e_direct_commands_backend_pinned() {
             scan_files.push(path);
         }
     }
-    scan_files.push(manifest_dir.join("tests/config_hermetic.rs"));
+    for rel in [
+        "tests/adversarial/huge_exclude_paths_glob_completes.rs",
+        "tests/audit_arch_wiring.rs",
+        "tests/audit_generalization.rs",
+        "tests/audit_research_innovation.rs",
+        "tests/audit_testing_dogfood.rs",
+        "tests/config_hermetic.rs",
+        "tests/lane5_sarif_schema_and_scale_matrix.rs",
+        "tests/lane5_scan_flag_and_exit_matrix.rs",
+        "tests/live_verify.rs",
+        "tests/regression_scans_user_detectors_directory.rs",
+        "tests/regression_self_scan_segment_suppression_visible.rs",
+        "tests/sarif_github_compliance.rs",
+    ] {
+        scan_files.push(manifest_dir.join(rel));
+    }
 
     let mut problems = Vec::new();
     for path in scan_files {
         let src = std::fs::read_to_string(&path).expect("read e2e source");
         let mut cursor = 0usize;
-        while let Some(offset) = src[cursor..].find("Command::new(binary())") {
+        while let Some(offset) = src[cursor..].find("Command::new(") {
             let start = cursor + offset;
             let rest = &src[start..];
             let end = [".output()", ".spawn()", ".status()"]

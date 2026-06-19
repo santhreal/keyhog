@@ -123,6 +123,8 @@ fn live_verify_smoke_real_credentials_yield_exit_10() {
         let out = Command::new(binary())
             .arg("scan")
             .arg("--no-daemon")
+            .arg("--backend")
+            .arg("simd")
             .arg("--verify")
             .arg("--format")
             .arg("json")

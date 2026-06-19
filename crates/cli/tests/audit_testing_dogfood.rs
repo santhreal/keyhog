@@ -25,10 +25,10 @@ fn binary() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
 
-/// A real AWS access key with a valid checksum that the engine fires on at the
-/// default 0.80 confidence (see crates/cli/tests/e2e/scan_planted_aws_exit_one.rs,
-/// which uses the same literal). NOT on the test-fixture suppression list.
-const FIRING_AWS_KEY: &str = "AKIAQYLPMN5HFIQR7XYA";
+/// A generic key/value secret that the entropy scanner reports below 0.99
+/// confidence. This keeps the stream/min-confidence contract non-vacuous now
+/// that AWS and GitHub structured findings are promoted to confidence 1.0.
+const FIRING_LOW_CONFIDENCE_SECRET: &str = "aAbBcCdDeEfFgGhH12345678";
 
 /// Stripe's published docs example secret key. keyhog's bundled test-fixture
 /// suppression list silences this one (it is a tutorial copy, not a leak), so
@@ -48,7 +48,7 @@ fn count_stream_lines(stderr: &str) -> usize {
     stderr.lines().filter(|l| l.contains("[stream]")).count()
 }
 
-/// AUD-testing_dogfood-1a — `--stream` previews a CRITICAL finding that the
+/// AUD-testing_dogfood-1a — `--stream` must not preview a finding that the
 /// `--min-confidence` floor then drops, so the stream lies about the result.
 ///
 /// FINDING: `--stream` is wired to the RAW scanner matches, not to the
@@ -59,12 +59,12 @@ fn count_stream_lines(stderr: &str) -> usize {
 /// which is BEFORE `filter_and_resolve` / `finalize` and the
 /// `--min-confidence` floor in crates/cli/src/orchestrator/run.rs apply.
 ///
-/// EVIDENCE (reproduced against the shipped binary):
+/// Historical evidence (reproduced against the shipped binary):
 ///   $ keyhog scan c.txt --stream --min-confidence 0.99 --format json
-///   stderr: [stream] CRITICAL aws/aws-access-key  c.txt:1  AKIA...7XYA
+///   stderr: [stream] MEDIUM generic/generic-secret  c.txt:1  aAbB...5678
 ///   stdout: []
 ///   exit:   0
-/// A developer (or CI log scraper) watching the stream sees a CRITICAL AWS leak
+/// A developer (or CI log scraper) watching the stream sees a secret
 /// "discovered", but the authoritative report is empty and the tool exits 0
 /// (clean). The `--stream` help calls it "purely a UX hint that the scanner is
 /// making progress"; emitting findings the report disowns is a correctness bug,
@@ -78,21 +78,40 @@ fn count_stream_lines(stderr: &str) -> usize {
 fn stream_preview_must_not_show_findings_dropped_by_min_confidence() {
     let dir = TempDir::new().expect("tempdir");
     let path = dir.path().join("c.txt");
-    std::fs::write(&path, format!("AWS_ACCESS_KEY_ID = \"{FIRING_AWS_KEY}\"\n")).unwrap();
+    std::fs::write(
+        &path,
+        format!("api_key = \"{FIRING_LOW_CONFIDENCE_SECRET}\"\n"),
+    )
+    .unwrap();
 
-    let out = Command::new(binary())
-        .args([
-            "scan",
-            "--no-daemon",
-            "--stream",
-            "--min-confidence",
-            "0.99",
-            "--format",
-            "json",
-        ])
-        .arg(&path)
-        .output()
-        .expect("spawn keyhog scan");
+    let run = |min_confidence: &str| {
+        Command::new(binary())
+            .args([
+                "scan",
+                "--no-daemon",
+                "--backend",
+                "simd",
+                "--stream",
+                "--min-confidence",
+                min_confidence,
+                "--format",
+                "json",
+            ])
+            .arg(&path)
+            .output()
+            .expect("spawn keyhog scan")
+    };
+
+    let control = run("0.40");
+    let control_stdout = String::from_utf8_lossy(&control.stdout);
+    assert_eq!(
+        count_json_findings(&control_stdout),
+        1,
+        "precondition: the fixture must produce one reportable generic-secret finding below the strict floor; stdout={control_stdout:?}; stderr={}",
+        String::from_utf8_lossy(&control.stderr)
+    );
+
+    let out = run("0.99");
 
     let stdout = String::from_utf8_lossy(&out.stdout);
     let stderr = String::from_utf8_lossy(&out.stderr);
@@ -102,7 +121,7 @@ fn stream_preview_must_not_show_findings_dropped_by_min_confidence() {
     assert_eq!(
         count_json_findings(&stdout),
         0,
-        "precondition: --min-confidence 0.99 must suppress the 0.80 AWS finding in the report; stdout={stdout:?}"
+        "precondition: --min-confidence 0.99 must suppress the sub-0.99 generic-secret finding in the report; stdout={stdout:?}"
     );
     assert_eq!(
         out.status.code(),
@@ -111,8 +130,8 @@ fn stream_preview_must_not_show_findings_dropped_by_min_confidence() {
     );
 
     // The defect: the stream contradicts the clean report by previewing the
-    // suppressed finding. This assert FAILS today (stream count == 1) and
-    // PASSES once the stream honors the confidence floor (stream count == 0).
+    // suppressed finding. This assert FAILS if the stream is wired to raw
+    // scanner matches and PASSES when the stream honors the confidence floor.
     assert_eq!(
         count_stream_lines(&stderr),
         0,
@@ -150,7 +169,15 @@ fn stream_preview_must_not_show_test_fixture_suppressed_credential() {
     std::fs::write(&path, format!("stripe_key = \"{STRIPE_DOCS_EXAMPLE}\"\n")).unwrap();
 
     let out = Command::new(binary())
-        .args(["scan", "--no-daemon", "--stream", "--format", "json"])
+        .args([
+            "scan",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--stream",
+            "--format",
+            "json",
+        ])
         .arg(&path)
         .output()
         .expect("spawn keyhog scan");
@@ -190,10 +217,14 @@ fn empty_detector_scan_fails_closed_without_phantom_list_guidance() {
     let empty_detectors = dir.path().join("empty_detectors");
     std::fs::create_dir_all(&empty_detectors).unwrap();
     let target = dir.path().join("c.txt");
-    std::fs::write(&target, format!("{FIRING_AWS_KEY}\n")).unwrap();
+    std::fs::write(
+        &target,
+        format!("api_key = \"{FIRING_LOW_CONFIDENCE_SECRET}\"\n"),
+    )
+    .unwrap();
 
     let scan = Command::new(binary())
-        .args(["scan", "--no-daemon", "-d"])
+        .args(["scan", "--no-daemon", "--backend", "simd", "-d"])
         .arg(&empty_detectors)
         .arg(&target)
         .output()

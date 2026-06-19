@@ -1,47 +1,13 @@
-//! VECTOR 8 (ARCHITECTURE) + VECTOR 9 (WIRING) audit: the daemon scan
-//! route bypasses `.keyhog.toml` policy that the in-process orchestrator
-//! enforces, because the routing decision is made on the RAW CLI args
-//! before the config file is ever read.
+//! VECTOR 8 (ARCHITECTURE) + VECTOR 9 (WIRING) audit: daemon routing must
+//! honor `.keyhog.toml` policy before it decides whether a scan can be served
+//! by the long-lived daemon.
 //!
-//! ROOT CAUSE (single bug, three observable symptoms):
-//!
-//!   `crates/cli/src/subcommands/scan.rs::run` calls `daemon_route(&args)`
-//!   (scan.rs:69) on the un-merged `ScanArgs`. `daemon_route` (scan.rs:97)
-//!   decides whether a scan may be served by the daemon by inspecting the
-//!   CLI flags only:
-//!
-//!       if args.lockdown || args.show_secrets || args.severity.is_some()
-//!           || args.min_confidence.is_some() || args.hide_client_safe
-//!       { return DaemonRoute::Forbidden; }      // scan.rs:144-157
-//!
-//!   The `.keyhog.toml` merge (`config::apply_config_file`, invoked via
-//!   `orchestrator_config::resolve_scan_config`) runs LATER, and ONLY on
-//!   the in-process path inside `ScanOrchestrator::new`
-//!   (orchestrator/mod.rs:78). So when a `.keyhog.toml` sets a policy via
-//!   the config file rather than a CLI flag, `daemon_route` never sees it:
-//!     * `min_confidence` from `.keyhog.toml` -> `args.min_confidence` is
-//!       still `None` at routing time -> the route is NOT forbidden -> the
-//!       daemon's `finalize_for_report` (scan.rs:283) applies NO confidence
-//!       floor at all (it has no `min_confidence` branch). Findings the
-//!       operator's config says to suppress are surfaced.
-//!     * `[lockdown] require = true` -> `effective_config.require_lockdown`
-//!       is only checked in `ScanOrchestrator::new` (orchestrator/mod.rs:89,
-//!       a fail-closed `bail!`). The daemon route never builds the
-//!       orchestrator, so the fail-closed security control is silently
-//!       defeated and the scan runs unprotected.
-//!
-//!   Net effect: scan RESULTS and a SECURITY GUARD both change purely on
-//!   whether a `keyhog daemon` happens to be live (the opportunistic route
-//!   in scan.rs:163 turns on merely because a socket exists). That is a
-//!   coherence + wiring violation: identical inputs, divergent behavior.
-//!
-//! These tests are the documented failing oracles. Each runs the REAL
-//! `keyhog` binary, starting an isolated daemon, and scans one planted
-//! fixture once in-process (`--no-daemon`, the correct reference behavior)
-//! and once over the daemon (`--daemon`), asserting PARITY. They FAIL today
-//! (the daemon route diverges) and will PASS once `daemon_route` consults
-//! the merged config (or `run()` merges config before routing) so a
-//! config-mandated floor / lockdown-require forces the in-process path.
+//! The daemon can only serve a narrow scanner-match route. Config-driven
+//! confidence floors, lockdown requirements, secret-output policy, allowlist
+//! governance, and similar per-request policy must either stay in-process or
+//! fail closed when the operator forced `--daemon=on`. These tests start an
+//! isolated daemon and prove forced daemon scans reject policy the daemon cannot
+//! enforce instead of silently changing results.
 //!
 //! Existing `regression_daemon_suppression_parity.rs` covers `.keyhogignore`
 //! / inline-ignore / `.keyhogignore.toml` parity; it does NOT cover
@@ -52,8 +18,10 @@
 
 #![cfg(unix)]
 
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 
 use tempfile::TempDir;
@@ -74,42 +42,93 @@ fn workspace_detectors() -> PathBuf {
         .expect("workspace detectors dir")
 }
 
-/// A planted AWS access key: `AKIA` + 16 base32 chars is the canonical AWS
-/// key shape every keyhog build detects at ~0.8 confidence. Split across a
-/// concat so this source file itself does not trip a self-scan. 0.8 sits
-/// ABOVE the default 0.40 floor (so it is normally reported) but BELOW the
-/// 0.99 floor the test's `.keyhog.toml` sets — that gap is what the floor
-/// test exercises.
+fn daemon_slot() -> MutexGuard<'static, ()> {
+    static DAEMON_SLOT: OnceLock<Mutex<()>> = OnceLock::new();
+    DAEMON_SLOT
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+fn test_cache_root() -> &'static TempDir {
+    static CACHE_ROOT: OnceLock<TempDir> = OnceLock::new();
+    CACHE_ROOT.get_or_init(|| {
+        let uid = unsafe { libc::geteuid() };
+        let allowed_root = std::env::temp_dir().join(format!("keyhog-cache-{uid}"));
+        std::fs::create_dir_all(&allowed_root).expect("allowed daemon cache root");
+        std::fs::set_permissions(&allowed_root, std::fs::Permissions::from_mode(0o700))
+            .expect("private allowed daemon cache root");
+        let dir = tempfile::Builder::new()
+            .prefix("audit-arch-wiring-")
+            .tempdir_in(&allowed_root)
+            .expect("daemon cache root");
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o700))
+            .expect("private daemon cache root");
+        std::fs::create_dir_all(dir.path().join("xdg")).expect("daemon xdg cache dir");
+        std::fs::create_dir_all(dir.path().join("hyperscan")).expect("daemon hyperscan cache dir");
+        dir
+    })
+}
+
+fn test_xdg_cache_home() -> PathBuf {
+    test_cache_root().path().join("xdg")
+}
+
+fn test_hyperscan_cache_dir() -> PathBuf {
+    test_cache_root().path().join("hyperscan")
+}
+
+/// A planted AWS access key used by lockdown/show-secrets tests. Split across
+/// a concat so this source file itself does not trip a self-scan.
 fn planted_secret() -> String {
     concat!("AKIA", "QYLPMN5HFIQR7XYA").to_string()
 }
+
+/// A generic key/value secret that reports below a 0.99 confidence floor.
+const LOW_CONFIDENCE_SECRET: &str = "aAbBcCdDeEfFgGhH12345678";
 
 /// Isolated daemon with its own `XDG_RUNTIME_DIR`, so `default_socket_path()`
 /// (used by both `daemon start` and `scan --daemon`) resolves to a per-test
 /// socket and never collides with a real user daemon.
 struct Daemon {
+    _slot: MutexGuard<'static, ()>,
     child: Child,
     runtime_dir: TempDir,
+    xdg_cache_home: PathBuf,
+    hyperscan_cache_dir: PathBuf,
     socket: PathBuf,
 }
 
 impl Daemon {
     fn start() -> Daemon {
+        let slot = daemon_slot();
         let runtime_dir = TempDir::new().expect("runtime tempdir");
+        std::fs::set_permissions(runtime_dir.path(), std::fs::Permissions::from_mode(0o700))
+            .expect("private runtime tempdir");
+        let xdg_cache_home = test_xdg_cache_home();
+        let hyperscan_cache_dir = test_hyperscan_cache_dir();
         let socket = runtime_dir.path().join("keyhog.sock");
 
         let child = Command::new(binary())
             .arg("daemon")
             .arg("start")
             .env("XDG_RUNTIME_DIR", runtime_dir.path())
+            .env("XDG_CACHE_HOME", &xdg_cache_home)
             .arg("--detectors")
             .arg(workspace_detectors())
+            .arg("--cache-dir")
+            .arg(&hyperscan_cache_dir)
+            .arg("--backend")
+            .arg("simd")
             .spawn()
             .expect("spawn keyhog daemon start");
 
-        let daemon = Daemon {
+        let mut daemon = Daemon {
+            _slot: slot,
             child,
             runtime_dir,
+            xdg_cache_home,
+            hyperscan_cache_dir,
             socket,
         };
         daemon.wait_until_ready();
@@ -123,13 +142,20 @@ impl Daemon {
     /// Poll `daemon status` until it answers (the compiled scanner takes a
     /// beat to warm). Fails loudly on timeout so a broken daemon can never
     /// masquerade as a clean parity result.
-    fn wait_until_ready(&self) {
-        let deadline = Instant::now() + Duration::from_secs(60);
+    fn wait_until_ready(&mut self) {
+        let deadline = Instant::now() + Duration::from_secs(180);
         loop {
+            if let Some(status) = self.child.try_wait().expect("poll daemon startup") {
+                panic!(
+                    "daemon exited before becoming ready; status={:?}",
+                    status.code()
+                );
+            }
             let status = Command::new(binary())
                 .arg("daemon")
                 .arg("status")
                 .env("XDG_RUNTIME_DIR", self.runtime_dir.path())
+                .env("XDG_CACHE_HOME", &self.xdg_cache_home)
                 .arg("--socket")
                 .arg(&self.socket)
                 .output()
@@ -139,7 +165,7 @@ impl Daemon {
             }
             if Instant::now() >= deadline {
                 panic!(
-                    "daemon never became ready within 60s; status stderr={}",
+                    "daemon never became ready within 180s; status stderr={}",
                     String::from_utf8_lossy(&status.stderr)
                 );
             }
@@ -154,6 +180,7 @@ impl Drop for Daemon {
             .arg("daemon")
             .arg("stop")
             .env("XDG_RUNTIME_DIR", self.runtime_dir.path())
+            .env("XDG_CACHE_HOME", &self.xdg_cache_home)
             .arg("--socket")
             .arg(&self.socket)
             .output();
@@ -177,15 +204,20 @@ struct ScanRun {
 /// fixture's `.keyhog.toml`, which is precisely the surface `daemon_route`
 /// fails to consult.
 fn scan(daemon: &Daemon, abs_path: &Path, route_flag: &str) -> ScanRun {
-    let output = Command::new(binary())
+    let mut command = Command::new(binary());
+    command
         .arg("scan")
         .arg(route_flag)
         .arg("--format")
         .arg("json")
+        .arg("--backend")
+        .arg("simd")
         .env("XDG_RUNTIME_DIR", daemon.runtime_dir())
-        .arg(abs_path)
-        .output()
-        .expect("spawn keyhog scan");
+        .env("XDG_CACHE_HOME", &daemon.xdg_cache_home);
+    if route_flag == "--no-daemon" {
+        command.arg("--cache-dir").arg(&daemon.hyperscan_cache_dir);
+    }
+    let output = command.arg(abs_path).output().expect("spawn keyhog scan");
     ScanRun {
         exit_code: output.status.code(),
         stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
@@ -209,66 +241,32 @@ fn findings(run: &ScanRun, label: &str) -> Vec<serde_json::Value> {
         .clone()
 }
 
-/// True when at least one finding is the planted AWS key (named detector or
-/// the `hot-aws_key` fast path).
-fn has_aws_finding(findings: &[serde_json::Value]) -> bool {
-    findings.iter().any(|f| {
-        matches!(
-            f.get("detector_id").and_then(|v| v.as_str()),
-            Some("aws-access-key") | Some("hot-aws_key")
-        )
-    })
-}
-
 fn write_fixture(dir: &Path, name: &str, content: &str) -> PathBuf {
     let path = dir.join(name);
     std::fs::write(&path, content).expect("write fixture");
     path
 }
 
-/// AUD-arch_wiring-1 — `.keyhog.toml` `min_confidence` is bypassed by the
-/// daemon route.
-///
-/// Finding: `crates/cli/src/subcommands/scan.rs:147` forbids the daemon
-/// route only when `args.min_confidence.is_some()` (the CLI flag). A floor
-/// set in `.keyhog.toml` is merged into `args.min_confidence` by
-/// `config::apply_config_file` (config.rs:362-364) — but that merge runs
-/// inside `ScanOrchestrator::new`, AFTER `daemon_route`. The daemon's
-/// `finalize_for_report` (scan.rs:283) has no confidence-floor stage at all,
-/// while the in-process `filter_and_resolve` always applies the resolved
-/// floor (orchestrator/postprocess.rs:161).
-///
-/// Reference behavior (`--no-daemon`): a 0.8-confidence finding under a
-/// `.keyhog.toml` floor of 0.99 is suppressed -> empty array, exit 0.
-/// Buggy behavior (`--daemon`): the finding surfaces -> non-empty array,
-/// exit 1. This test asserts the two routes AGREE (parity). It FAILS today
-/// because the daemon route reports the finding the config floor forbids.
-///
-/// Expected fix: `daemon_route` must consult the merged config (or `run()`
-/// must merge config before routing) and force the in-process path whenever
-/// the effective `min_confidence` floor is in play, so the floor is honored
-/// regardless of whether a daemon is live.
+/// AUD-arch_wiring-1 — `.keyhog.toml` `min_confidence` must be considered
+/// before a forced daemon route is accepted.
 #[test]
 fn daemon_route_honors_config_min_confidence_floor() {
     let daemon = Daemon::start();
     let work = TempDir::new().expect("work tempdir");
 
-    // Floor of 0.99 sits above the planted key's ~0.8 confidence: a
-    // policy-compliant scan must drop it.
     write_fixture(work.path(), ".keyhog.toml", "min_confidence = 0.99\n");
-    let secret = planted_secret();
     let path = write_fixture(
         work.path(),
         "config.txt",
-        &format!("aws_key = \"{secret}\"\n"),
+        &format!("api_key = \"{LOW_CONFIDENCE_SECRET}\"\n"),
     );
 
     // Reference: in-process honors the config floor and suppresses.
     let in_process = scan(&daemon, &path, "--no-daemon");
     let in_process_findings = findings(&in_process, "in-process(--no-daemon)");
     assert!(
-        !has_aws_finding(&in_process_findings),
-        "control: in-process path must suppress the 0.8-confidence key under a \
+        in_process_findings.is_empty(),
+        "control: in-process path must suppress the sub-0.99 generic secret under a \
          .keyhog.toml min_confidence=0.99 floor; got {in_process_findings:?}"
     );
     assert_eq!(
@@ -279,20 +277,20 @@ fn daemon_route_honors_config_min_confidence_floor() {
         in_process.stderr
     );
 
-    // Under test: the daemon route MUST reach the same suppressed result.
+    // Under test: forced daemon must fail closed because it cannot enforce the
+    // confidence floor itself.
     let via_daemon = scan(&daemon, &path, "--daemon");
-    let daemon_findings = findings(&via_daemon, "daemon(--daemon)");
-    assert!(
-        !has_aws_finding(&daemon_findings),
-        "BUG: daemon route ignored the .keyhog.toml min_confidence=0.99 floor and \
-         surfaced a 0.8-confidence finding the in-process path suppressed \
-         (results change purely because a daemon is running). daemon={daemon_findings:?}"
-    );
     assert_eq!(
-        via_daemon.exit_code, in_process.exit_code,
-        "daemon route exit code must match in-process under a config min_confidence \
-         floor; daemon stdout={:?} stderr={:?}",
+        via_daemon.exit_code,
+        Some(2),
+        "forced daemon route must fail closed under config min_confidence policy; stdout={:?} stderr={:?}",
         via_daemon.stdout, via_daemon.stderr
+    );
+    assert!(
+        via_daemon.stderr.contains("--daemon=on cannot be honored")
+            && via_daemon.stderr.contains("config policy"),
+        "forced daemon rejection must explain that config policy cannot be honored; stderr={:?}",
+        via_daemon.stderr
     );
 }
 
@@ -368,24 +366,8 @@ fn daemon_route_enforces_config_lockdown_require() {
     );
 }
 
-/// AUD-arch_wiring-3 — `show_secrets = true` from `.keyhog.toml` produces
-/// different OUTPUT over the daemon route than in-process.
-///
-/// Finding: same root cause. `config::apply_config_file` merges
-/// `.keyhog.toml` `show_secrets` into `args.show_secrets`, but only inside
-/// the orchestrator. `daemon_route` (scan.rs:145) forbids the daemon path
-/// only when the `args.show_secrets` CLI flag is set; the config-file value
-/// is invisible at routing time. The in-process path then prints the full
-/// credential, while the daemon's `finalize_for_report` (scan.rs:375)
-/// redacts it — the operator's documented config silently changes the output
-/// based on whether a daemon is live.
-///
-/// This test asserts the redacted/plaintext rendering is the SAME on both
-/// routes. It FAILS today (in-process shows the full key; daemon redacts).
-///
-/// Expected fix: as above — config-driven `show_secrets` must force the
-/// in-process path (or the daemon route must honor it), so credential
-/// rendering does not depend on daemon presence.
+/// AUD-arch_wiring-3 — `show_secrets = true` from `.keyhog.toml` must not be
+/// served by a forced daemon route that would redact differently.
 #[test]
 fn daemon_route_honors_config_show_secrets() {
     let daemon = Daemon::start();
@@ -425,14 +407,19 @@ fn daemon_route_honors_config_show_secrets() {
          .keyhog.toml show_secrets=true; got {in_process_cred:?}"
     );
 
-    // Under test: the daemon route must render the credential identically.
+    // Under test: forced daemon must reject the route instead of rendering a
+    // different redacted value.
     let via_daemon = scan(&daemon, &path, "--daemon");
-    let daemon_cred = rendered(&via_daemon, "daemon(--daemon)");
     assert_eq!(
-        daemon_cred, in_process_cred,
-        "BUG: daemon route ignored .keyhog.toml show_secrets=true and redacted the \
-         credential while the in-process path printed it in full \
-         (output changes purely because a daemon is running). \
-         daemon={daemon_cred:?} in_process={in_process_cred:?}"
+        via_daemon.exit_code,
+        Some(2),
+        "forced daemon route must fail closed under config show_secrets policy; stdout={:?} stderr={:?}",
+        via_daemon.stdout, via_daemon.stderr
+    );
+    assert!(
+        via_daemon.stderr.contains("--daemon=on cannot be honored")
+            && via_daemon.stderr.contains("secret-output"),
+        "forced daemon rejection must explain that secret-output policy cannot be honored; stderr={:?}",
+        via_daemon.stderr
     );
 }

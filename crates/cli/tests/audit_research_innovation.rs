@@ -79,10 +79,13 @@ fn write_fixture(name: &str, contents: &str) -> PathBuf {
     file
 }
 
-/// Run `keyhog scan <path> --format json` and parse the JSON array.
+/// Run `keyhog scan <path> --format json` through a diagnostic backend and parse the JSON array.
 fn scan_json(path: &PathBuf) -> serde_json::Value {
     let output = Command::new(binary())
         .arg("scan")
+        .arg("--no-daemon")
+        .arg("--backend")
+        .arg("simd")
         .arg(path)
         .arg("--format")
         .arg("json")
@@ -179,8 +182,10 @@ fn aws_canary_token_is_flagged_so_it_is_not_verified() {
 /// specifically the `alg_none` security anomaly. Today the token is detected but
 /// metadata is empty, so this fails.
 ///
-/// Token below = base64url({"alg":"none","typ":"JWT"}).{payload}.{dummy-sig}, a
-/// realistic forged unsigned JWT.
+/// Token below = base64url({"alg":"none","typ":"JWT"}).{payload}.{signature},
+/// a realistic forged unsigned JWT carrying a normal base64url signature-shaped
+/// segment so the test proves JWT analysis wiring rather than a weak synthetic
+/// signature edge.
 #[test]
 fn forged_alg_none_jwt_surfaces_security_anomaly_metadata() {
     // header {"alg":"none","typ":"JWT"} -> eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0
@@ -189,7 +194,7 @@ fn forged_alg_none_jwt_surfaces_security_anomaly_metadata() {
         "eyJhbGciOiJub25lIiwidHlwIjoiSldUIn0",
         ".eyJzdWIiOiJhZG1pbiIsIm5hbWUiOiJhdHRhY2tlciIsImlzcyI6Imh0dHBzOi8v",
         "YWNjb3VudHMuZXhhbXBsZS5jb20iLCJleHAiOjk5OTk5OTk5OTl9",
-        ".aaaaaaaaaaXXXXXXXXXX"
+        ".dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"
     );
     let path = write_fixture("jwt_alg_none", &format!("Authorization: Bearer {token}\n"));
     let json = scan_json(&path);

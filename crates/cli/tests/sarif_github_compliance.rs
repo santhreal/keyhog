@@ -36,7 +36,15 @@ fn sarif_is_github_code_scanning_compliant() {
     // Run FROM the repo root, like the Action (`cd $repo && keyhog scan .`).
     let out = Command::new(binary())
         .current_dir(dir.path())
-        .args(["scan", ".", "--no-daemon", "--format", "sarif"])
+        .args([
+            "scan",
+            ".",
+            "--no-daemon",
+            "--backend",
+            "simd",
+            "--format",
+            "sarif",
+        ])
         .output()
         .expect("spawn keyhog scan");
     let stdout = String::from_utf8_lossy(&out.stdout);
