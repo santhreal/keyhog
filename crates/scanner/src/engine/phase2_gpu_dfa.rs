@@ -104,24 +104,31 @@ impl Phase2GpuDfaCatalog {
         always_active_indices: &[usize],
         program_kind: Phase2GpuDfaProgramKind,
     ) -> Option<Self> {
-        let all_candidates: Vec<usize> = always_active_indices
-            .iter()
-            .copied()
-            .filter(|&idx| {
-                phase2_patterns.get(idx).is_some_and(|(pattern, _)| {
-                    gate_prefix_literals(pattern.regex.as_str()).is_none()
-                })
-            })
-            .collect();
+        let all_candidates =
+            prefixless_always_active_candidates(phase2_patterns, always_active_indices);
         let selected_len = all_candidates.len().min(PHASE2_GPU_DFA_MAX_CANDIDATES);
         let candidates = &all_candidates[..selected_len];
+        Self::build_from_selected_candidates(
+            phase2_patterns,
+            all_candidates.len(),
+            candidates,
+            program_kind,
+        )
+    }
+
+    fn build_from_selected_candidates(
+        phase2_patterns: &[(CompiledPattern, Vec<String>)],
+        all_candidate_count: usize,
+        candidates: &[usize],
+        program_kind: Phase2GpuDfaProgramKind,
+    ) -> Option<Self> {
         if candidates.is_empty() {
             return None;
         }
 
         let use_subgroup_coalesce = program_kind.use_subgroup_coalesce();
         let mut shards = Vec::new();
-        let mut uncovered_patterns = all_candidates.len().saturating_sub(candidates.len());
+        let mut uncovered_patterns = all_candidate_count.saturating_sub(candidates.len());
         if uncovered_patterns > 0 {
             tracing::warn!(
                 target: "keyhog::gpu",
@@ -144,7 +151,7 @@ impl Phase2GpuDfaCatalog {
         if shards.is_empty() {
             tracing::warn!(
                 target: "keyhog::gpu",
-                candidates = all_candidates.len(),
+                candidates = all_candidate_count,
                 "phase-2 GPU regex-DFA admission has no lowerable prefixless always-active pattern; CPU admission remains authoritative"
             );
             return None;
@@ -221,6 +228,21 @@ impl Phase2GpuDfaCatalog {
             matches_seen,
         })
     }
+}
+
+fn prefixless_always_active_candidates(
+    phase2_patterns: &[(CompiledPattern, Vec<String>)],
+    always_active_indices: &[usize],
+) -> Vec<usize> {
+    always_active_indices
+        .iter()
+        .copied()
+        .filter(|&idx| {
+            phase2_patterns
+                .get(idx)
+                .is_some_and(|(pattern, _)| gate_prefix_literals(pattern.regex.as_str()).is_none())
+        })
+        .collect()
 }
 
 impl Phase2GpuDfaCatalogCache {
@@ -601,5 +623,48 @@ mod tests {
         );
         assert!(!Phase2GpuDfaProgramKind::CudaCompatible.use_subgroup_coalesce());
         assert!(Phase2GpuDfaProgramKind::SubgroupCoalesced.use_subgroup_coalesce());
+    }
+
+    #[test]
+    fn embedded_detector_set_builds_real_gpu_dfa_catalog_slice() {
+        let detectors = keyhog_core::load_embedded_detectors_or_fail()
+            .expect("embedded detector corpus must parse");
+        let scanner =
+            CompiledScanner::compile_with_gpu_policy(detectors, GpuInitPolicy::ForceDisabled)
+                .expect("embedded detector corpus must compile without GPU acquisition");
+        let candidates = prefixless_always_active_candidates(
+            &scanner.phase2_patterns,
+            &scanner.phase2_always_active_indices,
+        );
+        assert!(
+            !candidates.is_empty(),
+            "embedded detector corpus must include prefixless always-active phase-2 candidates \
+             for KH-VYRE-5 GPU regex-DFA coverage"
+        );
+        let selected_len = candidates.len().min(8);
+        let catalog = Phase2GpuDfaCatalog::build_from_selected_candidates(
+            &scanner.phase2_patterns,
+            candidates.len(),
+            &candidates[..selected_len],
+            Phase2GpuDfaProgramKind::CudaCompatible,
+        )
+        .expect("selected embedded prefixless phase-2 candidates must lower to at least one GPU DFA shard");
+        let covered: usize = catalog
+            .shards
+            .iter()
+            .map(|shard| shard.phase2_indices.len())
+            .sum();
+        assert!(
+            covered > 0,
+            "selected embedded prefixless phase-2 candidates produced no GPU DFA coverage"
+        );
+        assert!(
+            covered <= selected_len,
+            "GPU DFA catalog covered more patterns than selected: covered={covered}, selected={selected_len}"
+        );
+        assert!(
+            catalog.uncovered_patterns + covered >= candidates.len(),
+            "uncovered/covered accounting must include the full embedded prefixless candidate set"
+        );
     }
 }
