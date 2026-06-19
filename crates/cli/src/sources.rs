@@ -49,60 +49,7 @@ pub(crate) fn build_sources(
     let merged_ignore_paths = merge_scan_ignore_paths(args, ignore_paths);
 
     if let Some(ref path) = args.path {
-        // Existence + readability pre-flight. The codewalk-driven
-        // walker swallows missing-path and permission-denied errors as
-        // per-entry warns, then declares "no findings" with exit 0.
-        // Per the documented exit-code contract these are runtime
-        // errors (exit 2). Catch them here so the user gets the right
-        // signal. kimi-dogfood-3 #137.
-        match std::fs::metadata(path) {
-            Ok(meta) => {
-                // Readability probe: for a regular file, try open();
-                // for a directory, the walk will surface per-entry
-                // permission denied warns and a missing/permission-
-                // denied root directory will fail the walker init.
-                if meta.is_file() {
-                    if let Err(e) = std::fs::File::open(path) {
-                        anyhow::bail!(
-                            "cannot read '{}': {}. Fix file permissions (`chmod +r {}`) and re-run.",
-                            path.display(),
-                            e,
-                            path.display()
-                        );
-                    }
-                }
-            }
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                anyhow::bail!(
-                    "path '{}' does not exist. Check the spelling and re-run.",
-                    path.display()
-                );
-            }
-            Err(e) => {
-                anyhow::bail!(
-                    "cannot stat '{}': {}. Likely a permissions or filesystem issue.",
-                    path.display(),
-                    e
-                );
-            }
-        }
-
-        // Non-UTF-8 path pre-flight. On Unix, `PathBuf` carries raw
-        // OsString bytes; codewalk stringifies the path for error
-        // reporting and loses the original bytes - the user sees a
-        // confusing `No such file or directory (os error 2)` from
-        // `stat()` on a garbled string, even though the file exists.
-        // Catch the case at CLI boundary so the message points at
-        // filename encoding, not at a missing-file rabbit hole.
-        // kimi-dogfood-2 #134.
-        if path.exists() && path.to_str().is_none() {
-            anyhow::bail!(
-                "path '{}' has a non-UTF-8 filename. keyhog requires UTF-8 paths so detection \
-                 output stays valid JSON. Rename the file (e.g. `convmv -f latin1 -t utf8 --notest`) \
-                 or scan its parent directory instead.",
-                path.display()
-            );
-        }
+        crate::path_validation::validate_cli_path_arg(path, "scan path")?;
         let mut fs_source = keyhog_sources::FilesystemSource::new(path.clone())
             .with_ignore_paths(merged_ignore_paths)
             // Default excludes are source-owned. `--no-default-excludes` must
