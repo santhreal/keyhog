@@ -401,7 +401,8 @@ pub(crate) fn run(args: ScanSystemArgs) -> Result<ExitCode> {
         // (converted per chunk), so no plaintext can reach disk here.
         // See kimi-wave1 audit finding 2.1.
         let json = serde_json::to_string_pretty(&sink.redacted).context("serialize findings")?;
-        std::fs::write(out, json).with_context(|| format!("write {}", out.display()))?;
+        crate::atomic_file::write_bytes(out, json.as_bytes())
+            .with_context(|| format!("atomically writing {}", out.display()))?;
         let palette = style::for_stderr();
         eprintln!(
             "{} wrote findings to {}",

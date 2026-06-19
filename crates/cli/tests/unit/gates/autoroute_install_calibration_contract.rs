@@ -28,6 +28,9 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
         ))
         .expect("autoroute cache path source readable"),
     );
+    let atomic_file =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/atomic_file.rs"))
+            .expect("atomic file source readable");
     let install_sh =
         std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/../../install.sh"))
             .expect("install.sh readable");
@@ -191,9 +194,10 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
         backend.contains("AUTOROUTE_CALIBRATION_TRIALS")
             && backend.contains("measure_reference_simd")
             && backend.contains("measure_candidate_backend")
-            && backend.contains("tempfile::NamedTempFile::new_in(parent)")
-            && backend.contains("tmp.as_file().sync_all()")
-            && backend.contains("tmp.persist(path)")
+            && backend.contains("crate::atomic_file::write_bytes(path, &serialized)")
+            && atomic_file.contains("tempfile::NamedTempFile::new_in(parent)")
+            && atomic_file.contains("tmp.as_file().sync_all()")
+            && atomic_file.contains("tmp.persist(path)")
             && backend.contains("backend rejected by autoroute parity check")
             && backend.contains("autoroute cache ignored")
             && backend.contains("scan config digest mismatch")

@@ -287,8 +287,8 @@ fn run_fix(args: &DetectorArgs) -> Result<ExitCode> {
                 count
             );
         } else {
-            atomic_write(&entry, &rewritten)
-                .with_context(|| format!("writing fixed {}", entry.display()))?;
+            crate::atomic_file::write_bytes(&entry, rewritten.as_bytes())
+                .with_context(|| format!("atomically writing fixed {}", entry.display()))?;
             println!("fixed {}: {} rewrite(s)", entry.display(), count);
         }
     }
@@ -320,27 +320,6 @@ fn list_toml_files(dir: &Path) -> Result<Vec<PathBuf>> {
     }
     out.sort();
     Ok(out)
-}
-
-/// Atomic file replace: write the new content into a tempfile in the same
-/// directory, fsync, then rename onto the target. A crash mid-write
-/// leaves the original file intact rather than truncating it.
-fn atomic_write(path: &Path, content: &str) -> Result<()> {
-    let parent = path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new(".")); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
-    let tmp = tempfile::NamedTempFile::new_in(parent)
-        .with_context(|| format!("creating tempfile in {}", parent.display()))?;
-    {
-        use std::io::Write;
-        let mut handle = tmp.as_file();
-        handle.write_all(content.as_bytes())?;
-        handle.flush()?;
-        handle.sync_all()?;
-    }
-    tmp.persist(path).map_err(|e| e.error)?;
-    Ok(())
 }
 
 fn print_detector_verbose(d: &DetectorSpec) {

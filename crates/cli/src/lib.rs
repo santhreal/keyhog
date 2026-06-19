@@ -361,6 +361,7 @@ fn print_version_info(full: bool) {
 }
 
 pub mod args;
+pub(crate) mod atomic_file;
 pub(crate) mod autoroute_cache_path;
 pub(crate) mod backend_env;
 pub(crate) mod baseline;

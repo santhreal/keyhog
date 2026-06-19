@@ -129,13 +129,7 @@ fn save_detector_cache(
         source_fingerprint,
         detectors: detectors.to_vec(),
     })?;
-    let parent = cache_path.parent().unwrap_or_else(|| Path::new(".")); // LAW10: cache path with no parent => current dir fallback before create_dir_all; cache write only, scan reparses source on failure
-    std::fs::create_dir_all(parent)?;
-    let mut tmp = tempfile::NamedTempFile::new_in(parent)?;
-    std::io::Write::write_all(&mut tmp, &json)?;
-    tmp.as_file().sync_all()?;
-    tmp.persist(cache_path).map_err(|e| e.error)?;
-    Ok(())
+    crate::atomic_file::write_bytes(cache_path, &json)
 }
 
 fn load_detector_cache(cache_path: &Path, source_dir: &Path) -> Option<Vec<DetectorSpec>> {

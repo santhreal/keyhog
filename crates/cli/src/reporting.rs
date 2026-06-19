@@ -37,37 +37,12 @@ pub(crate) fn report_findings_with_metadata(
     metadata: &ReportMetadata,
 ) -> Result<()> {
     if let Some(ref path) = args.output {
-        // Atomic-write the report file. A partial SARIF/JSON output
-        // breaks downstream tooling (GitHub code scanning rejects
-        // malformed SARIF; CI gates fail to parse JSON). Write to
-        // a NamedTempFile in the target directory, let the reporter
-        // flush + finish, then atomic-rename. If keyhog crashes
-        // mid-report (panic, OOM, kill), the user's previous
-        // report file is untouched and the tmp gets reaped by Drop.
-        let parent = path
-            .parent()
-            .filter(|p| !p.as_os_str().is_empty())
-            .unwrap_or_else(|| std::path::Path::new(".")); // LAW10: no parent/unresolved path => '.' (current dir), intended path default; recall-safe
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("creating output parent dir {}", parent.display()))?;
-        let tmp = tempfile::NamedTempFile::new_in(parent)
-            .with_context(|| format!("creating output tmp in {}", parent.display()))?;
-        let writer_handle = tmp
-            .reopen()
-            .with_context(|| format!("reopening output tmp for write of {}", path.display()))?;
-        let w = io::BufWriter::new(writer_handle);
-        report_with(w, &args.format, false, findings, metadata)?;
-        // BufWriter is dropped inside report_with's flush path;
-        // sync the tempfile's backing file before atomic rename so
-        // a crash between persist and the next fsync of the parent
-        // dir doesn't lose data on filesystems with delayed
-        // metadata writeback.
-        tmp.as_file()
-            .sync_all()
-            .with_context(|| format!("fsyncing output tmp for {}", path.display()))?;
-        tmp.persist(path)
-            .map_err(|e| e.error)
-            .with_context(|| format!("renaming output tmp onto {}", path.display()))?;
+        crate::atomic_file::write_with_file(path, |writer_handle| {
+            let w = io::BufWriter::new(writer_handle);
+            report_with(w, &args.format, false, findings, metadata)
+                .map_err(|error| io::Error::other(format!("{error:#}")))
+        })
+        .with_context(|| format!("atomically writing report {}", path.display()))?;
         Ok(())
     } else {
         let w = io::BufWriter::new(io::stdout());

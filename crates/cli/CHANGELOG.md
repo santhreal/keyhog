@@ -5,6 +5,8 @@
 - Replace autoroute cache writes through a synced same-directory temporary file
   so recalibration atomically replaces an existing cache path across supported
   operating systems.
+- Route CLI report/cache writes through one atomic file replacement helper,
+  including `scan-system --output`, to avoid truncated final-path artifacts.
 - Refuse autoroute calibration on empty or zero-byte samples before timing so
   calibration cannot persist route decisions that the cache loader would later
   reject as missing sample evidence.

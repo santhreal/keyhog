@@ -164,3 +164,30 @@ fn macos_scan_system_mount_enumeration_does_not_fall_back_to_path() {
         "trusted mount resolution failure must tell the operator how to configure a non-standard mount path"
     );
 }
+
+#[test]
+fn scan_system_output_uses_atomic_file_writer() {
+    let scan_system = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/subcommands/scan_system.rs"
+    ))
+    .expect("scan-system source readable");
+    let atomic_file =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/atomic_file.rs"))
+            .expect("atomic file source readable");
+
+    assert!(
+        scan_system.contains("crate::atomic_file::write_bytes(out, json.as_bytes())"),
+        "scan-system --output must use the shared atomic writer"
+    );
+    assert!(
+        !scan_system.contains("std::fs::write(out"),
+        "scan-system --output must not truncate/write the final report path directly"
+    );
+    assert!(
+        atomic_file.contains("tempfile::NamedTempFile::new_in(parent)")
+            && atomic_file.contains("tmp.as_file().sync_all()")
+            && atomic_file.contains("tmp.persist(path)"),
+        "shared CLI output writer must write a same-directory temp file, sync it, then persist over the target"
+    );
+}
