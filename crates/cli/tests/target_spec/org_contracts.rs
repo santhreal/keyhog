@@ -657,6 +657,38 @@ fn org_run_all_references_org_audit_and_named_gates() {
 }
 
 #[test]
+fn org_audit_rejects_generated_cache_clutter() {
+    let root = repo_root();
+    let audit = read(&root.join("scripts/org_audit.py"));
+    let run_all = read(&root.join("scripts/gates/run_all.sh"));
+
+    for required in [
+        "check_no_generated_cache_clutter(violations)",
+        "GENERATED_CACHE_DIRS",
+        "GENERATED_CACHE_GLOBS",
+        "generated cache clutter remains",
+        ".pytest_cache",
+        "benchmarks/.pytest_cache",
+        "tools/secretbench/scoring/.pytest_cache",
+        "crates/cli/.cache",
+        "benchmarks/**/__pycache__",
+        "ml/__pycache__",
+        "scripts/**/__pycache__",
+        "tools/**/__pycache__",
+    ] {
+        assert!(
+            audit.contains(required),
+            "ORG GAP [cache-clutter]: scripts/org_audit.py must reject generated cache clutter path/pattern `{required}`"
+        );
+    }
+
+    assert!(
+        run_all.contains("PYTHONDONTWRITEBYTECODE=1"),
+        "ORG GAP [cache-clutter]: scripts/gates/run_all.sh must disable Python bytecode cache writes"
+    );
+}
+
+#[test]
 fn org_silent_fallback_baseline_is_empty_and_shrink_only() {
     let root = repo_root();
     let baseline = read(&root.join("scripts/gates/silent_fallback_baseline.txt"));

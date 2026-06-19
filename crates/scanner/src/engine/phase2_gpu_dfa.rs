@@ -363,19 +363,6 @@ impl Phase2GpuDfaCatalogCache {
     }
 }
 
-impl CompiledScanner {
-    pub(crate) fn phase2_gpu_dfa_catalog(
-        &self,
-        backend_id: Option<&'static str>,
-    ) -> Option<&Phase2GpuDfaCatalog> {
-        self.phase2_gpu_dfa.catalog(
-            &self.phase2_patterns,
-            &self.phase2_always_active_indices,
-            backend_id,
-        )
-    }
-}
-
 impl Phase2GpuDfaShard {
     fn scan_admission_into(
         &self,

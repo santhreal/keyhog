@@ -1,10 +1,10 @@
 #[test]
 fn per_chunk_gpu_presence_reuses_and_zeroes_scratch() {
-    let lazy_src = std::fs::read_to_string(concat!(
+    let scratch_src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/src/engine/gpu_lazy.rs"
+        "/src/engine/gpu_literal_scratch.rs"
     ))
-    .expect("gpu_lazy.rs readable");
+    .expect("gpu_literal_scratch.rs readable");
     let triggered_src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/engine/backend_triggered.rs"
@@ -12,11 +12,11 @@ fn per_chunk_gpu_presence_reuses_and_zeroes_scratch() {
     .expect("backend_triggered.rs readable");
 
     assert!(
-        lazy_src.contains("GPU_LITERAL_SCAN_SCRATCH"),
+        scratch_src.contains("GPU_LITERAL_SCAN_SCRATCH"),
         "GPU literal trigger production must keep caller-owned scratch"
     );
     assert!(
-        lazy_src.contains("scan_presence_with_scratch"),
+        scratch_src.contains("scan_presence_with_scratch"),
         "GPU literal trigger production must call Vyre's scratch-reuse presence API"
     );
     assert!(
@@ -24,13 +24,13 @@ fn per_chunk_gpu_presence_reuses_and_zeroes_scratch() {
         "per-chunk GPU trigger production must not use the allocating scan_presence wrapper"
     );
     assert!(
-        lazy_src.contains("zero_gpu_literal_scratch")
-            && lazy_src.contains("scratch.haystack_bytes.fill(0);")
-            && lazy_src.contains("scratch.hit_bytes.fill(0);"),
+        scratch_src.contains("zero_gpu_literal_scratch")
+            && scratch_src.contains("scratch.haystack_bytes.fill(0);")
+            && scratch_src.contains("scratch.hit_bytes.fill(0);"),
         "reused GPU presence scratch must be zeroed before retention"
     );
     assert!(
-        lazy_src.contains("try_borrow_mut()"),
+        scratch_src.contains("try_borrow_mut()"),
         "thread-local GPU scratch borrow failures must return a loud error, not panic"
     );
 }
@@ -42,6 +42,11 @@ fn coalesced_gpu_uses_region_presence_not_per_rule_catalog() {
         "/src/engine/gpu_region_dispatch.rs"
     ))
     .expect("gpu_region_dispatch.rs readable");
+    let batch_src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/gpu_region_batch.rs"
+    ))
+    .expect("gpu_region_batch.rs readable");
 
     assert!(
         dispatch_src.contains("scan_gpu_literal_presence_by_region_with_scratch"),
@@ -52,8 +57,7 @@ fn coalesced_gpu_uses_region_presence_not_per_rule_catalog() {
         "coalesced GPU trigger production must not route through the per-rule megakernel catalog"
     );
     assert!(
-        dispatch_src.contains("build_region_presence_batch")
-            && dispatch_src.contains("region_starts"),
+        batch_src.contains("build_region_presence_batch") && batch_src.contains("region_starts"),
         "coalesced GPU trigger production must preserve one region row per chunk"
     );
 }

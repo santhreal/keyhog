@@ -9,17 +9,18 @@ re-discover the surface.
 Updated 2026-06-19. The workspace pins all five runtime `vyre*` crates at
 `=0.6.3` (vyre v0.6.3) from crates.io (root `Cargo.toml`, `[workspace.dependencies]`). That
 release carries the literal-set region APIs Keyhog imports, including
-`GpuLiteralSet::scan_presence_by_region_with_scratch` (`engine/gpu_region_dispatch.rs` via
-`engine/gpu_lazy.rs`). The repository carries no `vendor/` source tree; the
-exact crates.io pins are the only Vyre source for builds.
+`GpuLiteralSet::scan_presence_by_region_with_scratch`
+(`engine/gpu_region_dispatch.rs` via `engine/gpu_literal_scratch.rs`). The
+repository carries no `vendor/` source tree; the exact crates.io pins are the
+only Vyre source for builds.
 
 ## What keyhog uses today
 
 | Vyre symbol                                          | Where keyhog uses it                                                |
 | ---------------------------------------------------- | ------------------------------------------------------------------- |
 | `vyre_libs::scan::GpuLiteralSet`                     | `engine/gpu_lazy.rs::gpu_matcher` - literal trigger producer        |
-| `GpuLiteralSet::scan_presence_with_scratch`          | `engine/gpu_lazy.rs` - per-chunk trigger presence without hot-loop scratch allocation |
-| `GpuLiteralSet::scan_presence_by_region_with_scratch` | `engine/gpu_region_dispatch.rs` - one batched region row per chunk |
+| `GpuLiteralSet::scan_presence_with_scratch`          | `engine/gpu_literal_scratch.rs` - per-chunk trigger presence without hot-loop scratch allocation |
+| `GpuLiteralSet::scan_presence_by_region_with_scratch` | `engine/gpu_literal_scratch.rs` called by `engine/gpu_region_dispatch.rs` - one batched region row per chunk |
 | `vyre_libs::scan::build_regex_dfa_unanchored`        | Standalone `tests/megakernel_*.rs` Vyre validation experiments      |
 | `vyre_runtime::megakernel::BatchRuleProgram`         | Standalone `tests/megakernel_*.rs` Vyre validation experiments      |
 | `vyre_driver_wgpu::megakernel::{BatchDispatcher, FileBatch, HitRecord}` | Standalone `tests/megakernel_*.rs` Vyre validation experiments |
@@ -30,9 +31,9 @@ exact crates.io pins are the only Vyre source for builds.
 | `vyre_driver_wgpu::WgpuBackend`                      | `engine/compile.rs` acquires it as an `Arc<dyn VyreBackend>` when CUDA is unavailable |
 
 Current production scanner consumers are `engine/gpu_lazy.rs`,
-`engine/gpu_region_dispatch.rs`, `engine/compile.rs`, `gpu.rs`, and
-`static_intern.rs`. The per-rule megakernel catalog is not a production engine
-module.
+`engine/gpu_literal_scratch.rs`, `engine/gpu_region_dispatch.rs`,
+`engine/compile.rs`, `gpu.rs`, and `static_intern.rs`. The per-rule megakernel
+catalog is not a production engine module.
 
 ## Full vyre crate surface
 
@@ -485,10 +486,12 @@ are estimable. Listed best-bang-for-buck first.
 
 The production batched GPU path is `engine/gpu_region_dispatch.rs`:
 `scan_coalesced_gpu_region_presence` reuses one thread-local coalesced
-lowercase haystack scratch, records one `region_starts` entry per chunk,
-calls `GpuLiteralSet::scan_presence_by_region_with_scratch`, converts
-each region row through `triggered_patterns_from_gpu_presence`, and then
-hands the bitmap to the shared `scan_coalesced_phase2` tail.
+lowercase haystack scratch from `engine/gpu_region_batch.rs`, records one
+`region_starts` entry per chunk, calls
+`GpuLiteralSet::scan_presence_by_region_with_scratch` through
+`engine/gpu_literal_scratch.rs`, converts each region row through
+`triggered_patterns_from_gpu_presence`, and then hands the bitmap to the shared
+`scan_coalesced_phase2` tail.
 
 The retired per-rule megakernel catalog is not a production module.
 `engine/megakernel.rs`, `engine/megakernel_triggers.rs`,

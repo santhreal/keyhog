@@ -46,6 +46,10 @@ rc=0
 STRICT_ASSETS="${STRICT_ASSETS:-0}"
 GATES_SOURCE_ONLY="${GATES_SOURCE_ONLY:-0}"
 
+# Source/org gates must not leave Python bytecode cache clutter behind in the
+# repo tree; org_audit.py enforces that invariant.
+export PYTHONDONTWRITEBYTECODE=1
+
 # Some source-surface tests intentionally run this entrypoint with a stripped
 # environment. rustup/cargo need HOME to find the installed toolchain, so
 # recover it from the account database instead of letting a missing HOME turn

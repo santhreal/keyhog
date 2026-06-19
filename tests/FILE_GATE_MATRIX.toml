@@ -463,6 +463,9 @@ path = "crates/scanner/src/engine/phase2_entropy.rs"
 path = "crates/scanner/src/engine/phase2_generic.rs"
 
 [[module]]
+path = "crates/scanner/src/engine/phase2_gpu_dfa.rs"
+
+[[module]]
 path = "crates/scanner/src/engine/gpu_cache.rs"
 
 [[module]]
@@ -470,6 +473,12 @@ path = "crates/scanner/src/engine/gpu_forced.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/gpu_lazy.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/gpu_literal_scratch.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/gpu_region_batch.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/gpu_region_dispatch.rs"

@@ -16,6 +16,20 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
+GENERATED_CACHE_DIRS = (
+    ".pytest_cache",
+    "benchmarks/.pytest_cache",
+    "tools/secretbench/scoring/.pytest_cache",
+    "crates/cli/.cache",
+)
+
+GENERATED_CACHE_GLOBS = (
+    "benchmarks/**/__pycache__",
+    "ml/__pycache__",
+    "scripts/**/__pycache__",
+    "tools/**/__pycache__",
+)
+
 
 def rel(path: pathlib.Path) -> str:
     return path.relative_to(ROOT).as_posix()
@@ -27,6 +41,24 @@ def text(path: str) -> str:
 
 def fail(violations: list[str], msg: str) -> None:
     violations.append(msg)
+
+
+def check_no_generated_cache_clutter(violations: list[str]) -> None:
+    seen: set[str] = set()
+    for raw in GENERATED_CACHE_DIRS:
+        path = ROOT / raw
+        if path.is_dir():
+            item = rel(path)
+            seen.add(item)
+            fail(violations, f"generated cache clutter remains: {item}")
+
+    for pattern in GENERATED_CACHE_GLOBS:
+        for path in sorted(ROOT.glob(pattern)):
+            if path.is_dir():
+                item = rel(path)
+                if item not in seen:
+                    seen.add(item)
+                    fail(violations, f"generated cache clutter remains: {item}")
 
 
 def check_no_loc_cap_bloat(violations: list[str]) -> None:
@@ -112,6 +144,7 @@ def check_complexity_budget(violations: list[str]) -> None:
 
 def main() -> int:
     violations: list[str] = []
+    check_no_generated_cache_clutter(violations)
     check_no_loc_cap_bloat(violations)
     check_current_claims(violations)
     check_required_evidence_wiring(violations)

@@ -5,27 +5,32 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         "/src/engine/gpu_region_dispatch.rs"
     ))
     .expect("gpu_region_dispatch.rs readable");
+    let batch_src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/gpu_region_batch.rs"
+    ))
+    .expect("gpu_region_batch.rs readable");
     assert!(
         !dispatch_src.contains(".as_bytes().to_vec()")
             && !dispatch_src.contains("let mut haystack = Vec::new()"),
         "region dispatch must not allocate a fresh haystack Vec per batch/chunk"
     );
     assert!(
-        dispatch_src.contains("build_region_presence_batch")
-            && dispatch_src.contains("REGION_PRESENCE_BATCH_SCRATCH")
-            && dispatch_src.contains("region_starts")
-            && dispatch_src.contains("extend_ascii_lowercase_from"),
+        batch_src.contains("build_region_presence_batch")
+            && batch_src.contains("REGION_PRESENCE_BATCH_SCRATCH")
+            && batch_src.contains("region_starts")
+            && batch_src.contains("extend_ascii_lowercase_from"),
         "region dispatch must reuse one coalesced folded haystack scratch with one region row per chunk"
     );
     assert!(
-        !dispatch_src.contains("extend_from_slice(chunk.data.as_bytes())")
-            && !dispatch_src.contains("make_ascii_lowercase()"),
+        !batch_src.contains("extend_from_slice(chunk.data.as_bytes())")
+            && !batch_src.contains("make_ascii_lowercase()"),
         "region dispatch must not copy chunk bytes and then run a second lowercase pass"
     );
     assert!(
-        dispatch_src.contains("haystack.fill(0);")
-            && dispatch_src.contains("haystack.clear();")
-            && dispatch_src.contains("region_starts.clear();"),
+        batch_src.contains("haystack.fill(0);")
+            && batch_src.contains("haystack.clear();")
+            && batch_src.contains("region_starts.clear();"),
         "retained region-dispatch scratch must zero secret bytes and clear logical lengths"
     );
     assert!(

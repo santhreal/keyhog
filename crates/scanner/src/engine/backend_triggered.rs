@@ -218,7 +218,7 @@ impl CompiledScanner {
         };
         // Presence bitmap is the phase-1 path: no per-hit triples and no match
         // cap, with the same pattern-id mapping.
-        match super::gpu_lazy::scan_gpu_literal_presence_with_scratch(
+        match super::gpu_literal_scratch::scan_gpu_literal_presence_with_scratch(
             matcher,
             &**gpu_backend,
             text.as_bytes(),

@@ -62,6 +62,9 @@ mod generic_keyword_owner;
 mod gpu_cache;
 mod gpu_forced;
 mod gpu_lazy;
+mod gpu_literal_scratch;
+#[cfg(feature = "gpu")]
+mod gpu_region_batch;
 #[cfg(feature = "gpu")]
 mod gpu_region_dispatch;
 mod gpu_stack;

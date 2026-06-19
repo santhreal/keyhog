@@ -412,28 +412,38 @@ impl GitAskpassAuth {
 }
 
 fn write_secret_file(path: &Path, bytes: &[u8]) -> Result<(), SourceError> {
-    write_private_file(path, bytes, 0o600)
+    #[cfg(unix)]
+    return write_private_file(path, bytes, 0o600);
+    #[cfg(not(unix))]
+    write_private_file(path, bytes)
 }
 
 fn write_askpass_file(path: &Path, bytes: &[u8]) -> Result<(), SourceError> {
-    write_private_file(path, bytes, 0o700)
+    #[cfg(unix)]
+    return write_private_file(path, bytes, 0o700);
+    #[cfg(not(unix))]
+    write_private_file(path, bytes)
 }
 
-fn write_private_file(
-    path: &Path,
-    bytes: &[u8],
-    #[cfg_attr(not(unix), allow(unused_variables))] unix_mode: u32,
-) -> Result<(), SourceError> {
+#[cfg(unix)]
+fn write_private_file(path: &Path, bytes: &[u8], unix_mode: u32) -> Result<(), SourceError> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    options.mode(unix_mode);
+
+    let mut file = options.open(path).map_err(SourceError::Io)?;
+    file.write_all(bytes).map_err(SourceError::Io)
+}
+
+#[cfg(not(unix))]
+fn write_private_file(path: &Path, bytes: &[u8]) -> Result<(), SourceError> {
     use std::io::Write;
 
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create_new(true);
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(unix_mode);
-    }
 
     let mut file = options.open(path).map_err(SourceError::Io)?;
     file.write_all(bytes).map_err(SourceError::Io)
