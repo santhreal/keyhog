@@ -424,7 +424,8 @@ jobs:
       # local-checksum gate). `expect` enables the premium interactive case.
       - name: install-from-build proof (Linux)
         run: |
-          sudo apt-get install -y --no-install-recommends expect || true
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends expect
           bash tests/install/install_from_local_build.sh target/release-fast/keyhog
 
       # Dogfood gate: keyhog must find nothing alarming on its OWN repo. The

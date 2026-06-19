@@ -2061,6 +2061,29 @@ fn differential_bench_installs_verified_keyhog_release_binary() {
 }
 
 #[test]
+fn ci_install_from_build_proof_requires_expect_setup() {
+    let workflow = fs::read_to_string(ci_workflow()).expect("read ci.yml");
+    let install = workflow
+        .split("- name: install-from-build proof (Linux)")
+        .nth(1)
+        .and_then(|tail| tail.split("- name: Dogfood self-scan").next())
+        .expect("Linux install-from-build proof step exists");
+    assert!(
+        install.contains("sudo apt-get install -y --no-install-recommends expect"),
+        "Linux install proof must install expect before exercising interactive installer paths"
+    );
+    for retired in [
+        "expect || true",
+        "apt-get install -y --no-install-recommends expect || true",
+    ] {
+        assert!(
+            !install.contains(retired),
+            "Linux install proof must fail closed if expect cannot be installed: {retired}"
+        );
+    }
+}
+
+#[test]
 fn release_workflow_validates_manual_tag_before_shell_outputs() {
     let workflow = fs::read_to_string(release_workflow()).expect("read release.yml");
     let mut offenders = Vec::new();
