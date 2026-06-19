@@ -17,7 +17,7 @@ fn execution_plan_has_issue_hunt_inventory() {
         raw.contains("## Current Issue Hunt Inventory"),
         "execution plan must carry the current issue hunt inventory"
     );
-    for id in ["H1", "H2", "H3", "H4", "H5", "H6", "H7"] {
+    for id in ["H1", "H2", "H3", "H4", "H5", "H6", "H7", "H8"] {
         assert!(raw.contains(&format!("### {id} -")), "missing hunt {id}");
     }
 }
