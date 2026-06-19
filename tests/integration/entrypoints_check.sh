@@ -100,6 +100,25 @@ else
   fail=1
 fi
 
+BENCH="$ROOT/scripts/run_benchmark.sh"
+if [ -f "$BENCH" ]; then
+  if grep -qE 'grep -c|2>/dev/null|\|\| echo 0|cargo build|target/release/keyhog|tests/recall|KEYHOG_BIN=' "$BENCH"; then
+    echo "FAIL scripts/run_benchmark.sh must delegate to the canonical benchmark harness; no grep scoring, stderr suppression, hardcoded target binary, or legacy tests/recall corpus."
+    grep -nE 'grep -c|2>/dev/null|\|\| echo 0|cargo build|target/release/keyhog|tests/recall|KEYHOG_BIN=' "$BENCH" | sed 's/^/    /'
+    fail=1
+  elif grep -q 'leaderboard' "$BENCH" \
+     && grep -q 'gate' "$BENCH" \
+     && grep -q 'REQUIRE_COMPETITORS' "$BENCH"; then
+    note "OK   benchmark entrypoint: delegates to canonical leaderboard + gate"
+  else
+    echo "FAIL scripts/run_benchmark.sh must route through benchmarks/Makefile leaderboard and gate with required competitors."
+    fail=1
+  fi
+else
+  echo "FAIL scripts/run_benchmark.sh missing - compatibility benchmark entrypoint must route to the canonical harness."
+  fail=1
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "integration entry-point gate: PASS"
 else
