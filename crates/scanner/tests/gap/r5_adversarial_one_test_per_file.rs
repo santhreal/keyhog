@@ -34,7 +34,7 @@ fn should_skip(path: &PathBuf) -> bool {
     }
     matches!(
         path.file_name().and_then(|n| n.to_str()),
-        Some("oracle_support.rs" | "megakernel_support.rs" | "engine.rs" | "mod.rs")
+        Some("oracle_support.rs" | "gpu_backend_support.rs" | "engine.rs" | "mod.rs")
     )
 }
 

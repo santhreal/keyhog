@@ -7,13 +7,13 @@ pub mod decode_through_real_source_offset;
 pub mod empty_chunk_no_findings;
 pub mod empty_corpus_zero_findings;
 mod engine;
+pub mod gpu_backend_parity_aws_sample;
+pub mod gpu_backend_parity_github_pat_sample;
+pub mod gpu_backend_parity_stripe_sample;
 pub mod homoglyph;
 pub mod jwt_parsing_adversarial;
 #[path = "../massive_adversarial/mod.rs"]
 pub mod massive_adversarial;
-pub mod megakernel_cpu_parity_aws_sample;
-pub mod megakernel_cpu_parity_github_pat_sample;
-pub mod megakernel_cpu_parity_stripe_sample;
 pub(crate) mod oracle_support;
 pub mod r5t_top50_docker_hub_token_near_miss_chunk_boundary_must_not_fire;
 pub mod r5t_top50_firebase_api_key_near_miss_chunk_boundary_must_not_fire;

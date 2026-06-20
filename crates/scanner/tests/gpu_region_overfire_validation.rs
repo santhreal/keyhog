@@ -21,7 +21,7 @@
 //! to hard-fail in CI that mandates a GPU, else skipped (no silent CPU
 //! masquerade — the GPU path is exercised explicitly via `ScanBackend::Gpu`).
 //!
-//! Run: cargo test -p keyhog-scanner --features gpu --test megakernel_overfire_validation -- --nocapture
+//! Run: cargo test -p keyhog-scanner --features gpu --test gpu_region_overfire_validation -- --nocapture
 
 #[path = "support/mod.rs"]
 mod support;

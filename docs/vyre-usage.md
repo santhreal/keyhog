@@ -21,9 +21,9 @@ only Vyre source for builds.
 | `vyre_libs::scan::GpuLiteralSet`                     | `engine/gpu_lazy.rs::gpu_matcher` - literal trigger producer        |
 | `GpuLiteralSet::scan_presence_with_scratch`          | `engine/gpu_literal_scratch.rs` - per-chunk trigger presence without hot-loop scratch allocation |
 | `GpuLiteralSet::scan_presence_by_region_with_scratch` | `engine/gpu_literal_scratch.rs` called by `engine/gpu_region_dispatch.rs` - one batched region row per chunk |
-| `vyre_libs::scan::build_regex_dfa_unanchored`        | `engine/phase2_gpu_dfa.rs` - GPU regex-DFA admission for prefixless detectors (production); also exercised by `tests/megakernel_*.rs` Vyre validation probes |
-| `vyre_runtime::megakernel::BatchRuleProgram`         | Standalone `tests/megakernel_*.rs` Vyre validation probes only (the retired per-rule catalog primitive; not a production engine path) |
-| `vyre_driver_wgpu::megakernel::{BatchDispatcher, FileBatch, HitRecord}` | Standalone `tests/megakernel_*.rs` Vyre validation experiments |
+| `vyre_libs::scan::build_regex_dfa_unanchored`        | `engine/phase2_gpu_dfa.rs` - GPU regex-DFA admission for prefixless detectors (production); also exercised by `tests/vyre_megakernel_primitive_probe.rs` |
+| `vyre_runtime::megakernel::BatchRuleProgram`         | Standalone `tests/vyre_megakernel_primitive_probe.rs` only (the retired per-rule catalog primitive; not a production engine path) |
+| `vyre_driver_wgpu::megakernel::{BatchDispatcher, FileBatch, HitRecord}` | Standalone `tests/vyre_megakernel_primitive_probe.rs` only |
 | `vyre_libs::scan::LiteralMatch`                      | Re-exported as `keyhog_scanner::LiteralMatch` for API stability     |
 | `vyre_libs::scan::cached_load_or_compile`            | On-disk cache for compiled GPU literal-set programs                 |
 | `vyre_libs::intern::perfect_hash::PerfectHash`       | `static_intern.rs` - frozen detector-metadata interner              |
@@ -271,7 +271,7 @@ by primitive authors.
 | GPU regex-DFA admission (prefixless)  | ✅ shipped  | `engine/phase2_gpu_dfa.rs` via `build_regex_dfa_unanchored`            |
 | `rule` CPU evaluator + `FieldInSet`  | ✅ shipped  | upstream `vyre_libs::rule::cpu_eval` + `ast.rs`        |
 | `.keyhogignore.toml` rule engine     | ✅ shipped  | `crates/core/src/rule_filter.rs` + `orchestrator.rs`   |
-| Standalone Vyre megakernel probes    | measured    | `crates/scanner/tests/megakernel_*.rs`                 |
+| Standalone Vyre megakernel probe     | measured    | `crates/scanner/tests/vyre_megakernel_primitive_probe.rs` |
 | `cooperative_dfa` alt literal engine | ⏳ pending  | needs keyhog GPU dispatch infrastructure (entry below) |
 | `fuse_programs` decode+scan          | ⏳ pending  | needs source/scanner restructure (entry below)         |
 | `nn::moe` replacing gpu.rs MoE       | ⏳ pending  | parity work against existing weights (entry below)     |
@@ -466,7 +466,7 @@ are estimable. Listed best-bang-for-buck first.
    detector, which is the `chunks × rules` shape the RTX 5090 testing found to be
    the wrong production primitive (see "Production GPU trigger route" below); it
    is retired from the scan path and survives only as a Vyre validation probe in
-   `tests/megakernel_*.rs`. The GPU extraction work uses the coalesced
+   `tests/vyre_megakernel_primitive_probe.rs`. The GPU extraction work uses the coalesced
    region/regex-DFA primitives instead, for the same one-pass-over-the-batch
    reason region-presence replaced the literal megakernel.
 
@@ -498,7 +498,7 @@ The retired per-rule megakernel catalog is not a production module.
 `engine/megakernel.rs`, `engine/megakernel_triggers.rs`,
 `engine/megakernel_wire.rs`, the concrete `wgpu_backend` scanner field,
 and the `MegakernelCatalog` dispatch hook were removed. The standalone
-`tests/megakernel_*.rs` targets remain Vyre primitive probes only; they
+`tests/vyre_megakernel_primitive_probe.rs` target remains a Vyre primitive probe only; it
 do not describe the shipped Keyhog scan route.
 
 Architectural finding from RTX 5090 testing: Vyre's `BatchDispatcher`
@@ -577,7 +577,7 @@ bitmap Keyhog needs.
 
 - **vyre regex/frontend release cadence.** crates.io's latest published Vyre
   release used by Keyhog is `0.6.3`. The workspace resolves the five runtime
-  `vyre*` crates from exact registry pins, and the megakernel scan path imports
+  `vyre*` crates from exact registry pins, and the GPU regex-DFA admission path imports
   `vyre_libs::scan::build_regex_dfa_unanchored` from that release. Future
   upgrades bump the workspace pins, run
   `python3 scripts/gates/vyre_pin_consistency.py`, then run scanner GPU/CPU

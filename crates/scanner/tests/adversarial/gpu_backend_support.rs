@@ -1,4 +1,4 @@
-//! Helpers for megakernel ↔ CPU parity adversarial samples.
+//! Helpers for live GPU-backend ↔ CPU parity adversarial samples.
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
@@ -46,7 +46,7 @@ pub fn credential_keys(results: &[Vec<RawMatch>]) -> std::collections::BTreeSet<
         .collect()
 }
 
-pub fn assert_cpu_megakernel_parity(text: &str, path: &str, label: &str) {
+pub fn assert_cpu_gpu_backend_parity(text: &str, path: &str, label: &str) {
     let scanner = production_scanner();
     let chunks = [chunk(text, path)];
 
@@ -56,20 +56,20 @@ pub fn assert_cpu_megakernel_parity(text: &str, path: &str, label: &str) {
         "{label}: CPU baseline must fire on adversarial sample (recall oracle)"
     );
 
-    // The megakernel is the single on-GPU detection path; selecting the GPU
-    // backend routes through it.
-    let mega = credential_keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::Gpu));
-
-    if mega.is_empty() {
-        // No GPU adapter in this environment — CPU recall oracle above is the gate.
+    if !keyhog_scanner::gpu::gpu_available() {
+        eprintln!(
+            "{label}: GPU backend parity not run because no compatible GPU adapter is visible"
+        );
         return;
     }
 
+    let gpu = credential_keys(&scanner.scan_chunks_with_backend(&chunks, ScanBackend::Gpu));
+
     assert_eq!(
         cpu,
-        mega,
-        "{label}: megakernel GPU findings must match CPU fallback; cpu_only={:?} mega_only={:?}",
-        cpu.difference(&mega).collect::<Vec<_>>(),
-        mega.difference(&cpu).collect::<Vec<_>>()
+        gpu,
+        "{label}: GPU backend findings must match CPU fallback; cpu_only={:?} gpu_only={:?}",
+        cpu.difference(&gpu).collect::<Vec<_>>(),
+        gpu.difference(&cpu).collect::<Vec<_>>()
     );
 }
