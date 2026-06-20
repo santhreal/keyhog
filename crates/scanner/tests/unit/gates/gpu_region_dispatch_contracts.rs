@@ -156,11 +156,18 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
             && gpu_dfa_workload_src.contains("Phase2GpuAdmissionWorkload::Full")
             && gpu_dfa_workload_src.contains("Phase2GpuAdmissionWorkload::Subset")
             && gpu_dfa_workload_src.contains("Phase2GpuAdmissionWorkload::Empty")
-            && gpu_dfa_workload_src.contains("Vec::with_capacity(selected_count)")
+            && gpu_dfa_workload_src.contains("first_triggered_index")
+            && !gpu_dfa_workload_src.contains(".filter(|(idx, _chunk)|")
+            && !gpu_dfa_workload_src.contains(".count();")
             && gpu_dfa_workload_src.contains("expand_phase2_gpu_admission")
             && gpu_dfa_workload_src.contains("trigger_has_bits")
             && gpu_dfa_workload_src.contains("length_mismatch"),
-        "phase-2 GPU DFA trigger-row validation, no-hit workload shaping, full-batch reuse, and full-batch expansion must live in engine/phase2_gpu_dfa/workload.rs"
+        "phase-2 GPU DFA trigger-row validation, one-pass no-hit workload shaping, full-batch reuse, and full-batch expansion must live in engine/phase2_gpu_dfa/workload.rs"
+    );
+    assert!(
+        !dispatch_src.contains("admitted: vec![false; full_len]")
+            && dispatch_src.contains("phase2_gpu_empty_complete"),
+        "all-triggered phase-2 GPU DFA workload must not allocate a full false admission bitmap"
     );
     assert!(
         !gpu_dfa_src.contains("pack_haystack_u32_into")

@@ -17,9 +17,11 @@
 use super::gpu_region_batch::{
     set_trigger_bit, trigger_bit_is_set, validate_detector_match, with_region_presence_batch,
 };
+#[cfg(test)]
+use super::phase2_gpu_dfa::Phase2GpuDfaAdmission;
 use super::phase2_gpu_dfa::{
     build_phase2_gpu_admission_workload, expand_phase2_gpu_admission,
-    validate_phase2_gpu_trigger_rows, Phase2GpuAdmissionWorkload, Phase2GpuDfaAdmission,
+    validate_phase2_gpu_trigger_rows, Phase2GpuAdmissionWorkload,
 };
 use super::*;
 use crate::hw_probe::ScanBackend;
@@ -257,12 +259,12 @@ impl CompiledScanner {
                 return degrade(error.to_string());
             }
             let phase2_gpu_workload = build_phase2_gpu_admission_workload(chunks, &triggers);
+            let mut phase2_gpu_empty_complete = false;
             let phase2_gpu_admission = match phase2_gpu_workload {
-                Phase2GpuAdmissionWorkload::Empty { full_len } => Some(Phase2GpuDfaAdmission {
-                    admitted: vec![false; full_len],
-                    complete: true,
-                    matches_seen: 0,
-                }),
+                Phase2GpuAdmissionWorkload::Empty => {
+                    phase2_gpu_empty_complete = true;
+                    None
+                }
                 Phase2GpuAdmissionWorkload::Full { chunks: gpu_chunks } => {
                     match self.phase2_gpu_dfa_catalog(Some(backend.id())) {
                         Some(catalog) => {
@@ -319,9 +321,10 @@ impl CompiledScanner {
             let phase2_gpu_matches = phase2_gpu_admission
                 .as_ref()
                 .map_or(0usize, |admission| admission.matches_seen);
-            let phase2_gpu_complete = phase2_gpu_admission
-                .as_ref()
-                .is_some_and(|admission| admission.complete);
+            let phase2_gpu_complete = phase2_gpu_empty_complete
+                || phase2_gpu_admission
+                    .as_ref()
+                    .is_some_and(|admission| admission.complete);
             let results = self.scan_coalesced_phase2_with_admission(
                 chunks,
                 triggers,
@@ -506,6 +509,30 @@ mod tests {
     }
 
     #[test]
+    fn phase2_gpu_admission_workload_preserves_prefix_no_trigger_chunks() {
+        let chunks = [
+            keyhog_core::Chunk::from("no-trigger-before"),
+            keyhog_core::Chunk::from("triggered"),
+        ];
+        let triggers = vec![None, Some(vec![1])];
+
+        let workload = build_phase2_gpu_admission_workload(&chunks, &triggers);
+
+        let Phase2GpuAdmissionWorkload::Subset {
+            indices,
+            chunks: selected_chunks,
+            full_len,
+        } = workload
+        else {
+            panic!("no-trigger prefix before a triggered chunk must remain in subset workload");
+        };
+        assert_eq!(full_len, chunks.len());
+        assert_eq!(indices, vec![0]);
+        assert_eq!(selected_chunks.len(), 1);
+        assert_eq!(selected_chunks[0].data.as_ref(), "no-trigger-before");
+    }
+
+    #[test]
     fn phase2_gpu_admission_workload_skips_gpu_dfa_when_every_chunk_already_triggered() {
         let chunks = [
             keyhog_core::Chunk::from("triggered"),
@@ -515,10 +542,9 @@ mod tests {
 
         let workload = build_phase2_gpu_admission_workload(&chunks, &triggers);
 
-        let Phase2GpuAdmissionWorkload::Empty { full_len } = workload else {
+        let Phase2GpuAdmissionWorkload::Empty = workload else {
             panic!("all-triggered batch must skip phase-2 GPU DFA dispatch");
         };
-        assert_eq!(full_len, chunks.len());
     }
 
     #[test]
