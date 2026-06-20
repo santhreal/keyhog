@@ -159,11 +159,13 @@ fn collect_azure_blob_chunks(
 
     loop {
         if listed_objects >= max_objects {
-            crate::cloud::record_source_truncated_once(
+            if let Some(error) = crate::cloud::record_source_truncated_once(
                 "azure_blob",
                 "max_objects limit reached before listing all blobs",
                 &mut source_truncated_reported,
-            );
+            ) {
+                chunks.push(Err(error));
+            }
             break;
         }
 
@@ -232,11 +234,13 @@ fn collect_azure_blob_chunks(
         }
 
         if reached_limit {
-            crate::cloud::record_source_truncated_once(
+            if let Some(error) = crate::cloud::record_source_truncated_once(
                 "azure_blob",
                 "max_objects limit reached within the current Azure Blob listing page",
                 &mut source_truncated_reported,
-            );
+            ) {
+                chunks.push(Err(error));
+            }
             break;
         }
         match next_marker {

@@ -79,9 +79,13 @@ pub(crate) fn contains_forbidden_xml_markup(body: &str) -> bool {
     upper.contains("<!DOCTYPE") || upper.contains("<!ENTITY")
 }
 
-pub(crate) fn record_source_truncated_once(source: &str, reason: &str, reported: &mut bool) {
+pub(crate) fn record_source_truncated_once(
+    source: &str,
+    reason: &str,
+    reported: &mut bool,
+) -> Option<keyhog_core::SourceError> {
     if *reported {
-        return;
+        return None;
     }
     *reported = true;
     tracing::warn!(
@@ -90,4 +94,7 @@ pub(crate) fn record_source_truncated_once(source: &str, reason: &str, reported:
         "cloud source listing ended before every matching object was covered; remaining objects were NOT scanned"
     );
     let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
+    Some(keyhog_core::SourceError::Other(format!(
+        "{source} source scan was truncated: {reason}; remaining objects were not scanned"
+    )))
 }

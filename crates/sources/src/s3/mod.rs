@@ -214,11 +214,13 @@ fn collect_s3_chunks(
 
     loop {
         if listed_objects >= max_objects {
-            crate::cloud::record_source_truncated_once(
+            if let Some(error) = crate::cloud::record_source_truncated_once(
                 "s3",
                 "max_objects limit reached before listing all objects",
                 &mut source_truncated_reported,
-            );
+            ) {
+                chunks.push(Err(error));
+            }
             break;
         }
 
@@ -295,21 +297,25 @@ fn collect_s3_chunks(
 
         if reached_limit || !listing.is_truncated {
             if reached_limit {
-                crate::cloud::record_source_truncated_once(
+                if let Some(error) = crate::cloud::record_source_truncated_once(
                     "s3",
                     "max_objects limit reached within the current S3 listing page",
                     &mut source_truncated_reported,
-                );
+                ) {
+                    chunks.push(Err(error));
+                }
             }
             break;
         }
         continuation_token = listing.next_continuation_token;
         if continuation_token.is_none() {
-            crate::cloud::record_source_truncated_once(
+            if let Some(error) = crate::cloud::record_source_truncated_once(
                 "s3",
                 "S3 listing response was truncated but omitted NextContinuationToken",
                 &mut source_truncated_reported,
-            );
+            ) {
+                chunks.push(Err(error));
+            }
             break;
         }
     }

@@ -164,11 +164,13 @@ fn collect_gcs_chunks(
 
     loop {
         if listed_objects >= max_objects {
-            crate::cloud::record_source_truncated_once(
+            if let Some(error) = crate::cloud::record_source_truncated_once(
                 "gcs",
                 "max_objects limit reached before listing all objects",
                 &mut source_truncated_reported,
-            );
+            ) {
+                chunks.push(Err(error));
+            }
             break;
         }
 
@@ -241,11 +243,13 @@ fn collect_gcs_chunks(
         }
 
         if reached_limit {
-            crate::cloud::record_source_truncated_once(
+            if let Some(error) = crate::cloud::record_source_truncated_once(
                 "gcs",
                 "max_objects limit reached within the current GCS listing page",
                 &mut source_truncated_reported,
-            );
+            ) {
+                chunks.push(Err(error));
+            }
             break;
         }
         match listing.next_page_token {

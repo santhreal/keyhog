@@ -191,12 +191,24 @@ fn max_objects_limit_is_counted_source_truncated() {
         then.status(200).body("SHOULD_NOT_BE_FETCHED");
     });
 
-    let ok: Vec<_> = TestApi
+    let rows: Vec<_> = TestApi
         .gcs_source_with_endpoint_max_objects(BUCKET, server.url(""), 1)
         .chunks()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
+        .collect();
+    let ok: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
     assert_eq!(ok.len(), 1, "first object within cap should be scanned");
+    assert_eq!(
+        errors.len(),
+        1,
+        "max_objects truncation must surface one source error"
+    );
+    let err = errors[0].to_string();
+    assert!(
+        err.contains("source scan was truncated")
+            && err.contains("remaining objects were not scanned"),
+        "error should describe partial GCS coverage, got {err}"
+    );
 
     let after = skip_counts();
     assert_eq!(
