@@ -132,12 +132,23 @@ fn non_success_get_is_counted_unreadable() {
         then.status(403).body("AccessDenied");
     });
 
-    let ok: Vec<_> = TestApi
+    let rows: Vec<_> = TestApi
         .gcs_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
-    assert_eq!(ok.len(), 0, "failed object GET must not produce a chunk");
+        .collect();
+    assert_eq!(
+        rows.len(),
+        1,
+        "failed object GET must surface one source error"
+    );
+    let err = rows[0]
+        .as_ref()
+        .expect_err("failed object GET must be an error row");
+    assert!(
+        err.to_string().contains("GET returned 403")
+            && err.to_string().contains("object was not scanned"),
+        "error should name the unscanned GCS object, got {err}"
+    );
 
     let after = skip_counts();
     assert_eq!(

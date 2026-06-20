@@ -138,7 +138,7 @@ impl Source for S3Source {
             }
         });
         match result {
-            Ok(chunks) => Box::new(chunks.into_iter().map(Ok)),
+            Ok(rows) => Box::new(rows.into_iter()),
             Err(error) => Box::new(std::iter::once(Err(error))),
         }
     }
@@ -155,7 +155,7 @@ fn collect_s3_chunks(
     limits: crate::SourceLimits,
     http: &crate::http::HttpClientConfig,
     allow_credential_forward: bool,
-) -> Result<Vec<Chunk>, SourceError> {
+) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     let bucket = validate_bucket_name(bucket)?;
     // Honor the shared HTTP policy (proxy, insecure TLS, UA). Falls back to
     // the per-source default timeout when `http.timeout` is None - keeps the
@@ -286,8 +286,10 @@ fn collect_s3_chunks(
                 .collect()
         });
         for result in page_chunks {
-            if let Some(chunk) = result? {
-                chunks.push(chunk);
+            match result {
+                Ok(Some(chunk)) => chunks.push(Ok(chunk)),
+                Ok(None) => {}
+                Err(error) => chunks.push(Err(error)),
             }
         }
 
@@ -362,7 +364,9 @@ fn fetch_object_chunk(
             "skipping S3 object: GET returned non-success status; NOT scanned",
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-        return Ok(None);
+        return Err(SourceError::Other(format!(
+            "failed to scan S3 object s3://{bucket}/{key}: GET returned {status}; object was not scanned"
+        )));
     }
 
     if let Some(content_length) = response.content_length() {

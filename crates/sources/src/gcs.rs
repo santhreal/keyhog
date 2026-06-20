@@ -96,7 +96,7 @@ impl Source for GcsSource {
             }
         });
         match result {
-            Ok(chunks) => Box::new(chunks.into_iter().map(Ok)),
+            Ok(rows) => Box::new(rows.into_iter()),
             Err(error) => Box::new(std::iter::once(Err(error))),
         }
     }
@@ -143,7 +143,7 @@ fn collect_gcs_chunks(
     limits: crate::SourceLimits,
     http: &crate::http::HttpClientConfig,
     allow_token_forward: bool,
-) -> Result<Vec<Chunk>, SourceError> {
+) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     let bucket = validate_bucket_name(bucket)?;
     let endpoint = validate_endpoint(endpoint)?;
     let mut http = http.clone();
@@ -233,8 +233,10 @@ fn collect_gcs_chunks(
                 .collect()
         });
         for result in page_chunks {
-            if let Some(chunk) = result? {
-                chunks.push(chunk);
+            match result {
+                Ok(Some(chunk)) => chunks.push(Ok(chunk)),
+                Ok(None) => {}
+                Err(error) => chunks.push(Err(error)),
             }
         }
 
@@ -295,7 +297,9 @@ fn fetch_gcs_object_chunk(
             "skipping GCS object: GET returned non-success status; NOT scanned",
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-        return Ok(None);
+        return Err(SourceError::Other(format!(
+            "failed to scan GCS object gs://{bucket}/{name}: GET returned {status}; object was not scanned"
+        )));
     }
     if let Some(content_length) = response.content_length() {
         if content_length > max_object_bytes {

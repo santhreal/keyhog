@@ -146,11 +146,22 @@ fn non_success_get_is_counted_unreadable() {
         then.status(403).body("AuthorizationFailure");
     });
 
-    let ok: Vec<_> = AzureBlobSource::new(container_url(&server))
+    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
         .chunks()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
-    assert_eq!(ok.len(), 0, "failed blob GET must not produce a chunk");
+        .collect();
+    assert_eq!(
+        rows.len(),
+        1,
+        "failed blob GET must surface one source error"
+    );
+    let err = rows[0]
+        .as_ref()
+        .expect_err("failed blob GET must be an error row");
+    assert!(
+        err.to_string().contains("GET returned 403")
+            && err.to_string().contains("blob was not scanned"),
+        "error should name the unscanned Azure blob, got {err}"
+    );
 
     let after = skip_counts();
     assert_eq!(
