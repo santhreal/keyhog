@@ -17,6 +17,7 @@ const GITHUB_ACTIONS_PLUS_ONLY: &str =
 const GITHUB_ACTIONS_PLUS_SLASH: &str =
     "5OcKQwtmHw+SRJZ76bc4vwBhnVsM1ksLmOGTaHamLo6+MIF3IlZcNaWD3vhW7+3ID7UwSS6whDRWERI6756fzh06";
 const PROPERTIES_PURE_ALNUM: &str = "VqsjpzT2Jauz6vo76xb5vNB8XXxfBTQyNX6G5Kx1AEEk";
+const SLASH_BEARING_API_KEY: &str = "PvgsQdw6b5r9JqFzmaVkh/PBOtxkvFtq3OLNhcdqlOcoSqgnQx";
 const REPORT_FLOOR: f64 = 0.40;
 
 fn scanner(ml_enabled: bool) -> CompiledScanner {
@@ -147,6 +148,11 @@ fn strong_assignment_random_looking_base64_tokens_remain_reported() {
             "Xoxu5sLLXXgTPZyXF1tCcA3jFUIT0DtcRWA9fpF0",
             "TOKEN=Xoxu5sLLXXgTPZyXF1tCcA3jFUIT0DtcRWA9fpF0\n",
             "/repo/benchmarks/corpora/mirror/corpus/cc/mirror-pos-0001484.env",
+        ),
+        (
+            SLASH_BEARING_API_KEY,
+            "export API_KEY=\"PvgsQdw6b5r9JqFzmaVkh/PBOtxkvFtq3OLNhcdqlOcoSqgnQx\"\n",
+            "/repo/benchmarks/corpora/mirror/corpus/29/mirror-pos-0000553.sh",
         ),
     ];
 

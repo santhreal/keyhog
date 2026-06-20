@@ -153,8 +153,13 @@ pub(crate) fn entropy_match_suppressed(
         return true;
     }
     // URL / path-fragment shape (`user/settings/password`,
-    // `/api/v1/access_token`).
-    if crate::pipeline::looks_like_url_or_path_segment(&entropy_match.value) {
+    // `/api/v1/access_token`). Keep long high-entropy base64 punctuation
+    // payloads alive; a slash inside an opaque token is not path structure.
+    let high_entropy_long_punctuation_payload =
+        high_entropy_punctuation_payload && entropy_match.value.len() > 40;
+    if !high_entropy_long_punctuation_payload
+        && crate::pipeline::looks_like_url_or_path_segment(&entropy_match.value)
+    {
         return true;
     }
     // UUID v4 substring (`TOKEN_LIST=636765a9-1f92-4b40-ab0b-85ebd1e2c23d`

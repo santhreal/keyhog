@@ -221,8 +221,15 @@ impl CompiledScanner {
         }
         // URL / path-fragment shape: `user/settings/password` (gogs
         // template constants), `user/auth/forgot_passwd` (gogs auth
-        // templates), `/api/v1/access_token` (alist OAuth URL).
-        if crate::pipeline::looks_like_url_or_path_segment(value) {
+        // templates), `/api/v1/access_token` (alist OAuth URL). Keep the
+        // adjacent high-entropy base64 exemption here too for long opaque
+        // tokens that happen to contain `/`; keep the 40-char band on the
+        // path gate because it still contains random-byte decoys.
+        let high_entropy_long_punctuation_payload =
+            high_entropy_punctuation_payload && value.len() > 40;
+        if !high_entropy_long_punctuation_payload
+            && crate::pipeline::looks_like_url_or_path_segment(value)
+        {
             return Some("url_or_path_segment");
         }
         // Vendored 3rd-party minified bundle: drop generic-secret
