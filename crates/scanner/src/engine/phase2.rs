@@ -298,104 +298,119 @@ pub(crate) struct CombinedNoCandidateGate {
     /// 2 bytes (case-folded) never appear adjacent in the text, the literal
     /// cannot start there. No real candidate is ever skipped (sound subset of
     /// the AC's own non-hit criterion), and no extra false positives are
-    /// introduced (the AC still confirms every bloom hit). Law 10 is fully
-    /// satisfied: the bloom only accelerates the skip path, never widens it.
-    pub(crate) anchor_first_bigram_bloom: Box<[u64; 1024]>,
+    /// introduced (the AC still confirms every first-bigram hit). Law 10 is
+    /// fully satisfied: the set only accelerates the skip path, never widens it.
+    pub(crate) anchor_first_bigram: FirstBigramSet,
 }
 
-impl CombinedNoCandidateGate {
-    /// Build the first-bigram bloom from deduplicated, ASCII-lowercased
-    /// anchor literals. Inserts all four ASCII case variants for each
-    /// alphabetic byte pair to mirror the `ascii_case_insensitive` AC.
-    /// Called once at scanner-build time; zero cost on the hot path.
-    pub(crate) fn build_first_bigram_bloom(lits: &[Vec<u8>]) -> Box<[u64; 1024]> {
+/// Exact first-bigram prescreen for literal-set Aho-Corasick scans.
+///
+/// Each set bit means at least one literal can start with that adjacent byte
+/// pair. If a text contains none of the indexed first bigrams, the corresponding
+/// AC cannot match and the caller can skip the state-machine scan entirely. A
+/// hit is only a maybe: callers still run their exact AC to preserve the same
+/// match set.
+pub(crate) struct FirstBigramSet {
+    bits: Box<[u64; 1024]>,
+    fail_open: bool,
+}
+
+impl FirstBigramSet {
+    /// Build from deduplicated anchor literals. When `ascii_case_insensitive`
+    /// is true, insert all ASCII case variants for the first pair to mirror an
+    /// `ascii_case_insensitive` AC. Called once at scanner-build time.
+    pub(crate) fn from_literals<'a>(
+        lits: impl IntoIterator<Item = &'a [u8]>,
+        ascii_case_insensitive: bool,
+    ) -> Self {
         let mut bits = Box::new([0u64; 1024]);
         for lit in lits {
             if lit.len() < 2 {
-                // Law 10: a <2-byte literal has no first-bigram to gate on, so the
-                // prescreen cannot prove its absence — silently skipping it would
-                // make `anchor_present` miss that literal. `gate_prefix_literals`
-                // enforces ≥3-byte ASCII prefixes upstream (else the pattern runs
-                // unconditionally), so this is unreachable; but if that invariant
-                // ever weakens, fail OPEN — every bigram present ⇒ `anchor_present`
-                // always falls through to the exact AC, never a silent skip.
-                return Box::new([u64::MAX; 1024]);
+                // Law 10: a <2-byte literal has no first-bigram to gate on, so
+                // absence can never be proven. Saturate the set: every text falls
+                // through to the exact AC, never a silent skip.
+                return Self {
+                    bits: Box::new([u64::MAX; 1024]),
+                    fail_open: true,
+                };
             }
-            let a = lit[0]; // lowercased; guaranteed ASCII by gate_prefix_literals
+            let a = lit[0];
             let b = lit[1];
-            // Insert all case variants: for alphabetic bytes the AC matches
-            // both cases (ascii_case_insensitive), so we mirror that here.
-            let a_variants: &[u8] = if a.is_ascii_alphabetic() {
-                &[a, a ^ 0x20] // lowercase + uppercase toggle via XOR 0x20
+            let mut a_variants = [a; 2];
+            let a_len = if ascii_case_insensitive && a.is_ascii_alphabetic() {
+                a_variants = [a.to_ascii_lowercase(), a.to_ascii_uppercase()];
+                2
             } else {
-                std::slice::from_ref(&a)
+                1
             };
-            let b_variants: &[u8] = if b.is_ascii_alphabetic() {
-                &[b, b ^ 0x20]
+            let mut b_variants = [b; 2];
+            let b_len = if ascii_case_insensitive && b.is_ascii_alphabetic() {
+                b_variants = [b.to_ascii_lowercase(), b.to_ascii_uppercase()];
+                2
             } else {
-                std::slice::from_ref(&b)
+                1
             };
-            for &ca in a_variants {
-                for &cb in b_variants {
+            for &ca in &a_variants[..a_len] {
+                for &cb in &b_variants[..b_len] {
                     let idx = (ca as usize) << 8 | cb as usize;
                     bits[idx >> 6] |= 1u64 << (idx & 63);
                 }
             }
         }
-        bits
+        Self {
+            bits,
+            fail_open: false,
+        }
     }
 
-    /// True iff an anchorable pattern's required prefix MAY occur in
-    /// `match_text` (pure-ASCII precondition checked by the caller).
-    ///
-    /// Fast path: the first-bigram bloom checks whether any adjacent byte pair
-    /// in the text has its bit set. No set bit → the AC scan is guaranteed to
-    /// return false and is skipped entirely (sub-100 ns on warm 8 KB L1d table).
-    /// A bloom hit → AC runs for a precise answer (recall-identical to before).
-    ///
-    /// Soundness: every anchor literal starts with the 2-byte sequence that is
-    /// in the bloom; if the bloom finds no such sequence, the AC finds nothing.
     #[inline]
-    pub(crate) fn anchor_present(&self, match_text: &str) -> bool {
-        // --- Bigram prescreen (O(N/4), ~1 cycle/byte) ---
-        // Four independent probes per iteration avoid serial-dependency stalls.
+    pub(crate) fn may_have_match(&self, match_text: &str) -> bool {
+        if self.fail_open {
+            return true;
+        }
         let bytes = match_text.as_bytes();
-        let bits = self.anchor_first_bigram_bloom.as_ref();
+        let bits = self.bits.as_ref();
         let len = bytes.len();
         if len < 2 {
-            // No bigram exists — AC cannot match either (shortest literal ≥ 3 bytes).
             return false;
         }
-        let last_start = len - 2; // last valid pair index
-                                  // Inline bigram probe helper: look up (bytes[i], bytes[i+1]) in the bloom.
-                                  // The optimizer inlines this at each of the four unrolled call sites.
+        let last_start = len - 2;
         #[inline(always)]
         fn probe(bits: &[u64; 1024], bytes: &[u8], i: usize) -> bool {
             let idx = (bytes[i] as usize) << 8 | bytes[i + 1] as usize;
             bits[idx >> 6] & (1u64 << (idx & 63)) != 0
         }
         let mut i = 0usize;
-        // 4-wide unrolled: independent loads, one branch per group of four.
         while i + 4 <= last_start + 1 {
             if probe(bits, bytes, i)
                 | probe(bits, bytes, i + 1)
                 | probe(bits, bytes, i + 2)
                 | probe(bits, bytes, i + 3)
             {
-                // At least one bigram hit: run the AC for precision.
-                return self.anchor_ac.is_match(match_text);
+                return true;
             }
             i += 4;
         }
-        // Tail: fewer than 4 remaining pairs.
         while i <= last_start {
             if probe(bits, bytes, i) {
-                return self.anchor_ac.is_match(match_text);
+                return true;
             }
             i += 1;
         }
-        // Bloom found no first-bigram match: the AC is guaranteed to find nothing.
         false
+    }
+}
+
+impl CombinedNoCandidateGate {
+    /// True iff an anchorable pattern's required prefix MAY occur in
+    /// `match_text` (pure-ASCII precondition checked by the caller).
+    ///
+    /// Fast path: the first-bigram set checks whether any adjacent byte pair
+    /// in the text can begin a literal. No set bit means the AC scan is
+    /// guaranteed false and is skipped entirely. A hit runs the exact AC.
+    #[inline]
+    pub(crate) fn anchor_present(&self, match_text: &str) -> bool {
+        self.anchor_first_bigram.may_have_match(match_text) && self.anchor_ac.is_match(match_text)
     }
 
     /// Mark the non-anchorable always-active patterns that actually match

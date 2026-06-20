@@ -4,7 +4,7 @@
 //! **Background**: before the combined no-candidate gate was added, every
 //! `mark_matches` call ran the full Hyperscan always-active prefilter scan
 //! (~30931 ns/call) even on pure no-candidate chunks. The gate (`CombinedNoCandidateGate`)
-//! short-circuits at one bigram-bloom pass + one AC `is_match`, skipping the
+//! short-circuits at one exact first-bigram pass + one AC `is_match`, skipping the
 //! expensive per-pattern body entirely on chunks that cannot activate any
 //! always-active pattern.
 //!
@@ -25,7 +25,7 @@ use super::support;
 use support::paths::detector_dir;
 
 /// Isolated `mark_matches` gate path cost ceiling. The pre-fix always-active HS
-/// scan cost 30931 ns/call. The bloom+AC gate must be at least 10x cheaper —
+/// scan cost 30931 ns/call. The first-bigram+AC gate must be at least 10x cheaper —
 /// this ceiling is 3000 ns, leaving 10x headroom below the pre-fix baseline.
 /// On Zen 4 / warm L1d the gate typically costs 100-600 ns for ~200-byte
 /// no-candidate text.
@@ -36,7 +36,7 @@ const GATE_CEILING_NS: f64 = 3_000.0;
 const N_CALLS: u32 = 50_000;
 
 /// No-candidate text: pure whitespace (spaces, tabs, newlines only) under the
-/// chunk-bigram-bloom threshold (< 64 bytes so the bloom pre-screen is bypassed
+/// chunk-bigram threshold (< 64 bytes so the chunk pre-screen is bypassed
 /// and the scan always reaches `mark_matches`). No 3-byte substring can match
 /// any credential prefix literal (which is always pure ASCII non-whitespace), so
 /// the combined gate is GUARANTEED to skip on every call regardless of which

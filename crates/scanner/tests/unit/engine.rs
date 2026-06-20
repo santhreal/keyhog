@@ -245,6 +245,25 @@ fn entropy_fallback_precheck_admits_symbolic_password_runs() {
 }
 
 #[test]
+fn phase2_first_bigram_set_casefolds_and_saturates_short_literals() {
+    let gate =
+        keyhog_scanner::engine::phase2::FirstBigramSet::from_literals([b"mx_api".as_slice()], true);
+    assert!(gate.may_have_match("const MX_API_KEY = value"));
+    assert!(!gate.may_have_match("const sk_live_key = value"));
+
+    let saturated =
+        keyhog_scanner::engine::phase2::FirstBigramSet::from_literals([b"x".as_slice()], true);
+    assert!(
+        saturated.may_have_match("zz"),
+        "short literals cannot prove absence, so the prescreen must fail open"
+    );
+    assert!(
+        saturated.may_have_match("z"),
+        "short-literal fail-open must also hold for one-byte texts"
+    );
+}
+
+#[test]
 fn boundary_scan_uses_bounded_detector_match_width_past_1024_bytes() {
     let mut detector = demo_detector();
     detector.patterns[0].regex = r"LONG_[A-Za-z0-9]{1500}_END".into();

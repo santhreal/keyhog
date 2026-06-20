@@ -185,8 +185,9 @@ impl Phase2AlwaysActivePrefilter {
         }
         lits.sort_unstable();
         lits.dedup();
-        // Build the first-bigram bloom before moving `lits` into the AC builder.
-        let anchor_first_bigram_bloom = CombinedNoCandidateGate::build_first_bigram_bloom(&lits);
+        // Build the first-bigram prescreen before moving `lits` into the AC builder.
+        let anchor_first_bigram =
+            FirstBigramSet::from_literals(lits.iter().map(Vec::as_slice), true);
         match AhoCorasick::builder()
             .ascii_case_insensitive(true)
             .build(&lits)
@@ -194,7 +195,7 @@ impl Phase2AlwaysActivePrefilter {
             Ok(anchor_ac) => Some(CombinedNoCandidateGate {
                 anchor_ac,
                 non_anchorable,
-                anchor_first_bigram_bloom,
+                anchor_first_bigram,
             }),
             Err(error) => {
                 // Build failure disables the optimization (recall-safe: the full
@@ -563,10 +564,10 @@ impl Phase2AlwaysActivePrefilter {
         // `scan_each` enumeration + its HS-incompatible whole-chunk-regex loop, or
         // the `regex::RegexSet` batch loop — ran UNCONDITIONALLY on every chunk
         // (~10µs/chunk × 518k chunks ≈ 5.3s of pure no-candidate overhead).
-        // `combined_gate.anchor_present` is the ONE fast combined prefilter: one
-        // `ascii_case_insensitive` Aho-Corasick over the ANCHORABLE always-active
-        // patterns' required-prefix literals, `is_match` early-exiting at the first
-        // literal (~ns/chunk). On a PURE-ASCII chunk where it finds none, no
+        // `combined_gate.anchor_present` is the ONE fast combined prefilter: an
+        // exact first-bigram prescreen before one `ascii_case_insensitive`
+        // Aho-Corasick over the ANCHORABLE always-active patterns'
+        // required-prefix literals. On a PURE-ASCII chunk where it finds none, no
         // anchorable pattern can fire, so the whole body is skipped; only the small
         // NON-anchorable set (patterns that can match with no required literal) is
         // checked, each with its OWN regex, marking exactly those that match — the
@@ -743,8 +744,9 @@ impl Phase2AlwaysActivePrefilter {
         // no anchorable pattern can fire, so the active set is non-empty iff some
         // non-anchorable pattern matches — checked precisely with each pattern's
         // OWN regex, so the admission gate never over- or under-admits. The whole
-        // check costs one AC `is_match` plus a handful of per-pattern `is_match`
-        // calls instead of the full ~2,700-pattern HS/RegexSet scan.
+        // check costs one exact first-bigram prescreen, one possible AC
+        // `is_match`, and a handful of per-pattern `is_match` calls instead of
+        // the full ~2,700-pattern HS/RegexSet scan.
         if tuning.no_candidate_gate_enabled() {
             if let Some(gate) = &self.combined_gate {
                 if match_text.is_ascii() && !gate.anchor_present(match_text) {

@@ -115,6 +115,8 @@ pub(crate) struct Phase2AnchorIndex {
     /// with `find_overlapping_iter` so overlapping literals (`sk-` vs `sk-ant-`)
     /// all report.
     anchor_ac: Option<AhoCorasick>,
+    /// First-bigram prescreen for `anchor_ac`.
+    anchor_first_bigram: Option<super::phase2::FirstBigramSet>,
     /// `anchor_ac` pattern id -> phase-2 indices that declared this literal.
     literal_patterns: Vec<Vec<u32>>,
     /// Per phase-2 index: eligible for the anchored fast path.
@@ -128,6 +130,8 @@ pub(crate) struct Phase2AnchorIndex {
     /// semantics and run the few active keyword patterns whole-window instead
     /// of paying the all-eligible shared AC scan.
     always_anchor_ac: Option<AhoCorasick>,
+    /// First-bigram prescreen for `always_anchor_ac`.
+    always_anchor_first_bigram: Option<super::phase2::FirstBigramSet>,
     /// `always_anchor_ac` pattern id -> always-active phase-2 indices.
     always_literal_patterns: Vec<Vec<u32>>,
     /// Per phase-2 index: the anchored regex (Some iff eligible OR plain
@@ -145,6 +149,8 @@ pub(crate) struct Phase2AnchorIndex {
     /// short literal is cheap quick-fails, NOT whole-chunk scans). Replaces the
     /// plain RegexSet batches on ASCII chunks.
     plain_anchor_ac: Option<AhoCorasick>,
+    /// First-bigram prescreen for `plain_anchor_ac`.
+    plain_anchor_first_bigram: Option<super::phase2::FirstBigramSet>,
     /// `plain_anchor_ac` literal id -> plain phase-2 indices.
     plain_literal_patterns: Vec<Vec<u32>>,
     /// Plain patterns with NO usable folded literal: run whole-chunk on ASCII
@@ -281,6 +287,12 @@ impl Phase2AnchorIndex {
         }
         // MatchKind::Standard is required for find_overlapping_iter; ASCII-case
         // -insensitive so a single lowercase literal anchors all case variants.
+        let anchor_first_bigram = (!literals.is_empty()).then(|| {
+            super::phase2::FirstBigramSet::from_literals(
+                literals.iter().map(String::as_bytes),
+                true,
+            )
+        });
         let anchor_ac = if literals.is_empty() {
             None
         } else {
@@ -300,6 +312,12 @@ impl Phase2AnchorIndex {
                 }
             }
         };
+        let always_anchor_first_bigram = (!always_literals.is_empty()).then(|| {
+            super::phase2::FirstBigramSet::from_literals(
+                always_literals.iter().map(String::as_bytes),
+                true,
+            )
+        });
         let always_anchor_ac = if always_literals.is_empty() {
             None
         } else {
@@ -321,6 +339,12 @@ impl Phase2AnchorIndex {
         };
         // Case-SENSITIVE AC for the plain folded literals (the fold keeps exact
         // ASCII members, e.g. `[lOo]`, so case-sensitivity is already encoded).
+        let plain_anchor_first_bigram = (!plain_literals.is_empty()).then(|| {
+            super::phase2::FirstBigramSet::from_literals(
+                plain_literals.iter().map(String::as_bytes),
+                false,
+            )
+        });
         let plain_anchor_ac = if plain_literals.is_empty() {
             None
         } else {
@@ -342,14 +366,17 @@ impl Phase2AnchorIndex {
 
         Some(Self {
             anchor_ac,
+            anchor_first_bigram,
             literal_patterns,
             eligible,
             always_active_eligible,
             always_anchor_ac,
+            always_anchor_first_bigram,
             always_literal_patterns,
             anchored,
             eligible_count,
             plain_anchor_ac,
+            plain_anchor_first_bigram,
             plain_literal_patterns,
             plain_always_mark,
         })
@@ -376,6 +403,13 @@ impl Phase2AnchorIndex {
         let Some(ac) = &self.anchor_ac else {
             return;
         };
+        if self
+            .anchor_first_bigram
+            .as_ref()
+            .is_some_and(|gate| !gate.may_have_match(text))
+        {
+            return;
+        }
         for m in ac.find_overlapping_iter(text) {
             let lit_id = m.pattern().as_usize();
             let pos = m.start() as u32;
@@ -397,6 +431,13 @@ impl Phase2AnchorIndex {
         let Some(ac) = &self.always_anchor_ac else {
             return;
         };
+        if self
+            .always_anchor_first_bigram
+            .as_ref()
+            .is_some_and(|gate| !gate.may_have_match(text))
+        {
+            return;
+        }
         for m in ac.find_overlapping_iter(text) {
             let lit_id = m.pattern().as_usize();
             let pos = m.start() as u32;
@@ -443,6 +484,13 @@ impl Phase2AnchorIndex {
         let Some(ac) = &self.plain_anchor_ac else {
             return;
         };
+        if self
+            .plain_anchor_first_bigram
+            .as_ref()
+            .is_some_and(|gate| !gate.may_have_match(text))
+        {
+            return;
+        }
         for m in ac.find_overlapping_iter(text) {
             let lit_id = m.pattern().as_usize();
             let pos = m.start() as u32;
