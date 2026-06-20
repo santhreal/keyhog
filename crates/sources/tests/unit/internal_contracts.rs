@@ -764,6 +764,50 @@ fn ghidra_discovery_does_not_flatten_glob_errors() {
     );
 }
 
+#[test]
+fn sources_tests_do_not_flatten_source_chunk_results() {
+    fn collect_rs_files(root: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(root)
+            .unwrap_or_else(|error| panic!("read_dir({}) failed: {error}", root.display()))
+        {
+            let path = entry
+                .unwrap_or_else(|error| {
+                    panic!("read_dir entry failed in {}: {error}", root.display())
+                })
+                .path();
+            if path.is_dir() {
+                collect_rs_files(&path, out);
+            } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+                out.push(path);
+            }
+        }
+    }
+
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let support_path = root.join("tests/support/mod.rs");
+    let support = std::fs::read_to_string(&support_path)
+        .unwrap_or_else(|error| panic!("read {} failed: {error}", support_path.display()));
+    assert!(
+        support.contains("pub fn collect_chunks<") && support.contains("pub fn count_chunks<"),
+        "source tests must keep one fail-loud chunk-result collector in tests/support/mod.rs"
+    );
+
+    let mut test_files = Vec::new();
+    collect_rs_files(&root.join("tests"), &mut test_files);
+    for path in test_files {
+        if path.ends_with("unit/internal_contracts.rs") {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("read {} failed: {error}", path.display()));
+        assert!(
+            !source.contains(".chunks().flatten()"),
+            "test {} must use support::collect_chunks/count_chunks or assert SourceError explicitly; `.chunks().flatten()` drops SourceError items",
+            path.display()
+        );
+    }
+}
+
 #[cfg(feature = "binary")]
 #[test]
 fn ghidra_discovery_uses_trusted_paths_not_path_which() {

@@ -1,6 +1,6 @@
 //! Files over max_file_size must be skipped and bump SKIPPED_OVER_MAX_SIZE.
 
-use keyhog_core::Source;
+use super::support::collect_chunks;
 use keyhog_sources::{reset_skipped_over_max_size, skip_counts, FilesystemSource};
 
 #[test]
@@ -16,7 +16,7 @@ fn max_file_size_skips_oversize_plain_file() {
     std::fs::write(dir.path().join("huge.txt"), vec![b'a'; 4096]).expect("write");
 
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(512);
-    let chunks: Vec<_> = source.chunks().flatten().collect();
+    let chunks = collect_chunks(&source);
     assert_eq!(chunks.len(), 1);
     assert!(chunks[0].data.contains("ok"));
     assert!(

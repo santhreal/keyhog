@@ -7,14 +7,17 @@
 //! the source name, the chunk metadata path, the skip-count totals — never a
 //! bare `is_ok()` / `!is_empty()`.
 
+mod support;
+
 use keyhog_core::{Chunk, Source};
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource, SkipCounts};
 use std::fs;
 use std::path::Path;
+use support::collect_chunks;
 
 fn collect(src: &FilesystemSource) -> Vec<Chunk> {
-    src.chunks().flatten().collect()
+    collect_chunks(src)
 }
 
 fn body_contains(chunks: &[Chunk], needle: &str) -> bool {
@@ -376,13 +379,13 @@ fn skip_counts_reads_live_counters() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn missing_root_yields_no_content_chunks() {
+fn missing_root_yields_source_error() {
     let missing = Path::new("/nonexistent/keyhog/test/path/xyz");
     let src = FilesystemSource::new(missing.to_path_buf());
-    // The walker over a missing root produces no readable file chunks.
-    let chunks: Vec<Chunk> = src.chunks().flatten().collect();
+    let results: Vec<_> = src.chunks().collect();
+    assert_eq!(results.len(), 1, "missing root must yield one error item");
     assert!(
-        chunks.is_empty(),
-        "a missing root must not produce file-content chunks"
+        results[0].is_err(),
+        "missing root must surface SourceError instead of flattening to empty"
     );
 }

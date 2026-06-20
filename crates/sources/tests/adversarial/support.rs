@@ -1,7 +1,8 @@
 //! Shared hostile oracles for adversarial source tests (Unix + Windows).
 
-use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
+
+pub use crate::support::{collect_chunks, count_chunks};
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -18,9 +19,9 @@ pub fn oracle_plain_file_symlink_refused() {
     .expect("symlink");
     std::fs::write(root.path().join("real.txt"), "REAL=ok\n").expect("real");
 
-    let paths: Vec<_> = FilesystemSource::new(root.path().to_path_buf())
-        .chunks()
-        .flatten()
+    let source = FilesystemSource::new(root.path().to_path_buf());
+    let paths: Vec<_> = collect_chunks(&source)
+        .into_iter()
         .filter_map(|c| c.metadata.path.clone())
         .collect();
 
@@ -47,9 +48,9 @@ pub fn oracle_walker_symlink_escape_outside_root() {
     .expect("symlink");
     std::fs::write(root.path().join("inside.txt"), "INSIDE=ok\n").expect("inside");
 
-    let bodies: Vec<String> = FilesystemSource::new(root.path().to_path_buf())
-        .chunks()
-        .flatten()
+    let source = FilesystemSource::new(root.path().to_path_buf());
+    let bodies: Vec<String> = collect_chunks(&source)
+        .into_iter()
         .map(|c| c.data.to_string())
         .collect();
 
@@ -69,9 +70,9 @@ pub fn oracle_permission_denied_subtree_scan_continues() {
     std::fs::write(locked.join("secret.env"), "LOCKED=secret\n").expect("secret");
     deny_read_subtree(&locked).expect("deny locked subtree");
 
-    let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())
-        .chunks()
-        .flatten()
+    let source = FilesystemSource::new(dir.path().to_path_buf());
+    let bodies: Vec<String> = collect_chunks(&source)
+        .into_iter()
         .map(|c| c.data.to_string())
         .collect();
 
@@ -115,10 +116,8 @@ pub fn oracle_archive_symlink_target_swap_attempt() {
     std::fs::remove_file(&link).expect("remove");
     symlink_file(&evil, &link).expect("link evil");
 
-    let count = FilesystemSource::new(scan_root.path().to_path_buf())
-        .chunks()
-        .flatten()
-        .count();
+    let source = FilesystemSource::new(scan_root.path().to_path_buf());
+    let count = count_chunks(&source);
     assert_eq!(count, 0, "symlinked archive open must be refused entirely");
 }
 

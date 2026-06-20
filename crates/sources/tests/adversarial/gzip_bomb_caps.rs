@@ -4,6 +4,7 @@
 //! malformed `.gz` (truncated header, bad CRC, invalid block) should
 //! also be tolerated cleanly - empty Vec returned, no panic.
 
+use super::support::collect_chunks;
 use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 use std::fs;
@@ -21,10 +22,10 @@ fn malformed_gzip_does_not_panic() {
     .unwrap();
 
     let source = FilesystemSource::new(dir.path().to_path_buf());
-    // The malformed entry should be silently skipped (or yield an Err
-    // without panicking); good.py must still come through.
+    // The malformed entry should be skipped/counted without producing a chunk;
+    // good.py must still come through and no iterator error may be flattened.
     let mut found_good = false;
-    for c in source.chunks().flatten() {
+    for c in collect_chunks(&source) {
         if c.metadata
             .path
             .as_deref()

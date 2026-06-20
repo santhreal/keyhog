@@ -1,6 +1,6 @@
 //! Jar entries whose declared uncompressed size exceeds max_file_size are skipped.
 
-use keyhog_core::Source;
+use super::support::count_chunks;
 use keyhog_sources::FilesystemSource;
 use std::fs::File;
 use std::io::Write;
@@ -20,6 +20,6 @@ fn jar_oversized_entry_metadata_skipped() {
     zip.finish().expect("finish");
 
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(512);
-    let count = source.chunks().flatten().count();
+    let count = count_chunks(&source);
     assert_eq!(count, 0, "over-cap jar entries must be skipped");
 }

@@ -232,6 +232,31 @@ impl Source for FilesystemSource {
         if !self.respect_gitignore {
             config = config.respect_gitignore(false);
         }
+        if self.include_paths.is_empty() {
+            match self.root.try_exists() {
+                Ok(true) => {}
+                Ok(false) => {
+                    let error = SourceError::Io(std::io::Error::new(
+                        std::io::ErrorKind::NotFound,
+                        format!(
+                            "filesystem root '{}' does not exist; path was not scanned",
+                            self.root.display()
+                        ),
+                    ));
+                    return Box::new(std::iter::once(Err(error)));
+                }
+                Err(error) => {
+                    let error = SourceError::Io(std::io::Error::new(
+                        error.kind(),
+                        format!(
+                            "failed to stat filesystem root '{}': {error}; path was not scanned",
+                            self.root.display()
+                        ),
+                    ));
+                    return Box::new(std::iter::once(Err(error)));
+                }
+            }
+        }
         // Autoroute calibration and replay bucket the fused pipeline by chunk
         // batch shape. A parallel walker can emit the same tree in different
         // orders across runs, which changes which files land in a 32-chunk

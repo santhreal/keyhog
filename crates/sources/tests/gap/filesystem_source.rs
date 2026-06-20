@@ -33,6 +33,7 @@
 //! `std::iter::once`), keeping each assertion attributable to keyhog's own
 //! code rather than to codewalk internals.
 
+use crate::support::collect_chunks;
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{reset_skipped_over_max_size, skip_counts, FilesystemSource};
@@ -43,10 +44,8 @@ use std::path::Path;
 
 /// Collect all successfully-emitted chunks from a source rooted at `dir`.
 fn chunks_of(dir: &Path) -> Vec<keyhog_core::Chunk> {
-    FilesystemSource::new(dir.to_path_buf())
-        .chunks()
-        .flatten()
-        .collect()
+    let source = FilesystemSource::new(dir.to_path_buf());
+    collect_chunks(&source)
 }
 
 /// Concatenate every chunk's text so a body-substring assertion is robust to
@@ -60,15 +59,13 @@ fn combined_body(chunks: &[keyhog_core::Chunk]) -> String {
 /// `std::fs::metadata` + `process_entry`), which bypasses the walker's
 /// own extension/dir filter and thus isolates `process_entry`'s gates.
 fn scan_single_file(path: &Path) -> Vec<keyhog_core::Chunk> {
-    FilesystemSource::new(
+    let source = FilesystemSource::new(
         path.parent()
             .unwrap_or_else(|| Path::new("/"))
             .to_path_buf(),
     )
-    .with_include_paths(vec![path.to_path_buf()])
-    .chunks()
-    .flatten()
-    .collect()
+    .with_include_paths(vec![path.to_path_buf()]);
+    collect_chunks(&source)
 }
 
 // ───────────────────────── symlink non-follow ─────────────────────────
@@ -283,7 +280,7 @@ fn oversize_plain_file_is_skipped_and_undersize_kept() {
     fs::write(dir.path().join("big.txt"), &big).unwrap();
 
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(512);
-    let chunks: Vec<_> = source.chunks().flatten().collect();
+    let chunks = collect_chunks(&source);
     assert_eq!(chunks.len(), 1, "only the under-cap file should emit");
     assert!(chunks[0].data.contains("K=under_cap_marker"));
     assert!(
@@ -303,7 +300,7 @@ fn file_exactly_at_cap_is_kept() {
     assert_eq!(fs::metadata(&path).unwrap().len(), 10);
 
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(10);
-    let chunks: Vec<_> = source.chunks().flatten().collect();
+    let chunks = collect_chunks(&source);
     assert_eq!(chunks.len(), 1, "file at exactly the cap must be kept");
     assert!(chunks[0].data.contains("ABCDEFGHIJ"));
 }
@@ -316,7 +313,7 @@ fn file_one_byte_over_cap_is_skipped() {
     fs::write(dir.path().join("over.txt"), content).unwrap();
 
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(10);
-    let chunks: Vec<_> = source.chunks().flatten().collect();
+    let chunks = collect_chunks(&source);
     assert_eq!(chunks.len(), 0, "size == cap+1 must be skipped");
 }
 
@@ -329,7 +326,7 @@ fn max_file_size_zero_means_unlimited() {
     fs::write(dir.path().join("a.txt"), &content).unwrap();
 
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(0);
-    let chunks: Vec<_> = source.chunks().flatten().collect();
+    let chunks = collect_chunks(&source);
     assert_eq!(
         chunks.len(),
         1,
@@ -351,7 +348,7 @@ fn oversize_skip_increments_global_counter() {
     fs::write(dir.path().join("toobig.txt"), &big).unwrap();
 
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(64);
-    let _: Vec<_> = source.chunks().flatten().collect();
+    let _ = collect_chunks(&source);
 
     assert!(
         skip_counts().over_max_size >= 1,
@@ -782,7 +779,7 @@ fn ignore_patterns_via_with_ignore_paths_exclude_file() {
 
     let source = FilesystemSource::new(dir.path().to_path_buf())
         .with_ignore_paths(vec!["**/drop_me.log".to_string()]);
-    let body = combined_body(&source.chunks().flatten().collect::<Vec<_>>());
+    let body = combined_body(&collect_chunks(&source));
     assert!(body.contains("kept_by_flag"));
     assert!(
         !body.contains("excluded_by_flag"),
@@ -801,7 +798,7 @@ fn respect_gitignore_false_still_scans_ignored_file() {
     fs::write(dir.path().join("stash.txt"), "LEAK=found_despite_gitignore").unwrap();
 
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_respect_gitignore(false);
-    let body = combined_body(&source.chunks().flatten().collect::<Vec<_>>());
+    let body = combined_body(&collect_chunks(&source));
     assert!(
         body.contains("found_despite_gitignore"),
         "respect_gitignore(false) must surface .gitignore'd files (scan-system mode)"
@@ -1007,12 +1004,18 @@ fn mixed_tree_only_eligible_files_emit() {
 }
 
 #[test]
-fn nonexistent_root_yields_no_chunks_without_panic() {
-    // A root that does not exist must not panic; the walk yields nothing.
+fn nonexistent_root_yields_source_error_without_panic() {
+    // A root that does not exist must not panic or flatten to "clean": the
+    // iterator surfaces the unread root as a SourceError item.
     let missing = std::env::temp_dir().join("keyhog-gap-nonexistent-root-xyz-77");
     let _ = fs::remove_dir_all(&missing);
-    let chunks: Vec<_> = FilesystemSource::new(missing).chunks().flatten().collect();
-    assert!(chunks.is_empty(), "missing root must yield zero chunks");
+    let source = FilesystemSource::new(missing);
+    let results: Vec<_> = source.chunks().collect();
+    assert_eq!(results.len(), 1, "missing root must yield one error");
+    assert!(
+        results[0].is_err(),
+        "missing root must yield SourceError, not content"
+    );
 }
 
 #[test]
