@@ -470,7 +470,9 @@ fn fetch_object_chunk(
                 "skipping S3 object: body claimed text content-type but failed UTF-8 decode; NOT scanned"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            return Ok(None);
+            return Err(SourceError::Other(format!(
+                "failed to scan S3 object s3://{bucket}/{key}: body failed UTF-8 decode at byte {valid_up_to}; object was not scanned"
+            )));
         }
     };
 

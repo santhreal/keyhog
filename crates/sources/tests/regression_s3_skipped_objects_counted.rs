@@ -11,7 +11,7 @@
 //! "every object was actually scanned". The fix routes:
 //!   * over-cap (listed size, Content-Length, or streamed body) -> SKIPPED_OVER_MAX_SIZE
 //!   * binary content-type                                       -> SKIPPED_BINARY
-//!   * text-labelled body that fails UTF-8                       -> SKIPPED_UNREADABLE
+//!   * text-labelled body that fails UTF-8                       -> SKIPPED_UNREADABLE + source error row
 //! and upgrades every drop log from `debug!` to a loud `warn!`. This test pins
 //! the exact counter deltas by driving the REAL `S3Source::chunks()` production
 //! path (list -> per-object fetch -> skip) against an httpmock S3 endpoint.
@@ -239,16 +239,22 @@ fn non_utf8_text_labelled_object_is_counted_unreadable() {
             .body(vec![0xFFu8, 0xFE, 0x00, 0x80]);
     });
 
-    let ok: Vec<_> = TestApi
+    let rows: Vec<_> = TestApi
         .s3_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
+        .collect();
     assert_eq!(
-        ok.len(),
-        0,
-        "a non-UTF-8 text-labelled object yields no scanned chunk; got {} chunk(s)",
-        ok.len()
+        rows.len(),
+        1,
+        "a non-UTF-8 text-labelled object must surface one source error"
+    );
+    let err = rows[0]
+        .as_ref()
+        .expect_err("non-UTF-8 text-labelled object must be an error row");
+    assert!(
+        err.to_string().contains("failed UTF-8 decode")
+            && err.to_string().contains("object was not scanned"),
+        "error should name the undecodable S3 object, got {err}"
     );
 
     let after = skip_counts();

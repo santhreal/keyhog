@@ -159,6 +159,56 @@ fn non_success_get_is_counted_unreadable() {
 }
 
 #[test]
+fn non_utf8_text_labelled_object_is_counted_unreadable() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path(format!("/storage/v1/b/{BUCKET}/o"))
+            .query_param("alt", "json");
+        then.status(200)
+            .header("content-type", "application/json")
+            .body(listing(&object("lies.txt", 4)));
+    });
+    let _obj = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path(format!("/storage/v1/b/{BUCKET}/o/lies.txt"))
+            .query_param("alt", "media");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body(vec![0xFFu8, 0xFE, 0x00, 0x80]);
+    });
+
+    let rows: Vec<_> = TestApi
+        .gcs_source_with_endpoint(BUCKET, server.url(""))
+        .chunks()
+        .collect();
+    assert_eq!(
+        rows.len(),
+        1,
+        "non-UTF-8 GCS object must surface one source error"
+    );
+    let err = rows[0]
+        .as_ref()
+        .expect_err("non-UTF-8 GCS object must be an error row");
+    assert!(
+        err.to_string().contains("failed UTF-8 decode")
+            && err.to_string().contains("object was not scanned"),
+        "error should name the undecodable GCS object, got {err}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.unreadable - before.unreadable,
+        1,
+        "GCS non-UTF-8 text-labelled body MUST bump SKIPPED_UNREADABLE"
+    );
+}
+
+#[test]
 fn max_objects_limit_is_counted_source_truncated() {
     let _guard = counter_guard();
     TestApi.reset_skip_counters();

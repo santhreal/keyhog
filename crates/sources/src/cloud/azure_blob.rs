@@ -343,13 +343,16 @@ fn fetch_azure_blob_chunk(
     let object_text = match String::from_utf8(body) {
         Ok(text) => text,
         Err(error) => {
+            let valid_up_to = error.utf8_error().valid_up_to();
             tracing::warn!(
                 key = name,
-                valid_up_to = error.utf8_error().valid_up_to(),
+                valid_up_to,
                 "skipping Azure blob: body claimed text content-type but failed UTF-8 decode; NOT scanned"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            return Ok(None);
+            return Err(SourceError::Other(format!(
+                "failed to scan Azure blob {name}: body failed UTF-8 decode at byte {valid_up_to}; blob was not scanned"
+            )));
         }
     };
     Ok(Some(Chunk {

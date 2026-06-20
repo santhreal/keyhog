@@ -172,6 +172,55 @@ fn non_success_get_is_counted_unreadable() {
 }
 
 #[test]
+fn non_utf8_text_labelled_blob_is_counted_unreadable() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let _list = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/container")
+            .query_param("restype", "container")
+            .query_param("comp", "list");
+        then.status(200)
+            .header("content-type", "application/xml")
+            .body(listing(&blob("lies.txt", 4, "text/plain")));
+    });
+    let _obj = server.mock(|when, then| {
+        when.method(httpmock::Method::GET)
+            .path("/container/lies.txt");
+        then.status(200)
+            .header("content-type", "text/plain")
+            .body(vec![0xFFu8, 0xFE, 0x00, 0x80]);
+    });
+
+    let rows: Vec<_> = AzureBlobSource::new(container_url(&server))
+        .chunks()
+        .collect();
+    assert_eq!(
+        rows.len(),
+        1,
+        "non-UTF-8 Azure blob must surface one source error"
+    );
+    let err = rows[0]
+        .as_ref()
+        .expect_err("non-UTF-8 Azure blob must be an error row");
+    assert!(
+        err.to_string().contains("failed UTF-8 decode")
+            && err.to_string().contains("blob was not scanned"),
+        "error should name the undecodable Azure blob, got {err}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.unreadable - before.unreadable,
+        1,
+        "Azure non-UTF-8 text-labelled body MUST bump SKIPPED_UNREADABLE"
+    );
+}
+
+#[test]
 fn max_objects_limit_is_counted_source_truncated() {
     let _guard = counter_guard();
     TestApi.reset_skip_counters();
