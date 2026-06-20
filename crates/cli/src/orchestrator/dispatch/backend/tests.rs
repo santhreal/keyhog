@@ -1154,11 +1154,14 @@ fn autoroute_cache_rejects_selected_backend_with_overlapping_confidence() {
     let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
     let host = test_host(None);
     let key = test_workload_key();
-    let simd_timing =
-        BackendTimingEvidence::from_trial_ns(vec![10_000_000, 30_000_000, 30_000_000])
-            .expect("valid noisy SIMD timing");
-    let cpu_timing = BackendTimingEvidence::from_trial_ns(vec![11_000_000, 11_000_000, 11_000_000])
-        .expect("valid steady CPU timing");
+    let simd_timing = BackendTimingEvidence::from_trial_ns(vec![
+        10_000_000, 30_000_000, 30_000_000, 30_000_000, 30_000_000, 30_000_000, 30_000_000,
+    ])
+    .expect("valid noisy SIMD timing");
+    let cpu_timing = BackendTimingEvidence::from_trial_ns(vec![
+        11_000_000, 11_000_000, 11_000_000, 11_000_000, 11_000_000, 11_000_000, 11_000_000,
+    ])
+    .expect("valid steady CPU timing");
     let candidates = route_candidates(&simd_timing, Some(&cpu_timing), None);
     let bad = AutorouteDecision::from_timing_evidence(
         ScanBackend::SimdCpu,

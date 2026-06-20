@@ -18,8 +18,8 @@ use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
 
-pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 16;
-pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 3;
+pub(super) const AUTOROUTE_CACHE_VERSION: u32 = 17;
+pub(super) const AUTOROUTE_CALIBRATION_TRIALS: usize = 7;
 pub(super) const AUTOROUTE_GPU_WARM_TRIALS: usize = AUTOROUTE_CALIBRATION_TRIALS - 1;
 
 /// Persistent calibrated backend router.
