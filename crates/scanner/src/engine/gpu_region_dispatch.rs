@@ -24,6 +24,13 @@ use super::phase2_gpu_dfa::{
 use super::*;
 use crate::hw_probe::ScanBackend;
 
+fn mib_per_second(bytes: usize, elapsed: std::time::Duration) -> f64 {
+    if bytes == 0 || elapsed.is_zero() {
+        return 0.0;
+    }
+    bytes as f64 / (1024.0 * 1024.0) / elapsed.as_secs_f64()
+}
+
 impl CompiledScanner {
     pub(crate) fn phase2_gpu_dfa_catalog(
         &self,
@@ -108,12 +115,15 @@ impl CompiledScanner {
 
             let words = self.ac_map.len().div_ceil(64).max(1);
             let presence_words = self.ac_map.len().div_ceil(32).max(1);
+            let region_source_bytes: usize = chunks.iter().map(|chunk| chunk.data.len()).sum();
 
             let t_co = std::time::Instant::now();
             let mut co_s = std::time::Duration::ZERO;
             let mut dis_s = std::time::Duration::ZERO;
+            let mut region_coalesced_bytes = 0usize;
             let presence = match with_region_presence_batch(chunks, |haystack, region_starts| {
                 co_s = t_co.elapsed();
+                region_coalesced_bytes = haystack.len();
                 let t_dis = std::time::Instant::now();
                 let result =
                     super::gpu_literal_scratch::scan_gpu_literal_presence_by_region_with_scratch(
@@ -302,10 +312,13 @@ impl CompiledScanner {
             );
             if kh {
                 eprintln!(
-                    "perf-trace gpu-region-presence: chunks={} matcher={:.3}s coalesce={:.3}s dispatch={:.3}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_matches={} phase2_gpu_complete={} full_recall_floor={}",
+                    "perf-trace gpu-region-presence: chunks={} source_bytes={} coalesced_bytes={} matcher={:.3}s coalesce={:.6}s coalesce_mib_s={:.3} dispatch={:.3}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_matches={} phase2_gpu_complete={} full_recall_floor={}",
                     chunks.len(),
+                    region_source_bytes,
+                    region_coalesced_bytes,
                     matcher_s.as_secs_f64(),
                     co_s.as_secs_f64(),
+                    mib_per_second(region_source_bytes, co_s),
                     dis_s.as_secs_f64(),
                     floor_s.as_secs_f64(),
                     phase2_gpu_s.as_secs_f64(),
@@ -415,6 +428,15 @@ mod tests {
             "bounded GPU firing validation must not run a full prepared-chunk regex \
              scan after its local proof window misses"
         );
+    }
+
+    #[test]
+    fn coalesce_rate_reports_zero_for_zero_duration() {
+        assert_eq!(
+            mib_per_second(8 * 1024 * 1024, std::time::Duration::ZERO),
+            0.0
+        );
+        assert_eq!(mib_per_second(0, std::time::Duration::from_secs(1)), 0.0);
     }
 
     #[test]

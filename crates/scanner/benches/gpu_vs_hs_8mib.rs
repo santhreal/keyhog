@@ -1,14 +1,14 @@
-//! Apples-to-apples 8 MiB baseline: Hyperscan/SimdCpu vs the GPU megakernel.
+//! Apples-to-apples 8 MiB baseline: Hyperscan/SimdCpu vs GPU region presence.
 //!
 //! Same `CompiledScanner` (real detector catalog), same single 8 MiB chunk,
 //! same `scan_chunks_with_backend` batch entry. `SimdCpu` runs the Hyperscan
-//! literal prefilter phase-1; `Gpu` routes the batch through
-//! `scan_coalesced_megakernel` (the vyre batched-DFA megakernel). Both share
+//! literal prefilter phase-1; `Gpu` routes the batch through Vyre
+//! `GpuLiteralSet::scan_presence_by_region_with_scratch`. Both share
 //! `scan_coalesced_phase2`, so the delta is phase-1 backend only.
 //!
-//! Pass `-- --perf-trace` to get the megakernel's internal phase breakdown
-//! (catalog / coalesce / dispatch / validate / phase2) and the vyre dispatch
-//! telemetry (bytes uploaded / read back / kernel launches) on stderr.
+//! Pass `-- --perf-trace` to get the region-presence phase breakdown
+//! (matcher / coalesce / dispatch / floor / phase2_gpu / phase2) and Vyre
+//! dispatch telemetry on stderr.
 //!
 //! This is a plain `main()` (harness = false) so the numbers are raw wall-time
 //! medians, not criterion's adaptive sampling — every number is one timed call.
@@ -142,7 +142,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let chunk = make_chunk(payload, "src/bench_8mib.rs");
     let chunks = vec![chunk];
 
-    println!("=== keyhog 8 MiB matching baseline (GPU megakernel vs Hyperscan/SimdCpu) ===");
+    println!("=== keyhog 8 MiB matching baseline (GPU region presence vs Hyperscan/SimdCpu) ===");
     println!(
         "input={} MiB  detectors={}  iters={}  (median of {} steady-state calls, 1 warm-up excluded)",
         size / MIB,
@@ -159,8 +159,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (hs, hs_hits) = time_backend(&scanner, &chunks, ScanBackend::SimdCpu, iters);
     report("SimdCpu (Hyperscan)", hs, size, hs_hits);
 
-    // GPU megakernel path. --perf-trace prints the internal phase breakdown
-    // from megakernel_dispatch.rs plus the vyre dispatch telemetry.
+    // GPU region-presence path. --perf-trace prints the internal phase
+    // breakdown plus Vyre dispatch telemetry.
     #[cfg(feature = "gpu")]
     {
         // Surface the live GPU backend label so a silent degrade is visible.
@@ -170,7 +170,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("(gpu backend: NONE acquired — Gpu path will degrade loudly)");
         }
         let (gpu, gpu_hits) = time_backend(&scanner, &chunks, ScanBackend::Gpu, iters);
-        report("Gpu (vyre megakernel)", gpu, size, gpu_hits);
+        report("Gpu (region presence)", gpu, size, gpu_hits);
         let status = scanner.runtime_status();
         if status.gpu_degrade_count > 0 {
             println!(

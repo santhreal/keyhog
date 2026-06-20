@@ -43,6 +43,13 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         "region dispatch must use Vyre's batched region-presence scratch API"
     );
     assert!(
+        dispatch_src.contains("source_bytes={}")
+            && dispatch_src.contains("coalesced_bytes={}")
+            && dispatch_src.contains("coalesce_mib_s={:.3}")
+            && dispatch_src.contains("mib_per_second(region_source_bytes, co_s)"),
+        "GPU region perf trace must expose the CPU copy/fold pre-pass bytes and throughput, not just a rounded wall-time field"
+    );
+    assert!(
         dispatch_src.contains("phase2_gpu_dfa")
             && dispatch_src.contains("scan_coalesced_phase2_with_admission")
             && dispatch_src.contains("phase2_gpu_admitted")
