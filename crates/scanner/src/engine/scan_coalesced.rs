@@ -1,7 +1,7 @@
 // `scan_filters` is consumed by `should_scan_no_hit_chunk` (the no-phase-1-hit
 // admission gate) on the shared phase-2 tail. That tail is reached by the
-// coalesced producer (`simd`) and the GPU megakernel, and `gpu` implies `simd`
-// at the feature level.
+// coalesced producer (`simd`) and GPU region presence, and `gpu` implies
+// `simd` at the feature level.
 #[cfg(feature = "simd")]
 use super::scan_filters::*;
 use super::*;
@@ -117,8 +117,8 @@ impl CompiledScanner {
     }
 
     /// Phase 1 of the coalesced scan: the Hyperscan literal prefilter over raw
-    /// chunk bytes, producing one trigger bitmap per chunk. The GPU megakernel is
-    /// the alternative producer feeding the same phase 2.
+    /// chunk bytes, producing one trigger bitmap per chunk. GPU region presence
+    /// is the alternative producer feeding the same phase 2.
     #[cfg(feature = "simd")]
     pub(crate) fn compute_coalesced_triggers(
         &self,
@@ -207,8 +207,8 @@ impl CompiledScanner {
                 || entropy_admits)
     }
 
-    /// Shared phase-2 tail for the SIMD coalesced producer and the GPU
-    /// megakernel producer. Both backends feed identical per-chunk trigger
+    /// Shared phase-2 tail for the SIMD coalesced producer and GPU
+    /// region-presence producer. Both backends feed identical per-chunk trigger
     /// bitmaps into this owner so findings remain backend-invariant.
     #[cfg(feature = "simd")]
     pub(crate) fn scan_coalesced_phase2(

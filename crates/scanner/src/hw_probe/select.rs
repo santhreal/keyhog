@@ -143,8 +143,8 @@ pub(crate) fn select_backend_for_file(
 /// it uses the measured, parity-checked `MeasuredBackendRouter`
 /// (`crates/cli/src/orchestrator/dispatch/backend.rs`), which benchmarks the
 /// candidate backends on a real sample and gates the GPU behind explicit
-/// `--autoroute-gpu` calibration eligibility (the megakernel is slower than
-/// SIMD on keyhog's workload at every measured size). This function is the deterministic,
+/// `--autoroute-gpu` calibration eligibility (GPU region presence is slower
+/// than SIMD on keyhog's workload through the measured range). This function is the deterministic,
 /// side-effect-free dominance heuristic used by the `keyhog backend` report and
 /// by callers that want a backend decision without running the scanner — it
 /// shares [`cpu_tier_backend`] and [`gpu_could_engage`] with the live router so
@@ -244,12 +244,15 @@ pub(super) fn test_backend_override() -> Option<ScanBackend> {
 /// single source of truth for CLI/config backend parsing.
 pub fn parse_backend_str(raw: &str) -> Option<ScanBackend> {
     match raw.trim().to_ascii_lowercase().as_str() {
-        "gpu" | "gpu-zero-copy" | "literal-set" => Some(ScanBackend::Gpu),
+        // `gpu-zero-copy` is a legacy backend-string alias. The operator-visible
+        // label is `gpu-region-presence` because the live route still pays a
+        // host lowercase/coalescing pre-pass and therefore is not zero-copy.
+        "gpu" | "gpu-region-presence" | "gpu-zero-copy" | "literal-set" => Some(ScanBackend::Gpu),
         // Both spellings are advertised `--backend` values (clap
         // `PossibleValuesParser` in `args/scan.rs` accepts `mega-scan` AND
         // `megascan`); the no-hyphen form was previously dropped to `None` here,
         // so `--backend megascan` silently fell through to auto-routing instead
-        // of forcing the megakernel. Recognized here so the canonical parser
+        // of forcing the GPU route. Recognized here so the canonical parser
         // matches the advertised CLI surface (coherence).
         "mega-scan" | "megascan" | "gpu-mega-scan" | "regex-nfa" | "rule-pipeline" => {
             Some(ScanBackend::MegaScan)

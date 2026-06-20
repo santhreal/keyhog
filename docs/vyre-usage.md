@@ -367,7 +367,7 @@ source-code shape with a known-secret suffix per chunk) reports:
 ```
 cpu-fallback : 130 MiB/s  (302168 findings)
 simd-regex   : 136 MiB/s  (304128 findings)
-gpu-zero-copy:  34 MiB/s  (303554 findings)
+gpu-region-presence:  34 MiB/s  (303554 findings)
 ```
 
 Recall is now correct across all three backends (the prior `121×

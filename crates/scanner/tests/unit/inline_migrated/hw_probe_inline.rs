@@ -159,7 +159,7 @@ fn env_override_invalid_value_falls_through_to_auto() {
 #[test]
 fn backend_label_is_stable() {
     // Stable labels are part of our CLI banner contract.
-    assert_eq!(ScanBackend::Gpu.label(), "gpu-zero-copy");
+    assert_eq!(ScanBackend::Gpu.label(), "gpu-region-presence");
     assert_eq!(ScanBackend::SimdCpu.label(), "simd-regex");
     assert_eq!(ScanBackend::CpuFallback.label(), "cpu-fallback");
 }
@@ -169,7 +169,14 @@ fn env_override_accepts_label_aliases() {
     // Each backend has multiple opt-in aliases; CI runners and Dockerfiles
     // routinely use the human-readable label as the env value, so all forms
     // must map to the same backend. Asserted on the pure mapping (no global env).
-    for value in ["gpu", "GPU", "Gpu-Zero-Copy", " gpu ", "literal-set"] {
+    for value in [
+        "gpu",
+        "GPU",
+        "gpu-region-presence",
+        "Gpu-Zero-Copy",
+        " gpu ",
+        "literal-set",
+    ] {
         assert_eq!(
             parse_backend_str(value),
             Some(ScanBackend::Gpu),

@@ -222,11 +222,10 @@ impl ScanOrchestrator {
                         }
                     };
                     match chosen_backend {
-                        // The batched-DFA megakernel is the SINGLE on-GPU detection
-                        // path (it replaced the GpuLiteralSet two-phase and RulePipeline
-                        // MegaScan engines). It owns its backend acquisition and
-                        // degrades LOUDLY to SIMD CPU, so both an explicit GPU request
-                        // and a selected Gpu/MegaScan batch land here.
+                        // The Vyre GpuLiteralSet region-presence route is the single
+                        // on-GPU trigger path. It owns backend acquisition and degrades
+                        // LOUDLY to SIMD/CPU, so both an explicit GPU request and a
+                        // selected Gpu/MegaScan batch land here.
                         keyhog_scanner::hw_probe::ScanBackend::Gpu
                         | keyhog_scanner::hw_probe::ScanBackend::MegaScan => {
                             drain_prev(prev_phase2.take(), &mut findings);
@@ -236,7 +235,7 @@ impl ScanOrchestrator {
                                 backend = "gpu",
                                 batch_bytes,
                                 chunks = scanned_count,
-                                "batch dispatched (gpu megakernel)",
+                                "batch dispatched (gpu region presence)",
                             );
                             let per_chunk = scanner.scan_chunks_with_backend(
                                 &batch,

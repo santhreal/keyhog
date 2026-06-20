@@ -11,8 +11,8 @@
 /// one memory walk and shared cache lines.
 //
 // `any(simd, gpu)`: invoked only from `should_scan_no_hit_chunk`, the
-// no-phase-1-trigger admission gate on the coalesced (`simd`) / megakernel
-// (`gpu`) phase-2 tail. The no-`simd`-no-`gpu` AC+phase-2 path scans every
+// no-phase-1-trigger admission gate on the coalesced (`simd`) /
+// region-presence (`gpu`) phase-2 tail. The no-`simd`-no-`gpu` AC+phase-2 path scans every
 // chunk whole and never routes through that gate, so this filter has no caller
 // there — gated to match (Law 11).
 #[cfg(any(feature = "simd", feature = "gpu"))]
@@ -151,8 +151,8 @@ pub(super) const GENERIC_ASSIGNMENT_KEYWORDS: &[&str] = &[
 ///
 //
 // `any(simd, gpu)`: like `has_secret_keyword_fast`, this is consumed only by
-// `should_scan_no_hit_chunk` on the coalesced/megakernel phase-2 tail; gated to
-// match its caller so no-`simd`-no-`gpu` builds stay warning-clean (Law 11).
+// `should_scan_no_hit_chunk` on the coalesced/region-presence phase-2 tail;
+// gated to match its caller so no-`simd`-no-`gpu` builds stay warning-clean (Law 11).
 #[cfg(any(feature = "simd", feature = "gpu"))]
 pub(super) fn has_generic_assignment_keyword(data: &[u8]) -> bool {
     use aho_corasick::AhoCorasick;

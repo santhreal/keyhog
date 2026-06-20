@@ -88,7 +88,13 @@ fn with_env<R>(value: Option<&str>, body: impl FnOnce() -> R) -> R {
 #[test]
 fn env_override_gpu_forces_gpu_regardless_of_hardware() {
     let caps = caps_no_gpu(true, true);
-    for alias in ["gpu", "GPU", "gpu-zero-copy", "literal-set"] {
+    for alias in [
+        "gpu",
+        "GPU",
+        "gpu-region-presence",
+        "gpu-zero-copy",
+        "literal-set",
+    ] {
         with_env(Some(alias), || {
             assert_eq!(
                 select_backend(&caps, 1 << 30, 10_000),
@@ -536,7 +542,7 @@ fn classify_gpu_tier_edge_cases_are_low() {
 fn scan_backend_labels_are_stable() {
     // Stable labels feed logs, the `keyhog backend` subcommand, and CI
     // assertions. A renamed label breaks every downstream consumer.
-    assert_eq!(ScanBackend::Gpu.label(), "gpu-zero-copy");
+    assert_eq!(ScanBackend::Gpu.label(), "gpu-region-presence");
     assert_eq!(ScanBackend::MegaScan.label(), "gpu-mega-scan");
     assert_eq!(ScanBackend::SimdCpu.label(), "simd-regex");
     assert_eq!(ScanBackend::CpuFallback.label(), "cpu-fallback");

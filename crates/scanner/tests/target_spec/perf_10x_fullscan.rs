@@ -4,8 +4,9 @@
 //! A keyhog scan is two stages:
 //!   * **phase-1 / match** — the literal/regex prefilter (`AlphabetScreen` +
 //!     bigram bloom + Hyperscan/AC). On an RTX-5090 host this is ~0.03 s for a
-//!     16 MiB corpus and is effectively FREE; the GPU megakernel only replaces
-//!     THIS stage, which is why forcing GPU is 1.3-5.3x SLOWER end-to-end.
+//!     16 MiB corpus and is effectively FREE; the GPU region-presence route
+//!     only replaces THIS stage, which is why forcing GPU is 1.3-5.3x SLOWER
+//!     end-to-end.
 //!   * **phase-2 / verify** — per-candidate capture / checksum / entropy /
 //!     ML-MoE / companion / suppression / dedup. This is 15-30 s on the same
 //!     corpus and is the WHOLE bottleneck. It runs entirely on the CPU today,
@@ -248,7 +249,7 @@ fn assert_fullscan_10x_at(mib: usize) {
          target is baseline/{SPEEDUP_TARGET:.0} = {target_secs:.4}s (baseline SimdCpu = \
          {baseline_secs:.4}s). Current speedup is {speedup:.2}x, not {SPEEDUP_TARGET:.0}x. \
          The 10x lives in a BATCHED-GPU phase-2 verify path that does not exist yet — \
-         phase-1/match is already ~free, so routing to the GPU megakernel cannot close this. \
+         phase-1/match is already ~free, so routing to GPU region-presence cannot close this. \
          This line stays RED until batched phase-2 lands and select_backend routes here.",
         routed.label()
     );

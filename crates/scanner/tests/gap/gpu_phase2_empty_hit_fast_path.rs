@@ -1,9 +1,10 @@
 //! Static fail-closed guard: the coalesced phase-2 tail must keep the no-hit fast
 //! path that drops an unadmitted no-trigger chunk to `Vec::new()` BEFORE any
 //! `prepare_chunk` / post-process work, and its admission policy must match the
-//! keyword/entropy gate. Both the CPU Hyperscan prefilter and the GPU megakernel
-//! feed this single tail, so the old per-backend `gpu_phase2.rs` fast path was
-//! unified into `scan_coalesced_phase2`; this guard tracks it at its new home.
+//! keyword/entropy gate. Both the CPU Hyperscan prefilter and the GPU
+//! region-presence producer feed this single tail, so the old per-backend
+//! `gpu_phase2.rs` fast path was unified into `scan_coalesced_phase2`; this
+//! guard tracks it at its new home.
 
 fn scanner_root() -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))

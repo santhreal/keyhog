@@ -486,8 +486,8 @@ fn incremental_cache_warning(status: &MerkleLoadStatus) -> Option<String> {
 }
 
 fn gpu_init_policy_for_args(args: &ScanArgs) -> GpuInitPolicy {
-    // GPU init (which acquires the wgpu backend the megakernel needs) follows the
-    // selected backend: an explicit `--backend gpu`, or the measured
+    // GPU init (which acquires the backend the region-presence route needs)
+    // follows the selected backend: an explicit `--backend gpu`, or the measured
     // backend-selection policy below.
     if let Some(policy) = backend_name_gpu_policy(args.backend.as_deref()) {
         return policy;

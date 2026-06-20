@@ -290,7 +290,7 @@ impl CompiledScanner {
     //
     // `any(simd, gpu)`: the only caller is `should_scan_no_hit_chunk`, the
     // no-phase-1-trigger admission gate that exists solely on the coalesced
-    // (`simd`) and megakernel (`gpu`) phase-2 tail. A no-`simd`-no-`gpu` build
+    // (`simd`) and region-presence (`gpu`) phase-2 tail. A no-`simd`-no-`gpu` build
     // scans every chunk through the AC+phase-2 path unconditionally (no
     // trigger-skip step), so it never asks this question — gating here keeps
     // that profile warning-clean (Law 11) without dropping any chunk (Law 10).

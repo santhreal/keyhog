@@ -1,7 +1,7 @@
 //! KH-GAP-125: Engine backend parity lacks worst-case full-corpus CPU/SIMD/GPU gate.
 //!
 //! `backend_parity_matrix.rs` uses 6 synthetic fixtures; `gpu_parity.rs` uses one
-//! boundary corpus; megakernel full parity is waived (KH-GAP-043). No oracle runs
+//! boundary corpus; old GPU full parity was waived (KH-GAP-043). No oracle runs
 //! all 894 detectors × all backends on adversarial worst-case fixtures.
 
 use std::path::PathBuf;
@@ -18,6 +18,6 @@ fn full_corpus_multi_backend_worst_case_parity_test_exists() {
     assert!(
         exists,
         "KH-GAP-125: no worst-case full-corpus CPU/SIMD/GPU parity harness — \
-         only sample parity (3 detectors) + 6 synthetic fixtures + waived megakernel (043)"
+         only sample parity (3 detectors) + 6 synthetic fixtures + waived old-GPU parity (043)"
     );
 }

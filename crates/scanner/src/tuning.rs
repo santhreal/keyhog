@@ -66,7 +66,7 @@ pub(crate) struct ScannerTuning {
     no_candidate_gate: AtomicU8,
     /// Override for phase-2 plain-pattern localization.
     phase2_localizer: AtomicU8,
-    /// Override for the GPU megakernel full CPU recall floor.
+    /// Override for the GPU region-presence full CPU recall floor.
     gpu_recall_floor: AtomicU8,
     /// Override for GPU MoE readback timeout (`0` = compiled default).
     gpu_moe_timeout_ms: AtomicU64,
@@ -385,18 +385,18 @@ impl ScannerTuning {
         }
     }
 
-    // ── GPU megakernel CPU recall floor ───────────────────────────────────
+    // ── GPU region-presence CPU recall floor ──────────────────────────────
 
-    /// Override the full CPU trigger floor for GPU megakernel parity runs.
+    /// Override the full CPU trigger floor for GPU region-presence parity runs.
     /// Default OFF: the production GPU path pays for CPU triggers only when
     /// host-only detectors require them. Enabling this is explicit diagnostic
     /// coverage: it lets the shared CPU trigger net recover any GPU under-fire,
-    /// and the megakernel path reports that recovery loudly.
+    /// and the region-presence path reports that recovery loudly.
     pub(crate) fn set_gpu_recall_floor(&self, mode: Option<bool>) {
         self.gpu_recall_floor.store(encode_override(mode), Relaxed);
     }
 
-    /// Whether the GPU megakernel should compute the full CPU trigger floor
+    /// Whether GPU region presence should compute the full CPU trigger floor
     /// even when host-only detectors are absent.
     #[cfg(feature = "gpu")]
     pub(crate) fn gpu_recall_floor_enabled(&self) -> bool {

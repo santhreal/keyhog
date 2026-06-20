@@ -17,8 +17,8 @@ impl CompiledScanner {
     /// no-`gpu` build never asks the question. Gating it here keeps the
     /// no-`gpu` profiles warning-clean (Law 11) without changing any answer.
     /// `gpu` implies `simd` at the feature level (see keyhog-scanner Cargo.toml
-    /// — the megakernel reuses the SIMD phase-2 tail), so the `simd_prefilter`
-    /// field is always present here; the runtime `is_some()` still reflects
+    /// — GPU region presence reuses the SIMD phase-2 tail), so the
+    /// `simd_prefilter` field is always present here; the runtime `is_some()` still reflects
     /// whether the Hyperscan database actually built.
     #[cfg(feature = "gpu")]
     #[inline]
@@ -249,12 +249,11 @@ impl CompiledScanner {
 
     /// Warm backend resources that are initialized lazily during scanning.
     pub fn warm_backend(&self, backend: crate::hw_probe::ScanBackend) -> bool {
-        // `Gpu` and `MegaScan` are the SAME live on-GPU engine now (the
-        // megakernel — see backend_dispatch.rs / dispatch.rs / fused.rs, which
-        // all route a selected `MegaScan` batch through `ScanBackend::Gpu`). The
-        // separate `RulePipeline` regex-NFA engine `MegaScan` once warmed was a
-        // dead route (its `scan` was never invoked) and was removed, so warming
-        // both arms is exactly "is the GPU megakernel stack usable".
+        // `Gpu` and `MegaScan` are the SAME live on-GPU engine now: the
+        // GpuLiteralSet region-presence route. The separate `RulePipeline`
+        // regex-NFA engine `MegaScan` once warmed was a dead route (its `scan`
+        // was never invoked) and was removed, so warming both arms is exactly
+        // "is the GPU region-presence stack usable".
         let ready = match backend {
             crate::hw_probe::ScanBackend::Gpu | crate::hw_probe::ScanBackend::MegaScan => {
                 self.gpu_stack_usable()

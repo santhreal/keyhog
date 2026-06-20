@@ -1,8 +1,9 @@
 //! VRAM-adaptive MegaScan input sizing.
 //!
 //! No scan path builds or dispatches vyre's old `RulePipeline` regex-NFA engine:
-//! `--backend mega-scan` collapses onto the megakernel. This module owns only
-//! the live byte-budget selector used for routing and cache-key stability.
+//! `--backend mega-scan` collapses onto the GPU region-presence route. This
+//! module owns only the live byte-budget selector used for routing and
+//! cache-key stability.
 
 /// Maximum input buffer length the MegaScan `RulePipeline` is
 /// pre-compiled for. Chosen to match the orchestrator's

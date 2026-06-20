@@ -320,7 +320,7 @@ fn workload_selector_is_the_single_branch_owner() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn megascan_aliases_parse_but_collapse_onto_the_gpu_megakernel() {
+fn megascan_aliases_parse_but_collapse_onto_the_gpu_region_presence_route() {
     // Every advertised mega-scan alias still resolves (public CLI surface).
     for alias in [
         "mega-scan",
@@ -337,10 +337,10 @@ fn megascan_aliases_parse_but_collapse_onto_the_gpu_megakernel() {
     }
     // The label is stable (coherence with --help / banner / JSON).
     assert_eq!(ScanBackend::MegaScan.label(), "gpu-mega-scan");
-    assert_eq!(ScanBackend::Gpu.label(), "gpu-zero-copy");
+    assert_eq!(ScanBackend::Gpu.label(), "gpu-region-presence");
 
     // The collapse contract: a forced MegaScan and a forced Gpu both take the
-    // GPU megakernel route. `backend_dispatch.rs` keys the on-GPU path off
+    // GPU region-presence route. `backend_dispatch.rs` keys the on-GPU path off
     // `matches!(backend, Gpu | MegaScan)`; pin that both are GPU-class and the
     // CPU arms are not, so no caller can treat MegaScan as a third engine.
     fn is_gpu_class(b: ScanBackend) -> bool {
@@ -377,7 +377,7 @@ fn removed_dead_gpu_pipelines_stay_removed() {
     assert!(
         !code.contains("fn ac_gpu_program"),
         "ac_gpu_program method was removed as a dead route; do not re-add it — \
-         the megakernel is the single on-GPU AC engine"
+         region-presence is the single on-GPU trigger producer"
     );
     assert!(
         !code.contains("ac_gpu_program:"),
@@ -394,7 +394,7 @@ fn removed_dead_gpu_pipelines_stay_removed() {
     assert!(
         !code.contains("fn rule_pipeline(&self)"),
         "the rule_pipeline() lazy method was removed (its scan was never invoked); \
-         MegaScan IS the megakernel now"
+         MegaScan now collapses onto region-presence"
     );
     assert!(
         !code.contains("rule_pipeline: OnceLock"),
@@ -407,7 +407,7 @@ fn removed_dead_gpu_pipelines_stay_removed() {
         !code.contains("fn rule_pipeline_cached"),
         "rule_pipeline_cached was deleted as dead public surface (zero non-test \
          callers); the live GpuLiteralSet path caches via gpu_cache, and MegaScan \
-         collapses onto the megakernel — do not re-add the dead pipeline cache"
+         collapses onto region-presence — do not re-add the dead pipeline cache"
     );
     assert!(
         !code.contains("fn pipeline_cache_key") && !code.contains("PIPELINE_CACHE_VERSION"),
@@ -453,6 +453,10 @@ fn parse_backend_str_is_the_single_string_source() {
     assert_eq!(parse_backend_str("  GPU  "), Some(ScanBackend::Gpu));
     assert_eq!(parse_backend_str("SimD"), Some(ScanBackend::SimdCpu));
     // gpu aliases.
+    assert_eq!(
+        parse_backend_str("gpu-region-presence"),
+        Some(ScanBackend::Gpu)
+    );
     assert_eq!(parse_backend_str("gpu-zero-copy"), Some(ScanBackend::Gpu));
     assert_eq!(parse_backend_str("literal-set"), Some(ScanBackend::Gpu));
     // Unknown -> None (caller falls through to auto-routing).

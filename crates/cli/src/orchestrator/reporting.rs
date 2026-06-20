@@ -109,11 +109,11 @@ pub(crate) fn report_completion_summary(
 /// The per-batch routing decision was previously logged only at
 /// `tracing::debug!` (target `keyhog::routing`), invisible at the default
 /// `keyhog=warn` verbosity. So a scan that CORRECTLY chose SIMD — which is
-/// measured faster than the GPU megakernel for keyhog's detector set at every
-/// size (the ~1 GB DFA-catalog upload never amortizes in one scan, the per-rule
-/// DFA kernel is slower than the fused Hyperscan prefilter, and the CPU phase-2
-/// extraction dominates either way; see `measure_fastest_correct_backend`) —
-/// read to the operator as "GPU backend selection is broken." This prints ONE
+/// measured faster than the current GPU region-presence route for keyhog's
+/// detector set through the measured sweep (host fold/coalesce, dispatch,
+/// readback, and the shared CPU phase-2 tail; see
+/// `measure_fastest_correct_backend`) — read to the operator as "GPU backend
+/// selection is broken." This prints ONE
 /// completion line stating the backend(s) used and the routing rationale, so the
 /// decision is visible instead of buried (Law 10 / coherence). Reuses the
 /// scanner's existing per-chunk telemetry (`gpu_dispatches` vs `files_scanned`);
@@ -130,7 +130,7 @@ pub(crate) fn report_backend_summary(
         return;
     }
     // GPU_SCANNED_CHUNKS counts the chunks the coalesced GPU arm dispatched to
-    // the megakernel; everything else (the default fused CPU path and the
+    // GPU region presence; everything else (the default fused CPU path and the
     // coalesced SIMD arm) ran on SIMD/CPU.
     let gpu = crate::GPU_SCANNED_CHUNKS.load(Ordering::Relaxed).min(total);
     let simd = total - gpu;
@@ -139,22 +139,20 @@ pub(crate) fn report_backend_summary(
         format!("backend: {} (forced via --backend)", backend.label())
     } else if gpu > 0 && simd > 0 {
         format!(
-            "backend: gpu-zero-copy ({gpu} chunk(s)) + simd-regex ({simd} chunk(s)) - selected per batch by size"
+            "backend: gpu-region-presence ({gpu} chunk(s)) + simd-regex ({simd} chunk(s)) - selected per batch by size"
         )
     } else if gpu > 0 {
-        "backend: gpu-zero-copy (selected for large-buffer batches)".to_string()
+        "backend: gpu-region-presence (selected for large-buffer batches)".to_string()
     } else if hw.gpu_available && !hw.gpu_is_software {
         let name = hw.gpu_name.as_deref().unwrap_or("a GPU").trim().to_string(); // LAW10: absent name/label => display default; reporting-only, recall-safe
         format!(
             "backend: simd-regex - {name} present but NOT engaged, and that is the \
-             faster path here (measured). The GPU megakernel uploads the full DFA \
-             rule catalog (~1 GB, one-time per process) and then matches each \
-             detector as a separate per-rule DFA - slower than the fused Hyperscan \
-             prefilter - while the per-candidate extraction that dominates a scan \
-             runs on the CPU regardless. So SIMD wins for this detector set at every \
-             size we measured. Force the device path with --backend gpu (parity \
-             / research), include it in calibration with --autoroute-gpu (e.g. a \
-             long-lived daemon that amortizes the upload), or run `keyhog backend`."
+             faster path here (measured). The GPU region-presence route still pays \
+             host lowercase/coalescing, device dispatch/readback, and the shared CPU \
+             phase-2 extraction tail. In the current evidence, SIMD wins for this \
+             detector set through the measured range. Force the device path with \
+             --backend gpu (parity / research), include it in calibration with \
+             --autoroute-gpu, or run `keyhog backend`."
         )
     } else {
         "backend: simd-regex (no GPU available on this host)".to_string()

@@ -31,7 +31,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 pub(crate) static SCANNED_CHUNKS: AtomicUsize = AtomicUsize::new(0);
 pub(crate) static TOTAL_CHUNKS: AtomicUsize = AtomicUsize::new(0);
 pub(crate) static FINDINGS_COUNT: AtomicUsize = AtomicUsize::new(0);
-/// Chunks actually dispatched to the GPU megakernel (a subset of
+/// Chunks actually dispatched to GPU region presence (a subset of
 /// [`SCANNED_CHUNKS`]; the remainder ran on the SIMD/CPU path). The orchestrator
 /// bumps this in the coalesced GPU arm — the single place the GPU runs — so the
 /// completion summary can state which backend selection used and why,

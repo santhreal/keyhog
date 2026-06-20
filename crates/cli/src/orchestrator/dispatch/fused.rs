@@ -313,7 +313,7 @@ impl ScanOrchestrator {
                             backend = backend.label(),
                             batch_bytes = batch.iter().map(|c| c.data.len() as u64).sum::<u64>(),
                             chunks = scanned_count,
-                            "fused batch dispatched to GPU megakernel",
+                            "fused batch dispatched to GPU region presence",
                         );
                         crate::GPU_SCANNED_CHUNKS.fetch_add(scanned_count, Ordering::Relaxed);
                         scanner_ref.scan_chunks_with_backend(

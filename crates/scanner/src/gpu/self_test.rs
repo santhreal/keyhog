@@ -206,14 +206,14 @@ fn vyre_ac_kernel_self_test_impl() -> Result<VyreAcKernelSelfTest, String> {
     let results = scanner.scan_chunks_with_backend(&[chunk], ScanBackend::Gpu);
     if let Some(detail) = scanner.last_gpu_degrade_reason() {
         return Err(format!(
-            "megakernel degraded to SIMD/CPU at runtime despite an acquired GPU stack: {detail}"
+            "GPU region-presence scan degraded to SIMD/CPU at runtime despite an acquired GPU stack: {detail}"
         ));
     }
     let total: usize = results.iter().map(Vec::len).sum();
     if total == 0 {
         return Err(
-            "megakernel ran on GPU but reported zero matches for the planted 'needle' literal. \
-Indicates a catalog-lowering regression or a dispatch/workgroup-size mismatch."
+            "GPU region-presence scan ran on GPU but reported zero matches for the planted 'needle' literal. \
+Indicates a literal-set lowering regression or a dispatch/workgroup-size mismatch."
                 .to_string(),
         );
     }

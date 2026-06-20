@@ -35,7 +35,7 @@ pub(crate) fn parse_backend_override(
         .map(Some)
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "invalid --backend value {:?}. Supported values: auto, gpu, mega-scan, megascan, simd, cpu.",
+                "invalid --backend value {:?}. Supported values: auto, gpu, gpu-region-presence, mega-scan, megascan, simd, cpu.",
                 raw
             )
         })

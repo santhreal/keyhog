@@ -92,10 +92,18 @@ def check_current_claims(violations: list[str]) -> None:
         ROOT / "scripts/dogfood-windows.ps1",
         *(ROOT / "docs/src").rglob("*.md"),
         *(ROOT / "crates/cli/src").rglob("*.rs"),
+        *(ROOT / "crates/scanner/src").rglob("*.rs"),
     ]
     stale_patterns = {
         r"\bkeyhog\s+tui\b": "removed TUI command is still documented",
         r"Interactive TUI": "removed TUI surface is still documented",
+        r"\bGPU\s+megakernel\b": "retired GPU megakernel route is still named as live",
+        r"\bgpu\s+megakernel\b": "retired GPU megakernel route is still named as live",
+        r"\bmegakernel\s+producer\b": "retired megakernel producer is still named as live",
+        r"\bcoalesced/megakernel\b": "retired megakernel phase-2 wording remains",
+        r"\bgpu-zero-copy\b": "retired zero-copy GPU label is still named as live",
+        r"batch dispatched \(gpu megakernel\)": "retired GPU megakernel routing trace remains",
+        r"fused batch dispatched to GPU megakernel": "retired GPU megakernel routing trace remains",
         r"fastest hardware backend": "unproven fastest-backend claim remains",
         r"routes every scan": "unproven routing guarantee remains",
         r"\bauto-?router\b": "autorouter wording remains",
@@ -103,9 +111,12 @@ def check_current_claims(violations: list[str]) -> None:
     }
     for path in sorted(p for p in claim_paths if p.is_file()):
         src = path.read_text(encoding="utf-8", errors="replace")
+        rel_path = rel(path)
         for pattern, reason in stale_patterns.items():
+            if pattern == r"\bgpu-zero-copy\b" and rel_path == "crates/scanner/src/hw_probe/select.rs":
+                continue
             if re.search(pattern, src, flags=re.IGNORECASE):
-                fail(violations, f"{reason}: {rel(path)}")
+                fail(violations, f"{reason}: {rel_path}")
 
 
 def check_required_evidence_wiring(violations: list[str]) -> None:

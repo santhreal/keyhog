@@ -34,14 +34,14 @@ pub use tier::{gpu_routing_profile, gpu_routing_profiles, GpuRoutingProfile};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ScanBackend {
-    /// GPU pattern matching via vyre's literal-set engine
-    /// (`GpuLiteralSet`). The default GPU path; <~1500 patterns,
-    /// literal-prefix matching only.
+    /// GPU region-presence phase 1 via vyre's literal-set engine
+    /// (`GpuLiteralSet`). The default GPU path; it produces per-chunk
+    /// detector-presence bitmaps and the shared CPU phase-2 tail confirms
+    /// findings.
     Gpu,
-    /// GPU regex multimatch via vyre's `RulePipeline` mega-scan
-    /// pipeline (NFA-based). Activated by `--backend mega-scan`;
-    /// the regex-completion path that handles patterns
-    /// `GpuLiteralSet`'s literal prefix can't reduce to a literal.
+    /// Compatibility backend for the old mega-scan operator surface.
+    /// Activated by `--backend mega-scan`; the shipped scan path collapses it
+    /// onto the same GPU region-presence producer as [`ScanBackend::Gpu`].
     MegaScan,
     /// Hyperscan NFA multi-pattern matching + SIMD prefilter.
     /// This is the primary high-throughput path on all platforms.
@@ -55,7 +55,7 @@ impl ScanBackend {
     #[must_use]
     pub fn label(self) -> &'static str {
         match self {
-            Self::Gpu => "gpu-zero-copy",
+            Self::Gpu => "gpu-region-presence",
             Self::MegaScan => "gpu-mega-scan",
             Self::SimdCpu => "simd-regex",
             Self::CpuFallback => "cpu-fallback",

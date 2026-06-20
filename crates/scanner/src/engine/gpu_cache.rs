@@ -1,5 +1,5 @@
-//! On-disk cache helpers for compiled GPU matchers (the megakernel catalog
-//! cache lives at `~/.cache/keyhog/programs/` and is keyed via these helpers).
+//! On-disk cache helpers for compiled GPU literal-set matchers.
+//! Cache blobs live at `~/.cache/keyhog/programs/` and are keyed here.
 
 #[derive(Debug)]
 pub(crate) enum GpuMatcherCacheDirError {

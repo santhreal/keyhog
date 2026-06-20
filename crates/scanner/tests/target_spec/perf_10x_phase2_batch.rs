@@ -5,8 +5,8 @@
 //! phase-2 verify (per-candidate capture / checksum / entropy / ML-MoE /
 //! companion / suppression / dedup). Phase-2 is 15-30 s on the same corpus and
 //! is ALL of the wall time. It runs on the CPU, one candidate at a time. The
-//! GPU megakernel only replaces phase-1, so forcing GPU is strictly slower
-//! end-to-end — the 10x can only come from BATCHING phase-2 onto the GPU.
+//! GPU region-presence route only replaces phase-1, so forcing GPU is strictly
+//! slower end-to-end — the 10x can only come from BATCHING phase-2 onto the GPU.
 //!
 //! ## The targets encoded here (concrete, defensible, RED today)
 //!   1. **Per-candidate phase-2 cost `< PER_CANDIDATE_TARGET_US`.** A batched
@@ -205,7 +205,7 @@ fn assert_batch_phase2_throughput_at(lines: usize) {
          the batched-GPU target is N/100000 = {budget_secs:.4}s ({TARGET_CANDS_PER_SEC:.0} \
          cand/s). Measured throughput is {cands_per_sec:.0} cand/s on the routed path ({}). \
          Phase-2 runs one-candidate-at-a-time on the CPU today; this stays RED until the \
-         batched-GPU verify lands. Phase-1 is ≈free, so routing to the GPU megakernel does \
+         batched-GPU verify lands. Phase-1 is ≈free, so routing to GPU region-presence does \
          NOT help — the work to move is phase-2.",
         routed.label()
     );

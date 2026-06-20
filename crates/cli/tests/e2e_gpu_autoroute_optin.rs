@@ -81,7 +81,7 @@ fn without_optin_a_large_scan_never_reports_gpu_auto_selected() {
             "scan must emit the routing rationale line; stderr={stderr}"
         );
         assert!(
-            !stderr.contains("gpu-zero-copy (selected"),
+            !stderr.contains("gpu-region-presence (selected"),
             "the GPU must NOT be auto-selected without calibration evidence; stderr={stderr}"
         );
     } else {

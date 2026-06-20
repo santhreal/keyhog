@@ -3,7 +3,7 @@
 //! silently dead because the SIMD/GPU hot path never called
 //! `scan_phase2_patterns`. Fix: the call now runs after
 //! `extract_confirmed_patterns` in `scan_prepared_with_triggered`, the
-//! single per-chunk tail shared by the SIMD/CPU and megakernel coalesced
+//! single per-chunk tail shared by the SIMD/CPU and region-presence coalesced
 //! paths (via `scan_coalesced_phase2`). This test asserts the wire is
 //! alive - if a future refactor drops the call again, this catches it.
 

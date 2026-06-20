@@ -101,7 +101,7 @@ Autoroute calibration evidence is also explicit scan configuration: use
 `keyhog scan --autoroute-cache <PATH|off>` or `.keyhog.toml`
 `[system].autoroute_cache`.
 GPU MoE readback timeout is explicit scanner tuning:
-`.keyhog.toml` `[tuning].gpu_moe_timeout_ms`. GPU megakernel parity/debug
+`.keyhog.toml` `[tuning].gpu_moe_timeout_ms`. GPU region-presence parity/debug
 recall-floor runs use `.keyhog.toml` `[tuning].gpu_recall_floor = true`.
 
 ## `keyhog config --effective [SCAN FLAGS]`

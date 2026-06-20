@@ -135,7 +135,7 @@ fn scan_fixture(
     backend: ScanBackend,
 ) -> BTreeSet<FindingKey> {
     scanner.clear_fragment_cache();
-    // Gpu and MegaScan both route to the single on-GPU megakernel now.
+    // Gpu and MegaScan both route to the single on-GPU region-presence producer now.
     let results = scanner.scan_chunks_with_backend(chunks, backend);
     collect_keys(&results)
 }

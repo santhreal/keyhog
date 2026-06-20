@@ -56,7 +56,7 @@ fn scan_backend_is_exactly_the_four_collapsed_variants() {
     assert_eq!(
         labels,
         vec![
-            "gpu-zero-copy",
+            "gpu-region-presence",
             "gpu-mega-scan",
             "simd-regex",
             "cpu-fallback"
