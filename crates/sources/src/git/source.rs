@@ -919,16 +919,11 @@ fn collect_tree_blobs_metadata(
 /// resolves is a source error: otherwise live HEAD blobs can be mislabeled as
 /// `git/history`, silently downgrading active leaks.
 fn collect_head_blob_set(repo: &gix::Repository) -> Result<HashSet<gix::ObjectId>, SourceError> {
-    let head = match repo.head() {
-        Ok(head) => head,
-        Err(error) => {
-            tracing::debug!(
-                %error,
-                "git: HEAD is unavailable while collecting HEAD blob set; treating repository as empty"
-            );
-            return Ok(HashSet::new());
-        }
-    };
+    let head = repo.head().map_err(|error| {
+        SourceError::Git(format!(
+            "failed to read git HEAD while collecting live blob set: {error}"
+        ))
+    })?;
     let Some(head_id) = head.try_into_peeled_id().map_err(|error| {
         SourceError::Git(format!(
             "failed to resolve git HEAD while collecting live blob set: {error}"

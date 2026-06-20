@@ -6,20 +6,25 @@ fn corrupt_git_head_rejected() {
     use keyhog_core::Source;
     use keyhog_sources::GitSource;
 
-    let dir = tempfile::tempdir().expect("tempdir");
-    let git_dir = dir.path().join(".git");
-    std::fs::create_dir_all(&git_dir).expect("mkdir");
+    let (_temp, repo) = crate::support::git::init_repo();
+    crate::support::git::commit(
+        &repo,
+        "live.env",
+        "KEY=ghp_corruptHeadLiveRef00000000001\n",
+        "live ref survives corrupt HEAD",
+    );
+    let git_dir = repo.join(".git");
     std::fs::write(git_dir.join("HEAD"), b"not-a-valid-ref\n").expect("corrupt head");
 
-    let err = GitSource::new(dir.path().to_path_buf())
+    let err = GitSource::new(repo)
         .chunks()
         .next()
         .unwrap()
         .expect_err("corrupt HEAD must error");
     let msg = err.to_string();
     assert!(
-        !msg.is_empty(),
-        "corrupt git repo must surface actionable error, not panic"
+        msg.contains("failed to read git HEAD while collecting live blob set"),
+        "corrupt HEAD must fail before live-ref blobs are mislabeled as history; got {msg}"
     );
 }
 

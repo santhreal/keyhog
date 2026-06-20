@@ -17,12 +17,12 @@ fn git_corrupt_objects_directory_empty_rejected() {
     .expect("ref");
 
     let source = GitSource::new(dir.path().to_path_buf());
-    let mut iter = source.chunks();
-    match iter.next() {
-        Some(Err(e)) => assert!(!e.to_string().is_empty()),
-        None => {} // git log fails; empty iterator is acceptable (no panic)
-        Some(Ok(_)) => panic!("missing git objects must not yield readable chunks"),
-    }
+    let err = source
+        .chunks()
+        .next()
+        .expect("missing git objects must surface an error")
+        .expect_err("missing git objects must not yield readable chunks");
+    assert!(!err.to_string().is_empty());
 }
 
 #[cfg(not(feature = "git"))]
