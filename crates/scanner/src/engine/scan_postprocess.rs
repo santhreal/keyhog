@@ -20,8 +20,7 @@ use std::sync::Arc;
 // (`self.tuning.confirmed_suffix_gate_enabled()`); only the gate BUILDER remains
 // in the suffix-gate satellite.
 use super::scan_postprocess_profile::{
-    confirmed_prof_enabled, confirmed_prof_record, confirmed_prof_reset, confirmed_prof_stage_take,
-    confirmed_prof_vecs, ConfirmedStage,
+    confirmed_prof_enabled, confirmed_prof_record, confirmed_prof_vecs, ConfirmedStage,
 };
 #[cfg(feature = "decode")]
 use super::scan_postprocess_profile::{
@@ -503,71 +502,6 @@ impl CompiledScanner {
             && STRIPE_HOT_CONFIRMED_PREFIXES
                 .iter()
                 .any(|prefix| entry.regex.as_str().starts_with(prefix))
-    }
-
-    /// Print and reset the per-pattern confirmed-pass profile (top 30 by time).
-    pub(crate) fn confirmed_profile_dump(&self, label: &str) {
-        let total = self.ac_map.len() + self.phase2_patterns.len();
-        let (ns, runs) = confirmed_prof_vecs(total);
-        let mut rows: Vec<(usize, u64, u64)> = (0..total)
-            .map(|i| (i, ns[i].swap(0, Relaxed), runs[i].swap(0, Relaxed)))
-            .filter(|&(_, n, _)| n > 0)
-            .collect();
-        rows.sort_unstable_by(|a, b| b.1.cmp(&a.1));
-        let grand: u64 = rows.iter().map(|r| r.1).sum();
-        eprintln!(
-            "=== CONFIRMED per-pattern [{label}] total={:.1} ms over {} triggered patterns ===",
-            grand as f64 / 1e6,
-            rows.len()
-        );
-        let stages = confirmed_prof_stage_take();
-        let stage_total: u64 = stages.iter().map(|(ns, _)| *ns).sum();
-        if stage_total > 0 {
-            let labels = ["suffix-gate", "anchor-collect", "extract"];
-            eprintln!(
-                "=== CONFIRMED stages [{label}] total={:.1} ms ===",
-                stage_total as f64 / 1e6
-            );
-            for (idx, name) in labels.iter().enumerate() {
-                let (ns, runs) = stages[idx];
-                if ns == 0 {
-                    continue;
-                }
-                let per = if runs > 0 { ns / runs } else { 0 };
-                eprintln!(
-                    "  {:<15} {:>6.1}ms {:>5.1}%  runs={:<6} {:>7}ns/run",
-                    name,
-                    ns as f64 / 1e6,
-                    100.0 * ns as f64 / stage_total.max(1) as f64,
-                    runs,
-                    per
-                );
-            }
-        }
-        for (i, n, r) in rows.iter().take(30) {
-            let src = if *i < self.ac_map.len() {
-                self.ac_map[*i].regex.as_str()
-            } else {
-                self.phase2_patterns[*i - self.ac_map.len()]
-                    .0
-                    .regex
-                    .as_str()
-            };
-            let per = if *r > 0 { *n / *r } else { 0 };
-            let s: String = src.chars().take(60).collect();
-            eprintln!(
-                "  {:>6.1}ms {:>5.1}%  runs={:<6} {:>7}ns/run  {}",
-                *n as f64 / 1e6,
-                100.0 * *n as f64 / grand.max(1) as f64,
-                r,
-                per,
-                s
-            );
-        }
-    }
-
-    pub(crate) fn confirmed_profile_reset(&self) {
-        confirmed_prof_reset(self.ac_map.len() + self.phase2_patterns.len());
     }
 
     #[cfg(feature = "ml")]
