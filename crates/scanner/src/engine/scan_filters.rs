@@ -104,6 +104,7 @@ pub(super) const GENERIC_ASSIGNMENT_KEYWORDS: &[&str] = &[
     "api_key",
     "api-key",
     "api.key",
+    "auth",
     "auth_token",
     "auth-token",
     "auth.token",

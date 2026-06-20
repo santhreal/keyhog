@@ -12,6 +12,7 @@ use self::keywords::{
     keyword_has_word_boundary, normalize_assignment_keyword,
     normalized_assignment_keyword_has_secret_suffix,
 };
+use self::shape_helpers::is_structured_dotted_token;
 
 static GENERIC_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
     // Group 1 is the keyword, group 2 is the value. The regex accepts common
@@ -20,7 +21,7 @@ static GENERIC_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
     // stay in code gates below, where camelCase and hash-decoy handling are
     // testable without regex lookbehind.
     match regex::Regex::new(
-        r#"(?i)(secret|passphrase|password|passwd|pwd|pass|token|api[._-]?key|apikey|auth[._-]?token|auth[._-]?key|credential|private[._-]?key|signing[._-]?key|encryption[._-]?key|access[._-]?key|client[._-]?secret|app[._-]?secret|master[._-]?key|license[._-]?key|[a-z][a-z0-9]*(?:[._-][a-z0-9]+){0,2}[._-](?:key|secret|token))(?:[._-]?(?:key|base|value|val|string|str|enc|raw|b64)){0,2}["'`]?\s*(?::\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]{0,31}\s*[=:]\s*)?|=\s*)["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#,
+        r#"(?i)(secret|passphrase|password|passwd|pwd|pass|token|api[._-]?key|apikey|auth[._-]?token|auth[._-]?key|auth|credential|private[._-]?key|signing[._-]?key|encryption[._-]?key|access[._-]?key|client[._-]?secret|app[._-]?secret|master[._-]?key|license[._-]?key|[a-z][a-z0-9]*(?:[._-][a-z0-9]+){0,2}[._-](?:key|secret|token))(?:[._-]?(?:key|base|value|val|string|str|enc|raw|b64)){0,2}["'`]?\s*(?::\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]{0,31}\s*[=:]\s*)?|=\s*)["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#,
     ) {
         Ok(re) => Some(re),
         // Law 10: this static, build-from-constant regex compiling is a build
@@ -211,20 +212,29 @@ impl CompiledScanner {
                 // enforcing the boundary on every keyword cost ~36 real positives
                 // for no precision gain. `pass` alone needs the guard because its
                 // false-substring family (`bypass=`/`compass=`) is common.
-                if keyword_match.as_str().eq_ignore_ascii_case("pass")
+                let keyword = keyword_match.as_str();
+                if (keyword.eq_ignore_ascii_case("pass") || keyword.eq_ignore_ascii_case("auth"))
                     && !keyword_has_word_boundary(line, keyword_match.start())
                 {
                     continue;
                 }
-                if self.generic_keyword_owned_by_named_detector(keyword_match.as_str()) {
+                if self.generic_keyword_owned_by_named_detector(keyword) {
                     crate::telemetry::record_shape_suppression(
                         chunk.metadata.path.as_deref(),
-                        keyword_match.as_str(),
+                        keyword,
                         "generic_named_detector_owned_keyword",
                     );
                     continue;
                 }
                 let value = value_match.as_str();
+                if keyword.eq_ignore_ascii_case("auth") && !is_structured_dotted_token(value) {
+                    crate::telemetry::record_shape_suppression(
+                        chunk.metadata.path.as_deref(),
+                        value,
+                        "bare_auth_unstructured",
+                    );
+                    continue;
+                }
                 // Entropy gate: reject low-entropy values (variable names, prose).
                 // Routed through the SINGLE threshold-aware
                 // `generic_entropy_floor` helper (engine/scan_filters.rs) — the

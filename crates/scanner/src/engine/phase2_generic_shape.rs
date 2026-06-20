@@ -124,8 +124,9 @@ impl CompiledScanner {
         {
             return Some("type_name_shape");
         }
-        // Allow dots ONLY in JWT-like patterns (exactly 2 dots separating
-        // base64 segments). Reject other dotted values (method chains, FQDNs).
+        // Allow dots ONLY in structured token patterns (exactly 2 dots
+        // separating base64 segments). Reject other dotted values (method
+        // chains, FQDNs).
         //
         // Defect #76: the old "is_jwt_like" check passed any
         // 3-segment dotted string where each segment was 4+
@@ -136,27 +137,14 @@ impl CompiledScanner {
         // header); requiring that prefix on the first segment
         // eliminates property-access FPs without losing any
         // real JWT - the base64 alphabet only produces those
-        // three characters from a `{"` header.
-        if value.contains('.') {
-            let dot_count = value.chars().filter(|&c| c == '.').count();
-            let segments: Vec<&str> = value.split('.').collect();
-            let is_jwt_like = dot_count == 2
-                && segments.len() == 3
-                && segments[0].starts_with("eyJ")
-                && segments.iter().all(|s| {
-                    s.len() >= 4
-                        && s.chars().all(|c| {
-                            c.is_ascii_alphanumeric()
-                                || c == '+'
-                                || c == '/'
-                                || c == '='
-                                || c == '-'
-                                || c == '_'
-                        })
-                });
-            if !is_jwt_like {
-                return Some("non_jwt_dotted");
-            }
+        // three characters from a `{"` header. Discord-style bot tokens are
+        // the other bounded three-segment credential shape: 23-28, 6-8, and
+        // 27-38 base64url chars. Keep that exact length profile alive while
+        // leaving property access suppressed.
+        if value.contains('.')
+            && !crate::engine::phase2_generic::shape_helpers::is_structured_dotted_token(value)
+        {
+            return Some("non_jwt_dotted");
         }
         // Reject pure identifiers: only alphanumeric + underscore
         if value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {

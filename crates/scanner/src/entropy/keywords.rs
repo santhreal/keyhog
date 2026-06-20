@@ -1,5 +1,6 @@
 use super::{shannon_entropy, HIGH_ENTROPY_THRESHOLD};
 use crate::engine::phase2_generic::keywords::normalize_assignment_keyword;
+use crate::engine::phase2_generic::shape_helpers::is_structured_dotted_token;
 
 pub(crate) struct KeywordContext {
     pub(crate) keyword: String,
@@ -113,40 +114,42 @@ pub(super) fn extract_candidates(
         return candidates;
     }
 
-    let mut push_candidate = |raw: &str, strict: bool| {
+    let mut push_candidate = |raw: &str, strict: bool, allow_structured_dotted: bool| {
         let cleaned = clean_candidate_value(raw);
         if cleaned.len() < min_length {
             return;
         }
-        let plausible = if strict {
-            is_secret_plausible_with_lift(
-                cleaned,
-                placeholder_keywords,
-                is_credential_context,
-                allow_canonical_shapes,
-            )
-        } else {
-            is_candidate_plausible_with_lift(
-                cleaned,
-                placeholder_keywords,
-                is_credential_context,
-                allow_canonical_shapes,
-            )
-        };
+        let structured_dotted = allow_structured_dotted && is_structured_dotted_token(cleaned);
+        let plausible = structured_dotted
+            || if strict {
+                is_secret_plausible_with_lift(
+                    cleaned,
+                    placeholder_keywords,
+                    is_credential_context,
+                    allow_canonical_shapes,
+                )
+            } else {
+                is_candidate_plausible_with_lift(
+                    cleaned,
+                    placeholder_keywords,
+                    is_credential_context,
+                    allow_canonical_shapes,
+                )
+            };
         if plausible && !candidates.iter().any(|c| c == cleaned) {
             candidates.push(cleaned.to_string());
         }
     };
 
     if let Some(value) = authorization_header_value(line) {
-        push_candidate(value, false);
+        push_candidate(value, false, false);
     }
     if let Some(value) = xml_assignment_value(line) {
-        push_candidate(value, false);
+        push_candidate(value, false, true);
     }
 
     if let Some(sep_pos) = line.find('=').or_else(|| line.find(':')) {
-        push_candidate(&line[sep_pos + 1..], false);
+        push_candidate(&line[sep_pos + 1..], false, true);
     }
 
     for quote in ['"', '\''] {
@@ -157,7 +160,7 @@ pub(super) fn extract_candidates(
                     None => start = Some(index + 1),
                     Some(begin) => {
                         let content = &line[begin..index];
-                        push_candidate(content, true);
+                        push_candidate(content, true, false);
                         start = None;
                     }
                 }

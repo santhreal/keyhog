@@ -6,6 +6,8 @@ pub mod integration;
 pub mod regression;
 #[path = "regression_creddata_hex_key_recall.rs"]
 pub mod regression_creddata_hex_key_recall;
+#[path = "regression_dotted_authentication_key_recall.rs"]
+pub mod regression_dotted_authentication_key_recall;
 #[path = "regression_encoded_benign_text_suppression.rs"]
 pub mod regression_encoded_benign_text_suppression;
 #[path = "regression_entropy_base64_protobuf_decoys.rs"]

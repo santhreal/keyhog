@@ -306,6 +306,9 @@ pub(crate) fn candidate_is_plausible(
     context: &KeywordContext,
     placeholder_keywords: &[String],
 ) -> bool {
+    if crate::engine::phase2_generic::shape_helpers::is_structured_dotted_token(candidate) {
+        return candidate.len() >= KEYWORD_FREE_MIN_LEN.min(context.min_len);
+    }
     if entropy < context.threshold {
         return false;
     }
