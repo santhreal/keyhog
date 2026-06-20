@@ -16,6 +16,7 @@
 
 use super::gpu_region_batch::{
     set_trigger_bit, trigger_bit_is_set, validate_detector_match, with_region_presence_batch,
+    RegionPresenceBatchMode,
 };
 #[cfg(test)]
 use super::phase2_gpu_dfa::Phase2GpuDfaAdmission;
@@ -140,21 +141,26 @@ impl CompiledScanner {
             let mut co_s = std::time::Duration::ZERO;
             let mut dis_s = std::time::Duration::ZERO;
             let mut region_coalesced_bytes = 0usize;
-            let presence = match with_region_presence_batch(chunks, |haystack, region_starts| {
-                co_s = t_co.elapsed();
-                region_coalesced_bytes = haystack.len();
-                let t_dis = std::time::Instant::now();
-                let result =
-                    super::gpu_literal_scratch::scan_gpu_literal_presence_by_region_with_scratch(
-                        matcher,
-                        &**backend,
-                        haystack,
-                        region_starts,
-                    )
-                    .map_err(|error| format!("region-presence dispatch error: {error}"));
-                dis_s = t_dis.elapsed();
-                result
-            }) {
+            let mut region_batch_mode = RegionPresenceBatchMode::FoldedScratch;
+            let presence = match with_region_presence_batch(
+                chunks,
+                |haystack, region_starts, batch_mode| {
+                    co_s = t_co.elapsed();
+                    region_coalesced_bytes = haystack.len();
+                    region_batch_mode = batch_mode;
+                    let t_dis = std::time::Instant::now();
+                    let result =
+                        super::gpu_literal_scratch::scan_gpu_literal_presence_by_region_with_scratch(
+                            matcher,
+                            &**backend,
+                            haystack,
+                            region_starts,
+                        )
+                        .map_err(|error| format!("region-presence dispatch error: {error}"));
+                    dis_s = t_dis.elapsed();
+                    result
+                },
+            ) {
                 Ok(presence) => presence,
                 Err(error) => return degrade(error),
             };
@@ -354,10 +360,11 @@ impl CompiledScanner {
                     .filter(|&&present| present)
                     .count();
                 eprintln!(
-                    "perf-trace gpu-region-presence: chunks={} source_bytes={} coalesced_bytes={} matcher={:.3}s coalesce={:.6}s coalesce_mib_s={:.3} dispatch={:.3}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_matches={} phase2_gpu_complete={} phase2_always_anchor_chunks={} full_recall_floor={}",
+                    "perf-trace gpu-region-presence: chunks={} source_bytes={} coalesced_bytes={} batch_mode={} matcher={:.3}s coalesce={:.6}s coalesce_mib_s={:.3} dispatch={:.3}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_matches={} phase2_gpu_complete={} phase2_always_anchor_chunks={} full_recall_floor={}",
                     chunks.len(),
                     region_source_bytes,
                     region_coalesced_bytes,
+                    region_batch_mode.label(),
                     matcher_s.as_secs_f64(),
                     co_s.as_secs_f64(),
                     mib_per_second(region_source_bytes, co_s),
@@ -391,8 +398,8 @@ impl CompiledScanner {
 #[cfg(all(test, feature = "gpu"))]
 mod tests {
     use super::super::gpu_region_batch::{
-        build_region_presence_batch, validation_window_range, RegionPresenceScratch,
-        ZeroRegionPresenceScratch,
+        build_region_presence_batch, validation_window_range, with_region_presence_batch,
+        RegionPresenceBatchMode, RegionPresenceScratch, ZeroRegionPresenceScratch,
     };
     use super::*;
 
@@ -412,6 +419,36 @@ mod tests {
         }
 
         assert!(scratch.is_empty());
+    }
+
+    #[test]
+    fn region_presence_batch_borrows_single_chunk_when_folded_source_is_identical() {
+        let chunks = [keyhog_core::Chunk::from("ghp_lowercase_token_123")];
+        let source_ptr = chunks[0].data.as_bytes().as_ptr();
+
+        with_region_presence_batch(&chunks, |haystack, region_starts, mode| {
+            assert_eq!(mode, RegionPresenceBatchMode::BorrowedSingleChunk);
+            assert_eq!(haystack, chunks[0].data.as_bytes());
+            assert_eq!(haystack.as_ptr(), source_ptr);
+            assert_eq!(region_starts, &[0]);
+            Ok(())
+        })
+        .expect("borrowed single-chunk batch");
+    }
+
+    #[test]
+    fn region_presence_batch_uses_folded_scratch_when_case_fold_changes_bytes() {
+        let chunks = [keyhog_core::Chunk::from("GhP_TOKEN")];
+        let source_ptr = chunks[0].data.as_bytes().as_ptr();
+
+        with_region_presence_batch(&chunks, |haystack, region_starts, mode| {
+            assert_eq!(mode, RegionPresenceBatchMode::FoldedScratch);
+            assert_eq!(haystack, b"ghp_token");
+            assert_ne!(haystack.as_ptr(), source_ptr);
+            assert_eq!(region_starts, &[0]);
+            Ok(())
+        })
+        .expect("folded single-chunk batch");
     }
 
     #[test]

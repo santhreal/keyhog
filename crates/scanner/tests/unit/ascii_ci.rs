@@ -2,6 +2,7 @@
 
 use keyhog_scanner::testing::ascii_ci::{
     ci_find, contains_path_segment, contains_path_segment_two, extend_ascii_lowercase_from,
+    has_ascii_uppercase,
 };
 
 #[test]
@@ -58,6 +59,41 @@ fn extend_ascii_lowercase_from_writes_initialized_spare_capacity() {
     assert!(
         !src.contains("extend(src.iter().map"),
         "hot GPU lowercase staging must not return to iterator-driven Vec::extend"
+    );
+}
+
+#[test]
+fn has_ascii_uppercase_matches_scalar_byte_semantics() {
+    let bytes: Vec<u8> = (0u8..=255).collect();
+    assert_eq!(
+        has_ascii_uppercase(&bytes),
+        bytes.iter().any(u8::is_ascii_uppercase)
+    );
+
+    let mut no_uppercase: Vec<u8> = (0..4099)
+        .map(|idx| {
+            let byte = ((idx * 37 + 11) & 0xff) as u8;
+            byte.to_ascii_lowercase()
+        })
+        .collect();
+    no_uppercase.retain(|byte| !byte.is_ascii_uppercase());
+    assert!(!has_ascii_uppercase(&no_uppercase));
+
+    let mut long_tail = no_uppercase.clone();
+    long_tail.extend_from_slice(b"zzzzZ");
+    assert!(has_ascii_uppercase(&long_tail));
+}
+
+#[test]
+fn has_ascii_uppercase_keeps_simd_and_scalar_owner_in_ascii_ci() {
+    let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/ascii_ci.rs"));
+
+    assert!(
+        src.contains("fn has_ascii_uppercase")
+            && src.contains("has_ascii_uppercase_avx2")
+            && src.contains("has_ascii_uppercase_neon")
+            && src.contains("ascii_is_uppercase"),
+        "ASCII uppercase detection for GPU zero-copy admission must stay in the ascii_ci owner"
     );
 }
 

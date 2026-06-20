@@ -46,6 +46,15 @@ pub(crate) fn write_ascii_lowercase_into(dst: &mut [MaybeUninit<u8>], src: &[u8]
 }
 
 #[inline]
+#[cfg(any(feature = "gpu", test))]
+pub(crate) fn has_ascii_uppercase(src: &[u8]) -> bool {
+    match has_ascii_uppercase_simd(src) {
+        Some(found) => found,
+        None => src.iter().any(|&byte| ascii_is_uppercase(byte)),
+    }
+}
+
+#[inline]
 #[cfg(all(any(feature = "gpu", test), target_arch = "x86_64"))]
 fn write_ascii_lowercase_simd_prefix(dst: &mut [MaybeUninit<u8>], src: &[u8]) -> usize {
     if src.len() >= 128 && std::is_x86_feature_detected!("avx2") {
@@ -78,6 +87,37 @@ fn write_ascii_lowercase_simd_prefix(_dst: &mut [MaybeUninit<u8>], _src: &[u8]) 
     0
 }
 
+#[inline]
+#[cfg(all(any(feature = "gpu", test), target_arch = "x86_64"))]
+fn has_ascii_uppercase_simd(src: &[u8]) -> Option<bool> {
+    if src.len() >= 128 && std::is_x86_feature_detected!("avx2") {
+        // SAFETY: runtime detection proved AVX2 support. The scanner only
+        // reads within `src`, then finishes the scalar tail inside the helper.
+        return Some(unsafe { has_ascii_uppercase_avx2(src) });
+    }
+    None
+}
+
+#[inline]
+#[cfg(all(any(feature = "gpu", test), target_arch = "aarch64"))]
+fn has_ascii_uppercase_simd(src: &[u8]) -> Option<bool> {
+    if src.len() >= 64 {
+        // SAFETY: NEON is part of the aarch64 baseline. The scanner only reads
+        // within `src`, then finishes the scalar tail inside the helper.
+        return Some(unsafe { has_ascii_uppercase_neon(src) });
+    }
+    None
+}
+
+#[inline]
+#[cfg(all(
+    any(feature = "gpu", test),
+    not(any(target_arch = "x86_64", target_arch = "aarch64"))
+))]
+fn has_ascii_uppercase_simd(_src: &[u8]) -> Option<bool> {
+    None
+}
+
 #[cfg(all(any(feature = "gpu", test), target_arch = "x86_64"))]
 #[target_feature(enable = "avx2")]
 unsafe fn write_ascii_lowercase_avx2(dst: *mut u8, src: &[u8]) -> usize {
@@ -106,6 +146,31 @@ unsafe fn write_ascii_lowercase_avx2(dst: *mut u8, src: &[u8]) -> usize {
     offset
 }
 
+#[cfg(all(any(feature = "gpu", test), target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+unsafe fn has_ascii_uppercase_avx2(src: &[u8]) -> bool {
+    use std::arch::x86_64::{
+        __m256i, _mm256_and_si256, _mm256_cmpgt_epi8, _mm256_loadu_si256, _mm256_movemask_epi8,
+        _mm256_set1_epi8,
+    };
+
+    let upper_start_minus_one = _mm256_set1_epi8((b'A' - 1) as i8);
+    let upper_end_plus_one = _mm256_set1_epi8((b'Z' + 1) as i8);
+    let mut offset = 0usize;
+    while offset + 32 <= src.len() {
+        // SAFETY: the loop guard keeps the 32-byte unaligned load inside `src`.
+        let chunk = unsafe { _mm256_loadu_si256(src.as_ptr().add(offset).cast::<__m256i>()) };
+        let above_upper_start = _mm256_cmpgt_epi8(chunk, upper_start_minus_one);
+        let below_upper_end = _mm256_cmpgt_epi8(upper_end_plus_one, chunk);
+        let uppercase_mask = _mm256_and_si256(above_upper_start, below_upper_end);
+        if _mm256_movemask_epi8(uppercase_mask) != 0 {
+            return true;
+        }
+        offset += 32;
+    }
+    src[offset..].iter().any(|&byte| ascii_is_uppercase(byte))
+}
+
 #[cfg(all(any(feature = "gpu", test), target_arch = "aarch64"))]
 unsafe fn write_ascii_lowercase_neon(dst: *mut u8, src: &[u8]) -> usize {
     use std::arch::aarch64::{
@@ -132,11 +197,40 @@ unsafe fn write_ascii_lowercase_neon(dst: *mut u8, src: &[u8]) -> usize {
     offset
 }
 
+#[cfg(all(any(feature = "gpu", test), target_arch = "aarch64"))]
+unsafe fn has_ascii_uppercase_neon(src: &[u8]) -> bool {
+    use std::arch::aarch64::{
+        uint8x16_t, vandq_u8, vcgeq_u8, vcleq_u8, vdupq_n_u8, vld1q_u8, vmaxvq_u8,
+    };
+
+    let upper_start = vdupq_n_u8(b'A');
+    let upper_end = vdupq_n_u8(b'Z');
+    let mut offset = 0usize;
+    while offset + 16 <= src.len() {
+        // SAFETY: the loop guard keeps the 16-byte unaligned load inside `src`.
+        let chunk: uint8x16_t = unsafe { vld1q_u8(src.as_ptr().add(offset)) };
+        let above_or_equal_a = vcgeq_u8(chunk, upper_start);
+        let below_or_equal_z = vcleq_u8(chunk, upper_end);
+        let uppercase_mask = vandq_u8(above_or_equal_a, below_or_equal_z);
+        if vmaxvq_u8(uppercase_mask) != 0 {
+            return true;
+        }
+        offset += 16;
+    }
+    src[offset..].iter().any(|&byte| ascii_is_uppercase(byte))
+}
+
 #[inline]
 #[cfg(any(feature = "gpu", test))]
 fn ascii_lower_branchless(byte: u8) -> u8 {
-    let uppercase = byte.wrapping_sub(b'A') <= (b'Z' - b'A');
+    let uppercase = ascii_is_uppercase(byte);
     byte | ((uppercase as u8) << 5)
+}
+
+#[inline]
+#[cfg(any(feature = "gpu", test))]
+fn ascii_is_uppercase(byte: u8) -> bool {
+    byte.wrapping_sub(b'A') <= (b'Z' - b'A')
 }
 
 /// Case-insensitive `ends_with`. Returns true when the last `suffix.len()`

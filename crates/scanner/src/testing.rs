@@ -1190,6 +1190,10 @@ pub(crate) mod ascii_ci {
         crate::ascii_ci::extend_ascii_lowercase_from(dst, src)
     }
 
+    pub(crate) fn has_ascii_uppercase(src: &[u8]) -> bool {
+        crate::ascii_ci::has_ascii_uppercase(src)
+    }
+
     pub(crate) fn ci_find(haystack: &[u8], needle_lower: &[u8]) -> bool {
         crate::ascii_ci::ci_find(haystack, needle_lower)
     }

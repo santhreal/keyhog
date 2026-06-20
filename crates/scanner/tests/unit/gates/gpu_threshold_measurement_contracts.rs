@@ -19,6 +19,36 @@ struct CrossoverPoint {
     winner: String,
 }
 
+#[derive(serde::Deserialize)]
+struct GpuRegionPerfTrace {
+    schema_version: u32,
+    gpu: String,
+    backend: String,
+    payload: String,
+    points: Vec<GpuRegionPerfPoint>,
+}
+
+#[derive(serde::Deserialize)]
+struct GpuRegionPerfPoint {
+    mib: u64,
+    source_bytes: u64,
+    coalesced_bytes: u64,
+    batch_mode: String,
+    simd_wall_ms: f64,
+    gpu_wall_ms: f64,
+    gpu_over_simd_wall_ratio: f64,
+    winner: String,
+    hits: u64,
+    coalesce_s: f64,
+    coalesce_mib_s: f64,
+    dispatch_s: f64,
+    phase2_gpu_s: f64,
+    phase2_cpu_s: f64,
+    gpu_presence_bits: u64,
+    trigger_bits: u64,
+    phase2_gpu_complete: bool,
+}
+
 fn threshold_u64(name: &str) -> u64 {
     let src = include_str!("../../../src/hw_probe/thresholds.rs");
     let prefix = format!("pub(crate) const {name}: u64 = ");
@@ -38,6 +68,77 @@ fn threshold_u64(name: &str) -> u64 {
                 .unwrap_or_else(|error| panic!("parse {name} term {part:?}: {error}"))
         })
         .product()
+}
+
+#[test]
+fn rtx5090_region_perf_trace_records_direct_source_and_8mib_not_10x() {
+    const MIB: u64 = 1024 * 1024;
+    let raw = include_str!(
+        "../../../../../benchmarks/baselines/gpu_region_perf_trace_rtx5090_2026-06-20.toml"
+    );
+    let measurement: GpuRegionPerfTrace =
+        toml::from_str(raw).expect("parse RTX 5090 GPU region perf trace");
+
+    assert_eq!(measurement.schema_version, 2);
+    assert_eq!(measurement.gpu, "NVIDIA GeForce RTX 5090");
+    assert_eq!(measurement.backend, "region-presence");
+    assert_eq!(measurement.payload, "benign-sparse-single-chunk");
+
+    for mib in [1, 8, 64] {
+        let Some(point) = measurement.points.iter().find(|point| point.mib == mib) else {
+            panic!("{mib} MiB perf-trace point must be present");
+        };
+        assert_eq!(point.source_bytes, mib * MIB);
+        assert_eq!(
+            point.coalesced_bytes, point.source_bytes,
+            "single-chunk direct-source region scans must not add separator bytes"
+        );
+        assert_eq!(point.batch_mode, "borrowed-single-chunk");
+        assert_eq!(point.winner, "gpu");
+        assert!(
+            point.gpu_wall_ms < point.simd_wall_ms,
+            "{mib} MiB GPU route must beat Hyperscan in this refreshed trace"
+        );
+        let derived_ratio = point.gpu_wall_ms / point.simd_wall_ms;
+        assert!(
+            (derived_ratio - point.gpu_over_simd_wall_ratio).abs() < 0.005,
+            "{mib} MiB ratio drift: derived={derived_ratio} recorded={}",
+            point.gpu_over_simd_wall_ratio
+        );
+        assert!(
+            point.hits > 0,
+            "{mib} MiB trace must exercise recall parity"
+        );
+        assert!(point.coalesce_s > 0.0);
+        assert!(
+            point.coalesce_mib_s > 10_000.0,
+            "{mib} MiB direct-source admission should report memory-rate evidence"
+        );
+        assert!(point.dispatch_s > 0.0);
+        assert_eq!(point.phase2_gpu_s, 0.0);
+        assert!(point.phase2_cpu_s > 0.0);
+        assert_eq!(point.gpu_presence_bits, 29);
+        assert_eq!(point.trigger_bits, 75);
+        assert!(point.phase2_gpu_complete);
+    }
+
+    let eight = measurement
+        .points
+        .iter()
+        .find(|point| point.mib == 8)
+        .expect("8 MiB perf-trace point");
+    assert!(
+        eight.gpu_over_simd_wall_ratio < 1.0,
+        "8 MiB GPU must be recorded as a win after direct-source staging"
+    );
+    assert!(
+        eight.gpu_over_simd_wall_ratio > 0.10,
+        "8 MiB GPU is still not a 10x Hyperscan win; keep the product bar open"
+    );
+    assert!(
+        eight.phase2_cpu_s > eight.dispatch_s && eight.phase2_cpu_s > eight.coalesce_s * 100.0,
+        "8 MiB remaining wall time must identify the CPU phase-2 tail, not hide behind staging"
+    );
 }
 
 #[test]

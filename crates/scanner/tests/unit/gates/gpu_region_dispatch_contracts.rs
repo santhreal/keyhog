@@ -48,6 +48,9 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
     assert!(
         batch_src.contains("build_region_presence_batch")
             && batch_src.contains("REGION_PRESENCE_BATCH_SCRATCH")
+            && batch_src.contains("RegionPresenceBatchMode")
+            && batch_src.contains("BorrowedSingleChunk")
+            && batch_src.contains("has_ascii_uppercase")
             && batch_src.contains("region_starts")
             && batch_src.contains("spare_capacity_mut()[..total]")
             && batch_src.contains("write_ascii_lowercase_into")
@@ -74,6 +77,7 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
     assert!(
         dispatch_src.contains("source_bytes={}")
             && dispatch_src.contains("coalesced_bytes={}")
+            && dispatch_src.contains("batch_mode={}")
             && dispatch_src.contains("coalesce_mib_s={:.3}")
             && dispatch_src.contains("mib_per_second(region_source_bytes, co_s)"),
         "GPU region perf trace must expose the CPU copy/fold pre-pass bytes and throughput, not just a rounded wall-time field"

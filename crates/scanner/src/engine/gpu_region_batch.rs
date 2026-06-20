@@ -20,6 +20,21 @@ thread_local! {
         RefCell::new(RegionPresenceScratch::default());
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum RegionPresenceBatchMode {
+    BorrowedSingleChunk,
+    FoldedScratch,
+}
+
+impl RegionPresenceBatchMode {
+    pub(super) fn label(self) -> &'static str {
+        match self {
+            Self::BorrowedSingleChunk => "borrowed-single-chunk",
+            Self::FoldedScratch => "folded-scratch",
+        }
+    }
+}
+
 pub(super) struct ZeroRegionPresenceScratch<'a> {
     scratch: &'a mut RegionPresenceScratch,
 }
@@ -101,8 +116,20 @@ pub(super) fn build_region_presence_batch(
 
 pub(super) fn with_region_presence_batch<R>(
     chunks: &[keyhog_core::Chunk],
-    f: impl FnOnce(&[u8], &[u32]) -> std::result::Result<R, String>,
+    f: impl FnOnce(&[u8], &[u32], RegionPresenceBatchMode) -> std::result::Result<R, String>,
 ) -> std::result::Result<R, String> {
+    if let [chunk] = chunks {
+        let bytes = chunk.data.as_bytes();
+        if !crate::ascii_ci::has_ascii_uppercase(bytes) {
+            let region_starts = [0u32];
+            return f(
+                bytes,
+                &region_starts,
+                RegionPresenceBatchMode::BorrowedSingleChunk,
+            );
+        }
+    }
+
     REGION_PRESENCE_BATCH_SCRATCH
         .try_with(|cell| {
             let mut scratch = cell.try_borrow_mut().map_err(|_| {
@@ -112,7 +139,11 @@ pub(super) fn with_region_presence_batch<R>(
             })?;
             let mut zero_on_drop = ZeroRegionPresenceScratch::new(&mut scratch);
             build_region_presence_batch(chunks, zero_on_drop.as_mut())?;
-            f(zero_on_drop.haystack(), zero_on_drop.region_starts())
+            f(
+                zero_on_drop.haystack(),
+                zero_on_drop.region_starts(),
+                RegionPresenceBatchMode::FoldedScratch,
+            )
         })
         .map_err(|_| {
             "coalesced GPU region-presence scratch unavailable during thread shutdown".to_string()
