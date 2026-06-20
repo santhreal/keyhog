@@ -20,6 +20,10 @@ pub(super) fn extract_seven_zip_chunks(
             "refusing to open 7z archive at a symlink path - prevents the link-swap attack class"
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        emit(Err(SourceError::Other(format!(
+            "failed to scan 7z archive '{}': refusing symlink archive path; archive was not scanned",
+            path.display()
+        ))));
         return;
     }
 
@@ -38,6 +42,10 @@ pub(super) fn extract_seven_zip_chunks(
                 "cannot open 7z archive; skipping"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            emit(Err(SourceError::Other(format!(
+                "failed to scan 7z archive '{}': cannot open archive ({error}); archive was not scanned",
+                path.display()
+            ))));
             return;
         }
     };
@@ -48,6 +56,10 @@ pub(super) fn extract_seven_zip_chunks(
             "refusing 7z archive using plain LZMA: sevenz-rust2 does not expose a dictionary memory limit for that method"
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        emit(Err(SourceError::Other(format!(
+            "failed to scan 7z archive '{}': plain LZMA is refused because no dictionary memory limit is available",
+            path.display()
+        ))));
         return;
     }
 
@@ -116,6 +128,10 @@ pub(super) fn extract_seven_zip_chunks(
             "7z archive extraction failed before all entries were scanned"
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        emit(Err(SourceError::Other(format!(
+            "failed to scan 7z archive '{}': extraction failed before all entries were scanned ({error})",
+            path.display()
+        ))));
     } else if archive_truncated || consumer_stopped {
         tracing::debug!(archive = %path.display(), "7z extraction stopped early");
     }

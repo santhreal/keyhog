@@ -20,6 +20,10 @@ pub(super) fn extract_rar_chunks(
             "refusing to open RAR archive at a symlink path - prevents the link-swap attack class"
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        emit(Err(SourceError::Other(format!(
+            "failed to scan RAR archive '{}': refusing symlink archive path; archive was not scanned",
+            path.display()
+        ))));
         return;
     }
 
@@ -36,6 +40,10 @@ pub(super) fn extract_rar_chunks(
                 "cannot open RAR archive; skipping"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            emit(Err(SourceError::Other(format!(
+                "failed to scan RAR archive '{}': cannot open archive ({error}); archive was not scanned",
+                path.display()
+            ))));
             return;
         }
     };
@@ -151,6 +159,10 @@ pub(super) fn extract_rar_chunks(
                 "unsupported RAR archive family; skipping"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            emit(Err(SourceError::Other(format!(
+                "failed to scan RAR archive '{}': unsupported RAR archive family; archive was not scanned",
+                path.display()
+            ))));
         }
     }
 }
