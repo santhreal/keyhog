@@ -5,6 +5,7 @@ use std::sync::LazyLock;
 struct GenericKeywordStemSet {
     stems: Vec<&'static [u8]>,
     by_first: [Vec<usize>; 256],
+    has_first: [bool; 256],
 }
 
 static GENERIC_KEYWORD_STEMS: LazyLock<GenericKeywordStemSet> = LazyLock::new(|| {
@@ -13,17 +14,24 @@ static GENERIC_KEYWORD_STEMS: LazyLock<GenericKeywordStemSet> = LazyLock::new(||
         .map(str::as_bytes)
         .collect();
     let mut by_first: [Vec<usize>; 256] = std::array::from_fn(|_| Vec::new());
+    let mut has_first = [false; 256];
     for (idx, stem) in stems.iter().enumerate() {
         if let Some(&first) = stem.first() {
             let lower = first.to_ascii_lowercase();
             let upper = first.to_ascii_uppercase();
             by_first[lower as usize].push(idx);
+            has_first[lower as usize] = true;
             if upper != lower {
                 by_first[upper as usize].push(idx);
+                has_first[upper as usize] = true;
             }
         }
     }
-    GenericKeywordStemSet { stems, by_first }
+    GenericKeywordStemSet {
+        stems,
+        by_first,
+        has_first,
+    }
 });
 
 /// Compact keyword spellings into the minimal safe prefilter stems used by the
@@ -69,7 +77,8 @@ pub(crate) fn collect_generic_keyword_lines(text: &str, out: &mut Vec<usize>) {
             idx += 1;
             continue;
         }
-        if generic_stem_matches_at(bytes, idx, stem_set) {
+        if stem_set.has_first[bytes[idx] as usize] && generic_stem_matches_at(bytes, idx, stem_set)
+        {
             out.push(line_idx);
             match memchr::memchr(b'\n', &bytes[idx..]) {
                 Some(rel) => {
