@@ -104,6 +104,15 @@ fn filesystem_binary_strings_empty_branches_are_counted() {
 fn cloud_object_fetch_pool_is_single_shared_owner() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let cloud = std::fs::read_to_string(root.join("src/cloud/mod.rs")).expect("read cloud owner");
+    let parallel =
+        std::fs::read_to_string(root.join("src/parallel_fetch.rs")).expect("read fetch owner");
+    assert!(
+        parallel.contains("CLOUD_OBJECT_FETCH_THREADS")
+            && parallel.contains("REMOTE_API_FETCH_THREADS")
+            && parallel.contains("fn bounded_fetch_pool")
+            && parallel.matches("ThreadPoolBuilder::new()").count() == 1,
+        "parallel_fetch.rs must be the single bounded remote-fetch Rayon pool builder owner"
+    );
     assert!(
         cloud.contains("OBJECT_FETCH_THREADS") && cloud.contains("fn object_fetch_pool"),
         "cloud/mod.rs must own the shared cloud object-fetch pool and thread cap"
@@ -119,6 +128,19 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
             source.matches("ThreadPoolBuilder::new()").count(),
             0,
             "{rel} must not rebuild a Rayon pool inside its pagination loop"
+        );
+    }
+
+    for rel in ["src/slack.rs", "src/hosted_git.rs", "src/cloud/mod.rs"] {
+        let source = std::fs::read_to_string(root.join(rel)).expect("read remote source");
+        assert!(
+            source.contains("bounded_fetch_pool("),
+            "{rel} must use the shared bounded remote-fetch pool owner"
+        );
+        assert_eq!(
+            source.matches("ThreadPoolBuilder::new()").count(),
+            0,
+            "{rel} must not own private Rayon pool builders"
         );
     }
 }

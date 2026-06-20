@@ -118,10 +118,10 @@ impl SlackSource {
         // 20+ requests/minute; cap parallelism at 8 to leave headroom for the
         // burst budget. Was sequential - see docs/EXECUTION_PLAN.md.
         use rayon::prelude::*;
-        let pool = rayon::ThreadPoolBuilder::new()
-            .num_threads(8)
-            .build()
-            .map_err(|e| SourceError::Other(format!("rayon pool build: {e}")))?;
+        let pool = crate::parallel_fetch::bounded_fetch_pool(
+            "slack",
+            crate::parallel_fetch::REMOTE_API_FETCH_THREADS,
+        )?;
         let per_channel: Vec<Result<Vec<Chunk>, SourceError>> = pool.install(|| {
             channels
                 .par_iter()

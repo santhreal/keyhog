@@ -3,17 +3,12 @@ use std::path::Path;
 #[cfg(feature = "azure")]
 pub(crate) mod azure_blob;
 
-pub(crate) const OBJECT_FETCH_THREADS: usize = 16;
+pub(crate) const OBJECT_FETCH_THREADS: usize = crate::parallel_fetch::CLOUD_OBJECT_FETCH_THREADS;
 
 pub(crate) fn object_fetch_pool(
     source: &str,
 ) -> Result<rayon::ThreadPool, keyhog_core::SourceError> {
-    rayon::ThreadPoolBuilder::new()
-        .num_threads(OBJECT_FETCH_THREADS)
-        .build()
-        .map_err(|error| {
-            keyhog_core::SourceError::Other(format!("{source}: rayon pool build: {error}"))
-        })
+    crate::parallel_fetch::bounded_fetch_pool(source, OBJECT_FETCH_THREADS)
 }
 
 pub(crate) fn is_probably_text_object_key(key: &str) -> bool {

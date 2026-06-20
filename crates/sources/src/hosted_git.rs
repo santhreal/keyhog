@@ -32,10 +32,10 @@ pub(crate) fn scan_hosted_repos(
     let temp_dir = tempfile::tempdir().map_err(SourceError::Io)?;
     let temp_root = temp_dir.path().to_path_buf();
 
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(8)
-        .build()
-        .map_err(|e| SourceError::Other(format!("{platform}: rayon pool build failed: {e}")))?;
+    let pool = crate::parallel_fetch::bounded_fetch_pool(
+        platform,
+        crate::parallel_fetch::REMOTE_API_FETCH_THREADS,
+    )?;
 
     let per_repo: Vec<Result<Vec<Chunk>, SourceError>> = pool.install(|| {
         repos

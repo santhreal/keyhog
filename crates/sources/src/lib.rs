@@ -8,6 +8,7 @@
 
 mod api;
 mod limits;
+mod parallel_fetch;
 pub(crate) mod timeouts;
 
 use std::sync::atomic::AtomicUsize;
