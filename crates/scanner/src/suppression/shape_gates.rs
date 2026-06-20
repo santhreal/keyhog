@@ -207,6 +207,41 @@ pub(crate) fn is_uuid_v4_shape(s: &str) -> bool {
     !(saw_lower && saw_upper)
 }
 
+/// True when a quoted-printable assignment delimiter (`=3d`, `=3a`, etc.)
+/// has eaten the first byte-pair of a UUID and left the still-identifiable
+/// v4 suffix (`xxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx`). This is narrower than
+/// [`is_uuid_v4_shape`]: it requires the v4 and RFC-4122 variant nibbles so
+/// arbitrary 6-4-4-4-12 credential strings are not treated as generic UUIDs.
+pub(crate) fn looks_like_truncated_uuid_v4_suffix(s: &str) -> bool {
+    let b = s.as_bytes();
+    if b.len() != 34 {
+        return false;
+    }
+    if b[6] != b'-' || b[11] != b'-' || b[16] != b'-' || b[21] != b'-' {
+        return false;
+    }
+    if b[12] != b'4' {
+        return false;
+    }
+    if !matches!(b[17], b'8' | b'9' | b'a' | b'b' | b'A' | b'B') {
+        return false;
+    }
+    let mut saw_lower = false;
+    let mut saw_upper = false;
+    for (i, &c) in b.iter().enumerate() {
+        if matches!(i, 6 | 11 | 16 | 21) {
+            continue;
+        }
+        match c {
+            b'0'..=b'9' => {}
+            b'a'..=b'f' => saw_lower = true,
+            b'A'..=b'F' => saw_upper = true,
+            _ => return false,
+        }
+    }
+    !(saw_lower && saw_upper)
+}
+
 /// Return true if the credential contains three or more consecutive identical characters.
 pub(crate) fn has_three_or_more_consecutive_identical(s: &str) -> bool {
     let bytes = s.as_bytes();

@@ -9,7 +9,7 @@ use super::shape_gates::{
     has_n_or_more_consecutive_identical, has_repeated_block_mask,
     has_three_or_more_consecutive_identical, is_uuid_v4_shape, looks_like_bare_hex_digest,
     looks_like_dashed_serial_key, looks_like_prefixed_hash_digest, looks_like_standard_base64_blob,
-    RFC7519_EXAMPLE_JWT_PREFIX,
+    looks_like_truncated_uuid_v4_suffix, RFC7519_EXAMPLE_JWT_PREFIX,
 };
 use crate::context;
 
@@ -223,6 +223,9 @@ pub(super) fn should_suppress_inner(
     }
     if !bypass_shape_gates && is_uuid_v4_shape(credential) {
         return suppress(path, credential, "uuid_v4_shape");
+    }
+    if !bypass_shape_gates && looks_like_truncated_uuid_v4_suffix(credential) {
+        return suppress(path, credential, "truncated_uuid_v4_suffix");
     }
 
     // ── 5c. License-key / serial shape: 5 blocks of 5 alnum chars,
