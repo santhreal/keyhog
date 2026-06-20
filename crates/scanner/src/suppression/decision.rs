@@ -468,3 +468,84 @@ pub(super) fn should_suppress_inner(
     }
     false
 }
+
+pub(crate) fn decoded_benign_text_reason(credential: &str) -> Option<&'static str> {
+    let decoded = try_decode_b64_to_utf8(credential)?;
+    let decoded = decoded.trim();
+    if decoded.is_empty()
+        || decoded.len() > credential.len()
+        || !decoded
+            .chars()
+            .all(|c| !c.is_control() || c == '\n' || c == '\r' || c == '\t')
+    {
+        return None;
+    }
+
+    if decoded_looks_like_labelled_hash(decoded) {
+        return Some("decoded_labelled_hash_digest");
+    }
+    if looks_like_dashed_serial_key(decoded) {
+        return Some("decoded_dashed_serial_key");
+    }
+    if decoded.contains(RFC7519_EXAMPLE_JWT_PREFIX) {
+        return Some("decoded_rfc7519_example_jwt");
+    }
+    if decoded_looks_like_aws_iam_arn(decoded) {
+        return Some("decoded_aws_iam_arn");
+    }
+    if decoded_looks_like_template_placeholder(decoded) {
+        return Some("decoded_template_placeholder");
+    }
+    if decoded_looks_like_prose(decoded) {
+        return Some("decoded_prose_whitespace");
+    }
+    if crate::context::is_known_example_credential(decoded)
+        || crate::placeholder_words::contains_placeholder_word(decoded)
+    {
+        return Some("decoded_placeholder");
+    }
+
+    None
+}
+
+fn decoded_looks_like_labelled_hash(decoded: &str) -> bool {
+    if looks_like_prefixed_hash_digest(decoded) {
+        return true;
+    }
+    for label in ["sha512-", "sha256-"] {
+        let Some(idx) = decoded.find(label) else {
+            continue;
+        };
+        let body = &decoded[idx + label.len()..];
+        if body.len() >= 32 && crate::decode::standard_base64_shape(body).is_some() {
+            return true;
+        }
+    }
+    false
+}
+
+fn decoded_looks_like_aws_iam_arn(decoded: &str) -> bool {
+    (decoded.starts_with("arn:aws:iam::")
+        || decoded.starts_with("arn:aws-cn:iam::")
+        || decoded.starts_with("arn:aws-us-gov:iam::"))
+        && (decoded.contains(":role/")
+            || decoded.contains(":user/")
+            || decoded.contains(":group/")
+            || decoded.contains(":policy/")
+            || decoded.contains(":instance-profile/"))
+}
+
+fn decoded_looks_like_template_placeholder(decoded: &str) -> bool {
+    let bracketed = (decoded.starts_with('{') && decoded.ends_with('}'))
+        || (decoded.starts_with('<') && decoded.ends_with('>'))
+        || (decoded.starts_with("${") && decoded.ends_with('}'));
+    bracketed && decoded.len() <= 80
+}
+
+fn decoded_looks_like_prose(decoded: &str) -> bool {
+    decoded.len() > 30
+        && decoded.chars().filter(|c| c.is_whitespace()).count() >= 2
+        && decoded
+            .split_whitespace()
+            .any(|tok| tok.len() >= 3 && tok.chars().all(|c| c.is_ascii_lowercase()))
+}

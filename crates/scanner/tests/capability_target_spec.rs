@@ -30,3 +30,6 @@ mod capability_decode_depth;
 
 #[path = "target_spec/capability_unicode_evasion.rs"]
 mod capability_unicode_evasion;
+
+#[path = "target_spec/recall_generation_gap.rs"]
+mod recall_generation_gap;

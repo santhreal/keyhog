@@ -311,6 +311,9 @@ impl CompiledScanner {
         if crate::decode_structure::decoded_contains_placeholder(value) {
             return Some("decoded_placeholder");
         }
+        if let Some(reason) = crate::suppression::decision::decoded_benign_text_reason(value) {
+            return Some(reason);
+        }
         // Decode-through binary suppression: a generic high-entropy
         // candidate that base64/hex-decodes to identifiable binary
         // bytes (PNG / gzip / ELF / protobuf-wire) is embedded data,
