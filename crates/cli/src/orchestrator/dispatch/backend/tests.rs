@@ -941,6 +941,44 @@ fn autoroute_cache_rejects_zero_duration_timing_evidence() {
 }
 
 #[test]
+fn autoroute_cache_rejects_fabricated_timing_summary_evidence() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_fabricated_timing_summary_{}.json",
+        std::process::id()
+    ));
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(None);
+    let key = test_workload_key();
+    let mut bad = AutorouteDecision::new(ScanBackend::SimdCpu, 8 * 1024 * 1024, 1, 12, None, None);
+    bad.simd_timing.mean_ns = bad.simd_timing.mean_ns.saturating_add(1);
+    bad.simd_timing.confidence_interval_95_ns.high_ns = bad
+        .simd_timing
+        .confidence_interval_95_ns
+        .high_ns
+        .saturating_add(1);
+    write_tampered_decision_cache(
+        &path,
+        digest,
+        config_digest,
+        &host,
+        key,
+        bad,
+        "invalid SIMD timing evidence",
+    );
+    let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
+    assert!(
+        loaded
+            .expect_err("fabricated timing summary evidence must be rejected")
+            .to_string()
+            .contains("invalid SIMD timing evidence"),
+        "autoroute cache load must recompute timing summaries from trials instead of trusting persisted proof fields"
+    );
+
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
 fn backend_timing_evidence_rejects_empty_trial_sets_at_construction() {
     assert!(
         super::evidence::BackendTimingEvidence::from_trial_ns(Vec::new()).is_none(),
