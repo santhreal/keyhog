@@ -97,19 +97,33 @@ pub(super) fn extract_seven_zip_chunks(
             return Ok(true);
         }
         if total_uncompressed.saturating_add(entry_size) > total_budget {
-            eprintln!(
-                "keyhog: WARNING: aborting 7z extraction of {archive_display} at {} bytes \
-                 (> {total_budget} = 4x --max-file-size; archive-bomb guard) - remaining entries were NOT scanned.",
-                total_uncompressed.saturating_add(entry_size)
+            let error = super::report_archive_truncation(
+                &archive_display,
+                total_uncompressed.saturating_add(entry_size),
+                total_budget,
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
             archive_truncated = true;
+            if !emit(Err(error)) {
+                consumer_stopped = true;
+            }
             return Ok(false);
         }
 
         let mut content = Vec::with_capacity(entry_size.min(READ_CAPACITY_HINT) as usize);
         entry_reader.read_to_end(&mut content)?;
         total_uncompressed = total_uncompressed.saturating_add(content.len() as u64);
+        if total_uncompressed > total_budget {
+            let error = super::report_archive_truncation(
+                &archive_display,
+                total_uncompressed,
+                total_budget,
+            );
+            archive_truncated = true;
+            if !emit(Err(error)) {
+                consumer_stopped = true;
+            }
+            return Ok(false);
+        }
 
         let entry_path = format!("{archive_display}//{entry_name}");
         if let Some(chunk) = chunk_from_entry_content(content, entry_path) {

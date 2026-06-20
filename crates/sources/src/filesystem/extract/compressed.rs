@@ -177,11 +177,14 @@ pub(super) fn emit_tar_entries(
             // entries are NOT scanned, so this is partial coverage the operator
             // must see (the old `tracing::warn!` was invisible at default
             // verbosity). Surface loudly + count.
-            eprintln!(
-                "keyhog: WARNING: aborting tar extraction of {container_display} at {total_uncompressed} bytes \
-                 (> {total_budget} = 4x --max-file-size; tar-bomb guard) — remaining entries were NOT scanned."
+            let error = super::report_archive_truncation(
+                container_display,
+                total_uncompressed,
+                total_budget,
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+            if !emit(Err(error)) {
+                return;
+            }
             break;
         }
 

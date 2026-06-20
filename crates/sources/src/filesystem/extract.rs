@@ -35,6 +35,22 @@ pub(super) fn record_binary_without_printable_strings(path: &str) {
     );
 }
 
+pub(super) fn report_archive_truncation(
+    archive_display: &str,
+    attempted_total: u64,
+    total_budget: u64,
+) -> SourceError {
+    eprintln!(
+        "keyhog: WARNING: aborting archive extraction of {archive_display} at {attempted_total} bytes \
+         (> {total_budget} = 4x --max-file-size; archive-bomb guard) - remaining entries were \
+         NOT scanned."
+    );
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+    SourceError::Other(format!(
+        "archive extraction of '{archive_display}' was truncated at {attempted_total} bytes by the archive-bomb guard (budget {total_budget}); remaining entries were not scanned"
+    ))
+}
+
 /// Minimum file size to use memory mapping. The crossover point is
 /// platform-specific:
 ///

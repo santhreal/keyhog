@@ -38,7 +38,7 @@ fn seven_zip_routes_to_dedicated_extractor() {
         "ArchiveReader::new",
         "read_file_for_compressed_input",
         "SourceSkipEvent::Unreadable",
-        "SourceSkipEvent::ArchiveTruncated",
+        "report_archive_truncation",
         "EncoderMethod::LZMA",
         "filesystem/archive",
         "filesystem/archive-binary",
@@ -48,16 +48,24 @@ fn seven_zip_routes_to_dedicated_extractor() {
             "7z extractor must retain {needle}"
         );
     }
+    assert!(
+        !seven_zip.contains("SourceSkipEvent::ArchiveTruncated"),
+        "7z archive truncation must use the shared truncation reporter, not a format-local counter mutation"
+    );
 
     let rar = read("src/filesystem/extract/rar.rs");
     for needle in [
         "ArchiveReader::read",
         "read_file_for_compressed_input",
         "SourceSkipEvent::Unreadable",
-        "SourceSkipEvent::ArchiveTruncated",
+        "report_archive_truncation",
         "validate_scan_archive_entry_name",
         "chunk_from_archive_content",
     ] {
         assert!(rar.contains(needle), "RAR extractor must retain {needle}");
     }
+    assert!(
+        !rar.contains("SourceSkipEvent::ArchiveTruncated"),
+        "RAR archive truncation must use the shared truncation reporter, not a format-local counter mutation"
+    );
 }

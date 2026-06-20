@@ -4,6 +4,8 @@ use super::{display_path, is_symlink, record_binary_without_printable_strings};
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
 use std::path::{Component, Path};
 
+pub(super) use super::report_archive_truncation;
+
 mod zip_scan;
 
 pub(super) fn is_openpack_archive_ext(ext: &str) -> bool {
@@ -96,7 +98,7 @@ pub(super) fn extract_openpack_archive(
                         // operator must see. The old `tracing::warn!` was invisible
                         // at default verbosity; surface it loudly + count it.
                         let error = report_archive_truncation(
-                            path,
+                            &archive_display,
                             total_uncompressed.saturating_add(archive_entry.uncompressed_size),
                             total_budget,
                         );
@@ -127,7 +129,7 @@ pub(super) fn extract_openpack_archive(
                                 // the guard on decoded bytes before emitting the
                                 // chunk so partial archive coverage is still loud.
                                 let error = report_archive_truncation(
-                                    path,
+                                    &archive_display,
                                     total_uncompressed,
                                     total_budget,
                                 );
@@ -256,22 +258,6 @@ pub(super) fn chunk_from_archive_content(
             }
         }
     }
-}
-
-fn report_archive_truncation(path: &Path, attempted_total: u64, total_budget: u64) -> SourceError {
-    eprintln!(
-        "keyhog: WARNING: aborting archive extraction of {} at {} bytes \
-         (> {} = 4x --max-file-size; zip-bomb guard) - remaining entries were \
-         NOT scanned.",
-        path.display(),
-        attempted_total,
-        total_budget
-    );
-    let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
-    SourceError::Other(format!(
-        "archive extraction of '{}' was truncated at {attempted_total} bytes by the zip-bomb guard (budget {total_budget}); remaining entries were not scanned",
-        path.display()
-    ))
 }
 
 pub(super) fn validate_scan_archive_entry_name(name: &str) -> Result<(), &'static str> {

@@ -54,7 +54,7 @@ pub(super) fn extract_rar_chunks(
             for entry in &archive.entries {
                 let entry_name = entry.name_lossy();
                 let entry_size = u64::from(entry.header.unp_size);
-                if !state.entry_should_scan(&entry_name, entry_size, entry.is_directory()) {
+                if !state.entry_should_scan(&entry_name, entry_size, entry.is_directory(), emit) {
                     if state.archive_truncated {
                         break;
                     }
@@ -87,7 +87,7 @@ pub(super) fn extract_rar_chunks(
             for entry in archive.files() {
                 let entry_name = entry.name_lossy();
                 let entry_size = entry.unp_size;
-                if !state.entry_should_scan(&entry_name, entry_size, entry.is_directory()) {
+                if !state.entry_should_scan(&entry_name, entry_size, entry.is_directory(), emit) {
                     if state.archive_truncated {
                         break;
                     }
@@ -120,7 +120,7 @@ pub(super) fn extract_rar_chunks(
             for entry in archive.files() {
                 let entry_name = entry.name_lossy();
                 let entry_size = entry.unpacked_size;
-                if !state.entry_should_scan(&entry_name, entry_size, entry.is_directory()) {
+                if !state.entry_should_scan(&entry_name, entry_size, entry.is_directory(), emit) {
                     if state.archive_truncated {
                         break;
                     }
@@ -194,7 +194,13 @@ impl<'a> RarExtractionState<'a> {
         }
     }
 
-    fn entry_should_scan(&mut self, entry_name: &str, entry_size: u64, is_directory: bool) -> bool {
+    fn entry_should_scan(
+        &mut self,
+        entry_name: &str,
+        entry_size: u64,
+        is_directory: bool,
+        emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+    ) -> bool {
         if is_directory || super::super::filter::is_default_excluded(entry_name) {
             return false;
         }
@@ -219,15 +225,10 @@ impl<'a> RarExtractionState<'a> {
             return false;
         }
         if self.total_uncompressed.saturating_add(entry_size) > self.total_budget {
-            eprintln!(
-                "keyhog: WARNING: aborting RAR extraction of {} at {} bytes \
-                 (> {} = 4x --max-file-size; archive-bomb guard) - remaining entries were NOT scanned.",
-                self.archive_path.display(),
+            self.report_archive_truncation(
                 self.total_uncompressed.saturating_add(entry_size),
-                self.total_budget
+                emit,
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
-            self.archive_truncated = true;
             return false;
         }
         true
@@ -271,15 +272,7 @@ impl<'a> RarExtractionState<'a> {
         }
         self.total_uncompressed = self.total_uncompressed.saturating_add(actual_uncompressed);
         if self.total_uncompressed > self.total_budget {
-            eprintln!(
-                "keyhog: WARNING: aborting RAR extraction of {} at {} bytes \
-                 (> {} = 4x --max-file-size; archive-bomb guard) - remaining entries were NOT scanned.",
-                self.archive_path.display(),
-                self.total_uncompressed,
-                self.total_budget
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
-            self.archive_truncated = true;
+            self.report_archive_truncation(self.total_uncompressed, emit);
             return;
         }
         if let Some(chunk) =
@@ -287,6 +280,20 @@ impl<'a> RarExtractionState<'a> {
         {
             self.consumer_stopped = !emit(chunk);
         }
+    }
+
+    fn report_archive_truncation(
+        &mut self,
+        attempted_total: u64,
+        emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+    ) {
+        let error = super::report_archive_truncation(
+            &self.archive_display,
+            attempted_total,
+            self.total_budget,
+        );
+        self.archive_truncated = true;
+        self.consumer_stopped = !emit(Err(error));
     }
 }
 
