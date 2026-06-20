@@ -58,7 +58,22 @@ fn write_ascii_lowercase_simd_prefix(dst: &mut [MaybeUninit<u8>], src: &[u8]) ->
 }
 
 #[inline]
-#[cfg(all(any(feature = "gpu", test), not(target_arch = "x86_64")))]
+#[cfg(all(any(feature = "gpu", test), target_arch = "aarch64"))]
+fn write_ascii_lowercase_simd_prefix(dst: &mut [MaybeUninit<u8>], src: &[u8]) -> usize {
+    if src.len() >= 64 {
+        // SAFETY: NEON is part of the aarch64 baseline. `dst` and `src` have
+        // equal length; the NEON writer stores complete 16-byte chunks and
+        // leaves the scalar tail uninitialized for the caller's tail loop.
+        return unsafe { write_ascii_lowercase_neon(dst.as_mut_ptr().cast::<u8>(), src) };
+    }
+    0
+}
+
+#[inline]
+#[cfg(all(
+    any(feature = "gpu", test),
+    not(any(target_arch = "x86_64", target_arch = "aarch64"))
+))]
 fn write_ascii_lowercase_simd_prefix(_dst: &mut [MaybeUninit<u8>], _src: &[u8]) -> usize {
     0
 }
@@ -87,6 +102,32 @@ unsafe fn write_ascii_lowercase_avx2(dst: *mut u8, src: &[u8]) -> usize {
             _mm256_storeu_si256(dst.add(offset).cast::<__m256i>(), folded);
         }
         offset += 32;
+    }
+    offset
+}
+
+#[cfg(all(any(feature = "gpu", test), target_arch = "aarch64"))]
+unsafe fn write_ascii_lowercase_neon(dst: *mut u8, src: &[u8]) -> usize {
+    use std::arch::aarch64::{
+        uint8x16_t, vandq_u8, vcgeq_u8, vcleq_u8, vdupq_n_u8, vld1q_u8, vorrq_u8, vst1q_u8,
+    };
+
+    let upper_start = vdupq_n_u8(b'A');
+    let upper_end = vdupq_n_u8(b'Z');
+    let lowercase_bit = vdupq_n_u8(0x20);
+    let mut offset = 0usize;
+    while offset + 16 <= src.len() {
+        // SAFETY: the loop guard keeps the 16-byte unaligned load/store inside
+        // `src` and the caller-provided destination range.
+        let chunk: uint8x16_t = unsafe { vld1q_u8(src.as_ptr().add(offset)) };
+        let above_or_equal_a = vcgeq_u8(chunk, upper_start);
+        let below_or_equal_z = vcleq_u8(chunk, upper_end);
+        let uppercase_mask = vandq_u8(above_or_equal_a, below_or_equal_z);
+        let folded = vorrq_u8(chunk, vandq_u8(uppercase_mask, lowercase_bit));
+        unsafe {
+            vst1q_u8(dst.add(offset), folded);
+        }
+        offset += 16;
     }
     offset
 }

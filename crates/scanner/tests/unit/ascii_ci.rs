@@ -50,9 +50,10 @@ fn extend_ascii_lowercase_from_writes_initialized_spare_capacity() {
     assert!(
         src.contains("write_ascii_lowercase_avx2")
             && src.contains("std::is_x86_feature_detected!(\"avx2\")")
+            && src.contains("write_ascii_lowercase_neon")
             && src.contains("write_ascii_lowercase_simd_prefix")
             && src.contains("ascii_lower_branchless"),
-        "hot GPU lowercase staging must keep a runtime AVX2 prefix with a scalar tail"
+        "hot GPU lowercase staging must keep x86_64 AVX2 and aarch64 NEON prefixes with a scalar tail"
     );
     assert!(
         !src.contains("extend(src.iter().map"),
