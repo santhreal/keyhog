@@ -14,7 +14,7 @@
 //!                       │  one bitmap per chunk: "which detectors may match here"
 //!                       ▼
 //!           phase 2: scan_coalesced_phase2       (THE shared tail)        scan_coalesced.rs
-//!             • windowing (scan_chunk_or_window, >1 MiB)                   windowed.rs
+//!             • windowing (scan_windowed / triggered windows)               windowed.rs
 //!             • per-chunk extraction (scan_prepared_with_triggered)        backend_triggered.rs
 //!                 confirmed → phase2 capture → generic → entropy → ML
 //!             • post-process: suppression, dedup, confidence, decode       scan_postprocess.rs
@@ -39,7 +39,7 @@
 //! - `scan_chunks_with_backend_internal` (CPU-vs-GPU batch routing) .. backend_dispatch.rs
 //! - `scan_coalesced_gpu_region_presence` (GPU trigger production) ... gpu_region_dispatch.rs
 //! - `scan_prepared_with_triggered` / `collect_triggered_patterns_*` . backend_triggered.rs
-//! - `scan_chunk_or_window` / `scan_windowed` (the windowing contract) windowed.rs
+//! - `scan_windowed*` (the windowing contract) .............. windowed.rs
 //! - confirmed-pattern extraction ................................... extract.rs
 //! - phase-2 prefilter + keyword/anchor/generic/entropy passes ...... phase2*.rs
 //! - hot-pattern fast path (simdsieve) ............................. hot_patterns.rs

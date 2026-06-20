@@ -278,7 +278,9 @@ impl CompiledScanner {
             .enumerate()
             .map(|(chunk_index, (chunk, triggered_opt))| {
                 if let Some(triggered) = triggered_opt {
-                    let mut matches = self.scan_chunk_or_window(chunk, None, || {
+                    let mut matches = if chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
+                        self.scan_windowed_with_triggered(chunk, &triggered, None)
+                    } else {
                         let prepared = self.prepare_chunk(chunk);
                         self.scan_prepared_with_triggered(
                             prepared,
@@ -286,7 +288,7 @@ impl CompiledScanner {
                             triggered,
                             None,
                         )
-                    });
+                    };
                     self.post_process_coalesced_matches(chunk, &mut matches);
                     return matches;
                 }
