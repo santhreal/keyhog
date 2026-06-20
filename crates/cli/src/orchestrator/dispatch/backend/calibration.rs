@@ -9,7 +9,6 @@ use super::evidence::{
     canonical_match_digest, canonical_matches, gpu_cold_warm_route_evidence,
     selected_backend_margin_ns, AutorouteDecision, BackendTimingEvidence, CanonicalMatch,
 };
-use super::workload::sample_batch;
 use super::{is_gpu_backend, AutorouteRoutingError, AUTOROUTE_CALIBRATION_TRIALS};
 
 pub(super) fn calibrate_fastest_correct_backend(
@@ -19,15 +18,14 @@ pub(super) fn calibrate_fastest_correct_backend(
     batch: &[Chunk],
     autoroute_gpu: bool,
 ) -> Result<AutorouteDecision, AutorouteRoutingError> {
-    let sample = sample_batch(batch);
-    let sample_bytes = calibration_sample_bytes(&sample)?;
+    let sample_bytes = calibration_sample_bytes(batch)?;
 
-    let (reference_key, simd_timing) = measure_reference_simd(scanner, &sample)?;
+    let (reference_key, simd_timing) = measure_reference_simd(scanner, batch)?;
     let mut candidates = vec![(ScanBackend::SimdCpu, simd_timing.best_ns)];
     let mut best = (ScanBackend::SimdCpu, simd_timing.best_ns);
 
     let cpu_timing =
-        measure_candidate_backend(scanner, &sample, ScanBackend::CpuFallback, &reference_key);
+        measure_candidate_backend(scanner, batch, ScanBackend::CpuFallback, &reference_key);
     if let Some(cpu_timing) = cpu_timing.clone() {
         if cpu_timing.best_ns < best.1 {
             best = (ScanBackend::CpuFallback, cpu_timing.best_ns);
@@ -42,7 +40,7 @@ pub(super) fn calibrate_fastest_correct_backend(
     let gpu_candidate_allowed = autoroute_gpu && hw_caps.gpu_available && !hw_caps.gpu_is_software;
     if gpu_candidate_allowed {
         if let Some(measured_gpu_timing) =
-            measure_candidate_backend(scanner, &sample, ScanBackend::Gpu, &reference_key)
+            measure_candidate_backend(scanner, batch, ScanBackend::Gpu, &reference_key)
         {
             if let Some((cold_ns, warm_timing, route_ns)) =
                 gpu_cold_warm_route_evidence(&measured_gpu_timing)
@@ -76,7 +74,7 @@ pub(super) fn calibrate_fastest_correct_backend(
     tracing::info!(
         target: "keyhog::routing",
         backend = best.0.label(),
-        sample_chunks = sample.len(),
+        sample_chunks = batch.len(),
         sample_bytes,
         simd_ms = simd_timing.best_ms(),
         cpu_ms = cpu_timing.as_ref().map(BackendTimingEvidence::best_ms),
@@ -92,7 +90,7 @@ pub(super) fn calibrate_fastest_correct_backend(
     let decision = AutorouteDecision::from_timing_evidence(
         best.0,
         sample_bytes,
-        sample.len(),
+        batch.len(),
         correctness_digest,
         calibrated_at_unix_ms,
         selected_margin_ns,

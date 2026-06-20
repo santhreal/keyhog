@@ -199,7 +199,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("source_class_hash")
             && backend.contains("StableHasher::new(\"autoroute-source-class\")")
             && backend.contains("StableHasher::new(\"autoroute-correctness-digest\")")
-            && backend.contains("AUTOROUTE_CACHE_VERSION: u32 = 17")
+            && backend.contains("AUTOROUTE_CACHE_VERSION: u32 = 18")
             && backend.contains("AUTOROUTE_CALIBRATION_TRIALS: usize = 7")
             && backend.contains("trials"),
         "autoroute cache must persist binary identity, build feature identity, exact host identity, and measured calibration evidence"
@@ -208,6 +208,9 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
         backend.contains("AUTOROUTE_CALIBRATION_TRIALS")
             && backend.contains("measure_reference_simd")
             && backend.contains("measure_candidate_backend")
+            && !backend.contains("sample_batch(")
+            && !backend.contains("MAX_SAMPLE_CHUNKS")
+            && !backend.contains("MAX_SAMPLE_BYTES")
             && backend.contains("crate::atomic_file::write_bytes(path, &serialized)")
             && atomic_file.contains("tempfile::NamedTempFile::new_in(parent)")
             && atomic_file.contains("tmp.as_file().sync_all()")
@@ -230,7 +233,7 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && !backend.contains("load_autoroute_cache(path, detector_digest, &host_profile).ok()")
             && !backend.contains("std::fs::rename(&tmp, path)")
             && !backend.contains("path.with_extension(format!(\"tmp.\""),
-        "autoroute calibration must use repeated parity-checked trials, sync and atomically persist cache replacement, and must not silently ignore invalid existing cache state"
+        "autoroute calibration must use repeated parity-checked full-batch trials, sync and atomically persist cache replacement, and must not silently ignore invalid existing cache state"
     );
     assert!(
         run.contains("backend prewarm skipped during autoroute calibration")

@@ -204,6 +204,20 @@ fn autoroute_calibration_rejects_empty_sample_before_timing() {
 }
 
 #[test]
+fn autoroute_calibration_counts_full_batch_bytes() {
+    let batch = [
+        test_chunk("a".repeat(8 * 1024 * 1024)),
+        test_chunk("b".repeat(1024)),
+    ];
+
+    assert_eq!(
+        calibration::calibration_sample_bytes(&batch).expect("non-empty full batch is usable"),
+        (8 * 1024 * 1024 + 1024) as u64,
+        "autoroute calibration evidence must count the keyed full batch, not the retired 8 MiB prefix sample"
+    );
+}
+
+#[test]
 fn autoroute_cache_roundtrip_and_digest_invalidation() {
     let path =
         std::env::temp_dir().join(format!("keyhog_autoroute_test_{}.json", std::process::id()));

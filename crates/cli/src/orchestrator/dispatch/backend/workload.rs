@@ -51,21 +51,6 @@ impl fmt::Display for WorkloadClassificationError {
 
 impl std::error::Error for WorkloadClassificationError {}
 
-pub(super) fn sample_batch(batch: &[Chunk]) -> Vec<Chunk> {
-    const MAX_SAMPLE_CHUNKS: usize = 16;
-    const MAX_SAMPLE_BYTES: usize = 8 * 1024 * 1024;
-    let mut out = Vec::new();
-    let mut bytes = 0usize;
-    for chunk in batch {
-        if out.len() >= MAX_SAMPLE_CHUNKS || bytes >= MAX_SAMPLE_BYTES {
-            break;
-        }
-        bytes = bytes.saturating_add(chunk.data.len());
-        out.push(chunk.clone());
-    }
-    out
-}
-
 pub(super) fn workload_key(
     batch: &[Chunk],
     pattern_count: usize,
