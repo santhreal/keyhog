@@ -56,7 +56,7 @@ Each row is the same knob across all three layers. Defaults are
 | Fused depth | worker-count-derived | `fused_depth` | `--fused-depth` | Bounded channel depth for fused filesystem batches. |
 | Per-chunk timeout | off | `per_chunk_timeout_ms` | `--per-chunk-timeout-ms` | Optional hard deadline per chunk scan in milliseconds. |
 | Dedup scope | `credential` | `dedup` | `--dedup` | `credential` / `file` / `none`. |
-| Max file size | 10 MB | `max_file_size` | `--max-file-size` | Walker skips files larger than this. |
+| Max file size | 100 MiB | `max_file_size` | `--max-file-size` | Walker skips files larger than this. |
 | Severity floor | (all) | `severity` | `--severity` | Minimum severity to report: info/low/medium/high/critical. |
 | Output format | `text` | `format` | `--format` | text/json/jsonl/sarif/csv/github-annotations/gitlab-sast/html/junit. |
 | Show secrets | off | `show_secrets` | `--show-secrets` | Print plaintext credentials. **Never enable in CI/logs.** |
@@ -94,12 +94,11 @@ compiled `SourceLimits::default()` → `.keyhog.toml` `[limits]` → CLI
 | Binary strings bytes | 64 MiB | `[limits] binary_read_bytes` | `--limit-binary-read-bytes` |
 | Ghidra output bytes | 50 MiB | `[limits] binary_decompiled_bytes` | `--limit-binary-decompiled-bytes` |
 
-> Honesty note — a few `ScanConfig` fields are parse-compatible no-ops on the
-> live scan path: `max_file_size`/`dedup` on `ScanConfig` itself (the effective
-> values come from the walker and the verifier via the CLI args, not from
-> `ScanConfig`).
-> They are documented here so the surface is complete. The table above lists
-> the knobs that *do* reach behaviour through the CLI/TOML path.
+> Library note — `ScanConfig::max_file_size` and `ScanConfig::dedup` are scan
+> pipeline settings, not regex-engine settings. The CLI applies them through
+> the filesystem source and final deduplication stage; `FilesystemSource::new`
+> uses the same `DEFAULT_MAX_FILE_SIZE_BYTES` as `ScanConfig::default()` so the
+> shipped default cannot drift.
 
 ## Presets
 

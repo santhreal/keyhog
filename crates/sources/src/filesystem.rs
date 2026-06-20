@@ -119,7 +119,7 @@ impl FilesystemSource {
         let root = root.canonicalize().unwrap_or(root); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
         Self {
             root,
-            max_file_size: 100 * 1024 * 1024, // 100 MB default - large files use windowed scanning
+            max_file_size: keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
             ignore_paths: Vec::new(),
             include_paths: Vec::new(),
             respect_gitignore: true,
@@ -200,6 +200,24 @@ impl FilesystemSource {
     pub fn with_reader_threads(mut self, threads: NonZeroUsize) -> Self {
         self.reader_threads = Some(threads);
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FilesystemSource;
+
+    #[test]
+    fn default_max_file_size_matches_core_scan_config() {
+        let source = FilesystemSource::new(std::path::PathBuf::from("."));
+        assert_eq!(
+            source.max_file_size,
+            keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES
+        );
+        assert_eq!(
+            source.max_file_size,
+            keyhog_core::ScanConfig::default().max_file_size
+        );
     }
 }
 

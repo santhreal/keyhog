@@ -8,6 +8,13 @@ use thiserror::Error;
 
 use crate::DedupScope;
 
+/// Shipped filesystem per-file scan cap.
+///
+/// This is the single default used by the core config surface and by
+/// `keyhog-sources::FilesystemSource::new`. A caller can still pass
+/// `max_file_size = 0` through the source layer to mean "unlimited".
+pub const DEFAULT_MAX_FILE_SIZE_BYTES: u64 = 100 * 1024 * 1024;
+
 /// Configuration for a scan run.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -154,7 +161,7 @@ impl Default for ScanConfig {
             generic_keyword_low_entropy: true,
             entropy_threshold: 4.5,
             min_secret_len: 16,
-            max_file_size: 10 * 1024 * 1024, // 10 MB
+            max_file_size: DEFAULT_MAX_FILE_SIZE_BYTES,
             dedup: DedupScope::Credential,
             ml_enabled: true,
             ml_weight: 0.5,

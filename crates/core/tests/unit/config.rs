@@ -36,10 +36,10 @@ fn default_config_valid() {
         config.unicode_normalization,
         "unicode normalization must default to on"
     );
-    assert!(
-        config.max_file_size >= 1024 * 1024,
-        "default max_file_size too small: {}",
-        config.max_file_size
+    assert_eq!(
+        config.max_file_size,
+        keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
+        "default max_file_size must be single-sourced with FilesystemSource"
     );
     assert!(
         config.max_matches_per_chunk >= 100,
