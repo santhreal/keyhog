@@ -1,9 +1,10 @@
 //! Law 10 regression: an explicitly `--include`'d path that cannot be read —
 //! it does not exist, is neither a file nor a directory, or its `stat` fails —
-//! must be COUNTED as unreadable, never silently dropped. Before this fix the
-//! include walk returned an empty iterator for such a path, so the file vanished
-//! from the scan set while the run still printed "0 secrets" — a false clean
-//! bill of health for a file the user explicitly named.
+//! must be COUNTED as unreadable and surfaced as a source error, never silently
+//! dropped. Before this fix the include walk returned an empty iterator for
+//! such a path, so the file vanished from the scan set while the run still
+//! printed "0 secrets" — a false clean bill of health for a file the user
+//! explicitly named.
 //!
 //! Own test binary: `skip_counts()` reads process-global atomics, so this is
 //! isolated from the parallel integration pool and can assert exact counts.
@@ -18,15 +19,27 @@ fn explicitly_included_unreadable_path_is_counted_not_silently_dropped() {
 
     // An explicitly-included path that does not exist: `canonicalize` fails so
     // the original path is kept, and it is then neither a file nor a directory,
-    // hitting the include walk's `else` arm. It MUST bump the unreadable count.
+    // hitting the include walk's `else` arm. It MUST bump the unreadable count
+    // and emit a visible source error.
     TestApi.reset_skip_counters();
     let missing = dir.path().join("does-not-exist.env");
-    let n: usize = FilesystemSource::new(dir.path().to_path_buf())
+    let rows: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
         .with_include_paths(vec![missing])
         .chunks()
-        .flatten()
-        .count();
-    assert_eq!(n, 0, "a nonexistent include path yields no chunks");
+        .collect();
+    assert_eq!(
+        rows.len(),
+        1,
+        "a nonexistent include path must yield one visible source error"
+    );
+    let err = rows[0]
+        .as_ref()
+        .expect_err("a nonexistent include path must be an error row");
+    assert!(
+        err.to_string().contains("explicitly included path")
+            && err.to_string().contains("not scanned"),
+        "error should name the unscanned explicit include path, got {err}"
+    );
     assert_eq!(
         skip_counts().unreadable,
         1,

@@ -247,75 +247,87 @@ impl Source for FilesystemSource {
             entries
         }
 
+        let mut source_errors: Vec<SourceError> = Vec::new();
         let entries: Box<dyn Iterator<Item = codewalk::FileEntry> + Send> = if !self
             .include_paths
             .is_empty()
         {
             // Restrict the walk to the canonicalized allowed set so we
             // never traverse unrequested subdirectories (KH-54). The set is
-            // small (user-supplied include list); the directory walks it
-            // spawns stream lazily via `flat_map`, and explicitly-named
-            // single files are stat'd directly without a walk.
-            let mut allowed: Vec<PathBuf> = self
-                    .include_paths
-                    .iter()
-                    .filter(|p| {
-                        // No-follow guard at include-admission (M17), scoped to the
-                        // dangerous case. Include paths are admitted below via
-                        // `canonicalize()` + `is_file()`, BOTH of which follow
-                        // symlinks, and canonicalize resolves the link before any
-                        // later `is_symlink(path)` check can see it — so the refusal
-                        // must happen HERE, on the original pre-canonicalization path.
-                        //
-                        // ASYMMETRY (two pinned contracts): a symlink to a PLAIN file
-                        // is read (documented "canonicalize-then-read" — the user
-                        // explicitly named it; see
-                        // `included_symlinked_plain_file_is_canonicalized_then_read`).
-                        // But a symlink whose own extension marks it an ARCHIVE /
-                        // expandable container (`creds.har -> ~/.aws/credentials`,
-                        // `x.zip -> /etc/...`) is REFUSED: following it would read AND
-                        // structurally EXPAND an out-of-tree target, the link-swap
-                        // exfiltration class (see `har_symlink_target_is_not_followed_via_include`).
-                        // The expandable-extension set mirrors the archive/compressed
-                        // branches in `extract.rs::process_entry`.
-                        let is_link = std::fs::symlink_metadata(p)
-                            .map(|m| m.file_type().is_symlink())
-                            .unwrap_or(false);  // LAW10: empty/absent => documented numeric default, recall-safe
-                        if !is_link {
-                            return true;
-                        }
-                        let ext = p
-                            .extension()
-                            .and_then(|e| e.to_str())
-                            .unwrap_or("")  // LAW10: missing/non-string field => empty/placeholder; recall-safe
-                            .to_ascii_lowercase();
-                        let expandable = matches!(
-                            ext.as_str(),
-                            "har" | "zip" | "apk" | "ipa" | "crx" | "jar" | "tar" | "gz"
-                                | "tgz" | "zst" | "lz4" | "sz"
-                        );
-                        if expandable {
-                            tracing::warn!(
-                                path = %p.display(),
-                                "refusing --include of an archive symlink - prevents the link-swap exfiltration class"
-                            );
-                            let _event =
-                                crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                            return false;
-                        }
-                        true
-                    })
-                    .map(|p| p.canonicalize().unwrap_or_else(|_| p.clone()))  // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
-                    .collect();
+            // small (user-supplied include list); directory entries are
+            // collected deterministically before the reader pool, and
+            // explicitly-named single files are stat'd directly without a walk.
+            let mut allowed: Vec<PathBuf> = Vec::new();
+            for p in &self.include_paths {
+                // No-follow guard at include-admission (M17), scoped to the
+                // dangerous case. Include paths are admitted below via
+                // `canonicalize()` + `is_file()`, BOTH of which follow
+                // symlinks, and canonicalize resolves the link before any
+                // later `is_symlink(path)` check can see it — so the refusal
+                // must happen HERE, on the original pre-canonicalization path.
+                //
+                // ASYMMETRY (two pinned contracts): a symlink to a PLAIN file
+                // is read (documented "canonicalize-then-read" — the user
+                // explicitly named it; see
+                // `included_symlinked_plain_file_is_canonicalized_then_read`).
+                // But a symlink whose own extension marks it an ARCHIVE /
+                // expandable container (`creds.har -> ~/.aws/credentials`,
+                // `x.zip -> /etc/...`) is REFUSED: following it would read AND
+                // structurally EXPAND an out-of-tree target, the link-swap
+                // exfiltration class (see `har_symlink_target_is_not_followed_via_include`).
+                // The expandable-extension set mirrors the archive/compressed
+                // branches in `extract.rs::process_entry`.
+                let is_link = std::fs::symlink_metadata(p)
+                    .map(|m| m.file_type().is_symlink())
+                    .unwrap_or(false); // LAW10: empty/absent => documented numeric default, recall-safe
+                if !is_link {
+                    allowed.push(p.canonicalize().unwrap_or_else(|_| p.clone())); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
+                    continue;
+                }
+                let ext = p
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("") // LAW10: missing/non-string field => empty/placeholder; recall-safe
+                    .to_ascii_lowercase();
+                let expandable = matches!(
+                    ext.as_str(),
+                    "har"
+                        | "zip"
+                        | "apk"
+                        | "ipa"
+                        | "crx"
+                        | "jar"
+                        | "tar"
+                        | "gz"
+                        | "tgz"
+                        | "zst"
+                        | "lz4"
+                        | "sz"
+                );
+                if expandable {
+                    tracing::warn!(
+                        path = %p.display(),
+                        "refusing --include of an archive symlink - prevents the link-swap exfiltration class"
+                    );
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                    source_errors.push(SourceError::Other(format!(
+                        "refusing to scan explicitly included archive symlink '{}': archive symlink expansion is blocked to prevent link-swap exfiltration",
+                        p.display()
+                    )));
+                    continue;
+                }
+                allowed.push(p.canonicalize().unwrap_or_else(|_| p.clone())); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
+            }
             allowed.sort();
             allowed.dedup();
-            Box::new(allowed.into_iter().flat_map(move |path| {
-                let inner: Box<dyn Iterator<Item = codewalk::FileEntry> + Send> = if path.is_dir() {
+            let mut include_entries = Vec::new();
+            for path in allowed {
+                if path.is_dir() {
                     let sub_walker = CodeWalker::new(&path, config.clone());
-                    Box::new(sorted_entries(sub_walker).into_iter())
+                    include_entries.extend(sorted_entries(sub_walker));
                 } else if path.is_file() {
                     match std::fs::metadata(&path) {
-                        Ok(meta) => Box::new(std::iter::once(codewalk::FileEntry {
+                        Ok(meta) => include_entries.push(codewalk::FileEntry {
                             path,
                             size: meta.len(),
                             // `is_binary` is a walk-time hint codewalk fills for
@@ -328,7 +340,7 @@ impl Source for FilesystemSource {
                             // since codewalk 0.2.5; omitting it broke every
                             // fresh keyhog-sources compile.)
                             is_binary: false,
-                        })),
+                        }),
                         // Law 10: the user EXPLICITLY --include'd this file but
                         // `stat` failed (permission / I/O / race-delete). A
                         // silent `empty()` here drops a requested file while the
@@ -344,7 +356,10 @@ impl Source for FilesystemSource {
                             );
                             let _event =
                                 crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                            Box::new(std::iter::empty())
+                            source_errors.push(SourceError::Other(format!(
+                                "failed to scan explicitly included path '{}': stat failed ({e}); path was not scanned",
+                                path.display()
+                            )));
                         }
                     }
                 } else {
@@ -359,10 +374,13 @@ impl Source for FilesystemSource {
                         "explicitly --include'd path is neither a file nor a directory; NOT scanned"
                     );
                     let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                    Box::new(std::iter::empty())
-                };
-                inner
-            }))
+                    source_errors.push(SourceError::Other(format!(
+                        "failed to scan explicitly included path '{}': path is neither a file nor a directory; path was not scanned",
+                        path.display()
+                    )));
+                }
+            }
+            Box::new(include_entries.into_iter())
         } else {
             let walker = CodeWalker::new(&self.root, config);
             Box::new(sorted_entries(walker).into_iter())
@@ -386,7 +404,7 @@ impl Source for FilesystemSource {
             respect_default_excludes,
             reader_threads,
         );
-        Box::new(rx.into_iter())
+        Box::new(source_errors.into_iter().map(Err).chain(rx))
     }
 
     fn as_any(&self) -> &dyn std::any::Any {

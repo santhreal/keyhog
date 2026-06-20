@@ -57,9 +57,9 @@ const HAR_WITH_SECRET: &str = r#"{
 
 const SENTINEL: &str = "LEAKED_HAR_SENTINEL_TOKEN_8f3a91";
 
-/// A `.har` symlink pointing at a secret-bearing target, surfaced onto
-/// the scan set via `with_include_paths`, must not have its target read:
-/// the sentinel never appears in any emitted chunk.
+/// A `.har` symlink pointing at a secret-bearing target, surfaced onto the scan
+/// set via `with_include_paths`, must be refused visibly before its target is
+/// read.
 #[test]
 fn har_symlink_target_is_not_followed_via_include() {
     let dir = tempfile::tempdir().unwrap();
@@ -74,23 +74,24 @@ fn har_symlink_target_is_not_followed_via_include() {
     let bait = dir.path().join("creds.har");
     symlink(&target, &bait).unwrap();
 
-    // Drive the public API with the symlink as an explicit include path.
-    // `include_paths` admits it via `is_file()` (follows links), so the
-    // entry reaches `process_entry`; the in-read no-follow guard is what
-    // must stop the bytes from being scanned.
+    // Drive the public API with the symlink as an explicit include path. The
+    // include-admission guard must reject the archive symlink before HAR
+    // expansion can read the target bytes.
     let source =
         FilesystemSource::new(dir.path().to_path_buf()).with_include_paths(vec![bait.clone()]);
-    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
-
-    for chunk in &chunks {
-        assert!(
-            !chunk.data.contains(SENTINEL),
-            "HAR branch followed a symlink and scanned the target's bytes \
-             (source_type={:?}, path={:?}); the no-follow guard was bypassed",
-            chunk.metadata.source_type,
-            chunk.metadata.path,
-        );
-    }
+    let rows: Vec<_> = source.chunks().collect();
+    assert_eq!(
+        rows.len(),
+        1,
+        "archive symlink include must surface one source error"
+    );
+    let err = rows[0]
+        .as_ref()
+        .expect_err("archive symlink include must be refused");
+    assert!(
+        err.to_string().contains("archive symlink") && err.to_string().contains("refusing to scan"),
+        "error should name the refused archive symlink include, got {err}"
+    );
 }
 
 /// Control: a REAL (non-symlink) `.har` file with the same content IS
