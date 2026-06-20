@@ -1,27 +1,25 @@
 pub(crate) mod confirmed_anchor;
 
 use super::CompiledScanner;
-use crate::types::*;
+#[cfg(feature = "decode")]
+use crate::types::MAX_SCAN_CHUNK_BYTES;
 #[cfg(feature = "decode")]
 use keyhog_core::SensitiveString;
 use keyhog_core::{Chunk, RawMatch};
 #[cfg(feature = "decode")]
 use std::collections::HashSet;
+#[cfg(feature = "decode")]
 use std::sync::atomic::Ordering::Relaxed;
 #[cfg(feature = "decode")]
 use std::sync::Arc;
 
-// Profiling + suffix-gate machinery and the cross-chunk fragment scan were
+// Profiling + suffix-gate machinery, confirmed extraction, ML scoring, and the
+// cross-chunk fragment scan were
 // split into sibling satellites (Law 5). Re-export the public/crate interface
 // so external paths (`scan_postprocess::{decode_profile_dump,
-// build_confirmed_suffix_gate, ml_batch_profile_dump}`) keep resolving, and pull
-// the recorder symbols this file's impl still pokes. The confirmed-suffix-gate
-// ENABLE/override toggle now lives on the per-scanner `ScannerTuning`
-// (`self.tuning.confirmed_suffix_gate_enabled()`); only the gate BUILDER remains
-// in the suffix-gate satellite.
-use super::scan_postprocess_profile::{
-    confirmed_prof_enabled, confirmed_prof_record, confirmed_prof_vecs, ConfirmedStage,
-};
+// build_confirmed_suffix_gate, ml_batch_profile_dump}`) keep resolving. The
+// confirmed-suffix-gate ENABLE/override toggle lives on the per-scanner
+// `ScannerTuning`; only the gate BUILDER remains in the suffix-gate satellite.
 #[cfg(feature = "decode")]
 use super::scan_postprocess_profile::{
     decode_prof_enabled, DECODE_GEN_NS, DECODE_PARENTS, DECODE_SCAN_NS, DECODE_SUBCHUNKS,
@@ -30,9 +28,6 @@ use super::scan_postprocess_profile::{
 pub(crate) use super::scan_postprocess_profile::{decode_profile_dump, decode_profile_reset};
 pub(crate) use super::scan_postprocess_profile::{ml_batch_profile_dump, ml_batch_profile_reset};
 pub(crate) use super::scan_postprocess_suffix_gate::build_confirmed_suffix_gate;
-
-const STRIPE_HOT_CONFIRMED_DETECTOR_ID: &str = "stripe-secret-key";
-const STRIPE_HOT_CONFIRMED_PREFIXES: &[&str] = &["sk_live_", "sk_test_", "rk_live_", "rk_test_"];
 
 impl CompiledScanner {
     pub(crate) fn post_process_matches(
@@ -256,249 +251,5 @@ impl CompiledScanner {
             }
         });
         expanded
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn extract_confirmed_patterns(
-        &self,
-        confirmed_patterns: &[usize],
-        preprocessed: &ScannerPreprocessedText<'_>,
-        line_offsets: &[usize],
-        code_lines: &[&str],
-        documentation_lines: &[bool],
-        chunk: &Chunk,
-        scan_state: &mut ScanState,
-        deadline: Option<std::time::Instant>,
-    ) {
-        let prof = confirmed_prof_enabled();
-        let total = self.ac_map.len() + self.phase2_patterns.len();
-        // Suffix gate: one AC pass marks which required-suffix literals are
-        // present in the chunk; a triggered pattern whose suffix literals are
-        // ALL absent cannot match (every match ends with one of them), so its
-        // whole-chunk regex run is skipped. `None` when the gate is disabled or
-        // no pattern is gateable.
-        let needs_suffix_gate = self.tuning.confirmed_suffix_gate_enabled()
-            && confirmed_patterns.iter().any(|&pat_idx| {
-                let anchored = self
-                    .confirmed_anchor_index
-                    .as_ref()
-                    .is_some_and(|anchor_index| anchor_index.is_eligible(pat_idx));
-                self.ac_suffix_gate
-                    .get(pat_idx)
-                    .is_some_and(|gate| !gate.is_empty() && !anchored)
-            });
-        let suffix_present: Option<std::collections::HashSet<usize>> = match &self.suffix_gate_ac {
-            Some(ac) if needs_suffix_gate => {
-                let t0 = prof.then(std::time::Instant::now);
-                let present = ac
-                    .find_overlapping_iter(&*preprocessed.text)
-                    .map(|m| m.pattern().as_usize())
-                    .collect();
-                if let Some(t0) = t0 {
-                    confirmed_prof_record(ConfirmedStage::SuffixGate, t0.elapsed());
-                }
-                Some(present)
-            }
-            _ => None,
-        };
-        let suffix_allows = |pat_idx: usize| -> bool {
-            if let Some(present) = &suffix_present {
-                if let Some(gate) = self.ac_suffix_gate.get(pat_idx) {
-                    if !gate.is_empty() && !gate.iter().any(|id| present.contains(&(*id as usize)))
-                    {
-                        return false;
-                    }
-                }
-            }
-            true
-        };
-        let stripe_hot_offsets = self.stripe_direct_emitted_offsets(confirmed_patterns, scan_state);
-        if let Some(anchor_index) = &self.confirmed_anchor_index {
-            let has_active_anchored = confirmed_patterns
-                .iter()
-                .any(|&pat_idx| anchor_index.is_eligible(pat_idx) && suffix_allows(pat_idx));
-            if has_active_anchored {
-                confirmed_anchor::CONFIRMED_ANCHOR_CANDIDATES.with(|cell| {
-                    let mut candidates = cell.borrow_mut();
-                    let collect_t0 = prof.then(std::time::Instant::now);
-                    anchor_index.collect_candidates(
-                        &preprocessed.text,
-                        |pat_idx| {
-                            confirmed_patterns.binary_search(&pat_idx).is_ok()
-                                && suffix_allows(pat_idx)
-                        },
-                        &mut candidates,
-                    );
-                    if let Some(collect_t0) = collect_t0 {
-                        confirmed_prof_record(ConfirmedStage::AnchorCollect, collect_t0.elapsed());
-                    }
-                    let mut i = 0usize;
-                    while i < candidates.len() {
-                        if let Some(deadline) = deadline {
-                            if std::time::Instant::now() > deadline {
-                                break;
-                            }
-                        }
-                        let pat_idx = candidates[i].0 as usize;
-                        let mut j = i + 1;
-                        while j < candidates.len() && candidates[j].0 as usize == pat_idx {
-                            j += 1;
-                        }
-                        let group = &candidates[i..j];
-                        if let Some(entry) = self.ac_map.get(pat_idx) {
-                            let mut filtered_group = Vec::new();
-                            let group = if self.is_stripe_hot_confirmed_pattern(pat_idx) {
-                                if let Some(offsets) = stripe_hot_offsets.as_ref() {
-                                    filtered_group.reserve(group.len());
-                                    filtered_group.extend(group.iter().copied().filter(
-                                        |&(_, pos)| {
-                                            let absolute_offset =
-                                                pos as usize + chunk.metadata.base_offset;
-                                            !offsets.contains(&absolute_offset)
-                                        },
-                                    ));
-                                    if filtered_group.is_empty() {
-                                        i = j;
-                                        continue;
-                                    }
-                                    filtered_group.as_slice()
-                                } else {
-                                    group
-                                }
-                            } else {
-                                group
-                            };
-                            let t0 = if prof {
-                                Some(std::time::Instant::now())
-                            } else {
-                                None
-                            };
-                            match anchor_index.anchored_regex(pat_idx) {
-                                Some(re) => self.extract_anchored(
-                                    entry,
-                                    re,
-                                    group,
-                                    preprocessed,
-                                    line_offsets,
-                                    code_lines,
-                                    documentation_lines,
-                                    chunk,
-                                    scan_state,
-                                    deadline,
-                                ),
-                                None => self.extract_matches(
-                                    entry,
-                                    preprocessed,
-                                    line_offsets,
-                                    code_lines,
-                                    documentation_lines,
-                                    chunk,
-                                    scan_state,
-                                    0,
-                                    0,
-                                    deadline,
-                                ),
-                            }
-                            if let Some(t0) = t0 {
-                                let elapsed = t0.elapsed();
-                                confirmed_prof_record(ConfirmedStage::Extract, elapsed);
-                                let (ns, runs) = confirmed_prof_vecs(total);
-                                if let (Some(n), Some(r)) = (ns.get(pat_idx), runs.get(pat_idx)) {
-                                    n.fetch_add(elapsed.as_nanos() as u64, Relaxed);
-                                    r.fetch_add(1, Relaxed);
-                                }
-                            }
-                        }
-                        i = j;
-                    }
-                });
-            }
-        }
-        for &pat_idx in confirmed_patterns {
-            if let Some(deadline) = deadline {
-                if std::time::Instant::now() > deadline {
-                    break;
-                }
-            }
-            // Skip a gated ac_map pattern whose required suffix literal is absent.
-            if !suffix_allows(pat_idx) {
-                continue;
-            }
-            if self
-                .confirmed_anchor_index
-                .as_ref()
-                .is_some_and(|anchor_index| anchor_index.is_eligible(pat_idx))
-            {
-                continue;
-            }
-            let entry = if pat_idx < self.ac_map.len() {
-                &self.ac_map[pat_idx]
-            } else {
-                let phase2_idx = pat_idx - self.ac_map.len();
-                if phase2_idx >= self.phase2_patterns.len() {
-                    continue;
-                }
-                &self.phase2_patterns[phase2_idx].0
-            };
-            let t0 = if prof {
-                Some(std::time::Instant::now())
-            } else {
-                None
-            };
-            self.extract_matches(
-                entry,
-                preprocessed,
-                line_offsets,
-                code_lines,
-                documentation_lines,
-                chunk,
-                scan_state,
-                0,
-                0,
-                deadline,
-            );
-            if let Some(t0) = t0 {
-                let elapsed = t0.elapsed();
-                confirmed_prof_record(ConfirmedStage::Extract, elapsed);
-                let (ns, runs) = confirmed_prof_vecs(total);
-                if let (Some(n), Some(r)) = (ns.get(pat_idx), runs.get(pat_idx)) {
-                    n.fetch_add(elapsed.as_nanos() as u64, Relaxed);
-                    r.fetch_add(1, Relaxed);
-                }
-            }
-        }
-    }
-
-    fn stripe_direct_emitted_offsets(
-        &self,
-        confirmed_patterns: &[usize],
-        scan_state: &ScanState,
-    ) -> Option<std::collections::HashSet<usize>> {
-        if !confirmed_patterns
-            .iter()
-            .any(|&pat_idx| self.is_stripe_hot_confirmed_pattern(pat_idx))
-        {
-            return None;
-        }
-        let offsets: std::collections::HashSet<usize> = scan_state
-            .matches
-            .iter()
-            .filter(|m| m.detector_id.as_ref() == STRIPE_HOT_CONFIRMED_DETECTOR_ID)
-            .map(|m| m.location.offset)
-            .collect();
-        (!offsets.is_empty()).then_some(offsets)
-    }
-
-    fn is_stripe_hot_confirmed_pattern(&self, pat_idx: usize) -> bool {
-        let Some(entry) = self.ac_map.get(pat_idx) else {
-            return false;
-        };
-        let Some(detector) = self.detectors.get(entry.detector_index) else {
-            return false;
-        };
-        detector.id == STRIPE_HOT_CONFIRMED_DETECTOR_ID
-            && STRIPE_HOT_CONFIRMED_PREFIXES
-                .iter()
-                .any(|prefix| entry.regex.as_str().starts_with(prefix))
     }
 }

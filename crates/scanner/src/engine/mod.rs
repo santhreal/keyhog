@@ -96,6 +96,8 @@ mod scan_filters;
 mod scan_inner_profile;
 mod scan_no_hit_reassembly;
 mod scan_postprocess;
+#[path = "scan_postprocess/confirmed_extract.rs"]
+mod scan_postprocess_confirmed_extract;
 #[path = "scan_postprocess/fragments.rs"]
 mod scan_postprocess_fragments;
 #[cfg(feature = "ml")]
