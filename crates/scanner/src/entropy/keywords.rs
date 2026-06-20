@@ -564,6 +564,20 @@ pub(super) fn is_isolated_bare_secret_plausible(
     if is_isolated_leading_slash_base64_secret(value, placeholder_keywords) {
         return true;
     }
+    if value.contains('.') {
+        if value.len() >= 40
+            && !is_placeholder_ci(value.as_bytes(), placeholder_keywords)
+            && is_structured_dotted_token(value)
+        {
+            return true;
+        }
+        if value.starts_with("eyJ") {
+            return false;
+        }
+        if looks_like_dotted_source_identifier(value) {
+            return false;
+        }
+    }
     passes_plausibility_checks(
         value,
         PlausibilityMode::Lenient,
@@ -661,6 +675,42 @@ fn passes_strict_secret_shape_checks(value: &str, is_credential_context: bool) -
         return false;
     }
     true
+}
+
+fn looks_like_dotted_source_identifier(value: &str) -> bool {
+    let segments: Vec<&str> = value.split('.').collect();
+    if !(2..=5).contains(&segments.len()) || segments.iter().any(|segment| segment.is_empty()) {
+        return false;
+    }
+    if !segments.iter().all(|segment| {
+        segment
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    }) {
+        return false;
+    }
+
+    let source_receiver = matches!(
+        segments[0].to_ascii_lowercase().as_str(),
+        "this" | "self" | "window" | "process" | "global" | "config" | "client" | "service"
+    );
+    if source_receiver {
+        return true;
+    }
+
+    let has_camel_segment = segments.iter().any(|segment| {
+        segment
+            .as_bytes()
+            .windows(2)
+            .any(|pair| pair[0].is_ascii_lowercase() && pair[1].is_ascii_uppercase())
+    });
+    let has_credential_word = segments.iter().any(|segment| {
+        let lower = segment.to_ascii_lowercase();
+        ["token", "secret", "key", "auth", "password", "credential"]
+            .iter()
+            .any(|needle| lower.contains(needle))
+    });
+    has_camel_segment && has_credential_word
 }
 
 /// Heuristic for dash-segmented non-secret shapes. Matches fixed-width

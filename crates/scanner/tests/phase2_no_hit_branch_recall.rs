@@ -355,6 +355,66 @@ fn authorization_call_arg_surfaces_quoted_high_entropy_token() {
 
 #[cfg(feature = "entropy")]
 #[test]
+fn isolated_structured_dotted_tokens_enter_full_line_recovery() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+
+    for secret in [
+        "eyJ1Gk3_5qIWlCW9vrWA_Zc-CikFlEy5grq-2ah0D7iS150sDBETlYuoN_r_XnRJK0Q.A8Lrhe179XcO43ta8Er9KpU33H_dwrJBsHKF1z7bspluw3wF7r4mGMKpVCr9U5s-P58CXz3eACIeqezEPDEGO4PUH4LR9w.yO6nijlKQf5R0gF1JB",
+        "eyJhLD.eyJU16ZBmIIV3MOOWUXh-WS4UwUtRqqHlT9ANpC.KogxfWs1PZbn20DHnHLP5g78xRyaU82oYuwJ",
+    ] {
+        let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
+        let matches = scanner.scan(&chunk);
+        let entropy_fired = matches.iter().any(|m| {
+            m.detector_id.as_ref().starts_with("entropy-")
+                && m.credential.as_ref().contains(secret)
+        });
+        assert!(
+            entropy_fired,
+            "an isolated full-line structured dotted token must enter entropy \
+             recovery instead of being rejected by the JWT-shaped universal \
+             plausibility gate; secret={secret}; matches={:?}",
+            matches
+                .iter()
+                .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[cfg(feature = "entropy")]
+#[test]
+fn isolated_unstructured_dotted_values_stay_suppressed() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+
+    for value in [
+        "this.someService.copilotToken1234567890",
+        "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0",
+    ] {
+        let chunk = make_chunk(value, "notes/sufficiency-probe.txt");
+        let matches = scanner.scan(&chunk);
+        let entropy_fired = matches.iter().any(|m| {
+            m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(value)
+        });
+        assert!(
+            !entropy_fired,
+            "property-access and two-segment JWT-looking values must not enter \
+             isolated dotted-token recovery; value={value}; matches={:?}",
+            matches
+                .iter()
+                .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[cfg(feature = "entropy")]
+#[test]
 fn isolated_bare_split_entropy_secret_bypasses_identifier_emit_gate() {
     let mut config = ScannerConfig::default();
     config.min_confidence = 0.0;
