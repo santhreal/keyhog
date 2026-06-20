@@ -134,7 +134,6 @@ impl CompiledScanner {
         // dedup so we visit each line once even if multiple
         // keywords land on it.
         let scan_text: &str = &preprocessed.text;
-        let code_lines: Vec<&str> = scan_text.lines().collect();
         let identity_offsets = std::ptr::eq(scan_text.as_ptr(), chunk.data.as_ptr())
             && scan_text.len() == chunk.data.len();
         let scan_bytes = scan_text.as_bytes();
@@ -165,6 +164,7 @@ impl CompiledScanner {
             return;
         }
 
+        let mut code_lines_cache: Option<Vec<&str>> = None;
         for &line_idx in &lines_with_keyword {
             let Some(&line_offset) = line_offsets.get(line_idx) else {
                 continue;
@@ -175,7 +175,7 @@ impl CompiledScanner {
             if covered_lines.contains(&absolute_line) {
                 continue;
             }
-            let Some(&raw_line) = code_lines.get(line_idx) else {
+            let Some(raw_line) = line_at_index(scan_text, line_offsets, line_idx) else {
                 continue;
             };
             // The chunk-level AC told us this line has a keyword;
@@ -276,8 +276,10 @@ impl CompiledScanner {
                 }
 
                 // Context suppression: test files get lower confidence
+                let code_lines =
+                    code_lines_cache.get_or_insert_with(|| scan_text.lines().collect());
                 let context = crate::context::infer_context(
-                    &code_lines,
+                    code_lines.as_slice(),
                     line_idx,
                     chunk.metadata.path.as_deref(),
                 );
@@ -446,6 +448,24 @@ fn source_offset_for_line_value(source: &str, one_based_line: usize, value: &str
         line_start += line.len() + 1;
     }
     source.len()
+}
+
+fn line_at_index<'a>(text: &'a str, line_offsets: &[usize], line_idx: usize) -> Option<&'a str> {
+    let start = *line_offsets.get(line_idx)?;
+    let mut end = if let Some(next_line_start) = line_offsets.get(line_idx + 1) {
+        *next_line_start
+    } else {
+        // Last line has no following offset; the source length is its exact end.
+        text.len()
+    };
+    let bytes = text.as_bytes();
+    if end > start && bytes.get(end - 1).copied() == Some(b'\n') {
+        end -= 1;
+    }
+    if end > start && bytes.get(end - 1).copied() == Some(b'\r') {
+        end -= 1;
+    }
+    text.get(start..end)
 }
 
 fn bare_auth_value_allowed(value: &str) -> bool {

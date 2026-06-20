@@ -14,7 +14,10 @@
 //! medians, not criterion's adaptive sampling — every number is one timed call.
 
 use keyhog_core::{load_detectors, Chunk, ChunkMetadata};
-use keyhog_scanner::{set_perf_trace_enabled, CompiledScanner, ScanBackend};
+use keyhog_scanner::{
+    profile_dump, profile_reset, set_perf_trace_enabled, set_profile_enabled, CompiledScanner,
+    ScanBackend,
+};
 use std::env;
 use std::io;
 use std::path::PathBuf;
@@ -71,21 +74,29 @@ fn median(mut v: Vec<Duration>) -> Duration {
 }
 
 fn time_backend(
+    label: &str,
     scanner: &CompiledScanner,
     chunks: &[Chunk],
     backend: ScanBackend,
     iters: usize,
+    profile: bool,
 ) -> (Duration, usize) {
     // Warm: first GPU call pays the one-time catalog upload + pipeline compile;
     // first SimdCpu call warms caches. Exclude it from the steady-state median.
     let warm = scanner.scan_chunks_with_backend(chunks, backend);
     let hits: usize = warm.iter().map(Vec::len).sum();
+    if profile {
+        profile_reset();
+    }
     let mut samples = Vec::with_capacity(iters);
     for _ in 0..iters {
         let t = Instant::now();
         let r = scanner.scan_chunks_with_backend(chunks, backend);
         samples.push(t.elapsed());
         std::hint::black_box(&r);
+    }
+    if profile && !matches!(backend, ScanBackend::Gpu) {
+        profile_dump(label);
     }
     (median(samples), hits)
 }
@@ -122,8 +133,11 @@ fn env_positive_usize(name: &str, default: usize) -> Result<usize, io::Error> {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let perf_trace = env::args().any(|arg| arg == "--perf-trace");
+    let args: Vec<String> = env::args().collect();
+    let perf_trace = args.iter().any(|arg| arg == "--perf-trace");
+    let profile = args.iter().any(|arg| arg == "--profile");
     set_perf_trace_enabled(perf_trace);
+    set_profile_enabled(profile);
 
     let size_mib = env_positive_usize("KH_BENCH_SIZE_MIB", 8)?;
     let size = size_mib.checked_mul(MIB).ok_or_else(|| {
@@ -156,7 +170,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     // SimdCpu / Hyperscan phase-1 path.
-    let (hs, hs_hits) = time_backend(&scanner, &chunks, ScanBackend::SimdCpu, iters);
+    let (hs, hs_hits) = time_backend(
+        "bench-simd-hyperscan",
+        &scanner,
+        &chunks,
+        ScanBackend::SimdCpu,
+        iters,
+        profile,
+    );
     report("SimdCpu (Hyperscan)", hs, size, hs_hits);
 
     // GPU region-presence path. --perf-trace prints the internal phase
@@ -169,7 +190,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } else {
             println!("(gpu backend: NONE acquired — Gpu path will degrade loudly)");
         }
-        let (gpu, gpu_hits) = time_backend(&scanner, &chunks, ScanBackend::Gpu, iters);
+        let (gpu, gpu_hits) = time_backend(
+            "bench-gpu-region",
+            &scanner,
+            &chunks,
+            ScanBackend::Gpu,
+            iters,
+            profile,
+        );
         report("Gpu (region presence)", gpu, size, gpu_hits);
         let status = scanner.runtime_status();
         if status.gpu_degrade_count > 0 {
