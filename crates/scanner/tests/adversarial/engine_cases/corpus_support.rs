@@ -15,6 +15,12 @@ pub fn corpus_fixture_path(subdir: &str, rel: &str) -> PathBuf {
         .join(rel)
 }
 
+pub fn recall_fixture_path(rel: &str) -> PathBuf {
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/data/recall/kh_challenging")
+        .join(rel)
+}
+
 pub fn load_embedded_detectors() -> Vec<DetectorSpec> {
     keyhog_core::load_embedded_detectors_or_fail().expect("embedded detector corpus must load")
 }
@@ -37,6 +43,28 @@ pub fn scan_corpus(subdir: &str, rel: &str) -> Vec<keyhog_core::RawMatch> {
             base_offset: 0,
             base_line: 0,
             source_type: format!("test/corpus/{subdir}"),
+            path: Some(path.display().to_string()),
+            commit: None,
+            author: None,
+            date: None,
+            mtime_ns: None,
+            size_bytes: None,
+            ..Default::default()
+        },
+    };
+    production_scanner().scan(&chunk)
+}
+
+pub fn scan_recall(rel: &str) -> Vec<keyhog_core::RawMatch> {
+    let path = recall_fixture_path(rel);
+    let data = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("read {} failed: {e}", path.display()));
+    let chunk = Chunk {
+        data: data.into(),
+        metadata: ChunkMetadata {
+            base_offset: 0,
+            base_line: 0,
+            source_type: "test/recall/kh_challenging".into(),
             path: Some(path.display().to_string()),
             commit: None,
             author: None,

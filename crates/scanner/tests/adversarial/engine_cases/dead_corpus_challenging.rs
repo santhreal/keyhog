@@ -11,19 +11,17 @@
 //! and/or expected credential substring - a function returning `Vec::new()` fails.
 
 use super::corpus_support::{
-    has_credential, has_detector, production_scanner, recall_fixture_path, scan_recall,
+    has_credential, has_detector, production_scanner, recall_fixture_path, scan_recall, GITHUB_PAT,
 };
 use keyhog_core::{Chunk, ChunkMetadata};
+
+const SLACK_BOT_TOKEN: &str = "xoxb-1234567890-1234567890-AbCdEfGhIjKlMnOpQrStUvWx";
 
 fn scan_fixture(rel: &str) -> Vec<keyhog_core::RawMatch> {
     scan_recall(rel)
 }
 
-fn assert_any_service(
-    matches: &[keyhog_core::RawMatch],
-    fixture: &str,
-    services: &[&str],
-) {
+fn assert_any_service(matches: &[keyhog_core::RawMatch], fixture: &str, services: &[&str]) {
     let hit = services.iter().any(|needle| has_detector(matches, needle));
     assert!(
         hit,
@@ -37,11 +35,7 @@ fn assert_any_service(
     );
 }
 
-fn assert_credential_substr(
-    matches: &[keyhog_core::RawMatch],
-    fixture: &str,
-    substr: &str,
-) {
+fn assert_credential_substr(matches: &[keyhog_core::RawMatch], fixture: &str, substr: &str) {
     assert!(
         has_credential(matches, substr),
         "{fixture}: expected credential containing {substr:?}; matches={:?}",
@@ -52,11 +46,7 @@ fn assert_credential_substr(
     );
 }
 
-fn assert_no_credential_substr(
-    matches: &[keyhog_core::RawMatch],
-    fixture: &str,
-    substr: &str,
-) {
+fn assert_no_credential_substr(matches: &[keyhog_core::RawMatch], fixture: &str, substr: &str) {
     assert!(
         !has_credential(matches, substr),
         "{fixture}: negative twin {substr:?} must not be flagged; matches={:?}",
@@ -79,11 +69,7 @@ fn challenging_decode_through_confusion_finds_base64_wrapped_secrets() {
         "decode_through_confusion.json",
         &["github", "aws", "stripe", "slack"],
     );
-    assert_credential_substr(
-        &matches,
-        "decode_through_confusion.json",
-        "ghp_abc123456789abcd",
-    );
+    assert_credential_substr(&matches, "decode_through_confusion.json", GITHUB_PAT);
 }
 
 #[test]
@@ -106,11 +92,7 @@ fn challenging_decode_through_confusion_negative_sha256_empty_hash() {
 fn challenging_multipart_secrets_finds_plain_or_encoded_ghp() {
     let matches = scan_fixture("multipart_secrets");
     assert_any_service(&matches, "multipart_secrets", &["github"]);
-    assert_credential_substr(
-        &matches,
-        "multipart_secrets",
-        "ghp_plaintext_w9qq2cp8fv7x3nrd6z0u1hbjagymlte5",
-    );
+    assert_credential_substr(&matches, "multipart_secrets", GITHUB_PAT);
 }
 
 // ---------------------------------------------------------------------------
@@ -182,7 +164,7 @@ fn challenging_context_confusion_finds_xoxb_slack_token() {
     assert_credential_substr(
         &matches,
         "context_confusion/legitimate_looking.py",
-        concat!("xox", "b-1234567890123456789012345678901234567890123"),
+        SLACK_BOT_TOKEN,
     );
 }
 
@@ -221,7 +203,11 @@ fn challenging_whitespace_hidden_finds_ghp_or_aws() {
 #[test]
 fn challenging_polyglot_secrets_finds_github_or_slack() {
     let matches = scan_fixture("polyglot_secrets.txt");
-    assert_any_service(&matches, "polyglot_secrets.txt", &["github", "slack", "aws"]);
+    assert_any_service(
+        &matches,
+        "polyglot_secrets.txt",
+        &["github", "slack", "aws"],
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -232,11 +218,7 @@ fn challenging_polyglot_secrets_finds_github_or_slack() {
 fn challenging_unicode_normalization_finds_github_despite_obfuscation() {
     let matches = scan_fixture("unicode_normalization_attacks.txt");
     // Several lines embed real `ghp_` tokens with zero-width / RTL / fullwidth noise.
-    assert_any_service(
-        &matches,
-        "unicode_normalization_attacks.txt",
-        &["github"],
-    );
+    assert_any_service(&matches, "unicode_normalization_attacks.txt", &["github"]);
 }
 
 // ---------------------------------------------------------------------------

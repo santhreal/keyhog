@@ -13,6 +13,8 @@ mod concatenation_e2e;
 mod contexts;
 #[path = "engine_cases/corpus_support.rs"]
 mod corpus_support;
+#[path = "engine_cases/dead_corpus_challenging.rs"]
+mod dead_corpus_challenging;
 #[path = "engine_cases/dead_corpus_evasion.rs"]
 mod dead_corpus_evasion;
 #[path = "engine_cases/dedupe.rs"]

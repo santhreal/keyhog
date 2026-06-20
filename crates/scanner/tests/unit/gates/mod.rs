@@ -1,3 +1,4 @@
+pub mod adversarial_suite_live_contract;
 pub mod alphabet_filter_no_inline_tests;
 pub mod alphabet_filter_no_unwrap_expect;
 pub mod alphabet_filter_non_empty;
