@@ -1,5 +1,5 @@
 # Docs: https://planetscale.com/docs/concepts/service-tokens
-# Format: Service token starting with 'pscale_tkn_' followed by 43 alphanumeric characters
+# Format: Service token starting with 'pscale_tkn_' followed by a 43-character URL-safe body
 # Verify: Sent in Authorization header to api.planetscale.com/v1/organizations, returns 200 on success
 # Prefix: pscale_tkn_
 
@@ -11,8 +11,8 @@ severity = "high"
 keywords = ["pscale_tkn", "planetscale", "PLANETSCALE_SERVICE_TOKEN"]
 
 [[detector.patterns]]
-regex = 'pscale_tkn_[a-zA-Z0-9]{43}'
-description = "PlanetScale service token (pscale_tkn_ prefix, 43 chars)"
+regex = 'pscale_tkn_[a-zA-Z0-9_-]{43}'
+description = "PlanetScale service token (pscale_tkn_ prefix, 43 URL-safe chars)"
 
 [detector.verify]
 method = "GET"

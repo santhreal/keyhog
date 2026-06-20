@@ -1,7 +1,7 @@
 # Docs: https://neon.com/docs/manage/api-keys
-# Format: Randomly generated 64-character hexadecimal token
+# Format: Randomly generated bearer API token
 # Verify: GET /api/v2/projects with Authorization: Bearer token returns 200 if valid
-# Prefix: none (requires context anchoring)
+# Prefix: neon_api_ for current API keys; legacy/context fixtures may be 64 hex
 
 [detector]
 id = "neon-api-key"
@@ -13,6 +13,15 @@ keywords = ["NEON_API_KEY", "neon.tech", "Authorization"]
 [[detector.patterns]]
 regex = "(?:NEON_API_KEY|neon.?api.?key)[=:\\s\"'']+([a-f0-9]{64})"
 description = "Neon API key with context anchor"
+group = 1
+
+[[detector.patterns]]
+regex = "neon_api_[A-Za-z0-9_-]{48}"
+description = "Neon API key with neon_api_ prefix"
+
+[[detector.patterns]]
+regex = "(?:NEON_API_KEY|neon.?api.?key)[=:\\s\"'']+(neon_api_[A-Za-z0-9_-]{48})"
+description = "Neon API key with context anchor and neon_api_ prefix"
 group = 1
 
 [detector.verify]

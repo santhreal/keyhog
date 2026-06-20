@@ -13,6 +13,11 @@ text = "pscale_tkn_EwD5ne5cVM87vVUvFegDFbHqRWPLuPfgovlAxiHFhIB=\"pscale_tkn_EwD5
 credential = "pscale_tkn_EwD5ne5cVM87vVUvFegDFbHqRWPLuPfgovlAxiHFhIB"
 reason = "Quoted-value variant of the canonical positive."
 
+[[positive]]
+text = "PLANETSCALE_SERVICE_TOKEN=pscale_tkn_EwD5ne5cVM87vVUv-FegDFbHqRWPLuPfgovlAxiHFh_"
+credential = "pscale_tkn_EwD5ne5cVM87vVUv-FegDFbHqRWPLuPfgovlAxiHFh_"
+reason = "URL-safe body with hyphen and underscore must remain a service token."
+
 [[negative]]
 text = "YOUR_API_KEY_HERE_PLACEHOLDER_VALUE"
 reason = "Placeholder-keyword body — suppression gate matches PLACEHOLDER prefix."

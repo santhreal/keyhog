@@ -11,11 +11,11 @@ severity = "high"
 keywords = ["pscale_tkn", "planetscale", "PLANETSCALE_API_TOKEN"]
 
 [[detector.patterns]]
-regex = "pscale_tkn_[a-zA-Z0-9]{32,}"
-description = "PlanetScale API token v2 (pscale_tkn_ prefix)"
+regex = "pscale_tkn_[a-zA-Z0-9_-]{32,}"
+description = "PlanetScale API token v2 (pscale_tkn_ prefix, URL-safe body)"
 
 [[detector.patterns]]
-regex = "(?:PLANETSCALE|planetscale)[_\\s]?API[_\\s]?TOKEN[=:\\s\"'']+(pscale_tkn_[a-zA-Z0-9]{32,})"
+regex = "(?:PLANETSCALE|planetscale)[_\\s]?API[_\\s]?TOKEN[=:\\s\"'']+(pscale_tkn_[a-zA-Z0-9_-]{32,})"
 description = "PlanetScale API token with context anchor"
 group = 1
 
