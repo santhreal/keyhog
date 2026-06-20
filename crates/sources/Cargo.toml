@@ -175,6 +175,11 @@ path = "tests/regression_gcs_object_drops_counted.rs"
 required-features = ["gcs"]
 
 [[test]]
+name = "regression_web_response_gaps_counted"
+path = "tests/regression_web_response_gaps_counted.rs"
+required-features = ["web"]
+
+[[test]]
 name = "regression_s3_skipped_objects_counted"
 path = "tests/regression_s3_skipped_objects_counted.rs"
 required-features = ["s3"]

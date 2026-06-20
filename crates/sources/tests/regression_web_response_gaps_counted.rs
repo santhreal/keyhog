@@ -333,7 +333,46 @@ fn invalid_wasm_magic_is_error_and_counted_unreadable() {
 }
 
 #[test]
-fn valid_wasm_without_printable_strings_is_counted_binary_gap() {
+fn valid_wasm_with_printable_strings_is_scanned_as_wasm_chunk() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let mut wasm = Vec::from([0x00, 0x61, 0x73, 0x6d]);
+    wasm.extend_from_slice(&[0x01, 0x00, 0x00, 0x00]);
+    wasm.extend_from_slice(b"credential_string");
+    let url = server.url("/module.wasm");
+    let _module = server.mock(|when, then| {
+        when.method(httpmock::Method::GET).path("/module.wasm");
+        then.status(200)
+            .header("content-type", "application/wasm")
+            .body(wasm);
+    });
+
+    let chunks: Vec<_> = loopback_calibration_source(url.clone()).chunks().collect();
+    assert_eq!(chunks.len(), 1, "valid WASM URL must yield one chunk");
+    let chunk = match &chunks[0] {
+        Ok(chunk) => chunk,
+        Err(err) => panic!("valid WASM with printable strings must scan, got {err}"),
+    };
+    assert_eq!(chunk.metadata.source_type, "web:wasm");
+    assert_eq!(chunk.metadata.path.as_deref(), Some(url.as_str()));
+    assert!(
+        chunk.data.as_ref().contains("credential_string"),
+        "WASM chunk must carry extracted printable strings"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.total(),
+        before.total(),
+        "scanned WASM strings must not inflate skip counters"
+    );
+}
+
+#[test]
+fn valid_wasm_without_printable_strings_is_visible_error_and_counted_binary_gap() {
     let _guard = counter_guard();
     TestApi.reset_skip_counters();
     let before = skip_counts();
@@ -352,9 +391,18 @@ fn valid_wasm_without_printable_strings_is_counted_binary_gap() {
     let chunks: Vec<_> = loopback_calibration_source(server.url("/empty.wasm"))
         .chunks()
         .collect();
+    assert_eq!(
+        chunks.len(),
+        1,
+        "valid WASM with no printable strings must yield one visible error"
+    );
+    let err = chunks[0]
+        .as_ref()
+        .expect_err("valid WASM with no printable strings must be an error");
     assert!(
-        chunks.is_empty(),
-        "valid WASM with no printable strings yields no scannable chunks"
+        err.to_string()
+            .contains("WASM body yielded no printable strings"),
+        "error should name the unscanned WASM condition, got {err}"
     );
 
     let after = skip_counts();

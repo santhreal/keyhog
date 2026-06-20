@@ -445,7 +445,9 @@ fn handle_wasm(
             "WASM body yielded no printable strings; body was NOT scanned for secrets"
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-        return Vec::new();
+        return vec![Err(SourceError::Other(format!(
+            "failed to scan {safe_url}: WASM body yielded no printable strings, so no WebAssembly bytes were scanned for secrets"
+        )))];
     }
 
     vec![Ok(Chunk {
