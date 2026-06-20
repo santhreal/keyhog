@@ -8,18 +8,6 @@ use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 use std::io::Write;
 
-fn minimal_pdf(stream_dict: &str, stream: &[u8]) -> Vec<u8> {
-    let mut pdf = format!(
-        "%PDF-1.7\n1 0 obj\n<< /Type /Catalog >>\nendobj\n2 0 obj\n<< /Length {}{} >>\nstream\n",
-        stream.len(),
-        stream_dict
-    )
-    .into_bytes();
-    pdf.extend_from_slice(stream);
-    pdf.extend_from_slice(b"\nendstream\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n");
-    pdf
-}
-
 fn scan_pdf(bytes: Vec<u8>) -> Vec<keyhog_core::Chunk> {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("document.pdf");
@@ -32,7 +20,7 @@ fn scan_pdf(bytes: Vec<u8>) -> Vec<keyhog_core::Chunk> {
 
 #[test]
 fn pdf_literal_text_stream_is_scanned_as_pdf() {
-    let bytes = minimal_pdf(
+    let bytes = crate::support::pdf::minimal_pdf(
         "",
         b"BT /F1 12 Tf 72 720 Td (KEYHOG_PDF_LITERAL_SECRET_1234567890) Tj ET",
     );
@@ -60,7 +48,7 @@ fn pdf_flate_text_stream_is_decompressed_and_scanned() {
         .write_all(b"BT (KEYHOG_PDF_FLATE_SECRET_1234567890) Tj ET")
         .expect("write flate input");
     let compressed = encoder.finish().expect("finish flate");
-    let bytes = minimal_pdf(" /Filter /FlateDecode", &compressed);
+    let bytes = crate::support::pdf::minimal_pdf(" /Filter /FlateDecode", &compressed);
 
     let chunks = scan_pdf(bytes);
     assert!(
@@ -74,7 +62,7 @@ fn pdf_flate_text_stream_is_decompressed_and_scanned() {
 
 #[test]
 fn pdf_hex_text_string_is_decoded_and_scanned() {
-    let bytes = minimal_pdf(
+    let bytes = crate::support::pdf::minimal_pdf(
         "",
         b"BT <4b4559484f475f5044465f4845585f5345435245545f31323334353637383930> Tj ET",
     );

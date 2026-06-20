@@ -60,12 +60,10 @@ pub(super) fn extract_pdf_chunks(
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
     }
     if extracted.truncated {
-        eprintln!(
-            "keyhog: WARNING: PDF extraction of {} hit the {} byte decoded-stream cap - only the truncated prefix was scanned; the rest was NOT.",
-            path.display(),
-            budget
-        );
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+        let error = report_pdf_truncation(&path_display, budget);
+        if !emit(Err(error)) {
+            return;
+        }
     }
 
     let text = extracted.text.trim();
@@ -85,6 +83,16 @@ pub(super) fn extract_pdf_chunks(
     })) {
         tracing::debug!("PDF chunk consumer stopped before final chunk");
     }
+}
+
+fn report_pdf_truncation(path_display: &str, budget: usize) -> SourceError {
+    eprintln!(
+        "keyhog: WARNING: PDF extraction of {path_display} hit the {budget} byte decoded-stream cap - only the truncated prefix was scanned; the rest was NOT."
+    );
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+    SourceError::Other(format!(
+        "PDF extraction of '{path_display}' was truncated at the {budget}-byte decoded-stream cap; remaining decoded PDF stream bytes were not scanned"
+    ))
 }
 
 fn emit_non_pdf_extension_fallback(
