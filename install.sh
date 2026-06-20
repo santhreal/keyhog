@@ -205,7 +205,7 @@ usage() {
 "Quick install:" \
 "  curl -fsSL https://raw.githubusercontent.com/$REPO/main/install.sh | sh" \
 "" \
-"Modes:  (default) install/upgrade   --repair   --diagnose   --uninstall" \
+"Modes:  (default) install/upgrade   --repair   --diagnose   --calibrate   --uninstall" \
 "Flags:  --version=vX.Y.Z  --variant=cpu|cuda  --install-dir=PATH" \
 "        --from-file=PATH  --yes/-y  --no-prompt  --insecure  --no-color  --help/-h" \
 "Env:    KEYHOG_VERSION  GITHUB_TOKEN  NO_COLOR"

@@ -318,6 +318,9 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
     assert!(
         install_sh.contains("prime_autoroute_cache")
             && install_sh.contains("--calibrate")
+            && install_sh.contains(
+                "Modes:  (default) install/upgrade   --repair   --diagnose   --calibrate   --uninstall"
+            )
             && install_sh.contains("Autoroute calibration")
             && install_sh.contains("kib_sizes=\"4 64\"")
             && install_sh.contains("mib_sizes=\"1 8 32\"")
