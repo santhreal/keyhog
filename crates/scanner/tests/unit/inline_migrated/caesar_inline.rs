@@ -84,3 +84,55 @@ fn decode_chunk_round_trips_aws_shaped_token() {
         decoded.iter().map(|c| c.data.clone()).collect::<Vec<_>>(),
     );
 }
+
+#[test]
+fn private_key_block_body_skips_caesar_decoder() {
+    use keyhog_core::{Chunk, ChunkMetadata};
+
+    let shifted_google = caesar_shift("AIzaJBPI2n5UC64198Pt4qMGLqLHKvwsPonI4Lb", 1);
+    let chunk = Chunk {
+        data: format!("-----BEGIN PRIVATE KEY-----\n{shifted_google}\n-----END PRIVATE KEY-----\n")
+            .into(),
+        metadata: ChunkMetadata {
+            source_type: "filesystem".into(),
+            path: Some("key.pem".into()),
+            ..Default::default()
+        },
+    };
+
+    let decoded = CaesarDecoder.decode_chunk(&chunk);
+
+    assert!(
+        decoded.is_empty(),
+        "Caesar decoder must not emit provider-shaped children from private-key material: {:?}",
+        decoded.iter().map(|c| c.data.clone()).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn private_key_block_does_not_disable_caesar_outside_block() {
+    use keyhog_core::{Chunk, ChunkMetadata};
+
+    let shifted = caesar_shift("AKIAQR4DEFGHIJKL2345", 1);
+    let chunk = Chunk {
+        data: format!(
+            "token = \"{shifted}\"\n-----BEGIN PRIVATE KEY-----\nopaque\n-----END PRIVATE KEY-----\n"
+        )
+        .into(),
+        metadata: ChunkMetadata {
+            source_type: "filesystem".into(),
+            path: Some("bundle.env".into()),
+            ..Default::default()
+        },
+    };
+
+    let decoded = CaesarDecoder.decode_chunk(&chunk);
+
+    assert!(
+        decoded
+            .iter()
+            .any(|c| c.data.as_ref() == concat!("AK", "IAQR4DEFGHIJKL2345")),
+        "Caesar token outside the private-key block must still decode: {:?}",
+        decoded.iter().map(|c| c.data.clone()).collect::<Vec<_>>()
+    );
+}

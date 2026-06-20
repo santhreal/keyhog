@@ -8,6 +8,8 @@ pub mod regression;
 pub mod regression_creddata_hex_key_recall;
 #[path = "regression_encoded_benign_text_suppression.rs"]
 pub mod regression_encoded_benign_text_suppression;
+#[path = "regression_private_key_caesar_decode_suppression.rs"]
+pub mod regression_private_key_caesar_decode_suppression;
 #[path = "regression_private_key_decode_child_resolution.rs"]
 pub mod regression_private_key_decode_child_resolution;
 #[path = "regression_quoted_printable_uuid_suffix_suppression.rs"]

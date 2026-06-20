@@ -1,4 +1,4 @@
-use super::pipeline::{extract_encoded_values, push_decoded_text_chunk};
+use super::pipeline::{extract_encoded_value_spans, push_decoded_text_chunk};
 use super::Decoder;
 use aho_corasick::AhoCorasick;
 use keyhog_core::Chunk;
@@ -136,6 +136,128 @@ pub(crate) fn line_has_credential_url(line: &str) -> bool {
     userinfo[..at_pos].contains(':')
 }
 
+fn private_key_material_spans(text: &str) -> Vec<(usize, usize)> {
+    let mut spans = private_key_block_spans(text);
+    spans.extend(encoded_private_key_payload_spans(text));
+    spans
+}
+
+fn private_key_block_spans(text: &str) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    let mut search_from = 0usize;
+    while let Some(rel_begin) = text[search_from..].find("-----BEGIN ") {
+        let begin = search_from + rel_begin;
+        let header_end = match text[begin..].find('\n') {
+            Some(rel) => begin + rel,
+            None => text.len(),
+        };
+        if !text[begin..header_end].contains("PRIVATE KEY") {
+            search_from = begin + "-----BEGIN ".len();
+            continue;
+        }
+        let Some(rel_end) = text[header_end..].find("-----END ") else {
+            break;
+        };
+        let end_start = header_end + rel_end;
+        let end_line = match text[end_start..].find('\n') {
+            Some(rel) => end_start + rel + 1,
+            None => text.len(),
+        };
+        if text[end_start..end_line].contains("PRIVATE KEY") {
+            spans.push((begin, end_line));
+            search_from = end_line;
+        } else {
+            search_from = end_start + "-----END ".len();
+        }
+    }
+    spans
+}
+
+fn encoded_private_key_payload_spans(text: &str) -> Vec<(usize, usize)> {
+    struct Run {
+        start: usize,
+        end: usize,
+        encoded: String,
+    }
+
+    fn flush(run: &mut Option<Run>, spans: &mut Vec<(usize, usize)>) {
+        let Some(run) = run.take() else {
+            return;
+        };
+        if run.encoded.len() < 128 {
+            return;
+        }
+        let Ok(decoded) = super::base64_decode(&run.encoded) else {
+            return;
+        };
+        let Ok(decoded_text) = String::from_utf8(decoded) else {
+            return;
+        };
+        if decoded_text.contains("-----BEGIN ")
+            && decoded_text.contains("PRIVATE KEY")
+            && decoded_text.contains("-----END ")
+        {
+            spans.push((run.start, run.end));
+        }
+    }
+
+    let mut spans = Vec::new();
+    let mut run: Option<Run> = None;
+    let mut line_start = 0usize;
+    for line in text.split_inclusive('\n') {
+        let line_body = line.trim_end_matches(['\r', '\n']);
+        let absolute_line_end = line_start + line_body.len();
+        let (value_start, value) = base64ish_line_value(line_body, line_start);
+        if value.len() >= 16 && value.bytes().all(super::is_standard_base64_byte) {
+            match &mut run {
+                Some(active) => {
+                    active.end = absolute_line_end;
+                    active.encoded.push_str(value);
+                }
+                None => {
+                    run = Some(Run {
+                        start: value_start,
+                        end: absolute_line_end,
+                        encoded: value.to_string(),
+                    });
+                }
+            }
+        } else {
+            flush(&mut run, &mut spans);
+        }
+        line_start += line.len();
+    }
+    flush(&mut run, &mut spans);
+    spans
+}
+
+fn base64ish_line_value(line: &str, line_start: usize) -> (usize, &str) {
+    let mut start = 0usize;
+    let mut end = line.len();
+    if let Some(colon) = line.find(':') {
+        start = colon + 1;
+    }
+    while start < end && line.as_bytes()[start].is_ascii_whitespace() {
+        start += 1;
+    }
+    while end > start && line.as_bytes()[end - 1].is_ascii_whitespace() {
+        end -= 1;
+    }
+    (line_start + start, &line[start..end])
+}
+
+fn candidate_inside_spans(
+    candidate_span: Option<(usize, usize)>,
+    spans: &[(usize, usize)],
+) -> bool {
+    let Some((start, end)) = candidate_span else {
+        return false;
+    };
+    spans
+        .iter()
+        .any(|(span_start, span_end)| *span_start <= start && end <= *span_end)
+}
+
 impl Decoder for CaesarDecoder {
     fn name(&self) -> &'static str {
         "caesar"
@@ -168,7 +290,12 @@ impl Decoder for CaesarDecoder {
         if chunk_has_credential_url {
             return Vec::new();
         }
-        for candidate in extract_encoded_values(&chunk.data) {
+        let private_key_spans = private_key_material_spans(&chunk.data);
+        for candidate in extract_encoded_value_spans(&chunk.data) {
+            if candidate_inside_spans(candidate.span(), &private_key_spans) {
+                continue;
+            }
+            let candidate = candidate.value;
             if candidate.len() < MIN_CAESAR_LEN {
                 continue;
             }
