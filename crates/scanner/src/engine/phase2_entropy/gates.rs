@@ -178,9 +178,7 @@ pub(crate) fn entropy_match_suppressed(
     // URL / path-fragment shape (`user/settings/password`,
     // `/api/v1/access_token`). Keep long high-entropy base64 punctuation
     // payloads alive; a slash inside an opaque token is not path structure.
-    let high_entropy_long_punctuation_payload =
-        high_entropy_punctuation_payload && entropy_match.value.len() > 40;
-    if !high_entropy_long_punctuation_payload
+    if !high_entropy_punctuation_payload
         && crate::pipeline::looks_like_url_or_path_segment(&entropy_match.value)
     {
         return true;

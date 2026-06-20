@@ -303,6 +303,32 @@ fn credential_assignment_base64_random_byte_shape_reaches_audit_floor() {
 
 #[cfg(feature = "entropy")]
 #[test]
+fn isolated_slash_bearing_base64_entropy_secret_bypasses_path_fragment_gate() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+    let secret = "ev0BsFtSD7S/4VWYObxiEhME3hJBXeYzR43jgiB1";
+    let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
+
+    let matches = scanner.scan(&chunk);
+    let entropy_fired = matches.iter().any(|m| {
+        m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
+    });
+    assert!(
+        entropy_fired,
+        "an isolated 40-byte slash-bearing high-entropy token must not be \
+         hard-dropped as a URL/path fragment solely because it contains '/'; \
+         matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
 fn authorization_call_arg_surfaces_quoted_high_entropy_token() {
     let mut config = ScannerConfig::default();
     config.min_confidence = 0.0;
