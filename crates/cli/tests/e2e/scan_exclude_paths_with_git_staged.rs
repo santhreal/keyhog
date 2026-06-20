@@ -4,6 +4,11 @@ use crate::e2e::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 
+#[path = "../support/json_report.rs"]
+mod json_report_support;
+
+use json_report_support::parse_json_array;
+
 fn init_git_repo(dir: &std::path::Path) {
     std::process::Command::new("git")
         .args(["init", "-q"])
@@ -65,8 +70,17 @@ fn scan_exclude_paths_with_git_staged() {
         .arg(".")
         .output()
         .expect("spawn");
-    assert_eq!(output.status.code(), Some(0));
-    let findings: serde_json::Value =
-        serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).expect("json");
-    assert!(findings.as_array().unwrap().is_empty());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_eq!(
+        output.status.code(),
+        Some(0),
+        "all staged paths were excluded and should scan cleanly; stderr={stderr}"
+    );
+    assert!(
+        !stderr.contains(".keyhog-empty-staged-include-set"),
+        "git-staged exclusions must not route through a fake missing path; stderr={stderr}"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let findings = parse_json_array(&stdout, "git-staged exclude-paths scan JSON");
+    assert!(findings.is_empty());
 }

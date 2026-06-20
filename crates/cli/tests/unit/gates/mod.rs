@@ -27,6 +27,7 @@ pub mod daemon_server_no_unwrap_expect;
 pub mod daemon_server_non_empty;
 pub mod default_exclude_owner;
 pub mod duplicate_primitive_leads;
+pub mod git_staged_exclude_empty_source;
 pub mod inline_suppression_no_inline_tests;
 pub mod inline_suppression_no_unwrap_expect;
 pub mod inline_suppression_non_empty;

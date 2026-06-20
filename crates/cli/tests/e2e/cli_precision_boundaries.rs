@@ -13,7 +13,7 @@ use tempfile::TempDir;
 #[path = "../support/json_report.rs"]
 mod json_report_support;
 
-use json_report_support::{json_array_string_field_values, parse_json_array};
+use json_report_support::parse_json_array;
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
@@ -59,17 +59,25 @@ fn precision_mode_negative_twin_is_subset_of_default() {
     let (def_out, _, _) = scan_with_args(fixture, &[]);
     let (prec_out, _, _) = scan_with_args(fixture, &["--precision"]);
 
-    let def = json_array_string_field_values(
-        &def_out,
-        "detector_id",
-        "default precision negative-twin scan",
-    );
+    let def: Vec<String> = parse_json_array(&def_out, "default precision negative-twin scan")
+        .iter()
+        .filter_map(|finding| {
+            finding
+                .get("detector_id")
+                .and_then(|value| value.as_str())
+                .map(String::from)
+        })
+        .collect();
 
-    let prec = json_array_string_field_values(
-        &prec_out,
-        "detector_id",
-        "explicit precision negative-twin scan",
-    );
+    let prec: Vec<String> = parse_json_array(&prec_out, "explicit precision negative-twin scan")
+        .iter()
+        .filter_map(|finding| {
+            finding
+                .get("detector_id")
+                .and_then(|value| value.as_str())
+                .map(String::from)
+        })
+        .collect();
 
     // Every detector found in precision mode must also be in default mode.
     for det in &prec {
@@ -103,11 +111,16 @@ fn precision_mode_composes_with_no_suppress_test_fixtures() {
         Some(0),
         "default mode suppresses the Stripe demo key"
     );
-    let def = json_array_string_field_values(
-        &def_suppressed,
-        "service",
-        "default suppressed Stripe precision scan",
-    );
+    let def: Vec<String> =
+        parse_json_array(&def_suppressed, "default suppressed Stripe precision scan")
+            .iter()
+            .filter_map(|finding| {
+                finding
+                    .get("service")
+                    .and_then(|value| value.as_str())
+                    .map(String::from)
+            })
+            .collect();
     assert!(
         def.is_empty(),
         "default suppresses Stripe and should emit no findings for this fixture; got {def:?}"
@@ -122,11 +135,15 @@ fn precision_mode_composes_with_no_suppress_test_fixtures() {
         Some(1),
         "precision with --no-suppress-test-fixtures must find the Stripe key"
     );
-    let prec = json_array_string_field_values(
-        &prec_nosuppress,
-        "service",
-        "precision no-suppress Stripe scan",
-    );
+    let prec: Vec<String> = parse_json_array(&prec_nosuppress, "precision no-suppress Stripe scan")
+        .iter()
+        .filter_map(|finding| {
+            finding
+                .get("service")
+                .and_then(|value| value.as_str())
+                .map(String::from)
+        })
+        .collect();
     assert!(
         prec.contains(&"stripe".to_string()),
         "precision --no-suppress-test-fixtures must find Stripe; got {prec:?}"

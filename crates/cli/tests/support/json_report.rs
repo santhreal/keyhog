@@ -6,15 +6,3 @@ pub fn parse_json_array(stdout: &str, context: &str) -> Vec<serde_json::Value> {
         .unwrap_or_else(|| panic!("{context}: JSON report must be an array, got {value}"))
         .clone()
 }
-
-pub fn json_array_string_field_values(stdout: &str, field: &str, context: &str) -> Vec<String> {
-    parse_json_array(stdout, context)
-        .iter()
-        .filter_map(|finding| {
-            finding
-                .get(field)
-                .and_then(|value| value.as_str())
-                .map(String::from)
-        })
-        .collect()
-}

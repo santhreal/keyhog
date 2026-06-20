@@ -5,7 +5,10 @@ use std::path::PathBuf;
 fn cli_json_tests_do_not_drop_parse_errors() {
     let tests_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests");
     let from_str_call = ["serde_json::from_str::<serde_json::Value>", "("].concat();
+    let from_slice_call = ["serde_json::from_slice", "("].concat();
+    let json_empty_fallback = ["serde_json::", "json!([])"].concat();
     let ok_call = [").", "ok()"].concat();
+    let cloned_array_default = ["as_array()", ".cloned()", ".unwrap_or_default()"].concat();
     let mut stack = vec![tests_root.clone()];
     let mut offenders = Vec::new();
 
@@ -38,7 +41,12 @@ fn cli_json_tests_do_not_drop_parse_errors() {
                     .chars()
                     .filter(|character| !character.is_whitespace())
                     .collect();
-                if compact_window.contains(&from_str_call) && compact_window.contains(&ok_call) {
+                let drops_parse_error = (compact_window.contains(&from_str_call)
+                    || compact_window.contains(&from_slice_call))
+                    && (compact_window.contains(&ok_call)
+                        || compact_window.contains(&json_empty_fallback));
+                let drops_non_array_shape = compact_window.contains(&cloned_array_default);
+                if drops_parse_error || drops_non_array_shape {
                     let relative = path
                         .strip_prefix(&tests_root)
                         .unwrap_or(&path)
@@ -51,6 +59,6 @@ fn cli_json_tests_do_not_drop_parse_errors() {
 
     assert!(
         offenders.is_empty(),
-        "CLI JSON tests must fail loud on malformed output instead of hiding parse errors with .ok(): {offenders:?}"
+        "CLI JSON tests must fail loud on malformed output and non-array JSON instead of hiding them with .ok(), json!([]), or unwrap_or_default(): {offenders:?}"
     );
 }

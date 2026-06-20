@@ -4,6 +4,11 @@ use crate::e2e::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 
+#[path = "../support/json_report.rs"]
+mod json_report_support;
+
+use json_report_support::parse_json_array;
+
 #[test]
 fn scan_max_file_size_skips_oversized_file() {
     let dir = TempDir::new().expect("tempdir");
@@ -39,11 +44,11 @@ fn scan_max_file_size_skips_oversized_file() {
         "non-progress mode should not emit ANSI escapes; got: {}",
         stderr
     );
-    let findings: serde_json::Value =
-        serde_json::from_slice(&output.stdout).unwrap_or_else(|_| serde_json::json!([]));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let findings = parse_json_array(&stdout, "max-file-size skipped scan JSON");
     assert!(
-        findings.as_array().is_some_and(|a| a.is_empty()),
+        findings.is_empty(),
         "skipped file must not produce findings; got: {}",
-        String::from_utf8_lossy(&output.stdout)
+        stdout
     );
 }

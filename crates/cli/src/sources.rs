@@ -4,12 +4,36 @@ use crate::args::ScanArgs;
 #[cfg(feature = "git")]
 use anyhow::Context;
 use anyhow::Result;
-use keyhog_core::MerkleIndex;
 use keyhog_core::Source;
+use keyhog_core::{Chunk, MerkleIndex, SourceError};
 use std::num::NonZeroUsize;
 #[cfg(feature = "git")]
 use std::path::PathBuf;
 use std::sync::Arc;
+
+struct EmptySource {
+    name: &'static str,
+}
+
+impl EmptySource {
+    fn new(name: &'static str) -> Self {
+        Self { name }
+    }
+}
+
+impl Source for EmptySource {
+    fn name(&self) -> &str {
+        self.name
+    }
+
+    fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
+        Box::new(std::iter::empty())
+    }
+
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+}
 
 /// Merge `.keyhogignore` paths and `--exclude-paths`.
 ///
@@ -84,7 +108,15 @@ pub(crate) fn build_sources(
 
     let merged_ignore_paths = merge_scan_ignore_paths(args, ignore_paths);
 
-    if let Some(path) = scan_path {
+    #[cfg(feature = "git")]
+    let staged_include_set_exhausted = args.git_staged && staged_files.is_empty();
+
+    #[cfg(not(feature = "git"))]
+    let staged_include_set_exhausted = false;
+
+    if staged_include_set_exhausted {
+        sources.push(Box::new(EmptySource::new("git-staged/excluded")));
+    } else if let Some(path) = scan_path {
         crate::path_validation::validate_cli_path_arg(path, "scan path")?;
         let mut fs_source = keyhog_sources::FilesystemSource::new(path.clone())
             .with_ignore_paths(merged_ignore_paths)
@@ -590,7 +622,4 @@ fn filter_staged_files_by_cli_excludes(files: &mut Vec<PathBuf>, args: &ScanArgs
             rel == exclude || rel.ends_with(&format!("/{exclude}"))
         })
     });
-    if files.is_empty() {
-        files.push(base.join(".keyhog-empty-staged-include-set"));
-    }
 }

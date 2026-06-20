@@ -34,6 +34,11 @@ use std::path::PathBuf;
 use std::process::{Command, Output};
 use tempfile::TempDir;
 
+#[path = "../support/json_report.rs"]
+mod json_report_support;
+
+use json_report_support::parse_json_array;
+
 // ----------------------------------------------------------------------------
 // helpers (private to this module; the aggregator includes us as a plain mod)
 // ----------------------------------------------------------------------------
@@ -111,9 +116,7 @@ fn scan_file(name: &str, content: &str, extra: &[&str]) -> (TempDir, String, Str
 }
 
 fn parse_findings(stdout: &str) -> Vec<serde_json::Value> {
-    let v: serde_json::Value =
-        serde_json::from_str(stdout).unwrap_or_else(|_| serde_json::json!([]));
-    v.as_array().cloned().unwrap_or_default()
+    parse_json_array(stdout, "flag-surface scan JSON")
 }
 
 /// A genuine, corpus-detected AWS access key id (`aws-access-key`, severity

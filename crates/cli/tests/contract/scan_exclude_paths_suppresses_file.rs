@@ -4,6 +4,11 @@ use crate::e2e::support::binary;
 use std::process::Command;
 use tempfile::TempDir;
 
+#[path = "../support/json_report.rs"]
+mod json_report_support;
+
+use json_report_support::parse_json_array;
+
 #[test]
 fn scan_exclude_paths_suppresses_file() {
     let dir = TempDir::new().expect("tempdir");
@@ -28,8 +33,7 @@ fn scan_exclude_paths_suppresses_file() {
         .output()
         .expect("spawn");
     assert_eq!(output.status.code(), Some(0));
-    let findings: serde_json::Value =
-        serde_json::from_str(&String::from_utf8_lossy(&output.stdout))
-            .unwrap_or(serde_json::json!([]));
-    assert!(findings.as_array().is_some_and(|a| a.is_empty()));
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let findings = parse_json_array(&stdout, "exclude-paths contract scan JSON");
+    assert!(findings.is_empty());
 }

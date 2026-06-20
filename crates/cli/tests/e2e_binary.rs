@@ -24,7 +24,7 @@ use tempfile::TempDir;
 #[path = "support/json_report.rs"]
 mod json_report_support;
 
-use json_report_support::json_array_string_field_values;
+use json_report_support::parse_json_array;
 
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
@@ -1574,10 +1574,24 @@ fn precision_mode_keeps_strong_drops_weak() {
     );
     let (def_out, _e, _c) = scan_text_file(fixture, &[]);
     let (prec_out, _e2, _c2) = scan_text_file(fixture, &["--precision"]);
-    let def =
-        json_array_string_field_values(&def_out, "detector_id", "default precision-mode scan");
-    let prec =
-        json_array_string_field_values(&prec_out, "detector_id", "explicit precision-mode scan");
+    let def: Vec<String> = parse_json_array(&def_out, "default precision-mode scan")
+        .iter()
+        .filter_map(|finding| {
+            finding
+                .get("detector_id")
+                .and_then(|value| value.as_str())
+                .map(String::from)
+        })
+        .collect();
+    let prec: Vec<String> = parse_json_array(&prec_out, "explicit precision-mode scan")
+        .iter()
+        .filter_map(|finding| {
+            finding
+                .get("detector_id")
+                .and_then(|value| value.as_str())
+                .map(String::from)
+        })
+        .collect();
 
     assert!(
         def.len() >= 2,
