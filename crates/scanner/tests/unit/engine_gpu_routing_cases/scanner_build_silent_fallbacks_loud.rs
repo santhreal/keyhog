@@ -58,8 +58,12 @@ fn phase2_prefilter_compile_failures_warn() {
     assert!(
         phase2_gpu_dfa.contains(
             "phase-2 GPU regex-DFA admission received out-of-range always-active pattern index"
+        ) && phase2_gpu_dfa.contains(
+            "phase-2 GPU regex-DFA candidate selection received out-of-range pattern index"
+        ) && phase2_gpu_dfa.contains(
+            "phase-2 GPU regex-DFA candidate append received out-of-range pattern index"
         ),
-        "GPU regex-DFA admission must warn before ignoring corrupt always-active indices"
+        "GPU regex-DFA admission must warn before ignoring corrupt always-active or candidate indices"
     );
     // Every warn site must use tracing::warn!, not debug!/silent drop.
     assert!(

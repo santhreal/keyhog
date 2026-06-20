@@ -296,6 +296,7 @@ fn prioritized_phase2_gpu_dfa_candidates(
     candidates: &[usize],
     max_candidates: usize,
 ) -> Vec<usize> {
+    let candidates = valid_phase2_gpu_dfa_candidates(phase2_patterns, candidates);
     let mut selected = Vec::with_capacity(candidates.len().min(max_candidates));
     let mut selected_indices = HashSet::new();
     let mut base_detectors = HashSet::new();
@@ -303,7 +304,7 @@ fn prioritized_phase2_gpu_dfa_candidates(
 
     append_phase2_gpu_dfa_candidates(
         phase2_patterns,
-        candidates,
+        &candidates,
         max_candidates,
         &mut selected,
         &mut selected_indices,
@@ -311,7 +312,7 @@ fn prioritized_phase2_gpu_dfa_candidates(
     );
     append_phase2_gpu_dfa_candidates(
         phase2_patterns,
-        candidates,
+        &candidates,
         max_candidates,
         &mut selected,
         &mut selected_indices,
@@ -319,7 +320,7 @@ fn prioritized_phase2_gpu_dfa_candidates(
     );
     append_phase2_gpu_dfa_candidates(
         phase2_patterns,
-        candidates,
+        &candidates,
         max_candidates,
         &mut selected,
         &mut selected_indices,
@@ -327,7 +328,7 @@ fn prioritized_phase2_gpu_dfa_candidates(
     );
     append_phase2_gpu_dfa_candidates(
         phase2_patterns,
-        candidates,
+        &candidates,
         max_candidates,
         &mut selected,
         &mut selected_indices,
@@ -335,6 +336,26 @@ fn prioritized_phase2_gpu_dfa_candidates(
     );
 
     selected
+}
+
+fn valid_phase2_gpu_dfa_candidates(
+    phase2_patterns: &[(CompiledPattern, Vec<String>)],
+    candidates: &[usize],
+) -> Vec<usize> {
+    let mut valid = Vec::with_capacity(candidates.len());
+    for &idx in candidates {
+        if phase2_patterns.get(idx).is_some() {
+            valid.push(idx);
+        } else {
+            tracing::warn!(
+                target: "keyhog::gpu",
+                index = idx,
+                patterns = phase2_patterns.len(),
+                "phase-2 GPU regex-DFA candidate selection received out-of-range pattern index; invalid index ignored before prioritization"
+            );
+        }
+    }
+    valid
 }
 
 fn append_phase2_gpu_dfa_candidates<F>(
@@ -355,6 +376,12 @@ fn append_phase2_gpu_dfa_candidates<F>(
             return;
         }
         let Some((pattern, _)) = phase2_patterns.get(idx) else {
+            tracing::warn!(
+                target: "keyhog::gpu",
+                index = idx,
+                patterns = phase2_patterns.len(),
+                "phase-2 GPU regex-DFA candidate append received out-of-range pattern index; invalid index ignored before selection"
+            );
             continue;
         };
         if selected_indices.contains(&idx) || !accepts(pattern) {
@@ -1002,6 +1029,32 @@ mod tests {
             prioritized_phase2_gpu_dfa_candidates(&patterns, &candidates, 5),
             vec![1, 3, 4, 0, 2],
             "homoglyph variants stay eligible after the base-pattern breadth pass"
+        );
+    }
+
+    #[test]
+    fn gpu_dfa_candidate_selection_drops_corrupt_indices_before_prioritization() {
+        let patterns = vec![
+            (
+                test_pattern_with_shape("base0[0-9]{2}", true, 0, false),
+                Vec::new(),
+            ),
+            (
+                test_pattern_with_shape("base1[0-9]{2}", true, 1, false),
+                Vec::new(),
+            ),
+        ];
+        let candidates = [usize::MAX, 1, 9, 0];
+
+        assert_eq!(
+            valid_phase2_gpu_dfa_candidates(&patterns, &candidates),
+            vec![1, 0],
+            "corrupt GPU DFA candidate indices must be filtered once before selection"
+        );
+        assert_eq!(
+            prioritized_phase2_gpu_dfa_candidates(&patterns, &candidates, 8),
+            vec![1, 0],
+            "candidate prioritization must not silently carry impossible phase-2 indices"
         );
     }
 
