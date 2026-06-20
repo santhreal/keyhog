@@ -132,6 +132,8 @@ impl CompiledScanner {
             self.scan_generic_assignments(
                 &prepared.preprocessed,
                 line_offsets,
+                &code_lines,
+                &documentation_lines,
                 prepared.chunk,
                 &mut scan_state,
             );

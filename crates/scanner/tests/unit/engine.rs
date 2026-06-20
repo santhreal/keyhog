@@ -367,6 +367,19 @@ fn scan_filters_generic_assignment_accepts_dotted_and_dashed_keys() {
     }
 }
 
+#[test]
+fn generic_assignment_compact_prefilter_keeps_webhook_url_recall() {
+    let scanner = CompiledScanner::compile(vec![demo_detector()]).unwrap();
+    let value = "Zx9KmPq2LvWnB7tRsYz3BcDe";
+    let matches = scanner.scan(&chunk(&format!("webhook_url = \"{value}\"")));
+    assert!(
+        matches
+            .iter()
+            .any(|m| m.detector_id.as_ref() == "generic-secret" && m.credential.as_ref() == value),
+        "webhook_url must still reach the generic bridge after compact prefilter stemming"
+    );
+}
+
 // CredData's dominant credential-env shape is `*_PASS=` (GRAPHITE_PASS,
 // JENKINS_PASS, DB_PASS, …). The bridge keyword list historically had
 // `password`/`passwd`/`pwd` but not the bare `pass` abbreviation, so these were

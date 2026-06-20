@@ -8,11 +8,44 @@ pub(crate) mod keywords;
 pub(crate) mod shape_helpers;
 
 use self::keywords::{
-    is_strong_keyword_anchored_encoded_text_secret, is_strong_keyword_anchored_hex_key,
-    keyword_has_word_boundary, normalize_assignment_keyword,
+    generic_keyword_prefilter_stems, is_strong_keyword_anchored_encoded_text_secret,
+    is_strong_keyword_anchored_hex_key, keyword_has_word_boundary, normalize_assignment_keyword,
     normalized_assignment_keyword_has_secret_suffix,
 };
 use self::shape_helpers::is_structured_dotted_token;
+use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+
+static GENERIC_PREFILTER_NS: AtomicU64 = AtomicU64::new(0);
+static GENERIC_EXTRACT_NS: AtomicU64 = AtomicU64::new(0);
+static GENERIC_PREFILTER_CALLS: AtomicU64 = AtomicU64::new(0);
+static GENERIC_KEYWORD_LINES: AtomicU64 = AtomicU64::new(0);
+static GENERIC_REGEX_CAPTURES: AtomicU64 = AtomicU64::new(0);
+static GENERIC_EMITS: AtomicU64 = AtomicU64::new(0);
+
+pub(crate) fn generic_profile_dump() {
+    let prefilter_ns = GENERIC_PREFILTER_NS.swap(0, Relaxed);
+    let extract_ns = GENERIC_EXTRACT_NS.swap(0, Relaxed);
+    let calls = GENERIC_PREFILTER_CALLS.swap(0, Relaxed);
+    let keyword_lines = GENERIC_KEYWORD_LINES.swap(0, Relaxed);
+    let captures = GENERIC_REGEX_CAPTURES.swap(0, Relaxed);
+    let emits = GENERIC_EMITS.swap(0, Relaxed);
+    if prefilter_ns == 0 && extract_ns == 0 && calls == 0 {
+        return;
+    }
+    let prefilter_ms = prefilter_ns as f64 / 1e6;
+    let extract_ms = extract_ns as f64 / 1e6;
+    eprintln!(
+        "=== GENERIC bridge profile === prefilter={prefilter_ms:.1}ms extract={extract_ms:.1}ms \
+         calls={calls} keyword_lines={keyword_lines} regex_captures={captures} emits={emits}"
+    );
+}
+
+#[inline]
+fn record_generic_ns(slot: &AtomicU64, start: Option<std::time::Instant>) {
+    if let Some(start) = start {
+        slot.fetch_add(start.elapsed().as_nanos() as u64, Relaxed);
+    }
+}
 
 static GENERIC_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
     // Group 1 is the keyword, group 2 is the value. The regex accepts common
@@ -38,18 +71,12 @@ static GENERIC_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
     }
 });
 
-/// Local-only prefilter widening for vendor-prefixed `<name>_key=` lines.
-/// Do not add bare `key` to the shared keyword constant; that would widen
-/// unrelated chunk-admission and canonical-lift gates.
-const GENERIC_BRIDGE_EXTRA_KEYWORDS: &[&str] = &["key"];
-
 static KEYWORD_AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
-    match AhoCorasick::builder().ascii_case_insensitive(true).build(
-        super::scan_filters::GENERIC_ASSIGNMENT_KEYWORDS
-            .iter()
-            .chain(GENERIC_BRIDGE_EXTRA_KEYWORDS.iter())
-            .copied(),
-    ) {
+    let stems = generic_keyword_prefilter_stems();
+    match AhoCorasick::builder()
+        .ascii_case_insensitive(true)
+        .build(stems.iter().copied())
+    {
         Ok(ac) => Some(ac),
         Err(e) => {
             crate::prefilter_degrade::warn_prefilter_disabled(
@@ -89,6 +116,8 @@ impl CompiledScanner {
         &self,
         preprocessed: &ScannerPreprocessedText<'_>,
         line_offsets: &[usize],
+        code_lines: &[&str],
+        documentation_lines: &[bool],
         chunk: &Chunk,
         scan_state: &mut ScanState,
     ) {
@@ -145,6 +174,8 @@ impl CompiledScanner {
         let mut lines_with_keyword = KEYWORD_LINES_POOL.with(|cell| cell.take());
         lines_with_keyword.clear();
         let mut last_line_idx: Option<usize> = None;
+        let profile_enabled = super::profile::enabled();
+        let prefilter_start = profile_enabled.then(std::time::Instant::now);
         for mat in keyword_ac.find_iter(scan_bytes) {
             // `partition_point` returns the 1-based line number;
             // subtract 1 for the 0-based code_lines index. Same
@@ -157,6 +188,11 @@ impl CompiledScanner {
             last_line_idx = Some(line_idx);
             lines_with_keyword.push(line_idx);
         }
+        record_generic_ns(&GENERIC_PREFILTER_NS, prefilter_start);
+        if profile_enabled {
+            GENERIC_PREFILTER_CALLS.fetch_add(1, Relaxed);
+            GENERIC_KEYWORD_LINES.fetch_add(lines_with_keyword.len() as u64, Relaxed);
+        }
         if lines_with_keyword.is_empty() {
             // Return the (now-empty) buffer to the pool before bailing so its
             // capacity survives for the next chunk.
@@ -164,7 +200,9 @@ impl CompiledScanner {
             return;
         }
 
-        let mut code_lines_cache: Option<Vec<&str>> = None;
+        let extract_start = profile_enabled.then(std::time::Instant::now);
+        let mut preprocessed_code_lines_cache: Option<Vec<&str>> = None;
+        let mut preprocessed_documentation_lines_cache: Option<Vec<bool>> = None;
         for &line_idx in &lines_with_keyword {
             let Some(&line_offset) = line_offsets.get(line_idx) else {
                 continue;
@@ -197,6 +235,9 @@ impl CompiledScanner {
             let line: &str = &normalized_line;
 
             for caps in generic_re.captures_iter(line) {
+                if profile_enabled {
+                    GENERIC_REGEX_CAPTURES.fetch_add(1, Relaxed);
+                }
                 let Some(keyword_match) = caps.get(1) else {
                     continue;
                 };
@@ -275,14 +316,36 @@ impl CompiledScanner {
                     continue;
                 }
 
-                // Context suppression: test files get lower confidence
-                let code_lines =
-                    code_lines_cache.get_or_insert_with(|| scan_text.lines().collect());
-                let context = crate::context::infer_context(
-                    code_lines.as_slice(),
-                    line_idx,
-                    chunk.metadata.path.as_deref(),
-                );
+                // Context suppression: test files get lower confidence. On the
+                // byte-identical common path, reuse the lines and documentation
+                // flags already computed by the phase-2 caller; recomputing
+                // documentation flags for every generic candidate was
+                // O(candidates * lines). Synthesized structured/multiline text
+                // still builds its own cached context view so appended lines
+                // keep correct line indices.
+                let context = if identity_offsets {
+                    crate::context::infer_context_with_documentation(
+                        code_lines,
+                        line_idx,
+                        chunk.metadata.path.as_deref(),
+                        documentation_lines,
+                    )
+                } else {
+                    let preprocessed_code_lines = preprocessed_code_lines_cache
+                        .get_or_insert_with(|| scan_text.lines().collect());
+                    let preprocessed_documentation_lines = preprocessed_documentation_lines_cache
+                        .get_or_insert_with(|| {
+                            crate::context::documentation_line_flags(
+                                preprocessed_code_lines.as_slice(),
+                            )
+                        });
+                    crate::context::infer_context_with_documentation(
+                        preprocessed_code_lines.as_slice(),
+                        line_idx,
+                        chunk.metadata.path.as_deref(),
+                        preprocessed_documentation_lines.as_slice(),
+                    )
+                };
                 // The test/docs base-confidence haircut is the SAME path-keyed
                 // policy `--no-suppress-test-fixtures` (penalize_test_paths)
                 // governs everywhere else in the phase-2/postprocess tail.
@@ -414,8 +477,12 @@ impl CompiledScanner {
                     confidence: Some(confidence),
                 };
                 scan_state.push_match(raw, self.config.max_matches_per_chunk);
+                if profile_enabled {
+                    GENERIC_EMITS.fetch_add(1, Relaxed);
+                }
             }
         }
+        record_generic_ns(&GENERIC_EXTRACT_NS, extract_start);
         // Return the scratch buffer to the pool, preserving its capacity for
         // the next chunk this worker handles.
         KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));

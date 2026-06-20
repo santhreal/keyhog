@@ -20,12 +20,23 @@ fn engine_phase2_generic_non_empty() {
     );
     assert!(
         src.contains("line_at_index(scan_text, line_offsets, line_idx)")
-            && src.contains("let mut code_lines_cache: Option<Vec<&str>> = None;")
+            && src.contains("preprocessed_code_lines_cache: Option<Vec<&str>>")
+            && src.contains("preprocessed_documentation_lines_cache: Option<Vec<bool>>")
             && src.contains("get_or_insert_with(|| scan_text.lines().collect())"),
-        "engine::phase2_generic: generic assignment scanning must slice keyword-hit lines and lazily materialize context lines"
+        "engine::phase2_generic: generic assignment scanning must slice keyword-hit lines and lazily materialize synthesized context lines"
     );
     assert!(
         !src.contains("let code_lines: Vec<&str> = scan_text.lines().collect();"),
         "engine::phase2_generic: generic assignment scanning must not eagerly collect every line before keyword filtering"
+    );
+    assert!(
+        src.contains("infer_context_with_documentation(") && !src.contains("crate::context::infer_context("),
+        "engine::phase2_generic: generic context inference must reuse precomputed documentation flags instead of rebuilding them per candidate"
+    );
+    assert!(
+        src.contains("let stems = generic_keyword_prefilter_stems();")
+            && !src.contains("GENERIC_BRIDGE_EXTRA_KEYWORDS")
+            && !src.contains(".chain(GENERIC_BRIDGE_EXTRA_KEYWORDS.iter())"),
+        "engine::phase2_generic: generic keyword prefilter must use the derived compact stem set, not the full spelling list"
     );
 }

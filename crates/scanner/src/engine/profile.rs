@@ -308,6 +308,7 @@ pub fn dump(label: &str) {
     super::scan_postprocess::decode_profile_dump();
     crate::decode::extract_profile_dump();
     crate::decode::decoder_profile_dump();
+    super::phase2_generic::generic_profile_dump();
     super::scan_postprocess::ml_batch_profile_dump();
     crate::gpu::ml_split_profile_dump();
 }

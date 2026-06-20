@@ -1,5 +1,52 @@
 //! Keyword and strong-key classification helpers for the generic assignment bridge.
 
+/// Compact keyword spellings into the minimal safe prefilter stems used by the
+/// generic assignment bridge.
+///
+/// The extraction regex still decides whether a line has a valid assignment
+/// keyword. This prefilter only decides which lines are worth sending to that
+/// regex, so each returned stem must be a recall-preserving substring of one or
+/// more regex arms. Unknown added keywords keep their exact spelling, which
+/// prevents a keyword-list expansion from becoming invisible to the prefilter.
+pub(crate) fn generic_keyword_prefilter_stems() -> Vec<&'static str> {
+    let mut stems = Vec::new();
+    for keyword in crate::engine::scan_filters::GENERIC_ASSIGNMENT_KEYWORDS
+        .iter()
+        .copied()
+        // Local vendor-prefixed `<name>_key=` support needs a bare `key`
+        // prefilter stem; do not widen the shared no-hit admission gate.
+        .chain(std::iter::once("key"))
+    {
+        let stem = generic_keyword_prefilter_stem(keyword);
+        if !stems.contains(&stem) {
+            stems.push(stem);
+        }
+    }
+    stems
+}
+
+fn generic_keyword_prefilter_stem(keyword: &'static str) -> &'static str {
+    if keyword.contains("secret") {
+        "secret"
+    } else if keyword.contains("pass") {
+        "pass"
+    } else if keyword.contains("pwd") {
+        "pwd"
+    } else if keyword.contains("token") {
+        "token"
+    } else if keyword.contains("webhook") {
+        "webhook"
+    } else if keyword.contains("key") {
+        "key"
+    } else if keyword.contains("auth") {
+        "auth"
+    } else if keyword.contains("credential") {
+        "credential"
+    } else {
+        keyword
+    }
+}
+
 /// Normalize assignment-key spellings used by detector TOML keywords and by the
 /// generic bridge's captured LHS (`SEGMENT_WRITE_KEY`, `segment-write-key`,
 /// `segment.write.key`) into one comparable token.
