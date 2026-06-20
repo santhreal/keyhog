@@ -409,7 +409,8 @@ fn isolated_bare_candidate(line: &str, min_len: usize) -> Option<&str> {
     }
     let has_alpha = candidate.bytes().any(|b| b.is_ascii_alphabetic());
     let has_digit = candidate.bytes().any(|b| b.is_ascii_digit());
-    if !has_alpha || !has_digit {
+    let no_digit_symbolic_token = !has_digit && symbolic_alpha_only_opaque_candidate(candidate);
+    if !has_alpha || (!has_digit && !no_digit_symbolic_token) {
         return None;
     }
     let standard_token = !candidate.contains("://")
@@ -437,6 +438,7 @@ fn isolated_bare_candidate(line: &str, min_len: usize) -> Option<&str> {
         });
     if standard_token
         || colon_separated_opaque_candidate(candidate)
+        || no_digit_symbolic_token
         || symbolic_isolated_bare_candidate(candidate)
     {
         return Some(candidate);
@@ -466,6 +468,36 @@ fn colon_separated_opaque_candidate(candidate: &str) -> bool {
         }
         has_alpha && has_digit
     })
+}
+
+fn symbolic_alpha_only_opaque_candidate(candidate: &str) -> bool {
+    if candidate.len() < 18 || candidate.contains("://") {
+        return false;
+    }
+    let mut has_upper = false;
+    let mut has_lower = false;
+    let mut alpha = 0usize;
+    let mut punctuation = 0usize;
+    for b in candidate.bytes() {
+        if !b.is_ascii_graphic() || matches!(b, b'"' | b'\'' | b'`') {
+            return false;
+        }
+        if b.is_ascii_digit() {
+            return false;
+        }
+        if b.is_ascii_alphabetic() {
+            alpha += 1;
+            has_upper |= b.is_ascii_uppercase();
+            has_lower |= b.is_ascii_lowercase();
+        } else {
+            punctuation += 1;
+        }
+    }
+    has_upper
+        && has_lower
+        && punctuation >= 3
+        && alpha * 2 >= candidate.len()
+        && crate::suppression::token_randomness::is_random_token(candidate)
 }
 
 fn symbolic_isolated_bare_candidate(candidate: &str) -> bool {

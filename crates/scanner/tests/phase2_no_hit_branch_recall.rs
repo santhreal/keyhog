@@ -546,6 +546,57 @@ fn isolated_dictionary_password_with_one_symbol_stays_below_symbol_recovery() {
 
 #[cfg(feature = "entropy")]
 #[test]
+fn isolated_no_digit_symbolic_random_secret_enters_full_line_recovery() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+    let secret = "AFHzLDdEbht+JO%$Qr";
+    let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
+
+    let matches = scanner.scan(&chunk);
+    let entropy_fired = matches.iter().any(|m| {
+        m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
+    });
+    assert!(
+        entropy_fired,
+        "an isolated no-digit symbolic credential must enter full-line recovery \
+         when the shared randomness model says its alphabetic runs are random; \
+         matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
+fn isolated_no_digit_symbolic_identifier_stays_suppressed() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+    let identifier = "OAuthTokenSecret!@#Value";
+    let chunk = make_chunk(identifier, "notes/sufficiency-probe.txt");
+
+    let matches = scanner.scan(&chunk);
+    let entropy_fired = matches.iter().any(|m| {
+        m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(identifier)
+    });
+    assert!(
+        !entropy_fired,
+        "credential-word identifiers with punctuation must stay below the \
+         no-digit symbolic recovery branch; matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
 fn isolated_colon_separated_opaque_entropy_secret_enters_full_line_recovery() {
     let mut config = ScannerConfig::default();
     config.min_confidence = 0.0;
