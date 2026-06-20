@@ -505,13 +505,20 @@ impl CompiledScanner {
         let prefilter_ms = POPULATE_PREFILTER_NS.swap(0, Relaxed) as f64 / 1e6;
         let keyword_ms = POPULATE_KEYWORD_NS.swap(0, Relaxed) as f64 / 1e6;
         eprintln!(
-            "=== PHASE2 per-pattern profile [{label}] ===\n  populate: always-active RegexSet prefilter={prefilter_ms:.1} ms, keyword-AC={keyword_ms:.1} ms\n  extract: {:.1} ms over {} active patterns",
+            "=== PHASE2 per-pattern profile [{label}] ===\n  populate: always-active RegexSet prefilter={prefilter_ms:.1} ms, keyword-AC={keyword_ms:.1} ms\n  extract: {:.1} ms over {} active patterns\n  route: [LOCAL]=live shared-anchor localized, [PREFIX]=prefix-shaped but whole-window in this scanner",
             grand as f64 / 1e6,
             rows.len()
         );
+        let anchor_idx = self.phase2_anchor_index.as_ref();
         for (i, n, r) in rows.iter().take(30) {
             let src = self.phase2_patterns[*i].0.regex.as_str();
-            let anchored = regex_prefix_anchorable(src);
+            let route = if anchor_idx.is_some_and(|idx| idx.is_eligible(*i)) {
+                "LOCAL"
+            } else if regex_prefix_anchorable(src) {
+                "PREFIX"
+            } else {
+                "  --  "
+            };
             let per_run = if *r > 0 { *n / *r } else { 0 };
             eprintln!(
                 "  {:>6.1}ms {:>5.1}%  runs={:<6} {:>7}ns/run  [{}] {}",
@@ -519,7 +526,7 @@ impl CompiledScanner {
                 100.0 * *n as f64 / grand.max(1) as f64,
                 r,
                 per_run,
-                if anchored { "ANCHOR" } else { "  --  " },
+                route,
                 truncate_src(src, 64),
             );
         }
