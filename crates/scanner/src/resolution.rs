@@ -23,8 +23,41 @@ pub fn resolve_matches(mut matches: Vec<RawMatch>) -> Vec<RawMatch> {
     if matches.len() <= SINGLE_MATCH_COUNT {
         return matches;
     }
+    suppress_matches_nested_in_private_key_blocks(&mut matches);
     suppress_entropy_matches_near_named_detectors(&mut matches);
     resolve_match_groups(matches)
+}
+
+fn suppress_matches_nested_in_private_key_blocks(matches: &mut Vec<RawMatch>) {
+    let private_key_spans: Vec<(Arc<str>, usize, usize)> = matches
+        .iter()
+        .filter(|m| is_private_key_block_detector(m.detector_id.as_ref()))
+        .filter_map(match_span)
+        .collect();
+    if private_key_spans.is_empty() {
+        return;
+    }
+
+    matches.retain(|m| {
+        if is_private_key_block_detector(m.detector_id.as_ref()) {
+            return true;
+        }
+        let Some((file, start, end)) = match_span(m) else {
+            return true;
+        };
+        !private_key_spans
+            .iter()
+            .any(|(block_file, block_start, block_end)| {
+                block_file.as_ref() == file.as_ref() && *block_start <= start && end <= *block_end
+            })
+    });
+}
+
+fn match_span(m: &RawMatch) -> Option<(Arc<str>, usize, usize)> {
+    let file = m.location.file_path.clone()?;
+    let start = m.location.offset;
+    let end = start.saturating_add(m.credential.len());
+    Some((file, start, end))
 }
 
 fn suppress_entropy_matches_near_named_detectors(matches: &mut Vec<RawMatch>) {
@@ -69,6 +102,13 @@ fn is_entropy_detector(detector_id: &str) -> bool {
 
 fn is_generic_detector(detector_id: &str) -> bool {
     detector_id.starts_with("generic-") || detector_id == "private-key"
+}
+
+fn is_private_key_block_detector(detector_id: &str) -> bool {
+    matches!(
+        detector_id,
+        "private-key" | "ssh-private-key" | "github-app-private-key"
+    )
 }
 
 fn is_service_specific_detector(detector_id: &str) -> bool {

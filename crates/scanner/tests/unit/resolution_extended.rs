@@ -20,6 +20,17 @@ fn make_match_at(
     file: &str,
     line: usize,
 ) -> RawMatch {
+    make_match_at_offset(detector_id, credential, confidence, file, line, 0)
+}
+
+fn make_match_at_offset(
+    detector_id: &str,
+    credential: &str,
+    confidence: Option<f64>,
+    file: &str,
+    line: usize,
+    offset: usize,
+) -> RawMatch {
     RawMatch {
         detector_id: Arc::from(detector_id),
         detector_name: Arc::from(detector_id),
@@ -32,7 +43,7 @@ fn make_match_at(
             source: Arc::from("test"),
             file_path: Some(Arc::from(file)),
             line: Some(line),
-            offset: 0,
+            offset,
             commit: None,
             author: None,
             date: None,
@@ -170,6 +181,72 @@ fn service_detector_wins_over_higher_confidence_generic_password_on_same_line() 
         "postgresql-connection-string"
     );
     assert_eq!(resolved[0].credential.as_ref(), url);
+}
+
+#[test]
+fn private_key_block_retains_parent_over_decoded_child_match() {
+    let child_credential = "AIzaJBPI2n5UC64198Pt4qMGLqLHKvwsPonI4Lb";
+    let private_key = format!(
+        "-----BEGIN PGP PRIVATE KEY BLOCK-----\nopaque-bytes-{child_credential}-more-opaque-bytes\n-----END PGP PRIVATE KEY BLOCK-----"
+    );
+    let block_offset = 100;
+    let child_offset = block_offset
+        + private_key
+            .find(child_credential)
+            .expect("fixture contains child credential");
+    let parent = make_match_at_offset(
+        "private-key",
+        &private_key,
+        Some(0.8),
+        "secret.pem",
+        1,
+        block_offset,
+    );
+    let child = make_match_at_offset(
+        "google-api-key",
+        child_credential,
+        Some(0.95),
+        "secret.pem",
+        1,
+        child_offset,
+    );
+
+    let resolved = resolve_matches(vec![child, parent]);
+
+    assert_eq!(resolved.len(), 1);
+    assert_eq!(resolved[0].detector_id.as_ref(), "private-key");
+    assert_eq!(resolved[0].credential.as_ref(), private_key);
+}
+
+#[test]
+fn private_key_block_does_not_suppress_same_file_match_outside_block() {
+    let private_key =
+        "-----BEGIN PGP PRIVATE KEY BLOCK-----\nopaque-bytes\n-----END PGP PRIVATE KEY BLOCK-----";
+    let parent = make_match_at_offset("private-key", private_key, Some(0.8), "secret.pem", 1, 100);
+    let outside = make_match_at_offset(
+        "google-api-key",
+        "AIzaJBPI2n5UC64198Pt4qMGLqLHKvwsPonI4Lb",
+        Some(0.95),
+        "secret.pem",
+        40,
+        100 + private_key.len() + 20,
+    );
+
+    let resolved = resolve_matches(vec![outside, parent]);
+
+    assert_eq!(resolved.len(), 2);
+    assert!(
+        resolved
+            .iter()
+            .any(|m| m.detector_id.as_ref() == "private-key"),
+        "private-key parent must survive"
+    );
+    assert!(
+        resolved
+            .iter()
+            .any(|m| m.detector_id.as_ref() == "google-api-key"),
+        "outside same-file child must survive"
+    );
 }
 
 #[test]
