@@ -12,6 +12,9 @@ use self::batch::{build_packed_region_batch, ZeroPhase2GpuDfaScratch};
 use self::batch::{
     build_packed_region_batch_refs, with_phase2_gpu_dfa_scratch, Phase2GpuDfaScratch,
 };
+#[cfg(test)]
+use self::shard::match_region;
+use self::shard::Phase2GpuDfaShard;
 use super::phase2::gate_prefix_literals;
 use super::*;
 use std::borrow::Cow;
@@ -19,6 +22,7 @@ use std::collections::HashSet;
 use std::sync::OnceLock;
 
 mod batch;
+mod shard;
 
 const PHASE2_GPU_DFA_MAX_MATCHES: u32 = 1 << 20;
 const PHASE2_GPU_DFA_MAX_STATES: usize = 16_384;
@@ -29,7 +33,6 @@ const PHASE2_GPU_DFA_TARGET_SHARD_PATTERNS: usize = 16;
 const PHASE2_GPU_DFA_MAX_SHARDS: usize = 4;
 const PHASE2_GPU_DFA_MAX_CANDIDATES: usize =
     PHASE2_GPU_DFA_TARGET_SHARD_PATTERNS * PHASE2_GPU_DFA_MAX_SHARDS;
-const MATCH_TRIPLE_BYTES: usize = 12;
 
 #[derive(Debug)]
 pub(crate) struct Phase2GpuDfaCatalog {
@@ -67,12 +70,6 @@ impl Phase2GpuDfaProgramKind {
             Self::CudaCompatible => "cuda-compatible",
         }
     }
-}
-
-#[derive(Debug)]
-struct Phase2GpuDfaShard {
-    pipeline: vyre_libs::scan::RegexDfaPipeline,
-    phase2_indices: Vec<usize>,
 }
 
 impl Phase2GpuDfaCatalog {
@@ -373,115 +370,6 @@ impl Phase2GpuDfaCatalogCache {
     }
 }
 
-impl Phase2GpuDfaShard {
-    fn scan_admission_into(
-        &self,
-        backend: &dyn vyre::VyreBackend,
-        scratch: &mut Phase2GpuDfaScratch,
-        haystack_len: u32,
-        admitted: &mut [bool],
-    ) -> std::result::Result<bool, String> {
-        use vyre_libs::scan::dispatch_io;
-
-        let transition_bytes = dispatch_io::u32_words_as_le_bytes(&self.pipeline.dfa.transitions);
-        let output_offset_bytes =
-            dispatch_io::u32_words_as_le_bytes(&self.pipeline.dfa.output_offsets);
-        let output_record_bytes =
-            dispatch_io::u32_words_as_le_bytes(&self.pipeline.dfa.output_records);
-        let pattern_length_bytes =
-            dispatch_io::u32_words_as_le_bytes(&self.pipeline.pattern_lengths);
-        let haystack_len_bytes = haystack_len.to_le_bytes();
-        let match_count_bytes = [0u8; 4];
-        let config = dispatch_io::byte_scan_dispatch_config(
-            haystack_len,
-            self.pipeline.program.workgroup_size[0],
-        );
-        let inputs = [
-            scratch.dispatch.haystack_bytes.as_slice(),
-            transition_bytes.as_ref(),
-            output_offset_bytes.as_ref(),
-            output_record_bytes.as_ref(),
-            pattern_length_bytes.as_ref(),
-            haystack_len_bytes.as_slice(),
-            match_count_bytes.as_slice(),
-        ];
-        let outputs = backend
-            .dispatch_borrowed(&self.pipeline.program, &inputs, &config)
-            .map_err(|error| error.to_string())?;
-        let count_bytes =
-            dispatch_io::try_output_bytes(&outputs, 0, "phase-2 GPU regex-DFA match count")
-                .map_err(|error| error.to_string())?;
-        let count =
-            dispatch_io::try_read_u32_prefix(count_bytes, "phase-2 GPU regex-DFA match count")
-                .map_err(|error| error.to_string())?;
-        let triples_bytes =
-            dispatch_io::try_output_bytes(&outputs, 1, "phase-2 GPU regex-DFA matches")
-                .map_err(|error| error.to_string())?;
-        let overflowed = count > PHASE2_GPU_DFA_MAX_MATCHES;
-        let decoded_count = count.min(PHASE2_GPU_DFA_MAX_MATCHES);
-        let decoded_count_usize = usize::try_from(decoded_count).map_err(|error| {
-            format!(
-                "phase-2 GPU regex-DFA match count {} exceeds host usize: {error}",
-                decoded_count
-            )
-        })?;
-        let required = decoded_count_usize
-            .checked_mul(MATCH_TRIPLE_BYTES)
-            .ok_or_else(|| {
-                "phase-2 GPU regex-DFA match decode byte count overflowed host usize".to_string()
-            })?;
-        if triples_bytes.len() < required {
-            return Err(format!(
-                "phase-2 GPU regex-DFA match readback was {} byte(s), need {} byte(s)",
-                triples_bytes.len(),
-                required
-            ));
-        }
-        dispatch_io::try_unpack_match_triples_exact_prefix_into(
-            triples_bytes,
-            decoded_count,
-            &mut scratch.matches,
-        )
-        .map_err(|error| error.to_string())?;
-
-        let mut unattributed_matches = 0usize;
-        for m in &scratch.matches {
-            if self.phase2_indices.get(m.pattern_id as usize).is_none() {
-                return Err(format!(
-                    "phase-2 GPU regex-DFA reported pattern id {} outside shard size {}",
-                    m.pattern_id,
-                    self.phase2_indices.len()
-                ));
-            };
-            if let Some(region) =
-                match_region(&scratch.region_starts, scratch.haystack_len, m.start, m.end)
-            {
-                if let Some(slot) = admitted.get_mut(region) {
-                    *slot = true;
-                }
-            } else {
-                unattributed_matches = unattributed_matches.saturating_add(1);
-            }
-        }
-        if overflowed {
-            tracing::warn!(
-                target: "keyhog::gpu",
-                count,
-                cap = PHASE2_GPU_DFA_MAX_MATCHES,
-                "phase-2 GPU regex-DFA admission hit cap; decoded hits can admit chunks, misses still consult CPU admission"
-            );
-        }
-        if unattributed_matches > 0 {
-            tracing::warn!(
-                target: "keyhog::gpu",
-                unattributed = unattributed_matches,
-                "phase-2 GPU regex-DFA admission saw unattributed hit(s); decoded hits can admit chunks, misses still consult CPU admission"
-            );
-        }
-        Ok(overflowed || unattributed_matches > 0)
-    }
-}
-
 pub(crate) struct Phase2GpuDfaAdmission {
     pub(crate) admitted: Vec<bool>,
     pub(crate) complete: bool,
@@ -662,79 +550,6 @@ fn regex_dfa_source_for_pattern(pattern: &CompiledPattern) -> Cow<'_, str> {
     } else {
         Cow::Borrowed(source)
     }
-}
-
-fn match_region(region_starts: &[u32], haystack_len: usize, start: u32, end: u32) -> Option<usize> {
-    if end <= start {
-        return None;
-    }
-    let start_region = region_for_offset(region_starts, start)?;
-    let last = end.saturating_sub(1);
-    let end_region = region_for_offset(region_starts, last)?;
-    if start_region != end_region {
-        tracing::warn!(
-            target: "keyhog::gpu",
-            start,
-            end,
-            "phase-2 GPU regex-DFA match crossed a coalesced region boundary; ignoring admission hit"
-        );
-        return None;
-    }
-    let next_start = region_starts
-        .get(start_region + 1)
-        .map_or(haystack_len, |&offset| offset as usize);
-    let region_end = if start_region + 1 < region_starts.len() {
-        next_start.saturating_sub(1)
-    } else {
-        haystack_len
-    };
-    let start_usize = match usize::try_from(start) {
-        Ok(value) => value,
-        Err(error) => {
-            tracing::warn!(
-                target: "keyhog::gpu",
-                start,
-                %error,
-                "phase-2 GPU regex-DFA match start does not fit host usize; ignoring admission hit"
-            );
-            return None;
-        }
-    };
-    let end_usize = match usize::try_from(end) {
-        Ok(value) => value,
-        Err(error) => {
-            tracing::warn!(
-                target: "keyhog::gpu",
-                end,
-                %error,
-                "phase-2 GPU regex-DFA match end does not fit host usize; ignoring admission hit"
-            );
-            return None;
-        }
-    };
-    if start_usize < region_end && end_usize <= region_end {
-        Some(start_region)
-    } else {
-        tracing::warn!(
-            target: "keyhog::gpu",
-            start,
-            end,
-            region = start_region,
-            next_start,
-            region_end,
-            "phase-2 GPU regex-DFA match touches a coalesced separator/outside span; ignoring admission hit"
-        );
-        None
-    }
-}
-
-fn region_for_offset(region_starts: &[u32], offset: u32) -> Option<usize> {
-    if region_starts.is_empty() {
-        return None;
-    }
-    region_starts
-        .partition_point(|&start| start <= offset)
-        .checked_sub(1)
 }
 
 #[cfg(test)]

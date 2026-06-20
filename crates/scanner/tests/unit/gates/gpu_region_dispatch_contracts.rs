@@ -20,6 +20,11 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         "/src/engine/phase2_gpu_dfa/batch.rs"
     ))
     .expect("phase2 gpu dfa batch readable");
+    let gpu_dfa_shard_src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/phase2_gpu_dfa/shard.rs"
+    ))
+    .expect("phase2 gpu dfa shard readable");
     assert!(
         !dispatch_src.contains(".as_bytes().to_vec()")
             && !dispatch_src.contains("let mut haystack = Vec::new()"),
@@ -90,20 +95,23 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         .nth(1)
         .and_then(|tail| tail.split("fn prefixless_always_active_candidates").next())
         .expect("phase-2 GPU DFA batch admission owner present");
-    let phase2_shard_dispatch = gpu_dfa_src
+    let phase2_shard_dispatch = gpu_dfa_shard_src
         .split("fn scan_admission_into")
         .nth(1)
-        .and_then(|tail| tail.split("pub(crate) struct Phase2GpuDfaAdmission").next())
+        .and_then(|tail| tail.split("pub(super) fn match_region").next())
         .expect("phase-2 GPU DFA shard dispatch owner present");
     assert!(
         gpu_dfa_src.contains("mod batch;")
+            && gpu_dfa_src.contains("mod shard;")
             && gpu_dfa_src.contains("with_phase2_gpu_dfa_scratch")
-            && !gpu_dfa_src.contains("thread_local!"),
-        "phase-2 GPU DFA catalog/admission policy must delegate upload-batch scratch ownership to engine/phase2_gpu_dfa/batch.rs"
+            && !gpu_dfa_src.contains("thread_local!")
+            && !gpu_dfa_src.contains("fn scan_admission_into"),
+        "phase-2 GPU DFA catalog/admission policy must delegate upload-batch scratch to batch.rs and shard dispatch/readback to shard.rs"
     );
     assert!(
         !gpu_dfa_src.contains("pack_haystack_u32_into")
-            && !gpu_dfa_batch_src.contains("pack_haystack_u32_into"),
+            && !gpu_dfa_batch_src.contains("pack_haystack_u32_into")
+            && !gpu_dfa_shard_src.contains("pack_haystack_u32_into"),
         "phase-2 GPU DFA admission must build the packed upload buffer directly, not coalesce raw bytes and then pack them again"
     );
     assert!(
