@@ -6,3 +6,5 @@ pub mod integration;
 pub mod regression;
 #[path = "regression_creddata_hex_key_recall.rs"]
 pub mod regression_creddata_hex_key_recall;
+#[path = "regression_structured_hcl_generic_recall.rs"]
+pub mod regression_structured_hcl_generic_recall;

@@ -130,7 +130,7 @@ impl CompiledScanner {
         {
             let _g = profile::span(profile::P::Generic);
             self.scan_generic_assignments(
-                &code_lines,
+                &prepared.preprocessed,
                 line_offsets,
                 prepared.chunk,
                 &mut scan_state,

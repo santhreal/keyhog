@@ -86,7 +86,7 @@ impl CompiledScanner {
     ///   4. The value is not a known placeholder/example
     pub(crate) fn scan_generic_assignments(
         &self,
-        code_lines: &[&str],
+        preprocessed: &ScannerPreprocessedText<'_>,
         line_offsets: &[usize],
         chunk: &Chunk,
         scan_state: &mut ScanState,
@@ -132,7 +132,11 @@ impl CompiledScanner {
         // its line via the existing `line_offsets` binary search;
         // dedup so we visit each line once even if multiple
         // keywords land on it.
-        let chunk_bytes = chunk.data.as_bytes();
+        let scan_text: &str = &preprocessed.text;
+        let code_lines: Vec<&str> = scan_text.lines().collect();
+        let identity_offsets = std::ptr::eq(scan_text.as_ptr(), chunk.data.as_ptr())
+            && scan_text.len() == chunk.data.len();
+        let scan_bytes = scan_text.as_bytes();
         // Borrow the pooled scratch buffer for the duration of this scan.
         // `take` leaves an empty Vec in the cell so the heavy consume loop
         // below does not hold a live RefCell borrow (which would conflict
@@ -141,7 +145,7 @@ impl CompiledScanner {
         let mut lines_with_keyword = KEYWORD_LINES_POOL.with(|cell| cell.take());
         lines_with_keyword.clear();
         let mut last_line_idx: Option<usize> = None;
-        for mat in keyword_ac.find_iter(chunk_bytes) {
+        for mat in keyword_ac.find_iter(scan_bytes) {
             // `partition_point` returns the 1-based line number;
             // subtract 1 for the 0-based code_lines index. Same
             // idiom as `match_line_number`.
@@ -161,8 +165,13 @@ impl CompiledScanner {
         }
 
         for &line_idx in &lines_with_keyword {
-            let line_num = line_idx + 1;
-            if covered_lines.contains(&line_num) {
+            let Some(&line_offset) = line_offsets.get(line_idx) else {
+                continue;
+            };
+            let mapped_line =
+                crate::pipeline::match_line_number(preprocessed, line_offsets, line_offset);
+            let absolute_line = mapped_line + chunk.metadata.base_line;
+            if covered_lines.contains(&absolute_line) {
                 continue;
             }
             let Some(&raw_line) = code_lines.get(line_idx) else {
@@ -258,7 +267,7 @@ impl CompiledScanner {
 
                 // Context suppression: test files get lower confidence
                 let context = crate::context::infer_context(
-                    code_lines,
+                    &code_lines,
                     line_idx,
                     chunk.metadata.path.as_deref(),
                 );
@@ -357,9 +366,18 @@ impl CompiledScanner {
                 // line, plus the line's start in the chunk, plus the
                 // chunk's base offset in the original file (non-zero on
                 // windowed >64 MiB scans).
-                let chunk_line_offset = line_offsets.get(line_idx).copied().unwrap_or(0); // LAW10: bounds-checked lookup; out-of-range => documented default (total fn), recall-safe
-                let absolute_offset =
-                    chunk.metadata.base_offset + chunk_line_offset + value_match.start();
+                let preprocessed_offset = line_offset + value_match.start();
+                let mapped_line = crate::pipeline::match_line_number(
+                    preprocessed,
+                    line_offsets,
+                    preprocessed_offset,
+                );
+                let source_offset = if identity_offsets {
+                    preprocessed_offset
+                } else {
+                    source_offset_for_line_value(&chunk.data, mapped_line, value)
+                };
+                let absolute_offset = chunk.metadata.base_offset + source_offset;
                 let raw = keyhog_core::RawMatch {
                     credential_hash: crate::sha256_hash(value),
                     detector_id: Arc::from("generic-secret"),
@@ -374,7 +392,7 @@ impl CompiledScanner {
                         // Window-local line + chunk base line = absolute file
                         // line, mirroring `absolute_offset`'s base_offset add
                         // above. base_line is 0 for non-windowed chunks.
-                        line: Some(line_num + chunk.metadata.base_line),
+                        line: Some(mapped_line + chunk.metadata.base_line),
                         offset: absolute_offset,
                         commit: chunk.metadata.commit.as_deref().map(Arc::from),
                         author: chunk.metadata.author.as_deref().map(Arc::from),
@@ -405,4 +423,17 @@ impl CompiledScanner {
             .binary_search_by(|owned| owned.as_ref().cmp(normalized.as_str()))
             .is_ok()
     }
+}
+
+fn source_offset_for_line_value(source: &str, one_based_line: usize, value: &str) -> usize {
+    let mut line_start = 0usize;
+    for (line_idx, line) in source.split('\n').enumerate() {
+        if line_idx + 1 == one_based_line {
+            return line
+                .find(value)
+                .map_or(line_start, |column| line_start + column);
+        }
+        line_start += line.len() + 1;
+    }
+    source.len()
 }

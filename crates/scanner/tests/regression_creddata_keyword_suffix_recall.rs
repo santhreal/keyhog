@@ -46,6 +46,7 @@ fn credentials_for(scanner: &CompiledScanner, line: &str) -> Vec<String> {
         .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
         .into_iter()
         .flatten()
+        .filter(|m| m.detector_id.as_ref() == "generic-secret")
         .map(|m| m.credential.to_string())
         .collect()
 }
