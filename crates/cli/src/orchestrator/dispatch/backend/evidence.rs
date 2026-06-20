@@ -162,6 +162,52 @@ impl AutorouteDecision {
             self.gpu_route_ns,
         )
     }
+
+    pub(super) fn selected_backend_has_non_overlapping_confidence(
+        &self,
+        selected: ScanBackend,
+    ) -> bool {
+        let intervals = self.route_confidence_intervals();
+        let Some((_, selected_interval)) = intervals
+            .iter()
+            .find(|(backend, _)| *backend == selected)
+            .copied()
+        else {
+            return false;
+        };
+        intervals
+            .iter()
+            .filter(|(backend, _)| *backend != selected)
+            .all(|(_, competitor_interval)| selected_interval.high_ns < competitor_interval.low_ns)
+    }
+
+    fn route_confidence_intervals(&self) -> Vec<(ScanBackend, TimingConfidenceInterval)> {
+        let mut intervals = vec![(
+            ScanBackend::SimdCpu,
+            self.simd_timing.confidence_interval_95_ns,
+        )];
+        if let Some(cpu_timing) = self.cpu_timing.as_ref() {
+            intervals.push((
+                ScanBackend::CpuFallback,
+                cpu_timing.confidence_interval_95_ns,
+            ));
+        }
+        if let (Some(cold_ns), Some(warm_timing), Some(_route_ns)) = (
+            self.gpu_cold_ns,
+            self.gpu_warm_timing.as_ref(),
+            self.gpu_route_ns,
+        ) {
+            let warm_interval = warm_timing.confidence_interval_95_ns;
+            intervals.push((
+                ScanBackend::Gpu,
+                TimingConfidenceInterval {
+                    low_ns: cold_ns.max(warm_interval.low_ns),
+                    high_ns: cold_ns.max(warm_interval.high_ns),
+                },
+            ));
+        }
+        intervals
+    }
 }
 
 pub(super) fn route_candidates(
@@ -248,7 +294,7 @@ impl BackendTimingEvidence {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(super) struct TimingConfidenceInterval {
     pub(super) low_ns: u128,
     pub(super) high_ns: u128,

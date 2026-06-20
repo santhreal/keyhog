@@ -89,7 +89,7 @@ pub(super) fn calibrate_fastest_correct_backend(
         trials = AUTOROUTE_CALIBRATION_TRIALS,
         "autoroute calibrated backend decision"
     );
-    Ok(AutorouteDecision::from_timing_evidence(
+    let decision = AutorouteDecision::from_timing_evidence(
         best.0,
         sample_bytes,
         sample.len(),
@@ -102,7 +102,13 @@ pub(super) fn calibrate_fastest_correct_backend(
         gpu_cold_ns,
         gpu_warm_timing,
         gpu_route_ns,
-    ))
+    );
+    if !decision.selected_backend_has_non_overlapping_confidence(best.0) {
+        return Err(AutorouteRoutingError::calibration_not_persisted(
+            "selected backend timing evidence is not statistically separated from competing route evidence",
+        ));
+    }
+    Ok(decision)
 }
 
 pub(super) fn calibration_sample_bytes(sample: &[Chunk]) -> Result<u64, AutorouteRoutingError> {

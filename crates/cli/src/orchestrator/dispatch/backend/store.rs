@@ -300,6 +300,12 @@ fn validate_decision_route_evidence(
     if decision.selected_margin_ns != expected_margin {
         return Err("cache decision has invalid selected backend margin".into());
     }
+    if !decision.selected_backend_has_non_overlapping_confidence(selected_backend) {
+        return Err(
+            "selected backend timing evidence is not statistically separated from competing route evidence"
+                .into(),
+        );
+    }
     Ok(())
 }
 

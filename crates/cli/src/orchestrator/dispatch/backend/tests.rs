@@ -1,4 +1,6 @@
-use super::evidence::AutorouteDecision;
+use super::evidence::{
+    route_candidates, selected_backend_margin_ns, AutorouteDecision, BackendTimingEvidence,
+};
 use super::host::AutorouteHostProfile;
 use super::store::{load_autoroute_cache, save_autoroute_cache, AutorouteCache};
 use super::workload::{
@@ -1137,6 +1139,57 @@ fn autoroute_cache_rejects_selected_backend_that_is_not_fastest() {
             .to_string()
             .contains("selected backend is not the fastest persisted timing evidence"),
         "autoroute cache load must not trust a backend label that contradicts persisted timing evidence"
+    );
+
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
+fn autoroute_cache_rejects_selected_backend_with_overlapping_confidence() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_selected_overlap_{}.json",
+        std::process::id()
+    ));
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(None);
+    let key = test_workload_key();
+    let simd_timing =
+        BackendTimingEvidence::from_trial_ns(vec![10_000_000, 30_000_000, 30_000_000])
+            .expect("valid noisy SIMD timing");
+    let cpu_timing = BackendTimingEvidence::from_trial_ns(vec![11_000_000, 11_000_000, 11_000_000])
+        .expect("valid steady CPU timing");
+    let candidates = route_candidates(&simd_timing, Some(&cpu_timing), None);
+    let bad = AutorouteDecision::from_timing_evidence(
+        ScanBackend::SimdCpu,
+        8 * 1024 * 1024,
+        1,
+        0xA11D_0B57_A11D_0B57,
+        1,
+        selected_backend_margin_ns(ScanBackend::SimdCpu, &candidates),
+        simd_timing,
+        Some(cpu_timing),
+        None,
+        None,
+        None,
+        None,
+    );
+    write_tampered_decision_cache(
+        &path,
+        digest,
+        config_digest,
+        &host,
+        key,
+        bad,
+        "not statistically separated",
+    );
+    let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
+    assert!(
+        loaded
+            .expect_err("overlapping timing confidence must be rejected")
+            .to_string()
+            .contains("not statistically separated"),
+        "autoroute cache load must not trust a selected backend whose timing interval overlaps a competing route"
     );
 
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
