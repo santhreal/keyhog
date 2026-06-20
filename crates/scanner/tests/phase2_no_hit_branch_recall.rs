@@ -546,6 +546,59 @@ fn isolated_dictionary_password_with_one_symbol_stays_below_symbol_recovery() {
 
 #[cfg(feature = "entropy")]
 #[test]
+fn isolated_colon_separated_opaque_entropy_secret_enters_full_line_recovery() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+    let secret = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz:Kp4Qx7Rm2Sn5Tb8V";
+    let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
+
+    let matches = scanner.scan(&chunk);
+    let entropy_fired = matches.iter().any(|m| {
+        m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
+    });
+    assert!(
+        entropy_fired,
+        "a single-colon opaque credential made of two random alnum halves must \
+         enter isolated full-line recovery; matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
+fn isolated_hash_scheme_and_short_password_colon_values_stay_suppressed() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+    for value in [
+        "sha256:7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d",
+        "user:CorrectHorseBattery123",
+    ] {
+        let chunk = make_chunk(value, "notes/sufficiency-probe.txt");
+        let matches = scanner.scan(&chunk);
+        let entropy_fired = matches.iter().any(|m| {
+            m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(value)
+        });
+        assert!(
+            !entropy_fired,
+            "hash-scheme and short user/password colon shapes must not enter \
+             the isolated colon-token recovery branch; value={value}; matches={:?}",
+            matches
+                .iter()
+                .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[cfg(feature = "entropy")]
+#[test]
 fn isolated_bang_led_symbolic_entropy_secret_bypasses_punctuation_gate() {
     let mut config = ScannerConfig::default();
     config.min_confidence = 0.0;

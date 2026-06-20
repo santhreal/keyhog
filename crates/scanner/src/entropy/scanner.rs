@@ -435,10 +435,37 @@ fn isolated_bare_candidate(line: &str, min_len: usize) -> Option<&str> {
                         | b'*'
                 )
         });
-    if standard_token || symbolic_isolated_bare_candidate(candidate) {
+    if standard_token
+        || colon_separated_opaque_candidate(candidate)
+        || symbolic_isolated_bare_candidate(candidate)
+    {
         return Some(candidate);
     }
     None
+}
+
+fn colon_separated_opaque_candidate(candidate: &str) -> bool {
+    if candidate.contains("://") || candidate.bytes().filter(|&b| b == b':').count() != 1 {
+        return false;
+    }
+    let Some((left, right)) = candidate.split_once(':') else {
+        return false;
+    };
+    if left.len() < 20 || right.len() < 16 {
+        return false;
+    }
+    [left, right].into_iter().all(|part| {
+        let mut has_alpha = false;
+        let mut has_digit = false;
+        for b in part.bytes() {
+            if !b.is_ascii_alphanumeric() {
+                return false;
+            }
+            has_alpha |= b.is_ascii_alphabetic();
+            has_digit |= b.is_ascii_digit();
+        }
+        has_alpha && has_digit
+    })
 }
 
 fn symbolic_isolated_bare_candidate(candidate: &str) -> bool {
