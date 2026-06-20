@@ -8,6 +8,7 @@ use std::sync::atomic::AtomicU64;
 #[cfg(any(feature = "decode", feature = "ml"))]
 use std::sync::atomic::Ordering::Relaxed;
 use std::sync::OnceLock;
+use std::time::Duration;
 
 /// Per-pattern confirmed-pass profiler (measurement only). Enabled by
 /// `keyhog scan --profile` to accumulate, per (ac_map ∪ fallback) index, the wall
@@ -18,6 +19,35 @@ pub(crate) fn confirmed_prof_enabled() -> bool {
 }
 static CONFIRMED_PAT_NS: OnceLock<Vec<AtomicU64>> = OnceLock::new();
 static CONFIRMED_PAT_RUNS: OnceLock<Vec<AtomicU64>> = OnceLock::new();
+static CONFIRMED_STAGE_NS: [AtomicU64; 3] =
+    [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
+static CONFIRMED_STAGE_RUNS: [AtomicU64; 3] =
+    [AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0)];
+
+#[derive(Clone, Copy)]
+pub(crate) enum ConfirmedStage {
+    SuffixGate = 0,
+    AnchorCollect = 1,
+    Extract = 2,
+}
+
+pub(crate) fn confirmed_prof_record(stage: ConfirmedStage, elapsed: Duration) {
+    let idx = stage as usize;
+    CONFIRMED_STAGE_NS[idx].fetch_add(
+        elapsed.as_nanos() as u64,
+        std::sync::atomic::Ordering::Relaxed,
+    );
+    CONFIRMED_STAGE_RUNS[idx].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub(crate) fn confirmed_prof_stage_take() -> [(u64, u64); 3] {
+    std::array::from_fn(|idx| {
+        (
+            CONFIRMED_STAGE_NS[idx].swap(0, std::sync::atomic::Ordering::Relaxed),
+            CONFIRMED_STAGE_RUNS[idx].swap(0, std::sync::atomic::Ordering::Relaxed),
+        )
+    })
+}
 
 pub(crate) fn confirmed_prof_vecs(len: usize) -> (&'static [AtomicU64], &'static [AtomicU64]) {
     let ns = CONFIRMED_PAT_NS.get_or_init(|| (0..len).map(|_| AtomicU64::new(0)).collect());
@@ -31,6 +61,12 @@ pub(crate) fn confirmed_prof_reset(len: usize) {
         n.store(0, std::sync::atomic::Ordering::Relaxed);
     }
     for r in runs {
+        r.store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+    for n in &CONFIRMED_STAGE_NS {
+        n.store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+    for r in &CONFIRMED_STAGE_RUNS {
         r.store(0, std::sync::atomic::Ordering::Relaxed);
     }
 }

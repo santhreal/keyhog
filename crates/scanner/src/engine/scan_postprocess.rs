@@ -20,7 +20,8 @@ use std::sync::Arc;
 // (`self.tuning.confirmed_suffix_gate_enabled()`); only the gate BUILDER remains
 // in the suffix-gate satellite.
 use super::scan_postprocess_profile::{
-    confirmed_prof_enabled, confirmed_prof_reset, confirmed_prof_vecs,
+    confirmed_prof_enabled, confirmed_prof_record, confirmed_prof_reset, confirmed_prof_stage_take,
+    confirmed_prof_vecs, ConfirmedStage,
 };
 #[cfg(feature = "decode")]
 use super::scan_postprocess_profile::{
@@ -276,12 +277,28 @@ impl CompiledScanner {
         // ALL absent cannot match (every match ends with one of them), so its
         // whole-chunk regex run is skipped. `None` when the gate is disabled or
         // no pattern is gateable.
+        let needs_suffix_gate = self.tuning.confirmed_suffix_gate_enabled()
+            && confirmed_patterns.iter().any(|&pat_idx| {
+                let anchored = self
+                    .confirmed_anchor_index
+                    .as_ref()
+                    .is_some_and(|anchor_index| anchor_index.is_eligible(pat_idx));
+                self.ac_suffix_gate
+                    .get(pat_idx)
+                    .is_some_and(|gate| !gate.is_empty() && !anchored)
+            });
         let suffix_present: Option<std::collections::HashSet<usize>> = match &self.suffix_gate_ac {
-            Some(ac) if self.tuning.confirmed_suffix_gate_enabled() => Some(
-                ac.find_overlapping_iter(&*preprocessed.text)
+            Some(ac) if needs_suffix_gate => {
+                let t0 = prof.then(std::time::Instant::now);
+                let present = ac
+                    .find_overlapping_iter(&*preprocessed.text)
                     .map(|m| m.pattern().as_usize())
-                    .collect(),
-            ),
+                    .collect();
+                if let Some(t0) = t0 {
+                    confirmed_prof_record(ConfirmedStage::SuffixGate, t0.elapsed());
+                }
+                Some(present)
+            }
             _ => None,
         };
         let suffix_allows = |pat_idx: usize| -> bool {
@@ -302,6 +319,7 @@ impl CompiledScanner {
             if has_active_anchored {
                 confirmed_anchor::CONFIRMED_ANCHOR_CANDIDATES.with(|cell| {
                     let mut candidates = cell.borrow_mut();
+                    let collect_t0 = prof.then(std::time::Instant::now);
                     anchor_index.collect_candidates(
                         &preprocessed.text,
                         |pat_idx| {
@@ -310,6 +328,9 @@ impl CompiledScanner {
                         },
                         &mut candidates,
                     );
+                    if let Some(collect_t0) = collect_t0 {
+                        confirmed_prof_record(ConfirmedStage::AnchorCollect, collect_t0.elapsed());
+                    }
                     let mut i = 0usize;
                     while i < candidates.len() {
                         if let Some(deadline) = deadline {
@@ -356,9 +377,11 @@ impl CompiledScanner {
                                 ),
                             }
                             if let Some(t0) = t0 {
+                                let elapsed = t0.elapsed();
+                                confirmed_prof_record(ConfirmedStage::Extract, elapsed);
                                 let (ns, runs) = confirmed_prof_vecs(total);
                                 if let (Some(n), Some(r)) = (ns.get(pat_idx), runs.get(pat_idx)) {
-                                    n.fetch_add(t0.elapsed().as_nanos() as u64, Relaxed);
+                                    n.fetch_add(elapsed.as_nanos() as u64, Relaxed);
                                     r.fetch_add(1, Relaxed);
                                 }
                             }
@@ -412,9 +435,11 @@ impl CompiledScanner {
                 deadline,
             );
             if let Some(t0) = t0 {
+                let elapsed = t0.elapsed();
+                confirmed_prof_record(ConfirmedStage::Extract, elapsed);
                 let (ns, runs) = confirmed_prof_vecs(total);
                 if let (Some(n), Some(r)) = (ns.get(pat_idx), runs.get(pat_idx)) {
-                    n.fetch_add(t0.elapsed().as_nanos() as u64, Relaxed);
+                    n.fetch_add(elapsed.as_nanos() as u64, Relaxed);
                     r.fetch_add(1, Relaxed);
                 }
             }
@@ -436,6 +461,30 @@ impl CompiledScanner {
             grand as f64 / 1e6,
             rows.len()
         );
+        let stages = confirmed_prof_stage_take();
+        let stage_total: u64 = stages.iter().map(|(ns, _)| *ns).sum();
+        if stage_total > 0 {
+            let labels = ["suffix-gate", "anchor-collect", "extract"];
+            eprintln!(
+                "=== CONFIRMED stages [{label}] total={:.1} ms ===",
+                stage_total as f64 / 1e6
+            );
+            for (idx, name) in labels.iter().enumerate() {
+                let (ns, runs) = stages[idx];
+                if ns == 0 {
+                    continue;
+                }
+                let per = if runs > 0 { ns / runs } else { 0 };
+                eprintln!(
+                    "  {:<15} {:>6.1}ms {:>5.1}%  runs={:<6} {:>7}ns/run",
+                    name,
+                    ns as f64 / 1e6,
+                    100.0 * ns as f64 / stage_total.max(1) as f64,
+                    runs,
+                    per
+                );
+            }
+        }
         for (i, n, r) in rows.iter().take(30) {
             let src = if *i < self.ac_map.len() {
                 self.ac_map[*i].regex.as_str()

@@ -14,7 +14,9 @@
 //! medians, not criterion's adaptive sampling — every number is one timed call.
 
 use keyhog_core::{load_detectors, Chunk, ChunkMetadata};
-use keyhog_scanner::{set_perf_trace_enabled, set_profile_enabled, CompiledScanner, ScanBackend};
+use keyhog_scanner::{
+    set_perf_trace_enabled, set_profile_enabled, CompiledScanner, ScanBackend, ScannerTuningConfig,
+};
 use std::env;
 use std::io;
 use std::path::PathBuf;
@@ -129,6 +131,24 @@ fn env_positive_usize(name: &str, default: usize) -> Result<usize, io::Error> {
     }
 }
 
+fn env_optional_bool(name: &str) -> Result<Option<bool>, io::Error> {
+    match env::var(name) {
+        Ok(raw) => match raw.as_str() {
+            "1" | "true" | "on" | "yes" => Ok(Some(true)),
+            "0" | "false" | "off" | "no" => Ok(Some(false)),
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("{name}={raw:?} must be one of 1/0, true/false, on/off, or yes/no"),
+            )),
+        },
+        Err(env::VarError::NotPresent) => Ok(None),
+        Err(env::VarError::NotUnicode(raw)) => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("{name} is not valid Unicode: {raw:?}"),
+        )),
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
     let perf_trace = args.iter().any(|arg| arg == "--perf-trace");
@@ -147,7 +167,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let detectors = load_detectors(&detectors_dir())?;
     let n_det = detectors.len();
-    let scanner = CompiledScanner::compile(detectors)?;
+    let confirmed_suffix_gate = env_optional_bool("KH_BENCH_CONFIRMED_SUFFIX_GATE")?;
+    let tuning = ScannerTuningConfig {
+        confirmed_suffix_gate,
+        ..ScannerTuningConfig::default()
+    };
+    let scanner = CompiledScanner::compile(detectors)?.with_tuning_config(tuning);
 
     let payload = gen_payload(size);
     let chunk = make_chunk(payload, "src/bench_8mib.rs");
@@ -161,6 +186,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         iters,
         iters
     );
+    if let Some(enabled) = confirmed_suffix_gate {
+        println!("confirmed_suffix_gate={enabled}");
+    }
     println!(
         "{:<28} {:>13}   {:>13}   hits",
         "backend", "wall (median)", "throughput"

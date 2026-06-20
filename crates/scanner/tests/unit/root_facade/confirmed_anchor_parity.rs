@@ -33,6 +33,7 @@ impl Lcg {
 
 const TOKENS: &[&str] = &[
     "const stripe = \"sk_live_0123456789abcdefghijklmnopqrstuv\";",
+    "const stripe_upper = \"SK_LIVE_0123456789ABCDEFGHIJKLMNOPQRSTUV\";",
     "let stripe_test = \"sk_test_0123456789abcdefghijklmnopqrstuv\";",
     "api_key = \"0123456789abcdef0123456789abcdef\"",
     "API_TOKEN = \"abcdefghijklmnopqrstuvwxyz0123456789\"",
