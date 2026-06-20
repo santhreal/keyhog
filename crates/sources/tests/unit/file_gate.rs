@@ -275,6 +275,76 @@ fn slack_happy() {
 fn slack_error() {
     assert!(create_source("slack", None).is_err());
 }
+#[cfg(feature = "slack")]
+#[test]
+fn slack_error_json_preserves_api_error_code() {
+    let list_error = TestApi
+        .slack_conversations_list_len_for_test(r#"{"ok":false,"error":"not_authed"}"#)
+        .expect_err("Slack conversations.list error JSON must be surfaced as an error");
+    assert!(
+        list_error.contains("conversations.list"),
+        "Slack list error should name endpoint, got {list_error}"
+    );
+    assert!(
+        list_error.contains("not_authed"),
+        "Slack list error should preserve API code, got {list_error}"
+    );
+    assert!(
+        !list_error.contains("missing field"),
+        "Slack API error code must not be hidden by payload-field deserialization: {list_error}"
+    );
+
+    let history_error = TestApi
+        .slack_history_len_for_test(r#"{"ok":false,"error":"channel_not_found"}"#, "C0123")
+        .expect_err("Slack conversations.history error JSON must be surfaced as an error");
+    assert!(
+        history_error.contains("conversations.history"),
+        "Slack history error should name endpoint, got {history_error}"
+    );
+    assert!(
+        history_error.contains("channel_not_found"),
+        "Slack history error should preserve API code, got {history_error}"
+    );
+    assert!(
+        history_error.contains("C0123"),
+        "Slack history error should preserve channel context, got {history_error}"
+    );
+    assert!(
+        !history_error.contains("missing field"),
+        "Slack history API error code must not be hidden by payload-field deserialization: {history_error}"
+    );
+}
+#[cfg(feature = "slack")]
+#[test]
+fn slack_ok_json_requires_endpoint_payload() {
+    let list_error = TestApi
+        .slack_conversations_list_len_for_test(r#"{"ok":true}"#)
+        .expect_err("Slack ok list JSON without channels must be rejected");
+    assert!(
+        list_error.contains("conversations.list"),
+        "Slack list payload error should name endpoint, got {list_error}"
+    );
+    assert!(
+        list_error.contains("missing channels"),
+        "Slack list payload error should name missing field, got {list_error}"
+    );
+
+    let history_error = TestApi
+        .slack_history_len_for_test(r#"{"ok":true}"#, "C0123")
+        .expect_err("Slack ok history JSON without messages must be rejected");
+    assert!(
+        history_error.contains("conversations.history"),
+        "Slack history payload error should name endpoint, got {history_error}"
+    );
+    assert!(
+        history_error.contains("missing messages"),
+        "Slack history payload error should name missing field, got {history_error}"
+    );
+    assert!(
+        history_error.contains("C0123"),
+        "Slack history payload error should preserve channel context, got {history_error}"
+    );
+}
 
 // ── crates/sources/src/web.rs ─────────────────────────────────────────
 #[cfg(feature = "web")]

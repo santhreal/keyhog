@@ -8,6 +8,15 @@
 
 mod api;
 mod limits;
+#[cfg(any(
+    feature = "azure",
+    feature = "s3",
+    feature = "gcs",
+    feature = "slack",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket"
+))]
 mod parallel_fetch;
 pub(crate) mod timeouts;
 

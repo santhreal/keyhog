@@ -4,8 +4,8 @@
 //! Requires a Slack API token (Bot or User) with `channels:history` and `groups:history` scopes.
 
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
-use reqwest::blocking::Client;
-use serde::Deserialize;
+use reqwest::blocking::{Client, Response};
+use serde::{de::DeserializeOwned, Deserialize};
 
 /// Scan Slack messages via the `conversations.history` API.
 pub struct SlackSource {
@@ -77,7 +77,7 @@ struct SlackResponse<T> {
 
 #[derive(Deserialize)]
 struct ConversationsList {
-    channels: Vec<Channel>,
+    channels: Option<Vec<Channel>>,
 }
 
 #[derive(Deserialize)]
@@ -88,7 +88,7 @@ struct Channel {
 
 #[derive(Deserialize)]
 struct History {
-    messages: Vec<Message>,
+    messages: Option<Vec<Message>>,
 }
 
 #[derive(Deserialize)]
@@ -96,6 +96,101 @@ struct Message {
     user: Option<String>,
     text: String,
     ts: String,
+}
+
+const CONVERSATIONS_LIST: &str = "conversations.list";
+const CONVERSATIONS_HISTORY: &str = "conversations.history";
+
+fn slack_error_code(error: Option<&str>) -> &str {
+    match error {
+        Some(code) if !code.trim().is_empty() => code.trim(),
+        _ => "<no error field>",
+    }
+}
+
+fn parse_slack_response<T>(endpoint: &str, body: &str) -> Result<SlackResponse<T>, SourceError>
+where
+    T: DeserializeOwned,
+{
+    serde_json::from_str(body).map_err(|error| {
+        SourceError::Other(format!(
+            "failed to parse Slack {endpoint} response: {error}"
+        ))
+    })
+}
+
+fn read_slack_response<T>(
+    endpoint: &str,
+    response: Response,
+) -> Result<SlackResponse<T>, SourceError>
+where
+    T: DeserializeOwned,
+{
+    let status = response.status();
+    let body = response.text().map_err(|error| {
+        SourceError::Other(format!(
+            "failed to read Slack {endpoint} response body: {error}"
+        ))
+    })?;
+    match parse_slack_response(endpoint, &body) {
+        Ok(resp) => {
+            if !status.is_success() && resp.ok {
+                return Err(SourceError::Other(format!(
+                    "Slack API {endpoint} returned HTTP {status} with ok=true"
+                )));
+            }
+            Ok(resp)
+        }
+        Err(error) if !status.is_success() => Err(SourceError::Other(format!(
+            "Slack API {endpoint} returned HTTP {status} and an unreadable JSON body: {error}"
+        ))),
+        Err(error) => Err(error),
+    }
+}
+
+fn channels_from_response(
+    resp: SlackResponse<ConversationsList>,
+) -> Result<Vec<Channel>, SourceError> {
+    if !resp.ok {
+        return Err(SourceError::Other(format!(
+            "Slack API {CONVERSATIONS_LIST} error: {}",
+            slack_error_code(resp.error.as_deref())
+        )));
+    }
+    match resp.data.channels {
+        Some(channels) => Ok(channels),
+        None => Err(SourceError::Other(format!(
+            "Slack API {CONVERSATIONS_LIST} ok response missing channels"
+        ))),
+    }
+}
+
+fn messages_from_response(
+    resp: SlackResponse<History>,
+    channel_id: &str,
+) -> Result<Vec<Message>, SourceError> {
+    if !resp.ok {
+        return Err(SourceError::Other(format!(
+            "Slack API {CONVERSATIONS_HISTORY} error for channel {channel_id}: {}",
+            slack_error_code(resp.error.as_deref())
+        )));
+    }
+    match resp.data.messages {
+        Some(messages) => Ok(messages),
+        None => Err(SourceError::Other(format!(
+            "Slack API {CONVERSATIONS_HISTORY} ok response for channel {channel_id} missing messages"
+        ))),
+    }
+}
+
+pub(crate) fn conversations_list_len_for_test(body: &str) -> Result<usize, SourceError> {
+    let resp = parse_slack_response::<ConversationsList>(CONVERSATIONS_LIST, body)?;
+    channels_from_response(resp).map(|channels| channels.len())
+}
+
+pub(crate) fn history_len_for_test(body: &str, channel_id: &str) -> Result<usize, SourceError> {
+    let resp = parse_slack_response::<History>(CONVERSATIONS_HISTORY, body)?;
+    messages_from_response(resp, channel_id).map(|messages| messages.len())
 }
 
 impl SlackSource {
@@ -174,28 +269,18 @@ impl SlackSource {
     }
 
     fn list_channels(&self, client: &Client) -> Result<Vec<Channel>, SourceError> {
-        let resp: SlackResponse<ConversationsList> = client
+        let resp = client
             .get("https://slack.com/api/conversations.list")
             .bearer_auth(&self.token)
             .query(&[("types", "public_channel,private_channel")])
             .send()
-            .map_err(|e| SourceError::Other(e.to_string()))?
-            .json()
-            .map_err(|e| SourceError::Other(e.to_string()))?;
-
-        if !resp.ok {
-            // `resp.error` is omitted by some Slack API responses (rate
-            // limits return only HTTP status + headers; non-OK 200s with
-            // {"ok": false} sometimes lack the field). Map None to a
-            // descriptive marker rather than "" so the operator sees the
-            // shape of the failure ("invalid_auth" / "missing field" /
-            // "channel_not_found" are common values; "<no error field>"
-            // distinguishes a malformed response from one with an actual
-            // error code).
-            let error_code = resp.error.as_deref().unwrap_or("<no error field>"); // LAW10: missing/non-string field => empty/placeholder; recall-safe
-            return Err(SourceError::Other(format!("Slack API error: {error_code}")));
-        }
-        Ok(resp.data.channels)
+            .map_err(|error| {
+                SourceError::Other(format!(
+                    "Slack API {CONVERSATIONS_LIST} request failed: {error}"
+                ))
+            })?;
+        let resp = read_slack_response(CONVERSATIONS_LIST, resp)?;
+        channels_from_response(resp)
     }
 
     fn fetch_history(
@@ -203,7 +288,7 @@ impl SlackSource {
         client: &Client,
         channel_id: &str,
     ) -> Result<Vec<Message>, SourceError> {
-        let resp: SlackResponse<History> = client
+        let resp = client
             .get("https://slack.com/api/conversations.history")
             .bearer_auth(&self.token)
             .query(&[
@@ -211,22 +296,12 @@ impl SlackSource {
                 ("limit", &self.lookback_messages.to_string()),
             ])
             .send()
-            .map_err(|e| SourceError::Other(e.to_string()))?
-            .json()
-            .map_err(|e| SourceError::Other(e.to_string()))?;
-
-        if !resp.ok {
-            // `resp.error` is omitted by some Slack API responses (rate
-            // limits return only HTTP status + headers; non-OK 200s with
-            // {"ok": false} sometimes lack the field). Map None to a
-            // descriptive marker rather than "" so the operator sees the
-            // shape of the failure ("invalid_auth" / "missing field" /
-            // "channel_not_found" are common values; "<no error field>"
-            // distinguishes a malformed response from one with an actual
-            // error code).
-            let error_code = resp.error.as_deref().unwrap_or("<no error field>"); // LAW10: missing/non-string field => empty/placeholder; recall-safe
-            return Err(SourceError::Other(format!("Slack API error: {error_code}")));
-        }
-        Ok(resp.data.messages)
+            .map_err(|error| {
+                SourceError::Other(format!(
+                    "Slack API {CONVERSATIONS_HISTORY} request failed for channel {channel_id}: {error}"
+                ))
+            })?;
+        let resp = read_slack_response(CONVERSATIONS_HISTORY, resp)?;
+        messages_from_response(resp, channel_id)
     }
 }

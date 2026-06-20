@@ -291,6 +291,12 @@ pub mod testing {
             urls: Vec<String>,
             allow: bool,
         ) -> crate::WebSource;
+
+        #[cfg(feature = "slack")]
+        fn slack_conversations_list_len_for_test(&self, body: &str) -> Result<usize, String>;
+        #[cfg(feature = "slack")]
+        fn slack_history_len_for_test(&self, body: &str, channel_id: &str)
+            -> Result<usize, String>;
     }
 
     impl SourceTestApi for TestApi {
@@ -774,6 +780,20 @@ pub mod testing {
             allow: bool,
         ) -> crate::WebSource {
             crate::WebSource::new(urls).with_autoroute_loopback_calibration(allow)
+        }
+
+        #[cfg(feature = "slack")]
+        fn slack_conversations_list_len_for_test(&self, body: &str) -> Result<usize, String> {
+            crate::slack::conversations_list_len_for_test(body).map_err(|error| error.to_string())
+        }
+
+        #[cfg(feature = "slack")]
+        fn slack_history_len_for_test(
+            &self,
+            body: &str,
+            channel_id: &str,
+        ) -> Result<usize, String> {
+            crate::slack::history_len_for_test(body, channel_id).map_err(|error| error.to_string())
         }
     }
 }
