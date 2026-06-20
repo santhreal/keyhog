@@ -439,7 +439,8 @@ fn print_self_test_report(report: &BackendSelfTestReport) {
     } else {
         let stderr_palette = style::for_stderr();
         eprintln!(
-            "{} GPU self-test failed, keyhog will fall back to SIMD/CPU on this box.",
+            "{} GPU self-test failed; GPU routes are unavailable until fixed. \
+             Use --backend simd/cpu or --no-gpu for an explicit CPU-only scan.",
             style::fail("FAIL", &stderr_palette)
         );
     }

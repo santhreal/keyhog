@@ -216,7 +216,7 @@ pub(crate) fn run(_args: DoctorArgs) -> Result<ExitCode> {
             Err(e) => {
                 warned = true;
                 println!(
-                    "  gpu scan path  {}  GPU AC kernel self-test failed; scans fall back to SIMD/CPU (recall preserved, large-file GPU acceleration lost).\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test` for the full GPU diagnostic{reset}",
+                    "  gpu scan path  {}  GPU AC kernel self-test failed; GPU routes are unavailable until fixed (CPU/SIMD routes preserve recall, large-file GPU acceleration lost).\n                 {dim}{e}{reset}\n                 {dim}run `keyhog backend --self-test` for the full GPU diagnostic{reset}",
                     style::warn("WARN", &palette)
                 );
             }

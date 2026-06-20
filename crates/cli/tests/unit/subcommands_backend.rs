@@ -24,3 +24,30 @@ fn backend_self_test_json_preserves_failing_ac_probe() {
         "AC failure reason must survive JSON rendering: {parsed}"
     );
 }
+
+#[test]
+fn gpu_health_messages_do_not_advertise_implicit_cpu_fallback() {
+    for (label, source) in [
+        (
+            "backend",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/subcommands/backend.rs"
+            )),
+        ),
+        (
+            "doctor",
+            include_str!(concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/src/subcommands/doctor.rs"
+            )),
+        ),
+    ] {
+        assert!(
+            !source.contains("fall back to SIMD/CPU")
+                && !source.contains("falling back to CPU")
+                && source.contains("GPU routes are unavailable until fixed"),
+            "{label} GPU health wording must align with the no-silent-GPU-degrade contract"
+        );
+    }
+}
