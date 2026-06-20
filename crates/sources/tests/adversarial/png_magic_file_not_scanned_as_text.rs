@@ -1,6 +1,6 @@
 //! PNG magic header must be rejected by text decode path.
 
-use keyhog_core::Source;
+use super::support::collect_chunks;
 use keyhog_sources::FilesystemSource;
 
 #[test]
@@ -10,9 +10,8 @@ fn png_magic_file_not_scanned_as_text() {
     bytes.extend_from_slice(b"SECRET=hidden");
     std::fs::write(dir.path().join("img.png"), bytes).expect("write");
 
-    let count = FilesystemSource::new(dir.path().to_path_buf())
-        .chunks()
-        .flatten()
+    let count = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
+        .into_iter()
         .count();
     assert_eq!(count, 0);
 }

@@ -1,6 +1,6 @@
 //! PDF magic header must be rejected by text decode path.
 
-use keyhog_core::Source;
+use super::support::collect_chunks;
 use keyhog_sources::FilesystemSource;
 
 #[test]
@@ -12,9 +12,8 @@ fn pdf_magic_file_not_scanned_as_text() {
     bytes.extend_from_slice(b"SECRET=should-not-appear-as-text");
     std::fs::write(dir.path().join("doc.pdf"), bytes).expect("write");
 
-    let count = FilesystemSource::new(dir.path().to_path_buf())
-        .chunks()
-        .flatten()
+    let count = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
+        .into_iter()
         .count();
     assert_eq!(count, 0, "PDF magic must skip text decode");
 }

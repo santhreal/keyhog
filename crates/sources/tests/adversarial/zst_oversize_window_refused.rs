@@ -14,7 +14,7 @@
 //! mean the frame was refused (a mere output-budget truncation would still keep
 //! the head where the secret lives).
 
-use keyhog_core::Source;
+use super::support::collect_chunks;
 use keyhog_sources::FilesystemSource;
 
 /// AWS access key id, split so the literal never sits as a plaintext secret in
@@ -42,10 +42,8 @@ fn write_bomb(dir: &std::path::Path) {
 }
 
 fn scan_finds_secret(root: &std::path::Path, max_file_size: u64) -> bool {
-    FilesystemSource::new(root.to_path_buf())
-        .with_max_file_size(max_file_size)
-        .chunks()
-        .flatten()
+    collect_chunks(&FilesystemSource::new(root.to_path_buf()).with_max_file_size(max_file_size))
+        .into_iter()
         .any(|c| c.data.contains(SECRET))
 }
 

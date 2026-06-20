@@ -1,14 +1,13 @@
 //! 7z archives are source containers and must be unpacked.
 
-use keyhog_core::Source;
+use crate::support::collect_chunks;
 use keyhog_sources::FilesystemSource;
 
 fn scan_file(name: &str, bytes: Vec<u8>) -> Vec<keyhog_core::Chunk> {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join(name), bytes).expect("write 7z fixture");
-    FilesystemSource::new(dir.path().to_path_buf())
-        .chunks()
-        .flatten()
+    collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
+        .into_iter()
         .collect()
 }
 

@@ -1,9 +1,9 @@
 //! Zip archives whose cumulative uncompressed size exceeds 4× max_file_size
 //! must abort extraction before later entries are read (zip-bomb budget).
 
+use super::support::collect_chunks;
 use std::io::Write;
 
-use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 use std::fs::File;
 use zip::write::SimpleFileOptions;
@@ -31,9 +31,8 @@ fn zip_bomb_4x_budget_aborts_before_late_entry() {
     std::fs::write(dir.path().join("outside.txt"), "OUTSIDE=ok\n").expect("outside");
 
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(256);
-    let bodies: Vec<String> = source
-        .chunks()
-        .flatten()
+    let bodies: Vec<String> = collect_chunks(&source)
+        .into_iter()
         .map(|c| c.data.to_string())
         .collect();
 

@@ -1,9 +1,9 @@
 //! GitDiffSource must diff base..head and surface added secrets.
 
+use crate::support::collect_chunks;
 #[cfg(feature = "git")]
 #[test]
 fn git_diff_finds_feature_branch_secret() {
-    use keyhog_core::Source;
     use keyhog_sources::GitDiffSource;
     use std::process::Command;
 
@@ -28,12 +28,11 @@ fn git_diff_finds_feature_branch_secret() {
         "feature",
     );
 
-    let bodies: Vec<String> = GitDiffSource::new(repo, "main")
-        .with_head_ref("feature")
-        .chunks()
-        .flatten()
-        .map(|c| c.data.to_string())
-        .collect();
+    let bodies: Vec<String> =
+        collect_chunks(&GitDiffSource::new(repo, "main").with_head_ref("feature"))
+            .into_iter()
+            .map(|c| c.data.to_string())
+            .collect();
     assert!(
         bodies
             .iter()

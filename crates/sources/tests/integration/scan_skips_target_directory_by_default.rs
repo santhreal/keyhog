@@ -1,6 +1,6 @@
 //! Default ignore rules must skip target/ build artifacts.
 
-use keyhog_core::Source;
+use crate::support::collect_chunks;
 use keyhog_sources::FilesystemSource;
 
 #[test]
@@ -21,9 +21,8 @@ fn scan_skips_target_directory_by_default() {
     )
     .expect("write");
 
-    let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())
-        .chunks()
-        .flatten()
+    let bodies: Vec<String> = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
+        .into_iter()
         .map(|c| c.data.to_string())
         .collect();
     assert!(bodies.iter().any(|b| b.contains("scan-root")));

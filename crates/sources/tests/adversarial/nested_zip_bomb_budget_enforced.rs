@@ -1,8 +1,8 @@
 //! Nested zip members still count toward the 4× uncompressed budget.
 
+use super::support::collect_chunks;
 use std::io::Write;
 
-use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 use std::fs::File;
 use zip::write::SimpleFileOptions;
@@ -38,12 +38,11 @@ fn nested_zip_bomb_budget_enforced() {
         .expect("tail write");
     outer.finish().expect("finish outer");
 
-    let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())
-        .with_max_file_size(256)
-        .chunks()
-        .flatten()
-        .map(|c| c.data.to_string())
-        .collect();
+    let bodies: Vec<String> =
+        collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(256))
+            .into_iter()
+            .map(|c| c.data.to_string())
+            .collect();
 
     assert!(
         !bodies.iter().any(|b| b.contains("TAIL=AKIA")),

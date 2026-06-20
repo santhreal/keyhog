@@ -1,6 +1,6 @@
 //! Zero-byte `.gz` wrapper must not panic gzip dispatch.
 
-use keyhog_core::Source;
+use super::support::collect_chunks;
 use keyhog_sources::FilesystemSource;
 
 #[test]
@@ -9,9 +9,8 @@ fn zero_byte_gzip_no_panic() {
     std::fs::write(dir.path().join("empty.gz"), []).expect("empty gz");
     std::fs::write(dir.path().join("side.txt"), "SIDE=ok\n").expect("side");
 
-    let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())
-        .chunks()
-        .flatten()
+    let bodies: Vec<String> = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
+        .into_iter()
         .map(|c| c.data.to_string())
         .collect();
     assert!(bodies.iter().any(|b| b.contains("SIDE=ok")));

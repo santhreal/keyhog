@@ -1,6 +1,6 @@
 //! Zip entries with `../` path components must not surface extracted secrets.
 
-use keyhog_core::Source;
+use super::support::collect_chunks;
 use keyhog_sources::FilesystemSource;
 use std::fs::File;
 use std::io::Write;
@@ -22,9 +22,8 @@ fn zip_slip_dotdot_entry_not_extracted() {
     zip.write_all(b"SAFE=1\n").expect("write safe");
     zip.finish().expect("finish");
 
-    let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())
-        .chunks()
-        .flatten()
+    let bodies: Vec<String> = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
+        .into_iter()
         .map(|c| c.data.to_string())
         .collect();
 

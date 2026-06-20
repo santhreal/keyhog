@@ -1,8 +1,8 @@
 //! Valid single-member gzip must still surface inner secrets.
 
+use super::support::collect_chunks;
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 use std::fs::File;
 use std::io::Write;
@@ -20,9 +20,8 @@ fn gzip_single_member_secret_survives() {
     .expect("write");
     enc.finish().expect("finish");
 
-    let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())
-        .chunks()
-        .flatten()
+    let bodies: Vec<String> = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
+        .into_iter()
         .map(|c| c.data.to_string())
         .collect();
     assert!(

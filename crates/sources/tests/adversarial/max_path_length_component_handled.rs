@@ -1,6 +1,6 @@
 //! Very long path components must not panic the walker.
 
-use keyhog_core::Source;
+use super::support::collect_chunks;
 use keyhog_sources::FilesystemSource;
 
 #[test]
@@ -10,9 +10,8 @@ fn max_path_length_component_handled() {
     std::fs::write(dir.path().join(format!("{long_name}.txt")), "LONGNAME=1\n").expect("long");
     std::fs::write(dir.path().join("short.txt"), "SHORT=ok\n").expect("short");
 
-    let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())
-        .chunks()
-        .flatten()
+    let bodies: Vec<String> = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
+        .into_iter()
         .map(|c| c.data.to_string())
         .collect();
 

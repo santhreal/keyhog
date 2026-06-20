@@ -1,6 +1,6 @@
 //! R5-T archive adversarial: nested tar respects extraction budget.
 
-use keyhog_core::Source;
+use super::support::collect_chunks;
 use keyhog_sources::FilesystemSource;
 
 #[test]
@@ -28,12 +28,11 @@ fn r5t_nested_tar_two_levels_budget() {
         outer.into_inner().expect("outer"),
     )
     .expect("write");
-    let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())
-        .with_max_file_size(64)
-        .chunks()
-        .flatten()
-        .map(|c| c.data.to_string())
-        .collect();
+    let bodies: Vec<String> =
+        collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(64))
+            .into_iter()
+            .map(|c| c.data.to_string())
+            .collect();
     assert!(
         !bodies.iter().any(|b| b.contains("SHOULDNOTAPPEAR")),
         "nested tar budget must block; got {bodies:?}"

@@ -2,9 +2,9 @@
 //! dedicated PDF route extracts real PDF text streams while keeping provenance
 //! distinct from the plain filesystem decoder.
 
+use crate::support::collect_chunks;
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
-use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 use std::io::Write;
 
@@ -12,9 +12,8 @@ fn scan_pdf(bytes: Vec<u8>) -> Vec<keyhog_core::Chunk> {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("document.pdf");
     std::fs::write(&path, bytes).expect("write pdf");
-    FilesystemSource::new(dir.path().to_path_buf())
-        .chunks()
-        .flatten()
+    collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
+        .into_iter()
         .collect()
 }
 

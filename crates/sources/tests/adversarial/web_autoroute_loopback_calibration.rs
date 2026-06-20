@@ -1,6 +1,9 @@
 //! Autoroute calibration may fetch a loopback WebSource fixture; normal scans may not.
 
 #[cfg(feature = "web")]
+use super::support::collect_chunks;
+
+#[cfg(feature = "web")]
 #[test]
 fn web_loopback_fetch_requires_explicit_autoroute_calibration() {
     use keyhog_core::Source;
@@ -30,12 +33,8 @@ fn web_loopback_fetch_requires_explicit_autoroute_calibration() {
         "normal loopback block must happen before HTTP"
     );
 
-    let allowed: Vec<_> = TestApi
-        .web_source_with_autoroute_loopback_calibration(vec![url], true)
-        .chunks()
-        .collect();
-
-    let chunks: Vec<_> = allowed.into_iter().flatten().collect();
+    let chunks =
+        collect_chunks(&TestApi.web_source_with_autoroute_loopback_calibration(vec![url], true));
     assert!(
         chunks
             .iter()

@@ -1,6 +1,6 @@
 //! Non-text binary files must fall back to printable-string extraction.
 
-use keyhog_core::Source;
+use crate::support::collect_chunks;
 use keyhog_sources::FilesystemSource;
 
 #[test]
@@ -12,9 +12,8 @@ fn filesystem_binary_strings_fallback() {
     )
     .expect("write");
 
-    let chunks: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
-        .chunks()
-        .flatten()
+    let chunks: Vec<_> = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
+        .into_iter()
         .collect();
     assert!(
         chunks.iter().any(|c| {

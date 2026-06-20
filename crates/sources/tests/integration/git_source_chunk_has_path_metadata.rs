@@ -1,9 +1,9 @@
 //! GitSource chunks must include file path metadata.
 
+use crate::support::collect_chunks;
 #[cfg(feature = "git")]
 #[test]
 fn git_source_chunk_has_path_metadata() {
-    use keyhog_core::Source;
     use keyhog_sources::GitSource;
 
     let (_guard, repo) = crate::support::git::init_repo();
@@ -15,10 +15,8 @@ fn git_source_chunk_has_path_metadata() {
         "init",
     );
 
-    let paths: Vec<String> = GitSource::new(repo)
-        .with_max_commits(1)
-        .chunks()
-        .flatten()
+    let paths: Vec<String> = collect_chunks(&GitSource::new(repo).with_max_commits(1))
+        .into_iter()
         .filter_map(|c| c.metadata.path.clone())
         .collect();
     assert!(

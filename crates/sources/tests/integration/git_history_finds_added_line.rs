@@ -1,9 +1,9 @@
 //! GitHistorySource must surface added lines from commit patches.
 
+use crate::support::collect_chunks;
 #[cfg(feature = "git")]
 #[test]
 fn git_history_finds_added_line() {
-    use keyhog_core::Source;
     use keyhog_sources::GitHistorySource;
 
     let (_guard, repo) = crate::support::git::init_repo();
@@ -20,10 +20,8 @@ NEW_TOKEN=ghp_historyLineAdded00000001
         "add line",
     );
 
-    let bodies: Vec<String> = GitHistorySource::new(repo)
-        .with_max_commits(5)
-        .chunks()
-        .flatten()
+    let bodies: Vec<String> = collect_chunks(&GitHistorySource::new(repo).with_max_commits(5))
+        .into_iter()
         .map(|c| c.data.to_string())
         .collect();
     assert!(

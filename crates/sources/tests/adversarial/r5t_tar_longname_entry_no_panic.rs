@@ -1,6 +1,6 @@
 //! R5-T archive adversarial: tar with long name entry does not panic.
 
-use keyhog_core::Source;
+use super::support::collect_chunks;
 use keyhog_sources::FilesystemSource;
 
 #[test]
@@ -18,8 +18,7 @@ fn r5t_tar_longname_entry_no_panic() {
         tar_builder.into_inner().expect("tar"),
     )
     .expect("write");
-    let _ = FilesystemSource::new(dir.path().to_path_buf())
-        .chunks()
-        .flatten()
+    let _ = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
+        .into_iter()
         .count();
 }

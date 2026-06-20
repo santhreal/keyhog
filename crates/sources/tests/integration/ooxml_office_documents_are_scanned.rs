@@ -11,7 +11,7 @@
 //! member XML and assert the secret's bytes surface as an extracted chunk
 //! (Law 6: assert the real credential, not `!is_empty`).
 
-use keyhog_core::Source;
+use crate::support::collect_chunks;
 use keyhog_sources::FilesystemSource;
 use std::fs::File;
 use zip::write::SimpleFileOptions;
@@ -33,9 +33,8 @@ fn write_zip(path: &std::path::Path, members: &[(&str, String)]) {
 }
 
 fn extracted_bodies(dir: &std::path::Path) -> Vec<String> {
-    FilesystemSource::new(dir.to_path_buf())
-        .chunks()
-        .flatten()
+    collect_chunks(&FilesystemSource::new(dir.to_path_buf()))
+        .into_iter()
         .map(|c| c.data.to_string())
         .collect()
 }

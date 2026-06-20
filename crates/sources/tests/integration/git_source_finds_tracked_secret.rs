@@ -1,9 +1,9 @@
 //! GitSource must emit blob content from tracked files.
 
+use crate::support::collect_chunks;
 #[cfg(feature = "git")]
 #[test]
 fn git_source_finds_tracked_secret() {
-    use keyhog_core::Source;
     use keyhog_sources::GitSource;
 
     let (_guard, repo) = crate::support::git::init_repo();
@@ -15,10 +15,8 @@ fn git_source_finds_tracked_secret() {
         "add secret",
     );
 
-    let bodies: Vec<String> = GitSource::new(repo)
-        .with_max_commits(1)
-        .chunks()
-        .flatten()
+    let bodies: Vec<String> = collect_chunks(&GitSource::new(repo).with_max_commits(1))
+        .into_iter()
         .map(|c| c.data.to_string())
         .collect();
     assert!(

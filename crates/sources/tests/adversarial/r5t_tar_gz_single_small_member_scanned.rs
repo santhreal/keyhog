@@ -1,8 +1,8 @@
 //! R5-T archive adversarial: tar.gz with small text member is scanned.
 
+use super::support::collect_chunks;
 use flate2::write::GzEncoder;
 use flate2::Compression;
-use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 use std::io::Write;
 
@@ -22,9 +22,8 @@ fn r5t_tar_gz_single_small_member_scanned() {
     encoder.write_all(&tar_bytes).expect("gzip");
     let gz = encoder.finish().expect("finish");
     std::fs::write(dir.path().join("fixture.tar.gz"), gz).expect("write");
-    let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())
-        .chunks()
-        .flatten()
+    let bodies: Vec<String> = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
+        .into_iter()
         .map(|c| c.data.to_string())
         .collect();
     assert!(

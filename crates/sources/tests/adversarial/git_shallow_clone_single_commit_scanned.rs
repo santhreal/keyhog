@@ -1,9 +1,9 @@
 //! Shallow git clone (depth 1) must still scan without panic.
 
+use super::support::collect_chunks;
 #[cfg(feature = "git")]
 #[test]
 fn git_shallow_clone_single_commit_scanned() {
-    use keyhog_core::Source;
     use keyhog_sources::GitSource;
     use std::process::Command;
 
@@ -49,9 +49,8 @@ fn git_shallow_clone_single_commit_scanned() {
         .expect("git clone")
         .success());
 
-    let bodies: Vec<String> = GitSource::new(shallow.path().to_path_buf())
-        .chunks()
-        .flatten()
+    let bodies: Vec<String> = collect_chunks(&GitSource::new(shallow.path().to_path_buf()))
+        .into_iter()
         .map(|c| c.data.to_string())
         .collect();
     assert!(

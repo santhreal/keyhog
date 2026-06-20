@@ -800,9 +800,15 @@ fn sources_tests_do_not_flatten_source_chunk_results() {
         }
         let source = std::fs::read_to_string(&path)
             .unwrap_or_else(|error| panic!("read {} failed: {error}", path.display()));
+        let compact: String = source.chars().filter(|ch| !ch.is_whitespace()).collect();
         assert!(
-            !source.contains(".chunks().flatten()"),
-            "test {} must use support::collect_chunks/count_chunks or assert SourceError explicitly; `.chunks().flatten()` drops SourceError items",
+            !compact.contains(".chunks().flatten()"),
+            "test {} must use support::collect_chunks/count_chunks or assert SourceError explicitly; a `chunks().flatten()` chain drops SourceError items even when split across lines",
+            path.display()
+        );
+        assert!(
+            !compact.contains(".into_iter().flatten()"),
+            "test {} must not collect Source::chunks Result rows and flatten them afterward; assert SourceError rows explicitly or use the fail-loud collector",
             path.display()
         );
     }

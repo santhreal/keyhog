@@ -1,6 +1,6 @@
 //! Unicode entry names inside jar archives must unpack and scan.
 
-use keyhog_core::Source;
+use super::support::collect_chunks;
 use keyhog_sources::FilesystemSource;
 use std::fs::File;
 use std::io::Write;
@@ -21,9 +21,8 @@ fn unicode_filename_in_jar_scanned() {
     .expect("write");
     zip.finish().expect("finish");
 
-    let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())
-        .chunks()
-        .flatten()
+    let bodies: Vec<String> = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
+        .into_iter()
         .map(|c| c.data.to_string())
         .collect();
     assert!(

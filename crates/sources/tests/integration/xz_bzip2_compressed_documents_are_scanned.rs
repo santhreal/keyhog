@@ -1,8 +1,8 @@
 //! xz and bzip2 are compressed source containers, not binary skip extensions.
 
+use crate::support::collect_chunks;
 use bzip2::write::BzEncoder;
 use bzip2::Compression;
-use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 use std::io::Write;
 use xz2::write::XzEncoder;
@@ -10,9 +10,8 @@ use xz2::write::XzEncoder;
 fn scan_file(name: &str, bytes: Vec<u8>) -> Vec<keyhog_core::Chunk> {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join(name), bytes).expect("write compressed fixture");
-    FilesystemSource::new(dir.path().to_path_buf())
-        .chunks()
-        .flatten()
+    collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
+        .into_iter()
         .collect()
 }
 

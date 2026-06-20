@@ -11,13 +11,15 @@
 //! single bad byte no longer discards the blob.
 //!
 //! Exercised through the public `Source` streaming API (`GitSource::chunks`).
-
 #![cfg(feature = "git")]
+
+mod support;
+
+use support::collect_chunks;
 
 use std::path::Path;
 use std::process::Command;
 
-use keyhog_core::Source;
 use keyhog_sources::GitSource;
 
 fn git(repo: &Path, args: &[&str]) {
@@ -58,12 +60,11 @@ fn git_source_scans_blob_with_non_utf8_byte() {
     git(repo, &["add", "config.ini"]);
     git(repo, &["commit", "-m", "add config with stray high byte"]);
 
-    let bodies: Vec<String> = GitSource::new(repo.to_path_buf())
-        .with_max_commits(1)
-        .chunks()
-        .flatten()
-        .map(|c| c.data.to_string())
-        .collect();
+    let bodies: Vec<String> =
+        collect_chunks(&GitSource::new(repo.to_path_buf()).with_max_commits(1))
+            .into_iter()
+            .map(|c| c.data.to_string())
+            .collect();
 
     assert!(
         bodies.iter().any(|b| b.contains("AKIAIOSFODNN7EXAMPLE")),

@@ -3,19 +3,22 @@
 //! layer. Regression for the wiring gap where a secret committed inside
 //! `package-lock.json` stayed silently excluded even with the flag set.
 
-use keyhog_core::{Chunk, Source};
+mod support;
+
+use keyhog_core::Chunk;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource};
 use std::fs;
+use support::collect_chunks;
 
 static SKIP_COUNTER_GUARD: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 fn scan_dir(dir: &std::path::Path, respect_default_excludes: bool) -> Vec<Chunk> {
-    FilesystemSource::new(dir.to_path_buf())
-        .with_default_excludes(respect_default_excludes)
-        .chunks()
-        .flatten()
-        .collect()
+    collect_chunks(
+        &FilesystemSource::new(dir.to_path_buf()).with_default_excludes(respect_default_excludes),
+    )
+    .into_iter()
+    .collect()
 }
 
 fn body_contains(chunks: &[Chunk], needle: &str) -> bool {
@@ -88,11 +91,11 @@ fn default_excludes_apply_to_direct_include_paths_by_relative_path() {
     fs::write(&secret, format!("TOKEN={SENTINEL}\n")).unwrap();
 
     TestApi.reset_skip_counters();
-    let skipped = FilesystemSource::new(dir.path().to_path_buf())
-        .with_include_paths(vec![secret.clone()])
-        .chunks()
-        .flatten()
-        .collect::<Vec<_>>();
+    let skipped = collect_chunks(
+        &FilesystemSource::new(dir.path().to_path_buf()).with_include_paths(vec![secret.clone()]),
+    )
+    .into_iter()
+    .collect::<Vec<_>>();
     assert!(
         !body_contains(&skipped, SENTINEL),
         "source-owned default excludes must classify direct include paths by relative path"
@@ -104,12 +107,13 @@ fn default_excludes_apply_to_direct_include_paths_by_relative_path() {
     );
 
     TestApi.reset_skip_counters();
-    let included = FilesystemSource::new(dir.path().to_path_buf())
-        .with_include_paths(vec![secret])
-        .with_default_excludes(false)
-        .chunks()
-        .flatten()
-        .collect::<Vec<_>>();
+    let included = collect_chunks(
+        &FilesystemSource::new(dir.path().to_path_buf())
+            .with_include_paths(vec![secret])
+            .with_default_excludes(false),
+    )
+    .into_iter()
+    .collect::<Vec<_>>();
     assert!(
         body_contains(&included, SENTINEL),
         "--no-default-excludes must scan the direct include path"

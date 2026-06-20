@@ -365,12 +365,13 @@ fn cap_applies_to_included_single_file() {
     let big = "I=".to_string() + &"w".repeat(1000);
     fs::write(&path, &big).unwrap();
 
-    let chunks: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
-        .with_include_paths(vec![path.clone()])
-        .with_max_file_size(128)
-        .chunks()
-        .flatten()
-        .collect();
+    let chunks: Vec<_> = collect_chunks(
+        &FilesystemSource::new(dir.path().to_path_buf())
+            .with_include_paths(vec![path.clone()])
+            .with_max_file_size(128),
+    )
+    .into_iter()
+    .collect();
     assert_eq!(chunks.len(), 0, "cap must apply on the include path too");
 }
 

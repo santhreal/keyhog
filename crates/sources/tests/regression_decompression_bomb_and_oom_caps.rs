@@ -11,14 +11,16 @@
 //! Own test binary: the skip counters are process-global atomics. A per-file
 //! `MUTEX` serialises the counter-asserting tests so they don't race each other
 //! within this binary (cargo runs tests in a binary in parallel by default).
-
 #![cfg(unix)]
+
+mod support;
 
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource};
 use std::io::Write as _;
 use std::sync::Mutex;
+use support::collect_chunks;
 
 /// Serialises the process-global skip-counter assertions in THIS binary.
 static COUNTER_LOCK: Mutex<()> = Mutex::new(());
@@ -117,9 +119,8 @@ fn healthy_zip_is_not_counted_as_truncated() {
 
     TestApi.reset_skip_counters();
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(1024 * 1024);
-    let bodies: Vec<String> = source
-        .chunks()
-        .flatten()
+    let bodies: Vec<String> = collect_chunks(&source)
+        .into_iter()
         .map(|c| c.data.to_string())
         .collect();
     assert_eq!(
@@ -161,9 +162,8 @@ fn zip_with_unlimited_max_file_size_is_fully_extracted() {
     TestApi.reset_skip_counters();
     // max_file_size = 0 => unlimited per-file cap.
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(0);
-    let bodies: Vec<String> = source
-        .chunks()
-        .flatten()
+    let bodies: Vec<String> = collect_chunks(&source)
+        .into_iter()
         .map(|c| c.data.to_string())
         .collect();
 
@@ -212,9 +212,8 @@ fn symlinked_archive_in_tree_is_not_expanded_and_is_counted() {
 
     TestApi.reset_skip_counters();
     let source = FilesystemSource::new(walked.path().to_path_buf());
-    let bodies: Vec<String> = source
-        .chunks()
-        .flatten()
+    let bodies: Vec<String> = collect_chunks(&source)
+        .into_iter()
         .map(|c| c.data.to_string())
         .collect();
 

@@ -1,6 +1,6 @@
 //! Single archive entries declaring uncompressed size above max_file_size are skipped.
 
-use keyhog_core::Source;
+use super::support::collect_chunks;
 use keyhog_sources::FilesystemSource;
 use std::fs::File;
 use std::io::Write;
@@ -27,9 +27,8 @@ fn zip_entry_over_per_file_cap_skipped() {
     zip.finish().expect("finish bomb");
 
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(512);
-    let bodies: Vec<String> = source
-        .chunks()
-        .flatten()
+    let bodies: Vec<String> = collect_chunks(&source)
+        .into_iter()
         .map(|c| c.data.to_string())
         .collect();
 

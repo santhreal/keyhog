@@ -9,9 +9,12 @@
 //! Own test binary: `skip_counts()` reads process-global atomics, so this is
 //! isolated from the parallel integration pool and can assert exact counts.
 
+mod support;
+
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource};
+use support::collect_chunks;
 
 #[test]
 fn explicitly_included_unreadable_path_is_counted_not_silently_dropped() {
@@ -53,12 +56,12 @@ fn explicitly_included_unreadable_path_is_counted_not_silently_dropped() {
     TestApi.reset_skip_counters();
     let real = dir.path().join("real.env");
     std::fs::write(&real, b"AWS=AKIAQYLPMN5HFIQR7XYA\n").expect("write");
-    let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())
-        .with_include_paths(vec![real])
-        .chunks()
-        .flatten()
-        .map(|c| c.data.to_string())
-        .collect();
+    let bodies: Vec<String> = collect_chunks(
+        &FilesystemSource::new(dir.path().to_path_buf()).with_include_paths(vec![real]),
+    )
+    .into_iter()
+    .map(|c| c.data.to_string())
+    .collect();
     assert!(
         bodies.iter().any(|b| b.contains("AKIAQYLPMN5HFIQR7XYA")),
         "a real included file must still be scanned; got {bodies:?}"
