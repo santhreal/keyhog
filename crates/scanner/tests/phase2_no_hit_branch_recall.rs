@@ -486,6 +486,58 @@ fn isolated_dictionary_password_with_one_symbol_stays_below_symbol_recovery() {
 
 #[cfg(feature = "entropy")]
 #[test]
+fn isolated_bang_led_symbolic_entropy_secret_bypasses_punctuation_gate() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+    let secret =
+        "!t1c!_Axt_7ARTF*Pzzl8L8qY*XoT5AiY2Yo-ppyTjrjvA0JAM2UPZFE1iFJa4U2q=#GhFKv&2UJR7wOQqIiQ6qWW";
+    let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
+
+    let matches = scanner.scan(&chunk);
+    let entropy_fired = matches.iter().any(|m| {
+        m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
+    });
+    assert!(
+        entropy_fired,
+        "a long high-entropy credential that legitimately starts with `!` must \
+         not be discarded as a punctuation-decorated identifier; matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
+fn isolated_js_coercion_identifier_stays_below_bang_led_recovery() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+    let identifier = "!!apiKeyOrOAuthToken1234567890CredentialName";
+    let chunk = make_chunk(identifier, "notes/sufficiency-probe.txt");
+
+    let matches = scanner.scan(&chunk);
+    let entropy_fired = matches.iter().any(|m| {
+        m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(identifier)
+    });
+    assert!(
+        !entropy_fired,
+        "JS truthy-coercion / decorated identifier shapes must stay suppressed \
+         even though long `!`-led opaque credential bodies are recoverable; \
+         matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
 fn isolated_mixed_underscore_entropy_secret_enters_direct_scan_prefilter_recovery() {
     let mut config = ScannerConfig::default();
     config.min_confidence = 0.0;

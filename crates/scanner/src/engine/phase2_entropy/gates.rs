@@ -169,9 +169,11 @@ pub(crate) fn entropy_match_suppressed(
     if crate::pipeline::looks_like_scheme_prefixed_uri(&entropy_match.value) {
         return true;
     }
-    let high_entropy_punctuation_payload = entropy_match.entropy >= 4.8
-        && entropy_match.value.len() >= 40
-        && (entropy_match.value.contains('+') || entropy_match.value.contains('/'));
+    let high_entropy_punctuation_payload =
+        crate::suppression::shape::looks_like_high_entropy_punctuation_payload(
+            &entropy_match.value,
+            entropy_match.entropy,
+        );
     // Punctuation-decorated identifier (`--api-secret`,
     // `&gss_token`, `@v_password`, `!!apiKey`, `Password:`,
     // `privateAccessToken!`, `/etc/passwd:/etc/passwd:ro`).

@@ -218,7 +218,7 @@ impl CompiledScanner {
         // `!!apiKeyOrOAuthToken` (JS coercion), `Password:` (UI label),
         // `privateAccessToken!` (TS non-null assertion).
         let high_entropy_punctuation_payload =
-            entropy >= 4.8 && value.len() >= 40 && (value.contains('+') || value.contains('/'));
+            crate::suppression::shape::looks_like_high_entropy_punctuation_payload(value, entropy);
         if !high_entropy_punctuation_payload
             && crate::pipeline::looks_like_punctuation_decorated_identifier(value)
         {

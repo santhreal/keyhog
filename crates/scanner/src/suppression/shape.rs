@@ -392,6 +392,48 @@ pub(crate) fn looks_like_url_or_path_segment(value: &str) -> bool {
     })
 }
 
+/// True for opaque high-entropy punctuation payloads where punctuation is part
+/// of the credential body, not syntax around an identifier. This is shared by
+/// the generic and entropy emit paths so the base64 and symbolic-secret
+/// carve-outs do not drift.
+pub(crate) fn looks_like_high_entropy_punctuation_payload(value: &str, entropy: f64) -> bool {
+    if entropy < 4.8 || value.len() < 40 {
+        return false;
+    }
+    if value.contains('+') || value.contains('/') {
+        return true;
+    }
+    looks_like_bang_led_opaque_secret(value)
+}
+
+fn looks_like_bang_led_opaque_secret(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if !bytes.starts_with(b"!") || bytes.starts_with(b"!!") {
+        return false;
+    }
+
+    let mut has_alpha = false;
+    let mut has_digit = false;
+    let mut alnum = 0usize;
+    let mut punctuation = 0usize;
+    for &byte in bytes {
+        if !byte.is_ascii_graphic() {
+            return false;
+        }
+        if byte.is_ascii_alphabetic() {
+            has_alpha = true;
+            alnum += 1;
+        } else if byte.is_ascii_digit() {
+            has_digit = true;
+            alnum += 1;
+        } else {
+            punctuation += 1;
+        }
+    }
+
+    has_alpha && has_digit && punctuation >= 4 && alnum * 2 >= bytes.len()
+}
+
 /// True if `value` ends in a regex-literal sigil (`)/g`, `]+`, `})\\b`,
 /// `)?$`, etc.). These are JavaScript / Python / Go / Rust regex pattern
 /// definitions captured by a credential detector running on a *secret
