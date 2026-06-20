@@ -83,10 +83,12 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
     );
     assert!(
         dispatch_src.contains("build_phase2_gpu_admission_workload")
-            && dispatch_src.contains("phase2_gpu_workload.chunks.as_slice()")
+            && dispatch_src.contains("Phase2GpuAdmissionWorkload::Full")
+            && dispatch_src.contains("scan_admission_chunks")
+            && dispatch_src.contains("Phase2GpuAdmissionWorkload::Subset")
             && dispatch_src.contains("scan_admission_refs")
             && !dispatch_src.contains("catalog.scan_admission(&**backend, chunks)"),
-        "phase-2 GPU DFA admission must scan only no-trigger chunks; chunks with phase-1 trigger bits already enter the shared phase-2 tail"
+        "phase-2 GPU DFA admission must reuse the original chunk slice for all-no-trigger batches and allocate subset refs only for mixed batches; chunks with phase-1 trigger bits already enter the shared phase-2 tail"
     );
     assert!(
         dispatch_src.contains("validate_phase2_gpu_trigger_rows")
@@ -151,10 +153,14 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
     assert!(
         gpu_dfa_workload_src.contains("validate_phase2_gpu_trigger_rows")
             && gpu_dfa_workload_src.contains("build_phase2_gpu_admission_workload")
+            && gpu_dfa_workload_src.contains("Phase2GpuAdmissionWorkload::Full")
+            && gpu_dfa_workload_src.contains("Phase2GpuAdmissionWorkload::Subset")
+            && gpu_dfa_workload_src.contains("Phase2GpuAdmissionWorkload::Empty")
+            && gpu_dfa_workload_src.contains("Vec::with_capacity(selected_count)")
             && gpu_dfa_workload_src.contains("expand_phase2_gpu_admission")
             && gpu_dfa_workload_src.contains("trigger_has_bits")
             && gpu_dfa_workload_src.contains("length_mismatch"),
-        "phase-2 GPU DFA trigger-row validation, no-hit workload shaping, and full-batch expansion must live in engine/phase2_gpu_dfa/workload.rs"
+        "phase-2 GPU DFA trigger-row validation, no-hit workload shaping, full-batch reuse, and full-batch expansion must live in engine/phase2_gpu_dfa/workload.rs"
     );
     assert!(
         !gpu_dfa_src.contains("pack_haystack_u32_into")

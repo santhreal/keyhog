@@ -8,9 +8,10 @@
 //! and dispatch failures continue through the CPU admission gate.
 
 #[cfg(test)]
-use self::batch::{build_packed_region_batch, ZeroPhase2GpuDfaScratch};
+use self::batch::ZeroPhase2GpuDfaScratch;
 use self::batch::{
-    build_packed_region_batch_refs, with_phase2_gpu_dfa_scratch, Phase2GpuDfaScratch,
+    build_packed_region_batch, build_packed_region_batch_refs, with_phase2_gpu_dfa_scratch,
+    Phase2GpuDfaScratch,
 };
 #[cfg(test)]
 use self::candidates::valid_phase2_gpu_dfa_candidates;
@@ -23,6 +24,7 @@ use self::lowering::regex_dfa_source_for_pattern;
 #[cfg(test)]
 use self::shard::match_region;
 use self::shard::Phase2GpuDfaShard;
+pub(super) use self::workload::Phase2GpuAdmissionWorkload;
 pub(crate) use self::workload::Phase2GpuDfaAdmission;
 pub(super) use self::workload::{
     build_phase2_gpu_admission_workload, expand_phase2_gpu_admission,
@@ -175,6 +177,16 @@ impl Phase2GpuDfaCatalog {
     ) -> std::result::Result<Phase2GpuDfaAdmission, String> {
         self.scan_admission_with_builder(backend, chunks.len(), |scratch| {
             build_packed_region_batch_refs(chunks, scratch)
+        })
+    }
+
+    pub(crate) fn scan_admission_chunks(
+        &self,
+        backend: &dyn vyre::VyreBackend,
+        chunks: &[keyhog_core::Chunk],
+    ) -> std::result::Result<Phase2GpuDfaAdmission, String> {
+        self.scan_admission_with_builder(backend, chunks.len(), |scratch| {
+            build_packed_region_batch(chunks, scratch)
         })
     }
 

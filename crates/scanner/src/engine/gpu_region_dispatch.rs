@@ -19,7 +19,7 @@ use super::gpu_region_batch::{
 };
 use super::phase2_gpu_dfa::{
     build_phase2_gpu_admission_workload, expand_phase2_gpu_admission,
-    validate_phase2_gpu_trigger_rows, Phase2GpuDfaAdmission,
+    validate_phase2_gpu_trigger_rows, Phase2GpuAdmissionWorkload, Phase2GpuDfaAdmission,
 };
 use super::*;
 use crate::hw_probe::ScanBackend;
@@ -257,33 +257,52 @@ impl CompiledScanner {
                 return degrade(error.to_string());
             }
             let phase2_gpu_workload = build_phase2_gpu_admission_workload(chunks, &triggers);
-            let phase2_gpu_admission = if phase2_gpu_workload.chunks.is_empty() {
-                Some(Phase2GpuDfaAdmission {
-                    admitted: vec![false; chunks.len()],
+            let phase2_gpu_admission = match phase2_gpu_workload {
+                Phase2GpuAdmissionWorkload::Empty { full_len } => Some(Phase2GpuDfaAdmission {
+                    admitted: vec![false; full_len],
                     complete: true,
                     matches_seen: 0,
-                })
-            } else {
-                match self.phase2_gpu_dfa_catalog(Some(backend.id())) {
-                    Some(catalog) => match catalog
-                        .scan_admission_refs(&**backend, phase2_gpu_workload.chunks.as_slice())
-                    {
-                        Ok(admission) => Some(expand_phase2_gpu_admission(
-                            admission,
-                            &phase2_gpu_workload.indices,
-                            chunks.len(),
-                        )),
-                        Err(error) => {
-                            tracing::warn!(
-                                target: "keyhog::gpu",
-                                %error,
-                                "phase-2 GPU regex-DFA admission failed; CPU admission remains authoritative"
-                            );
-                            None
+                }),
+                Phase2GpuAdmissionWorkload::Full { chunks: gpu_chunks } => {
+                    match self.phase2_gpu_dfa_catalog(Some(backend.id())) {
+                        Some(catalog) => {
+                            match catalog.scan_admission_chunks(&**backend, gpu_chunks) {
+                                Ok(admission) => Some(admission),
+                                Err(error) => {
+                                    tracing::warn!(
+                                        target: "keyhog::gpu",
+                                        %error,
+                                        "phase-2 GPU regex-DFA admission failed; CPU admission remains authoritative"
+                                    );
+                                    None
+                                }
+                            }
                         }
-                    },
-                    None => None,
+                        None => None,
+                    }
                 }
+                Phase2GpuAdmissionWorkload::Subset {
+                    indices,
+                    chunks: gpu_chunks,
+                    full_len,
+                } => match self.phase2_gpu_dfa_catalog(Some(backend.id())) {
+                    Some(catalog) => {
+                        match catalog.scan_admission_refs(&**backend, gpu_chunks.as_slice()) {
+                            Ok(admission) => {
+                                Some(expand_phase2_gpu_admission(admission, &indices, full_len))
+                            }
+                            Err(error) => {
+                                tracing::warn!(
+                                    target: "keyhog::gpu",
+                                    %error,
+                                    "phase-2 GPU regex-DFA admission failed; CPU admission remains authoritative"
+                                );
+                                None
+                            }
+                        }
+                    }
+                    None => None,
+                },
             };
             let phase2_gpu_s = t_phase2_gpu.elapsed();
 
@@ -451,10 +470,55 @@ mod tests {
 
         let workload = build_phase2_gpu_admission_workload(&chunks, &triggers);
 
-        assert_eq!(workload.indices, vec![1, 2]);
-        assert_eq!(workload.chunks.len(), 2);
-        assert_eq!(workload.chunks[0].data.as_ref(), "no-trigger-none");
-        assert_eq!(workload.chunks[1].data.as_ref(), "no-trigger-zero-row");
+        let Phase2GpuAdmissionWorkload::Subset {
+            indices,
+            chunks: selected_chunks,
+            full_len,
+        } = workload
+        else {
+            panic!("mixed triggered/no-trigger batch must build subset workload");
+        };
+        assert_eq!(full_len, 4);
+        assert_eq!(indices, vec![1, 2]);
+        assert_eq!(selected_chunks.len(), 2);
+        assert_eq!(selected_chunks[0].data.as_ref(), "no-trigger-none");
+        assert_eq!(selected_chunks[1].data.as_ref(), "no-trigger-zero-row");
+    }
+
+    #[test]
+    fn phase2_gpu_admission_workload_uses_original_slice_for_all_no_trigger_chunks() {
+        let chunks = [
+            keyhog_core::Chunk::from("no-trigger-none"),
+            keyhog_core::Chunk::from("no-trigger-zero-row"),
+        ];
+        let triggers = vec![None, Some(vec![0])];
+
+        let workload = build_phase2_gpu_admission_workload(&chunks, &triggers);
+
+        let Phase2GpuAdmissionWorkload::Full {
+            chunks: selected_chunks,
+        } = workload
+        else {
+            panic!("all no-trigger batch must use full-slice workload");
+        };
+        assert_eq!(selected_chunks.as_ptr(), chunks.as_ptr());
+        assert_eq!(selected_chunks.len(), chunks.len());
+    }
+
+    #[test]
+    fn phase2_gpu_admission_workload_skips_gpu_dfa_when_every_chunk_already_triggered() {
+        let chunks = [
+            keyhog_core::Chunk::from("triggered"),
+            keyhog_core::Chunk::from("also-triggered"),
+        ];
+        let triggers = vec![Some(vec![1]), Some(vec![0, 8])];
+
+        let workload = build_phase2_gpu_admission_workload(&chunks, &triggers);
+
+        let Phase2GpuAdmissionWorkload::Empty { full_len } = workload else {
+            panic!("all-triggered batch must skip phase-2 GPU DFA dispatch");
+        };
+        assert_eq!(full_len, chunks.len());
     }
 
     #[test]

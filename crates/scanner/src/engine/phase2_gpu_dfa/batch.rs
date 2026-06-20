@@ -62,7 +62,6 @@ pub(super) fn with_phase2_gpu_dfa_scratch<R>(
         })?
 }
 
-#[cfg(test)]
 pub(super) fn build_packed_region_batch(
     chunks: &[keyhog_core::Chunk],
     scratch: &mut Phase2GpuDfaScratch,

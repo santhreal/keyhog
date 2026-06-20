@@ -6,9 +6,18 @@ pub(crate) struct Phase2GpuDfaAdmission {
     pub(crate) matches_seen: usize,
 }
 
-pub(in crate::engine) struct Phase2GpuAdmissionWorkload<'a> {
-    pub(in crate::engine) indices: Vec<usize>,
-    pub(in crate::engine) chunks: Vec<&'a keyhog_core::Chunk>,
+pub(in crate::engine) enum Phase2GpuAdmissionWorkload<'a> {
+    Empty {
+        full_len: usize,
+    },
+    Full {
+        chunks: &'a [keyhog_core::Chunk],
+    },
+    Subset {
+        indices: Vec<usize>,
+        chunks: Vec<&'a keyhog_core::Chunk>,
+        full_len: usize,
+    },
 }
 
 fn trigger_has_bits(trigger: Option<&[u64]>) -> bool {
@@ -31,8 +40,28 @@ pub(in crate::engine) fn build_phase2_gpu_admission_workload<'a>(
     chunks: &'a [keyhog_core::Chunk],
     triggers: &[Option<Vec<u64>>],
 ) -> Phase2GpuAdmissionWorkload<'a> {
-    let mut indices = Vec::new();
-    let mut selected_chunks = Vec::new();
+    let selected_count = chunks
+        .iter()
+        .enumerate()
+        .filter(|(idx, _chunk)| {
+            !trigger_has_bits(
+                triggers
+                    .get(*idx)
+                    .and_then(|trigger| trigger.as_ref().map(Vec::as_slice)),
+            )
+        })
+        .count();
+    if selected_count == 0 {
+        return Phase2GpuAdmissionWorkload::Empty {
+            full_len: chunks.len(),
+        };
+    }
+    if selected_count == chunks.len() {
+        return Phase2GpuAdmissionWorkload::Full { chunks };
+    }
+
+    let mut indices = Vec::with_capacity(selected_count);
+    let mut selected_chunks = Vec::with_capacity(selected_count);
     for (idx, chunk) in chunks.iter().enumerate() {
         if trigger_has_bits(
             triggers
@@ -44,9 +73,10 @@ pub(in crate::engine) fn build_phase2_gpu_admission_workload<'a>(
         indices.push(idx);
         selected_chunks.push(chunk);
     }
-    Phase2GpuAdmissionWorkload {
+    Phase2GpuAdmissionWorkload::Subset {
         indices,
         chunks: selected_chunks,
+        full_len: chunks.len(),
     }
 }
 
