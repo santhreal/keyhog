@@ -37,27 +37,9 @@ impl CompiledScanner {
         };
 
         for offset in sieve {
-            // First-byte (plus one disambiguating byte) dispatch instead of
-            // an O(8) linear re-compare against every HOT_PATTERNS entry at
-            // every sieve hit. SimdSieve already located the hit but only
-            // yields the offset, so we still have to identify WHICH literal
-            // matched - but the 8 hot literals are mutually-exclusive
-            // prefixes keyed by their first byte (`g`/`s`/`A`/`S`/`x`), so a
-            // single byte (two for the `s`/`A`/`x` collision pairs) selects
-            // the lone candidate. That collapses the per-hit cost from 8 full
-            // slice compares to one dispatch + one confirming compare. The
-            // returned index is verified against the full literal below so
-            // behavior is byte-identical to the old linear scan, just without
-            // the redundant 7 compares.
-            //
-            //   0 ghp_     `g`
-            //   1 sk-proj- `s` then `k`
-            //   2 AKIA     `A` then `K`
-            //   3 ASIA     `A` then `S`
-            //   4 SG.      `S`
-            //   5 xoxb-    `x` then 4th byte `b`
-            //   6 xoxp-    `x` then 4th byte `p`
-            //   7 sq0csp-  `s` then `q`
+            // Resolve the SimdSieve offset to one table slot without a
+            // linear HOT_PATTERNS scan. The full literal compare below remains
+            // the verifier; this only handles first-byte collision families.
             let Some(pattern_idx) = hot_pattern_index_at(text_bytes, offset) else {
                 continue;
             };
@@ -154,16 +136,8 @@ impl CompiledScanner {
                 // floor turns every `SG.length` / `ghp_xxxx` / `xoxb-abc`
                 // substring into a hard finding.
                 //
-                // Index aligns with simdsieve_prefilter::HOT_PATTERNS:
-                //   0 ghp_      40  (ghp_ + 36 base62 = real GitHub PAT)
-                //   1 sk-proj-  20  (sk-proj- + 12 - anthropic/openai newer keys)
-                //   2 AKIA      20  (AKIA + 16 - already tightened, scanner_stress)
-                //   3 ASIA      20  (ASIA + 16 - temporary AWS sts session creds)
-                //   4 SG.       26  (SG. + 22 first-segment base64 minimum;
-                //                    full SG.X22+.Y43+ is 69+ chars total)
-                //   5 xoxb-     16  (xoxb- + 11 alnum minimum slack bot token)
-                //   6 xoxp-     16  (xoxp- + 11 alnum minimum slack user token)
-                //   7 sq0csp-   16  (sq0csp- + 9 alnum minimum square secret)
+                // Index-parallel floors: ghp=40, sk-proj=20, AKIA/ASIA=20,
+                // SG=26, Slack/Square=16, Stripe=32.
                 //
                 // Dogfood: pre-tightening the v0.5.19 binary fired
                 // `SG.length` in claude-code's OAuthFlowStep.tsx
@@ -171,7 +145,8 @@ impl CompiledScanner {
                 // sendgrid_key. SG. floor of 8 meant `SG.length` (9
                 // chars) cleared. 26-floor leaves the first-segment
                 // shape intact while killing the JS-property FP.
-                const PER_PATTERN_MIN_LEN: &[usize] = &[40, 20, 20, 20, 26, 16, 16, 16];
+                const PER_PATTERN_MIN_LEN: &[usize] =
+                    &[40, 20, 20, 20, 26, 16, 16, 16, 32, 32, 32, 32];
                 let min_len = PER_PATTERN_MIN_LEN.get(pattern_idx).copied().unwrap_or(8); // LAW10: bounds-checked lookup; out-of-range => documented default (total fn), recall-safe
                 if credential.len() < min_len
                     || crate::pipeline::should_suppress_known_example_credential_with_source(
@@ -340,31 +315,16 @@ impl CompiledScanner {
                     },
                 );
                 // A single sieve offset can match at most one hot literal
-                // (the 8 are mutually-exclusive prefixes), so there is no
+                // (the prefixes are mutually-exclusive), so there is no
                 // remaining candidate to skip - fall through to the next
-                // offset. This replaces the old `break` out of the per-offset
-                // 8-pattern loop, which is now gone.
+                // offset. This replaces the old per-offset pattern loop.
             }
         }
     }
 }
 
-/// Resolve a sieve hit at `offset` to the single
-/// [`crate::simdsieve_prefilter::HOT_PATTERNS`] index whose literal can begin
-/// there, or `None` if no hot literal does.
-///
-/// SimdSieve yields only the offset of a prefix hit, not which needle fired,
-/// so the caller would otherwise re-compare all 8 hot literals at every hit
-/// (`O(hits x 8 x patternlen)`). The 8 hot literals are mutually-exclusive
-/// prefixes keyed almost entirely by their first byte, so one byte (a second
-/// byte for the `s`/`A`/`x` collision pairs) selects the lone candidate. The
-/// caller still confirms the full literal, so this is a dispatch, not the
-/// verification - a wrong tail (`xoxq-`, `sk-Xroj-`) is rejected by the
-/// caller's full-slice compare exactly as before.
-///
-/// Index-parallel with [`crate::simdsieve_prefilter::HOT_PATTERNS`]:
-///   0 `ghp_`  1 `sk-proj-`  2 `AKIA`  3 `ASIA`
-///   4 `SG.`   5 `xoxb-`     6 `xoxp-` 7 `sq0csp-`
+/// Resolve a sieve hit to the single HOT_PATTERNS slot that can begin there.
+/// The caller still verifies the full literal; this is dispatch only.
 #[cfg(feature = "simdsieve")]
 #[inline]
 fn hot_pattern_index_at(text_bytes: &[u8], offset: usize) -> Option<usize> {
@@ -373,11 +333,21 @@ fn hot_pattern_index_at(text_bytes: &[u8], offset: usize) -> Option<usize> {
         b'g' => Some(0), // ghp_
         b'S' => Some(4), // SG.
         b's' => match *rest.get(1)? {
-            // sk-proj- vs sq0csp-
-            b'k' => Some(1),
+            b'k' if rest.starts_with(b"sk-proj-") => Some(1),
+            b'k' if rest.starts_with(b"sk_live_") => Some(8),
+            b'k' if rest.starts_with(b"sk_test_") => Some(9),
             b'q' => Some(7),
             _ => None,
         },
+        b'r' => {
+            if rest.starts_with(b"rk_live_") {
+                Some(10)
+            } else if rest.starts_with(b"rk_test_") {
+                Some(11)
+            } else {
+                None
+            }
+        }
         b'A' => match *rest.get(1)? {
             // AKIA vs ASIA
             b'K' => Some(2),

@@ -1,6 +1,6 @@
 //! SIMD-accelerated prefilter for the top N most common secret patterns.
 //!
-//! `simdsieve` checks keyhog's 8 hot prefixes in a single AVX-512/AVX2/NEON
+//! `simdsieve` checks keyhog's hot prefixes in a single AVX-512/AVX2/NEON
 //! pass. (The crate's 50+ GB/s headline is its single-byte-prefix peak;
 //! multi-byte prefixes like these run lower — throughput scales down with
 //! prefix length — but still far faster than running AC/regex on every byte.)
@@ -17,6 +17,10 @@ pub(crate) const HOT_PATTERNS: &[&[u8]] = &[
     b"xoxb-",
     b"xoxp-",
     b"sq0csp-",
+    b"sk_live_",
+    b"sk_test_",
+    b"rk_live_",
+    b"rk_test_",
 ];
 
 /// `service` field per hot pattern - the CANONICAL service of the detector
@@ -30,7 +34,8 @@ pub(crate) const HOT_PATTERNS: &[&[u8]] = &[
 /// platforms agree and matches what `keyhog explain` already resolves hot ids
 /// to. Index-parallel with HOT_PATTERNS / the two arrays below.
 pub(crate) const HOT_PATTERN_NAMES: &[&str] = &[
-    "github", "openai", "aws", "aws", "sendgrid", "slack", "slack", "square",
+    "github", "openai", "aws", "aws", "sendgrid", "slack", "slack", "square", "stripe", "stripe",
+    "stripe", "stripe",
 ];
 
 /// Canonical `detector_id` per hot pattern - the id of the named detector the
@@ -59,6 +64,10 @@ pub(crate) const HOT_PATTERN_DETECTOR_IDS: &[&str] = &[
     "slack-bot-token",
     "slack-user-token",
     "hot-square_secret",
+    "stripe-secret-key",
+    "stripe-secret-key",
+    "stripe-secret-key",
+    "stripe-secret-key",
 ];
 
 /// Canonical human-readable detector name per hot pattern (matches the `name`
@@ -73,6 +82,10 @@ pub(crate) const HOT_PATTERN_DISPLAY_NAMES: &[&str] = &[
     "Slack Bot Token",
     "Slack User Token",
     "Square Secret",
+    "Stripe Secret Key",
+    "Stripe Secret Key",
+    "Stripe Secret Key",
+    "Stripe Secret Key",
 ];
 
 /// Build a precise-regex validator for each hot-pattern slot, index-parallel

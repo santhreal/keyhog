@@ -34,6 +34,9 @@ use super::scan_postprocess_profile::{ml_batch_prof_enabled, ml_batch_record};
 pub(crate) use super::scan_postprocess_profile::{ml_batch_profile_dump, ml_batch_profile_reset};
 pub(crate) use super::scan_postprocess_suffix_gate::build_confirmed_suffix_gate;
 
+const STRIPE_HOT_CONFIRMED_DETECTOR_ID: &str = "stripe-secret-key";
+const STRIPE_HOT_CONFIRMED_PREFIXES: &[&str] = &["sk_live_", "sk_test_", "rk_live_", "rk_test_"];
+
 impl CompiledScanner {
     pub(crate) fn post_process_matches(
         &self,
@@ -312,6 +315,7 @@ impl CompiledScanner {
             }
             true
         };
+        let stripe_hot_offsets = self.stripe_direct_emitted_offsets(confirmed_patterns, scan_state);
         if let Some(anchor_index) = &self.confirmed_anchor_index {
             let has_active_anchored = confirmed_patterns
                 .iter()
@@ -345,6 +349,28 @@ impl CompiledScanner {
                         }
                         let group = &candidates[i..j];
                         if let Some(entry) = self.ac_map.get(pat_idx) {
+                            let mut filtered_group = Vec::new();
+                            let group = if self.is_stripe_hot_confirmed_pattern(pat_idx) {
+                                if let Some(offsets) = stripe_hot_offsets.as_ref() {
+                                    filtered_group.reserve(group.len());
+                                    filtered_group.extend(group.iter().copied().filter(
+                                        |&(_, pos)| {
+                                            let absolute_offset =
+                                                pos as usize + chunk.metadata.base_offset;
+                                            !offsets.contains(&absolute_offset)
+                                        },
+                                    ));
+                                    if filtered_group.is_empty() {
+                                        i = j;
+                                        continue;
+                                    }
+                                    filtered_group.as_slice()
+                                } else {
+                                    group
+                                }
+                            } else {
+                                group
+                            };
                             let t0 = if prof {
                                 Some(std::time::Instant::now())
                             } else {
@@ -444,6 +470,39 @@ impl CompiledScanner {
                 }
             }
         }
+    }
+
+    fn stripe_direct_emitted_offsets(
+        &self,
+        confirmed_patterns: &[usize],
+        scan_state: &ScanState,
+    ) -> Option<std::collections::HashSet<usize>> {
+        if !confirmed_patterns
+            .iter()
+            .any(|&pat_idx| self.is_stripe_hot_confirmed_pattern(pat_idx))
+        {
+            return None;
+        }
+        let offsets: std::collections::HashSet<usize> = scan_state
+            .matches
+            .iter()
+            .filter(|m| m.detector_id.as_ref() == STRIPE_HOT_CONFIRMED_DETECTOR_ID)
+            .map(|m| m.location.offset)
+            .collect();
+        (!offsets.is_empty()).then_some(offsets)
+    }
+
+    fn is_stripe_hot_confirmed_pattern(&self, pat_idx: usize) -> bool {
+        let Some(entry) = self.ac_map.get(pat_idx) else {
+            return false;
+        };
+        let Some(detector) = self.detectors.get(entry.detector_index) else {
+            return false;
+        };
+        detector.id == STRIPE_HOT_CONFIRMED_DETECTOR_ID
+            && STRIPE_HOT_CONFIRMED_PREFIXES
+                .iter()
+                .any(|prefix| entry.regex.as_str().starts_with(prefix))
     }
 
     /// Print and reset the per-pattern confirmed-pass profile (top 30 by time).

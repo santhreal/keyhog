@@ -54,6 +54,30 @@ fn hot_patterns_map_to_canonical_detector_identity() {
         (b"xoxb-", "slack-bot-token", "Slack Bot Token", "slack"),
         (b"xoxp-", "slack-user-token", "Slack User Token", "slack"),
         (b"sq0csp-", "hot-square_secret", "Square Secret", "square"),
+        (
+            b"sk_live_",
+            "stripe-secret-key",
+            "Stripe Secret Key",
+            "stripe",
+        ),
+        (
+            b"sk_test_",
+            "stripe-secret-key",
+            "Stripe Secret Key",
+            "stripe",
+        ),
+        (
+            b"rk_live_",
+            "stripe-secret-key",
+            "Stripe Secret Key",
+            "stripe",
+        ),
+        (
+            b"rk_test_",
+            "stripe-secret-key",
+            "Stripe Secret Key",
+            "stripe",
+        ),
     ];
     assert_eq!(HOT_PATTERNS.len(), expected.len());
     for (i, (prefix, id, name, service)) in expected.iter().enumerate() {
