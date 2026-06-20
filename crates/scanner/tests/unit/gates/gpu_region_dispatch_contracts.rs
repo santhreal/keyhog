@@ -30,6 +30,11 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         "/src/engine/phase2_gpu_dfa/shard.rs"
     ))
     .expect("phase2 gpu dfa shard readable");
+    let gpu_dfa_workload_src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/phase2_gpu_dfa/workload.rs"
+    ))
+    .expect("phase2 gpu dfa workload readable");
     assert!(
         !dispatch_src.contains(".as_bytes().to_vec()")
             && !dispatch_src.contains("let mut haystack = Vec::new()"),
@@ -80,7 +85,7 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
     );
     assert!(
         dispatch_src.contains("validate_phase2_gpu_trigger_rows")
-            && gpu_dfa_src.contains("refusing to run mismatched phase-2 admission"),
+            && gpu_dfa_workload_src.contains("refusing to run mismatched phase-2 admission"),
         "region dispatch must fail loud before phase-2 if trigger row count drifts from chunk count"
     );
     let engine_mod_src =
@@ -109,12 +114,15 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         gpu_dfa_src.contains("mod batch;")
             && gpu_dfa_src.contains("mod candidates;")
             && gpu_dfa_src.contains("mod shard;")
+            && gpu_dfa_src.contains("mod workload;")
             && gpu_dfa_src.contains("with_phase2_gpu_dfa_scratch")
             && !gpu_dfa_src.contains("thread_local!")
             && !gpu_dfa_src.contains("fn scan_admission_into")
             && !gpu_dfa_src.contains("fn prioritized_phase2_gpu_dfa_candidates")
-            && !gpu_dfa_src.contains("gate_prefix_literals"),
-        "phase-2 GPU DFA catalog/admission policy must delegate candidate selection, upload-batch scratch, and shard dispatch/readback to their owners"
+            && !gpu_dfa_src.contains("gate_prefix_literals")
+            && !gpu_dfa_src.contains("fn trigger_has_bits")
+            && !gpu_dfa_src.contains("fn expand_phase2_gpu_admission"),
+        "phase-2 GPU DFA catalog/admission policy must delegate candidate selection, upload-batch scratch, shard dispatch/readback, and workload shaping to their owners"
     );
     assert!(
         gpu_dfa_candidates_src.contains("prefixless_always_active_candidates")
@@ -123,6 +131,14 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
             && gpu_dfa_candidates_src.contains("gate_prefix_literals")
             && gpu_dfa_candidates_src.contains("HashSet"),
         "phase-2 GPU DFA candidate discovery and prioritization must live in engine/phase2_gpu_dfa/candidates.rs"
+    );
+    assert!(
+        gpu_dfa_workload_src.contains("validate_phase2_gpu_trigger_rows")
+            && gpu_dfa_workload_src.contains("build_phase2_gpu_admission_workload")
+            && gpu_dfa_workload_src.contains("expand_phase2_gpu_admission")
+            && gpu_dfa_workload_src.contains("trigger_has_bits")
+            && gpu_dfa_workload_src.contains("length_mismatch"),
+        "phase-2 GPU DFA trigger-row validation, no-hit workload shaping, and full-batch expansion must live in engine/phase2_gpu_dfa/workload.rs"
     );
     assert!(
         !gpu_dfa_src.contains("pack_haystack_u32_into")
