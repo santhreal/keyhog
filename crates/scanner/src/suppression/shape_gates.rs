@@ -43,7 +43,7 @@ pub(crate) fn looks_like_prefixed_hash_digest(credential: &str) -> bool {
         if body.len() == 40 && is_uniform_hex(body) {
             return true;
         }
-        if looks_like_base64_blob_with_padding(body) {
+        if looks_like_base64_integrity_body(body) {
             return true;
         }
     }
@@ -95,19 +95,17 @@ fn strip_hash_algo_prefix(credential: &str) -> Option<&str> {
     None
 }
 
-/// True if `s` looks like a base64-encoded blob with one or two
-/// trailing `=` padding chars (the canonical shape of npm package-
-/// lock `integrity` values after stripping `sha512-`). Conservative
-/// length floor of 40 chars to avoid catching short base64 tokens
-/// that might be real secrets.
-fn looks_like_base64_blob_with_padding(s: &str) -> bool {
+/// True if `s` looks like a base64-encoded package-integrity body after
+/// stripping `sha512-` / `sha256-`. Padding is common but not required:
+/// value extractors and lockfile generators can surface the same structural
+/// integrity string without trailing `=`, and the algorithm label is the
+/// non-secret evidence. Conservative length floor of 40 chars avoids catching
+/// short base64-ish provider tokens.
+fn looks_like_base64_integrity_body(s: &str) -> bool {
     if s.len() < 40 {
         return false;
     }
-    if !(s.ends_with("==") || s.ends_with('=')) {
-        return false;
-    }
-    crate::decode::standard_base64_shape(s).is_some_and(|shape| shape.has_padding)
+    crate::decode::standard_base64_shape(s).is_some()
 }
 
 /// True if `credential` is a standard-base64-encoded arbitrary-bytes
