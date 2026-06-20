@@ -274,6 +274,11 @@ fn is_credential_body_byte(b: u8) -> bool {
 }
 
 #[inline]
+fn is_anchor_start_blocked_by(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
+#[inline]
 fn is_interior_control(b: u8) -> bool {
     matches!(b, b'\t' | b'\r')
 }
@@ -316,9 +321,10 @@ pub(crate) fn strip_interior_evasion_controls(text: &str) -> std::borrow::Cow<'_
     for mat in ac.find_iter(text) {
         let start = mat.start();
         let end = mat.end();
-        // Word boundary before the anchor: start-of-text or a non-credential
-        // byte. Stops mid-identifier false anchoring (e.g. `xAKIA…`).
-        if start > 0 && is_credential_body_byte(bytes[start - 1]) {
+        // Word boundary before the anchor: start-of-text or a non-identifier
+        // byte. Stops mid-identifier false anchoring (e.g. `xAKIA…`) while
+        // allowing ordinary assignments such as `key=AKIA...`.
+        if start > 0 && is_anchor_start_blocked_by(bytes[start - 1]) {
             continue;
         }
         let window_end = end.saturating_add(MAX_BODY_WINDOW).min(bytes.len());

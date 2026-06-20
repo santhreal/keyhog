@@ -201,6 +201,28 @@ fn strips_interior_tab_inside_anchored_credential() {
 }
 
 #[test]
+fn strips_interior_tab_after_assignment_operator() {
+    let evasive = "aws_access_key_id=AKIA\tIOSFODNN7EXAMPLE";
+    let out = strip_interior_evasion_controls(evasive);
+    assert_eq!(out, "aws_access_key_id=AKIAIOSFODNN7EXAMPLE");
+}
+
+#[test]
+fn strips_interior_tab_after_non_ascii_context() {
+    let evasive = "note=\u{00E9}; key=AKIA\tIOSFODNN7EXAMPLE";
+    let out = strip_interior_evasion_controls(evasive);
+    assert_eq!(out, "note=\u{00E9}; key=AKIAIOSFODNN7EXAMPLE");
+}
+
+#[test]
+fn preserves_anchor_embedded_inside_identifier() {
+    let text = "prefixAKIA\tIOSFODNN7EXAMPLE";
+    let out = strip_interior_evasion_controls(text);
+    assert!(matches!(out, std::borrow::Cow::Borrowed(_)));
+    assert_eq!(out, text);
+}
+
+#[test]
 fn preserves_structural_tab_indentation() {
     // A leading TAB (indentation: control preceded by newline) is NOT interior
     // to a credential body and must be preserved -> borrowed, unchanged.
