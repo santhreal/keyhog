@@ -487,6 +487,9 @@ pub(crate) fn decoded_benign_text_reason(credential: &str) -> Option<&'static st
     if decoded_looks_like_labelled_hash(decoded) {
         return Some("decoded_labelled_hash_digest");
     }
+    if decoded_looks_like_bare_hash_digest(decoded) {
+        return Some("decoded_bare_hash_digest");
+    }
     if looks_like_dashed_serial_key(decoded) {
         return Some("decoded_dashed_serial_key");
     }
@@ -528,6 +531,10 @@ fn decoded_looks_like_labelled_hash(decoded: &str) -> bool {
         }
     }
     false
+}
+
+fn decoded_looks_like_bare_hash_digest(decoded: &str) -> bool {
+    matches!(decoded.len(), 56 | 64 | 72 | 128) && looks_like_bare_hex_digest(decoded)
 }
 
 fn decoded_looks_like_aws_iam_arn(decoded: &str) -> bool {
