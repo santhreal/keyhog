@@ -561,6 +561,9 @@ pub(super) fn is_isolated_bare_secret_plausible(
     value: &str,
     placeholder_keywords: &[String],
 ) -> bool {
+    if is_isolated_leading_slash_base64_secret(value, placeholder_keywords) {
+        return true;
+    }
     passes_plausibility_checks(
         value,
         PlausibilityMode::Lenient,
@@ -568,6 +571,44 @@ pub(super) fn is_isolated_bare_secret_plausible(
         false,
         false,
     ) && passes_strict_secret_shape_checks(value, false)
+}
+
+fn is_isolated_leading_slash_base64_secret(value: &str, placeholder_keywords: &[String]) -> bool {
+    let Some(body) = value.strip_prefix('/') else {
+        return false;
+    };
+    if value.len() < 40
+        || is_placeholder_ci(value.as_bytes(), placeholder_keywords)
+        || has_low_alnum_ratio(value)
+    {
+        return false;
+    }
+    let padding = body.bytes().rev().take_while(|&b| b == b'=').count();
+    if padding > 2 || body[..body.len() - padding].contains('=') {
+        return false;
+    }
+    if body.contains('/') && !body.contains('+') && padding == 0 {
+        return false;
+    }
+    let mut has_upper = false;
+    let mut has_lower = false;
+    let mut has_digit = false;
+    for b in body.bytes() {
+        if b == b'=' {
+            continue;
+        }
+        if !(b.is_ascii_alphanumeric() || b == b'+' || b == b'/') {
+            return false;
+        }
+        has_upper |= b.is_ascii_uppercase();
+        has_lower |= b.is_ascii_lowercase();
+        has_digit |= b.is_ascii_digit();
+    }
+    has_upper
+        && has_lower
+        && has_digit
+        && shannon_entropy(value.as_bytes()) >= 4.8
+        && passes_strict_secret_shape_checks(value, false)
 }
 
 fn passes_strict_secret_shape_checks(value: &str, is_credential_context: bool) -> bool {

@@ -381,6 +381,61 @@ fn isolated_bare_split_entropy_secret_bypasses_identifier_emit_gate() {
 
 #[cfg(feature = "entropy")]
 #[test]
+fn isolated_leading_slash_base64_entropy_secrets_bypass_path_rejection() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+
+    for secret in [
+        "/ZM9TBrKrmGsNmjQ8mT3OA94HhblZa+QFPiyCEs5lkO/nMLpQAK4lXOELxyxeH8ilqtekYJEB1J5+TkPo/QyFcIoCVvQ2hmsCfjd==",
+        "/7j3M6glXEI5gvG5RRuIQjBARCDxbz8wJWl3EiPP",
+    ] {
+        let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
+        let matches = scanner.scan(&chunk);
+        let entropy_fired = matches.iter().any(|m| {
+            m.detector_id.as_ref().starts_with("entropy-")
+                && m.credential.as_ref().contains(secret)
+        });
+        assert!(
+            entropy_fired,
+            "an isolated leading-slash base64 token must not be rejected only \
+             because `/` can start a path; secret={secret}; matches={:?}",
+            matches
+                .iter()
+                .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[cfg(feature = "entropy")]
+#[test]
+fn isolated_absolute_path_with_random_segment_stays_below_leading_slash_recovery() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+    let path = "/tmp/Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz/cache";
+    let chunk = make_chunk(path, "notes/sufficiency-probe.txt");
+
+    let matches = scanner.scan(&chunk);
+    let entropy_fired = matches.iter().any(|m| {
+        m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(path)
+    });
+    assert!(
+        !entropy_fired,
+        "slash-separated absolute paths must not enter the isolated leading-slash \
+         base64 token exception; matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
 fn isolated_mixed_underscore_entropy_secret_enters_direct_scan_prefilter_recovery() {
     let mut config = ScannerConfig::default();
     config.min_confidence = 0.0;
