@@ -120,6 +120,7 @@ mod windowed_support;
 // macOS/Windows/musl release assets) fail with E0432.
 #[cfg(feature = "simd")]
 pub(crate) use backend_prepared::build_simd_scanner;
+pub(crate) use backend_prepared::code_lines_from_offsets;
 pub(crate) use backend_prepared::PreparedChunk;
 #[cfg(test)]
 pub(crate) use boundary::scan_chunk_boundaries;

@@ -17,7 +17,7 @@ impl CompiledScanner {
     ) -> Vec<RawMatch> {
         // Borrow cached line offsets; downstream consumers take `&[usize]`.
         let line_offsets: &[usize] = prepared.line_offsets();
-        let code_lines: Vec<&str> = prepared.chunk.data.lines().collect();
+        let code_lines = prepared.code_lines(line_offsets);
         let mut scan_state = ScanState::with_static_intern(self.static_intern.clone());
 
         // Unified profiler; phase-2 capture has its own internal sub-spans.
@@ -189,7 +189,7 @@ impl CompiledScanner {
     pub(crate) fn debug_scan_phase2_only(&self, chunk: &keyhog_core::Chunk) -> Vec<RawMatch> {
         let prepared = self.prepare_chunk(chunk);
         let line_offsets: &[usize] = prepared.line_offsets();
-        let code_lines: Vec<&str> = prepared.chunk.data.lines().collect();
+        let code_lines = prepared.code_lines(line_offsets);
         let documentation_lines = context::documentation_line_flags(&code_lines);
         let mut scan_state = ScanState::with_static_intern(self.static_intern.clone());
         self.scan_phase2_patterns(

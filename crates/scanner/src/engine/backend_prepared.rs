@@ -31,6 +31,35 @@ impl<'a> PreparedChunk<'a> {
         self.line_offsets
             .get_or_init(|| compute_line_offsets(&self.preprocessed.text))
     }
+
+    pub(crate) fn code_lines(&self, line_offsets: &[usize]) -> Vec<&str> {
+        if self.preprocessed.text.as_bytes() == self.chunk.data.as_bytes() {
+            code_lines_from_offsets(&self.chunk.data, line_offsets)
+        } else {
+            self.chunk.data.lines().collect()
+        }
+    }
+}
+
+pub(crate) fn code_lines_from_offsets<'a>(text: &'a str, line_offsets: &[usize]) -> Vec<&'a str> {
+    let mut lines = Vec::with_capacity(line_offsets.len());
+    for (idx, &start) in line_offsets.iter().enumerate() {
+        if start >= text.len() {
+            break;
+        }
+        let has_next_line = idx + 1 < line_offsets.len();
+        let end = if has_next_line {
+            line_offsets[idx + 1].saturating_sub(1)
+        } else {
+            text.len()
+        };
+        let mut line = &text[start..end];
+        if has_next_line && line.as_bytes().last() == Some(&b'\r') {
+            line = &line[..line.len() - 1];
+        }
+        lines.push(line);
+    }
+    lines
 }
 
 #[cfg(feature = "simd")]

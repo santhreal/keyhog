@@ -1,5 +1,6 @@
 // LR1-A3: one #[test] per file
 mod all_tests_declares_a3_pipeline_module;
+mod code_lines_from_offsets_matches_str_lines;
 mod compute_line_offsets_empty;
 mod compute_line_offsets_only_newlines;
 mod compute_line_offsets_single_line;

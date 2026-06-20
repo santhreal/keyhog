@@ -77,6 +77,7 @@ pub mod decode_util_non_empty;
 pub mod engine_backend_no_inline_tests;
 pub mod engine_backend_no_unwrap_expect;
 pub mod engine_backend_non_empty;
+pub mod engine_backend_triggered_line_cache_contract;
 pub mod engine_boundary_no_inline_tests;
 pub mod engine_boundary_no_unwrap_expect;
 pub mod engine_boundary_non_empty;

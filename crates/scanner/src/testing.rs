@@ -345,6 +345,9 @@ pub use crate::engine::{
     floor_char_boundary, line_number_for_offset, next_window_offset, record_window_match,
     window_chunk, window_end_offset,
 };
+pub fn code_lines_from_offsets_for_test<'a>(text: &'a str, line_offsets: &[usize]) -> Vec<&'a str> {
+    crate::engine::code_lines_from_offsets(text, line_offsets)
+}
 #[cfg(test)]
 pub(crate) use crate::normalize_chunk_data;
 pub use crate::pipeline::compute_line_offsets;
