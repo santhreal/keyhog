@@ -826,6 +826,108 @@ fn isolated_bare_dash_entropy_secret_bypasses_serial_decoy_gate() {
     );
 }
 
+#[cfg(feature = "entropy")]
+#[test]
+fn isolated_lower_dash_app_password_enters_full_line_recovery() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+    let secret = "kp4q-x7rm-2sn5-tb8v";
+    let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
+
+    let matches = scanner.scan(&chunk);
+    let entropy_fired = matches.iter().any(|m| {
+        m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
+    });
+    assert!(
+        entropy_fired,
+        "an isolated lowercase 4x4 app-password token with mixed alnum groups \
+         must clear the app-password floor instead of requiring a service \
+         keyword anchor; matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
+fn lower_dash_app_password_surfaces_in_assignment_contexts() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+    let secret = "kp4q-x7rm-2sn5-tb8v";
+    let cases = [
+        (
+            format!("export SERVICE_API_TOKEN={secret}\n"),
+            "deploy/.env",
+            "env export",
+        ),
+        (
+            format!("config:\n  service:\n    api_token: {secret}\n"),
+            "k8s/values.yaml",
+            "yaml value",
+        ),
+        (
+            format!("const client = new Client({{ token: \"{secret}\" }});\n"),
+            "src/client.js",
+            "source assignment",
+        ),
+    ];
+
+    for (body, path, label) in cases {
+        let chunk = make_chunk(&body, path);
+        let matches = scanner.scan(&chunk);
+        let entropy_fired = matches.iter().any(|m| {
+            m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
+        });
+        assert!(
+            entropy_fired,
+            "a lowercase 4x4 app-password token must surface in {label} \
+             context once it is sufficient as an isolated credential; \
+             matches={:?}",
+            matches
+                .iter()
+                .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[cfg(feature = "entropy")]
+#[test]
+fn isolated_lower_dash_identifiers_and_hex_serials_stay_suppressed() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+
+    for value in [
+        "abcd-efgh-ijkl-mnop",
+        "1a2b-3c4d-5e6f-7a8b",
+        "A1B2-C3D4-E5F6-G7H8",
+    ] {
+        let chunk = make_chunk(value, "notes/sufficiency-probe.txt");
+        let matches = scanner.scan(&chunk);
+        let entropy_fired = matches.iter().any(|m| {
+            m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(value)
+        });
+        assert!(
+            !entropy_fired,
+            "identifier-like, all-hex, and uppercase serial 4x4 dash shapes \
+             must stay below the lowercase app-password recovery branch; \
+             value={value}; matches={:?}",
+            matches
+                .iter()
+                .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
 #[test]
 fn bare_entropy_source_file_obeys_default_entropy_source_gate() {
     let mut config = ScannerConfig::default();

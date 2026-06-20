@@ -56,6 +56,10 @@ pub(crate) fn entropy_match_suppressed(
             &entropy_match.keyword,
         );
     let isolated_bare_token = entropy_match.keyword == crate::entropy::ISOLATED_BARE_ENTROPY_LABEL;
+    let lower_dash_app_password = crate::entropy::scanner::lower_dash_app_password_floor_met(
+        &entropy_match.value,
+        entropy_match.entropy,
+    );
     // Hash/UUID/license/JWT suppression mirrors the named/generic paths. The
     // canonical-lift lane releases only complete credential-anchored hex/UUID
     // shapes; content gates for examples, placeholders, npm integrity, and
@@ -72,7 +76,10 @@ pub(crate) fn entropy_match_suppressed(
     // `entropy-api-key` because `key` matched a keyword
     // anchor near the value - but the value itself is an
     // identifier, not a high-entropy random string.
-    if !isolated_bare_token && entropy_path_looks_like_kebab_identifier(&entropy_match.value) {
+    if !isolated_bare_token
+        && !lower_dash_app_password
+        && entropy_path_looks_like_kebab_identifier(&entropy_match.value)
+    {
         return true;
     }
 
@@ -143,6 +150,7 @@ pub(crate) fn entropy_match_suppressed(
                 &entropy_match.value,
                 entropy_match.entropy,
             ))
+        && !(same_line_high_signal_assignment_owner && lower_dash_app_password)
         && crate::pipeline::looks_like_word_separated_identifier(&entropy_match.value)
     {
         return true;

@@ -37,6 +37,12 @@ impl CompiledScanner {
                 self.config.entropy_threshold,
                 &self.config.placeholder_keywords,
             );
+        #[cfg(feature = "simd")]
+        let lower_dash_app_password_candidate = path_entropy_appropriate
+            && crate::entropy::scanner::has_lower_dash_app_password_candidate(
+                &preprocessed.text,
+                &self.config,
+            );
         if !path_entropy_appropriate && !isolated_bare_candidate {
             return;
         }
@@ -48,6 +54,7 @@ impl CompiledScanner {
         // proof should not re-litigate.
         #[cfg(feature = "simd")]
         if !isolated_bare_candidate
+            && !lower_dash_app_password_candidate
             && !super::scan_filters::has_high_entropy_run_at_least(
                 preprocessed.text.as_bytes(),
                 self.config.min_secret_len,

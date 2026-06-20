@@ -302,6 +302,46 @@ pub(crate) fn has_isolated_bare_secret_candidate(
     })
 }
 
+#[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
+pub(crate) fn has_lower_dash_app_password_candidate(
+    text: &str,
+    config: &crate::ScannerConfig,
+) -> bool {
+    let lines: Vec<&str> = text.lines().collect();
+    for (_, keyword_line) in find_keyword_assignment_lines(&lines, &config.secret_keywords) {
+        if is_likely_innocuous_line(keyword_line) {
+            continue;
+        }
+        let context = keyword_context(
+            keyword_line,
+            config.min_secret_len,
+            config.entropy_threshold,
+            &config.secret_keywords,
+            false,
+        );
+        for candidate in extract_candidates(
+            keyword_line,
+            context.min_len,
+            &config.placeholder_keywords,
+            context.is_credential_context,
+            false,
+        ) {
+            let entropy = shannon_entropy(candidate.as_bytes());
+            if lower_dash_app_password_floor_met(&candidate, entropy)
+                && candidate_is_plausible(
+                    &candidate,
+                    entropy,
+                    &context,
+                    &config.placeholder_keywords,
+                )
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn isolated_bare_entropy_threshold(entropy_threshold: f64) -> f64 {
     if entropy_threshold.is_finite() && entropy_threshold > HIGH_ENTROPY_THRESHOLD {
         entropy_threshold
@@ -318,6 +358,7 @@ fn isolated_bare_entropy_floor_met(candidate: &str, entropy: f64, threshold: f64
         return false;
     }
     mixed_separator_token_floor_met(candidate, entropy)
+        || lower_dash_app_password_floor_met(candidate, entropy)
         || mixed_contiguous_token_floor_met(candidate, entropy)
 }
 
@@ -342,6 +383,37 @@ pub(crate) fn mixed_separator_token_floor_met(candidate: &str, entropy: f64) -> 
         has_digit |= b.is_ascii_digit();
     }
     has_upper && has_lower && has_digit
+}
+
+pub(crate) fn lower_dash_app_password_floor_met(candidate: &str, entropy: f64) -> bool {
+    const LOWER_DASH_APP_PASSWORD_THRESHOLD: f64 = 3.9;
+    if entropy < LOWER_DASH_APP_PASSWORD_THRESHOLD || candidate.len() != 19 {
+        return false;
+    }
+
+    let mut has_non_hex = false;
+    let mut group_count = 0usize;
+    for group in candidate.split('-') {
+        group_count += 1;
+        if group.len() != 4 {
+            return false;
+        }
+        let mut has_alpha = false;
+        let mut has_digit = false;
+        for b in group.bytes() {
+            if !(b.is_ascii_lowercase() || b.is_ascii_digit()) {
+                return false;
+            }
+            has_alpha |= b.is_ascii_lowercase();
+            has_digit |= b.is_ascii_digit();
+            has_non_hex |= b.is_ascii_alphabetic() && !b.is_ascii_hexdigit();
+        }
+        if !has_alpha || !has_digit {
+            return false;
+        }
+    }
+
+    group_count == 4 && has_non_hex
 }
 
 fn mixed_contiguous_token_floor_met(candidate: &str, entropy: f64) -> bool {
