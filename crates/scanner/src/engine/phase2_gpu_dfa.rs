@@ -7,12 +7,18 @@
 //! trusted only as "no covered prefixless pattern was seen"; uncovered patterns
 //! and dispatch failures continue through the CPU admission gate.
 
+#[cfg(test)]
+use self::batch::{build_packed_region_batch, ZeroPhase2GpuDfaScratch};
+use self::batch::{
+    build_packed_region_batch_refs, with_phase2_gpu_dfa_scratch, Phase2GpuDfaScratch,
+};
 use super::phase2::gate_prefix_literals;
 use super::*;
 use std::borrow::Cow;
-use std::cell::RefCell;
 use std::collections::HashSet;
 use std::sync::OnceLock;
+
+mod batch;
 
 const PHASE2_GPU_DFA_MAX_MATCHES: u32 = 1 << 20;
 const PHASE2_GPU_DFA_MAX_STATES: usize = 16_384;
@@ -67,48 +73,6 @@ impl Phase2GpuDfaProgramKind {
 struct Phase2GpuDfaShard {
     pipeline: vyre_libs::scan::RegexDfaPipeline,
     phase2_indices: Vec<usize>,
-}
-
-#[derive(Default)]
-struct Phase2GpuDfaScratch {
-    #[cfg(test)]
-    haystack: Vec<u8>,
-    haystack_len: usize,
-    region_starts: Vec<u32>,
-    dispatch: vyre_libs::scan::dispatch_io::ScanDispatchScratch,
-    matches: Vec<vyre_libs::scan::LiteralMatch>,
-}
-
-thread_local! {
-    static PHASE2_GPU_DFA_SCRATCH: RefCell<Phase2GpuDfaScratch> =
-        RefCell::new(Phase2GpuDfaScratch::default());
-}
-
-struct ZeroPhase2GpuDfaScratch<'a> {
-    scratch: &'a mut Phase2GpuDfaScratch,
-}
-
-impl<'a> ZeroPhase2GpuDfaScratch<'a> {
-    fn new(scratch: &'a mut Phase2GpuDfaScratch) -> Self {
-        Self { scratch }
-    }
-}
-
-impl Drop for ZeroPhase2GpuDfaScratch<'_> {
-    fn drop(&mut self) {
-        #[cfg(test)]
-        {
-            self.scratch.haystack.fill(0);
-            self.scratch.haystack.clear();
-        }
-        self.scratch.haystack_len = 0;
-        self.scratch.region_starts.clear();
-        self.scratch.dispatch.haystack_bytes.fill(0);
-        self.scratch.dispatch.haystack_bytes.clear();
-        self.scratch.dispatch.hit_bytes.fill(0);
-        self.scratch.dispatch.hit_bytes.clear();
-        self.scratch.matches.clear();
-    }
 }
 
 impl Phase2GpuDfaCatalog {
@@ -220,20 +184,10 @@ impl Phase2GpuDfaCatalog {
                 matches_seen: 0,
             });
         }
-        PHASE2_GPU_DFA_SCRATCH
-            .try_with(|cell| {
-                let mut scratch = cell.try_borrow_mut().map_err(|_| {
-                    "phase-2 GPU regex-DFA scratch already borrowed on this thread; recursive \
-                     phase-2 GPU admission dispatch is unsupported"
-                        .to_string()
-                })?;
-                let zero_on_drop = ZeroPhase2GpuDfaScratch::new(&mut scratch);
-                build_batch(zero_on_drop.scratch)?;
-                self.scan_admission_with_scratch(backend, zero_on_drop.scratch, chunk_count)
-            })
-            .map_err(|_| {
-                "phase-2 GPU regex-DFA scratch unavailable during thread shutdown".to_string()
-            })?
+        with_phase2_gpu_dfa_scratch(|scratch| {
+            build_batch(scratch)?;
+            self.scan_admission_with_scratch(backend, scratch, chunk_count)
+        })
     }
 
     fn scan_admission_with_scratch(
@@ -708,85 +662,6 @@ fn regex_dfa_source_for_pattern(pattern: &CompiledPattern) -> Cow<'_, str> {
     } else {
         Cow::Borrowed(source)
     }
-}
-
-#[cfg(test)]
-fn build_packed_region_batch(
-    chunks: &[keyhog_core::Chunk],
-    scratch: &mut Phase2GpuDfaScratch,
-) -> std::result::Result<(), String> {
-    build_packed_region_batch_iter(chunks.iter(), chunks.len(), scratch)
-}
-
-fn build_packed_region_batch_refs(
-    chunks: &[&keyhog_core::Chunk],
-    scratch: &mut Phase2GpuDfaScratch,
-) -> std::result::Result<(), String> {
-    build_packed_region_batch_iter(chunks.iter().copied(), chunks.len(), scratch)
-}
-
-fn build_packed_region_batch_iter<'a, I>(
-    chunks: I,
-    chunk_count: usize,
-    scratch: &mut Phase2GpuDfaScratch,
-) -> std::result::Result<(), String>
-where
-    I: Clone + Iterator<Item = &'a keyhog_core::Chunk>,
-{
-    let mut total = chunk_count.saturating_sub(1);
-    for chunk in chunks.clone() {
-        total = total.checked_add(chunk.data.len()).ok_or_else(|| {
-            "phase-2 GPU regex-DFA coalesced batch length overflows host usize".to_string()
-        })?;
-    }
-    if total > u32::MAX as usize {
-        return Err(format!(
-            "phase-2 GPU regex-DFA coalesced batch is {total} byte(s), above the u32 GPU ABI; split the batch before dispatch"
-        ));
-    }
-    let padded_len = vyre_libs::scan::dispatch_io::haystack_padded_u32_byte_len(total)
-        .map_err(|error| error.to_string())?;
-
-    #[cfg(test)]
-    {
-        scratch.haystack.clear();
-        scratch.haystack.try_reserve(total).map_err(|error| {
-            format!("phase-2 GPU regex-DFA replay haystack reserve failed: {error}")
-        })?;
-    }
-    scratch.haystack_len = total;
-    scratch.region_starts.clear();
-    scratch
-        .region_starts
-        .try_reserve(chunk_count)
-        .map_err(|error| format!("phase-2 GPU regex-DFA region-start reserve failed: {error}"))?;
-    scratch.dispatch.haystack_bytes.clear();
-    scratch
-        .dispatch
-        .haystack_bytes
-        .try_reserve(padded_len)
-        .map_err(|error| {
-            format!("phase-2 GPU regex-DFA packed haystack reserve failed: {error}")
-        })?;
-    for (idx, chunk) in chunks.enumerate() {
-        let start = u32::try_from(scratch.dispatch.haystack_bytes.len()).map_err(|_| {
-            "phase-2 GPU regex-DFA region start exceeds the u32 GPU ABI".to_string()
-        })?;
-        scratch.region_starts.push(start);
-        scratch
-            .dispatch
-            .haystack_bytes
-            .extend_from_slice(chunk.data.as_bytes());
-        #[cfg(test)]
-        scratch.haystack.extend_from_slice(chunk.data.as_bytes());
-        if idx + 1 != chunk_count {
-            scratch.dispatch.haystack_bytes.push(0);
-            #[cfg(test)]
-            scratch.haystack.push(0);
-        }
-    }
-    scratch.dispatch.haystack_bytes.resize(padded_len, 0);
-    Ok(())
 }
 
 fn match_region(region_starts: &[u32], haystack_len: usize, start: u32, end: u32) -> Option<usize> {

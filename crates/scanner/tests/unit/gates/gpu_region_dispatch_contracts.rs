@@ -15,6 +15,11 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         "/src/engine/phase2_gpu_dfa.rs"
     ))
     .expect("phase2 gpu dfa readable");
+    let gpu_dfa_batch_src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/phase2_gpu_dfa/batch.rs"
+    ))
+    .expect("phase2 gpu dfa batch readable");
     assert!(
         !dispatch_src.contains(".as_bytes().to_vec()")
             && !dispatch_src.contains("let mut haystack = Vec::new()"),
@@ -91,14 +96,21 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         .and_then(|tail| tail.split("pub(crate) struct Phase2GpuDfaAdmission").next())
         .expect("phase-2 GPU DFA shard dispatch owner present");
     assert!(
-        !gpu_dfa_src.contains("pack_haystack_u32_into"),
+        gpu_dfa_src.contains("mod batch;")
+            && gpu_dfa_src.contains("with_phase2_gpu_dfa_scratch")
+            && !gpu_dfa_src.contains("thread_local!"),
+        "phase-2 GPU DFA catalog/admission policy must delegate upload-batch scratch ownership to engine/phase2_gpu_dfa/batch.rs"
+    );
+    assert!(
+        !gpu_dfa_src.contains("pack_haystack_u32_into")
+            && !gpu_dfa_batch_src.contains("pack_haystack_u32_into"),
         "phase-2 GPU DFA admission must build the packed upload buffer directly, not coalesce raw bytes and then pack them again"
     );
     assert!(
-        gpu_dfa_src.contains("build_packed_region_batch_refs")
-            && gpu_dfa_src.contains("haystack_padded_u32_byte_len")
-            && gpu_dfa_src.contains(".haystack_bytes")
-            && gpu_dfa_src.contains(".extend_from_slice(chunk.data.as_bytes())")
+        gpu_dfa_batch_src.contains("build_packed_region_batch_refs")
+            && gpu_dfa_batch_src.contains("haystack_padded_u32_byte_len")
+            && gpu_dfa_batch_src.contains(".haystack_bytes")
+            && gpu_dfa_batch_src.contains(".extend_from_slice(chunk.data.as_bytes())")
             && phase2_scan_admission.contains("scratch.haystack_len")
             && phase2_scan_admission.contains("let shard_incomplete")
             && phase2_scan_admission.contains("complete = false")
