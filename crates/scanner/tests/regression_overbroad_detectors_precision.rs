@@ -1,6 +1,6 @@
 //! Regression: over-broad detectors matching generic tokens.
 //!
-//! Four detectors shipped patterns that fired on generic, non-credential
+//! Five detectors shipped patterns that fired on generic, non-credential
 //! tokens, producing false positives at (in three cases) `critical` severity:
 //!
 //!   * `transpose-api-key`  — `(?:TRANSPOSE|transpose)[_a-zA-Z0-9]*[=:\s"']+([a-f0-9]{32})`
@@ -17,6 +17,9 @@
 //!   * `pipedream-api-key` — `api_[a-zA-Z0-9]{40,}`. `api_` is a generic prefix,
 //!     so any `api_<40+ alnum>` (lowercase identifiers, lowercase hex digests)
 //!     matched.
+//!   * `vercel-edge-function-credentials` — the `ecfg_` trigger must be a token,
+//!     not a case-insensitive substring inside SCREAMING_CASE enum names such as
+//!     `CUDNN_BACKEND_ENGINECFG_DESCRIPTOR`.
 //!
 //! The fixes (in `detectors/*.toml`) tighten each pattern to its real,
 //! service-specific shape WITHOUT losing the canonical-positive recall path.
@@ -57,6 +60,34 @@ fn compile(pattern: &PatternSpec) -> Regex {
         .crlf(true)
         .build()
         .unwrap_or_else(|e| panic!("compile `{}`: {e}", pattern.regex))
+}
+
+struct CompiledPattern {
+    regex: Regex,
+}
+
+struct CompiledDetector {
+    patterns: Vec<CompiledPattern>,
+}
+
+impl CompiledDetector {
+    fn from_spec(spec: &DetectorSpec) -> Self {
+        Self {
+            patterns: spec
+                .patterns
+                .iter()
+                .map(|pattern| CompiledPattern {
+                    regex: compile(pattern),
+                })
+                .collect(),
+        }
+    }
+
+    fn any_matches(&self, haystack: &str) -> bool {
+        self.patterns
+            .iter()
+            .any(|pattern| pattern.regex.is_match(haystack))
+    }
 }
 
 /// True iff ANY of the detector's patterns matches anywhere in `haystack`.
@@ -322,8 +353,71 @@ fn pipedream_boundary_uppercase_and_length() {
 }
 
 // ---------------------------------------------------------------------------
+// vercel-edge-function-credentials
+// ---------------------------------------------------------------------------
+
+#[test]
+fn vercel_edge_config_keeps_canonical_recall() {
+    let spec = load_detector("vercel-edge-function-credentials");
+    let cred = "ecfg_VWTr5j5Y";
+    assert_eq!(
+        captured(&spec, cred).as_deref(),
+        Some(cred),
+        "vercel edge config must still fire on the canonical bare ecfg_ token"
+    );
+    assert_eq!(
+        captured(&spec, "\"ecfg_VWTr5j5Y\"").as_deref(),
+        Some(cred),
+        "vercel edge config must capture the token without quote delimiters"
+    );
+    assert_eq!(
+        captured(&spec, "EDGE_CONFIG=ecfg_VWTr5j5Y").as_deref(),
+        Some(cred),
+        "vercel edge config must still fire on the context-anchored env form"
+    );
+}
+
+#[test]
+fn vercel_edge_config_rejects_cudnn_enginecfg_enum() {
+    let spec = load_detector("vercel-edge-function-credentials");
+    let decoys = [
+        "CUDNN_BACKEND_ENGINECFG_DESCRIPTOR",
+        "CUDNN_BACKEND_ENGINECFG_JSON_REPR",
+        "SOME_ENGINECFG_DESCRIPTOR",
+    ];
+    for decoy in decoys {
+        assert!(
+            !any_pattern_matches(&spec, decoy),
+            "vercel edge config must NOT fire on mid-identifier enum text: {decoy:?}"
+        );
+    }
+}
+
+#[test]
+fn vercel_edge_config_token_boundaries_are_explicit() {
+    let spec = load_detector("vercel-edge-function-credentials");
+    assert!(
+        !any_pattern_matches(&spec, "prefixecfg_VWTr5j5Y"),
+        "alphanumeric left neighbor must block a bare ecfg_ match"
+    );
+    assert!(
+        !any_pattern_matches(&spec, "_ecfg_VWTr5j5Y"),
+        "underscore left neighbor must block a bare ecfg_ match"
+    );
+    let overlong_body = format!("ecfg_{}", "A".repeat(129));
+    assert!(
+        !any_pattern_matches(&spec, &overlong_body),
+        "129-byte body must not let the bare pattern truncate at the 128-byte cap"
+    );
+    assert!(
+        any_pattern_matches(&spec, "x-ecfg_VWTr5j5Y"),
+        "dash is a delimiter before a real ecfg_ token"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Property-style adversarial loop: deterministic generated generic tokens.
-// None of the four tightened detectors may fire on machine-generated generic
+// None of the five tightened detectors may fire on machine-generated generic
 // tokens that lack the service-specific signature.
 // ---------------------------------------------------------------------------
 
@@ -342,10 +436,11 @@ impl Lcg {
 
 #[test]
 fn overbroad_detectors_reject_generic_tokens_proptest() {
-    let transpose = load_detector("transpose-api-key");
-    let octopus = load_detector("octopus-deploy-api-key");
-    let moralis = load_detector("moralis-api-key");
-    let pipedream = load_detector("pipedream-api-key");
+    let transpose = CompiledDetector::from_spec(&load_detector("transpose-api-key"));
+    let octopus = CompiledDetector::from_spec(&load_detector("octopus-deploy-api-key"));
+    let moralis = CompiledDetector::from_spec(&load_detector("moralis-api-key"));
+    let pipedream = CompiledDetector::from_spec(&load_detector("pipedream-api-key"));
+    let vercel = CompiledDetector::from_spec(&load_detector("vercel-edge-function-credentials"));
 
     let lowers: &[u8] = b"abcdefghijklmnopqrstuvwxyz";
     let hexdigits: &[u8] = b"0123456789abcdef";
@@ -362,7 +457,7 @@ fn overbroad_detectors_reject_generic_tokens_proptest() {
         }
         let t = format!("transposeMatrix{}Cache = {hex}", (rng.next_u32() % 90) + 10);
         assert!(
-            !any_pattern_matches(&transpose, &t),
+            !transpose.any_matches(&t),
             "transpose fired on generic word-prefixed hash: {t:?}"
         );
 
@@ -374,7 +469,7 @@ fn overbroad_detectors_reject_generic_tokens_proptest() {
             word.push((b'A' + (rng.next_u32() as u8 % 26)) as char);
         }
         assert!(
-            !any_pattern_matches(&octopus, &word),
+            !octopus.any_matches(&word),
             "octopus fired on a pure-letter uppercase token: {word:?}"
         );
 
@@ -392,7 +487,7 @@ fn overbroad_detectors_reject_generic_tokens_proptest() {
         }
         let m = format!("X-API-Key: {body}");
         assert!(
-            !any_pattern_matches(&moralis, &m),
+            !moralis.any_matches(&m),
             "moralis fired on a bare generic X-API-Key header: {m:?}"
         );
 
@@ -403,8 +498,15 @@ fn overbroad_detectors_reject_generic_tokens_proptest() {
             ident.push(lowers[(rng.next_u32() as usize) % lowers.len()] as char);
         }
         assert!(
-            !any_pattern_matches(&pipedream, &ident),
+            !pipedream.any_matches(&ident),
             "pipedream fired on an all-lowercase api_ identifier: {ident:?}"
+        );
+
+        // 5) vercel edge config: a SCREAMING_CASE enum containing ENGINECFG.
+        let v = format!("CUDNN_BACKEND_ENGINECFG_{}_DESCRIPTOR", rng.next_u32());
+        assert!(
+            !vercel.any_matches(&v),
+            "vercel fired on a generated ENGINECFG enum: {v:?}"
         );
     }
 }
