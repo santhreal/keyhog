@@ -239,6 +239,7 @@ pub struct CompiledScanner {
     pub(crate) same_prefix_patterns: CsrU32,
     pub(crate) phase2_keyword_ac: Option<AhoCorasick>,
     pub(crate) phase2_keyword_to_patterns: CsrU32,
+    pub(crate) phase2_keyword_count: usize,
     pub(crate) phase2_always_active_indices: Vec<usize>,
     /// Combined-RegexSet prefilter over `phase2_always_active_indices`. When
     /// present, the per-chunk phase-2 capture scan runs one linear set pass instead of

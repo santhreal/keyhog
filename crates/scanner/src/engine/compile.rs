@@ -64,51 +64,49 @@ impl CompiledScanner {
             }
         }
         #[cfg(feature = "gpu")]
-        let (gpu_literals, gpu_backend) =
-            if !gpu_disabled && crate::hw_probe::probe_hardware().gpu_available {
-                let literals = build_gpu_literals(&state.ac_literals);
-                let cuda_backend: Option<Arc<dyn vyre::VyreBackend>> = {
-                    #[cfg(target_os = "linux")]
-                    {
-                        match vyre_driver_cuda::cuda_factory() {
-                            Ok(boxed) => {
-                                tracing::info!(
-                                    target: "keyhog::routing",
-                                    "CUDA backend acquired, bypassing wgpu/naga/WGSL path"
-                                );
-                                Some(Arc::from(boxed))
-                            }
-                            Err(error) => {
-                                surface_cuda_acquisition_failure(&error);
-                                None
-                            }
-                        }
-                    }
-                    #[cfg(not(target_os = "linux"))]
-                    {
-                        None
-                    }
-                };
-                match cuda_backend {
-                    Some(cuda) => (literals, Some(cuda)),
-                    None => match vyre_driver_wgpu::WgpuBackend::shared() {
-                        Ok(wgpu) => {
-                            let trait_obj: Arc<dyn vyre::VyreBackend> = wgpu.clone();
-                            (literals, Some(trait_obj))
+        let gpu_backend = if !gpu_disabled && crate::hw_probe::probe_hardware().gpu_available {
+            let cuda_backend: Option<Arc<dyn vyre::VyreBackend>> = {
+                #[cfg(target_os = "linux")]
+                {
+                    match vyre_driver_cuda::cuda_factory() {
+                        Ok(boxed) => {
+                            tracing::info!(
+                                target: "keyhog::routing",
+                                "CUDA backend acquired, bypassing wgpu/naga/WGSL path"
+                            );
+                            Some(Arc::from(boxed))
                         }
                         Err(error) => {
-                            tracing::warn!(
-                                target: "keyhog::routing",
-                                %error,
-                                "wgpu backend unavailable; scan will use CPU-only path"
-                            );
-                            (literals, None)
+                            surface_cuda_acquisition_failure(&error);
+                            None
                         }
-                    },
+                    }
                 }
-            } else {
-                (None, None)
+                #[cfg(not(target_os = "linux"))]
+                {
+                    None
+                }
             };
+            match cuda_backend {
+                Some(cuda) => Some(cuda),
+                None => match vyre_driver_wgpu::WgpuBackend::shared() {
+                    Ok(wgpu) => {
+                        let trait_obj: Arc<dyn vyre::VyreBackend> = wgpu.clone();
+                        Some(trait_obj)
+                    }
+                    Err(error) => {
+                        tracing::warn!(
+                            target: "keyhog::routing",
+                            %error,
+                            "wgpu backend unavailable; scan will use CPU-only path"
+                        );
+                        None
+                    }
+                },
+            }
+        } else {
+            None
+        };
 
         // Lean (no-`gpu`) build: never link the wgpu / CUDA drivers, never
         // probe Vulkan at startup. The hw_probe still reports its findings so
@@ -116,12 +114,9 @@ impl CompiledScanner {
         // backend is acquired. `gpu_disabled` stays read so the cfg-aware
         // dead-code warning is suppressed without an `_ =` decoration.
         #[cfg(not(feature = "gpu"))]
-        let (gpu_literals, gpu_backend): (
-            Option<Arc<Vec<Vec<u8>>>>,
-            Option<Arc<dyn vyre::VyreBackend>>,
-        ) = {
+        let gpu_backend: Option<Arc<dyn vyre::VyreBackend>> = {
             let _ = gpu_disabled; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
-            (None, None)
+            None
         };
         let prefix_propagation = CsrU32::from(build_prefix_propagation(&state.ac_literals));
         let same_prefix_patterns = CsrU32::from(build_same_prefix_patterns(&state.ac_literals));
@@ -153,9 +148,18 @@ impl CompiledScanner {
                 None => (None, CsrU32::default()),
             };
 
-        let (phase2_keyword_ac, phase2_keyword_to_patterns) =
+        let (phase2_keyword_ac, phase2_keyword_to_patterns, phase2_keywords) =
             build_phase2_keyword_ac(&state.phase2_patterns);
+        let phase2_keyword_count = phase2_keywords.len();
         let phase2_keyword_to_patterns = CsrU32::from(phase2_keyword_to_patterns);
+        #[cfg(feature = "gpu")]
+        let gpu_literals = if gpu_backend.is_some() {
+            build_gpu_literals(&state.ac_literals, &phase2_keywords)
+        } else {
+            None
+        };
+        #[cfg(not(feature = "gpu"))]
+        let gpu_literals: Option<Arc<Vec<Vec<u8>>>> = None;
         // Precompute always-active phase-2 indices so the per-chunk hot path
         // seeds the sparse active set without scanning the full phase-2 table.
         let phase2_always_active_indices: Vec<usize> = state
@@ -396,6 +400,7 @@ impl CompiledScanner {
             same_prefix_patterns,
             phase2_keyword_ac,
             phase2_keyword_to_patterns,
+            phase2_keyword_count,
             phase2_always_active_indices,
             phase2_always_active_prefilter,
             phase2_anchor_index,

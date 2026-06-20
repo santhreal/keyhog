@@ -216,7 +216,7 @@ impl CompiledScanner {
         chunks: &[keyhog_core::Chunk],
         triggers: Vec<Option<Vec<u64>>>,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
-        self.scan_coalesced_phase2_with_admission(chunks, triggers, None)
+        self.scan_coalesced_phase2_with_admission(chunks, triggers, None, None)
     }
 
     #[cfg(feature = "simd")]
@@ -266,6 +266,7 @@ impl CompiledScanner {
         chunks: &[keyhog_core::Chunk],
         triggers: Vec<Option<Vec<u64>>>,
         phase2_admission: Option<&[bool]>,
+        phase2_keyword_hints: Option<&[Vec<u32>]>,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
         use crate::hw_probe::ScanBackend;
         use rayon::prelude::*;
@@ -277,9 +278,12 @@ impl CompiledScanner {
             .zip(triggers.into_par_iter())
             .enumerate()
             .map(|(chunk_index, (chunk, triggered_opt))| {
+                let keyword_hints = phase2_keyword_hints
+                    .and_then(|rows| rows.get(chunk_index))
+                    .map(Vec::as_slice);
                 if let Some(triggered) = triggered_opt {
                     let mut matches = if chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
-                        self.scan_windowed_with_triggered(chunk, &triggered, None)
+                        self.scan_windowed_with_triggered(chunk, &triggered, None, keyword_hints)
                     } else {
                         let prepared = self.prepare_chunk(chunk);
                         self.scan_prepared_with_triggered(
@@ -287,6 +291,7 @@ impl CompiledScanner {
                             ScanBackend::SimdCpu,
                             triggered,
                             None,
+                            keyword_hints,
                         )
                     };
                     self.post_process_coalesced_matches(chunk, &mut matches);
@@ -297,7 +302,12 @@ impl CompiledScanner {
                         Some(&admitted) => admitted,
                         None => false, // LAW10: recall_preserving; absent GPU admission never skips CPU admission.
                     };
-                if !admitted_by_phase2_gpu && !self.should_scan_no_hit_chunk(chunk) {
+                let admitted_by_phase2_keyword_hint =
+                    keyword_hints.is_some_and(|hints| !hints.is_empty());
+                if !admitted_by_phase2_gpu
+                    && !admitted_by_phase2_keyword_hint
+                    && !self.should_scan_no_hit_chunk(chunk)
+                {
                     if let Some(matches) = self.decode_only_coalesced_matches(chunk) {
                         return matches;
                     }
@@ -318,6 +328,7 @@ impl CompiledScanner {
                     ScanBackend::SimdCpu,
                     triggered,
                     None,
+                    keyword_hints,
                 );
                 self.record_and_reassemble_for_no_hit_chunk(chunk, &mut matches);
                 self.post_process_coalesced_matches(chunk, &mut matches);

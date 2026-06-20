@@ -20,7 +20,7 @@ pub fn scan_coalesced_phase2_with_admission_for_test(
     triggers: Vec<Option<Vec<u64>>>,
     phase2_admission: Option<&[bool]>,
 ) -> Vec<Vec<keyhog_core::RawMatch>> {
-    scanner.scan_coalesced_phase2_with_admission(chunks, triggers, phase2_admission)
+    scanner.scan_coalesced_phase2_with_admission(chunks, triggers, phase2_admission, None)
 }
 
 #[cfg(test)]
@@ -414,7 +414,7 @@ pub(crate) fn phase2_keyword_ac_summary(regex: &str, keywords: Vec<String>) -> (
         homoglyph_variant: false,
     };
     let phase2_patterns = vec![(pattern, keywords)];
-    let (ac, mapping) = crate::compiler::build_phase2_keyword_ac(&phase2_patterns);
+    let (ac, mapping, _keywords) = crate::compiler::build_phase2_keyword_ac(&phase2_patterns);
     (ac.is_some(), mapping.len())
 }
 

@@ -132,7 +132,8 @@ impl CompiledScanner {
             };
 
             let words = self.ac_map.len().div_ceil(64).max(1);
-            let presence_words = self.ac_map.len().div_ceil(32).max(1);
+            let gpu_literal_count = self.gpu_presence_literal_count();
+            let presence_words = gpu_literal_count.div_ceil(32).max(1);
             let region_source_bytes: usize = chunks.iter().map(|chunk| chunk.data.len()).sum();
 
             let t_co = std::time::Instant::now();
@@ -183,6 +184,7 @@ impl CompiledScanner {
             }
 
             let mut triggers: Vec<Option<Vec<u64>>> = Vec::with_capacity(chunks.len());
+            let mut phase2_keyword_hints: Vec<Vec<u32>> = Vec::with_capacity(chunks.len());
             let mut gpu_presence_bits = 0usize;
             for (row_idx, row) in presence
                 .chunks_exact(presence_words)
@@ -192,7 +194,7 @@ impl CompiledScanner {
                 if let Some((word_idx, stray_bits)) = self.gpu_presence_stray_tail_bits(row) {
                     return degrade(format!(
                         "region-presence readback row {row_idx} has out-of-range detector bit(s): word {word_idx} bits 0x{stray_bits:08x} beyond {} literal(s)",
-                        self.ac_map.len()
+                        gpu_literal_count
                     ));
                 }
                 gpu_presence_bits += row
@@ -200,6 +202,7 @@ impl CompiledScanner {
                     .map(|word| word.count_ones() as usize)
                     .sum::<usize>();
                 let bits = self.triggered_patterns_from_gpu_presence(row);
+                phase2_keyword_hints.push(self.phase2_keyword_hints_from_gpu_presence(row));
                 if bits.iter().any(|&word| word != 0) {
                     triggers.push(Some(bits));
                 } else {
@@ -339,6 +342,7 @@ impl CompiledScanner {
                 phase2_gpu_admission
                     .as_ref()
                     .map(|admission| admission.admitted.as_slice()),
+                Some(phase2_keyword_hints.as_slice()),
             );
             if kh {
                 eprintln!(

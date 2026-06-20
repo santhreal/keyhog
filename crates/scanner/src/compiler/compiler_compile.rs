@@ -29,8 +29,15 @@ pub(crate) fn build_ac_pattern_set(literals: &[String]) -> Result<Option<AhoCora
 /// Keep GPU literal inputs in Keyhog order so Vyre match pattern IDs map back
 /// to `ac_map` without an adapter table.
 #[cfg(feature = "gpu")]
-pub(crate) fn build_gpu_literals(ac_literals: &[String]) -> Option<std::sync::Arc<Vec<Vec<u8>>>> {
-    if ac_literals.iter().any(String::is_empty) {
+pub(crate) fn build_gpu_literals(
+    ac_literals: &[String],
+    phase2_keywords: &[String],
+) -> Option<std::sync::Arc<Vec<Vec<u8>>>> {
+    if ac_literals
+        .iter()
+        .chain(phase2_keywords)
+        .any(String::is_empty)
+    {
         tracing::warn!("GPU literal set contains an empty literal; disabling GPU literal scan");
         return None;
     }
@@ -49,6 +56,7 @@ pub(crate) fn build_gpu_literals(ac_literals: &[String]) -> Option<std::sync::Ar
     // with the caseless regex.
     let literals: Vec<Vec<u8>> = ac_literals
         .iter()
+        .chain(phase2_keywords)
         .map(|literal| literal.to_ascii_lowercase().into_bytes())
         .collect();
     if literals.is_empty() {
@@ -84,7 +92,7 @@ pub(crate) fn build_prefix_propagation(literals: &[String]) -> Vec<Vec<usize>> {
 
 pub(crate) fn build_phase2_keyword_ac(
     phase2_patterns: &[(CompiledPattern, Vec<String>)],
-) -> (Option<AhoCorasick>, Vec<Vec<usize>>) {
+) -> (Option<AhoCorasick>, Vec<Vec<usize>>, Vec<String>) {
     let mut all_keywords = Vec::new();
     let mut keyword_to_patterns = Vec::new();
     let mut keyword_map: std::collections::HashMap<String, usize> =
@@ -115,13 +123,13 @@ pub(crate) fn build_phase2_keyword_ac(
     }
 
     if all_keywords.is_empty() {
-        return (None, Vec::new());
+        return (None, Vec::new(), Vec::new());
     }
 
     let keyword_count = all_keywords.len();
     let ac = match AhoCorasickBuilder::new()
         .ascii_case_insensitive(true)
-        .build(all_keywords)
+        .build(&all_keywords)
     {
         Ok(ac) => Some(ac),
         Err(error) => {
@@ -134,7 +142,7 @@ pub(crate) fn build_phase2_keyword_ac(
         }
     };
 
-    (ac, keyword_to_patterns)
+    (ac, keyword_to_patterns, all_keywords)
 }
 
 pub(crate) fn log_quality_warnings(warnings: &[String]) {

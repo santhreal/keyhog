@@ -22,6 +22,7 @@ impl CompiledScanner {
         chunk: &Chunk,
         scan_state: &mut ScanState,
         deadline: Option<std::time::Instant>,
+        phase2_keyword_hints: Option<&[u32]>,
     ) {
         if let Some(deadline) = deadline {
             if std::time::Instant::now() >= deadline {
@@ -48,6 +49,7 @@ impl CompiledScanner {
                     scan_state,
                     deadline,
                     None,
+                    phase2_keyword_hints,
                 );
                 return;
             }
@@ -64,6 +66,7 @@ impl CompiledScanner {
                 chunk,
                 scan_state,
                 deadline,
+                phase2_keyword_hints,
             );
             return;
         }
@@ -71,6 +74,7 @@ impl CompiledScanner {
         self.with_active_phase2_patterns(
             &chunk.data,
             &preprocessed.text,
+            phase2_keyword_hints,
             |this, active_patterns| {
                 // `active_patterns` is the SPARSE list of active phase-2 indices,
                 // so we touch only the patterns that can fire on this chunk rather
@@ -143,6 +147,7 @@ impl CompiledScanner {
         scan_state: &mut ScanState,
         deadline: Option<std::time::Instant>,
         focus: (usize, usize),
+        phase2_keyword_hints: Option<&[u32]>,
     ) {
         if let Some(deadline) = deadline {
             if std::time::Instant::now() >= deadline {
@@ -174,6 +179,7 @@ impl CompiledScanner {
                 chunk,
                 scan_state,
                 deadline,
+                phase2_keyword_hints,
             );
             return;
         }
@@ -196,6 +202,7 @@ impl CompiledScanner {
                     scan_state,
                     deadline,
                     focus,
+                    phase2_keyword_hints,
                 );
                 return;
             }
@@ -207,37 +214,42 @@ impl CompiledScanner {
         let match_text = &text[fs..fe];
         let cursor = focus;
         let prof = phase2_pattern_prof_enabled();
-        self.with_active_phase2_patterns(&chunk.data, match_text, |this, active_patterns| {
-            for (tested, &index) in active_patterns.iter().enumerate() {
-                if let Some(deadline) = deadline {
-                    if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
-                        break;
+        self.with_active_phase2_patterns(
+            &chunk.data,
+            match_text,
+            phase2_keyword_hints,
+            |this, active_patterns| {
+                for (tested, &index) in active_patterns.iter().enumerate() {
+                    if let Some(deadline) = deadline {
+                        if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
+                            break;
+                        }
+                    }
+                    let (entry, _keywords) = &this.phase2_patterns[index];
+                    let t0 = if prof { Some(Instant::now()) } else { None };
+                    this.extract_matches_inner(
+                        entry,
+                        preprocessed,
+                        line_offsets,
+                        code_lines,
+                        documentation_lines,
+                        chunk,
+                        scan_state,
+                        0,
+                        0,
+                        cursor,
+                        deadline,
+                    );
+                    if let Some(t0) = t0 {
+                        phase2_pattern_prof_record(
+                            this.phase2_patterns.len(),
+                            index,
+                            t0.elapsed().as_nanos() as u64,
+                        );
                     }
                 }
-                let (entry, _keywords) = &this.phase2_patterns[index];
-                let t0 = if prof { Some(Instant::now()) } else { None };
-                this.extract_matches_inner(
-                    entry,
-                    preprocessed,
-                    line_offsets,
-                    code_lines,
-                    documentation_lines,
-                    chunk,
-                    scan_state,
-                    0,
-                    0,
-                    cursor,
-                    deadline,
-                );
-                if let Some(t0) = t0 {
-                    phase2_pattern_prof_record(
-                        this.phase2_patterns.len(),
-                        index,
-                        t0.elapsed().as_nanos() as u64,
-                    );
-                }
-            }
-        });
+            },
+        );
     }
 
     /// Compute the active phase-2 set into the thread-local pool, run the
@@ -255,6 +267,7 @@ impl CompiledScanner {
         &self,
         data: &str,
         match_text: &str,
+        phase2_keyword_hints: Option<&[u32]>,
         f: impl FnOnce(&Self, &[usize]) -> R,
     ) -> R {
         ACTIVE_PATTERNS_POOL.with(|cell| {
@@ -262,7 +275,13 @@ impl CompiledScanner {
             scratch.begin(self.phase2_patterns.len());
             // anchor_mode = false: the legacy whole-chunk path has no AC gating,
             // so every always-active pattern must be marked for recall.
-            self.populate_active_phase2(data, match_text, &mut scratch, false);
+            self.populate_active_phase2(
+                data,
+                match_text,
+                &mut scratch,
+                false,
+                phase2_keyword_hints,
+            );
             if self.tuning.phase2_reverse_enabled() {
                 scratch.active.reverse();
             }
@@ -341,7 +360,7 @@ impl CompiledScanner {
             None => ACTIVE_PATTERNS_POOL.with(|cell| {
                 let mut scratch = cell.borrow_mut();
                 scratch.begin(self.phase2_patterns.len());
-                self.populate_active_phase2(data, data, &mut scratch, false);
+                self.populate_active_phase2(data, data, &mut scratch, false, None);
                 !scratch.active.is_empty()
             }),
         }
@@ -371,6 +390,7 @@ impl CompiledScanner {
         match_text: &str,
         scratch: &mut ActivePatternsScratch,
         anchor_mode: bool,
+        phase2_keyword_hints: Option<&[u32]>,
     ) {
         if let Some(keyword_ac) = &self.phase2_keyword_ac {
             let prof = phase2_pattern_prof_enabled();
@@ -418,13 +438,26 @@ impl CompiledScanner {
             }
             let t1 = if prof { Some(Instant::now()) } else { None };
             {
-                let _g = super::profile::span(super::profile::P::Phase2KeywordAc);
-                for mat in keyword_ac.find_iter(data) {
-                    let keyword_idx = mat.pattern().as_usize();
-                    if let Some(pattern_indices) = self.phase2_keyword_to_patterns.get(keyword_idx)
-                    {
-                        for &pattern_idx in pattern_indices {
-                            scratch.mark(pattern_idx as usize);
+                if let Some(keyword_hints) = phase2_keyword_hints {
+                    for &keyword_idx in keyword_hints {
+                        if let Some(pattern_indices) =
+                            self.phase2_keyword_to_patterns.get(keyword_idx as usize)
+                        {
+                            for &pattern_idx in pattern_indices {
+                                scratch.mark(pattern_idx as usize);
+                            }
+                        }
+                    }
+                } else {
+                    let _g = super::profile::span(super::profile::P::Phase2KeywordAc);
+                    for mat in keyword_ac.find_iter(data) {
+                        let keyword_idx = mat.pattern().as_usize();
+                        if let Some(pattern_indices) =
+                            self.phase2_keyword_to_patterns.get(keyword_idx)
+                        {
+                            for &pattern_idx in pattern_indices {
+                                scratch.mark(pattern_idx as usize);
+                            }
                         }
                     }
                 }
@@ -451,42 +484,48 @@ impl CompiledScanner {
         chunk: &Chunk,
         scan_state: &mut ScanState,
         deadline: Option<std::time::Instant>,
+        phase2_keyword_hints: Option<&[u32]>,
     ) {
         let prof = phase2_pattern_prof_enabled();
-        self.with_active_phase2_patterns(&chunk.data, &preprocessed.text, |this, active_set| {
-            // `active_set` is the sparse list of active phase-2 indices, so
-            // we iterate only the patterns that can fire - no second
-            // `Vec<&CompiledPattern>` collect and no scan over the inactive
-            // entries of the full phase-2 vector.
-            for (tested, &index) in active_set.iter().enumerate() {
-                if let Some(deadline) = deadline {
-                    if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
-                        break;
+        self.with_active_phase2_patterns(
+            &chunk.data,
+            &preprocessed.text,
+            phase2_keyword_hints,
+            |this, active_set| {
+                // `active_set` is the sparse list of active phase-2 indices, so
+                // we iterate only the patterns that can fire - no second
+                // `Vec<&CompiledPattern>` collect and no scan over the inactive
+                // entries of the full phase-2 vector.
+                for (tested, &index) in active_set.iter().enumerate() {
+                    if let Some(deadline) = deadline {
+                        if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
+                            break;
+                        }
+                    }
+                    let (entry, _) = &this.phase2_patterns[index];
+                    let t0 = if prof { Some(Instant::now()) } else { None };
+                    this.extract_matches(
+                        entry,
+                        preprocessed,
+                        line_offsets,
+                        code_lines,
+                        documentation_lines,
+                        chunk,
+                        scan_state,
+                        0,
+                        0,
+                        deadline,
+                    );
+                    if let Some(t0) = t0 {
+                        phase2_pattern_prof_record(
+                            this.phase2_patterns.len(),
+                            index,
+                            t0.elapsed().as_nanos() as u64,
+                        );
                     }
                 }
-                let (entry, _) = &this.phase2_patterns[index];
-                let t0 = if prof { Some(Instant::now()) } else { None };
-                this.extract_matches(
-                    entry,
-                    preprocessed,
-                    line_offsets,
-                    code_lines,
-                    documentation_lines,
-                    chunk,
-                    scan_state,
-                    0,
-                    0,
-                    deadline,
-                );
-                if let Some(t0) = t0 {
-                    phase2_pattern_prof_record(
-                        this.phase2_patterns.len(),
-                        index,
-                        t0.elapsed().as_nanos() as u64,
-                    );
-                }
-            }
-        });
+            },
+        );
     }
 
     /// Print and reset the per-pattern phase-2 profile (top 30 by time). Call

@@ -19,6 +19,7 @@ impl CompiledScanner {
         &self,
         data: &str,
         match_text: &str,
+        phase2_keyword_hints: Option<&[u32]>,
         f: impl FnOnce(&Self, &ActivePatternsScratch) -> R,
     ) -> R {
         ACTIVE_PATTERNS_POOL.with(|cell| {
@@ -26,7 +27,7 @@ impl CompiledScanner {
             scratch.begin(self.phase2_patterns.len());
             // anchor_mode = true: this method only runs on the shared-anchor
             // path, where eligible always-active patterns are gated by the AC.
-            self.populate_active_phase2(data, match_text, &mut scratch, true);
+            self.populate_active_phase2(data, match_text, &mut scratch, true, phase2_keyword_hints);
             if self.tuning.phase2_reverse_enabled() {
                 scratch.active.reverse();
             }
@@ -64,6 +65,7 @@ impl CompiledScanner {
         // anchored verification still use the FULL text, so results for matches
         // starting inside the window are byte-identical. `None` = whole chunk.
         focus: Option<(usize, usize)>,
+        phase2_keyword_hints: Option<&[u32]>,
     ) {
         let prof = phase2_pattern_prof_enabled();
         // Text the AC candidate scan and the always-active prefilter run on.
@@ -77,114 +79,44 @@ impl CompiledScanner {
         let cursor = focus;
         // Keyword AC still seeds from the FULL chunk bytes so a keyword in far
         // context activates its pattern; only the prefilter text is windowed.
-        self.with_active_phase2_scratch(&chunk.data, scan_text, |this, scratch| {
-            let active_keyword_anchors = scratch
-                .active
-                .iter()
-                .filter(|&&pat| anchor_idx.is_eligible(pat))
-                .count();
-            let localize_keyword_anchors =
-                active_keyword_anchors > KEYWORD_ANCHOR_WHOLE_CHUNK_CUTOFF;
-            ANCHOR_CANDIDATES.with(|cell| {
-                let mut cands = cell.borrow_mut();
-                {
-                    let _g = super::profile::span(super::profile::P::Phase2SharedAc);
-                    if localize_keyword_anchors {
-                        anchor_idx.collect_candidates(
-                            scan_text,
-                            |pat| scratch.is_active(pat),
-                            &mut cands,
-                        );
-                    } else {
-                        anchor_idx.collect_always_active_candidates(scan_text, &mut cands);
-                    }
-                }
-                // Candidate positions are relative to `scan_text`; lift them back
-                // into full-text coordinates so anchored verification indexes the
-                // real (full) `preprocessed.text`.
-                if shift != 0 {
-                    for c in cands.iter_mut() {
-                        c.1 += shift;
-                    }
-                }
-                // Candidates are sorted by (pattern, pos); verify each
-                // pattern's contiguous run together so its per-pattern
-                // signal cache is built at most once.
-                let _verify_g = super::profile::span(super::profile::P::Phase2AnchoredVerify);
-                let mut i = 0usize;
-                while i < cands.len() {
-                    if let Some(deadline) = deadline {
-                        if std::time::Instant::now() >= deadline {
-                            break;
-                        }
-                    }
-                    let pat = cands[i].0 as usize;
-                    let mut j = i + 1;
-                    while j < cands.len() && cands[j].0 as usize == pat {
-                        j += 1;
-                    }
-                    let group = &cands[i..j];
-                    let (entry, _) = &this.phase2_patterns[pat];
-                    let t0 = if prof { Some(Instant::now()) } else { None };
-                    match anchor_idx.anchored_regex(pat) {
-                        Some(re) => this.extract_anchored(
-                            entry,
-                            re,
-                            group,
-                            preprocessed,
-                            line_offsets,
-                            code_lines,
-                            documentation_lines,
-                            chunk,
-                            scan_state,
-                            deadline,
-                        ),
-                        // Anchored regex failed to compile (logged once in
-                        // `AnchoredRegex::get`): fall back LOUDLY to the
-                        // whole-chunk walk so recall is preserved.
-                        None => this.extract_matches_inner(
-                            entry,
-                            preprocessed,
-                            line_offsets,
-                            code_lines,
-                            documentation_lines,
-                            chunk,
-                            scan_state,
-                            0,
-                            0,
-                            cursor,
-                            deadline,
-                        ),
-                    }
-                    if let Some(t0) = t0 {
-                        phase2_pattern_prof_record(
-                            this.phase2_patterns.len(),
-                            pat,
-                            t0.elapsed().as_nanos() as u64,
-                        );
-                    }
-                    i = j;
-                }
-            });
-
-            // Localized homoglyph path (ASCII chunks): the prefilter skipped
-            // the plain (homoglyph) patterns, so verify them here from the
-            // folded-literal AC candidate positions via `extract_anchored`
-            // (O(match) each — dense over-marking from a short literal is a
-            // cheap quick-fail, not a whole-chunk scan). Plain patterns with
-            // no folded literal run whole-chunk (they are few).
-            if self.tuning.homoglyph_gate_enabled()
-                && scan_text.is_ascii()
-                && anchor_idx.has_plain_localizer(&self.tuning)
-            {
+        self.with_active_phase2_scratch(
+            &chunk.data,
+            scan_text,
+            phase2_keyword_hints,
+            |this, scratch| {
+                let active_keyword_anchors = scratch
+                    .active
+                    .iter()
+                    .filter(|&&pat| anchor_idx.is_eligible(pat))
+                    .count();
+                let localize_keyword_anchors =
+                    active_keyword_anchors > KEYWORD_ANCHOR_WHOLE_CHUNK_CUTOFF;
                 ANCHOR_CANDIDATES.with(|cell| {
                     let mut cands = cell.borrow_mut();
-                    anchor_idx.collect_plain_candidates(scan_text, &mut cands);
+                    {
+                        let _g = super::profile::span(super::profile::P::Phase2SharedAc);
+                        if localize_keyword_anchors {
+                            anchor_idx.collect_candidates(
+                                scan_text,
+                                |pat| scratch.is_active(pat),
+                                &mut cands,
+                            );
+                        } else {
+                            anchor_idx.collect_always_active_candidates(scan_text, &mut cands);
+                        }
+                    }
+                    // Candidate positions are relative to `scan_text`; lift them back
+                    // into full-text coordinates so anchored verification indexes the
+                    // real (full) `preprocessed.text`.
                     if shift != 0 {
                         for c in cands.iter_mut() {
                             c.1 += shift;
                         }
                     }
+                    // Candidates are sorted by (pattern, pos); verify each
+                    // pattern's contiguous run together so its per-pattern
+                    // signal cache is built at most once.
+                    let _verify_g = super::profile::span(super::profile::P::Phase2AnchoredVerify);
                     let mut i = 0usize;
                     while i < cands.len() {
                         if let Some(deadline) = deadline {
@@ -213,6 +145,9 @@ impl CompiledScanner {
                                 scan_state,
                                 deadline,
                             ),
+                            // Anchored regex failed to compile (logged once in
+                            // `AnchoredRegex::get`): fall back LOUDLY to the
+                            // whole-chunk walk so recall is preserved.
                             None => this.extract_matches_inner(
                                 entry,
                                 preprocessed,
@@ -237,14 +172,122 @@ impl CompiledScanner {
                         i = j;
                     }
                 });
-                for &idx in anchor_idx.plain_always_mark() {
+
+                // Localized homoglyph path (ASCII chunks): the prefilter skipped
+                // the plain (homoglyph) patterns, so verify them here from the
+                // folded-literal AC candidate positions via `extract_anchored`
+                // (O(match) each — dense over-marking from a short literal is a
+                // cheap quick-fail, not a whole-chunk scan). Plain patterns with
+                // no folded literal run whole-chunk (they are few).
+                if self.tuning.homoglyph_gate_enabled()
+                    && scan_text.is_ascii()
+                    && anchor_idx.has_plain_localizer(&self.tuning)
+                {
+                    ANCHOR_CANDIDATES.with(|cell| {
+                        let mut cands = cell.borrow_mut();
+                        anchor_idx.collect_plain_candidates(scan_text, &mut cands);
+                        if shift != 0 {
+                            for c in cands.iter_mut() {
+                                c.1 += shift;
+                            }
+                        }
+                        let mut i = 0usize;
+                        while i < cands.len() {
+                            if let Some(deadline) = deadline {
+                                if std::time::Instant::now() >= deadline {
+                                    break;
+                                }
+                            }
+                            let pat = cands[i].0 as usize;
+                            let mut j = i + 1;
+                            while j < cands.len() && cands[j].0 as usize == pat {
+                                j += 1;
+                            }
+                            let group = &cands[i..j];
+                            let (entry, _) = &this.phase2_patterns[pat];
+                            let t0 = if prof { Some(Instant::now()) } else { None };
+                            match anchor_idx.anchored_regex(pat) {
+                                Some(re) => this.extract_anchored(
+                                    entry,
+                                    re,
+                                    group,
+                                    preprocessed,
+                                    line_offsets,
+                                    code_lines,
+                                    documentation_lines,
+                                    chunk,
+                                    scan_state,
+                                    deadline,
+                                ),
+                                None => this.extract_matches_inner(
+                                    entry,
+                                    preprocessed,
+                                    line_offsets,
+                                    code_lines,
+                                    documentation_lines,
+                                    chunk,
+                                    scan_state,
+                                    0,
+                                    0,
+                                    cursor,
+                                    deadline,
+                                ),
+                            }
+                            if let Some(t0) = t0 {
+                                phase2_pattern_prof_record(
+                                    this.phase2_patterns.len(),
+                                    pat,
+                                    t0.elapsed().as_nanos() as u64,
+                                );
+                            }
+                            i = j;
+                        }
+                    });
+                    for &idx in anchor_idx.plain_always_mark() {
+                        if let Some(deadline) = deadline {
+                            if std::time::Instant::now() >= deadline {
+                                break;
+                            }
+                        }
+                        let pat = idx as usize;
+                        let (entry, _) = &this.phase2_patterns[pat];
+                        let t0 = if prof { Some(Instant::now()) } else { None };
+                        this.extract_matches_inner(
+                            entry,
+                            preprocessed,
+                            line_offsets,
+                            code_lines,
+                            documentation_lines,
+                            chunk,
+                            scan_state,
+                            0,
+                            0,
+                            cursor,
+                            deadline,
+                        );
+                        if let Some(t0) = t0 {
+                            phase2_pattern_prof_record(
+                                this.phase2_patterns.len(),
+                                pat,
+                                t0.elapsed().as_nanos() as u64,
+                            );
+                        }
+                    }
+                }
+
+                // Active patterns with no required-literal anchor: whole-chunk
+                // (windowed to the focus cursor when focus-restricting).
+                let _wholechunk_g = super::profile::span(super::profile::P::Phase2WholeChunk);
+                for (tested, &index) in scratch.active.iter().enumerate() {
+                    if localize_keyword_anchors && anchor_idx.is_eligible(index) {
+                        continue;
+                    }
                     if let Some(deadline) = deadline {
-                        if std::time::Instant::now() >= deadline {
+                        if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
                             break;
                         }
                     }
-                    let pat = idx as usize;
-                    let (entry, _) = &this.phase2_patterns[pat];
+                    let (entry, _) = &this.phase2_patterns[index];
                     let t0 = if prof { Some(Instant::now()) } else { None };
                     this.extract_matches_inner(
                         entry,
@@ -262,48 +305,12 @@ impl CompiledScanner {
                     if let Some(t0) = t0 {
                         phase2_pattern_prof_record(
                             this.phase2_patterns.len(),
-                            pat,
+                            index,
                             t0.elapsed().as_nanos() as u64,
                         );
                     }
                 }
-            }
-
-            // Active patterns with no required-literal anchor: whole-chunk
-            // (windowed to the focus cursor when focus-restricting).
-            let _wholechunk_g = super::profile::span(super::profile::P::Phase2WholeChunk);
-            for (tested, &index) in scratch.active.iter().enumerate() {
-                if localize_keyword_anchors && anchor_idx.is_eligible(index) {
-                    continue;
-                }
-                if let Some(deadline) = deadline {
-                    if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
-                        break;
-                    }
-                }
-                let (entry, _) = &this.phase2_patterns[index];
-                let t0 = if prof { Some(Instant::now()) } else { None };
-                this.extract_matches_inner(
-                    entry,
-                    preprocessed,
-                    line_offsets,
-                    code_lines,
-                    documentation_lines,
-                    chunk,
-                    scan_state,
-                    0,
-                    0,
-                    cursor,
-                    deadline,
-                );
-                if let Some(t0) = t0 {
-                    phase2_pattern_prof_record(
-                        this.phase2_patterns.len(),
-                        index,
-                        t0.elapsed().as_nanos() as u64,
-                    );
-                }
-            }
-        });
+            },
+        );
     }
 }

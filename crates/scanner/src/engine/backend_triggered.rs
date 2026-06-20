@@ -10,6 +10,7 @@ impl CompiledScanner {
         _backend: ScanBackend,
         triggered_patterns: Vec<u64>,
         deadline: Option<std::time::Instant>,
+        phase2_keyword_hints: Option<&[u32]>,
     ) -> Vec<RawMatch> {
         // Borrow cached line offsets; downstream consumers take `&[usize]`.
         let line_offsets: &[usize] = prepared.line_offsets();
@@ -115,6 +116,7 @@ impl CompiledScanner {
                 &mut scan_state,
                 deadline,
                 span,
+                phase2_keyword_hints,
             ),
             None => self.scan_phase2_patterns(
                 &prepared.preprocessed,
@@ -124,6 +126,7 @@ impl CompiledScanner {
                 prepared.chunk,
                 &mut scan_state,
                 deadline,
+                phase2_keyword_hints,
             ),
         }
 
@@ -180,6 +183,7 @@ impl CompiledScanner {
             prepared.chunk,
             &mut scan_state,
             None,
+            None,
         );
         scan_state.into_matches()
     }
@@ -226,7 +230,7 @@ impl CompiledScanner {
             text.as_bytes(),
         ) {
             Ok(presence) => {
-                let expected_presence_words = self.ac_map.len().div_ceil(32).max(1);
+                let expected_presence_words = self.gpu_presence_literal_count().div_ceil(32).max(1);
                 if presence.len() != expected_presence_words {
                     return degrade(format!(
                         "per-chunk GPU presence readback length mismatch: got {} u32 word(s), need {}",
@@ -237,7 +241,7 @@ impl CompiledScanner {
                 if let Some((word_idx, stray_bits)) = self.gpu_presence_stray_tail_bits(&presence) {
                     return degrade(format!(
                         "per-chunk GPU presence readback has out-of-range detector bit(s): word {word_idx} bits 0x{stray_bits:08x} beyond {} literal(s)",
-                        self.ac_map.len()
+                        self.gpu_presence_literal_count()
                     ));
                 }
                 // Union with AC triggers so the GPU literal matcher is never
@@ -334,8 +338,13 @@ impl CompiledScanner {
     /// occurred. Maps each set bit through `mark_triggered_pattern` — the compact
     /// per-pattern counterpart of consuming per-hit match triples (the triple path
     /// was removed; see `collect_triggered_patterns_gpu`).
+    #[inline]
+    pub(super) fn gpu_presence_literal_count(&self) -> usize {
+        self.ac_map.len() + self.phase2_keyword_count
+    }
+
     pub(super) fn gpu_presence_stray_tail_bits(&self, presence: &[u32]) -> Option<(usize, u32)> {
-        let literal_count = self.ac_map.len();
+        let literal_count = self.gpu_presence_literal_count();
         let used_tail_bits = literal_count % 32;
         if literal_count != 0 && used_tail_bits == 0 {
             return None;
@@ -356,11 +365,36 @@ impl CompiledScanner {
             let mut bits = word;
             while bits != 0 {
                 let bit = bits.trailing_zeros() as usize;
-                self.mark_triggered_pattern(&mut triggered, word_idx * 32 + bit);
+                let literal_idx = word_idx * 32 + bit;
+                if literal_idx < self.ac_map.len() {
+                    self.mark_triggered_pattern(&mut triggered, literal_idx);
+                }
                 bits &= bits - 1;
             }
         }
         triggered
+    }
+
+    #[cfg(feature = "gpu")]
+    pub(super) fn phase2_keyword_hints_from_gpu_presence(&self, presence: &[u32]) -> Vec<u32> {
+        let keyword_count = self.phase2_keyword_count;
+        if keyword_count == 0 {
+            return Vec::new();
+        }
+        let base = self.ac_map.len();
+        let mut hints = Vec::new();
+        for keyword_idx in 0..keyword_count {
+            let literal_idx = base + keyword_idx;
+            let word_idx = literal_idx / 32;
+            let bit = literal_idx % 32;
+            if presence
+                .get(word_idx)
+                .is_some_and(|word| (word & (1u32 << bit)) != 0)
+            {
+                hints.push(keyword_idx as u32);
+            }
+        }
+        hints
     }
 
     fn mark_triggered_pattern(&self, triggered_patterns: &mut [u64], pattern_index: usize) {
@@ -398,5 +432,75 @@ impl CompiledScanner {
         } else {
             ScanBackend::CpuFallback
         }
+    }
+}
+
+#[cfg(all(test, feature = "gpu"))]
+mod tests {
+    use super::*;
+    use keyhog_core::{DetectorSpec, PatternSpec, Severity};
+
+    fn scanner_with_detector_and_phase2_keyword() -> CompiledScanner {
+        CompiledScanner::compile_with_gpu_policy(
+            vec![DetectorSpec {
+                tests: Vec::new(),
+                id: "gpu-presence-split".into(),
+                name: "GPU Presence Split".into(),
+                service: "test".into(),
+                severity: Severity::High,
+                patterns: vec![
+                    PatternSpec {
+                        regex: "abc[0-9]+".into(),
+                        description: None,
+                        group: None,
+                        client_safe: false,
+                    },
+                    PatternSpec {
+                        regex: "[a-z]{4}[0-9]{4}".into(),
+                        description: None,
+                        group: None,
+                        client_safe: false,
+                    },
+                ],
+                companions: Vec::new(),
+                verify: None,
+                keywords: vec!["phasekw".into()],
+                min_confidence: None,
+                ..Default::default()
+            }],
+            GpuInitPolicy::ForceDisabled,
+        )
+        .expect("scanner compile")
+    }
+
+    #[test]
+    fn appended_gpu_presence_bits_become_phase2_keyword_hints_only() {
+        let scanner = scanner_with_detector_and_phase2_keyword();
+        assert_eq!(
+            scanner.ac_map.len(),
+            1,
+            "fixture needs one detector literal"
+        );
+        assert_eq!(
+            scanner.phase2_keyword_count, 1,
+            "fixture needs one phase2 keyword"
+        );
+
+        let mut row = vec![0u32; scanner.gpu_presence_literal_count().div_ceil(32).max(1)];
+        let phase2_literal_idx = scanner.ac_map.len();
+        row[phase2_literal_idx / 32] |= 1u32 << (phase2_literal_idx % 32);
+
+        assert_eq!(
+            scanner.phase2_keyword_hints_from_gpu_presence(&row),
+            vec![0]
+        );
+        assert!(scanner.gpu_presence_stray_tail_bits(&row).is_none());
+        assert!(
+            scanner
+                .triggered_patterns_from_gpu_presence(&row)
+                .iter()
+                .all(|&word| word == 0),
+            "phase2 keyword bits must not set confirmed detector trigger bits"
+        );
     }
 }
