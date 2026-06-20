@@ -77,6 +77,8 @@ mod phase2_anchor_scan;
 mod phase2_compiled;
 mod phase2_compiled_anchored;
 pub(crate) mod phase2_entropy;
+#[path = "phase2/first_bigram.rs"]
+mod phase2_first_bigram;
 pub(crate) mod phase2_generic;
 mod phase2_generic_shape;
 #[cfg(feature = "gpu")]
