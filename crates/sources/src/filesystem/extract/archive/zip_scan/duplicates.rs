@@ -98,11 +98,14 @@ pub(super) fn extract_zip_archive_from_central_entries(
         if entry.uncompressed_size > 0
             && total_uncompressed.saturating_add(entry.uncompressed_size) > total_budget
         {
-            report_archive_truncation(
+            let error = report_archive_truncation(
                 path,
                 total_uncompressed.saturating_add(entry.uncompressed_size),
                 total_budget,
             );
+            if !emit(Err(error)) {
+                return;
+            }
             break;
         }
 
@@ -203,7 +206,10 @@ pub(super) fn extract_zip_archive_from_central_entries(
         }
         total_uncompressed = total_uncompressed.saturating_add(actual_uncompressed);
         if total_uncompressed > total_budget {
-            report_archive_truncation(path, total_uncompressed, total_budget);
+            let error = report_archive_truncation(path, total_uncompressed, total_budget);
+            if !emit(Err(error)) {
+                return;
+            }
             break;
         }
         if let Some(chunk) = chunk_from_archive_content(archive_display, &entry_path_name, content)

@@ -56,7 +56,9 @@ fn zip_bomb_extraction_is_truncated_and_counted() {
 
     TestApi.reset_skip_counters();
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(MAX);
-    let chunks: Vec<_> = source.chunks().flatten().collect();
+    let rows: Vec<_> = source.chunks().collect();
+    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
 
     // The bomb guard fired: exactly one archive was truncated.
     assert_eq!(
@@ -64,6 +66,16 @@ fn zip_bomb_extraction_is_truncated_and_counted() {
         1,
         "the zip-bomb guard must record exactly one truncated archive so the \
          operator sees the archive was only partially scanned (Law 10)"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "zip-bomb truncation must surface one source error"
+    );
+    let err = errors[0].to_string();
+    assert!(
+        err.contains("archive extraction") && err.contains("remaining entries were not scanned"),
+        "error should describe partial ZIP coverage, got {err}"
     );
     // Truncation means NOT every entry was emitted. 16 entries would each be one
     // chunk if the budget were unbounded; the budget caps at ~4 entries' worth.

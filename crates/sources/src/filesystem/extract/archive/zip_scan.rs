@@ -106,11 +106,14 @@ pub(super) fn extract_zip_archive(
         if advertised_uncompressed > 0
             && total_uncompressed.saturating_add(advertised_uncompressed) > total_budget
         {
-            report_archive_truncation(
+            let error = report_archive_truncation(
                 path,
                 total_uncompressed.saturating_add(advertised_uncompressed),
                 total_budget,
             );
+            if !emit(Err(error)) {
+                return;
+            }
             break;
         }
 
@@ -156,7 +159,10 @@ pub(super) fn extract_zip_archive(
         }
         total_uncompressed = total_uncompressed.saturating_add(actual_uncompressed);
         if total_uncompressed > total_budget {
-            report_archive_truncation(path, total_uncompressed, total_budget);
+            let error = report_archive_truncation(path, total_uncompressed, total_budget);
+            if !emit(Err(error)) {
+                return;
+            }
             break;
         }
 

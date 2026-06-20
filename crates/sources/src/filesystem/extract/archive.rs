@@ -95,16 +95,14 @@ pub(super) fn extract_openpack_archive(
                         // remaining entries are NOT scanned — partial coverage the
                         // operator must see. The old `tracing::warn!` was invisible
                         // at default verbosity; surface it loudly + count it.
-                        eprintln!(
-                            "keyhog: WARNING: aborting archive extraction of {} at {} bytes \
-                             (> {} = 4x --max-file-size; zip-bomb guard) — remaining entries were \
-                             NOT scanned.",
-                            path.display(),
+                        let error = report_archive_truncation(
+                            path,
                             total_uncompressed.saturating_add(archive_entry.uncompressed_size),
-                            total_budget
+                            total_budget,
                         );
-                        let _event =
-                            crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+                        if !emit(Err(error)) {
+                            return;
+                        }
                         break;
                     }
                     match pack.read_entry(&archive_entry.name) {
@@ -128,17 +126,14 @@ pub(super) fn extract_openpack_archive(
                                 // uncompressed size for deflated entries. Enforce
                                 // the guard on decoded bytes before emitting the
                                 // chunk so partial archive coverage is still loud.
-                                eprintln!(
-                                    "keyhog: WARNING: aborting archive extraction of {} at {} bytes \
-                                     (> {} = 4x --max-file-size; zip-bomb guard) — remaining entries were \
-                                     NOT scanned.",
-                                    path.display(),
+                                let error = report_archive_truncation(
+                                    path,
                                     total_uncompressed,
-                                    total_budget
+                                    total_budget,
                                 );
-                                let _event = crate::record_skip_event(
-                                    crate::SourceSkipEvent::ArchiveTruncated,
-                                );
+                                if !emit(Err(error)) {
+                                    return;
+                                }
                                 break;
                             }
                             let entry_path =
@@ -263,7 +258,7 @@ pub(super) fn chunk_from_archive_content(
     }
 }
 
-fn report_archive_truncation(path: &Path, attempted_total: u64, total_budget: u64) {
+fn report_archive_truncation(path: &Path, attempted_total: u64, total_budget: u64) -> SourceError {
     eprintln!(
         "keyhog: WARNING: aborting archive extraction of {} at {} bytes \
          (> {} = 4x --max-file-size; zip-bomb guard) - remaining entries were \
@@ -273,6 +268,10 @@ fn report_archive_truncation(path: &Path, attempted_total: u64, total_budget: u6
         total_budget
     );
     let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+    SourceError::Other(format!(
+        "archive extraction of '{}' was truncated at {attempted_total} bytes by the zip-bomb guard (budget {total_budget}); remaining entries were not scanned",
+        path.display()
+    ))
 }
 
 pub(super) fn validate_scan_archive_entry_name(name: &str) -> Result<(), &'static str> {
