@@ -215,6 +215,8 @@ fn installer_primes_autoroute_and_runtime_requires_explicit_calibration() {
             && backend.contains("scan config digest mismatch")
             && backend.contains("rules digest mismatch")
             && backend.contains("build feature set mismatch")
+            && backend.contains("decision.backend != selected_backend.label()")
+            && backend.contains("non-canonical backend label")
             && backend.contains("selected backend is missing timing evidence")
             && backend.contains("selected backend is not the fastest persisted timing evidence")
             && backend.contains("cache decision has mismatched GPU cold/warm route evidence")

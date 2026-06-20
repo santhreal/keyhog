@@ -247,6 +247,14 @@ fn validate_decision_route_evidence(
         )
         .into());
     };
+    if decision.backend != selected_backend.label() {
+        return Err(format!(
+            "cache contains non-canonical backend label {:?}; expected {:?}",
+            decision.backend,
+            selected_backend.label()
+        )
+        .into());
+    }
     if decision.trials < AUTOROUTE_CALIBRATION_TRIALS {
         return Err("cache was produced with insufficient calibration trials".into());
     }

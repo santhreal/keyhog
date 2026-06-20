@@ -116,6 +116,12 @@ def check_current_claims(violations: list[str]) -> None:
         for pattern, reason in stale_patterns.items():
             if pattern == r"\bgpu-zero-copy\b" and rel_path == "crates/scanner/src/hw_probe/select.rs":
                 continue
+            if (
+                pattern == r"\bgpu-zero-copy\b"
+                and rel_path == "crates/cli/src/orchestrator/dispatch/backend/tests.rs"
+                and "autoroute_cache_rejects_legacy_backend_alias_labels" in src
+            ):
+                continue
             if re.search(pattern, src, flags=re.IGNORECASE):
                 fail(violations, f"{reason}: {rel_path}")
 

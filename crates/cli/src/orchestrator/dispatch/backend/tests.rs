@@ -906,6 +906,40 @@ fn autoroute_cache_rejects_missing_calibration_sample_evidence() {
 }
 
 #[test]
+fn autoroute_cache_rejects_legacy_backend_alias_labels() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_legacy_backend_alias_{}.json",
+        std::process::id()
+    ));
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(Some("NVIDIA GeForce RTX 5090"));
+    let key = test_workload_key();
+    let mut bad =
+        AutorouteDecision::new(ScanBackend::Gpu, 8 * 1024 * 1024, 1, 12, Some(20), Some(10));
+    bad.backend = "gpu-zero-copy".to_string();
+    write_tampered_decision_cache(
+        &path,
+        digest,
+        config_digest,
+        &host,
+        key,
+        bad,
+        "non-canonical backend label",
+    );
+    let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host);
+    assert!(
+        loaded
+            .expect_err("legacy backend aliases must not be accepted in persisted autoroute proof")
+            .to_string()
+            .contains("non-canonical backend label"),
+        "autoroute cache must require canonical backend labels, not CLI compatibility aliases"
+    );
+
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
 fn autoroute_cache_rejects_zero_duration_timing_evidence() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_autoroute_zero_duration_timing_{}.json",
