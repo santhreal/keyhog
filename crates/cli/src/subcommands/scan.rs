@@ -81,17 +81,22 @@ pub(crate) async fn run(args: ScanArgs) -> Result<ExitCode> {
     #[cfg(unix)]
     match daemon_route(&args, &policy) {
         DaemonRoute::Required => run_via_daemon(&policy.effective_args).await,
-        DaemonRoute::Opportunistic => match run_via_daemon(&policy.effective_args).await {
-            Ok(exit) => Ok(exit),
-            Err(e) => {
-                tracing::debug!(
-                    error = %e,
-                    "daemon selection unavailable; falling back to in-process scanner"
-                );
-                let orchestrator = ScanOrchestrator::new(args)?;
-                orchestrator.run().await
+        DaemonRoute::Opportunistic => {
+            match run_via_daemon(&policy.effective_args).await {
+                Ok(exit) => Ok(exit),
+                Err(e) => {
+                    if matches!(args.daemon, Some(DaemonMode::Auto)) {
+                        eprintln!("keyhog: daemon auto route unavailable ({e:#}); running in-process scanner");
+                    }
+                    tracing::debug!(
+                        error = %e,
+                        "daemon auto route unavailable; running in-process scanner"
+                    );
+                    let orchestrator = ScanOrchestrator::new(args)?;
+                    orchestrator.run().await
+                }
             }
-        },
+        }
         DaemonRoute::Rejected(reason) => bail!("{reason}"),
         DaemonRoute::Forbidden => {
             let orchestrator = ScanOrchestrator::new(args)?;
@@ -364,6 +369,20 @@ fn daemon_incompatible_scan_options(args: &ScanArgs) -> Option<&'static str> {
     {
         return Some(
             "this scan sets scan-mode, engine, benchmark, or dogfood options that require the in-process scanner",
+        );
+    }
+    if args.backend.is_some()
+        || args.autoroute_cache.is_some()
+        || args.autoroute_calibrate
+        || args.autoroute_gpu
+        || args.no_autoroute_gpu
+        || args.no_gpu
+        || args.require_gpu
+        || args.batch_pipeline
+        || args.no_batch_pipeline
+    {
+        return Some(
+            "this scan sets backend, GPU, batch-pipeline, or autoroute controls the daemon protocol cannot honor per request",
         );
     }
     if args.decode_depth.is_some()

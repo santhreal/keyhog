@@ -179,6 +179,88 @@ fn forced_daemon_rejects_scan_mode_flags() {
 }
 
 #[test]
+fn forced_daemon_rejects_backend_routing_flags() {
+    let work = TempDir::new().expect("work dir");
+    let path = work.path().join("leak.env");
+    std::fs::write(&path, aws_key_line()).expect("write fixture");
+    let runtime = TempDir::new().expect("isolated runtime");
+
+    for args in [
+        &[
+            "scan",
+            "--daemon=on",
+            "--backend",
+            "simd",
+            "--format",
+            "json",
+        ][..],
+        &[
+            "scan",
+            "--daemon=on",
+            "--autoroute-calibrate",
+            "--format",
+            "json",
+        ][..],
+    ] {
+        let out = Command::new(binary())
+            .env("XDG_RUNTIME_DIR", runtime.path())
+            .args(args)
+            .arg(&path)
+            .output()
+            .expect("spawn keyhog scan");
+
+        let combined = combined_output(&out);
+        assert_eq!(
+            out.status.code(),
+            Some(2),
+            "forced daemon with backend routing flags must fail instead of ignoring them; output={combined}"
+        );
+        assert!(
+            combined.contains("--daemon=on cannot be honored")
+                && combined.contains("daemon protocol cannot honor"),
+            "forced-daemon rejection must name the backend-routing mismatch; output={combined}"
+        );
+        assert!(
+            !combined.contains("aws-access-key"),
+            "forced daemon rejection must not scan after dropping backend-routing controls; output={combined}"
+        );
+    }
+}
+
+#[test]
+fn explicit_auto_stale_daemon_socket_surfaces_in_process_route() {
+    let work = TempDir::new().expect("work dir");
+    let path = work.path().join("leak.env");
+    std::fs::write(&path, aws_key_line()).expect("write fixture");
+    let runtime = TempDir::new().expect("isolated runtime");
+    std::fs::write(runtime.path().join("keyhog.sock"), b"stale socket path")
+        .expect("write stale daemon socket placeholder");
+
+    let out = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", runtime.path())
+        .args(["scan", "--daemon=auto", "--format", "json"])
+        .arg(&path)
+        .output()
+        .expect("spawn keyhog scan");
+
+    let combined = combined_output(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "explicit daemon auto should surface the daemon miss before the in-process route reports its own failure; output={combined}"
+    );
+    assert!(
+        combined.contains("daemon auto route unavailable")
+            && combined.contains("running in-process scanner"),
+        "explicit daemon auto route change must be operator-visible; output={combined}"
+    );
+    assert!(
+        combined.contains("autoroute calibration required"),
+        "the in-process route must be the route that reports the missing calibration; output={combined}"
+    );
+}
+
+#[test]
 fn forced_daemon_scan_path_expands_har_base64_response() {
     let daemon = DaemonGuard::start();
     let work = TempDir::new().expect("work dir");
