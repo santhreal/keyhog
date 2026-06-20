@@ -381,6 +381,57 @@ fn isolated_bare_split_entropy_secret_bypasses_identifier_emit_gate() {
 
 #[cfg(feature = "entropy")]
 #[test]
+fn isolated_mixed_underscore_entropy_secret_enters_direct_scan_prefilter_recovery() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+    let secret = "H_ZM9TBrKrmGsNmjQ8mT";
+    let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
+
+    let matches = scanner.scan(&chunk);
+    let entropy_fired = matches.iter().any(|m| {
+        m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
+    });
+    assert!(
+        entropy_fired,
+        "an isolated mixed-case/digit underscore token must enter direct no-hit \
+         entropy recovery instead of being filtered as a low-entropy identifier; \
+         matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
+fn isolated_snake_case_identifier_with_digits_stays_below_entropy_recovery() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+    let identifier = "s3_secret_access_key";
+    let chunk = make_chunk(identifier, "notes/sufficiency-probe.txt");
+
+    let matches = scanner.scan(&chunk);
+    let entropy_fired = matches.iter().any(|m| {
+        m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(identifier)
+    });
+    assert!(
+        !entropy_fired,
+        "snake_case identifiers with digits must not enter the isolated-token \
+         separator floor; matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
 fn isolated_bare_dash_entropy_secret_bypasses_serial_decoy_gate() {
     let mut config = ScannerConfig::default();
     config.min_confidence = 0.0;

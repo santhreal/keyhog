@@ -47,7 +47,7 @@ pub(crate) fn entropy_match_suppressed(
     // the direct-assignment surface the MoE can actually arbitrate.
     let same_line_credential_assignment =
         value_line_has_same_line_credential_keyword(entropy_match, preprocessed, line_offsets);
-    let same_line_random_byte_owner =
+    let same_line_high_signal_assignment_owner =
         value_line_has_random_byte_blob_owner(entropy_match, preprocessed, line_offsets);
     let canonical_lift = allow_canonical_lift
         && same_line_credential_assignment
@@ -138,6 +138,11 @@ pub(crate) fn entropy_match_suppressed(
     // KH-L-0415: see the `looks_like_pure_identifier` note above — same measured
     // no-op on both corpora, left as the plain gate by documented decision.
     if entropy_match.keyword != crate::entropy::ISOLATED_BARE_ENTROPY_LABEL
+        && !(same_line_high_signal_assignment_owner
+            && crate::entropy::scanner::mixed_separator_token_floor_met(
+                &entropy_match.value,
+                entropy_match.entropy,
+            ))
         && crate::pipeline::looks_like_word_separated_identifier(&entropy_match.value)
     {
         return true;
@@ -373,7 +378,7 @@ pub(crate) fn entropy_match_suppressed(
     // TOKEN/API_KEY/DEPLOY_TOKEN positives can be opaque base64-looking random
     // bytes. Require decoded NUL evidence before entropy hard-drops the value.
     if !isolated_bare_token
-        && !same_line_random_byte_owner
+        && !same_line_high_signal_assignment_owner
         && !high_entropy_punctuation_payload
         && crate::decode_structure::decoded_contains_nul_byte(&entropy_match.value)
         && crate::engine::phase2_generic::shape_helpers::generic_path_looks_like_random_byte_blob(

@@ -297,7 +297,8 @@ pub(crate) fn has_isolated_bare_secret_candidate(
             return false;
         };
         let entropy = shannon_entropy(candidate.as_bytes());
-        entropy >= threshold && is_isolated_bare_secret_plausible(candidate, placeholder_keywords)
+        isolated_bare_entropy_floor_met(candidate, entropy, threshold)
+            && is_isolated_bare_secret_plausible(candidate, placeholder_keywords)
     })
 }
 
@@ -307,6 +308,39 @@ fn isolated_bare_entropy_threshold(entropy_threshold: f64) -> f64 {
     } else {
         MIXED_ALNUM_TOKEN_THRESHOLD
     }
+}
+
+fn isolated_bare_entropy_floor_met(candidate: &str, entropy: f64, threshold: f64) -> bool {
+    if entropy >= threshold {
+        return true;
+    }
+    if threshold > MIXED_ALNUM_TOKEN_THRESHOLD {
+        return false;
+    }
+    mixed_separator_token_floor_met(candidate, entropy)
+}
+
+pub(crate) fn mixed_separator_token_floor_met(candidate: &str, entropy: f64) -> bool {
+    const MIXED_SEPARATOR_TOKEN_THRESHOLD: f64 = 3.65;
+    if entropy < MIXED_SEPARATOR_TOKEN_THRESHOLD || candidate.len() < 20 || !candidate.contains('_')
+    {
+        return false;
+    }
+    let mut has_upper = false;
+    let mut has_lower = false;
+    let mut has_digit = false;
+    for b in candidate.bytes() {
+        if b == b'_' {
+            continue;
+        }
+        if !b.is_ascii_alphanumeric() {
+            return false;
+        }
+        has_upper |= b.is_ascii_uppercase();
+        has_lower |= b.is_ascii_lowercase();
+        has_digit |= b.is_ascii_digit();
+    }
+    has_upper && has_lower && has_digit
 }
 
 fn collect_isolated_bare_candidate(
@@ -325,7 +359,7 @@ fn collect_isolated_bare_candidate(
         return;
     };
     let entropy = shannon_entropy(candidate.as_bytes());
-    if entropy < context.threshold
+    if !isolated_bare_entropy_floor_met(candidate, entropy, context.threshold)
         || !is_isolated_bare_secret_plausible(candidate, placeholder_keywords)
         || !seen.insert(candidate.to_string())
     {
