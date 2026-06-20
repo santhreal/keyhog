@@ -25,12 +25,34 @@ fn extend_ascii_lowercase_from_matches_make_ascii_lowercase_semantics() {
 }
 
 #[test]
+fn extend_ascii_lowercase_from_matches_make_ascii_lowercase_for_long_tail() {
+    let src: Vec<u8> = (0..4099)
+        .map(|idx| ((idx * 37 + 11) & 0xff) as u8)
+        .collect();
+    let mut expected = b"prefix:".to_vec();
+    expected.extend_from_slice(&src);
+    expected[b"prefix:".len()..].make_ascii_lowercase();
+
+    let mut actual = b"prefix:".to_vec();
+    extend_ascii_lowercase_from(&mut actual, &src);
+
+    assert_eq!(actual, expected);
+}
+
+#[test]
 fn extend_ascii_lowercase_from_writes_initialized_spare_capacity() {
     let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/ascii_ci.rs"));
 
     assert!(
         src.contains("spare_capacity_mut()") && src.contains("set_len(old_len + src.len())"),
         "hot GPU lowercase staging must initialize spare Vec capacity directly"
+    );
+    assert!(
+        src.contains("write_ascii_lowercase_avx2")
+            && src.contains("std::is_x86_feature_detected!(\"avx2\")")
+            && src.contains("write_ascii_lowercase_simd_prefix")
+            && src.contains("ascii_lower_branchless"),
+        "hot GPU lowercase staging must keep a runtime AVX2 prefix with a scalar tail"
     );
     assert!(
         !src.contains("extend(src.iter().map"),

@@ -11,6 +11,9 @@
 //! using `memchr::memchr2_iter` to skim past chunks where the first byte
 //! of the needle is absent.
 
+#[cfg(any(feature = "gpu", test))]
+use std::mem::MaybeUninit;
+
 /// Append `src` to `dst` while ASCII-lowercasing bytes in one pass.
 ///
 /// This is for hot paths that must materialize a lowercase byte buffer for an
@@ -23,14 +26,69 @@ pub(crate) fn extend_ascii_lowercase_from(dst: &mut Vec<u8>, src: &[u8]) {
     let old_len = dst.len();
     dst.reserve(src.len());
     let spare = &mut dst.spare_capacity_mut()[..src.len()];
-    for (slot, &byte) in spare.iter_mut().zip(src) {
-        slot.write(ascii_lower_branchless(byte));
-    }
+    write_ascii_lowercase_into(spare, src);
     // SAFETY: every element in the spare slice above was initialized exactly
-    // once, and reserve() guaranteed enough capacity for src.len() bytes.
+    // once by write_ascii_lowercase_into, and reserve() guaranteed enough
+    // capacity for src.len() bytes.
     unsafe {
         dst.set_len(old_len + src.len());
     }
+}
+
+#[inline]
+#[cfg(any(feature = "gpu", test))]
+fn write_ascii_lowercase_into(dst: &mut [MaybeUninit<u8>], src: &[u8]) {
+    debug_assert_eq!(dst.len(), src.len());
+    let simd_len = write_ascii_lowercase_simd_prefix(dst, src);
+    for (slot, &byte) in dst[simd_len..].iter_mut().zip(&src[simd_len..]) {
+        slot.write(ascii_lower_branchless(byte));
+    }
+}
+
+#[inline]
+#[cfg(all(any(feature = "gpu", test), target_arch = "x86_64"))]
+fn write_ascii_lowercase_simd_prefix(dst: &mut [MaybeUninit<u8>], src: &[u8]) -> usize {
+    if src.len() >= 128 && std::is_x86_feature_detected!("avx2") {
+        // SAFETY: runtime detection proved AVX2 support. `dst` and `src` have
+        // equal length; the AVX2 writer only stores complete 32-byte chunks
+        // inside that range and leaves the scalar tail uninitialized.
+        return unsafe { write_ascii_lowercase_avx2(dst.as_mut_ptr().cast::<u8>(), src) };
+    }
+    0
+}
+
+#[inline]
+#[cfg(all(any(feature = "gpu", test), not(target_arch = "x86_64")))]
+fn write_ascii_lowercase_simd_prefix(_dst: &mut [MaybeUninit<u8>], _src: &[u8]) -> usize {
+    0
+}
+
+#[cfg(all(any(feature = "gpu", test), target_arch = "x86_64"))]
+#[target_feature(enable = "avx2")]
+unsafe fn write_ascii_lowercase_avx2(dst: *mut u8, src: &[u8]) -> usize {
+    use std::arch::x86_64::{
+        __m256i, _mm256_and_si256, _mm256_cmpgt_epi8, _mm256_loadu_si256, _mm256_or_si256,
+        _mm256_set1_epi8, _mm256_storeu_si256,
+    };
+
+    let upper_start_minus_one = _mm256_set1_epi8((b'A' - 1) as i8);
+    let upper_end_plus_one = _mm256_set1_epi8((b'Z' + 1) as i8);
+    let lowercase_bit = _mm256_set1_epi8(0x20);
+    let mut offset = 0usize;
+    while offset + 32 <= src.len() {
+        // SAFETY: the loop guard keeps the 32-byte unaligned load/store inside
+        // `src` and the caller-provided destination range.
+        let chunk = unsafe { _mm256_loadu_si256(src.as_ptr().add(offset).cast::<__m256i>()) };
+        let above_upper_start = _mm256_cmpgt_epi8(chunk, upper_start_minus_one);
+        let below_upper_end = _mm256_cmpgt_epi8(upper_end_plus_one, chunk);
+        let uppercase_mask = _mm256_and_si256(above_upper_start, below_upper_end);
+        let folded = _mm256_or_si256(chunk, _mm256_and_si256(uppercase_mask, lowercase_bit));
+        unsafe {
+            _mm256_storeu_si256(dst.add(offset).cast::<__m256i>(), folded);
+        }
+        offset += 32;
+    }
+    offset
 }
 
 #[inline]
