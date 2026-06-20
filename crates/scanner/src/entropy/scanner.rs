@@ -404,13 +404,7 @@ fn isolated_bare_candidate(line: &str, min_len: usize) -> Option<&str> {
     let candidate = line
         .trim()
         .trim_matches(|c: char| c == '"' || c == '\'' || c == '`' || c == ';' || c == ',');
-    if candidate.len() < min_len
-        || candidate.bytes().any(|b| b.is_ascii_whitespace())
-        || candidate.contains("://")
-        || has_non_padding_equals(candidate)
-        || candidate.contains('<')
-        || candidate.contains('>')
-    {
+    if candidate.len() < min_len || candidate.bytes().any(|b| b.is_ascii_whitespace()) {
         return None;
     }
     let has_alpha = candidate.bytes().any(|b| b.is_ascii_alphabetic());
@@ -418,9 +412,11 @@ fn isolated_bare_candidate(line: &str, min_len: usize) -> Option<&str> {
     if !has_alpha || !has_digit {
         return None;
     }
-    candidate
-        .bytes()
-        .all(|b| {
+    let standard_token = !candidate.contains("://")
+        && !has_non_padding_equals(candidate)
+        && !candidate.contains('<')
+        && !candidate.contains('>')
+        && candidate.bytes().all(|b| {
             b.is_ascii_alphanumeric()
                 || matches!(
                     b,
@@ -438,8 +434,27 @@ fn isolated_bare_candidate(line: &str, min_len: usize) -> Option<&str> {
                         | b'&'
                         | b'*'
                 )
-        })
-        .then_some(candidate)
+        });
+    if standard_token || symbolic_isolated_bare_candidate(candidate) {
+        return Some(candidate);
+    }
+    None
+}
+
+fn symbolic_isolated_bare_candidate(candidate: &str) -> bool {
+    if candidate.contains("://") {
+        return false;
+    }
+    let mut symbol_count = 0usize;
+    for b in candidate.bytes() {
+        if matches!(b, b'"' | b'\'' | b'`') || !b.is_ascii_graphic() {
+            return false;
+        }
+        if !b.is_ascii_alphanumeric() {
+            symbol_count += 1;
+        }
+    }
+    symbol_count >= 2
 }
 
 fn has_non_padding_equals(candidate: &str) -> bool {

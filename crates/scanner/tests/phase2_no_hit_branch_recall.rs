@@ -436,6 +436,56 @@ fn isolated_absolute_path_with_random_segment_stays_below_leading_slash_recovery
 
 #[cfg(feature = "entropy")]
 #[test]
+fn isolated_symbol_heavy_entropy_secrets_enter_full_line_recovery() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+
+    let secret = "RJ{4~d__D!Ts3S-jP46V~SAQ";
+    let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
+    let matches = scanner.scan(&chunk);
+    let entropy_fired = matches.iter().any(|m| {
+        m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
+    });
+    assert!(
+        entropy_fired,
+        "an isolated symbol-heavy high-entropy credential must enter the \
+         full-line recovery path; matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
+fn isolated_dictionary_password_with_one_symbol_stays_below_symbol_recovery() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+    let value = "SnowFlakePass123!";
+    let chunk = make_chunk(value, "notes/sufficiency-probe.txt");
+
+    let matches = scanner.scan(&chunk);
+    let entropy_fired = matches.iter().any(|m| {
+        m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(value)
+    });
+    assert!(
+        !entropy_fired,
+        "dictionary-style passwords with one punctuation mark must not enter \
+         the symbol-heavy full-line recovery branch; matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
 fn isolated_mixed_underscore_entropy_secret_enters_direct_scan_prefilter_recovery() {
     let mut config = ScannerConfig::default();
     config.min_confidence = 0.0;
