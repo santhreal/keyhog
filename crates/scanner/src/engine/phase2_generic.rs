@@ -21,7 +21,7 @@ static GENERIC_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
     // stay in code gates below, where camelCase and hash-decoy handling are
     // testable without regex lookbehind.
     match regex::Regex::new(
-        r#"(?i)(secret|passphrase|password|passwd|pwd|pass|token|api[._-]?key|apikey|auth[._-]?token|auth[._-]?key|auth|credential|private[._-]?key|signing[._-]?key|encryption[._-]?key|access[._-]?key|client[._-]?secret|app[._-]?secret|master[._-]?key|license[._-]?key|[a-z][a-z0-9]*(?:[._-][a-z0-9]+){0,2}[._-](?:key|secret|token))(?:[._-]?(?:key|base|value|val|string|str|enc|raw|b64)){0,2}["'`]?\s*(?::\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]{0,31}\s*[=:]\s*)?|=\s*)["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#,
+        r#"(?i)(secret|passphrase|password|passwd|pwd|pass|token|webhook[._-]?url|api[._-]?key|apikey|auth[._-]?token|auth[._-]?key|auth|credential|private[._-]?key|signing[._-]?key|encryption[._-]?key|access[._-]?key|client[._-]?secret|app[._-]?secret|master[._-]?key|license[._-]?key|[a-z][a-z0-9]*(?:[._-][a-z0-9]+){0,2}[._-](?:key|secret|token))(?:[._-]?(?:key|base|value|val|string|str|enc|raw|b64)){0,2}["'`]?\s*(?::\s*(?:&?[a-zA-Z_][a-zA-Z0-9_<>]{0,31}\s*[=:]\s*)?|=\s*)["'`]?([a-zA-Z0-9/+=_.:!@#$%^&*-]{8,128})["'`]?"#,
     ) {
         Ok(re) => Some(re),
         // Law 10: this static, build-from-constant regex compiling is a build
@@ -227,7 +227,7 @@ impl CompiledScanner {
                     continue;
                 }
                 let value = value_match.as_str();
-                if keyword.eq_ignore_ascii_case("auth") && !is_structured_dotted_token(value) {
+                if keyword.eq_ignore_ascii_case("auth") && !bare_auth_value_allowed(value) {
                     crate::telemetry::record_shape_suppression(
                         chunk.metadata.path.as_deref(),
                         value,
@@ -446,4 +446,11 @@ fn source_offset_for_line_value(source: &str, one_based_line: usize, value: &str
         line_start += line.len() + 1;
     }
     source.len()
+}
+
+fn bare_auth_value_allowed(value: &str) -> bool {
+    is_structured_dotted_token(value)
+        || (!value.contains('.')
+            && value.bytes().any(|byte| !byte.is_ascii_alphanumeric())
+            && crate::entropy::keywords::passes_strict_secret_checks(value, true))
 }

@@ -100,6 +100,9 @@ pub(super) const GENERIC_ASSIGNMENT_KEYWORDS: &[&str] = &[
     // for self-documentation.
     "pass",
     "token",
+    "webhook_url",
+    "webhook-url",
+    "webhook.url",
     "apikey",
     "api_key",
     "api-key",

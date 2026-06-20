@@ -24,3 +24,5 @@ pub mod regression_quoted_printable_uuid_suffix_suppression;
 pub mod regression_reverse_integrity_decoy_suppression;
 #[path = "regression_structured_hcl_generic_recall.rs"]
 pub mod regression_structured_hcl_generic_recall;
+#[path = "regression_symbolic_password_weak_wrappers.rs"]
+pub mod regression_symbolic_password_weak_wrappers;
