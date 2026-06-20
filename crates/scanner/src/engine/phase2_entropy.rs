@@ -41,25 +41,18 @@ impl CompiledScanner {
             return;
         }
 
-        // Cheap precheck: the full-chunk Shannon-entropy sweep below is O(L)
-        // per chunk, paid on the ~95% of source files that contain no
-        // high-entropy token. A real secret at this stage is always a
-        // contiguous base62/hex run (32-char hex API key, 40-char base62
-        // token, 64-char SHA hex, base64 blob). If the chunk holds no such
-        // run, `find_entropy_secrets_with_threshold` cannot return a hit, so
-        // we skip the sweep entirely. Reuses the same single-pass run scan
-        // (`has_high_entropy_run_fast`) the no-HS-hit admission branch in
-        // `scan_coalesced` uses, so the gate stays consistent and adds no
-        // FPs (hash/UUID shapes are still suppressed downstream). The helper
-        // is compiled under `any(simd, gpu)` (it is also the no-hit admission
-        // gate's run scan); this precheck itself is `#[cfg(simd)]`, so on a
-        // no-`simd` build it is a no-op and the full entropy sweep runs
-        // unconditionally — same findings, just without the cheap skip.
+        // Cheap precheck: most chunks have no entropy token, so avoid the full
+        // Shannon sweep unless a contiguous run exists. Isolated bare-token
+        // admission is the exception: that parser already proved a bounded
+        // full-line candidate, and may use separators that the generic run
+        // proof should not re-litigate.
         #[cfg(feature = "simd")]
-        if !super::scan_filters::has_high_entropy_run_at_least(
-            preprocessed.text.as_bytes(),
-            self.config.min_secret_len,
-        ) {
+        if !isolated_bare_candidate
+            && !super::scan_filters::has_high_entropy_run_at_least(
+                preprocessed.text.as_bytes(),
+                self.config.min_secret_len,
+            )
+        {
             return;
         }
 

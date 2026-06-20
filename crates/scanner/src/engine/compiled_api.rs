@@ -337,6 +337,32 @@ impl CompiledScanner {
         let bigram_ok =
             chunk.data.len() < 64 || self.bigram_bloom.maybe_overlaps(chunk.data.as_bytes());
         if !(alphabet_ok && bigram_ok) {
+            #[cfg(feature = "simd")]
+            if self.should_scan_no_hit_chunk(chunk) {
+                let prepared = self.prepare_chunk(chunk);
+                let triggered = if prepared.preprocessed.text.as_bytes() == chunk.data.as_bytes() {
+                    Vec::new()
+                } else {
+                    self.collect_triggered_patterns_for_backend(
+                        &prepared.preprocessed.text,
+                        crate::hw_probe::ScanBackend::SimdCpu,
+                    )
+                };
+                let mut matches = self.scan_prepared_with_triggered(
+                    prepared,
+                    crate::hw_probe::ScanBackend::SimdCpu,
+                    triggered,
+                    deadline,
+                    None,
+                    None,
+                    None,
+                    None,
+                );
+                self.record_and_reassemble_for_no_hit_chunk(chunk, &mut matches);
+                self.post_process_matches(chunk, &mut matches, deadline);
+                return matches;
+            }
+
             if self.chunk_needs_decode_postprocess(chunk) {
                 // Direct scan is skipped (the outer bytes match nothing); only
                 // the decoded sub-chunks are scanned, inside post_process.

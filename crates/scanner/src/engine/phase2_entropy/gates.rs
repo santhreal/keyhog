@@ -68,7 +68,9 @@ pub(crate) fn entropy_match_suppressed(
     // `entropy-api-key` because `key` matched a keyword
     // anchor near the value - but the value itself is an
     // identifier, not a high-entropy random string.
-    if entropy_path_looks_like_kebab_identifier(&entropy_match.value) {
+    if entropy_match.keyword != crate::entropy::ISOLATED_BARE_ENTROPY_LABEL
+        && entropy_path_looks_like_kebab_identifier(&entropy_match.value)
+    {
         return true;
     }
 
