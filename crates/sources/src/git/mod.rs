@@ -133,9 +133,21 @@ pub(crate) fn parse_hunk_new_start(header: &str) -> Option<usize> {
     digits.parse().ok() // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
 }
 
+pub(crate) fn parse_hunk_new_start_or_error(
+    header: &str,
+    source_type: &str,
+) -> Result<usize, SourceError> {
+    parse_hunk_new_start(header).ok_or_else(|| {
+        SourceError::Other(format!(
+            "{source_type} output contains malformed unified-diff hunk header {header:?}; \
+             refusing to guess line 1 because that would corrupt finding line attribution"
+        ))
+    })
+}
+
 #[cfg(test)]
 mod hunk_header_tests {
-    use super::parse_hunk_new_start;
+    use super::{parse_hunk_new_start, parse_hunk_new_start_or_error};
 
     #[test]
     fn parses_new_start_with_and_without_count() {
@@ -144,6 +156,17 @@ mod hunk_header_tests {
         assert_eq!(parse_hunk_new_start("@@ -0,0 +1,5 @@"), Some(1));
         assert_eq!(parse_hunk_new_start("@@ -3,1 +3,1 @@ a + b"), Some(3));
         assert_eq!(parse_hunk_new_start("@@ garbage @@"), None);
+    }
+
+    #[test]
+    fn malformed_hunk_header_is_error_not_line_one() {
+        let err = parse_hunk_new_start_or_error("@@ garbage @@", "git diff")
+            .expect_err("malformed hunk headers must not default to line 1");
+        let keyhog_core::SourceError::Other(message) = err else {
+            panic!("expected SourceError::Other");
+        };
+        assert!(message.contains("malformed unified-diff hunk header"));
+        assert!(message.contains("refusing to guess line 1"));
     }
 }
 

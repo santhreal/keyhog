@@ -264,7 +264,13 @@ fn stream_added_lines(
                 // Start of a new hunk: flush the previous hunk as its own
                 // chunk (so its base line applies cleanly), then adopt this
                 // hunk's new-file start as the base for the lines that follow.
-                let new_start = super::parse_hunk_new_start(&line).unwrap_or(1); // LAW10: empty/absent => documented numeric default, recall-safe
+                let new_start = match super::parse_hunk_new_start_or_error(&line, "git diff") {
+                    Ok(new_start) => new_start,
+                    Err(error) => {
+                        done = true;
+                        return Some(Err(error));
+                    }
+                };
                 let prev_content = std::mem::take(&mut current_content);
                 let prev_base_line = current_base_line;
                 current_base_line = new_start.saturating_sub(1);

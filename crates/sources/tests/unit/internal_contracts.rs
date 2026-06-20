@@ -123,6 +123,31 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
     }
 }
 
+#[cfg(feature = "git")]
+#[test]
+fn git_hunk_headers_must_not_default_to_line_one() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let git_mod = std::fs::read_to_string(root.join("src/git/mod.rs")).expect("read git owner");
+    assert!(
+        git_mod.contains("fn parse_hunk_new_start_or_error")
+            && git_mod.contains("refusing to guess line 1"),
+        "git/mod.rs must own a loud hunk-header parser for line attribution"
+    );
+
+    for rel in ["src/git/diff.rs", "src/git/history.rs"] {
+        let source = std::fs::read_to_string(root.join(rel)).expect("read git source");
+        assert!(
+            source.contains("parse_hunk_new_start_or_error"),
+            "{rel} must fail on malformed hunk headers instead of inventing a base line"
+        );
+        assert!(
+            !source.contains("parse_hunk_new_start(&line).unwrap_or(1)")
+                && !source.contains("parse_hunk_new_start(&line).unwrap_or_else"),
+            "{rel} must not resurrect the silent line-1 fallback"
+        );
+    }
+}
+
 #[test]
 fn http_user_agent_contracts() {
     let ua = TestApi.user_agent(None);
