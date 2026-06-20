@@ -121,7 +121,19 @@ fn binary_mod_happy() {
 #[test]
 fn binary_mod_error() {
     let source = keyhog_sources::BinarySource::new(std::path::PathBuf::from("/no/such/file"));
-    assert!(source.chunks().next().is_none());
+    let rows: Vec<_> = source.chunks().collect();
+    assert_eq!(
+        rows.len(),
+        1,
+        "missing binary path must surface one source error"
+    );
+    let err = rows[0]
+        .as_ref()
+        .expect_err("missing binary path must be an error row");
+    assert!(
+        err.to_string().contains("cannot read file"),
+        "binary error should name the unreadable input, got {err}"
+    );
 }
 
 // ── crates/sources/src/binary/ghidra.rs ─────────────────────────────────

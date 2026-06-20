@@ -117,7 +117,10 @@ impl BinarySource {
         self
     }
 
-    fn ghidra_chunks(&self, ghidra_bin: &Path) -> Result<Vec<Chunk>, SourceError> {
+    fn ghidra_chunks(
+        &self,
+        ghidra_bin: &Path,
+    ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
         let tmp_dir = tempfile::tempdir().map_err(SourceError::Io)?;
         let project_dir = tmp_dir.path().join("ghidra_project");
         std::fs::create_dir_all(&project_dir).map_err(SourceError::Io)?;
@@ -206,7 +209,10 @@ impl BinarySource {
         }
     }
 
-    fn parse_decompiled_output(&self, output_path: &Path) -> Result<Vec<Chunk>, SourceError> {
+    fn parse_decompiled_output(
+        &self,
+        output_path: &Path,
+    ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
         let metadata = std::fs::metadata(output_path).map_err(SourceError::Io)?;
         if metadata.len() > self.limits.binary_decompiled_bytes {
             // Law 10: loud, not silent — the deep-analysis output was discarded
@@ -242,7 +248,7 @@ impl BinarySource {
 
         // Chunk 1: full decompiled output (for pattern matching on variable names, etc.)
         if !decompiled_text.is_empty() {
-            chunks.push(Chunk {
+            chunks.push(Ok(Chunk {
                 data: decompiled_text.into(),
                 metadata: ChunkMetadata {
                     base_offset: 0,
@@ -256,12 +262,12 @@ impl BinarySource {
                     size_bytes: None,
                     decoded_span: None,
                 },
-            });
+            }));
         }
 
         // Chunk 2: extracted string literals (higher signal, less noise)
         if !string_literals.is_empty() {
-            chunks.push(Chunk {
+            chunks.push(Ok(Chunk {
                 data: string_literals.join("\n").into(),
                 metadata: ChunkMetadata {
                     base_offset: 0,
@@ -275,7 +281,7 @@ impl BinarySource {
                     size_bytes: None,
                     decoded_span: None,
                 },
-            });
+            }));
         }
 
         // Also run basic strings extraction for anything Ghidra might miss
@@ -285,7 +291,7 @@ impl BinarySource {
         Ok(chunks)
     }
 
-    fn strings_chunks(&self) -> Vec<Chunk> {
+    fn strings_chunks(&self) -> Vec<Result<Chunk, SourceError>> {
         let bytes = match read_binary_capped(&self.path, self.limits.binary_read_bytes) {
             Ok(read) => {
                 if read.truncated {
@@ -311,7 +317,10 @@ impl BinarySource {
                 );
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
                 BINARY_UNREADABLE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                return Vec::new();
+                return vec![Err(SourceError::Other(format!(
+                    "failed to scan binary {}: cannot read file ({error}); it was not scanned for secrets",
+                    self.path.display()
+                )))];
             }
         };
 
@@ -322,14 +331,14 @@ impl BinarySource {
         #[cfg(feature = "binary")]
         {
             if let Some(section_chunks) = sections::extract_sections(&bytes, &path_str) {
-                chunks.extend(section_chunks);
+                chunks.extend(section_chunks.into_iter().map(Ok));
             }
         }
 
         // Always do full strings extraction as fallback/supplement
         let strings = extract_printable_strings(&bytes, MIN_STRING_LEN);
         if !strings.is_empty() {
-            chunks.push(Chunk {
+            chunks.push(Ok(Chunk {
                 data: crate::strings::join_sensitive_strings(&strings, "\n"),
                 metadata: ChunkMetadata {
                     base_offset: 0,
@@ -343,7 +352,7 @@ impl BinarySource {
                     size_bytes: None,
                     decoded_span: None,
                 },
-            });
+            }));
         }
 
         if chunks.is_empty() {
@@ -352,6 +361,10 @@ impl BinarySource {
                 self.path.display()
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+            return vec![Err(SourceError::Other(format!(
+                "failed to scan binary {}: yielded no scannable sections or printable strings, so no binary bytes were scanned for secrets",
+                self.path.display()
+            )))];
         }
 
         chunks
@@ -415,16 +428,16 @@ impl Source for BinarySource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        let result = if let Some(ghidra_bin) = &self.ghidra_path {
-            self.ghidra_chunks(ghidra_bin)
+        let rows = if let Some(ghidra_bin) = &self.ghidra_path {
+            match self.ghidra_chunks(ghidra_bin) {
+                Ok(rows) => rows,
+                Err(e) => vec![Err(e)],
+            }
         } else {
-            Ok(self.strings_chunks())
+            self.strings_chunks()
         };
 
-        match result {
-            Ok(chunks) => Box::new(chunks.into_iter().map(Ok)),
-            Err(e) => Box::new(std::iter::once(Err(e))),
-        }
+        Box::new(rows.into_iter())
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self

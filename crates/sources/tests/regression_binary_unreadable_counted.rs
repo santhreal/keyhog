@@ -4,8 +4,9 @@
 //! Before the fix `BinarySource::strings_chunks` logged the read failure at
 //! `tracing::debug!` (invisible at default verbosity) and returned an empty
 //! `Vec`, so a permission-denied / vanished binary read as a clean file. The
-//! fix bumps `BINARY_UNREADABLE` + prints a loud stderr warning at the drop
-//! site; this test pins the counter behaviour.
+//! fix bumps `BINARY_UNREADABLE`, prints a loud stderr warning, and emits a
+//! `SourceError` row at the drop site; this test pins the visible source
+//! behaviour and counter behaviour.
 //!
 //! Own test binary: `binary_unreadable()` reads a process-global atomic.
 
@@ -29,17 +30,22 @@ fn unreadable_binary_is_counted_not_silently_dropped() {
     let dir = tempfile::tempdir().unwrap();
     let missing = dir.path().join("does-not-exist.bin");
 
-    let bodies: Vec<_> = TestApi
+    let rows: Vec<_> = TestApi
         .binary_strings_only(missing.clone())
         .chunks()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
-    // The strings path returns no chunks for an unreadable file (the Source
-    // wrapper turns the empty Vec into an empty chunk stream).
+        .collect();
+    assert_eq!(
+        rows.len(),
+        1,
+        "an unreadable binary must yield one visible source error"
+    );
+    let err = rows[0]
+        .as_ref()
+        .expect_err("an unreadable binary must be an error row");
     assert!(
-        bodies.is_empty(),
-        "an unreadable binary yields no chunks; got {} chunk(s)",
-        bodies.len()
+        err.to_string().contains("cannot read file")
+            && err.to_string().contains("not scanned for secrets"),
+        "error should name the unreadable binary coverage gap, got {err}"
     );
     assert_eq!(
         binary_unreadable(),
@@ -105,14 +111,20 @@ fn readable_binary_without_printable_strings_is_counted_as_binary_gap() {
     let bin = dir.path().join("zeros.bin");
     std::fs::write(&bin, vec![0u8; 4096]).unwrap();
 
-    let bodies: Vec<_> = TestApi
-        .binary_strings_only(bin.clone())
-        .chunks()
-        .collect::<Result<Vec<_>, _>>()
-        .unwrap();
+    let rows: Vec<_> = TestApi.binary_strings_only(bin.clone()).chunks().collect();
+    assert_eq!(
+        rows.len(),
+        1,
+        "a readable binary with no printable strings must yield one visible source error"
+    );
+    let err = rows[0]
+        .as_ref()
+        .expect_err("a readable no-strings binary must be an error row");
     assert!(
-        bodies.is_empty(),
-        "a readable binary with no printable strings yields no chunks"
+        err.to_string()
+            .contains("yielded no scannable sections or printable strings")
+            && err.to_string().contains("no binary bytes were scanned"),
+        "error should name the unscanned binary condition, got {err}"
     );
 
     let after = skip_counts();
