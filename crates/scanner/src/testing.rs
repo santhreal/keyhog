@@ -31,6 +31,15 @@ pub fn scan_coalesced_phase2_with_admission_for_test(
     )
 }
 
+#[cfg(feature = "simd")]
+pub fn scan_windowed_with_triggered_for_test(
+    scanner: &crate::CompiledScanner,
+    chunk: &keyhog_core::Chunk,
+    triggered_patterns: &[u64],
+) -> Vec<keyhog_core::RawMatch> {
+    scanner.scan_windowed_with_triggered(chunk, triggered_patterns, None, None, None, None, None)
+}
+
 #[cfg(test)]
 pub(crate) fn scan_with_deadline(
     scanner: &crate::CompiledScanner,
@@ -343,7 +352,7 @@ pub(crate) use crate::compiler::{
 };
 pub use crate::engine::{
     floor_char_boundary, line_number_for_offset, next_window_offset, record_window_match,
-    window_chunk, window_end_offset,
+    window_chunk, window_end_offset, window_ranges,
 };
 pub fn code_lines_from_offsets_for_test<'a>(text: &'a str, line_offsets: &[usize]) -> Vec<&'a str> {
     crate::engine::code_lines_from_offsets(text, line_offsets)

@@ -12,6 +12,21 @@ pub fn next_window_offset(text: &str, current_end: usize, overlap: usize) -> usi
     ceil_char_boundary(text, current_end.saturating_sub(overlap))
 }
 
+pub fn window_ranges(text: &str, max_len: usize, overlap: usize) -> Vec<(usize, usize)> {
+    let mut ranges = Vec::new();
+    let mut offset = 0usize;
+    while offset < text.len() {
+        let end = window_end_offset(text, offset, max_len);
+        ranges.push((offset, end));
+        if end >= text.len() {
+            break;
+        }
+        let next = next_window_offset(text, end, overlap);
+        offset = if next > offset { next } else { end };
+    }
+    ranges
+}
+
 pub fn window_chunk(chunk: &Chunk, start: usize, end: usize) -> Chunk {
     Chunk {
         data: chunk.data.as_ref()[start..end].to_string().into(),
@@ -21,12 +36,22 @@ pub fn window_chunk(chunk: &Chunk, start: usize, end: usize) -> Chunk {
 
 pub fn record_window_match(
     line_offsets: &[usize],
+    source_base_offset: usize,
     window_offset: usize,
+    window_len: usize,
     m: &mut RawMatch,
     seen: &mut HashSet<(Arc<str>, SensitiveString, usize)>,
     seen_order: &mut VecDeque<(Arc<str>, SensitiveString, usize)>,
 ) -> bool {
-    m.location.offset += window_offset;
+    let Some(window_local_offset) = m.location.offset.checked_sub(source_base_offset) else {
+        return false;
+    };
+    if window_local_offset >= window_len {
+        return false;
+    }
+    m.location.offset = source_base_offset
+        .saturating_add(window_offset)
+        .saturating_add(window_local_offset);
     if m.location.line.is_some() {
         // `line_offsets` holds each line-start byte offset in ascending order
         // (offset 0 first). The count of starts `<= offset` IS the 1-based line

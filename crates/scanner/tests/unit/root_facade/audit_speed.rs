@@ -165,6 +165,8 @@ fn windowed_line_attribution_is_not_linear_in_offset() {
     assert!(record_window_match(
         &line_offsets,
         0,
+        0,
+        text.len(),
         &mut probe,
         &mut seen,
         &mut seen_order
@@ -182,7 +184,15 @@ fn windowed_line_attribution_is_not_linear_in_offset() {
     for k in 0..CALLS {
         let off = probe_offset.saturating_sub(k);
         let mut m = demo_window_match(off);
-        if record_window_match(&line_offsets, 0, &mut m, &mut seen, &mut seen_order) {
+        if record_window_match(
+            &line_offsets,
+            0,
+            0,
+            text.len(),
+            &mut m,
+            &mut seen,
+            &mut seen_order,
+        ) {
             sink = sink.wrapping_add(m.location.line.unwrap_or(0));
         }
     }

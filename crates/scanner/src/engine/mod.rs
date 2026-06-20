@@ -141,7 +141,7 @@ pub(crate) use scan_postprocess::decode_profile_dump;
 pub(crate) use windowed_support::ceil_char_boundary;
 pub use windowed_support::{
     floor_char_boundary, line_number_for_offset, next_window_offset, record_window_match,
-    window_chunk, window_end_offset,
+    window_chunk, window_end_offset, window_ranges,
 };
 
 use crate::compiler::*;

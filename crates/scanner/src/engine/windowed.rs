@@ -1,3 +1,5 @@
+#[cfg(any(feature = "simd", feature = "gpu"))]
+use super::windowed_support::window_ranges;
 use super::windowed_support::{
     next_window_offset, record_window_match, window_chunk, window_end_offset,
 };
@@ -39,7 +41,9 @@ impl CompiledScanner {
             for mut raw_match in self.scan_inner(&window_chunk, backend, deadline) {
                 if record_window_match(
                     &line_offsets,
+                    chunk.metadata.base_offset,
                     offset,
+                    end - offset,
                     &mut raw_match,
                     &mut seen,
                     &mut seen_order,
@@ -67,6 +71,8 @@ impl CompiledScanner {
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
         generic_keyword_positions: Option<&[u32]>,
     ) -> Vec<RawMatch> {
+        use rayon::prelude::*;
+
         let chunk_text = &chunk.data;
         if reject_oversized_window_chunk(chunk, chunk_text) {
             return Vec::new();
@@ -74,57 +80,69 @@ impl CompiledScanner {
         let mut all_matches = Vec::with_capacity((chunk_text.len() / 4096).max(16));
         let mut seen = HashSet::new();
         let mut seen_order = VecDeque::new();
-        let mut offset = 0usize;
         let line_offsets = crate::compute_line_offsets(chunk_text);
+        let ranges = window_ranges(chunk_text, MAX_SCAN_CHUNK_BYTES, WINDOW_OVERLAP_BYTES);
 
-        while offset < chunk_text.len() {
-            if let Some(deadline) = deadline {
-                if std::time::Instant::now() > deadline {
-                    break;
+        let window_matches: Vec<(usize, usize, Vec<RawMatch>)> = ranges
+            .par_iter()
+            .map(|&(offset, end)| {
+                let window_len = end - offset;
+                if let Some(deadline) = deadline {
+                    if std::time::Instant::now() > deadline {
+                        return (offset, window_len, Vec::new());
+                    }
                 }
-            }
-            let end = window_end_offset(chunk_text, offset, MAX_SCAN_CHUNK_BYTES);
-            let window_chunk = window_chunk(chunk, offset, end);
-            let prepared = self.prepare_chunk(&window_chunk);
-            let window_confirmed_anchor_matches;
-            let confirmed_anchor_matches = if let Some(matches) = confirmed_anchor_literal_matches {
-                window_confirmed_anchor_matches = matches
-                    .iter()
-                    .filter_map(|&(literal_idx, pos)| {
-                        let pos = pos as usize;
-                        (pos >= offset && pos < end).then_some((literal_idx, (pos - offset) as u32))
-                    })
-                    .collect::<Vec<_>>();
-                Some(window_confirmed_anchor_matches.as_slice())
-            } else {
-                None
-            };
-            let window_generic_keyword_positions;
-            let generic_positions = if let Some(positions) = generic_keyword_positions {
-                window_generic_keyword_positions = positions
-                    .iter()
-                    .filter_map(|&pos| {
-                        let pos = pos as usize;
-                        (pos >= offset && pos < end).then_some((pos - offset) as u32)
-                    })
-                    .collect::<Vec<_>>();
-                Some(window_generic_keyword_positions.as_slice())
-            } else {
-                None
-            };
-            for mut raw_match in self.scan_prepared_with_triggered(
-                prepared,
-                crate::hw_probe::ScanBackend::SimdCpu,
-                triggered_patterns.to_vec(),
-                deadline,
-                phase2_keyword_hints,
-                phase2_always_anchor_present,
-                confirmed_anchor_matches,
-                generic_positions,
-            ) {
+                let window_chunk = window_chunk(chunk, offset, end);
+                let prepared = self.prepare_chunk(&window_chunk);
+                let window_confirmed_anchor_matches;
+                let confirmed_anchor_matches =
+                    if let Some(matches) = confirmed_anchor_literal_matches {
+                        window_confirmed_anchor_matches = matches
+                            .iter()
+                            .filter_map(|&(literal_idx, pos)| {
+                                let pos = pos as usize;
+                                (pos >= offset && pos < end)
+                                    .then_some((literal_idx, (pos - offset) as u32))
+                            })
+                            .collect::<Vec<_>>();
+                        Some(window_confirmed_anchor_matches.as_slice())
+                    } else {
+                        None
+                    };
+                let window_generic_keyword_positions;
+                let generic_positions = if let Some(positions) = generic_keyword_positions {
+                    window_generic_keyword_positions = positions
+                        .iter()
+                        .filter_map(|&pos| {
+                            let pos = pos as usize;
+                            (pos >= offset && pos < end).then_some((pos - offset) as u32)
+                        })
+                        .collect::<Vec<_>>();
+                    Some(window_generic_keyword_positions.as_slice())
+                } else {
+                    None
+                };
+                let matches = self.scan_prepared_with_triggered(
+                    prepared,
+                    crate::hw_probe::ScanBackend::SimdCpu,
+                    triggered_patterns.to_vec(),
+                    deadline,
+                    phase2_keyword_hints,
+                    phase2_always_anchor_present,
+                    confirmed_anchor_matches,
+                    generic_positions,
+                );
+                (offset, window_len, matches)
+            })
+            .collect();
+
+        for (offset, window_len, matches) in window_matches {
+            for mut raw_match in matches {
                 if record_window_match(
                     &line_offsets,
+                    chunk.metadata.base_offset,
                     offset,
+                    window_len,
                     &mut raw_match,
                     &mut seen,
                     &mut seen_order,
@@ -132,10 +150,6 @@ impl CompiledScanner {
                     all_matches.push(raw_match);
                 }
             }
-            if end >= chunk_text.len() {
-                break;
-            }
-            offset = next_window_offset(chunk_text, end, WINDOW_OVERLAP_BYTES);
         }
 
         all_matches

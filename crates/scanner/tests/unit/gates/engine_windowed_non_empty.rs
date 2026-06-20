@@ -23,6 +23,8 @@ fn engine_windowed_non_empty() {
     assert!(
         src.contains("pub(crate) fn scan_windowed_with_triggered")
             && src.contains("triggered_patterns: &[u64]")
+            && src.contains("window_ranges(chunk_text, MAX_SCAN_CHUNK_BYTES, WINDOW_OVERLAP_BYTES)")
+            && src.contains(".par_iter()")
             && src.contains("scan_prepared_with_triggered("),
         "engine::windowed: coalesced/GPU large-chunk phase-2 must preserve producer trigger bitmaps instead of recomputing phase1 per window"
     );
