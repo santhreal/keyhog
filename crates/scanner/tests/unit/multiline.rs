@@ -18,6 +18,18 @@ fn test_python_implicit_concatenation() {
 }
 
 #[test]
+fn test_python_parenthesized_implicit_three_line_concatenation() {
+    let text = "token = (\n    \"sk-proj-\"\n    \"abcdef123456\"\n    \"7890abcdef\"\n)\n";
+    let preprocessed =
+        preprocess_multiline(text, &MultilineConfig::default(), &FragmentCache::new(100));
+    assert!(
+        preprocessed.text.contains("sk-proj-abcdef1234567890abcdef"),
+        "parenthesized implicit string block must append the joined credential; got:\n{}",
+        preprocessed.text
+    );
+}
+
+#[test]
 fn test_javascript_plus_concatenation() {
     let text = "const key = \"sk-\" +\n    \"test_\" +\n    \"secret123\";";
     let preprocessed =

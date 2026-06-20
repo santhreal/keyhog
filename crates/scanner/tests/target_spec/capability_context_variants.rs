@@ -256,7 +256,7 @@ fn every_sufficient_detector_fires_on_a_rotated_key() {
 /// detector's structural anchor is untouched.
 fn rotate_body(cred: &str) -> Option<String> {
     let bytes = cred.as_bytes();
-    let mut best: Option<(usize, usize)> = None; // (start, len)
+    let mut runs: Vec<(usize, usize)> = Vec::new(); // (start, len)
     let mut run_start = None;
     for (i, b) in bytes.iter().enumerate() {
         let alnum = b.is_ascii_alphanumeric();
@@ -264,8 +264,8 @@ fn rotate_body(cred: &str) -> Option<String> {
             (true, None) => run_start = Some(i),
             (false, Some(s)) => {
                 let len = i - s;
-                if best.map_or(true, |(_, bl)| len > bl) {
-                    best = Some((s, len));
+                if len >= 8 {
+                    runs.push((s, len));
                 }
                 run_start = None;
             }
@@ -274,14 +274,20 @@ fn rotate_body(cred: &str) -> Option<String> {
     }
     if let Some(s) = run_start {
         let len = bytes.len() - s;
-        if best.map_or(true, |(_, bl)| len > bl) {
-            best = Some((s, len));
+        if len >= 8 {
+            runs.push((s, len));
         }
     }
-    let (start, len) = best?;
-    if len < 8 {
-        return None;
+    let (mut start, mut len) = *runs.last()?;
+    if start == 0 && len >= 12 {
+        // No-separator tokens often carry fixed detector prefixes inside the
+        // same alphanumeric run (`AKIA...`, `AIza...`). Preserve that structural
+        // prefix and rotate the body bytes behind it, matching the test's
+        // contract instead of accidentally generating a different token shape.
+        start += 4;
+        len -= 4;
     }
+    (len >= 8).then_some(())?;
     let mut out = cred.as_bytes().to_vec();
     for (k, b) in out[start..start + len].iter_mut().enumerate() {
         // Deterministic rotation within the same class so digits stay digits,

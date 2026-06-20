@@ -1,5 +1,5 @@
-use super::config::LineMapping;
-use super::string_extract::extract_prefix;
+use super::config::{starts_parenthesized_implicit_block, LineMapping};
+use super::string_extract::{extract_prefix, extract_quoted_content};
 use crate::fragment_cache::FragmentCache;
 use crate::shared_regexes::ASSIGN_RE;
 use regex::Regex;
@@ -108,6 +108,29 @@ pub(super) fn collect_structural_fragments(
                 active_clusters.insert(prefix, new_idx);
             }
         }
+    }
+
+    // Python-style implicit concatenation also appears as a parenthesized block:
+    //
+    //   token = (
+    //       "head"
+    //       "middle"
+    //       "tail"
+    //   )
+    //
+    // The per-line chain joins explicit `+` and same-line implicit literals;
+    // this structural pass owns the cross-line block shape.
+    for (start_line, joined) in collect_parenthesized_implicit_blocks(lines)
+        .into_iter()
+        .filter(|(_, joined)| joined.len() >= 12)
+    {
+        structural_joined.push(joined.clone());
+        structural_mappings.push(LineMapping {
+            start_offset: current_struct_offset,
+            end_offset: current_struct_offset + joined.len(),
+            line_number: start_line,
+        });
+        current_struct_offset += joined.len() + 1;
     }
 
     // Second pass: reassemble explicit `+`-concatenation expressions like
@@ -322,4 +345,59 @@ fn join_inline_array_strings(line: &str) -> String {
     }
 
     array_joined
+}
+
+fn collect_parenthesized_implicit_blocks(lines: &[&str]) -> Vec<(usize, String)> {
+    let mut blocks = Vec::new();
+    let mut index = 0usize;
+    while index < lines.len() {
+        if !starts_parenthesized_implicit_block(lines[index]) {
+            index += 1;
+            continue;
+        }
+
+        let mut parts = Vec::new();
+        let mut first_literal_line = None;
+        let mut cursor = index + 1;
+        let mut closed = false;
+        while cursor < lines.len() && cursor.saturating_sub(index) <= 16 {
+            let trimmed = lines[cursor].trim();
+            if trimmed.starts_with(')') {
+                closed = true;
+                break;
+            }
+            if trimmed.is_empty() {
+                cursor += 1;
+                continue;
+            }
+            let Some(part) = quoted_literal_line(trimmed) else {
+                parts.clear();
+                break;
+            };
+            first_literal_line.get_or_insert(cursor + 1);
+            parts.push(part);
+            cursor += 1;
+        }
+
+        if closed && parts.len() >= 2 {
+            if let Some(start_line) = first_literal_line {
+                blocks.push((start_line, parts.concat()));
+            }
+            index = cursor + 1;
+        } else {
+            index += 1;
+        }
+    }
+    blocks
+}
+
+fn quoted_literal_line(trimmed: &str) -> Option<String> {
+    let literal = trimmed.trim_end_matches(',').trim();
+    if literal.starts_with('"') {
+        return extract_quoted_content(literal, '"', '"');
+    }
+    if literal.starts_with('\'') {
+        return extract_quoted_content(literal, '\'', '\'');
+    }
+    None
 }

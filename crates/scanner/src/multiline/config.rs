@@ -201,6 +201,7 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
             || trimmed.contains("paste0(")
             || trimmed.contains("paste(")
             || trimmed.contains("concat!(")
+            || starts_parenthesized_implicit_block(trimmed)
             || trimmed.contains("\" +")
             || trimmed.contains("' +")
             || trimmed.contains("+ \"")
@@ -231,6 +232,14 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
     }
 
     false
+}
+
+#[cfg(feature = "multiline")]
+pub(super) fn starts_parenthesized_implicit_block(line: &str) -> bool {
+    let Some(assign_idx) = line.find(['=', ':']) else {
+        return false;
+    };
+    line[assign_idx + 1..].trim() == "("
 }
 
 #[cfg(feature = "multiline")]
