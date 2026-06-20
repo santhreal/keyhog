@@ -27,7 +27,8 @@ pub(crate) async fn run(args: RepairArgs) -> Result<ExitCode> {
     // 1. Diagnose. The in-process self-test exercises the running binary's
     //    scan pipeline; if it works and the user didn't force, there's nothing
     //    to repair.
-    let healthy = installer::scan_engine_self_test().unwrap_or(false); // LAW10: empty/absent => documented numeric default, recall-safe
+    let self_test = installer::scan_engine_self_test();
+    let healthy = matches!(self_test, Ok(true));
     if healthy && !args.force {
         println!(
             "  {} scan engine healthy - nothing to repair.",
@@ -39,7 +40,19 @@ pub(crate) async fn run(args: RepairArgs) -> Result<ExitCode> {
     if healthy {
         println!("  {dim}--force: reinstalling a fresh binary.{reset}");
     } else {
-        println!("  {yellow}self-test failed{reset} - reinstalling a fresh binary.");
+        match &self_test {
+            Ok(false) => {
+                println!(
+                    "  {yellow}self-test failed{reset} (planted secret was not detected) - reinstalling a fresh binary."
+                );
+            }
+            Err(error) => {
+                println!(
+                    "  {yellow}self-test failed{reset} ({error}) - reinstalling a fresh binary."
+                );
+            }
+            Ok(true) => {}
+        }
     }
 
     // 2. Reinstall a known-good release binary (latest, or pinned --version).

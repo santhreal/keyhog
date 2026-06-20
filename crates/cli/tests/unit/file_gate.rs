@@ -428,6 +428,26 @@ fn subcommands_hook_error() {
     assert!(Cli::try_parse_from(["keyhog", "hook"]).is_err());
 }
 
+// ── crates/cli/src/subcommands/repair.rs ──────────────────────────────
+#[test]
+fn subcommands_repair_self_test_errors_are_visible() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let repair = std::fs::read_to_string(root.join("src/subcommands/repair.rs"))
+        .expect("read repair subcommand");
+    assert!(
+        !repair.contains("scan_engine_self_test().unwrap_or(false)"),
+        "repair must not collapse self-test errors into a boolean"
+    );
+    assert!(
+        repair.contains("Err(error)") && repair.contains("({error}) - reinstalling"),
+        "repair must print the self-test error reason before reinstalling"
+    );
+    assert!(
+        repair.contains("planted secret was not detected"),
+        "repair must distinguish a false self-test from an errored self-test"
+    );
+}
+
 // ── crates/cli/src/subcommands/scan.rs ────────────────────────────────
 #[test]
 fn subcommands_scan_error() {
