@@ -129,6 +129,112 @@ pub(crate) fn looks_like_word_separated_identifier(value: &str) -> bool {
     true
 }
 
+/// True when a hyphen-separated value is policy/config prose rather than an
+/// opaque token. This targets long train-case status strings such as
+/// `ExecStart-points-to-public-vyre-binary-or-verified-install-path` that carry
+/// credential keywords in the surrounding key but are made of natural-language
+/// words.
+pub(crate) fn looks_like_train_case_prose_identifier(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() < 24 || bytes.len() > 160 || !bytes.contains(&b'-') {
+        return false;
+    }
+    if !bytes.iter().all(|&b| b.is_ascii_alphabetic() || b == b'-') {
+        return false;
+    }
+    const PROSE_CONNECTORS: &[&str] = &[
+        "and", "or", "to", "for", "from", "with", "without", "non", "only", "into",
+    ];
+    let mut part_count = 0usize;
+    let mut lower_parts = 0usize;
+    let mut has_connector = false;
+    for part in value.split('-') {
+        if part.is_empty() || part.len() > 18 {
+            return false;
+        }
+        part_count += 1;
+        if part.bytes().any(|b| b.is_ascii_lowercase()) {
+            lower_parts += 1;
+        }
+        if PROSE_CONNECTORS
+            .iter()
+            .any(|connector| part.eq_ignore_ascii_case(connector))
+        {
+            has_connector = true;
+        }
+    }
+    if part_count < 4 || lower_parts < 3 || !has_connector {
+        return false;
+    }
+    !super::token_randomness::is_random_token(value)
+}
+
+/// Public schema/policy identifiers often look like
+/// `product-area-contract:v1`. Under keys such as `schema_token` the generic
+/// bridge used to report them as credentials; a versioned kebab identifier is a
+/// public contract name, not a secret.
+pub(crate) fn looks_like_public_version_identifier(value: &str) -> bool {
+    let Some((name, version)) = value.split_once(':') else {
+        return false;
+    };
+    let Some(version_digits) = version.strip_prefix('v') else {
+        return false;
+    };
+    if version_digits.is_empty()
+        || version_digits.len() > 3
+        || !version_digits.bytes().all(|b| b.is_ascii_digit())
+    {
+        return false;
+    }
+    if name.len() < 8 || name.len() > 96 || !name.contains('-') {
+        return false;
+    }
+    if !name
+        .bytes()
+        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    {
+        return false;
+    }
+    let mut part_count = 0usize;
+    for part in name.split('-') {
+        if part.is_empty() || part.len() > 24 {
+            return false;
+        }
+        part_count += 1;
+    }
+    if part_count < 3 {
+        return false;
+    }
+    !super::token_randomness::is_random_token(name)
+}
+
+/// Shell/template values are assembled at runtime. The generic bridge may see
+/// either the full `${VAR}` / `$(cmd)` form or a regex-truncated prefix ending
+/// in `$`; both are source templates, not literal credentials.
+pub(crate) fn looks_like_shell_template_value(value: &str) -> bool {
+    if value.contains("${") || value.contains("$(") {
+        return true;
+    }
+    let Some(prefix) = value.strip_suffix('$') else {
+        return false;
+    };
+    let prefix = prefix.trim_end_matches('-');
+    if prefix.len() < 8 || prefix.len() > 80 || !prefix.contains('-') {
+        return false;
+    }
+    if !prefix.bytes().all(|b| b.is_ascii_alphabetic() || b == b'-') {
+        return false;
+    }
+    let mut part_count = 0usize;
+    for part in prefix.split('-') {
+        if part.is_empty() || part.len() > 18 {
+            return false;
+        }
+        part_count += 1;
+    }
+    part_count >= 2 && !super::token_randomness::is_random_token(prefix)
+}
+
 /// True if `value` looks like a URI / URN / scheme-prefixed string.
 /// Captures these FP shapes seen in dogfood:
 ///   * `urn:shopify:params:oauth:token-type:online-access-token`

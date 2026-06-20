@@ -136,6 +136,17 @@ pub(crate) fn entropy_match_suppressed(
     if crate::pipeline::looks_like_word_separated_identifier(&entropy_match.value) {
         return true;
     }
+    // Long train-case config/policy prose next to a credential keyword is still
+    // prose, not an entropy-bearing secret.
+    if crate::pipeline::looks_like_train_case_prose_identifier(&entropy_match.value) {
+        return true;
+    }
+    if crate::pipeline::looks_like_public_version_identifier(&entropy_match.value) {
+        return true;
+    }
+    if crate::pipeline::looks_like_shell_template_value(&entropy_match.value) {
+        return true;
+    }
     // Scheme-prefixed URI / URN (`urn:shopify:...`,
     // `secret-token:<base64>`).
     if crate::pipeline::looks_like_scheme_prefixed_uri(&entropy_match.value) {

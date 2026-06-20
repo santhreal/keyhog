@@ -78,6 +78,15 @@ impl CompiledScanner {
         if value.len() < 8 {
             return Some("value_too_short");
         }
+        if crate::pipeline::looks_like_train_case_prose_identifier(value) {
+            return Some("train_case_prose_identifier");
+        }
+        if crate::pipeline::looks_like_public_version_identifier(value) {
+            return Some("public_version_identifier");
+        }
+        if crate::pipeline::looks_like_shell_template_value(value) {
+            return Some("shell_template_value");
+        }
 
         // Variable-name filter: real secrets have mixed character classes.
         // Reject if the value looks like a code expression (has parens,
