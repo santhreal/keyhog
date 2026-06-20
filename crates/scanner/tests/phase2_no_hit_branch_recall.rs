@@ -487,6 +487,56 @@ fn isolated_snake_case_identifier_with_digits_stays_below_entropy_recovery() {
 
 #[cfg(feature = "entropy")]
 #[test]
+fn isolated_mixed_alnum_entropy_secret_uses_randomness_floor() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+    let secret = "C372xGw30nSx5QdQuTxy";
+    let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
+
+    let matches = scanner.scan(&chunk);
+    let entropy_fired = matches.iter().any(|m| {
+        m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
+    });
+    assert!(
+        entropy_fired,
+        "an isolated 20-byte mixed alnum token that the shared randomness model \
+         classifies as random must clear the lower full-line floor; matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
+fn isolated_camelcase_identifier_with_digits_stays_below_mixed_alnum_floor() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+    let identifier = "ClientSecretConfigValue2";
+    let chunk = make_chunk(identifier, "notes/sufficiency-probe.txt");
+
+    let matches = scanner.scan(&chunk);
+    let entropy_fired = matches.iter().any(|m| {
+        m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(identifier)
+    });
+    assert!(
+        !entropy_fired,
+        "pronounceable camelCase identifiers with digits must not enter the \
+         lower mixed-alnum isolated-token floor; matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
 fn isolated_bare_dash_entropy_secret_bypasses_serial_decoy_gate() {
     let mut config = ScannerConfig::default();
     config.min_confidence = 0.0;

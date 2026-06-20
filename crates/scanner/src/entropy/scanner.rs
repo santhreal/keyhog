@@ -318,6 +318,7 @@ fn isolated_bare_entropy_floor_met(candidate: &str, entropy: f64, threshold: f64
         return false;
     }
     mixed_separator_token_floor_met(candidate, entropy)
+        || mixed_contiguous_token_floor_met(candidate, entropy)
 }
 
 pub(crate) fn mixed_separator_token_floor_met(candidate: &str, entropy: f64) -> bool {
@@ -341,6 +342,31 @@ pub(crate) fn mixed_separator_token_floor_met(candidate: &str, entropy: f64) -> 
         has_digit |= b.is_ascii_digit();
     }
     has_upper && has_lower && has_digit
+}
+
+fn mixed_contiguous_token_floor_met(candidate: &str, entropy: f64) -> bool {
+    const MIXED_CONTIGUOUS_TOKEN_THRESHOLD: f64 = 3.65;
+    if entropy < MIXED_CONTIGUOUS_TOKEN_THRESHOLD || candidate.len() < 20 {
+        return false;
+    }
+    let mut has_upper = false;
+    let mut has_lower = false;
+    let mut has_digit = false;
+    let mut all_hex = true;
+    for b in candidate.bytes() {
+        if !b.is_ascii_alphanumeric() {
+            return false;
+        }
+        has_upper |= b.is_ascii_uppercase();
+        has_lower |= b.is_ascii_lowercase();
+        has_digit |= b.is_ascii_digit();
+        all_hex &= b.is_ascii_hexdigit();
+    }
+    has_upper
+        && has_lower
+        && has_digit
+        && !all_hex
+        && crate::suppression::token_randomness::is_random_token(candidate)
 }
 
 fn collect_isolated_bare_candidate(
