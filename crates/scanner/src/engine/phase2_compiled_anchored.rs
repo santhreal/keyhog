@@ -66,6 +66,7 @@ impl CompiledScanner {
         // starting inside the window are byte-identical. `None` = whole chunk.
         focus: Option<(usize, usize)>,
         phase2_keyword_hints: Option<&[u32]>,
+        phase2_always_anchor_present: Option<bool>,
     ) {
         let prof = phase2_pattern_prof_enabled();
         // Text the AC candidate scan and the always-active prefilter run on.
@@ -101,6 +102,8 @@ impl CompiledScanner {
                                 |pat| scratch.is_active(pat),
                                 &mut cands,
                             );
+                        } else if phase2_always_anchor_present == Some(false) {
+                            cands.clear();
                         } else {
                             anchor_idx.collect_always_active_candidates(scan_text, &mut cands);
                         }

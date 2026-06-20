@@ -11,6 +11,7 @@ impl CompiledScanner {
         triggered_patterns: Vec<u64>,
         deadline: Option<std::time::Instant>,
         phase2_keyword_hints: Option<&[u32]>,
+        phase2_always_anchor_present: Option<bool>,
     ) -> Vec<RawMatch> {
         // Borrow cached line offsets; downstream consumers take `&[usize]`.
         let line_offsets: &[usize] = prepared.line_offsets();
@@ -33,6 +34,12 @@ impl CompiledScanner {
         let expanded_patterns = self.expand_triggered_patterns(&triggered_patterns);
         // Needed by phase-2 capture on both trigger and no-trigger paths.
         let documentation_lines = context::documentation_line_flags(&code_lines);
+        // GPU presence rows are produced from raw chunk bytes. A negative
+        // always-anchor row is only a sound skip proof when phase-2 scans the
+        // same bytes; unicode/multiline preprocessing can introduce ASCII
+        // anchor text that the raw GPU literal pass could not have seen.
+        let phase2_always_anchor_present = phase2_always_anchor_present
+            .filter(|_| prepared.preprocessed.text.as_bytes() == prepared.chunk.data.as_bytes());
 
         // No-trigger fast path: when no AC pattern fired, the entire
         // confirmed-pattern extraction pipeline is dead work. Skip
@@ -117,6 +124,7 @@ impl CompiledScanner {
                 deadline,
                 span,
                 phase2_keyword_hints,
+                phase2_always_anchor_present,
             ),
             None => self.scan_phase2_patterns(
                 &prepared.preprocessed,
@@ -127,6 +135,7 @@ impl CompiledScanner {
                 &mut scan_state,
                 deadline,
                 phase2_keyword_hints,
+                phase2_always_anchor_present,
             ),
         }
 
@@ -182,6 +191,7 @@ impl CompiledScanner {
             &documentation_lines,
             prepared.chunk,
             &mut scan_state,
+            None,
             None,
             None,
         );
@@ -340,7 +350,7 @@ impl CompiledScanner {
     /// was removed; see `collect_triggered_patterns_gpu`).
     #[inline]
     pub(super) fn gpu_presence_literal_count(&self) -> usize {
-        self.ac_map.len() + self.phase2_keyword_count
+        self.ac_map.len() + self.phase2_keyword_count + self.phase2_always_anchor_literal_count
     }
 
     pub(super) fn gpu_presence_stray_tail_bits(&self, presence: &[u32]) -> Option<(usize, u32)> {
@@ -397,6 +407,27 @@ impl CompiledScanner {
         hints
     }
 
+    #[cfg(feature = "gpu")]
+    pub(super) fn phase2_always_anchor_present_from_gpu_presence(&self, presence: &[u32]) -> bool {
+        let anchor_count = self.phase2_always_anchor_literal_count;
+        if anchor_count == 0 {
+            return false;
+        }
+        let base = self.ac_map.len() + self.phase2_keyword_count;
+        for anchor_idx in 0..anchor_count {
+            let literal_idx = base + anchor_idx;
+            let word_idx = literal_idx / 32;
+            let bit = literal_idx % 32;
+            if presence
+                .get(word_idx)
+                .is_some_and(|word| (word & (1u32 << bit)) != 0)
+            {
+                return true;
+            }
+        }
+        false
+    }
+
     fn mark_triggered_pattern(&self, triggered_patterns: &mut [u64], pattern_index: usize) {
         if pattern_index / 64 >= triggered_patterns.len() {
             return;
@@ -440,34 +471,54 @@ mod tests {
     use super::*;
     use keyhog_core::{DetectorSpec, PatternSpec, Severity};
 
-    fn scanner_with_detector_and_phase2_keyword() -> CompiledScanner {
+    fn scanner_with_detector_and_phase2_keyword_and_anchor() -> CompiledScanner {
         CompiledScanner::compile_with_gpu_policy(
-            vec![DetectorSpec {
-                tests: Vec::new(),
-                id: "gpu-presence-split".into(),
-                name: "GPU Presence Split".into(),
-                service: "test".into(),
-                severity: Severity::High,
-                patterns: vec![
-                    PatternSpec {
-                        regex: "abc[0-9]+".into(),
+            vec![
+                DetectorSpec {
+                    tests: Vec::new(),
+                    id: "gpu-presence-split".into(),
+                    name: "GPU Presence Split".into(),
+                    service: "test".into(),
+                    severity: Severity::High,
+                    patterns: vec![
+                        PatternSpec {
+                            regex: "abc[0-9]+".into(),
+                            description: None,
+                            group: None,
+                            client_safe: false,
+                        },
+                        PatternSpec {
+                            regex: "[a-z]{4}[0-9]{4}".into(),
+                            description: None,
+                            group: None,
+                            client_safe: false,
+                        },
+                    ],
+                    companions: Vec::new(),
+                    verify: None,
+                    keywords: vec!["phasekw".into()],
+                    min_confidence: None,
+                    ..Default::default()
+                },
+                DetectorSpec {
+                    tests: Vec::new(),
+                    id: "gpu-presence-always-anchor".into(),
+                    name: "GPU Presence Always Anchor".into(),
+                    service: "test".into(),
+                    severity: Severity::High,
+                    patterns: vec![PatternSpec {
+                        regex: "[Aa][Nn][Cc][Hh][Oo][Rr][Kk][Ee][Yy][0-9]{4}".into(),
                         description: None,
                         group: None,
                         client_safe: false,
-                    },
-                    PatternSpec {
-                        regex: "[a-z]{4}[0-9]{4}".into(),
-                        description: None,
-                        group: None,
-                        client_safe: false,
-                    },
-                ],
-                companions: Vec::new(),
-                verify: None,
-                keywords: vec!["phasekw".into()],
-                min_confidence: None,
-                ..Default::default()
-            }],
+                    }],
+                    companions: Vec::new(),
+                    verify: None,
+                    keywords: Vec::new(),
+                    min_confidence: None,
+                    ..Default::default()
+                },
+            ],
             GpuInitPolicy::ForceDisabled,
         )
         .expect("scanner compile")
@@ -475,7 +526,7 @@ mod tests {
 
     #[test]
     fn appended_gpu_presence_bits_become_phase2_keyword_hints_only() {
-        let scanner = scanner_with_detector_and_phase2_keyword();
+        let scanner = scanner_with_detector_and_phase2_keyword_and_anchor();
         assert_eq!(
             scanner.ac_map.len(),
             1,
@@ -484,6 +535,10 @@ mod tests {
         assert_eq!(
             scanner.phase2_keyword_count, 1,
             "fixture needs one phase2 keyword"
+        );
+        assert!(
+            scanner.phase2_always_anchor_literal_count > 0,
+            "fixture needs at least one always-active anchor literal"
         );
 
         let mut row = vec![0u32; scanner.gpu_presence_literal_count().div_ceil(32).max(1)];
@@ -501,6 +556,31 @@ mod tests {
                 .iter()
                 .all(|&word| word == 0),
             "phase2 keyword bits must not set confirmed detector trigger bits"
+        );
+        assert!(
+            !scanner.phase2_always_anchor_present_from_gpu_presence(&row),
+            "phase2 keyword bits must not mark always-active anchor presence"
+        );
+    }
+
+    #[test]
+    fn appended_gpu_presence_anchor_bits_are_absence_proofs_only() {
+        let scanner = scanner_with_detector_and_phase2_keyword_and_anchor();
+        let mut row = vec![0u32; scanner.gpu_presence_literal_count().div_ceil(32).max(1)];
+        let anchor_literal_idx = scanner.ac_map.len() + scanner.phase2_keyword_count;
+        row[anchor_literal_idx / 32] |= 1u32 << (anchor_literal_idx % 32);
+
+        assert!(scanner
+            .phase2_keyword_hints_from_gpu_presence(&row)
+            .is_empty());
+        assert!(scanner.phase2_always_anchor_present_from_gpu_presence(&row));
+        assert!(scanner.gpu_presence_stray_tail_bits(&row).is_none());
+        assert!(
+            scanner
+                .triggered_patterns_from_gpu_presence(&row)
+                .iter()
+                .all(|&word| word == 0),
+            "always-active anchor bits must not set confirmed detector trigger bits"
         );
     }
 }

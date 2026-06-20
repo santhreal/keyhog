@@ -31,9 +31,9 @@ fn engine_windowed_non_empty() {
         "engine::windowed: do not reintroduce the wrapper that discarded coalesced producer triggers on large chunks"
     );
     assert!(
-        coalesced_src.contains(
-            "self.scan_windowed_with_triggered(chunk, &triggered, None, keyword_hints)"
-        ),
-        "engine::scan_coalesced: triggered large chunks must route through scan_windowed_with_triggered with producer keyword hints"
+        coalesced_src.contains("self.scan_windowed_with_triggered(")
+            && coalesced_src.contains("keyword_hints")
+            && coalesced_src.contains("always_anchor_present"),
+        "engine::scan_coalesced: triggered large chunks must route through scan_windowed_with_triggered with producer keyword hints and always-anchor presence proof"
     );
 }

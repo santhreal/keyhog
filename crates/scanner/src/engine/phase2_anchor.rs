@@ -131,6 +131,11 @@ pub(crate) struct Phase2AnchorIndex {
     /// semantics and run the few active keyword patterns whole-window instead
     /// of paying the all-eligible shared AC scan.
     always_anchor_ac: Option<AhoCorasick>,
+    /// Literal rows backing `always_anchor_ac`, in the same order as the AC
+    /// pattern IDs. The GPU producer appends these after detector literals and
+    /// phase-2 keywords so an all-zero tail row proves this small AC has no
+    /// possible match in that chunk.
+    always_anchor_literals: Vec<String>,
     /// First-bigram prescreen for `always_anchor_ac`.
     always_anchor_first_bigram: Option<FirstBigramSet>,
     /// `always_anchor_ac` pattern id -> always-active phase-2 indices.
@@ -178,6 +183,10 @@ impl Phase2AnchorIndex {
             return false;
         }
         matches!(self.always_active_eligible.get(phase2_idx), Some(true)) // LAW10: pattern not anchor-eligible => caller runs whole-chunk; anchor is a prefilter opt, recall-preserving
+    }
+
+    pub(crate) fn always_anchor_literals(&self) -> &[String] {
+        &self.always_anchor_literals
     }
 
     /// Build the index from the compiled phase-2 set. `always_active_indices`
@@ -362,6 +371,7 @@ impl Phase2AnchorIndex {
             eligible,
             always_active_eligible,
             always_anchor_ac,
+            always_anchor_literals: always_literals,
             always_anchor_first_bigram,
             always_literal_patterns,
             anchored,

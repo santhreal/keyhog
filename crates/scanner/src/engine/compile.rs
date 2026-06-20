@@ -152,14 +152,6 @@ impl CompiledScanner {
             build_phase2_keyword_ac(&state.phase2_patterns);
         let phase2_keyword_count = phase2_keywords.len();
         let phase2_keyword_to_patterns = CsrU32::from(phase2_keyword_to_patterns);
-        #[cfg(feature = "gpu")]
-        let gpu_literals = if gpu_backend.is_some() {
-            build_gpu_literals(&state.ac_literals, &phase2_keywords)
-        } else {
-            None
-        };
-        #[cfg(not(feature = "gpu"))]
-        let gpu_literals: Option<Arc<Vec<Vec<u8>>>> = None;
         // Precompute always-active phase-2 indices so the per-chunk hot path
         // seeds the sparse active set without scanning the full phase-2 table.
         let phase2_always_active_indices: Vec<usize> = state
@@ -186,6 +178,24 @@ impl CompiledScanner {
             &state.phase2_patterns,
             &phase2_always_active_indices,
         );
+        let phase2_always_anchor_literal_count = phase2_anchor_index
+            .as_ref()
+            .map_or(0, |index| index.always_anchor_literals().len());
+        #[cfg(feature = "gpu")]
+        let gpu_literals = if gpu_backend.is_some() {
+            let phase2_always_anchor_literals = phase2_anchor_index
+                .as_ref()
+                .map_or(&[] as &[String], |index| index.always_anchor_literals());
+            build_gpu_literals(
+                &state.ac_literals,
+                &phase2_keywords,
+                phase2_always_anchor_literals,
+            )
+        } else {
+            None
+        };
+        #[cfg(not(feature = "gpu"))]
+        let gpu_literals: Option<Arc<Vec<Vec<u8>>>> = None;
 
         // Combined-RegexSet prefilter over EVERY always-active phase-2 pattern. The
         // plain (homoglyph-variant) batches carry a fast ASCII-folded alternate
@@ -401,6 +411,7 @@ impl CompiledScanner {
             phase2_keyword_ac,
             phase2_keyword_to_patterns,
             phase2_keyword_count,
+            phase2_always_anchor_literal_count,
             phase2_always_active_indices,
             phase2_always_active_prefilter,
             phase2_anchor_index,

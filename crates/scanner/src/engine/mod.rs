@@ -240,6 +240,11 @@ pub struct CompiledScanner {
     pub(crate) phase2_keyword_ac: Option<AhoCorasick>,
     pub(crate) phase2_keyword_to_patterns: CsrU32,
     pub(crate) phase2_keyword_count: usize,
+    /// GPU region-presence literal rows appended after detector literals and
+    /// phase-2 keyword rows. These are the literals backing the always-active
+    /// phase-2 anchor AC; an all-zero row segment proves that AC has no possible
+    /// candidates for the chunk.
+    pub(crate) phase2_always_anchor_literal_count: usize,
     pub(crate) phase2_always_active_indices: Vec<usize>,
     /// Combined-RegexSet prefilter over `phase2_always_active_indices`. When
     /// present, the per-chunk phase-2 capture scan runs one linear set pass instead of

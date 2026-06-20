@@ -63,6 +63,7 @@ impl CompiledScanner {
         triggered_patterns: &[u64],
         deadline: Option<std::time::Instant>,
         phase2_keyword_hints: Option<&[u32]>,
+        phase2_always_anchor_present: Option<bool>,
     ) -> Vec<RawMatch> {
         let chunk_text = &chunk.data;
         if reject_oversized_window_chunk(chunk, chunk_text) {
@@ -89,6 +90,7 @@ impl CompiledScanner {
                 triggered_patterns.to_vec(),
                 deadline,
                 phase2_keyword_hints,
+                phase2_always_anchor_present,
             ) {
                 if record_window_match(
                     &line_offsets,

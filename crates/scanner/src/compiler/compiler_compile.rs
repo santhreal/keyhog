@@ -32,10 +32,12 @@ pub(crate) fn build_ac_pattern_set(literals: &[String]) -> Result<Option<AhoCora
 pub(crate) fn build_gpu_literals(
     ac_literals: &[String],
     phase2_keywords: &[String],
+    phase2_always_anchor_literals: &[String],
 ) -> Option<std::sync::Arc<Vec<Vec<u8>>>> {
     if ac_literals
         .iter()
         .chain(phase2_keywords)
+        .chain(phase2_always_anchor_literals)
         .any(String::is_empty)
     {
         tracing::warn!("GPU literal set contains an empty literal; disabling GPU literal scan");
@@ -57,6 +59,7 @@ pub(crate) fn build_gpu_literals(
     let literals: Vec<Vec<u8>> = ac_literals
         .iter()
         .chain(phase2_keywords)
+        .chain(phase2_always_anchor_literals)
         .map(|literal| literal.to_ascii_lowercase().into_bytes())
         .collect();
     if literals.is_empty() {

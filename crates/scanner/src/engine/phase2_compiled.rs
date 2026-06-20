@@ -23,6 +23,7 @@ impl CompiledScanner {
         scan_state: &mut ScanState,
         deadline: Option<std::time::Instant>,
         phase2_keyword_hints: Option<&[u32]>,
+        phase2_always_anchor_present: Option<bool>,
     ) {
         if let Some(deadline) = deadline {
             if std::time::Instant::now() >= deadline {
@@ -50,6 +51,7 @@ impl CompiledScanner {
                     deadline,
                     None,
                     phase2_keyword_hints,
+                    phase2_always_anchor_present,
                 );
                 return;
             }
@@ -148,6 +150,7 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
         focus: (usize, usize),
         phase2_keyword_hints: Option<&[u32]>,
+        phase2_always_anchor_present: Option<bool>,
     ) {
         if let Some(deadline) = deadline {
             if std::time::Instant::now() >= deadline {
@@ -180,6 +183,7 @@ impl CompiledScanner {
                 scan_state,
                 deadline,
                 phase2_keyword_hints,
+                phase2_always_anchor_present,
             );
             return;
         }
@@ -203,6 +207,7 @@ impl CompiledScanner {
                     deadline,
                     focus,
                     phase2_keyword_hints,
+                    phase2_always_anchor_present,
                 );
                 return;
             }

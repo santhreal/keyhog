@@ -185,6 +185,7 @@ impl CompiledScanner {
 
             let mut triggers: Vec<Option<Vec<u64>>> = Vec::with_capacity(chunks.len());
             let mut phase2_keyword_hints: Vec<Vec<u32>> = Vec::with_capacity(chunks.len());
+            let mut phase2_always_anchor_presence: Vec<bool> = Vec::with_capacity(chunks.len());
             let mut gpu_presence_bits = 0usize;
             for (row_idx, row) in presence
                 .chunks_exact(presence_words)
@@ -203,6 +204,8 @@ impl CompiledScanner {
                     .sum::<usize>();
                 let bits = self.triggered_patterns_from_gpu_presence(row);
                 phase2_keyword_hints.push(self.phase2_keyword_hints_from_gpu_presence(row));
+                phase2_always_anchor_presence
+                    .push(self.phase2_always_anchor_present_from_gpu_presence(row));
                 if bits.iter().any(|&word| word != 0) {
                     triggers.push(Some(bits));
                 } else {
@@ -343,10 +346,15 @@ impl CompiledScanner {
                     .as_ref()
                     .map(|admission| admission.admitted.as_slice()),
                 Some(phase2_keyword_hints.as_slice()),
+                Some(phase2_always_anchor_presence.as_slice()),
             );
             if kh {
+                let phase2_always_anchor_chunks = phase2_always_anchor_presence
+                    .iter()
+                    .filter(|&&present| present)
+                    .count();
                 eprintln!(
-                    "perf-trace gpu-region-presence: chunks={} source_bytes={} coalesced_bytes={} matcher={:.3}s coalesce={:.6}s coalesce_mib_s={:.3} dispatch={:.3}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_matches={} phase2_gpu_complete={} full_recall_floor={}",
+                    "perf-trace gpu-region-presence: chunks={} source_bytes={} coalesced_bytes={} matcher={:.3}s coalesce={:.6}s coalesce_mib_s={:.3} dispatch={:.3}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_matches={} phase2_gpu_complete={} phase2_always_anchor_chunks={} full_recall_floor={}",
                     chunks.len(),
                     region_source_bytes,
                     region_coalesced_bytes,
@@ -363,6 +371,7 @@ impl CompiledScanner {
                     phase2_gpu_admitted,
                     phase2_gpu_matches,
                     phase2_gpu_complete,
+                    phase2_always_anchor_chunks,
                     full_recall_floor,
                 );
             }
