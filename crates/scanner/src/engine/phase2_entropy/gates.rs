@@ -45,13 +45,17 @@ pub(crate) fn entropy_match_suppressed(
     // `KEYWORD = <uuid/hex>` assignment), which is the only context where a
     // canonical shape is genuinely the assigned secret. This pins the release to
     // the direct-assignment surface the MoE can actually arbitrate.
+    let same_line_credential_assignment =
+        value_line_has_same_line_credential_keyword(entropy_match, preprocessed, line_offsets);
+    let same_line_random_byte_owner =
+        value_line_has_random_byte_blob_owner(entropy_match, preprocessed, line_offsets);
     let canonical_lift = allow_canonical_lift
-        && keyword_is_credential_anchor(&entropy_match.keyword)
-        && value_line_has_same_line_credential_keyword(entropy_match, preprocessed, line_offsets)
+        && same_line_credential_assignment
         && crate::entropy::scanner::canonical_shape_lift_allowed(
             &entropy_match.value,
             &entropy_match.keyword,
         );
+    let isolated_bare_token = entropy_match.keyword == crate::entropy::ISOLATED_BARE_ENTROPY_LABEL;
     // Hash/UUID/license/JWT suppression mirrors the named/generic paths. The
     // canonical-lift lane releases only complete credential-anchored hex/UUID
     // shapes; content gates for examples, placeholders, npm integrity, and
@@ -68,9 +72,7 @@ pub(crate) fn entropy_match_suppressed(
     // `entropy-api-key` because `key` matched a keyword
     // anchor near the value - but the value itself is an
     // identifier, not a high-entropy random string.
-    if entropy_match.keyword != crate::entropy::ISOLATED_BARE_ENTROPY_LABEL
-        && entropy_path_looks_like_kebab_identifier(&entropy_match.value)
-    {
+    if !isolated_bare_token && entropy_path_looks_like_kebab_identifier(&entropy_match.value) {
         return true;
     }
 
@@ -372,7 +374,9 @@ pub(crate) fn entropy_match_suppressed(
     // but entropy emits independently. Do not reuse that broad gate verbatim:
     // TOKEN/API_KEY/DEPLOY_TOKEN positives can be opaque base64-looking random
     // bytes. Require decoded NUL evidence before entropy hard-drops the value.
-    if !high_entropy_punctuation_payload
+    if !isolated_bare_token
+        && !same_line_random_byte_owner
+        && !high_entropy_punctuation_payload
         && crate::decode_structure::decoded_contains_nul_byte(&entropy_match.value)
         && crate::engine::phase2_generic::shape_helpers::generic_path_looks_like_random_byte_blob(
             &entropy_match.value,
@@ -403,23 +407,116 @@ fn value_line_has_same_line_credential_keyword(
     preprocessed: &ScannerPreprocessedText<'_>,
     line_offsets: &[usize],
 ) -> bool {
-    let line_idx = entropy_match.line.saturating_sub(1);
-    let Some(&line_start) = line_offsets.get(line_idx) else {
+    let Some(line_text) = entropy_value_line(entropy_match, preprocessed, line_offsets) else {
         return false;
     };
-    let line_end = line_offsets
-        .get(line_idx + 1)
-        .copied()
-        .unwrap_or(preprocessed.text.len()); // LAW10: bounds-checked next-line offset; last line => end-of-text span, recall-safe boundary default
-    let Some(line_text) = preprocessed.text.get(line_start..line_end) else {
-        return false;
-    };
-    // The value must appear on this line (defensive: the entropy offset already
-    // points at the line, but a multiline preprocessing artifact could shift it).
-    if !line_text.contains(entropy_match.value.as_str()) {
-        return false;
-    }
     crate::entropy::keywords::line_has_credential_assignment_surface(line_text)
+        || value_owned_by_local_credential_key(line_text, &entropy_match.value)
+}
+
+fn value_line_has_random_byte_blob_owner(
+    entropy_match: &crate::entropy::EntropyMatch,
+    preprocessed: &ScannerPreprocessedText<'_>,
+    line_offsets: &[usize],
+) -> bool {
+    let Some(line_text) = entropy_value_line(entropy_match, preprocessed, line_offsets) else {
+        return false;
+    };
+    value_owned_by_local_key_matching(line_text, &entropy_match.value, |normalized| {
+        random_byte_assignment_key_is_high_signal(normalized)
+    })
+}
+
+fn entropy_value_line<'a>(
+    entropy_match: &crate::entropy::EntropyMatch,
+    preprocessed: &'a ScannerPreprocessedText<'_>,
+    line_offsets: &[usize],
+) -> Option<&'a str> {
+    let line_idx = entropy_match.line.saturating_sub(1);
+    if let Some(&line_start) = line_offsets.get(line_idx) {
+        let line_end = line_offsets
+            .get(line_idx + 1)
+            .copied()
+            .unwrap_or(preprocessed.text.len()); // LAW10: bounds-checked next-line offset; last line => end-of-text span, recall-safe boundary default
+        if let Some(line_text) = preprocessed.text.get(line_start..line_end) {
+            if line_text.contains(entropy_match.value.as_str()) {
+                return Some(line_text);
+            }
+        }
+    }
+
+    let offset = entropy_match.offset.min(preprocessed.text.len());
+    let line_start = preprocessed.text[..offset]
+        .rfind('\n')
+        .map(|index| index + 1)
+        .unwrap_or(0); // LAW10: no preceding newline => first line start, recall-safe boundary default
+    let line_end = preprocessed.text[offset..]
+        .find('\n')
+        .map(|relative| offset + relative)
+        .unwrap_or(preprocessed.text.len()); // LAW10: no following newline => last line end, recall-safe boundary default
+    let line_text = preprocessed.text.get(line_start..line_end)?;
+    line_text
+        .contains(entropy_match.value.as_str())
+        .then_some(line_text)
+}
+
+fn value_owned_by_local_credential_key(line: &str, value: &str) -> bool {
+    value_owned_by_local_key_matching(line, value, |normalized| {
+        crate::entropy::keywords::normalized_assignment_keyword_is_credential(normalized)
+            || keyword_is_credential_anchor(normalized)
+    })
+}
+
+fn value_owned_by_local_key_matching(
+    line: &str,
+    value: &str,
+    accepts: impl Fn(&str) -> bool,
+) -> bool {
+    let Some(value_start) = line.find(value) else {
+        return false;
+    };
+    let before_value = &line[..value_start];
+    for (sep_idx, _) in before_value
+        .char_indices()
+        .rev()
+        .filter(|(_, ch)| matches!(ch, '=' | ':'))
+    {
+        let lhs = &before_value[..sep_idx];
+        let Some(key) = lhs
+            .rsplit(|ch: char| !(ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.')))
+            .find(|part| !part.is_empty())
+        else {
+            continue;
+        };
+        if let Some(normalized) =
+            crate::engine::phase2_generic::keywords::normalize_assignment_keyword(key)
+        {
+            if accepts(&normalized) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn random_byte_assignment_key_is_high_signal(normalized: &str) -> bool {
+    let compact: String = normalized
+        .bytes()
+        .filter(|b| !matches!(b, b'_' | b'-' | b'.'))
+        .map(|b| b.to_ascii_lowercase() as char)
+        .collect();
+    let separated_suffix =
+        normalized.contains('_') && matches!(normalized.rsplit('_').next(), Some("key" | "token"));
+    separated_suffix
+        || matches!(compact.as_str(), "token" | "bearer" | "authorization")
+        || compact.contains("apikey")
+        || compact.contains("apitoken")
+        || compact.contains("accesskey")
+        || compact.contains("authkey")
+        || compact.contains("privatekey")
+        || compact.contains("signingkey")
+        || compact.contains("encryptionkey")
+        || compact.contains("sessionkey")
 }
 
 /// The entropy-fallback known-example / placeholder gate, lift-aware.

@@ -232,6 +232,77 @@ fn isolated_bare_base64_shaped_entropy_secret_bypasses_blob_shape_gate() {
 
 #[cfg(feature = "entropy")]
 #[test]
+fn isolated_bare_base64_random_byte_shape_reaches_audit_floor() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+    let secret = "JwbAykwNNL4zIbfQOSw6FvkB5uYAFzOQidAQ9PTG";
+    let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
+
+    let matches = scanner.scan(&chunk);
+    let entropy_fired = matches.iter().any(|m| {
+        m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
+    });
+    assert!(
+        entropy_fired,
+        "an isolated full-line base64-shaped token that decodes to random bytes \
+         must reach the audit/report-floor path instead of being hard-dropped \
+         as an assignment-sourced random-byte blob; matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
+fn credential_assignment_base64_random_byte_shape_reaches_audit_floor() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    config.penalize_test_paths = false;
+    let scanner = compile_scanner_with_config(config);
+    let secret = "JwbAykwNNL4zIbfQOSw6FvkB5uYAFzOQidAQ9PTG";
+    let cases = [
+        (
+            format!("SERVICE_API_TOKEN=\"{secret}\"\n"),
+            "deploy/.env",
+            "env assignment",
+        ),
+        (
+            format!("{{\n  \"service\": {{\n    \"apiToken\": \"{secret}\"\n  }}\n}}\n"),
+            "settings/config.json",
+            "camelCase JSON field",
+        ),
+        (
+            format!("const client = new Client({{ token: \"{secret}\" }});\n"),
+            "src/client.js",
+            "nested source object field",
+        ),
+    ];
+
+    for (body, path, label) in cases {
+        let chunk = make_chunk(&body, path);
+        let matches = scanner.scan(&chunk);
+        let entropy_fired = matches.iter().any(|m| {
+            m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
+        });
+        assert!(
+            entropy_fired,
+            "a same-line credential assignment ({label}) must score base64-shaped \
+             random-byte tokens instead of hard-dropping them before \
+             penalties/model arbitration; matches={:?}",
+            matches
+                .iter()
+                .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+                .collect::<Vec<_>>()
+        );
+    }
+}
+
+#[cfg(feature = "entropy")]
+#[test]
 fn authorization_call_arg_surfaces_quoted_high_entropy_token() {
     let mut config = ScannerConfig::default();
     config.min_confidence = 0.0;
