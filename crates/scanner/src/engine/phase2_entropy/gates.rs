@@ -133,7 +133,9 @@ pub(crate) fn entropy_match_suppressed(
     // names, snake_case Go consts, etc.
     // KH-L-0415: see the `looks_like_pure_identifier` note above — same measured
     // no-op on both corpora, left as the plain gate by documented decision.
-    if crate::pipeline::looks_like_word_separated_identifier(&entropy_match.value) {
+    if entropy_match.keyword != crate::entropy::ISOLATED_BARE_ENTROPY_LABEL
+        && crate::pipeline::looks_like_word_separated_identifier(&entropy_match.value)
+    {
         return true;
     }
     // Long train-case config/policy prose next to a credential keyword is still

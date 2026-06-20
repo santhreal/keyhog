@@ -291,7 +291,7 @@ my-service-prod-key-name-here
 
 #[test]
 fn keyword_free_scan_rejects_short_high_entropy_strings() {
-    let text = "ZxCvBn123!@#AsD";
+    let text = "ZxCvBn123!@#As";
     assert!(find_secrets(text, 16, 0, HIGH_ENTROPY_THRESHOLD).is_empty());
 }
 

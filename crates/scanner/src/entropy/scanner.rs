@@ -1,15 +1,15 @@
 use super::{
-    keywords::*, shannon_entropy, EntropyMatch, HIGH_ENTROPY_THRESHOLD, LOW_ENTROPY_THRESHOLD,
-    MIXED_ALNUM_TOKEN_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD,
+    keywords::*, shannon_entropy, EntropyMatch, HIGH_ENTROPY_THRESHOLD,
+    ISOLATED_BARE_ENTROPY_LABEL, LOW_ENTROPY_THRESHOLD, MIXED_ALNUM_TOKEN_THRESHOLD,
+    VERY_HIGH_ENTROPY_THRESHOLD,
 };
 
 const CREDENTIAL_CONTEXT_MIN_LEN: usize = 8;
 const KEYWORD_FREE_MIN_LEN: usize = 20;
-const KEYWORD_FREE_ISOLATED_MIN_LEN: usize = 20;
+const KEYWORD_FREE_ISOLATED_MIN_LEN: usize = 16;
 const MIN_PASSWORD_LEN: usize = 8;
 const FIRST_SOURCE_LINE_NUMBER: usize = 1;
 const KEYWORD_FREE_LABEL: &str = "none (high-entropy)";
-const KEYWORD_FREE_ISOLATED_LABEL: &str = "none (isolated-token)";
 
 /// Test-only constructor for a credential-anchor [`KeywordContext`] using the
 /// production tuning constants (the low-entropy floor and the credential-context
@@ -249,7 +249,7 @@ fn scan_keyword_free_candidates(
         allow_canonical_shapes: false,
     };
     let isolated_token_context = KeywordContext {
-        keyword: KEYWORD_FREE_ISOLATED_LABEL.to_string(),
+        keyword: ISOLATED_BARE_ENTROPY_LABEL.to_string(),
         threshold: isolated_bare_entropy_threshold(entropy_threshold),
         min_len: KEYWORD_FREE_ISOLATED_MIN_LEN,
         is_credential_context: false,

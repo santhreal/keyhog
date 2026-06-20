@@ -27,7 +27,8 @@ pub const HIGH_ENTROPY_THRESHOLD: f64 = 4.5;
 /// normal keyword-free substring: either the whole line is the token, or a
 /// credential/auth anchor owns the quoted value. Kept below the global 4.5
 /// floor but above low-entropy identifiers.
-pub(crate) const MIXED_ALNUM_TOKEN_THRESHOLD: f64 = 4.2;
+pub(crate) const MIXED_ALNUM_TOKEN_THRESHOLD: f64 = 4.0;
+pub(crate) const ISOLATED_BARE_ENTROPY_LABEL: &str = "none (isolated-token)";
 /// Threshold for keyword-independent entropy detection.
 pub const VERY_HIGH_ENTROPY_THRESHOLD: f64 = 5.8;
 /// Threshold for keyword-independent detection in clearly sensitive files.
