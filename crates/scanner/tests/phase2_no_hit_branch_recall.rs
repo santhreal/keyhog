@@ -154,6 +154,32 @@ fn bare_entropy_secret_file_still_enters_coalesced_no_hit_branch() {
     );
 }
 
+#[cfg(feature = "entropy")]
+#[test]
+fn isolated_bare_entropy_secret_enters_coalesced_no_hit_branch_on_plain_text_path() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    let scanner = compile_scanner_with_config(config);
+    let secret = "KP4QX7RM2SN5TB8VW3YZ";
+    let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
+
+    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk));
+    let matches = &results[0];
+    let entropy_fired = matches.iter().any(|m| {
+        m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
+    });
+    assert!(
+        entropy_fired,
+        "an isolated full-line high-entropy token must enter the no-hit coalesced \
+         entropy path even when the plain-text path is not otherwise entropy-eligible; \
+         matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))
+            .collect::<Vec<_>>()
+    );
+}
+
 #[test]
 fn bare_entropy_source_file_obeys_default_entropy_source_gate() {
     let mut config = ScannerConfig::default();

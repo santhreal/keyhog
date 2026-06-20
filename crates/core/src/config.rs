@@ -182,6 +182,8 @@ impl Default for ScanConfig {
                 "apikey".into(),
                 "api-key".into(),
                 "access_key".into(),
+                "auth".into(),
+                "authorization".into(),
                 "auth_token".into(),
                 "auth_key".into(),
                 "private_key".into(),

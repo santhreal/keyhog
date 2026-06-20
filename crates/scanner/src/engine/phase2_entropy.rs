@@ -25,10 +25,19 @@ impl CompiledScanner {
         if !self.config.entropy_enabled {
             return;
         }
-        if !crate::entropy::is_entropy_appropriate(
+        let path_entropy_appropriate = crate::entropy::is_entropy_appropriate_with_content(
             chunk.metadata.path.as_deref(),
             self.config.entropy_in_source_files,
-        ) {
+            &preprocessed.text,
+            &self.config.secret_keywords,
+        );
+        let isolated_bare_candidate = !path_entropy_appropriate
+            && crate::entropy::scanner::has_isolated_bare_secret_candidate(
+                &preprocessed.text,
+                self.config.entropy_threshold,
+                &self.config.placeholder_keywords,
+            );
+        if !path_entropy_appropriate && !isolated_bare_candidate {
             return;
         }
 

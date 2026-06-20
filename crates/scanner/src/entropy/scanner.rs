@@ -1,13 +1,15 @@
 use super::{
     keywords::*, shannon_entropy, EntropyMatch, HIGH_ENTROPY_THRESHOLD, LOW_ENTROPY_THRESHOLD,
-    VERY_HIGH_ENTROPY_THRESHOLD,
+    MIXED_ALNUM_TOKEN_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD,
 };
 
 const CREDENTIAL_CONTEXT_MIN_LEN: usize = 8;
 const KEYWORD_FREE_MIN_LEN: usize = 20;
+const KEYWORD_FREE_ISOLATED_MIN_LEN: usize = 20;
 const MIN_PASSWORD_LEN: usize = 8;
 const FIRST_SOURCE_LINE_NUMBER: usize = 1;
 const KEYWORD_FREE_LABEL: &str = "none (high-entropy)";
+const KEYWORD_FREE_ISOLATED_LABEL: &str = "none (isolated-token)";
 
 /// Test-only constructor for a credential-anchor [`KeywordContext`] using the
 /// production tuning constants (the low-entropy floor and the credential-context
@@ -246,12 +248,28 @@ fn scan_keyword_free_candidates(
         // regardless of model authority. The lift is anchor-gated.
         allow_canonical_shapes: false,
     };
+    let isolated_token_context = KeywordContext {
+        keyword: KEYWORD_FREE_ISOLATED_LABEL.to_string(),
+        threshold: isolated_bare_entropy_threshold(entropy_threshold),
+        min_len: KEYWORD_FREE_ISOLATED_MIN_LEN,
+        is_credential_context: false,
+        allow_canonical_shapes: false,
+    };
     for (line_idx, line) in lines.iter().enumerate() {
         if let Some(skip) = skip_lines {
             if skip.contains(&line_idx) {
                 continue;
             }
         }
+        collect_isolated_bare_candidate(
+            line,
+            line_idx,
+            line_offsets[line_idx],
+            &isolated_token_context,
+            seen,
+            matches,
+            placeholder_keywords,
+        );
         collect_line_candidates(
             line,
             line_idx,
@@ -262,6 +280,114 @@ fn scan_keyword_free_candidates(
             placeholder_keywords,
         );
     }
+}
+
+#[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
+pub(crate) fn has_isolated_bare_secret_candidate(
+    text: &str,
+    entropy_threshold: f64,
+    placeholder_keywords: &[String],
+) -> bool {
+    let threshold = isolated_bare_entropy_threshold(entropy_threshold);
+    text.lines().any(|line| {
+        if is_likely_innocuous_line(line) {
+            return false;
+        }
+        let Some(candidate) = isolated_bare_candidate(line, KEYWORD_FREE_ISOLATED_MIN_LEN) else {
+            return false;
+        };
+        let entropy = shannon_entropy(candidate.as_bytes());
+        entropy >= threshold && is_isolated_bare_secret_plausible(candidate, placeholder_keywords)
+    })
+}
+
+fn isolated_bare_entropy_threshold(entropy_threshold: f64) -> f64 {
+    if entropy_threshold.is_finite() && entropy_threshold > HIGH_ENTROPY_THRESHOLD {
+        entropy_threshold
+    } else {
+        MIXED_ALNUM_TOKEN_THRESHOLD
+    }
+}
+
+fn collect_isolated_bare_candidate(
+    line: &str,
+    line_idx: usize,
+    line_offset: usize,
+    context: &KeywordContext,
+    seen: &mut std::collections::HashSet<String>,
+    matches: &mut Vec<EntropyMatch>,
+    placeholder_keywords: &[String],
+) {
+    if is_likely_innocuous_line(line) {
+        return;
+    }
+    let Some(candidate) = isolated_bare_candidate(line, context.min_len) else {
+        return;
+    };
+    let entropy = shannon_entropy(candidate.as_bytes());
+    if entropy < context.threshold
+        || !is_isolated_bare_secret_plausible(candidate, placeholder_keywords)
+        || !seen.insert(candidate.to_string())
+    {
+        return;
+    }
+    matches.push(EntropyMatch {
+        value: candidate.to_string(),
+        entropy,
+        keyword: context.keyword.clone(),
+        line: line_idx + FIRST_SOURCE_LINE_NUMBER,
+        offset: line_offset,
+    });
+}
+
+fn isolated_bare_candidate(line: &str, min_len: usize) -> Option<&str> {
+    let candidate = line
+        .trim()
+        .trim_matches(|c: char| c == '"' || c == '\'' || c == '`' || c == ';' || c == ',');
+    if candidate.len() < min_len
+        || candidate.bytes().any(|b| b.is_ascii_whitespace())
+        || candidate.contains("://")
+        || has_non_padding_equals(candidate)
+        || candidate.contains('<')
+        || candidate.contains('>')
+    {
+        return None;
+    }
+    let has_alpha = candidate.bytes().any(|b| b.is_ascii_alphabetic());
+    let has_digit = candidate.bytes().any(|b| b.is_ascii_digit());
+    if !has_alpha || !has_digit {
+        return None;
+    }
+    candidate
+        .bytes()
+        .all(|b| {
+            b.is_ascii_alphanumeric()
+                || matches!(
+                    b,
+                    b'-' | b'_'
+                        | b'+'
+                        | b'/'
+                        | b'='
+                        | b'.'
+                        | b'!'
+                        | b'@'
+                        | b'#'
+                        | b'$'
+                        | b'%'
+                        | b'^'
+                        | b'&'
+                        | b'*'
+                )
+        })
+        .then_some(candidate)
+}
+
+fn has_non_padding_equals(candidate: &str) -> bool {
+    let padding = candidate.bytes().rev().take_while(|&b| b == b'=').count();
+    if padding > 2 {
+        return true;
+    }
+    candidate[..candidate.len() - padding].contains('=')
 }
 
 fn collect_line_candidates(
@@ -515,6 +641,9 @@ fn keyword_context(
         "api_key",
         "apikey",
         "api-key",
+        "auth",
+        "authorization",
+        "bearer",
         "_key",
         "-key",
         "token",

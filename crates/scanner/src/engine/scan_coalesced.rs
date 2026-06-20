@@ -195,13 +195,21 @@ impl CompiledScanner {
         {
             return true;
         }
-        let entropy_admits = self.config.entropy_enabled
-            && crate::entropy::is_entropy_appropriate(
+        let small_chunk = chunk.data.len() <= 32 * 1024;
+        let entropy_admits = small_chunk
+            && self.config.entropy_enabled
+            && ((crate::entropy::is_entropy_appropriate_with_content(
                 chunk.metadata.path.as_deref(),
                 self.config.entropy_in_source_files,
-            )
-            && has_high_entropy_run_fast(data);
-        chunk.data.len() <= 32 * 1024
+                &chunk.data,
+                &self.config.secret_keywords,
+            ) && has_high_entropy_run_fast(data))
+                || crate::entropy::scanner::has_isolated_bare_secret_candidate(
+                    &chunk.data,
+                    self.config.entropy_threshold,
+                    &self.config.placeholder_keywords,
+                ));
+        small_chunk
             && (has_generic_assignment_keyword(data)
                 || has_secret_keyword_fast(data)
                 || entropy_admits)

@@ -1,4 +1,4 @@
-use super::{shannon_entropy, HIGH_ENTROPY_THRESHOLD};
+use super::{shannon_entropy, HIGH_ENTROPY_THRESHOLD, MIXED_ALNUM_TOKEN_THRESHOLD};
 use crate::engine::phase2_generic::keywords::normalize_assignment_keyword;
 use crate::engine::phase2_generic::shape_helpers::is_structured_dotted_token;
 
@@ -518,6 +518,59 @@ pub(crate) fn entropy_value_looks_like_prose(value: &str) -> bool {
 }
 
 pub(crate) fn passes_strict_secret_checks(value: &str, is_credential_context: bool) -> bool {
+    if !passes_strict_secret_shape_checks(value, is_credential_context) {
+        return false;
+    }
+
+    // Symbolic-charset / credential-anchored entropy relaxation.
+    // The blanket `HIGH_ENTROPY_THRESHOLD` (4.5) floor over-rejects
+    // real symbolic-password shapes whose Shannon entropy lands in
+    // the 3.5-4.5 band - e.g. `1E1B3b4Ho$U4kYBi` (entropy ~3.95),
+    // `Y6NPMwS*rWGUv!JQnSG6a#D14` (entropy ~4.1). When the value
+    // arrives WITH a strong credential-keyword anchor AND carries
+    // at least one symbolic (non-alphanumeric) character, the
+    // anchor + symbol-set together are positive evidence that the
+    // value is a credential, not a code identifier or English word.
+    // Use a lower 3.5 floor in that case. Pure-alphanumeric values
+    // keep the original 4.5 floor (those are harder to distinguish
+    // from CamelCase/snake_case identifiers).
+    let entropy = shannon_entropy(value.as_bytes());
+    if entropy >= HIGH_ENTROPY_THRESHOLD {
+        return true;
+    }
+    if is_credential_context {
+        let has_alpha = value.bytes().any(|b| b.is_ascii_alphabetic());
+        let has_digit = value.bytes().any(|b| b.is_ascii_digit());
+        let has_symbol = value.bytes().any(|b| !b.is_ascii_alphanumeric());
+        if has_symbol && entropy >= 3.5 {
+            return true;
+        }
+        if !has_symbol
+            && has_alpha
+            && has_digit
+            && value.len() >= 20
+            && entropy >= MIXED_ALNUM_TOKEN_THRESHOLD
+        {
+            return true;
+        }
+    }
+    false
+}
+
+pub(super) fn is_isolated_bare_secret_plausible(
+    value: &str,
+    placeholder_keywords: &[String],
+) -> bool {
+    passes_plausibility_checks(
+        value,
+        PlausibilityMode::Lenient,
+        placeholder_keywords,
+        false,
+        false,
+    ) && passes_strict_secret_shape_checks(value, false)
+}
+
+fn passes_strict_secret_shape_checks(value: &str, is_credential_context: bool) -> bool {
     // Outside a credential-keyword anchor, any >10-char pure-hex value is a
     // checksum/digest, not a credential. Inside one (`apiKey: <hex>`), the
     // keyword is positive evidence the hex IS the credential - the entropy
@@ -571,30 +624,7 @@ pub(crate) fn passes_strict_secret_checks(value: &str, is_credential_context: bo
     if is_dash_segmented_alnum_decoy(value) {
         return false;
     }
-
-    // Symbolic-charset / credential-anchored entropy relaxation.
-    // The blanket `HIGH_ENTROPY_THRESHOLD` (4.5) floor over-rejects
-    // real symbolic-password shapes whose Shannon entropy lands in
-    // the 3.5-4.5 band - e.g. `1E1B3b4Ho$U4kYBi` (entropy ~3.95),
-    // `Y6NPMwS*rWGUv!JQnSG6a#D14` (entropy ~4.1). When the value
-    // arrives WITH a strong credential-keyword anchor AND carries
-    // at least one symbolic (non-alphanumeric) character, the
-    // anchor + symbol-set together are positive evidence that the
-    // value is a credential, not a code identifier or English word.
-    // Use a lower 3.5 floor in that case. Pure-alphanumeric values
-    // keep the original 4.5 floor (those are harder to distinguish
-    // from CamelCase/snake_case identifiers).
-    let entropy = shannon_entropy(value.as_bytes());
-    if entropy >= HIGH_ENTROPY_THRESHOLD {
-        return true;
-    }
-    if is_credential_context {
-        let has_symbol = value.bytes().any(|b| !b.is_ascii_alphanumeric());
-        if has_symbol && entropy >= 3.5 {
-            return true;
-        }
-    }
-    false
+    true
 }
 
 /// Heuristic: is this value a dash-segmented run of alphanumerics with

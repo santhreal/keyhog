@@ -235,8 +235,63 @@ fn keyword_free_scan_detects_long_high_entropy_strings() {
 }
 
 #[test]
+fn keyword_free_scan_detects_isolated_bare_high_entropy_token() {
+    let secret = "Zx9Cv8Bn7Mq6Pw5Er4Ty3Ui2Op1As0DfGh";
+    let matches = find_secrets(secret, 16, 0, HIGH_ENTROPY_THRESHOLD);
+    assert_eq!(matches.len(), 1);
+    assert_eq!(matches[0].value, secret);
+    assert_eq!(matches[0].keyword, "none (isolated-token)");
+    assert_eq!(matches[0].line, 1);
+    assert_eq!(matches[0].offset, 0);
+}
+
+#[test]
+fn keyword_free_scan_detects_isolated_bare_mixed_alnum_token_below_global_floor() {
+    let secret = "KP4QX7RM2SN5TB8VW3YZ";
+    let matches = find_secrets(secret, 16, 0, HIGH_ENTROPY_THRESHOLD);
+    assert_eq!(matches.len(), 1);
+    assert_eq!(matches[0].value, secret);
+    assert_eq!(matches[0].keyword, "none (isolated-token)");
+    assert!(matches[0].entropy < HIGH_ENTROPY_THRESHOLD);
+}
+
+#[test]
+fn authorization_call_arg_extracts_quoted_token_in_source_context() {
+    let secret = "KP4QX7RM2SN5TB8VW3YZ";
+    let text = format!("response = requests.get(url, headers={{'Authorization': '{secret}'}})\n");
+    let secret_keywords = vec!["auth".to_string(), "authorization".to_string()];
+    let test_keywords = vec!["test".to_string()];
+    let placeholder_keywords = vec!["placeholder".to_string()];
+    let matches = find_entropy_secrets(
+        &text,
+        16,
+        1,
+        HIGH_ENTROPY_THRESHOLD,
+        &secret_keywords,
+        &test_keywords,
+        &placeholder_keywords,
+    );
+    assert!(
+        matches.iter().any(|m| m.value == secret),
+        "matches={matches:?}"
+    );
+}
+
+#[test]
+fn keyword_free_isolated_bare_token_rejects_canonical_non_secret_shapes() {
+    let text = "\
+550e8400-e29b-41d4-a716-446655440000
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+deadbeefcafebabe01234567
+ABCDE-FGHIJ-KLMNO-PQRST-UVWXY
+my-service-prod-key-name-here
+";
+    assert!(find_secrets(text, 16, 0, HIGH_ENTROPY_THRESHOLD).is_empty());
+}
+
+#[test]
 fn keyword_free_scan_rejects_short_high_entropy_strings() {
-    let text = "ZxCvBn123!@#AsDfGh456$%^QwErTy789";
+    let text = "ZxCvBn123!@#AsD";
     assert!(find_secrets(text, 16, 0, HIGH_ENTROPY_THRESHOLD).is_empty());
 }
 
