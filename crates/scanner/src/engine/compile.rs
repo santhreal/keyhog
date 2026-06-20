@@ -181,15 +181,32 @@ impl CompiledScanner {
         let phase2_always_anchor_literal_count = phase2_anchor_index
             .as_ref()
             .map_or(0, |index| index.always_anchor_literals().len());
+
+        // Confirmed-pass suffix gate (one AC over required suffix literals) so a
+        // triggered detector whose rare trailing literal (`.*<sitename>`) is
+        // absent skips its O(chunk) whole-chunk regex run.
+        let (suffix_gate_ac, ac_suffix_gate) =
+            super::scan_postprocess::build_confirmed_suffix_gate(&state.ac_map);
+        let gated = ac_suffix_gate.iter().filter(|g| !g.is_empty()).count();
+        let confirmed_anchor_index =
+            scan_postprocess::confirmed_anchor::ConfirmedAnchorIndex::build(&state.ac_map);
+        let confirmed_anchor_literal_count = confirmed_anchor_index
+            .as_ref()
+            .map_or(0, |index| index.anchor_literals().len());
+
         #[cfg(feature = "gpu")]
         let gpu_literals = if gpu_backend.is_some() {
             let phase2_always_anchor_literals = phase2_anchor_index
                 .as_ref()
                 .map_or(&[] as &[String], |index| index.always_anchor_literals());
+            let confirmed_anchor_literals = confirmed_anchor_index
+                .as_ref()
+                .map_or(&[] as &[String], |index| index.anchor_literals());
             build_gpu_literals(
                 &state.ac_literals,
                 &phase2_keywords,
                 phase2_always_anchor_literals,
+                confirmed_anchor_literals,
             )
         } else {
             None
@@ -218,14 +235,6 @@ impl CompiledScanner {
             "phase-2 prefilter built with homoglyph ASCII-folded fast path"
         );
 
-        // Confirmed-pass suffix gate (one AC over required suffix literals) so a
-        // triggered detector whose rare trailing literal (`.*<sitename>`) is
-        // absent skips its O(chunk) whole-chunk regex run.
-        let (suffix_gate_ac, ac_suffix_gate) =
-            super::scan_postprocess::build_confirmed_suffix_gate(&state.ac_map);
-        let gated = ac_suffix_gate.iter().filter(|g| !g.is_empty()).count();
-        let confirmed_anchor_index =
-            scan_postprocess::confirmed_anchor::ConfirmedAnchorIndex::build(&state.ac_map);
         tracing::debug!(
             gated,
             anchored = confirmed_anchor_index
@@ -412,6 +421,7 @@ impl CompiledScanner {
             phase2_keyword_to_patterns,
             phase2_keyword_count,
             phase2_always_anchor_literal_count,
+            confirmed_anchor_literal_count,
             phase2_always_active_indices,
             phase2_always_active_prefilter,
             phase2_anchor_index,

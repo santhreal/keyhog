@@ -216,7 +216,7 @@ impl CompiledScanner {
         chunks: &[keyhog_core::Chunk],
         triggers: Vec<Option<Vec<u64>>>,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
-        self.scan_coalesced_phase2_with_admission(chunks, triggers, None, None, None)
+        self.scan_coalesced_phase2_with_admission(chunks, triggers, None, None, None, None)
     }
 
     #[cfg(feature = "simd")]
@@ -268,6 +268,7 @@ impl CompiledScanner {
         phase2_admission: Option<&[bool]>,
         phase2_keyword_hints: Option<&[Vec<u32>]>,
         phase2_always_anchor_presence: Option<&[bool]>,
+        confirmed_anchor_literal_matches: Option<&[Vec<(u32, u32)>]>,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
         use crate::hw_probe::ScanBackend;
         use rayon::prelude::*;
@@ -284,6 +285,9 @@ impl CompiledScanner {
                     .map(Vec::as_slice);
                 let always_anchor_present =
                     phase2_always_anchor_presence.and_then(|rows| rows.get(chunk_index).copied());
+                let confirmed_anchor_matches = confirmed_anchor_literal_matches
+                    .and_then(|rows| rows.get(chunk_index))
+                    .map(Vec::as_slice);
                 if let Some(triggered) = triggered_opt {
                     let mut matches = if chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
                         self.scan_windowed_with_triggered(
@@ -292,6 +296,7 @@ impl CompiledScanner {
                             None,
                             keyword_hints,
                             always_anchor_present,
+                            confirmed_anchor_matches,
                         )
                     } else {
                         let prepared = self.prepare_chunk(chunk);
@@ -302,6 +307,7 @@ impl CompiledScanner {
                             None,
                             keyword_hints,
                             always_anchor_present,
+                            confirmed_anchor_matches,
                         )
                     };
                     self.post_process_coalesced_matches(chunk, &mut matches);
@@ -342,6 +348,7 @@ impl CompiledScanner {
                     None,
                     keyword_hints,
                     always_anchor_present,
+                    confirmed_anchor_matches,
                 );
                 self.record_and_reassemble_for_no_hit_chunk(chunk, &mut matches);
                 self.post_process_coalesced_matches(chunk, &mut matches);

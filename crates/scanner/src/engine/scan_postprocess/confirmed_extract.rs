@@ -24,6 +24,7 @@ impl CompiledScanner {
         chunk: &Chunk,
         scan_state: &mut ScanState,
         deadline: Option<std::time::Instant>,
+        confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
     ) {
         let prof = scan_postprocess_profile::confirmed_prof_enabled();
         let total = self.ac_map.len() + self.phase2_patterns.len();
@@ -79,14 +80,22 @@ impl CompiledScanner {
                 scan_postprocess::confirmed_anchor::CONFIRMED_ANCHOR_CANDIDATES.with(|cell| {
                     let mut candidates = cell.borrow_mut();
                     let collect_t0 = prof.then(std::time::Instant::now);
-                    anchor_index.collect_candidates(
-                        &preprocessed.text,
-                        |pat_idx| {
-                            confirmed_patterns.binary_search(&pat_idx).is_ok()
-                                && suffix_allows(pat_idx)
-                        },
-                        &mut candidates,
-                    );
+                    let is_active = |pat_idx| {
+                        confirmed_patterns.binary_search(&pat_idx).is_ok() && suffix_allows(pat_idx)
+                    };
+                    if let Some(literal_matches) = confirmed_anchor_literal_matches {
+                        anchor_index.collect_candidates_from_literal_matches(
+                            literal_matches,
+                            is_active,
+                            &mut candidates,
+                        );
+                    } else {
+                        anchor_index.collect_candidates(
+                            &preprocessed.text,
+                            is_active,
+                            &mut candidates,
+                        );
+                    }
                     if let Some(collect_t0) = collect_t0 {
                         scan_postprocess_profile::confirmed_prof_record(
                             scan_postprocess_profile::ConfirmedStage::AnchorCollect,

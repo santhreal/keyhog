@@ -20,7 +20,14 @@ pub fn scan_coalesced_phase2_with_admission_for_test(
     triggers: Vec<Option<Vec<u64>>>,
     phase2_admission: Option<&[bool]>,
 ) -> Vec<Vec<keyhog_core::RawMatch>> {
-    scanner.scan_coalesced_phase2_with_admission(chunks, triggers, phase2_admission, None, None)
+    scanner.scan_coalesced_phase2_with_admission(
+        chunks,
+        triggers,
+        phase2_admission,
+        None,
+        None,
+        None,
+    )
 }
 
 #[cfg(test)]

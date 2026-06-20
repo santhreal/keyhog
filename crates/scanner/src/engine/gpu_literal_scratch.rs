@@ -77,3 +77,19 @@ pub(super) fn scan_gpu_literal_presence_by_region_with_scratch(
             .map_err(|error| error.to_string())
     })
 }
+
+#[cfg(feature = "gpu")]
+pub(super) fn scan_gpu_literal_matches_with_scratch(
+    matcher: &vyre_libs::scan::GpuLiteralSet,
+    backend: &dyn vyre::VyreBackend,
+    haystack: &[u8],
+    max_matches: u32,
+) -> std::result::Result<Vec<vyre_libs::scan::LiteralMatch>, String> {
+    with_gpu_literal_scratch(|scratch| {
+        let mut matches = Vec::new();
+        matcher
+            .scan_into_with_scratch(backend, haystack, max_matches, &mut matches, scratch)
+            .map_err(|error| error.to_string())?;
+        Ok(matches)
+    })
+}

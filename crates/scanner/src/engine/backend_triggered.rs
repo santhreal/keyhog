@@ -12,6 +12,7 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_anchor_present: Option<bool>,
+        confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
     ) -> Vec<RawMatch> {
         // Borrow cached line offsets; downstream consumers take `&[usize]`.
         let line_offsets: &[usize] = prepared.line_offsets();
@@ -39,6 +40,8 @@ impl CompiledScanner {
         // same bytes; unicode/multiline preprocessing can introduce ASCII
         // anchor text that the raw GPU literal pass could not have seen.
         let phase2_always_anchor_present = phase2_always_anchor_present
+            .filter(|_| prepared.preprocessed.text.as_bytes() == prepared.chunk.data.as_bytes());
+        let confirmed_anchor_literal_matches = confirmed_anchor_literal_matches
             .filter(|_| prepared.preprocessed.text.as_bytes() == prepared.chunk.data.as_bytes());
 
         // No-trigger fast path: when no AC pattern fired, the entire
@@ -85,6 +88,7 @@ impl CompiledScanner {
                 prepared.chunk,
                 &mut scan_state,
                 deadline,
+                confirmed_anchor_literal_matches,
             );
         }
 
@@ -350,7 +354,10 @@ impl CompiledScanner {
     /// was removed; see `collect_triggered_patterns_gpu`).
     #[inline]
     pub(super) fn gpu_presence_literal_count(&self) -> usize {
-        self.ac_map.len() + self.phase2_keyword_count + self.phase2_always_anchor_literal_count
+        self.ac_map.len()
+            + self.phase2_keyword_count
+            + self.phase2_always_anchor_literal_count
+            + self.confirmed_anchor_literal_count
     }
 
     pub(super) fn gpu_presence_stray_tail_bits(&self, presence: &[u32]) -> Option<(usize, u32)> {
@@ -581,6 +588,30 @@ mod tests {
                 .iter()
                 .all(|&word| word == 0),
             "always-active anchor bits must not set confirmed detector trigger bits"
+        );
+    }
+
+    #[test]
+    fn appended_gpu_presence_confirmed_anchor_bits_are_position_hints_only() {
+        let mut scanner = scanner_with_detector_and_phase2_keyword_and_anchor();
+        scanner.confirmed_anchor_literal_count = 1;
+        let mut row = vec![0u32; scanner.gpu_presence_literal_count().div_ceil(32).max(1)];
+        let confirmed_anchor_literal_idx = scanner.ac_map.len()
+            + scanner.phase2_keyword_count
+            + scanner.phase2_always_anchor_literal_count;
+        row[confirmed_anchor_literal_idx / 32] |= 1u32 << (confirmed_anchor_literal_idx % 32);
+
+        assert!(scanner
+            .phase2_keyword_hints_from_gpu_presence(&row)
+            .is_empty());
+        assert!(!scanner.phase2_always_anchor_present_from_gpu_presence(&row));
+        assert!(scanner.gpu_presence_stray_tail_bits(&row).is_none());
+        assert!(
+            scanner
+                .triggered_patterns_from_gpu_presence(&row)
+                .iter()
+                .all(|&word| word == 0),
+            "confirmed-anchor position bits must not set detector trigger bits"
         );
     }
 }

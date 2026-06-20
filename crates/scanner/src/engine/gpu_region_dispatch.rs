@@ -27,6 +27,8 @@ use super::phase2_gpu_dfa::{
 use super::*;
 use crate::hw_probe::ScanBackend;
 
+const GPU_CONFIRMED_ANCHOR_MAX_MATCHES: u32 = 65_536;
+
 fn mib_per_second(bytes: usize, elapsed: std::time::Duration) -> f64 {
     if bytes == 0 || elapsed.is_zero() {
         return 0.0;
@@ -48,6 +50,28 @@ fn report_phase2_gpu_admission_loss(error: impl std::fmt::Display) {
         %error,
         "phase-2 GPU regex-DFA admission failed; CPU admission remains authoritative",
     );
+}
+
+fn report_confirmed_anchor_gpu_candidate_loss(error: impl std::fmt::Display) {
+    let error = error.to_string();
+    static CONFIRMED_ANCHOR_GPU_CANDIDATE_LOSS_WARNED: std::sync::OnceLock<()> =
+        std::sync::OnceLock::new();
+    if CONFIRMED_ANCHOR_GPU_CANDIDATE_LOSS_WARNED.set(()).is_ok() {
+        eprintln!(
+            "keyhog: confirmed-anchor GPU candidate collection unavailable ({error}); CPU \
+             confirmed-anchor collection remains authoritative. GPU speed evidence is incomplete."
+        );
+    }
+    tracing::warn!(
+        target: "keyhog::gpu",
+        %error,
+        "confirmed-anchor GPU candidate collection unavailable; CPU confirmed-anchor collection remains authoritative",
+    );
+}
+
+struct GpuRegionPresenceEvidence {
+    presence: Vec<u32>,
+    confirmed_anchor_literal_matches: Option<Vec<Vec<(u32, u32)>>>,
 }
 
 impl CompiledScanner {
@@ -140,9 +164,10 @@ impl CompiledScanner {
             let t_co = std::time::Instant::now();
             let mut co_s = std::time::Duration::ZERO;
             let mut dis_s = std::time::Duration::ZERO;
+            let mut confirmed_anchor_gpu_s = std::time::Duration::ZERO;
             let mut region_coalesced_bytes = 0usize;
             let mut region_batch_mode = RegionPresenceBatchMode::FoldedScratch;
-            let presence = match with_region_presence_batch(
+            let evidence = match with_region_presence_batch(
                 chunks,
                 |haystack, region_starts, batch_mode| {
                     co_s = t_co.elapsed();
@@ -158,12 +183,27 @@ impl CompiledScanner {
                         )
                         .map_err(|error| format!("region-presence dispatch error: {error}"));
                     dis_s = t_dis.elapsed();
-                    result
+                    let presence = result?;
+                    let t_confirmed_anchor_gpu = std::time::Instant::now();
+                    let confirmed_anchor_literal_matches = self
+                        .confirmed_anchor_literal_matches_from_gpu(
+                            matcher,
+                            &**backend,
+                            haystack,
+                            region_starts,
+                        );
+                    confirmed_anchor_gpu_s = t_confirmed_anchor_gpu.elapsed();
+                    Ok(GpuRegionPresenceEvidence {
+                        presence,
+                        confirmed_anchor_literal_matches,
+                    })
                 },
             ) {
-                Ok(presence) => presence,
+                Ok(evidence) => evidence,
                 Err(error) => return degrade(error),
             };
+            let presence = evidence.presence;
+            let confirmed_anchor_literal_matches = evidence.confirmed_anchor_literal_matches;
 
             let t_floor = std::time::Instant::now();
             let full_recall_floor = self.tuning.gpu_recall_floor_enabled();
@@ -353,14 +393,24 @@ impl CompiledScanner {
                     .map(|admission| admission.admitted.as_slice()),
                 Some(phase2_keyword_hints.as_slice()),
                 Some(phase2_always_anchor_presence.as_slice()),
+                confirmed_anchor_literal_matches.as_deref(),
             );
             if kh {
                 let phase2_always_anchor_chunks = phase2_always_anchor_presence
                     .iter()
                     .filter(|&&present| present)
                     .count();
+                let confirmed_anchor_candidate_rows = confirmed_anchor_literal_matches
+                    .as_ref()
+                    .map_or(0usize, |rows| {
+                        rows.iter().filter(|row| !row.is_empty()).count()
+                    });
+                let confirmed_anchor_candidate_count = confirmed_anchor_literal_matches
+                    .as_ref()
+                    .map_or(0usize, |rows| rows.iter().map(Vec::len).sum());
+                let confirmed_anchor_gpu_complete = confirmed_anchor_literal_matches.is_some();
                 eprintln!(
-                    "perf-trace gpu-region-presence: chunks={} source_bytes={} coalesced_bytes={} batch_mode={} matcher={:.3}s coalesce={:.6}s coalesce_mib_s={:.3} dispatch={:.3}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_matches={} phase2_gpu_complete={} phase2_always_anchor_chunks={} full_recall_floor={}",
+                    "perf-trace gpu-region-presence: chunks={} source_bytes={} coalesced_bytes={} batch_mode={} matcher={:.3}s coalesce={:.6}s coalesce_mib_s={:.3} dispatch={:.3}s confirmed_anchor_gpu={:.3}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_matches={} phase2_gpu_complete={} phase2_always_anchor_chunks={} confirmed_anchor_gpu_complete={} confirmed_anchor_candidate_rows={} confirmed_anchor_candidates={} full_recall_floor={}",
                     chunks.len(),
                     region_source_bytes,
                     region_coalesced_bytes,
@@ -369,6 +419,7 @@ impl CompiledScanner {
                     co_s.as_secs_f64(),
                     mib_per_second(region_source_bytes, co_s),
                     dis_s.as_secs_f64(),
+                    confirmed_anchor_gpu_s.as_secs_f64(),
                     floor_s.as_secs_f64(),
                     phase2_gpu_s.as_secs_f64(),
                     t_p2.elapsed().as_secs_f64(),
@@ -379,6 +430,9 @@ impl CompiledScanner {
                     phase2_gpu_matches,
                     phase2_gpu_complete,
                     phase2_always_anchor_chunks,
+                    confirmed_anchor_gpu_complete,
+                    confirmed_anchor_candidate_rows,
+                    confirmed_anchor_candidate_count,
                     full_recall_floor,
                 );
             }
@@ -392,6 +446,67 @@ impl CompiledScanner {
             }
             results
         }
+    }
+
+    fn confirmed_anchor_literal_matches_from_gpu(
+        &self,
+        matcher: &vyre_libs::scan::GpuLiteralSet,
+        backend: &dyn vyre::VyreBackend,
+        haystack: &[u8],
+        region_starts: &[u32],
+    ) -> Option<Vec<Vec<(u32, u32)>>> {
+        let literal_count = self.confirmed_anchor_literal_count;
+        if literal_count == 0 {
+            return None;
+        }
+        let matches = match super::gpu_literal_scratch::scan_gpu_literal_matches_with_scratch(
+            matcher,
+            backend,
+            haystack,
+            GPU_CONFIRMED_ANCHOR_MAX_MATCHES,
+        ) {
+            Ok(matches) => matches,
+            Err(error) => {
+                report_confirmed_anchor_gpu_candidate_loss(error);
+                return None;
+            }
+        };
+        if matches.len() >= GPU_CONFIRMED_ANCHOR_MAX_MATCHES as usize {
+            report_confirmed_anchor_gpu_candidate_loss(format!(
+                "positioned literal scan reached cap {GPU_CONFIRMED_ANCHOR_MAX_MATCHES}; \
+                 refusing incomplete confirmed-anchor candidates"
+            ));
+            return None;
+        }
+        let base =
+            self.ac_map.len() + self.phase2_keyword_count + self.phase2_always_anchor_literal_count;
+        let end = base + literal_count;
+        let mut rows = vec![Vec::new(); region_starts.len()];
+        for m in matches {
+            let pattern_id = m.pattern_id as usize;
+            if pattern_id < base || pattern_id >= end {
+                continue;
+            }
+            let Some(region) =
+                super::phase2_gpu_dfa::match_region(region_starts, haystack.len(), m.start, m.end)
+            else {
+                continue;
+            };
+            let region_start = region_starts[region] as usize;
+            let start = m.start as usize;
+            if start < region_start {
+                continue;
+            }
+            let local_start = start - region_start;
+            if let Ok(local_start) = u32::try_from(local_start) {
+                rows[region].push(((pattern_id - base) as u32, local_start));
+            }
+        }
+        for row in &mut rows {
+            row.sort_unstable();
+            row.dedup();
+        }
+        Some(rows)
     }
 }
 

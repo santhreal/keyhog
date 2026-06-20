@@ -42,11 +42,15 @@ struct GpuRegionPerfPoint {
     coalesce_s: f64,
     coalesce_mib_s: f64,
     dispatch_s: f64,
+    confirmed_anchor_gpu_s: f64,
     phase2_gpu_s: f64,
     phase2_cpu_s: f64,
     gpu_presence_bits: u64,
     trigger_bits: u64,
     phase2_gpu_complete: bool,
+    confirmed_anchor_gpu_complete: bool,
+    confirmed_anchor_candidate_rows: u64,
+    confirmed_anchor_candidates: u64,
 }
 
 fn threshold_u64(name: &str) -> u64 {
@@ -79,7 +83,7 @@ fn rtx5090_region_perf_trace_records_direct_source_and_8mib_not_10x() {
     let measurement: GpuRegionPerfTrace =
         toml::from_str(raw).expect("parse RTX 5090 GPU region perf trace");
 
-    assert_eq!(measurement.schema_version, 2);
+    assert_eq!(measurement.schema_version, 3);
     assert_eq!(measurement.gpu, "NVIDIA GeForce RTX 5090");
     assert_eq!(measurement.backend, "region-presence");
     assert_eq!(measurement.payload, "benign-sparse-single-chunk");
@@ -115,11 +119,21 @@ fn rtx5090_region_perf_trace_records_direct_source_and_8mib_not_10x() {
             "{mib} MiB direct-source admission should report memory-rate evidence"
         );
         assert!(point.dispatch_s > 0.0);
+        assert!(
+            point.confirmed_anchor_gpu_s > 0.0,
+            "{mib} MiB trace must account for positioned confirmed-anchor GPU candidate collection"
+        );
         assert_eq!(point.phase2_gpu_s, 0.0);
         assert!(point.phase2_cpu_s > 0.0);
-        assert_eq!(point.gpu_presence_bits, 29);
+        assert_eq!(point.gpu_presence_bits, 39);
         assert_eq!(point.trigger_bits, 75);
         assert!(point.phase2_gpu_complete);
+        assert!(point.confirmed_anchor_gpu_complete);
+        assert_eq!(point.confirmed_anchor_candidate_rows, 1);
+        assert!(
+            point.confirmed_anchor_candidates > 0,
+            "{mib} MiB trace must prove confirmed-anchor candidates were produced by GPU"
+        );
     }
 
     let eight = measurement
@@ -138,6 +152,10 @@ fn rtx5090_region_perf_trace_records_direct_source_and_8mib_not_10x() {
     assert!(
         eight.phase2_cpu_s > eight.dispatch_s && eight.phase2_cpu_s > eight.coalesce_s * 100.0,
         "8 MiB remaining wall time must identify the CPU phase-2 tail, not hide behind staging"
+    );
+    assert!(
+        eight.confirmed_anchor_candidates >= 1_000,
+        "8 MiB sparse payload should keep the confirmed-anchor GPU candidate proof complete"
     );
 }
 

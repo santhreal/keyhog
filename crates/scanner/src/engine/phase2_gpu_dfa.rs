@@ -21,8 +21,7 @@ use self::candidates::{
 use self::lowering::build_shards_recursive;
 #[cfg(test)]
 use self::lowering::regex_dfa_source_for_pattern;
-#[cfg(test)]
-use self::shard::match_region;
+pub(super) use self::shard::match_region;
 use self::shard::Phase2GpuDfaShard;
 pub(super) use self::workload::Phase2GpuAdmissionWorkload;
 pub(crate) use self::workload::Phase2GpuDfaAdmission;

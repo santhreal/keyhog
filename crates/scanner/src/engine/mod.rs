@@ -250,6 +250,11 @@ pub struct CompiledScanner {
     /// phase-2 anchor AC; an all-zero row segment proves that AC has no possible
     /// candidates for the chunk.
     pub(crate) phase2_always_anchor_literal_count: usize,
+    /// GPU literal rows appended after phase-2 rows. These mirror the confirmed
+    /// shared-anchor AC's required-prefix literals and are used only as a
+    /// positioned candidate accelerator; the CPU confirmed extractor remains
+    /// authoritative whenever the GPU candidate list is unavailable or capped.
+    pub(crate) confirmed_anchor_literal_count: usize,
     pub(crate) phase2_always_active_indices: Vec<usize>,
     /// Combined-RegexSet prefilter over `phase2_always_active_indices`. When
     /// present, the per-chunk phase-2 capture scan runs one linear set pass instead of

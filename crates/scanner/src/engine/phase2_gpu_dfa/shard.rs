@@ -120,7 +120,7 @@ impl Phase2GpuDfaShard {
     }
 }
 
-pub(super) fn match_region(
+pub(in crate::engine) fn match_region(
     region_starts: &[u32],
     haystack_len: usize,
     start: u32,

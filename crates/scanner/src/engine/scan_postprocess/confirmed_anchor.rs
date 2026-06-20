@@ -44,6 +44,7 @@ impl CompiledScanner {
 pub(crate) struct ConfirmedAnchorIndex {
     anchor_ac: AhoCorasick,
     anchor_first_bigram: FirstBigramSet,
+    anchor_literals: Vec<String>,
     literal_patterns: Vec<Vec<u32>>,
     eligible: Vec<bool>,
     anchored: Vec<Option<AnchoredRegex>>,
@@ -105,6 +106,7 @@ impl ConfirmedAnchorIndex {
         Some(Self {
             anchor_ac,
             anchor_first_bigram,
+            anchor_literals: literals,
             literal_patterns,
             eligible,
             anchored,
@@ -114,6 +116,10 @@ impl ConfirmedAnchorIndex {
 
     pub(crate) fn eligible_count(&self) -> usize {
         self.eligible_count
+    }
+
+    pub(crate) fn anchor_literals(&self) -> &[String] {
+        &self.anchor_literals
     }
 
     #[cfg(test)]
@@ -144,6 +150,27 @@ impl ConfirmedAnchorIndex {
             let literal_idx = mat.pattern().as_usize();
             let pos = mat.start() as u32;
             if let Some(patterns) = self.literal_patterns.get(literal_idx) {
+                for &pattern in patterns {
+                    let pattern = pattern as usize;
+                    if is_active(pattern) {
+                        out.push((pattern as u32, pos));
+                    }
+                }
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+    }
+
+    pub(crate) fn collect_candidates_from_literal_matches(
+        &self,
+        literal_matches: &[(u32, u32)],
+        is_active: impl Fn(usize) -> bool,
+        out: &mut Vec<(u32, u32)>,
+    ) {
+        out.clear();
+        for &(literal_idx, pos) in literal_matches {
+            if let Some(patterns) = self.literal_patterns.get(literal_idx as usize) {
                 for &pattern in patterns {
                     let pattern = pattern as usize;
                     if is_active(pattern) {
