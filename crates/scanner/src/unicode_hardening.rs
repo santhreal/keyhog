@@ -144,11 +144,14 @@ pub(crate) fn detect_unicode_attacks(text: &str) -> Vec<EvasionMatch> {
 /// returned `Cow::Borrowed` with no allocation. Only inputs containing actual
 /// homoglyphs/zero-width/RTL characters take the slow per-char-rebuild path.
 pub(crate) fn normalize_homoglyphs(text: &str) -> std::borrow::Cow<'_, str> {
-    if text.is_ascii() && !contains_ascii_evasion(text.as_bytes()) {
-        return std::borrow::Cow::Borrowed(text);
-    }
-    if !text.is_ascii() && !contains_evasion(text) {
-        return std::borrow::Cow::Borrowed(text);
+    match ascii_normalization_scan(text.as_bytes()) {
+        AsciiNormalizationScan::CleanAscii => return std::borrow::Cow::Borrowed(text),
+        AsciiNormalizationScan::EvasiveAscii => {}
+        AsciiNormalizationScan::NonAscii => {
+            if !contains_evasion(text) {
+                return std::borrow::Cow::Borrowed(text);
+            }
+        }
     }
     let mut normalized = String::with_capacity(text.len());
     for ch in text.chars() {
@@ -175,6 +178,25 @@ pub(crate) fn normalize_homoglyphs(text: &str) -> std::borrow::Cow<'_, str> {
         normalized.push(ch);
     }
     std::borrow::Cow::Owned(normalized)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AsciiNormalizationScan {
+    CleanAscii,
+    EvasiveAscii,
+    NonAscii,
+}
+
+fn ascii_normalization_scan(bytes: &[u8]) -> AsciiNormalizationScan {
+    for &byte in bytes {
+        if byte >= 0x80 {
+            return AsciiNormalizationScan::NonAscii;
+        }
+        if byte < 0x20 && !matches!(byte, b'\n' | b'\r' | b'\t') {
+            return AsciiNormalizationScan::EvasiveAscii;
+        }
+    }
+    AsciiNormalizationScan::CleanAscii
 }
 
 /// Full Unicode normalization (NFC + homoglyph replacement)
