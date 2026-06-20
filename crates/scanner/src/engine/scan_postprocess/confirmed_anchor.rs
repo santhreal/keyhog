@@ -8,6 +8,7 @@
 //! without a proven prefix keep the whole-chunk path.
 
 use super::super::phase2_anchor::{required_prefix_literals, AnchoredRegex};
+use super::super::phase2_first_bigram::FirstBigramSet;
 use super::super::CompiledScanner;
 use crate::types::CompiledPattern;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
@@ -35,6 +36,7 @@ impl CompiledScanner {
 
 pub(crate) struct ConfirmedAnchorIndex {
     anchor_ac: AhoCorasick,
+    anchor_first_bigram: FirstBigramSet,
     literal_patterns: Vec<Vec<u32>>,
     eligible: Vec<bool>,
     anchored: Vec<Option<AnchoredRegex>>,
@@ -73,6 +75,9 @@ impl ConfirmedAnchorIndex {
             return None;
         }
 
+        let anchor_first_bigram =
+            FirstBigramSet::from_literals(literals.iter().map(String::as_bytes), true);
+
         let anchor_ac = match AhoCorasickBuilder::new()
             .match_kind(MatchKind::Standard)
             .ascii_case_insensitive(true)
@@ -91,6 +96,7 @@ impl ConfirmedAnchorIndex {
 
         Some(Self {
             anchor_ac,
+            anchor_first_bigram,
             literal_patterns,
             eligible,
             anchored,
@@ -118,6 +124,9 @@ impl ConfirmedAnchorIndex {
         out: &mut Vec<(u32, u32)>,
     ) {
         out.clear();
+        if !self.anchor_first_bigram.may_have_match(text) {
+            return;
+        }
         for mat in self.anchor_ac.find_overlapping_iter(text) {
             let literal_idx = mat.pattern().as_usize();
             let pos = mat.start() as u32;
