@@ -35,8 +35,7 @@
 #   --help / -h         show this help and exit
 #
 # Env overrides:
-#   KEYHOG_VERSION, KEYHOG_VARIANT, KEYHOG_INSTALL, KEYHOG_FROM_FILE,
-#   GITHUB_TOKEN, NO_COLOR
+#   KEYHOG_VERSION, KEYHOG_VARIANT, KEYHOG_INSTALL, GITHUB_TOKEN, NO_COLOR
 
 set -eu
 
@@ -45,7 +44,7 @@ RELEASE_PUBLIC_KEY="RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go"
 INSTALL_DIR="${KEYHOG_INSTALL:-$HOME/.local/bin}"
 VERSION="${KEYHOG_VERSION:-}"
 VARIANT="${KEYHOG_VARIANT:-auto}"
-FROM_FILE="${KEYHOG_FROM_FILE:-}"
+FROM_FILE=""
 INSECURE_INSTALL=0
 MODE="install"
 INTERACTIVE=1
@@ -209,7 +208,7 @@ usage() {
 "Modes:  (default) install/upgrade   --repair   --diagnose   --uninstall" \
 "Flags:  --version=vX.Y.Z  --variant=cpu|cuda  --install-dir=PATH" \
 "        --from-file=PATH  --yes/-y  --no-prompt  --insecure  --no-color  --help/-h" \
-"Env:    KEYHOG_VERSION  KEYHOG_VARIANT  KEYHOG_INSTALL  KEYHOG_FROM_FILE  GITHUB_TOKEN  NO_COLOR"
+"Env:    KEYHOG_VERSION  KEYHOG_VARIANT  KEYHOG_INSTALL  GITHUB_TOKEN  NO_COLOR"
     fi
     exit 0
 }

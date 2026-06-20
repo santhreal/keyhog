@@ -16,6 +16,19 @@ fn install_scripts_do_not_accept_insecure_env_override() {
 }
 
 #[test]
+fn install_from_file_is_explicit_flag_not_env() {
+    for (name, script) in [
+        ("install.sh", include_str!("../../../install.sh")),
+        ("install.ps1", include_str!("../../../install.ps1")),
+    ] {
+        assert!(
+            !script.contains("KEYHOG_FROM_FILE"),
+            "{name} must not accept KEYHOG_FROM_FILE; local/offline installs use --from-file/-FromFile explicitly"
+        );
+    }
+}
+
+#[test]
 fn install_scripts_keep_explicit_insecure_flags() {
     let sh = include_str!("../../../install.sh");
     assert!(

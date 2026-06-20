@@ -26,8 +26,7 @@
 #   -NoColor              disable ANSI colors
 #
 # Env overrides:
-#   $env:KEYHOG_VERSION, $env:KEYHOG_FROM_FILE, $env:KEYHOG_INSTALL,
-#   $env:GITHUB_TOKEN, $env:NO_COLOR
+#   $env:KEYHOG_VERSION, $env:KEYHOG_INSTALL, $env:GITHUB_TOKEN, $env:NO_COLOR
 
 [CmdletBinding()]
 param(
@@ -39,7 +38,7 @@ param(
     [switch]$NoColor,
     [switch]$Insecure,
     [string]$Version = $env:KEYHOG_VERSION,
-    [string]$FromFile = $env:KEYHOG_FROM_FILE,
+    [string]$FromFile,
     [string]$InstallDir = $(if ($env:KEYHOG_INSTALL) { $env:KEYHOG_INSTALL } else { Join-Path $env:LOCALAPPDATA 'keyhog\bin' })
 )
 
