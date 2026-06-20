@@ -49,13 +49,17 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         batch_src.contains("build_region_presence_batch")
             && batch_src.contains("REGION_PRESENCE_BATCH_SCRATCH")
             && batch_src.contains("region_starts")
-            && batch_src.contains("extend_ascii_lowercase_from"),
-        "region dispatch must reuse one coalesced folded haystack scratch with one region row per chunk"
+            && batch_src.contains("spare_capacity_mut()[..total]")
+            && batch_src.contains("write_ascii_lowercase_into")
+            && batch_src.contains("set_len(total)"),
+        "region dispatch must reuse one exact-size coalesced folded haystack scratch with one region row per chunk"
     );
     assert!(
         !batch_src.contains("extend_from_slice(chunk.data.as_bytes())")
+            && !batch_src.contains("extend_ascii_lowercase_from")
+            && !batch_src.contains("scratch.haystack.push(0)")
             && !batch_src.contains("make_ascii_lowercase()"),
-        "region dispatch must not copy chunk bytes and then run a second lowercase pass"
+        "region dispatch must not copy chunk bytes and then run a second lowercase pass or per-chunk Vec append/push bookkeeping"
     );
     assert!(
         batch_src.contains("haystack.fill(0);")

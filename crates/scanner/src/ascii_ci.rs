@@ -21,7 +21,7 @@ use std::mem::MaybeUninit;
 /// [`[u8]::make_ascii_lowercase`] semantics without first copying the original
 /// bytes and then walking them again to fold case.
 #[inline]
-#[cfg(any(feature = "gpu", test))]
+#[cfg(test)]
 pub(crate) fn extend_ascii_lowercase_from(dst: &mut Vec<u8>, src: &[u8]) {
     let old_len = dst.len();
     dst.reserve(src.len());
@@ -37,7 +37,7 @@ pub(crate) fn extend_ascii_lowercase_from(dst: &mut Vec<u8>, src: &[u8]) {
 
 #[inline]
 #[cfg(any(feature = "gpu", test))]
-fn write_ascii_lowercase_into(dst: &mut [MaybeUninit<u8>], src: &[u8]) {
+pub(crate) fn write_ascii_lowercase_into(dst: &mut [MaybeUninit<u8>], src: &[u8]) {
     debug_assert_eq!(dst.len(), src.len());
     let simd_len = write_ascii_lowercase_simd_prefix(dst, src);
     for (slot, &byte) in dst[simd_len..].iter_mut().zip(&src[simd_len..]) {

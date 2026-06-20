@@ -76,15 +76,25 @@ pub(super) fn build_region_presence_batch(
         .region_starts
         .try_reserve(chunks.len())
         .map_err(|error| format!("coalesced GPU region-start reserve failed: {error}"))?;
+    let spare = &mut scratch.haystack.spare_capacity_mut()[..total];
+    let mut offset = 0usize;
     for (idx, chunk) in chunks.iter().enumerate() {
-        let start = u32::try_from(scratch.haystack.len()).map_err(|_| {
-            "coalesced GPU region-presence start offset exceeds the u32 GPU ABI".to_string()
-        })?;
-        scratch.region_starts.push(start);
-        crate::ascii_ci::extend_ascii_lowercase_from(&mut scratch.haystack, chunk.data.as_bytes());
+        scratch.region_starts.push(offset as u32);
+        let bytes = chunk.data.as_bytes();
+        let end = offset + bytes.len();
+        crate::ascii_ci::write_ascii_lowercase_into(&mut spare[offset..end], bytes);
+        offset = end;
         if idx + 1 != chunks.len() {
-            scratch.haystack.push(0);
+            spare[offset].write(0);
+            offset += 1;
         }
+    }
+    debug_assert_eq!(offset, total);
+    // SAFETY: total capacity was reserved above, each chunk slice and separator
+    // slot in `spare[..total]` was initialized exactly once, and all fallible
+    // checks run before writes begin.
+    unsafe {
+        scratch.haystack.set_len(total);
     }
     Ok(())
 }
