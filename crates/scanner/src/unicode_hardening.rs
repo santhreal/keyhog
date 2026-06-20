@@ -297,10 +297,9 @@ pub(crate) fn strip_interior_evasion_controls(text: &str) -> std::borrow::Cow<'_
     // Cheap gate: is there ANY `\t`/`\r` flanked by credential bytes? Indentation
     // (control preceded by `\n`/space) and CRLF (`\r` followed by `\n`) fail this,
     // so the overwhelming majority of inputs return here with no anchor scan.
-    let has_candidate = (1..bytes.len() - 1).any(|i| {
-        is_interior_control(bytes[i])
-            && is_credential_body_byte(bytes[i - 1])
-            && is_credential_body_byte(bytes[i + 1])
+    let has_candidate = memchr::memchr2_iter(b'\t', b'\r', &bytes[1..bytes.len() - 1]).any(|i| {
+        let i = i + 1;
+        is_credential_body_byte(bytes[i - 1]) && is_credential_body_byte(bytes[i + 1])
     });
     if !has_candidate {
         return std::borrow::Cow::Borrowed(text);
