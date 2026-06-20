@@ -86,7 +86,7 @@ fn rtx5090_region_perf_trace_records_direct_source_and_8mib_not_10x() {
     let measurement: GpuRegionPerfTrace =
         toml::from_str(raw).expect("parse RTX 5090 GPU region perf trace");
 
-    assert_eq!(measurement.schema_version, 4);
+    assert_eq!(measurement.schema_version, 5);
     assert_eq!(measurement.gpu, "NVIDIA GeForce RTX 5090");
     assert_eq!(measurement.backend, "region-presence");
     assert_eq!(measurement.payload, "benign-sparse-single-chunk");
@@ -125,7 +125,10 @@ fn rtx5090_region_perf_trace_records_direct_source_and_8mib_not_10x() {
         assert!(point.positioned_literal_gpu_s > 0.0);
         assert_eq!(point.phase2_gpu_s, 0.0);
         assert!(point.phase2_cpu_s > 0.0);
-        assert_eq!(point.gpu_presence_bits, 40);
+        assert_eq!(
+            point.gpu_presence_bits, 29,
+            "{mib} MiB presence matcher must exclude positioned confirmed-anchor/generic rows"
+        );
         assert_eq!(point.trigger_bits, 75);
         assert!(point.phase2_gpu_complete);
         assert!(point.confirmed_anchor_gpu_complete);
@@ -154,6 +157,10 @@ fn rtx5090_region_perf_trace_records_direct_source_and_8mib_not_10x() {
     assert!(
         eight.gpu_over_simd_wall_ratio > 0.10,
         "8 MiB GPU is still not a 10x Hyperscan win; keep the product bar open"
+    );
+    assert!(
+        eight.gpu_over_simd_wall_ratio < 0.23,
+        "8 MiB split positioned matcher trace must retain the measured schema-v5 improvement"
     );
     assert!(
         eight.phase2_cpu_s > eight.dispatch_s && eight.phase2_cpu_s > eight.coalesce_s * 100.0,

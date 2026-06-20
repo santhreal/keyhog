@@ -189,6 +189,10 @@ pub struct CompiledScanner {
     pub(crate) gpu_backend: Option<Arc<dyn vyre::VyreBackend>>,
     pub(crate) gpu_literals: Option<Arc<Vec<Vec<u8>>>>,
     pub(crate) gpu_matcher: OnceLock<Option<vyre_libs::scan::GpuLiteralSet>>,
+    #[cfg(feature = "gpu")]
+    pub(crate) gpu_position_literals: Option<Arc<Vec<Vec<u8>>>>,
+    #[cfg(feature = "gpu")]
+    pub(crate) gpu_position_matcher: OnceLock<Option<vyre_libs::scan::GpuLiteralSet>>,
     pub(crate) gpu_last_degrade_reason: std::sync::Mutex<Option<String>>,
     pub(crate) gpu_degrade_count: std::sync::atomic::AtomicU64,
     pub(crate) static_intern: Arc<crate::static_intern::StaticInterner>,
@@ -250,14 +254,16 @@ pub struct CompiledScanner {
     /// phase-2 anchor AC; an all-zero row segment proves that AC has no possible
     /// candidates for the chunk.
     pub(crate) phase2_always_anchor_literal_count: usize,
-    /// GPU literal rows appended after phase-2 rows. These mirror the confirmed
-    /// shared-anchor AC's required-prefix literals and are used only as a
-    /// positioned candidate accelerator; the CPU confirmed extractor remains
-    /// authoritative whenever the GPU candidate list is unavailable or capped.
+    /// Rows in `gpu_position_literals` for confirmed shared-anchor literals.
+    /// Used only as a positioned candidate accelerator; the CPU confirmed
+    /// extractor remains authoritative whenever the GPU candidate list is
+    /// unavailable or capped.
+    #[cfg(feature = "gpu")]
     pub(crate) confirmed_anchor_literal_count: usize,
-    /// GPU literal rows appended after confirmed-anchor rows. These mirror the
-    /// generic assignment bridge's compact keyword stems and are used only as
-    /// positioned line-candidate hints for that bridge.
+    /// Rows in `gpu_position_literals` after confirmed-anchor rows. These
+    /// mirror the generic assignment bridge's compact keyword stems and are
+    /// used only as positioned line-candidate hints for that bridge.
+    #[cfg(feature = "gpu")]
     pub(crate) generic_keyword_literal_count: usize,
     pub(crate) phase2_always_active_indices: Vec<usize>,
     /// Combined-RegexSet prefilter over `phase2_always_active_indices`. When

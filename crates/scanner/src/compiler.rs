@@ -9,8 +9,6 @@ pub(crate) mod compiler_prefix;
 pub(crate) use compiler_build::build_compile_state;
 #[cfg(test)]
 pub(crate) use compiler_build::{rewrite_alternation_prefix, split_leading_inline_flag};
-#[cfg(feature = "gpu")]
-pub(crate) use compiler_compile::build_gpu_literals;
 pub(crate) use compiler_compile::build_phase2_keyword_ac;
 pub(crate) use compiler_compile::log_quality_warnings;
 #[cfg(test)]
@@ -18,6 +16,8 @@ pub(crate) use compiler_compile::match_proves_keyword_nearby;
 pub(crate) use compiler_compile::{
     build_ac_pattern_set, build_prefix_propagation, build_same_prefix_patterns,
 };
+#[cfg(feature = "gpu")]
+pub(crate) use compiler_compile::{build_gpu_literals, build_gpu_position_literals};
 #[cfg(test)]
 pub(crate) use compiler_prefix::is_escaped_literal;
 #[cfg(test)]

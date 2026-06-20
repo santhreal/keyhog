@@ -33,20 +33,34 @@ pub(crate) fn build_gpu_literals(
     ac_literals: &[String],
     phase2_keywords: &[String],
     phase2_always_anchor_literals: &[String],
+) -> Option<std::sync::Arc<Vec<Vec<u8>>>> {
+    build_gpu_literal_rows(
+        ac_literals
+            .iter()
+            .chain(phase2_keywords)
+            .chain(phase2_always_anchor_literals),
+        "GPU literal set",
+    )
+}
+
+#[cfg(feature = "gpu")]
+pub(crate) fn build_gpu_position_literals(
     confirmed_anchor_literals: &[String],
     generic_keyword_literals: &[String],
 ) -> Option<std::sync::Arc<Vec<Vec<u8>>>> {
-    if ac_literals
-        .iter()
-        .chain(phase2_keywords)
-        .chain(phase2_always_anchor_literals)
-        .chain(confirmed_anchor_literals)
-        .chain(generic_keyword_literals)
-        .any(String::is_empty)
-    {
-        tracing::warn!("GPU literal set contains an empty literal; disabling GPU literal scan");
-        return None;
-    }
+    build_gpu_literal_rows(
+        confirmed_anchor_literals
+            .iter()
+            .chain(generic_keyword_literals),
+        "GPU positioned literal set",
+    )
+}
+
+#[cfg(feature = "gpu")]
+fn build_gpu_literal_rows<'a>(
+    literals: impl Iterator<Item = &'a String>,
+    label: &'static str,
+) -> Option<std::sync::Arc<Vec<Vec<u8>>>> {
     // ASCII-lowercase every literal for the GPU automaton. The SIMD path
     // compiles Hyperscan with `PatternFlags::CASELESS` unconditionally
     // (simd.rs), so detection is case-INSENSITIVE for every pattern. The GPU
@@ -60,22 +74,19 @@ pub(crate) fn build_gpu_literals(
     // preserving (1 byte -> 1 byte, only A-Z affected), so match offsets map
     // back unchanged and phase 2 re-confirms on the original mixed-case bytes
     // with the caseless regex.
-    let literals: Vec<Vec<u8>> = ac_literals
-        .iter()
-        .chain(phase2_keywords)
-        .chain(phase2_always_anchor_literals)
-        .chain(confirmed_anchor_literals)
-        .chain(generic_keyword_literals)
-        .map(|literal| literal.to_ascii_lowercase().into_bytes())
-        .collect();
-    if literals.is_empty() {
+    let mut rows = Vec::new();
+    for literal in literals {
+        if literal.is_empty() {
+            tracing::warn!("{label} contains an empty literal; disabling GPU literal scan");
+            return None;
+        }
+        rows.push(literal.to_ascii_lowercase().into_bytes());
+    }
+    if rows.is_empty() {
         None
     } else {
-        tracing::info!(
-            patterns = literals.len(),
-            "GPU literal set prepared for Vyre"
-        );
-        Some(std::sync::Arc::new(literals))
+        tracing::info!(patterns = rows.len(), "{} prepared for Vyre", label);
+        Some(std::sync::Arc::new(rows))
     }
 }
 

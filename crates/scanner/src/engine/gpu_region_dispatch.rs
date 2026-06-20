@@ -194,7 +194,6 @@ impl CompiledScanner {
                     let presence = result?;
                     let t_positioned_literal_gpu = std::time::Instant::now();
                     let positioned = self.positioned_literal_evidence_from_gpu(
-                        matcher,
                         &**backend,
                         haystack,
                         region_starts,
@@ -472,7 +471,6 @@ impl CompiledScanner {
 
     fn positioned_literal_evidence_from_gpu(
         &self,
-        matcher: &vyre_libs::scan::GpuLiteralSet,
         backend: &dyn vyre::VyreBackend,
         haystack: &[u8],
         region_starts: &[u32],
@@ -482,6 +480,12 @@ impl CompiledScanner {
         if confirmed_count == 0 && generic_count == 0 {
             return GpuPositionEvidence::default();
         }
+        let Some(matcher) = self.gpu_position_matcher() else {
+            report_positioned_gpu_candidate_loss(
+                "positioned literal matcher not built for this scanner",
+            );
+            return GpuPositionEvidence::default();
+        };
         let matches = match super::gpu_literal_scratch::scan_gpu_literal_matches_with_scratch(
             matcher,
             backend,
@@ -501,9 +505,8 @@ impl CompiledScanner {
             ));
             return GpuPositionEvidence::default();
         }
-        let confirmed_base =
-            self.ac_map.len() + self.phase2_keyword_count + self.phase2_always_anchor_literal_count;
-        let confirmed_end = confirmed_base + confirmed_count;
+        let confirmed_base = 0usize;
+        let confirmed_end = confirmed_count;
         let generic_base = confirmed_end;
         let generic_end = generic_base + generic_count;
         let mut confirmed_rows =

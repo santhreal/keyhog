@@ -15,6 +15,11 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         "/src/engine/phase2_gpu_dfa.rs"
     ))
     .expect("phase2 gpu dfa readable");
+    let gpu_lazy_src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/gpu_lazy.rs"
+    ))
+    .expect("gpu lazy matcher owner readable");
     let gpu_dfa_batch_src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/engine/phase2_gpu_dfa/batch.rs"
@@ -73,6 +78,13 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
     assert!(
         dispatch_src.contains("scan_gpu_literal_presence_by_region_with_scratch"),
         "region dispatch must use Vyre's batched region-presence scratch API"
+    );
+    assert!(
+        dispatch_src.contains("self.gpu_position_matcher()")
+            && dispatch_src.contains("let confirmed_base = 0usize")
+            && gpu_lazy_src.contains("pub(crate) fn gpu_position_matcher")
+            && gpu_lazy_src.contains("compile_gpu_literal_set(literals, \"pos-lit\")"),
+        "positioned confirmed-anchor/generic candidates must use the smaller positioned matcher, not appended rows in the region-presence bitset"
     );
     assert!(
         dispatch_src.contains("source_bytes={}")

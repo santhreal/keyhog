@@ -190,14 +190,17 @@ impl CompiledScanner {
         let gated = ac_suffix_gate.iter().filter(|g| !g.is_empty()).count();
         let confirmed_anchor_index =
             scan_postprocess::confirmed_anchor::ConfirmedAnchorIndex::build(&state.ac_map);
+        #[cfg(feature = "gpu")]
         let confirmed_anchor_literal_count = confirmed_anchor_index
             .as_ref()
             .map_or(0, |index| index.anchor_literals().len());
+        #[cfg(feature = "gpu")]
         let generic_keyword_literals =
             super::phase2_generic::keywords::generic_keyword_prefilter_stems()
                 .into_iter()
                 .map(str::to_owned)
                 .collect::<Vec<_>>();
+        #[cfg(feature = "gpu")]
         let generic_keyword_literal_count = generic_keyword_literals.len();
 
         #[cfg(feature = "gpu")]
@@ -205,16 +208,20 @@ impl CompiledScanner {
             let phase2_always_anchor_literals = phase2_anchor_index
                 .as_ref()
                 .map_or(&[] as &[String], |index| index.always_anchor_literals());
-            let confirmed_anchor_literals = confirmed_anchor_index
-                .as_ref()
-                .map_or(&[] as &[String], |index| index.anchor_literals());
             build_gpu_literals(
                 &state.ac_literals,
                 &phase2_keywords,
                 phase2_always_anchor_literals,
-                confirmed_anchor_literals,
-                &generic_keyword_literals,
             )
+        } else {
+            None
+        };
+        #[cfg(feature = "gpu")]
+        let gpu_position_literals = if gpu_backend.is_some() {
+            let confirmed_anchor_literals = confirmed_anchor_index
+                .as_ref()
+                .map_or(&[] as &[String], |index| index.anchor_literals());
+            build_gpu_position_literals(confirmed_anchor_literals, &generic_keyword_literals)
         } else {
             None
         };
@@ -406,6 +413,10 @@ impl CompiledScanner {
             gpu_backend,
             gpu_literals,
             gpu_matcher: OnceLock::new(),
+            #[cfg(feature = "gpu")]
+            gpu_position_literals,
+            #[cfg(feature = "gpu")]
+            gpu_position_matcher: OnceLock::new(),
             gpu_last_degrade_reason: std::sync::Mutex::new(None),
             gpu_degrade_count: std::sync::atomic::AtomicU64::new(0),
             static_intern,
@@ -428,7 +439,9 @@ impl CompiledScanner {
             phase2_keyword_to_patterns,
             phase2_keyword_count,
             phase2_always_anchor_literal_count,
+            #[cfg(feature = "gpu")]
             confirmed_anchor_literal_count,
+            #[cfg(feature = "gpu")]
             generic_keyword_literal_count,
             phase2_always_active_indices,
             phase2_always_active_prefilter,

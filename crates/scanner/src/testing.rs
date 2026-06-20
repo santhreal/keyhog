@@ -328,7 +328,7 @@ pub(crate) mod multiline {
 }
 
 #[cfg(all(test, feature = "gpu"))]
-pub(crate) use crate::compiler::build_gpu_literals;
+pub(crate) use crate::compiler::{build_gpu_literals, build_gpu_position_literals};
 #[cfg(all(test, feature = "gpu"))]
 pub(crate) fn gpu_matcher_cache_dir_from_base(
     base: Option<std::path::PathBuf>,

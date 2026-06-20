@@ -358,11 +358,7 @@ impl CompiledScanner {
     /// was removed; see `collect_triggered_patterns_gpu`).
     #[inline]
     pub(super) fn gpu_presence_literal_count(&self) -> usize {
-        self.ac_map.len()
-            + self.phase2_keyword_count
-            + self.phase2_always_anchor_literal_count
-            + self.confirmed_anchor_literal_count
-            + self.generic_keyword_literal_count
+        self.ac_map.len() + self.phase2_keyword_count + self.phase2_always_anchor_literal_count
     }
 
     pub(super) fn gpu_presence_stray_tail_bits(&self, presence: &[u32]) -> Option<(usize, u32)> {
@@ -597,52 +593,61 @@ mod tests {
     }
 
     #[test]
-    fn appended_gpu_presence_confirmed_anchor_bits_are_position_hints_only() {
+    #[cfg(feature = "gpu")]
+    fn positioned_confirmed_anchor_bits_are_not_presence_bits() {
         let mut scanner = scanner_with_detector_and_phase2_keyword_and_anchor();
         scanner.confirmed_anchor_literal_count = 1;
+        assert_eq!(
+            scanner.gpu_presence_literal_count(),
+            scanner.ac_map.len()
+                + scanner.phase2_keyword_count
+                + scanner.phase2_always_anchor_literal_count
+        );
         let mut row = vec![0u32; scanner.gpu_presence_literal_count().div_ceil(32).max(1)];
-        let confirmed_anchor_literal_idx = scanner.ac_map.len()
-            + scanner.phase2_keyword_count
-            + scanner.phase2_always_anchor_literal_count;
+        let confirmed_anchor_literal_idx = scanner.gpu_presence_literal_count();
         row[confirmed_anchor_literal_idx / 32] |= 1u32 << (confirmed_anchor_literal_idx % 32);
 
         assert!(scanner
             .phase2_keyword_hints_from_gpu_presence(&row)
             .is_empty());
         assert!(!scanner.phase2_always_anchor_present_from_gpu_presence(&row));
-        assert!(scanner.gpu_presence_stray_tail_bits(&row).is_none());
+        assert!(scanner.gpu_presence_stray_tail_bits(&row).is_some());
         assert!(
             scanner
                 .triggered_patterns_from_gpu_presence(&row)
                 .iter()
                 .all(|&word| word == 0),
-            "confirmed-anchor position bits must not set detector trigger bits"
+            "positioned confirmed-anchor bits must not set detector trigger bits"
         );
     }
 
     #[test]
-    fn appended_gpu_presence_generic_keyword_bits_are_position_hints_only() {
+    #[cfg(feature = "gpu")]
+    fn positioned_generic_keyword_bits_are_not_presence_bits() {
         let mut scanner = scanner_with_detector_and_phase2_keyword_and_anchor();
         scanner.confirmed_anchor_literal_count = 1;
         scanner.generic_keyword_literal_count = 1;
+        assert_eq!(
+            scanner.gpu_presence_literal_count(),
+            scanner.ac_map.len()
+                + scanner.phase2_keyword_count
+                + scanner.phase2_always_anchor_literal_count
+        );
         let mut row = vec![0u32; scanner.gpu_presence_literal_count().div_ceil(32).max(1)];
-        let generic_keyword_literal_idx = scanner.ac_map.len()
-            + scanner.phase2_keyword_count
-            + scanner.phase2_always_anchor_literal_count
-            + scanner.confirmed_anchor_literal_count;
+        let generic_keyword_literal_idx = scanner.gpu_presence_literal_count();
         row[generic_keyword_literal_idx / 32] |= 1u32 << (generic_keyword_literal_idx % 32);
 
         assert!(scanner
             .phase2_keyword_hints_from_gpu_presence(&row)
             .is_empty());
         assert!(!scanner.phase2_always_anchor_present_from_gpu_presence(&row));
-        assert!(scanner.gpu_presence_stray_tail_bits(&row).is_none());
+        assert!(scanner.gpu_presence_stray_tail_bits(&row).is_some());
         assert!(
             scanner
                 .triggered_patterns_from_gpu_presence(&row)
                 .iter()
                 .all(|&word| word == 0),
-            "generic keyword position bits must not set detector trigger bits"
+            "positioned generic keyword bits must not set detector trigger bits"
         );
     }
 }
