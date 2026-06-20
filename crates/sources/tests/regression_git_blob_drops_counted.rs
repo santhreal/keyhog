@@ -256,9 +256,38 @@ fn aggregate_git_history_cap_is_counted_source_truncated() {
     TestApi.reset_skip_counters();
     let before = skip_counts();
 
+    let temp = tempfile::tempdir().expect("tempdir");
+    let repo = temp.path();
+    init_repo(repo);
+    std::fs::write(repo.join("first.txt"), "FIRST=visible\n").expect("write first");
+    std::fs::write(repo.join("second.txt"), "SECOND=not reached\n").expect("write second");
+    git(repo, &["add", "."]);
+    git(repo, &["commit", "-m", "two chunks"]);
+
+    let mut limits = keyhog_sources::SourceLimits::default();
+    limits.git_chunk_count = 1;
+
+    let rows: Vec<_> = GitSource::new(repo.to_path_buf())
+        .with_limits(limits)
+        .chunks()
+        .collect();
+    let ok: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+    assert_eq!(
+        ok.len(),
+        1,
+        "the first Git history chunk should still be scanned before the cap"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "aggregate Git cap must surface one source error"
+    );
+    let err = errors[0].to_string();
     assert!(
-        TestApi.record_git_history_cap_for_test(0, 500_000),
-        "chunk cap boundary should record a source truncation"
+        err.contains("git history source was truncated")
+            && err.contains("remaining blobs were not scanned"),
+        "error should describe partial Git history coverage, got {err}"
     );
 
     let after = skip_counts();

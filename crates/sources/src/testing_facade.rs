@@ -140,8 +140,6 @@ pub mod testing {
         where
             B: Into<String>,
             E: Into<String>;
-        #[cfg(feature = "git")]
-        fn record_git_history_cap_for_test(&self, total_bytes: usize, chunk_count: usize) -> bool;
         #[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
         fn git_clone_timeout(&self) -> std::time::Duration;
         #[cfg(feature = "binary")]
@@ -530,11 +528,6 @@ pub mod testing {
             crate::S3Source::new(bucket)
                 .with_endpoint(endpoint)
                 .with_max_objects(max_objects)
-        }
-
-        #[cfg(feature = "git")]
-        fn record_git_history_cap_for_test(&self, total_bytes: usize, chunk_count: usize) -> bool {
-            crate::git::record_git_history_cap_for_test(total_bytes, chunk_count)
         }
 
         #[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]

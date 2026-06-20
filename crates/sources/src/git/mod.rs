@@ -28,11 +28,6 @@ pub use diff::GitDiffSource;
 pub use history::GitHistorySource;
 pub use source::GitSource;
 
-#[cfg(feature = "git")]
-pub(crate) fn record_git_history_cap_for_test(total_bytes: usize, chunk_count: usize) -> bool {
-    source::record_git_history_cap_for_test(total_bytes, chunk_count)
-}
-
 /// Read one line (through the trailing `\n`) into `buf`, capping buffered bytes
 /// at `max`. If the line exceeds `max`, the first `max` bytes are kept (still
 /// scanned) and the overflow is consumed and discarded so the stream stays

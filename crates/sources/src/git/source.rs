@@ -96,18 +96,19 @@ fn git_history_cap_status(
     None
 }
 
-fn record_git_history_cap_once(cap: GitHistoryCap, reported: &mut bool) {
+fn record_git_history_cap_once(cap: GitHistoryCap, reported: &mut bool) -> Option<SourceError> {
     if *reported {
-        return;
+        return None;
     }
     *reported = true;
-    match cap {
+    let reason = match cap {
         GitHistoryCap::TotalBytes { total, cap } => {
             tracing::warn!(
                 total_bytes = total,
                 cap,
                 "git history source reached aggregate byte cap; remaining blobs were NOT scanned"
             );
+            format!("aggregate byte cap reached at {total} bytes (cap {cap})")
         }
         GitHistoryCap::Chunks { count, cap } => {
             tracing::warn!(
@@ -115,20 +116,13 @@ fn record_git_history_cap_once(cap: GitHistoryCap, reported: &mut bool) {
                 cap,
                 "git history source reached aggregate chunk cap; remaining blobs were NOT scanned"
             );
+            format!("aggregate chunk cap reached at {count} chunk(s) (cap {cap})")
         }
-    }
-    let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
-}
-
-pub(crate) fn record_git_history_cap_for_test(total_bytes: usize, chunk_count: usize) -> bool {
-    let Some(cap) =
-        git_history_cap_status(total_bytes, chunk_count, crate::SourceLimits::default())
-    else {
-        return false;
     };
-    let mut reported = false;
-    record_git_history_cap_once(cap, &mut reported);
-    reported
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
+    Some(SourceError::Other(format!(
+        "git history source was truncated: {reason}; remaining blobs were not scanned"
+    )))
 }
 
 /// Scans git blobs reachable from refs, reflogs, stashes, and dangling commits.
@@ -286,9 +280,9 @@ fn stream_git_blobs(
             }
 
             if let Some(cap) = git_history_cap_status(total_bytes, chunk_count, limits) {
-                record_git_history_cap_once(cap, &mut aggregate_cap_reported);
+                let error = record_git_history_cap_once(cap, &mut aggregate_cap_reported);
                 done = true;
-                return None;
+                return error.map(Err);
             }
 
             let id = if let Some(id) = unreachable_commits.pop_front() {
