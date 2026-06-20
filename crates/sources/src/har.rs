@@ -85,12 +85,12 @@ pub(crate) fn try_expand_har(
         let request_len = request_text.len() as u64;
         total_bytes = total_bytes.saturating_add(request_len);
         if total_bytes > budget {
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
             tracing::warn!(
                 path = %path_str,
                 budget,
                 "aborting HAR expansion: cumulative request/response bytes exceed 4x file cap"
             );
+            chunks.push(Err(har_source_truncated_error(path_str, budget)));
             break;
         }
         if request_len > 0 {
@@ -108,12 +108,12 @@ pub(crate) fn try_expand_har(
         let response_len = response_text.len() as u64;
         total_bytes = total_bytes.saturating_add(response_len);
         if total_bytes > budget {
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
             tracing::warn!(
                 path = %path_str,
                 budget,
                 "aborting HAR expansion: cumulative request/response bytes exceed 4x file cap"
             );
+            chunks.push(Err(har_source_truncated_error(path_str, budget)));
             break;
         }
         if response_len > 0 {
@@ -129,6 +129,13 @@ pub(crate) fn try_expand_har(
     }
 
     Some(chunks)
+}
+
+fn har_source_truncated_error(path_str: &str, budget: u64) -> SourceError {
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
+    SourceError::Other(format!(
+        "HAR source scan was truncated for {path_str}: cumulative request/response bytes exceeded the {budget}-byte expansion budget; remaining HAR entries were not scanned"
+    ))
 }
 
 fn trim_bom_and_whitespace(bytes: &[u8]) -> &[u8] {
@@ -384,15 +391,67 @@ mod tests {
 
         let chunks = try_expand_har(fixture().as_bytes(), "cap.har", 1)
             .expect("valid HAR should parse before the expansion budget fires");
+        let (ok_chunks, errors) = split_rows(chunks);
 
         assert!(
-            chunks.is_empty(),
-            "over-budget expansion must not emit a chunk it cannot prove covered; chunks={chunks:?}"
+            ok_chunks.is_empty(),
+            "over-budget expansion must not emit a chunk it cannot prove covered; chunks={ok_chunks:?}"
+        );
+        assert_eq!(
+            errors.len(),
+            1,
+            "over-budget expansion must surface exactly one source error row"
+        );
+        assert!(
+            errors[0].contains("HAR source scan was truncated"),
+            "wrong truncation error: {}",
+            errors[0]
+        );
+        assert!(
+            errors[0].contains("remaining HAR entries were not scanned"),
+            "truncation error must make unscanned scope explicit: {}",
+            errors[0]
         );
         assert_eq!(
             crate::skip_counts().source_truncated,
             1,
             "HAR expansion budget must surface as a partial source truncation"
+        );
+
+        crate::reset_skip_counters();
+    }
+
+    #[test]
+    fn response_side_expansion_budget_truncation_surfaces_source_error() {
+        crate::reset_skip_counters();
+
+        let har = har_with_response_body(None, &"A".repeat(256));
+        let chunks = try_expand_har(har.as_bytes(), "cap.har", 20).expect("valid HAR should parse");
+        let (ok_chunks, errors) = split_rows(chunks);
+
+        assert_eq!(
+            ok_chunks.len(),
+            1,
+            "request chunk should remain visible before response expansion exceeds budget"
+        );
+        assert_eq!(
+            ok_chunks[0].metadata.source_type, "wire:har:request",
+            "only the admitted request chunk should be emitted before truncation"
+        );
+        assert_eq!(
+            errors.len(),
+            1,
+            "response-side budget truncation must surface exactly one source error row"
+        );
+        assert!(
+            errors[0].contains("HAR source scan was truncated"),
+            "wrong truncation error: {}",
+            errors[0]
+        );
+        assert_eq!(
+            crate::skip_counts().source_truncated,
+            1,
+            "response-side HAR expansion budget must bump SOURCE_TRUNCATED exactly once"
         );
 
         crate::reset_skip_counters();
@@ -412,6 +471,18 @@ mod tests {
             "response":{{"status":200,"statusText":"OK","headers":[],
             "content":{{"size":1,"mimeType":"application/json",{enc_field}"text":"{text}"}}}}}}]}}}}"#
         )
+    }
+
+    fn split_rows(rows: Vec<Result<Chunk, SourceError>>) -> (Vec<Chunk>, Vec<String>) {
+        let mut ok_chunks = Vec::new();
+        let mut errors = Vec::new();
+        for row in rows {
+            match row {
+                Ok(chunk) => ok_chunks.push(chunk),
+                Err(error) => errors.push(error.to_string()),
+            }
+        }
+        (ok_chunks, errors)
     }
 
     #[test]
