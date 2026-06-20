@@ -1,5 +1,26 @@
 //! Keyword and strong-key classification helpers for the generic assignment bridge.
 
+use std::sync::LazyLock;
+
+struct GenericKeywordStemSet {
+    stems: Vec<&'static [u8]>,
+    by_first: [Vec<usize>; 256],
+}
+
+static GENERIC_KEYWORD_STEMS: LazyLock<GenericKeywordStemSet> = LazyLock::new(|| {
+    let stems: Vec<&'static [u8]> = generic_keyword_prefilter_stems()
+        .into_iter()
+        .map(str::as_bytes)
+        .collect();
+    let mut by_first: [Vec<usize>; 256] = std::array::from_fn(|_| Vec::new());
+    for (idx, stem) in stems.iter().enumerate() {
+        if let Some(&first) = stem.first() {
+            by_first[ascii_lower(first) as usize].push(idx);
+        }
+    }
+    GenericKeywordStemSet { stems, by_first }
+});
+
 /// Compact keyword spellings into the minimal safe prefilter stems used by the
 /// generic assignment bridge.
 ///
@@ -23,6 +44,61 @@ pub(crate) fn generic_keyword_prefilter_stems() -> Vec<&'static str> {
         }
     }
     stems
+}
+
+/// Collect zero-based line indexes whose text contains any generic assignment
+/// prefilter stem.
+///
+/// This is the hot-path replacement for a whole-chunk Aho-Corasick prefilter
+/// over eight compact stems. It walks the bytes once, maps newlines as it goes,
+/// and stops scanning a line after its first stem hit because the generic bridge
+/// only needs to decide which lines should run the heavier assignment regex.
+pub(crate) fn collect_generic_keyword_lines(text: &str, out: &mut Vec<usize>) {
+    let stem_set = &*GENERIC_KEYWORD_STEMS;
+    let bytes = text.as_bytes();
+    let mut idx = 0usize;
+    let mut line_idx = 0usize;
+    while idx < bytes.len() {
+        if bytes[idx] == b'\n' {
+            line_idx += 1;
+            idx += 1;
+            continue;
+        }
+        if generic_stem_matches_at(bytes, idx, stem_set) {
+            out.push(line_idx);
+            match memchr::memchr(b'\n', &bytes[idx..]) {
+                Some(rel) => {
+                    idx += rel + 1;
+                    line_idx += 1;
+                }
+                None => break,
+            }
+            continue;
+        }
+        idx += 1;
+    }
+}
+
+#[inline]
+fn generic_stem_matches_at(bytes: &[u8], start: usize, stem_set: &GenericKeywordStemSet) -> bool {
+    let folded = ascii_lower(bytes[start]) as usize;
+    for &stem_idx in &stem_set.by_first[folded] {
+        let stem = stem_set.stems[stem_idx];
+        let end = start + stem.len();
+        if end <= bytes.len() && bytes[start..end].eq_ignore_ascii_case(stem) {
+            return true;
+        }
+    }
+    false
+}
+
+#[inline]
+fn ascii_lower(byte: u8) -> u8 {
+    if byte.is_ascii_uppercase() {
+        byte | 0x20
+    } else {
+        byte
+    }
 }
 
 fn generic_keyword_prefilter_stem(keyword: &'static str) -> &'static str {

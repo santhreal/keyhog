@@ -1,5 +1,4 @@
 use super::*;
-use aho_corasick::AhoCorasick;
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::LazyLock;
@@ -8,7 +7,7 @@ pub(crate) mod keywords;
 pub(crate) mod shape_helpers;
 
 use self::keywords::{
-    generic_keyword_prefilter_stems, is_strong_keyword_anchored_encoded_text_secret,
+    collect_generic_keyword_lines, is_strong_keyword_anchored_encoded_text_secret,
     is_strong_keyword_anchored_hex_key, keyword_has_word_boundary, normalize_assignment_keyword,
     normalized_assignment_keyword_has_secret_suffix,
 };
@@ -80,26 +79,8 @@ static GENERIC_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
     }
 });
 
-static KEYWORD_AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
-    let stems = generic_keyword_prefilter_stems();
-    match AhoCorasick::builder()
-        .ascii_case_insensitive(true)
-        .build(stems.iter().copied())
-    {
-        Ok(ac) => Some(ac),
-        Err(e) => {
-            crate::prefilter_degrade::warn_prefilter_disabled(
-                "generic-assignment keyword prefilter (KEYWORD_AC)",
-                &e,
-            );
-            None
-        }
-    }
-});
-
 pub(crate) fn warm_generic_assignment_runtime() {
     let _ = GENERIC_RE.as_ref(); // LAW10: forces lazy-static/regex eager init (warm-up); not a fallback
-    let _ = KEYWORD_AC.as_ref(); // LAW10: forces lazy-static/regex eager init (warm-up); not a fallback
 }
 
 thread_local! {
@@ -154,33 +135,16 @@ impl CompiledScanner {
             lines
         };
 
-        // Single-pass case-insensitive Aho-Corasick over the compact keyword stems.
-        // Replaces the previous 16 × O(line_len) byte-window scans per line
-        // (one per keyword) with one O(line_len) automaton walk that catches
-        // every keyword simultaneously. On an 8 MiB no-hit corpus this drops
-        // the scan_generic_assignments pre-filter from ~16 × 240 ms of
-        // window-scan to a single AC pass.
-        // `None` here means the keyword AC failed to build; the `KEYWORD_AC`
-        // initializer already emitted the loud one-shot Law-10 warning, so this
-        // per-chunk path just returns (the named-detector pass still ran).
-        let Some(keyword_ac) = KEYWORD_AC.as_ref() else {
-            return;
-        };
-
-        // ONE chunk-level AC scan instead of N per-line scans.
+        // ONE chunk-level derived-stem scan instead of N per-line scans.
         // Profile showed scan_generic_assignments at ~500 µs/chunk -
-        // dominant non-ML cost - and most of that was the per-line
-        // KEYWORD_AC.find overhead (per-call AC setup × N lines).
-        // One contiguous find_iter over the whole chunk is the same
-        // total bytes scanned but with a single overhead point and
-        // way better cache behavior. Map each match offset back to
-        // its line via the existing `line_offsets` binary search;
-        // dedup so we visit each line once even if multiple
-        // keywords land on it.
+        // dominant non-ML cost. The keyword owner derives the same compact stem
+        // set from the generic keyword list, walks bytes once, tracks line
+        // numbers during the pass, and skips the rest of a line after the first
+        // stem hit because the heavier regex needs only a per-line admission
+        // decision.
         let scan_text: &str = &preprocessed.text;
         let identity_offsets = std::ptr::eq(scan_text.as_ptr(), chunk.data.as_ptr())
             && scan_text.len() == chunk.data.len();
-        let scan_bytes = scan_text.as_bytes();
         // Borrow the pooled scratch buffer for the duration of this scan.
         // `take` leaves an empty Vec in the cell so the heavy consume loop
         // below does not hold a live RefCell borrow (which would conflict
@@ -188,21 +152,9 @@ impl CompiledScanner {
         // exit, preserving its capacity for the next chunk on this worker.
         let mut lines_with_keyword = KEYWORD_LINES_POOL.with(|cell| cell.take());
         lines_with_keyword.clear();
-        let mut last_line_idx: Option<usize> = None;
         let profile_enabled = super::profile::enabled();
         let prefilter_start = profile_enabled.then(std::time::Instant::now);
-        for mat in keyword_ac.find_iter(scan_bytes) {
-            // `partition_point` returns the 1-based line number;
-            // subtract 1 for the 0-based code_lines index. Same
-            // idiom as `match_line_number`.
-            let line_num_1b = line_offsets.partition_point(|&lo| lo <= mat.start());
-            let line_idx = line_num_1b.saturating_sub(1);
-            if Some(line_idx) == last_line_idx {
-                continue;
-            }
-            last_line_idx = Some(line_idx);
-            lines_with_keyword.push(line_idx);
-        }
+        collect_generic_keyword_lines(scan_text, &mut lines_with_keyword);
         record_generic_ns(&GENERIC_PREFILTER_NS, prefilter_start);
         if profile_enabled {
             GENERIC_PREFILTER_CALLS.fetch_add(1, Relaxed);

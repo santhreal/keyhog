@@ -4,6 +4,11 @@
 fn engine_phase2_generic_non_empty() {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/engine/phase2_generic.rs");
     let src = std::fs::read_to_string(path).expect("source readable");
+    let keywords_path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/phase2_generic/keywords.rs"
+    );
+    let keywords_src = std::fs::read_to_string(keywords_path).expect("keywords source readable");
     assert!(
         src.trim().len() >= 20,
         "engine::phase2_generic: expected substantive source, got {} trimmed bytes",
@@ -34,9 +39,10 @@ fn engine_phase2_generic_non_empty() {
         "engine::phase2_generic: generic context inference must reuse precomputed documentation flags instead of rebuilding them per candidate"
     );
     assert!(
-        src.contains("let stems = generic_keyword_prefilter_stems();")
+        src.contains("collect_generic_keyword_lines(scan_text, &mut lines_with_keyword)")
+            && keywords_src.contains("generic_keyword_prefilter_stems()")
             && !src.contains("GENERIC_BRIDGE_EXTRA_KEYWORDS")
             && !src.contains(".chain(GENERIC_BRIDGE_EXTRA_KEYWORDS.iter())"),
-        "engine::phase2_generic: generic keyword prefilter must use the derived compact stem set, not the full spelling list"
+        "engine::phase2_generic: generic keyword prefilter must use the derived compact stem collector, not the full spelling list"
     );
 }

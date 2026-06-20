@@ -380,6 +380,22 @@ fn generic_assignment_compact_prefilter_keeps_webhook_url_recall() {
     );
 }
 
+#[test]
+fn generic_assignment_prefilter_collects_casefolded_keyword_lines_once() {
+    let text = concat!(
+        "plain first line\n",
+        "API_KEY = 'one'\n",
+        "token and SECRET both on one line\n",
+        "COMPASS = broad-prefilter-boundary-rejected-later\n",
+        "webhook_url = 'two'"
+    );
+    let mut lines = Vec::new();
+    keyhog_scanner::engine::phase2_generic::keywords::collect_generic_keyword_lines(
+        text, &mut lines,
+    );
+    assert_eq!(lines, vec![1, 2, 3, 4]);
+}
+
 // CredData's dominant credential-env shape is `*_PASS=` (GRAPHITE_PASS,
 // JENKINS_PASS, DB_PASS, …). The bridge keyword list historically had
 // `password`/`passwd`/`pwd` but not the bare `pass` abbreviation, so these were
