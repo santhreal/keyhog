@@ -180,22 +180,15 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
     // value, so any of them is a concat indicator.
     let has_paste =
         text.contains("paste0(") || text.contains("paste(") || text.contains("concat!(");
-    let has_implicit = bytes.windows(3).any(|window| {
-        (window[0] == b'"' && window[1] == b' ' && window[2] == b'"')
-            || (window[0] == b'\'' && window[1] == b' ' && window[2] == b'\'')
-            || (window[0] == b'"'
-                && window[1] == b'\n'
-                && (window[2] == b'"' || window[2] == b' ' || window[2] == b'\t'))
-            || (window[0] == b'\''
-                && window[1] == b'\n'
-                && (window[2] == b'\'' || window[2] == b' ' || window[2] == b'\t'))
-    });
+    let has_implicit = has_implicit_concat_marker(bytes);
+    let has_var_ref_concat =
+        memchr::memchr(b'+', bytes).is_some() && has_var_ref_concatenation(text);
     if !has_explicit_concat
         && !has_backslash_cont
         && !has_template
         && !has_paste
         && !has_implicit
-        && !has_var_ref_concatenation(text)
+        && !has_var_ref_concat
     {
         return false;
     }
@@ -238,6 +231,16 @@ pub(crate) fn has_concatenation_indicators(text: &str) -> bool {
     }
 
     false
+}
+
+#[cfg(feature = "multiline")]
+fn has_implicit_concat_marker(bytes: &[u8]) -> bool {
+    const MARKERS: &[&[u8]] = &[
+        b"\" \"", b"' '", b"\"\n\"", b"\"\n ", b"\"\n\t", b"'\n'", b"'\n ", b"'\n\t",
+    ];
+    MARKERS
+        .iter()
+        .any(|marker| memchr::memmem::find(bytes, marker).is_some())
 }
 
 /// Variable-reference concatenation: `token = head + tail` (no quoted
