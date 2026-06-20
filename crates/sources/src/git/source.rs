@@ -359,7 +359,13 @@ fn stream_git_blobs(
                     continue;
                 }
             };
-            let author_str = commit_author_name(&commit, &commit_id_str);
+            let author_str = match commit_author_name(&commit, &commit_id_str) {
+                Ok(author) => author,
+                Err(error) => {
+                    done = true;
+                    return Some(Err(error));
+                }
+            };
             let tree = match commit.tree() {
                 Ok(t) => t,
                 Err(error) => {
@@ -801,26 +807,19 @@ fn collect_unreachable_commit_ids(
     Ok(out)
 }
 
-fn commit_author_name(commit: &gix::Commit<'_>, commit_id: &str) -> String {
-    match commit.author() {
-        Ok(author) => {
-            let name = String::from_utf8_lossy(author.name.as_ref())
-                .trim()
-                .to_string();
-            if name.is_empty() {
-                "unknown".to_string()
-            } else {
-                name
-            }
-        }
-        Err(error) => {
-            tracing::warn!(
-                %error,
-                commit = commit_id,
-                "git commit author metadata unreadable; chunk author set to unknown"
-            );
-            "unknown".to_string()
-        }
+fn commit_author_name(commit: &gix::Commit<'_>, commit_id: &str) -> Result<String, SourceError> {
+    let author = commit.author().map_err(|error| {
+        SourceError::Git(format!(
+            "failed to read git commit author metadata for {commit_id}: {error}"
+        ))
+    })?;
+    let name = String::from_utf8_lossy(author.name.as_ref())
+        .trim()
+        .to_string();
+    if name.is_empty() {
+        Ok("unknown".to_string())
+    } else {
+        Ok(name)
     }
 }
 

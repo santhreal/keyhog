@@ -25,6 +25,7 @@ mod docker_tar_symlink_entry_rejected;
 mod empty_jar_does_not_panic;
 mod filesystem_minified_js_skipped;
 mod git_bare_repository_without_commits_handled;
+mod git_corrupt_author_metadata_rejected;
 mod git_corrupt_config_invalid_ini_rejected;
 mod git_corrupt_gitdir_pointer_invalid_rejected;
 mod git_corrupt_head_detached_invalid_hash_rejected;
