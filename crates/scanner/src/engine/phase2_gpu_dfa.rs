@@ -71,7 +71,9 @@ struct Phase2GpuDfaShard {
 
 #[derive(Default)]
 struct Phase2GpuDfaScratch {
+    #[cfg(test)]
     haystack: Vec<u8>,
+    haystack_len: usize,
     region_starts: Vec<u32>,
     dispatch: vyre_libs::scan::dispatch_io::ScanDispatchScratch,
     matches: Vec<vyre_libs::scan::LiteralMatch>,
@@ -94,8 +96,12 @@ impl<'a> ZeroPhase2GpuDfaScratch<'a> {
 
 impl Drop for ZeroPhase2GpuDfaScratch<'_> {
     fn drop(&mut self) {
-        self.scratch.haystack.fill(0);
-        self.scratch.haystack.clear();
+        #[cfg(test)]
+        {
+            self.scratch.haystack.fill(0);
+            self.scratch.haystack.clear();
+        }
+        self.scratch.haystack_len = 0;
         self.scratch.region_starts.clear();
         self.scratch.dispatch.haystack_bytes.fill(0);
         self.scratch.dispatch.haystack_bytes.clear();
@@ -194,7 +200,7 @@ impl Phase2GpuDfaCatalog {
         chunks: &[&keyhog_core::Chunk],
     ) -> std::result::Result<Phase2GpuDfaAdmission, String> {
         self.scan_admission_with_builder(backend, chunks.len(), |scratch| {
-            build_raw_region_batch_refs(chunks, scratch)
+            build_packed_region_batch_refs(chunks, scratch)
         })
     }
 
@@ -238,17 +244,19 @@ impl Phase2GpuDfaCatalog {
     ) -> std::result::Result<Phase2GpuDfaAdmission, String> {
         use vyre_libs::scan::dispatch_io;
 
-        let haystack_len = dispatch_io::scan_guard(
-            &scratch.haystack,
-            "phase2_gpu_regex_dfa",
-            dispatch_io::DEFAULT_MAX_SCAN_BYTES,
-        )
-        .map_err(|error| error.to_string())?;
-        dispatch_io::pack_haystack_u32_into(
-            &scratch.haystack,
-            &mut scratch.dispatch.haystack_bytes,
-        )
-        .map_err(|error| error.to_string())?;
+        let haystack_len = u32::try_from(scratch.haystack_len).map_err(|error| {
+            format!(
+                "phase2_gpu_regex_dfa haystack is {} byte(s), above the u32 GPU ABI: {error}",
+                scratch.haystack_len
+            )
+        })?;
+        if haystack_len > dispatch_io::DEFAULT_MAX_SCAN_BYTES {
+            return Err(format!(
+                "phase2_gpu_regex_dfa scan-guard ceiling exceeded: {} byte(s) > {} byte(s). Fix: split the scan before dispatch.",
+                haystack_len,
+                dispatch_io::DEFAULT_MAX_SCAN_BYTES
+            ));
+        }
 
         let mut admitted = vec![false; chunk_count];
         let mut complete = self.uncovered_patterns == 0;
@@ -491,12 +499,9 @@ impl Phase2GpuDfaShard {
                     self.phase2_indices.len()
                 ));
             };
-            if let Some(region) = match_region(
-                &scratch.region_starts,
-                scratch.haystack.len(),
-                m.start,
-                m.end,
-            ) {
+            if let Some(region) =
+                match_region(&scratch.region_starts, scratch.haystack_len, m.start, m.end)
+            {
                 if let Some(slot) = admitted.get_mut(region) {
                     *slot = true;
                 }
@@ -706,21 +711,21 @@ fn regex_dfa_source_for_pattern(pattern: &CompiledPattern) -> Cow<'_, str> {
 }
 
 #[cfg(test)]
-fn build_raw_region_batch(
+fn build_packed_region_batch(
     chunks: &[keyhog_core::Chunk],
     scratch: &mut Phase2GpuDfaScratch,
 ) -> std::result::Result<(), String> {
-    build_raw_region_batch_iter(chunks.iter(), chunks.len(), scratch)
+    build_packed_region_batch_iter(chunks.iter(), chunks.len(), scratch)
 }
 
-fn build_raw_region_batch_refs(
+fn build_packed_region_batch_refs(
     chunks: &[&keyhog_core::Chunk],
     scratch: &mut Phase2GpuDfaScratch,
 ) -> std::result::Result<(), String> {
-    build_raw_region_batch_iter(chunks.iter().copied(), chunks.len(), scratch)
+    build_packed_region_batch_iter(chunks.iter().copied(), chunks.len(), scratch)
 }
 
-fn build_raw_region_batch_iter<'a, I>(
+fn build_packed_region_batch_iter<'a, I>(
     chunks: I,
     chunk_count: usize,
     scratch: &mut Phase2GpuDfaScratch,
@@ -739,26 +744,48 @@ where
             "phase-2 GPU regex-DFA coalesced batch is {total} byte(s), above the u32 GPU ABI; split the batch before dispatch"
         ));
     }
-    scratch.haystack.clear();
+    let padded_len = vyre_libs::scan::dispatch_io::haystack_padded_u32_byte_len(total)
+        .map_err(|error| error.to_string())?;
+
+    #[cfg(test)]
+    {
+        scratch.haystack.clear();
+        scratch.haystack.try_reserve(total).map_err(|error| {
+            format!("phase-2 GPU regex-DFA replay haystack reserve failed: {error}")
+        })?;
+    }
+    scratch.haystack_len = total;
     scratch.region_starts.clear();
-    scratch
-        .haystack
-        .try_reserve(total)
-        .map_err(|error| format!("phase-2 GPU regex-DFA haystack reserve failed: {error}"))?;
     scratch
         .region_starts
         .try_reserve(chunk_count)
         .map_err(|error| format!("phase-2 GPU regex-DFA region-start reserve failed: {error}"))?;
+    scratch.dispatch.haystack_bytes.clear();
+    scratch
+        .dispatch
+        .haystack_bytes
+        .try_reserve(padded_len)
+        .map_err(|error| {
+            format!("phase-2 GPU regex-DFA packed haystack reserve failed: {error}")
+        })?;
     for (idx, chunk) in chunks.enumerate() {
-        let start = u32::try_from(scratch.haystack.len()).map_err(|_| {
+        let start = u32::try_from(scratch.dispatch.haystack_bytes.len()).map_err(|_| {
             "phase-2 GPU regex-DFA region start exceeds the u32 GPU ABI".to_string()
         })?;
         scratch.region_starts.push(start);
+        scratch
+            .dispatch
+            .haystack_bytes
+            .extend_from_slice(chunk.data.as_bytes());
+        #[cfg(test)]
         scratch.haystack.extend_from_slice(chunk.data.as_bytes());
         if idx + 1 != chunk_count {
+            scratch.dispatch.haystack_bytes.push(0);
+            #[cfg(test)]
             scratch.haystack.push(0);
         }
     }
+    scratch.dispatch.haystack_bytes.resize(padded_len, 0);
     Ok(())
 }
 
@@ -868,7 +895,7 @@ mod tests {
         chunks: &[keyhog_core::Chunk],
     ) -> Vec<bool> {
         let mut scratch = Phase2GpuDfaScratch::default();
-        build_raw_region_batch(chunks, &mut scratch).expect("region batch");
+        build_packed_region_batch(chunks, &mut scratch).expect("region batch");
         let mut admitted = vec![false; chunks.len()];
         for shard in &catalog.shards {
             replay_shard_admission(shard, &scratch, &mut admitted);
@@ -915,7 +942,7 @@ mod tests {
     }
 
     #[test]
-    fn raw_region_batch_preserves_case_separates_and_clears() {
+    fn packed_region_batch_preserves_case_separates_pads_and_clears() {
         let chunks = [
             keyhog_core::Chunk::from("GhP_TOKEN"),
             keyhog_core::Chunk::from("Zz9"),
@@ -923,12 +950,20 @@ mod tests {
         let mut scratch = Phase2GpuDfaScratch::default();
         {
             let guard = ZeroPhase2GpuDfaScratch::new(&mut scratch);
-            build_raw_region_batch(&chunks, guard.scratch).expect("batch");
+            build_packed_region_batch(&chunks, guard.scratch).expect("batch");
             assert_eq!(guard.scratch.haystack, b"GhP_TOKEN\0Zz9");
+            assert_eq!(guard.scratch.haystack_len, b"GhP_TOKEN\0Zz9".len());
+            assert_eq!(
+                guard.scratch.dispatch.haystack_bytes,
+                b"GhP_TOKEN\0Zz9\0\0\0".to_vec(),
+                "production upload scratch must be u32-padded directly without a second pack step"
+            );
             assert_eq!(guard.scratch.region_starts, &[0, 10]);
         }
         assert!(scratch.haystack.is_empty());
+        assert_eq!(scratch.haystack_len, 0);
         assert!(scratch.region_starts.is_empty());
+        assert!(scratch.dispatch.haystack_bytes.is_empty());
     }
 
     #[test]
@@ -947,7 +982,7 @@ mod tests {
             keyhog_core::Chunk::from("wxyz"),
         ];
         let mut scratch = Phase2GpuDfaScratch::default();
-        build_raw_region_batch(&chunks, &mut scratch).expect("region batch");
+        build_packed_region_batch(&chunks, &mut scratch).expect("region batch");
         assert_eq!(scratch.haystack, b"abcd\0wxyz");
         assert_eq!(scratch.region_starts, &[0, 5]);
 

@@ -90,19 +90,21 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         .nth(1)
         .and_then(|tail| tail.split("pub(crate) struct Phase2GpuDfaAdmission").next())
         .expect("phase-2 GPU DFA shard dispatch owner present");
-    assert_eq!(
-        gpu_dfa_src.matches("pack_haystack_u32_into").count(),
-        1,
-        "phase-2 GPU DFA admission must pack the coalesced haystack once per batch, not once per shard"
+    assert!(
+        !gpu_dfa_src.contains("pack_haystack_u32_into"),
+        "phase-2 GPU DFA admission must build the packed upload buffer directly, not coalesce raw bytes and then pack them again"
     );
     assert!(
-        phase2_scan_admission.contains("pack_haystack_u32_into")
-            && phase2_scan_admission.contains("scan_guard(")
+        gpu_dfa_src.contains("build_packed_region_batch_refs")
+            && gpu_dfa_src.contains("haystack_padded_u32_byte_len")
+            && gpu_dfa_src.contains(".haystack_bytes")
+            && gpu_dfa_src.contains(".extend_from_slice(chunk.data.as_bytes())")
+            && phase2_scan_admission.contains("scratch.haystack_len")
             && phase2_scan_admission.contains("let shard_incomplete")
             && phase2_scan_admission.contains("complete = false")
             && !phase2_shard_dispatch.contains("pack_haystack_u32_into")
             && !phase2_shard_dispatch.contains("scan_guard("),
-        "phase-2 GPU DFA shard dispatch must reuse the batch-packed haystack bytes and propagate incomplete shard evidence"
+        "phase-2 GPU DFA shard dispatch must reuse the directly built batch-packed haystack bytes and propagate incomplete shard evidence"
     );
     assert!(
         phase2_shard_dispatch.contains("unattributed_matches")

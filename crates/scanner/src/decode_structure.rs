@@ -270,6 +270,7 @@ pub(crate) fn decodes_to_printable_text(candidate: &str) -> bool {
 /// decoded payload is binary data evidence for fallback entropy gates that have
 /// no service-specific detector anchor.
 #[must_use]
+#[cfg(any(feature = "entropy", test))]
 pub(crate) fn decoded_contains_nul_byte(candidate: &str) -> bool {
     use std::cell::RefCell;
     use std::collections::HashMap;
