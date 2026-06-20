@@ -86,8 +86,8 @@ try {
 # 4. Installer dogfood: drive install.ps1's local-binary path (-FromFile) into a
 #    throwaway prefix, then prove the INSTALLED binary runs and `keyhog doctor`
 #    passes. Mirrors the unix install proof (tests/install/install_from_local_
-#    build.sh). Windows ships the `portable` build, which compiles the `tui`
-#    feature out, so there is no TUI phase here -- that surface is unix-only.
+#    build.sh). The removed terminal dashboard has no Windows dogfood branch;
+#    this proof stays on the supported scan/doctor surfaces.
 $installScript = Join-Path $BuildDir 'install.ps1'
 if (-not (Test-Path $installScript)) { $installScript = Join-Path $Source 'install.ps1' }
 if (Test-Path $installScript) {

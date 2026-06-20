@@ -89,6 +89,7 @@ def check_no_loc_cap_bloat(violations: list[str]) -> None:
 def check_current_claims(violations: list[str]) -> None:
     claim_paths = [
         ROOT / "README.md",
+        ROOT / "scripts/dogfood-windows.ps1",
         *(ROOT / "docs/src").rglob("*.md"),
         *(ROOT / "crates/cli/src").rglob("*.rs"),
     ]
