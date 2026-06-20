@@ -23,10 +23,9 @@ present. A driver-only NVIDIA host (libcuda.so loadable but no
 toolkit) stays on the WGPU build, since the native-CUDA dispatch
 saves only single-digit percent on typical repo scans and the
 binary footprint + runtime dependency are not worth it for the
-non-CUDA-developer case. Pass `--variant=cuda` (or set
-`KEYHOG_VARIANT=cuda`) to force the CUDA build anyway. macOS
-release assets run SIMD on CPU plus the WGPU GPU path on compatible
-adapters; no separate native Metal release asset ships.
+non-CUDA-developer case. Pass `--variant=cuda` to force the CUDA build
+anyway. macOS release assets run SIMD on CPU plus the WGPU GPU path on
+compatible adapters; no separate native Metal release asset ships.
 
 ## Interactive mode (recommended for first install)
 
@@ -89,11 +88,11 @@ The installer auto-detects, but you can override:
 
 | Env var / flag                          | Effect                                                        |
 |-----------------------------------------|---------------------------------------------------------------|
-| `KEYHOG_VARIANT=cuda` (or `--variant=cuda`) | Force the CUDA-accelerated Linux build (requires libcuda.so). |
-| `KEYHOG_VARIANT=cpu`  (or `--variant=cpu`)  | Force the default WGPU + SIMD build, skip GPU detection.      |
+| `--variant=cuda`                        | Force the CUDA-accelerated Linux build (requires libcuda.so). |
+| `--variant=cpu`                         | Force the default WGPU + SIMD build, skip GPU detection.      |
 | `KEYHOG_VERSION=v0.5.40` (or `--version=v0.5.40`) | Pin a specific release tag (default: GitHub's latest-asset redirect, with API fallback only when that asset is missing). |
-| `KEYHOG_INSTALL=/usr/local/bin` (or `--install-dir=...`) | Install into a different directory.            |
-| `GITHUB_TOKEN=...`                          | Optional auth for the fallback GitHub releases API lookup. The normal latest-asset path does not need it. |
+| `--install-dir=...`                     | Install into a different directory.            |
+| `GITHUB_TOKEN=...`                      | Optional auth for the fallback GitHub releases API lookup. The normal latest-asset path does not need it. |
 | `--yes` / `-y`                          | Non-interactive: accept all defaults, no prompts.             |
 | `--no-color`                            | Disable ANSI colors (e.g. for log capture).                   |
 
@@ -111,11 +110,11 @@ Hosted CI runners normally have no useful GPU. Use `--no-gpu` or
 `--require-gpu` or `[system] gpu = "required"` so a driver regression fails
 closed instead of running as a CPU-only scan.
 
-An explicit `--variant=cuda` / `KEYHOG_VARIANT=cuda` request requires the
-`keyhog-linux-x86_64-cuda` release asset and fails closed if that asset is
-missing. The portable WGPU + SIMD fallback is allowed only when the installer
-auto-selected CUDA from host detection; in that case the installer made the
-accelerator choice and logs the fallback before installing the default asset.
+An explicit `--variant=cuda` request requires the `keyhog-linux-x86_64-cuda`
+release asset and fails closed if that asset is missing. The portable WGPU +
+SIMD fallback is allowed only when the installer auto-selected CUDA from host
+detection; in that case the installer made the accelerator choice and logs the
+fallback before installing the default asset.
 
 ## Repair, diagnose, uninstall
 

@@ -164,14 +164,13 @@ development setup, not just an NVIDIA driver. macOS release assets run
 SIMD on CPU plus the WGPU GPU path on compatible adapters. Each download
 is SHA256-verified against the release-side checksum file before install.
 
-Override the variant with `KEYHOG_VARIANT=cuda` (force the native CUDA
-build, requires `libcuda.so` at runtime) or `KEYHOG_VARIANT=cpu` (force
-the default WGPU + SIMD build, skip GPU detection entirely). Pin a
-version with `KEYHOG_VERSION=v0.5.40`. Change the install dir with
-`KEYHOG_INSTALL=/usr/local/bin`. An explicit CUDA variant request requires
-the `keyhog-linux-x86_64-cuda` release asset and fails closed if that asset
-is missing; only auto-selected CUDA hosts may fall back to the WGPU + SIMD
-asset.
+Override the variant with `--variant=cuda` (force the native CUDA build,
+requires `libcuda.so` at runtime) or `--variant=cpu` (force the default
+WGPU + SIMD build, skip GPU detection entirely). Pin a version with
+`KEYHOG_VERSION=v0.5.40`. Change the install dir with
+`--install-dir=/usr/local/bin`. An explicit CUDA variant request requires the
+`keyhog-linux-x86_64-cuda` release asset and fails closed if that asset is
+missing; only auto-selected CUDA hosts may fall back to the WGPU + SIMD asset.
 
 Three diagnostic modes ship with the same script:
 ```bash

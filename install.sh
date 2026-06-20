@@ -21,7 +21,7 @@
 #   --version=v0.5.37   pin a release tag (default: latest release with assets)
 #   --variant=cuda      force CUDA variant (Linux only)
 #   --variant=cpu       force the default WGPU + SIMD variant
-#   --install-dir=PATH  override $KEYHOG_INSTALL
+#   --install-dir=PATH  override the default install directory
 #   --from-file=PATH    install a pre-built/pre-downloaded keyhog binary instead
 #                       of downloading a release (offline / air-gapped installs,
 #                       and CI proving a freshly-built binary). Skips the GitHub
@@ -35,15 +35,15 @@
 #   --help / -h         show this help and exit
 #
 # Env overrides:
-#   KEYHOG_VERSION, KEYHOG_VARIANT, KEYHOG_INSTALL, GITHUB_TOKEN, NO_COLOR
+#   KEYHOG_VERSION, GITHUB_TOKEN, NO_COLOR
 
 set -eu
 
 REPO="santhsecurity/keyhog"
 RELEASE_PUBLIC_KEY="RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go"
-INSTALL_DIR="${KEYHOG_INSTALL:-$HOME/.local/bin}"
+INSTALL_DIR="$HOME/.local/bin"
 VERSION="${KEYHOG_VERSION:-}"
-VARIANT="${KEYHOG_VARIANT:-auto}"
+VARIANT="auto"
 FROM_FILE=""
 INSECURE_INSTALL=0
 MODE="install"
@@ -208,7 +208,7 @@ usage() {
 "Modes:  (default) install/upgrade   --repair   --diagnose   --uninstall" \
 "Flags:  --version=vX.Y.Z  --variant=cpu|cuda  --install-dir=PATH" \
 "        --from-file=PATH  --yes/-y  --no-prompt  --insecure  --no-color  --help/-h" \
-"Env:    KEYHOG_VERSION  KEYHOG_VARIANT  KEYHOG_INSTALL  GITHUB_TOKEN  NO_COLOR"
+"Env:    KEYHOG_VERSION  GITHUB_TOKEN  NO_COLOR"
     fi
     exit 0
 }

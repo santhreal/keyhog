@@ -69,8 +69,8 @@ chmod +x "$work/binB/keyhog"
 
 run_calibrate() { # $1=install-dir-with-keyhog
     env -i PATH="/usr/bin:/bin" HOME="$work/home" TMPDIR="$work/tmp" \
-        KEYHOG_INSTALL="$1" NO_COLOR=1 \
-        sh "$INSTALL_SH" --calibrate 2>&1
+        NO_COLOR=1 \
+        sh "$INSTALL_SH" --install-dir="$1" --calibrate 2>&1
 }
 mkdir -p "$work/home" "$work/tmp"
 
@@ -91,7 +91,7 @@ else
 fi
 
 # 3. A genuinely failing probe must SURFACE the real reason (Law 10), not swallow it.
-outB="$(KEYHOG_INSTALL="$work/binB" run_calibrate "$work/binB")"
+outB="$(run_calibrate "$work/binB")"
 if printf '%s' "$outB" | grep -q 'mock driver fault'; then
     _pass "failing probe surfaces the real reason (no silent swallow)"
 else

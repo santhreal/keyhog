@@ -24,9 +24,7 @@ These are read by the installer, not by the scanner.
 
 | Variable          | Default                                                  | Effect |
 |-------------------|----------------------------------------------------------|--------|
-| `KEYHOG_INSTALL`  | `~/.local/bin` (sh) / `%LOCALAPPDATA%\keyhog\bin` (ps1)   | Where the installer drops the binary. |
 | `KEYHOG_VERSION`  | (latest release)                                          | Pin the install to a specific release tag instead of latest. |
-| `KEYHOG_VARIANT`  | `auto` (`cuda` on hosts with the full CUDA toolkit, else `cpu`) | Force the `cuda` or `cpu` Linux build. `cpu` is the WGPU+SIMD default and still dispatches on any compatible Vulkan adapter; `cuda` adds the native-CUDA backend. |
 | `GITHUB_TOKEN`    | (unset)                                                  | Optional token for the fallback GitHub releases API lookup only; the default latest-asset redirect path does not use it. |
 
 ## OS / terminal standards

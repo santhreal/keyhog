@@ -19,14 +19,14 @@
 #   -FromFile PATH        install a pre-built/pre-downloaded keyhog.exe instead
 #                         of querying GitHub (offline / air-gapped / CI proving).
 #                         Requires a sibling PATH.sha256 unless -Insecure is explicit.
-#   -InstallDir PATH      override $env:KEYHOG_INSTALL
+#   -InstallDir PATH      override the default install directory
 #   -Yes                  non-interactive: accept defaults, no prompts
 #   -Insecure             allow install only when release signature/checksum
 #                         proof is unavailable; fetched mismatches still fail
 #   -NoColor              disable ANSI colors
 #
 # Env overrides:
-#   $env:KEYHOG_VERSION, $env:KEYHOG_INSTALL, $env:GITHUB_TOKEN, $env:NO_COLOR
+#   $env:KEYHOG_VERSION, $env:GITHUB_TOKEN, $env:NO_COLOR
 
 [CmdletBinding()]
 param(
@@ -39,7 +39,7 @@ param(
     [switch]$Insecure,
     [string]$Version = $env:KEYHOG_VERSION,
     [string]$FromFile,
-    [string]$InstallDir = $(if ($env:KEYHOG_INSTALL) { $env:KEYHOG_INSTALL } else { Join-Path $env:LOCALAPPDATA 'keyhog\bin' })
+    [string]$InstallDir = $(Join-Path $env:LOCALAPPDATA 'keyhog\bin')
 )
 
 $ErrorActionPreference = 'Stop'

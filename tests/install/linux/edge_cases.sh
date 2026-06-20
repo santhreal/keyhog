@@ -14,7 +14,7 @@
 # JSON-indentation bug (the default `curl | sh` install failing outright).
 #
 # Each test runs install.sh in a per-test sandbox: env -i with PATH pointed
-# at a mock bin/ dir, a throwaway HOME, and a throwaway KEYHOG_INSTALL. No
+# at a mock bin/ dir and a throwaway HOME. No
 # network, no host mutation.
 
 set -u
@@ -575,9 +575,11 @@ EOF
 run_install() {
     sb=$1; home=$2; shift 2
     [ "$1" = "--" ] && shift
+    if [ "${INSTALL_DIR_OVERRIDE:-}" != "" ]; then
+        set -- "--install-dir=$INSTALL_DIR_OVERRIDE" "$@"
+    fi
     state=$(mktemp -d -t kh-state-XXXXXX)
     env -i PATH="$sb/bin" HOME="$home" \
-        KEYHOG_INSTALL="${KEYHOG_INSTALL_OVERRIDE:-$home/.local/bin}" \
         MOCK_STATE_DIR="$state" \
         MOCK_RELEASES="${MOCK_RELEASES:-DOWN}" \
         MOCK_ASSET="${MOCK_ASSET:-404}" \
@@ -586,7 +588,6 @@ run_install() {
         MOCK_SIG="${MOCK_SIG:-match}" \
         MOCK_SHA="${MOCK_SHA:-absent}" \
         MOCK_LDD="${MOCK_LDD:-ok}" \
-        KEYHOG_VARIANT="${KEYHOG_VARIANT:-auto}" \
         ${KEYHOG_VERSION:+KEYHOG_VERSION="$KEYHOG_VERSION"} \
         ${GITHUB_TOKEN:+GITHUB_TOKEN="$GITHUB_TOKEN"} \
         sh "$INSTALL_SH" "$@" 2>&1
@@ -603,7 +604,7 @@ echo "=============================================================="
 
 reset_mocks() {
     unset MOCK_RELEASES MOCK_ASSET MOCK_LATEST_ASSET MOCK_FALLBACK MOCK_SIG MOCK_SHA MOCK_LDD \
-          KEYHOG_VARIANT KEYHOG_VERSION KEYHOG_INSTALL_OVERRIDE GITHUB_TOKEN
+          KEYHOG_VERSION INSTALL_DIR_OVERRIDE GITHUB_TOKEN
 }
 
 # ======================================================================
@@ -750,14 +751,14 @@ fi
 printf '\n[5] variant overrides\n'
 reset_mocks
 sb=$(build_sandbox Linux x86_64 yes yes yes); h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 KEYHOG_VARIANT=cpu run_install "$sb" "$h" -- --diagnose --no-color)
+out=$(KEYHOG_VERSION=v9.9.9 run_install "$sb" "$h" -- --variant=cpu --diagnose --no-color)
 expect_match "5.1 variant=cpu beats cuda host" "Would install: keyhog-linux-x86_64$" "$out"
 rm -rf "$h"; h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 KEYHOG_VARIANT=cuda run_install "$sb" "$h" -- --diagnose --no-color)
+out=$(KEYHOG_VERSION=v9.9.9 run_install "$sb" "$h" -- --variant=cuda --diagnose --no-color)
 expect_match "5.2 variant=cuda forces cuda asset" "Would install: keyhog-linux-x86_64-cuda" "$out"
 rm -rf "$sb" "$h"
 sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 KEYHOG_VARIANT=cuda run_install "$sb" "$h" -- --diagnose --no-color)
+out=$(KEYHOG_VERSION=v9.9.9 run_install "$sb" "$h" -- --variant=cuda --diagnose --no-color)
 expect_match "5.3 variant=cuda on no-gpu still cuda asset" "Would install: keyhog-linux-x86_64-cuda" "$out"
 rm -rf "$sb" "$h"
 
@@ -868,7 +869,7 @@ rm -rf "$sb"
 printf '\n[7] cuda asset fallback policy\n'
 reset_mocks
 sb=$(build_sandbox Linux x86_64 yes yes yes); h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 KEYHOG_VARIANT=cuda MOCK_ASSET=404 MOCK_FALLBACK="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
+out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET=404 MOCK_FALLBACK="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --variant=cuda --no-prompt); st=$?
 expect_match  "7.1 explicit cuda missing asset refuses" "Download failed|release published" "$out"
 expect_status "7.2 explicit cuda missing asset exits 1" 1 "$st"
 expect_nofile "7.3 explicit cuda missing asset writes no binary" "$h/.local/bin/keyhog"
@@ -998,10 +999,10 @@ h=$(newhome)
 out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --install-dir="$h/custom/dir")
 expect_file "10.3 binary at custom --install-dir" "$h/custom/dir/keyhog"
 rm -rf "$h"
-# 10.4 KEYHOG_INSTALL env honored
+# 10.4 install-dir helper uses the explicit flag path
 h=$(newhome)
-out=$(KEYHOG_VERSION=v9.9.9 KEYHOG_INSTALL_OVERRIDE="$h/envdir" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt)
-expect_file "10.4 binary at KEYHOG_INSTALL dir" "$h/envdir/keyhog"
+out=$(KEYHOG_VERSION=v9.9.9 INSTALL_DIR_OVERRIDE="$h/flagdir" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt)
+expect_file "10.4 binary at explicit install dir" "$h/flagdir/keyhog"
 rm -rf "$h"
 # 10.5 spaces in install dir
 h=$(newhome)
@@ -1106,13 +1107,13 @@ done
 # ======================================================================
 # 16. arg vs env precedence + short flags
 # ======================================================================
-printf '\n[16] arg/env precedence + short flags\n'
+printf '\n[16] arg precedence + short flags\n'
 reset_mocks
 sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
-# --install-dir flag beats KEYHOG_INSTALL env
-out=$(KEYHOG_VERSION=v9.9.9 KEYHOG_INSTALL_OVERRIDE="$h/envdir" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --install-dir="$h/flagdir")
-expect_file   "16.1 --install-dir beats env" "$h/flagdir/keyhog"
-expect_nofile "16.2 env dir unused when flag set" "$h/envdir/keyhog"
+# later --install-dir beats an earlier install-dir helper flag
+out=$(KEYHOG_VERSION=v9.9.9 INSTALL_DIR_OVERRIDE="$h/firstdir" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --install-dir="$h/flagdir")
+expect_file   "16.1 later --install-dir wins" "$h/flagdir/keyhog"
+expect_nofile "16.2 earlier install-dir unused when later flag set" "$h/firstdir/keyhog"
 rm -rf "$h"; h=$(newhome)
 # -y short flag accepted (no unknown-arg error)
 out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- -y); st=$?
@@ -1274,7 +1275,6 @@ signal_state=$(mktemp -d -t kh-signal-state-XXXXXX)
 signal_tmp=$(mktemp -d -t kh-signal-tmp-XXXXXX)
 signal_out="$h/signal.out"
 env -i PATH="$sb/bin" HOME="$h" \
-    KEYHOG_INSTALL="$h/.local/bin" \
     TMPDIR="$signal_tmp" \
     MOCK_STATE_DIR="$signal_state" \
     MOCK_RELEASES="$FIX_DIR/releases_normal.json" \
@@ -1282,9 +1282,8 @@ env -i PATH="$sb/bin" HOME="$h" \
     MOCK_FALLBACK=404 \
     MOCK_SHA=match \
     MOCK_LDD=ok \
-    KEYHOG_VARIANT=auto \
     KEYHOG_VERSION=v9.9.9 \
-    sh "$INSTALL_SH" --no-prompt --no-color >"$signal_out" 2>&1 &
+    sh "$INSTALL_SH" --install-dir="$h/.local/bin" --variant=auto --no-prompt --no-color >"$signal_out" 2>&1 &
 signal_pid=$!
 i=0
 while [ "$i" -lt 200 ]; do
@@ -1330,7 +1329,7 @@ if command -v script >/dev/null 2>&1 && script -qefc true /dev/null >/dev/null 2
     sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
     repo="$h/repo"
     mkdir -p "$repo/.git"
-    wizard_cmd="cd $repo && env -i PATH=$h/.local/bin:$sb/bin HOME=$h SHELL=/bin/bash KEYHOG_INSTALL=$h/.local/bin MOCK_STATE_DIR=$h/state MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_wizard_fail MOCK_FALLBACK=404 MOCK_SHA=match MOCK_LDD=ok KEYHOG_VARIANT=auto KEYHOG_VERSION=v9.9.9 sh $INSTALL_SH --no-color"
+    wizard_cmd="cd $repo && env -i PATH=$h/.local/bin:$sb/bin HOME=$h SHELL=/bin/bash MOCK_STATE_DIR=$h/state MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_wizard_fail MOCK_FALLBACK=404 MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9 sh $INSTALL_SH --install-dir=$h/.local/bin --variant=auto --no-color"
     out=$(printf 'y\ny\ny\n' | script -qefc "$wizard_cmd" /dev/null 2>&1); st=$?
     expect_status "19.19 interactive wizard failure test exits 0" 0 "$st"
     expect_match  "19.20 completion wizard surfaces real stderr" "completion generation failed: completion disk denied" "$out"
@@ -1520,9 +1519,9 @@ printf '\n[21] PATH setup idempotency and macOS bash rc target\n'
 if command -v script >/dev/null 2>&1 && script -qefc true /dev/null >/dev/null 2>&1; then
     reset_mocks
     sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
-    path_env="PATH=$sb/bin HOME=$h SHELL=/bin/bash KEYHOG_INSTALL=$h/.local/bin MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_FALLBACK=404 MOCK_SHA=match MOCK_LDD=ok KEYHOG_VARIANT=auto KEYHOG_VERSION=v9.9.9"
-    path_cmd1="env -i $path_env MOCK_STATE_DIR=$h/state-1 sh $INSTALL_SH --no-color"
-    path_cmd2="env -i $path_env MOCK_STATE_DIR=$h/state-2 sh $INSTALL_SH --no-color"
+    path_env="PATH=$sb/bin HOME=$h SHELL=/bin/bash MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_FALLBACK=404 MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9"
+    path_cmd1="env -i $path_env MOCK_STATE_DIR=$h/state-1 sh $INSTALL_SH --install-dir=$h/.local/bin --variant=auto --no-color"
+    path_cmd2="env -i $path_env MOCK_STATE_DIR=$h/state-2 sh $INSTALL_SH --install-dir=$h/.local/bin --variant=auto --no-color"
     out=$(printf 'y\ny\ny\nn\nn\n' | script -qefc "$path_cmd1" /dev/null 2>&1); st=$?
     expect_status "21.1 first bash PATH setup install exits 0" 0 "$st"
     out=$(printf 'y\ny\nn\nn\n' | script -qefc "$path_cmd2" /dev/null 2>&1); st=$?
@@ -1540,7 +1539,7 @@ if command -v script >/dev/null 2>&1 && script -qefc true /dev/null >/dev/null 2
 
     reset_mocks
     sb=$(build_sandbox Darwin x86_64 no no no); h=$(newhome)
-    mac_cmd="env -i PATH=$sb/bin HOME=$h SHELL=/bin/bash KEYHOG_INSTALL=$h/.local/bin MOCK_STATE_DIR=$h/state MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_FALLBACK=404 MOCK_SHA=match MOCK_LDD=ok KEYHOG_VARIANT=auto KEYHOG_VERSION=v9.9.9 sh $INSTALL_SH --no-color"
+    mac_cmd="env -i PATH=$sb/bin HOME=$h SHELL=/bin/bash MOCK_STATE_DIR=$h/state MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_FALLBACK=404 MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9 sh $INSTALL_SH --install-dir=$h/.local/bin --variant=auto --no-color"
     out=$(printf 'y\ny\ny\nn\nn\n' | script -qefc "$mac_cmd" /dev/null 2>&1); st=$?
     expect_status "21.5 macOS bash PATH setup install exits 0" 0 "$st"
     expect_file   "21.6 macOS bash PATH setup writes login profile" "$h/.bash_profile"
@@ -1549,9 +1548,9 @@ if command -v script >/dev/null 2>&1 && script -qefc true /dev/null >/dev/null 2
 
     reset_mocks
     sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
-    zsh_env="PATH=$sb/bin HOME=$h SHELL=/bin/zsh KEYHOG_INSTALL=$h/.local/bin MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_FALLBACK=404 MOCK_SHA=match MOCK_LDD=ok KEYHOG_VARIANT=auto KEYHOG_VERSION=v9.9.9"
-    zsh_cmd1="env -i $zsh_env MOCK_STATE_DIR=$h/zsh-state-1 sh $INSTALL_SH --no-color"
-    zsh_cmd2="env -i $zsh_env MOCK_STATE_DIR=$h/zsh-state-2 sh $INSTALL_SH --no-color"
+    zsh_env="PATH=$sb/bin HOME=$h SHELL=/bin/zsh MOCK_RELEASES=$FIX_DIR/releases_normal.json MOCK_ASSET=$FIX_DIR/fake_keyhog_healthy MOCK_FALLBACK=404 MOCK_SHA=match MOCK_LDD=ok KEYHOG_VERSION=v9.9.9"
+    zsh_cmd1="env -i $zsh_env MOCK_STATE_DIR=$h/zsh-state-1 sh $INSTALL_SH --install-dir=$h/.local/bin --variant=auto --no-color"
+    zsh_cmd2="env -i $zsh_env MOCK_STATE_DIR=$h/zsh-state-2 sh $INSTALL_SH --install-dir=$h/.local/bin --variant=auto --no-color"
     out=$(printf 'y\ny\ny\ny\nn\n' | script -qefc "$zsh_cmd1" /dev/null 2>&1); st=$?
     expect_status "21.8 zsh completion setup install exits 0" 0 "$st"
     expect_file   "21.9 zsh completion file is written" "$h/.zfunc/_keyhog"

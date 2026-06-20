@@ -29,6 +29,29 @@ fn install_from_file_is_explicit_flag_not_env() {
 }
 
 #[test]
+fn installer_destination_and_variant_are_explicit_flags_not_env() {
+    for (name, script, forbidden) in [
+        (
+            "install.sh",
+            include_str!("../../../install.sh"),
+            &["KEYHOG_INSTALL", "KEYHOG_VARIANT"][..],
+        ),
+        (
+            "install.ps1",
+            include_str!("../../../install.ps1"),
+            &["KEYHOG_INSTALL", "KEYHOG_VARIANT"][..],
+        ),
+    ] {
+        for token in forbidden {
+            assert!(
+                !script.contains(token),
+                "{name} must not accept {token}; installer destination and variant use explicit flags"
+            );
+        }
+    }
+}
+
+#[test]
 fn install_scripts_keep_explicit_insecure_flags() {
     let sh = include_str!("../../../install.sh");
     assert!(

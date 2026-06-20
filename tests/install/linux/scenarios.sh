@@ -156,7 +156,6 @@ run_diagnose() {
     ch=$(clean_home)
     env -i PATH="$sb/bin" HOME="$ch" \
             KEYHOG_VERSION=v0.5.29 \
-            KEYHOG_INSTALL="$ch/.local/bin" \
             sh "$INSTALL_SH" --diagnose --no-color 2>&1
     rm -rf "$ch"
 }
@@ -167,9 +166,7 @@ run_diagnose_variant() {
     ch=$(clean_home)
     env -i PATH="$sb/bin" HOME="$ch" \
             KEYHOG_VERSION=v0.5.29 \
-            KEYHOG_VARIANT="$variant" \
-            KEYHOG_INSTALL="$ch/.local/bin" \
-            sh "$INSTALL_SH" --diagnose --no-color 2>&1
+            sh "$INSTALL_SH" --variant="$variant" --diagnose --no-color 2>&1
     rm -rf "$ch"
 }
 
@@ -236,18 +233,18 @@ expect "E.1 mac-x86_64 picked"          "Would install: keyhog-macos-x86_64"    
 rm -rf "$sb"
 
 # ============================================================
-# Scenario F: KEYHOG_VARIANT=cpu override on a CUDA host
+# Scenario F: --variant=cpu override on a CUDA host
 # ============================================================
-printf '\n[F] KEYHOG_VARIANT=cpu overrides CUDA host\n'
+printf '\n[F] --variant=cpu overrides CUDA host\n'
 sb=$(build_sandbox "F" "Linux" "x86_64" "yes" "yes")
 out=$(run_diagnose_variant "$sb" "cpu")
 expect "F.1 default picked despite CUDA" "Would install: keyhog-linux-x86_64$"    "$out"
 rm -rf "$sb"
 
 # ============================================================
-# Scenario G: KEYHOG_VARIANT=cuda override on a no-GPU host
+# Scenario G: --variant=cuda override on a no-GPU host
 # ============================================================
-printf '\n[G] KEYHOG_VARIANT=cuda overrides no-GPU detection\n'
+printf '\n[G] --variant=cuda overrides no-GPU detection\n'
 sb=$(build_sandbox "G" "Linux" "x86_64" "no" "no")
 out=$(run_diagnose_variant "$sb" "cuda")
 expect "G.1 cuda picked regardless"     "Would install: keyhog-linux-x86_64-cuda" "$out"
@@ -259,7 +256,7 @@ rm -rf "$sb"
 printf '\n[H] Unsupported platform exits cleanly\n'
 sb=$(build_sandbox "H" "FreeBSD" "x86_64" "no" "no")
 hh=$(clean_home)
-out=$(env -i PATH="$sb/bin" HOME="$hh" KEYHOG_INSTALL="$hh/.local/bin" KEYHOG_VERSION=v0.5.29 \
+out=$(env -i PATH="$sb/bin" HOME="$hh" KEYHOG_VERSION=v0.5.29 \
       sh "$INSTALL_SH" --diagnose --no-color 2>&1) || true
 rm -rf "$hh"
 expect "H.1 reports unsupported"        "Unsupported platform"                    "$out"
@@ -281,8 +278,7 @@ printf '\n[J] --uninstall is a safe no-op when nothing is installed\n'
 sb=$(build_sandbox "J" "Linux" "x86_64" "no" "no")
 nodir=$(mktemp -d -t kh-noinstall-XXXXXX)
 out=$(env -i PATH="$sb/bin" HOME="$nodir" KEYHOG_VERSION=v0.5.29 \
-      KEYHOG_INSTALL="$nodir/bin" \
-      sh "$INSTALL_SH" --uninstall --no-color 2>&1) || true
+      sh "$INSTALL_SH" --install-dir="$nodir/bin" --uninstall --no-color 2>&1) || true
 expect "J.1 says nothing to remove"     "Nothing to remove"                       "$out"
 rm -rf "$sb" "$nodir"
 
