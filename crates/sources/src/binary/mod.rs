@@ -292,17 +292,15 @@ impl BinarySource {
     }
 
     fn strings_chunks(&self) -> Vec<Result<Chunk, SourceError>> {
+        let path_display = crate::filesystem::display_path(&self.path);
+        let mut chunks = Vec::new();
         let bytes = match read_binary_capped(&self.path, self.limits.binary_read_bytes) {
             Ok(read) => {
                 if read.truncated {
-                    eprintln!(
-                        "keyhog: WARNING: binary {} exceeded the {} byte strings-read cap; \
-                         only the first {} bytes were scanned.",
-                        self.path.display(),
+                    chunks.push(Err(report_binary_truncation(
+                        &path_display,
                         self.limits.binary_read_bytes,
-                        self.limits.binary_read_bytes
-                    );
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
+                    )));
                 }
                 read.bytes
             }
@@ -324,13 +322,10 @@ impl BinarySource {
             }
         };
 
-        let mut chunks = Vec::new();
-        let path_str = crate::filesystem::display_path(&self.path);
-
         // Try section-aware extraction using goblin (ELF/PE/Mach-O)
         #[cfg(feature = "binary")]
         {
-            if let Some(section_chunks) = sections::extract_sections(&bytes, &path_str) {
+            if let Some(section_chunks) = sections::extract_sections(&bytes, &path_display) {
                 chunks.extend(section_chunks.into_iter().map(Ok));
             }
         }
@@ -344,7 +339,7 @@ impl BinarySource {
                     base_offset: 0,
                     base_line: 0,
                     source_type: "binary:strings".to_string(),
-                    path: Some(path_str),
+                    path: Some(path_display),
                     commit: None,
                     author: None,
                     date: None,
@@ -369,6 +364,16 @@ impl BinarySource {
 
         chunks
     }
+}
+
+fn report_binary_truncation(path_display: &str, cap: usize) -> SourceError {
+    eprintln!(
+        "keyhog: WARNING: binary {path_display} exceeded the {cap} byte strings-read cap; only the first {cap} bytes were scanned."
+    );
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
+    SourceError::Other(format!(
+        "binary {path_display} exceeded the {cap}-byte strings-read cap; remaining binary bytes were not scanned"
+    ))
 }
 
 fn capture_ghidra_stderr_excerpt(

@@ -14,7 +14,7 @@
 
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
-use keyhog_sources::{binary_unreadable, reset_binary_counters, skip_counts};
+use keyhog_sources::{binary_unreadable, reset_binary_counters, skip_counts, SourceLimits};
 use std::sync::Mutex;
 
 /// Serialises process-global binary-counter assertions in this test binary.
@@ -97,6 +97,59 @@ fn readable_binary_is_not_counted_as_unreadable() {
         skip_counts().unreadable,
         0,
         "a readable binary must not increment the shared unreadable skip counter"
+    );
+}
+
+#[test]
+fn capped_binary_read_surfaces_truncation_error_and_scans_prefix() {
+    let _guard = COUNTER_LOCK.lock().unwrap();
+    reset_binary_counters();
+    TestApi.reset_skip_counters();
+
+    let dir = tempfile::tempdir().unwrap();
+    let bin = dir.path().join("truncated.bin");
+    let mut bytes = b"prefix_KEYHOG_BINARY_TRUNCATED_PREFIX_SECRET_1234567890_suffix".to_vec();
+    bytes.extend_from_slice(&[0u8; 256]);
+    std::fs::write(&bin, &bytes).unwrap();
+
+    let mut limits = SourceLimits::default();
+    limits.binary_read_bytes = 64;
+    let rows: Vec<_> = TestApi
+        .binary_strings_only(bin.clone())
+        .with_limits(limits)
+        .chunks()
+        .collect();
+    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+
+    assert_eq!(
+        errors.len(),
+        1,
+        "a capped binary prefix scan must emit one truncation error row"
+    );
+    let err = errors[0].to_string();
+    assert!(
+        err.contains("strings-read cap") && err.contains("remaining binary bytes were not scanned"),
+        "error should describe the partial binary scan, got {err}"
+    );
+    assert!(
+        chunks.iter().any(|chunk| {
+            chunk.metadata.source_type == "binary:strings"
+                && chunk
+                    .data
+                    .contains("KEYHOG_BINARY_TRUNCATED_PREFIX_SECRET_1234567890")
+        }),
+        "binary prefix strings must still be scanned after the truncation row; chunks={chunks:?}"
+    );
+    assert_eq!(
+        skip_counts().source_truncated,
+        1,
+        "binary read-cap truncation must bump SOURCE_TRUNCATED exactly once"
+    );
+    assert_eq!(
+        binary_unreadable(),
+        0,
+        "a capped but readable binary must not be counted as unreadable"
     );
 }
 
