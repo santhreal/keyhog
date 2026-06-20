@@ -10,6 +10,11 @@ use std::path::PathBuf;
 use std::process::Command;
 use tempfile::TempDir;
 
+#[path = "../support/json_report.rs"]
+mod json_report_support;
+
+use json_report_support::{json_array_string_field_values, parse_json_array};
+
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
@@ -47,37 +52,24 @@ fn scan_with_args(fixture: &str, args: &[&str]) -> (String, String, Option<i32>)
 #[test]
 fn precision_mode_negative_twin_is_subset_of_default() {
     let fixture = concat!(
-        "AWS_ACCESS_KEY_ID = \"AKIA",
-        "QYLPMN5HGT3KZ7WB\"\n",
         "aws_secret_access_key = \"kP8xQ2mNvR7tZ4wL9bYsH3jD6fG1cA0eXuViK5oT\"\n",
+        "DATABASE_PASSWORD = \"admin123\"\n",
     );
 
     let (def_out, _, _) = scan_with_args(fixture, &[]);
     let (prec_out, _, _) = scan_with_args(fixture, &["--precision"]);
 
-    let def: Vec<String> = serde_json::from_str::<serde_json::Value>(&def_out)
-        .ok()
-        .and_then(|v| v.as_array().cloned())
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|f| {
-            f.get("detector_id")
-                .and_then(|d| d.as_str())
-                .map(String::from)
-        })
-        .collect();
+    let def = json_array_string_field_values(
+        &def_out,
+        "detector_id",
+        "default precision negative-twin scan",
+    );
 
-    let prec: Vec<String> = serde_json::from_str::<serde_json::Value>(&prec_out)
-        .ok()
-        .and_then(|v| v.as_array().cloned())
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|f| {
-            f.get("detector_id")
-                .and_then(|d| d.as_str())
-                .map(String::from)
-        })
-        .collect();
+    let prec = json_array_string_field_values(
+        &prec_out,
+        "detector_id",
+        "explicit precision negative-twin scan",
+    );
 
     // Every detector found in precision mode must also be in default mode.
     for det in &prec {
@@ -111,16 +103,14 @@ fn precision_mode_composes_with_no_suppress_test_fixtures() {
         Some(0),
         "default mode suppresses the Stripe demo key"
     );
-    let def: Vec<String> = serde_json::from_str::<serde_json::Value>(&def_suppressed)
-        .ok()
-        .and_then(|v| v.as_array().cloned())
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|f| f.get("service").and_then(|s| s.as_str()).map(String::from))
-        .collect();
+    let def = json_array_string_field_values(
+        &def_suppressed,
+        "service",
+        "default suppressed Stripe precision scan",
+    );
     assert!(
-        !def.contains(&"stripe".to_string()),
-        "default suppresses Stripe"
+        def.is_empty(),
+        "default suppresses Stripe and should emit no findings for this fixture; got {def:?}"
     );
 
     // Precision with no-suppress: the Stripe key is high-confidence, so it should
@@ -132,13 +122,11 @@ fn precision_mode_composes_with_no_suppress_test_fixtures() {
         Some(1),
         "precision with --no-suppress-test-fixtures must find the Stripe key"
     );
-    let prec: Vec<String> = serde_json::from_str::<serde_json::Value>(&prec_nosuppress)
-        .ok()
-        .and_then(|v| v.as_array().cloned())
-        .unwrap_or_default()
-        .iter()
-        .filter_map(|f| f.get("service").and_then(|s| s.as_str()).map(String::from))
-        .collect();
+    let prec = json_array_string_field_values(
+        &prec_nosuppress,
+        "service",
+        "precision no-suppress Stripe scan",
+    );
     assert!(
         prec.contains(&"stripe".to_string()),
         "precision --no-suppress-test-fixtures must find Stripe; got {prec:?}"
@@ -217,12 +205,10 @@ fn precision_mode_composes_with_verify_flag() {
 /// normally but the precision floor still applies.
 #[test]
 fn precision_mode_composes_with_scan_comments() {
-    // A high-confidence AWS *secret* access key in a comment. The bare AKIA
-    // access-key-id detector self-declares a sub-0.85 floor (it is recall-
-    // tuned and precision deliberately drops it), so it is the wrong probe for
-    // "a high-confidence finding survives in a comment". The keyword-anchored
-    // secret key scores ~1.0 and is the credential whose survival under
-    // `--scan-comments` + precision this test means to assert.
+    // A high-confidence AWS *secret* access key in a comment. A weak generic
+    // credential would only prove the floor drops noisy findings; this test
+    // asserts that an opted-in comment scan still keeps a strong credential
+    // that clears the precision bar.
     let fixture =
         "// TODO: rotate aws_secret_access_key = \"kP8xQ2mNvR7tZ4wL9bYsH3jD6fG1cA0eXuViK5oT\"\n";
 
@@ -275,30 +261,19 @@ fn precision_mode_ignores_min_confidence_when_lower_than_0_85() {
 fn precision_mode_tightens_large_mixed_corpus() {
     let fixture = concat!(
         "# Real credentials\n",
-        "AWS_ACCESS_KEY_ID = \"AKIA",
-        "QYLPMN5HGT3KZ7WB\"\n",
         "aws_secret_access_key = \"kP8xQ2mNvR7tZ4wL9bYsH3jD6fG1cA0eXuViK5oT\"\n",
         // Checksum-valid GitHub PAT (floored at 0.9), a genuine high-confidence
         // member of the corpus that survives precision.
         "GH_TOKEN = \"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\"\n",
-        "# Weak patterns\n",
-        "PASSWORD = \"weak_pass\"\n",
-        "API_KEY = \"some_generic_key\"\n",
-        "SECRET = \"generic_secret\"\n",
+        "# Weak default-only generic finding\n",
+        "DATABASE_PASSWORD = \"admin123\"\n",
     );
 
     let (def_out, _, _) = scan_with_args(fixture, &[]);
     let (prec_out, _, _) = scan_with_args(fixture, &["--precision"]);
 
-    let def_count = serde_json::from_str::<serde_json::Value>(&def_out)
-        .ok()
-        .and_then(|v| v.as_array().map(|a| a.len()))
-        .unwrap_or(0);
-
-    let prec_count = serde_json::from_str::<serde_json::Value>(&prec_out)
-        .ok()
-        .and_then(|v| v.as_array().map(|a| a.len()))
-        .unwrap_or(0);
+    let def_count = parse_json_array(&def_out, "default large mixed precision scan").len();
+    let prec_count = parse_json_array(&prec_out, "explicit large mixed precision scan").len();
 
     assert!(
         def_count > prec_count,

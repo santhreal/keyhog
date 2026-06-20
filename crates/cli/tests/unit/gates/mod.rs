@@ -30,6 +30,7 @@ pub mod duplicate_primitive_leads;
 pub mod inline_suppression_no_inline_tests;
 pub mod inline_suppression_no_unwrap_expect;
 pub mod inline_suppression_non_empty;
+pub mod json_tests_fail_loud;
 pub mod main_no_inline_tests;
 pub mod main_no_unwrap_expect;
 pub mod main_non_empty;

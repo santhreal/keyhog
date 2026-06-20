@@ -25,6 +25,11 @@ use std::path::PathBuf;
 use std::process::Command;
 use tempfile::TempDir;
 
+#[path = "support/jsonl.rs"]
+mod jsonl_support;
+
+use jsonl_support::parse_jsonl_objects;
+
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
@@ -68,10 +73,8 @@ fn json_hashes(stdout: &str) -> BTreeSet<String> {
 /// Pull the credential_hash of every finding from a JSONL report (one object
 /// per line).
 fn jsonl_hashes(stdout: &str) -> BTreeSet<String> {
-    stdout
-        .lines()
-        .filter(|l| !l.trim().is_empty())
-        .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+    parse_jsonl_objects(stdout, "format/backend JSONL report")
+        .into_iter()
         .filter_map(|f| {
             f.get("credential_hash")
                 .and_then(|h| h.as_str())

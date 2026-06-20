@@ -36,6 +36,11 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use tempfile::TempDir;
 
+#[path = "support/jsonl.rs"]
+mod jsonl_support;
+
+use jsonl_support::parse_jsonl_objects;
+
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
@@ -262,10 +267,8 @@ fn every_format_parses_and_carries_the_planted_finding() {
                 );
             }
             "jsonl" => {
-                let any = stdout
-                    .lines()
-                    .filter(|l| !l.trim().is_empty())
-                    .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
+                let any = parse_jsonl_objects(&stdout, "format matrix JSONL report")
+                    .into_iter()
                     .any(|f| f.get("detector_id").and_then(|d| d.as_str()) == Some(DETECTOR_ID));
                 assert!(
                     any,
@@ -335,16 +338,15 @@ fn json_and_jsonl_surface_identical_hashes_across_every_backend() {
     for &backend in BACKENDS {
         let json = json_hashes(&scan(&path, &["--backend", backend, "--format", "json"]).1);
         let jsonl_out = scan(&path, &["--backend", backend, "--format", "jsonl"]).1;
-        let jsonl: BTreeSet<String> = jsonl_out
-            .lines()
-            .filter(|l| !l.trim().is_empty())
-            .filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok())
-            .filter_map(|f| {
-                f.get("credential_hash")
-                    .and_then(|h| h.as_str())
-                    .map(String::from)
-            })
-            .collect();
+        let jsonl: BTreeSet<String> =
+            parse_jsonl_objects(&jsonl_out, "backend matrix JSONL report")
+                .into_iter()
+                .filter_map(|f| {
+                    f.get("credential_hash")
+                        .and_then(|h| h.as_str())
+                        .map(String::from)
+                })
+                .collect();
         assert_eq!(
             json, jsonl,
             "--backend {backend}: json and jsonl must surface identical hashes"

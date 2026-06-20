@@ -127,25 +127,32 @@ fn precision_mode_exits_one_on_findings() {
 }
 
 /// Precision mode respects the literal 0.85 min_confidence floor.
-/// The AWS access-key-id (AKIA…) detector has a low confidence score by design
-/// (below 0.85). In precision mode it must be dropped, but in default mode
-/// (which has a 0.5 floor) it is kept. This asserts precision enforces 0.85.
+/// A generic password assignment scores above the default floor and below the
+/// precision bar. In precision mode it must be dropped, but in default mode it
+/// is kept. This asserts precision enforces 0.85.
 #[test]
 fn precision_mode_enforces_0_85_floor_on_weak_credentials() {
-    let fixture = concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HGT3KZ7WB\"\n");
+    let fixture = "DATABASE_PASSWORD = \"admin123\"\n";
 
-    // Default mode: the weak AKIA key is surfaced (floor is ~0.5).
+    // Default mode: the weak generic secret is surfaced (floor is 0.40).
     let (def_out, _e, def_code) = scan_text_file(fixture, &[]);
-    assert_eq!(def_code, Some(1), "default mode must find the weak AWS key");
+    assert_eq!(
+        def_code,
+        Some(1),
+        "default mode must find the weak generic secret"
+    );
     let def_findings: serde_json::Value =
         serde_json::from_str(&def_out).expect("default stdout is JSON");
     let def_arr = def_findings.as_array().expect("array");
     assert!(
-        !def_arr.is_empty(),
-        "default must surface the AKIA key; got {def_out}"
+        def_arr.iter().any(
+            |finding| finding.get("detector_id").and_then(|value| value.as_str())
+                == Some("generic-secret")
+        ),
+        "default must surface the generic-secret finding; got {def_out}"
     );
 
-    // Precision mode: the same AKIA key must be dropped (floor is 0.85).
+    // Precision mode: the same weak generic secret must be dropped.
     let (prec_out, _e2, prec_code) = scan_text_file(fixture, &["--precision"]);
     let prec_findings: serde_json::Value =
         serde_json::from_str(&prec_out).expect("precision stdout is JSON");
@@ -153,7 +160,7 @@ fn precision_mode_enforces_0_85_floor_on_weak_credentials() {
 
     assert!(
         prec_arr.is_empty(),
-        "precision mode must drop the AKIA key (conf < 0.85); got {prec_out}"
+        "precision mode must drop the generic secret (conf < 0.85); got {prec_out}"
     );
     assert!(
         prec_code.is_some_and(|c| c == 0),

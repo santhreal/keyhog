@@ -21,6 +21,11 @@ use std::process::Command;
 
 use tempfile::TempDir;
 
+#[path = "support/json_report.rs"]
+mod json_report_support;
+
+use json_report_support::json_array_string_field_values;
+
 fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_keyhog"))
 }
@@ -50,10 +55,13 @@ fn scan_text_file(content: &str, extra_args: &[&str]) -> (String, String, Option
 
     let output = Command::new(binary())
         .arg("scan")
+        .arg("--no-daemon")
+        .args(["--backend", "simd"])
         .args(extra_args)
         .arg("--format")
         .arg("json")
         .arg(&path)
+        .env_remove("KEYHOG_BACKEND")
         .output()
         .expect("spawn keyhog scan");
 
@@ -1556,40 +1564,32 @@ fn config_lockdown_require_refuses_without_flag() {
 
 /// `--precision` is a high-precision mass-scan preset: it must keep genuine
 /// high-confidence secrets while dropping weaker (sub-0.85) findings that the
-/// default floor admits. The AWS secret key scores far higher than the bare
-/// access-key id, so precision keeps the former and drops the latter.
+/// default floor admits. The AWS secret key scores far higher than a generic
+/// password assignment, so precision keeps the former and drops the latter.
 #[test]
 fn precision_mode_keeps_strong_drops_weak() {
     let fixture = concat!(
-        "aws_access_key_id = \"AKIA",
-        "QYLPMN5HGT3KZ7WB\"\n",
         "aws_secret_access_key = \"kP8xQ2mNvR7tZ4wL9bYsH3jD6fG1cA0eXuViK5oT\"\n",
+        "DATABASE_PASSWORD = \"admin123\"\n",
     );
-    let parse = |s: &str| -> Vec<String> {
-        serde_json::from_str::<serde_json::Value>(s)
-            .ok()
-            .and_then(|v| v.as_array().cloned())
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|f| {
-                f.get("detector_id")
-                    .and_then(|d| d.as_str())
-                    .map(String::from)
-            })
-            .collect()
-    };
     let (def_out, _e, _c) = scan_text_file(fixture, &[]);
     let (prec_out, _e2, _c2) = scan_text_file(fixture, &["--precision"]);
-    let def = parse(&def_out);
-    let prec = parse(&prec_out);
+    let def =
+        json_array_string_field_values(&def_out, "detector_id", "default precision-mode scan");
+    let prec =
+        json_array_string_field_values(&prec_out, "detector_id", "explicit precision-mode scan");
 
     assert!(
         def.len() >= 2,
-        "default mode should surface both the access-key id and the secret key; got {def:?}"
+        "default mode should surface both the weak generic secret and the AWS secret; got {def:?}"
     );
     assert!(
         def.iter().any(|d| d == "aws-secret-access-key"),
         "default must find the secret key; got {def:?}"
+    );
+    assert!(
+        def.iter().any(|d| d == "generic-secret"),
+        "default must find the weak generic secret; got {def:?}"
     );
     assert!(
         prec.iter().any(|d| d == "aws-secret-access-key"),
@@ -1600,10 +1600,8 @@ fn precision_mode_keeps_strong_drops_weak() {
         "precision must be strictly tighter than default; default={def:?} precision={prec:?}"
     );
     assert!(
-        !prec
-            .iter()
-            .any(|d| d == "aws-access-key" || d == "hot-aws_key"),
-        "precision must drop the weaker access-key-id finding (below the 0.85 bar); got {prec:?}"
+        !prec.iter().any(|d| d == "generic-secret"),
+        "precision must drop the weaker generic-secret finding (below the 0.85 bar); got {prec:?}"
     );
 }
 
