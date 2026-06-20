@@ -21,8 +21,8 @@ only Vyre source for builds.
 | `vyre_libs::scan::GpuLiteralSet`                     | `engine/gpu_lazy.rs::gpu_matcher` - literal trigger producer        |
 | `GpuLiteralSet::scan_presence_with_scratch`          | `engine/gpu_literal_scratch.rs` - per-chunk trigger presence without hot-loop scratch allocation |
 | `GpuLiteralSet::scan_presence_by_region_with_scratch` | `engine/gpu_literal_scratch.rs` called by `engine/gpu_region_dispatch.rs` - one batched region row per chunk |
-| `vyre_libs::scan::build_regex_dfa_unanchored`        | Standalone `tests/megakernel_*.rs` Vyre validation experiments      |
-| `vyre_runtime::megakernel::BatchRuleProgram`         | Standalone `tests/megakernel_*.rs` Vyre validation experiments      |
+| `vyre_libs::scan::build_regex_dfa_unanchored`        | `engine/phase2_gpu_dfa.rs` - GPU regex-DFA admission for prefixless detectors (production); also exercised by `tests/megakernel_*.rs` Vyre validation probes |
+| `vyre_runtime::megakernel::BatchRuleProgram`         | Standalone `tests/megakernel_*.rs` Vyre validation probes only (the retired per-rule catalog primitive; not a production engine path) |
 | `vyre_driver_wgpu::megakernel::{BatchDispatcher, FileBatch, HitRecord}` | Standalone `tests/megakernel_*.rs` Vyre validation experiments |
 | `vyre_libs::scan::LiteralMatch`                      | Re-exported as `keyhog_scanner::LiteralMatch` for API stability     |
 | `vyre_libs::scan::cached_load_or_compile`            | On-disk cache for compiled GPU literal-set programs                 |
@@ -32,8 +32,9 @@ only Vyre source for builds.
 
 Current production scanner consumers are `engine/gpu_lazy.rs`,
 `engine/gpu_literal_scratch.rs`, `engine/gpu_region_dispatch.rs`,
-`engine/compile.rs`, `gpu.rs`, and `static_intern.rs`. The per-rule megakernel
-catalog is not a production engine module.
+`engine/phase2_gpu_dfa.rs`, `engine/compile.rs`, `gpu.rs`, and
+`static_intern.rs`. The per-rule megakernel catalog is not a production engine
+module.
 
 ## Full vyre crate surface
 
@@ -267,6 +268,7 @@ by primitive authors.
 | `intern::perfect_hash`               | ✅ shipped  | `crates/scanner/src/static_intern.rs` + `engine/mod.rs` |
 | Measured-safe GPU heuristic routing  | ✅ shipped  | `crates/scanner/src/hw_probe.rs`                       |
 | GPU region-presence dispatch         | ✅ shipped  | `engine/gpu_region_dispatch.rs::scan_coalesced_gpu_region_presence` |
+| GPU regex-DFA admission (prefixless)  | ✅ shipped  | `engine/phase2_gpu_dfa.rs` via `build_regex_dfa_unanchored`            |
 | `rule` CPU evaluator + `FieldInSet`  | ✅ shipped  | upstream `vyre_libs::rule::cpu_eval` + `ast.rs`        |
 | `.keyhogignore.toml` rule engine     | ✅ shipped  | `crates/core/src/rule_filter.rs` + `orchestrator.rs`   |
 | Standalone Vyre megakernel probes    | measured    | `crates/scanner/tests/megakernel_*.rs`                 |
@@ -446,33 +448,32 @@ are estimable. Listed best-bang-for-buck first.
    same sequence to bisect. Useful for debugging GPU non-determinism
    reports. Scope: replay log plumbing and deterministic rerun test.
 
-8. ⏳ **`vyre-driver-megakernel` to bundle the per-chunk extraction
-   onto GPU** - IN PROGRESS (scaffolding committed, dispatch loop
-   in follow-up). Today the GPU only runs
-   the literal-prefilter; per-chunk regex matching, entropy
-   scoring, ML inference all run CPU-side after the prefilter
-   returns triggers. The benchmark above shows this serial CPU
-   work caps the throughput at ~135 MB/s regardless of how fast
-   the prefilter is.
+8. 🟡 **Move the per-chunk extraction tail onto the GPU** - PARTIALLY SHIPPED.
+   The first stage landed: `engine/phase2_gpu_dfa.rs` runs a GPU regex-DFA
+   *admission* pass (`vyre_libs::scan::build_regex_dfa_unanchored`) after
+   region-presence, so the regex check for prefixless detectors - the ones the
+   literal-set prefilter cannot trigger - now runs on the GPU instead of the CPU
+   (`gpu_region_dispatch.rs::scan_coalesced_gpu_region_presence` builds the
+   admission workload, dispatches it, and treats CPU admission as authoritative
+   if the GPU pass errors). Still CPU-side after the prefilter: full per-detector
+   regex *extraction* of the admitted candidates, entropy scoring, and ML
+   inference. The benchmark above shows that remaining serial CPU work is what
+   caps throughput at ~135 MB/s, so finishing entropy + ML fusion is the
+   next win.
 
-   Vyre exposes a complete megakernel API at
-   `vyre-runtime::megakernel`:
-   - `BatchDispatcher::new(backend, config)` - compile once
-   - `BatchDispatcher::dispatch(batch, rules)` - one GPU launch
-     handles many files × many DFA rules
-   - `FileBatch` - offsets/metadata/work_queue/haystack/hit_ring
-   - `BatchRuleProgram::new(rule_idx, transitions, accept,
-     state_count)` - wraps a DFA per detector
+   This did NOT and must NOT use Vyre's per-rule `vyre-runtime::megakernel`
+   `BatchDispatcher` / `BatchRuleProgram` API. That primitive models one DFA per
+   detector, which is the `chunks × rules` shape the RTX 5090 testing found to be
+   the wrong production primitive (see "Production GPU trigger route" below); it
+   is retired from the scan path and survives only as a Vyre validation probe in
+   `tests/megakernel_*.rs`. The GPU extraction work uses the coalesced
+   region/regex-DFA primitives instead, for the same one-pass-over-the-batch
+   reason region-presence replaced the literal megakernel.
 
-   Current Keyhog production entry point:
-   - `crates/scanner/src/engine/gpu_region_dispatch.rs::scan_coalesced_gpu_region_presence`
-     uses `GpuLiteralSet::scan_presence_by_region_with_scratch`, not the per-rule
-     `BatchDispatcher` catalog.
-   - Standalone `tests/megakernel_*.rs` targets continue to exercise Vyre's
-     `BatchDispatcher` and `BatchRuleProgram` primitives outside the shipped scan route.
-
-   Scope: dispatch hook, per-pattern hit reporting, parity, and benchmark
-   threshold update. Biggest single perf win available.
+   Scope for the remaining stage: lower entropy + MoE scoring to GPU IR (or fuse
+   them into the admission dispatch), CPU/GPU parity on the admitted candidate
+   set, and a benchmark-threshold update. Biggest single perf win still
+   available.
 
 9. **CPU-side entropy-fast SIMD-isation.**
    The benchmark shows per-chunk extraction is the bottleneck even
