@@ -15,7 +15,12 @@ static GENERIC_KEYWORD_STEMS: LazyLock<GenericKeywordStemSet> = LazyLock::new(||
     let mut by_first: [Vec<usize>; 256] = std::array::from_fn(|_| Vec::new());
     for (idx, stem) in stems.iter().enumerate() {
         if let Some(&first) = stem.first() {
-            by_first[ascii_lower(first) as usize].push(idx);
+            let lower = first.to_ascii_lowercase();
+            let upper = first.to_ascii_uppercase();
+            by_first[lower as usize].push(idx);
+            if upper != lower {
+                by_first[upper as usize].push(idx);
+            }
         }
     }
     GenericKeywordStemSet { stems, by_first }
@@ -81,8 +86,7 @@ pub(crate) fn collect_generic_keyword_lines(text: &str, out: &mut Vec<usize>) {
 
 #[inline]
 fn generic_stem_matches_at(bytes: &[u8], start: usize, stem_set: &GenericKeywordStemSet) -> bool {
-    let folded = ascii_lower(bytes[start]) as usize;
-    for &stem_idx in &stem_set.by_first[folded] {
+    for &stem_idx in &stem_set.by_first[bytes[start] as usize] {
         let stem = stem_set.stems[stem_idx];
         let end = start + stem.len();
         if end <= bytes.len() && bytes[start..end].eq_ignore_ascii_case(stem) {
@@ -90,15 +94,6 @@ fn generic_stem_matches_at(bytes: &[u8], start: usize, stem_set: &GenericKeyword
         }
     }
     false
-}
-
-#[inline]
-fn ascii_lower(byte: u8) -> u8 {
-    if byte.is_ascii_uppercase() {
-        byte | 0x20
-    } else {
-        byte
-    }
 }
 
 fn generic_keyword_prefilter_stem(keyword: &'static str) -> &'static str {
