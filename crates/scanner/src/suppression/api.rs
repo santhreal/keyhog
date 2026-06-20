@@ -50,6 +50,7 @@ pub(crate) fn should_suppress_known_example_credential_with_source(
         None,
         false,
         false,
+        false,
     )
 }
 
@@ -59,6 +60,11 @@ pub(crate) fn should_suppress_known_example_credential_with_source(
 /// the value is a COMPLETE pure-hex value of canonical key length (32/48)
 /// anchored by a STRONG credential keyword — exempts it from the bare-hex-digest
 /// gate only (see [`super::decision::should_suppress_inner`]).
+///
+/// `allow_base64_blob_shape`: set only for the isolated full-line entropy lane.
+/// It releases the shape-only random-base64 gate while keeping decoded-content
+/// checks alive, so a standalone opaque token can surface but decoded examples,
+/// hashes, UUIDs, prose, and placeholders still fail closed.
 pub(crate) fn should_suppress_known_example_credential_with_source_and_entropy(
     credential: &str,
     path: Option<&str>,
@@ -66,6 +72,7 @@ pub(crate) fn should_suppress_known_example_credential_with_source_and_entropy(
     source_type: Option<&str>,
     entropy: f64,
     allow_canonical_hex_key: bool,
+    allow_base64_blob_shape: bool,
     allow_encoded_text_secret: bool,
 ) -> bool {
     should_suppress_inner(
@@ -77,6 +84,7 @@ pub(crate) fn should_suppress_known_example_credential_with_source_and_entropy(
         false,
         Some(entropy),
         allow_canonical_hex_key,
+        allow_base64_blob_shape,
         allow_encoded_text_secret,
     )
 }
@@ -359,6 +367,7 @@ pub(crate) fn should_suppress_named_detector_finding_weak(
         false,
         bypass_shape_gates,
         None,
+        false,
         false,
         allow_encoded_text_secret,
     )

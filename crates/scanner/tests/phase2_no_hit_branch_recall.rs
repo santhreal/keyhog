@@ -182,6 +182,57 @@ fn isolated_bare_entropy_secret_enters_coalesced_no_hit_branch_on_plain_text_pat
 
 #[cfg(feature = "entropy")]
 #[test]
+fn isolated_bare_base64_shaped_entropy_secret_bypasses_blob_shape_gate() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    let scanner = compile_scanner_with_config(config);
+    let secret = "cvxs2sDMfkbwkGohlpD2BuQhAcqkYTI0nCInqbKrMfyX87TPRTfNvVVq89b9VGLi";
+    let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
+
+    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk));
+    let matches = &results[0];
+    let entropy_fired = matches.iter().any(|m| {
+        m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
+    });
+    assert!(
+        entropy_fired,
+        "an isolated full-line token must not be hard-dropped only because its \
+         bytes also satisfy the random-base64 blob shape; matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
+fn authorization_call_arg_surfaces_quoted_high_entropy_token() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    let scanner = compile_scanner_with_config(config);
+    let secret = "cvxs2sDMfkbwkGohlpD2BuQhAcqkYTI0nCInqbKrMfyX87TPRTfNvVVq89b9VGLi";
+    let body = format!("response = requests.get(url, headers={{'Authorization': '{secret}'}})\n");
+    let chunk = make_chunk(&body, "src/fetch.py");
+
+    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk));
+    let matches = &results[0];
+    let surfaced = matches
+        .iter()
+        .any(|m| m.credential.as_ref().contains(secret));
+    assert!(
+        surfaced,
+        "a quoted Authorization header value in source must reach the report path \
+         instead of depending on a detector-specific service anchor; matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
 fn isolated_bare_split_entropy_secret_bypasses_identifier_emit_gate() {
     let mut config = ScannerConfig::default();
     config.min_confidence = 0.0;

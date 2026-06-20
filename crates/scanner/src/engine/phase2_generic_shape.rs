@@ -11,8 +11,8 @@
 //! guarded by the generic-secret bench gates. The three `generic_path_looks_like_*`
 //! helpers (the gauntlet's only callers) move with it.
 use super::phase2_generic::shape_helpers::{
-    generic_path_looks_like_random_base64_blob, generic_path_looks_like_random_byte_blob,
-    generic_path_looks_like_trimmed_aws_arn,
+    generic_path_allows_ambiguous_base64_candidate, generic_path_looks_like_random_base64_blob,
+    generic_path_looks_like_random_byte_blob, generic_path_looks_like_trimmed_aws_arn,
 };
 use super::*;
 
@@ -78,6 +78,8 @@ impl CompiledScanner {
         if value.len() < 8 {
             return Some("value_too_short");
         }
+        let allow_ambiguous_base64_candidate =
+            generic_path_allows_ambiguous_base64_candidate(value, entropy);
         if crate::pipeline::looks_like_train_case_prose_identifier(value) {
             return Some("train_case_prose_identifier");
         }
@@ -305,6 +307,7 @@ impl CompiledScanner {
             Some(chunk.metadata.source_type.as_str()),
             entropy,
             allow_canonical_hex_key,
+            allow_ambiguous_base64_candidate,
             allow_encoded_text_secret,
         ) {
             return Some("known_example_or_placeholder");
@@ -357,6 +360,7 @@ impl CompiledScanner {
         // etc.) is unaffected - the negative twin still fires.
         if !high_entropy_punctuation_payload
             && !allow_canonical_hex_key
+            && !allow_ambiguous_base64_candidate
             && !allow_encoded_text_secret
             && generic_path_looks_like_random_byte_blob(value)
         {

@@ -41,6 +41,7 @@ pub(super) fn should_suppress_inner(
     // `{32,48}` regexes, never on a complete bridge capture). All other gates —
     // prefixed-hash-digest, UUID, repetitive/placeholder/fake-sequence — stay.
     allow_canonical_hex_key: bool,
+    allow_base64_blob_shape: bool,
     allow_encoded_text_secret: bool,
 ) -> bool {
     let from_evasion_decoder =
@@ -364,6 +365,7 @@ pub(super) fn should_suppress_inner(
     // dropped as a protobuf-shaped blob).
     if !bypass_shape_gates
         && !high_entropy_base64_candidate
+        && !allow_base64_blob_shape
         && !allow_encoded_text_secret
         && looks_like_standard_base64_blob(credential)
     {
@@ -462,6 +464,7 @@ pub(super) fn should_suppress_inner(
                     bypass_shape_gates,
                     None,
                     allow_canonical_hex_key,
+                    false,
                     false,
                 )
             {

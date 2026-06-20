@@ -450,12 +450,17 @@ fn entropy_fallback_example_suppressed(
     let source = Some(chunk.metadata.source_type.as_str());
 
     if !canonical_lift {
-        // Original behaviour, unchanged.
-        return crate::pipeline::should_suppress_known_example_credential_with_source(
+        let isolated_bare_token =
+            entropy_match.keyword == crate::entropy::ISOLATED_BARE_ENTROPY_LABEL;
+        return crate::suppression::api::should_suppress_known_example_credential_with_source_and_entropy(
             value,
             path,
             crate::context::CodeContext::Unknown,
             source,
+            entropy_match.entropy,
+            false,
+            isolated_bare_token,
+            false,
         );
     }
 
@@ -494,6 +499,7 @@ fn entropy_fallback_example_suppressed(
         source,
         entropy_match.entropy,
         true,
+        false,
         false,
     )
 }

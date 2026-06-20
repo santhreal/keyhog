@@ -75,6 +75,25 @@ pub(crate) fn generic_path_looks_like_random_base64_blob(value: &str, entropy: f
     crate::decode_structure::is_byte_distribution_base64_blob(value, 40, 300)
 }
 
+/// True when a generic assignment candidate is standard-base64-shaped but has
+/// enough entropy and alphabet diversity that shape alone cannot prove it is
+/// data rather than an opaque no-prefix credential. These candidates still flow
+/// through the generic confidence penalties, so ordinary report-floor scans keep
+/// random-byte blobs quiet while `min_confidence=0` target/audit scans can see
+/// the candidate instead of losing it to a hard suppression cliff.
+pub(crate) fn generic_path_allows_ambiguous_base64_candidate(value: &str, entropy: f64) -> bool {
+    const HIGH_ENTROPY_BASE64_CUTOFF: f64 = 4.8;
+    const MIN_DISTINCT_ALNUM: u32 = 32;
+
+    if entropy < HIGH_ENTROPY_BASE64_CUTOFF {
+        return false;
+    }
+    let Some(shape) = crate::decode::standard_base64_shape(value) else {
+        return false;
+    };
+    shape.distinct_alnum >= MIN_DISTINCT_ALNUM
+}
+
 /// Random-byte base64 decoy detector for the generic-secret path only.
 /// Returns true when `value` is a pure standard-base64-alphabet blob in the
 /// 40-80-char decoy band that base64-decodes to bytes which are neither valid
