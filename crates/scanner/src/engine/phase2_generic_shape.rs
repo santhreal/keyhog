@@ -87,6 +87,12 @@ impl CompiledScanner {
         if crate::pipeline::looks_like_shell_template_value(value) {
             return Some("shell_template_value");
         }
+        if crate::pipeline::looks_like_percent_encoded_markup(value) {
+            return Some("percent_encoded_markup");
+        }
+        if crate::pipeline::looks_like_html_event_handler_fragment(value) {
+            return Some("html_event_handler_fragment");
+        }
 
         // Variable-name filter: real secrets have mixed character classes.
         // Reject if the value looks like a code expression (has parens,

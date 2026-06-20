@@ -19,6 +19,7 @@ pub(crate) use postprocess::should_suppress_known_example_credential_with_source
 pub(crate) use postprocess::{contains_uuid_v4_substring, looks_like_email_address};
 pub(crate) use postprocess::{detector_weak_anchor, should_suppress_named_detector_finding_weak};
 pub(crate) use postprocess::{
+    looks_like_html_event_handler_fragment, looks_like_percent_encoded_markup,
     looks_like_public_version_identifier, looks_like_punctuation_decorated_identifier,
     looks_like_pure_identifier, looks_like_regex_literal_tail, looks_like_scheme_prefixed_uri,
     looks_like_shell_template_value, looks_like_train_case_prose_identifier,

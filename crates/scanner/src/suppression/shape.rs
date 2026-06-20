@@ -235,6 +235,65 @@ pub(crate) fn looks_like_shell_template_value(value: &str) -> bool {
     part_count >= 2 && !super::token_randomness::is_random_token(prefix)
 }
 
+/// URL-encoded markup/XSS probes (`%3Cscript%3E`, double-encoded
+/// `%253Cscript%253E`, etc.) are payload examples, not credentials. Keep this
+/// separate from URL-percent decode-through so real percent-encoded secrets
+/// still decode and fire.
+pub(crate) fn looks_like_percent_encoded_markup(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() < 8 || !bytes.contains(&b'%') {
+        return false;
+    }
+    let has_encoded_open = crate::ascii_ci::ci_find(bytes, b"%3c")
+        || crate::ascii_ci::ci_find(bytes, b"%253c")
+        || crate::ascii_ci::ci_find(bytes, b"%26lt%3b");
+    let has_encoded_close = crate::ascii_ci::ci_find(bytes, b"%3e")
+        || crate::ascii_ci::ci_find(bytes, b"%253e")
+        || crate::ascii_ci::ci_find(bytes, b"%26gt%3b");
+    if !(has_encoded_open && has_encoded_close) {
+        return false;
+    }
+    [
+        b"script".as_slice(),
+        b"iframe".as_slice(),
+        b"svg".as_slice(),
+        b"img".as_slice(),
+        b"onerror".as_slice(),
+        b"onfocus".as_slice(),
+        b"onclick".as_slice(),
+    ]
+    .iter()
+    .any(|needle| crate::ascii_ci::ci_find(bytes, needle))
+}
+
+/// HTML event-handler attribute fragments such as `onfocus=` are executable
+/// payload grammar, not secret material.
+pub(crate) fn looks_like_html_event_handler_fragment(value: &str) -> bool {
+    let Some(event) = value.strip_suffix('=') else {
+        return false;
+    };
+    if event.len() < 5 || event.len() > 24 || !event.bytes().all(|b| b.is_ascii_alphabetic()) {
+        return false;
+    }
+    const HTML_EVENTS: &[&str] = &[
+        "onblur",
+        "onchange",
+        "onclick",
+        "onerror",
+        "onfocus",
+        "oninput",
+        "onkeydown",
+        "onkeypress",
+        "onkeyup",
+        "onload",
+        "onmouseover",
+        "onsubmit",
+    ];
+    HTML_EVENTS
+        .iter()
+        .any(|known| event.eq_ignore_ascii_case(known))
+}
+
 /// True if `value` looks like a URI / URN / scheme-prefixed string.
 /// Captures these FP shapes seen in dogfood:
 ///   * `urn:shopify:params:oauth:token-type:online-access-token`

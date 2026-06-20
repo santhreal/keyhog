@@ -147,6 +147,12 @@ pub(crate) fn entropy_match_suppressed(
     if crate::pipeline::looks_like_shell_template_value(&entropy_match.value) {
         return true;
     }
+    if crate::pipeline::looks_like_percent_encoded_markup(&entropy_match.value) {
+        return true;
+    }
+    if crate::pipeline::looks_like_html_event_handler_fragment(&entropy_match.value) {
+        return true;
+    }
     // Scheme-prefixed URI / URN (`urn:shopify:...`,
     // `secret-token:<base64>`).
     if crate::pipeline::looks_like_scheme_prefixed_uri(&entropy_match.value) {

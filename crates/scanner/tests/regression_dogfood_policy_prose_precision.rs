@@ -77,6 +77,18 @@ fn shell_template_values_do_not_surface_as_literal_secrets() {
 }
 
 #[test]
+fn encoded_markup_and_html_event_fragments_do_not_surface_as_secrets() {
+    let scanner = scanner();
+    for value in [
+        "%253Cscript%253E",
+        "%3Cimg%20src=x%20onerror=alert%281%29%3E",
+    ] {
+        assert_no_exact_credential(&scanner, &format!("payload = \"{value}\""), value);
+    }
+    assert_no_exact_credential(&scanner, r#"token = "onfocus=""#, "onfocus=");
+}
+
+#[test]
 fn random_hyphenated_password_under_keyword_still_surfaces() {
     let scanner = scanner();
     let credential = "aapqhgn-qhuuc-trnmf";
