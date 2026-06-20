@@ -11,7 +11,7 @@ use super::super::phase2_anchor::{required_prefix_literals, AnchoredRegex};
 use super::super::phase2_first_bigram::FirstBigramSet;
 use super::super::CompiledScanner;
 use crate::types::CompiledPattern;
-use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind};
 use regex::Regex;
 use std::cell::RefCell;
 
@@ -31,6 +31,13 @@ impl CompiledScanner {
         self.confirmed_anchor_index
             .as_ref()
             .map_or(0, ConfirmedAnchorIndex::eligible_count)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn confirmed_anchor_kind_for_test(&self) -> Option<AhoCorasickKind> {
+        self.confirmed_anchor_index
+            .as_ref()
+            .map(ConfirmedAnchorIndex::anchor_kind)
     }
 }
 
@@ -80,6 +87,7 @@ impl ConfirmedAnchorIndex {
 
         let anchor_ac = match AhoCorasickBuilder::new()
             .match_kind(MatchKind::Standard)
+            .kind(Some(AhoCorasickKind::DFA))
             .ascii_case_insensitive(true)
             .build(&literals)
         {
@@ -106,6 +114,11 @@ impl ConfirmedAnchorIndex {
 
     pub(crate) fn eligible_count(&self) -> usize {
         self.eligible_count
+    }
+
+    #[cfg(test)]
+    pub(crate) fn anchor_kind(&self) -> AhoCorasickKind {
+        self.anchor_ac.kind()
     }
 
     #[inline]

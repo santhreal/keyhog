@@ -114,6 +114,17 @@ fn scan(scanner: &CompiledScanner, chunk: &Chunk) -> Vec<(String, String, String
 }
 
 #[test]
+fn confirmed_anchor_uses_dfa_for_reused_shared_catalog() {
+    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors load");
+    let scanner = CompiledScanner::compile(detectors).expect("scanner compiles");
+    assert_eq!(
+        keyhog_scanner::testing::confirmed_anchor_kind(&scanner),
+        Some(aho_corasick::AhoCorasickKind::DFA),
+        "confirmed shared-anchor collection is hot enough to require the DFA automaton"
+    );
+}
+
+#[test]
 fn confirmed_anchor_parity_default() {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors load");
     let anchored = CompiledScanner::compile(detectors.clone()).expect("anchored scanner compiles");

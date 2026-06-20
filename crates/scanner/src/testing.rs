@@ -551,6 +551,13 @@ pub(crate) fn confirmed_anchor_eligible_count(scanner: &crate::engine::CompiledS
 }
 
 #[cfg(test)]
+pub(crate) fn confirmed_anchor_kind(
+    scanner: &crate::engine::CompiledScanner,
+) -> Option<aho_corasick::AhoCorasickKind> {
+    scanner.confirmed_anchor_kind_for_test()
+}
+
+#[cfg(test)]
 pub(crate) fn set_no_candidate_gate(scanner: &crate::engine::CompiledScanner, mode: Option<bool>) {
     scanner.tuning().set_no_candidate_gate(mode);
 }
