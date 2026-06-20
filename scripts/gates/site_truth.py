@@ -9,6 +9,7 @@ import sys
 import tomllib
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
+sys.dont_write_bytecode = True
 sys.path.insert(0, str(REPO / "scripts"))
 
 from site_detector_catalog import detector_catalog_drift  # noqa: E402

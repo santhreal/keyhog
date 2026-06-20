@@ -627,6 +627,8 @@
     "severity": "high",
     "keywords": [
       "auth0",
+      "AUTH0_API_KEY",
+      "AUTH0_CLIENT_SECRET",
       "client_id",
       "client_secret",
       "domain",
