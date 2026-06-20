@@ -204,6 +204,7 @@ fn every_sufficient_detector_fires_on_a_rotated_key() {
 
     let mut total = 0usize;
     let mut surfaced = 0usize;
+    let mut skipped = 0usize;
     let mut failures: Vec<String> = Vec::new();
 
     for canon in &sufficient {
@@ -211,6 +212,7 @@ fn every_sufficient_detector_fires_on_a_rotated_key() {
             // No rotatable alphanumeric run of length >= 8 — e.g. a pure
             // structural token. Skip: there is nothing to rotate without
             // changing the shape. (Counted in `skipped`.)
+            skipped += 1;
             continue;
         };
         // Plant the rotated token in the SAME minimal context the contract used,
@@ -233,9 +235,16 @@ fn every_sufficient_detector_fires_on_a_rotated_key() {
 
     let ratio = surfaced as f64 / total.max(1) as f64;
     println!(
-        "rotated-key recall: {surfaced}/{total} = {ratio:.4}; {} failing detectors",
-        failures.len()
+        "rotated-key recall: {surfaced}/{total} = {ratio:.4}; {} skipped; {} failing detectors",
+        skipped,
+        failures.len(),
     );
+    if !failures.is_empty() {
+        println!(
+            "remaining rotated-key failures:\n  - {}",
+            join_capped(&failures, 20)
+        );
+    }
     assert!(
         total >= 150,
         "expected >= 150 rotatable credential-sufficient detectors, ran {total}"
@@ -255,6 +264,13 @@ fn every_sufficient_detector_fires_on_a_rotated_key() {
 /// when there is no rotatable run. Preserves prefixes/suffixes/separators so the
 /// detector's structural anchor is untouched.
 fn rotate_body(cred: &str) -> Option<String> {
+    if is_non_secret_literal_shape(cred) {
+        return None;
+    }
+    if let Some(rotated) = rotate_embedded_checksum_token(cred) {
+        return Some(rotated);
+    }
+
     let bytes = cred.as_bytes();
     let mut runs: Vec<(usize, usize)> = Vec::new(); // (start, len)
     let mut run_start = None;
@@ -278,32 +294,201 @@ fn rotate_body(cred: &str) -> Option<String> {
             runs.push((s, len));
         }
     }
-    let (mut start, mut len) = *runs.last()?;
-    if start == 0 && len >= 12 {
+    while let Some((mut start, mut len)) = runs.pop() {
+        let fixed_prefix_len = no_separator_fixed_prefix_len(cred, start, len);
+        if fixed_prefix_len > 0 {
+            start += fixed_prefix_len;
+            len = len.saturating_sub(fixed_prefix_len);
+        }
+        if len < 8 {
+            continue;
+        }
+        let mut out = cred.as_bytes().to_vec();
+        rotate_alnum_run_preserving_grammar(&mut out[start..start + len]);
+        let rotated = String::from_utf8(out).ok()?;
+        if rotated != cred {
+            return Some(rotated);
+        }
+    }
+    None
+}
+
+fn is_non_secret_literal_shape(cred: &str) -> bool {
+    cred.contains("NEVER__MATCH__K8S_DISABLED")
+        || cred.eq_ignore_ascii_case("INTERNETOFTHINGS.ibmcloud.com")
+}
+
+fn no_separator_fixed_prefix_len(cred: &str, start: usize, len: usize) -> usize {
+    if start != 0 || len < 12 {
+        return 0;
+    }
+    if cred.starts_with("ABSKQmVkcm9ja0FQSUtleS") {
+        return "ABSKQmVkcm9ja0FQSUtleS".len();
+    }
+    if cred.starts_with("AKCp8") {
+        return "AKCp8".len();
+    }
+    if len >= 12 {
         // No-separator tokens often carry fixed detector prefixes inside the
         // same alphanumeric run (`AKIA...`, `AIza...`). Preserve that structural
         // prefix and rotate the body bytes behind it, matching the test's
         // contract instead of accidentally generating a different token shape.
-        start += 4;
-        len -= 4;
+        return 4;
     }
-    (len >= 8).then_some(())?;
-    let mut out = cred.as_bytes().to_vec();
-    for (k, b) in out[start..start + len].iter_mut().enumerate() {
-        // Deterministic rotation within the same class so digits stay digits,
-        // upper stays upper, lower stays lower (preserves shape constraints).
+    0
+}
+
+fn rotate_embedded_checksum_token(cred: &str) -> Option<String> {
+    if let Some(payload) = cred.strip_prefix("ghp_") {
+        if payload.len() == 36 && payload.as_bytes().iter().all(u8::is_ascii_alphanumeric) {
+            let mut body = payload[..30].as_bytes().to_vec();
+            rotate_alnum_run_preserving_grammar(&mut body);
+            let body = String::from_utf8(body).ok()?;
+            return Some(format!(
+                "ghp_{body}{}",
+                crc32_base62_suffix(body.as_bytes(), 6)
+            ));
+        }
+    }
+
+    if let Some(payload) = cred.strip_prefix("npm_") {
+        if payload.len() == 36 && payload.as_bytes().iter().all(u8::is_ascii_alphanumeric) {
+            let mut body = payload[..30].as_bytes().to_vec();
+            rotate_alnum_run_preserving_grammar(&mut body);
+            let body = String::from_utf8(body).ok()?;
+            return Some(format!(
+                "npm_{body}{}",
+                crc32_base62_suffix(body.as_bytes(), 6)
+            ));
+        }
+    }
+
+    if let Some(payload) = cred.strip_prefix("github_pat_") {
+        let Some((left, right)) = payload.split_once('_') else {
+            return None;
+        };
+        if left.len() == 22
+            && right.len() == 59
+            && left.as_bytes().iter().all(u8::is_ascii_alphanumeric)
+            && right.as_bytes().iter().all(u8::is_ascii_alphanumeric)
+        {
+            let mut right_body = right[..53].as_bytes().to_vec();
+            rotate_alnum_run_preserving_grammar(&mut right_body);
+            let right_body = String::from_utf8(right_body).ok()?;
+            return Some(format!(
+                "github_pat_{left}_{right_body}{}",
+                crc32_base62_suffix(right_body.as_bytes(), 6)
+            ));
+        }
+    }
+
+    None
+}
+
+fn rotate_alnum_run_preserving_grammar(run: &mut [u8]) {
+    let hex_lower = run
+        .iter()
+        .all(|b| b.is_ascii_digit() || matches!(*b, b'a'..=b'f'));
+    let hex_upper = run
+        .iter()
+        .all(|b| b.is_ascii_digit() || matches!(*b, b'A'..=b'F'));
+
+    for (k, b) in run.iter_mut().enumerate() {
         let shift = ((k * 7 + 3) % 23) as u8;
         if b.is_ascii_digit() {
             *b = b'0' + ((*b - b'0' + shift) % 10);
+        } else if hex_lower && matches!(*b, b'a'..=b'f') {
+            *b = b'a' + ((*b - b'a' + shift) % 6);
+        } else if hex_upper && matches!(*b, b'A'..=b'F') {
+            *b = b'A' + ((*b - b'A' + shift) % 6);
         } else if b.is_ascii_uppercase() {
             *b = b'A' + ((*b - b'A' + shift) % 26);
         } else if b.is_ascii_lowercase() {
             *b = b'a' + ((*b - b'a' + shift) % 26);
         }
     }
-    // Guarantee the rotated body actually differs from the original.
-    let rotated = String::from_utf8(out).ok()?;
-    (rotated != cred).then_some(rotated)
+}
+
+fn crc32_base62_suffix(data: &[u8], width: usize) -> String {
+    base62_encode_u32(crc32(data), width)
+}
+
+fn crc32(data: &[u8]) -> u32 {
+    const TABLE: [u32; 256] = {
+        let mut table = [0u32; 256];
+        let mut i = 0;
+        while i < 256 {
+            let mut crc = i as u32;
+            let mut j = 0;
+            while j < 8 {
+                if crc & 1 != 0 {
+                    crc = 0xEDB88320 ^ (crc >> 1);
+                } else {
+                    crc >>= 1;
+                }
+                j += 1;
+            }
+            table[i] = crc;
+            i += 1;
+        }
+        table
+    };
+
+    let mut crc: u32 = 0xFFFF_FFFF;
+    for &byte in data {
+        crc = TABLE[((crc ^ byte as u32) & 0xFF) as usize] ^ (crc >> 8);
+    }
+    crc ^ 0xFFFF_FFFF
+}
+
+fn base62_encode_u32(mut value: u32, width: usize) -> String {
+    const BASE62_DIGITS: &[u8; 62] =
+        b"0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    if value == 0 {
+        return "0".repeat(width);
+    }
+    let mut rev = Vec::with_capacity(width.max(6));
+    while value > 0 {
+        rev.push(BASE62_DIGITS[(value % 62) as usize] as char);
+        value /= 62;
+    }
+    while rev.len() < width {
+        rev.push('0');
+    }
+    rev.reverse();
+    rev.into_iter().collect()
+}
+
+#[test]
+fn rotated_key_generator_preserves_hex_anchors_and_checksums() {
+    let activepieces = rotate_body("ap_0123456789abcdef0123456789abcdef").unwrap();
+    assert!(activepieces.starts_with("ap_"));
+    assert!(
+        activepieces["ap_".len()..]
+            .bytes()
+            .all(|b| b.is_ascii_digit() || matches!(b, b'a'..=b'f')),
+        "{activepieces}"
+    );
+
+    let bedrock = rotate_body(
+        "ABSKQmVkcm9ja0FQSUtleSYGcEYmTIBr6ysnXHravYjroDShigIQLS0PNHDWjrpil9o3qRwpbzFl0vePrls1cDN8QvUdbqJwNSlzq23meO5ACW3zsuzeDQgwLd92dO3gFCPF",
+    )
+    .unwrap();
+    assert!(bedrock.starts_with("ABSKQmVkcm9ja0FQSUtleS"));
+
+    let ghp = rotate_body("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").unwrap();
+    let ghp_payload = ghp.strip_prefix("ghp_").unwrap();
+    assert_eq!(
+        &ghp_payload[30..],
+        crc32_base62_suffix(ghp_payload[..30].as_bytes(), 6)
+    );
+
+    let npm = rotate_body("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").unwrap();
+    let npm_payload = npm.strip_prefix("npm_").unwrap();
+    assert_eq!(
+        &npm_payload[30..],
+        crc32_base62_suffix(npm_payload[..30].as_bytes(), 6)
+    );
 }
 
 /// Population floor + visibility: how many detectors are credential-sufficient
