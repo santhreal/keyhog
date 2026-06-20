@@ -33,6 +33,22 @@ fn mib_per_second(bytes: usize, elapsed: std::time::Duration) -> f64 {
     bytes as f64 / (1024.0 * 1024.0) / elapsed.as_secs_f64()
 }
 
+fn report_phase2_gpu_admission_loss(error: impl std::fmt::Display) {
+    let error = error.to_string();
+    static PHASE2_GPU_ADMISSION_LOSS_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+    if PHASE2_GPU_ADMISSION_LOSS_WARNED.set(()).is_ok() {
+        eprintln!(
+            "keyhog: phase-2 GPU regex-DFA admission failed ({error}); CPU admission remains \
+             authoritative for this scan. GPU speed evidence is incomplete."
+        );
+    }
+    tracing::warn!(
+        target: "keyhog::gpu",
+        %error,
+        "phase-2 GPU regex-DFA admission failed; CPU admission remains authoritative",
+    );
+}
+
 impl CompiledScanner {
     pub(crate) fn phase2_gpu_dfa_catalog(
         &self,
@@ -271,11 +287,7 @@ impl CompiledScanner {
                             match catalog.scan_admission_chunks(&**backend, gpu_chunks) {
                                 Ok(admission) => Some(admission),
                                 Err(error) => {
-                                    tracing::warn!(
-                                        target: "keyhog::gpu",
-                                        %error,
-                                        "phase-2 GPU regex-DFA admission failed; CPU admission remains authoritative"
-                                    );
+                                    report_phase2_gpu_admission_loss(error);
                                     None
                                 }
                             }
@@ -294,11 +306,7 @@ impl CompiledScanner {
                                 Some(expand_phase2_gpu_admission(admission, &indices, full_len))
                             }
                             Err(error) => {
-                                tracing::warn!(
-                                    target: "keyhog::gpu",
-                                    %error,
-                                    "phase-2 GPU regex-DFA admission failed; CPU admission remains authoritative"
-                                );
+                                report_phase2_gpu_admission_loss(error);
                                 None
                             }
                         }

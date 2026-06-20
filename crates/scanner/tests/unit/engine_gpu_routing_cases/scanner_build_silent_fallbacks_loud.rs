@@ -54,7 +54,11 @@ fn phase2_prefilter_compile_failures_warn() {
         phase2_hs.contains("HS always-active prefilter received out-of-range phase-2 index"),
         "Hyperscan always-active prefilter must warn before ignoring corrupt phase-2 indices"
     );
-    let phase2_gpu_dfa = engine_src("phase2_gpu_dfa.rs");
+    let phase2_gpu_dfa = [
+        engine_src("phase2_gpu_dfa.rs"),
+        engine_src("phase2_gpu_dfa/candidates.rs"),
+    ]
+    .join("\n");
     assert!(
         phase2_gpu_dfa.contains(
             "phase-2 GPU regex-DFA admission received out-of-range always-active pattern index"
@@ -69,6 +73,25 @@ fn phase2_prefilter_compile_failures_warn() {
     assert!(
         src.contains("tracing::warn!("),
         "phase2_prefilter.rs must contain tracing::warn! calls"
+    );
+}
+
+#[test]
+fn phase2_gpu_admission_loss_is_operator_visible() {
+    let src = engine_src("gpu_region_dispatch.rs");
+    assert!(
+        src.contains("fn report_phase2_gpu_admission_loss")
+            && src.contains("PHASE2_GPU_ADMISSION_LOSS_WARNED")
+            && src.contains("eprintln!(")
+            && src.contains("GPU speed evidence is incomplete")
+            && src.contains("CPU admission remains authoritative"),
+        "phase-2 GPU regex-DFA admission loss must be visible to normal CLI stderr, not only tracing"
+    );
+    assert!(
+        src.matches("report_phase2_gpu_admission_loss(error);")
+            .count()
+            >= 2,
+        "both full-batch and subset phase-2 GPU admission failures must route through the visible reporter"
     );
 }
 
