@@ -35,21 +35,20 @@ multiline = []
 simd = ["dep:hyperscan"]  # Vectorscan/Hyperscan SIMD regex compilation (builds HS database)
 simd_scan = ["simd"]      # Enable SIMD scan path (experimental — AC+fallback is faster for <2K patterns)
 simdsieve = ["dep:simdsieve"]  # SIMD-accelerated prefilter for top 8 patterns (50 GB/s)
-# GPU dispatch stack: wgpu cross-platform driver (+ pollster/bytemuck), the
-# vyre wgpu driver, the vyre runtime megakernel, and on Linux the vyre CUDA
-# driver. cudarc still loads libcuda/libnvrtc DYNAMICALLY at runtime so a
-# `gpu`-on build that lands on a driverless host falls back to wgpu and a
-# driverless+adapter-less host falls all the way back to the CPU path. Turning
-# the feature OFF removes wgpu/vulkan/EGL linkage entirely — the lean CI
-# path. `vyre`/`vyre_libs` stay on either way because their CPU primitives
-# are woven into the scan types.
+# GPU dispatch stack: wgpu cross-platform driver (+ pollster/bytemuck), Vyre's
+# GPU literal-set region-presence runtime, and on Linux the Vyre CUDA driver.
+# cudarc still loads libcuda/libnvrtc DYNAMICALLY at runtime, while GPU
+# availability and any CPU degradation are reported by the engine/autoroute
+# result path instead of being hidden at feature selection time. Turning the
+# feature OFF removes wgpu/vulkan/EGL linkage entirely — the lean CI path.
+# `vyre`/`vyre_libs` stay on either way because their CPU primitives are woven
+# into the scan types.
 #
-# `gpu` IMPLIES `simd`: the megakernel dispatch path reuses the SIMD prefilter
-# for its phase-2 no-hit tail (see megakernel_dispatch.rs and scan.rs
-# `scan_coalesced_phase2`). A gpu-without-simd build would leave the entire
-# megakernel stack dead — there is no coherent GPU detection path without the
-# SIMD tail, so the combination is disallowed at the feature level rather than
-# silently degraded.
+# `gpu` IMPLIES `simd`: the region-presence producer shares the coalesced
+# phase-2 validation tail with SIMD (see scan_coalesced.rs
+# `scan_coalesced_phase2`). A gpu-without-simd build would compile the trigger
+# producer without the validation path KeyHog ships, so the combination is
+# disallowed at the feature level rather than silently degraded.
 gpu = [
     "simd",
     "dep:wgpu",
@@ -58,9 +57,9 @@ gpu = [
     "dep:vyre-driver-wgpu",
     "dep:vyre-runtime",
     "dep:vyre-driver-cuda",
-    # Persistent batch megakernel: the DFA rule-catalog dispatcher
-    # (BatchDispatcher / FileBatch / HitRecord) on both the runtime and the wgpu
-    # driver. This is the on-GPU detection path (see docs/EXECUTION_PLAN.md).
+    # Vyre's batch GPU ABI is exposed under this feature name. KeyHog's
+    # production route uses the literal-set region-presence API, not the retired
+    # per-rule route (see docs/EXECUTION_PLAN.md).
     "vyre-driver-wgpu/megakernel-batch",
 ]
 # CUDA acquisition lives inside the `gpu` feature and is exercised on Linux

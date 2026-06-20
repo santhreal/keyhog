@@ -90,6 +90,7 @@ def check_current_claims(violations: list[str]) -> None:
     claim_paths = [
         ROOT / "README.md",
         ROOT / "scripts/dogfood-windows.ps1",
+        ROOT / "crates/scanner/Cargo.toml",
         *(ROOT / "docs/src").rglob("*.md"),
         *(ROOT / "crates/cli/src").rglob("*.rs"),
         *(ROOT / "crates/scanner/src").rglob("*.rs"),
@@ -117,6 +118,13 @@ def check_current_claims(violations: list[str]) -> None:
                 continue
             if re.search(pattern, src, flags=re.IGNORECASE):
                 fail(violations, f"{reason}: {rel_path}")
+
+
+def check_install_fixture_backend_labels(violations: list[str]) -> None:
+    fixture = "tests/install/linux/edge_cases.sh"
+    src = text(fixture)
+    if "gpu-zero-copy" in src:
+        fail(violations, f"installer fixture uses retired GPU backend label: {fixture}")
 
 
 def check_required_evidence_wiring(violations: list[str]) -> None:
@@ -159,6 +167,7 @@ def main() -> int:
     check_no_generated_cache_clutter(violations)
     check_no_loc_cap_bloat(violations)
     check_current_claims(violations)
+    check_install_fixture_backend_labels(violations)
     check_required_evidence_wiring(violations)
     check_complexity_budget(violations)
 

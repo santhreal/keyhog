@@ -170,7 +170,7 @@ write_mock_autoroute_cache() {
     [
       { "bytes_bucket": 12, "chunks_bucket": 1, "max_file_bucket": 12, "pattern_bucket": 9, "decode_density_bucket": 1, "source_class_hash": 2 },
       {
-        "backend": "gpu-zero-copy",
+        "backend": "gpu-region-presence",
         "sample_bytes": 8388608,
         "sample_chunks": 1,
         "correctness_digest": 2,
@@ -778,7 +778,7 @@ expect_match  "6.3a minisign verified line"   "Minisign signature verified" "$ou
 expect_exec   "6.4 binary is executable"      "$h/.local/bin/keyhog"
 expect_match  "6.4a calibration summary table printed" "Autoroute calibration decisions" "$out"
 expect_match  "6.4b calibration summary reports persisted decision count" "decisions persisted: 2" "$out"
-expect_match  "6.4c calibration summary shows backend margin" "gpu-zero-copy.*7\\.0ms" "$out"
+expect_match  "6.4c calibration summary shows backend margin" "gpu-region-presence.*7\\.0ms" "$out"
 rm -rf "$h"
 # 6.4d missing .minisig refuses by default.
 h=$(newhome)
