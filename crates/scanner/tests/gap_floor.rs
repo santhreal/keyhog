@@ -1,5 +1,7 @@
 #![allow(clippy::needless_borrow, clippy::needless_update, clippy::useless_vec)]
 
+#[path = "gap/docs_megakernel_env_claim_matches_engine.rs"]
+mod docs_megakernel_env_claim_matches_engine;
 #[path = "gap/r5_chunk_boundary_adversarial_floor_12.rs"]
 mod r5_chunk_boundary_adversarial_floor_12;
 #[path = "gap/r5_chunk_boundary_not_only_aws.rs"]
