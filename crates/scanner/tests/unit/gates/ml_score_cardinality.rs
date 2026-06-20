@@ -1,10 +1,10 @@
 #[test]
 fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
-    let postprocess = std::fs::read_to_string(concat!(
+    let ml_postprocess = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/src/engine/scan_postprocess.rs"
+        "/src/engine/scan_postprocess/ml.rs"
     ))
-    .expect("scan_postprocess.rs readable");
+    .expect("scan_postprocess/ml.rs readable");
     let gpu = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/gpu.rs"))
         .expect("gpu.rs readable");
     let backend =
@@ -12,13 +12,13 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
             .expect("gpu/backend.rs readable");
 
     assert!(
-        postprocess.contains("fn score_ml_pending_cpu")
-            && postprocess.contains("crate::ml_scorer::score_with_config(")
-            && postprocess.contains("scores.len() == pending_matches.len()")
-            && postprocess.contains(
+        ml_postprocess.contains("fn score_ml_pending_cpu")
+            && ml_postprocess.contains("crate::ml_scorer::score_with_config(")
+            && ml_postprocess.contains("scores.len() == pending_matches.len()")
+            && ml_postprocess.contains(
                 "ML score count mismatch; recomputing CPU MoE scores before confidence blending"
             )
-            && postprocess.contains("pending_matches.into_iter().zip(scores.into_iter())"),
+            && ml_postprocess.contains("pending_matches.into_iter().zip(scores.into_iter())"),
         "postprocess ML scoring must preserve every pending finding when score cardinality drifts"
     );
     assert!(

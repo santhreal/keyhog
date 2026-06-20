@@ -17,7 +17,7 @@
 //!             • windowing (scan_windowed / triggered windows)               windowed.rs
 //!             • per-chunk extraction (scan_prepared_with_triggered)        backend_triggered.rs
 //!                 confirmed → phase2 capture → generic → entropy → ML
-//!             • post-process: suppression, dedup, confidence, decode       scan_postprocess.rs
+//!             • post-process: suppression, dedup, confidence, decode/ML    scan_postprocess.rs
 //!             • cross-chunk boundary reassembly (scan_chunk_boundaries)    boundary.rs
 //! ```
 //!
@@ -43,7 +43,7 @@
 //! - confirmed-pattern extraction ................................... extract.rs
 //! - phase-2 prefilter + keyword/anchor/generic/entropy passes ...... phase2*.rs
 //! - hot-pattern fast path (simdsieve) ............................. hot_patterns.rs
-//! - post-process (suppression, dedup, confidence, decode recursion). scan_postprocess.rs, process.rs
+//! - post-process (suppression, dedup, confidence, decode/ML) ...... scan_postprocess.rs, scan_postprocess/*
 //! - cross-chunk seam reassembly ................................... boundary.rs
 //! - loud GPU-degrade / fail-closed helpers ....................... gpu_forced.rs
 //! - compile (build the scanner, acquire backends) ................. compile.rs
@@ -98,6 +98,9 @@ mod scan_no_hit_reassembly;
 mod scan_postprocess;
 #[path = "scan_postprocess/fragments.rs"]
 mod scan_postprocess_fragments;
+#[cfg(feature = "ml")]
+#[path = "scan_postprocess/ml.rs"]
+mod scan_postprocess_ml;
 #[path = "scan_postprocess/profile.rs"]
 mod scan_postprocess_profile;
 #[path = "scan_postprocess/suffix_gate.rs"]

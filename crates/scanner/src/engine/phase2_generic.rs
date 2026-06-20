@@ -354,7 +354,7 @@ impl CompiledScanner {
                 let confidence = (base_conf + entropy_boost + length_boost).min(0.95);
 
                 // Route through the SAME canonical post-ML penalty pipeline the
-                // ML / named-detector emit path uses (scan_postprocess.rs). The
+                // ML / named-detector emit path uses (scan_postprocess/ml.rs). The
                 // generic-secret fallback historically emitted via `push_match`
                 // and BYPASSED it, so the random-base64 / encoded-binary /
                 // placeholder blob penalties (×0.02) never reached this path -
