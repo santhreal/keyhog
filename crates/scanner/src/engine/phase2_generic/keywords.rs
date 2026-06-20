@@ -93,6 +93,33 @@ pub(crate) fn collect_generic_keyword_lines(text: &str, out: &mut Vec<usize>) {
     }
 }
 
+/// Collect zero-based line indexes from trusted generic-stem match positions.
+///
+/// The GPU region path supplies these positions only when its literal haystack
+/// is byte-identical to the preprocessed text, so this helper performs mapping
+/// and deduplication only. Text scanning stays in [`collect_generic_keyword_lines`].
+pub(crate) fn collect_generic_keyword_lines_from_positions(
+    line_offsets: &[usize],
+    positions: &[u32],
+    out: &mut Vec<usize>,
+) {
+    out.clear();
+    if line_offsets.is_empty() {
+        return;
+    }
+    for &pos in positions {
+        let pos = pos as usize;
+        let line_idx = line_offsets
+            .partition_point(|&line_start| line_start <= pos)
+            .saturating_sub(1);
+        if line_idx < line_offsets.len() {
+            out.push(line_idx);
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+}
+
 #[inline]
 fn generic_stem_matches_at(bytes: &[u8], start: usize, stem_set: &GenericKeywordStemSet) -> bool {
     for &stem_idx in &stem_set.by_first[bytes[start] as usize] {

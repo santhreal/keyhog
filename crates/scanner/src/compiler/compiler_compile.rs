@@ -34,12 +34,14 @@ pub(crate) fn build_gpu_literals(
     phase2_keywords: &[String],
     phase2_always_anchor_literals: &[String],
     confirmed_anchor_literals: &[String],
+    generic_keyword_literals: &[String],
 ) -> Option<std::sync::Arc<Vec<Vec<u8>>>> {
     if ac_literals
         .iter()
         .chain(phase2_keywords)
         .chain(phase2_always_anchor_literals)
         .chain(confirmed_anchor_literals)
+        .chain(generic_keyword_literals)
         .any(String::is_empty)
     {
         tracing::warn!("GPU literal set contains an empty literal; disabling GPU literal scan");
@@ -63,6 +65,7 @@ pub(crate) fn build_gpu_literals(
         .chain(phase2_keywords)
         .chain(phase2_always_anchor_literals)
         .chain(confirmed_anchor_literals)
+        .chain(generic_keyword_literals)
         .map(|literal| literal.to_ascii_lowercase().into_bytes())
         .collect();
     if literals.is_empty() {

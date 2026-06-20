@@ -50,6 +50,8 @@ impl CompiledScanner {
             );
             SCAN_INNER_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
-        self.scan_prepared_with_triggered(prepared, backend, triggered, deadline, None, None, None)
+        self.scan_prepared_with_triggered(
+            prepared, backend, triggered, deadline, None, None, None, None,
+        )
     }
 }

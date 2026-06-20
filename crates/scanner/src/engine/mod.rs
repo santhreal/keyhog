@@ -255,6 +255,10 @@ pub struct CompiledScanner {
     /// positioned candidate accelerator; the CPU confirmed extractor remains
     /// authoritative whenever the GPU candidate list is unavailable or capped.
     pub(crate) confirmed_anchor_literal_count: usize,
+    /// GPU literal rows appended after confirmed-anchor rows. These mirror the
+    /// generic assignment bridge's compact keyword stems and are used only as
+    /// positioned line-candidate hints for that bridge.
+    pub(crate) generic_keyword_literal_count: usize,
     pub(crate) phase2_always_active_indices: Vec<usize>,
     /// Combined-RegexSet prefilter over `phase2_always_active_indices`. When
     /// present, the per-chunk phase-2 capture scan runs one linear set pass instead of

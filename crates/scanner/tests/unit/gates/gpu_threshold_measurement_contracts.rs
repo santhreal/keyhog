@@ -42,7 +42,7 @@ struct GpuRegionPerfPoint {
     coalesce_s: f64,
     coalesce_mib_s: f64,
     dispatch_s: f64,
-    confirmed_anchor_gpu_s: f64,
+    positioned_literal_gpu_s: f64,
     phase2_gpu_s: f64,
     phase2_cpu_s: f64,
     gpu_presence_bits: u64,
@@ -51,6 +51,9 @@ struct GpuRegionPerfPoint {
     confirmed_anchor_gpu_complete: bool,
     confirmed_anchor_candidate_rows: u64,
     confirmed_anchor_candidates: u64,
+    generic_keyword_gpu_complete: bool,
+    generic_keyword_candidate_rows: u64,
+    generic_keyword_candidates: u64,
 }
 
 fn threshold_u64(name: &str) -> u64 {
@@ -83,7 +86,7 @@ fn rtx5090_region_perf_trace_records_direct_source_and_8mib_not_10x() {
     let measurement: GpuRegionPerfTrace =
         toml::from_str(raw).expect("parse RTX 5090 GPU region perf trace");
 
-    assert_eq!(measurement.schema_version, 3);
+    assert_eq!(measurement.schema_version, 4);
     assert_eq!(measurement.gpu, "NVIDIA GeForce RTX 5090");
     assert_eq!(measurement.backend, "region-presence");
     assert_eq!(measurement.payload, "benign-sparse-single-chunk");
@@ -119,13 +122,10 @@ fn rtx5090_region_perf_trace_records_direct_source_and_8mib_not_10x() {
             "{mib} MiB direct-source admission should report memory-rate evidence"
         );
         assert!(point.dispatch_s > 0.0);
-        assert!(
-            point.confirmed_anchor_gpu_s > 0.0,
-            "{mib} MiB trace must account for positioned confirmed-anchor GPU candidate collection"
-        );
+        assert!(point.positioned_literal_gpu_s > 0.0);
         assert_eq!(point.phase2_gpu_s, 0.0);
         assert!(point.phase2_cpu_s > 0.0);
-        assert_eq!(point.gpu_presence_bits, 39);
+        assert_eq!(point.gpu_presence_bits, 40);
         assert_eq!(point.trigger_bits, 75);
         assert!(point.phase2_gpu_complete);
         assert!(point.confirmed_anchor_gpu_complete);
@@ -133,6 +133,12 @@ fn rtx5090_region_perf_trace_records_direct_source_and_8mib_not_10x() {
         assert!(
             point.confirmed_anchor_candidates > 0,
             "{mib} MiB trace must prove confirmed-anchor candidates were produced by GPU"
+        );
+        assert!(point.generic_keyword_gpu_complete);
+        assert_eq!(point.generic_keyword_candidate_rows, 1);
+        assert!(
+            point.generic_keyword_candidates > 0,
+            "{mib} MiB trace must prove generic keyword candidates were produced by GPU"
         );
     }
 
@@ -156,6 +162,10 @@ fn rtx5090_region_perf_trace_records_direct_source_and_8mib_not_10x() {
     assert!(
         eight.confirmed_anchor_candidates >= 1_000,
         "8 MiB sparse payload should keep the confirmed-anchor GPU candidate proof complete"
+    );
+    assert!(
+        eight.generic_keyword_candidates >= 100,
+        "8 MiB sparse payload should keep the generic keyword GPU candidate proof complete"
     );
 }
 

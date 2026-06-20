@@ -27,6 +27,7 @@ pub fn scan_coalesced_phase2_with_admission_for_test(
         None,
         None,
         None,
+        None,
     )
 }
 

@@ -193,6 +193,12 @@ impl CompiledScanner {
         let confirmed_anchor_literal_count = confirmed_anchor_index
             .as_ref()
             .map_or(0, |index| index.anchor_literals().len());
+        let generic_keyword_literals =
+            super::phase2_generic::keywords::generic_keyword_prefilter_stems()
+                .into_iter()
+                .map(str::to_owned)
+                .collect::<Vec<_>>();
+        let generic_keyword_literal_count = generic_keyword_literals.len();
 
         #[cfg(feature = "gpu")]
         let gpu_literals = if gpu_backend.is_some() {
@@ -207,6 +213,7 @@ impl CompiledScanner {
                 &phase2_keywords,
                 phase2_always_anchor_literals,
                 confirmed_anchor_literals,
+                &generic_keyword_literals,
             )
         } else {
             None
@@ -422,6 +429,7 @@ impl CompiledScanner {
             phase2_keyword_count,
             phase2_always_anchor_literal_count,
             confirmed_anchor_literal_count,
+            generic_keyword_literal_count,
             phase2_always_active_indices,
             phase2_always_active_prefilter,
             phase2_anchor_index,

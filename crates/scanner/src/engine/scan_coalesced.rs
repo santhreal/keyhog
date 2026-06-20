@@ -216,7 +216,7 @@ impl CompiledScanner {
         chunks: &[keyhog_core::Chunk],
         triggers: Vec<Option<Vec<u64>>>,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
-        self.scan_coalesced_phase2_with_admission(chunks, triggers, None, None, None, None)
+        self.scan_coalesced_phase2_with_admission(chunks, triggers, None, None, None, None, None)
     }
 
     #[cfg(feature = "simd")]
@@ -269,6 +269,7 @@ impl CompiledScanner {
         phase2_keyword_hints: Option<&[Vec<u32>]>,
         phase2_always_anchor_presence: Option<&[bool]>,
         confirmed_anchor_literal_matches: Option<&[Vec<(u32, u32)>]>,
+        generic_keyword_positions: Option<&[Vec<u32>]>,
     ) -> Vec<Vec<keyhog_core::RawMatch>> {
         use crate::hw_probe::ScanBackend;
         use rayon::prelude::*;
@@ -288,6 +289,9 @@ impl CompiledScanner {
                 let confirmed_anchor_matches = confirmed_anchor_literal_matches
                     .and_then(|rows| rows.get(chunk_index))
                     .map(Vec::as_slice);
+                let generic_keyword_positions = generic_keyword_positions
+                    .and_then(|rows| rows.get(chunk_index))
+                    .map(Vec::as_slice);
                 if let Some(triggered) = triggered_opt {
                     let mut matches = if chunk.data.len() > MAX_SCAN_CHUNK_BYTES {
                         self.scan_windowed_with_triggered(
@@ -297,6 +301,7 @@ impl CompiledScanner {
                             keyword_hints,
                             always_anchor_present,
                             confirmed_anchor_matches,
+                            generic_keyword_positions,
                         )
                     } else {
                         let prepared = self.prepare_chunk(chunk);
@@ -308,6 +313,7 @@ impl CompiledScanner {
                             keyword_hints,
                             always_anchor_present,
                             confirmed_anchor_matches,
+                            generic_keyword_positions,
                         )
                     };
                     self.post_process_coalesced_matches(chunk, &mut matches);
@@ -321,9 +327,12 @@ impl CompiledScanner {
                 let admitted_by_phase2_keyword_hint =
                     keyword_hints.is_some_and(|hints| !hints.is_empty());
                 let admitted_by_phase2_always_anchor = always_anchor_present.unwrap_or(false); // LAW10: absent GPU row does not skip; CPU no-hit admission remains authoritative.
+                let admitted_by_generic_keyword_hint =
+                    generic_keyword_positions.is_some_and(|positions| !positions.is_empty());
                 if !admitted_by_phase2_gpu
                     && !admitted_by_phase2_keyword_hint
                     && !admitted_by_phase2_always_anchor
+                    && !admitted_by_generic_keyword_hint
                     && !self.should_scan_no_hit_chunk(chunk)
                 {
                     if let Some(matches) = self.decode_only_coalesced_matches(chunk) {
@@ -349,6 +358,7 @@ impl CompiledScanner {
                     keyword_hints,
                     always_anchor_present,
                     confirmed_anchor_matches,
+                    generic_keyword_positions,
                 );
                 self.record_and_reassemble_for_no_hit_chunk(chunk, &mut matches);
                 self.post_process_coalesced_matches(chunk, &mut matches);

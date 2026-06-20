@@ -13,6 +13,7 @@ impl CompiledScanner {
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_anchor_present: Option<bool>,
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
+        generic_keyword_positions: Option<&[u32]>,
     ) -> Vec<RawMatch> {
         // Borrow cached line offsets; downstream consumers take `&[usize]`.
         let line_offsets: &[usize] = prepared.line_offsets();
@@ -42,6 +43,8 @@ impl CompiledScanner {
         let phase2_always_anchor_present = phase2_always_anchor_present
             .filter(|_| prepared.preprocessed.text.as_bytes() == prepared.chunk.data.as_bytes());
         let confirmed_anchor_literal_matches = confirmed_anchor_literal_matches
+            .filter(|_| prepared.preprocessed.text.as_bytes() == prepared.chunk.data.as_bytes());
+        let generic_keyword_positions = generic_keyword_positions
             .filter(|_| prepared.preprocessed.text.as_bytes() == prepared.chunk.data.as_bytes());
 
         // No-trigger fast path: when no AC pattern fired, the entire
@@ -152,6 +155,7 @@ impl CompiledScanner {
                 &documentation_lines,
                 prepared.chunk,
                 &mut scan_state,
+                generic_keyword_positions,
             );
         }
 
@@ -358,6 +362,7 @@ impl CompiledScanner {
             + self.phase2_keyword_count
             + self.phase2_always_anchor_literal_count
             + self.confirmed_anchor_literal_count
+            + self.generic_keyword_literal_count
     }
 
     pub(super) fn gpu_presence_stray_tail_bits(&self, presence: &[u32]) -> Option<(usize, u32)> {
@@ -612,6 +617,32 @@ mod tests {
                 .iter()
                 .all(|&word| word == 0),
             "confirmed-anchor position bits must not set detector trigger bits"
+        );
+    }
+
+    #[test]
+    fn appended_gpu_presence_generic_keyword_bits_are_position_hints_only() {
+        let mut scanner = scanner_with_detector_and_phase2_keyword_and_anchor();
+        scanner.confirmed_anchor_literal_count = 1;
+        scanner.generic_keyword_literal_count = 1;
+        let mut row = vec![0u32; scanner.gpu_presence_literal_count().div_ceil(32).max(1)];
+        let generic_keyword_literal_idx = scanner.ac_map.len()
+            + scanner.phase2_keyword_count
+            + scanner.phase2_always_anchor_literal_count
+            + scanner.confirmed_anchor_literal_count;
+        row[generic_keyword_literal_idx / 32] |= 1u32 << (generic_keyword_literal_idx % 32);
+
+        assert!(scanner
+            .phase2_keyword_hints_from_gpu_presence(&row)
+            .is_empty());
+        assert!(!scanner.phase2_always_anchor_present_from_gpu_presence(&row));
+        assert!(scanner.gpu_presence_stray_tail_bits(&row).is_none());
+        assert!(
+            scanner
+                .triggered_patterns_from_gpu_presence(&row)
+                .iter()
+                .all(|&word| word == 0),
+            "generic keyword position bits must not set detector trigger bits"
         );
     }
 }

@@ -11,8 +11,9 @@ pub(crate) mod shape_helpers;
 
 use self::auth_value::bare_auth_value_allowed;
 use self::keywords::{
-    collect_generic_keyword_lines, is_strong_keyword_anchored_encoded_text_secret,
-    is_strong_keyword_anchored_hex_key, keyword_has_word_boundary, normalize_assignment_keyword,
+    collect_generic_keyword_lines, collect_generic_keyword_lines_from_positions,
+    is_strong_keyword_anchored_encoded_text_secret, is_strong_keyword_anchored_hex_key,
+    keyword_has_word_boundary, normalize_assignment_keyword,
     normalized_assignment_keyword_has_secret_suffix,
 };
 use self::line_mapping::{line_at_index, source_offset_for_line_value};
@@ -73,6 +74,7 @@ impl CompiledScanner {
         documentation_lines: &[bool],
         chunk: &Chunk,
         scan_state: &mut ScanState,
+        generic_keyword_positions: Option<&[u32]>,
     ) {
         let Some(generic_re) = GENERIC_RE.as_ref() else {
             return;
@@ -117,7 +119,15 @@ impl CompiledScanner {
         lines_with_keyword.clear();
         let profile_enabled = super::profile::enabled();
         let prefilter_start = profile_enabled.then(std::time::Instant::now);
-        collect_generic_keyword_lines(scan_text, &mut lines_with_keyword);
+        if let Some(positions) = generic_keyword_positions {
+            collect_generic_keyword_lines_from_positions(
+                line_offsets,
+                positions,
+                &mut lines_with_keyword,
+            );
+        } else {
+            collect_generic_keyword_lines(scan_text, &mut lines_with_keyword);
+        }
         metrics::record_prefilter_ns(prefilter_start);
         if profile_enabled {
             metrics::record_prefilter_call(lines_with_keyword.len());

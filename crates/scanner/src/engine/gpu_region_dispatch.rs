@@ -27,7 +27,7 @@ use super::phase2_gpu_dfa::{
 use super::*;
 use crate::hw_probe::ScanBackend;
 
-const GPU_CONFIRMED_ANCHOR_MAX_MATCHES: u32 = 65_536;
+const GPU_POSITIONED_LITERAL_MAX_MATCHES: u32 = 65_536;
 
 fn mib_per_second(bytes: usize, elapsed: std::time::Duration) -> f64 {
     if bytes == 0 || elapsed.is_zero() {
@@ -52,26 +52,34 @@ fn report_phase2_gpu_admission_loss(error: impl std::fmt::Display) {
     );
 }
 
-fn report_confirmed_anchor_gpu_candidate_loss(error: impl std::fmt::Display) {
+fn report_positioned_gpu_candidate_loss(error: impl std::fmt::Display) {
     let error = error.to_string();
-    static CONFIRMED_ANCHOR_GPU_CANDIDATE_LOSS_WARNED: std::sync::OnceLock<()> =
+    static POSITIONED_GPU_CANDIDATE_LOSS_WARNED: std::sync::OnceLock<()> =
         std::sync::OnceLock::new();
-    if CONFIRMED_ANCHOR_GPU_CANDIDATE_LOSS_WARNED.set(()).is_ok() {
+    if POSITIONED_GPU_CANDIDATE_LOSS_WARNED.set(()).is_ok() {
         eprintln!(
-            "keyhog: confirmed-anchor GPU candidate collection unavailable ({error}); CPU \
-             confirmed-anchor collection remains authoritative. GPU speed evidence is incomplete."
+            "keyhog: positioned GPU candidate collection unavailable ({error}); CPU \
+             confirmed-anchor and generic keyword collection remain authoritative. GPU speed \
+             evidence is incomplete."
         );
     }
     tracing::warn!(
         target: "keyhog::gpu",
         %error,
-        "confirmed-anchor GPU candidate collection unavailable; CPU confirmed-anchor collection remains authoritative",
+        "positioned GPU candidate collection unavailable; CPU collection remains authoritative",
     );
 }
 
 struct GpuRegionPresenceEvidence {
     presence: Vec<u32>,
     confirmed_anchor_literal_matches: Option<Vec<Vec<(u32, u32)>>>,
+    generic_keyword_positions: Option<Vec<Vec<u32>>>,
+}
+
+#[derive(Default)]
+struct GpuPositionEvidence {
+    confirmed_anchor_literal_matches: Option<Vec<Vec<(u32, u32)>>>,
+    generic_keyword_positions: Option<Vec<Vec<u32>>>,
 }
 
 impl CompiledScanner {
@@ -164,7 +172,7 @@ impl CompiledScanner {
             let t_co = std::time::Instant::now();
             let mut co_s = std::time::Duration::ZERO;
             let mut dis_s = std::time::Duration::ZERO;
-            let mut confirmed_anchor_gpu_s = std::time::Duration::ZERO;
+            let mut positioned_literal_gpu_s = std::time::Duration::ZERO;
             let mut region_coalesced_bytes = 0usize;
             let mut region_batch_mode = RegionPresenceBatchMode::FoldedScratch;
             let evidence = match with_region_presence_batch(
@@ -184,18 +192,19 @@ impl CompiledScanner {
                         .map_err(|error| format!("region-presence dispatch error: {error}"));
                     dis_s = t_dis.elapsed();
                     let presence = result?;
-                    let t_confirmed_anchor_gpu = std::time::Instant::now();
-                    let confirmed_anchor_literal_matches = self
-                        .confirmed_anchor_literal_matches_from_gpu(
-                            matcher,
-                            &**backend,
-                            haystack,
-                            region_starts,
-                        );
-                    confirmed_anchor_gpu_s = t_confirmed_anchor_gpu.elapsed();
+                    let t_positioned_literal_gpu = std::time::Instant::now();
+                    let positioned = self.positioned_literal_evidence_from_gpu(
+                        matcher,
+                        &**backend,
+                        haystack,
+                        region_starts,
+                    );
+                    positioned_literal_gpu_s = t_positioned_literal_gpu.elapsed();
                     Ok(GpuRegionPresenceEvidence {
                         presence,
-                        confirmed_anchor_literal_matches,
+                        confirmed_anchor_literal_matches: positioned
+                            .confirmed_anchor_literal_matches,
+                        generic_keyword_positions: positioned.generic_keyword_positions,
                     })
                 },
             ) {
@@ -204,6 +213,7 @@ impl CompiledScanner {
             };
             let presence = evidence.presence;
             let confirmed_anchor_literal_matches = evidence.confirmed_anchor_literal_matches;
+            let generic_keyword_positions = evidence.generic_keyword_positions;
 
             let t_floor = std::time::Instant::now();
             let full_recall_floor = self.tuning.gpu_recall_floor_enabled();
@@ -394,6 +404,7 @@ impl CompiledScanner {
                 Some(phase2_keyword_hints.as_slice()),
                 Some(phase2_always_anchor_presence.as_slice()),
                 confirmed_anchor_literal_matches.as_deref(),
+                generic_keyword_positions.as_deref(),
             );
             if kh {
                 let phase2_always_anchor_chunks = phase2_always_anchor_presence
@@ -409,8 +420,16 @@ impl CompiledScanner {
                     .as_ref()
                     .map_or(0usize, |rows| rows.iter().map(Vec::len).sum());
                 let confirmed_anchor_gpu_complete = confirmed_anchor_literal_matches.is_some();
+                let generic_keyword_candidate_rows =
+                    generic_keyword_positions.as_ref().map_or(0usize, |rows| {
+                        rows.iter().filter(|row| !row.is_empty()).count()
+                    });
+                let generic_keyword_candidate_count = generic_keyword_positions
+                    .as_ref()
+                    .map_or(0usize, |rows| rows.iter().map(Vec::len).sum());
+                let generic_keyword_gpu_complete = generic_keyword_positions.is_some();
                 eprintln!(
-                    "perf-trace gpu-region-presence: chunks={} source_bytes={} coalesced_bytes={} batch_mode={} matcher={:.3}s coalesce={:.6}s coalesce_mib_s={:.3} dispatch={:.3}s confirmed_anchor_gpu={:.3}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_matches={} phase2_gpu_complete={} phase2_always_anchor_chunks={} confirmed_anchor_gpu_complete={} confirmed_anchor_candidate_rows={} confirmed_anchor_candidates={} full_recall_floor={}",
+                    "perf-trace gpu-region-presence: chunks={} source_bytes={} coalesced_bytes={} batch_mode={} matcher={:.3}s coalesce={:.6}s coalesce_mib_s={:.3} dispatch={:.3}s positioned_literal_gpu={:.3}s floor={:.3}s phase2_gpu={:.3}s phase2={:.3}s gpu_presence_bits={} underfire_recovered={} trigger_bits={} phase2_gpu_admitted={} phase2_gpu_matches={} phase2_gpu_complete={} phase2_always_anchor_chunks={} confirmed_anchor_gpu_complete={} confirmed_anchor_candidate_rows={} confirmed_anchor_candidates={} generic_keyword_gpu_complete={} generic_keyword_candidate_rows={} generic_keyword_candidates={} full_recall_floor={}",
                     chunks.len(),
                     region_source_bytes,
                     region_coalesced_bytes,
@@ -419,7 +438,7 @@ impl CompiledScanner {
                     co_s.as_secs_f64(),
                     mib_per_second(region_source_bytes, co_s),
                     dis_s.as_secs_f64(),
-                    confirmed_anchor_gpu_s.as_secs_f64(),
+                    positioned_literal_gpu_s.as_secs_f64(),
                     floor_s.as_secs_f64(),
                     phase2_gpu_s.as_secs_f64(),
                     t_p2.elapsed().as_secs_f64(),
@@ -433,6 +452,9 @@ impl CompiledScanner {
                     confirmed_anchor_gpu_complete,
                     confirmed_anchor_candidate_rows,
                     confirmed_anchor_candidate_count,
+                    generic_keyword_gpu_complete,
+                    generic_keyword_candidate_rows,
+                    generic_keyword_candidate_count,
                     full_recall_floor,
                 );
             }
@@ -448,43 +470,50 @@ impl CompiledScanner {
         }
     }
 
-    fn confirmed_anchor_literal_matches_from_gpu(
+    fn positioned_literal_evidence_from_gpu(
         &self,
         matcher: &vyre_libs::scan::GpuLiteralSet,
         backend: &dyn vyre::VyreBackend,
         haystack: &[u8],
         region_starts: &[u32],
-    ) -> Option<Vec<Vec<(u32, u32)>>> {
-        let literal_count = self.confirmed_anchor_literal_count;
-        if literal_count == 0 {
-            return None;
+    ) -> GpuPositionEvidence {
+        let confirmed_count = self.confirmed_anchor_literal_count;
+        let generic_count = self.generic_keyword_literal_count;
+        if confirmed_count == 0 && generic_count == 0 {
+            return GpuPositionEvidence::default();
         }
         let matches = match super::gpu_literal_scratch::scan_gpu_literal_matches_with_scratch(
             matcher,
             backend,
             haystack,
-            GPU_CONFIRMED_ANCHOR_MAX_MATCHES,
+            GPU_POSITIONED_LITERAL_MAX_MATCHES,
         ) {
             Ok(matches) => matches,
             Err(error) => {
-                report_confirmed_anchor_gpu_candidate_loss(error);
-                return None;
+                report_positioned_gpu_candidate_loss(error);
+                return GpuPositionEvidence::default();
             }
         };
-        if matches.len() >= GPU_CONFIRMED_ANCHOR_MAX_MATCHES as usize {
-            report_confirmed_anchor_gpu_candidate_loss(format!(
-                "positioned literal scan reached cap {GPU_CONFIRMED_ANCHOR_MAX_MATCHES}; \
-                 refusing incomplete confirmed-anchor candidates"
+        if matches.len() >= GPU_POSITIONED_LITERAL_MAX_MATCHES as usize {
+            report_positioned_gpu_candidate_loss(format!(
+                "positioned literal scan reached cap {GPU_POSITIONED_LITERAL_MAX_MATCHES}; \
+                 refusing incomplete positioned candidates"
             ));
-            return None;
+            return GpuPositionEvidence::default();
         }
-        let base =
+        let confirmed_base =
             self.ac_map.len() + self.phase2_keyword_count + self.phase2_always_anchor_literal_count;
-        let end = base + literal_count;
-        let mut rows = vec![Vec::new(); region_starts.len()];
+        let confirmed_end = confirmed_base + confirmed_count;
+        let generic_base = confirmed_end;
+        let generic_end = generic_base + generic_count;
+        let mut confirmed_rows =
+            (confirmed_count > 0).then(|| vec![Vec::new(); region_starts.len()]);
+        let mut generic_rows = (generic_count > 0).then(|| vec![Vec::new(); region_starts.len()]);
         for m in matches {
             let pattern_id = m.pattern_id as usize;
-            if pattern_id < base || pattern_id >= end {
+            let is_confirmed = pattern_id >= confirmed_base && pattern_id < confirmed_end;
+            let is_generic = pattern_id >= generic_base && pattern_id < generic_end;
+            if !is_confirmed && !is_generic {
                 continue;
             }
             let Some(region) =
@@ -499,14 +528,31 @@ impl CompiledScanner {
             }
             let local_start = start - region_start;
             if let Ok(local_start) = u32::try_from(local_start) {
-                rows[region].push(((pattern_id - base) as u32, local_start));
+                if is_confirmed {
+                    if let Some(rows) = confirmed_rows.as_mut() {
+                        rows[region].push(((pattern_id - confirmed_base) as u32, local_start));
+                    }
+                } else if let Some(rows) = generic_rows.as_mut() {
+                    rows[region].push(local_start);
+                }
             }
         }
-        for row in &mut rows {
-            row.sort_unstable();
-            row.dedup();
+        if let Some(rows) = confirmed_rows.as_mut() {
+            for row in rows {
+                row.sort_unstable();
+                row.dedup();
+            }
         }
-        Some(rows)
+        if let Some(rows) = generic_rows.as_mut() {
+            for row in rows {
+                row.sort_unstable();
+                row.dedup();
+            }
+        }
+        GpuPositionEvidence {
+            confirmed_anchor_literal_matches: confirmed_rows,
+            generic_keyword_positions: generic_rows,
+        }
     }
 }
 

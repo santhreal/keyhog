@@ -40,9 +40,11 @@ fn engine_phase2_generic_non_empty() {
     );
     assert!(
         src.contains("collect_generic_keyword_lines(scan_text, &mut lines_with_keyword)")
+            && src.contains("collect_generic_keyword_lines_from_positions(")
+            && keywords_src.contains("collect_generic_keyword_lines_from_positions")
             && keywords_src.contains("generic_keyword_prefilter_stems()")
             && !src.contains("GENERIC_BRIDGE_EXTRA_KEYWORDS")
             && !src.contains(".chain(GENERIC_BRIDGE_EXTRA_KEYWORDS.iter())"),
-        "engine::phase2_generic: generic keyword prefilter must use the derived compact stem collector, not the full spelling list"
+        "engine::phase2_generic: generic keyword prefilter must use the derived compact stem collector and the trusted GPU-position input mode, not the full spelling list"
     );
 }

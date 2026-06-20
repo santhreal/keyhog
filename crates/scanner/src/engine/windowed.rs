@@ -65,6 +65,7 @@ impl CompiledScanner {
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_anchor_present: Option<bool>,
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
+        generic_keyword_positions: Option<&[u32]>,
     ) -> Vec<RawMatch> {
         let chunk_text = &chunk.data;
         if reject_oversized_window_chunk(chunk, chunk_text) {
@@ -98,6 +99,19 @@ impl CompiledScanner {
             } else {
                 None
             };
+            let window_generic_keyword_positions;
+            let generic_positions = if let Some(positions) = generic_keyword_positions {
+                window_generic_keyword_positions = positions
+                    .iter()
+                    .filter_map(|&pos| {
+                        let pos = pos as usize;
+                        (pos >= offset && pos < end).then_some((pos - offset) as u32)
+                    })
+                    .collect::<Vec<_>>();
+                Some(window_generic_keyword_positions.as_slice())
+            } else {
+                None
+            };
             for mut raw_match in self.scan_prepared_with_triggered(
                 prepared,
                 crate::hw_probe::ScanBackend::SimdCpu,
@@ -106,6 +120,7 @@ impl CompiledScanner {
                 phase2_keyword_hints,
                 phase2_always_anchor_present,
                 confirmed_anchor_matches,
+                generic_positions,
             ) {
                 if record_window_match(
                     &line_offsets,
