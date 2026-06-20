@@ -7,12 +7,15 @@
 #[path = "support/pdf.rs"]
 mod pdf_support;
 
+mod support;
+
 use flate2::write::ZlibEncoder;
 use flate2::Compression;
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource};
 use std::io::Write;
+use support::split_chunk_results;
 
 fn write_pdf(bytes: &[u8]) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -63,8 +66,7 @@ fn pdf_decoded_stream_truncation_surfaces_source_error() {
         .with_max_file_size(MAX_FILE_SIZE)
         .chunks()
         .collect();
-    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
-    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+    let (chunks, errors) = split_chunk_results(&rows);
 
     assert_eq!(
         errors.len(),

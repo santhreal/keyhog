@@ -2,6 +2,7 @@
 
 #[cfg(feature = "binary")]
 mod capped {
+    use super::super::support::split_chunk_results;
     use keyhog_core::Source;
     use keyhog_sources::testing::{SourceTestApi, TestApi};
     use std::io::Write;
@@ -16,8 +17,7 @@ mod capped {
 
         let source = TestApi.binary_strings_only(&path);
         let rows: Vec<_> = source.chunks().collect();
-        let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
-        let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+        let (chunks, errors) = split_chunk_results(&rows);
         assert!(
             !chunks.is_empty(),
             "capped binary read must emit chunks for printable-run file"

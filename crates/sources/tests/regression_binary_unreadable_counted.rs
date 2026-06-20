@@ -12,10 +12,13 @@
 
 #![cfg(all(unix, feature = "binary"))]
 
+mod support;
+
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{binary_unreadable, reset_binary_counters, skip_counts, SourceLimits};
 use std::sync::Mutex;
+use support::split_chunk_results;
 
 /// Serialises process-global binary-counter assertions in this test binary.
 static COUNTER_LOCK: Mutex<()> = Mutex::new(());
@@ -119,8 +122,7 @@ fn capped_binary_read_surfaces_truncation_error_and_scans_prefix() {
         .with_limits(limits)
         .chunks()
         .collect();
-    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
-    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+    let (chunks, errors) = split_chunk_results(&rows);
 
     assert_eq!(
         errors.len(),

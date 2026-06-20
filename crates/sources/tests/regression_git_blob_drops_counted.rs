@@ -21,10 +21,13 @@
 
 #![cfg(feature = "git")]
 
+mod support;
+
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use std::path::Path;
 use std::process::Command;
 use std::sync::{Mutex, MutexGuard};
+use support::split_chunk_results;
 
 use keyhog_core::Source;
 use keyhog_sources::{skip_counts, GitDiffSource, GitSource};
@@ -271,8 +274,7 @@ fn aggregate_git_history_cap_is_counted_source_truncated() {
         .with_limits(limits)
         .chunks()
         .collect();
-    let ok: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
-    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+    let (ok, errors) = split_chunk_results(&rows);
     assert_eq!(
         ok.len(),
         1,

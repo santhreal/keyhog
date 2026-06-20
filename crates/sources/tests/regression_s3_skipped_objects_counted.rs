@@ -22,10 +22,13 @@
 
 #![cfg(feature = "s3")]
 
+mod support;
+
 use keyhog_core::Source;
 use keyhog_sources::skip_counts;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use std::sync::{Mutex, MutexGuard};
+use support::split_chunk_results;
 
 const BUCKET: &str = "regression-bucket";
 static COUNTER_LOCK: Mutex<()> = Mutex::new(());
@@ -360,8 +363,7 @@ fn max_objects_limit_is_counted_source_truncated() {
         .s3_source_with_endpoint_max_objects(BUCKET, server.url(""), 1)
         .chunks()
         .collect();
-    let ok: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
-    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+    let (ok, errors) = split_chunk_results(&rows);
     assert_eq!(
         ok.len(),
         1,
@@ -421,8 +423,7 @@ fn truncated_listing_without_token_is_counted_source_truncated() {
         .s3_source_with_endpoint(BUCKET, server.url(""))
         .chunks()
         .collect();
-    let ok: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
-    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+    let (ok, errors) = split_chunk_results(&rows);
     assert_eq!(
         ok.len(),
         1,

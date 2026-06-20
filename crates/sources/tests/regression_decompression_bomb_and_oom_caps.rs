@@ -20,7 +20,7 @@ use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource};
 use std::io::Write as _;
 use std::sync::Mutex;
-use support::collect_chunks;
+use support::{collect_chunks, split_chunk_results};
 
 /// Serialises the process-global skip-counter assertions in THIS binary.
 static COUNTER_LOCK: Mutex<()> = Mutex::new(());
@@ -59,8 +59,7 @@ fn zip_bomb_extraction_is_truncated_and_counted() {
     TestApi.reset_skip_counters();
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(MAX);
     let rows: Vec<_> = source.chunks().collect();
-    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
-    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+    let (chunks, errors) = split_chunk_results(&rows);
 
     // The bomb guard fired: exactly one archive was truncated.
     assert_eq!(
@@ -252,8 +251,7 @@ fn gzip_single_stream_bomb_is_truncated_and_counted() {
     TestApi.reset_skip_counters();
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(MAX);
     let rows: Vec<_> = source.chunks().collect();
-    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
-    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+    let (chunks, errors) = split_chunk_results(&rows);
 
     assert_eq!(
         skip_counts().archive_truncated,

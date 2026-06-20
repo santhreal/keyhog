@@ -4,9 +4,12 @@
 #[path = "support/archive.rs"]
 mod archive_support;
 
+mod support;
+
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{skip_counts, FilesystemSource};
+use support::split_chunk_results;
 
 #[test]
 fn corrupt_seven_zip_counts_as_unreadable() {
@@ -64,8 +67,7 @@ fn seven_zip_archive_truncation_surfaces_source_error() {
         .with_max_file_size(MAX_FILE_SIZE)
         .chunks()
         .collect();
-    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
-    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
+    let (chunks, errors) = split_chunk_results(&rows);
 
     assert!(
         (1..5).contains(&chunks.len()),

@@ -788,8 +788,10 @@ fn sources_tests_do_not_flatten_source_chunk_results() {
     let support = std::fs::read_to_string(&support_path)
         .unwrap_or_else(|error| panic!("read {} failed: {error}", support_path.display()));
     assert!(
-        support.contains("pub fn collect_chunks<") && support.contains("pub fn count_chunks<"),
-        "source tests must keep one fail-loud chunk-result collector in tests/support/mod.rs"
+        support.contains("pub fn collect_chunks<")
+            && support.contains("pub fn count_chunks<")
+            && support.contains("pub fn split_chunk_results"),
+        "source tests must keep fail-loud chunk-result collectors in tests/support/mod.rs"
     );
 
     let mut test_files = Vec::new();
@@ -809,6 +811,12 @@ fn sources_tests_do_not_flatten_source_chunk_results() {
         assert!(
             !compact.contains(".into_iter().flatten()"),
             "test {} must not collect Source::chunks Result rows and flatten them afterward; assert SourceError rows explicitly or use the fail-loud collector",
+            path.display()
+        );
+        assert!(
+            !compact.contains(".filter_map(|row|row.as_ref().ok())")
+                && !compact.contains(".filter_map(|row|row.as_ref().err())"),
+            "test {} must use support::split_chunk_results when it expects both chunks and SourceError rows from Source::chunks",
             path.display()
         );
     }
