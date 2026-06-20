@@ -290,18 +290,10 @@ pub(super) fn extract_compressed_chunks(
         }
     };
     if decompressed.len() >= budget {
-        // Law 10: the decompressed stream was truncated at the bomb cap — only the
-        // prefix is scanned, the tail is NOT. Surface loudly + count as a
-        // truncated archive so the operator sees the partial coverage (the old
-        // `tracing::warn!` was invisible at default verbosity).
-        eprintln!(
-            "keyhog: WARNING: decompression of {} hit the {} byte cap (= 4x --max-file-size; \
-             zip-bomb guard) — only the truncated {}-byte prefix was scanned; the rest was NOT.",
-            path.display(),
-            budget,
-            decompressed.len()
-        );
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+        let error = report_compressed_truncation(path, budget, decompressed.len());
+        if !emit(Err(error)) {
+            return;
+        }
     }
 
     let path_display = display_path(path);
@@ -340,4 +332,23 @@ pub(super) fn extract_compressed_chunks(
     })) {
         tracing::debug!("compressed chunk consumer stopped before final chunk");
     }
+}
+
+fn report_compressed_truncation(path: &Path, budget: usize, decoded_len: usize) -> SourceError {
+    // Law 10: the decompressed stream was truncated at the bomb cap — only the
+    // prefix is scanned, the tail is NOT. Surface loudly + count as a
+    // truncated archive so the operator sees the partial coverage (the old
+    // `tracing::warn!` was invisible at default verbosity).
+    eprintln!(
+        "keyhog: WARNING: decompression of {} hit the {} byte cap (= 4x --max-file-size; \
+         zip-bomb guard) — only the truncated {}-byte prefix was scanned; the rest was NOT.",
+        path.display(),
+        budget,
+        decoded_len
+    );
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+    SourceError::Other(format!(
+        "decompression of '{}' was truncated at {decoded_len} bytes by the zip-bomb guard (budget {budget}); the remaining compressed stream was not scanned",
+        path.display()
+    ))
 }

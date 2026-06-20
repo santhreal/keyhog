@@ -252,13 +252,26 @@ fn gzip_single_stream_bomb_is_truncated_and_counted() {
 
     TestApi.reset_skip_counters();
     let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(MAX);
-    let chunks: Vec<_> = source.chunks().flatten().collect();
+    let rows: Vec<_> = source.chunks().collect();
+    let chunks: Vec<_> = rows.iter().filter_map(|row| row.as_ref().ok()).collect();
+    let errors: Vec<_> = rows.iter().filter_map(|row| row.as_ref().err()).collect();
 
     assert_eq!(
         skip_counts().archive_truncated,
         1,
         "a gzip stream that decompresses past the 4x cap must be recorded as a \
          truncated archive (Law 10), not silently scanned-as-prefix in the dark"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "gzip truncation must surface one source error"
+    );
+    let err = errors[0].to_string();
+    assert!(
+        err.contains("decompression")
+            && err.contains("remaining compressed stream was not scanned"),
+        "error should describe partial compressed-stream coverage, got {err}"
     );
     // The decompressed prefix that WAS scanned must be bounded by the budget, so
     // no single emitted chunk's data exceeds the 256 KiB budget by much (the
