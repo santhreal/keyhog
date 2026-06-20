@@ -187,6 +187,11 @@ jobs:
         run: cargo test -p keyhog-core --test all_tests --profile release-fast
       - name: scanner all_tests
         run: cargo test -p keyhog-scanner --test all_tests --no-default-features --features ci-lean --profile release-fast
+      # Dead-corpus adversarial scanner fixtures are a standalone target because
+      # the full adversarial directory contains integration-unsafe unit-internal
+      # probes. This target keeps the real corpus recall shards live in CI.
+      - name: scanner adversarial dead corpus
+        run: cargo test -p keyhog-scanner --test adversarial_suite --no-default-features --features ci-lean --profile release-fast
       - name: sources all_tests
         run: cargo test -p keyhog-sources --test all_tests --profile release-fast
       - name: verifier all_tests
