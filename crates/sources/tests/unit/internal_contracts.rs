@@ -73,6 +73,51 @@ fn sources_testing_facade_is_direct_module_reexport() {
 }
 
 #[test]
+fn sources_lib_rs_is_module_map_not_mixed_owner() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let lib = std::fs::read_to_string(root.join("src/lib.rs")).expect("read sources lib");
+    let skip = std::fs::read_to_string(root.join("src/skip.rs")).expect("read skip owner");
+    let factory =
+        std::fs::read_to_string(root.join("src/factory.rs")).expect("read source factory owner");
+    let decode = std::fs::read_to_string(root.join("src/decode.rs")).expect("read decode owner");
+
+    assert!(
+        lib.contains("mod skip;") && lib.contains("mod factory;") && lib.contains("mod decode;"),
+        "sources lib.rs must wire skip/factory/decode owners explicitly"
+    );
+    assert!(
+        skip.contains("pub struct SkipCounts")
+            && skip.contains("pub(crate) enum SourceSkipEvent")
+            && skip.contains("fn counter(self)")
+            && skip.contains("pub fn skip_counts()"),
+        "skip.rs must own source coverage counters and typed skip recording"
+    );
+    assert!(
+        factory.contains("pub fn create_source_with_http_config_and_limits")
+            && factory.contains("match name")
+            && factory.contains("fn optional_usize_source_param"),
+        "factory.rs must own source construction and source parameter parsing"
+    );
+    assert!(
+        decode.contains("pub fn decode_file_bytes")
+            && decode.contains("crate::filesystem::decode_text_file"),
+        "decode.rs must own the public filesystem-decoder facade"
+    );
+    for forbidden in [
+        "static SKIPPED_",
+        "enum SourceSkipEvent",
+        "match name {",
+        "fn optional_usize_source_param",
+        "pub fn decode_file_bytes",
+    ] {
+        assert!(
+            !lib.contains(forbidden),
+            "sources lib.rs must stay a module map/re-export root, found {forbidden:?}"
+        );
+    }
+}
+
+#[test]
 fn filesystem_binary_strings_empty_branches_are_counted() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let extract = std::fs::read_to_string(root.join("src/filesystem/extract.rs"))

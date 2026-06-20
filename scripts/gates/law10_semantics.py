@@ -185,8 +185,7 @@ def check(blocks: list[Law10Block]) -> tuple[Counter[str], list[Law10Block], lis
 def raw_source_skip_counter_mutations() -> list[tuple[str, int, str]]:
     offenders: list[tuple[str, int, str]] = []
     allowed_owner_paths = {
-        "crates/sources/src/lib.rs",
-        "crates/sources/src/testing_facade.rs",
+        "crates/sources/src/skip.rs",
     }
     root = REPO / "crates" / "sources" / "src"
     for path in sorted(root.rglob("*.rs")):

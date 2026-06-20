@@ -301,18 +301,7 @@ pub mod testing {
 
     impl SourceTestApi for TestApi {
         fn set_skip_counts(&self, counts: crate::SkipCounts) {
-            use std::sync::atomic::Ordering::Relaxed;
-
-            crate::SKIPPED_OVER_MAX_SIZE.store(counts.over_max_size, Relaxed);
-            crate::SKIPPED_BINARY.store(counts.binary, Relaxed);
-            crate::SKIPPED_EXCLUDED.store(counts.excluded, Relaxed);
-            crate::SKIPPED_UNREADABLE.store(counts.unreadable, Relaxed);
-            crate::SKIPPED_ARCHIVE_TRUNCATED.store(counts.archive_truncated, Relaxed);
-            crate::BINARY_SECTION_NAME_UNRESOLVED
-                .store(counts.binary_section_name_unresolved, Relaxed);
-            crate::SOURCE_TRUNCATED.store(counts.source_truncated, Relaxed);
-            crate::STRUCTURED_SOURCE_PARSE_FAILURES
-                .store(counts.structured_source_parse_failures, Relaxed);
+            crate::skip::set_skip_counts_for_test(counts);
         }
 
         fn reset_skip_counters(&self) {
