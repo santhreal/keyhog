@@ -3,57 +3,20 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
+mod auth_value;
 pub(crate) mod keywords;
+mod line_mapping;
+mod metrics;
 pub(crate) mod shape_helpers;
 
+use self::auth_value::bare_auth_value_allowed;
 use self::keywords::{
     collect_generic_keyword_lines, is_strong_keyword_anchored_encoded_text_secret,
     is_strong_keyword_anchored_hex_key, keyword_has_word_boundary, normalize_assignment_keyword,
     normalized_assignment_keyword_has_secret_suffix,
 };
-use self::shape_helpers::is_structured_dotted_token;
-use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
-
-static GENERIC_PREFILTER_NS: AtomicU64 = AtomicU64::new(0);
-static GENERIC_EXTRACT_NS: AtomicU64 = AtomicU64::new(0);
-static GENERIC_PREFILTER_CALLS: AtomicU64 = AtomicU64::new(0);
-static GENERIC_KEYWORD_LINES: AtomicU64 = AtomicU64::new(0);
-static GENERIC_REGEX_CAPTURES: AtomicU64 = AtomicU64::new(0);
-static GENERIC_EMITS: AtomicU64 = AtomicU64::new(0);
-
-pub(crate) fn generic_profile_dump() {
-    let prefilter_ns = GENERIC_PREFILTER_NS.swap(0, Relaxed);
-    let extract_ns = GENERIC_EXTRACT_NS.swap(0, Relaxed);
-    let calls = GENERIC_PREFILTER_CALLS.swap(0, Relaxed);
-    let keyword_lines = GENERIC_KEYWORD_LINES.swap(0, Relaxed);
-    let captures = GENERIC_REGEX_CAPTURES.swap(0, Relaxed);
-    let emits = GENERIC_EMITS.swap(0, Relaxed);
-    if prefilter_ns == 0 && extract_ns == 0 && calls == 0 {
-        return;
-    }
-    let prefilter_ms = prefilter_ns as f64 / 1e6;
-    let extract_ms = extract_ns as f64 / 1e6;
-    eprintln!(
-        "=== GENERIC bridge profile === prefilter={prefilter_ms:.1}ms extract={extract_ms:.1}ms \
-         calls={calls} keyword_lines={keyword_lines} regex_captures={captures} emits={emits}"
-    );
-}
-
-pub(crate) fn generic_profile_reset() {
-    GENERIC_PREFILTER_NS.store(0, Relaxed);
-    GENERIC_EXTRACT_NS.store(0, Relaxed);
-    GENERIC_PREFILTER_CALLS.store(0, Relaxed);
-    GENERIC_KEYWORD_LINES.store(0, Relaxed);
-    GENERIC_REGEX_CAPTURES.store(0, Relaxed);
-    GENERIC_EMITS.store(0, Relaxed);
-}
-
-#[inline]
-fn record_generic_ns(slot: &AtomicU64, start: Option<std::time::Instant>) {
-    if let Some(start) = start {
-        slot.fetch_add(start.elapsed().as_nanos() as u64, Relaxed);
-    }
-}
+use self::line_mapping::{line_at_index, source_offset_for_line_value};
+pub(crate) use self::metrics::{generic_profile_dump, generic_profile_reset};
 
 static GENERIC_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
     // Group 1 is the keyword, group 2 is the value. The regex accepts common
@@ -155,10 +118,9 @@ impl CompiledScanner {
         let profile_enabled = super::profile::enabled();
         let prefilter_start = profile_enabled.then(std::time::Instant::now);
         collect_generic_keyword_lines(scan_text, &mut lines_with_keyword);
-        record_generic_ns(&GENERIC_PREFILTER_NS, prefilter_start);
+        metrics::record_prefilter_ns(prefilter_start);
         if profile_enabled {
-            GENERIC_PREFILTER_CALLS.fetch_add(1, Relaxed);
-            GENERIC_KEYWORD_LINES.fetch_add(lines_with_keyword.len() as u64, Relaxed);
+            metrics::record_prefilter_call(lines_with_keyword.len());
         }
         if lines_with_keyword.is_empty() {
             // Return the (now-empty) buffer to the pool before bailing so its
@@ -203,7 +165,7 @@ impl CompiledScanner {
 
             for caps in generic_re.captures_iter(line) {
                 if profile_enabled {
-                    GENERIC_REGEX_CAPTURES.fetch_add(1, Relaxed);
+                    metrics::record_regex_capture();
                 }
                 let Some(keyword_match) = caps.get(1) else {
                     continue;
@@ -445,11 +407,11 @@ impl CompiledScanner {
                 };
                 scan_state.push_match(raw, self.config.max_matches_per_chunk);
                 if profile_enabled {
-                    GENERIC_EMITS.fetch_add(1, Relaxed);
+                    metrics::record_emit();
                 }
             }
         }
-        record_generic_ns(&GENERIC_EXTRACT_NS, extract_start);
+        metrics::record_extract_ns(extract_start);
         // Return the scratch buffer to the pool, preserving its capacity for
         // the next chunk this worker handles.
         KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
@@ -469,42 +431,4 @@ impl CompiledScanner {
             .binary_search_by(|owned| owned.as_ref().cmp(normalized.as_str()))
             .is_ok()
     }
-}
-
-fn source_offset_for_line_value(source: &str, one_based_line: usize, value: &str) -> usize {
-    let mut line_start = 0usize;
-    for (line_idx, line) in source.split('\n').enumerate() {
-        if line_idx + 1 == one_based_line {
-            return line
-                .find(value)
-                .map_or(line_start, |column| line_start + column);
-        }
-        line_start += line.len() + 1;
-    }
-    source.len()
-}
-
-fn line_at_index<'a>(text: &'a str, line_offsets: &[usize], line_idx: usize) -> Option<&'a str> {
-    let start = *line_offsets.get(line_idx)?;
-    let mut end = if let Some(next_line_start) = line_offsets.get(line_idx + 1) {
-        *next_line_start
-    } else {
-        // Last line has no following offset; the source length is its exact end.
-        text.len()
-    };
-    let bytes = text.as_bytes();
-    if end > start && bytes.get(end - 1).copied() == Some(b'\n') {
-        end -= 1;
-    }
-    if end > start && bytes.get(end - 1).copied() == Some(b'\r') {
-        end -= 1;
-    }
-    text.get(start..end)
-}
-
-fn bare_auth_value_allowed(value: &str) -> bool {
-    is_structured_dotted_token(value)
-        || (!value.contains('.')
-            && value.bytes().any(|byte| !byte.is_ascii_alphanumeric())
-            && crate::entropy::keywords::passes_strict_secret_checks(value, true))
 }
