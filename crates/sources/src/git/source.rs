@@ -36,6 +36,8 @@ struct DecodedGitBlob {
     file_text: String,
 }
 
+type GitBlobPathKey = (gix::ObjectId, Vec<u8>);
+
 #[derive(Debug)]
 enum GitBlobBatchItem {
     Candidate(GitBlobCandidate),
@@ -257,9 +259,9 @@ fn stream_git_blobs(
     // HEAD exists but its commit/tree cannot be read, labeling live blobs as
     // `git/history` would silently downgrade active leaks. The only clean empty
     // case is an unborn/empty repo, where there are no HEAD blobs to label.
-    let head_blobs = collect_head_blob_set(&repo_handle)?;
+    let head_blob_paths = collect_head_blob_path_set(&repo_handle)?;
     let mut current_tree_blobs: VecDeque<Chunk> = VecDeque::new();
-    let mut seen_blobs: HashSet<gix::ObjectId> = HashSet::new();
+    let mut seen_blob_paths: HashSet<GitBlobPathKey> = HashSet::new();
     let mut seen_commits: HashSet<gix::ObjectId> = HashSet::new();
     let mut total_bytes = 0usize;
     let mut chunk_count = 0usize;
@@ -376,11 +378,11 @@ fn stream_git_blobs(
             };
 
             let mut blob_metadata = Vec::new();
-            collect_tree_blobs_metadata(repo, &tree, &mut seen_blobs, &mut blob_metadata, b"");
+            collect_tree_blobs_metadata(repo, &tree, &mut seen_blob_paths, &mut blob_metadata, b"");
 
             if !blob_metadata.is_empty() {
                 let mut blob_metadata = blob_metadata.into_iter();
-                let head_blobs_ref = &head_blobs;
+                let head_blob_paths_ref = &head_blob_paths;
 
                 'blob_batches: loop {
                     if git_history_cap_status(total_bytes, chunk_count, limits).is_some() {
@@ -431,8 +433,11 @@ fn stream_git_blobs(
                             },
                         };
 
+                        let in_head = head_blob_paths_ref.contains(&(
+                            decoded_blob.oid.to_owned(),
+                            decoded_blob.filepath.clone(),
+                        ));
                         let path = String::from_utf8_lossy(&decoded_blob.filepath).to_string();
-                        let in_head = head_blobs_ref.contains(&decoded_blob.oid);
                         let chunk = Chunk {
                             data: decoded_blob.file_text.into(),
                             metadata: ChunkMetadata {
@@ -826,7 +831,7 @@ fn commit_author_name(commit: &gix::Commit<'_>, commit_id: &str) -> Result<Strin
 fn collect_tree_blobs_metadata(
     repo: &gix::Repository,
     tree: &gix::Tree<'_>,
-    seen_blobs: &mut HashSet<gix::ObjectId>,
+    seen_blob_paths: &mut HashSet<GitBlobPathKey>,
     blob_metadata: &mut Vec<(gix::ObjectId, Vec<u8>)>,
     prefix: &[u8],
 ) {
@@ -886,7 +891,7 @@ fn collect_tree_blobs_metadata(
                     collect_tree_blobs_metadata(
                         repo,
                         &subtree,
-                        seen_blobs,
+                        seen_blob_paths,
                         blob_metadata,
                         &filepath,
                     );
@@ -906,18 +911,20 @@ fn collect_tree_blobs_metadata(
             continue;
         }
 
-        if seen_blobs.insert(oid) {
+        if seen_blob_paths.insert((oid.to_owned(), filepath.clone())) {
             blob_metadata.push((oid, filepath));
         }
     }
 }
 
-/// Walk HEAD's tree and collect every blob OID reachable from it.
+/// Walk HEAD's tree and collect every blob path identity reachable from it.
 ///
 /// Returns an empty set for an unborn/empty repository. Any failure after HEAD
 /// resolves is a source error: otherwise live HEAD blobs can be mislabeled as
 /// `git/history`, silently downgrading active leaks.
-fn collect_head_blob_set(repo: &gix::Repository) -> Result<HashSet<gix::ObjectId>, SourceError> {
+fn collect_head_blob_path_set(
+    repo: &gix::Repository,
+) -> Result<HashSet<GitBlobPathKey>, SourceError> {
     let head = repo.head().map_err(|error| {
         SourceError::Git(format!(
             "failed to read git HEAD while collecting live blob set: {error}"
@@ -950,14 +957,15 @@ fn collect_head_blob_set(repo: &gix::Repository) -> Result<HashSet<gix::ObjectId
         ))
     })?;
     let mut out = HashSet::new();
-    walk_tree_for_blobs(repo, &tree, &mut out)?;
+    walk_tree_for_blob_paths(repo, &tree, &mut out, b"")?;
     Ok(out)
 }
 
-fn walk_tree_for_blobs(
+fn walk_tree_for_blob_paths(
     repo: &gix::Repository,
     tree: &gix::Tree<'_>,
-    out: &mut HashSet<gix::ObjectId>,
+    out: &mut HashSet<GitBlobPathKey>,
+    prefix: &[u8],
 ) -> Result<(), SourceError> {
     for entry_ref in tree.iter() {
         let entry = entry_ref.map_err(|error| {
@@ -967,6 +975,14 @@ fn walk_tree_for_blobs(
         })?;
         let oid = entry.oid().to_owned();
         let mode = entry.mode();
+        let filepath = if prefix.is_empty() {
+            entry.filename().to_vec()
+        } else {
+            let mut path = prefix.to_vec();
+            path.push(b'/');
+            path.extend_from_slice(entry.filename());
+            path
+        };
         if mode.is_tree() {
             let obj = repo.find_object(oid).map_err(|error| {
                 SourceError::Git(format!(
@@ -978,9 +994,9 @@ fn walk_tree_for_blobs(
                     "git HEAD subtree object is not a tree while collecting live blob set: {error}"
                 ))
             })?;
-            walk_tree_for_blobs(repo, &subtree, out)?;
+            walk_tree_for_blob_paths(repo, &subtree, out, &filepath)?;
         } else if mode.is_blob() {
-            out.insert(oid);
+            out.insert((oid, filepath));
         }
     }
     Ok(())

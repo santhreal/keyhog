@@ -10,8 +10,8 @@
 //!   density rule.
 //! * `stream_git_blobs` (source.rs:97) — `git log --reflog --all`, explicit
 //!   refs/stash coverage, unreachable commit enumeration, gix tree walk,
-//!   `seen_blobs`/`seen_commits` dedup, the filesystem-owned default-exclude
-//!   path classifier,
+//!   path-aware blob dedup / `seen_commits` dedup, the filesystem-owned
+//!   default-exclude path classifier,
 //!   the `header.size() > MAX_GIT_BLOB_BYTES` (10 MiB, strict `>`) bound,
 //!   `source_type = git/head` vs `git/history`, `commit`/`author`/`size_bytes`
 //!   attribution, and `date: None`.
@@ -960,14 +960,14 @@ fn blob_just_under_10_mib_is_scanned() {
 }
 
 // ----------------------------------------------------------------------------
-// dedup: seen_blobs (identical content) and seen_commits (merge dup)
+// dedup: blob path identity and seen_commits (merge dup)
 // ----------------------------------------------------------------------------
 
 #[test]
-fn identical_blob_content_is_emitted_once_across_paths() {
+fn identical_blob_content_is_emitted_once_per_path() {
     // Two distinct paths with byte-identical content share one git blob OID.
-    // `seen_blobs` dedups on OID, so only ONE chunk is emitted (whichever path
-    // is walked first), not two.
+    // They are still two operator-visible scan locations; dedup is by
+    // (blob-oid, path), not blob-oid alone.
     let (_t, repo) = init_repo();
     let content = b"DUPLICATE=ghp_sameContentTwoFiles01\n";
     std::fs::write(repo.join("first.env"), content).unwrap();
@@ -976,13 +976,55 @@ fn identical_blob_content_is_emitted_once_across_paths() {
     commit_only(&repo, "two files identical content");
 
     let chunks = collect_chunks(&repo, 1);
-    let n = chunks
+    let paths = chunks
         .iter()
         .filter(|c| c.data.contains("ghp_sameContentTwoFiles01"))
-        .count();
+        .map(|c| {
+            (
+                c.metadata.path.clone().expect("duplicate path"),
+                c.metadata.source_type.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
     assert_eq!(
-        n, 1,
-        "identical blob OID must be emitted exactly once (seen_blobs dedup); got {n}"
+        paths,
+        vec![
+            ("first.env".to_string(), "git/head".to_string()),
+            ("second.env".to_string(), "git/head".to_string())
+        ],
+        "identical content under different paths must not collapse to one chunk"
+    );
+}
+
+#[test]
+fn renamed_blob_keeps_head_and_history_path_identity() {
+    // A pure git rename preserves the blob OID. HEAD contains the new path;
+    // history contains the old path. OID-only dedup emits only the new path,
+    // and OID-only HEAD labeling misclassifies the old path as git/head.
+    let (_t, repo) = init_repo();
+    let content = b"RENAMED=ghp_renamePathIdentity00000001\n";
+    commit_file(&repo, "old.env", content, "old path");
+    git(&repo, &["mv", "old.env", "new.env"]);
+    commit_only(&repo, "rename same blob");
+
+    let chunks = collect_chunks(&repo, 5);
+    let paths = chunks
+        .iter()
+        .filter(|c| c.data.contains("ghp_renamePathIdentity00000001"))
+        .map(|c| {
+            (
+                c.metadata.path.clone().expect("renamed path"),
+                c.metadata.source_type.clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        paths,
+        vec![
+            ("new.env".to_string(), "git/head".to_string()),
+            ("old.env".to_string(), "git/history".to_string())
+        ],
+        "a rename must preserve both path identities with exact HEAD/history labels"
     );
 }
 
