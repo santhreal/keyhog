@@ -7,7 +7,9 @@
 //! candidate with the same anchored regex machinery used by phase-2. Patterns
 //! without a proven prefix keep the whole-chunk path.
 
-use super::super::phase2_anchor::{required_prefix_literals, AnchoredRegex};
+use super::super::phase2_anchor::{
+    required_prefix_literals_with_cap, AnchoredRegex, CONFIRMED_MAX_LITERALS_PER_PATTERN,
+};
 use super::super::phase2_first_bigram::FirstBigramSet;
 use super::super::CompiledScanner;
 use crate::types::CompiledPattern;
@@ -63,8 +65,10 @@ impl ConfirmedAnchorIndex {
 
         for (idx, pattern) in ac_map.iter().enumerate() {
             let ci = pattern.regex.is_case_insensitive();
-            let Some(pattern_literals) = required_prefix_literals(pattern.regex.as_str(), ci)
-            else {
+            let Some(pattern_literals) = required_prefix_literals_with_cap(
+                pattern.regex.as_str(),
+                CONFIRMED_MAX_LITERALS_PER_PATTERN,
+            ) else {
                 continue;
             };
             for lit in &pattern_literals {

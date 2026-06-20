@@ -31,6 +31,7 @@
 //! char-class bodies, homoglyph unicode cross-products) is NOT eligible and
 //! keeps the whole-chunk path — never a silent recall trade.
 
+use super::phase2::{gate_prefix_literals, MIN_PREFIX_BYTES};
 use super::phase2_first_bigram::FirstBigramSet;
 use crate::types::*;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
@@ -38,19 +39,13 @@ use regex::{Regex, RegexBuilder};
 use regex_syntax::hir::literal::{ExtractKind, Extractor};
 use std::sync::{Arc, OnceLock};
 
-/// Required-prefix literals shorter than this occur too densely to prune the
-/// scan and bloat the shared automaton; below the keyword-AC's >=4 floor is
-/// intentional — an anchor is a *required* substring, so even a 3-byte one
-/// (`sk-`, `eyJ`, `1/`) hard-prunes a 16 KiB chunk.
-const MIN_ANCHOR_LEN: usize = 3;
-
-/// Cap on distinct (ASCII-lowercased) required-prefix literals per pattern. The
-/// ASCII-base detectors that dominate the profile collapse to 1-4 literals
-/// after case folding; only homoglyph cross-products and giant alternations
-/// exceed this, and those are exactly the patterns better left whole-chunk
-/// (their rare literals never appear in real text, so their own prefilter is
-/// already ~free).
-const MAX_LITERALS_PER_PATTERN: usize = 8;
+/// Cap on distinct (ASCII-lowercased) required-prefix literals per pattern.
+/// Canonical ASCII detector patterns with optional separators/case spellings
+/// can produce more than the old 8-literal floor (`mx[_-]?api[_-]?key` has
+/// 29) while still being selective and cheap to verify. Homoglyph cross
+/// products and giant alternations still exceed this and stay whole-chunk.
+const MAX_LITERALS_PER_PATTERN: usize = 32;
+pub(crate) const CONFIRMED_MAX_LITERALS_PER_PATTERN: usize = 8;
 
 /// A lazily-compiled `\A`-anchored copy of a pattern's regex. Searched
 /// on `&text[pos..]`, `\A` pins the match to start exactly at `pos`, so a hit is
@@ -217,7 +212,7 @@ impl Phase2AnchorIndex {
 
         for (idx, (pattern, _keywords)) in phase2_patterns.iter().enumerate() {
             let ci = pattern.regex.is_case_insensitive();
-            if let Some(pattern_literals) = required_prefix_literals(pattern.regex.as_str(), ci) {
+            if let Some(pattern_literals) = required_prefix_literals(pattern.regex.as_str()) {
                 // Register every literal and map it back to this pattern.
                 for lit in &pattern_literals {
                     let id = *literal_ids.entry(lit.clone()).or_insert_with(|| {
@@ -530,7 +525,7 @@ fn leading_literals_of_folded(folded: &str) -> Option<Vec<String>> {
     }
     let mut out: Vec<String> = Vec::with_capacity(literals.len());
     for lit in literals {
-        if lit.len() < MIN_ANCHOR_LEN {
+        if lit.len() < MIN_PREFIX_BYTES {
             return None;
         }
         out.push(std::str::from_utf8(lit.as_bytes()).ok()?.to_string()); // LAW10: pattern not anchor-eligible => caller runs whole-chunk; anchor is a prefilter opt, recall-preserving
@@ -541,47 +536,36 @@ fn leading_literals_of_folded(folded: &str) -> Option<Vec<String>> {
 }
 
 /// Extract the finite set of required prefix literals for `src`, ASCII
-/// -lowercased + deduped, or `None` if the pattern is not anchor-eligible
-/// (infinite/oversized literal set, or any literal below `MIN_ANCHOR_LEN`).
+/// -lowercased + deduped, or `None` if the pattern is not anchor-eligible.
 ///
-/// `case_insensitive` mirrors the pattern's runtime flag so the extracted
-/// literals reflect the real match semantics; case variants collapse under the
-/// ASCII-lowercase fold (the shared AC matches case-insensitively).
-pub(crate) fn required_prefix_literals(src: &str, case_insensitive: bool) -> Option<Vec<String>> {
-    let hir = regex_syntax::ParserBuilder::new()
-        .case_insensitive(case_insensitive)
-        .build()
-        .parse(src)
-        .ok()?; // LAW10: pattern not anchor-eligible => caller runs whole-chunk; anchor is a prefilter opt, recall-preserving
-    let mut extractor = Extractor::new();
-    extractor.kind(ExtractKind::Prefix);
-    let seq = extractor.extract(&hir);
+/// The proof source is the same `gate_prefix_literals` primitive used by the
+/// phase-2 no-candidate gate: canonical regex parse, finite prefix literals,
+/// every member ASCII and at least `MIN_PREFIX_BYTES`. The localizer's AC is
+/// ASCII-case-insensitive and the verifier runs the exact runtime regex at the
+/// candidate start, so canonical ASCII literals are sound even for detector
+/// regexes compiled with global case-insensitive matching. Non-ASCII prefixes
+/// stay whole-chunk rather than relying on incomplete ASCII folding.
+pub(crate) fn required_prefix_literals(src: &str) -> Option<Vec<String>> {
+    required_prefix_literals_with_cap(src, MAX_LITERALS_PER_PATTERN)
+}
 
-    // Reject infinite/unknown seqs: those carry no sound prefix prefilter.
-    if !seq.is_finite() {
-        return None;
-    }
-    let literals = seq.literals()?;
-    if literals.is_empty() {
-        return None;
-    }
+pub(crate) fn required_prefix_literals_with_cap(
+    src: &str,
+    max_literals_per_pattern: usize,
+) -> Option<Vec<String>> {
+    let literals = gate_prefix_literals(src)?;
     let mut out: Vec<String> = Vec::with_capacity(literals.len());
     for lit in literals {
-        // A literal below the anchor floor (or, defensively, an empty one)
-        // disqualifies the whole pattern: a 1-2 byte anchor doesn't prune.
-        if lit.len() < MIN_ANCHOR_LEN {
-            return None;
-        }
-        // Required-prefix literals are ASCII for the detectors that benefit;
-        // a non-UTF-8 literal can't be a `&str` needle, so disqualify.
-        let s = std::str::from_utf8(lit.as_bytes())
+        debug_assert!(lit.len() >= MIN_PREFIX_BYTES);
+        debug_assert!(lit.is_ascii());
+        let s = std::str::from_utf8(&lit)
             .ok()? // LAW10: pattern not anchor-eligible => caller runs whole-chunk; anchor is a prefilter opt, recall-preserving
             .to_ascii_lowercase();
         out.push(s);
     }
     out.sort_unstable();
     out.dedup();
-    if out.len() > MAX_LITERALS_PER_PATTERN {
+    if out.len() > max_literals_per_pattern {
         return None;
     }
     Some(out)

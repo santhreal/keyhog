@@ -1,5 +1,5 @@
 //! Gate `engine::phase2_compiled`: phase-2 profile route labels must describe
-//! the live compiled route, not a looser parser-only prefix shape.
+//! compiled anchor eligibility separately from looser parser-only prefix shape.
 
 #[test]
 fn engine_phase2_profile_route_truth() {
@@ -7,12 +7,12 @@ fn engine_phase2_profile_route_truth() {
     let src = std::fs::read_to_string(path).expect("phase2_compiled source readable");
     assert!(
         src.contains("idx.is_eligible(*i)")
-            && src.contains("[LOCAL]=live shared-anchor localized")
-            && src.contains("[PREFIX]=prefix-shaped but whole-window in this scanner"),
-        "phase2 profile must label live shared-anchor eligibility separately from prefix shape"
+            && src.contains("[ELIG]=compiled shared-anchor eligible")
+            && src.contains("[PREFIX]=prefix-shaped but not anchor-eligible in this scanner"),
+        "phase2 profile must label compiled shared-anchor eligibility separately from prefix shape"
     );
     assert!(
-        !src.contains("if anchored { \"ANCHOR\" }"),
-        "phase2 profile must not report parser-only prefix shape as live ANCHOR route"
+        !src.contains("if anchored { \"ANCHOR\" }") && !src.contains("[LOCAL]"),
+        "phase2 profile must not report parser-only prefix shape or cutoff-limited eligibility as a guaranteed LOCAL route"
     );
 }

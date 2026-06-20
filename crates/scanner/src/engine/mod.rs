@@ -73,6 +73,8 @@ mod gpu_stack;
 mod hot_patterns;
 pub(crate) mod phase2;
 mod phase2_anchor;
+#[cfg(test)]
+pub(crate) use phase2_anchor::required_prefix_literals as phase2_required_prefix_literals_for_test;
 mod phase2_anchor_scan;
 mod phase2_compiled;
 mod phase2_compiled_anchored;

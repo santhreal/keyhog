@@ -2,8 +2,8 @@ use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::engine::CompiledScanner;
 use keyhog_scanner::hw_probe::testing::ScanBackend;
 use keyhog_scanner::testing::{
-    floor_char_boundary, line_number_for_offset, next_window_offset, window_chunk,
-    window_end_offset,
+    floor_char_boundary, line_number_for_offset, next_window_offset, phase2_gate_prefix_literals,
+    phase2_required_prefix_literals, window_chunk, window_end_offset,
 };
 use keyhog_scanner::ScannerConfig;
 
@@ -23,6 +23,27 @@ fn demo_detector() -> DetectorSpec {
         companions: vec![],
         verify: None,
         keywords: vec!["abc".into()],
+        min_confidence: None,
+        ..Default::default()
+    }
+}
+
+fn mx_api_detector() -> DetectorSpec {
+    DetectorSpec {
+        tests: Vec::new(),
+        id: "mx-api-credentials".into(),
+        name: "MX API Credentials".into(),
+        service: "mx".into(),
+        severity: Severity::High,
+        patterns: vec![PatternSpec {
+            regex: r#"(?:MX|mx)[._-]?(?:API|api)?[._-]?(?:KEY|key)[=:\s"'']+([a-f0-9]{32})"#.into(),
+            description: Some("MX API Key".into()),
+            group: Some(1),
+            client_safe: false,
+        }],
+        companions: vec![],
+        verify: None,
+        keywords: vec!["MX_API_KEY".into(), "api_key".into()],
         min_confidence: None,
         ..Default::default()
     }
@@ -178,6 +199,64 @@ fn fallback_pattern_skips_plaintext_without_keyword() {
     detector.keywords = vec!["ghp_".into()];
     let scanner = CompiledScanner::compile(vec![detector]).unwrap();
     assert!(scanner.scan(&chunk("the quick brown fox")).is_empty());
+}
+
+#[test]
+fn phase2_required_prefix_literals_share_gate_prefix_owner() {
+    let src = r#"(?:MX|mx)[._-]?(?:API|api)?[._-]?(?:KEY|key)[=:\s"'']+([a-f0-9]{32})"#;
+    let anchor_lits = phase2_required_prefix_literals(src).expect("MX anchors");
+    let mut gate_lits: Vec<String> = phase2_gate_prefix_literals(src)
+        .expect("MX gate literals")
+        .into_iter()
+        .map(|bytes| {
+            String::from_utf8(bytes)
+                .expect("gate literals are ASCII")
+                .to_ascii_lowercase()
+        })
+        .collect();
+    gate_lits.sort_unstable();
+    gate_lits.dedup();
+
+    assert_eq!(anchor_lits, gate_lits);
+    assert_eq!(anchor_lits.len(), 29);
+    assert!(anchor_lits.iter().any(|lit| lit == "mx_api_key"));
+}
+
+#[test]
+fn phase2_required_prefix_literals_rejects_non_ascii_and_oversized_sets() {
+    assert!(phase2_required_prefix_literals("ÉSECRET[0-9]+").is_none());
+
+    let oversized = format!(
+        "(?:{})[=:\\s]+([a-f0-9]{{32}})",
+        (0..33)
+            .map(|idx| format!("ALT{idx:02}"))
+            .collect::<Vec<_>>()
+            .join("|")
+    );
+    assert!(phase2_required_prefix_literals(&oversized).is_none());
+}
+
+#[test]
+fn mx_api_key_phase2_pattern_is_shared_anchor_localized() {
+    let scanner = crate::engine::CompiledScanner::compile(vec![mx_api_detector()])
+        .expect("MX detector compiles");
+    let phase2_index = scanner
+        .phase2_patterns
+        .iter()
+        .position(|(pattern, _)| pattern.regex.as_str().contains("(?:API|api)?"))
+        .expect("MX API key pattern is in phase2");
+    let anchor_index = scanner
+        .phase2_anchor_index
+        .as_ref()
+        .expect("phase2 anchor index built");
+    assert!(anchor_index.is_eligible(phase2_index));
+
+    let value = "abcdef0123456789abcdef0123456789";
+    let matches = scanner.scan(&chunk(&format!("export MX_API_KEY={value}")));
+    assert!(
+        matches.iter().any(|m| m.credential.as_ref() == value),
+        "localized MX phase2 pattern must still report the API key: {matches:?}"
+    );
 }
 
 #[test]

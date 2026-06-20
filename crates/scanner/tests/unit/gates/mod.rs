@@ -84,6 +84,7 @@ pub mod engine_boundary_non_empty;
 pub mod engine_hot_patterns_no_inline_tests;
 pub mod engine_hot_patterns_no_unwrap_expect;
 pub mod engine_hot_patterns_non_empty;
+pub mod engine_phase2_anchor_prefix_owner;
 pub mod engine_phase2_entropy_no_inline_tests;
 pub mod engine_phase2_entropy_no_unwrap_expect;
 pub mod engine_phase2_entropy_non_empty;

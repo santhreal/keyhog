@@ -11,6 +11,8 @@ use std::sync::OnceLock;
 // engine-internal route selector, not scanner public API.
 pub(crate) use crate::tuning::*;
 
+pub(crate) const MIN_PREFIX_BYTES: usize = 3;
+
 /// Per-pattern phase-2 profiler (measurement only). Enabled by the unified
 /// scanner profiler (`keyhog scan --profile`) so profiling has one runtime owner.
 /// Accumulates wall time per phase-2 pattern to identify the detectors that
@@ -409,8 +411,9 @@ pub(crate) const DECODE_FOCUS_MARGIN: usize = 64;
 // safe M equals the full splice context (zero savings). Do not re-add it.
 
 /// Extract a pattern's required-prefix literals IF it is gate-eligible: the
-/// prefix `Seq` must be finite, non-empty, every member >= 3 bytes AND pure
-/// ASCII (so an `ascii_case_insensitive` Aho-Corasick over them is a sound
+/// prefix `Seq` must be finite, non-empty, every member at least
+/// `MIN_PREFIX_BYTES` AND pure ASCII (so an `ascii_case_insensitive`
+/// Aho-Corasick over them is a sound
 /// presence oracle). Returns the literal byte strings, or `None` when the
 /// pattern can match without any specific prefix literal (then it must never be
 /// gated). Mirrors the soundness contract of `regex_prefix_anchorable`.
@@ -438,7 +441,7 @@ pub(crate) fn gate_prefix_literals(src: &str) -> Option<Vec<Vec<u8>>> {
         // Every member must be a real >=3-byte ASCII required prefix. A short or
         // non-ASCII member would make the AC gate either over-match (unsound case
         // folding) or too weak; bail so the pattern runs unconditionally.
-        if bytes.len() < 3 || !bytes.is_ascii() {
+        if bytes.len() < MIN_PREFIX_BYTES || !bytes.is_ascii() {
             return None;
         }
         out.push(bytes.to_vec());

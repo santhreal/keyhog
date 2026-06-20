@@ -549,7 +549,7 @@ impl CompiledScanner {
         let prefilter_ms = POPULATE_PREFILTER_NS.swap(0, Relaxed) as f64 / 1e6;
         let keyword_ms = POPULATE_KEYWORD_NS.swap(0, Relaxed) as f64 / 1e6;
         eprintln!(
-            "=== PHASE2 per-pattern profile [{label}] ===\n  populate: always-active RegexSet prefilter={prefilter_ms:.1} ms, keyword-AC={keyword_ms:.1} ms\n  extract: {:.1} ms over {} active patterns\n  route: [LOCAL]=live shared-anchor localized, [PREFIX]=prefix-shaped but whole-window in this scanner",
+            "=== PHASE2 per-pattern profile [{label}] ===\n  populate: always-active RegexSet prefilter={prefilter_ms:.1} ms, keyword-AC={keyword_ms:.1} ms\n  extract: {:.1} ms over {} active patterns\n  route: [ELIG]=compiled shared-anchor eligible, [PREFIX]=prefix-shaped but not anchor-eligible in this scanner",
             grand as f64 / 1e6,
             rows.len()
         );
@@ -557,7 +557,7 @@ impl CompiledScanner {
         for (i, n, r) in rows.iter().take(30) {
             let src = self.phase2_patterns[*i].0.regex.as_str();
             let route = if anchor_idx.is_some_and(|idx| idx.is_eligible(*i)) {
-                "LOCAL"
+                "ELIG"
             } else if regex_prefix_anchorable(src) {
                 "PREFIX"
             } else {

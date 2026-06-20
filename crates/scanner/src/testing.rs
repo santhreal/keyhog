@@ -463,6 +463,16 @@ pub(crate) fn phase2_pattern_diagnostics(
 }
 
 #[cfg(test)]
+pub(crate) fn phase2_required_prefix_literals(src: &str) -> Option<Vec<String>> {
+    crate::engine::phase2_required_prefix_literals_for_test(src)
+}
+
+#[cfg(test)]
+pub(crate) fn phase2_gate_prefix_literals(src: &str) -> Option<Vec<Vec<u8>>> {
+    crate::engine::phase2::gate_prefix_literals(src)
+}
+
+#[cfg(test)]
 pub(crate) fn set_test_backend_override(mode: Option<crate::hw_probe::ScanBackend>) {
     crate::hw_probe::select::set_test_backend_override(mode);
 }

@@ -83,7 +83,10 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         dispatch_src.contains("self.gpu_position_matcher()")
             && dispatch_src.contains("let confirmed_base = 0usize")
             && gpu_lazy_src.contains("pub(crate) fn gpu_position_matcher")
-            && gpu_lazy_src.contains("compile_gpu_literal_set(literals, \"pos-lit\")"),
+            && gpu_lazy_src.contains("compile_gpu_literal_set(literals, \"pos-lit\")")
+            && gpu_lazy_src.contains("catch_unwind")
+            && gpu_lazy_src.contains("GPU literal-set compile panicked")
+            && gpu_lazy_src.contains("GPU positioned literal matcher unavailable"),
         "positioned confirmed-anchor/generic candidates must use the smaller positioned matcher, not appended rows in the region-presence bitset"
     );
     assert!(
