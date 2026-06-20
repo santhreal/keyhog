@@ -67,6 +67,11 @@ fn decoded_iam_arn_license_hash_and_prose_do_not_surface_as_outer_base64_secret(
             "decoded npm integrity hash",
         ),
         (
+            "token",
+            "ZTk5YjJlZjktM2I5ZS00ZTRjLWIwOWItMmY5OWVlZTYxZjU2",
+            "decoded UUID v4",
+        ),
+        (
             "session",
             "U2Vzc2lvbiBvcGVuZWQgd2l0aCBoYW5kbGUgdU9MTEEzbVg2UWxLVG10ekVS",
             "decoded audit prose",

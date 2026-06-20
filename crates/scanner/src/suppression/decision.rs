@@ -487,6 +487,9 @@ pub(crate) fn decoded_benign_text_reason(credential: &str) -> Option<&'static st
     if looks_like_dashed_serial_key(decoded) {
         return Some("decoded_dashed_serial_key");
     }
+    if is_uuid_v4_shape(decoded) {
+        return Some("decoded_uuid_v4_shape");
+    }
     if decoded.contains(RFC7519_EXAMPLE_JWT_PREFIX) {
         return Some("decoded_rfc7519_example_jwt");
     }
