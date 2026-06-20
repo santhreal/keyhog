@@ -25,6 +25,11 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         "/src/engine/phase2_gpu_dfa/candidates.rs"
     ))
     .expect("phase2 gpu dfa candidates readable");
+    let gpu_dfa_lowering_src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/phase2_gpu_dfa/lowering.rs"
+    ))
+    .expect("phase2 gpu dfa lowering readable");
     let gpu_dfa_shard_src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/engine/phase2_gpu_dfa/shard.rs"
@@ -113,6 +118,7 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
     assert!(
         gpu_dfa_src.contains("mod batch;")
             && gpu_dfa_src.contains("mod candidates;")
+            && gpu_dfa_src.contains("mod lowering;")
             && gpu_dfa_src.contains("mod shard;")
             && gpu_dfa_src.contains("mod workload;")
             && gpu_dfa_src.contains("with_phase2_gpu_dfa_scratch")
@@ -120,9 +126,11 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
             && !gpu_dfa_src.contains("fn scan_admission_into")
             && !gpu_dfa_src.contains("fn prioritized_phase2_gpu_dfa_candidates")
             && !gpu_dfa_src.contains("gate_prefix_literals")
+            && !gpu_dfa_src.contains("fn build_shard")
+            && !gpu_dfa_src.contains("build_regex_dfa_unanchored")
             && !gpu_dfa_src.contains("fn trigger_has_bits")
             && !gpu_dfa_src.contains("fn expand_phase2_gpu_admission"),
-        "phase-2 GPU DFA catalog/admission policy must delegate candidate selection, upload-batch scratch, shard dispatch/readback, and workload shaping to their owners"
+        "phase-2 GPU DFA catalog/admission policy must delegate candidate selection, lowering, upload-batch scratch, shard dispatch/readback, and workload shaping to their owners"
     );
     assert!(
         gpu_dfa_candidates_src.contains("prefixless_always_active_candidates")
@@ -131,6 +139,14 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
             && gpu_dfa_candidates_src.contains("gate_prefix_literals")
             && gpu_dfa_candidates_src.contains("HashSet"),
         "phase-2 GPU DFA candidate discovery and prioritization must live in engine/phase2_gpu_dfa/candidates.rs"
+    );
+    assert!(
+        gpu_dfa_lowering_src.contains("build_shards_recursive")
+            && gpu_dfa_lowering_src.contains("build_regex_dfa_unanchored")
+            && gpu_dfa_lowering_src.contains("try_build_ac_bounded_ranges_program_ext")
+            && gpu_dfa_lowering_src.contains("regex_dfa_source_for_pattern")
+            && gpu_dfa_lowering_src.contains("Cow"),
+        "phase-2 GPU DFA regex source lowering and shard construction must live in engine/phase2_gpu_dfa/lowering.rs"
     );
     assert!(
         gpu_dfa_workload_src.contains("validate_phase2_gpu_trigger_rows")
