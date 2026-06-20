@@ -47,6 +47,7 @@ $ErrorActionPreference = 'Stop'
 $Repo = 'santhsecurity/keyhog'
 $Script:ReleasePublicKey = 'RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 $Script:InsecureInstall = [bool]$Insecure
+$Script:LatestReleaseAlias = $false
 
 # ============================================================
 # colors + i/o helpers
@@ -291,6 +292,67 @@ function Resolve-TagFromApi {
     exit 1
 }
 
+function Resolve-TagFromLatestRedirect {
+    param([string]$Name)
+    if (-not $Name) { return $false }
+    $url = "https://github.com/$Repo/releases/latest/download/$Name"
+    $location = $null
+    try {
+        $response = Invoke-WebRequest -Uri $url -Method Head -MaximumRedirection 0 -UseBasicParsing -ErrorAction Stop
+        if ($response.Headers -and $response.Headers.Location) {
+            $location = [string]$response.Headers.Location
+        }
+    } catch {
+        $resp = $_.Exception.Response
+        if (-not $resp) { return $false }
+        if ($resp.Headers -and $resp.Headers.Location) {
+            $location = [string]$resp.Headers.Location
+        }
+    }
+    if ($location -and $location -match '/releases/download/([^/]+)/') {
+        $Script:Tag = $Matches[1]
+        return $true
+    }
+    return $false
+}
+
+function Resolve-OperatorReleaseTag {
+    Resolve-Tag
+    $Script:LatestReleaseAlias = $false
+    if (-not $Version -and $Script:Tag -eq 'latest') {
+        if (Resolve-TagFromLatestRedirect -Name $Script:Asset) {
+            $Script:LatestReleaseAlias = $true
+            return
+        }
+        Warn "Latest release asset redirect did not reveal a concrete tag; checking recent releases for the newest tag with assets."
+        Resolve-TagFromApi
+        $Script:LatestReleaseAlias = $true
+    }
+}
+
+function Get-ReleaseTagLabel {
+    if ($Script:LatestReleaseAlias) { return "$($Script:Tag) (latest)" }
+    return $Script:Tag
+}
+
+function Get-VersionTagFromText {
+    param([string]$Text)
+    if ($Text -match '(v[0-9][0-9A-Za-z._-]*)') { return $Matches[1] }
+    return $null
+}
+
+function Show-InstalledReleaseRelation {
+    param([string]$Existing)
+    if (-not $Script:LatestReleaseAlias -or -not $Existing) { return }
+    $existingTag = Get-VersionTagFromText -Text $Existing
+    if (-not $existingTag) { return }
+    if ($existingTag -eq $Script:Tag) {
+        Say "  Update:        up to date"
+    } else {
+        Say "  Update:        update available ($existingTag -> $($Script:Tag))"
+    }
+}
+
 function Get-ReleaseAssetUrl {
     param([string]$Name)
     if ($Script:Tag -eq 'latest') {
@@ -351,9 +413,25 @@ function Allow-UnverifiedInstall {
     }
     Err $Reason
     Err "Refusing to install an unverified keyhog binary."
-    Err "Fix: ensure the .minisig and .sha256 files are published, minisign is installed, and Get-FileHash is available."
+    if ($Reason -like '*minisign is not installed*') {
+        Show-MinisignInstallHint
+    } else {
+        Err "Fix: ensure the .minisig and .sha256 files are published, minisign is installed, and Get-FileHash is available."
+    }
     Err "Only for emergency/local diagnostics, rerun with -Insecure to accept an unverified binary."
     return $false
+}
+
+function Show-MinisignInstallHint {
+    if (Get-Command winget -ErrorAction SilentlyContinue) {
+        Err "Fix: install minisign with: winget install -e --id jedisct1.minisign"
+    } elseif (Get-Command scoop -ErrorAction SilentlyContinue) {
+        Err "Fix: install minisign with: scoop install minisign"
+    } elseif (Get-Command choco -ErrorAction SilentlyContinue) {
+        Err "Fix: install minisign with: choco install minisign"
+    } else {
+        Err "Fix: install minisign with Scoop (scoop install minisign), Chocolatey (choco install minisign), or cargo install minisign."
+    }
 }
 
 function Find-Minisign {
@@ -1061,22 +1139,6 @@ function Stage-Install {
             Remove-Item -Force $tmp -ErrorAction SilentlyContinue
             exit 1
         }
-    } elseif (-not $Version -and $Script:Tag -eq 'latest') {
-        try {
-            Download-Asset -Name $Script:Asset -OutPath $tmp
-        } catch {
-            Warn "Latest release asset redirect did not provide $($Script:Asset); checking recent releases for the newest tag with assets."
-            Resolve-TagFromApi
-            Say "  Release tag: $($Script:Tag)"
-            try {
-                Download-Asset -Name $Script:Asset -OutPath $tmp
-            } catch {
-                Err "Download failed. Is the release published yet? Browse https://github.com/$Repo/releases"
-                Err "Underlying error: $_"
-                Remove-Item -Force $tmp -ErrorAction SilentlyContinue
-                exit 1
-            }
-        }
     } else {
         try {
             Download-Asset -Name $Script:Asset -OutPath $tmp
@@ -1235,9 +1297,12 @@ function Show-Summary {
     Say  "  GPU note: $($Script:GpuNote)"
     Say  "  Picked asset:  $($Script:Asset)"
     Say  "  Install dir:   $InstallDir"
-    Say  "  Release tag:   $($Script:Tag)"
+    Say  "  Release tag:   $(Get-ReleaseTagLabel)"
     $existing = Get-CurrentVersion
-    if ($existing) { Say "  Existing:      $existing" }
+    if ($existing) {
+        Say "  Existing:      $existing"
+        Show-InstalledReleaseRelation -Existing $existing
+    }
 }
 
 function Post-Install-Wizard {
@@ -1335,7 +1400,7 @@ function Do-Install {
         $Script:GpuNote = "installing local binary: $FromFile"
     } else {
         Resolve-Asset
-        Resolve-Tag
+        Resolve-OperatorReleaseTag
     }
     Show-Summary
     if ($Script:Interactive -and -not $Yes) {
@@ -1357,7 +1422,7 @@ function Do-Install {
 function Do-Repair {
     Info "Repair mode."
     Resolve-Asset
-    Resolve-Tag
+    Resolve-OperatorReleaseTag
     $bin = Get-CurrentBinary
     if (-not $bin) {
         Warn "No existing keyhog binary found. Installing fresh."
@@ -1372,7 +1437,7 @@ function Do-Repair {
     Say "Found existing binary: $bin"
     & $bin --version > $null 2>&1
     if ($LASTEXITCODE -eq 0) {
-        Ok "Binary runs cleanly. Re-downloading $($Script:Asset) anyway (--repair)."
+        Ok "Binary runs cleanly. Repair will download and verify $($Script:Asset) before replacing it (-Repair)."
     } else {
         Warn "Existing binary does not run. Replacing with $($Script:Asset)."
     }
@@ -1415,9 +1480,11 @@ function Do-Diagnose {
     }
     Write-Host ""
     Use-Color "Latest release" 'White'
-    Resolve-Tag
-    Say "  Tag: $($Script:Tag)"
     Resolve-Asset
+    Resolve-OperatorReleaseTag
+    Say "  Tag: $(Get-ReleaseTagLabel)"
+    $existing = Get-CurrentVersion
+    Show-InstalledReleaseRelation -Existing $existing
     Say "  Would install: $($Script:Asset)"
 }
 

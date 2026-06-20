@@ -51,6 +51,7 @@ MODE="install"
 INTERACTIVE=1
 ASSUME_YES=0
 USE_COLOR=1
+LATEST_RELEASE_ALIAS=0
 
 # ============================================================
 # colors / style
@@ -486,6 +487,62 @@ resolve_tag_from_api() {
     fi
 }
 
+resolve_tag_from_latest_redirect() {
+    name="$1"
+    [ -n "$name" ] || return 1
+    latest_url=$(printf 'https://github.com/%s/releases/latest/download/%s\n' "$REPO" "$name")
+    if ! redirect_url=$(curl -fsSI -o /dev/null -w '%{redirect_url}' "$latest_url" 2>/dev/null); then
+        return 1
+    fi
+    redirect_tag=$(printf '%s\n' "$redirect_url" | sed -n 's#.*/releases/download/\([^/][^/]*\)/.*#\1#p' | head -n 1)
+    [ -n "$redirect_tag" ] || return 1
+    TAG="$redirect_tag"
+    return 0
+}
+
+resolve_operator_release_tag() {
+    resolve_tag
+    LATEST_RELEASE_ALIAS=0
+    if [ -z "$VERSION" ] && [ "$TAG" = "latest" ]; then
+        if resolve_tag_from_latest_redirect "$ASSET"; then
+            LATEST_RELEASE_ALIAS=1
+            return
+        fi
+        if [ -n "$ASSET_FALLBACK" ] && resolve_tag_from_latest_redirect "$ASSET_FALLBACK"; then
+            LATEST_RELEASE_ALIAS=1
+            return
+        fi
+        warn "Latest release asset redirect did not reveal a concrete tag; checking recent releases for the newest tag with assets."
+        resolve_tag_from_api
+        LATEST_RELEASE_ALIAS=1
+    fi
+}
+
+release_tag_label() {
+    if [ "$LATEST_RELEASE_ALIAS" = "1" ]; then
+        printf '%s (latest)\n' "$TAG"
+    else
+        printf '%s\n' "$TAG"
+    fi
+}
+
+version_tag_from_text() {
+    printf '%s\n' "$1" | sed -n 's/.*\(v[0-9][0-9A-Za-z._-]*\).*/\1/p' | head -n 1
+}
+
+show_installed_release_relation() {
+    existing="$1"
+    [ "$LATEST_RELEASE_ALIAS" = "1" ] || return 0
+    [ -n "$existing" ] || return 0
+    existing_tag=$(version_tag_from_text "$existing")
+    [ -n "$existing_tag" ] || return 0
+    if [ "$existing_tag" = "$TAG" ]; then
+        say "  Update:        up to date"
+    else
+        say "  Update:        update available ($existing_tag -> $TAG)"
+    fi
+}
+
 release_asset_url() {
     name="$1"
     if [ "$TAG" = "latest" ]; then
@@ -543,9 +600,47 @@ allow_unverified_install() {
     fi
     err "$reason"
     err "Refusing to install an unverified keyhog binary."
-    err "Fix: ensure the .minisig and .sha256 files are published, minisign is installed, and sha256sum or shasum is available."
+    case "$reason" in
+      *"minisign is not installed"*)
+        print_minisign_install_hint
+        ;;
+      *)
+        err "Fix: ensure the .minisig and .sha256 files are published, minisign is installed, and sha256sum or shasum is available."
+        ;;
+    esac
     err "Only for emergency/local diagnostics, rerun with --insecure to accept an unverified binary."
     return 1
+}
+
+print_minisign_install_hint() {
+    case "$OS" in
+      darwin)
+        if command -v brew >/dev/null 2>&1; then
+            err "Fix: install minisign with: brew install minisign"
+        else
+            err "Fix: install Homebrew, then run: brew install minisign"
+            err "Portable fallback: cargo install minisign"
+        fi
+        ;;
+      linux)
+        if command -v apt-get >/dev/null 2>&1; then
+            err "Fix: install minisign with: sudo apt-get update && sudo apt-get install -y minisign"
+        elif command -v dnf >/dev/null 2>&1; then
+            err "Fix: install minisign with: sudo dnf install -y minisign"
+        elif command -v yum >/dev/null 2>&1; then
+            err "Fix: install minisign with: sudo yum install -y minisign"
+        elif command -v apk >/dev/null 2>&1; then
+            err "Fix: install minisign with: sudo apk add minisign"
+        elif command -v pacman >/dev/null 2>&1; then
+            err "Fix: install minisign with: sudo pacman -S --needed minisign"
+        else
+            err "Fix: install minisign with your distro package manager, or run: cargo install minisign"
+        fi
+        ;;
+      *)
+        err "Fix: install minisign, then rerun this command."
+        ;;
+    esac
 }
 
 # Verify the release minisign signature of $1 against the pinned keyhog release
@@ -694,19 +789,6 @@ stage_and_install() {
             rm -f "$tmp"
             trap - EXIT INT TERM
             exit 1
-        fi
-    elif [ -z "$VERSION" ] && [ "$TAG" = "latest" ]; then
-        if ! download_selected_release_asset "$tmp" 1; then
-            warn "Latest release asset redirect did not provide $ASSET; checking recent releases for the newest tag with assets."
-            resolve_tag_from_api
-            say "  Release tag: $TAG"
-            if download_selected_release_asset "$tmp"; then
-                :
-            else
-                rm -f "$tmp"
-                trap - EXIT INT TERM
-                exit 1
-            fi
         fi
     elif ! download_selected_release_asset "$tmp"; then
         rm -f "$tmp"
@@ -1653,10 +1735,11 @@ show_summary() {
     say  "  GPU note: $GPU_NOTE"
     say  "  Picked asset:  $ASSET"
     say  "  Install dir:   $INSTALL_DIR"
-    say  "  Release tag:   $TAG"
+    say  "  Release tag:   $(release_tag_label)"
     existing=$(current_version)
     if [ -n "$existing" ]; then
         say  "  Existing:      $existing"
+        show_installed_release_relation "$existing"
     fi
 }
 
@@ -1987,7 +2070,7 @@ do_install() {
         GPU_NOTE="installing local binary: $FROM_FILE"
     else
         resolve_asset
-        resolve_tag
+        resolve_operator_release_tag
     fi
 
     show_summary
@@ -2015,7 +2098,7 @@ do_install() {
 do_repair() {
     info "Repair mode."
     resolve_asset
-    resolve_tag
+    resolve_operator_release_tag
     bin=$(current_binary)
     if [ -z "$bin" ]; then
         warn "No existing keyhog binary found. Installing fresh."
@@ -2029,7 +2112,7 @@ do_repair() {
     fi
     say "Found existing binary: $bin"
     if "$bin" --version >/dev/null 2>&1; then
-        ok "Binary runs cleanly. Re-downloading $ASSET to overwrite anyway (--repair)."
+        ok "Binary runs cleanly. Repair will download and verify $ASSET before replacing it (--repair)."
     else
         warn "Existing binary does not run. Replacing with $ASSET."
     fi
@@ -2052,9 +2135,11 @@ do_diagnose() {
     if [ -n "$bin" ] && "$bin" --version >/dev/null 2>&1; then
         "$bin" doctor
         printf '\n%sLatest release%s\n' "$C_BOLD" "$C_RESET"
-        resolve_tag
-        say "  Tag: $TAG"
         resolve_asset
+        resolve_operator_release_tag
+        say "  Tag: $(release_tag_label)"
+        existing=$(current_version)
+        show_installed_release_relation "$existing"
         say "  Would install: $ASSET"
         return
     fi
@@ -2084,9 +2169,11 @@ do_diagnose() {
       *) warn "  $INSTALL_DIR is NOT on PATH. Add: export PATH=\"$INSTALL_DIR:\$PATH\"" ;;
     esac
     printf '\n%sLatest release%s\n' "$C_BOLD" "$C_RESET"
-    resolve_tag
-    say "  Tag: $TAG"
     resolve_asset
+    resolve_operator_release_tag
+    say "  Tag: $(release_tag_label)"
+    ver=$(current_version)
+    show_installed_release_relation "$ver"
     say "  Would install: $ASSET"
 }
 

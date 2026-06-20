@@ -210,19 +210,54 @@ fn powershell_uninstall_helpers_clean_user_path_and_completion_files() {
 }
 
 #[test]
-fn powershell_default_install_uses_latest_redirect_before_api_fallback() {
+fn powershell_default_install_resolves_concrete_latest_before_download() {
     let script = include_str!("../../../install.ps1");
     let resolve_tag = ps_function(script, "Resolve-Tag");
     let resolve_tag_from_api = ps_function(script, "Resolve-TagFromApi");
+    let resolve_redirect = ps_function(script, "Resolve-TagFromLatestRedirect");
+    let resolve_operator_tag = ps_function(script, "Resolve-OperatorReleaseTag");
+    let release_label = ps_function(script, "Get-ReleaseTagLabel");
+    let show_summary = ps_function(script, "Show-Summary");
     let asset_url = ps_function(script, "Get-ReleaseAssetUrl");
     let download_asset = ps_function(script, "Download-Asset");
     let verify_checksum = ps_function(script, "Verify-Checksum");
     let stage_install = ps_function(script, "Stage-Install");
+    let do_install = ps_function(script, "Do-Install");
+    let do_repair = ps_function(script, "Do-Repair");
+    let do_diagnose = ps_function(script, "Do-Diagnose");
     let github_api = ps_function(script, "Invoke-GitHubApi");
 
     assert!(
         resolve_tag.contains("$Script:Tag = 'latest'") && !resolve_tag.contains("api.github.com"),
-        "default PowerShell install must not call GitHub's rate-limited API while resolving the common latest tag"
+        "Resolve-Tag should only normalize the requested tag; operator paths own concrete latest resolution"
+    );
+    assert_in_order(
+        resolve_operator_tag,
+        &[
+            "Resolve-Tag",
+            "$Script:Tag -eq 'latest'",
+            "Resolve-TagFromLatestRedirect",
+            "$Script:LatestReleaseAlias = $true",
+            "return",
+            "checking recent releases",
+            "Resolve-TagFromApi",
+            "$Script:LatestReleaseAlias = $true",
+        ],
+    );
+    assert!(
+        resolve_redirect.contains("Invoke-WebRequest")
+            && resolve_redirect.contains("-Method Head")
+            && resolve_redirect.contains("-MaximumRedirection 0")
+            && resolve_redirect.contains("Headers.Location")
+            && resolve_redirect.contains("releases/latest/download")
+            && resolve_redirect.contains("/releases/download/([^/]+)/"),
+        "PowerShell latest resolution must read the first non-API redirect before the GitHub releases API"
+    );
+    assert!(
+        release_label.contains("$($Script:Tag) (latest)")
+            && show_summary.contains("Get-ReleaseTagLabel")
+            && show_summary.contains("Show-InstalledReleaseRelation"),
+        "PowerShell summaries must display the concrete tag while preserving that it came from latest"
     );
     assert!(
         asset_url.contains("releases/latest/download/$Name")
@@ -232,26 +267,38 @@ fn powershell_default_install_uses_latest_redirect_before_api_fallback() {
     assert!(
         download_asset.contains("$url = Get-ReleaseAssetUrl -Name $Name")
             && verify_checksum.contains("Get-ReleaseAssetUrl -Name \"$AssetName.sha256\""),
-        "asset, signature, and checksum downloads must share the latest-aware URL owner"
+        "asset, signature, and checksum downloads must share the release URL owner"
+    );
+    assert!(
+        !stage_install.contains("Latest release asset redirect did not provide")
+            && !stage_install.contains("Resolve-TagFromApi"),
+        "Stage-Install must not own a second late latest-resolution route"
     );
     assert_in_order(
-        stage_install,
+        do_install,
         &[
-            "elseif (-not $Version -and $Script:Tag -eq 'latest')",
-            "Download-Asset -Name $Script:Asset -OutPath $tmp",
-            "Latest release asset redirect did not provide",
-            "Resolve-TagFromApi",
-            "Download-Asset -Name $Script:Asset -OutPath $tmp",
+            "Resolve-Asset",
+            "Resolve-OperatorReleaseTag",
+            "Show-Summary",
+        ],
+    );
+    assert_in_order(do_repair, &["Resolve-Asset", "Resolve-OperatorReleaseTag"]);
+    assert_in_order(
+        do_diagnose,
+        &[
+            "Resolve-Asset",
+            "Resolve-OperatorReleaseTag",
+            "Would install",
         ],
     );
     assert!(
         resolve_tag_from_api.contains("api.github.com/repos/$Repo/releases?per_page=10"),
-        "PowerShell API release walk must exist only as the latest-asset-miss fallback"
+        "PowerShell API release walk must choose the newest release with assets when the latest redirect cannot prove a tag"
     );
     assert!(
         github_api.contains("$env:GITHUB_TOKEN")
             && github_api.contains("Authorization")
             && github_api.contains("Bearer $env:GITHUB_TOKEN"),
-        "PowerShell fallback API request must honor optional GITHUB_TOKEN"
+        "PowerShell release-resolution API request must honor optional GITHUB_TOKEN"
     );
 }

@@ -388,7 +388,7 @@ sha_of() {
 # the mock curl reads at runtime (exported into the run via run_install):
 #   MOCK_RELEASES   - path to releases JSON, or "DOWN" to simulate API down
 #   MOCK_ASSET      - path to the binary to serve, or "404"
-#   MOCK_LATEST_ASSET - path served by /releases/latest/download, or "404"
+#   MOCK_LATEST_ASSET - legacy latest-redirect fixture hook, or "404"
 #   MOCK_FALLBACK   - path to serve for the *fallback* asset, or "404"
 #   MOCK_SIG        - "match" | "invalid" | "absent"
 #   MOCK_SHA        - "match" | "mismatch" | "absent"
@@ -496,13 +496,19 @@ EOF
 FIX_DIR="$FIX_DIR"
 EOF
     cat >> "$sb/bin/curl" <<'EOF'
-url="" ; out="" ; prev=""
+url="" ; out="" ; write_out="" ; prev=""
 for a in "$@"; do
   case "$prev" in -o) out="$a" ;; esac
+  case "$prev" in -w) write_out="$a" ;; esac
   case "$a" in http://*|https://*) url="$a" ;; esac
   prev="$a"
 done
 emit() { if [ -n "$out" ]; then cat > "$out"; else cat; fi; }
+emit_redirect_url() {
+  case "$write_out" in
+    *'%{redirect_url}'*) printf '%s' "$1" ;;
+  esac
+}
 
 # Cross-invocation state (each curl call is a fresh process, so attempt
 # ordering and the "what did we serve" record live in files, not env).
@@ -538,7 +544,9 @@ case "$url" in
     if [ "${MOCK_LATEST_ASSET:-${MOCK_ASSET:-404}}" = "404" ]; then exit 22; fi
     served="${MOCK_LATEST_ASSET:-$MOCK_ASSET}"
     printf '%s' "$served" > "$sd/served"
-    cat "$served" > "$out"
+    if [ -n "$out" ]; then cat "$served" > "$out"; fi
+    asset_name="${url##*/}"
+    emit_redirect_url "https://github.com/santhsecurity/keyhog/releases/download/${MOCK_LATEST_TAG:-v9.9.9}/$asset_name"
     exit 0 ;;
   *releases/download/*)
     # First download attempt = primary asset, second = fallback. Tracked
@@ -553,6 +561,7 @@ case "$url" in
     fi
     printf '%s' "$served" > "$sd/served"
     cat "$served" > "$out"
+    emit_redirect_url "$url"
     exit 0 ;;
   *) exit 22 ;;
 esac
@@ -621,31 +630,31 @@ expect_match   "1.11 piped --help shows quick install" "curl -fsSL" "$out"
 expect_nomatch "1.12 piped --help has no sed error" "can't read|No such file" "$out"
 
 # ======================================================================
-# 2. resolve_tag (the JSON-indentation regression + siblings)
+# 2. resolve_tag (concrete latest resolution + JSON-indentation regression)
 # ======================================================================
 printf '\n[2] resolve_tag against GitHub-shaped JSON\n'
 reset_mocks
 sb=$(build_sandbox Linux x86_64 no no no); h=$(newhome)
 out=$(MOCK_RELEASES="$FIX_DIR/releases_normal.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match  "2.1 default install uses latest asset redirect" "Release tag:   latest" "$out"
+expect_match  "2.1 default install resolves latest to a concrete tag" "Release tag:   v9.9.9" "$out"
 expect_status "2.2 normal install exits 0" 0 "$st"
-expect_nofile "2.3 default latest success skips GitHub API" "$h/github-api-called"
+expect_nofile "2.3 default latest resolution skips GitHub API when redirect proves tag" "$h/github-api-called"
 rm -rf "$h"; h=$(newhome)
 out=$(MOCK_LATEST_ASSET=404 MOCK_RELEASES="$FIX_DIR/releases_latest_empty.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt)
-expect_match  "2.4 latest miss falls back to API release walk" "checking recent releases" "$out"
-expect_match  "2.5 skips asset-less newest, picks v9.9.8" "Release tag: v9.9.8" "$out"
-expect_file   "2.6 latest miss calls GitHub API" "$h/github-api-called"
+expect_match  "2.4 missing latest asset falls back to API release walk" "checking recent releases" "$out"
+expect_match  "2.5 skips asset-less newest, picks v9.9.8" "Release tag:   v9.9.8" "$out"
+expect_file   "2.6 asset walk calls GitHub API" "$h/github-api-called"
 rm -rf "$h"; h=$(newhome)
 out=$(GITHUB_TOKEN=ghp_mock_token MOCK_LATEST_ASSET=404 MOCK_RELEASES="$FIX_DIR/releases_latest_empty.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_status "2.7 authenticated API fallback install exits 0" 0 "$st"
-expect_file   "2.8 API fallback sends Authorization when GITHUB_TOKEN is set" "$h/github-api-auth"
+expect_status "2.7 authenticated latest-resolution install exits 0" 0 "$st"
+expect_file   "2.8 latest-resolution API sends Authorization when GITHUB_TOKEN is set" "$h/github-api-auth"
 rm -rf "$h"; h=$(newhome)
 out=$(MOCK_LATEST_ASSET=404 MOCK_RELEASES="$FIX_DIR/releases_all_empty.json" run_install "$sb" "$h" -- --no-prompt); st=$?
 expect_match  "2.9 all-empty releases errors" "No GitHub release" "$out"
 expect_status "2.10 all-empty exits 1" 1 "$st"
 rm -rf "$h"; h=$(newhome)
 out=$(MOCK_LATEST_ASSET=404 run_install "$sb" "$h" -- --no-prompt); st=$?    # MOCK_RELEASES unset => DOWN
-expect_match  "2.11 API down errors clearly after latest miss" "Could not query GitHub releases API" "$out"
+expect_match  "2.11 API down errors clearly during latest resolution" "Could not query GitHub releases API" "$out"
 expect_match  "2.12 API down surfaces curl detail" "GitHub API error: mock GitHub API down" "$out"
 expect_status "2.13 API down exits 1" 1 "$st"
 rm -rf "$h"; h=$(newhome)
@@ -800,17 +809,23 @@ expect_nofile "6.4p no binary written after invalid signature with insecure" "$h
 rm -rf "$h"
 # 6.4q missing minisign verifier fails closed unless explicitly insecure.
 sb_no_minisign=$(build_sandbox Linux x86_64 no no no); rm -f "$sb_no_minisign/bin/minisign"
+cat > "$sb_no_minisign/bin/apt-get" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+chmod +x "$sb_no_minisign/bin/apt-get"
 h=$(newhome)
 out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb_no_minisign" "$h" -- --no-prompt); st=$?
 expect_match  "6.4q no minisign tool refuses" "minisign is not installed|Refusing to install an unverified" "$out"
-expect_status "6.4r no minisign tool exits 1" 1 "$st"
-expect_nofile "6.4s no binary written without minisign" "$h/.local/bin/keyhog"
+expect_match  "6.4r no minisign tool gives Debian install command" "sudo apt-get update && sudo apt-get install -y minisign" "$out"
+expect_status "6.4s no minisign tool exits 1" 1 "$st"
+expect_nofile "6.4t no binary written without minisign" "$h/.local/bin/keyhog"
 rm -rf "$h"
 h=$(newhome)
 out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb_no_minisign" "$h" -- --no-prompt --insecure); st=$?
-expect_match  "6.4t no minisign tool insecure override is loud" "INSECURE" "$out"
-expect_status "6.4u no minisign tool insecure override installs" 0 "$st"
-expect_exec   "6.4v binary present after verifier-tool bypass" "$h/.local/bin/keyhog"
+expect_match  "6.4u no minisign tool insecure override is loud" "INSECURE" "$out"
+expect_status "6.4v no minisign tool insecure override installs" 0 "$st"
+expect_exec   "6.4w binary present after verifier-tool bypass" "$h/.local/bin/keyhog"
 rm -rf "$sb_no_minisign" "$h"
 # 6.5 checksum mismatch refuses + no install
 h=$(newhome)
@@ -910,7 +925,7 @@ expect_match  "9.1 repair w/o binary installs fresh" "No existing keyhog|Install
 expect_exec   "9.2 repair produced a binary" "$h/.local/bin/keyhog"
 # 9.3 repair with healthy existing binary -> re-downloads
 out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --repair --no-prompt)
-expect_match  "9.3 repair re-downloads over healthy" "Re-downloading|Repair complete" "$out"
+expect_match  "9.3 repair verifies before replacing healthy binary" "download and verify|Repair complete" "$out"
 rm -rf "$h"
 # 9.4 diagnose with no binary -> shell diagnostic, no writes
 h=$(newhome)
@@ -1071,8 +1086,8 @@ out=$(MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb"
 expect_match "14.2 bare numeric tag normalises to v-prefixed" "Release tag:   v2.0.0" "$out"
 rm -rf "$h"; h=$(newhome)
 out=$(MOCK_RELEASES="$FIX_DIR/releases_normal.json" MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb" "$h" -- --version= --no-prompt)
-expect_match "14.3 empty --version uses default latest redirect" "Release tag:   latest" "$out"
-expect_nofile "14.4 empty --version does not call GitHub API when latest succeeds" "$h/github-api-called"
+expect_match "14.3 empty --version resolves latest to concrete tag" "Release tag:   v9.9.9" "$out"
+expect_nofile "14.4 empty --version skips GitHub API when latest redirect proves tag" "$h/github-api-called"
 rm -rf "$sb" "$h"
 
 # ======================================================================
