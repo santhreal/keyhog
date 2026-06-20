@@ -25,6 +25,20 @@ fn extend_ascii_lowercase_from_matches_make_ascii_lowercase_semantics() {
 }
 
 #[test]
+fn extend_ascii_lowercase_from_writes_initialized_spare_capacity() {
+    let src = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/ascii_ci.rs"));
+
+    assert!(
+        src.contains("spare_capacity_mut()") && src.contains("set_len(old_len + src.len())"),
+        "hot GPU lowercase staging must initialize spare Vec capacity directly"
+    );
+    assert!(
+        !src.contains("extend(src.iter().map"),
+        "hot GPU lowercase staging must not return to iterator-driven Vec::extend"
+    );
+}
+
+#[test]
 fn ci_find_matches_case_insensitively() {
     assert!(ci_find(b"Hello WORLD", b"hello"));
     assert!(ci_find(b"Hello WORLD", b"world"));

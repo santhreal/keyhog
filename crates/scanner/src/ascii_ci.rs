@@ -20,8 +20,17 @@
 #[inline]
 #[cfg(any(feature = "gpu", test))]
 pub(crate) fn extend_ascii_lowercase_from(dst: &mut Vec<u8>, src: &[u8]) {
+    let old_len = dst.len();
     dst.reserve(src.len());
-    dst.extend(src.iter().map(|&byte| ascii_lower_branchless(byte)));
+    let spare = &mut dst.spare_capacity_mut()[..src.len()];
+    for (slot, &byte) in spare.iter_mut().zip(src) {
+        slot.write(ascii_lower_branchless(byte));
+    }
+    // SAFETY: every element in the spare slice above was initialized exactly
+    // once, and reserve() guaranteed enough capacity for src.len() bytes.
+    unsafe {
+        dst.set_len(old_len + src.len());
+    }
 }
 
 #[inline]
