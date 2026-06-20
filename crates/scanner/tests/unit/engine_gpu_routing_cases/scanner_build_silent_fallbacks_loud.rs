@@ -96,6 +96,32 @@ fn phase2_gpu_admission_loss_is_operator_visible() {
 }
 
 #[test]
+fn phase2_gpu_catalog_loss_is_operator_visible() {
+    let src = engine_src("phase2_gpu_dfa.rs");
+    assert!(
+        src.contains("fn report_phase2_gpu_catalog_loss")
+            && src.contains("PHASE2_GPU_CATALOG_LOSS_WARNED")
+            && src.contains("eprintln!(")
+            && src.contains("phase-2 GPU regex-DFA catalog incomplete")
+            && src.contains("GPU speed evidence is incomplete")
+            && src.contains("CPU admission remains"),
+        "phase-2 GPU regex-DFA catalog incompleteness must be visible to normal CLI stderr, not only tracing"
+    );
+    assert!(
+        src.contains("candidate budget reached: selected")
+            && src.contains("no lowerable prefixless always-active pattern")
+            && src.contains("prefixless always-active pattern(s) uncovered after lowering"),
+        "candidate budget, no-lowerable-catalog, and uncovered-pattern catalog gaps must describe the lost GPU evidence"
+    );
+    assert!(
+        src.matches("report_phase2_gpu_catalog_loss(format!(")
+            .count()
+            >= 3,
+        "every phase-2 GPU catalog incompleteness branch must route through the visible reporter"
+    );
+}
+
+#[test]
 fn phase2_anchor_ac_build_failures_warn() {
     let src = engine_src("phase2_anchor.rs");
     assert!(

@@ -49,6 +49,17 @@ const PHASE2_GPU_DFA_MAX_SHARDS: usize = 4;
 const PHASE2_GPU_DFA_MAX_CANDIDATES: usize =
     PHASE2_GPU_DFA_TARGET_SHARD_PATTERNS * PHASE2_GPU_DFA_MAX_SHARDS;
 
+fn report_phase2_gpu_catalog_loss(reason: impl std::fmt::Display) {
+    let reason = reason.to_string();
+    static PHASE2_GPU_CATALOG_LOSS_WARNED: OnceLock<()> = OnceLock::new();
+    if PHASE2_GPU_CATALOG_LOSS_WARNED.set(()).is_ok() {
+        eprintln!(
+            "keyhog: phase-2 GPU regex-DFA catalog incomplete ({reason}); CPU admission remains \
+             authoritative for uncovered patterns. GPU speed evidence is incomplete."
+        );
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct Phase2GpuDfaCatalog {
     shards: Vec<Phase2GpuDfaShard>,
@@ -129,6 +140,11 @@ impl Phase2GpuDfaCatalog {
                 candidate_budget = PHASE2_GPU_DFA_MAX_CANDIDATES,
                 "phase-2 GPU regex-DFA admission candidate budget reached; GPU hits can admit selected prefixless patterns, misses still consult CPU admission"
             );
+            report_phase2_gpu_catalog_loss(format!(
+                "candidate budget reached: selected {} of {} prefixless always-active pattern(s)",
+                candidates.len(),
+                all_candidate_count
+            ));
         }
         for chunk in candidates.chunks(PHASE2_GPU_DFA_TARGET_SHARD_PATTERNS) {
             build_shards_recursive(
@@ -146,6 +162,9 @@ impl Phase2GpuDfaCatalog {
                 candidates = all_candidate_count,
                 "phase-2 GPU regex-DFA admission has no lowerable prefixless always-active pattern; CPU admission remains authoritative"
             );
+            report_phase2_gpu_catalog_loss(format!(
+                "no lowerable prefixless always-active pattern among {all_candidate_count} candidate(s)"
+            ));
             return None;
         }
         if uncovered_patterns > 0 {
@@ -155,6 +174,9 @@ impl Phase2GpuDfaCatalog {
                 uncovered = uncovered_patterns,
                 "phase-2 GPU regex-DFA admission has uncovered prefixless pattern(s); GPU hits can admit chunks, misses still consult CPU admission"
             );
+            report_phase2_gpu_catalog_loss(format!(
+                "{uncovered_patterns} prefixless always-active pattern(s) uncovered after lowering"
+            ));
         }
         tracing::debug!(
             target: "keyhog::gpu",
