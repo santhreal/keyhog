@@ -20,6 +20,11 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         "/src/engine/phase2_gpu_dfa/batch.rs"
     ))
     .expect("phase2 gpu dfa batch readable");
+    let gpu_dfa_candidates_src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/phase2_gpu_dfa/candidates.rs"
+    ))
+    .expect("phase2 gpu dfa candidates readable");
     let gpu_dfa_shard_src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/engine/phase2_gpu_dfa/shard.rs"
@@ -102,11 +107,22 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
         .expect("phase-2 GPU DFA shard dispatch owner present");
     assert!(
         gpu_dfa_src.contains("mod batch;")
+            && gpu_dfa_src.contains("mod candidates;")
             && gpu_dfa_src.contains("mod shard;")
             && gpu_dfa_src.contains("with_phase2_gpu_dfa_scratch")
             && !gpu_dfa_src.contains("thread_local!")
-            && !gpu_dfa_src.contains("fn scan_admission_into"),
-        "phase-2 GPU DFA catalog/admission policy must delegate upload-batch scratch to batch.rs and shard dispatch/readback to shard.rs"
+            && !gpu_dfa_src.contains("fn scan_admission_into")
+            && !gpu_dfa_src.contains("fn prioritized_phase2_gpu_dfa_candidates")
+            && !gpu_dfa_src.contains("gate_prefix_literals"),
+        "phase-2 GPU DFA catalog/admission policy must delegate candidate selection, upload-batch scratch, and shard dispatch/readback to their owners"
+    );
+    assert!(
+        gpu_dfa_candidates_src.contains("prefixless_always_active_candidates")
+            && gpu_dfa_candidates_src.contains("prioritized_phase2_gpu_dfa_candidates")
+            && gpu_dfa_candidates_src.contains("valid_phase2_gpu_dfa_candidates")
+            && gpu_dfa_candidates_src.contains("gate_prefix_literals")
+            && gpu_dfa_candidates_src.contains("HashSet"),
+        "phase-2 GPU DFA candidate discovery and prioritization must live in engine/phase2_gpu_dfa/candidates.rs"
     );
     assert!(
         !gpu_dfa_src.contains("pack_haystack_u32_into")
