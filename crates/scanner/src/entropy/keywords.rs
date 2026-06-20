@@ -609,33 +609,24 @@ fn passes_strict_secret_shape_checks(value: &str, is_credential_context: bool) -
         return false;
     }
 
-    // Dash-segmented-alnum decoy shape. License/product serials
+    // Dash-segmented-alnum decoy shapes. License/product serials
     // (`A1B2C-D3E4F-G5H6I-J7K8L-M9N0P`), template placeholders
     // (`XXXXX-XXXXX-...`) and segmented identifiers
-    // (`my-service-prod-key-name-here`) are dash-joined runs of
-    // alphanumerics with no other symbol class. The dash inflates
-    // their byte alphabet enough that the serial shape lands AT or
-    // ABOVE the 4.5 blanket floor (a 5x5 mixed serial measures
-    // ~4.58), so the entropy admit below would let them through.
-    // They are not credentials - the 0f05b3de mirror admitted 42 of
-    // them as false positives. Reject the shape outright; symbolic
-    // passwords keep a richer symbol set (`$`, `*`, `!`, `#`, ...)
-    // and never reduce to pure dash-segmented alnum.
+    // (`my-service-prod-key-name-here`) are dash-joined runs that can
+    // reach the entropy floor without being credentials. Keep this
+    // gate narrow: real service tokens often contain one or more
+    // dashes inside otherwise random alnum bodies.
     if is_dash_segmented_alnum_decoy(value) {
         return false;
     }
     true
 }
 
-/// Heuristic: is this value a dash-segmented run of alphanumerics with
-/// no other symbol class? Matches license/product serials
-/// (`A1B2C-D3E4F-G5H6I-J7K8L-M9N0P`), template placeholders
-/// (`XXXXX-XXXXX-...`) and segmented identifiers
-/// (`my-service-prod-key-name-here`). The only non-alphanumeric byte is
-/// `-`, and it joins at least two non-empty alphanumeric groups. Real
-/// symbolic passwords carry richer symbol sets (`$`, `*`, `!`, `#`)
-/// and never reduce to this shape, so gating on it is precision-positive
-/// at near-zero recall cost.
+/// Heuristic for dash-segmented non-secret shapes. Matches fixed-width
+/// uppercase/digit product serials (`A1B2C-D3E4F-G5H6I`) and multi-part
+/// letter identifiers (`my-service-prod-key-name-here`). It deliberately does
+/// not reject every dash-separated alnum value: high-entropy service tokens
+/// commonly carry one dash or random dash-separated chunks.
 pub(crate) fn is_dash_segmented_alnum_decoy(value: &str) -> bool {
     if !value.contains('-') {
         return false;
@@ -646,16 +637,32 @@ pub(crate) fn is_dash_segmented_alnum_decoy(value: &str) -> bool {
     {
         return false;
     }
-    let mut groups = 0usize;
+    let mut groups = Vec::new();
     for group in value.split('-') {
         if group.is_empty() {
-            // A leading/trailing/double dash breaks the uniform serial
+            // A leading/trailing/double dash breaks the serial/identifier
             // shape - leave those to the entropy floors.
             return false;
         }
-        groups += 1;
+        groups.push(group);
     }
-    groups >= 2
+
+    let fixed_width_upper_serial = groups.len() >= 3
+        && groups.iter().all(|group| {
+            group.len() == 5
+                && group
+                    .bytes()
+                    .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+        });
+    if fixed_width_upper_serial {
+        return true;
+    }
+
+    groups.len() >= 3
+        && groups
+            .iter()
+            .all(|group| group.bytes().all(|b| b.is_ascii_alphabetic()))
+        && !crate::suppression::token_randomness::is_random_token(value)
 }
 
 /// Heuristic: is this string a likely source-code identifier rather

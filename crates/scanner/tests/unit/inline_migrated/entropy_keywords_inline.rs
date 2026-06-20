@@ -184,6 +184,20 @@ fn symbolic_password_class_survives_decoy_gate() {
 }
 
 #[test]
+fn random_dash_segmented_tokens_survive_decoy_gate() {
+    for secret in [
+        "Kp4Qx7-Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn",
+        "ZAOruHaF3QjNZzFWmvWmil-gzx1rVJEJumWonOs0RTNf54QVHP3cn8fLFtV5iTuy8ymH2Cn0RnV2ho2aJn7ADtc7ltW",
+        "S4oxj2N-bVEi6ivQsrW3",
+    ] {
+        assert!(
+            !is_dash_segmented_alnum_decoy(secret),
+            "random dash-bearing token must not be classified as a serial decoy: {secret}"
+        );
+    }
+}
+
+#[test]
 fn dash_segmented_helper_excludes_symbolic_and_unsegmented() {
     // Unit check on the shape predicate itself: only pure
     // dash-joined alnum runs qualify; richer symbol sets and

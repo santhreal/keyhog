@@ -206,6 +206,31 @@ fn isolated_bare_split_entropy_secret_bypasses_identifier_emit_gate() {
     );
 }
 
+#[cfg(feature = "entropy")]
+#[test]
+fn isolated_bare_dash_entropy_secret_bypasses_serial_decoy_gate() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    let scanner = compile_scanner_with_config(config);
+    let secret = "Kp4Qx7-Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn";
+    let chunk = make_chunk(secret, "notes/sufficiency-probe.txt");
+
+    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk));
+    let matches = &results[0];
+    let entropy_fired = matches.iter().any(|m| {
+        m.detector_id.as_ref().starts_with("entropy-") && m.credential.as_ref().contains(secret)
+    });
+    assert!(
+        entropy_fired,
+        "a random isolated token with an embedded dash must not be killed by the \
+         dash-segmented serial decoy gate; matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))
+            .collect::<Vec<_>>()
+    );
+}
+
 #[test]
 fn bare_entropy_source_file_obeys_default_entropy_source_gate() {
     let mut config = ScannerConfig::default();
