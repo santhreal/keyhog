@@ -56,6 +56,13 @@ pub(crate) fn extract_profile_dump() {
     );
 }
 
+pub(crate) fn extract_profile_reset() {
+    use std::sync::atomic::Ordering::Relaxed;
+    EXTRACT_CALLS.store(0, Relaxed);
+    EXTRACT_BYTES.store(0, Relaxed);
+    EXTRACT_NS.store(0, Relaxed);
+}
+
 thread_local! {
     /// Per-BFS-item shared WHOLE-CHUNK candidate cache. `decode_chunk` primes
     /// this once per chunk so the ~5 whole-chunk decoders (base64/hex/url/caesar/

@@ -1,0 +1,136 @@
+//! Shared-anchor localization for the confirmed pass.
+//!
+//! Confirmed patterns are already gated by phase-1 literal presence, but the
+//! old path still ran every triggered pattern's full regex over the whole scan
+//! window. For patterns whose regex has a finite required prefix, one shared
+//! Aho-Corasick pass can collect candidate start positions and then verify each
+//! candidate with the same anchored regex machinery used by phase-2. Patterns
+//! without a proven prefix keep the whole-chunk path.
+
+use super::super::phase2_anchor::{required_prefix_literals, AnchoredRegex};
+use super::super::CompiledScanner;
+use crate::types::CompiledPattern;
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
+use regex::Regex;
+use std::cell::RefCell;
+
+thread_local! {
+    pub(crate) static CONFIRMED_ANCHOR_CANDIDATES: RefCell<Vec<(u32, u32)>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+impl CompiledScanner {
+    #[cfg(test)]
+    pub(crate) fn disable_confirmed_anchor_for_test(&mut self) {
+        self.confirmed_anchor_index = None;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn confirmed_anchor_eligible_count_for_test(&self) -> usize {
+        self.confirmed_anchor_index
+            .as_ref()
+            .map_or(0, ConfirmedAnchorIndex::eligible_count)
+    }
+}
+
+pub(crate) struct ConfirmedAnchorIndex {
+    anchor_ac: AhoCorasick,
+    literal_patterns: Vec<Vec<u32>>,
+    eligible: Vec<bool>,
+    anchored: Vec<Option<AnchoredRegex>>,
+    eligible_count: usize,
+}
+
+impl ConfirmedAnchorIndex {
+    pub(crate) fn build(ac_map: &[CompiledPattern]) -> Option<Self> {
+        let mut literal_ids: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
+        let mut literals: Vec<String> = Vec::new();
+        let mut literal_patterns: Vec<Vec<u32>> = Vec::new();
+        let mut eligible = vec![false; ac_map.len()];
+        let mut anchored: Vec<Option<AnchoredRegex>> = (0..ac_map.len()).map(|_| None).collect();
+
+        for (idx, pattern) in ac_map.iter().enumerate() {
+            let ci = pattern.regex.is_case_insensitive();
+            let Some(pattern_literals) = required_prefix_literals(pattern.regex.as_str(), ci)
+            else {
+                continue;
+            };
+            for lit in &pattern_literals {
+                let id = *literal_ids.entry(lit.clone()).or_insert_with(|| {
+                    literals.push(lit.clone());
+                    literal_patterns.push(Vec::new());
+                    literals.len() - 1
+                });
+                literal_patterns[id].push(idx as u32);
+            }
+            eligible[idx] = true;
+            anchored[idx] = Some(AnchoredRegex::new(pattern.regex.as_str(), ci));
+        }
+
+        let eligible_count = eligible.iter().filter(|&&value| value).count();
+        if eligible_count == 0 {
+            return None;
+        }
+
+        let anchor_ac = match AhoCorasickBuilder::new()
+            .match_kind(MatchKind::Standard)
+            .ascii_case_insensitive(true)
+            .build(&literals)
+        {
+            Ok(ac) => ac,
+            Err(error) => {
+                tracing::warn!(
+                    literals = literals.len(),
+                    %error,
+                    "confirmed shared-anchor Aho-Corasick build failed; confirmed localization disabled (recall preserved)"
+                );
+                return None;
+            }
+        };
+
+        Some(Self {
+            anchor_ac,
+            literal_patterns,
+            eligible,
+            anchored,
+            eligible_count,
+        })
+    }
+
+    pub(crate) fn eligible_count(&self) -> usize {
+        self.eligible_count
+    }
+
+    #[inline]
+    pub(crate) fn is_eligible(&self, ac_idx: usize) -> bool {
+        matches!(self.eligible.get(ac_idx), Some(true))
+    }
+
+    pub(crate) fn anchored_regex(&self, ac_idx: usize) -> Option<&Regex> {
+        self.anchored.get(ac_idx)?.as_ref()?.get()
+    }
+
+    pub(crate) fn collect_candidates(
+        &self,
+        text: &str,
+        is_active: impl Fn(usize) -> bool,
+        out: &mut Vec<(u32, u32)>,
+    ) {
+        out.clear();
+        for mat in self.anchor_ac.find_overlapping_iter(text) {
+            let literal_idx = mat.pattern().as_usize();
+            let pos = mat.start() as u32;
+            if let Some(patterns) = self.literal_patterns.get(literal_idx) {
+                for &pattern in patterns {
+                    let pattern = pattern as usize;
+                    if is_active(pattern) {
+                        out.push((pattern as u32, pos));
+                    }
+                }
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+    }
+}

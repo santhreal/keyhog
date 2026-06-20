@@ -53,6 +53,7 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
                     pattern_index,
                     pattern,
                     &detector.id,
+                    &detector.keywords,
                 )?);
             }
             Ok((patterns, companions))
@@ -135,6 +136,7 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
                         regex: LazyRegex::plain(full_homoglyph_regex),
                         group: pattern.group,
                         client_safe: pattern.client_safe,
+                        match_proves_keyword_nearby: false,
                         homoglyph_variant: true,
                     },
                     Vec::new(),

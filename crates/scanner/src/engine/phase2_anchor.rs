@@ -51,7 +51,7 @@ const MIN_ANCHOR_LEN: usize = 3;
 /// already ~free).
 const MAX_LITERALS_PER_PATTERN: usize = 8;
 
-/// A lazily-compiled `\A`-anchored copy of a phase-2 pattern's regex. Searched
+/// A lazily-compiled `\A`-anchored copy of a pattern's regex. Searched
 /// on `&text[pos..]`, `\A` pins the match to start exactly at `pos`, so a hit is
 /// confirmed in O(match length) with no forward scan. Flags mirror the
 /// pattern's own `LazyRegex` build so the anchored regex is match-equivalent.
@@ -62,7 +62,7 @@ pub(crate) struct AnchoredRegex {
 }
 
 impl AnchoredRegex {
-    fn new(src: &str, case_insensitive: bool) -> Self {
+    pub(crate) fn new(src: &str, case_insensitive: bool) -> Self {
         Self {
             src: Arc::from(src),
             case_insensitive,
@@ -75,7 +75,7 @@ impl AnchoredRegex {
     /// the whole-chunk path instead — never a silent skip. For the curated
     /// corpus this never returns `None` (anchoring only shrinks the automaton
     /// the unanchored regex already builds).
-    fn get(&self) -> Option<&Regex> {
+    pub(crate) fn get(&self) -> Option<&Regex> {
         self.cell
             .get_or_init(|| {
                 // Wrap in a non-capturing group so the inner capture-group
@@ -123,6 +123,13 @@ pub(crate) struct Phase2AnchorIndex {
     /// These are gated+located purely by the shared AC, so they are REMOVED
     /// from the expensive always-active RegexSet prefilter — the main win.
     always_active_eligible: Vec<bool>,
+    /// Separate AC over only always-active eligible literals. Sparse
+    /// keyword-triggered chunks can use this small index for always-active
+    /// semantics and run the few active keyword patterns whole-window instead
+    /// of paying the all-eligible shared AC scan.
+    always_anchor_ac: Option<AhoCorasick>,
+    /// `always_anchor_ac` pattern id -> always-active phase-2 indices.
+    always_literal_patterns: Vec<Vec<u32>>,
     /// Per phase-2 index: the anchored regex (Some iff eligible OR plain
     /// -anchorable — the localized homoglyph path also runs `\A(?:regex)`).
     anchored: Vec<Option<AnchoredRegex>>,
@@ -152,15 +159,18 @@ impl Phase2AnchorIndex {
 
     #[inline]
     pub(crate) fn is_eligible(&self, phase2_idx: usize) -> bool {
-        self.eligible.get(phase2_idx).copied().unwrap_or(false) // LAW10: pattern not anchor-eligible => caller runs whole-chunk; anchor is a prefilter opt, recall-preserving
+        if self.anchor_ac.is_none() {
+            return false;
+        }
+        matches!(self.eligible.get(phase2_idx), Some(true)) // LAW10: pattern not anchor-eligible => caller runs whole-chunk; anchor is a prefilter opt, recall-preserving
     }
 
     #[inline]
     pub(crate) fn is_always_active_eligible(&self, phase2_idx: usize) -> bool {
-        self.always_active_eligible
-            .get(phase2_idx)
-            .copied()
-            .unwrap_or(false) // LAW10: pattern not anchor-eligible => caller runs whole-chunk; anchor is a prefilter opt, recall-preserving
+        if self.always_anchor_ac.is_none() {
+            return false;
+        }
+        matches!(self.always_active_eligible.get(phase2_idx), Some(true)) // LAW10: pattern not anchor-eligible => caller runs whole-chunk; anchor is a prefilter opt, recall-preserving
     }
 
     /// Build the index from the compiled phase-2 set. `always_active_indices`
@@ -254,7 +264,21 @@ impl Phase2AnchorIndex {
                 always_active_eligible[i] = true;
             }
         }
-
+        let mut always_literals: Vec<String> = Vec::new();
+        let mut always_literal_patterns: Vec<Vec<u32>> = Vec::new();
+        for (lit_id, pats) in literal_patterns.iter().enumerate() {
+            let filtered = pats
+                .iter()
+                .copied()
+                .filter(|&pat| matches!(always_active_eligible.get(pat as usize), Some(true)))
+                .collect::<Vec<_>>();
+            if !filtered.is_empty() {
+                if let Some(lit) = literals.get(lit_id) {
+                    always_literals.push(lit.clone());
+                    always_literal_patterns.push(filtered);
+                }
+            }
+        }
         // MatchKind::Standard is required for find_overlapping_iter; ASCII-case
         // -insensitive so a single lowercase literal anchors all case variants.
         let anchor_ac = if literals.is_empty() {
@@ -271,6 +295,25 @@ impl Phase2AnchorIndex {
                         literals = literals.len(),
                         %error,
                         "phase-2 shared-anchor Aho-Corasick build failed; shared-anchor optimization disabled for case-insensitive patterns (recall preserved)"
+                    );
+                    None
+                }
+            }
+        };
+        let always_anchor_ac = if always_literals.is_empty() {
+            None
+        } else {
+            match AhoCorasickBuilder::new()
+                .match_kind(MatchKind::Standard)
+                .ascii_case_insensitive(true)
+                .build(&always_literals)
+            {
+                Ok(ac) => Some(ac),
+                Err(error) => {
+                    tracing::warn!(
+                        literals = always_literals.len(),
+                        %error,
+                        "phase-2 always-active shared-anchor Aho-Corasick build failed; always-active anchored patterns stay on the RegexSet path (recall preserved)"
                     );
                     None
                 }
@@ -302,6 +345,8 @@ impl Phase2AnchorIndex {
             literal_patterns,
             eligible,
             always_active_eligible,
+            always_anchor_ac,
+            always_literal_patterns,
             anchored,
             eligible_count,
             plain_anchor_ac,
@@ -340,6 +385,24 @@ impl Phase2AnchorIndex {
                     if self.is_always_active_eligible(p) || is_active(p) {
                         out.push((pat, pos));
                     }
+                }
+            }
+        }
+        out.sort_unstable();
+        out.dedup();
+    }
+
+    pub(crate) fn collect_always_active_candidates(&self, text: &str, out: &mut Vec<(u32, u32)>) {
+        out.clear();
+        let Some(ac) = &self.always_anchor_ac else {
+            return;
+        };
+        for m in ac.find_overlapping_iter(text) {
+            let lit_id = m.pattern().as_usize();
+            let pos = m.start() as u32;
+            if let Some(pats) = self.always_literal_patterns.get(lit_id) {
+                for &pat in pats {
+                    out.push((pat, pos));
                 }
             }
         }
@@ -435,7 +498,7 @@ fn leading_literals_of_folded(folded: &str) -> Option<Vec<String>> {
 /// `case_insensitive` mirrors the pattern's runtime flag so the extracted
 /// literals reflect the real match semantics; case variants collapse under the
 /// ASCII-lowercase fold (the shared AC matches case-insensitively).
-fn required_prefix_literals(src: &str, case_insensitive: bool) -> Option<Vec<String>> {
+pub(crate) fn required_prefix_literals(src: &str, case_insensitive: bool) -> Option<Vec<String>> {
     let hir = regex_syntax::ParserBuilder::new()
         .case_insensitive(case_insensitive)
         .build()

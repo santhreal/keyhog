@@ -1,3 +1,5 @@
+pub(crate) mod confirmed_anchor;
+
 use super::CompiledScanner;
 use crate::types::*;
 #[cfg(feature = "decode")]
@@ -17,16 +19,18 @@ use std::sync::Arc;
 // ENABLE/override toggle now lives on the per-scanner `ScannerTuning`
 // (`self.tuning.confirmed_suffix_gate_enabled()`); only the gate BUILDER remains
 // in the suffix-gate satellite.
-pub(crate) use super::scan_postprocess_profile::decode_profile_dump;
-pub(crate) use super::scan_postprocess_profile::ml_batch_profile_dump;
-use super::scan_postprocess_profile::{confirmed_prof_enabled, confirmed_prof_vecs};
+use super::scan_postprocess_profile::{
+    confirmed_prof_enabled, confirmed_prof_reset, confirmed_prof_vecs,
+};
 #[cfg(feature = "decode")]
 use super::scan_postprocess_profile::{
     decode_prof_enabled, DECODE_GEN_NS, DECODE_PARENTS, DECODE_SCAN_NS, DECODE_SUBCHUNKS,
     DECODE_SUBCHUNK_BYTES,
 };
+pub(crate) use super::scan_postprocess_profile::{decode_profile_dump, decode_profile_reset};
 #[cfg(feature = "ml")]
 use super::scan_postprocess_profile::{ml_batch_prof_enabled, ml_batch_record};
+pub(crate) use super::scan_postprocess_profile::{ml_batch_profile_dump, ml_batch_profile_reset};
 pub(crate) use super::scan_postprocess_suffix_gate::build_confirmed_suffix_gate;
 
 impl CompiledScanner {
@@ -280,6 +284,90 @@ impl CompiledScanner {
             ),
             _ => None,
         };
+        let suffix_allows = |pat_idx: usize| -> bool {
+            if let Some(present) = &suffix_present {
+                if let Some(gate) = self.ac_suffix_gate.get(pat_idx) {
+                    if !gate.is_empty() && !gate.iter().any(|id| present.contains(&(*id as usize)))
+                    {
+                        return false;
+                    }
+                }
+            }
+            true
+        };
+        if let Some(anchor_index) = &self.confirmed_anchor_index {
+            let has_active_anchored = confirmed_patterns
+                .iter()
+                .any(|&pat_idx| anchor_index.is_eligible(pat_idx) && suffix_allows(pat_idx));
+            if has_active_anchored {
+                confirmed_anchor::CONFIRMED_ANCHOR_CANDIDATES.with(|cell| {
+                    let mut candidates = cell.borrow_mut();
+                    anchor_index.collect_candidates(
+                        &preprocessed.text,
+                        |pat_idx| {
+                            confirmed_patterns.binary_search(&pat_idx).is_ok()
+                                && suffix_allows(pat_idx)
+                        },
+                        &mut candidates,
+                    );
+                    let mut i = 0usize;
+                    while i < candidates.len() {
+                        if let Some(deadline) = deadline {
+                            if std::time::Instant::now() > deadline {
+                                break;
+                            }
+                        }
+                        let pat_idx = candidates[i].0 as usize;
+                        let mut j = i + 1;
+                        while j < candidates.len() && candidates[j].0 as usize == pat_idx {
+                            j += 1;
+                        }
+                        let group = &candidates[i..j];
+                        if let Some(entry) = self.ac_map.get(pat_idx) {
+                            let t0 = if prof {
+                                Some(std::time::Instant::now())
+                            } else {
+                                None
+                            };
+                            match anchor_index.anchored_regex(pat_idx) {
+                                Some(re) => self.extract_anchored(
+                                    entry,
+                                    re,
+                                    group,
+                                    preprocessed,
+                                    line_offsets,
+                                    code_lines,
+                                    documentation_lines,
+                                    chunk,
+                                    scan_state,
+                                    deadline,
+                                ),
+                                None => self.extract_matches(
+                                    entry,
+                                    preprocessed,
+                                    line_offsets,
+                                    code_lines,
+                                    documentation_lines,
+                                    chunk,
+                                    scan_state,
+                                    0,
+                                    0,
+                                    deadline,
+                                ),
+                            }
+                            if let Some(t0) = t0 {
+                                let (ns, runs) = confirmed_prof_vecs(total);
+                                if let (Some(n), Some(r)) = (ns.get(pat_idx), runs.get(pat_idx)) {
+                                    n.fetch_add(t0.elapsed().as_nanos() as u64, Relaxed);
+                                    r.fetch_add(1, Relaxed);
+                                }
+                            }
+                        }
+                        i = j;
+                    }
+                });
+            }
+        }
         for &pat_idx in confirmed_patterns {
             if let Some(deadline) = deadline {
                 if std::time::Instant::now() > deadline {
@@ -287,13 +375,15 @@ impl CompiledScanner {
                 }
             }
             // Skip a gated ac_map pattern whose required suffix literal is absent.
-            if let Some(present) = &suffix_present {
-                if let Some(gate) = self.ac_suffix_gate.get(pat_idx) {
-                    if !gate.is_empty() && !gate.iter().any(|id| present.contains(&(*id as usize)))
-                    {
-                        continue;
-                    }
-                }
+            if !suffix_allows(pat_idx) {
+                continue;
+            }
+            if self
+                .confirmed_anchor_index
+                .as_ref()
+                .is_some_and(|anchor_index| anchor_index.is_eligible(pat_idx))
+            {
+                continue;
             }
             let entry = if pat_idx < self.ac_map.len() {
                 &self.ac_map[pat_idx]
@@ -366,6 +456,10 @@ impl CompiledScanner {
                 s
             );
         }
+    }
+
+    pub(crate) fn confirmed_profile_reset(&self) {
+        confirmed_prof_reset(self.ac_map.len() + self.phase2_patterns.len());
     }
 
     #[cfg(feature = "ml")]

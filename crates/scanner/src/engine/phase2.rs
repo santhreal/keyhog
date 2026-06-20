@@ -103,6 +103,21 @@ pub(crate) fn phase2_pattern_prof_vecs(len: usize) -> (&'static [AtomicU64], &'s
     (ns.as_slice(), runs.as_slice())
 }
 
+pub(crate) fn phase2_pattern_prof_reset(len: usize) {
+    let (ns, runs) = phase2_pattern_prof_vecs(len);
+    for n in ns {
+        n.store(0, Relaxed);
+    }
+    for r in runs {
+        r.store(0, Relaxed);
+    }
+    POPULATE_PREFILTER_NS.store(0, Relaxed);
+    POPULATE_KEYWORD_NS.store(0, Relaxed);
+    GATE_BATCH_SKIPS.store(0, Relaxed);
+    GATE_BATCH_RUNS.store(0, Relaxed);
+    GATE_CALLS.store(0, Relaxed);
+}
+
 #[inline]
 pub(crate) fn phase2_pattern_prof_record(len: usize, index: usize, nanos: u64) {
     let (ns, runs) = phase2_pattern_prof_vecs(len);

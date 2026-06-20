@@ -318,6 +318,7 @@ mod tests {
             regex,
             group: None,
             client_safe: false,
+            match_proves_keyword_nearby: false,
             homoglyph_variant,
         }
     }

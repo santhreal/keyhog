@@ -89,6 +89,12 @@ only this fraction is GPU-offloadable) ===",
     );
 }
 
+pub(crate) fn ml_split_profile_reset() {
+    use std::sync::atomic::Ordering::Relaxed;
+    MOE_FEATURE_NS.store(0, Relaxed);
+    MOE_SCORE_NS.store(0, Relaxed);
+}
+
 #[cfg(test)]
 pub(crate) fn batch_ml_inference(
     candidates: &[(&str, &str)],

@@ -410,6 +410,7 @@ pub(crate) fn phase2_keyword_ac_summary(regex: &str, keywords: Vec<String>) -> (
         regex: crate::types::LazyRegex::detector(regex),
         group: None,
         client_safe: false,
+        match_proves_keyword_nearby: false,
         homoglyph_variant: false,
     };
     let phase2_patterns = vec![(pattern, keywords)];
@@ -537,6 +538,16 @@ pub(crate) fn set_confirmed_suffix_gate(
     mode: Option<bool>,
 ) {
     scanner.tuning().set_confirmed_suffix_gate(mode);
+}
+
+#[cfg(test)]
+pub(crate) fn disable_confirmed_anchor(scanner: &mut crate::engine::CompiledScanner) {
+    scanner.disable_confirmed_anchor_for_test();
+}
+
+#[cfg(test)]
+pub(crate) fn confirmed_anchor_eligible_count(scanner: &crate::engine::CompiledScanner) -> usize {
+    scanner.confirmed_anchor_eligible_count_for_test()
 }
 
 #[cfg(test)]
@@ -1213,6 +1224,11 @@ pub(crate) mod compiler_prefix {
     pub(crate) fn strip_leading_inline_flags(pattern: &str) -> &str {
         crate::compiler::compiler_prefix::strip_leading_inline_flags(pattern)
     }
+}
+
+#[cfg(test)]
+pub(crate) fn match_proves_keyword_nearby(regex: &str, keywords: &[String]) -> bool {
+    crate::compiler::match_proves_keyword_nearby(regex, keywords)
 }
 
 /// Caesar shift-selection internals, exposed for the 100k differential

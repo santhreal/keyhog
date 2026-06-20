@@ -198,6 +198,13 @@ fn read_reset() -> ([u64; N], [u64; N], [u64; N], u64, u64) {
 /// Discard all accumulated counters without printing (warm-up between runs).
 pub fn reset() {
     let _ = read_reset(); // LAW10: intentionally discards the swapped-out profiling counters (reset side-effect, warm-up between runs); telemetry-only, recall-irrelevant
+    super::scan_inner_profile::scan_inner_profile_reset();
+    super::scan_postprocess::decode_profile_reset();
+    crate::decode::extract_profile_reset();
+    crate::decode::decoder_profile_reset();
+    super::phase2_generic::generic_profile_reset();
+    super::scan_postprocess::ml_batch_profile_reset();
+    crate::gpu::ml_split_profile_reset();
 }
 
 const PHASE2_CAPTURE_LEAVES: [usize; 5] = [

@@ -182,6 +182,7 @@ pub(crate) fn compile_pattern(
     pattern_index: usize,
     spec: &PatternSpec,
     detector_id: &str,
+    detector_keywords: &[String],
 ) -> Result<CompiledPattern> {
     // Eagerly validate regex SYNTAX so a malformed detector pattern (e.g.
     // `(unclosed`) is rejected at compile time rather than silently degrading
@@ -227,8 +228,26 @@ pub(crate) fn compile_pattern(
         regex: LazyRegex::detector(spec.regex.as_str()),
         group: spec.group,
         client_safe: spec.client_safe,
+        match_proves_keyword_nearby: match_proves_keyword_nearby(
+            spec.regex.as_str(),
+            detector_keywords,
+        ),
         homoglyph_variant: false,
     })
+}
+
+pub(crate) fn match_proves_keyword_nearby(regex: &str, detector_keywords: &[String]) -> bool {
+    let prefixes = super::compiler_prefix::extract_literal_prefixes(regex);
+    !prefixes.is_empty()
+        && prefixes.iter().all(|prefix| {
+            detector_keywords.iter().any(|keyword| {
+                !keyword.is_empty()
+                    && prefix
+                        .as_bytes()
+                        .get(..keyword.len())
+                        .is_some_and(|head| head.eq_ignore_ascii_case(keyword.as_bytes()))
+            })
+        })
 }
 
 /// Number of independently-locked shards in the process-wide regex cache.

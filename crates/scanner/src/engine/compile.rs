@@ -210,10 +210,15 @@ impl CompiledScanner {
         let (suffix_gate_ac, ac_suffix_gate) =
             super::scan_postprocess::build_confirmed_suffix_gate(&state.ac_map);
         let gated = ac_suffix_gate.iter().filter(|g| !g.is_empty()).count();
+        let confirmed_anchor_index =
+            scan_postprocess::confirmed_anchor::ConfirmedAnchorIndex::build(&state.ac_map);
         tracing::debug!(
             gated,
+            anchored = confirmed_anchor_index
+                .as_ref()
+                .map_or(0, |index| index.eligible_count()),
             total = state.ac_map.len(),
-            "confirmed suffix gate built"
+            "confirmed suffix/anchor gates built"
         );
 
         log_quality_warnings(&state.quality_warnings);
@@ -381,6 +386,7 @@ impl CompiledScanner {
             ac_match_upper_bounds,
             suffix_gate_ac,
             ac_suffix_gate,
+            confirmed_anchor_index,
             ac_map: state.ac_map,
             pattern_boundary_context,
             prefix_propagation,

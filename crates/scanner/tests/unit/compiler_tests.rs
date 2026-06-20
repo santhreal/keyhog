@@ -1,8 +1,8 @@
 //! Migrated from src/compiler.rs & src/compiler/compiler_prefix.rs
 
 use keyhog_scanner::testing::{
-    extract_inner_literals, extract_literal_prefixes, rewrite_alternation_prefix,
-    split_leading_inline_flag,
+    extract_inner_literals, extract_literal_prefixes, match_proves_keyword_nearby,
+    rewrite_alternation_prefix, split_leading_inline_flag,
 };
 
 #[test]
@@ -145,6 +145,31 @@ fn inner_literal_dedup() {
 #[test]
 fn inner_literal_garbage_regex_returns_empty() {
     assert!(extract_inner_literals(r"[unclosed").is_empty());
+}
+
+#[test]
+fn keyword_signal_proof_requires_all_prefixes_to_start_with_detector_keyword() {
+    let stripe_keywords = vec![
+        "sk_live_".to_string(),
+        "sk_test_".to_string(),
+        "rk_live_".to_string(),
+        "rk_test_".to_string(),
+    ];
+    assert!(match_proves_keyword_nearby(
+        r"(?:sk_live_|sk_test_)[a-zA-Z0-9]{24,}",
+        &stripe_keywords
+    ));
+
+    let mixed_keywords = vec!["sk_live_".to_string()];
+    assert!(!match_proves_keyword_nearby(
+        r"(?:sk_live_|rk_live_)[a-zA-Z0-9]{24,}",
+        &mixed_keywords
+    ));
+
+    assert!(!match_proves_keyword_nearby(
+        r"[a-zA-Z0-9]{20}",
+        &stripe_keywords
+    ));
 }
 
 /// Quantify how many embedded detectors move from fallback to AC

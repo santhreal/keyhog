@@ -256,8 +256,9 @@ impl CompiledScanner {
                 }
             }
 
-            let &(keyword_nearby, sensitive_file) = signals
-                .get_or_init(|| super::scan_filters::compute_pattern_signals(detector, chunk));
+            let &(keyword_nearby, sensitive_file) = signals.get_or_init(|| {
+                super::scan_filters::compute_pattern_signals(entry, detector, chunk)
+            });
             self.process_match(
                 entry,
                 detector,
@@ -367,8 +368,9 @@ impl CompiledScanner {
             if matched.end() == matched.start() {
                 continue;
             }
-            let &(keyword_nearby, sensitive_file) = signals
-                .get_or_init(|| super::scan_filters::compute_pattern_signals(detector, chunk));
+            let &(keyword_nearby, sensitive_file) = signals.get_or_init(|| {
+                super::scan_filters::compute_pattern_signals(entry, detector, chunk)
+            });
             self.process_match(
                 entry,
                 detector,

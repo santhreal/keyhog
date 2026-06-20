@@ -8,6 +8,8 @@ use super::phase2::*;
 use super::*;
 use std::time::Instant;
 
+const KEYWORD_ANCHOR_WHOLE_CHUNK_CUTOFF: usize = 2;
+
 impl CompiledScanner {
     /// As `with_active_phase2_patterns`, but hands the closure the full
     /// `ActivePatternsScratch` (not just the sparse list) so it can also test
@@ -76,15 +78,26 @@ impl CompiledScanner {
         // Keyword AC still seeds from the FULL chunk bytes so a keyword in far
         // context activates its pattern; only the prefilter text is windowed.
         self.with_active_phase2_scratch(&chunk.data, scan_text, |this, scratch| {
+            let active_keyword_anchors = scratch
+                .active
+                .iter()
+                .filter(|&&pat| anchor_idx.is_eligible(pat))
+                .count();
+            let localize_keyword_anchors =
+                active_keyword_anchors > KEYWORD_ANCHOR_WHOLE_CHUNK_CUTOFF;
             ANCHOR_CANDIDATES.with(|cell| {
                 let mut cands = cell.borrow_mut();
                 {
                     let _g = super::profile::span(super::profile::P::Phase2SharedAc);
-                    anchor_idx.collect_candidates(
-                        scan_text,
-                        |pat| scratch.is_active(pat),
-                        &mut cands,
-                    );
+                    if localize_keyword_anchors {
+                        anchor_idx.collect_candidates(
+                            scan_text,
+                            |pat| scratch.is_active(pat),
+                            &mut cands,
+                        );
+                    } else {
+                        anchor_idx.collect_always_active_candidates(scan_text, &mut cands);
+                    }
                 }
                 // Candidate positions are relative to `scan_text`; lift them back
                 // into full-text coordinates so anchored verification indexes the
@@ -260,7 +273,7 @@ impl CompiledScanner {
             // (windowed to the focus cursor when focus-restricting).
             let _wholechunk_g = super::profile::span(super::profile::P::Phase2WholeChunk);
             for (tested, &index) in scratch.active.iter().enumerate() {
-                if anchor_idx.is_eligible(index) {
+                if localize_keyword_anchors && anchor_idx.is_eligible(index) {
                     continue;
                 }
                 if let Some(deadline) = deadline {

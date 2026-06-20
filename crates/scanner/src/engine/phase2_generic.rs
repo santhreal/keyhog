@@ -40,6 +40,15 @@ pub(crate) fn generic_profile_dump() {
     );
 }
 
+pub(crate) fn generic_profile_reset() {
+    GENERIC_PREFILTER_NS.store(0, Relaxed);
+    GENERIC_EXTRACT_NS.store(0, Relaxed);
+    GENERIC_PREFILTER_CALLS.store(0, Relaxed);
+    GENERIC_KEYWORD_LINES.store(0, Relaxed);
+    GENERIC_REGEX_CAPTURES.store(0, Relaxed);
+    GENERIC_EMITS.store(0, Relaxed);
+}
+
 #[inline]
 fn record_generic_ns(slot: &AtomicU64, start: Option<std::time::Instant>) {
     if let Some(start) = start {
@@ -125,21 +134,27 @@ impl CompiledScanner {
             return;
         };
 
-        // Short-circuit: for the ~95% of chunks with zero prior matches there
-        // is nothing to dedup against, so skip both allocations (the temporary
-        // `Vec<usize>` and the `HashSet`) and use an empty set. Only build the
-        // covered-line set when there is at least one existing match.
-        let covered_lines: std::collections::HashSet<usize> = if scan_state.matches.is_empty() {
-            std::collections::HashSet::new()
-        } else {
-            scan_state
-                .matches
-                .iter()
-                .filter_map(|m| m.location.line)
-                .collect()
+        // Lines already carrying named findings do not need a generic bridge
+        // echo. Include ML-pending findings too: they have not been finalized
+        // yet, but they already represent named detector matches on the line.
+        let covered_lines: std::collections::HashSet<usize> = scan_state
+            .matches
+            .iter()
+            .filter_map(|m| m.location.line)
+            .collect();
+        #[cfg(feature = "ml")]
+        let covered_lines = {
+            let mut lines = covered_lines;
+            lines.extend(
+                scan_state
+                    .ml_pending
+                    .iter()
+                    .filter_map(|pending| pending.raw_match.location.line),
+            );
+            lines
         };
 
-        // Single-pass case-insensitive Aho-Corasick over all 16 keywords.
+        // Single-pass case-insensitive Aho-Corasick over the compact keyword stems.
         // Replaces the previous 16 × O(line_len) byte-window scans per line
         // (one per keyword) with one O(line_len) automaton walk that catches
         // every keyword simultaneously. On an 8 MiB no-hit corpus this drops

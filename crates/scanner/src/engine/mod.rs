@@ -224,6 +224,12 @@ pub struct CompiledScanner {
     /// from the chunk cannot match and is skipped (see `extract_confirmed_patterns`).
     pub(crate) suffix_gate_ac: Option<AhoCorasick>,
     pub(crate) ac_suffix_gate: Vec<Vec<u32>>,
+    /// Shared-anchor localization index over the confirmed `ac_map`. Eligible
+    /// triggered patterns are verified at required-prefix candidate positions
+    /// instead of each walking the whole scan window; non-eligible patterns keep
+    /// the whole-chunk path.
+    pub(crate) confirmed_anchor_index:
+        Option<scan_postprocess::confirmed_anchor::ConfirmedAnchorIndex>,
     pub(crate) prefix_propagation: CsrU32,
     pub(crate) phase2_patterns: Vec<(CompiledPattern, Vec<String>)>,
     pub(crate) companions: Vec<Vec<CompiledCompanion>>,

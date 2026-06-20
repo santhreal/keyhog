@@ -194,6 +194,12 @@ impl CompiledScanner {
         self.confirmed_profile_dump(label);
     }
 
+    pub fn reset_profile_reports(&self) {
+        profile::reset();
+        self.phase2_profile_reset();
+        self.confirmed_profile_reset();
+    }
+
     pub(crate) fn detector_digest(&self) -> u64 {
         let patterns = self.pattern_regex_strs();
         let mut hasher = blake3::Hasher::new();

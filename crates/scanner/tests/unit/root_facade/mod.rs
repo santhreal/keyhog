@@ -7,6 +7,7 @@ mod audit_speed;
 mod autoroute_gpu_optin_contract;
 mod backend_collapse_regression;
 mod backend_collapse_surface_regression;
+mod confirmed_anchor_parity;
 mod confirmed_gate_parity;
 mod confirmed_pattern_profile;
 mod decode_focus_parity;
@@ -14,6 +15,7 @@ mod decode_recursion_profile;
 mod decode_test;
 mod detector_registry_truth_matrix;
 mod fullscan_throughput;
+mod generic_named_pending_coverage;
 #[cfg(feature = "gpu")]
 mod gpu_cache_dir_contract;
 mod gpu_resident_throughput;

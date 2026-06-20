@@ -524,4 +524,8 @@ impl CompiledScanner {
             );
         }
     }
+
+    pub(crate) fn phase2_profile_reset(&self) {
+        phase2_pattern_prof_reset(self.phase2_patterns.len());
+    }
 }

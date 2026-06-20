@@ -35,3 +35,10 @@ pub(crate) fn scan_inner_profile_dump() {
         }
     );
 }
+
+pub(crate) fn scan_inner_profile_reset() {
+    use std::sync::atomic::Ordering::Relaxed;
+    SCAN_PREPARE_NS.store(0, Relaxed);
+    SCAN_PHASE1_NS.store(0, Relaxed);
+    SCAN_INNER_CALLS.store(0, Relaxed);
+}

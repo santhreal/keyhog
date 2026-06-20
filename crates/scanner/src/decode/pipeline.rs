@@ -73,6 +73,16 @@ pub(crate) fn decoder_profile_dump() {
     eprintln!("  {:<18}: {prod_total:>8}", "TOTAL");
 }
 
+pub(crate) fn decoder_profile_reset() {
+    use std::sync::atomic::Ordering::Relaxed;
+    for slot in &DECODER_NS {
+        slot.store(0, Relaxed);
+    }
+    for slot in &DECODER_PRODUCED {
+        slot.store(0, Relaxed);
+    }
+}
+
 const MAX_DECODED_CHUNKS_PER_ROOT: usize = 1000;
 const MAX_DECODED_TOTAL_BYTES: usize = 64 * 1024 * 1024;
 /// Hard ceiling on the wall-clock time decode_chunk may spend on ONE chunk
@@ -635,7 +645,7 @@ where
 }
 
 mod extractor;
-pub(crate) use extractor::extract_profile_dump;
 pub(super) use extractor::{
     extract_encoded_value_spans, extract_encoded_values, hash_fast, ExtractedValue,
 };
+pub(crate) use extractor::{extract_profile_dump, extract_profile_reset};

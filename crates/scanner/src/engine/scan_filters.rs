@@ -437,13 +437,15 @@ fn is_provider_token_byte(byte: u8) -> bool {
 /// `OnceCell` init closure body (Rust can't `impl FnOnce<>` to share inline).
 /// Lives here (not `scan.rs`) to keep that file under the standard 500-LOC cap.
 pub(super) fn compute_pattern_signals(
+    entry: &crate::types::CompiledPattern,
     detector: &keyhog_core::DetectorSpec,
     chunk: &keyhog_core::Chunk,
 ) -> (bool, bool) {
-    let kw = detector
-        .keywords
-        .iter()
-        .any(|keyword| chunk.data.contains(keyword.as_str()));
+    let kw = entry.match_proves_keyword_nearby
+        || detector
+            .keywords
+            .iter()
+            .any(|keyword| chunk.data.contains(keyword.as_str()));
     let sf = chunk
         .metadata
         .path

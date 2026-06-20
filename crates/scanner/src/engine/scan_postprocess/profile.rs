@@ -25,6 +25,16 @@ pub(crate) fn confirmed_prof_vecs(len: usize) -> (&'static [AtomicU64], &'static
     (ns.as_slice(), runs.as_slice())
 }
 
+pub(crate) fn confirmed_prof_reset(len: usize) {
+    let (ns, runs) = confirmed_prof_vecs(len);
+    for n in ns {
+        n.store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+    for r in runs {
+        r.store(0, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
 /// ML batch-size histogram. Buckets the `ml_pending.len()` seen at each
 /// [`CompiledScanner::apply_ml_batch_scores`] call so we can measure how far
 /// per-(sub)chunk ML batches sit from the GPU MoE 64-candidate dispatch threshold
@@ -114,8 +124,22 @@ GPU-eligible (>=64): {calls_ge64} calls ({:.1}%), {cands_ge64} candidates ({:.1}
     }
 }
 
+#[cfg(feature = "ml")]
+pub(crate) fn ml_batch_profile_reset() {
+    for bucket in &ML_BATCH_BUCKETS {
+        bucket.store(0, Relaxed);
+    }
+    ML_BATCH_CALLS.store(0, Relaxed);
+    ML_BATCH_CANDIDATES.store(0, Relaxed);
+    ML_BATCH_CALLS_GE64.store(0, Relaxed);
+    ML_BATCH_CANDIDATES_GE64.store(0, Relaxed);
+}
+
 #[cfg(not(feature = "ml"))]
 pub(crate) fn ml_batch_profile_dump() {}
+
+#[cfg(not(feature = "ml"))]
+pub(crate) fn ml_batch_profile_reset() {}
 
 /// Decode-recursion profiler (measurement only). Use `keyhog scan --profile` to
 /// accumulate, across a full scan, how many parent
@@ -172,7 +196,19 @@ pub(crate) fn decode_profile_dump() -> (u64, u64, u64, f64, f64) {
     (parents, subchunks, bytes, gen_ms, scan_ms)
 }
 
+#[cfg(feature = "decode")]
+pub(crate) fn decode_profile_reset() {
+    DECODE_PARENTS.store(0, Relaxed);
+    DECODE_SUBCHUNKS.store(0, Relaxed);
+    DECODE_SUBCHUNK_BYTES.store(0, Relaxed);
+    DECODE_GEN_NS.store(0, Relaxed);
+    DECODE_SCAN_NS.store(0, Relaxed);
+}
+
 #[cfg(not(feature = "decode"))]
 pub(crate) fn decode_profile_dump() -> (u64, u64, u64, f64, f64) {
     (0, 0, 0, 0.0, 0.0)
 }
+
+#[cfg(not(feature = "decode"))]
+pub(crate) fn decode_profile_reset() {}

@@ -14,10 +14,7 @@
 //! medians, not criterion's adaptive sampling — every number is one timed call.
 
 use keyhog_core::{load_detectors, Chunk, ChunkMetadata};
-use keyhog_scanner::{
-    profile_dump, profile_reset, set_perf_trace_enabled, set_profile_enabled, CompiledScanner,
-    ScanBackend,
-};
+use keyhog_scanner::{set_perf_trace_enabled, set_profile_enabled, CompiledScanner, ScanBackend};
 use std::env;
 use std::io;
 use std::path::PathBuf;
@@ -86,7 +83,7 @@ fn time_backend(
     let warm = scanner.scan_chunks_with_backend(chunks, backend);
     let hits: usize = warm.iter().map(Vec::len).sum();
     if profile {
-        profile_reset();
+        scanner.reset_profile_reports();
     }
     let mut samples = Vec::with_capacity(iters);
     for _ in 0..iters {
@@ -95,8 +92,8 @@ fn time_backend(
         samples.push(t.elapsed());
         std::hint::black_box(&r);
     }
-    if profile && !matches!(backend, ScanBackend::Gpu) {
-        profile_dump(label);
+    if profile {
+        scanner.dump_profile_reports(label);
     }
     (median(samples), hits)
 }
