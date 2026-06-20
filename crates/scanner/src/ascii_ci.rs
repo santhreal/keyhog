@@ -20,26 +20,15 @@
 #[inline]
 #[cfg(any(feature = "gpu", test))]
 pub(crate) fn extend_ascii_lowercase_from(dst: &mut Vec<u8>, src: &[u8]) {
-    let start = dst.len();
     dst.reserve(src.len());
-    let out = dst.as_mut_ptr();
-    for (offset, &byte) in src.iter().enumerate() {
-        let folded = if byte.is_ascii_uppercase() {
-            byte | 0x20
-        } else {
-            byte
-        };
-        // SAFETY: `reserve(src.len())` guarantees capacity for every write in
-        // `start..start + src.len()`. The loop body cannot panic, and length is
-        // published only after all initialized bytes are written.
-        unsafe {
-            out.add(start + offset).write(folded);
-        }
-    }
-    // SAFETY: the loop initialized exactly `src.len()` bytes after `start`.
-    unsafe {
-        dst.set_len(start + src.len());
-    }
+    dst.extend(src.iter().map(|&byte| ascii_lower_branchless(byte)));
+}
+
+#[inline]
+#[cfg(any(feature = "gpu", test))]
+fn ascii_lower_branchless(byte: u8) -> u8 {
+    let uppercase = byte.wrapping_sub(b'A') <= (b'Z' - b'A');
+    byte | ((uppercase as u8) << 5)
 }
 
 /// Case-insensitive `ends_with`. Returns true when the last `suffix.len()`

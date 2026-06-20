@@ -14,12 +14,12 @@ fn extend_ascii_lowercase_from_appends_folded_bytes_once() {
 
 #[test]
 fn extend_ascii_lowercase_from_matches_make_ascii_lowercase_semantics() {
-    let src = b"AbC xyz 123 ! \xc3\x91";
+    let src: Vec<u8> = (0u8..=255).collect();
     let mut expected = src.to_vec();
     expected.make_ascii_lowercase();
 
     let mut actual = Vec::new();
-    extend_ascii_lowercase_from(&mut actual, src);
+    extend_ascii_lowercase_from(&mut actual, &src);
 
     assert_eq!(actual, expected);
 }
