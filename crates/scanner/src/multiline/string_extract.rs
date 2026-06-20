@@ -207,6 +207,18 @@ fn extract_plus_concatenation(line: &str) -> Option<(String, bool)> {
         trimmed
     };
 
+    // This extractor owns quoted/string-literal concatenation only. Unquoted
+    // `+` appears naturally inside standard base64 and arithmetic/config
+    // expressions; treating it as a join mutates ordinary assignment values and
+    // appends a synthetic scan body past EOF. Variable-reference joins such as
+    // `token = head + tail` are handled by the structural resolver instead.
+    if !content_to_split.contains('"')
+        && !content_to_split.contains('\'')
+        && !content_to_split.contains('`')
+    {
+        return None;
+    }
+
     let parts: Vec<&str> = content_to_split.split('+').collect();
     if parts.len() < 2 && !ends_with_plus {
         return None;

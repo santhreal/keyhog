@@ -8,6 +8,8 @@ pub mod regression;
 pub mod regression_creddata_hex_key_recall;
 #[path = "regression_encoded_benign_text_suppression.rs"]
 pub mod regression_encoded_benign_text_suppression;
+#[path = "regression_entropy_base64_protobuf_decoys.rs"]
+pub mod regression_entropy_base64_protobuf_decoys;
 #[path = "regression_generic_bridge_padded_log_field.rs"]
 pub mod regression_generic_bridge_padded_log_field;
 #[path = "regression_private_key_caesar_decode_suppression.rs"]

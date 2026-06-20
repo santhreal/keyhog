@@ -264,6 +264,38 @@ pub(crate) fn decodes_to_printable_text(candidate: &str) -> bool {
         && !structure.is_binary_payload()
 }
 
+/// True when a base64/base64url/hex-shaped candidate decodes to bytes carrying
+/// at least one NUL byte. This is narrower than `printable_ratio`: random bytes
+/// and opaque credentials can both be mostly non-printable, but a NUL-bearing
+/// decoded payload is binary data evidence for fallback entropy gates that have
+/// no service-specific detector anchor.
+#[must_use]
+pub(crate) fn decoded_contains_nul_byte(candidate: &str) -> bool {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+
+    thread_local! {
+        static CACHE: RefCell<HashMap<u64, bool>> = RefCell::new(HashMap::with_capacity(256));
+    }
+
+    let key = crate::util_hash::hash_fast(candidate.as_bytes());
+    crate::util_hash::memoize_by_hash(
+        &CACHE,
+        key,
+        crate::util_hash::DEFAULT_MAX_CACHE_ENTRIES,
+        || {
+            let trimmed = candidate.trim();
+            if trimmed.len() < MIN_DECODE_LEN {
+                return false;
+            }
+            let Some(bytes) = decode_candidate(trimmed) else {
+                return false;
+            };
+            bytes.contains(&0)
+        },
+    )
+}
+
 fn compute_decoded_is_base64_blob(candidate: &str) -> bool {
     let trimmed = candidate.trim();
     if trimmed.len() < MIN_DECODE_LEN {

@@ -321,7 +321,6 @@ pub(crate) fn entropy_match_suppressed(
     {
         return true;
     }
-
     // Decode-through coherence (entropy phase-2 path). The
     // ML-pending pipeline calls `apply_post_ml_penalties`
     // which gates on `decode_structure::is_encoded_binary`,
@@ -339,6 +338,19 @@ pub(crate) fn entropy_match_suppressed(
     // cost is a single bytes-hash + cache lookup.
     if !high_entropy_punctuation_payload
         && crate::decode_structure::is_encoded_binary(&entropy_match.value)
+    {
+        return true;
+    }
+    // Random-byte base64 decoy coherence for the entropy path. The generic
+    // bridge already dogfood-suppresses pure standard-base64 random-byte blobs,
+    // but entropy emits independently. Do not reuse that broad gate verbatim:
+    // TOKEN/API_KEY/DEPLOY_TOKEN positives can be opaque base64-looking random
+    // bytes. Require decoded NUL evidence before entropy hard-drops the value.
+    if !high_entropy_punctuation_payload
+        && crate::decode_structure::decoded_contains_nul_byte(&entropy_match.value)
+        && crate::engine::phase2_generic::shape_helpers::generic_path_looks_like_random_byte_blob(
+            &entropy_match.value,
+        )
     {
         return true;
     }
