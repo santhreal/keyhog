@@ -27,11 +27,10 @@
 //! ```
 
 mod support;
-use support::paths::{corpus_dir, detector_dir};
+use support::paths::{corpus_dir, corpus_files, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
-use std::path::PathBuf;
 use std::time::Instant;
 
 const KIB: usize = 1024;
@@ -104,31 +103,13 @@ fn benign_payload(size: usize) -> String {
 /// corpus tree is absent.
 fn dense_base() -> Option<String> {
     let root = corpus_dir()?;
-    let mut files: Vec<PathBuf> = Vec::new();
-    let mut stack = vec![root];
-    while let Some(dir) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in rd.flatten() {
-            let p = entry.path();
-            if p.is_dir() {
-                stack.push(p);
-            } else if p.is_file() {
-                files.push(p);
-            }
-        }
-    }
-    files.sort();
     let mut blob = String::with_capacity(MIB);
-    for p in files.iter().take(4000) {
+    for bytes in corpus_files(&root, 4000) {
         if blob.len() >= MIB {
             break;
         }
-        if let Ok(bytes) = std::fs::read(p) {
-            blob.push_str(&String::from_utf8_lossy(&bytes));
-            blob.push('\n');
-        }
+        blob.push_str(&String::from_utf8_lossy(&bytes));
+        blob.push('\n');
     }
     (!blob.is_empty()).then_some(blob)
 }

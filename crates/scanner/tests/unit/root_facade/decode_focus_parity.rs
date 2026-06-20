@@ -11,12 +11,11 @@
 //!     -p keyhog-scanner --test decode_focus_parity -- --nocapture
 
 use super::support;
-use support::paths::{corpus_dir, detector_dir};
+use support::paths::{corpus_dir, corpus_files, detector_dir};
 
 use base64::Engine;
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
-use std::path::PathBuf;
 
 struct Lcg(u64);
 impl Lcg {
@@ -154,30 +153,6 @@ fn diff_panic(label: &str, on: &[(String, String, String)], off: &[(String, Stri
     panic!("decode focus changed findings on {label}");
 }
 
-fn collect_files(root: &PathBuf, limit: usize) -> Vec<Vec<u8>> {
-    let mut files = Vec::new();
-    let mut stack = vec![root.clone()];
-    while let Some(dir) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for e in rd.flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                stack.push(p);
-            } else if p.is_file() {
-                if let Ok(b) = std::fs::read(&p) {
-                    files.push(b);
-                    if files.len() >= limit {
-                        return files;
-                    }
-                }
-            }
-        }
-    }
-    files
-}
-
 #[test]
 fn decode_focus_parity_default() {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
@@ -204,7 +179,7 @@ fn decode_focus_parity_default() {
     }
 
     if let Some(root) = corpus_dir() {
-        let files = collect_files(&root, 6000);
+        let files = corpus_files(&root, 6000);
         let mut chunks: Vec<Vec<u8>> = Vec::new();
         let mut cur = Vec::new();
         for f in &files {

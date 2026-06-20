@@ -7,35 +7,10 @@
 //!   cargo test --profile release-fast -p keyhog-scanner \
 //!     --test phase2_pattern_profile -- --ignored --nocapture
 
-use super::support::paths::{corpus_dir, detector_dir};
+use super::support::paths::{corpus_dir, corpus_files, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{set_profile_enabled, CompiledScanner, ScanBackend};
-use std::path::PathBuf;
-
-fn collect_files(root: &PathBuf, limit: usize) -> Vec<Vec<u8>> {
-    let mut files = Vec::new();
-    let mut stack = vec![root.clone()];
-    while let Some(dir) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in rd.flatten() {
-            let p = entry.path();
-            if p.is_dir() {
-                stack.push(p);
-            } else if p.is_file() {
-                if let Ok(b) = std::fs::read(&p) {
-                    files.push(b);
-                    if files.len() >= limit {
-                        return files;
-                    }
-                }
-            }
-        }
-    }
-    files
-}
 
 fn chunk_of(bytes: &[u8], label: &str) -> Chunk {
     Chunk {
@@ -60,7 +35,7 @@ fn phase2_pattern_profile_mirror() {
         eprintln!("phase2_pattern_profile: mirror corpus absent — skipping");
         return;
     };
-    let files = collect_files(&root, 8000);
+    let files = corpus_files(&root, 8000);
     eprintln!("phase2_pattern_profile: {} mirror files", files.len());
 
     // Regime B: ~16 KiB concatenated chunks (the stated target file size).

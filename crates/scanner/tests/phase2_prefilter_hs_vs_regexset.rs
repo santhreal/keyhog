@@ -20,7 +20,6 @@
 #![cfg(feature = "simd")]
 
 use std::collections::BTreeSet;
-use std::path::PathBuf;
 use std::time::Instant;
 
 use hyperscan::{
@@ -29,35 +28,11 @@ use hyperscan::{
 
 #[path = "support/mod.rs"]
 mod support;
-use support::paths::{corpus_dir, detector_dir};
+use support::paths::{corpus_dir, corpus_files, detector_dir};
 
 /// Patterns per `regex::RegexSet` batch (mirrors the production prefilter, which
 /// batches rather than building one giant set that blows the compiled-size cap).
 const REGEX_BATCH: usize = 256;
-
-fn collect_files(root: &PathBuf, limit: usize) -> Vec<Vec<u8>> {
-    let mut files = Vec::new();
-    let mut stack = vec![root.clone()];
-    while let Some(dir) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in rd.flatten() {
-            let p = entry.path();
-            if p.is_dir() {
-                stack.push(p);
-            } else if p.is_file() {
-                if let Ok(b) = std::fs::read(&p) {
-                    files.push(b);
-                    if files.len() >= limit {
-                        return files;
-                    }
-                }
-            }
-        }
-    }
-    files
-}
 
 /// Build a Hyperscan block DB over `(id, regex)`, dropping patterns HS rejects
 /// (PCRE features / "pattern too large") the same way the production
@@ -166,7 +141,7 @@ fn hs_vs_regexset_throughput_and_parity() {
         hs_dropped.len()
     );
 
-    let files = collect_files(&root, 4000);
+    let files = corpus_files(&root, 4000);
     let total_bytes: usize = files.iter().map(Vec::len).sum();
     eprintln!(
         "corpus: {} files, {:.2} MiB",

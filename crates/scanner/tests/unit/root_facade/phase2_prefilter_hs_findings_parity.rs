@@ -16,41 +16,16 @@
 #![cfg(feature = "simd")]
 
 use std::collections::BTreeSet;
-use std::path::PathBuf;
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 
 use super::support;
-use support::paths::{corpus_dir, detector_dir};
+use support::paths::{corpus_dir, corpus_files_with_paths, detector_dir};
 
 /// `(detector_id, credential, offset)` — the finding identity the swap must
 /// preserve exactly.
 type FindingKey = (String, String, usize);
-
-fn collect_files(root: &PathBuf, limit: usize) -> Vec<(String, Vec<u8>)> {
-    let mut files = Vec::new();
-    let mut stack = vec![root.clone()];
-    while let Some(dir) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in rd.flatten() {
-            let p = entry.path();
-            if p.is_dir() {
-                stack.push(p);
-            } else if p.is_file() {
-                if let Ok(b) = std::fs::read(&p) {
-                    files.push((p.to_string_lossy().into_owned(), b));
-                    if files.len() >= limit {
-                        return files;
-                    }
-                }
-            }
-        }
-    }
-    files
-}
 
 fn scan_file(scanner: &CompiledScanner, path: &str, bytes: &[u8]) -> BTreeSet<FindingKey> {
     let chunk = Chunk {
@@ -94,7 +69,7 @@ fn hs_prefilter_findings_identical_to_regexset() {
         return;
     };
     let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
-    let files = collect_files(&root, 6000);
+    let files = corpus_files_with_paths(&root, 6000);
     assert!(!files.is_empty(), "mirror corpus must have files");
 
     let mut mismatched = 0usize;

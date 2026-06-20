@@ -16,11 +16,10 @@
 //!     --test phase2_anchor_parity -- --ignored --nocapture
 
 use super::support;
-use support::paths::{corpus_dir, detector_dir};
+use support::paths::{corpus_dir, corpus_files, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
-use std::path::PathBuf;
 
 /// Tiny deterministic LCG so the corpus is reproducible without a crate dep and
 /// without the banned `Math.random`/time entropy.
@@ -233,30 +232,6 @@ fn synthetic(scanner: &CompiledScanner, n: usize) -> usize {
     checked
 }
 
-fn collect_files(root: &PathBuf, limit: usize) -> Vec<Vec<u8>> {
-    let mut files = Vec::new();
-    let mut stack = vec![root.clone()];
-    while let Some(dir) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for entry in rd.flatten() {
-            let p = entry.path();
-            if p.is_dir() {
-                stack.push(p);
-            } else if p.is_file() {
-                if let Ok(b) = std::fs::read(&p) {
-                    files.push(b);
-                    if files.len() >= limit {
-                        return files;
-                    }
-                }
-            }
-        }
-    }
-    files
-}
-
 /// Isolated fallback-pass diff on the mirror-16k chunks: compares ONLY
 /// `scan_phase2_patterns` output (no reassembly/decode), so it names the
 /// exact detector whose raw match set diverges.
@@ -269,7 +244,7 @@ fn phase2_only_diff_mirror() {
         eprintln!("no corpus; skipping");
         return;
     };
-    let files = collect_files(&root, 6000);
+    let files = corpus_files(&root, 6000);
     let mut chunks_16k: Vec<Vec<u8>> = Vec::new();
     let mut cur = Vec::new();
     for f in &files {
@@ -321,7 +296,7 @@ fn phase2_anchor_parity_default() {
 
     if let Some(root) = corpus_dir() {
         // 16 KiB-concatenated chunks (the target size class) + raw small files.
-        let files = collect_files(&root, 6000);
+        let files = corpus_files(&root, 6000);
         checked += assert_corpus(&scanner, &files, "mirror-small");
         let mut chunks_16k: Vec<Vec<u8>> = Vec::new();
         let mut cur = Vec::new();

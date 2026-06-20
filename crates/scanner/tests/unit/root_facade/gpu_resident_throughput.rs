@@ -21,7 +21,7 @@
 
 #![cfg(feature = "gpu")]
 
-use super::support::paths::{corpus_dir, detector_dir};
+use super::support::paths::{corpus_bytes, corpus_dir, detector_dir};
 
 use keyhog_scanner::CompiledScanner;
 use std::time::Instant;
@@ -30,29 +30,7 @@ fn collect_corpus_bytes(limit_bytes: usize) -> Vec<u8> {
     let Some(root) = corpus_dir() else {
         return Vec::new();
     };
-    let mut out = Vec::with_capacity(limit_bytes);
-    let mut stack = vec![root];
-    while let Some(dir) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for e in rd.flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                stack.push(p);
-            } else if p.is_file() {
-                if let Ok(b) = std::fs::read(&p) {
-                    out.extend_from_slice(&b);
-                    out.push(b'\n');
-                    if out.len() >= limit_bytes {
-                        out.truncate(limit_bytes);
-                        return out;
-                    }
-                }
-            }
-        }
-    }
-    out
+    corpus_bytes(&root, limit_bytes)
 }
 
 #[test]

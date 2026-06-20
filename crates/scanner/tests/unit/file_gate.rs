@@ -1243,6 +1243,54 @@ fn scanner_benches_use_testing_facade_not_private_modules() {
     }
 }
 
+#[test]
+fn scanner_test_corpus_walks_use_shared_fail_loud_helper() {
+    fn collect_rs_files(root: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(root)
+            .unwrap_or_else(|error| panic!("read_dir({}) failed: {error}", root.display()))
+        {
+            let path = entry
+                .unwrap_or_else(|error| {
+                    panic!("read_dir entry failed in {}: {error}", root.display())
+                })
+                .path();
+            if path.is_dir() {
+                collect_rs_files(&path, out);
+            } else if path.extension().and_then(|ext| ext.to_str()) == Some("rs") {
+                out.push(path);
+            }
+        }
+    }
+
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let support_path = manifest_dir.join("tests/support/paths.rs");
+    let support = std::fs::read_to_string(&support_path)
+        .unwrap_or_else(|error| panic!("read {} failed: {error}", support_path.display()));
+    assert!(
+        support.contains("pub fn corpus_files(")
+            && support.contains("pub fn corpus_files_with_paths(")
+            && support.contains("pub fn corpus_bytes("),
+        "scanner test real-corpus walkers must live in tests/support/paths.rs"
+    );
+
+    let mut test_files = Vec::new();
+    collect_rs_files(&manifest_dir.join("tests"), &mut test_files);
+    for path in test_files {
+        if path.ends_with("unit/file_gate.rs") {
+            continue;
+        }
+        let source = std::fs::read_to_string(&path)
+            .unwrap_or_else(|error| panic!("read {} failed: {error}", path.display()));
+        for forbidden in ["let Ok(rd) = std::fs::read_dir", "rd.flatten()"] {
+            assert!(
+                !source.contains(forbidden),
+                "scanner test {} must use support::paths::corpus_files/corpus_files_with_paths/corpus_bytes for real-corpus walks instead of `{forbidden}`",
+                path.display()
+            );
+        }
+    }
+}
+
 // ── crates/scanner/src/ml_scorer/ml_features.rs ─────────────────────────────────
 #[test]
 fn ml_features_happy() {

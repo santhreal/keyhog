@@ -9,36 +9,11 @@
 //!     -- --ignored --nocapture
 
 use super::support;
-use support::paths::{corpus_dir, detector_dir};
+use support::paths::{corpus_dir, corpus_files, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
-use std::path::PathBuf;
 use std::time::Instant;
-
-fn collect_files(root: &PathBuf, limit: usize) -> Vec<Vec<u8>> {
-    let mut files = Vec::new();
-    let mut stack = vec![root.clone()];
-    while let Some(dir) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for e in rd.flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                stack.push(p);
-            } else if p.is_file() {
-                if let Ok(b) = std::fs::read(&p) {
-                    files.push(b);
-                    if files.len() >= limit {
-                        return files;
-                    }
-                }
-            }
-        }
-    }
-    files
-}
 
 fn chunk_of(bytes: &[u8], label: &str) -> Chunk {
     Chunk {
@@ -107,7 +82,7 @@ fn fullscan_throughput_mirror() {
         eprintln!("no corpus; skipping");
         return;
     };
-    let files = collect_files(&root, 8000);
+    let files = corpus_files(&root, 8000);
 
     // Regime B: 16 KiB chunks.
     let mut chunks_16k: Vec<Vec<u8>> = Vec::new();

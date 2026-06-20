@@ -15,11 +15,10 @@
 //! second test confirms the skip is a no-op on a non-ASCII (homoglyph) chunk.
 
 use super::support;
-use support::paths::{corpus_dir, detector_dir};
+use support::paths::{corpus_dir, corpus_files, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
-use std::path::PathBuf;
 
 struct Lcg(u64);
 impl Lcg {
@@ -149,30 +148,6 @@ fn report(on: &[Key], off: &[Key], input: &[u8]) -> String {
     )
 }
 
-fn collect_files(root: &PathBuf, limit: usize) -> Vec<Vec<u8>> {
-    let mut files = Vec::new();
-    let mut stack = vec![root.clone()];
-    while let Some(dir) = stack.pop() {
-        let Ok(rd) = std::fs::read_dir(&dir) else {
-            continue;
-        };
-        for e in rd.flatten() {
-            let p = e.path();
-            if p.is_dir() {
-                stack.push(p);
-            } else if p.is_file() {
-                if let Ok(b) = std::fs::read(&p) {
-                    files.push(b);
-                    if files.len() >= limit {
-                        return files;
-                    }
-                }
-            }
-        }
-    }
-    files
-}
-
 // The SOUNDNESS gate for the `homoglyph_ascii_skip` optimization (now default ON).
 // It PASSES: closing the base-AC coverage gap — phase-1 marks triggers with
 // OVERLAPPING AC matching, so a detector whose base literal is shadowed by a
@@ -216,7 +191,7 @@ fn homoglyph_ascii_skip_parity_default() {
     // speed; the synthetic sweep above plus this sample is a strong regression
     // gate, and `KEYHOG_PARITY_N` widens the synthetic half for exhaustive runs.
     if let Some(root) = corpus_dir() {
-        for (i, f) in collect_files(&root, 3000).into_iter().enumerate() {
+        for (i, f) in corpus_files(&root, 3000).into_iter().enumerate() {
             if !f.is_ascii() {
                 continue;
             }
