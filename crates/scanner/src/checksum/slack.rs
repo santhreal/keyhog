@@ -57,35 +57,40 @@ pub(crate) fn warm_runtime_regexes() {
 }
 
 impl SlackTokenValidator {
-    fn is_valid_slack_bot(credential: &str) -> bool {
+    /// `Some(true/false)` is a real match verdict; `None` means the structural
+    /// regex never compiled (the `warn_prefilter_disabled` path), so the
+    /// validator genuinely *cannot verify* this token. That is `NotApplicable`,
+    /// NOT a fabrication verdict - mapping a missing-regex to `Invalid` would
+    /// DROP every legitimate Slack token on an infra failure, the exact
+    /// false-drop this file's regex widening exists to prevent.
+    fn slack_bot_match(credential: &str) -> Option<bool> {
         SLACK_BOT_RE
             .as_ref()
-            .is_some_and(|regex| regex.is_match(credential))
+            .map(|regex| regex.is_match(credential))
     }
 
-    fn is_valid_slack_user(credential: &str) -> bool {
+    fn slack_user_match(credential: &str) -> Option<bool> {
         SLACK_USER_RE
             .as_ref()
-            .is_some_and(|regex| regex.is_match(credential))
+            .map(|regex| regex.is_match(credential))
     }
 }
 
 impl ChecksumValidator for SlackTokenValidator {
     fn validate(&self, credential: &str) -> ChecksumResult {
-        if credential.starts_with("xoxb-") {
-            if Self::is_valid_slack_bot(credential) {
-                ChecksumResult::Valid
-            } else {
-                ChecksumResult::Invalid
-            }
+        let verdict = if credential.starts_with("xoxb-") {
+            Self::slack_bot_match(credential)
         } else if credential.starts_with("xoxp-") {
-            if Self::is_valid_slack_user(credential) {
-                ChecksumResult::Valid
-            } else {
-                ChecksumResult::Invalid
-            }
+            Self::slack_user_match(credential)
         } else {
-            ChecksumResult::NotApplicable
+            return ChecksumResult::NotApplicable;
+        };
+        match verdict {
+            Some(true) => ChecksumResult::Valid,
+            Some(false) => ChecksumResult::Invalid,
+            // Regex unavailable: this validator can't verify the token. Defer to
+            // entropy/other gates instead of dropping a possibly-real finding.
+            None => ChecksumResult::NotApplicable,
         }
     }
 }
