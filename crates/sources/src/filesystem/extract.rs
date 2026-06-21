@@ -14,6 +14,26 @@ mod pdf;
 mod rar;
 mod seven_zip;
 
+/// Aggregate decoded-byte ceiling used when `--max-file-size 0` removes the
+/// per-file cap. Extraction still needs a hard bomb guard so an archive or
+/// compressed stream cannot expand without bound.
+pub(super) const UNCAPPED_ARCHIVE_BUDGET: u64 = 1024 * 1024 * 1024;
+
+pub(super) fn extraction_total_budget(max_size: u64) -> u64 {
+    if max_size == 0 {
+        UNCAPPED_ARCHIVE_BUDGET
+    } else {
+        max_size.saturating_mul(4)
+    }
+}
+
+pub(super) fn extraction_total_budget_usize(max_size: u64) -> usize {
+    match usize::try_from(extraction_total_budget(max_size)) {
+        Ok(value) => value,
+        Err(_error) => usize::MAX,
+    }
+}
+
 /// Test whether `path` is a symlink. No cache: the walker visits each
 /// path exactly once, so a process-lifetime `DashMap<PathBuf, bool>`
 /// only ever sees a single lookup per key and retained one PathBuf per

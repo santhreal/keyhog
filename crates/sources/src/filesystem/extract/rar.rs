@@ -1,13 +1,11 @@
 //! RAR archive extraction for filesystem entries.
 
 use super::archive::{chunk_from_archive_content, validate_scan_archive_entry_name};
-use super::{display_path, is_symlink, read};
+use super::{display_path, extraction_total_budget, is_symlink, read};
 use keyhog_core::{Chunk, SourceError};
 use rars::{Archive, ArchiveReader};
 use std::io::Write;
 use std::path::Path;
-
-const UNCAPPED_ARCHIVE_BUDGET: u64 = 1024 * 1024 * 1024;
 
 pub(super) fn extract_rar_chunks(
     path: &Path,
@@ -183,11 +181,7 @@ impl<'a> RarExtractionState<'a> {
             archive_path,
             archive_display: display_path(archive_path),
             per_entry_cap: if max_size == 0 { u64::MAX } else { max_size },
-            total_budget: if max_size == 0 {
-                UNCAPPED_ARCHIVE_BUDGET
-            } else {
-                max_size.saturating_mul(4)
-            },
+            total_budget: extraction_total_budget(max_size),
             total_uncompressed: 0,
             consumer_stopped: false,
             archive_truncated: false,

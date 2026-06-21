@@ -1,6 +1,9 @@
 //! Compressed stream and tar-container extraction for filesystem entries.
 
-use super::{display_path, is_symlink, read, record_binary_without_printable_strings};
+use super::{
+    display_path, extraction_total_budget, extraction_total_budget_usize, is_symlink, read,
+    record_binary_without_printable_strings,
+};
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
 use std::path::Path;
 
@@ -128,7 +131,7 @@ pub(super) fn emit_tar_entries(
         }
     };
 
-    let total_budget: u64 = max_size.saturating_mul(4);
+    let total_budget: u64 = extraction_total_budget(max_size);
     let mut total_uncompressed: u64 = 0;
 
     for entry in entries {
@@ -273,14 +276,7 @@ pub(super) fn extract_compressed_chunks(
         None => return,
     };
     let compressed = file_bytes.as_slice();
-    let total_budget: usize = max_size.saturating_mul(4) as usize;
-    let budget = if total_budget == 0 {
-        // max_size==0 means "no cap"; still bound the decode so a bomb cannot
-        // OOM the process. 1 GiB is far above any real source file.
-        1024 * 1024 * 1024
-    } else {
-        total_budget
-    };
+    let budget = extraction_total_budget_usize(max_size);
 
     let decompressed = match decompress_to_bytes(format, compressed, budget) {
         Some(d) => d,

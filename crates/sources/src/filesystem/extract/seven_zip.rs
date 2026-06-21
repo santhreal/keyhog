@@ -1,12 +1,14 @@
 //! 7z archive extraction for filesystem entries.
 
-use super::{display_path, is_symlink, read, record_binary_without_printable_strings};
+use super::{
+    display_path, extraction_total_budget, is_symlink, read,
+    record_binary_without_printable_strings,
+};
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
 use sevenz_rust2::{ArchiveReader, EncoderMethod, Password};
 use std::io::{Cursor, Read};
 use std::path::Path;
 
-const UNCAPPED_ARCHIVE_BUDGET: u64 = 1024 * 1024 * 1024;
 const READ_CAPACITY_HINT: u64 = 64 * 1024;
 
 pub(super) fn extract_seven_zip_chunks(
@@ -64,11 +66,7 @@ pub(super) fn extract_seven_zip_chunks(
     }
 
     let per_entry_cap = if max_size == 0 { u64::MAX } else { max_size };
-    let total_budget = if max_size == 0 {
-        UNCAPPED_ARCHIVE_BUDGET
-    } else {
-        max_size.saturating_mul(4)
-    };
+    let total_budget = extraction_total_budget(max_size);
     let mut total_uncompressed: u64 = 0;
     let mut consumer_stopped = false;
     let mut archive_truncated = false;

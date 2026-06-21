@@ -1,6 +1,8 @@
 //! Zip/APK/IPA/CRX/JAR + OOXML/ODF office-document archive extraction.
 
-use super::{display_path, is_symlink, record_binary_without_printable_strings};
+use super::{
+    display_path, extraction_total_budget, is_symlink, record_binary_without_printable_strings,
+};
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
 use std::path::{Component, Path};
 
@@ -44,18 +46,10 @@ pub(super) fn extract_openpack_archive(
 
     let archive_display = display_path(path);
     let mut total_uncompressed: u64 = 0;
-    // `max_size == 0` means "no per-file cap". The compressed-stream path treats
-    // that as a 1 GiB hard ceiling so a bomb still can't OOM the process; the zip
-    // path must do the SAME, otherwise `total_budget` would be 0 and the FIRST
-    // non-empty entry would trip the bomb guard, truncating every archive to
-    // nothing (a recall bug, not a safety win). Match the two paths.
-    const UNCAPPED_ARCHIVE_BUDGET: u64 = 1024 * 1024 * 1024;
+    // `max_size == 0` means "no per-file cap"; extraction still uses the shared
+    // aggregate bomb ceiling instead of letting the budget collapse to 0.
     let per_entry_cap: u64 = if max_size == 0 { u64::MAX } else { max_size };
-    let total_budget: u64 = if max_size == 0 {
-        UNCAPPED_ARCHIVE_BUDGET
-    } else {
-        max_size.saturating_mul(4)
-    };
+    let total_budget: u64 = extraction_total_budget(max_size);
     let ext = match path.extension().and_then(|s| s.to_str()) {
         Some(ext) => ext.to_ascii_lowercase(),
         None => String::new(),
