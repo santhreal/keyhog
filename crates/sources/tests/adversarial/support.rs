@@ -2,7 +2,7 @@
 
 use keyhog_sources::FilesystemSource;
 
-pub use crate::support::{collect_chunks, count_chunks, split_chunk_results};
+pub use crate::support::{collect_chunks, count_chunks};
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;

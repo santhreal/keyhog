@@ -123,7 +123,7 @@ const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
     feature = "s3",
     feature = "gcs"
 ))]
-const REDIRECT_LIMIT: usize = 5;
+pub(crate) const REDIRECT_LIMIT: usize = 5;
 
 pub(crate) fn user_agent(suffix: Option<&str>) -> String {
     let base = concat!("keyhog/", env!("CARGO_PKG_VERSION"));

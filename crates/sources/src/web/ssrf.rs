@@ -1,6 +1,6 @@
 use keyhog_core::SourceError;
 
-const REDIRECT_LIMIT: usize = 5;
+use crate::http::REDIRECT_LIMIT;
 
 pub(crate) fn redact_url(url: &str) -> std::borrow::Cow<'_, str> {
     let scheme_end = match url.find("://") {
