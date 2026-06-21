@@ -58,7 +58,6 @@ mod compiled_api;
 mod csr;
 pub(crate) use csr::CsrU32;
 mod extract;
-mod generic_keyword_owner;
 mod gpu_cache;
 #[cfg(all(test, feature = "gpu"))]
 pub(crate) use gpu_cache::gpu_matcher_cache_dir_from_base;

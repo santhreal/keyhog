@@ -5,7 +5,7 @@ pub(crate) mod helpers;
 #[cfg(feature = "entropy")]
 use super::*;
 #[cfg(feature = "entropy")]
-use gates::entropy_match_suppressed;
+use gates::{entropy_match_suppressed, entropy_value_line};
 #[cfg(feature = "entropy")]
 use std::sync::Arc;
 
@@ -68,8 +68,24 @@ impl CompiledScanner {
             for m in &scan_state.matches {
                 let id = &*m.detector_id;
                 if !crate::detector_ids::is_generic_or_entropy_detector(id) {
-                    if let Some(line) = m.location.line {
-                        skip_lines.insert(line);
+                    if let Some(line_idx) =
+                        entropy_skip_line_index(m.location.line, chunk.metadata.base_line)
+                    {
+                        skip_lines.insert(line_idx);
+                    }
+                }
+            }
+        }
+        #[cfg(feature = "ml")]
+        if !scan_state.ml_pending.is_empty() {
+            for pending in &scan_state.ml_pending {
+                let id = &*pending.raw_match.detector_id;
+                if !crate::detector_ids::is_generic_or_entropy_detector(id) {
+                    if let Some(line_idx) = entropy_skip_line_index(
+                        pending.raw_match.location.line,
+                        chunk.metadata.base_line,
+                    ) {
+                        skip_lines.insert(line_idx);
                     }
                 }
             }
@@ -131,6 +147,18 @@ impl CompiledScanner {
                 allow_canonical_lift,
                 source_entropy_requires_same_line_credential,
             ) {
+                continue;
+            }
+            if self.entropy_match_owned_by_named_assignment(
+                &entropy_match,
+                preprocessed,
+                line_offsets,
+            ) {
+                crate::telemetry::record_shape_suppression(
+                    chunk.metadata.path.as_deref(),
+                    &entropy_match.value,
+                    "entropy_named_detector_owned_assignment",
+                );
                 continue;
             }
 
@@ -225,4 +253,29 @@ impl CompiledScanner {
             );
         }
     }
+
+    fn entropy_match_owned_by_named_assignment(
+        &self,
+        entropy_match: &crate::entropy::EntropyMatch,
+        preprocessed: &ScannerPreprocessedText<'_>,
+        line_offsets: &[usize],
+    ) -> bool {
+        if crate::generic_keyword_owner::candidate_embeds_owned_assignment_key(
+            &self.generic_named_assignment_keywords,
+            &entropy_match.value,
+        ) {
+            return true;
+        }
+        entropy_value_line(entropy_match, preprocessed, line_offsets).is_some_and(|line| {
+            crate::generic_keyword_owner::line_assignment_owned_by_named_detector(
+                &self.generic_named_assignment_keywords,
+                line,
+            )
+        })
+    }
+}
+
+#[cfg(feature = "entropy")]
+fn entropy_skip_line_index(absolute_line: Option<usize>, chunk_base_line: usize) -> Option<usize> {
+    absolute_line?.checked_sub(chunk_base_line + 1)
 }

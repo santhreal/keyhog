@@ -89,6 +89,8 @@ pub mod entropy;
 pub(crate) mod error;
 /// Cross-chunk fragment reassembly cache.
 pub(crate) mod fragment_cache;
+/// Named-detector ownership for assignment-key fallback suppression.
+pub(crate) mod generic_keyword_owner;
 /// GPU-accelerated matching via wgpu.
 pub mod gpu;
 /// Hardware capability detection and backend selection.

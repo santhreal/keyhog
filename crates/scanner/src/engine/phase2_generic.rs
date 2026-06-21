@@ -12,8 +12,7 @@ use self::auth_value::bare_auth_value_allowed;
 use self::keywords::{
     collect_generic_keyword_lines, collect_generic_keyword_lines_from_positions,
     is_strong_keyword_anchored_encoded_text_secret, is_strong_keyword_anchored_hex_key,
-    keyword_has_word_boundary, normalize_assignment_keyword,
-    normalized_assignment_keyword_has_secret_suffix,
+    keyword_has_word_boundary,
 };
 use self::line_mapping::line_at_index;
 pub(crate) use self::metrics::{generic_profile_dump, generic_profile_reset};
@@ -197,7 +196,12 @@ impl CompiledScanner {
                 {
                     continue;
                 }
-                if self.generic_keyword_owned_by_named_detector(keyword) {
+                if crate::generic_keyword_owner::keyword_span_owned_by_named_detector(
+                    &self.generic_named_assignment_keywords,
+                    line,
+                    keyword_match.start(),
+                    keyword_match.end(),
+                ) {
                     crate::telemetry::record_shape_suppression(
                         chunk.metadata.path.as_deref(),
                         keyword,
@@ -366,20 +370,5 @@ impl CompiledScanner {
         // Return the scratch buffer to the pool, preserving its capacity for
         // the next chunk this worker handles.
         KEYWORD_LINES_POOL.with(|cell| cell.replace(lines_with_keyword));
-    }
-
-    fn generic_keyword_owned_by_named_detector(&self, keyword: &str) -> bool {
-        if self.generic_named_assignment_keywords.is_empty() {
-            return false;
-        }
-        let Some(normalized) = normalize_assignment_keyword(keyword) else {
-            return false;
-        };
-        if !normalized_assignment_keyword_has_secret_suffix(&normalized) {
-            return false;
-        }
-        self.generic_named_assignment_keywords
-            .binary_search_by(|owned| owned.as_ref().cmp(normalized.as_str()))
-            .is_ok()
     }
 }

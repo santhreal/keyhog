@@ -330,7 +330,7 @@ impl CompiledScanner {
             .map(crate::suppression::detector_weak_anchor)
             .collect();
         let generic_named_assignment_keywords =
-            generic_keyword_owner::build_generic_named_assignment_keywords(&detectors);
+            crate::generic_keyword_owner::build_generic_named_assignment_keywords(&detectors);
 
         let pattern_boundary_context = boundary::derive_pattern_boundary_context(
             state

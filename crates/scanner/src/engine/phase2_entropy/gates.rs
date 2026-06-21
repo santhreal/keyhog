@@ -422,7 +422,7 @@ fn value_line_has_random_byte_blob_owner(
     })
 }
 
-fn entropy_value_line<'a>(
+pub(crate) fn entropy_value_line<'a>(
     entropy_match: &crate::entropy::EntropyMatch,
     preprocessed: &'a ScannerPreprocessedText<'_>,
     line_offsets: &[usize],
