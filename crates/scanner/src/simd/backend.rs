@@ -437,7 +437,7 @@ impl HsScanner {
             .shard_target
             .filter(|&v| v >= 1)
             .unwrap_or(TARGET_PATTERNS_PER_SHARD); // LAW10: absent shard-target compile tuning => documented default; sharding only changes WHERE patterns compile, never the finding set (recall-unchanged, per the comment above).
-        let cap = cores.min(MAX_COMPILE_SHARDS).max(1);
+        let cap = cores.clamp(1, MAX_COMPILE_SHARDS);
         let shard_count = hs_pats
             .len()
             .div_ceil(target)

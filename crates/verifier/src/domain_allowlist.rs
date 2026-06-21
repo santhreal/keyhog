@@ -175,7 +175,7 @@ pub(crate) fn effective_allowlist(spec: &keyhog_core::VerifySpec) -> Option<Vec<
     }
     builtin_service_domains()
         .get(key)
-        .map(|domains| domains.iter().map(|d| d.to_string()).collect())
+        .map(|domains| domains.iter().map(|d| (*d).to_string()).collect())
 }
 
 /// Check that `host` is on `allowlist` (exact or subdomain match). Empty

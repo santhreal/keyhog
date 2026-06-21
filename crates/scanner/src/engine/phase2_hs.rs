@@ -1,8 +1,8 @@
 //! Hyperscan-backed always-active phase-2 prefilter engine (`Phase2HsEngine`).
 //! Extracted from `phase2.rs`; simd-only (the whole module is cfg-gated). Holds
 //! the compiled HS database for the always-active phase-2 set and marks matches
-//! into the caller's scratch. Pure move, no behaviour change.
-#![cfg(feature = "simd")]
+//! into the caller's scratch. Pure move, no behaviour change. The module is
+//! gated `#[cfg(feature = "simd")]` at its `mod` declaration in `engine/mod.rs`.
 
 use super::phase2::ActivePatternsScratch;
 use super::*;

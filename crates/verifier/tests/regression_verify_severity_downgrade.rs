@@ -99,7 +99,7 @@ fn dead_and_revoked_downgrade_exactly_one_tier_for_every_severity() {
     for &sev in &ALL_SEVERITIES {
         for verdict in downgrading_verdicts() {
             let finding =
-                TestApi.into_finding(group_with_severity(sev), verdict.clone(), HashMap::new());
+                TestApi.build_finding(group_with_severity(sev), verdict.clone(), HashMap::new());
             let want = expected_downgraded(sev);
             assert_eq!(
                 finding.severity, want,
@@ -110,7 +110,7 @@ fn dead_and_revoked_downgrade_exactly_one_tier_for_every_severity() {
             // The verdict itself must survive verbatim onto the finding.
             assert_eq!(
                 finding.verification, verdict,
-                "into_finding must preserve the verification verdict {verdict:?}"
+                "build_finding must preserve the verification verdict {verdict:?}"
             );
         }
     }
@@ -125,7 +125,7 @@ fn non_conclusive_verdicts_leave_severity_unchanged_for_every_severity() {
     for &sev in &ALL_SEVERITIES {
         for verdict in unchanged_verdicts() {
             let finding =
-                TestApi.into_finding(group_with_severity(sev), verdict.clone(), HashMap::new());
+                TestApi.build_finding(group_with_severity(sev), verdict.clone(), HashMap::new());
             assert_eq!(
                 finding.severity, sev,
                 "verdict {verdict:?} must leave a {sev:?} finding at {sev:?} \
@@ -134,7 +134,7 @@ fn non_conclusive_verdicts_leave_severity_unchanged_for_every_severity() {
             );
             assert_eq!(
                 finding.verification, verdict,
-                "into_finding must preserve the verification verdict {verdict:?}"
+                "build_finding must preserve the verification verdict {verdict:?}"
             );
         }
     }
@@ -145,7 +145,7 @@ fn non_conclusive_verdicts_leave_severity_unchanged_for_every_severity() {
 /// Pins the precise values shown in verification.md's box example.
 #[test]
 fn critical_dead_becomes_high_critical_live_stays_critical() {
-    let dead = TestApi.into_finding(
+    let dead = TestApi.build_finding(
         group_with_severity(Severity::Critical),
         VerificationResult::Dead,
         HashMap::new(),
@@ -157,7 +157,7 @@ fn critical_dead_becomes_high_critical_live_stays_critical() {
          the second box header reads HIGH, not CRITICAL)"
     );
 
-    let live = TestApi.into_finding(
+    let live = TestApi.build_finding(
         group_with_severity(Severity::Critical),
         VerificationResult::Live,
         HashMap::new(),
@@ -173,7 +173,7 @@ fn critical_dead_becomes_high_critical_live_stays_critical() {
 /// This is the boundary case of `downgrade_one`'s fixed point.
 #[test]
 fn dead_info_stays_info_no_underflow() {
-    let f = TestApi.into_finding(
+    let f = TestApi.build_finding(
         group_with_severity(Severity::Info),
         VerificationResult::Dead,
         HashMap::new(),

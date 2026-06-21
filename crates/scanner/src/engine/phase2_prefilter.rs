@@ -346,7 +346,7 @@ impl Phase2AlwaysActivePrefilter {
                     // set (truncation is a perf opt, never a correctness need).
                     let trunc_srcs: Vec<String> = srcs
                         .iter()
-                        .map(|s| truncate_for_prefilter(s).unwrap_or_else(|| s.to_string())) // LAW10: truncation is a prefilter perf-opt over a SUPERSET; un-truncatable => full form, recall-safe (never under-matches)
+                        .map(|s| truncate_for_prefilter(s).unwrap_or_else(|| (*s).to_string())) // LAW10: truncation is a prefilter perf-opt over a SUPERSET; un-truncatable => full form, recall-safe (never under-matches)
                         .collect();
                     let set_trunc = match Self::compile_set_owned(&trunc_srcs, case_insensitive) {
                         Some(trunc) => trunc,

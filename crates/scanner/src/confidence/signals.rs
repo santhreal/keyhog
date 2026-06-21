@@ -100,5 +100,5 @@ pub(crate) fn is_sensitive_path(path: &str) -> bool {
     // the confidence boost is never silently lost — the loud `eprintln!` above
     // already told the operator why (Law 10: a loud, recall-preserving fallback
     // is permitted; a silent one is not).
-    ac.as_ref().map_or(true, |ac| ac.is_match(path))
+    ac.as_ref().is_none_or(|ac| ac.is_match(path))
 }

@@ -312,10 +312,7 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
     type GroupKey = ([u8; 32], Option<Arc<str>>);
     let mut groups: IndexMap<GroupKey, Vec<DedupedMatch>> = IndexMap::new();
     for m in deduped {
-        let key = (
-            m.credential_hash.clone(),
-            m.primary_location.file_path.clone(),
-        );
+        let key = (m.credential_hash, m.primary_location.file_path.clone());
         groups.entry(key).or_default().push(m);
     }
 
@@ -400,9 +397,9 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
 /// bump, not a string copy, so building the key per match stays O(1). Used as
 /// the per-group seen-set element so additional_locations membership is O(1)
 /// instead of an O(K) linear scan.
-fn location_identity(
-    loc: &MatchLocation,
-) -> (Arc<str>, Option<Arc<str>>, Option<usize>, Option<Arc<str>>) {
+type LocationIdentity = (Arc<str>, Option<Arc<str>>, Option<usize>, Option<Arc<str>>);
+
+fn location_identity(loc: &MatchLocation) -> LocationIdentity {
     (
         Arc::clone(&loc.source),
         loc.file_path.clone(),

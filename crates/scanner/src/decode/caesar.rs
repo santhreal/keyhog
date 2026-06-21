@@ -132,7 +132,7 @@ pub(crate) fn line_has_credential_url(line: &str) -> bool {
         return false;
     };
     // Scheme must be 2+ alphabetic bytes immediately before `://`.
-    let scheme_bytes = line[..scheme_end].as_bytes();
+    let scheme_bytes = &line.as_bytes()[..scheme_end];
     let scheme_ok = scheme_bytes.len() >= 2
         && scheme_bytes
             .iter()

@@ -61,32 +61,40 @@ fn match_span(m: &RawMatch) -> Option<(Arc<str>, usize, usize)> {
 }
 
 fn suppress_entropy_matches_near_named_detectors(matches: &mut Vec<RawMatch>) {
-    // Use (Arc<str>, usize) to avoid per-match String allocation.
-    let named_lines: HashSet<(Arc<str>, usize)> = matches
-        .iter()
-        .filter(|m| is_service_specific_detector(m.detector_id.as_ref()))
-        .filter_map(|m| {
+    // Index service-specific detector lines as path -> {line}, so the adjacency
+    // check below is a pure HashSet lookup with zero per-match Arc clones: we
+    // look up by `&str` via `Arc<str>: Borrow<str>`.
+    let mut named_lines: HashMap<Arc<str>, HashSet<usize>> = HashMap::new();
+    for m in matches.iter() {
+        if !is_service_specific_detector(m.detector_id.as_ref()) {
+            continue;
+        }
+        if let Some(line) = m.location.line {
             let path = m
                 .location
                 .file_path
                 .clone()
                 .unwrap_or_else(|| Arc::from("")); // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
-            m.location.line.map(|line| (path, line))
-        })
-        .collect();
+            named_lines.entry(path).or_default().insert(line);
+        }
+    }
     matches.retain(|m| {
         if !crate::detector_ids::is_entropy_detector(m.detector_id.as_ref()) {
             return true;
         }
-        let path = m
-            .location
-            .file_path
-            .clone()
-            .unwrap_or_else(|| Arc::from("")); // LAW10: string-intern miss => owned Arc of identical bytes, recall-safe
-        if let Some(line) = m.location.line {
+        let Some(line) = m.location.line else {
+            return true;
+        };
+        // Empty path for the intern-miss case mirrors the `Arc::from("")` key
+        // used when indexing above; lookup is by `&str`, no allocation.
+        let path = match m.location.file_path.as_deref() {
+            Some(path) => path,
+            None => "",
+        };
+        if let Some(lines) = named_lines.get(path) {
             for offset in 0..=ADJACENT_LINE_DISTANCE {
-                if named_lines.contains(&(Arc::clone(&path), line.saturating_sub(offset)))
-                    || named_lines.contains(&(Arc::clone(&path), line.saturating_add(offset)))
+                if lines.contains(&line.saturating_sub(offset))
+                    || lines.contains(&line.saturating_add(offset))
                 {
                     return false;
                 }

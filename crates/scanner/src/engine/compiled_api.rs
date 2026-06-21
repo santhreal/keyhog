@@ -333,7 +333,7 @@ impl CompiledScanner {
         let alphabet_ok = self
             .alphabet_screen
             .as_ref()
-            .map_or(true, |screen| screen.screen(chunk.data.as_bytes()));
+            .is_none_or(|screen| screen.screen(chunk.data.as_bytes()));
         let bigram_ok =
             chunk.data.len() < 64 || self.bigram_bloom.maybe_overlaps(chunk.data.as_bytes());
         if !(alphabet_ok && bigram_ok) {

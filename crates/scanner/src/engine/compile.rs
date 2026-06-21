@@ -91,7 +91,7 @@ impl CompiledScanner {
                 Some(cuda) => Some(cuda),
                 None => match vyre_driver_wgpu::WgpuBackend::shared() {
                     Ok(wgpu) => {
-                        let trait_obj: Arc<dyn vyre::VyreBackend> = wgpu.clone();
+                        let trait_obj: Arc<dyn vyre::VyreBackend> = wgpu;
                         Some(trait_obj)
                     }
                     Err(error) => {

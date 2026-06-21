@@ -337,8 +337,10 @@ impl MerkleIndex {
             // RwLock is non-reentrant; re-locking shard `i` would
             // deadlock).
             let mut shard = self.shards[i].write();
-            if shard.contains_key(&path) {
-                shard.insert(path, entry);
+            // Single probe: replace in place when the path is already tracked.
+            // (`contains_key` + `insert` hashed `path` twice.)
+            if let Some(slot) = shard.get_mut(&path) {
+                *slot = entry;
                 return true;
             }
         }

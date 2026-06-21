@@ -139,7 +139,7 @@ impl Drop for ScanTelemetryRestore {
 pub fn with_scan_telemetry<R>(telemetry: &Arc<ScanTelemetry>, f: impl FnOnce() -> R) -> R {
     let previous = CURRENT_SCAN_TELEMETRY.with(|slot| {
         let mut slot = slot.borrow_mut();
-        std::mem::replace(&mut *slot, Some(Arc::clone(telemetry)))
+        slot.replace(Arc::clone(telemetry))
     });
     let _restore = ScanTelemetryRestore { previous };
     f()

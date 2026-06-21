@@ -274,7 +274,7 @@ fn fetch_azure_blob_chunk(
     }
 
     let url = azure_blob_url(container_url, name);
-    let response = client.get(url.clone()).send().map_err(|error| {
+    let response = client.get(url).send().map_err(|error| {
         SourceError::Other(format!("failed to download Azure blob: {name}: {error}"))
     })?;
     if !response.status().is_success() {
@@ -434,7 +434,10 @@ fn azure_blob_url(container_url: &reqwest::Url, name: &str) -> reqwest::Url {
     url
 }
 
-fn azure_blob_display_path(container_url: &reqwest::Url, name: &str) -> Result<String, SourceError> {
+fn azure_blob_display_path(
+    container_url: &reqwest::Url,
+    name: &str,
+) -> Result<String, SourceError> {
     let Some(host) = container_url.host_str() else {
         return Err(SourceError::Other(
             "invalid Azure Blob container URL: missing host while building blob display path"

@@ -56,9 +56,9 @@ impl DecodeStructure {
     }
 }
 
-/// Minimum candidate length before we bother decoding. A base64 blob needs
-/// >= 8 chars to carry a 4-byte magic header, and short tokens are the job of
-/// the named detectors anyway.
+/// Minimum candidate length before we bother decoding. A base64 blob needs at
+/// least 8 chars to carry a 4-byte magic header, and short tokens are the job
+/// of the named detectors anyway.
 const MIN_DECODE_LEN: usize = 16;
 
 /// Conservative verdict for the confidence pipeline: does this generic

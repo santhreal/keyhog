@@ -424,7 +424,7 @@ pub mod testing {
         ) -> impl std::future::Future<
             Output = (keyhog_core::VerificationResult, HashMap<String, String>),
         > + Send;
-        fn into_finding(
+        fn build_finding(
             &self,
             group: keyhog_core::DedupedMatch,
             verification: keyhog_core::VerificationResult,
@@ -566,7 +566,7 @@ pub mod testing {
             crate::verify::retry_loop_preserves_metadata_on_exhaustion_for_test().await
         }
 
-        fn into_finding(
+        fn build_finding(
             &self,
             group: keyhog_core::DedupedMatch,
             verification: keyhog_core::VerificationResult,

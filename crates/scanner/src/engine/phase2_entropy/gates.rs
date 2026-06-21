@@ -1,5 +1,4 @@
 //! Entropy-fallback candidate suppression predicate.
-#![cfg(feature = "entropy")]
 use super::helpers::*;
 use crate::engine::*;
 

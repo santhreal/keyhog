@@ -236,11 +236,11 @@ impl ScannerConfig {
     pub const HIGH_PRECISION_MIN_CONFIDENCE: f64 = 0.85;
 
     pub fn fast() -> Self {
-        let mut c = Self::default();
-        c.max_decode_depth = 0;
-        c.ml_enabled = false;
-        c.entropy_enabled = false;
-        c
+        let mut config = Self::default();
+        config.max_decode_depth = 0;
+        config.ml_enabled = false;
+        config.entropy_enabled = false;
+        config
     }
 
     pub fn thorough() -> Self {
@@ -248,11 +248,11 @@ impl ScannerConfig {
         // `ScanConfig::default()` floor (single source of truth) instead of
         // forking a second literal. Deep scanning widens decode/entropy, not
         // the confidence bar.
-        let mut c = Self::default();
-        c.max_decode_depth = 10;
-        c.ml_enabled = true;
-        c.entropy_enabled = true;
-        c
+        let mut config = Self::default();
+        config.max_decode_depth = 10;
+        config.ml_enabled = true;
+        config.entropy_enabled = true;
+        config
     }
 
     /// High-precision mass-scan preset: minimise false positives at the cost of
@@ -276,16 +276,16 @@ impl ScannerConfig {
     /// `penalize_test_paths` stays on (the default) to suppress fixture-shaped
     /// hits. A `--min-confidence` override still layers on top of this preset.
     pub fn high_precision() -> Self {
-        let mut c = Self::default();
-        c.max_decode_depth = 1;
-        c.entropy_enabled = false;
+        let mut config = Self::default();
+        config.max_decode_depth = 1;
+        config.entropy_enabled = false;
         // High-precision mode does not admit low-entropy keyword-anchored
         // values: that surface trades precision for real-world recall, the
         // opposite of this preset's contract. Restores the high
         // `generic-secret` floor.
-        c.generic_keyword_low_entropy = false;
-        c.min_confidence = Self::HIGH_PRECISION_MIN_CONFIDENCE;
-        c
+        config.generic_keyword_low_entropy = false;
+        config.min_confidence = Self::HIGH_PRECISION_MIN_CONFIDENCE;
+        config
     }
 
     pub fn min_confidence(mut self, min_confidence: f64) -> Self {

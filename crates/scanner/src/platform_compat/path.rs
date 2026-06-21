@@ -16,9 +16,8 @@ pub(crate) fn path_basename_bytes(path: &[u8]) -> &[u8] {
 }
 
 /// Run a predicate over each path component, accepting both separators.
-pub(crate) fn path_component_matches(path: &str, mut predicate: impl FnMut(&str) -> bool) -> bool {
-    path.split(PATH_SEPARATORS)
-        .any(|component| predicate(component))
+pub(crate) fn path_component_matches(path: &str, predicate: impl FnMut(&str) -> bool) -> bool {
+    path.split(PATH_SEPARATORS).any(predicate)
 }
 
 /// Case-insensitive match against any exact path component.

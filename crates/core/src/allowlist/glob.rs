@@ -69,8 +69,10 @@ impl PathGlobIndex {
     /// `split_segments` + the oversize scan ONCE per pattern (the work
     /// `glob_match_normalized` previously repeated on every finding).
     pub(super) fn build(patterns: &[String]) -> Self {
-        let mut index = PathGlobIndex::default();
-        index.source_len = patterns.len();
+        let mut index = PathGlobIndex {
+            source_len: patterns.len(),
+            ..PathGlobIndex::default()
+        };
         for pattern in patterns {
             let directory_pattern = pattern.replace('\\', "/").ends_with('/');
             let mut normalized_pattern = normalize_path(pattern);
