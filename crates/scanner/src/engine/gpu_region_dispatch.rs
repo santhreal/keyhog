@@ -19,9 +19,11 @@ use super::gpu_region_batch::{
     RegionPresenceBatchMode,
 };
 #[cfg(test)]
+use super::phase2_gpu_dfa::build_phase2_gpu_admission_workload;
+#[cfg(test)]
 use super::phase2_gpu_dfa::Phase2GpuDfaAdmission;
 use super::phase2_gpu_dfa::{
-    build_phase2_gpu_admission_workload, expand_phase2_gpu_admission,
+    build_phase2_gpu_admission_workload_filtered, expand_phase2_gpu_admission,
     validate_phase2_gpu_trigger_rows, Phase2GpuAdmissionWorkload,
 };
 use super::*;
@@ -335,7 +337,28 @@ impl CompiledScanner {
             if let Err(error) = validate_phase2_gpu_trigger_rows(chunks.len(), triggers.len()) {
                 return degrade(error.to_string());
             }
-            let phase2_gpu_workload = build_phase2_gpu_admission_workload(chunks, &triggers);
+            let mut phase2_gpu_row_needed = Vec::with_capacity(chunks.len());
+            for (idx, chunk) in chunks.iter().enumerate() {
+                let row_has_trigger = triggers
+                    .get(idx)
+                    .and_then(|trigger| trigger.as_ref())
+                    .is_some_and(|bits| bits.iter().any(|&word| word != 0));
+                if row_has_trigger {
+                    phase2_gpu_row_needed.push(true);
+                    continue;
+                }
+                // Encoded-only rows that CPU admission would route straight to
+                // decode-only recovery do not need the prefixless phase-2 GPU
+                // DFA. The shared phase-2 tail still runs decode-only on those
+                // rows; this just avoids a redundant GPU admission dispatch.
+                let decode_only_row = self.chunk_needs_decode_postprocess(chunk)
+                    && !self.should_scan_no_hit_chunk(chunk);
+                phase2_gpu_row_needed.push(!decode_only_row);
+            }
+            let phase2_gpu_workload =
+                build_phase2_gpu_admission_workload_filtered(chunks, &triggers, |idx, _| {
+                    phase2_gpu_row_needed[idx]
+                });
             let mut phase2_gpu_empty_complete = false;
             let phase2_gpu_admission = match phase2_gpu_workload {
                 Phase2GpuAdmissionWorkload::Empty => {
@@ -752,6 +775,48 @@ mod tests {
         assert_eq!(indices, vec![0]);
         assert_eq!(selected_chunks.len(), 1);
         assert_eq!(selected_chunks[0].data.as_ref(), "no-trigger-before");
+    }
+
+    #[test]
+    fn phase2_gpu_admission_workload_filter_skips_decode_only_rows() {
+        let chunks = [
+            keyhog_core::Chunk::from("decode-only-unicode-escape"),
+            keyhog_core::Chunk::from("ordinary-no-trigger"),
+            keyhog_core::Chunk::from("already-triggered"),
+        ];
+        let triggers = vec![None, None, Some(vec![1])];
+
+        let workload =
+            build_phase2_gpu_admission_workload_filtered(&chunks, &triggers, |idx, _| idx != 0);
+
+        let Phase2GpuAdmissionWorkload::Subset {
+            indices,
+            chunks: selected_chunks,
+            full_len,
+        } = workload
+        else {
+            panic!("filtered no-trigger batch must build subset workload");
+        };
+        assert_eq!(full_len, chunks.len());
+        assert_eq!(indices, vec![1]);
+        assert_eq!(selected_chunks.len(), 1);
+        assert_eq!(selected_chunks[0].data.as_ref(), "ordinary-no-trigger");
+    }
+
+    #[test]
+    fn phase2_gpu_admission_workload_filter_empty_when_all_no_trigger_rows_skipped() {
+        let chunks = [
+            keyhog_core::Chunk::from("decode-only-a"),
+            keyhog_core::Chunk::from("decode-only-b"),
+        ];
+        let triggers = vec![None, Some(vec![0])];
+
+        let workload =
+            build_phase2_gpu_admission_workload_filtered(&chunks, &triggers, |_, _| false);
+
+        let Phase2GpuAdmissionWorkload::Empty = workload else {
+            panic!("all filtered no-trigger rows must skip phase-2 GPU DFA dispatch");
+        };
     }
 
     #[test]

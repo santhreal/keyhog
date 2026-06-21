@@ -23,10 +23,12 @@ use self::lowering::build_shards_recursive;
 use self::lowering::regex_dfa_source_for_pattern;
 pub(super) use self::shard::match_region;
 use self::shard::Phase2GpuDfaShard;
+#[cfg(test)]
+pub(super) use self::workload::build_phase2_gpu_admission_workload;
 pub(super) use self::workload::Phase2GpuAdmissionWorkload;
 pub(crate) use self::workload::Phase2GpuDfaAdmission;
 pub(super) use self::workload::{
-    build_phase2_gpu_admission_workload, expand_phase2_gpu_admission,
+    build_phase2_gpu_admission_workload_filtered, expand_phase2_gpu_admission,
     validate_phase2_gpu_trigger_rows,
 };
 use super::*;
