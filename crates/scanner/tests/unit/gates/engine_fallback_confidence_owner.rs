@@ -10,6 +10,19 @@ fn read(path: &Path) -> String {
     std::fs::read_to_string(path).unwrap_or_else(|e| panic!("{} not readable: {e}", path.display()))
 }
 
+fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
+    for entry in
+        std::fs::read_dir(dir).unwrap_or_else(|e| panic!("{} not readable: {e}", dir.display()))
+    {
+        let path = entry.expect("dir entry").path();
+        if path.is_dir() {
+            collect_rs_files(&path, out);
+        } else if path.extension().and_then(|e| e.to_str()) == Some("rs") {
+            out.push(path);
+        }
+    }
+}
+
 fn uncommented_code(src: &str) -> String {
     src.lines()
         .filter_map(|line| {
@@ -80,4 +93,69 @@ fn entropy_and_generic_fallback_confidence_route_through_scoring_owner() {
             "generic fallback emitter must not own confidence policy token {forbidden:?}"
         );
     }
+}
+
+#[test]
+fn report_confidence_tail_routes_through_scoring_owner() {
+    let src = scanner_src();
+    let owner = src.join("engine/scoring.rs");
+    let scoring = uncommented_code(&read(&owner));
+    for required in [
+        "fn finalize_report_confidence(",
+        "apply_post_ml_penalties_with_encoded_text_lift",
+        "apply_path_confidence_penalties",
+        "known_prefix_confidence_floor",
+        "apply_calibration_multiplier",
+        "apply_checksum_confidence",
+    ] {
+        assert!(
+            scoring.contains(required),
+            "engine::scoring must own report-confidence policy token {required:?}"
+        );
+    }
+
+    for path in [
+        "engine/process.rs",
+        "engine/scan_postprocess/ml.rs",
+        "engine/phase2_entropy.rs",
+        "engine/phase2_generic.rs",
+    ] {
+        let code = uncommented_code(&read(&src.join(path)));
+        assert!(
+            code.contains("super::scoring::finalize_report_confidence("),
+            "{path} must route final report confidence through engine::scoring"
+        );
+    }
+    let hot_patterns = uncommented_code(&read(&src.join("engine/hot_patterns.rs")));
+    assert!(
+        hot_patterns.contains("super::scoring::hot_pattern_confidence("),
+        "hot patterns must route final report confidence through the hot scoring owner"
+    );
+
+    let mut files = Vec::new();
+    collect_rs_files(&src.join("engine"), &mut files);
+    let mut offenders = Vec::new();
+    for path in files {
+        if path == owner {
+            continue;
+        }
+        let code = uncommented_code(&read(&path));
+        for forbidden in [
+            "crate::confidence::apply_post_ml_penalties(",
+            "crate::confidence::apply_post_ml_penalties_with_encoded_text_lift(",
+            "crate::confidence::apply_path_confidence_penalties(",
+            "crate::confidence::apply_calibration_multiplier(",
+            "super::scoring::apply_checksum_confidence(",
+            ".adjusted_confidence(",
+        ] {
+            if code.contains(forbidden) {
+                offenders.push(format!("{} contains {forbidden}", path.display()));
+            }
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "engine emission paths must not own report-confidence policy calls: {offenders:#?}"
+    );
 }

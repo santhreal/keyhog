@@ -31,14 +31,13 @@ fn hot_pattern_confidence_routes_through_scoring_owner() {
     assert!(
         scoring.contains("fn hot_pattern_confidence(")
             && scoring.contains("const BASE_CONFIDENCE")
-            && scoring.contains("known_prefix_confidence_floor")
-            && scoring.contains("apply_checksum_confidence"),
-        "engine::scoring must own hot-pattern base confidence plus checksum confidence"
+            && scoring.contains("finalize_report_confidence"),
+        "engine::scoring must own hot-pattern base confidence plus report-confidence finalization"
     );
 
     let hot_patterns = uncommented_code(&read(&src.join("engine/hot_patterns.rs")));
     assert!(
-        hot_patterns.contains("super::scoring::hot_pattern_confidence(credential)"),
+        hot_patterns.contains("super::scoring::hot_pattern_confidence("),
         "hot-pattern fast path must call the scoring owner"
     );
     for forbidden in [

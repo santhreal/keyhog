@@ -6,6 +6,5 @@
 
 mod path;
 
-#[cfg(any(feature = "ml", test))]
 pub(crate) use path::path_component_matches;
 pub(crate) use path::{path_basename, path_basename_bytes, path_has_any_component};

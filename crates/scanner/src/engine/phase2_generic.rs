@@ -292,35 +292,22 @@ impl CompiledScanner {
                     value.len(),
                 );
 
-                // Route through the SAME canonical post-ML penalty pipeline the
-                // ML / named-detector emit path uses (scan_postprocess/ml.rs). The
-                // generic-secret fallback historically emitted via `push_match`
-                // and BYPASSED it, so the random-base64 / encoded-binary /
-                // placeholder blob penalties (×0.02) never reached this path -
-                // that bypass IS the base64-protobuf FP class (the lost
-                // separation pipeline closed exactly this wiring gap). `is_named
-                // = false`: generic-secret is an unanchored fallback, so the
-                // shape penalties (char-diversity / repeat-run / uniform-base64
-                // -blob / encoded-binary) all apply. A real short/base62 secret
-                // clears every check unchanged; only a 44+ char raw-base64-blob
-                // or encoded-binary value (the decoy class) is slammed ×0.02
-                // below the floor. Applied BEFORE the checksum floor so a valid
-                // embedded CRC still overrides shape and surfaces the token, and
-                // a user can recover the penalized blob with `--min-confidence`.
-                let confidence = crate::confidence::apply_post_ml_penalties_with_encoded_text_lift(
+                // Route through the SAME report-confidence finalizer the ML and
+                // named-detector emit paths use. `is_named=false` keeps the
+                // generic fallback's shape penalties active; the encoded-text
+                // lift is the one extra raw signal this path contributes.
+                let Some(confidence) = super::scoring::finalize_report_confidence(
                     confidence,
-                    value,
-                    false,
-                    allow_encoded_text_secret,
-                );
-
-                // Shared checksum policy on the generic-secret fallback emit
-                // path: a prefix-bearing token (`ghp_`/`npm_`/…) with an
-                // Invalid embedded CRC is dropped, and a Valid one is floored
-                // before the min-confidence gate so a confirmed token clears
-                // the bar even on the phase-2 path.
-                let Some(confidence) = super::scoring::apply_checksum_confidence(confidence, value)
-                else {
+                    super::scoring::ReportConfidencePolicy {
+                        credential: value,
+                        detector_id: crate::detector_ids::GENERIC_SECRET,
+                        file_path: chunk.metadata.path.as_deref(),
+                        is_named_detector: false,
+                        penalize_test_paths: self.config.penalize_test_paths,
+                        allow_encoded_text_lift: allow_encoded_text_secret,
+                        calibration: self.config.calibration.as_deref(),
+                    },
+                ) else {
                     // A prefix-bearing token with an INVALID embedded checksum is a
                     // confirmed false positive — trace the drop (KH-L-0412, Law-10)
                     // so it is not silent, mirroring the named path's

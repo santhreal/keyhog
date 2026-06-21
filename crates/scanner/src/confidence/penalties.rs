@@ -1,5 +1,4 @@
 use super::{CONFIDENCE_MAX, CONFIDENCE_MIN};
-#[cfg(any(feature = "ml", test))]
 use keyhog_core::BetaCounters;
 
 /// Sanitize a confidence value so a NaN or infinity entering the
@@ -155,11 +154,6 @@ pub(crate) fn is_service_anchored_detector(detector_id: &str) -> bool {
 /// anchor already proved it is real. The placeholder-WORD penalty still
 /// applies to everything (a named token literally containing "EXAMPLE" /
 /// "placeholder" is a doc sample regardless of which detector fired).
-#[cfg(any(feature = "entropy", feature = "ml", test))]
-pub(crate) fn apply_post_ml_penalties(score: f64, credential: &str, is_named: bool) -> f64 {
-    apply_post_ml_penalties_with_encoded_text_lift(score, credential, is_named, false)
-}
-
 pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
     score: f64,
     credential: &str,
@@ -261,7 +255,6 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
 /// prior is symmetric, so 0.5 × score keeps previous behavior approximately
 /// stable until observations accumulate. Detectors with a long clean record
 /// (posterior > 0.5) get amplified; chronic FP-emitters get muted.
-#[cfg(any(feature = "ml", test))]
 pub(crate) fn apply_calibration_multiplier(
     score: f64,
     detector_id: &str,
@@ -287,7 +280,6 @@ pub(crate) fn apply_calibration_multiplier(
     finalize_confidence(score * multiplier)
 }
 
-#[cfg(any(feature = "ml", test))]
 fn calibration_posterior_mean(counters: BetaCounters) -> f64 {
     let total = counters.alpha as f64 + counters.beta as f64;
     if total == 0.0 {
@@ -297,7 +289,6 @@ fn calibration_posterior_mean(counters: BetaCounters) -> f64 {
     }
 }
 
-#[cfg(any(feature = "ml", test))]
 fn calibration_observations(counters: BetaCounters) -> u32 {
     counters
         .alpha
@@ -309,7 +300,6 @@ fn calibration_observations(counters: BetaCounters) -> u32 {
 ///
 /// `penalize = false` is the scanner side of `--no-suppress-test-fixtures`.
 /// The NaN-safety barrier still runs in every branch.
-#[cfg(any(feature = "ml", test))]
 pub(crate) fn apply_path_confidence_penalties(
     score: f64,
     path: Option<&str>,

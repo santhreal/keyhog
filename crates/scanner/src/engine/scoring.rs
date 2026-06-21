@@ -24,14 +24,66 @@ pub(super) fn apply_checksum_confidence(confidence: f64, credential: &str) -> Op
     checksum_policy_for(credential).adjusted_confidence(confidence)
 }
 
+pub(super) struct ReportConfidencePolicy<'a> {
+    pub(super) credential: &'a str,
+    pub(super) detector_id: &'a str,
+    pub(super) file_path: Option<&'a str>,
+    pub(super) is_named_detector: bool,
+    pub(super) penalize_test_paths: bool,
+    pub(super) allow_encoded_text_lift: bool,
+    pub(super) calibration: Option<&'a keyhog_core::Calibration>,
+}
+
+pub(super) fn finalize_report_confidence(
+    confidence: f64,
+    policy: ReportConfidencePolicy<'_>,
+) -> Option<f64> {
+    let confidence = crate::confidence::apply_post_ml_penalties_with_encoded_text_lift(
+        confidence,
+        policy.credential,
+        policy.is_named_detector,
+        policy.allow_encoded_text_lift,
+    );
+    let confidence = crate::confidence::apply_path_confidence_penalties(
+        confidence,
+        policy.file_path,
+        policy.penalize_test_paths,
+    );
+    let confidence =
+        if let Some(floor) = crate::confidence::known_prefix_confidence_floor(policy.credential) {
+            confidence.max(floor)
+        } else {
+            confidence
+        };
+    let confidence = crate::confidence::apply_calibration_multiplier(
+        confidence,
+        policy.detector_id,
+        policy.calibration,
+    );
+    apply_checksum_confidence(confidence, policy.credential)
+}
+
 #[cfg(feature = "simdsieve")]
-pub(super) fn hot_pattern_confidence(credential: &str) -> Option<f64> {
+pub(super) fn hot_pattern_confidence(
+    credential: &str,
+    detector_id: &str,
+    file_path: Option<&str>,
+    penalize_test_paths: bool,
+    calibration: Option<&keyhog_core::Calibration>,
+) -> Option<f64> {
     const BASE_CONFIDENCE: f64 = 0.7;
-    let base_confidence = match crate::confidence::known_prefix_confidence_floor(credential) {
-        Some(confidence) => confidence,
-        None => BASE_CONFIDENCE,
-    };
-    apply_checksum_confidence(base_confidence, credential)
+    finalize_report_confidence(
+        BASE_CONFIDENCE,
+        ReportConfidencePolicy {
+            credential,
+            detector_id,
+            file_path,
+            is_named_detector: true,
+            penalize_test_paths,
+            allow_encoded_text_lift: false,
+            calibration,
+        },
+    )
 }
 
 #[cfg(feature = "entropy")]

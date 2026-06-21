@@ -36,18 +36,19 @@ fn detector_dir() -> PathBuf {
 }
 
 /// A high-entropy value with no service prefix, assigned to a generic
-/// `api_secret` key. It is captured by the generic-secret assignment fallback
-/// (the path under test), not by any anchored named detector. 48 mixed-case
-/// alphanumerics → entropy well above the generic floor, length well above the
-/// 16-char minimum, no `+`/`/`/`=` punctuation that would trip the
-/// random-base64-blob gate.
-const GENERIC_SECRET_LINE: &str = "api_secret = \"Zx9Kq2Wm7Lp4Rn8Tv3Yb6Hc1Df5Gj0Ks2Md4Pw7Qz9Xa3B\"";
+/// `license_key` key. Entropy and ML are disabled in the scanner config below
+/// so this isolates the generic-secret assignment fallback rather than letting
+/// entropy or the named generic-password detector claim the line first.
+const GENERIC_SECRET_LINE: &str =
+    "license_key = \"Zx9Kq2Wm7Lp4Rn8Tv3Yb6Hc1Df5Gj0Ks2Md4Pw7Qz9Xa3B\"";
 const GENERIC_VALUE: &str = "Zx9Kq2Wm7Lp4Rn8Tv3Yb6Hc1Df5Gj0Ks2Md4Pw7Qz9Xa3B";
 
 fn scanner_with(penalize_test_paths: bool) -> CompiledScanner {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
     let mut config = ScannerConfig::default();
     config.penalize_test_paths = penalize_test_paths;
+    config.entropy_enabled = false;
+    config.ml_enabled = false;
     CompiledScanner::compile(detectors)
         .expect("compile scanner")
         .with_config(config)

@@ -138,7 +138,9 @@ pub mod confidence {
 
     #[cfg(test)]
     pub(crate) fn apply_post_ml_penalties(score: f64, credential: &str, is_named: bool) -> f64 {
-        crate::confidence::penalties::apply_post_ml_penalties(score, credential, is_named)
+        crate::confidence::penalties::apply_post_ml_penalties_with_encoded_text_lift(
+            score, credential, is_named, false,
+        )
     }
 
     #[cfg(test)]

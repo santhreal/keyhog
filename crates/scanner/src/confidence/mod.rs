@@ -9,12 +9,8 @@ pub(crate) use prefixes::{known_prefix_body, known_prefix_confidence_floor, KNOW
 pub(crate) use signals::ConfidenceSignals;
 
 use crate::entropy::{HIGH_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD};
-#[cfg(feature = "ml")]
 pub(crate) use penalties::apply_calibration_multiplier;
-#[cfg(feature = "ml")]
 pub(crate) use penalties::apply_path_confidence_penalties;
-#[cfg(any(feature = "entropy", feature = "ml"))]
-pub(crate) use penalties::apply_post_ml_penalties;
 pub(crate) use penalties::apply_post_ml_penalties_with_encoded_text_lift;
 #[cfg(feature = "entropy")]
 pub(crate) use penalties::contains_placeholder_word;

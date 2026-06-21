@@ -196,12 +196,19 @@ impl CompiledScanner {
 
             // Non-ML path (the `ml` feature is compiled out, or ML disabled at
             // runtime). Emit directly with the entropy heuristic, routed through
-            // the post-ML shape penalties and the shared checksum policy owner.
-            let confidence =
-                crate::confidence::apply_post_ml_penalties(confidence, &entropy_match.value, false);
-            let Some(confidence) =
-                super::scoring::apply_checksum_confidence(confidence, &entropy_match.value)
-            else {
+            // the same report-confidence finalizer used by ML and detector hits.
+            let Some(confidence) = super::scoring::finalize_report_confidence(
+                confidence,
+                super::scoring::ReportConfidencePolicy {
+                    credential: &entropy_match.value,
+                    detector_id: metadata.0.as_ref(),
+                    file_path: chunk.metadata.path.as_deref(),
+                    is_named_detector: false,
+                    penalize_test_paths: self.config.penalize_test_paths,
+                    allow_encoded_text_lift: false,
+                    calibration: self.config.calibration.as_deref(),
+                },
+            ) else {
                 continue;
             };
             scan_state.push_match_lazy(

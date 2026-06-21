@@ -15,7 +15,6 @@ pub(crate) struct PlaceholderWord {
 }
 
 impl PlaceholderWord {
-    #[cfg(any(feature = "ml", test))]
     pub(crate) fn lower(&self) -> &str {
         &self.lower
     }

@@ -268,8 +268,18 @@ impl CompiledScanner {
 
         match score_result {
             super::MlScoreResult::Final(mut confidence) => {
-                let Some(adjusted_confidence) = checksum_policy.adjusted_confidence(confidence)
-                else {
+                let Some(adjusted_confidence) = super::scoring::finalize_report_confidence(
+                    confidence,
+                    super::scoring::ReportConfidencePolicy {
+                        credential,
+                        detector_id: detector.id.as_ref(),
+                        file_path: chunk.metadata.path.as_deref(),
+                        is_named_detector,
+                        penalize_test_paths: self.config.penalize_test_paths,
+                        allow_encoded_text_lift: false,
+                        calibration: self.config.calibration.as_deref(),
+                    },
+                ) else {
                     return;
                 };
                 confidence = adjusted_confidence;

@@ -109,44 +109,20 @@ impl CompiledScanner {
                 final_score *= pending.code_context.confidence_multiplier();
             }
 
-            let final_score = crate::confidence::apply_post_ml_penalties(
+            let Some(final_score) = super::scoring::finalize_report_confidence(
                 final_score,
-                &pending.credential,
-                crate::confidence::is_service_anchored_detector(&pending.raw_match.detector_id),
-            );
-            let final_score = crate::confidence::apply_path_confidence_penalties(
-                final_score,
-                pending.raw_match.location.file_path.as_deref(),
-                self.config.penalize_test_paths,
-            );
-            let final_score = if let Some(floor) =
-                crate::confidence::known_prefix_confidence_floor(&pending.credential)
-            {
-                final_score.max(floor)
-            } else {
-                final_score
-            };
-
-            // Bayesian calibration multiplier (Tier-B #4). No-op unless the
-            // resolved scan config explicitly supplied a calibration store, or
-            // when the detector has zero recorded observations beyond the
-            // Beta(1,1) prior. Detectors with a long clean track get amplified;
-            // chronic FP-emitters muted.
-            let final_score = crate::confidence::apply_calibration_multiplier(
-                final_score,
-                &pending.raw_match.detector_id,
-                self.config.calibration.as_deref(),
-            );
-
-            // Embedded-checksum adjudication - the FINAL confidence step so a
-            // cryptographically-confirmed token (GitHub/npm/Slack/Stripe/GitLab/
-            // PyPI) clears the `--precision` 0.85 bar regardless of how ML or
-            // calibration scored its shape, and a checksum-failing one is
-            // dropped. Route through the shared match-policy owner to keep this
-            // batch path self-consistent with direct emitters.
-            let Some(final_score) =
-                super::scoring::apply_checksum_confidence(final_score, &pending.credential)
-            else {
+                super::scoring::ReportConfidencePolicy {
+                    credential: &pending.credential,
+                    detector_id: pending.raw_match.detector_id.as_ref(),
+                    file_path: pending.raw_match.location.file_path.as_deref(),
+                    is_named_detector: crate::confidence::is_service_anchored_detector(
+                        &pending.raw_match.detector_id,
+                    ),
+                    penalize_test_paths: self.config.penalize_test_paths,
+                    allow_encoded_text_lift: false,
+                    calibration: self.config.calibration.as_deref(),
+                },
+            ) else {
                 continue;
             };
 

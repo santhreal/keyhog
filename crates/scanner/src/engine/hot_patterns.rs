@@ -157,13 +157,19 @@ impl CompiledScanner {
                     continue;
                 }
 
-                let Some(confidence) = super::scoring::hot_pattern_confidence(credential) else {
+                let metadata = &self.hot_metadata_by_index[pattern_idx];
+                let Some(confidence) = super::scoring::hot_pattern_confidence(
+                    credential,
+                    metadata.0.as_ref(),
+                    chunk.metadata.path.as_deref(),
+                    self.config.penalize_test_paths,
+                    self.config.calibration.as_deref(),
+                ) else {
                     continue;
                 };
 
                 let line = crate::pipeline::match_line_number(preprocessed, line_offsets, offset);
 
-                let metadata = &self.hot_metadata_by_index[pattern_idx];
                 let absolute_line = line + chunk.metadata.base_line;
                 let source_offset =
                     preprocessed.source_offset_for_match(&chunk.data, offset, credential);
