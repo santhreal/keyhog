@@ -120,9 +120,14 @@ pub fn is_entropy_appropriate(path: Option<&str>, allow_source_files: bool) -> b
 /// Content-aware variant of [`is_entropy_appropriate`].
 ///
 /// `has_secret_keyword_line` is true when the chunk text contains at least one
-/// secret-keyword assignment line (same predicate the entropy scanner uses to
-/// seed keyword contexts, [`keywords::find_keyword_assignment_lines`]). When
-/// set, two path-only hard-OFFs are lifted:
+/// secret-keyword assignment line. For config/data files this uses the same
+/// broader predicate the entropy scanner uses to seed keyword contexts. For
+/// source-code files it is intentionally narrower: only a same-line credential
+/// assignment surface such as `apiKey = "..."` lifts the source-file hard-OFF.
+/// Ordinary compiler/parser code is full of `Token`, `key`, `signature`, and
+/// `digest` identifiers next to `=`/`:`; treating those as credential context
+/// turns the whole source chunk into entropy noise. When set, two path-only
+/// hard-OFFs are lifted:
 ///
 ///   * `.json` files (the single biggest FN wrapper - `{"auth": "<40-char
 ///     base64>"}` was scoring 0 while the identical `auth: "<same>"` in
@@ -144,11 +149,14 @@ pub fn is_entropy_appropriate_with_content(
     text: &str,
     secret_keywords: &[String],
 ) -> bool {
-    let has_secret_keyword_line = !keywords::find_keyword_assignment_lines(
-        &text.lines().collect::<Vec<_>>(),
-        secret_keywords,
-    )
-    .is_empty();
+    let source_path = crate::decode::caesar::is_source_code_path(path);
+    let has_secret_keyword_line = if source_path && !allow_source_files {
+        text.lines()
+            .any(keywords::line_has_credential_assignment_surface)
+    } else {
+        !keywords::find_keyword_assignment_lines(&text.lines().collect::<Vec<_>>(), secret_keywords)
+            .is_empty()
+    };
     is_entropy_appropriate_inner(path, allow_source_files, has_secret_keyword_line)
 }
 

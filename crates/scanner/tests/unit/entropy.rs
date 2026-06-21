@@ -212,6 +212,35 @@ fn entropy_is_not_appropriate_for_source_files_even_with_config_substrings() {
 }
 
 #[test]
+fn source_entropy_lift_requires_same_line_credential_assignment_surface() {
+    let text = r#"
+pub fn gpu_tokenize_and_classify() {
+    let mut scratch = TokenizationScratch::default();
+}
+"#;
+    let secret_keywords = vec!["TOKEN".to_string(), "SECRET".to_string()];
+    assert!(
+        !is_entropy_appropriate_with_content(
+            Some("vyre-libs/src/parsing/c/preprocess/gpu_pipeline/tokenization.rs"),
+            false,
+            text,
+            &secret_keywords,
+        ),
+        "source files must not enable entropy merely because ordinary code contains Token/secret words next to '='"
+    );
+}
+
+#[test]
+fn source_entropy_lift_preserves_real_credential_assignment_surface() {
+    let text = r#"const apiKey = "aK7xP9mQ2wE5rT8yU1iO3pA6sD4fG0hJkL";"#;
+    let secret_keywords = vec!["API_KEY".to_string(), "TOKEN".to_string()];
+    assert!(
+        is_entropy_appropriate_with_content(Some("src/config.ts"), false, text, &secret_keywords),
+        "source files with direct credential assignments must still enable entropy"
+    );
+}
+
+#[test]
 fn entropy_is_appropriate_for_source_files_when_allowed() {
     assert!(is_entropy_appropriate(Some("src/main.rs"), true));
     assert!(is_entropy_appropriate(Some("lib/app.py"), true));

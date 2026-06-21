@@ -30,6 +30,7 @@ pub(crate) fn entropy_match_suppressed(
     // label). Every OTHER gate runs verbatim. False ⇒ byte-identical strict
     // gauntlet.
     allow_canonical_lift: bool,
+    source_entropy_requires_same_line_credential: bool,
 ) -> bool {
     // The lift only releases the shape gates for a candidate that carries a
     // STRONG credential keyword anchor (the only candidates the generation lift
@@ -47,6 +48,17 @@ pub(crate) fn entropy_match_suppressed(
     // the direct-assignment surface the MoE can actually arbitrate.
     let same_line_credential_assignment =
         value_line_has_same_line_credential_keyword(entropy_match, preprocessed, line_offsets);
+    if source_entropy_requires_same_line_credential
+        && crate::suppression::shape::looks_like_source_type_identifier(&entropy_match.value)
+    {
+        return true;
+    }
+    if source_entropy_requires_same_line_credential && !same_line_credential_assignment {
+        return true;
+    }
+    if chunk.metadata.source_type.contains("/caesar") {
+        return true;
+    }
     let same_line_high_signal_assignment_owner =
         value_line_has_random_byte_blob_owner(entropy_match, preprocessed, line_offsets);
     let canonical_lift = allow_canonical_lift
@@ -163,6 +175,18 @@ pub(crate) fn entropy_match_suppressed(
     if crate::pipeline::looks_like_public_version_identifier(&entropy_match.value) {
         return true;
     }
+    if crate::pipeline::looks_like_public_reference_selector(&entropy_match.value) {
+        return true;
+    }
+    if crate::pipeline::looks_like_public_metadata_identifier(&entropy_match.value) {
+        return true;
+    }
+    if crate::pipeline::looks_like_public_evidence_identifier(&entropy_match.value) {
+        return true;
+    }
+    if crate::pipeline::looks_like_public_artifact_reference(&entropy_match.value) {
+        return true;
+    }
     if crate::pipeline::looks_like_shell_template_value(&entropy_match.value) {
         return true;
     }
@@ -182,6 +206,16 @@ pub(crate) fn entropy_match_suppressed(
             &entropy_match.value,
             entropy_match.entropy,
         );
+    if !high_entropy_punctuation_payload
+        && crate::pipeline::looks_like_source_code_expression(&entropy_match.value)
+    {
+        return true;
+    }
+    if crate::decode::caesar::is_source_code_path(chunk.metadata.path.as_deref())
+        && crate::suppression::shape::looks_like_source_symbol_identifier(&entropy_match.value)
+    {
+        return true;
+    }
     // Punctuation-decorated identifier (`--api-secret`,
     // `&gss_token`, `@v_password`, `!!apiKey`, `Password:`,
     // `privateAccessToken!`, `/etc/passwd:/etc/passwd:ro`).

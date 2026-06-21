@@ -32,6 +32,134 @@ pub(crate) fn extract_prefix(var_name: &str) -> String {
         .to_string()
 }
 
+pub(crate) fn fragment_assignment_name_is_credential_like(var_name: &str) -> bool {
+    let Some(normalized) =
+        crate::engine::phase2_generic::keywords::normalize_assignment_keyword(var_name)
+    else {
+        return false;
+    };
+    if normalized_assignment_name_is_public_metadata_owner(&normalized) {
+        return false;
+    }
+    normalized_or_fragment_base_is_credential_like(&normalized)
+}
+
+fn normalized_assignment_name_is_public_metadata_owner(normalized: &str) -> bool {
+    matches!(
+        normalized,
+        "digest" | "hash" | "checksum" | "version" | "lines"
+    ) || normalized.ends_with("_digest")
+        || normalized.ends_with("_hash")
+        || normalized.ends_with("_checksum")
+        || normalized.ends_with("_version")
+        || normalized.ends_with("_lines")
+        || normalized.ends_with("_dedup_key")
+}
+
+fn normalized_or_fragment_base_is_credential_like(normalized: &str) -> bool {
+    if normalized_assignment_name_is_credential_like(normalized, false) {
+        return true;
+    }
+    if let Some(base) = strip_separated_fragment_suffix(normalized) {
+        return normalized_assignment_name_is_credential_like(base, true);
+    }
+    let compact: String = normalized
+        .bytes()
+        .filter(|&b| b != b'_')
+        .map(char::from)
+        .collect();
+    strip_compact_fragment_suffix(&compact)
+        .is_some_and(|base| normalized_assignment_name_is_credential_like(base, true))
+}
+
+fn normalized_assignment_name_is_credential_like(
+    normalized: &str,
+    from_fragment_suffix: bool,
+) -> bool {
+    if !from_fragment_suffix && is_bare_ambiguous_fragment_owner(normalized) {
+        return false;
+    }
+    crate::entropy::keywords::normalized_assignment_keyword_is_credential(normalized)
+        || crate::engine::phase2_generic::keywords::normalized_assignment_keyword_has_secret_suffix(
+            normalized,
+        )
+}
+
+fn is_bare_ambiguous_fragment_owner(normalized: &str) -> bool {
+    matches!(
+        normalized,
+        "key"
+            | "token"
+            | "secret"
+            | "password"
+            | "passwd"
+            | "pwd"
+            | "pass"
+            | "credential"
+            | "auth"
+            | "authorization"
+    )
+}
+
+fn strip_separated_fragment_suffix(normalized: &str) -> Option<&str> {
+    let (base, suffix) = normalized.rsplit_once('_')?;
+    if base.is_empty() {
+        return None;
+    }
+    let suffix_is_fragment = matches!(
+        suffix,
+        "prefix"
+            | "suffix"
+            | "head"
+            | "tail"
+            | "left"
+            | "right"
+            | "chunk"
+            | "piece"
+            | "frag"
+            | "fragment"
+            | "part"
+            | "chunks"
+            | "pieces"
+            | "frags"
+            | "fragments"
+            | "parts"
+    ) || suffix
+        .strip_prefix("part")
+        .is_some_and(|digits| !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit()));
+    suffix_is_fragment.then_some(base)
+}
+
+fn strip_compact_fragment_suffix(compact: &str) -> Option<&str> {
+    for suffix in [
+        "prefix",
+        "suffix",
+        "head",
+        "tail",
+        "left",
+        "right",
+        "chunk",
+        "piece",
+        "frag",
+        "fragment",
+        "part",
+        "chunks",
+        "pieces",
+        "frags",
+        "fragments",
+        "parts",
+    ] {
+        if let Some(base) = compact.strip_suffix(suffix) {
+            if !base.is_empty() {
+                return Some(base);
+            }
+        }
+    }
+    let without_digits = compact.trim_end_matches(|ch: char| ch.is_ascii_digit());
+    let base = without_digits.strip_suffix("part")?;
+    (!base.is_empty()).then_some(base)
+}
+
 #[cfg(feature = "multiline")]
 pub(super) fn extract_string_part(
     line: &str,

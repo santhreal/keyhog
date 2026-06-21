@@ -160,6 +160,16 @@ pub(crate) fn should_suppress_named_detector_finding_weak(
     // contract evasions. See task #41 + the 2026-05-27 audit.
     let apply_tier_b = is_generic_or_entropy(detector_id, weak_anchor);
 
+    if apply_tier_b && source_type.is_some_and(|source| source.contains("/caesar")) {
+        crate::telemetry::record_example_suppression(
+            "pipeline",
+            path,
+            credential,
+            "caesar_generic_fallback",
+        );
+        return true;
+    }
+
     // KH-L-0414: the contiguous-identifier gate KH-L-0413 lifted on the
     // scan-time generic bridge also fired here on weakly-anchored named /
     // generic-* / entropy-* findings, dropping real random passwords a service

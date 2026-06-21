@@ -30,6 +30,11 @@ impl CompiledScanner {
                 let Some(value_match) = caps.get(2) else {
                     continue;
                 };
+                if !crate::multiline::fragment_assignment_name_is_credential_like(
+                    var_name_match.as_str(),
+                ) {
+                    continue;
+                }
 
                 let fragment_line = line_idx + 1;
                 // Compute the trigger value's byte offset within chunk.data.

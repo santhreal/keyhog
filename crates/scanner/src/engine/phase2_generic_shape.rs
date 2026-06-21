@@ -53,6 +53,10 @@ impl CompiledScanner {
         allow_canonical_hex_key: bool,
         allow_encoded_text_secret: bool,
     ) -> Option<&'static str> {
+        if chunk.metadata.source_type.contains("/caesar") {
+            return Some("caesar_generic_fallback");
+        }
+
         // Keyword-anchored values use the relaxed `generic-keyword-secret`
         // floor when `generic_keyword_low_entropy` is on (the default):
         // the credential keyword in the key is the evidence, and precision
@@ -80,11 +84,25 @@ impl CompiledScanner {
         }
         let allow_ambiguous_base64_candidate =
             generic_path_allows_ambiguous_base64_candidate(value, entropy);
+        let high_entropy_punctuation_payload =
+            crate::suppression::shape::looks_like_high_entropy_punctuation_payload(value, entropy);
         if crate::pipeline::looks_like_train_case_prose_identifier(value) {
             return Some("train_case_prose_identifier");
         }
         if crate::pipeline::looks_like_public_version_identifier(value) {
             return Some("public_version_identifier");
+        }
+        if crate::pipeline::looks_like_public_reference_selector(value) {
+            return Some("public_reference_selector");
+        }
+        if crate::pipeline::looks_like_public_metadata_identifier(value) {
+            return Some("public_metadata_identifier");
+        }
+        if crate::pipeline::looks_like_public_evidence_identifier(value) {
+            return Some("public_evidence_identifier");
+        }
+        if crate::pipeline::looks_like_public_artifact_reference(value) {
+            return Some("public_artifact_reference");
         }
         if crate::pipeline::looks_like_shell_template_value(value) {
             return Some("shell_template_value");
@@ -97,11 +115,20 @@ impl CompiledScanner {
         }
 
         // Variable-name filter: real secrets have mixed character classes.
-        // Reject if the value looks like a code expression (has parens,
-        // brackets, dots, or is pure snake_case/camelCase).
-        if value.contains('(') || value.contains('[') || value.contains('{') || value.contains(' ')
-        {
+        // Reject code expressions and whitespace-bearing labels before they
+        // can be scored as keyword-anchored generic credentials.
+        if value.contains(' ') {
             return Some("code_expression_chars");
+        }
+        if !high_entropy_punctuation_payload
+            && crate::pipeline::looks_like_source_code_expression(value)
+        {
+            return Some("source_code_expression");
+        }
+        if crate::decode::caesar::is_source_code_path(chunk.metadata.path.as_deref())
+            && crate::suppression::shape::looks_like_source_symbol_identifier(value)
+        {
+            return Some("source_symbol_identifier");
         }
         // C++ / Rust scope-resolution (`Class::Member`, `Etc::passwd`,
         // `PrivateKey::<T>`) is the dominant generic-secret FP class
@@ -217,8 +244,6 @@ impl CompiledScanner {
         // `&gss_recv_token` (C pointer), `@v_password` (SQL bind),
         // `!!apiKeyOrOAuthToken` (JS coercion), `Password:` (UI label),
         // `privateAccessToken!` (TS non-null assertion).
-        let high_entropy_punctuation_payload =
-            crate::suppression::shape::looks_like_high_entropy_punctuation_payload(value, entropy);
         if !high_entropy_punctuation_payload
             && crate::pipeline::looks_like_punctuation_decorated_identifier(value)
         {

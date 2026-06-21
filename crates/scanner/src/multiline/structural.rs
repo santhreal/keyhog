@@ -1,5 +1,7 @@
 use super::config::{starts_parenthesized_implicit_block, LineMapping};
-use super::string_extract::{extract_prefix, extract_quoted_content};
+use super::string_extract::{
+    extract_prefix, extract_quoted_content, fragment_assignment_name_is_credential_like,
+};
 use crate::fragment_cache::FragmentCache;
 use crate::shared_regexes::ASSIGN_RE;
 use regex::Regex;
@@ -64,7 +66,9 @@ pub(super) fn collect_structural_fragments(
         std::collections::HashMap::new();
 
     for (index, line) in lines.iter().enumerate() {
-        if line.contains('[') && line.contains(']') {
+        if inline_array_assignment_name(line)
+            .is_some_and(fragment_assignment_name_is_credential_like)
+        {
             let array_joined = join_inline_array_strings(line);
             if array_joined.len() >= 16 {
                 structural_joined.push(array_joined.clone());
@@ -87,6 +91,9 @@ pub(super) fn collect_structural_fragments(
             let var_name = var_name_match.as_str();
             let value = value_match.as_str();
             var_values.insert(var_name.to_string(), (index, value.to_string()));
+            if !fragment_assignment_name_is_credential_like(var_name) {
+                continue;
+            }
             let prefix = extract_prefix(var_name);
             let mut added = false;
 
@@ -228,6 +235,10 @@ fn resolve_concat_reference(
 ) -> Option<String> {
     let re = CONCAT_RE.as_ref()?;
     let caps = re.captures(line)?;
+    if !inline_array_assignment_name(line).is_some_and(fragment_assignment_name_is_credential_like)
+    {
+        return None;
+    }
     let rhs = caps.get(1)?.as_str();
     let parts: Vec<&str> = rhs.split('+').map(str::trim).collect();
     if parts.len() < 2 {
@@ -239,6 +250,13 @@ fn resolve_concat_reference(
         joined.push_str(&value.1);
     }
     Some(joined)
+}
+
+fn inline_array_assignment_name(line: &str) -> Option<&str> {
+    let sep = line.find('=').or_else(|| line.find(':'))?;
+    let lhs = &line[..sep];
+    lhs.rsplit(|ch: char| !(ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.')))
+        .find(|part| !part.is_empty())
 }
 
 /// Resolve a template-literal RHS like `` `${a}${b}` `` (or `` `${"lit"}` ``)

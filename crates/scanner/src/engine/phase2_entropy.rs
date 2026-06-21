@@ -25,12 +25,17 @@ impl CompiledScanner {
         if !self.config.entropy_enabled {
             return;
         }
+        if chunk.metadata.source_type.contains("/caesar") {
+            return;
+        }
         let path_entropy_appropriate = crate::entropy::is_entropy_appropriate_with_content(
             chunk.metadata.path.as_deref(),
             self.config.entropy_in_source_files,
             &preprocessed.text,
             &self.config.secret_keywords,
         );
+        let source_entropy_requires_same_line_credential = !self.config.entropy_in_source_files
+            && crate::decode::caesar::is_source_code_path(chunk.metadata.path.as_deref());
         let isolated_bare_candidate = !path_entropy_appropriate
             && crate::entropy::scanner::has_isolated_bare_secret_candidate(
                 &preprocessed.text,
@@ -161,6 +166,7 @@ impl CompiledScanner {
                 line_offsets,
                 chunk,
                 allow_canonical_lift,
+                source_entropy_requires_same_line_credential,
             ) {
                 continue;
             }

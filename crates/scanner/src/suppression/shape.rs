@@ -3,6 +3,22 @@
 //! is involved. Sibling modules (`api`, `decision`) chain them together
 //! into actual suppression decisions.
 
+mod path;
+mod public;
+mod source;
+
+pub(crate) use path::{looks_like_scheme_prefixed_uri, looks_like_url_or_path_segment};
+pub(crate) use public::{
+    looks_like_html_event_handler_fragment, looks_like_percent_encoded_markup,
+    looks_like_public_artifact_reference, looks_like_public_evidence_identifier,
+    looks_like_public_metadata_identifier, looks_like_public_reference_selector,
+    looks_like_public_version_identifier, looks_like_shell_template_value,
+};
+pub(crate) use source::{
+    looks_like_source_code_expression, looks_like_source_symbol_identifier,
+    looks_like_source_type_identifier,
+};
+
 /// True if `credential` is an identifier / natural-language shape rather
 /// than a real credential. Covers three FP families seen in dogfood:
 ///   * snake_case-no-digit (≥ 2 underscores) - C/Rust function names like
@@ -169,229 +185,6 @@ pub(crate) fn looks_like_train_case_prose_identifier(value: &str) -> bool {
     !super::token_randomness::is_random_token(value)
 }
 
-/// Public schema/policy identifiers often look like
-/// `product-area-contract:v1`. Under keys such as `schema_token` the generic
-/// bridge used to report them as credentials; a versioned kebab identifier is a
-/// public contract name, not a secret.
-pub(crate) fn looks_like_public_version_identifier(value: &str) -> bool {
-    let Some((name, version)) = value.split_once(':') else {
-        return false;
-    };
-    let Some(version_digits) = version.strip_prefix('v') else {
-        return false;
-    };
-    if version_digits.is_empty()
-        || version_digits.len() > 3
-        || !version_digits.bytes().all(|b| b.is_ascii_digit())
-    {
-        return false;
-    }
-    if name.len() < 8 || name.len() > 96 || !name.contains('-') {
-        return false;
-    }
-    if !name
-        .bytes()
-        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-    {
-        return false;
-    }
-    let mut part_count = 0usize;
-    for part in name.split('-') {
-        if part.is_empty() || part.len() > 24 {
-            return false;
-        }
-        part_count += 1;
-    }
-    if part_count < 3 {
-        return false;
-    }
-    !super::token_randomness::is_random_token(name)
-}
-
-/// Shell/template values are assembled at runtime. The generic bridge may see
-/// either the full `${VAR}` / `$(cmd)` form or a regex-truncated prefix ending
-/// in `$`; both are source templates, not literal credentials.
-pub(crate) fn looks_like_shell_template_value(value: &str) -> bool {
-    if value.contains("${") || value.contains("$(") {
-        return true;
-    }
-    let Some(prefix) = value.strip_suffix('$') else {
-        return false;
-    };
-    let prefix = prefix.trim_end_matches('-');
-    if prefix.len() < 8 || prefix.len() > 80 || !prefix.contains('-') {
-        return false;
-    }
-    if !prefix.bytes().all(|b| b.is_ascii_alphabetic() || b == b'-') {
-        return false;
-    }
-    let mut part_count = 0usize;
-    for part in prefix.split('-') {
-        if part.is_empty() || part.len() > 18 {
-            return false;
-        }
-        part_count += 1;
-    }
-    part_count >= 2 && !super::token_randomness::is_random_token(prefix)
-}
-
-/// URL-encoded markup/XSS probes (`%3Cscript%3E`, double-encoded
-/// `%253Cscript%253E`, etc.) are payload examples, not credentials. Keep this
-/// separate from URL-percent decode-through so real percent-encoded secrets
-/// still decode and fire.
-pub(crate) fn looks_like_percent_encoded_markup(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    if bytes.len() < 8 || !bytes.contains(&b'%') {
-        return false;
-    }
-    let has_encoded_open = crate::ascii_ci::ci_find(bytes, b"%3c")
-        || crate::ascii_ci::ci_find(bytes, b"%253c")
-        || crate::ascii_ci::ci_find(bytes, b"%26lt%3b");
-    let has_encoded_close = crate::ascii_ci::ci_find(bytes, b"%3e")
-        || crate::ascii_ci::ci_find(bytes, b"%253e")
-        || crate::ascii_ci::ci_find(bytes, b"%26gt%3b");
-    if !(has_encoded_open && has_encoded_close) {
-        return false;
-    }
-    [
-        b"script".as_slice(),
-        b"iframe".as_slice(),
-        b"svg".as_slice(),
-        b"img".as_slice(),
-        b"onerror".as_slice(),
-        b"onfocus".as_slice(),
-        b"onclick".as_slice(),
-    ]
-    .iter()
-    .any(|needle| crate::ascii_ci::ci_find(bytes, needle))
-}
-
-/// HTML event-handler attribute fragments such as `onfocus=` are executable
-/// payload grammar, not secret material.
-pub(crate) fn looks_like_html_event_handler_fragment(value: &str) -> bool {
-    let Some(event) = value.strip_suffix('=') else {
-        return false;
-    };
-    if event.len() < 5 || event.len() > 24 || !event.bytes().all(|b| b.is_ascii_alphabetic()) {
-        return false;
-    }
-    const HTML_EVENTS: &[&str] = &[
-        "onblur",
-        "onchange",
-        "onclick",
-        "onerror",
-        "onfocus",
-        "oninput",
-        "onkeydown",
-        "onkeypress",
-        "onkeyup",
-        "onload",
-        "onmouseover",
-        "onsubmit",
-    ];
-    HTML_EVENTS
-        .iter()
-        .any(|known| event.eq_ignore_ascii_case(known))
-}
-
-/// True if `value` looks like a URI / URN / scheme-prefixed string.
-/// Captures these FP shapes seen in dogfood:
-///   * `urn:shopify:params:oauth:token-type:online-access-token`
-///     (shopify-api-js token-exchange.ts)
-///   * `secret-token:wjOtYCQypY5ky1AM_co1lTXNJdOe3Q_waNnnfdyl5u3eOKHCKL-galY9Wklf`
-///     (bat-go merchant README log-line example)
-///   * `something://...`
-///
-/// Pattern: starts with a lowercase-alpha scheme of length 3-15,
-/// followed by `:` and ≥2 more `:` chars (URN) OR `//` (URL).
-/// Real credentials never have this leading-scheme shape.
-pub(crate) fn looks_like_scheme_prefixed_uri(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    if bytes.len() < 6 {
-        return false;
-    }
-    // Find first `:`
-    let Some(colon_idx) = bytes.iter().position(|&b| b == b':') else {
-        return false;
-    };
-    if !(3..=15).contains(&colon_idx) {
-        return false;
-    }
-    // Scheme part [0..colon_idx) must be alpha (allow `-` for `secret-token`)
-    let scheme = &bytes[..colon_idx];
-    if !scheme.iter().all(|&b| b.is_ascii_alphabetic() || b == b'-') {
-        return false;
-    }
-    // Must have at least one letter in the scheme
-    if !scheme.iter().any(|b| b.is_ascii_alphabetic()) {
-        return false;
-    }
-    let after = &bytes[colon_idx + 1..];
-    // URL form: starts with `//`
-    if after.starts_with(b"//") {
-        return true;
-    }
-    // URN form: at least one more `:` in the rest of the value
-    if after.contains(&b':') {
-        return true;
-    }
-    // Compound-scheme single-colon form: scheme contains `-`
-    // (`secret-token`, `auth-token`, `bearer-token`). Real credentials don't
-    // have a colon `<8` chars in from the start; URI-like prefixes do.
-    if scheme.contains(&b'-') {
-        return true;
-    }
-    // Common content-addressable hash schemes - `sha256:<hex>`, `sha1:<hex>`,
-    // `md5:<hex>`. These are integrity digests, not credentials; the generic
-    // regex captures them when an `image: sha256:<hex>` config line appears.
-    let scheme_str = std::str::from_utf8(scheme).unwrap_or(""); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
-    if matches!(
-        scheme_str,
-        "sha256" | "sha512" | "sha1" | "md5" | "blake3" | "blake2"
-    ) {
-        return true;
-    }
-    // Type-annotation / documentation `<short-alpha>:<short-alpha>` shape:
-    // both sides are pure-alpha ≤ 10 chars, total length ≤ 20. Catches
-    // `bool:false`, `int:42`, `string:USD`, `kind:Secret` documentation
-    // examples (llama-cpp arg.cpp:2468 has
-    // `--override-kv tokenizer.ggml.add_bos_token=bool:false,...` whose
-    // `token=bool:false` substring captures as `bool:false`). Real
-    // credentials never have this shape.
-    if bytes.len() <= 20
-        && after.iter().all(|&b| b.is_ascii_alphabetic())
-        && !after.is_empty()
-        && after.len() <= 10
-    {
-        return true;
-    }
-    false
-}
-
-/// True if `value` looks like a `/`-separated path or URL fragment.
-/// Catches Go template paths `user/settings/password` (gogs setting.go),
-/// `user/auth/forgot_passwd` (gogs auth.go), URL fragments like
-/// `/api/v1/access_token` (alist 123_open/api.go). Real credentials don't
-/// have multiple `/` segments - they're random opaque tokens.
-///
-/// Pattern: value contains `/` AND every `/`-delimited non-empty segment
-/// looks like a path component (alphanumeric + `_-.`, contains a letter).
-/// Requires ≥ 2 segments to avoid suppressing single-`/` opaque tokens.
-pub(crate) fn looks_like_url_or_path_segment(value: &str) -> bool {
-    if !value.contains('/') {
-        return false;
-    }
-    let segments: Vec<&str> = value.split('/').filter(|s| !s.is_empty()).collect();
-    if segments.len() < 2 {
-        return false;
-    }
-    segments.iter().all(|s| {
-        s.bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-' || b == b'.')
-            && s.bytes().any(|b| b.is_ascii_alphabetic())
-    })
-}
-
 /// True for opaque high-entropy punctuation payloads where punctuation is part
 /// of the credential body, not syntax around an identifier. This is shared by
 /// the generic and entropy emit paths so the base64 and symbolic-secret
@@ -546,14 +339,14 @@ pub(crate) fn looks_like_syntactic_punctuation_marker(value: &str) -> bool {
     if starts_with_double_dash {
         return true;
     }
-    // Leading `&`/`@`/`$` is a grammar marker ONLY when what follows is a bare
+    // Leading `&`/`@`/`$`/`*` is a grammar marker ONLY when what follows is a bare
     // identifier: `&password` (C pointer), `@api_key` (attribute), `$API_KEY`
-    // (shell/GraphQL var). When the remainder carries credential symbols
+    // (shell/GraphQL var), `*input_key` (Rust/C dereference). When the remainder carries credential symbols
     // (`%`, `!`, `+`, `-`, `=`, …) it is a real secret body that merely starts
     // with the sigil - e.g. tower's `@gAdtFo%B!tcnSl+A-Rt5x…`. Requiring a
     // pure-identifier tail keeps the FP suppression while letting anchored
     // secrets through.
-    if matches!(bytes[0], b'&' | b'@' | b'$') {
+    if matches!(bytes[0], b'&' | b'@' | b'$' | b'*') {
         let rest = &bytes[1..];
         let pure_ident_tail =
             !rest.is_empty() && rest.iter().all(|&b| b.is_ascii_alphanumeric() || b == b'_');
@@ -564,11 +357,17 @@ pub(crate) fn looks_like_syntactic_punctuation_marker(value: &str) -> bool {
     let last = bytes[bytes.len() - 1];
     // Trailing `:` after a value of pure-alpha + colon shape.
     if last == b':' {
-        // Allow only if everything before the trailing `:` is alpha (UI label
-        // shape `Password:`, `Username:`). A real credential containing `:`
-        // mid-string lands elsewhere (scheme reject above).
+        // Allow only if everything before the trailing `:` is an identifier
+        // label (`Password:`, `Username:`, `ptx_source_key:`). A real
+        // credential containing `:` mid-string lands elsewhere (scheme reject
+        // above).
         let prefix = &bytes[..bytes.len() - 1];
-        if !prefix.is_empty() && prefix.iter().all(|&b| b.is_ascii_alphabetic()) {
+        if !prefix.is_empty()
+            && prefix.iter().any(|b| b.is_ascii_alphabetic())
+            && prefix
+                .iter()
+                .all(|&b| b.is_ascii_alphanumeric() || b == b'_')
+        {
             return true;
         }
     }

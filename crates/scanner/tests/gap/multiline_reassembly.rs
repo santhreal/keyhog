@@ -618,7 +618,7 @@ fn inline_array_strings_are_concatenated_when_long_enough() {
     let text = concat!(
         "url = \"https://\" +\n",
         "      \"example.com\"\n",
-        "parts = [\"AKIAIOSF\", \"ODNN7EXAMPLE12\"]\n",
+        "api_key_parts = [\"AKIAIOSF\", \"ODNN7EXAMPLE12\"]\n",
     );
     let p = pre(text);
     // "AKIAIOSF" + "ODNN7EXAMPLE12" = "AKIAIOSFODNN7EXAMPLE12" (len 22 >= 16).
@@ -632,10 +632,21 @@ fn inline_array_short_join_is_dropped() {
     let text = concat!(
         "url = \"https://\" +\n",
         "      \"example.com\"\n",
-        "parts = [\"ab\", \"cd\"]\n",
+        "api_key_parts = [\"ab\", \"cd\"]\n",
     );
     let p = pre(text);
     assert!(!p.text.contains("abcd"), "{:?}", p.text);
+}
+
+#[test]
+fn inline_array_non_credential_metadata_is_not_concatenated() {
+    let text = concat!(
+        "url = \"https://\" +\n",
+        "      \"example.com\"\n",
+        "vx_rows = [\"VX-701\", \"VX-703\", \"VX-709\", \"VX-710\"]\n",
+    );
+    let p = pre(text);
+    assert!(!p.text.contains("VX-701VX-703VX-709VX-710"), "{:?}", p.text);
 }
 
 // ---------------------------------------------------------------------------
