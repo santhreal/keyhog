@@ -183,8 +183,7 @@ pub(crate) fn entropy_match_suppressed(
     // public identifier inside an env list, not a credential, and the MoE has
     // no anchor to arbitrate it. The whole-value UUID under a strong keyword is
     // the one the model can earn.
-    let value_is_exact_uuid =
-        crate::suppression::shape_gates::is_uuid_v4_shape(&entropy_match.value);
+    let value_is_exact_uuid = crate::suppression::shape::is_uuid_v4_shape(&entropy_match.value);
     if !(canonical_lift && value_is_exact_uuid)
         && crate::suppression::shape::contains_uuid_v4_substring(&entropy_match.value)
     {
@@ -562,7 +561,7 @@ fn entropy_fallback_example_suppressed(
     // placeholder of ANY canonical shape stays dropped.
     if crate::context::is_known_example_credential(value)
         || crate::confidence::contains_placeholder_word(value)
-        || crate::suppression::shape_gates::has_three_or_more_consecutive_identical(value)
+        || crate::suppression::shape::has_three_or_more_consecutive_identical(value)
     {
         return true;
     }
@@ -571,7 +570,7 @@ fn entropy_fallback_example_suppressed(
     // UUID arm always fires regardless of `allow_canonical_hex_key`), so for a
     // clean UUID the content gate above is the whole verdict — let it through to
     // the model.
-    if crate::suppression::shape_gates::is_uuid_v4_shape(value) {
+    if crate::suppression::shape::is_uuid_v4_shape(value) {
         return false;
     }
 

@@ -1190,7 +1190,7 @@ impl BigramBloom {
 
 #[cfg(test)]
 pub(crate) fn looks_like_standard_base64_blob(credential: &str) -> bool {
-    crate::suppression::shape_gates::looks_like_standard_base64_blob(credential)
+    crate::suppression::shape::looks_like_standard_base64_blob(credential)
 }
 
 #[cfg(all(test, feature = "entropy"))]

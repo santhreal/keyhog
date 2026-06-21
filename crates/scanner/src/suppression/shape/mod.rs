@@ -3,10 +3,18 @@
 //! is involved. Sibling modules (`api`, `decision`) chain them together
 //! into actual suppression decisions.
 
+mod canonical;
 mod path;
 mod public;
 mod source;
 
+pub(crate) use canonical::{
+    has_n_or_more_consecutive_identical, has_repeated_block_mask,
+    has_three_or_more_consecutive_identical, is_uuid_v4_shape, looks_like_bare_hex_digest,
+    looks_like_dashed_serial_key, looks_like_prefixed_hash_digest,
+    looks_like_prefixed_masked_sequence, looks_like_standard_base64_blob,
+    looks_like_truncated_uuid_v4_suffix, RFC7519_EXAMPLE_JWT_PREFIX,
+};
 pub(crate) use path::{looks_like_scheme_prefixed_uri, looks_like_url_or_path_segment};
 pub(crate) use public::{
     looks_like_html_event_handler_fragment, looks_like_percent_encoded_markup,

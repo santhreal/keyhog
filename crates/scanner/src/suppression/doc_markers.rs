@@ -6,7 +6,7 @@
 //! `Suppress` means "this is a documentation specimen, suppress now";
 //! `KeepChecking` means "fall through to the rest of the decision tree".
 
-use super::shape_gates::{looks_like_prefixed_masked_sequence, RFC7519_EXAMPLE_JWT_PREFIX};
+use super::shape::{looks_like_prefixed_masked_sequence, RFC7519_EXAMPLE_JWT_PREFIX};
 
 /// Outcome of the doc/placeholder/marker pre-checks.
 pub(super) enum MarkerVerdict {

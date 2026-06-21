@@ -82,3 +82,52 @@ fn shape_predicates_do_not_route_through_pipeline_or_suppression_root() {
         "shape/path suppression predicates must use suppression::shape or suppression::path_filter: {offenders:#?}"
     );
 }
+
+#[test]
+fn legacy_shape_gate_module_homes_do_not_return() {
+    let src = scanner_src();
+    let legacy_root = src.join("suppression/shape.rs");
+    let legacy_gates = src.join("suppression/shape_gates.rs");
+    assert!(
+        !legacy_root.exists(),
+        "{} must stay moved to suppression/shape/mod.rs",
+        legacy_root.display()
+    );
+    assert!(
+        !legacy_gates.exists(),
+        "{} must stay moved under suppression/shape/",
+        legacy_gates.display()
+    );
+
+    let shape_mod = src.join("suppression/shape/mod.rs");
+    let canonical = src.join("suppression/shape/canonical.rs");
+    assert!(shape_mod.exists(), "{} is missing", shape_mod.display());
+    assert!(canonical.exists(), "{} is missing", canonical.display());
+
+    let mut files = Vec::new();
+    collect_rs_files(&src, &mut files);
+    let mut offenders = Vec::new();
+    for path in files {
+        let rel = path
+            .strip_prefix(&src)
+            .expect("scanner src path")
+            .to_string_lossy()
+            .replace('\\', "/");
+        let code = uncommented_code(&read(&path));
+        for forbidden in [
+            "mod shape_gates",
+            "shape_gates::",
+            "suppression::shape_gates",
+        ] {
+            if code.contains(forbidden) {
+                offenders.push(format!("{rel} contains {forbidden}"));
+            }
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "legacy shape-gate owner returned:\n{}",
+        offenders.join("\n")
+    );
+}

@@ -1,7 +1,7 @@
 //! Precision: decoy / placeholder twins for the ~40 named + generic
 //! detectors must NOT fire as real findings. Every assertion is derived
 //! from the real suppression cascade in
-//! `crates/scanner/src/suppression/{api,decision,doc_markers,shape,shape_gates}.rs`
+//! `crates/scanner/src/suppression/{api,decision,doc_markers,shape/}.rs`
 //! and the entropy decoy gates in
 //! `crates/scanner/src/entropy/{keywords,scanner}.rs`.
 //!
@@ -347,7 +347,7 @@ fn dashed_serial_license_key_always_suppressed() {
 
 #[test]
 fn near_serial_shapes_do_not_match_dashed_serial() {
-    // shape_gates::looks_like_dashed_serial_key requires len==29 AND
+    // shape::looks_like_dashed_serial_key requires len==29 AND
     // exactly 5 groups. A 4-group or wrong-length value must not be caught
     // by THIS gate. Use a 4-group value with a digit, mixed case, no runs:
     // "Ab1cD-Ef2gH-Ij3kL-Mn4oP" (len 23, 4 groups). Should NOT suppress.
@@ -633,7 +633,7 @@ fn slash_led_value_suppressed_generic_but_not_named() {
 
 #[test]
 fn standard_base64_protobuf_blob_classified() {
-    // shape_gates::looks_like_standard_base64_blob: len in [40,80], standard
+    // shape::looks_like_standard_base64_blob: len in [40,80], standard
     // base64 alphabet, has +/ OR padding OR mult-4 high diversity.
     // 48-char standard base64 with `+`, `/` and `=` padding.
     let blob = "QUJDREVG+2hpamtsbW5vcHFy/3N0dXZ3eHl6MDEyMzQ1Njc=";
@@ -714,7 +714,7 @@ fn known_prefix_clean_token_allowed_not_suppressed() {
 
 #[test]
 fn trailing_ellipsis_body_is_masked_sequence() {
-    // shape_gates::looks_like_prefixed_masked_sequence: trailing "..." after
+    // shape::looks_like_prefixed_masked_sequence: trailing "..." after
     // a known prefix → masked. sk_live_ + ellipsis.
     assert!(suppress_generic("sk_live_abcd1234..."));
     // Unicode horizontal ellipsis is also caught.

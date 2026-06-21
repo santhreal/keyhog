@@ -31,7 +31,7 @@ impl Decoder for ReverseDecoder {
         let candidates = extract_encoded_value_spans(&chunk.data)
             .into_iter()
             .filter(|c| c.value.len() >= MIN_REVERSE_LEN)
-            .filter(|c| !crate::suppression::shape_gates::looks_like_prefixed_hash_digest(&c.value))
+            .filter(|c| !crate::suppression::shape::looks_like_prefixed_hash_digest(&c.value))
             .filter(|c| looks_reversible(&c.value))
             .collect();
         decode_candidate_spans_exact(chunk, candidates, |s| Ok(reverse_str(s)), self.name())

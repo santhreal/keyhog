@@ -5,7 +5,7 @@
 
 use super::decode::try_decode_b64_to_utf8;
 use super::doc_markers::{check_markers, MarkerVerdict};
-use super::shape_gates::{
+use super::shape::{
     has_n_or_more_consecutive_identical, has_repeated_block_mask,
     has_three_or_more_consecutive_identical, is_uuid_v4_shape, looks_like_bare_hex_digest,
     looks_like_dashed_serial_key, looks_like_prefixed_hash_digest, looks_like_standard_base64_blob,

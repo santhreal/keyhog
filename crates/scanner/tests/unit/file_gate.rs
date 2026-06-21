@@ -391,8 +391,8 @@ fn decode_base64_shape_and_decode_have_one_scanner_owner() {
             include_str!("../../src/suppression/decode.rs"),
         ),
         (
-            "suppression/shape_gates.rs",
-            include_str!("../../src/suppression/shape_gates.rs"),
+            "suppression/shape/canonical.rs",
+            include_str!("../../src/suppression/shape/canonical.rs"),
         ),
         ("decode/mod.rs", include_str!("../../src/decode/mod.rs")),
     ] {

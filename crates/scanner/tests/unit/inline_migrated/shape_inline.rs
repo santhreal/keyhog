@@ -1,4 +1,4 @@
-//! Migrated from src/suppression/shape.rs (KH-GAP-004).
+//! Migrated from suppression::shape module-root tests (KH-GAP-004).
 
 use keyhog_scanner::testing::shape::{
     looks_like_credential_colliding_punctuation, looks_like_punctuation_decorated_identifier,

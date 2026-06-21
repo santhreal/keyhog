@@ -116,9 +116,7 @@ pub mod root_facade;
 pub mod scanner_config_state;
 pub mod scanner_misc;
 pub mod segment_attribution;
-// shape_gates: uses `std::borrow::Cow` import that triggers a warning,
-// and has type issues. Fixed separately.
-pub mod shape_gates;
+pub mod shape_canonical;
 pub mod structured_parsers;
 pub mod sub_facade;
 pub mod unicode_combining_marks_normalization;

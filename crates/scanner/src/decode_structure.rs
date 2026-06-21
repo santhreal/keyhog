@@ -116,7 +116,7 @@ pub(crate) fn is_encoded_binary(candidate: &str) -> bool {
 /// `min_diversity == 0` disables the diversity admit (only punctuation /
 /// padding then qualify). The two penalty-path callers that share THIS gate are
 /// [`looks_like_uniform_base64_blob`] (44..=600, diversity 32) and
-/// `suppression::shape_gates::looks_like_standard_base64_blob` (40..=80,
+/// `suppression::shape::looks_like_standard_base64_blob` (40..=80,
 /// diversity 32). The emit/drop scanner paths need a stricter admit (BOTH
 /// `+` AND `/`), so they share the separate [`is_byte_distribution_base64_blob`]
 /// skeleton instead of this one — see that function for why the two admit

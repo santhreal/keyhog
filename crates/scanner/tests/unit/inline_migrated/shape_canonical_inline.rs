@@ -1,4 +1,4 @@
-//! Migrated from src/suppression/shape_gates.rs — the standard-base64-blob
+//! Migrated from suppression::shape::canonical — the standard-base64-blob
 //! shape gate (high-diversity / padded admits, low-diversity / non-mult-4
 //! rejects) that kills the base64-protobuf FP class (KH-GAP-004).
 

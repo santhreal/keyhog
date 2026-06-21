@@ -2,8 +2,8 @@
 //! value of canonical key length (32/48) under a STRONG credential keyword, and
 //! must keep SUPPRESSING the look-alikes the lift deliberately excludes.
 //!
-//! Root cause this locks against: `suppression::shape_gates::looks_like_bare_hex
-//! _digest` (lengths 32|40|48|56|64|72|128) plus the random-byte/encoded-binary
+//! Root cause this locks against: `suppression::shape::looks_like_bare_hex_digest`
+//! (lengths 32|40|48|56|64|72|128) plus the random-byte/encoded-binary
 //! shape arms suppressed EVERY keyword-bridged pure-hex value, dropping real
 //! hex keys (`encryption_key = <hex48>`). On the real CredData corpus those are
 //! genuine 96-100% of the time (hex48+kw 1033 POS / 0 NEG, hex32+kw 0.976);

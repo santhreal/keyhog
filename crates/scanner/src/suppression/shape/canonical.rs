@@ -1,3 +1,6 @@
+//! Canonical non-secret credential body shapes such as digests, UUIDs,
+//! serial keys, JWT examples, and mask runs.
+
 pub(crate) const RFC7519_EXAMPLE_JWT_PREFIX: &str =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkw";
 

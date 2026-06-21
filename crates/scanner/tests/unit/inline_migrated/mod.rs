@@ -16,7 +16,7 @@ mod jwt_inline;
 mod parsers_inline;
 mod probabilistic_gate_inline;
 mod reverse_inline;
-mod shape_gates_inline;
+mod shape_canonical_inline;
 mod shape_inline;
 mod simd_inline;
 mod simdsieve_prefilter_inline;

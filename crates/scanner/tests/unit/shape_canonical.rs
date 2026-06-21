@@ -1,8 +1,8 @@
-/// Unit tests for shape-gate heuristics exercised through the public
+/// Unit tests for canonical shape heuristics exercised through the public
 /// `keyhog_scanner::jwt` module (which is truly public) and through
 /// `keyhog_scanner::testing::normalize_chunk_data` / `should_suppress_known_example_credential`.
 ///
-/// The individual shape-gate functions (`looks_like_dashed_serial_key`, etc.)
+/// The individual canonical shape functions (`looks_like_dashed_serial_key`, etc.)
 /// are `pub(crate)` so they cannot be accessed from integration tests.
 /// Instead, we:
 ///   1. Test the JWT module's `looks_like_jwt` which is a distinct public API.
