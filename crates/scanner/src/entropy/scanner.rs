@@ -294,7 +294,7 @@ fn scan_keyword_free_candidates(
                 continue;
             }
         }
-        collect_isolated_bare_candidate(
+        collect_isolated_bare_candidates(
             line,
             line_idx,
             line_offsets[line_idx],
@@ -336,15 +336,12 @@ pub(crate) fn has_isolated_bare_secret_candidate_with_lines(
         if is_likely_innocuous_line(line) {
             return false;
         }
-        let Some(candidate) = isolated_bare_candidate(line, KEYWORD_FREE_ISOLATED_MIN_LEN) else {
-            return false;
-        };
-        if is_canonical_non_secret_shape(candidate) {
-            return false;
-        }
-        let entropy = shannon_entropy(candidate.as_bytes());
-        isolated_bare_entropy_floor_met(candidate, entropy, threshold)
-            && is_isolated_bare_secret_plausible(candidate, placeholder_keywords)
+        let mut found = false;
+        visit_isolated_bare_candidates(line, KEYWORD_FREE_ISOLATED_MIN_LEN, |candidate, _| {
+            found |=
+                isolated_bare_secret_entropy(candidate, threshold, placeholder_keywords).is_some();
+        });
+        found
     })
 }
 
@@ -486,7 +483,7 @@ fn mixed_contiguous_token_floor_met(candidate: &str, entropy: f64) -> bool {
         && crate::suppression::token_randomness::is_random_token(candidate)
 }
 
-fn collect_isolated_bare_candidate(
+fn collect_isolated_bare_candidates(
     line: &str,
     line_idx: usize,
     line_offset: usize,
@@ -498,27 +495,103 @@ fn collect_isolated_bare_candidate(
     if is_likely_innocuous_line(line) {
         return;
     }
-    let Some(candidate) = isolated_bare_candidate(line, context.min_len) else {
-        return;
-    };
+    visit_isolated_bare_candidates(line, context.min_len, |candidate, candidate_offset| {
+        let Some(entropy) =
+            isolated_bare_secret_entropy(candidate, context.threshold, placeholder_keywords)
+        else {
+            return;
+        };
+        if seen.contains(candidate) {
+            return;
+        }
+        seen.insert(candidate.to_string());
+        matches.push(EntropyMatch {
+            value: candidate.to_string(),
+            entropy,
+            keyword: context.keyword.clone(),
+            line: line_idx + FIRST_SOURCE_LINE_NUMBER,
+            offset: line_offset + candidate_offset,
+        });
+    });
+}
+
+fn isolated_bare_secret_entropy(
+    candidate: &str,
+    threshold: f64,
+    placeholder_keywords: &[String],
+) -> Option<f64> {
     if is_canonical_non_secret_shape(candidate) {
-        return;
+        return None;
     }
     let entropy = shannon_entropy(candidate.as_bytes());
-    if !isolated_bare_entropy_floor_met(candidate, entropy, context.threshold)
-        || !is_isolated_bare_secret_plausible(candidate, placeholder_keywords)
-        || seen.contains(candidate)
-    {
+    (isolated_bare_entropy_floor_met(candidate, entropy, threshold)
+        && is_isolated_bare_secret_plausible(candidate, placeholder_keywords))
+    .then_some(entropy)
+}
+
+fn visit_isolated_bare_candidates<'a>(
+    line: &'a str,
+    min_len: usize,
+    mut visit: impl FnMut(&'a str, usize),
+) {
+    if let Some(candidate) = isolated_bare_candidate(line, min_len) {
+        let candidate_offset = candidate.as_ptr() as usize - line.as_ptr() as usize;
+        visit(candidate, candidate_offset);
         return;
     }
-    seen.insert(candidate.to_string());
-    matches.push(EntropyMatch {
-        value: candidate.to_string(),
-        entropy,
-        keyword: context.keyword.clone(),
-        line: line_idx + FIRST_SOURCE_LINE_NUMBER,
-        offset: line_offset,
-    });
+
+    if !line.bytes().any(|b| b.is_ascii_whitespace()) {
+        return;
+    }
+
+    let bytes = line.as_bytes();
+    let mut cursor = 0usize;
+    while cursor < bytes.len() {
+        while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
+            cursor += 1;
+        }
+        let token_start = cursor;
+        while cursor < bytes.len() && !bytes[cursor].is_ascii_whitespace() {
+            cursor += 1;
+        }
+        let token_end = cursor;
+        if token_start == token_end {
+            continue;
+        }
+        if let Some((candidate, candidate_offset)) =
+            isolated_bare_candidate_in_span(line, token_start, token_end, min_len)
+        {
+            visit(candidate, candidate_offset);
+        }
+    }
+}
+
+fn isolated_bare_candidate_in_span(
+    line: &str,
+    token_start: usize,
+    token_end: usize,
+    min_len: usize,
+) -> Option<(&str, usize)> {
+    let token = &line[token_start..token_end];
+    let leading = token
+        .bytes()
+        .take_while(|b| matches!(*b, b';' | b','))
+        .count();
+    let trailing = token
+        .bytes()
+        .rev()
+        .take_while(|b| matches!(*b, b';' | b','))
+        .count();
+    if leading + trailing >= token.len() {
+        return None;
+    }
+    let candidate_start = token_start + leading;
+    let candidate_end = token_end - trailing;
+    let candidate = &line[candidate_start..candidate_end];
+    isolated_bare_candidate(candidate, min_len).map(|value| {
+        let offset = value.as_ptr() as usize - line.as_ptr() as usize;
+        (value, offset)
+    })
 }
 
 fn isolated_bare_candidate(line: &str, min_len: usize) -> Option<&str> {

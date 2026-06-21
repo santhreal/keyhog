@@ -312,6 +312,30 @@ fn keyword_free_scan_detects_isolated_bare_mixed_alnum_token_below_global_floor(
 }
 
 #[test]
+fn keyword_free_scan_detects_embedded_isolated_bare_mixed_alnum_token() {
+    let secret = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn";
+    let prefix = "prefixFiller0123456789".repeat(12);
+    let text = format!("{prefix} {secret}\n");
+    let matches = find_secrets(&text, 16, 0, HIGH_ENTROPY_THRESHOLD);
+    let hit = matches
+        .iter()
+        .find(|m| m.value == secret)
+        .unwrap_or_else(|| panic!("embedded isolated token must surface; matches={matches:?}"));
+    assert_eq!(hit.keyword, "none (isolated-token)");
+    assert_eq!(hit.line, 1);
+    assert_eq!(hit.offset, prefix.len() + 1);
+}
+
+#[test]
+fn keyword_free_embedded_isolated_scan_rejects_program_identifier_twin() {
+    let text = "prefix ClientSecretConfigValue2\n";
+    assert!(
+        find_secrets(&text, 16, 0, HIGH_ENTROPY_THRESHOLD).is_empty(),
+        "source-shaped identifiers must not become keyword-free isolated secrets"
+    );
+}
+
+#[test]
 fn keyword_free_scan_detects_isolated_slash_bearing_base64_token() {
     let secret = "ev0BsFtSD7S/4VWYObxiEhME3hJBXeYzR43jgiB1";
     let matches = find_secrets(secret, 16, 0, HIGH_ENTROPY_THRESHOLD);

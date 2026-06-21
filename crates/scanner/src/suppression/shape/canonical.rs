@@ -297,6 +297,32 @@ pub(crate) fn has_repeated_block_mask(s: &str) -> bool {
         }
         i += run;
     }
+    if long_runs >= 3 {
+        return true;
+    }
+    has_repeated_full_block(bytes)
+}
+
+fn has_repeated_full_block(bytes: &[u8]) -> bool {
+    if bytes.len() < 24 || !bytes.iter().any(|b| b.is_ascii_alphanumeric()) {
+        return false;
+    }
+    let max_block_len = (bytes.len() / 3).min(64);
+    for block_len in 3..=max_block_len {
+        if bytes.len() % block_len != 0 {
+            continue;
+        }
+        let first = &bytes[..block_len];
+        if first.iter().all(|b| !b.is_ascii_alphanumeric()) {
+            continue;
+        }
+        if bytes[block_len..]
+            .chunks_exact(block_len)
+            .all(|chunk| chunk == first)
+        {
+            return true;
+        }
+    }
     false
 }
 

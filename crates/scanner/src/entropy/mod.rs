@@ -102,7 +102,9 @@ pub struct EntropyMatch {
     pub keyword: String,
     /// One-based source line number for the match.
     pub line: usize,
-    /// Byte offset of the start of the containing line.
+    /// Byte offset used to locate the match in preprocessed text. Most
+    /// line-scoped entropy candidates use the containing line start; isolated
+    /// token candidates use the token start.
     pub offset: usize,
 }
 

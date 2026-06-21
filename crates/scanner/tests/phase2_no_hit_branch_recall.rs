@@ -182,6 +182,87 @@ fn isolated_bare_entropy_secret_enters_coalesced_no_hit_branch_on_plain_text_pat
 
 #[cfg(feature = "entropy")]
 #[test]
+fn embedded_isolated_entropy_secret_enters_coalesced_no_hit_branch_on_plain_text_path() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    let scanner = compile_scanner_with_config(config);
+    let secret = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn";
+    let prefix = "prefixFiller0123456789".repeat(12);
+    let chunk = make_chunk(
+        &format!("{prefix} {secret}\n"),
+        "notes/sufficiency-probe.txt",
+    );
+
+    let direct = scanner.scan(&chunk);
+    assert!(
+        direct.iter().any(|m| m.credential.as_ref() == secret),
+        "direct scan must recover an embedded isolated entropy token after same-line filler; matches={:?}",
+        direct
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.location.offset))
+            .collect::<Vec<_>>()
+    );
+
+    scanner.clear_fragment_cache();
+    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk));
+    let matches = &results[0];
+    assert!(
+        matches.iter().any(|m| m.credential.as_ref() == secret),
+        "coalesced no-hit admission must not reject an embedded isolated entropy token on a \
+         plain-text path only because same-line filler precedes it; matches={:?}",
+        matches
+            .iter()
+            .map(|m| (
+                m.detector_id.as_ref(),
+                m.credential.as_ref(),
+                m.location.offset
+            ))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
+fn deterministic_same_line_filler_does_not_surface_as_embedded_isolated_secret() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    let scanner = compile_scanner_with_config(config);
+    let filler = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789..".repeat(4);
+    let chunk = make_chunk(&format!("{filler}\n"), "notes/sufficiency-probe.txt");
+
+    let direct = scanner.scan(&chunk);
+    assert!(
+        direct.iter().all(|m| m.credential.as_ref() != filler),
+        "direct scan must suppress deterministic alphabet filler; matches={:?}",
+        direct
+            .iter()
+            .map(|m| (
+                m.detector_id.as_ref(),
+                m.credential.as_ref(),
+                m.location.offset
+            ))
+            .collect::<Vec<_>>()
+    );
+
+    scanner.clear_fragment_cache();
+    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk));
+    let matches = &results[0];
+    assert!(
+        matches.iter().all(|m| m.credential.as_ref() != filler),
+        "coalesced no-hit route must suppress deterministic alphabet filler; matches={:?}",
+        matches
+            .iter()
+            .map(|m| (
+                m.detector_id.as_ref(),
+                m.credential.as_ref(),
+                m.location.offset
+            ))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
 fn isolated_short_dash_entropy_secret_enters_direct_scan_prefilter_recovery() {
     let mut config = ScannerConfig::default();
     config.min_confidence = 0.0;
