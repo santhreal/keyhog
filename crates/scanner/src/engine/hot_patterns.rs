@@ -169,14 +169,14 @@ impl CompiledScanner {
                 // on their own regex DEFINITIONS - `AKIA[A-Z0-9]{16,17})/g`,
                 // `ASIA[A-Z0-9]{16})\b`, `xoxb-[0-9-]*`. Real tokens never
                 // end in regex sigils. The tail-suffix check is O(1).
-                if crate::pipeline::looks_like_regex_literal_tail(credential) {
+                if crate::suppression::shape::looks_like_regex_literal_tail(credential) {
                     continue;
                 }
                 // Vendored 3rd-party minified bundle: same rationale as
                 // the named-detector path. Random byte sequences in
                 // minified codemirror/pdfjs/jquery/wp-includes bundles
                 // routinely hit `AKIA…`/`ASIA…` literal-prefix patterns.
-                if crate::pipeline::looks_like_vendored_minified_path(
+                if crate::suppression::path_filter::looks_like_vendored_minified_path(
                     chunk.metadata.path.as_deref(),
                 ) {
                     continue;
@@ -196,8 +196,9 @@ impl CompiledScanner {
                 // DEFINITIONS. The `looks_like_regex_literal_tail` check
                 // catches the common forms; decoder-mangled trailing
                 // sigils slip past - this filter closes the gap.
-                if crate::pipeline::looks_like_secret_scanner_source(chunk.metadata.path.as_deref())
-                {
+                if crate::suppression::path_filter::looks_like_secret_scanner_source(
+                    chunk.metadata.path.as_deref(),
+                ) {
                     continue;
                 }
                 // Raw base64 / pure-alphabet files: alphabet-coincidence

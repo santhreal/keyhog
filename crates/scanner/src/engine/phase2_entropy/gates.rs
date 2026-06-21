@@ -61,7 +61,7 @@ pub(crate) fn entropy_match_suppressed(
 
     // Pure identifiers are not entropy credentials; keep this local because the
     // entropy fallback emits directly instead of going through named suppression.
-    if crate::pipeline::looks_like_pure_identifier(&entropy_match.value) {
+    if crate::suppression::shape::looks_like_pure_identifier(&entropy_match.value) {
         return true;
     }
     // Whitespace-bearing values are natural-language labels or
@@ -114,7 +114,7 @@ pub(crate) fn entropy_match_suppressed(
                 entropy_match.entropy,
             ))
         && !(same_line_high_signal_assignment_owner && lower_dash_app_password)
-        && crate::pipeline::looks_like_word_separated_identifier(&entropy_match.value)
+        && crate::suppression::shape::looks_like_word_separated_identifier(&entropy_match.value)
     {
         return true;
     }
@@ -132,7 +132,7 @@ pub(crate) fn entropy_match_suppressed(
     }
     // Scheme-prefixed URI / URN (`urn:shopify:...`,
     // `secret-token:<base64>`).
-    if crate::pipeline::looks_like_scheme_prefixed_uri(&entropy_match.value) {
+    if crate::suppression::shape::looks_like_scheme_prefixed_uri(&entropy_match.value) {
         return true;
     }
     let high_entropy_punctuation_payload =
@@ -141,7 +141,7 @@ pub(crate) fn entropy_match_suppressed(
             entropy_match.entropy,
         );
     if !high_entropy_punctuation_payload
-        && crate::pipeline::looks_like_source_code_expression(&entropy_match.value)
+        && crate::suppression::shape::looks_like_source_code_expression(&entropy_match.value)
     {
         return true;
     }
@@ -154,7 +154,9 @@ pub(crate) fn entropy_match_suppressed(
     // `&gss_token`, `@v_password`, `!!apiKey`, `Password:`,
     // `privateAccessToken!`, `/etc/passwd:/etc/passwd:ro`).
     if !high_entropy_punctuation_payload
-        && crate::pipeline::looks_like_punctuation_decorated_identifier(&entropy_match.value)
+        && crate::suppression::shape::looks_like_punctuation_decorated_identifier(
+            &entropy_match.value,
+        )
     {
         return true;
     }
@@ -162,7 +164,7 @@ pub(crate) fn entropy_match_suppressed(
     // `/api/v1/access_token`). Keep long high-entropy base64 punctuation
     // payloads alive; a slash inside an opaque token is not path structure.
     if !high_entropy_punctuation_payload
-        && crate::pipeline::looks_like_url_or_path_segment(&entropy_match.value)
+        && crate::suppression::shape::looks_like_url_or_path_segment(&entropy_match.value)
     {
         return true;
     }
@@ -184,13 +186,13 @@ pub(crate) fn entropy_match_suppressed(
     let value_is_exact_uuid =
         crate::suppression::shape_gates::is_uuid_v4_shape(&entropy_match.value);
     if !(canonical_lift && value_is_exact_uuid)
-        && crate::pipeline::contains_uuid_v4_substring(&entropy_match.value)
+        && crate::suppression::shape::contains_uuid_v4_substring(&entropy_match.value)
     {
         return true;
     }
     // Email address (gogs TestInit.golden.ini:89 `USER=noreply@gogs.localhost`
     // captured as entropy-password due to nearby `PASSWORD=` line).
-    if crate::pipeline::looks_like_email_address(&entropy_match.value) {
+    if crate::suppression::shape::looks_like_email_address(&entropy_match.value) {
         return true;
     }
     // Blockchain / network address keyword context: the line
@@ -245,7 +247,9 @@ pub(crate) fn entropy_match_suppressed(
     }
     // Vendored 3rd-party minified bundle: any "secret-like"
     // sequence is a minification coincidence, not a leak.
-    if crate::pipeline::looks_like_vendored_minified_path(chunk.metadata.path.as_deref()) {
+    if crate::suppression::path_filter::looks_like_vendored_minified_path(
+        chunk.metadata.path.as_deref(),
+    ) {
         return true;
     }
     // Raw base64 files (`.b64`, `.base64`, `base64_string.txt`):

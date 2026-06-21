@@ -205,8 +205,8 @@ impl CompiledScanner {
                 // opposite filtering. A/B confirmed no-op on both corpora; left as
                 // the plain shape check by documented decision.
                 let identifier_shaped =
-                    crate::pipeline::looks_like_word_separated_identifier(credential)
-                        || crate::pipeline::looks_like_pure_identifier(credential);
+                    crate::suppression::shape::looks_like_word_separated_identifier(credential)
+                        || crate::suppression::shape::looks_like_pure_identifier(credential);
                 if !is_named_detector || identifier_shaped {
                     return Some(MlScoreResult::Final(0.1));
                 }

@@ -100,7 +100,7 @@ impl CompiledScanner {
             return Some("code_expression_chars");
         }
         if !high_entropy_punctuation_payload
-            && crate::pipeline::looks_like_source_code_expression(value)
+            && crate::suppression::shape::looks_like_source_code_expression(value)
         {
             return Some("source_code_expression");
         }
@@ -185,7 +185,9 @@ impl CompiledScanner {
         // config field), `curlx_strdup` (C single-underscore fn).
         // The `chars().all alphanumeric+_` branch above only covers
         // underscore separators; this extends coverage to hyphens.
-        if keep_identifier_gate(value) && crate::pipeline::looks_like_pure_identifier(value) {
+        if keep_identifier_gate(value)
+            && crate::suppression::shape::looks_like_pure_identifier(value)
+        {
             return Some("pure_identifier");
         }
         // Word-separated identifier with embedded digits: catches
@@ -208,7 +210,7 @@ impl CompiledScanner {
         // (`abxnj_gjvpuqzo`, `aapqhgn-qhuuc-trnmf`) while keeping every
         // digit/uppercase-bearing acronym & product-key identifier suppressed.
         if keep_word_separated_gate(value)
-            && crate::pipeline::looks_like_word_separated_identifier(value)
+            && crate::suppression::shape::looks_like_word_separated_identifier(value)
         {
             return Some("word_separated_identifier");
         }
@@ -216,7 +218,7 @@ impl CompiledScanner {
         // `secret-token:<base64>` (bat-go merchant README). Documented
         // OAuth grant types and protocol URIs that the regex captures
         // via the trailing `token-type:...token` keyword.
-        if crate::pipeline::looks_like_scheme_prefixed_uri(value) {
+        if crate::suppression::shape::looks_like_scheme_prefixed_uri(value) {
             return Some("scheme_prefixed_uri");
         }
         // Punctuation-decorated identifier: `--api-secret` (CLI flag),
@@ -224,7 +226,7 @@ impl CompiledScanner {
         // `!!apiKeyOrOAuthToken` (JS coercion), `Password:` (UI label),
         // `privateAccessToken!` (TS non-null assertion).
         if !high_entropy_punctuation_payload
-            && crate::pipeline::looks_like_punctuation_decorated_identifier(value)
+            && crate::suppression::shape::looks_like_punctuation_decorated_identifier(value)
         {
             return Some("punctuation_decorated_identifier");
         }
@@ -237,13 +239,15 @@ impl CompiledScanner {
         let high_entropy_long_punctuation_payload =
             high_entropy_punctuation_payload && value.len() > 40;
         if !high_entropy_long_punctuation_payload
-            && crate::pipeline::looks_like_url_or_path_segment(value)
+            && crate::suppression::shape::looks_like_url_or_path_segment(value)
         {
             return Some("url_or_path_segment");
         }
         // Vendored 3rd-party minified bundle: drop generic-secret
         // hits in vendored codemirror/pdfjs/wp-includes/etc. paths.
-        if crate::pipeline::looks_like_vendored_minified_path(chunk.metadata.path.as_deref()) {
+        if crate::suppression::path_filter::looks_like_vendored_minified_path(
+            chunk.metadata.path.as_deref(),
+        ) {
             return Some("vendored_minified_path");
         }
         // Regex-literal suppression: the fast-path hot patterns and
@@ -255,7 +259,7 @@ impl CompiledScanner {
         // Source: claude-code's teamMemorySync/secretScanner.ts had
         // 3 hot-aws_session_key / hot-slack_bot_token findings on
         // its own regex definitions.
-        if crate::pipeline::looks_like_regex_literal_tail(value) {
+        if crate::suppression::shape::looks_like_regex_literal_tail(value) {
             return Some("regex_literal_tail");
         }
 

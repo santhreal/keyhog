@@ -1,16 +1,5 @@
 //! Post-match processing: raw match construction and placeholder suppression.
 
-#[cfg(feature = "entropy")]
-pub(crate) use crate::suppression::{contains_uuid_v4_substring, looks_like_email_address};
-pub(crate) use crate::suppression::{
-    looks_like_punctuation_decorated_identifier, looks_like_pure_identifier,
-    looks_like_regex_literal_tail, looks_like_scheme_prefixed_uri,
-    looks_like_source_code_expression, looks_like_url_or_path_segment,
-    looks_like_vendored_minified_path, looks_like_word_separated_identifier,
-};
-// See pipeline/mod.rs: this alias is still the simdsieve hot-path facade.
-#[cfg(feature = "simdsieve")]
-pub(crate) use crate::suppression::looks_like_secret_scanner_source;
 #[cfg(test)]
 pub(crate) use crate::suppression::should_suppress_known_example_credential_with_source;
 pub(crate) use crate::suppression::{
