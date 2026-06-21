@@ -106,8 +106,10 @@ Pre-commit scans are designed for sub-100 ms latency on typical
 commits. If yours feels slow:
 
 - `keyhog daemon start` (unix only). The daemon holds the compiled
-  scanner in memory; pre-commit invocations bypass the ~3 s cold
-  start. Latency drops from ~3 s to ~30 ms.
+  scanner in memory for editor-save or hook glue that scans stdin or
+  one regular file. The default staged-file hook uses the in-process
+  orchestrator because git source expansion, baseline policy, and
+  verification are not daemon work.
 - `--fast` skips the entropy / ML scorer. Removes ~20% of detectors
   but ~50% of scan time. Worth it for the pre-commit path; the full
   scan still runs in CI.

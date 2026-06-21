@@ -447,9 +447,9 @@ The installed hook calls `keyhog scan --fast --git-staged --backend simd`
 on every commit. If `keyhog` is missing from `PATH`, the hook blocks the
 commit because the security scan did not run; install KeyHog, fix `PATH`,
 or remove `.git/hooks/pre-commit` if the repository should not be protected.
-If `keyhog daemon start` is running, the in-process scan reuses
-the daemon's compiled scanner for sub-50 ms latency; otherwise the
-hook pays the ~3 s compile cost on each commit.
+Staged/diff scans use the in-process orchestrator because they need
+git-aware source expansion and policy handling. The daemon fast path is
+for editor-save and hook glue that scans stdin or one regular file.
 
 Or via the `pre-commit` framework:
 
@@ -477,8 +477,15 @@ keyhog daemon status
 keyhog daemon stop
 ```
 
-Use it in pre-commit hooks, IDE save handlers, or any per-commit CI
-loop. systemd / launchd unit examples in
+Daemon scans are scanner-only and apply to eligible stdin or single
+regular-file inputs. They return findings before baseline filtering,
+Merkle skip-cache, and live verification; directory, git, remote,
+baseline, `--verify`, backend/GPU/autoroute, and policy-changing scans
+run in-process. `--daemon=on` fails loudly when the daemon cannot honor
+the requested scan exactly.
+
+Use it in IDE save handlers, stdin/single-file hook glue, or per-commit
+CI loops that feed one file at a time. systemd / launchd unit examples in
 [`site/daemon.html`](./site/daemon.html).
 
 Watch-mode for IDEs:

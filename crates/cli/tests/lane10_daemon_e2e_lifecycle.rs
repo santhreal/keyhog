@@ -1,5 +1,5 @@
 //! Lane-10 (dogfood/robustness) end-to-end: drive the REAL `keyhog` binary
-//! through the daemon lifecycle the way a user / IDE / CI hook does, and pin
+//! through the daemon lifecycle the way a user / IDE / single-file hook does, and pin
 //! the robustness guarantees:
 //!   * start -> status -> stop, with the socket created 0600 and removed on stop;
 //!   * the idle-request timeout reclaims a half-frame / slowloris connection so
@@ -84,6 +84,13 @@ fn daemon_start_status_stop_lifecycle_and_socket_hygiene() {
     assert!(
         out.contains("detectors") && out.contains("uptime"),
         "status must report uptime + detector count; got {out}"
+    );
+    assert!(
+        out.contains("stdin/single-file")
+            && out.contains("before baseline")
+            && out.contains("verification")
+            && out.contains("run in-process"),
+        "status must disclose the daemon scan scope and in-process-only post-steps; got {out}"
     );
 
     // stop exits 0 and removes the socket.

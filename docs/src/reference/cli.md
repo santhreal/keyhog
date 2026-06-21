@@ -50,7 +50,7 @@ user error, `3` system error, `10` live credential, `11` scanner panic,
 | Flag                          | Effect                                         |
 |-------------------------------|------------------------------------------------|
 | `--fast`                      | Skip entropy + ML scorer. ~50% faster, ~20% fewer detectors. |
-| `--daemon`                    | Force daemon route. Unix only.                 |
+| `--daemon`                    | Force daemon route for eligible stdin/single-file scans. Unix only; fails if the request needs the in-process pipeline. |
 | `--no-daemon`                 | Force in-process scan even if daemon is up.    |
 | `--timeout <SECONDS>`         | Hard per-scan deadline.                        |
 | `--profile`                   | Emit the scanner-owned hierarchical profile report to stderr at scan end. |
@@ -157,14 +157,21 @@ Manages the git pre-commit hook. See
 
 ## `keyhog daemon <start|stop|status>` (Unix only)
 
-The daemon holds the compiled scanner in memory so pre-commit /
-IDE-save invocations skip the ~3 s cold start.
+The daemon holds the compiled scanner in memory so IDE-save handlers
+and stdin/single-file hook invocations skip the ~3 s cold start.
+
+The daemon route is scanner-only for eligible stdin or single regular
+file scans. Results are pre-baseline, pre-Merkle-skip-cache, and
+pre-verification. Directory, git, remote, baseline, `--verify`,
+backend/GPU/autoroute, and policy-changing scans run through the
+in-process pipeline; `--daemon=on` exits with an error when that exact
+daemon route cannot be honored.
 
 | Subcommand         | Effect                                              |
 |--------------------|-----------------------------------------------------|
 | `daemon start`     | Bind the Unix socket, accept connections.           |
 | `daemon stop`      | Tell the running daemon to shut down.               |
-| `daemon status`    | Print uptime, scans served, active scans.           |
+| `daemon status`    | Print uptime, scans served, active scans, and scan scope. |
 
 `daemon start --request-timeout-secs <N>` sets how long one client connection
 may sit without completing a request frame before the daemon closes it and

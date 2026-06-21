@@ -410,8 +410,8 @@ pub struct ScanArgs {
     /// verification) which the daemon's stdin-only fast path does not replicate.
     ///
     /// Compatibility alias for `--daemon=off` (CLI-02); the canonical spelling
-    /// is `--daemon=off`. Retained because pre-commit hooks and editor
-    /// integrations in the wild pass `--no-daemon`.
+    /// is `--daemon=off`. Retained because hook glue and editor integrations
+    /// in the wild pass `--no-daemon`.
     #[arg(long, conflicts_with = "daemon")]
     pub no_daemon: bool,
 

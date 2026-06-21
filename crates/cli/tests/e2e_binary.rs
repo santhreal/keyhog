@@ -1077,7 +1077,7 @@ fn daemon_wire_scan_path_finds_planted_secret() {
 /// `run_via_daemon`): `--stdin` sends `Request::ScanText`, a single
 /// file path sends `Request::ScanPath`. The path route is covered by
 /// the test above; this drives the stdin/ScanText route - the
-/// pre-commit / IDE-save fast path the daemon exists for (see the
+/// stdin / IDE-save fast path the daemon exists for (see the
 /// `daemon/protocol.rs` ScanText doc) - over a REAL bound socket
 /// rather than the in-memory `tokio::io::duplex` mock the unit test
 /// uses. Pipes a planted AWS key into `keyhog scan --daemon --stdin

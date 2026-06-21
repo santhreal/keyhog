@@ -74,6 +74,11 @@ impl Daemon {
             .env("XDG_RUNTIME_DIR", runtime_dir.path())
             .arg("--detectors")
             .arg(workspace_detectors())
+            // Keep this parity harness independent of host autoroute calibration.
+            // A scan-time --backend flag would force the client in-process, so the
+            // backend must be pinned on the daemon process itself.
+            .arg("--backend")
+            .arg("cpu")
             .spawn()
             .expect("spawn keyhog daemon start");
 
@@ -139,12 +144,18 @@ impl Drop for Daemon {
 /// daemon's runtime dir. `route_flag` is `--daemon` or `--no-daemon`.
 /// Returns the parsed JSON findings array.
 fn scan_json(daemon: &Daemon, path: &Path, route_flag: &str) -> Vec<serde_json::Value> {
-    let output = Command::new(binary())
-        .arg("scan")
+    let mut cmd = Command::new(binary());
+    cmd.arg("scan")
         .arg(route_flag)
         .arg("--format")
         .arg("json")
-        .env("XDG_RUNTIME_DIR", daemon.runtime_dir())
+        .env("XDG_RUNTIME_DIR", daemon.runtime_dir());
+    if route_flag == "--no-daemon" {
+        // Match the daemon's process-level backend pin without relying on
+        // ambient autoroute calibration for the in-process control scan.
+        cmd.arg("--backend").arg("cpu");
+    }
+    let output = cmd
         // Keep the scan focused on the planted file; no ML/network knobs
         // that would force the route back in-process (see `daemon_route`).
         .arg(path)
@@ -181,6 +192,61 @@ fn has_aws_finding(findings: &[serde_json::Value]) -> bool {
         .any(|id| id == "aws-access-key" || id == "hot-aws_key")
 }
 
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord)]
+struct FindingSignature {
+    detector_id: String,
+    detector_name: String,
+    service: String,
+    severity: String,
+    credential_redacted: String,
+    credential_hash: String,
+    source: String,
+    file_path: Option<String>,
+    line: Option<u64>,
+    offset: Option<u64>,
+    verification: String,
+}
+
+fn required_str(finding: &serde_json::Value, pointer: &str) -> String {
+    finding
+        .pointer(pointer)
+        .and_then(|value| value.as_str())
+        .unwrap_or_else(|| panic!("finding missing required string field {pointer}: {finding}"))
+        .to_owned()
+}
+
+fn optional_str(finding: &serde_json::Value, pointer: &str) -> Option<String> {
+    finding
+        .pointer(pointer)
+        .and_then(|value| value.as_str())
+        .map(str::to_owned)
+}
+
+fn optional_u64(finding: &serde_json::Value, pointer: &str) -> Option<u64> {
+    finding.pointer(pointer).and_then(|value| value.as_u64())
+}
+
+fn finding_signatures(findings: &[serde_json::Value]) -> Vec<FindingSignature> {
+    let mut signatures: Vec<_> = findings
+        .iter()
+        .map(|finding| FindingSignature {
+            detector_id: required_str(finding, "/detector_id"),
+            detector_name: required_str(finding, "/detector_name"),
+            service: required_str(finding, "/service"),
+            severity: required_str(finding, "/severity"),
+            credential_redacted: required_str(finding, "/credential_redacted"),
+            credential_hash: required_str(finding, "/credential_hash"),
+            source: required_str(finding, "/location/source"),
+            file_path: optional_str(finding, "/location/file_path"),
+            line: optional_u64(finding, "/location/line"),
+            offset: optional_u64(finding, "/location/offset"),
+            verification: required_str(finding, "/verification"),
+        })
+        .collect();
+    signatures.sort();
+    signatures
+}
+
 /// Write `content` to `dir/filename` and return the absolute path.
 fn write_fixture(dir: &Path, filename: &str, content: &str) -> PathBuf {
     let path = dir.join(filename);
@@ -213,6 +279,11 @@ fn daemon_and_in_process_both_detect_unsuppressed_secret() {
     assert!(
         has_aws_finding(&in_process_findings),
         "in-process route must detect the planted AWS key; got {in_process_findings:?}"
+    );
+    assert_eq!(
+        finding_signatures(&daemon_findings),
+        finding_signatures(&in_process_findings),
+        "eligible daemon and in-process single-file scans must emit the same finding signatures"
     );
 }
 

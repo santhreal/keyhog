@@ -35,8 +35,8 @@ them without touching Rust code.
 ## What it doesn't do
 
 - **No telemetry.** Findings stay local. The scanner never phones home.
-- **No agent.** A daemon mode exists for pre-commit / IDE-save fast-path
-  scans on Unix, but it's opt-in and stays on your machine.
+- **No agent.** A daemon mode exists for IDE-save and stdin/single-file
+  fast-path scans on Unix, but it's opt-in and stays on your machine.
 - **No "AI-powered" detection.** Every detector is a regex with a
   service-specific anchor and a real verification endpoint. The ML
   scorer that bumps confidence on ambiguous matches is a tiny on-device

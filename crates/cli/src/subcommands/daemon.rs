@@ -122,6 +122,11 @@ async fn status(socket: Option<PathBuf>) -> Result<ExitCode> {
                 "keyhog daemon: uptime {}s · {} scans served · {} active · {} detectors",
                 uptime_secs, scans_served, active_scans, detector_count
             );
+            println!(
+                "scan scope: eligible stdin/single-file scans before baseline, Merkle \
+                 skip-cache, and verification; directories, git/remote sources, policy \
+                 changes, baseline, and --verify run in-process."
+            );
             if stale {
                 let palette = style::for_stderr();
                 eprintln!(
