@@ -3,6 +3,7 @@
 //! Real secrets have high entropy (4.5+), while hashes, UUIDs, and placeholders
 //! have characteristic entropy profiles that help separate true positives.
 
+mod isolated;
 pub(crate) mod keywords;
 pub(crate) mod scanner;
 
