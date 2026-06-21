@@ -39,6 +39,16 @@ pub mod testing {
         ) -> Vec<String>;
         fn decode_utf16(&self, bytes: &[u8]) -> Option<String>;
         fn looks_binary(&self, bytes: &[u8]) -> bool;
+        fn duplicate_zip_central_entries_error(
+            &self,
+            path: &std::path::Path,
+        ) -> Result<String, String>;
+        fn duplicate_zip_local_entry_data_error(
+            &self,
+            path: &std::path::Path,
+            compressed_size: u64,
+        ) -> Result<String, String>;
+        fn filesystem_default_max_file_size(&self) -> u64;
 
         #[cfg(any(
             feature = "azure",
@@ -377,6 +387,25 @@ pub mod testing {
 
         fn looks_binary(&self, bytes: &[u8]) -> bool {
             crate::filesystem::looks_binary_for_test(bytes)
+        }
+
+        fn duplicate_zip_central_entries_error(
+            &self,
+            path: &std::path::Path,
+        ) -> Result<String, String> {
+            crate::filesystem::duplicate_zip_central_entries_error_for_test(path)
+        }
+
+        fn duplicate_zip_local_entry_data_error(
+            &self,
+            path: &std::path::Path,
+            compressed_size: u64,
+        ) -> Result<String, String> {
+            crate::filesystem::duplicate_zip_local_entry_data_error_for_test(path, compressed_size)
+        }
+
+        fn filesystem_default_max_file_size(&self) -> u64 {
+            crate::filesystem::default_max_file_size_for_test()
         }
 
         #[cfg(any(

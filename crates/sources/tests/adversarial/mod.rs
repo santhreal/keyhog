@@ -99,6 +99,7 @@ mod web_redirect_target_zero_address_blocked;
 mod zero_byte_gzip_no_panic;
 mod zero_byte_plain_file_handled;
 mod zip_bomb_4x_budget_aborts_before_late_entry;
+mod zip_duplicate_alloc_bomb_rejected;
 mod zip_entry_over_per_file_cap_skipped;
 mod zip_slip_absolute_unix_path_not_extracted;
 mod zip_slip_apktool_assets_traversal_not_extracted;

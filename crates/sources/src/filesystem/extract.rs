@@ -34,6 +34,17 @@ pub(super) fn extraction_total_budget_usize(max_size: u64) -> usize {
     }
 }
 
+pub(crate) fn duplicate_zip_central_entries_error_for_test(path: &Path) -> Result<String, String> {
+    archive::duplicate_zip_central_entries_error_for_test(path)
+}
+
+pub(crate) fn duplicate_zip_local_entry_data_error_for_test(
+    path: &Path,
+    compressed_size: u64,
+) -> Result<String, String> {
+    archive::duplicate_zip_local_entry_data_error_for_test(path, compressed_size)
+}
+
 /// Test whether `path` is a symlink. No cache: the walker visits each
 /// path exactly once, so a process-lifetime `DashMap<PathBuf, bool>`
 /// only ever sees a single lookup per key and retained one PathBuf per

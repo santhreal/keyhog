@@ -1,4 +1,4 @@
-use keyhog_core::Source;
+use keyhog_core::{Source, SourceError};
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::FilesystemSource;
 use std::num::NonZeroUsize;
@@ -17,9 +17,36 @@ fn filesystem_source_yields_file_contents() {
 }
 
 #[test]
-fn filesystem_source_missing_path_yields_nothing() {
-    let source = FilesystemSource::new(PathBuf::from("/tmp/keyhog-missing-path-xyzzy-999"));
-    assert!(source.chunks().next().is_none());
+fn filesystem_source_missing_path_yields_source_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let missing = dir.path().join("does-not-exist");
+
+    let source = FilesystemSource::new(missing.clone());
+    let row = source
+        .chunks()
+        .next()
+        .expect("missing filesystem root must emit a visible SourceError");
+    let err = row.expect_err("missing filesystem root must not look like a clean scan");
+    let SourceError::Io(error) = err else {
+        panic!("missing filesystem root must emit SourceError::Io; got {err:?}");
+    };
+    assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
+    let message = error.to_string();
+    assert!(
+        message.contains("filesystem root") && message.contains("does not exist"),
+        "missing root error must explain the unscanned path; got {message:?} for {}",
+        missing.display()
+    );
+}
+
+#[test]
+fn default_max_file_size_matches_core_scan_config() {
+    let max_file_size = TestApi.filesystem_default_max_file_size();
+    assert_eq!(max_file_size, keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES);
+    assert_eq!(
+        max_file_size,
+        keyhog_core::ScanConfig::default().max_file_size
+    );
 }
 
 #[test]

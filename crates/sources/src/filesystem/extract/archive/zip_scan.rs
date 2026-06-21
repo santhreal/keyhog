@@ -9,6 +9,17 @@ use std::path::Path;
 
 mod duplicates;
 
+pub(crate) fn duplicate_zip_central_entries_error_for_test(path: &Path) -> Result<String, String> {
+    duplicates::read_central_zip_entries_error_for_test(path)
+}
+
+pub(crate) fn duplicate_zip_local_entry_data_error_for_test(
+    path: &Path,
+    compressed_size: u64,
+) -> Result<String, String> {
+    duplicates::read_local_zip_entry_data_error_for_test(path, compressed_size)
+}
+
 pub(super) fn extract_zip_archive(
     path: &Path,
     archive_display: &str,

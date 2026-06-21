@@ -10,6 +10,17 @@ pub(super) use super::report_archive_truncation;
 
 mod zip_scan;
 
+pub(crate) fn duplicate_zip_central_entries_error_for_test(path: &Path) -> Result<String, String> {
+    zip_scan::duplicate_zip_central_entries_error_for_test(path)
+}
+
+pub(crate) fn duplicate_zip_local_entry_data_error_for_test(
+    path: &Path,
+    compressed_size: u64,
+) -> Result<String, String> {
+    zip_scan::duplicate_zip_local_entry_data_error_for_test(path, compressed_size)
+}
+
 pub(super) fn is_openpack_archive_ext(ext: &str) -> bool {
     matches!(
         ext,

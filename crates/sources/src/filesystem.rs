@@ -69,6 +69,23 @@ pub(crate) fn looks_binary_for_test(bytes: &[u8]) -> bool {
     read::looks_binary_for_test(bytes)
 }
 
+pub(crate) fn duplicate_zip_central_entries_error_for_test(
+    path: &std::path::Path,
+) -> Result<String, String> {
+    extract::duplicate_zip_central_entries_error_for_test(path)
+}
+
+pub(crate) fn duplicate_zip_local_entry_data_error_for_test(
+    path: &std::path::Path,
+    compressed_size: u64,
+) -> Result<String, String> {
+    extract::duplicate_zip_local_entry_data_error_for_test(path, compressed_size)
+}
+
+pub(crate) fn default_max_file_size_for_test() -> u64 {
+    FilesystemSource::new(PathBuf::from(".")).max_file_size
+}
+
 /// Scans files in a directory tree.
 pub struct FilesystemSource {
     root: PathBuf,
@@ -200,24 +217,6 @@ impl FilesystemSource {
     pub fn with_reader_threads(mut self, threads: NonZeroUsize) -> Self {
         self.reader_threads = Some(threads);
         self
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::FilesystemSource;
-
-    #[test]
-    fn default_max_file_size_matches_core_scan_config() {
-        let source = FilesystemSource::new(std::path::PathBuf::from("."));
-        assert_eq!(
-            source.max_file_size,
-            keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES
-        );
-        assert_eq!(
-            source.max_file_size,
-            keyhog_core::ScanConfig::default().max_file_size
-        );
     }
 }
 

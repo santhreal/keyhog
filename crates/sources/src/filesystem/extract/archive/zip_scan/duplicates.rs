@@ -259,6 +259,19 @@ fn read_central_zip_entries(path: &Path) -> Result<Vec<CentralZipEntry>, String>
     file.seek(SeekFrom::Start(u64::from(central_offset)))
         .map_err(|error| error.to_string())?;
     let central_len = usize::try_from(central_size).map_err(|error| error.to_string())?;
+    // A crafted EOCD can declare a central-directory size far larger than the
+    // file. `vec![0u8; central_len]` eagerly reserves that many bytes (an
+    // alloc-bomb that aborts the process under a memory cap / cgroup, or a large
+    // virtual-memory spike under overcommit) BEFORE `read_exact` could fail at
+    // EOF. The central directory must physically fit within the file at its
+    // declared offset, so reject any size that overruns the file before
+    // allocating.
+    if u64::from(central_offset).saturating_add(u64::from(central_size)) > file_len {
+        return Err(
+            "zip end-of-central-directory record declares a central directory past the end of the file"
+                .to_string(),
+        );
+    }
     let mut central = vec![0u8; central_len];
     file.read_exact(&mut central)
         .map_err(|error| error.to_string())?;
@@ -317,6 +330,9 @@ fn read_central_zip_entries(path: &Path) -> Result<Vec<CentralZipEntry>, String>
 
 fn read_local_zip_entry_data(file: &mut File, entry: &CentralZipEntry) -> Result<Vec<u8>, String> {
     const LOCAL_SIGNATURE: u32 = 0x0403_4b50;
+    let file_len = file
+        .seek(SeekFrom::End(0))
+        .map_err(|error| error.to_string())?;
     file.seek(SeekFrom::Start(entry.local_header_offset))
         .map_err(|error| error.to_string())?;
     let mut header = [0u8; 30];
@@ -337,6 +353,15 @@ fn read_local_zip_entry_data(file: &mut File, entry: &CentralZipEntry) -> Result
         .map_err(|error| error.to_string())?;
     let data_len = usize::try_from(entry.compressed_size)
         .map_err(|error| format!("zip entry compressed size is too large: {error}"))?;
+    // Bound the allocation by the bytes actually present after the local header:
+    // a crafted central entry can claim a `compressed_size` far larger than the
+    // file, and `vec![0u8; data_len]` would reserve it eagerly (aborting under a
+    // memory cap) before `read_exact` hits EOF.
+    if entry.compressed_size > file_len.saturating_sub(data_offset) {
+        return Err(
+            "zip local entry declares compressed data past the end of the file".to_string(),
+        );
+    }
     let mut data = vec![0u8; data_len];
     file.read_exact(&mut data)
         .map_err(|error| error.to_string())?;
@@ -420,6 +445,33 @@ fn read_u32(bytes: &[u8]) -> Result<u32, String> {
         .try_into()
         .map_err(|_| "short zip u32 field".to_string())?;
     Ok(u32::from_le_bytes(array))
+}
+
+pub(crate) fn read_central_zip_entries_error_for_test(path: &Path) -> Result<String, String> {
+    match read_central_zip_entries(path) {
+        Ok(_entries) => Err("zip central directory parsed without an error".to_string()),
+        Err(error) => Ok(error),
+    }
+}
+
+pub(crate) fn read_local_zip_entry_data_error_for_test(
+    path: &Path,
+    compressed_size: u64,
+) -> Result<String, String> {
+    let mut file = File::open(path).map_err(|error| error.to_string())?;
+    let entry = CentralZipEntry {
+        name: "entry".to_string(),
+        compression_method: 0,
+        crc32: 0,
+        compressed_size,
+        uncompressed_size: 0,
+        local_header_offset: 0,
+        external_attrs: 0,
+    };
+    match read_local_zip_entry_data(&mut file, &entry) {
+        Ok(_data) => Err("zip local entry payload read without an error".to_string()),
+        Err(error) => Ok(error),
+    }
 }
 
 fn write_u16(out: &mut Vec<u8>, value: u16) {

@@ -764,7 +764,13 @@ path = "crates/sources/src/binary/mod.rs"
 path = "crates/sources/src/binary/sections.rs"
 
 [[module]]
+path = "crates/sources/src/decode.rs"
+
+[[module]]
 path = "crates/sources/src/docker.rs"
+
+[[module]]
+path = "crates/sources/src/factory.rs"
 
 [[module]]
 path = "crates/sources/src/filesystem.rs"
@@ -872,6 +878,9 @@ path = "crates/sources/src/lib.rs"
 path = "crates/sources/src/limits.rs"
 
 [[module]]
+path = "crates/sources/src/parallel_fetch.rs"
+
+[[module]]
 path = "crates/sources/src/testing_facade.rs"
 
 [[module]]
@@ -882,6 +891,9 @@ path = "crates/sources/src/s3/listing.rs"
 
 [[module]]
 path = "crates/sources/src/s3/mod.rs"
+
+[[module]]
+path = "crates/sources/src/skip.rs"
 
 [[module]]
 path = "crates/sources/src/slack.rs"
