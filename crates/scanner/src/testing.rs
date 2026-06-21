@@ -1250,6 +1250,10 @@ pub(crate) mod shape {
     pub(crate) fn looks_like_syntactic_punctuation_marker(credential: &str) -> bool {
         crate::suppression::shape::looks_like_syntactic_punctuation_marker(credential)
     }
+
+    pub(crate) fn looks_like_train_case_prose_identifier(credential: &str) -> bool {
+        crate::suppression::shape::looks_like_train_case_prose_identifier(credential)
+    }
 }
 
 #[cfg(test)]

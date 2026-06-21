@@ -2,7 +2,7 @@
 
 use keyhog_scanner::testing::shape::{
     looks_like_credential_colliding_punctuation, looks_like_punctuation_decorated_identifier,
-    looks_like_syntactic_punctuation_marker,
+    looks_like_syntactic_punctuation_marker, looks_like_train_case_prose_identifier,
 };
 
 #[test]
@@ -63,4 +63,30 @@ fn anchored_password_ending_in_bang_is_not_suppressed_by_either_tier() {
     assert!(!looks_like_syntactic_punctuation_marker(v));
     assert!(!looks_like_credential_colliding_punctuation(v));
     assert!(!looks_like_punctuation_decorated_identifier(v));
+}
+
+#[test]
+fn train_case_policy_prose_is_structural_even_when_bigrams_look_random() {
+    for value in [
+        "ConfigMap-values-carry-non-secret-Tier-A-runtime-knobs-only",
+        "ConfigMapXYZ-values-carry-non-secret-runtime-knobs-only",
+    ] {
+        assert!(
+            looks_like_train_case_prose_identifier(value),
+            "connector-bearing policy prose must be suppressed before randomness scoring: {value}"
+        );
+    }
+}
+
+#[test]
+fn train_case_gate_requires_connector_bearing_prose() {
+    for value in [
+        "a8x-9fk-2qz-7mw-random-bytes",
+        "Qxzvbnm-Kprtwyl-Jhgfdsaz-Mnbvcxzq",
+    ] {
+        assert!(
+            !looks_like_train_case_prose_identifier(value),
+            "hyphenated non-prose token must not trip the policy-prose gate: {value}"
+        );
+    }
 }

@@ -181,7 +181,7 @@ pub(crate) fn looks_like_train_case_prose_identifier(value: &str) -> bool {
     if part_count < 4 || lower_parts < 3 || !has_connector {
         return false;
     }
-    !super::token_randomness::is_random_token(value)
+    true
 }
 
 /// True for opaque high-entropy punctuation payloads where punctuation is part

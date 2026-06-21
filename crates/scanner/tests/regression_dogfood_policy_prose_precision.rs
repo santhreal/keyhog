@@ -52,6 +52,14 @@ fn assert_no_credential_prefix(scanner: &CompiledScanner, line: &str, prefix: &s
     );
 }
 
+fn assert_no_findings(scanner: &CompiledScanner, line: &str) {
+    let findings = findings_for(scanner, line);
+    assert!(
+        findings.is_empty(),
+        "policy/config prose line must produce zero findings: {line:?}; findings: {findings:#?}"
+    );
+}
+
 #[test]
 fn policy_train_case_strings_do_not_surface_as_entropy_or_generic_secrets() {
     let scanner = scanner();
@@ -63,6 +71,17 @@ fn policy_train_case_strings_do_not_surface_as_entropy_or_generic_secrets() {
         "DynamicUser-or-dedicated-unprivileged-user-required-for-daemon-mode",
     ] {
         assert_no_exact_credential(&scanner, &format!("api_key_policy = \"{value}\""), value);
+    }
+}
+
+#[test]
+fn compound_policy_prose_lines_produce_zero_findings() {
+    let scanner = scanner();
+    for value in [
+        "ConfigMap-values-carry-non-secret-Tier-A-runtime-knobs-only",
+        "ConfigMapXYZ-values-carry-non-secret-runtime-knobs-only",
+    ] {
+        assert_no_findings(&scanner, &format!("api_key_policy = \"{value}\""));
     }
 }
 
