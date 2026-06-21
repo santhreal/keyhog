@@ -2783,3 +2783,74 @@ e2e_linked = true
 path = "crates/sources/src/profile.rs"
 error = true
 adversarial = true
+
+
+# --- KH-GAP-176: scanner src modules added since the matrix was last synced ---
+[[module]]
+path = "crates/scanner/src/anchored_regex.rs"
+
+[[module]]
+path = "crates/scanner/src/detector_ids.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2/first_bigram.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_generic/auth_value.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_generic/line_mapping.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_generic/metrics.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_gpu_dfa/batch.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_gpu_dfa/candidates.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_gpu_dfa/lowering.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_gpu_dfa/shard.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_gpu_dfa/workload.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/scan_postprocess/confirmed_anchor.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/scan_postprocess/confirmed_extract.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/scan_postprocess/ml.rs"
+
+[[module]]
+path = "crates/scanner/src/entropy/isolated.rs"
+
+[[module]]
+path = "crates/scanner/src/entropy/plausibility.rs"
+
+[[module]]
+path = "crates/scanner/src/generic_keyword_owner.rs"
+
+[[module]]
+path = "crates/scanner/src/suppression/shape/canonical.rs"
+
+[[module]]
+path = "crates/scanner/src/suppression/shape/mod.rs"
+
+[[module]]
+path = "crates/scanner/src/suppression/shape/path.rs"
+
+[[module]]
+path = "crates/scanner/src/suppression/shape/prose.rs"
+
+[[module]]
+path = "crates/scanner/src/suppression/shape/public.rs"
+
+[[module]]
+path = "crates/scanner/src/suppression/shape/source.rs"
