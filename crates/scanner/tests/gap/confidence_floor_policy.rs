@@ -612,8 +612,8 @@ fn not_applicable_token_must_earn_precision_bar_on_its_own() {
 }
 
 // ===========================================================================
-// SECTION 7: known_prefix_confidence_floor — the 0.8 base used on the hot path
-// before checksum adjustment (engine/hot_patterns.rs).
+// SECTION 7: known_prefix_confidence_floor — the 0.8 base used by the
+// hot-pattern confidence policy before checksum adjustment.
 // ===========================================================================
 
 #[test]
@@ -651,7 +651,7 @@ fn known_prefix_floor_suppressed_by_placeholder_word_case_insensitive() {
 
 #[test]
 fn hot_path_base_confidence_is_0_7_without_known_prefix() {
-    // engine/hot_patterns.rs uses
+    // engine::scoring::hot_pattern_confidence uses
     //   known_prefix_confidence_floor(cred).unwrap_or(0.7)
     // as the base confidence. Mirror that composition: an unknown-prefix hot
     // literal starts at 0.7.
@@ -662,8 +662,8 @@ fn hot_path_base_confidence_is_0_7_without_known_prefix() {
 #[test]
 fn hot_path_valid_token_base_floored_to_0_9() {
     // Full hot-path composition for a checksum-bearing literal:
-    //   base = known_prefix_confidence_floor(cred).unwrap_or(0.7)  // ghp_ -> 0.8
-    //   final = checksum_adjusted_confidence(base, cred)           // Valid -> 0.9
+    //   base = known_prefix_confidence_floor(cred).unwrap_or(0.7) // ghp_ -> 0.8
+    //   final = checksum_adjusted_confidence(base, cred)          // Valid -> 0.9
     let token = valid_ghp(&body30());
     let base = known_prefix_confidence_floor(&token).unwrap_or(0.7);
     assert_eq!(base, 0.8, "ghp_ is a known prefix -> 0.8 base");

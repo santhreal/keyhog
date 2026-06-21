@@ -24,6 +24,16 @@ pub(super) fn apply_checksum_confidence(confidence: f64, credential: &str) -> Op
     checksum_policy_for(credential).adjusted_confidence(confidence)
 }
 
+#[cfg(feature = "simdsieve")]
+pub(super) fn hot_pattern_confidence(credential: &str) -> Option<f64> {
+    const BASE_CONFIDENCE: f64 = 0.7;
+    let base_confidence = match crate::confidence::known_prefix_confidence_floor(credential) {
+        Some(confidence) => confidence,
+        None => BASE_CONFIDENCE,
+    };
+    apply_checksum_confidence(base_confidence, credential)
+}
+
 impl CompiledScanner {
     pub(crate) fn match_companions(
         &self,

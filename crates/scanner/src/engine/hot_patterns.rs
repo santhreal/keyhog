@@ -224,16 +224,7 @@ impl CompiledScanner {
                     continue;
                 }
 
-                // Embedded-checksum adjudication for hot literals that carry a
-                // self-verifying CRC (`ghp_`, `xoxb-`, `xoxp-`). Keep the
-                // literal match fast, but route the confidence/drop decision
-                // through the shared match-policy owner so this path cannot
-                // drift from detector/generic/entropy emitters.
-                let base_confidence =
-                    crate::confidence::known_prefix_confidence_floor(credential).unwrap_or(0.7); // LAW10: empty/absent => documented numeric/sentinel default, recall-safe
-                let Some(confidence) =
-                    super::scoring::apply_checksum_confidence(base_confidence, credential)
-                else {
+                let Some(confidence) = super::scoring::hot_pattern_confidence(credential) else {
                     continue;
                 };
 
