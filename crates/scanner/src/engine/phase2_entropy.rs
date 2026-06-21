@@ -105,19 +105,10 @@ impl CompiledScanner {
         for entropy_match in entropy_matches {
             // Resolve metadata once; emit clones the pre-interned triple.
             let entropy_meta_idx = helpers::classify_entropy_detector_index(&entropy_match.keyword);
-            let base_confidence =
-                if entropy_match.entropy >= crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD {
-                    0.75
-                } else if entropy_match.entropy >= crate::entropy::HIGH_ENTROPY_THRESHOLD {
-                    0.65
-                } else {
-                    0.55_f64.min(entropy_match.entropy / 8.0)
-                };
-            let confidence = if entropy_match.keyword != "none (high-entropy)" {
-                (base_confidence + 0.1).min(0.90_f64)
-            } else {
-                base_confidence
-            };
+            let confidence = super::scoring::entropy_fallback_confidence(
+                entropy_match.entropy,
+                &entropy_match.keyword,
+            );
             let mapped_line = crate::pipeline::match_line_number(
                 preprocessed,
                 line_offsets,

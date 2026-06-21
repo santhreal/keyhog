@@ -284,45 +284,13 @@ impl CompiledScanner {
                         preprocessed_documentation_lines.as_slice(),
                     )
                 };
-                // The test/docs base-confidence haircut is the SAME path-keyed
-                // policy `--no-suppress-test-fixtures` (penalize_test_paths)
-                // governs everywhere else in the phase-2/postprocess tail.
-                // This generic-secret fallback historically baked 0.25/0.30 into
-                // `base_conf` UNCONDITIONALLY, so the opt-out could not clear it:
-                // MC-15 proved on the bench that the same byte-identical corpus
-                // scored ~600 fewer findings under a `fixtures/`-named scan dir
-                // than under `corpus/` even with the flag set, because TestCode
-                // values landed at 0.25 and fell below the 0.40 floor. Gating the
-                // haircut on `penalize_test_paths` (mirroring the canonical policy)
-                // makes the opt-out actually clear the path penalty here too; with
-                // the flag UNSET (default) behaviour is byte-identical to before.
-                let base_conf = match context {
-                    crate::context::CodeContext::TestCode if self.config.penalize_test_paths => {
-                        0.25
-                    }
-                    // `--scan-comments` (see ScannerConfig.scan_comments)
-                    // promotes comment-context credentials to the
-                    // ordinary-source base confidence so a real secret
-                    // pasted into a TODO/debug-trace comment surfaces
-                    // instead of getting silently filtered. Documentation
-                    // context stays downgraded - it's a different (and
-                    // far noisier) signal class than inline comments - but it
-                    // too is cleared by the fixture opt-out, matching the
-                    // canonical TestCode|Documentation policy.
-                    crate::context::CodeContext::Comment if self.config.scan_comments => 0.60,
-                    crate::context::CodeContext::Documentation
-                        if self.config.penalize_test_paths =>
-                    {
-                        0.30
-                    }
-                    crate::context::CodeContext::Comment => 0.30,
-                    _ => 0.60,
-                };
-
-                // Boost confidence for longer, higher-entropy values
-                let entropy_boost = ((entropy - 3.5) * 0.1).min(0.25);
-                let length_boost = ((value.len() as f64 - 16.0) * 0.005).clamp(0.0, 0.15);
-                let confidence = (base_conf + entropy_boost + length_boost).min(0.95);
+                let confidence = super::scoring::generic_secret_confidence(
+                    context,
+                    self.config.scan_comments,
+                    self.config.penalize_test_paths,
+                    entropy,
+                    value.len(),
+                );
 
                 // Route through the SAME canonical post-ML penalty pipeline the
                 // ML / named-detector emit path uses (scan_postprocess/ml.rs). The
