@@ -1,8 +1,43 @@
-use super::{line::find_line_number, ExtractedPair};
+use super::{line::resolve_line_numbers, ExtractedPair};
+
+enum LineAnchor {
+    Value,
+    Owned(String),
+}
+
+struct PendingExtractedPair {
+    context: String,
+    value: String,
+    line_anchor: LineAnchor,
+}
+
+impl PendingExtractedPair {
+    fn value_anchor(context: impl Into<String>, value: String) -> Self {
+        Self {
+            context: context.into(),
+            value,
+            line_anchor: LineAnchor::Value,
+        }
+    }
+
+    fn owned_anchor(context: impl Into<String>, value: String, line_anchor: String) -> Self {
+        Self {
+            context: context.into(),
+            value,
+            line_anchor: LineAnchor::Owned(line_anchor),
+        }
+    }
+
+    fn line_anchor(&self) -> &str {
+        match &self.line_anchor {
+            LineAnchor::Value => &self.value,
+            LineAnchor::Owned(anchor) => anchor,
+        }
+    }
+}
 
 /// Parse Terraform state JSON and recursively extract `value` fields.
 pub(crate) fn parse_tfstate(text: &str) -> Vec<ExtractedPair> {
-    let mut pairs = Vec::new();
     let value: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
         Err(error) => {
@@ -12,11 +47,12 @@ pub(crate) fn parse_tfstate(text: &str) -> Vec<ExtractedPair> {
             // for the `-v` error detail.
             crate::telemetry::record_structured_parse_failure();
             tracing::warn!(target: "keyhog::structured", %error, "tfstate JSON parse failed; value fields will not be decoded-through");
-            return pairs;
+            return Vec::new();
         }
     };
-    extract_tfstate_values(&value, text, &mut pairs, 0);
-    pairs
+    let mut pending = Vec::new();
+    extract_tfstate_values(&value, &mut pending, 0);
+    finalize_pending_pairs(text, pending)
 }
 
 /// Cap recursion depth on adversarial JSON. A 2 MiB document of nested arrays
@@ -25,8 +61,7 @@ const MAX_TFSTATE_DEPTH: usize = 256;
 
 fn extract_tfstate_values(
     value: &serde_json::Value,
-    text: &str,
-    pairs: &mut Vec<ExtractedPair>,
+    pending: &mut Vec<PendingExtractedPair>,
     depth: usize,
 ) {
     if depth >= MAX_TFSTATE_DEPTH {
@@ -36,27 +71,16 @@ fn extract_tfstate_values(
         serde_json::Value::Object(map) => {
             for (k, v) in map {
                 if k == "value" {
-                    let val_str = match v {
-                        serde_json::Value::String(s) => s.clone(),
-                        serde_json::Value::Number(n) => n.to_string(),
-                        serde_json::Value::Bool(b) => b.to_string(),
-                        _ => String::new(),
-                    };
-                    if !val_str.is_empty() {
-                        let line = find_line_number(text, &val_str).unwrap_or(1); // LAW10: line not located => placeholder line for REPORTING only; finding still emitted, recall-safe
-                        pairs.push(ExtractedPair {
-                            context: "tfstate-value".to_string(),
-                            value: val_str,
-                            line,
-                        });
+                    if let Some(val_str) = scalar_value_text(v) {
+                        pending.push(PendingExtractedPair::value_anchor("tfstate-value", val_str));
                     }
                 }
-                extract_tfstate_values(v, text, pairs, depth + 1);
+                extract_tfstate_values(v, pending, depth + 1);
             }
         }
         serde_json::Value::Array(arr) => {
             for v in arr {
-                extract_tfstate_values(v, text, pairs, depth + 1);
+                extract_tfstate_values(v, pending, depth + 1);
             }
         }
         _ => {}
@@ -65,7 +89,6 @@ fn extract_tfstate_values(
 
 /// Parse Jupyter notebook JSON and extract code cell sources.
 pub(crate) fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
-    let mut pairs = Vec::new();
     let value: serde_json::Value = match serde_json::from_str(text) {
         Ok(v) => v,
         Err(error) => {
@@ -74,15 +97,19 @@ pub(crate) fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
             // scannable lines). Count + keep the debug detail.
             crate::telemetry::record_structured_parse_failure();
             tracing::warn!(target: "keyhog::structured", %error, "Jupyter notebook JSON parse failed; code cells will not be decoded-through");
-            return pairs;
+            return Vec::new();
         }
     };
     let cells = match value.get("cells") {
         Some(serde_json::Value::Array(arr)) => arr,
-        _ => return pairs,
+        _ => return Vec::new(),
     };
+    let mut pending = Vec::new();
     for (idx, cell) in cells.iter().enumerate() {
-        let cell_type = cell.get("cell_type").and_then(|c| c.as_str()).unwrap_or(""); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
+        let cell_type = match cell.get("cell_type").and_then(|c| c.as_str()) {
+            Some(cell_type) => cell_type,
+            None => "",
+        };
         if cell_type != "code" {
             continue;
         }
@@ -90,10 +117,14 @@ pub(crate) fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
             Some(v) => v,
             None => continue,
         };
-        let (source_text, line) = match source {
+        match source {
             serde_json::Value::String(s) => {
-                let line = find_line_number(text, s).unwrap_or(1); // LAW10: line not located => placeholder line for REPORTING only; finding still emitted, recall-safe
-                (s.clone(), line)
+                if !s.trim().is_empty() {
+                    pending.push(PendingExtractedPair::value_anchor(
+                        format!("jupyter-cell-{idx}"),
+                        s.clone(),
+                    ));
+                }
             }
             serde_json::Value::Array(arr) => {
                 let mut malformed_source_fragment = false;
@@ -113,19 +144,19 @@ pub(crate) fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
                     );
                 }
                 let joined = parts.join("");
-                let anchor = parts
-                    .iter()
-                    .find_map(|p| {
-                        let trimmed_end = p.trim_end_matches(['\n', '\r']);
-                        if trimmed_end.is_empty() {
-                            None
-                        } else {
-                            Some(trimmed_end.to_string())
-                        }
-                    })
-                    .unwrap_or_else(|| joined.clone()); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
-                let line = find_line_number(text, &anchor).unwrap_or(1); // LAW10: line not located => placeholder line for REPORTING only; finding still emitted, recall-safe
-                (joined, line)
+                if !joined.trim().is_empty() {
+                    match first_nonempty_fragment_anchor(&parts) {
+                        Some(anchor) => pending.push(PendingExtractedPair::owned_anchor(
+                            format!("jupyter-cell-{idx}"),
+                            joined,
+                            anchor,
+                        )),
+                        None => pending.push(PendingExtractedPair::value_anchor(
+                            format!("jupyter-cell-{idx}"),
+                            joined,
+                        )),
+                    }
+                }
             }
             _ => {
                 crate::telemetry::record_structured_parse_failure();
@@ -137,13 +168,46 @@ pub(crate) fn parse_jupyter(text: &str) -> Vec<ExtractedPair> {
                 continue;
             }
         };
-        if !source_text.trim().is_empty() {
-            pairs.push(ExtractedPair {
-                context: format!("jupyter-cell-{}", idx),
-                value: source_text,
-                line,
-            });
+    }
+    finalize_pending_pairs(text, pending)
+}
+
+fn scalar_value_text(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        serde_json::Value::Bool(b) => Some(b.to_string()),
+        _ => None,
+    }
+}
+
+fn first_nonempty_fragment_anchor(parts: &[String]) -> Option<String> {
+    for part in parts {
+        let trimmed_end = part.trim_end_matches(['\n', '\r']);
+        if !trimmed_end.is_empty() {
+            return Some(trimmed_end.to_string());
         }
+    }
+    None
+}
+
+fn finalize_pending_pairs(text: &str, pending: Vec<PendingExtractedPair>) -> Vec<ExtractedPair> {
+    let anchors: Vec<&str> = pending
+        .iter()
+        .map(PendingExtractedPair::line_anchor)
+        .collect();
+    let lines = resolve_line_numbers(text, &anchors);
+    let mut pairs = Vec::with_capacity(pending.len());
+    for (index, pending_pair) in pending.into_iter().enumerate() {
+        let line = match lines.get(index) {
+            Some(line) => *line,
+            None => 1,
+        };
+        pairs.push(ExtractedPair {
+            context: pending_pair.context,
+            value: pending_pair.value,
+            line,
+        });
     }
     pairs
 }

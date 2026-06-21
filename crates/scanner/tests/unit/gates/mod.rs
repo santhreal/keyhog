@@ -206,6 +206,7 @@ pub mod simdsieve_prefilter_non_empty;
 pub mod static_intern_no_inline_tests;
 pub mod static_intern_no_unwrap_expect;
 pub mod static_intern_non_empty;
+pub mod structured_json_line_lookup_batched;
 pub mod structured_parse_failure_counter_isolated;
 pub mod structured_parsers_no_inline_tests;
 pub mod structured_parsers_no_unwrap_expect;

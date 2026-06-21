@@ -164,6 +164,50 @@ fn tfstate_deeply_nested_json_does_not_overflow() {
     assert!(pairs.is_empty());
 }
 
+#[test]
+fn tfstate_value_lines_are_resolved_in_batch() {
+    let text = r#"{
+  "outputs": [
+    {
+      "value": "tf_first_secret"
+    },
+    {
+      "value": "tf_second_secret"
+    },
+    {
+      "value": true
+    }
+  ]
+}"#;
+    let pairs = parse_tfstate(text);
+    let by_value: std::collections::HashMap<_, _> =
+        pairs.iter().map(|p| (p.value.as_str(), p.line)).collect();
+    assert_eq!(by_value.get("tf_first_secret"), Some(&4));
+    assert_eq!(by_value.get("tf_second_secret"), Some(&7));
+    assert_eq!(by_value.get("true"), Some(&10));
+}
+
+#[test]
+fn jupyter_code_cell_lines_are_resolved_in_batch() {
+    let text = r#"{
+  "cells": [
+    {
+      "cell_type": "code",
+      "source": ["first_api = 'aaa'\n", "x = 1\n"]
+    },
+    {
+      "cell_type": "code",
+      "source": ["second_api = 'bbb'\n"]
+    }
+  ]
+}"#;
+    let pairs = parse_jupyter(text);
+    let by_context: std::collections::HashMap<_, _> =
+        pairs.iter().map(|p| (p.context.as_str(), p.line)).collect();
+    assert_eq!(by_context.get("jupyter-cell-0"), Some(&5));
+    assert_eq!(by_context.get("jupyter-cell-1"), Some(&9));
+}
+
 /// Same guard for the docker-compose path — a YAML mapping nested
 /// thousands of levels deep must bail rather than stack-overflow.
 #[test]
