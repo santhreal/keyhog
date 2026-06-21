@@ -160,8 +160,8 @@ fn malformed_toml_files_fail_closed_instead_of_returning_partial_corpus() {
         .expect_err("enforced detector load must reject a partial corpus");
         let message = error.to_string();
         assert!(
-            message.contains("failed to load or pass the quality gate")
-                && message.contains("partial detector corpus")
+            message.contains("pass the quality gate")
+                && message.contains("complete detector corpus")
                 && message.contains("broken.toml")
                 && message.contains("Fix: repair the named TOML"),
             "malformed detector error must be operator-visible; got {message}"

@@ -124,6 +124,7 @@ jobs:
       - name: Install Vectorscan
         run: sudo apt-get update -qq && sudo apt-get install -y libhyperscan-dev pkg-config
       - run: cargo test -p keyhog-core --lib
+      - run: cargo check -p keyhog-core --all-targets
       - run: cargo test -p keyhog-scanner --lib
       - run: cargo test -p keyhog --lib
 

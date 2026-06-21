@@ -24,7 +24,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let issues = validate_detector(&detector);
     let ignore_path = std::env::temp_dir().join("keyhog-core-standalone.keyhogignore");
     std::fs::write(&ignore_path, "path:**/*.md\n")?;
-    let allowlist = Allowlist::load(&ignore_path)?;
+    let allowlist = Allowlist::load_with_metadata_policy(&ignore_path, false, false, None)?;
     std::fs::remove_file(&ignore_path)?;
     let detectors_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../detectors");
     let detectors = load_detectors(&detectors_dir)?;

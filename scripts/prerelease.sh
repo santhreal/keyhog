@@ -128,6 +128,7 @@ check "README bench tables up to date" make -C benchmarks report-check
 # ── 3. Rust test gates (CI-faithful) ─────────────────────────────────────────
 if [ "$SKIP_RUST" != "1" ]; then
   step "rust: per-crate all_tests (matches ci.yml)"
+  check "core all-targets compile" cargo check -p keyhog-core --all-targets
   check "core all_tests"     cargo test -p keyhog-core     --test all_tests --profile "$PROFILE" -- --test-threads=4
   check "scanner all_tests"  cargo test -p keyhog-scanner  --test all_tests --no-default-features --features ci-lean --profile "$PROFILE" -- --test-threads=4
   check "scanner adversarial dead corpus" cargo test -p keyhog-scanner --test adversarial_suite --no-default-features --features ci-lean --profile "$PROFILE" -- --test-threads=4
