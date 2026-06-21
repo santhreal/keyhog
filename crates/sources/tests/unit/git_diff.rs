@@ -1,7 +1,7 @@
 #[cfg(feature = "git")]
 use keyhog_core::Source;
 #[cfg(feature = "git")]
-use keyhog_sources::GitDiffSource;
+use keyhog_sources::{GitDiffSource, SourceLimits};
 #[cfg(feature = "git")]
 use std::path::PathBuf;
 #[cfg(feature = "git")]
@@ -133,6 +133,50 @@ fn git_diff_chunks_carry_absolute_base_line_per_hunk() {
         } else {
             panic!("unexpected diff chunk content: {data:?}");
         }
+    }
+}
+
+#[cfg(feature = "git")]
+#[test]
+fn git_diff_hunk_flush_uses_resolved_git_blob_byte_cap() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    commit_file(&repo_path, "seed.txt", "seed = true\n", "base");
+    Command::new("git")
+        .args(["checkout", "-b", "feature"])
+        .current_dir(&repo_path)
+        .output()
+        .unwrap();
+    commit_file(
+        &repo_path,
+        "big.txt",
+        "line_one\nline_two\nline_three\n",
+        "add multi-line hunk",
+    );
+
+    let mut limits = SourceLimits::default();
+    limits.git_blob_bytes = 12;
+
+    let chunks: Vec<_> = GitDiffSource::new(repo_path, "main")
+        .with_head_ref("feature")
+        .with_limits(limits)
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    assert!(
+        chunks.len() >= 2,
+        "git-diff hunk buffering must honor SourceLimits::git_blob_bytes; got {chunks:?}"
+    );
+    let joined = chunks
+        .iter()
+        .map(|chunk| chunk.data.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    for expected in ["line_one", "line_two", "line_three"] {
+        assert!(
+            joined.contains(expected),
+            "split git-diff chunks must preserve added line {expected:?}; got {chunks:?}"
+        );
     }
 }
 

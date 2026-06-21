@@ -1,7 +1,7 @@
 #[cfg(feature = "git")]
 use keyhog_core::Source;
 #[cfg(feature = "git")]
-use keyhog_sources::GitHistorySource;
+use keyhog_sources::{GitHistorySource, SourceLimits};
 #[cfg(feature = "git")]
 use std::path::PathBuf;
 #[cfg(feature = "git")]
@@ -116,6 +116,44 @@ fn git_history_eof_flush_carries_absolute_base_line() {
         secret_chunk.metadata.base_line, 79,
         "EOF flush must preserve the hunk base line instead of resetting final history findings to line 1"
     );
+}
+
+#[cfg(feature = "git")]
+#[test]
+fn git_history_hunk_flush_uses_resolved_git_blob_byte_cap() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    commit_file(
+        &repo_path,
+        "big.txt",
+        "hist_one\nhist_two\nhist_three\n",
+        "add multi-line hunk",
+    );
+
+    let mut limits = SourceLimits::default();
+    limits.git_blob_bytes = 12;
+
+    let chunks: Vec<_> = GitHistorySource::new(repo_path)
+        .with_max_commits(1)
+        .with_limits(limits)
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+
+    assert!(
+        chunks.len() >= 2,
+        "git-history hunk buffering must honor SourceLimits::git_blob_bytes; got {chunks:?}"
+    );
+    let joined = chunks
+        .iter()
+        .map(|chunk| chunk.data.to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    for expected in ["hist_one", "hist_two", "hist_three"] {
+        assert!(
+            joined.contains(expected),
+            "split git-history chunks must preserve added line {expected:?}; got {chunks:?}"
+        );
+    }
 }
 
 #[cfg(feature = "git")]

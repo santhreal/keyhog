@@ -3,20 +3,39 @@
 #[cfg(feature = "git")]
 #[test]
 fn git_blob_byte_caps_in_source() {
-    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/git/source.rs"))
-        .expect("git/source.rs");
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/git");
     assert!(
-        !src.contains("MAX_GIT_BLOB_BYTES")
-            && !src.contains("MAX_GIT_TOTAL_BYTES")
-            && !src.contains("MAX_GIT_CHUNKS"),
+        std::fs::read_to_string(root.join("mod.rs"))
+            .expect("git/mod.rs")
+            .contains("fn git_blob_bytes_limit_usize("),
+        "git module must own the git_blob_bytes usize conversion for source buffers"
+    );
+
+    let source = std::fs::read_to_string(root.join("source.rs")).expect("git/source.rs");
+    assert!(
+        !source.contains("MAX_GIT_BLOB_BYTES")
+            && !source.contains("MAX_GIT_TOTAL_BYTES")
+            && !source.contains("MAX_GIT_CHUNKS"),
         "Git source caps must be owned by SourceLimits"
     );
     assert!(
-        src.contains("git_blob_bytes")
-            && src.contains("git_total_bytes")
-            && src.contains("git_chunk_count"),
+        source.contains("git_blob_bytes")
+            && source.contains("git_total_bytes")
+            && source.contains("git_chunk_count"),
         "Git blob source must use resolved SourceLimits"
     );
+
+    for rel in ["diff.rs", "history.rs"] {
+        let src = std::fs::read_to_string(root.join(rel)).expect("git hunk source readable");
+        assert!(
+            !src.contains("10 * 1024 * 1024"),
+            "{rel} must not hardcode the git hunk buffer cap; use SourceLimits::git_blob_bytes"
+        );
+        assert!(
+            src.contains("git_blob_bytes_limit_usize(limits)") && src.contains("hunk_byte_cap"),
+            "{rel} must use the shared git_blob_bytes hunk cap"
+        );
+    }
 }
 
 #[cfg(not(feature = "git"))]

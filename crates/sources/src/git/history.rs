@@ -129,6 +129,7 @@ fn stream_git_history_chunks(
     let mut in_hunk = false;
     let mut done = false;
     let mut line_buf = Vec::new();
+    let hunk_byte_cap = super::git_blob_bytes_limit_usize(limits);
     // New-file line before the current hunk's first added line (hunk header
     // `+new_start - 1`). Added to a match's chunk-local line so findings
     // report the absolute new-file line instead of the chunk-local one
@@ -342,8 +343,8 @@ fn stream_git_history_chunks(
                 current_content.push('\n');
             }
 
-            // Safety cap to prevent unlimited memory growth per file hunk
-            if current_content.len() > 10 * 1024 * 1024 {
+            // Safety cap to prevent unlimited memory growth per file hunk.
+            if current_content.len() > hunk_byte_cap {
                 if let (Some(commit), Some(author), Some(date), Some(path)) = (
                     &current_commit,
                     &current_author,
@@ -351,7 +352,7 @@ fn stream_git_history_chunks(
                     &current_path,
                 ) {
                     let flush_base_line = current_base_line;
-                    // Mid-hunk flush of a single >10 MiB hunk: advance the base
+                    // Mid-hunk flush of a single over-cap hunk: advance the base
                     // by the lines emitted now so the remaining lines of the
                     // SAME hunk stay correctly attributed after the reset.
                     current_base_line = current_base_line.saturating_add(

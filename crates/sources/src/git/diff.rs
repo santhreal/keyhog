@@ -157,6 +157,7 @@ fn stream_added_lines(
     let mut done = false;
     let mut emit_untracked = false;
     let mut line_buf: Vec<u8> = Vec::new();
+    let hunk_byte_cap = super::git_blob_bytes_limit_usize(limits);
     // New-file line BEFORE the current hunk's first added line (i.e. the
     // hunk header's `+new_start - 1`). The scanner counts a match's line
     // within the chunk text from 1; adding this base yields the absolute
@@ -302,11 +303,11 @@ fn stream_added_lines(
                 current_content.push('\n');
             }
 
-            if current_content.len() > 10 * 1024 * 1024 {
+            if current_content.len() > hunk_byte_cap {
                 if let Some(ref path) = current_path {
                     if !current_content.trim().is_empty() {
                         let flush_base_line = current_base_line;
-                        // Mid-hunk flush of a single >10 MiB hunk: the lines
+                        // Mid-hunk flush of a single over-cap hunk: the lines
                         // that follow continue the SAME hunk, so advance the
                         // base by the lines we are emitting now to keep their
                         // attribution correct after the buffer resets.

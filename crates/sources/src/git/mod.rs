@@ -28,6 +28,13 @@ pub use diff::GitDiffSource;
 pub use history::GitHistorySource;
 pub use source::GitSource;
 
+pub(crate) fn git_blob_bytes_limit_usize(limits: crate::SourceLimits) -> usize {
+    match usize::try_from(limits.git_blob_bytes) {
+        Ok(value) => value,
+        Err(_) => usize::MAX, // LAW10: recall-safe size knob; configured cap exceeds platform usize, so saturate to the maximum representable in-memory buffer cap.
+    }
+}
+
 /// Read one line (through the trailing `\n`) into `buf`, capping buffered bytes
 /// at `max`. If the line exceeds `max`, the first `max` bytes are kept (still
 /// scanned) and the overflow is consumed and discarded so the stream stays
