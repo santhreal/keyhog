@@ -82,6 +82,58 @@ pub(crate) fn suppress_known_example_credential(
     )
 }
 
+#[cfg(any(feature = "simdsieve", test))]
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct HotPatternSuppressionCtx<'a> {
+    path: Option<&'a str>,
+    source_type: &'a str,
+}
+
+#[cfg(any(feature = "simdsieve", test))]
+impl<'a> HotPatternSuppressionCtx<'a> {
+    pub(crate) fn new(path: Option<&'a str>, source_type: &'a str) -> Self {
+        Self { path, source_type }
+    }
+}
+
+#[cfg(feature = "simdsieve")]
+pub(crate) fn suppress_hot_pattern_candidate(
+    credential: &str,
+    ctx: HotPatternSuppressionCtx<'_>,
+) -> bool {
+    let example_ctx = KnownExampleSuppressionCtx::new(
+        ctx.path,
+        context::CodeContext::Unknown,
+        Some(ctx.source_type),
+    );
+    suppress_known_example_credential(credential, example_ctx)
+        || looks_like_regex_literal_tail(credential)
+        || looks_like_vendored_minified_path(ctx.path)
+        || ctx.source_type.contains("binary-strings")
+        || ctx.source_type.contains("archive-binary")
+        || looks_like_secret_scanner_source(ctx.path)
+        || looks_like_hot_pattern_base64_path(ctx.path)
+}
+
+#[cfg(feature = "simdsieve")]
+fn looks_like_hot_pattern_base64_path(path: Option<&str>) -> bool {
+    let Some(path) = path else {
+        return false;
+    };
+    let bytes = path.as_bytes();
+    if crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b".b64")
+        || crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b".base64")
+    {
+        return true;
+    }
+    let basename = crate::platform_compat::path_basename_bytes(bytes);
+    (crate::ascii_ci::starts_with_ignore_ascii_case(basename, b"base64_")
+        || crate::ascii_ci::ci_find(basename, b"base64_string"))
+        && !crate::ascii_ci::ends_with_ignore_ascii_case(basename, b".json")
+        && !crate::ascii_ci::ends_with_ignore_ascii_case(basename, b".yml")
+        && !crate::ascii_ci::ends_with_ignore_ascii_case(basename, b".yaml")
+}
+
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct NamedDetectorSuppressionCtx<'a> {
     path: Option<&'a str>,

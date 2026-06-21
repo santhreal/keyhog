@@ -17,3 +17,5 @@ pub(crate) use api::{
 pub(crate) use api::{
     should_suppress_known_example_credential, should_suppress_named_detector_finding,
 };
+#[cfg(feature = "simdsieve")]
+pub(crate) use api::{suppress_hot_pattern_candidate, HotPatternSuppressionCtx};

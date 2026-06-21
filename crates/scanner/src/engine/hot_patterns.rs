@@ -1,8 +1,6 @@
 #[cfg(feature = "simdsieve")]
 use super::*;
 #[cfg(feature = "simdsieve")]
-use crate::context;
-#[cfg(feature = "simdsieve")]
 use keyhog_core::{MatchLocation, RawMatch, Severity};
 #[cfg(feature = "simdsieve")]
 use std::collections::HashMap;
@@ -148,79 +146,16 @@ impl CompiledScanner {
                 const PER_PATTERN_MIN_LEN: &[usize] =
                     &[40, 20, 20, 20, 26, 16, 16, 16, 32, 32, 32, 32];
                 let min_len = PER_PATTERN_MIN_LEN.get(pattern_idx).copied().unwrap_or(8); // LAW10: bounds-checked lookup; out-of-range => documented default (total fn), recall-safe
-                let example_ctx = crate::suppression::api::KnownExampleSuppressionCtx::new(
+                let suppression_ctx = crate::suppression::HotPatternSuppressionCtx::new(
                     chunk.metadata.path.as_deref(),
-                    context::CodeContext::Unknown,
-                    Some(chunk.metadata.source_type.as_str()),
+                    chunk.metadata.source_type.as_str(),
                 );
                 if credential.len() < min_len
-                    || crate::suppression::api::suppress_known_example_credential(
+                    || crate::suppression::suppress_hot_pattern_candidate(
                         credential,
-                        example_ctx,
+                        suppression_ctx,
                     )
                 {
-                    continue;
-                }
-
-                // Regex-literal suppression for the hot-pattern fast-path.
-                // Source files that ship secret-scanner code (claude-code's
-                // teamMemorySync/secretScanner.ts, components/Feedback.tsx,
-                // every trufflehog / gitleaks competitor) emit hot findings
-                // on their own regex DEFINITIONS - `AKIA[A-Z0-9]{16,17})/g`,
-                // `ASIA[A-Z0-9]{16})\b`, `xoxb-[0-9-]*`. Real tokens never
-                // end in regex sigils. The tail-suffix check is O(1).
-                if crate::suppression::shape::looks_like_regex_literal_tail(credential) {
-                    continue;
-                }
-                // Vendored 3rd-party minified bundle: same rationale as
-                // the named-detector path. Random byte sequences in
-                // minified codemirror/pdfjs/jquery/wp-includes bundles
-                // routinely hit `AKIA…`/`ASIA…` literal-prefix patterns.
-                if crate::suppression::path_filter::looks_like_vendored_minified_path(
-                    chunk.metadata.path.as_deref(),
-                ) {
-                    continue;
-                }
-                // Native-binary string extraction: skip hot-pattern hits
-                // on the strings-fallback source - same coverage rationale
-                // as `should_suppress_named_detector_finding`.
-                if chunk.metadata.source_type.contains("binary-strings")
-                    || chunk.metadata.source_type.contains("archive-binary")
-                {
-                    continue;
-                }
-                // Secret-scanner source files (the dogfooded file IS itself
-                // a secret scanner - claude-code's teamMemorySync/
-                // secretScanner.ts, trufflehog/, gitleaks/, etc.) emit
-                // hot-pattern findings on their own detector regex
-                // DEFINITIONS. The `looks_like_regex_literal_tail` check
-                // catches the common forms; decoder-mangled trailing
-                // sigils slip past - this filter closes the gap.
-                if crate::suppression::path_filter::looks_like_secret_scanner_source(
-                    chunk.metadata.path.as_deref(),
-                ) {
-                    continue;
-                }
-                // Raw base64 / pure-alphabet files: alphabet-coincidence
-                // matches inside the base64 stream (AKIA/ASIA/etc.) are
-                // not credentials. Skim raw path bytes case-insensitively
-                // so a per-match `.to_ascii_lowercase()` allocation never
-                // lands on the hot-pattern path (this branch fires for
-                // every AKIA/ASIA literal in every chunk).
-                if chunk.metadata.path.as_deref().is_some_and(|p| {
-                    let bytes = p.as_bytes();
-                    if crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b".b64")
-                        || crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b".base64")
-                    {
-                        return true;
-                    }
-                    let basename = crate::platform_compat::path_basename_bytes(bytes);
-                    (crate::ascii_ci::starts_with_ignore_ascii_case(basename, b"base64_")
-                        || crate::ascii_ci::ci_find(basename, b"base64_string"))
-                        && !crate::ascii_ci::ends_with_ignore_ascii_case(basename, b".json")
-                        && !crate::ascii_ci::ends_with_ignore_ascii_case(basename, b".yml")
-                        && !crate::ascii_ci::ends_with_ignore_ascii_case(basename, b".yaml")
-                }) {
                     continue;
                 }
 
