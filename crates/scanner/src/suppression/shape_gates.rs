@@ -260,22 +260,6 @@ pub(crate) fn has_three_or_more_consecutive_identical(s: &str) -> bool {
     false
 }
 
-pub(crate) fn known_prefix_body(credential: &str) -> Option<&str> {
-    // Single source of truth: crate::confidence::KNOWN_PREFIXES.
-    // Pre-2026-05-24 this function carried a hand-curated 27-entry list
-    // that drifted from the canonical 38-entry KNOWN_PREFIXES. Missing
-    // entries (sk-, xoxs-, glcbt-, glrt-, vercel_, sbp_, 0x, rk_test_,
-    // -----BEGIN, TESTKEY_) meant credentials with those prefixes
-    // bypassed the early-return-false fast path and fell into the
-    // repetitive-mask/filler gates below, where a legitimate
-    // `sk-abcdefghijklmnopqrstuvwxyz...` OpenAI key with naturally-
-    // occurring repeated characters would be dropped. Kimi-suppress
-    // audit finding #1.
-    crate::confidence::KNOWN_PREFIXES
-        .iter()
-        .find_map(|prefix| credential.strip_prefix(prefix))
-}
-
 pub(crate) fn looks_like_prefixed_masked_sequence(body: &str) -> bool {
     // Trailing-ellipsis is an unambiguous placeholder signal: real secrets
     // never end in `...`. UI prompt strings like `ghp_1a2b3c4...` (vscode

@@ -5,7 +5,7 @@ pub(crate) mod penalties;
 mod prefixes;
 mod signals;
 
-pub(crate) use prefixes::{known_prefix_confidence_floor, KNOWN_PREFIXES};
+pub(crate) use prefixes::{known_prefix_body, known_prefix_confidence_floor, KNOWN_PREFIXES};
 pub(crate) use signals::ConfidenceSignals;
 
 use crate::entropy::{HIGH_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD};

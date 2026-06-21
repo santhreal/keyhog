@@ -216,11 +216,11 @@ impl CompiledScanner {
         }
 
         // Checksum validation: tokens with embedded checksums (GitHub, npm, Slack,
-        // Stripe, GitLab, PyPI) can be verified without network requests.
-        // Valid checksum -> floor confidence at 0.9 (confirmed real token format).
-        // Invalid checksum -> cap confidence at 0.1 (confirmed false positive).
-        let checksum_result = crate::checksum::validate_checksum(credential);
-        if checksum_result == crate::checksum::ChecksumResult::Invalid {
+        // Stripe, GitLab, PyPI) can be verified without network requests. The
+        // engine match-policy owner makes the drop/floor rule shared with hot,
+        // generic, entropy, and ML emitters.
+        let checksum_policy = super::scoring::checksum_policy_for(credential);
+        if checksum_policy.is_invalid() {
             // Checksum failed: NOT a real token. Skip expensive ML scoring.
             crate::telemetry::record_shape_suppression(
                 chunk.metadata.path.as_deref(),
@@ -267,11 +267,11 @@ impl CompiledScanner {
 
         match score_result {
             super::MlScoreResult::Final(mut confidence) => {
-                // Boost confidence for checksum-validated tokens (single
-                // source of truth for the floor; see `checksum::CHECKSUM_VALID_FLOOR`).
-                if checksum_result == crate::checksum::ChecksumResult::Valid {
-                    confidence = confidence.max(crate::checksum::CHECKSUM_VALID_FLOOR);
-                }
+                let Some(adjusted_confidence) = checksum_policy.adjusted_confidence(confidence)
+                else {
+                    return;
+                };
+                confidence = adjusted_confidence;
                 let source_offset =
                     preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
                 let raw_match = build_raw_match(

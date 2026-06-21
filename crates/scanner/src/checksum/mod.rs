@@ -88,6 +88,34 @@ pub(crate) fn crc32_base62_suffix(data: &[u8], width: usize) -> String {
 /// [`ScannerConfig::HIGH_PRECISION_MIN_CONFIDENCE`](crate::ScannerConfig::HIGH_PRECISION_MIN_CONFIDENCE).
 pub const CHECKSUM_VALID_FLOOR: f64 = 0.9;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ChecksumConfidenceDecision {
+    result: ChecksumResult,
+}
+
+impl ChecksumConfidenceDecision {
+    #[inline]
+    pub(crate) fn for_credential(credential: &str) -> Self {
+        Self {
+            result: validate_checksum(credential),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn is_invalid(self) -> bool {
+        matches!(self.result, ChecksumResult::Invalid)
+    }
+
+    #[inline]
+    pub(crate) fn adjusted_confidence(self, confidence: f64) -> Option<f64> {
+        match self.result {
+            ChecksumResult::Invalid => None,
+            ChecksumResult::Valid => Some(confidence.max(CHECKSUM_VALID_FLOOR)),
+            ChecksumResult::NotApplicable => Some(confidence),
+        }
+    }
+}
+
 /// Map a credential's embedded-checksum verdict onto a confidence decision.
 ///
 /// This is the single source of truth for how a [`ChecksumResult`] adjusts a
@@ -107,11 +135,7 @@ pub const CHECKSUM_VALID_FLOOR: f64 = 0.9;
 ///   unchanged.
 #[inline]
 pub fn checksum_adjusted_confidence(confidence: f64, credential: &str) -> Option<f64> {
-    match validate_checksum(credential) {
-        ChecksumResult::Invalid => None,
-        ChecksumResult::Valid => Some(confidence.max(CHECKSUM_VALID_FLOOR)),
-        ChecksumResult::NotApplicable => Some(confidence),
-    }
+    ChecksumConfidenceDecision::for_credential(credential).adjusted_confidence(confidence)
 }
 
 pub(crate) fn warm_runtime_regexes() {

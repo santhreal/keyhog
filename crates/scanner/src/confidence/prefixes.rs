@@ -104,12 +104,17 @@ pub(crate) fn known_prefix_confidence_floor(credential: &str) -> Option<f64> {
     {
         return None;
     }
-    if KNOWN_PREFIXES
-        .iter()
-        .any(|prefix| credential.starts_with(prefix))
-    {
-        Some(0.8)
-    } else {
-        None
+    if let Some(body) = known_prefix_body(credential) {
+        if crate::placeholder_words::bytes_contain_placeholder_word(body.as_bytes()) {
+            return None;
+        }
+        return Some(0.8);
     }
+    None
+}
+
+pub(crate) fn known_prefix_body(credential: &str) -> Option<&str> {
+    KNOWN_PREFIXES
+        .iter()
+        .find_map(|prefix| credential.strip_prefix(prefix))
 }

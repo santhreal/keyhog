@@ -221,21 +221,14 @@ impl CompiledScanner {
                 }
 
                 // Embedded-checksum adjudication for hot literals that carry a
-                // self-verifying CRC (`ghp_`, `xoxb-`, `xoxp-`). The fast path
-                // emits matches DIRECTLY - bypassing the regex/`process_match`
-                // and ML scorers - so before this gate a fabricated `ghp_…`
-                // survived at the 0.8 prefix floor and a confirmed one never
-                // cleared the `--precision` 0.85 bar. Route through the single
-                // shared policy so the fast path adjudicates checksums exactly
-                // like every other emission path: `Invalid` drops the match,
-                // `Valid` floors confidence at `CHECKSUM_VALID_FLOOR`, and a
-                // checksum-less hot literal (AKIA/ASIA/SG./sk-proj-/sq0csp-)
-                // keeps the prefix floor. Done before the metadata interning
-                // below so a dropped token pays for none of it.
+                // self-verifying CRC (`ghp_`, `xoxb-`, `xoxp-`). Keep the
+                // literal match fast, but route the confidence/drop decision
+                // through the shared match-policy owner so this path cannot
+                // drift from detector/generic/entropy emitters.
                 let base_confidence =
                     crate::confidence::known_prefix_confidence_floor(credential).unwrap_or(0.7); // LAW10: empty/absent => documented numeric/sentinel default, recall-safe
                 let Some(confidence) =
-                    crate::checksum::checksum_adjusted_confidence(base_confidence, credential)
+                    super::scoring::apply_checksum_confidence(base_confidence, credential)
                 else {
                     continue;
                 };

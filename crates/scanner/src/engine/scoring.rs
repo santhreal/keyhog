@@ -12,6 +12,18 @@ use super::*;
 use crate::context;
 use std::collections::HashMap;
 
+pub(super) type CredentialChecksumPolicy = crate::checksum::ChecksumConfidenceDecision;
+
+#[inline]
+pub(super) fn checksum_policy_for(credential: &str) -> CredentialChecksumPolicy {
+    crate::checksum::ChecksumConfidenceDecision::for_credential(credential)
+}
+
+#[inline]
+pub(super) fn apply_checksum_confidence(confidence: f64, credential: &str) -> Option<f64> {
+    checksum_policy_for(credential).adjusted_confidence(confidence)
+}
+
 impl CompiledScanner {
     pub(crate) fn match_companions(
         &self,

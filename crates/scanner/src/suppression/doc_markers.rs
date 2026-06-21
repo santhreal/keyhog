@@ -6,9 +6,7 @@
 //! `Suppress` means "this is a documentation specimen, suppress now";
 //! `KeepChecking` means "fall through to the rest of the decision tree".
 
-use super::shape_gates::{
-    known_prefix_body, looks_like_prefixed_masked_sequence, RFC7519_EXAMPLE_JWT_PREFIX,
-};
+use super::shape_gates::{looks_like_prefixed_masked_sequence, RFC7519_EXAMPLE_JWT_PREFIX};
 
 /// Outcome of the doc/placeholder/marker pre-checks.
 pub(super) enum MarkerVerdict {
@@ -212,7 +210,7 @@ pub(super) fn check_markers(
     // downstream shape gates would only generate FPs, so we return early.
     // `TESTKEY_*` adversarial fixtures must not take this fast path; they
     // fall through to the repetitive-mask gates in the decision tree.
-    let known_prefix_body = known_prefix_body(credential);
+    let known_prefix_body = crate::confidence::known_prefix_body(credential);
     if let Some(body) = known_prefix_body {
         if looks_like_prefixed_masked_sequence(body) {
             crate::telemetry::record_shape_suppression(

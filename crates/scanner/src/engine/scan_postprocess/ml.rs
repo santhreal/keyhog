@@ -142,14 +142,10 @@ impl CompiledScanner {
             // cryptographically-confirmed token (GitHub/npm/Slack/Stripe/GitLab/
             // PyPI) clears the `--precision` 0.85 bar regardless of how ML or
             // calibration scored its shape, and a checksum-failing one is
-            // dropped. `process_match` already rejects `Invalid` before a match
-            // reaches `ml_pending`, but the Pending branch never applied the
-            // `Valid` floor that the non-ML `Final` branch did - so a confirmed
-            // GitHub PAT was scored only on its 0.8 prefix floor and silently
-            // suppressed under precision. Routing through the one shared policy
-            // closes that gap and keeps the ML path self-consistent.
+            // dropped. Route through the shared match-policy owner to keep this
+            // batch path self-consistent with direct emitters.
             let Some(final_score) =
-                crate::checksum::checksum_adjusted_confidence(final_score, &pending.credential)
+                super::scoring::apply_checksum_confidence(final_score, &pending.credential)
             else {
                 continue;
             };

@@ -239,14 +239,11 @@ impl CompiledScanner {
 
             // Non-ML path (the `ml` feature is compiled out, or ML disabled at
             // runtime). Emit directly with the entropy heuristic, routed through
-            // the post-ML shape penalties and the single checksum policy exactly
-            // as before: the uniform-base64-blob / encoded-binary / placeholder /
-            // diversity penalties (×0.02) apply, then a prefix-bearing token with
-            // an Invalid embedded CRC is dropped and a Valid one floored.
+            // the post-ML shape penalties and the shared checksum policy owner.
             let confidence =
                 crate::confidence::apply_post_ml_penalties(confidence, &entropy_match.value, false);
             let Some(confidence) =
-                crate::checksum::checksum_adjusted_confidence(confidence, &entropy_match.value)
+                super::scoring::apply_checksum_confidence(confidence, &entropy_match.value)
             else {
                 continue;
             };

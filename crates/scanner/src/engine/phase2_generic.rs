@@ -347,14 +347,12 @@ impl CompiledScanner {
                     allow_encoded_text_secret,
                 );
 
-                // Single checksum policy on the generic-secret fallback emit path
-                // (checksum/mod.rs documents EVERY emission path routes through
-                // this): a prefix-bearing token (`ghp_`/`npm_`/…) with an Invalid
-                // embedded CRC is dropped, and a Valid one is floored to
-                // CHECKSUM_VALID_FLOOR BEFORE the min-confidence gate so a
-                // confirmed token clears the bar even on the phase-2 path.
-                let Some(confidence) =
-                    crate::checksum::checksum_adjusted_confidence(confidence, value)
+                // Shared checksum policy on the generic-secret fallback emit
+                // path: a prefix-bearing token (`ghp_`/`npm_`/…) with an
+                // Invalid embedded CRC is dropped, and a Valid one is floored
+                // before the min-confidence gate so a confirmed token clears
+                // the bar even on the phase-2 path.
+                let Some(confidence) = super::scoring::apply_checksum_confidence(confidence, value)
                 else {
                     // A prefix-bearing token with an INVALID embedded checksum is a
                     // confirmed false positive — trace the drop (KH-L-0412, Law-10)
