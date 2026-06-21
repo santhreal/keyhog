@@ -150,13 +150,46 @@ pub(crate) fn find_entropy_secrets_with_canonical_lift(
 ) -> Vec<EntropyMatch> {
     let lines: Vec<&str> = text.lines().collect();
     let line_offsets = crate::pipeline::compute_line_offsets(text);
-    let mut matches = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-    let keyword_lines = find_keyword_assignment_lines(&lines, secret_keywords);
-
-    scan_keyword_contexts(
+    find_entropy_secrets_with_canonical_lift_and_lines(
         &lines,
         &line_offsets,
+        min_length,
+        context_lines,
+        entropy_threshold,
+        keyword_free_threshold,
+        secret_keywords,
+        test_keywords,
+        placeholder_keywords,
+        skip_lines,
+        allow_canonical_lift,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn find_entropy_secrets_with_canonical_lift_and_lines(
+    lines: &[&str],
+    line_offsets: &[usize],
+    min_length: usize,
+    context_lines: usize,
+    entropy_threshold: f64,
+    keyword_free_threshold: f64,
+    secret_keywords: &[String],
+    test_keywords: &[String],
+    placeholder_keywords: &[String],
+    skip_lines: Option<&std::collections::HashSet<usize>>,
+    allow_canonical_lift: bool,
+) -> Vec<EntropyMatch> {
+    debug_assert!(
+        line_offsets.len() >= lines.len(),
+        "entropy line offsets must cover every split line"
+    );
+    let mut matches = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    let keyword_lines = find_keyword_assignment_lines(lines, secret_keywords);
+
+    scan_keyword_contexts(
+        lines,
+        line_offsets,
         &keyword_lines,
         min_length,
         context_lines,
@@ -170,8 +203,8 @@ pub(crate) fn find_entropy_secrets_with_canonical_lift(
         allow_canonical_lift,
     );
     scan_keyword_free_candidates(
-        &lines,
-        &line_offsets,
+        lines,
+        line_offsets,
         entropy_threshold,
         keyword_free_threshold,
         &mut seen,
@@ -288,8 +321,18 @@ pub(crate) fn has_isolated_bare_secret_candidate(
     entropy_threshold: f64,
     placeholder_keywords: &[String],
 ) -> bool {
+    let lines: Vec<&str> = text.lines().collect();
+    has_isolated_bare_secret_candidate_with_lines(&lines, entropy_threshold, placeholder_keywords)
+}
+
+#[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
+pub(crate) fn has_isolated_bare_secret_candidate_with_lines(
+    lines: &[&str],
+    entropy_threshold: f64,
+    placeholder_keywords: &[String],
+) -> bool {
     let threshold = isolated_bare_entropy_threshold(entropy_threshold);
-    text.lines().any(|line| {
+    lines.iter().any(|line| {
         if is_likely_innocuous_line(line) {
             return false;
         }
@@ -306,12 +349,11 @@ pub(crate) fn has_isolated_bare_secret_candidate(
 }
 
 #[cfg(any(feature = "simd", feature = "gpu", feature = "entropy"))]
-pub(crate) fn has_lower_dash_app_password_candidate(
-    text: &str,
+pub(crate) fn has_lower_dash_app_password_candidate_with_lines(
+    lines: &[&str],
     config: &crate::ScannerConfig,
 ) -> bool {
-    let lines: Vec<&str> = text.lines().collect();
-    for (_, keyword_line) in find_keyword_assignment_lines(&lines, &config.secret_keywords) {
+    for (_, keyword_line) in find_keyword_assignment_lines(lines, &config.secret_keywords) {
         if is_likely_innocuous_line(keyword_line) {
             continue;
         }

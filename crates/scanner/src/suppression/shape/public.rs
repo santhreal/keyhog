@@ -4,12 +4,6 @@ use crate::suppression::token_randomness::TokenRandomness;
 /// `product-area-contract:v1`. Under keys such as `schema_token` the generic
 /// bridge used to report them as credentials; a versioned kebab identifier is a
 /// public contract name, not a secret.
-#[cfg(test)]
-pub(crate) fn looks_like_public_version_identifier(value: &str) -> bool {
-    let randomness = TokenRandomness::for_candidate(value);
-    looks_like_public_version_identifier_with_randomness(value, &randomness)
-}
-
 pub(crate) fn looks_like_public_version_identifier_with_randomness(
     value: &str,
     randomness: &TokenRandomness<'_>,
@@ -79,12 +73,6 @@ pub(crate) fn looks_like_public_reference_selector(value: &str) -> bool {
 /// Public taxonomy / provenance labels used in source ledgers:
 /// `official-author-documentation`, `primary-protocol-specification`,
 /// `source-available`, etc.
-#[cfg(test)]
-pub(crate) fn looks_like_public_metadata_identifier(value: &str) -> bool {
-    let randomness = TokenRandomness::for_candidate(value);
-    looks_like_public_metadata_identifier_with_randomness(value, &randomness)
-}
-
 pub(crate) fn looks_like_public_metadata_identifier_with_randomness(
     value: &str,
     randomness: &TokenRandomness<'_>,
@@ -282,12 +270,6 @@ fn looks_like_caesar_shifted_public_issue_reference(value: &str) -> bool {
 
 /// Public source/doc/build artifact references often get concatenated by
 /// markdown/TOML extraction into dense strings (`src/foo.rs:1-3docs/bar.md`).
-#[cfg(test)]
-pub(crate) fn looks_like_public_artifact_reference(value: &str) -> bool {
-    let randomness = TokenRandomness::for_candidate(value);
-    looks_like_public_artifact_reference_with_randomness(value, &randomness)
-}
-
 pub(crate) fn looks_like_public_artifact_reference_with_randomness(
     value: &str,
     randomness: &TokenRandomness<'_>,
@@ -371,12 +353,6 @@ pub(crate) fn looks_like_public_artifact_reference_with_randomness(
 /// Shell/template values are assembled at runtime. The generic bridge may see
 /// either the full `${VAR}` / `$(cmd)` form or a regex-truncated prefix ending
 /// in `$`; both are source templates, not literal credentials.
-#[cfg(test)]
-pub(crate) fn looks_like_shell_template_value(value: &str) -> bool {
-    let randomness = TokenRandomness::for_candidate(value);
-    looks_like_shell_template_value_with_randomness(value, &randomness)
-}
-
 pub(crate) fn looks_like_shell_template_value_with_randomness(
     value: &str,
     randomness: &TokenRandomness<'_>,

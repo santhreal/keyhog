@@ -149,13 +149,24 @@ pub fn is_entropy_appropriate_with_content(
     text: &str,
     secret_keywords: &[String],
 ) -> bool {
+    let lines: Vec<&str> = text.lines().collect();
+    is_entropy_appropriate_with_content_lines(path, allow_source_files, &lines, secret_keywords)
+}
+
+pub(crate) fn is_entropy_appropriate_with_content_lines(
+    path: Option<&str>,
+    allow_source_files: bool,
+    lines: &[&str],
+    secret_keywords: &[String],
+) -> bool {
     let source_path = crate::decode::caesar::is_program_source_code_path(path);
     let has_secret_keyword_line = if source_path && !allow_source_files {
-        text.lines()
+        lines
+            .iter()
+            .copied()
             .any(keywords::line_has_credential_assignment_surface)
     } else {
-        !keywords::find_keyword_assignment_lines(&text.lines().collect::<Vec<_>>(), secret_keywords)
-            .is_empty()
+        !keywords::find_keyword_assignment_lines(lines, secret_keywords).is_empty()
     };
     is_entropy_appropriate_inner(path, allow_source_files, has_secret_keyword_line)
 }

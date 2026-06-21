@@ -159,15 +159,6 @@ impl<'a> TokenRandomness<'a> {
     }
 }
 
-/// Mean adjacent-bigram log-probability over the value's alphabetic runs, or
-/// `None` when there are too few alphabetic bigrams to judge. Bigrams are only
-/// counted between two ADJACENT ASCII letters (a digit/symbol breaks the run),
-/// so an embedded digit never bridges an improbable cross-segment pair.
-#[cfg(test)]
-pub(crate) fn mean_bigram_logprob(value: &str) -> Option<f32> {
-    RandomTokenEvidence::analyze(value).mean_bigram_logprob()
-}
-
 /// `true` iff `value` reads as a RANDOM token (real credential) rather than a
 /// pronounceable dictionary identifier (code reference) OR a low-diversity
 /// repetitive pattern. Fails safe to `false` (treat as NOT random ⇒ keep
@@ -187,13 +178,7 @@ pub(crate) fn is_random_token(value: &str) -> bool {
 ///
 /// Used ONLY for the contiguous gates (`pure_identifier` / `type_name`), whose
 /// own predicates already reject digit-bearing values; the WORD-SEPARATED gate
-/// needs the stricter [`keep_word_separated_gate`].
-#[inline]
-#[cfg(test)]
-pub(crate) fn keep_identifier_gate(value: &str) -> bool {
-    !is_random_token(value)
-}
-
+/// needs the stricter [`keep_word_separated_gate_with_randomness`].
 #[inline]
 pub(crate) fn keep_identifier_gate_with_randomness(
     value: &str,
@@ -202,33 +187,18 @@ pub(crate) fn keep_identifier_gate_with_randomness(
     !randomness.is_random_token(value)
 }
 
-/// Stricter sibling of [`keep_identifier_gate`] for the WORD-SEPARATED identifier
-/// gate (KH-L-0414). The randomness model is an ENGLISH-WORD model, and a
-/// multi-segment programmer identifier with embedded digits / uppercase splits
-/// into SHORT acronym fragments (`d2i_PKCS7_bio` → `pkcs`, `curlx_memdup0` →
-/// `memdup`) that the model mis-scores as random — so `is_random_token` alone is
-/// unsound here. Real CredData word-separated passwords are uniformly
-/// all-lowercase letters + `_`/`-` separators (`abxnj_gjvpuqzo`,
-/// `aapqhgn-qhuuc-trnmf`); requiring that shape BEFORE trusting the randomness
-/// verdict recovers 141 real passwords while keeping every acronym / product-key
-/// identifier (`d2i_PKCS7_bio`, `sqlite3_malloc64`, `2iw9-n01w-Mc4V-faEC`)
-/// suppressed. Returns `true` (stay suppressed) for anything that is not an
-/// all-lowercase-letter (+ separator) random token.
-#[inline]
-#[cfg(test)]
-pub(crate) fn keep_word_separated_gate(value: &str) -> bool {
-    // Any digit / uppercase / non-ASCII byte ⇒ not the clean lowercase password
-    // shape ⇒ keep the gate engaged (the acronym / product-key class the English
-    // model would mis-lift).
-    if !value
-        .bytes()
-        .all(|b| b.is_ascii_lowercase() || b == b'_' || b == b'-')
-    {
-        return true;
-    }
-    !is_random_token(value)
-}
-
+/// Stricter sibling of [`keep_identifier_gate_with_randomness`] for the
+/// WORD-SEPARATED identifier gate (KH-L-0414). The randomness model is an
+/// ENGLISH-WORD model, and a multi-segment programmer identifier with embedded
+/// digits / uppercase splits into SHORT acronym fragments (`d2i_PKCS7_bio` →
+/// `pkcs`, `curlx_memdup0` → `memdup`) that the model mis-scores as random —
+/// so `is_random_token` alone is unsound here. Real CredData word-separated
+/// passwords are uniformly all-lowercase letters + `_`/`-` separators
+/// (`abxnj_gjvpuqzo`, `aapqhgn-qhuuc-trnmf`); requiring that shape BEFORE
+/// trusting the randomness verdict recovers 141 real passwords while keeping
+/// every acronym / product-key identifier (`d2i_PKCS7_bio`, `sqlite3_malloc64`,
+/// `2iw9-n01w-Mc4V-faEC`) suppressed. Returns `true` (stay suppressed) for
+/// anything that is not an all-lowercase-letter (+ separator) random token.
 #[inline]
 pub(crate) fn keep_word_separated_gate_with_randomness(
     value: &str,

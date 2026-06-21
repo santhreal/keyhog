@@ -28,24 +28,25 @@ impl CompiledScanner {
         if chunk.metadata.source_type.contains("/caesar") {
             return;
         }
-        let path_entropy_appropriate = crate::entropy::is_entropy_appropriate_with_content(
+        let entropy_lines: Vec<&str> = preprocessed.text.lines().collect();
+        let path_entropy_appropriate = crate::entropy::is_entropy_appropriate_with_content_lines(
             chunk.metadata.path.as_deref(),
             self.config.entropy_in_source_files,
-            &preprocessed.text,
+            &entropy_lines,
             &self.config.secret_keywords,
         );
         let source_entropy_requires_same_line_credential = !self.config.entropy_in_source_files
             && crate::decode::caesar::is_program_source_code_path(chunk.metadata.path.as_deref());
         let isolated_bare_candidate = !path_entropy_appropriate
-            && crate::entropy::scanner::has_isolated_bare_secret_candidate(
-                &preprocessed.text,
+            && crate::entropy::scanner::has_isolated_bare_secret_candidate_with_lines(
+                &entropy_lines,
                 self.config.entropy_threshold,
                 &self.config.placeholder_keywords,
             );
         #[cfg(feature = "simd")]
         let lower_dash_app_password_candidate = path_entropy_appropriate
-            && crate::entropy::scanner::has_lower_dash_app_password_candidate(
-                &preprocessed.text,
+            && crate::entropy::scanner::has_lower_dash_app_password_candidate_with_lines(
+                &entropy_lines,
                 &self.config,
             );
         if !path_entropy_appropriate && !isolated_bare_candidate {
@@ -91,18 +92,20 @@ impl CompiledScanner {
         let allow_canonical_lift = self.config.ml_enabled && self.config.entropy_ml_authoritative;
         #[cfg(not(feature = "ml"))]
         let allow_canonical_lift = false;
-        let entropy_matches = crate::entropy::scanner::find_entropy_secrets_with_canonical_lift(
-            &preprocessed.text,
-            self.config.min_secret_len,
-            1,
-            self.config.entropy_threshold,
-            keyword_free_threshold,
-            &self.config.secret_keywords,
-            &self.config.test_keywords,
-            &self.config.placeholder_keywords,
-            Some(&skip_lines),
-            allow_canonical_lift,
-        );
+        let entropy_matches =
+            crate::entropy::scanner::find_entropy_secrets_with_canonical_lift_and_lines(
+                &entropy_lines,
+                line_offsets,
+                self.config.min_secret_len,
+                1,
+                self.config.entropy_threshold,
+                keyword_free_threshold,
+                &self.config.secret_keywords,
+                &self.config.test_keywords,
+                &self.config.placeholder_keywords,
+                Some(&skip_lines),
+                allow_canonical_lift,
+            );
         for entropy_match in entropy_matches {
             // Resolve metadata once; emit clones the pre-interned triple.
             let entropy_meta_idx = helpers::classify_entropy_detector_index(&entropy_match.keyword);

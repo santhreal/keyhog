@@ -6,12 +6,6 @@ use crate::suppression::token_randomness::TokenRandomness;
 /// `vec![...]`, `.unwrap_or(u32::MAX)`, and `foo(bar)` after the entropy or
 /// generic bridge has already mistaken nearby `token`/`key` identifiers for a
 /// credential anchor.
-#[cfg(test)]
-pub(crate) fn looks_like_source_code_expression(value: &str) -> bool {
-    let randomness = TokenRandomness::for_candidate(value);
-    looks_like_source_code_expression_with_randomness(value, &randomness)
-}
-
 pub(crate) fn looks_like_source_code_expression_with_randomness(
     value: &str,
     randomness: &TokenRandomness<'_>,
@@ -197,12 +191,6 @@ fn looks_like_source_format_template_fragment(value: &str) -> bool {
             || template.contains("%s"))
 }
 
-#[cfg(test)]
-pub(crate) fn looks_like_source_symbol_identifier(value: &str) -> bool {
-    let randomness = TokenRandomness::for_candidate(value);
-    looks_like_source_symbol_identifier_with_randomness(value, &randomness)
-}
-
 pub(crate) fn looks_like_source_symbol_identifier_with_randomness(
     value: &str,
     randomness: &TokenRandomness<'_>,
@@ -330,13 +318,6 @@ fn has_call_or_index_syntax(value: &str) -> bool {
         }
     }
     false
-}
-
-#[cfg(feature = "entropy")]
-#[cfg(test)]
-pub(crate) fn looks_like_source_type_identifier(value: &str) -> bool {
-    let randomness = TokenRandomness::for_candidate(value);
-    looks_like_source_type_identifier_with_randomness(value, &randomness)
 }
 
 #[cfg(feature = "entropy")]
