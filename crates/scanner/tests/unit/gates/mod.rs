@@ -209,6 +209,7 @@ pub mod structured_parsers_no_unwrap_expect;
 pub mod structured_parsers_non_empty;
 pub mod suppression_known_example_ctx_owner;
 pub mod suppression_named_detector_ctx_owner;
+pub mod suppression_randomness_context_owner;
 pub mod suppression_shape_canonical_imports;
 pub mod telemetry_no_inline_tests;
 pub mod telemetry_no_unwrap_expect;

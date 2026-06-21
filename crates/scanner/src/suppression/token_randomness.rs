@@ -73,35 +73,99 @@ const RANDOM_LOGPROB_THRESHOLD: f32 = -6.85;
 /// drops no real password.
 const MIN_DISTINCT_LETTERS: usize = 3;
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct RandomTokenEvidence {
+    mean_bigram_logprob: Option<f32>,
+    distinct_letters: usize,
+}
+
+impl RandomTokenEvidence {
+    pub(crate) fn analyze(value: &str) -> Self {
+        let table = &*BIGRAM_LOGPROB;
+        let bytes = value.as_bytes();
+        let mut sum = 0.0f32;
+        let mut pairs = 0u32;
+        let mut alpha = 0usize;
+        let mut prev: Option<usize> = None;
+        let mut seen_letters = 0u32;
+        for &byte in bytes {
+            if byte.is_ascii_alphabetic() {
+                alpha += 1;
+                let idx = (byte.to_ascii_lowercase() - b'a') as usize;
+                seen_letters |= 1u32 << idx;
+                if let Some(p) = prev {
+                    sum += table[p * 26 + idx];
+                    pairs += 1;
+                }
+                prev = Some(idx);
+            } else {
+                // digit / symbol ends the current alphabetic run
+                prev = None;
+            }
+        }
+        let mean_bigram_logprob = if alpha < MIN_ALPHA || pairs == 0 {
+            None
+        } else {
+            Some(sum / pairs as f32)
+        };
+        Self {
+            mean_bigram_logprob,
+            distinct_letters: seen_letters.count_ones() as usize,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn mean_bigram_logprob(self) -> Option<f32> {
+        self.mean_bigram_logprob
+    }
+
+    #[inline]
+    pub(crate) fn is_random_token(self) -> bool {
+        self.mean_bigram_logprob()
+            .is_some_and(|score| score <= RANDOM_LOGPROB_THRESHOLD)
+            && self.distinct_letters >= MIN_DISTINCT_LETTERS
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct TokenRandomness<'a> {
+    candidate: &'a str,
+    candidate_evidence: RandomTokenEvidence,
+}
+
+impl<'a> TokenRandomness<'a> {
+    #[inline]
+    pub(crate) fn for_candidate(candidate: &'a str) -> Self {
+        Self {
+            candidate,
+            candidate_evidence: RandomTokenEvidence::analyze(candidate),
+        }
+    }
+
+    #[inline]
+    pub(crate) fn evidence_for(&self, value: &str) -> RandomTokenEvidence {
+        if std::ptr::eq(value.as_ptr(), self.candidate.as_ptr())
+            && value.len() == self.candidate.len()
+        {
+            self.candidate_evidence
+        } else {
+            RandomTokenEvidence::analyze(value)
+        }
+    }
+
+    #[inline]
+    pub(crate) fn is_random_token(&self, value: &str) -> bool {
+        self.evidence_for(value).is_random_token()
+    }
+}
+
 /// Mean adjacent-bigram log-probability over the value's alphabetic runs, or
 /// `None` when there are too few alphabetic bigrams to judge. Bigrams are only
 /// counted between two ADJACENT ASCII letters (a digit/symbol breaks the run),
 /// so an embedded digit never bridges an improbable cross-segment pair.
+#[cfg(test)]
 pub(crate) fn mean_bigram_logprob(value: &str) -> Option<f32> {
-    let table = &*BIGRAM_LOGPROB;
-    let bytes = value.as_bytes();
-    let mut sum = 0.0f32;
-    let mut pairs = 0u32;
-    let mut alpha = 0usize;
-    let mut prev: Option<usize> = None;
-    for &byte in bytes {
-        if byte.is_ascii_alphabetic() {
-            alpha += 1;
-            let idx = (byte.to_ascii_lowercase() - b'a') as usize;
-            if let Some(p) = prev {
-                sum += table[p * 26 + idx];
-                pairs += 1;
-            }
-            prev = Some(idx);
-        } else {
-            // digit / symbol ends the current alphabetic run
-            prev = None;
-        }
-    }
-    if alpha < MIN_ALPHA || pairs == 0 {
-        return None;
-    }
-    Some(sum / pairs as f32)
+    RandomTokenEvidence::analyze(value).mean_bigram_logprob()
 }
 
 /// `true` iff `value` reads as a RANDOM token (real credential) rather than a
@@ -110,27 +174,7 @@ pub(crate) fn mean_bigram_logprob(value: &str) -> Option<f32> {
 /// suppressing) when the value is too short/sparse to judge or has too few
 /// distinct letters — soundness over reach, independent of any caller-side floor.
 pub(crate) fn is_random_token(value: &str) -> bool {
-    match mean_bigram_logprob(value) {
-        // Improbable-under-English AND diverse enough to be a real random token.
-        Some(score) => {
-            score <= RANDOM_LOGPROB_THRESHOLD && distinct_letters(value) >= MIN_DISTINCT_LETTERS
-        }
-        None => false,
-    }
-}
-
-/// Number of DISTINCT ASCII letters (case-folded) in `value`. A repetitive run
-/// (`aaaaaaaa` → 1) or an alternating pattern (`xzxzxzxz` → 2) has improbable
-/// English bigrams but is not random; [`is_random_token`] requires
-/// [`MIN_DISTINCT_LETTERS`] to reject those.
-fn distinct_letters(value: &str) -> usize {
-    let mut seen = 0u32;
-    for &b in value.as_bytes() {
-        if b.is_ascii_alphabetic() {
-            seen |= 1u32 << (b.to_ascii_lowercase() - b'a');
-        }
-    }
-    seen.count_ones() as usize
+    RandomTokenEvidence::analyze(value).is_random_token()
 }
 
 /// Shared decision for the CONTIGUOUS identifier/type-name shape gates
@@ -145,8 +189,17 @@ fn distinct_letters(value: &str) -> usize {
 /// own predicates already reject digit-bearing values; the WORD-SEPARATED gate
 /// needs the stricter [`keep_word_separated_gate`].
 #[inline]
+#[cfg(test)]
 pub(crate) fn keep_identifier_gate(value: &str) -> bool {
     !is_random_token(value)
+}
+
+#[inline]
+pub(crate) fn keep_identifier_gate_with_randomness(
+    value: &str,
+    randomness: &TokenRandomness<'_>,
+) -> bool {
+    !randomness.is_random_token(value)
 }
 
 /// Stricter sibling of [`keep_identifier_gate`] for the WORD-SEPARATED identifier
@@ -162,6 +215,7 @@ pub(crate) fn keep_identifier_gate(value: &str) -> bool {
 /// suppressed. Returns `true` (stay suppressed) for anything that is not an
 /// all-lowercase-letter (+ separator) random token.
 #[inline]
+#[cfg(test)]
 pub(crate) fn keep_word_separated_gate(value: &str) -> bool {
     // Any digit / uppercase / non-ASCII byte ⇒ not the clean lowercase password
     // shape ⇒ keep the gate engaged (the acronym / product-key class the English
@@ -173,4 +227,21 @@ pub(crate) fn keep_word_separated_gate(value: &str) -> bool {
         return true;
     }
     !is_random_token(value)
+}
+
+#[inline]
+pub(crate) fn keep_word_separated_gate_with_randomness(
+    value: &str,
+    randomness: &TokenRandomness<'_>,
+) -> bool {
+    // Any digit / uppercase / non-ASCII byte ⇒ not the clean lowercase password
+    // shape ⇒ keep the gate engaged (the acronym / product-key class the English
+    // model would mis-lift).
+    if !value
+        .bytes()
+        .all(|b| b.is_ascii_lowercase() || b == b'_' || b == b'-')
+    {
+        return true;
+    }
+    !randomness.is_random_token(value)
 }

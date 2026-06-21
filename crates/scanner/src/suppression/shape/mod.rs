@@ -22,15 +22,15 @@ pub(crate) use path::{looks_like_scheme_prefixed_uri, looks_like_url_or_path_seg
 pub(crate) use prose::looks_like_english_prose;
 pub(crate) use public::{
     looks_like_html_event_handler_fragment, looks_like_percent_encoded_markup,
-    looks_like_public_artifact_reference, looks_like_public_evidence_identifier,
-    looks_like_public_metadata_identifier, looks_like_public_reference_selector,
-    looks_like_public_version_identifier, looks_like_shell_template_value,
+    looks_like_public_evidence_identifier, looks_like_public_reference_selector,
+    looks_like_public_version_identifier_with_randomness,
 };
 #[cfg(feature = "entropy")]
-pub(crate) use source::looks_like_source_type_identifier;
+pub(crate) use source::looks_like_source_type_identifier_with_randomness;
 pub(crate) use source::{
     looks_like_dotted_source_identifier, looks_like_program_identifier,
-    looks_like_source_code_expression, looks_like_source_symbol_identifier,
+    looks_like_source_code_expression_with_randomness,
+    looks_like_source_symbol_identifier_with_randomness,
 };
 
 /// True if `credential` is an identifier / natural-language shape rather
@@ -209,18 +209,28 @@ pub(crate) enum PublicShapeScope {
 /// because weak-anchor named detectors still carry service evidence: they need
 /// public template/version/markup/prose suppression, but broad artifact/domain
 /// suppressors would erase real service URLs and tenant hostnames.
+#[cfg(test)]
 pub(crate) fn public_noncredential_shape(
     value: &str,
     scope: PublicShapeScope,
 ) -> Option<&'static str> {
+    let randomness = crate::suppression::token_randomness::TokenRandomness::for_candidate(value);
+    public_noncredential_shape_with_randomness(value, scope, &randomness)
+}
+
+pub(crate) fn public_noncredential_shape_with_randomness(
+    value: &str,
+    scope: PublicShapeScope,
+    randomness: &crate::suppression::token_randomness::TokenRandomness<'_>,
+) -> Option<&'static str> {
     if looks_like_train_case_prose_identifier(value) {
         return Some("train_case_prose_identifier");
     }
-    if looks_like_public_version_identifier(value) {
+    if public::looks_like_public_version_identifier_with_randomness(value, randomness) {
         return Some("public_version_identifier");
     }
     if scope == PublicShapeScope::WeakAnchor {
-        if looks_like_shell_template_value(value) {
+        if public::looks_like_shell_template_value_with_randomness(value, randomness) {
             return Some("shell_template_value");
         }
         if looks_like_percent_encoded_markup(value) {
@@ -234,16 +244,16 @@ pub(crate) fn public_noncredential_shape(
     if looks_like_public_reference_selector(value) {
         return Some("public_reference_selector");
     }
-    if looks_like_public_metadata_identifier(value) {
+    if public::looks_like_public_metadata_identifier_with_randomness(value, randomness) {
         return Some("public_metadata_identifier");
     }
     if looks_like_public_evidence_identifier(value) {
         return Some("public_evidence_identifier");
     }
-    if looks_like_public_artifact_reference(value) {
+    if public::looks_like_public_artifact_reference_with_randomness(value, randomness) {
         return Some("public_artifact_reference");
     }
-    if looks_like_shell_template_value(value) {
+    if public::looks_like_shell_template_value_with_randomness(value, randomness) {
         return Some("shell_template_value");
     }
     if looks_like_percent_encoded_markup(value) {

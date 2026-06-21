@@ -12,12 +12,17 @@ pub(crate) fn entropy_match_suppressed(
     allow_canonical_lift: bool,
     source_entropy_requires_same_line_credential: bool,
 ) -> bool {
+    let randomness =
+        crate::suppression::token_randomness::TokenRandomness::for_candidate(&entropy_match.value);
     // Proximity context is too loose to release canonical shapes; require the
     // credential keyword on the same line as the candidate.
     let same_line_credential_assignment =
         value_line_has_same_line_credential_keyword(entropy_match, preprocessed, line_offsets);
     if source_entropy_requires_same_line_credential
-        && crate::suppression::shape::looks_like_source_type_identifier(&entropy_match.value)
+        && crate::suppression::shape::looks_like_source_type_identifier_with_randomness(
+            &entropy_match.value,
+            &randomness,
+        )
     {
         return true;
     }
@@ -121,9 +126,10 @@ pub(crate) fn entropy_match_suppressed(
     // prose, not an entropy-bearing secret. The same public-shape owner is used
     // by generic and weak-anchor postprocess paths so keyword context cannot
     // silently override a value-only public/non-secret shape.
-    if crate::suppression::shape::public_noncredential_shape(
+    if crate::suppression::shape::public_noncredential_shape_with_randomness(
         &entropy_match.value,
         crate::suppression::shape::PublicShapeScope::Full,
+        &randomness,
     )
     .is_some()
     {
@@ -140,12 +146,18 @@ pub(crate) fn entropy_match_suppressed(
             entropy_match.entropy,
         );
     if !high_entropy_punctuation_payload
-        && crate::suppression::shape::looks_like_source_code_expression(&entropy_match.value)
+        && crate::suppression::shape::looks_like_source_code_expression_with_randomness(
+            &entropy_match.value,
+            &randomness,
+        )
     {
         return true;
     }
     if crate::decode::caesar::is_program_source_code_path(chunk.metadata.path.as_deref())
-        && crate::suppression::shape::looks_like_source_symbol_identifier(&entropy_match.value)
+        && crate::suppression::shape::looks_like_source_symbol_identifier_with_randomness(
+            &entropy_match.value,
+            &randomness,
+        )
     {
         return true;
     }

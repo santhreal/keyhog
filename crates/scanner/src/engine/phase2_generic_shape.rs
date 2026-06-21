@@ -20,12 +20,14 @@ use super::*;
 /// `pure_identifier` / `type_name_shape` / `word_separated_identifier`) drops
 /// code references (`password = getUserName`) — but also ~1114 keyword-anchored
 /// REAL random passwords (`GRAPHITE_PASS=gjbubxsu`) that are shape-identical
-/// (lowercase, no digit). `keep_identifier_gate` returns false (LIFT the gate,
-/// recover the value) ONLY when the value reads as a RANDOM token under the
-/// English bigram model — a dictionary identifier still returns true (stay
-/// suppressed). The gate is the SHARED `token_randomness::keep_identifier_gate`
-/// so this scan-time path and the post-process weak-anchor path agree exactly.
-use crate::suppression::token_randomness::{keep_identifier_gate, keep_word_separated_gate};
+/// (lowercase, no digit). `keep_identifier_gate_with_randomness` returns false
+/// (LIFT the gate, recover the value) ONLY when the value reads as a RANDOM
+/// token under the English bigram model - a dictionary identifier still returns
+/// true (stay suppressed). The gate is the SHARED context-aware function so this
+/// scan-time path and the post-process weak-anchor path agree exactly.
+use crate::suppression::token_randomness::{
+    keep_identifier_gate_with_randomness, keep_word_separated_gate_with_randomness, TokenRandomness,
+};
 
 impl CompiledScanner {
     /// `Some(gate)` iff a generic-secret candidate `value` (with precomputed
@@ -82,13 +84,15 @@ impl CompiledScanner {
         if value.len() < 8 {
             return Some("value_too_short");
         }
+        let randomness = TokenRandomness::for_candidate(value);
         let allow_ambiguous_base64_candidate =
             generic_path_allows_ambiguous_base64_candidate(value, entropy);
         let high_entropy_punctuation_payload =
             crate::suppression::shape::looks_like_high_entropy_punctuation_payload(value, entropy);
-        if let Some(reason) = crate::suppression::shape::public_noncredential_shape(
+        if let Some(reason) = crate::suppression::shape::public_noncredential_shape_with_randomness(
             value,
             crate::suppression::shape::PublicShapeScope::Full,
+            &randomness,
         ) {
             return Some(reason);
         }
@@ -100,12 +104,18 @@ impl CompiledScanner {
             return Some("code_expression_chars");
         }
         if !high_entropy_punctuation_payload
-            && crate::suppression::shape::looks_like_source_code_expression(value)
+            && crate::suppression::shape::looks_like_source_code_expression_with_randomness(
+                value,
+                &randomness,
+            )
         {
             return Some("source_code_expression");
         }
         if crate::decode::caesar::is_source_code_path(chunk.metadata.path.as_deref())
-            && crate::suppression::shape::looks_like_source_symbol_identifier(value)
+            && crate::suppression::shape::looks_like_source_symbol_identifier_with_randomness(
+                value,
+                &randomness,
+            )
         {
             return Some("source_symbol_identifier");
         }
@@ -137,7 +147,7 @@ impl CompiledScanner {
         // only as a coincidence; a 14-char value with two upper-case
         // clusters and a digit triplet is overwhelmingly a type
         // identifier.
-        if keep_identifier_gate(value)
+        if keep_identifier_gate_with_randomness(value, &randomness)
             && value.len() >= 8
             && value.len() <= 40
             && value.as_bytes()[0].is_ascii_uppercase()
@@ -175,7 +185,9 @@ impl CompiledScanner {
             let has_digit = value.chars().any(|c| c.is_ascii_digit());
             let has_upper = value.chars().any(|c| c.is_ascii_uppercase());
             let has_lower = value.chars().any(|c| c.is_ascii_lowercase());
-            if keep_identifier_gate(value) && !(has_digit && (has_upper || has_lower)) {
+            if keep_identifier_gate_with_randomness(value, &randomness)
+                && !(has_digit && (has_upper || has_lower))
+            {
                 return Some("pure_identifier_no_digit");
             }
         }
@@ -185,31 +197,15 @@ impl CompiledScanner {
         // config field), `curlx_strdup` (C single-underscore fn).
         // The `chars().all alphanumeric+_` branch above only covers
         // underscore separators; this extends coverage to hyphens.
-        if keep_identifier_gate(value)
+        if keep_identifier_gate_with_randomness(value, &randomness)
             && crate::suppression::shape::looks_like_pure_identifier(value)
         {
             return Some("pure_identifier");
         }
-        // Word-separated identifier with embedded digits: catches
-        // FPs missed by `looks_like_pure_identifier`'s `!has_digit`
-        // guard. `s3_secret_access_key` (alist), `d2i_PKCS7_bio`
-        // (openssl ts.c), `sqlite3_int` (sqlite fts5), `curlx_memdup0`
-        // (curl ntlm_sspi.c), `X-Shopify-Access-Token` (shopify-api
-        // headers). Real credentials concentrate randomness in one
-        // long segment; programmer identifiers are sequences of
-        // short dictionary fragments.
-        //
-        // KH-L-0414: this gate uses the STRICTER `keep_word_separated_gate`, NOT
-        // the contiguous `keep_identifier_gate`. The randomness discriminator is
-        // an ENGLISH-WORD model, and multi-segment programmer identifiers carry
-        // acronym fragments (`PKCS`, `curlx`, `d2i`) that are improbable under
-        // English and would be mis-scored as random (`d2i_PKCS7_bio` −7.88,
-        // `curlx_memdup0` −7.09, both below −6.85). `keep_word_separated_gate`
-        // only trusts the random verdict for all-lowercase-letter values, so it
-        // recovers the 141 real CredData word-separated passwords
-        // (`abxnj_gjvpuqzo`, `aapqhgn-qhuuc-trnmf`) while keeping every
-        // digit/uppercase-bearing acronym & product-key identifier suppressed.
-        if keep_word_separated_gate(value)
+        // Word-separated identifier with embedded digits. The stricter
+        // context-aware gate owns the acronym/product-key carve-out and the
+        // random lowercase-password lift in `token_randomness`.
+        if keep_word_separated_gate_with_randomness(value, &randomness)
             && crate::suppression::shape::looks_like_word_separated_identifier(value)
         {
             return Some("word_separated_identifier");

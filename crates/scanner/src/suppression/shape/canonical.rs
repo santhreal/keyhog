@@ -324,6 +324,14 @@ pub(crate) fn has_n_or_more_consecutive_identical(s: &str, n: usize) -> bool {
 /// deliberately does not reject every dash-separated alnum value: high-entropy
 /// service tokens commonly carry one dash or random dash-separated chunks.
 pub(crate) fn is_dash_segmented_alnum_decoy(value: &str) -> bool {
+    let randomness = crate::suppression::token_randomness::TokenRandomness::for_candidate(value);
+    is_dash_segmented_alnum_decoy_with_randomness(value, &randomness)
+}
+
+pub(crate) fn is_dash_segmented_alnum_decoy_with_randomness(
+    value: &str,
+    randomness: &crate::suppression::token_randomness::TokenRandomness<'_>,
+) -> bool {
     if !value.contains('-') {
         return false;
     }
@@ -356,5 +364,5 @@ pub(crate) fn is_dash_segmented_alnum_decoy(value: &str) -> bool {
         && groups
             .iter()
             .all(|group| group.bytes().all(|b| b.is_ascii_alphabetic()))
-        && !crate::suppression::token_randomness::is_random_token(value)
+        && !randomness.is_random_token(value)
 }

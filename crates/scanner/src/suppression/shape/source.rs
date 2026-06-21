@@ -1,19 +1,29 @@
-use super::looks_like_public_version_identifier;
+use super::looks_like_public_version_identifier_with_randomness;
+use crate::suppression::token_randomness::TokenRandomness;
 
 /// Source-code expressions are not credentials. This catches extracted
 /// function/method/type syntax such as `TokenizationScratch::default()`,
 /// `vec![...]`, `.unwrap_or(u32::MAX)`, and `foo(bar)` after the entropy or
 /// generic bridge has already mistaken nearby `token`/`key` identifiers for a
 /// credential anchor.
+#[cfg(test)]
 pub(crate) fn looks_like_source_code_expression(value: &str) -> bool {
+    let randomness = TokenRandomness::for_candidate(value);
+    looks_like_source_code_expression_with_randomness(value, &randomness)
+}
+
+pub(crate) fn looks_like_source_code_expression_with_randomness(
+    value: &str,
+    randomness: &TokenRandomness<'_>,
+) -> bool {
     let bytes = value.as_bytes();
     if bytes.len() < 6 || bytes.len() > 240 {
         return false;
     }
     if looks_like_source_numeric_literal(value)
         || looks_like_source_const_label(value)
-        || looks_like_source_string_terminator_fragment(value)
-        || looks_like_source_escaped_string_fragment(value)
+        || looks_like_source_string_terminator_fragment(value, randomness)
+        || looks_like_source_escaped_string_fragment(value, randomness)
         || looks_like_source_format_template_fragment(value)
     {
         return true;
@@ -117,16 +127,19 @@ fn looks_like_source_const_label(value: &str) -> bool {
             .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
 }
 
-fn looks_like_source_string_terminator_fragment(value: &str) -> bool {
+fn looks_like_source_string_terminator_fragment(
+    value: &str,
+    randomness: &TokenRandomness<'_>,
+) -> bool {
     let Some(prefix) = value.strip_suffix("\")") else {
         return false;
     };
     if prefix.len() < 2 || prefix.len() > 80 {
         return false;
     }
-    looks_like_public_version_identifier(prefix)
+    looks_like_public_version_identifier_with_randomness(prefix, randomness)
         || looks_like_short_version_literal(prefix)
-        || looks_like_source_symbol_identifier(prefix)
+        || looks_like_source_symbol_identifier_with_randomness(prefix, randomness)
 }
 
 fn looks_like_short_version_literal(value: &str) -> bool {
@@ -146,7 +159,10 @@ fn looks_like_short_version_literal(value: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
-fn looks_like_source_escaped_string_fragment(value: &str) -> bool {
+fn looks_like_source_escaped_string_fragment(
+    value: &str,
+    randomness: &TokenRandomness<'_>,
+) -> bool {
     let Some(after_quote) = value.strip_prefix("\\\"") else {
         return false;
     };
@@ -154,7 +170,7 @@ fn looks_like_source_escaped_string_fragment(value: &str) -> bool {
     if inner.len() < 6 || inner.len() > 40 {
         return false;
     }
-    !crate::suppression::token_randomness::is_random_token(inner)
+    !randomness.is_random_token(inner)
         && inner
             .bytes()
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
@@ -181,7 +197,16 @@ fn looks_like_source_format_template_fragment(value: &str) -> bool {
             || template.contains("%s"))
 }
 
+#[cfg(test)]
 pub(crate) fn looks_like_source_symbol_identifier(value: &str) -> bool {
+    let randomness = TokenRandomness::for_candidate(value);
+    looks_like_source_symbol_identifier_with_randomness(value, &randomness)
+}
+
+pub(crate) fn looks_like_source_symbol_identifier_with_randomness(
+    value: &str,
+    randomness: &TokenRandomness<'_>,
+) -> bool {
     let bytes = value.as_bytes();
     if bytes.len() < 8 || bytes.len() > 96 {
         return false;
@@ -216,8 +241,7 @@ pub(crate) fn looks_like_source_symbol_identifier(value: &str) -> bool {
         "CacheKey",
         "SourceKey",
     ];
-    SOURCE_TYPE_TERMS.iter().any(|term| value.contains(term))
-        || !crate::suppression::token_randomness::is_random_token(value)
+    SOURCE_TYPE_TERMS.iter().any(|term| value.contains(term)) || !randomness.is_random_token(value)
 }
 
 /// Heuristic: is this string a likely source-code identifier rather than a
@@ -309,7 +333,17 @@ fn has_call_or_index_syntax(value: &str) -> bool {
 }
 
 #[cfg(feature = "entropy")]
+#[cfg(test)]
 pub(crate) fn looks_like_source_type_identifier(value: &str) -> bool {
+    let randomness = TokenRandomness::for_candidate(value);
+    looks_like_source_type_identifier_with_randomness(value, &randomness)
+}
+
+#[cfg(feature = "entropy")]
+pub(crate) fn looks_like_source_type_identifier_with_randomness(
+    value: &str,
+    randomness: &TokenRandomness<'_>,
+) -> bool {
     let bytes = value.as_bytes();
     if bytes.len() < 8 || bytes.len() > 120 || !bytes[0].is_ascii_uppercase() {
         return false;
@@ -320,8 +354,5 @@ pub(crate) fn looks_like_source_type_identifier(value: &str) -> bool {
     let upper = bytes.iter().filter(|b| b.is_ascii_uppercase()).count();
     let lower = bytes.iter().filter(|b| b.is_ascii_lowercase()).count();
     let digits = bytes.iter().filter(|b| b.is_ascii_digit()).count();
-    upper >= 2
-        && lower >= 3
-        && digits >= 1
-        && !crate::suppression::token_randomness::is_random_token(value)
+    upper >= 2 && lower >= 3 && digits >= 1 && !randomness.is_random_token(value)
 }

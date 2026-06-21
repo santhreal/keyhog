@@ -9,9 +9,11 @@ use super::shape::{
     looks_like_email_address, looks_like_pure_identifier, looks_like_regex_literal_tail,
     looks_like_scheme_prefixed_uri, looks_like_syntactic_punctuation_marker,
     looks_like_url_or_path_segment, looks_like_word_separated_identifier,
-    public_noncredential_shape, PublicShapeScope,
+    public_noncredential_shape_with_randomness, PublicShapeScope,
 };
-use super::token_randomness::{keep_identifier_gate, keep_word_separated_gate};
+use super::token_randomness::{
+    keep_identifier_gate_with_randomness, keep_word_separated_gate_with_randomness, TokenRandomness,
+};
 use crate::context;
 
 #[derive(Debug, Clone, Copy)]
@@ -245,6 +247,7 @@ pub(crate) fn suppress_named_detector_finding(
     let source_type = ctx.source_type;
     let detector_id = ctx.detector_id;
     let weak_anchor = ctx.weak_anchor;
+    let randomness = TokenRandomness::for_candidate(credential);
 
     // Shape filters split into two tiers based on whether the shape
     // can legitimately appear as the body of a real service-anchored
@@ -285,7 +288,11 @@ pub(crate) fn suppress_named_detector_finding(
     }
 
     if apply_tier_b {
-        if let Some(reason) = public_noncredential_shape(credential, PublicShapeScope::WeakAnchor) {
+        if let Some(reason) = public_noncredential_shape_with_randomness(
+            credential,
+            PublicShapeScope::WeakAnchor,
+            &randomness,
+        ) {
             crate::telemetry::record_example_suppression("pipeline", path, credential, reason);
             return true;
         }
@@ -297,7 +304,10 @@ pub(crate) fn suppress_named_detector_finding(
     // detector flagged. Gate it on the SHARED `keep_identifier_gate` so a random
     // token (`gjbubxsu`) is recovered while a dictionary reference
     // (`getUserName`) still suppresses — one discriminator, both paths.
-    if apply_tier_b && keep_identifier_gate(credential) && looks_like_pure_identifier(credential) {
+    if apply_tier_b
+        && keep_identifier_gate_with_randomness(credential, &randomness)
+        && looks_like_pure_identifier(credential)
+    {
         crate::telemetry::record_example_suppression(
             "pipeline",
             path,
@@ -312,7 +322,7 @@ pub(crate) fn suppress_named_detector_finding(
     // is trusted only for all-lowercase-letter random tokens. See the matching
     // note in `phase2_generic_shape::generic_value_shape_rejected`.
     if apply_tier_b
-        && keep_word_separated_gate(credential)
+        && keep_word_separated_gate_with_randomness(credential, &randomness)
         && looks_like_word_separated_identifier(credential)
     {
         crate::telemetry::record_example_suppression(
