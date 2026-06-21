@@ -8,13 +8,13 @@
 //! without a proven prefix keep the whole-chunk path.
 
 use super::super::phase2_anchor::{
-    required_prefix_literals_with_cap, AnchoredRegex, CONFIRMED_MAX_LITERALS_PER_PATTERN,
+    required_prefix_literals_with_cap, CONFIRMED_MAX_LITERALS_PER_PATTERN,
 };
 use super::super::phase2_first_bigram::FirstBigramSet;
 use super::super::CompiledScanner;
+use crate::anchored_regex::AnchoredRegex;
 use crate::types::CompiledPattern;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, AhoCorasickKind, MatchKind};
-use regex::Regex;
 use std::cell::RefCell;
 
 thread_local! {
@@ -139,8 +139,10 @@ impl ConfirmedAnchorIndex {
         matches!(self.eligible.get(ac_idx), Some(true))
     }
 
-    pub(crate) fn anchored_regex(&self, ac_idx: usize) -> Option<&Regex> {
-        self.anchored.get(ac_idx)?.as_ref()?.get()
+    pub(crate) fn anchored_regex(&self, ac_idx: usize) -> Option<&AnchoredRegex> {
+        let anchored = self.anchored.get(ac_idx)?.as_ref()?;
+        anchored.get()?;
+        Some(anchored)
     }
 
     pub(crate) fn collect_candidates(

@@ -115,6 +115,7 @@ pub(crate) mod types;
 // Internal modules.
 /// SIMD-accelerated alphabet pre-filtering.
 pub(crate) mod alphabet_filter;
+pub(crate) mod anchored_regex;
 /// ASCII case-insensitive byte-search primitives shared by every hot path
 /// that needs to skim text without lowering the haystack first.
 pub(crate) mod ascii_ci;

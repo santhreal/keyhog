@@ -7,8 +7,8 @@
 //! the legacy whole-chunk extraction path.
 
 use super::support;
-use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
-use keyhog_scanner::{CompiledScanner, ScanBackend};
+use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, RawMatch, Severity};
+use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 use support::paths::detector_dir;
 
 struct Lcg(u64);
@@ -111,6 +111,59 @@ fn scan(scanner: &CompiledScanner, chunk: &Chunk) -> Vec<(String, String, String
     canonical(
         &scanner.scan_chunks_with_backend(std::slice::from_ref(chunk), ScanBackend::CpuFallback),
     )
+}
+
+fn boundary_scanner() -> CompiledScanner {
+    let mut config = ScannerConfig::default();
+    config.ml_enabled = false;
+    config.min_confidence = 0.0;
+    CompiledScanner::compile(vec![DetectorSpec {
+        id: "boundary-detector".to_string(),
+        name: "Boundary Detector".to_string(),
+        service: "boundary".to_string(),
+        severity: Severity::High,
+        patterns: vec![PatternSpec {
+            regex: r#"\bAGORA_APP_ID[=\s"']+([a-f0-9]{32})"#.to_string(),
+            description: Some("Boundary-sensitive assignment".to_string()),
+            group: Some(1),
+            client_safe: false,
+        }],
+        keywords: vec!["AGORA_APP_ID".to_string()],
+        ..DetectorSpec::default()
+    }])
+    .expect("boundary scanner compiles")
+    .with_config(config)
+}
+
+fn boundary_credentials(scanner: &CompiledScanner, text: &str) -> Vec<String> {
+    let chunk = chunk_of(text.as_bytes(), "boundary.env");
+    scanner
+        .scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+        .into_iter()
+        .flatten()
+        .map(|m| m.credential.to_string())
+        .collect()
+}
+
+#[test]
+fn confirmed_anchor_preserves_real_left_boundary_context() {
+    let scanner = boundary_scanner();
+    let credential = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d";
+
+    assert_eq!(
+        boundary_credentials(&scanner, &format!("AGORA_APP_ID = \"{credential}\"")),
+        [credential],
+        "offset-zero anchored verification must keep matching"
+    );
+    assert_eq!(
+        boundary_credentials(&scanner, &format!("x\nAGORA_APP_ID = \"{credential}\"")),
+        [credential],
+        "line-start anchored verification must keep matching"
+    );
+    assert!(
+        boundary_credentials(&scanner, &format!("BAGORA_APP_ID = \"{credential}\"")).is_empty(),
+        "embedded candidate must not fabricate a word boundary"
+    );
 }
 
 #[test]

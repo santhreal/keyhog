@@ -16,9 +16,11 @@
 //! prefilters). We union all those literals into ONE Aho-Corasick automaton and
 //! scan the chunk a SINGLE time. Each AC hit is a candidate start position for
 //! the pattern(s) that own that literal; we verify the candidate by running a
-//! `\A`-anchored copy of the pattern's regex at exactly that position — O(match
-//! length), with no forward scan. The 82 chunk passes collapse to one shared AC
-//! pass plus a handful of anchored verifications.
+//! `\A`-anchored copy of the pattern's regex at exactly that position. For
+//! non-zero positions, verification includes the real previous character before
+//! the candidate so left-boundary constructs remain whole-chunk-equivalent. The
+//! 82 chunk passes collapse to one shared AC pass plus a handful of O(match
+//! length) anchored verifications.
 //!
 //! ## Soundness (recall is identical, proven by differential test)
 //!
@@ -33,11 +35,10 @@
 
 use super::phase2::{gate_prefix_literals, MIN_PREFIX_BYTES};
 use super::phase2_first_bigram::FirstBigramSet;
+use crate::anchored_regex::AnchoredRegex;
 use crate::types::*;
 use aho_corasick::{AhoCorasick, AhoCorasickBuilder, MatchKind};
-use regex::{Regex, RegexBuilder};
 use regex_syntax::hir::literal::{ExtractKind, Extractor};
-use std::sync::{Arc, OnceLock};
 
 /// Cap on distinct (ASCII-lowercased) required-prefix literals per pattern.
 /// Canonical ASCII detector patterns with optional separators/case spellings
@@ -46,61 +47,6 @@ use std::sync::{Arc, OnceLock};
 /// products and giant alternations still exceed this and stay whole-chunk.
 const MAX_LITERALS_PER_PATTERN: usize = 32;
 pub(crate) const CONFIRMED_MAX_LITERALS_PER_PATTERN: usize = 8;
-
-/// A lazily-compiled `\A`-anchored copy of a pattern's regex. Searched
-/// on `&text[pos..]`, `\A` pins the match to start exactly at `pos`, so a hit is
-/// confirmed in O(match length) with no forward scan. Flags mirror the
-/// pattern's own `LazyRegex` build so the anchored regex is match-equivalent.
-pub(crate) struct AnchoredRegex {
-    src: Arc<str>,
-    case_insensitive: bool,
-    cell: OnceLock<Option<Arc<Regex>>>,
-}
-
-impl AnchoredRegex {
-    pub(crate) fn new(src: &str, case_insensitive: bool) -> Self {
-        Self {
-            src: Arc::from(src),
-            case_insensitive,
-            cell: OnceLock::new(),
-        }
-    }
-
-    /// The anchored regex, or `None` if it failed to compile. A `None` here is
-    /// surfaced LOUDLY by the caller (one `error!`) and the pattern is run on
-    /// the whole-chunk path instead — never a silent skip. For the curated
-    /// corpus this never returns `None` (anchoring only shrinks the automaton
-    /// the unanchored regex already builds).
-    pub(crate) fn get(&self) -> Option<&Regex> {
-        self.cell
-            .get_or_init(|| {
-                // Wrap in a non-capturing group so the inner capture-group
-                // numbering (`entry.group`) is preserved, then pin with `\A`.
-                let anchored = format!(r"\A(?:{})", self.src);
-                let built = RegexBuilder::new(&anchored)
-                    .case_insensitive(self.case_insensitive)
-                    .size_limit(crate::types::REGEX_SIZE_LIMIT_BYTES)
-                    .dfa_size_limit(crate::types::regex_dfa_limit())
-                    .crlf(self.case_insensitive)
-                    .build();
-                match built {
-                    Ok(rx) => Some(Arc::new(rx)),
-                    Err(error) => {
-                        tracing::error!(
-                            pattern = %self.src,
-                            %error,
-                            "phase-2 anchored-regex failed to compile; this \
-                             pattern uses the whole-chunk path for the rest of \
-                             the run (recall preserved, localization skipped)"
-                        );
-                        None
-                    }
-                }
-            })
-            .as_ref()
-            .map(Arc::as_ref)
-    }
-}
 
 /// Per-scanner index that drives shared-anchor phase-2 localization AND
 /// replaces the always-active RegexSet prefilter for eligible patterns.
@@ -447,10 +393,13 @@ impl Phase2AnchorIndex {
         out.dedup();
     }
 
-    /// The anchored regex for `phase2_idx`, or `None` if not eligible or the
-    /// anchored build failed (caller must then use the whole-chunk path).
-    pub(crate) fn anchored_regex(&self, phase2_idx: usize) -> Option<&Regex> {
-        self.anchored.get(phase2_idx)?.as_ref()?.get()
+    /// The anchored regex owner for `phase2_idx`, or `None` if not eligible.
+    /// The caller chooses the no-context or left-context compiled variant for
+    /// each candidate position.
+    pub(crate) fn anchored_regex(&self, phase2_idx: usize) -> Option<&AnchoredRegex> {
+        let anchored = self.anchored.get(phase2_idx)?.as_ref()?;
+        anchored.get()?;
+        Some(anchored)
     }
 
     /// Whether the localized homoglyph path has any work (an AC or always-mark

@@ -9,9 +9,9 @@
 //! so anchoring at every AC-reported position finds every whole-chunk match).
 use super::scan_filters::looks_like_variable_name;
 use super::CompiledScanner;
+use crate::anchored_regex::AnchoredRegex;
 use crate::types::*;
 use keyhog_core::Chunk;
-use regex::Regex;
 use std::cell::OnceCell;
 
 impl CompiledScanner {
@@ -31,7 +31,7 @@ impl CompiledScanner {
     pub(crate) fn extract_anchored(
         &self,
         entry: &CompiledPattern,
-        anchored_re: &Regex,
+        anchored_re: &AnchoredRegex,
         positions: &[(u32, u32)],
         preprocessed: &ScannerPreprocessedText<'_>,
         line_offsets: &[usize],
@@ -55,8 +55,33 @@ impl CompiledScanner {
         // expensive (O(K x |chunk|) keyword scan + path AC). Computed at most
         // once, on the first surviving match — same contract as extract.rs.
         let signals = OnceCell::<(bool, bool)>::new();
-        let mut locs = anchored_re.capture_locations();
-        let groups_total = locs.len();
+        let Some(no_context_re) = anchored_re.get() else {
+            return;
+        };
+        let mut no_context_locs = no_context_re.capture_locations();
+        let left_context_re = if positions.iter().any(|&(_, pos)| pos > 0) {
+            match anchored_re.get_with_left_context() {
+                Some(re) => Some(re),
+                None => {
+                    self.extract_matches(
+                        entry,
+                        preprocessed,
+                        line_offsets,
+                        code_lines,
+                        documentation_lines,
+                        chunk,
+                        scan_state,
+                        0,
+                        0,
+                        deadline,
+                    );
+                    return;
+                }
+            }
+        } else {
+            None
+        };
+        let mut left_context_locs = left_context_re.map(|re| re.capture_locations());
         let group = entry.group;
         // Mirror the whole-chunk cursor: next match must start at-or-after this.
         let mut next_allowed: usize = 0;
@@ -82,16 +107,38 @@ impl CompiledScanner {
             if pos > bytes_total || !search_text.is_char_boundary(pos) {
                 continue;
             }
-            let slice = &search_text[pos..];
-            let Some(whole) = anchored_re.captures_read(&mut locs, slice) else {
+            let context_start = if pos == 0 {
+                0
+            } else {
+                super::floor_char_boundary(search_text, pos.saturating_sub(1))
+            };
+            let left_context_len = pos - context_start;
+            let use_left_context = left_context_len > 0;
+            let (re, locs) = if use_left_context {
+                let Some(re) = left_context_re else {
+                    continue;
+                };
+                let Some(locs) = left_context_locs.as_mut() else {
+                    continue;
+                };
+                (re, locs)
+            } else {
+                (no_context_re, &mut no_context_locs)
+            };
+            let slice = &search_text[context_start..];
+            let Some(whole) = re.captures_read(locs, slice) else {
                 continue;
             };
-            // `\A` guarantees a hit starts at slice offset 0; guard defensively.
+            // `\A` guarantees a hit starts at slice offset 0. For non-zero
+            // candidate positions the anchored regex consumes exactly one real
+            // preceding character before the detector pattern, so left-boundary
+            // constructs (`\b`, multiline `^`, etc.) see the same context as a
+            // whole-chunk regex walk instead of a fabricated haystack start.
             if whole.start() != 0 {
                 continue;
             }
             let full_start = pos;
-            let full_end = pos + whole.end();
+            let full_end = context_start + whole.end();
             // Zero-width match: skip emission (matches extract.rs) and advance
             // one byte so an empty-shape pattern can't stall.
             if full_end == full_start {
@@ -106,7 +153,9 @@ impl CompiledScanner {
             // extract_grouped_matches; for plain patterns, the whole match.
             let (credential, credential_start, credential_end): (&str, usize, usize) = match group {
                 Some(group) => {
-                    let (mut cs, mut ce) = locs.get(group).unwrap_or((whole.start(), whole.end())); // LAW10: bounds-checked lookup; out-of-range => documented default (total fn), recall-safe
+                    let groups_total = locs.len();
+                    let (mut cs, mut ce) =
+                        locs.get(group).unwrap_or((left_context_len, whole.end())); // LAW10: bounds-checked lookup; out-of-range => documented default (total fn), recall-safe
                     let mut cred = &slice[cs..ce];
                     if looks_like_variable_name(cred) && groups_total > 2 {
                         for g in 1..groups_total {
@@ -124,9 +173,9 @@ impl CompiledScanner {
                             }
                         }
                     }
-                    (cred, pos + cs, pos + ce)
+                    (cred, context_start + cs, context_start + ce)
                 }
-                None => (&slice[whole.start()..whole.end()], full_start, full_end),
+                None => (&slice[left_context_len..whole.end()], full_start, full_end),
             };
 
             let &(keyword_nearby, sensitive_file) = signals.get_or_init(|| {
