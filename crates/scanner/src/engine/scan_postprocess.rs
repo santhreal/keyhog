@@ -85,11 +85,10 @@ impl CompiledScanner {
             // dedup keeps only one alias, so WHICH offset wins must be the real,
             // lowest one - not whichever the (cmp/scan-order-dependent) iteration
             // happens to reach first. A higher synthetic-append offset is an
-            // invalid source coordinate (it can point PAST the real chunk, e.g.
-            // a boundary-buffer straddle match then fails its seam test and the
-            // finding silently vanishes). Sort offset-ascending so the dedup
-            // keeps the lowest (real) offset - the same primary-location rule
-            // dedup_cross_detector applies (Law 10: no order-dependent recall).
+            // invalid source coordinate (it can point past the real chunk).
+            // Sort offset-ascending so the dedup keeps the lowest source
+            // coordinate - the same primary-location rule dedup_cross_detector
+            // applies (Law 10: no order-dependent recall).
             let mut decoded_candidates: Vec<RawMatch> = Vec::new();
             for decoded_chunk in decoded_chunks {
                 // kimi-wave1 finding 5.LOW: a single decoded chunk that
