@@ -5,17 +5,21 @@
 
 mod canonical;
 mod path;
+#[cfg(any(feature = "entropy", test))]
+mod prose;
 mod public;
 mod source;
 
 pub(crate) use canonical::{
     has_n_or_more_consecutive_identical, has_repeated_block_mask,
-    has_three_or_more_consecutive_identical, is_uuid_v4_shape, looks_like_bare_hex_digest,
-    looks_like_dashed_serial_key, looks_like_prefixed_hash_digest,
+    has_three_or_more_consecutive_identical, is_dash_segmented_alnum_decoy, is_uuid_v4_shape,
+    looks_like_bare_hex_digest, looks_like_dashed_serial_key, looks_like_prefixed_hash_digest,
     looks_like_prefixed_masked_sequence, looks_like_standard_base64_blob,
     looks_like_truncated_uuid_v4_suffix, RFC7519_EXAMPLE_JWT_PREFIX,
 };
 pub(crate) use path::{looks_like_scheme_prefixed_uri, looks_like_url_or_path_segment};
+#[cfg(any(feature = "entropy", test))]
+pub(crate) use prose::looks_like_english_prose;
 pub(crate) use public::{
     looks_like_html_event_handler_fragment, looks_like_percent_encoded_markup,
     looks_like_public_artifact_reference, looks_like_public_evidence_identifier,
@@ -24,7 +28,10 @@ pub(crate) use public::{
 };
 #[cfg(feature = "entropy")]
 pub(crate) use source::looks_like_source_type_identifier;
-pub(crate) use source::{looks_like_source_code_expression, looks_like_source_symbol_identifier};
+pub(crate) use source::{
+    looks_like_dotted_source_identifier, looks_like_program_identifier,
+    looks_like_source_code_expression, looks_like_source_symbol_identifier,
+};
 
 /// True if `credential` is an identifier / natural-language shape rather
 /// than a real credential. Covers three FP families seen in dogfood:

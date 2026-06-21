@@ -220,6 +220,65 @@ pub(crate) fn looks_like_source_symbol_identifier(value: &str) -> bool {
         || !crate::suppression::token_randomness::is_random_token(value)
 }
 
+/// Heuristic: is this string a likely source-code identifier rather than a
+/// credential? Identifiers in mainstream languages are all `[A-Za-z_]` with
+/// camelCase / PascalCase / snake_case shape.
+pub(crate) fn looks_like_program_identifier(value: &str) -> bool {
+    if !value
+        .chars()
+        .all(|ch| ch.is_ascii_alphabetic() || ch == '_')
+    {
+        return false;
+    }
+    if value.contains('_') && value.chars().all(|ch| ch.is_ascii_lowercase() || ch == '_') {
+        return true;
+    }
+    let bytes = value.as_bytes();
+    let mut transitions = 0usize;
+    for pair in bytes.windows(2) {
+        if pair[0].is_ascii_lowercase() && pair[1].is_ascii_uppercase() {
+            transitions += 1;
+        }
+    }
+    transitions >= 1
+}
+
+pub(crate) fn looks_like_dotted_source_identifier(value: &str) -> bool {
+    let segments: Vec<&str> = value.split('.').collect();
+    if !(2..=5).contains(&segments.len()) || segments.iter().any(|segment| segment.is_empty()) {
+        return false;
+    }
+    if !segments.iter().all(|segment| {
+        segment
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    }) {
+        return false;
+    }
+
+    let source_receiver = matches!(
+        segments[0].to_ascii_lowercase().as_str(),
+        "this" | "self" | "window" | "process" | "global" | "config" | "client" | "service"
+    );
+    if source_receiver {
+        return true;
+    }
+
+    let has_camel_segment = segments.iter().any(|segment| {
+        segment
+            .as_bytes()
+            .windows(2)
+            .any(|pair| pair[0].is_ascii_lowercase() && pair[1].is_ascii_uppercase())
+    });
+    let has_credential_word = segments.iter().any(|segment| {
+        let lower = segment.to_ascii_lowercase();
+        ["token", "secret", "key", "auth", "password", "credential"]
+            .iter()
+            .any(|needle| lower.contains(needle))
+    });
+    has_camel_segment && has_credential_word
+}
+
 fn has_call_or_index_syntax(value: &str) -> bool {
     let bytes = value.as_bytes();
     for (idx, &byte) in bytes.iter().enumerate() {

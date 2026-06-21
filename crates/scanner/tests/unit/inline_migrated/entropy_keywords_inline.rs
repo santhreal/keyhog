@@ -1,5 +1,4 @@
-//! Migrated from src/entropy/keywords.rs — prose classification and
-//! strict-secret/decoy gating predicates (KH-GAP-004).
+//! Migrated from inline entropy keyword/prose/decoy tests (KH-GAP-004).
 
 use keyhog_scanner::testing::entropy_keywords::{
     entropy_value_looks_like_prose, is_dash_segmented_alnum_decoy, looks_like_english_prose,

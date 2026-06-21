@@ -318,3 +318,43 @@ pub(crate) fn has_n_or_more_consecutive_identical(s: &str, n: usize) -> bool {
     }
     false
 }
+
+/// Heuristic for dash-segmented non-secret shapes. Matches fixed-width
+/// uppercase/digit product serials and multi-part letter identifiers. It
+/// deliberately does not reject every dash-separated alnum value: high-entropy
+/// service tokens commonly carry one dash or random dash-separated chunks.
+pub(crate) fn is_dash_segmented_alnum_decoy(value: &str) -> bool {
+    if !value.contains('-') {
+        return false;
+    }
+    if !value
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    {
+        return false;
+    }
+    let mut groups = Vec::new();
+    for group in value.split('-') {
+        if group.is_empty() {
+            return false;
+        }
+        groups.push(group);
+    }
+
+    let fixed_width_upper_serial = groups.len() >= 3
+        && groups.iter().all(|group| {
+            group.len() == 5
+                && group
+                    .bytes()
+                    .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+        });
+    if fixed_width_upper_serial {
+        return true;
+    }
+
+    groups.len() >= 3
+        && groups
+            .iter()
+            .all(|group| group.bytes().all(|b| b.is_ascii_alphabetic()))
+        && !crate::suppression::token_randomness::is_random_token(value)
+}

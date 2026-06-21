@@ -88,7 +88,7 @@ pub(crate) fn entropy_match_suppressed(
     // keyword itself is positive evidence and we keep the
     // candidate - users do plant lowercase-only passwords.
     if !keyword_is_credential_anchor(&entropy_match.keyword)
-        && crate::entropy::keywords::entropy_value_looks_like_prose(&entropy_match.value)
+        && crate::suppression::shape::looks_like_english_prose(&entropy_match.value)
     {
         return true;
     }

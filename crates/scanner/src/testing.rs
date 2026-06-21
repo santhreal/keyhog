@@ -615,7 +615,7 @@ pub(crate) fn truncate_for_prefilter(src: &str) -> Option<String> {
 }
 #[cfg(test)]
 pub(crate) fn looks_like_program_identifier(value: &str) -> bool {
-    crate::entropy::keywords::looks_like_program_identifier(value)
+    crate::suppression::shape::looks_like_program_identifier(value)
 }
 
 /// Internal entropy shape-classification predicates, exposed for the
@@ -673,18 +673,18 @@ pub(crate) mod entropy_scanner {
     }
 }
 
-/// Internal prose/decoy/strict-secret predicates, exposed for the unit
-/// tests migrated out of `src/entropy/keywords.rs` (KH-GAP-004).
+/// Entropy plausibility and shape predicates exposed for unit tests migrated
+/// out of their original inline homes (KH-GAP-004).
 #[cfg(test)]
 pub(crate) mod entropy_keywords {
     pub(crate) use crate::entropy::keywords::PlausibilityContext;
 
     pub(crate) fn looks_like_english_prose(value: &str) -> bool {
-        crate::entropy::keywords::looks_like_english_prose(value)
+        crate::suppression::shape::looks_like_english_prose(value)
     }
 
     pub(crate) fn entropy_value_looks_like_prose(value: &str) -> bool {
-        crate::entropy::keywords::entropy_value_looks_like_prose(value)
+        crate::suppression::shape::looks_like_english_prose(value)
     }
 
     pub(crate) fn passes_strict_secret_checks(value: &str, is_credential_context: bool) -> bool {
@@ -692,7 +692,7 @@ pub(crate) mod entropy_keywords {
     }
 
     pub(crate) fn is_dash_segmented_alnum_decoy(value: &str) -> bool {
-        crate::entropy::keywords::is_dash_segmented_alnum_decoy(value)
+        crate::suppression::shape::is_dash_segmented_alnum_decoy(value)
     }
 
     pub(crate) fn is_candidate_plausible(value: &str, placeholder_keywords: &[String]) -> bool {

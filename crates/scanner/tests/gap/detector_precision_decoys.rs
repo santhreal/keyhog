@@ -423,7 +423,7 @@ fn real_symbolic_password_not_suppressed_as_filler() {
 
 #[test]
 fn long_pure_lowercase_is_prose() {
-    // keywords::looks_like_english_prose branch 1: all lowercase, len>=16.
+    // shape::looks_like_english_prose branch 1: all lowercase, len>=16.
     assert!(looks_like_english_prose(
         "thequickbrownfoxjumpsoverthelazydog"
     ));

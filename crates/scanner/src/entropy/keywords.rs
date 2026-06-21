@@ -476,73 +476,6 @@ fn has_low_alnum_ratio(value: &str) -> bool {
     alnum < 0.5
 }
 
-/// Heuristic for "this value looks like an English-prose run", not a
-/// credential. Tightens FP filtering when the keyword-anchor is weak
-/// (e.g. the word `secret` appears in a comment or commit message that
-/// happens to also contain a high-entropy looking token-substring). Real
-/// credentials never contain consecutive lowercase ASCII letters longer
-/// than ~12 chars (longest common English word still in heavy use), and
-/// they don't contain multiple whitespace-delimited words.
-///
-/// Returns true if `value` should be treated as English prose.
-#[cfg(any(feature = "entropy", test))]
-pub(crate) fn looks_like_english_prose(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    if bytes.len() < 16 {
-        return false;
-    }
-
-    // Branch 1: pure lowercase ASCII letters with no digit/symbol. A 16+
-    // char string of nothing but lowercase letters is overwhelmingly a
-    // dictionary-word concatenation, joined sentence fragment, or
-    // identifier sentence (e.g. `description = "thequickbrownfoxjumps..."`
-    // emitted from a free-text field). Real high-entropy credentials at
-    // this length virtually always include at least one digit or a
-    // mixed-case transition - the entropy of pure-lowercase-letters tops
-    // out at log2(26) = 4.7 bits/byte, but English compressed via the
-    // narrow vowel/consonant alternation lands well under that.
-    if bytes.iter().all(|b| b.is_ascii_lowercase()) && bytes.len() >= 16 {
-        return true;
-    }
-
-    // Branch 2: multi-word whitespace-bearing prose. The dotenv / log-line
-    // / properties extractors occasionally capture the entire RHS as a
-    // single value when the source is `KEY=this is the description of
-    // something interesting and long`. The whitespace-bearing gate at the
-    // emit site already drops these unconditionally for the entropy
-    // fallback, but Strict-mode plausibility (called from quoted-value
-    // extraction) sees the raw string and needs an explicit prose branch:
-    // 2+ whitespace-separated tokens where every token is 2+ chars of
-    // pure ASCII letters (any case) and there is at least one lowercase
-    // run of 3+ chars. Real credentials never split into multiple
-    // alphabetic tokens.
-    let tokens: Vec<&str> = value.split_whitespace().collect();
-    if tokens.len() >= 2 {
-        let all_alpha = tokens
-            .iter()
-            .all(|t| t.len() >= 2 && t.bytes().all(|b| b.is_ascii_alphabetic()));
-        if all_alpha {
-            let has_lowercase_word = tokens
-                .iter()
-                .any(|t| t.len() >= 3 && t.bytes().all(|b| b.is_ascii_lowercase()));
-            if has_lowercase_word {
-                return true;
-            }
-        }
-    }
-
-    false
-}
-
-/// Public predicate for callers in the entropy emit-path. Returns true
-/// when the value would be classified as English prose; the emit-path
-/// uses this to tighten plausibility when no strong credential keyword
-/// anchor is adjacent.
-#[cfg(any(feature = "entropy", test))]
-pub(crate) fn entropy_value_looks_like_prose(value: &str) -> bool {
-    looks_like_english_prose(value)
-}
-
 pub(crate) fn passes_strict_secret_checks(value: &str, is_credential_context: bool) -> bool {
     if !passes_strict_secret_shape_checks(value, is_credential_context) {
         return false;
@@ -600,7 +533,7 @@ pub(super) fn is_isolated_bare_secret_plausible(
         if value.starts_with("eyJ") {
             return false;
         }
-        if looks_like_dotted_source_identifier(value) {
+        if crate::suppression::shape::looks_like_dotted_source_identifier(value) {
             return false;
         }
     }
@@ -685,7 +618,7 @@ fn passes_strict_secret_shape_checks(value: &str, is_credential_context: bool) -
     // a camelCase / PascalCase shape (at least one internal
     // uppercase boundary). Real secrets virtually always include
     // digits or special characters.
-    if looks_like_program_identifier(value) {
+    if crate::suppression::shape::looks_like_program_identifier(value) {
         return false;
     }
 
@@ -696,120 +629,10 @@ fn passes_strict_secret_shape_checks(value: &str, is_credential_context: bool) -
     // reach the entropy floor without being credentials. Keep this
     // gate narrow: real service tokens often contain one or more
     // dashes inside otherwise random alnum bodies.
-    if is_dash_segmented_alnum_decoy(value) {
+    if crate::suppression::shape::is_dash_segmented_alnum_decoy(value) {
         return false;
     }
     true
-}
-
-fn looks_like_dotted_source_identifier(value: &str) -> bool {
-    let segments: Vec<&str> = value.split('.').collect();
-    if !(2..=5).contains(&segments.len()) || segments.iter().any(|segment| segment.is_empty()) {
-        return false;
-    }
-    if !segments.iter().all(|segment| {
-        segment
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
-    }) {
-        return false;
-    }
-
-    let source_receiver = matches!(
-        segments[0].to_ascii_lowercase().as_str(),
-        "this" | "self" | "window" | "process" | "global" | "config" | "client" | "service"
-    );
-    if source_receiver {
-        return true;
-    }
-
-    let has_camel_segment = segments.iter().any(|segment| {
-        segment
-            .as_bytes()
-            .windows(2)
-            .any(|pair| pair[0].is_ascii_lowercase() && pair[1].is_ascii_uppercase())
-    });
-    let has_credential_word = segments.iter().any(|segment| {
-        let lower = segment.to_ascii_lowercase();
-        ["token", "secret", "key", "auth", "password", "credential"]
-            .iter()
-            .any(|needle| lower.contains(needle))
-    });
-    has_camel_segment && has_credential_word
-}
-
-/// Heuristic for dash-segmented non-secret shapes. Matches fixed-width
-/// uppercase/digit product serials (`A1B2C-D3E4F-G5H6I`) and multi-part
-/// letter identifiers (`my-service-prod-key-name-here`). It deliberately does
-/// not reject every dash-separated alnum value: high-entropy service tokens
-/// commonly carry one dash or random dash-separated chunks.
-pub(crate) fn is_dash_segmented_alnum_decoy(value: &str) -> bool {
-    if !value.contains('-') {
-        return false;
-    }
-    if !value
-        .bytes()
-        .all(|b| b.is_ascii_alphanumeric() || b == b'-')
-    {
-        return false;
-    }
-    let mut groups = Vec::new();
-    for group in value.split('-') {
-        if group.is_empty() {
-            // A leading/trailing/double dash breaks the serial/identifier
-            // shape - leave those to the entropy floors.
-            return false;
-        }
-        groups.push(group);
-    }
-
-    let fixed_width_upper_serial = groups.len() >= 3
-        && groups.iter().all(|group| {
-            group.len() == 5
-                && group
-                    .bytes()
-                    .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
-        });
-    if fixed_width_upper_serial {
-        return true;
-    }
-
-    groups.len() >= 3
-        && groups
-            .iter()
-            .all(|group| group.bytes().all(|b| b.is_ascii_alphabetic()))
-        && !crate::suppression::token_randomness::is_random_token(value)
-}
-
-/// Heuristic: is this string a likely source-code identifier rather
-/// than a credential? Identifiers in mainstream languages are all
-/// `[A-Za-z_]` (no digits) with camelCase / PascalCase / snake_case
-/// shape. Real API keys almost always include at least one digit (the
-/// few that don't are short - `<8` chars - and rejected upstream by
-/// length gates).
-pub(crate) fn looks_like_program_identifier(value: &str) -> bool {
-    // Letters + underscore only. Any digit, hyphen, slash, or special
-    // char means it's not a typical identifier.
-    if !value
-        .chars()
-        .all(|ch| ch.is_ascii_alphabetic() || ch == '_')
-    {
-        return false;
-    }
-    // snake_case (lowercase + underscore segments) - `my_long_helper_name`.
-    if value.contains('_') && value.chars().all(|ch| ch.is_ascii_lowercase() || ch == '_') {
-        return true;
-    }
-    // camelCase / PascalCase - at least one internal lower→Upper
-    // boundary. `BulkUpdateApiKeyResponse` has many; `Foo` has none.
-    let bytes = value.as_bytes();
-    let mut transitions = 0usize;
-    for pair in bytes.windows(2) {
-        if pair[0].is_ascii_lowercase() && pair[1].is_ascii_uppercase() {
-            transitions += 1;
-        }
-    }
-    transitions >= 1
 }
 
 fn unique_char_count(value: &str) -> usize {

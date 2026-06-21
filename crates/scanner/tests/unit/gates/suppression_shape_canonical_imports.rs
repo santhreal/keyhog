@@ -131,3 +131,42 @@ fn legacy_shape_gate_module_homes_do_not_return() {
         offenders.join("\n")
     );
 }
+
+#[test]
+fn entropy_keywords_does_not_own_shape_predicates() {
+    let src = scanner_src();
+    let entropy_keywords = read(&src.join("entropy/keywords.rs"));
+    let mut offenders = Vec::new();
+
+    for forbidden in [
+        "fn looks_like_english_prose",
+        "fn entropy_value_looks_like_prose",
+        "fn looks_like_program_identifier",
+        "fn looks_like_dotted_source_identifier",
+        "fn is_dash_segmented_alnum_decoy",
+    ] {
+        if entropy_keywords.contains(forbidden) {
+            offenders.push(format!("entropy/keywords.rs defines {forbidden}"));
+        }
+    }
+
+    let shape_mod = read(&src.join("suppression/shape/mod.rs"));
+    for required in [
+        "looks_like_english_prose",
+        "looks_like_program_identifier",
+        "looks_like_dotted_source_identifier",
+        "is_dash_segmented_alnum_decoy",
+    ] {
+        if !shape_mod.contains(required) {
+            offenders.push(format!(
+                "suppression/shape/mod.rs does not re-export {required}"
+            ));
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "shape predicates leaked back into entropy keywords:\n{}",
+        offenders.join("\n")
+    );
+}
