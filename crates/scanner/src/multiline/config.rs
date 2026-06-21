@@ -39,6 +39,8 @@ pub(crate) struct LineMapping {
     pub(crate) end_offset: usize,
     /// Original line number (1-indexed).
     pub(crate) line_number: usize,
+    /// Start byte offset of the mapped source line in the original text.
+    pub(crate) original_start_offset: usize,
 }
 
 /// Result of preprocessing text for multi-line concatenation.
@@ -86,6 +88,23 @@ impl<'a> PreprocessedText<'a> {
         }
     }
 
+    pub(crate) fn source_offset_for_match(
+        &self,
+        source: &str,
+        offset: usize,
+        credential: &str,
+    ) -> usize {
+        let idx = self.mappings.partition_point(|m| m.start_offset <= offset);
+        if idx == 0 {
+            return offset.min(source.len().saturating_sub(1));
+        }
+        let m = &self.mappings[idx - 1];
+        if offset >= m.end_offset {
+            return offset.min(source.len().saturating_sub(1));
+        }
+        source_offset_from_mapping(source, m, offset, credential)
+    }
+
     /// Build a preprocessed representation with a one-line identity mapping.
     ///
     /// Takes the text as a [`Cow`] so a byte-identical passthrough chunk can be
@@ -103,6 +122,7 @@ impl<'a> PreprocessedText<'a> {
                 line_number: line_idx + 1,
                 start_offset: offset,
                 end_offset: end + 1,
+                original_start_offset: offset,
             });
             offset = end + 1;
         }
@@ -116,6 +136,44 @@ impl<'a> PreprocessedText<'a> {
             mappings,
         }
     }
+}
+
+#[cfg(feature = "multiline")]
+fn source_offset_from_mapping(
+    source: &str,
+    mapping: &LineMapping,
+    offset: usize,
+    credential: &str,
+) -> usize {
+    if mapping.start_offset == mapping.original_start_offset && offset < source.len() {
+        return offset;
+    }
+    if let Some(line) = source_line_at(source, mapping.original_start_offset) {
+        if let Some(column) = line.find(credential) {
+            return mapping.original_start_offset + column;
+        }
+    }
+    let candidate = mapping
+        .original_start_offset
+        .saturating_add(offset.saturating_sub(mapping.start_offset));
+    if candidate < source.len() {
+        candidate
+    } else if mapping.original_start_offset < source.len() {
+        mapping.original_start_offset
+    } else {
+        source.len().saturating_sub(1)
+    }
+}
+
+#[cfg(feature = "multiline")]
+fn source_line_at(source: &str, start: usize) -> Option<&str> {
+    if start >= source.len() {
+        return None;
+    }
+    let rest = &source[start..];
+    let end = rest.find('\n').unwrap_or(rest.len()); // LAW10: no newline means the line runs to source end; reporting-only coordinate slice
+    let line = &rest[..end];
+    Some(line.strip_suffix('\r').unwrap_or(line)) // LAW10: no CR suffix means the source line is already normalized; reporting-only coordinate slice
 }
 
 /// Configuration for multiline concatenation recovery.

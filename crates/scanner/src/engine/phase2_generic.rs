@@ -16,7 +16,7 @@ use self::keywords::{
     keyword_has_word_boundary, normalize_assignment_keyword,
     normalized_assignment_keyword_has_secret_suffix,
 };
-use self::line_mapping::{line_at_index, source_offset_for_line_value};
+use self::line_mapping::line_at_index;
 pub(crate) use self::metrics::{generic_profile_dump, generic_profile_reset};
 
 static GENERIC_RE: LazyLock<Option<regex::Regex>> = LazyLock::new(|| {
@@ -386,11 +386,8 @@ impl CompiledScanner {
                     line_offsets,
                     preprocessed_offset,
                 );
-                let source_offset = if identity_offsets {
-                    preprocessed_offset
-                } else {
-                    source_offset_for_line_value(&chunk.data, mapped_line, value)
-                };
+                let source_offset =
+                    preprocessed.source_offset_for_match(&chunk.data, preprocessed_offset, value);
                 let absolute_offset = chunk.metadata.base_offset + source_offset;
                 let raw = keyhog_core::RawMatch {
                     credential_hash: crate::sha256_hash(value),

@@ -45,6 +45,17 @@ fn generic_hits<'a>(matches: &'a [RawMatch], credential: &str) -> Vec<&'a RawMat
         .collect()
 }
 
+fn detector_hits<'a>(
+    matches: &'a [RawMatch],
+    detector_id: &str,
+    credential: &str,
+) -> Vec<&'a RawMatch> {
+    matches
+        .iter()
+        .filter(|m| m.detector_id.as_ref() == detector_id && m.credential.as_ref() == credential)
+        .collect()
+}
+
 #[test]
 fn hcl_variable_default_generic_secret_surfaces_with_source_line_and_offset() {
     let secret = "a1b2c3d4e5f60718293a4b5c6d7e8f901a2b3c4d5e6f7081";
@@ -93,6 +104,34 @@ fn mirror_shaped_hcl_base64_surfaces_at_default_floor() {
     assert!(
         hit.confidence.is_some_and(|confidence| confidence >= 0.40),
         "default-floor HCL generic hit must carry an honest emitted confidence"
+    );
+}
+
+#[test]
+fn hcl_structured_only_generic_password_reports_source_offset_not_append_offset() {
+    let secret = "S4oxj2N-bVEi6ivQsrW3";
+    let body =
+        format!("variable \"db_password\" {{\n  type    = string\n  default = \"{secret}\"\n}}\n");
+    let scanner = scanner_with_floor(0.40);
+    let matches = scan(&scanner, &body, "/repo/infra/passwords.tf");
+    let hits = detector_hits(&matches, "generic-password", secret);
+    assert_eq!(
+        hits.len(),
+        1,
+        "db_password structured append must feed generic-password exactly once; matches={matches:#?}"
+    );
+    let hit = hits[0];
+    let source_offset = body.find(secret).expect("secret offset");
+    assert_eq!(hit.location.line, Some(3));
+    assert_eq!(
+        hit.location.offset, source_offset,
+        "structured-only generic-password hit must report the source value offset, not the appended synthetic line"
+    );
+    assert!(
+        hit.location.offset < body.len(),
+        "structured append offset {} must be inside source len {}",
+        hit.location.offset,
+        body.len()
     );
 }
 

@@ -45,11 +45,12 @@ pub(crate) fn preprocess_multiline<'a>(
 
     let mut result_lines = Vec::new();
     let mut mappings = Vec::new();
+    let source_line_offsets = crate::compute_line_offsets(text);
     let mut current_offset = 0usize;
     let mut index = 0;
     while index < lines.len() {
         let (joined_line, lines_consumed, line_mappings) =
-            process_line_chain(&lines, index, config, current_offset);
+            process_line_chain(&lines, &source_line_offsets, index, config, current_offset);
 
         if !joined_line.is_empty() {
             let total_len = joined_line.len();
@@ -87,8 +88,12 @@ pub(crate) fn preprocess_multiline<'a>(
     } else {
         original_end + 1
     };
-    let (structural_joined, structural_mappings) =
-        collect_structural_fragments(&lines, structural_base, fragment_cache);
+    let (structural_joined, structural_mappings) = collect_structural_fragments(
+        &lines,
+        &source_line_offsets,
+        structural_base,
+        fragment_cache,
+    );
 
     // Delay the full-chunk `text.to_string()` copy until we know there is
     // actually something to append. When neither a real concatenation join nor
@@ -161,6 +166,7 @@ fn identity_line_mappings(text: &str, original_end: usize) -> Vec<LineMapping> {
             line_number: line_idx + 1,
             start_offset: offset,
             end_offset: (end + 1).min(original_end),
+            original_start_offset: offset,
         });
         offset = end + 1;
     }
@@ -184,6 +190,7 @@ fn passthrough_text(text: std::borrow::Cow<'_, str>) -> PreprocessedText<'_> {
 
 fn process_line_chain(
     lines: &[&str],
+    source_line_offsets: &[usize],
     start_idx: usize,
     config: &MultilineConfig,
     base_offset: usize,
@@ -228,6 +235,7 @@ fn process_line_chain(
             start_offset: base_offset,
             end_offset: base_offset + joined.len(),
             line_number: original_start_line,
+            original_start_offset: source_line_offsets.get(start_idx).copied().unwrap_or(0), // LAW10: reporting-only fallback for malformed synthetic line index
         }]
     };
 

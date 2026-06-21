@@ -207,6 +207,37 @@ fn isolated_short_dash_entropy_secret_enters_direct_scan_prefilter_recovery() {
 
 #[cfg(feature = "entropy")]
 #[test]
+fn multiline_symbolic_isolated_candidate_enters_coalesced_no_hit_branch() {
+    let scanner = compile_scanner_with_config(ScannerConfig::default());
+    let secret = "BadCbc0#-DE&1$FA";
+    let chunk = make_chunk(&format!("`{secret}`\\\n\n"), "notes/multiline-symbolic.txt");
+
+    let direct = scanner.scan(&chunk);
+    assert!(
+        direct.iter().any(|m| m.credential.as_ref() == secret),
+        "direct scan must surface the multiline-isolated symbolic candidate; matches={:?}",
+        direct
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))
+            .collect::<Vec<_>>()
+    );
+
+    scanner.clear_fragment_cache();
+    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk));
+    let matches = &results[0];
+    assert!(
+        matches.iter().any(|m| m.credential.as_ref() == secret),
+        "coalesced no-hit branch must admit multiline preprocessing when it creates \
+         an isolated entropy candidate; matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref()))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
 fn isolated_bare_base64_shaped_entropy_secret_bypasses_blob_shape_gate() {
     let mut config = ScannerConfig::default();
     config.min_confidence = 0.0;

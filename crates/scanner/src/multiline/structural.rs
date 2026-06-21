@@ -44,6 +44,7 @@ pub(super) fn warm_runtime_regexes() {
 
 pub(super) fn collect_structural_fragments(
     lines: &[&str],
+    source_line_offsets: &[usize],
     initial_offset: usize,
     fragment_cache: &FragmentCache,
 ) -> (Vec<String>, Vec<LineMapping>) {
@@ -76,6 +77,7 @@ pub(super) fn collect_structural_fragments(
                     start_offset: current_struct_offset,
                     end_offset: current_struct_offset + array_joined.len(),
                     line_number: index + 1,
+                    original_start_offset: source_line_offsets.get(index).copied().unwrap_or(0), // LAW10: reporting-only fallback for malformed synthetic line index
                 });
                 current_struct_offset += array_joined.len() + 1;
             }
@@ -136,6 +138,10 @@ pub(super) fn collect_structural_fragments(
             start_offset: current_struct_offset,
             end_offset: current_struct_offset + joined.len(),
             line_number: start_line,
+            original_start_offset: source_line_offsets
+                .get(start_line.saturating_sub(1))
+                .copied()
+                .unwrap_or(0), // LAW10: reporting-only fallback for malformed synthetic line index
         });
         current_struct_offset += joined.len() + 1;
     }
@@ -154,7 +160,7 @@ pub(super) fn collect_structural_fragments(
     // surface the secret - better than the previous behavior of missing it
     // entirely.
     const SYNTHETIC_BASE_LINE: usize = 1_000_000_000;
-    for (offset_idx, (_index, joined)) in lines
+    for (offset_idx, (index, joined)) in lines
         .iter()
         .enumerate()
         .filter_map(|(i, line)| resolve_concat_reference(line, &var_values).map(|j| (i, j)))
@@ -166,6 +172,7 @@ pub(super) fn collect_structural_fragments(
             start_offset: current_struct_offset,
             end_offset: current_struct_offset + joined.len(),
             line_number: SYNTHETIC_BASE_LINE + offset_idx,
+            original_start_offset: source_line_offsets.get(index).copied().unwrap_or(0), // LAW10: reporting-only fallback for malformed synthetic line index
         });
         current_struct_offset += joined.len() + 1;
     }
@@ -180,16 +187,20 @@ pub(super) fn collect_structural_fragments(
     // pass (keeps cold-path JS/TS scanning free of the cost).
     if lines.iter().any(|line| line.contains("}${")) {
         let tmpl_vars = collect_template_vars(lines);
-        for joined in lines
+        for (index, joined) in lines
             .iter()
-            .filter_map(|line| resolve_template_reference(line, &tmpl_vars))
-            .filter(|j| j.len() >= 12)
+            .enumerate()
+            .filter_map(|(index, line)| {
+                resolve_template_reference(line, &tmpl_vars).map(|joined| (index, joined))
+            })
+            .filter(|(_, joined)| joined.len() >= 12)
         {
             structural_joined.push(joined.clone());
             structural_mappings.push(LineMapping {
                 start_offset: current_struct_offset,
                 end_offset: current_struct_offset + joined.len(),
                 line_number: SYNTHETIC_BASE_LINE,
+                original_start_offset: source_line_offsets.get(index).copied().unwrap_or(0), // LAW10: reporting-only fallback for malformed synthetic line index
             });
             current_struct_offset += joined.len() + 1;
         }
@@ -205,6 +216,10 @@ pub(super) fn collect_structural_fragments(
                     start_offset: current_struct_offset,
                     end_offset: current_struct_offset + joined.len(),
                     line_number: start_line,
+                    original_start_offset: source_line_offsets
+                        .get(start_line.saturating_sub(1))
+                        .copied()
+                        .unwrap_or(0), // LAW10: reporting-only fallback for malformed synthetic line index
                 });
                 current_struct_offset += joined.len() + 1;
             }

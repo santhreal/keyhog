@@ -189,13 +189,25 @@ impl CompiledScanner {
             return true;
         }
         let data = chunk.data.as_bytes();
-        #[cfg(feature = "multiline")]
-        if crate::multiline::has_concatenation_indicators(&chunk.data)
-            && has_secret_keyword_fast(data)
-        {
-            return true;
-        }
         let small_chunk = chunk.data.len() <= 32 * 1024;
+        #[cfg(feature = "multiline")]
+        if crate::multiline::has_concatenation_indicators(&chunk.data) {
+            if has_secret_keyword_fast(data) {
+                return true;
+            }
+            if small_chunk && self.config.entropy_enabled {
+                let prepared = self.prepare_chunk(chunk);
+                if prepared.preprocessed.text.as_bytes() != chunk.data.as_bytes()
+                    && crate::entropy::scanner::has_isolated_bare_secret_candidate(
+                        &prepared.preprocessed.text,
+                        self.config.entropy_threshold,
+                        &self.config.placeholder_keywords,
+                    )
+                {
+                    return true;
+                }
+            }
+        }
         let entropy_admits = small_chunk
             && self.config.entropy_enabled
             && ((crate::entropy::is_entropy_appropriate_with_content(

@@ -122,6 +122,7 @@ fn build_preprocessed_text<'a>(
 
     // One mapping per source line plus one per synthetic line.
     let line_count = text.split('\n').count();
+    let source_line_offsets = crate::compute_line_offsets(text);
     let mut mappings: Vec<LineMapping> = Vec::with_capacity(line_count + pairs.len());
     let mut offset = 0usize;
 
@@ -131,6 +132,7 @@ fn build_preprocessed_text<'a>(
             line_number: line_idx + 1,
             start_offset: offset,
             end_offset: (end + 1).min(original_end),
+            original_start_offset: offset,
         });
         offset = end + 1;
     }
@@ -145,6 +147,7 @@ fn build_preprocessed_text<'a>(
             line_number: pair.line,
             start_offset: current_offset,
             end_offset: current_offset + line_len,
+            original_start_offset: source_line_start(&source_line_offsets, pair.line),
         });
         final_text.push_str(&pair.context);
         final_text.push_str(": ");
@@ -180,6 +183,7 @@ fn build_preprocessed_text<'a>(
 
     // One mapping per source line plus one per synthetic line.
     let line_count = text.split('\n').count();
+    let source_line_offsets = crate::compute_line_offsets(text);
     let mut mappings: Vec<LineMapping> = Vec::with_capacity(line_count + pairs.len());
     let mut offset = 0usize;
 
@@ -189,6 +193,7 @@ fn build_preprocessed_text<'a>(
             line_number: line_idx + 1,
             start_offset: offset,
             end_offset: end + 1,
+            original_start_offset: offset,
         });
         offset = end + 1;
     }
@@ -206,6 +211,7 @@ fn build_preprocessed_text<'a>(
             line_number: pair.line,
             start_offset: current_offset,
             end_offset: current_offset + line_len,
+            original_start_offset: source_line_start(&source_line_offsets, pair.line),
         });
         final_text.push_str(&pair.context);
         final_text.push_str(": ");
@@ -219,4 +225,11 @@ fn build_preprocessed_text<'a>(
         text: std::borrow::Cow::Owned(final_text),
         mappings,
     }
+}
+
+fn source_line_start(line_offsets: &[usize], one_based_line: usize) -> usize {
+    line_offsets
+        .get(one_based_line.saturating_sub(1))
+        .copied()
+        .unwrap_or(0) // LAW10: reporting-only fallback for malformed structured pair line
 }

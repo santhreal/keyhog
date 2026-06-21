@@ -244,7 +244,9 @@ impl CompiledScanner {
 
                 let metadata = &self.hot_metadata_by_index[pattern_idx];
                 let absolute_line = line + chunk.metadata.base_line;
-                let absolute_offset = offset + chunk.metadata.base_offset;
+                let source_offset =
+                    preprocessed.source_offset_for_match(&chunk.data, offset, credential);
+                let absolute_offset = source_offset + chunk.metadata.base_offset;
                 scan_state.push_match_lazy(
                     crate::scanner_config::RawMatchPriority {
                         confidence: Some(confidence),

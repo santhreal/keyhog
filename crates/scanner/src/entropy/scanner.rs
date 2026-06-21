@@ -513,10 +513,15 @@ fn isolated_bare_candidate(line: &str, min_len: usize) -> Option<&str> {
                         | b'*'
                 )
         });
+    let bang_led_symbolic_token = has_assignment_equals
+        && candidate.starts_with('!')
+        && !candidate.starts_with("!!")
+        && symbolic_isolated_bare_candidate(candidate);
     if standard_token
         || colon_separated_opaque_candidate(candidate)
         || no_digit_symbolic_token
         || (!has_assignment_equals && symbolic_isolated_bare_candidate(candidate))
+        || bang_led_symbolic_token
     {
         return Some(candidate);
     }

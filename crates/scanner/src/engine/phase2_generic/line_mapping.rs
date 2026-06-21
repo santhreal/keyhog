@@ -1,21 +1,4 @@
-//! Line slicing and source-coordinate recovery for generic assignment findings.
-
-pub(super) fn source_offset_for_line_value(
-    source: &str,
-    one_based_line: usize,
-    value: &str,
-) -> usize {
-    let mut line_start = 0usize;
-    for (line_idx, line) in source.split('\n').enumerate() {
-        if line_idx + 1 == one_based_line {
-            return line
-                .find(value)
-                .map_or(line_start, |column| line_start + column);
-        }
-        line_start += line.len() + 1;
-    }
-    source.len()
-}
+//! Line slicing for generic assignment findings.
 
 pub(super) fn line_at_index<'a>(
     text: &'a str,

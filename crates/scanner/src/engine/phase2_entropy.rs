@@ -119,10 +119,17 @@ impl CompiledScanner {
             } else {
                 base_confidence
             };
-            // Candidate offsets are already chunk-local line starts; add only
-            // the window base offset for absolute file coordinates.
-            let _ = line_offsets; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
-            let offset = entropy_match.offset + chunk.metadata.base_offset;
+            let mapped_line = crate::pipeline::match_line_number(
+                preprocessed,
+                line_offsets,
+                entropy_match.offset,
+            );
+            let source_offset = preprocessed.source_offset_for_match(
+                &chunk.data,
+                entropy_match.offset,
+                &entropy_match.value,
+            );
+            let offset = source_offset + chunk.metadata.base_offset;
 
             // Pass the lift switch only after generation; the gauntlet still
             // owns every non-canonical precision gate.
@@ -138,7 +145,7 @@ impl CompiledScanner {
             }
 
             let metadata = &self.entropy_metadata_by_index[entropy_meta_idx];
-            let absolute_line = entropy_match.line + chunk.metadata.base_line;
+            let absolute_line = mapped_line + chunk.metadata.base_line;
             let build_raw_match = |scan_state: &mut ScanState, confidence| {
                 // Clone metadata only for candidates that need an owned RawMatch.
                 let detector_id = Arc::clone(&metadata.0);

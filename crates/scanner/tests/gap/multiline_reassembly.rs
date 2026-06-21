@@ -841,6 +841,7 @@ fn line_for_offset_before_any_mapping_is_none() {
             start_offset: 5,
             end_offset: 8,
             line_number: 3,
+            original_start_offset: 5,
         }],
     };
     // offset 4 < first start_offset -> partition_point returns 0 -> None.
@@ -863,11 +864,13 @@ fn line_for_offset_gap_between_mappings_is_none() {
                 start_offset: 0,
                 end_offset: 3,
                 line_number: 1,
+                original_start_offset: 0,
             },
             LineMapping {
                 start_offset: 10,
                 end_offset: 13,
                 line_number: 5,
+                original_start_offset: 10,
             },
         ],
     };

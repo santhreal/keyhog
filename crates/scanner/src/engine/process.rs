@@ -272,13 +272,15 @@ impl CompiledScanner {
                 if checksum_result == crate::checksum::ChecksumResult::Valid {
                     confidence = confidence.max(crate::checksum::CHECKSUM_VALID_FLOOR);
                 }
+                let source_offset =
+                    preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
                 let raw_match = build_raw_match(
                     detector,
                     self.interned_detector_metadata(entry.detector_index),
                     chunk,
                     credential,
                     companions,
-                    credential_start + base_offset,
+                    source_offset + base_offset,
                     line + base_line,
                     entropy,
                     confidence,
@@ -295,13 +297,15 @@ impl CompiledScanner {
                 credential: pending_credential,
                 ml_context,
             } => {
+                let source_offset =
+                    preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
                 let raw_match = build_raw_match(
                     detector,
                     self.interned_detector_metadata(entry.detector_index),
                     chunk,
                     credential,
                     companions,
-                    credential_start + base_offset,
+                    source_offset + base_offset,
                     line + base_line,
                     entropy,
                     heuristic_conf,

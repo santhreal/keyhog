@@ -16,7 +16,7 @@
 //!      control bytes, lone surrogates' replacement, NULs, and long high-
 //!      entropy runs) must RETURN, never panic / index out of bounds / overflow.
 //!      Every surfaced match must also be internally consistent: its credential
-//!      is non-empty and its byte offset lies within the chunk.
+//!      is non-empty and its byte offset points at a byte inside the chunk.
 //!
 //!   2. `coalesced_batch_loses_no_per_chunk_finding` (2_000 cases) — the
 //!      production batch path (`scan_coalesced`, which adds cross-chunk boundary
@@ -86,8 +86,8 @@ proptest! {
                 "a surfaced match must carry a non-empty credential"
             );
             prop_assert!(
-                m.location.offset <= chunk_len,
-                "match offset {} exceeds chunk length {chunk_len}",
+                m.location.offset < chunk_len,
+                "match offset {} must point inside chunk length {chunk_len}",
                 m.location.offset
             );
         }
