@@ -176,7 +176,7 @@ fn github_pat_example_suppressed() {
 #[test]
 fn placeholder_keywords_suppressed() {
     use keyhog_scanner::context::CodeContext;
-    use keyhog_scanner::testing::should_suppress_known_example_credential;
+    use keyhog_scanner::testing::known_example_suppressed;
 
     let placeholders = vec![
         "my_example_key",
@@ -188,7 +188,7 @@ fn placeholder_keywords_suppressed() {
     ];
     for p in &placeholders {
         assert!(
-            should_suppress_known_example_credential(p, None, CodeContext::Unknown),
+            known_example_suppressed(p, None, CodeContext::Unknown),
             "{p} should be suppressed as a placeholder keyword"
         );
     }
@@ -197,7 +197,7 @@ fn placeholder_keywords_suppressed() {
 #[test]
 fn instructional_fragments_suppressed() {
     use keyhog_scanner::context::CodeContext;
-    use keyhog_scanner::testing::should_suppress_known_example_credential;
+    use keyhog_scanner::testing::known_example_suppressed;
 
     let examples = vec![
         "your_api_key_here",
@@ -208,7 +208,7 @@ fn instructional_fragments_suppressed() {
     ];
     for e in &examples {
         assert!(
-            should_suppress_known_example_credential(e, None, CodeContext::Unknown),
+            known_example_suppressed(e, None, CodeContext::Unknown),
             "{e} should be suppressed as an instructional placeholder"
         );
     }
@@ -217,7 +217,7 @@ fn instructional_fragments_suppressed() {
 #[test]
 fn repetitive_masking_suppressed() {
     use keyhog_scanner::context::CodeContext;
-    use keyhog_scanner::testing::should_suppress_known_example_credential;
+    use keyhog_scanner::testing::known_example_suppressed;
 
     let examples = vec![
         "ghp_xxx123456789012345678901234567890",
@@ -227,7 +227,7 @@ fn repetitive_masking_suppressed() {
     ];
     for e in &examples {
         assert!(
-            should_suppress_known_example_credential(e, None, CodeContext::Unknown),
+            known_example_suppressed(e, None, CodeContext::Unknown),
             "{e} should be suppressed due to repetitive masking"
         );
     }
@@ -236,7 +236,7 @@ fn repetitive_masking_suppressed() {
 #[test]
 fn fake_sequences_suppressed() {
     use keyhog_scanner::context::CodeContext;
-    use keyhog_scanner::testing::should_suppress_known_example_credential;
+    use keyhog_scanner::testing::known_example_suppressed;
 
     let examples = vec![
         "prefix_1234567890_suffix",
@@ -245,7 +245,7 @@ fn fake_sequences_suppressed() {
     ];
     for e in &examples {
         assert!(
-            should_suppress_known_example_credential(e, None, CodeContext::Unknown),
+            known_example_suppressed(e, None, CodeContext::Unknown),
             "{e} should be suppressed as a fake sequence"
         );
     }
@@ -254,18 +254,14 @@ fn fake_sequences_suppressed() {
 #[test]
 fn todo_fixme_suppressed() {
     use keyhog_scanner::context::CodeContext;
-    use keyhog_scanner::testing::should_suppress_known_example_credential;
+    use keyhog_scanner::testing::known_example_suppressed;
 
     assert!(
-        should_suppress_known_example_credential(
-            "TODO_add_real_key_here",
-            None,
-            CodeContext::Unknown
-        ),
+        known_example_suppressed("TODO_add_real_key_here", None, CodeContext::Unknown),
         "TODO marker should suppress credential"
     );
     assert!(
-        should_suppress_known_example_credential("FIXME_replace_me", None, CodeContext::Unknown),
+        known_example_suppressed("FIXME_replace_me", None, CodeContext::Unknown),
         "FIXME marker should suppress credential"
     );
 }
@@ -273,18 +269,14 @@ fn todo_fixme_suppressed() {
 #[test]
 fn real_credentials_not_suppressed() {
     use keyhog_scanner::context::CodeContext;
-    use keyhog_scanner::testing::should_suppress_known_example_credential;
+    use keyhog_scanner::testing::known_example_suppressed;
 
     assert!(
-        !should_suppress_known_example_credential(
-            "AKIAQWERTYUIOPASDFGHJKLZX",
-            None,
-            CodeContext::Unknown
-        ),
+        !known_example_suppressed("AKIAQWERTYUIOPASDFGHJKLZX", None, CodeContext::Unknown),
         "realistic AWS key without placeholder markers should not be suppressed"
     );
     assert!(
-        !should_suppress_known_example_credential(
+        !known_example_suppressed(
             concat!("sk_li", "ve_abcdefghijklmnopqrstuvwxyz"),
             None,
             CodeContext::Unknown

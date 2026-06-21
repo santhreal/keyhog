@@ -146,16 +146,6 @@ pub(crate) struct NamedDetectorSuppressionCtx<'a> {
 }
 
 impl<'a> NamedDetectorSuppressionCtx<'a> {
-    #[cfg(test)]
-    pub(crate) fn new(
-        path: Option<&'a str>,
-        context: context::CodeContext,
-        source_type: Option<&'a str>,
-        detector_id: &'a str,
-    ) -> Self {
-        Self::with_weak_anchor(path, context, source_type, detector_id, false)
-    }
-
     pub(crate) fn with_weak_anchor(
         path: Option<&'a str>,
         context: context::CodeContext,
@@ -171,63 +161,6 @@ impl<'a> NamedDetectorSuppressionCtx<'a> {
             weak_anchor,
         }
     }
-}
-
-/// Check if a credential should be suppressed (e.g., if it is a known example token).
-#[cfg(test)]
-pub(crate) fn should_suppress_known_example_credential(
-    credential: &str,
-    path: Option<&str>,
-    context: context::CodeContext,
-) -> bool {
-    suppress_known_example_credential(
-        credential,
-        KnownExampleSuppressionCtx::new(path, context, None),
-    )
-}
-
-/// Variant of [`should_suppress_known_example_credential`] that also takes the
-/// chunk's `source_type`. When the credential arrived through an
-/// **adversarial-evasion decoder** (reverse, Caesar/ROT-N), the EXAMPLE-token
-/// suppression is skipped - legitimate test fixtures don't typically reverse
-/// or rotate their EXAMPLE markers; only attackers building evasions do, so
-/// the marker becomes evidence FOR a real leak rather than against it.
-///
-/// Other decoders (base64, hex, URL) decode legitimate transport encodings
-/// where EXAMPLE-suppression remains appropriate, so we don't blanket-bypass
-/// the rule on every decoder origin.
-#[cfg(test)]
-pub(crate) fn should_suppress_known_example_credential_with_source(
-    credential: &str,
-    path: Option<&str>,
-    context: context::CodeContext,
-    source_type: Option<&str>,
-) -> bool {
-    suppress_known_example_credential(
-        credential,
-        KnownExampleSuppressionCtx::new(path, context, source_type),
-    )
-}
-
-/// Variant for named-detector findings that have already matched a
-/// service-specific anchor (e.g. `ALGOLIA_ADMIN_KEY=<32hex>`). When set,
-/// the shape-based gates (pure-hash-digest, UUID, b64-blob, dashed-serial,
-/// hex-uniformity) are bypassed because the regex anchor IS the positive
-/// evidence - a 32-hex value after `ALGOLIA_ADMIN_KEY=` is an Algolia key,
-/// NOT an MD5. Use ONLY from detector paths whose regex requires a
-/// service-keyword anchor in the alternation list.
-#[cfg(test)]
-pub(crate) fn should_suppress_named_detector_finding(
-    credential: &str,
-    path: Option<&str>,
-    context: context::CodeContext,
-    source_type: Option<&str>,
-    detector_id: &str,
-) -> bool {
-    suppress_named_detector_finding(
-        credential,
-        NamedDetectorSuppressionCtx::new(path, context, source_type, detector_id),
-    )
 }
 
 /// Named-detector suppression with explicit structural context.

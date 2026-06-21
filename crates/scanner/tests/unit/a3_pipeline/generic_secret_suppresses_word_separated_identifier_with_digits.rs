@@ -1,5 +1,5 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::testing::should_suppress_named_detector_finding;
+use keyhog_scanner::testing::named_detector_suppressed;
 
 #[test]
 fn snake_case_identifier_with_digits_suppressed() {
@@ -10,7 +10,7 @@ fn snake_case_identifier_with_digits_suppressed() {
     // `looks_like_pure_identifier` (rejects on `has_digit`).
     // v0.5.22 wires `looks_like_word_separated_identifier`, which
     // permits digits but enforces max-word-length ≤ 10.
-    assert!(should_suppress_named_detector_finding(
+    assert!(named_detector_suppressed(
         "s3_secret_access_key",
         Some("alist/internal/conf/const.go"),
         CodeContext::Unknown,
@@ -18,7 +18,7 @@ fn snake_case_identifier_with_digits_suppressed() {
         "generic-secret",
     ));
     // openssl apps/ts.c:683 - `token = d2i_PKCS7_bio(in_bio, NULL)`
-    assert!(should_suppress_named_detector_finding(
+    assert!(named_detector_suppressed(
         "d2i_PKCS7_bio",
         Some("openssl/apps/ts.c"),
         CodeContext::Unknown,
@@ -26,7 +26,7 @@ fn snake_case_identifier_with_digits_suppressed() {
         "generic-secret",
     ));
     // sqlite ext/fts5/fts5_test_tok.c - `sqlite3_malloc64`
-    assert!(should_suppress_named_detector_finding(
+    assert!(named_detector_suppressed(
         "sqlite3_malloc64",
         Some("sqlite/ext/fts5/fts5_test_tok.c"),
         CodeContext::Unknown,
@@ -34,7 +34,7 @@ fn snake_case_identifier_with_digits_suppressed() {
         "generic-secret",
     ));
     // curl lib/vauth/ntlm_sspi.c:204 - `input_token = curlx_memdup0(...)`
-    assert!(should_suppress_named_detector_finding(
+    assert!(named_detector_suppressed(
         "curlx_memdup0",
         Some("curl/lib/vauth/ntlm_sspi.c"),
         CodeContext::Unknown,

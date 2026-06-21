@@ -1,29 +1,31 @@
 //! LANE-4 detection-truth: pin the EXACT dogfood `reason` string the
 //! suppression cascade emits for each placeholder / example / shape class, over
-//! the public `keyhog_scanner::testing::should_suppress_known_example_credential` entry
+//! the public `keyhog_scanner::testing::known_example_suppressed` entry
 //! point.
 //!
-//! Telemetry is process-global, so — like the sibling
-//! `regression_dogfood_shape_suppression_trace.rs` — ALL assertions live in ONE
-//! sequential `#[test]` fn in this file (its own test binary, no cross-file
-//! race). This is the COMPANION to the parallel bool-only matrices in
-//! `suppression_truth_table.rs`: those pin "suppressed / not", this pins WHICH
-//! gate did it by its literal `&'static str` reason, so a renamed / reordered /
-//! removed cascade arm flips a specific named row red rather than passing
-//! silently (Law 6 — exact value, never `is_ok`/`!is_empty`).
+//! Dogfood's hot-path flag is process-global, so this file takes the shared
+//! unit telemetry lock and records events into scoped telemetry rather than the
+//! process-global event buffer. This is the COMPANION to the parallel bool-only
+//! matrices in `suppression_truth_table.rs`: those pin "suppressed / not", this
+//! pins WHICH gate did it by its literal `&'static str` reason, so a renamed /
+//! reordered / removed cascade arm flips a specific named row red rather than
+//! passing silently (Law 6 — exact value, never `is_ok`/`!is_empty`).
 //!
 //! The reason strings are the literals emitted by
 //! `crates/scanner/src/suppression/decision.rs` and `suppression/doc_markers.rs`.
 
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::telemetry::{self, DogfoodEvent};
-use keyhog_scanner::testing::should_suppress_known_example_credential;
+use keyhog_scanner::telemetry::{self, DogfoodEvent, ScanTelemetry};
+use keyhog_scanner::testing::known_example_suppressed;
+use std::sync::Arc;
 
 /// Drain the dogfood trace and return every suppression reason (example OR
 /// shape), in recorded order. The cascade short-circuits, so the FIRST reason
 /// is the authoritative gate that fired.
-fn drain_reasons() -> Vec<String> {
-    telemetry::drain_events()
+fn drain_reasons(trace: &ScanTelemetry) -> Vec<String> {
+    trace
+        .drain()
+        .dogfood_events
         .into_iter()
         .map(|e| match e {
             DogfoodEvent::ShapeSuppressed { reason, .. }
@@ -35,13 +37,17 @@ fn drain_reasons() -> Vec<String> {
 /// Assert `credential` is suppressed AND the first recorded reason is exactly
 /// `expected_reason`. Drains so each case starts clean.
 fn assert_reason(credential: &str, expected_reason: &str) {
-    let suppressed =
-        should_suppress_known_example_credential(credential, None, CodeContext::Unknown);
+    let trace = Arc::new(ScanTelemetry::new());
+    telemetry::testing::reset();
+    telemetry::enable_dogfood();
+    let suppressed = telemetry::with_scan_telemetry(&trace, || {
+        known_example_suppressed(credential, None, CodeContext::Unknown)
+    });
     assert!(
         suppressed,
         "{credential:?} must be suppressed (expected gate: {expected_reason})"
     );
-    let reasons = drain_reasons();
+    let reasons = drain_reasons(&trace);
     assert!(
         !reasons.is_empty(),
         "{credential:?} suppressed but emitted NO dogfood reason — a silent gate \
@@ -55,9 +61,13 @@ fn assert_reason(credential: &str, expected_reason: &str) {
 
 /// Assert `credential` is NOT suppressed and emits NO suppression event.
 fn assert_not_suppressed(credential: &str) {
-    let suppressed =
-        should_suppress_known_example_credential(credential, None, CodeContext::Unknown);
-    let reasons = drain_reasons();
+    let trace = Arc::new(ScanTelemetry::new());
+    telemetry::testing::reset();
+    telemetry::enable_dogfood();
+    let suppressed = telemetry::with_scan_telemetry(&trace, || {
+        known_example_suppressed(credential, None, CodeContext::Unknown)
+    });
+    let reasons = drain_reasons(&trace);
     assert!(
         !suppressed,
         "REAL secret {credential:?} was WRONGLY suppressed by gate(s) {reasons:?} — recall regression"
@@ -127,9 +137,7 @@ const REAL_SECRETS: &[&str] = &[
 
 #[test]
 fn each_suppression_gate_emits_its_exact_reason_and_real_secrets_emit_none() {
-    telemetry::testing::reset();
-    telemetry::enable_dogfood();
-
+    let _telemetry_guard = super::super::telemetry_serial::lock();
     for (credential, gate) in REASON_TABLE {
         assert_reason(credential, gate);
     }

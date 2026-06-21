@@ -7,17 +7,15 @@
 //! with "never reached the engine" (a Law-10 silent drop). The predicate now
 //! returns `Some(gate_name)` and the caller records a `ShapeSuppressed` event.
 //!
-//! Telemetry is process-global, so the assertions are serialized through one
-//! lock; this file is its own test binary.
+//! Dogfood's hot-path flag is process-global, so the assertions use the shared
+//! unit telemetry lock and scoped telemetry buffers.
 
 use super::support::paths::detector_dir;
 
 use keyhog_core::{Chunk, ChunkMetadata};
-use keyhog_scanner::telemetry::{self, DogfoodEvent};
+use keyhog_scanner::telemetry::{self, DogfoodEvent, ScanTelemetry};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
-use std::sync::Mutex;
-
-static T_LOCK: Mutex<()> = Mutex::new(());
+use std::sync::Arc;
 
 fn scanner() -> CompiledScanner {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
@@ -28,15 +26,23 @@ fn scanner() -> CompiledScanner {
 /// its shape gauntlet run) and return the `ShapeSuppressed` reasons recorded for
 /// our planted value (matched by redaction prefix so a concurrent gate can't
 /// satisfy the assertion).
-fn shape_reasons_for(scanner: &CompiledScanner, line: &str, redact_prefix: &str) -> Vec<String> {
+fn shape_reasons_for(
+    scanner: &CompiledScanner,
+    line: &str,
+    redact_prefix: &str,
+    trace: &Arc<ScanTelemetry>,
+) -> Vec<String> {
     let chunk = Chunk {
         data: line.into(),
         metadata: ChunkMetadata::default(),
     };
     scanner.clear_fragment_cache();
-    let _ =
-        scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback);
-    telemetry::drain_events()
+    let _ = telemetry::with_scan_telemetry(trace, || {
+        scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+    });
+    trace
+        .drain()
+        .dogfood_events
         .into_iter()
         .filter_map(|e| match e {
             DogfoodEvent::ShapeSuppressed {
@@ -51,7 +57,7 @@ fn shape_reasons_for(scanner: &CompiledScanner, line: &str, redact_prefix: &str)
 
 #[test]
 fn generic_gauntlet_base64_blob_drop_is_traced() {
-    let _g = T_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = super::super::telemetry_serial::lock();
     let s = scanner();
     telemetry::testing::reset();
     telemetry::enable_dogfood();
@@ -60,7 +66,8 @@ fn generic_gauntlet_base64_blob_drop_is_traced() {
     // binary decoy class) drops it. No vendor prefix => no named detector fires,
     // so the generic bridge is the only path and the gauntlet is what suppresses.
     let blob = "Yml0Y29pbgABAgMEBQYHCAkKCwwND/7+/f38+/r5+Pf=";
-    let reasons = shape_reasons_for(&s, &format!("secret = \"{blob}\""), "Yml0");
+    let trace = Arc::new(ScanTelemetry::new());
+    let reasons = shape_reasons_for(&s, &format!("secret = \"{blob}\""), "Yml0", &trace);
     assert!(
         reasons.iter().any(|r| r == "base64_blob"),
         "the generic-bridge base64-blob shape drop must emit a ShapeSuppressed \
@@ -69,7 +76,8 @@ fn generic_gauntlet_base64_blob_drop_is_traced() {
 
     // ── negative twin: dogfood OFF ⇒ zero events, decision unchanged ──
     telemetry::testing::reset();
-    let off = shape_reasons_for(&s, &format!("secret = \"{blob}\""), "Yml0");
+    let trace = Arc::new(ScanTelemetry::new());
+    let off = shape_reasons_for(&s, &format!("secret = \"{blob}\""), "Yml0", &trace);
     assert!(
         off.is_empty(),
         "with dogfood OFF the generic-gauntlet recorder must emit nothing, got {off:?}"

@@ -1,5 +1,5 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::testing::should_suppress_named_detector_finding;
+use keyhog_scanner::testing::named_detector_suppressed;
 
 #[test]
 fn real_credential_with_underscores_not_suppressed() {
@@ -13,7 +13,7 @@ fn real_credential_with_underscores_not_suppressed() {
     // Literal defanged via concat!() so GitHub push-protection
     // doesn't flag this fixture as a leaked Stripe key.
     let stripe_shape = concat!("sk", "_test_", "4eC39HqLyjWDarjtT1zdp7dc");
-    assert!(!should_suppress_named_detector_finding(
+    assert!(!named_detector_suppressed(
         stripe_shape,
         Some("app/config/billing.rs"),
         CodeContext::Unknown,
@@ -23,7 +23,7 @@ fn real_credential_with_underscores_not_suppressed() {
     // MailChimp API key shape: `<32-hex>-<region>` - last segment
     // short, first segment long random hex. Must NOT suppress.
     let mailchimp_shape = concat!("a1b2c3d4e5f6789012345678901234ab", "-", "us12");
-    assert!(!should_suppress_named_detector_finding(
+    assert!(!named_detector_suppressed(
         mailchimp_shape,
         Some("app/config/mail.env"),
         CodeContext::Unknown,
@@ -38,7 +38,7 @@ fn real_credential_with_underscores_not_suppressed() {
         "abcdef123456-",
         "AbCdEfGhIjKlMnOpQrStUvWx"
     );
-    assert!(!should_suppress_named_detector_finding(
+    assert!(!named_detector_suppressed(
         slack_shape,
         Some("config/slack.toml"),
         CodeContext::Unknown,

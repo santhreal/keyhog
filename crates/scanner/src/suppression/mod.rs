@@ -8,14 +8,8 @@ pub(crate) mod path_filter;
 pub(crate) mod shape;
 pub(crate) mod token_randomness;
 
-#[cfg(test)]
-pub(crate) use api::should_suppress_known_example_credential_with_source;
 pub(crate) use api::{
     detector_weak_anchor, suppress_named_detector_finding, NamedDetectorSuppressionCtx,
-};
-#[cfg(test)]
-pub(crate) use api::{
-    should_suppress_known_example_credential, should_suppress_named_detector_finding,
 };
 #[cfg(feature = "simdsieve")]
 pub(crate) use api::{suppress_hot_pattern_candidate, HotPatternSuppressionCtx};

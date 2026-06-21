@@ -1,5 +1,5 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::testing::should_suppress_named_detector_finding;
+use keyhog_scanner::testing::named_detector_suppressed;
 
 #[test]
 fn template_path_and_url_fragment_suppressed() {
@@ -8,14 +8,14 @@ fn template_path_and_url_fragment_suppressed() {
     //   `tmplUserSettingsPassword = "user/settings/password"`
     // and auth.go has `user/auth/forgot_passwd`. These are TEMPLATE paths,
     // not credentials. v0.5.22 wires `looks_like_url_or_path_segment`.
-    assert!(should_suppress_named_detector_finding(
+    assert!(named_detector_suppressed(
         "user/settings/password",
         Some("gogs/internal/route/user/setting.go"),
         CodeContext::Unknown,
         None,
         "generic-password",
     ));
-    assert!(should_suppress_named_detector_finding(
+    assert!(named_detector_suppressed(
         "user/auth/forgot_passwd",
         Some("gogs/internal/route/user/auth.go"),
         CodeContext::Unknown,
@@ -24,7 +24,7 @@ fn template_path_and_url_fragment_suppressed() {
     ));
     // alist drivers/123_open/api.go:14 has `ApiToken = "/api/v1/access_token"`
     // - that's a URL path string, not a token value.
-    assert!(should_suppress_named_detector_finding(
+    assert!(named_detector_suppressed(
         "/api/v1/access_token",
         Some("alist/drivers/123_open/api.go"),
         CodeContext::Unknown,

@@ -1,5 +1,5 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::testing::should_suppress_named_detector_finding;
+use keyhog_scanner::testing::named_detector_suppressed;
 
 #[test]
 fn multi_hyphen_train_case_header_name_suppressed() {
@@ -10,14 +10,14 @@ fn multi_hyphen_train_case_header_name_suppressed() {
     // not header VALUES - never credentials.
     // v0.5.22 wires `looks_like_word_separated_identifier` which catches
     // multi-hyphen alpha-only train-case via max-word-length ≤ 10.
-    assert!(should_suppress_named_detector_finding(
+    assert!(named_detector_suppressed(
         "X-Shopify-Access-Token",
         Some("shopify-api-js/packages/shopify-api/lib/types.ts"),
         CodeContext::Unknown,
         None,
         "generic-secret",
     ));
-    assert!(should_suppress_named_detector_finding(
+    assert!(named_detector_suppressed(
         "Shopify-Storefront-Private-Token",
         Some("shopify-api-ruby/lib/shopify_api/clients/graphql/storefront.rb"),
         CodeContext::Unknown,
@@ -25,7 +25,7 @@ fn multi_hyphen_train_case_header_name_suppressed() {
         "generic-secret",
     ));
     // Generic train-case header
-    assert!(should_suppress_named_detector_finding(
+    assert!(named_detector_suppressed(
         "X-Auth-Token",
         Some("server/middleware.go"),
         CodeContext::Unknown,

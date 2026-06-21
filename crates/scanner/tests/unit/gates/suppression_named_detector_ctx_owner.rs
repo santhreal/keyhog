@@ -47,8 +47,15 @@ fn engine_uses_typed_named_detector_suppression_context() {
         "suppression::api must expose the typed named-detector suppression entry point"
     );
     assert!(
-        !api.contains("fn should_suppress_named_detector_finding_weak("),
+        !api.contains("fn should_suppress_named_detector_finding(")
+            && !api.contains("fn should_suppress_named_detector_finding_weak(")
+            && !api.contains("fn named_detector_suppressed("),
         "named-detector suppression must not expose a separate weak rigor-tier function"
+    );
+    let suppression_mod = read(&src.join("suppression/mod.rs"));
+    assert!(
+        !suppression_mod.contains("should_suppress_named_detector_finding"),
+        "suppression::mod must not re-export named-detector rigor wrappers"
     );
 
     let mut files = Vec::new();
@@ -57,6 +64,7 @@ fn engine_uses_typed_named_detector_suppression_context() {
     for path in files {
         let code = uncommented_code(&read(&path));
         for forbidden in [
+            "should_suppress_named_detector_finding(",
             "should_suppress_named_detector_finding_weak(",
             "crate::pipeline::should_suppress_named_detector_finding",
             "crate::pipeline::detector_weak_anchor",

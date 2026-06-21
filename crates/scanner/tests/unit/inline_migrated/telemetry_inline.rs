@@ -5,13 +5,11 @@ use keyhog_scanner::telemetry::{
     reset_example_suppression_count, testing::reset, with_scan_telemetry, DogfoodEvent,
     ScanTelemetry,
 };
-use std::sync::{Arc, Barrier, Mutex};
-
-static T_LOCK: Mutex<()> = Mutex::new(());
+use std::sync::{Arc, Barrier};
 
 #[test]
 fn counter_increments_without_dogfood() {
-    let _g = T_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = super::super::telemetry_serial::lock();
     reset();
     record_example_suppression("aws", None, "AKIAEXAMPLE", "ends_with_EXAMPLE");
     record_example_suppression("aws", None, "AKIAEXAMPLE2", "ends_with_EXAMPLE");
@@ -24,7 +22,7 @@ fn counter_increments_without_dogfood() {
 
 #[test]
 fn repeated_default_suppression_counts_without_event_dedup_work() {
-    let _g = T_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = super::super::telemetry_serial::lock();
     reset();
     record_example_suppression("aws", Some("same.env"), "AKIAEXAMPLE", "ends_with_EXAMPLE");
     record_example_suppression("aws", Some("same.env"), "AKIAEXAMPLE", "ends_with_EXAMPLE");
@@ -42,7 +40,7 @@ fn repeated_default_suppression_counts_without_event_dedup_work() {
 
 #[test]
 fn reset_example_suppression_count_makes_repeated_daemon_scans_stable() {
-    let _g = T_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = super::super::telemetry_serial::lock();
     reset();
     record_example_suppression("aws", Some("same.env"), "AKIAEXAMPLE", "ends_with_EXAMPLE");
     assert_eq!(example_suppression_count(), 1);
@@ -58,7 +56,7 @@ fn reset_example_suppression_count_makes_repeated_daemon_scans_stable() {
 
 #[test]
 fn drain_events_allows_same_dogfood_suppression_in_next_scan() {
-    let _g = T_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = super::super::telemetry_serial::lock();
     reset();
     enable_dogfood();
     record_example_suppression("aws", Some("same.env"), "AKIAEXAMPLE", "ends_with_EXAMPLE");
@@ -75,7 +73,7 @@ fn drain_events_allows_same_dogfood_suppression_in_next_scan() {
 
 #[test]
 fn scoped_scan_telemetry_isolates_concurrent_daemon_counts() {
-    let _g = T_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = super::super::telemetry_serial::lock();
     reset();
     enable_dogfood();
 
@@ -135,7 +133,7 @@ fn scoped_scan_telemetry_isolates_concurrent_daemon_counts() {
 
 #[test]
 fn dogfood_captures_events() {
-    let _g = T_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = super::super::telemetry_serial::lock();
     reset();
     enable_dogfood();
     record_example_suppression(
@@ -178,7 +176,7 @@ fn dogfood_captures_events() {
 
 #[test]
 fn redaction_keeps_prefix_only() {
-    let _g = T_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = super::super::telemetry_serial::lock();
     reset();
     enable_dogfood();
     record_example_suppression(
@@ -203,7 +201,7 @@ fn redaction_keeps_prefix_only() {
 
 #[test]
 fn redaction_handles_short_credentials() {
-    let _g = T_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _g = super::super::telemetry_serial::lock();
     reset();
     enable_dogfood();
     record_example_suppression("pipeline", None, "", "empty");

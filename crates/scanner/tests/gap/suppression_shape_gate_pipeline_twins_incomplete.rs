@@ -1,6 +1,6 @@
 //! KH-GAP-126: Suppression vs shape-gates lack paired FP/FN pipeline twins.
 //!
-//! `engine_cases/suppression.rs` tests unit-level `should_suppress_known_example_credential`
+//! `engine_cases/suppression.rs` tests unit-level `known_example_suppressed`
 //! and a few e2e EXAMPLE paths. No paired twins prove:
 //!   - FN: realistic credential wrongly suppressed when shape_gates fire
 //!   - FP: near-miss placeholder reaches findings when bypass_shape_gates is false

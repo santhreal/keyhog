@@ -1,9 +1,9 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::testing::should_suppress_known_example_credential;
+use keyhog_scanner::testing::known_example_suppressed;
 
 #[test]
 fn fixme_marker_suppresses() {
-    assert!(should_suppress_known_example_credential(
+    assert!(known_example_suppressed(
         "FIXME_set_secret",
         None,
         CodeContext::Comment,

@@ -1,5 +1,5 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::testing::should_suppress_named_detector_finding;
+use keyhog_scanner::testing::named_detector_suppressed;
 
 #[test]
 fn kebab_case_config_name_suppressed_for_generic_password() {
@@ -7,7 +7,7 @@ fn kebab_case_config_name_suppressed_for_generic_password() {
     // `(?i)password[=:]<value>` regex and capture kebab-case field
     // names like `user-password`, `aria-secret`, `api-token`. These
     // are config keys, not credentials.
-    assert!(should_suppress_named_detector_finding(
+    assert!(named_detector_suppressed(
         "user-password",
         Some("config/setting.go"),
         CodeContext::Unknown,

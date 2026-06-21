@@ -1,5 +1,5 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::testing::should_suppress_named_detector_finding;
+use keyhog_scanner::testing::named_detector_suppressed;
 
 #[test]
 fn real_password_with_digits_not_suppressed_by_camelcase_filter() {
@@ -9,7 +9,7 @@ fn real_password_with_digits_not_suppressed_by_camelcase_filter() {
     // from the identifier-shape suppression path).
     // If this assertion ever flips to true we've broken real-cred
     // recall.
-    assert!(!should_suppress_named_detector_finding(
+    assert!(!named_detector_suppressed(
         "Passw0rdAbc123",
         Some("config.env"),
         CodeContext::Unknown,

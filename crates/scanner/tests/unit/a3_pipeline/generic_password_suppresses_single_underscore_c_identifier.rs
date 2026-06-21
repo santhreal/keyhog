@@ -1,5 +1,5 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::testing::should_suppress_named_detector_finding;
+use keyhog_scanner::testing::named_detector_suppressed;
 
 #[test]
 fn single_underscore_c_function_name_suppressed_for_generic_password() {
@@ -9,7 +9,7 @@ fn single_underscore_c_function_name_suppressed_for_generic_password() {
     // looks_like_pure_identifier required ≥ 2 underscores so this
     // slipped; bumped the alpha-cluster path to ≤ 1 separator
     // (underscore or hyphen).
-    assert!(should_suppress_named_detector_finding(
+    assert!(named_detector_suppressed(
         "curlx_strdup",
         Some("curl/lib/netrc.c"),
         CodeContext::Unknown,

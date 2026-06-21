@@ -1,5 +1,5 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::testing::should_suppress_known_example_credential_with_source;
+use keyhog_scanner::testing::known_example_suppressed_with_source;
 
 // The CI-workflow path filter lives inside `engine::phase2_entropy`,
 // not the global suppression library - it's only meaningful for the
@@ -15,7 +15,7 @@ fn high_entropy_workflow_step_name_not_globally_suppressed() {
     // future change that adds blanket suppression of step-name strings
     // doesn't silently propagate to named detectors that should still
     // catch a real `${{ secrets.SOMETHING }}` value.
-    assert!(!should_suppress_known_example_credential_with_source(
+    assert!(!known_example_suppressed_with_source(
         "UploadtoCodecov",
         Some("/repo/.github/workflows/coverage.yml"),
         CodeContext::Unknown,

@@ -5,15 +5,19 @@
 //! UUID / bare-hex / base64-blob / placeholder arms `return true` silently and
 //! the dogfood trace showed `events: []` for a matched-and-silenced credential.
 //!
-//! Telemetry is process-global, so all assertions live in ONE `#[test]` fn
-//! (sequential) — this file is its own test binary, so no cross-file race.
+//! Dogfood's hot-path flag is process-global, so this test takes the shared
+//! unit telemetry lock and records events into scoped telemetry rather than the
+//! process-global event buffer.
 
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::telemetry::{self, DogfoodEvent};
+use keyhog_scanner::telemetry::{self, DogfoodEvent, ScanTelemetry};
+use std::sync::Arc;
 
 /// Drain the trace and return the `reason` of each `ShapeSuppressed` event.
-fn drain_shape_reasons() -> Vec<String> {
-    telemetry::drain_events()
+fn drain_shape_reasons(trace: &ScanTelemetry) -> Vec<String> {
+    trace
+        .drain()
+        .dogfood_events
         .into_iter()
         .filter_map(|e| match e {
             DogfoodEvent::ShapeSuppressed { reason, .. } => Some(reason.into_owned()),
@@ -25,17 +29,18 @@ fn drain_shape_reasons() -> Vec<String> {
 /// Assert `credential` is suppressed AND the dogfood trace names exactly
 /// `expected_reason` (drains the buffer so each case starts clean).
 fn assert_suppressed_with_reason(credential: &str, expected_reason: &str) {
-    let suppressed = keyhog_scanner::testing::should_suppress_known_example_credential(
-        credential,
-        None,
-        CodeContext::Unknown,
-    );
+    let trace = Arc::new(ScanTelemetry::new());
+    telemetry::testing::reset();
+    telemetry::enable_dogfood();
+    let suppressed = telemetry::with_scan_telemetry(&trace, || {
+        keyhog_scanner::testing::known_example_suppressed(credential, None, CodeContext::Unknown)
+    });
     assert!(
         suppressed,
         "{credential:?} should be suppressed by the {expected_reason} gate"
     );
     assert_eq!(
-        drain_shape_reasons(),
+        drain_shape_reasons(&trace),
         vec![expected_reason.to_string()],
         "dogfood trace for {credential:?} must name exactly the {expected_reason} gate"
     );
@@ -43,9 +48,7 @@ fn assert_suppressed_with_reason(credential: &str, expected_reason: &str) {
 
 #[test]
 fn dogfood_trace_names_each_cascade_suppression_gate() {
-    telemetry::testing::reset();
-    telemetry::enable_dogfood();
-
+    let _telemetry_guard = super::super::telemetry_serial::lock();
     // ── shape gates (decision.rs) ──
     // UUID-v4 (version nibble 4, variant 8/9/a/b) — the dominant CredData/mirror
     // recall-conflict shape (KH-L-0405/0406); was silently dropped before wiring.
@@ -57,7 +60,7 @@ fn dogfood_trace_names_each_cascade_suppression_gate() {
     );
     // Standard base64 blob: `+/` punctuation, `=` padding, length >= 40.
     assert_suppressed_with_reason(
-        "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5+/AB==",
+        "QUJDREVG+2hpamtsbW5vcHFy/3N0dXZ3eHl6MDEyMzQ1Njc=",
         "base64_blob",
     );
     // Dashed serial / product-key shape: 5 blocks of 5 alnum.
@@ -75,17 +78,20 @@ fn dogfood_trace_names_each_cascade_suppression_gate() {
     // ── negative twin: dogfood OFF ⇒ NO events recorded (zero-cost path),
     //     suppression decision itself UNCHANGED (still true). ──
     telemetry::testing::reset(); // clears the enable flag
-    let still_suppressed = keyhog_scanner::testing::should_suppress_known_example_credential(
-        "1f48cec7-bbee-4eb7-8e35-3bc1e7a0f2c2",
-        None,
-        CodeContext::Unknown,
-    );
+    let trace = Arc::new(ScanTelemetry::new());
+    let still_suppressed = telemetry::with_scan_telemetry(&trace, || {
+        keyhog_scanner::testing::known_example_suppressed(
+            "1f48cec7-bbee-4eb7-8e35-3bc1e7a0f2c2",
+            None,
+            CodeContext::Unknown,
+        )
+    });
     assert!(
         still_suppressed,
         "suppression behavior must be identical whether or not dogfood is on"
     );
     assert!(
-        telemetry::drain_events().is_empty(),
+        trace.drain().dogfood_events.is_empty(),
         "with dogfood OFF the shape-suppression recorder must emit nothing"
     );
 }

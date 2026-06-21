@@ -11,9 +11,6 @@ use keyhog_scanner::testing::{build_ac_pattern_set, extract_literal_prefix, is_e
 use keyhog_scanner::testing::{compile_state_ac_literals, compile_state_is_ok};
 use keyhog_scanner::types::ScannerConfig;
 use keyhog_scanner::{testing::BigramBloom, ScanError};
-use std::sync::Mutex;
-
-static TELEMETRY_LOCK: Mutex<()> = Mutex::new(());
 
 // ── bigram_bloom.rs ─────────────────────────────────────────────────
 
@@ -234,7 +231,7 @@ fn structured_env_preprocessing_surfaces_key_value_via_scan() {
 
 #[test]
 fn telemetry_records_example_suppression_when_dogfood_enabled() {
-    let _guard = TELEMETRY_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = super::telemetry_serial::lock();
     reset();
     enable_dogfood();
     record_example_suppression("demo", None, "ghp_EXAMPLE", "ends_with_EXAMPLE");
@@ -245,7 +242,7 @@ fn telemetry_records_example_suppression_when_dogfood_enabled() {
 
 #[test]
 fn telemetry_reset_clears_dogfood_state() {
-    let _guard = TELEMETRY_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = super::telemetry_serial::lock();
     reset();
     enable_dogfood();
     reset();
@@ -254,7 +251,7 @@ fn telemetry_reset_clears_dogfood_state() {
 
 #[test]
 fn production_scan_reset_clears_dogfood_and_suppression_counts() {
-    let _guard = TELEMETRY_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = super::telemetry_serial::lock();
     reset();
     enable_dogfood();
     record_example_suppression("demo", None, "ghp_EXAMPLE", "ends_with_EXAMPLE");

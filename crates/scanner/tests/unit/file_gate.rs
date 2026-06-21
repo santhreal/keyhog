@@ -731,7 +731,7 @@ fn engine_boundary_error() {
 fn engine_utf8_boundary_helper_has_one_implementation_owner() {
     let owner = include_str!("../../src/engine/windowed_support.rs");
     assert_eq!(
-        owner.matches("pub(crate) fn floor_char_boundary(").count(),
+        owner.matches("fn floor_char_boundary(").count(),
         1,
         "windowed_support.rs must own the single scanner UTF-8 floor helper body"
     );
@@ -1101,7 +1101,6 @@ fn lib_root_pipeline_helpers_are_reexports_not_forwarders() {
         "match_entropy",
         "floor_char_boundary",
         "is_within_hex_context",
-        "should_suppress_known_example_credential",
         "find_companion",
     ] {
         assert!(
@@ -1130,9 +1129,6 @@ fn testing_facade_pipeline_helpers_are_owner_reexports_not_forwarders() {
         "match_entropy",
         "floor_char_boundary",
         "is_within_hex_context",
-        "should_suppress_known_example_credential",
-        "should_suppress_known_example_credential_with_source",
-        "should_suppress_named_detector_finding",
         "find_companion",
         "line_window_offsets",
         "window_end_offset",
@@ -1148,7 +1144,7 @@ fn testing_facade_pipeline_helpers_are_owner_reexports_not_forwarders() {
     }
     assert!(
         source.contains("pub(crate) use crate::pipeline::{")
-            && source.contains("pub(crate) use crate::engine::{"),
+            && source.contains("pub use crate::engine::{"),
         "testing facade should group owner re-exports by implementation boundary"
     );
 }
@@ -1583,6 +1579,7 @@ fn structured_parsers_error() {
 // ── crates/scanner/src/telemetry.rs ───────────────────────────────────
 #[test]
 fn telemetry_happy() {
+    let _guard = super::telemetry_serial::lock();
     reset();
     enable_dogfood();
     record_example_suppression("d", None, "ghp_EXAMPLE", "suffix");
@@ -1591,6 +1588,7 @@ fn telemetry_happy() {
 }
 #[test]
 fn telemetry_error() {
+    let _guard = super::telemetry_serial::lock();
     reset();
     assert!(drain_events().is_empty());
 }

@@ -1,5 +1,5 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::testing::should_suppress_named_detector_finding;
+use keyhog_scanner::testing::named_detector_suppressed;
 
 #[test]
 fn powershell_verb_noun_pattern_suppressed_for_generic_detectors() {
@@ -12,14 +12,14 @@ fn powershell_verb_noun_pattern_suppressed_for_generic_detectors() {
     // `looks_like_pure_identifier`; v0.5.21 wires that filter in.
     // This test exercises the named-detector path which shares the
     // same shape gate.
-    assert!(should_suppress_named_detector_finding(
+    assert!(named_detector_suppressed(
         "Get-Location",
         Some("powershell/parser.ts"),
         CodeContext::Unknown,
         None,
         "generic-password",
     ));
-    assert!(should_suppress_named_detector_finding(
+    assert!(named_detector_suppressed(
         "Set-Location",
         Some("powershell/parser.ts"),
         CodeContext::Unknown,

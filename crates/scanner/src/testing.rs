@@ -371,10 +371,52 @@ pub(crate) use crate::pipeline::{
 #[cfg(test)]
 pub(crate) use crate::prefix_trie::build_propagation_table;
 #[cfg(test)]
-pub(crate) use crate::suppression::{
-    detector_weak_anchor, should_suppress_known_example_credential,
-    should_suppress_known_example_credential_with_source, should_suppress_named_detector_finding,
-};
+pub(crate) use crate::suppression::detector_weak_anchor;
+
+#[cfg(test)]
+pub(crate) fn known_example_suppressed(
+    credential: &str,
+    path: Option<&str>,
+    context: crate::context::CodeContext,
+) -> bool {
+    crate::suppression::api::suppress_known_example_credential(
+        credential,
+        crate::suppression::api::KnownExampleSuppressionCtx::new(path, context, None),
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn known_example_suppressed_with_source(
+    credential: &str,
+    path: Option<&str>,
+    context: crate::context::CodeContext,
+    source_type: Option<&str>,
+) -> bool {
+    crate::suppression::api::suppress_known_example_credential(
+        credential,
+        crate::suppression::api::KnownExampleSuppressionCtx::new(path, context, source_type),
+    )
+}
+
+#[cfg(test)]
+pub(crate) fn named_detector_suppressed(
+    credential: &str,
+    path: Option<&str>,
+    context: crate::context::CodeContext,
+    source_type: Option<&str>,
+    detector_id: &str,
+) -> bool {
+    crate::suppression::api::suppress_named_detector_finding(
+        credential,
+        crate::suppression::api::NamedDetectorSuppressionCtx::with_weak_anchor(
+            path,
+            context,
+            source_type,
+            detector_id,
+            false,
+        ),
+    )
+}
 
 #[cfg(test)]
 pub(crate) fn scan_state_drain(

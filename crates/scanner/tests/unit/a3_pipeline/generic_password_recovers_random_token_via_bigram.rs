@@ -1,5 +1,5 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::testing::should_suppress_named_detector_finding;
+use keyhog_scanner::testing::named_detector_suppressed;
 
 // KH-L-0414: the post-process weak-anchor suppressor
 // (`suppress_named_detector_finding`) applied the SAME
@@ -23,7 +23,7 @@ fn random_lowercase_token_not_suppressed_by_identifier_gate() {
     // KH-L-0414 `looks_like_pure_identifier` fired and this dropped; now the
     // bigram randomness check lifts the identifier gate.
     assert!(
-        !should_suppress_named_detector_finding(
+        !named_detector_suppressed(
             "ufnlbbavawsdeecn",
             Some("config.env"),
             CodeContext::Unknown,
@@ -43,7 +43,7 @@ fn lowercase_word_separated_random_password_recovered() {
     // verdict for this clean shape, so they are recovered (KH-L-0414).
     for val in ["abxnj_gjvpuqzo", "aapqhgn-qhuuc-trnmf", "avy_tcfkongh"] {
         assert!(
-            !should_suppress_named_detector_finding(
+            !named_detector_suppressed(
                 val,
                 Some("creds.env"),
                 CodeContext::Unknown,
@@ -66,7 +66,7 @@ fn word_separated_acronym_identifier_stays_suppressed() {
     // these must stay suppressed despite the misleading randomness score.
     for val in ["d2i_PKCS7_bio", "curlx_memdup0", "s3_secret_access_key"] {
         assert!(
-            should_suppress_named_detector_finding(
+            named_detector_suppressed(
                 val,
                 Some("openssl/apps/ts.c"),
                 CodeContext::Unknown,
@@ -90,7 +90,7 @@ fn low_diversity_patterns_stay_suppressed() {
     // suppressed (it must read as an identifier, not get lifted as a secret).
     for val in ["xzxzxzxz", "qqqqwwww", "aaaaaaaa", "zzzzzzzzzzzz"] {
         assert!(
-            should_suppress_named_detector_finding(
+            named_detector_suppressed(
                 val,
                 Some("creds.env"),
                 CodeContext::Unknown,
@@ -116,7 +116,7 @@ fn dictionary_identifier_still_suppressed() {
         ("access-token-value", "generic-secret"),
     ] {
         assert!(
-            should_suppress_named_detector_finding(
+            named_detector_suppressed(
                 val,
                 Some("WebgoatContext.java"),
                 CodeContext::Unknown,

@@ -1,9 +1,9 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::testing::should_suppress_known_example_credential;
+use keyhog_scanner::testing::known_example_suppressed;
 
 #[test]
 fn b64_wrapped_example_suppressed() {
-    assert!(should_suppress_known_example_credential(
+    assert!(known_example_suppressed(
         "Z2hwX0VYQU1QTEVfVE9LRU5fRlJPTV9ET0NT",
         None,
         CodeContext::Unknown,

@@ -1,5 +1,5 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::testing::should_suppress_named_detector_finding;
+use keyhog_scanner::testing::named_detector_suppressed;
 
 #[test]
 fn long_random_secret_with_one_colon_not_suppressed() {
@@ -9,7 +9,7 @@ fn long_random_secret_with_one_colon_not_suppressed() {
     // Scheme reject requires: scheme is 3-15 alpha chars + ≥2 more `:`
     // OR `://`. A single mid-value colon flanked by random alphanumerics
     // does not match either.
-    assert!(!should_suppress_named_detector_finding(
+    assert!(!named_detector_suppressed(
         "RandomP4ssw0rdAbXyZ1234567890",
         Some("config/database.yml"),
         CodeContext::Unknown,
@@ -23,7 +23,7 @@ fn long_random_secret_with_one_colon_not_suppressed() {
     // Literal defanged via concat!() so GitHub push-protection doesn't
     // flag this fixture as a leaked PAT.
     let ghp_shape = concat!("ghp", "_", "abcdef0123456789ABCDEFghijKLMNopqrst");
-    assert!(!should_suppress_named_detector_finding(
+    assert!(!named_detector_suppressed(
         ghp_shape,
         Some("app/scripts/release.sh"),
         CodeContext::Unknown,

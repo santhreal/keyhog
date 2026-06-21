@@ -502,7 +502,7 @@ pub(crate) fn looks_credential_shaped(s: &str) -> bool {
     // whose substrings can incidentally collide with detector regexes
     // (`sb_4bZ39EnIvgT...` matches the stackblitz `sb_[a-zA-Z0-9_-]{20,}`
     // regex purely by letter coincidence). The downstream
-    // `should_suppress_named_detector_finding` bypasses the
+    // `suppress_named_detector_finding` bypasses the
     // EXAMPLE / INSERT / CHANGE / REPLACE markers for `/caesar`
     // source_types (because evasion-decoded inputs CAN legitimately
     // be a planted-credential rotation), so the gate has to happen

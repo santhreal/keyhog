@@ -24,6 +24,7 @@ fn aws_shaped_detector() -> DetectorSpec {
 
 #[test]
 fn invalid_detector_index_extraction_skip_is_counted() {
+    let _telemetry_guard = super::super::telemetry_serial::lock();
     reset();
     let mut scanner = CompiledScanner::compile(vec![aws_shaped_detector()]).expect("compile");
     assert!(

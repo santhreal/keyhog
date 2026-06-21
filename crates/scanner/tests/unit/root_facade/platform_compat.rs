@@ -1,6 +1,6 @@
 use keyhog_scanner::context::{infer_context, CodeContext};
 use keyhog_scanner::testing::confidence::apply_path_confidence_penalties;
-use keyhog_scanner::testing::{compute_line_offsets, should_suppress_named_detector_finding};
+use keyhog_scanner::testing::{compute_line_offsets, named_detector_suppressed};
 
 #[test]
 fn windows_form_test_path_classifies_as_test_code_on_every_host() {
@@ -24,7 +24,7 @@ fn windows_form_fixture_path_halves_confidence_on_every_host() {
 
 #[test]
 fn windows_form_base64_path_suppresses_raw_filesystem_hits() {
-    let suppressed = should_suppress_named_detector_finding(
+    let suppressed = named_detector_suppressed(
         "Aa1Bb2Cc3Dd4Ee5Ff6Gg7Hh8Ii9Jj0Kk",
         Some(r"C:\repo\assets\base64_string.txt"),
         CodeContext::Unknown,
@@ -39,7 +39,7 @@ fn windows_form_base64_path_suppresses_raw_filesystem_hits() {
 
 #[test]
 fn raw_base64_path_gate_is_filesystem_scoped() {
-    let suppressed = should_suppress_named_detector_finding(
+    let suppressed = named_detector_suppressed(
         "Aa1Bb2Cc3Dd4Ee5Ff6Gg7Hh8Ii9Jj0Kk",
         Some(r"C:\repo\assets\base64_string.txt"),
         CodeContext::Unknown,

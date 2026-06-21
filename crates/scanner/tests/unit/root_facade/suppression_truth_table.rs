@@ -1,5 +1,5 @@
 //! LANE-4 detection-truth: a DATA-DRIVEN BOOL-ONLY suppression truth table over
-//! the public `keyhog_scanner::testing::should_suppress_known_example_credential` entry
+//! the public `keyhog_scanner::testing::known_example_suppressed` entry
 //! point (the gate every scan-path finding passes through).
 //!
 //! This file asserts ONLY the boolean decision — it never touches the
@@ -22,13 +22,13 @@
 
 use keyhog_scanner::context::CodeContext;
 use keyhog_scanner::testing::confidence::placeholder_words;
-use keyhog_scanner::testing::should_suppress_known_example_credential;
+use keyhog_scanner::testing::known_example_suppressed;
 
 /// Decision under the default public entry point (no path, unknown context):
 /// `bypass_shape_gates = false`, so the full shape cascade is engaged — exactly
 /// the path a generic/entropy finding takes on a real scan.
 fn suppressed(credential: &str) -> bool {
-    should_suppress_known_example_credential(credential, None, CodeContext::Unknown)
+    known_example_suppressed(credential, None, CodeContext::Unknown)
 }
 
 /// Deterministic xorshift64* byte source — reproducible random bodies without

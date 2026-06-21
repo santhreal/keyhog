@@ -1,9 +1,9 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::testing::should_suppress_known_example_credential;
+use keyhog_scanner::testing::known_example_suppressed;
 
 #[test]
 fn sample_word_suppresses_credential() {
-    assert!(should_suppress_known_example_credential(
+    assert!(known_example_suppressed(
         "SAMPLE_API_TOKEN",
         None,
         CodeContext::Documentation,

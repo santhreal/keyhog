@@ -1,5 +1,5 @@
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::testing::should_suppress_named_detector_finding;
+use keyhog_scanner::testing::named_detector_suppressed;
 
 #[test]
 fn german_dictionary_word_in_i18n_properties_suppressed() {
@@ -8,7 +8,7 @@ fn german_dictionary_word_in_i18n_properties_suppressed() {
     // gets captured by `(?i)password[=:]<word>` shapes in i18n
     // .properties files. Pure-alphabetic 8..=32 char strings
     // without digit are dictionary words, not credentials.
-    assert!(should_suppress_named_detector_finding(
+    assert!(named_detector_suppressed(
         "Benutzername",
         Some("WebGoatLabels_german.properties"),
         CodeContext::Unknown,

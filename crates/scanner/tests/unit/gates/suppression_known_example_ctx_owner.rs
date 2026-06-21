@@ -45,6 +45,22 @@ fn engine_uses_typed_known_example_suppression_context() {
             && api.contains("fn suppress_known_example_credential("),
         "suppression::api must expose the typed known-example suppression entry point"
     );
+    for forbidden in [
+        "fn should_suppress_known_example_credential(",
+        "fn should_suppress_known_example_credential_with_source(",
+        "fn should_suppress_known_example_credential_with_source_and_entropy(",
+    ] {
+        assert!(
+            !api.contains(forbidden),
+            "suppression::api must not expose known-example rigor wrapper `{forbidden}`"
+        );
+    }
+
+    let suppression_mod = read(&scanner_src().join("suppression/mod.rs"));
+    assert!(
+        !suppression_mod.contains("should_suppress_known_example_credential"),
+        "suppression::mod must not re-export known-example rigor wrappers"
+    );
 
     let mut files = Vec::new();
     collect_rs_files(&scanner_src().join("engine"), &mut files);
@@ -52,6 +68,7 @@ fn engine_uses_typed_known_example_suppression_context() {
     for path in files {
         let code = uncommented_code(&read(&path));
         for forbidden in [
+            "should_suppress_known_example_credential(",
             "should_suppress_known_example_credential_with_source(",
             "should_suppress_known_example_credential_with_source_and_entropy(",
         ] {

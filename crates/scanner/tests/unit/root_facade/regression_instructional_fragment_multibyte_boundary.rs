@@ -10,10 +10,10 @@
 //! boundary (`upper[..idx].chars().next_back()`), matching the
 //! `upper_contains_token` helper the module header documents.
 //!
-//! Observable through the public `should_suppress_known_example_credential`.
+//! Observable through the public `known_example_suppressed`.
 
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::testing::should_suppress_known_example_credential;
+use keyhog_scanner::testing::known_example_suppressed;
 
 /// `K-ÎÏÁÊÔÓÇ7CHANGE` is 16 chars / 23 bytes. The embedded `CHANGE` begins at
 /// BYTE offset 17 but its real preceding character is `7` (alphanumeric, so
@@ -26,11 +26,7 @@ use keyhog_scanner::testing::should_suppress_known_example_credential;
 #[test]
 fn multibyte_prefixed_change_run_is_not_a_word_boundary() {
     assert!(
-        !should_suppress_known_example_credential(
-            "K-ÎÏÁÊÔÓÇ7CHANGE",
-            None,
-            CodeContext::Assignment,
-        ),
+        !known_example_suppressed("K-ÎÏÁÊÔÓÇ7CHANGE", None, CodeContext::Assignment,),
         "multibyte-prefixed CHANGE run with an alphanumeric char immediately \
          before the fragment must not be treated as an instructional \
          placeholder (byte/char index mix recall hole)"
@@ -52,7 +48,7 @@ fn genuine_instructional_placeholders_still_suppressed() {
         "secret-REPLACE-this",
     ] {
         assert!(
-            should_suppress_known_example_credential(placeholder, None, CodeContext::Assignment,),
+            known_example_suppressed(placeholder, None, CodeContext::Assignment,),
             "instructional placeholder {placeholder:?} must remain suppressed",
         );
     }

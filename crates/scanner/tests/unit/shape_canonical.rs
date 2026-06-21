@@ -1,19 +1,19 @@
 /// Unit tests for canonical shape heuristics exercised through the public
 /// `keyhog_scanner::jwt` module (which is truly public) and through
-/// `keyhog_scanner::testing::normalize_chunk_data` / `should_suppress_known_example_credential`.
+/// `keyhog_scanner::testing::normalize_chunk_data` / `known_example_suppressed`.
 ///
 /// The individual canonical shape functions (`looks_like_dashed_serial_key`, etc.)
 /// are `pub(crate)` so they cannot be accessed from integration tests.
 /// Instead, we:
 ///   1. Test the JWT module's `looks_like_jwt` which is a distinct public API.
-///   2. Test `should_suppress_known_example_credential` which calls
+///   2. Test `known_example_suppressed` which calls
 ///      the shape-gate pipeline end-to-end.
 ///   3. Test `normalize_chunk_data` for the Unicode-evasion guard.
 ///
 /// For each gate, at least one positive (should suppress) and one negative
 /// (should NOT suppress) case is present.
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::testing::{normalize_chunk_data, should_suppress_known_example_credential};
+use keyhog_scanner::testing::{known_example_suppressed, normalize_chunk_data};
 
 // ── placeholder / example credential suppression ──────────────────────────────
 
@@ -22,7 +22,7 @@ fn all_same_char_body_is_suppressed_as_example() {
     // 32 identical chars → sequential_placeholder → suppressed
     let cred = "A".repeat(32);
     assert!(
-        should_suppress_known_example_credential(&cred, None, CodeContext::Unknown),
+        known_example_suppressed(&cred, None, CodeContext::Unknown),
         "all-same-char body should be suppressed"
     );
 }
@@ -32,7 +32,7 @@ fn high_entropy_mixed_body_not_suppressed() {
     // Realistic random-looking credential — must NOT be suppressed
     let cred = "aK7xP9mQ2wE5rT8yU1iO3pA6sD4fGhJk";
     assert!(
-        !should_suppress_known_example_credential(cred, None, CodeContext::Assignment),
+        !known_example_suppressed(cred, None, CodeContext::Assignment),
         "realistic mixed credential should not be suppressed"
     );
 }
@@ -42,7 +42,7 @@ fn example_suffix_credential_is_suppressed() {
     // Ends with EXAMPLE — universal documentation convention
     let cred = "ghp_AAAAAAAAAAAAAAAAAAAEXAMPLE";
     assert!(
-        should_suppress_known_example_credential(cred, None, CodeContext::Unknown),
+        known_example_suppressed(cred, None, CodeContext::Unknown),
         "EXAMPLE suffix should be suppressed"
     );
 }
@@ -51,7 +51,7 @@ fn example_suffix_credential_is_suppressed() {
 fn examplekey_suffix_credential_is_suppressed() {
     let cred = "sk_test_AAAAAAAAAAAAAEXAMPLEKEY";
     assert!(
-        should_suppress_known_example_credential(cred, None, CodeContext::Unknown),
+        known_example_suppressed(cred, None, CodeContext::Unknown),
         "EXAMPLEKEY suffix should be suppressed"
     );
 }
@@ -61,7 +61,7 @@ fn x_dominated_credential_above_threshold_suppressed() {
     // >75% of body is 'x' / 'X'
     let cred = "xxxxxxxxxxxxxxxxxxxxxxxxxxxx1234"; // 28 x + 4 other = 87.5% x
     assert!(
-        should_suppress_known_example_credential(cred, None, CodeContext::Unknown),
+        known_example_suppressed(cred, None, CodeContext::Unknown),
         "x-dominated credential (>75%) should be suppressed"
     );
 }
@@ -77,7 +77,7 @@ fn x_dominated_below_threshold_not_suppressed() {
     // 32 chars, 16 x = 50% < 75% → not suppressed (assuming credential has genuine entropy)
     // Note: this may still be suppressed for other reasons (sequential, etc.)
     // The primary assertion is that the function does not panic.
-    let _ = should_suppress_known_example_credential(&cred, None, CodeContext::Unknown);
+    let _ = known_example_suppressed(&cred, None, CodeContext::Unknown);
 }
 
 #[test]
@@ -85,7 +85,7 @@ fn md5_of_empty_string_is_suppressed() {
     // MD5("") = d41d8cd98f00b204e9800998ecf8427e
     let cred = "d41d8cd98f00b204e9800998ecf8427e";
     assert!(
-        should_suppress_known_example_credential(cred, None, CodeContext::Unknown),
+        known_example_suppressed(cred, None, CodeContext::Unknown),
         "MD5 of empty string must be suppressed"
     );
 }
@@ -94,7 +94,7 @@ fn md5_of_empty_string_is_suppressed() {
 fn sha1_of_empty_string_is_suppressed() {
     let cred = "da39a3ee5e6b4b0d3255bfef95601890afd80709";
     assert!(
-        should_suppress_known_example_credential(cred, None, CodeContext::Unknown),
+        known_example_suppressed(cred, None, CodeContext::Unknown),
         "SHA1 of empty string must be suppressed"
     );
 }
@@ -103,7 +103,7 @@ fn sha1_of_empty_string_is_suppressed() {
 fn sha256_of_empty_string_is_suppressed() {
     let cred = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
     assert!(
-        should_suppress_known_example_credential(cred, None, CodeContext::Unknown),
+        known_example_suppressed(cred, None, CodeContext::Unknown),
         "SHA256 of empty string must be suppressed"
     );
 }

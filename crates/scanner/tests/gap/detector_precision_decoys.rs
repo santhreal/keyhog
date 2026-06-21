@@ -6,9 +6,9 @@
 //! `crates/scanner/src/entropy/{keywords,scanner}.rs`.
 //!
 //! Two surfaces are exercised:
-//!   * `should_suppress_known_example_credential` — the generic / EXAMPLE
+//!   * `known_example_suppressed` — the generic / EXAMPLE
 //!     entry point (bypass_shape_gates = false, weak_anchor = false).
-//!   * `should_suppress_named_detector_finding` — the service-anchored
+//!   * `named_detector_suppressed` — the service-anchored
 //!     entry point (bypass_shape_gates depends on the detector id).
 //! Plus the leaf predicates exposed through `keyhog_scanner::testing`.
 //!
@@ -17,8 +17,8 @@
 //! so a test passing on a function that always returns `true` is impossible.
 
 use keyhog_scanner::context::CodeContext;
-use keyhog_scanner::testing::should_suppress_known_example_credential;
-use keyhog_scanner::testing::should_suppress_named_detector_finding;
+use keyhog_scanner::testing::known_example_suppressed;
+use keyhog_scanner::testing::named_detector_suppressed;
 
 use keyhog_scanner::testing::entropy_keywords::{
     entropy_value_looks_like_prose, is_dash_segmented_alnum_decoy, looks_like_english_prose,
@@ -38,13 +38,13 @@ use keyhog_scanner::testing::shape::{
 /// Suppress through the generic / EXAMPLE entry point (no service anchor,
 /// shape gates engaged). Default placeholder list is empty.
 fn suppress_generic(cred: &str) -> bool {
-    should_suppress_known_example_credential(cred, None, CodeContext::Assignment)
+    known_example_suppressed(cred, None, CodeContext::Assignment)
 }
 
 /// Suppress through the named-detector entry point with a service-anchored
 /// detector id (shape gates bypassed for strongly-anchored ids).
 fn suppress_named(cred: &str, detector_id: &str) -> bool {
-    should_suppress_named_detector_finding(cred, None, CodeContext::Assignment, None, detector_id)
+    named_detector_suppressed(cred, None, CodeContext::Assignment, None, detector_id)
 }
 
 /// Build the production credential-keyword anchor used by the entropy path.

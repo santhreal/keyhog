@@ -137,6 +137,7 @@ fn tagged(out: &[Chunk]) -> usize {
 
 #[test]
 fn decode_budget_is_enforced_inside_a_single_decoder_fanout() {
+    let _telemetry_guard = super::super::telemetry_serial::lock();
     reset();
     // Register our custom decoder ONCE for this whole test binary, before any
     // call to `decode_chunk` initializes the registry. Built-ins run first;

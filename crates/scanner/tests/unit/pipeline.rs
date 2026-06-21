@@ -1,8 +1,8 @@
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::context::CodeContext;
 use keyhog_scanner::testing::{
-    compute_line_offsets, is_within_hex_context, local_context_window, match_entropy,
-    match_line_number, normalize_scannable_chunk, should_suppress_known_example_credential,
+    compute_line_offsets, is_within_hex_context, known_example_suppressed, local_context_window,
+    match_entropy, match_line_number, normalize_scannable_chunk,
 };
 use keyhog_scanner::testing::{find_companion, normalize_chunk_data};
 use keyhog_scanner::types::ScannerPreprocessedText;
@@ -62,8 +62,8 @@ fn normalize_scannable_chunk_allocates_when_evasion_chars_present() {
 }
 
 #[test]
-fn should_suppress_known_example_credential_blocks_example_suffix() {
-    assert!(should_suppress_known_example_credential(
+fn known_example_suppressed_blocks_example_suffix() {
+    assert!(known_example_suppressed(
         concat!("AK", "IAIOSFODNN7EXAMPLE"),
         None,
         CodeContext::Assignment
@@ -100,8 +100,8 @@ fn match_line_number_empty_offsets_falls_back_safely() {
 }
 
 #[test]
-fn should_suppress_known_example_credential_allows_realistic_token() {
-    assert!(!should_suppress_known_example_credential(
+fn known_example_suppressed_allows_realistic_token() {
+    assert!(!known_example_suppressed(
         concat!("gh", "p_zQWBuTSOoRi4A9spHcVY5ncnsDkxkJ0mLq17"),
         None,
         CodeContext::Assignment

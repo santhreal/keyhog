@@ -106,7 +106,7 @@ const PRODUCTION_PATHS: &[&str] = &[
 ];
 
 /// File paths that match keyhog's path-based suppression heuristics
-/// (see `should_suppress_known_example_credential_with_source` in
+/// (see `known_example_suppressed_with_source` in
 /// `crates/scanner/src/pipeline.rs`). The detector MAY fire here OR
 /// MAY suppress - we don't gate on either outcome, we just record
 /// the rate so a future regression that flips suppression off
