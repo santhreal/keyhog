@@ -84,8 +84,8 @@ fn plain_text_passthrough_returns_input_verbatim() {
 
 #[test]
 fn passthrough_single_line_offset_maps_to_line_one() {
-    // `passthrough_text` builds mappings with end_offset = offset + line.len()
-    // (newline EXCLUDED). For "abcdefghij" len 10 -> mapping {0,10,line 1}.
+    // `passthrough_text` uses the shared identity mapping owner. For
+    // "abcdefghij" len 10 -> mapping {0,10,line 1}.
     let text = "abcdefghij";
     let p = pre(text);
     assert_eq!(p.mappings.len(), 1);
@@ -99,23 +99,22 @@ fn passthrough_single_line_offset_maps_to_line_one() {
 }
 
 #[test]
-fn passthrough_multiline_offsets_skip_the_newline_byte() {
-    // `passthrough_text`: for each line, mapping is [offset, offset+len);
-    // offset advances by len()+1 (the '\n'). So the newline byte between
-    // lines is NOT inside any mapping window.
+fn passthrough_multiline_offsets_include_the_newline_byte() {
+    // `passthrough_text`: for each non-final line, mapping is
+    // [offset, offset+len+1), so the newline byte stays attached to the
+    // preceding source line.
     let text = "abc\ndefgh"; // line1 "abc"(0..3), '\n'@3, line2 "defgh"(4..9)
     let p = pre(text);
     assert_eq!(p.mappings.len(), 2);
     assert_eq!(p.mappings[0].start_offset, 0);
-    assert_eq!(p.mappings[0].end_offset, 3);
+    assert_eq!(p.mappings[0].end_offset, 4);
     assert_eq!(p.mappings[0].line_number, 1);
     assert_eq!(p.mappings[1].start_offset, 4);
     assert_eq!(p.mappings[1].end_offset, 9);
     assert_eq!(p.mappings[1].line_number, 2);
     assert_eq!(p.line_for_offset(0), Some(1));
     assert_eq!(p.line_for_offset(2), Some(1));
-    // offset 3 is the '\n': within [0,3)? no; within [4,9)? no -> None.
-    assert_eq!(p.line_for_offset(3), None);
+    assert_eq!(p.line_for_offset(3), Some(1));
     assert_eq!(p.line_for_offset(4), Some(2));
     assert_eq!(p.line_for_offset(8), Some(2));
 }
@@ -799,9 +798,9 @@ fn fragment_cache_three_near_fragments_emit_six_ordered_pairs() {
 
 #[test]
 fn preprocessed_text_passthrough_clamps_last_mapping_to_text_len() {
-    // `PreprocessedText::passthrough` differs from the internal passthrough_text:
-    // it uses split('\n') with end_offset = end+1, then clamps the LAST mapping
-    // to text.len().
+    // `PreprocessedText::passthrough` and the internal passthrough path share
+    // the split('\n') identity-mapping contract: end_offset = end+1, then the
+    // last mapping is clamped to text.len().
     let text = "abc\ndef"; // len 7. split: "abc"(0..3 -> end_off 4), "def"(4..7).
     let p = PreprocessedText::passthrough(std::borrow::Cow::Borrowed(text));
     assert_eq!(p.original_end, 7);
@@ -817,7 +816,7 @@ fn preprocessed_text_passthrough_clamps_last_mapping_to_text_len() {
 #[test]
 fn preprocessed_text_passthrough_line_for_offset_covers_newline() {
     // Because passthrough() sets end_offset = end+1 for non-last lines, the
-    // '\n' byte at offset 3 IS inside mapping[0]'s window (unlike passthrough_text).
+    // '\n' byte at offset 3 is inside mapping[0]'s window.
     let text = "abc\ndef";
     let p = PreprocessedText::passthrough(std::borrow::Cow::Borrowed(text));
     assert_eq!(p.line_for_offset(0), Some(1));
