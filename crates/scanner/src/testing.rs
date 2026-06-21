@@ -687,8 +687,11 @@ pub(crate) mod entropy_keywords {
         crate::suppression::shape::looks_like_english_prose(value)
     }
 
-    pub(crate) fn passes_strict_secret_checks(value: &str, is_credential_context: bool) -> bool {
-        crate::entropy::keywords::passes_strict_secret_checks(value, is_credential_context)
+    pub(crate) fn passes_secret_strength_checks(value: &str, is_credential_context: bool) -> bool {
+        crate::entropy::keywords::passes_secret_strength_checks(
+            value,
+            PlausibilityContext::new(is_credential_context, false),
+        )
     }
 
     pub(crate) fn is_dash_segmented_alnum_decoy(value: &str) -> bool {

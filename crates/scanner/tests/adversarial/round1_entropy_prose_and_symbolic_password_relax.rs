@@ -7,7 +7,7 @@
 //! engine/phase2_entropy.rs):
 //!   * `looks_like_english_prose` lowered length floor 24 -> 16 and
 //!     added a multi-token whitespace-alphabetic branch.
-//!   * `passes_strict_secret_checks` relaxed in credential-anchored
+//!   * `passes_secret_strength_checks` relaxed in credential-anchored
 //!     context: symbolic-char + entropy >= 3.5 admits values past the
 //!     4.5 floor. Pure-alphanumeric keeps the 4.5 floor.
 //!

@@ -41,12 +41,18 @@ fn entropy_plausibility_uses_typed_context_entry_points() {
             && owner.contains("context: PlausibilityContext"),
         "is_secret_plausible must take PlausibilityContext"
     );
+    assert!(
+        owner.contains("pub(crate) fn passes_secret_strength_checks(")
+            && owner.contains("context: PlausibilityContext"),
+        "passes_secret_strength_checks must take PlausibilityContext"
+    );
 
     for forbidden in [
         "fn is_candidate_plausible_with_context",
         "fn is_secret_plausible_with_context",
         "fn is_candidate_plausible_with_lift",
         "fn is_secret_plausible_with_lift",
+        "fn passes_strict_secret_checks",
     ] {
         assert!(
             !owner.contains(forbidden),
@@ -65,6 +71,7 @@ fn entropy_plausibility_uses_typed_context_entry_points() {
             "is_secret_plausible_with_context",
             "is_candidate_plausible_with_lift",
             "is_secret_plausible_with_lift",
+            "passes_strict_secret_checks",
         ] {
             if code.contains(forbidden) {
                 offenders.push(format!("{} contains {forbidden}", rel.display()));

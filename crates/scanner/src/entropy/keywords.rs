@@ -432,9 +432,7 @@ fn passes_plausibility_checks(
         return false;
     }
 
-    if matches!(mode, PlausibilityMode::Strict)
-        && !passes_strict_secret_checks(value, context.is_credential_context)
-    {
+    if matches!(mode, PlausibilityMode::Strict) && !passes_secret_strength_checks(value, context) {
         return false;
     }
     true
@@ -476,8 +474,8 @@ fn has_low_alnum_ratio(value: &str) -> bool {
     alnum < 0.5
 }
 
-pub(crate) fn passes_strict_secret_checks(value: &str, is_credential_context: bool) -> bool {
-    if !passes_strict_secret_shape_checks(value, is_credential_context) {
+pub(crate) fn passes_secret_strength_checks(value: &str, context: PlausibilityContext) -> bool {
+    if !passes_secret_shape_checks(value, context) {
         return false;
     }
 
@@ -497,7 +495,7 @@ pub(crate) fn passes_strict_secret_checks(value: &str, is_credential_context: bo
     if entropy >= HIGH_ENTROPY_THRESHOLD {
         return true;
     }
-    if is_credential_context {
+    if context.is_credential_context {
         let has_alpha = value.bytes().any(|b| b.is_ascii_alphabetic());
         let has_digit = value.bytes().any(|b| b.is_ascii_digit());
         let has_symbol = value.bytes().any(|b| !b.is_ascii_alphanumeric());
@@ -542,7 +540,7 @@ pub(super) fn is_isolated_bare_secret_plausible(
         PlausibilityMode::Lenient,
         placeholder_keywords,
         PlausibilityContext::default(),
-    ) && passes_strict_secret_shape_checks(value, false)
+    ) && passes_secret_shape_checks(value, PlausibilityContext::default())
 }
 
 fn is_isolated_leading_slash_base64_secret(value: &str, placeholder_keywords: &[String]) -> bool {
@@ -580,17 +578,19 @@ fn is_isolated_leading_slash_base64_secret(value: &str, placeholder_keywords: &[
         && has_lower
         && has_digit
         && shannon_entropy(value.as_bytes()) >= 4.8
-        && passes_strict_secret_shape_checks(value, false)
+        && passes_secret_shape_checks(value, PlausibilityContext::default())
 }
 
-fn passes_strict_secret_shape_checks(value: &str, is_credential_context: bool) -> bool {
+fn passes_secret_shape_checks(value: &str, context: PlausibilityContext) -> bool {
     // Outside a credential-keyword anchor, any >10-char pure-hex value is a
     // checksum/digest, not a credential. Inside one (`apiKey: <hex>`), the
     // keyword is positive evidence the hex IS the credential - the entropy
     // path's strict mode would otherwise drop every md5/sha1/sha256-shaped
     // planted secret. Mirror v30 had 112 generic-high-entropy-string FNs
     // driven by exactly this gate firing in credential context.
-    if !is_credential_context && value.chars().all(|ch| ch.is_ascii_hexdigit()) && value.len() > 10
+    if !context.is_credential_context
+        && value.chars().all(|ch| ch.is_ascii_hexdigit())
+        && value.len() > 10
     {
         return false;
     }

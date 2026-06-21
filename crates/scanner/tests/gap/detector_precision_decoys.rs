@@ -22,7 +22,7 @@ use keyhog_scanner::testing::should_suppress_named_detector_finding;
 
 use keyhog_scanner::testing::entropy_keywords::{
     entropy_value_looks_like_prose, is_dash_segmented_alnum_decoy, looks_like_english_prose,
-    passes_strict_secret_checks,
+    passes_secret_strength_checks,
 };
 use keyhog_scanner::testing::entropy_scanner::{
     candidate_is_plausible, credential_keyword_context, is_canonical_non_secret_shape,
@@ -471,7 +471,7 @@ fn prose_multi_word_in_assignment_value_suppressed_generic() {
 
 #[test]
 fn dash_segmented_alnum_decoys_rejected_by_strict_gate() {
-    // keywords::passes_strict_secret_checks → is_dash_segmented_alnum_decoy.
+    // keywords::passes_secret_strength_checks -> is_dash_segmented_alnum_decoy.
     // The 5x5 serial measures ~4.58 entropy (above the 4.5 floor) yet must
     // still be rejected, in BOTH credential and non-credential context.
     let decoys = [
@@ -483,11 +483,11 @@ fn dash_segmented_alnum_decoys_rejected_by_strict_gate() {
     ];
     for d in decoys {
         assert!(
-            !passes_strict_secret_checks(d, true),
+            !passes_secret_strength_checks(d, true),
             "decoy {d:?} must be rejected in credential context"
         );
         assert!(
-            !passes_strict_secret_checks(d, false),
+            !passes_secret_strength_checks(d, false),
             "decoy {d:?} must be rejected without anchor"
         );
         assert!(is_dash_segmented_alnum_decoy(d), "{d:?} is dash-segmented");
@@ -498,14 +498,14 @@ fn dash_segmented_alnum_decoys_rejected_by_strict_gate() {
 fn symbolic_password_admitted_only_with_anchor() {
     // Positive recall: a 3.5-4.5 entropy symbolic password is admitted in
     // credential context (anchor + symbol relaxation) ...
-    assert!(passes_strict_secret_checks("1E1B3b4Ho$U4kYBi", true));
-    assert!(passes_strict_secret_checks(
+    assert!(passes_secret_strength_checks("1E1B3b4Ho$U4kYBi", true));
+    assert!(passes_secret_strength_checks(
         "Y6NPMwS*rWGUv!JQnSG6a#D14",
         true
     ));
     // ... but the SAME sub-4.5 symbolic value without an anchor stays
     // rejected (the relaxation requires is_credential_context).
-    assert!(!passes_strict_secret_checks("1E1B3b4Ho$U4kYBi", false));
+    assert!(!passes_secret_strength_checks("1E1B3b4Ho$U4kYBi", false));
 }
 
 #[test]
@@ -513,7 +513,7 @@ fn pure_lowercase_repetition_rejected_even_with_anchor() {
     // Adversarial: low-entropy pure-lowercase repetition (entropy ~3.0)
     // fails both the prose/identifier path and the entropy floor, so it is
     // rejected even with a credential anchor.
-    assert!(!passes_strict_secret_checks(
+    assert!(!passes_secret_strength_checks(
         "passwordispasswordispassword",
         true
     ));

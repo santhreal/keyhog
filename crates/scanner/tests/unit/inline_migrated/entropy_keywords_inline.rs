@@ -2,7 +2,7 @@
 
 use keyhog_scanner::testing::entropy_keywords::{
     entropy_value_looks_like_prose, is_dash_segmented_alnum_decoy, looks_like_english_prose,
-    passes_strict_secret_checks,
+    passes_secret_strength_checks,
 };
 
 // ── prose classification ──
@@ -99,8 +99,8 @@ fn symbolic_password_in_credential_context_admitted() {
     // credential-keyword anchored context. Catches the FN class
     // described in the generic-password investigator findings
     // (Y6NPMwS*rWGUv!JQnSG6a#D14, 1E1B3b4Ho$U4kYBi, etc.).
-    assert!(passes_strict_secret_checks("1E1B3b4Ho$U4kYBi", true,));
-    assert!(passes_strict_secret_checks(
+    assert!(passes_secret_strength_checks("1E1B3b4Ho$U4kYBi", true,));
+    assert!(passes_secret_strength_checks(
         "Y6NPMwS*rWGUv!JQnSG6a#D14",
         true,
     ));
@@ -112,7 +112,7 @@ fn pure_alnum_low_entropy_in_credential_context_rejected() {
     // and NO symbol stays rejected even in credential context - the
     // anchor + symbol-set combo is what lifts the floor; alphanumeric
     // alone is indistinguishable from CamelCase identifiers.
-    assert!(!passes_strict_secret_checks("abcdefghij1234567", true,));
+    assert!(!passes_secret_strength_checks("abcdefghij1234567", true,));
 }
 
 #[test]
@@ -122,7 +122,7 @@ fn symbolic_value_no_anchor_keeps_high_floor() {
     // not enough signal without the keyword anchor.
     // `H!l$o-w0rld-pas` has symbols and ~3.7 entropy, below the
     // 4.5 blanket floor, with no anchor - must stay rejected.
-    assert!(!passes_strict_secret_checks("H!l$o-w0rld-pas", false,));
+    assert!(!passes_secret_strength_checks("H!l$o-w0rld-pas", false,));
 }
 
 #[test]
@@ -133,7 +133,7 @@ fn english_prose_with_anchor_still_rejected() {
     // also gates on entropy floors which prose fails.
     // `passwordispasswordispassword` is pure-lowercase 28 chars,
     // entropy lands around 3.0 - both alnum-only branches reject.
-    assert!(!passes_strict_secret_checks(
+    assert!(!passes_secret_strength_checks(
         "passwordispasswordispassword",
         true,
     ));
@@ -157,13 +157,13 @@ fn dash_segmented_alnum_decoys_rejected() {
     ];
     let fp: usize = decoy_corpus
         .iter()
-        .filter(|value| passes_strict_secret_checks(value, true))
+        .filter(|value| passes_secret_strength_checks(value, true))
         .count();
     assert_eq!(fp, 0, "license/template decoys must yield zero admits");
     // And outside credential context too.
     assert!(decoy_corpus
         .iter()
-        .all(|value| !passes_strict_secret_checks(value, false)));
+        .all(|value| !passes_secret_strength_checks(value, false)));
 }
 
 #[test]
@@ -179,7 +179,7 @@ fn symbolic_password_class_survives_decoy_gate() {
     ];
     assert!(passwords
         .iter()
-        .all(|value| passes_strict_secret_checks(value, true)));
+        .all(|value| passes_secret_strength_checks(value, true)));
 }
 
 #[test]
