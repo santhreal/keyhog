@@ -255,71 +255,26 @@ class KeyhogScanner(Scanner):
 
     @property
     def binary(self) -> str:
-        # ONE resolution order, the same locator the gate tests use, so the
-        # bench and the tests can never drift. Falls back to a bare PATH lookup
-        # only when no real binary is found.
-        return resolve_keyhog_binary(self._binary) or self.binary_name
-
-    def detector_corpus_sha256(self) -> str:
-        return compute_detector_corpus_sha256(self._detector_corpus)
-
-    def assert_freshness(self) -> str:
-        return assert_keyhog_binary_current(self.binary)
-
-    @contextlib.contextmanager
-    def _binary_snapshot(self):
-        with sibling_executable_snapshot(self.binary) as snapshot:
-            version = assert_keyhog_binary_current(
-                str(snapshot.launch_path), pass_fds=snapshot.pass_fds,
-            )
-            yield snapshot.launch_path, snapshot.sha256, version, snapshot.pass_fds
-
-    def _detector_snapshot(self) -> tuple[pathlib.Path, str]:
-        digest = self.detector_corpus_sha256()
-        root = _detector_snapshot_root()
-        target = root / digest / "detectors"
-        if target.is_dir():
-            observed = compute_detector_corpus_sha256(target)
-            if observed != digest:
-                raise RuntimeError(
-                    f"benchmark detector snapshot {target} is corrupt: "
-                    f"expected SHA-256 {digest}, found {observed}. "
-                    "Remove that snapshot directory and rerun"
-                )
-            return target, digest
-
-        root.mkdir(mode=0o700, parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(
-            prefix="keyhog-bench-detectors-", dir=root
-        ) as raw_staging:
-            staging = pathlib.Path(raw_staging)
-            staged_detectors = staging / "detectors"
-            staged_detectors.mkdir(mode=0o700)
-            sources = sorted(
-                self._detector_corpus.glob("*.toml"),
-                key=lambda path: os.fsencode(path.name),
-            )
-            if not sources:
-                raise RuntimeError(
-                    f"{self._detector_corpus} contains no detector TOMLs; "
-                    "cannot run a provenance-bound benchmark"
-                )
-            for source in sources:
-                destination = staged_detectors / source.name
-                shutil.copyfile(source, destination)
-                destination.chmod(0o400)
-            staged_detectors.chmod(0o500)
-            if compute_detector_corpus_sha256(staged_detectors) != digest:
-                raise RuntimeError(
-                    "detector corpus changed while its benchmark snapshot was created; rerun"
-                )
-            published = root / digest
-            try:
-                staging.rename(published)
-            except OSError:
-                if not target.is_dir() or compute_detector_corpus_sha256(target) != digest:
-                    raise
-        return target, digest
+        # ONE resolution order, shared with the gate tests via
+        # `resolve_keyhog_binary`: explicit override / `KEYHOG_BIN` / freshly-built
+        # release / a release binary in a known cargo target dir. If NONE exists we
+        # FAIL LOUD — we never silently fall back to a PATH `keyhog`, because a
+        # stale install (one predating a new flag like `--no-config`, or simply an
+        # older detector set) silently scores WORSE recall and the operator reads
+        # it as "keyhog lost to the competitors" when keyhog never ran HEAD at all.
+        # That stale-binary silent fallback is the exact Law-10 footgun this
+        # locator's docstring promises to avoid; before this fix `binary` had its
+        # OWN drifting order ending in PATH `self.binary_name`, contradicting both
+        # the docstring and `resolve_keyhog_binary` (NO DUPLICATION).
+        resolved = resolve_keyhog_binary(self._binary)
+        if resolved:
+            return resolved
+        raise RuntimeError(
+            "no keyhog binary found for the benchmark: build a release binary "
+            "(`cargo build --release -p keyhog`) or set KEYHOG_BIN to its path. "
+            "Refusing to silently fall back to a PATH `keyhog`, which would score a "
+            "stale install as if it were HEAD and misreport recall."
+        )
 
     # ── config matrix ──────────────────────────────────────────────────
 
