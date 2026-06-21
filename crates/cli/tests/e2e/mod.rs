@@ -24,6 +24,7 @@ pub mod scan_autoroute_missing_calibration_exits_two;
 pub mod scan_bigtree_completes_and_recalls;
 pub mod scan_binary_ghidra_stderr;
 pub mod scan_clean_file_exit_zero;
+pub mod scan_decode_plain_base64;
 pub mod scan_dedup_none_reports_all_occurrences;
 pub mod scan_deep_flag_git_staged_clean;
 pub mod scan_demo_example_not_clean_summary;
