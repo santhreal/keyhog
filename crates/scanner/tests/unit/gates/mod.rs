@@ -147,6 +147,7 @@ pub mod inline_gate;
 pub mod jwt_no_inline_tests;
 pub mod jwt_no_unwrap_expect;
 pub mod jwt_non_empty;
+pub mod ml_features_entropy_threshold_owner;
 pub mod ml_features_no_inline_tests;
 pub mod ml_features_no_unwrap_expect;
 pub mod ml_features_non_empty;

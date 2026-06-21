@@ -1,4 +1,4 @@
-use crate::entropy::shannon_entropy;
+use crate::entropy::{shannon_entropy, HIGH_ENTROPY_THRESHOLD, VERY_HIGH_ENTROPY_THRESHOLD};
 
 /// Feature vector dimensionality. Each feature captures one signal:
 /// 4 length features + 4 entropy features + 4 character class features +
@@ -34,12 +34,10 @@ const VERY_LONG_LENGTH_THRESHOLD: usize = 100;
 /// Normalization ceiling for Shannon entropy (max theoretical for ASCII = 8.0).
 const MAX_NORMALIZED_ENTROPY: f32 = 8.0;
 
-/// Entropy thresholds derived from the training corpus: 3.5 separates readable
-/// English from random-ish strings, 4.5 separates structured tokens from high
-/// entropy, and 5.0 flags near-random secrets.
-const LOW_ENTROPY_THRESHOLD: f64 = 3.5;
-const HIGH_ENTROPY_THRESHOLD: f64 = 4.5;
-const VERY_HIGH_ENTROPY_THRESHOLD: f64 = 5.5;
+/// Model-specific low-entropy bucket from the training corpus: 3.5 separates
+/// readable English from random-ish strings. The high and very-high buckets use
+/// the scanner's canonical entropy thresholds, not private ML copies.
+const ML_LOW_ENTROPY_FEATURE_THRESHOLD: f64 = 3.5;
 
 const MAX_PREFIX_LENGTH: f32 = 10.0;
 const OPENAI_PREFIX: &str = "sk-";
@@ -222,7 +220,7 @@ fn apply_length_features(features: &mut [f32; NUM_FEATURES], len: usize) {
 
 fn apply_entropy_features(features: &mut [f32; NUM_FEATURES], entropy_value: f64) {
     features[4] = entropy_value as f32 / MAX_NORMALIZED_ENTROPY;
-    features[5] = binary_feature(entropy_value >= LOW_ENTROPY_THRESHOLD);
+    features[5] = binary_feature(entropy_value >= ML_LOW_ENTROPY_FEATURE_THRESHOLD);
     features[6] = binary_feature(entropy_value >= HIGH_ENTROPY_THRESHOLD);
     features[7] = binary_feature(entropy_value >= VERY_HIGH_ENTROPY_THRESHOLD);
 }

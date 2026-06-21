@@ -1,9 +1,11 @@
+use keyhog_scanner::entropy::{shannon_entropy, VERY_HIGH_ENTROPY_THRESHOLD};
 use keyhog_scanner::ml_scorer::score_with_config;
 use keyhog_scanner::testing::compute_features_public;
 
 const FILE_TYPE_OFFSET: usize = 32;
 const CONFIG_FILE_TYPE_INDEX: usize = FILE_TYPE_OFFSET;
 const CI_FILE_TYPE_INDEX: usize = FILE_TYPE_OFFSET + 2;
+const VERY_HIGH_ENTROPY_FEATURE_INDEX: usize = 7;
 
 fn test_score(text: &str, context: &str) -> f64 {
     score_with_config(
@@ -113,6 +115,22 @@ fn file_type_context_markers_are_ascii_case_insensitive() {
     assert_eq!(
         config[CONFIG_FILE_TYPE_INDEX], 1.0,
         "mixed-case config markers must classify as config context"
+    );
+}
+
+#[test]
+fn very_high_entropy_feature_uses_canonical_scanner_threshold() {
+    let text = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
+    let entropy = shannon_entropy(text.as_bytes());
+    assert!(
+        (5.5..VERY_HIGH_ENTROPY_THRESHOLD).contains(&entropy),
+        "fixture entropy {entropy:.4} must sit between the old drifted 5.5 cutoff and canonical {VERY_HIGH_ENTROPY_THRESHOLD}"
+    );
+
+    let features = compute_features_public(text, "API_KEY=");
+    assert_eq!(
+        features[VERY_HIGH_ENTROPY_FEATURE_INDEX], 0.0,
+        "ML feature[7] must use canonical VERY_HIGH_ENTROPY_THRESHOLD={VERY_HIGH_ENTROPY_THRESHOLD}, not the old private 5.5 cutoff"
     );
 }
 
