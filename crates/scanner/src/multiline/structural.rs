@@ -235,8 +235,7 @@ fn resolve_concat_reference(
 ) -> Option<String> {
     let re = CONCAT_RE.as_ref()?;
     let caps = re.captures(line)?;
-    if !inline_array_assignment_name(line).is_some_and(fragment_assignment_name_is_credential_like)
-    {
+    if !inline_array_assignment_name(line).is_some_and(concat_target_name_is_credential_like) {
         return None;
     }
     let rhs = caps.get(1)?.as_str();
@@ -250,6 +249,18 @@ fn resolve_concat_reference(
         joined.push_str(&value.1);
     }
     Some(joined)
+}
+
+fn concat_target_name_is_credential_like(var_name: &str) -> bool {
+    let Some(normalized) =
+        crate::engine::phase2_generic::keywords::normalize_assignment_keyword(var_name)
+    else {
+        return false;
+    };
+    crate::entropy::keywords::normalized_assignment_keyword_is_credential(&normalized)
+        || crate::engine::phase2_generic::keywords::normalized_assignment_keyword_has_secret_suffix(
+            &normalized,
+        )
 }
 
 fn inline_array_assignment_name(line: &str) -> Option<&str> {

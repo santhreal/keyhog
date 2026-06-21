@@ -6,6 +6,7 @@ mod empty_input;
 mod extract_prefix_strips_part_suffix;
 mod fragment_eviction_max_per_scope;
 mod json_brace_passthrough;
+mod json_crlf_passthrough_mapping;
 mod large_file_with_secret_keyword_no_concat_passthrough;
 mod large_file_without_keyword_passthrough;
 mod line_boundary_100_no_join;

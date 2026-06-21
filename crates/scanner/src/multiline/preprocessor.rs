@@ -168,17 +168,12 @@ fn identity_line_mappings(text: &str, original_end: usize) -> Vec<LineMapping> {
 }
 
 fn passthrough_text(text: std::borrow::Cow<'_, str>) -> PreprocessedText<'_> {
-    let mut mappings = Vec::new();
-    let mut offset = 0;
-    for (index, line) in text.lines().enumerate() {
-        mappings.push(LineMapping {
-            line_number: index + 1,
-            start_offset: offset,
-            end_offset: offset + line.len(),
-        });
-        offset += line.len() + 1;
-    }
     let original_end = text.len();
+    let mappings = if text.is_empty() {
+        Vec::new()
+    } else {
+        identity_line_mappings(&text, original_end)
+    };
     PreprocessedText {
         // Byte-identical passthrough: carry the Cow through with no body copy.
         text,
