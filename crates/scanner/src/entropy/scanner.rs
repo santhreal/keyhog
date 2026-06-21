@@ -296,6 +296,9 @@ pub(crate) fn has_isolated_bare_secret_candidate(
         let Some(candidate) = isolated_bare_candidate(line, KEYWORD_FREE_ISOLATED_MIN_LEN) else {
             return false;
         };
+        if is_canonical_non_secret_shape(candidate) {
+            return false;
+        }
         let entropy = shannon_entropy(candidate.as_bytes());
         isolated_bare_entropy_floor_met(candidate, entropy, threshold)
             && is_isolated_bare_secret_plausible(candidate, placeholder_keywords)
@@ -456,6 +459,9 @@ fn collect_isolated_bare_candidate(
     let Some(candidate) = isolated_bare_candidate(line, context.min_len) else {
         return;
     };
+    if is_canonical_non_secret_shape(candidate) {
+        return;
+    }
     let entropy = shannon_entropy(candidate.as_bytes());
     if !isolated_bare_entropy_floor_met(candidate, entropy, context.threshold)
         || !is_isolated_bare_secret_plausible(candidate, placeholder_keywords)
@@ -473,9 +479,7 @@ fn collect_isolated_bare_candidate(
 }
 
 fn isolated_bare_candidate(line: &str, min_len: usize) -> Option<&str> {
-    let candidate = line
-        .trim()
-        .trim_matches(|c: char| c == '"' || c == '\'' || c == '`' || c == ';' || c == ',');
+    let candidate = line.trim().trim_matches(|c: char| c == ';' || c == ',');
     if candidate.len() < min_len || candidate.bytes().any(|b| b.is_ascii_whitespace()) {
         return None;
     }
@@ -485,8 +489,9 @@ fn isolated_bare_candidate(line: &str, min_len: usize) -> Option<&str> {
     if !has_alpha || (!has_digit && !no_digit_symbolic_token) {
         return None;
     }
+    let has_assignment_equals = has_non_padding_equals(candidate);
     let standard_token = !candidate.contains("://")
-        && !has_non_padding_equals(candidate)
+        && !has_assignment_equals
         && !candidate.contains('<')
         && !candidate.contains('>')
         && candidate.bytes().all(|b| {
@@ -511,7 +516,7 @@ fn isolated_bare_candidate(line: &str, min_len: usize) -> Option<&str> {
     if standard_token
         || colon_separated_opaque_candidate(candidate)
         || no_digit_symbolic_token
-        || symbolic_isolated_bare_candidate(candidate)
+        || (!has_assignment_equals && symbolic_isolated_bare_candidate(candidate))
     {
         return Some(candidate);
     }
@@ -573,7 +578,7 @@ fn symbolic_alpha_only_opaque_candidate(candidate: &str) -> bool {
 }
 
 fn symbolic_isolated_bare_candidate(candidate: &str) -> bool {
-    if candidate.contains("://") {
+    if candidate.contains("://") || candidate.bytes().any(|b| matches!(b, b':' | b',')) {
         return false;
     }
     let mut symbol_count = 0usize;

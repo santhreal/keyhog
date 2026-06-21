@@ -88,6 +88,19 @@ fn scan(body: String) -> Vec<keyhog_core::RawMatch> {
     shared_scanner().scan(&chunk)
 }
 
+fn scan_cpu_fallback(body: String) -> Vec<keyhog_core::RawMatch> {
+    let chunk = Chunk {
+        data: body.into(),
+        metadata: ChunkMetadata {
+            source_type: "adversarial".into(),
+            path: Some("/repo/secrets.env".into()),
+            base_offset: 0,
+            ..Default::default()
+        },
+    };
+    shared_scanner().scan_with_backend(&chunk, keyhog_scanner::ScanBackend::CpuFallback)
+}
+
 proptest! {
     #![proptest_config(ProptestConfig { cases: 1_000, .. ProptestConfig::default() })]
 
@@ -136,6 +149,22 @@ proptest! {
                 .collect::<Vec<_>>()
         );
     }
+}
+
+#[test]
+fn shrunk_internal_plus_token_surfaces_on_cpu_fallback_tail() {
+    let token = "AAAAAAAAANJBBC5jNOBdCOFDBQNPD+tCRBTDUSELFGGIHHEVWPZXYabkMocK";
+    let matches = scan_cpu_fallback(format!("export TOKEN={token}\n"));
+    assert!(
+        matches
+            .iter()
+            .any(|m| m.credential.as_ref().contains(token)),
+        "CPU fallback tail must surface the generated entropy candidate; matches={:?}",
+        matches
+            .iter()
+            .map(|m| (m.detector_id.as_ref(), m.credential.as_ref(), m.confidence))
+            .collect::<Vec<_>>()
+    );
 }
 
 /// Soundness: a short alnum token with `+` (well under the 32-char

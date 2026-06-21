@@ -38,16 +38,6 @@ pub(super) fn upper_contains_token(upper: &str, token: &str) -> bool {
     })
 }
 
-fn upper_contains_placeholder_marker(upper: &str, token: &str) -> bool {
-    upper.match_indices(token).any(|(idx, _)| {
-        let before = upper[..idx].chars().next_back();
-        let after = upper[idx + token.len()..].chars().next();
-        let left_boundary = before.is_none_or(|c| !c.is_alphanumeric());
-        let right_boundary = after.is_none_or(|c| !c.is_alphanumeric());
-        left_boundary || right_boundary
-    })
-}
-
 /// Run the doc/placeholder/marker pre-checks against `credential`. Caller
 /// passes `upper` (already uppercased credential) to avoid re-allocating
 /// and `from_evasion_decoder` so EXAMPLE-suppression can be skipped when
@@ -59,16 +49,16 @@ pub(super) fn check_markers(
     upper: &str,
     from_evasion_decoder: bool,
     path: Option<&str>,
+    entropy_hint: Option<f64>,
 ) -> MarkerVerdict {
     // ── 1. Universal placeholder keywords (case-insensitive) ──
-    for word in crate::placeholder_words::words() {
-        if word.is_example() {
-            continue;
-        }
-        if upper_contains_placeholder_marker(upper, word.upper()) {
-            crate::telemetry::record_shape_suppression(path, credential, "placeholder_word");
-            return MarkerVerdict::Suppress;
-        }
+    if crate::placeholder_words::contains_non_example_placeholder_word_with_entropy_hint(
+        credential,
+        upper,
+        entropy_hint,
+    ) {
+        crate::telemetry::record_shape_suppression(path, credential, "placeholder_word");
+        return MarkerVerdict::Suppress;
     }
     // EXAMPLE is special: only suppress if it is in the credential value itself,
     // not in a URL domain (example.com is a reserved domain per RFC 2606).

@@ -16,6 +16,22 @@ fn placeholder_words_detected_case_insensitive() {
 }
 
 #[test]
+fn high_entropy_internal_plus_suffix_collision_is_not_placeholder() {
+    let token = "AAAAAAAAANJBBC5jNOBdCOFDBQNPD+tCRBTDUSELFGGIHHEVWPZXYabkMocK";
+
+    assert!(
+        !contains_placeholder_word(token),
+        "random high-entropy token ending in MOCK must not be suppressed as documentation text"
+    );
+
+    let explicit_doc_marker = "AAAAAAAAANJBBC5jNOBdCOFDBQNPD+tCRBTDUSELFGGIHHEVWPZXYabk-MOCK";
+    assert!(
+        contains_placeholder_word(explicit_doc_marker),
+        "explicit boundary-delimited MOCK marker must still suppress"
+    );
+}
+
+#[test]
 fn placeholder_word_tier_b_parser_rejects_invalid_vocabularies() {
     let empty = parse_placeholder_words_for_test("[placeholder_words]\nwords = []\n")
         .expect_err("empty placeholder vocabulary must fail closed");

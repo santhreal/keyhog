@@ -50,7 +50,7 @@ pub(super) fn should_suppress_inner(
 
     // ── 1-2. Doc / placeholder / instructional / RFC7519 / known-prefix /
     //         DOC_MARKER substring scans.
-    match check_markers(credential, &upper, from_evasion_decoder, path) {
+    match check_markers(credential, &upper, from_evasion_decoder, path, entropy_hint) {
         MarkerVerdict::Suppress => return true,
         MarkerVerdict::Allow => return false,
         MarkerVerdict::KeepChecking => {}

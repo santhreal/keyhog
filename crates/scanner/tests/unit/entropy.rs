@@ -361,6 +361,21 @@ fn authorization_call_arg_extracts_quoted_token_in_source_context() {
 }
 
 #[test]
+fn credential_context_base64_token_with_internal_plus_generates_entropy_candidate() {
+    let secret = "AAAAAAAAANJBBC5jNOBdCOFDBQNPD+tCRBTDUSELFGGIHHEVWPZXYabkMocK";
+    let matches = find_secrets(
+        &format!("export TOKEN={secret}\n"),
+        16,
+        1,
+        HIGH_ENTROPY_THRESHOLD,
+    );
+    assert!(
+        matches.iter().any(|m| m.value == secret),
+        "credential-owned base64-like token with one internal plus must be generated; matches={matches:?}"
+    );
+}
+
+#[test]
 fn keyword_free_isolated_bare_token_rejects_canonical_non_secret_shapes() {
     let text = "\
 550e8400-e29b-41d4-a716-446655440000

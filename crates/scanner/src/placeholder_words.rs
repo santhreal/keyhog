@@ -64,13 +64,66 @@ pub(crate) fn example_word() -> Option<&'static PlaceholderWord> {
 }
 
 pub(crate) fn contains_placeholder_word(credential: &str) -> bool {
-    bytes_contain_placeholder_word(credential.as_bytes())
+    contains_placeholder_word_with_entropy_hint(credential, None)
+}
+
+pub(crate) fn contains_placeholder_word_with_entropy_hint(
+    credential: &str,
+    entropy_hint: Option<f64>,
+) -> bool {
+    let upper = credential.to_ascii_uppercase();
+    words()
+        .iter()
+        .any(|word| placeholder_word_suppresses(credential, &upper, word.upper(), entropy_hint))
+}
+
+pub(crate) fn contains_non_example_placeholder_word_with_entropy_hint(
+    credential: &str,
+    upper: &str,
+    entropy_hint: Option<f64>,
+) -> bool {
+    words()
+        .iter()
+        .filter(|word| !word.is_example())
+        .any(|word| placeholder_word_suppresses(credential, upper, word.upper(), entropy_hint))
 }
 
 pub(crate) fn bytes_contain_placeholder_word(bytes: &[u8]) -> bool {
     words()
         .iter()
         .any(|word| crate::ascii_ci::ci_find(bytes, word.lower_bytes()))
+}
+
+fn placeholder_word_suppresses(
+    credential: &str,
+    upper: &str,
+    token: &str,
+    entropy_hint: Option<f64>,
+) -> bool {
+    upper.match_indices(token).any(|(idx, _)| {
+        let before = upper[..idx].chars().next_back();
+        let after = upper[idx + token.len()..].chars().next();
+        let left_boundary = before.is_none_or(|c| !c.is_alphanumeric());
+        let right_boundary = after.is_none_or(|c| !c.is_alphanumeric());
+        if !(left_boundary || right_boundary) {
+            return false;
+        }
+        if left_boundary && right_boundary {
+            return true;
+        }
+        !looks_like_high_entropy_marker_collision(credential, entropy_hint)
+    })
+}
+
+fn looks_like_high_entropy_marker_collision(credential: &str, entropy_hint: Option<f64>) -> bool {
+    if credential.len() < 40 || !(credential.contains('+') || credential.contains('/')) {
+        return false;
+    }
+    let entropy = match entropy_hint {
+        Some(entropy) => entropy,
+        None => crate::entropy::shannon_entropy(credential.as_bytes()),
+    };
+    entropy >= 4.8
 }
 
 pub(crate) fn parse_placeholder_words(raw: &str) -> Result<Vec<PlaceholderWord>, String> {
