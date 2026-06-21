@@ -361,15 +361,18 @@ pub fn code_lines_from_offsets_for_test<'a>(text: &'a str, line_offsets: &[usize
 pub(crate) use crate::normalize_chunk_data;
 pub use crate::pipeline::compute_line_offsets;
 #[cfg(test)]
-pub(crate) use crate::pipeline::{
-    detector_weak_anchor, is_within_hex_context, local_context_window, match_entropy,
-    normalize_scannable_chunk, should_suppress_known_example_credential,
-    should_suppress_known_example_credential_with_source, should_suppress_named_detector_finding,
-};
-#[cfg(test)]
 pub(crate) use crate::pipeline::{find_companion, line_window_offsets, match_line_number};
 #[cfg(test)]
+pub(crate) use crate::pipeline::{
+    is_within_hex_context, local_context_window, match_entropy, normalize_scannable_chunk,
+};
+#[cfg(test)]
 pub(crate) use crate::prefix_trie::build_propagation_table;
+#[cfg(test)]
+pub(crate) use crate::suppression::{
+    detector_weak_anchor, should_suppress_known_example_credential,
+    should_suppress_known_example_credential_with_source, should_suppress_named_detector_finding,
+};
 
 #[cfg(test)]
 pub(crate) fn scan_state_drain(

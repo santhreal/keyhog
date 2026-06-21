@@ -82,6 +82,43 @@ pub(crate) fn suppress_known_example_credential(
     )
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct NamedDetectorSuppressionCtx<'a> {
+    path: Option<&'a str>,
+    context: context::CodeContext,
+    source_type: Option<&'a str>,
+    detector_id: &'a str,
+    weak_anchor: bool,
+}
+
+impl<'a> NamedDetectorSuppressionCtx<'a> {
+    #[cfg(test)]
+    pub(crate) fn new(
+        path: Option<&'a str>,
+        context: context::CodeContext,
+        source_type: Option<&'a str>,
+        detector_id: &'a str,
+    ) -> Self {
+        Self::with_weak_anchor(path, context, source_type, detector_id, false)
+    }
+
+    pub(crate) fn with_weak_anchor(
+        path: Option<&'a str>,
+        context: context::CodeContext,
+        source_type: Option<&'a str>,
+        detector_id: &'a str,
+        weak_anchor: bool,
+    ) -> Self {
+        Self {
+            path,
+            context,
+            source_type,
+            detector_id,
+            weak_anchor,
+        }
+    }
+}
+
 /// Check if a credential should be suppressed (e.g., if it is a known example token).
 #[cfg(test)]
 pub(crate) fn should_suppress_known_example_credential(
@@ -133,34 +170,30 @@ pub(crate) fn should_suppress_named_detector_finding(
     source_type: Option<&str>,
     detector_id: &str,
 ) -> bool {
-    should_suppress_named_detector_finding_weak(
+    suppress_named_detector_finding(
         credential,
-        path,
-        context,
-        source_type,
-        detector_id,
-        false,
+        NamedDetectorSuppressionCtx::new(path, context, source_type, detector_id),
     )
 }
 
-/// Weak-anchor-aware variant of [`should_suppress_named_detector_finding`].
+/// Named-detector suppression with explicit structural context.
 ///
-/// `weak_anchor` is the structural classification produced by
-/// [`detector_weak_anchor`] at the scan call site (which has the full
-/// [`keyhog_core::DetectorSpec`]). When `true`, the detector relies on a
+/// `NamedDetectorSuppressionCtx::weak_anchor` is produced by
+/// [`detector_weak_anchor`] at the scan call site, which has the full
+/// [`keyhog_core::DetectorSpec`]. When it is true, the detector relies on a
 /// generic keyword anchor with a broad / hash-shaped capture, so the
 /// shape-suppression gates that protect the `generic-*` / `entropy-*`
-/// fallbacks stay engaged instead of being bypassed. The id-only public
-/// wrapper above passes `false` for callers that have not computed the
-/// structural classification.
-pub(crate) fn should_suppress_named_detector_finding_weak(
+/// fallbacks stay engaged instead of being bypassed.
+pub(crate) fn suppress_named_detector_finding(
     credential: &str,
-    path: Option<&str>,
-    context: context::CodeContext,
-    source_type: Option<&str>,
-    detector_id: &str,
-    weak_anchor: bool,
+    ctx: NamedDetectorSuppressionCtx<'_>,
 ) -> bool {
+    let path = ctx.path;
+    let context = ctx.context;
+    let source_type = ctx.source_type;
+    let detector_id = ctx.detector_id;
+    let weak_anchor = ctx.weak_anchor;
+
     // Shape filters split into two tiers based on whether the shape
     // can legitimately appear as the body of a real service-anchored
     // credential.
@@ -422,7 +455,7 @@ pub(crate) fn should_suppress_named_detector_finding_weak(
 /// True if the detector that fired has no service-specific anchor -
 /// the generic `generic-*` / `entropy-*` fallbacks, or a named detector
 /// that the structural classifier flagged as weakly anchored
-/// (`weak_anchor`). Used by [`should_suppress_named_detector_finding_weak`]
+/// (`weak_anchor`). Used by [`suppress_named_detector_finding`]
 /// to decide whether the Tier-B shape filters apply: strongly anchored
 /// detectors have positive evidence in their regex that the shape filter
 /// would otherwise destroy.

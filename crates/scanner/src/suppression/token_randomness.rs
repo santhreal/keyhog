@@ -138,7 +138,7 @@ fn distinct_letters(value: &str) -> usize {
 /// UNLESS the value reads as a random token, in which case lift it (`false` ⇒
 /// recover the value). The single source of truth for the gate so the scan-time
 /// generic bridge (`phase2_generic_shape`) and the post-process weak-anchor
-/// path (`suppression::api::should_suppress_named_detector_finding_weak`) agree
+/// path (`suppression::api::suppress_named_detector_finding`) agree
 /// byte-for-byte — both wrap the SAME `is_random_token`, never a second copy.
 ///
 /// Used ONLY for the contiguous gates (`pure_identifier` / `type_name`), whose

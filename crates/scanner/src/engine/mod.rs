@@ -218,7 +218,7 @@ pub struct CompiledScanner {
     /// string walk) thousands of times for an unchanging value. Resolved ONCE at
     /// construction; the per-match path indexes by `entry.detector_index`. Same
     /// pattern as `metadata_by_index`. Byte-identical to
-    /// `crate::pipeline::detector_weak_anchor(&detectors[i])`.
+    /// `crate::suppression::detector_weak_anchor(&detectors[i])`.
     pub(crate) detector_weak_anchor_by_index: Vec<bool>,
     /// Normalized assignment-key names owned by service-specific named
     /// detectors, e.g. `segment_write_key`. The generic assignment bridge uses

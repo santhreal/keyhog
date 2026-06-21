@@ -9,6 +9,9 @@ fn mod_rs_reexports_scan_loop_and_postprocess() {
     assert!(mod_rs.contains("context_window"));
     assert!(mod_rs.contains("scan_loop"));
     assert!(mod_rs.contains("postprocess"));
-    assert!(mod_rs.contains("should_suppress_known_example_credential"));
+    assert!(
+        !mod_rs.contains("should_suppress_"),
+        "pipeline/mod.rs must not re-export suppression helpers"
+    );
     assert!(mod_rs.contains("is_within_hex_context"));
 }

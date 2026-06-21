@@ -11,7 +11,9 @@ pub(crate) mod token_randomness;
 
 #[cfg(test)]
 pub(crate) use api::should_suppress_known_example_credential_with_source;
-pub(crate) use api::{detector_weak_anchor, should_suppress_named_detector_finding_weak};
+pub(crate) use api::{
+    detector_weak_anchor, suppress_named_detector_finding, NamedDetectorSuppressionCtx,
+};
 #[cfg(test)]
 pub(crate) use api::{
     should_suppress_known_example_credential, should_suppress_named_detector_finding,

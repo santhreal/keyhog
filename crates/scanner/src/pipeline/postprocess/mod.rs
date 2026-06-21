@@ -1,15 +1,5 @@
 //! Post-match processing: raw match construction and placeholder suppression.
 
-#[cfg(test)]
-pub(crate) use crate::suppression::should_suppress_known_example_credential_with_source;
-pub(crate) use crate::suppression::{
-    detector_weak_anchor, should_suppress_named_detector_finding_weak,
-};
-#[cfg(test)]
-pub(crate) use crate::suppression::{
-    should_suppress_known_example_credential, should_suppress_named_detector_finding,
-};
-
 use crate::types::*;
 use keyhog_core::{Chunk, MatchLocation, RawMatch};
 use std::collections::HashMap;

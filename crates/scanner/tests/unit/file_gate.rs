@@ -1133,7 +1133,6 @@ fn testing_facade_pipeline_helpers_are_owner_reexports_not_forwarders() {
         "should_suppress_known_example_credential",
         "should_suppress_known_example_credential_with_source",
         "should_suppress_named_detector_finding",
-        "should_suppress_named_detector_finding_weak",
         "find_companion",
         "line_window_offsets",
         "window_end_offset",

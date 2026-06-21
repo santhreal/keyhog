@@ -2,7 +2,7 @@ use keyhog_scanner::context::CodeContext;
 use keyhog_scanner::testing::should_suppress_named_detector_finding;
 
 // KH-L-0414: the post-process weak-anchor suppressor
-// (`should_suppress_named_detector_finding_weak`) applied the SAME
+// (`suppress_named_detector_finding`) applied the SAME
 // `looks_like_pure_identifier` / `looks_like_word_separated_identifier` Tier-B
 // gates that KH-L-0413 lifted on the scan-time generic bridge — so a real random
 // password a generic-* / entropy-* / weakly-anchored named detector flagged was

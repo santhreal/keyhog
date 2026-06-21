@@ -125,15 +125,16 @@ impl CompiledScanner {
             .detector_weak_anchor_by_index
             .get(entry.detector_index)
             .copied()
-            .unwrap_or_else(|| crate::pipeline::detector_weak_anchor(detector)); // LAW10: bounds-checked lookup; out-of-range => documented default (total fn), recall-safe
-        if crate::pipeline::should_suppress_named_detector_finding_weak(
-            credential,
-            chunk.metadata.path.as_deref(),
-            inferred_context,
-            Some(chunk.metadata.source_type.as_str()),
-            detector.id.as_ref(),
-            weak_anchor,
-        ) {
+            .unwrap_or_else(|| crate::suppression::detector_weak_anchor(detector)); // LAW10: bounds-checked lookup; out-of-range => documented default (total fn), recall-safe
+        let named_suppression_ctx =
+            crate::suppression::NamedDetectorSuppressionCtx::with_weak_anchor(
+                chunk.metadata.path.as_deref(),
+                inferred_context,
+                Some(chunk.metadata.source_type.as_str()),
+                detector.id.as_ref(),
+                weak_anchor,
+            );
+        if crate::suppression::suppress_named_detector_finding(credential, named_suppression_ctx) {
             // KH-L-0412 (Law-10): the weak-anchor named-detector context/example
             // suppression was the last silent `return` on this path. Trace it so a
             // dropped weak-anchored named match is visible to `--dogfood`.

@@ -327,7 +327,7 @@ impl CompiledScanner {
         // candidate. Built here (before `detectors` is moved into the struct).
         let detector_weak_anchor_by_index: Vec<bool> = detectors
             .iter()
-            .map(crate::pipeline::detector_weak_anchor)
+            .map(crate::suppression::detector_weak_anchor)
             .collect();
         let generic_named_assignment_keywords =
             generic_keyword_owner::build_generic_named_assignment_keywords(&detectors);
