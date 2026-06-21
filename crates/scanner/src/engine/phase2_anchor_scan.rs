@@ -154,8 +154,16 @@ impl CompiledScanner {
             let (credential, credential_start, credential_end): (&str, usize, usize) = match group {
                 Some(group) => {
                     let groups_total = locs.len();
-                    let (mut cs, mut ce) =
-                        locs.get(group).unwrap_or((left_context_len, whole.end())); // LAW10: bounds-checked lookup; out-of-range => documented default (total fn), recall-safe
+                    let (mut cs, mut ce) = match locs.get(group) {
+                        Some(range) => range,
+                        None => (left_context_len, whole.end()),
+                    };
+                    // Group 0 belongs to the detector regex, not the synthetic
+                    // left-context byte that lets boundary assertions see the
+                    // real preceding character.
+                    if use_left_context && group == 0 {
+                        cs = left_context_len;
+                    }
                     let mut cred = &slice[cs..ce];
                     if looks_like_variable_name(cred) && groups_total > 2 {
                         for g in 1..groups_total {
