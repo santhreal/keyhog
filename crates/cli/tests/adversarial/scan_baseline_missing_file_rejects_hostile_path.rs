@@ -10,6 +10,14 @@ fn scan_baseline_missing_file_rejects_hostile_path() {
         .args([
             "scan",
             "--no-daemon",
+            // Pin an explicit backend so the scan reaches baseline loading
+            // deterministically. Without this, an uncalibrated host (no
+            // persisted autoroute decision / unavailable GPU runtime identity)
+            // fails closed at the autoroute gate BEFORE the baseline-missing
+            // check, masking what this test verifies. Mirrors the `--backend
+            // simd` convention every other adversarial scan test follows.
+            "--backend",
+            "simd",
             "--format",
             "json",
             "--baseline",

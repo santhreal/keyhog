@@ -266,17 +266,30 @@ pub(crate) fn ci_find(haystack: &[u8], needle_lower: &[u8]) -> bool {
     if needle_lower.is_empty() {
         return true;
     }
-    let n = needle_lower.len();
+    ci_find_nonempty(haystack, needle_lower)
+}
+
+/// Case-insensitive ASCII byte substring search for caller-supplied needles.
+///
+/// Unlike [`ci_find`], the needle may contain any ASCII case and an empty
+/// needle is treated as "not found". That makes this the right primitive for
+/// user/configured keyword lists where `""` must not match every byte offset.
+#[inline]
+pub(crate) fn ci_find_nonempty(haystack: &[u8], needle: &[u8]) -> bool {
+    if needle.is_empty() {
+        return false;
+    }
+    let n = needle.len();
     if haystack.len() < n {
         return false;
     }
-    let first_lower = needle_lower[0];
-    let first_upper = first_lower.to_ascii_uppercase();
+    let first_lower = needle[0].to_ascii_lowercase();
+    let first_upper = needle[0].to_ascii_uppercase();
     for start in memchr::memchr2_iter(first_lower, first_upper, haystack) {
         if start + n > haystack.len() {
             break;
         }
-        if haystack[start..start + n].eq_ignore_ascii_case(needle_lower) {
+        if haystack[start..start + n].eq_ignore_ascii_case(needle) {
             return true;
         }
     }

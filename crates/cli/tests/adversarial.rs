@@ -21,6 +21,8 @@ mod concurrent_four_scans_json_unix;
 mod concurrent_four_scans_json_windows_stub;
 #[path = "adversarial/concurrent_json_output_integrity.rs"]
 mod concurrent_json_output_integrity;
+#[path = "adversarial/config_empty_keyword_rejected.rs"]
+mod config_empty_keyword_rejected;
 #[path = "adversarial/config_parse_warns_once.rs"]
 mod config_parse_warns_once;
 #[path = "adversarial/daemon_start_help_documents_socket_flag.rs"]

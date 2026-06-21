@@ -323,12 +323,10 @@ pub(crate) fn is_secret_plausible(
 }
 
 fn is_placeholder_ci(bytes: &[u8], placeholder_keywords: &[String]) -> bool {
-    if placeholder_keywords.iter().any(|placeholder| {
-        let placeholder_bytes = placeholder.as_bytes();
-        bytes
-            .windows(placeholder_bytes.len())
-            .any(|window| window.eq_ignore_ascii_case(placeholder_bytes))
-    }) {
+    if placeholder_keywords
+        .iter()
+        .any(|placeholder| crate::ascii_ci::ci_find_nonempty(bytes, placeholder.as_bytes()))
+    {
         return true;
     }
 

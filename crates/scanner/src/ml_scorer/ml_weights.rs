@@ -14,10 +14,18 @@ include!(concat!(env!("OUT_DIR"), "/model_version.rs"));
 // now lives in `src/ml_scorer/`, so the embed path goes up one level.
 const WEIGHTS: &[u8] = include_bytes!("../weights.bin");
 
-const INPUT_DIM: usize = 42;
-const EXPERT_COUNT: usize = 6;
-const EXPERT_FC1_OUT: usize = 32;
-const EXPERT_FC2_OUT: usize = 16;
+// Model architecture dimensions: the SINGLE SOURCE OF TRUTH for both the weight
+// buffer layout (the offsets/counts below) AND the const-generic layer sizes the
+// forward pass uses in `ml_scorer.rs`. The parent module mirrors these as
+// `NUM_FEATURES`/`EXPERT_COUNT`/`EXPERT_HIDDEN_LAYER_*` (it needs them as plain
+// consts for const-generic dense-layer sizing) and pins each mirror to these
+// with a compile-time `assert!`, so a retrain that changes the architecture here
+// + in `weights.bin` fails the BUILD unless the mirrors are updated to match
+// (the per-call `debug_assert`s in the forward pass are compiled out in release).
+pub(crate) const INPUT_DIM: usize = 42;
+pub(crate) const EXPERT_COUNT: usize = 6;
+pub(crate) const EXPERT_FC1_OUT: usize = 32;
+pub(crate) const EXPERT_FC2_OUT: usize = 16;
 
 const GATE_W_COUNT: usize = INPUT_DIM * EXPERT_COUNT;
 const GATE_B_COUNT: usize = EXPERT_COUNT;

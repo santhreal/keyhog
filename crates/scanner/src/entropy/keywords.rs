@@ -51,12 +51,9 @@ fn is_keyword_assignment_line(line: &str, secret_keywords: &[String]) -> bool {
     }
 
     let line_bytes = line.as_bytes();
-    let has_keyword = secret_keywords.iter().any(|keyword| {
-        let keyword_bytes = keyword.as_bytes();
-        line_bytes
-            .windows(keyword_bytes.len())
-            .any(|window| window.eq_ignore_ascii_case(keyword_bytes))
-    });
+    let has_keyword = secret_keywords
+        .iter()
+        .any(|keyword| crate::ascii_ci::ci_find_nonempty(line_bytes, keyword.as_bytes()));
     has_keyword && (line.contains('=') || line.contains(':'))
 }
 

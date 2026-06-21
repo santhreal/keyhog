@@ -615,20 +615,7 @@ fn keyword_context(
         "-secret",
     ];
 
-    // ASCII case-insensitive substring search - avoids the
-    // per-call `keyword_line.to_lowercase()` and per-keyword
-    // `keyword.to_lowercase()` allocations the previous flow did
-    // on every entropy candidate. Mirrors `is_keyword_assignment_line`
-    // which already uses `eq_ignore_ascii_case` over byte windows.
     let line_bytes = keyword_line.as_bytes();
-    fn contains_ci(haystack: &[u8], needle: &[u8]) -> bool {
-        if needle.is_empty() || needle.len() > haystack.len() {
-            return false;
-        }
-        haystack
-            .windows(needle.len())
-            .any(|w| w.eq_ignore_ascii_case(needle))
-    }
     let exact_assignment_keyword =
         crate::entropy::keywords::assignment_keyword_for_line(keyword_line);
     let keyword = exact_assignment_keyword
@@ -636,7 +623,7 @@ fn keyword_context(
         .or_else(|| {
             secret_keywords
                 .iter()
-                .find(|keyword| contains_ci(line_bytes, keyword.as_bytes()))
+                .find(|keyword| crate::ascii_ci::ci_find_nonempty(line_bytes, keyword.as_bytes()))
                 .map(|keyword| keyword.as_str())
         })
         .unwrap_or("unknown"); // LAW10: absent path/field => display placeholder; reporting-only, recall-safe
@@ -644,9 +631,9 @@ fn keyword_context(
         .as_deref()
         .is_some_and(crate::entropy::keywords::normalized_assignment_keyword_is_credential);
     let is_credential_context = is_exact_credential_context
-        || CREDENTIAL_KEYWORDS
-            .iter()
-            .any(|credential_keyword| contains_ci(line_bytes, credential_keyword.as_bytes()));
+        || CREDENTIAL_KEYWORDS.iter().any(|credential_keyword| {
+            crate::ascii_ci::ci_find_nonempty(line_bytes, credential_keyword.as_bytes())
+        });
 
     let base_threshold =
         if entropy_threshold.is_finite() && entropy_threshold > HIGH_ENTROPY_THRESHOLD {

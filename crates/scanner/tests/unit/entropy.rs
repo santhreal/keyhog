@@ -92,6 +92,29 @@ fn plausible_secret_filter() {
 }
 
 #[test]
+fn empty_secret_keyword_is_ignored_not_matched_at_every_offset() {
+    let matches = find_entropy_secrets(
+        "debug = not-a-secret\n",
+        8,
+        2,
+        HIGH_ENTROPY_THRESHOLD,
+        &["".to_string()],
+        &[],
+        &[],
+    );
+
+    assert!(matches.is_empty());
+}
+
+#[test]
+fn empty_placeholder_keyword_is_ignored_not_a_panic_or_global_placeholder() {
+    assert!(is_secret_plausible(
+        "aK7xP9mQ2wE5rT8yU1iO3pA6sD4fG0hJ",
+        &["".to_string()]
+    ));
+}
+
+#[test]
 fn candidate_mode_skips_strict_secret_checks() {
     assert!(is_candidate_plausible("0123456789abcdef", &[]));
     assert!(!is_secret_plausible("0123456789abcdef", &[]));

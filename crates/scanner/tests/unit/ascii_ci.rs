@@ -1,8 +1,8 @@
 //! Migrated from src/ascii_ci.rs
 
 use keyhog_scanner::testing::ascii_ci::{
-    ci_find, contains_path_segment, contains_path_segment_two, extend_ascii_lowercase_from,
-    has_ascii_uppercase,
+    ci_find, ci_find_nonempty, contains_path_segment, contains_path_segment_two,
+    extend_ascii_lowercase_from, has_ascii_uppercase,
 };
 
 #[test]
@@ -107,6 +107,18 @@ fn ci_find_matches_case_insensitively() {
 #[test]
 fn ci_find_empty_needle_is_true() {
     assert!(ci_find(b"anything", b""));
+}
+
+#[test]
+fn ci_find_nonempty_empty_needle_is_false() {
+    assert!(!ci_find_nonempty(b"anything", b""));
+}
+
+#[test]
+fn ci_find_nonempty_handles_configured_mixed_case_needles() {
+    assert!(ci_find_nonempty(b"api_key=abc123", b"API_KEY"));
+    assert!(ci_find_nonempty(b"PLACEHOLDER_TOKEN", b"placeholder"));
+    assert!(!ci_find_nonempty(b"api_key=abc123", b"SECRET_KEY"));
 }
 
 #[test]

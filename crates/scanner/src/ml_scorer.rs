@@ -42,6 +42,21 @@ const EXPERT_COUNT: usize = 6;
 const EXPERT_HIDDEN_LAYER_1: usize = 32;
 const EXPERT_HIDDEN_LAYER_2: usize = 16;
 
+// SINGLE-SOURCE-OF-TRUTH guard. These layer dimensions are mirrored from
+// `ml_weights` (their canonical home, where they also drive the `weights.bin`
+// buffer offsets) because the forward pass needs them as plain consts for
+// const-generic dense-layer sizing. If a retrain changes the architecture in
+// `ml_weights`/`weights.bin` but a mirror here is not updated, the forward pass
+// would slice the weight buffer with the wrong stride — silent wrong scores or
+// an out-of-bounds index in release, where the per-call `debug_assert`s vanish
+// and only `all_weights()`'s byte-length `assert` (which checks `weights.bin`
+// SIZE, not these strides) fires. These const assertions fail the BUILD on any
+// drift, before any test runs, at zero runtime cost.
+const _: () = assert!(NUM_FEATURES == ml_weights::INPUT_DIM);
+const _: () = assert!(EXPERT_COUNT == ml_weights::EXPERT_COUNT);
+const _: () = assert!(EXPERT_HIDDEN_LAYER_1 == ml_weights::EXPERT_FC1_OUT);
+const _: () = assert!(EXPERT_HIDDEN_LAYER_2 == ml_weights::EXPERT_FC2_OUT);
+
 /// Score a candidate secret and its surrounding context using default (empty) heuristic lists.
 pub(crate) fn score(text: &str, context: &str) -> f64 {
     score_with_config(text, context, &[], &[], &[], &[])

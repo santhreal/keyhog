@@ -92,6 +92,26 @@ fn invalid_config_value(field: &str, value: &str, detail: &str) -> String {
     format!("- {field} = {value:?}: {detail}")
 }
 
+/// Reject a user-supplied keyword list that contains an empty entry.
+///
+/// An empty keyword is meaningless as a match needle (it would match at every
+/// byte offset) and, critically, reaches `slice::windows(0)` in the entropy
+/// keyword/placeholder scan (`entropy::keywords::is_keyword_assignment_line`,
+/// `entropy::plausibility::is_placeholder_ci`, `entropy::scanner`), which panics
+/// with "size is zero" and crashes the whole scan. Fail closed at the config
+/// boundary with a message that names the fix, rather than letting a
+/// `.keyhog.toml` typo (`placeholder_keywords = [""]`) abort mid-scan with an
+/// opaque panic. Returns `true` when the list is safe to apply.
+fn keyword_list_is_nonempty(errors: &mut Vec<String>, field: &str, entries: &[String]) -> bool {
+    if entries.iter().any(|entry| entry.is_empty()) {
+        errors.push(format!(
+            "- {field}: entries must not be empty; remove the empty \"\" item"
+        ));
+        return false;
+    }
+    true
+}
+
 fn parse_config_byte_size(errors: &mut Vec<String>, field: &str, value: &str) -> Option<usize> {
     match parse_byte_size(value) {
         Ok(size) => Some(size),
@@ -706,16 +726,24 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     }
 
     if let Some(prefixes) = config.known_prefixes {
-        args.known_prefixes = prefixes;
+        if keyword_list_is_nonempty(&mut config_errors, "known_prefixes", &prefixes) {
+            args.known_prefixes = prefixes;
+        }
     }
     if let Some(keywords) = config.secret_keywords {
-        args.secret_keywords = keywords;
+        if keyword_list_is_nonempty(&mut config_errors, "secret_keywords", &keywords) {
+            args.secret_keywords = keywords;
+        }
     }
     if let Some(keywords) = config.test_keywords {
-        args.test_keywords = keywords;
+        if keyword_list_is_nonempty(&mut config_errors, "test_keywords", &keywords) {
+            args.test_keywords = keywords;
+        }
     }
     if let Some(keywords) = config.placeholder_keywords {
-        args.placeholder_keywords = keywords;
+        if keyword_list_is_nonempty(&mut config_errors, "placeholder_keywords", &keywords) {
+            args.placeholder_keywords = keywords;
+        }
     }
 
     // `[scan]` nested table - the surface the README documents as canonical.
