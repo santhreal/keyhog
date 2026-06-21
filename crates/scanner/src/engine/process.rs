@@ -36,10 +36,10 @@ impl CompiledScanner {
     ) {
         let (credential, match_end) =
             extend_known_prefix_credential(data, credential, credential_end);
-        if detector.id == "aws-access-key" && credential.len() != 20 {
+        if detector.id.as_str() == crate::detector_ids::AWS_ACCESS_KEY && credential.len() != 20 {
             return;
         }
-        if detector.id == "anthropic-api-key" {
+        if detector.id.as_str() == crate::detector_ids::ANTHROPIC_API_KEY {
             const LEGACY_PREFIX: &str = "sk-ant-api03-";
             if let Some(body) = credential.strip_prefix(LEGACY_PREFIX) {
                 if !(80..=120).contains(&body.len()) {
@@ -78,7 +78,7 @@ impl CompiledScanner {
         // strings) BEFORE the expensive false-positive context check and ML scoring.
         // Only applied to generic detectors. Specific detectors with known prefixes
         // already have high confidence from the prefix match.
-        if detector.id.starts_with("generic-")
+        if crate::detector_ids::is_generic_detector(detector.id.as_ref())
             && crate::confidence::known_prefix_confidence_floor(credential).is_none()
             && !crate::probabilistic_gate::ProbabilisticGate::looks_promising(credential)
         {
@@ -169,14 +169,14 @@ impl CompiledScanner {
         };
         let entropy = match_entropy(credential.as_bytes());
 
-        let is_generic =
-            detector.id.starts_with("generic-") && detector.id != "generic-private-key";
+        let is_generic = crate::detector_ids::is_generic_detector(detector.id.as_ref())
+            && detector.id.as_str() != crate::detector_ids::GENERIC_PRIVATE_KEY;
         let is_weakly_anchored = weak_anchor;
         if is_generic || is_weakly_anchored {
             // Per-detector entropy floor. Structured tokens (UUIDs, short API keys)
             // have lower entropy than random strings. A blanket 3.5 floor misses them.
             let floor_id = if is_weakly_anchored {
-                "generic-api-key"
+                crate::detector_ids::GENERIC_API_KEY
             } else {
                 detector.id.as_str()
             };

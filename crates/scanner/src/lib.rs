@@ -79,6 +79,8 @@ pub mod decode;
 /// Decode-structure analysis: classify what a candidate base64/hex-decodes to
 /// (binary asset magic bytes, protobuf wire) so decode-through feeds scoring.
 pub(crate) mod decode_structure;
+/// Canonical detector-id strings and scanner-side detector-family predicates.
+pub(crate) mod detector_ids;
 /// Core scan execution engine.
 pub(crate) mod engine;
 /// Shannon entropy analysis for secret detection.

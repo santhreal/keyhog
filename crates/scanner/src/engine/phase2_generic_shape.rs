@@ -65,9 +65,9 @@ impl CompiledScanner {
         // 2.8/3.2/3.5 `generic-secret` floor discarded. The
         // `--no-keyword-low-entropy` opt-out restores the high floor.
         let floor_id = if self.config.generic_keyword_low_entropy {
-            "generic-keyword-secret"
+            crate::detector_ids::GENERIC_KEYWORD_SECRET
         } else {
-            "generic-secret"
+            crate::detector_ids::GENERIC_SECRET
         };
         let min_entropy = super::scan_filters::generic_entropy_floor(
             self.config.entropy_threshold,

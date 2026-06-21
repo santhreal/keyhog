@@ -432,11 +432,9 @@ pub(crate) fn suppress_named_detector_finding(
     // service-specific, and shape gates are load-bearing for them.
     // Weakly anchored named detectors (e.g. datadog-api-key) also do not
     // bypass shape gates to prevent false positive traps from triggering.
-    let bypass_shape_gates = !detector_id.starts_with("generic-")
-        && !detector_id.starts_with("entropy-")
-        && !weak_anchor
-        && detector_id != "private-key";
-    let allow_encoded_text_secret = detector_id.starts_with("generic-")
+    let bypass_shape_gates =
+        crate::detector_ids::is_service_anchored_detector(detector_id) && !weak_anchor;
+    let allow_encoded_text_secret = crate::detector_ids::is_generic_detector(detector_id)
         && crate::decode_structure::decodes_to_printable_text(credential);
     should_suppress_inner(
         credential,
@@ -460,7 +458,7 @@ pub(crate) fn suppress_named_detector_finding(
 /// detectors have positive evidence in their regex that the shape filter
 /// would otherwise destroy.
 fn is_generic_or_entropy(detector_id: &str, weak_anchor: bool) -> bool {
-    detector_id.starts_with("generic-") || detector_id.starts_with("entropy-") || weak_anchor
+    crate::detector_ids::is_generic_or_entropy_detector(detector_id) || weak_anchor
 }
 
 /// Detectors that are weakly anchored but NOT caught by the structural
@@ -471,30 +469,6 @@ fn is_generic_or_entropy(detector_id: &str, weak_anchor: bool) -> bool {
 /// (`{20,}` / `{32}`). These were measured FP-prone on the SecretBench
 /// mirror corpus and so remain an explicit, corpus-derived data set rather
 /// than a structural derivation.
-const RESIDUAL_WEAK_ANCHORED: &[&str] = &[
-    "aerisweather-api-credentials",
-    "base-api-credentials",
-    "flickr-api-key",
-    "census-api-key",
-    "workato-api-credentials",
-    "adobe-api-key",
-    "alchemy-api-key",
-    "azure-openai-api-key",
-    "datadog-api-key",
-    "etherscan-api-key",
-    "spotify-client-credentials",
-    "bamboohr-api-key",
-    "calendly-api-key",
-    "crowdin-api-token",
-    "github-oauth-secret",
-    "sonarcloud-token",
-    "activecampaign-api-key",
-    "chef-automate-token",
-    "foundation-api-key",
-    "getresponse-api-key",
-    "rudder-api-token",
-];
-
 /// Structurally classify whether a named detector is *weakly anchored*:
 /// it relies on a generic keyword anchor (`api_key=`, `token=`, …) with a
 /// capture that can collide with non-secrets, so the shape-suppression
@@ -511,13 +485,15 @@ const RESIDUAL_WEAK_ANCHORED: &[&str] = &[
 /// stays in [`RESIDUAL_WEAK_ANCHORED`].
 pub(crate) fn detector_weak_anchor(spec: &keyhog_core::DetectorSpec) -> bool {
     let id = spec.id.as_str();
-    if id.starts_with("generic-") || id.starts_with("entropy-") || id == "private-key" {
+    if crate::detector_ids::is_generic_or_entropy_detector(id)
+        || crate::detector_ids::is_private_key_fallback(id)
+    {
         return false;
     }
     if spec.min_confidence.is_some() {
         return false;
     }
-    RESIDUAL_WEAK_ANCHORED.contains(&id)
+    crate::detector_ids::is_residual_weak_anchored(id)
         || spec
             .patterns
             .iter()

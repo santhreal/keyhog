@@ -389,7 +389,7 @@ impl CompiledScanner {
                 let absolute_offset = chunk.metadata.base_offset + source_offset;
                 let raw = keyhog_core::RawMatch {
                     credential_hash: crate::sha256_hash(value),
-                    detector_id: Arc::from("generic-secret"),
+                    detector_id: Arc::from(crate::detector_ids::GENERIC_SECRET),
                     detector_name: Arc::from("Generic Secret (Key=Value)"),
                     service: Arc::from("generic"),
                     severity: keyhog_core::Severity::Medium,

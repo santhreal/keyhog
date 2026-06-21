@@ -9,7 +9,6 @@ use crate::types::{ScanState, ScannerPreprocessedText};
 use keyhog_core::Chunk;
 use std::sync::atomic::Ordering::Relaxed;
 
-const STRIPE_HOT_CONFIRMED_DETECTOR_ID: &str = "stripe-secret-key";
 const STRIPE_HOT_CONFIRMED_PREFIXES: &[&str] = &["sk_live_", "sk_test_", "rk_live_", "rk_test_"];
 
 impl CompiledScanner {
@@ -260,7 +259,7 @@ impl CompiledScanner {
         let offsets: std::collections::HashSet<usize> = scan_state
             .matches
             .iter()
-            .filter(|m| m.detector_id.as_ref() == STRIPE_HOT_CONFIRMED_DETECTOR_ID)
+            .filter(|m| m.detector_id.as_ref() == crate::detector_ids::STRIPE_SECRET_KEY)
             .map(|m| m.location.offset)
             .collect();
         (!offsets.is_empty()).then_some(offsets)
@@ -273,7 +272,7 @@ impl CompiledScanner {
         let Some(detector) = self.detectors.get(entry.detector_index) else {
             return false;
         };
-        detector.id == STRIPE_HOT_CONFIRMED_DETECTOR_ID
+        detector.id.as_str() == crate::detector_ids::STRIPE_SECRET_KEY
             && STRIPE_HOT_CONFIRMED_PREFIXES
                 .iter()
                 .any(|prefix| entry.regex.as_str().starts_with(prefix))

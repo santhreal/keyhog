@@ -56,18 +56,18 @@ pub(crate) const HOT_PATTERN_NAMES: &[&str] = &[
 /// precise-regex validation) would have rejected them outright, since the
 /// session-token regex can never match an `ASIA…` literal.
 pub(crate) const HOT_PATTERN_DETECTOR_IDS: &[&str] = &[
-    "github-classic-pat",
-    "openai-api-key",
-    "aws-access-key",
-    "aws-access-key",
-    "sendgrid-api-key",
-    "slack-bot-token",
-    "slack-user-token",
-    "hot-square_secret",
-    "stripe-secret-key",
-    "stripe-secret-key",
-    "stripe-secret-key",
-    "stripe-secret-key",
+    crate::detector_ids::GITHUB_CLASSIC_PAT,
+    crate::detector_ids::OPENAI_API_KEY,
+    crate::detector_ids::AWS_ACCESS_KEY,
+    crate::detector_ids::AWS_ACCESS_KEY,
+    crate::detector_ids::SENDGRID_API_KEY,
+    crate::detector_ids::SLACK_BOT_TOKEN,
+    crate::detector_ids::SLACK_USER_TOKEN,
+    crate::detector_ids::HOT_SQUARE_SECRET,
+    crate::detector_ids::STRIPE_SECRET_KEY,
+    crate::detector_ids::STRIPE_SECRET_KEY,
+    crate::detector_ids::STRIPE_SECRET_KEY,
+    crate::detector_ids::STRIPE_SECRET_KEY,
 ];
 
 /// Canonical human-readable detector name per hot pattern (matches the `name`

@@ -70,7 +70,7 @@ impl CompiledScanner {
         if !scan_state.matches.is_empty() {
             for m in &scan_state.matches {
                 let id = &*m.detector_id;
-                if !id.starts_with("generic-") && !id.starts_with("entropy-") {
+                if !crate::detector_ids::is_generic_or_entropy_detector(id) {
                     if let Some(line) = m.location.line {
                         skip_lines.insert(line);
                     }

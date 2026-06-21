@@ -302,21 +302,21 @@ pub(super) fn generic_entropy_floor(
         // admitting low-diversity identifiers. Must precede the `<= 40` arm:
         // guard arms evaluate top-to-bottom, so listing `<= 40` first would
         // subsume this (every len<=24 is also <=40) and make 3.0 dead code.
-        "generic-api-key" if credential_len <= 24 => 3.0,
+        id if id == crate::detector_ids::GENERIC_API_KEY && credential_len <= 24 => 3.0,
         // UUID-based tokens (25..=40) have lower entropy due to hex + dashes.
-        "generic-api-key" if credential_len <= 40 => 2.8,
+        id if id == crate::detector_ids::GENERIC_API_KEY && credential_len <= 40 => 2.8,
         // Long random strings need higher entropy to distinguish from code
-        "generic-api-key" => 3.5,
+        id if id == crate::detector_ids::GENERIC_API_KEY => 3.5,
         // Password fields can be anything
-        "generic-password" => 2.5,
+        id if id == crate::detector_ids::GENERIC_PASSWORD => 2.5,
         // Database connection strings have structure
-        "generic-database-url" => 2.0,
+        id if id == crate::detector_ids::GENERIC_DATABASE_URL => 2.0,
         // `generic-secret` (the `SECRET_NAME = "value"` phase-2 bridge). These three
         // per-length floors are the values the phase-2 path historically baked
         // in (2.8 / 3.2 / 3.5); kept identical so default behavior is unchanged.
-        "generic-secret" if credential_len <= 24 => 2.8,
-        "generic-secret" if credential_len <= 40 => 3.2,
-        "generic-secret" => 3.5,
+        id if id == crate::detector_ids::GENERIC_SECRET && credential_len <= 24 => 2.8,
+        id if id == crate::detector_ids::GENERIC_SECRET && credential_len <= 40 => 3.2,
+        id if id == crate::detector_ids::GENERIC_SECRET => 3.5,
         // Keyword-anchored generic bridge (`PASSWORD=`, `*_PASS=`, `secret:`,
         // `api_key=` ...). The credential KEYWORD in the key is itself strong
         // evidence, so the entropy bar is far lower than the bare
@@ -326,7 +326,7 @@ pub(super) fn generic_entropy_floor(
         // is carried by the MoE (retrained on these candidates) and the shape
         // filters, NOT by entropy. Honors the operator's `--entropy-threshold`
         // exactly like the other arms (the `base.max(threshold)` below).
-        "generic-keyword-secret" => 1.5,
+        id if id == crate::detector_ids::GENERIC_KEYWORD_SECRET => 1.5,
         // Default: original threshold
         _ => 3.5,
     };

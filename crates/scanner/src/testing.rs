@@ -814,37 +814,37 @@ pub(crate) mod checksum {
     checksum_validator_wrapper!(
         GithubClassicPatValidator,
         crate::checksum::github::GithubClassicPatValidator,
-        "github-classic-pat"
+        crate::detector_ids::GITHUB_CLASSIC_PAT
     );
     checksum_validator_wrapper!(
         GithubFineGrainedPatValidator,
         crate::checksum::github::GithubFineGrainedPatValidator,
-        "github-fine-grained-pat"
+        crate::detector_ids::GITHUB_FINE_GRAINED_PAT
     );
     checksum_validator_wrapper!(
         GitlabTokenValidator,
         crate::checksum::gitlab::GitlabTokenValidator,
-        "gitlab-token"
+        crate::detector_ids::GITLAB_TOKEN
     );
     checksum_validator_wrapper!(
         NpmTokenValidator,
         crate::checksum::npm::NpmTokenValidator,
-        "npm-access-token"
+        crate::detector_ids::NPM_ACCESS_TOKEN
     );
     checksum_validator_wrapper!(
         PypiTokenValidator,
         crate::checksum::npm::PypiTokenValidator,
-        "pypi-api-token"
+        crate::detector_ids::PYPI_API_TOKEN
     );
     checksum_validator_wrapper!(
         SlackTokenValidator,
         crate::checksum::slack::SlackTokenValidator,
-        "slack-token"
+        crate::detector_ids::SLACK_TOKEN
     );
     checksum_validator_wrapper!(
         StripeTokenValidator,
         crate::checksum::stripe::StripeTokenValidator,
-        "stripe-api-key"
+        crate::detector_ids::STRIPE_API_KEY
     );
 }
 

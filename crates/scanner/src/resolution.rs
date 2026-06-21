@@ -75,7 +75,7 @@ fn suppress_entropy_matches_near_named_detectors(matches: &mut Vec<RawMatch>) {
         })
         .collect();
     matches.retain(|m| {
-        if m.detector_id.as_ref() != "entropy" && !m.detector_id.as_ref().starts_with("entropy-") {
+        if !crate::detector_ids::is_entropy_detector(m.detector_id.as_ref()) {
             return true;
         }
         let path = m
@@ -97,18 +97,15 @@ fn suppress_entropy_matches_near_named_detectors(matches: &mut Vec<RawMatch>) {
 }
 
 fn is_entropy_detector(detector_id: &str) -> bool {
-    detector_id == "entropy" || detector_id.starts_with("entropy-")
+    crate::detector_ids::is_entropy_detector(detector_id)
 }
 
 fn is_generic_detector(detector_id: &str) -> bool {
-    detector_id.starts_with("generic-") || detector_id == "private-key"
+    crate::detector_ids::is_generic_or_private_key_detector(detector_id)
 }
 
 fn is_private_key_block_detector(detector_id: &str) -> bool {
-    matches!(
-        detector_id,
-        "private-key" | "ssh-private-key" | "github-app-private-key"
-    )
+    crate::detector_ids::is_private_key_block_detector(detector_id)
 }
 
 fn is_service_specific_detector(detector_id: &str) -> bool {
@@ -193,9 +190,7 @@ fn match_priority_score(m: &RawMatch) -> f64 {
 
     // Prefer specific detectors over generic ones for credentials with known prefixes.
     if crate::confidence::known_prefix_confidence_floor(&m.credential).is_some()
-        && m.detector_id.as_ref() != "entropy"
-        && !m.detector_id.as_ref().starts_with("entropy-")
-        && !m.detector_id.as_ref().starts_with("generic-")
+        && crate::detector_ids::is_service_anchored_detector(m.detector_id.as_ref())
     {
         score += 5.0;
     }

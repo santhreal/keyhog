@@ -74,6 +74,7 @@ pub mod decode_url_non_empty;
 pub mod decode_util_no_inline_tests;
 pub mod decode_util_no_unwrap_expect;
 pub mod decode_util_non_empty;
+pub mod detector_id_owner;
 pub mod engine_backend_no_inline_tests;
 pub mod engine_backend_no_unwrap_expect;
 pub mod engine_backend_non_empty;

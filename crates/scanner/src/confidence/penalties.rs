@@ -143,9 +143,7 @@ pub(crate) fn is_degenerate_repeat(credential: &str) -> bool {
 /// anchorless generic path must not bury it. This is the single predicate
 /// behind every "named anchor overrides shape" decision; keep it in one place.
 pub(crate) fn is_service_anchored_detector(detector_id: &str) -> bool {
-    !detector_id.starts_with("generic-")
-        && !detector_id.starts_with("entropy-")
-        && detector_id != "private-key"
+    crate::detector_ids::is_service_anchored_detector(detector_id)
 }
 
 /// Apply post-ML penalties based on hard-coded placeholder heuristics.

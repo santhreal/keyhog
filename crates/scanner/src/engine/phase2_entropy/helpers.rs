@@ -1,6 +1,9 @@
 //! Focused shape helpers for fallback entropy filtering.
 
 #[cfg(feature = "entropy")]
+use crate::detector_ids::{ENTROPY_API_KEY, ENTROPY_GENERIC, ENTROPY_PASSWORD, ENTROPY_TOKEN};
+
+#[cfg(feature = "entropy")]
 pub(crate) fn entropy_path_looks_like_kebab_identifier(value: &str) -> bool {
     if value.len() > 24 {
         return false;
@@ -133,10 +136,10 @@ pub(crate) fn entropy_path_looks_like_random_base64_blob(value: &str) -> bool {
 /// re-interning these constants per finding (PERF-locality_intern-1).
 #[cfg(feature = "entropy")]
 pub(crate) const ENTROPY_DETECTOR_METADATA: [(&str, &str, &str); 4] = [
-    ("entropy-generic", "Generic High-Entropy Secret", "generic"),
-    ("entropy-password", "Password (Entropy Detected)", "generic"),
-    ("entropy-token", "API Token (Entropy Detected)", "generic"),
-    ("entropy-api-key", "API Key (Entropy Detected)", "generic"),
+    (ENTROPY_GENERIC, "Generic High-Entropy Secret", "generic"),
+    (ENTROPY_PASSWORD, "Password (Entropy Detected)", "generic"),
+    (ENTROPY_TOKEN, "API Token (Entropy Detected)", "generic"),
+    (ENTROPY_API_KEY, "API Key (Entropy Detected)", "generic"),
 ];
 
 /// Classify an entropy candidate's keyword into the index of its metadata
