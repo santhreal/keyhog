@@ -151,6 +151,7 @@ pub(super) struct LimitsSection {
     pub s3_object_bytes: Option<String>,
     pub gcs_object_bytes: Option<String>,
     pub azure_blob_bytes: Option<String>,
+    pub cloud_max_objects: Option<usize>,
     pub docker_tar_entry_bytes: Option<String>,
     pub docker_image_config_bytes: Option<String>,
     pub docker_tar_total_bytes: Option<String>,
@@ -158,6 +159,7 @@ pub(super) struct LimitsSection {
     pub git_total_bytes: Option<String>,
     pub git_blob_bytes: Option<String>,
     pub git_chunks: Option<usize>,
+    pub hosted_git_pages: Option<usize>,
     pub binary_read_bytes: Option<String>,
     pub binary_decompiled_bytes: Option<String>,
 }

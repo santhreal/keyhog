@@ -8,13 +8,12 @@ use reqwest::blocking::Client;
 use serde::Deserialize;
 
 const DEFAULT_GCS_ENDPOINT: &str = "https://storage.googleapis.com";
-const DEFAULT_MAX_OBJECTS: usize = 100_000;
 
 pub struct GcsSource {
     bucket: String,
     prefix: Option<String>,
     endpoint: String,
-    max_objects: usize,
+    max_objects: Option<usize>,
     limits: crate::SourceLimits,
     http: crate::http::HttpClientConfig,
     allow_token_forward: bool,
@@ -26,7 +25,7 @@ impl GcsSource {
             bucket: bucket.into(),
             prefix: None,
             endpoint: DEFAULT_GCS_ENDPOINT.to_string(),
-            max_objects: DEFAULT_MAX_OBJECTS,
+            max_objects: None,
             limits: crate::SourceLimits::default(),
             http: crate::http::HttpClientConfig {
                 ua_suffix: Some("gcs".into()),
@@ -65,7 +64,7 @@ impl GcsSource {
     }
 
     pub(crate) fn with_max_objects(mut self, max_objects: usize) -> Self {
-        self.max_objects = max_objects;
+        self.max_objects = Some(max_objects);
         self
     }
 }
@@ -83,7 +82,10 @@ impl Source for GcsSource {
                         &self.bucket,
                         self.prefix.as_deref(),
                         &self.endpoint,
-                        self.max_objects,
+                        match self.max_objects {
+                            Some(max_objects) => max_objects,
+                            None => self.limits.cloud_max_objects, // LAW10: no explicit per-source object-count override => use resolved Tier-A SourceLimits default
+                        },
                         self.limits,
                         &self.http,
                         self.allow_token_forward,

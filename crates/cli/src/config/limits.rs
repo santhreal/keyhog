@@ -19,12 +19,39 @@ fn merge_limit_bytes(
 }
 
 #[cfg(any(
+    feature = "git",
+    feature = "s3",
+    feature = "gcs",
+    feature = "azure",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket"
+))]
+fn merge_limit_count(
+    errors: &mut Vec<String>,
+    field: &str,
+    value: Option<usize>,
+    target: &mut Option<usize>,
+) {
+    if let Some(count) = value {
+        if count == 0 {
+            errors.push(format!("- {field} = 0: use a positive integer"));
+        } else if target.is_none() {
+            *target = Some(count);
+        }
+    }
+}
+
+#[cfg(any(
     not(feature = "web"),
     not(feature = "s3"),
     not(feature = "gcs"),
     not(feature = "azure"),
     not(feature = "docker"),
     not(feature = "git"),
+    not(feature = "github"),
+    not(feature = "gitlab"),
+    not(feature = "bitbucket"),
     not(feature = "binary")
 ))]
 fn disabled_limit_feature_error(errors: &mut Vec<String>, field: &str, feature: &str) {
@@ -93,6 +120,18 @@ pub(super) fn apply_limits_section(
         disabled_limit_feature_error(config_errors, "azure_blob_bytes", "azure");
     }
 
+    #[cfg(any(feature = "s3", feature = "gcs", feature = "azure"))]
+    merge_limit_count(
+        config_errors,
+        "[limits].cloud_max_objects",
+        limits.cloud_max_objects,
+        &mut args.limits.limit_cloud_max_objects,
+    );
+    #[cfg(not(any(feature = "s3", feature = "gcs", feature = "azure")))]
+    if limits.cloud_max_objects.is_some() {
+        disabled_limit_feature_error(config_errors, "cloud_max_objects", "s3/gcs/azure");
+    }
+
     #[cfg(feature = "docker")]
     {
         merge_limit_bytes(
@@ -147,13 +186,12 @@ pub(super) fn apply_limits_section(
             limits.git_blob_bytes,
             &mut args.limits.limit_git_blob_bytes,
         );
-        if let Some(count) = limits.git_chunks {
-            if count == 0 {
-                config_errors.push("- [limits].git_chunks = 0: use a positive integer".to_string());
-            } else if args.limits.limit_git_chunks.is_none() {
-                args.limits.limit_git_chunks = Some(count);
-            }
-        }
+        merge_limit_count(
+            config_errors,
+            "[limits].git_chunks",
+            limits.git_chunks,
+            &mut args.limits.limit_git_chunks,
+        );
     }
     #[cfg(not(feature = "git"))]
     {
@@ -169,6 +207,18 @@ pub(super) fn apply_limits_section(
         if limits.git_chunks.is_some() {
             disabled_limit_feature_error(config_errors, "git_chunks", "git");
         }
+    }
+
+    #[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
+    merge_limit_count(
+        config_errors,
+        "[limits].hosted_git_pages",
+        limits.hosted_git_pages,
+        &mut args.limits.limit_hosted_git_pages,
+    );
+    #[cfg(not(any(feature = "github", feature = "gitlab", feature = "bitbucket")))]
+    if limits.hosted_git_pages.is_some() {
+        disabled_limit_feature_error(config_errors, "hosted_git_pages", "github/gitlab/bitbucket");
     }
 
     #[cfg(feature = "binary")]

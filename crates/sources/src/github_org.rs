@@ -30,6 +30,7 @@ pub struct GitHubOrgSource {
     /// this every `/orgs/<org>/repos` call would silently bypass the
     /// configured corporate proxy.
     http: crate::http::HttpClientConfig,
+    limits: crate::SourceLimits,
 }
 
 impl GitHubOrgSource {
@@ -52,6 +53,7 @@ impl GitHubOrgSource {
                 ua_suffix: Some("github-org".into()),
                 ..Default::default()
             },
+            limits: crate::SourceLimits::default(),
         }
     }
 
@@ -59,6 +61,11 @@ impl GitHubOrgSource {
     /// into the GitHub API client.
     pub(crate) fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
         self.http = http;
+        self
+    }
+
+    pub(crate) fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
+        self.limits = limits;
         self
     }
 }
@@ -80,7 +87,7 @@ impl Source for GitHubOrgSource {
         // the orchestrator turns into a non-zero exit instead of a crash.
         let result = thread::scope(|s| {
             match s
-                .spawn(|| collect_org_chunks(&self.org, &self.token, &self.http))
+                .spawn(|| collect_org_chunks(&self.org, &self.token, &self.http, self.limits))
                 .join()
             {
                 Ok(result) => result,
@@ -151,10 +158,11 @@ fn collect_org_chunks(
     org: &str,
     token: &str,
     http: &crate::http::HttpClientConfig,
+    limits: crate::SourceLimits,
 ) -> Result<Vec<Chunk>, SourceError> {
     validate_org_name(org)?;
     let client = build_client(token, http)?;
-    let repos = list_repos(&client, org)?;
+    let repos = list_repos(&client, org, limits.hosted_git_pages)?;
     hosted_git::scan_hosted_repos(
         "github",
         "github-org",
@@ -199,17 +207,15 @@ fn build_client(token: &str, http: &crate::http::HttpClientConfig) -> Result<Cli
         .map_err(|e| SourceError::Other(format!("failed to build GitHub client: {e}")))
 }
 
-fn list_repos(client: &Client, org: &str) -> Result<Vec<HostedRepo>, SourceError> {
+fn list_repos(
+    client: &Client,
+    org: &str,
+    max_pages: usize,
+) -> Result<Vec<HostedRepo>, SourceError> {
     let mut repos = Vec::new();
     let mut page = 1;
-    // Hard ceiling: GitHub returns max 100 repos/page, so 1000 pages =
-    // 100k repos. No legitimate org needs to be scanned past that in a
-    // single CLI invocation. Without this, a maliciously paginated
-    // response (or a GitHub Enterprise instance with 10M repos) would
-    // spin keyhog indefinitely.
-    const MAX_PAGES: usize = 1000;
 
-    while page <= MAX_PAGES {
+    while page <= max_pages {
         let response = send_github_request_with_backoff(client, org, page)?;
 
         if !response.status().is_success() {
@@ -237,7 +243,7 @@ fn list_repos(client: &Client, org: &str) -> Result<Vec<HostedRepo>, SourceError
         page += 1;
     }
 
-    Err(github_listing_truncated_error(org, repos.len(), MAX_PAGES))
+    Err(github_listing_truncated_error(org, repos.len(), max_pages))
 }
 
 fn github_listing_truncated_error(org: &str, repo_count: usize, max_pages: usize) -> SourceError {

@@ -12,7 +12,6 @@ use auth::AwsSigV4Config;
 use listing::parse_s3_listing;
 
 const DEFAULT_S3_HOST_SUFFIX: &str = "s3.amazonaws.com";
-const DEFAULT_MAX_OBJECTS: usize = 100_000;
 
 /// Scan text objects in an S3 bucket via the ListObjectsV2 REST API.
 ///
@@ -29,7 +28,7 @@ pub struct S3Source {
     bucket: String,
     prefix: Option<String>,
     endpoint: Option<String>,
-    max_objects: usize,
+    max_objects: Option<usize>,
     limits: crate::SourceLimits,
     /// Shared HTTP policy (proxy, insecure_tls, ua_suffix, timeout). Defaults
     /// to `HttpClientConfig::default()` (no ambient proxy/TLS env). Set via
@@ -56,7 +55,7 @@ impl S3Source {
             bucket: bucket.into(),
             prefix: None,
             endpoint: None,
-            max_objects: DEFAULT_MAX_OBJECTS,
+            max_objects: None,
             limits: crate::SourceLimits::default(),
             http: crate::http::HttpClientConfig {
                 ua_suffix: Some("s3".into()),
@@ -103,7 +102,7 @@ impl S3Source {
 
     /// Limit the number of objects listed from the bucket before stopping.
     pub(crate) fn with_max_objects(mut self, max_objects: usize) -> Self {
-        self.max_objects = max_objects;
+        self.max_objects = Some(max_objects);
         self
     }
 }
@@ -125,7 +124,10 @@ impl Source for S3Source {
                         &self.bucket,
                         self.prefix.as_deref(),
                         self.endpoint.as_deref(),
-                        self.max_objects,
+                        match self.max_objects {
+                            Some(max_objects) => max_objects,
+                            None => self.limits.cloud_max_objects, // LAW10: no explicit per-source object-count override => use resolved Tier-A SourceLimits default
+                        },
                         self.limits,
                         &self.http,
                         self.allow_credential_forward,

@@ -72,7 +72,8 @@ pub fn create_source_with_http_config_and_limits(
                     let token = required_source_param("github-org", &fields, 1, "TOKEN")?;
                     return Ok(Box::new(
                         crate::github_org::GitHubOrgSource::new(org.to_string(), token.to_string())
-                            .with_http_config(http),
+                            .with_http_config(http)
+                            .with_limits(limits),
                     ));
                 }
                 #[cfg(not(feature = "github"))]
@@ -238,7 +239,7 @@ pub fn create_source_with_http_config_and_limits(
             if let Some(params) = params {
                 #[cfg(feature = "gitlab")]
                 return Ok(Box::new(crate::gitlab_group::source_from_params(
-                    params, http,
+                    params, http, limits,
                 )?));
                 #[cfg(not(feature = "gitlab"))]
                 {
@@ -257,7 +258,7 @@ pub fn create_source_with_http_config_and_limits(
             if let Some(params) = params {
                 #[cfg(feature = "bitbucket")]
                 return Ok(Box::new(crate::bitbucket_workspace::source_from_params(
-                    params, http,
+                    params, http, limits,
                 )?));
                 #[cfg(not(feature = "bitbucket"))]
                 {

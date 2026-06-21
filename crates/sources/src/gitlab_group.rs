@@ -17,6 +17,7 @@ pub(crate) struct GitLabGroupSource {
     token: String,
     endpoint: String,
     http: crate::http::HttpClientConfig,
+    limits: crate::SourceLimits,
 }
 
 impl GitLabGroupSource {
@@ -29,6 +30,7 @@ impl GitLabGroupSource {
                 ua_suffix: Some("gitlab-group".into()),
                 ..Default::default()
             },
+            limits: crate::SourceLimits::default(),
         }
     }
 
@@ -39,6 +41,11 @@ impl GitLabGroupSource {
 
     pub(crate) fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
         self.http = http;
+        self
+    }
+
+    pub(crate) fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
+        self.limits = limits;
         self
     }
 }
@@ -52,7 +59,13 @@ impl Source for GitLabGroupSource {
         let result = thread::scope(|s| {
             match s
                 .spawn(|| {
-                    collect_group_chunks(&self.group, &self.token, &self.endpoint, &self.http)
+                    collect_group_chunks(
+                        &self.group,
+                        &self.token,
+                        &self.endpoint,
+                        &self.http,
+                        self.limits,
+                    )
                 })
                 .join()
             {
@@ -84,11 +97,12 @@ fn collect_group_chunks(
     token: &str,
     endpoint: &str,
     http: &crate::http::HttpClientConfig,
+    limits: crate::SourceLimits,
 ) -> Result<Vec<Chunk>, SourceError> {
     validate_group_path(group)?;
     let api_root = normalize_gitlab_api_root(endpoint)?;
     let client = build_client(token, http)?;
-    let repos = list_projects(&client, &api_root, group)?;
+    let repos = list_projects(&client, &api_root, group, limits.hosted_git_pages)?;
     hosted_git::scan_hosted_repos("gitlab", "gitlab-group", None, "oauth2", token, &repos)
 }
 
@@ -114,12 +128,12 @@ fn list_projects(
     client: &Client,
     api_root: &reqwest::Url,
     group: &str,
+    max_pages: usize,
 ) -> Result<Vec<HostedRepo>, SourceError> {
     let mut repos = Vec::new();
     let encoded_group = urlencoding::encode(group);
-    const MAX_PAGES: usize = 1000;
 
-    for page in 1..=MAX_PAGES {
+    for page in 1..=max_pages {
         let mut url = api_root.clone();
         url.set_path(&format!(
             "{}/groups/{}/projects",
@@ -164,7 +178,7 @@ fn list_projects(
         "group",
         group,
         repos.len(),
-        MAX_PAGES,
+        max_pages,
     ))
 }
 
@@ -202,6 +216,7 @@ fn validate_token(token: &str) -> Result<(), SourceError> {
 pub(crate) fn source_from_params(
     params: &str,
     http: crate::http::HttpClientConfig,
+    limits: crate::SourceLimits,
 ) -> Result<GitLabGroupSource, SourceError> {
     let mut parts = params.splitn(3, '\n');
     let Some(group) = parts.next() else {
@@ -225,7 +240,8 @@ pub(crate) fn source_from_params(
     }
     Ok(GitLabGroupSource::new(group.to_string(), token.to_string())
         .with_endpoint(endpoint.to_string())
-        .with_http_config(http))
+        .with_http_config(http)
+        .with_limits(limits))
 }
 
 pub(crate) fn listing_truncated_error_for_test(

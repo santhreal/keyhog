@@ -184,20 +184,22 @@ pub(crate) fn build_sources(
     #[cfg(feature = "github")]
     if let (Some(org), Some(token)) = (&args.github_org, &args.github_token) {
         let params = format!("{org}\n{token}");
-        sources.push(keyhog_sources::create_source_with_http_config(
+        sources.push(keyhog_sources::create_source_with_http_config_and_limits(
             "github-org",
             Some(&params),
             source_http_config(args, "github-org"),
+            source_limits,
         )?);
     }
 
     #[cfg(feature = "gitlab")]
     if let (Some(group), Some(token)) = (&args.gitlab_group, &args.gitlab_token) {
         let params = format!("{group}\n{token}\n{}", args.gitlab_endpoint);
-        sources.push(keyhog_sources::create_source_with_http_config(
+        sources.push(keyhog_sources::create_source_with_http_config_and_limits(
             "gitlab-group",
             Some(&params),
             source_http_config(args, "gitlab-group"),
+            source_limits,
         )?);
     }
 
@@ -211,10 +213,11 @@ pub(crate) fn build_sources(
             "{workspace}\n{username}\n{token}\n{}",
             args.bitbucket_endpoint
         );
-        sources.push(keyhog_sources::create_source_with_http_config(
+        sources.push(keyhog_sources::create_source_with_http_config_and_limits(
             "bitbucket-workspace",
             Some(&params),
             source_http_config(args, "bitbucket-workspace"),
+            source_limits,
         )?);
     }
 

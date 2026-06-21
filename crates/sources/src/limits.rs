@@ -12,6 +12,7 @@ pub const DEFAULT_SOURCE_LIMITS: SourceLimits = SourceLimits {
     s3_object_bytes: 10 * 1024 * 1024,
     gcs_object_bytes: 10 * 1024 * 1024,
     azure_blob_bytes: 10 * 1024 * 1024,
+    cloud_max_objects: 100_000,
     docker_tar_entry_bytes: 128 * 1024 * 1024,
     docker_image_config_bytes: 16 * 1024 * 1024,
     docker_tar_total_bytes: 8 * 1024 * 1024 * 1024,
@@ -19,6 +20,7 @@ pub const DEFAULT_SOURCE_LIMITS: SourceLimits = SourceLimits {
     git_total_bytes: 256 * 1024 * 1024,
     git_blob_bytes: 10 * 1024 * 1024,
     git_chunk_count: 500_000,
+    hosted_git_pages: 1000,
     binary_read_bytes: 64 * 1024 * 1024,
     binary_decompiled_bytes: 50 * 1024 * 1024,
 };
@@ -31,6 +33,7 @@ pub struct SourceLimits {
     pub s3_object_bytes: u64,
     pub gcs_object_bytes: u64,
     pub azure_blob_bytes: u64,
+    pub cloud_max_objects: usize,
     pub docker_tar_entry_bytes: u64,
     pub docker_image_config_bytes: u64,
     pub docker_tar_total_bytes: u64,
@@ -38,6 +41,7 @@ pub struct SourceLimits {
     pub git_total_bytes: usize,
     pub git_blob_bytes: u64,
     pub git_chunk_count: usize,
+    pub hosted_git_pages: usize,
     pub binary_read_bytes: usize,
     pub binary_decompiled_bytes: u64,
 }

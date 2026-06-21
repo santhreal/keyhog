@@ -18,6 +18,7 @@ pub(crate) struct BitbucketWorkspaceSource {
     token: String,
     endpoint: String,
     http: crate::http::HttpClientConfig,
+    limits: crate::SourceLimits,
 }
 
 impl BitbucketWorkspaceSource {
@@ -31,6 +32,7 @@ impl BitbucketWorkspaceSource {
                 ua_suffix: Some("bitbucket-workspace".into()),
                 ..Default::default()
             },
+            limits: crate::SourceLimits::default(),
         }
     }
 
@@ -41,6 +43,11 @@ impl BitbucketWorkspaceSource {
 
     pub(crate) fn with_http_config(mut self, http: crate::http::HttpClientConfig) -> Self {
         self.http = http;
+        self
+    }
+
+    pub(crate) fn with_limits(mut self, limits: crate::SourceLimits) -> Self {
+        self.limits = limits;
         self
     }
 }
@@ -60,6 +67,7 @@ impl Source for BitbucketWorkspaceSource {
                         &self.token,
                         &self.endpoint,
                         &self.http,
+                        self.limits,
                     )
                 })
                 .join()
@@ -110,12 +118,13 @@ fn collect_workspace_chunks(
     token: &str,
     endpoint: &str,
     http: &crate::http::HttpClientConfig,
+    limits: crate::SourceLimits,
 ) -> Result<Vec<Chunk>, SourceError> {
     validate_workspace(workspace)?;
     validate_basic_auth(username, token)?;
     let api_root = hosted_git::validated_api_endpoint("bitbucket", endpoint)?;
     let client = build_client(username, token, http)?;
-    let repos = list_repositories(&client, &api_root, workspace)?;
+    let repos = list_repositories(&client, &api_root, workspace, limits.hosted_git_pages)?;
     hosted_git::scan_hosted_repos(
         "bitbucket",
         "bitbucket-workspace",
@@ -154,6 +163,7 @@ fn list_repositories(
     client: &Client,
     api_root: &reqwest::Url,
     workspace: &str,
+    max_pages: usize,
 ) -> Result<Vec<HostedRepo>, SourceError> {
     let mut repos = Vec::new();
     let mut url = api_root.clone();
@@ -163,8 +173,7 @@ fn list_repositories(
     ));
     url.set_query(Some("pagelen=100"));
 
-    const MAX_PAGES: usize = 1000;
-    for _page in 1..=MAX_PAGES {
+    for _page in 1..=max_pages {
         let response = client
             .get(url.clone())
             .send()
@@ -204,7 +213,7 @@ fn list_repositories(
         "workspace",
         workspace,
         repos.len(),
-        MAX_PAGES,
+        max_pages,
     ))
 }
 
@@ -244,6 +253,7 @@ fn validate_basic_auth(username: &str, token: &str) -> Result<(), SourceError> {
 pub(crate) fn source_from_params(
     params: &str,
     http: crate::http::HttpClientConfig,
+    limits: crate::SourceLimits,
 ) -> Result<BitbucketWorkspaceSource, SourceError> {
     let mut parts = params.splitn(4, '\n');
     let Some(workspace) = parts.next() else {
@@ -276,7 +286,8 @@ pub(crate) fn source_from_params(
         token.to_string(),
     )
     .with_endpoint(endpoint.to_string())
-    .with_http_config(http))
+    .with_http_config(http)
+    .with_limits(limits))
 }
 
 pub(crate) fn listing_truncated_error_for_test(

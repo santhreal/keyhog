@@ -570,7 +570,9 @@ exclude = ["**/test/fixtures/**", "vendor/"]
 [limits]
 stdin_bytes = "10MB"
 web_response_bytes = "10MB"
+cloud_max_objects = 100000
 git_total_bytes = "256MB"
+hosted_git_pages = 1000
 docker_tar_total_bytes = "8GB"
 
 [detector.generic-api-key]

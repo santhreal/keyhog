@@ -89,6 +89,10 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         limits.azure_blob_bytes
     ));
     out.push_str(&format!(
+        "limit_cloud_max_objects = {}\n",
+        limits.cloud_max_objects
+    ));
+    out.push_str(&format!(
         "limit_docker_tar_entry_bytes = {}\n",
         limits.docker_tar_entry_bytes
     ));
@@ -113,6 +117,10 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         limits.git_blob_bytes
     ));
     out.push_str(&format!("limit_git_chunks = {}\n", limits.git_chunk_count));
+    out.push_str(&format!(
+        "limit_hosted_git_pages = {}\n",
+        limits.hosted_git_pages
+    ));
     out.push_str(&format!(
         "limit_binary_read_bytes = {}\n",
         limits.binary_read_bytes
@@ -423,6 +431,7 @@ fn hash_source_limits(h: &mut StableHasher, limits: keyhog_sources::SourceLimits
     h.field_u64("source_limits.s3_object_bytes", limits.s3_object_bytes);
     h.field_u64("source_limits.gcs_object_bytes", limits.gcs_object_bytes);
     h.field_u64("source_limits.azure_blob_bytes", limits.azure_blob_bytes);
+    h.field_usize("source_limits.cloud_max_objects", limits.cloud_max_objects);
     h.field_u64(
         "source_limits.docker_tar_entry_bytes",
         limits.docker_tar_entry_bytes,
@@ -439,6 +448,7 @@ fn hash_source_limits(h: &mut StableHasher, limits: keyhog_sources::SourceLimits
     h.field_usize("source_limits.git_total_bytes", limits.git_total_bytes);
     h.field_u64("source_limits.git_blob_bytes", limits.git_blob_bytes);
     h.field_usize("source_limits.git_chunk_count", limits.git_chunk_count);
+    h.field_usize("source_limits.hosted_git_pages", limits.hosted_git_pages);
     h.field_usize("source_limits.binary_read_bytes", limits.binary_read_bytes);
     h.field_u64(
         "source_limits.binary_decompiled_bytes",

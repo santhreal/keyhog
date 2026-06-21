@@ -347,6 +347,23 @@ fn config_feature_limits_reach_source_limits() {
     assert_eq!(limits.git_chunk_count, 17);
 }
 
+#[cfg(all(
+    any(feature = "s3", feature = "gcs", feature = "azure"),
+    any(feature = "github", feature = "gitlab", feature = "bitbucket")
+))]
+#[test]
+fn config_count_limits_reach_source_limits() {
+    let args = args_for_config(
+        "[limits]\n\
+         cloud_max_objects = 23\n\
+         hosted_git_pages = 31\n",
+    );
+    let limits = args.limits.to_source_limits();
+
+    assert_eq!(limits.cloud_max_objects, 23);
+    assert_eq!(limits.hosted_git_pages, 31);
+}
+
 #[test]
 fn detector_parse_cache_has_single_cli_owner() {
     let cli_src = include_str!("../../src/orchestrator_config/detectors.rs");

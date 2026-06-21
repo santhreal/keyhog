@@ -29,6 +29,11 @@ pub struct SourceLimitArgs {
     #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
     pub limit_azure_blob_bytes: Option<usize>,
 
+    /// Maximum objects listed from one S3/GCS/Azure container before truncating.
+    #[cfg(any(feature = "s3", feature = "gcs", feature = "azure"))]
+    #[arg(long, value_name = "N", value_parser = crate::value_parsers::parse_positive_limit_count)]
+    pub limit_cloud_max_objects: Option<usize>,
+
     /// Maximum bytes allowed for one Docker tar entry.
     #[cfg(feature = "docker")]
     #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
@@ -64,6 +69,11 @@ pub struct SourceLimitArgs {
     #[arg(long, value_name = "N", value_parser = crate::value_parsers::parse_positive_limit_count)]
     pub limit_git_chunks: Option<usize>,
 
+    /// Maximum hosted-git API pages listed from one org/group/workspace.
+    #[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
+    #[arg(long, value_name = "N", value_parser = crate::value_parsers::parse_positive_limit_count)]
+    pub limit_hosted_git_pages: Option<usize>,
+
     /// Maximum bytes read for binary strings extraction.
     #[cfg(feature = "binary")]
     #[arg(long, value_name = "SIZE", value_parser = crate::value_parsers::parse_byte_size)]
@@ -97,6 +107,10 @@ impl SourceLimitArgs {
         if let Some(value) = self.limit_azure_blob_bytes {
             limits.azure_blob_bytes = value as u64;
         }
+        #[cfg(any(feature = "s3", feature = "gcs", feature = "azure"))]
+        if let Some(value) = self.limit_cloud_max_objects {
+            limits.cloud_max_objects = value;
+        }
         #[cfg(feature = "docker")]
         if let Some(value) = self.limit_docker_tar_entry_bytes {
             limits.docker_tar_entry_bytes = value as u64;
@@ -124,6 +138,10 @@ impl SourceLimitArgs {
         #[cfg(feature = "git")]
         if let Some(value) = self.limit_git_chunks {
             limits.git_chunk_count = value;
+        }
+        #[cfg(any(feature = "github", feature = "gitlab", feature = "bitbucket"))]
+        if let Some(value) = self.limit_hosted_git_pages {
+            limits.hosted_git_pages = value;
         }
         #[cfg(feature = "binary")]
         if let Some(value) = self.limit_binary_read_bytes {

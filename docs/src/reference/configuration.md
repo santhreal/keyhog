@@ -84,6 +84,7 @@ compiled `SourceLimits::default()` → `.keyhog.toml` `[limits]` → CLI
 | S3 object bytes | 10 MiB | `[limits] s3_object_bytes` | `--limit-s3-object-bytes` |
 | GCS object bytes | 10 MiB | `[limits] gcs_object_bytes` | `--limit-gcs-object-bytes` |
 | Azure blob bytes | 10 MiB | `[limits] azure_blob_bytes` | `--limit-azure-blob-bytes` |
+| Cloud listed objects | 100000 | `[limits] cloud_max_objects` | `--limit-cloud-max-objects` |
 | Docker tar entry bytes | 128 MiB | `[limits] docker_tar_entry_bytes` | `--limit-docker-tar-entry-bytes` |
 | Docker config/manifest bytes | 16 MiB | `[limits] docker_image_config_bytes` | `--limit-docker-image-config-bytes` |
 | Docker tar total bytes | 8 GiB | `[limits] docker_tar_total_bytes` | `--limit-docker-tar-total-bytes` |
@@ -91,6 +92,7 @@ compiled `SourceLimits::default()` → `.keyhog.toml` `[limits]` → CLI
 | Git aggregate bytes | 256 MiB | `[limits] git_total_bytes` | `--limit-git-total-bytes` |
 | Git blob bytes | 10 MiB | `[limits] git_blob_bytes` | `--limit-git-blob-bytes` |
 | Git emitted chunks | 500000 | `[limits] git_chunks` | `--limit-git-chunks` |
+| Hosted-git listing pages | 1000 | `[limits] hosted_git_pages` | `--limit-hosted-git-pages` |
 | Binary strings bytes | 64 MiB | `[limits] binary_read_bytes` | `--limit-binary-read-bytes` |
 | Ghidra output bytes | 50 MiB | `[limits] binary_decompiled_bytes` | `--limit-binary-decompiled-bytes` |
 

@@ -595,6 +595,7 @@ fn config_effective_source_limits_follow_config_and_cli_precedence() {
         "[limits]\n\
          stdin_bytes = \"1MB\"\n\
          web_response_bytes = \"2MB\"\n\
+         cloud_max_objects = 23\n\
          git_chunks = 17\n",
     )
     .expect("write config");
@@ -607,6 +608,7 @@ fn config_effective_source_limits_follow_config_and_cli_precedence() {
     for required in [
         "limit_stdin_bytes = 3145728",
         "limit_web_response_bytes = 2097152",
+        "limit_cloud_max_objects = 23",
         "limit_git_chunks = 17",
     ] {
         assert!(

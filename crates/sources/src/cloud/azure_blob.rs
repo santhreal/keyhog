@@ -10,12 +10,10 @@ use quick_xml::Reader;
 use reqwest::blocking::Client;
 use serde::Deserialize;
 
-const DEFAULT_MAX_OBJECTS: usize = 100_000;
-
 pub struct AzureBlobSource {
     container_url: String,
     prefix: Option<String>,
-    max_objects: usize,
+    max_objects: Option<usize>,
     limits: crate::SourceLimits,
     http: crate::http::HttpClientConfig,
 }
@@ -25,7 +23,7 @@ impl AzureBlobSource {
         Self {
             container_url: container_url.into(),
             prefix: None,
-            max_objects: DEFAULT_MAX_OBJECTS,
+            max_objects: None,
             limits: crate::SourceLimits::default(),
             http: crate::http::HttpClientConfig {
                 ua_suffix: Some("azure-blob".into()),
@@ -50,7 +48,7 @@ impl AzureBlobSource {
     }
 
     pub(crate) fn with_max_objects(mut self, max_objects: usize) -> Self {
-        self.max_objects = max_objects;
+        self.max_objects = Some(max_objects);
         self
     }
 }
@@ -67,7 +65,10 @@ impl Source for AzureBlobSource {
                     collect_azure_blob_chunks(
                         &self.container_url,
                         self.prefix.as_deref(),
-                        self.max_objects,
+                        match self.max_objects {
+                            Some(max_objects) => max_objects,
+                            None => self.limits.cloud_max_objects, // LAW10: no explicit per-source object-count override => use resolved Tier-A SourceLimits default
+                        },
                         self.limits,
                         &self.http,
                     )
