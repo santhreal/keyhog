@@ -9,6 +9,7 @@ use super::shape::{
     looks_like_email_address, looks_like_pure_identifier, looks_like_regex_literal_tail,
     looks_like_scheme_prefixed_uri, looks_like_syntactic_punctuation_marker,
     looks_like_url_or_path_segment, looks_like_word_separated_identifier,
+    public_noncredential_shape, PublicShapeScope,
 };
 use super::token_randomness::{keep_identifier_gate, keep_word_separated_gate};
 use crate::context;
@@ -168,6 +169,13 @@ pub(crate) fn should_suppress_named_detector_finding_weak(
             "caesar_generic_fallback",
         );
         return true;
+    }
+
+    if apply_tier_b {
+        if let Some(reason) = public_noncredential_shape(credential, PublicShapeScope::WeakAnchor) {
+            crate::telemetry::record_example_suppression("pipeline", path, credential, reason);
+            return true;
+        }
     }
 
     // KH-L-0414: the contiguous-identifier gate KH-L-0413 lifted on the

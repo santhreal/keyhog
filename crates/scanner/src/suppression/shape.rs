@@ -184,6 +184,62 @@ pub(crate) fn looks_like_train_case_prose_identifier(value: &str) -> bool {
     true
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PublicShapeScope {
+    Full,
+    WeakAnchor,
+}
+
+/// One owner for public/non-credential value shapes. The scope is explicit
+/// because weak-anchor named detectors still carry service evidence: they need
+/// public template/version/markup/prose suppression, but broad artifact/domain
+/// suppressors would erase real service URLs and tenant hostnames.
+pub(crate) fn public_noncredential_shape(
+    value: &str,
+    scope: PublicShapeScope,
+) -> Option<&'static str> {
+    if looks_like_train_case_prose_identifier(value) {
+        return Some("train_case_prose_identifier");
+    }
+    if looks_like_public_version_identifier(value) {
+        return Some("public_version_identifier");
+    }
+    if scope == PublicShapeScope::WeakAnchor {
+        if looks_like_shell_template_value(value) {
+            return Some("shell_template_value");
+        }
+        if looks_like_percent_encoded_markup(value) {
+            return Some("percent_encoded_markup");
+        }
+        if looks_like_html_event_handler_fragment(value) {
+            return Some("html_event_handler_fragment");
+        }
+        return None;
+    }
+    if looks_like_public_reference_selector(value) {
+        return Some("public_reference_selector");
+    }
+    if looks_like_public_metadata_identifier(value) {
+        return Some("public_metadata_identifier");
+    }
+    if looks_like_public_evidence_identifier(value) {
+        return Some("public_evidence_identifier");
+    }
+    if looks_like_public_artifact_reference(value) {
+        return Some("public_artifact_reference");
+    }
+    if looks_like_shell_template_value(value) {
+        return Some("shell_template_value");
+    }
+    if looks_like_percent_encoded_markup(value) {
+        return Some("percent_encoded_markup");
+    }
+    if looks_like_html_event_handler_fragment(value) {
+        return Some("html_event_handler_fragment");
+    }
+    None
+}
+
 /// True for opaque high-entropy punctuation payloads where punctuation is part
 /// of the credential body, not syntax around an identifier. This is shared by
 /// the generic and entropy emit paths so the base64 and symbolic-secret

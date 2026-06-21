@@ -18,13 +18,9 @@ pub(crate) use path_filter::looks_like_vendored_minified_path;
 #[cfg(feature = "entropy")]
 pub(crate) use shape::{contains_uuid_v4_substring, looks_like_email_address};
 pub(crate) use shape::{
-    looks_like_html_event_handler_fragment, looks_like_percent_encoded_markup,
-    looks_like_public_artifact_reference, looks_like_public_evidence_identifier,
-    looks_like_public_metadata_identifier, looks_like_public_reference_selector,
-    looks_like_public_version_identifier, looks_like_punctuation_decorated_identifier,
-    looks_like_pure_identifier, looks_like_regex_literal_tail, looks_like_scheme_prefixed_uri,
-    looks_like_shell_template_value, looks_like_source_code_expression,
-    looks_like_train_case_prose_identifier, looks_like_url_or_path_segment,
+    looks_like_punctuation_decorated_identifier, looks_like_pure_identifier,
+    looks_like_regex_literal_tail, looks_like_scheme_prefixed_uri,
+    looks_like_source_code_expression, looks_like_url_or_path_segment,
     looks_like_word_separated_identifier,
 };
 

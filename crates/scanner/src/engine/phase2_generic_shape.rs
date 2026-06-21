@@ -86,32 +86,11 @@ impl CompiledScanner {
             generic_path_allows_ambiguous_base64_candidate(value, entropy);
         let high_entropy_punctuation_payload =
             crate::suppression::shape::looks_like_high_entropy_punctuation_payload(value, entropy);
-        if crate::pipeline::looks_like_train_case_prose_identifier(value) {
-            return Some("train_case_prose_identifier");
-        }
-        if crate::pipeline::looks_like_public_version_identifier(value) {
-            return Some("public_version_identifier");
-        }
-        if crate::pipeline::looks_like_public_reference_selector(value) {
-            return Some("public_reference_selector");
-        }
-        if crate::pipeline::looks_like_public_metadata_identifier(value) {
-            return Some("public_metadata_identifier");
-        }
-        if crate::pipeline::looks_like_public_evidence_identifier(value) {
-            return Some("public_evidence_identifier");
-        }
-        if crate::pipeline::looks_like_public_artifact_reference(value) {
-            return Some("public_artifact_reference");
-        }
-        if crate::pipeline::looks_like_shell_template_value(value) {
-            return Some("shell_template_value");
-        }
-        if crate::pipeline::looks_like_percent_encoded_markup(value) {
-            return Some("percent_encoded_markup");
-        }
-        if crate::pipeline::looks_like_html_event_handler_fragment(value) {
-            return Some("html_event_handler_fragment");
+        if let Some(reason) = crate::suppression::shape::public_noncredential_shape(
+            value,
+            crate::suppression::shape::PublicShapeScope::Full,
+        ) {
+            return Some(reason);
         }
 
         // Variable-name filter: real secrets have mixed character classes.

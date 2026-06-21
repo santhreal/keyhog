@@ -86,6 +86,28 @@ fn compound_policy_prose_lines_produce_zero_findings() {
 }
 
 #[test]
+fn public_shape_verdict_does_not_change_under_credential_keys() {
+    let scanner = scanner();
+    for (neutral_line, credential_line) in [
+        (
+            r#"x = "vyre-archive-replay-audits:v1""#,
+            r#"schema_token = "vyre-archive-replay-audits:v1""#,
+        ),
+        (
+            r#"x = "publish-vyre-${VERSION}-weir-${BUILD}""#,
+            r#"approval_token = "publish-vyre-${VERSION}-weir-${BUILD}""#,
+        ),
+        (
+            r#"x = "%3Cimg%20src=x%20onerror=alert%281%29%3E""#,
+            r#"payload_token = "%3Cimg%20src=x%20onerror=alert%281%29%3E""#,
+        ),
+    ] {
+        assert_no_findings(&scanner, neutral_line);
+        assert_no_findings(&scanner, credential_line);
+    }
+}
+
+#[test]
 fn public_schema_version_identifiers_do_not_surface_as_generic_secrets() {
     let scanner = scanner();
     for value in [

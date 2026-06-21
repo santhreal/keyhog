@@ -119,32 +119,15 @@ pub(crate) fn entropy_match_suppressed(
         return true;
     }
     // Long train-case config/policy prose next to a credential keyword is still
-    // prose, not an entropy-bearing secret.
-    if crate::pipeline::looks_like_train_case_prose_identifier(&entropy_match.value) {
-        return true;
-    }
-    if crate::pipeline::looks_like_public_version_identifier(&entropy_match.value) {
-        return true;
-    }
-    if crate::pipeline::looks_like_public_reference_selector(&entropy_match.value) {
-        return true;
-    }
-    if crate::pipeline::looks_like_public_metadata_identifier(&entropy_match.value) {
-        return true;
-    }
-    if crate::pipeline::looks_like_public_evidence_identifier(&entropy_match.value) {
-        return true;
-    }
-    if crate::pipeline::looks_like_public_artifact_reference(&entropy_match.value) {
-        return true;
-    }
-    if crate::pipeline::looks_like_shell_template_value(&entropy_match.value) {
-        return true;
-    }
-    if crate::pipeline::looks_like_percent_encoded_markup(&entropy_match.value) {
-        return true;
-    }
-    if crate::pipeline::looks_like_html_event_handler_fragment(&entropy_match.value) {
+    // prose, not an entropy-bearing secret. The same public-shape owner is used
+    // by generic and weak-anchor postprocess paths so keyword context cannot
+    // silently override a value-only public/non-secret shape.
+    if crate::suppression::shape::public_noncredential_shape(
+        &entropy_match.value,
+        crate::suppression::shape::PublicShapeScope::Full,
+    )
+    .is_some()
+    {
         return true;
     }
     // Scheme-prefixed URI / URN (`urn:shopify:...`,

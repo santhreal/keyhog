@@ -1254,6 +1254,20 @@ pub(crate) mod shape {
     pub(crate) fn looks_like_train_case_prose_identifier(credential: &str) -> bool {
         crate::suppression::shape::looks_like_train_case_prose_identifier(credential)
     }
+
+    pub(crate) fn public_noncredential_shape_full(credential: &str) -> Option<&'static str> {
+        crate::suppression::shape::public_noncredential_shape(
+            credential,
+            crate::suppression::shape::PublicShapeScope::Full,
+        )
+    }
+
+    pub(crate) fn public_noncredential_shape_weak_anchor(credential: &str) -> Option<&'static str> {
+        crate::suppression::shape::public_noncredential_shape(
+            credential,
+            crate::suppression::shape::PublicShapeScope::WeakAnchor,
+        )
+    }
 }
 
 #[cfg(test)]
