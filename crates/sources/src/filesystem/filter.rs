@@ -323,6 +323,24 @@ pub(super) fn walker_config(
     ignore_paths: &[String],
     respect_default_excludes: bool,
 ) -> WalkConfig {
+    // `--no-default-excludes` must drop the WALKER-level dir/extension skips
+    // (build/, dist/, vendor/, node_modules/, *.png, ...), not only the per-file
+    // extraction gate in `extract.rs`. These were applied unconditionally here,
+    // so a directory walk silently still skipped those subtrees even when the
+    // operator opted out — the flag lied about its own contract (a CredData scan
+    // could never reach a labeled secret under `.../build/...`). With the opt-out,
+    // the sets are empty so traversal visits every path; `.gitignore` and an
+    // explicit `.keyhogignore`/`--exclude-paths` still apply (those are operator
+    // intent, not the compiled default policy).
+    let (exclude_extensions, exclude_dirs): (HashSet<String>, HashSet<String>) =
+        if respect_default_excludes {
+            (
+                default_excludes().extensions.iter().cloned().collect(),
+                default_excludes().dirs.iter().cloned().collect(),
+            )
+        } else {
+            (HashSet::new(), HashSet::new())
+        };
     let ignore_overrides = ignore_paths
         .iter()
         .map(|pattern| {
