@@ -102,7 +102,10 @@ method-level version of steps 2–4.
 4. **Post-process** — suppression, dedup, confidence, decode recursion, cross-chunk
    seam reassembly (`engine/scan_postprocess.rs`, `engine/process.rs`,
    `engine/boundary.rs`). Confidence + ML scoring: `confidence/`, `ml_scorer.rs`
-   + `ml_scorer/` (`ml_features`, `ml_weights`); context inference: `context/`.
+   + `ml_scorer/` (`ml_features`, `ml_weights`); context inference: `context/`. The
+   per-match policy here (suppression gates · example/placeholder · checksum ·
+   confidence penalties) is governed by one invariant — see **Match adjudication:
+   one policy, one chokepoint** below.
 5. **Verify (optional)** — for the 344 detectors with a `[detector.verify]`
    endpoint, turn a candidate into verified-live, behind SSRF/bogon/rate guards.
    `verifier/`.
@@ -113,6 +116,58 @@ method-level version of steps 2–4.
 **Two-phase coalesced** is the key perf idea: 95 %+ of files have no Phase-1 hit
 and pay near-zero cost; full extraction runs only on hits. Determinism is a
 contract: same input → byte-exact same output.
+
+### Match adjudication: one policy, one chokepoint
+
+**Governing invariant.** Whether a candidate match becomes a reported finding —
+and at what confidence — is a pure function of the **value and its context**,
+*never* of which emission path produced it. A value that is a `${}` shell
+template, a `name-name:v1` public identifier, or `Config-Word-and-Word-only`
+policy prose is not a secret no matter whether the entropy detector, the generic
+keyword bridge, the weak-anchor post-pass, or the hot-pattern fast path surfaced
+it. Phase-2 has several emission paths; they exist for *speed and recall*, not to
+each carry their own copy of policy.
+
+**The rule.** Every emission path produces `CandidateMatch`es and funnels them
+through one adjudicator. Paths *find*; they do not *decide*. The adjudicator runs
+a single ordered policy, each stage a pure `fn(value, ctx) -> StageOutcome`:
+
+```
+emission paths (entropy · generic/keyword bridge · weak-anchor · hot fast path · GPU)
+        │  each yields CandidateMatch { detector, span, value }
+        ▼
+adjudicate_match(CandidateMatch, MatchCtx)            ← the ONLY funnel
+   1. public_noncredential_shape(value, ctx)   one gate list, every `looks_like_*`
+   2. example / placeholder suppression(value, ctx)   one entry point
+   3. checksum_adjusted_confidence(value)
+   4. apply_path_confidence_penalties(ctx)     comment / path / context
+        ▼
+   Verdict::Suppressed(stage_name)  |  Verdict::Reported(confidence)
+```
+
+`MatchCtx` carries every input a stage needs (`value, detector, span, path,
+entropy, anchor_kind, in_comment, …`) so no stage is silently starved of data —
+the reason a path could otherwise reach for a weaker overload. The `Verdict`
+names the deciding stage, which is exactly what `--dogfood` prints, so every
+suppression is explainable in one place. Adding a gate is a one-line edit to
+`public_noncredential_shape` and applies to *all* paths by construction.
+
+**Why this shape.** Per-match policy split across paths drifts: a richer path
+gains a gate the others lack, and a value's fate starts depending on its path —
+a silent override (Law 10). One funnel makes the whole policy readable top to
+bottom and makes divergence impossible to introduce. Enforcement is mechanical:
+no `looks_like_*` / `checksum_adjusted_confidence` / `should_suppress_known_example_*`
+call may exist outside the adjudicator (grep-contract tests), and a cross-path
+test feeds the same tricky value through every path and asserts one identical
+verdict.
+
+> Status: the policy *functions* exist and are shared, but they are still applied
+> from several call sites with drifted gate subsets (entropy/generic/weak-anchor/
+> hot-path), which is the current source of value-vs-path false positives. The
+> consolidation onto the single `adjudicate_match` chokepoint is tracked in
+> [`EXECUTION_PLAN.md`](EXECUTION_PLAN.md) under **SILENT-OVERRIDE-1..4**. This
+> section is the target the migration converges on; until it lands, treat any new
+> emission path as obligated to call the full policy, not a subset.
 
 ### The ML model (`weights.bin`)
 
@@ -148,6 +203,7 @@ summary shown by `keyhog --version`.
 | Add/edit a detector | `detectors/<name>.toml` (data; see `CONTRIBUTING.md` for the schema) |
 | Understand the scan flow at method level | `crates/scanner/src/engine/mod.rs` header |
 | Change how confidence is scored | `crates/scanner/src/confidence/`, `ml_scorer.rs` |
+| Add a suppression gate / change what counts as a non-secret | the one gate list `public_noncredential_shape` — see "Match adjudication" above (never inline a `looks_like_*` call in an emission path) |
 | Retrain / improve the ML model | `ml/retrain_loop.sh` (+ `ml/README.md`) |
 | Add an input source | `crates/sources/src/` |
 | Add live verification for a detector | `[detector.verify]` in the TOML + `crates/verifier/src/verify/` |
