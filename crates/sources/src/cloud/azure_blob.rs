@@ -356,13 +356,14 @@ fn fetch_azure_blob_chunk(
             )));
         }
     };
+    let display_path = azure_blob_display_path(container_url, name)?;
     Ok(Some(Chunk {
         data: object_text.into(),
         metadata: ChunkMetadata {
             base_offset: 0,
             base_line: 0,
             source_type: "azure_blob".into(),
-            path: Some(azure_blob_display_path(container_url, name)),
+            path: Some(display_path),
             commit: None,
             author: None,
             date: None,
@@ -433,13 +434,15 @@ fn azure_blob_url(container_url: &reqwest::Url, name: &str) -> reqwest::Url {
     url
 }
 
-fn azure_blob_display_path(container_url: &reqwest::Url, name: &str) -> String {
-    let host = match container_url.host_str() {
-        Some(host) => host,
-        None => "unknown-host",
+fn azure_blob_display_path(container_url: &reqwest::Url, name: &str) -> Result<String, SourceError> {
+    let Some(host) = container_url.host_str() else {
+        return Err(SourceError::Other(
+            "invalid Azure Blob container URL: missing host while building blob display path"
+                .into(),
+        ));
     };
     let container_path = container_url.path().trim_matches('/');
-    format!("azblob://{host}/{container_path}/{name}")
+    Ok(format!("azblob://{host}/{container_path}/{name}"))
 }
 
 fn validate_container_url(raw: &str) -> Result<reqwest::Url, SourceError> {
