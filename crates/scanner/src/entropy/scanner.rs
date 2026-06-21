@@ -507,10 +507,11 @@ fn collect_isolated_bare_candidate(
     let entropy = shannon_entropy(candidate.as_bytes());
     if !isolated_bare_entropy_floor_met(candidate, entropy, context.threshold)
         || !is_isolated_bare_secret_plausible(candidate, placeholder_keywords)
-        || !seen.insert(candidate.to_string())
+        || seen.contains(candidate)
     {
         return;
     }
+    seen.insert(candidate.to_string());
     matches.push(EntropyMatch {
         value: candidate.to_string(),
         entropy,
@@ -670,10 +671,11 @@ fn collect_line_candidates(
     ) {
         let entropy = shannon_entropy(candidate.as_bytes());
         if !candidate_is_plausible(&candidate, entropy, context, placeholder_keywords)
-            || !seen.insert(candidate.clone())
+            || seen.contains(candidate.as_str())
         {
             continue;
         }
+        seen.insert(candidate.clone());
         matches.push(EntropyMatch {
             value: candidate,
             entropy,
