@@ -320,6 +320,9 @@ impl CompiledScanner {
         deadline: Option<std::time::Instant>,
         backend: Option<crate::hw_probe::ScanBackend>,
     ) -> Vec<RawMatch> {
+        if crate::deadline::expired(deadline) {
+            return Vec::new();
+        }
         // Direct-match prefilters: skip chunks that carry none of any
         // detector's literal bytes (`AlphabetScreen`) or bigrams (bloom). A
         // FULLY-ENCODED secret carries none of those - its plaintext prefix
@@ -358,14 +361,21 @@ impl CompiledScanner {
                     None,
                     None,
                 );
+                if crate::deadline::expired(deadline) {
+                    return matches;
+                }
                 self.record_and_reassemble_for_no_hit_chunk(chunk, &mut matches);
+                if crate::deadline::expired(deadline) {
+                    return matches;
+                }
                 self.post_process_matches(chunk, &mut matches, deadline);
                 return matches;
             }
 
             if self.chunk_needs_decode_postprocess(chunk) {
-                // Direct scan is skipped (the outer bytes match nothing); only
-                // the decoded sub-chunks are scanned, inside post_process.
+                if crate::deadline::expired(deadline) {
+                    return Vec::new();
+                }
                 let mut matches = Vec::new();
                 self.post_process_matches(chunk, &mut matches, deadline);
                 return matches;
@@ -390,6 +400,9 @@ impl CompiledScanner {
             self.scan_inner(chunk, selected_backend, deadline)
         };
 
+        if crate::deadline::expired(deadline) {
+            return matches;
+        }
         self.post_process_matches(chunk, &mut matches, deadline);
 
         matches

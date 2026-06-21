@@ -23,6 +23,8 @@ pub(crate) use pipeline::{
     decoder_profile_dump, decoder_profile_reset, extract_profile_dump, extract_profile_reset,
 };
 #[cfg(test)]
+pub(crate) use pipeline::{register_thread_decoder, ScopedDecoderRegistration};
+#[cfg(test)]
 pub(crate) use util::take_hex_digits;
 
 use keyhog_core::Chunk;

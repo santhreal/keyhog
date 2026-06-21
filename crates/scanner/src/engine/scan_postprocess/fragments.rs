@@ -14,6 +14,9 @@ impl CompiledScanner {
         matches: &mut Vec<RawMatch>,
         deadline: Option<std::time::Instant>,
     ) {
+        if crate::deadline::expired(deadline) {
+            return;
+        }
         if !Self::has_fragment_assignment_syntax(chunk.data.as_bytes()) {
             return;
         }
@@ -23,6 +26,9 @@ impl CompiledScanner {
         };
 
         for (line_idx, line) in chunk.data.lines().enumerate() {
+            if crate::deadline::expired(deadline) {
+                return;
+            }
             if let Some(caps) = assign_re.captures(line) {
                 let Some(var_name_match) = caps.get(1) else {
                     continue;
@@ -75,6 +81,9 @@ impl CompiledScanner {
 
                 let candidates = self.fragment_cache.record_and_reassemble(fragment);
                 for candidate in candidates {
+                    if crate::deadline::expired(deadline) {
+                        return;
+                    }
                     // `candidate` is `Zeroizing<String>` (kimi-wave1 fix).
                     let entropy = crate::pipeline::match_entropy(candidate.as_str().as_bytes());
                     if entropy < 3.0 || candidate.len() < 16 {
@@ -110,6 +119,9 @@ impl CompiledScanner {
                     };
                     let mut reassembled_matches =
                         self.scan_inner(&synthetic_chunk, backend, deadline);
+                    if crate::deadline::expired(deadline) {
+                        return;
+                    }
                     for m in &mut reassembled_matches {
                         m.detector_id = format!("{}:reassembled", m.detector_id).into();
                         // Stamp the finding's path from the CONTRIBUTING

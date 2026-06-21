@@ -551,7 +551,7 @@ impl Phase2AlwaysActivePrefilter {
         localize_plain: bool,
         tuning: &ScannerTuning,
     ) {
-        MARK_CALLS.fetch_add(1, Relaxed);
+        record_mark_call();
         // SWE-101 no-candidate gate (the user's #1 issue: "phase-2 must NEVER
         // eat runtime — not 0.000000001s"). The per-pattern body below — the HS
         // `scan_each` enumeration + its HS-incompatible whole-chunk-regex loop, or
@@ -576,14 +576,14 @@ impl Phase2AlwaysActivePrefilter {
                     // No anchorable pattern can fire; mark only the non-anchorable
                     // patterns that actually match (precise, recall-identical).
                     gate.mark_non_anchorable(match_text, scratch);
-                    MARK_GATE_SKIPS.fetch_add(1, Relaxed);
+                    record_mark_gate_skip();
                     return;
                 }
             }
         }
         // Past the gate: a candidate is possible, so the per-pattern marking body
         // below is real work, not no-candidate overhead.
-        MARK_PERPATTERN_WORK.fetch_add(1, Relaxed);
+        record_mark_perpattern_work();
         // SIMD fast path: one Hyperscan scan replaces the whole-chunk RegexSet
         // batch loop below (the measured #1 scan cost). `localize_plain` is a
         // RegexSet-batch optimization (skip plain batches the shared-anchor AC

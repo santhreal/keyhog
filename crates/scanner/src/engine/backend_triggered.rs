@@ -15,6 +15,9 @@ impl CompiledScanner {
         confirmed_anchor_literal_matches: Option<&[(u32, u32)]>,
         generic_keyword_positions: Option<&[u32]>,
     ) -> Vec<RawMatch> {
+        if crate::deadline::expired(deadline) {
+            return Vec::new();
+        }
         // Borrow cached line offsets; downstream consumers take `&[usize]`.
         let line_offsets: &[usize] = prepared.line_offsets();
         let code_lines = prepared.code_lines(line_offsets);
@@ -31,6 +34,9 @@ impl CompiledScanner {
                 prepared.chunk,
                 &mut scan_state,
             );
+        }
+        if crate::deadline::expired(deadline) {
+            return scan_state.into_matches();
         }
 
         let expanded_patterns = self.expand_triggered_patterns(&triggered_patterns);
@@ -94,6 +100,9 @@ impl CompiledScanner {
                 confirmed_anchor_literal_matches,
             );
         }
+        if crate::deadline::expired(deadline) {
+            return scan_state.into_matches();
+        }
 
         // Phase-2 capture patterns (no usable literal prefix; e.g. asana-pat
         // shaped `1/[0-9]{16,20}/...`) never enter the AC-trigger
@@ -145,6 +154,9 @@ impl CompiledScanner {
                 phase2_always_anchor_present,
             ),
         }
+        if crate::deadline::expired(deadline) {
+            return scan_state.into_matches();
+        }
 
         {
             let _g = profile::span(profile::P::Generic);
@@ -158,6 +170,9 @@ impl CompiledScanner {
                 generic_keyword_positions,
             );
         }
+        if crate::deadline::expired(deadline) {
+            return scan_state.into_matches();
+        }
 
         #[cfg(feature = "entropy")]
         {
@@ -168,6 +183,9 @@ impl CompiledScanner {
                 prepared.chunk,
                 &mut scan_state,
             );
+        }
+        if crate::deadline::expired(deadline) {
+            return scan_state.into_matches();
         }
 
         #[cfg(feature = "ml")]

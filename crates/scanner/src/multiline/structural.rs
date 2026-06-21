@@ -250,9 +250,7 @@ fn resolve_concat_reference(
 ) -> Option<String> {
     let re = CONCAT_RE.as_ref()?;
     let caps = re.captures(line)?;
-    if !inline_array_assignment_name(line).is_some_and(concat_target_name_is_credential_like) {
-        return None;
-    }
+    let target_name = inline_array_assignment_name(line)?;
     let rhs = caps.get(1)?.as_str();
     let parts: Vec<&str> = rhs.split('+').map(str::trim).collect();
     if parts.len() < 2 {
@@ -263,7 +261,9 @@ fn resolve_concat_reference(
         let value = var_values.get(*ident)?;
         joined.push_str(&value.1);
     }
-    Some(joined)
+    (concat_target_name_is_credential_like(target_name)
+        || crate::confidence::known_prefix_confidence_floor(&joined).is_some())
+    .then_some(joined)
 }
 
 fn concat_target_name_is_credential_like(var_name: &str) -> bool {

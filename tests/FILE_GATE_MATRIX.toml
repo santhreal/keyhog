@@ -434,6 +434,9 @@ path = "crates/scanner/src/decode/util.rs"
 path = "crates/scanner/src/decode_structure.rs"
 
 [[module]]
+path = "crates/scanner/src/deadline.rs"
+
+[[module]]
 path = "crates/scanner/src/engine/backend.rs"
 
 [[module]]
@@ -1023,6 +1026,9 @@ path = "crates/scanner/src/generic_keyword_owner.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/phase2/first_bigram.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2/mark_stats.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_entropy/gates.rs"

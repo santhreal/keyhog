@@ -567,6 +567,37 @@ fn var_ref_concatenation_resolves_prior_literals() {
 }
 
 #[test]
+fn var_ref_concatenation_resolves_known_prefix_with_weak_target_name() {
+    // `aws_access` is a common shorthand for an access-key value but is not a
+    // strong generic assignment key by itself. The resolved RHS carries the
+    // known AKIA credential prefix, so the structural pass must append it for
+    // named detectors instead of treating the weak target name as proof that
+    // the join is irrelevant.
+    let text = concat!(
+        "key_head = \"AKIA\"\n",
+        "key_tail = \"R7VXNPLMQ3HSKWJT\"\n",
+        "aws_access = key_head + key_tail\n",
+    );
+    let p = pre(text);
+    assert!(p.text.contains("AKIAR7VXNPLMQ3HSKWJT"), "{:?}", p.text);
+}
+
+#[test]
+fn var_ref_concatenation_weak_target_without_known_prefix_yields_nothing() {
+    let text = concat!(
+        "left_part = \"R7VXNPLMQ3HSKWJT\"\n",
+        "right_part = \"XK4P9MQ2WE5RT8YU\"\n",
+        "output = left_part + right_part\n",
+    );
+    let p = pre(text);
+    assert!(
+        !p.text.contains("R7VXNPLMQ3HSKWJTXK4P9MQ2WE5RT8YU"),
+        "{:?}",
+        p.text
+    );
+}
+
+#[test]
 fn var_ref_concatenation_unresolved_ident_yields_nothing() {
     // resolve_concat_reference returns None if any RHS ident is unknown.
     // `bbb` is never assigned -> the `+`-concat line resolves to None.

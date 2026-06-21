@@ -9,9 +9,18 @@ use super::url::{
 };
 use super::Decoder;
 use keyhog_core::{Chunk, ChunkMetadata};
+use parking_lot::RwLock;
+#[cfg(test)]
+use std::cell::RefCell;
 use std::collections::{HashSet, VecDeque};
+use std::sync::Arc;
 
-static DECODERS: std::sync::OnceLock<Vec<Box<dyn Decoder>>> = std::sync::OnceLock::new();
+static DECODERS: std::sync::OnceLock<RwLock<Vec<Arc<dyn Decoder>>>> = std::sync::OnceLock::new();
+
+#[cfg(test)]
+thread_local! {
+    static THREAD_DECODERS: RefCell<Vec<Arc<dyn Decoder>>> = RefCell::new(Vec::new());
+}
 
 /// Per-decoder wall-time profiler (measurement only). Enabled by the single
 /// scanner profiler switch (`keyhog scan --profile`) so profiling has one runtime
@@ -36,7 +45,8 @@ static DECODER_PRODUCED: [std::sync::atomic::AtomicU64; 16] = {
 /// names). Folded into the unified scanner profile dump.
 pub(crate) fn decoder_profile_dump() {
     use std::sync::atomic::Ordering::Relaxed;
-    let names: Vec<&str> = get_decoders().iter().map(|d| d.name()).collect();
+    let decoders = active_decoders();
+    let names: Vec<&str> = decoders.iter().map(|d| d.name()).collect();
     let mut rows: Vec<(String, f64)> = (0..names.len().min(16))
         .map(|i| {
             (
@@ -94,67 +104,127 @@ const MAX_DECODED_TOTAL_BYTES: usize = 64 * 1024 * 1024;
 /// inputs hit it before the user notices.
 const DEFAULT_DECODE_WALL_BUDGET_MS: u64 = 50;
 
-fn get_decoders() -> &'static [Box<dyn Decoder>] {
-    DECODERS.get_or_init(|| {
-        vec![
-            Box::new(Base64Decoder),
-            Box::new(HexDecoder),
-            Box::new(UrlDecoder),
-            Box::new(QuotedPrintableDecoder),
-            Box::new(HtmlNamedEntityDecoder),
-            Box::new(HtmlNumericEntityDecoder),
-            Box::new(HexEscapeDecoder),
-            Box::new(OctalEscapeDecoder),
-            Box::new(MimeEncodedWordDecoder),
-            Box::new(UnicodeEscapeDecoder),
-            // JSON unescape - strips `\"` / `\\` / `\n` style escapes
-            // inside JSON string values so credentials stored as
-            // JSON-encoded fields (the most common shape after .env)
-            // survive into the scanner. Originally implemented but
-            // never registered - the adversarial_explosion_runner's
-            // `json` wrapper class surfaced ~73 misses that wiring
-            // this in closed (5792/5792 variants now fire).
-            Box::new(JsonDecoder),
-            Box::new(Z85Decoder),
-            Box::new(ReverseDecoder),
-            Box::new(CaesarDecoder),
-        ]
-    })
+fn default_decoders() -> Vec<Arc<dyn Decoder>> {
+    vec![
+        Arc::new(Base64Decoder),
+        Arc::new(HexDecoder),
+        Arc::new(UrlDecoder),
+        Arc::new(QuotedPrintableDecoder),
+        Arc::new(HtmlNamedEntityDecoder),
+        Arc::new(HtmlNumericEntityDecoder),
+        Arc::new(HexEscapeDecoder),
+        Arc::new(OctalEscapeDecoder),
+        Arc::new(MimeEncodedWordDecoder),
+        Arc::new(UnicodeEscapeDecoder),
+        // JSON unescape - strips `\"` / `\\` / `\n` style escapes
+        // inside JSON string values so credentials stored as
+        // JSON-encoded fields (the most common shape after .env)
+        // survive into the scanner. Originally implemented but
+        // never registered - the adversarial_explosion_runner's
+        // `json` wrapper class surfaced ~73 misses that wiring
+        // this in closed (5792/5792 variants now fire).
+        Arc::new(JsonDecoder),
+        Arc::new(Z85Decoder),
+        Arc::new(ReverseDecoder),
+        Arc::new(CaesarDecoder),
+    ]
 }
 
-/// Register a custom decoder. Must be called BEFORE any scan runs.
-/// Panics if the decoder list has already been initialized.
+fn decoder_registry() -> &'static RwLock<Vec<Arc<dyn Decoder>>> {
+    DECODERS.get_or_init(|| RwLock::new(default_decoders()))
+}
+
+#[cfg(not(test))]
+fn active_decoders() -> Vec<Arc<dyn Decoder>> {
+    decoder_registry().read().clone()
+}
+
+#[cfg(test)]
+fn active_decoders() -> Vec<Arc<dyn Decoder>> {
+    let mut decoders = decoder_registry().read().clone();
+    THREAD_DECODERS.with(|thread_decoders| {
+        decoders.extend(thread_decoders.borrow().iter().cloned());
+    });
+    decoders
+}
+
+/// Register a custom decoder.
 pub fn register_decoder(decoder: Box<dyn Decoder>) {
-    // After initialization, the decoder list is immutable for lock-free reads.
-    // Custom decoders must be registered before the first scan.
-    if DECODERS.get().is_some() {
+    let decoder_name = decoder.name();
+    let mut decoders = decoder_registry().write();
+    if decoders
+        .iter()
+        .any(|existing| existing.name() == decoder_name)
+    {
         tracing::warn!(
-            "register_decoder called after initialization: decoder ignored. Fix: register custom decoders before scanning."
+            decoder = decoder_name,
+            "register_decoder called with a duplicate decoder name; decoder ignored"
         );
         return;
     }
-    // KEEP THIS LIST IN SYNC with `get_decoders()` above - they're
-    // two paths to the same initialized state, and a decoder missing
-    // here would silently vanish from any custom-decoder-registered
-    // run.
-    let mut decoders: Vec<Box<dyn Decoder>> = vec![
-        Box::new(Base64Decoder),
-        Box::new(HexDecoder),
-        Box::new(UrlDecoder),
-        Box::new(QuotedPrintableDecoder),
-        Box::new(HtmlNamedEntityDecoder),
-        Box::new(HtmlNumericEntityDecoder),
-        Box::new(HexEscapeDecoder),
-        Box::new(OctalEscapeDecoder),
-        Box::new(MimeEncodedWordDecoder),
-        Box::new(UnicodeEscapeDecoder),
-        Box::new(JsonDecoder),
-        Box::new(Z85Decoder),
-        Box::new(ReverseDecoder),
-        Box::new(CaesarDecoder),
-    ];
-    decoders.push(decoder);
-    let _ = DECODERS.set(decoders); // LAW10: OnceLock::set; Err => already initialized (same value), idempotent init
+    decoders.push(Arc::from(decoder));
+}
+
+#[cfg(test)]
+pub(crate) struct ScopedDecoderRegistration {
+    name: &'static str,
+    active: bool,
+}
+
+#[cfg(test)]
+impl Drop for ScopedDecoderRegistration {
+    fn drop(&mut self) {
+        if !self.active {
+            return;
+        }
+        THREAD_DECODERS.with(|thread_decoders| {
+            let mut decoders = thread_decoders.borrow_mut();
+            if let Some(index) = decoders
+                .iter()
+                .rposition(|decoder| decoder.name() == self.name)
+            {
+                decoders.remove(index);
+            }
+        });
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn register_thread_decoder(decoder: Box<dyn Decoder>) -> ScopedDecoderRegistration {
+    let decoder_name = decoder.name();
+    let has_global_duplicate = decoder_registry()
+        .read()
+        .iter()
+        .any(|existing| existing.name() == decoder_name);
+    if has_global_duplicate {
+        tracing::warn!(
+            decoder = decoder_name,
+            "register_thread_decoder called with a duplicate global decoder name; decoder ignored"
+        );
+        return ScopedDecoderRegistration {
+            name: decoder_name,
+            active: false,
+        };
+    }
+
+    let mut inserted = false;
+    let decoder = Arc::from(decoder);
+    THREAD_DECODERS.with(|thread_decoders| {
+        let mut decoders = thread_decoders.borrow_mut();
+        if decoders.iter().any(|existing| existing.name() == decoder_name) {
+            tracing::warn!(
+                decoder = decoder_name,
+                "register_thread_decoder called with a duplicate thread decoder name; decoder ignored"
+            );
+            return;
+        }
+        decoders.push(decoder);
+        inserted = true;
+    });
+    ScopedDecoderRegistration {
+        name: decoder_name,
+        active: inserted,
+    }
 }
 
 pub(crate) fn decode_chunk(
@@ -190,7 +260,7 @@ pub(crate) fn decode_chunk(
     // RETURNED for scanning; this counter decides the recursion budget.
     let mut produced = 0usize;
 
-    let registry = get_decoders();
+    let decoders = active_decoders();
     // Defensive: drop any cache left by a prior `decode_chunk` that early-returned
     // (budget exhausted) before its final clear, so no stale (ptr,len) can be read.
     extractor::clear_shared_candidates();
@@ -226,7 +296,7 @@ pub(crate) fn decode_chunk(
         // `extract_encoded_values(&current.data)` (it was ~67% of decode-gen).
         extractor::prime_shared_candidates(&current.data);
         let prof_dec = decoder_prof_enabled();
-        for (dec_i, decoder) in registry.iter().enumerate() {
+        for (dec_i, decoder) in decoders.iter().enumerate() {
             // Re-check the wall-clock budget BEFORE each decoder's
             // candidate fan-out (C9). The top-of-loop check only fires
             // once per BFS dequeue, so a single chunk could run all 14

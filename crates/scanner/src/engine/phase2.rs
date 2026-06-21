@@ -7,6 +7,11 @@ use std::cell::RefCell;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::sync::OnceLock;
 
+mod mark_stats;
+#[cfg(test)]
+pub(crate) use mark_stats::{phase2_mark_stats, phase2_mark_stats_reset};
+pub(crate) use mark_stats::{record_mark_call, record_mark_gate_skip, record_mark_perpattern_work};
+
 // The per-scanner performance tuning lives at crate root but remains an
 // engine-internal route selector, not scanner public API.
 pub(crate) use crate::tuning::*;
@@ -38,49 +43,6 @@ pub(crate) static POPULATE_KEYWORD_NS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static GATE_BATCH_SKIPS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static GATE_BATCH_RUNS: AtomicU64 = AtomicU64::new(0);
 pub(crate) static GATE_CALLS: AtomicU64 = AtomicU64::new(0);
-
-/// SWE-101 no-candidate fast-path counters. ALWAYS live (no env gate): a
-/// regression test reads them to PROVE the always-active prefilter does **no
-/// per-pattern work** on a chunk that cannot activate any always-active pattern.
-///
-///   * `MARK_CALLS`          — every `mark_matches` call.
-///   * `MARK_GATE_SKIPS`     — calls that the combined no-candidate gate proved
-///     inert (no always-active pattern can fire), so the expensive per-pattern
-///     body (HS `scan_each` enumeration + the HS-incompatible whole-chunk regex
-///     loop, or the `regex::RegexSet` batch loop) was skipped entirely.
-///   * `MARK_PERPATTERN_WORK` — calls that DID enter the expensive per-pattern
-///     marking body. On a no-candidate corpus this MUST stay at zero; any
-///     increment is the flagship "a phase-2 pass ate runtime on a chunk with no
-///     candidate" regression (SWE-101).
-///
-/// These are relaxed atomics bumped once per call on a path that is already doing
-/// (or deliberately skipping) a chunk scan, so the counter cost is in the noise;
-/// they are not behind the profiler flag because the regression gate must observe
-/// them in an ordinary (unprofiled) run.
-pub(crate) static MARK_CALLS: AtomicU64 = AtomicU64::new(0);
-pub(crate) static MARK_GATE_SKIPS: AtomicU64 = AtomicU64::new(0);
-pub(crate) static MARK_PERPATTERN_WORK: AtomicU64 = AtomicU64::new(0);
-
-/// Snapshot `(calls, gate_skips, perpattern_work)` of the no-candidate fast-path
-/// counters WITHOUT resetting them. The SWE-101 regression test reads a delta
-/// across a scan to assert that a no-candidate chunk did zero per-pattern work.
-#[cfg(test)]
-pub(crate) fn phase2_mark_stats() -> (u64, u64, u64) {
-    (
-        MARK_CALLS.load(Relaxed),
-        MARK_GATE_SKIPS.load(Relaxed),
-        MARK_PERPATTERN_WORK.load(Relaxed),
-    )
-}
-
-/// Reset the no-candidate fast-path counters to zero (test isolation between
-/// scans).
-#[cfg(test)]
-pub(crate) fn phase2_mark_stats_reset() {
-    MARK_CALLS.store(0, Relaxed);
-    MARK_GATE_SKIPS.store(0, Relaxed);
-    MARK_PERPATTERN_WORK.store(0, Relaxed);
-}
 
 /// Print and reset the prefix-gate skip counters. Returns `(calls, skips, runs)`.
 #[cfg(test)]

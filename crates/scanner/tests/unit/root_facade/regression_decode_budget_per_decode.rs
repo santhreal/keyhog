@@ -29,16 +29,15 @@
 //!   * NEW behavior: zero (the inner loop bailed on its first iteration once it
 //!     saw the deadline had passed).
 //!
-//! `register_decoder` initializes a process-global `OnceLock`, so this whole
-//! test binary shares ONE custom decoder. We therefore parameterize behavior
-//! through the chunk `path` and drive every scenario (positive, negative twin,
-//! boundary, adversarial, and a property-style loop) through that single
-//! registered decoder from one `#[test]` to keep registry init ordered.
+//! The test registers its custom decoder through the scanner testing facade's
+//! thread-local scoped hook. Production `register_decoder` still appends to the
+//! live process-global registry, but this regression must not poison unrelated
+//! parity tests running concurrently in the same Rust test process.
 
 use keyhog_core::{Chunk, ChunkMetadata, SensitiveString};
-use keyhog_scanner::decode::{register_decoder, Decoder};
+use keyhog_scanner::decode::Decoder;
 use keyhog_scanner::telemetry::{decode_truncation_count, reset_for_scan, testing::reset};
-use keyhog_scanner::testing::decode_chunk;
+use keyhog_scanner::testing::{decode_chunk, register_thread_decoder};
 use std::time::{Duration, Instant};
 
 /// Recognizable marker the custom decoder stamps into each result's
@@ -139,10 +138,10 @@ fn tagged(out: &[Chunk]) -> usize {
 fn decode_budget_is_enforced_inside_a_single_decoder_fanout() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
     reset();
-    // Register our custom decoder ONCE for this whole test binary, before any
-    // call to `decode_chunk` initializes the registry. Built-ins run first;
-    // ours runs last.
-    register_decoder(Box::new(FanoutDecoder));
+    // Built-ins run first; this thread-scoped decoder runs last and is removed
+    // when the test exits, so concurrent parity tests see the production
+    // registry only.
+    let _decoder_guard = register_thread_decoder(Box::new(FanoutDecoder));
 
     // ---- Negative twin: generous deadline, decoder does NOT sleep ----------
     // With the deadline far in the future and no sleep, every inner-loop budget

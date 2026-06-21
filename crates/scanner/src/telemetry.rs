@@ -168,6 +168,11 @@ static STRUCTURED_PARSE_FAILURES: AtomicUsize = AtomicUsize::new(0);
 /// still scanned, but secrets only reachable after an omitted recursive decode
 /// layer may be missed, so the CLI must surface this as a coverage gap.
 static DECODE_TRUNCATIONS: AtomicUsize = AtomicUsize::new(0);
+#[cfg(test)]
+thread_local! {
+    static THREAD_DECODE_TRUNCATIONS: std::cell::Cell<usize> =
+        const { std::cell::Cell::new(0) };
+}
 /// A compiled pattern pointed at a detector index outside the loaded detector
 /// table. That is a scanner invariant violation: the affected pattern cannot
 /// safely emit a finding because metadata lookup would be wrong/panic, so the
@@ -423,11 +428,22 @@ pub fn structured_parse_failure_count() -> usize {
 /// decoder output because a safety budget/cap fired.
 pub(crate) fn record_decode_truncation() {
     let _receipt = record_scanner_coverage_gap(ScannerCoverageGapEvent::DecodeTruncation);
+    #[cfg(test)]
+    THREAD_DECODE_TRUNCATIONS.with(|count| count.set(count.get() + 1));
 }
 
 /// Count of decode roots truncated by safety budgets/caps this scan.
+#[cfg(not(test))]
 pub fn decode_truncation_count() -> usize {
     DECODE_TRUNCATIONS.load(Ordering::Relaxed)
+}
+
+/// Count of decode roots truncated by safety budgets/caps on the current test
+/// thread. Production still records the global counter; tests read this local
+/// view so parallel decode-budget probes cannot pollute exact assertions.
+#[cfg(test)]
+pub fn decode_truncation_count() -> usize {
+    THREAD_DECODE_TRUNCATIONS.with(|count| count.get())
 }
 
 /// Record that a compiled pattern could not be extracted because its
@@ -513,6 +529,8 @@ pub fn reset_for_scan() {
     GPU_DISPATCHES.store(0, Ordering::Relaxed);
     STRUCTURED_PARSE_FAILURES.store(0, Ordering::Relaxed);
     DECODE_TRUNCATIONS.store(0, Ordering::Relaxed);
+    #[cfg(test)]
+    THREAD_DECODE_TRUNCATIONS.with(|count| count.set(0));
     INVALID_DETECTOR_INDEX_SKIPS.store(0, Ordering::Relaxed);
     if let Ok(mut events) = t.events.lock() {
         events.clear();

@@ -74,6 +74,7 @@ pub(crate) mod compiler;
 pub(crate) mod confidence;
 /// Code context analysis (comments, assignments, test files).
 pub mod context;
+pub(crate) mod deadline;
 /// Decode-through pipeline for nested encodings (base64, hex, URL, etc.).
 pub mod decode;
 /// Decode-structure analysis: classify what a candidate base64/hex-decodes to

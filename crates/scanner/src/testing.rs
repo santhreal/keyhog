@@ -1098,6 +1098,13 @@ pub fn decode_chunk(
     crate::decode::decode_chunk(chunk, max_depth, validate, deadline, screen.map(|s| &s.0))
 }
 
+#[cfg(test)]
+pub(crate) fn register_thread_decoder(
+    decoder: Box<dyn crate::decode::Decoder>,
+) -> crate::decode::ScopedDecoderRegistration {
+    crate::decode::register_thread_decoder(decoder)
+}
+
 pub fn ml_score(text: &str, context: &str) -> f64 {
     crate::ml_scorer::score(text, context)
 }

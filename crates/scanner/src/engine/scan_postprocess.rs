@@ -45,8 +45,14 @@ impl CompiledScanner {
         matches: &mut Vec<RawMatch>,
         deadline: Option<std::time::Instant>,
     ) {
+        if crate::deadline::expired(deadline) {
+            return;
+        }
         let pp_start = std::time::Instant::now();
         self.scan_cross_chunk_fragments(chunk, matches, deadline);
+        if crate::deadline::expired(deadline) {
+            return;
+        }
 
         #[cfg(feature = "decode")]
         if chunk.data.len() <= self.config.max_decode_bytes {
@@ -69,6 +75,9 @@ impl CompiledScanner {
                     self.alphabet_screen.as_ref(),
                 )
             };
+            if crate::deadline::expired(deadline) {
+                return;
+            }
             if let Some(t) = gen_start {
                 DECODE_GEN_NS.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
                 if !decoded_chunks.is_empty() {
@@ -91,6 +100,9 @@ impl CompiledScanner {
             // applies (Law 10: no order-dependent recall).
             let mut decoded_candidates: Vec<RawMatch> = Vec::new();
             for decoded_chunk in decoded_chunks {
+                if crate::deadline::expired(deadline) {
+                    break;
+                }
                 // kimi-wave1 finding 5.LOW: a single decoded chunk that
                 // exceeds `max_decode_bytes` slips past the outer guard
                 // (which only checked the *input* chunk size). Skip
@@ -140,6 +152,9 @@ impl CompiledScanner {
                     self.scan_inner(&decoded_chunk, decoded_backend, deadline)
                 };
                 super::profile::set_in_decode(restore_rescan);
+                if crate::deadline::expired(deadline) {
+                    break;
+                }
                 if let Some(t) = scan_start {
                     DECODE_SCAN_NS.fetch_add(t.elapsed().as_nanos() as u64, Relaxed);
                 }
