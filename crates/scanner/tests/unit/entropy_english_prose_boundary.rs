@@ -5,17 +5,17 @@
 //! mode rejects strings 16+ chars of pure lowercase as prose. This test pins
 //! the exact length boundary and ensures mixed-case/digit strings bypass the gate.
 
-use keyhog_scanner::testing::entropy_keywords::is_secret_plausible;
+use keyhog_scanner::testing::entropy_keywords::entropy_value_looks_like_prose;
 
 #[test]
 fn prose_detection_boundary_15_char_pure_lowercase_accepted() {
     // 15-char pure lowercase is below the prose threshold (16+).
     // Even though it looks like words ("thequickbrownf"), it should pass
     // because the gate only rejects 16+ chars. This is a boundary case.
-    let short_prose = "thequickbrownf";
+    let short_prose = "thequickbrownfo";
     assert_eq!(short_prose.len(), 15);
     assert!(short_prose.chars().all(|c| c.is_ascii_lowercase()));
-    assert!(is_secret_plausible(short_prose, &[]));
+    assert!(!entropy_value_looks_like_prose(short_prose));
 }
 
 #[test]
@@ -25,7 +25,7 @@ fn prose_detection_boundary_16_char_pure_lowercase_rejected() {
     let prose = "thequickbrownfox";
     assert_eq!(prose.len(), 16);
     assert!(prose.chars().all(|c| c.is_ascii_lowercase()));
-    assert!(!is_secret_plausible(prose, &[]));
+    assert!(entropy_value_looks_like_prose(prose));
 }
 
 #[test]
@@ -51,7 +51,7 @@ fn prose_detection_multiword_prose_with_spaces_rejected() {
     assert!(tokens
         .iter()
         .all(|t| { t.len() >= 2 && t.bytes().all(|b| b.is_ascii_alphabetic()) }));
-    assert!(!is_secret_plausible(multiword, &[]));
+    assert!(entropy_value_looks_like_prose(multiword));
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn prose_detection_single_long_word_rejected() {
     let long_word = "abcdefghijklmnopqrstuvwxyz";
     assert_eq!(long_word.len(), 26);
     assert!(long_word.chars().all(|c| c.is_ascii_lowercase()));
-    assert!(!is_secret_plausible(long_word, &[]));
+    assert!(entropy_value_looks_like_prose(long_word));
 }
 
 #[test]
@@ -88,11 +88,9 @@ fn prose_detection_single_word_with_underscore_not_prose_by_space_gate() {
 
 #[test]
 fn prose_detection_short_multiword_with_threshold() {
-    // "hi there" (8 chars) is multiword (2 tokens, both alphabetic, has 3+
-    // char lowercase "there"). But the prose gate checks `bytes.len() < 16`
-    // first for branch 1. Branch 2 (multiword) doesn't have a length gate,
-    // so this 8-char multiword string SHOULD be rejected as prose.
+    // "hi there" (8 chars) is multiword, but the prose gate rejects only
+    // 16+ byte values, so this short phrase is left to other gates.
     let short_multiword = "hi there";
     assert!(short_multiword.split_whitespace().count() >= 2);
-    assert!(!is_secret_plausible(short_multiword, &[]));
+    assert!(!entropy_value_looks_like_prose(short_multiword));
 }

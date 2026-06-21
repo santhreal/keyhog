@@ -9,8 +9,12 @@
 
 use keyhog_scanner::entropy::shannon_entropy;
 use keyhog_scanner::testing::entropy_keywords::{
-    is_secret_plausible, is_secret_plausible_with_context,
+    is_secret_plausible_in_context, PlausibilityContext,
 };
+
+fn plausibility_context(is_credential_context: bool) -> PlausibilityContext {
+    PlausibilityContext::new(is_credential_context, false)
+}
 
 #[test]
 fn symbolic_password_3_5_with_context_accepted() {
@@ -23,10 +27,10 @@ fn symbolic_password_3_5_with_context_accepted() {
     // In credential context (is_credential_context = true), should be accepted
     // at the 3.5 floor.
     let placeholder_keywords = vec![];
-    assert!(is_secret_plausible_with_context(
+    assert!(is_secret_plausible_in_context(
         symbolic_pwd,
         &placeholder_keywords,
-        true // is_credential_context = true
+        plausibility_context(true)
     ));
 }
 
@@ -40,28 +44,28 @@ fn symbolic_password_3_5_without_context_rejected() {
     assert!(symbolic_pwd.bytes().any(|b| !b.is_ascii_alphanumeric()));
     // Outside credential context, rejected because entropy < 4.5.
     let placeholder_keywords = vec![];
-    assert!(!is_secret_plausible_with_context(
+    assert!(!is_secret_plausible_in_context(
         symbolic_pwd,
         &placeholder_keywords,
-        false // is_credential_context = false
+        plausibility_context(false)
     ));
 }
 
 #[test]
 fn pure_alphanumeric_3_5_with_context_still_rejected() {
-    // "abc123def456ghi789jklmno" (26 chars, all alphanumeric, entropy ~3.8).
-    // Even WITH credential context, pure alphanumeric 3.5-4.5 is rejected.
-    // The relaxation only applies to symbolic passwords.
-    let alphanumeric = "abc123def456ghi789jklmno";
+    // Pure alphanumeric 3.5-4.5 entropy below the mixed-alnum length carve-out
+    // is rejected. The 3.5 symbolic relaxation applies only when a symbol is
+    // present.
+    let alphanumeric = "abc123def456ghi789j";
     let entropy = shannon_entropy(alphanumeric.as_bytes());
     assert!(entropy >= 3.5 && entropy < 4.5, "entropy: {}", entropy);
     assert!(alphanumeric.bytes().all(|b| b.is_ascii_alphanumeric()));
     // Even with credential context, no symbol → no relaxation.
     let placeholder_keywords = vec![];
-    assert!(!is_secret_plausible_with_context(
+    assert!(!is_secret_plausible_in_context(
         alphanumeric,
         &placeholder_keywords,
-        true // is_credential_context = true (but no symbols)
+        plausibility_context(true)
     ));
 }
 
@@ -77,10 +81,10 @@ fn symbolic_password_boundary_3_5_exact_entropy() {
     assert!(borderline.bytes().any(|b| !b.is_ascii_alphanumeric()));
     // With credential context, should be accepted.
     let placeholder_keywords = vec![];
-    assert!(is_secret_plausible_with_context(
+    assert!(is_secret_plausible_in_context(
         borderline,
         &placeholder_keywords,
-        true
+        plausibility_context(true)
     ));
 }
 
@@ -100,28 +104,28 @@ fn symbolic_password_with_single_symbol_relaxation_applies() {
     // If entropy >= 3.5 and has a symbol, it should pass with credential context.
     let placeholder_keywords = vec![];
     if entropy >= 3.5 && entropy < 4.5 {
-        assert!(is_secret_plausible_with_context(
+        assert!(is_secret_plausible_in_context(
             almost_alnum,
             &placeholder_keywords,
-            true
+            plausibility_context(true)
         ));
     }
 }
 
 #[test]
 fn symbolic_password_multiple_symbols_entropy_relaxation() {
-    // "P@ssw0rd!#$%^&*" has multiple symbols. Entropy likely > 4.5, but
-    // even if it were 3.5-4.5, it should pass with credential context.
-    let multi_symbol = "P@ssw0rd!#$%^&*";
+    // Multiple symbols with enough alphanumeric mass should pass in credential
+    // context once entropy reaches the symbolic relaxation floor.
+    let multi_symbol = "P@ssw0rd!AbC123$";
     let entropy = shannon_entropy(multi_symbol.as_bytes());
     assert!(multi_symbol.bytes().any(|b| !b.is_ascii_alphanumeric()));
     // In credential context, admitted if entropy >= 3.5.
     let placeholder_keywords = vec![];
     if entropy >= 3.5 {
-        assert!(is_secret_plausible_with_context(
+        assert!(is_secret_plausible_in_context(
             multi_symbol,
             &placeholder_keywords,
-            true
+            plausibility_context(true)
         ));
     }
 }
@@ -138,10 +142,10 @@ fn pure_alphanumeric_4_5_accepted_without_context() {
     assert!(entropy >= 4.5, "entropy: {}", entropy);
     // Accepted even without credential context.
     let placeholder_keywords = vec![];
-    assert!(is_secret_plausible_with_context(
+    assert!(is_secret_plausible_in_context(
         high_entropy_alnum,
         &placeholder_keywords,
-        false
+        plausibility_context(false)
     ));
 }
 
@@ -155,10 +159,10 @@ fn symbolic_password_no_symbols_detected_fails_relaxation() {
     if entropy >= 3.5 && entropy < 4.5 {
         // Even with credential context, should be rejected (no symbols).
         let placeholder_keywords = vec![];
-        assert!(!is_secret_plausible_with_context(
+        assert!(!is_secret_plausible_in_context(
             pure_alnum,
             &placeholder_keywords,
-            true
+            plausibility_context(true)
         ));
     }
 }

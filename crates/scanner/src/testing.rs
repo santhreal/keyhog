@@ -677,6 +677,8 @@ pub(crate) mod entropy_scanner {
 /// tests migrated out of `src/entropy/keywords.rs` (KH-GAP-004).
 #[cfg(test)]
 pub(crate) mod entropy_keywords {
+    pub(crate) use crate::entropy::keywords::PlausibilityContext;
+
     pub(crate) fn looks_like_english_prose(value: &str) -> bool {
         crate::entropy::keywords::looks_like_english_prose(value)
     }
@@ -694,35 +696,35 @@ pub(crate) mod entropy_keywords {
     }
 
     pub(crate) fn is_candidate_plausible(value: &str, placeholder_keywords: &[String]) -> bool {
-        crate::entropy::keywords::is_candidate_plausible(value, placeholder_keywords)
+        crate::entropy::keywords::is_candidate_plausible(
+            value,
+            placeholder_keywords,
+            PlausibilityContext::default(),
+        )
     }
 
     pub fn is_secret_plausible(value: &str, placeholder_keywords: &[String]) -> bool {
-        crate::entropy::keywords::is_secret_plausible(value, placeholder_keywords)
-    }
-
-    pub(crate) fn is_candidate_plausible_with_context(
-        value: &str,
-        placeholder_keywords: &[String],
-        is_credential_context: bool,
-    ) -> bool {
-        crate::entropy::keywords::is_candidate_plausible_with_context(
+        crate::entropy::keywords::is_secret_plausible(
             value,
             placeholder_keywords,
-            is_credential_context,
+            PlausibilityContext::default(),
         )
     }
 
-    pub(crate) fn is_secret_plausible_with_context(
+    pub(crate) fn is_candidate_plausible_in_context(
         value: &str,
         placeholder_keywords: &[String],
-        is_credential_context: bool,
+        context: PlausibilityContext,
     ) -> bool {
-        crate::entropy::keywords::is_secret_plausible_with_context(
-            value,
-            placeholder_keywords,
-            is_credential_context,
-        )
+        crate::entropy::keywords::is_candidate_plausible(value, placeholder_keywords, context)
+    }
+
+    pub(crate) fn is_secret_plausible_in_context(
+        value: &str,
+        placeholder_keywords: &[String],
+        context: PlausibilityContext,
+    ) -> bool {
+        crate::entropy::keywords::is_secret_plausible(value, placeholder_keywords, context)
     }
 }
 
@@ -785,7 +787,7 @@ pub(crate) mod checksum {
     }
 
     macro_rules! checksum_validator_wrapper {
-        ($name:ident, $inner:path, $validator_id:literal) => {
+        ($name:ident, $inner:path, $validator_id:expr) => {
             pub(crate) struct $name;
 
             impl ChecksumValidator for $name {

@@ -28,6 +28,21 @@ pub(crate) struct KeywordContext {
     pub(crate) allow_canonical_shapes: bool,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct PlausibilityContext {
+    pub(crate) is_credential_context: bool,
+    pub(crate) allow_canonical_shapes: bool,
+}
+
+impl PlausibilityContext {
+    pub(crate) const fn new(is_credential_context: bool, allow_canonical_shapes: bool) -> Self {
+        Self {
+            is_credential_context,
+            allow_canonical_shapes,
+        }
+    }
+}
+
 pub(super) fn find_keyword_assignment_lines<'a>(
     lines: &'a [&str],
     secret_keywords: &[String],
@@ -122,18 +137,16 @@ pub(super) fn extract_candidates(
         let structured_dotted = allow_structured_dotted && is_structured_dotted_token(cleaned);
         let plausible = structured_dotted
             || if strict {
-                is_secret_plausible_with_lift(
+                is_secret_plausible(
                     cleaned,
                     placeholder_keywords,
-                    is_credential_context,
-                    allow_canonical_shapes,
+                    PlausibilityContext::new(is_credential_context, allow_canonical_shapes),
                 )
             } else {
-                is_candidate_plausible_with_lift(
+                is_candidate_plausible(
                     cleaned,
                     placeholder_keywords,
-                    is_credential_context,
-                    allow_canonical_shapes,
+                    PlausibilityContext::new(is_credential_context, allow_canonical_shapes),
                 )
             };
         if plausible && !candidates.iter().any(|c| c == cleaned) {
@@ -361,11 +374,7 @@ enum PlausibilityMode {
     Strict,
 }
 
-fn is_known_non_secret(
-    value: &str,
-    is_credential_context: bool,
-    allow_canonical_shapes: bool,
-) -> bool {
+fn is_known_non_secret(value: &str, context: PlausibilityContext) -> bool {
     // UUID / k8s-resource-uid (8-4-4-4-12 hex). Dropped at extraction so a bare
     // `TOKEN_LIST=<uuid>` env identifier does not generate. CredData recall lane:
     // when the lift is engaged (model authoritative + strong credential anchor),
@@ -373,7 +382,7 @@ fn is_known_non_secret(
     // Heroku UUID key, PowerBI client secret) and MUST be extracted as a
     // candidate for the MoE to arbitrate, so the gate releases here. Off the lift
     // it is byte-identical.
-    if !allow_canonical_shapes && value.len() == 36 {
+    if !context.allow_canonical_shapes && value.len() == 36 {
         let bytes = value.as_bytes();
         if bytes[8] == b'-'
             && bytes[13] == b'-'
@@ -395,13 +404,13 @@ fn is_known_non_secret(
     // then narrows it again to explicit crypto-key anchors.
     let hex_len = value.len();
     if [32, 40, 64, 128].contains(&hex_len) && value.chars().all(|ch| ch.is_ascii_hexdigit()) {
-        if !is_credential_context {
+        if !context.is_credential_context {
             return true;
         }
         if hex_len == 40 || hex_len == 128 {
             return true;
         }
-        if hex_len == 64 && !allow_canonical_shapes {
+        if hex_len == 64 && !context.allow_canonical_shapes {
             return true;
         }
     }
@@ -413,11 +422,10 @@ fn passes_plausibility_checks(
     value: &str,
     mode: PlausibilityMode,
     placeholder_keywords: &[String],
-    is_credential_context: bool,
-    allow_canonical_shapes: bool,
+    context: PlausibilityContext,
 ) -> bool {
     if matches_universal_rejection(value)
-        || is_known_non_secret(value, is_credential_context, allow_canonical_shapes)
+        || is_known_non_secret(value, context)
         || is_placeholder_ci(value.as_bytes(), placeholder_keywords)
         || has_low_alnum_ratio(value)
     {
@@ -425,7 +433,7 @@ fn passes_plausibility_checks(
     }
 
     if matches!(mode, PlausibilityMode::Strict)
-        && !passes_strict_secret_checks(value, is_credential_context)
+        && !passes_strict_secret_checks(value, context.is_credential_context)
     {
         return false;
     }
@@ -600,8 +608,7 @@ pub(super) fn is_isolated_bare_secret_plausible(
         value,
         PlausibilityMode::Lenient,
         placeholder_keywords,
-        false,
-        false,
+        PlausibilityContext::default(),
     ) && passes_strict_secret_shape_checks(value, false)
 }
 
@@ -819,89 +826,29 @@ fn second_half_entropy(value: &str) -> f64 {
     shannon_entropy(&value.as_bytes()[half_start..])
 }
 
-#[cfg(test)]
-pub(crate) fn is_candidate_plausible(value: &str, placeholder_keywords: &[String]) -> bool {
-    passes_plausibility_checks(
-        value,
-        PlausibilityMode::Lenient,
-        placeholder_keywords,
-        false,
-        false,
-    )
-}
-
-pub(crate) fn is_secret_plausible(value: &str, placeholder_keywords: &[String]) -> bool {
-    passes_plausibility_checks(
-        value,
-        PlausibilityMode::Strict,
-        placeholder_keywords,
-        false,
-        false,
-    )
-}
-
-/// Credential-context-aware plausibility check (Lenient mode).
-///
-/// Pass `is_credential_context = true` when the candidate came from a line
-/// containing a credential keyword (`token`, `api_key`, `password`, ...).
-/// In that case the hex-digest blacklist is skipped so md5/sha1/sha256-shaped
-/// values can surface as candidates - the credential keyword anchor provides
-/// the positive evidence that they're secrets, not digests.
-#[cfg(test)]
-pub(crate) fn is_candidate_plausible_with_context(
+pub(crate) fn is_candidate_plausible(
     value: &str,
     placeholder_keywords: &[String],
-    is_credential_context: bool,
-) -> bool {
-    is_candidate_plausible_with_lift(value, placeholder_keywords, is_credential_context, false)
-}
-
-/// Lift-aware sibling of [`is_candidate_plausible_with_context`] (Lenient mode):
-/// `allow_canonical_shapes` additionally releases the extraction-time canonical-
-/// shape gate (UUID / hex32-128) so a UUID-bodied or 64-hex value is EXTRACTED
-/// as a candidate for the MoE. Off the lift it is byte-identical to
-/// [`is_candidate_plausible_with_context`]. See the CredData recall lane in
-/// `entropy::scanner`.
-pub(super) fn is_candidate_plausible_with_lift(
-    value: &str,
-    placeholder_keywords: &[String],
-    is_credential_context: bool,
-    allow_canonical_shapes: bool,
+    context: PlausibilityContext,
 ) -> bool {
     passes_plausibility_checks(
         value,
         PlausibilityMode::Lenient,
         placeholder_keywords,
-        is_credential_context,
-        allow_canonical_shapes,
+        context,
     )
 }
 
-/// Credential-context-aware plausibility check (Strict mode, for quoted values).
-#[cfg(test)]
-pub(crate) fn is_secret_plausible_with_context(
+pub(crate) fn is_secret_plausible(
     value: &str,
     placeholder_keywords: &[String],
-    is_credential_context: bool,
-) -> bool {
-    is_secret_plausible_with_lift(value, placeholder_keywords, is_credential_context, false)
-}
-
-/// Lift-aware sibling of [`is_secret_plausible_with_context`] (Strict mode).
-/// `allow_canonical_shapes` releases the extraction-time canonical-shape gate.
-/// Off the lift it is byte-identical.
-pub(super) fn is_secret_plausible_with_lift(
-    value: &str,
-    placeholder_keywords: &[String],
-    is_credential_context: bool,
-    allow_canonical_shapes: bool,
+    context: PlausibilityContext,
 ) -> bool {
     passes_plausibility_checks(
         value,
         PlausibilityMode::Strict,
         placeholder_keywords,
-        is_credential_context,
-        allow_canonical_shapes,
+        context,
     )
 }
 

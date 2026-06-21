@@ -10,13 +10,10 @@ use keyhog_scanner::testing::entropy_keywords::is_secret_plausible;
 
 #[test]
 fn uniqueness_boundary_16_char_with_7_unique_rejected() {
-    // 16+ chars with < 8 unique chars must be rejected. Build a 16-char
-    // string with exactly 7 unique characters: "aaaabbbbccccdddd"
-    // (4 of each: 'a', 'b', 'c', 'd', then add 3 more unique, total 7).
-    // Actually, let's be precise: "aaaabbbbbccccdd" (15) → "aaaabbbbccccdddd" (16)
-    // Let's use: "aabbccddeeeeeeee" (16 chars, unique: a,b,c,d,e = 5)
-    let with_7_unique = "aabbccddeeeffgg";
-    assert_eq!(with_7_unique.len(), 15);
+    // >16 chars with < 8 unique chars must be rejected. Build a 17-char
+    // string with exactly 7 unique characters.
+    let with_7_unique = "aabbccddeeffggggg";
+    assert_eq!(with_7_unique.len(), 17);
     let unique_count: std::collections::HashSet<char> = with_7_unique.chars().collect();
     assert_eq!(unique_count.len(), 7);
     assert!(!is_secret_plausible(with_7_unique, &[]));
@@ -38,7 +35,7 @@ fn uniqueness_boundary_16_char_with_8_unique_potential_pass() {
 fn uniqueness_boundary_15_char_with_low_unique_not_gated() {
     // The uniqueness gate only applies to > 16 chars. At 15 chars with
     // 3 unique characters, it should NOT be rejected by uniqueness.
-    let short_low_unique = "aaabbbcccccccc";
+    let short_low_unique = "aaabbbccccccccc";
     assert_eq!(short_low_unique.len(), 15);
     let unique_count: std::collections::HashSet<char> = short_low_unique.chars().collect();
     assert!(unique_count.len() < 8);
@@ -95,7 +92,7 @@ fn entropy_second_half_boundary_exactly_16_char_not_gated() {
 fn uniqueness_and_entropy_second_half_both_fail_at_17_chars() {
     // A 17-char string that fails both uniqueness (< 8 unique) AND second-half
     // entropy (< 2.5) should be rejected. Either gate suffices to reject it.
-    let bad_both = "aabbccddeeeffggg";
+    let bad_both = "aabbccddeeffggggg";
     assert_eq!(bad_both.len(), 17);
     let unique_count: std::collections::HashSet<char> = bad_both.chars().collect();
     assert!(unique_count.len() < 8);
@@ -110,13 +107,13 @@ fn passes_uniqueness_but_fails_entropy_floor() {
     // overall entropy < 4.5. Should be rejected by entropy floor, not
     // uniqueness or second-half entropy.
     // Low-entropy alphabet: mostly 'a', 'b', 'c' with few high-entropy chars.
-    let low_entropy_high_unique = "aaaabbbbccccddddeeee";
+    let low_entropy_high_unique = "aaaabbbbccccde12f3g4";
     assert!(low_entropy_high_unique.len() > 16);
     let unique_count: std::collections::HashSet<char> = low_entropy_high_unique.chars().collect();
     assert!(unique_count.len() >= 8);
     let overall_entropy = shannon_entropy(low_entropy_high_unique.as_bytes());
     assert!(overall_entropy < 4.5, "entropy: {}", overall_entropy);
-    // Will be rejected, but by the entropy floor (checked in is_secret_plausible_with_context),
+    // Will be rejected, but by the entropy floor (checked in context-aware plausibility),
     // not the uniqueness/second-half gates.
 }
 
@@ -124,7 +121,7 @@ fn passes_uniqueness_but_fails_entropy_floor() {
 fn uniqueness_strictly_less_than_8() {
     // The gate checks: "unique_char_count < 8" (strictly less than).
     // So 8 unique chars is the boundary: it passes the uniqueness gate.
-    let with_exactly_8 = "abcdefgh11111111";
+    let with_exactly_8 = "abcdefg111111111";
     assert_eq!(with_exactly_8.len(), 16);
     let unique_count: std::collections::HashSet<char> = with_exactly_8.chars().collect();
     assert_eq!(unique_count.len(), 8);

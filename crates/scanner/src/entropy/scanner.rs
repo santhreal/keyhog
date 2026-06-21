@@ -685,7 +685,11 @@ pub(crate) fn candidate_is_plausible(
         return candidate.len() >= MIN_PASSWORD_LEN;
     }
     candidate.len() >= KEYWORD_FREE_MIN_LEN.min(context.min_len)
-        && is_secret_plausible(candidate, placeholder_keywords)
+        && is_secret_plausible(
+            candidate,
+            placeholder_keywords,
+            crate::entropy::keywords::PlausibilityContext::default(),
+        )
 }
 
 /// True when `value` is EXACTLY a canonical non-secret shape: a hash digest,

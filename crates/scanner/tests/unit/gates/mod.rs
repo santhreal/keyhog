@@ -122,6 +122,7 @@ pub mod entropy_fast_non_empty;
 pub mod entropy_keywords_no_inline_tests;
 pub mod entropy_keywords_no_unwrap_expect;
 pub mod entropy_keywords_non_empty;
+pub mod entropy_plausibility_context_owner;
 pub mod entropy_scanner_no_inline_tests;
 pub mod entropy_scanner_no_unwrap_expect;
 pub mod entropy_scanner_non_empty;

@@ -9,8 +9,12 @@
 //! crypto-key anchor release them later.
 
 use keyhog_scanner::testing::entropy_keywords::{
-    is_candidate_plausible_with_context, is_secret_plausible_with_context,
+    is_candidate_plausible_in_context, is_secret_plausible_in_context, PlausibilityContext,
 };
+
+fn plausibility_context(is_credential_context: bool) -> PlausibilityContext {
+    PlausibilityContext::new(is_credential_context, false)
+}
 
 #[test]
 fn hex_32_char_canonical_length_without_context_rejected() {
@@ -20,10 +24,10 @@ fn hex_32_char_canonical_length_without_context_rejected() {
     assert!(md5.chars().all(|c| c.is_ascii_hexdigit()));
     // Without credential context, pure-hex canonical lengths are rejected.
     let placeholder_keywords = vec![];
-    assert!(!is_secret_plausible_with_context(
+    assert!(!is_secret_plausible_in_context(
         md5,
         &placeholder_keywords,
-        false // is_credential_context = false
+        plausibility_context(false)
     ));
 }
 
@@ -34,10 +38,10 @@ fn hex_40_char_canonical_length_without_context_rejected() {
     assert_eq!(sha1.len(), 40);
     assert!(sha1.chars().all(|c| c.is_ascii_hexdigit()));
     let placeholder_keywords = vec![];
-    assert!(!is_secret_plausible_with_context(
+    assert!(!is_secret_plausible_in_context(
         sha1,
         &placeholder_keywords,
-        false
+        plausibility_context(false)
     ));
 }
 
@@ -48,10 +52,10 @@ fn hex_64_char_canonical_length_without_context_rejected() {
     assert_eq!(sha256.len(), 64);
     assert!(sha256.chars().all(|c| c.is_ascii_hexdigit()));
     let placeholder_keywords = vec![];
-    assert!(!is_secret_plausible_with_context(
+    assert!(!is_secret_plausible_in_context(
         sha256,
         &placeholder_keywords,
-        false
+        plausibility_context(false)
     ));
 }
 
@@ -62,10 +66,10 @@ fn hex_128_char_canonical_length_without_context_rejected() {
     assert_eq!(sha512.len(), 128);
     assert!(sha512.chars().all(|c| c.is_ascii_hexdigit()));
     let placeholder_keywords = vec![];
-    assert!(!is_secret_plausible_with_context(
+    assert!(!is_secret_plausible_in_context(
         sha512,
         &placeholder_keywords,
-        false
+        plausibility_context(false)
     ));
 }
 
@@ -77,10 +81,10 @@ fn hex_64_char_canonical_length_with_context_rejected_without_lift() {
     assert_eq!(sha256.len(), 64);
     assert!(sha256.chars().all(|c| c.is_ascii_hexdigit()));
     let placeholder_keywords = vec![];
-    assert!(!is_secret_plausible_with_context(
+    assert!(!is_secret_plausible_in_context(
         sha256,
         &placeholder_keywords,
-        true // is_credential_context = true
+        plausibility_context(true)
     ));
 }
 
@@ -91,10 +95,10 @@ fn hex_40_char_canonical_length_with_context_rejected() {
     assert_eq!(sha1.len(), 40);
     assert!(sha1.chars().all(|c| c.is_ascii_hexdigit()));
     let placeholder_keywords = vec![];
-    assert!(!is_secret_plausible_with_context(
+    assert!(!is_secret_plausible_in_context(
         sha1,
         &placeholder_keywords,
-        true
+        plausibility_context(true)
     ));
 }
 
@@ -108,10 +112,10 @@ fn hex_non_canonical_66_char_accepted_regardless_of_context() {
     let placeholder_keywords = vec![];
     // Lenient candidate mode should not reject this through the canonical
     // digest-length gate.
-    assert!(is_candidate_plausible_with_context(
+    assert!(is_candidate_plausible_in_context(
         &non_canonical,
         &placeholder_keywords,
-        false
+        plausibility_context(false)
     ));
 }
 
@@ -132,10 +136,10 @@ fn hex_32_char_canonical_with_context_accepted() {
     assert_eq!(md5.len(), 32);
     assert!(md5.chars().all(|c| c.is_ascii_hexdigit()));
     let placeholder_keywords = vec![];
-    assert!(is_candidate_plausible_with_context(
+    assert!(is_candidate_plausible_in_context(
         md5,
         &placeholder_keywords,
-        true
+        plausibility_context(true)
     ));
 }
 
@@ -146,10 +150,10 @@ fn hex_128_char_canonical_with_context_rejected() {
     assert_eq!(sha512.len(), 128);
     assert!(sha512.chars().all(|c| c.is_ascii_hexdigit()));
     let placeholder_keywords = vec![];
-    assert!(!is_secret_plausible_with_context(
+    assert!(!is_secret_plausible_in_context(
         sha512,
         &placeholder_keywords,
-        true
+        plausibility_context(true)
     ));
 }
 
@@ -162,10 +166,10 @@ fn hex_boundary_31_char_not_rejected_by_hex_gate() {
     let placeholder_keywords = vec![];
     // Lenient candidate mode should not reject this through the canonical
     // digest-length gate.
-    assert!(is_candidate_plausible_with_context(
+    assert!(is_candidate_plausible_in_context(
         almost_md5,
         &placeholder_keywords,
-        false
+        plausibility_context(false)
     ));
 }
 
@@ -178,10 +182,10 @@ fn hex_boundary_33_char_not_rejected_by_hex_gate() {
     let placeholder_keywords = vec![];
     // Lenient candidate mode should not reject this through the canonical
     // digest-length gate.
-    assert!(is_candidate_plausible_with_context(
+    assert!(is_candidate_plausible_in_context(
         almost_md5,
         &placeholder_keywords,
-        false
+        plausibility_context(false)
     ));
 }
 
