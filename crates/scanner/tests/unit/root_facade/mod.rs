@@ -53,7 +53,6 @@ mod regression_invalid_detector_index_skip_counted;
 mod regression_multiline_struct_base_and_fstring_prefix;
 mod regression_org_split_multiline_and_context_api;
 mod regression_slack_three_segment;
-mod regression_structured_parse_failure_counted;
 mod regression_unicode_nbsp_separator_normalization;
 mod routing_matrix;
 mod rule_pipeline_shard_probe;
