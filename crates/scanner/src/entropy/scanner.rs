@@ -11,6 +11,7 @@ use super::{
     keywords::*, shannon_entropy, EntropyMatch, HIGH_ENTROPY_THRESHOLD, LOW_ENTROPY_THRESHOLD,
     VERY_HIGH_ENTROPY_THRESHOLD,
 };
+use crate::entropy::plausibility::{is_secret_plausible, PlausibilityContext};
 
 const CREDENTIAL_CONTEXT_MIN_LEN: usize = 8;
 const KEYWORD_FREE_MIN_LEN: usize = 20;
@@ -438,7 +439,7 @@ pub(crate) fn candidate_is_plausible(
         && is_secret_plausible(
             candidate,
             placeholder_keywords,
-            crate::entropy::keywords::PlausibilityContext::default(),
+            PlausibilityContext::default(),
         )
 }
 

@@ -1,6 +1,5 @@
-use super::keywords::{
-    is_isolated_bare_secret_plausible, is_likely_innocuous_line, KeywordContext,
-};
+use super::keywords::{is_likely_innocuous_line, KeywordContext};
+use super::plausibility::is_isolated_bare_secret_plausible;
 use super::{
     shannon_entropy, EntropyMatch, HIGH_ENTROPY_THRESHOLD, ISOLATED_BARE_ENTROPY_LABEL,
     MIXED_ALNUM_TOKEN_THRESHOLD,

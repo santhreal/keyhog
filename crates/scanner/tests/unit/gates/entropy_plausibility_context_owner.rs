@@ -26,10 +26,11 @@ fn collect_rs_files(dir: &Path, out: &mut Vec<PathBuf>) {
 #[test]
 fn entropy_plausibility_uses_typed_context_entry_points() {
     let src = scanner_src();
-    let owner = read(&src.join("entropy/keywords.rs"));
+    let owner = read(&src.join("entropy/plausibility.rs"));
+    let keywords = read(&src.join("entropy/keywords.rs"));
     assert!(
         owner.contains("pub(crate) struct PlausibilityContext"),
-        "entropy::keywords must own the typed plausibility context"
+        "entropy::plausibility must own the typed plausibility context"
     );
     assert!(
         owner.contains("pub(crate) fn is_candidate_plausible(")
@@ -48,6 +49,22 @@ fn entropy_plausibility_uses_typed_context_entry_points() {
     );
 
     for forbidden in [
+        "pub(crate) struct PlausibilityContext",
+        "pub(crate) fn is_candidate_plausible(",
+        "pub(crate) fn is_secret_plausible(",
+        "pub(crate) fn passes_secret_strength_checks(",
+        "pub(crate) fn is_isolated_bare_secret_plausible(",
+        "fn is_known_non_secret",
+        "fn passes_plausibility_checks",
+        "fn is_placeholder_ci",
+    ] {
+        assert!(
+            !keywords.contains(forbidden),
+            "entropy::keywords must not own plausibility body `{forbidden}`"
+        );
+    }
+
+    for forbidden in [
         "fn is_candidate_plausible_with_context",
         "fn is_secret_plausible_with_context",
         "fn is_candidate_plausible_with_lift",
@@ -56,7 +73,7 @@ fn entropy_plausibility_uses_typed_context_entry_points() {
     ] {
         assert!(
             !owner.contains(forbidden),
-            "entropy::keywords must not reintroduce overload `{forbidden}`"
+            "entropy::plausibility must not reintroduce overload `{forbidden}`"
         );
     }
 

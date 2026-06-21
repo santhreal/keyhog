@@ -679,7 +679,7 @@ pub(crate) mod entropy_scanner {
 /// out of their original inline homes (KH-GAP-004).
 #[cfg(test)]
 pub(crate) mod entropy_keywords {
-    pub(crate) use crate::entropy::keywords::PlausibilityContext;
+    pub(crate) use crate::entropy::plausibility::PlausibilityContext;
 
     pub(crate) fn looks_like_english_prose(value: &str) -> bool {
         crate::suppression::shape::looks_like_english_prose(value)
@@ -690,7 +690,7 @@ pub(crate) mod entropy_keywords {
     }
 
     pub(crate) fn passes_secret_strength_checks(value: &str, is_credential_context: bool) -> bool {
-        crate::entropy::keywords::passes_secret_strength_checks(
+        crate::entropy::plausibility::passes_secret_strength_checks(
             value,
             PlausibilityContext::new(is_credential_context, false),
         )
@@ -701,7 +701,7 @@ pub(crate) mod entropy_keywords {
     }
 
     pub(crate) fn is_candidate_plausible(value: &str, placeholder_keywords: &[String]) -> bool {
-        crate::entropy::keywords::is_candidate_plausible(
+        crate::entropy::plausibility::is_candidate_plausible(
             value,
             placeholder_keywords,
             PlausibilityContext::default(),
@@ -709,7 +709,7 @@ pub(crate) mod entropy_keywords {
     }
 
     pub fn is_secret_plausible(value: &str, placeholder_keywords: &[String]) -> bool {
-        crate::entropy::keywords::is_secret_plausible(
+        crate::entropy::plausibility::is_secret_plausible(
             value,
             placeholder_keywords,
             PlausibilityContext::default(),
@@ -721,7 +721,7 @@ pub(crate) mod entropy_keywords {
         placeholder_keywords: &[String],
         context: PlausibilityContext,
     ) -> bool {
-        crate::entropy::keywords::is_candidate_plausible(value, placeholder_keywords, context)
+        crate::entropy::plausibility::is_candidate_plausible(value, placeholder_keywords, context)
     }
 
     pub(crate) fn is_secret_plausible_in_context(
@@ -729,7 +729,7 @@ pub(crate) mod entropy_keywords {
         placeholder_keywords: &[String],
         context: PlausibilityContext,
     ) -> bool {
-        crate::entropy::keywords::is_secret_plausible(value, placeholder_keywords, context)
+        crate::entropy::plausibility::is_secret_plausible(value, placeholder_keywords, context)
     }
 }
 
