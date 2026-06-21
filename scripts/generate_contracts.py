@@ -86,8 +86,8 @@ MANUAL_OVERRIDES: dict[str, tuple[str, str]] = {
     ),
     "opencart-api-credentials": (
         "OPENCART_api_key="
-        + "Ab3Cd9Ef2Gh7Jk4Lm8Np1Qr5St0Uv6Wx3Yz2Ab3Cd9Ef2Gh7Jk4Lm8Np1Qr5St0Uv6Wx3Yz2Ab3Cd9Ef2Gh7Jk4Lm8Np1Qr5St0Uv6Wx3Yz2Ab3Cd9Ef2Gh7Jk4Lm8Np1Qr5St0Uv6Wx3Yz2",
-        "Ab3Cd9Ef2Gh7Jk4Lm8Np1Qr5St0Uv6Wx3Yz2Ab3Cd9Ef2Gh7Jk4Lm8Np1Qr5St0Uv6Wx3Yz2Ab3Cd9Ef2Gh7Jk4Lm8Np1Qr5St0Uv6Wx3Yz2Ab3Cd9Ef2Gh7Jk4Lm8Np1Qr5St0Uv6Wx3Yz2",
+        + "Aa9Fz3Lm7Qp2Rv8Wx4Nc6Yt1Bd5Gh0Ks9Pu3Vq7Jm2Te8Ln4Rx6Cy1Hw5Da0Fp9Uz3Mk7Qb2Vs8Nw4Xe6Cr1Gy5Ld0Hp9Ta3Kq7Mb2Vz8Rn4Wc6Fx1Jy5Sd0Lu9Pb3Qe7Xm2Vt8Nk4",
+        "Aa9Fz3Lm7Qp2Rv8Wx4Nc6Yt1Bd5Gh0Ks9Pu3Vq7Jm2Te8Ln4Rx6Cy1Hw5Da0Fp9Uz3Mk7Qb2Vs8Nw4Xe6Cr1Gy5Ld0Hp9Ta3Kq7Mb2Vz8Rn4Wc6Fx1Jy5Sd0Lu9Pb3Qe7Xm2Vt8Nk4",
     ),
     "oracle-cloud-government-credentials": (
         "OCI_GOVERNMENT TENANCY=ocid1.tenancy.oc1.aaaaaaa."

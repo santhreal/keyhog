@@ -131,8 +131,8 @@ HAND_POSITIVES: dict[str, list[tuple[str, str]]] = {
     ],
     "wechat-api-credentials": [
         (
-            "WECHAT_APPID=wxb044e1c1cb3f7ece\nwechat app_secret=a1b2c3d4e5f6789012345678901234567",
-            "a1b2c3d4e5f6789012345678901234567",
+            "WECHAT_APPID=wxb044e1c1cb3f7ece\nwechat app_secret=a1b2c3d4e5f678901234567890123456",
+            "a1b2c3d4e5f678901234567890123456",
         ),
         (
             'appid: wxc155d2e3cb4f8fdf\nWECHAT app_secret="b2c3d4e5f67890123456789012345678"',

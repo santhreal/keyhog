@@ -9,8 +9,8 @@ credential = "r8_Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw"
 reason = "Replicate r8_-prefixed API token (37 alnum body)."
 
 [[positive]]
-text = "REPLICATE_API_TOKEN=r8_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk"
-credential = "r8_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8Vk"
+text = "REPLICATE_API_TOKEN=r8_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8V"
+credential = "r8_Vk9Bn3Lp7Qm2Rs5Tw8Vk9Bn3Lp7Qm2Rs5Tw8V"
 reason = "Standard REPLICATE_API_TOKEN env-var assignment."
 
 [[negative]]
