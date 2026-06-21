@@ -85,10 +85,12 @@ pub fn compute_line_offsets(text: &str) -> Vec<usize> {
     let estimated_lines = bytes.len() / 40 + 1;
     let mut offsets = Vec::with_capacity(estimated_lines);
     offsets.push(0);
-    let mut start = 0;
-    while let Some(pos) = memchr::memchr(b'\n', &bytes[start..]) {
-        offsets.push(start + pos + 1);
-        start += pos + 1;
+    // One SIMD pass over the whole buffer: `memchr_iter` carries its search
+    // state across matches, vs re-invoking `memchr` on a fresh `&bytes[start..]`
+    // sub-slice per newline. `pos` is the absolute newline index, so `pos + 1`
+    // is the start of the next line — identical output to the prior loop.
+    for pos in memchr::memchr_iter(b'\n', bytes) {
+        offsets.push(pos + 1);
     }
     offsets
 }
