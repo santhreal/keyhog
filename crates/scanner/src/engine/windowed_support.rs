@@ -1,4 +1,4 @@
-//! Window slicing and dedup helpers for the engine windowing contract.
+//! Window slicing and `(detector, credential, source_offset)` raw-hit dedup.
 
 use super::*;
 use keyhog_core::SensitiveString;

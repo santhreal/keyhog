@@ -303,7 +303,11 @@ pub enum VerificationResult {
 }
 
 impl RawMatch {
-    /// Get unique key for deduplication.
+    /// Get the raw-match correlation key used before report scope is applied.
+    ///
+    /// This intentionally excludes location. Window/raw-span dedup uses
+    /// `(detector, credential, offset)` in the scanner, while report grouping
+    /// applies `DedupScope` in `core::dedup`.
     pub(crate) fn deduplication_key(&self) -> (&str, &str) {
         (&self.detector_id, &self.credential)
     }

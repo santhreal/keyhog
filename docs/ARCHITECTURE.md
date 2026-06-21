@@ -117,6 +117,23 @@ method-level version of steps 2–4.
 and pay near-zero cost; full extraction runs only on hits. Determinism is a
 contract: same input → byte-exact same output.
 
+### Finding identity and dedup
+
+There is one identity contract with stage-specific keys, not interchangeable
+"same finding" guesses:
+
+| Stage | Owner | Key | Why |
+|-------|-------|-----|-----|
+| Window overlap and raw collector | `scanner/src/engine/windowed_support.rs::record_window_match`; `scanner/src/scanner_config.rs::ScanState::into_matches` | `(detector_id, credential, source_offset)` | Adjacent 1 MiB windows overlap by 128 KiB, and more than one backend signal can surface the same span. The source-offset key removes duplicate raw hits without merging separate occurrences on different lines. |
+| Raw-match correlation helper | `core/src/finding.rs::RawMatch::deduplication_key` | `(detector_id, credential)` | Tests and internal correlation can ask whether two raw matches carry the same detector/value before a report scope is applied. It is not a report key because it intentionally excludes location. |
+| User-selected report scope | `core/src/dedup.rs::dedup_matches` | `DedupScope::Credential`: `(detector_id, credential)`; `DedupScope::File`: `(detector_id, credential, source + file_path + commit)`; `DedupScope::None`: no grouping | This is the operator-visible grouping. The primary location is the lowest source offset; additional locations use `(source, file_path, line, commit)` so structured/decode aliases on the same source line collapse. |
+| Cross-detector report collapse | `core/src/dedup.rs::dedup_cross_detector` | `(credential_hash, primary_file_path)` after `dedup_matches` | One secret value can match several detectors. This keeps one reported finding, chooses the best detector deterministically, and records alternate detector evidence as companions while preserving file-scoped reports. |
+| Reporter-local location cleanup | `core/src/report/sarif.rs` | `(file_path, line, offset)` within one reported finding | Output adapters may remove repeated locations for format stability. They do not decide scan/report identity. |
+
+The required seam test is `scan_windowed_overlap_dedups_end_to_end`: a token
+placed wholly inside the 128 KiB overlap must scan as one raw match and one
+final reported finding.
+
 ### Match adjudication: one policy, one chokepoint
 
 **Governing invariant.** Whether a candidate match becomes a reported finding —
