@@ -220,13 +220,25 @@ pub(crate) fn extract_literal_prefix(pattern: &str) -> Option<String> {
                     break;
                 }
             }
-            '[' | '.' | '*' | '+' | '?' | '{' | '|' | '^' | '$' => break,
+            '[' | '.' | '+' | '|' | '^' | '$' => break,
+            '*' | '?' => {
+                prefix.pop();
+                break;
+            }
+            '{' => {
+                if chars.peek() == Some(&'0') {
+                    prefix.pop();
+                }
+                break;
+            }
             '(' => {
                 // Mid-pattern alternation: try to extend the prefix with
                 // the group's alternatives. This turns "secret_(key|token)"
                 // into prefix "secret_key" (the longest common prefix after
-                // expanding alternatives). If the group has no pipe, continue
-                // extracting the literal inside it.
+                // expanding alternatives). If the group has no top-level pipe,
+                // extract the literal prefix inside it so captured whole-token
+                // patterns like `(https?://...)` route from their earliest
+                // guaranteed bytes instead of a later inner literal.
                 let group_start = chars.clone().collect::<String>();
                 if let Some(alternatives) = extract_group_alternatives(&group_start) {
                     // Find the longest common prefix of all alternatives
@@ -244,6 +256,10 @@ pub(crate) fn extract_literal_prefix(pattern: &str) -> Option<String> {
                         if !common.is_empty() {
                             prefix.push_str(&common);
                         }
+                    }
+                } else if let Some(inner) = extract_plain_group_inner(&group_start) {
+                    if let Some(inner_prefix) = extract_literal_prefix(inner) {
+                        prefix.push_str(&inner_prefix);
                     }
                 }
                 break;
@@ -264,16 +280,69 @@ pub(crate) fn extract_literal_prefix(pattern: &str) -> Option<String> {
 /// Input: "key|token)rest..." → Some(["key", "token"])
 /// Returns None if the group contains regex metacharacters.
 fn extract_group_alternatives(s: &str) -> Option<Vec<String>> {
-    // Strip optional non-capturing prefix
-    let inner = s
-        .strip_prefix("?:")
-        .or_else(|| s.strip_prefix("?i:"))
-        .or_else(|| s.strip_prefix("?im:"))
-        .unwrap_or(s); // LAW10: no non-capturing prefix present => use the group source unchanged (intended), recall-safe
+    let (inner, _tail) = leading_group_parts(s)?;
+    let inner = strip_group_prefix(inner);
+    if !has_top_level_alternation(inner) {
+        return None;
+    }
 
+    let parts = split_top_level_alternatives(inner);
+    let literals: Vec<String> = parts.iter().filter_map(|part| literal_head(part)).collect();
+
+    if literals.len() == parts.len() && !literals.is_empty() {
+        Some(literals)
+    } else {
+        None
+    }
+}
+
+/// Extract the inner source for a leading group that does not have a top-level
+/// alternation. Capturing and non-capturing groups are accepted; lookahead and
+/// flag-only groups naturally return no prefix through the recursive parser.
+fn extract_plain_group_inner(s: &str) -> Option<&str> {
+    let (inner, _tail) = leading_group_parts(s)?;
+    let inner = strip_group_prefix(inner);
+    if has_top_level_alternation(inner) {
+        return None;
+    }
+    Some(inner)
+}
+
+fn strip_group_prefix(s: &str) -> &str {
+    s.strip_prefix("?:")
+        .or_else(|| s.strip_prefix("?i:"))
+        .or_else(|| s.strip_prefix("?m:"))
+        .or_else(|| s.strip_prefix("?s:"))
+        .or_else(|| s.strip_prefix("?im:"))
+        .or_else(|| s.strip_prefix("?is:"))
+        .or_else(|| s.strip_prefix("?ms:"))
+        .unwrap_or(s) // LAW10: no non-capturing prefix present => use the group source unchanged (intended), recall-safe
+}
+
+fn leading_group_parts(s: &str) -> Option<(&str, &str)> {
     let mut depth = 0i32;
     let mut end = None;
-    for (i, ch) in inner.char_indices() {
+    let mut in_class = false;
+    let mut escaped = false;
+    for (i, ch) in s.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if in_class {
+            if ch == ']' {
+                in_class = false;
+            }
+            continue;
+        }
+        if ch == '[' {
+            in_class = true;
+            continue;
+        }
         match ch {
             '(' => depth += 1,
             ')' => {
@@ -287,13 +356,67 @@ fn extract_group_alternatives(s: &str) -> Option<Vec<String>> {
         }
     }
     let end = end?;
-    let group_content = &inner[..end];
+    Some((&s[..end], &s[end + 1..]))
+}
 
-    // Split by | at depth 0
+fn has_top_level_alternation(s: &str) -> bool {
+    let mut depth = 0i32;
+    let mut in_class = false;
+    let mut escaped = false;
+    for ch in s.chars() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if in_class {
+            if ch == ']' {
+                in_class = false;
+            }
+            continue;
+        }
+        if ch == '[' {
+            in_class = true;
+            continue;
+        }
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            '|' if depth == 0 => return true,
+            _ => {}
+        }
+    }
+    false
+}
+
+fn split_top_level_alternatives(group_content: &str) -> Vec<&str> {
     let mut parts = Vec::new();
     let mut start = 0;
     let mut d = 0i32;
+    let mut in_class = false;
+    let mut escaped = false;
     for (i, ch) in group_content.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
+        if in_class {
+            if ch == ']' {
+                in_class = false;
+            }
+            continue;
+        }
+        if ch == '[' {
+            in_class = true;
+            continue;
+        }
         match ch {
             '(' => d += 1,
             ')' => d -= 1,
@@ -305,33 +428,24 @@ fn extract_group_alternatives(s: &str) -> Option<Vec<String>> {
         }
     }
     parts.push(&group_content[start..]);
+    parts
+}
 
-    // Extract literal prefix from each alternative
-    let literals: Vec<String> = parts
-        .iter()
-        .filter_map(|part| {
-            let mut lit = String::new();
-            for ch in part.chars() {
-                match ch {
-                    'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' | '.' | ':' | '=' | ' ' => {
-                        lit.push(ch);
-                    }
-                    '\\' => break, // escaped char - stop
-                    _ => break,    // metachar - stop
-                }
+fn literal_head(part: &str) -> Option<String> {
+    let mut lit = String::new();
+    for ch in part.chars() {
+        match ch {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '_' | '-' | '.' | ':' | '=' | ' ' => {
+                lit.push(ch);
             }
-            if lit.is_empty() {
-                None
-            } else {
-                Some(lit)
-            }
-        })
-        .collect();
-
-    if literals.len() == parts.len() && !literals.is_empty() {
-        Some(literals)
-    } else {
+            '\\' => break,
+            _ => break,
+        }
+    }
+    if lit.is_empty() {
         None
+    } else {
+        Some(lit)
     }
 }
 

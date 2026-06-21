@@ -134,6 +134,28 @@ fn inner_literal_handles_escaped_dot() {
 }
 
 #[test]
+fn literal_prefix_drops_optional_literal_suffix() {
+    let prefixes = extract_literal_prefixes(r"https?://[a-z0-9.-]+\.example\.com/[A-Za-z0-9]+");
+    assert_eq!(
+        prefixes,
+        vec!["http"],
+        "AC prefix must be the guaranteed scheme bytes so http and https both route"
+    );
+}
+
+#[test]
+fn boundary_guarded_captured_url_uses_earliest_scheme_prefix() {
+    let prefixes = extract_literal_prefixes(
+        r"(?:^|[^A-Za-z0-9_])(https?://[a-zA-Z0-9._-]+\.zksync\.[a-z]+/[a-zA-Z0-9_-]+)(?:$|[^A-Za-z0-9_-])",
+    );
+    assert_eq!(
+        prefixes,
+        vec!["http"],
+        "captured service URLs must route from the match start, not a later host literal"
+    );
+}
+
+#[test]
 fn inner_literal_dedup() {
     // `(?:KEY|KEY|other)foo` → "KEY" should appear once even if both
     // literal alternatives emit it.
