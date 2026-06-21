@@ -203,6 +203,7 @@ pub mod static_intern_non_empty;
 pub mod structured_parsers_no_inline_tests;
 pub mod structured_parsers_no_unwrap_expect;
 pub mod structured_parsers_non_empty;
+pub mod suppression_known_example_ctx_owner;
 pub mod telemetry_no_inline_tests;
 pub mod telemetry_no_unwrap_expect;
 pub mod telemetry_non_empty;

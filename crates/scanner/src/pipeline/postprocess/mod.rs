@@ -8,12 +8,10 @@ pub(crate) use crate::suppression::{
     looks_like_source_code_expression, looks_like_url_or_path_segment,
     looks_like_vendored_minified_path, looks_like_word_separated_identifier,
 };
-// See pipeline/mod.rs: only the `simdsieve` hot-pattern fast path imports
-// this symbol through the pipeline module path; gate to silence the lean
-// build without an #[allow] evasion.
+// See pipeline/mod.rs: this alias is still the simdsieve hot-path facade.
 #[cfg(feature = "simdsieve")]
 pub(crate) use crate::suppression::looks_like_secret_scanner_source;
-#[cfg(any(feature = "entropy", feature = "simdsieve", test))]
+#[cfg(test)]
 pub(crate) use crate::suppression::should_suppress_known_example_credential_with_source;
 pub(crate) use crate::suppression::{
     detector_weak_anchor, should_suppress_named_detector_finding_weak,

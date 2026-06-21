@@ -13,7 +13,7 @@ pub(crate) use context_window::local_context_window;
 pub(crate) use context_window::normalize_scannable_chunk;
 pub(crate) use context_window::{find_companion, match_line_number};
 pub(crate) use postprocess::build_raw_match;
-#[cfg(any(feature = "entropy", feature = "simdsieve", test))]
+#[cfg(test)]
 pub(crate) use postprocess::should_suppress_known_example_credential_with_source;
 #[cfg(feature = "entropy")]
 pub(crate) use postprocess::{contains_uuid_v4_substring, looks_like_email_address};

@@ -507,17 +507,16 @@ fn random_byte_assignment_key_is_high_signal(normalized: &str) -> bool {
 
 /// The entropy-fallback known-example / placeholder gate, lift-aware.
 ///
-/// Off the lift (`canonical_lift == false`) this is BYTE-IDENTICAL to the
-/// original call: the plain surface-form
-/// [`should_suppress_known_example_credential_with_source`]. The lift path only
-/// diverges for a candidate the generation lift just produced under a strong
-/// credential anchor — a canonical hash/UUID/serial shape — and only releases
-/// the two SHAPE arms that would HARD-DROP it before the MoE scores it:
+/// Off the lift (`canonical_lift == false`) this routes through the standard
+/// typed known-example suppression context with entropy attached. The lift path
+/// only diverges for a candidate the generation lift just produced under a
+/// strong credential anchor — a canonical hash/UUID/serial shape — and only
+/// releases the two SHAPE arms that would HARD-DROP it before the MoE scores it:
 ///   * the bare-hash-digest arm (hex32/40/64/128 — the `hex64` AES-256-key miss
 ///     class), released via the existing `allow_canonical_hex_key` exemption
 ///     threaded into [`should_suppress_inner`]; and
 ///   * the UUID-v4 shape arm (the `UUID` miss class), which
-///     [`should_suppress_inner`] gates only on `!bypass_shape_gates` and never
+///     [`suppress_known_example_credential`] gates only on `!bypass_shape_gates` and never
 ///     exempts — so for an EXACT-UUID lifted value we bypass that decision-tree
 ///     entry entirely and apply the CONTENT gates ourselves (doc/placeholder
 ///     markers + repetitive-run + decoded-placeholder), keeping a
@@ -537,8 +536,7 @@ fn entropy_fallback_example_suppressed(
     if !canonical_lift {
         let isolated_bare_token =
             entropy_match.keyword == crate::entropy::ISOLATED_BARE_ENTROPY_LABEL;
-        return crate::suppression::api::should_suppress_known_example_credential_with_source_and_entropy(
-            value,
+        let example_ctx = crate::suppression::api::KnownExampleSuppressionCtx::with_entropy(
             path,
             crate::context::CodeContext::Unknown,
             source,
@@ -547,6 +545,7 @@ fn entropy_fallback_example_suppressed(
             isolated_bare_token,
             false,
         );
+        return crate::suppression::api::suppress_known_example_credential(value, example_ctx);
     }
 
     // Lift path. ALL lifted canonical shapes (UUID, hex digest, serial) first
@@ -577,8 +576,7 @@ fn entropy_fallback_example_suppressed(
     // arm; every other CONTENT gate inside the decision tree (markers,
     // placeholders, license serials, npm-integrity, prefixed digests) still
     // fires, so `AKIAEXAMPLE…`-class and labelled-digest values stay dropped.
-    crate::suppression::api::should_suppress_known_example_credential_with_source_and_entropy(
-        value,
+    let example_ctx = crate::suppression::api::KnownExampleSuppressionCtx::with_entropy(
         path,
         crate::context::CodeContext::Unknown,
         source,
@@ -586,5 +584,6 @@ fn entropy_fallback_example_suppressed(
         true,
         false,
         false,
-    )
+    );
+    crate::suppression::api::suppress_known_example_credential(value, example_ctx)
 }

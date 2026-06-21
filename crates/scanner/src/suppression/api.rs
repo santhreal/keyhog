@@ -14,6 +14,74 @@ use super::shape::{
 use super::token_randomness::{keep_identifier_gate, keep_word_separated_gate};
 use crate::context;
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct KnownExampleSuppressionCtx<'a> {
+    path: Option<&'a str>,
+    context: context::CodeContext,
+    source_type: Option<&'a str>,
+    entropy: Option<f64>,
+    allow_canonical_hex_key: bool,
+    allow_base64_blob_shape: bool,
+    allow_encoded_text_secret: bool,
+}
+
+impl<'a> KnownExampleSuppressionCtx<'a> {
+    #[cfg(any(feature = "simdsieve", test))]
+    pub(crate) fn new(
+        path: Option<&'a str>,
+        context: context::CodeContext,
+        source_type: Option<&'a str>,
+    ) -> Self {
+        Self {
+            path,
+            context,
+            source_type,
+            entropy: None,
+            allow_canonical_hex_key: false,
+            allow_base64_blob_shape: false,
+            allow_encoded_text_secret: false,
+        }
+    }
+
+    pub(crate) fn with_entropy(
+        path: Option<&'a str>,
+        context: context::CodeContext,
+        source_type: Option<&'a str>,
+        entropy: f64,
+        allow_canonical_hex_key: bool,
+        allow_base64_blob_shape: bool,
+        allow_encoded_text_secret: bool,
+    ) -> Self {
+        Self {
+            path,
+            context,
+            source_type,
+            entropy: Some(entropy),
+            allow_canonical_hex_key,
+            allow_base64_blob_shape,
+            allow_encoded_text_secret,
+        }
+    }
+}
+
+pub(crate) fn suppress_known_example_credential(
+    credential: &str,
+    ctx: KnownExampleSuppressionCtx<'_>,
+) -> bool {
+    should_suppress_inner(
+        credential,
+        ctx.path,
+        ctx.context,
+        ctx.source_type,
+        false,
+        false,
+        ctx.entropy,
+        ctx.allow_canonical_hex_key,
+        ctx.allow_base64_blob_shape,
+        ctx.allow_encoded_text_secret,
+    )
+}
+
 /// Check if a credential should be suppressed (e.g., if it is a known example token).
 #[cfg(test)]
 pub(crate) fn should_suppress_known_example_credential(
@@ -21,7 +89,10 @@ pub(crate) fn should_suppress_known_example_credential(
     path: Option<&str>,
     context: context::CodeContext,
 ) -> bool {
-    should_suppress_known_example_credential_with_source(credential, path, context, None)
+    suppress_known_example_credential(
+        credential,
+        KnownExampleSuppressionCtx::new(path, context, None),
+    )
 }
 
 /// Variant of [`should_suppress_known_example_credential`] that also takes the
@@ -34,59 +105,16 @@ pub(crate) fn should_suppress_known_example_credential(
 /// Other decoders (base64, hex, URL) decode legitimate transport encodings
 /// where EXAMPLE-suppression remains appropriate, so we don't blanket-bypass
 /// the rule on every decoder origin.
-#[cfg(any(feature = "entropy", feature = "simdsieve", test))]
+#[cfg(test)]
 pub(crate) fn should_suppress_known_example_credential_with_source(
     credential: &str,
     path: Option<&str>,
     context: context::CodeContext,
     source_type: Option<&str>,
 ) -> bool {
-    should_suppress_inner(
+    suppress_known_example_credential(
         credential,
-        path,
-        context,
-        source_type,
-        false,
-        false,
-        None,
-        false,
-        false,
-        false,
-    )
-}
-
-/// Entropy-aware variant for high-entropy generic/entropy fallbacks.
-///
-/// `allow_canonical_hex_key` (KH-L-0110): set by the generic keyword-bridge when
-/// the value is a COMPLETE pure-hex value of canonical key length (32/48)
-/// anchored by a STRONG credential keyword — exempts it from the bare-hex-digest
-/// gate only (see [`super::decision::should_suppress_inner`]).
-///
-/// `allow_base64_blob_shape`: set only for the isolated full-line entropy lane.
-/// It releases the shape-only random-base64 gate while keeping decoded-content
-/// checks alive, so a standalone opaque token can surface but decoded examples,
-/// hashes, UUIDs, prose, and placeholders still fail closed.
-pub(crate) fn should_suppress_known_example_credential_with_source_and_entropy(
-    credential: &str,
-    path: Option<&str>,
-    context: context::CodeContext,
-    source_type: Option<&str>,
-    entropy: f64,
-    allow_canonical_hex_key: bool,
-    allow_base64_blob_shape: bool,
-    allow_encoded_text_secret: bool,
-) -> bool {
-    should_suppress_inner(
-        credential,
-        path,
-        context,
-        source_type,
-        false,
-        false,
-        Some(entropy),
-        allow_canonical_hex_key,
-        allow_base64_blob_shape,
-        allow_encoded_text_secret,
+        KnownExampleSuppressionCtx::new(path, context, source_type),
     )
 }
 

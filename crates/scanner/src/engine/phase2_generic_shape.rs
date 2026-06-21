@@ -304,8 +304,7 @@ impl CompiledScanner {
         // a +14 TP recall gain. Net: catastrophic. Hold the strict
         // variant: hash-digest / UUID values in credential slots are
         // dominated by image digests and resource IDs in real source.
-        if crate::suppression::api::should_suppress_known_example_credential_with_source_and_entropy(
-            value,
+        let example_ctx = crate::suppression::api::KnownExampleSuppressionCtx::with_entropy(
             chunk.metadata.path.as_deref(),
             crate::context::CodeContext::Unknown,
             Some(chunk.metadata.source_type.as_str()),
@@ -313,7 +312,8 @@ impl CompiledScanner {
             allow_canonical_hex_key,
             allow_ambiguous_base64_candidate,
             allow_encoded_text_secret,
-        ) {
+        );
+        if crate::suppression::api::suppress_known_example_credential(value, example_ctx) {
             return Some("known_example_or_placeholder");
         }
         // Decoded-form placeholder check: a docs sample that arrives

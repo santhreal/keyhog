@@ -24,7 +24,7 @@ pub(crate) use shape::{
     looks_like_word_separated_identifier,
 };
 
-#[cfg(any(feature = "entropy", feature = "simdsieve", test))]
+#[cfg(test)]
 pub(crate) use api::should_suppress_known_example_credential_with_source;
 pub(crate) use api::{detector_weak_anchor, should_suppress_named_detector_finding_weak};
 #[cfg(test)]

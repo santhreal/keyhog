@@ -148,12 +148,15 @@ impl CompiledScanner {
                 const PER_PATTERN_MIN_LEN: &[usize] =
                     &[40, 20, 20, 20, 26, 16, 16, 16, 32, 32, 32, 32];
                 let min_len = PER_PATTERN_MIN_LEN.get(pattern_idx).copied().unwrap_or(8); // LAW10: bounds-checked lookup; out-of-range => documented default (total fn), recall-safe
+                let example_ctx = crate::suppression::api::KnownExampleSuppressionCtx::new(
+                    chunk.metadata.path.as_deref(),
+                    context::CodeContext::Unknown,
+                    Some(chunk.metadata.source_type.as_str()),
+                );
                 if credential.len() < min_len
-                    || crate::pipeline::should_suppress_known_example_credential_with_source(
+                    || crate::suppression::api::suppress_known_example_credential(
                         credential,
-                        chunk.metadata.path.as_deref(),
-                        context::CodeContext::Unknown,
-                        Some(chunk.metadata.source_type.as_str()),
+                        example_ctx,
                     )
                 {
                     continue;
