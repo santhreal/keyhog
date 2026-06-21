@@ -337,6 +337,9 @@ fn repair_truncated_json_eof(text: &str) -> Option<serde_json::Value> {
 
 /// Parse Jupyter notebook JSON and extract code cell sources.
 pub(crate) fn parse_jupyter(text: &str, decode_derived: bool) -> Vec<ExtractedPair> {
+    if !text.trim_start().starts_with('{') {
+        return Vec::new();
+    }
     let value: serde_json::Value = match serde_json::from_str(text) {
         Ok(value) => value,
         Err(error) => match repair_truncated_json_eof(text) {
