@@ -149,7 +149,7 @@ pub(crate) fn find_entropy_secrets_with_canonical_lift(
     allow_canonical_lift: bool,
 ) -> Vec<EntropyMatch> {
     let lines: Vec<&str> = text.lines().collect();
-    let line_offsets = cumulative_line_offsets(&lines);
+    let line_offsets = crate::pipeline::compute_line_offsets(text);
     let mut matches = Vec::new();
     let mut seen = std::collections::HashSet::new();
     let keyword_lines = find_keyword_assignment_lines(&lines, secret_keywords);
@@ -819,16 +819,6 @@ fn compact_keyword(keyword: &str) -> String {
         .filter(|b| !matches!(b, b'_' | b'-' | b'.'))
         .map(|b| b.to_ascii_lowercase() as char)
         .collect()
-}
-
-fn cumulative_line_offsets(lines: &[&str]) -> Vec<usize> {
-    let mut offsets = Vec::with_capacity(lines.len());
-    let mut current = 0usize;
-    for line in lines {
-        offsets.push(current);
-        current = current.saturating_add(line.len().saturating_add(1));
-    }
-    offsets
 }
 
 fn keyword_context(

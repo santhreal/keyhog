@@ -121,6 +121,22 @@ fn entropy_match_offsets_are_cumulative() {
 }
 
 #[test]
+fn entropy_match_offsets_are_byte_accurate_for_crlf() {
+    let secret = "aK7xP9mQ2wE5rT8yU1iO3pA6sD4fG0hJkL";
+    let text = "first=line\r\nAPI_KEY=aK7xP9mQ2wE5rT8yU1iO3pA6sD4fG0hJkL\r\n";
+    let matches = find_secrets(text, 16, 2, HIGH_ENTROPY_THRESHOLD);
+    let hit = matches
+        .iter()
+        .find(|candidate| candidate.value == secret)
+        .unwrap_or_else(|| panic!("CRLF fixture must report {secret:?}; matches={matches:?}"));
+    assert_eq!(
+        hit.offset,
+        "first=line\r\n".len(),
+        "CRLF line starts must be byte offsets into the original text, not text.lines() lengths"
+    );
+}
+
+#[test]
 fn entropy_empty_input_is_zero() {
     assert_eq!(shannon_entropy(b""), 0.0);
 }

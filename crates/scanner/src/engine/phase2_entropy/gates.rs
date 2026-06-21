@@ -426,12 +426,17 @@ fn entropy_value_line<'a>(
         }
     }
 
-    let offset = entropy_match.offset.min(preprocessed.text.len());
-    let line_start = preprocessed.text[..offset]
+    let offset = crate::engine::floor_char_boundary(
+        preprocessed.text.as_ref(),
+        entropy_match.offset.min(preprocessed.text.len()),
+    );
+    let before_offset = preprocessed.text.get(..offset)?;
+    let at_offset = preprocessed.text.get(offset..)?;
+    let line_start = before_offset
         .rfind('\n')
         .map(|index| index + 1)
         .unwrap_or(0); // LAW10: no preceding newline => first line start, recall-safe boundary default
-    let line_end = preprocessed.text[offset..]
+    let line_end = at_offset
         .find('\n')
         .map(|relative| offset + relative)
         .unwrap_or(preprocessed.text.len()); // LAW10: no following newline => last line end, recall-safe boundary default
