@@ -71,29 +71,50 @@ static ROTATED_PREFIX_AC: LazyLock<Option<AhoCorasick>> = LazyLock::new(|| {
     }
 });
 
-/// File extensions where Caesar-decoding is pure noise. Matched against the
-/// suffix of `chunk.metadata.path` (lower-cased). Kept short - only the
-/// dominant source-code extensions a scanner is realistically pointed at.
-const SOURCE_CODE_EXTENSIONS: &[&str] = &[
+/// Program/source extensions where source-like identifier density makes
+/// Caesar-decoding pure noise. Matched against the suffix of
+/// `chunk.metadata.path` after ASCII-lowercasing and slash normalization.
+const PROGRAM_SOURCE_CODE_EXTENSIONS: &[&str] = &[
     ".rs", ".py", ".go", ".js", ".jsx", ".ts", ".tsx", ".java", ".kt", ".scala", ".c", ".cc",
     ".cpp", ".cxx", ".h", ".hh", ".hpp", ".cs", ".rb", ".php", ".swift", ".m", ".mm", ".sh",
     ".bash", ".zsh", ".fish", ".lua", ".pl", ".pm", ".sql", ".html", ".htm", ".css", ".scss",
-    ".sass", ".vue", ".svelte", ".md", ".rst", ".txt", ".adoc", ".tbl", ".mk", ".cmake",
+    ".sass", ".vue", ".svelte", ".tbl", ".mk", ".cmake",
 ];
 
 const SOURCE_CODE_FILENAMES: &[&str] = &["kconfig", "makefile", "cmakelists.txt"];
 
-pub(crate) fn is_source_code_path(path: Option<&str>) -> bool {
-    let Some(p) = path else { return false };
-    let lower = p.replace('\\', "/").to_ascii_lowercase();
+/// Text/document paths are also decode-noise for ROT-N, but they are not
+/// program source for entropy suppression. Keep this separate so entropy does
+/// not inherit a Caesar-specific broad definition of "source".
+const CAESAR_TEXT_NOISE_EXTENSIONS: &[&str] = &[".md", ".rst", ".txt", ".adoc"];
+
+fn source_path_matches(lower: &str, extensions: &[&str], filenames: &[&str]) -> bool {
     if let Some(file_name) = lower.rsplit('/').next() {
-        if SOURCE_CODE_FILENAMES.contains(&file_name) {
+        if filenames.contains(&file_name) {
             return true;
         }
     }
-    SOURCE_CODE_EXTENSIONS
-        .iter()
-        .any(|ext| lower.ends_with(ext))
+    extensions.iter().any(|ext| lower.ends_with(ext))
+}
+
+pub(crate) fn is_program_source_code_path(path: Option<&str>) -> bool {
+    let Some(p) = path else { return false };
+    let lower = p.replace('\\', "/").to_ascii_lowercase();
+    source_path_matches(
+        &lower,
+        PROGRAM_SOURCE_CODE_EXTENSIONS,
+        SOURCE_CODE_FILENAMES,
+    )
+}
+
+pub(crate) fn is_source_code_path(path: Option<&str>) -> bool {
+    let Some(p) = path else { return false };
+    let lower = p.replace('\\', "/").to_ascii_lowercase();
+    source_path_matches(
+        &lower,
+        PROGRAM_SOURCE_CODE_EXTENSIONS,
+        SOURCE_CODE_FILENAMES,
+    ) || source_path_matches(&lower, CAESAR_TEXT_NOISE_EXTENSIONS, &[])
 }
 
 /// True when `line` contains a `scheme://user:pass@host` URL with embedded

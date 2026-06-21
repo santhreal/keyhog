@@ -14,10 +14,9 @@ pub(crate) use public::{
     looks_like_public_metadata_identifier, looks_like_public_reference_selector,
     looks_like_public_version_identifier, looks_like_shell_template_value,
 };
-pub(crate) use source::{
-    looks_like_source_code_expression, looks_like_source_symbol_identifier,
-    looks_like_source_type_identifier,
-};
+#[cfg(feature = "entropy")]
+pub(crate) use source::looks_like_source_type_identifier;
+pub(crate) use source::{looks_like_source_code_expression, looks_like_source_symbol_identifier};
 
 /// True if `credential` is an identifier / natural-language shape rather
 /// than a real credential. Covers three FP families seen in dogfood:

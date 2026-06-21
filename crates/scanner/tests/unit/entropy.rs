@@ -241,6 +241,17 @@ fn source_entropy_lift_preserves_real_credential_assignment_surface() {
 }
 
 #[test]
+fn source_entropy_lift_accepts_nested_object_credential_field() {
+    let text =
+        r#"const client = new Client({ token: "JwbAykwNNL4zIbfQOSw6FvkB5uYAFzOQidAQ9PTG" });"#;
+    let secret_keywords = vec!["API_KEY".to_string(), "TOKEN".to_string()];
+    assert!(
+        is_entropy_appropriate_with_content(Some("src/client.js"), false, text, &secret_keywords),
+        "source entropy lift must recognize credential object fields after an outer assignment"
+    );
+}
+
+#[test]
 fn entropy_is_appropriate_for_source_files_when_allowed() {
     assert!(is_entropy_appropriate(Some("src/main.rs"), true));
     assert!(is_entropy_appropriate(Some("lib/app.py"), true));
@@ -282,6 +293,33 @@ fn keyword_free_scan_detects_isolated_bare_mixed_alnum_token_below_global_floor(
     assert_eq!(matches[0].value, secret);
     assert_eq!(matches[0].keyword, "none (isolated-token)");
     assert!(matches[0].entropy < HIGH_ENTROPY_THRESHOLD);
+}
+
+#[test]
+fn keyword_free_scan_detects_isolated_slash_bearing_base64_token() {
+    let secret = "ev0BsFtSD7S/4VWYObxiEhME3hJBXeYzR43jgiB1";
+    let matches = find_secrets(secret, 16, 0, HIGH_ENTROPY_THRESHOLD);
+    assert_eq!(matches.len(), 1);
+    assert_eq!(matches[0].value, secret);
+    assert_eq!(matches[0].keyword, "none (isolated-token)");
+}
+
+#[test]
+fn keyword_free_scan_detects_isolated_lowercase_underscore_token() {
+    let secret = "kp4qx7rm_sn5tb8vw_3yzkp4qx";
+    let matches = find_secrets(secret, 16, 0, HIGH_ENTROPY_THRESHOLD);
+    assert_eq!(matches.len(), 1);
+    assert_eq!(matches[0].value, secret);
+    assert_eq!(matches[0].keyword, "none (isolated-token)");
+}
+
+#[test]
+fn keyword_free_scan_detects_isolated_mixed_underscore_token() {
+    let secret = "H_ZM9TBrKrmGsNmjQ8mT";
+    let matches = find_secrets(secret, 16, 0, HIGH_ENTROPY_THRESHOLD);
+    assert_eq!(matches.len(), 1);
+    assert_eq!(matches[0].value, secret);
+    assert_eq!(matches[0].keyword, "none (isolated-token)");
 }
 
 #[test]

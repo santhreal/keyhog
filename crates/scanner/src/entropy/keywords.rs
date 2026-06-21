@@ -190,12 +190,30 @@ pub(crate) fn assignment_keyword_for_line(line: &str) -> Option<String> {
     if let Some(tag) = xml_assignment_tag(line) {
         return normalize_assignment_keyword(tag);
     }
-    let sep_pos = line.find('=').or_else(|| line.find(':'))?;
-    let lhs = &line[..sep_pos];
-    let key = lhs
-        .rsplit(|ch: char| !(ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.')))
-        .find(|part| !part.is_empty())?;
-    normalize_assignment_keyword(key)
+    let mut fallback = None;
+    for (sep_pos, _) in line
+        .char_indices()
+        .rev()
+        .filter(|(_, ch)| matches!(ch, '=' | ':'))
+    {
+        let lhs = &line[..sep_pos];
+        let Some(key) = lhs
+            .rsplit(|ch: char| !(ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.')))
+            .find(|part| !part.is_empty())
+        else {
+            continue;
+        };
+        let Some(normalized) = normalize_assignment_keyword(key) else {
+            continue;
+        };
+        if normalized_assignment_keyword_is_credential(&normalized) {
+            return Some(normalized);
+        }
+        if fallback.is_none() {
+            fallback = Some(normalized);
+        }
+    }
+    fallback
 }
 
 pub(crate) fn normalized_assignment_keyword_is_credential(normalized: &str) -> bool {

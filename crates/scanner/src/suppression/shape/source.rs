@@ -249,6 +249,7 @@ fn has_call_or_index_syntax(value: &str) -> bool {
     false
 }
 
+#[cfg(feature = "entropy")]
 pub(crate) fn looks_like_source_type_identifier(value: &str) -> bool {
     let bytes = value.as_bytes();
     if bytes.len() < 8 || bytes.len() > 120 || !bytes[0].is_ascii_uppercase() {

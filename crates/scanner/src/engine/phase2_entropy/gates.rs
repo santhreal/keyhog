@@ -1,51 +1,20 @@
-//! Entropy-fallback per-candidate SUPPRESSION GAUNTLET, extracted from
-//! `phase2_entropy.rs` (Law 5). `entropy_match_suppressed` is the pure
-//! predicate the `scan_entropy_fallback` loop calls after computing a
-//! candidate's confidence/offset: true iff any precision gate would have
-//! `continue`d (hash / uuid / identifier / uri / prose / blockchain-addr /
-//! base64-file / ci-workflow / i18n / encoded-binary / placeholder families).
-//! Behaviour-identical to the former inline gauntlet — every gate verbatim,
-//! each `continue` became `return true`. Takes no `self`: it reads only the
-//! candidate, the chunk/preprocessed context, and the `helpers`
-//! path predicates. Recall guarded by the entropy bench gates.
+//! Entropy-fallback candidate suppression predicate.
 #![cfg(feature = "entropy")]
 use super::helpers::*;
 use crate::engine::*;
 
-/// True iff an entropy-fallback candidate should be suppressed by any precision
-/// gate. Pure — no side effects, no emission. Extracted verbatim from
-/// `scan_entropy_fallback` (Law 5).
 pub(crate) fn entropy_match_suppressed(
     entropy_match: &crate::entropy::EntropyMatch,
     preprocessed: &ScannerPreprocessedText<'_>,
     line_offsets: &[usize],
     chunk: &Chunk,
-    // CredData recall lane (candidate GENERATION). When `true` the MoE is the
-    // runtime precision authority; a canonical hash/UUID-shaped candidate that
-    // the generation lift produced under a strong credential anchor must reach
-    // the model, so the two SHAPE gates that would re-drop it here — the
-    // UUID-substring gate and the hash-digest arm of the known-example check —
-    // are skipped, but ONLY for a credential-anchored candidate (keyword is a
-    // real credential anchor, not the keyword-free `none (high-entropy)`
-    // label). Every OTHER gate runs verbatim. False ⇒ byte-identical strict
-    // gauntlet.
+    // ML-authoritative credential anchors may release canonical hash/UUID shape
+    // gates; all other precision gates stay live.
     allow_canonical_lift: bool,
     source_entropy_requires_same_line_credential: bool,
 ) -> bool {
-    // The lift only releases the shape gates for a candidate that carries a
-    // STRONG credential keyword anchor (the only candidates the generation lift
-    // produces with a canonical shape). A keyword-free or weak-anchor candidate
-    // keeps the full strict gauntlet, so the release surface is exactly the one
-    // the model earns.
-    //
-    // The entropy phase-2 path's "credential context" is keyword PROXIMITY (any line
-    // within ±1 line of a credential-keyword assignment), which is too loose to
-    // release a shape gate on its own — a `sha256:` digest one line below a
-    // `# api_key` comment would qualify. So the lift additionally requires the
-    // credential keyword to sit on the SAME line as the value (a true
-    // `KEYWORD = <uuid/hex>` assignment), which is the only context where a
-    // canonical shape is genuinely the assigned secret. This pins the release to
-    // the direct-assignment surface the MoE can actually arbitrate.
+    // Proximity context is too loose to release canonical shapes; require the
+    // credential keyword on the same line as the candidate.
     let same_line_credential_assignment =
         value_line_has_same_line_credential_keyword(entropy_match, preprocessed, line_offsets);
     if source_entropy_requires_same_line_credential
@@ -72,22 +41,12 @@ pub(crate) fn entropy_match_suppressed(
         &entropy_match.value,
         entropy_match.entropy,
     );
-    // Hash/UUID/license/JWT suppression mirrors the named/generic paths. The
-    // canonical-lift lane releases only complete credential-anchored hex/UUID
-    // shapes; content gates for examples, placeholders, npm integrity, and
-    // decoded specimens remain live.
+    // Keep shared content gates live even when canonical shape gates are lifted.
     if entropy_fallback_example_suppressed(entropy_match, chunk, canonical_lift) {
         return true;
     }
 
-    // kebab-case-identifier suppression: short values made
-    // mostly of lowercase letters with 1+ dashes (e.g.
-    // `api-key-secret`, `token-secret`, `db-password`) are
-    // k8s/yaml `name:` metadata fields, NOT credentials.
-    // The entropy fallback was firing on these as
-    // `entropy-api-key` because `key` matched a keyword
-    // anchor near the value - but the value itself is an
-    // identifier, not a high-entropy random string.
+    // Kebab identifiers near `key` words are usually config names, not secrets.
     if !isolated_bare_token
         && !lower_dash_app_password
         && entropy_path_looks_like_kebab_identifier(&entropy_match.value)
@@ -95,15 +54,7 @@ pub(crate) fn entropy_match_suppressed(
         return true;
     }
 
-    // Filename-shape suppression: values ending in a common
-    // file extension (`.jks`, `.yml`, `.yaml`, `.toml`,
-    // `.json`, `.properties`, `.pem`, `.key`, `.crt`, `.cer`,
-    // `.pfx`, `.p12`, `.keystore`, `.truststore`) are
-    // file/keystore references next to a `KEYSTORE_FILENAME:`
-    // / `TRUSTSTORE_FILENAME:` keyword anchor - NOT
-    // credentials. Bat-go's docker-compose.yml had 4+
-    // entropy-api-key FPs on `kafka.broker1.keystore.jks`
-    // /`kafka.broker1.truststore.jks`.
+    // Filename-shaped values beside keystore/file keywords are references.
     if entropy_path_looks_like_filename(&entropy_match.value) {
         return true;
     }
@@ -211,7 +162,7 @@ pub(crate) fn entropy_match_suppressed(
     {
         return true;
     }
-    if crate::decode::caesar::is_source_code_path(chunk.metadata.path.as_deref())
+    if crate::decode::caesar::is_program_source_code_path(chunk.metadata.path.as_deref())
         && crate::suppression::shape::looks_like_source_symbol_identifier(&entropy_match.value)
     {
         return true;

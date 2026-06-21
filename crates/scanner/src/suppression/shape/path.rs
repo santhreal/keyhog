@@ -21,10 +21,9 @@ pub(crate) fn looks_like_scheme_prefixed_uri(value: &str) -> bool {
     if after.starts_with(b"//") || after.contains(&b':') || scheme.contains(&b'-') {
         return true;
     }
-    let scheme_str = std::str::from_utf8(scheme).unwrap_or("");
     if matches!(
-        scheme_str,
-        "sha256" | "sha512" | "sha1" | "md5" | "blake3" | "blake2"
+        scheme,
+        b"sha256" | b"sha512" | b"sha1" | b"md5" | b"blake3" | b"blake2"
     ) {
         return true;
     }

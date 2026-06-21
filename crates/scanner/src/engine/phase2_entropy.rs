@@ -35,7 +35,7 @@ impl CompiledScanner {
             &self.config.secret_keywords,
         );
         let source_entropy_requires_same_line_credential = !self.config.entropy_in_source_files
-            && crate::decode::caesar::is_source_code_path(chunk.metadata.path.as_deref());
+            && crate::decode::caesar::is_program_source_code_path(chunk.metadata.path.as_deref());
         let isolated_bare_candidate = !path_entropy_appropriate
             && crate::entropy::scanner::has_isolated_bare_secret_candidate(
                 &preprocessed.text,
@@ -52,11 +52,8 @@ impl CompiledScanner {
             return;
         }
 
-        // Cheap precheck: most chunks have no entropy token, so avoid the full
-        // Shannon sweep unless a contiguous run exists. Isolated bare-token
-        // admission is the exception: that parser already proved a bounded
-        // full-line candidate, and may use separators that the generic run
-        // proof should not re-litigate.
+        // Avoid the full Shannon sweep unless a run proof or isolated candidate
+        // already exists.
         #[cfg(feature = "simd")]
         if !isolated_bare_candidate
             && !lower_dash_app_password_candidate
@@ -68,9 +65,7 @@ impl CompiledScanner {
             return;
         }
 
-        // Skip entropy scanning on lines that already have named detector
-        // matches. Only allocate the skip-line set when there are matches to
-        // walk - the ~95%-empty common case pays nothing.
+        // Avoid entropy duplicates on lines already claimed by named detectors.
         let mut skip_lines = std::collections::HashSet::new();
         if !scan_state.matches.is_empty() {
             for m in &scan_state.matches {
@@ -90,16 +85,8 @@ impl CompiledScanner {
                 crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD
             };
 
-        // CredData recall lane (candidate GENERATION). The MoE is the runtime
-        // precision authority exactly when `ml` is compiled in, ML is enabled,
-        // and `entropy_ml_authoritative` is set. ONLY then do we let a
-        // strong-credential-anchored line GENERATE a canonical hash/UUID/serial
-        // -shaped candidate (the CredData `UUID` + `hex64` AES-256-key miss
-        // classes, otherwise dropped at the generation source by
-        // `is_canonical_non_secret_shape` before any candidate exists). With the
-        // model in scope the model arbitrates the shape; without it the strict
-        // gate stands and behaviour is byte-identical. The lift is also
-        // anchor-gated inside the generator (keyword-free candidates never lift).
+        // With authoritative ML, credential-anchored canonical hash/UUID/serial
+        // candidates may be generated for model arbitration.
         #[cfg(feature = "ml")]
         let allow_canonical_lift = self.config.ml_enabled && self.config.entropy_ml_authoritative;
         #[cfg(not(feature = "ml"))]
@@ -117,10 +104,7 @@ impl CompiledScanner {
             allow_canonical_lift,
         );
         for entropy_match in entropy_matches {
-            // Resolve the entropy class to an index into the pre-interned
-            // metadata table once; the actual (id, name, service) Arc<str>
-            // triple is cloned by this index at the emit site below
-            // (PERF-locality_intern-1) instead of re-interning per finding.
+            // Resolve metadata once; emit clones the pre-interned triple.
             let entropy_meta_idx = helpers::classify_entropy_detector_index(&entropy_match.keyword);
             let base_confidence =
                 if entropy_match.entropy >= crate::entropy::VERY_HIGH_ENTROPY_THRESHOLD {
@@ -135,31 +119,13 @@ impl CompiledScanner {
             } else {
                 base_confidence
             };
-            // `entropy_match.offset` is ALREADY the byte offset of the
-            // start of the containing line (set by `collect_line_candidates`
-            // from the same `line_offsets` table). The earlier
-            // `line_offsets[entropy_match.line - 1] + entropy_match.offset`
-            // double-counted that base, producing offsets ~2× the file
-            // size for findings late in the file - defect #80, 130+
-            // corrupted finding offsets across the dogfood corpora. Use
-            // the value directly. `_line_offsets` retained as a
-            // parameter for the windowed/multiline paths that still need
-            // it. `chunk.metadata.base_offset` is added for windowed
-            // chunks (>64 MiB files) so the reported offset is the
-            // absolute file offset, not the per-window one.
+            // Candidate offsets are already chunk-local line starts; add only
+            // the window base offset for absolute file coordinates.
             let _ = line_offsets; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
             let offset = entropy_match.offset + chunk.metadata.base_offset;
 
-            // CredData recall lane: the canonical-shape gates inside the
-            // gauntlet (UUID substring + the hash-digest arm of the
-            // known-example check) would RE-DROP the very UUID/hex candidates
-            // the generation lift just produced, before the MoE ever scores
-            // them. Pass the lift switch so those two shape gates are skipped
-            // ONLY for a candidate generated under a strong credential anchor
-            // with the model in scope — every other precision gate
-            // (identifier / prose / url / blockchain / i18n / encoded-binary /
-            // placeholder …) still runs verbatim, and the non-lift path is
-            // byte-identical.
+            // Pass the lift switch only after generation; the gauntlet still
+            // owns every non-canonical precision gate.
             if entropy_match_suppressed(
                 &entropy_match,
                 preprocessed,
@@ -174,9 +140,7 @@ impl CompiledScanner {
             let metadata = &self.entropy_metadata_by_index[entropy_meta_idx];
             let absolute_line = entropy_match.line + chunk.metadata.base_line;
             let build_raw_match = |scan_state: &mut ScanState, confidence| {
-                // Clone the pre-interned entropy-class metadata triple only for
-                // candidates that need an owned RawMatch. Non-ML capped heap
-                // rejects compare a borrowed priority first.
+                // Clone metadata only for candidates that need an owned RawMatch.
                 let detector_id = Arc::clone(&metadata.0);
                 let detector_name = Arc::clone(&metadata.1);
                 let service = Arc::clone(&metadata.2);
@@ -214,9 +178,7 @@ impl CompiledScanner {
                     location: MatchLocation {
                         source,
                         file_path,
-                        // Absolute file line: window-local line + chunk base
-                        // line (the line analog of the `+ base_offset` already
-                        // baked into `offset`). 0 base_line on non-windowed.
+                        // Window-local line plus chunk base line.
                         line: Some(absolute_line),
                         offset,
                         commit,

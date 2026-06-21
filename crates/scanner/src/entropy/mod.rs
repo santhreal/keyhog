@@ -149,7 +149,7 @@ pub fn is_entropy_appropriate_with_content(
     text: &str,
     secret_keywords: &[String],
 ) -> bool {
-    let source_path = crate::decode::caesar::is_source_code_path(path);
+    let source_path = crate::decode::caesar::is_program_source_code_path(path);
     let has_secret_keyword_line = if source_path && !allow_source_files {
         text.lines()
             .any(keywords::line_has_credential_assignment_surface)
