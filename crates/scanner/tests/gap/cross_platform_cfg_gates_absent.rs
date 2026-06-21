@@ -42,7 +42,6 @@ fn scanner_path_compat_owner_is_declared_and_used() {
 
     for file in [
         "src/suppression/api.rs",
-        "src/engine/hot_patterns.rs",
         "src/engine/phase2_entropy/gates.rs",
     ] {
         let body = src(file);

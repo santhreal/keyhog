@@ -37,16 +37,15 @@ fn no_hit_admission_consults_active_phase2_set() {
     // The shared coalesced phase-2 tail — fed by BOTH the CPU Hyperscan prefilter
     // and the GPU region route — must route no-trigger chunks through that gate.
     assert!(
-        scan.contains("if !self.should_scan_no_hit_chunk(chunk)"),
-        "scan_coalesced_phase2's no-hit branch must gate on should_scan_no_hit_chunk \
-         so CPU and GPU producers share one recall-load-bearing admission policy"
-    );
-    assert!(
         scan.contains("scan_coalesced_phase2_with_admission")
             && scan.contains("admitted_by_phase2_gpu")
-            && scan.contains("!admitted_by_phase2_gpu && !self.should_scan_no_hit_chunk(chunk)"),
+            && scan.contains("admitted_by_phase2_keyword_hint")
+            && scan.contains("admitted_by_phase2_always_anchor")
+            && scan.contains("admitted_by_generic_keyword_hint")
+            && scan.contains("&& !self.should_scan_no_hit_chunk(chunk)"),
         "GPU phase-2 regex-DFA admission may only force a no-hit chunk into the \
-         shared tail; a GPU miss must still consult CPU admission"
+         shared tail; a GPU miss with no other producer hint must still consult \
+         CPU admission"
     );
 
     // The active-set probe must stay shared with the production phase-2 scanner.
@@ -60,9 +59,11 @@ fn no_hit_admission_consults_active_phase2_set() {
     );
 
     let gpu_dfa = scanner_source("engine/phase2_gpu_dfa.rs");
+    let gpu_candidates = scanner_source("engine/phase2_gpu_dfa/candidates.rs");
+    let gpu_lowering = scanner_source("engine/phase2_gpu_dfa/lowering.rs");
     assert!(
-        gpu_dfa.contains("build_regex_dfa_unanchored")
-            && gpu_dfa.contains("gate_prefix_literals")
+        gpu_lowering.contains("build_regex_dfa_unanchored")
+            && gpu_candidates.contains("gate_prefix_literals")
             && gpu_dfa.contains("CPU admission remains authoritative"),
         "phase-2 GPU admission must be a real Vyre regex-DFA path for prefixless \
          always-active patterns, with CPU admission authoritative for uncovered/error cases"

@@ -435,7 +435,7 @@ pub(crate) fn looks_like_syntactic_punctuation_marker(value: &str) -> bool {
         }
     }
     let last = bytes[bytes.len() - 1];
-    // Trailing `:` after a value of pure-alpha + colon shape.
+    // Trailing `:` after an alphabetic/underscore label.
     if last == b':' {
         // Allow only if everything before the trailing `:` is an identifier
         // label (`Password:`, `Username:`, `ptx_source_key:`). A real
@@ -444,9 +444,7 @@ pub(crate) fn looks_like_syntactic_punctuation_marker(value: &str) -> bool {
         let prefix = &bytes[..bytes.len() - 1];
         if !prefix.is_empty()
             && prefix.iter().any(|b| b.is_ascii_alphabetic())
-            && prefix
-                .iter()
-                .all(|&b| b.is_ascii_alphanumeric() || b == b'_')
+            && prefix.iter().all(|&b| b.is_ascii_alphabetic() || b == b'_')
         {
             return true;
         }

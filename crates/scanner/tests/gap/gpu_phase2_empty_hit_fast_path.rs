@@ -15,9 +15,9 @@ fn coalesced_phase2_empty_hits_skip_uninteresting_chunks_before_prepare() {
     let src = std::fs::read_to_string(scanner_root().join("src/engine/scan_coalesced.rs"))
         .expect("engine/scan_coalesced.rs source readable");
 
-    let empty_hit_gate = src
-        .find("if !self.should_scan_no_hit_chunk(chunk)")
-        .expect("coalesced phase2 must gate no-trigger chunks on should_scan_no_hit_chunk");
+    let empty_hit_gate = src.find("&& !self.should_scan_no_hit_chunk(chunk)").expect(
+        "coalesced phase2 must gate unadmitted no-trigger chunks on should_scan_no_hit_chunk",
+    );
     let return_empty = src[empty_hit_gate..]
         .find("return Vec::new();")
         .map(|off| empty_hit_gate + off)

@@ -6,7 +6,7 @@
 //!   crates/scanner/src/engine/phase2_entropy/helpers.rs
 //!   crates/scanner/src/engine/phase2_generic/keywords.rs
 //!   crates/scanner/src/engine/phase2_generic/shape_helpers.rs
-//!   crates/scanner/src/engine/generic_keyword_owner.rs
+//!   crates/scanner/src/generic_keyword_owner.rs
 //!   crates/scanner/src/engine/gpu_stack.rs
 //!   crates/scanner/src/engine/gpu_region_dispatch.rs
 //!   crates/scanner/src/engine/windowed_support.rs
@@ -57,7 +57,7 @@ const PREVIOUSLY_MISSING: &[&str] = &[
     "crates/scanner/src/engine/phase2_entropy/helpers.rs",
     "crates/scanner/src/engine/phase2_generic/keywords.rs",
     "crates/scanner/src/engine/phase2_generic/shape_helpers.rs",
-    "crates/scanner/src/engine/generic_keyword_owner.rs",
+    "crates/scanner/src/generic_keyword_owner.rs",
     "crates/scanner/src/engine/gpu_stack.rs",
     "crates/scanner/src/engine/gpu_region_dispatch.rs",
     "crates/scanner/src/engine/windowed_support.rs",

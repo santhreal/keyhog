@@ -20,8 +20,8 @@ fn simd_no_hit_multiline_branch_does_not_reenter_full_scan() {
     // `scan_prepared_with_triggered`, gated by the raw-vs-preprocessed drift
     // check.
     let start = src
-        .find("if !self.should_scan_no_hit_chunk(chunk)")
-        .expect("SIMD no-hit branch must exist");
+        .find("&& !self.should_scan_no_hit_chunk(chunk)")
+        .expect("SIMD no-hit branch must gate unadmitted no-trigger chunks");
     let end = src
         .find("let phase2_elapsed = phase2_start.elapsed();")
         .expect("phase-2 boundary-reassembly tail must follow the no-hit branch");

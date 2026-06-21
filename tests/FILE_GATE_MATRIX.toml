@@ -530,7 +530,13 @@ path = "crates/scanner/src/engine/windowed.rs"
 path = "crates/scanner/src/entropy/keywords.rs"
 
 [[module]]
+path = "crates/scanner/src/entropy/isolated.rs"
+
+[[module]]
 path = "crates/scanner/src/entropy/mod.rs"
+
+[[module]]
+path = "crates/scanner/src/entropy/plausibility.rs"
 
 [[module]]
 path = "crates/scanner/src/entropy/scanner.rs"
@@ -702,6 +708,24 @@ path = "crates/scanner/src/suppression/path_filter.rs"
 
 [[module]]
 path = "crates/scanner/src/suppression/shape.rs"
+
+[[module]]
+path = "crates/scanner/src/suppression/shape/canonical.rs"
+
+[[module]]
+path = "crates/scanner/src/suppression/shape/mod.rs"
+
+[[module]]
+path = "crates/scanner/src/suppression/shape/path.rs"
+
+[[module]]
+path = "crates/scanner/src/suppression/shape/prose.rs"
+
+[[module]]
+path = "crates/scanner/src/suppression/shape/public.rs"
+
+[[module]]
+path = "crates/scanner/src/suppression/shape/source.rs"
 
 [[module]]
 path = "crates/scanner/src/suppression/shape_gates.rs"
@@ -965,6 +989,9 @@ path = "crates/scanner/src/engine/phase2_truncate.rs"
 path = "crates/scanner/src/engine/scan_postprocess/fragments.rs"
 
 [[module]]
+path = "crates/scanner/src/engine/scan_postprocess/ml.rs"
+
+[[module]]
 path = "crates/scanner/src/engine/scan_postprocess/profile.rs"
 
 [[module]]
@@ -983,7 +1010,19 @@ path = "crates/scanner/src/prefilter_degrade.rs"
 path = "crates/scanner/src/api.rs"
 
 [[module]]
+path = "crates/scanner/src/anchored_regex.rs"
+
+[[module]]
 path = "crates/scanner/src/context/placeholder.rs"
+
+[[module]]
+path = "crates/scanner/src/detector_ids.rs"
+
+[[module]]
+path = "crates/scanner/src/generic_keyword_owner.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2/first_bigram.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_entropy/gates.rs"
@@ -992,16 +1031,43 @@ path = "crates/scanner/src/engine/phase2_entropy/gates.rs"
 path = "crates/scanner/src/engine/phase2_entropy/helpers.rs"
 
 [[module]]
+path = "crates/scanner/src/engine/phase2_generic/auth_value.rs"
+
+[[module]]
 path = "crates/scanner/src/engine/phase2_generic/keywords.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_generic/line_mapping.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_generic/metrics.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/phase2_generic/shape_helpers.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/generic_keyword_owner.rs"
+path = "crates/scanner/src/engine/phase2_gpu_dfa/batch.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_gpu_dfa/candidates.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_gpu_dfa/lowering.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_gpu_dfa/shard.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/phase2_gpu_dfa/workload.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/gpu_stack.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/scan_postprocess/confirmed_anchor.rs"
+
+[[module]]
+path = "crates/scanner/src/engine/scan_postprocess/confirmed_extract.rs"
 
 [[module]]
 path = "crates/scanner/src/engine/windowed_support.rs"

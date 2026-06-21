@@ -96,11 +96,8 @@ impl Phase2AlwaysActivePrefilter {
             &mut ungated_indices,
             &mut plain_gate_lits,
         );
-        let combined_gate = Self::build_combined_gate(
-            phase2_patterns,
-            &valid_always_active_indices,
-            &ungated_indices,
-        );
+        let combined_gate =
+            Self::build_combined_gate(phase2_patterns, &valid_always_active_indices);
         Some(Self {
             batches,
             ungated_indices,
@@ -135,12 +132,8 @@ impl Phase2AlwaysActivePrefilter {
     fn build_combined_gate(
         phase2_patterns: &[(CompiledPattern, Vec<String>)],
         always_active_indices: &[usize],
-        ungated_indices: &[usize],
     ) -> Option<CombinedNoCandidateGate> {
         if always_active_indices.is_empty() {
-            return None;
-        }
-        if !ungated_indices.is_empty() {
             return None;
         }
         let mut lits: Vec<Vec<u8>> = Vec::new();
@@ -735,11 +728,6 @@ impl Phase2AlwaysActivePrefilter {
     /// tail) so non-`simd` profiles don't carry it as dead code (Law 11).
     #[cfg(any(feature = "simd", feature = "gpu"))]
     pub(crate) fn any_active_match(&self, match_text: &str, tuning: &ScannerTuning) -> bool {
-        // Patterns whose batch failed to compile run unconditionally
-        // (`ungated_indices`), so the active set is non-empty for every chunk.
-        if !self.ungated_indices.is_empty() {
-            return true;
-        }
         // Same no-candidate gate as `mark_matches`: on a pure-ASCII no-anchor chunk
         // no anchorable pattern can fire, so the active set is non-empty iff some
         // non-anchorable pattern matches — checked precisely with each pattern's
@@ -753,6 +741,15 @@ impl Phase2AlwaysActivePrefilter {
                     return gate.any_non_anchorable_match(match_text);
                 }
             }
+        }
+        // Patterns whose batch failed to compile run unconditionally on the full
+        // marking path, so a chunk that reaches this point must be admitted.
+        // Keep this AFTER the combined no-candidate gate: a pure-ASCII no-anchor
+        // chunk can still be rejected exactly, because even ungated patterns with
+        // required literals cannot match and non-anchorable ones are checked by
+        // their own regexes in the gate.
+        if !self.ungated_indices.is_empty() {
+            return true;
         }
         #[cfg(feature = "simd")]
         if let Some(hs) = &self.hs {

@@ -375,9 +375,9 @@ pub(crate) struct Phase2AlwaysActivePrefilter {
     /// gates the expensive per-pattern marking. See [`CombinedNoCandidateGate`].
     /// `Some` whenever the gate can be built (an `ascii_case_insensitive`
     /// Aho-Corasick over the anchorable always-active patterns' required-prefix
-    /// literals, plus the small non-anchorable always-mark list, and no ungated
-    /// pattern); `None` only on a degraded build, where `mark_matches` runs the
-    /// full body unconditionally (recall-safe, never a silent skip — Law 10).
+    /// literals, plus exact regex checks for the small non-anchorable always-mark
+    /// list); `None` only on a degraded build, where `mark_matches` runs the full
+    /// body unconditionally (recall-safe, never a silent skip — Law 10).
     pub(crate) combined_gate: Option<CombinedNoCandidateGate>,
     /// Hyperscan-backed engine over the SAME always-active patterns. When present
     /// and enabled (`phase2_hs_enabled`), `mark_matches` uses it instead of the
