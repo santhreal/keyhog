@@ -29,8 +29,16 @@ regex = "transifex\\.com[\\s\\S]*?[=:\\s\"'' ]+([a-zA-Z0-9_-]{40,})"
 description = "Transifex API token with domain context (multi-line tolerant)"
 group = 1
 
+# The username capture floor is {3,}, NOT `+`. A min-1 full-alphabet capture
+# (`([a-zA-Z0-9_-]+)`) is the "broad-identifier" shape that
+# `suppression::detector_weak_anchor` flags — and a single broad capture marks
+# the WHOLE detector weak-anchored, stripping named-detector confidence
+# protection from the strong 40+ token patterns above and burying the real
+# `Authorization: Bearer <token>` hit as `scoring_rejected`. {3,} still matches
+# the documented token-auth username `api` while clearing the min<=1 heuristic,
+# so the detector keeps its service-anchored strength.
 [[detector.patterns]]
-regex = '''(?:TRANSIFEX|TRANSIFEX_API)[_\-\s]*USERNAME[=:\s"'']+([a-zA-Z0-9_-]+)'''
+regex = "(?:TRANSIFEX|TRANSIFEX_API)[_\\s]?USERNAME[=:\\s\"'']+([a-zA-Z0-9_-]{3,})"
 description = "Transifex username for API authentication"
 group = 1
 weak_anchor = true

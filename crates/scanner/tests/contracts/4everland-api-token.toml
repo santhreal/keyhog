@@ -20,7 +20,7 @@ reason = "Body 19 chars, below 20 minimum."
 [[evasion]]
 text = "Bearer 4ever-access-key=KP4QX7RM2SN5TB8VW3YZKP4QX7RM2SN5"
 credential = "KP4QX7RM2SN5TB8VW3YZKP4QX7RM2SN5"
-reason = "Bearer prefix + hyphen-separated access-key form. A 4everland access key is [A-Z0-9]{20,32}, so the token is 32 chars (the prior 41-char value exceeded the access-key length and the regex captured only its first 32)."
+reason = "Bearer prefix with hyphen-separated key form. The 32-char body is the access-key maximum ([A-Z0-9]{20,32}); a 40-char value is the secret-key shape, surfaced by the secret_key companion ([A-Za-z0-9/+=]{40}), not the access-key pattern. The prior 40-char fixture body was out-of-contract — it tested a secret-length value against the access-key capture, which correctly caps at 32."
 
 [perf]
 fixture_bytes = 4096

@@ -1,0 +1,43 @@
+# Per-detector contract: http-basic-auth
+#
+# `Authorization: Basic <base64(user:password)>` (RFC 7617). The captured
+# credential is the base64 blob; it decodes to `user:pass`. Recall lane: all 643
+# labeled CredData "Auth:Basic" positives were NEVER-CANDIDATE before this
+# detector because the header has no `keyword = value` assignment for the generic
+# bridge to anchor on.
+
+schema_version = 1
+detector_id = "http-basic-auth"
+service = "http-basic-auth"
+severity = "medium"
+
+# ---- POSITIVES (recall) ---------------------------------------------
+
+[[positive]]
+text = "Authorization: Basic dXNlcjpwYXNzd29yZA=="
+credential = "dXNlcjpwYXNzd29yZA=="
+reason = "Canonical RFC 7617 header; base64 decodes to `user:password`."
+
+[[positive]]
+text = "Authorization: Basic YWRtaW46czNjcjN0UEBzc3cwcmQ="
+credential = "YWRtaW46czNjcjN0UEBzc3cwcmQ="
+reason = "Admin credential; base64 decodes to `admin:s3cr3tP@ssw0rd`."
+
+[[positive]]
+text = "curl -H \"Authorization: Basic c3ZjX2FjY291bnQ6S3g5bVBxMndMNW5SOHRXdlo=\" https://api.example.com/v1"
+credential = "c3ZjX2FjY291bnQ6S3g5bVBxMndMNW5SOHRXdlo="
+reason = "Service-account credential in a curl command; decodes to `svc_account:Kx9mPq2wL5nR8tWvZ`."
+
+# ---- NEGATIVES (precision) ------------------------------------------
+
+[[negative]]
+text = "// Supports Basic or Bearer authentication schemes for the REST API."
+reason = "The scheme word `Basic` in prose with no following base64 blob — must not fire."
+
+[[negative]]
+text = "Authorization: Basic dGVzdA=="
+reason = "Below the 16-char base64 floor (`dGVzdA` = `test`, 6 chars) — a trivially-short decoy the length gate rejects."
+
+[[negative]]
+text = "subscription_tier = \"Basic\""
+reason = "`Basic` as a product/config value, not an auth scheme — no base64 follows."
