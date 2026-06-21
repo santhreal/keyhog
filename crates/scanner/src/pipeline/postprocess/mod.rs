@@ -1,7 +1,7 @@
 //! Post-match processing: raw match construction and placeholder suppression.
 
 use crate::types::*;
-use keyhog_core::{Chunk, MatchLocation, RawMatch};
+use keyhog_core::{Chunk, MatchLocation, RawMatch, Severity};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -89,6 +89,57 @@ pub(crate) fn build_raw_match(
                 .map(|d| scan_state.intern_metadata(d)),
         },
         entropy: Some(ent),
+        confidence: Some(confidence),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_synthetic_raw_match(
+    metadata: (Arc<str>, Arc<str>, Arc<str>),
+    severity: Severity,
+    chunk: &Chunk,
+    credential: &str,
+    absolute_offset: usize,
+    absolute_line: Option<usize>,
+    entropy: Option<f64>,
+    confidence: f64,
+    scan_state: &mut ScanState,
+) -> RawMatch {
+    let (detector_id, detector_name, service) = metadata;
+    RawMatch {
+        detector_id,
+        detector_name,
+        service,
+        severity,
+        credential_hash: crate::sha256_hash(credential),
+        credential: scan_state.intern_credential(credential),
+        companions: HashMap::new(),
+        location: MatchLocation {
+            source: scan_state.intern_metadata(&chunk.metadata.source_type),
+            file_path: chunk
+                .metadata
+                .path
+                .as_ref()
+                .map(|path| scan_state.intern_metadata(path)),
+            line: absolute_line,
+            offset: absolute_offset,
+            commit: chunk
+                .metadata
+                .commit
+                .as_ref()
+                .map(|commit| scan_state.intern_metadata(commit)),
+            author: chunk
+                .metadata
+                .author
+                .as_ref()
+                .map(|author| scan_state.intern_metadata(author)),
+            date: chunk
+                .metadata
+                .date
+                .as_ref()
+                .map(|date| scan_state.intern_metadata(date)),
+        },
+        entropy,
         confidence: Some(confidence),
     }
 }

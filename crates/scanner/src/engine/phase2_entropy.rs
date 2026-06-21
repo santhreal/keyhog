@@ -7,10 +7,6 @@ use super::*;
 #[cfg(feature = "entropy")]
 use gates::entropy_match_suppressed;
 #[cfg(feature = "entropy")]
-use keyhog_core::MatchLocation;
-#[cfg(feature = "entropy")]
-use std::collections::HashMap;
-#[cfg(feature = "entropy")]
 use std::sync::Arc;
 
 #[cfg(feature = "entropy")]
@@ -154,50 +150,17 @@ impl CompiledScanner {
                 let detector_id = Arc::clone(&metadata.0);
                 let detector_name = Arc::clone(&metadata.1);
                 let service = Arc::clone(&metadata.2);
-                let credential = scan_state.intern_credential(&entropy_match.value);
-                let source = scan_state.intern_metadata(&chunk.metadata.source_type);
-                let file_path = chunk
-                    .metadata
-                    .path
-                    .as_ref()
-                    .map(|path| scan_state.intern_metadata(path));
-                let commit = chunk
-                    .metadata
-                    .commit
-                    .as_ref()
-                    .map(|commit| scan_state.intern_metadata(commit));
-                let author = chunk
-                    .metadata
-                    .author
-                    .as_ref()
-                    .map(|author| scan_state.intern_metadata(author));
-                let date = chunk
-                    .metadata
-                    .date
-                    .as_ref()
-                    .map(|date| scan_state.intern_metadata(date));
-
-                RawMatch {
-                    credential_hash: crate::sha256_hash(&entropy_match.value),
-                    detector_id,
-                    detector_name,
-                    service,
-                    severity: keyhog_core::Severity::High,
-                    credential,
-                    companions: HashMap::new(),
-                    location: MatchLocation {
-                        source,
-                        file_path,
-                        // Window-local line plus chunk base line.
-                        line: Some(absolute_line),
-                        offset,
-                        commit,
-                        author,
-                        date,
-                    },
-                    entropy: Some(entropy_match.entropy),
-                    confidence: Some(confidence),
-                }
+                crate::pipeline::build_synthetic_raw_match(
+                    (detector_id, detector_name, service),
+                    keyhog_core::Severity::High,
+                    chunk,
+                    &entropy_match.value,
+                    offset,
+                    Some(absolute_line),
+                    Some(entropy_match.entropy),
+                    confidence,
+                    scan_state,
+                )
             };
 
             // UNIFIED SCORING. When ML is live, route the entropy candidate

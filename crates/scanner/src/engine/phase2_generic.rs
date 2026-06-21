@@ -1,6 +1,5 @@
 use super::*;
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::sync::LazyLock;
 
 mod auth_value;
@@ -387,29 +386,21 @@ impl CompiledScanner {
                 let source_offset =
                     preprocessed.source_offset_for_match(&chunk.data, preprocessed_offset, value);
                 let absolute_offset = chunk.metadata.base_offset + source_offset;
-                let raw = keyhog_core::RawMatch {
-                    credential_hash: crate::sha256_hash(value),
-                    detector_id: Arc::from(crate::detector_ids::GENERIC_SECRET),
-                    detector_name: Arc::from("Generic Secret (Key=Value)"),
-                    service: Arc::from("generic"),
-                    severity: keyhog_core::Severity::Medium,
-                    credential: value.into(),
-                    companions: HashMap::new(),
-                    location: keyhog_core::MatchLocation {
-                        source: Arc::from(chunk.metadata.source_type.as_str()),
-                        file_path: chunk.metadata.path.as_deref().map(Arc::from),
-                        // Window-local line + chunk base line = absolute file
-                        // line, mirroring `absolute_offset`'s base_offset add
-                        // above. base_line is 0 for non-windowed chunks.
-                        line: Some(mapped_line + chunk.metadata.base_line),
-                        offset: absolute_offset,
-                        commit: chunk.metadata.commit.as_deref().map(Arc::from),
-                        author: chunk.metadata.author.as_deref().map(Arc::from),
-                        date: chunk.metadata.date.as_deref().map(Arc::from),
-                    },
-                    entropy: Some(entropy),
-                    confidence: Some(confidence),
-                };
+                let raw = crate::pipeline::build_synthetic_raw_match(
+                    (
+                        Arc::from(crate::detector_ids::GENERIC_SECRET),
+                        Arc::from("Generic Secret (Key=Value)"),
+                        Arc::from("generic"),
+                    ),
+                    keyhog_core::Severity::Medium,
+                    chunk,
+                    value,
+                    absolute_offset,
+                    Some(mapped_line + chunk.metadata.base_line),
+                    Some(entropy),
+                    confidence,
+                    scan_state,
+                );
                 scan_state.push_match(raw, self.config.max_matches_per_chunk);
                 if profile_enabled {
                     metrics::record_emit();

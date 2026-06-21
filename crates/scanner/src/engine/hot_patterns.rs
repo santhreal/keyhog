@@ -1,9 +1,7 @@
 #[cfg(feature = "simdsieve")]
 use super::*;
 #[cfg(feature = "simdsieve")]
-use keyhog_core::{MatchLocation, RawMatch, Severity};
-#[cfg(feature = "simdsieve")]
-use std::collections::HashMap;
+use keyhog_core::Severity;
 #[cfg(feature = "simdsieve")]
 use std::sync::Arc;
 
@@ -188,55 +186,17 @@ impl CompiledScanner {
                         let detector_id = Arc::clone(&metadata.0);
                         let detector_name = Arc::clone(&metadata.1);
                         let service = Arc::clone(&metadata.2);
-                        let credential_shared = scan_state.intern_credential(credential);
-                        let source = scan_state.intern_metadata(&chunk.metadata.source_type);
-                        let file_path = chunk
-                            .metadata
-                            .path
-                            .as_ref()
-                            .map(|path| scan_state.intern_metadata(path));
-                        let commit = chunk
-                            .metadata
-                            .commit
-                            .as_ref()
-                            .map(|commit| scan_state.intern_metadata(commit));
-                        let author = chunk
-                            .metadata
-                            .author
-                            .as_ref()
-                            .map(|author| scan_state.intern_metadata(author));
-                        let date = chunk
-                            .metadata
-                            .date
-                            .as_ref()
-                            .map(|date| scan_state.intern_metadata(date));
-
-                        RawMatch {
-                            credential_hash: crate::sha256_hash(credential),
-                            detector_id,
-                            detector_name,
-                            service,
-                            severity: Severity::Critical,
-                            credential: credential_shared,
-                            companions: HashMap::new(),
-                            location: MatchLocation {
-                                source,
-                                file_path,
-                                // Absolute file coordinates: window-local line +
-                                // chunk base line, window-local offset + chunk
-                                // base offset. The hot-pattern fast path emits
-                                // directly (no build_raw_match), so it must apply
-                                // both bases itself like every other emit site;
-                                // both are 0 on non-windowed chunks.
-                                line: Some(absolute_line),
-                                offset: absolute_offset,
-                                commit,
-                                author,
-                                date,
-                            },
-                            entropy: None,
-                            confidence: Some(confidence),
-                        }
+                        crate::pipeline::build_synthetic_raw_match(
+                            (detector_id, detector_name, service),
+                            Severity::Critical,
+                            chunk,
+                            credential,
+                            absolute_offset,
+                            Some(absolute_line),
+                            None,
+                            confidence,
+                            scan_state,
+                        )
                     },
                 );
                 // A single sieve offset can match at most one hot literal

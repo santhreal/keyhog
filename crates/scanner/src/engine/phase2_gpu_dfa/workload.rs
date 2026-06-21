@@ -47,8 +47,10 @@ pub(in crate::engine) fn build_phase2_gpu_admission_workload_filtered<'a>(
     triggers: &[Option<Vec<u64>>],
     include_no_trigger_chunk: impl Fn(usize, &'a keyhog_core::Chunk) -> bool,
 ) -> Phase2GpuAdmissionWorkload<'a> {
-    let mut selected_count = 0usize;
-    let mut skipped_count = 0usize;
+    let mut first_triggered_index = None;
+    let mut first_excluded_index = None;
+    let mut indices = Vec::new();
+    let mut selected_chunks = Vec::new();
 
     for (idx, chunk) in chunks.iter().enumerate() {
         let has_trigger = trigger_has_bits(
@@ -56,38 +58,40 @@ pub(in crate::engine) fn build_phase2_gpu_admission_workload_filtered<'a>(
                 .get(idx)
                 .and_then(|trigger| trigger.as_ref().map(Vec::as_slice)),
         );
-        if !has_trigger && include_no_trigger_chunk(idx, chunk) {
-            selected_count += 1;
-        } else {
-            skipped_count += 1;
+        if has_trigger && first_triggered_index.is_none() {
+            first_triggered_index = Some(idx);
         }
-    }
-
-    if skipped_count == 0 {
-        return Phase2GpuAdmissionWorkload::Full { chunks };
-    }
-    if selected_count == 0 {
-        return Phase2GpuAdmissionWorkload::Empty;
-    }
-
-    let mut indices = Vec::with_capacity(selected_count);
-    let mut selected_chunks = Vec::with_capacity(selected_count);
-    for (idx, chunk) in chunks.iter().enumerate() {
-        let has_trigger = trigger_has_bits(
-            triggers
-                .get(idx)
-                .and_then(|trigger| trigger.as_ref().map(Vec::as_slice)),
-        );
         if !has_trigger && include_no_trigger_chunk(idx, chunk) {
+            if first_excluded_index.is_none() {
+                continue;
+            }
             indices.push(idx);
             selected_chunks.push(chunk);
+            continue;
+        }
+
+        if first_excluded_index.is_none() {
+            first_excluded_index = Some(idx);
+            let remaining = chunks.len().saturating_sub(idx);
+            indices = Vec::with_capacity(idx.saturating_add(remaining));
+            selected_chunks = Vec::with_capacity(idx.saturating_add(remaining));
+            for (prefix_idx, prefix_chunk) in chunks[..idx].iter().enumerate() {
+                indices.push(prefix_idx);
+                selected_chunks.push(prefix_chunk);
+            }
         }
     }
 
-    Phase2GpuAdmissionWorkload::Subset {
-        indices,
-        chunks: selected_chunks,
-        full_len: chunks.len(),
+    debug_assert!(first_triggered_index.is_none() || first_excluded_index.is_some());
+
+    match (first_excluded_index, indices.is_empty()) {
+        (None, _) => Phase2GpuAdmissionWorkload::Full { chunks },
+        (Some(_), true) => Phase2GpuAdmissionWorkload::Empty,
+        (Some(_), false) => Phase2GpuAdmissionWorkload::Subset {
+            indices,
+            chunks: selected_chunks,
+            full_len: chunks.len(),
+        },
     }
 }
 
