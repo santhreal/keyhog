@@ -24,14 +24,19 @@ pub(super) fn physical_core_count() -> Option<usize> {
 #[cfg(target_os = "linux")]
 fn linux_physical_cores() -> Option<usize> {
     let content = std::fs::read_to_string("/proc/cpuinfo").ok()?; // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
+    linux_physical_cores_from_cpuinfo(&content)
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn linux_physical_cores_from_cpuinfo(content: &str) -> Option<usize> {
     let mut pairs = std::collections::HashSet::new();
     let mut physical_id = None::<usize>;
     let mut core_id = None::<usize>;
     for line in content.lines() {
         if line.starts_with("physical id") {
-            physical_id = line.split(':').nth(1)?.trim().parse().ok(); // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
+            physical_id = parse_proc_usize_field(line);
         } else if line.starts_with("core id") {
-            core_id = line.split(':').nth(1)?.trim().parse().ok(); // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
+            core_id = parse_proc_usize_field(line);
         } else if line.trim().is_empty() {
             if let (Some(p), Some(c)) = (physical_id, core_id) {
                 pairs.insert((p, c));
@@ -40,10 +45,24 @@ fn linux_physical_cores() -> Option<usize> {
             core_id = None;
         }
     }
+    if let (Some(p), Some(c)) = (physical_id, core_id) {
+        pairs.insert((p, c));
+    }
     if pairs.is_empty() {
         None
     } else {
         Some(pairs.len())
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn parse_proc_usize_field(line: &str) -> Option<usize> {
+    let Some((_, value)) = line.split_once(':') else {
+        return None;
+    };
+    match value.trim().parse() {
+        Ok(parsed) => Some(parsed),
+        Err(_) => None, // LAW10: malformed trusted /proc hardware probe field skipped; perf-only core-count sizing, recall-irrelevant
     }
 }
 
@@ -99,13 +118,7 @@ pub(super) fn detect_total_memory_mb() -> Option<u64> {
     #[cfg(target_os = "linux")]
     {
         let content = std::fs::read_to_string("/proc/meminfo").ok()?; // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
-        for line in content.lines() {
-            if line.starts_with("MemTotal:") {
-                let kb: u64 = line.split_whitespace().nth(1)?.parse().ok()?; // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
-                return Some(kb / 1024);
-            }
-        }
-        None
+        linux_total_memory_mb_from_meminfo(&content)
     }
     #[cfg(target_os = "macos")]
     {
@@ -156,6 +169,22 @@ pub(super) fn detect_total_memory_mb() -> Option<u64> {
     {
         None
     }
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn linux_total_memory_mb_from_meminfo(content: &str) -> Option<u64> {
+    for line in content.lines() {
+        if line.starts_with("MemTotal:") {
+            let Some(kb_text) = line.split_whitespace().nth(1) else {
+                continue;
+            };
+            let Ok(kb) = kb_text.parse::<u64>() else {
+                continue;
+            };
+            return Some(kb / 1024);
+        }
+    }
+    None
 }
 
 pub(super) fn detect_io_uring() -> bool {

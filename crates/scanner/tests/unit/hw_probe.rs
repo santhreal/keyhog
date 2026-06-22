@@ -81,6 +81,43 @@ fn hardware_probes_do_not_fall_back_to_path_binaries() {
     );
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_cpuinfo_parser_skips_malformed_records() {
+    let cpuinfo = "\
+physical id\t: 0
+core id\t\t: 0
+
+physical id without separator
+core id\t\t: 1
+
+physical id\t: 1
+core id\t\t: 0
+";
+
+    assert_eq!(
+        linux_physical_cores_from_cpuinfo(cpuinfo),
+        Some(2),
+        "one malformed cpuinfo record must not abort counting later valid core pairs"
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_meminfo_parser_skips_malformed_memtotal_lines() {
+    let meminfo = "\
+MemTotal:
+MemFree:        1024 kB
+MemTotal:    1048576 kB
+";
+
+    assert_eq!(
+        linux_total_memory_mb_from_meminfo(meminfo),
+        Some(1024),
+        "a malformed MemTotal line must not abort before a later valid line"
+    );
+}
+
 #[test]
 fn windows_powershell_probe_still_reports_cores() {
     // We can't reach the private `windows_physical_cores()` symbol from an

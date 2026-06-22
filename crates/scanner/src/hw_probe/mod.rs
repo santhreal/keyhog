@@ -243,4 +243,14 @@ pub mod testing {
     pub fn forced_backend_override_for_test() -> Option<ScanBackend> {
         super::select::forced_backend_override_for_test()
     }
+
+    #[cfg(target_os = "linux")]
+    pub fn linux_physical_cores_from_cpuinfo(content: &str) -> Option<usize> {
+        super::platform::linux_physical_cores_from_cpuinfo(content)
+    }
+
+    #[cfg(target_os = "linux")]
+    pub fn linux_total_memory_mb_from_meminfo(content: &str) -> Option<u64> {
+        super::platform::linux_total_memory_mb_from_meminfo(content)
+    }
 }
