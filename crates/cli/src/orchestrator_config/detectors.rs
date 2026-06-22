@@ -2,9 +2,11 @@ use anyhow::{Context, Result};
 use keyhog_core::{load_detectors, validate_detector, DetectorSpec, QualityIssue};
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 const DETECTOR_CACHE_VERSION: u32 = 3;
+const DETECTOR_CACHE_FILE_BYTES: u64 = 64 * 1024 * 1024;
 
 #[derive(Serialize, Deserialize)]
 struct DetectorCacheFile {
@@ -145,7 +147,7 @@ fn load_detector_cache(cache_path: &Path, source_dir: &Path) -> Option<Vec<Detec
         }
     };
 
-    let data = match std::fs::read(cache_path) {
+    let data = match read_detector_cache_file(cache_path) {
         Ok(data) => data,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return None,
         Err(error) => {
@@ -199,6 +201,34 @@ fn load_detector_cache(cache_path: &Path, source_dir: &Path) -> Option<Vec<Detec
     Some(validated)
 }
 
+fn read_detector_cache_file(cache_path: &Path) -> std::io::Result<Vec<u8>> {
+    let file = std::fs::File::open(cache_path)?;
+    let len = file.metadata()?.len();
+    if len > DETECTOR_CACHE_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "detector parse cache exceeds {} byte cap; delete the cache file to rebuild it",
+                DETECTOR_CACHE_FILE_BYTES
+            ),
+        ));
+    }
+
+    let mut data = Vec::with_capacity(len as usize);
+    file.take(DETECTOR_CACHE_FILE_BYTES.saturating_add(1))
+        .read_to_end(&mut data)?;
+    if data.len() as u64 > DETECTOR_CACHE_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "detector parse cache grew past {} byte cap while reading; retry after the file is stable",
+                DETECTOR_CACHE_FILE_BYTES
+            ),
+        ));
+    }
+    Ok(data)
+}
+
 fn detector_source_fingerprint(source_dir: &Path) -> std::io::Result<String> {
     let mut entries = Vec::new();
     for entry in std::fs::read_dir(source_dir)? {
@@ -208,8 +238,8 @@ fn detector_source_fingerprint(source_dir: &Path) -> std::io::Result<String> {
             continue;
         }
         let name = entry.file_name().to_string_lossy().into_owned();
-        let bytes = std::fs::read(&path)?;
-        entries.push((name, *blake3::hash(&bytes).as_bytes()));
+        let contents = keyhog_core::read_detector_toml_file(&path)?;
+        entries.push((name, *blake3::hash(contents.as_bytes()).as_bytes()));
     }
     entries.sort_by(|a, b| a.0.cmp(&b.0));
 

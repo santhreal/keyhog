@@ -173,6 +173,27 @@ fn malformed_toml_files_fail_closed_instead_of_returning_partial_corpus() {
 }
 
 #[test]
+fn oversized_toml_files_fail_closed_instead_of_allocating_unboundedly() {
+    let dir = temp_dir("detector-load-oversized");
+    let path = dir.join("oversized.toml");
+    let file = std::fs::File::create(&path).expect("create oversized detector");
+    file.set_len(keyhog_core::DETECTOR_TOML_FILE_BYTES + 1)
+        .expect("make oversized sparse detector TOML");
+
+    let error = keyhog_core::testing::CoreTestApi::load_detectors_with_gate(
+        &keyhog_core::testing::TestApi,
+        &dir,
+        true,
+    )
+    .expect_err("oversized detector TOML must reject the corpus");
+    let message = error.to_string();
+    assert!(
+        message.contains("exceeds") && message.contains("complete detector corpus"),
+        "oversized detector TOML must be an operator-visible corpus failure; got {message}"
+    );
+}
+
+#[test]
 fn no_detector_uses_singular_companion_table() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     // The in-crate `detectors` is a Unix symlink to `../../detectors`. On

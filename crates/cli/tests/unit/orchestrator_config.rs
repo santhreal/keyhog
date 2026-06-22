@@ -467,3 +467,54 @@ fn detector_parse_cache_rejects_poisoned_cached_detector() {
         "invalid cached detector must be rejected and replaced by source TOML"
     );
 }
+
+#[test]
+fn detector_parse_cache_refuses_oversized_cache_file() {
+    let dir = TempDir::new().expect("tempdir");
+    let source_dir = dir.path().join("detectors");
+    std::fs::create_dir_all(&source_dir).expect("mkdir detectors");
+    std::fs::write(
+        source_dir.join("alpha.toml"),
+        detector_toml("alpha-token", "alpha_"),
+    )
+    .expect("write alpha");
+    let cache_path = dir.path().join("detectors-cache.json");
+    let cache = std::fs::File::create(&cache_path).expect("create oversized cache");
+    cache
+        .set_len(70 * 1024 * 1024)
+        .expect("make oversized sparse cache");
+
+    let loaded = API
+        .load_detectors_from_dir_with_cache(&source_dir, &cache_path)
+        .expect("oversized cache should be discarded and rebuilt from source TOML");
+
+    assert_eq!(loaded.len(), 1);
+    assert_eq!(loaded[0].id, "alpha-token");
+    assert!(
+        std::fs::metadata(&cache_path)
+            .expect("rebuilt cache metadata")
+            .len()
+            < 1024 * 1024,
+        "oversized parse cache must be replaced by a normal cache artifact"
+    );
+}
+
+#[test]
+fn detector_parse_cache_reads_are_bounded() {
+    let cli_src = include_str!("../../src/orchestrator_config/detectors.rs");
+    assert!(
+        cli_src.contains("const DETECTOR_CACHE_FILE_BYTES")
+            && cli_src.contains("fn read_detector_cache_file(")
+            && cli_src.contains(".take(DETECTOR_CACHE_FILE_BYTES.saturating_add(1))"),
+        "detector parse cache reads must go through the capped cache reader"
+    );
+    assert!(
+        !cli_src.contains("std::fs::read(cache_path)")
+            && !cli_src.contains("std::fs::read(&cache_path)"),
+        "detector parse cache must not use unbounded std::fs::read"
+    );
+    assert!(
+        cli_src.contains("keyhog_core::read_detector_toml_file(&path)"),
+        "detector source fingerprinting must share the bounded core detector TOML reader"
+    );
+}

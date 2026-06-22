@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 
-use super::{validate_detector, DetectorFile, DetectorSpec, QualityIssue, SpecError};
+use super::{
+    read_detector_toml_file, validate_detector, DetectorFile, DetectorSpec, QualityIssue, SpecError,
+};
 
 /// Load all detector specs from a directory of TOML files.
 /// Runs the quality gate on each detector and fails closed if any detector
@@ -173,7 +175,7 @@ enum ReadDetectorOutcome {
 }
 
 fn read_detector_file(path: &Path) -> ReadDetectorOutcome {
-    let contents = match std::fs::read_to_string(path) {
+    let contents = match read_detector_toml_file(path) {
         Ok(contents) => contents,
         Err(error) => {
             // Bumped from `debug!` to `warn!`. A user with a broken

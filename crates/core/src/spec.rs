@@ -10,10 +10,47 @@ pub(crate) mod load;
 mod validate;
 
 use serde::{Deserialize, Serialize};
+use std::io::Read;
 use thiserror::Error;
 
 pub use load::load_detectors;
 pub use validate::{validate_detector, QualityIssue};
+
+/// Maximum accepted size for one on-disk detector TOML file.
+///
+/// Detector specs are control-plane data, not scan input. A multi-megabyte
+/// detector file is either corrupt or hostile; refusing it keeps corpus loading
+/// from becoming an unbounded allocation path.
+pub const DETECTOR_TOML_FILE_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Read one detector TOML file through the shared corpus cap.
+pub fn read_detector_toml_file(path: &std::path::Path) -> std::io::Result<String> {
+    let file = std::fs::File::open(path)?;
+    let len = file.metadata()?.len();
+    if len > DETECTOR_TOML_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "detector TOML exceeds {} byte cap; split the detector corpus or remove the oversized file",
+                DETECTOR_TOML_FILE_BYTES
+            ),
+        ));
+    }
+
+    let mut contents = String::new();
+    file.take(DETECTOR_TOML_FILE_BYTES.saturating_add(1))
+        .read_to_string(&mut contents)?;
+    if contents.len() as u64 > DETECTOR_TOML_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "detector TOML grew past {} byte cap while reading; rerun after the file is stable",
+                DETECTOR_TOML_FILE_BYTES
+            ),
+        ));
+    }
+    Ok(contents)
+}
 
 /// Metadata field specification for verification results.
 #[derive(Debug, Clone, Serialize, Deserialize)]
