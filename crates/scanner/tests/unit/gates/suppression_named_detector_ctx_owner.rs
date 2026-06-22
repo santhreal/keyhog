@@ -95,3 +95,17 @@ fn pipeline_does_not_facade_suppression_decisions() {
         );
     }
 }
+
+#[test]
+fn engine_named_detector_suppression_routes_through_adjudicator() {
+    let src = scanner_src();
+    let process = uncommented_code(&read(&src.join("engine/process.rs")));
+    assert!(
+        process.contains("crate::adjudicate::adjudicate_match("),
+        "engine/process.rs must route named-detector candidate decisions through adjudicate_match"
+    );
+    assert!(
+        !process.contains("suppress_named_detector_finding("),
+        "engine/process.rs must not call suppress_named_detector_finding directly; the adjudicator owns the decision"
+    );
+}

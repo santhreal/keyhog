@@ -134,16 +134,22 @@ impl CompiledScanner {
                 detector.id.as_ref(),
                 weak_anchor,
             );
-        if crate::suppression::suppress_named_detector_finding(credential, named_suppression_ctx) {
-            // KH-L-0412 (Law-10): the weak-anchor named-detector context/example
-            // suppression was the last silent `return` on this path. Trace it so a
-            // dropped weak-anchored named match is visible to `--dogfood`.
-            crate::telemetry::record_shape_suppression(
-                chunk.metadata.path.as_deref(),
-                credential,
-                "named_weak_anchor_suppressed",
-            );
-            return;
+        let candidate = crate::adjudicate::CandidateMatch::new(credential);
+        let match_ctx = crate::adjudicate::MatchCtx::for_named_detector(named_suppression_ctx);
+        match crate::adjudicate::adjudicate_match(candidate, &match_ctx) {
+            crate::adjudicate::Verdict::Suppressed(stage_id) => {
+                // KH-L-0412 (Law-10): named-detector context/example suppression
+                // was the last silent `return` on this path. Trace it through the
+                // adjudicator so a dropped match is visible to `--dogfood` with
+                // the deciding stage name.
+                crate::telemetry::record_shape_suppression(
+                    chunk.metadata.path.as_deref(),
+                    credential,
+                    stage_id.as_str(),
+                );
+                return;
+            }
+            crate::adjudicate::Verdict::Reported => {}
         }
 
         // `match_companions` returns `None` when a `required = true`

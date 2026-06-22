@@ -116,6 +116,7 @@ pub(crate) mod static_intern;
 pub(crate) mod types;
 
 // Internal modules.
+pub(crate) mod adjudicate;
 /// SIMD-accelerated alphabet pre-filtering.
 pub(crate) mod alphabet_filter;
 pub(crate) mod anchored_regex;

@@ -2,6 +2,7 @@ pub mod a3_decode;
 pub mod a3_multiline;
 pub mod a3_pipeline;
 pub mod a4_lr2;
+pub mod adjudicate;
 pub mod alphabet_filter;
 pub mod ascii_ci;
 pub mod bigram_bloom;
