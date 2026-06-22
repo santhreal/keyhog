@@ -247,10 +247,18 @@ fn unpack_tar(
     destination: &Path,
     limits: crate::SourceLimits,
 ) -> Result<(), SourceError> {
+    let file = File::open(archive_path).map_err(SourceError::Io)?;
+    unpack_open_tar(file, destination, limits)
+}
+
+fn unpack_open_tar(
+    mut file: File,
+    destination: &Path,
+    limits: crate::SourceLimits,
+) -> Result<(), SourceError> {
     // Open the archive file exactly once to prevent TOCTOU race conditions.
     // A separate open for validation and extraction would allow the file to
     // be swapped between the two passes.
-    let mut file = File::open(archive_path).map_err(SourceError::Io)?;
     let mut validation_archive = tar::Archive::new(&mut file);
     validate_extracted_tree(&mut validation_archive, limits)?;
 
@@ -265,19 +273,21 @@ fn unpack_layer_archive(
     destination: &Path,
     limits: crate::SourceLimits,
 ) -> Result<(), SourceError> {
-    match layer_archive_encoding(archive_path)? {
-        LayerArchiveEncoding::RawTar => unpack_tar(archive_path, destination, limits),
-        LayerArchiveEncoding::GzipTar => {
-            let validation_file = File::open(archive_path).map_err(SourceError::Io)?;
-            validate_tar_reader(flate2::read::MultiGzDecoder::new(validation_file), limits)?;
+    let mut file = File::open(archive_path).map_err(SourceError::Io)?;
+    let encoding = layer_archive_encoding(&mut file)?;
+    file.rewind().map_err(SourceError::Io)?;
 
-            let extract_file = File::open(archive_path).map_err(SourceError::Io)?;
-            unpack_tar_reader(flate2::read::MultiGzDecoder::new(extract_file), destination)
+    match encoding {
+        LayerArchiveEncoding::RawTar => unpack_open_tar(file, destination, limits),
+        LayerArchiveEncoding::GzipTar => {
+            validate_tar_reader(flate2::read::MultiGzDecoder::new(&mut file), limits)?;
+
+            file.rewind().map_err(SourceError::Io)?;
+            unpack_tar_reader(flate2::read::MultiGzDecoder::new(&mut file), destination)
         }
         LayerArchiveEncoding::ZstdTar => {
-            let validation_file = File::open(archive_path).map_err(SourceError::Io)?;
             let mut validation_reader =
-                zstd::stream::read::Decoder::new(validation_file).map_err(SourceError::Io)?;
+                zstd::stream::read::Decoder::new(&mut file).map_err(SourceError::Io)?;
             validation_reader
                 .window_log_max(crate::compression_limits::zstd_window_log_max_for_budget(
                     limits.docker_tar_total_bytes,
@@ -285,9 +295,9 @@ fn unpack_layer_archive(
                 .map_err(SourceError::Io)?;
             validate_tar_reader(validation_reader, limits)?;
 
-            let extract_file = File::open(archive_path).map_err(SourceError::Io)?;
+            file.rewind().map_err(SourceError::Io)?;
             let mut extract_reader =
-                zstd::stream::read::Decoder::new(extract_file).map_err(SourceError::Io)?;
+                zstd::stream::read::Decoder::new(&mut file).map_err(SourceError::Io)?;
             extract_reader
                 .window_log_max(crate::compression_limits::zstd_window_log_max_for_budget(
                     limits.docker_tar_total_bytes,
@@ -314,8 +324,7 @@ enum LayerArchiveEncoding {
     ZstdTar,
 }
 
-fn layer_archive_encoding(archive_path: &Path) -> Result<LayerArchiveEncoding, SourceError> {
-    let mut file = File::open(archive_path).map_err(SourceError::Io)?;
+fn layer_archive_encoding(file: &mut File) -> Result<LayerArchiveEncoding, SourceError> {
     let mut magic = [0u8; 4];
     let read = file.read(&mut magic).map_err(SourceError::Io)?;
     if read >= 2 && magic[..2] == [0x1f, 0x8b] {
