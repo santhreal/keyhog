@@ -241,29 +241,21 @@ impl CompiledScanner {
         }
         let mut expanded = triggered_patterns.to_vec();
         super::trigger_bitmap::for_each_set_bit(triggered_patterns, |pat_idx| {
-            // kimi-engine audit: defensive bounds check. ac_map and
-            // same_prefix_patterns SHOULD be the same length after
-            // compilation, but if a future deserialization path
-            // restores compiled state from disk with a mismatched
-            // shape (or a bug in the compiler tears the invariant)
-            // we'd panic on the indexed access. .get() turns that
-            // into a benign skip - we lose the same-prefix expansion
-            // for this pattern rather than crashing the scan.
             if pat_idx >= self.ac_map.len() {
+                crate::telemetry::record_invalid_pattern_index_skip();
                 return;
             }
-            if let Some(siblings) = self.same_prefix_patterns.get(pat_idx) {
-                for &other_idx in siblings {
-                    let other_idx = other_idx as usize;
-                    // Same defensive bound on the expanded write -
-                    // a stale sibling index past the bitmask end
-                    // would otherwise panic via bounds-checked
-                    // slice index. We compute the bucket up front
-                    // and silently skip out-of-range writes.
-                    let bucket = other_idx / 64;
-                    if let Some(slot) = expanded.get_mut(bucket) {
-                        *slot |= 1u64 << (other_idx % 64);
-                    }
+            let Some(siblings) = self.same_prefix_patterns.get(pat_idx) else {
+                crate::telemetry::record_invalid_pattern_index_skip();
+                return;
+            };
+            for &other_idx in siblings {
+                let other_idx = other_idx as usize;
+                let bucket = other_idx / 64;
+                if let Some(slot) = expanded.get_mut(bucket) {
+                    *slot |= 1u64 << (other_idx % 64);
+                } else {
+                    crate::telemetry::record_invalid_pattern_index_skip();
                 }
             }
         });

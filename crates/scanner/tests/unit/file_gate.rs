@@ -1628,6 +1628,13 @@ fn telemetry_coverage_gap_counters_have_typed_owner() {
         0,
         "invalid detector-index skips must route through record_scanner_coverage_gap"
     );
+    assert_eq!(
+        source
+            .matches("INVALID_PATTERN_INDEX_SKIPS.fetch_add")
+            .count(),
+        0,
+        "invalid pattern-index skips must route through record_scanner_coverage_gap"
+    );
     assert!(
         source.contains(
             "record_scanner_coverage_gap(ScannerCoverageGapEvent::StructuredParseFailure"
@@ -1635,6 +1642,9 @@ fn telemetry_coverage_gap_counters_have_typed_owner() {
             .contains("record_scanner_coverage_gap(ScannerCoverageGapEvent::DecodeTruncation")
             && source.contains(
                 "record_scanner_coverage_gap(ScannerCoverageGapEvent::InvalidDetectorIndexSkip"
+            )
+            && source.contains(
+                "record_scanner_coverage_gap(ScannerCoverageGapEvent::InvalidPatternIndexSkip"
             ),
         "public recorder wrappers must delegate to the typed scanner coverage-gap owner"
     );

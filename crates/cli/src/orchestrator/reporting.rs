@@ -240,6 +240,17 @@ pub(crate) fn report_skip_summary(ansi: bool) {
         eprintln!("{}WARN{} {msg}", palette.yellow, palette.reset);
     }
 
+    let invalid_pattern_index_skips = keyhog_scanner::telemetry::invalid_pattern_index_skip_count();
+    if invalid_pattern_index_skips > 0 {
+        let msg = format!(
+            "{invalid_pattern_index_skips} scanner pattern expansion edge(s) were NOT applied: \
+             compiled pattern-index side data referenced patterns outside the trigger bitmap. \
+             This is a scanner invariant violation; treat the scan as partial."
+        );
+        let palette = terminal_palette(ansi, false);
+        eprintln!("{}WARN{} {msg}", palette.yellow, palette.reset);
+    }
+
     let c = keyhog_sources::skip_counts();
     // Whether the binary source recorded any degradation/drop. Checked here so a
     // run whose ONLY coverage gap is a Ghidra fallback / unreadable binary (with
@@ -265,6 +276,7 @@ pub(crate) fn report_skip_summary(ansi: bool) {
         && !binary_gap
         && decode_truncations == 0
         && invalid_detector_index_skips == 0
+        && invalid_pattern_index_skips == 0
     {
         return;
     }
