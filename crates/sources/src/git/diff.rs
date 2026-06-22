@@ -126,10 +126,9 @@ fn stream_added_lines(
     command.stdout(std::process::Stdio::piped());
     command.stderr(std::process::Stdio::piped());
 
-    let mut child = command.spawn().map_err(SourceError::Io)?;
+    let mut child = super::spawn_git_child(command)?;
     let stdout = child
-        .stdout
-        .take()
+        .take_stdout()
         .ok_or_else(|| SourceError::Io(std::io::Error::other("missing stdout")))?;
     let mut reader = std::io::BufReader::new(stdout);
 

@@ -236,10 +236,9 @@ fn stream_git_blobs(
 
     log_cmd.stdout(std::process::Stdio::piped());
     log_cmd.stderr(std::process::Stdio::piped());
-    let mut log_child = log_cmd.spawn().map_err(SourceError::Io)?;
+    let mut log_child = super::spawn_git_child(log_cmd)?;
     let log_stdout = log_child
-        .stdout
-        .take()
+        .take_stdout()
         .ok_or_else(|| SourceError::Io(std::io::Error::other("missing log stdout")))?;
     let mut log_lines = std::io::BufReader::new(log_stdout).lines();
 

@@ -3,7 +3,8 @@
 use keyhog_core::SourceError;
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Child, ChildStderr, ChildStdout, Command};
+use std::thread::JoinHandle;
 
 mod diff;
 mod history;
@@ -34,6 +35,80 @@ pub(crate) fn git_blob_bytes_limit_usize(limits: crate::SourceLimits) -> usize {
         Ok(value) => value,
         Err(_) => usize::MAX, // LAW10: recall-safe size knob; configured cap exceeds platform usize, so saturate to the maximum representable in-memory buffer cap.
     }
+}
+
+const GIT_STDERR_EXCERPT_BYTES: usize = 64 * 1024;
+
+pub(crate) struct GitChild {
+    child: Child,
+    stderr: Option<JoinHandle<String>>,
+}
+
+pub(crate) fn spawn_git_child(mut command: Command) -> Result<GitChild, SourceError> {
+    let mut child = command.spawn().map_err(SourceError::Io)?;
+    let stderr = child
+        .stderr
+        .take()
+        .map(|pipe| std::thread::spawn(move || drain_stderr_excerpt(pipe)));
+    Ok(GitChild { child, stderr })
+}
+
+impl GitChild {
+    pub(crate) fn take_stdout(&mut self) -> Option<ChildStdout> {
+        self.child.stdout.take()
+    }
+
+    fn wait(&mut self) -> Result<std::process::ExitStatus, SourceError> {
+        self.child.wait().map_err(SourceError::Io)
+    }
+
+    fn stderr_excerpt(&mut self) -> String {
+        match self.stderr.take() {
+            Some(handle) => match handle.join() {
+                Ok(stderr) => stderr,
+                Err(_panic_payload) => {
+                    // LAW10: stderr-reader failure is surfaced unconditionally, and child exit status still controls success/failure.
+                    eprintln!(
+                        "keyhog: git stderr reader panicked; stderr excerpt unavailable for child status"
+                    );
+                    tracing::warn!(
+                        "git stderr reader panicked; stderr excerpt unavailable for child status"
+                    );
+                    "stderr unavailable: stderr reader panicked".to_string()
+                }
+            },
+            None => String::new(),
+        }
+    }
+}
+
+fn drain_stderr_excerpt(mut stderr_pipe: ChildStderr) -> String {
+    let mut excerpt = Vec::new();
+    let mut buffer = [0_u8; 8192];
+    let mut truncated = false;
+    loop {
+        match stderr_pipe.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => {
+                if excerpt.len() < GIT_STDERR_EXCERPT_BYTES {
+                    let keep = read.min(GIT_STDERR_EXCERPT_BYTES - excerpt.len());
+                    excerpt.extend_from_slice(&buffer[..keep]);
+                    if keep < read {
+                        truncated = true;
+                    }
+                } else {
+                    truncated = true;
+                }
+            }
+            Err(error) => return format!("stderr unavailable: {error}"),
+        }
+    }
+
+    let mut text = String::from_utf8_lossy(&excerpt).into_owned();
+    if truncated {
+        text.push_str("\n[stderr truncated after 65536 bytes]");
+    }
+    text
 }
 
 /// Read one line (through the trailing `\n`) into `buf`, capping buffered bytes
@@ -72,21 +147,16 @@ pub(crate) fn read_capped_line<R: std::io::BufRead>(
 }
 
 pub(crate) fn wait_for_git_child(
-    child: &mut std::process::Child,
+    child: &mut GitChild,
     label: &str,
     operation: &str,
 ) -> Result<(), SourceError> {
-    let status = child.wait().map_err(SourceError::Io)?;
+    let status = child.wait()?;
+    let stderr = child.stderr_excerpt();
     if status.success() {
         return Ok(());
     }
 
-    let mut stderr = String::new();
-    if let Some(stderr_pipe) = child.stderr.as_mut() {
-        if let Err(error) = stderr_pipe.read_to_string(&mut stderr) {
-            stderr = format!("stderr unavailable: {error}");
-        }
-    }
     Err(SourceError::Git(format!(
         "{label} failed while {operation}: {}",
         stderr.trim()
@@ -136,6 +206,54 @@ mod capped_line_tests {
         assert_eq!(read_capped_line(&mut r, &mut buf, 100).unwrap(), 3);
         assert_eq!(&buf[..], b"abc");
         assert_eq!(read_capped_line(&mut r, &mut buf, 100).unwrap(), 0);
+    }
+}
+
+#[cfg(test)]
+mod git_child_tests {
+    use super::{spawn_git_child, wait_for_git_child, GIT_STDERR_EXCERPT_BYTES};
+    use std::io::{Read, Write};
+    use std::process::{Command, Stdio};
+
+    const SPAM_STDERR_ENV: &str = "KEYHOG_TEST_SPAM_GIT_STDERR";
+
+    #[test]
+    fn streamed_git_child_drains_large_stderr_before_wait() {
+        if std::env::var_os(SPAM_STDERR_ENV).is_some() {
+            let payload = vec![b'E'; GIT_STDERR_EXCERPT_BYTES * 4];
+            std::io::stderr()
+                .write_all(&payload)
+                .expect("child writes stderr payload");
+            std::process::exit(42);
+        }
+
+        let mut command = Command::new(std::env::current_exe().expect("current test binary"));
+        command
+            .env(SPAM_STDERR_ENV, "1")
+            .arg("--exact")
+            .arg("git::git_child_tests::streamed_git_child_drains_large_stderr_before_wait")
+            .arg("--nocapture")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let mut child = spawn_git_child(command).expect("spawn noisy git-child surrogate");
+        let mut stdout = child.take_stdout().expect("stdout pipe");
+        let mut stdout_bytes = Vec::new();
+        stdout
+            .read_to_end(&mut stdout_bytes)
+            .expect("stdout drains after stderr reader prevents pipe deadlock");
+
+        let error = wait_for_git_child(&mut child, "git test", "draining stderr")
+            .expect_err("non-zero child exit must surface as git error");
+        let message = error.to_string();
+        assert!(
+            message.contains("git test failed while draining stderr"),
+            "expected git failure context, got {message:?}"
+        );
+        assert!(
+            message.contains("[stderr truncated after 65536 bytes]"),
+            "large stderr must be drained but stored as a bounded excerpt"
+        );
     }
 }
 
