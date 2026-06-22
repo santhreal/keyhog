@@ -10,7 +10,7 @@ use super::{display_path, is_symlink};
 use crate::filesystem::read;
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
 use memchr::memmem;
-use std::io::Read as _;
+use std::io::Read;
 use std::path::Path;
 
 const STREAM: &[u8] = b"stream";
@@ -56,8 +56,17 @@ pub(super) fn extract_pdf_chunks(
 
     let budget = pdf_decode_budget(max_size);
     let extracted = extract_pdf_text(&bytes, budget);
-    if extracted.encrypted_or_unsupported {
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+    if extracted.recovered_after_error {
+        let error = report_pdf_recovered_after_error(&path_display);
+        if !emit(Err(error)) {
+            return;
+        }
+    }
+    if let Some(gap) = extracted.unreadable_gap {
+        let error = report_pdf_unreadable_gap(&path_display, gap);
+        if !emit(Err(error)) {
+            return;
+        }
     }
     if extracted.truncated {
         let error = report_pdf_truncation(&path_display, budget);
@@ -83,6 +92,27 @@ pub(super) fn extract_pdf_chunks(
     })) {
         tracing::debug!("PDF chunk consumer stopped before final chunk");
     }
+}
+
+fn report_pdf_recovered_after_error(path_display: &str) -> SourceError {
+    eprintln!(
+        "keyhog: WARNING: PDF extraction of {path_display} recovered decoded text and then a stream decode failed - only the recovered prefix was scanned; the rest was NOT."
+    );
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+    SourceError::Other(format!(
+        "PDF extraction of '{path_display}' failed after recovering decoded text; only the recovered prefix was scanned and the remaining PDF stream bytes were not scanned"
+    ))
+}
+
+fn report_pdf_unreadable_gap(path_display: &str, gap: PdfUnreadableGap) -> SourceError {
+    let detail = gap.detail();
+    eprintln!(
+        "keyhog: WARNING: PDF extraction of {path_display} could not scan part of the PDF ({detail}); affected PDF bytes were NOT scanned."
+    );
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+    SourceError::Other(format!(
+        "PDF extraction of '{path_display}' could not scan part of the PDF ({detail}); affected PDF bytes were not scanned"
+    ))
 }
 
 fn report_pdf_truncation(path_display: &str, budget: usize) -> SourceError {
@@ -146,14 +176,42 @@ fn pdf_decode_budget(max_size: u64) -> usize {
 #[derive(Default)]
 struct PdfExtract {
     text: String,
-    encrypted_or_unsupported: bool,
+    unreadable_gap: Option<PdfUnreadableGap>,
+    recovered_after_error: bool,
     truncated: bool,
+}
+
+#[derive(Clone, Copy)]
+enum PdfUnreadableGap {
+    Encrypted,
+    MissingEndstream,
+    UnsupportedFilter,
+    StreamDecodeFailed,
+}
+
+impl PdfUnreadableGap {
+    fn detail(self) -> &'static str {
+        match self {
+            Self::Encrypted => "encrypted PDF",
+            Self::MissingEndstream => "stream without endstream marker",
+            Self::UnsupportedFilter => "unsupported stream filter",
+            Self::StreamDecodeFailed => "stream decode failed before producing text",
+        }
+    }
+}
+
+impl PdfExtract {
+    fn record_unreadable_gap(&mut self, gap: PdfUnreadableGap) {
+        if self.unreadable_gap.is_none() {
+            self.unreadable_gap = Some(gap);
+        }
+    }
 }
 
 fn extract_pdf_text(bytes: &[u8], decoded_budget: usize) -> PdfExtract {
     let mut out = PdfExtract::default();
     if memmem::find(bytes, b"/Encrypt").is_some() {
-        out.encrypted_or_unsupported = true;
+        out.record_unreadable_gap(PdfUnreadableGap::Encrypted);
     }
 
     let mut ranges = Vec::new();
@@ -168,7 +226,7 @@ fn extract_pdf_text(bytes: &[u8], decoded_budget: usize) -> PdfExtract {
 
         let body_start = stream_body_start(bytes, stream_pos + STREAM.len());
         let Some(end_rel) = memmem::find(&bytes[body_start..], ENDSTREAM) else {
-            out.encrypted_or_unsupported = true;
+            out.record_unreadable_gap(PdfUnreadableGap::MissingEndstream);
             break;
         };
         let body_end = body_start + end_rel;
@@ -192,10 +250,13 @@ fn extract_pdf_text(bytes: &[u8], decoded_budget: usize) -> PdfExtract {
                 append_pdf_strings(&decoded, &mut out.text);
                 remaining_budget = remaining_budget.saturating_sub(decoded.len());
                 out.truncated |= truncated;
-                out.encrypted_or_unsupported |= recovered_after_error;
+                out.recovered_after_error |= recovered_after_error;
             }
-            StreamDecode::UnsupportedOrUnreadable => {
-                out.encrypted_or_unsupported = true;
+            StreamDecode::UnsupportedFilter => {
+                out.record_unreadable_gap(PdfUnreadableGap::UnsupportedFilter);
+            }
+            StreamDecode::Unreadable => {
+                out.record_unreadable_gap(PdfUnreadableGap::StreamDecodeFailed);
             }
         }
         cursor = body_end + ENDSTREAM.len();
@@ -208,7 +269,8 @@ fn extract_pdf_text(bytes: &[u8], decoded_budget: usize) -> PdfExtract {
 enum StreamDecode<'a> {
     Borrowed(&'a [u8], bool),
     Owned(Vec<u8>, bool, bool),
-    UnsupportedOrUnreadable,
+    UnsupportedFilter,
+    Unreadable,
 }
 
 fn decode_stream<'a>(dict: &[u8], stream_bytes: &'a [u8], budget: usize) -> StreamDecode<'a> {
@@ -221,7 +283,7 @@ fn decode_stream<'a>(dict: &[u8], stream_bytes: &'a [u8], budget: usize) -> Stre
         memmem::find(dict, b"/FlateDecode").is_some() || memmem::find(dict, b"/Fl").is_some();
 
     if has_filter && !has_flate {
-        return StreamDecode::UnsupportedOrUnreadable;
+        return StreamDecode::UnsupportedFilter;
     }
     if has_filter {
         return inflate_pdf_stream(stream_bytes, budget);
@@ -232,10 +294,9 @@ fn decode_stream<'a>(dict: &[u8], stream_bytes: &'a [u8], budget: usize) -> Stre
 }
 
 fn inflate_pdf_stream(stream_bytes: &[u8], budget: usize) -> StreamDecode<'_> {
-    let mut out = Vec::new();
     let limit = (budget as u64).saturating_add(1);
     let mut decoder = flate2::read::ZlibDecoder::new(stream_bytes).take(limit);
-    let result = decoder.read_to_end(&mut out);
+    let (mut out, result) = read_pdf_stream_prefix(&mut decoder);
     let truncated = out.len() > budget;
     if truncated {
         out.truncate(budget);
@@ -243,7 +304,19 @@ fn inflate_pdf_stream(stream_bytes: &[u8], budget: usize) -> StreamDecode<'_> {
     match result {
         Ok(_) => StreamDecode::Owned(out, truncated, false),
         Err(_) if !out.is_empty() => StreamDecode::Owned(out, truncated, true),
-        Err(_) => StreamDecode::UnsupportedOrUnreadable, // LAW10: loud-counted/surfaced: caller turns this stream decode failure into an unreadable source coverage gap
+        Err(_) => StreamDecode::Unreadable, // LAW10: loud-counted/surfaced: caller turns this stream decode failure into an unreadable source coverage gap
+    }
+}
+
+fn read_pdf_stream_prefix(reader: &mut impl Read) -> (Vec<u8>, std::io::Result<()>) {
+    let mut out = Vec::new();
+    let mut buf = [0u8; 4096];
+    loop {
+        match reader.read(&mut buf) {
+            Ok(0) => return (out, Ok(())),
+            Ok(n) => out.extend_from_slice(&buf[..n]),
+            Err(error) => return (out, Err(error)),
+        }
     }
 }
 
