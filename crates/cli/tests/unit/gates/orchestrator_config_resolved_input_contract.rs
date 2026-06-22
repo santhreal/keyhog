@@ -11,6 +11,10 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
         "orchestrator_config must keep a resolved scanner-builder input boundary"
     );
     assert!(
+        src.contains("struct ScanRuntimeInput"),
+        "orchestrator_config must keep a resolved runtime/path input boundary"
+    );
+    assert!(
         src.contains("fn build_scanner_config_from_input(input: &ScannerConfigInput)"),
         "ScannerConfig construction must have an input-owned implementation"
     );
@@ -28,6 +32,10 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
         "resolve_scan_config must convert post-merge args into ScannerConfigInput once"
     );
     assert!(
+        resolve_body.contains("ScanRuntimeInput::from_scan_args(args)"),
+        "resolve_scan_config must convert post-merge args into ScanRuntimeInput once"
+    );
+    assert!(
         resolve_body.contains("build_scanner_config_from_input(&scanner_input)"),
         "resolve_scan_config must build ScannerConfig through the resolved input boundary"
     );
@@ -35,6 +43,28 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
         !resolve_body.contains("build_scanner_config(args)"),
         "resolve_scan_config must not pass raw ScanArgs directly into ScannerConfig construction"
     );
+    for forbidden in [
+        "args.cache_dir",
+        "args.autoroute_cache",
+        "args.calibration_cache",
+        "args.backend",
+        "args.batch_pipeline",
+        "args.no_batch_pipeline",
+        "args.threads",
+        "args.reader_threads",
+        "args.fused_batch",
+        "args.fused_depth",
+        "args.autoroute_gpu",
+        "args.no_autoroute_gpu",
+        "args.autoroute_calibrate",
+        "args.regex_dfa_limit",
+        "args.limits",
+    ] {
+        assert!(
+            !resolve_body.contains(forbidden),
+            "resolve_scan_config must read runtime/path fields through ScanRuntimeInput, not `{forbidden}`"
+        );
+    }
 
     let builder_body = src
         .split("fn build_scanner_config_from_input(input: &ScannerConfigInput)")

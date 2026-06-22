@@ -82,6 +82,45 @@ impl ScannerConfigInput {
     }
 }
 
+#[derive(Debug, Clone)]
+struct ScanRuntimeInput {
+    cache_dir: Option<PathBuf>,
+    autoroute_cache: Option<String>,
+    calibration_cache: Option<PathBuf>,
+    backend: Option<String>,
+    batch_pipeline: bool,
+    threads: Option<usize>,
+    reader_threads: Option<usize>,
+    fused_batch: usize,
+    fused_depth: Option<usize>,
+    gpu_runtime_policy: keyhog_scanner::gpu::GpuRuntimePolicy,
+    autoroute_gpu: bool,
+    autoroute_calibration: bool,
+    regex_dfa_limit: Option<usize>,
+    source_limits: keyhog_sources::SourceLimits,
+}
+
+impl ScanRuntimeInput {
+    fn from_scan_args(args: &ScanArgs) -> Self {
+        Self {
+            cache_dir: args.cache_dir.clone(),
+            autoroute_cache: args.autoroute_cache.clone(),
+            calibration_cache: args.calibration_cache.clone(),
+            backend: args.backend.clone(),
+            batch_pipeline: args.batch_pipeline && !args.no_batch_pipeline,
+            threads: args.threads,
+            reader_threads: args.reader_threads,
+            fused_batch: args.fused_batch.unwrap_or(FUSED_BATCH_DEFAULT), // LAW10: absent fused-batch config => documented compiled throughput default; no recall path changes and the value is printed/hashes into autoroute identity
+            fused_depth: args.fused_depth,
+            gpu_runtime_policy: gpu_runtime_policy_from_args(args),
+            autoroute_gpu: args.autoroute_gpu && !args.no_autoroute_gpu,
+            autoroute_calibration: args.autoroute_calibrate,
+            regex_dfa_limit: args.regex_dfa_limit,
+            source_limits: args.limits.to_source_limits(),
+        }
+    }
+}
+
 pub(crate) fn build_scanner_config(args: &ScanArgs) -> ScannerConfig {
     let input = ScannerConfigInput::from_scan_args(args);
     build_scanner_config_from_input(&input)
@@ -390,24 +429,18 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
     aws_canary_accounts.dedup();
     let aws_canary_set = aws_canary_accounts.iter().cloned().collect();
     keyhog_core::set_extra_canary_accounts(aws_canary_set);
-    configure_hyperscan_cache_dir(args.cache_dir.clone())?;
-    let autoroute_cache_path =
-        crate::autoroute_cache_path::resolve_autoroute_cache_path(args.autoroute_cache.as_deref())
-            .map_err(anyhow::Error::msg)?;
-    let backend_override = parse_backend_override(args.backend.as_deref())?;
-    let batch_pipeline = args.batch_pipeline && !args.no_batch_pipeline;
-    let threads = args.threads;
-    let reader_threads = args.reader_threads;
-    let fused_batch = args.fused_batch.unwrap_or(FUSED_BATCH_DEFAULT); // LAW10: absent fused-batch config => documented compiled throughput default; no recall path changes and the value is printed/hashes into autoroute identity
-    let fused_depth = args.fused_depth;
-    let gpu_runtime_policy = gpu_runtime_policy_from_args(args);
-    let autoroute_gpu = args.autoroute_gpu && !args.no_autoroute_gpu;
-    let autoroute_calibration = args.autoroute_calibrate;
+    let runtime_input = ScanRuntimeInput::from_scan_args(args);
+    configure_hyperscan_cache_dir(runtime_input.cache_dir.clone())?;
+    let autoroute_cache_path = crate::autoroute_cache_path::resolve_autoroute_cache_path(
+        runtime_input.autoroute_cache.as_deref(),
+    )
+    .map_err(anyhow::Error::msg)?;
+    let backend_override = parse_backend_override(runtime_input.backend.as_deref())?;
     let scanner_tuning = outcome.scanner_tuning;
     let scanner_input = ScannerConfigInput::from_scan_args(args);
     let mut scanner = build_scanner_config_from_input(&scanner_input);
     let (calibration_cache_path, calibration_store, calibration_entry_count, calibration_digest) =
-        load_explicit_scan_calibration(args.calibration_cache.as_deref())?;
+        load_explicit_scan_calibration(runtime_input.calibration_cache.as_deref())?;
     if let Some(calibration_store) = calibration_store {
         scanner = scanner.with_calibration(calibration_store);
     }
@@ -418,22 +451,22 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
     let ml_enabled = scanner.ml_enabled;
     Ok(ResolvedScanConfig {
         backend_override,
-        batch_pipeline,
-        threads,
-        reader_threads,
-        fused_batch,
-        fused_depth,
-        gpu_runtime_policy,
-        autoroute_gpu,
-        autoroute_calibration,
+        batch_pipeline: runtime_input.batch_pipeline,
+        threads: runtime_input.threads,
+        reader_threads: runtime_input.reader_threads,
+        fused_batch: runtime_input.fused_batch,
+        fused_depth: runtime_input.fused_depth,
+        gpu_runtime_policy: runtime_input.gpu_runtime_policy,
+        autoroute_gpu: runtime_input.autoroute_gpu,
+        autoroute_calibration: runtime_input.autoroute_calibration,
         scanner,
         min_confidence,
         ml_enabled,
         detector_min_confidence: outcome.detector_min_confidence,
         disabled_detectors: outcome.disabled_detectors.into_iter().collect(),
         require_lockdown: outcome.require_lockdown,
-        regex_dfa_limit: args.regex_dfa_limit,
-        hyperscan_cache_dir: args.cache_dir.clone(),
+        regex_dfa_limit: runtime_input.regex_dfa_limit,
+        hyperscan_cache_dir: runtime_input.cache_dir,
         autoroute_cache_path,
         calibration_cache_path,
         calibration_entry_count,
@@ -446,7 +479,7 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
             require_approved_by: outcome.allowlist_require_approved_by,
             max_expires_days: outcome.allowlist_max_expires_days,
         },
-        source_limits: args.limits.to_source_limits(),
+        source_limits: runtime_input.source_limits,
     })
 }
 
