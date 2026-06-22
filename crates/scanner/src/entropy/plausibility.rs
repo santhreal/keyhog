@@ -29,19 +29,10 @@ fn is_known_non_secret(value: &str, context: PlausibilityContext) -> bool {
     // Heroku UUID key, PowerBI client secret) and MUST be extracted as a
     // candidate for the MoE to arbitrate, so the gate releases here. Off the lift
     // it is byte-identical.
-    if !context.allow_canonical_shapes && value.len() == 36 {
-        let bytes = value.as_bytes();
-        if bytes[8] == b'-'
-            && bytes[13] == b'-'
-            && bytes[18] == b'-'
-            && bytes[23] == b'-'
-            && value
-                .chars()
-                .filter(|&ch| ch != '-')
-                .all(|ch| ch.is_ascii_hexdigit())
-        {
-            return true;
-        }
+    if !context.allow_canonical_shapes
+        && crate::suppression::shape::looks_like_entropy_uuid_shape(value)
+    {
+        return true;
     }
 
     // Pure-hex canonical lengths are usually file/commit/image digests. A
@@ -50,7 +41,7 @@ fn is_known_non_secret(value: &str, context: PlausibilityContext) -> bool {
     // only when the model-authoritative lift is active; the scanner-side owner
     // then narrows it again to explicit crypto-key anchors.
     let hex_len = value.len();
-    if [32, 40, 64, 128].contains(&hex_len) && value.chars().all(|ch| ch.is_ascii_hexdigit()) {
+    if crate::suppression::shape::looks_like_entropy_canonical_hex_digest(value) {
         if !context.is_credential_context {
             return true;
         }

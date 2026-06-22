@@ -22,6 +22,60 @@ pub(crate) fn looks_like_dashed_serial_key(credential: &str) -> bool {
         .all(|p| p.len() == 5 && p.chars().all(|c| c.is_ascii_alphanumeric()))
 }
 
+/// Canonical non-secret shapes rejected at entropy candidate generation.
+///
+/// This intentionally preserves the historical entropy semantics instead of
+/// reusing broader report-time suppression helpers. For example,
+/// [`looks_like_bare_hex_digest`] also suppresses truncated digest lengths
+/// 48/56/72, and [`looks_like_dashed_serial_key`] accepts lowercase serial
+/// groups; entropy generation only treats exact UUID, 32/40/64/128 pure-hex,
+/// npm SRI, and uppercase 5x5 license serial shapes as canonical non-secrets.
+pub(crate) fn looks_like_entropy_canonical_non_secret_shape(value: &str) -> bool {
+    looks_like_entropy_uuid_shape(value)
+        || looks_like_entropy_canonical_hex_digest(value)
+        || looks_like_entropy_integrity_digest(value)
+        || looks_like_entropy_upper_license_serial(value)
+}
+
+pub(crate) fn looks_like_entropy_uuid_shape(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    value.len() == 36
+        && bytes[8] == b'-'
+        && bytes[13] == b'-'
+        && bytes[18] == b'-'
+        && bytes[23] == b'-'
+        && value.bytes().all(|b| b == b'-' || b.is_ascii_hexdigit())
+}
+
+pub(crate) fn looks_like_entropy_canonical_hex_digest(value: &str) -> bool {
+    matches!(value.len(), 32 | 40 | 64 | 128) && value.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+fn looks_like_entropy_integrity_digest(value: &str) -> bool {
+    for prefix in ["sha512-", "sha384-", "sha256-"] {
+        if let Some(body) = value.strip_prefix(prefix) {
+            if !body.is_empty() && crate::decode::standard_base64_shape(body).is_some() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn looks_like_entropy_upper_license_serial(value: &str) -> bool {
+    if value.len() != 29 || value.as_bytes().iter().filter(|&&b| b == b'-').count() != 4 {
+        return false;
+    }
+    let groups: Vec<&str> = value.split('-').collect();
+    groups.len() == 5
+        && groups.iter().all(|group| {
+            group.len() == 5
+                && group
+                    .bytes()
+                    .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+        })
+}
+
 /// Algo-labelled hash-digest sub-shape:
 /// docker (`sha256:<64-hex>`), npm package-lock integrity
 /// (`sha512-<base64>`), python requirements (`sha256:<64-hex>`), git-LFS

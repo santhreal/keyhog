@@ -156,6 +156,9 @@ fn entropy_keywords_does_not_own_shape_predicates() {
         "looks_like_program_identifier",
         "looks_like_dotted_source_identifier",
         "is_dash_segmented_alnum_decoy",
+        "looks_like_entropy_canonical_non_secret_shape",
+        "looks_like_entropy_canonical_hex_digest",
+        "looks_like_entropy_uuid_shape",
     ] {
         if !shape_mod.contains(required) {
             offenders.push(format!(
@@ -169,4 +172,52 @@ fn entropy_keywords_does_not_own_shape_predicates() {
         "shape predicates leaked back into entropy keywords:\n{}",
         offenders.join("\n")
     );
+}
+
+#[test]
+fn entropy_canonical_shapes_live_in_shape_owner() {
+    let src = scanner_src();
+    let scanner = uncommented_code(&read(&src.join("entropy/scanner.rs")));
+    let plausibility = uncommented_code(&read(&src.join("entropy/plausibility.rs")));
+    let shape = uncommented_code(&read(&src.join("suppression/shape/canonical.rs")));
+
+    assert!(
+        shape.contains("fn looks_like_entropy_canonical_non_secret_shape(")
+            && shape.contains("fn looks_like_entropy_canonical_hex_digest(")
+            && shape.contains("fn looks_like_entropy_uuid_shape("),
+        "suppression::shape::canonical must own entropy canonical non-secret shape predicates"
+    );
+    assert!(
+        scanner.contains(
+            "crate::suppression::shape::looks_like_entropy_canonical_non_secret_shape(value)"
+        ) && scanner.contains("crate::suppression::shape::looks_like_entropy_uuid_shape(value)"),
+        "entropy/scanner.rs must call the shape owner for canonical non-secret and UUID checks"
+    );
+    assert!(
+        plausibility.contains("crate::suppression::shape::looks_like_entropy_uuid_shape(value)")
+            && plausibility.contains(
+                "crate::suppression::shape::looks_like_entropy_canonical_hex_digest(value)"
+            ),
+        "entropy/plausibility.rs must call the shape owner for canonical UUID/hex checks"
+    );
+
+    for (rel, code) in [
+        ("entropy/scanner.rs", scanner.as_str()),
+        ("entropy/plausibility.rs", plausibility.as_str()),
+    ] {
+        for forbidden in [
+            "bytes[8] == b'-'",
+            "bytes[13] == b'-'",
+            "bytes[18] == b'-'",
+            "bytes[23] == b'-'",
+            "matches!(len, 32 | 40 | 64 | 128)",
+            "[32, 40, 64, 128].contains",
+            "[\"sha512-\", \"sha384-\", \"sha256-\"]",
+        ] {
+            assert!(
+                !code.contains(forbidden),
+                "{rel} must not re-own canonical entropy shape predicate token {forbidden:?}"
+            );
+        }
+    }
 }

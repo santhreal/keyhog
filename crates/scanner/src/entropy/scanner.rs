@@ -449,52 +449,7 @@ pub(crate) fn candidate_is_plausible(
 /// anchor must not re-admit them. Service-specific detector regexes (not this
 /// path) own the rare case where such a shape really is a credential.
 pub(crate) fn is_canonical_non_secret_shape(value: &str) -> bool {
-    let len = value.len();
-
-    // 8-4-4-4-12 UUID / k8s-resource-uid (36 chars, hex groups split by `-`).
-    if len == 36 {
-        let bytes = value.as_bytes();
-        if bytes[8] == b'-'
-            && bytes[13] == b'-'
-            && bytes[18] == b'-'
-            && bytes[23] == b'-'
-            && value.bytes().all(|b| b == b'-' || b.is_ascii_hexdigit())
-        {
-            return true;
-        }
-    }
-
-    // Pure-hex digests at canonical lengths: md5(32), sha1/git-commit-sha(40),
-    // sha256(64), sha512(128). npm-lock-integrity hex bodies land here too.
-    if matches!(len, 32 | 40 | 64 | 128) && value.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return true;
-    }
-
-    // npm Subresource Integrity: `sha512-<base64>` / `sha384-` / `sha256-`.
-    for prefix in ["sha512-", "sha384-", "sha256-"] {
-        if let Some(body) = value.strip_prefix(prefix) {
-            if !body.is_empty() && crate::decode::standard_base64_shape(body).is_some() {
-                return true;
-            }
-        }
-    }
-
-    // License serial: 5 dash-joined groups of 5 uppercase-alphanumeric chars
-    // (`JQQJN-VBWHG-...`, `ABCDE-FGHIJ-KLMNO-PQRST-UVWXY`).
-    if len == 29 && value.as_bytes().iter().filter(|&&b| b == b'-').count() == 4 {
-        let groups: Vec<&str> = value.split('-').collect();
-        if groups.len() == 5
-            && groups.iter().all(|g| {
-                g.len() == 5
-                    && g.bytes()
-                        .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
-            })
-        {
-            return true;
-        }
-    }
-
-    false
+    crate::suppression::shape::looks_like_entropy_canonical_non_secret_shape(value)
 }
 
 /// True iff the model-authoritative canonical-shape lift may release this exact
@@ -525,13 +480,7 @@ pub(crate) fn canonical_shape_lift_allowed(value: &str, keyword: &str) -> bool {
 }
 
 fn is_uuid_shape(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    value.len() == 36
-        && bytes[8] == b'-'
-        && bytes[13] == b'-'
-        && bytes[18] == b'-'
-        && bytes[23] == b'-'
-        && value.bytes().all(|b| b == b'-' || b.is_ascii_hexdigit())
+    crate::suppression::shape::looks_like_entropy_uuid_shape(value)
 }
 
 fn keyword_is_crypto_key_material(keyword: &str) -> bool {
