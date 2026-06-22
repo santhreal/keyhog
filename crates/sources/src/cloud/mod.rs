@@ -7,20 +7,9 @@ use std::io::Read;
 #[cfg(feature = "azure")]
 pub(crate) mod azure_blob;
 
-pub(crate) const OBJECT_FETCH_THREADS: usize = crate::parallel_fetch::CLOUD_OBJECT_FETCH_THREADS;
+pub(crate) use crate::blocking_thread::collect_on_blocking_thread;
 
-pub(crate) fn collect_on_blocking_thread<T, F>(source: &'static str, f: F) -> Result<T, SourceError>
-where
-    T: Send,
-    F: FnOnce() -> Result<T, SourceError> + Send,
-{
-    std::thread::scope(|scope| match scope.spawn(f).join() {
-        Ok(result) => result,
-        Err(_panic) => Err(SourceError::Other(format!(
-            "{source} fetch thread panicked"
-        ))),
-    })
-}
+pub(crate) const OBJECT_FETCH_THREADS: usize = crate::parallel_fetch::CLOUD_OBJECT_FETCH_THREADS;
 
 pub(crate) fn object_fetch_pool(
     source: &str,

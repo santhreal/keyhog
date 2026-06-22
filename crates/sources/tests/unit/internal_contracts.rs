@@ -149,6 +149,8 @@ fn filesystem_binary_strings_empty_branches_are_counted() {
 fn cloud_object_fetch_pool_is_single_shared_owner() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     let cloud = std::fs::read_to_string(root.join("src/cloud/mod.rs")).expect("read cloud owner");
+    let blocking_thread =
+        std::fs::read_to_string(root.join("src/blocking_thread.rs")).expect("read thread owner");
     let parallel =
         std::fs::read_to_string(root.join("src/parallel_fetch.rs")).expect("read fetch owner");
     assert!(
@@ -163,11 +165,11 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
         "cloud/mod.rs must own the shared cloud object-fetch pool and thread cap"
     );
     assert!(
-        cloud.contains("fn collect_on_blocking_thread")
+        blocking_thread.contains("fn collect_on_blocking_thread")
             && cloud.contains("fn blocking_client")
             && cloud.contains("fn parse_http_endpoint")
             && cloud.contains("fn credential_forward_allowed"),
-        "cloud/mod.rs must own shared cloud blocking thread, client, endpoint, and credential-forward primitives"
+        "blocking_thread.rs and cloud/mod.rs must own shared remote thread, cloud client, endpoint, and credential-forward primitives"
     );
 
     for rel in ["src/s3/mod.rs", "src/gcs.rs", "src/cloud/azure_blob.rs"] {
@@ -240,6 +242,17 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
             "{rel} must not own private Rayon pool builders"
         );
     }
+
+    let web = std::fs::read_to_string(root.join("src/web.rs")).expect("read web source");
+    assert!(
+        web.contains("blocking_thread::collect_on_blocking_thread(\"web\""),
+        "web source must use the shared blocking-thread wrapper"
+    );
+    assert_eq!(
+        web.matches("std::thread::scope").count(),
+        0,
+        "web source must not own a private scoped-thread wrapper"
+    );
 }
 
 #[cfg(feature = "git")]

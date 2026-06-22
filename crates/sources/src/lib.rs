@@ -7,6 +7,7 @@
 #![allow(clippy::too_many_arguments)]
 
 mod api;
+mod blocking_thread;
 mod compression_limits;
 mod decode;
 mod factory;
@@ -23,7 +24,12 @@ mod limits;
 mod parallel_fetch;
 mod skip;
 pub(crate) mod timeouts;
-#[cfg(any(feature = "web", feature = "github", feature = "gitlab", feature = "bitbucket"))]
+#[cfg(any(
+    feature = "web",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket"
+))]
 mod url_redaction;
 
 /// Shared HTTP-client policy (proxy, TLS, UA) used by every source

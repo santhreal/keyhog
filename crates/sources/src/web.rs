@@ -165,13 +165,10 @@ impl Source for WebSource {
         // dropping its internal runtime inside an async context aborts the
         // process. `fetch_all` is eager, so run it on a scoped std thread that
         // carries no ambient tokio runtime.
-        let all = std::thread::scope(|s| match s.spawn(|| self.fetch_all()).join() {
-            Ok(result) => result,
-            Err(_panic) => vec![Err(SourceError::Other(
-                "web fetch thread panicked".to_string(),
-            ))],
-        });
-        Box::new(all.into_iter())
+        match crate::blocking_thread::collect_on_blocking_thread("web", || Ok(self.fetch_all())) {
+            Ok(all) => Box::new(all.into_iter()),
+            Err(error) => Box::new(std::iter::once(Err(error))),
+        }
     }
     fn as_any(&self) -> &dyn std::any::Any {
         self
