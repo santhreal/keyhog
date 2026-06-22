@@ -333,41 +333,25 @@ impl Phase2AlwaysActivePrefilter {
                     } else {
                         Self::build_ascii_alternate(phase2_patterns, &valid_indices)
                     };
-                    // Truncated SUPERSET variants (lazy-DFA-friendly): each entry
-                    // through `truncate_for_prefilter` (fallback to verbatim), SAME
-                    // order. If the truncated set fails to compile, reuse the full
-                    // set (truncation is a perf opt, never a correctness need).
                     let trunc_srcs: Vec<String> = srcs
                         .iter()
                         .map(|s| truncate_for_prefilter(s).unwrap_or_else(|| (*s).to_string())) // LAW10: truncation is a prefilter perf-opt over a SUPERSET; un-truncatable => full form, recall-safe (never under-matches)
                         .collect();
-                    let set_trunc = match Self::compile_set_owned(&trunc_srcs, case_insensitive) {
-                        Some(trunc) => trunc,
-                        // Truncated form failed to compile: reuse the full set as
-                        // the (sound-superset) trunc gate by recompiling it — it
-                        // already compiled above as `set`. If even that anomalously
-                        // fails, never unwrap in production: degrade this batch to
-                        // always-run (ungated) so a compile anomaly costs perf, not
-                        // recall.
-                        None => {
+                    let set_trunc = match Self::compile_truncated_or_full_set(
+                        &srcs,
+                        &trunc_srcs,
+                        case_insensitive,
+                    ) {
+                        Ok(set) => set,
+                        Err(error) => {
                             tracing::warn!(
-                                batch_size = chunk.len(),
+                                batch_size = valid_indices.len(),
                                 case_insensitive,
-                                "truncated phase-2 RegexSet batch failed to compile; using full set (perf-only impact)"
+                                %error,
+                                "phase-2 RegexSet batch recompile failed; batch will run ungated (recall preserved)"
                             );
-                            match Self::compile_set(&srcs, case_insensitive) {
-                                Ok(full) => full,
-                                Err(error) => {
-                                    tracing::warn!(
-                                        batch_size = valid_indices.len(),
-                                        case_insensitive,
-                                        %error,
-                                        "phase-2 RegexSet batch recompile failed; batch will run ungated (recall preserved)"
-                                    );
-                                    ungated_indices.extend_from_slice(&valid_indices);
-                                    continue;
-                                }
-                            }
+                            ungated_indices.extend_from_slice(&valid_indices);
+                            continue;
                         }
                     };
                     let ascii_set_trunc = ascii_set
@@ -416,14 +400,26 @@ impl Phase2AlwaysActivePrefilter {
             .build()
     }
 
-    fn compile_set_owned(srcs: &[String], case_insensitive: bool) -> Option<regex::RegexSet> {
-        regex::RegexSetBuilder::new(srcs)
+    pub(crate) fn compile_truncated_or_full_set(
+        srcs: &[&str],
+        trunc_srcs: &[String],
+        case_insensitive: bool,
+    ) -> std::result::Result<regex::RegexSet, regex::Error> {
+        regex::RegexSetBuilder::new(trunc_srcs)
             .case_insensitive(case_insensitive)
             .size_limit(Self::BATCH_SIZE_LIMIT_BYTES)
             .dfa_size_limit(Self::BATCH_SIZE_LIMIT_BYTES)
             .crlf(case_insensitive)
             .build()
-            .ok() // LAW10: RegexSet compile failure => None; caller reuses the full/un-truncated set (recall-preserving), size/DFA limits only affect compile success not which matches report
+            .or_else(|_| {
+                // LAW10: truncated RegexSet compile failure reuses the full set; recall-preserving
+                tracing::warn!(
+                    batch_size = trunc_srcs.len(),
+                    case_insensitive,
+                    "truncated phase-2 RegexSet batch failed to compile; using full set (perf-only impact)"
+                );
+                Self::compile_set(srcs, case_insensitive)
+            })
     }
 
     /// Build the combined skip-gate Aho-Corasick over `literals`. `ci` selects

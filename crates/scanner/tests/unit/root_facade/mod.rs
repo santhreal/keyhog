@@ -36,6 +36,7 @@ mod phase2_pattern_profile;
 mod phase2_prefilter_hs_findings_parity;
 mod phase2_prefilter_hs_large_parity;
 mod phase2_prefix_gate_parity;
+mod phase2_sibling_path_contract;
 mod phase2_truncate_contract;
 mod platform_compat;
 mod prefilter_truncate_parity;

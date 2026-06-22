@@ -28,6 +28,31 @@ pub(crate) struct RequestError {
     pub transient: bool,
 }
 
+pub(crate) fn reject_private_resolved_addrs(
+    addrs: &[std::net::SocketAddr],
+    allow_private_ips: bool,
+) -> std::result::Result<(), VerificationResult> {
+    if !allow_private_ips && addrs.iter().any(|addr| is_private_ip_addr(&addr.ip())) {
+        return Err(VerificationResult::Error(PRIVATE_URL_ERROR.into()));
+    }
+    Ok(())
+}
+
+pub(crate) fn ssrf_check_url_with_resolved_addrs_for_test(
+    raw_url: &str,
+    addrs: &[std::net::SocketAddr],
+    allow_private_ips: bool,
+) -> std::result::Result<(), VerificationResult> {
+    let url = match reqwest::Url::parse(raw_url) {
+        Ok(url) => url,
+        Err(e) => return Err(VerificationResult::Error(format!("invalid URL: {}", e))),
+    };
+    if !allow_private_ips && is_private_url(url.as_str()) {
+        return Err(VerificationResult::Error(PRIVATE_URL_ERROR.into()));
+    }
+    reject_private_resolved_addrs(addrs, allow_private_ips)
+}
+
 pub(crate) async fn resolved_client_for_url(
     base_client: &Client,
     raw_url: &str,
@@ -99,9 +124,7 @@ pub(crate) async fn resolved_client_for_url(
                 ));
             }
             Ok(addrs) => {
-                if !allow_private_ips && addrs.iter().any(|addr| is_private_ip_addr(&addr.ip())) {
-                    return Err(VerificationResult::Error(PRIVATE_URL_ERROR.into()));
-                }
+                reject_private_resolved_addrs(&addrs, allow_private_ips)?;
                 pinned_addrs = addrs;
             }
             Err(error) => {

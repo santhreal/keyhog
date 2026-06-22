@@ -424,6 +424,12 @@ pub mod testing {
         ) -> impl std::future::Future<
             Output = (keyhog_core::VerificationResult, HashMap<String, String>),
         > + Send;
+        fn ssrf_check_url_with_resolved_addrs_for_test(
+            &self,
+            raw_url: &str,
+            addrs: &[std::net::SocketAddr],
+            allow_private_ips: bool,
+        ) -> Result<(), keyhog_core::VerificationResult>;
         fn build_finding(
             &self,
             group: keyhog_core::DedupedMatch,
@@ -564,6 +570,19 @@ pub mod testing {
             &self,
         ) -> (keyhog_core::VerificationResult, HashMap<String, String>) {
             crate::verify::retry_loop_preserves_metadata_on_exhaustion_for_test().await
+        }
+
+        fn ssrf_check_url_with_resolved_addrs_for_test(
+            &self,
+            raw_url: &str,
+            addrs: &[std::net::SocketAddr],
+            allow_private_ips: bool,
+        ) -> Result<(), keyhog_core::VerificationResult> {
+            crate::verify::ssrf_check_url_with_resolved_addrs_for_test(
+                raw_url,
+                addrs,
+                allow_private_ips,
+            )
         }
 
         fn build_finding(

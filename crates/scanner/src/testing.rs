@@ -657,6 +657,21 @@ pub(crate) fn mark_matches_gate_ns_per_call(
 pub(crate) fn truncate_for_prefilter(src: &str) -> Option<String> {
     crate::engine::phase2_truncate::truncate_for_prefilter(src)
 }
+
+#[cfg(test)]
+pub(crate) fn phase2_truncated_set_failure_matches_full_set(
+    srcs: &[&str],
+    trunc_srcs: &[String],
+    case_insensitive: bool,
+    text: &str,
+) -> Result<Vec<usize>, regex::Error> {
+    crate::engine::phase2::Phase2AlwaysActivePrefilter::compile_truncated_or_full_set(
+        srcs,
+        trunc_srcs,
+        case_insensitive,
+    )
+    .map(|set| set.matches(text).iter().collect())
+}
 #[cfg(test)]
 pub(crate) fn looks_like_program_identifier(value: &str) -> bool {
     crate::suppression::shape::looks_like_program_identifier(value)
