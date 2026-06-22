@@ -38,6 +38,7 @@ use keyhog_core::{Chunk, ChunkMetadata, SensitiveString};
 use keyhog_scanner::decode::Decoder;
 use keyhog_scanner::telemetry::{decode_truncation_count, reset_for_scan, testing::reset};
 use keyhog_scanner::testing::{decode_chunk, register_thread_decoder};
+use keyhog_scanner::{CompiledScanner, ScannerConfig};
 use std::time::{Duration, Instant};
 
 /// Recognizable marker the custom decoder stamps into each result's
@@ -109,6 +110,28 @@ impl Decoder for FanoutDecoder {
             });
         }
         out
+    }
+}
+
+struct OversizeDecodedChunk;
+
+impl Decoder for OversizeDecodedChunk {
+    fn name(&self) -> &'static str {
+        "oversize_decoded_chunk"
+    }
+
+    fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
+        if chunk.metadata.source_type.contains("oversize-decoded") {
+            return Vec::new();
+        }
+        vec![Chunk {
+            data: SensitiveString::from("Z".repeat(256)),
+            metadata: ChunkMetadata {
+                source_type: format!("{}/oversize-decoded", chunk.metadata.source_type),
+                path: chunk.metadata.path.clone(),
+                ..Default::default()
+            },
+        }]
     }
 }
 
@@ -280,4 +303,35 @@ fn decode_budget_is_enforced_inside_a_single_decoder_fanout() {
         0,
         "the production per-scan telemetry reset must clear decode coverage-gap counters"
     );
+}
+
+#[test]
+fn postprocess_oversized_decoded_child_counts_decode_truncation() {
+    let _telemetry_guard = super::super::telemetry_serial::lock();
+    reset();
+    let _decoder_guard = register_thread_decoder(Box::new(OversizeDecodedChunk));
+
+    let mut config = ScannerConfig::default();
+    config.max_decode_bytes = 64;
+    config.max_decode_depth = 1;
+    let scanner = CompiledScanner::compile(Vec::new())
+        .expect("empty scanner compiles")
+        .with_config(config);
+
+    let root = inert_root("oversize-child/audit.log");
+    assert!(
+        root.data.len() <= 64,
+        "fixture parent must enter decode postprocess"
+    );
+    let matches = scanner.scan(&root);
+    assert!(
+        matches.is_empty(),
+        "oversized decoded-child fixture has no detectors and must not emit matches"
+    );
+    assert_eq!(
+        decode_truncation_count(),
+        1,
+        "postprocess max_decode_bytes child skip must be counted as decode coverage truncation"
+    );
+    reset_for_scan();
 }

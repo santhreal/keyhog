@@ -109,6 +109,7 @@ impl CompiledScanner {
                 // anything that grew past the configured ceiling - the
                 // input was already a decode bomb if we got here.
                 if decoded_chunk.data.len() > self.config.max_decode_bytes {
+                    crate::telemetry::record_decode_truncation();
                     tracing::debug!(
                         path = ?chunk.metadata.path,
                         decoded_len = decoded_chunk.data.len(),

@@ -540,6 +540,7 @@ fn engine_backend_happy() {
     use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, Severity};
     use keyhog_scanner::engine::CompiledScanner;
     use keyhog_scanner::hw_probe::testing::ScanBackend;
+    let token = "GATEabcDEF1234567890abcDEFGH";
     let det = DetectorSpec {
         tests: Vec::new(),
         id: "gate".into(),
@@ -547,20 +548,20 @@ fn engine_backend_happy() {
         service: "demo".into(),
         severity: Severity::High,
         patterns: vec![PatternSpec {
-            regex: "abc".into(),
+            regex: r#"GATE[A-Za-z0-9]{24}"#.into(),
             description: None,
             group: None,
             client_safe: false,
         }],
         companions: vec![],
         verify: None,
-        keywords: vec!["abc".into()],
+        keywords: vec!["GATE".into()],
         min_confidence: None,
         ..Default::default()
     };
     let scanner = CompiledScanner::compile(vec![det]).unwrap();
     let chunk = Chunk {
-        data: "abc".into(),
+        data: token.into(),
         metadata: ChunkMetadata::default(),
     };
     assert_eq!(
@@ -612,8 +613,10 @@ fn engine_mod_error() {
 // ── crates/scanner/src/engine/scan.rs ─────────────────────────────────
 #[test]
 fn engine_scan_happy() {
-    let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
-    assert_eq!(scanner.scan(&demo_chunk("abc")).len(), 1);
+    let token = "GATEabcDEF1234567890abcDEFGH";
+    let scanner =
+        CompiledScanner::compile(vec![demo_detector(r#"GATE[A-Za-z0-9]{24}"#, "GATE")]).unwrap();
+    assert_eq!(scanner.scan(&demo_chunk(token)).len(), 1);
 }
 #[test]
 fn engine_scan_error() {
@@ -1634,6 +1637,25 @@ fn telemetry_coverage_gap_counters_have_typed_owner() {
                 "record_scanner_coverage_gap(ScannerCoverageGapEvent::InvalidDetectorIndexSkip"
             ),
         "public recorder wrappers must delegate to the typed scanner coverage-gap owner"
+    );
+}
+
+#[test]
+fn decode_postprocess_oversize_child_skip_is_counted() {
+    let path = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/scan_postprocess.rs"
+    );
+    let source = std::fs::read_to_string(path).expect("read scan_postprocess source");
+    let oversize_branch = source
+        .split("if decoded_chunk.data.len() > self.config.max_decode_bytes")
+        .nth(1)
+        .and_then(|tail| tail.split("continue;").next())
+        .expect("decoded child max_decode_bytes branch must exist");
+
+    assert!(
+        oversize_branch.contains("crate::telemetry::record_decode_truncation();"),
+        "postprocess oversized decoded-child skip must count a decode coverage gap before continuing"
     );
 }
 
