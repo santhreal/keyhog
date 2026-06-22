@@ -1,5 +1,4 @@
-use keyhog_scanner::testing::line_window_offsets;
-use keyhog_scanner::types::ScannerPreprocessedText;
+use keyhog_scanner::testing::{line_window_offsets, ScannerPreprocessedText};
 
 #[test]
 fn line_window_offsets_returns_inclusive_range() {

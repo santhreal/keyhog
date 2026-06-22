@@ -1,5 +1,4 @@
-use keyhog_scanner::testing::{compute_line_offsets, match_line_number};
-use keyhog_scanner::types::ScannerPreprocessedText;
+use keyhog_scanner::testing::{compute_line_offsets, match_line_number, ScannerPreprocessedText};
 
 #[test]
 fn offset_zero_maps_to_line_one() {

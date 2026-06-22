@@ -43,6 +43,8 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #![allow(clippy::too_many_arguments)]
 
+use std::borrow::Cow;
+
 #[cfg(test)]
 extern crate self as keyhog_scanner;
 
@@ -192,7 +194,6 @@ pub fn validate_hyperscan_cache_dir(path: &std::path::Path) -> std::result::Resu
 }
 
 /// Normalize scannable text by removing evasion characters and handling homoglyphs.
-#[cfg(test)]
 pub(crate) fn normalize_chunk_data(data: &str) -> Cow<'_, str> {
     if data.is_ascii() {
         return Cow::Borrowed(data);

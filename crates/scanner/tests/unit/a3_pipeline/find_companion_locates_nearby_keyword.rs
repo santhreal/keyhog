@@ -1,6 +1,4 @@
-use keyhog_scanner::testing::find_companion;
-use keyhog_scanner::types::CompiledCompanion;
-use keyhog_scanner::types::ScannerPreprocessedText;
+use keyhog_scanner::testing::{find_companion, CompiledCompanion, ScannerPreprocessedText};
 
 #[test]
 fn companion_within_window_returns_value() {

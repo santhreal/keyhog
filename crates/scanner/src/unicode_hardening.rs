@@ -483,7 +483,6 @@ fn fullwidth_to_ascii(ch: char) -> char {
 }
 
 /// Check if a character is a Unicode evasion character (zero-width or RTL override)
-#[cfg(test)]
 pub(crate) fn is_evasion_char(ch: char) -> bool {
     is_zero_width(ch) || is_rtl_override(ch)
 }

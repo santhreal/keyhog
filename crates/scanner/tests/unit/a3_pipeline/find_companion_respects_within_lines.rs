@@ -1,5 +1,4 @@
-use keyhog_scanner::testing::find_companion;
-use keyhog_scanner::types::{CompiledCompanion, ScannerPreprocessedText};
+use keyhog_scanner::testing::{find_companion, CompiledCompanion, ScannerPreprocessedText};
 
 #[test]
 fn companion_beyond_within_lines_returns_none() {

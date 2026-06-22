@@ -10,3 +10,6 @@ pub mod execution_plan_hunt_sections;
 pub mod gap_mod_wires_a3_slice_gates;
 pub mod gate_mod_lists_six_replacement_gates;
 pub mod scanner_gap_mod_wires_all_disk_files;
+pub mod scanner_test_module_manifests_wired;
+
+mod mod_wiring;

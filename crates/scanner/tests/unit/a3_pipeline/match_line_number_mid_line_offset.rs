@@ -1,7 +1,4 @@
-use keyhog_scanner::{
-    testing::{compute_line_offsets, match_line_number},
-    types::ScannerPreprocessedText,
-};
+use keyhog_scanner::testing::{compute_line_offsets, match_line_number, ScannerPreprocessedText};
 
 #[test]
 fn mid_line_byte_resolves_to_line_two() {

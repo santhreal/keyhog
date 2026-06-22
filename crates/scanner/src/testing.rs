@@ -412,22 +412,98 @@ pub use crate::engine::{
 pub fn code_lines_from_offsets_for_test<'a>(text: &'a str, line_offsets: &[usize]) -> Vec<&'a str> {
     crate::engine::code_lines_from_offsets(text, line_offsets)
 }
-#[cfg(test)]
-pub(crate) use crate::normalize_chunk_data;
 pub use crate::pipeline::compute_line_offsets;
-#[cfg(test)]
-pub(crate) use crate::pipeline::{find_companion, line_window_offsets, match_line_number};
-#[cfg(test)]
-pub(crate) use crate::pipeline::{
-    is_within_hex_context, local_context_window, match_entropy, normalize_scannable_chunk,
-};
+pub fn normalize_chunk_data(data: &str) -> std::borrow::Cow<'_, str> {
+    crate::normalize_chunk_data(data)
+}
+pub fn normalize_scannable_chunk<'a>(
+    chunk: &'a keyhog_core::Chunk,
+    owned: &'a mut Option<keyhog_core::Chunk>,
+) -> &'a keyhog_core::Chunk {
+    crate::pipeline::normalize_scannable_chunk(chunk, owned)
+}
+pub fn is_within_hex_context(data: &str, match_start: usize, match_end: usize) -> bool {
+    crate::pipeline::is_within_hex_context(data, match_start, match_end)
+}
+pub fn local_context_window(text: &str, line: usize, radius: usize) -> &str {
+    crate::pipeline::local_context_window(text, line, radius)
+}
+pub fn match_entropy(data: &[u8]) -> f64 {
+    crate::pipeline::match_entropy(data)
+}
+#[cfg(feature = "multiline")]
+pub use multiline::PreprocessedText as ScannerPreprocessedText;
+#[cfg(feature = "multiline")]
+pub struct CompiledCompanion {
+    pub name: String,
+    pub regex: regex::Regex,
+    pub capture_group: Option<usize>,
+    pub within_lines: usize,
+    pub required: bool,
+}
+#[cfg(feature = "multiline")]
+fn inner_preprocessed<'a>(
+    preprocessed: &ScannerPreprocessedText<'a>,
+) -> crate::types::ScannerPreprocessedText<'a> {
+    crate::types::ScannerPreprocessedText {
+        text: preprocessed.text.clone(),
+        original_end: preprocessed.original_end,
+        mappings: preprocessed
+            .mappings
+            .iter()
+            .map(|mapping| crate::multiline::LineMapping {
+                start_offset: mapping.start_offset,
+                end_offset: mapping.end_offset,
+                line_number: mapping.line_number,
+                original_start_offset: mapping.original_start_offset,
+            })
+            .collect(),
+    }
+}
+#[cfg(feature = "multiline")]
+fn inner_companion(companion: &CompiledCompanion) -> crate::types::CompiledCompanion {
+    crate::types::CompiledCompanion {
+        name: companion.name.clone(),
+        regex: companion.regex.clone(),
+        capture_group: companion.capture_group,
+        within_lines: companion.within_lines,
+        required: companion.required,
+    }
+}
+#[cfg(feature = "multiline")]
+pub fn match_line_number(
+    preprocessed: &ScannerPreprocessedText<'_>,
+    line_offsets: &[usize],
+    offset: usize,
+) -> usize {
+    let inner = inner_preprocessed(preprocessed);
+    crate::pipeline::match_line_number(&inner, line_offsets, offset)
+}
+#[cfg(feature = "multiline")]
+pub fn line_window_offsets(
+    preprocessed: &ScannerPreprocessedText<'_>,
+    start_line: usize,
+    end_line: usize,
+) -> Option<(usize, usize)> {
+    let inner = inner_preprocessed(preprocessed);
+    crate::pipeline::line_window_offsets(&inner, start_line, end_line)
+}
+#[cfg(feature = "multiline")]
+pub fn find_companion(
+    preprocessed: &ScannerPreprocessedText<'_>,
+    primary_line: usize,
+    companion: &CompiledCompanion,
+) -> Option<String> {
+    let inner_preprocessed = inner_preprocessed(preprocessed);
+    let inner_companion = inner_companion(companion);
+    crate::pipeline::find_companion(&inner_preprocessed, primary_line, &inner_companion)
+}
 #[cfg(test)]
 pub(crate) use crate::prefix_trie::build_propagation_table;
 #[cfg(test)]
 pub(crate) use crate::suppression::detector_weak_anchor;
 
-#[cfg(test)]
-pub(crate) fn known_example_suppressed(
+pub fn known_example_suppressed(
     credential: &str,
     path: Option<&str>,
     context: crate::context::CodeContext,
@@ -438,8 +514,7 @@ pub(crate) fn known_example_suppressed(
     )
 }
 
-#[cfg(test)]
-pub(crate) fn known_example_suppressed_with_source(
+pub fn known_example_suppressed_with_source(
     credential: &str,
     path: Option<&str>,
     context: crate::context::CodeContext,
@@ -451,8 +526,7 @@ pub(crate) fn known_example_suppressed_with_source(
     )
 }
 
-#[cfg(test)]
-pub(crate) fn named_detector_suppressed(
+pub fn named_detector_suppressed(
     credential: &str,
     path: Option<&str>,
     context: crate::context::CodeContext,
@@ -1704,10 +1778,7 @@ pub(crate) fn find_hex_strings(text: &str, min_length: usize) -> Vec<crate::deco
     crate::decode::find_hex_strings(text, min_length)
 }
 
-pub fn take_hex_digits<I>(
-    chars: &mut std::iter::Peekable<I>,
-    count: usize,
-) -> Result<u32, ()>
+pub fn take_hex_digits<I>(chars: &mut std::iter::Peekable<I>, count: usize) -> Result<u32, ()>
 where
     I: Iterator<Item = char>,
 {

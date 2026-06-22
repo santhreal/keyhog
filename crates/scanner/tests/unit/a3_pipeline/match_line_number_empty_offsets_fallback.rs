@@ -1,5 +1,4 @@
-use keyhog_scanner::testing::match_line_number;
-use keyhog_scanner::types::ScannerPreprocessedText;
+use keyhog_scanner::testing::{match_line_number, ScannerPreprocessedText};
 
 #[test]
 fn empty_offsets_falls_back_to_line_one() {

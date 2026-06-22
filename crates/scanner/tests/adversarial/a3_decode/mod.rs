@@ -1,4 +1,5 @@
 // LR1-A3: one #[test] per file
+mod decode_bomb_nested_base64;
 mod decode_hostile_caesar_shift_noise_only;
 mod decode_hostile_deep_json_string_nesting;
 mod decode_hostile_hex_encoded_github_pat_fragment;
@@ -14,7 +15,6 @@ mod decode_hostile_oversized_percent_run;
 mod decode_hostile_rot47_noise_only;
 mod decode_hostile_unicode_surrogate_pair_in_base64;
 mod decode_hostile_url_double_percent_encoded_aws;
-mod decode_bomb_nested_base64;
 mod malformed_base64_no_panic;
 mod multiline_phantom_no_double_secret;
 mod null_byte_in_parent_no_panic;

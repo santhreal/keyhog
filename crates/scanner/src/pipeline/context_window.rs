@@ -1,7 +1,5 @@
 use crate::types::*;
-#[cfg(test)]
 use keyhog_core::Chunk;
-#[cfg(test)]
 use std::borrow::Cow;
 
 /// Borrow the `[line - radius, line + radius]` window directly out of `text`.
@@ -12,7 +10,6 @@ use std::borrow::Cow;
 /// line). We locate the two byte boundaries with `memchr` newline scans -
 /// O(window) for the start instead of O(file) - and slice once. Callers that
 /// need ownership call `.to_string()` (still one alloc total, down from two).
-#[cfg(any(feature = "ml", test))]
 pub(crate) fn local_context_window(text: &str, line: usize, radius: usize) -> &str {
     let bytes = text.as_bytes();
     // Byte offset where the first window line begins. Walk forward over the
@@ -114,7 +111,6 @@ pub(crate) fn match_line_number(
         }
     }
 }
-#[cfg(test)]
 pub(crate) fn normalize_scannable_chunk<'a>(
     chunk: &'a Chunk,
     owned: &'a mut Option<Chunk>,
