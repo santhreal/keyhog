@@ -45,6 +45,33 @@ fn rejects_excessive_counted_repetition() {
 }
 
 #[test]
+fn rejects_cumulative_nested_counted_repetition() {
+    let issues = validate_detector(&detector_with_pattern("token(?:[A-Z]{500}){3}"));
+
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("counted repetition bound")
+    )));
+}
+
+#[test]
+fn deeply_nested_regex_validation_is_iterative() {
+    let mut regex = format!("token{}", "a{1}".repeat(300));
+    for _ in 0..120 {
+        regex = format!("(?:{regex}){{1}}");
+    }
+    let issues = validate_detector(&detector_with_pattern(&regex));
+
+    assert!(
+        issues.iter().any(|issue| matches!(
+            issue,
+            QualityIssue::Error(message) if message.contains("too complex")
+        )),
+        "expected deep but bounded-size regex to hit the validator complexity gate, got: {issues:?}"
+    );
+}
+
+#[test]
 fn rejects_nested_quantifiers() {
     let issues = validate_detector(&detector_with_pattern("(a+)+b"));
 
@@ -61,6 +88,16 @@ fn rejects_quantified_overlapping_alternation() {
     assert!(issues.iter().any(|issue| matches!(
         issue,
         QualityIssue::Error(message) if message.contains("overlapping alternations")
+    )));
+}
+
+#[test]
+fn rejects_unsupported_lookaround_at_parse() {
+    let issues = validate_detector(&detector_with_pattern("token(?=secret)"));
+
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("does not compile")
     )));
 }
 
@@ -128,4 +165,17 @@ fn warns_but_accepts_companion_character_class_with_tight_radius() {
         )),
         "tight-radius pure character class must NOT trip the rejection error"
     );
+}
+
+#[test]
+fn regex_validator_uses_one_iterative_ast_walk() {
+    let source =
+        std::fs::read_to_string("src/spec/validate_regex.rs").expect("read validate_regex source");
+
+    assert!(source.contains("struct RegexWalkFrame"));
+    assert!(source.contains("fn collect_regex_stats"));
+    assert!(!source.contains("collect_regex_complexity("));
+    assert!(!source.contains("collect_redos_risks("));
+    assert!(!source.contains("literalish_prefix(&group.ast)"));
+    assert!(!source.contains(".any(ast_contains_repetition)"));
 }

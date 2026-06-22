@@ -14,8 +14,7 @@ pub(crate) fn validate_regex_complexity(
     issues: &mut Vec<QualityIssue>,
 ) {
     let mut stats = RegexComplexityStats::default();
-    collect_regex_complexity(ast, &mut stats);
-    collect_redos_risks(ast, &mut stats, false);
+    collect_regex_stats(ast, &mut stats);
 
     if stats.nodes > MAX_REGEX_AST_NODES {
         issues.push(QualityIssue::Error(format!(
@@ -31,7 +30,7 @@ pub(crate) fn validate_regex_complexity(
         )));
     }
 
-    if stats.max_repeat_bound > MAX_REGEX_REPEAT_BOUND {
+    if stats.max_repeat_bound > u128::from(MAX_REGEX_REPEAT_BOUND) {
         issues.push(QualityIssue::Error(format!(
             "{kind} {index} regex has an excessive counted repetition bound ({} > {} limit)",
             stats.max_repeat_bound, MAX_REGEX_REPEAT_BOUND
@@ -55,139 +54,113 @@ pub(crate) fn validate_regex_complexity(
 struct RegexComplexityStats {
     nodes: usize,
     max_alternation_branches: usize,
-    max_repeat_bound: u32,
+    max_repeat_bound: u128,
     has_nested_quantifier: bool,
     has_quantified_overlapping_alternation: bool,
 }
 
-fn collect_regex_complexity(ast: &Ast, stats: &mut RegexComplexityStats) {
-    stats.nodes += 1;
-    match ast {
-        Ast::Repetition(repetition) => {
-            update_repeat_bound(&repetition.op.kind, stats);
-            collect_regex_complexity(&repetition.ast, stats);
-        }
-        Ast::Group(group) => collect_regex_complexity(&group.ast, stats),
-        Ast::Alternation(alternation) => {
-            stats.max_alternation_branches =
-                stats.max_alternation_branches.max(alternation.asts.len());
-            for ast in &alternation.asts {
-                collect_regex_complexity(ast, stats);
-            }
-        }
-        Ast::Concat(concat) => {
-            for ast in &concat.asts {
-                collect_regex_complexity(ast, stats);
-            }
-        }
-        Ast::Empty(_)
-        | Ast::Flags(_)
-        | Ast::Literal(_)
-        | Ast::Dot(_)
-        | Ast::Assertion(_)
-        | Ast::ClassUnicode(_)
-        | Ast::ClassPerl(_)
-        | Ast::ClassBracketed(_) => {}
-    }
+#[derive(Clone, Copy)]
+struct RegexWalkFrame<'a> {
+    ast: &'a Ast,
+    inside_unbounded_repetition: bool,
+    repeat_product: u128,
 }
 
-fn collect_redos_risks(ast: &Ast, stats: &mut RegexComplexityStats, inside_repetition: bool) {
-    match ast {
-        Ast::Repetition(repetition) => {
-            // Flag nested quantifiers only when they can cause exponential backtracking.
-            //
-            // SAFE patterns (char class quantifier inside group quantifier):
-            //   (?:api[_\s.-]*)? - [_\s.-]* is atomic, can't overlap
-            //   (?:key|token)[=:\s"']+  - char class quantifier, deterministic
-            //
-            // DANGEROUS patterns (group/concat quantifier inside quantifier):
-            //   (a+)+       - classic ReDoS
-            //   (\w+\s*)+   - overlapping quantifiers on non-atomic elements
-            //
-            // Strategy: only flag when THIS repetition wraps a non-atomic element
-            // AND we're inside another repetition, OR when our inner AST itself
-            // contains a nested repetition wrapping a non-atomic element.
-            let this_is_simple_atom = matches!(
-                &*repetition.ast,
-                Ast::Literal(_)
-                    | Ast::Dot(_)
-                    | Ast::ClassBracketed(_)
-                    | Ast::ClassPerl(_)
-                    | Ast::ClassUnicode(_)
-            );
-            let this_is_unbounded = matches!(
-                repetition.op.kind,
-                ast::RepetitionKind::ZeroOrMore
-                    | ast::RepetitionKind::OneOrMore
-                    | ast::RepetitionKind::Range(ast::RepetitionRange::AtLeast { .. })
-            );
-            // Only flag when BOTH the outer and this repetition are unbounded
-            // and this wraps a non-atomic element. (?:group)? is safe because
-            // ? is {0,1} - it can't cause exponential backtracking.
-            if inside_repetition && !this_is_simple_atom && this_is_unbounded {
-                stats.has_nested_quantifier = true;
+fn collect_regex_stats(ast: &Ast, stats: &mut RegexComplexityStats) {
+    let mut stack = vec![RegexWalkFrame {
+        ast,
+        inside_unbounded_repetition: false,
+        repeat_product: 1,
+    }];
+
+    while let Some(frame) = stack.pop() {
+        stats.nodes += 1;
+        match frame.ast {
+            Ast::Repetition(repetition) => {
+                let this_is_simple_atom = is_simple_atom(&repetition.ast);
+                let this_is_unbounded = is_unbounded_repeat(&repetition.op.kind);
+                let repeat_bound = repeat_bound(&repetition.op.kind);
+                let cumulative_bound = frame.repeat_product.saturating_mul(repeat_bound);
+                stats.max_repeat_bound = stats.max_repeat_bound.max(cumulative_bound);
+
+                if frame.inside_unbounded_repetition && !this_is_simple_atom && this_is_unbounded {
+                    stats.has_nested_quantifier = true;
+                }
+                if !frame.inside_unbounded_repetition
+                    && this_is_unbounded
+                    && !this_is_simple_atom
+                    && ast_contains_repetition(&repetition.ast)
+                {
+                    stats.has_nested_quantifier = true;
+                }
+                if alternation_has_overlapping_prefixes(&repetition.ast) {
+                    stats.has_quantified_overlapping_alternation = true;
+                }
+
+                stack.push(RegexWalkFrame {
+                    ast: &repetition.ast,
+                    inside_unbounded_repetition: frame.inside_unbounded_repetition
+                        || this_is_unbounded,
+                    repeat_product: cumulative_bound,
+                });
             }
-            if !inside_repetition
-                && this_is_unbounded
-                && !this_is_simple_atom
-                && ast_contains_repetition(&repetition.ast)
-            {
-                stats.has_nested_quantifier = true;
+            Ast::Group(group) => stack.push(RegexWalkFrame {
+                ast: &group.ast,
+                ..frame
+            }),
+            Ast::Alternation(alternation) => {
+                stats.max_alternation_branches =
+                    stats.max_alternation_branches.max(alternation.asts.len());
+                for ast in &alternation.asts {
+                    stack.push(RegexWalkFrame { ast, ..frame });
+                }
             }
-            if alternation_has_overlapping_prefixes(&repetition.ast) {
-                stats.has_quantified_overlapping_alternation = true;
+            Ast::Concat(concat) => {
+                for ast in &concat.asts {
+                    stack.push(RegexWalkFrame { ast, ..frame });
+                }
             }
-            // Only propagate inside_repetition when this is unbounded
-            collect_redos_risks(
-                &repetition.ast,
-                stats,
-                inside_repetition || this_is_unbounded,
-            );
+            Ast::Empty(_)
+            | Ast::Flags(_)
+            | Ast::Literal(_)
+            | Ast::Dot(_)
+            | Ast::Assertion(_)
+            | Ast::ClassUnicode(_)
+            | Ast::ClassPerl(_)
+            | Ast::ClassBracketed(_) => {}
         }
-        Ast::Group(group) => collect_redos_risks(&group.ast, stats, inside_repetition),
-        Ast::Alternation(alternation) => {
-            for ast in &alternation.asts {
-                collect_redos_risks(ast, stats, inside_repetition);
-            }
-        }
-        Ast::Concat(concat) => {
-            for ast in &concat.asts {
-                collect_redos_risks(ast, stats, inside_repetition);
-            }
-        }
-        Ast::Empty(_)
-        | Ast::Flags(_)
-        | Ast::Literal(_)
-        | Ast::Dot(_)
-        | Ast::Assertion(_)
-        | Ast::ClassUnicode(_)
-        | Ast::ClassPerl(_)
-        | Ast::ClassBracketed(_) => {}
     }
 }
 
 fn ast_contains_repetition(ast: &Ast) -> bool {
-    match ast {
-        Ast::Repetition(_) => true,
-        Ast::Group(group) => ast_contains_repetition(&group.ast),
-        Ast::Alternation(alternation) => alternation.asts.iter().any(ast_contains_repetition),
-        Ast::Concat(concat) => concat.asts.iter().any(ast_contains_repetition),
-        Ast::Empty(_)
-        | Ast::Flags(_)
-        | Ast::Literal(_)
-        | Ast::Dot(_)
-        | Ast::Assertion(_)
-        | Ast::ClassUnicode(_)
-        | Ast::ClassPerl(_)
-        | Ast::ClassBracketed(_) => false,
+    let mut stack = vec![ast];
+    while let Some(node) = stack.pop() {
+        match node {
+            Ast::Repetition(_) => return true,
+            Ast::Group(group) => stack.push(&group.ast),
+            Ast::Alternation(alternation) => stack.extend(alternation.asts.iter()),
+            Ast::Concat(concat) => stack.extend(concat.asts.iter()),
+            Ast::Empty(_)
+            | Ast::Flags(_)
+            | Ast::Literal(_)
+            | Ast::Dot(_)
+            | Ast::Assertion(_)
+            | Ast::ClassUnicode(_)
+            | Ast::ClassPerl(_)
+            | Ast::ClassBracketed(_) => {}
+        }
     }
+    false
 }
 
 fn alternation_has_overlapping_prefixes(ast: &Ast) -> bool {
-    let alternatives = match ast {
-        Ast::Alternation(alternation) => &alternation.asts,
-        Ast::Group(group) => return alternation_has_overlapping_prefixes(&group.ast),
-        _ => return false,
+    let mut node = ast;
+    let alternatives = loop {
+        match node {
+            Ast::Alternation(alternation) => break &alternation.asts,
+            Ast::Group(group) => node = &group.ast,
+            _ => return false,
+        }
     };
 
     let prefixes = alternatives
@@ -205,33 +178,63 @@ fn alternation_has_overlapping_prefixes(ast: &Ast) -> bool {
 }
 
 fn literalish_prefix(ast: &Ast) -> Option<String> {
-    match ast {
-        Ast::Literal(literal) => Some(literal.c.to_string()),
-        Ast::Concat(concat) => {
-            let mut prefix = String::new();
-            for node in &concat.asts {
-                match node {
-                    Ast::Literal(literal) => prefix.push(literal.c),
-                    Ast::Group(group) => prefix.push_str(&literalish_prefix(&group.ast)?),
-                    _ => break,
+    let mut prefix = String::new();
+    let mut stack = vec![ast];
+
+    while let Some(node) = stack.pop() {
+        match node {
+            Ast::Literal(literal) => prefix.push(literal.c),
+            Ast::Group(group) => stack.push(&group.ast),
+            Ast::Concat(concat) => {
+                for child in concat.asts.iter().rev() {
+                    stack.push(child);
                 }
             }
-            (!prefix.is_empty()).then_some(prefix)
+            Ast::Empty(_)
+            | Ast::Flags(_)
+            | Ast::Dot(_)
+            | Ast::Assertion(_)
+            | Ast::ClassUnicode(_)
+            | Ast::ClassPerl(_)
+            | Ast::ClassBracketed(_)
+            | Ast::Alternation(_)
+            | Ast::Repetition(_) => break,
         }
-        Ast::Group(group) => literalish_prefix(&group.ast),
-        _ => None,
     }
+
+    (!prefix.is_empty()).then_some(prefix)
 }
 
-fn update_repeat_bound(kind: &ast::RepetitionKind, stats: &mut RegexComplexityStats) {
-    let bound = match kind {
+fn is_simple_atom(ast: &Ast) -> bool {
+    matches!(
+        ast,
+        Ast::Literal(_)
+            | Ast::Dot(_)
+            | Ast::ClassBracketed(_)
+            | Ast::ClassPerl(_)
+            | Ast::ClassUnicode(_)
+    )
+}
+
+fn is_unbounded_repeat(kind: &ast::RepetitionKind) -> bool {
+    matches!(
+        kind,
+        ast::RepetitionKind::ZeroOrMore
+            | ast::RepetitionKind::OneOrMore
+            | ast::RepetitionKind::Range(ast::RepetitionRange::AtLeast { .. })
+    )
+}
+
+fn repeat_bound(kind: &ast::RepetitionKind) -> u128 {
+    match kind {
         ast::RepetitionKind::ZeroOrOne => 1,
-        ast::RepetitionKind::ZeroOrMore | ast::RepetitionKind::OneOrMore => MAX_REGEX_REPEAT_BOUND,
+        ast::RepetitionKind::ZeroOrMore | ast::RepetitionKind::OneOrMore => {
+            u128::from(MAX_REGEX_REPEAT_BOUND)
+        }
         ast::RepetitionKind::Range(range) => match range {
             ast::RepetitionRange::Exactly(max)
             | ast::RepetitionRange::AtLeast(max)
-            | ast::RepetitionRange::Bounded(_, max) => *max,
+            | ast::RepetitionRange::Bounded(_, max) => u128::from(*max),
         },
-    };
-    stats.max_repeat_bound = stats.max_repeat_bound.max(bound);
+    }
 }
