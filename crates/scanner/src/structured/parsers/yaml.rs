@@ -10,17 +10,9 @@ use super::{
 /// same byte body, and matching on the encoded blob would route both
 /// findings to the first occurrence.
 pub(crate) fn parse_k8s_secret(text: &str) -> Vec<ExtractedPair> {
-    let value: serde_yaml::Value = match serde_yaml::from_str(text) {
-        Ok(v) => v,
-        Err(error) => {
-            // Law 10: this file declared `kind: Secret` but won't parse, so its
-            // base64 `data:` values are never decoded — the exact secrets a k8s
-            // Secret hides. Count it (the file MATCHED the format, so this is a
-            // real coverage gap, not generic YAML noise); keep the debug detail.
-            crate::telemetry::record_structured_parse_failure();
-            tracing::warn!(target: "keyhog::structured", %error, "k8s secret YAML parse failed; base64 data: values will not be decoded-through");
-            return Vec::new();
-        }
+    let value = match parse_yaml_value(text, "k8s-secret", "base64 data: values") {
+        Some(value) => value,
+        None => return Vec::new(),
     };
 
     let mut pending = Vec::new();
@@ -73,20 +65,43 @@ pub(crate) fn parse_k8s_secret(text: &str) -> Vec<ExtractedPair> {
 
 /// Parse docker-compose.yml environment blocks.
 pub(crate) fn parse_docker_compose(text: &str) -> Vec<ExtractedPair> {
-    let value: serde_yaml::Value = match serde_yaml::from_str(text) {
-        Ok(v) => v,
-        Err(error) => {
-            // Law 10: a docker-compose file that won't parse loses its
-            // environment-block decode-through (inline `environment:` secrets
-            // never become scannable lines). Count + keep the debug detail.
-            crate::telemetry::record_structured_parse_failure();
-            tracing::warn!(target: "keyhog::structured", %error, "docker-compose YAML parse failed; environment-block decode-through disabled");
-            return Vec::new();
-        }
+    let value = match parse_yaml_value(text, "docker-compose", "environment-block values") {
+        Some(value) => value,
+        None => return Vec::new(),
     };
     let mut pending = Vec::new();
     find_environment_pairs(&value, &mut pending, 0);
     finalize_pending_pairs(text, pending)
+}
+
+/// serde_yaml 0.9.34 enforces this parser recursion limit before building a
+/// Value. Keep the contract local and tested so the parse-time guard is visible
+/// instead of being mistaken for the post-parse compose traversal cap below.
+const SERDE_YAML_PARSE_RECURSION_LIMIT: usize = 128;
+
+fn parse_yaml_value(
+    text: &str,
+    surface: &'static str,
+    lost_decode_surface: &'static str,
+) -> Option<serde_yaml::Value> {
+    match serde_yaml::from_str(text) {
+        Ok(value) => Some(value),
+        Err(error) => {
+            // Law 10: a structured YAML file that won't parse loses its
+            // decode-through surface. Count + keep the debug detail; serde_yaml
+            // also rejects deeply nested YAML before Value construction.
+            crate::telemetry::record_structured_parse_failure();
+            tracing::warn!(
+                target: "keyhog::structured",
+                %error,
+                surface,
+                lost_decode_surface,
+                serde_yaml_parse_recursion_limit = SERDE_YAML_PARSE_RECURSION_LIMIT,
+                "structured YAML parse failed; decode-through disabled"
+            );
+            None
+        }
+    }
 }
 
 /// Cap recursion depth on adversarial YAML. Real docker-compose schemas nest

@@ -200,6 +200,16 @@ fn docker_compose_list_environment() {
     assert_eq!(value_of!(pairs, "DB_PASS"), Some("supersecret"));
 }
 
+#[test]
+fn docker_compose_deeply_nested_yaml_is_bounded() {
+    let text = deeply_nested_yaml(140, "environment:\n  API_KEY: should_not_parse\n");
+    let pairs = parse_docker_compose(&text);
+    assert!(
+        pairs.is_empty(),
+        "deeply nested compose YAML must fail closed instead of overflowing"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // parse_k8s_secret — base64 decode under data:
 // ---------------------------------------------------------------------------
@@ -228,4 +238,30 @@ fn k8s_secret_stringdata_kept_verbatim() {
 #[test]
 fn k8s_secret_invalid_yaml_empty() {
     assert!(parse_k8s_secret("\t: : : not yaml").is_empty());
+}
+
+#[test]
+fn k8s_secret_deeply_nested_yaml_is_bounded() {
+    let text = deeply_nested_yaml(140, "data:\n  token: c2hvdWxkX25vdF9wYXJzZQ==\n");
+    let pairs = parse_k8s_secret(&text);
+    assert!(
+        pairs.is_empty(),
+        "deeply nested k8s Secret YAML must fail closed instead of overflowing"
+    );
+}
+
+fn deeply_nested_yaml(depth: usize, leaf: &str) -> String {
+    let mut text = String::new();
+    for level in 0..depth {
+        text.push_str(&"  ".repeat(level));
+        text.push_str("node");
+        text.push_str(&level.to_string());
+        text.push_str(":\n");
+    }
+    for line in leaf.lines() {
+        text.push_str(&"  ".repeat(depth));
+        text.push_str(line);
+        text.push('\n');
+    }
+    text
 }
