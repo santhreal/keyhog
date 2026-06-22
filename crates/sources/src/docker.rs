@@ -302,6 +302,7 @@ fn validate_extracted_tree_with_limits<R: std::io::Read>(
             )));
         }
         if size > limits.docker_tar_entry_bytes {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             return Err(SourceError::Other(format!(
                 "docker archive entry '{}' exceeds {} bytes",
                 path.display(),
@@ -314,6 +315,7 @@ fn validate_extracted_tree_with_limits<R: std::io::Read>(
         // unpack exhausts disk. Reject before unpack starts.
         cumulative_bytes = cumulative_bytes.saturating_add(size);
         if cumulative_bytes > limits.docker_tar_total_bytes {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
             return Err(SourceError::Other(format!(
                 "docker archive cumulative size exceeds {} bytes at entry '{}' \
                  (likely zip-bomb)",

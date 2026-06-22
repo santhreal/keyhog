@@ -82,13 +82,17 @@ fn read_stdin_limited(max_bytes: usize) -> std::io::Result<String> {
     read_to_string_limited(&mut std::io::stdin().lock(), max_bytes)
 }
 
-fn read_to_string_limited(reader: &mut impl Read, max_bytes: usize) -> std::io::Result<String> {
+pub(crate) fn read_to_string_limited(
+    reader: &mut impl Read,
+    max_bytes: usize,
+) -> std::io::Result<String> {
     let mut bytes = Vec::new();
     // Read at most `max_bytes + 1` so oversized stdin is rejected before we
     // hand a giant buffer to the scanner.
     reader.take(max_bytes as u64 + 1).read_to_end(&mut bytes)?;
 
     if bytes.len() > max_bytes {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
         return Err(std::io::Error::other(format!(
             "stdin exceeds {} byte limit",
             max_bytes

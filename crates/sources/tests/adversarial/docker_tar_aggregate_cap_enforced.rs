@@ -2,10 +2,13 @@
 //! must be rejected before unpack (zip-bomb defense).
 
 #[cfg(feature = "docker")]
+use keyhog_sources::skip_counts;
+#[cfg(feature = "docker")]
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 #[cfg(feature = "docker")]
 #[test]
 fn docker_tar_aggregate_cap_enforced() {
+    TestApi.reset_skip_counters();
     let dir = tempfile::tempdir().expect("tempdir");
     let tar_path = dir.path().join("aggregate_bomb.tar");
     let file = std::fs::File::create(&tar_path).expect("create tar");
@@ -30,6 +33,15 @@ fn docker_tar_aggregate_cap_enforced() {
     assert!(
         msg.contains("cumulative size exceeds") && msg.contains("zip-bomb"),
         "expected aggregate cap rejection, got {msg:?}"
+    );
+    let counts = skip_counts();
+    assert_eq!(
+        counts.archive_truncated, 1,
+        "Docker aggregate cap rejection must be visible as archive-truncated telemetry"
+    );
+    assert_eq!(
+        counts.over_max_size, 0,
+        "aggregate cap rejection is not a single-entry over-max-size skip"
     );
 }
 

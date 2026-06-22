@@ -1,10 +1,13 @@
 //! Docker tar per-entry declared size above cap must be rejected.
 
 #[cfg(feature = "docker")]
+use keyhog_sources::skip_counts;
+#[cfg(feature = "docker")]
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 #[cfg(feature = "docker")]
 #[test]
 fn docker_tar_single_entry_exceeds_cap_rejected() {
+    TestApi.reset_skip_counters();
     let dir = tempfile::tempdir().expect("tempdir");
     let tar_path = dir.path().join("huge.tar");
     let file = std::fs::File::create(&tar_path).expect("create tar");
@@ -23,6 +26,15 @@ fn docker_tar_single_entry_exceeds_cap_rejected() {
     assert!(
         msg.contains("exceeds"),
         "expected per-entry cap rejection, got {msg:?}"
+    );
+    let counts = skip_counts();
+    assert_eq!(
+        counts.over_max_size, 1,
+        "Docker per-entry cap rejection must be visible as over-max-size telemetry"
+    );
+    assert_eq!(
+        counts.archive_truncated, 0,
+        "per-entry cap rejection is not an aggregate archive truncation"
     );
 }
 

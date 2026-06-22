@@ -7,6 +7,11 @@ pub mod testing {
         fn set_skip_counts(&self, counts: crate::SkipCounts);
         fn reset_skip_counters(&self);
         fn bump_skipped_over_max_size(&self, delta: usize);
+        fn read_stdin_test_input_with_limit(
+            &self,
+            input: &[u8],
+            max_bytes: usize,
+        ) -> std::io::Result<String>;
         fn reader_pool_thread_count(&self, scanner_threads: usize) -> usize;
         fn configured_reader_pool_thread_count(
             &self,
@@ -320,6 +325,15 @@ pub mod testing {
 
         fn bump_skipped_over_max_size(&self, delta: usize) {
             let _event = crate::record_skip_events(crate::SourceSkipEvent::OverMaxSize, delta);
+        }
+
+        fn read_stdin_test_input_with_limit(
+            &self,
+            input: &[u8],
+            max_bytes: usize,
+        ) -> std::io::Result<String> {
+            let mut reader = std::io::Cursor::new(input);
+            crate::stdin::read_to_string_limited(&mut reader, max_bytes)
         }
 
         fn reader_pool_thread_count(&self, scanner_threads: usize) -> usize {

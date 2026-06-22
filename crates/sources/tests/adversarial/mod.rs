@@ -84,6 +84,7 @@ mod r5t_zip_slip_null_byte_in_name_not_extracted;
 mod r5t_zip_slip_uppercase_dotdot_not_extracted;
 mod r5t_zip_stored_zero_byte_entry_no_panic;
 mod snappy_random_bytes_no_panic;
+mod stdin_over_max_size_counted;
 mod support;
 mod tar_zero_byte_no_panic;
 mod unicode_filename_in_jar_scanned;
