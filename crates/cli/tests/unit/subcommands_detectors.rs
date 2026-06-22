@@ -83,3 +83,16 @@ fn embedded_detector_loading_uses_core_fail_closed_loader() {
         "detectors subcommand must not warn-and-continue on malformed embedded detector TOML"
     );
 }
+
+#[test]
+fn detectors_fix_uses_bounded_core_detector_reader() {
+    let src = include_str!("../../src/subcommands/detectors.rs");
+    assert!(
+        src.contains("keyhog_core::read_detector_toml_file(&entry)"),
+        "`detectors --fix` must share the bounded core detector TOML reader"
+    );
+    assert!(
+        !src.contains("std::fs::read_to_string(&entry)"),
+        "`detectors --fix` must not read detector TOMLs through unbounded read_to_string"
+    );
+}

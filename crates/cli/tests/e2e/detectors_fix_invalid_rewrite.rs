@@ -111,3 +111,31 @@ url = "https://api.example.com/{tenant}/token"
         "stderr must name the detector file that blocked the rewrite; stderr={stderr}"
     );
 }
+
+#[test]
+fn detectors_fix_oversized_detector_fails_before_rewrite() {
+    let dir = TempDir::new().expect("tempdir");
+    let oversized = dir.path().join("oversized.toml");
+    let file = std::fs::File::create(&oversized).expect("create oversized detector");
+    file.set_len(keyhog_core::DETECTOR_TOML_FILE_BYTES + 1)
+        .expect("make oversized sparse detector");
+
+    let output = Command::new(binary())
+        .args(["detectors", "--fix", "--detectors"])
+        .arg(dir.path())
+        .output()
+        .expect("spawn keyhog detectors --fix");
+
+    assert_eq!(
+        output.status.code(),
+        Some(2),
+        "`detectors --fix` must fail on oversized detector TOML; stdout={} stderr={}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("oversized.toml") && stderr.contains("exceeds"),
+        "stderr must name the oversized detector and the cap failure; stderr={stderr}"
+    );
+}

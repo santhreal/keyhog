@@ -263,7 +263,7 @@ fn run_fix(args: &DetectorArgs) -> Result<ExitCode> {
 
     for entry in entries {
         total_files += 1;
-        let raw = std::fs::read_to_string(&entry)
+        let raw = keyhog_core::read_detector_toml_file(&entry)
             .with_context(|| format!("reading {}", entry.display()))?;
         let (rewritten, count) = fix_single_brace_in_verify_blocks(&raw);
         if count == 0 {
