@@ -56,6 +56,19 @@ thread_local! {
     static KEYWORD_LINES_POOL: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
 }
 
+fn record_adjudicated_suppression(
+    path: Option<&str>,
+    credential: &str,
+    stage_id: crate::adjudicate::StageId,
+) {
+    let candidate = crate::adjudicate::CandidateMatch::new(credential);
+    let ctx = crate::adjudicate::MatchCtx::for_stage(stage_id);
+    if let Some(stage_id) = crate::adjudicate::adjudicate_match(candidate, &ctx).suppressed_stage()
+    {
+        crate::telemetry::record_shape_suppression(path, credential, stage_id.as_str());
+    }
+}
+
 impl CompiledScanner {
     /// Scan for generic `SECRET_NAME = "high_entropy_value"` patterns.
     /// This is the precision-gated equivalent of Gitleaks's `generic-api-key`.
@@ -202,19 +215,19 @@ impl CompiledScanner {
                     keyword_match.start(),
                     keyword_match.end(),
                 ) {
-                    crate::telemetry::record_shape_suppression(
+                    record_adjudicated_suppression(
                         chunk.metadata.path.as_deref(),
                         keyword,
-                        "generic_named_detector_owned_keyword",
+                        crate::adjudicate::StageId::GenericNamedDetectorOwnedKeyword,
                     );
                     continue;
                 }
                 let value = value_match.as_str();
                 if keyword.eq_ignore_ascii_case("auth") && !bare_auth_value_allowed(value) {
-                    crate::telemetry::record_shape_suppression(
+                    record_adjudicated_suppression(
                         chunk.metadata.path.as_deref(),
                         value,
-                        "bare_auth_unstructured",
+                        crate::adjudicate::StageId::BareAuthUnstructured,
                     );
                     continue;
                 }
@@ -250,10 +263,10 @@ impl CompiledScanner {
                     allow_canonical_hex_key,
                     allow_encoded_text_secret,
                 ) {
-                    crate::telemetry::record_shape_suppression(
+                    record_adjudicated_suppression(
                         chunk.metadata.path.as_deref(),
                         value,
-                        reason,
+                        crate::adjudicate::StageId::GenericValueShape(reason),
                     );
                     continue;
                 }
@@ -316,15 +329,20 @@ impl CompiledScanner {
                     // confirmed false positive — trace the drop (KH-L-0412, Law-10)
                     // so it is not silent, mirroring the named path's
                     // `checksum_invalid` engine gate.
-                    crate::telemetry::record_shape_suppression(
+                    record_adjudicated_suppression(
                         chunk.metadata.path.as_deref(),
                         value,
-                        "checksum_invalid",
+                        crate::adjudicate::StageId::ChecksumInvalid,
                     );
                     continue;
                 };
 
                 if confidence < self.config.min_confidence {
+                    record_adjudicated_suppression(
+                        chunk.metadata.path.as_deref(),
+                        value,
+                        crate::adjudicate::StageId::GenericBelowMinConfidence,
+                    );
                     continue;
                 }
 

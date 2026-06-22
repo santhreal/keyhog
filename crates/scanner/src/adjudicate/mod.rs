@@ -20,6 +20,10 @@ pub(crate) enum StageId {
     ScoringRejected,
     ReportConfidenceRejected,
     NamedDetectorSuppression,
+    GenericNamedDetectorOwnedKeyword,
+    BareAuthUnstructured,
+    GenericValueShape(&'static str),
+    GenericBelowMinConfidence,
 }
 
 impl StageId {
@@ -38,6 +42,10 @@ impl StageId {
             Self::ScoringRejected => "scoring_rejected",
             Self::ReportConfidenceRejected => "report_confidence_rejected",
             Self::NamedDetectorSuppression => "named_detector_suppressed",
+            Self::GenericNamedDetectorOwnedKeyword => "generic_named_detector_owned_keyword",
+            Self::BareAuthUnstructured => "bare_auth_unstructured",
+            Self::GenericValueShape(reason) => reason,
+            Self::GenericBelowMinConfidence => "generic_below_min_confidence",
         }
     }
 }
@@ -182,13 +190,23 @@ impl ProcessCandidateSignals {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct MatchCtx<'a> {
+    explicit_stage: Option<StageId>,
     process_signals: Option<ProcessCandidateSignals>,
     named_detector_suppression: Option<NamedDetectorSuppressionCtx<'a>>,
 }
 
 impl<'a> MatchCtx<'a> {
+    pub(crate) const fn for_stage(stage_id: StageId) -> Self {
+        Self {
+            explicit_stage: Some(stage_id),
+            process_signals: None,
+            named_detector_suppression: None,
+        }
+    }
+
     pub(crate) const fn for_process_signals(process_signals: ProcessCandidateSignals) -> Self {
         Self {
+            explicit_stage: None,
             process_signals: Some(process_signals),
             named_detector_suppression: None,
         }
@@ -196,6 +214,7 @@ impl<'a> MatchCtx<'a> {
 
     pub(crate) const fn for_named_detector(ctx: NamedDetectorSuppressionCtx<'a>) -> Self {
         Self {
+            explicit_stage: None,
             process_signals: None,
             named_detector_suppression: Some(ctx),
         }
@@ -207,7 +226,11 @@ type StageFn = for<'candidate, 'ctx, 'borrow> fn(
     &'borrow MatchCtx<'ctx>,
 ) -> StageOutcome;
 
-const STAGES: &[StageFn] = &[process_signal_stage, named_detector_suppression_stage];
+const STAGES: &[StageFn] = &[
+    explicit_stage,
+    process_signal_stage,
+    named_detector_suppression_stage,
+];
 
 pub(crate) fn adjudicate_match(candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> Verdict {
     for stage in STAGES {
@@ -217,6 +240,14 @@ pub(crate) fn adjudicate_match(candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>
         }
     }
     Verdict::Reported
+}
+
+fn explicit_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageOutcome {
+    if let Some(stage_id) = ctx.explicit_stage {
+        StageOutcome::Suppress(stage_id)
+    } else {
+        StageOutcome::Pass
+    }
 }
 
 fn process_signal_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageOutcome {

@@ -139,3 +139,31 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
         );
     }
 }
+
+#[test]
+fn generic_bridge_suppression_reasons_route_through_adjudicator() {
+    let src = scanner_src();
+    let generic = uncommented_code(&read(&src.join("engine/phase2_generic.rs")));
+    let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
+
+    assert!(
+        generic.contains("fn record_adjudicated_suppression(")
+            && generic.contains("crate::adjudicate::adjudicate_match("),
+        "engine/phase2_generic.rs must route generic suppression telemetry through the adjudicator"
+    );
+
+    for reason in [
+        "generic_named_detector_owned_keyword",
+        "bare_auth_unstructured",
+        "generic_below_min_confidence",
+    ] {
+        assert!(
+            !generic.contains(&format!("\"{reason}\"")),
+            "engine/phase2_generic.rs must not own the {reason} suppression reason"
+        );
+        assert!(
+            adjudicate.contains(&format!("\"{reason}\"")),
+            "adjudicate/mod.rs must own the {reason} suppression reason"
+        );
+    }
+}

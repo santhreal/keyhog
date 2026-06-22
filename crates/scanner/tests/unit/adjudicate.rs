@@ -174,6 +174,66 @@ fn process_stage_reports_service_anchored_candidate() {
 }
 
 #[test]
+fn explicit_stage_reports_generic_named_detector_owned_keyword() {
+    let credential = "segment_write_key";
+    let ctx = MatchCtx::for_stage(StageId::GenericNamedDetectorOwnedKeyword);
+
+    assert_eq!(
+        adjudicate_match(CandidateMatch::new(credential), &ctx),
+        Verdict::Suppressed(StageId::GenericNamedDetectorOwnedKeyword)
+    );
+    assert_eq!(
+        StageId::GenericNamedDetectorOwnedKeyword.as_str(),
+        "generic_named_detector_owned_keyword"
+    );
+}
+
+#[test]
+fn explicit_stage_reports_bare_auth_unstructured() {
+    let credential = "not-a-structured-authorization-value";
+    let ctx = MatchCtx::for_stage(StageId::BareAuthUnstructured);
+
+    assert_eq!(
+        adjudicate_match(CandidateMatch::new(credential), &ctx),
+        Verdict::Suppressed(StageId::BareAuthUnstructured)
+    );
+    assert_eq!(
+        StageId::BareAuthUnstructured.as_str(),
+        "bare_auth_unstructured"
+    );
+}
+
+#[test]
+fn explicit_stage_reports_generic_value_shape_reason() {
+    let credential = "DUMMY_TOKEN_VALUE_abc123def456";
+    let ctx = MatchCtx::for_stage(StageId::GenericValueShape("known_example_or_placeholder"));
+
+    assert_eq!(
+        adjudicate_match(CandidateMatch::new(credential), &ctx),
+        Verdict::Suppressed(StageId::GenericValueShape("known_example_or_placeholder"))
+    );
+    assert_eq!(
+        StageId::GenericValueShape("known_example_or_placeholder").as_str(),
+        "known_example_or_placeholder"
+    );
+}
+
+#[test]
+fn explicit_stage_reports_generic_below_min_confidence() {
+    let credential = "low-confidence-but-shaped-value";
+    let ctx = MatchCtx::for_stage(StageId::GenericBelowMinConfidence);
+
+    assert_eq!(
+        adjudicate_match(CandidateMatch::new(credential), &ctx),
+        Verdict::Suppressed(StageId::GenericBelowMinConfidence)
+    );
+    assert_eq!(
+        StageId::GenericBelowMinConfidence.as_str(),
+        "generic_below_min_confidence"
+    );
+}
+
+#[test]
 fn named_detector_stage_suppresses_generic_identifier() {
     let ctx = MatchCtx::for_named_detector(NamedDetectorSuppressionCtx::with_weak_anchor(
         Some("webgoat/WebgoatContext.java"),
