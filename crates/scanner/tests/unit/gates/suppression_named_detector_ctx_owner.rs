@@ -127,7 +127,6 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
         "camel_case_no_digit",
         "checksum_invalid",
         "scoring_rejected",
-        "report_confidence_rejected",
         "below_min_confidence",
     ] {
         assert!(
@@ -186,7 +185,7 @@ fn entropy_and_ml_emit_reject_reasons_route_through_adjudicator() {
 
     for reason in [
         "entropy_named_detector_owned_assignment",
-        "report_confidence_rejected",
+        "checksum_invalid",
         "below_min_confidence",
         "hard_suppressed_context",
     ] {

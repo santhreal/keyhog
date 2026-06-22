@@ -239,7 +239,7 @@ impl CompiledScanner {
                 crate::adjudicate::record_stage_suppression(
                     chunk.metadata.path.as_deref(),
                     &entropy_match.value,
-                    crate::adjudicate::StageId::ReportConfidenceRejected,
+                    crate::adjudicate::StageId::ChecksumInvalid,
                 );
                 continue;
             };

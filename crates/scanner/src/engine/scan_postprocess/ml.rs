@@ -126,7 +126,7 @@ impl CompiledScanner {
                 crate::adjudicate::record_stage_suppression(
                     pending.raw_match.location.file_path.as_deref(),
                     &pending.credential,
-                    crate::adjudicate::StageId::ReportConfidenceRejected,
+                    crate::adjudicate::StageId::ChecksumInvalid,
                 );
                 continue;
             };

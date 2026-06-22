@@ -18,7 +18,6 @@ pub(crate) enum StageId {
     CamelCaseNoDigit,
     ChecksumInvalid,
     ScoringRejected,
-    ReportConfidenceRejected,
     BelowMinConfidence,
     HardSuppressedContext,
     NamedDetectorSuppression,
@@ -44,7 +43,6 @@ impl StageId {
             Self::CamelCaseNoDigit => "camel_case_no_digit",
             Self::ChecksumInvalid => "checksum_invalid",
             Self::ScoringRejected => "scoring_rejected",
-            Self::ReportConfidenceRejected => "report_confidence_rejected",
             Self::BelowMinConfidence => "below_min_confidence",
             Self::HardSuppressedContext => "hard_suppressed_context",
             Self::NamedDetectorSuppression => "named_detector_suppressed",
@@ -182,14 +180,6 @@ impl ProcessCandidateSignals {
     pub(crate) const fn from_scoring_rejected(scoring_rejected: bool) -> Self {
         if scoring_rejected {
             Self::suppress(StageId::ScoringRejected)
-        } else {
-            Self::pass()
-        }
-    }
-
-    pub(crate) const fn from_report_confidence_rejected(report_confidence_rejected: bool) -> Self {
-        if report_confidence_rejected {
-            Self::suppress(StageId::ReportConfidenceRejected)
         } else {
             Self::pass()
         }

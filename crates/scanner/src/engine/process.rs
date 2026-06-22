@@ -278,17 +278,12 @@ impl CompiledScanner {
                         calibration: self.config.calibration.as_deref(),
                     },
                 ) else {
-                    let report_confidence_ctx = crate::adjudicate::MatchCtx::for_process_signals(
-                        crate::adjudicate::ProcessCandidateSignals::from_report_confidence_rejected(
-                            true,
-                        ),
-                    );
-                    crate::adjudicate::record_suppression(
+                    crate::adjudicate::record_stage_suppression(
                         chunk.metadata.path.as_deref(),
                         credential,
-                        &report_confidence_ctx,
+                        crate::adjudicate::StageId::ChecksumInvalid,
                     )
-                    .expect("report-confidence-rejected signal must suppress");
+                    .expect("checksum-invalid signal must suppress");
                     return;
                 };
                 confidence = adjusted_confidence;
