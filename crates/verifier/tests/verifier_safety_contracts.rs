@@ -819,6 +819,88 @@ fn single_and_multi_step_share_http_request_lifecycle_helpers() {
 }
 
 #[test]
+fn resolved_client_for_url_is_split_into_explicit_egress_stages() {
+    let request = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/verify/request.rs"
+    ))
+    .expect("verify/request.rs must be readable");
+    let resolved = request
+        .split("pub(crate) async fn resolved_client_for_url(")
+        .nth(1)
+        .expect("resolved_client_for_url must exist")
+        .split("fn parse_target_url(")
+        .next()
+        .expect("resolved_client_for_url must be followed by parse_target_url");
+
+    for needle in [
+        "parse_target_url(raw_url)?",
+        "enforce_target_url_policy(&url, allow_private_ips, allow_http)?",
+        "proxied_target(base_client, url)",
+        "target_host(&url)",
+        "resolve_direct_target_addrs(&url, &host, allow_private_ips).await?",
+        "direct_target_client(base_client, &host, &pinned_addrs, timeout, insecure_tls)?",
+    ] {
+        assert!(
+            resolved.contains(needle),
+            "resolved_client_for_url must delegate egress stage {needle}"
+        );
+    }
+
+    for owner in [
+        "fn parse_target_url(",
+        "fn enforce_target_url_policy(",
+        "fn proxied_target(",
+        "fn target_host(",
+        "async fn resolve_direct_target_addrs(",
+        "fn direct_target_client(",
+    ] {
+        assert!(request.contains(owner), "request.rs must define {owner}");
+    }
+
+    let policy = request
+        .split("fn enforce_target_url_policy(")
+        .nth(1)
+        .expect("policy stage must exist")
+        .split("fn proxied_target(")
+        .next()
+        .expect("policy stage must be bounded before proxied_target");
+    assert!(
+        policy.contains("screen_target_url_and_addrs(url, &[], allow_private_ips)?")
+            && policy.contains("VerificationResult::Error(HTTPS_ONLY_ERROR.into())"),
+        "policy stage must own URL-shape SSRF screening before HTTPS enforcement"
+    );
+
+    let direct_resolve = request
+        .split("async fn resolve_direct_target_addrs(")
+        .nth(1)
+        .expect("direct resolver stage must exist")
+        .split("fn direct_target_client(")
+        .next()
+        .expect("direct resolver stage must be bounded before client selection");
+    assert!(
+        direct_resolve.contains("crate::ssrf::resolve_dns_cached")
+            && direct_resolve.contains("screen_target_url_and_addrs(url, &addrs, allow_private_ips)?")
+            && direct_resolve.contains("blocked: DNS returned no addresses")
+            && direct_resolve.contains("blocked: DNS resolution failed"),
+        "direct resolver stage must own DNS resolution, resolved-IP screening, and fail-closed DNS errors"
+    );
+
+    let direct_client = request
+        .split("fn direct_target_client(")
+        .nth(1)
+        .expect("direct client stage must exist")
+        .split("fn pinned_client_for(")
+        .next()
+        .expect("direct client stage must be bounded before cache owner");
+    assert!(
+        direct_client.contains("return Ok(base_client.clone());")
+            && direct_client.contains("pinned_client_for(host, pinned_addrs, timeout, insecure_tls)"),
+        "direct client stage must preserve the empty-host base-client path and the pinned-client cache path"
+    );
+}
+
+#[test]
 fn aws_sts_egress_uses_resolved_screened_client() {
     let aws = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/verify/aws.rs"))
         .expect("verify/aws.rs must be readable");

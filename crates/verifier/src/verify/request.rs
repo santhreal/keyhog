@@ -92,23 +92,8 @@ pub(crate) async fn resolved_client_for_url(
     proxy_in_use: bool,
     insecure_tls: bool,
 ) -> std::result::Result<ResolvedTarget, VerificationResult> {
-    let url = match reqwest::Url::parse(raw_url) {
-        Ok(url) => url,
-        Err(e) => return Err(VerificationResult::Error(format!("invalid URL: {}", e))),
-    };
-
-    // SSRF check MUST come before HTTPS-only check to prevent information leakage
-    // about internal network topology via error message differentiation.
-    screen_target_url_and_addrs(&url, &[], allow_private_ips)?;
-
-    // Enforce HTTPS unconditionally in production. Plaintext loopback secret
-    // transmission was a known leak vector - see audit release-2026-04-26.
-    // Tests that need HTTP set `danger_allow_http=true` AND
-    // `danger_allow_private_ips=true` so production paths can never opt
-    // into either accidentally.
-    if !allow_http && url.scheme() != "https" {
-        return Err(VerificationResult::Error(HTTPS_ONLY_ERROR.into()));
-    }
+    let url = parse_target_url(raw_url)?;
+    enforce_target_url_policy(&url, allow_private_ips, allow_http)?;
 
     // When a proxy is in use, DNS resolution is the proxy's job (the
     // verifier sends an absolute-form HTTP request or HTTP CONNECT and
@@ -121,10 +106,7 @@ pub(crate) async fn resolved_client_for_url(
     // moot through a proxy (the proxy resolves once; reqwest doesn'"'"'t
     // re-resolve).
     if proxy_in_use {
-        return Ok(ResolvedTarget {
-            client: base_client.clone(),
-            url,
-        });
+        return Ok(proxied_target(base_client, url));
     }
 
     // Direct connection (no proxy): resolve the host once and PIN that
@@ -135,60 +117,108 @@ pub(crate) async fn resolved_client_for_url(
     // the first time and 127.0.0.1 the second. Pinning means the TCP
     // connect uses the IP we already accepted - the second lookup never
     // happens.
-    let mut pinned_addrs: Vec<std::net::SocketAddr> = Vec::new();
-    let host = url.host_str().unwrap_or_default().to_string(); // LAW10: missing/non-string field => empty/placeholder; recall-safe
-    let port = url.port_or_known_default().unwrap_or(443); // LAW10: no explicit port => scheme default (443); recall-irrelevant
+    let host = target_host(&url);
+    let pinned_addrs = resolve_direct_target_addrs(&url, &host, allow_private_ips).await?;
+    let client = direct_target_client(base_client, &host, &pinned_addrs, timeout, insecure_tls)?;
 
-    if !host.is_empty() {
-        // Skip DNS for raw IP literals - `lookup_host` handles them, but
-        // be explicit for clarity.
-        let target = format!("{host}:{port}");
-        let addrs: std::result::Result<Vec<std::net::SocketAddr>, std::io::Error> =
-            crate::ssrf::resolve_dns_cached(target.as_str()).await;
-        match addrs {
-            Ok(addrs) if addrs.is_empty() => {
-                return Err(VerificationResult::Error(
-                    "blocked: DNS returned no addresses".into(),
-                ));
-            }
-            Ok(addrs) => {
-                screen_target_url_and_addrs(&url, &addrs, allow_private_ips)?;
-                pinned_addrs = addrs;
-            }
-            Err(error) => {
-                // Law 10: failure => fail-closed error (blocked/refused), never proceeds; security guard
-                return Err(VerificationResult::Error(format!(
-                    "blocked: DNS resolution failed: {error}"
-                )));
-            }
-        }
+    Ok(ResolvedTarget { client, url })
+}
+
+fn parse_target_url(raw_url: &str) -> std::result::Result<reqwest::Url, VerificationResult> {
+    reqwest::Url::parse(raw_url)
+        .map_err(|e| VerificationResult::Error(format!("invalid URL: {}", e)))
+}
+
+fn enforce_target_url_policy(
+    url: &reqwest::Url,
+    allow_private_ips: bool,
+    allow_http: bool,
+) -> std::result::Result<(), VerificationResult> {
+    // SSRF check MUST come before HTTPS-only check to prevent information leakage
+    // about internal network topology via error message differentiation.
+    screen_target_url_and_addrs(url, &[], allow_private_ips)?;
+
+    // Enforce HTTPS unconditionally in production. Plaintext loopback secret
+    // transmission was a known leak vector - see audit release-2026-04-26.
+    // Tests that need HTTP set `danger_allow_http=true` AND
+    // `danger_allow_private_ips=true` so production paths can never opt
+    // into either accidentally.
+    if !allow_http && url.scheme() != "https" {
+        return Err(VerificationResult::Error(HTTPS_ONLY_ERROR.into()));
     }
 
-    // Build or reuse a cached client that pins host→addresses. `.resolve_to_addrs`
+    Ok(())
+}
+
+fn proxied_target(base_client: &Client, url: reqwest::Url) -> ResolvedTarget {
+    ResolvedTarget {
+        client: base_client.clone(),
+        url,
+    }
+}
+
+fn target_host(url: &reqwest::Url) -> String {
+    url.host_str().unwrap_or_default().to_string() // LAW10: missing/non-string field => empty/placeholder; recall-safe
+}
+
+async fn resolve_direct_target_addrs(
+    url: &reqwest::Url,
+    host: &str,
+    allow_private_ips: bool,
+) -> std::result::Result<Vec<SocketAddr>, VerificationResult> {
+    if host.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let port = url.port_or_known_default().unwrap_or(443); // LAW10: no explicit port => scheme default (443); recall-irrelevant
+    let target = format!("{host}:{port}");
+    match crate::ssrf::resolve_dns_cached(target.as_str()).await {
+        Ok(addrs) if addrs.is_empty() => Err(VerificationResult::Error(
+            "blocked: DNS returned no addresses".into(),
+        )),
+        Ok(addrs) => {
+            screen_target_url_and_addrs(url, &addrs, allow_private_ips)?;
+            Ok(addrs)
+        }
+        Err(error) => {
+            // Law 10: failure => fail-closed error (blocked/refused), never proceeds; security guard
+            Err(VerificationResult::Error(format!(
+                "blocked: DNS resolution failed: {error}"
+            )))
+        }
+    }
+}
+
+fn direct_target_client(
+    base_client: &Client,
+    host: &str,
+    pinned_addrs: &[SocketAddr],
+    timeout: Duration,
+    insecure_tls: bool,
+) -> std::result::Result<Client, VerificationResult> {
+    // Build or reuse a cached client that pins host->addresses. `.resolve_to_addrs`
     // bypasses the system resolver for this hostname, so reqwest's internal
     // connector cannot re-resolve to a private IP between the check above
     // and the TCP connect. Keep `base_client` for code paths that don't
     // resolve a URL (e.g. AwsV4 self-constructing auth).
-    let client = if !pinned_addrs.is_empty() {
-        // The DNS-pinning rebuild MUST replicate the security-critical
-        // config baked into `base_client`. Reqwest's default ClientBuilder
-        // would otherwise:
-        //   - follow redirects (Policy::limited(10)) - the base client sets
-        //     Policy::none() to stop a public host from issuing a 302 to a
-        //     private IP that bypasses the pre-connect SSRF check (the pin
-        //     only covers the ORIGINAL host; the redirect target is
-        //     re-resolved via the system resolver).
-        //   - validate certs strictly - the base client honors
-        //     `--insecure` (`config.insecure_tls`); dropping that here
-        //     means the flag silently doesn't apply on the path that
-        //     actually serves the request when no proxy is in use.
-        // Both gaps were live until 2026-05-26.
-        pinned_client_for(&host, &pinned_addrs, timeout, insecure_tls)?
-    } else {
-        base_client.clone()
-    };
+    if pinned_addrs.is_empty() {
+        return Ok(base_client.clone());
+    }
 
-    Ok(ResolvedTarget { client, url })
+    // The DNS-pinning rebuild MUST replicate the security-critical
+    // config baked into `base_client`. Reqwest's default ClientBuilder
+    // would otherwise:
+    //   - follow redirects (Policy::limited(10)) - the base client sets
+    //     Policy::none() to stop a public host from issuing a 302 to a
+    //     private IP that bypasses the pre-connect SSRF check (the pin
+    //     only covers the ORIGINAL host; the redirect target is
+    //     re-resolved via the system resolver).
+    //   - validate certs strictly - the base client honors
+    //     `--insecure` (`config.insecure_tls`); dropping that here
+    //     means the flag silently doesn't apply on the path that
+    //     actually serves the request when no proxy is in use.
+    // Both gaps were live until 2026-05-26.
+    pinned_client_for(host, pinned_addrs, timeout, insecure_tls)
 }
 
 fn pinned_client_for(
