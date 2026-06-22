@@ -99,6 +99,21 @@ services:
 }
 
 #[test]
+fn parse_docker_compose_env_lines_are_batched_and_attributed() {
+    let text = "version: '3'\nservices:\n  web:\n    image: app\n    environment:\n      - API_KEY=fake_docker_secret_value\n      - DEBUG=false\n";
+    let pairs = parse_docker_compose(text);
+    let api_key = pairs
+        .iter()
+        .find(|pair| pair.context == "API_KEY")
+        .expect("API_KEY env pair extracted");
+
+    assert_eq!(
+        api_key.line, 6,
+        "docker-compose sequence env pair must report its own YAML line"
+    );
+}
+
+#[test]
 fn parse_docker_compose_malformed_yaml_does_not_panic() {
     let text = "{ invalid yaml: [unclosed";
     // Must not panic — just return empty or parse what it can
@@ -124,6 +139,30 @@ fn parse_k8s_secret_base64_data_extracted() {
     assert!(
         !pairs.is_empty(),
         "k8s secret data block must produce pairs"
+    );
+}
+
+#[test]
+fn parse_k8s_secret_data_and_string_data_lines_are_attributed() {
+    use base64::Engine;
+    let b64_val = base64::engine::general_purpose::STANDARD.encode(b"fake_k8s_secret_value");
+    let text = format!(
+        "apiVersion: v1\nkind: Secret\ndata:\n  token: {b64_val}\nstringData:\n  password: cleartext_secret\n"
+    );
+    let pairs = parse_k8s_secret(&text);
+    let token = pairs
+        .iter()
+        .find(|pair| pair.context == "token")
+        .expect("base64 data token extracted");
+    let password = pairs
+        .iter()
+        .find(|pair| pair.context == "password")
+        .expect("stringData password extracted");
+
+    assert_eq!(token.line, 4, "data token line must point at token key");
+    assert_eq!(
+        password.line, 6,
+        "stringData line must point at password key"
     );
 }
 

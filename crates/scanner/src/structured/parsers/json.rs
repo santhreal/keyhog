@@ -1,40 +1,7 @@
-use super::{line::resolve_line_numbers, ExtractedPair};
-
-enum LineAnchor {
-    Value,
-    Owned(String),
-}
-
-struct PendingExtractedPair {
-    context: String,
-    value: String,
-    line_anchor: LineAnchor,
-}
-
-impl PendingExtractedPair {
-    fn value_anchor(context: impl Into<String>, value: String) -> Self {
-        Self {
-            context: context.into(),
-            value,
-            line_anchor: LineAnchor::Value,
-        }
-    }
-
-    fn owned_anchor(context: impl Into<String>, value: String, line_anchor: String) -> Self {
-        Self {
-            context: context.into(),
-            value,
-            line_anchor: LineAnchor::Owned(line_anchor),
-        }
-    }
-
-    fn line_anchor(&self) -> &str {
-        match &self.line_anchor {
-            LineAnchor::Value => &self.value,
-            LineAnchor::Owned(anchor) => anchor,
-        }
-    }
-}
+use super::{
+    line::{finalize_pending_pairs, PendingExtractedPair},
+    ExtractedPair,
+};
 
 /// Parse Terraform state JSON and recursively extract `value` fields.
 pub(crate) fn parse_tfstate(text: &str) -> Vec<ExtractedPair> {
@@ -189,25 +156,4 @@ fn first_nonempty_fragment_anchor(parts: &[String]) -> Option<String> {
         }
     }
     None
-}
-
-fn finalize_pending_pairs(text: &str, pending: Vec<PendingExtractedPair>) -> Vec<ExtractedPair> {
-    let anchors: Vec<&str> = pending
-        .iter()
-        .map(PendingExtractedPair::line_anchor)
-        .collect();
-    let lines = resolve_line_numbers(text, &anchors);
-    let mut pairs = Vec::with_capacity(pending.len());
-    for (index, pending_pair) in pending.into_iter().enumerate() {
-        let line = match lines.get(index) {
-            Some(line) => *line,
-            None => 1,
-        };
-        pairs.push(ExtractedPair {
-            context: pending_pair.context,
-            value: pending_pair.value,
-            line,
-        });
-    }
-    pairs
 }
