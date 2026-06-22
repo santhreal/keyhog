@@ -112,10 +112,9 @@ impl WebSource {
     /// Uses `reqwest::blocking` directly; the blocking client internally manages
     /// its own background runtime, so no dedicated thread wrapper is required.
     ///
-    /// Each URL gets its own client built via [`build_web_client`] so the
-    /// host can be DNS-resolved and pinned (DNS-rebinding defense); the
-    /// custom redirect policy re-validates every hop (redirect-to-internal
-    /// defense). Both gates mirror the verifier's `resolved_client_for_url`.
+    /// Each URL and redirect hop gets its own client built via
+    /// [`build_web_client`] so the host can be DNS-resolved and pinned
+    /// (DNS-rebinding defense) before that exact request is sent.
     fn fetch_all(&self) -> Vec<Result<Chunk, SourceError>> {
         let proxy_in_use = matches!(
             self.http.effective_proxy().as_deref(),
@@ -142,19 +141,11 @@ impl WebSource {
                 continue;
             }
 
-            let client =
-                match build_web_client(&self.http, url, proxy_in_use, allow_calibration_url) {
-                    Ok(c) => c,
-                    Err(e) => {
-                        results.push(Err(e));
-                        continue;
-                    }
-                };
-
             let chunks = fetch_url(
-                &client,
+                &self.http,
                 url,
                 self.limits.web_response_bytes,
+                proxy_in_use,
                 allow_calibration_url,
             );
             results.extend(chunks);
@@ -196,9 +187,10 @@ impl Source for WebSource {
 /// cheap defense-in-depth guard so this helper stays safe even if a future
 /// caller hands it a client that skipped `build_web_client`.
 fn fetch_url(
-    client: &reqwest::blocking::Client,
+    http: &crate::http::HttpClientConfig,
     url: &str,
     max_response_bytes: usize,
+    proxy_in_use: bool,
     allow_autoroute_loopback_calibration_url: bool,
 ) -> Vec<Result<Chunk, SourceError>> {
     // SSRF defense (host pre-filter): the verifier already has this gate via
@@ -217,13 +209,15 @@ fn fetch_url(
         )))];
     }
 
-    let resp = match client.get(url).send() {
+    let resp = match send_with_pinned_redirects(
+        http,
+        url,
+        proxy_in_use,
+        allow_autoroute_loopback_calibration_url,
+    ) {
         Ok(r) => r,
         Err(e) => {
-            let safe_url = redact_url(url);
-            return vec![Err(SourceError::Other(format!(
-                "failed to fetch {safe_url}: {e}"
-            )))];
+            return vec![Err(e)];
         }
     };
 
@@ -246,6 +240,79 @@ fn fetch_url(
     } else {
         handle_js(resp, url, max_response_bytes)
     }
+}
+
+fn send_with_pinned_redirects(
+    http: &crate::http::HttpClientConfig,
+    url: &str,
+    proxy_in_use: bool,
+    allow_autoroute_loopback_calibration_url: bool,
+) -> Result<reqwest::blocking::Response, SourceError> {
+    let mut current_url = url.to_string();
+    let mut allow_current_calibration_url = allow_autoroute_loopback_calibration_url
+        && is_autoroute_loopback_calibration_url(&current_url);
+    for hop in 0..=crate::http::REDIRECT_LIMIT {
+        let client = build_web_client(
+            http,
+            &current_url,
+            proxy_in_use,
+            allow_current_calibration_url,
+        )?;
+        let resp = client.get(&current_url).send().map_err(|e| {
+            let safe_url = redact_url(&current_url);
+            SourceError::Other(format!("failed to fetch {safe_url}: {e}"))
+        })?;
+        if !resp.status().is_redirection() {
+            return Ok(resp);
+        }
+        if hop >= crate::http::REDIRECT_LIMIT {
+            let safe_url = redact_url(&current_url);
+            return Err(SourceError::Other(format!(
+                "failed to fetch {safe_url}: too many redirects (> {})",
+                crate::http::REDIRECT_LIMIT
+            )));
+        }
+        let Some(location) = resp.headers().get(reqwest::header::LOCATION) else {
+            let safe_url = redact_url(&current_url);
+            return Err(SourceError::Other(format!(
+                "failed to fetch {safe_url}: redirect response missing Location header"
+            )));
+        };
+        let location = location.to_str().map_err(|e| {
+            let safe_url = redact_url(&current_url);
+            SourceError::Other(format!(
+                "failed to fetch {safe_url}: redirect Location header is invalid: {e}"
+            ))
+        })?;
+        let target = resp.url().join(location).map_err(|e| {
+            let safe_url = redact_url(&current_url);
+            SourceError::Other(format!(
+                "failed to fetch {safe_url}: redirect Location {location:?} is invalid: {e}"
+            ))
+        })?;
+        match target.scheme() {
+            "http" | "https" => {}
+            scheme => {
+                let safe_target = redact_url(target.as_str());
+                return Err(SourceError::Other(format!(
+                    "refusing to follow redirect to {safe_target}: unsupported URL scheme {scheme:?}"
+                )));
+            }
+        }
+        let target = target.to_string();
+        let allow_target_calibration_url = allow_autoroute_loopback_calibration_url
+            && is_autoroute_loopback_calibration_url(&target);
+        if is_disallowed_web_host(&target) && !allow_target_calibration_url {
+            let redacted = redact_url(&target);
+            return Err(SourceError::Other(format!(
+                "refusing to follow redirect to {redacted}: target resolves to a \
+                 private / loopback / link-local / metadata-service address"
+            )));
+        }
+        current_url = target;
+        allow_current_calibration_url = allow_target_calibration_url;
+    }
+    unreachable!("redirect loop exits by return or redirect cap");
 }
 
 /// Handle a JavaScript file: return the full text as a single chunk.

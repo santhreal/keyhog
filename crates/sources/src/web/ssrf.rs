@@ -1,7 +1,5 @@
 use keyhog_core::SourceError;
 
-use crate::http::REDIRECT_LIMIT;
-
 pub(crate) fn redact_url(url: &str) -> std::borrow::Cow<'_, str> {
     crate::url_redaction::redact_url(url)
 }
@@ -50,37 +48,6 @@ pub(crate) fn is_disallowed_ip(ip: std::net::IpAddr) -> bool {
     keyhog_verifier::ssrf::is_private_ip_addr(&ip)
 }
 
-fn ssrf_revalidating_redirect_policy() -> reqwest::redirect::Policy {
-    reqwest::redirect::Policy::custom(|attempt| {
-        if attempt.previous().len() >= REDIRECT_LIMIT {
-            return attempt.error(SourceError::Other(format!(
-                "too many redirects (> {REDIRECT_LIMIT})"
-            )));
-        }
-        let (target_str, host, port) = {
-            let url = attempt.url();
-            (
-                url.as_str().to_string(),
-                url.host_str().map(str::to_owned),
-                url.port_or_known_default().unwrap_or(443), // LAW10: 443 is the correct https default port, not a swallowed failure
-            )
-        };
-        if is_disallowed_web_host(&target_str) {
-            let redacted = redact_url(&target_str);
-            return attempt.error(SourceError::Other(format!(
-                "refusing to follow redirect to {redacted}: target resolves to a \
-                 private / loopback / link-local / metadata-service address"
-            )));
-        }
-        if let Some(host) = host {
-            if let Err(e) = resolve_and_screen(&host, port) {
-                return attempt.error(e);
-            }
-        }
-        attempt.follow()
-    })
-}
-
 pub(crate) fn build_web_client(
     cfg: &crate::http::HttpClientConfig,
     url: &str,
@@ -89,7 +56,7 @@ pub(crate) fn build_web_client(
 ) -> Result<reqwest::blocking::Client, SourceError> {
     let mut builder = crate::http::blocking_client_builder(cfg)
         .map_err(SourceError::Other)?
-        .redirect(ssrf_revalidating_redirect_policy());
+        .redirect(reqwest::redirect::Policy::none());
 
     if !proxy_in_use && !allow_autoroute_loopback_calibration_url {
         let parsed = reqwest::Url::parse(url)
