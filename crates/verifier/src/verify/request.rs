@@ -1,6 +1,9 @@
 use std::collections::HashMap;
-use std::time::Duration;
+use std::net::SocketAddr;
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
 
+use dashmap::DashMap;
 use keyhog_core::{HttpMethod, VerificationResult};
 use reqwest::Client;
 
@@ -8,6 +11,8 @@ use crate::ssrf::{is_private_ip_addr, is_private_url};
 
 pub(crate) const PRIVATE_URL_ERROR: &str = "blocked: private URL";
 pub(crate) const HTTPS_ONLY_ERROR: &str = "blocked: HTTPS only";
+const PINNED_CLIENT_CACHE_TTL: Duration = Duration::from_secs(60);
+const PINNED_CLIENT_CACHE_MAX_ENTRIES: usize = 4096;
 
 pub(crate) struct ResolvedTarget {
     pub client: Client,
@@ -28,6 +33,22 @@ pub(crate) struct RequestError {
     pub transient: bool,
 }
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+struct PinnedClientKey {
+    host: String,
+    addrs: Vec<SocketAddr>,
+    timeout: Duration,
+    insecure_tls: bool,
+}
+
+struct CachedPinnedClient {
+    inserted_at: Instant,
+    client: Client,
+}
+
+static PINNED_CLIENT_CACHE: OnceLock<DashMap<PinnedClientKey, CachedPinnedClient>> =
+    OnceLock::new();
+
 pub(crate) fn reject_private_resolved_addrs(
     addrs: &[std::net::SocketAddr],
     allow_private_ips: bool,
@@ -36,6 +57,17 @@ pub(crate) fn reject_private_resolved_addrs(
         return Err(VerificationResult::Error(PRIVATE_URL_ERROR.into()));
     }
     Ok(())
+}
+
+fn screen_target_url_and_addrs(
+    url: &reqwest::Url,
+    addrs: &[std::net::SocketAddr],
+    allow_private_ips: bool,
+) -> std::result::Result<(), VerificationResult> {
+    if !allow_private_ips && is_private_url(url.as_str()) {
+        return Err(VerificationResult::Error(PRIVATE_URL_ERROR.into()));
+    }
+    reject_private_resolved_addrs(addrs, allow_private_ips)
 }
 
 pub(crate) fn ssrf_check_url_with_resolved_addrs_for_test(
@@ -47,10 +79,7 @@ pub(crate) fn ssrf_check_url_with_resolved_addrs_for_test(
         Ok(url) => url,
         Err(e) => return Err(VerificationResult::Error(format!("invalid URL: {}", e))),
     };
-    if !allow_private_ips && is_private_url(url.as_str()) {
-        return Err(VerificationResult::Error(PRIVATE_URL_ERROR.into()));
-    }
-    reject_private_resolved_addrs(addrs, allow_private_ips)
+    screen_target_url_and_addrs(&url, addrs, allow_private_ips)
 }
 
 pub(crate) async fn resolved_client_for_url(
@@ -69,9 +98,7 @@ pub(crate) async fn resolved_client_for_url(
 
     // SSRF check MUST come before HTTPS-only check to prevent information leakage
     // about internal network topology via error message differentiation.
-    if !allow_private_ips && is_private_url(url.as_str()) {
-        return Err(VerificationResult::Error(PRIVATE_URL_ERROR.into()));
-    }
+    screen_target_url_and_addrs(&url, &[], allow_private_ips)?;
 
     // Enforce HTTPS unconditionally in production. Plaintext loopback secret
     // transmission was a known leak vector - see audit release-2026-04-26.
@@ -124,7 +151,7 @@ pub(crate) async fn resolved_client_for_url(
                 ));
             }
             Ok(addrs) => {
-                reject_private_resolved_addrs(&addrs, allow_private_ips)?;
+                screen_target_url_and_addrs(&url, &addrs, allow_private_ips)?;
                 pinned_addrs = addrs;
             }
             Err(error) => {
@@ -136,7 +163,7 @@ pub(crate) async fn resolved_client_for_url(
         }
     }
 
-    // Build a per-request client that pins host→addresses. `.resolve_to_addrs`
+    // Build or reuse a cached client that pins host→addresses. `.resolve_to_addrs`
     // bypasses the system resolver for this hostname, so reqwest's internal
     // connector cannot re-resolve to a private IP between the check above
     // and the TCP connect. Keep `base_client` for code paths that don't
@@ -155,49 +182,102 @@ pub(crate) async fn resolved_client_for_url(
         //     means the flag silently doesn't apply on the path that
         //     actually serves the request when no proxy is in use.
         // Both gaps were live until 2026-05-26.
-        match Client::builder()
-            .timeout(timeout)
-            .danger_accept_invalid_certs(insecure_tls)
-            // Mirror the base client's decompression-bomb posture: the DNS-pinned
-            // rebuild is the client that actually serves the request on the
-            // direct (no-proxy) path, so it MUST also refuse auto-inflate or the
-            // 1 MB streaming cap in `read_response_body` would measure inflated
-            // bytes on this path even though the base client measures wire bytes.
-            // No-op today (the crate ships without the gzip/brotli/zstd/deflate
-            // features) but load-bearing if a future Cargo.toml edit — or a
-            // transitive dep's feature union — enables one.
-            .no_gzip()
-            .no_brotli()
-            .no_zstd()
-            .no_deflate()
-            .redirect(reqwest::redirect::Policy::none())
-            .resolve_to_addrs(&host, &pinned_addrs)
-            .build()
-        {
-            Ok(c) => c,
-            Err(e) => {
-                // LAW 10 — NO SILENT FALLBACK. Earlier this branch cloned the
-                // unpinned `base_client` and called it "best-effort". That
-                // reopened the DNS-rebinding window the pin exists to close:
-                // the base client re-resolves `host` through the system
-                // resolver at connect time, so an attacker DNS server that
-                // returned a public IP for the pre-connect SSRF check could
-                // return 127.0.0.1 / 169.254.169.254 for the actual connect.
-                // The pin build failing is not a license to drop the
-                // protection silently — fail CLOSED with a loud, blocked
-                // result the operator can see in the finding. (KH-GAP-120.)
-                return Err(VerificationResult::Error(format!(
-                    "blocked: DNS pin client build failed ({e}); refusing to \
-                     fall back to an unpinned client (would reopen the \
-                     DNS-rebinding window). Fix: report this verifier build"
-                )));
-            }
-        }
+        pinned_client_for(&host, &pinned_addrs, timeout, insecure_tls)?
     } else {
         base_client.clone()
     };
 
     Ok(ResolvedTarget { client, url })
+}
+
+fn pinned_client_for(
+    host: &str,
+    pinned_addrs: &[SocketAddr],
+    timeout: Duration,
+    insecure_tls: bool,
+) -> std::result::Result<Client, VerificationResult> {
+    let key = PinnedClientKey {
+        host: host.to_string(),
+        addrs: pinned_addrs.to_vec(),
+        timeout,
+        insecure_tls,
+    };
+    let cache = PINNED_CLIENT_CACHE.get_or_init(DashMap::new);
+    if let Some(entry) = cache.get(&key) {
+        if entry.inserted_at.elapsed() < PINNED_CLIENT_CACHE_TTL {
+            return Ok(entry.client.clone());
+        }
+        drop(entry);
+        cache.remove(&key);
+    }
+    if cache.len() >= PINNED_CLIENT_CACHE_MAX_ENTRIES {
+        cache.clear();
+    }
+    let client = build_pinned_client(host, pinned_addrs, timeout, insecure_tls)?;
+    cache.insert(
+        key,
+        CachedPinnedClient {
+            inserted_at: Instant::now(),
+            client: client.clone(),
+        },
+    );
+    Ok(client)
+}
+
+pub(crate) fn clear_pinned_client_cache_for_test() {
+    if let Some(cache) = PINNED_CLIENT_CACHE.get() {
+        cache.clear();
+    }
+}
+
+pub(crate) fn pinned_client_cache_len_for_test() -> usize {
+    PINNED_CLIENT_CACHE.get().map_or(0, DashMap::len)
+}
+
+pub(crate) fn pinned_client_cache_len_for_host_for_test(host: &str) -> usize {
+    PINNED_CLIENT_CACHE.get().map_or(0, |cache| {
+        cache
+            .iter()
+            .filter(|entry| entry.key().host == host)
+            .count()
+    })
+}
+
+pub(crate) fn pinned_client_for_test(
+    host: &str,
+    pinned_addrs: &[SocketAddr],
+    timeout: Duration,
+    insecure_tls: bool,
+) -> std::result::Result<(), VerificationResult> {
+    pinned_client_for(host, pinned_addrs, timeout, insecure_tls).map(|_| ())
+}
+
+fn build_pinned_client(
+    host: &str,
+    pinned_addrs: &[SocketAddr],
+    timeout: Duration,
+    insecure_tls: bool,
+) -> std::result::Result<Client, VerificationResult> {
+    // The DNS-pinning rebuild MUST replicate the security-critical config baked
+    // into `base_client`; a build failure is a blocked verifier state, never a
+    // license to use an unpinned client.
+    Client::builder()
+        .timeout(timeout)
+        .danger_accept_invalid_certs(insecure_tls)
+        .no_gzip()
+        .no_brotli()
+        .no_zstd()
+        .no_deflate()
+        .redirect(reqwest::redirect::Policy::none())
+        .resolve_to_addrs(host, pinned_addrs)
+        .build()
+        .map_err(|e| {
+            VerificationResult::Error(format!(
+                "blocked: DNS pin client build failed ({e}); refusing to \
+                 fall back to an unpinned client (would reopen the \
+                 DNS-rebinding window). Fix: report this verifier build"
+            ))
+        })
 }
 
 pub(crate) async fn build_request_for_step(

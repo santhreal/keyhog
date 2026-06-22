@@ -1,5 +1,6 @@
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
+use std::collections::BTreeMap;
 
 const ALGORITHM: &str = "AWS4-HMAC-SHA256";
 
@@ -20,16 +21,16 @@ pub fn sign_request_authorization(
 ) -> Result<(String, String, String), String> {
     let (date_stamp, amz_date) = format_sigv4_timestamps(unix_secs);
     let canonical_query = canonical_query_string(query_pairs);
-    let mut headers = Vec::with_capacity(2 + extra_signed_headers.len() + 1);
-    headers.push(("host".to_string(), host.to_string()));
-    headers.push(("x-amz-date".to_string(), amz_date.clone()));
+    let mut header_map = BTreeMap::<String, Vec<String>>::new();
+    push_canonical_header(&mut header_map, "host", host);
+    push_canonical_header(&mut header_map, "x-amz-date", &amz_date);
     for (name, value) in extra_signed_headers {
-        headers.push((name.to_ascii_lowercase(), value.trim().to_string()));
+        push_canonical_header(&mut header_map, name, value);
     }
     if let Some(token) = session_token {
-        headers.push(("x-amz-security-token".to_string(), token.to_string()));
+        push_canonical_header(&mut header_map, "x-amz-security-token", token);
     }
-    headers.sort_by(|a, b| a.0.cmp(&b.0));
+    let headers = merged_canonical_headers(header_map);
 
     let canonical_headers = canonical_header_block(&headers);
     let signed_headers = headers
@@ -83,6 +84,28 @@ pub(crate) fn canonical_header_block(headers: &[(String, String)]) -> String {
         block.push('\n');
     }
     block
+}
+
+fn push_canonical_header(headers: &mut BTreeMap<String, Vec<String>>, name: &str, value: &str) {
+    let canonical_name = name.trim().to_ascii_lowercase();
+    if canonical_name.is_empty() {
+        return;
+    }
+    headers
+        .entry(canonical_name)
+        .or_default()
+        .push(trim_all(value));
+}
+
+fn merged_canonical_headers(headers: BTreeMap<String, Vec<String>>) -> Vec<(String, String)> {
+    headers
+        .into_iter()
+        .map(|(name, values)| (name, values.join(",")))
+        .collect()
+}
+
+fn trim_all(value: &str) -> String {
+    value.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 pub(crate) fn credential_scope(date_stamp: &str, region: &str, service: &str) -> String {

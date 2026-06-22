@@ -67,3 +67,35 @@ fn sigv4_owner_sorts_s3_content_hash_and_query_pairs() {
         .contains("Credential=AKIAIOSFODNN7EXAMPLE/20240101/us-west-2/s3/aws4_request"));
     assert!(authorization.contains("SignedHeaders=host;x-amz-content-sha256;x-amz-date"));
 }
+
+#[test]
+fn sigv4_owner_merges_duplicate_headers_and_collapses_spaces() {
+    let (authorization, _amz_date, signed_headers) =
+        keyhog_verifier::sigv4::sign_request_authorization(
+            "AKIAIOSFODNN7EXAMPLE",
+            "wJalrXUtnFEMI/K7MDENG+bPxRfiCYEXAMPLEKEY",
+            None,
+            "us-east-1",
+            "service",
+            "GET",
+            "/",
+            &[],
+            "example.amazonaws.com",
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            1_704_067_200,
+            &[
+                ("X-Amz-Meta-Test", "  alpha   beta  "),
+                ("x-amz-meta-test", "gamma\t\tdelta"),
+            ],
+        )
+        .expect("sign request with duplicate extra header");
+
+    assert_eq!(signed_headers, "host;x-amz-date;x-amz-meta-test");
+    assert!(authorization.contains("SignedHeaders=host;x-amz-date;x-amz-meta-test"));
+    let signature = authorization
+        .rsplit_once("Signature=")
+        .expect("authorization carries signature")
+        .1;
+    assert_eq!(signature.len(), 64);
+    assert!(signature.bytes().all(|b| b.is_ascii_hexdigit()));
+}

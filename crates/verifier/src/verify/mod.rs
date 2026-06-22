@@ -36,8 +36,10 @@ pub(crate) use credential::{
     verify_with_retry, VerificationAttempt,
 };
 pub(crate) use request::{
-    build_request_for_step, execute_request, resolved_client_for_url,
-    ssrf_check_url_with_resolved_addrs_for_test, RequestBuildResult,
+    build_request_for_step, clear_pinned_client_cache_for_test, execute_request,
+    pinned_client_cache_len_for_host_for_test, pinned_client_cache_len_for_test,
+    pinned_client_for_test, resolved_client_for_url, ssrf_check_url_with_resolved_addrs_for_test,
+    RequestBuildResult,
 };
 pub(crate) use response::{
     body_indicates_error, evaluate_success, extract_metadata, read_response_body,

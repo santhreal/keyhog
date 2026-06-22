@@ -94,8 +94,12 @@ impl RateLimiter {
                 Some(wait)
             }
         };
-        if let Some(wait) = wait_time {
-            tokio::time::sleep(wait.max(bp)).await;
+        let delay = match wait_time {
+            Some(wait) => wait.max(bp),
+            None => bp,
+        };
+        if !delay.is_zero() {
+            tokio::time::sleep(delay).await;
         }
     }
 

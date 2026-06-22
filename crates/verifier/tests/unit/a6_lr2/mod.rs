@@ -2,6 +2,7 @@
 mod interactsh_decrypt_roundtrip;
 mod oob_wait_for_race_store_before_wait;
 mod rate_limit_burst_respects_interval;
+mod rate_limit_error_backpressure_applies_without_slot_wait;
 mod retry_backoff_uses_exponential_jitter;
 mod retry_preserves_metadata_on_exhaustion;
 mod sanitize_keeps_tab;

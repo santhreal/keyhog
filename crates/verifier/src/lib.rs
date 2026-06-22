@@ -468,6 +468,16 @@ pub mod testing {
             addrs: &[std::net::SocketAddr],
             allow_private_ips: bool,
         ) -> Result<(), keyhog_core::VerificationResult>;
+        fn clear_pinned_request_client_cache(&self);
+        fn pinned_request_client_cache_len(&self) -> usize;
+        fn pinned_request_client_cache_len_for_host(&self, host: &str) -> usize;
+        fn pinned_request_client_for_test(
+            &self,
+            host: &str,
+            addrs: &[std::net::SocketAddr],
+            timeout: Duration,
+            insecure_tls: bool,
+        ) -> Result<(), keyhog_core::VerificationResult>;
         fn build_finding(
             &self,
             group: keyhog_core::DedupedMatch,
@@ -643,6 +653,28 @@ pub mod testing {
                 addrs,
                 allow_private_ips,
             )
+        }
+
+        fn clear_pinned_request_client_cache(&self) {
+            crate::verify::clear_pinned_client_cache_for_test();
+        }
+
+        fn pinned_request_client_cache_len(&self) -> usize {
+            crate::verify::pinned_client_cache_len_for_test()
+        }
+
+        fn pinned_request_client_cache_len_for_host(&self, host: &str) -> usize {
+            crate::verify::pinned_client_cache_len_for_host_for_test(host)
+        }
+
+        fn pinned_request_client_for_test(
+            &self,
+            host: &str,
+            addrs: &[std::net::SocketAddr],
+            timeout: Duration,
+            insecure_tls: bool,
+        ) -> Result<(), keyhog_core::VerificationResult> {
+            crate::verify::pinned_client_for_test(host, addrs, timeout, insecure_tls)
         }
 
         fn build_finding(

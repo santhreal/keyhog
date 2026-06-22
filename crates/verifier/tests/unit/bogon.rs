@@ -132,9 +132,32 @@ fn rejects_ipv6_discard_100() {
 }
 
 #[test]
+fn rejects_ipv6_benchmark_2001_2_48() {
+    assert!(TestApi.ip_addr_is_bogon(v6(0x2001, 0x0002, 0, 0, 0, 0, 0, 1)));
+    assert!(TestApi.ip_addr_is_bogon(v6(0x2001, 0x0002, 0xffff, 0, 0, 0, 0, 1)));
+    assert!(!TestApi.ip_addr_is_bogon(v6(0x2001, 0x0003, 0, 0, 0, 0, 0, 1)));
+}
+
+#[test]
+fn rejects_ipv6_deprecated_site_local_fec0_10() {
+    assert!(TestApi.ip_addr_is_bogon(v6(0xfec0, 0, 0, 0, 0, 0, 0, 1)));
+    assert!(TestApi.ip_addr_is_bogon(v6(0xfeff, 0, 0, 0, 0, 0, 0, 1)));
+    assert!(!TestApi.ip_addr_is_bogon(v6(0x2001, 0x0003, 0, 0, 0, 0, 0, 1)));
+}
+
+#[test]
 fn rejects_ipv4_mapped_ipv6_for_private_v4() {
     let v6_addr = Ipv6Addr::new(0, 0, 0, 0, 0, 0xffff, 0x0a00, 0x0001);
     assert!(TestApi.ip_addr_is_bogon(IpAddr::V6(v6_addr)));
+}
+
+#[test]
+fn rejects_nat64_wrapping_private_v4_and_allows_public_v4() {
+    let private = Ipv6Addr::new(0x0064, 0xff9b, 0, 0, 0, 0, 0x7f00, 0x0001);
+    assert!(TestApi.ip_addr_is_bogon(IpAddr::V6(private)));
+
+    let public = Ipv6Addr::new(0x0064, 0xff9b, 0, 0, 0, 0, 0x0808, 0x0808);
+    assert!(!TestApi.ip_addr_is_bogon(IpAddr::V6(public)));
 }
 
 #[test]
@@ -182,9 +205,12 @@ fn known_bogon_count_pinned_so_silent_removals_break_ci() {
         v6(0x2001, 0x0000, 0, 0, 0, 0, 0, 1),
         v6(0x2001, 0x0020, 0, 0, 0, 0, 0, 1),
         v6(0x0100, 0, 0, 0, 0, 0, 0, 1),
+        v6(0x2001, 0x0002, 0, 0, 0, 0, 0, 1),
+        v6(0xfec0, 0, 0, 0, 0, 0, 0, 1),
+        IpAddr::V6(Ipv6Addr::new(0x0064, 0xff9b, 0, 0, 0, 0, 0x7f00, 0x0001)),
     ];
     for ip in known {
         assert!(TestApi.ip_addr_is_bogon(*ip), "{ip:?} expected to be bogon");
     }
-    assert_eq!(known.len(), 18, "bogon coverage count changed");
+    assert_eq!(known.len(), 21, "bogon coverage count changed");
 }

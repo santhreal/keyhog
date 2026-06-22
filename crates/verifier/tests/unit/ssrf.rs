@@ -4,6 +4,7 @@ use keyhog_core::VerificationResult;
 use keyhog_verifier::ssrf::{is_private_ip_addr, is_private_url};
 use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::time::Duration;
 
 #[test]
 fn decimal_integer_localhost_is_private_url() {
@@ -58,4 +59,50 @@ fn failed_integer_ip_parse_domain_is_blocked_by_resolved_ip_veto() {
     TestApi
         .ssrf_check_url_with_resolved_addrs_for_test(url, &resolved, true)
         .expect("explicit private-IP allowance is the only way to pass the injected resolution");
+}
+
+#[test]
+fn nat64_resolved_loopback_is_blocked_by_shared_screen() {
+    let url = "https://public.example/";
+    let resolved = [SocketAddr::new(
+        IpAddr::V6(std::net::Ipv6Addr::new(
+            0x0064, 0xff9b, 0, 0, 0, 0, 0x7f00, 0x0001,
+        )),
+        443,
+    )];
+
+    let err = TestApi
+        .ssrf_check_url_with_resolved_addrs_for_test(url, &resolved, false)
+        .expect_err("NAT64 loopback mapping must be blocked after DNS resolution");
+    assert_eq!(
+        err,
+        VerificationResult::Error("blocked: private URL".into())
+    );
+}
+
+#[test]
+fn pinned_request_client_cache_reuses_matching_dns_pin() {
+    TestApi.clear_pinned_request_client_cache();
+    let host = "cache-test.invalid";
+    let addrs = [SocketAddr::new(IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)), 443)];
+    let timeout = Duration::from_millis(250);
+
+    TestApi
+        .pinned_request_client_for_test(host, &addrs, timeout, false)
+        .expect("first pinned client builds");
+    assert_eq!(TestApi.pinned_request_client_cache_len_for_host(host), 1);
+
+    TestApi
+        .pinned_request_client_for_test(host, &addrs, timeout, false)
+        .expect("matching pinned client is reused");
+    assert_eq!(
+        TestApi.pinned_request_client_cache_len_for_host(host),
+        1,
+        "same host/address/security tuple must not rebuild a second cached client"
+    );
+
+    TestApi
+        .pinned_request_client_for_test(host, &addrs, Duration::from_millis(500), false)
+        .expect("timeout is part of the client cache key");
+    assert_eq!(TestApi.pinned_request_client_cache_len_for_host(host), 2);
 }

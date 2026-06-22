@@ -38,8 +38,10 @@
 //! **IPv6:** loopback (`::1`), unspecified (`::`), unique-local
 //! (`fc00::/7`), link-local (`fe80::/10`), multicast, documentation
 //! (`2001:db8::/32`), Teredo (`2001::/32`), ORCHIDv2
-//! (`2001:20::/28`), discard prefix (`100::/64`), 6to4 wrapping a
-//! bogon IPv4 (`2002::/16`), IPv4-mapped (`::ffff:0:0/96`) and
+//! (`2001:20::/28`), discard prefix (`100::/64`), benchmark
+//! (`2001:2::/48`), deprecated site-local (`fec0::/10`), NAT64
+//! well-known prefix wrapping a bogon IPv4 (`64:ff9b::/96`), 6to4
+//! wrapping a bogon IPv4 (`2002::/16`), IPv4-mapped (`::ffff:0:0/96`) and
 //! IPv4-compatible (`::a.b.c.d`) wrappings of bogon IPv4.
 //!
 //! ## What this is *not*
@@ -145,6 +147,23 @@ pub(crate) fn ip_addr_is_bogon(ip: IpAddr) -> bool {
                 return ip_addr_is_bogon(IpAddr::V4(compat));
             }
             let segs = v.segments();
+            if segs[0] == 0x0064
+                && segs[1] == 0xff9b
+                && segs[2] == 0
+                && segs[3] == 0
+                && segs[4] == 0
+                && segs[5] == 0
+            {
+                let v4 = core::net::Ipv4Addr::new(
+                    (segs[6] >> 8) as u8,
+                    (segs[6] & 0xff) as u8,
+                    (segs[7] >> 8) as u8,
+                    (segs[7] & 0xff) as u8,
+                );
+                if ip_addr_is_bogon(IpAddr::V4(v4)) {
+                    return true;
+                }
+            }
             if segs[0] == 0x2002 {
                 let v4 = core::net::Ipv4Addr::new(
                     (segs[1] >> 8) as u8,
@@ -165,8 +184,14 @@ pub(crate) fn ip_addr_is_bogon(ip: IpAddr) -> bool {
             if segs[0] == 0x2001 && (segs[1] & 0xfff0) == 0x0020 {
                 return true; // ORCHIDv2 (RFC 7343)
             }
+            if segs[0] == 0x2001 && segs[1] == 0x0002 {
+                return true; // 2001:2::/48 benchmarking (RFC 5180)
+            }
             if segs[0] == 0x0100 && segs[1] == 0 && segs[2] == 0 && segs[3] == 0 {
                 return true; // 100::/64 discard (RFC 6666)
+            }
+            if (segs[0] & 0xffc0) == 0xfec0 {
+                return true; // fec0::/10 deprecated site-local
             }
             v.is_loopback()
                 || v.is_multicast()
