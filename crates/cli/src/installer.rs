@@ -124,13 +124,20 @@ pub(crate) fn replace_running_binary<F>(
 where
     F: FnOnce(&Path) -> bool,
 {
-    replace_running_binary_checked(exe, bytes, |path| {
+    replace_running_binary_checked(exe, bytes, bool_verify_as_result(verify))
+}
+
+fn bool_verify_as_result<F>(verify: F) -> impl FnOnce(&Path) -> Result<()>
+where
+    F: FnOnce(&Path) -> bool,
+{
+    move |path| {
         if verify(path) {
             Ok(())
         } else {
             Err(anyhow!("post-install verifier returned false"))
         }
-    })
+    }
 }
 
 fn replace_running_binary_checked<F>(exe: &Path, bytes: &[u8], verify: F) -> Result<Option<PathBuf>>
@@ -169,8 +176,8 @@ where
     if had_prior {
         std::fs::rename(&stash, exe).with_context(|| {
             format!(
-                "ROLLBACK FAILED: the new binary failed its health check and the stashed \
-                 working binary at {} could not be restored over {}. Restore it manually.",
+                "ROLLBACK FAILED: the new binary failed its health check ({verify_error}) and the \
+                 stashed working binary at {} could not be restored over {}. Restore it manually.",
                 stash.display(),
                 exe.display()
             )
@@ -395,18 +402,11 @@ pub(crate) fn verify_candidate_release(
 ///
 /// `verify` is injected so tests can drive the rollback path deterministically
 /// without execing a real binary; production callers pass [`verify_via_doctor`].
-#[cfg(unix)]
 pub(crate) fn install_with_rollback<F>(exe: &Path, bytes: &[u8], verify: F) -> Result<()>
 where
     F: FnOnce(&Path) -> bool,
 {
-    install_with_rollback_checked(exe, bytes, |path| {
-        if verify(path) {
-            Ok(())
-        } else {
-            Err(anyhow!("post-install verifier returned false"))
-        }
-    })
+    install_with_rollback_checked(exe, bytes, bool_verify_as_result(verify))
 }
 
 #[cfg(unix)]
@@ -462,8 +462,8 @@ where
     if had_prior {
         std::fs::rename(&backup, exe).with_context(|| {
             format!(
-                "ROLLBACK FAILED: the new binary failed its health check and the backup at {} \
-                 could not be restored over {}. Reinstall manually from {}",
+                "ROLLBACK FAILED: the new binary failed its health check ({verify_error}) and the \
+                 backup at {} could not be restored over {}. Reinstall manually from {}",
                 backup.display(),
                 exe.display(),
                 backup.display()
@@ -482,20 +482,6 @@ where
              binary to roll back to). The release may be broken for this host."
         ))
     }
-}
-
-#[cfg(windows)]
-pub(crate) fn install_with_rollback<F>(exe: &Path, bytes: &[u8], verify: F) -> Result<()>
-where
-    F: FnOnce(&Path) -> bool,
-{
-    install_with_rollback_checked(exe, bytes, |path| {
-        if verify(path) {
-            Ok(())
-        } else {
-            Err(anyhow!("post-install verifier returned false"))
-        }
-    })
 }
 
 #[cfg(windows)]

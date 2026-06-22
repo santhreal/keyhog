@@ -166,6 +166,27 @@ fn release_tag_version_mismatch_rolls_back_to_the_working_binary() {
 }
 
 #[test]
+fn rollback_restore_failure_reports_original_verify_error() {
+    let (_dir, exe) = staged_exe(b"OLD-WORKING-BINARY");
+
+    let err = API
+        .install_with_rollback_checked(&exe, b"NEW-BROKEN-BINARY", |path| {
+            std::fs::remove_file(path).expect("remove candidate before blocking rollback");
+            std::fs::create_dir(path).expect("directory at exe path blocks file restore");
+            Err(anyhow::anyhow!("candidate doctor sentinel failure"))
+        })
+        .expect_err("rollback restore must fail when the exe path is a directory");
+    let message = format!("{err:#}");
+
+    assert!(
+        message.contains("ROLLBACK FAILED")
+            && message.contains("candidate doctor sentinel failure")
+            && message.contains("could not be restored"),
+        "rollback restore failure must preserve the original verifier error and restore failure context, got: {message}"
+    );
+}
+
+#[test]
 fn older_candidate_version_requires_an_explicit_pin() {
     let _slot = subprocess_slot();
     let candidate = version_script("0.5.39");

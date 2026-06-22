@@ -204,6 +204,27 @@ fn reap_stale_binaries_does_not_flatten_read_dir_errors() {
     );
 }
 
+#[test]
+fn install_with_rollback_bool_wrapper_has_one_owner() {
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/installer.rs"))
+        .expect("installer source readable");
+    let wrapper = "pub(crate) fn install_with_rollback<F>";
+    let wrapper_count = src.matches(wrapper).count();
+    assert_eq!(
+        wrapper_count, 1,
+        "install_with_rollback bool compatibility wrapper must have one cfg-neutral owner"
+    );
+    assert!(
+        src.contains("install_with_rollback_checked(exe, bytes, bool_verify_as_result(verify))"),
+        "install_with_rollback must delegate through the shared bool-to-Result verifier adapter"
+    );
+    assert!(
+        src.matches("fn bool_verify_as_result<F>").count() == 1
+            && src.matches("post-install verifier returned false").count() == 1,
+        "boolean verifier compatibility text must live in one adapter, not per-platform wrappers"
+    );
+}
+
 // Supply-chain: a missing `.minisig` must FAIL CLOSED. A forged 404 on the
 // signature URL (active MITM / compromised CDN serving a tampered binary)
 // otherwise bypassed the entire minisign gate. Linux-gated because the served
