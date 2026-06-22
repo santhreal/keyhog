@@ -14,6 +14,7 @@ fn config_file_merge_uses_section_helpers() {
         "fn apply_tuning_section(",
         "fn apply_scan_section(",
         "fn apply_top_level_scan_fields(",
+        "fn resolve_policy_outcome(",
     ] {
         assert!(
             src.contains(helper),
@@ -28,6 +29,7 @@ fn config_file_merge_uses_section_helpers() {
         "apply_tuning_section(",
         "apply_top_level_scan_fields(",
         "apply_scan_section(",
+        "resolve_policy_outcome(",
     ] {
         assert!(
             apply.contains(call),
@@ -53,6 +55,12 @@ fn config_file_merge_uses_section_helpers() {
         "known_prefixes",
         "secret_keywords",
         "placeholder_keywords",
+        "config.lockdown",
+        "config.detector",
+        "let require_lockdown",
+        "let baseline = shipped_config_outcome()",
+        "section.enabled",
+        "section.min_confidence",
     ] {
         assert!(
             !apply.contains(forbidden),

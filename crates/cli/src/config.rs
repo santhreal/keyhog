@@ -833,6 +833,42 @@ fn apply_top_level_scan_fields(
     }
 }
 
+fn resolve_policy_outcome(config: &mut ConfigFile) -> ConfigOutcome {
+    // `[lockdown] require = true` -> the caller refuses to run unless
+    // `--lockdown` was passed (README: "refuse to run without --lockdown").
+    let mut outcome = shipped_config_outcome();
+    outcome.require_lockdown = config
+        .lockdown
+        .as_ref()
+        .and_then(|l| l.require)
+        .unwrap_or(false); // LAW10: empty/absent => documented numeric default, recall-safe
+
+    // `[detector.<id>]` table: `enabled = false` drops the detector from the
+    // loaded corpus after `load_detectors`; `min_confidence = <f>` becomes a
+    // per-detector confidence floor applied in scan post-processing. Both keys
+    // were README-documented; the confidence floor used to be parsed and
+    // silently ignored (the disabled toggle was wired earlier). Drain the map
+    // once into both outputs.
+    //
+    // Start from the compiled Tier-A defaults (`shipped_config_outcome`) so the
+    // shipped floors/disables apply even when the `.keyhog.toml` does not
+    // mention that detector, then layer the file on top: a file
+    // `min_confidence` overrides the compiled floor for that id, and file
+    // disables union with the compiled disables.
+    if let Some(map) = config.detector.take() {
+        for (id, section) in map {
+            if section.enabled == Some(false) && !outcome.disabled_detectors.contains(&id) {
+                outcome.disabled_detectors.push(id.clone());
+            }
+            if let Some(conf) = section.min_confidence {
+                outcome.detector_min_confidence.insert(id, conf);
+            }
+        }
+    }
+
+    outcome
+}
+
 #[allow(clippy::collapsible_if, clippy::cmp_owned)]
 fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> ConfigOutcome {
     // `--no-config`: hermetic run on the compiled-in Tier-A shipped defaults.
@@ -936,51 +972,14 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     apply_top_level_scan_fields(args, &mut config_errors, &mut config);
     apply_scan_section(args, &mut config_errors, config.scan.take());
 
-    // `[lockdown] require = true` -> the caller refuses to run unless
-    // `--lockdown` was passed (README: "refuse to run without --lockdown").
-    let require_lockdown = config
-        .lockdown
-        .as_ref()
-        .and_then(|l| l.require)
-        .unwrap_or(false); // LAW10: empty/absent => documented numeric default, recall-safe
-
-    // `[detector.<id>]` table: `enabled = false` drops the detector from the
-    // loaded corpus after `load_detectors`; `min_confidence = <f>` becomes a
-    // per-detector confidence floor applied in scan post-processing. Both keys
-    // were README-documented; the confidence floor used to be parsed and
-    // silently ignored (the disabled toggle was wired earlier). Drain the map
-    // once into both outputs.
-    //
-    // Start from the compiled Tier-A defaults (`shipped_config_outcome`) so the
-    // shipped floors/disables apply even when the `.keyhog.toml` does not
-    // mention that detector, then layer the file on top: a file
-    // `min_confidence` overrides the compiled floor for that id, and file
-    // disables union with the compiled disables.
-    let baseline = shipped_config_outcome();
-    let mut disabled_detectors = baseline.disabled_detectors;
-    let mut detector_min_confidence = baseline.detector_min_confidence;
-    if let Some(map) = config.detector {
-        for (id, section) in map {
-            if section.enabled == Some(false) && !disabled_detectors.contains(&id) {
-                disabled_detectors.push(id.clone());
-            }
-            if let Some(conf) = section.min_confidence {
-                detector_min_confidence.insert(id, conf);
-            }
-        }
-    }
-
-    ConfigOutcome {
-        disabled_detectors,
-        require_lockdown,
-        detector_min_confidence,
-        config_errors,
-        trusted_bin_dirs,
-        aws_canary_accounts,
-        scanner_tuning,
-        allowlist_file,
-        allowlist_require_reason,
-        allowlist_require_approved_by,
-        allowlist_max_expires_days,
-    }
+    let mut outcome = resolve_policy_outcome(&mut config);
+    outcome.config_errors = config_errors;
+    outcome.trusted_bin_dirs = trusted_bin_dirs;
+    outcome.aws_canary_accounts = aws_canary_accounts;
+    outcome.scanner_tuning = scanner_tuning;
+    outcome.allowlist_file = allowlist_file;
+    outcome.allowlist_require_reason = allowlist_require_reason;
+    outcome.allowlist_require_approved_by = allowlist_require_approved_by;
+    outcome.allowlist_max_expires_days = allowlist_max_expires_days;
+    outcome
 }

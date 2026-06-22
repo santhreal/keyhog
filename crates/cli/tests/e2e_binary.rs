@@ -1504,42 +1504,77 @@ fn config_detector_min_confidence_floor_drops_findings() {
     // precedence over the global --min-confidence. README-documented but
     // parsed-and-silently-ignored before this wiring (it was decoded into
     // DetectorSection.min_confidence and never consumed).
-    //
-    // The AWS key fires under both the hot-pattern fast path (`hot-aws_key`)
-    // and the TOML `aws-access-key` detector, so the floor must be set on both
-    // to fully suppress it - same shadowing as the disable test.
-    let aws = concat!("AWS_ACCESS_KEY_ID = \"AKIA", "QYLPMN5HFIQR7XYA\"\n");
+    let dir = TempDir::new().expect("tempdir");
+    let detectors_dir = dir.path().join("detectors");
+    std::fs::create_dir_all(&detectors_dir).expect("mkdir detectors");
+    std::fs::write(
+        detectors_dir.join("demo-only.toml"),
+        r#"
+        [detector]
+        id = "demo-only"
+        name = "Demo Only"
+        service = "demo"
+        severity = "high"
+        keywords = ["demo_secret_"]
 
-    // Baseline: the key is found.
-    let (_o, _e, before) = scan_dir_with_config(aws, "", &[]);
-    assert_eq!(before, Some(1), "baseline: the AWS key must be found");
+        [[detector.patterns]]
+        regex = "demo_secret_[A-Z0-9]{8}"
+        "#,
+    )
+    .expect("write detector");
+    std::fs::write(
+        dir.path().join("planted.txt"),
+        "token = demo_secret_ABCD1234\n",
+    )
+    .expect("write fixture");
 
-    // A floor of 1.0 is unreachable by any real confidence (scores are < 1.0),
-    // so it must drop every finding from these detectors -> exit 0.
-    let (out_hi, _e, code_hi) = scan_dir_with_config(
-        aws,
-        "[detector.hot-aws_key]\nmin_confidence = 1.0\n\
-         [detector.aws-access-key]\nmin_confidence = 1.0\n",
-        &[],
+    let run = |config: &str| {
+        std::fs::write(dir.path().join(".keyhog.toml"), config).expect("write config");
+        let output = Command::new(binary())
+            .args([
+                "scan",
+                "--no-daemon",
+                "--backend",
+                "simd",
+                "--format",
+                "json",
+                "--detectors",
+            ])
+            .arg(&detectors_dir)
+            .arg(dir.path())
+            .output()
+            .expect("spawn keyhog scan");
+        (
+            String::from_utf8_lossy(&output.stdout).into_owned(),
+            String::from_utf8_lossy(&output.stderr).into_owned(),
+            output.status.code(),
+        )
+    };
+
+    // Baseline: the custom detector emits the planted token at confidence 0.5.
+    let (out_base, _e, before) = run("");
+    assert_eq!(
+        before,
+        Some(1),
+        "baseline finding must fire; stdout={out_base}"
     );
+    assert!(
+        out_base.contains("\"confidence\":0.5"),
+        "fixture must stay below the high floor so this test proves filtering; stdout={out_base}"
+    );
+
+    let (out_hi, _e, code_hi) = run("[detector.demo-only]\nmin_confidence = 0.6\n");
     assert_eq!(
         code_hi,
         Some(0),
-        "a per-detector min_confidence floor of 1.0 must suppress the finding; stdout={out_hi}"
+        "a per-detector min_confidence floor above the finding confidence must suppress it; stdout={out_hi}"
     );
 
-    // A floor of 0.0 is below any confidence, so the finding survives - proving
-    // the floor value (not merely the table's presence) is what drives the drop.
-    let (_o, _e, code_lo) = scan_dir_with_config(
-        aws,
-        "[detector.hot-aws_key]\nmin_confidence = 0.0\n\
-         [detector.aws-access-key]\nmin_confidence = 0.0\n",
-        &[],
-    );
+    let (_out_lo, _e, code_lo) = run("[detector.demo-only]\nmin_confidence = 0.4\n");
     assert_eq!(
         code_lo,
         Some(1),
-        "a per-detector min_confidence floor of 0.0 must keep the finding"
+        "a per-detector min_confidence floor below the finding confidence must keep it"
     );
 }
 
