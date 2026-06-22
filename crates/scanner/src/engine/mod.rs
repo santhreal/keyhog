@@ -53,6 +53,8 @@ mod backend_dispatch;
 mod backend_prepared;
 mod backend_triggered;
 mod boundary;
+#[cfg(test)]
+pub(crate) use boundary::scan_chunk_boundaries as scan_chunk_boundaries_for_test;
 mod compile;
 mod compiled_api;
 mod csr;

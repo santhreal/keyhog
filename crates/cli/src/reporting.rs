@@ -148,6 +148,10 @@ fn sarif_skip_summary() -> Vec<(String, usize)> {
             "scanner pattern expansion skipped by invalid pattern index (scanner invariant violation; scan partial)".to_string(),
             keyhog_scanner::telemetry::invalid_pattern_index_skip_count(),
         ),
+        (
+            "scanner boundary reassembly skipped by chunk/result cardinality mismatch (scanner invariant violation; scan partial)".to_string(),
+            keyhog_scanner::telemetry::boundary_result_cardinality_mismatch_count(),
+        ),
     ];
 
     #[cfg(feature = "binary")]

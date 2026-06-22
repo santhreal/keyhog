@@ -251,6 +251,18 @@ pub(crate) fn report_skip_summary(ansi: bool) {
         eprintln!("{}WARN{} {msg}", palette.yellow, palette.reset);
     }
 
+    let boundary_cardinality_mismatches =
+        keyhog_scanner::telemetry::boundary_result_cardinality_mismatch_count();
+    if boundary_cardinality_mismatches > 0 {
+        let msg = format!(
+            "{boundary_cardinality_mismatches} boundary reassembly pass(es) were NOT applied: \
+             chunk/result cardinality drift made cross-chunk findings unsafe to append. \
+             This is a scanner invariant violation; treat the scan as partial."
+        );
+        let palette = terminal_palette(ansi, false);
+        eprintln!("{}WARN{} {msg}", palette.yellow, palette.reset);
+    }
+
     let c = keyhog_sources::skip_counts();
     // Whether the binary source recorded any degradation/drop. Checked here so a
     // run whose ONLY coverage gap is a Ghidra fallback / unreadable binary (with
@@ -277,6 +289,7 @@ pub(crate) fn report_skip_summary(ansi: bool) {
         && decode_truncations == 0
         && invalid_detector_index_skips == 0
         && invalid_pattern_index_skips == 0
+        && boundary_cardinality_mismatches == 0
     {
         return;
     }

@@ -182,6 +182,9 @@ static INVALID_DETECTOR_INDEX_SKIPS: AtomicUsize = AtomicUsize::new(0);
 /// outside the compiled pattern bitmap. That loses phase-2 admission/expansion
 /// coverage for the affected pattern, so the operator must see the partial scan.
 static INVALID_PATTERN_INDEX_SKIPS: AtomicUsize = AtomicUsize::new(0);
+/// Cross-chunk boundary reassembly could not run because the caller supplied a
+/// result vector with different cardinality than the chunk vector.
+static BOUNDARY_RESULT_CARDINALITY_MISMATCHES: AtomicUsize = AtomicUsize::new(0);
 
 /// Scanner coverage gap recorded when a scanner-owned transform did not run to
 /// full coverage. These are not source skips: raw bytes still flow through the
@@ -192,6 +195,7 @@ pub(crate) enum ScannerCoverageGapEvent {
     DecodeTruncation,
     InvalidDetectorIndexSkip,
     InvalidPatternIndexSkip,
+    BoundaryResultCardinalityMismatch,
 }
 
 impl ScannerCoverageGapEvent {
@@ -201,6 +205,7 @@ impl ScannerCoverageGapEvent {
             Self::DecodeTruncation => &DECODE_TRUNCATIONS,
             Self::InvalidDetectorIndexSkip => &INVALID_DETECTOR_INDEX_SKIPS,
             Self::InvalidPatternIndexSkip => &INVALID_PATTERN_INDEX_SKIPS,
+            Self::BoundaryResultCardinalityMismatch => &BOUNDARY_RESULT_CARDINALITY_MISMATCHES,
         }
     }
 }
@@ -476,6 +481,19 @@ pub fn invalid_pattern_index_skip_count() -> usize {
     INVALID_PATTERN_INDEX_SKIPS.load(Ordering::Relaxed)
 }
 
+/// Record that boundary reassembly was skipped because caller-provided chunk
+/// and result slices no longer had the same cardinality.
+pub(crate) fn record_boundary_result_cardinality_mismatch() {
+    let _receipt =
+        record_scanner_coverage_gap(ScannerCoverageGapEvent::BoundaryResultCardinalityMismatch);
+}
+
+/// Count of boundary-reassembly passes skipped by chunk/result cardinality
+/// mismatch this scan.
+pub fn boundary_result_cardinality_mismatch_count() -> usize {
+    BOUNDARY_RESULT_CARDINALITY_MISMATCHES.load(Ordering::Relaxed)
+}
+
 /// Append events into the per-process buffer without going through the
 /// `record_example_suppression` path (no counter bump, no dogfood
 /// enable-check). Used by the daemon client to replay events captured
@@ -551,6 +569,7 @@ pub fn reset_for_scan() {
     THREAD_DECODE_TRUNCATIONS.with(|count| count.set(0));
     INVALID_DETECTOR_INDEX_SKIPS.store(0, Ordering::Relaxed);
     INVALID_PATTERN_INDEX_SKIPS.store(0, Ordering::Relaxed);
+    BOUNDARY_RESULT_CARDINALITY_MISMATCHES.store(0, Ordering::Relaxed);
     if let Ok(mut events) = t.events.lock() {
         events.clear();
     }

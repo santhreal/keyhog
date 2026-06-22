@@ -41,6 +41,7 @@ mod phase2_truncate_contract;
 mod platform_compat;
 mod prefilter_truncate_parity;
 mod regression_ac_overlap_shadow;
+mod regression_boundary_cardinality_mismatch_counted;
 mod regression_creddata_canonical_shape_generation;
 mod regression_decode_budget_per_decode;
 mod regression_decode_fanout_budget;

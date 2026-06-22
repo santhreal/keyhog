@@ -1635,6 +1635,13 @@ fn telemetry_coverage_gap_counters_have_typed_owner() {
         0,
         "invalid pattern-index skips must route through record_scanner_coverage_gap"
     );
+    assert_eq!(
+        source
+            .matches("BOUNDARY_RESULT_CARDINALITY_MISMATCHES.fetch_add")
+            .count(),
+        0,
+        "boundary cardinality mismatches must route through record_scanner_coverage_gap"
+    );
     assert!(
         source.contains(
             "record_scanner_coverage_gap(ScannerCoverageGapEvent::StructuredParseFailure"
@@ -1645,6 +1652,9 @@ fn telemetry_coverage_gap_counters_have_typed_owner() {
             )
             && source.contains(
                 "record_scanner_coverage_gap(ScannerCoverageGapEvent::InvalidPatternIndexSkip"
+            )
+            && source.contains(
+                "record_scanner_coverage_gap(ScannerCoverageGapEvent::BoundaryResultCardinalityMismatch"
             ),
         "public recorder wrappers must delegate to the typed scanner coverage-gap owner"
     );

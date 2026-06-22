@@ -108,7 +108,10 @@ pub(crate) fn scan_chunk_boundaries(
     if chunks.len() < 2 {
         return;
     }
-    debug_assert_eq!(chunks.len(), per_chunk_results.len());
+    if chunks.len() != per_chunk_results.len() {
+        crate::telemetry::record_boundary_result_cardinality_mismatch();
+        return;
+    }
 
     // Group chunk indices by (source_type, path). Indices, not refs,
     // because we need to mutate `per_chunk_results[bi]` later.
@@ -148,10 +151,8 @@ fn scan_one_pair(
     bi: usize,
     per_chunk_results: &mut [Vec<RawMatch>],
 ) {
-    // kimi-engine audit: in release builds only a debug_assert protects
-    // the `per_chunk_results[ai]` / `[bi]` accesses below. Verify here
-    // and bail silently rather than panicking on a slice mismatch.
     if ai >= per_chunk_results.len() || bi >= per_chunk_results.len() {
+        crate::telemetry::record_boundary_result_cardinality_mismatch();
         return;
     }
 
