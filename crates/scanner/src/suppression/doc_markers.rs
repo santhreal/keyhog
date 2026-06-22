@@ -1,26 +1,18 @@
 //! Doc / placeholder / instructional marker substring scans. Extracted
-//! from `should_suppress_inner` so documentation-marker handling has one
+//! from `suppression_stage_inner` so documentation-marker handling has one
 //! focused boundary. Returns a tri-state verdict that the decision tree consumes
-//! verbatim - `Allow` means "this is a known
+//! verbatim - `Suppress(reason)` means "suppress with this exact stage reason";
+//! `Allow` means "this is a known
 //! service-prefixed token, do NOT suppress and skip the shape gates";
-//! `Suppress` means "this is a documentation specimen, suppress now";
 //! `KeepChecking` means "fall through to the rest of the decision tree".
 
 use super::shape::{looks_like_prefixed_masked_sequence, RFC7519_EXAMPLE_JWT_PREFIX};
 
-fn record_marker_suppression(path: Option<&str>, credential: &str, reason: &'static str) {
-    crate::adjudicate::record_stage_suppression(
-        path,
-        credential,
-        crate::adjudicate::StageId::ShapeGate(reason),
-    );
-}
-
 /// Outcome of the doc/placeholder/marker pre-checks.
 pub(super) enum MarkerVerdict {
     /// The credential matched a documentation marker or known FP shape -
-    /// the caller should return `true` (suppress) immediately.
-    Suppress,
+    /// the caller should suppress immediately with this exact reason.
+    Suppress(&'static str),
     /// The credential is a known service-prefixed token (e.g. `ghp_…`,
     /// `AKIA…`) whose body does NOT match a masked-sequence shape. The
     /// caller should return `false` immediately - the prefix is positive
@@ -54,7 +46,7 @@ pub(super) fn check_markers(
     credential: &str,
     upper: &str,
     from_evasion_decoder: bool,
-    path: Option<&str>,
+    _path: Option<&str>,
     entropy_hint: Option<f64>,
 ) -> MarkerVerdict {
     // ── 1. Universal placeholder keywords (case-insensitive) ──
@@ -63,8 +55,7 @@ pub(super) fn check_markers(
         upper,
         entropy_hint,
     ) {
-        record_marker_suppression(path, credential, "placeholder_word");
-        return MarkerVerdict::Suppress;
+        return MarkerVerdict::Suppress("placeholder_word");
     }
     // EXAMPLE is special: only suppress if it is in the credential value itself,
     // not in a URL domain (example.com is a reserved domain per RFC 2606).
@@ -80,13 +71,7 @@ pub(super) fn check_markers(
             && !credential.contains("example.com")
             && !credential.contains("example.org")
         {
-            crate::adjudicate::record_example_suppression(
-                "pipeline",
-                path,
-                credential,
-                "contains_EXAMPLE_token",
-            );
-            return MarkerVerdict::Suppress;
+            return MarkerVerdict::Suppress("contains_EXAMPLE_token");
         }
     }
 
@@ -112,16 +97,14 @@ pub(super) fn check_markers(
                     .next_back()
                     .is_none_or(|c| !c.is_alphanumeric())
             }) {
-                record_marker_suppression(path, credential, "instructional_fragment");
-                return MarkerVerdict::Suppress;
+                return MarkerVerdict::Suppress("instructional_fragment");
             }
         }
     }
 
     // Developer markers override provider-prefix trust.
     if upper_contains_token(upper, "TODO") || upper_contains_token(upper, "FIXME") {
-        record_marker_suppression(path, credential, "dev_marker_todo_fixme");
-        return MarkerVerdict::Suppress;
+        return MarkerVerdict::Suppress("dev_marker_todo_fixme");
     }
 
     // The RFC 7519 specimen JWT must be checked BEFORE the
@@ -144,8 +127,7 @@ pub(super) fn check_markers(
     // 349 leaked FPs in `jwt-rfc-example` category were the
     // `auth_token=…` log-line + `api.key=…` properties shape.
     if credential.contains(RFC7519_EXAMPLE_JWT_PREFIX) {
-        record_marker_suppression(path, credential, "rfc7519_example_jwt");
-        return MarkerVerdict::Suppress;
+        return MarkerVerdict::Suppress("rfc7519_example_jwt");
     }
 
     // Documentation/placeholder markers embedded *inside* a
@@ -196,8 +178,7 @@ pub(super) fn check_markers(
                 {
                     continue;
                 }
-                record_marker_suppression(path, credential, "doc_marker_substring");
-                return MarkerVerdict::Suppress;
+                return MarkerVerdict::Suppress("doc_marker_substring");
             }
         }
     }
@@ -213,8 +194,7 @@ pub(super) fn check_markers(
     let known_prefix_body = crate::confidence::known_prefix_body(credential);
     if let Some(body) = known_prefix_body {
         if looks_like_prefixed_masked_sequence(body) {
-            record_marker_suppression(path, credential, "prefixed_masked_sequence");
-            return MarkerVerdict::Suppress;
+            return MarkerVerdict::Suppress("prefixed_masked_sequence");
         }
         if !credential.starts_with("TESTKEY_") {
             return MarkerVerdict::Allow;

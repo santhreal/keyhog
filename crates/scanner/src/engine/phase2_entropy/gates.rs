@@ -571,7 +571,7 @@ fn random_byte_assignment_key_is_high_signal(normalized: &str) -> bool {
 /// releases the two SHAPE arms that would HARD-DROP it before the MoE scores it:
 ///   * the bare-hash-digest arm (hex32/40/64/128 — the `hex64` AES-256-key miss
 ///     class), released via the existing `allow_canonical_hex_key` exemption
-///     threaded into [`should_suppress_inner`]; and
+///     threaded into `suppression_stage_inner`; and
 ///   * the UUID-v4 shape arm (the `UUID` miss class), which
 ///     [`suppress_known_example_credential`] gates only on `!bypass_shape_gates` and never
 ///     exempts — so for an EXACT-UUID lifted value we bypass that decision-tree
@@ -620,7 +620,7 @@ fn entropy_fallback_example_suppressed(
         return true;
     }
 
-    // An EXACT-UUID value cannot be exempted inside `should_suppress_inner` (its
+    // An EXACT-UUID value cannot be exempted inside `suppression_stage_inner` (its
     // UUID arm always fires regardless of `allow_canonical_hex_key`), so for a
     // clean UUID the content gate above is the whole verdict — let it through to
     // the model.

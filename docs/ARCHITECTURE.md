@@ -181,6 +181,8 @@ verdict.
 > Status: `adjudicate_match` exists and many drop decisions now emit typed
 > `StageId`s through the adjudicator, including hot-pattern min-length and
 > policy suppression plus exact named-detector shape/path suppression reasons.
+> Named-detector adjudication also preserves exact shared-cascade and
+> decode-through suppression reasons instead of using a generic bucket.
 > Some policy stages still execute from their emission-path owners instead of
 > one full verdict that owns suppression and report confidence end to end. The
 > consolidation is tracked in

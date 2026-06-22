@@ -1,7 +1,7 @@
-//! The unified suppression decision tree. All three public entry points
-//! in [`super::api`] eventually call [`should_suppress_inner`], which
-//! walks a linear cascade of shape / context / path / decode gates and
-//! returns `true` to suppress.
+//! The unified suppression decision tree. Public entry points in
+//! [`super::api`] delegate to [`suppression_stage_inner`], which walks a
+//! linear cascade of shape / context / path / decode gates and returns the
+//! exact adjudicator stage that suppresses a candidate.
 
 use super::decode::try_decode_b64_to_utf8;
 use super::doc_markers::{check_markers, MarkerVerdict};
@@ -11,24 +11,14 @@ use super::shape::{
     looks_like_dashed_serial_key, looks_like_prefixed_hash_digest, looks_like_standard_base64_blob,
     looks_like_truncated_uuid_v4_suffix, RFC7519_EXAMPLE_JWT_PREFIX,
 };
-use crate::context;
+use crate::{adjudicate::StageId, context};
 
-/// Suppress (`return true`) AND record a `--dogfood` shape-suppression event
-/// naming the gate, so a recall-affecting shape drop is never silent (the
-/// `--dogfood` contract: "whether a match was made and silenced, or never
-/// reached the engine"). Zero-cost when dogfood is off (the recorder
-/// short-circuits on an atomic). `reason` is the gate name.
 #[inline]
-fn suppress(path: Option<&str>, credential: &str, reason: &'static str) -> bool {
-    crate::adjudicate::record_stage_suppression(
-        path,
-        credential,
-        crate::adjudicate::StageId::ShapeGate(reason),
-    );
-    true
+fn suppress(reason: &'static str) -> Option<StageId> {
+    Some(StageId::ShapeGate(reason))
 }
 
-pub(super) fn should_suppress_inner(
+pub(super) fn suppression_stage_inner(
     credential: &str,
     path: Option<&str>,
     context: context::CodeContext,
@@ -47,7 +37,7 @@ pub(super) fn should_suppress_inner(
     allow_canonical_hex_key: bool,
     allow_base64_blob_shape: bool,
     allow_encoded_text_secret: bool,
-) -> bool {
+) -> Option<StageId> {
     let from_evasion_decoder =
         source_type.is_some_and(|s| s.contains("/reverse") || s.contains("/caesar"));
     let upper = credential.to_uppercase();
@@ -55,8 +45,8 @@ pub(super) fn should_suppress_inner(
     // ── 1-2. Doc / placeholder / instructional / RFC7519 / known-prefix /
     //         DOC_MARKER substring scans.
     match check_markers(credential, &upper, from_evasion_decoder, path, entropy_hint) {
-        MarkerVerdict::Suppress => return true,
-        MarkerVerdict::Allow => return false,
+        MarkerVerdict::Suppress(reason) => return suppress(reason),
+        MarkerVerdict::Allow => return None,
         MarkerVerdict::KeepChecking => {}
     }
 
@@ -71,7 +61,7 @@ pub(super) fn should_suppress_inner(
     // PEM `private-key` detector silently misses them - see
     // `tests/contracts/private-key.toml` OPENSSH positive.
     if credential.starts_with("-----BEGIN") {
-        return false;
+        return None;
     }
 
     // ── 3. Repetitive masking patterns ──
@@ -88,7 +78,7 @@ pub(super) fn should_suppress_inner(
     // 5+ consecutive 'x' or 'X' (e.g., xxxxx, XXXXXXX) - masks and placeholders.
     // 3x can appear in real base64/hex, so only suppress longer runs.
     if !bypass_shape_gates && upper.contains("XXXXX") {
-        return suppress(path, credential, "mask_run_xxxxx");
+        return suppress("mask_run_xxxxx");
     }
     // 5+ consecutive identical characters in any credential, or 3+ in short credentials.
     // Real secrets can have short runs (e.g., "000" in base64) but rarely 5+.
@@ -96,7 +86,7 @@ pub(super) fn should_suppress_inner(
         && credential.len() < 20
         && has_three_or_more_consecutive_identical(credential)
     {
-        return suppress(path, credential, "short_repetitive_run");
+        return suppress("short_repetitive_run");
     }
     let has_n_plus = has_n_or_more_consecutive_identical(credential, 5);
     let suppresses_repetitive_run =
@@ -107,10 +97,10 @@ pub(super) fn should_suppress_inner(
             && (credential.contains('+') || credential.contains('/'))
     });
     if !bypass_shape_gates && suppresses_repetitive_run {
-        return suppress(path, credential, "repetitive_run");
+        return suppress("repetitive_run");
     }
     if !bypass_shape_gates && has_repeated_block_mask(credential) {
-        return suppress(path, credential, "repeated_block_mask");
+        return suppress("repeated_block_mask");
     }
     // Entirely filler symbols
     if !bypass_shape_gates
@@ -118,7 +108,7 @@ pub(super) fn should_suppress_inner(
             .chars()
             .all(|c| c == 'x' || c == 'X' || c == '*' || c == '-' || c == '.')
     {
-        return suppress(path, credential, "filler_symbols");
+        return suppress("filler_symbols");
     }
     // Purely symbolic strings that look like filler/placeholder
     // (e.g., "********", "--------") - NOT real passwords like "!@#$%^&*()"
@@ -141,7 +131,7 @@ pub(super) fn should_suppress_inner(
             }
         }
         if distinct <= 2 {
-            return suppress(path, credential, "low_distinct_symbolic");
+            return suppress("low_distinct_symbolic");
         }
     }
 
@@ -157,7 +147,7 @@ pub(super) fn should_suppress_inner(
                 // not long ones where it's a small substring.
                 let seq_ratio = seq.len() as f64 / credential.len().max(1) as f64;
                 if seq_ratio > 0.4 {
-                    return suppress(path, credential, "fake_sequence");
+                    return suppress("fake_sequence");
                 }
             }
         }
@@ -221,16 +211,16 @@ pub(super) fn should_suppress_inner(
     //     pure-hex captures as `weak_anchor` → `!bypass_shape_gates`
     //     here, so this arm still fires for them.
     if looks_like_prefixed_hash_digest(credential) {
-        return suppress(path, credential, "labelled_hash_digest");
+        return suppress("labelled_hash_digest");
     }
     if !bypass_shape_gates && !allow_canonical_hex_key && looks_like_bare_hex_digest(credential) {
-        return suppress(path, credential, "bare_hex_digest");
+        return suppress("bare_hex_digest");
     }
     if !bypass_shape_gates && is_uuid_v4_shape(credential) {
-        return suppress(path, credential, "uuid_v4_shape");
+        return suppress("uuid_v4_shape");
     }
     if !bypass_shape_gates && looks_like_truncated_uuid_v4_suffix(credential) {
-        return suppress(path, credential, "truncated_uuid_v4_suffix");
+        return suppress("truncated_uuid_v4_suffix");
     }
 
     // ── 5c. License-key / serial shape: 5 blocks of 5 alnum chars,
@@ -248,7 +238,7 @@ pub(super) fn should_suppress_inner(
     //         service-anchored credential carries a known prefix and has
     //         already exited via `Allow` in `check_markers`.
     if looks_like_dashed_serial_key(credential) {
-        return suppress(path, credential, "dashed_serial_key");
+        return suppress("dashed_serial_key");
     }
 
     // ── 5d. The well-known RFC 7519 example JWT (specimen token
@@ -268,7 +258,7 @@ pub(super) fn should_suppress_inner(
     // segment - the prefix-only check is sufficient and survives
     // truncation.)
     if credential.starts_with(RFC7519_EXAMPLE_JWT_PREFIX) {
-        return suppress(path, credential, "rfc7519_example_jwt");
+        return suppress("rfc7519_example_jwt");
     }
 
     // ── 5e0. Credentials never contain interior whitespace runs.
@@ -287,7 +277,7 @@ pub(super) fn should_suppress_inner(
             .split_whitespace()
             .any(|tok| tok.len() >= 3 && tok.chars().all(|c| c.is_ascii_lowercase()));
         if has_word_run {
-            return suppress(path, credential, "prose_whitespace");
+            return suppress("prose_whitespace");
         }
     }
 
@@ -310,7 +300,7 @@ pub(super) fn should_suppress_inner(
             || credential.contains(":policy/")
             || credential.contains(":instance-profile/"))
     {
-        return suppress(path, credential, "aws_iam_arn");
+        return suppress("aws_iam_arn");
     }
 
     // ── 5e2. HTML colour codes (`#RRGGBB`, `#RGB`). 6-or-3 hex
@@ -321,7 +311,7 @@ pub(super) fn should_suppress_inner(
         if (body.len() == 3 || body.len() == 6 || body.len() == 8)
             && body.chars().all(|c| c.is_ascii_hexdigit())
         {
-            return suppress(path, credential, "html_color");
+            return suppress("html_color");
         }
     }
 
@@ -338,7 +328,7 @@ pub(super) fn should_suppress_inner(
             || (trimmed.starts_with('<') && trimmed.ends_with('>'))
             || (trimmed.starts_with("${") && trimmed.ends_with('}'));
         if bracketed && trimmed.len() <= 80 {
-            return suppress(path, credential, "template_placeholder");
+            return suppress("template_placeholder");
         }
     }
 
@@ -373,7 +363,7 @@ pub(super) fn should_suppress_inner(
         && !allow_encoded_text_secret
         && looks_like_standard_base64_blob(credential)
     {
-        return suppress(path, credential, "base64_blob");
+        return suppress("base64_blob");
     }
 
     // ── 6. Algorithmic placeholder detection ──
@@ -382,13 +372,7 @@ pub(super) fn should_suppress_inner(
         if bypass_shape_gates && credential.chars().all(|c| c.is_ascii_hexdigit()) {
             // Keep named hex detectors alive (e.g. Algolia admin key)
         } else {
-            crate::adjudicate::record_example_suppression(
-                "pipeline",
-                path,
-                credential,
-                "algorithmic_placeholder",
-            );
-            return true;
+            return suppress("algorithmic_placeholder");
         }
     }
 
@@ -410,7 +394,7 @@ pub(super) fn should_suppress_inner(
             || trimmed_upper == "YOUR_TOKEN"
             || trimmed_upper == "YOUR_API_KEY"
         {
-            return suppress(path, credential, "doc_placeholder_word");
+            return suppress("doc_placeholder_word");
         }
     }
 
@@ -422,7 +406,7 @@ pub(super) fn should_suppress_inner(
         let is_example_path =
             crate::platform_compat::path_has_any_component(path, EXAMPLE_PATH_COMPONENTS);
         if is_example_path && super::doc_markers::upper_contains_token(&upper, "EXAMPLE") {
-            return suppress(Some(path), credential, "example_path_marker");
+            return suppress("example_path_marker");
         }
     }
 
@@ -459,7 +443,8 @@ pub(super) fn should_suppress_inner(
                 && decoded
                     .chars()
                     .all(|c| !c.is_control() || c == '\n' || c == '\r' || c == '\t')
-                && should_suppress_inner(
+            {
+                return suppression_stage_inner(
                     &decoded,
                     path,
                     context,
@@ -470,13 +455,11 @@ pub(super) fn should_suppress_inner(
                     allow_canonical_hex_key,
                     false,
                     false,
-                )
-            {
-                return true;
+                );
             }
         }
     }
-    false
+    None
 }
 
 pub(crate) fn decoded_benign_text_reason(credential: &str) -> Option<&'static str> {

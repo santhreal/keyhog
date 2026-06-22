@@ -345,6 +345,46 @@ fn named_detector_stage_reports_exact_email_shape_reason() {
 }
 
 #[test]
+fn named_detector_stage_reports_shared_suppression_reason() {
+    let ctx = MatchCtx::for_named_detector(NamedDetectorSuppressionCtx::with_weak_anchor(
+        Some("service/config.rs"),
+        CodeContext::Unknown,
+        Some("filesystem"),
+        "datadog-api-key",
+        true,
+    ));
+
+    assert_eq!(
+        adjudicate_match(
+            CandidateMatch::new(
+                "sha256:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+            ),
+            &ctx
+        ),
+        Verdict::Suppressed(StageId::ShapeGate("labelled_hash_digest"))
+    );
+}
+
+#[test]
+fn named_detector_stage_reports_decoded_inner_reason() {
+    let ctx = MatchCtx::for_named_detector(NamedDetectorSuppressionCtx::with_weak_anchor(
+        Some("secret.yaml"),
+        CodeContext::Unknown,
+        Some("filesystem"),
+        "datadog-api-key",
+        true,
+    ));
+
+    assert_eq!(
+        adjudicate_match(
+            CandidateMatch::new("YXJuOmF3czppYW06OjEyMzQ6cm9sZS9Y"),
+            &ctx
+        ),
+        Verdict::Suppressed(StageId::ShapeGate("aws_iam_arn"))
+    );
+}
+
+#[test]
 fn named_detector_stage_reports_service_anchored_identifier() {
     let ctx = MatchCtx::for_named_detector(NamedDetectorSuppressionCtx::with_weak_anchor(
         Some("service/config.rs"),

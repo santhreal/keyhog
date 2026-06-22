@@ -1,8 +1,8 @@
 //! Public suppression entry points. The scanner calls one of these three
 //! per finding; they apply the path / shape pre-checks unique to each
-//! call site, then delegate the rest to [`super::decision::should_suppress_inner`].
+//! call site, then delegate the rest to [`super::decision::suppression_stage_inner`].
 
-use super::decision::should_suppress_inner;
+use super::decision::suppression_stage_inner;
 use super::path_filter::{looks_like_secret_scanner_source, looks_like_vendored_minified_path};
 use super::shape::{
     contains_uuid_v4_substring, looks_like_credential_colliding_punctuation,
@@ -70,7 +70,14 @@ pub(crate) fn suppress_known_example_credential(
     credential: &str,
     ctx: KnownExampleSuppressionCtx<'_>,
 ) -> bool {
-    should_suppress_inner(
+    suppress_known_example_credential_stage(credential, ctx).is_some()
+}
+
+pub(crate) fn suppress_known_example_credential_stage(
+    credential: &str,
+    ctx: KnownExampleSuppressionCtx<'_>,
+) -> Option<crate::adjudicate::StageId> {
+    suppression_stage_inner(
         credential,
         ctx.path,
         ctx.context,
@@ -122,10 +129,8 @@ pub(crate) fn hot_pattern_suppression_stage(
         context::CodeContext::Unknown,
         Some(ctx.source_type),
     );
-    if suppress_known_example_credential(credential, example_ctx) {
-        return Some(crate::adjudicate::StageId::ShapeGate(
-            "hot_known_example_or_placeholder",
-        ));
+    if let Some(stage_id) = suppress_known_example_credential_stage(credential, example_ctx) {
+        return Some(stage_id);
     }
     if looks_like_regex_literal_tail(credential) {
         return Some(crate::adjudicate::StageId::ShapeGate(
@@ -478,7 +483,7 @@ pub(crate) fn suppress_named_detector_finding_stage(
         crate::detector_ids::is_service_anchored_detector(detector_id) && !weak_anchor;
     let allow_encoded_text_secret = crate::detector_ids::is_generic_detector(detector_id)
         && crate::decode_structure::decodes_to_printable_text(credential);
-    if should_suppress_inner(
+    suppression_stage_inner(
         credential,
         path,
         context,
@@ -489,11 +494,7 @@ pub(crate) fn suppress_named_detector_finding_stage(
         false,
         false,
         allow_encoded_text_secret,
-    ) {
-        Some(crate::adjudicate::StageId::NamedDetectorSuppression)
-    } else {
-        None
-    }
+    )
 }
 
 /// True if the detector that fired has no service-specific anchor -

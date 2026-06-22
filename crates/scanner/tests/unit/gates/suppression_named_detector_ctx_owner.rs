@@ -103,6 +103,7 @@ fn engine_named_detector_suppression_routes_through_adjudicator() {
     let src = scanner_src();
     let process = uncommented_code(&read(&src.join("engine/process.rs")));
     let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
+    let api = uncommented_code(&read(&src.join("suppression/api.rs")));
     assert!(
         process.contains("crate::adjudicate::record_suppression("),
         "engine/process.rs must route named-detector candidate decisions through the adjudicator recorder"
@@ -113,7 +114,9 @@ fn engine_named_detector_suppression_routes_through_adjudicator() {
     );
     assert!(
         adjudicate.contains("crate::suppression::suppress_named_detector_finding_stage(")
-            && !adjudicate.contains("Suppress(StageId::NamedDetectorSuppression)"),
+            && !adjudicate.contains("StageId::NamedDetectorSuppression")
+            && !adjudicate.contains("named_detector_suppressed")
+            && !api.contains("StageId::NamedDetectorSuppression"),
         "adjudicator must preserve exact named-detector suppression stages instead of flattening them"
     );
 }
