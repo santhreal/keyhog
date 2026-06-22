@@ -73,7 +73,7 @@ fn passes_plausibility_checks(
 ) -> bool {
     if matches_universal_rejection(value)
         || is_known_non_secret(value, context)
-        || is_placeholder_ci(value.as_bytes(), placeholder_keywords)
+        || is_placeholder_ci(value, placeholder_keywords)
         || has_low_alnum_ratio(value)
     {
         return false;
@@ -170,7 +170,7 @@ pub(crate) fn is_isolated_bare_secret_plausible(
     }
     if value.contains('.') {
         if value.len() >= 40
-            && !is_placeholder_ci(value.as_bytes(), placeholder_keywords)
+            && !is_placeholder_ci(value, placeholder_keywords)
             && is_structured_dotted_token(value)
         {
             return true;
@@ -195,7 +195,7 @@ fn is_isolated_leading_slash_base64_secret(value: &str, placeholder_keywords: &[
         return false;
     };
     if value.len() < 40
-        || is_placeholder_ci(value.as_bytes(), placeholder_keywords)
+        || is_placeholder_ci(value, placeholder_keywords)
         || has_low_alnum_ratio(value)
     {
         return false;
@@ -322,7 +322,8 @@ pub(crate) fn is_secret_plausible(
     )
 }
 
-fn is_placeholder_ci(bytes: &[u8], placeholder_keywords: &[String]) -> bool {
+fn is_placeholder_ci(value: &str, placeholder_keywords: &[String]) -> bool {
+    let bytes = value.as_bytes();
     if placeholder_keywords
         .iter()
         .any(|placeholder| crate::ascii_ci::ci_find_nonempty(bytes, placeholder.as_bytes()))
@@ -330,22 +331,8 @@ fn is_placeholder_ci(bytes: &[u8], placeholder_keywords: &[String]) -> bool {
         return true;
     }
 
-    let upper = String::from_utf8_lossy(bytes).to_uppercase();
-    upper.contains("EXAMPLE")
-        || upper.contains("YOUR_")
-        || upper.contains("REPLACE_ME")
-        || upper.contains("CHANGE_ME")
-        || upper.contains("INSERT_HERE")
-        || upper.contains("FAKE_")
-        || upper.contains("DUMMY_")
-        || upper.contains("MOCK_")
-        || (upper.contains("SECRET_KEY") && upper.len() < 20)
-        || (upper.starts_with("AKIA")
-            && (upper.ends_with("EXAMPLE") || upper.contains("1234567890")))
-        || bytes.contains(&b'<')
-        || bytes.contains(&b'>')
-        || matches!(
-            bytes,
-            b"null" | b"none" | b"undefined" | b"empty" | b"default" | b"secret" | b"password"
-        )
+    crate::placeholder_words::contains_placeholder_word_with_entropy_hint(
+        value,
+        Some(shannon_entropy(bytes)),
+    ) || crate::placeholder_words::bytes_contain_entropy_placeholder_marker(bytes)
 }

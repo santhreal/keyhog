@@ -121,6 +121,27 @@ fn candidate_mode_skips_strict_secret_checks() {
 }
 
 #[test]
+fn plausibility_uses_shared_placeholder_markers() {
+    for value in [
+        "YOUR_API_KEY_HERE",
+        "REPLACE_ME_WITH_TOKEN",
+        "INSERT_HERE_SECRET_VALUE",
+        "AKIA1234567890ABCDEF",
+        "<paste-token-here>",
+    ] {
+        assert!(
+            !is_candidate_plausible(value, &[]),
+            "placeholder marker {value:?} must fail candidate plausibility"
+        );
+    }
+
+    assert!(
+        !is_candidate_plausible("operator_seeded_marker", &["seeded".to_string()]),
+        "operator placeholder keywords must still participate in plausibility"
+    );
+}
+
+#[test]
 fn detect_db_password_hex() {
     let text = "DB_PASSWORD=8ae31cacf141669ddfb5da\n";
     let matches = find_secrets(text, 8, 2, HIGH_ENTROPY_THRESHOLD);

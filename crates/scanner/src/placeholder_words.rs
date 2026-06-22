@@ -93,6 +93,26 @@ pub(crate) fn bytes_contain_placeholder_word(bytes: &[u8]) -> bool {
         .any(|word| crate::ascii_ci::ci_find(bytes, word.lower_bytes()))
 }
 
+pub(crate) fn bytes_contain_entropy_placeholder_marker(bytes: &[u8]) -> bool {
+    let upper = String::from_utf8_lossy(bytes).to_uppercase();
+    upper.contains("YOUR_")
+        || upper.contains("REPLACE_ME")
+        || upper.contains("CHANGE_ME")
+        || upper.contains("INSERT_HERE")
+        || upper.contains("FAKE_")
+        || upper.contains("DUMMY_")
+        || upper.contains("MOCK_")
+        || (upper.contains("SECRET_KEY") && upper.len() < 20)
+        || (upper.starts_with("AKIA")
+            && (upper.ends_with("EXAMPLE") || upper.contains("1234567890")))
+        || bytes.contains(&b'<')
+        || bytes.contains(&b'>')
+        || matches!(
+            bytes,
+            b"null" | b"none" | b"undefined" | b"empty" | b"default" | b"secret" | b"password"
+        )
+}
+
 fn placeholder_word_suppresses(
     credential: &str,
     upper: &str,

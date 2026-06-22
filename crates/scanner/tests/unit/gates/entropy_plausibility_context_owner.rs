@@ -47,6 +47,30 @@ fn entropy_plausibility_uses_typed_context_entry_points() {
             && owner.contains("context: PlausibilityContext"),
         "passes_secret_strength_checks must take PlausibilityContext"
     );
+    assert!(
+        owner.contains("crate::placeholder_words::contains_placeholder_word_with_entropy_hint(")
+            && owner.contains(
+                "crate::placeholder_words::bytes_contain_entropy_placeholder_marker(bytes)"
+            ),
+        "entropy::plausibility must consume the shared placeholder owner instead of duplicating marker lists"
+    );
+    for forbidden_marker in [
+        "\"EXAMPLE\"",
+        "\"YOUR_\"",
+        "\"REPLACE_ME\"",
+        "\"CHANGE_ME\"",
+        "\"INSERT_HERE\"",
+        "\"FAKE_\"",
+        "\"DUMMY_\"",
+        "\"MOCK_\"",
+        "\"SECRET_KEY\"",
+        "\"1234567890\"",
+    ] {
+        assert!(
+            !owner.contains(forbidden_marker),
+            "entropy::plausibility must not own placeholder marker literal {forbidden_marker}"
+        );
+    }
 
     for forbidden in [
         "pub(crate) struct PlausibilityContext",
