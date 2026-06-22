@@ -18,8 +18,8 @@ fn frag(prefix: &str, var: &str, value: &str, path: &str, line: usize) -> Secret
 fn three_fragments_emit_all_pairwise_joins() {
     let cache = FragmentCache::new(1024);
     cache.record_and_reassemble(frag("p", "A", "111", "/d/a.py", 1));
-    cache.record_and_reassemble(frag("p", "B", "222", "/d/b.py", 2));
-    let candidates = cache.record_and_reassemble(frag("p", "C", "333", "/d/c.py", 3));
+    cache.record_and_reassemble(frag("p", "B", "222", "/d/a.py", 2));
+    let candidates = cache.record_and_reassemble(frag("p", "C", "333", "/d/a.py", 3));
     assert_eq!(
         candidates.len(),
         6,

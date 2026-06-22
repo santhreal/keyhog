@@ -1,4 +1,4 @@
-//! Cross-file fragments in the same directory join into credential candidates.
+//! Same-directory fragments in different files must not reassemble.
 
 use keyhog_scanner::testing::fragment_cache::{FragmentCache, SecretFragment};
 use std::sync::Arc;
@@ -15,7 +15,7 @@ fn frag(prefix: &str, var: &str, value: &str, path: &str, line: usize) -> Secret
 }
 
 #[test]
-fn two_fragments_same_dir_join() {
+fn two_fragments_same_dir_different_file_do_not_join() {
     let cache = FragmentCache::new(1024);
     let candidates = cache.record_and_reassemble(frag(
         "aws_key",
@@ -37,8 +37,8 @@ fn two_fragments_same_dir_join() {
     ));
     let joined: Vec<String> = candidates.iter().map(|c| c.as_str().to_string()).collect();
     assert!(
-        joined.contains(&concat!("AK", "IAIOSFODNN7EXAMPLE").to_string()),
-        "expected prefix+suffix join, got {:?}",
+        joined.is_empty(),
+        "same-directory but different-file fragments must not join, got {:?}",
         joined
     );
 }
