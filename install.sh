@@ -1057,6 +1057,17 @@ prime_autoroute_cache() {
         err "Installed keyhog scan --help returned no output; refusing to guess calibration flags."
         return 1
     fi
+    if ! printf '%s' "$scan_help" | grep -q -- '--autoroute-calibrate'; then
+        # This build does not expose autoroute calibration. The portable
+        # macOS/Windows builds gate it out (only the Linux build ships it), so
+        # the binary routes with its compiled-in defaults and has no cache to
+        # prime -- calibration is a no-op here. Passing --autoroute-calibrate to
+        # a binary that lacks it makes every probe fail with "unexpected
+        # argument" and (before this guard) rolled back the whole install on
+        # those platforms; skip calibration and report success instead.
+        warn "  Autoroute calibration not supported by this build (no --autoroute-calibrate flag); using the binary's compiled-in routing."
+        return 0
+    fi
     if printf '%s' "$scan_help" | grep -q -- '--no-config'; then
         cfg_flag="--no-config"
         cfg_file=""
