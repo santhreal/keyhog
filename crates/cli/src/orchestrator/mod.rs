@@ -455,6 +455,15 @@ impl ScanOrchestrator {
                     max_expires_days: None,
                 },
                 source_limits: keyhog_sources::SourceLimits::default(),
+                report: crate::orchestrator_config::ResolvedReportPolicy {
+                    severity: None,
+                    dedup: crate::args::CliDedupScope::Credential,
+                    verify: false,
+                    lockdown: false,
+                    show_secrets: false,
+                    no_suppress_test_fixtures: false,
+                    hide_client_safe: false,
+                },
             },
         }
     }

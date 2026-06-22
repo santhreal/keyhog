@@ -15,6 +15,10 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
         "orchestrator_config must keep a resolved runtime/path input boundary"
     );
     assert!(
+        src.contains("struct ResolvedReportPolicy"),
+        "orchestrator_config must keep a resolved reporting/postprocess policy boundary"
+    );
+    assert!(
         src.contains("fn build_scanner_config_from_input(input: &ScannerConfigInput)"),
         "ScannerConfig construction must have an input-owned implementation"
     );
@@ -34,6 +38,10 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
     assert!(
         resolve_body.contains("ScanRuntimeInput::from_scan_args(args)"),
         "resolve_scan_config must convert post-merge args into ScanRuntimeInput once"
+    );
+    assert!(
+        resolve_body.contains("ResolvedReportPolicy::from_scan_args(args)"),
+        "resolve_scan_config must convert post-merge args into ResolvedReportPolicy once"
     );
     assert!(
         resolve_body.contains("build_scanner_config_from_input(&scanner_input)"),
@@ -75,4 +83,42 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
         !builder_body.contains("args."),
         "build_scanner_config_from_input must read only ScannerConfigInput, not raw ScanArgs"
     );
+}
+
+#[test]
+fn postprocess_reads_resolved_report_policy() {
+    let postprocess = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator/postprocess.rs"
+    ))
+    .expect("postprocess source readable");
+    for forbidden in [
+        "self.args.no_suppress_test_fixtures",
+        "self.args.severity",
+        "self.args.dedup",
+        "if self.args.verify {",
+        "self.args.lockdown && self.args.show_secrets",
+        "self.args.show_secrets",
+    ] {
+        assert!(
+            !postprocess.contains(forbidden),
+            "postprocess reporting policy must come from ResolvedReportPolicy, not `{forbidden}`"
+        );
+    }
+
+    let run = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator/run.rs"
+    ))
+    .expect("orchestrator run source readable");
+    for forbidden in [
+        "if self.args.verify {",
+        "self.args.show_secrets",
+        "self.args.hide_client_safe",
+    ] {
+        assert!(
+            !run.contains(forbidden),
+            "run reporting policy must come from ResolvedReportPolicy, not `{forbidden}`"
+        );
+    }
 }

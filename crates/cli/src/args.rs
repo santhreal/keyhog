@@ -491,7 +491,7 @@ pub enum DetectorFormat {
     Json,
 }
 
-#[derive(Clone, ValueEnum)]
+#[derive(Clone, Debug, ValueEnum)]
 pub enum SeverityFilter {
     Info,
     Low,
@@ -525,7 +525,7 @@ pub enum OutputFormat {
     Junit,
 }
 
-#[derive(Clone, ValueEnum, PartialEq)]
+#[derive(Clone, Debug, ValueEnum, PartialEq)]
 pub enum CliDedupScope {
     Credential,
     File,

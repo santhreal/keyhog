@@ -6,7 +6,7 @@ use anyhow::Context;
 use anyhow::Result;
 #[cfg(feature = "verify")]
 use keyhog_core::DedupedMatch;
-use keyhog_core::{dedup_matches, RawMatch, VerificationResult, VerifiedFinding};
+use keyhog_core::{RawMatch, VerificationResult, VerifiedFinding, dedup_matches};
 
 /// Offline (no-verify, no-network) structural metadata for a finding's
 /// credential, surfaced on every scan-output route.
@@ -149,7 +149,7 @@ impl ScanOrchestrator {
                 // The previous iteration also matched any segment literally
                 // equal to "keyhog", which dropped findings from any folder
                 // named keyhog/ (forks, docs paths, Reddit demo trees).
-                if !self.args.no_suppress_test_fixtures {
+                if !self.effective_config.report.no_suppress_test_fixtures {
                     if let Some(file_path) = m.location.file_path.as_deref() {
                         if finding_inside_keyhog_repo(file_path) {
                             let mut segs = file_path.split(['/', '\\']);
@@ -201,7 +201,7 @@ impl ScanOrchestrator {
                         return false;
                     }
                 }
-                if let Some(min_severity) = &self.args.severity {
+                if let Some(min_severity) = &self.effective_config.report.severity {
                     if m.severity < min_severity.to_severity() {
                         return false;
                     }
@@ -219,13 +219,13 @@ impl ScanOrchestrator {
         mut matches: Vec<RawMatch>,
     ) -> Result<Vec<VerifiedFinding>> {
         matches.sort_by_key(|m| std::cmp::Reverse(m.severity));
-        let scope = self.args.dedup.to_core();
+        let scope = self.effective_config.report.dedup.to_core();
         let deduped = dedup_matches(matches, &scope);
         let deduped = keyhog_core::dedup_cross_detector(deduped);
 
         #[cfg(feature = "verify")]
-        if self.args.verify {
-            if self.args.lockdown {
+        if self.effective_config.report.verify {
+            if self.effective_config.report.lockdown {
                 anyhow::bail!(
                     "lockdown mode forbids --verify (would send credentials \
                      to outbound HTTPS endpoints). Drop --verify or drop --lockdown."
@@ -234,7 +234,7 @@ impl ScanOrchestrator {
             return self.verify_findings(deduped).await;
         }
 
-        if self.args.lockdown && self.args.show_secrets {
+        if self.effective_config.report.lockdown && self.effective_config.report.show_secrets {
             anyhow::bail!(
                 "lockdown mode forbids --show-secrets (would print plaintext credentials \
                  to stdout/stderr). Drop --show-secrets or drop --lockdown."
@@ -248,7 +248,7 @@ impl ScanOrchestrator {
                 detector_name: m.detector_name,
                 service: m.service,
                 severity: m.severity,
-                credential_redacted: if self.args.show_secrets {
+                credential_redacted: if self.effective_config.report.show_secrets {
                     m.credential.to_string().into()
                 } else {
                     keyhog_core::redact(&m.credential)

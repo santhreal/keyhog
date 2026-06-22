@@ -1,4 +1,4 @@
-use crate::args::ScanArgs;
+use crate::args::{CliDedupScope, ScanArgs, SeverityFilter};
 use anyhow::Result;
 use keyhog_scanner::ScannerConfig;
 use std::path::{Path, PathBuf};
@@ -14,9 +14,9 @@ pub(crate) use detectors::{
 };
 pub(crate) use effective::{autoroute_config_digest, render_effective_config};
 pub(crate) use runtime::{
-    backend_override_label, configure_hyperscan_cache_dir, configure_threads, fused_depth_default,
-    gpu_runtime_policy_from_args, parse_backend_override, FUSED_BATCH_DEFAULT, MAX_THREADS_CAP,
-    ML_THRESHOLD_DEFAULT,
+    FUSED_BATCH_DEFAULT, MAX_THREADS_CAP, ML_THRESHOLD_DEFAULT, backend_override_label,
+    configure_hyperscan_cache_dir, configure_threads, fused_depth_default,
+    gpu_runtime_policy_from_args, parse_backend_override,
 };
 
 #[derive(Debug, Clone)]
@@ -318,6 +318,31 @@ pub(crate) struct ResolvedAllowlistConfig {
     pub(crate) max_expires_days: Option<u64>,
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct ResolvedReportPolicy {
+    pub(crate) severity: Option<SeverityFilter>,
+    pub(crate) dedup: CliDedupScope,
+    pub(crate) verify: bool,
+    pub(crate) lockdown: bool,
+    pub(crate) show_secrets: bool,
+    pub(crate) no_suppress_test_fixtures: bool,
+    pub(crate) hide_client_safe: bool,
+}
+
+impl ResolvedReportPolicy {
+    fn from_scan_args(args: &ScanArgs) -> Self {
+        Self {
+            severity: args.severity.clone(),
+            dedup: args.dedup.clone(),
+            verify: args.verify,
+            lockdown: args.lockdown,
+            show_secrets: args.show_secrets,
+            no_suppress_test_fixtures: args.no_suppress_test_fixtures,
+            hide_client_safe: args.hide_client_safe,
+        }
+    }
+}
+
 /// The single resolved scan configuration: the END of the precedence chain
 /// `compiled-default -> [scan] table -> flat ConfigFile fields -> CLI flags`,
 /// already merged into the engine's [`ScannerConfig`] PLUS the post-scan policy
@@ -402,6 +427,8 @@ pub(crate) struct ResolvedScanConfig {
     pub(crate) allowlist: ResolvedAllowlistConfig,
     /// Resolved source byte/count limits applied while constructing sources.
     pub(crate) source_limits: keyhog_sources::SourceLimits,
+    /// Resolved reporting/postprocess policy that can come from CLI or TOML.
+    pub(crate) report: ResolvedReportPolicy,
 }
 
 /// Resolve the full scan configuration in one place: run the precedence merge
@@ -430,6 +457,7 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
     let aws_canary_set = aws_canary_accounts.iter().cloned().collect();
     keyhog_core::set_extra_canary_accounts(aws_canary_set);
     let runtime_input = ScanRuntimeInput::from_scan_args(args);
+    let report = ResolvedReportPolicy::from_scan_args(args);
     configure_hyperscan_cache_dir(runtime_input.cache_dir.clone())?;
     let autoroute_cache_path = crate::autoroute_cache_path::resolve_autoroute_cache_path(
         runtime_input.autoroute_cache.as_deref(),
@@ -480,6 +508,7 @@ pub(crate) fn resolve_scan_config(args: &mut ScanArgs) -> Result<ResolvedScanCon
             max_expires_days: outcome.allowlist_max_expires_days,
         },
         source_limits: runtime_input.source_limits,
+        report,
     })
 }
 
@@ -517,6 +546,15 @@ pub(crate) fn resolved_scan_config_for_scanner(scanner: ScannerConfig) -> Resolv
             max_expires_days: None,
         },
         source_limits: keyhog_sources::SourceLimits::default(),
+        report: ResolvedReportPolicy {
+            severity: None,
+            dedup: CliDedupScope::Credential,
+            verify: false,
+            lockdown: false,
+            show_secrets: false,
+            no_suppress_test_fixtures: false,
+            hide_client_safe: false,
+        },
     }
 }
 
