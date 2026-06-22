@@ -127,6 +127,7 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
         "camel_case_no_digit",
         "checksum_invalid",
         "scoring_rejected",
+        "report_confidence_rejected",
     ] {
         assert!(
             !process.contains(&format!("\"{reason}\"")),

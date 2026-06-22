@@ -288,6 +288,20 @@ impl CompiledScanner {
                         calibration: self.config.calibration.as_deref(),
                     },
                 ) else {
+                    let report_confidence_ctx = crate::adjudicate::MatchCtx::for_process_signals(
+                        crate::adjudicate::ProcessCandidateSignals::from_report_confidence_rejected(
+                            true,
+                        ),
+                    );
+                    let stage_id =
+                        crate::adjudicate::adjudicate_match(candidate, &report_confidence_ctx)
+                            .suppressed_stage()
+                            .expect("report-confidence-rejected signal must suppress");
+                    crate::telemetry::record_shape_suppression(
+                        chunk.metadata.path.as_deref(),
+                        credential,
+                        stage_id.as_str(),
+                    );
                     return;
                 };
                 confidence = adjusted_confidence;

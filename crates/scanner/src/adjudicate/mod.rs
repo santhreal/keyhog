@@ -18,6 +18,7 @@ pub(crate) enum StageId {
     CamelCaseNoDigit,
     ChecksumInvalid,
     ScoringRejected,
+    ReportConfidenceRejected,
     NamedDetectorSuppression,
 }
 
@@ -35,6 +36,7 @@ impl StageId {
             Self::CamelCaseNoDigit => "camel_case_no_digit",
             Self::ChecksumInvalid => "checksum_invalid",
             Self::ScoringRejected => "scoring_rejected",
+            Self::ReportConfidenceRejected => "report_confidence_rejected",
             Self::NamedDetectorSuppression => "named_detector_suppressed",
         }
     }
@@ -78,20 +80,20 @@ impl<'a> CandidateMatch<'a> {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct ProcessCandidateSignals {
-    invalid_aws_access_key_length: bool,
-    invalid_anthropic_legacy_length: bool,
-    within_hex_context: bool,
-    hex_digest_fragment: bool,
-    generic_without_prefix_not_promising: bool,
-    false_positive_context: bool,
-    missing_required_companion: bool,
-    entropy_below_floor: bool,
-    camel_case_no_digit: bool,
-    checksum_invalid: bool,
-    scoring_rejected: bool,
+    stage_id: Option<StageId>,
 }
 
 impl ProcessCandidateSignals {
+    const fn pass() -> Self {
+        Self { stage_id: None }
+    }
+
+    const fn suppress(stage_id: StageId) -> Self {
+        Self {
+            stage_id: Some(stage_id),
+        }
+    }
+
     pub(crate) fn from_match(
         detector_id: &str,
         credential: &str,
@@ -99,65 +101,44 @@ impl ProcessCandidateSignals {
         credential_start: usize,
         match_end: usize,
     ) -> Self {
-        let invalid_aws_access_key_length =
-            detector_id == crate::detector_ids::AWS_ACCESS_KEY && credential.len() != 20;
-        let invalid_anthropic_legacy_length = detector_id == crate::detector_ids::ANTHROPIC_API_KEY
+        if detector_id == crate::detector_ids::AWS_ACCESS_KEY && credential.len() != 20 {
+            return Self::suppress(StageId::AwsAccessKeyLengthInvalid);
+        }
+        if detector_id == crate::detector_ids::ANTHROPIC_API_KEY
             && credential
                 .strip_prefix("sk-ant-api03-")
-                .is_some_and(|body| !(80..=120).contains(&body.len()));
-        let within_hex_context =
-            crate::pipeline::is_within_hex_context(data, credential_start, match_end);
-        let hex_digest_fragment =
-            is_hex_digest_fragment(data, credential_start, match_end, credential);
-        let generic_without_prefix_not_promising =
-            crate::detector_ids::is_generic_detector(detector_id)
-                && crate::confidence::known_prefix_confidence_floor(credential).is_none()
-                && !crate::probabilistic_gate::ProbabilisticGate::looks_promising(credential);
-
-        Self {
-            invalid_aws_access_key_length,
-            invalid_anthropic_legacy_length,
-            within_hex_context,
-            hex_digest_fragment,
-            generic_without_prefix_not_promising,
-            false_positive_context: false,
-            missing_required_companion: false,
-            entropy_below_floor: false,
-            camel_case_no_digit: false,
-            checksum_invalid: false,
-            scoring_rejected: false,
+                .is_some_and(|body| !(80..=120).contains(&body.len()))
+        {
+            return Self::suppress(StageId::AnthropicLegacyLengthInvalid);
         }
+        if crate::pipeline::is_within_hex_context(data, credential_start, match_end) {
+            return Self::suppress(StageId::WithinHexContext);
+        }
+        if is_hex_digest_fragment(data, credential_start, match_end, credential) {
+            return Self::suppress(StageId::HexDigestFragment);
+        }
+        if crate::detector_ids::is_generic_detector(detector_id)
+            && crate::confidence::known_prefix_confidence_floor(credential).is_none()
+            && !crate::probabilistic_gate::ProbabilisticGate::looks_promising(credential)
+        {
+            return Self::suppress(StageId::ProbabilisticGateNotPromising);
+        }
+        Self::pass()
     }
 
     pub(crate) const fn from_false_positive_context(false_positive_context: bool) -> Self {
-        Self {
-            invalid_aws_access_key_length: false,
-            invalid_anthropic_legacy_length: false,
-            within_hex_context: false,
-            hex_digest_fragment: false,
-            generic_without_prefix_not_promising: false,
-            false_positive_context,
-            missing_required_companion: false,
-            entropy_below_floor: false,
-            camel_case_no_digit: false,
-            checksum_invalid: false,
-            scoring_rejected: false,
+        if false_positive_context {
+            Self::suppress(StageId::FalsePositiveContext)
+        } else {
+            Self::pass()
         }
     }
 
     pub(crate) const fn from_missing_required_companion(missing_required_companion: bool) -> Self {
-        Self {
-            invalid_aws_access_key_length: false,
-            invalid_anthropic_legacy_length: false,
-            within_hex_context: false,
-            hex_digest_fragment: false,
-            generic_without_prefix_not_promising: false,
-            false_positive_context: false,
-            missing_required_companion,
-            entropy_below_floor: false,
-            camel_case_no_digit: false,
-            checksum_invalid: false,
-            scoring_rejected: false,
+        if missing_required_companion {
+            Self::suppress(StageId::MissingRequiredCompanion)
+        } else {
+            Self::pass()
         }
     }
 
@@ -165,50 +146,36 @@ impl ProcessCandidateSignals {
         entropy_below_floor: bool,
         camel_case_no_digit: bool,
     ) -> Self {
-        Self {
-            invalid_aws_access_key_length: false,
-            invalid_anthropic_legacy_length: false,
-            within_hex_context: false,
-            hex_digest_fragment: false,
-            generic_without_prefix_not_promising: false,
-            false_positive_context: false,
-            missing_required_companion: false,
-            entropy_below_floor,
-            camel_case_no_digit,
-            checksum_invalid: false,
-            scoring_rejected: false,
+        if entropy_below_floor {
+            Self::suppress(StageId::EntropyBelowFloor)
+        } else if camel_case_no_digit {
+            Self::suppress(StageId::CamelCaseNoDigit)
+        } else {
+            Self::pass()
         }
     }
 
     pub(crate) const fn from_checksum_invalid(checksum_invalid: bool) -> Self {
-        Self {
-            invalid_aws_access_key_length: false,
-            invalid_anthropic_legacy_length: false,
-            within_hex_context: false,
-            hex_digest_fragment: false,
-            generic_without_prefix_not_promising: false,
-            false_positive_context: false,
-            missing_required_companion: false,
-            entropy_below_floor: false,
-            camel_case_no_digit: false,
-            checksum_invalid,
-            scoring_rejected: false,
+        if checksum_invalid {
+            Self::suppress(StageId::ChecksumInvalid)
+        } else {
+            Self::pass()
         }
     }
 
     pub(crate) const fn from_scoring_rejected(scoring_rejected: bool) -> Self {
-        Self {
-            invalid_aws_access_key_length: false,
-            invalid_anthropic_legacy_length: false,
-            within_hex_context: false,
-            hex_digest_fragment: false,
-            generic_without_prefix_not_promising: false,
-            false_positive_context: false,
-            missing_required_companion: false,
-            entropy_below_floor: false,
-            camel_case_no_digit: false,
-            checksum_invalid: false,
-            scoring_rejected,
+        if scoring_rejected {
+            Self::suppress(StageId::ScoringRejected)
+        } else {
+            Self::pass()
+        }
+    }
+
+    pub(crate) const fn from_report_confidence_rejected(report_confidence_rejected: bool) -> Self {
+        if report_confidence_rejected {
+            Self::suppress(StageId::ReportConfidenceRejected)
+        } else {
+            Self::pass()
         }
     }
 }
@@ -256,38 +223,8 @@ fn process_signal_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> S
     let Some(signals) = ctx.process_signals else {
         return StageOutcome::Pass;
     };
-    if signals.invalid_aws_access_key_length {
-        return StageOutcome::Suppress(StageId::AwsAccessKeyLengthInvalid);
-    }
-    if signals.invalid_anthropic_legacy_length {
-        return StageOutcome::Suppress(StageId::AnthropicLegacyLengthInvalid);
-    }
-    if signals.within_hex_context {
-        return StageOutcome::Suppress(StageId::WithinHexContext);
-    }
-    if signals.hex_digest_fragment {
-        return StageOutcome::Suppress(StageId::HexDigestFragment);
-    }
-    if signals.generic_without_prefix_not_promising {
-        return StageOutcome::Suppress(StageId::ProbabilisticGateNotPromising);
-    }
-    if signals.false_positive_context {
-        return StageOutcome::Suppress(StageId::FalsePositiveContext);
-    }
-    if signals.missing_required_companion {
-        return StageOutcome::Suppress(StageId::MissingRequiredCompanion);
-    }
-    if signals.entropy_below_floor {
-        return StageOutcome::Suppress(StageId::EntropyBelowFloor);
-    }
-    if signals.camel_case_no_digit {
-        return StageOutcome::Suppress(StageId::CamelCaseNoDigit);
-    }
-    if signals.checksum_invalid {
-        return StageOutcome::Suppress(StageId::ChecksumInvalid);
-    }
-    if signals.scoring_rejected {
-        return StageOutcome::Suppress(StageId::ScoringRejected);
+    if let Some(stage_id) = signals.stage_id {
+        return StageOutcome::Suppress(stage_id);
     }
     StageOutcome::Pass
 }

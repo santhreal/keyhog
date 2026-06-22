@@ -145,6 +145,19 @@ fn process_stage_suppresses_scoring_rejected() {
 }
 
 #[test]
+fn process_stage_suppresses_report_confidence_rejected() {
+    let credential = "AKIAIOSFODNN7EXAMPLE";
+    let ctx = MatchCtx::for_process_signals(
+        ProcessCandidateSignals::from_report_confidence_rejected(true),
+    );
+
+    assert_eq!(
+        adjudicate_match(CandidateMatch::new(credential), &ctx),
+        Verdict::Suppressed(StageId::ReportConfidenceRejected)
+    );
+}
+
+#[test]
 fn process_stage_reports_service_anchored_candidate() {
     let credential = "AKIAIOSFODNN7EXAMPLE";
 
