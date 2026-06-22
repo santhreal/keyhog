@@ -5,7 +5,7 @@ use keyhog_core::VerificationResult;
 use reqwest::Client;
 use sha2::{Digest, Sha256};
 
-use crate::verify::request::execute_request;
+use crate::verify::request::{execute_request, resolved_client_for_url};
 use crate::verify::response::read_response_body;
 
 const AWS_VALID_ACCESS_KEY_PREFIXES: &[&str] = &["AKIA", "ASIA", "AROA", "AIDA", "AGPA"];
@@ -21,6 +21,10 @@ pub(crate) async fn build_aws_probe(
     companions: &HashMap<String, String>,
     timeout: Duration,
     client: &Client,
+    allow_private_ips: bool,
+    allow_http: bool,
+    proxy_in_use: bool,
+    insecure_tls: bool,
 ) -> super::request::RequestBuildResult {
     let access_key = crate::interpolate::resolve_field(access_key, credential, companions);
     let secret_key = crate::interpolate::resolve_field(secret_key, credential, companions);
@@ -94,10 +98,30 @@ pub(crate) async fn build_aws_probe(
     let host = format!("sts.{region}.amazonaws.com");
     let url = format!("https://{host}/");
     let body = "Action=GetCallerIdentity&Version=2011-06-15";
-
-    match build_sigv4_request(
+    let resolved_target = match resolved_client_for_url(
         client,
         &url,
+        timeout,
+        allow_private_ips,
+        allow_http,
+        proxy_in_use,
+        insecure_tls,
+    )
+    .await
+    {
+        Ok(resolved_target) => resolved_target,
+        Err(result) => {
+            return super::request::RequestBuildResult::Final {
+                result,
+                metadata: HashMap::from([("format_valid".into(), "true".into())]),
+                transient: false,
+            };
+        }
+    };
+
+    match build_sigv4_request(
+        &resolved_target.client,
+        resolved_target.url.as_str(),
         &host,
         body,
         &access_key,

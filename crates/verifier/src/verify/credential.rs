@@ -283,6 +283,10 @@ pub(crate) async fn verify_credential(
             credential,
             companions_ref,
             timeout,
+            allow_private_ips,
+            allow_http,
+            proxy_in_use,
+            insecure_tls,
             allow_script_verify,
         )
         .await
@@ -324,6 +328,10 @@ pub(crate) async fn verify_credential(
             credential,
             companions_ref,
             timeout,
+            allow_private_ips,
+            allow_http,
+            proxy_in_use,
+            insecure_tls,
             allow_script_verify,
         )
         .await

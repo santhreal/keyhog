@@ -288,6 +288,10 @@ pub(crate) async fn build_request_for_step(
     credential: &str,
     companions: &HashMap<String, String>,
     timeout: Duration,
+    allow_private_ips: bool,
+    allow_http: bool,
+    proxy_in_use: bool,
+    insecure_tls: bool,
     allow_script_verify: bool,
 ) -> RequestBuildResult {
     let request = request_for_method(client, method, url).timeout(timeout);
@@ -298,6 +302,10 @@ pub(crate) async fn build_request_for_step(
         companions,
         timeout,
         client,
+        allow_private_ips,
+        allow_http,
+        proxy_in_use,
+        insecure_tls,
         allow_script_verify,
     )
     .await

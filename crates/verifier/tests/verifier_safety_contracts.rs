@@ -734,6 +734,67 @@ fn interpolation_context_is_explicit_at_request_call_sites() {
     );
 }
 
+#[test]
+fn aws_sts_egress_uses_resolved_screened_client() {
+    let aws = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/verify/aws.rs"))
+        .expect("verify/aws.rs must be readable");
+    assert!(
+        aws.contains("use crate::verify::request::{execute_request, resolved_client_for_url};"),
+        "AWS verifier must import the shared resolved-client egress owner"
+    );
+    assert!(
+        aws.contains("let resolved_target = match resolved_client_for_url(")
+            && aws.contains("allow_private_ips")
+            && aws.contains("allow_http")
+            && aws.contains("proxy_in_use")
+            && aws.contains("insecure_tls"),
+        "AWS STS must screen and DNS-pin its fixed endpoint through resolved_client_for_url"
+    );
+    assert!(
+        aws.contains("&resolved_target.client") && aws.contains("resolved_target.url.as_str()"),
+        "AWS STS request must be sent through the resolved/pinned client and URL"
+    );
+
+    let auth = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/verify/auth.rs"))
+        .expect("verify/auth.rs must be readable");
+    let aws_call = auth
+        .split("AuthSpec::AwsV4")
+        .nth(1)
+        .expect("AuthSpec::AwsV4 arm must exist");
+    for needle in [
+        "allow_private_ips",
+        "allow_http",
+        "proxy_in_use",
+        "insecure_tls",
+    ] {
+        assert!(
+            aws_call.contains(needle),
+            "AuthSpec::AwsV4 must pass network policy field {needle} to build_aws_probe"
+        );
+    }
+
+    let request = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/verify/request.rs"
+    ))
+    .expect("verify/request.rs must be readable");
+    let builder = request
+        .split("pub(crate) async fn build_request_for_step")
+        .nth(1)
+        .expect("request step builder must exist");
+    for needle in [
+        "allow_private_ips: bool",
+        "allow_http: bool",
+        "proxy_in_use: bool",
+        "insecure_tls: bool",
+    ] {
+        assert!(
+            builder.contains(needle),
+            "request step builder must carry network policy field {needle}"
+        );
+    }
+}
+
 // ===========================================================================
 // 5b. OOB interaction drops are LOUD, not silent (Law 10)
 // ===========================================================================

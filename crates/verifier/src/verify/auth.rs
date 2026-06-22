@@ -14,6 +14,10 @@ pub(crate) async fn build_request_for_auth(
     companions: &HashMap<String, String>,
     timeout: Duration,
     client: &Client,
+    allow_private_ips: bool,
+    allow_http: bool,
+    proxy_in_use: bool,
+    insecure_tls: bool,
     allow_script_verify: bool,
 ) -> RequestBuildResult {
     match auth {
@@ -66,6 +70,10 @@ pub(crate) async fn build_request_for_auth(
                 companions,
                 timeout,
                 client,
+                allow_private_ips,
+                allow_http,
+                proxy_in_use,
+                insecure_tls,
             )
             .await
         }

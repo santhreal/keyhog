@@ -72,6 +72,10 @@ pub(crate) async fn verify_multi_step(
             credential,
             &current_companions,
             step_timeout,
+            allow_private_ips,
+            allow_http,
+            proxy_in_use,
+            insecure_tls,
             allow_script_verify,
         )
         .await;
