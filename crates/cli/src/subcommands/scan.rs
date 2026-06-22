@@ -603,9 +603,10 @@ fn finalize_for_report(matches: Vec<RawMatch>, args: &ScanArgs) -> Result<Vec<Ve
     // so this is the same suppression the in-process path performs.
     // stdin/`ScanText` matches have no `file_path` and are left untouched
     // by the filter regardless of source.
+    let filesystem_source = std::sync::Arc::<str>::from("filesystem");
     for m in &mut matches {
         if m.location.file_path.is_some() && m.location.source.as_ref() != "filesystem" {
-            m.location.source = std::sync::Arc::from("filesystem");
+            m.location.source = filesystem_source.clone();
         }
     }
     let mut matches = crate::inline_suppression::filter_inline_suppressions(matches);

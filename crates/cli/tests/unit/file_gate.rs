@@ -129,6 +129,44 @@ fn scan_runtime_reset_runs_before_dogfood_enablement() {
     }
 }
 
+#[test]
+fn ak_p4_cli_hot_paths_stay_linear() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let orchestrator =
+        std::fs::read_to_string(root.join("src/orchestrator/mod.rs")).expect("read orchestrator");
+    let scan =
+        std::fs::read_to_string(root.join("src/subcommands/scan.rs")).expect("read scan command");
+    let sources = std::fs::read_to_string(root.join("src/sources.rs")).expect("read sources");
+
+    assert!(
+        orchestrator.contains("detectors.retain(|d| !disabled_detectors.contains(d.id.as_str()))"),
+        "disabled detector filtering must use the resolved HashSet, not a linear search per detector"
+    );
+    assert!(
+        !orchestrator.contains("disabled_detectors.iter().any(|id| id == &d.id)"),
+        "disabled detector filtering must not regress to O(detectors * disabled ids)"
+    );
+    assert!(
+        scan.contains("let filesystem_source = std::sync::Arc::<str>::from(\"filesystem\");")
+            && scan.contains("m.location.source = filesystem_source.clone();"),
+        "daemon scan-path suppression normalization must hoist the filesystem Arc outside the finding loop"
+    );
+    assert!(
+        !scan.contains("m.location.source = std::sync::Arc::from(\"filesystem\");"),
+        "daemon scan-path suppression normalization must not allocate a fresh Arc per finding"
+    );
+    assert!(
+        sources.contains("let normalized_excludes: Vec<String> = excludes")
+            && sources.contains("staged_relative_path_matches_exclude(&rel, exclude)")
+            && sources.contains(".strip_suffix(exclude)"),
+        "staged-file exclude filtering must normalize excludes once and match suffixes without per-file format allocation"
+    );
+    assert!(
+        !sources.contains("rel.ends_with(&format!(\"/{exclude}\"))"),
+        "staged-file exclude filtering must not allocate a formatted suffix per exclude check"
+    );
+}
+
 // ── crates/cli/src/main.rs ────────────────────────────────────────────
 #[test]
 fn main_happy() {

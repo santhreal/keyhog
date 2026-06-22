@@ -609,6 +609,10 @@ fn filter_staged_files_by_cli_excludes(files: &mut Vec<PathBuf>, args: &ScanArgs
     let Some(excludes) = args.exclude_paths.as_ref() else {
         return;
     };
+    let normalized_excludes: Vec<String> = excludes
+        .iter()
+        .map(|exclude| exclude.replace('\\', "/"))
+        .collect();
     let base = args
         .path
         .as_deref()
@@ -620,9 +624,16 @@ fn filter_staged_files_by_cli_excludes(files: &mut Vec<PathBuf>, args: &ScanArgs
     files.retain(|path| {
         let rel = path.strip_prefix(&base).unwrap_or(path); // LAW10: no prefix/BOM to strip => value unchanged (intended), recall-safe
         let rel = rel.to_string_lossy().replace('\\', "/");
-        !excludes.iter().any(|exclude| {
-            let exclude = exclude.replace('\\', "/");
-            rel == exclude || rel.ends_with(&format!("/{exclude}"))
-        })
+        !normalized_excludes
+            .iter()
+            .any(|exclude| staged_relative_path_matches_exclude(&rel, exclude))
     });
+}
+
+#[cfg(feature = "git")]
+fn staged_relative_path_matches_exclude(rel: &str, exclude: &str) -> bool {
+    rel == exclude
+        || rel
+            .strip_suffix(exclude)
+            .is_some_and(|prefix| prefix.ends_with('/'))
 }

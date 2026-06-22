@@ -181,7 +181,7 @@ impl ScanOrchestrator {
         // (Previously this config key was parsed and silently ignored.)
         if !disabled_detectors.is_empty() {
             let before = detectors.len();
-            detectors.retain(|d| !disabled_detectors.iter().any(|id| id == &d.id));
+            detectors.retain(|d| !disabled_detectors.contains(d.id.as_str()));
             let dropped = before - detectors.len();
             if dropped > 0 {
                 if detectors.is_empty() {
