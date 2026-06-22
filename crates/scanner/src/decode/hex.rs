@@ -80,12 +80,3 @@ pub fn hex_decode(input: &str) -> Result<Vec<u8>, ()> {
     }
     hex_simd::decode_to_vec(&cleaned).map_err(|_| ())
 }
-
-pub(super) fn hex_val(byte: u8) -> Result<u8, ()> {
-    match byte {
-        b'0'..=b'9' => Ok(byte - b'0'),
-        b'a'..=b'f' => Ok(byte - b'a' + 10),
-        b'A'..=b'F' => Ok(byte - b'A' + 10),
-        _ => Err(()),
-    }
-}

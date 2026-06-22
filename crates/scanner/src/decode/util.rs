@@ -28,3 +28,13 @@ where
     }
     Ok(value)
 }
+
+#[allow(clippy::result_unit_err)]
+pub(super) fn hex_val(byte: u8) -> Result<u8, ()> {
+    match byte {
+        b'0'..=b'9' => Ok(byte - b'0'),
+        b'a'..=b'f' => Ok(byte - b'a' + 10),
+        b'A'..=b'F' => Ok(byte - b'A' + 10),
+        _ => Err(()),
+    }
+}

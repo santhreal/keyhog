@@ -1,10 +1,10 @@
 use super::base64::base64_decode;
-use super::hex::hex_val;
 use super::pipeline::{
     decode_candidate_spans_exact, decode_candidates, extract_encoded_value_spans,
     extract_encoded_values, ExtractedValue,
 };
 use super::unicode_escape::unicode_escape_decode;
+use super::util::hex_val;
 use super::Decoder;
 use crate::context;
 use keyhog_core::Chunk;
