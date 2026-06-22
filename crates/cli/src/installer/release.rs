@@ -118,10 +118,14 @@ pub(crate) fn is_newer(current: &str, latest: &str) -> bool {
 /// Cheap guard against installing a non-executable (404 HTML page, truncated
 /// download): check the platform's executable magic bytes.
 pub(crate) fn looks_like_native_executable(bytes: &[u8]) -> bool {
+    looks_like_native_executable_for_os(bytes, std::env::consts::OS)
+}
+
+pub(crate) fn looks_like_native_executable_for_os(bytes: &[u8], os: &str) -> bool {
     if bytes.len() < 4 {
         return false;
     }
-    match std::env::consts::OS {
+    match os {
         "linux" => bytes.starts_with(&[0x7F, b'E', b'L', b'F']),
         "macos" => matches!(
             bytes[..4],
@@ -132,6 +136,7 @@ pub(crate) fn looks_like_native_executable(bytes: &[u8]) -> bool {
                 | [0xCA, 0xFE, 0xBA, 0xBE]
                 | [0xBE, 0xBA, 0xFE, 0xCA]
         ),
+        "windows" => bytes.starts_with(b"MZ"),
         _ => true,
     }
 }

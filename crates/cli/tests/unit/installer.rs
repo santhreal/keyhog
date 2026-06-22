@@ -65,6 +65,11 @@ fn rejects_non_executable_download() {
     assert!(!API.looks_like_native_executable(b""));
     #[cfg(target_os = "linux")]
     assert!(API.looks_like_native_executable(&[0x7F, b'E', b'L', b'F', 2, 1, 1, 0]));
+
+    assert!(API.looks_like_native_executable_for_os(&[0x7F, b'E', b'L', b'F', 2, 1, 1, 0], "linux"));
+    assert!(API.looks_like_native_executable_for_os(&[0xFE, 0xED, 0xFA, 0xCF, 0, 0, 0, 0], "macos"));
+    assert!(API.looks_like_native_executable_for_os(&[b'M', b'Z', 0x90, 0x00], "windows"));
+    assert!(!API.looks_like_native_executable_for_os(b"<!DOCTYPE html><html>Not Found", "windows"));
 }
 
 #[test]

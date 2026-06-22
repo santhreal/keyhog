@@ -138,6 +138,7 @@ pub trait CliTestApi {
     fn parse_semver(&self, tag: &str) -> Option<(u64, u64, u64)>;
     fn is_newer(&self, current: &str, latest: &str) -> bool;
     fn looks_like_native_executable(&self, bytes: &[u8]) -> bool;
+    fn looks_like_native_executable_for_os(&self, bytes: &[u8], os: &str) -> bool;
     fn verify_release_signature(&self, data: &[u8], signature: &str) -> Result<()>;
     fn release_api_base(&self) -> String;
     fn release_api_base_with_override(&self, base: &str) -> String;
@@ -441,6 +442,9 @@ impl CliTestApi for TestApi {
     }
     fn looks_like_native_executable(&self, bytes: &[u8]) -> bool {
         crate::installer::looks_like_native_executable(bytes)
+    }
+    fn looks_like_native_executable_for_os(&self, bytes: &[u8], os: &str) -> bool {
+        crate::installer::looks_like_native_executable_for_os(bytes, os)
     }
     fn verify_release_signature(&self, data: &[u8], signature: &str) -> Result<()> {
         crate::installer::verify_release_signature(data, signature)

@@ -51,18 +51,17 @@ fn release_asset_naming_unchanged_after_split() {
 
 #[test]
 fn release_executable_magic_check_unchanged_after_split() {
-    // The ELF magic guard is the cheap "did we download an HTML 404?" gate.
+    // The native magic guard is the cheap "did we download an HTML 404?" gate.
     let elf = [0x7Fu8, b'E', b'L', b'F', 0, 0, 0, 0];
+    let macho = [0xFEu8, 0xED, 0xFA, 0xCF, 0, 0, 0, 0];
+    let pe = [b'M', b'Z', 0x90, 0x00];
     let html = b"<!DOCTYPE html>";
-    match std::env::consts::OS {
-        "linux" => {
-            assert!(API.looks_like_native_executable(&elf));
-            assert!(!API.looks_like_native_executable(html));
-        }
-        // On non-linux hosts the function intentionally accepts anything >= 4
-        // bytes for the foreign-platform branch; only assert the too-short case.
-        _ => {}
-    }
+    assert!(API.looks_like_native_executable_for_os(&elf, "linux"));
+    assert!(API.looks_like_native_executable_for_os(&macho, "macos"));
+    assert!(API.looks_like_native_executable_for_os(&pe, "windows"));
+    assert!(!API.looks_like_native_executable_for_os(html, "linux"));
+    assert!(!API.looks_like_native_executable_for_os(html, "macos"));
+    assert!(!API.looks_like_native_executable_for_os(html, "windows"));
     assert!(!API.looks_like_native_executable(&[0x7F, b'E']));
 }
 
