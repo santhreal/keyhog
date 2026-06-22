@@ -301,6 +301,18 @@ impl CompiledScanner {
                     .expect("below-min-confidence signal must suppress");
                     return;
                 }
+                let hard_suppressed = inferred_context.should_hard_suppress(confidence)
+                    && (self.config.penalize_test_paths
+                        || matches!(inferred_context, crate::context::CodeContext::Comment));
+                if hard_suppressed {
+                    crate::adjudicate::record_stage_suppression(
+                        chunk.metadata.path.as_deref(),
+                        credential,
+                        crate::adjudicate::StageId::HardSuppressedContext,
+                    )
+                    .expect("hard-suppressed-context signal must suppress");
+                    return;
+                }
                 let source_offset =
                     preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
                 let raw_match = build_raw_match(

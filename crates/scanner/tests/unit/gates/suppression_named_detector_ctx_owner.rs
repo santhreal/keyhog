@@ -252,3 +252,21 @@ fn example_suppression_telemetry_is_only_called_by_adjudicator() {
         "production code must route example suppression telemetry through adjudicate, not call telemetry directly: {offenders:#?}"
     );
 }
+
+#[test]
+fn final_emit_context_hard_suppression_stays_out_of_scoring_owner() {
+    let src = scanner_src();
+    let scoring = uncommented_code(&read(&src.join("engine/scoring.rs")));
+    let process = uncommented_code(&read(&src.join("engine/process.rs")));
+    let ml = uncommented_code(&read(&src.join("engine/scan_postprocess/ml.rs")));
+
+    assert!(
+        !scoring.contains("should_hard_suppress("),
+        "engine/scoring.rs must not hide context hard suppression behind None/scoring_rejected"
+    );
+    assert!(
+        process.contains("StageId::HardSuppressedContext")
+            && ml.contains("StageId::HardSuppressedContext"),
+        "both direct and ML final emit tails must report hard_suppressed_context through adjudication"
+    );
+}

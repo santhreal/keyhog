@@ -50,6 +50,27 @@ fn mx_api_detector() -> DetectorSpec {
     }
 }
 
+fn service_context_detector() -> DetectorSpec {
+    DetectorSpec {
+        tests: Vec::new(),
+        id: "unit-service-token".into(),
+        name: "Unit Service Token".into(),
+        service: "unit".into(),
+        severity: Severity::Critical,
+        patterns: vec![PatternSpec {
+            regex: r#"(HARDTOK[A-Za-z0-9]{20})"#.into(),
+            description: Some("Unit service token".into()),
+            group: Some(1),
+            client_safe: false,
+        }],
+        companions: vec![],
+        verify: None,
+        keywords: vec!["HARDTOK".into()],
+        min_confidence: None,
+        ..Default::default()
+    }
+}
+
 fn chunk(data: &str) -> Chunk {
     Chunk {
         data: data.into(),
@@ -303,6 +324,49 @@ fn named_detector_honors_min_confidence_and_traces_reject() {
     assert!(
         reasons.iter().any(|reason| reason == "below_min_confidence"),
         "named detector min-confidence reject must be operator-visible through adjudication; got {reasons:?}"
+    );
+}
+
+#[test]
+fn named_detector_comment_hard_suppression_traces_precise_reason() {
+    let _guard = super::telemetry_serial::lock();
+    let value = "HARDTOKabcdefghijklmno12345";
+    let mut config = ScannerConfig::default();
+    config.ml_enabled = false;
+    config.min_confidence = 0.0;
+    config.test_keywords.clear();
+    config.placeholder_keywords.clear();
+
+    let scanner = CompiledScanner::compile(vec![service_context_detector()])
+        .unwrap()
+        .with_config(config);
+    keyhog_scanner::telemetry::testing::reset();
+    keyhog_scanner::telemetry::enable_dogfood();
+    let trace = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
+    let chunk = file_chunk(format!("<!--{value}-->"), "named_comment_floor.html", 0);
+    let matches = keyhog_scanner::telemetry::with_scan_telemetry(&trace, || scanner.scan(&chunk));
+
+    assert!(
+        !matches.iter().any(|m| m.credential.as_ref() == value),
+        "low-confidence named detector hit in comment context must not emit; got {matches:?}"
+    );
+    let reasons: Vec<_> = trace
+        .drain()
+        .dogfood_events
+        .into_iter()
+        .filter_map(|event| match event {
+            keyhog_scanner::telemetry::DogfoodEvent::ShapeSuppressed {
+                path: Some(path),
+                reason,
+                ..
+            } if path == "named_comment_floor.html" => Some(reason.into_owned()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        reasons,
+        vec!["hard_suppressed_context"],
+        "context hard suppression must not be hidden behind scoring_rejected"
     );
 }
 

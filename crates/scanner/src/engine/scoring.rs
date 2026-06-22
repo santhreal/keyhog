@@ -235,17 +235,7 @@ impl CompiledScanner {
                 } else {
                     confidence
                 };
-
-                // Keep comment hard-suppression separate from the fixture
-                // opt-out; comments stay controlled by `--scan-comments`.
-                let hard_suppressed = context.should_hard_suppress(final_score)
-                    && (self.config.penalize_test_paths
-                        || matches!(context, crate::context::CodeContext::Comment));
-                if hard_suppressed {
-                    None
-                } else {
-                    Some(MlScoreResult::Final(final_score))
-                }
+                Some(MlScoreResult::Final(final_score))
             }
             #[cfg(feature = "ml")]
             MlScoreResult::Pending { .. } => Some(score_result),
