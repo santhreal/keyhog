@@ -861,6 +861,23 @@ expect_match  "6.15 missing docker source tool warns" "Docker image calibration 
 expect_status "6.16 missing docker source tool does not fail filesystem install" 0 "$st"
 expect_exec   "6.17 binary present when optional source tool missing" "$h/.local/bin/keyhog"
 rm -rf "$h"
+sb_dead_docker=$(build_sandbox Linux x86_64 no no no)
+cat > "$sb_dead_docker/bin/docker" <<'SH'
+#!/bin/sh
+case "$1" in
+  info)  echo "mock docker daemon unavailable" >&2; exit 1 ;;
+  build) : > "$HOME/docker-build-called"; exit 1 ;;
+  *)     exit 1 ;;
+esac
+SH
+chmod +x "$sb_dead_docker/bin/docker"
+h=$(newhome)
+out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_docker_help" MOCK_SHA=match run_install "$sb_dead_docker" "$h" -- --no-prompt); st=$?
+expect_match  "6.18 dead docker daemon warns" "Docker daemon is not responding" "$out"
+expect_status "6.19 dead docker daemon does not fail filesystem install" 0 "$st"
+expect_exec   "6.20 binary present when docker daemon is dead" "$h/.local/bin/keyhog"
+expect_nofile "6.21 dead docker daemon is not used for calibration build" "$h/docker-build-called"
+rm -rf "$h" "$sb_dead_docker"
 rm -rf "$sb"
 
 # ======================================================================

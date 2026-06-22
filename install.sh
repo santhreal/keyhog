@@ -1015,6 +1015,11 @@ cleanup_autoroute_calibration() {
     fi
 }
 
+docker_daemon_ready() {
+    docker_cmd="$1"
+    "$docker_cmd" info >/dev/null 2>&1
+}
+
 prime_autoroute_cache() {
     bin="$1"
     if ! tmpdir="$(mktemp -d -t keyhog-autoroute-prime-XXXXXX)"; then
@@ -1080,6 +1085,10 @@ prime_autoroute_cache() {
         if [ -z "$docker_bin" ]; then
             warn "  Docker image calibration unavailable: docker was not found on PATH."
             warn "  Filesystem/stdin calibration will continue; install Docker and rerun install.sh --calibrate before relying on Docker image autorouting."
+            unavailable_calibrations="${unavailable_calibrations} docker"
+        elif ! docker_daemon_ready "$docker_bin"; then
+            warn "  Docker image calibration unavailable: the Docker daemon is not responding (is Docker Desktop or dockerd running?)."
+            warn "  Filesystem/stdin calibration will continue; start Docker and rerun install.sh --calibrate before relying on Docker image autorouting."
             unavailable_calibrations="${unavailable_calibrations} docker"
         else
             docker_calibration=1

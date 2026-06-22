@@ -641,6 +641,21 @@ function Show-AutorouteCalibrationSummary {
     return $true
 }
 
+function Test-DockerDaemonResponsive {
+    param($DockerPath)
+    # `docker info` round-trips to the daemon and exits non-zero when the engine
+    # is not running (e.g. Docker Desktop installed but not started). Used to
+    # distinguish "docker installed AND usable" from "docker present but dead"
+    # so calibration can skip the docker workload instead of failing the whole
+    # install. All streams suppressed; only the exit code matters.
+    try {
+        & $DockerPath info *> $null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    }
+}
+
 function Invoke-AutorouteCalibration {
     param($BinPath)
     $tmpDir = Join-Path ([System.IO.Path]::GetTempPath()) ("keyhog-autoroute-prime-{0}" -f ([System.Guid]::NewGuid()))
@@ -708,6 +723,17 @@ function Invoke-AutorouteCalibration {
                 if (-not $dockerCmd) {
                     Warn "  Docker image calibration unavailable: docker was not found on PATH."
                     Warn "  Filesystem/stdin calibration will continue; install Docker and rerun install.ps1 -Calibrate before relying on Docker image autorouting."
+                    $unavailableCalibrations += 'docker'
+                } elseif (-not (Test-DockerDaemonResponsive $dockerCmd.Source)) {
+                    # docker is installed but the daemon is not responding -- the
+                    # common Windows case (Docker Desktop not started). Without
+                    # this guard the `docker build` calibration probe below failed
+                    # and rolled back the ENTIRE install, so keyhog could not be
+                    # installed on any host whose Docker engine was merely stopped.
+                    # Treat a dead daemon exactly like missing docker: skip the
+                    # docker workload and continue, don't brick the install.
+                    Warn "  Docker image calibration unavailable: the Docker daemon is not responding (is Docker Desktop running?)."
+                    Warn "  Filesystem/stdin calibration will continue; start Docker and rerun install.ps1 -Calibrate before relying on Docker image autorouting."
                     $unavailableCalibrations += 'docker'
                 } else {
                     $dockerPath = $dockerCmd.Source
