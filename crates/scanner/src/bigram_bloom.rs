@@ -83,14 +83,19 @@ impl BigramBloom {
 
     /// Insert every distinct bigram from `bytes` into this table.
     ///
-    /// Refreshes the saturation flag so a table built directly through this
-    /// public entry point (rather than [`Self::from_literal_prefixes`]) keeps
-    /// `maybe_overlaps`'s short-circuit consistent with its bit population.
+    /// Refreshes the saturation flag so tests that mutate a table directly
+    /// keep `maybe_overlaps`'s short-circuit consistent with bit population.
+    #[cfg(test)]
     pub(crate) fn insert_all(&mut self, bytes: &[u8]) {
+        self.insert_all_without_saturation_refresh(bytes);
+        self.recompute_saturation();
+    }
+
+    #[inline]
+    fn insert_all_without_saturation_refresh(&mut self, bytes: &[u8]) {
         for window in bytes.windows(2) {
             self.insert(window[0], window[1]);
         }
-        self.recompute_saturation();
     }
 
     #[inline]
@@ -136,7 +141,7 @@ impl BigramBloom {
                 bloom.insert_row(bytes[0]);
                 continue;
             }
-            bloom.insert_all(bytes);
+            bloom.insert_all_without_saturation_refresh(bytes);
             // Extension: terminal byte may be followed by anything in a
             // real secret. Add `last || any`. The `len() < 2` guard
             // above proves non-empty; if a future refactor weakens

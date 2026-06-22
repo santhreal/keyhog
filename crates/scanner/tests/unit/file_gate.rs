@@ -92,6 +92,25 @@ fn bigram_bloom_error() {
     assert!(!BigramBloom::from_literal_prefixes(&["ghp_".into()]).maybe_overlaps(b"zzzz"));
 }
 
+#[test]
+fn bigram_bloom_constructor_recomputes_saturation_once() {
+    let owner = include_str!("../../src/bigram_bloom.rs");
+    assert!(
+        owner.contains("fn insert_all_without_saturation_refresh(&mut self, bytes: &[u8])")
+            && owner.contains("self.insert_all_without_saturation_refresh(bytes);\n        self.recompute_saturation();"),
+        "direct insert_all must still refresh saturation after mutation"
+    );
+    assert!(
+        owner.contains("bloom.insert_all_without_saturation_refresh(bytes);")
+            && owner.contains("bloom.recompute_saturation();\n        bloom\n    }"),
+        "from_literal_prefixes must batch bigram insertion and recompute saturation once"
+    );
+    assert!(
+        !owner.contains("bloom.insert_all(bytes);\n            // Extension: terminal byte may be followed by anything"),
+        "from_literal_prefixes must not pay a saturation popcount per literal"
+    );
+}
+
 // ── crates/scanner/src/checksum/github.rs ───────────────────────────
 #[test]
 fn checksum_github_happy() {
