@@ -5,6 +5,9 @@ use regex_syntax::ast;
 use serde::Serialize;
 
 const MAX_REGEX_PATTERN_LEN: usize = 4096;
+const MAX_COMPANION_WITHIN_LINES: usize = 100;
+const MIN_HTTP_STATUS: u16 = 100;
+const MAX_HTTP_STATUS: u16 = 599;
 // MAX_REGEX_AST_NODES / MAX_REGEX_ALTERNATION_BRANCHES /
 // MAX_REGEX_REPEAT_BOUND were originally defined here too but are the
 // canonical constants in `validate/regex_complexity.rs` (which is where
@@ -133,6 +136,12 @@ fn validate_companions(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
                 i
             )));
         }
+        if companion.within_lines > MAX_COMPANION_WITHIN_LINES {
+            issues.push(QualityIssue::Error(format!(
+                "companion {} within_lines={} exceeds {} search-window limit",
+                i, companion.within_lines, MAX_COMPANION_WITHIN_LINES
+            )));
+        }
         validate_regex_definition(RegexKind::Companion, i, &companion.regex, issues);
         // A "pure character class" companion (e.g. `[A-Z0-9]{10}` for an
         // Algolia application_id) is acceptable when `within_lines` is small:
@@ -217,9 +226,48 @@ fn validate_verify_spec(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
     if let Some(ref verify) = spec.verify {
         // verify.service defaults to the detector's service - empty is fine
         validate_verify_urls(verify, issues);
+        validate_verify_success_statuses(verify, issues);
         check_oob_consistency(verify, issues);
     }
     check_reserved_companion_names(spec, issues);
+}
+
+fn validate_verify_success_statuses(verify: &VerifySpec, issues: &mut Vec<QualityIssue>) {
+    if let Some(success) = &verify.success {
+        validate_success_status("verify.success", success, issues);
+    }
+    for (step_index, step) in verify.steps.iter().enumerate() {
+        validate_success_status(
+            &format!("verify.steps[{step_index}].success"),
+            &step.success,
+            issues,
+        );
+    }
+}
+
+fn validate_success_status(
+    scope: &str,
+    success: &super::SuccessSpec,
+    issues: &mut Vec<QualityIssue>,
+) {
+    validate_http_status(scope, "status", success.status, issues);
+    validate_http_status(scope, "status_not", success.status_not, issues);
+}
+
+fn validate_http_status(
+    scope: &str,
+    field: &str,
+    status: Option<u16>,
+    issues: &mut Vec<QualityIssue>,
+) {
+    let Some(status) = status else {
+        return;
+    };
+    if !(MIN_HTTP_STATUS..=MAX_HTTP_STATUS).contains(&status) {
+        issues.push(QualityIssue::Error(format!(
+            "{scope}.{field}={status} is outside valid HTTP status range {MIN_HTTP_STATUS}..={MAX_HTTP_STATUS}"
+        )));
+    }
 }
 
 fn validate_verify_urls(verify: &VerifySpec, issues: &mut Vec<QualityIssue>) {

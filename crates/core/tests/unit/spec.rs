@@ -186,7 +186,9 @@ fn oversized_toml_files_fail_closed_instead_of_allocating_unboundedly() {
     .expect_err("oversized detector TOML must reject the corpus");
     let message = error.to_string();
     assert!(
-        message.contains("exceeds") && message.contains("complete detector corpus"),
+        message.contains("exceeds")
+            && message.contains("complete detector corpus")
+            && message.contains(&path.display().to_string()),
         "oversized detector TOML must be an operator-visible corpus failure; got {message}"
     );
 }
@@ -212,6 +214,8 @@ fn spec_loader_and_validator_boundaries_are_explicit() {
     assert!(load_source.contains("fn discover_detector_tomls("));
     assert!(load_source.contains("fn parse_detector_files("));
     assert!(load_source.contains("fn assemble_detector_load("));
+    assert!(load_source.contains("directory entry under"));
+    assert!(load_source.contains("detector TOML {} exceeds"));
 
     let load_fn = load_source
         .split("pub(crate) fn load_detectors_with_gate(")

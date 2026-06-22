@@ -23,7 +23,7 @@ pub const DETECTOR_TOML_FILE_BYTES: u64 = 16 * 1024 * 1024;
 #[allow(clippy::result_large_err)] // SpecError variants include 128-byte toml::de::Error; boxing would be a breaking API change.
 pub enum SpecError {
     #[error(
-        "failed to read detector file {path}: {source}. Fix: check the detector path exists and that the file is readable TOML"
+        "failed to read detector path {path}: {source}. Fix: check the detector path exists and that the file is readable TOML"
     )]
     ReadFile {
         path: String,
@@ -72,7 +72,8 @@ pub fn read_detector_toml_file(path: &Path) -> std::io::Result<String> {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!(
-                "detector TOML exceeds {} byte cap; split the detector corpus or remove the oversized file",
+                "detector TOML {} exceeds {} byte cap; split the detector corpus or remove the oversized file",
+                path.display(),
                 DETECTOR_TOML_FILE_BYTES
             ),
         ));
@@ -85,7 +86,8 @@ pub fn read_detector_toml_file(path: &Path) -> std::io::Result<String> {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             format!(
-                "detector TOML grew past {} byte cap while reading; rerun after the file is stable",
+                "detector TOML {} grew past {} byte cap while reading; rerun after the file is stable",
+                path.display(),
                 DETECTOR_TOML_FILE_BYTES
             ),
         ));
@@ -144,7 +146,7 @@ fn discover_detector_tomls(dir: &Path, enforce_gate: bool) -> Result<Vec<PathBuf
     let mut toml_paths = Vec::new();
     for entry in entries {
         let entry = entry.map_err(|e| SpecError::ReadFile {
-            path: dir.display().to_string(),
+            path: format!("directory entry under {}", dir.display()),
             source: e,
         })?;
         let path = entry.path();

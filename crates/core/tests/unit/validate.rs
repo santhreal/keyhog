@@ -1,5 +1,6 @@
 use keyhog_core::{
-    validate_detector, CompanionSpec, DetectorSpec, PatternSpec, QualityIssue, Severity,
+    validate_detector, AuthSpec, CompanionSpec, DetectorSpec, HttpMethod, PatternSpec,
+    QualityIssue, Severity, StepSpec, SuccessSpec, VerifySpec,
 };
 
 fn detector_with_pattern(regex: &str) -> DetectorSpec {
@@ -154,6 +155,78 @@ fn accepts_pattern_group_zero_and_existing_capture_group() {
 }
 
 #[test]
+fn rejects_companion_search_window_above_cap() {
+    let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
+    detector.companions.push(CompanionSpec {
+        name: "secret".into(),
+        regex: "api_key=".into(),
+        within_lines: 101,
+        required: false,
+    });
+
+    let issues = validate_detector(&detector);
+
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message)
+            if message.contains("within_lines=101 exceeds 100 search-window limit")
+    )));
+}
+
+#[test]
+fn rejects_verify_success_statuses_outside_http_range() {
+    let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
+    detector.verify = Some(VerifySpec {
+        url: Some("https://example.com/verify".into()),
+        success: Some(SuccessSpec {
+            status: Some(99),
+            status_not: Some(600),
+            ..Default::default()
+        }),
+        ..Default::default()
+    });
+
+    let issues = validate_detector(&detector);
+
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("verify.success.status=99")
+    )));
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("verify.success.status_not=600")
+    )));
+}
+
+#[test]
+fn rejects_step_success_statuses_outside_http_range() {
+    let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
+    detector.verify = Some(VerifySpec {
+        steps: vec![StepSpec {
+            name: "probe".into(),
+            method: HttpMethod::Get,
+            url: "https://example.com/verify".into(),
+            auth: AuthSpec::None,
+            headers: Vec::new(),
+            body: None,
+            success: SuccessSpec {
+                status: Some(700),
+                ..Default::default()
+            },
+            extract: Vec::new(),
+        }],
+        ..Default::default()
+    });
+
+    let issues = validate_detector(&detector);
+
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message) if message.contains("verify.steps[0].success.status=700")
+    )));
+}
+
+#[test]
 fn rejects_broad_companion_character_class() {
     // Wide search radius (>5 lines) STILL rejects pure character classes
     // - without a textual anchor the search becomes too permissive.
@@ -280,6 +353,17 @@ fn pattern_group_bounds_are_validated_before_scanner_compile() {
     assert!(source.contains("fn validate_pattern_groups("));
     assert!(source.contains("regex.captures_len()"));
     assert!(source.contains("group >= captures"));
+}
+
+#[test]
+fn spec_field_bounds_are_named_and_validated() {
+    let source = std::fs::read_to_string("src/spec/validate.rs").expect("read validate source");
+
+    assert!(source.contains("const MAX_COMPANION_WITHIN_LINES: usize = 100;"));
+    assert!(source.contains("const MIN_HTTP_STATUS: u16 = 100;"));
+    assert!(source.contains("const MAX_HTTP_STATUS: u16 = 599;"));
+    assert!(source.contains("fn validate_verify_success_statuses("));
+    assert!(source.contains("fn validate_http_status("));
 }
 
 #[test]
