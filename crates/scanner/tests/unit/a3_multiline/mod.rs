@@ -1,6 +1,7 @@
 // LR1-A3: one #[test] per file
 mod backslash_continuation_disabled;
 mod cross_file_different_directory_no_join;
+mod default_join_window_covers_long_split_secret;
 mod duplicate_fragment_not_recorded_twice;
 mod empty_input;
 mod extract_prefix_strips_part_suffix;
@@ -15,6 +16,7 @@ mod large_file_without_keyword_passthrough;
 mod line_boundary_100_no_join;
 mod line_boundary_99_joins;
 mod line_for_offset_appended_region;
+mod max_join_boundary_does_not_skip_next_line;
 mod max_join_lines_respected;
 mod phantom_append_single_line_trailing_newline;
 mod plus_concat_disabled;

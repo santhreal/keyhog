@@ -176,6 +176,7 @@ pub mod ml_weights_non_empty;
 pub mod multiline_config_no_inline_tests;
 pub mod multiline_config_no_unwrap_expect;
 pub mod multiline_config_non_empty;
+pub mod multiline_preprocessor_join_window_contract;
 pub mod multiline_preprocessor_no_inline_tests;
 pub mod multiline_preprocessor_no_unwrap_expect;
 pub mod multiline_preprocessor_non_empty;

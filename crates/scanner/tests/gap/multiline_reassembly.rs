@@ -62,7 +62,7 @@ fn frag(prefix: &str, var: &str, value: &str, line: usize, path: Option<&str>) -
 #[test]
 fn default_config_values_match_source() {
     let c = MultilineConfig::default();
-    assert_eq!(c.max_join_lines, 10);
+    assert_eq!(c.max_join_lines, 64);
     assert!(c.python_implicit);
     assert!(c.backslash_continuation);
     assert!(c.plus_concatenation);

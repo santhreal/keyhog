@@ -7,6 +7,7 @@ use std::sync::LazyLock;
 const MAX_MULTILINE_PREPROCESS_BYTES: usize = 2 * 1024 * 1024;
 #[cfg(feature = "multiline")]
 const MAX_MULTILINE_LINE_BYTES: usize = 64 * 1024;
+pub(crate) const DEFAULT_MAX_JOIN_LINES: usize = 64;
 
 #[cfg(feature = "multiline")]
 static VAR_REF_CONCAT_RE: LazyLock<Option<Regex>> = LazyLock::new(|| {
@@ -194,7 +195,7 @@ pub struct MultilineConfig {
 impl Default for MultilineConfig {
     fn default() -> Self {
         Self {
-            max_join_lines: 10,
+            max_join_lines: DEFAULT_MAX_JOIN_LINES,
             python_implicit: true,
             backslash_continuation: true,
             plus_concatenation: true,

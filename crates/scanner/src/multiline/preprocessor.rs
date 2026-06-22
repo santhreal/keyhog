@@ -197,9 +197,11 @@ fn process_line_chain(
 ) -> (String, usize, Vec<LineMapping>) {
     let mut joined_parts = Vec::new();
     let mut current_idx = start_idx;
+    let mut lines_consumed = 0usize;
     let original_start_line = start_idx + 1;
 
-    while current_idx < lines.len() && (current_idx - start_idx) < config.max_join_lines {
+    let join_limit = config.max_join_lines.max(1);
+    while current_idx < lines.len() && lines_consumed < join_limit {
         let line = lines[current_idx];
         let (part, continues, continuation_type) =
             extract_string_part(line, config, current_idx > start_idx);
@@ -209,6 +211,7 @@ fn process_line_chain(
                 joined_parts.push(part);
             }
             if !continues {
+                lines_consumed += 1;
                 break;
             }
         } else {
@@ -220,10 +223,12 @@ fn process_line_chain(
                 joined_parts.push(part);
             }
             if !continues {
+                lines_consumed += 1;
                 break;
             }
         }
 
+        lines_consumed += 1;
         current_idx += 1;
     }
 
@@ -239,6 +244,5 @@ fn process_line_chain(
         }]
     };
 
-    let lines_consumed = (current_idx - start_idx) + 1;
     (joined, lines_consumed, mappings)
 }
