@@ -50,6 +50,7 @@ mod jar_oversized_entry_metadata_skipped;
 mod lz4_random_bytes_no_panic;
 mod max_file_size_skips_oversize_plain_file;
 mod max_path_length_component_handled;
+mod mmap_toctou_sanity_cap_counted;
 mod nested_archive;
 mod nested_zip_bomb_budget_enforced;
 mod oversize_compressed_input_refused;

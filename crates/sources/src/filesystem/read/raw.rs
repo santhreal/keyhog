@@ -172,6 +172,7 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<String> {
                 cap = MMAP_TOCTOU_SANITY_CAP_BYTES,
                 "refusing to mmap file: live size exceeds sanity cap (likely TOCTOU growth)"
             );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             return None;
         }
     }

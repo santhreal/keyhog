@@ -26,11 +26,13 @@ pub mod testing {
         ) -> crate::FilesystemSource;
         fn filesystem_skipped_count(&self, source: &crate::FilesystemSource) -> usize;
         fn max_buffered_read_bytes(&self) -> u64;
+        fn mmap_toctou_sanity_cap_bytes(&self) -> u64;
         fn read_file_safe_capped(
             &self,
             path: &std::path::Path,
             cap: u64,
         ) -> std::io::Result<Vec<u8>>;
+        fn read_file_mmap(&self, path: &std::path::Path) -> Option<String>;
         fn read_file_for_compressed_input(
             &self,
             path: &std::path::Path,
@@ -370,12 +372,20 @@ pub mod testing {
             crate::filesystem::max_buffered_read_bytes_for_test()
         }
 
+        fn mmap_toctou_sanity_cap_bytes(&self) -> u64 {
+            crate::filesystem::mmap_toctou_sanity_cap_bytes_for_test()
+        }
+
         fn read_file_safe_capped(
             &self,
             path: &std::path::Path,
             cap: u64,
         ) -> std::io::Result<Vec<u8>> {
             crate::filesystem::read_file_safe_capped_for_test(path, cap)
+        }
+
+        fn read_file_mmap(&self, path: &std::path::Path) -> Option<String> {
+            crate::filesystem::read_file_mmap_for_test(path)
         }
 
         fn read_file_for_compressed_input(

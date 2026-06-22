@@ -38,11 +38,19 @@ pub(crate) fn max_buffered_read_bytes_for_test() -> u64 {
     raw::MAX_BUFFERED_READ_BYTES
 }
 
+pub(crate) fn mmap_toctou_sanity_cap_bytes_for_test() -> u64 {
+    MMAP_TOCTOU_SANITY_CAP_BYTES
+}
+
 pub(crate) fn read_file_safe_capped_for_test(
     path: &std::path::Path,
     cap: u64,
 ) -> std::io::Result<Vec<u8>> {
     raw::read_file_safe(path, cap)
+}
+
+pub(crate) fn read_file_mmap_for_test(path: &std::path::Path) -> Option<String> {
+    raw::read_file_mmap(path)
 }
 
 pub(crate) fn read_file_for_compressed_input_for_test(
