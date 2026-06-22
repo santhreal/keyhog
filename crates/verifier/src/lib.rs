@@ -17,6 +17,7 @@ pub mod ssrf;
 mod verify;
 
 use std::collections::HashMap;
+use std::sync::atomic::AtomicUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -68,6 +69,7 @@ pub struct VerificationEngine {
     /// locking) replaces the previous parking_lot::Mutex<HashMap> which was an
     /// async anti-pattern - see docs/EXECUTION_PLAN.md.
     pub(crate) inflight: Arc<DashMap<(Arc<str>, SensitiveString), Arc<Notify>>>,
+    pub(crate) inflight_count: Arc<AtomicUsize>,
     pub(crate) max_inflight_keys: usize,
     pub(crate) danger_allow_private_ips: bool,
     pub(crate) danger_allow_http: bool,
@@ -416,6 +418,7 @@ pub mod testing {
             raw_url: &str,
             spec: &keyhog_core::VerifySpec,
         ) -> Result<(), String>;
+        fn engine_inflight_count(&self, engine: &crate::VerificationEngine) -> usize;
         fn format_sigv4_timestamps(&self, unix_secs: u64) -> (String, String);
         fn interactsh_client_for_test(
             &self,
@@ -537,6 +540,12 @@ pub mod testing {
             spec: &keyhog_core::VerifySpec,
         ) -> Result<(), String> {
             crate::domain_allowlist::check_url_against_spec(raw_url, spec)
+        }
+
+        fn engine_inflight_count(&self, engine: &crate::VerificationEngine) -> usize {
+            engine
+                .inflight_count
+                .load(std::sync::atomic::Ordering::Acquire)
         }
 
         fn format_sigv4_timestamps(&self, unix_secs: u64) -> (String, String) {

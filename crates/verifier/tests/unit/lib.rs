@@ -1,4 +1,5 @@
 use keyhog_core::{dedup_matches, DedupScope, DetectorSpec, MatchLocation, RawMatch, Severity};
+use keyhog_verifier::testing::{TestApi, VerifierTestApi};
 use keyhog_verifier::{VerificationEngine, VerifyConfig};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -98,4 +99,39 @@ async fn test_verify_all_logic() {
     let findings = engine.verify_all(vec![group]).await;
     assert_eq!(findings.len(), 1);
     assert_eq!(requests.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        TestApi.engine_inflight_count(&engine),
+        0,
+        "inflight counter must return to zero after a real verify_all request completes"
+    );
+}
+
+#[test]
+fn inflight_capacity_check_uses_atomic_counter_not_dashmap_len() {
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/verify/mod.rs"))
+        .expect("verify/mod.rs must be readable");
+    assert!(
+        src.contains("inflight_count: Arc<AtomicUsize>"),
+        "verify task shared state must carry the cheap inflight counter"
+    );
+    assert!(
+        src.contains("fn try_reserve_inflight_slot(")
+            && src.contains("compare_exchange_weak")
+            && src.contains("current >= max_inflight_keys"),
+        "new inflight keys must reserve capacity through an atomic compare-exchange"
+    );
+    assert!(
+        !src.contains("inflight.len() >= max_inflight_keys"),
+        "hot verification wait loop must not call DashMap::len() to enforce max_inflight_keys"
+    );
+    let entry_match = src
+        .find("match inflight.entry(key.clone())")
+        .expect("inflight entry match must exist");
+    let reserve = src
+        .find("try_reserve_inflight_slot(&inflight_count, max_inflight_keys)")
+        .expect("atomic reserve call must exist");
+    assert!(
+        entry_match < reserve,
+        "duplicate in-flight keys must join the existing Notify before applying the new-key cap"
+    );
 }

@@ -16,6 +16,7 @@ mod request;
 mod response;
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -52,6 +53,7 @@ struct VerifyTaskShared {
     timeout: Duration,
     cache: Arc<cache::VerificationCache>,
     inflight: Arc<DashMap<(Arc<str>, SensitiveString), Arc<Notify>>>,
+    inflight_count: Arc<AtomicUsize>,
     max_inflight_keys: usize,
     danger_allow_private_ips: bool,
     danger_allow_http: bool,
@@ -76,6 +78,7 @@ struct VerifyTaskShared {
 struct InflightGuard {
     key: (Arc<str>, SensitiveString),
     inflight: Arc<DashMap<(Arc<str>, SensitiveString), Arc<Notify>>>,
+    inflight_count: Arc<AtomicUsize>,
     notify: Arc<Notify>,
 }
 
@@ -86,7 +89,26 @@ impl Drop for InflightGuard {
         // less than the previous global parking_lot::Mutex which was held
         // across the entire HashMap traversal in the await loop.
         self.inflight.remove(&self.key);
+        self.inflight_count.fetch_sub(1, Ordering::Release);
         self.notify.notify_waiters();
+    }
+}
+
+fn try_reserve_inflight_slot(inflight_count: &AtomicUsize, max_inflight_keys: usize) -> bool {
+    let mut current = inflight_count.load(Ordering::Acquire);
+    loop {
+        if current >= max_inflight_keys {
+            return false;
+        }
+        match inflight_count.compare_exchange_weak(
+            current,
+            current + 1,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => return true,
+            Err(observed) => current = observed,
+        }
     }
 }
 
@@ -173,6 +195,7 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
 
     let cache = shared.cache;
     let inflight = shared.inflight;
+    let inflight_count = shared.inflight_count;
     let max_inflight_keys = shared.max_inflight_keys;
 
     let Ok(_global_permit) = global.acquire().await else {
@@ -200,10 +223,6 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
             // global parking_lot::Mutex held across HashMap operations in an
             // async context (anti-pattern that stalled the tokio runtime
             // under high concurrency - see legendary-2026-04-26).
-            if inflight.len() >= max_inflight_keys {
-                break None;
-            }
-
             let key = (group.detector_id.clone(), group.credential.clone());
             if let Some((cached_result, cached_meta)) =
                 cache.get(&group.credential, &group.detector_id)
@@ -214,11 +233,15 @@ async fn verify_group_task(shared: VerifyTaskShared, group: DedupedMatch) -> Ver
             match inflight.entry(key.clone()) {
                 dashmap::mapref::entry::Entry::Occupied(entry) => Some(entry.get().clone()),
                 dashmap::mapref::entry::Entry::Vacant(entry) => {
+                    if !try_reserve_inflight_slot(&inflight_count, max_inflight_keys) {
+                        break None;
+                    }
                     let notify = Arc::new(Notify::new());
                     entry.insert(notify.clone());
                     break Some(InflightGuard {
                         key,
                         inflight: inflight.clone(),
+                        inflight_count: inflight_count.clone(),
                         notify,
                     });
                 }
@@ -321,6 +344,7 @@ impl VerificationEngine {
             timeout: config.timeout,
             cache: Arc::new(cache::VerificationCache::default_ttl()),
             inflight: Arc::new(DashMap::new()),
+            inflight_count: Arc::new(AtomicUsize::new(0)),
             max_inflight_keys: config.max_inflight_keys.max(1),
             danger_allow_private_ips: config.danger_allow_private_ips,
             danger_allow_http: config.danger_allow_http,
@@ -355,6 +379,7 @@ impl VerificationEngine {
             timeout: self.timeout,
             cache: self.cache.clone(),
             inflight: self.inflight.clone(),
+            inflight_count: self.inflight_count.clone(),
             max_inflight_keys: self.max_inflight_keys,
             danger_allow_private_ips: self.danger_allow_private_ips,
             danger_allow_http: self.danger_allow_http,
