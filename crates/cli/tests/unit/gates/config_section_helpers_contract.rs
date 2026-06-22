@@ -12,6 +12,7 @@ fn config_file_merge_uses_section_helpers() {
         "fn apply_aws_section(",
         "fn apply_allowlist_section(",
         "fn apply_tuning_section(",
+        "fn apply_scan_section(",
     ] {
         assert!(
             src.contains(helper),
@@ -24,6 +25,7 @@ fn config_file_merge_uses_section_helpers() {
         "apply_aws_section(",
         "apply_allowlist_section(",
         "apply_tuning_section(",
+        "apply_scan_section(",
     ] {
         assert!(
             apply.contains(call),
@@ -37,6 +39,10 @@ fn config_file_merge_uses_section_helpers() {
         "\"- [allowlist].file: path must not be empty\"",
         "scanner_tuning.phase2_hs",
         "parse_gpu_runtime_policy(",
+        "\"[scan].severity\"",
+        "\"[scan].format\"",
+        "\"[scan].dedup\"",
+        "\"- [scan].min_secret_len = 0",
     ] {
         assert!(
             !apply.contains(forbidden),

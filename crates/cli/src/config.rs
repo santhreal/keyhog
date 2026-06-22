@@ -10,7 +10,7 @@ mod limits;
 mod schema;
 
 use limits::apply_limits_section;
-use schema::{AllowlistSection, AwsSection, ConfigFile, SystemSection, TuningSection};
+use schema::{AllowlistSection, AwsSection, ConfigFile, ScanSection, SystemSection, TuningSection};
 
 /// Compiled-in Tier-A per-detector confidence floors that ship inside the
 /// binary, independent of any on-disk `.keyhog.toml`. This is the fix for the
@@ -432,6 +432,138 @@ fn apply_tuning_section(
     }
 }
 
+fn apply_scan_section(
+    args: &mut ScanArgs,
+    config_errors: &mut Vec<String>,
+    scan: Option<ScanSection>,
+) {
+    // `[scan]` nested table - the surface the README documents as canonical.
+    // Mirrors the flat top-level scalars and fills only fields still at their
+    // default (so the flat form wins if both are present, and a `[scan]`-only
+    // config now actually takes effect instead of being silently dropped).
+    if let Some(scan) = scan {
+        if args.severity.is_none() {
+            if let Some(ref s) = scan.severity {
+                match parse_severity_filter(s) {
+                    Some(severity) => args.severity = Some(severity),
+                    None => config_errors.push(invalid_config_value(
+                        "[scan].severity",
+                        s,
+                        "expected one of info, low, medium, high, critical",
+                    )),
+                }
+            }
+        } else if let Some(ref s) = scan.severity {
+            if parse_severity_filter(s).is_none() {
+                config_errors.push(invalid_config_value(
+                    "[scan].severity",
+                    s,
+                    "expected one of info, low, medium, high, critical",
+                ));
+            }
+        }
+        if args.min_confidence.is_none() {
+            args.min_confidence = scan.min_confidence;
+        }
+        if let Some(depth) = scan.decode_depth {
+            let parsed_depth =
+                parse_config_decode_depth(config_errors, "[scan].decode_depth", depth);
+            if args.decode_depth.is_none() {
+                args.decode_depth = parsed_depth;
+            }
+        }
+        if scan.min_secret_len == Some(0) {
+            config_errors.push("- [scan].min_secret_len = 0: use a positive integer".to_string());
+        } else if args.min_secret_len.is_none() {
+            args.min_secret_len = scan.min_secret_len;
+        }
+        if matches!(args.format, crate::args::OutputFormat::Text) {
+            if let Some(ref f) = scan.format {
+                match parse_output_format(f) {
+                    Some(fmt) => args.format = fmt,
+                    None => config_errors.push(invalid_config_value(
+                        "[scan].format",
+                        f,
+                        "expected one of text, json, jsonl, sarif, csv, github-annotations, gitlab-sast, html, junit",
+                    )),
+                }
+            }
+        } else if let Some(ref f) = scan.format {
+            if parse_output_format(f).is_none() {
+                config_errors.push(invalid_config_value(
+                    "[scan].format",
+                    f,
+                    "expected one of text, json, jsonl, sarif, csv, github-annotations, gitlab-sast, html, junit",
+                ));
+            }
+        }
+        if args.exclude_paths.is_none() {
+            args.exclude_paths = scan.exclude;
+        }
+        if args.threads.is_none() {
+            args.threads = scan.threads;
+        }
+        if let Some(threads) = scan.reader_threads {
+            if threads == 0 {
+                config_errors
+                    .push("- [scan].reader_threads = 0: use a positive integer".to_string());
+            } else if args.reader_threads.is_none() {
+                args.reader_threads = Some(threads);
+            }
+        }
+        if let Some(batch) = scan.fused_batch {
+            if batch == 0 {
+                config_errors.push("- [scan].fused_batch = 0: use a positive integer".to_string());
+            } else if args.fused_batch.is_none() {
+                args.fused_batch = Some(batch);
+            }
+        }
+        if let Some(depth) = scan.fused_depth {
+            if depth == 0 {
+                config_errors.push("- [scan].fused_depth = 0: use a positive integer".to_string());
+            } else if args.fused_depth.is_none() {
+                args.fused_depth = Some(depth);
+            }
+        }
+        if let Some(timeout_ms) = scan.per_chunk_timeout_ms {
+            if timeout_ms == 0 {
+                config_errors
+                    .push("- [scan].per_chunk_timeout_ms = 0: use a positive integer".to_string());
+            } else if args.per_chunk_timeout_ms.is_none() {
+                args.per_chunk_timeout_ms = Some(timeout_ms);
+            }
+        }
+        if matches!(args.dedup, crate::args::CliDedupScope::Credential) {
+            if let Some(ref d) = scan.dedup {
+                match parse_dedup_scope(d) {
+                    Some(scope) => args.dedup = scope,
+                    None => config_errors.push(invalid_config_value(
+                        "[scan].dedup",
+                        d,
+                        "expected one of credential, file, none",
+                    )),
+                }
+            }
+        } else if let Some(ref d) = scan.dedup {
+            if parse_dedup_scope(d).is_none() {
+                config_errors.push(invalid_config_value(
+                    "[scan].dedup",
+                    d,
+                    "expected one of credential, file, none",
+                ));
+            }
+        }
+        if let Some(incremental) = scan.incremental {
+            if !args.incremental {
+                args.incremental = incremental;
+            }
+        }
+        if args.incremental_cache.is_none() {
+            args.incremental_cache = scan.incremental_cache;
+        }
+    }
+}
+
 #[allow(clippy::collapsible_if, clippy::cmp_owned)]
 fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> ConfigOutcome {
     // `--no-config`: hermetic run on the compiled-in Tier-A shipped defaults.
@@ -796,131 +928,7 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         }
     }
 
-    // `[scan]` nested table - the surface the README documents as canonical.
-    // Mirrors the flat top-level scalars and fills only fields still at their
-    // default (so the flat form wins if both are present, and a `[scan]`-only
-    // config now actually takes effect instead of being silently dropped).
-    if let Some(scan) = config.scan {
-        if args.severity.is_none() {
-            if let Some(ref s) = scan.severity {
-                match parse_severity_filter(s) {
-                    Some(severity) => args.severity = Some(severity),
-                    None => config_errors.push(invalid_config_value(
-                        "[scan].severity",
-                        s,
-                        "expected one of info, low, medium, high, critical",
-                    )),
-                }
-            }
-        } else if let Some(ref s) = scan.severity {
-            if parse_severity_filter(s).is_none() {
-                config_errors.push(invalid_config_value(
-                    "[scan].severity",
-                    s,
-                    "expected one of info, low, medium, high, critical",
-                ));
-            }
-        }
-        if args.min_confidence.is_none() {
-            args.min_confidence = scan.min_confidence;
-        }
-        if let Some(depth) = scan.decode_depth {
-            let parsed_depth =
-                parse_config_decode_depth(&mut config_errors, "[scan].decode_depth", depth);
-            if args.decode_depth.is_none() {
-                args.decode_depth = parsed_depth;
-            }
-        }
-        if scan.min_secret_len == Some(0) {
-            config_errors.push("- [scan].min_secret_len = 0: use a positive integer".to_string());
-        } else if args.min_secret_len.is_none() {
-            args.min_secret_len = scan.min_secret_len;
-        }
-        if matches!(args.format, crate::args::OutputFormat::Text) {
-            if let Some(ref f) = scan.format {
-                match parse_output_format(f) {
-                    Some(fmt) => args.format = fmt,
-                    None => config_errors.push(invalid_config_value(
-                        "[scan].format",
-                        f,
-                        "expected one of text, json, jsonl, sarif, csv, github-annotations, gitlab-sast, html, junit",
-                    )),
-                }
-            }
-        } else if let Some(ref f) = scan.format {
-            if parse_output_format(f).is_none() {
-                config_errors.push(invalid_config_value(
-                    "[scan].format",
-                    f,
-                    "expected one of text, json, jsonl, sarif, csv, github-annotations, gitlab-sast, html, junit",
-                ));
-            }
-        }
-        if args.exclude_paths.is_none() {
-            args.exclude_paths = scan.exclude;
-        }
-        if args.threads.is_none() {
-            args.threads = scan.threads;
-        }
-        if let Some(threads) = scan.reader_threads {
-            if threads == 0 {
-                config_errors
-                    .push("- [scan].reader_threads = 0: use a positive integer".to_string());
-            } else if args.reader_threads.is_none() {
-                args.reader_threads = Some(threads);
-            }
-        }
-        if let Some(batch) = scan.fused_batch {
-            if batch == 0 {
-                config_errors.push("- [scan].fused_batch = 0: use a positive integer".to_string());
-            } else if args.fused_batch.is_none() {
-                args.fused_batch = Some(batch);
-            }
-        }
-        if let Some(depth) = scan.fused_depth {
-            if depth == 0 {
-                config_errors.push("- [scan].fused_depth = 0: use a positive integer".to_string());
-            } else if args.fused_depth.is_none() {
-                args.fused_depth = Some(depth);
-            }
-        }
-        if let Some(timeout_ms) = scan.per_chunk_timeout_ms {
-            if timeout_ms == 0 {
-                config_errors
-                    .push("- [scan].per_chunk_timeout_ms = 0: use a positive integer".to_string());
-            } else if args.per_chunk_timeout_ms.is_none() {
-                args.per_chunk_timeout_ms = Some(timeout_ms);
-            }
-        }
-        if matches!(args.dedup, crate::args::CliDedupScope::Credential) {
-            if let Some(ref d) = scan.dedup {
-                match parse_dedup_scope(d) {
-                    Some(scope) => args.dedup = scope,
-                    None => config_errors.push(invalid_config_value(
-                        "[scan].dedup",
-                        d,
-                        "expected one of credential, file, none",
-                    )),
-                }
-            }
-        } else if let Some(ref d) = scan.dedup {
-            if parse_dedup_scope(d).is_none() {
-                config_errors.push(invalid_config_value(
-                    "[scan].dedup",
-                    d,
-                    "expected one of credential, file, none",
-                ));
-            }
-        }
-        if let Some(incremental) = scan.incremental {
-            if !args.incremental {
-                args.incremental = incremental;
-            }
-        }
-        if args.incremental_cache.is_none() {
-            args.incremental_cache = scan.incremental_cache;
-        }
-    }
+    apply_scan_section(args, &mut config_errors, config.scan);
 
     // `[lockdown] require = true` -> the caller refuses to run unless
     // `--lockdown` was passed (README: "refuse to run without --lockdown").
