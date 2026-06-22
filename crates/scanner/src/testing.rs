@@ -431,9 +431,14 @@ pub fn local_context_window(text: &str, line: usize, radius: usize) -> &str {
 pub fn match_entropy(data: &[u8]) -> f64 {
     crate::pipeline::match_entropy(data)
 }
-#[cfg(feature = "multiline")]
+#[cfg(all(feature = "multiline", test))]
+pub(crate) use crate::pipeline::{find_companion, line_window_offsets, match_line_number};
+#[cfg(all(feature = "multiline", test))]
+pub(crate) use crate::types::{CompiledCompanion, ScannerPreprocessedText};
+
+#[cfg(all(feature = "multiline", not(test)))]
 pub use multiline::PreprocessedText as ScannerPreprocessedText;
-#[cfg(feature = "multiline")]
+#[cfg(all(feature = "multiline", not(test)))]
 pub struct CompiledCompanion {
     pub name: String,
     pub regex: regex::Regex,
@@ -441,7 +446,7 @@ pub struct CompiledCompanion {
     pub within_lines: usize,
     pub required: bool,
 }
-#[cfg(feature = "multiline")]
+#[cfg(all(feature = "multiline", not(test)))]
 fn inner_preprocessed<'a>(
     preprocessed: &ScannerPreprocessedText<'a>,
 ) -> crate::types::ScannerPreprocessedText<'a> {
@@ -460,7 +465,7 @@ fn inner_preprocessed<'a>(
             .collect(),
     }
 }
-#[cfg(feature = "multiline")]
+#[cfg(all(feature = "multiline", not(test)))]
 fn inner_companion(companion: &CompiledCompanion) -> crate::types::CompiledCompanion {
     crate::types::CompiledCompanion {
         name: companion.name.clone(),
@@ -470,7 +475,7 @@ fn inner_companion(companion: &CompiledCompanion) -> crate::types::CompiledCompa
         required: companion.required,
     }
 }
-#[cfg(feature = "multiline")]
+#[cfg(all(feature = "multiline", not(test)))]
 pub fn match_line_number(
     preprocessed: &ScannerPreprocessedText<'_>,
     line_offsets: &[usize],
@@ -479,7 +484,7 @@ pub fn match_line_number(
     let inner = inner_preprocessed(preprocessed);
     crate::pipeline::match_line_number(&inner, line_offsets, offset)
 }
-#[cfg(feature = "multiline")]
+#[cfg(all(feature = "multiline", not(test)))]
 pub fn line_window_offsets(
     preprocessed: &ScannerPreprocessedText<'_>,
     start_line: usize,
@@ -488,7 +493,7 @@ pub fn line_window_offsets(
     let inner = inner_preprocessed(preprocessed);
     crate::pipeline::line_window_offsets(&inner, start_line, end_line)
 }
-#[cfg(feature = "multiline")]
+#[cfg(all(feature = "multiline", not(test)))]
 pub fn find_companion(
     preprocessed: &ScannerPreprocessedText<'_>,
     primary_line: usize,
@@ -503,6 +508,7 @@ pub(crate) use crate::prefix_trie::build_propagation_table;
 #[cfg(test)]
 pub(crate) use crate::suppression::detector_weak_anchor;
 
+#[cfg(any(feature = "simdsieve", test))]
 pub fn known_example_suppressed(
     credential: &str,
     path: Option<&str>,
@@ -514,6 +520,7 @@ pub fn known_example_suppressed(
     )
 }
 
+#[cfg(any(feature = "simdsieve", test))]
 pub fn known_example_suppressed_with_source(
     credential: &str,
     path: Option<&str>,

@@ -5,6 +5,7 @@ mod postprocess;
 mod scan_loop;
 
 pub use context_window::compute_line_offsets;
+#[cfg(any(feature = "multiline", test))]
 pub(crate) use context_window::line_window_offsets;
 pub(crate) use context_window::local_context_window;
 pub(crate) use context_window::normalize_scannable_chunk;

@@ -2,10 +2,9 @@ use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::context::CodeContext;
 use keyhog_scanner::testing::{
     compute_line_offsets, is_within_hex_context, known_example_suppressed, local_context_window,
-    match_entropy, match_line_number, normalize_scannable_chunk,
+    match_entropy, match_line_number, normalize_scannable_chunk, ScannerPreprocessedText,
 };
-use keyhog_scanner::testing::{find_companion, normalize_chunk_data};
-use keyhog_scanner::types::ScannerPreprocessedText;
+use keyhog_scanner::testing::{find_companion, normalize_chunk_data, CompiledCompanion};
 
 // ── Happy path ──────────────────────────────────────────────────────
 
@@ -80,7 +79,7 @@ fn is_within_hex_context_detects_hex_runs_near_match() {
 fn find_companion_locates_nearby_keyword() {
     let text = "aws_access_key_id = AKIA123\naws_secret_access_key = wJalrXUtnFEMI";
     let preprocessed = ScannerPreprocessedText::passthrough(text);
-    let companion = keyhog_scanner::types::CompiledCompanion {
+    let companion = CompiledCompanion {
         name: "secret".into(),
         regex: regex::Regex::new("aws_secret_access_key\\s*=\\s*(\\S+)").unwrap(),
         capture_group: Some(1),
@@ -117,7 +116,7 @@ fn is_within_hex_context_rejects_short_non_hex_match() {
 #[test]
 fn find_companion_returns_none_when_pattern_missing() {
     let preprocessed = ScannerPreprocessedText::passthrough("TOKEN=abc");
-    let companion = keyhog_scanner::types::CompiledCompanion {
+    let companion = CompiledCompanion {
         name: "missing".into(),
         regex: regex::Regex::new("does_not_exist=(\\S+)").unwrap(),
         capture_group: Some(1),

@@ -18,7 +18,7 @@ use std::time::Instant;
 use keyhog_core::{MatchLocation, RawMatch, Severity};
 use keyhog_scanner::testing::compute_line_offsets;
 use keyhog_scanner::testing::{line_number_for_offset, record_window_match};
-use keyhog_scanner::types::{CompiledCompanion, ScannerPreprocessedText};
+use keyhog_scanner::testing::{CompiledCompanion, ScannerPreprocessedText};
 use regex::Regex;
 
 /// AUD-speed-1 — `find_companion` does an O(L) LINEAR scan of `preprocessed.mappings`

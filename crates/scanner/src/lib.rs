@@ -172,9 +172,6 @@ pub(crate) mod shared_regexes;
 
 pub use api::*;
 
-#[cfg(test)]
-use std::borrow::Cow;
-
 /// Configure the Hyperscan compiled-database cache directory for this process.
 ///
 /// Call before compiling a scanner. `None` restores the platform default
