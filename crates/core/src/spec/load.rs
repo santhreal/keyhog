@@ -131,7 +131,12 @@ pub(crate) fn load_detectors_with_gate(
     dir: &Path,
     enforce_gate: bool,
 ) -> Result<Vec<DetectorSpec>, SpecError> {
-    // Phase 1: collect all TOML file paths (fast, sequential)
+    let toml_paths = discover_detector_tomls(dir, enforce_gate)?;
+    let parsed = parse_detector_files(&toml_paths);
+    assemble_detector_load(dir, enforce_gate, toml_paths.len(), parsed)
+}
+
+fn discover_detector_tomls(dir: &Path, enforce_gate: bool) -> Result<Vec<PathBuf>, SpecError> {
     let entries = std::fs::read_dir(dir).map_err(|e| SpecError::ReadFile {
         path: dir.display().to_string(),
         source: e,
@@ -147,6 +152,7 @@ pub(crate) fn load_detectors_with_gate(
             toml_paths.push(path);
         }
     }
+
     if enforce_gate && toml_paths.is_empty() {
         return Err(SpecError::DetectorCorpusRejected {
             dir: dir.display().to_string(),
@@ -157,14 +163,22 @@ pub(crate) fn load_detectors_with_gate(
                     .to_string(),
         });
     }
+    Ok(toml_paths)
+}
 
-    // Phase 2: read + parse all TOMLs in parallel
-    let parsed: Vec<ReadDetectorOutcome> = toml_paths
+fn parse_detector_files(toml_paths: &[PathBuf]) -> Vec<ReadDetectorOutcome> {
+    toml_paths
         .par_iter()
         .map(|path| read_detector_file(path))
-        .collect();
+        .collect()
+}
 
-    // Phase 3: validate + filter (sequential for logging)
+fn assemble_detector_load(
+    dir: &Path,
+    enforce_gate: bool,
+    total: usize,
+    parsed: Vec<ReadDetectorOutcome>,
+) -> Result<Vec<DetectorSpec>, SpecError> {
     let mut load_state = DetectorLoadState::default();
     let mut detectors = Vec::with_capacity(parsed.len());
 
@@ -191,7 +205,7 @@ pub(crate) fn load_detectors_with_gate(
 
     log_load_summary(&load_state);
     if enforce_gate && load_state.has_failures() {
-        return Err(load_state.into_rejected_error(dir, toml_paths.len()));
+        return Err(load_state.into_rejected_error(dir, total));
     }
 
     detectors.sort_by(|a, b| a.id.cmp(&b.id));

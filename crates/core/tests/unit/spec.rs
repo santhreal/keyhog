@@ -168,6 +168,20 @@ fn spec_loader_and_validator_boundaries_are_explicit() {
     assert!(load_source.contains("pub enum SpecError"));
     assert!(load_source.contains("pub fn read_detector_toml_file"));
     assert!(load_source.contains("pub const DETECTOR_TOML_FILE_BYTES"));
+    assert!(load_source.contains("fn discover_detector_tomls("));
+    assert!(load_source.contains("fn parse_detector_files("));
+    assert!(load_source.contains("fn assemble_detector_load("));
+
+    let load_fn = load_source
+        .split("pub(crate) fn load_detectors_with_gate(")
+        .nth(1)
+        .expect("load_detectors_with_gate exists")
+        .split("fn discover_detector_tomls(")
+        .next()
+        .expect("load function boundary");
+    assert!(!load_fn.contains("std::fs::read_dir"));
+    assert!(!load_fn.contains(".par_iter()"));
+    assert!(!load_fn.contains("for outcome in parsed"));
 
     assert!(validate_source.contains("mod regex_complexity;"));
     assert!(!validate_source.contains("#[path ="));
