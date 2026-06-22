@@ -12,8 +12,9 @@
 //!
 //! "Match" means the URL's host (lowercased) equals an allowlist entry, OR is
 //! a subdomain of an allowlist entry (e.g. `api.github.com` matches
-//! `github.com`). Wildcards in the allowlist are not parsed; the
-//! suffix-match below subsumes them.
+//! `github.com`). Public multi-tenant suffixes are exact-only: `tenant.example`
+//! can be explicitly allowed, but the shared suffix must not become a wildcard
+//! license for attacker-owned tenants.
 
 use std::collections::HashMap;
 
@@ -187,8 +188,23 @@ pub(crate) fn host_is_allowed(host: &str, allowlist: &[String]) -> bool {
     let host = host.trim_end_matches('.').to_lowercase();
     allowlist.iter().any(|allowed| {
         let allowed = allowed.trim_end_matches('.').to_lowercase();
-        host == allowed || host.ends_with(&format!(".{allowed}"))
+        if host == allowed {
+            return true;
+        }
+        !is_exact_only_shared_tenant_suffix(&allowed) && host.ends_with(&format!(".{allowed}"))
     })
+}
+
+fn is_exact_only_shared_tenant_suffix(domain: &str) -> bool {
+    matches!(
+        domain,
+        "azurewebsites.net"
+            | "firebaseapp.com"
+            | "herokuapp.com"
+            | "myshopify.com"
+            | "netlify.app"
+            | "vercel.app"
+    )
 }
 
 /// Top-level guard: parse `raw_url`, look up the allowlist for `spec`, and

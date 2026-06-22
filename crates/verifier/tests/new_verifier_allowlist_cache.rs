@@ -152,6 +152,40 @@ fn host_case_insensitive() {
     assert!(TestApi.host_is_allowed("API.GitHub.COM", &["github.com".to_string()]));
 }
 
+#[test]
+fn host_shared_tenant_suffix_is_exact_only() {
+    for suffix in [
+        "azurewebsites.net",
+        "firebaseapp.com",
+        "herokuapp.com",
+        "myshopify.com",
+        "netlify.app",
+        "vercel.app",
+    ] {
+        assert!(
+            TestApi.host_is_allowed(suffix, &[suffix.to_string()]),
+            "exact shared suffix host should still match itself: {suffix}"
+        );
+        assert!(
+            !TestApi.host_is_allowed(&format!("attacker.{suffix}"), &[suffix.to_string()]),
+            "shared tenant suffix must not wildcard-match attacker-owned tenants: {suffix}"
+        );
+    }
+}
+
+#[test]
+fn host_explicit_tenant_subdomain_is_allowed_without_shared_suffix_wildcard() {
+    assert!(TestApi.host_is_allowed(
+        "tenant.herokuapp.com",
+        &["tenant.herokuapp.com".to_string()]
+    ));
+    assert!(TestApi.host_is_allowed(
+        "api.tenant.herokuapp.com",
+        &["tenant.herokuapp.com".to_string()]
+    ));
+    assert!(!TestApi.host_is_allowed("other.herokuapp.com", &["tenant.herokuapp.com".to_string()]));
+}
+
 // ===========================================================================
 // domain_allowlist::check_url_against_spec
 // ===========================================================================
@@ -173,6 +207,27 @@ fn check_url_blocks_offlist_host() {
     assert!(
         err.contains("not in the allowlist") && err.contains("evil.attacker.com"),
         "error must name the rejected host: {err}"
+    );
+}
+
+#[test]
+fn check_url_blocks_builtin_shared_tenant_subdomain() {
+    let heroku = spec("heroku", &[]);
+    let err = TestApi
+        .check_url_against_spec("https://attacker.herokuapp.com/v", &heroku)
+        .expect_err("built-in herokuapp.com suffix must not allow arbitrary tenants");
+    assert!(
+        err.contains("attacker.herokuapp.com") && err.contains("not in the allowlist"),
+        "error must name the rejected shared-tenant host: {err}"
+    );
+
+    let shopify = spec("shopify", &[]);
+    let err = TestApi
+        .check_url_against_spec("https://attacker.myshopify.com/admin", &shopify)
+        .expect_err("built-in myshopify.com suffix must not allow arbitrary shops");
+    assert!(
+        err.contains("attacker.myshopify.com") && err.contains("not in the allowlist"),
+        "error must name the rejected shared-tenant host: {err}"
     );
 }
 
