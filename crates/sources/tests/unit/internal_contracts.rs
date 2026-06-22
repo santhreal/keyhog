@@ -241,6 +241,49 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
         }
     }
 
+    for (rel, collect_sig, helper_name, parser_name, next_boundary) in [
+        (
+            "src/s3/mod.rs",
+            "fn collect_s3_chunks(",
+            "fetch_s3_listing_page(",
+            "parse_s3_listing(",
+            "fn fetch_s3_listing_page(",
+        ),
+        (
+            "src/gcs.rs",
+            "fn collect_gcs_chunks(",
+            "fetch_gcs_listing_page(",
+            "parse_gcs_listing(",
+            "fn fetch_gcs_listing_page(",
+        ),
+        (
+            "src/cloud/azure_blob.rs",
+            "fn collect_azure_blob_chunks(",
+            "fetch_azure_blob_listing_page(",
+            "parse_azure_listing(",
+            "fn fetch_azure_blob_listing_page(",
+        ),
+    ] {
+        let source = std::fs::read_to_string(root.join(rel)).expect("read cloud source");
+        let collect = source
+            .split(collect_sig)
+            .nth(1)
+            .unwrap_or_else(|| panic!("{rel} must contain {collect_sig}"))
+            .split(next_boundary)
+            .next()
+            .unwrap_or_else(|| panic!("{rel} collect section must be bounded by {next_boundary}"));
+        assert!(
+            source.contains(helper_name) && collect.contains(helper_name),
+            "{rel} collector must delegate listing-page HTTP request/parsing through {helper_name}"
+        );
+        for forbidden in [".send()", ".text()", parser_name] {
+            assert!(
+                !collect.contains(forbidden),
+                "{rel} collector must not own listing-page HTTP/parsing detail `{forbidden}`"
+            );
+        }
+    }
+
     for rel in ["src/slack.rs", "src/hosted_git.rs", "src/cloud/mod.rs"] {
         let source = std::fs::read_to_string(root.join(rel)).expect("read remote source");
         assert!(

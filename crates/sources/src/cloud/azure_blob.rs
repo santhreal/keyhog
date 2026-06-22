@@ -149,20 +149,8 @@ fn collect_azure_blob_chunks(
             break;
         }
 
-        let list_url = azure_list_url(&container_url, prefix, marker.as_deref());
-        let response = client.get(list_url.clone()).send().map_err(|error| {
-            SourceError::Other(format!("failed to list Azure blobs at {list_url}: {error}"))
-        })?;
-        if !response.status().is_success() {
-            return Err(SourceError::Other(format!(
-                "failed to list Azure blobs: container request returned {}",
-                response.status()
-            )));
-        }
-        let body = response.text().map_err(|error| {
-            SourceError::Other(format!("failed to read Azure Blob listing: {error}"))
-        })?;
-        let listing = parse_azure_listing(&body)?;
+        let listing =
+            fetch_azure_blob_listing_page(&client, &container_url, prefix, marker.as_deref())?;
         let next_marker = listing.next_marker().map(str::to_string);
         let remaining = max_objects.saturating_sub(listed_objects);
         let (page, reached_limit) = crate::cloud::take_listing_page(listing.blobs.blob, remaining);
@@ -223,6 +211,28 @@ fn collect_azure_blob_chunks(
     }
 
     Ok(chunks)
+}
+
+fn fetch_azure_blob_listing_page(
+    client: &Client,
+    container_url: &reqwest::Url,
+    prefix: Option<&str>,
+    marker: Option<&str>,
+) -> Result<AzureListResponse, SourceError> {
+    let list_url = azure_list_url(container_url, prefix, marker);
+    let response = client.get(list_url.clone()).send().map_err(|error| {
+        SourceError::Other(format!("failed to list Azure blobs at {list_url}: {error}"))
+    })?;
+    if !response.status().is_success() {
+        return Err(SourceError::Other(format!(
+            "failed to list Azure blobs: container request returned {}",
+            response.status()
+        )));
+    }
+    let body = response.text().map_err(|error| {
+        SourceError::Other(format!("failed to read Azure Blob listing: {error}"))
+    })?;
+    parse_azure_listing(&body)
 }
 
 fn fetch_azure_blob_chunk(

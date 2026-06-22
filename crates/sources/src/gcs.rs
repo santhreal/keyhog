@@ -159,33 +159,14 @@ fn collect_gcs_chunks(
             break;
         }
 
-        let list_url = gcs_list_url(&endpoint, &bucket);
-        let mut request = client
-            .get(&list_url)
-            .query(&[("alt", "json"), ("maxResults", "1000")]);
-        if let Some(prefix) = prefix {
-            request = request.query(&[("prefix", prefix)]);
-        }
-        if let Some(token) = page_token.as_deref() {
-            request = request.query(&[("pageToken", token)]);
-        }
-        if let Some(token) = bearer.as_deref() {
-            request = request.bearer_auth(token);
-        }
-
-        let response = request
-            .send()
-            .map_err(|error| SourceError::Other(format!("failed to list GCS objects: {error}")))?;
-        if !response.status().is_success() {
-            return Err(SourceError::Other(format!(
-                "failed to list GCS objects: bucket request returned {}",
-                response.status()
-            )));
-        }
-        let body = response
-            .text()
-            .map_err(|error| SourceError::Other(format!("failed to read GCS listing: {error}")))?;
-        let listing = parse_gcs_listing(&body)?;
+        let listing = fetch_gcs_listing_page(
+            &client,
+            &endpoint,
+            &bucket,
+            prefix,
+            page_token.as_deref(),
+            bearer.as_deref(),
+        )?;
         let remaining = max_objects.saturating_sub(listed_objects);
         let (page, reached_limit) = crate::cloud::take_listing_page(listing.items, remaining);
         listed_objects += page.len();
@@ -237,6 +218,43 @@ fn collect_gcs_chunks(
     }
 
     Ok(chunks)
+}
+
+fn fetch_gcs_listing_page(
+    client: &Client,
+    endpoint: &str,
+    bucket: &str,
+    prefix: Option<&str>,
+    page_token: Option<&str>,
+    bearer: Option<&str>,
+) -> Result<GcsListResponse, SourceError> {
+    let list_url = gcs_list_url(endpoint, bucket);
+    let mut request = client
+        .get(&list_url)
+        .query(&[("alt", "json"), ("maxResults", "1000")]);
+    if let Some(prefix) = prefix {
+        request = request.query(&[("prefix", prefix)]);
+    }
+    if let Some(token) = page_token {
+        request = request.query(&[("pageToken", token)]);
+    }
+    if let Some(token) = bearer {
+        request = request.bearer_auth(token);
+    }
+
+    let response = request
+        .send()
+        .map_err(|error| SourceError::Other(format!("failed to list GCS objects: {error}")))?;
+    if !response.status().is_success() {
+        return Err(SourceError::Other(format!(
+            "failed to list GCS objects: bucket request returned {}",
+            response.status()
+        )));
+    }
+    let body = response
+        .text()
+        .map_err(|error| SourceError::Other(format!("failed to read GCS listing: {error}")))?;
+    parse_gcs_listing(&body)
 }
 
 fn fetch_gcs_object_chunk(

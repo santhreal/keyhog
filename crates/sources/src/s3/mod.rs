@@ -8,7 +8,7 @@ mod auth;
 mod listing;
 
 use auth::AwsSigV4Config;
-use listing::parse_s3_listing;
+use listing::{parse_s3_listing, ListBucketResult};
 
 const DEFAULT_S3_HOST_SUFFIX: &str = "s3.amazonaws.com";
 
@@ -207,32 +207,13 @@ fn collect_s3_chunks(
             break;
         }
 
-        let mut request = client.get(&base_url).query(&[("list-type", "2")]);
-        if let Some(prefix) = prefix {
-            request = request.query(&[("prefix", prefix)]);
-        }
-        if let Some(token) = continuation_token.as_deref() {
-            request = request.query(&[("continuation-token", token)]);
-        }
-        if let Some(auth) = aws_auth.as_ref() {
-            request = auth.sign(request, &base_url)?;
-        }
-
-        let response = request
-            .send()
-            .map_err(|e| SourceError::Other(format!("failed to list S3 objects: {e}")))?;
-
-        if !response.status().is_success() {
-            return Err(SourceError::Other(format!(
-                "failed to list S3 objects: bucket request returned {}",
-                response.status()
-            )));
-        }
-
-        let body = response
-            .text()
-            .map_err(|e| SourceError::Other(format!("failed to read S3 listing: {e}")))?;
-        let listing = parse_s3_listing(&body)?;
+        let listing = fetch_s3_listing_page(
+            &client,
+            &base_url,
+            prefix,
+            continuation_token.as_deref(),
+            aws_auth.as_ref(),
+        )?;
         let remaining = max_objects.saturating_sub(listed_objects);
         let (page, reached_limit) = crate::cloud::take_listing_page(listing.contents, remaining);
         listed_objects += page.len();
@@ -297,6 +278,41 @@ fn collect_s3_chunks(
     }
 
     Ok(chunks)
+}
+
+fn fetch_s3_listing_page(
+    client: &Client,
+    base_url: &str,
+    prefix: Option<&str>,
+    continuation_token: Option<&str>,
+    aws_auth: Option<&AwsSigV4Config>,
+) -> Result<ListBucketResult, SourceError> {
+    let mut request = client.get(base_url).query(&[("list-type", "2")]);
+    if let Some(prefix) = prefix {
+        request = request.query(&[("prefix", prefix)]);
+    }
+    if let Some(token) = continuation_token {
+        request = request.query(&[("continuation-token", token)]);
+    }
+    if let Some(auth) = aws_auth {
+        request = auth.sign(request, base_url)?;
+    }
+
+    let response = request
+        .send()
+        .map_err(|e| SourceError::Other(format!("failed to list S3 objects: {e}")))?;
+
+    if !response.status().is_success() {
+        return Err(SourceError::Other(format!(
+            "failed to list S3 objects: bucket request returned {}",
+            response.status()
+        )));
+    }
+
+    let body = response
+        .text()
+        .map_err(|e| SourceError::Other(format!("failed to read S3 listing: {e}")))?;
+    parse_s3_listing(&body)
 }
 
 fn fetch_object_chunk(
