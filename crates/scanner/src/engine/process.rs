@@ -122,12 +122,8 @@ impl CompiledScanner {
             return;
         }
 
-        // `match_companions` returns `None` when a `required = true`
-        // companion isn't found within the search radius. That is a
-        // hard skip signal, not "no companions found." The previous
-        // `.unwrap_or_default()` swallowed it and let the match fire
-        // anyway, silently nullifying the `required` field on every
-        // detector that uses it (notably `twilio-auth-token`).
+        // `None` means a required companion is missing; record that hard skip
+        // instead of treating it like an empty companion set.
         let companions = if self.companions.is_empty() {
             HashMap::new()
         } else {
@@ -139,12 +135,15 @@ impl CompiledScanner {
                             true,
                         ),
                     );
-                    crate::adjudicate::record_suppression(
+                    let recorded = crate::adjudicate::record_suppression(
                         chunk.metadata.path.as_deref(),
                         credential,
                         &companion_ctx,
-                    )
-                    .expect("missing-required-companion signal must suppress");
+                    );
+                    debug_assert_eq!(
+                        recorded,
+                        Some(crate::adjudicate::StageId::MissingRequiredCompanion)
+                    );
                     return;
                 }
             }
@@ -247,12 +246,12 @@ impl CompiledScanner {
             let scoring_ctx = crate::adjudicate::MatchCtx::for_process_signals(
                 crate::adjudicate::ProcessCandidateSignals::from_scoring_rejected(true),
             );
-            crate::adjudicate::record_suppression(
+            let recorded = crate::adjudicate::record_suppression(
                 chunk.metadata.path.as_deref(),
                 credential,
                 &scoring_ctx,
-            )
-            .expect("scoring-rejected signal must suppress");
+            );
+            debug_assert_eq!(recorded, Some(crate::adjudicate::StageId::ScoringRejected));
             return;
         };
 
@@ -275,12 +274,12 @@ impl CompiledScanner {
                         calibration: self.config.calibration.as_deref(),
                     },
                 ) else {
-                    crate::adjudicate::record_stage_suppression(
+                    let recorded = crate::adjudicate::record_stage_suppression(
                         chunk.metadata.path.as_deref(),
                         credential,
                         crate::adjudicate::StageId::ChecksumInvalid,
-                    )
-                    .expect("checksum-invalid signal must suppress");
+                    );
+                    debug_assert_eq!(recorded, Some(crate::adjudicate::StageId::ChecksumInvalid));
                     return;
                 };
                 confidence = adjusted_confidence;
