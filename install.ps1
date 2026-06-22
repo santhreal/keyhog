@@ -1304,27 +1304,37 @@ function Show-Summary {
     }
 }
 
+function Ensure-OnPath {
+    # PATH wiring runs in EVERY install mode -- not only the interactive wizard.
+    # The canonical quick install (`iwr ... | iex`) and `-Yes` are
+    # non-interactive, and Confirm-Choice auto-approves the Yes-default there, so
+    # keyhog lands on PATH automatically instead of being installed-but-
+    # uninvokable. (Previously the only PATH-wiring lived inside the wizard, which
+    # early-returns for `-not Interactive -or $Yes` -- so the documented quick
+    # install left `keyhog` off PATH and unrunnable, a silent config gap.)
+    # Interactive runs still prompt; a decline prints the exact manual command --
+    # never a silent skip.
+    $pathEntries = $env:PATH -split ';'
+    if ($pathEntries -contains $InstallDir) { return }
+    $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+    if (-not $userPath) { $userPath = "" }
+    if (($userPath -split ';') -contains $InstallDir) {
+        Dim "  $InstallDir already in your User PATH (open a new shell to pick it up)."
+        return
+    }
+    if (Confirm-Choice "Add $InstallDir to your User PATH (persistent)?" 'Y') {
+        $newPath = if ($userPath) { "$InstallDir;$userPath" } else { $InstallDir }
+        [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
+        Ok "  Added $InstallDir to your User PATH. Open a new shell to pick up the change."
+    } else {
+        Warn "  $InstallDir is NOT on PATH. Add it with: setx PATH `"$InstallDir;`$env:PATH`""
+    }
+}
+
 function Post-Install-Wizard {
     if (-not $Script:Interactive -or $Yes) { return }
     Write-Host ""
     Use-Color "Optional post-install steps" 'White'
-
-    $pathEntries = $env:PATH -split ';'
-    if ($pathEntries -notcontains $InstallDir) {
-        if (Confirm-Choice "Add $InstallDir to your User PATH (persistent)?" 'Y') {
-            $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-            if (-not $userPath) { $userPath = "" }
-            if (($userPath -split ';') -notcontains $InstallDir) {
-                $newPath = if ($userPath) { "$InstallDir;$userPath" } else { $InstallDir }
-                [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-                Ok "  Added. Open a new shell to pick up the change."
-            } else {
-                Dim "  Already in User PATH."
-            }
-        } else {
-            Dim "  Skipped. Add manually with: setx PATH `"$InstallDir;`$env:PATH`""
-        }
-    }
 
     if (Confirm-Choice "Install PowerShell completions?" 'N') {
         $dir = Join-Path $env:USERPROFILE 'Documents\PowerShell\Completions'
@@ -1410,6 +1420,7 @@ function Do-Install {
         Err "Install failed verification; see above."
         exit 1
     }
+    Ensure-OnPath
     Post-Install-Wizard
     Write-Host ""
     Use-Color "Next steps:" 'White'
