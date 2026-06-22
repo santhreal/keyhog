@@ -34,6 +34,7 @@
 //! Schema reference: <http://www.softwareishard.com/blog/har-12-spec/>
 
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
+use std::borrow::Cow;
 
 /// Try to parse `bytes` as a HAR 1.2 document and expand it into one
 /// chunk per request and one chunk per response. Returns `None` when
@@ -163,7 +164,7 @@ fn contains_har_marker(bytes: &[u8]) -> bool {
 }
 
 fn render_request(req: &HarRequest) -> String {
-    let mut out = String::with_capacity(256);
+    let mut out = String::with_capacity(request_render_capacity(req));
     out.push_str(&req.method);
     out.push(' ');
     out.push_str(&req.url);
@@ -193,8 +194,9 @@ fn render_request(req: &HarRequest) -> String {
 }
 
 fn render_response(resp: &HarResponse) -> String {
-    let mut out = String::with_capacity(256);
-    out.push_str(&resp.status.to_string());
+    let decoded = resp.content.as_ref().and_then(decoded_content_text);
+    let mut out = String::with_capacity(response_render_capacity(resp, decoded.as_deref()));
+    push_i64_decimal(&mut out, resp.status);
     if let Some(status_text) = &resp.status_text {
         out.push(' ');
         out.push_str(status_text);
@@ -206,13 +208,103 @@ fn render_response(resp: &HarResponse) -> String {
         out.push_str(&header.value);
         out.push('\n');
     }
-    if let Some(content) = &resp.content {
-        if let Some(text) = decoded_content_text(content) {
-            out.push('\n');
-            out.push_str(&text);
-        }
+    if let Some(text) = decoded {
+        out.push('\n');
+        out.push_str(&text);
     }
     out
+}
+
+fn request_render_capacity(req: &HarRequest) -> usize {
+    let post_capacity = match req.post_data.as_ref().and_then(|post| post.text.as_ref()) {
+        Some(text) => 1usize.saturating_add(text.len()),
+        None => 0,
+    };
+    req.method
+        .len()
+        .saturating_add(1)
+        .saturating_add(req.url.len())
+        .saturating_add(1)
+        .saturating_add(kv_lines_capacity(&req.headers))
+        .saturating_add(if req.query_string.is_empty() {
+            0
+        } else {
+            "# query\n"
+                .len()
+                .saturating_add(query_lines_capacity(&req.query_string))
+        })
+        .saturating_add(post_capacity)
+}
+
+fn response_render_capacity(resp: &HarResponse, decoded_text: Option<&str>) -> usize {
+    let status_text_capacity = match &resp.status_text {
+        Some(status_text) => 1usize.saturating_add(status_text.len()),
+        None => 0,
+    };
+    let decoded_capacity = match decoded_text {
+        Some(text) => 1usize.saturating_add(text.len()),
+        None => 0,
+    };
+    i64_decimal_len(resp.status)
+        .saturating_add(status_text_capacity)
+        .saturating_add(1)
+        .saturating_add(kv_lines_capacity(&resp.headers))
+        .saturating_add(decoded_capacity)
+}
+
+fn i64_decimal_len(value: i64) -> usize {
+    if value == 0 {
+        return 1;
+    }
+    let mut len = usize::from(value < 0);
+    let mut n = value.unsigned_abs();
+    while n > 0 {
+        len += 1;
+        n /= 10;
+    }
+    len
+}
+
+fn push_i64_decimal(out: &mut String, value: i64) {
+    let mut bytes = [0u8; 20];
+    let mut index = bytes.len();
+    let mut n = value.unsigned_abs();
+    if n == 0 {
+        index -= 1;
+        bytes[index] = b'0';
+    }
+    while n > 0 {
+        index -= 1;
+        bytes[index] = b'0' + (n % 10) as u8;
+        n /= 10;
+    }
+    if value < 0 {
+        index -= 1;
+        bytes[index] = b'-';
+    }
+    for &byte in &bytes[index..] {
+        out.push(byte as char);
+    }
+}
+
+fn kv_lines_capacity(items: &[HarKv]) -> usize {
+    items.iter().fold(0usize, |capacity, item| {
+        capacity
+            .saturating_add(item.name.len())
+            .saturating_add(2)
+            .saturating_add(item.value.len())
+            .saturating_add(1)
+    })
+}
+
+fn query_lines_capacity(items: &[HarKv]) -> usize {
+    items.iter().fold(0usize, |capacity, item| {
+        capacity
+            .saturating_add(item.name.len())
+            .saturating_add(1)
+            .saturating_add(item.value.len())
+            .saturating_add(1)
+    })
 }
 
 /// HAR `content.text` is base64-encoded when `content.encoding == "base64"`
@@ -220,20 +312,20 @@ fn render_response(resp: &HarResponse) -> String {
 /// are scanned instead of the opaque base64 blob. Malformed base64 (a
 /// truncated or corrupt encoding field) falls back to the raw text so a bad
 /// `encoding` value never drops the body from the scan entirely.
-fn decoded_content_text(content: &HarContent) -> Option<String> {
+fn decoded_content_text(content: &HarContent) -> Option<Cow<'_, str>> {
     use base64::Engine as _;
     let text = content.text.as_ref()?;
     if content.encoding.as_deref() == Some("base64") {
         match base64::engine::general_purpose::STANDARD.decode(text.trim()) {
-            Ok(bytes) => Some(String::from_utf8_lossy(&bytes).into_owned()),
+            Ok(bytes) => Some(Cow::Owned(String::from_utf8_lossy(&bytes).into_owned())),
             // Law 10: recall-safe — a malformed `encoding: base64` body is scanned
             // RAW instead of being dropped, so a credential in the un-decodable
             // body still reaches the scanner. Proven by the
             // `malformed_base64_encoding_falls_back_to_raw_text` regression test.
-            Err(_) => Some(text.clone()), // LAW10: unrecognized/partial => caller scans whole-file/recovered prefix; recall-preserving
+            Err(_) => Some(Cow::Borrowed(text)), // LAW10: unrecognized/partial => caller scans whole-file/recovered prefix; recall-preserving
         }
     } else {
-        Some(text.clone())
+        Some(Cow::Borrowed(text))
     }
 }
 

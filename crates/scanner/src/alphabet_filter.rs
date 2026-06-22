@@ -127,6 +127,11 @@ impl AlphabetMask {
             || (self.mask[3] & other.mask[3]) != 0
     }
 
+    #[inline]
+    pub(crate) fn contains_byte(&self, byte: u8) -> bool {
+        (self.mask[(byte / 64) as usize] & (1 << (byte % 64))) != 0
+    }
+
     /// Union two masks together.
     pub(crate) fn union(&mut self, other: &Self) {
         self.mask[0] |= other.mask[0];
@@ -182,9 +187,10 @@ impl AlphabetScreen {
             }
         }
 
-        // Fallback to building the mask and intersecting.
-        // This is actually faster than a simple scalar search for 1MB no-match.
-        self.target_mask.intersects(&AlphabetMask::from_bytes(data))
+        // Scalar fallback: return as soon as a target byte appears instead
+        // of building a complete chunk mask when the first match is early.
+        data.iter()
+            .any(|&byte| self.target_mask.contains_byte(byte))
     }
 
     /// AVX2 implementation of [`screen`](Self::screen). Public so the
@@ -253,7 +259,7 @@ impl AlphabetScreen {
         }
 
         for &b in remainder {
-            if (self.target_mask.mask[(b / 64) as usize] & (1 << (b % 64))) != 0 {
+            if self.target_mask.contains_byte(b) {
                 return true;
             }
         }

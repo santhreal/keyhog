@@ -109,6 +109,29 @@ fn source_extract_pdf_and_binary_hot_paths_are_bounded() {
     );
 }
 
+#[test]
+fn har_render_hot_paths_size_and_borrow_bodies() {
+    let har = include_str!("../../src/har.rs");
+    assert!(
+        har.contains("String::with_capacity(request_render_capacity(req))")
+            && har.contains(
+                "String::with_capacity(response_render_capacity(resp, decoded.as_deref()))"
+            )
+            && har.contains("fn kv_lines_capacity")
+            && har.contains("fn i64_decimal_len(value: i64) -> usize")
+            && har.contains("push_i64_decimal(&mut out, resp.status)")
+            && !har.contains("resp.status.to_string()")
+            && !har.contains("String::with_capacity(256)"),
+        "HAR request/response render buffers must be sized from field lengths, not a fixed guess"
+    );
+    assert!(
+        har.contains("fn decoded_content_text(content: &HarContent) -> Option<Cow<'_, str>>")
+            && har.contains("Some(Cow::Borrowed(text))")
+            && !har.contains("Some(text.clone())"),
+        "HAR non-base64 and malformed-base64 bodies must borrow raw text instead of cloning it"
+    );
+}
+
 // ── crates/sources/src/timeouts.rs ────────────────────────────────────
 #[cfg(any(feature = "web", feature = "slack", feature = "s3", feature = "github"))]
 #[test]

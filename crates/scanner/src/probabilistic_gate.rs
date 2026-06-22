@@ -83,7 +83,9 @@ impl ProbabilisticGate {
         // UUID-without-dashes pads.
         //
         // We compute distinct bigrams via a 64-byte (512-bit) bitset over
-        // a 9-bit FNV slot, identical to the bigram_bloom strategy.
+        // a cheap deterministic 9-bit byte-pair mix. This gate is a
+        // lossy statistical screen, so paying two FNV rounds per adjacent
+        // byte pair is unnecessary hot-path work.
         let bytes = s.as_bytes();
         if bytes.len() >= 32 {
             let mut bigram_seen = [0u64; 8]; // 512 bits ≈ 0.6% FP at 28 bigrams
@@ -104,10 +106,7 @@ impl ProbabilisticGate {
 
 #[inline]
 fn bigram_slot_512(a: u8, b: u8) -> usize {
-    let mut h: u32 = 0x811c_9dc5;
-    h ^= a as u32;
-    h = h.wrapping_mul(0x0100_0193);
-    h ^= b as u32;
-    h = h.wrapping_mul(0x0100_0193);
-    (h as usize) & 0x01ff
+    let a = a as usize;
+    let b = b as usize;
+    (a.wrapping_mul(33) ^ b.wrapping_mul(17) ^ (a << 1) ^ (b >> 3)) & 0x01ff
 }

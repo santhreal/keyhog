@@ -81,6 +81,17 @@ fn alphabet_filter_error_rejects_unrelated_bytes() {
     let screen = AlphabetScreen::new(&["zzzz".into()]);
     assert!(!screen.screen(b"plain english prose"));
 }
+#[test]
+fn alphabet_filter_scalar_screen_returns_on_first_target_byte() {
+    let source = include_str!("../../src/alphabet_filter.rs");
+    assert!(
+        source.contains("pub(crate) fn contains_byte(&self, byte: u8) -> bool")
+            && source.contains("data.iter()")
+            && source.contains(".any(|&byte| self.target_mask.contains_byte(byte))")
+            && !source.contains("self.target_mask.intersects(&AlphabetMask::from_bytes(data))"),
+        "alphabet scalar screen must not build a full chunk mask before it can answer true"
+    );
+}
 
 // ── crates/scanner/src/bigram_bloom.rs ──────────────────────────────
 #[test]
@@ -1552,6 +1563,17 @@ fn probabilistic_gate_happy() {
 fn probabilistic_gate_error() {
     let scanner = CompiledScanner::compile(vec![demo_detector("abc", "abc")]).unwrap();
     assert!(scanner.scan(&demo_chunk("aaaaaaaaaaaaaaaa")).is_empty());
+}
+#[test]
+fn probabilistic_gate_bigram_slot_avoids_per_pair_fnv_rounds() {
+    let source = include_str!("../../src/probabilistic_gate.rs");
+    assert!(
+        source.contains("fn bigram_slot_512(a: u8, b: u8) -> usize")
+            && source.contains("wrapping_mul(33)")
+            && !source.contains("0x811c_9dc5")
+            && !source.contains("0x0100_0193"),
+        "probabilistic gate bigram slot must avoid FNV rounds for every adjacent byte pair"
+    );
 }
 
 // ── crates/scanner/src/resolution.rs ──────────────────────────────────
