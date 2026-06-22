@@ -18,4 +18,20 @@ fn merkle_index_non_empty() {
         !prod.contains("todo!()") && !prod.contains("unimplemented!()"),
         "merkle_index: todo!/unimplemented! forbidden in non-test source"
     );
+    assert!(
+        !prod.contains("DefaultHasher"),
+        "merkle_index: shard routing is a hot path and must not use SipHasher DefaultHasher"
+    );
+    assert!(
+        prod.contains("fn shard_index_bytes(bytes: &[u8]) -> usize")
+            && prod.contains("SHARD_MIX")
+            && prod.contains("hash & (MERKLE_SHARDS - 1)"),
+        "merkle_index: shard routing must use the dedicated fast byte mixer"
+    );
+    assert!(
+        prod.contains("fn shard_capacity(max_entries: usize) -> usize")
+            && prod.contains("HashMap::with_capacity(shard_capacity)")
+            && !prod.contains("RwLock::new(HashMap::new())"),
+        "merkle_index: shard maps must be pre-sized from the configured entry cap"
+    );
 }

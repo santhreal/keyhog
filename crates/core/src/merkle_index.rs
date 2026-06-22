@@ -52,11 +52,7 @@
 //! and what its content fingerprint is, which is why `--lockdown`
 //! refuses to load or write the cache at all.
 
-use std::collections::{
-    hash_map::{DefaultHasher, Entry},
-    HashMap,
-};
-use std::hash::{Hash, Hasher};
+use std::collections::{hash_map::Entry, HashMap};
 use std::path::{Path, PathBuf};
 
 use parking_lot::RwLock;
@@ -73,6 +69,11 @@ const SCHEMA_VERSION: u32 = 4;
 /// Shard count: spreads concurrent `record` / `unchanged` calls across
 /// independent locks so tiny-file storms don't serialize all rayon workers.
 const MERKLE_SHARDS: usize = 64;
+
+#[cfg(target_pointer_width = "64")]
+const SHARD_MIX: usize = 0x517c_c1b7_2722_0a95;
+#[cfg(target_pointer_width = "32")]
+const SHARD_MIX: usize = 0x9e37_79b1;
 
 /// Default upper bound on the number of in-memory cache entries.
 ///
@@ -168,9 +169,36 @@ pub enum MerkleLoadStatus {
 }
 
 fn shard_index(path: &Path) -> usize {
-    let mut h = DefaultHasher::new();
-    path.hash(&mut h);
-    (h.finish() as usize) % MERKLE_SHARDS
+    #[cfg(unix)]
+    {
+        use std::os::unix::ffi::OsStrExt;
+        shard_index_bytes(path.as_os_str().as_bytes())
+    }
+
+    #[cfg(not(unix))]
+    {
+        shard_index_bytes(path.as_os_str().to_string_lossy().as_bytes())
+    }
+}
+
+#[inline]
+fn shard_index_bytes(bytes: &[u8]) -> usize {
+    debug_assert!(MERKLE_SHARDS.is_power_of_two());
+    let mut hash = SHARD_MIX ^ bytes.len();
+    for &byte in bytes {
+        hash ^= usize::from(byte);
+        hash = hash.rotate_left(5).wrapping_mul(SHARD_MIX);
+    }
+    hash & (MERKLE_SHARDS - 1)
+}
+
+#[inline]
+fn shard_capacity(max_entries: usize) -> usize {
+    if max_entries == 0 {
+        0
+    } else {
+        (max_entries / MERKLE_SHARDS) + usize::from(max_entries % MERKLE_SHARDS != 0)
+    }
 }
 
 /// Live-cache key. Sharding stays path-based so all chunks from one file live
@@ -243,9 +271,10 @@ impl MerkleIndex {
     /// want the old behavior, but the documented resident cost still
     /// applies (~150 bytes/entry).
     pub(crate) fn with_max_entries(max_entries: usize) -> Self {
+        let shard_capacity = shard_capacity(max_entries);
         Self {
             shards: (0..MERKLE_SHARDS)
-                .map(|_| RwLock::new(HashMap::new()))
+                .map(|_| RwLock::new(HashMap::with_capacity(shard_capacity)))
                 .collect(),
             max_entries,
             cap_warned: std::sync::atomic::AtomicBool::new(false),
