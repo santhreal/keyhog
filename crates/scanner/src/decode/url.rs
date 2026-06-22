@@ -193,15 +193,13 @@ fn percent_decode(input: &str) -> Result<String, ()> {
             bytes.extend_from_slice(&input_bytes[index..index + pct_idx]);
             index += pct_idx;
 
-            if index + 2 < input_bytes.len() {
-                let high = hex_val(input_bytes[index + 1])?;
-                let low = hex_val(input_bytes[index + 2])?;
-                bytes.push((high << 4) | low);
-                index += 3;
-            } else {
-                bytes.push(b'%');
-                index += 1;
+            if index + 2 >= input_bytes.len() {
+                return Err(());
             }
+            let high = hex_val(input_bytes[index + 1])?;
+            let low = hex_val(input_bytes[index + 2])?;
+            bytes.push((high << 4) | low);
+            index += 3;
         } else {
             bytes.extend_from_slice(&input_bytes[index..]);
             break;
@@ -219,12 +217,7 @@ fn url_decode(input: &str) -> Result<String, ()> {
     if !contains_percent_escape(input) {
         return Err(());
     }
-    let decoded = percent_decode(input)?;
-    if contains_percent_escape(&decoded) {
-        percent_decode(&decoded)
-    } else {
-        Ok(decoded)
-    }
+    percent_decode(input)
 }
 
 fn contains_percent_escape(input: &str) -> bool {

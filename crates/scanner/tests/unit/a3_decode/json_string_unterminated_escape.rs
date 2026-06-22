@@ -61,8 +61,8 @@ fn json_unicode_escape_at_string_end() {
 
 #[test]
 fn json_valid_unicode_escape() {
-    // Valid `A` (= 'A').
-    let text = r#"{"key": "preAfix"}"#;
+    // Valid `\u0041` (= 'A').
+    let text = r#"{"key": "pre\u0041fix"}"#;
     let chunk = Chunk {
         data: text.into(),
         metadata: Default::default(),
@@ -73,7 +73,7 @@ fn json_valid_unicode_escape() {
         decoded
             .iter()
             .any(|c| c.metadata.source_type.contains("json") && c.data.contains("preAfix")),
-        "valid JSON \\uXXXX must decode to character"
+        "valid JSON \\uXXXX must decode to character: {decoded:?}"
     );
 }
 

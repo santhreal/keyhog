@@ -1692,8 +1692,7 @@ pub(crate) fn caesar_shift(input: &str, shift: u8) -> String {
     crate::decode::caesar::caesar_shift(input, shift)
 }
 
-#[cfg(test)]
-pub(crate) fn is_source_code_path(path: Option<&str>) -> bool {
+pub fn is_source_code_path(path: Option<&str>) -> bool {
     crate::decode::caesar::is_source_code_path(path)
 }
 
@@ -1706,8 +1705,7 @@ pub(crate) fn find_hex_strings(text: &str, min_length: usize) -> Vec<crate::deco
     crate::decode::find_hex_strings(text, min_length)
 }
 
-#[cfg(test)]
-pub(crate) fn take_hex_digits<I>(
+pub fn take_hex_digits<I>(
     chars: &mut std::iter::Peekable<I>,
     count: usize,
 ) -> Result<u32, ()>

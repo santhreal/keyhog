@@ -24,7 +24,6 @@ pub(crate) use pipeline::{
 };
 #[cfg(test)]
 pub(crate) use pipeline::{register_thread_decoder, ScopedDecoderRegistration};
-#[cfg(test)]
 pub(crate) use util::take_hex_digits;
 
 use keyhog_core::Chunk;

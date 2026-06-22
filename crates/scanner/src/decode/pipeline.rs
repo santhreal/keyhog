@@ -115,7 +115,6 @@ fn default_decoders() -> Vec<Arc<dyn Decoder>> {
         Arc::new(HexEscapeDecoder),
         Arc::new(OctalEscapeDecoder),
         Arc::new(MimeEncodedWordDecoder),
-        Arc::new(UnicodeEscapeDecoder),
         // JSON unescape - strips `\"` / `\\` / `\n` style escapes
         // inside JSON string values so credentials stored as
         // JSON-encoded fields (the most common shape after .env)
@@ -124,6 +123,7 @@ fn default_decoders() -> Vec<Arc<dyn Decoder>> {
         // `json` wrapper class surfaced ~73 misses that wiring
         // this in closed (5792/5792 variants now fire).
         Arc::new(JsonDecoder),
+        Arc::new(UnicodeEscapeDecoder),
         Arc::new(Z85Decoder),
         Arc::new(ReverseDecoder),
         Arc::new(CaesarDecoder),

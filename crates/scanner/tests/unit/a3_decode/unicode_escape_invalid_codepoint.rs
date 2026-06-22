@@ -31,7 +31,7 @@ fn unicode_escape_out_of_range_codepoint() {
     // However, \U takes 8 (not supported here). `￿` is the max valid 4-digit encoding.
     // Test the boundary: max valid is 0xFFFF, anything in that range should work.
     // For now, test with a known valid max.
-    let text = r#"{"api_key": "￿"}"#;
+    let text = r#"api_key=\uFFFF"#;
     let chunk = Chunk {
         data: text.into(),
         metadata: Default::default(),
