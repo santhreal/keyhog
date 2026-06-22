@@ -1,5 +1,10 @@
 use keyhog_scanner::entropy::*;
+use keyhog_scanner::telemetry::{self, DogfoodEvent, ScanTelemetry};
 use keyhog_scanner::testing::entropy_keywords::{is_candidate_plausible, is_secret_plausible};
+use keyhog_scanner::testing::entropy_scanner::{
+    candidate_plausibility_rejection_reason, credential_keyword_context,
+};
+use std::sync::Arc;
 
 fn find_secrets(
     text: &str,
@@ -118,6 +123,86 @@ fn empty_placeholder_keyword_is_ignored_not_a_panic_or_global_placeholder() {
 fn candidate_mode_skips_strict_secret_checks() {
     assert!(is_candidate_plausible("0123456789abcdef", &[]));
     assert!(!is_secret_plausible("0123456789abcdef", &[]));
+}
+
+#[test]
+fn entropy_generation_rejection_stage_is_named() {
+    let ctx = credential_keyword_context("api_key");
+    let canonical = "d41d8cd98f00b204e9800998ecf8427e";
+    assert_eq!(
+        candidate_plausibility_rejection_reason(
+            canonical,
+            shannon_entropy(canonical.as_bytes()),
+            &ctx,
+            &[],
+        ),
+        Some("entropy_canonical_non_secret_shape")
+    );
+
+    let low_entropy = "aaaaaaaaaaaaaaaa";
+    assert_eq!(
+        candidate_plausibility_rejection_reason(
+            low_entropy,
+            shannon_entropy(low_entropy.as_bytes()),
+            &ctx,
+            &[],
+        ),
+        Some("entropy_below_floor")
+    );
+}
+
+#[test]
+fn entropy_generation_rejection_is_dogfood_visible() {
+    let _guard = super::telemetry_serial::lock();
+    let low_entropy = "abc123ABCabc123ABC12";
+    let secret_keywords = vec!["API_KEY".to_string()];
+    let trace = Arc::new(ScanTelemetry::new());
+
+    telemetry::testing::reset();
+    telemetry::enable_dogfood();
+    let _ = telemetry::with_scan_telemetry(&trace, || {
+        find_entropy_secrets(
+            &format!("API_KEY={low_entropy}\n"),
+            8,
+            0,
+            HIGH_ENTROPY_THRESHOLD,
+            &secret_keywords,
+            &[],
+            &[],
+        )
+    });
+    let reasons: Vec<String> = trace
+        .drain()
+        .dogfood_events
+        .into_iter()
+        .filter_map(|event| match event {
+            DogfoodEvent::ShapeSuppressed {
+                credential_redacted,
+                reason,
+                ..
+            } if credential_redacted.starts_with("abc1") => Some(reason.into_owned()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(reasons, vec!["entropy_below_floor"]);
+
+    telemetry::testing::reset();
+    let trace = Arc::new(ScanTelemetry::new());
+    let _ = telemetry::with_scan_telemetry(&trace, || {
+        find_entropy_secrets(
+            &format!("API_KEY={low_entropy}\n"),
+            8,
+            0,
+            HIGH_ENTROPY_THRESHOLD,
+            &secret_keywords,
+            &[],
+            &[],
+        )
+    });
+    assert!(
+        trace.drain().dogfood_events.is_empty(),
+        "dogfood-off entropy generation rejection must not emit trace events"
+    );
 }
 
 #[test]

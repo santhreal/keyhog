@@ -36,6 +36,11 @@ pub(crate) enum EntropyShapeStage {
     EncodedBinary,
     RandomByteBlob,
     DecodedPlaceholder,
+    StructuredDottedTooShort,
+    CanonicalNonSecretShape,
+    CredentialContextTooShort,
+    KeywordFreeTooShort,
+    SecretPlausibilityRejected,
 }
 
 impl EntropyShapeStage {
@@ -70,6 +75,11 @@ impl EntropyShapeStage {
             Self::EncodedBinary => "entropy_encoded_binary",
             Self::RandomByteBlob => "entropy_random_byte_blob",
             Self::DecodedPlaceholder => "entropy_decoded_placeholder",
+            Self::StructuredDottedTooShort => "entropy_structured_dotted_too_short",
+            Self::CanonicalNonSecretShape => "entropy_canonical_non_secret_shape",
+            Self::CredentialContextTooShort => "entropy_credential_context_too_short",
+            Self::KeywordFreeTooShort => "entropy_keyword_free_too_short",
+            Self::SecretPlausibilityRejected => "entropy_secret_plausibility_rejected",
         }
     }
 }

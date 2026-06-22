@@ -727,6 +727,21 @@ pub(crate) mod entropy_scanner {
         )
     }
 
+    pub(crate) fn candidate_plausibility_rejection_reason(
+        candidate: &str,
+        entropy: f64,
+        context: &KeywordContext,
+        placeholder_keywords: &[String],
+    ) -> Option<&'static str> {
+        crate::entropy::scanner::candidate_plausibility_rejection_stage(
+            candidate,
+            entropy,
+            &context.inner,
+            placeholder_keywords,
+        )
+        .map(|stage| stage.as_str())
+    }
+
     pub(crate) fn is_canonical_non_secret_shape(value: &str) -> bool {
         crate::entropy::scanner::is_canonical_non_secret_shape(value)
     }

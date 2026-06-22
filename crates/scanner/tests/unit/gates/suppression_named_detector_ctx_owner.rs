@@ -237,6 +237,42 @@ fn entropy_fallback_shape_gauntlet_returns_adjudicator_stage() {
 }
 
 #[test]
+fn entropy_generation_plausibility_rejections_route_through_adjudicator() {
+    let src = scanner_src();
+    let scanner = uncommented_code(&read(&src.join("entropy/scanner.rs")));
+    let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
+
+    assert!(
+        scanner.contains("fn candidate_plausibility_rejection_stage(")
+            && scanner.contains(") -> Option<StageId>"),
+        "entropy candidate generation plausibility must return the adjudicator StageId, not a silent bool"
+    );
+    assert!(
+        scanner.contains("candidate_plausibility_rejection_stage(")
+            && scanner.contains("&candidate")
+            && scanner.contains("crate::telemetry::is_dogfood_enabled()")
+            && scanner.contains("crate::adjudicate::record_stage_suppression(None, &candidate, stage_id)"),
+        "collect_line_candidates must record generation-side entropy drops through the adjudicator when dogfood is enabled"
+    );
+    for reason in [
+        "entropy_structured_dotted_too_short",
+        "entropy_canonical_non_secret_shape",
+        "entropy_credential_context_too_short",
+        "entropy_keyword_free_too_short",
+        "entropy_secret_plausibility_rejected",
+    ] {
+        assert!(
+            !scanner.contains(&format!("\"{reason}\"")),
+            "entropy/scanner.rs must not own the {reason} suppression reason"
+        );
+        assert!(
+            adjudicate.contains(&format!("\"{reason}\"")),
+            "adjudicate/mod.rs must own the {reason} suppression reason"
+        );
+    }
+}
+
+#[test]
 fn shape_suppression_telemetry_is_only_called_by_adjudicator() {
     let src = scanner_src();
     let mut files = Vec::new();

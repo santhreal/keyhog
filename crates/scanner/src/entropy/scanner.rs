@@ -11,6 +11,7 @@ use super::{
     keywords::*, shannon_entropy, EntropyMatch, HIGH_ENTROPY_THRESHOLD, LOW_ENTROPY_THRESHOLD,
     VERY_HIGH_ENTROPY_THRESHOLD,
 };
+use crate::adjudicate::{EntropyShapeStage, StageId};
 use crate::entropy::plausibility::{is_secret_plausible, PlausibilityContext};
 
 const CREDENTIAL_CONTEXT_MIN_LEN: usize = 8;
@@ -377,9 +378,18 @@ fn collect_line_candidates(
         context.allow_canonical_shapes,
     ) {
         let entropy = shannon_entropy(candidate.as_bytes());
-        if !candidate_is_plausible(&candidate, entropy, context, placeholder_keywords)
-            || seen.contains(candidate.as_str())
-        {
+        if let Some(stage_id) = candidate_plausibility_rejection_stage(
+            &candidate,
+            entropy,
+            context,
+            placeholder_keywords,
+        ) {
+            if crate::telemetry::is_dogfood_enabled() {
+                crate::adjudicate::record_stage_suppression(None, &candidate, stage_id);
+            }
+            continue;
+        }
+        if seen.contains(candidate.as_str()) {
             continue;
         }
         seen.insert(candidate.clone());
@@ -399,11 +409,23 @@ pub(crate) fn candidate_is_plausible(
     context: &KeywordContext,
     placeholder_keywords: &[String],
 ) -> bool {
+    candidate_plausibility_rejection_stage(candidate, entropy, context, placeholder_keywords)
+        .is_none()
+}
+
+pub(crate) fn candidate_plausibility_rejection_stage(
+    candidate: &str,
+    entropy: f64,
+    context: &KeywordContext,
+    placeholder_keywords: &[String],
+) -> Option<StageId> {
     if crate::engine::phase2_generic::shape_helpers::is_structured_dotted_token(candidate) {
-        return candidate.len() >= KEYWORD_FREE_MIN_LEN.min(context.min_len);
+        return (candidate.len() < KEYWORD_FREE_MIN_LEN.min(context.min_len)).then_some(
+            StageId::EntropyValueShape(EntropyShapeStage::StructuredDottedTooShort),
+        );
     }
     if entropy < context.threshold {
-        return false;
+        return Some(StageId::EntropyBelowFloor);
     }
     if context.is_credential_context {
         // A bare credential keyword (`api_key=`, `token:`, `secret=`) is a
@@ -431,16 +453,29 @@ pub(crate) fn candidate_is_plausible(
         let canonical_lift = context.allow_canonical_shapes
             && canonical_shape_lift_allowed(candidate, &context.keyword);
         if !canonical_lift && is_canonical_non_secret_shape(candidate) {
-            return false;
+            return Some(StageId::EntropyValueShape(
+                EntropyShapeStage::CanonicalNonSecretShape,
+            ));
         }
-        return candidate.len() >= MIN_PASSWORD_LEN;
+        return (candidate.len() < MIN_PASSWORD_LEN).then_some(StageId::EntropyValueShape(
+            EntropyShapeStage::CredentialContextTooShort,
+        ));
     }
-    candidate.len() >= KEYWORD_FREE_MIN_LEN.min(context.min_len)
-        && is_secret_plausible(
-            candidate,
-            placeholder_keywords,
-            PlausibilityContext::default(),
-        )
+    if candidate.len() < KEYWORD_FREE_MIN_LEN.min(context.min_len) {
+        return Some(StageId::EntropyValueShape(
+            EntropyShapeStage::KeywordFreeTooShort,
+        ));
+    }
+    if !is_secret_plausible(
+        candidate,
+        placeholder_keywords,
+        PlausibilityContext::default(),
+    ) {
+        return Some(StageId::EntropyValueShape(
+            EntropyShapeStage::SecretPlausibilityRejected,
+        ));
+    }
+    None
 }
 
 /// True when `value` is EXACTLY a canonical non-secret shape: a hash digest,
