@@ -19,7 +19,31 @@ fn dedup_non_empty() {
         "dedup: todo!/unimplemented! forbidden in non-test source"
     );
     assert!(
-        !prod.contains("sha256_hash("),
-        "dedup must reuse RawMatch::credential_hash; recomputing SHA-256 in the dedup hot path is forbidden"
+        src.contains("fn effective_credential_hash(")
+            && src.contains("credential_hash == [0; 32]")
+            && src.contains("effective_credential_hash(m.credential.as_ref(), m.credential_hash)")
+            && src.contains(
+                "effective_credential_hash(matched.credential.as_ref(), matched.credential_hash)"
+            ),
+        "dedup must reuse RawMatch::credential_hash, with only the zero-hash compatibility repair at the input boundary"
+    );
+    assert!(
+        !prod.contains("sha256_hash(m.credential.as_ref())")
+            && !prod.contains("sha256_hash(matched.credential.as_ref())"),
+        "dedup must not unconditionally recompute SHA-256 in the per-match hot path"
+    );
+    assert!(
+        src.contains("IndexMap::with_capacity(match_count)")
+            && src.contains("Vec::with_capacity(match_count)")
+            && src.contains("IndexMap::with_capacity(deduped.len())"),
+        "dedup grouping tables must be pre-sized from the known input length"
+    );
+    assert!(
+        !src.contains("IndexMap<DedupKey, DedupedMatch> = IndexMap::new()")
+            && !src.contains(
+                "seen_locations: Vec<std::collections::HashSet<LocIdentity>> = Vec::new()"
+            )
+            && !src.contains("IndexMap<GroupKey, Vec<DedupedMatch>> = IndexMap::new()"),
+        "dedup hot grouping tables must not regress to zero-capacity allocation"
     );
 }

@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-use crate::{MatchLocation, RawMatch, SensitiveString, Severity};
+use crate::{sha256_hash, MatchLocation, RawMatch, SensitiveString, Severity};
 
 /// Count of times [`dedup_cross_detector`] reached the (guard-impossible) empty
 /// singleton-group branch, where a finding would otherwise vanish from the
@@ -99,13 +99,15 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
         return matches
             .into_iter()
             .map(|m| {
+                let credential_hash =
+                    effective_credential_hash(m.credential.as_ref(), m.credential_hash);
                 DedupedMatch {
                     detector_id: m.detector_id,
                     detector_name: m.detector_name,
                     service: m.service,
                     severity: m.severity,
                     credential: m.credential,
-                    credential_hash: m.credential_hash,
+                    credential_hash,
                     companions: m.companions,
                     primary_location: m.location,
                     additional_locations: Vec::new(),
@@ -121,7 +123,6 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
     // BTreeMap was O(log N) per insert and dominated dedup time on 1M+
     // matches - see docs/EXECUTION_PLAN.md.
     type DedupKey = (Arc<str>, SensitiveString, Option<Arc<str>>);
-    let mut groups: IndexMap<DedupKey, DedupedMatch> = IndexMap::new();
 
     // O(1) per-match membership for additional_locations. The duplicate arm
     // used to run `existing.additional_locations.iter().any(is_same_location)`
@@ -138,7 +139,6 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
     // already-recorded additional, now in O(1) instead of O(K). Turns a
     // K-repeat group from O(K^2) to O(K).
     type LocIdentity = (Arc<str>, Option<Arc<str>>, Option<usize>, Option<Arc<str>>);
-    let mut seen_locations: Vec<std::collections::HashSet<LocIdentity>> = Vec::new();
 
     // Sort by offset ascending so that for any group of (detector, credential,
     // file) matches the LOWEST offset becomes the primary_location and any
@@ -154,6 +154,10 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
     // offset per file independently. #16 regression: hot-github_pat
     // primary at offset 79 in a 64-byte file.
     let mut matches = matches;
+    let match_count = matches.len();
+    let mut groups: IndexMap<DedupKey, DedupedMatch> = IndexMap::with_capacity(match_count);
+    let mut seen_locations: Vec<std::collections::HashSet<LocIdentity>> =
+        Vec::with_capacity(match_count);
     matches.sort_by(|a, b| {
         a.location
             .file_path
@@ -225,8 +229,10 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
                 existing.confidence = max_confidence(existing.confidence, matched.confidence);
             }
             None => {
-                let mut seen = std::collections::HashSet::new();
+                let mut seen = std::collections::HashSet::with_capacity(1);
                 seen.insert(location_identity(&matched.location));
+                let credential_hash =
+                    effective_credential_hash(matched.credential.as_ref(), matched.credential_hash);
                 groups.insert(
                     key,
                     DedupedMatch {
@@ -235,7 +241,7 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
                         service: matched.service,
                         severity: matched.severity,
                         credential: matched.credential,
-                        credential_hash: matched.credential_hash,
+                        credential_hash,
                         companions: matched.companions,
                         primary_location: matched.location,
                         additional_locations: Vec::new(),
@@ -299,6 +305,14 @@ fn is_decoder_location(location: &MatchLocation) -> bool {
         .any(|suffix| location.source.ends_with(suffix))
 }
 
+fn effective_credential_hash(credential: &str, credential_hash: [u8; 32]) -> [u8; 32] {
+    if credential_hash == [0; 32] {
+        sha256_hash(credential)
+    } else {
+        credential_hash
+    }
+}
+
 /// Cross-detector dedup at emit time.
 ///
 /// One credential value commonly matches multiple detectors - `AIza...` keys
@@ -327,7 +341,8 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
     // Group by (credential_hash, primary_location.file_path) - splitting by
     // file keeps file-scope dedup intact when the caller used DedupScope::File.
     type GroupKey = ([u8; 32], Option<Arc<str>>);
-    let mut groups: IndexMap<GroupKey, Vec<DedupedMatch>> = IndexMap::new();
+    let mut groups: IndexMap<GroupKey, Vec<DedupedMatch>> =
+        IndexMap::with_capacity(deduped.len());
     for m in deduped {
         let key = (m.credential_hash, m.primary_location.file_path.clone());
         groups.entry(key).or_default().push(m);
