@@ -609,6 +609,78 @@ fn dns_pin_build_failure_fails_closed_not_silent_fallback() {
     );
 }
 
+#[test]
+fn ssrf_ip_policy_has_one_classifier_owner() {
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/ssrf.rs"))
+        .expect("ssrf.rs must be readable");
+
+    let owner = src
+        .split("fn verifier_blocks_ip_addr(")
+        .nth(1)
+        .expect("ssrf.rs must define the canonical verifier IP classifier")
+        .split("/// Compatibility alias")
+        .next()
+        .expect("classifier owner must appear before compatibility alias");
+    assert!(
+        owner.contains("crate::bogon::ip_addr_is_bogon(ip)"),
+        "the canonical verifier classifier must delegate shared reserved/private ranges to bogon"
+    );
+    assert!(
+        owner.contains("ipv4.is_multicast() || ipv4.octets()[0] >= 240"),
+        "only verifier-specific IPv4 multicast/Class-E policy should be layered on top of bogon"
+    );
+
+    let fast_alias = src
+        .split("pub fn is_private_ip_addr_fast(")
+        .nth(1)
+        .expect("historical fast-name compatibility alias must exist")
+        .split("/// Check a resolved IP address")
+        .next()
+        .expect("fast alias body before canonical public function");
+    assert!(
+        fast_alias.contains("verifier_blocks_ip_addr(*ip)"),
+        "is_private_ip_addr_fast must call the single classifier instead of owning a duplicate table"
+    );
+
+    let public_veto = src
+        .split("pub fn is_private_ip_addr(")
+        .nth(1)
+        .expect("post-resolution public IP veto must exist")
+        .split("/// Returns true if the URL")
+        .next()
+        .expect("public veto body before URL classifier");
+    assert!(
+        public_veto.contains("verifier_blocks_ip_addr(*ip)"),
+        "is_private_ip_addr must call the same classifier as the compatibility alias"
+    );
+
+    let url_classifier = src
+        .split("pub fn is_private_url(")
+        .nth(1)
+        .expect("URL SSRF classifier must exist");
+    assert!(
+        url_classifier.matches("verifier_blocks_ip_addr(").count() >= 3,
+        "URL literal and encoded-IP checks must route through the same IP classifier"
+    );
+    assert!(
+        !url_classifier.contains("crate::bogon::ip_addr_is_bogon")
+            && !url_classifier.contains("is_private_ip_addr_fast(&IpAddr"),
+        "URL classifier must not re-inline the bogon/fast union"
+    );
+    for retired_mask in [
+        "0xFF000000",
+        "0xFFF00000",
+        "0xFFFF0000",
+        "0xFFC00000",
+        "0xF0000000",
+    ] {
+        assert!(
+            !src.contains(retired_mask),
+            "retired duplicate SSRF bitmask table returned via {retired_mask}"
+        );
+    }
+}
+
 // ===========================================================================
 // 5b. OOB interaction drops are LOUD, not silent (Law 10)
 // ===========================================================================

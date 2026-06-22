@@ -205,7 +205,7 @@ fn bogon_v6_public_is_allowed() {
 }
 
 // ===========================================================================
-// ssrf::is_private_ip_addr_fast — the bitwise fast path
+// ssrf::is_private_ip_addr_fast — compatibility alias for the canonical verifier IP policy
 // ===========================================================================
 
 #[test]
@@ -253,21 +253,23 @@ fn fast_path_v6_public_is_not_private() {
 }
 
 // ===========================================================================
-// ssrf::is_private_ip_addr — fast path OR bogon (the post-resolution veto)
+// ssrf::is_private_ip_addr — the canonical post-resolution verifier IP policy
 // ===========================================================================
 
 #[test]
-fn combined_veto_catches_bogon_only_ranges() {
-    // 198.18.0.0/15 benchmark: NOT caught by the fast path, IS a bogon.
+fn verifier_ip_policy_catches_bogon_ranges_through_both_public_names() {
+    // 198.18.0.0/15 benchmark: shared bogon range, therefore blocked through
+    // both public verifier IP predicates.
     assert!(
-        !is_private_ip_addr_fast(&v4(198, 18, 0, 1)),
-        "benchmark range is not in the fast-path table"
+        is_private_ip_addr_fast(&v4(198, 18, 0, 1)),
+        "fast compatibility alias must use the canonical verifier IP policy"
     );
     assert!(
         is_private_ip_addr(&v4(198, 18, 0, 1)),
-        "combined veto must still refuse the benchmark range via the bogon layer"
+        "post-resolution veto must refuse the benchmark range via the bogon layer"
     );
-    // 192.0.2.0/24 documentation: bogon-only.
+    // 192.0.2.0/24 documentation.
+    assert!(is_private_ip_addr_fast(&v4(192, 0, 2, 1)));
     assert!(is_private_ip_addr(&v4(192, 0, 2, 1)));
 }
 

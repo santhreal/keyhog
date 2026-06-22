@@ -1,27 +1,22 @@
 //! Gap coverage for the verifier SSRF guard.
 //!
-//! Targets the three layered predicates that decide whether live credential
+//! Targets the verifier predicates that decide whether live credential
 //! verification is allowed to dial a host:
 //!
-//!   * `keyhog_verifier::ssrf::is_private_ip_addr_fast` — pure bitwise IPv4/IPv6
-//!     range veto (no allocation, no DNS).
-//!   * `keyhog_verifier::ssrf::is_private_ip_addr` — fast path OR the shared
-//!     `bogon` classifier; this is the post-DNS-resolution veto that defeats
-//!     DNS rebinding.
+//!   * `keyhog_verifier::ssrf::is_private_ip_addr_fast` — compatibility alias
+//!     for the single verifier IP refusal policy.
+//!   * `keyhog_verifier::ssrf::is_private_ip_addr` — the same single verifier
+//!     IP refusal policy used after DNS resolution to defeat DNS rebinding.
 //!   * `keyhog_verifier::ssrf::is_private_url` — the URL-string gate that parses
 //!     the host through the `url` crate and refuses private / reserved / encoded
 //!     loopback hosts (the only gate on the proxy verification path).
 //!   * `keyhog_verifier::testing::ip_addr_is_bogon` — the shared bogon predicate.
 //!
 //! Every expected value here is derived directly from
-//! `crates/verifier/src/ssrf.rs` + `crates/verifier/src/bogon.rs`. The fast path
-//! covers exactly: 127/8, 10/8, 172.16/12, 192.168/16, 169.254/16, 0/8,
-//! 224/4 multicast, 100.64/10 CGN, and 240/4 reserved for IPv4; and ::1, ::,
-//! fe80::/10, fc00::/7, ff00::/8 for IPv6. The bogon layer adds documentation,
-//! benchmark (198.18/15), protocol-assignment (192.0.0/24), broadcast, and the
-//! IPv6 documentation/Teredo/ORCHIDv2/discard/6to4/mapped/compat wrappings.
-//! `is_private_ip_addr_fast` deliberately does NOT cover those extra ranges —
-//! that boundary is asserted below.
+//! `crates/verifier/src/ssrf.rs` + `crates/verifier/src/bogon.rs`. The verifier
+//! policy is the fleet bogon table plus verifier-specific IPv4 multicast and
+//! Class-E reserved refusals; `is_private_ip_addr_fast` must never drift into a
+//! narrower duplicate table again.
 
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
@@ -206,9 +201,9 @@ fn fast_v6_link_local_fe80_slash10() {
     // fe80::/10 covers fe80.. through febf..
     assert!(is_private_ip_addr_fast(&v6("fe80::1")));
     assert!(is_private_ip_addr_fast(&v6("febf::1")));
-    // fec0:: has top two bits of the second nibble != 0b10 => NOT fe80::/10.
-    // (0xc0 & 0xc0 == 0xc0, not 0x80) so the fast path does not match it here.
-    assert!(!is_private_ip_addr_fast(&v6("fec0::1")));
+    // fec0::/10 is deprecated site-local and is blocked by the shared bogon
+    // layer through the single verifier policy.
+    assert!(is_private_ip_addr_fast(&v6("fec0::1")));
 }
 
 #[test]
@@ -233,28 +228,31 @@ fn fast_v6_public_addresses_allowed() {
     // Cloudflare + Google public resolvers.
     assert!(!is_private_ip_addr_fast(&v6("2606:4700:4700::1111")));
     assert!(!is_private_ip_addr_fast(&v6("2001:4860:4860::8888")));
-    // Documentation 2001:db8:: is NOT caught by the FAST path (only by bogon).
-    assert!(!is_private_ip_addr_fast(&v6("2001:db8::1")));
+    // Documentation 2001:db8:: is caught by the shared bogon layer through the
+    // single verifier policy.
+    assert!(is_private_ip_addr_fast(&v6("2001:db8::1")));
 }
 
 // ===========================================================================
-// Boundary between fast path and the bogon layer (is_private_ip_addr).
-// The fast path is intentionally narrower; is_private_ip_addr OR-s in bogon.
+// Compatibility alias: the historical fast name must equal the canonical
+// post-resolution verifier IP refusal policy.
 // ===========================================================================
 
 #[test]
-fn bogon_only_v4_protocol_assignment_192_0_0_slash24() {
-    // 192.0.0.0/24 is bogon (IETF protocol assignment) but NOT in the fast path.
-    assert!(!is_private_ip_addr_fast(&v4(192, 0, 0, 1)));
+fn verifier_policy_v4_protocol_assignment_192_0_0_slash24() {
+    // 192.0.0.0/24 is bogon (IETF protocol assignment) and must be blocked by
+    // both public verifier IP predicates.
+    assert!(is_private_ip_addr_fast(&v4(192, 0, 0, 1)));
     assert!(TestApi.ip_addr_is_bogon(v4(192, 0, 0, 1)));
     assert!(is_private_ip_addr(&v4(192, 0, 0, 1)));
 }
 
 #[test]
-fn bogon_only_v4_benchmark_198_18_slash15() {
-    // 198.18.0.0/15 benchmark range: bogon but not fast.
-    assert!(!is_private_ip_addr_fast(&v4(198, 18, 0, 1)));
-    assert!(!is_private_ip_addr_fast(&v4(198, 19, 255, 255)));
+fn verifier_policy_v4_benchmark_198_18_slash15() {
+    // 198.18.0.0/15 benchmark range: bogon and blocked by both public verifier
+    // IP predicates.
+    assert!(is_private_ip_addr_fast(&v4(198, 18, 0, 1)));
+    assert!(is_private_ip_addr_fast(&v4(198, 19, 255, 255)));
     assert!(TestApi.ip_addr_is_bogon(v4(198, 18, 0, 1)));
     assert!(TestApi.ip_addr_is_bogon(v4(198, 19, 255, 255)));
     assert!(is_private_ip_addr(&v4(198, 18, 0, 1)));
@@ -264,10 +262,10 @@ fn bogon_only_v4_benchmark_198_18_slash15() {
 }
 
 #[test]
-fn bogon_only_v4_documentation_test_nets() {
-    // RFC5737 TEST-NET-1/2/3 are documentation => bogon, not fast.
+fn verifier_policy_v4_documentation_test_nets() {
+    // RFC5737 TEST-NET-1/2/3 are documentation => bogon and verifier-blocked.
     for ip in [v4(192, 0, 2, 1), v4(198, 51, 100, 1), v4(203, 0, 113, 1)] {
-        assert!(!is_private_ip_addr_fast(&ip), "fast must NOT flag {ip}");
+        assert!(is_private_ip_addr_fast(&ip), "fast alias must flag {ip}");
         assert!(TestApi.ip_addr_is_bogon(ip), "bogon must flag {ip}");
         assert!(is_private_ip_addr(&ip), "combined must flag {ip}");
     }
@@ -311,8 +309,7 @@ fn bogon_v6_documentation_2001_db8_slash32() {
     assert!(TestApi.ip_addr_is_bogon(v6("2001:db8::1")));
     assert!(TestApi.ip_addr_is_bogon(v6("2001:db8:dead:beef::1")));
     assert!(is_private_ip_addr(&v6("2001:db8::1")));
-    // Fast path does not cover documentation.
-    assert!(!is_private_ip_addr_fast(&v6("2001:db8::1")));
+    assert!(is_private_ip_addr_fast(&v6("2001:db8::1")));
 }
 
 #[test]

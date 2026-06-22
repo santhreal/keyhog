@@ -54,88 +54,38 @@ pub async fn resolve_dns_cached(host_port: &str) -> std::io::Result<Vec<SocketAd
     Ok(addrs)
 }
 
-/// Fast bitwise checks on numeric IP values to instantly veto local, private, and loopback IP addresses.
-pub fn is_private_ip_addr_fast(ip: &IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(ipv4) => {
-            let octets = ipv4.octets();
-            let val = u32::from_be_bytes(octets);
-            // 127.0.0.0/8 (Loopback)
-            if val & 0xFF000000 == 0x7F000000 {
-                return true;
-            }
-            // 10.0.0.0/8 (Private A)
-            if val & 0xFF000000 == 0x0A000000 {
-                return true;
-            }
-            // 172.16.0.0/12 (Private B)
-            if val & 0xFFF00000 == 0xAC100000 {
-                return true;
-            }
-            // 192.168.0.0/16 (Private C)
-            if val & 0xFFFF0000 == 0xC0A80000 {
-                return true;
-            }
-            // 169.254.0.0/16 (Link-local)
-            if val & 0xFFFF0000 == 0xA9FE0000 {
-                return true;
-            }
-            // 0.0.0.0/8 (Unspecified)
-            if val & 0xFF000000 == 0 {
-                return true;
-            }
-            // 224.0.0.0/4 (Multicast)
-            if val & 0xF0000000 == 0xE0000000 {
-                return true;
-            }
-            // 100.64.0.0/10 (Carrier-grade NAT)
-            if val & 0xFFC00000 == 0x64400000 {
-                return true;
-            }
-            // 240.0.0.0/4 (Reserved, RFC 1112 "future use" / Class E).
-            // This range is not globally routable and includes the limited
-            // broadcast address 255.255.255.255 (0xFFFFFFFF) as its top host.
-            // A defense-in-depth SSRF guard blocks the whole reserved block
-            // fail-closed — nothing legitimate is reachable there, and decimal
-            // IP forms like `http://4294967294/` (255.255.255.254) must not slip
-            // through just because they aren't the exact broadcast value.
-            if val & 0xF0000000 == 0xF0000000 {
-                return true;
-            }
-            false
-        }
-        IpAddr::V6(ipv6) => {
-            let octets = ipv6.octets();
-            // ::1 (Loopback)
-            if octets == [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1] {
-                return true;
-            }
-            // :: (Unspecified)
-            if octets == [0; 16] {
-                return true;
-            }
-            // fe80::/10 (Link-local)
-            if octets[0] == 0xfe && (octets[1] & 0xc0) == 0x80 {
-                return true;
-            }
-            // fc00::/7 (Unique local)
-            if (octets[0] & 0xfe) == 0xfc {
-                return true;
-            }
-            // ff00::/8 (Multicast)
-            if octets[0] == 0xff {
-                return true;
-            }
-            false
-        }
+/// Canonical verifier IP-address refusal policy.
+///
+/// The fleet-wide bogon table owns private, loopback, link-local,
+/// documentation, benchmark, protocol-assignment, metadata, IPv6 wrapping, and
+/// other reserved ranges. The verifier adds the ranges it deliberately refuses
+/// even though `bogon` leaves them available for consumers with different
+/// routing policy: IPv4 multicast and the IPv4 Class-E reserved block.
+#[inline]
+fn verifier_blocks_ip_addr(ip: IpAddr) -> bool {
+    if crate::bogon::ip_addr_is_bogon(ip) {
+        return true;
     }
+    match ip {
+        IpAddr::V4(ipv4) => ipv4.is_multicast() || ipv4.octets()[0] >= 240,
+        IpAddr::V6(_) => false,
+    }
+}
+
+/// Compatibility alias for callers that still import the historical fast-path
+/// name. It now returns the single verifier IP policy instead of a partial
+/// pre-bogon subset.
+#[inline]
+pub fn is_private_ip_addr_fast(ip: &IpAddr) -> bool {
+    verifier_blocks_ip_addr(*ip)
 }
 
 /// Check a resolved IP address against the same private/loopback/multicast rules
 /// used for the URL-string check. Used after DNS resolution to defeat DNS
 /// rebinding (where attacker.com → 127.0.0.1).
+#[inline]
 pub fn is_private_ip_addr(ip: &IpAddr) -> bool {
-    is_private_ip_addr_fast(ip) || crate::bogon::ip_addr_is_bogon(*ip)
+    verifier_blocks_ip_addr(*ip)
 }
 
 /// Returns true if the URL points to a private or loopback address.
@@ -158,16 +108,12 @@ pub fn is_private_url(url_str: &str) -> bool {
 
     match host {
         url::Host::Ipv4(ip) => {
-            if is_private_ip_addr_fast(&IpAddr::V4(ip))
-                || crate::bogon::ip_addr_is_bogon(IpAddr::V4(ip))
-            {
+            if verifier_blocks_ip_addr(IpAddr::V4(ip)) {
                 return true;
             }
         }
         url::Host::Ipv6(ip) => {
-            if is_private_ip_addr_fast(&IpAddr::V6(ip))
-                || crate::bogon::ip_addr_is_bogon(IpAddr::V6(ip))
-            {
+            if verifier_blocks_ip_addr(IpAddr::V6(ip)) {
                 return true;
             }
         }
@@ -230,9 +176,7 @@ pub fn is_private_url(url_str: &str) -> bool {
                 canonicalize_short_form_ipv4(d)
             };
             if let Some(ip) = maybe_ip {
-                if is_private_ip_addr_fast(&IpAddr::V4(ip))
-                    || crate::bogon::ip_addr_is_bogon(IpAddr::V4(ip))
-                {
+                if verifier_blocks_ip_addr(IpAddr::V4(ip)) {
                     return true;
                 }
             }
