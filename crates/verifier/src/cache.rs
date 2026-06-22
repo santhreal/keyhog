@@ -215,9 +215,7 @@ impl VerificationCache {
             self.queue.lock().push_back(key);
         }
 
-        while self.entries.len() > self.max_entries {
-            self.evict_one_oldest();
-        }
+        self.enforce_max_entries_bound();
     }
 
     /// Number of live or pending FIFO keys. Test-only visibility through the
@@ -280,6 +278,14 @@ impl VerificationCache {
         self.reconcile_queue_with_entries();
     }
 
+    pub(crate) fn enforce_max_entries_bound(&self) {
+        while self.entries.len() > self.max_entries {
+            if !self.evict_one_oldest() && !self.evict_any_entry() {
+                break;
+            }
+        }
+    }
+
     fn reconcile_queue_with_entries(&self) {
         let mut queue = self.queue.lock();
         queue.retain(|key| self.entries.contains_key(key));
@@ -292,13 +298,43 @@ impl VerificationCache {
         }
     }
 
-    fn evict_one_oldest(&self) {
+    fn evict_one_oldest(&self) -> bool {
         let mut queue = self.queue.lock();
         while let Some(key) = queue.pop_front() {
             if self.entries.remove(&key).is_some() {
-                break;
+                return true;
             }
         }
+        false
+    }
+
+    fn evict_any_entry(&self) -> bool {
+        let key = self.entries.iter().next().map(|entry| entry.key().clone());
+        match key {
+            Some(key) => self.entries.remove(&key).is_some(),
+            None => false,
+        }
+    }
+
+    pub(crate) fn clear_eviction_queue_for_test(&self) {
+        self.queue.lock().clear();
+    }
+
+    pub(crate) fn insert_unqueued_for_test(
+        &self,
+        credential: &str,
+        detector_id: &str,
+        result: VerificationResult,
+        metadata: HashMap<String, String>,
+    ) {
+        self.entries.insert(
+            cache_key(credential, detector_id),
+            CacheEntry {
+                result,
+                metadata: sanitize_metadata(metadata),
+                expires_at: Instant::now() + self.ttl,
+            },
+        );
     }
 }
 

@@ -298,6 +298,15 @@ pub mod testing {
         fn queue_len(&self) -> usize;
         fn is_empty(&self) -> bool;
         fn evict_expired(&self);
+        fn enforce_max_entries_bound(&self);
+        fn clear_eviction_queue_for_test(&self);
+        fn insert_unqueued_for_test(
+            &self,
+            credential: &str,
+            detector_id: &str,
+            result: keyhog_core::VerificationResult,
+            metadata: HashMap<String, String>,
+        );
     }
 
     impl VerifierTestCache for TestVerificationCache {
@@ -348,6 +357,25 @@ pub mod testing {
 
         fn evict_expired(&self) {
             self.0.evict_expired();
+        }
+
+        fn enforce_max_entries_bound(&self) {
+            self.0.enforce_max_entries_bound();
+        }
+
+        fn clear_eviction_queue_for_test(&self) {
+            self.0.clear_eviction_queue_for_test();
+        }
+
+        fn insert_unqueued_for_test(
+            &self,
+            credential: &str,
+            detector_id: &str,
+            result: keyhog_core::VerificationResult,
+            metadata: HashMap<String, String>,
+        ) {
+            self.0
+                .insert_unqueued_for_test(credential, detector_id, result, metadata);
         }
     }
 

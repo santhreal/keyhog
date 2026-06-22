@@ -109,6 +109,36 @@ fn eviction_queue_stays_bounded_when_ttl_keeps_entry_map_under_capacity() {
 }
 
 #[test]
+fn max_entry_enforcement_progresses_when_fifo_queue_is_empty() {
+    let cache = VerificationCache::with_max_entries(Duration::from_secs(60), 1);
+    cache.insert_unqueued_for_test("cred1", "det", VerificationResult::Dead, HashMap::new());
+    cache.insert_unqueued_for_test("cred2", "det", VerificationResult::Dead, HashMap::new());
+    cache.clear_eviction_queue_for_test();
+
+    cache.enforce_max_entries_bound();
+
+    assert!(
+        cache.len() <= 1,
+        "cache bound enforcement must still make progress when FIFO state is empty; len={}",
+        cache.len()
+    );
+}
+
+#[test]
+fn cache_bound_enforcement_has_non_fifo_progress_fallback() {
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/cache.rs"))
+        .expect("cache.rs must be readable");
+    assert!(
+        src.contains("fn evict_any_entry(&self) -> bool"),
+        "cache eviction must have a non-FIFO fallback for queue-drift cases"
+    );
+    assert!(
+        src.contains("if !self.evict_one_oldest() && !self.evict_any_entry()"),
+        "max-entry enforcement must call the non-FIFO fallback when FIFO eviction makes no progress"
+    );
+}
+
+#[test]
 fn long_detector_ids_do_not_collide_after_truncation_boundary() {
     let cache = VerificationCache::new(Duration::from_secs(60));
     let shared_prefix = "x".repeat(128);
