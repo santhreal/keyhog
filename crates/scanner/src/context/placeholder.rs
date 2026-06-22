@@ -130,7 +130,7 @@ fn is_hex_sequential_placeholder(credential: &str) -> bool {
         .windows(2)
         .filter(|window| {
             window[1] == window[0] + 1
-                || (window[0] == b'f' && window[1] == b'a')
+                || (window[0] == b'f' && window[1] == b'0')
                 || (window[0] == b'9' && window[1] == b'a')
                 || (window[0] == b'9' && window[1] == b'0')
         })

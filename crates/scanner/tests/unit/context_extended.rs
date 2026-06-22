@@ -89,6 +89,26 @@ fn ascending_hex_pairs_is_example() {
     let _ = is_known_example_credential(cred);
 }
 
+#[test]
+fn ascending_hex_pair_columns_wrap_f_to_zero() {
+    let cred = "e0f102132435465768798a9bacbdcedf";
+    assert!(
+        is_known_example_credential(cred),
+        "pair-column hex placeholders must treat f->0 as the wrap, matching the single-byte hex sequence path"
+    );
+}
+
+#[test]
+fn hex_pair_column_source_uses_same_f_wrap_for_both_columns() {
+    let source =
+        std::fs::read_to_string("src/context/placeholder.rs").expect("read placeholder source");
+    assert!(
+        source.contains("window[0] == b'f' && window[1] == b'0'")
+            && !source.contains("window[0] == b'f' && window[1] == b'a'"),
+        "hex pair-column placeholder detection must not diverge between first and second chars"
+    );
+}
+
 // ── CodeContext confidence multiplier invariants ───────────────────────────────
 
 #[test]
