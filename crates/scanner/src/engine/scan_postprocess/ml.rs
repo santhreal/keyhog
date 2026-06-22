@@ -123,19 +123,38 @@ impl CompiledScanner {
                     calibration: self.config.calibration.as_deref(),
                 },
             ) else {
+                crate::adjudicate::record_stage_suppression(
+                    pending.raw_match.location.file_path.as_deref(),
+                    &pending.credential,
+                    crate::adjudicate::StageId::ReportConfidenceRejected,
+                );
                 continue;
             };
+            if final_score < self.config.min_confidence {
+                crate::adjudicate::record_stage_suppression(
+                    pending.raw_match.location.file_path.as_deref(),
+                    &pending.credential,
+                    crate::adjudicate::StageId::BelowMinConfidence,
+                );
+                continue;
+            }
 
             // The fixture opt-out disables test/docs hard suppression too; low
             // confidence comments still follow `--scan-comments`.
             let hard_suppressed = pending.code_context.should_hard_suppress(final_score)
                 && (self.config.penalize_test_paths
                     || matches!(pending.code_context, crate::context::CodeContext::Comment));
-            if !hard_suppressed {
-                let mut raw_match = pending.raw_match;
-                raw_match.confidence = Some(final_score);
-                scan_state.push_match(raw_match, self.config.max_matches_per_chunk);
+            if hard_suppressed {
+                crate::adjudicate::record_stage_suppression(
+                    pending.raw_match.location.file_path.as_deref(),
+                    &pending.credential,
+                    crate::adjudicate::StageId::HardSuppressedContext,
+                );
+                continue;
             }
+            let mut raw_match = pending.raw_match;
+            raw_match.confidence = Some(final_score);
+            scan_state.push_match(raw_match, self.config.max_matches_per_chunk);
         }
     }
 }

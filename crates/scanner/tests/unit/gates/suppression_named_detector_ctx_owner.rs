@@ -128,6 +128,7 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
         "checksum_invalid",
         "scoring_rejected",
         "report_confidence_rejected",
+        "below_min_confidence",
     ] {
         assert!(
             !process.contains(&format!("\"{reason}\"")),
@@ -147,8 +148,7 @@ fn generic_bridge_suppression_reasons_route_through_adjudicator() {
     let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
 
     assert!(
-        generic.contains("fn record_adjudicated_suppression(")
-            && generic.contains("crate::adjudicate::adjudicate_match("),
+        generic.contains("crate::adjudicate::record_stage_suppression("),
         "engine/phase2_generic.rs must route generic suppression telemetry through the adjudicator"
     );
 
@@ -160,6 +160,43 @@ fn generic_bridge_suppression_reasons_route_through_adjudicator() {
         assert!(
             !generic.contains(&format!("\"{reason}\"")),
             "engine/phase2_generic.rs must not own the {reason} suppression reason"
+        );
+        assert!(
+            adjudicate.contains(&format!("\"{reason}\"")),
+            "adjudicate/mod.rs must own the {reason} suppression reason"
+        );
+    }
+}
+
+#[test]
+fn entropy_and_ml_emit_reject_reasons_route_through_adjudicator() {
+    let src = scanner_src();
+    let entropy = uncommented_code(&read(&src.join("engine/phase2_entropy.rs")));
+    let ml = uncommented_code(&read(&src.join("engine/scan_postprocess/ml.rs")));
+    let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
+
+    assert!(
+        entropy.contains("crate::adjudicate::record_stage_suppression("),
+        "engine/phase2_entropy.rs must route entropy suppressions through the adjudicator"
+    );
+    assert!(
+        ml.contains("crate::adjudicate::record_stage_suppression("),
+        "engine/scan_postprocess/ml.rs must route pending-match suppressions through the adjudicator"
+    );
+
+    for reason in [
+        "entropy_named_detector_owned_assignment",
+        "report_confidence_rejected",
+        "below_min_confidence",
+        "hard_suppressed_context",
+    ] {
+        assert!(
+            !entropy.contains(&format!("\"{reason}\"")),
+            "engine/phase2_entropy.rs must not own the {reason} suppression reason"
+        );
+        assert!(
+            !ml.contains(&format!("\"{reason}\"")),
+            "engine/scan_postprocess/ml.rs must not own the {reason} suppression reason"
         );
         assert!(
             adjudicate.contains(&format!("\"{reason}\"")),

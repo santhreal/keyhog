@@ -234,6 +234,36 @@ fn explicit_stage_reports_generic_below_min_confidence() {
 }
 
 #[test]
+fn explicit_stage_reports_entropy_named_detector_owned_assignment() {
+    let credential = "segment_write_key";
+    let ctx = MatchCtx::for_stage(StageId::EntropyNamedDetectorOwnedAssignment);
+
+    assert_eq!(
+        adjudicate_match(CandidateMatch::new(credential), &ctx),
+        Verdict::Suppressed(StageId::EntropyNamedDetectorOwnedAssignment)
+    );
+    assert_eq!(
+        StageId::EntropyNamedDetectorOwnedAssignment.as_str(),
+        "entropy_named_detector_owned_assignment"
+    );
+}
+
+#[test]
+fn explicit_stage_reports_hard_suppressed_context() {
+    let credential = "documentation-only-token";
+    let ctx = MatchCtx::for_stage(StageId::HardSuppressedContext);
+
+    assert_eq!(
+        adjudicate_match(CandidateMatch::new(credential), &ctx),
+        Verdict::Suppressed(StageId::HardSuppressedContext)
+    );
+    assert_eq!(
+        StageId::HardSuppressedContext.as_str(),
+        "hard_suppressed_context"
+    );
+}
+
+#[test]
 fn named_detector_stage_suppresses_generic_identifier() {
     let ctx = MatchCtx::for_named_detector(NamedDetectorSuppressionCtx::with_weak_anchor(
         Some("webgoat/WebgoatContext.java"),

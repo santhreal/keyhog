@@ -154,10 +154,10 @@ impl CompiledScanner {
                 preprocessed,
                 line_offsets,
             ) {
-                crate::telemetry::record_shape_suppression(
+                crate::adjudicate::record_stage_suppression(
                     chunk.metadata.path.as_deref(),
                     &entropy_match.value,
-                    "entropy_named_detector_owned_assignment",
+                    crate::adjudicate::StageId::EntropyNamedDetectorOwnedAssignment,
                 );
                 continue;
             }
@@ -222,9 +222,8 @@ impl CompiledScanner {
                 continue;
             }
 
-            // Non-ML path (the `ml` feature is compiled out, or ML disabled at
-            // runtime). Emit directly with the entropy heuristic, routed through
-            // the same report-confidence finalizer used by ML and detector hits.
+            // Non-ML path emits directly through the same report-confidence
+            // finalizer used by ML and detector hits.
             let Some(confidence) = super::scoring::finalize_report_confidence(
                 confidence,
                 super::scoring::ReportConfidencePolicy {
@@ -237,8 +236,21 @@ impl CompiledScanner {
                     calibration: self.config.calibration.as_deref(),
                 },
             ) else {
+                crate::adjudicate::record_stage_suppression(
+                    chunk.metadata.path.as_deref(),
+                    &entropy_match.value,
+                    crate::adjudicate::StageId::ReportConfidenceRejected,
+                );
                 continue;
             };
+            if confidence < self.config.min_confidence {
+                crate::adjudicate::record_stage_suppression(
+                    chunk.metadata.path.as_deref(),
+                    &entropy_match.value,
+                    crate::adjudicate::StageId::BelowMinConfidence,
+                );
+                continue;
+            }
             scan_state.push_match_lazy(
                 crate::scanner_config::RawMatchPriority {
                     confidence: Some(confidence),

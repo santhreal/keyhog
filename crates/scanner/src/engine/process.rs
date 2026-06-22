@@ -263,14 +263,12 @@ impl CompiledScanner {
             let scoring_ctx = crate::adjudicate::MatchCtx::for_process_signals(
                 crate::adjudicate::ProcessCandidateSignals::from_scoring_rejected(true),
             );
-            let stage_id = crate::adjudicate::adjudicate_match(candidate, &scoring_ctx)
-                .suppressed_stage()
-                .expect("scoring-rejected signal must suppress");
-            crate::telemetry::record_shape_suppression(
+            crate::adjudicate::record_suppression(
                 chunk.metadata.path.as_deref(),
                 credential,
-                stage_id.as_str(),
-            );
+                &scoring_ctx,
+            )
+            .expect("scoring-rejected signal must suppress");
             return;
         };
 
@@ -293,18 +291,24 @@ impl CompiledScanner {
                             true,
                         ),
                     );
-                    let stage_id =
-                        crate::adjudicate::adjudicate_match(candidate, &report_confidence_ctx)
-                            .suppressed_stage()
-                            .expect("report-confidence-rejected signal must suppress");
-                    crate::telemetry::record_shape_suppression(
+                    crate::adjudicate::record_suppression(
                         chunk.metadata.path.as_deref(),
                         credential,
-                        stage_id.as_str(),
-                    );
+                        &report_confidence_ctx,
+                    )
+                    .expect("report-confidence-rejected signal must suppress");
                     return;
                 };
                 confidence = adjusted_confidence;
+                if confidence < self.config.min_confidence {
+                    crate::adjudicate::record_stage_suppression(
+                        chunk.metadata.path.as_deref(),
+                        credential,
+                        crate::adjudicate::StageId::BelowMinConfidence,
+                    )
+                    .expect("below-min-confidence signal must suppress");
+                    return;
+                }
                 let source_offset =
                     preprocessed.source_offset_for_match(&chunk.data, credential_start, credential);
                 let raw_match = build_raw_match(

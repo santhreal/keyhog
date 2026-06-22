@@ -6,6 +6,7 @@ use keyhog_scanner::testing::{
     phase2_required_prefix_literals, window_chunk, window_end_offset,
 };
 use keyhog_scanner::ScannerConfig;
+use std::sync::Arc;
 
 fn demo_detector() -> DetectorSpec {
     DetectorSpec {
@@ -260,6 +261,52 @@ fn mx_api_key_phase2_pattern_is_shared_anchor_localized() {
 }
 
 #[test]
+fn named_detector_honors_min_confidence_and_traces_reject() {
+    let _guard = super::telemetry_serial::lock();
+    let value = "abcdef0123456789abcdef0123456789";
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.99;
+    config.ml_enabled = false;
+    config.test_keywords.clear();
+    config.placeholder_keywords.clear();
+
+    let scanner = CompiledScanner::compile(vec![mx_api_detector()])
+        .unwrap()
+        .with_config(config);
+    keyhog_scanner::telemetry::testing::reset();
+    keyhog_scanner::telemetry::enable_dogfood();
+    let trace = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
+    let chunk = file_chunk(
+        format!("export MX_API_KEY={value}"),
+        "named_min_floor.env",
+        0,
+    );
+    let matches = keyhog_scanner::telemetry::with_scan_telemetry(&trace, || scanner.scan(&chunk));
+
+    assert!(
+        !matches.iter().any(|m| m.credential.as_ref() == value),
+        "named detector candidate below min_confidence must not emit; got {matches:?}"
+    );
+    let reasons: Vec<_> = trace
+        .drain()
+        .dogfood_events
+        .into_iter()
+        .filter_map(|event| match event {
+            keyhog_scanner::telemetry::DogfoodEvent::ShapeSuppressed {
+                path: Some(path),
+                reason,
+                ..
+            } if path == "named_min_floor.env" => Some(reason.into_owned()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        reasons.iter().any(|reason| reason == "below_min_confidence"),
+        "named detector min-confidence reject must be operator-visible through adjudication; got {reasons:?}"
+    );
+}
+
+#[test]
 fn entropy_fallback_honors_min_secret_len_config() {
     let value = "aK7xP9mQ2wE5rT8yU1iO3pA6sD4fG0hJ";
     assert_eq!(value.len(), 32);
@@ -320,6 +367,52 @@ fn entropy_fallback_precheck_admits_symbolic_password_runs() {
             m.credential.as_ref() == value && m.detector_id.as_ref().starts_with("entropy-")
         }),
         "credential-context symbolic password should reach entropy fallback; got {matches:?}"
+    );
+}
+
+#[test]
+fn entropy_fallback_honors_min_confidence_and_traces_reject() {
+    let _guard = super::telemetry_serial::lock();
+    let value = "aK7xP9mQ2wE5rT8yU1iO3pA6sD4fG0hJ";
+    let mut config = ScannerConfig::default();
+    config.entropy_in_source_files = true;
+    config.entropy_threshold = 3.0;
+    config.min_confidence = 0.99;
+    config.ml_enabled = false;
+    config.entropy_ml_authoritative = false;
+    config.secret_keywords = vec!["MARKER".into()];
+    config.test_keywords.clear();
+    config.placeholder_keywords.clear();
+
+    let scanner = CompiledScanner::compile(Vec::new())
+        .unwrap()
+        .with_config(config);
+    keyhog_scanner::telemetry::testing::reset();
+    keyhog_scanner::telemetry::enable_dogfood();
+    let trace = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
+    let chunk = file_chunk(format!("MARKER = \"{value}\""), "entropy_min_floor.env", 0);
+    let matches = keyhog_scanner::telemetry::with_scan_telemetry(&trace, || scanner.scan(&chunk));
+
+    assert!(
+        !matches.iter().any(|m| m.credential.as_ref() == value),
+        "entropy candidate below min_confidence must not emit; got {matches:?}"
+    );
+    let reasons: Vec<_> = trace
+        .drain()
+        .dogfood_events
+        .into_iter()
+        .filter_map(|event| match event {
+            keyhog_scanner::telemetry::DogfoodEvent::ShapeSuppressed {
+                path: Some(path),
+                reason,
+                ..
+            } if path == "entropy_min_floor.env" => Some(reason.into_owned()),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        reasons.iter().any(|reason| reason == "below_min_confidence"),
+        "entropy min-confidence reject must be operator-visible through adjudication; got {reasons:?}"
     );
 }
 

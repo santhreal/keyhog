@@ -56,19 +56,6 @@ thread_local! {
     static KEYWORD_LINES_POOL: RefCell<Vec<usize>> = const { RefCell::new(Vec::new()) };
 }
 
-fn record_adjudicated_suppression(
-    path: Option<&str>,
-    credential: &str,
-    stage_id: crate::adjudicate::StageId,
-) {
-    let candidate = crate::adjudicate::CandidateMatch::new(credential);
-    let ctx = crate::adjudicate::MatchCtx::for_stage(stage_id);
-    if let Some(stage_id) = crate::adjudicate::adjudicate_match(candidate, &ctx).suppressed_stage()
-    {
-        crate::telemetry::record_shape_suppression(path, credential, stage_id.as_str());
-    }
-}
-
 impl CompiledScanner {
     /// Scan for generic `SECRET_NAME = "high_entropy_value"` patterns.
     /// This is the precision-gated equivalent of Gitleaks's `generic-api-key`.
@@ -215,7 +202,7 @@ impl CompiledScanner {
                     keyword_match.start(),
                     keyword_match.end(),
                 ) {
-                    record_adjudicated_suppression(
+                    crate::adjudicate::record_stage_suppression(
                         chunk.metadata.path.as_deref(),
                         keyword,
                         crate::adjudicate::StageId::GenericNamedDetectorOwnedKeyword,
@@ -224,7 +211,7 @@ impl CompiledScanner {
                 }
                 let value = value_match.as_str();
                 if keyword.eq_ignore_ascii_case("auth") && !bare_auth_value_allowed(value) {
-                    record_adjudicated_suppression(
+                    crate::adjudicate::record_stage_suppression(
                         chunk.metadata.path.as_deref(),
                         value,
                         crate::adjudicate::StageId::BareAuthUnstructured,
@@ -263,7 +250,7 @@ impl CompiledScanner {
                     allow_canonical_hex_key,
                     allow_encoded_text_secret,
                 ) {
-                    record_adjudicated_suppression(
+                    crate::adjudicate::record_stage_suppression(
                         chunk.metadata.path.as_deref(),
                         value,
                         crate::adjudicate::StageId::GenericValueShape(reason),
@@ -329,7 +316,7 @@ impl CompiledScanner {
                     // confirmed false positive — trace the drop (KH-L-0412, Law-10)
                     // so it is not silent, mirroring the named path's
                     // `checksum_invalid` engine gate.
-                    record_adjudicated_suppression(
+                    crate::adjudicate::record_stage_suppression(
                         chunk.metadata.path.as_deref(),
                         value,
                         crate::adjudicate::StageId::ChecksumInvalid,
@@ -338,7 +325,7 @@ impl CompiledScanner {
                 };
 
                 if confidence < self.config.min_confidence {
-                    record_adjudicated_suppression(
+                    crate::adjudicate::record_stage_suppression(
                         chunk.metadata.path.as_deref(),
                         value,
                         crate::adjudicate::StageId::GenericBelowMinConfidence,

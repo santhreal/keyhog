@@ -19,11 +19,14 @@ pub(crate) enum StageId {
     ChecksumInvalid,
     ScoringRejected,
     ReportConfidenceRejected,
+    BelowMinConfidence,
+    HardSuppressedContext,
     NamedDetectorSuppression,
     GenericNamedDetectorOwnedKeyword,
     BareAuthUnstructured,
     GenericValueShape(&'static str),
     GenericBelowMinConfidence,
+    EntropyNamedDetectorOwnedAssignment,
 }
 
 impl StageId {
@@ -41,11 +44,14 @@ impl StageId {
             Self::ChecksumInvalid => "checksum_invalid",
             Self::ScoringRejected => "scoring_rejected",
             Self::ReportConfidenceRejected => "report_confidence_rejected",
+            Self::BelowMinConfidence => "below_min_confidence",
+            Self::HardSuppressedContext => "hard_suppressed_context",
             Self::NamedDetectorSuppression => "named_detector_suppressed",
             Self::GenericNamedDetectorOwnedKeyword => "generic_named_detector_owned_keyword",
             Self::BareAuthUnstructured => "bare_auth_unstructured",
             Self::GenericValueShape(reason) => reason,
             Self::GenericBelowMinConfidence => "generic_below_min_confidence",
+            Self::EntropyNamedDetectorOwnedAssignment => "entropy_named_detector_owned_assignment",
         }
     }
 }
@@ -240,6 +246,27 @@ pub(crate) fn adjudicate_match(candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>
         }
     }
     Verdict::Reported
+}
+
+pub(crate) fn record_suppression(
+    path: Option<&str>,
+    credential: &str,
+    ctx: &MatchCtx<'_>,
+) -> Option<StageId> {
+    let stage_id = adjudicate_match(CandidateMatch::new(credential), ctx).suppressed_stage();
+    if let Some(stage_id) = stage_id {
+        crate::telemetry::record_shape_suppression(path, credential, stage_id.as_str());
+    }
+    stage_id
+}
+
+pub(crate) fn record_stage_suppression(
+    path: Option<&str>,
+    credential: &str,
+    stage_id: StageId,
+) -> Option<StageId> {
+    let ctx = MatchCtx::for_stage(stage_id);
+    record_suppression(path, credential, &ctx)
 }
 
 fn explicit_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageOutcome {
