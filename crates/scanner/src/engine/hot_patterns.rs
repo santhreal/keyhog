@@ -75,12 +75,12 @@ impl CompiledScanner {
 
                 let credential = std::str::from_utf8(&candidate[..cred_end]).unwrap_or(""); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
                 let record_hot_drop = |credential: &str, stage_id: crate::adjudicate::StageId| {
-                    crate::adjudicate::record_stage_suppression(
+                    let recorded = crate::adjudicate::record_stage_suppression(
                         chunk.metadata.path.as_deref(),
                         credential,
                         stage_id,
-                    )
-                    .expect("hot-pattern suppression stage must suppress");
+                    );
+                    debug_assert_eq!(recorded, Some(stage_id));
                 };
 
                 // The literal-prefix hit plus length floor is only a prefilter.

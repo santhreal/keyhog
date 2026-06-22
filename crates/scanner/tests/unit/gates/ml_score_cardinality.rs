@@ -13,6 +13,7 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
 
     assert!(
         ml_postprocess.contains("fn score_ml_pending_cpu")
+            && ml_postprocess.contains("fn emit_finalized_pending_match")
             && ml_postprocess.contains("crate::ml_scorer::score_with_config(")
             && ml_postprocess.contains("scores.len() == pending_matches.len()")
             && ml_postprocess.contains(
@@ -20,6 +21,15 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
             )
             && ml_postprocess.contains("pending_matches.into_iter().zip(scores.into_iter())"),
         "postprocess ML scoring must preserve every pending finding when score cardinality drifts"
+    );
+    assert!(
+        ml_postprocess.contains("self.emit_finalized_pending_match(scan_state, p, heuristic_conf)")
+            && ml_postprocess.contains(
+                "self.emit_finalized_pending_match(scan_state, pending, final_score)"
+            )
+            && ml_postprocess.contains("StageId::ChecksumInvalid")
+            && ml_postprocess.contains("crate::adjudicate::final_emit_suppression_stage("),
+        "every ML-pending drain path must pass through the report finalizer and adjudicator-owned rejection stages"
     );
     assert!(
         gpu.contains("let score_features_on_cpu = || -> Vec<f64>")

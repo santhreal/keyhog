@@ -272,6 +272,35 @@ impl ProcessCandidateSignals {
     }
 }
 
+pub(crate) fn final_emit_suppression_stage(
+    detector_id: &str,
+    credential: &str,
+    code_context: crate::context::CodeContext,
+    confidence: f64,
+    min_confidence_floor: f64,
+    penalize_test_paths: bool,
+) -> Option<StageId> {
+    let context_hard_suppression_applies =
+        penalize_test_paths || matches!(code_context, crate::context::CodeContext::Comment);
+    if context_hard_suppression_applies && code_context.should_hard_suppress(confidence) {
+        return Some(StageId::HardSuppressedContext);
+    }
+
+    if confidence < min_confidence_floor {
+        if crate::detector_ids::is_generic_detector(detector_id) {
+            if crate::confidence::known_prefix_confidence_floor(credential).is_some()
+                && !crate::probabilistic_gate::ProbabilisticGate::looks_promising(credential)
+            {
+                return Some(StageId::ProbabilisticGateNotPromising);
+            }
+            return Some(StageId::GenericBelowMinConfidence);
+        }
+        return Some(StageId::BelowMinConfidence);
+    }
+
+    None
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct MatchCtx<'a> {
     explicit_stage: Option<StageId>,

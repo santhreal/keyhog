@@ -249,11 +249,18 @@ impl CompiledScanner {
                 );
                 continue;
             };
-            if confidence < self.config.min_confidence {
+            if let Some(stage_id) = crate::adjudicate::final_emit_suppression_stage(
+                metadata.0.as_ref(),
+                &entropy_match.value,
+                crate::context::CodeContext::Unknown,
+                confidence,
+                self.config.min_confidence,
+                self.config.penalize_test_paths,
+            ) {
                 crate::adjudicate::record_stage_suppression(
                     chunk.metadata.path.as_deref(),
                     &entropy_match.value,
-                    crate::adjudicate::StageId::BelowMinConfidence,
+                    stage_id,
                 );
                 continue;
             }

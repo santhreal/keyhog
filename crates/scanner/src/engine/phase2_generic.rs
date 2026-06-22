@@ -329,11 +329,18 @@ impl CompiledScanner {
                     continue;
                 };
 
-                if confidence < self.config.min_confidence {
+                if let Some(stage_id) = crate::adjudicate::final_emit_suppression_stage(
+                    crate::detector_ids::GENERIC_SECRET,
+                    value,
+                    context,
+                    confidence,
+                    self.config.min_confidence,
+                    self.config.penalize_test_paths,
+                ) {
                     crate::adjudicate::record_stage_suppression(
                         chunk.metadata.path.as_deref(),
                         value,
-                        crate::adjudicate::StageId::GenericBelowMinConfidence,
+                        stage_id,
                     );
                     continue;
                 }

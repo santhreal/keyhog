@@ -225,17 +225,9 @@ impl CompiledScanner {
             return;
         }
 
-        // A named, service-anchored detector (anything that is not a
-        // generic-* / entropy-* / private-key fallback) carries positive
-        // evidence in its own regex: its match IS the credential. The
-        // probabilistic "looks_promising" gate in `calculate_final_score`
-        // is built to reject low-diversity / UUID / structured strings for
-        // the GENERIC entropy path - applied to a named detector it slams
-        // legitimate UUID/hex API keys (Heroku, Braze, Codecov, Consul,
-        // Linode, Databricks, +100 others) to 0.1, below the 0.3 report
-        // floor, silently deleting real secrets. Mirror the same anchor=
-        // positive-evidence rule the shape-gate bypass already uses so the
-        // gate stays load-bearing for generic-* but never buries a named hit.
+        // Service-anchored detector regexes are positive evidence; generic
+        // shape gates stay load-bearing only for generic/entropy/private-key
+        // fallbacks and weak anchors.
         let is_named_detector =
             crate::confidence::is_service_anchored_detector(&detector.id) && !weak_anchor;
         let Some(score_result) = self.match_confidence(
@@ -292,25 +284,20 @@ impl CompiledScanner {
                     return;
                 };
                 confidence = adjusted_confidence;
-                if confidence < min_confidence_floor {
-                    crate::adjudicate::record_stage_suppression(
+                if let Some(stage_id) = crate::adjudicate::final_emit_suppression_stage(
+                    detector.id.as_ref(),
+                    credential,
+                    inferred_context,
+                    confidence,
+                    min_confidence_floor,
+                    self.config.penalize_test_paths,
+                ) {
+                    let recorded = crate::adjudicate::record_stage_suppression(
                         chunk.metadata.path.as_deref(),
                         credential,
-                        crate::adjudicate::StageId::BelowMinConfidence,
-                    )
-                    .expect("below-min-confidence signal must suppress");
-                    return;
-                }
-                let hard_suppressed = inferred_context.should_hard_suppress(confidence)
-                    && (self.config.penalize_test_paths
-                        || matches!(inferred_context, crate::context::CodeContext::Comment));
-                if hard_suppressed {
-                    crate::adjudicate::record_stage_suppression(
-                        chunk.metadata.path.as_deref(),
-                        credential,
-                        crate::adjudicate::StageId::HardSuppressedContext,
-                    )
-                    .expect("hard-suppressed-context signal must suppress");
+                        stage_id,
+                    );
+                    debug_assert_eq!(recorded, Some(stage_id));
                     return;
                 }
                 let source_offset =

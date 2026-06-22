@@ -363,6 +363,7 @@ fn decoded_postprocess_example_drops_route_through_adjudicator() {
 #[test]
 fn final_emit_context_hard_suppression_stays_out_of_scoring_owner() {
     let src = scanner_src();
+    let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
     let scoring = uncommented_code(&read(&src.join("engine/scoring.rs")));
     let process = uncommented_code(&read(&src.join("engine/process.rs")));
     let ml = uncommented_code(&read(&src.join("engine/scan_postprocess/ml.rs")));
@@ -372,8 +373,10 @@ fn final_emit_context_hard_suppression_stays_out_of_scoring_owner() {
         "engine/scoring.rs must not hide context hard suppression behind None/scoring_rejected"
     );
     assert!(
-        process.contains("StageId::HardSuppressedContext")
-            && ml.contains("StageId::HardSuppressedContext"),
-        "both direct and ML final emit tails must report hard_suppressed_context through adjudication"
+        adjudicate.contains("fn final_emit_suppression_stage(")
+            && adjudicate.contains("StageId::HardSuppressedContext")
+            && process.contains("crate::adjudicate::final_emit_suppression_stage(")
+            && ml.contains("crate::adjudicate::final_emit_suppression_stage("),
+        "both direct and ML final emit tails must report hard_suppressed_context through the shared adjudicator stage selector"
     );
 }

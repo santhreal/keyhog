@@ -8,6 +8,54 @@ use super::{scan_postprocess_profile, CompiledScanner};
 use crate::types::{MlPendingMatch, ScanState};
 
 impl CompiledScanner {
+    fn emit_finalized_pending_match(
+        &self,
+        scan_state: &mut ScanState,
+        pending: MlPendingMatch,
+        mut final_score: f64,
+    ) {
+        let Some(adjusted_score) = super::scoring::finalize_report_confidence(
+            final_score,
+            super::scoring::ReportConfidencePolicy {
+                credential: &pending.credential,
+                detector_id: pending.raw_match.detector_id.as_ref(),
+                file_path: pending.raw_match.location.file_path.as_deref(),
+                is_named_detector: crate::confidence::is_service_anchored_detector(
+                    &pending.raw_match.detector_id,
+                ),
+                penalize_test_paths: self.config.penalize_test_paths,
+                allow_encoded_text_lift: false,
+                calibration: self.config.calibration.as_deref(),
+            },
+        ) else {
+            crate::adjudicate::record_stage_suppression(
+                pending.raw_match.location.file_path.as_deref(),
+                &pending.credential,
+                crate::adjudicate::StageId::ChecksumInvalid,
+            );
+            return;
+        };
+        final_score = adjusted_score;
+        if let Some(stage_id) = crate::adjudicate::final_emit_suppression_stage(
+            pending.raw_match.detector_id.as_ref(),
+            &pending.credential,
+            pending.code_context,
+            final_score,
+            pending.min_confidence_floor,
+            self.config.penalize_test_paths,
+        ) {
+            crate::adjudicate::record_stage_suppression(
+                pending.raw_match.location.file_path.as_deref(),
+                &pending.credential,
+                stage_id,
+            );
+            return;
+        }
+        let mut raw_match = pending.raw_match;
+        raw_match.confidence = Some(final_score);
+        scan_state.push_match(raw_match, self.config.max_matches_per_chunk);
+    }
+
     fn score_ml_pending_cpu(&self, pending_matches: &[MlPendingMatch]) -> Vec<f64> {
         pending_matches
             .iter()
@@ -35,9 +83,8 @@ impl CompiledScanner {
         if !self.config.ml_enabled {
             let pending = scan_state.ml_pending.drain(..).collect::<Vec<_>>();
             for p in pending {
-                let mut raw_match = p.raw_match;
-                raw_match.confidence = Some(p.heuristic_conf);
-                scan_state.push_match(raw_match, self.config.max_matches_per_chunk);
+                let heuristic_conf = p.heuristic_conf;
+                self.emit_finalized_pending_match(scan_state, p, heuristic_conf);
             }
             return;
         }
@@ -109,52 +156,7 @@ impl CompiledScanner {
                 final_score *= pending.code_context.confidence_multiplier();
             }
 
-            let Some(final_score) = super::scoring::finalize_report_confidence(
-                final_score,
-                super::scoring::ReportConfidencePolicy {
-                    credential: &pending.credential,
-                    detector_id: pending.raw_match.detector_id.as_ref(),
-                    file_path: pending.raw_match.location.file_path.as_deref(),
-                    is_named_detector: crate::confidence::is_service_anchored_detector(
-                        &pending.raw_match.detector_id,
-                    ),
-                    penalize_test_paths: self.config.penalize_test_paths,
-                    allow_encoded_text_lift: false,
-                    calibration: self.config.calibration.as_deref(),
-                },
-            ) else {
-                crate::adjudicate::record_stage_suppression(
-                    pending.raw_match.location.file_path.as_deref(),
-                    &pending.credential,
-                    crate::adjudicate::StageId::ChecksumInvalid,
-                );
-                continue;
-            };
-            if final_score < pending.min_confidence_floor {
-                crate::adjudicate::record_stage_suppression(
-                    pending.raw_match.location.file_path.as_deref(),
-                    &pending.credential,
-                    crate::adjudicate::StageId::BelowMinConfidence,
-                );
-                continue;
-            }
-
-            // The fixture opt-out disables test/docs hard suppression too; low
-            // confidence comments still follow `--scan-comments`.
-            let hard_suppressed = pending.code_context.should_hard_suppress(final_score)
-                && (self.config.penalize_test_paths
-                    || matches!(pending.code_context, crate::context::CodeContext::Comment));
-            if hard_suppressed {
-                crate::adjudicate::record_stage_suppression(
-                    pending.raw_match.location.file_path.as_deref(),
-                    &pending.credential,
-                    crate::adjudicate::StageId::HardSuppressedContext,
-                );
-                continue;
-            }
-            let mut raw_match = pending.raw_match;
-            raw_match.confidence = Some(final_score);
-            scan_state.push_match(raw_match, self.config.max_matches_per_chunk);
+            self.emit_finalized_pending_match(scan_state, pending, final_score);
         }
     }
 }

@@ -1,6 +1,6 @@
 use crate::adjudicate::{
-    adjudicate_match, CandidateMatch, EntropyShapeStage, MatchCtx, ProcessCandidateSignals,
-    StageId, Verdict,
+    adjudicate_match, final_emit_suppression_stage, CandidateMatch, EntropyShapeStage, MatchCtx,
+    ProcessCandidateSignals, StageId, Verdict,
 };
 use crate::context::CodeContext;
 use crate::suppression::NamedDetectorSuppressionCtx;
@@ -290,6 +290,51 @@ fn explicit_stage_reports_shape_gate_reason() {
     assert_eq!(
         StageId::ShapeGate("placeholder_word").as_str(),
         "placeholder_word"
+    );
+}
+
+#[test]
+fn final_emit_stage_prefers_hard_context_before_floor() {
+    assert_eq!(
+        final_emit_suppression_stage(
+            crate::detector_ids::AWS_ACCESS_KEY,
+            "AKIAIOSFODNN7EXAMPLE",
+            CodeContext::Documentation,
+            0.40,
+            0.85,
+            true,
+        ),
+        Some(StageId::HardSuppressedContext)
+    );
+}
+
+#[test]
+fn final_emit_stage_names_generic_floor_drop() {
+    assert_eq!(
+        final_emit_suppression_stage(
+            crate::detector_ids::GENERIC_SECRET,
+            "random_api_key_value_123456",
+            CodeContext::Assignment,
+            0.35,
+            0.40,
+            true,
+        ),
+        Some(StageId::GenericBelowMinConfidence)
+    );
+}
+
+#[test]
+fn final_emit_stage_preserves_known_prefix_not_promising_root_cause() {
+    assert_eq!(
+        final_emit_suppression_stage(
+            crate::detector_ids::GENERIC_API_KEY,
+            "hf_ababababababababababababababababab",
+            CodeContext::Assignment,
+            0.80,
+            0.85,
+            true,
+        ),
+        Some(StageId::ProbabilisticGateNotPromising)
     );
 }
 
