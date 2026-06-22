@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use keyhog_core::{AuthSpec, HttpMethod, OobPolicy, VerificationResult};
+use rand::Rng;
 use reqwest::Client;
 
 use crate::interpolate::{companions_with_oob, interpolate};
@@ -108,8 +109,8 @@ pub(crate) async fn verify_with_retry(
     .await
 }
 
-/// Generic retry loop with linear backoff. Extracted so the retry contract
-/// can be unit-tested without HTTP.
+/// Generic retry loop with exponential backoff plus bounded jitter. Extracted
+/// so the retry contract can be unit-tested without HTTP.
 ///
 /// The previous inline loop dropped the last transient attempt's `metadata`
 /// when retries were exhausted (it returned `(last_error.unwrap_or(...),
@@ -129,7 +130,14 @@ where
 
     for attempt in 0..max_attempts {
         if attempt > 0 {
-            tokio::time::sleep(Duration::from_millis(base_delay_ms * attempt as u64)).await;
+            let (min_delay_ms, max_delay_ms) =
+                retry_delay_bounds_for_attempt(attempt, base_delay_ms);
+            let delay_ms = if min_delay_ms == max_delay_ms {
+                min_delay_ms
+            } else {
+                rand::thread_rng().gen_range(min_delay_ms..=max_delay_ms)
+            };
+            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
         }
 
         let result = attempt_fn(attempt).await;
@@ -148,6 +156,16 @@ where
             HashMap::new(),
         ),
     }
+}
+
+pub(crate) fn retry_delay_bounds_for_attempt(attempt: usize, base_delay_ms: u64) -> (u64, u64) {
+    if attempt == 0 || base_delay_ms == 0 {
+        return (0, 0);
+    }
+    let exponent = attempt.saturating_sub(1).min(10);
+    let base = base_delay_ms.saturating_mul(1u64 << exponent);
+    let jitter = (base / 4).max(1);
+    (base, base.saturating_add(jitter))
 }
 
 pub(crate) async fn retry_loop_preserves_metadata_on_exhaustion_for_test(

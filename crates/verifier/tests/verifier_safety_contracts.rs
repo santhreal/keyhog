@@ -498,7 +498,8 @@ async fn slow_server_hits_the_configured_timeout() {
     let elapsed = started.elapsed();
 
     assert_eq!(findings.len(), 1);
-    // 3 retries × (150 ms timeout + linear backoff 0/500/1000 ms) ≈ < 2.5 s.
+    // 3 retries × (150 ms timeout + exponential backoff/jitter) stays far below
+    // the 30 s server stall.
     // The hard ceiling here is just "did NOT hang for the 30 s server stall".
     assert!(
         elapsed < Duration::from_secs(8),

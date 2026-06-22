@@ -9,5 +9,8 @@ async fn rate_limit_burst_respects_interval() {
     limiter.wait("svc").await;
     limiter.wait("svc").await;
     let elapsed = t0.elapsed();
-    assert!(elapsed >= Duration::from_millis(150), "second wait must queue after first slot, got {elapsed:?}");
+    assert!(
+        elapsed >= Duration::from_millis(150),
+        "second wait must queue after first slot, got {elapsed:?}"
+    );
 }

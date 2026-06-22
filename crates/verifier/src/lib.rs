@@ -461,6 +461,7 @@ pub mod testing {
         ) -> impl std::future::Future<
             Output = (keyhog_core::VerificationResult, HashMap<String, String>),
         > + Send;
+        fn retry_delay_bounds_for_attempt(&self, attempt: usize, base_delay_ms: u64) -> (u64, u64);
         fn ssrf_check_url_with_resolved_addrs_for_test(
             &self,
             raw_url: &str,
@@ -625,6 +626,10 @@ pub mod testing {
             &self,
         ) -> (keyhog_core::VerificationResult, HashMap<String, String>) {
             crate::verify::retry_loop_preserves_metadata_on_exhaustion_for_test().await
+        }
+
+        fn retry_delay_bounds_for_attempt(&self, attempt: usize, base_delay_ms: u64) -> (u64, u64) {
+            crate::verify::retry_delay_bounds_for_attempt(attempt, base_delay_ms)
         }
 
         fn ssrf_check_url_with_resolved_addrs_for_test(

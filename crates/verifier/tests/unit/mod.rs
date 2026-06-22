@@ -1,3 +1,4 @@
+pub mod a6_lr2;
 pub mod bogon;
 pub mod cache;
 pub mod domain_allowlist;

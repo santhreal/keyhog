@@ -6,7 +6,8 @@ use std::time::Duration;
 #[tokio::test]
 async fn oob_wait_for_race_store_before_wait() {
     let client = Arc::new(
-        TestApi.interactsh_client_for_test("https://example.test")
+        TestApi
+            .interactsh_client_for_test("https://example.test")
             .expect("for_test RSA keygen must succeed"),
     );
     let session = TestApi.oob_session_for_test(client, OobConfig::default());

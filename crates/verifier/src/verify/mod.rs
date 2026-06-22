@@ -32,7 +32,8 @@ use crate::{into_finding, DedupedMatch, VerificationEngine, VerifyConfig, Verify
 
 pub(crate) use aws::build_aws_probe;
 pub(crate) use credential::{
-    retry_loop_preserves_metadata_on_exhaustion_for_test, verify_with_retry, VerificationAttempt,
+    retry_delay_bounds_for_attempt, retry_loop_preserves_metadata_on_exhaustion_for_test,
+    verify_with_retry, VerificationAttempt,
 };
 pub(crate) use request::{
     build_request_for_step, execute_request, resolved_client_for_url,
