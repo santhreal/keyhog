@@ -234,8 +234,7 @@ fn collect_s3_chunks(
             .map_err(|e| SourceError::Other(format!("failed to read S3 listing: {e}")))?;
         let listing = parse_s3_listing(&body)?;
         let remaining = max_objects.saturating_sub(listed_objects);
-        let reached_limit = listing.contents.len() > remaining;
-        let page: Vec<_> = listing.contents.into_iter().take(remaining).collect();
+        let (page, reached_limit) = crate::cloud::take_listing_page(listing.contents, remaining);
         listed_objects += page.len();
 
         // Concurrent object fetcher. S3 is designed for massive concurrent
@@ -270,13 +269,7 @@ fn collect_s3_chunks(
                 })
                 .collect()
         });
-        for result in page_chunks {
-            match result {
-                Ok(Some(chunk)) => chunks.push(Ok(chunk)),
-                Ok(None) => {}
-                Err(error) => chunks.push(Err(error)),
-            }
-        }
+        crate::cloud::push_page_chunks(&mut chunks, page_chunks);
 
         if reached_limit || !listing.is_truncated {
             if reached_limit {

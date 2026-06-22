@@ -217,15 +217,26 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
             source.contains("read_text_object_body("),
             "{rel} must use the shared cloud text-object response reader"
         );
+        assert!(
+            source.contains("take_listing_page("),
+            "{rel} must use the shared cloud listing page cap helper"
+        );
+        assert!(
+            source.contains("push_page_chunks("),
+            "{rel} must use the shared cloud page chunk drain helper"
+        );
         for forbidden in [
             ".take(max_object_bytes + 1)",
             ".take(max_blob_bytes + 1)",
             "String::from_utf8(body)",
             "response.content_length()",
+            ".into_iter().take(remaining).collect()",
+            "for result in page_chunks {",
+            "Ok(Some(chunk)) => chunks.push(Ok(chunk))",
         ] {
             assert!(
                 !source.contains(forbidden),
-                "{rel} must not own duplicated cloud response-body handling `{forbidden}`"
+                "{rel} must not own duplicated cloud body/page handling `{forbidden}`"
             );
         }
     }

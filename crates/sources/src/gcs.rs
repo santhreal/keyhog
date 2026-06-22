@@ -187,8 +187,7 @@ fn collect_gcs_chunks(
             .map_err(|error| SourceError::Other(format!("failed to read GCS listing: {error}")))?;
         let listing = parse_gcs_listing(&body)?;
         let remaining = max_objects.saturating_sub(listed_objects);
-        let reached_limit = listing.items.len() > remaining;
-        let page: Vec<_> = listing.items.into_iter().take(remaining).collect();
+        let (page, reached_limit) = crate::cloud::take_listing_page(listing.items, remaining);
         listed_objects += page.len();
 
         let page_chunks: Vec<Result<Option<Chunk>, SourceError>> = fetch_pool.install(|| {
@@ -219,13 +218,7 @@ fn collect_gcs_chunks(
                 })
                 .collect()
         });
-        for result in page_chunks {
-            match result {
-                Ok(Some(chunk)) => chunks.push(Ok(chunk)),
-                Ok(None) => {}
-                Err(error) => chunks.push(Err(error)),
-            }
-        }
+        crate::cloud::push_page_chunks(&mut chunks, page_chunks);
 
         if reached_limit {
             if let Some(error) = crate::cloud::record_source_truncated_once(

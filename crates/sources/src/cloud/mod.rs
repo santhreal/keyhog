@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use keyhog_core::SourceError;
+use keyhog_core::{Chunk, SourceError};
 use reqwest::blocking::{Client, Response};
 use std::io::Read;
 
@@ -51,6 +51,25 @@ pub(crate) fn parse_http_endpoint(raw: &str, source: &str) -> Result<reqwest::Ur
 
 pub(crate) fn credential_forward_allowed(allow_explicit: bool) -> bool {
     allow_explicit
+}
+
+pub(crate) fn take_listing_page<T>(items: Vec<T>, remaining: usize) -> (Vec<T>, bool) {
+    let reached_limit = items.len() > remaining;
+    let page = items.into_iter().take(remaining).collect();
+    (page, reached_limit)
+}
+
+pub(crate) fn push_page_chunks(
+    chunks: &mut Vec<Result<Chunk, SourceError>>,
+    page_chunks: Vec<Result<Option<Chunk>, SourceError>>,
+) {
+    for result in page_chunks {
+        match result {
+            Ok(Some(chunk)) => chunks.push(Ok(chunk)),
+            Ok(None) => {}
+            Err(error) => chunks.push(Err(error)),
+        }
+    }
 }
 
 pub(crate) struct TextObjectBodyContext<'a> {
