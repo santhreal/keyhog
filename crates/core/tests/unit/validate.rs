@@ -120,6 +120,40 @@ fn rejects_invalid_companion_regexes() {
 }
 
 #[test]
+fn rejects_pattern_group_index_past_regex_capture_count() {
+    let mut detector = detector_with_pattern("token_([A-Z0-9]{8})");
+    detector.patterns[0].group = Some(2);
+
+    let issues = validate_detector(&detector);
+
+    assert!(issues.iter().any(|issue| matches!(
+        issue,
+        QualityIssue::Error(message)
+            if message.contains("pattern 0 capture group 2 is out of range")
+    )));
+}
+
+#[test]
+fn accepts_pattern_group_zero_and_existing_capture_group() {
+    let mut whole_match = detector_with_pattern("token_[A-Z0-9]{8}");
+    whole_match.patterns[0].group = Some(0);
+
+    let mut capture = detector_with_pattern("token_([A-Z0-9]{8})");
+    capture.patterns[0].group = Some(1);
+
+    for detector in [whole_match, capture] {
+        let issues = validate_detector(&detector);
+        assert!(
+            !issues.iter().any(|issue| matches!(
+                issue,
+                QualityIssue::Error(message) if message.contains("capture group")
+            )),
+            "valid capture group must not be rejected, got {issues:?}"
+        );
+    }
+}
+
+#[test]
 fn rejects_broad_companion_character_class() {
     // Wide search radius (>5 lines) STILL rejects pure character classes
     // - without a textual anchor the search becomes too permissive.
@@ -237,6 +271,15 @@ fn regex_validation_uses_typed_kinds_not_string_labels() {
     assert!(!source.contains("kind: &str"));
     assert!(!source.contains("validate_regex_definition(\"pattern\""));
     assert!(!source.contains("validate_regex_definition(\"companion\""));
+}
+
+#[test]
+fn pattern_group_bounds_are_validated_before_scanner_compile() {
+    let source = std::fs::read_to_string("src/spec/validate.rs").expect("read validate source");
+
+    assert!(source.contains("fn validate_pattern_groups("));
+    assert!(source.contains("regex.captures_len()"));
+    assert!(source.contains("group >= captures"));
 }
 
 #[test]

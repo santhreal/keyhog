@@ -56,6 +56,7 @@ pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
     let mut issues = Vec::new();
     validate_patterns_present(spec, &mut issues);
     validate_regexes(spec, &mut issues);
+    validate_pattern_groups(spec, &mut issues);
     validate_keywords(spec, &mut issues);
     validate_pattern_specificity(spec, &mut issues);
     validate_companions(spec, &mut issues);
@@ -80,6 +81,26 @@ fn validate_keywords(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
         issues.push(QualityIssue::Warning(
             "no keywords defined - pattern may produce false positives".into(),
         ));
+    }
+}
+
+fn validate_pattern_groups(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+    for (i, pat) in spec.patterns.iter().enumerate() {
+        let Some(group) = pat.group else {
+            continue;
+        };
+        let Ok(regex) = regex::Regex::new(&pat.regex) else {
+            continue; // LAW10: invalid regex already emits a QualityIssue::Error; detector load fails closed, recall-safe
+        };
+        let captures = regex.captures_len();
+        if group >= captures {
+            issues.push(QualityIssue::Error(format!(
+                "pattern {i} capture group {group} is out of range; regex has {} capture groups \
+                 (valid group indexes are 0..{})",
+                captures.saturating_sub(1),
+                captures.saturating_sub(1)
+            )));
+        }
     }
 }
 
