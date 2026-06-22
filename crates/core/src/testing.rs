@@ -65,6 +65,15 @@ pub trait CoreTestApi {
         size: u64,
         content_hash: [u8; 32],
     );
+    fn merkle_record_chunk_at_offset_and_check_unchanged(
+        &self,
+        index: &MerkleIndex,
+        path: PathBuf,
+        chunk_offset: u64,
+        mtime_ns: u64,
+        size: u64,
+        content: &[u8],
+    ) -> bool;
     fn merkle_len(&self, index: &MerkleIndex) -> usize;
     fn merkle_default_cache_path(&self) -> Option<PathBuf>;
     fn lockdown_disk_cache_violations(&self) -> Vec<PathBuf>;
@@ -278,6 +287,24 @@ impl CoreTestApi for TestApi {
         content_hash: [u8; 32],
     ) {
         index.record_with_metadata(path, mtime_ns, size, content_hash);
+    }
+
+    fn merkle_record_chunk_at_offset_and_check_unchanged(
+        &self,
+        index: &MerkleIndex,
+        path: PathBuf,
+        chunk_offset: u64,
+        mtime_ns: u64,
+        size: u64,
+        content: &[u8],
+    ) -> bool {
+        index.record_chunk_at_offset_and_check_unchanged(
+            path,
+            chunk_offset,
+            mtime_ns,
+            size,
+            content,
+        )
     }
 
     fn merkle_len(&self, index: &MerkleIndex) -> usize {

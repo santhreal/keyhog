@@ -17,7 +17,7 @@ fn merkle_try_insert_uses_hash_map_entry_once() {
         .next()
         .expect("try_insert body boundary");
 
-    assert!(try_insert.contains("shard.entry(path)"));
+    assert!(try_insert.contains("shard.entry(key)"));
     assert!(try_insert.contains("Entry::Occupied"));
     assert!(try_insert.contains("Entry::Vacant"));
     assert!(!try_insert.contains(".get_mut(&path)"));

@@ -1,4 +1,4 @@
-//! Regression: the v3 racy-clean guard drops cache entries whose file mtime
+//! Regression: the racy-clean guard drops cache entries whose file mtime
 //! lands in the same clock-second as (or after) the index write, while keeping
 //! entries from a strictly earlier second.
 //!
@@ -27,13 +27,31 @@ fn racy_entry_dropped_safe_entry_kept_on_load() {
     let safe_mtime = 999 * NS_PER_SEC + 900_000_000; // 999.9s - strictly earlier second
 
     let on_disk = serde_json::json!({
-        "version": 3,
+        "version": 4,
         "written_at_ns": written_at_ns,
-        "entries": {
-            "/racy-after": { "mtime_ns": racy_after, "size": 10, "hash": "ab".repeat(32) },
-            "/racy-boundary": { "mtime_ns": racy_boundary, "size": 11, "hash": "ef".repeat(32) },
-            "/safe": { "mtime_ns": safe_mtime, "size": 20, "hash": "cd".repeat(32) }
-        }
+        "entries": [
+            {
+                "path": "/racy-after",
+                "chunk_offset": 0,
+                "mtime_ns": racy_after,
+                "size": 10,
+                "hash": "ab".repeat(32)
+            },
+            {
+                "path": "/racy-boundary",
+                "chunk_offset": 0,
+                "mtime_ns": racy_boundary,
+                "size": 11,
+                "hash": "ef".repeat(32)
+            },
+            {
+                "path": "/safe",
+                "chunk_offset": 0,
+                "mtime_ns": safe_mtime,
+                "size": 20,
+                "hash": "cd".repeat(32)
+            }
+        ]
     });
     std::fs::write(&cache_path, serde_json::to_vec(&on_disk).unwrap()).unwrap();
 
@@ -71,11 +89,17 @@ fn zero_written_at_marks_every_entry_racy() {
     let cache_path = dir.path().join("merkle.idx");
 
     let on_disk = serde_json::json!({
-        "version": 3,
+        "version": 4,
         "written_at_ns": 0,
-        "entries": {
-            "/any": { "mtime_ns": 5, "size": 1, "hash": "12".repeat(32) }
-        }
+        "entries": [
+            {
+                "path": "/any",
+                "chunk_offset": 0,
+                "mtime_ns": 5,
+                "size": 1,
+                "hash": "12".repeat(32)
+            }
+        ]
     });
     std::fs::write(&cache_path, serde_json::to_vec(&on_disk).unwrap()).unwrap();
 

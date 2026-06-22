@@ -334,8 +334,9 @@ impl ScanOrchestrator {
                             (merkle.as_ref(), c.metadata.path.as_deref())
                         {
                             let path = std::path::PathBuf::from(path_str);
-                            if idx.record_chunk_and_check_unchanged(
+                            if idx.record_chunk_at_offset_and_check_unchanged(
                                 path,
+                                c.metadata.base_offset as u64,
                                 c.metadata.mtime_ns.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
                                 c.metadata.size_bytes.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
                                 c.data.as_bytes(),

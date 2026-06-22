@@ -7,7 +7,15 @@ fn schema_version_mismatch_treated_as_cold_start() {
     let cache_path = dir.path().join("merkle.idx");
     let bad = serde_json::json!({
         "version": 99,
-        "entries": { "/foo": { "mtime_ns": 0, "size": 0, "hash": "00".repeat(32) } }
+        "entries": [
+            {
+                "path": "/foo",
+                "chunk_offset": 0,
+                "mtime_ns": 0,
+                "size": 0,
+                "hash": "00".repeat(32)
+            }
+        ]
     });
     std::fs::write(&cache_path, serde_json::to_vec(&bad).unwrap()).unwrap();
     let report = keyhog_core::testing::CoreTestApi::merkle_load_report(
@@ -19,7 +27,7 @@ fn schema_version_mismatch_treated_as_cold_start() {
         MerkleLoadStatus::SchemaMismatch {
             path,
             version: 99,
-            expected: 3,
+            expected: 4,
         } if path == &cache_path
     ));
     let loaded = report.into_index();

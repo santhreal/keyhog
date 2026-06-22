@@ -10,18 +10,24 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 use super::{
-    tmp_hygiene::sweep_stale_tmp_files, CacheEntry, MerkleIndex, MerkleLoadReport,
+    tmp_hygiene::sweep_stale_tmp_files, CacheEntry, CacheKey, MerkleIndex, MerkleLoadReport,
     MerkleLoadStatus, SCHEMA_VERSION,
 };
 use crate::hex_encode;
 use crate::merkle_spec_hash::hex_to_array;
 
-/// On-disk per-entry record (v2). The `mtime_ns` + `size` pair is the
+/// On-disk per-entry record (v4). The `mtime_ns` + `size` pair is the
 /// fast-path key: a successful match short-circuits the BLAKE3 read entirely.
 /// `hash` remains as a paranoid-mode verifier and as the authoritative content
 /// fingerprint when mtime alone changed.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct EntryV2 {
+struct EntryV4 {
+    /// Source path. Stored inside the entry because v4 allows multiple rows for
+    /// one path at different chunk offsets.
+    path: String,
+    /// Absolute byte offset of this chunk within `path`.
+    #[serde(default)]
+    chunk_offset: u64,
     /// `mtime` in nanoseconds since UNIX epoch. Stored as `u64` so we don't lose
     /// ext4/NTFS sub-second precision; older filesystems just round-trip their
     /// rounded value.
@@ -49,8 +55,8 @@ struct OnDisk {
     /// re-reads and re-hashes everything rather than trusting a stale entry.
     #[serde(default)]
     written_at_ns: u64,
-    /// `path -> entry`. Stored as hex strings so a human can diff cache files.
-    entries: HashMap<String, EntryV2>,
+    /// One persisted chunk row per `(path, chunk_offset)`.
+    entries: Vec<EntryV4>,
 }
 
 /// Nanoseconds per second; used to floor a timestamp to its whole second for
@@ -203,12 +209,12 @@ impl MerkleIndex {
         // correct cold re-scan that self-heals on the next save.
         let racy_floor = second_floor(on_disk.written_at_ns);
         let mut racy_dropped = 0usize;
-        for (entry_path, entry) in on_disk.entries {
+        for entry in on_disk.entries {
             let Some(hash) = hex_to_array(&entry.hash) else {
                 let invalid_hash = entry.hash;
                 tracing::warn!(
                     cache = %path.display(),
-                    entry_path = %entry_path,
+                    entry_path = %entry.path,
                     hash = %invalid_hash,
                     "merkle index entry hash is invalid; treating as cold start"
                 );
@@ -216,22 +222,22 @@ impl MerkleIndex {
                     Self::empty(),
                     MerkleLoadStatus::InvalidEntryHash {
                         path: path.to_path_buf(),
-                        entry_path,
+                        entry_path: entry.path,
                         hash: invalid_hash,
                     },
                 );
             };
+            let key = CacheKey::chunk(PathBuf::from(entry.path), entry.chunk_offset);
             let entry = CacheEntry {
                 mtime_ns: entry.mtime_ns,
                 size: entry.size,
                 hash,
             };
-            let entry_path = PathBuf::from(entry_path);
             if entry.mtime_ns >= racy_floor {
                 racy_dropped += 1;
                 continue;
             }
-            if !idx.try_insert(entry_path, entry) {
+            if !idx.try_insert(key, entry) {
                 break;
             }
         }
@@ -290,7 +296,7 @@ impl MerkleIndex {
         &self,
         path: &Path,
         spec_hash: Option<&[u8; 32]>,
-    ) -> HashMap<PathBuf, CacheEntry> {
+    ) -> HashMap<CacheKey, CacheEntry> {
         // Preserve existing disk entries only when they match the spec gate we
         // are about to write. Corrupt or mismatched disk state has already been
         // surfaced by load and must not block writing a fresh cache.
@@ -303,13 +309,13 @@ impl MerkleIndex {
 
     fn overlay_in_memory_entries(
         &self,
-        merged: &mut HashMap<PathBuf, CacheEntry>,
-    ) -> HashSet<PathBuf> {
-        let mut in_memory_paths = HashSet::<PathBuf>::new();
+        merged: &mut HashMap<CacheKey, CacheEntry>,
+    ) -> HashSet<CacheKey> {
+        let mut in_memory_paths = HashSet::<CacheKey>::new();
         for shard in &self.shards {
-            for (path, entry) in shard.read().iter() {
-                merged.insert(path.clone(), *entry);
-                in_memory_paths.insert(path.clone());
+            for (key, entry) in shard.read().iter() {
+                merged.insert(key.clone(), *entry);
+                in_memory_paths.insert(key.clone());
             }
         }
         in_memory_paths
@@ -317,38 +323,38 @@ impl MerkleIndex {
 
     fn enforce_persisted_cap(
         &self,
-        merged: &mut HashMap<PathBuf, CacheEntry>,
-        in_memory_paths: &HashSet<PathBuf>,
+        merged: &mut HashMap<CacheKey, CacheEntry>,
+        in_memory_paths: &HashSet<CacheKey>,
     ) {
         if self.max_entries == 0 || merged.len() <= self.max_entries {
             return;
         }
 
-        let mut to_remove = Vec::<PathBuf>::new();
-        for path in merged.keys() {
+        let mut to_remove = Vec::<CacheKey>::new();
+        for key in merged.keys() {
             if merged.len().saturating_sub(to_remove.len()) <= self.max_entries {
                 break;
             }
-            if !in_memory_paths.contains(path) {
-                to_remove.push(path.clone());
+            if !in_memory_paths.contains(key) {
+                to_remove.push(key.clone());
             }
         }
-        for path in to_remove {
-            merged.remove(&path);
+        for key in to_remove {
+            merged.remove(&key);
         }
         if merged.len() <= self.max_entries {
             return;
         }
 
-        let mut to_remove = Vec::<PathBuf>::new();
-        for path in merged.keys() {
+        let mut to_remove = Vec::<CacheKey>::new();
+        for key in merged.keys() {
             if merged.len().saturating_sub(to_remove.len()) <= self.max_entries {
                 break;
             }
-            to_remove.push(path.clone());
+            to_remove.push(key.clone());
         }
-        for path in to_remove {
-            merged.remove(&path);
+        for key in to_remove {
+            merged.remove(&key);
         }
     }
 }
@@ -360,30 +366,27 @@ pub fn default_cache_path() -> Option<PathBuf> {
     dirs::cache_dir().map(|dir| dir.join("keyhog").join("merkle.idx"))
 }
 
-fn encode_entries(entries: &HashMap<PathBuf, CacheEntry>) -> HashMap<String, EntryV2> {
+fn encode_entries(entries: &HashMap<CacheKey, CacheEntry>) -> Vec<EntryV4> {
     entries
         .iter()
-        .map(|(path, entry)| {
-            (
-                path.display().to_string(),
-                EntryV2 {
-                    mtime_ns: entry.mtime_ns,
-                    size: entry.size,
-                    hash: hex_encode(&entry.hash),
-                },
-            )
+        .map(|(key, entry)| EntryV4 {
+            path: key.path.display().to_string(),
+            chunk_offset: key.chunk_offset,
+            mtime_ns: entry.mtime_ns,
+            size: entry.size,
+            hash: hex_encode(&entry.hash),
         })
         .collect()
 }
 
-fn flatten_shards(index: &MerkleIndex) -> HashMap<PathBuf, CacheEntry> {
+fn flatten_shards(index: &MerkleIndex) -> HashMap<CacheKey, CacheEntry> {
     let mut entries = HashMap::new();
     for shard in &index.shards {
         entries.extend(
             shard
                 .read()
                 .iter()
-                .map(|(path, entry)| (path.clone(), *entry)),
+                .map(|(key, entry)| (key.clone(), *entry)),
         );
     }
     entries

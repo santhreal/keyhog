@@ -5,15 +5,17 @@ fn merkle_invalid_entry_hash_cold_starts_with_status() {
     let dir = tempfile::tempdir().expect("tempdir");
     let cache_path = dir.path().join("merkle.idx");
     let bad = serde_json::json!({
-        "version": 3,
+        "version": 4,
         "written_at_ns": 1,
-        "entries": {
-            "/tmp/keyhog-bad-entry": {
+        "entries": [
+            {
+                "path": "/tmp/keyhog-bad-entry",
+                "chunk_offset": 0,
                 "mtime_ns": 0,
                 "size": 10,
                 "hash": "not-a-blake3-hex"
             }
-        }
+        ]
     });
     std::fs::write(
         &cache_path,

@@ -3,9 +3,10 @@
 //! ## What it does
 //!
 //! On a fresh scan we compute, for every input chunk, a metadata tuple
-//! `(mtime_ns, size, BLAKE3(content))` and store it under the file's
-//! canonical path. On the next run, files whose `(mtime, size)` match
-//! the stored values can be skipped *without re-reading the bytes* -
+//! `(mtime_ns, size, chunk_offset, BLAKE3(content))` and store it under the
+//! file's canonical path plus chunk offset. On the next run, files whose
+//! `(mtime, size)` match the stored values can be skipped *without re-reading
+//! the bytes* -
 //! they almost certainly haven't changed (rsync-style trust). When
 //! `(mtime, size)` differ but BLAKE3 matches we record the new mtime
 //! and still skip - same content, different stat (touched, copied).
@@ -23,7 +24,7 @@
 //!   correctness fix for "added a detector but unchanged files were
 //!   silently skipped, missing the new detection forever." Superseded by
 //!   v3 and treated as cold-start (it lacks the racy-clean timestamp).
-//! - **v3 (current)** - v2 plus a top-level `written_at_ns` (wall-clock
+//! - **v3 (legacy)** - v2 plus a top-level `written_at_ns` (wall-clock
 //!   nanoseconds when the index was last written). On load, any entry
 //!   whose file `mtime_ns` falls in the same clock-second as - or after -
 //!   `written_at_ns` is dropped (git's "racy index" guard): a
@@ -33,6 +34,10 @@
 //!   freshly injected secret forever. Dropped entries are simply re-read
 //!   and re-hashed on the next scan - slower for those few files, never
 //!   unsound.
+//! - **v4 (current)** - v3 plus an explicit chunk offset in each persisted
+//!   row. Chunked files no longer overwrite every earlier chunk under the
+//!   same path, so incremental scans can skip unchanged large files by chunk
+//!   instead of re-hashing them on every run.
 //!
 //! ## Serialization
 //!
@@ -63,7 +68,7 @@ mod tmp_hygiene;
 
 pub use storage::default_cache_path;
 
-const SCHEMA_VERSION: u32 = 3;
+const SCHEMA_VERSION: u32 = 4;
 
 /// Shard count: spreads concurrent `record` / `unchanged` calls across
 /// independent locks so tiny-file storms don't serialize all rayon workers.
@@ -168,7 +173,25 @@ fn shard_index(path: &Path) -> usize {
     (h.finish() as usize) % MERKLE_SHARDS
 }
 
-/// In-memory per-entry record. Mirrors [`EntryV2`] but holds the hash as
+/// Live-cache key. Sharding stays path-based so all chunks from one file live
+/// in the same shard; `forget(path)` can then evict the whole file cheaply.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct CacheKey {
+    path: PathBuf,
+    chunk_offset: u64,
+}
+
+impl CacheKey {
+    fn file(path: PathBuf) -> Self {
+        Self::chunk(path, 0)
+    }
+
+    fn chunk(path: PathBuf, chunk_offset: u64) -> Self {
+        Self { path, chunk_offset }
+    }
+}
+
+/// In-memory per-entry record. Mirrors the durable storage entry but holds the hash as
 /// a fixed-size array - saves the per-lookup hex-decode cost on the
 /// `unchanged` hot path.
 #[derive(Debug, Clone, Copy)]
@@ -186,7 +209,7 @@ struct CacheEntry {
 /// concurrent updates rarely contend.
 #[derive(Debug)]
 pub struct MerkleIndex {
-    shards: Vec<RwLock<HashMap<PathBuf, CacheEntry>>>,
+    shards: Vec<RwLock<HashMap<CacheKey, CacheEntry>>>,
     /// Upper bound on the number of retained entries across all shards.
     /// Defaults to [`MERKLE_DEFAULT_MAX_ENTRIES`]. Once reached, only
     /// updates to existing paths are accepted; new paths are dropped
@@ -251,9 +274,30 @@ impl MerkleIndex {
         size: u64,
         content: &[u8],
     ) -> bool {
+        self.record_chunk_at_offset_and_check_unchanged(path, 0, mtime_ns, size, content)
+    }
+
+    /// Record one observed chunk at its absolute byte offset and return `true`
+    /// when the same `(path, chunk_offset)` previously held the same content.
+    pub fn record_chunk_at_offset_and_check_unchanged(
+        &self,
+        path: PathBuf,
+        chunk_offset: u64,
+        mtime_ns: u64,
+        size: u64,
+        content: &[u8],
+    ) -> bool {
         let content_hash = Self::hash_content(content);
-        let unchanged = self.unchanged(&path, &content_hash);
-        self.record_with_metadata(path, mtime_ns, size, content_hash);
+        let key = CacheKey::chunk(path, chunk_offset);
+        let unchanged = self.unchanged_key(&key, &content_hash);
+        self.record_key_with_metadata(
+            key,
+            CacheEntry {
+                mtime_ns,
+                size,
+                hash: content_hash,
+            },
+        );
         unchanged
     }
 
@@ -261,10 +305,14 @@ impl MerkleIndex {
     /// content hash. Kept for callers that already have the hash in hand
     /// (e.g. the orchestrator's chunk-level skip path).
     pub(crate) fn unchanged(&self, path: &Path, content_hash: &[u8; 32]) -> bool {
-        let i = shard_index(path);
+        self.unchanged_key(&CacheKey::file(path.to_path_buf()), content_hash)
+    }
+
+    fn unchanged_key(&self, key: &CacheKey, content_hash: &[u8; 32]) -> bool {
+        let i = shard_index(&key.path);
         self.shards[i]
             .read()
-            .get(path)
+            .get(key)
             .is_some_and(|prev| &prev.hash == content_hash)
     }
 
@@ -274,10 +322,11 @@ impl MerkleIndex {
     /// A `false` return means "either we've never seen this path, or
     /// metadata differs - caller must read + hash to decide."
     pub fn metadata_unchanged(&self, path: &Path, mtime_ns: u64, size: u64) -> bool {
+        let key = CacheKey::file(path.to_path_buf());
         let i = shard_index(path);
         self.shards[i]
             .read()
-            .get(path)
+            .get(&key)
             .is_some_and(|prev| prev.mtime_ns == mtime_ns && prev.size == size)
     }
 
@@ -286,10 +335,11 @@ impl MerkleIndex {
     /// verifiers that want to confirm content didn't change even when
     /// metadata happens to match.
     pub(crate) fn lookup(&self, path: &Path) -> Option<(u64, u64, [u8; 32])> {
+        let key = CacheKey::file(path.to_path_buf());
         let i = shard_index(path);
         self.shards[i]
             .read()
-            .get(path)
+            .get(&key)
             .map(|e| (e.mtime_ns, e.size, e.hash))
     }
 
@@ -312,14 +362,18 @@ impl MerkleIndex {
         size: u64,
         content_hash: [u8; 32],
     ) {
-        self.try_insert(
-            path,
+        self.record_key_with_metadata(
+            CacheKey::file(path),
             CacheEntry {
                 mtime_ns,
                 size,
                 hash: content_hash,
             },
         );
+    }
+
+    fn record_key_with_metadata(&self, key: CacheKey, entry: CacheEntry) {
+        self.try_insert(key, entry);
     }
 
     /// Insert or update one entry, honoring [`Self::max_entries`].
@@ -330,10 +384,10 @@ impl MerkleIndex {
     /// the working set) so an over-cap scan never corrupts existing state.
     /// The first drop emits a single WARN; subsequent drops are silent to
     /// avoid a log storm on a multi-million-file overflow.
-    fn try_insert(&self, path: PathBuf, entry: CacheEntry) -> bool {
-        let i = shard_index(&path);
+    fn try_insert(&self, key: CacheKey, entry: CacheEntry) -> bool {
+        let i = shard_index(&key.path);
         let mut shard = self.shards[i].write();
-        let slot = match shard.entry(path) {
+        let slot = match shard.entry(key) {
             Entry::Occupied(mut slot) => {
                 slot.insert(entry);
                 return true;
@@ -376,7 +430,7 @@ impl MerkleIndex {
     /// finding, no secret value ever touches the on-disk index.
     pub fn forget(&self, path: &Path) {
         let i = shard_index(path);
-        self.shards[i].write().remove(path);
+        self.shards[i].write().retain(|key, _| key.path != path);
     }
 
     /// Number of indexed entries.

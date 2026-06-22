@@ -59,8 +59,8 @@ fn save_cap_prefers_current_in_memory_entries() {
 
 #[test]
 fn persisted_cap_enforcement_does_not_replace_the_merged_map() {
-    let source = std::fs::read_to_string("src/merkle_index/storage.rs")
-        .expect("read merkle storage source");
+    let source =
+        std::fs::read_to_string("src/merkle_index/storage.rs").expect("read merkle storage source");
     let cap_fn = source
         .split("fn enforce_persisted_cap(")
         .nth(1)
@@ -69,7 +69,7 @@ fn persisted_cap_enforcement_does_not_replace_the_merged_map() {
         .next()
         .expect("cap function boundary");
 
-    assert!(cap_fn.contains("merged.remove(&path)"));
+    assert!(cap_fn.contains("merged.remove(&key)"));
     assert!(!cap_fn.contains("HashMap::<PathBuf, CacheEntry>::with_capacity"));
     assert!(!cap_fn.contains("*merged = kept"));
 }
