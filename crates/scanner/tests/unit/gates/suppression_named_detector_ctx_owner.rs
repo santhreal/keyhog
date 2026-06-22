@@ -258,11 +258,13 @@ fn entropy_generation_plausibility_rejections_route_through_adjudicator() {
     assert!(
         keywords.contains("struct ExtractionRejection")
             && keywords.contains("pub(super) stage_id: StageId")
+            && keywords.contains("EntropyShapeStage::ConcatenationFragmentLine")
             && scanner.contains("extract_candidates_with_rejections(")
             && scanner.contains("rejection.stage_id"),
         "entropy extraction-time drops must carry typed adjudicator stages back to the collector"
     );
     for reason in [
+        "entropy_concatenation_fragment_line",
         "entropy_structured_dotted_too_short",
         "entropy_canonical_non_secret_shape",
         "entropy_credential_context_too_short",

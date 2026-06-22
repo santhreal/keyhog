@@ -156,6 +156,14 @@ fn extract_candidates_internal(
     let mut candidates = Vec::new();
     let mut rejections = Vec::new();
     if is_likely_concatenation_fragment(line) {
+        let trimmed = line.trim();
+        if trace_rejections && !trimmed.is_empty() {
+            push_extraction_rejection(
+                &mut rejections,
+                trimmed,
+                StageId::EntropyValueShape(EntropyShapeStage::ConcatenationFragmentLine),
+            );
+        }
         return ExtractedCandidates {
             candidates,
             rejections,

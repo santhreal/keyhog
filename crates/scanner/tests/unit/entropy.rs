@@ -265,6 +265,60 @@ fn entropy_extraction_rejection_is_dogfood_visible() {
 }
 
 #[test]
+fn entropy_concatenation_fragment_skip_is_dogfood_visible() {
+    let _guard = super::telemetry_serial::lock();
+    let fragment = "\"abcDEF1234567890\" +";
+    let secret_keywords = vec!["API_KEY".to_string()];
+    let trace = Arc::new(ScanTelemetry::new());
+
+    telemetry::testing::reset();
+    telemetry::enable_dogfood();
+    let matches = telemetry::with_scan_telemetry(&trace, || {
+        find_entropy_secrets(
+            &format!("API_KEY hint\n{fragment}\n"),
+            8,
+            1,
+            HIGH_ENTROPY_THRESHOLD,
+            &secret_keywords,
+            &[],
+            &[],
+        )
+    });
+    assert!(
+        matches.is_empty(),
+        "concatenation-fragment fixture must stay suppressed"
+    );
+    let reasons: Vec<String> = trace
+        .drain()
+        .dogfood_events
+        .into_iter()
+        .filter_map(|event| match event {
+            DogfoodEvent::ShapeSuppressed { reason, .. } => Some(reason.into_owned()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(reasons, vec!["entropy_concatenation_fragment_line"]);
+
+    telemetry::testing::reset();
+    let trace = Arc::new(ScanTelemetry::new());
+    let _ = telemetry::with_scan_telemetry(&trace, || {
+        find_entropy_secrets(
+            &format!("API_KEY hint\n{fragment}\n"),
+            8,
+            1,
+            HIGH_ENTROPY_THRESHOLD,
+            &secret_keywords,
+            &[],
+            &[],
+        )
+    });
+    assert!(
+        trace.drain().dogfood_events.is_empty(),
+        "dogfood-off concatenation-fragment skip must not emit trace events"
+    );
+}
+
+#[test]
 fn plausibility_uses_shared_placeholder_markers() {
     for value in [
         "YOUR_API_KEY_HERE",
