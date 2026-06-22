@@ -5,7 +5,7 @@ pub(crate) mod helpers;
 #[cfg(feature = "entropy")]
 use super::*;
 #[cfg(feature = "entropy")]
-use gates::{entropy_match_suppressed, entropy_value_line};
+use gates::{entropy_match_suppression_stage, entropy_value_line};
 #[cfg(feature = "entropy")]
 use std::sync::Arc;
 
@@ -139,7 +139,7 @@ impl CompiledScanner {
 
             // Pass the lift switch only after generation; the gauntlet still
             // owns every non-canonical precision gate.
-            if entropy_match_suppressed(
+            if let Some(stage_id) = entropy_match_suppression_stage(
                 &entropy_match,
                 preprocessed,
                 line_offsets,
@@ -147,6 +147,11 @@ impl CompiledScanner {
                 allow_canonical_lift,
                 source_entropy_requires_same_line_credential,
             ) {
+                crate::adjudicate::record_stage_suppression(
+                    chunk.metadata.path.as_deref(),
+                    &entropy_match.value,
+                    stage_id,
+                );
                 continue;
             }
             if self.entropy_match_owned_by_named_assignment(

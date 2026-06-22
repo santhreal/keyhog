@@ -1,0 +1,90 @@
+//! Regression: entropy fallback value-shape drops must name the adjudicator
+//! stage in dogfood telemetry. A candidate that reaches the entropy gauntlet
+//! and dies there is different from a candidate that never generated.
+
+use super::support::paths::detector_dir;
+
+use keyhog_core::{Chunk, ChunkMetadata};
+use keyhog_scanner::telemetry::{self, DogfoodEvent, ScanTelemetry};
+use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
+use std::sync::Arc;
+
+fn scanner() -> CompiledScanner {
+    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
+    let mut cfg = ScannerConfig::default();
+    cfg.ml_enabled = false;
+    CompiledScanner::compile(detectors)
+        .expect("compile scanner")
+        .with_config(cfg)
+}
+
+fn entropy_shape_reasons_for(
+    scanner: &CompiledScanner,
+    body: &str,
+    path: &str,
+    redact_prefix: &str,
+    trace: &Arc<ScanTelemetry>,
+) -> Vec<String> {
+    let chunk = Chunk {
+        data: body.into(),
+        metadata: ChunkMetadata {
+            source_type: "filesystem".into(),
+            path: Some(path.into()),
+            ..Default::default()
+        },
+    };
+    scanner.clear_fragment_cache();
+    let _ = telemetry::with_scan_telemetry(trace, || {
+        scanner.scan_chunks_with_backend(std::slice::from_ref(&chunk), ScanBackend::CpuFallback)
+    });
+    trace
+        .drain()
+        .dogfood_events
+        .into_iter()
+        .filter_map(|event| match event {
+            DogfoodEvent::ShapeSuppressed {
+                reason,
+                credential_redacted,
+                ..
+            } if credential_redacted.starts_with(redact_prefix) => Some(reason.into_owned()),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn entropy_gauntlet_i18n_path_drop_is_traced() {
+    let _g = super::super::telemetry_serial::lock();
+    let s = scanner();
+    telemetry::testing::reset();
+    telemetry::enable_dogfood();
+
+    let blob =
+        "5OcKQwtmHw+SRJZ76bc4vwBhnVsM1ksLmOGTaHamLo6+MIF3IlZcNaWD3vhW7+3ID7UwSS6whDRWERI6756fzh06";
+    let trace = Arc::new(ScanTelemetry::new());
+    let reasons = entropy_shape_reasons_for(
+        &s,
+        &format!("password hint\n{blob}\n"),
+        "/repo/locale/messages.properties",
+        "5OcK",
+        &trace,
+    );
+    assert!(
+        reasons.iter().any(|r| r == "entropy_i18n_file"),
+        "entropy fallback i18n path drop must emit its adjudicator stage; got {reasons:?}"
+    );
+
+    telemetry::testing::reset();
+    let trace = Arc::new(ScanTelemetry::new());
+    let off = entropy_shape_reasons_for(
+        &s,
+        &format!("password hint\n{blob}\n"),
+        "/repo/locale/messages.properties",
+        "5OcK",
+        &trace,
+    );
+    assert!(
+        off.is_empty(),
+        "with dogfood OFF the entropy-gauntlet recorder must emit nothing, got {off:?}"
+    );
+}

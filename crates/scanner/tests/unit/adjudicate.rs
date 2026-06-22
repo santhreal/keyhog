@@ -1,5 +1,6 @@
 use crate::adjudicate::{
-    adjudicate_match, CandidateMatch, MatchCtx, ProcessCandidateSignals, StageId, Verdict,
+    adjudicate_match, CandidateMatch, EntropyShapeStage, MatchCtx, ProcessCandidateSignals,
+    StageId, Verdict,
 };
 use crate::context::CodeContext;
 use crate::suppression::NamedDetectorSuppressionCtx;
@@ -233,6 +234,19 @@ fn explicit_stage_reports_entropy_named_detector_owned_assignment() {
         StageId::EntropyNamedDetectorOwnedAssignment.as_str(),
         "entropy_named_detector_owned_assignment"
     );
+}
+
+#[test]
+fn explicit_stage_reports_entropy_value_shape_reason() {
+    let credential = "Yml0Y29pbgABAgMEBQYHCAkKCwwND/7+/f38+/r5+Pf=";
+    let stage = StageId::EntropyValueShape(EntropyShapeStage::RandomBase64Blob);
+    let ctx = MatchCtx::for_stage(stage);
+
+    assert_eq!(
+        adjudicate_match(CandidateMatch::new(credential), &ctx),
+        Verdict::Suppressed(stage)
+    );
+    assert_eq!(stage.as_str(), "entropy_random_base64_blob");
 }
 
 #[test]

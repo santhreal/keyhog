@@ -6,6 +6,75 @@
 use crate::suppression::NamedDetectorSuppressionCtx;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EntropyShapeStage {
+    SourceIdentifierInSourceContext,
+    MissingSameLineCredential,
+    CaesarSource,
+    KnownExampleOrPlaceholder,
+    KebabIdentifier,
+    Filename,
+    PureIdentifier,
+    Whitespace,
+    EnglishProse,
+    CommaDelimited,
+    WordSeparatedIdentifier,
+    PublicNoncredentialShape,
+    SchemePrefixedUri,
+    SourceCodeExpression,
+    SourceSymbolIdentifier,
+    PunctuationDecoratedIdentifier,
+    UrlOrPathSegment,
+    UuidV4OrSubstring,
+    EmailAddress,
+    BlockchainOrNetworkAddress,
+    VendoredMinifiedPath,
+    RawBase64File,
+    CiWorkflowFile,
+    I18nFile,
+    ShellExpansionOrTemplate,
+    RandomBase64Blob,
+    EncodedBinary,
+    RandomByteBlob,
+    DecodedPlaceholder,
+}
+
+impl EntropyShapeStage {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::SourceIdentifierInSourceContext => "entropy_source_identifier_in_source_context",
+            Self::MissingSameLineCredential => "entropy_missing_same_line_credential",
+            Self::CaesarSource => "entropy_caesar_source",
+            Self::KnownExampleOrPlaceholder => "entropy_known_example_or_placeholder",
+            Self::KebabIdentifier => "entropy_kebab_identifier",
+            Self::Filename => "entropy_filename",
+            Self::PureIdentifier => "entropy_pure_identifier",
+            Self::Whitespace => "entropy_whitespace",
+            Self::EnglishProse => "entropy_english_prose",
+            Self::CommaDelimited => "entropy_comma_delimited",
+            Self::WordSeparatedIdentifier => "entropy_word_separated_identifier",
+            Self::PublicNoncredentialShape => "entropy_public_noncredential_shape",
+            Self::SchemePrefixedUri => "entropy_scheme_prefixed_uri",
+            Self::SourceCodeExpression => "entropy_source_code_expression",
+            Self::SourceSymbolIdentifier => "entropy_source_symbol_identifier",
+            Self::PunctuationDecoratedIdentifier => "entropy_punctuation_decorated_identifier",
+            Self::UrlOrPathSegment => "entropy_url_or_path_segment",
+            Self::UuidV4OrSubstring => "entropy_uuid_v4_or_substring",
+            Self::EmailAddress => "entropy_email_address",
+            Self::BlockchainOrNetworkAddress => "entropy_blockchain_or_network_address",
+            Self::VendoredMinifiedPath => "entropy_vendored_minified_path",
+            Self::RawBase64File => "entropy_raw_base64_file",
+            Self::CiWorkflowFile => "entropy_ci_workflow_file",
+            Self::I18nFile => "entropy_i18n_file",
+            Self::ShellExpansionOrTemplate => "entropy_shell_expansion_or_template",
+            Self::RandomBase64Blob => "entropy_random_base64_blob",
+            Self::EncodedBinary => "entropy_encoded_binary",
+            Self::RandomByteBlob => "entropy_random_byte_blob",
+            Self::DecodedPlaceholder => "entropy_decoded_placeholder",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StageId {
     AwsAccessKeyLengthInvalid,
     AnthropicLegacyLengthInvalid,
@@ -27,6 +96,7 @@ pub(crate) enum StageId {
     GenericValueShape(&'static str),
     GenericBelowMinConfidence,
     EntropyNamedDetectorOwnedAssignment,
+    EntropyValueShape(EntropyShapeStage),
 }
 
 impl StageId {
@@ -52,6 +122,7 @@ impl StageId {
             Self::GenericValueShape(reason) => reason,
             Self::GenericBelowMinConfidence => "generic_below_min_confidence",
             Self::EntropyNamedDetectorOwnedAssignment => "entropy_named_detector_owned_assignment",
+            Self::EntropyValueShape(stage) => stage.as_str(),
         }
     }
 }

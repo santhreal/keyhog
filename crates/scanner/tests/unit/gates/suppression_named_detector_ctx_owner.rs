@@ -205,6 +205,38 @@ fn entropy_and_ml_emit_reject_reasons_route_through_adjudicator() {
 }
 
 #[test]
+fn entropy_fallback_shape_gauntlet_returns_adjudicator_stage() {
+    let src = scanner_src();
+    let entropy = uncommented_code(&read(&src.join("engine/phase2_entropy.rs")));
+    let gates = uncommented_code(&read(&src.join("engine/phase2_entropy/gates.rs")));
+    let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
+
+    assert!(
+        gates.contains("fn entropy_match_suppression_stage(")
+            && gates.contains(") -> Option<StageId>"),
+        "entropy fallback shape gauntlet must return the adjudicator StageId, not a silent bool"
+    );
+    assert!(
+        !gates.contains("fn entropy_match_suppressed("),
+        "the old boolean entropy_match_suppressed entry point must not return"
+    );
+    assert!(
+        entropy.contains("if let Some(stage_id) = entropy_match_suppression_stage(")
+            && entropy.contains("crate::adjudicate::record_stage_suppression("),
+        "phase2 entropy caller must record the returned adjudicator stage before skipping a candidate"
+    );
+    assert!(
+        gates.contains("StageId::EntropyValueShape("),
+        "entropy fallback shape gauntlet must name typed entropy value stages"
+    );
+    assert!(
+        adjudicate.contains("enum EntropyShapeStage")
+            && adjudicate.contains("\"entropy_random_base64_blob\""),
+        "adjudicate/mod.rs must own entropy fallback suppression stage names"
+    );
+}
+
+#[test]
 fn shape_suppression_telemetry_is_only_called_by_adjudicator() {
     let src = scanner_src();
     let mut files = Vec::new();
