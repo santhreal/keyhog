@@ -97,7 +97,7 @@ pub(super) fn extract_openpack_archive(
                             size = archive_entry.uncompressed_size,
                             "skipping archive entry: uncompressed size exceeds per-file cap"
                         );
-                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
                         continue;
                     }
                     if archive_entry.uncompressed_size > 0
@@ -129,7 +129,7 @@ pub(super) fn extract_openpack_archive(
                                     "skipping archive entry: decoded size exceeds per-file cap"
                                 );
                                 let _event =
-                                    crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                                    crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
                                 continue;
                             }
                             total_uncompressed =

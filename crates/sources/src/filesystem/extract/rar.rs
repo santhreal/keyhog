@@ -221,7 +221,7 @@ impl<'a> RarExtractionState<'a> {
                 size = entry_size,
                 "skipping RAR entry: uncompressed size exceeds per-file cap"
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             return false;
         }
         if self.total_uncompressed.saturating_add(entry_size) > self.total_budget {
@@ -267,7 +267,7 @@ impl<'a> RarExtractionState<'a> {
                 size = actual_uncompressed,
                 "skipping RAR entry: decoded size exceeds per-file cap"
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             return;
         }
         self.total_uncompressed = self.total_uncompressed.saturating_add(actual_uncompressed);

@@ -1,7 +1,7 @@
 //! Single archive entries declaring uncompressed size above max_file_size are skipped.
 
 use super::support::collect_chunks;
-use keyhog_sources::FilesystemSource;
+use keyhog_sources::{reset_skipped_over_max_size, skip_counts, FilesystemSource};
 use std::fs::File;
 use std::io::Write;
 use zip::write::SimpleFileOptions;
@@ -9,6 +9,7 @@ use zip::ZipWriter;
 
 #[test]
 fn zip_entry_over_per_file_cap_skipped() {
+    reset_skipped_over_max_size();
     let dir = tempfile::tempdir().expect("tempdir");
 
     let control = dir.path().join("control.zip");
@@ -39,5 +40,14 @@ fn zip_entry_over_per_file_cap_skipped() {
     assert!(
         !bodies.iter().any(|b| b.contains('H') && b.len() > 100),
         "oversized archive entry must be skipped entirely; got {bodies:?}"
+    );
+    let counts = skip_counts();
+    assert_eq!(
+        counts.over_max_size, 1,
+        "oversized archive entries must be counted as over-max-size coverage gaps"
+    );
+    assert_eq!(
+        counts.unreadable, 0,
+        "oversized archive entries are not unreadable/corrupt inputs"
     );
 }

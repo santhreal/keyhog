@@ -172,7 +172,7 @@ pub(super) fn emit_tar_entries(
                 size = entry_size,
                 "skipping tar entry: uncompressed size exceeds per-file cap"
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             continue;
         }
         total_uncompressed = total_uncompressed.saturating_add(entry_size);

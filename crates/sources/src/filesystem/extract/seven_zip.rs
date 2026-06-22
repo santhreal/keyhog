@@ -91,7 +91,7 @@ pub(super) fn extract_seven_zip_chunks(
                 size = entry_size,
                 "skipping 7z entry: uncompressed size exceeds per-file cap"
             );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             drain_entry(entry_reader)?;
             return Ok(true);
         }
