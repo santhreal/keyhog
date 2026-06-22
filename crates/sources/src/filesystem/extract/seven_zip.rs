@@ -2,7 +2,7 @@
 
 use super::{
     display_path, extraction_total_budget, is_symlink, read,
-    record_binary_without_printable_strings,
+    record_binary_without_printable_strings, record_default_excluded_archive_entry,
 };
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
 use sevenz_rust2::{ArchiveReader, EncoderMethod, Password};
@@ -78,6 +78,7 @@ pub(super) fn extract_seven_zip_chunks(
 
         let entry_name = entry.name().to_string();
         if super::super::filter::is_default_excluded(&entry_name) {
+            record_default_excluded_archive_entry(&archive_display, &entry_name);
             drain_entry(entry_reader)?;
             return Ok(true);
         }

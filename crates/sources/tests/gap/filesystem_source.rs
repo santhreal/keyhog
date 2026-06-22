@@ -38,6 +38,7 @@ use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{reset_skipped_over_max_size, skip_counts, FilesystemSource};
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 
 // ─────────────────────────── helpers ───────────────────────────
@@ -484,6 +485,38 @@ fn tar_archive_content_is_unpacked_and_scanned() {
             .as_deref()
             .is_some_and(|p| p.contains("//leak.env"))),
         ".tar entry chunk must carry the `<archive>//<entry>` path; got chunks: {chunks:#?}"
+    );
+}
+
+#[test]
+fn zip_archive_default_excluded_entries_are_counted() {
+    TestApi.reset_skip_counters();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("bundle.zip");
+    let file = fs::File::create(&path).unwrap();
+    let mut zip = zip::ZipWriter::new(file);
+    let opts =
+        zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Stored);
+    zip.start_file("node_modules/hidden.env", opts).unwrap();
+    zip.write_all(b"SECRET=excluded_from_archive").unwrap();
+    zip.start_file("safe.env", opts).unwrap();
+    zip.write_all(b"SECRET=scanned_from_archive").unwrap();
+    zip.finish().unwrap();
+
+    let chunks = scan_single_file(&path);
+    let body = combined_body(&chunks);
+    assert!(
+        body.contains("SECRET=scanned_from_archive"),
+        "non-excluded zip entry must still be scanned; got chunks: {chunks:#?}"
+    );
+    assert!(
+        !body.contains("excluded_from_archive"),
+        "default-excluded zip entry must not be scanned; got chunks: {chunks:#?}"
+    );
+    assert_eq!(
+        skip_counts().excluded,
+        1,
+        "default-excluded archive entries must be counted as excluded coverage gaps"
     );
 }
 

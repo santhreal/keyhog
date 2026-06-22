@@ -2,7 +2,7 @@
 
 use super::{
     display_path, extraction_total_budget, extraction_total_budget_usize, is_symlink, read,
-    record_binary_without_printable_strings,
+    record_binary_without_printable_strings, record_default_excluded_archive_entry,
 };
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
 use std::path::Path;
@@ -160,6 +160,7 @@ pub(super) fn emit_tar_entries(
             .unwrap_or_else(|| "<tar-entry>".to_string()); // LAW10: missing/non-string field => empty/placeholder; recall-safe
 
         if super::super::filter::is_default_excluded(&entry_name) {
+            record_default_excluded_archive_entry(container_display, &entry_name);
             continue;
         }
         if max_size > 0 && entry_size > max_size {

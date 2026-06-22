@@ -2,6 +2,7 @@
 
 use super::{
     display_path, extraction_total_budget, is_symlink, record_binary_without_printable_strings,
+    record_default_excluded_archive_entry,
 };
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
 use std::path::{Component, Path};
@@ -79,9 +80,14 @@ pub(super) fn extract_openpack_archive(
         Ok(pack) => match pack.entries() {
             Ok(entries) => {
                 for archive_entry in entries {
-                    if archive_entry.is_dir
-                        || super::super::filter::is_default_excluded(&archive_entry.name)
-                    {
+                    if archive_entry.is_dir {
+                        continue;
+                    }
+                    if super::super::filter::is_default_excluded(&archive_entry.name) {
+                        record_default_excluded_archive_entry(
+                            &archive_display,
+                            &archive_entry.name,
+                        );
                         continue;
                     }
                     if archive_entry.uncompressed_size > per_entry_cap {

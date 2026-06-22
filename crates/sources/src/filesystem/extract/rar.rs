@@ -1,7 +1,9 @@
 //! RAR archive extraction for filesystem entries.
 
 use super::archive::{chunk_from_archive_content, validate_scan_archive_entry_name};
-use super::{display_path, extraction_total_budget, is_symlink, read};
+use super::{
+    display_path, extraction_total_budget, is_symlink, read, record_default_excluded_archive_entry,
+};
 use keyhog_core::{Chunk, SourceError};
 use rars::{Archive, ArchiveReader};
 use std::io::Write;
@@ -195,7 +197,11 @@ impl<'a> RarExtractionState<'a> {
         is_directory: bool,
         emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
     ) -> bool {
-        if is_directory || super::super::filter::is_default_excluded(entry_name) {
+        if is_directory {
+            return false;
+        }
+        if super::super::filter::is_default_excluded(entry_name) {
+            record_default_excluded_archive_entry(&self.archive_display, entry_name);
             return false;
         }
         if let Err(reason) = validate_scan_archive_entry_name(entry_name) {

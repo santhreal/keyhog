@@ -63,7 +63,14 @@ pub(super) fn extract_zip_archive_from_central_entries(
             format!("{}#{}", entry.name, *occurrence)
         };
 
-        if entry.name.ends_with('/') || filter::is_default_excluded(&entry.name) {
+        if entry.name.ends_with('/') {
+            continue;
+        }
+        if filter::is_default_excluded(&entry.name) {
+            super::super::super::record_default_excluded_archive_entry(
+                archive_display,
+                &entry.name,
+            );
             continue;
         }
         if let Err(reason) = validate_scan_archive_entry_name(&entry.name) {

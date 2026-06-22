@@ -80,7 +80,11 @@ pub(super) fn extract_zip_archive(
             }
         };
         let entry_name = entry.name().to_string();
-        if entry.is_dir() || filter::is_default_excluded(&entry_name) {
+        if entry.is_dir() {
+            continue;
+        }
+        if filter::is_default_excluded(&entry_name) {
+            super::super::record_default_excluded_archive_entry(archive_display, &entry_name);
             continue;
         }
         if let Err(reason) = validate_scan_archive_entry_name(&entry_name) {
