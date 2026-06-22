@@ -130,6 +130,24 @@ fn extract_quoted_value(s: &str) -> Option<String> {
         return None;
     }
     let body = &s[1..];
-    let end = body.find(quote as char)?;
+    let end = find_unescaped_quote(body, quote)?;
     Some(body[..end].to_string())
+}
+
+fn find_unescaped_quote(body: &str, quote: u8) -> Option<usize> {
+    let mut escaped = false;
+    for (offset, byte) in body.as_bytes().iter().copied().enumerate() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if byte == b'\\' {
+            escaped = true;
+            continue;
+        }
+        if byte == quote {
+            return Some(offset);
+        }
+    }
+    None
 }

@@ -88,6 +88,30 @@ fn hcl_extracts_flat_tfvars_assignment() {
 }
 
 #[test]
+fn hcl_flat_assignment_preserves_escaped_quotes_inside_value() {
+    let text = r#"api_token = "prefix\"middle\"suffix"
+"#;
+    let pairs = parse_hcl(text);
+    assert_eq!(
+        value_of!(pairs, "api_token"),
+        Some(r#"prefix\"middle\"suffix"#)
+    );
+}
+
+#[test]
+fn hcl_variable_default_preserves_escaped_quotes_inside_value() {
+    let text = r#"variable "api_token" {
+  default = "prefix\"middle\"suffix"
+}
+"#;
+    let pairs = parse_hcl(text);
+    assert_eq!(
+        value_of!(pairs, "api_token"),
+        Some(r#"prefix\"middle\"suffix"#)
+    );
+}
+
+#[test]
 fn hcl_ignores_block_header_assignments() {
     // `resource "x" "b" {` must not be parsed as an assignment, but the inner
     // flat `bucket = "my-bucket"` IS extracted.
