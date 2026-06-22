@@ -633,7 +633,10 @@ fn consume_adjacent_base64_padding(parent: &[u8], start: usize) -> usize {
         return start;
     }
     match parent.get(end).copied() {
-        None | Some(b'\n' | b'\r' | b'\t' | b' ' | b';' | b',' | b'"' | b'\'' | b'`') => end,
+        None
+        | Some(
+            b'\n' | b'\r' | b'\t' | b' ' | b';' | b',' | b'"' | b'\'' | b'`' | b'}' | b']' | b'&',
+        ) => end,
         _ => start,
     }
 }
