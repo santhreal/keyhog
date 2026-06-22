@@ -883,3 +883,31 @@ fn hosted_git_askpass_uses_private_create_new_files() {
         "Windows hosted Git askpass must classify the prompt without expanding raw %1 through cmd metacharacter parsing"
     );
 }
+
+#[test]
+fn hosted_git_wait_errors_kill_and_reap_child() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let hosted_git = std::fs::read_to_string(root.join("src/hosted_git.rs"))
+        .expect("hosted_git source readable");
+    let wait_start = hosted_git
+        .find("fn wait_for_command_with_timeout(")
+        .expect("wait_for_command_with_timeout present");
+    let auth_start = hosted_git[wait_start..]
+        .find("#[derive(Debug)]")
+        .map(|offset| wait_start + offset)
+        .expect("wait helper boundary present");
+    let wait_block = &hosted_git[wait_start..auth_start];
+
+    assert!(
+        wait_block.contains("Err(error) =>")
+            && wait_block.contains("kill_and_reap_child(&mut child)")
+            && wait_block.contains("fn kill_and_reap_child(")
+            && wait_block.contains("child.kill()")
+            && wait_block.contains("child.wait()"),
+        "hosted Git clone wait errors and timeouts must kill and reap the child before returning"
+    );
+    assert!(
+        !wait_block.contains("child.try_wait().map_err(|e| e.to_string())?"),
+        "hosted Git clone wait must not return directly from try_wait errors before child cleanup"
+    );
+}

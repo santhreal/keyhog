@@ -392,17 +392,39 @@ fn wait_for_command_with_timeout(
 ) -> Result<std::process::Output, String> {
     let start = Instant::now();
     loop {
-        if child.try_wait().map_err(|e| e.to_string())?.is_some() {
-            return child.wait_with_output().map_err(|e| e.to_string());
+        match child.try_wait() {
+            Ok(Some(_status)) => return child.wait_with_output().map_err(|e| e.to_string()),
+            Ok(None) => {}
+            Err(error) => {
+                kill_and_reap_child(&mut child).map_err(|cleanup_error| {
+                    format!(
+                        "git clone status check failed: {error}; additionally failed to stop child: {cleanup_error}"
+                    )
+                })?;
+                return Err(format!(
+                    "git clone status check failed: {error}; child was killed and reaped"
+                ));
+            }
         }
 
         if start.elapsed() >= timeout {
-            child.kill().map_err(|e| e.to_string())?;
-            child.wait().map_err(|e| e.to_string())?;
+            kill_and_reap_child(&mut child)?;
             return Err(format!("git clone timed out after {}s", timeout.as_secs()));
         }
 
         thread::sleep(Duration::from_millis(100));
+    }
+}
+
+fn kill_and_reap_child(child: &mut std::process::Child) -> Result<(), String> {
+    let kill_result = child.kill();
+    let wait_result = child.wait();
+    match (kill_result, wait_result) {
+        (_, Ok(_status)) => Ok(()),
+        (Ok(()), Err(wait_error)) => Err(format!("failed to reap child: {wait_error}")),
+        (Err(kill_error), Err(wait_error)) => Err(format!(
+            "failed to kill child: {kill_error}; failed to reap child: {wait_error}"
+        )),
     }
 }
 
