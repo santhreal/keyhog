@@ -47,7 +47,10 @@
 //! and what its content fingerprint is, which is why `--lockdown`
 //! refuses to load or write the cache at all.
 
-use std::collections::{hash_map::DefaultHasher, HashMap};
+use std::collections::{
+    hash_map::{DefaultHasher, Entry},
+    HashMap,
+};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 
@@ -329,21 +332,15 @@ impl MerkleIndex {
     /// avoid a log storm on a multi-million-file overflow.
     fn try_insert(&self, path: PathBuf, entry: CacheEntry) -> bool {
         let i = shard_index(&path);
-        {
-            // Fast path: updating a path we already track is a
-            // replacement, not growth - always allowed, no cap check.
-            // Scope the write guard so it is released before we read
-            // sibling shards for the cap check below (parking_lot
-            // RwLock is non-reentrant; re-locking shard `i` would
-            // deadlock).
-            let mut shard = self.shards[i].write();
-            // Single probe: replace in place when the path is already tracked.
-            // (`contains_key` + `insert` hashed `path` twice.)
-            if let Some(slot) = shard.get_mut(&path) {
-                *slot = entry;
+        let mut shard = self.shards[i].write();
+        let slot = match shard.entry(path) {
+            Entry::Occupied(mut slot) => {
+                slot.insert(entry);
                 return true;
             }
-        }
+            Entry::Vacant(slot) => slot,
+        };
+
         // `max_entries == 0` means unbounded (opt-in legacy behavior).
         // The cap is a soft budget checked against `approx_count` (O(1),
         // no shard scan). Concurrent new-path inserts across shards can
@@ -362,14 +359,8 @@ impl MerkleIndex {
             }
             return false;
         }
-        // Re-acquire the shard write lock for the actual insert. A racing
-        // writer may have inserted this same new path in the gap; only
-        // bump the approximate count when WE created a new key, so the
-        // counter doesn't drift above true growth on update races.
-        let is_new = self.shards[i].write().insert(path, entry).is_none();
-        if is_new {
-            self.approx_count.fetch_add(1, Ordering::Relaxed);
-        }
+        slot.insert(entry);
+        self.approx_count.fetch_add(1, Ordering::Relaxed);
         true
     }
 

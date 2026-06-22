@@ -91,6 +91,7 @@ pub mod merkle_racy_clean_entry_dropped_on_load;
 pub mod merkle_record_and_unchanged_roundtrip;
 pub mod merkle_spec_hash_changes_on_keyword_add;
 pub mod merkle_spec_hash_order_invariant;
+pub mod merkle_try_insert_entry_hot_path;
 pub mod missing_cache_returns_empty;
 pub mod missing_file_returns_empty;
 pub mod multiple_suppress_combine_with_or;
