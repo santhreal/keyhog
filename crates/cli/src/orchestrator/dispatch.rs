@@ -12,8 +12,8 @@ use crate::orchestrator_config::autoroute_config_digest;
 mod backend;
 mod fused;
 use anyhow::Result;
-pub(crate) use backend::backend_requires_coalesced_batch_pipeline_for_test;
 pub(crate) use backend::CachedBackendRouter;
+pub(crate) use backend::backend_requires_coalesced_batch_pipeline_for_test;
 use backend::{AutorouteRoutingError, MeasuredBackendRouter};
 use keyhog_core::{RawMatch, Source};
 use std::sync::Arc;
@@ -84,10 +84,10 @@ impl ScanOrchestrator {
                 .total_memory_mb
                 .map(|mb| (mb as usize) * 1024 * 1024)
                 .unwrap_or(0); // LAW10: empty/absent => documented numeric default, recall-safe
-                               // Pipeline depth here is still being computed below, so
-                               // assume the max (3) for the headroom clamp. Worst case
-                               // is the orchestrator picking depth=1 and only using a
-                               // third of the headroom - safe in the under-direction.
+            // Pipeline depth here is still being computed below, so
+            // assume the max (3) for the headroom clamp. Worst case
+            // is the orchestrator picking depth=1 and only using a
+            // third of the headroom - safe in the under-direction.
             let headroom_cap = total_ram_bytes / (8 * 3);
             if headroom_cap == 0 {
                 engine_cap
@@ -153,8 +153,7 @@ impl ScanOrchestrator {
         let hw_caps = keyhog_scanner::hw_probe::probe_hardware().clone();
         let pattern_count = scanner.runtime_status().pattern_count;
         let config_digest = autoroute_config_digest(&self.effective_config);
-        let rules_digest =
-            keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&self.detectors));
+        let rules_digest = self.detector_rules_digest.clone();
         let autoroute_cache_path = Ok(self.effective_config.autoroute_cache_path.clone());
         let autoroute_gpu = self.effective_config.autoroute_gpu;
         let autoroute_calibration = self.effective_config.autoroute_calibration;
@@ -441,8 +440,7 @@ impl ScanOrchestrator {
                     idx.forget(std::path::Path::new(fp));
                 }
             }
-            let spec_hash = keyhog_core::compute_spec_hash(&self.detectors);
-            if let Err(e) = idx.save_with_spec(path, &spec_hash) {
+            if let Err(e) = idx.save_with_spec(path, &self.detector_spec_hash) {
                 tracing::warn!(error = %e, "failed to persist merkle index");
                 eprintln!(
                     "warning: incremental cache {} could not be persisted: {e}; \

@@ -8,9 +8,9 @@ mod run;
 
 use crate::args::ScanArgs;
 use crate::orchestrator_config::{
-    auto_discover_detectors, autoroute_config_digest, configure_threads, load_detectors_no_cache,
-    load_detectors_with_cache, parse_backend_override, resolve_scan_config,
-    resolved_scan_config_for_scanner, ResolvedScanConfig,
+    ResolvedScanConfig, auto_discover_detectors, autoroute_config_digest, configure_threads,
+    load_detectors_no_cache, load_detectors_with_cache, parse_backend_override,
+    resolve_scan_config, resolved_scan_config_for_scanner,
 };
 use crate::style;
 use anyhow::{Context, Result};
@@ -81,6 +81,8 @@ pub(crate) fn scanner_panic_notice_for_test(panicked: bool) -> Option<String> {
 pub(crate) struct ScanOrchestrator {
     pub(crate) args: ScanArgs,
     pub(crate) detectors: Vec<DetectorSpec>,
+    pub(crate) detector_spec_hash: [u8; 32],
+    pub(crate) detector_rules_digest: String,
     pub(crate) scanner: Arc<CompiledScanner>,
     pub(crate) signatures: std::collections::HashSet<Arc<str>>,
     pub(crate) test_fixture_suppressions: crate::test_fixture_suppressions::TestFixtureSuppressions,
@@ -212,8 +214,7 @@ impl ScanOrchestrator {
                 let palette = style::for_stderr();
                 eprintln!(
                     "{} .keyhog.toml disables detector id(s) {disabled_detectors:?}, but none matched the loaded corpus. \
-                     Detector ids come from `keyhog detectors` (e.g. hot-pattern ids are prefixed `hot-`)."
-                    ,
+                     Detector ids come from `keyhog detectors` (e.g. hot-pattern ids are prefixed `hot-`).",
                     style::warn("WARN", &palette)
                 );
             }
@@ -267,6 +268,9 @@ impl ScanOrchestrator {
             }
         }
 
+        let detector_spec_hash = keyhog_core::compute_spec_hash(&detectors);
+        let detector_rules_digest = keyhog_core::hex_encode(&detector_spec_hash);
+
         let gpu_init_policy = gpu_init_policy_for_args(&args);
         let scanner = Arc::new(
             CompiledScanner::compile_with_gpu_policy_and_tuning(
@@ -311,6 +315,8 @@ impl ScanOrchestrator {
         Ok(Self {
             args,
             detectors,
+            detector_spec_hash,
+            detector_rules_digest,
             scanner,
             signatures,
             test_fixture_suppressions,
@@ -369,8 +375,8 @@ impl ScanOrchestrator {
         path: Option<&std::path::Path>,
     ) -> Option<Arc<keyhog_core::MerkleIndex>> {
         let path = path?;
-        let spec_hash = keyhog_core::compute_spec_hash(&self.detectors);
-        let report = keyhog_core::MerkleIndex::load_with_spec_report(path, &spec_hash);
+        let report =
+            keyhog_core::MerkleIndex::load_with_spec_report(path, &self.detector_spec_hash);
         if let Some(warning) = incremental_cache_warning(report.status()) {
             eprintln!("{warning}");
         }
@@ -406,9 +412,13 @@ impl ScanOrchestrator {
             .fused_batch
             .unwrap_or(crate::orchestrator_config::FUSED_BATCH_DEFAULT); // LAW10: absent fused-batch config => documented compiled throughput default; no scan feature disabled and effective config prints the concrete value
         let fused_depth = args.fused_depth;
+        let detector_spec_hash = keyhog_core::compute_spec_hash(&detectors);
+        let detector_rules_digest = keyhog_core::hex_encode(&detector_spec_hash);
         Self {
             args,
             detectors,
+            detector_spec_hash,
+            detector_rules_digest,
             scanner,
             signatures,
             test_fixture_suppressions,

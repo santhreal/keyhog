@@ -1,7 +1,7 @@
 //! Fused filesystem read+scan dispatch path.
 
 use super::backend::{
-    backend_requires_coalesced_batch_pipeline, CachedBackendRouter, MeasuredBackendRouter,
+    CachedBackendRouter, MeasuredBackendRouter, backend_requires_coalesced_batch_pipeline,
 };
 use crate::orchestrator::ScanOrchestrator;
 use crate::orchestrator_config::{autoroute_config_digest, fused_depth_default};
@@ -82,8 +82,7 @@ impl ScanOrchestrator {
         let hw_caps = keyhog_scanner::hw_probe::probe_hardware().clone();
         let pattern_count = self.scanner.runtime_status().pattern_count;
         let config_digest = autoroute_config_digest(&self.effective_config);
-        let rules_digest =
-            keyhog_core::hex_encode(&keyhog_core::compute_spec_hash(&self.detectors));
+        let rules_digest = self.detector_rules_digest.clone();
         (hw_caps, pattern_count, rules_digest, config_digest)
     }
 
