@@ -117,6 +117,11 @@ struct StoredInteraction {
     received_at: Instant,
 }
 
+struct WaiterEntry {
+    notify: Arc<Notify>,
+    active_waiters: usize,
+}
+
 /// Engine-shared OOB session. Wrap in `Arc` and share across verify tasks.
 pub struct OobSession {
     client: Arc<InteractshClient>,
@@ -133,9 +138,10 @@ pub struct OobSession {
     observations: Arc<DashMap<String, Vec<StoredInteraction>>>,
     /// id → notify handle. Populated by `wait_for` before it parks; the
     /// poller signals on match. `Mutex<HashMap>` over a `DashMap` because
-    /// we need atomic insert-and-check-existing; contention is bounded
-    /// (one entry per in-flight finding, ~max_concurrent_global).
-    waiters: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
+    /// we need atomic insert/refcount/drop for duplicate waiters on one id;
+    /// contention is bounded (one entry per in-flight finding,
+    /// ~max_concurrent_global).
+    waiters: Arc<Mutex<HashMap<String, WaiterEntry>>>,
     poller_handle: Mutex<Option<JoinHandle<()>>>,
     shutdown: Arc<AtomicBool>,
 }
@@ -220,10 +226,14 @@ impl OobSession {
 
         let notify = {
             let mut waiters = self.waiters.lock();
-            waiters
+            let entry = waiters
                 .entry(unique_id.to_string())
-                .or_insert_with(|| Arc::new(Notify::new()))
-                .clone()
+                .or_insert_with(|| WaiterEntry {
+                    notify: Arc::new(Notify::new()),
+                    active_waiters: 0,
+                });
+            entry.active_waiters = entry.active_waiters.saturating_add(1);
+            Arc::clone(&entry.notify)
         };
         let _waiter_guard = WaiterGuard::new(Arc::clone(&self.waiters), unique_id.to_string());
 
@@ -335,7 +345,7 @@ impl OobSession {
     fn wake_all_waiters(&self) {
         let drained: Vec<Arc<Notify>> = {
             let mut waiters = self.waiters.lock();
-            waiters.drain().map(|(_, n)| n).collect()
+            waiters.drain().map(|(_, entry)| entry.notify).collect()
         };
         for notify in drained {
             notify.notify_waiters();
@@ -368,7 +378,11 @@ impl OobSession {
             .entry(id.clone())
             .or_default()
             .push(stored);
-        if let Some(notify) = self.waiters.lock().get(&id) {
+        let notify = {
+            let waiters = self.waiters.lock();
+            waiters.get(&id).map(|entry| Arc::clone(&entry.notify))
+        };
+        if let Some(notify) = notify {
             notify.notify_waiters();
         }
     }
@@ -406,22 +420,37 @@ impl OobSession {
     pub(crate) fn waiter_count_for_test(&self) -> usize {
         self.waiters.lock().len()
     }
+
+    pub(crate) fn active_waiter_count_for_test(&self) -> usize {
+        self.waiters
+            .lock()
+            .values()
+            .map(|entry| entry.active_waiters)
+            .sum()
+    }
 }
 
 struct WaiterGuard {
-    waiters: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
+    waiters: Arc<Mutex<HashMap<String, WaiterEntry>>>,
     unique_id: String,
 }
 
 impl WaiterGuard {
-    fn new(waiters: Arc<Mutex<HashMap<String, Arc<Notify>>>>, unique_id: String) -> Self {
+    fn new(waiters: Arc<Mutex<HashMap<String, WaiterEntry>>>, unique_id: String) -> Self {
         Self { waiters, unique_id }
     }
 }
 
 impl Drop for WaiterGuard {
     fn drop(&mut self) {
-        self.waiters.lock().remove(&self.unique_id);
+        let mut waiters = self.waiters.lock();
+        let Some(entry) = waiters.get_mut(&self.unique_id) else {
+            return;
+        };
+        entry.active_waiters = entry.active_waiters.saturating_sub(1);
+        if entry.active_waiters == 0 {
+            waiters.remove(&self.unique_id);
+        }
     }
 }
 

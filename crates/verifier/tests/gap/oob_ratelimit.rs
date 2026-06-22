@@ -1186,6 +1186,85 @@ async fn wait_for_cancel_removes_waiter_entry() {
 }
 
 #[tokio::test]
+async fn canceling_one_duplicate_waiter_keeps_remaining_waiter_notifiable() {
+    let session = test_session("https://example.test");
+    let id = "duplicatewaiterid000000000000000000";
+
+    let first_session = Arc::clone(&session);
+    let first_id = id.to_string();
+    let first = tokio::spawn(async move {
+        first_session
+            .wait_for(&first_id, OobAccept::Dns, Duration::from_secs(30))
+            .await
+    });
+
+    let second_session = Arc::clone(&session);
+    let second_id = id.to_string();
+    let second = tokio::spawn(async move {
+        second_session
+            .wait_for(&second_id, OobAccept::Dns, Duration::from_secs(30))
+            .await
+    });
+
+    for _ in 0..100 {
+        if TestApi.oob_session_waiter_count(&session) == 1
+            && TestApi.oob_session_active_waiter_count(&session) == 2
+        {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(
+        TestApi.oob_session_waiter_count(&session),
+        1,
+        "duplicate waits for one id must share one notify entry"
+    );
+    assert_eq!(
+        TestApi.oob_session_active_waiter_count(&session),
+        2,
+        "test setup must have two active waiters before cancellation"
+    );
+
+    first.abort();
+    let _ = first.await;
+    for _ in 0..100 {
+        if TestApi.oob_session_waiter_count(&session) == 1
+            && TestApi.oob_session_active_waiter_count(&session) == 1
+        {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(
+        TestApi.oob_session_waiter_count(&session),
+        1,
+        "canceling one duplicate waiter must not remove the shared notify entry"
+    );
+    assert_eq!(
+        TestApi.oob_session_active_waiter_count(&session),
+        1,
+        "canceling one duplicate waiter must decrement only its own waiter ref"
+    );
+
+    TestApi.oob_session_store_and_notify(
+        &session,
+        interaction(id, InteractionProtocol::Dns, "remaining-waiter"),
+    );
+
+    match second.await.expect("remaining waiter task must join") {
+        OobObservation::Observed { remote_address, .. } => {
+            assert_eq!(remote_address, "remaining-waiter");
+        }
+        other => panic!("remaining duplicate waiter must still be notified, got {other:?}"),
+    }
+    assert_eq!(
+        TestApi.oob_session_waiter_count(&session),
+        0,
+        "last duplicate waiter must remove the notify entry after completion"
+    );
+}
+
+#[tokio::test]
 async fn abort_poller_for_drop_is_idempotent() {
     let session = test_session("https://example.test");
     TestApi.oob_session_abort_poller_for_drop(&session);
