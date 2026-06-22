@@ -50,8 +50,10 @@ fn hot_pattern_suppression_routes_through_suppression_owner() {
     assert!(
         hot_patterns.contains("crate::suppression::hot_pattern_suppression_stage(")
             && hot_patterns.contains("crate::adjudicate::record_stage_suppression(")
+            && hot_patterns.contains("\"hot_regex_validation_rejected\"")
+            && hot_patterns.contains("crate::adjudicate::StageId::ChecksumInvalid")
             && !hot_patterns.contains("credential.len() < min_len"),
-        "hot-pattern fast path must call the suppression owner for length and policy drops"
+        "hot-pattern fast path must record length, policy, regex-validation, and checksum drops"
     );
     for forbidden in [
         "suppress_known_example_credential",

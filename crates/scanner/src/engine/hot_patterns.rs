@@ -74,19 +74,17 @@ impl CompiledScanner {
                     .unwrap_or(candidate.len()); // LAW10: search/boundary miss => span end (whole remainder), recall-safe boundary default
 
                 let credential = std::str::from_utf8(&candidate[..cred_end]).unwrap_or(""); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
+                let record_hot_drop = |credential: &str, stage_id: crate::adjudicate::StageId| {
+                    crate::adjudicate::record_stage_suppression(
+                        chunk.metadata.path.as_deref(),
+                        credential,
+                        stage_id,
+                    )
+                    .expect("hot-pattern suppression stage must suppress");
+                };
 
-                // Precise-regex gate. The literal-prefix hit + length floor
-                // below is a fast prefilter, NOT proof of a real token: a
-                // length floor admits wrong-character-class strings the
-                // detector's own regex rejects (`ghp_THIS_HAS_UNDERSCORES…`
-                // is 43 ≥ 40 but `_` is not in `[A-Za-z0-9]`;
-                // `xoxp-123-456-789-abc` is 20 ≥ 16 but the segments are far
-                // short of the 10-13-digit Slack shape). Validate the
-                // candidate against the detector's regex (anchored at the
-                // candidate start) and emit the PRECISE matched span, so the
-                // fast path can never surface a finding the AC+regex path
-                // would not. Slots with no canonical detector (square) carry
-                // a `None` validator and keep the length-floor as their gate.
+                // The literal-prefix hit plus length floor is only a prefilter.
+                // The precise validator owns the emitted token span.
                 let credential = match self.hot_pattern_validators.get(pattern_idx) {
                     Some(Some(validator)) => match validator.find(credential) {
                         // `^`-anchored, so any match starts at 0; trim the
@@ -95,11 +93,25 @@ impl CompiledScanner {
                             if m.end() < credential.len()
                                 && credential.as_bytes()[m.end()].is_ascii_alphanumeric()
                             {
+                                record_hot_drop(
+                                    credential,
+                                    crate::adjudicate::StageId::ShapeGate(
+                                        "hot_regex_validation_rejected",
+                                    ),
+                                );
                                 continue;
                             }
                             &credential[..m.end()]
                         }
-                        None => continue,
+                        None => {
+                            record_hot_drop(
+                                credential,
+                                crate::adjudicate::StageId::ShapeGate(
+                                    "hot_regex_validation_rejected",
+                                ),
+                            );
+                            continue;
+                        }
                     },
                     // No validator for this slot (square, or out of range):
                     // fall back to the length-floor-only behavior below.
@@ -134,12 +146,7 @@ impl CompiledScanner {
                 if let Some(stage_id) =
                     crate::suppression::hot_pattern_suppression_stage(credential, suppression_ctx)
                 {
-                    crate::adjudicate::record_stage_suppression(
-                        chunk.metadata.path.as_deref(),
-                        credential,
-                        stage_id,
-                    )
-                    .expect("hot-pattern suppression stage must suppress");
+                    record_hot_drop(credential, stage_id);
                     continue;
                 }
 
@@ -151,6 +158,7 @@ impl CompiledScanner {
                     self.config.penalize_test_paths,
                     self.config.calibration.as_deref(),
                 ) else {
+                    record_hot_drop(credential, crate::adjudicate::StageId::ChecksumInvalid);
                     continue;
                 };
 
