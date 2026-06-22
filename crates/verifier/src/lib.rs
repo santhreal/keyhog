@@ -419,6 +419,11 @@ pub mod testing {
             aes_key: &[u8],
             b64: &str,
         ) -> Result<Option<crate::oob::Interaction>, crate::oob::InteractshError>;
+        fn oob_collector_ssrf_check_dns_result(
+            &self,
+            server: &str,
+            resolved: std::io::Result<Vec<std::net::SocketAddr>>,
+        ) -> Result<(), crate::oob::InteractshError>;
         fn retry_loop_preserves_metadata_on_exhaustion(
             &self,
         ) -> impl std::future::Future<
@@ -564,6 +569,14 @@ pub mod testing {
             b64: &str,
         ) -> Result<Option<crate::oob::Interaction>, crate::oob::InteractshError> {
             crate::oob::decrypt_entry_for_test(aes_key, b64)
+        }
+
+        fn oob_collector_ssrf_check_dns_result(
+            &self,
+            server: &str,
+            resolved: std::io::Result<Vec<std::net::SocketAddr>>,
+        ) -> Result<(), crate::oob::InteractshError> {
+            crate::oob::ssrf_check_collector_dns_result_for_test(server, resolved)
         }
 
         async fn retry_loop_preserves_metadata_on_exhaustion(

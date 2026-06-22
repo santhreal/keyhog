@@ -53,3 +53,10 @@ pub(crate) fn decrypt_entry_for_test(
 ) -> Result<Option<Interaction>, InteractshError> {
     decrypt::decrypt_entry(aes_key, b64)
 }
+
+pub(crate) fn ssrf_check_collector_dns_result_for_test(
+    server: &str,
+    resolved: std::io::Result<Vec<std::net::SocketAddr>>,
+) -> Result<(), InteractshError> {
+    client::ssrf_check_collector_dns_result_for_test(server, resolved)
+}

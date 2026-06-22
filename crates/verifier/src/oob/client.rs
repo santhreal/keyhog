@@ -502,33 +502,55 @@ async fn ssrf_check_collector(server: &str) -> Result<(), InteractshError> {
         )));
     }
 
-    // Resolve once and re-check every answer to defeat DNS rebinding. A
-    // resolution failure here is NOT fatal: the subsequent register POST will
-    // surface the real transport/DNS error with the engine's own diagnostics.
-    // We only refuse when we positively observe a private resolved IP.
-    let url = match url::Url::parse(server) {
-        Ok(u) => u,
-        // `normalize_server` cannot produce an unparseable URL, but if it
-        // somehow does, refuse rather than fall through to an unchecked POST.
-        Err(_error) => {
-            // Law 10: failure => fail-closed error (blocked/refused), never proceeds; security guard
-            return Err(InteractshError::BlockedCollector(format!(
-                "{server} is not a parseable collector URL"
-            )));
-        }
-    };
-    if let Some(host) = url.host_str() {
-        let port = url.port_or_known_default().unwrap_or(443); // LAW10: no explicit port => scheme default (443); recall-irrelevant
-        if let Ok(addrs) = crate::ssrf::resolve_dns_cached(&format!("{host}:{port}")).await {
-            if addrs
-                .iter()
-                .any(|addr| crate::ssrf::is_private_ip_addr(&addr.ip()))
-            {
-                return Err(InteractshError::BlockedCollector(format!(
-                    "{server} resolves to a private/loopback/link-local address"
-                )));
-            }
-        }
+    let host_port = collector_host_port(server)?;
+    let addrs = crate::ssrf::resolve_dns_cached(&host_port)
+        .await
+        .map_err(|error| collector_dns_failure(server, error))?;
+    check_collector_resolved_addrs(server, &addrs)
+}
+
+pub(crate) fn ssrf_check_collector_dns_result_for_test(
+    server: &str,
+    resolved: std::io::Result<Vec<std::net::SocketAddr>>,
+) -> Result<(), InteractshError> {
+    let _host_port = collector_host_port(server)?;
+    let addrs = resolved.map_err(|error| collector_dns_failure(server, error))?;
+    check_collector_resolved_addrs(server, &addrs)
+}
+
+fn collector_host_port(server: &str) -> Result<String, InteractshError> {
+    let url = url::Url::parse(server).map_err(|_error| {
+        InteractshError::BlockedCollector(format!("{server} is not a parseable collector URL"))
+    })?;
+    let host = url.host_str().ok_or_else(|| {
+        InteractshError::BlockedCollector(format!("{server} has no collector host"))
+    })?;
+    let port = url.port_or_known_default().unwrap_or(443); // LAW10: no explicit port => scheme default (443); recall-irrelevant
+    Ok(format!("{host}:{port}"))
+}
+
+fn collector_dns_failure(server: &str, error: std::io::Error) -> InteractshError {
+    InteractshError::BlockedCollector(format!(
+        "{server} DNS resolution failed before SSRF screening: {error}; collector was not contacted"
+    ))
+}
+
+fn check_collector_resolved_addrs(
+    server: &str,
+    addrs: &[std::net::SocketAddr],
+) -> Result<(), InteractshError> {
+    if addrs.is_empty() {
+        return Err(InteractshError::BlockedCollector(format!(
+            "{server} DNS returned no addresses before SSRF screening; collector was not contacted"
+        )));
+    }
+    if addrs
+        .iter()
+        .any(|addr| crate::ssrf::is_private_ip_addr(&addr.ip()))
+    {
+        return Err(InteractshError::BlockedCollector(format!(
+            "{server} resolves to a private/loopback/link-local address"
+        )));
     }
     Ok(())
 }

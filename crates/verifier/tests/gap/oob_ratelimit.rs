@@ -360,6 +360,49 @@ fn redact_blocked_collector_exact_display() {
 }
 
 #[test]
+fn collector_ssrf_dns_resolution_failure_blocks_before_contact() {
+    let err = TestApi
+        .oob_collector_ssrf_check_dns_result(
+            "https://collector.example",
+            Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "synthetic dns timeout",
+            )),
+        )
+        .expect_err("collector DNS failure must fail closed");
+    let display = redact_interactsh_error(&err);
+    assert!(
+        display.contains("DNS resolution failed before SSRF screening")
+            && display.contains("collector was not contacted")
+            && display.contains("synthetic dns timeout"),
+        "DNS resolution failure must block the collector request loudly, got {display}"
+    );
+}
+
+#[test]
+fn collector_ssrf_empty_dns_answer_blocks_before_contact() {
+    let err = TestApi
+        .oob_collector_ssrf_check_dns_result("https://collector.example", Ok(Vec::new()))
+        .expect_err("empty collector DNS answer must fail closed");
+    let display = redact_interactsh_error(&err);
+    assert!(
+        display.contains("DNS returned no addresses")
+            && display.contains("collector was not contacted"),
+        "empty DNS answer must block the collector request loudly, got {display}"
+    );
+}
+
+#[test]
+fn collector_ssrf_public_dns_answer_is_allowed() {
+    let public = "8.8.8.8:443"
+        .parse()
+        .expect("public socket address should parse");
+    TestApi
+        .oob_collector_ssrf_check_dns_result("https://collector.example", Ok(vec![public]))
+        .expect("public collector address should pass the SSRF screen");
+}
+
+#[test]
 fn redact_aes_unwrap_exact_display() {
     let e = InteractshError::AesUnwrap("expected 32-byte AES-256 key, got 16".into());
     assert_eq!(
