@@ -109,11 +109,17 @@ pub(crate) fn strip_leading_boundary_guard(pattern: &str) -> Option<&str> {
     let bytes = body.as_bytes();
     let mut depth = 0i32;
     let mut in_class = false;
+    let mut escaped = false;
     let mut i = 0;
     let mut end = None;
     while i < bytes.len() {
+        if escaped {
+            escaped = false;
+            i += 1;
+            continue;
+        }
         match bytes[i] {
-            b'\\' => i += 1, // skip the escaped byte
+            b'\\' => escaped = true,
             b'[' if !in_class => in_class = true,
             b']' if in_class => in_class = false,
             b'(' if !in_class => depth += 1,
@@ -141,7 +147,16 @@ pub(crate) fn strip_leading_boundary_guard(pattern: &str) -> Option<&str> {
     let mut start = 0;
     let mut d = 0i32;
     let mut cls = false;
+    let mut escaped = false;
     for (j, ch) in group.char_indices() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if ch == '\\' {
+            escaped = true;
+            continue;
+        }
         match ch {
             '[' if !cls => cls = true,
             ']' if cls => cls = false,

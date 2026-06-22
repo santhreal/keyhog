@@ -79,3 +79,15 @@ fn strip_boundary_guard_only_for_real_guards() {
     // No leading `(?:` group at all.
     assert_eq!(strip_leading_boundary_guard("AKIA[0-9]{16}"), None);
 }
+
+#[test]
+fn boundary_guard_with_escaped_class_bracket_extracts_inner_literal() {
+    assert_eq!(
+        strip_leading_boundary_guard(r"(?:^|[^\]])(ghp_token)"),
+        Some("(ghp_token)")
+    );
+    assert_eq!(
+        extract_literal_prefixes(r"(?:^|[^\]])(ghp_[A-Za-z0-9]{36})"),
+        vec!["ghp_".to_string()]
+    );
+}
