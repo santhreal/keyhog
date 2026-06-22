@@ -26,8 +26,10 @@
 //! the same `scan_with_backend(routed)` call drops below these targets and the
 //! file flips green with no test change (Law 9: never weaken to pass).
 //!
-//! These RUN in the normal `cargo test` set and assert REAL measured µs/candidate
-//! and candidates/second, not shapes (Law 6).
+//! The named throughput/per-candidate cells assert REAL measured µs/candidate
+//! and candidates/second, not shapes (Law 6). Rollup tests are
+//! declaration-coverage checks only and must not duplicate the heavy scans
+//! already owned by the named cells.
 
 use keyhog_core::{load_detectors, Chunk, ChunkMetadata};
 use keyhog_scanner::{probe_hardware, select_backend, CompiledScanner, ScanBackend};
@@ -169,6 +171,7 @@ const MEASURE_REPS: usize = 1;
 /// `N candidates < N / 100_000 s` contract at a given candidate-stream size.
 /// RED until batched-GPU phase-2 sustains 100k candidates/s.
 fn assert_batch_phase2_throughput_at(lines: usize) {
+    eprintln!("perf_10x_phase2[{lines} lines]: starting measured throughput cell");
     let scanner = build_scanner();
     let corpus = candidate_dense_corpus(lines);
     let chunk = chunk_of(corpus, &format!("phase2-{lines}"));
@@ -214,6 +217,7 @@ fn assert_batch_phase2_throughput_at(lines: usize) {
 /// Per-candidate marginal cost contract at a given candidate-stream size.
 /// RED until per-candidate phase-2 cost drops below `PER_CANDIDATE_TARGET_US`.
 fn assert_per_candidate_cost_at(lines: usize) {
+    eprintln!("perf_10x_phase2[{lines} lines]: starting measured per-candidate cell");
     let scanner = build_scanner();
     let corpus = candidate_dense_corpus(lines);
     let chunk = chunk_of(corpus, &format!("percand-{lines}"));
@@ -296,41 +300,17 @@ fn per_candidate_cost_100k() {
     assert_per_candidate_cost_at(100_000);
 }
 
-/// Rollup over every candidate-stream size: asserts BOTH the throughput and the
-/// per-candidate targets at every size in one body, naming all unmet sizes at
-/// once. Scales the worklist with `CANDIDATE_LINES`.
+/// Fast candidate-stream declaration rollup.
+///
+/// The named tests above own the measured throughput and per-candidate
+/// assertions. This rollup keeps the size list visible without rerunning every
+/// heavy candidate stream inside one opaque test.
 #[test]
 fn batch_phase2_all_sizes_rollup() {
-    let scanner = build_scanner();
-    let caps = probe_hardware();
-    let mut unmet: Vec<(usize, f64, f64)> = Vec::new(); // (lines, cand/s, µs/cand)
-    for &lines in CANDIDATE_LINES {
-        let corpus = candidate_dense_corpus(lines);
-        let chunk = chunk_of(corpus, &format!("rollup-{lines}"));
-        let routed = select_backend(
-            caps,
-            chunk.data.len() as u64,
-            scanner.runtime_status().pattern_count,
-        );
-        let (secs, n) = scan_secs_and_candidates(&scanner, &chunk, routed);
-        let cps = n as f64 / secs.max(1e-12);
-        let us = secs * 1e6 / n.max(1) as f64;
-        eprintln!(
-            "rollup[{lines} lines]: {cps:.0} cand/s, {us:.2} µs/cand \
-             (targets >= {TARGET_CANDS_PER_SEC:.0} cand/s, < {PER_CANDIDATE_TARGET_US:.1} µs)"
-        );
-        if cps < TARGET_CANDS_PER_SEC || us >= PER_CANDIDATE_TARGET_US {
-            unmet.push((lines, cps, us));
-        }
-    }
-    assert!(
-        unmet.is_empty(),
-        "BATCH PHASE-2 ROLLUP: {} of {} candidate-stream sizes miss the batched-GPU phase-2 \
-         targets (>= {TARGET_CANDS_PER_SEC:.0} cand/s AND < {PER_CANDIDATE_TARGET_US:.1} \
-         µs/cand): {:?} (lines, cand/s, µs/cand). All sizes must meet both once batched \
-         phase-2 lands.",
-        unmet.len(),
-        CANDIDATE_LINES.len(),
-        unmet
+    assert_eq!(
+        CANDIDATE_LINES,
+        &[10_000, 25_000, 50_000, 100_000],
+        "phase-2 candidate-stream target sizes changed; keep the named measured tests in sync"
     );
+    eprintln!("phase-2 candidate-stream measured sizes declared: {CANDIDATE_LINES:?}");
 }
