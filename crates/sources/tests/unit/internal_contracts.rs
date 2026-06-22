@@ -161,8 +161,11 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
         "parallel_fetch.rs must be the single bounded remote-fetch Rayon pool builder owner"
     );
     assert!(
-        cloud.contains("OBJECT_FETCH_THREADS") && cloud.contains("fn object_fetch_pool"),
-        "cloud/mod.rs must own the shared cloud object-fetch pool and thread cap"
+        cloud.contains("OBJECT_FETCH_THREADS")
+            && cloud.contains("fn object_fetch_pool")
+            && cloud.contains("struct CloudListingCoverage")
+            && cloud.contains("fn take_listing_page"),
+        "cloud/mod.rs must own the shared cloud object-fetch pool, thread cap, and listing coverage owner"
     );
     assert!(
         blocking_thread.contains("fn collect_on_blocking_thread")
@@ -218,8 +221,8 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
             "{rel} must use the shared cloud text-object response reader"
         );
         assert!(
-            source.contains("take_listing_page("),
-            "{rel} must use the shared cloud listing page cap helper"
+            source.contains("CloudListingCoverage::new("),
+            "{rel} must use the shared cloud listing coverage owner"
         );
         assert!(
             source.contains("push_page_chunks("),
@@ -231,6 +234,10 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
             "String::from_utf8(body)",
             "response.content_length()",
             ".into_iter().take(remaining).collect()",
+            "let mut listed_objects",
+            "source_truncated_reported",
+            "record_source_truncated_once(",
+            "take_listing_page(",
             "for result in page_chunks {",
             "Ok(Some(chunk)) => chunks.push(Ok(chunk))",
         ] {
@@ -283,7 +290,23 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
             source.contains(download_name) && collect.contains(download_name),
             "{rel} collector must delegate per-page object downloading through {download_name}"
         );
-        for forbidden in [".send()", ".text()", ".par_iter()", parser_name] {
+        assert!(
+            collect.contains("CloudListingCoverage::new(")
+                && collect.contains(".has_capacity_or_record(")
+                && collect.contains(".take_page(")
+                && collect.contains(".record_truncated("),
+            "{rel} collector must route listing cap/truncation state through CloudListingCoverage"
+        );
+        for forbidden in [
+            ".send()",
+            ".text()",
+            ".par_iter()",
+            parser_name,
+            "listed_objects",
+            "source_truncated_reported",
+            "record_source_truncated_once(",
+            "take_listing_page(",
+        ] {
             assert!(
                 !collect.contains(forbidden),
                 "{rel} collector must not own listing-page HTTP/parsing/download detail `{forbidden}`"

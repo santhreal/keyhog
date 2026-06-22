@@ -158,19 +158,11 @@ fn collect_s3_chunks(
     let aws_auth = resolve_s3_auth(&base_url, endpoint, allow_credential_forward);
     let mut continuation_token = None::<String>;
     let mut chunks = Vec::new();
-    let mut listed_objects = 0usize;
-    let mut source_truncated_reported = false;
+    let mut coverage = crate::cloud::CloudListingCoverage::new("s3", "objects", max_objects);
     let fetch_pool = crate::cloud::object_fetch_pool("s3")?;
 
     loop {
-        if listed_objects >= max_objects {
-            if let Some(error) = crate::cloud::record_source_truncated_once(
-                "s3",
-                "max_objects limit reached before listing all objects",
-                &mut source_truncated_reported,
-            ) {
-                chunks.push(Err(error));
-            }
+        if !coverage.has_capacity_or_record(&mut chunks) {
             break;
         }
 
@@ -181,9 +173,7 @@ fn collect_s3_chunks(
             continuation_token.as_deref(),
             aws_auth.as_ref(),
         )?;
-        let remaining = max_objects.saturating_sub(listed_objects);
-        let (page, reached_limit) = crate::cloud::take_listing_page(listing.contents, remaining);
-        listed_objects += page.len();
+        let (page, reached_limit) = coverage.take_page(listing.contents);
 
         let page_chunks = download_s3_listing_page(
             &fetch_pool,
@@ -198,25 +188,19 @@ fn collect_s3_chunks(
 
         if reached_limit || !listing.is_truncated {
             if reached_limit {
-                if let Some(error) = crate::cloud::record_source_truncated_once(
-                    "s3",
+                coverage.record_truncated(
+                    &mut chunks,
                     "max_objects limit reached within the current S3 listing page",
-                    &mut source_truncated_reported,
-                ) {
-                    chunks.push(Err(error));
-                }
+                );
             }
             break;
         }
         continuation_token = listing.next_continuation_token;
         if continuation_token.is_none() {
-            if let Some(error) = crate::cloud::record_source_truncated_once(
-                "s3",
+            coverage.record_truncated(
+                &mut chunks,
                 "S3 listing response was truncated but omitted NextContinuationToken",
-                &mut source_truncated_reported,
-            ) {
-                chunks.push(Err(error));
-            }
+            );
             break;
         }
     }

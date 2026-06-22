@@ -132,28 +132,18 @@ fn collect_azure_blob_chunks(
     let client = crate::cloud::blocking_client("Azure Blob", http)?;
     let mut marker = None::<String>;
     let mut chunks = Vec::new();
-    let mut listed_objects = 0usize;
-    let mut source_truncated_reported = false;
+    let mut coverage = crate::cloud::CloudListingCoverage::new("azure_blob", "blobs", max_objects);
     let fetch_pool = crate::cloud::object_fetch_pool("azure_blob")?;
 
     loop {
-        if listed_objects >= max_objects {
-            if let Some(error) = crate::cloud::record_source_truncated_once(
-                "azure_blob",
-                "max_objects limit reached before listing all blobs",
-                &mut source_truncated_reported,
-            ) {
-                chunks.push(Err(error));
-            }
+        if !coverage.has_capacity_or_record(&mut chunks) {
             break;
         }
 
         let listing =
             fetch_azure_blob_listing_page(&client, &container_url, prefix, marker.as_deref())?;
         let next_marker = listing.next_marker().map(str::to_string);
-        let remaining = max_objects.saturating_sub(listed_objects);
-        let (page, reached_limit) = crate::cloud::take_listing_page(listing.blobs.blob, remaining);
-        listed_objects += page.len();
+        let (page, reached_limit) = coverage.take_page(listing.blobs.blob);
 
         let page_chunks = download_azure_blob_listing_page(
             &fetch_pool,
@@ -165,13 +155,10 @@ fn collect_azure_blob_chunks(
         crate::cloud::push_page_chunks(&mut chunks, page_chunks);
 
         if reached_limit {
-            if let Some(error) = crate::cloud::record_source_truncated_once(
-                "azure_blob",
+            coverage.record_truncated(
+                &mut chunks,
                 "max_objects limit reached within the current Azure Blob listing page",
-                &mut source_truncated_reported,
-            ) {
-                chunks.push(Err(error));
-            }
+            );
             break;
         }
         match next_marker {

@@ -59,6 +59,60 @@ pub(crate) fn take_listing_page<T>(items: Vec<T>, remaining: usize) -> (Vec<T>, 
     (page, reached_limit)
 }
 
+pub(crate) struct CloudListingCoverage {
+    source: &'static str,
+    item_plural: &'static str,
+    max_objects: usize,
+    listed_objects: usize,
+    source_truncated_reported: bool,
+}
+
+impl CloudListingCoverage {
+    pub(crate) fn new(source: &'static str, item_plural: &'static str, max_objects: usize) -> Self {
+        Self {
+            source,
+            item_plural,
+            max_objects,
+            listed_objects: 0,
+            source_truncated_reported: false,
+        }
+    }
+
+    pub(crate) fn has_capacity_or_record(
+        &mut self,
+        chunks: &mut Vec<Result<Chunk, SourceError>>,
+    ) -> bool {
+        if self.listed_objects < self.max_objects {
+            return true;
+        }
+        let reason = format!(
+            "max_objects limit reached before listing all {}",
+            self.item_plural
+        );
+        self.record_truncated(chunks, &reason);
+        false
+    }
+
+    pub(crate) fn take_page<T>(&mut self, items: Vec<T>) -> (Vec<T>, bool) {
+        let remaining = self.max_objects.saturating_sub(self.listed_objects);
+        let (page, reached_limit) = take_listing_page(items, remaining);
+        self.listed_objects += page.len();
+        (page, reached_limit)
+    }
+
+    pub(crate) fn record_truncated(
+        &mut self,
+        chunks: &mut Vec<Result<Chunk, SourceError>>,
+        reason: &str,
+    ) {
+        if let Some(error) =
+            record_source_truncated_once(self.source, reason, &mut self.source_truncated_reported)
+        {
+            chunks.push(Err(error));
+        }
+    }
+}
+
 pub(crate) fn push_page_chunks(
     chunks: &mut Vec<Result<Chunk, SourceError>>,
     page_chunks: Vec<Result<Option<Chunk>, SourceError>>,

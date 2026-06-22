@@ -142,19 +142,11 @@ fn collect_gcs_chunks(
     let bearer = resolve_gcs_auth(&endpoint, allow_token_forward);
     let mut page_token = None::<String>;
     let mut chunks = Vec::new();
-    let mut listed_objects = 0usize;
-    let mut source_truncated_reported = false;
+    let mut coverage = crate::cloud::CloudListingCoverage::new("gcs", "objects", max_objects);
     let fetch_pool = crate::cloud::object_fetch_pool("gcs")?;
 
     loop {
-        if listed_objects >= max_objects {
-            if let Some(error) = crate::cloud::record_source_truncated_once(
-                "gcs",
-                "max_objects limit reached before listing all objects",
-                &mut source_truncated_reported,
-            ) {
-                chunks.push(Err(error));
-            }
+        if !coverage.has_capacity_or_record(&mut chunks) {
             break;
         }
 
@@ -166,9 +158,7 @@ fn collect_gcs_chunks(
             page_token.as_deref(),
             bearer.as_deref(),
         )?;
-        let remaining = max_objects.saturating_sub(listed_objects);
-        let (page, reached_limit) = crate::cloud::take_listing_page(listing.items, remaining);
-        listed_objects += page.len();
+        let (page, reached_limit) = coverage.take_page(listing.items);
 
         let page_chunks = download_gcs_listing_page(
             &fetch_pool,
@@ -182,13 +172,10 @@ fn collect_gcs_chunks(
         crate::cloud::push_page_chunks(&mut chunks, page_chunks);
 
         if reached_limit {
-            if let Some(error) = crate::cloud::record_source_truncated_once(
-                "gcs",
+            coverage.record_truncated(
+                &mut chunks,
                 "max_objects limit reached within the current GCS listing page",
-                &mut source_truncated_reported,
-            ) {
-                chunks.push(Err(error));
-            }
+            );
             break;
         }
         match listing.next_page_token {
