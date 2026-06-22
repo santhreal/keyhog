@@ -204,6 +204,66 @@ fn binary_untracked_git_diff_file_is_counted_binary() {
     );
 }
 
+/// An untracked worktree file that exceeds the git-diff byte cap is an
+/// operator-visible source error and an over-size coverage event, not an
+/// uncounted abort before diff chunks are emitted.
+#[test]
+fn oversized_untracked_git_diff_file_is_counted_over_max_size() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let temp = tempfile::tempdir().expect("tempdir");
+    let repo = temp.path();
+    init_repo(repo);
+    std::fs::write(repo.join("tracked.txt"), "tracked baseline\n").expect("write tracked");
+    git(repo, &["add", "tracked.txt"]);
+    git(repo, &["commit", "-m", "baseline"]);
+
+    std::fs::write(
+        repo.join("untracked.txt"),
+        "aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n", // keyhog:ignore detector=aws-access-key (synthetic over-cap fixture)
+    )
+    .expect("write oversized untracked file");
+
+    let mut limits = keyhog_sources::SourceLimits::default();
+    limits.git_blob_bytes = 12;
+
+    let rows: Vec<_> = GitDiffSource::new(repo.to_path_buf(), "HEAD")
+        .with_limits(limits)
+        .chunks()
+        .collect();
+    let (ok, errors) = split_chunk_results(&rows);
+    assert!(
+        ok.is_empty(),
+        "over-cap untracked git-diff file must not emit chunks"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "over-cap untracked git-diff file must surface one source error"
+    );
+    let err = errors[0].to_string();
+    assert!(
+        err.contains("untracked.txt")
+            && err.contains("exceeds git_blob_bytes limit")
+            && err.contains("12"),
+        "error should name the untracked file and cap, got {err}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.over_max_size - before.over_max_size,
+        1,
+        "the over-cap untracked git-diff file MUST bump SKIPPED_OVER_MAX_SIZE exactly once"
+    );
+    assert_eq!(
+        after.binary - before.binary,
+        0,
+        "over-cap untracked git-diff file must not be miscounted as binary"
+    );
+}
+
 /// A blob skipped by the shared default-exclude policy is intentionally not
 /// scanned, but it still has to reach the shared excluded coverage counter.
 #[test]

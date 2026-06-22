@@ -412,6 +412,7 @@ fn list_untracked_worktree_chunks(
             )));
         }
         if metadata.len() > limits.git_blob_bytes {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             return Err(SourceError::Git(format!(
                 "git-diff untracked path '{}' exceeds git_blob_bytes limit ({} > {})",
                 rel,
@@ -426,6 +427,7 @@ fn list_untracked_worktree_chunks(
             .read_to_end(&mut bytes)
             .map_err(SourceError::Io)?;
         if bytes.len() as u64 > limits.git_blob_bytes {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             return Err(SourceError::Git(format!(
                 "git-diff untracked path '{}' grew beyond git_blob_bytes limit while reading",
                 rel
