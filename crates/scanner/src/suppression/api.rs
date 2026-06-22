@@ -89,12 +89,21 @@ pub(crate) fn suppress_known_example_credential(
 pub(crate) struct HotPatternSuppressionCtx<'a> {
     path: Option<&'a str>,
     source_type: &'a str,
+    min_credential_len: usize,
 }
 
 #[cfg(any(feature = "simdsieve", test))]
 impl<'a> HotPatternSuppressionCtx<'a> {
-    pub(crate) fn new(path: Option<&'a str>, source_type: &'a str) -> Self {
-        Self { path, source_type }
+    pub(crate) fn new(
+        path: Option<&'a str>,
+        source_type: &'a str,
+        min_credential_len: usize,
+    ) -> Self {
+        Self {
+            path,
+            source_type,
+            min_credential_len,
+        }
     }
 }
 
@@ -103,6 +112,11 @@ pub(crate) fn hot_pattern_suppression_stage(
     credential: &str,
     ctx: HotPatternSuppressionCtx<'_>,
 ) -> Option<crate::adjudicate::StageId> {
+    if credential.len() < ctx.min_credential_len {
+        return Some(crate::adjudicate::StageId::ShapeGate(
+            "hot_below_min_length",
+        ));
+    }
     let example_ctx = KnownExampleSuppressionCtx::new(
         ctx.path,
         context::CodeContext::Unknown,

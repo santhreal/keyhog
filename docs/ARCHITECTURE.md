@@ -179,12 +179,13 @@ test feeds the same tricky value through every path and asserts one identical
 verdict.
 
 > Status: `adjudicate_match` exists and many drop decisions now emit typed
-> `StageId`s through the adjudicator, including hot-pattern suppression. Some
-> policy stages still execute from their emission-path owners instead of one
-> full verdict that owns suppression and report confidence end to end. The
-> consolidation is tracked in [`EXECUTION_PLAN.md`](EXECUTION_PLAN.md) under
-> **SILENT-OVERRIDE-1..4**; any emission path must route policy decisions through
-> the adjudicator stage model, not a silent local subset.
+> `StageId`s through the adjudicator, including hot-pattern min-length and
+> policy suppression. Some policy stages still execute from their emission-path
+> owners instead of one full verdict that owns suppression and report confidence
+> end to end. The consolidation is tracked in
+> [`EXECUTION_PLAN.md`](EXECUTION_PLAN.md) under **SILENT-OVERRIDE-1..4**; any
+> emission path must route policy decisions through the adjudicator stage model,
+> not a silent local subset.
 
 ### The ML model (`weights.bin`)
 

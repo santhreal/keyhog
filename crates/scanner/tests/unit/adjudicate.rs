@@ -285,6 +285,7 @@ fn hot_pattern_suppression_owner_returns_adjudicator_stage() {
     let ctx = crate::suppression::HotPatternSuppressionCtx::new(
         Some("web/node_modules/package/dist/index.min.js"),
         "filesystem",
+        40,
     );
 
     assert_eq!(
@@ -293,6 +294,17 @@ fn hot_pattern_suppression_owner_returns_adjudicator_stage() {
             ctx,
         ),
         Some(StageId::ShapeGate("hot_vendored_minified_path"))
+    );
+}
+
+#[cfg(feature = "simdsieve")]
+#[test]
+fn hot_pattern_min_length_drop_returns_adjudicator_stage() {
+    let ctx = crate::suppression::HotPatternSuppressionCtx::new(None, "filesystem", 40);
+
+    assert_eq!(
+        crate::suppression::hot_pattern_suppression_stage("ghp_short", ctx),
+        Some(StageId::ShapeGate("hot_below_min_length"))
     );
 }
 

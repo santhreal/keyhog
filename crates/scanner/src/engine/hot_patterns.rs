@@ -129,10 +129,8 @@ impl CompiledScanner {
                 let suppression_ctx = crate::suppression::HotPatternSuppressionCtx::new(
                     chunk.metadata.path.as_deref(),
                     chunk.metadata.source_type.as_str(),
+                    min_len,
                 );
-                if credential.len() < min_len {
-                    continue;
-                }
                 if let Some(stage_id) =
                     crate::suppression::hot_pattern_suppression_stage(credential, suppression_ctx)
                 {

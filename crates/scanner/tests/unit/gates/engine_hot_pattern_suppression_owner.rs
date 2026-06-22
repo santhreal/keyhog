@@ -32,6 +32,8 @@ fn hot_pattern_suppression_routes_through_suppression_owner() {
         suppression.contains("struct HotPatternSuppressionCtx")
             && suppression.contains("fn hot_pattern_suppression_stage(")
             && suppression.contains(") -> Option<crate::adjudicate::StageId>")
+            && suppression.contains("min_credential_len")
+            && suppression.contains("\"hot_below_min_length\"")
             && suppression.contains("suppress_known_example_credential")
             && suppression.contains("looks_like_regex_literal_tail")
             && suppression.contains("looks_like_vendored_minified_path")
@@ -47,8 +49,9 @@ fn hot_pattern_suppression_routes_through_suppression_owner() {
     let hot_patterns = uncommented_code(&read(&src.join("engine/hot_patterns.rs")));
     assert!(
         hot_patterns.contains("crate::suppression::hot_pattern_suppression_stage(")
-            && hot_patterns.contains("crate::adjudicate::record_stage_suppression("),
-        "hot-pattern fast path must call the suppression owner"
+            && hot_patterns.contains("crate::adjudicate::record_stage_suppression(")
+            && !hot_patterns.contains("credential.len() < min_len"),
+        "hot-pattern fast path must call the suppression owner for length and policy drops"
     );
     for forbidden in [
         "suppress_known_example_credential",
