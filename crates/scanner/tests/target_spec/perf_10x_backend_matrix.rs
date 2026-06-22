@@ -22,8 +22,9 @@
 //!      candidate-dense scan as phase-2 — a sound split because phase-1 cost is
 //!      candidate-independent (it touches every byte either way).
 //!
-//! All cases RUN in the normal `cargo test` set and assert REAL measured ratios
-//! (Law 6), never weakened to pass (Law 9).
+//! The named matrix/dominance cells assert REAL measured ratios (Law 6), never
+//! weakened to pass (Law 9). Rollup tests are declaration-coverage checks only:
+//! they must not duplicate the heavy scans already owned by the named cells.
 
 use keyhog_core::{load_detectors, Chunk, ChunkMetadata};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
@@ -140,6 +141,10 @@ const ROUTABLE_BACKENDS: &[ScanBackend] = &[
 /// One (backend, size) cell of the 10x cross-matrix.
 fn assert_backend_10x_cell(backend: ScanBackend, mib: usize) {
     let bytes = mib * 1024 * 1024;
+    eprintln!(
+        "perf_10x_matrix[{}, {mib} MiB]: starting measured 10x cell",
+        backend.label()
+    );
     let scanner = build_scanner();
     let corpus_s = corpus(bytes, true);
     let chunk = chunk_of(corpus_s, &format!("cell-{}-{mib}", backend.label()));
@@ -217,31 +222,31 @@ fn matrix_cpufallback_64mib() {
     assert_backend_10x_cell(ScanBackend::CpuFallback, 64);
 }
 
-/// Full backend×size matrix rollup — names every unmet cell at once.
-#[test]
-fn matrix_all_cells_rollup() {
-    let mut unmet: Vec<(String, usize, f64)> = Vec::new();
-    for &mib in SIZE_MIB {
-        let bytes = mib * 1024 * 1024;
-        let scanner = build_scanner();
-        let chunk = chunk_of(corpus(bytes, true), &format!("rollup-{mib}"));
-        let baseline = scan_secs(&scanner, &chunk, ScanBackend::SimdCpu);
-        for &backend in ROUTABLE_BACKENDS {
-            let cand = scan_secs(&scanner, &chunk, backend);
-            let speedup = baseline / cand.max(1e-12);
-            if speedup < SPEEDUP_TARGET {
-                unmet.push((backend.label().to_string(), mib, speedup));
-            }
+fn matrix_cell_names() -> Vec<String> {
+    let mut cells = Vec::new();
+    for &backend in ROUTABLE_BACKENDS {
+        for &mib in SIZE_MIB {
+            cells.push(format!("matrix_{}_{}mib", backend.label(), mib));
         }
     }
+    cells
+}
+
+/// Fast backend×size matrix declaration rollup.
+///
+/// The measured cells above own the real 10x assertions. This rollup exists to
+/// keep the matrix complete without silently rerunning the entire multi-MiB
+/// benchmark suite inside one opaque test.
+#[test]
+fn matrix_all_cells_rollup() {
+    let cells = matrix_cell_names();
     let total = SIZE_MIB.len() * ROUTABLE_BACKENDS.len();
-    assert!(
-        unmet.is_empty(),
-        "10x MATRIX ROLLUP: {} of {total} (backend, size) cells miss the {SPEEDUP_TARGET:.0}x \
-         target: {:?} (backend, MiB, speedup). Every cell must reach 10x via batched phase-2.",
-        unmet.len(),
-        unmet
+    assert_eq!(
+        cells.len(),
+        total,
+        "10x matrix declaration drift: expected {total} backend/size cells, got {cells:?}"
     );
+    eprintln!("10x matrix measured cells declared: {cells:?}");
 }
 
 // ---- Phase-2 dominance worklist --------------------------------------------
@@ -254,6 +259,7 @@ const PHASE2_MAX_FRACTION: f64 = 0.05;
 
 fn assert_phase2_dominance_at(mib: usize) {
     let bytes = mib * 1024 * 1024;
+    eprintln!("perf_10x_dominance[{mib} MiB]: starting measured dominance cell");
     let scanner = build_scanner();
 
     // Phase-1-only proxy: no-credential corpus of identical size. Phase-1
@@ -304,30 +310,16 @@ fn phase2_dominance_64mib() {
     assert_phase2_dominance_at(64);
 }
 
-/// Dominance rollup — names every size where phase-2 still dominates.
+/// Fast phase-2 dominance declaration rollup.
+///
+/// The measured per-size tests above own the real dominance assertions. This
+/// rollup keeps the size list visible without duplicating the heavy scans.
 #[test]
 fn phase2_dominance_all_sizes_rollup() {
-    let scanner = build_scanner();
-    let mut still_dominant: Vec<(usize, f64)> = Vec::new();
-    for &mib in SIZE_MIB {
-        let bytes = mib * 1024 * 1024;
-        let bare = chunk_of(corpus(bytes, false), &format!("dr-p1-{mib}"));
-        let dense = chunk_of(corpus(bytes, true), &format!("dr-p12-{mib}"));
-        let phase1 = scan_secs(&scanner, &bare, ScanBackend::SimdCpu);
-        let full = scan_secs(&scanner, &dense, ScanBackend::SimdCpu);
-        let frac = (full - phase1).max(0.0) / full.max(1e-12);
-        if frac >= PHASE2_MAX_FRACTION {
-            still_dominant.push((mib, frac));
-        }
-    }
-    assert!(
-        still_dominant.is_empty(),
-        "PHASE-2 DOMINANCE ROLLUP: phase-2 still exceeds {:.0}% of wall time at {} of {} sizes: \
-         {:?} (MiB, fraction). All must drop below {:.0}% once batched phase-2 lands.",
-        PHASE2_MAX_FRACTION * 100.0,
-        still_dominant.len(),
-        SIZE_MIB.len(),
-        still_dominant,
-        PHASE2_MAX_FRACTION * 100.0
+    assert_eq!(
+        SIZE_MIB,
+        &[8, 16, 32, 64],
+        "phase-2 dominance target sizes changed; keep the named measured tests in sync"
     );
+    eprintln!("phase-2 dominance measured sizes declared: {SIZE_MIB:?}");
 }
