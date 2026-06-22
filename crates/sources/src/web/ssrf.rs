@@ -89,7 +89,6 @@ pub(crate) fn build_web_client(
 ) -> Result<reqwest::blocking::Client, SourceError> {
     let mut builder = crate::http::blocking_client_builder(cfg)
         .map_err(SourceError::Other)?
-        .timeout(crate::timeouts::HTTP_REQUEST)
         .redirect(ssrf_revalidating_redirect_policy());
 
     if !proxy_in_use && !allow_autoroute_loopback_calibration_url {

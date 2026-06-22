@@ -639,6 +639,7 @@ fn web_ssrf_url_classifier_uses_verifier_owner() {
     let ssrf =
         std::fs::read_to_string(root.join("src/web/ssrf.rs")).expect("web ssrf source readable");
     let cargo = std::fs::read_to_string(root.join("Cargo.toml")).expect("sources Cargo readable");
+    let http = std::fs::read_to_string(root.join("src/http.rs")).expect("sources HTTP readable");
 
     assert!(
         ssrf.contains("keyhog_verifier::ssrf::is_private_url(url)"),
@@ -658,6 +659,14 @@ fn web_ssrf_url_classifier_uses_verifier_owner() {
         !cargo.contains(r#"web = ["dep:reqwest", "dep:url", "dep:keyhog-verifier"]"#)
             && !cargo.contains("[dependencies.url]\n"),
         "keyhog-sources no longer needs a direct url crate dependency for the WebSource SSRF prefilter"
+    );
+    assert!(
+        http.contains("timeout(cfg.timeout.unwrap_or(DEFAULT_TIMEOUT))"),
+        "shared HTTP builder must own the Tier-A timeout default"
+    );
+    assert!(
+        !ssrf.contains(".timeout(crate::timeouts::HTTP_REQUEST)"),
+        "WebSource SSRF client builder must not clobber HttpClientConfig::timeout after the shared builder applies it"
     );
 }
 
