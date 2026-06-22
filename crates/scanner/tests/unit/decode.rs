@@ -184,6 +184,37 @@ fn splice_windows_context_instead_of_whole_parent() {
 }
 
 #[test]
+fn large_parent_decode_splice_preserves_context_window() {
+    use keyhog_core::Chunk;
+    use keyhog_scanner::testing::decode_chunk;
+
+    let b64_secret = "QUtJQUlPU0ZPRE5ON0VYQU1QTEU=";
+    let mut parent = ".\n".repeat(140 * 1024);
+    parent.push_str(&format!("aws_secret_access_key = \"{b64_secret}\"\n"));
+    parent.push_str(&".\n".repeat(140 * 1024));
+    assert!(
+        parent.len() > 256 * 1024,
+        "fixture must exceed the old whole-parent splice guard"
+    );
+
+    let chunk = Chunk::from(parent);
+    let decoded = decode_chunk(&chunk, 2, true, None, None);
+
+    let spliced = decoded
+        .iter()
+        .find(|c| {
+            let data = c.data.as_ref();
+            data.contains("AKIAIOSFODNN7EXAMPLE") && data.contains("aws_secret_access_key")
+        })
+        .expect("large parent decode must preserve companion context");
+    assert!(
+        spliced.data.len() < 4 * 1024,
+        "large parent splice must stay windowed, got {} bytes",
+        spliced.data.len()
+    );
+}
+
+#[test]
 fn underscores_alone_dont_create_phantom_matches() {
     // Underscore-only string strips to empty, must not match.
     let found = find_hex_strings("\"_____________________________\"", 32);

@@ -483,17 +483,15 @@ pub(super) fn push_decoded_text_chunk_spliced_at(
     // Build the new chunk's payload. Default: just the decoded text
     // (legacy shape). If we know the original encoded blob AND it
     // appears in the parent, splice the decoded text in at the first
-    // occurrence so the companion context survives. Cap the splice
-    // path on chunk size so a multi-MB parent doesn't blow memory.
-    const MAX_SPLICE_PARENT_BYTES: usize = 256 * 1024;
+    // occurrence so the companion context survives. The splice helper
+    // keeps only a bounded parent window, so parent file size must not
+    // disable context preservation.
     // `decoded_span` is the [start,end) byte range of the decoded text WITHIN
     // `payload` — the only genuinely new bytes a decode sub-chunk adds over its
     // already-scanned parent context. The self-contained passes restrict their
     // rescan to a focus window around it (see `scan_phase2_patterns` focus).
     let text_len = text.len();
-    let (base_offset, payload, decoded_span) = if !original_encoded.is_empty()
-        && chunk.data.len() <= MAX_SPLICE_PARENT_BYTES
-    {
+    let (base_offset, payload, decoded_span) = if !original_encoded.is_empty() {
         let spliced = match original_span {
             Some((start, end)) => {
                 splice_decoded_payload_at(chunk.data.as_ref(), start, end, &text, decoder_name)
