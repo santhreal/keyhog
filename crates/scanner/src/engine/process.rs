@@ -160,6 +160,8 @@ impl CompiledScanner {
         let is_generic = crate::detector_ids::is_generic_detector(detector.id.as_ref())
             && detector.id.as_str() != crate::detector_ids::GENERIC_PRIVATE_KEY;
         let is_weakly_anchored = weak_anchor;
+        let mut entropy_below_floor = false;
+        let mut camel_case_no_digit = false;
         if is_generic || is_weakly_anchored {
             // Per-detector entropy floor. Structured tokens (UUIDs, short API keys)
             // have lower entropy than random strings. A blanket 3.5 floor misses them.
@@ -171,22 +173,16 @@ impl CompiledScanner {
             let entropy_floor =
                 generic_entropy_floor(self.config.entropy_threshold, floor_id, credential.len());
             if entropy < entropy_floor {
-                crate::telemetry::record_shape_suppression(
-                    chunk.metadata.path.as_deref(),
-                    credential,
-                    "entropy_below_floor",
-                );
-                return;
-            }
-            // camelCase-without-digits is the false-positive shape (Java/Go
-            // identifiers like `getUserName`); real tokens almost always carry
-            // a digit. The cheap digit scan (ASCII bytes, no UTF-8 decode via
-            // `chars()`) runs first so any credential containing a digit skips
-            // the O(n) camel-transition window walk entirely. Only no-digit
-            // credentials pay for the count, and `take(2)` stops it as soon as
-            // the >=2 threshold is reached. Behavior is identical to the prior
-            // `transitions >= 2 && !has_digit` gate.
-            if !credential.bytes().any(|b| b.is_ascii_digit()) {
+                entropy_below_floor = true;
+            } else if !credential.bytes().any(|b| b.is_ascii_digit()) {
+                // camelCase-without-digits is the false-positive shape (Java/Go
+                // identifiers like `getUserName`); real tokens almost always carry
+                // a digit. The cheap digit scan (ASCII bytes, no UTF-8 decode via
+                // `chars()`) runs first so any credential containing a digit skips
+                // the O(n) camel-transition window walk entirely. Only no-digit
+                // credentials pay for the count, and `take(2)` stops it as soon as
+                // the >=2 threshold is reached. Behavior is identical to the prior
+                // `transitions >= 2 && !has_digit` gate.
                 let camel_transitions = credential
                     .as_bytes()
                     .windows(2)
@@ -194,14 +190,25 @@ impl CompiledScanner {
                     .take(2)
                     .count();
                 if camel_transitions >= 2 {
-                    crate::telemetry::record_shape_suppression(
-                        chunk.metadata.path.as_deref(),
-                        credential,
-                        "camel_case_no_digit",
-                    );
-                    return;
+                    camel_case_no_digit = true;
                 }
             }
+        }
+        let entropy_shape_ctx = crate::adjudicate::MatchCtx::for_process_signals(
+            crate::adjudicate::ProcessCandidateSignals::from_entropy_shape(
+                entropy_below_floor,
+                camel_case_no_digit,
+            ),
+        );
+        if let Some(stage_id) =
+            crate::adjudicate::adjudicate_match(candidate, &entropy_shape_ctx).suppressed_stage()
+        {
+            crate::telemetry::record_shape_suppression(
+                chunk.metadata.path.as_deref(),
+                credential,
+                stage_id.as_str(),
+            );
+            return;
         }
 
         // Checksum validation: tokens with embedded checksums (GitHub, npm, Slack,
@@ -209,12 +216,19 @@ impl CompiledScanner {
         // engine match-policy owner makes the drop/floor rule shared with hot,
         // generic, entropy, and ML emitters.
         let checksum_policy = super::scoring::checksum_policy_for(credential);
-        if checksum_policy.is_invalid() {
+        let checksum_ctx = crate::adjudicate::MatchCtx::for_process_signals(
+            crate::adjudicate::ProcessCandidateSignals::from_checksum_invalid(
+                checksum_policy.is_invalid(),
+            ),
+        );
+        if let Some(stage_id) =
+            crate::adjudicate::adjudicate_match(candidate, &checksum_ctx).suppressed_stage()
+        {
             // Checksum failed: NOT a real token. Skip expensive ML scoring.
             crate::telemetry::record_shape_suppression(
                 chunk.metadata.path.as_deref(),
                 credential,
-                "checksum_invalid",
+                stage_id.as_str(),
             );
             return;
         }
@@ -246,10 +260,16 @@ impl CompiledScanner {
             is_named_detector,
             scan_state,
         ) else {
+            let scoring_ctx = crate::adjudicate::MatchCtx::for_process_signals(
+                crate::adjudicate::ProcessCandidateSignals::from_scoring_rejected(true),
+            );
+            let stage_id = crate::adjudicate::adjudicate_match(candidate, &scoring_ctx)
+                .suppressed_stage()
+                .expect("scoring-rejected signal must suppress");
             crate::telemetry::record_shape_suppression(
                 chunk.metadata.path.as_deref(),
                 credential,
-                "scoring_rejected",
+                stage_id.as_str(),
             );
             return;
         };

@@ -99,6 +99,52 @@ fn process_stage_suppresses_missing_required_companion() {
 }
 
 #[test]
+fn process_stage_preserves_entropy_floor_before_camel_order() {
+    let credential = "getParameter";
+    let ctx =
+        MatchCtx::for_process_signals(ProcessCandidateSignals::from_entropy_shape(true, true));
+
+    assert_eq!(
+        adjudicate_match(CandidateMatch::new(credential), &ctx),
+        Verdict::Suppressed(StageId::EntropyBelowFloor)
+    );
+}
+
+#[test]
+fn process_stage_suppresses_camel_case_no_digit() {
+    let credential = "getParameter";
+    let ctx =
+        MatchCtx::for_process_signals(ProcessCandidateSignals::from_entropy_shape(false, true));
+
+    assert_eq!(
+        adjudicate_match(CandidateMatch::new(credential), &ctx),
+        Verdict::Suppressed(StageId::CamelCaseNoDigit)
+    );
+}
+
+#[test]
+fn process_stage_suppresses_checksum_invalid() {
+    let credential = "ghp_invalidchecksum000000000000000000000";
+    let ctx = MatchCtx::for_process_signals(ProcessCandidateSignals::from_checksum_invalid(true));
+
+    assert_eq!(
+        adjudicate_match(CandidateMatch::new(credential), &ctx),
+        Verdict::Suppressed(StageId::ChecksumInvalid)
+    );
+}
+
+#[test]
+fn process_stage_suppresses_scoring_rejected() {
+    let credential = "AKIAIOSFODNN7EXAMPLE";
+    let ctx = MatchCtx::for_process_signals(ProcessCandidateSignals::from_scoring_rejected(true));
+
+    assert_eq!(
+        adjudicate_match(CandidateMatch::new(credential), &ctx),
+        Verdict::Suppressed(StageId::ScoringRejected)
+    );
+}
+
+#[test]
 fn process_stage_reports_service_anchored_candidate() {
     let credential = "AKIAIOSFODNN7EXAMPLE";
 

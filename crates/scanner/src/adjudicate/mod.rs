@@ -14,6 +14,10 @@ pub(crate) enum StageId {
     ProbabilisticGateNotPromising,
     FalsePositiveContext,
     MissingRequiredCompanion,
+    EntropyBelowFloor,
+    CamelCaseNoDigit,
+    ChecksumInvalid,
+    ScoringRejected,
     NamedDetectorSuppression,
 }
 
@@ -27,6 +31,10 @@ impl StageId {
             Self::ProbabilisticGateNotPromising => "probabilistic_gate_not_promising",
             Self::FalsePositiveContext => "false_positive_context",
             Self::MissingRequiredCompanion => "missing_required_companion",
+            Self::EntropyBelowFloor => "entropy_below_floor",
+            Self::CamelCaseNoDigit => "camel_case_no_digit",
+            Self::ChecksumInvalid => "checksum_invalid",
+            Self::ScoringRejected => "scoring_rejected",
             Self::NamedDetectorSuppression => "named_detector_suppressed",
         }
     }
@@ -77,6 +85,10 @@ pub(crate) struct ProcessCandidateSignals {
     generic_without_prefix_not_promising: bool,
     false_positive_context: bool,
     missing_required_companion: bool,
+    entropy_below_floor: bool,
+    camel_case_no_digit: bool,
+    checksum_invalid: bool,
+    scoring_rejected: bool,
 }
 
 impl ProcessCandidateSignals {
@@ -110,6 +122,10 @@ impl ProcessCandidateSignals {
             generic_without_prefix_not_promising,
             false_positive_context: false,
             missing_required_companion: false,
+            entropy_below_floor: false,
+            camel_case_no_digit: false,
+            checksum_invalid: false,
+            scoring_rejected: false,
         }
     }
 
@@ -122,6 +138,10 @@ impl ProcessCandidateSignals {
             generic_without_prefix_not_promising: false,
             false_positive_context,
             missing_required_companion: false,
+            entropy_below_floor: false,
+            camel_case_no_digit: false,
+            checksum_invalid: false,
+            scoring_rejected: false,
         }
     }
 
@@ -134,6 +154,61 @@ impl ProcessCandidateSignals {
             generic_without_prefix_not_promising: false,
             false_positive_context: false,
             missing_required_companion,
+            entropy_below_floor: false,
+            camel_case_no_digit: false,
+            checksum_invalid: false,
+            scoring_rejected: false,
+        }
+    }
+
+    pub(crate) const fn from_entropy_shape(
+        entropy_below_floor: bool,
+        camel_case_no_digit: bool,
+    ) -> Self {
+        Self {
+            invalid_aws_access_key_length: false,
+            invalid_anthropic_legacy_length: false,
+            within_hex_context: false,
+            hex_digest_fragment: false,
+            generic_without_prefix_not_promising: false,
+            false_positive_context: false,
+            missing_required_companion: false,
+            entropy_below_floor,
+            camel_case_no_digit,
+            checksum_invalid: false,
+            scoring_rejected: false,
+        }
+    }
+
+    pub(crate) const fn from_checksum_invalid(checksum_invalid: bool) -> Self {
+        Self {
+            invalid_aws_access_key_length: false,
+            invalid_anthropic_legacy_length: false,
+            within_hex_context: false,
+            hex_digest_fragment: false,
+            generic_without_prefix_not_promising: false,
+            false_positive_context: false,
+            missing_required_companion: false,
+            entropy_below_floor: false,
+            camel_case_no_digit: false,
+            checksum_invalid,
+            scoring_rejected: false,
+        }
+    }
+
+    pub(crate) const fn from_scoring_rejected(scoring_rejected: bool) -> Self {
+        Self {
+            invalid_aws_access_key_length: false,
+            invalid_anthropic_legacy_length: false,
+            within_hex_context: false,
+            hex_digest_fragment: false,
+            generic_without_prefix_not_promising: false,
+            false_positive_context: false,
+            missing_required_companion: false,
+            entropy_below_floor: false,
+            camel_case_no_digit: false,
+            checksum_invalid: false,
+            scoring_rejected,
         }
     }
 }
@@ -201,6 +276,18 @@ fn process_signal_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> S
     }
     if signals.missing_required_companion {
         return StageOutcome::Suppress(StageId::MissingRequiredCompanion);
+    }
+    if signals.entropy_below_floor {
+        return StageOutcome::Suppress(StageId::EntropyBelowFloor);
+    }
+    if signals.camel_case_no_digit {
+        return StageOutcome::Suppress(StageId::CamelCaseNoDigit);
+    }
+    if signals.checksum_invalid {
+        return StageOutcome::Suppress(StageId::ChecksumInvalid);
+    }
+    if signals.scoring_rejected {
+        return StageOutcome::Suppress(StageId::ScoringRejected);
     }
     StageOutcome::Pass
 }

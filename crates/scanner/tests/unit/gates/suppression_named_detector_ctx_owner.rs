@@ -123,6 +123,10 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
         "probabilistic_gate_not_promising",
         "false_positive_context",
         "missing_required_companion",
+        "entropy_below_floor",
+        "camel_case_no_digit",
+        "checksum_invalid",
+        "scoring_rejected",
     ] {
         assert!(
             !process.contains(&format!("\"{reason}\"")),
