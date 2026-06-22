@@ -21,6 +21,7 @@ pub mod r5t_top50_paypal_client_secret_near_miss_chunk_boundary_must_not_fire;
 pub mod r5t_top50_vercel_api_token_near_miss_chunk_boundary_must_not_fire;
 pub mod reverse;
 pub mod round1_alphabet_screen_case_fold_parity;
+pub mod round1_auth_json_shape_fires_and_camelcase_does_not;
 pub mod round1_caesar_skips_caesar_on_credential_url_lines;
 pub mod round1_cross_file_reassembly_does_not_cannibalize_singleton;
 pub mod round1_decoded_is_base64_blob_property;
