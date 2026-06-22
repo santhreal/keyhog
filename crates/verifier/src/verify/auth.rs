@@ -97,17 +97,13 @@ pub(crate) async fn build_request_for_auth(
                     transient: false,
                 };
             }
-            // Even with the env var set, restrict engine to a known
-            // allowlist. New engines need a code change + audit, not
-            // a config knob.
-            const ALLOWED_ENGINES: &[&str] = &["python3", "python", "node"];
-            if !ALLOWED_ENGINES.contains(&engine.as_str()) {
+            if !engine.is_allowed_for_verify() {
                 return RequestBuildResult::Final {
                     result: VerificationResult::Error(format!(
                         "blocked: AuthSpec::Script engine '{engine}' is not on \
                          the allowlist ({:?}); refuse to run unknown interpreters \
                          with credential context in scope",
-                        ALLOWED_ENGINES
+                        keyhog_core::ScriptEngine::ALLOWED_FOR_VERIFY
                     )),
                     metadata: HashMap::new(),
                     transient: false,
@@ -115,7 +111,7 @@ pub(crate) async fn build_request_for_auth(
             }
             let variables = companions.clone();
             match codewalk::sandbox::execute_script(
-                engine,
+                engine.as_str(),
                 code,
                 "verification_target",
                 "custom_verify",

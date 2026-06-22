@@ -1,6 +1,6 @@
 use keyhog_core::{
-    validate_detector, CompanionSpec, DetectorFile, DetectorSpec, PatternSpec, QualityIssue,
-    Severity,
+    validate_detector, AuthSpec, CompanionSpec, DetectorFile, DetectorSpec, PatternSpec,
+    QualityIssue, ScriptEngine, Severity,
 };
 use std::fs;
 use std::path::PathBuf;
@@ -56,6 +56,47 @@ fn detector_spec_deserialization() {
     assert_eq!(spec.severity, Severity::High);
     assert_eq!(spec.patterns.len(), 1);
     assert_eq!(spec.keywords.len(), 2);
+}
+
+#[test]
+fn script_auth_engine_is_typed_but_toml_stays_string_compatible() {
+    let toml_str = r#"
+        [detector]
+        id = "script-auth"
+        name = "Script Auth"
+        service = "demo"
+        severity = "high"
+        keywords = ["demo_"]
+
+        [[detector.patterns]]
+        regex = 'demo_[A-Z0-9]{8}'
+
+        [detector.verify]
+        url = "https://example.com/verify"
+
+        [detector.verify.auth]
+        type = "script"
+        engine = "python3"
+        code = "print('STATUS: LIVE')"
+    "#;
+
+    let file: DetectorFile = toml::from_str(toml_str).unwrap();
+    let auth = file.detector.verify.unwrap().auth.unwrap();
+    assert!(matches!(
+        auth,
+        AuthSpec::Script {
+            engine: ScriptEngine::Python3,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn unknown_script_auth_engine_preserves_wire_value_for_verifier_rejection() {
+    let engine = ScriptEngine::from("notreal");
+    assert_eq!(engine.as_str(), "notreal");
+    let value = toml::Value::try_from(&engine).unwrap();
+    assert_eq!(value.as_str(), Some("notreal"));
 }
 
 #[test]
@@ -185,6 +226,9 @@ fn spec_loader_and_validator_boundaries_are_explicit() {
 
     assert!(validate_source.contains("mod regex_complexity;"));
     assert!(!validate_source.contains("#[path ="));
+    assert!(spec_source.contains("pub enum ScriptEngine"));
+    assert!(spec_source.contains("engine: ScriptEngine"));
+    assert!(!spec_source.contains("Script {\n        engine: String"));
 }
 
 #[test]

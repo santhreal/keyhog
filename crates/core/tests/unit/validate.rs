@@ -228,6 +228,18 @@ fn literal_specificity_uses_ast_not_raw_regex_scans() {
 }
 
 #[test]
+fn regex_validation_uses_typed_kinds_not_string_labels() {
+    let source = std::fs::read_to_string("src/spec/validate.rs").expect("read validate source");
+
+    assert!(source.contains("enum RegexKind"));
+    assert!(source.contains("RegexKind::Pattern"));
+    assert!(source.contains("RegexKind::Companion"));
+    assert!(!source.contains("kind: &str"));
+    assert!(!source.contains("validate_regex_definition(\"pattern\""));
+    assert!(!source.contains("validate_regex_definition(\"companion\""));
+}
+
+#[test]
 fn verify_template_checks_use_one_field_visitor() {
     let source = std::fs::read_to_string("src/spec/validate.rs").expect("read validate source");
 

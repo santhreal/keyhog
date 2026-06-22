@@ -26,8 +26,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use keyhog_core::{
-    AuthSpec, DedupedMatch, DetectorSpec, HttpMethod, MatchLocation, MetadataSpec, Severity,
-    VerificationResult, VerifySpec,
+    AuthSpec, DedupedMatch, DetectorSpec, HttpMethod, MatchLocation, MetadataSpec, ScriptEngine,
+    Severity, VerificationResult, VerifySpec,
 };
 use keyhog_verifier::{VerificationEngine, VerifyConfig};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -155,7 +155,7 @@ async fn script_auth_verify_requires_explicit_config_not_env() {
         vec![],
     );
     spec.verify.as_mut().unwrap().auth = Some(AuthSpec::Script {
-        engine: "notreal".into(),
+        engine: ScriptEngine::from("notreal"),
         code: "print('STATUS: LIVE')".into(),
     });
 

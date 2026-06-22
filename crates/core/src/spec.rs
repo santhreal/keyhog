@@ -9,6 +9,8 @@
 pub(crate) mod load;
 mod validate;
 
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 pub use load::{load_detectors, read_detector_toml_file, SpecError, DETECTOR_TOML_FILE_BYTES};
@@ -291,9 +293,76 @@ pub enum AuthSpec {
         session_token: Option<String>,
     },
     Script {
-        engine: String,
+        engine: ScriptEngine,
         code: String,
     },
+}
+
+/// Script interpreter names accepted by the detector TOML schema.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ScriptEngine {
+    Python3,
+    Python,
+    Node,
+    Other(String),
+}
+
+impl ScriptEngine {
+    pub const ALLOWED_FOR_VERIFY: &'static [&'static str] = &["python3", "python", "node"];
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Python3 => "python3",
+            Self::Python => "python",
+            Self::Node => "node",
+            Self::Other(engine) => engine,
+        }
+    }
+
+    pub fn is_allowed_for_verify(&self) -> bool {
+        matches!(self, Self::Python3 | Self::Python | Self::Node)
+    }
+}
+
+impl From<String> for ScriptEngine {
+    fn from(engine: String) -> Self {
+        match engine.as_str() {
+            "python3" => Self::Python3,
+            "python" => Self::Python,
+            "node" => Self::Node,
+            _ => Self::Other(engine),
+        }
+    }
+}
+
+impl From<&str> for ScriptEngine {
+    fn from(engine: &str) -> Self {
+        Self::from(engine.to_owned())
+    }
+}
+
+impl fmt::Display for ScriptEngine {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl Serialize for ScriptEngine {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(self.as_str())
+    }
+}
+
+impl<'de> Deserialize<'de> for ScriptEngine {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        Ok(String::deserialize(deserializer)?.into())
+    }
 }
 
 /// Criteria for a successful verification response.

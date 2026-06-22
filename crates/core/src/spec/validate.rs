@@ -71,7 +71,7 @@ fn validate_patterns_present(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>
 
 fn validate_regexes(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
     for (i, pat) in spec.patterns.iter().enumerate() {
-        validate_regex_definition("pattern", i, &pat.regex, issues);
+        validate_regex_definition(RegexKind::Pattern, i, &pat.regex, issues);
     }
 }
 
@@ -112,7 +112,7 @@ fn validate_companions(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
                 i
             )));
         }
-        validate_regex_definition("companion", i, &companion.regex, issues);
+        validate_regex_definition(RegexKind::Companion, i, &companion.regex, issues);
         // A "pure character class" companion (e.g. `[A-Z0-9]{10}` for an
         // Algolia application_id) is acceptable when `within_lines` is small:
         // the positional constraint is itself the contextual anchor. Reject
@@ -146,12 +146,28 @@ fn validate_companions(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
 /// regex is acceptable. The positional bound provides the context anchor.
 const TIGHT_COMPANION_RADIUS: usize = 5;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum RegexKind {
+    Pattern,
+    Companion,
+}
+
+impl RegexKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Pattern => "pattern",
+            Self::Companion => "companion",
+        }
+    }
+}
+
 fn validate_regex_definition(
-    kind: &str,
+    kind: RegexKind,
     index: usize,
     regex: &str,
     issues: &mut Vec<QualityIssue>,
 ) {
+    let kind = kind.label();
     if regex.len() > MAX_REGEX_PATTERN_LEN {
         issues.push(QualityIssue::Error(format!(
             "{kind} {index} regex is too large ({} bytes > {} byte limit)",
