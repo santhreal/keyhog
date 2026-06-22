@@ -10,8 +10,7 @@
 //! The Ghidra integration is a runtime dependency, not compile-time.
 //! `cargo build -F binary` pulls in `goblin` for format detection; Ghidra is optional.
 
-use std::io::BufRead;
-use std::io::Read;
+use std::io::{BufRead, Error, ErrorKind, Read};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::AtomicUsize;
@@ -457,8 +456,27 @@ struct CappedBinaryRead {
 
 fn read_binary_capped(path: &Path, cap: usize) -> std::io::Result<CappedBinaryRead> {
     let file = std::fs::File::open(path)?;
-    let mut limited = file.take(cap as u64 + 1);
-    let mut bytes = Vec::new();
+    let read_limit_usize = cap.checked_add(1).ok_or_else(|| {
+        Error::new(
+            ErrorKind::InvalidInput,
+            "binary read cap cannot represent the truncation sentinel byte",
+        )
+    })?;
+    let read_limit = u64::try_from(read_limit_usize).map_err(|_| {
+        Error::new(
+            ErrorKind::InvalidInput,
+            "binary read cap is too large for this platform",
+        )
+    })?;
+    let capacity_u64 = file.metadata()?.len().min(read_limit);
+    let capacity = usize::try_from(capacity_u64).map_err(|_| {
+        Error::new(
+            ErrorKind::InvalidData,
+            "binary capped read capacity exceeds this platform's addressable memory",
+        )
+    })?;
+    let mut limited = file.take(read_limit);
+    let mut bytes = Vec::with_capacity(capacity);
     limited.read_to_end(&mut bytes)?;
     let truncated = bytes.len() > cap;
     if truncated {

@@ -379,20 +379,32 @@ fn append_pdf_strings(bytes: &[u8], out: &mut String) {
     let mut pos = 0usize;
     while pos < bytes.len() {
         match bytes[pos] {
-            b'(' => match parse_literal_string(bytes, pos) {
-                Some((text, next)) => {
-                    push_scannable_pdf_text(&text, out);
-                    pos = next;
+            b'(' => {
+                let Some(relative_close) = memchr::memchr(b')', &bytes[pos + 1..]) else {
+                    break;
+                };
+                let next_close = pos + 1 + relative_close;
+                match parse_literal_string(bytes, pos, next_close) {
+                    Some((text, next)) => {
+                        push_scannable_pdf_text(&text, out);
+                        pos = next;
+                    }
+                    None => pos = next_close + 1,
                 }
-                None => pos += 1,
-            },
-            b'<' if bytes.get(pos + 1) != Some(&b'<') => match parse_hex_string(bytes, pos) {
-                Some((text, next)) => {
-                    push_scannable_pdf_text(&text, out);
-                    pos = next;
+            }
+            b'<' if bytes.get(pos + 1) != Some(&b'<') => {
+                let Some(relative_close) = memchr::memchr(b'>', &bytes[pos + 1..]) else {
+                    break;
+                };
+                let next_close = pos + 1 + relative_close;
+                match parse_hex_string(bytes, pos, next_close) {
+                    Some((text, next)) => {
+                        push_scannable_pdf_text(&text, out);
+                        pos = next;
+                    }
+                    None => pos = next_close + 1,
                 }
-                None => pos += 1,
-            },
+            }
             _ => pos += 1,
         }
     }
@@ -411,10 +423,10 @@ fn push_scannable_pdf_text(text: &str, out: &mut String) {
     }
 }
 
-fn parse_literal_string(bytes: &[u8], start: usize) -> Option<(String, usize)> {
+fn parse_literal_string(bytes: &[u8], start: usize, first_close: usize) -> Option<(String, usize)> {
     let mut pos = start + 1;
     let mut depth = 1usize;
-    let mut out = Vec::new();
+    let mut out = Vec::with_capacity(first_close.saturating_sub(start + 1).min(4096));
     while pos < bytes.len() {
         match bytes[pos] {
             b'\\' => {
@@ -476,9 +488,9 @@ fn parse_octal_escape(bytes: &[u8], start: usize) -> (u8, usize) {
     ((value & 0xff) as u8, consumed)
 }
 
-fn parse_hex_string(bytes: &[u8], start: usize) -> Option<(String, usize)> {
+fn parse_hex_string(bytes: &[u8], start: usize, first_close: usize) -> Option<(String, usize)> {
     let mut pos = start + 1;
-    let mut nibbles = Vec::new();
+    let mut nibbles = Vec::with_capacity(first_close.saturating_sub(start + 1).min(4096));
     while pos < bytes.len() {
         let byte = bytes[pos];
         if byte == b'>' {

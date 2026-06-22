@@ -8,8 +8,13 @@ use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
-use super::decode::{decode_text_file, decode_text_file_owned};
+use super::decode::decode_text_file_owned_or_bytes;
 use super::MMAP_TOCTOU_SANITY_CAP_BYTES;
+
+pub(in crate::filesystem) enum BufferedFileRead {
+    Text(String),
+    Bytes(Vec<u8>),
+}
 
 /// Hard ceiling on a single buffered (non-mmap) whole-file read. Set to the
 /// same 2 GiB sanity cap the mmap path enforces post-open: `--max-file-size`
@@ -19,7 +24,10 @@ use super::MMAP_TOCTOU_SANITY_CAP_BYTES;
 /// read with `.take(MAX_BUFFERED_READ_BYTES)`. (KH-GAP-013)
 pub(super) const MAX_BUFFERED_READ_BYTES: u64 = MMAP_TOCTOU_SANITY_CAP_BYTES;
 
-pub(in crate::filesystem) fn read_file_buffered(path: &Path, size_hint: u64) -> Option<String> {
+pub(in crate::filesystem) fn read_file_buffered(
+    path: &Path,
+    size_hint: u64,
+) -> Option<BufferedFileRead> {
     // The buffered read already owns its `Vec<u8>`. Hand it to the owning
     // decoder so the valid-UTF-8 fast path can *move* the buffer straight
     // into the returned `String` (`String::from_utf8` reuses the same
@@ -44,7 +52,10 @@ pub(in crate::filesystem) fn read_file_buffered(path: &Path, size_hint: u64) -> 
             return None;
         }
     };
-    decode_text_file_owned(bytes)
+    match decode_text_file_owned_or_bytes(bytes) {
+        Ok(text) => Some(BufferedFileRead::Text(text)),
+        Err(bytes) => Some(BufferedFileRead::Bytes(bytes)),
+    }
 }
 
 /// Open `path` in a symlink-resistant way. POSIX gets `O_NOFOLLOW`;
@@ -195,7 +206,7 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<String> {
                 &mut (&mut file).take(MMAP_TOCTOU_SANITY_CAP_BYTES),
                 &mut bytes,
             ) {
-                Ok(_) => return decode_text_file(&bytes),
+                Ok(_) => return super::decode::decode_text_file(&bytes),
                 Err(error) => {
                     tracing::warn!(
                         path = %path.display(),
@@ -229,7 +240,7 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<String> {
                 &mut (&mut file).take(MMAP_TOCTOU_SANITY_CAP_BYTES),
                 &mut bytes,
             ) {
-                Ok(_) => return decode_text_file(&bytes),
+                Ok(_) => return super::decode::decode_text_file(&bytes),
                 Err(error) => {
                     tracing::warn!(
                         path = %path.display(),
@@ -260,7 +271,7 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<String> {
         }
     }
 
-    let result = decode_text_file(&mmap);
+    let result = super::decode::decode_text_file(&mmap);
 
     #[cfg(unix)]
     {

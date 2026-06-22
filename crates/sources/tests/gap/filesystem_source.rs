@@ -14,7 +14,7 @@
 //!       1. `is_default_excluded(filename)`  (filename component only)
 //!       2. `.min.` / `.bundle.` / `.chunk.js` / `.min.js` / `.bundle.js`
 //!       3. `max_size > 0 && file_size > max_size` -> warn + counter + return
-//!       4. `skip_extensions().contains(ext.to_lowercase())`
+//!       4. `is_skip_extension(ext)` ASCII-case-insensitive extension gate
 //!       5. empty-ext: sniff first 16 bytes for NUL / ELF / MZ / %PDF / PK
 //!       6. merkle skip
 //!       7. pdf structured extraction
@@ -378,16 +378,12 @@ fn max_file_size_zero_expands_nonempty_har() {
         2,
         "max_file_size(0) must be uncapped for HAR expansion, not a zero-byte expansion budget"
     );
-    assert!(
-        chunks
-            .iter()
-            .any(|chunk| chunk.metadata.source_type == "wire:har:request")
-    );
-    assert!(
-        chunks
-            .iter()
-            .any(|chunk| chunk.metadata.source_type == "wire:har:response")
-    );
+    assert!(chunks
+        .iter()
+        .any(|chunk| chunk.metadata.source_type == "wire:har:request"));
+    assert!(chunks
+        .iter()
+        .any(|chunk| chunk.metadata.source_type == "wire:har:response"));
     let body = combined_body(&chunks);
     assert!(body.contains("har_header_secret_123456"));
     assert!(body.contains("har_response_secret_123456"));

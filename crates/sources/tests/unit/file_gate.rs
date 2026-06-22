@@ -47,6 +47,68 @@ fn filesystem_read_error() {
     assert!(std::fs::read("/nonexistent/keyhog-gate-path").is_err());
 }
 
+#[test]
+fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() {
+    let extract = include_str!("../../src/filesystem/extract.rs");
+    let filter = include_str!("../../src/filesystem/filter.rs");
+    let read_mod = include_str!("../../src/filesystem/read/mod.rs");
+    let raw = include_str!("../../src/filesystem/read/raw.rs");
+    let decode = include_str!("../../src/filesystem/read/decode.rs");
+
+    assert!(
+        filter.contains("pub(super) fn is_skip_extension(ext: &str)")
+            && filter.contains("ext.eq_ignore_ascii_case(skip)"),
+        "filesystem extension skipping must compare ASCII-case-insensitively without allocating a lowercase extension"
+    );
+    assert!(
+        extract.contains("is_skip_extension(ext)")
+            && extract.contains("ext.eq_ignore_ascii_case(\"pdf\")")
+            && extract.contains("ext.eq_ignore_ascii_case(\"7z\")")
+            && extract.contains("ext.eq_ignore_ascii_case(\"rar\")")
+            && !extract.contains(".to_lowercase();"),
+        "filesystem extract hot path must not allocate a lowercase extension per file"
+    );
+    assert!(
+        read_mod.contains("BufferedFileRead")
+            && raw.contains("enum BufferedFileRead")
+            && raw.contains("decode_text_file_owned_or_bytes(bytes)")
+            && decode.contains("fn decode_text_file_owned_or_bytes"),
+        "buffered file reads must preserve already-read bytes when text decoding rejects them"
+    );
+    assert!(
+        extract.contains("Some(read::BufferedFileRead::Bytes(bytes))")
+            && extract.contains("extract_printable_strings(&bytes, 8)"),
+        "filesystem binary-strings fallback must reuse buffered bytes instead of rereading the file"
+    );
+}
+
+#[test]
+fn source_extract_pdf_and_binary_hot_paths_are_bounded() {
+    let binary = include_str!("../../src/binary/mod.rs");
+    assert!(
+        binary.contains("let capacity_u64 = file.metadata()?.len().min(read_limit);")
+            && binary.contains("Vec::with_capacity(capacity)")
+            && binary.contains("cap.checked_add(1)")
+            && binary.contains("truncation sentinel byte")
+            && binary.contains("binary capped read capacity exceeds"),
+        "binary capped reads must pre-size from metadata and fail closed on cap/capacity overflow"
+    );
+    assert!(
+        !binary.contains("let mut bytes = Vec::new();\n    limited.read_to_end(&mut bytes)?;"),
+        "binary capped read must not feed read_to_end from an empty Vec"
+    );
+
+    let pdf = include_str!("../../src/filesystem/extract/pdf.rs");
+    assert!(
+        pdf.contains("memchr::memchr(b')', &bytes[pos + 1..])")
+            && pdf.contains("memchr::memchr(b'>', &bytes[pos + 1..])")
+            && pdf.contains("None => pos = next_close + 1")
+            && pdf.contains("let mut out = Vec::with_capacity")
+            && pdf.contains("let mut nibbles = Vec::with_capacity"),
+        "PDF literal/hex scanners must bound failed delimiter scans and pre-size per-string scratch buffers"
+    );
+}
+
 // ── crates/sources/src/timeouts.rs ────────────────────────────────────
 #[cfg(any(feature = "web", feature = "slack", feature = "s3", feature = "github"))]
 #[test]

@@ -17,7 +17,7 @@ fn pdf_not_in_skip_extensions_and_has_structured_route() {
 
     let extract = read("src/filesystem/extract.rs");
     assert!(
-        extract.contains("mod pdf;") && extract.contains("ext == \"pdf\""),
+        extract.contains("mod pdf;") && extract.contains("ext.eq_ignore_ascii_case(\"pdf\")"),
         "filesystem/extract.rs must keep a dedicated .pdf route before generic text/binary fallback"
     );
 

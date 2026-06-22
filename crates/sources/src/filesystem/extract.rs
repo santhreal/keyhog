@@ -1,5 +1,5 @@
 use super::display_path;
-use super::filter::{is_default_excluded, skip_extensions};
+use super::filter::{is_default_excluded, is_skip_extension};
 use super::read;
 use keyhog_core::MerkleIndex;
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
@@ -161,14 +161,10 @@ pub(super) fn process_entry(
         return;
     }
 
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("") // LAW10: missing/non-string field => empty/placeholder; recall-safe
-        .to_lowercase();
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
 
     // Compile the SKIP_EXTENSIONS array into a fast HashSet at startup to accelerate file-type screening (KH-45)
-    if skip_extensions().contains(ext.as_str()) {
+    if is_skip_extension(ext) {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
         return;
     }
@@ -201,13 +197,13 @@ pub(super) fn process_entry(
         }
     }
 
-    if ext == "pdf" {
+    if ext.eq_ignore_ascii_case("pdf") {
         pdf::extract_pdf_chunks(&path, file_size, live_mtime_ns, max_size, emit);
         return;
-    } else if ext == "7z" {
+    } else if ext.eq_ignore_ascii_case("7z") {
         seven_zip::extract_seven_zip_chunks(&path, max_size, emit);
         return;
-    } else if ext == "rar" {
+    } else if ext.eq_ignore_ascii_case("rar") {
         rar::extract_rar_chunks(&path, max_size, emit);
         return;
     } else if archive::is_openpack_archive_ext(&ext) {
@@ -464,41 +460,58 @@ pub(super) fn process_entry(
         return;
     }
 
-    let file_text = if file_size >= MMAP_THRESHOLD {
-        read::read_file_mmap(&path)
+    let content_source = if file_size >= MMAP_THRESHOLD {
+        read::read_file_mmap(&path).map(read::BufferedFileRead::Text)
     } else {
         read::read_file_buffered(&path, file_size)
     };
 
-    let (content, source_type) = match file_text {
-        Some(text) if !text.is_empty() => (text.into(), "filesystem"),
-        _ => match read::read_file_safe(&path, file_size) {
-            Ok(bytes) => {
-                let strings = crate::strings::extract_printable_strings(&bytes, 8);
-                if strings.is_empty() {
-                    record_binary_without_printable_strings(&display_path(&path));
-                    return;
-                }
-                tracing::info!(
-                    path = %path.display(),
-                    "file is not valid text; scanning printable strings only"
-                );
-                (
-                    crate::strings::join_sensitive_strings(&strings, "\n"),
-                    "filesystem:binary-strings",
-                )
-            }
-            Err(error) => {
-                tracing::warn!(
-                    path = %path.display(),
-                    %error,
-                    "cannot read file; skipping"
-                );
-                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                let _ = emit(Err(keyhog_core::SourceError::Io(error))); // LAW10: unused-binding marker; no runtime effect, not a fallback
+    let (content, source_type) = match content_source {
+        Some(read::BufferedFileRead::Text(text)) if !text.is_empty() => (text.into(), "filesystem"),
+        Some(read::BufferedFileRead::Bytes(bytes)) => {
+            let strings = crate::strings::extract_printable_strings(&bytes, 8);
+            if strings.is_empty() {
+                record_binary_without_printable_strings(&display_path(&path));
                 return;
             }
-        },
+            tracing::info!(
+                path = %path.display(),
+                "file is not valid text; scanning printable strings only"
+            );
+            (
+                crate::strings::join_sensitive_strings(&strings, "\n"),
+                "filesystem:binary-strings",
+            )
+        }
+        _ => {
+            match read::read_file_safe(&path, file_size) {
+                Ok(bytes) => {
+                    let strings = crate::strings::extract_printable_strings(&bytes, 8);
+                    if strings.is_empty() {
+                        record_binary_without_printable_strings(&display_path(&path));
+                        return;
+                    }
+                    tracing::info!(
+                        path = %path.display(),
+                        "file is not valid text; scanning printable strings only"
+                    );
+                    (
+                        crate::strings::join_sensitive_strings(&strings, "\n"),
+                        "filesystem:binary-strings",
+                    )
+                }
+                Err(error) => {
+                    tracing::warn!(
+                        path = %path.display(),
+                        %error,
+                        "cannot read file; skipping"
+                    );
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                    let _ = emit(Err(keyhog_core::SourceError::Io(error))); // LAW10: unused-binding marker; no runtime effect, not a fallback
+                    return;
+                }
+            }
+        }
     };
 
     if !emit(Ok(Chunk {

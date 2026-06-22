@@ -26,6 +26,12 @@ pub(super) fn skip_extensions() -> &'static HashSet<&'static str> {
     &SKIP_EXTENSIONS_SET
 }
 
+pub(super) fn is_skip_extension(ext: &str) -> bool {
+    skip_extensions()
+        .iter()
+        .any(|skip| ext.eq_ignore_ascii_case(skip))
+}
+
 fn default_excludes() -> &'static DefaultExcludeRules {
     &DEFAULT_EXCLUDES
 }

@@ -63,19 +63,21 @@ pub(crate) fn decode_text_file(bytes: &[u8]) -> Option<String> {
 /// memcpy per buffered read on the hot path. The mmap path cannot use this
 /// (its backing store is a borrowed mapping, not an owned `Vec`), so it
 /// keeps calling `decode_text_file`.
-pub(in crate::filesystem) fn decode_text_file_owned(bytes: Vec<u8>) -> Option<String> {
+pub(in crate::filesystem) fn decode_text_file_owned_or_bytes(
+    bytes: Vec<u8>,
+) -> Result<String, Vec<u8>> {
     if has_binary_magic(&bytes) {
-        return None;
+        return Err(bytes);
     }
     if let Some(text) = decode_utf16(&bytes) {
-        return Some(text);
+        return Ok(text);
     }
     // The UTF-8-BOM case still needs the borrowed slow path: stripping the
     // 3-byte BOM means the owned buffer no longer starts at the text, so
     // `String::from_utf8(bytes)` would keep the BOM. It's rare; let the
     // borrowing decoder handle it (with its single owned copy).
     if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
-        return decode_text_file(&bytes);
+        return decode_text_file(&bytes).ok_or(bytes);
     }
     // Valid-UTF-8 fast path - identical gate to `decode_text_file`, but the
     // verified buffer is moved into the `String` (zero re-alloc) rather than
@@ -83,9 +85,9 @@ pub(in crate::filesystem) fn decode_text_file_owned(bytes: Vec<u8>) -> Option<St
     match String::from_utf8(bytes) {
         Ok(s) => {
             if looks_binary_header_check(s.as_bytes()) {
-                return None;
+                return Err(s.into_bytes());
             }
-            Some(s)
+            Ok(s)
         }
         // Not strictly valid UTF-8: recover the original bytes (no copy,
         // `into_bytes` just unwraps the buffer) and take the shared lossy /
@@ -93,9 +95,9 @@ pub(in crate::filesystem) fn decode_text_file_owned(bytes: Vec<u8>) -> Option<St
         Err(e) => {
             let bytes = e.into_bytes();
             if looks_binary(&bytes) {
-                return None;
+                return Err(bytes);
             }
-            Some(String::from_utf8_lossy(&bytes).into_owned())
+            Ok(String::from_utf8_lossy(&bytes).into_owned())
         }
     }
 }
