@@ -33,14 +33,6 @@ impl CompressedFormat {
     }
 }
 
-/// Smallest zstd `windowLog` whose window (`1 << log`) covers `budget`, clamped
-/// to libzstd's valid range `[10, 31]`.
-pub(crate) fn budget_window_log_max(budget: usize) -> u32 {
-    let b = (budget.max(1 << 10)) as u64; // floor the window at 1 KiB
-    let log = 64 - (b - 1).leading_zeros(); // ceil(log2(b))
-    log.clamp(10, 31)
-}
-
 fn decompress_to_bytes(
     format: CompressedFormat,
     compressed: &[u8],
@@ -67,7 +59,9 @@ fn decompress_to_bytes(
                 // budget. `.take(take_limit)` caps decoded OUTPUT, but a crafted
                 // tiny `.zst` can advertise a large `windowLog` and force that
                 // allocation before producing a single byte.
-                match dec.window_log_max(budget_window_log_max(budget)) {
+                match dec.window_log_max(crate::compression_limits::zstd_window_log_max_for_budget(
+                    budget as u64,
+                )) {
                     Ok(()) => dec.take(take_limit).read_to_end(&mut out),
                     Err(e) => Err(e),
                 }

@@ -259,6 +259,13 @@ pub mod testing {
             destination: &std::path::Path,
         ) -> Result<(), keyhog_core::SourceError>;
         #[cfg(feature = "docker")]
+        fn unpack_docker_layer_archive_with_total_cap(
+            &self,
+            archive_path: &std::path::Path,
+            destination: &std::path::Path,
+            total_cap: u64,
+        ) -> Result<(), keyhog_core::SourceError>;
+        #[cfg(feature = "docker")]
         fn docker_rewrite_layer_chunks<I>(
             &self,
             chunks: I,
@@ -747,6 +754,20 @@ pub mod testing {
             destination: &std::path::Path,
         ) -> Result<(), keyhog_core::SourceError> {
             crate::docker::unpack_layer_archive_for_test(archive_path, destination)
+        }
+
+        #[cfg(feature = "docker")]
+        fn unpack_docker_layer_archive_with_total_cap(
+            &self,
+            archive_path: &std::path::Path,
+            destination: &std::path::Path,
+            total_cap: u64,
+        ) -> Result<(), keyhog_core::SourceError> {
+            crate::docker::unpack_layer_archive_with_total_cap_for_test(
+                archive_path,
+                destination,
+                total_cap,
+            )
         }
 
         #[cfg(feature = "docker")]

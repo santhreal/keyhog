@@ -125,6 +125,61 @@ fn docker_gzip_layer_reads_concatenated_members() {
 
 #[cfg(feature = "docker")]
 #[test]
+fn docker_zstd_layer_refuses_window_above_budget() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let layer_path = dir.path().join("layer.tar.zst");
+
+    let mut builder = tar::Builder::new(Vec::new());
+    let mut payload = b"SECOND=AKIAIOSFODNN7EXAMPLE\n".to_vec();
+    payload.extend_from_slice(&vec![b'A'; 9 * 1024 * 1024]);
+    let mut header = tar::Header::new_gnu();
+    header.set_path("oversize-window.env").expect("set path");
+    header.set_size(payload.len() as u64);
+    header.set_entry_type(tar::EntryType::Regular);
+    header.set_cksum();
+    builder
+        .append(&header, payload.as_slice())
+        .expect("append zstd payload");
+    builder.finish().expect("finish tar");
+    let tar_bytes = builder.into_inner().expect("tar bytes");
+    let compressed = zstd::stream::encode_all(tar_bytes.as_slice(), 19).expect("zstd encode");
+    assert!(
+        compressed.len() < 512 * 1024,
+        "repetitive zstd layer should be small on disk; got {} bytes",
+        compressed.len()
+    );
+    std::fs::write(&layer_path, compressed).expect("write zstd layer");
+
+    let allowed = dir.path().join("allowed");
+    std::fs::create_dir(&allowed).expect("mkdir allowed");
+    TestApi
+        .unpack_docker_layer_archive(&layer_path, &allowed)
+        .expect("default Docker zstd budget must accept the fixture");
+    assert!(
+        std::fs::read_to_string(allowed.join("oversize-window.env"))
+            .expect("read extracted zstd layer file")
+            .contains("AKIAIOSFODNN7EXAMPLE"),
+        "control leg must prove the zstd layer is otherwise valid"
+    );
+
+    let refused = dir.path().join("refused");
+    std::fs::create_dir(&refused).expect("mkdir refused");
+    let err = TestApi
+        .unpack_docker_layer_archive_with_total_cap(&layer_path, &refused, 2 * 1024 * 1024)
+        .expect_err("zstd layer window above Docker budget must be refused");
+    assert!(
+        !refused.join("oversize-window.env").exists(),
+        "oversize-window zstd layer must not be extracted after refusal"
+    );
+    let msg = err.to_string().to_lowercase();
+    assert!(
+        msg.contains("window") || msg.contains("memory") || msg.contains("frame"),
+        "zstd refusal should identify the decompression-window failure, got {err}"
+    );
+}
+
+#[cfg(feature = "docker")]
+#[test]
 fn docker_layer_filesystem_error_propagates() {
     let dir = tempfile::tempdir().expect("tempdir");
     let err = TestApi

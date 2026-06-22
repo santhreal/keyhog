@@ -7,6 +7,7 @@
 #![allow(clippy::too_many_arguments)]
 
 mod api;
+mod compression_limits;
 mod decode;
 mod factory;
 mod limits;

@@ -276,13 +276,23 @@ fn unpack_layer_archive(
         }
         LayerArchiveEncoding::ZstdTar => {
             let validation_file = File::open(archive_path).map_err(SourceError::Io)?;
-            let validation_reader =
+            let mut validation_reader =
                 zstd::stream::read::Decoder::new(validation_file).map_err(SourceError::Io)?;
+            validation_reader
+                .window_log_max(crate::compression_limits::zstd_window_log_max_for_budget(
+                    limits.docker_tar_total_bytes,
+                ))
+                .map_err(SourceError::Io)?;
             validate_tar_reader(validation_reader, limits)?;
 
             let extract_file = File::open(archive_path).map_err(SourceError::Io)?;
-            let extract_reader =
+            let mut extract_reader =
                 zstd::stream::read::Decoder::new(extract_file).map_err(SourceError::Io)?;
+            extract_reader
+                .window_log_max(crate::compression_limits::zstd_window_log_max_for_budget(
+                    limits.docker_tar_total_bytes,
+                ))
+                .map_err(SourceError::Io)?;
             unpack_tar_reader(extract_reader, destination)
         }
     }
@@ -970,6 +980,18 @@ pub(crate) fn unpack_layer_archive_for_test(
     destination: &Path,
 ) -> Result<(), SourceError> {
     unpack_layer_archive(archive_path, destination, crate::SourceLimits::default())
+}
+
+pub(crate) fn unpack_layer_archive_with_total_cap_for_test(
+    archive_path: &Path,
+    destination: &Path,
+    total_cap: u64,
+) -> Result<(), SourceError> {
+    let limits = crate::SourceLimits {
+        docker_tar_total_bytes: total_cap,
+        ..crate::SourceLimits::default()
+    };
+    unpack_layer_archive(archive_path, destination, limits)
 }
 
 pub(crate) fn rewrite_layer_chunks_for_test<I>(
