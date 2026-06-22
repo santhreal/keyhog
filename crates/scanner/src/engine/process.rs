@@ -38,7 +38,6 @@ impl CompiledScanner {
             extend_known_prefix_credential(data, credential, credential_end);
         let line = match_line_number(preprocessed, line_offsets, credential_start);
 
-        let candidate = crate::adjudicate::CandidateMatch::new(credential);
         let process_signals = crate::adjudicate::ProcessCandidateSignals::from_match(
             detector.id.as_ref(),
             credential,
@@ -47,14 +46,13 @@ impl CompiledScanner {
             match_end,
         );
         let process_ctx = crate::adjudicate::MatchCtx::for_process_signals(process_signals);
-        if let Some(stage_id) =
-            crate::adjudicate::adjudicate_match(candidate, &process_ctx).suppressed_stage()
+        if crate::adjudicate::record_suppression(
+            chunk.metadata.path.as_deref(),
+            credential,
+            &process_ctx,
+        )
+        .is_some()
         {
-            crate::telemetry::record_shape_suppression(
-                chunk.metadata.path.as_deref(),
-                credential,
-                stage_id.as_str(),
-            );
             return;
         }
         let false_positive_context = context::is_false_positive_context(
@@ -71,14 +69,13 @@ impl CompiledScanner {
                 false_positive_context,
             ),
         );
-        if let Some(stage_id) =
-            crate::adjudicate::adjudicate_match(candidate, &false_positive_ctx).suppressed_stage()
+        if crate::adjudicate::record_suppression(
+            chunk.metadata.path.as_deref(),
+            credential,
+            &false_positive_ctx,
+        )
+        .is_some()
         {
-            crate::telemetry::record_shape_suppression(
-                chunk.metadata.path.as_deref(),
-                credential,
-                stage_id.as_str(),
-            );
             return;
         }
 
@@ -111,18 +108,17 @@ impl CompiledScanner {
                 weak_anchor,
             );
         let match_ctx = crate::adjudicate::MatchCtx::for_named_detector(named_suppression_ctx);
-        if let Some(stage_id) =
-            crate::adjudicate::adjudicate_match(candidate, &match_ctx).suppressed_stage()
+        if crate::adjudicate::record_suppression(
+            chunk.metadata.path.as_deref(),
+            credential,
+            &match_ctx,
+        )
+        .is_some()
         {
             // KH-L-0412 (Law-10): named-detector context/example suppression
             // was the last silent `return` on this path. Trace it through the
             // adjudicator so a dropped match is visible to `--dogfood` with
             // the deciding stage name.
-            crate::telemetry::record_shape_suppression(
-                chunk.metadata.path.as_deref(),
-                credential,
-                stage_id.as_str(),
-            );
             return;
         }
 
@@ -143,14 +139,12 @@ impl CompiledScanner {
                             true,
                         ),
                     );
-                    let stage_id = crate::adjudicate::adjudicate_match(candidate, &companion_ctx)
-                        .suppressed_stage()
-                        .expect("missing-required-companion signal must suppress");
-                    crate::telemetry::record_shape_suppression(
+                    crate::adjudicate::record_suppression(
                         chunk.metadata.path.as_deref(),
                         credential,
-                        stage_id.as_str(),
-                    );
+                        &companion_ctx,
+                    )
+                    .expect("missing-required-companion signal must suppress");
                     return;
                 }
             }
@@ -200,14 +194,13 @@ impl CompiledScanner {
                 camel_case_no_digit,
             ),
         );
-        if let Some(stage_id) =
-            crate::adjudicate::adjudicate_match(candidate, &entropy_shape_ctx).suppressed_stage()
+        if crate::adjudicate::record_suppression(
+            chunk.metadata.path.as_deref(),
+            credential,
+            &entropy_shape_ctx,
+        )
+        .is_some()
         {
-            crate::telemetry::record_shape_suppression(
-                chunk.metadata.path.as_deref(),
-                credential,
-                stage_id.as_str(),
-            );
             return;
         }
 
@@ -221,15 +214,14 @@ impl CompiledScanner {
                 checksum_policy.is_invalid(),
             ),
         );
-        if let Some(stage_id) =
-            crate::adjudicate::adjudicate_match(candidate, &checksum_ctx).suppressed_stage()
+        if crate::adjudicate::record_suppression(
+            chunk.metadata.path.as_deref(),
+            credential,
+            &checksum_ctx,
+        )
+        .is_some()
         {
             // Checksum failed: NOT a real token. Skip expensive ML scoring.
-            crate::telemetry::record_shape_suppression(
-                chunk.metadata.path.as_deref(),
-                credential,
-                stage_id.as_str(),
-            );
             return;
         }
 

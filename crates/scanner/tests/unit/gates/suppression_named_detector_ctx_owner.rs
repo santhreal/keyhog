@@ -101,8 +101,8 @@ fn engine_named_detector_suppression_routes_through_adjudicator() {
     let src = scanner_src();
     let process = uncommented_code(&read(&src.join("engine/process.rs")));
     assert!(
-        process.contains("crate::adjudicate::adjudicate_match("),
-        "engine/process.rs must route named-detector candidate decisions through adjudicate_match"
+        process.contains("crate::adjudicate::record_suppression("),
+        "engine/process.rs must route named-detector candidate decisions through the adjudicator recorder"
     );
     assert!(
         !process.contains("suppress_named_detector_finding("),
@@ -203,4 +203,28 @@ fn entropy_and_ml_emit_reject_reasons_route_through_adjudicator() {
             "adjudicate/mod.rs must own the {reason} suppression reason"
         );
     }
+}
+
+#[test]
+fn shape_suppression_telemetry_is_only_called_by_adjudicator() {
+    let src = scanner_src();
+    let mut files = Vec::new();
+    collect_rs_files(&src, &mut files);
+
+    let mut offenders = Vec::new();
+    for path in files {
+        let rel = path.strip_prefix(&src).expect("scanner src prefix");
+        if rel == Path::new("telemetry.rs") || rel == Path::new("adjudicate/mod.rs") {
+            continue;
+        }
+        let code = uncommented_code(&read(&path));
+        if code.contains("record_shape_suppression(") {
+            offenders.push(rel.display().to_string());
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "production code must route shape suppression telemetry through adjudicate, not call telemetry directly: {offenders:#?}"
+    );
 }

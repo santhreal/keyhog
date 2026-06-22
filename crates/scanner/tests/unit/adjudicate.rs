@@ -264,6 +264,21 @@ fn explicit_stage_reports_hard_suppressed_context() {
 }
 
 #[test]
+fn explicit_stage_reports_shape_gate_reason() {
+    let credential = "PLACEHOLDER_TOKEN";
+    let ctx = MatchCtx::for_stage(StageId::ShapeGate("placeholder_word"));
+
+    assert_eq!(
+        adjudicate_match(CandidateMatch::new(credential), &ctx),
+        Verdict::Suppressed(StageId::ShapeGate("placeholder_word"))
+    );
+    assert_eq!(
+        StageId::ShapeGate("placeholder_word").as_str(),
+        "placeholder_word"
+    );
+}
+
+#[test]
 fn named_detector_stage_suppresses_generic_identifier() {
     let ctx = MatchCtx::for_named_detector(NamedDetectorSuppressionCtx::with_weak_anchor(
         Some("webgoat/WebgoatContext.java"),

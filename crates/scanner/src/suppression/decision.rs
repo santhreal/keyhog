@@ -20,7 +20,11 @@ use crate::context;
 /// short-circuits on an atomic). `reason` is the gate name.
 #[inline]
 fn suppress(path: Option<&str>, credential: &str, reason: &'static str) -> bool {
-    crate::telemetry::record_shape_suppression(path, credential, reason);
+    crate::adjudicate::record_stage_suppression(
+        path,
+        credential,
+        crate::adjudicate::StageId::ShapeGate(reason),
+    );
     true
 }
 

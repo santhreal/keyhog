@@ -8,6 +8,14 @@
 
 use super::shape::{looks_like_prefixed_masked_sequence, RFC7519_EXAMPLE_JWT_PREFIX};
 
+fn record_marker_suppression(path: Option<&str>, credential: &str, reason: &'static str) {
+    crate::adjudicate::record_stage_suppression(
+        path,
+        credential,
+        crate::adjudicate::StageId::ShapeGate(reason),
+    );
+}
+
 /// Outcome of the doc/placeholder/marker pre-checks.
 pub(super) enum MarkerVerdict {
     /// The credential matched a documentation marker or known FP shape -
@@ -55,7 +63,7 @@ pub(super) fn check_markers(
         upper,
         entropy_hint,
     ) {
-        crate::telemetry::record_shape_suppression(path, credential, "placeholder_word");
+        record_marker_suppression(path, credential, "placeholder_word");
         return MarkerVerdict::Suppress;
     }
     // EXAMPLE is special: only suppress if it is in the credential value itself,
@@ -104,11 +112,7 @@ pub(super) fn check_markers(
                     .next_back()
                     .is_none_or(|c| !c.is_alphanumeric())
             }) {
-                crate::telemetry::record_shape_suppression(
-                    path,
-                    credential,
-                    "instructional_fragment",
-                );
+                record_marker_suppression(path, credential, "instructional_fragment");
                 return MarkerVerdict::Suppress;
             }
         }
@@ -116,7 +120,7 @@ pub(super) fn check_markers(
 
     // Developer markers override provider-prefix trust.
     if upper_contains_token(upper, "TODO") || upper_contains_token(upper, "FIXME") {
-        crate::telemetry::record_shape_suppression(path, credential, "dev_marker_todo_fixme");
+        record_marker_suppression(path, credential, "dev_marker_todo_fixme");
         return MarkerVerdict::Suppress;
     }
 
@@ -140,7 +144,7 @@ pub(super) fn check_markers(
     // 349 leaked FPs in `jwt-rfc-example` category were the
     // `auth_token=…` log-line + `api.key=…` properties shape.
     if credential.contains(RFC7519_EXAMPLE_JWT_PREFIX) {
-        crate::telemetry::record_shape_suppression(path, credential, "rfc7519_example_jwt");
+        record_marker_suppression(path, credential, "rfc7519_example_jwt");
         return MarkerVerdict::Suppress;
     }
 
@@ -192,11 +196,7 @@ pub(super) fn check_markers(
                 {
                     continue;
                 }
-                crate::telemetry::record_shape_suppression(
-                    path,
-                    credential,
-                    "doc_marker_substring",
-                );
+                record_marker_suppression(path, credential, "doc_marker_substring");
                 return MarkerVerdict::Suppress;
             }
         }
@@ -213,11 +213,7 @@ pub(super) fn check_markers(
     let known_prefix_body = crate::confidence::known_prefix_body(credential);
     if let Some(body) = known_prefix_body {
         if looks_like_prefixed_masked_sequence(body) {
-            crate::telemetry::record_shape_suppression(
-                path,
-                credential,
-                "prefixed_masked_sequence",
-            );
+            record_marker_suppression(path, credential, "prefixed_masked_sequence");
             return MarkerVerdict::Suppress;
         }
         if !credential.starts_with("TESTKEY_") {
