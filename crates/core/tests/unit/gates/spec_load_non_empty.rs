@@ -18,4 +18,9 @@ fn spec_load_non_empty() {
         !prod.contains("todo!()") && !prod.contains("unimplemented!()"),
         "spec::load: todo!/unimplemented! forbidden in non-test source"
     );
+    assert!(
+        prod.contains("let mut contents = String::with_capacity(len as usize);")
+            && !prod.contains("let mut contents = String::new();"),
+        "spec::load: detector TOML reads must pre-size the String from capped metadata length"
+    );
 }

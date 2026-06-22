@@ -79,7 +79,7 @@ pub fn read_detector_toml_file(path: &Path) -> std::io::Result<String> {
         ));
     }
 
-    let mut contents = String::new();
+    let mut contents = String::with_capacity(len as usize);
     file.take(DETECTOR_TOML_FILE_BYTES.saturating_add(1))
         .read_to_string(&mut contents)?;
     if contents.len() as u64 > DETECTOR_TOML_FILE_BYTES {

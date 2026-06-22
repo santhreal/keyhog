@@ -350,9 +350,11 @@ fn regex_validation_uses_typed_kinds_not_string_labels() {
 fn pattern_group_bounds_are_validated_before_scanner_compile() {
     let source = std::fs::read_to_string("src/spec/validate.rs").expect("read validate source");
 
-    assert!(source.contains("fn validate_pattern_groups("));
-    assert!(source.contains("regex.captures_len()"));
+    assert!(source.contains("fn validate_pattern_groups<'a>("));
+    assert!(source.contains("fn ast_captures_len(ast: &ast::Ast) -> usize"));
+    assert!(source.contains("fn ast_max_capture_index(ast: &ast::Ast) -> Option<u32>"));
     assert!(source.contains("group >= captures"));
+    assert!(!source.contains("regex::Regex::new(&pat.regex)"));
 }
 
 #[test]

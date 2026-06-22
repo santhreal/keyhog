@@ -3,6 +3,7 @@
 use super::{DetectorSpec, VerifySpec};
 use regex_syntax::ast;
 use serde::Serialize;
+use std::collections::{hash_map::Entry, HashMap};
 
 const MAX_REGEX_PATTERN_LEN: usize = 4096;
 const MAX_COMPANION_WITHIN_LINES: usize = 100;
@@ -57,12 +58,13 @@ pub enum QualityIssue {
 /// ```
 pub fn validate_detector(spec: &DetectorSpec) -> Vec<QualityIssue> {
     let mut issues = Vec::new();
+    let mut regex_cache = RegexAstCache::default();
     validate_patterns_present(spec, &mut issues);
-    validate_regexes(spec, &mut issues);
-    validate_pattern_groups(spec, &mut issues);
+    validate_regexes(spec, &mut issues, &mut regex_cache);
+    validate_pattern_groups(spec, &mut issues, &mut regex_cache);
     validate_keywords(spec, &mut issues);
-    validate_pattern_specificity(spec, &mut issues);
-    validate_companions(spec, &mut issues);
+    validate_pattern_specificity(spec, &mut issues, &mut regex_cache);
+    validate_companions(spec, &mut issues, &mut regex_cache);
     validate_verify_spec(spec, &mut issues);
     issues
 }
@@ -73,9 +75,13 @@ fn validate_patterns_present(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>
     }
 }
 
-fn validate_regexes(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+fn validate_regexes<'a>(
+    spec: &'a DetectorSpec,
+    issues: &mut Vec<QualityIssue>,
+    regex_cache: &mut RegexAstCache<'a>,
+) {
     for (i, pat) in spec.patterns.iter().enumerate() {
-        validate_regex_definition(RegexKind::Pattern, i, &pat.regex, issues);
+        validate_regex_definition(RegexKind::Pattern, i, &pat.regex, issues, regex_cache);
     }
 }
 
@@ -87,15 +93,19 @@ fn validate_keywords(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
     }
 }
 
-fn validate_pattern_groups(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+fn validate_pattern_groups<'a>(
+    spec: &'a DetectorSpec,
+    issues: &mut Vec<QualityIssue>,
+    regex_cache: &mut RegexAstCache<'a>,
+) {
     for (i, pat) in spec.patterns.iter().enumerate() {
         let Some(group) = pat.group else {
             continue;
         };
-        let Ok(regex) = regex::Regex::new(&pat.regex) else {
+        let Ok(ast) = regex_cache.parse(&pat.regex) else {
             continue; // LAW10: invalid regex already emits a QualityIssue::Error; detector load fails closed, recall-safe
         };
-        let captures = regex.captures_len();
+        let captures = ast_captures_len(ast);
         if group >= captures {
             issues.push(QualityIssue::Error(format!(
                 "pattern {i} capture group {group} is out of range; regex has {} capture groups \
@@ -107,9 +117,13 @@ fn validate_pattern_groups(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) 
     }
 }
 
-fn validate_pattern_specificity(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+fn validate_pattern_specificity<'a>(
+    spec: &'a DetectorSpec,
+    issues: &mut Vec<QualityIssue>,
+    regex_cache: &mut RegexAstCache<'a>,
+) {
     for (i, pat) in spec.patterns.iter().enumerate() {
-        let has_prefix = has_literal_prefix(&pat.regex, 3);
+        let has_prefix = has_literal_prefix(regex_cache, &pat.regex, 3);
         let has_group = pat.group.is_some();
         let is_pure_charclass = is_pure_character_class(&pat.regex);
 
@@ -128,7 +142,11 @@ fn validate_pattern_specificity(spec: &DetectorSpec, issues: &mut Vec<QualityIss
     }
 }
 
-fn validate_companions(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
+fn validate_companions<'a>(
+    spec: &'a DetectorSpec,
+    issues: &mut Vec<QualityIssue>,
+    regex_cache: &mut RegexAstCache<'a>,
+) {
     for (i, companion) in spec.companions.iter().enumerate() {
         if companion.name.trim().is_empty() {
             issues.push(QualityIssue::Error(format!(
@@ -142,7 +160,13 @@ fn validate_companions(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
                 i, companion.within_lines, MAX_COMPANION_WITHIN_LINES
             )));
         }
-        validate_regex_definition(RegexKind::Companion, i, &companion.regex, issues);
+        validate_regex_definition(
+            RegexKind::Companion,
+            i,
+            &companion.regex,
+            issues,
+            regex_cache,
+        );
         // A "pure character class" companion (e.g. `[A-Z0-9]{10}` for an
         // Algolia application_id) is acceptable when `within_lines` is small:
         // the positional constraint is itself the contextual anchor. Reject
@@ -162,7 +186,7 @@ fn validate_companions(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
                     i, companion.regex, companion.within_lines, TIGHT_COMPANION_RADIUS
                 )));
             }
-        } else if !has_substantial_literal(&companion.regex, 3) {
+        } else if !has_substantial_literal(regex_cache, &companion.regex, 3) {
             issues.push(QualityIssue::Warning(format!(
                 "companion {} regex '{}' is too broad - may produce false positives. \
                  Add a context anchor like 'KEY_NAME='.",
@@ -191,11 +215,31 @@ impl RegexKind {
     }
 }
 
-fn validate_regex_definition(
+#[derive(Default)]
+struct RegexAstCache<'a> {
+    parsed: HashMap<&'a str, Result<ast::Ast, String>>,
+}
+
+impl<'a> RegexAstCache<'a> {
+    fn parse(&mut self, regex: &'a str) -> Result<&ast::Ast, &str> {
+        let parsed = match self.parsed.entry(regex) {
+            Entry::Occupied(entry) => entry.into_mut(),
+            Entry::Vacant(entry) => entry.insert(
+                ast::parse::Parser::new()
+                    .parse(regex)
+                    .map_err(|error| error.to_string()),
+            ),
+        };
+        parsed.as_ref().map_err(String::as_str)
+    }
+}
+
+fn validate_regex_definition<'a>(
     kind: RegexKind,
     index: usize,
-    regex: &str,
+    regex: &'a str,
     issues: &mut Vec<QualityIssue>,
+    regex_cache: &mut RegexAstCache<'a>,
 ) {
     let kind = kind.label();
     if regex.len() > MAX_REGEX_PATTERN_LEN {
@@ -207,17 +251,21 @@ fn validate_regex_definition(
         return;
     }
 
-    match ast::parse::Parser::new().parse(regex) {
-        Ok(ast) => validate_regex_complexity(kind, index, &ast, issues),
+    match regex_cache.parse(regex) {
+        Ok(ast) => validate_regex_complexity(kind, index, ast, issues),
         Err(error) => issues.push(QualityIssue::Error(format!(
             "{kind} {index} regex does not compile: {error}"
         ))),
     }
 }
 
-fn has_substantial_literal(pattern: &str, min_len: usize) -> bool {
-    match ast::parse::Parser::new().parse(pattern) {
-        Ok(ast) => ast_literal_runs(&ast).max >= min_len,
+fn has_substantial_literal<'a>(
+    regex_cache: &mut RegexAstCache<'a>,
+    pattern: &'a str,
+    min_len: usize,
+) -> bool {
+    match regex_cache.parse(pattern) {
+        Ok(ast) => ast_literal_runs(ast).max >= min_len,
         Err(_) => false, // LAW10: invalid regex already emits a QualityIssue::Error; no recall impact
     }
 }
@@ -484,10 +532,45 @@ fn validate_url(url: &str, issues: &mut Vec<QualityIssue>) {
     }
 }
 
-fn has_literal_prefix(pattern: &str, min_len: usize) -> bool {
-    match ast::parse::Parser::new().parse(pattern) {
-        Ok(ast) => ast_literal_runs(&ast).prefix >= min_len,
+fn has_literal_prefix<'a>(
+    regex_cache: &mut RegexAstCache<'a>,
+    pattern: &'a str,
+    min_len: usize,
+) -> bool {
+    match regex_cache.parse(pattern) {
+        Ok(ast) => ast_literal_runs(ast).prefix >= min_len,
         Err(_) => false, // LAW10: invalid regex already emits a QualityIssue::Error; no recall impact
+    }
+}
+
+fn ast_captures_len(ast: &ast::Ast) -> usize {
+    ast_max_capture_index(ast)
+        .map(|index| index as usize + 1)
+        .unwrap_or(1) // LAW10: no explicit capture groups still leaves regex capture group 0; this is the same captures_len contract, not a fallback.
+}
+
+fn ast_max_capture_index(ast: &ast::Ast) -> Option<u32> {
+    match ast {
+        ast::Ast::Group(group) => group
+            .capture_index()
+            .into_iter()
+            .chain(ast_max_capture_index(&group.ast))
+            .max(),
+        ast::Ast::Concat(concat) => concat.asts.iter().filter_map(ast_max_capture_index).max(),
+        ast::Ast::Alternation(alternation) => alternation
+            .asts
+            .iter()
+            .filter_map(ast_max_capture_index)
+            .max(),
+        ast::Ast::Repetition(repetition) => ast_max_capture_index(&repetition.ast),
+        ast::Ast::Empty(_)
+        | ast::Ast::Flags(_)
+        | ast::Ast::Literal(_)
+        | ast::Ast::Dot(_)
+        | ast::Ast::Assertion(_)
+        | ast::Ast::ClassUnicode(_)
+        | ast::Ast::ClassPerl(_)
+        | ast::Ast::ClassBracketed(_) => None,
     }
 }
 

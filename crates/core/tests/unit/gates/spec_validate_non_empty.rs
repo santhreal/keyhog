@@ -18,4 +18,13 @@ fn spec_validate_non_empty() {
         !prod.contains("todo!()") && !prod.contains("unimplemented!()"),
         "spec::validate: todo!/unimplemented! forbidden in non-test source"
     );
+    assert!(
+        prod.contains("struct RegexAstCache")
+            && prod.contains("HashMap<&'a str, Result<ast::Ast, String>>")
+            && prod.contains("fn parse(&mut self, regex: &'a str) -> Result<&ast::Ast, &str>")
+            && prod.matches("ast::parse::Parser::new()").count() == 1
+            && prod.matches("regex_cache.parse(").count() == 4
+            && !prod.contains("regex::Regex::new(&pat.regex)"),
+        "spec::validate: detector regex validation must parse each regex through the shared AST cache"
+    );
 }
