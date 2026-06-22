@@ -52,6 +52,14 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
         "Hyperscan scratches must be preallocated per shard instead of allocated opportunistically during scan coverage"
     );
     assert!(
+        backend.contains("const HS_CACHE_FILE_BYTES")
+            && backend.contains("fn read_hs_cache_file(")
+            && backend.contains("file.take(HS_CACHE_FILE_BYTES.saturating_add(1))")
+            && backend.contains("read_hs_cache_file(&cache_path)")
+            && !backend.contains("std::fs::read(&cache_path)"),
+        "Hyperscan shard cache loads must be capped before reading cache bytes"
+    );
+    assert!(
         engine_backend_prepared
             .contains("HS compile returned unsupported pattern id outside the deduped AC table")
             && !engine_backend_prepared.contains(".filter_map(|&hs_id| index_map.get(hs_id))")

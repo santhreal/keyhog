@@ -36,6 +36,12 @@ const TARGET_PATTERNS_PER_SHARD: usize = 80;
 /// real corpus (~900 patterns) sits at ~23 shards, well under it.
 const MAX_COMPILE_SHARDS: usize = 64;
 
+/// Hard cap for one serialized Hyperscan shard cache file. Cache files are
+/// performance artifacts, not source input; refusing an oversized cache and
+/// compiling the shard from detector patterns preserves findings while closing
+/// the unbounded `std::fs::read` allocation path.
+const HS_CACHE_FILE_BYTES: u64 = 64 * 1024 * 1024;
+
 /// Effective user id for cache-dir namespacing and ownership checks. On Unix
 /// this is `geteuid()`; on non-Unix (Windows) there is no euid, and per-user
 /// isolation comes from the ACL'd user profile dir (`dirs::cache_dir()` →
@@ -172,6 +178,35 @@ fn resolve_cache_dir() -> Result<PathBuf, String> {
         }
     }
     Ok(dir)
+}
+
+fn read_hs_cache_file(path: &std::path::Path) -> std::io::Result<Option<Vec<u8>>> {
+    use std::io::Read;
+
+    let file = std::fs::File::open(path)?;
+    let metadata = file.metadata()?;
+    if metadata.len() > HS_CACHE_FILE_BYTES {
+        tracing::warn!(
+            cache = %path.display(),
+            size = metadata.len(),
+            cap = HS_CACHE_FILE_BYTES,
+            "HS shard cache file exceeds cap; compiling from patterns"
+        );
+        return Ok(None);
+    }
+
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    let mut limited = file.take(HS_CACHE_FILE_BYTES.saturating_add(1));
+    limited.read_to_end(&mut bytes)?;
+    if bytes.len() as u64 > HS_CACHE_FILE_BYTES {
+        tracing::warn!(
+            cache = %path.display(),
+            cap = HS_CACHE_FILE_BYTES,
+            "HS shard cache grew beyond cap while reading; compiling from patterns"
+        );
+        return Ok(None);
+    }
+    Ok(Some(bytes))
 }
 
 /// Monotonic per-process id source so each `HsScanner` instance gets a
@@ -511,23 +546,36 @@ impl HsScanner {
                 let cache_path = cache_dir.join(format!("hs-{shard_key}.db"));
 
                 // Try the per-shard disk cache first.
-                if let Ok(bytes) = std::fs::read(&cache_path) {
-                    if bytes.len() > 8
-                        && &bytes[0..4] == CACHE_MAGIC
-                        && bytes[4..8].try_into().map(u32::from_le_bytes).unwrap_or(0) // LAW10: invalid cache header misses cache and recompiles the same patterns.
-                            == CACHE_VERSION
-                    {
-                        use hyperscan::Serialized;
-                        let payload: &[u8] = &bytes[8..];
-                        if let Ok(db) = payload.deserialize::<BlockMode>() {
-                            tracing::info!(
-                                cache = %cache_path.display(),
-                                shard = shard_idx,
-                                patterns = pats.len(),
-                                "HS shard loaded from cache"
-                            );
-                            return Ok((db, Vec::new()));
+                match read_hs_cache_file(&cache_path) {
+                    Ok(Some(bytes)) => {
+                        if bytes.len() > 8 && &bytes[0..4] == CACHE_MAGIC {
+                            let cache_version = bytes[4..8]
+                                .try_into()
+                                .map(u32::from_le_bytes)
+                                .unwrap_or(0); // LAW10: invalid cache header misses cache and recompiles the same patterns.
+                            if cache_version == CACHE_VERSION {
+                                use hyperscan::Serialized;
+                                let payload: &[u8] = &bytes[8..];
+                                if let Ok(db) = payload.deserialize::<BlockMode>() {
+                                    tracing::info!(
+                                        cache = %cache_path.display(),
+                                        shard = shard_idx,
+                                        patterns = pats.len(),
+                                        "HS shard loaded from cache"
+                                    );
+                                    return Ok((db, Vec::new()));
+                                }
+                            }
                         }
+                    }
+                    Ok(None) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => {
+                        tracing::warn!(
+                            cache = %cache_path.display(),
+                            error = %error,
+                            "HS shard cache file is not usable; compiling from patterns"
+                        );
                     }
                 }
 
