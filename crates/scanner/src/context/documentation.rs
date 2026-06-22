@@ -12,8 +12,13 @@ pub(crate) fn documentation_line_flags(lines: &[&str]) -> Vec<bool> {
     for (idx, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
         let is_fence = trimmed.starts_with("```");
-        let triple_count = trimmed.matches("\"\"\"").count() + trimmed.matches("'''").count();
-        if is_fence || in_markdown_code_block || in_docstring {
+        let docstring_segment = before_line_comment(trimmed);
+        let triple_count = docstring_delimiter_count(docstring_segment);
+        let self_contained_docstring = !in_docstring
+            && triple_count >= DOCSTRING_TOGGLE_REMAINDER
+            && triple_count % DOCSTRING_TOGGLE_REMAINDER == 0
+            && opens_docstring(docstring_segment);
+        if is_fence || in_markdown_code_block || in_docstring || self_contained_docstring {
             flags[idx] = true;
         }
 
@@ -24,12 +29,64 @@ pub(crate) fn documentation_line_flags(lines: &[&str]) -> Vec<bool> {
             if in_docstring {
                 in_docstring = false;
             } else {
-                in_docstring = opens_docstring(trimmed);
+                in_docstring = opens_docstring(docstring_segment);
             }
         }
     }
 
     flags
+}
+
+fn docstring_delimiter_count(segment: &str) -> usize {
+    segment.matches("\"\"\"").count() + segment.matches("'''").count()
+}
+
+fn before_line_comment(trimmed: &str) -> &str {
+    let bytes = trimmed.as_bytes();
+    let mut regular_quote = None;
+    let mut escaped = false;
+    let mut idx = 0;
+
+    while idx < bytes.len() {
+        let byte = bytes[idx];
+        if escaped {
+            escaped = false;
+            idx += 1;
+            continue;
+        }
+        if regular_quote.is_some() && byte == b'\\' {
+            escaped = true;
+            idx += 1;
+            continue;
+        }
+        if let Some(quote) = regular_quote {
+            if byte == quote {
+                regular_quote = None;
+            }
+            idx += 1;
+            continue;
+        }
+        if is_triple_quote_at(bytes, idx) {
+            idx += 3;
+            continue;
+        }
+        if byte == b'/' && bytes.get(idx + 1).copied() == Some(b'/') {
+            return &trimmed[..idx];
+        }
+        if byte == b'"' || byte == b'\'' {
+            regular_quote = Some(byte);
+        }
+        idx += 1;
+    }
+
+    trimmed
+}
+
+fn is_triple_quote_at(bytes: &[u8], idx: usize) -> bool {
+    let Some([first, second, third]) = bytes.get(idx..idx + 3) else {
+        return false;
+    };
+    (first == second && second == third) && (*first == b'"' || *first == b'\'')
 }
 
 /// Decide whether an odd triple-quote on this line genuinely OPENS a multi-line

@@ -38,3 +38,47 @@ fn context_real_docstring_opener_still_flags_body() {
     );
     assert!(flags[2], "docstring closer line stays in documentation");
 }
+
+#[test]
+fn context_line_comment_triple_quote_does_not_close_docstring() {
+    let lines = vec![
+        r#""""Module docstring."#,
+        "inside before comment",
+        r#"// """ comment text, not a Python docstring closer"#,
+        "still inside the docstring api_key = sk-demo",
+        r#"""""#,
+    ];
+    let flags = documentation_line_flags(&lines);
+    assert!(
+        flags[3],
+        "triple quotes inside a line comment must not close docstring state"
+    );
+    assert!(flags[4], "real closer line stays in documentation");
+}
+
+#[test]
+fn context_self_contained_docstring_line_is_documentation() {
+    let lines = vec!["\"\"\"api_key = sk-demo\"\"\"", "ordinary_code = true"];
+    let flags = documentation_line_flags(&lines);
+    assert!(
+        flags[0],
+        "single-line docstring must be classified as documentation"
+    );
+    assert!(
+        !flags[1],
+        "single-line docstring must not leak documentation state to the next line"
+    );
+}
+
+#[test]
+fn context_double_slash_inside_regular_string_does_not_hide_docstring() {
+    let lines = vec![
+        r#"prefix = "https://example.test" """doc""""#,
+        "ordinary_code = true",
+    ];
+    let flags = documentation_line_flags(&lines);
+    assert!(
+        !flags[1],
+        "double slash inside a regular string must not corrupt docstring state"
+    );
+}
