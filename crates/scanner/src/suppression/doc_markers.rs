@@ -80,7 +80,7 @@ pub(super) fn check_markers(
             && !credential.contains("example.com")
             && !credential.contains("example.org")
         {
-            crate::telemetry::record_example_suppression(
+            crate::adjudicate::record_example_suppression(
                 "pipeline",
                 path,
                 credential,

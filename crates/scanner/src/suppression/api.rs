@@ -211,7 +211,7 @@ pub(crate) fn suppress_named_detector_finding(
     let apply_tier_b = is_generic_or_entropy(detector_id, weak_anchor);
 
     if apply_tier_b && source_type.is_some_and(|source| source.contains("/caesar")) {
-        crate::telemetry::record_example_suppression(
+        crate::adjudicate::record_example_suppression(
             "pipeline",
             path,
             credential,
@@ -226,7 +226,7 @@ pub(crate) fn suppress_named_detector_finding(
             PublicShapeScope::WeakAnchor,
             &randomness,
         ) {
-            crate::telemetry::record_example_suppression("pipeline", path, credential, reason);
+            crate::adjudicate::record_example_suppression("pipeline", path, credential, reason);
             return true;
         }
     }
@@ -241,7 +241,7 @@ pub(crate) fn suppress_named_detector_finding(
         && keep_identifier_gate_with_randomness(credential, &randomness)
         && looks_like_pure_identifier(credential)
     {
-        crate::telemetry::record_example_suppression(
+        crate::adjudicate::record_example_suppression(
             "pipeline",
             path,
             credential,
@@ -258,7 +258,7 @@ pub(crate) fn suppress_named_detector_finding(
         && keep_word_separated_gate_with_randomness(credential, &randomness)
         && looks_like_word_separated_identifier(credential)
     {
-        crate::telemetry::record_example_suppression(
+        crate::adjudicate::record_example_suppression(
             "pipeline",
             path,
             credential,
@@ -267,7 +267,7 @@ pub(crate) fn suppress_named_detector_finding(
         return true;
     }
     if apply_tier_b && looks_like_scheme_prefixed_uri(credential) {
-        crate::telemetry::record_example_suppression(
+        crate::adjudicate::record_example_suppression(
             "pipeline",
             path,
             credential,
@@ -278,7 +278,7 @@ pub(crate) fn suppress_named_detector_finding(
     // Tier A: pure syntactic markers (`--flag`, `&ptr`, `@attr`, `$var`,
     // `Label:`) are never a credential body - suppress for every detector.
     if looks_like_syntactic_punctuation_marker(credential) {
-        crate::telemetry::record_example_suppression(
+        crate::adjudicate::record_example_suppression(
             "pipeline",
             path,
             credential,
@@ -291,7 +291,7 @@ pub(crate) fn suppress_named_detector_finding(
     // entropy matches; a named service-anchored detector has already proven
     // these bytes are the credential, so DON'T suppress there.
     if apply_tier_b && looks_like_credential_colliding_punctuation(credential) {
-        crate::telemetry::record_example_suppression(
+        crate::adjudicate::record_example_suppression(
             "pipeline",
             path,
             credential,
@@ -300,7 +300,7 @@ pub(crate) fn suppress_named_detector_finding(
         return true;
     }
     if apply_tier_b && looks_like_url_or_path_segment(credential) {
-        crate::telemetry::record_example_suppression(
+        crate::adjudicate::record_example_suppression(
             "pipeline",
             path,
             credential,
@@ -314,7 +314,7 @@ pub(crate) fn suppress_named_detector_finding(
     // launchdarkly sdk-key, etc.) - only suppress in generic/entropy
     // paths where there's no service anchor.
     if apply_tier_b && contains_uuid_v4_substring(credential) {
-        crate::telemetry::record_example_suppression(
+        crate::adjudicate::record_example_suppression(
             "pipeline",
             path,
             credential,
@@ -326,14 +326,19 @@ pub(crate) fn suppress_named_detector_finding(
     // ini), `bob.norman@mail.example.com` (shopify test response).
     // Email addresses are public identifiers, not credentials.
     if looks_like_email_address(credential) {
-        crate::telemetry::record_example_suppression("pipeline", path, credential, "email_address");
+        crate::adjudicate::record_example_suppression(
+            "pipeline",
+            path,
+            credential,
+            "email_address",
+        );
         return true;
     }
     // Vendored 3rd-party minified bundle path: applies to ALL detectors,
     // not just generic-*. A "secret-like" sequence in a minified
     // codemirror/pdfjs/jquery/etc. bundle is never a real leak.
     if looks_like_vendored_minified_path(path) {
-        crate::telemetry::record_example_suppression(
+        crate::adjudicate::record_example_suppression(
             "pipeline",
             path,
             credential,
@@ -353,7 +358,7 @@ pub(crate) fn suppress_named_detector_finding(
     // brute-force strings. Skip every named-detector finding here so
     // we don't ship FPs from compiled apps' rodata.
     if source_type.is_some_and(|s| s.contains("binary-strings") || s.contains("archive-binary")) {
-        crate::telemetry::record_example_suppression(
+        crate::adjudicate::record_example_suppression(
             "pipeline",
             path,
             credential,
@@ -364,7 +369,7 @@ pub(crate) fn suppress_named_detector_finding(
     // The file at `path` is itself a secret scanner - every detector
     // routinely matches its own regex definitions inside the source.
     if looks_like_secret_scanner_source(path) {
-        crate::telemetry::record_example_suppression(
+        crate::adjudicate::record_example_suppression(
             "pipeline",
             path,
             credential,
@@ -399,7 +404,7 @@ pub(crate) fn suppress_named_detector_finding(
             || basename.eq_ignore_ascii_case(b"base64.txt")
     }) && source_type.is_some_and(|s| s == "filesystem")
     {
-        crate::telemetry::record_example_suppression(
+        crate::adjudicate::record_example_suppression(
             "pipeline",
             path,
             credential,
@@ -414,7 +419,7 @@ pub(crate) fn suppress_named_detector_finding(
     // has 1 `hot-aws_key` finding on its own AWS regex definition
     // `/AKIA[A-Z0-9]{16,17}/g,`.
     if looks_like_regex_literal_tail(credential) {
-        crate::telemetry::record_example_suppression(
+        crate::adjudicate::record_example_suppression(
             "pipeline",
             path,
             credential,

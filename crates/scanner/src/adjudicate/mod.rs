@@ -271,6 +271,15 @@ pub(crate) fn record_stage_suppression(
     record_suppression(path, credential, &ctx)
 }
 
+pub(crate) fn record_example_suppression(
+    detector: &str,
+    path: Option<&str>,
+    credential: &str,
+    reason: &'static str,
+) {
+    crate::telemetry::record_example_suppression(detector, path, credential, reason);
+}
+
 fn explicit_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageOutcome {
     if let Some(stage_id) = ctx.explicit_stage {
         StageOutcome::Suppress(stage_id)

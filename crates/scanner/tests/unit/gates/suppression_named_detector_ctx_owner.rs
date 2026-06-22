@@ -228,3 +228,27 @@ fn shape_suppression_telemetry_is_only_called_by_adjudicator() {
         "production code must route shape suppression telemetry through adjudicate, not call telemetry directly: {offenders:#?}"
     );
 }
+
+#[test]
+fn example_suppression_telemetry_is_only_called_by_adjudicator() {
+    let src = scanner_src();
+    let mut files = Vec::new();
+    collect_rs_files(&src, &mut files);
+
+    let mut offenders = Vec::new();
+    for path in files {
+        let rel = path.strip_prefix(&src).expect("scanner src prefix");
+        if rel == Path::new("telemetry.rs") || rel == Path::new("adjudicate/mod.rs") {
+            continue;
+        }
+        let code = uncommented_code(&read(&path));
+        if code.contains("crate::telemetry::record_example_suppression(") {
+            offenders.push(rel.display().to_string());
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "production code must route example suppression telemetry through adjudicate, not call telemetry directly: {offenders:#?}"
+    );
+}

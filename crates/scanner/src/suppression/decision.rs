@@ -382,7 +382,7 @@ pub(super) fn should_suppress_inner(
         if bypass_shape_gates && credential.chars().all(|c| c.is_ascii_hexdigit()) {
             // Keep named hex detectors alive (e.g. Algolia admin key)
         } else {
-            crate::telemetry::record_example_suppression(
+            crate::adjudicate::record_example_suppression(
                 "pipeline",
                 path,
                 credential,
