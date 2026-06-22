@@ -694,6 +694,19 @@ function Invoke-AutorouteCalibration {
                 Err "Installed keyhog scan --help returned no output; refusing to guess calibration flags."
                 return $false
             }
+            if ($scanHelp -notmatch '--autoroute-calibrate') {
+                # This build does not expose autoroute calibration. The portable
+                # Windows/macOS builds gate it out (only the Linux build ships
+                # it), so the binary routes with its compiled-in defaults and has
+                # no cache to prime -- calibration is a no-op here. Passing
+                # --autoroute-calibrate to a binary that lacks it makes EVERY
+                # probe fail with "unexpected argument", which (before this guard)
+                # rolled back the entire install on Windows/macOS. Skip
+                # calibration and report success so the install completes.
+                Warn "  Autoroute calibration not supported by this build (no --autoroute-calibrate flag); using the binary's compiled-in routing."
+                Dim "  Install is complete; this is expected on portable (Windows/macOS) builds."
+                return $true
+            }
             $configArgs = if ($scanHelp -match '--no-config') {
                 @('--no-config')
             } else {
