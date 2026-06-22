@@ -23,13 +23,19 @@ git = ["gix"]
 # they're unconditional now (serde for the HAR parser in
 # filesystem.rs::har, which is in the always-on path).
 #
-# `keyhog-verifier` is pulled in by web and s3 so WebSource SSRF delegates to
-# the fleet-canonical URL/IP classifier and S3 request signing delegates to the
-# single SigV4 owner instead of carrying source-local forks.
+# `keyhog-verifier` is pulled in by web, hosted git, and s3 so WebSource and
+# hosted clone SSRF gates delegate to the fleet-canonical URL/IP classifier and
+# S3 request signing delegates to the single SigV4 owner instead of carrying
+# source-local forks.
 web = ["dep:reqwest", "dep:keyhog-verifier"]
-github = ["dep:reqwest", "dep:tempfile"]
-gitlab = ["dep:reqwest", "dep:tempfile", "dep:urlencoding"]
-bitbucket = ["dep:reqwest", "dep:tempfile"]
+github = ["dep:reqwest", "dep:tempfile", "dep:keyhog-verifier"]
+gitlab = [
+    "dep:reqwest",
+    "dep:tempfile",
+    "dep:urlencoding",
+    "dep:keyhog-verifier",
+]
+bitbucket = ["dep:reqwest", "dep:tempfile", "dep:keyhog-verifier"]
 slack = ["dep:reqwest"]
 azure = [
     "dep:reqwest",

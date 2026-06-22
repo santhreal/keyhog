@@ -370,6 +370,13 @@ fn github_repo_name_and_clone_url_contracts() {
         "git@github.com:org/repo.git",
         "file:///etc/passwd",
         "http://insecure.example/repo.git",
+        "https://user:secret@example.com/repo.git",
+        "https://example.com/repo.git?token=secret",
+        "https://example.com/repo.git#secret",
+        "https://a&calc.com/repo.git",
+        "https://127.0.0.1/repo.git",
+        "https://169.254.169.254/latest/meta-data",
+        "https://metadata.google.internal/repo.git",
         "https://example.com/repo with space.git",
         "https://example.com/repo\nwith\nnewlines",
     ] {
@@ -867,5 +874,12 @@ fn hosted_git_askpass_uses_private_create_new_files() {
         !hosted_git.contains("std::fs::write(\n                &path")
             && !hosted_git.contains("std::fs::write(&path"),
         "hosted Git askpass material must not use plain fs::write"
+    );
+    assert!(
+        !hosted_git.contains("echo %1 | findstr")
+            && hosted_git.contains("setlocal EnableExtensions EnableDelayedExpansion")
+            && hosted_git.contains(r#"set \"prompt=%~1\""#)
+            && hosted_git.contains(r#"echo(!prompt!| findstr /I /C:\"Username\""#),
+        "Windows hosted Git askpass must classify the prompt without expanding raw %1 through cmd metacharacter parsing"
     );
 }

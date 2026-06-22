@@ -830,6 +830,9 @@ path = "crates/sources/src/filesystem/reader.rs"
 path = "crates/sources/src/api.rs"
 
 [[module]]
+path = "crates/sources/src/compression_limits.rs"
+
+[[module]]
 path = "crates/sources/src/cloud/mod.rs"
 
 [[module]]
@@ -906,6 +909,9 @@ path = "crates/sources/src/strings.rs"
 
 [[module]]
 path = "crates/sources/src/timeouts.rs"
+
+[[module]]
+path = "crates/sources/src/url_redaction.rs"
 
 [[module]]
 path = "crates/sources/src/web.rs"

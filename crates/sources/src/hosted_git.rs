@@ -111,16 +111,13 @@ pub(crate) fn validate_display_path(platform: &str, path: &str) -> Result<(), So
     Ok(())
 }
 
-/// Refuse clone URLs that git would interpret as anything other than HTTPS.
+/// Refuse clone URLs that git would interpret as anything other than a public
+/// HTTPS repository URL.
 pub(crate) fn validate_clone_url(platform: &str, url: &str) -> Result<(), SourceError> {
-    if !url.starts_with("https://") {
+    let redacted = crate::url_redaction::redact_url(url);
+    if url.chars().any(|c| c.is_control() || c.is_whitespace()) {
         return Err(SourceError::Other(format!(
-            "{platform}: refusing non-https clone URL (potential ext::/ssh:// RCE vector): {url:?}"
-        )));
-    }
-    if url.contains(' ') || url.contains('\n') || url.contains('\r') || url.contains('\0') {
-        return Err(SourceError::Other(format!(
-            "{platform}: refusing clone URL with control characters: {url:?}"
+            "{platform}: refusing clone URL with whitespace/control characters: {redacted:?}"
         )));
     }
     if url.len() > 2048 {
@@ -129,7 +126,47 @@ pub(crate) fn validate_clone_url(platform: &str, url: &str) -> Result<(), Source
             url.len()
         )));
     }
+    if contains_windows_cmd_metachar(url) {
+        return Err(SourceError::Other(format!(
+            "{platform}: refusing clone URL with Windows command metacharacters: {redacted:?}"
+        )));
+    }
+
+    let parsed = reqwest::Url::parse(url).map_err(|error| {
+        SourceError::Other(format!(
+            "{platform}: refusing invalid clone URL {redacted:?}: {error}"
+        ))
+    })?;
+    if parsed.scheme() != "https" {
+        return Err(SourceError::Other(format!(
+            "{platform}: refusing non-https clone URL (potential ext::/ssh:// RCE vector): {redacted:?}"
+        )));
+    }
+    if parsed.host_str().is_none() {
+        return Err(SourceError::Other(format!(
+            "{platform}: refusing hostless clone URL: {redacted:?}"
+        )));
+    }
+    if !parsed.username().is_empty() || parsed.password().is_some() {
+        return Err(SourceError::Other(format!(
+            "{platform}: refusing clone URL with embedded credentials: {redacted:?}"
+        )));
+    }
+    if parsed.query().is_some() || parsed.fragment().is_some() {
+        return Err(SourceError::Other(format!(
+            "{platform}: refusing clone URL with query or fragment: {redacted:?}"
+        )));
+    }
+    if keyhog_verifier::ssrf::is_private_url(parsed.as_str()) {
+        return Err(SourceError::Other(format!(
+            "{platform}: refusing clone URL whose host is private, loopback, link-local, or metadata-only: {redacted:?}"
+        )));
+    }
     Ok(())
+}
+
+fn contains_windows_cmd_metachar(url: &str) -> bool {
+    url.contains(['&', '|', '<', '>', '^'])
 }
 
 pub(crate) fn listing_truncated_error(
@@ -396,7 +433,7 @@ impl GitAskpassAuth {
         } else {
             let path = dir.path().join("askpass.bat");
             let content = format!(
-                "@echo off\r\necho %1 | findstr /I \"Username\" >nul\r\nif %errorlevel% == 0 (\r\n  type \"{}\"\r\n) else (\r\n  type \"{}\"\r\n)\r\n",
+                "@echo off\r\nsetlocal EnableExtensions EnableDelayedExpansion\r\nset \"prompt=%~1\"\r\necho(!prompt!| findstr /I /C:\"Username\" >nul\r\nif not errorlevel 1 (\r\n  type \"{}\"\r\n) else (\r\n  type \"{}\"\r\n)\r\n",
                 username_path.display(),
                 token_path.display()
             );

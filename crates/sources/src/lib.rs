@@ -57,6 +57,7 @@ mod s3;
 mod slack;
 mod stdin;
 mod strings;
+mod url_redaction;
 #[cfg(feature = "web")]
 mod web;
 
