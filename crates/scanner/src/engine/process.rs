@@ -138,10 +138,18 @@ impl CompiledScanner {
             match self.match_companions(entry, preprocessed, line) {
                 Some(c) => c,
                 None => {
+                    let companion_ctx = crate::adjudicate::MatchCtx::for_process_signals(
+                        crate::adjudicate::ProcessCandidateSignals::from_missing_required_companion(
+                            true,
+                        ),
+                    );
+                    let stage_id = crate::adjudicate::adjudicate_match(candidate, &companion_ctx)
+                        .suppressed_stage()
+                        .expect("missing-required-companion signal must suppress");
                     crate::telemetry::record_shape_suppression(
                         chunk.metadata.path.as_deref(),
                         credential,
-                        "missing_required_companion",
+                        stage_id.as_str(),
                     );
                     return;
                 }

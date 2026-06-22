@@ -13,6 +13,7 @@ pub(crate) enum StageId {
     HexDigestFragment,
     ProbabilisticGateNotPromising,
     FalsePositiveContext,
+    MissingRequiredCompanion,
     NamedDetectorSuppression,
 }
 
@@ -25,6 +26,7 @@ impl StageId {
             Self::HexDigestFragment => "hex_digest_fragment",
             Self::ProbabilisticGateNotPromising => "probabilistic_gate_not_promising",
             Self::FalsePositiveContext => "false_positive_context",
+            Self::MissingRequiredCompanion => "missing_required_companion",
             Self::NamedDetectorSuppression => "named_detector_suppressed",
         }
     }
@@ -74,6 +76,7 @@ pub(crate) struct ProcessCandidateSignals {
     hex_digest_fragment: bool,
     generic_without_prefix_not_promising: bool,
     false_positive_context: bool,
+    missing_required_companion: bool,
 }
 
 impl ProcessCandidateSignals {
@@ -106,6 +109,7 @@ impl ProcessCandidateSignals {
             hex_digest_fragment,
             generic_without_prefix_not_promising,
             false_positive_context: false,
+            missing_required_companion: false,
         }
     }
 
@@ -117,6 +121,19 @@ impl ProcessCandidateSignals {
             hex_digest_fragment: false,
             generic_without_prefix_not_promising: false,
             false_positive_context,
+            missing_required_companion: false,
+        }
+    }
+
+    pub(crate) const fn from_missing_required_companion(missing_required_companion: bool) -> Self {
+        Self {
+            invalid_aws_access_key_length: false,
+            invalid_anthropic_legacy_length: false,
+            within_hex_context: false,
+            hex_digest_fragment: false,
+            generic_without_prefix_not_promising: false,
+            false_positive_context: false,
+            missing_required_companion,
         }
     }
 }
@@ -181,6 +198,9 @@ fn process_signal_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> S
     }
     if signals.false_positive_context {
         return StageOutcome::Suppress(StageId::FalsePositiveContext);
+    }
+    if signals.missing_required_companion {
+        return StageOutcome::Suppress(StageId::MissingRequiredCompanion);
     }
     StageOutcome::Pass
 }

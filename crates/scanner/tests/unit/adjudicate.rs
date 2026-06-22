@@ -86,6 +86,19 @@ fn process_stage_suppresses_false_positive_context() {
 }
 
 #[test]
+fn process_stage_suppresses_missing_required_companion() {
+    let credential = "AKIAIOSFODNN7EXAMPLE";
+    let ctx = MatchCtx::for_process_signals(
+        ProcessCandidateSignals::from_missing_required_companion(true),
+    );
+
+    assert_eq!(
+        adjudicate_match(CandidateMatch::new(credential), &ctx),
+        Verdict::Suppressed(StageId::MissingRequiredCompanion)
+    );
+}
+
+#[test]
 fn process_stage_reports_service_anchored_candidate() {
     let credential = "AKIAIOSFODNN7EXAMPLE";
 
