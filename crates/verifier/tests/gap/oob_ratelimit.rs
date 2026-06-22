@@ -1135,6 +1135,45 @@ async fn wait_for_disabled_is_immediate_not_blocked_to_timeout() {
 }
 
 #[tokio::test]
+async fn wait_for_cancel_removes_waiter_entry() {
+    let session = test_session("https://example.test");
+    let id = "cancelledwaiterid000000000000000000";
+    let parked = Arc::clone(&session);
+    let waiter_id = id.to_string();
+    let handle = tokio::spawn(async move {
+        parked
+            .wait_for(&waiter_id, OobAccept::Dns, Duration::from_secs(30))
+            .await
+    });
+
+    for _ in 0..50 {
+        if TestApi.oob_session_waiter_count(&session) == 1 {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(
+        TestApi.oob_session_waiter_count(&session),
+        1,
+        "wait_for must register exactly one parked waiter before cancellation"
+    );
+
+    handle.abort();
+    let _ = handle.await;
+    for _ in 0..50 {
+        if TestApi.oob_session_waiter_count(&session) == 0 {
+            break;
+        }
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(
+        TestApi.oob_session_waiter_count(&session),
+        0,
+        "dropping a wait_for future must remove its waiter entry"
+    );
+}
+
+#[tokio::test]
 async fn abort_poller_for_drop_is_idempotent() {
     let session = test_session("https://example.test");
     TestApi.oob_session_abort_poller_for_drop(&session);

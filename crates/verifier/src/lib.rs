@@ -413,6 +413,7 @@ pub mod testing {
             session: &crate::oob::OobSession,
             interaction: crate::oob::Interaction,
         );
+        fn oob_session_waiter_count(&self, session: &crate::oob::OobSession) -> usize;
         fn oob_session_abort_poller_for_drop(&self, session: &crate::oob::OobSession);
         fn decrypt_entry_for_test(
             &self,
@@ -557,6 +558,10 @@ pub mod testing {
             interaction: crate::oob::Interaction,
         ) {
             session.store_and_notify_for_test(interaction);
+        }
+
+        fn oob_session_waiter_count(&self, session: &crate::oob::OobSession) -> usize {
+            session.waiter_count_for_test()
         }
 
         fn oob_session_abort_poller_for_drop(&self, session: &crate::oob::OobSession) {

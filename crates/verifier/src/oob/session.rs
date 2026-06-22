@@ -225,6 +225,7 @@ impl OobSession {
                 .or_insert_with(|| Arc::new(Notify::new()))
                 .clone()
         };
+        let _waiter_guard = WaiterGuard::new(Arc::clone(&self.waiters), unique_id.to_string());
 
         // Race we're closing:
         //
@@ -260,13 +261,11 @@ impl OobSession {
             // every parked waiter, but they need to re-check shutdown to
             // exit the loop instead of falling back into the next await.
             if self.shutdown.load(Ordering::Acquire) {
-                self.waiters.lock().remove(unique_id);
                 return OobObservation::Disabled("session shut down".into());
             }
 
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                self.waiters.lock().remove(unique_id);
                 return OobObservation::NotObserved;
             }
 
@@ -274,17 +273,14 @@ impl OobSession {
             notified.as_mut().enable();
 
             if let Some(obs) = self.peek_match(unique_id, accepts) {
-                self.waiters.lock().remove(unique_id);
                 return obs;
             }
 
             let woken = tokio::time::timeout(remaining, notified.as_mut()).await;
             if let Some(obs) = self.peek_match(unique_id, accepts) {
-                self.waiters.lock().remove(unique_id);
                 return obs;
             }
             if woken.is_err() {
-                self.waiters.lock().remove(unique_id);
                 return OobObservation::NotObserved;
             }
             // Wakeup but no matching observation (e.g. wrong protocol filter,
@@ -405,6 +401,27 @@ impl OobSession {
     /// Test-only accessor for driving notify paths from integration tests.
     pub(crate) fn store_and_notify_for_test(&self, interaction: super::client::Interaction) {
         self.store_and_notify(interaction);
+    }
+
+    pub(crate) fn waiter_count_for_test(&self) -> usize {
+        self.waiters.lock().len()
+    }
+}
+
+struct WaiterGuard {
+    waiters: Arc<Mutex<HashMap<String, Arc<Notify>>>>,
+    unique_id: String,
+}
+
+impl WaiterGuard {
+    fn new(waiters: Arc<Mutex<HashMap<String, Arc<Notify>>>>, unique_id: String) -> Self {
+        Self { waiters, unique_id }
+    }
+}
+
+impl Drop for WaiterGuard {
+    fn drop(&mut self) {
+        self.waiters.lock().remove(&self.unique_id);
     }
 }
 
