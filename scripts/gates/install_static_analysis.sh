@@ -64,6 +64,26 @@ installer_release_api_gate() {
 # Fix: brace-delimit the name -> "${AssetName}:". Known scopes/drives
 # (env/script/global/local/private/using/variable/function/workflow) are valid
 # and excluded.
+autoroute_calibration_optional_gate() {
+    # Both installers must SKIP autoroute calibration when the installed binary
+    # lacks --autoroute-calibrate. The portable Windows/macOS builds gate that
+    # flag out (only the Linux build ships it); passing it anyway makes every
+    # calibration probe fail "unexpected argument" and rolls back the ENTIRE
+    # install, leaving keyhog uninstallable on those platforms. Verified
+    # end-to-end on Windows. Assert each installer detects the flag before use so
+    # this cannot silently regress.
+    fail=0
+    if ! grep -qF "scanHelp -notmatch '--autoroute-calibrate'" install.ps1; then
+        echo "install.ps1 must skip calibration when the build lacks --autoroute-calibrate (portable Windows/macOS builds)." >&2
+        fail=1
+    fi
+    if ! grep -qF "grep -q -- '--autoroute-calibrate'" install.sh; then
+        echo "install.sh must skip calibration when the build lacks --autoroute-calibrate (portable macOS/Windows builds)." >&2
+        fail=1
+    fi
+    return "$fail"
+}
+
 powershell_drive_ref_gate() {
     local hits
     hits=$(grep -nE '\$[A-Za-z_][A-Za-z0-9_]*:( |\$|"|'"'"'|\))' install.ps1 |
@@ -89,6 +109,7 @@ done
 
 run "Installer release API error surfacing" installer_release_api_gate
 run "PowerShell drive-ref parse guard: install.ps1" powershell_drive_ref_gate
+run "Autoroute calibration optional on portable builds" autoroute_calibration_optional_gate
 
 if need_tool shellcheck; then
     for file in "${shellcheck_targets[@]}"; do
