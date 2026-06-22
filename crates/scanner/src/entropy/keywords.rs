@@ -1,4 +1,5 @@
 use super::plausibility::{is_candidate_plausible, is_secret_plausible, PlausibilityContext};
+use crate::adjudicate::{EntropyShapeStage, StageId};
 use crate::engine::phase2_generic::keywords::normalize_assignment_keyword;
 use crate::engine::phase2_generic::shape_helpers::is_structured_dotted_token;
 
@@ -106,31 +107,91 @@ pub(super) fn extract_candidates(
     // must release for the `UUID`/`hex64` miss classes.
     allow_canonical_shapes: bool,
 ) -> Vec<String> {
+    extract_candidates_internal(
+        line,
+        min_length,
+        placeholder_keywords,
+        is_credential_context,
+        allow_canonical_shapes,
+        false,
+    )
+    .candidates
+}
+
+pub(super) struct ExtractionRejection {
+    pub(super) value: String,
+    pub(super) stage_id: StageId,
+}
+
+pub(super) struct ExtractedCandidates {
+    pub(super) candidates: Vec<String>,
+    pub(super) rejections: Vec<ExtractionRejection>,
+}
+
+pub(super) fn extract_candidates_with_rejections(
+    line: &str,
+    min_length: usize,
+    placeholder_keywords: &[String],
+    is_credential_context: bool,
+    allow_canonical_shapes: bool,
+) -> ExtractedCandidates {
+    extract_candidates_internal(
+        line,
+        min_length,
+        placeholder_keywords,
+        is_credential_context,
+        allow_canonical_shapes,
+        true,
+    )
+}
+
+fn extract_candidates_internal(
+    line: &str,
+    min_length: usize,
+    placeholder_keywords: &[String],
+    is_credential_context: bool,
+    allow_canonical_shapes: bool,
+    trace_rejections: bool,
+) -> ExtractedCandidates {
     let mut candidates = Vec::new();
+    let mut rejections = Vec::new();
     if is_likely_concatenation_fragment(line) {
-        return candidates;
+        return ExtractedCandidates {
+            candidates,
+            rejections,
+        };
     }
 
     let mut push_candidate = |raw: &str, strict: bool, allow_structured_dotted: bool| {
         let cleaned = clean_candidate_value(raw);
         if cleaned.len() < min_length {
+            if trace_rejections && !cleaned.is_empty() {
+                let stage_id = if is_credential_context {
+                    StageId::EntropyValueShape(EntropyShapeStage::CredentialContextTooShort)
+                } else {
+                    StageId::EntropyValueShape(EntropyShapeStage::KeywordFreeTooShort)
+                };
+                push_extraction_rejection(&mut rejections, cleaned, stage_id);
+            }
             return;
         }
         let structured_dotted = allow_structured_dotted && is_structured_dotted_token(cleaned);
+        let plausibility_context =
+            PlausibilityContext::new(is_credential_context, allow_canonical_shapes);
         let plausible = structured_dotted
             || if strict {
-                is_secret_plausible(
-                    cleaned,
-                    placeholder_keywords,
-                    PlausibilityContext::new(is_credential_context, allow_canonical_shapes),
-                )
+                is_secret_plausible(cleaned, placeholder_keywords, plausibility_context)
             } else {
-                is_candidate_plausible(
-                    cleaned,
-                    placeholder_keywords,
-                    PlausibilityContext::new(is_credential_context, allow_canonical_shapes),
-                )
+                is_candidate_plausible(cleaned, placeholder_keywords, plausibility_context)
             };
+        if !plausible && trace_rejections {
+            let stage = if strict {
+                EntropyShapeStage::SecretPlausibilityRejected
+            } else {
+                EntropyShapeStage::CandidatePlausibilityRejected
+            };
+            push_extraction_rejection(&mut rejections, cleaned, StageId::EntropyValueShape(stage));
+        }
         if plausible && !candidates.iter().any(|c| c == cleaned) {
             candidates.push(cleaned.to_string());
         }
@@ -163,7 +224,30 @@ pub(super) fn extract_candidates(
         }
     }
 
-    candidates
+    if trace_rejections {
+        rejections.retain(|rejection| !candidates.iter().any(|value| value == &rejection.value));
+    }
+
+    ExtractedCandidates {
+        candidates,
+        rejections,
+    }
+}
+
+fn push_extraction_rejection(
+    rejections: &mut Vec<ExtractionRejection>,
+    cleaned: &str,
+    stage_id: StageId,
+) {
+    if !rejections
+        .iter()
+        .any(|rejection| rejection.value == cleaned && rejection.stage_id == stage_id)
+    {
+        rejections.push(ExtractionRejection {
+            value: cleaned.to_string(),
+            stage_id,
+        });
+    }
 }
 
 fn is_import_like(trimmed: &str) -> bool {

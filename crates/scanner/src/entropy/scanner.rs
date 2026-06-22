@@ -370,13 +370,29 @@ fn collect_line_candidates(
         return;
     }
 
-    for candidate in extract_candidates(
-        line,
-        context.min_len,
-        placeholder_keywords,
-        context.is_credential_context,
-        context.allow_canonical_shapes,
-    ) {
+    let candidates = if crate::telemetry::is_dogfood_enabled() {
+        let extracted = extract_candidates_with_rejections(
+            line,
+            context.min_len,
+            placeholder_keywords,
+            context.is_credential_context,
+            context.allow_canonical_shapes,
+        );
+        for rejection in &extracted.rejections {
+            crate::adjudicate::record_stage_suppression(None, &rejection.value, rejection.stage_id);
+        }
+        extracted.candidates
+    } else {
+        extract_candidates(
+            line,
+            context.min_len,
+            placeholder_keywords,
+            context.is_credential_context,
+            context.allow_canonical_shapes,
+        )
+    };
+
+    for candidate in candidates {
         let entropy = shannon_entropy(candidate.as_bytes());
         if let Some(stage_id) = candidate_plausibility_rejection_stage(
             &candidate,

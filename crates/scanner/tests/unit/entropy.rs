@@ -206,6 +206,65 @@ fn entropy_generation_rejection_is_dogfood_visible() {
 }
 
 #[test]
+fn entropy_extraction_rejection_is_dogfood_visible() {
+    let _guard = super::telemetry_serial::lock();
+    let placeholder = "YOUR_API_KEY_HERE";
+    let secret_keywords = vec!["API_KEY".to_string()];
+    let placeholder_keywords = vec!["placeholder".to_string()];
+    let trace = Arc::new(ScanTelemetry::new());
+
+    telemetry::testing::reset();
+    telemetry::enable_dogfood();
+    let matches = telemetry::with_scan_telemetry(&trace, || {
+        find_entropy_secrets(
+            &format!("API_KEY={placeholder}\n"),
+            8,
+            0,
+            HIGH_ENTROPY_THRESHOLD,
+            &secret_keywords,
+            &[],
+            &placeholder_keywords,
+        )
+    });
+    assert!(
+        matches.is_empty(),
+        "placeholder fixture must stay suppressed"
+    );
+    let reasons: Vec<String> = trace
+        .drain()
+        .dogfood_events
+        .into_iter()
+        .filter_map(|event| match event {
+            DogfoodEvent::ShapeSuppressed {
+                credential_redacted,
+                reason,
+                ..
+            } if credential_redacted.starts_with("YOUR") => Some(reason.into_owned()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(reasons, vec!["entropy_candidate_plausibility_rejected"]);
+
+    telemetry::testing::reset();
+    let trace = Arc::new(ScanTelemetry::new());
+    let _ = telemetry::with_scan_telemetry(&trace, || {
+        find_entropy_secrets(
+            &format!("API_KEY={placeholder}\n"),
+            8,
+            0,
+            HIGH_ENTROPY_THRESHOLD,
+            &secret_keywords,
+            &[],
+            &placeholder_keywords,
+        )
+    });
+    assert!(
+        trace.drain().dogfood_events.is_empty(),
+        "dogfood-off entropy extraction rejection must not emit trace events"
+    );
+}
+
+#[test]
 fn plausibility_uses_shared_placeholder_markers() {
     for value in [
         "YOUR_API_KEY_HERE",

@@ -240,6 +240,7 @@ fn entropy_fallback_shape_gauntlet_returns_adjudicator_stage() {
 fn entropy_generation_plausibility_rejections_route_through_adjudicator() {
     let src = scanner_src();
     let scanner = uncommented_code(&read(&src.join("entropy/scanner.rs")));
+    let keywords = uncommented_code(&read(&src.join("entropy/keywords.rs")));
     let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
 
     assert!(
@@ -254,16 +255,25 @@ fn entropy_generation_plausibility_rejections_route_through_adjudicator() {
             && scanner.contains("crate::adjudicate::record_stage_suppression(None, &candidate, stage_id)"),
         "collect_line_candidates must record generation-side entropy drops through the adjudicator when dogfood is enabled"
     );
+    assert!(
+        keywords.contains("struct ExtractionRejection")
+            && keywords.contains("pub(super) stage_id: StageId")
+            && scanner.contains("extract_candidates_with_rejections(")
+            && scanner.contains("rejection.stage_id"),
+        "entropy extraction-time drops must carry typed adjudicator stages back to the collector"
+    );
     for reason in [
         "entropy_structured_dotted_too_short",
         "entropy_canonical_non_secret_shape",
         "entropy_credential_context_too_short",
         "entropy_keyword_free_too_short",
+        "entropy_candidate_plausibility_rejected",
         "entropy_secret_plausibility_rejected",
     ] {
         assert!(
-            !scanner.contains(&format!("\"{reason}\"")),
-            "entropy/scanner.rs must not own the {reason} suppression reason"
+            !scanner.contains(&format!("\"{reason}\""))
+                && !keywords.contains(&format!("\"{reason}\"")),
+            "entropy scanner/keywords must not own the {reason} suppression reason"
         );
         assert!(
             adjudicate.contains(&format!("\"{reason}\"")),

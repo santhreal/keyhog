@@ -40,6 +40,7 @@ pub(crate) enum EntropyShapeStage {
     CanonicalNonSecretShape,
     CredentialContextTooShort,
     KeywordFreeTooShort,
+    CandidatePlausibilityRejected,
     SecretPlausibilityRejected,
 }
 
@@ -79,6 +80,7 @@ impl EntropyShapeStage {
             Self::CanonicalNonSecretShape => "entropy_canonical_non_secret_shape",
             Self::CredentialContextTooShort => "entropy_credential_context_too_short",
             Self::KeywordFreeTooShort => "entropy_keyword_free_too_short",
+            Self::CandidatePlausibilityRejected => "entropy_candidate_plausibility_rejected",
             Self::SecretPlausibilityRejected => "entropy_secret_plausibility_rejected",
         }
     }
