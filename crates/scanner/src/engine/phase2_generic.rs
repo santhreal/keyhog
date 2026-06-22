@@ -194,6 +194,11 @@ impl CompiledScanner {
                 if (keyword.eq_ignore_ascii_case("pass") || keyword.eq_ignore_ascii_case("auth"))
                     && !keyword_has_word_boundary(line, keyword_match.start())
                 {
+                    crate::adjudicate::record_stage_suppression(
+                        chunk.metadata.path.as_deref(),
+                        keyword,
+                        crate::adjudicate::StageId::GenericKeywordBoundary,
+                    );
                     continue;
                 }
                 if crate::generic_keyword_owner::keyword_span_owned_by_named_detector(

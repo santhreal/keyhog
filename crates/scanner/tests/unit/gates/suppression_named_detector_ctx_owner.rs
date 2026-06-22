@@ -164,6 +164,7 @@ fn generic_bridge_suppression_reasons_route_through_adjudicator() {
 
     for reason in [
         "generic_named_detector_owned_keyword",
+        "generic_keyword_boundary",
         "bare_auth_unstructured",
         "generic_below_min_confidence",
     ] {

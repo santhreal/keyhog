@@ -177,6 +177,20 @@ fn explicit_stage_reports_generic_named_detector_owned_keyword() {
 }
 
 #[test]
+fn explicit_stage_reports_generic_keyword_boundary() {
+    let ctx = MatchCtx::for_stage(StageId::GenericKeywordBoundary);
+
+    assert_eq!(
+        adjudicate_match(CandidateMatch::new("bypass"), &ctx),
+        Verdict::Suppressed(StageId::GenericKeywordBoundary)
+    );
+    assert_eq!(
+        StageId::GenericKeywordBoundary.as_str(),
+        "generic_keyword_boundary"
+    );
+}
+
+#[test]
 fn explicit_stage_reports_bare_auth_unstructured() {
     let credential = "not-a-structured-authorization-value";
     let ctx = MatchCtx::for_stage(StageId::BareAuthUnstructured);
