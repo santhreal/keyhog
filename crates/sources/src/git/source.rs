@@ -20,6 +20,7 @@ const GIT_PARALLEL_BLOB_BATCH_BYTES: u64 = 32 * 1024 * 1024;
 
 /// Metadata item bound for one parallel blob decode batch.
 const GIT_PARALLEL_BLOB_BATCH_ITEMS: usize = 4096;
+const GIT_FSCK_LINE_BYTES: usize = 4096;
 
 #[derive(Debug, Clone)]
 struct GitBlobCandidate {
@@ -761,28 +762,31 @@ fn collect_unreachable_commit_ids(
         return Ok(VecDeque::new());
     }
 
-    let output = Command::new(super::git_bin()?)
-        .args([
-            "-C",
-            repo_arg,
-            "fsck",
-            "--unreachable",
-            "--no-reflogs",
-            "--no-progress",
-        ])
-        .output()
-        .map_err(SourceError::Io)?;
+    let mut command = Command::new(super::git_bin()?);
+    command.args([
+        "-C",
+        repo_arg,
+        "fsck",
+        "--unreachable",
+        "--no-reflogs",
+        "--no-progress",
+    ]);
+    command.stdout(std::process::Stdio::piped());
+    command.stderr(std::process::Stdio::piped());
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(SourceError::Git(format!(
-            "git fsck failed while enumerating unreachable commits: {}",
-            stderr.trim()
-        )));
-    }
-
+    let mut child = super::spawn_git_child(command)?;
+    let stdout = child
+        .take_stdout()
+        .ok_or_else(|| SourceError::Io(std::io::Error::other("missing fsck stdout")))?;
+    let mut reader = std::io::BufReader::new(stdout);
     let mut out = VecDeque::new();
-    for line in String::from_utf8_lossy(&output.stdout).lines() {
+    let mut line_buf = Vec::new();
+    while super::read_capped_line(&mut reader, &mut line_buf, GIT_FSCK_LINE_BYTES)
+        .map_err(SourceError::Io)?
+        > 0
+    {
+        let line = String::from_utf8_lossy(&line_buf);
+        let line = line.trim_end_matches('\n').trim_end_matches('\r');
         let Some(commit_id) = line.strip_prefix("unreachable commit ") else {
             continue;
         };
@@ -794,6 +798,7 @@ fn collect_unreachable_commit_ids(
             break;
         }
     }
+    super::wait_for_git_child(&mut child, "git fsck", "enumerating unreachable commits")?;
     Ok(out)
 }
 
