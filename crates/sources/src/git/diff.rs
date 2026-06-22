@@ -374,32 +374,88 @@ fn list_untracked_worktree_chunks(
     date: &str,
     limits: crate::SourceLimits,
 ) -> Result<Vec<Chunk>, SourceError> {
-    let output = Command::new(super::git_bin()?)
-        .args([
-            "-C",
-            repo_arg,
-            "ls-files",
-            "--others",
-            "--exclude-standard",
-            "-z",
-            "--",
-        ])
-        .output()
-        .map_err(SourceError::Io)?;
-    if !output.status.success() {
+    let mut command = Command::new(super::git_bin()?);
+    command.args([
+        "-C",
+        repo_arg,
+        "ls-files",
+        "--others",
+        "--exclude-standard",
+        "-z",
+        "--",
+    ]);
+    command.stdout(std::process::Stdio::piped());
+    command.stderr(std::process::Stdio::piped());
+
+    let mut child = super::spawn_git_child(command)?;
+    let mut stdout = child
+        .take_stdout()
+        .ok_or_else(|| SourceError::Io(std::io::Error::other("missing ls-files stdout")))?;
+    let mut raw_paths: Vec<Vec<u8>> = Vec::new();
+    let mut path_buf = Vec::new();
+    let mut read_buf = [0_u8; 8192];
+    let mut overlong_path = false;
+    let mut saw_overlong_path = false;
+    loop {
+        let read = stdout.read(&mut read_buf).map_err(SourceError::Io)?;
+        if read == 0 {
+            break;
+        }
+        for byte in &read_buf[..read] {
+            if *byte == 0 {
+                if !path_buf.is_empty() && !overlong_path {
+                    raw_paths.push(std::mem::take(&mut path_buf));
+                } else {
+                    path_buf.clear();
+                }
+                saw_overlong_path |= overlong_path;
+                overlong_path = false;
+                continue;
+            }
+            if path_buf.len() < limits.git_line_bytes {
+                path_buf.push(*byte);
+            } else {
+                overlong_path = true;
+                saw_overlong_path = true;
+            }
+        }
+    }
+    if !path_buf.is_empty() {
+        if overlong_path {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
+            super::wait_for_git_child(
+                &mut child,
+                "git ls-files --others",
+                "enumerating untracked paths",
+            )?;
+            return Err(SourceError::Git(format!(
+                "git ls-files reported an untracked path longer than git_line_bytes ({})",
+                limits.git_line_bytes
+            )));
+        }
+        raw_paths.push(path_buf);
+    }
+    if saw_overlong_path {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::SourceTruncated);
+        super::wait_for_git_child(
+            &mut child,
+            "git ls-files --others",
+            "enumerating untracked paths",
+        )?;
         return Err(SourceError::Git(format!(
-            "git ls-files --others failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            "git ls-files reported an untracked path longer than git_line_bytes ({})",
+            limits.git_line_bytes
         )));
     }
+    super::wait_for_git_child(
+        &mut child,
+        "git ls-files --others",
+        "enumerating untracked paths",
+    )?;
 
     let mut chunks = Vec::new();
-    for raw in output
-        .stdout
-        .split(|byte| *byte == 0)
-        .filter(|raw| !raw.is_empty())
-    {
-        let rel = std::str::from_utf8(raw).map_err(|error| {
+    for raw in raw_paths {
+        let rel = std::str::from_utf8(&raw).map_err(|error| {
             SourceError::Git(format!("git reported non-UTF-8 untracked path: {error}"))
         })?;
         validate_untracked_relative_path(rel)?;
