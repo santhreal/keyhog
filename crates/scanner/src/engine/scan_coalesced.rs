@@ -185,25 +185,40 @@ impl CompiledScanner {
     /// still be driven through the phase-2 / generic / entropy tail?
     #[cfg(feature = "simd")]
     pub(crate) fn should_scan_no_hit_chunk(&self, chunk: &keyhog_core::Chunk) -> bool {
-        if self.has_active_phase2_patterns_for_chunk(&chunk.data) {
+        let raw_text = chunk.data.as_ref();
+        if self.no_hit_text_admits(chunk, raw_text) {
             return true;
         }
-        let data = chunk.data.as_bytes();
-        let small_chunk = chunk.data.len() <= 32 * 1024;
+
+        if !self.config.unicode_normalization
+            || !crate::unicode_hardening::contains_evasion(raw_text)
+        {
+            return false;
+        }
+
+        let prepared = self.prepare_chunk(chunk);
+        let normalized = prepared.preprocessed.text.as_ref();
+        normalized.as_bytes() != raw_text.as_bytes() && self.no_hit_text_admits(chunk, normalized)
+    }
+
+    #[cfg(feature = "simd")]
+    fn no_hit_text_admits(&self, chunk: &keyhog_core::Chunk, text: &str) -> bool {
+        if self.has_active_phase2_patterns_for_chunk(text) {
+            return true;
+        }
+        let data = text.as_bytes();
+        let small_chunk = text.len() <= 32 * 1024;
         #[cfg(feature = "multiline")]
-        if crate::multiline::has_concatenation_indicators(&chunk.data) {
-            if has_secret_keyword_fast(data) {
+        if crate::multiline::has_concatenation_indicators(text) {
+            if has_generic_assignment_keyword(data) || has_secret_keyword_fast(data) {
                 return true;
             }
             if small_chunk && self.config.entropy_enabled {
-                let prepared = self.prepare_chunk(chunk);
-                if prepared.preprocessed.text.as_bytes() != chunk.data.as_bytes()
-                    && crate::entropy::scanner::has_isolated_bare_secret_candidate(
-                        &prepared.preprocessed.text,
-                        self.config.entropy_threshold,
-                        &self.config.placeholder_keywords,
-                    )
-                {
+                if crate::entropy::scanner::has_isolated_bare_secret_candidate(
+                    text,
+                    self.config.entropy_threshold,
+                    &self.config.placeholder_keywords,
+                ) {
                     return true;
                 }
             }
@@ -213,11 +228,11 @@ impl CompiledScanner {
             && ((crate::entropy::is_entropy_appropriate_with_content(
                 chunk.metadata.path.as_deref(),
                 self.config.entropy_in_source_files,
-                &chunk.data,
+                text,
                 &self.config.secret_keywords,
             ) && has_high_entropy_run_fast(data))
                 || crate::entropy::scanner::has_isolated_bare_secret_candidate(
-                    &chunk.data,
+                    text,
                     self.config.entropy_threshold,
                     &self.config.placeholder_keywords,
                 ));

@@ -441,12 +441,15 @@ pub(super) fn compute_pattern_signals(
     entry: &crate::types::CompiledPattern,
     detector: &keyhog_core::DetectorSpec,
     chunk: &keyhog_core::Chunk,
+    preprocessed: &crate::types::ScannerPreprocessedText<'_>,
 ) -> (bool, bool) {
-    let kw = entry.match_proves_keyword_nearby
-        || detector
-            .keywords
-            .iter()
-            .any(|keyword| chunk.data.contains(keyword.as_str()));
+    let kw = entry.match_proves_keyword_nearby || {
+        detector.keywords.iter().any(|keyword| {
+            chunk.data.contains(keyword.as_str())
+                || (preprocessed.text.as_bytes() != chunk.data.as_bytes()
+                    && preprocessed.text.contains(keyword.as_str()))
+        })
+    };
     let sf = chunk
         .metadata
         .path

@@ -74,7 +74,7 @@ impl CompiledScanner {
         }
         let prof = phase2_pattern_prof_enabled();
         self.with_active_phase2_patterns(
-            &chunk.data,
+            &preprocessed.text,
             &preprocessed.text,
             phase2_keyword_hints,
             |this, active_patterns| {
@@ -120,19 +120,10 @@ impl CompiledScanner {
     /// `seen`) when the parent chunk was scanned, so the only NEW phase-2
     /// matches are those that touch the decoded text.
     ///
-    /// This windows the two expensive parts of the phase-2 pass — the
-    /// always-active prefilter RegexSet and the per-pattern regex extraction —
-    /// to `[start-margin, end+margin)`, while keeping the FULL splice for every
-    /// signal that decides whether/how a match is reported:
-    ///   - `keyword_nearby` (`compute_pattern_signals` reads the full `chunk`),
-    ///   - the keyword Aho-Corasick prefilter (`data = &chunk.data`, so a
-    ///     keyword in far context still activates its pattern),
-    ///   - `line_offsets` / `documentation_lines` / `base_offset` / `base_line`.
-    /// So for any match that STARTS inside the focus window the produced
-    /// `(detector, credential, location, confidence)` is byte-identical to the
-    /// whole-splice scan. Matches outside the window are either pure-context
-    /// (already found by the parent → deduped) or unreachable, so the reported
-    /// set is unchanged (validated by `decode_focus_parity`).
+    /// This windows the always-active prefilter and per-pattern extraction while
+    /// keeping full-splice signals (`keyword_nearby`, keyword AC, line/context
+    /// tables, base offsets) so matches starting inside the focus window stay
+    /// byte-identical to the whole-splice scan (`decode_focus_parity`).
     ///
     /// PRECONDITION: `preprocessed.text` must be byte-aligned with `chunk.data`
     /// (the homoglyph-normalisation no-op passthrough), so `focus` — computed in
@@ -213,14 +204,13 @@ impl CompiledScanner {
             }
         }
 
-        // Anchor index unavailable: windowed non-anchor path (prefilter over the
-        // focus slice, keyword AC over full `chunk.data`, extraction cursor-bound
-        // to the window).
+        // Anchor index unavailable: prefilter the focus slice, seed keyword AC
+        // from normalized full text, and cursor-bound extraction to the window.
         let match_text = &text[fs..fe];
         let cursor = focus;
         let prof = phase2_pattern_prof_enabled();
         self.with_active_phase2_patterns(
-            &chunk.data,
+            &preprocessed.text,
             match_text,
             phase2_keyword_hints,
             |this, active_patterns| {
@@ -264,10 +254,9 @@ impl CompiledScanner {
     /// allocation. The closure receives `&[usize]` - the phase-2 indices
     /// that are active for this chunk, so it visits only those patterns
     /// rather than the full `phase2_patterns.len()` vector.
-    /// `data` seeds the keyword-AC prefilter (raw chunk bytes, as before).
-    /// `match_text` is the text the always-active RegexSet prefilter runs on and
-    /// MUST be the same text per-pattern extraction uses (`preprocessed.text`)
-    /// so the prefilter is sound under unicode normalization.
+    /// `data` seeds the keyword-AC prefilter.
+    /// `match_text` is the always-active RegexSet prefilter text and must match
+    /// extraction text so prefiltering is sound under unicode normalization.
     fn with_active_phase2_patterns<R>(
         &self,
         data: &str,
@@ -332,8 +321,7 @@ impl CompiledScanner {
         // Boolean admission: does any phase-2 keyword OR any always-active
         // prefilter pattern fire on this chunk? This is the SAME union the
         // production scan marks (`populate_active_phase2`, `anchor_mode=false`,
-        // `match_text == data` — admission runs on the raw chunk before any
-        // structured preprocessing), but each side EARLY-EXITS at its first hit
+        // `match_text == data`), but each side EARLY-EXITS at its first hit
         // instead of building the full marked set. Building that set is the
         // measured #1 scan cost (`phase2:prefilter`), and extraction rebuilds it
         // when the chunk is admitted — so the gate's own marked set was pure
@@ -493,7 +481,7 @@ impl CompiledScanner {
     ) {
         let prof = phase2_pattern_prof_enabled();
         self.with_active_phase2_patterns(
-            &chunk.data,
+            &preprocessed.text,
             &preprocessed.text,
             phase2_keyword_hints,
             |this, active_set| {

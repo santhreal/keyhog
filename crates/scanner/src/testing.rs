@@ -3,6 +3,8 @@
 
 #[cfg(test)]
 use keyhog_core::Chunk;
+#[cfg(test)]
+use std::sync::{Mutex, MutexGuard, OnceLock};
 
 #[cfg(test)]
 pub(crate) use crate::engine::scan_chunk_boundaries;
@@ -47,6 +49,14 @@ pub(crate) fn scan_with_deadline(
     deadline: Option<std::time::Instant>,
 ) -> Vec<keyhog_core::RawMatch> {
     scanner.scan_with_deadline(chunk, deadline)
+}
+
+#[cfg(test)]
+pub(crate) fn telemetry_serial_lock() -> MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner()) // LAW10: testing-only mutex poisoning recovery; no runtime effect on shipped scanner behavior
 }
 
 #[cfg(test)]

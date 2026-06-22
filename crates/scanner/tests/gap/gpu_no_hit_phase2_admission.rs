@@ -27,11 +27,15 @@ fn no_hit_admission_consults_active_phase2_set() {
     let scan = scanner_source("engine/scan_coalesced.rs");
 
     // The shared no-hit admission gate must consult the real active phase-2 set
-    // FIRST (the exact, cheap necessary condition for an anchorless match).
+    // through the raw-or-normalized text helper FIRST (the exact, cheap
+    // necessary condition for an anchorless match).
     assert!(
-        scan.contains("self.has_active_phase2_patterns_for_chunk(&chunk.data)"),
+        scan.contains("fn no_hit_text_admits(&self, chunk: &keyhog_core::Chunk, text: &str)")
+            && scan.contains("if self.no_hit_text_admits(chunk, raw_text)")
+            && scan.contains("self.no_hit_text_admits(chunk, normalized)")
+            && scan.contains("self.has_active_phase2_patterns_for_chunk(text)"),
         "should_scan_no_hit_chunk must probe the active phase-2 set to preserve \
-         prefixless / keyword-less detector recall on no-literal chunks"
+         prefixless / keyword-less detector recall on raw and normalized no-literal chunks"
     );
 
     // The shared coalesced phase-2 tail — fed by BOTH the CPU Hyperscan prefilter

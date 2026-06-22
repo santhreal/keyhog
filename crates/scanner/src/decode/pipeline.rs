@@ -95,14 +95,6 @@ pub(crate) fn decoder_profile_reset() {
 
 const MAX_DECODED_CHUNKS_PER_ROOT: usize = 1000;
 const MAX_DECODED_TOTAL_BYTES: usize = 64 * 1024 * 1024;
-/// Hard ceiling on the wall-clock time decode_chunk may spend on ONE chunk
-/// when the caller didn't pass an explicit deadline. Mitigates decode-bomb
-/// inputs (multi-layer base64 of unrelated data) that the existing
-/// MAX_DECODED_TOTAL_BYTES cap doesn't catch when each layer fits under the
-/// total budget but together blow the wall budget. Tuned generously: 50 ms
-/// is ~10x the cost of a normal chunk's full decode-through; pathological
-/// inputs hit it before the user notices.
-const DEFAULT_DECODE_WALL_BUDGET_MS: u64 = 50;
 
 fn default_decoders() -> Vec<Arc<dyn Decoder>> {
     vec![
@@ -265,24 +257,11 @@ pub(crate) fn decode_chunk(
     // (budget exhausted) before its final clear, so no stale (ptr,len) can be read.
     extractor::clear_shared_candidates();
 
-    // Per-chunk wall-clock ceiling. Always apply the TIGHTER of the
-    // caller-supplied `deadline` and our own `DEFAULT_DECODE_WALL_BUDGET_MS`
-    // ceiling. kimi-wave1 audit finding 5.2: previously the caller's
-    // (long) scan deadline overrode this guard, letting a decode-bomb
-    // chunk consume the entire scan budget.
-    let local_ceiling =
-        std::time::Instant::now() + std::time::Duration::from_millis(DEFAULT_DECODE_WALL_BUDGET_MS);
-    let effective_deadline = match deadline {
-        Some(d) => d.min(local_ceiling),
-        None => local_ceiling,
-    };
-
     while let Some((current, depth)) = queue.pop_front() {
-        if std::time::Instant::now() > effective_deadline {
+        if crate::deadline::expired(deadline) {
             tracing::debug!(
                 path = ?chunk.metadata.path,
-                budget_ms = DEFAULT_DECODE_WALL_BUDGET_MS,
-                "decode budget exhausted; stopping decode-through"
+                "decode caller deadline exhausted; stopping decode-through"
             );
             crate::telemetry::record_decode_truncation();
             break;
@@ -297,19 +276,17 @@ pub(crate) fn decode_chunk(
         extractor::prime_shared_candidates(&current.data);
         let prof_dec = decoder_prof_enabled();
         for (dec_i, decoder) in decoders.iter().enumerate() {
-            // Re-check the wall-clock budget BEFORE each decoder's
+            // Re-check the caller deadline BEFORE each decoder's
             // candidate fan-out (C9). The top-of-loop check only fires
             // once per BFS dequeue, so a single chunk could run all 14
-            // decoders to completion with no budget check, blowing far past
-            // DEFAULT_DECODE_WALL_BUDGET_MS on one chunk. This check stops us
-            // from even invoking the next decoder once the deadline trips;
+            // decoders to completion with no deadline check. This check stops
+            // us from even invoking the next decoder once the deadline trips;
             // the matching check inside the inner loop below stops us
             // consuming the CURRENT decoder's (un-bounded) output.
-            if std::time::Instant::now() > effective_deadline {
+            if crate::deadline::expired(deadline) {
                 tracing::debug!(
                     path = ?chunk.metadata.path,
-                    budget_ms = DEFAULT_DECODE_WALL_BUDGET_MS,
-                    "decode budget exhausted mid-fan-out; stopping decode-through"
+                    "decode caller deadline exhausted mid-fan-out; stopping decode-through"
                 );
                 crate::telemetry::record_decode_truncation();
                 extractor::clear_shared_candidates();
@@ -330,26 +307,23 @@ pub(crate) fn decode_chunk(
                 }
             }
             for decoded in decoded_out {
-                // Re-check the budget WHILE consuming this decoder's output
+                // Re-check the deadline WHILE consuming this decoder's output
                 // (C9 root cause). The pre-decoder check above only fires
                 // once per decoder, but `decode_chunk` returns a fully
                 // materialized Vec whose length is O(chunk size) -
                 // `extract_encoded_values` yields one candidate per quoted
                 // string / `key=value` / base64 run, and Caesar fans each out
                 // 25x. Without this check the pipeline still hashes, screens,
-                // clones, and queues every one of those results AFTER the
-                // deadline has passed, so a single dense chunk's fan-out
-                // (tens of thousands of results) ran the per-result work to
-                // completion regardless of the wall budget. The
+                // clones, and queues every one of those results after the
+                // caller deadline has passed. The
                 // `decoder.decode_chunk` call itself cannot be interrupted
                 // (trait returns an owned Vec), but bailing here bounds the
                 // post-deadline overrun to one decoder's fan-out at most -
                 // and stops the (dominant) per-result processing cost dead.
-                if std::time::Instant::now() > effective_deadline {
+                if crate::deadline::expired(deadline) {
                     tracing::debug!(
                         path = ?chunk.metadata.path,
-                        budget_ms = DEFAULT_DECODE_WALL_BUDGET_MS,
-                        "decode budget exhausted while consuming decoder output; \
+                        "decode caller deadline exhausted while consuming decoder output; \
                          stopping decode-through"
                     );
                     crate::telemetry::record_decode_truncation();

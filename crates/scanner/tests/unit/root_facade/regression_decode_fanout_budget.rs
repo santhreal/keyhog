@@ -4,7 +4,7 @@
 //! dequeue, so a single dense chunk's per-decoder candidate fan-out
 //! (especially Caesar's 25x shift loop over every un-deduped candidate)
 //! ran to completion with no mid-fan-out budget check, pinning a core
-//! far past the intended `DEFAULT_DECODE_WALL_BUDGET_MS` ceiling.
+//! far past the caller deadline.
 //!
 //! M2: `MAX_DECODED_CHUNKS_PER_ROOT` was tested against `decoded_chunks`,
 //! which only collected screen-passing chunks. Screen-failing decoded
@@ -13,8 +13,9 @@
 //! guard never bound recursion.
 //!
 //! Both are observable through the public `decode_chunk` API: a
-//! pathological input must return within a bounded wall-clock time even
-//! when the alphabet screen rejects every decoded chunk.
+//! pathological input must stay bounded by the deterministic per-root fan-out
+//! cap even when the alphabet screen rejects every decoded chunk. Explicit
+//! caller deadlines are covered by `regression_decode_budget_per_decode`.
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::testing::decode_chunk;
@@ -43,11 +44,9 @@ fn dense_token_chunk() -> Chunk {
     }
 }
 
-/// The wall budget is `DEFAULT_DECODE_WALL_BUDGET_MS` (50ms). With the C9
-/// fix, after the deadline trips we bail before the next decoder's
-/// fan-out, so the worst case is roughly one decoder's fan-out past the
-/// deadline. A generous multiple of the budget guards against both the
-/// pre-fix unbounded behavior (seconds-to-minutes per chunk) and CI jitter.
+/// A generous ceiling for the deterministic fan-out cap guard. This is not a
+/// scanner recall timeout; it only prevents the regression test itself from
+/// hanging if the cap stops applying.
 const MAX_DECODE_WALL: Duration = Duration::from_secs(5);
 
 #[test]
@@ -63,16 +62,16 @@ fn dense_chunk_decode_stays_within_wall_budget_with_rejecting_screen() {
     let screen = AlphabetScreen::new(&["q".to_string()]);
 
     let start = Instant::now();
-    // depth 3 mirrors the production decode-through depth; no caller
-    // deadline so the internal DEFAULT_DECODE_WALL_BUDGET_MS ceiling is
-    // the only wall guard under test.
+    // Depth 3 mirrors production decode-through depth. No caller deadline:
+    // default scans must be governed by deterministic count/byte caps, not a
+    // load-dependent wall clock.
     let out = decode_chunk(&chunk, 3, false, None, Some(&screen));
     let elapsed = start.elapsed();
 
     assert!(
         elapsed < MAX_DECODE_WALL,
         "decode_chunk ran {elapsed:?} on a dense fan-out chunk; the per-chunk \
-         wall budget (C9) and produced-chunk cap (M2) must bound it well under \
+         produced-chunk cap (M2) must bound it well under \
          {MAX_DECODE_WALL:?}"
     );
 
@@ -89,8 +88,8 @@ fn dense_chunk_decode_stays_within_wall_budget_with_rejecting_screen() {
 #[test]
 fn dense_chunk_decode_stays_within_wall_budget_no_screen() {
     // Same pathological input with no screen (every decoded chunk passes
-    // and is collected). The C9 mid-fan-out deadline check must still bound
-    // total wall time regardless of how many candidates each decoder emits.
+    // and is collected). The produced-chunk cap must still bound total work
+    // regardless of how many candidates each decoder emits.
     let chunk = dense_token_chunk();
 
     let start = Instant::now();
@@ -100,7 +99,7 @@ fn dense_chunk_decode_stays_within_wall_budget_no_screen() {
     assert!(
         elapsed < MAX_DECODE_WALL,
         "decode_chunk ran {elapsed:?} on a dense fan-out chunk with no screen; \
-         the per-chunk wall budget (C9) must bound it well under {MAX_DECODE_WALL:?}"
+         the produced-chunk cap must bound it well under {MAX_DECODE_WALL:?}"
     );
 
     // With produced counted for every unique chunk, the per-root cap is a

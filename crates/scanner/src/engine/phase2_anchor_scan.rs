@@ -185,7 +185,7 @@ impl CompiledScanner {
             };
 
             let &(keyword_nearby, sensitive_file) = signals.get_or_init(|| {
-                super::scan_filters::compute_pattern_signals(entry, detector, chunk)
+                super::scan_filters::compute_pattern_signals(entry, detector, chunk, preprocessed)
             });
             self.process_match(
                 entry,

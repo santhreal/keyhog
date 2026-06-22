@@ -57,13 +57,9 @@ impl CompiledScanner {
         chunk: &Chunk,
         scan_state: &mut ScanState,
         deadline: Option<std::time::Instant>,
-        // Decode-recursion FOCUS window `[fs, fe)` (in `preprocessed.text` ==
-        // `chunk.data` coordinates). When `Some`, the AC candidate scan, the
-        // always-active prefilter and every whole-chunk extraction are restricted
-        // to this window — the rest of the splice is already-scanned parent
-        // context. Signals (`keyword_nearby` via `&chunk.data`), line numbers and
-        // anchored verification still use the FULL text, so results for matches
-        // starting inside the window are byte-identical. `None` = whole chunk.
+        // Decode focus window in preprocessed/chunk coordinates. AC candidates,
+        // prefiltering and extraction are windowed; keyword/context signals use
+        // full raw plus normalized text so in-window matches stay byte-identical.
         focus: Option<(usize, usize)>,
         phase2_keyword_hints: Option<&[u32]>,
         phase2_always_anchor_present: Option<bool>,
@@ -78,10 +74,10 @@ impl CompiledScanner {
         // `cursor_range` for whole-chunk phase-2 extraction: restrict match
         // STARTS to the focus window (matches still extend right freely).
         let cursor = focus;
-        // Keyword AC still seeds from the FULL chunk bytes so a keyword in far
-        // context activates its pattern; only the prefilter text is windowed.
+        // Keyword AC seeds from normalized full text; only the always-active
+        // prefilter text is windowed under decode focus.
         self.with_active_phase2_scratch(
-            &chunk.data,
+            &preprocessed.text,
             scan_text,
             phase2_keyword_hints,
             |this, scratch| {

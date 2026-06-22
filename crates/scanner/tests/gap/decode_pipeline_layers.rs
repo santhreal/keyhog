@@ -608,7 +608,7 @@ fn pipeline_drops_other_control_byte_decodes() {
 }
 
 // ===========================================================================
-// Per-decode budget bounds fan-out (MAX_DECODED_CHUNKS_PER_ROOT + wall budget)
+// Per-decode budget bounds fan-out (MAX_DECODED_CHUNKS_PER_ROOT + caller deadline)
 // ===========================================================================
 
 #[test]
@@ -631,9 +631,9 @@ fn pipeline_fanout_bounded_under_per_root_cap() {
 
 #[test]
 fn pipeline_wall_budget_bounds_pathological_input() {
-    // DEFAULT_DECODE_WALL_BUDGET_MS == 50ms. A dense fan-out chunk must return
-    // well under a generous multiple of the budget even with a screen that
-    // rejects nearly everything (forcing maximal recursion).
+    // A dense fan-out chunk must return well under a generous ceiling even with
+    // a screen that rejects nearly everything. Default scans are bounded by
+    // deterministic count/byte caps, not an implicit load-dependent timeout.
     use std::time::{Duration, Instant};
     let token = "a1b2c3d4e5f6g7h8,";
     let mut data = String::with_capacity(512 * 1024);
@@ -647,15 +647,14 @@ fn pipeline_wall_budget_bounds_pathological_input() {
     let elapsed = start.elapsed();
     assert!(
         elapsed < Duration::from_secs(5),
-        "decode_chunk ran {elapsed:?}; the per-chunk wall budget must bound it"
+        "decode_chunk ran {elapsed:?}; the per-root fan-out cap must bound it"
     );
     assert!(out.len() <= 1000);
 }
 
 #[test]
 fn pipeline_caller_deadline_in_past_stops_immediately() {
-    // An already-expired caller deadline is the tighter of (deadline,
-    // local_ceiling); the top-of-loop check fires on the first dequeue and the
+    // An already-expired caller deadline fires on the first dequeue and the
     // pipeline returns essentially nothing.
     use std::time::Instant;
     let c = chunk("k=\"QUtJQUlPU0ZPRE5ON0VYQU1QTEU=\"");

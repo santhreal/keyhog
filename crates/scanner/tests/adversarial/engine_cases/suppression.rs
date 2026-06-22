@@ -1,14 +1,5 @@
 use super::support::*;
 use keyhog_scanner::telemetry::DogfoodEvent;
-use std::sync::{Mutex, OnceLock};
-
-/// Tests that touch the process-global `keyhog_scanner::telemetry` state
-/// must serialise against each other or `cargo test`'s parallel runner
-/// causes them to drain each other's events / share `enable_dogfood`.
-fn telemetry_lock() -> &'static Mutex<()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-}
 
 #[test]
 fn pure_placeholder_not_flagged() {
@@ -47,7 +38,7 @@ fn pure_placeholder_not_flagged() {
 /// distinguish "clean" from "saw a known example".
 #[test]
 fn example_suppression_is_recorded_in_telemetry() {
-    let _guard = telemetry_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = keyhog_scanner::testing::telemetry_serial_lock();
     keyhog_scanner::telemetry::testing::reset();
     let detector = DetectorSpec {
         tests: Vec::new(),
@@ -81,7 +72,7 @@ fn example_suppression_is_recorded_in_telemetry() {
 
 #[test]
 fn dogfood_captures_redacted_event() {
-    let _guard = telemetry_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = keyhog_scanner::testing::telemetry_serial_lock();
     keyhog_scanner::telemetry::testing::reset();
     keyhog_scanner::telemetry::enable_dogfood();
     let detector = DetectorSpec {
@@ -323,7 +314,7 @@ fn null_padded_binaryish_chunk_is_safe() {
 /// cascade); that drop must now emit a `ShapeSuppressed` event naming the gate.
 #[test]
 fn dogfood_records_engine_probabilistic_gate_drop() {
-    let _guard = telemetry_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let _guard = keyhog_scanner::testing::telemetry_serial_lock();
     keyhog_scanner::telemetry::testing::reset();
     keyhog_scanner::telemetry::enable_dogfood();
     let detector = DetectorSpec {

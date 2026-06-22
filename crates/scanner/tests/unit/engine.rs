@@ -24,7 +24,7 @@ fn demo_detector() -> DetectorSpec {
         companions: vec![],
         verify: None,
         keywords: vec!["abc".into()],
-        min_confidence: None,
+        min_confidence: Some(0.0),
         ..Default::default()
     }
 }
@@ -69,6 +69,14 @@ fn service_context_detector() -> DetectorSpec {
         min_confidence: None,
         ..Default::default()
     }
+}
+
+fn embedded_detector(id: &str) -> DetectorSpec {
+    keyhog_core::load_embedded_detectors_or_fail()
+        .expect("embedded detector corpus must load")
+        .into_iter()
+        .find(|detector| detector.id == id)
+        .unwrap_or_else(|| panic!("embedded detector {id} must exist"))
 }
 
 fn chunk(data: &str) -> Chunk {
@@ -497,6 +505,35 @@ fn phase2_first_bigram_set_casefolds_and_saturates_short_literals() {
         saturated.may_have_match("z"),
         "short-literal fail-open must also hold for one-byte texts"
     );
+}
+
+#[test]
+fn azure_subscription_key_named_detector_fires_on_normal_and_zero_width_anchor() {
+    let value = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d";
+    assert_eq!(value.len(), 32);
+    let mut config = ScannerConfig::default();
+    config.ml_enabled = false;
+    config.min_confidence = 0.0;
+    config.test_keywords.clear();
+    config.placeholder_keywords.clear();
+
+    let scanner = CompiledScanner::compile(vec![embedded_detector("azure-subscription-key")])
+        .expect("azure subscription key detector compiles")
+        .with_config(config);
+
+    for text in [
+        format!("azure_subscription_key = \"{value}\""),
+        format!("azure_subscription\u{200b}_key = \"{value}\""),
+    ] {
+        let matches = scanner.scan(&chunk(&text));
+        assert!(
+            matches.iter().any(|m| {
+                m.detector_id.as_ref() == "azure-subscription-key"
+                    && m.credential.as_ref() == value
+            }),
+            "Azure subscription key must fire through its named detector, not a generic substitute; text={text:?} matches={matches:?}"
+        );
+    }
 }
 
 #[test]

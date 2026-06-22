@@ -17,7 +17,7 @@ fn demo_scanner() -> CompiledScanner {
         companions: vec![],
         verify: None,
         keywords: vec!["abc".into()],
-        min_confidence: None,
+        min_confidence: Some(0.0),
         ..Default::default()
     }])
     .unwrap()

@@ -130,12 +130,10 @@ fn scan_both(
 ) -> (Vec<(String, String, String)>, Vec<(String, String, String)>) {
     keyhog_scanner::testing::set_decode_focus(&s, Some(true));
     s.clear_fragment_cache();
-    let on =
-        canonical(&s.scan_chunks_with_backend(std::slice::from_ref(c), ScanBackend::CpuFallback));
+    let on = canonical(&[s.scan_with_backend(c, ScanBackend::CpuFallback)]);
     keyhog_scanner::testing::set_decode_focus(&s, Some(false));
     s.clear_fragment_cache();
-    let off =
-        canonical(&s.scan_chunks_with_backend(std::slice::from_ref(c), ScanBackend::CpuFallback));
+    let off = canonical(&[s.scan_with_backend(c, ScanBackend::CpuFallback)]);
     (on, off)
 }
 
@@ -155,6 +153,7 @@ fn diff_panic(label: &str, on: &[(String, String, String)], off: &[(String, Stri
 
 #[test]
 fn decode_focus_parity_default() {
+    let _telemetry_guard = super::super::telemetry_serial::lock();
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
     let scanner = CompiledScanner::compile(detectors).expect("compile");
     let n: usize = std::env::var("KEYHOG_GATE_PARITY_N")

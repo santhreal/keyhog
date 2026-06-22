@@ -160,15 +160,13 @@ fn scan_both(scanner: &CompiledScanner, chunk: &Chunk) -> (Vec<Key>, Vec<Key>) {
     keyhog_scanner::testing::set_phase2_anchor_mode(&scanner, Some(true));
     keyhog_scanner::testing::set_phase2_homoglyph_gate(&scanner, Some(true));
     scanner.clear_fragment_cache();
-    let optimized =
-        scanner.scan_chunks_with_backend(std::slice::from_ref(chunk), ScanBackend::CpuFallback);
+    let optimized = vec![scanner.scan_with_backend(chunk, ScanBackend::CpuFallback)];
     // Fully-unoptimized baseline: every phase-2 pattern runs the legacy
     // whole-chunk path, including every homoglyph variant on every chunk.
     keyhog_scanner::testing::set_phase2_anchor_mode(&scanner, Some(false));
     keyhog_scanner::testing::set_phase2_homoglyph_gate(&scanner, Some(false));
     scanner.clear_fragment_cache();
-    let baseline =
-        scanner.scan_chunks_with_backend(std::slice::from_ref(chunk), ScanBackend::CpuFallback);
+    let baseline = vec![scanner.scan_with_backend(chunk, ScanBackend::CpuFallback)];
     (canonical(&optimized), canonical(&baseline))
 }
 
@@ -281,6 +279,7 @@ fn phase2_only_diff_mirror() {
 
 #[test]
 fn phase2_anchor_parity_default() {
+    let _telemetry_guard = super::super::telemetry_serial::lock();
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
     let scanner = CompiledScanner::compile(detectors).expect("compile");
 

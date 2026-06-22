@@ -11,7 +11,9 @@ use super::support;
 use support::paths::{corpus_dir, corpus_files, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
+use keyhog_scanner::telemetry::{with_scan_telemetry, ScanTelemetry};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
+use std::sync::Arc;
 
 struct Lcg(u64);
 impl Lcg {
@@ -95,17 +97,22 @@ fn scan_both(
 ) -> (Vec<(String, String, String)>, Vec<(String, String, String)>) {
     keyhog_scanner::testing::set_confirmed_suffix_gate(&s, Some(true));
     s.clear_fragment_cache();
-    let on =
-        canonical(&s.scan_chunks_with_backend(std::slice::from_ref(c), ScanBackend::CpuFallback));
+    let on_trace = Arc::new(ScanTelemetry::new());
+    let on = with_scan_telemetry(&on_trace, || {
+        canonical(&[s.scan_with_backend(c, ScanBackend::CpuFallback)])
+    });
     keyhog_scanner::testing::set_confirmed_suffix_gate(&s, Some(false));
     s.clear_fragment_cache();
-    let off =
-        canonical(&s.scan_chunks_with_backend(std::slice::from_ref(c), ScanBackend::CpuFallback));
+    let off_trace = Arc::new(ScanTelemetry::new());
+    let off = with_scan_telemetry(&off_trace, || {
+        canonical(&[s.scan_with_backend(c, ScanBackend::CpuFallback)])
+    });
     (on, off)
 }
 
 #[test]
 fn confirmed_gate_parity_default() {
+    let _telemetry_guard = super::super::telemetry_serial::lock();
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
     let scanner = CompiledScanner::compile(detectors).expect("compile");
     let n: usize = std::env::var("KEYHOG_GATE_PARITY_N")

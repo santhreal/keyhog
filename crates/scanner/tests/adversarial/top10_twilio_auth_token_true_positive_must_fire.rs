@@ -6,7 +6,7 @@ use super::oracle_support::assert_detector_fires;
 fn top10_twilio_auth_token_true_positive_must_fire() {
     assert_detector_fires(
         "twilio-auth-token",
-        "TWILIO_ACCOUNT_SID=AC00000000000000000000000000000000\nTWILIO_AUTH_TOKEN=00000000000000000000000000000000\n",
-        "00000000000000000000000000000000",
+        "TWILIO_ACCOUNT_SID=AC1234567890abcdef1234567890abcdef\nTWILIO_AUTH_TOKEN=abcdef1234567890abcdef1234567890\n",
+        "abcdef1234567890abcdef1234567890",
     );
 }

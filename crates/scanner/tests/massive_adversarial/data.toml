@@ -2632,31 +2632,31 @@ suite = 12
 [[case.assertion]]
 kind = "fires"
 name = "normal"
-text = 'azure_subscription_key = "abcde1234567890abcde123456789012"'
-credential = 'abcde1234567890abcde123456789012'
+text = 'azure_subscription_key = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"'
+credential = '7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d'
 
 [[case.assertion]]
 kind = "silent"
 name = "prefix"
-text = 'azure_unsubscriptipn_key = "abcde1234567890abcde123456789012"'
+text = 'azure_unsubscriptipn_key = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwsp"
-text = 'azure_subscription\u{200B}_key = "abcde1234567890abcde123456789012"'
-credential = 'abcde1234567890abcde123456789012'
+text = 'azure_subscription\u{200B}_key = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"'
+credential = '7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d'
 
 [[case.assertion]]
 kind = "fires"
 name = "hyphen"
-text = 'azure_subscription_key = "abcde12345\u{00AD}67890abcde123456789012"'
-credential = 'abcde1234567890abcde123456789012'
+text = 'azure_subscription_key = "7b3e5d8c1a9f4e2b\u{00AD}6c8d3a5e9f1b7c4d"'
+credential = '7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d'
 
 [[case.assertion]]
 kind = "fires"
 name = "homoglyph"
-text = 'az\u{0457}re_subscription_key = "abcde1234567890abcde123456789012"'
-credential = 'abcde1234567890abcde123456789012'
+text = 'az\u{0457}re_subscription_key = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d"'
+credential = '7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d'
 
 [[case]]
 detector_id = "backblaze-b2-app-key-v2"
@@ -3917,31 +3917,31 @@ suite = 16
 [[case.assertion]]
 kind = "fires"
 name = "normal"
-text = 'calendly_token = "0000000000000000000000000000000000000000"'
-credential = '0000000000000000000000000000000000000000'
+text = 'calendly_token = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f"'
+credential = '7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f'
 
 [[case.assertion]]
 kind = "silent"
 name = "prefix"
-text = 'falendly_token = "0000000000000000000000000000000000000000"'
+text = 'falendly_token = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f"'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwsp"
-text = 'calendly\u{200B}_token = "0000000000000000000000000000000000000000"'
-credential = '0000000000000000000000000000000000000000'
+text = 'calendly\u{200B}_token = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f"'
+credential = '7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f'
 
 [[case.assertion]]
 kind = "fires"
 name = "hyphen"
-text = 'calendly_token = "000000000000000000000000000000\u{00AD}0000000000"'
-credential = '0000000000000000000000000000000000000000'
+text = 'calendly_token = "7b3e5d8c1a9f4e2b6c8d\u{00AD}3a5e9f1b7c4d8e6a2b9f"'
+credential = '7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f'
 
 [[case.assertion]]
 kind = "fires"
 name = "homoglyph"
-text = 'cal\u{0435}ndly_token = "0000000000000000000000000000000000000000"'
-credential = '0000000000000000000000000000000000000000'
+text = 'cal\u{0435}ndly_token = "7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f"'
+credential = '7b3e5d8c1a9f4e2b6c8d3a5e9f1b7c4d8e6a2b9f'
 
 [[case]]
 detector_id = "calendly-webhook-signing-key"
@@ -4474,31 +4474,31 @@ suite = 20
 [[case.assertion]]
 kind = "fires"
 name = "normal"
-text = 'CF_API_TOKEN = "0000000000000000000000000000000000000000"'
-credential = '0000000000000000000000000000000000000000'
+text = 'CF_API_TOKEN = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd"'
+credential = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd'
 
 [[case.assertion]]
 kind = "silent"
 name = "prefix"
-text = 'DF_API_TOKEN = "0000000000000000000000000000000000000000"'
+text = 'DF_API_TOKEN = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd"'
 
 [[case.assertion]]
 kind = "fires"
 name = "zwsp"
-text = 'CF_API\u{200B}_TOKEN = "0000000000000000000000000000000000000000"'
-credential = '0000000000000000000000000000000000000000'
+text = 'CF_API\u{200B}_TOKEN = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd"'
+credential = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd'
 
 [[case.assertion]]
 kind = "fires"
 name = "hyphen"
-text = 'CF_API_TOKEN = "000000000000000000000000000000\u{00AD}0000000000"'
-credential = '0000000000000000000000000000000000000000'
+text = 'CF_API_TOKEN = "AbCdEfGhIjKlMnOpQrSt\u{00AD}UvWxYz0123456789AbCd"'
+credential = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd'
 
 [[case.assertion]]
 kind = "fires"
 name = "homoglyph"
-text = 'CF_AP\u{0406}_TOKEN = "0000000000000000000000000000000000000000"'
-credential = '0000000000000000000000000000000000000000'
+text = 'CF_AP\u{0406}_TOKEN = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd"'
+credential = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCd'
 
 [[case]]
 detector_id = "cloudflare-global-api-key"

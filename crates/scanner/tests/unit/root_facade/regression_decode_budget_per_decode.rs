@@ -7,7 +7,7 @@
 //! hash, screen, clone, and queue EVERY one of those results after the deadline
 //! had already passed. The per-decode fan-out was therefore effectively
 //! unbounded: a single dense chunk pinned a core processing tens of thousands
-//! of decoded results long past `DEFAULT_DECODE_WALL_BUDGET_MS`.
+//! of decoded results long past the caller deadline.
 //!
 //! The fix adds a budget check at the top of the inner
 //! `for decoded in decoder.decode_chunk(&current)` loop in
@@ -48,7 +48,7 @@ const TAG: &str = "c9probe";
 
 /// Number of unique decoded chunks the custom decoder emits per call. Kept
 /// below `MAX_DECODED_CHUNKS_PER_ROOT` (1000) so the per-root fan-out cap is
-/// NOT what bounds the count - the wall-budget check is the only thing that can
+/// NOT what bounds the count - the caller-deadline check is the only thing that can
 /// reduce it from `FANOUT` to 0. (If this exceeded 1000, the OLD path would
 /// also stop at the cap and the test couldn't distinguish the bug.)
 const FANOUT: usize = 400;
@@ -237,26 +237,24 @@ fn decode_budget_is_enforced_inside_a_single_decoder_fanout() {
         );
     }
 
-    // ---- Adversarial: the implicit DEFAULT_DECODE_WALL_BUDGET_MS ceiling ----
-    // No caller deadline at all. The pipeline's own 50ms ceiling
-    // (DEFAULT_DECODE_WALL_BUDGET_MS) must still bound a decoder that sleeps
-    // 300ms past it: a None deadline must NOT defeat the wall budget. The fixed
-    // inner-loop check enforces the implicit ceiling exactly like an explicit
-    // one, so our tagged contribution is dropped.
+    // ---- No implicit timeout: absent deadline is deterministic -------------
+    // A None deadline must not invent a wall-clock recall cutoff. The fixed
+    // inner-loop check enforces only the caller-supplied deadline, so the
+    // sleeping decoder still contributes when no deadline was requested.
     {
         let root = inert_root("c9-sleep/explosion.bin");
         let out = decode_chunk(&root, 2, false, None, None);
         assert_eq!(
             tagged(&out),
-            0,
-            "with no caller deadline, the implicit 50ms wall ceiling must still \
-             stop the post-deadline fan-out; got {} tagged chunks",
+            FANOUT,
+            "with no caller deadline, decode must be governed by deterministic \
+             count/byte caps rather than a load-dependent wall clock; got {} tagged chunks",
             tagged(&out)
         );
         assert_eq!(
             decode_truncation_count(),
-            3,
-            "implicit wall-budget truncation must be counted"
+            2,
+            "no-deadline decode must not report a wall-budget truncation"
         );
     }
 

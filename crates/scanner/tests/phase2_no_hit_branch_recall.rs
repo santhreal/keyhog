@@ -223,6 +223,36 @@ fn embedded_isolated_entropy_secret_enters_coalesced_no_hit_branch_on_plain_text
 
 #[cfg(feature = "entropy")]
 #[test]
+fn zero_width_generic_assignment_enters_coalesced_no_hit_branch_after_normalization() {
+    let mut config = ScannerConfig::default();
+    config.min_confidence = 0.0;
+    let scanner = compile_scanner_with_config(config);
+    let secret = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn";
+    let chunk = make_chunk(
+        &format!("se\u{200B}cretKey=\"{secret}\"\n"),
+        "notes/normalized-no-hit.txt",
+    );
+
+    scanner.clear_fragment_cache();
+    let results = scanner.scan_coalesced(std::slice::from_ref(&chunk));
+    let matches = &results[0];
+    assert!(
+        matches.iter().any(|m| m.credential.as_ref() == secret),
+        "coalesced no-hit admission must consult normalized text for generic/entropy \
+         anchors instead of falling through to decode-only or empty output; matches={:?}",
+        matches
+            .iter()
+            .map(|m| (
+                m.detector_id.as_ref(),
+                m.credential.as_ref(),
+                m.location.offset
+            ))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[cfg(feature = "entropy")]
+#[test]
 fn deterministic_same_line_filler_does_not_surface_as_embedded_isolated_secret() {
     let mut config = ScannerConfig::default();
     config.min_confidence = 0.0;
