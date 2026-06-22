@@ -35,6 +35,13 @@ const TARGET_PATTERNS_PER_SHARD: usize = 80;
 /// scan-time dispatch). At this cap the per-shard size grows again, but the
 /// real corpus (~900 patterns) sits at ~23 shards, well under it.
 const MAX_COMPILE_SHARDS: usize = 64;
+const MAX_HS_PATTERN_LEN: usize = 500;
+const BASE_PATTERN_COST: u64 = 16;
+const RETRY_THRESHOLD: usize = 100;
+const RETRY_DROP_DIVISOR: usize = 10;
+const HS_CACHE_MAGIC: &[u8; 4] = b"KHHS";
+const HS_CACHE_VERSION: u32 = 1;
+const HS_CRATE_CACHE_VERSION: &[u8] = b"0.3.2";
 
 /// Hard cap for one serialized Hyperscan shard cache file. Cache files are
 /// performance artifacts, not source input; refusing an oversized cache and
@@ -295,6 +302,12 @@ pub(crate) struct HsCompileOpts<'a> {
     pub(crate) utf8: bool,
 }
 
+struct PreparedPatterns {
+    hs_pats: Vec<Pattern>,
+    pattern_map: Vec<(usize, usize, bool)>,
+    unsupported: Vec<usize>,
+}
+
 impl HsScanner {
     /// Compile patterns into a Hyperscan database (legacy: all `CASELESS`,
     /// no `SINGLEMATCH`).
@@ -313,52 +326,20 @@ impl HsScanner {
         Self::compile_with_opts(patterns, HsCompileOpts::default())
     }
 
-    /// Compile patterns with explicit per-pattern flags. See [`HsCompileOpts`].
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// use keyhog_scanner::simd::backend::{HsScanner, HsCompileOpts};
-    ///
-    /// let opts = HsCompileOpts { singlematch: true, caseless: Some(&[false]) };
-    /// let _ = HsScanner::compile_with_opts(&[(0, 0, "demo_[A-Z0-9]{8}", false)], opts)?;
-    /// ```
-    pub(crate) fn compile_with_opts(
+    fn prepare_patterns(
         patterns: &[(usize, usize, &str, bool)],
         opts: HsCompileOpts<'_>,
-    ) -> Result<(Self, Vec<usize>), String> {
+    ) -> PreparedPatterns {
         let mut hs_pats = Vec::new();
         let mut pattern_map = Vec::new();
         let mut unsupported = Vec::new();
 
         for (i, &(det_idx, pat_idx, regex, has_group)) in patterns.iter().enumerate() {
-            // Skip patterns that are too long for Hyperscan (>500 chars)
-            if regex.len() > 500 {
+            if regex.len() > MAX_HS_PATTERN_LEN {
                 unsupported.push(i);
                 continue;
             }
-            // No SOM_LEFTMOST - it causes "Pattern too large" on complex
-            // regexes; match positions are extracted by the regex crate.
-            // CASELESS is per-pattern (legacy callers get all-caseless);
-            // SINGLEMATCH is opt-in for the set-membership prefilter.
-            let mut flags = PatternFlags::empty();
-            let caseless = match opts.caseless {
-                Some(flags) => match flags.get(i) {
-                    Some(value) => *value,
-                    None => true,
-                },
-                None => true,
-            };
-            if caseless {
-                flags |= PatternFlags::CASELESS;
-            }
-            if opts.singlematch {
-                flags |= PatternFlags::SINGLEMATCH;
-            }
-            if opts.utf8 {
-                flags |= PatternFlags::UTF8;
-            }
-            match Pattern::with_flags(regex, flags) {
+            match Pattern::with_flags(regex, Self::pattern_flags(i, opts)) {
                 Ok(mut p) => {
                     p.id = Some(pattern_map.len());
                     hs_pats.push(p);
@@ -376,240 +357,227 @@ impl HsScanner {
             }
         }
 
-        if hs_pats.is_empty() {
-            return Err("no patterns compiled".into());
+        PreparedPatterns {
+            hs_pats,
+            pattern_map,
+            unsupported,
+        }
+    }
+
+    fn pattern_flags(index: usize, opts: HsCompileOpts<'_>) -> PatternFlags {
+        // No SOM_LEFTMOST - it causes "Pattern too large" on complex regexes;
+        // match positions are extracted by the regex crate. CASELESS is
+        // per-pattern (legacy callers get all-caseless); SINGLEMATCH is opt-in
+        // for the set-membership prefilter.
+        let mut flags = PatternFlags::empty();
+        let caseless = match opts.caseless {
+            Some(flags) => flags.get(index).copied().unwrap_or(true), // LAW10: missing per-pattern flag uses legacy CASELESS default; recall-conservative overmatch, not a silent drop.
+            None => true,
+        };
+        if caseless {
+            flags |= PatternFlags::CASELESS;
+        }
+        if opts.singlematch {
+            flags |= PatternFlags::SINGLEMATCH;
+        }
+        if opts.utf8 {
+            flags |= PatternFlags::UTF8;
+        }
+        flags
+    }
+
+    fn compile_cache_key(hs_pats: &[Pattern], opts: HsCompileOpts<'_>) -> String {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        for p in hs_pats {
+            h.update(p.expression.as_bytes());
+            h.update([0]);
         }
 
-        let cache_dir = resolve_cache_dir()?;
+        h.update(hyperscan::version().to_string().as_bytes());
+        h.update(HS_CRATE_CACHE_VERSION);
 
-        // Cache key: SHA-256 of all pattern strings + environment metadata.
-        let cache_key = {
-            use sha2::{Digest, Sha256};
-            let mut h = Sha256::new();
-            for p in &hs_pats {
-                h.update(p.expression.as_bytes());
-                h.update([0]);
+        #[cfg(target_arch = "x86_64")]
+        {
+            if is_x86_feature_detected!("avx512f") {
+                h.update(b"avx512f");
             }
-
-            // Task 1a: include hyperscan library version, CPU features, target arch
-            h.update(hyperscan::version().to_string().as_bytes());
-            h.update(b"0.3.2"); // Pin hyperscan crate version
-
-            #[cfg(target_arch = "x86_64")]
-            {
-                if is_x86_feature_detected!("avx512f") {
-                    h.update(b"avx512f");
-                }
-                if is_x86_feature_detected!("avx2") {
-                    h.update(b"avx2");
-                }
-                if is_x86_feature_detected!("sse4.2") {
-                    h.update(b"sse4.2");
-                }
+            if is_x86_feature_detected!("avx2") {
+                h.update(b"avx2");
             }
-            #[cfg(target_arch = "aarch64")]
-            {
-                h.update(b"neon");
+            if is_x86_feature_detected!("sse4.2") {
+                h.update(b"sse4.2");
             }
-            h.update(std::env::consts::ARCH.as_bytes());
+        }
+        #[cfg(target_arch = "aarch64")]
+        {
+            h.update(b"neon");
+        }
+        h.update(std::env::consts::ARCH.as_bytes());
 
-            // Flags are baked into the serialized DB, so the cache key must
-            // distinguish a caseless-all/no-singlematch build from a
-            // per-pattern/singlematch one — otherwise a phase-1 cache entry
-            // could be loaded for a prefilter request (or vice versa).
-            h.update(if opts.singlematch { b"SM1" } else { b"SM0" });
-            h.update(if opts.utf8 { b"U81" } else { b"U80" });
-            match opts.caseless {
-                None => h.update(b"CLall"),
-                Some(cl) => {
-                    h.update(b"CLper");
-                    for &b in cl {
-                        h.update([b as u8]);
-                    }
+        // Flags are baked into the serialized DB, so the cache key must
+        // distinguish a caseless-all/no-singlematch build from a
+        // per-pattern/singlematch one.
+        h.update(if opts.singlematch { b"SM1" } else { b"SM0" });
+        h.update(if opts.utf8 { b"U81" } else { b"U80" });
+        match opts.caseless {
+            None => h.update(b"CLall"),
+            Some(cl) => {
+                h.update(b"CLper");
+                for &b in cl {
+                    h.update([b as u8]);
                 }
             }
+        }
 
-            hex::encode(h.finalize())
-        };
-        // ── Shard the pattern set and compile each shard in parallel ──
-        //
-        // The single serial `Builder::build` over the whole pattern set is
-        // the entire cold-compile cost (~99.7% of it; the rayon regex-
-        // validate phase upstream is ~5ms) and it scales ~linearly with the
-        // pattern count while every core but one idles. Splitting the
-        // patterns into K independent shards and building them on the rayon
-        // pool lets the idle cores absorb the work, so doubling the pattern
-        // count is bounded by the largest shard, not the sum. Each
-        // `Builder::build` is fully independent and CPU-bound; the match ids
-        // are the GLOBAL pattern ids (set on `Pattern.id` above), so a match
-        // from any shard maps back through the same `pattern_map` and the
-        // union of all shards' matches is exactly what a single all-patterns
-        // database would have produced - no recall change, only WHERE each
-        // pattern compiles.
+        hex::encode(h.finalize())
+    }
+
+    fn compile_shard_count(pattern_count: usize, opts: HsCompileOpts<'_>) -> usize {
         let cores = std::thread::available_parallelism()
             .map(|c| c.get())
             .unwrap_or(1); // LAW10: host core-count probe failure only selects the one-shard compile path; findings are unchanged.
-                           // Shard count: aim for ~TARGET patterns per shard, but cap at the
-                           // core count so every shard runs in a SINGLE parallel wave. Two
-                           // boundary behaviours matter for the full/half cold-compile ratio:
-                           //
-                           //   * Below the cap (small/medium corpus): shard COUNT scales with n
-                           //     at a fixed per-shard size, so each `Builder::build` costs the
-                           //     same and doubling the corpus is fully absorbed by spinning up
-                           //     more parallel shards (flat).
-                           //   * At the cap (large corpus, n > cores*TARGET): per-shard size
-                           //     grows as n/cores. With TARGET tuned so the full corpus sits
-                           //     right at the cap, a half-size corpus lands just below it at a
-                           //     similar per-shard size, so the two stay within a small factor
-                           //     and the ratio tracks the (sub-linear) per-shard build growth
-                           //     rather than the pattern count.
-                           //
-                           // Letting shards exceed cores was measured to be WORSE: the build
-                           // then runs ceil(shards/cores) work-stealing waves and the wall-clock
-                           // quantizes at the core boundary (a corpus needing 42 shards on 32
-                           // cores pays ~1.7x vs a half needing 21), so we stay within one wave.
         let target = opts
             .shard_target
             .filter(|&v| v >= 1)
-            .unwrap_or(TARGET_PATTERNS_PER_SHARD); // LAW10: absent shard-target compile tuning => documented default; sharding only changes WHERE patterns compile, never the finding set (recall-unchanged, per the comment above).
+            .unwrap_or(TARGET_PATTERNS_PER_SHARD); // LAW10: absent shard-target compile tuning => documented default; sharding only changes WHERE patterns compile, never the finding set.
         let cap = cores.clamp(1, MAX_COMPILE_SHARDS);
-        let shard_count = hs_pats
-            .len()
+        pattern_count
             .div_ceil(target)
             .clamp(1, cap)
-            .min(hs_pats.len())
-            .max(1);
+            .min(pattern_count)
+            .max(1)
+    }
 
-        // LPT (longest-processing-time-first) bin-packing partition. The
-        // Hyperscan build time of a shard is dominated by its heaviest
-        // regexes (DFA state blow-up is super-linear in pattern length), so a
-        // naive round-robin that happens to land several long regexes in one
-        // shard makes that shard the wall-clock-determining straggler. Sort
-        // patterns by a cost proxy (expression length) descending and place
-        // each on the currently-lightest shard. This minimizes the MAX shard
-        // cost, so wall-clock ~ mean shard cost, which scales smoothly with
-        // patterns-per-shard - the property the full/half ratio test checks.
-        // Each shard keeps the patterns' original GLOBAL ids (set on
-        // `Pattern.id` above), so the union semantics are unchanged.
+    fn partition_patterns_lpt(hs_pats: &[Pattern], shard_count: usize) -> Vec<Vec<Pattern>> {
         let mut order: Vec<usize> = (0..hs_pats.len()).collect();
         order.sort_unstable_by_key(|&i| std::cmp::Reverse(hs_pats[i].expression.len()));
         let mut shard_pats: Vec<Vec<Pattern>> = (0..shard_count).map(|_| Vec::new()).collect();
         let mut shard_cost: Vec<u64> = vec![0; shard_count];
         for &i in &order {
-            // Index of the lightest shard so far. `shard_count` is
-            // `.clamp(1, cap).max(1)` above, so `shard_cost` is never empty
-            // and `min_by_key` always yields `Some`; `unwrap_or(0)` keeps the
-            // path panic-free (shard 0 always exists) without a production
-            // `.expect`.
             let lightest = shard_cost
                 .iter()
                 .enumerate()
                 .min_by_key(|(_, &c)| c)
                 .map(|(idx, _)| idx)
                 .unwrap_or(0); // LAW10: shard_count is clamped to >=1 above; fallback is unreachable and preserves shard 0.
-                               // Cost proxy: length plus a fixed per-pattern overhead so a shard
-                               // with many short patterns is not treated as free.
-            shard_cost[lightest] += hs_pats[i].expression.len() as u64 + 16;
+            shard_cost[lightest] += hs_pats[i].expression.len() as u64 + BASE_PATTERN_COST;
             shard_pats[lightest].push(hs_pats[i].clone());
         }
+        shard_pats
+    }
 
-        const CACHE_MAGIC: &[u8; 4] = b"KHHS";
-        const CACHE_VERSION: u32 = 1;
-
-        // Compile (or cache-load) every shard concurrently. Returns the
-        // built database and the global ids the shard had to drop (over-long
-        // / unsupported constructs) for the phase-2 keyword reroute.
+    fn compile_cached_shards(
+        shard_pats: Vec<Vec<Pattern>>,
+        shard_count: usize,
+        cache_key: &str,
+        cache_dir: &std::path::Path,
+    ) -> Vec<Result<(BlockDatabase, Vec<usize>), String>> {
         use rayon::prelude::*;
-        let shard_results: Vec<Result<(BlockDatabase, Vec<usize>), String>> = shard_pats
+        shard_pats
             .into_par_iter()
             .enumerate()
             .map(|(shard_idx, pats)| {
-                // Per-shard cache key: the shared env-metadata digest plus
-                // this shard's own pattern strings, so each shard file is
-                // independent and the warm path is a deserialize-only load.
-                // The partition is deterministic for a given (pattern set,
-                // shard_count), so the keys are stable across runs; a host
-                // with a different shard_count simply produces different
-                // per-shard keys (no stale-read collision).
-                let shard_key = {
-                    use sha2::{Digest, Sha256};
-                    let mut h = Sha256::new();
-                    h.update(cache_key.as_bytes());
-                    h.update((shard_count as u64).to_le_bytes());
-                    h.update((shard_idx as u64).to_le_bytes());
-                    for p in &pats {
-                        h.update(p.expression.as_bytes());
-                        h.update([0]);
-                    }
-                    hex::encode(h.finalize())
-                };
+                let shard_key = Self::shard_cache_key(cache_key, shard_count, shard_idx, &pats);
                 let cache_path = cache_dir.join(format!("hs-{shard_key}.db"));
 
-                // Try the per-shard disk cache first.
-                match read_hs_cache_file(&cache_path) {
-                    Ok(Some(bytes)) => {
-                        if bytes.len() > 8 && &bytes[0..4] == CACHE_MAGIC {
-                            let cache_version = bytes[4..8]
-                                .try_into()
-                                .map(u32::from_le_bytes)
-                                .unwrap_or(0); // LAW10: invalid cache header misses cache and recompiles the same patterns.
-                            if cache_version == CACHE_VERSION {
-                                use hyperscan::Serialized;
-                                let payload: &[u8] = &bytes[8..];
-                                if let Ok(db) = payload.deserialize::<BlockMode>() {
-                                    tracing::info!(
-                                        cache = %cache_path.display(),
-                                        shard = shard_idx,
-                                        patterns = pats.len(),
-                                        "HS shard loaded from cache"
-                                    );
-                                    return Ok((db, Vec::new()));
-                                }
-                            }
+                if let Some(db) = Self::load_cached_shard(&cache_path, shard_idx, pats.len()) {
+                    return Ok((db, Vec::new()));
+                }
+
+                let (db, dropped) = Self::compile_hs_db(&pats)?;
+                Self::persist_cached_shard(&db, &cache_path, shard_idx);
+                Ok((db, dropped))
+            })
+            .collect()
+    }
+
+    fn shard_cache_key(
+        cache_key: &str,
+        shard_count: usize,
+        shard_idx: usize,
+        pats: &[Pattern],
+    ) -> String {
+        use sha2::{Digest, Sha256};
+        let mut h = Sha256::new();
+        h.update(cache_key.as_bytes());
+        h.update((shard_count as u64).to_le_bytes());
+        h.update((shard_idx as u64).to_le_bytes());
+        for p in pats {
+            h.update(p.expression.as_bytes());
+            h.update([0]);
+        }
+        hex::encode(h.finalize())
+    }
+
+    fn load_cached_shard(
+        cache_path: &std::path::Path,
+        shard_idx: usize,
+        pattern_count: usize,
+    ) -> Option<BlockDatabase> {
+        match read_hs_cache_file(cache_path) {
+            Ok(Some(bytes)) => {
+                if bytes.len() > 8 && &bytes[0..4] == HS_CACHE_MAGIC {
+                    let cache_version = bytes[4..8].try_into().map(u32::from_le_bytes).unwrap_or(0); // LAW10: invalid cache header misses cache and recompiles the same patterns.
+                    if cache_version == HS_CACHE_VERSION {
+                        use hyperscan::Serialized;
+                        let payload: &[u8] = &bytes[8..];
+                        if let Ok(db) = payload.deserialize::<BlockMode>() {
+                            tracing::info!(
+                                cache = %cache_path.display(),
+                                shard = shard_idx,
+                                patterns = pattern_count,
+                                "HS shard loaded from cache"
+                            );
+                            return Some(db);
                         }
                     }
-                    Ok(None) => {}
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(error) => {
-                        tracing::warn!(
+                }
+            }
+            Ok(None) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => {
+                tracing::warn!(
+                    cache = %cache_path.display(),
+                    error = %error,
+                    "HS shard cache file is not usable; compiling from patterns"
+                );
+            }
+        }
+        None
+    }
+
+    fn persist_cached_shard(db: &BlockDatabase, cache_path: &std::path::Path, shard_idx: usize) {
+        if let Ok(ser) = db.serialize() {
+            let mut data = Vec::with_capacity(ser.as_ref().len() + 8);
+            data.extend_from_slice(HS_CACHE_MAGIC);
+            data.extend_from_slice(&HS_CACHE_VERSION.to_le_bytes());
+            data.extend_from_slice(ser.as_ref());
+            let parent = cache_path
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new(".")); // LAW10: cache_path is constructed with a parent; fallback only disables atomic cache locality, not scanning.
+            if let Ok(mut tmp) = tempfile::NamedTempFile::new_in(parent) {
+                if std::io::Write::write_all(&mut tmp, &data).is_ok()
+                    && tmp.as_file().sync_all().is_ok()
+                {
+                    if let Err(error) = tmp.persist(cache_path) {
+                        tracing::debug!(
                             cache = %cache_path.display(),
                             error = %error,
-                            "HS shard cache file is not usable; compiling from patterns"
+                            "HS shard cache persist failed; next run will recompile"
                         );
                     }
                 }
+            }
+            tracing::info!(cache = %cache_path.display(), shard = shard_idx, "HS shard cached");
+        }
+    }
 
-                // Cold: build this shard, then atomically persist it.
-                let (db, dropped) = Self::compile_hs_db(&pats)?;
-                if let Ok(ser) = db.serialize() {
-                    let mut data = Vec::with_capacity(ser.as_ref().len() + 8);
-                    data.extend_from_slice(CACHE_MAGIC);
-                    data.extend_from_slice(&CACHE_VERSION.to_le_bytes());
-                    data.extend_from_slice(ser.as_ref());
-                    let parent = cache_path
-                        .parent()
-                        .unwrap_or_else(|| std::path::Path::new(".")); // LAW10: cache_path is constructed with a parent; fallback only disables atomic cache locality, not scanning.
-                    if let Ok(mut tmp) = tempfile::NamedTempFile::new_in(parent) {
-                        if std::io::Write::write_all(&mut tmp, &data).is_ok()
-                            && tmp.as_file().sync_all().is_ok()
-                        {
-                            if let Err(error) = tmp.persist(&cache_path) {
-                                tracing::debug!(
-                                    cache = %cache_path.display(),
-                                    error = %error,
-                                    "HS shard cache persist failed; next run will recompile"
-                                );
-                            }
-                        }
-                    }
-                    tracing::info!(cache = %cache_path.display(), shard = shard_idx, "HS shard cached");
-                }
-                Ok((db, dropped))
-            })
-            .collect();
-
-        // Assemble the shards; any single shard's compile error fails the
-        // whole build (matches the previous all-or-nothing contract).
+    fn assemble_scanner_shards(
+        shard_count: usize,
+        shard_results: Vec<Result<(BlockDatabase, Vec<usize>), String>>,
+        unsupported: &mut Vec<usize>,
+    ) -> Result<Vec<Shard>, String> {
         let mut shards = Vec::with_capacity(shard_count);
         for result in shard_results {
             let (db, dropped) = result?;
@@ -627,6 +595,41 @@ impl HsScanner {
                 scratch_pool: parking_lot::Mutex::new(scratch_pool),
             });
         }
+        Ok(shards)
+    }
+
+    /// Compile patterns with explicit per-pattern flags. See [`HsCompileOpts`].
+    ///
+    /// # Examples
+    ///
+    /// ```rust,ignore
+    /// use keyhog_scanner::simd::backend::{HsScanner, HsCompileOpts};
+    ///
+    /// let opts = HsCompileOpts { singlematch: true, caseless: Some(&[false]) };
+    /// let _ = HsScanner::compile_with_opts(&[(0, 0, "demo_[A-Z0-9]{8}", false)], opts)?;
+    /// ```
+    pub(crate) fn compile_with_opts(
+        patterns: &[(usize, usize, &str, bool)],
+        opts: HsCompileOpts<'_>,
+    ) -> Result<(Self, Vec<usize>), String> {
+        let PreparedPatterns {
+            hs_pats,
+            pattern_map,
+            mut unsupported,
+        } = Self::prepare_patterns(patterns, opts);
+
+        if hs_pats.is_empty() {
+            return Err("no patterns compiled".into());
+        }
+
+        let cache_dir = resolve_cache_dir()?;
+
+        let cache_key = Self::compile_cache_key(&hs_pats, opts);
+        let shard_count = Self::compile_shard_count(hs_pats.len(), opts);
+        let shard_pats = Self::partition_patterns_lpt(&hs_pats, shard_count);
+        let shard_results =
+            Self::compile_cached_shards(shard_pats, shard_count, &cache_key, &cache_dir);
+        let shards = Self::assemble_scanner_shards(shard_count, shard_results, &mut unsupported)?;
 
         // The caller (`build_simd_scanner`) already logs
         // `unsupported.len()` via tracing::info!, and consumers that
@@ -658,12 +661,12 @@ impl HsScanner {
             let patterns_obj = Patterns(std::mem::take(&mut attempts));
             match Builder::build::<BlockMode>(&patterns_obj) {
                 Ok(db) => break db,
-                Err(_) if patterns_obj.0.len() > 100 => {
+                Err(_) if patterns_obj.0.len() > RETRY_THRESHOLD => {
                     // Law 10: compile retry records dropped ids and caller reroutes them to the phase-2 keyword lane.
                     // Reclaim ownership for the next attempt.
                     attempts = patterns_obj.0;
                     attempts.sort_by_key(|p| std::cmp::Reverse(p.expression.len()));
-                    let remove_count = attempts.len() / 10;
+                    let remove_count = attempts.len() / RETRY_DROP_DIVISOR;
                     for _ in 0..remove_count {
                         if let Some(removed) = attempts.pop() {
                             dropped.push(removed.id.unwrap_or(0)); // LAW10: ids are assigned above; fallback id is unreachable and only affects the returned reroute list.

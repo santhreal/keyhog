@@ -55,7 +55,7 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
         backend.contains("const HS_CACHE_FILE_BYTES")
             && backend.contains("fn read_hs_cache_file(")
             && backend.contains("file.take(HS_CACHE_FILE_BYTES.saturating_add(1))")
-            && backend.contains("read_hs_cache_file(&cache_path)")
+            && backend.contains("read_hs_cache_file(cache_path)")
             && !backend.contains("std::fs::read(&cache_path)"),
         "Hyperscan shard cache loads must be capped before reading cache bytes"
     );

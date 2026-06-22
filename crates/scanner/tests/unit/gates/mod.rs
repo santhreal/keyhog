@@ -202,6 +202,7 @@ pub mod resolution_non_empty;
 pub mod shared_regexes_no_inline_tests;
 pub mod shared_regexes_no_unwrap_expect;
 pub mod shared_regexes_non_empty;
+pub mod simd_compile_org_contract;
 pub mod simd_no_inline_tests;
 pub mod simd_no_silent_hyperscan_partial_contract;
 pub mod simd_no_unwrap_expect;
