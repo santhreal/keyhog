@@ -6,12 +6,14 @@ use std::collections::{BTreeMap, HashSet};
 use std::fs::File;
 use std::io::{Read, Seek};
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use regex::Regex;
 
 use crate::FilesystemSource;
+
+const DOCKER_STDERR_EXCERPT_BYTES: usize = 64 * 1024;
 
 /// Scan a Docker image by saving it as a tar archive and unpacking each layer.
 ///
@@ -102,19 +104,7 @@ fn collect_docker_chunks(
                 .into(),
         )
     })?;
-    let output = Command::new(&docker_bin)
-        .args(["image", "save", "-o"])
-        .arg(&archive_path)
-        .arg(&image)
-        .output()
-        .map_err(SourceError::Io)?;
-
-    if !output.status.success() {
-        return Err(SourceError::Other(format!(
-            "failed to export docker image: {image}: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        )));
-    }
+    export_docker_image_archive(&docker_bin, &image, &archive_path)?;
 
     unpack_tar(&archive_path, &root_path, limits)?;
 
@@ -142,6 +132,78 @@ fn collect_docker_chunks(
     }
 
     Ok(chunks)
+}
+
+fn export_docker_image_archive(
+    docker_bin: &Path,
+    image: &str,
+    archive_path: &Path,
+) -> Result<(), SourceError> {
+    let mut child = Command::new(docker_bin)
+        .args(["image", "save", "-o"])
+        .arg(archive_path)
+        .arg(image)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(SourceError::Io)?;
+    let stderr = child
+        .stderr
+        .take()
+        .map(|pipe| std::thread::spawn(move || drain_docker_stderr_excerpt(pipe)));
+    let status = child.wait().map_err(SourceError::Io)?;
+    let stderr = match stderr {
+        Some(handle) => match handle.join() {
+            Ok(stderr) => stderr,
+            Err(_panic_payload) => {
+                eprintln!("keyhog: docker stderr reader panicked during image export");
+                tracing::warn!("docker stderr reader panicked during image export");
+                "stderr unavailable: docker stderr reader panicked".to_string()
+            }
+        },
+        None => {
+            eprintln!("keyhog: docker image export stderr pipe was unavailable");
+            tracing::warn!("docker image export stderr pipe was unavailable");
+            String::new()
+        }
+    };
+    if status.success() {
+        return Ok(());
+    }
+
+    Err(SourceError::Other(format!(
+        "failed to export docker image: {image}: {}",
+        stderr.trim()
+    )))
+}
+
+fn drain_docker_stderr_excerpt(mut stderr_pipe: impl Read) -> String {
+    let mut excerpt = Vec::new();
+    let mut buffer = [0_u8; 8192];
+    let mut truncated = false;
+    loop {
+        match stderr_pipe.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => {
+                if excerpt.len() < DOCKER_STDERR_EXCERPT_BYTES {
+                    let keep = read.min(DOCKER_STDERR_EXCERPT_BYTES - excerpt.len());
+                    excerpt.extend_from_slice(&buffer[..keep]);
+                    if keep < read {
+                        truncated = true;
+                    }
+                } else {
+                    truncated = true;
+                }
+            }
+            Err(error) => return format!("stderr unavailable: {error}"),
+        }
+    }
+
+    let mut text = String::from_utf8_lossy(&excerpt).into_owned();
+    if truncated {
+        text.push_str("\n[stderr truncated after 65536 bytes]");
+    }
+    text
 }
 
 fn validate_image_name(image: &str) -> Result<String, SourceError> {
@@ -886,6 +948,14 @@ pub(crate) fn manifest_layer_archives_for_test(
     root_path: &Path,
 ) -> Result<Vec<PathBuf>, SourceError> {
     find_layer_archives(root_path, crate::SourceLimits::default())
+}
+
+pub(crate) fn export_docker_image_archive_for_test(
+    docker_bin: &Path,
+    image: &str,
+    archive_path: &Path,
+) -> Result<(), SourceError> {
+    export_docker_image_archive(docker_bin, image, archive_path)
 }
 
 pub(crate) fn manifest_config_chunks_for_test(

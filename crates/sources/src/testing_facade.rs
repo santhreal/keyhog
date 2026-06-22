@@ -235,6 +235,13 @@ pub mod testing {
         ) -> keyhog_core::SourceError;
 
         #[cfg(feature = "docker")]
+        fn export_docker_image_archive(
+            &self,
+            docker_bin: &std::path::Path,
+            image: &str,
+            archive_path: &std::path::Path,
+        ) -> Result<(), keyhog_core::SourceError>;
+        #[cfg(feature = "docker")]
         fn docker_manifest_layer_archives(
             &self,
             root_path: &std::path::Path,
@@ -704,6 +711,16 @@ pub mod testing {
             crate::bitbucket_workspace::listing_truncated_error_for_test(
                 workspace, repo_count, max_pages,
             )
+        }
+
+        #[cfg(feature = "docker")]
+        fn export_docker_image_archive(
+            &self,
+            docker_bin: &std::path::Path,
+            image: &str,
+            archive_path: &std::path::Path,
+        ) -> Result<(), keyhog_core::SourceError> {
+            crate::docker::export_docker_image_archive_for_test(docker_bin, image, archive_path)
         }
 
         #[cfg(feature = "docker")]
