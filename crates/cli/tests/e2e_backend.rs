@@ -41,6 +41,10 @@ fn backend_default_returns_exit_zero_with_hardware_info() {
             || stdout.to_lowercase().contains("hardware"),
         "backend output should describe detected hardware; got: {stdout}"
     );
+    assert!(
+        stdout.contains("reason="),
+        "backend output must explain each heuristic routing decision; got: {stdout}"
+    );
 }
 
 /// `keyhog backend --self-test` runs GPU/SIMD self-tests and returns exit 0 on pass.
@@ -117,6 +121,10 @@ fn backend_probe_bytes_tests_routing_threshold() {
     assert!(
         stdout.contains("backend") || stdout.contains("gpu") || stdout.contains("route"),
         "probe output should show backend routing decision; got: {stdout}"
+    );
+    assert!(
+        stdout.contains("reason:"),
+        "probe output should show the structured routing reason; got: {stdout}"
     );
 }
 

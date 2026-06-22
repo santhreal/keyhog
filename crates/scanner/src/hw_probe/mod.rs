@@ -27,7 +27,10 @@ pub(crate) mod thresholds;
 
 pub use banner::startup_banner;
 pub(crate) use select::select_backend_for_file;
-pub use select::{gpu_could_engage, parse_backend_str, select_backend};
+pub use select::{
+    gpu_could_engage, parse_backend_str, select_backend, select_backend_verdict,
+    BackendRoutingReason, BackendRoutingVerdict,
+};
 pub use tier::{gpu_routing_profile, gpu_routing_profiles, GpuRoutingProfile};
 
 /// Scan execution backend selected for a given workload.
@@ -161,7 +164,8 @@ pub fn probe_hardware() -> &'static HardwareCaps {
 #[doc(hidden)]
 pub mod testing {
     pub use super::{
-        gpu_could_engage, parse_backend_str, probe_hardware, select_backend, startup_banner,
+        gpu_could_engage, parse_backend_str, probe_hardware, select_backend,
+        select_backend_verdict, startup_banner, BackendRoutingReason, BackendRoutingVerdict,
         HardwareCaps, ScanBackend,
     };
 
@@ -215,6 +219,20 @@ pub mod testing {
         large_chunk_bytes: u64,
     ) -> ScanBackend {
         super::select::select_backend_for_batch(
+            caps,
+            workload_bytes,
+            pattern_count,
+            large_chunk_bytes,
+        )
+    }
+
+    pub fn select_backend_for_batch_verdict(
+        caps: &HardwareCaps,
+        workload_bytes: u64,
+        pattern_count: usize,
+        large_chunk_bytes: u64,
+    ) -> BackendRoutingVerdict {
+        super::select::select_backend_for_batch_verdict(
             caps,
             workload_bytes,
             pattern_count,

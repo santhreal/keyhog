@@ -14,7 +14,7 @@ use crate::exit_codes::EXIT_BACKEND_SELF_TEST_FAILED;
 use crate::style::{self, Palette};
 use anyhow::Result;
 use keyhog_scanner::hw_probe::{
-    gpu_routing_profile, gpu_routing_profiles, probe_hardware, select_backend,
+    gpu_routing_profile, gpu_routing_profiles, probe_hardware, select_backend_verdict,
 };
 use serde::Serialize;
 use std::process::ExitCode;
@@ -119,15 +119,26 @@ fn print_backend_report(args: &BackendArgs) -> Result<()> {
         (1024 * 1024 * 1024, "1 GiB single chunk"),
     ];
     for (bytes, label) in scenarios {
-        let backend = select_backend(hw, *bytes, pat);
-        println!("  {:<42} {}", label, backend.label());
+        let verdict = select_backend_verdict(hw, *bytes, pat);
+        println!(
+            "  {:<42} {} reason={} ({})",
+            label,
+            verdict.backend.label(),
+            verdict.reason.label(),
+            verdict.reason_detail()
+        );
     }
 
     if let Some(bytes) = args.probe_bytes {
         println!();
-        let backend = select_backend(hw, bytes, pat);
+        let verdict = select_backend_verdict(hw, bytes, pat);
         println!("## --probe-bytes {bytes}");
-        println!("  {}", backend.label());
+        println!("  backend: {}", verdict.backend.label());
+        println!(
+            "  reason:  {} ({})",
+            verdict.reason.label(),
+            verdict.reason_detail()
+        );
     }
 
     println!();

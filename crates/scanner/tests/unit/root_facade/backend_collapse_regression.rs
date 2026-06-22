@@ -14,7 +14,8 @@
 use keyhog_scanner::gpu::{gpu_runtime_policy, set_gpu_runtime_policy, GpuRuntimePolicy};
 use keyhog_scanner::hw_probe::testing::{
     cpu_tier_backend, gpu_could_engage, parse_backend_str, select_backend,
-    select_backend_for_batch, HardwareCaps, ScanBackend,
+    select_backend_for_batch, select_backend_for_batch_verdict, select_backend_verdict,
+    BackendRoutingReason, HardwareCaps, ScanBackend,
 };
 use keyhog_scanner::testing::{clear_test_backend_override, set_test_backend_override, thresholds};
 use std::sync::Mutex;
@@ -157,6 +158,85 @@ fn select_backend_routes_cpu_tier_through_the_shared_helper() {
     });
 }
 
+#[test]
+fn routing_verdict_surfaces_every_cpu_reason() {
+    with_policy(GpuRuntimePolicy::Disabled, None, || {
+        let caps = caps_gpu(true, true);
+        let verdict = select_backend_verdict(&caps, thresholds::GPU_MIN_BYTES_HIGH_TIER, 5_000);
+        assert_eq!(verdict.backend, ScanBackend::SimdCpu);
+        assert_eq!(verdict.reason, BackendRoutingReason::GpuDisabledByPolicy);
+        assert_eq!(verdict.reason.label(), "gpu_disabled_by_policy");
+        assert!(
+            verdict.reason_detail().contains("runtime policy"),
+            "disabled-policy verdict must explain the policy cause"
+        );
+    });
+
+    with_policy(GpuRuntimePolicy::Auto, None, || {
+        let no_gpu = caps_no_gpu(true, true);
+        let no_gpu_verdict =
+            select_backend_verdict(&no_gpu, thresholds::GPU_MIN_BYTES_HIGH_TIER, 5_000);
+        assert_eq!(no_gpu_verdict.backend, ScanBackend::SimdCpu);
+        assert_eq!(no_gpu_verdict.reason, BackendRoutingReason::GpuProbeMiss);
+        assert!(no_gpu_verdict.reason_detail().contains("hardware probe"));
+
+        let mut software = caps_gpu(true, true);
+        software.gpu_is_software = true;
+        software.gpu_name = Some("llvmpipe (LLVM 15)".into());
+        let software_verdict =
+            select_backend_verdict(&software, thresholds::GPU_MIN_BYTES_HIGH_TIER, 5_000);
+        assert_eq!(software_verdict.backend, ScanBackend::SimdCpu);
+        assert_eq!(
+            software_verdict.reason,
+            BackendRoutingReason::GpuSoftwareRenderer
+        );
+        assert!(software_verdict
+            .reason_detail()
+            .contains("software renderer"));
+
+        let threshold_verdict = select_backend_verdict(&caps_gpu(true, true), 1024, 5_000);
+        assert_eq!(threshold_verdict.backend, ScanBackend::SimdCpu);
+        assert_eq!(
+            threshold_verdict.reason,
+            BackendRoutingReason::GpuThresholdNotMet
+        );
+        assert!(threshold_verdict
+            .reason_detail()
+            .contains("GPU thresholds not met"));
+
+        let batch_verdict = select_backend_for_batch_verdict(
+            &caps_gpu(true, true),
+            thresholds::GPU_MIN_BYTES_HIGH_TIER,
+            5_000,
+            1024,
+        );
+        assert_eq!(batch_verdict.backend, ScanBackend::SimdCpu);
+        assert_eq!(
+            batch_verdict.reason,
+            BackendRoutingReason::GpuBatchNotDominant
+        );
+        assert!(batch_verdict.reason_detail().contains("do not dominate"));
+    });
+}
+
+#[test]
+fn routing_verdict_surfaces_gpu_selection_reason() {
+    with_policy(GpuRuntimePolicy::Auto, None, || {
+        let verdict = select_backend_verdict(
+            &caps_gpu(true, true),
+            thresholds::GPU_MIN_BYTES_HIGH_TIER,
+            5_000,
+        );
+        assert_eq!(verdict.backend, ScanBackend::Gpu);
+        assert_eq!(verdict.reason, BackendRoutingReason::GpuSelected);
+        assert_eq!(verdict.reason.label(), "gpu_selected");
+        assert_eq!(verdict.workload_bytes, thresholds::GPU_MIN_BYTES_HIGH_TIER);
+        assert_eq!(verdict.pattern_count, 5_000);
+        assert_eq!(verdict.gpu_tier, "high");
+        assert!(verdict.reason_detail().contains("GPU thresholds met"));
+    });
+}
+
 // ---------------------------------------------------------------------------
 // 2. The selection matrix: exact backend per (caps, bytes, patterns, env).
 // ---------------------------------------------------------------------------
@@ -268,21 +348,37 @@ fn workload_selector_is_the_single_branch_owner() {
         );
     }
 
-    for (signature, name) in [
-        ("pub fn select_backend(", "public file/workload wrapper"),
+    for (signature, expected_delegate, name) in [
+        (
+            "pub fn select_backend(",
+            "select_backend_verdict(",
+            "public file/workload wrapper",
+        ),
+        (
+            "pub fn select_backend_verdict(",
+            "select_backend_for_workload(",
+            "public file/workload verdict wrapper",
+        ),
         (
             "pub(crate) fn select_backend_for_file(",
+            "select_backend_for_workload(",
             "compiled-scanner file wrapper",
         ),
         (
             "pub(crate) fn select_backend_for_batch(",
+            "select_backend_for_batch_verdict(",
             "batch workload wrapper",
+        ),
+        (
+            "pub(crate) fn select_backend_for_batch_verdict(",
+            "select_backend_for_workload(",
+            "batch workload verdict wrapper",
         ),
     ] {
         let body = function_body(&select_code, signature);
         assert!(
-            body.contains("select_backend_for_workload("),
-            "{name} must delegate to the single workload selector"
+            body.contains(expected_delegate),
+            "{name} must delegate via `{expected_delegate}`"
         );
         for forbidden in [
             "test_backend_override()",

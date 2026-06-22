@@ -3,7 +3,7 @@
 //! thresholds, and CPU-tier fallback cannot drift.
 
 use super::tier::{
-    classify_gpu_tier, gpu_min_bytes_for_tier, gpu_pattern_breakeven_for_tier,
+    classify_gpu_tier, gpu_min_bytes_for_tier, gpu_pattern_breakeven_for_tier, gpu_routing_profile,
     gpu_solo_bytes_for_tier,
 };
 use super::{HardwareCaps, ScanBackend};
@@ -78,25 +78,185 @@ impl BackendWorkload {
     }
 }
 
-fn select_backend_for_workload(caps: &HardwareCaps, workload: BackendWorkload) -> ScanBackend {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackendRoutingReason {
+    TestOverride,
+    GpuDisabledByPolicy,
+    GpuProbeMiss,
+    GpuSoftwareRenderer,
+    GpuBatchNotDominant,
+    GpuThresholdNotMet,
+    GpuSelected,
+}
+
+impl BackendRoutingReason {
+    #[must_use]
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::TestOverride => "test_override",
+            Self::GpuDisabledByPolicy => "gpu_disabled_by_policy",
+            Self::GpuProbeMiss => "gpu_probe_miss",
+            Self::GpuSoftwareRenderer => "gpu_software_renderer",
+            Self::GpuBatchNotDominant => "gpu_batch_not_dominant",
+            Self::GpuThresholdNotMet => "gpu_threshold_not_met",
+            Self::GpuSelected => "gpu_selected",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BackendRoutingVerdict {
+    pub backend: ScanBackend,
+    pub reason: BackendRoutingReason,
+    pub workload_bytes: u64,
+    pub pattern_count: usize,
+    pub large_chunk_bytes: Option<u64>,
+    pub gpu_available: bool,
+    pub gpu_is_software: bool,
+    pub gpu_tier: &'static str,
+    pub gpu_min_bytes: u64,
+    pub gpu_solo_bytes: u64,
+    pub gpu_pattern_breakeven: usize,
+}
+
+impl BackendRoutingVerdict {
+    fn new(
+        caps: &HardwareCaps,
+        workload: BackendWorkload,
+        backend: ScanBackend,
+        reason: BackendRoutingReason,
+    ) -> Self {
+        let profile = gpu_routing_profile(caps.gpu_name.as_deref());
+        Self {
+            backend,
+            reason,
+            workload_bytes: workload.bytes,
+            pattern_count: workload.pattern_count,
+            large_chunk_bytes: workload.large_chunk_bytes,
+            gpu_available: caps.gpu_available,
+            gpu_is_software: caps.gpu_is_software,
+            gpu_tier: profile.tier,
+            gpu_min_bytes: profile.min_bytes,
+            gpu_solo_bytes: profile.solo_bytes,
+            gpu_pattern_breakeven: profile.pattern_breakeven,
+        }
+    }
+
+    #[must_use]
+    pub fn reason_detail(self) -> String {
+        match self.reason {
+            BackendRoutingReason::TestOverride => "forced by test override".to_string(),
+            BackendRoutingReason::GpuDisabledByPolicy => {
+                "GPU disabled by resolved runtime policy".to_string()
+            }
+            BackendRoutingReason::GpuProbeMiss => {
+                "no usable GPU adapter reported by hardware probe".to_string()
+            }
+            BackendRoutingReason::GpuSoftwareRenderer => {
+                "GPU adapter is a software renderer and is slower than CPU/SIMD".to_string()
+            }
+            BackendRoutingReason::GpuBatchNotDominant => {
+                let Some(large) = self.large_chunk_bytes else {
+                    return format!(
+                        "large-chunk byte share is unavailable for workload bytes ({})",
+                        self.workload_bytes
+                    );
+                };
+                format!(
+                    "large-chunk bytes ({large}) do not dominate workload bytes ({})",
+                    self.workload_bytes
+                )
+            }
+            BackendRoutingReason::GpuThresholdNotMet => format!(
+                "GPU thresholds not met for tier {}: bytes={} min={} solo={} patterns={} pattern_floor={}",
+                self.gpu_tier,
+                self.workload_bytes,
+                self.gpu_min_bytes,
+                self.gpu_solo_bytes,
+                self.pattern_count,
+                self.gpu_pattern_breakeven
+            ),
+            BackendRoutingReason::GpuSelected => format!(
+                "GPU thresholds met for tier {}: bytes={} min={} solo={} patterns={} pattern_floor={}",
+                self.gpu_tier,
+                self.workload_bytes,
+                self.gpu_min_bytes,
+                self.gpu_solo_bytes,
+                self.pattern_count,
+                self.gpu_pattern_breakeven
+            ),
+        }
+    }
+}
+
+fn select_backend_for_workload(
+    caps: &HardwareCaps,
+    workload: BackendWorkload,
+) -> BackendRoutingVerdict {
     if let Some(forced) = test_backend_override() {
-        return forced;
+        return BackendRoutingVerdict::new(
+            caps,
+            workload,
+            forced,
+            BackendRoutingReason::TestOverride,
+        );
     }
 
     // Skip GPU consideration when the resolved scanner runtime policy disables
     // GPU init, so the routing decision matches what the GPU init paths will
     // actually do.
+    let cpu_backend = cpu_tier_backend(caps);
     if crate::gpu::gpu_disabled_by_policy() {
-        return cpu_tier_backend(caps);
+        return BackendRoutingVerdict::new(
+            caps,
+            workload,
+            cpu_backend,
+            BackendRoutingReason::GpuDisabledByPolicy,
+        );
     }
 
-    if workload.gpu_dominates_dispatch_cost()
-        && gpu_could_engage(caps, workload.bytes, workload.pattern_count)
-    {
-        return ScanBackend::Gpu;
+    if !caps.gpu_available {
+        return BackendRoutingVerdict::new(
+            caps,
+            workload,
+            cpu_backend,
+            BackendRoutingReason::GpuProbeMiss,
+        );
     }
 
-    cpu_tier_backend(caps)
+    if caps.gpu_is_software {
+        return BackendRoutingVerdict::new(
+            caps,
+            workload,
+            cpu_backend,
+            BackendRoutingReason::GpuSoftwareRenderer,
+        );
+    }
+
+    if !workload.gpu_dominates_dispatch_cost() {
+        return BackendRoutingVerdict::new(
+            caps,
+            workload,
+            cpu_backend,
+            BackendRoutingReason::GpuBatchNotDominant,
+        );
+    }
+
+    if gpu_could_engage(caps, workload.bytes, workload.pattern_count) {
+        return BackendRoutingVerdict::new(
+            caps,
+            workload,
+            ScanBackend::Gpu,
+            BackendRoutingReason::GpuSelected,
+        );
+    }
+
+    BackendRoutingVerdict::new(
+        caps,
+        workload,
+        cpu_backend,
+        BackendRoutingReason::GpuThresholdNotMet,
+    )
 }
 
 /// Auto-route a scan to the best backend for this hardware + workload.
@@ -125,6 +285,15 @@ pub fn select_backend(
     workload_bytes: u64,
     pattern_count: usize,
 ) -> ScanBackend {
+    select_backend_verdict(caps, workload_bytes, pattern_count).backend
+}
+
+#[must_use]
+pub fn select_backend_verdict(
+    caps: &HardwareCaps,
+    workload_bytes: u64,
+    pattern_count: usize,
+) -> BackendRoutingVerdict {
     select_backend_for_workload(caps, BackendWorkload::file(workload_bytes, pattern_count))
 }
 
@@ -134,7 +303,7 @@ pub(crate) fn select_backend_for_file(
     file_bytes: u64,
     pattern_count: usize,
 ) -> ScanBackend {
-    select_backend_for_workload(caps, BackendWorkload::file(file_bytes, pattern_count))
+    select_backend_for_workload(caps, BackendWorkload::file(file_bytes, pattern_count)).backend
 }
 
 /// Batch-aware backend routing — a pure, hardware-only library router.
@@ -192,6 +361,17 @@ pub(crate) fn select_backend_for_batch(
     pattern_count: usize,
     large_chunk_bytes: u64,
 ) -> ScanBackend {
+    select_backend_for_batch_verdict(caps, workload_bytes, pattern_count, large_chunk_bytes).backend
+}
+
+#[must_use]
+#[cfg(test)]
+pub(crate) fn select_backend_for_batch_verdict(
+    caps: &HardwareCaps,
+    workload_bytes: u64,
+    pattern_count: usize,
+    large_chunk_bytes: u64,
+) -> BackendRoutingVerdict {
     select_backend_for_workload(
         caps,
         BackendWorkload::batch(workload_bytes, pattern_count, large_chunk_bytes),
