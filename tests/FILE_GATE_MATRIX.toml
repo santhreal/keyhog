@@ -1028,6 +1028,9 @@ path = "crates/scanner/src/api.rs"
 path = "crates/scanner/src/anchored_regex.rs"
 
 [[module]]
+path = "crates/scanner/src/adjudicate/mod.rs"
+
+[[module]]
 path = "crates/scanner/src/context/placeholder.rs"
 
 [[module]]

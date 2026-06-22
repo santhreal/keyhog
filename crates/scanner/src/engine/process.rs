@@ -264,6 +264,11 @@ impl CompiledScanner {
             return;
         };
 
+        let min_confidence_floor = match detector.min_confidence {
+            Some(detector_floor) => detector_floor,
+            None => self.config.min_confidence,
+        };
+
         match score_result {
             super::MlScoreResult::Final(mut confidence) => {
                 let Some(adjusted_confidence) = super::scoring::finalize_report_confidence(
@@ -287,7 +292,7 @@ impl CompiledScanner {
                     return;
                 };
                 confidence = adjusted_confidence;
-                if confidence < self.config.min_confidence {
+                if confidence < min_confidence_floor {
                     crate::adjudicate::record_stage_suppression(
                         chunk.metadata.path.as_deref(),
                         credential,
@@ -354,6 +359,7 @@ impl CompiledScanner {
                     code_context,
                     credential: pending_credential.into_owned(),
                     ml_context: ml_context.into_owned(),
+                    min_confidence_floor,
                     // Detector/generic matches: the firing regex is positive
                     // evidence, so the heuristic stays a confidence FLOOR (the
                     // model can only raise). Not model-authoritative.

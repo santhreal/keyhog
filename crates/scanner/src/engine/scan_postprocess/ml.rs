@@ -130,7 +130,7 @@ impl CompiledScanner {
                 );
                 continue;
             };
-            if final_score < self.config.min_confidence {
+            if final_score < pending.min_confidence_floor {
                 crate::adjudicate::record_stage_suppression(
                     pending.raw_match.location.file_path.as_deref(),
                     &pending.credential,

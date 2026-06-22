@@ -402,6 +402,8 @@ pub(crate) struct MlPendingMatch {
     pub(crate) credential: String,
     /// Surrounding context passed to the ML scorer.
     pub(crate) ml_context: String,
+    /// Confidence floor that applies to this pending candidate after ML blending.
+    pub(crate) min_confidence_floor: f64,
     /// When true, the MoE score is AUTHORITATIVE for this candidate: the final
     /// confidence is the model score directly, NOT `max(heuristic, ml)`. Set for
     /// entropy phase-2 candidates, whose "heuristic" is bare entropy magnitude -

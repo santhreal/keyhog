@@ -21,9 +21,9 @@ fn chunk_boundary_twilio_token_split_reassembled() {
     // both), so the boundary buffer must reassemble the token AND see the SID.
     // The SID sits fully in chunk A; the auth-token hex straddles the seam.
     // The captured credential is the 32-hex auth-token group.
-    let credential = "00000000000000000000000000000000";
+    let credential = "abcdef1234567890abcdef1234567890";
     let block = format!(
-        "TWILIO_ACCOUNT_SID=AC00000000000000000000000000000000\ntwilio_auth_token={credential}"
+        "TWILIO_ACCOUNT_SID=AC1234567890abcdef1234567890abcdef\ntwilio_auth_token={credential}"
     );
     // Split inside the auth-token hex (the SID line is 53 bytes incl. newline,
     // `twilio_auth_token=` is 18 bytes, so the hex starts at byte 71).

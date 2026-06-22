@@ -113,9 +113,10 @@ const GHP_TOKEN: &str = "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";
 
 // Elasticsearch API key (basic-auth detector primary pattern):
 //   (?:ELASTICSEARCH[_-]?API[_-]?KEY|...)[=:\s"']+([a-zA-Z0-9_-]{48,})
-// 56-char body, mirrors the green elasticsearch-basic-auth contract.
+// 56-char body, non-repetitive so it exercises exact credential slicing without
+// being correctly treated as a synthetic low-confidence repeated fixture.
 const ES_KEYWORD: &str = "ELASTICSEARCH_API_KEY";
-const ES_BODY_56: &str = "Kp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3YzKp4Qx7Rm2Sn5Tb8Vw3Yz";
+const ES_BODY_56: &str = "AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGhIjKlMnOpQrSt";
 
 // ThreatConnect Access ID: detector `threatconnect-api-key`, group `(\d{20})`.
 // Pure digits -> neither known-prefix nor base64-padding extension fires, so the
