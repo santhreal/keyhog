@@ -10,7 +10,7 @@ mod limits;
 mod schema;
 
 use limits::apply_limits_section;
-use schema::ConfigFile;
+use schema::{AllowlistSection, AwsSection, ConfigFile, SystemSection, TuningSection};
 
 /// Compiled-in Tier-A per-detector confidence floors that ship inside the
 /// binary, independent of any on-disk `.keyhog.toml`. This is the fix for the
@@ -245,6 +245,193 @@ pub(crate) fn apply_config_file_quiet(args: &mut ScanArgs) -> ConfigOutcome {
     apply_config_file_impl(args, false)
 }
 
+fn collect_trusted_bin_dirs(
+    config_errors: &mut Vec<String>,
+    trusted_bin_dirs: &mut Vec<PathBuf>,
+    field: &str,
+    dirs: Option<&[PathBuf]>,
+) {
+    if let Some(dirs) = dirs {
+        for dir in dirs {
+            if dir.is_absolute() {
+                trusted_bin_dirs.push(dir.clone());
+            } else {
+                config_errors.push(format!(
+                    "- {field}: trusted binary directory {} must be absolute",
+                    dir.display()
+                ));
+            }
+        }
+    }
+}
+
+fn apply_system_section(
+    args: &mut ScanArgs,
+    config_errors: &mut Vec<String>,
+    trusted_bin_dirs: &mut Vec<PathBuf>,
+    top_level_trusted_bin_dirs: Option<&[PathBuf]>,
+    system: Option<&SystemSection>,
+) {
+    collect_trusted_bin_dirs(
+        config_errors,
+        trusted_bin_dirs,
+        "trusted_bin_dirs",
+        top_level_trusted_bin_dirs,
+    );
+    collect_trusted_bin_dirs(
+        config_errors,
+        trusted_bin_dirs,
+        "[system].trusted_bin_dirs",
+        system.and_then(|section| section.trusted_bin_dirs.as_deref()),
+    );
+    if let Some(cache_dir) = system.and_then(|section| section.cache_dir.as_ref()) {
+        if cache_dir.is_absolute() {
+            if args.cache_dir.is_none() {
+                args.cache_dir = Some(cache_dir.clone());
+            }
+        } else {
+            config_errors.push(format!(
+                "- [system].cache_dir: Hyperscan cache directory {} must be absolute",
+                cache_dir.display()
+            ));
+        }
+    }
+    if let Some(autoroute_cache) = system.and_then(|section| section.autoroute_cache.as_ref()) {
+        if args.autoroute_cache.is_none() {
+            args.autoroute_cache = Some(autoroute_cache.clone());
+        }
+    }
+    if let Some(calibration_cache) = system.and_then(|section| section.calibration_cache.as_ref()) {
+        if calibration_cache.is_absolute() {
+            if args.calibration_cache.is_none() {
+                args.calibration_cache = Some(calibration_cache.clone());
+            }
+        } else {
+            config_errors.push(format!(
+                "- [system].calibration_cache: calibration cache path {} must be absolute",
+                calibration_cache.display()
+            ));
+        }
+    }
+    if let Some(batch_pipeline) = system.and_then(|section| section.batch_pipeline) {
+        if !args.batch_pipeline && !args.no_batch_pipeline {
+            args.batch_pipeline = batch_pipeline;
+        }
+    }
+    if let Some(gpu_policy) = system.and_then(|section| section.gpu.as_deref()) {
+        match parse_gpu_runtime_policy(gpu_policy) {
+            Some(keyhog_scanner::gpu::GpuRuntimePolicy::Disabled) => {
+                if !args.no_gpu && !args.require_gpu {
+                    args.no_gpu = true;
+                }
+            }
+            Some(keyhog_scanner::gpu::GpuRuntimePolicy::Required) => {
+                if !args.no_gpu && !args.require_gpu {
+                    args.require_gpu = true;
+                }
+            }
+            Some(keyhog_scanner::gpu::GpuRuntimePolicy::Auto) => {}
+            None => config_errors.push(invalid_config_value(
+                "[system].gpu",
+                gpu_policy,
+                "expected auto, off, or required",
+            )),
+        }
+    }
+    if let Some(autoroute_gpu) = system.and_then(|section| section.autoroute_gpu) {
+        if !args.autoroute_gpu && !args.no_autoroute_gpu {
+            args.autoroute_gpu = autoroute_gpu;
+        }
+    }
+}
+
+fn apply_aws_section(
+    config_errors: &mut Vec<String>,
+    aws_canary_accounts: &mut Vec<String>,
+    aws: Option<&AwsSection>,
+) {
+    if let Some(aws) = aws {
+        if let Some(accounts) = aws.canary_accounts.as_ref() {
+            match keyhog_core::parse_canary_account_ids(accounts.iter().map(String::as_str)) {
+                Ok(parsed) => aws_canary_accounts.extend(parsed),
+                Err(error) => config_errors.push(format!("- [aws].canary_accounts: {error}")),
+            }
+        }
+        if let Some(accounts) = aws.knockoff_accounts.as_ref() {
+            match keyhog_core::parse_canary_account_ids(accounts.iter().map(String::as_str)) {
+                Ok(parsed) => aws_canary_accounts.extend(parsed),
+                Err(error) => config_errors.push(format!("- [aws].knockoff_accounts: {error}")),
+            }
+        }
+    }
+}
+
+fn apply_allowlist_section(
+    config_errors: &mut Vec<String>,
+    config_path: &Path,
+    allowlist_file: &mut Option<PathBuf>,
+    allowlist_require_reason: &mut bool,
+    allowlist_require_approved_by: &mut bool,
+    allowlist_max_expires_days: &mut Option<u64>,
+    allowlist: Option<&AllowlistSection>,
+) {
+    if let Some(allowlist) = allowlist {
+        if let Some(require_reason) = allowlist.require_reason {
+            *allowlist_require_reason = require_reason;
+        }
+        if let Some(require_approved_by) = allowlist.require_approved_by {
+            *allowlist_require_approved_by = require_approved_by;
+        }
+        *allowlist_max_expires_days = allowlist.max_expires_days;
+        if let Some(file) = allowlist.file.as_deref() {
+            let file = file.trim();
+            if file.is_empty() {
+                config_errors.push("- [allowlist].file: path must not be empty".to_string());
+            } else {
+                *allowlist_file = Some(config_relative_path(config_path, file));
+            }
+        }
+    }
+}
+
+fn apply_tuning_section(
+    config_errors: &mut Vec<String>,
+    scanner_tuning: &mut keyhog_scanner::ScannerTuningConfig,
+    tuning: Option<&TuningSection>,
+) {
+    if let Some(tuning) = tuning {
+        scanner_tuning.phase2_hs = tuning.fallback_hs;
+        scanner_tuning.hs_prefilter_max_len = tuning.hs_prefilter_max_len;
+        if let Some(shard_target) = tuning.hs_shard_target {
+            if shard_target == 0 {
+                config_errors
+                    .push("- [tuning].hs_shard_target: expected an integer >= 1".to_string());
+            } else {
+                scanner_tuning.hs_shard_target = Some(shard_target);
+            }
+        }
+        scanner_tuning.phase2_anchor = tuning.fallback_anchor;
+        scanner_tuning.homoglyph_gate = tuning.homoglyph_gate;
+        scanner_tuning.homoglyph_ascii_skip = tuning.homoglyph_ascii_skip;
+        scanner_tuning.fallback_reverse = tuning.fallback_reverse;
+        scanner_tuning.prefilter_truncate = tuning.prefilter_truncate;
+        scanner_tuning.fallback_prefix_gate = tuning.fallback_prefix_gate;
+        scanner_tuning.decode_focus = tuning.decode_focus;
+        scanner_tuning.confirmed_suffix_gate = tuning.confirmed_suffix_gate;
+        scanner_tuning.no_candidate_gate = tuning.no_candidate_gate;
+        scanner_tuning.fallback_localizer = tuning.fallback_localizer;
+        scanner_tuning.gpu_recall_floor = tuning.gpu_recall_floor;
+        if let Some(timeout_ms) = tuning.gpu_moe_timeout_ms {
+            if timeout_ms == 0 {
+                config_errors
+                    .push("- [tuning].gpu_moe_timeout_ms: expected an integer >= 1".to_string());
+            } else {
+                scanner_tuning.gpu_moe_timeout_ms = Some(timeout_ms);
+            }
+        }
+    }
+}
+
 #[allow(clippy::collapsible_if, clippy::cmp_owned)]
 fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> ConfigOutcome {
     // `--no-config`: hermetic run on the compiled-in Tier-A shipped defaults.
@@ -318,169 +505,32 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     let mut allowlist_require_approved_by = false;
     let mut allowlist_max_expires_days = None;
 
-    let mut collect_trusted_bin_dirs = |field: &str, dirs: Option<Vec<PathBuf>>| {
-        if let Some(dirs) = dirs {
-            for dir in dirs {
-                if dir.is_absolute() {
-                    trusted_bin_dirs.push(dir);
-                } else {
-                    config_errors.push(format!(
-                        "- {field}: trusted binary directory {} must be absolute",
-                        dir.display()
-                    ));
-                }
-            }
-        }
-    };
-    collect_trusted_bin_dirs("trusted_bin_dirs", config.trusted_bin_dirs.clone());
-    collect_trusted_bin_dirs(
-        "[system].trusted_bin_dirs",
-        config
-            .system
-            .as_ref()
-            .and_then(|system| system.trusted_bin_dirs.clone()),
+    apply_system_section(
+        args,
+        &mut config_errors,
+        &mut trusted_bin_dirs,
+        config.trusted_bin_dirs.as_deref(),
+        config.system.as_ref(),
     );
-    if let Some(cache_dir) = config
-        .system
-        .as_ref()
-        .and_then(|system| system.cache_dir.clone())
-    {
-        if cache_dir.is_absolute() {
-            if args.cache_dir.is_none() {
-                args.cache_dir = Some(cache_dir);
-            }
-        } else {
-            config_errors.push(format!(
-                "- [system].cache_dir: Hyperscan cache directory {} must be absolute",
-                cache_dir.display()
-            ));
-        }
-    }
-    if let Some(autoroute_cache) = config
-        .system
-        .as_ref()
-        .and_then(|system| system.autoroute_cache.clone())
-    {
-        if args.autoroute_cache.is_none() {
-            args.autoroute_cache = Some(autoroute_cache);
-        }
-    }
-    if let Some(calibration_cache) = config
-        .system
-        .as_ref()
-        .and_then(|system| system.calibration_cache.clone())
-    {
-        if calibration_cache.is_absolute() {
-            if args.calibration_cache.is_none() {
-                args.calibration_cache = Some(calibration_cache);
-            }
-        } else {
-            config_errors.push(format!(
-                "- [system].calibration_cache: calibration cache path {} must be absolute",
-                calibration_cache.display()
-            ));
-        }
-    }
-    if let Some(batch_pipeline) = config
-        .system
-        .as_ref()
-        .and_then(|system| system.batch_pipeline)
-    {
-        if !args.batch_pipeline && !args.no_batch_pipeline {
-            args.batch_pipeline = batch_pipeline;
-        }
-    }
-    if let Some(gpu_policy) = config.system.as_ref().and_then(|system| system.gpu.clone()) {
-        match parse_gpu_runtime_policy(&gpu_policy) {
-            Some(keyhog_scanner::gpu::GpuRuntimePolicy::Disabled) => {
-                if !args.no_gpu && !args.require_gpu {
-                    args.no_gpu = true;
-                }
-            }
-            Some(keyhog_scanner::gpu::GpuRuntimePolicy::Required) => {
-                if !args.no_gpu && !args.require_gpu {
-                    args.require_gpu = true;
-                }
-            }
-            Some(keyhog_scanner::gpu::GpuRuntimePolicy::Auto) => {}
-            None => config_errors.push(invalid_config_value(
-                "[system].gpu",
-                &gpu_policy,
-                "expected auto, off, or required",
-            )),
-        }
-    }
-    if let Some(autoroute_gpu) = config
-        .system
-        .as_ref()
-        .and_then(|system| system.autoroute_gpu)
-    {
-        if !args.autoroute_gpu && !args.no_autoroute_gpu {
-            args.autoroute_gpu = autoroute_gpu;
-        }
-    }
-    if let Some(aws) = config.aws.as_ref() {
-        if let Some(accounts) = aws.canary_accounts.clone() {
-            match keyhog_core::parse_canary_account_ids(accounts.iter().map(String::as_str)) {
-                Ok(parsed) => aws_canary_accounts.extend(parsed),
-                Err(error) => config_errors.push(format!("- [aws].canary_accounts: {error}")),
-            }
-        }
-        if let Some(accounts) = aws.knockoff_accounts.clone() {
-            match keyhog_core::parse_canary_account_ids(accounts.iter().map(String::as_str)) {
-                Ok(parsed) => aws_canary_accounts.extend(parsed),
-                Err(error) => config_errors.push(format!("- [aws].knockoff_accounts: {error}")),
-            }
-        }
-    }
-    if let Some(allowlist) = config.allowlist.as_ref() {
-        if let Some(require_reason) = allowlist.require_reason {
-            allowlist_require_reason = require_reason;
-        }
-        if let Some(require_approved_by) = allowlist.require_approved_by {
-            allowlist_require_approved_by = require_approved_by;
-        }
-        allowlist_max_expires_days = allowlist.max_expires_days;
-        if let Some(file) = allowlist.file.as_deref() {
-            let file = file.trim();
-            if file.is_empty() {
-                config_errors.push("- [allowlist].file: path must not be empty".to_string());
-            } else {
-                allowlist_file = Some(config_relative_path(&config_path, file));
-            }
-        }
-    }
-    if let Some(tuning) = config.tuning {
-        scanner_tuning.phase2_hs = tuning.fallback_hs;
-        scanner_tuning.hs_prefilter_max_len = tuning.hs_prefilter_max_len;
-        if let Some(shard_target) = tuning.hs_shard_target {
-            if shard_target == 0 {
-                config_errors
-                    .push("- [tuning].hs_shard_target: expected an integer >= 1".to_string());
-            } else {
-                scanner_tuning.hs_shard_target = Some(shard_target);
-            }
-        }
-        scanner_tuning.phase2_anchor = tuning.fallback_anchor;
-        scanner_tuning.homoglyph_gate = tuning.homoglyph_gate;
-        scanner_tuning.homoglyph_ascii_skip = tuning.homoglyph_ascii_skip;
-        scanner_tuning.fallback_reverse = tuning.fallback_reverse;
-        scanner_tuning.prefilter_truncate = tuning.prefilter_truncate;
-        scanner_tuning.fallback_prefix_gate = tuning.fallback_prefix_gate;
-        scanner_tuning.decode_focus = tuning.decode_focus;
-        scanner_tuning.confirmed_suffix_gate = tuning.confirmed_suffix_gate;
-        scanner_tuning.no_candidate_gate = tuning.no_candidate_gate;
-        scanner_tuning.fallback_localizer = tuning.fallback_localizer;
-        scanner_tuning.gpu_recall_floor = tuning.gpu_recall_floor;
-        if let Some(timeout_ms) = tuning.gpu_moe_timeout_ms {
-            if timeout_ms == 0 {
-                config_errors
-                    .push("- [tuning].gpu_moe_timeout_ms: expected an integer >= 1".to_string());
-            } else {
-                scanner_tuning.gpu_moe_timeout_ms = Some(timeout_ms);
-            }
-        }
-    }
+    apply_aws_section(
+        &mut config_errors,
+        &mut aws_canary_accounts,
+        config.aws.as_ref(),
+    );
+    apply_allowlist_section(
+        &mut config_errors,
+        &config_path,
+        &mut allowlist_file,
+        &mut allowlist_require_reason,
+        &mut allowlist_require_approved_by,
+        &mut allowlist_max_expires_days,
+        config.allowlist.as_ref(),
+    );
+    apply_tuning_section(
+        &mut config_errors,
+        &mut scanner_tuning,
+        config.tuning.as_ref(),
+    );
 
     // Apply config values only when no explicit CLI flag was given.
     if let Some(ref detectors_str) = config.detectors {

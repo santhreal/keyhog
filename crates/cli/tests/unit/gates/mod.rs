@@ -12,6 +12,7 @@ pub mod benchmark_non_empty;
 pub mod config_no_inline_tests;
 pub mod config_no_unwrap_expect;
 pub mod config_non_empty;
+pub mod config_section_helpers_contract;
 pub mod contract_modules_all_wired;
 pub mod daemon_client_no_inline_tests;
 pub mod daemon_client_no_unwrap_expect;
