@@ -2,18 +2,15 @@
 //! stage in dogfood telemetry. A candidate that reaches the entropy gauntlet
 //! and dies there is different from a candidate that never generated.
 
-use super::support::paths::detector_dir;
-
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::telemetry::{self, DogfoodEvent, ScanTelemetry};
 use keyhog_scanner::{CompiledScanner, ScanBackend, ScannerConfig};
 use std::sync::Arc;
 
 fn scanner() -> CompiledScanner {
-    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
     let mut cfg = ScannerConfig::default();
     cfg.ml_enabled = false;
-    CompiledScanner::compile(detectors)
+    CompiledScanner::compile(Vec::new())
         .expect("compile scanner")
         .with_config(cfg)
 }
@@ -57,11 +54,11 @@ fn entropy_gauntlet_i18n_path_drop_is_traced() {
     let _g = super::super::telemetry_serial::lock();
     let s = scanner();
     telemetry::testing::reset();
-    telemetry::enable_dogfood();
 
     let blob =
         "5OcKQwtmHw+SRJZ76bc4vwBhnVsM1ksLmOGTaHamLo6+MIF3IlZcNaWD3vhW7+3ID7UwSS6whDRWERI6756fzh06";
     let trace = Arc::new(ScanTelemetry::new());
+    trace.enable_dogfood();
     let reasons = entropy_shape_reasons_for(
         &s,
         &format!("password hint\n{blob}\n"),

@@ -33,6 +33,11 @@ fn chunk(body: &str) -> Chunk {
 #[test]
 fn shadowed_inner_literal_is_ac_confirmed_with_variant_skipped() {
     let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
+    let detectors: Vec<_> = detectors
+        .into_iter()
+        .filter(|detector| detector.id == "generic-password")
+        .collect();
+    assert_eq!(detectors.len(), 1, "fixture requires generic-password");
     let scanner = CompiledScanner::compile(detectors).expect("compile");
 
     let c = chunk("client_secret=\"0123456789abcdefABCDEFxyz\"\n");

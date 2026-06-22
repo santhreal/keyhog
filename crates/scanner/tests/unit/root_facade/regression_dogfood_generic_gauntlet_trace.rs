@@ -7,10 +7,8 @@
 //! with "never reached the engine" (a Law-10 silent drop). The predicate now
 //! returns `Some(gate_name)` and the caller records a `ShapeSuppressed` event.
 //!
-//! Dogfood's hot-path flag is process-global, so the assertions use the shared
-//! unit telemetry lock and scoped telemetry buffers.
-
-use super::support::paths::detector_dir;
+//! Dogfood's hot-path flag is carried by the scan telemetry scope here, so the
+//! positive and negative twins do not depend on process-global test scheduling.
 
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::telemetry::{self, DogfoodEvent, ScanTelemetry};
@@ -18,8 +16,7 @@ use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::sync::Arc;
 
 fn scanner() -> CompiledScanner {
-    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
-    CompiledScanner::compile(detectors).expect("compile scanner")
+    CompiledScanner::compile(Vec::new()).expect("compile scanner")
 }
 
 /// Scan `line` through the CPU fallback path (where the generic keyword bridge +
@@ -60,13 +57,13 @@ fn generic_gauntlet_base64_blob_drop_is_traced() {
     let _g = super::super::telemetry_serial::lock();
     let s = scanner();
     telemetry::testing::reset();
-    telemetry::enable_dogfood();
     // A standard-base64 blob under a `secret` keyword: 48 chars, `+`/`/`, padding,
     // entropy < 4.8 — the generic-path `base64_blob` gate (a protobuf/marshalled-
     // binary decoy class) drops it. No vendor prefix => no named detector fires,
     // so the generic bridge is the only path and the gauntlet is what suppresses.
     let blob = "Yml0Y29pbgABAgMEBQYHCAkKCwwND/7+/f38+/r5+Pf=";
     let trace = Arc::new(ScanTelemetry::new());
+    trace.enable_dogfood();
     let reasons = shape_reasons_for(&s, &format!("secret = \"{blob}\""), "Yml0", &trace);
     assert!(
         reasons.iter().any(|r| r == "base64_blob"),

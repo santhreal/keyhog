@@ -31,7 +31,7 @@ fn drain_shape_reasons(trace: &ScanTelemetry) -> Vec<String> {
 fn assert_suppressed_with_reason(credential: &str, expected_reason: &str) {
     let trace = Arc::new(ScanTelemetry::new());
     telemetry::testing::reset();
-    telemetry::enable_dogfood();
+    trace.enable_dogfood();
     let suppressed = telemetry::with_scan_telemetry(&trace, || {
         keyhog_scanner::testing::known_example_suppressed(credential, None, CodeContext::Unknown)
     });

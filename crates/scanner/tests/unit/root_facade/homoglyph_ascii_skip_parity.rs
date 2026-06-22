@@ -8,8 +8,9 @@
 //! on a chunk with no non-ASCII bytes the variant's only matchable form is that
 //! base, already covered by the AC-triggered confirmed pass.
 //!
-//! This scans the mirror corpus + 20k generated ASCII inputs with skip ON vs OFF
-//! and asserts byte-identical `RawMatch` sets. A divergence names the exact
+//! This scans the mirror corpus + generated ASCII inputs through the shipped
+//! detector specs represented by the parity tokens with skip ON vs OFF and
+//! asserts byte-identical `RawMatch` sets. A divergence names the exact
 //! detector+credential a homoglyph variant catches on ASCII that the base AC does
 //! NOT — i.e. a real coverage gap to close, NOT a reason to weaken the test. A
 //! second test confirms the skip is a no-op on a non-ASCII (homoglyph) chunk.
@@ -19,6 +20,7 @@ use support::paths::{corpus_dir, corpus_files, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
+use std::sync::OnceLock;
 
 struct Lcg(u64);
 impl Lcg {
@@ -53,7 +55,18 @@ const TOKENS: &[&str] = &[
     "STRIPE_RESTRICTED_KEY=\"rk_live_2S2FrlCUpmb2ou955jvUlPSH\"",
 ];
 
+const DETECTOR_IDS: &[&str] = &[
+    "stripe-secret-key",
+    "aws-access-key",
+    "generic-password",
+    "8x8-api-credentials",
+    "500px-api-key",
+    "4everland-api-token",
+];
+
 const FILLER: &[u8] = b"abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789\n\t=:;,.\"'(){}[]/_- the quick brown fox config value path import export return function const let var\n";
+const DEFAULT_PARITY_N: usize = 64;
+const DEFAULT_CORPUS_CAP: usize = 0;
 
 fn gen_ascii_chunk(rng: &mut Lcg) -> Vec<u8> {
     let mut buf: Vec<u8> = Vec::new();
@@ -88,6 +101,18 @@ fn gen_ascii_chunk(rng: &mut Lcg) -> Vec<u8> {
     buf
 }
 
+fn deterministic_ascii_cases() -> Vec<Vec<u8>> {
+    let mut cases = Vec::new();
+    for token in TOKENS {
+        cases.push(token.as_bytes().to_vec());
+        cases.push(format!("const value = {token};\n").into_bytes());
+        cases.push(format!("client_secret = \"{token}\"\n").into_bytes());
+        cases.push(format!("prefix secret {token} suffix token\n").into_bytes());
+        cases.push(format!("{}\n{}\n", "a".repeat(96), token).into_bytes());
+    }
+    cases
+}
+
 fn chunk_of(bytes: &[u8], label: &str) -> Chunk {
     Chunk {
         data: String::from_utf8_lossy(bytes).into_owned().into(),
@@ -101,10 +126,9 @@ fn chunk_of(bytes: &[u8], label: &str) -> Chunk {
 }
 
 type Key = (String, String, String);
-fn canonical(matches: &[Vec<RawMatch>]) -> Vec<Key> {
+fn canonical(matches: &[RawMatch]) -> Vec<Key> {
     let mut v: Vec<Key> = matches
         .iter()
-        .flatten()
         .map(|m| {
             (
                 m.detector_id.to_string(),
@@ -117,6 +141,21 @@ fn canonical(matches: &[Vec<RawMatch>]) -> Vec<Key> {
     v
 }
 
+fn scanner() -> &'static CompiledScanner {
+    static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
+    SCANNER.get_or_init(|| {
+        let mut detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
+        detectors.retain(|detector| DETECTOR_IDS.contains(&detector.id.as_str()));
+        for id in DETECTOR_IDS {
+            assert!(
+                detectors.iter().any(|detector| detector.id == *id),
+                "homoglyph parity detector subset missing shipped detector {id}"
+            );
+        }
+        CompiledScanner::compile(detectors).expect("compile")
+    })
+}
+
 /// Scan `chunk` with the homoglyph ASCII-skip OFF (fold; the recall baseline) and
 /// ON (the optimization), returning `(skip_on, fold_off)`.
 fn scan_both(scanner: &CompiledScanner, chunk: &Chunk) -> (Vec<Key>, Vec<Key>) {
@@ -125,14 +164,10 @@ fn scan_both(scanner: &CompiledScanner, chunk: &Chunk) -> (Vec<Key>, Vec<Key>) {
     keyhog_scanner::testing::set_phase2_hs(&scanner, Some(false));
     keyhog_scanner::testing::set_homoglyph_ascii_skip(&scanner, Some(false));
     scanner.clear_fragment_cache();
-    let off = canonical(
-        &scanner.scan_chunks_with_backend(std::slice::from_ref(chunk), ScanBackend::CpuFallback),
-    );
+    let off = canonical(&scanner.scan_with_backend(chunk, ScanBackend::CpuFallback));
     keyhog_scanner::testing::set_homoglyph_ascii_skip(&scanner, Some(true));
     scanner.clear_fragment_cache();
-    let on = canonical(
-        &scanner.scan_chunks_with_backend(std::slice::from_ref(chunk), ScanBackend::CpuFallback),
-    );
+    let on = canonical(&scanner.scan_with_backend(chunk, ScanBackend::CpuFallback));
     keyhog_scanner::testing::set_homoglyph_ascii_skip(&scanner, None);
     (on, off)
 }
@@ -159,22 +194,29 @@ fn report(on: &[Key], off: &[Key], input: &[u8]) -> String {
 // fast; set `KEYHOG_PARITY_N` higher for an exhaustive sweep.
 #[test]
 fn homoglyph_ascii_skip_parity_default() {
-    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors unavailable: {e}");
-            return;
-        }
-    };
-    let scanner = CompiledScanner::compile(detectors).expect("compile");
+    let _telemetry_guard = super::super::telemetry_serial::lock();
+    let scanner = scanner();
+    scanner.clear_fragment_cache();
 
     let n: usize = std::env::var("KEYHOG_PARITY_N")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(5_000);
+        .unwrap_or(DEFAULT_PARITY_N);
+    let corpus_cap: usize = std::env::var("KEYHOG_PARITY_CORPUS_N")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_CORPUS_CAP);
+
+    let deterministic_cases = deterministic_ascii_cases();
+    for (i, bytes) in deterministic_cases.iter().enumerate() {
+        assert!(bytes.is_ascii(), "deterministic case {i} must be ASCII");
+        let chunk = chunk_of(bytes, &format!("deterministic-{i}"));
+        let (on, off) = scan_both(scanner, &chunk);
+        assert_eq!(on, off, "{}", report(&on, &off, bytes));
+    }
 
     let mut rng = Lcg(0x1234_5678_9abc_def0);
-    let mut checked = 0usize;
+    let mut checked = deterministic_cases.len();
     for i in 0..n {
         let bytes = gen_ascii_chunk(&mut rng);
         // Only ASCII inputs exercise the skip (it is a no-op on non-ASCII).
@@ -187,11 +229,12 @@ fn homoglyph_ascii_skip_parity_default() {
         checked += 1;
     }
 
-    // Real mirror corpus — the representative ASCII source files. Capped for CI
-    // speed; the synthetic sweep above plus this sample is a strong regression
-    // gate, and `KEYHOG_PARITY_N` widens the synthetic half for exhaustive runs.
+    // Optional real mirror corpus sample. The full lib-test binary already runs
+    // near the memory ceiling before this root-facade tail, so the default gate
+    // uses deterministic token/context cases plus a bounded synthetic sweep.
+    // `KEYHOG_PARITY_CORPUS_N` widens this half for dedicated parity runs.
     if let Some(root) = corpus_dir() {
-        for (i, f) in corpus_files(&root, 3000).into_iter().enumerate() {
+        for (i, f) in corpus_files(&root, corpus_cap).into_iter().enumerate() {
             if !f.is_ascii() {
                 continue;
             }
@@ -203,7 +246,10 @@ fn homoglyph_ascii_skip_parity_default() {
     }
 
     eprintln!("homoglyph_ascii_skip_parity: {checked} ASCII inputs checked, skip ≡ fold");
-    assert!(checked >= n, "expected >= {n} checks, got {checked}");
+    assert!(
+        checked >= n + TOKENS.len(),
+        "expected random sweep plus deterministic token coverage, got {checked}"
+    );
 }
 
 /// The skip is gated on `chunk.is_ascii()`, so a chunk containing an actual
@@ -211,14 +257,9 @@ fn homoglyph_ascii_skip_parity_default() {
 /// touches the case homoglyph detection exists for.
 #[test]
 fn homoglyph_variant_unaffected_on_non_ascii() {
-    let detectors = match keyhog_core::load_detectors(&detector_dir()) {
-        Ok(d) => d,
-        Err(e) => {
-            eprintln!("SKIP: detectors unavailable: {e}");
-            return;
-        }
-    };
-    let scanner = CompiledScanner::compile(detectors).expect("compile");
+    let _telemetry_guard = super::super::telemetry_serial::lock();
+    let scanner = scanner();
+    scanner.clear_fragment_cache();
     // "аpi_key" with a Cyrillic 'а' (U+0430) — a non-ASCII chunk.
     let input = "\u{0430}pi_key = \"AbCdEf0123456789xyzABCD\"\n".as_bytes();
     assert!(!input.is_ascii());

@@ -159,7 +159,7 @@ fn entropy_generation_rejection_is_dogfood_visible() {
     let trace = Arc::new(ScanTelemetry::new());
 
     telemetry::testing::reset();
-    telemetry::enable_dogfood();
+    trace.enable_dogfood();
     let _ = telemetry::with_scan_telemetry(&trace, || {
         find_entropy_secrets(
             &format!("API_KEY={low_entropy}\n"),
@@ -214,7 +214,7 @@ fn entropy_extraction_rejection_is_dogfood_visible() {
     let trace = Arc::new(ScanTelemetry::new());
 
     telemetry::testing::reset();
-    telemetry::enable_dogfood();
+    trace.enable_dogfood();
     let matches = telemetry::with_scan_telemetry(&trace, || {
         find_entropy_secrets(
             &format!("API_KEY={placeholder}\n"),
@@ -272,7 +272,7 @@ fn entropy_concatenation_fragment_skip_is_dogfood_visible() {
     let trace = Arc::new(ScanTelemetry::new());
 
     telemetry::testing::reset();
-    telemetry::enable_dogfood();
+    trace.enable_dogfood();
     let matches = telemetry::with_scan_telemetry(&trace, || {
         find_entropy_secrets(
             &format!("API_KEY hint\n{fragment}\n"),

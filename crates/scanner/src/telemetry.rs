@@ -85,6 +85,7 @@ struct Telemetry {
 /// counts/events into that scope instead of the process-global cell.
 #[derive(Default)]
 pub struct ScanTelemetry {
+    dogfood_enabled: AtomicBool,
     example_suppressions: AtomicUsize,
     events: Mutex<Vec<DogfoodEvent>>,
     emitted_suppression_events: Mutex<HashSet<String>>,
@@ -93,6 +94,14 @@ pub struct ScanTelemetry {
 impl ScanTelemetry {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn enable_dogfood(&self) {
+        self.dogfood_enabled.store(true, Ordering::Relaxed);
+    }
+
+    fn is_dogfood_enabled(&self) -> bool {
+        self.dogfood_enabled.load(Ordering::Relaxed)
     }
 
     fn example_suppression_count(&self) -> usize {
@@ -147,6 +156,14 @@ pub fn with_scan_telemetry<R>(telemetry: &Arc<ScanTelemetry>, f: impl FnOnce() -
 
 fn current_scan_telemetry() -> Option<Arc<ScanTelemetry>> {
     CURRENT_SCAN_TELEMETRY.with(|slot| slot.borrow().clone())
+}
+
+fn current_scan_dogfood_enabled() -> Option<bool> {
+    CURRENT_SCAN_TELEMETRY.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .map(|telemetry| telemetry.is_dogfood_enabled())
+    })
 }
 
 // Global lock-free telemetry counters (KH-116)
@@ -245,6 +262,9 @@ pub fn enable_dogfood() {
 }
 
 pub fn is_dogfood_enabled() -> bool {
+    if let Some(enabled) = current_scan_dogfood_enabled() {
+        return enabled;
+    }
     DOGFOOD_ENABLED.load(Ordering::Relaxed)
 }
 

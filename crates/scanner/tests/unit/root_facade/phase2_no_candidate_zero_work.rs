@@ -29,7 +29,7 @@ use support::contracts::test_chunk as make_chunk;
 use support::paths::detector_dir;
 
 use std::collections::BTreeSet;
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
 
 use keyhog_scanner::CompiledScanner;
 
@@ -41,9 +41,27 @@ use keyhog_scanner::CompiledScanner;
 /// not read counters, but it also scans and thus must not race a reader.)
 static COUNTER_LOCK: Mutex<()> = Mutex::new(());
 
-fn compile() -> CompiledScanner {
-    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors load");
-    CompiledScanner::compile(detectors).expect("scanner compile")
+const DETECTOR_IDS: &[&str] = &[
+    "asana-pat",
+    "stripe-secret-key",
+    "github-classic-pat",
+    "slack-bot-token",
+    "generic-password",
+];
+
+fn scanner() -> &'static CompiledScanner {
+    static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
+    SCANNER.get_or_init(|| {
+        let mut detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors load");
+        detectors.retain(|detector| DETECTOR_IDS.contains(&detector.id.as_str()));
+        for id in DETECTOR_IDS {
+            assert!(
+                detectors.iter().any(|detector| detector.id == *id),
+                "no-candidate gate detector subset missing shipped detector {id}"
+            );
+        }
+        CompiledScanner::compile(detectors).expect("scanner compile")
+    })
 }
 
 /// `(detector_id, credential, offset)` — the finding identity the gate must
@@ -52,6 +70,7 @@ type FindingKey = (String, String, usize);
 
 fn finding_keys(scanner: &CompiledScanner, text: &str, path: &str) -> BTreeSet<FindingKey> {
     let chunk = make_chunk(text, path);
+    scanner.clear_fragment_cache();
     scanner
         .scan(&chunk)
         .iter()
@@ -79,7 +98,8 @@ const NO_CANDIDATE_TEXT: &str =
 #[test]
 fn no_candidate_chunk_does_zero_per_pattern_work() {
     let _guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let scanner = compile();
+    let scanner = support::compile_full_detector_scanner();
+    scanner.clear_fragment_cache();
     crate::engine::phase2_mark_stats_reset();
     // Warm: scan the no-candidate chunk once so the counters reflect exactly one
     // production `mark_matches` invocation pattern.
@@ -116,7 +136,7 @@ fn no_candidate_chunk_does_zero_per_pattern_work() {
 #[test]
 fn always_active_finding_survives_the_gate() {
     let _guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let scanner = compile();
+    let scanner = scanner();
     crate::engine::phase2_mark_stats_reset();
     // asana-pat shape `1/<16-20 digits>/<32 hex>` — a prefix-less / keyword-less
     // always-active phase-2 detector (issue #69 class), exactly the kind the
@@ -147,7 +167,7 @@ fn always_active_finding_survives_the_gate() {
 #[test]
 fn boolean_admission_honors_homoglyph_ascii_skip() {
     let _guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let scanner = compile();
+    let scanner = scanner();
     let prefilter = scanner
         .phase2_always_active_prefilter
         .as_ref()
@@ -177,7 +197,7 @@ fn boolean_admission_honors_homoglyph_ascii_skip() {
 #[test]
 fn gate_is_recall_neutral_findings_byte_identical() {
     let _guard = COUNTER_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let scanner = compile();
+    let scanner = scanner();
     // A corpus that exercises both candidate and no-candidate lines so the gate's
     // skip path AND its run path both contribute findings.
     let corpus = "\

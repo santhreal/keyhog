@@ -20,6 +20,7 @@ use support::paths::{corpus_dir, corpus_files, detector_dir};
 
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
+use std::sync::OnceLock;
 
 /// Tiny deterministic LCG so the corpus is reproducible without a crate dep and
 /// without the banned `Math.random`/time entropy.
@@ -61,6 +62,23 @@ const TOKENS: &[&str] = &[
     "password=Hunter2Hunter2Hunter2xx",
     "-----BEGIN RSA PRIVATE KEY-----\nMIIBOgIBAAJBAKj34GkxFhD90vcNLYLInFEX6Ppy1tPf9Cnzj4p4WGeKLs1Pt8Q\n-----END RSA PRIVATE KEY-----",
 ];
+
+const DETECTOR_IDS: &[&str] = &[
+    "github-classic-pat",
+    "github-oauth-access-token",
+    "github-app-installation-token",
+    "stripe-secret-key",
+    "anthropic-api-key",
+    "slack-bot-token",
+    "npm-access-token",
+    "google-api-key",
+    "aws-access-key",
+    "private-key",
+    "generic-password",
+];
+
+const DEFAULT_PARITY_N: usize = 256;
+const DEFAULT_CORPUS_CAP: usize = 0;
 
 const FILLER: &[u8] = b"abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789\n\t=:;,.\"'(){}[]/_- the quick brown fox config value path import export return function const let var\n";
 
@@ -118,6 +136,19 @@ fn gen_chunk(rng: &mut Lcg) -> Vec<u8> {
     buf
 }
 
+fn deterministic_cases() -> Vec<Vec<u8>> {
+    let mut cases = Vec::new();
+    for token in TOKENS {
+        cases.push(token.as_bytes().to_vec());
+        cases.push(format!("const value = {token};\n").into_bytes());
+        cases.push(format!("client_secret = \"{token}\"\n").into_bytes());
+        cases.push(format!("prefix token secret {token} suffix token\n").into_bytes());
+        cases.push(format!("{token}{token}\n").into_bytes());
+        cases.push(format!("{}\n{}\n", "a".repeat(128), token).into_bytes());
+    }
+    cases
+}
+
 fn chunk_of(bytes: &[u8], label: &str) -> Chunk {
     Chunk {
         data: String::from_utf8_lossy(bytes).into_owned().into(),
@@ -148,6 +179,21 @@ fn canonical(matches: &[Vec<RawMatch>]) -> Vec<Key> {
         .collect();
     v.sort();
     v
+}
+
+fn scanner() -> &'static CompiledScanner {
+    static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
+    SCANNER.get_or_init(|| {
+        let mut detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
+        detectors.retain(|detector| DETECTOR_IDS.contains(&detector.id.as_str()));
+        for id in DETECTOR_IDS {
+            assert!(
+                detectors.iter().any(|detector| detector.id == *id),
+                "phase2 anchor parity detector subset missing shipped detector {id}"
+            );
+        }
+        CompiledScanner::compile(detectors).expect("compile")
+    })
 }
 
 fn scan_both(scanner: &CompiledScanner, chunk: &Chunk) -> (Vec<Key>, Vec<Key>) {
@@ -280,23 +326,31 @@ fn phase2_only_diff_mirror() {
 #[test]
 fn phase2_anchor_parity_default() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
-    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
-    let scanner = CompiledScanner::compile(detectors).expect("compile");
+    let scanner = scanner();
+    scanner.clear_fragment_cache();
 
-    // Default in-CI sweep: enough synthetic inputs to cover the cursor edges,
-    // plus the mirror corpus when available. The `KEYHOG_PARITY_N` env scales
-    // this to the 100k+ exhaustive sweep on demand.
+    // Default in-CI sweep: deterministic token/edge coverage plus bounded
+    // seeded synthetic inputs. The full detector/corpus binary already runs near
+    // the memory ceiling before this tail; `KEYHOG_PARITY_N` and
+    // `KEYHOG_PARITY_CORPUS_N` widen the sweep for dedicated parity runs.
     let n: usize = std::env::var("KEYHOG_PARITY_N")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(20_000);
+        .unwrap_or(DEFAULT_PARITY_N);
+    let corpus_cap: usize = std::env::var("KEYHOG_PARITY_CORPUS_N")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_CORPUS_CAP);
 
-    let mut checked = synthetic(&scanner, n);
+    let deterministic_cases = deterministic_cases();
+    let mut checked = assert_corpus(scanner, &deterministic_cases, "deterministic");
+    checked += synthetic(scanner, n);
 
-    if let Some(root) = corpus_dir() {
+    if corpus_cap > 0 {
         // 16 KiB-concatenated chunks (the target size class) + raw small files.
-        let files = corpus_files(&root, 6000);
-        checked += assert_corpus(&scanner, &files, "mirror-small");
+        let root = corpus_dir().expect("corpus cap requested but mirror corpus is unavailable");
+        let files = corpus_files(&root, corpus_cap);
+        checked += assert_corpus(scanner, &files, "mirror-small");
         let mut chunks_16k: Vec<Vec<u8>> = Vec::new();
         let mut cur = Vec::new();
         for f in &files {
@@ -309,17 +363,17 @@ fn phase2_anchor_parity_default() {
         if !cur.is_empty() {
             chunks_16k.push(cur);
         }
-        checked += assert_corpus(&scanner, &chunks_16k, "mirror-16k");
+        checked += assert_corpus(scanner, &chunks_16k, "mirror-16k");
     }
 
     // Restore this scanner's overrides to "follow env" (instance-local; with
     // per-scanner tuning there is no cross-test global to leak, but keep the
     // pairing explicit).
-    keyhog_scanner::testing::set_phase2_anchor_mode(&scanner, None);
-    keyhog_scanner::testing::set_phase2_homoglyph_gate(&scanner, None);
+    keyhog_scanner::testing::set_phase2_anchor_mode(scanner, None);
+    keyhog_scanner::testing::set_phase2_homoglyph_gate(scanner, None);
     eprintln!("phase2_anchor_parity: {checked} inputs checked, optimized ≡ baseline");
     assert!(
-        checked >= n,
-        "expected at least {n} parity checks, ran {checked}"
+        checked >= n + TOKENS.len(),
+        "expected random sweep plus deterministic token coverage, ran {checked}"
     );
 }

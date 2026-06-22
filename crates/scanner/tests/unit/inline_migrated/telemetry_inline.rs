@@ -7,6 +7,16 @@ use keyhog_scanner::telemetry::{
 };
 use std::sync::{Arc, Barrier};
 
+fn scoped_dogfood_events(f: impl FnOnce()) -> Vec<DogfoodEvent> {
+    reset();
+    let trace = Arc::new(ScanTelemetry::new());
+    trace.enable_dogfood();
+    with_scan_telemetry(&trace, f);
+    let events = trace.drain().dogfood_events;
+    reset();
+    events
+}
+
 #[test]
 fn counter_increments_without_dogfood() {
     let _g = super::super::telemetry_serial::lock();
@@ -75,10 +85,11 @@ fn drain_events_allows_same_dogfood_suppression_in_next_scan() {
 fn scoped_scan_telemetry_isolates_concurrent_daemon_counts() {
     let _g = super::super::telemetry_serial::lock();
     reset();
-    enable_dogfood();
 
     let first = Arc::new(ScanTelemetry::new());
     let second = Arc::new(ScanTelemetry::new());
+    first.enable_dogfood();
+    second.enable_dogfood();
     let barrier = Arc::new(Barrier::new(3));
 
     let first_worker = {
@@ -134,15 +145,14 @@ fn scoped_scan_telemetry_isolates_concurrent_daemon_counts() {
 #[test]
 fn dogfood_captures_events() {
     let _g = super::super::telemetry_serial::lock();
-    reset();
-    enable_dogfood();
-    record_example_suppression(
-        "aws-access-key",
-        Some("demo-secret.env"),
-        concat!("AK", "IAIOSFODNN7EXAMPLE"),
-        "ends_with_EXAMPLE",
-    );
-    let events = drain_events();
+    let events = scoped_dogfood_events(|| {
+        record_example_suppression(
+            "aws-access-key",
+            Some("demo-secret.env"),
+            concat!("AK", "IAIOSFODNN7EXAMPLE"),
+            "ends_with_EXAMPLE",
+        )
+    });
     assert_eq!(events.len(), 1);
     match &events[0] {
         DogfoodEvent::ExampleSuppressed {
@@ -177,15 +187,14 @@ fn dogfood_captures_events() {
 #[test]
 fn redaction_keeps_prefix_only() {
     let _g = super::super::telemetry_serial::lock();
-    reset();
-    enable_dogfood();
-    record_example_suppression(
-        "aws-access-key",
-        None,
-        concat!("AK", "IAIOSFODNN7EXAMPLE"),
-        "ends_with_EXAMPLE",
-    );
-    let events = drain_events();
+    let events = scoped_dogfood_events(|| {
+        record_example_suppression(
+            "aws-access-key",
+            None,
+            concat!("AK", "IAIOSFODNN7EXAMPLE"),
+            "ends_with_EXAMPLE",
+        )
+    });
     let red: &str = match &events[0] {
         DogfoodEvent::ExampleSuppressed {
             credential_redacted,
@@ -202,10 +211,8 @@ fn redaction_keeps_prefix_only() {
 #[test]
 fn redaction_handles_short_credentials() {
     let _g = super::super::telemetry_serial::lock();
-    reset();
-    enable_dogfood();
-    record_example_suppression("pipeline", None, "", "empty");
-    let events = drain_events();
+    let events =
+        scoped_dogfood_events(|| record_example_suppression("pipeline", None, "", "empty"));
     match &events[0] {
         DogfoodEvent::ExampleSuppressed {
             credential_redacted,

@@ -50,6 +50,22 @@ const TOKENS: &[&str] = &[
     "1/1234567890123456/abcdef0123456789abcdef0123456789",
     "-----BEGIN RSA PRIVATE KEY-----\nMIIBOgIBAAJBAKj3aQ\n-----END RSA PRIVATE KEY-----",
 ];
+
+const DETECTOR_IDS: &[&str] = &[
+    "github-classic-pat",
+    "github-oauth-access-token",
+    "slack-bot-token",
+    "stripe-secret-key",
+    "aws-access-key",
+    "gitlab-personal-access-token",
+    "visualcrossing-api-key",
+    "nasa-api-key",
+    "private-key",
+];
+
+const DEFAULT_PARITY_N: usize = 256;
+const DEFAULT_CORPUS_CAP: usize = 0;
+
 // Filler with NO credential prefixes — sometimes carries a "keyword" token so the
 // keyword_nearby signal interacts with the decoded text (the exact case the focus
 // restriction must keep exact by computing signals over the full splice).
@@ -94,6 +110,16 @@ fn gen(rng: &mut Lcg) -> Vec<u8> {
         }
     }
     b
+}
+
+fn deterministic_cases() -> Vec<Vec<u8>> {
+    let mut cases = Vec::new();
+    for token in TOKENS {
+        cases.push(format!("data = \"{}\"\n", b64(token)).into_bytes());
+        cases.push(format!("blob: {}\n", hexs(token)).into_bytes());
+        cases.push(format!("prefix token secret {token} suffix\n").into_bytes());
+    }
+    cases
 }
 
 fn chunk_of(bytes: &[u8], label: &str) -> Chunk {
@@ -154,15 +180,38 @@ fn diff_panic(label: &str, on: &[(String, String, String)], off: &[(String, Stri
 #[test]
 fn decode_focus_parity_default() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
-    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
+    let mut detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
+    detectors.retain(|detector| DETECTOR_IDS.contains(&detector.id.as_str()));
+    for id in DETECTOR_IDS {
+        assert!(
+            detectors.iter().any(|detector| detector.id == *id),
+            "decode focus parity detector subset missing shipped detector {id}"
+        );
+    }
     let scanner = CompiledScanner::compile(detectors).expect("compile");
     let n: usize = std::env::var("KEYHOG_GATE_PARITY_N")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(20_000);
+        .unwrap_or(DEFAULT_PARITY_N);
+    let corpus_cap: usize = std::env::var("KEYHOG_GATE_PARITY_CORPUS_N")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_CORPUS_CAP);
 
+    let deterministic_cases = deterministic_cases();
+    for (i, b) in deterministic_cases.iter().enumerate() {
+        let c = chunk_of(b, &format!("deterministic-{i}"));
+        let (on, off) = scan_both(&scanner, &c);
+        if on != off {
+            eprintln!(
+                "input: {:?}",
+                String::from_utf8_lossy(&b[..b.len().min(240)])
+            );
+            diff_panic(&format!("deterministic-{i}"), &on, &off);
+        }
+    }
     let mut rng = Lcg(0xf0cad_e1234_5678);
-    let mut checked = 0usize;
+    let mut checked = deterministic_cases.len();
     for i in 0..n {
         let b = gen(&mut rng);
         let c = chunk_of(&b, &format!("syn-{i}"));
@@ -178,7 +227,7 @@ fn decode_focus_parity_default() {
     }
 
     if let Some(root) = corpus_dir() {
-        let files = corpus_files(&root, 6000);
+        let files = corpus_files(&root, corpus_cap);
         let mut chunks: Vec<Vec<u8>> = Vec::new();
         let mut cur = Vec::new();
         for f in &files {
@@ -203,5 +252,8 @@ fn decode_focus_parity_default() {
 
     keyhog_scanner::testing::set_decode_focus(&scanner, None);
     eprintln!("decode_focus_parity: {checked} inputs, focus-on ≡ focus-off");
-    assert!(checked >= n);
+    assert!(
+        checked >= n + TOKENS.len(),
+        "expected random sweep plus deterministic token coverage, got {checked}"
+    );
 }

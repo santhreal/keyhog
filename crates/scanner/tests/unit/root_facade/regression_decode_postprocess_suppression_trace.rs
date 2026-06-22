@@ -62,7 +62,6 @@ fn root_chunk() -> Chunk {
 fn decoded_reverse_placeholder_drop_records_adjudicator_example_suppression() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
     telemetry::testing::reset();
-    telemetry::enable_dogfood();
     let _decoder_guard = register_thread_decoder(Box::new(ReversePlaceholderDecoder));
 
     let mut config = ScannerConfig::default();
@@ -73,6 +72,7 @@ fn decoded_reverse_placeholder_drop_records_adjudicator_example_suppression() {
         .with_config(config);
 
     let trace = Arc::new(ScanTelemetry::new());
+    trace.enable_dogfood();
     let matches = telemetry::with_scan_telemetry(&trace, || scanner.scan(&root_chunk()));
     assert!(
         matches.is_empty(),

@@ -303,8 +303,8 @@ fn named_detector_honors_min_confidence_and_traces_reject() {
         .unwrap()
         .with_config(config);
     keyhog_scanner::telemetry::testing::reset();
-    keyhog_scanner::telemetry::enable_dogfood();
     let trace = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
+    trace.enable_dogfood();
     let chunk = file_chunk(
         format!("export MX_API_KEY={value}"),
         "named_min_floor.env",
@@ -349,8 +349,8 @@ fn named_detector_comment_hard_suppression_traces_precise_reason() {
         .unwrap()
         .with_config(config);
     keyhog_scanner::telemetry::testing::reset();
-    keyhog_scanner::telemetry::enable_dogfood();
     let trace = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
+    trace.enable_dogfood();
     let chunk = file_chunk(format!("<!--{value}-->"), "named_comment_floor.html", 0);
     let matches = keyhog_scanner::telemetry::with_scan_telemetry(&trace, || scanner.scan(&chunk));
 
@@ -460,8 +460,8 @@ fn entropy_fallback_honors_min_confidence_and_traces_reject() {
         .unwrap()
         .with_config(config);
     keyhog_scanner::telemetry::testing::reset();
-    keyhog_scanner::telemetry::enable_dogfood();
     let trace = Arc::new(keyhog_scanner::telemetry::ScanTelemetry::new());
+    trace.enable_dogfood();
     let chunk = file_chunk(format!("MARKER = \"{value}\""), "entropy_min_floor.env", 0);
     let matches = keyhog_scanner::telemetry::with_scan_telemetry(&trace, || scanner.scan(&chunk));
 

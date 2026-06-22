@@ -33,9 +33,6 @@
 //! so the assertion pins candidate GENERATION, not the MoE's score magnitude
 //! (which is lane-4 scoring, deliberately out of scope here).
 
-use super::support;
-use support::paths::detector_dir;
-
 use keyhog_core::{Chunk, ChunkMetadata};
 use keyhog_scanner::testing::entropy_scanner::{
     candidate_is_plausible, credential_keyword_context, credential_keyword_context_with_lift,
@@ -133,7 +130,6 @@ fn lift_still_drops_short_and_placeholder_values() {
 // ── (b) END-TO-END: the shipped CPU-fallback path surfaces the candidate ────
 
 fn scanner_with_floor(min_confidence: f64) -> CompiledScanner {
-    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
     // Default config has ml_enabled, entropy_enabled, and
     // entropy_ml_authoritative all true — the production state that engages the
     // lift. Lower only the min-confidence floor so the assertion pins candidate
@@ -145,20 +141,19 @@ fn scanner_with_floor(min_confidence: f64) -> CompiledScanner {
         config.entropy_ml_authoritative && config.ml_enabled && config.entropy_enabled,
         "fixture invariant: default config must be model-authoritative for the lift"
     );
-    CompiledScanner::compile(detectors)
+    CompiledScanner::compile(Vec::new())
         .expect("compile scanner")
         .with_config(config)
 }
 
 fn scanner_without_lift(min_confidence: f64) -> CompiledScanner {
-    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("load detectors");
     let mut config = ScannerConfig::default();
     config.min_confidence = min_confidence;
     // Turn OFF model authority: the lift must NOT engage, so the canonical
     // shapes stay suppressed exactly as on the legacy path.
     config.entropy_ml_authoritative = false;
     config.sanitise();
-    CompiledScanner::compile(detectors)
+    CompiledScanner::compile(Vec::new())
         .expect("compile scanner")
         .with_config(config)
 }

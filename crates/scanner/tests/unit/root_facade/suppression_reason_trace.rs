@@ -39,7 +39,7 @@ fn drain_reasons(trace: &ScanTelemetry) -> Vec<String> {
 fn assert_reason(credential: &str, expected_reason: &str) {
     let trace = Arc::new(ScanTelemetry::new());
     telemetry::testing::reset();
-    telemetry::enable_dogfood();
+    trace.enable_dogfood();
     let suppressed = telemetry::with_scan_telemetry(&trace, || {
         known_example_suppressed(credential, None, CodeContext::Unknown)
     });
@@ -63,7 +63,7 @@ fn assert_reason(credential: &str, expected_reason: &str) {
 fn assert_not_suppressed(credential: &str) {
     let trace = Arc::new(ScanTelemetry::new());
     telemetry::testing::reset();
-    telemetry::enable_dogfood();
+    trace.enable_dogfood();
     let suppressed = telemetry::with_scan_telemetry(&trace, || {
         known_example_suppressed(credential, None, CodeContext::Unknown)
     });

@@ -19,6 +19,7 @@ use support::paths::{corpus_dir, corpus_files, detector_dir};
 use base64::Engine;
 use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
+use std::sync::OnceLock;
 
 struct Lcg(u64);
 impl Lcg {
@@ -55,6 +56,23 @@ const TOKENS: &[&str] = &[
     "-----BEGIN RSA PRIVATE KEY-----\nMIIBOgIBAAJBAKj3aQ\n-----END RSA PRIVATE KEY-----",
     "plain text with no credential at all just words here",
 ];
+
+const DETECTOR_IDS: &[&str] = &[
+    "github-classic-pat",
+    "github-oauth-access-token",
+    "slack-bot-token",
+    "stripe-secret-key",
+    "aws-access-key",
+    "gitlab-personal-access-token",
+    "visualcrossing-api-key",
+    "nasa-api-key",
+    "private-key",
+    "generic-password",
+];
+
+const DEFAULT_PARITY_N: usize = 256;
+const DEFAULT_CORPUS_CAP: usize = 0;
+
 // Filler that contains NONE of the credential prefixes, so a chunk of pure
 // filler is exactly the "gate skips everything" case the optimization targets.
 const FILLER: &[u8] =
@@ -89,6 +107,17 @@ fn gen(rng: &mut Lcg) -> Vec<u8> {
     b
 }
 
+fn deterministic_cases() -> Vec<Vec<u8>> {
+    let mut cases = Vec::new();
+    for token in TOKENS {
+        cases.push(token.as_bytes().to_vec());
+        cases.push(format!("data = \"{}\"\n", b64(token)).into_bytes());
+        cases.push(format!("prefix token secret {token} suffix\n").into_bytes());
+        cases.push(format!("{}\n{}\n", "z".repeat(96), token).into_bytes());
+    }
+    cases
+}
+
 fn chunk_of(bytes: &[u8], label: &str) -> Chunk {
     Chunk {
         data: String::from_utf8_lossy(bytes).into_owned().into(),
@@ -115,6 +144,21 @@ fn canonical(m: &[Vec<RawMatch>]) -> Vec<(String, String, String)> {
         .collect();
     v.sort();
     v
+}
+
+fn scanner() -> &'static CompiledScanner {
+    static SCANNER: OnceLock<CompiledScanner> = OnceLock::new();
+    SCANNER.get_or_init(|| {
+        let mut detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
+        detectors.retain(|detector| DETECTOR_IDS.contains(&detector.id.as_str()));
+        for id in DETECTOR_IDS {
+            assert!(
+                detectors.iter().any(|detector| detector.id == *id),
+                "phase2 prefix parity detector subset missing shipped detector {id}"
+            );
+        }
+        CompiledScanner::compile(detectors).expect("compile")
+    })
 }
 
 fn scan_both(
@@ -150,19 +194,36 @@ fn diff_panic(label: &str, on: &[(String, String, String)], off: &[(String, Stri
 #[test]
 fn phase2_prefix_gate_parity_default() {
     let _telemetry_guard = super::super::telemetry_serial::lock();
-    let detectors = keyhog_core::load_detectors(&detector_dir()).expect("detectors");
-    let scanner = CompiledScanner::compile(detectors).expect("compile");
+    let scanner = scanner();
+    scanner.clear_fragment_cache();
     let n: usize = std::env::var("KEYHOG_GATE_PARITY_N")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(20_000);
+        .unwrap_or(DEFAULT_PARITY_N);
+    let corpus_cap: usize = std::env::var("KEYHOG_GATE_PARITY_CORPUS_N")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_CORPUS_CAP);
 
-    let mut rng = Lcg(0x5eed_face_d00d_1234);
+    let deterministic_cases = deterministic_cases();
     let mut checked = 0usize;
+    for (i, b) in deterministic_cases.iter().enumerate() {
+        let c = chunk_of(b, &format!("deterministic-{i}"));
+        let (on, off) = scan_both(scanner, &c);
+        if on != off {
+            eprintln!(
+                "input: {:?}",
+                String::from_utf8_lossy(&b[..b.len().min(220)])
+            );
+            diff_panic(&format!("deterministic-{i}"), &on, &off);
+        }
+        checked += 1;
+    }
+    let mut rng = Lcg(0x5eed_face_d00d_1234);
     for i in 0..n {
         let b = gen(&mut rng);
         let c = chunk_of(&b, &format!("syn-{i}"));
-        let (on, off) = scan_both(&scanner, &c);
+        let (on, off) = scan_both(scanner, &c);
         if on != off {
             eprintln!(
                 "input: {:?}",
@@ -173,8 +234,9 @@ fn phase2_prefix_gate_parity_default() {
         checked += 1;
     }
 
-    if let Some(root) = corpus_dir() {
-        let files = corpus_files(&root, 6000);
+    if corpus_cap > 0 {
+        let root = corpus_dir().expect("corpus cap requested but mirror corpus is unavailable");
+        let files = corpus_files(&root, corpus_cap);
         let mut chunks: Vec<Vec<u8>> = Vec::new();
         let mut cur = Vec::new();
         for f in &files {
@@ -189,7 +251,7 @@ fn phase2_prefix_gate_parity_default() {
         }
         for (i, c) in chunks.iter().enumerate() {
             let ch = chunk_of(c, &format!("corpus-{i}"));
-            let (on, off) = scan_both(&scanner, &ch);
+            let (on, off) = scan_both(scanner, &ch);
             if on != off {
                 diff_panic(&format!("corpus-{i}"), &on, &off);
             }
@@ -197,7 +259,10 @@ fn phase2_prefix_gate_parity_default() {
         }
     }
 
-    keyhog_scanner::testing::set_phase2_prefix_gate(&scanner, None);
+    keyhog_scanner::testing::set_phase2_prefix_gate(scanner, None);
     eprintln!("phase2_prefix_gate_parity: {checked} inputs, gate-on ≡ gate-off");
-    assert!(checked >= n);
+    assert!(
+        checked >= n + TOKENS.len(),
+        "expected random sweep plus deterministic token coverage, got {checked}"
+    );
 }

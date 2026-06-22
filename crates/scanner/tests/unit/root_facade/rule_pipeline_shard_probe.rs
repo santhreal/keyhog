@@ -20,7 +20,6 @@
 use super::support;
 use support::paths::detector_dir;
 
-use keyhog_scanner::CompiledScanner;
 use vyre_libs::scan::{compile_regex_set, RegexCompileError};
 
 #[test]
@@ -32,8 +31,15 @@ fn shard_distribution_under_state_cap() {
             return;
         }
     };
-    let scanner = CompiledScanner::compile(detectors).expect("scanner compile");
-    let pats = keyhog_scanner::testing::pattern_regex_strs(&scanner);
+    let pats: Vec<String> = detectors
+        .iter()
+        .flat_map(|detector| {
+            detector
+                .patterns
+                .iter()
+                .map(|pattern| pattern.regex.clone())
+        })
+        .collect();
     eprintln!("Total regex patterns: {}", pats.len());
 
     // Step 1: per-pattern state cost. Each compile attempt is one
@@ -44,7 +50,7 @@ fn shard_distribution_under_state_cap() {
     let mut singletons_over_cap: Vec<(usize, usize)> = Vec::new();
     let mut singletons_unparseable: Vec<(usize, String)> = Vec::new();
     for (i, p) in pats.iter().enumerate() {
-        match compile_regex_set(&[*p]) {
+        match compile_regex_set(&[p.as_str()]) {
             Ok(set) => {
                 let n = set.plan.num_states as usize;
                 if n > SHARD_CAP_STATES {
@@ -99,7 +105,7 @@ fn shard_distribution_under_state_cap() {
         for (reason, pids) in &buckets {
             eprintln!("  samples from bucket {:?} (first 3):", reason);
             for pid in pids.iter().take(3) {
-                let s = pats[*pid];
+                let s = pats[*pid].as_str();
                 let short: String = s.chars().take(180).collect();
                 let truncated = if s.len() > 180 { "..." } else { "" };
                 eprintln!("    pid={} regex={}{}", pid, short, truncated);
@@ -149,7 +155,7 @@ fn shard_distribution_under_state_cap() {
     // any cross-pattern epsilon-state inflation that the singleton
     // estimate missed).
     if let Some(first) = shards.first() {
-        let pats0: Vec<&str> = first.iter().map(|&j| pats[j]).collect();
+        let pats0: Vec<&str> = first.iter().map(|&j| pats[j].as_str()).collect();
         match compile_regex_set(&pats0) {
             Ok(set) => eprintln!(
                 "  first-shard verify: ok ({} patterns → {} states)",
