@@ -586,31 +586,25 @@ fn dns_pin_build_failure_fails_closed_not_silent_fallback() {
         "pin-build failure must surface a loud blocked error, not fall back"
     );
     // The fail-closed branch must return a blocked VerificationResult, not
-    // clone base_client. Scope the inspection to the text from the pinned
-    // `.build()` site to the end of the `resolved_client_for_url` fn so the
-    // `base_client.clone()` used by the *no-pin* (`pinned_addrs.is_empty()`)
-    // branch below does not count.
+    // clone base_client. Scope the inspection to the current pinned-client
+    // owner so the proxy/no-pin branches elsewhere do not count.
     let pin_section = src
-        .split("resolve_to_addrs(&host, &pinned_addrs)")
+        .split("fn build_pinned_client(")
         .nth(1)
-        .expect("the pinned build site");
-    let after_build = pin_section
-        .split(".build()")
-        .nth(1)
-        .expect("text after .build()");
-    // The Err arm body runs from `Err(e) =>` up to the `} else {` that begins
-    // the no-pin branch. Only that slice may NOT clone base_client.
-    let err_arm_to_else = after_build
-        .split("} else {")
+        .expect("the pinned client builder owner");
+    let builder_fn = pin_section
+        .split("pub(crate) async fn build_request_for_step")
         .next()
-        .expect("the pinned-build match block before the no-pin else branch");
+        .expect("pinned builder before request-step builder");
     assert!(
-        err_arm_to_else.contains("return Err(VerificationResult::Error"),
+        builder_fn.contains(".map_err(|e|")
+            && builder_fn.contains("VerificationResult::Error")
+            && builder_fn.contains("DNS pin client build failed"),
         "pin-build Err arm must fail closed with a blocked VerificationResult, \
-         got:\n{err_arm_to_else}"
+         got:\n{builder_fn}"
     );
     assert!(
-        !err_arm_to_else.contains("base_client.clone()"),
+        !builder_fn.contains("base_client.clone()"),
         "pin-build Err arm must not clone the unpinned base client (silent fallback)"
     );
 }
@@ -652,7 +646,7 @@ fn oob_decrypt_entry_drops_are_surfaced_loudly_not_silently() {
     // The non-UTF-8 branch must not be a bare silent `return Ok(None)`: it must
     // be preceded by a warn within the same Err arm.
     let utf8_arm = src
-        .split("std::str::from_utf8(&buf)")
+        .split("std::str::from_utf8(payload)")
         .nth(1)
         .expect("the from_utf8 match site");
     let utf8_err_arm = utf8_arm
@@ -675,6 +669,29 @@ fn oob_decrypt_entry_drops_are_surfaced_loudly_not_silently() {
         missing_id_before_return.contains("warn!(")
             && missing_id_before_return.contains("full-id or unique-id"),
         "a decrypted interaction without an id must warn before it is dropped"
+    );
+}
+
+#[test]
+fn oob_decrypt_hot_path_does_not_clone_ciphertext_or_recollect_payload() {
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/oob/decrypt.rs"))
+        .expect("oob/decrypt.rs must be readable");
+
+    assert!(
+        src.contains("split_at_mut(16)") && src.contains(".decrypt(payload)"),
+        "decrypt_entry must decrypt in place inside the decoded buffer, not clone ciphertext"
+    );
+    assert!(
+        !src.contains("ct.to_vec()"),
+        "decrypt_entry must not clone the ciphertext tail before AES-CFB decrypt"
+    );
+    assert!(
+        src.contains("fn truncate_raw_payload(mut raw_payload: String) -> String"),
+        "payload truncation must keep ownership and truncate in place"
+    );
+    assert!(
+        !src.contains(".chars().take(MAX_RAW_PAYLOAD).collect()"),
+        "payload truncation must not allocate a second String"
     );
 }
 

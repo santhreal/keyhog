@@ -49,7 +49,7 @@ pub(super) fn decrypt_entry(
     aes_key: &[u8],
     b64: &str,
 ) -> Result<Option<Interaction>, InteractshError> {
-    let bytes = B64
+    let mut bytes = B64
         .decode(b64.as_bytes())
         .map_err(|e| InteractshError::Decrypt(format!("base64: {e}")))?;
     if bytes.len() < 16 {
@@ -58,17 +58,16 @@ pub(super) fn decrypt_entry(
             bytes.len()
         )));
     }
-    let (iv, ct) = bytes.split_at(16);
-    let mut buf = ct.to_vec();
+    let (iv, payload) = bytes.split_at_mut(16);
     Aes256CfbDec::new_from_slices(aes_key, iv)
         .map_err(|e| InteractshError::Decrypt(format!("cfb init: {e}")))?
-        .decrypt(&mut buf);
+        .decrypt(payload);
     // LAW 10 — a dropped OOB interaction is NOT silent. Skipping a malformed
     // entry is the right call (one bad entry must not abort the whole poll
     // batch), but the drop is recall-affecting: a missed callback can flip an
     // exfil-capable credential from Live to Dead. Surface every drop LOUDLY at
     // `warn` (not `debug`) so the operator can see the OOB signal was lost.
-    let json = match std::str::from_utf8(&buf) {
+    let json = match std::str::from_utf8(payload) {
         Ok(s) => s,
         Err(e) => {
             warn!(
@@ -115,7 +114,7 @@ pub(super) fn decrypt_entry(
     } else {
         raw.q_type
     };
-    let raw_payload: String = raw_payload.chars().take(MAX_RAW_PAYLOAD).collect();
+    let raw_payload = truncate_raw_payload(raw_payload);
     Ok(Some(Interaction {
         unique_id,
         protocol: InteractionProtocol::parse(&raw.protocol),
@@ -123,4 +122,11 @@ pub(super) fn decrypt_entry(
         timestamp: raw.timestamp,
         raw_payload,
     }))
+}
+
+fn truncate_raw_payload(mut raw_payload: String) -> String {
+    if let Some((idx, _)) = raw_payload.char_indices().nth(MAX_RAW_PAYLOAD) {
+        raw_payload.truncate(idx);
+    }
+    raw_payload
 }
