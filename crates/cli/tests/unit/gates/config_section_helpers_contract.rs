@@ -13,6 +13,7 @@ fn config_file_merge_uses_section_helpers() {
         "fn apply_allowlist_section(",
         "fn apply_tuning_section(",
         "fn apply_scan_section(",
+        "fn apply_top_level_scan_fields(",
     ] {
         assert!(
             src.contains(helper),
@@ -25,6 +26,7 @@ fn config_file_merge_uses_section_helpers() {
         "apply_aws_section(",
         "apply_allowlist_section(",
         "apply_tuning_section(",
+        "apply_top_level_scan_fields(",
         "apply_scan_section(",
     ] {
         assert!(
@@ -43,6 +45,14 @@ fn config_file_merge_uses_section_helpers() {
         "\"[scan].format\"",
         "\"[scan].dedup\"",
         "\"- [scan].min_secret_len = 0",
+        "\"format\"",
+        "\"severity\"",
+        "\"dedup\"",
+        "\"decode_size_limit\"",
+        "apply_limits_section(",
+        "known_prefixes",
+        "secret_keywords",
+        "placeholder_keywords",
     ] {
         assert!(
             !apply.contains(forbidden),

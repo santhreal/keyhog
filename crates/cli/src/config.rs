@@ -564,106 +564,11 @@ fn apply_scan_section(
     }
 }
 
-#[allow(clippy::collapsible_if, clippy::cmp_owned)]
-fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> ConfigOutcome {
-    // `--no-config`: hermetic run on the compiled-in Tier-A shipped defaults.
-    // Skip BOTH `.keyhog.toml` walk-up discovery AND any explicit `--config`
-    // path (clap already rejects `--config` together with `--no-config`, so
-    // honoring it here keeps the probe and the real merge consistent). This is
-    // what the bench harness passes so the benched config is the shipped
-    // default BY DESIGN, not by the accident of no config happening to be found
-    // on the walk-up from a corpus that lives inside the repo tree (MC-07). The
-    // shipped Tier-A floors/disables still apply — they ARE the default.
-    if args.no_config {
-        return shipped_config_outcome();
-    }
-    let config_path = args
-        .config
-        .clone()
-        .or_else(|| find_config_file(args.path.as_deref()));
-
-    let config_path = match config_path {
-        Some(path) => path,
-        // No `.keyhog.toml` on the walk-up path (the bench/default case): still
-        // ship the compiled Tier-A floors/disables so tuned == benched ==
-        // shipped, instead of the empty `ConfigOutcome::default()`.
-        None => return shipped_config_outcome(),
-    };
-
-    let raw = match std::fs::read_to_string(&config_path) {
-        Ok(content) => content,
-        Err(error) => {
-            if emit_diagnostics {
-                tracing::warn!(
-                    path = %config_path.display(),
-                    "failed to read .keyhog.toml: {error}"
-                );
-            }
-            return config_file_error(
-                &config_path,
-                format_args!("failed to read config file: {error}"),
-                "make the file readable, pass a valid --config path, or run with --no-config",
-            );
-        }
-    };
-
-    let config: ConfigFile = match toml::from_str(&raw) {
-        Ok(parsed) => parsed,
-        Err(error) => {
-            // The daemon routing probe passes `emit_diagnostics = false` and
-            // inspects `config_errors`; the real orchestrator merge turns the
-            // same error into the single operator-visible CLI failure.
-            if emit_diagnostics {
-                tracing::warn!(
-                    path = %config_path.display(),
-                    "failed to parse .keyhog.toml: {error}"
-                );
-            }
-            return config_file_error(
-                &config_path,
-                format_args!("failed to parse TOML: {error}"),
-                "correct the TOML syntax or run with --no-config for a hermetic default scan",
-            );
-        }
-    };
-
-    tracing::debug!(path = %config_path.display(), "loaded .keyhog.toml");
-    let mut config_errors = Vec::new();
-    let mut trusted_bin_dirs = Vec::new();
-    let mut aws_canary_accounts = Vec::new();
-    let mut scanner_tuning = keyhog_scanner::ScannerTuningConfig::default();
-    let mut allowlist_file = None;
-    let mut allowlist_require_reason = false;
-    let mut allowlist_require_approved_by = false;
-    let mut allowlist_max_expires_days = None;
-
-    apply_system_section(
-        args,
-        &mut config_errors,
-        &mut trusted_bin_dirs,
-        config.trusted_bin_dirs.as_deref(),
-        config.system.as_ref(),
-    );
-    apply_aws_section(
-        &mut config_errors,
-        &mut aws_canary_accounts,
-        config.aws.as_ref(),
-    );
-    apply_allowlist_section(
-        &mut config_errors,
-        &config_path,
-        &mut allowlist_file,
-        &mut allowlist_require_reason,
-        &mut allowlist_require_approved_by,
-        &mut allowlist_max_expires_days,
-        config.allowlist.as_ref(),
-    );
-    apply_tuning_section(
-        &mut config_errors,
-        &mut scanner_tuning,
-        config.tuning.as_ref(),
-    );
-
+fn apply_top_level_scan_fields(
+    args: &mut ScanArgs,
+    config_errors: &mut Vec<String>,
+    config: &mut ConfigFile,
+) {
     // Apply config values only when no explicit CLI flag was given.
     if let Some(ref detectors_str) = config.detectors {
         if args.detectors == PathBuf::from("detectors") {
@@ -720,9 +625,9 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         }
     }
 
-    if let Some(_no_entropy) = config.no_entropy {
+    if let Some(no_entropy) = config.no_entropy {
         if !args.no_entropy {
-            args.no_entropy = _no_entropy;
+            args.no_entropy = no_entropy;
         }
     }
 
@@ -782,10 +687,10 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         }
     }
 
-    if let Some(_verify) = config.verify {
+    if let Some(verify) = config.verify {
         #[cfg(feature = "verify")]
         if !args.verify {
-            args.verify = _verify;
+            args.verify = verify;
         }
     }
 
@@ -801,10 +706,10 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         }
     }
 
-    if let Some(_max_commits) = config.max_commits {
+    if let Some(max_commits) = config.max_commits {
         #[cfg(feature = "git")]
         if args.max_commits == 1000 {
-            args.max_commits = _max_commits;
+            args.max_commits = max_commits;
         }
     }
 
@@ -821,19 +726,18 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     }
 
     if args.incremental_cache.is_none() {
-        args.incremental_cache = config.incremental_cache;
+        args.incremental_cache = config.incremental_cache.take();
     }
 
     if let Some(depth) = config.decode_depth {
-        let parsed_depth = parse_config_decode_depth(&mut config_errors, "decode_depth", depth);
+        let parsed_depth = parse_config_decode_depth(config_errors, "decode_depth", depth);
         if args.decode_depth.is_none() {
             args.decode_depth = parsed_depth;
         }
     }
 
     if let Some(ref limit_str) = config.decode_size_limit {
-        let parsed_size =
-            parse_config_byte_size(&mut config_errors, "decode_size_limit", limit_str);
+        let parsed_size = parse_config_byte_size(config_errors, "decode_size_limit", limit_str);
         if args.decode_size_limit.is_none() {
             if let Some(size) = parsed_size {
                 args.decode_size_limit = Some(size);
@@ -841,15 +745,15 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         }
     }
 
-    if let Some(_entropy_source) = config.entropy_source_files {
+    if let Some(entropy_source) = config.entropy_source_files {
         if !args.entropy_source_files {
-            args.entropy_source_files = _entropy_source;
+            args.entropy_source_files = entropy_source;
         }
     }
 
-    if let Some(_entropy_threshold) = config.entropy_threshold {
+    if let Some(entropy_threshold) = config.entropy_threshold {
         if args.entropy_threshold.is_none() {
-            args.entropy_threshold = Some(_entropy_threshold);
+            args.entropy_threshold = Some(entropy_threshold);
         }
     }
 
@@ -880,7 +784,7 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     }
 
     if let Some(ref limit_str) = config.max_file_size {
-        let parsed_size = parse_config_byte_size(&mut config_errors, "max_file_size", limit_str);
+        let parsed_size = parse_config_byte_size(config_errors, "max_file_size", limit_str);
         if args.max_file_size.is_none() {
             if let Some(size) = parsed_size {
                 args.max_file_size = Some(size);
@@ -889,7 +793,7 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
     }
 
     if let Some(ref limit_str) = config.regex_dfa_limit {
-        let parsed_size = parse_config_byte_size(&mut config_errors, "regex_dfa_limit", limit_str);
+        let parsed_size = parse_config_byte_size(config_errors, "regex_dfa_limit", limit_str);
         if args.regex_dfa_limit.is_none() {
             if let Some(size) = parsed_size {
                 args.regex_dfa_limit = Some(size);
@@ -897,38 +801,140 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         }
     }
 
-    if let Some(limits) = config.limits {
-        apply_limits_section(args, &mut config_errors, limits);
+    if let Some(limits) = config.limits.take() {
+        apply_limits_section(args, config_errors, limits);
     }
 
-    if let Some(paths) = config.exclude_paths {
+    if let Some(paths) = config.exclude_paths.take() {
         if args.exclude_paths.is_none() {
             args.exclude_paths = Some(paths);
         }
     }
 
-    if let Some(prefixes) = config.known_prefixes {
-        if keyword_list_is_nonempty(&mut config_errors, "known_prefixes", &prefixes) {
+    if let Some(prefixes) = config.known_prefixes.take() {
+        if keyword_list_is_nonempty(config_errors, "known_prefixes", &prefixes) {
             args.known_prefixes = prefixes;
         }
     }
-    if let Some(keywords) = config.secret_keywords {
-        if keyword_list_is_nonempty(&mut config_errors, "secret_keywords", &keywords) {
+    if let Some(keywords) = config.secret_keywords.take() {
+        if keyword_list_is_nonempty(config_errors, "secret_keywords", &keywords) {
             args.secret_keywords = keywords;
         }
     }
-    if let Some(keywords) = config.test_keywords {
-        if keyword_list_is_nonempty(&mut config_errors, "test_keywords", &keywords) {
+    if let Some(keywords) = config.test_keywords.take() {
+        if keyword_list_is_nonempty(config_errors, "test_keywords", &keywords) {
             args.test_keywords = keywords;
         }
     }
-    if let Some(keywords) = config.placeholder_keywords {
-        if keyword_list_is_nonempty(&mut config_errors, "placeholder_keywords", &keywords) {
+    if let Some(keywords) = config.placeholder_keywords.take() {
+        if keyword_list_is_nonempty(config_errors, "placeholder_keywords", &keywords) {
             args.placeholder_keywords = keywords;
         }
     }
+}
 
-    apply_scan_section(args, &mut config_errors, config.scan);
+#[allow(clippy::collapsible_if, clippy::cmp_owned)]
+fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> ConfigOutcome {
+    // `--no-config`: hermetic run on the compiled-in Tier-A shipped defaults.
+    // Skip BOTH `.keyhog.toml` walk-up discovery AND any explicit `--config`
+    // path (clap already rejects `--config` together with `--no-config`, so
+    // honoring it here keeps the probe and the real merge consistent). This is
+    // what the bench harness passes so the benched config is the shipped
+    // default BY DESIGN, not by the accident of no config happening to be found
+    // on the walk-up from a corpus that lives inside the repo tree (MC-07). The
+    // shipped Tier-A floors/disables still apply — they ARE the default.
+    if args.no_config {
+        return shipped_config_outcome();
+    }
+    let config_path = args
+        .config
+        .clone()
+        .or_else(|| find_config_file(args.path.as_deref()));
+
+    let config_path = match config_path {
+        Some(path) => path,
+        // No `.keyhog.toml` on the walk-up path (the bench/default case): still
+        // ship the compiled Tier-A floors/disables so tuned == benched ==
+        // shipped, instead of the empty `ConfigOutcome::default()`.
+        None => return shipped_config_outcome(),
+    };
+
+    let raw = match std::fs::read_to_string(&config_path) {
+        Ok(content) => content,
+        Err(error) => {
+            if emit_diagnostics {
+                tracing::warn!(
+                    path = %config_path.display(),
+                    "failed to read .keyhog.toml: {error}"
+                );
+            }
+            return config_file_error(
+                &config_path,
+                format_args!("failed to read config file: {error}"),
+                "make the file readable, pass a valid --config path, or run with --no-config",
+            );
+        }
+    };
+
+    let mut config: ConfigFile = match toml::from_str(&raw) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            // The daemon routing probe passes `emit_diagnostics = false` and
+            // inspects `config_errors`; the real orchestrator merge turns the
+            // same error into the single operator-visible CLI failure.
+            if emit_diagnostics {
+                tracing::warn!(
+                    path = %config_path.display(),
+                    "failed to parse .keyhog.toml: {error}"
+                );
+            }
+            return config_file_error(
+                &config_path,
+                format_args!("failed to parse TOML: {error}"),
+                "correct the TOML syntax or run with --no-config for a hermetic default scan",
+            );
+        }
+    };
+
+    tracing::debug!(path = %config_path.display(), "loaded .keyhog.toml");
+    let mut config_errors = Vec::new();
+    let mut trusted_bin_dirs = Vec::new();
+    let mut aws_canary_accounts = Vec::new();
+    let mut scanner_tuning = keyhog_scanner::ScannerTuningConfig::default();
+    let mut allowlist_file = None;
+    let mut allowlist_require_reason = false;
+    let mut allowlist_require_approved_by = false;
+    let mut allowlist_max_expires_days = None;
+
+    apply_system_section(
+        args,
+        &mut config_errors,
+        &mut trusted_bin_dirs,
+        config.trusted_bin_dirs.as_deref(),
+        config.system.as_ref(),
+    );
+    apply_aws_section(
+        &mut config_errors,
+        &mut aws_canary_accounts,
+        config.aws.as_ref(),
+    );
+    apply_allowlist_section(
+        &mut config_errors,
+        &config_path,
+        &mut allowlist_file,
+        &mut allowlist_require_reason,
+        &mut allowlist_require_approved_by,
+        &mut allowlist_max_expires_days,
+        config.allowlist.as_ref(),
+    );
+    apply_tuning_section(
+        &mut config_errors,
+        &mut scanner_tuning,
+        config.tuning.as_ref(),
+    );
+
+    apply_top_level_scan_fields(args, &mut config_errors, &mut config);
+    apply_scan_section(args, &mut config_errors, config.scan.take());
 
     // `[lockdown] require = true` -> the caller refuses to run unless
     // `--lockdown` was passed (README: "refuse to run without --lockdown").
