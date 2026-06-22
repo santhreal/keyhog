@@ -27,7 +27,7 @@ git = ["gix"]
 # hosted clone SSRF gates delegate to the fleet-canonical URL/IP classifier and
 # S3 request signing delegates to the single SigV4 owner instead of carrying
 # source-local forks.
-web = ["dep:reqwest", "dep:keyhog-verifier"]
+web = ["dep:reqwest", "dep:keyhog-verifier", "dep:brotli"]
 github = ["dep:reqwest", "dep:tempfile", "dep:keyhog-verifier"]
 gitlab = [
     "dep:reqwest",
@@ -95,6 +95,10 @@ lz4_flex = { workspace = true }
 snap = { workspace = true }
 bzip2 = { workspace = true }
 xz2 = { workspace = true }
+# Optional WebSource Content-Encoding decoder for `br` responses. Reqwest
+# auto-decompression stays disabled; WebSource owns the explicit decoded-size
+# cap before scanning.
+brotli = { workspace = true, optional = true }
 sevenz-rust2 = { workspace = true }
 # `tar` is non-optional (NOT just the `docker` feature) because the always-on
 # filesystem path untars gzip(tar)/.tgz/.tar containers per-entry so a secret

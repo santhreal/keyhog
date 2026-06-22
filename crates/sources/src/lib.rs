@@ -23,6 +23,8 @@ mod limits;
 mod parallel_fetch;
 mod skip;
 pub(crate) mod timeouts;
+#[cfg(any(feature = "web", feature = "github", feature = "gitlab", feature = "bitbucket"))]
+mod url_redaction;
 
 /// Shared HTTP-client policy (proxy, TLS, UA) used by every source
 /// + verifier site that talks to the network. Always compiled - the
@@ -57,7 +59,6 @@ mod s3;
 mod slack;
 mod stdin;
 mod strings;
-mod url_redaction;
 #[cfg(feature = "web")]
 mod web;
 

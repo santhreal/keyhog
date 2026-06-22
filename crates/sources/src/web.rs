@@ -467,13 +467,8 @@ fn handle_wasm(
     })]
 }
 
-/// Read an HTTP response body as text, capping at the resolved source limit.
-///
-/// Pre-flight Content-Length and streamed cap-aware copy. The previous
-/// version called `.text()` (which auto-decompresses gzip/deflate to
-/// completion) before checking the size - a 1 MB gzip bomb expanding to
-/// 1+ GB would OOM before this check fired. See `audit release-2026-04-26
-/// web.rs:287-301`.
+/// Read an HTTP response body as text, capping raw and decoded bytes at the
+/// resolved source limit.
 fn read_text_response(
     resp: reqwest::blocking::Response,
     max_response_bytes: usize,
@@ -485,8 +480,12 @@ fn read_text_response(
     })
 }
 
-/// Read an HTTP response body as bytes, capping at the resolved source limit
-/// BEFORE decompression to defeat gzip-bomb DoS.
+/// Read an HTTP response body as bytes.
+///
+/// Raw wire bytes are capped before buffering, then an explicit
+/// Content-Encoding decoder inflates gzip/br/deflate through the same cap.
+/// Reqwest auto-decompression stays disabled in `http.rs`, so a compressed
+/// web response cannot inflate before these limits run.
 fn read_bytes_response(
     resp: reqwest::blocking::Response,
     max_response_bytes: usize,
@@ -494,9 +493,10 @@ fn read_bytes_response(
     use std::io::Read;
     let url = resp.url().to_string();
     let safe_url = redact_url(&url);
+    let encodings = response_content_encodings(resp.headers(), &safe_url)?;
 
     if let Some(len) = resp.content_length() {
-        if len as usize > max_response_bytes {
+        if len > max_response_bytes as u64 {
             let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
             return Err(SourceError::Other(format!(
                 "response from {safe_url} declares {len} bytes (> {max_response_bytes} byte limit)"
@@ -518,5 +518,86 @@ fn read_bytes_response(
         )));
     }
 
-    Ok(buf)
+    decode_content_encoding(buf, &encodings, &safe_url, max_response_bytes)
+}
+
+fn response_content_encodings(
+    headers: &reqwest::header::HeaderMap,
+    safe_url: &str,
+) -> Result<Vec<String>, SourceError> {
+    let Some(raw) = headers.get(reqwest::header::CONTENT_ENCODING) else {
+        return Ok(Vec::new());
+    };
+    let raw = raw.to_str().map_err(|error| {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        SourceError::Other(format!(
+            "response from {safe_url} has invalid Content-Encoding header: {error}"
+        ))
+    })?;
+    Ok(raw
+        .split(',')
+        .map(str::trim)
+        .filter(|encoding| !encoding.is_empty())
+        .map(str::to_ascii_lowercase)
+        .filter(|encoding| encoding != "identity")
+        .collect())
+}
+
+fn decode_content_encoding(
+    mut bytes: Vec<u8>,
+    encodings: &[String],
+    safe_url: &str,
+    max_response_bytes: usize,
+) -> Result<Vec<u8>, SourceError> {
+    for encoding in encodings.iter().rev() {
+        bytes = decode_one_content_encoding(&bytes, encoding, safe_url, max_response_bytes)?;
+    }
+    Ok(bytes)
+}
+
+fn decode_one_content_encoding(
+    bytes: &[u8],
+    encoding: &str,
+    safe_url: &str,
+    max_response_bytes: usize,
+) -> Result<Vec<u8>, SourceError> {
+    use std::io::Read as _;
+
+    let limit = (max_response_bytes as u64).saturating_add(1);
+    let mut out = Vec::new();
+    let result = match encoding {
+        "gzip" | "x-gzip" => {
+            let mut decoder = flate2::read::MultiGzDecoder::new(bytes).take(limit);
+            decoder.read_to_end(&mut out)
+        }
+        "deflate" => {
+            let mut decoder = flate2::read::ZlibDecoder::new(bytes).take(limit);
+            decoder.read_to_end(&mut out)
+        }
+        "br" => {
+            let mut decoder = brotli::Decompressor::new(bytes, 4096).take(limit);
+            decoder.read_to_end(&mut out)
+        }
+        other => {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return Err(SourceError::Other(format!(
+                "response from {safe_url} uses unsupported Content-Encoding {other:?}; body was not scanned"
+            )));
+        }
+    };
+
+    result.map_err(|error| {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        SourceError::Other(format!(
+            "failed to decode {encoding} response from {safe_url}: {error}"
+        ))
+    })?;
+    if out.len() > max_response_bytes {
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+        return Err(SourceError::Other(format!(
+            "decoded {encoding} response from {safe_url} exceeds {max_response_bytes} byte limit"
+        )));
+    }
+
+    Ok(out)
 }

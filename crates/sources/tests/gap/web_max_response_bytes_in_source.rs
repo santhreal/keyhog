@@ -1,4 +1,4 @@
-//! Web fetch must cap raw response bytes; gzip auto-decompress disabled via http.rs.
+//! Web fetch must cap raw response bytes and explicit Content-Encoding decode.
 
 #[cfg(feature = "web")]
 #[test]
@@ -12,6 +12,12 @@ fn web_max_response_bytes_in_source() {
     assert!(
         src.contains("max_response_bytes") && src.contains(".take(max_response_bytes as u64 + 1)"),
         "response body read must use take() before buffering"
+    );
+    assert!(
+        src.contains("fn decode_content_encoding")
+            && src.contains("decoded {encoding} response")
+            && src.contains("Content-Encoding"),
+        "web response handling must explicitly decode gzip/br/deflate behind the same cap"
     );
     let limits = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/limits.rs"))
         .expect("limits.rs");

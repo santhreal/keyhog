@@ -85,9 +85,10 @@ tar = "=0.4.45"
 # path (crates/sources/filesystem/extract.rs). ziftsieve only extracts DEFLATE
 # *literals* for its bloom prefilter and drops back-references, so it cannot
 # reconstruct the real decompressed bytes a scanner needs. These crates do the
-# full inflate. Versions pinned to what the lockfile already resolves
-# (transitively via ziftsieve) so no new graph nodes are introduced.
+# full inflate. Brotli is used by the WebSource Content-Encoding decoder, while
+# the others also serve filesystem compressed-input extraction.
 flate2 = "=1.1.9"
+brotli = "=8.0.4"
 zstd = "=0.13.3"
 lz4_flex = "=0.11.6"
 snap = "=1.1.1"

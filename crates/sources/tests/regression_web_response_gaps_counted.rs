@@ -2,7 +2,11 @@
 
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
-use keyhog_sources::{skip_counts, WebSource};
+use keyhog_sources::{
+    create_source_with_http_config_and_limits, http::HttpClientConfig, skip_counts, SourceLimits,
+    WebSource,
+};
+use std::io::Write as _;
 use std::sync::{Mutex, MutexGuard};
 
 static COUNTER_LOCK: Mutex<()> = Mutex::new(());
@@ -24,6 +28,41 @@ fn counter_guard() -> CounterGuard {
 
 fn loopback_calibration_source(url: String) -> WebSource {
     TestApi.web_source_with_autoroute_loopback_calibration(vec![url], true)
+}
+
+fn loopback_calibration_source_with_limits(
+    url: String,
+    limits: SourceLimits,
+) -> Box<dyn Source> {
+    let params = format!("autoroute_loopback_calibration=true\n{url}");
+    create_source_with_http_config_and_limits(
+        "web",
+        Some(&params),
+        HttpClientConfig::default(),
+        limits,
+    )
+    .expect("web source with limits")
+}
+
+fn gzip_bytes(payload: &[u8]) -> Vec<u8> {
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(payload).expect("gzip payload");
+    encoder.finish().expect("finish gzip")
+}
+
+fn deflate_bytes(payload: &[u8]) -> Vec<u8> {
+    let mut encoder = flate2::write::ZlibEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(payload).expect("deflate payload");
+    encoder.finish().expect("finish deflate")
+}
+
+fn brotli_bytes(payload: &[u8]) -> Vec<u8> {
+    let mut compressed = Vec::new();
+    {
+        let mut encoder = brotli::CompressorWriter::new(&mut compressed, 4096, 5, 22);
+        encoder.write_all(payload).expect("brotli payload");
+    }
+    compressed
 }
 
 #[test]
@@ -55,6 +94,89 @@ fn clean_javascript_response_is_scanned_and_counter_clean() {
         after.total(),
         before.total(),
         "a scanned web body must not inflate skip counters"
+    );
+}
+
+#[test]
+fn compressed_javascript_responses_are_decoded_and_scanned() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let cases = [
+        ("gzip", "/gzip.js", gzip_bytes(b"const gzip_marker = 'web_gzip_secret_marker';\n")),
+        (
+            "deflate",
+            "/deflate.js",
+            deflate_bytes(b"const deflate_marker = 'web_deflate_secret_marker';\n"),
+        ),
+        ("br", "/brotli.js", brotli_bytes(b"const br_marker = 'web_brotli_secret_marker';\n")),
+    ];
+    for (encoding, path, body) in cases {
+        let _mock = server.mock(|when, then| {
+            when.method(httpmock::Method::GET).path(path);
+            then.status(200)
+                .header("content-type", "application/javascript")
+                .header("content-encoding", encoding)
+                .body(body.clone());
+        });
+        let ok: Vec<_> = loopback_calibration_source(server.url(path))
+            .chunks()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap_or_else(|error| panic!("{encoding} response must decode and scan: {error}"));
+        assert_eq!(ok.len(), 1, "{encoding} response should produce one chunk");
+        assert!(
+            ok[0].data.contains("web_") && ok[0].data.contains("_secret_marker"),
+            "{encoding} chunk must carry decoded JavaScript body, got {:?}",
+            ok[0].data
+        );
+    }
+
+    let after = skip_counts();
+    assert_eq!(
+        after.total(),
+        before.total(),
+        "decoded compressed web bodies must not inflate skip counters"
+    );
+}
+
+#[test]
+fn compressed_web_response_decoded_size_is_capped() {
+    let _guard = counter_guard();
+    TestApi.reset_skip_counters();
+    let before = skip_counts();
+
+    let server = httpmock::MockServer::start();
+    let _mock = server.mock(|when, then| {
+        when.method(httpmock::Method::GET).path("/bomb.js");
+        then.status(200)
+            .header("content-type", "application/javascript")
+            .header("content-encoding", "gzip")
+            .body(gzip_bytes(&vec![b'a'; 4096]));
+    });
+    let limits = SourceLimits {
+        web_response_bytes: 1024,
+        ..SourceLimits::default()
+    };
+    let rows: Vec<_> = loopback_calibration_source_with_limits(server.url("/bomb.js"), limits)
+        .chunks()
+        .collect();
+    assert_eq!(rows.len(), 1, "decoded over-cap response must yield one error");
+    let err = rows[0]
+        .as_ref()
+        .expect_err("decoded over-cap response must fail closed");
+    assert!(
+        err.to_string().contains("decoded gzip response")
+            && err.to_string().contains("exceeds 1024 byte limit"),
+        "decoded cap error should name the encoding and limit, got {err}"
+    );
+
+    let after = skip_counts();
+    assert_eq!(
+        after.over_max_size - before.over_max_size,
+        1,
+        "decoded over-cap WebSource response MUST bump SKIPPED_OVER_MAX_SIZE"
     );
 }
 
