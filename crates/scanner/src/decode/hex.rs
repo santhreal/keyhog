@@ -74,9 +74,16 @@ const MAX_HEX_INPUT_LEN: usize = 32 * 1024 * 1024; // 32 MB -> 16 MB decoded
 
 #[allow(clippy::result_unit_err)]
 pub fn hex_decode(input: &str) -> Result<Vec<u8>, ()> {
+    if !input.as_bytes().contains(&b'_') {
+        if !input.len().is_multiple_of(2) || input.len() > MAX_HEX_INPUT_LEN {
+            return Err(());
+        }
+        return hex_simd::decode_to_vec(input.as_bytes()).map_err(|_| ());
+    }
+
     let cleaned: String = input.chars().filter(|c| *c != '_').collect();
     if !cleaned.len().is_multiple_of(2) || cleaned.len() > MAX_HEX_INPUT_LEN {
         return Err(());
     }
-    hex_simd::decode_to_vec(&cleaned).map_err(|_| ())
+    hex_simd::decode_to_vec(cleaned.as_bytes()).map_err(|_| ())
 }

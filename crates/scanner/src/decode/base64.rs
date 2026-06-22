@@ -248,11 +248,15 @@ fn find_z85_string_spans(text: &str, min_length: usize) -> Vec<ExtractedValue> {
         |ch: char| ch.is_ascii_alphanumeric() || ".-:+=^!/*?&<>()[]{}@%$#".contains(ch);
 
     for candidate in extract_encoded_value_spans(text) {
-        let cleaned: String = candidate
-            .value
-            .chars()
-            .filter(|ch| !ch.is_whitespace())
-            .collect();
+        let cleaned = if candidate.value.chars().any(char::is_whitespace) {
+            candidate
+                .value
+                .chars()
+                .filter(|ch| !ch.is_whitespace())
+                .collect()
+        } else {
+            candidate.value
+        };
         if cleaned.len() >= min_length
             && cleaned.len().is_multiple_of(5)
             && cleaned.chars().all(is_z85_char)

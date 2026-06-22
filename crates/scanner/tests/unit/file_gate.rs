@@ -438,6 +438,22 @@ fn decode_base64_shape_and_decode_have_one_scanner_owner() {
     }
 }
 
+#[test]
+fn decode_z85_extractor_keeps_clean_candidates_allocation_free() {
+    let owner = include_str!("../../src/decode/base64.rs");
+    assert!(
+        owner.contains("if candidate.value.chars().any(char::is_whitespace)")
+            && owner.contains("} else {\n            candidate.value\n        }"),
+        "Z85 extraction must move already-clean candidates instead of allocating a cleaned String"
+    );
+    assert!(
+        !owner.contains(
+            "let cleaned: String = candidate\n            .value\n            .chars()\n            .filter(|ch| !ch.is_whitespace())\n            .collect();"
+        ),
+        "Z85 extraction must not unconditionally allocate a cleaned String per candidate"
+    );
+}
+
 // ── crates/scanner/src/decode/caesar.rs ───────────────────────────────
 #[test]
 fn decode_caesar_happy() {
@@ -462,6 +478,23 @@ fn decode_hex_happy() {
 #[test]
 fn decode_hex_error() {
     assert!(hex_decode("gg").is_err());
+}
+
+#[test]
+fn decode_hex_fast_path_does_not_clean_when_no_underscores() {
+    let owner = include_str!("../../src/decode/hex.rs");
+    assert!(
+        owner.contains("if !input.as_bytes().contains(&b'_')")
+            && owner.contains("hex_simd::decode_to_vec(input.as_bytes())")
+            && owner.contains("hex_simd::decode_to_vec(cleaned.as_bytes())"),
+        "hex_decode must decode underscore-free input without allocating a cleaned String"
+    );
+    assert!(
+        !owner.contains(
+            "pub fn hex_decode(input: &str) -> Result<Vec<u8>, ()> {\n    let cleaned: String = input.chars().filter(|c| *c != '_').collect();"
+        ),
+        "hex_decode must not clean before checking the underscore-free fast path"
+    );
 }
 
 // ── crates/scanner/src/decode/json.rs ─────────────────────────────────
