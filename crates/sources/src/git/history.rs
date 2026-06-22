@@ -128,6 +128,7 @@ fn stream_git_history_chunks(
     let mut current_content = String::new();
     let mut in_hunk = false;
     let mut done = false;
+    let mut wait_after_final_chunk = false;
     let mut line_buf = Vec::new();
     let hunk_byte_cap = super::git_blob_bytes_limit_usize(limits);
     // New-file line before the current hunk's first added line (hunk header
@@ -138,6 +139,13 @@ fn stream_git_history_chunks(
     let mut current_base_line: usize = 0;
 
     Ok(std::iter::from_fn(move || {
+        if wait_after_final_chunk {
+            wait_after_final_chunk = false;
+            done = true;
+            return super::wait_for_git_child(&mut child, "git log")
+                .err()
+                .map(Err);
+        }
         if done {
             return None;
         }
@@ -147,7 +155,6 @@ fn stream_git_history_chunks(
             let line =
                 match super::read_capped_line(&mut reader, &mut line_buf, limits.git_line_bytes) {
                     Ok(0) => {
-                        done = true;
                         if let (Some(commit), Some(author), Some(date), Some(path)) = (
                             &current_commit,
                             &current_author,
@@ -155,6 +162,7 @@ fn stream_git_history_chunks(
                             &current_path,
                         ) {
                             if !current_content.trim().is_empty() {
+                                wait_after_final_chunk = true;
                                 return Some(Ok(Chunk {
                                     data: current_content.trim().to_string().into(),
                                     metadata: ChunkMetadata {
@@ -172,7 +180,10 @@ fn stream_git_history_chunks(
                                 }));
                             }
                         }
-                        return None;
+                        done = true;
+                        return super::wait_for_git_child(&mut child, "git log")
+                            .err()
+                            .map(Err);
                     }
                     Ok(_) => {
                         let l = String::from_utf8_lossy(&line_buf);

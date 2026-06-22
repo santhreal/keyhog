@@ -1,6 +1,7 @@
 //! Shared git utilities.
 
 use keyhog_core::SourceError;
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -68,6 +69,27 @@ pub(crate) fn read_capped_line<R: std::io::BufRead>(
             return Ok(consumed);
         }
     }
+}
+
+pub(crate) fn wait_for_git_child(
+    child: &mut std::process::Child,
+    label: &str,
+) -> Result<(), SourceError> {
+    let status = child.wait().map_err(SourceError::Io)?;
+    if status.success() {
+        return Ok(());
+    }
+
+    let mut stderr = String::new();
+    if let Some(stderr_pipe) = child.stderr.as_mut() {
+        if let Err(error) = stderr_pipe.read_to_string(&mut stderr) {
+            stderr = format!("stderr unavailable: {error}");
+        }
+    }
+    Err(SourceError::Git(format!(
+        "{label} failed while enumerating git commits: {}",
+        stderr.trim()
+    )))
 }
 
 #[cfg(test)]

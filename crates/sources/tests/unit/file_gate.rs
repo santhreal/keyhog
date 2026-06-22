@@ -206,6 +206,18 @@ fn git_history_happy() {
     assert_eq!(source.name(), "git-history");
 }
 
+#[cfg(feature = "git")]
+#[test]
+fn git_history_waits_for_log_child_at_eof() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/git/history.rs");
+    let source = std::fs::read_to_string(path).expect("git history source readable");
+    assert!(
+        source.contains("wait_after_final_chunk")
+            && source.contains("super::wait_for_git_child(&mut child, \"git log\")"),
+        "git history iterator must wait on git log at EOF so command failure cannot look like a clean history scan"
+    );
+}
+
 // ── crates/sources/src/docker.rs ──────────────────────────────────────
 #[cfg(feature = "docker")]
 #[test]

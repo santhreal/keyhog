@@ -2,7 +2,7 @@
 //! `gix`, stopping once the in-memory byte cap is reached.
 
 use std::collections::{HashSet, VecDeque};
-use std::io::{BufRead, Read};
+use std::io::BufRead;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -305,7 +305,7 @@ fn stream_git_blobs(
                     }
                     None => {
                         log_done = true;
-                        if let Err(error) = wait_for_git_child(&mut log_child, "git log") {
+                        if let Err(error) = super::wait_for_git_child(&mut log_child, "git log") {
                             done = true;
                             return Some(Err(error));
                         }
@@ -748,24 +748,6 @@ fn parse_commit_id_line(line: &str) -> Result<Option<gix::ObjectId>, SourceError
             Ok(None)
         }
     }
-}
-
-fn wait_for_git_child(child: &mut std::process::Child, label: &str) -> Result<(), SourceError> {
-    let status = child.wait().map_err(SourceError::Io)?;
-    if status.success() {
-        return Ok(());
-    }
-
-    let mut stderr = String::new();
-    if let Some(stderr_pipe) = child.stderr.as_mut() {
-        if let Err(error) = stderr_pipe.read_to_string(&mut stderr) {
-            stderr = format!("stderr unavailable: {error}");
-        }
-    }
-    Err(SourceError::Git(format!(
-        "{label} failed while enumerating git commits: {}",
-        stderr.trim()
-    )))
 }
 
 fn collect_unreachable_commit_ids(

@@ -34,6 +34,12 @@ fn phase2_prefilter_compile_failures_warn() {
         "RegexSet batch source entries and stored phase-2 indices must stay aligned"
     );
     assert!(
+        src.matches("crate::telemetry::record_invalid_pattern_index_skip()")
+            .count()
+            >= 3,
+        "phase2 prefilter corrupt pattern-index skips must count typed scanner coverage gaps"
+    );
+    assert!(
         !src.contains(".filter_map(|&i| phase2_patterns.get(i))"),
         "ASCII-folded alternate RegexSets must not filter-map corrupt indices out of alignment"
     );

@@ -51,6 +51,7 @@ impl Phase2AlwaysActivePrefilter {
                     plain_other.push(index);
                 }
                 None => {
+                    crate::telemetry::record_invalid_pattern_index_skip();
                     tracing::warn!(
                         index,
                         patterns = phase2_patterns.len(),
@@ -312,6 +313,7 @@ impl Phase2AlwaysActivePrefilter {
             let mut srcs = Vec::with_capacity(chunk.len());
             for &index in chunk {
                 let Some((pattern, _)) = phase2_patterns.get(index) else {
+                    crate::telemetry::record_invalid_pattern_index_skip();
                     tracing::warn!(
                         index,
                         patterns = phase2_patterns.len(),
@@ -508,6 +510,7 @@ impl Phase2AlwaysActivePrefilter {
         let mut folded = Vec::with_capacity(indices.len());
         for &index in indices {
             let Some((pattern, _)) = phase2_patterns.get(index) else {
+                crate::telemetry::record_invalid_pattern_index_skip();
                 tracing::warn!(
                     index,
                     patterns = phase2_patterns.len(),
