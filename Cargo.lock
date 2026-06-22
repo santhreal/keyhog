@@ -2845,6 +2845,7 @@ dependencies = [
  "async-trait",
  "blake3",
  "dirs",
+ "fs2",
  "hex",
  "indexmap 2.14.0",
  "libc",

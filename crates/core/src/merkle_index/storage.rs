@@ -5,8 +5,11 @@
 //! persistence.
 
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsString;
+use std::fs::{File, OpenOptions};
 use std::path::{Path, PathBuf};
 
+use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 
 use super::{
@@ -93,10 +96,21 @@ impl MerkleIndex {
         Self::load_report(path).into_index()
     }
 
+    pub(crate) fn load_with_max_entries(path: &Path, max_entries: usize) -> Self {
+        Self::load_report_with_max_entries(path, max_entries).into_index()
+    }
+
     /// Load the index from `path` and report whether it cold-started.
     pub(crate) fn load_report(path: &Path) -> MerkleLoadReport {
+        Self::load_report_with_max_entries(path, super::MERKLE_DEFAULT_MAX_ENTRIES)
+    }
+
+    pub(crate) fn load_report_with_max_entries(
+        path: &Path,
+        max_entries: usize,
+    ) -> MerkleLoadReport {
         sweep_stale_tmp_files(path);
-        let (index, status) = Self::load_with_spec_inner(path, None);
+        let (index, status) = Self::load_with_spec_inner(path, None, max_entries);
         MerkleLoadReport { index, status }
     }
 
@@ -106,22 +120,45 @@ impl MerkleIndex {
         Self::load_with_spec_report(path, expected_spec_hash).into_index()
     }
 
+    pub(crate) fn load_with_spec_and_max_entries(
+        path: &Path,
+        expected_spec_hash: &[u8; 32],
+        max_entries: usize,
+    ) -> Self {
+        Self::load_with_spec_report_and_max_entries(path, expected_spec_hash, max_entries)
+            .into_index()
+    }
+
     /// Load the spec-gated index and report whether the cache was trusted.
     pub fn load_with_spec_report(path: &Path, expected_spec_hash: &[u8; 32]) -> MerkleLoadReport {
+        Self::load_with_spec_report_and_max_entries(
+            path,
+            expected_spec_hash,
+            super::MERKLE_DEFAULT_MAX_ENTRIES,
+        )
+    }
+
+    fn load_with_spec_report_and_max_entries(
+        path: &Path,
+        expected_spec_hash: &[u8; 32],
+        max_entries: usize,
+    ) -> MerkleLoadReport {
         sweep_stale_tmp_files(path);
-        let (index, status) = Self::load_with_spec_inner(path, Some(expected_spec_hash));
+        let (index, status) =
+            Self::load_with_spec_inner(path, Some(expected_spec_hash), max_entries);
         MerkleLoadReport { index, status }
     }
 
     fn load_with_spec_inner(
         path: &Path,
         expected_spec_hash: Option<&[u8; 32]>,
+        max_entries: usize,
     ) -> (Self, MerkleLoadStatus) {
         let bytes = match std::fs::read(path) {
             Ok(bytes) => bytes,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 return (
-                    Self::empty(),
+                    Self::with_max_entries(max_entries),
                     MerkleLoadStatus::Missing {
                         path: path.to_path_buf(),
                     },
@@ -135,7 +172,7 @@ impl MerkleIndex {
                     "merkle index file read failed; treating as cold start"
                 );
                 return (
-                    Self::empty(),
+                    Self::with_max_entries(max_entries),
                     MerkleLoadStatus::ReadFailed {
                         path: path.to_path_buf(),
                         error,
@@ -153,7 +190,7 @@ impl MerkleIndex {
                     "merkle index parse failed; treating as cold start"
                 );
                 return (
-                    Self::empty(),
+                    Self::with_max_entries(max_entries),
                     MerkleLoadStatus::ParseFailed {
                         path: path.to_path_buf(),
                         error,
@@ -169,7 +206,7 @@ impl MerkleIndex {
                 "merkle index schema mismatch; treating as cold start"
             );
             return (
-                Self::empty(),
+                Self::with_max_entries(max_entries),
                 MerkleLoadStatus::SchemaMismatch {
                     path: path.to_path_buf(),
                     version: on_disk.version,
@@ -189,7 +226,7 @@ impl MerkleIndex {
                     "detector spec changed since last scan; cache invalidated"
                 );
                 return (
-                    Self::empty(),
+                    Self::with_max_entries(max_entries),
                     MerkleLoadStatus::SpecChanged {
                         path: path.to_path_buf(),
                     },
@@ -197,7 +234,7 @@ impl MerkleIndex {
             }
         }
 
-        let idx = Self::empty();
+        let idx = Self::with_max_entries(max_entries);
         // Racy-clean guard (git's "racy index" problem): an entry whose file
         // mtime falls in the same clock-second as - or after - the moment we
         // last wrote this index cannot be trusted by (mtime, size) alone. A
@@ -219,7 +256,7 @@ impl MerkleIndex {
                     "merkle index entry hash is invalid; treating as cold start"
                 );
                 return (
-                    Self::empty(),
+                    Self::with_max_entries(max_entries),
                     MerkleLoadStatus::InvalidEntryHash {
                         path: path.to_path_buf(),
                         entry_path: entry.path,
@@ -277,6 +314,7 @@ impl MerkleIndex {
     }
 
     fn save_inner(&self, path: &Path, spec_hash: Option<&[u8; 32]>) -> std::io::Result<()> {
+        let _save_lock = CacheWriteLock::acquire(path)?;
         let mut merged = self.load_merge_base(path, spec_hash);
         let in_memory_paths = self.overlay_in_memory_entries(&mut merged);
         self.enforce_persisted_cap(&mut merged, &in_memory_paths);
@@ -301,8 +339,8 @@ impl MerkleIndex {
         // are about to write. Corrupt or mismatched disk state has already been
         // surfaced by load and must not block writing a fresh cache.
         let on_disk_now = match spec_hash {
-            Some(hash) => Self::load_with_spec(path, hash),
-            None => Self::load(path),
+            Some(hash) => Self::load_with_spec_and_max_entries(path, hash, self.max_entries),
+            None => Self::load_with_max_entries(path, self.max_entries),
         };
         flatten_shards(&on_disk_now)
     }
@@ -403,4 +441,41 @@ fn persist_atomically(path: &Path, serialized: &[u8]) -> std::io::Result<()> {
     tmp.as_file().sync_all()?;
     tmp.persist(path).map_err(|error| error.error)?;
     Ok(())
+}
+
+struct CacheWriteLock {
+    file: File,
+}
+
+impl CacheWriteLock {
+    fn acquire(cache_path: &Path) -> std::io::Result<Self> {
+        let lock_path = cache_lock_path(cache_path)?;
+        let parent = lock_path.parent().unwrap_or_else(|| Path::new(".")); // LAW10: deterministic cwd parent for bare lock filename; no recall impact
+        std::fs::create_dir_all(parent)?;
+        let file = OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .open(&lock_path)?;
+        file.lock_exclusive()?;
+        Ok(Self { file })
+    }
+}
+
+impl Drop for CacheWriteLock {
+    fn drop(&mut self) {
+        let _ = self.file.unlock(); // LAW10: File drop releases the OS lock; explicit unlock failure has no recall impact
+    }
+}
+
+fn cache_lock_path(cache_path: &Path) -> std::io::Result<PathBuf> {
+    let Some(base_name) = cache_path.file_name() else {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("merkle cache path '{}' has no file name", cache_path.display()),
+        ));
+    };
+    let mut file_name = OsString::from(base_name);
+    file_name.push(".lock");
+    Ok(cache_path.with_file_name(file_name))
 }

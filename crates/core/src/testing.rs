@@ -42,6 +42,7 @@ pub trait CoreTestApi {
     fn merkle_with_max_entries(&self, max_entries: usize) -> MerkleIndex;
     fn merkle_max_entries(&self, index: &MerkleIndex) -> usize;
     fn merkle_load(&self, path: &Path) -> MerkleIndex;
+    fn merkle_load_with_max_entries(&self, path: &Path, max_entries: usize) -> MerkleIndex;
     fn merkle_load_report(&self, path: &Path) -> MerkleLoadReport;
     fn merkle_load_with_spec(&self, path: &Path, expected_spec_hash: &[u8; 32]) -> MerkleIndex;
     fn merkle_save(&self, index: &MerkleIndex, path: &Path) -> std::io::Result<()>;
@@ -234,6 +235,10 @@ impl CoreTestApi for TestApi {
 
     fn merkle_load(&self, path: &Path) -> MerkleIndex {
         MerkleIndex::load(path)
+    }
+
+    fn merkle_load_with_max_entries(&self, path: &Path, max_entries: usize) -> MerkleIndex {
+        MerkleIndex::load_with_max_entries(path, max_entries)
     }
 
     fn merkle_load_report(&self, path: &Path) -> MerkleLoadReport {
