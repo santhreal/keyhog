@@ -19,7 +19,7 @@ mod seven_zip;
 /// compressed stream cannot expand without bound.
 pub(super) const UNCAPPED_ARCHIVE_BUDGET: u64 = 1024 * 1024 * 1024;
 
-pub(super) fn extraction_total_budget(max_size: u64) -> u64 {
+pub(crate) fn extraction_total_budget(max_size: u64) -> u64 {
     if max_size == 0 {
         UNCAPPED_ARCHIVE_BUDGET
     } else {

@@ -76,7 +76,7 @@ pub(crate) fn try_expand_har(
 
     let mut chunks = Vec::with_capacity(doc.log.entries.len() * 2);
     let mut total_bytes: u64 = 0;
-    let budget = max_size.saturating_mul(4);
+    let budget = crate::filesystem::extraction_total_budget(max_size);
 
     for entry in doc.log.entries {
         let url = entry.request.url.clone();

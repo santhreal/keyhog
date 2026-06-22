@@ -337,6 +337,63 @@ fn max_file_size_zero_means_unlimited() {
 }
 
 #[test]
+fn max_file_size_zero_expands_nonempty_har() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("capture.har");
+    let har = r#"{
+        "log": {
+            "version": "1.2",
+            "creator": {"name": "test", "version": "1"},
+            "entries": [
+                {
+                    "request": {
+                        "method": "POST",
+                        "url": "https://example.test/api?token=har_query_secret_123456",
+                        "headers": [
+                            {"name": "Authorization", "value": "Bearer har_header_secret_123456"}
+                        ],
+                        "queryString": [
+                            {"name": "token", "value": "har_query_secret_123456"}
+                        ],
+                        "postData": {"text": "{\"api_key\":\"har_post_secret_123456\"}"}
+                    },
+                    "response": {
+                        "status": 200,
+                        "statusText": "OK",
+                        "headers": [
+                            {"name": "Content-Type", "value": "application/json"}
+                        ],
+                        "content": {"text": "{\"token\":\"har_response_secret_123456\"}"}
+                    }
+                }
+            ]
+        }
+    }"#;
+    fs::write(&path, har).unwrap();
+
+    let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(0);
+    let chunks = collect_chunks(&source);
+    assert_eq!(
+        chunks.len(),
+        2,
+        "max_file_size(0) must be uncapped for HAR expansion, not a zero-byte expansion budget"
+    );
+    assert!(
+        chunks
+            .iter()
+            .any(|chunk| chunk.metadata.source_type == "wire:har:request")
+    );
+    assert!(
+        chunks
+            .iter()
+            .any(|chunk| chunk.metadata.source_type == "wire:har:response")
+    );
+    let body = combined_body(&chunks);
+    assert!(body.contains("har_header_secret_123456"));
+    assert!(body.contains("har_response_secret_123456"));
+}
+
+#[test]
 fn oversize_skip_increments_global_counter() {
     // process_entry bumps crate::SKIPPED_OVER_MAX_SIZE per over-cap file.
     // The counter is process-global and tests run in parallel, so we reset
