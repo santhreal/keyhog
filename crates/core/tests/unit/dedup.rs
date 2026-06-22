@@ -25,6 +25,34 @@ fn sample_match(id: &str, cred: &str, path: &str) -> RawMatch {
 }
 
 #[test]
+fn dedup_reuses_precomputed_hash_for_none_scope() {
+    let mut raw = sample_match("det1", "secret1", "file1.txt");
+    raw.credential_hash = [0x41; 32];
+
+    let deduped = dedup_matches(vec![raw], &DedupScope::None);
+    assert_eq!(deduped.len(), 1);
+    assert_eq!(
+        deduped[0].credential_hash,
+        [0x41; 32],
+        "dedup none must reuse RawMatch::credential_hash instead of recomputing SHA-256"
+    );
+}
+
+#[test]
+fn dedup_reuses_precomputed_hash_for_group_insert() {
+    let mut raw = sample_match("det1", "secret1", "file1.txt");
+    raw.credential_hash = [0x42; 32];
+
+    let deduped = dedup_matches(vec![raw], &DedupScope::Credential);
+    assert_eq!(deduped.len(), 1);
+    assert_eq!(
+        deduped[0].credential_hash,
+        [0x42; 32],
+        "dedup grouped insert must reuse RawMatch::credential_hash instead of recomputing SHA-256"
+    );
+}
+
+#[test]
 fn dedup_credential_scope() {
     let matches = vec![
         sample_match("det1", "secret1", "file1.txt"),

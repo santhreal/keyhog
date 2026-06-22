@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
-use crate::{sha256_hash, MatchLocation, RawMatch, SensitiveString, Severity};
+use crate::{MatchLocation, RawMatch, SensitiveString, Severity};
 
 /// Count of times [`dedup_cross_detector`] reached the (guard-impossible) empty
 /// singleton-group branch, where a finding would otherwise vanish from the
@@ -99,14 +99,13 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
         return matches
             .into_iter()
             .map(|m| {
-                let credential_hash = sha256_hash(m.credential.as_ref());
                 DedupedMatch {
                     detector_id: m.detector_id,
                     detector_name: m.detector_name,
                     service: m.service,
                     severity: m.severity,
                     credential: m.credential,
-                    credential_hash,
+                    credential_hash: m.credential_hash,
                     companions: m.companions,
                     primary_location: m.location,
                     additional_locations: Vec::new(),
@@ -226,7 +225,6 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
                 existing.confidence = max_confidence(existing.confidence, matched.confidence);
             }
             None => {
-                let credential_hash = sha256_hash(matched.credential.as_ref());
                 let mut seen = std::collections::HashSet::new();
                 seen.insert(location_identity(&matched.location));
                 groups.insert(
@@ -237,7 +235,7 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
                         service: matched.service,
                         severity: matched.severity,
                         credential: matched.credential,
-                        credential_hash,
+                        credential_hash: matched.credential_hash,
                         companions: matched.companions,
                         primary_location: matched.location,
                         additional_locations: Vec::new(),

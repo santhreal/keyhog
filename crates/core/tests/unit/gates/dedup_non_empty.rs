@@ -18,4 +18,8 @@ fn dedup_non_empty() {
         !prod.contains("todo!()") && !prod.contains("unimplemented!()"),
         "dedup: todo!/unimplemented! forbidden in non-test source"
     );
+    assert!(
+        !prod.contains("sha256_hash("),
+        "dedup must reuse RawMatch::credential_hash; recomputing SHA-256 in the dedup hot path is forbidden"
+    );
 }
