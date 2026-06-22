@@ -222,19 +222,18 @@ pub(crate) mod context {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod fragment_cache {
+pub mod fragment_cache {
     use std::sync::Arc;
 
     use zeroize::Zeroizing;
 
     #[derive(Clone)]
-    pub(crate) struct SecretFragment {
-        pub(crate) prefix: String,
-        pub(crate) var_name: String,
-        pub(crate) value: Zeroizing<String>,
-        pub(crate) line: usize,
-        pub(crate) path: Option<Arc<str>>,
+    pub struct SecretFragment {
+        pub prefix: String,
+        pub var_name: String,
+        pub value: Zeroizing<String>,
+        pub line: usize,
+        pub path: Option<Arc<str>>,
     }
 
     impl std::fmt::Debug for SecretFragment {
@@ -252,10 +251,10 @@ pub(crate) mod fragment_cache {
         }
     }
 
-    pub(crate) struct ReassembledCandidate {
-        pub(crate) value: Zeroizing<String>,
-        pub(crate) path: Option<Arc<str>>,
-        pub(crate) line: usize,
+    pub struct ReassembledCandidate {
+        pub value: Zeroizing<String>,
+        pub path: Option<Arc<str>>,
+        pub line: usize,
     }
 
     impl std::fmt::Debug for ReassembledCandidate {
@@ -271,26 +270,23 @@ pub(crate) mod fragment_cache {
         }
     }
 
-    pub(crate) struct FragmentCache(crate::fragment_cache::FragmentCache);
+    pub struct FragmentCache(crate::fragment_cache::FragmentCache);
 
     impl FragmentCache {
-        pub(crate) fn new(capacity: usize) -> Self {
+        pub fn new(capacity: usize) -> Self {
             Self(crate::fragment_cache::FragmentCache::new(capacity))
         }
 
-        #[cfg(test)]
         pub(super) fn inner(&self) -> &crate::fragment_cache::FragmentCache {
             &self.0
         }
 
-        pub(crate) fn record_and_reassemble(
-            &self,
-            fragment: SecretFragment,
-        ) -> Vec<Zeroizing<String>> {
+        pub fn record_and_reassemble(&self, fragment: SecretFragment) -> Vec<Zeroizing<String>> {
             self.0.record_and_reassemble(inner_fragment(fragment))
         }
 
-        pub(crate) fn record_and_reassemble_stamped(
+        #[cfg(feature = "simd")]
+        pub fn record_and_reassemble_stamped(
             &self,
             fragment: SecretFragment,
         ) -> Vec<ReassembledCandidate> {
@@ -305,7 +301,7 @@ pub(crate) mod fragment_cache {
                 .collect()
         }
 
-        pub(crate) fn clear(&self) {
+        pub fn clear(&self) {
             self.0.clear();
         }
     }
@@ -320,21 +316,78 @@ pub(crate) mod fragment_cache {
         }
     }
 
-    pub(crate) fn shard_index_drift_probe(prefix: &str, scope: &str) -> (usize, usize) {
+    pub fn shard_index_drift_probe(prefix: &str, scope: &str) -> (usize, usize) {
         crate::fragment_cache::shard_index_drift_probe(prefix, scope)
     }
 }
 
-#[cfg(test)]
-pub(crate) mod multiline {
-    pub(crate) use crate::multiline::{LineMapping, MultilineConfig, PreprocessedText};
+#[cfg(feature = "multiline")]
+pub mod multiline {
+    pub use crate::multiline::MultilineConfig;
 
-    pub(crate) fn preprocess_multiline<'a>(
+    #[derive(Debug, Clone)]
+    pub struct LineMapping {
+        pub start_offset: usize,
+        pub end_offset: usize,
+        pub line_number: usize,
+        pub original_start_offset: usize,
+    }
+
+    #[derive(Debug, Clone)]
+    pub struct PreprocessedText<'a> {
+        pub text: std::borrow::Cow<'a, str>,
+        pub original_end: usize,
+        pub mappings: Vec<LineMapping>,
+    }
+
+    impl<'a> PreprocessedText<'a> {
+        pub fn passthrough(text: impl Into<std::borrow::Cow<'a, str>>) -> Self {
+            public_preprocessed(crate::multiline::PreprocessedText::passthrough(text))
+        }
+
+        pub fn line_for_offset(&self, offset: usize) -> Option<usize> {
+            let idx = self.mappings.partition_point(|m| m.start_offset <= offset);
+            if idx == 0 {
+                return None;
+            }
+            let mapping = &self.mappings[idx - 1];
+            if offset < mapping.end_offset {
+                Some(mapping.line_number)
+            } else {
+                None
+            }
+        }
+    }
+
+    pub fn preprocess_multiline<'a>(
         text: impl Into<std::borrow::Cow<'a, str>>,
         config: &MultilineConfig,
         fragment_cache: &super::fragment_cache::FragmentCache,
     ) -> PreprocessedText<'a> {
-        crate::multiline::preprocess_multiline(text, config, fragment_cache.inner())
+        public_preprocessed(crate::multiline::preprocess_multiline(
+            text,
+            config,
+            fragment_cache.inner(),
+        ))
+    }
+
+    fn public_preprocessed<'a>(
+        preprocessed: crate::multiline::PreprocessedText<'a>,
+    ) -> PreprocessedText<'a> {
+        PreprocessedText {
+            text: preprocessed.text,
+            original_end: preprocessed.original_end,
+            mappings: preprocessed
+                .mappings
+                .into_iter()
+                .map(|mapping| LineMapping {
+                    start_offset: mapping.start_offset,
+                    end_offset: mapping.end_offset,
+                    line_number: mapping.line_number,
+                    original_start_offset: mapping.original_start_offset,
+                })
+                .collect(),
+        }
     }
 }
 

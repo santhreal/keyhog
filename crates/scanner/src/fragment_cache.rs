@@ -345,7 +345,6 @@ fn shard_index_of(prefix: &str, scope: &str) -> usize {
 /// equivalence test can live in `tests/unit/inline_migrated/` without leaking
 /// the private `shard_fold` / `SHARD_COUNT` internals.
 #[doc(hidden)]
-#[cfg(test)]
 pub(crate) fn shard_index_drift_probe(prefix: &str, scope: &str) -> (usize, usize) {
     let joined = format!("{prefix}\0{scope}");
     let joined_key_shard = joined.bytes().fold(0usize, shard_fold) % SHARD_COUNT;

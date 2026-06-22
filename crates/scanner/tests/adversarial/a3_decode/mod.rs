@@ -1,6 +1,25 @@
 // LR1-A3: one #[test] per file
+mod decode_hostile_caesar_shift_noise_only;
+mod decode_hostile_deep_json_string_nesting;
+mod decode_hostile_hex_encoded_github_pat_fragment;
+mod decode_hostile_html_entity_run;
+mod decode_hostile_interleaved_percent_noise;
+mod decode_hostile_invalid_utf8_percent;
+mod decode_hostile_json_backslash_ladder;
+mod decode_hostile_json_escaped_newline_credential;
+mod decode_hostile_long_base64_padding_run;
+mod decode_hostile_mixed_encoding_layers;
+mod decode_hostile_null_interleaved_base64;
+mod decode_hostile_oversized_percent_run;
+mod decode_hostile_rot47_noise_only;
+mod decode_hostile_unicode_surrogate_pair_in_base64;
+mod decode_hostile_url_double_percent_encoded_aws;
 mod decode_bomb_nested_base64;
 mod malformed_base64_no_panic;
 mod multiline_phantom_no_double_secret;
 mod null_byte_in_parent_no_panic;
 mod percent_run_not_double_base64;
+mod r5t_decode_hostile_base64_line_wrap_64;
+mod r5t_decode_hostile_hex_with_underscores;
+mod r5t_decode_hostile_json_unicode_escape_run;
+mod r5t_decode_hostile_triple_url_encoding;
