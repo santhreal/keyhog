@@ -1,0 +1,27 @@
+schema_version = 1
+
+[test_paths]
+filename_prefixes = [
+  "test_",
+]
+filename_suffixes = [
+  "_test.go",
+  "_test.rs",
+  "_test.py",
+  "_test.rb",
+  "_test.java",
+  "Test.java",
+  "Tests.java",
+  ".test.js",
+  ".test.ts",
+  ".spec.js",
+  ".spec.ts",
+]
+path_components = [
+  "test",
+  "tests",
+  "__tests__",
+  "fixtures",
+  "testdata",
+  "spec",
+]

@@ -1,10 +1,44 @@
 use super::{documentation::documentation_line_flags, CodeContext};
+use std::collections::BTreeSet;
+use std::sync::LazyLock;
 
-const TEST_PREFIX_LEN: usize = 5;
 const ENCRYPTED_BLOCK_LOOKBACK_LINES: usize = 10;
 // 100 lines covers large Go/Java test functions with extensive setup.
 // The previous 30-line limit caused test fixtures to be reported as findings.
 const TEST_FUNCTION_LOOKBACK_LINES: usize = 100;
+
+#[derive(serde::Deserialize)]
+struct TestPathRuleFile {
+    schema_version: u32,
+    test_paths: TestPathRuleSection,
+}
+
+#[derive(serde::Deserialize)]
+struct TestPathRuleSection {
+    filename_prefixes: Vec<String>,
+    filename_suffixes: Vec<String>,
+    path_components: Vec<String>,
+}
+
+#[derive(Debug)]
+pub(crate) struct TestPathRules {
+    pub(crate) filename_prefixes: Vec<String>,
+    pub(crate) filename_suffixes: Vec<String>,
+    pub(crate) path_components: Vec<String>,
+}
+
+static TEST_PATH_RULES: LazyLock<TestPathRules> = LazyLock::new(|| {
+    match parse_test_path_rules(include_str!("../../data/test-path-rules.toml")) {
+        Ok(rules) => rules,
+        Err(error) => {
+            panic!(
+                "crates/scanner/data/test-path-rules.toml is invalid: {error}. \
+                     Fix the bundled Tier-B test-path rules; refusing to run without \
+                     test-context classification truth."
+            )
+        }
+    }
+});
 
 /// Infer the structural context of a match at a given line.
 pub fn infer_context(lines: &[&str], line_idx: usize, file_path: Option<&str>) -> CodeContext {
@@ -65,28 +99,97 @@ pub(crate) fn infer_context_with_documentation(
 }
 
 fn is_test_file(path: &str) -> bool {
-    const TEST_PATH_COMPONENTS: &[&str] =
-        &["test", "tests", "__tests__", "fixtures", "testdata", "spec"];
+    let rules = test_path_rules();
     let filename = crate::platform_compat::path_basename(path);
     let stem = filename.split('.').next().unwrap_or(filename); // LAW10: split yields >=1 element; unwrap_or is the never-taken total default, recall-safe
 
-    stem.len() > TEST_PREFIX_LEN
-        && stem
-            .as_bytes()
-            .get(..TEST_PREFIX_LEN)
-            .is_some_and(|bytes| bytes.eq_ignore_ascii_case(b"test_"))
-        || filename.ends_with("_test.go")
-        || filename.ends_with("_test.rs")
-        || filename.ends_with("_test.py")
-        || filename.ends_with("_test.rb")
-        || filename.ends_with("_test.java")
-        || filename.ends_with("Test.java")
-        || filename.ends_with("Tests.java")
-        || filename.ends_with(".test.js")
-        || filename.ends_with(".test.ts")
-        || filename.ends_with(".spec.js")
-        || filename.ends_with(".spec.ts")
-        || crate::platform_compat::path_has_any_component(path, TEST_PATH_COMPONENTS)
+    rules.filename_prefixes.iter().any(|prefix| {
+        stem.len() > prefix.len()
+            && stem
+                .as_bytes()
+                .get(..prefix.len())
+                .is_some_and(|bytes| bytes.eq_ignore_ascii_case(prefix.as_bytes()))
+    }) || rules
+        .filename_suffixes
+        .iter()
+        .any(|suffix| filename.ends_with(suffix))
+        || crate::platform_compat::path_component_matches(path, |part| {
+            rules
+                .path_components
+                .iter()
+                .any(|component| part.eq_ignore_ascii_case(component))
+        })
+}
+
+fn test_path_rules() -> &'static TestPathRules {
+    &TEST_PATH_RULES
+}
+
+pub(crate) fn parse_test_path_rules(raw: &str) -> Result<TestPathRules, String> {
+    let parsed: TestPathRuleFile =
+        toml::from_str(raw).map_err(|error| format!("invalid test-path-rules.toml: {error}"))?;
+    if parsed.schema_version != 1 {
+        return Err(format!(
+            "unsupported test-path-rules schema_version {}",
+            parsed.schema_version
+        ));
+    }
+    Ok(TestPathRules {
+        filename_prefixes: validate_rule_list(
+            "test_paths.filename_prefixes",
+            parsed.test_paths.filename_prefixes,
+            RuleListKind::FilenameFragment,
+        )?,
+        filename_suffixes: validate_rule_list(
+            "test_paths.filename_suffixes",
+            parsed.test_paths.filename_suffixes,
+            RuleListKind::FilenameFragment,
+        )?,
+        path_components: validate_rule_list(
+            "test_paths.path_components",
+            parsed.test_paths.path_components,
+            RuleListKind::PathComponent,
+        )?,
+    })
+}
+
+#[derive(Clone, Copy)]
+enum RuleListKind {
+    FilenameFragment,
+    PathComponent,
+}
+
+fn validate_rule_list(
+    field: &str,
+    values: Vec<String>,
+    kind: RuleListKind,
+) -> Result<Vec<String>, String> {
+    if values.is_empty() {
+        return Err(format!("{field} must contain at least one entry"));
+    }
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::with_capacity(values.len());
+    for raw in values {
+        let value = raw.trim();
+        if value.is_empty() {
+            return Err(format!("{field} entries must not be empty"));
+        }
+        if value.bytes().any(|byte| byte == b'/' || byte == b'\\') {
+            return Err(format!(
+                "{field} entry {value:?} must not contain path separators"
+            ));
+        }
+        if matches!(kind, RuleListKind::PathComponent) && value.contains('.') {
+            return Err(format!(
+                "{field} component {value:?} must be a path segment, not a filename pattern"
+            ));
+        }
+        if !seen.insert(value.to_string()) {
+            return Err(format!("duplicate {field} entry {value:?}"));
+        }
+        out.push(value.to_string());
+    }
+    Ok(out)
 }
 
 fn infer_default_context(trimmed: &str) -> CodeContext {

@@ -16,6 +16,8 @@ pub(crate) use false_positive::parse_disclaimer_phrases;
 pub(crate) use false_positive::{is_false_positive_context, is_false_positive_match_context};
 pub use inference::infer_context;
 pub(crate) use inference::infer_context_with_documentation;
+#[cfg(test)]
+pub(crate) use inference::parse_test_path_rules;
 pub(crate) use placeholder::is_known_example_credential;
 #[cfg(test)]
 pub(crate) use placeholder::is_sequential_placeholder;

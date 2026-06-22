@@ -368,6 +368,27 @@ fn context_inference_error() {
     );
 }
 
+#[test]
+fn context_inference_test_path_rules_are_tier_b_data() {
+    let source = include_str!("../../src/context/inference.rs");
+    assert!(
+        source.contains("include_str!(\"../../data/test-path-rules.toml\")")
+            && source.contains("parse_test_path_rules"),
+        "test-path classification rules must be loaded from Tier-B scanner data"
+    );
+    for forbidden in [
+        "TEST_PATH_COMPONENTS",
+        "TEST_PREFIX_LEN",
+        "\"_test.go\"",
+        "\".spec.ts\"",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "context/inference.rs must not hardcode test-path rule {forbidden}"
+        );
+    }
+}
+
 // ── crates/scanner/src/context/mod.rs ─────────────────────────────────
 #[test]
 fn context_mod_happy() {

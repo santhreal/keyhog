@@ -223,6 +223,17 @@ pub(crate) mod context {
         crate::context::parse_disclaimer_phrases(raw)
     }
 
+    pub(crate) fn parse_test_path_rules_for_test(
+        raw: &str,
+    ) -> Result<(Vec<String>, Vec<String>, Vec<String>), String> {
+        let rules = crate::context::parse_test_path_rules(raw)?;
+        Ok((
+            rules.filename_prefixes,
+            rules.filename_suffixes,
+            rules.path_components,
+        ))
+    }
+
     pub(crate) fn is_known_example_credential(credential: &str) -> bool {
         crate::context::is_known_example_credential(credential)
     }

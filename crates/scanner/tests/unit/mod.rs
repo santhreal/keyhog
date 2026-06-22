@@ -63,6 +63,7 @@ pub mod context_rust_test_file_suffix;
 pub mod context_string_literal_detects_quotes;
 pub mod context_test_directory_component;
 pub mod context_tier_b_disclaimer_parser;
+pub mod context_tier_b_test_path_parser;
 pub mod context_tokio_test_attribute;
 pub mod context_unknown_no_quotes_no_assignment;
 pub mod decode;
