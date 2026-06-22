@@ -40,6 +40,7 @@ pub mod numeric_env_knobs_loud_contract;
 pub mod orchestrator_config_no_inline_tests;
 pub mod orchestrator_config_no_unwrap_expect;
 pub mod orchestrator_config_non_empty;
+pub mod orchestrator_config_resolved_input_contract;
 pub mod orchestrator_no_inline_tests;
 pub mod orchestrator_no_unwrap_expect;
 pub mod orchestrator_non_empty;
