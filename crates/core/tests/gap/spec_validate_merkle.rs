@@ -1369,6 +1369,49 @@ fn spec_hash_keyword_namespaced_by_id() {
 }
 
 #[test]
+fn spec_hash_pattern_and_companion_entries_are_namespaced_by_detector_id() {
+    let mut a1 = clean_detector("idA");
+    a1.patterns[0].regex = "SHARED_A_[0-9]+".into();
+    a1.companions = vec![CompanionSpec {
+        name: "shared-companion".into(),
+        regex: "COMPANION_A_[0-9]+".into(),
+        within_lines: 3,
+        required: false,
+    }];
+    let mut a2 = clean_detector("idB");
+    a2.patterns[0].regex = "SHARED_B_[0-9]+".into();
+    a2.companions = vec![CompanionSpec {
+        name: "shared-companion".into(),
+        regex: "COMPANION_B_[0-9]+".into(),
+        within_lines: 3,
+        required: false,
+    }];
+
+    let mut b1 = clean_detector("idA");
+    b1.patterns[0].regex = "SHARED_B_[0-9]+".into();
+    b1.companions = vec![CompanionSpec {
+        name: "shared-companion".into(),
+        regex: "COMPANION_B_[0-9]+".into(),
+        within_lines: 3,
+        required: false,
+    }];
+    let mut b2 = clean_detector("idB");
+    b2.patterns[0].regex = "SHARED_A_[0-9]+".into();
+    b2.companions = vec![CompanionSpec {
+        name: "shared-companion".into(),
+        regex: "COMPANION_A_[0-9]+".into(),
+        within_lines: 3,
+        required: false,
+    }];
+
+    assert_ne!(
+        compute_spec_hash(&[a1, a2]),
+        compute_spec_hash(&[b1, b2]),
+        "moving patterns or companions across detector ids must invalidate the merkle cache"
+    );
+}
+
+#[test]
 fn spec_hash_two_distinct_detectors_differ_from_duplicate_pair() {
     // Sanity: {a, b} must not collide with {a, a}.
     let a = clean_detector("aa");

@@ -86,6 +86,37 @@ fn raw_match_deduplication_key_is_detector_and_credential() {
 }
 
 #[test]
+fn deduped_match_serializes_companions_in_key_order() {
+    let mut deduped = dedup_matches(
+        vec![{
+            let mut m = raw(
+                "det",
+                "Detector",
+                "svc",
+                Severity::Medium,
+                "cred",
+                loc("f", 1, 0),
+                Some(0.7),
+            );
+            m.companions.insert("zeta".into(), "last".into());
+            m.companions.insert("alpha".into(), "first".into());
+            m.companions.insert("middle".into(), "mid".into());
+            m
+        }],
+        &DedupScope::Credential,
+    );
+    let json = serde_json::to_string(&deduped.remove(0)).expect("deduped match serializes");
+    let alpha = json.find(r#""alpha":"first""#).expect("alpha companion");
+    let middle = json.find(r#""middle":"mid""#).expect("middle companion");
+    let zeta = json.find(r#""zeta":"last""#).expect("zeta companion");
+
+    assert!(
+        alpha < middle && middle < zeta,
+        "companion keys must serialize in lexical order for byte-stable reports: {json}"
+    );
+}
+
+#[test]
 fn raw_match_debug_redacts_credential() {
     let m = raw(
         "stripe",

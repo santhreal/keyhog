@@ -37,3 +37,23 @@ fn dedup_prefers_original_location_over_nearby_decoder_alias() {
     assert_eq!(deduped[0].primary_location.offset, 19000);
     assert!(deduped[0].additional_locations.is_empty());
 }
+
+#[test]
+fn dedup_keeps_nearby_decoder_match_when_known_lines_are_far_apart() {
+    let decoded = raw_match("filesystem/json", 615, 19008);
+    let original = raw_match("filesystem", 612, 19000);
+
+    let deduped = dedup_matches(vec![decoded, original], &DedupScope::Credential);
+
+    assert_eq!(
+        deduped.len(),
+        1,
+        "same detector/credential still forms one reported finding"
+    );
+    assert_eq!(
+        deduped[0].additional_locations.len(),
+        1,
+        "known line distance above one must not be collapsed as a decoder alias"
+    );
+    assert_eq!(deduped[0].additional_locations[0].line, Some(615));
+}

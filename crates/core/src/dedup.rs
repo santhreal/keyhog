@@ -8,6 +8,7 @@
 //! hit dedup.
 
 use indexmap::IndexMap;
+use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::atomic::AtomicU64;
@@ -56,6 +57,7 @@ pub struct DedupedMatch {
     #[serde(with = "crate::finding::serde_hash_hex")]
     pub credential_hash: [u8; 32],
     /// Optional companion credentials extracted nearby.
+    #[serde(serialize_with = "serialize_companions_sorted")]
     pub companions: HashMap<String, String>,
     /// Primary source location.
     pub primary_location: MatchLocation,
@@ -268,9 +270,26 @@ fn is_decoder_alias_pair(a: &MatchLocation, b: &MatchLocation) -> bool {
     }
     match (a.line, b.line) {
         (Some(left), Some(right)) if left.abs_diff(right) <= 1 => return true,
+        (Some(_), Some(_)) => return false,
         _ => {}
     }
     a.offset.abs_diff(b.offset) <= 16
+}
+
+fn serialize_companions_sorted<S>(
+    companions: &HashMap<String, String>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let mut entries: Vec<_> = companions.iter().collect();
+    entries.sort_by(|left, right| left.0.cmp(right.0));
+    let mut map = serializer.serialize_map(Some(entries.len()))?;
+    for (key, value) in entries {
+        map.serialize_entry(key, value)?;
+    }
+    map.end()
 }
 
 fn is_decoder_location(location: &MatchLocation) -> bool {

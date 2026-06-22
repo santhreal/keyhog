@@ -14,15 +14,16 @@ pub fn compute_spec_hash(detectors: &[DetectorSpec]) -> [u8; 32] {
             entries.push(format!("sev:{:?}", d.severity));
             for p in &d.patterns {
                 entries.push(format!(
-                    "p:{}|g:{}",
+                    "p:{}:{}|g:{}",
+                    d.id,
                     p.regex,
                     p.group.map(|g| g.to_string()).unwrap_or_default() // LAW10: missing/non-string field => empty/placeholder; recall-safe
                 ));
             }
             for c in &d.companions {
                 entries.push(format!(
-                    "c:{}|{}|w:{}|r:{}",
-                    c.name, c.regex, c.within_lines, c.required
+                    "c:{}:{}|{}|w:{}|r:{}",
+                    d.id, c.name, c.regex, c.within_lines, c.required
                 ));
             }
             let mut kws: Vec<&String> = d.keywords.iter().collect();
