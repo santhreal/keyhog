@@ -144,7 +144,6 @@ fn collect_gcs_chunks(
     let mut chunks = Vec::new();
     let mut listed_objects = 0usize;
     let mut source_truncated_reported = false;
-    use rayon::prelude::*;
     let fetch_pool = crate::cloud::object_fetch_pool("gcs")?;
 
     loop {
@@ -171,34 +170,15 @@ fn collect_gcs_chunks(
         let (page, reached_limit) = crate::cloud::take_listing_page(listing.items, remaining);
         listed_objects += page.len();
 
-        let page_chunks: Vec<Result<Option<Chunk>, SourceError>> = fetch_pool.install(|| {
-            page.par_iter()
-                .map(|object| -> Result<Option<Chunk>, SourceError> {
-                    let listed_size = object.size_bytes()?;
-                    if listed_size == Some(0) {
-                        return Ok(None);
-                    }
-                    if !crate::cloud::is_probably_text_object_key(&object.name) {
-                        tracing::warn!(
-                            bucket = %bucket,
-                            key = %object.name,
-                            "skipping GCS object: extension is treated as binary/container content; NOT scanned as text",
-                        );
-                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-                        return Ok(None);
-                    }
-                    fetch_gcs_object_chunk(
-                        &client,
-                        &endpoint,
-                        &bucket,
-                        &object.name,
-                        listed_size,
-                        bearer.as_deref(),
-                        limits.gcs_object_bytes,
-                    )
-                })
-                .collect()
-        });
+        let page_chunks = download_gcs_listing_page(
+            &fetch_pool,
+            &page,
+            &client,
+            &endpoint,
+            &bucket,
+            bearer.as_deref(),
+            limits.gcs_object_bytes,
+        );
         crate::cloud::push_page_chunks(&mut chunks, page_chunks);
 
         if reached_limit {
@@ -255,6 +235,47 @@ fn fetch_gcs_listing_page(
         .text()
         .map_err(|error| SourceError::Other(format!("failed to read GCS listing: {error}")))?;
     parse_gcs_listing(&body)
+}
+
+fn download_gcs_listing_page(
+    fetch_pool: &rayon::ThreadPool,
+    page: &[GcsObject],
+    client: &Client,
+    endpoint: &str,
+    bucket: &str,
+    bearer: Option<&str>,
+    max_object_bytes: u64,
+) -> Vec<Result<Option<Chunk>, SourceError>> {
+    use rayon::prelude::*;
+
+    fetch_pool.install(|| {
+        page.par_iter()
+            .map(|object| -> Result<Option<Chunk>, SourceError> {
+                let listed_size = object.size_bytes()?;
+                if listed_size == Some(0) {
+                    return Ok(None);
+                }
+                if !crate::cloud::is_probably_text_object_key(&object.name) {
+                    tracing::warn!(
+                        bucket = %bucket,
+                        key = %object.name,
+                        "skipping GCS object: extension is treated as binary/container content; NOT scanned as text",
+                    );
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                    return Ok(None);
+                }
+                fetch_gcs_object_chunk(
+                    client,
+                    endpoint,
+                    bucket,
+                    &object.name,
+                    listed_size,
+                    bearer,
+                    max_object_bytes,
+                )
+            })
+            .collect()
+    })
 }
 
 fn fetch_gcs_object_chunk(

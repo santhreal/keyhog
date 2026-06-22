@@ -241,12 +241,13 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
         }
     }
 
-    for (rel, collect_sig, helper_name, parser_name, next_boundary) in [
+    for (rel, collect_sig, helper_name, parser_name, download_name, next_boundary) in [
         (
             "src/s3/mod.rs",
             "fn collect_s3_chunks(",
             "fetch_s3_listing_page(",
             "parse_s3_listing(",
+            "download_s3_listing_page(",
             "fn fetch_s3_listing_page(",
         ),
         (
@@ -254,6 +255,7 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
             "fn collect_gcs_chunks(",
             "fetch_gcs_listing_page(",
             "parse_gcs_listing(",
+            "download_gcs_listing_page(",
             "fn fetch_gcs_listing_page(",
         ),
         (
@@ -261,6 +263,7 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
             "fn collect_azure_blob_chunks(",
             "fetch_azure_blob_listing_page(",
             "parse_azure_listing(",
+            "download_azure_blob_listing_page(",
             "fn fetch_azure_blob_listing_page(",
         ),
     ] {
@@ -276,10 +279,14 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
             source.contains(helper_name) && collect.contains(helper_name),
             "{rel} collector must delegate listing-page HTTP request/parsing through {helper_name}"
         );
-        for forbidden in [".send()", ".text()", parser_name] {
+        assert!(
+            source.contains(download_name) && collect.contains(download_name),
+            "{rel} collector must delegate per-page object downloading through {download_name}"
+        );
+        for forbidden in [".send()", ".text()", ".par_iter()", parser_name] {
             assert!(
                 !collect.contains(forbidden),
-                "{rel} collector must not own listing-page HTTP/parsing detail `{forbidden}`"
+                "{rel} collector must not own listing-page HTTP/parsing/download detail `{forbidden}`"
             );
         }
     }

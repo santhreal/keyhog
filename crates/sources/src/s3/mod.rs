@@ -8,7 +8,7 @@ mod auth;
 mod listing;
 
 use auth::AwsSigV4Config;
-use listing::{parse_s3_listing, ListBucketResult};
+use listing::{parse_s3_listing, ListBucketResult, ListObject};
 
 const DEFAULT_S3_HOST_SUFFIX: &str = "s3.amazonaws.com";
 
@@ -192,7 +192,6 @@ fn collect_s3_chunks(
     let mut chunks = Vec::new();
     let mut listed_objects = 0usize;
     let mut source_truncated_reported = false;
-    use rayon::prelude::*;
     let fetch_pool = crate::cloud::object_fetch_pool("s3")?;
 
     loop {
@@ -218,38 +217,15 @@ fn collect_s3_chunks(
         let (page, reached_limit) = crate::cloud::take_listing_page(listing.contents, remaining);
         listed_objects += page.len();
 
-        // Concurrent object fetcher. S3 is designed for massive concurrent
-        // GETs; the previous sequential loop wasted 90%+ of wall-clock on
-        // large buckets. We use rayon (the workspace's parallelism primitive)
-        // bounded to 16 in-flight downloads - high enough to saturate
-        // reasonable bandwidth, low enough to avoid hammering small buckets.
-        let page_chunks: Vec<Result<Option<Chunk>, SourceError>> = fetch_pool.install(|| {
-            page.par_iter()
-                .map(|object| -> Result<Option<Chunk>, SourceError> {
-                    if object.size == 0 {
-                        return Ok(None);
-                    }
-                    if !crate::cloud::is_probably_text_object_key(&object.key) {
-                        tracing::warn!(
-                            bucket = %bucket,
-                            key = %object.key,
-                            "skipping S3 object: extension is treated as binary/container content; NOT scanned as text",
-                        );
-                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-                        return Ok(None);
-                    }
-                    fetch_object_chunk(
-                        &client,
-                        &base_url,
-                        &bucket,
-                        &object.key,
-                        object.size,
-                        aws_auth.as_ref(),
-                        limits.s3_object_bytes,
-                    )
-                })
-                .collect()
-        });
+        let page_chunks = download_s3_listing_page(
+            &fetch_pool,
+            &page,
+            &client,
+            &base_url,
+            &bucket,
+            aws_auth.as_ref(),
+            limits.s3_object_bytes,
+        );
         crate::cloud::push_page_chunks(&mut chunks, page_chunks);
 
         if reached_limit || !listing.is_truncated {
@@ -313,6 +289,47 @@ fn fetch_s3_listing_page(
         .text()
         .map_err(|e| SourceError::Other(format!("failed to read S3 listing: {e}")))?;
     parse_s3_listing(&body)
+}
+
+fn download_s3_listing_page(
+    fetch_pool: &rayon::ThreadPool,
+    page: &[ListObject],
+    client: &Client,
+    base_url: &str,
+    bucket: &str,
+    aws_auth: Option<&AwsSigV4Config>,
+    max_object_bytes: u64,
+) -> Vec<Result<Option<Chunk>, SourceError>> {
+    use rayon::prelude::*;
+
+    // Concurrent object fetcher. S3 is designed for massive concurrent GETs.
+    fetch_pool.install(|| {
+        page.par_iter()
+            .map(|object| -> Result<Option<Chunk>, SourceError> {
+                if object.size == 0 {
+                    return Ok(None);
+                }
+                if !crate::cloud::is_probably_text_object_key(&object.key) {
+                    tracing::warn!(
+                        bucket = %bucket,
+                        key = %object.key,
+                        "skipping S3 object: extension is treated as binary/container content; NOT scanned as text",
+                    );
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                    return Ok(None);
+                }
+                fetch_object_chunk(
+                    client,
+                    base_url,
+                    bucket,
+                    &object.key,
+                    object.size,
+                    aws_auth,
+                    max_object_bytes,
+                )
+            })
+            .collect()
+    })
 }
 
 fn fetch_object_chunk(

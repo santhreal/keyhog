@@ -134,7 +134,6 @@ fn collect_azure_blob_chunks(
     let mut chunks = Vec::new();
     let mut listed_objects = 0usize;
     let mut source_truncated_reported = false;
-    use rayon::prelude::*;
     let fetch_pool = crate::cloud::object_fetch_pool("azure_blob")?;
 
     loop {
@@ -156,42 +155,13 @@ fn collect_azure_blob_chunks(
         let (page, reached_limit) = crate::cloud::take_listing_page(listing.blobs.blob, remaining);
         listed_objects += page.len();
 
-        let page_chunks: Vec<Result<Option<Chunk>, SourceError>> = fetch_pool.install(|| {
-            page.par_iter()
-                .map(|blob| -> Result<Option<Chunk>, SourceError> {
-                    let listed_size = blob.properties.content_length;
-                    if listed_size == Some(0) {
-                        return Ok(None);
-                    }
-                    if !crate::cloud::is_probably_text_object_key(&blob.name) {
-                        tracing::warn!(
-                            key = %blob.name,
-                            "skipping Azure blob: extension is treated as binary/container content; NOT scanned as text",
-                        );
-                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-                        return Ok(None);
-                    }
-                    if let Some(content_type) = blob.properties.content_type.as_deref() {
-                        if crate::cloud::is_binary_content_type(content_type) {
-                            tracing::warn!(
-                                key = %blob.name,
-                                content_type,
-                                "skipping Azure blob: listing reports binary content-type; NOT scanned as text",
-                            );
-                            let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-                            return Ok(None);
-                        }
-                    }
-                    fetch_azure_blob_chunk(
-                        &client,
-                        &container_url,
-                        &blob.name,
-                        listed_size,
-                        limits.azure_blob_bytes,
-                    )
-                })
-                .collect()
-        });
+        let page_chunks = download_azure_blob_listing_page(
+            &fetch_pool,
+            &page,
+            &client,
+            &container_url,
+            limits.azure_blob_bytes,
+        );
         crate::cloud::push_page_chunks(&mut chunks, page_chunks);
 
         if reached_limit {
@@ -233,6 +203,47 @@ fn fetch_azure_blob_listing_page(
         SourceError::Other(format!("failed to read Azure Blob listing: {error}"))
     })?;
     parse_azure_listing(&body)
+}
+
+fn download_azure_blob_listing_page(
+    fetch_pool: &rayon::ThreadPool,
+    page: &[AzureListedBlob],
+    client: &Client,
+    container_url: &reqwest::Url,
+    max_blob_bytes: u64,
+) -> Vec<Result<Option<Chunk>, SourceError>> {
+    use rayon::prelude::*;
+
+    fetch_pool.install(|| {
+        page.par_iter()
+            .map(|blob| -> Result<Option<Chunk>, SourceError> {
+                let listed_size = blob.properties.content_length;
+                if listed_size == Some(0) {
+                    return Ok(None);
+                }
+                if !crate::cloud::is_probably_text_object_key(&blob.name) {
+                    tracing::warn!(
+                        key = %blob.name,
+                        "skipping Azure blob: extension is treated as binary/container content; NOT scanned as text",
+                    );
+                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                    return Ok(None);
+                }
+                if let Some(content_type) = blob.properties.content_type.as_deref() {
+                    if crate::cloud::is_binary_content_type(content_type) {
+                        tracing::warn!(
+                            key = %blob.name,
+                            content_type,
+                            "skipping Azure blob: listing reports binary content-type; NOT scanned as text",
+                        );
+                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+                        return Ok(None);
+                    }
+                }
+                fetch_azure_blob_chunk(client, container_url, &blob.name, listed_size, max_blob_bytes)
+            })
+            .collect()
+    })
 }
 
 fn fetch_azure_blob_chunk(
