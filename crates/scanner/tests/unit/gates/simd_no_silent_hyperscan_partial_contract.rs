@@ -82,7 +82,7 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
     );
     assert!(
         engine_scan.contains("scanner.scan_each_result(data")
-            && triggered.contains("scanner.scan_result(text.as_bytes())")
+            && triggered.contains("scanner.scan_matches_result(text.as_bytes()")
             && phase2_hs.contains("scan_each_result")
             && phase2_hs.contains("any_match_result")
             && phase2_prefilter.contains(
@@ -92,6 +92,12 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
                 "HS always-active admission gate failed; using RegexSet path for this chunk"
             ),
         "production engine callers must use fallible SIMD helpers and route failures to conservative explicit paths"
+    );
+    assert!(
+        scan.contains("fn scan_matches_result(")
+            && !scan.contains("fn scan_result(")
+            && !scan.contains("Vec::with_capacity(32)"),
+        "Hyperscan scan hot paths must stream matches through callbacks instead of allocating a per-chunk Vec"
     );
     assert!(
         engine_scan.contains("normalize_coalesced_phase2_triggers")

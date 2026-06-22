@@ -298,24 +298,23 @@ impl CompiledScanner {
         if let Some(scanner) = &self.simd_prefilter {
             // AC and HS trigger sets are incomparable; union then confirm.
             let mut triggered_patterns = self.collect_triggered_patterns_cpu(text);
-            match scanner.scan_result(text.as_bytes()) {
-                Ok(matches) => {
-                    for (hs_id, _start, _end) in matches {
-                        let Some((_detector_index, dedup_id, _has_group)) =
-                            scanner.pattern_info(hs_id)
-                        else {
-                            continue;
-                        };
-                        if let Some(original_indices) = self.hs_index_map.get(dedup_id) {
-                            for &pattern_index in original_indices {
-                                self.mark_triggered_pattern(
-                                    &mut triggered_patterns,
-                                    pattern_index as usize,
-                                );
-                            }
+            let scan_result =
+                scanner.scan_matches_result(text.as_bytes(), |hs_id, _start, _end| {
+                    let Some((_detector_index, dedup_id, _has_group)) = scanner.pattern_info(hs_id)
+                    else {
+                        return;
+                    };
+                    if let Some(original_indices) = self.hs_index_map.get(dedup_id) {
+                        for &pattern_index in original_indices {
+                            self.mark_triggered_pattern(
+                                &mut triggered_patterns,
+                                pattern_index as usize,
+                            );
                         }
                     }
-                }
+                });
+            match scan_result {
+                Ok(()) => {}
                 Err(error) => {
                     tracing::warn!(
                         %error,

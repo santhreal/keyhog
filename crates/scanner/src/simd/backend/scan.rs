@@ -33,19 +33,20 @@ fn put_scratch(scanner_id: u64, shard_idx: usize, scratch: Scratch) {
 }
 
 impl HsScanner {
-    pub(crate) fn scan_result(&self, text: &[u8]) -> Result<Vec<(usize, usize, usize)>, String> {
-        // The match callback pushes the GLOBAL pattern id (set on
+    pub(crate) fn scan_matches_result(
+        &self,
+        text: &[u8],
+        mut on_match: impl FnMut(usize, usize, usize),
+    ) -> Result<(), String> {
+        // The match callback exposes the GLOBAL pattern id (set on
         // `Pattern.id` at compile), so the union over shards is identical
         // to a single all-patterns database's output - offsets are in the
-        // original byte space, no remapping. Reserve once for the common
-        // case; the union is typically small.
-        let mut matches = Vec::with_capacity(32);
-
+        // original byte space, no remapping.
         for (shard_idx, shard) in self.shards.iter().enumerate() {
             let scratch = take_scratch(self.scanner_id, shard_idx, shard)?;
 
             if let Err(error) = shard.db.scan(text, &scratch, |id, from, to, _flags| {
-                matches.push((id as usize, from as usize, to as usize));
+                on_match(id as usize, from as usize, to as usize);
                 Matching::Continue
             }) {
                 put_scratch(self.scanner_id, shard_idx, scratch);
@@ -56,7 +57,7 @@ impl HsScanner {
 
             put_scratch(self.scanner_id, shard_idx, scratch);
         }
-        Ok(matches)
+        Ok(())
     }
 
     /// Scan `text`, invoking `on_match(hs_id)` for each matching pattern id,
