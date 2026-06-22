@@ -1,3 +1,4 @@
+pub mod adversarial_windows_stubs_no_op;
 pub mod archive_symlink_guard_in_source;
 pub mod binary_max_decompiled_cap_in_source;
 pub mod binary_no_unbounded_fs_read;
@@ -20,6 +21,7 @@ pub mod git_rev_parse_end_of_options;
 pub mod git_source;
 pub mod git_uses_resolve_safe_bin;
 pub mod git_validate_repo_path_canonicalizes;
+pub mod http_async_client_no_auto_gzip;
 pub mod http_client_no_auto_gzip;
 pub mod mmap_toctou_sanity_cap_in_read;
 pub mod pdf_not_in_skip_extensions;

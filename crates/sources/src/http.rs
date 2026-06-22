@@ -197,6 +197,9 @@ pub(crate) fn async_client_builder(
         .timeout(cfg.timeout.unwrap_or(DEFAULT_TIMEOUT)) // LAW10: Tier-A config default — unset timeout uses the documented DEFAULT_TIMEOUT, not a silent error
         .redirect(reqwest::redirect::Policy::limited(REDIRECT_LIMIT))
         .user_agent(user_agent(cfg.ua_suffix.as_deref()))
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
         .danger_accept_invalid_certs(cfg.effective_insecure_tls());
 
     match cfg.effective_proxy().as_deref() {
