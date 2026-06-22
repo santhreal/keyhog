@@ -170,74 +170,45 @@ fn validate_regex_definition(
 }
 
 fn has_substantial_literal(pattern: &str, min_len: usize) -> bool {
-    let mut max_literal_len = 0;
-    let mut current_literal_len = 0;
-    let mut in_escape = false;
-    let mut in_char_class = false;
-
-    for ch in pattern.chars() {
-        if in_escape {
-            if is_escaped_literal(ch) {
-                current_literal_len += 1;
-            } else {
-                max_literal_len = max_literal_len.max(current_literal_len);
-                current_literal_len = 0;
-            }
-            in_escape = false;
-            continue;
-        }
-
-        match ch {
-            '\\' => in_escape = true,
-            '[' => {
-                max_literal_len = max_literal_len.max(current_literal_len);
-                current_literal_len = 0;
-                in_char_class = true;
-            }
-            ']' => {
-                in_char_class = false;
-            }
-            '(' | ')' | '.' | '*' | '+' | '?' | '{' | '}' | '|' | '^' | '$' => {
-                max_literal_len = max_literal_len.max(current_literal_len);
-                current_literal_len = 0;
-            }
-            _ => {
-                if !in_char_class {
-                    current_literal_len += 1;
-                }
-            }
-        }
+    match ast::parse::Parser::new().parse(pattern) {
+        Ok(ast) => ast_literal_runs(&ast).max >= min_len,
+        Err(_) => false, // LAW10: invalid regex already emits a QualityIssue::Error; no recall impact
     }
-    max_literal_len = max_literal_len.max(current_literal_len);
-    max_literal_len >= min_len
-}
-
-fn is_escaped_literal(ch: char) -> bool {
-    matches!(
-        ch,
-        '[' | ']' | '(' | ')' | '.' | '*' | '+' | '?' | '{' | '}' | '\\' | '|' | '^' | '$'
-    )
 }
 
 fn validate_verify_spec(spec: &DetectorSpec, issues: &mut Vec<QualityIssue>) {
     if let Some(ref verify) = spec.verify {
         // verify.service defaults to the detector's service - empty is fine
-        if !verify.steps.is_empty() {
-            for step in &verify.steps {
-                validate_url(&step.url, issues);
-                check_url_exfil_risk(&step.url, &verify.allowed_domains, issues);
-            }
-        } else if let Some(ref url) = verify.url {
-            validate_url(url, issues);
-            check_url_exfil_risk(url, &verify.allowed_domains, issues);
-        } else {
-            issues.push(QualityIssue::Error(
-                "verify spec has no steps and no default URL".into(),
-            ));
-        }
+        validate_verify_urls(verify, issues);
         check_oob_consistency(verify, issues);
     }
     check_reserved_companion_names(spec, issues);
+}
+
+fn validate_verify_urls(verify: &VerifySpec, issues: &mut Vec<QualityIssue>) {
+    let mut validated_url = false;
+    visit_verify_template_fields(verify, |field| {
+        if field.kind != VerifyTemplateFieldKind::Url {
+            return;
+        }
+        let selected = if verify.steps.is_empty() {
+            field.scope == VerifyTemplateScope::DefaultRequest
+        } else {
+            field.scope == VerifyTemplateScope::Step
+        };
+        if !selected {
+            return;
+        }
+        validated_url = true;
+        validate_url(field.value, issues);
+        check_url_exfil_risk(field.value, &verify.allowed_domains, issues);
+    });
+
+    if !validated_url {
+        issues.push(QualityIssue::Error(
+            "verify spec has no steps and no default URL".into(),
+        ));
+    }
 }
 
 /// Reserved synthetic companion-map keys used by the OOB interpolator. A
@@ -275,29 +246,11 @@ fn check_reserved_companion_names(spec: &DetectorSpec, issues: &mut Vec<QualityI
 /// silently-wrong verify behavior. Fail-closed at the validator instead.
 fn check_oob_consistency(verify: &VerifySpec, issues: &mut Vec<QualityIssue>) {
     let mut interactsh_referenced = false;
-    let mut scan = |s: &str| {
-        if s.contains("{{interactsh") {
+    visit_verify_template_fields(verify, |field| {
+        if field.value.contains("{{interactsh") {
             interactsh_referenced = true;
         }
-    };
-    if let Some(ref url) = verify.url {
-        scan(url);
-    }
-    if let Some(ref body) = verify.body {
-        scan(body);
-    }
-    for h in &verify.headers {
-        scan(&h.value);
-    }
-    for step in &verify.steps {
-        scan(&step.url);
-        if let Some(ref body) = step.body {
-            scan(body);
-        }
-        for h in &step.headers {
-            scan(&h.value);
-        }
-    }
+    });
     let oob_configured = verify.oob.is_some();
     if oob_configured && !verify.steps.is_empty() {
         issues.push(QualityIssue::Error(
@@ -325,6 +278,74 @@ fn check_oob_consistency(verify: &VerifySpec, issues: &mut Vec<QualityIssue>) {
                 .into(),
         )),
         _ => {}
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum VerifyTemplateScope {
+    DefaultRequest,
+    Step,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum VerifyTemplateFieldKind {
+    Url,
+    Body,
+    Header,
+}
+
+#[derive(Clone, Copy)]
+struct VerifyTemplateField<'a> {
+    scope: VerifyTemplateScope,
+    kind: VerifyTemplateFieldKind,
+    value: &'a str,
+}
+
+fn visit_verify_template_fields<'a>(
+    verify: &'a VerifySpec,
+    mut visit: impl FnMut(VerifyTemplateField<'a>),
+) {
+    if let Some(ref url) = verify.url {
+        visit(VerifyTemplateField {
+            scope: VerifyTemplateScope::DefaultRequest,
+            kind: VerifyTemplateFieldKind::Url,
+            value: url,
+        });
+    }
+    if let Some(ref body) = verify.body {
+        visit(VerifyTemplateField {
+            scope: VerifyTemplateScope::DefaultRequest,
+            kind: VerifyTemplateFieldKind::Body,
+            value: body,
+        });
+    }
+    for header in &verify.headers {
+        visit(VerifyTemplateField {
+            scope: VerifyTemplateScope::DefaultRequest,
+            kind: VerifyTemplateFieldKind::Header,
+            value: &header.value,
+        });
+    }
+    for step in &verify.steps {
+        visit(VerifyTemplateField {
+            scope: VerifyTemplateScope::Step,
+            kind: VerifyTemplateFieldKind::Url,
+            value: &step.url,
+        });
+        if let Some(ref body) = step.body {
+            visit(VerifyTemplateField {
+                scope: VerifyTemplateScope::Step,
+                kind: VerifyTemplateFieldKind::Body,
+                value: body,
+            });
+        }
+        for header in &step.headers {
+            visit(VerifyTemplateField {
+                scope: VerifyTemplateScope::Step,
+                kind: VerifyTemplateFieldKind::Header,
+                value: &header.value,
+            });
+        }
     }
 }
 
@@ -379,14 +400,150 @@ fn validate_url(url: &str, issues: &mut Vec<QualityIssue>) {
 }
 
 fn has_literal_prefix(pattern: &str, min_len: usize) -> bool {
-    let mut count = 0;
-    for ch in pattern.chars() {
-        match ch {
-            '[' | '(' | '.' | '*' | '+' | '?' | '{' | '\\' | '|' | '^' | '$' => break,
-            _ => count += 1,
+    match ast::parse::Parser::new().parse(pattern) {
+        Ok(ast) => ast_literal_runs(&ast).prefix >= min_len,
+        Err(_) => false, // LAW10: invalid regex already emits a QualityIssue::Error; no recall impact
+    }
+}
+
+#[derive(Clone, Copy)]
+struct LiteralRunStats {
+    prefix: usize,
+    suffix: usize,
+    max: usize,
+    all_literal: bool,
+}
+
+impl LiteralRunStats {
+    fn empty() -> Self {
+        Self {
+            prefix: 0,
+            suffix: 0,
+            max: 0,
+            all_literal: true,
         }
     }
-    count >= min_len
+
+    fn literal(len: usize) -> Self {
+        Self {
+            prefix: len,
+            suffix: len,
+            max: len,
+            all_literal: true,
+        }
+    }
+}
+
+fn ast_literal_runs(ast: &ast::Ast) -> LiteralRunStats {
+    match ast {
+        ast::Ast::Literal(_) => LiteralRunStats::literal(1),
+        ast::Ast::Empty(_) | ast::Ast::Flags(_) | ast::Ast::Assertion(_) => {
+            LiteralRunStats::empty()
+        }
+        ast::Ast::Group(group) => ast_literal_runs(&group.ast),
+        ast::Ast::Concat(concat) => concat
+            .asts
+            .iter()
+            .fold(LiteralRunStats::empty(), combine_literal_runs),
+        ast::Ast::Alternation(alternation) => LiteralRunStats {
+            max: match alternation
+                .asts
+                .iter()
+                .map(|child| ast_literal_runs(child).max)
+                .max()
+            {
+                Some(max) => max,
+                None => 0,
+            },
+            prefix: 0,
+            suffix: 0,
+            all_literal: false,
+        },
+        ast::Ast::Repetition(repetition) => repeated_literal_runs(
+            ast_literal_runs(&repetition.ast),
+            repetition_min(&repetition.op.kind),
+            repetition_is_exact(&repetition.op.kind),
+        ),
+        ast::Ast::Dot(_)
+        | ast::Ast::ClassUnicode(_)
+        | ast::Ast::ClassPerl(_)
+        | ast::Ast::ClassBracketed(_) => LiteralRunStats {
+            prefix: 0,
+            suffix: 0,
+            max: 0,
+            all_literal: false,
+        },
+    }
+}
+
+fn combine_literal_runs(left: LiteralRunStats, right: &ast::Ast) -> LiteralRunStats {
+    let right = ast_literal_runs(right);
+    LiteralRunStats {
+        prefix: if left.all_literal {
+            left.prefix.saturating_add(right.prefix)
+        } else {
+            left.prefix
+        },
+        suffix: if right.all_literal {
+            left.suffix.saturating_add(right.suffix)
+        } else {
+            right.suffix
+        },
+        max: left
+            .max
+            .max(right.max)
+            .max(left.suffix.saturating_add(right.prefix)),
+        all_literal: left.all_literal && right.all_literal,
+    }
+}
+
+fn repeated_literal_runs(
+    inner: LiteralRunStats,
+    min_repetitions: usize,
+    exact_repetition: bool,
+) -> LiteralRunStats {
+    if min_repetitions == 0 {
+        return LiteralRunStats {
+            prefix: 0,
+            suffix: 0,
+            max: inner.max,
+            all_literal: false,
+        };
+    }
+
+    if inner.all_literal {
+        let repeated_len = inner.max.saturating_mul(min_repetitions);
+        return LiteralRunStats {
+            prefix: repeated_len,
+            suffix: repeated_len,
+            max: repeated_len,
+            all_literal: exact_repetition,
+        };
+    }
+
+    LiteralRunStats {
+        prefix: inner.prefix,
+        suffix: inner.suffix,
+        max: inner.max,
+        all_literal: false,
+    }
+}
+
+fn repetition_min(kind: &ast::RepetitionKind) -> usize {
+    match kind {
+        ast::RepetitionKind::ZeroOrOne | ast::RepetitionKind::ZeroOrMore => 0,
+        ast::RepetitionKind::OneOrMore => 1,
+        ast::RepetitionKind::Range(ast::RepetitionRange::Exactly(min))
+        | ast::RepetitionKind::Range(ast::RepetitionRange::AtLeast(min))
+        | ast::RepetitionKind::Range(ast::RepetitionRange::Bounded(min, _)) => *min as usize,
+    }
+}
+
+fn repetition_is_exact(kind: &ast::RepetitionKind) -> bool {
+    matches!(
+        kind,
+        ast::RepetitionKind::Range(ast::RepetitionRange::Exactly(_))
+    )
 }
 
 fn is_pure_character_class(pattern: &str) -> bool {

@@ -168,6 +168,43 @@ fn warns_but_accepts_companion_character_class_with_tight_radius() {
 }
 
 #[test]
+fn grouped_literal_prefix_satisfies_pattern_specificity() {
+    let mut detector = detector_with_pattern("(?:demo_)[A-Z0-9]{8}");
+    detector.keywords.clear();
+
+    let issues = validate_detector(&detector);
+
+    assert!(
+        !issues.iter().any(|issue| matches!(
+            issue,
+            QualityIssue::Warning(message) if message.contains("no literal prefix")
+        )),
+        "AST literal prefix inside a group must count as pattern context; got {issues:?}"
+    );
+}
+
+#[test]
+fn grouped_companion_literal_satisfies_context_anchor() {
+    let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
+    detector.companions.push(CompanionSpec {
+        name: "secret".into(),
+        regex: "(?:api_key=)[A-Z0-9]{8}".into(),
+        within_lines: 12,
+        required: false,
+    });
+
+    let issues = validate_detector(&detector);
+
+    assert!(
+        !issues.iter().any(|issue| matches!(
+            issue,
+            QualityIssue::Warning(message) if message.contains("too broad")
+        )),
+        "AST literal run inside a group must count as companion context; got {issues:?}"
+    );
+}
+
+#[test]
 fn regex_validator_uses_one_iterative_ast_walk() {
     let source = std::fs::read_to_string("src/spec/validate/regex_complexity.rs")
         .expect("read regex complexity source");
@@ -178,4 +215,29 @@ fn regex_validator_uses_one_iterative_ast_walk() {
     assert!(!source.contains("collect_redos_risks("));
     assert!(!source.contains("literalish_prefix(&group.ast)"));
     assert!(!source.contains(".any(ast_contains_repetition)"));
+}
+
+#[test]
+fn literal_specificity_uses_ast_not_raw_regex_scans() {
+    let source = std::fs::read_to_string("src/spec/validate.rs").expect("read validate source");
+
+    assert!(source.contains("fn ast_literal_runs("));
+    assert!(source.contains("fn combine_literal_runs("));
+    assert!(!source.contains("fn is_escaped_literal("));
+    assert!(!source.contains("for ch in pattern.chars()"));
+}
+
+#[test]
+fn verify_template_checks_use_one_field_visitor() {
+    let source = std::fs::read_to_string("src/spec/validate.rs").expect("read validate source");
+
+    assert!(source.contains("struct VerifyTemplateField"));
+    assert!(source.contains("fn visit_verify_template_fields"));
+    assert_eq!(
+        source.matches("for step in &verify.steps").count(),
+        1,
+        "step URL/body/header traversal should live only in the template-field visitor"
+    );
+    assert!(source.contains("validate_verify_urls(verify, issues);"));
+    assert!(source.contains("visit_verify_template_fields(verify, |field|"));
 }
