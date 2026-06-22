@@ -31,12 +31,12 @@
 //! Implements the `projectdiscovery/interactsh` register/poll protocol:
 //!
 //! 1. Generate a fresh RSA-2048 keypair on engine startup.
-//! 2. POST `/register` with `{public-key: PEM, secret-key: UUID, correlation-id: 20 lowercase a-z0-9}`.
-//! 3. Each per-finding URL is `{correlation-id}{13 random}.{server}` (33 chars total).
+//! 2. POST `/register` with `{public-key: PEM, secret-key: UUID, correlation-id: 24 lowercase a-z0-9}`.
+//! 3. Each per-finding URL is `{correlation-id}{24 random}.{server}` (48 chars total).
 //! 4. Background loop polls `/poll?id={cid}&secret={uuid}`.
 //! 5. Each interaction comes back as `{aes_key: RSA-OAEP(sha256) wrapping a 32-byte key, data: [base64(IV[16] || AES-256-CFB(payload))]}`.
 //! 6. Decrypt → JSON `{protocol, unique-id, raw-request, remote-address, timestamp}`.
-//! 7. Match `unique-id` (full 33-char subdomain prefix) to the finding that minted it.
+//! 7. Match `unique-id` (full 48-char subdomain prefix) to the finding that minted it.
 //! 8. POST `/deregister` on shutdown.
 
 mod client;

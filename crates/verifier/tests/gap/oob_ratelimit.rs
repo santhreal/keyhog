@@ -852,27 +852,39 @@ async fn backpressure_clears_after_enough_successes() {
 // ========================================================================
 
 #[test]
-fn client_for_test_correlation_id_is_fixed_20_chars() {
+fn client_for_test_correlation_id_is_fixed_24_chars() {
     let client = test_client("oast.fun");
     assert_eq!(
         TestApi.interactsh_client_correlation_id(&client),
-        "abcdefghijklmnopqrst"
+        "abcdefghijklmnopqrstuvwx"
     );
-    assert_eq!(TestApi.interactsh_client_correlation_id(&client).len(), 20);
+    assert_eq!(TestApi.interactsh_client_correlation_id(&client).len(), 24);
 }
 
 #[test]
-fn mint_url_unique_id_is_33_chars_corr_plus_13_suffix() {
+fn mint_url_unique_id_is_48_chars_corr_plus_24_suffix() {
     let client = test_client("oast.fun");
     let minted = TestApi.interactsh_client_mint_url(&client);
-    assert_eq!(minted.unique_id.len(), 33, "20 corr + 13 suffix = 33");
+    assert_eq!(minted.unique_id.len(), 48, "24 corr + 24 suffix = 48");
     assert!(
-        minted.unique_id.starts_with("abcdefghijklmnopqrst"),
+        minted.unique_id.len() < 63,
+        "unique-id remains one DNS label under the 63-octet label limit"
+    );
+    assert!(
+        minted
+            .unique_id
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit()),
+        "unique_id must be DNS-safe lowercase alphanumeric, got {:?}",
+        minted.unique_id
+    );
+    assert!(
+        minted.unique_id.starts_with("abcdefghijklmnopqrstuvwx"),
         "unique_id must begin with the correlation id"
     );
-    // Suffix is 13 lowercase alphanumerics.
-    let suffix = &minted.unique_id[20..];
-    assert_eq!(suffix.len(), 13);
+    // Suffix is 24 uniformly sampled lowercase DNS-safe alphanumerics.
+    let suffix = &minted.unique_id[24..];
+    assert_eq!(suffix.len(), 24);
     assert!(
         suffix
             .chars()
@@ -938,13 +950,13 @@ fn mint_url_two_mints_differ_in_suffix() {
     let a = TestApi.interactsh_client_mint_url(&client);
     let b = TestApi.interactsh_client_mint_url(&client);
     assert_eq!(
-        &a.unique_id[..20],
-        &b.unique_id[..20],
+        &a.unique_id[..24],
+        &b.unique_id[..24],
         "same correlation id"
     );
     assert_ne!(
         a.unique_id, b.unique_id,
-        "13-char random suffix must (overwhelmingly) differ"
+        "24-char random suffix must (overwhelmingly) differ"
     );
 }
 
@@ -952,8 +964,8 @@ fn mint_url_two_mints_differ_in_suffix() {
 fn session_mint_delegates_to_client_mint_url() {
     let session = test_session("oast.fun");
     let minted = TestApi.oob_session_mint(&session);
-    assert_eq!(minted.unique_id.len(), 33);
-    assert!(minted.unique_id.starts_with("abcdefghijklmnopqrst"));
+    assert_eq!(minted.unique_id.len(), 48);
+    assert!(minted.unique_id.starts_with("abcdefghijklmnopqrstuvwx"));
     assert_eq!(minted.host, format!("{}.oast.fun", minted.unique_id));
 }
 

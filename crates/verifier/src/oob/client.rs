@@ -18,7 +18,6 @@
 use std::time::Duration;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
-use rand::distributions::Alphanumeric;
 use rand::{rngs::OsRng, Rng};
 use reqwest::Client;
 use rsa::pkcs8::{EncodePublicKey, LineEnding};
@@ -35,6 +34,9 @@ use tracing::{debug, warn};
 /// budget covers all configured collectors collectively - the limit is
 /// about our own machine not blasting traffic, not about per-host fairness.
 const OOB_SERVICE: &str = "oob.interactsh";
+const DNS_TOKEN_ALPHABET: &[u8; 36] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+const CORRELATION_ID_LEN: usize = 24;
+const UNIQUE_SUFFIX_LEN: usize = 24;
 
 /// All errors that can arise from the OOB client. `Transient` errors mean the
 /// caller should retry (network blip, rate-limit); everything else is final.
@@ -92,7 +94,7 @@ impl InteractionProtocol {
 /// One decrypted interaction returned by the collector.
 #[derive(Debug, Clone)]
 pub struct Interaction {
-    /// Full 33-char unique id (correlation-id || 13-char suffix). This is
+    /// Full unique id (correlation-id || per-finding suffix). This is
     /// what we match against per-finding URLs we minted.
     pub unique_id: String,
     pub protocol: InteractionProtocol,
@@ -117,8 +119,8 @@ pub struct InteractshClient {
     correlation_id: String,
     secret_key: String,
     private_key: RsaPrivateKey,
-    /// Length of the per-URL suffix (interactsh uses 13 to bring total ID to
-    /// 33 chars). Exposed for tests; production always uses 13.
+    /// Length of the per-URL suffix. Production uses 24 DNS-safe characters so
+    /// a known correlation id still leaves >122 bits of per-finding entropy.
     suffix_len: usize,
 }
 
@@ -135,10 +137,10 @@ impl InteractshClient {
         Ok(Self {
             http: Client::new(),
             server: normalize_server(server),
-            correlation_id: "abcdefghijklmnopqrst".to_string(),
+            correlation_id: "abcdefghijklmnopqrstuvwx".to_string(),
             secret_key: "test-secret".to_string(),
             private_key,
-            suffix_len: 13,
+            suffix_len: UNIQUE_SUFFIX_LEN,
         })
     }
 }
@@ -252,15 +254,11 @@ impl InteractshClient {
             .map_err(|e| InteractshError::KeyEncode(e.to_string()))?;
         let public_key_b64 = B64.encode(pem.as_bytes());
 
-        // Correlation id is 20 lowercase alphanumerics - interactsh-server
+        // Correlation id is 24 lowercase alphanumerics - interactsh-server
         // matches incoming subdomains by this prefix, so the ID space must
         // be wide enough that collisions are statistically impossible across
-        // every concurrent scanner sharing the collector. 36^20 ≈ 1.3e31.
-        let correlation_id: String = OsRng
-            .sample_iter(&Alphanumeric)
-            .take(20)
-            .map(|b| (b as char).to_ascii_lowercase())
-            .collect();
+        // every concurrent scanner sharing the collector. 36^24 ≈ 2.2e37.
+        let correlation_id = random_dns_token(CORRELATION_ID_LEN);
         let secret_key = uuid::Uuid::new_v4().to_string();
 
         let server = normalize_server(server);
@@ -308,20 +306,16 @@ impl InteractshClient {
             correlation_id,
             secret_key,
             private_key,
-            suffix_len: 13,
+            suffix_len: UNIQUE_SUFFIX_LEN,
         })
     }
 
-    /// Mint a fresh callback URL bound to this session. The full 33-char
+    /// Mint a fresh callback URL bound to this session. The full unique-id
     /// subdomain is returned (unique-id) plus the host the service should
     /// hit. Caller is responsible for embedding it where the credential's
     /// API will follow.
     pub(crate) fn mint_url(&self) -> MintedUrl {
-        let suffix: String = OsRng
-            .sample_iter(&Alphanumeric)
-            .take(self.suffix_len)
-            .map(|b| (b as char).to_ascii_lowercase())
-            .collect();
+        let suffix = random_dns_token(self.suffix_len);
         let unique_id = format!("{}{}", self.correlation_id, suffix);
         let host = format!("{}.{}", unique_id, self.server_host());
         let url = format!("https://{host}");
@@ -465,10 +459,20 @@ impl InteractshClient {
     }
 }
 
+fn random_dns_token(len: usize) -> String {
+    let mut rng = OsRng;
+    (0..len)
+        .map(|_| {
+            let idx = rng.gen_range(0..DNS_TOKEN_ALPHABET.len());
+            DNS_TOKEN_ALPHABET[idx] as char
+        })
+        .collect()
+}
+
 /// One per-finding callback URL, returned from `InteractshClient::mint_url`.
 #[derive(Debug, Clone)]
 pub struct MintedUrl {
-    /// Full 33-char id; the value the service will reflect in DNS/HTTP host.
+    /// Full id; the value the service will reflect in DNS/HTTP host.
     pub unique_id: String,
     /// `<unique_id>.<server-host>` - bare host without scheme.
     pub host: String,
