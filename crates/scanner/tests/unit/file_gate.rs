@@ -353,6 +353,10 @@ fn decode_base64_shape_and_decode_have_one_scanner_owner() {
         1,
         "decode/base64.rs must own the scanner base64 variant classifier"
     );
+    assert!(
+        owner.contains("base64_decode_with_variant(&b64_match.value.value, b64_match.variant)"),
+        "Base64Decoder must reuse the variant classified during candidate extraction"
+    );
     assert_eq!(
         owner
             .matches("pub(crate) fn standard_base64_shape(")

@@ -1,5 +1,5 @@
 use super::pipeline::{
-    extract_encoded_value_spans, push_decoded_text_chunk_spliced_at, ExtractedValue,
+    ExtractedValue, extract_encoded_value_spans, push_decoded_text_chunk_spliced_at,
 };
 use super::{Decoder, EncodedString};
 use keyhog_core::Chunk;
@@ -16,8 +16,10 @@ impl Decoder for Base64Decoder {
         // Floor lowered from 20→12 so short contract credentials (7–15
         // chars) survive encode-through in `encoding_explosion_runner`.
         // `extract_encoded_values` already rejects noise shorter than 4.
-        for b64_match in find_base64_string_spans(&chunk.data, 12) {
-            if let Ok(decoded) = base64_decode(&b64_match.value) {
+        for b64_match in find_classified_base64_string_spans(&chunk.data, 12) {
+            if let Ok(decoded) =
+                base64_decode_with_variant(&b64_match.value.value, b64_match.variant)
+            {
                 if let Ok(text) = String::from_utf8(decoded) {
                     // Splice the decoded text back over the original
                     // base64 blob in the parent so companion context
@@ -29,7 +31,7 @@ impl Decoder for Base64Decoder {
                         &mut decoded_chunks,
                         chunk,
                         b64_match.span(),
-                        &b64_match.value,
+                        &b64_match.value.value,
                         text,
                         self.name(),
                     );
@@ -73,6 +75,17 @@ enum Base64Variant {
     StandardNoPad,
     UrlSafe,
     UrlSafeNoPad,
+}
+
+struct Base64ExtractedValue {
+    value: ExtractedValue,
+    variant: Base64Variant,
+}
+
+impl Base64ExtractedValue {
+    fn span(&self) -> Option<(usize, usize)> {
+        self.value.span()
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -139,12 +152,26 @@ pub fn find_base64_strings(text: &str, min_length: usize) -> Vec<EncodedString> 
 fn find_base64_string_spans(text: &str, min_length: usize) -> Vec<ExtractedValue> {
     let mut results = Vec::new();
 
+    for candidate in find_classified_base64_string_spans(text, min_length) {
+        results.push(candidate.value);
+    }
+    results
+}
+
+fn find_classified_base64_string_spans(text: &str, min_length: usize) -> Vec<Base64ExtractedValue> {
+    let mut results = Vec::new();
+
     for candidate in extract_encoded_value_spans(text) {
-        if candidate.value.len() >= min_length
-            && candidate.value.bytes().all(is_base64_candidate_byte)
-            && classify_base64(&candidate.value).is_some()
+        if candidate.value.len() < min_length
+            || !candidate.value.bytes().all(is_base64_candidate_byte)
         {
-            results.push(candidate);
+            continue;
+        }
+        if let Some(variant) = classify_base64(&candidate.value) {
+            results.push(Base64ExtractedValue {
+                value: candidate,
+                variant,
+            });
         }
     }
     results
@@ -199,6 +226,11 @@ pub fn base64_decode(input: &str) -> Result<Vec<u8>, ()> {
     }
 
     let variant = classify_base64(input).ok_or(())?;
+    base64_decode_with_variant(input, variant)
+}
+
+#[allow(clippy::result_unit_err)]
+fn base64_decode_with_variant(input: &str, variant: Base64Variant) -> Result<Vec<u8>, ()> {
     match variant {
         Base64Variant::Standard => base64_simd::STANDARD.decode_to_vec(input.as_bytes()),
         Base64Variant::StandardNoPad => {
