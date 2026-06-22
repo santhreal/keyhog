@@ -60,9 +60,8 @@ fn test_scan_timeout_respects_deadline() {
 ///
 /// This test feeds a 1 MiB chunk that produces ~50k+ matches for a
 /// trivial regex, sets a 5 ms deadline, and asserts the scan
-/// returns within 100 ms - proving the inner loop is checking the
-/// deadline at its `is_multiple_of(64)` cadence and breaking
-/// early.
+/// returns within 100 ms - proving the regex loop and the per-match
+/// post-processing chain both honor the deadline.
 #[test]
 fn test_inner_loop_deadline_aborts_many_match_pattern() {
     let detector = DetectorSpec {
@@ -108,8 +107,8 @@ fn test_inner_loop_deadline_aborts_many_match_pattern() {
     assert!(
         elapsed < Duration::from_millis(100),
         "Inner-loop deadline did not abort: scan ran for {:?} \
-         despite a 5ms deadline. The `extract_grouped_matches` /
-         `extract_plain_matches` deadline check is not firing.",
+         despite a 5ms deadline. The extractor regex/post-processing \
+         deadline checks are not firing.",
         elapsed
     );
 }

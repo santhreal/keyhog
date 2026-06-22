@@ -187,13 +187,8 @@ impl CompiledScanner {
             if match_count >= MAX_INNER_LOOP_ITERS {
                 break;
             }
-            if let Some(deadline) = deadline {
-                if match_count.is_multiple_of(64)
-                    && match_count > 0
-                    && std::time::Instant::now() >= deadline
-                {
-                    break;
-                }
+            if crate::deadline::expired_on_cadence(deadline, match_count, 64) {
+                break;
             }
             match_count += 1;
             let Some(whole) = rx.captures_read_at(&mut locs, search_text, cursor) else {
@@ -277,6 +272,9 @@ impl CompiledScanner {
                 keyword_nearby,
                 sensitive_file,
             );
+            if crate::deadline::expired(deadline) {
+                break;
+            }
         }
     }
 
@@ -334,13 +332,8 @@ impl CompiledScanner {
             if match_count >= MAX_INNER_LOOP_ITERS {
                 break;
             }
-            if let Some(deadline) = deadline {
-                if match_count.is_multiple_of(64)
-                    && match_count > 0
-                    && std::time::Instant::now() >= deadline
-                {
-                    break;
-                }
+            if crate::deadline::expired_on_cadence(deadline, match_count, 64) {
+                break;
             }
             let Some(matched) = rx.find_at(search_text, cursor) else {
                 break;
@@ -389,6 +382,9 @@ impl CompiledScanner {
                 keyword_nearby,
                 sensitive_file,
             );
+            if crate::deadline::expired(deadline) {
+                break;
+            }
         }
     }
 }

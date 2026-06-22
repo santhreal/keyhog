@@ -98,10 +98,8 @@ impl CompiledScanner {
             if iters >= MAX_INNER_LOOP_ITERS {
                 break;
             }
-            if let Some(deadline) = deadline {
-                if iters.is_multiple_of(64) && iters > 0 && std::time::Instant::now() >= deadline {
-                    break;
-                }
+            if crate::deadline::expired_on_cadence(deadline, iters, 64) {
+                break;
             }
             iters += 1;
             if pos > bytes_total || !search_text.is_char_boundary(pos) {
@@ -207,6 +205,9 @@ impl CompiledScanner {
                 keyword_nearby,
                 sensitive_file,
             );
+            if crate::deadline::expired(deadline) {
+                break;
+            }
         }
     }
 }
