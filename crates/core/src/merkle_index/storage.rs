@@ -324,22 +324,32 @@ impl MerkleIndex {
             return;
         }
 
-        let mut kept = HashMap::<PathBuf, CacheEntry>::with_capacity(self.max_entries);
-        for path in in_memory_paths {
-            if kept.len() >= self.max_entries {
+        let mut to_remove = Vec::<PathBuf>::new();
+        for path in merged.keys() {
+            if merged.len().saturating_sub(to_remove.len()) <= self.max_entries {
                 break;
             }
-            if let Some(entry) = merged.get(path) {
-                kept.insert(path.clone(), *entry);
+            if !in_memory_paths.contains(path) {
+                to_remove.push(path.clone());
             }
         }
-        for (path, entry) in merged.iter() {
-            if kept.len() >= self.max_entries {
+        for path in to_remove {
+            merged.remove(&path);
+        }
+        if merged.len() <= self.max_entries {
+            return;
+        }
+
+        let mut to_remove = Vec::<PathBuf>::new();
+        for path in merged.keys() {
+            if merged.len().saturating_sub(to_remove.len()) <= self.max_entries {
                 break;
             }
-            kept.entry(path.clone()).or_insert(*entry);
+            to_remove.push(path.clone());
         }
-        *merged = kept;
+        for path in to_remove {
+            merged.remove(&path);
+        }
     }
 }
 

@@ -87,6 +87,7 @@ pub mod lookup_returns_full_tuple;
 pub mod merkle_invalid_entry_hash_cold_starts;
 pub mod merkle_corrupted_cache_cold_start;
 pub mod merkle_metadata_unchanged_exact_pair;
+pub mod merkle_persisted_cap_trims_in_place;
 pub mod merkle_racy_clean_entry_dropped_on_load;
 pub mod merkle_record_and_unchanged_roundtrip;
 pub mod merkle_spec_hash_changes_on_keyword_add;
