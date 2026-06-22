@@ -139,7 +139,7 @@ fn collect_gcs_chunks(
     let bucket = validate_bucket_name(bucket)?;
     let endpoint = validate_endpoint(endpoint)?;
     let client = crate::cloud::blocking_client("GCS", http)?;
-    let bearer = gcs_bearer_token(&endpoint, allow_token_forward);
+    let bearer = resolve_gcs_auth(&endpoint, allow_token_forward);
     let mut page_token = None::<String>;
     let mut chunks = Vec::new();
     let mut listed_objects = 0usize;
@@ -198,6 +198,10 @@ fn collect_gcs_chunks(
     }
 
     Ok(chunks)
+}
+
+fn resolve_gcs_auth(endpoint: &str, allow_token_forward: bool) -> Option<String> {
+    gcs_bearer_token(endpoint, allow_token_forward)
 }
 
 fn fetch_gcs_listing_page(

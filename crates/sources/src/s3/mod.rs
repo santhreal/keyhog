@@ -155,39 +155,7 @@ fn collect_s3_chunks(
     // existing behavior for callers that don't override.
     let client = crate::cloud::blocking_client("S3", http)?;
     let base_url = build_base_url(&bucket, endpoint)?;
-    // Issue #4: scope SigV4 auto-signing to AWS-owned endpoints. When the
-    // user points `--s3-endpoint` at a non-AWS host (MinIO, Ceph, attacker-
-    // controlled), reading `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
-    // and attaching a signed `Authorization` header to that request hands
-    // the developer's AWS identity material to a third party they never
-    // explicitly opted into. Default policy: refuse to forward ambient
-    // creds to custom endpoints. The operator opts in only through an
-    // explicit caller-supplied flag after verifying the endpoint and accepting
-    // the credential-leak exposure.
-    let endpoint_is_aws_host = match endpoint {
-        Some(value) => endpoint_is_aws(value),
-        None => true,
-    };
-    let aws_auth = if endpoint_is_aws_host {
-        AwsSigV4Config::from_env(&base_url)
-    } else if crate::cloud::credential_forward_allowed(allow_credential_forward) {
-        tracing::warn!(
-            endpoint = %endpoint.unwrap_or(""),  // LAW10: missing/non-string field => empty/placeholder; recall-safe
-            "explicit S3 credential-forwarding override active: forwarding \
-             ambient AWS credentials to non-AWS endpoint. Verify you trust this host."
-        );
-        AwsSigV4Config::from_env(&base_url)
-    } else {
-        if std::env::var("AWS_ACCESS_KEY_ID").is_ok() {
-            tracing::warn!(
-                endpoint = %endpoint.unwrap_or(""),  // LAW10: missing/non-string field => empty/placeholder; recall-safe
-                "AWS credentials present but endpoint is non-AWS; refusing to \
-                 forward. Pass the explicit S3 credential-forwarding flag only \
-                 for endpoints you trust."
-            );
-        }
-        None
-    };
+    let aws_auth = resolve_s3_auth(&base_url, endpoint, allow_credential_forward);
     let mut continuation_token = None::<String>;
     let mut chunks = Vec::new();
     let mut listed_objects = 0usize;
@@ -254,6 +222,46 @@ fn collect_s3_chunks(
     }
 
     Ok(chunks)
+}
+
+fn resolve_s3_auth(
+    base_url: &str,
+    endpoint: Option<&str>,
+    allow_credential_forward: bool,
+) -> Option<AwsSigV4Config> {
+    // Issue #4: scope SigV4 auto-signing to AWS-owned endpoints. When the
+    // user points `--s3-endpoint` at a non-AWS host (MinIO, Ceph, attacker-
+    // controlled), reading `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`
+    // and attaching a signed `Authorization` header to that request hands
+    // the developer's AWS identity material to a third party they never
+    // explicitly opted into. Default policy: refuse to forward ambient
+    // creds to custom endpoints. The operator opts in only through an
+    // explicit caller-supplied flag after verifying the endpoint and accepting
+    // the credential-leak exposure.
+    let endpoint_is_aws_host = match endpoint {
+        Some(value) => endpoint_is_aws(value),
+        None => true,
+    };
+    if endpoint_is_aws_host {
+        return AwsSigV4Config::from_env(base_url);
+    }
+    if crate::cloud::credential_forward_allowed(allow_credential_forward) {
+        tracing::warn!(
+            endpoint = %endpoint.unwrap_or(""),  // LAW10: missing/non-string field => empty/placeholder; recall-safe
+            "explicit S3 credential-forwarding override active: forwarding \
+             ambient AWS credentials to non-AWS endpoint. Verify you trust this host."
+        );
+        return AwsSigV4Config::from_env(base_url);
+    }
+    if std::env::var("AWS_ACCESS_KEY_ID").is_ok() {
+        tracing::warn!(
+            endpoint = %endpoint.unwrap_or(""),  // LAW10: missing/non-string field => empty/placeholder; recall-safe
+            "AWS credentials present but endpoint is non-AWS; refusing to \
+             forward. Pass the explicit S3 credential-forwarding flag only \
+             for endpoints you trust."
+        );
+    }
+    None
 }
 
 fn fetch_s3_listing_page(

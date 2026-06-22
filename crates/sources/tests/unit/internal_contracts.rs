@@ -291,6 +291,42 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
         }
     }
 
+    for (rel, collect_sig, auth_helper, next_boundary, forbidden) in [
+        (
+            "src/s3/mod.rs",
+            "fn collect_s3_chunks(",
+            "resolve_s3_auth(",
+            "fn resolve_s3_auth(",
+            &["AwsSigV4Config::from_env", "std::env::var"][..],
+        ),
+        (
+            "src/gcs.rs",
+            "fn collect_gcs_chunks(",
+            "resolve_gcs_auth(",
+            "fn resolve_gcs_auth(",
+            &["gcs_bearer_token(", "std::env::var"][..],
+        ),
+    ] {
+        let source = std::fs::read_to_string(root.join(rel)).expect("read cloud source");
+        let collect = source
+            .split(collect_sig)
+            .nth(1)
+            .unwrap_or_else(|| panic!("{rel} must contain {collect_sig}"))
+            .split(next_boundary)
+            .next()
+            .unwrap_or_else(|| panic!("{rel} collect section must be bounded by {next_boundary}"));
+        assert!(
+            source.contains(auth_helper) && collect.contains(auth_helper),
+            "{rel} collector must delegate credential/auth resolution through {auth_helper}"
+        );
+        for forbidden in forbidden {
+            assert!(
+                !collect.contains(forbidden),
+                "{rel} collector must not own credential/auth implementation detail `{forbidden}`"
+            );
+        }
+    }
+
     for rel in ["src/slack.rs", "src/hosted_git.rs", "src/cloud/mod.rs"] {
         let source = std::fs::read_to_string(root.join(rel)).expect("read remote source");
         assert!(
