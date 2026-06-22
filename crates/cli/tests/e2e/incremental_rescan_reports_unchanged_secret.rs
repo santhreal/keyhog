@@ -129,3 +129,37 @@ fn incremental_cache_persist_failure_is_visible_and_nonzero_on_clean_scan() {
         "incremental cache persistence failure must be operator-visible; stderr={stderr}"
     );
 }
+
+#[test]
+fn incremental_cache_persist_failure_with_findings_keeps_finding_exit_and_warning() {
+    let dir = TempDir::new().expect("tempdir");
+    std::fs::write(
+        dir.path().join("config.env"),
+        "TOKEN=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\n",
+    )
+    .expect("write secret file");
+    let blocker = dir.path().join("not-a-directory");
+    std::fs::write(&blocker, b"regular file").expect("write cache parent blocker");
+    let cache = blocker.join("merkle.idx");
+    let cache_arg = cache.to_str().unwrap();
+    let args = ["--incremental", "--incremental-cache", cache_arg];
+
+    let output = scan_path(dir.path(), &args);
+    assert_eq!(
+        output.status.code(),
+        Some(1),
+        "findings keep the findings exit code even when cache persistence also fails"
+    );
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("github-classic-pat"),
+        "cache persistence failure must not hide the reported secret; stdout={}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("warning: incremental cache")
+            && stderr.contains("could not be persisted")
+            && stderr.contains("cache path is fixed"),
+        "masked cache persistence failure must remain operator-visible; stderr={stderr}"
+    );
+}
