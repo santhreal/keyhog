@@ -813,3 +813,93 @@ fn oob_deregister_error_body_is_capped_not_unbounded() {
         "deregister must not read an UNCAPPED body via resp.text() (memory-bomb vector)"
     );
 }
+
+#[test]
+fn oob_collector_direct_client_is_dns_pinned() {
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/oob/client.rs"))
+        .expect("oob/client.rs must be readable");
+    let helper = src
+        .split("async fn collector_http_client(")
+        .nth(1)
+        .expect("collector_http_client must exist");
+    let helper_body = helper
+        .split("pub(crate) fn ssrf_check_collector_dns_result_for_test")
+        .next()
+        .expect("collector helper section must be bounded");
+
+    assert!(
+        helper_body.contains("crate::ssrf::is_private_url(server)"),
+        "OOB collector policy must reject private-looking collector URLs before network contact"
+    );
+    assert!(
+        helper_body.contains("crate::ssrf::resolve_dns_cached(&host_port)"),
+        "OOB collector direct path must resolve the collector host before contact"
+    );
+    assert!(
+        helper_body.contains("check_collector_resolved_addrs(server, &addrs)?"),
+        "OOB collector direct path must screen every resolved address"
+    );
+    assert!(
+        helper_body.contains(".resolve_to_addrs(&host, &pinned_addrs)"),
+        "OOB collector direct path must pin the screened DNS answers"
+    );
+    assert!(
+        helper_body.contains("refusing an unpinned collector client"),
+        "OOB collector pin-client build failure must fail closed, not use an unpinned client"
+    );
+}
+
+#[test]
+fn oob_collector_pinned_client_preserves_security_builder_options() {
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/oob/client.rs"))
+        .expect("oob/client.rs must be readable");
+    let helper = src
+        .split("async fn collector_http_client(")
+        .nth(1)
+        .expect("collector_http_client must exist");
+    let builder = helper
+        .split(".resolve_to_addrs(&host, &pinned_addrs)")
+        .next()
+        .expect("collector pinned builder must be present");
+
+    for needle in [
+        ".timeout(timeout)",
+        ".danger_accept_invalid_certs(insecure_tls)",
+        ".no_proxy()",
+        ".no_gzip()",
+        ".no_brotli()",
+        ".no_zstd()",
+        ".no_deflate()",
+        ".redirect(reqwest::redirect::Policy::none())",
+    ] {
+        assert!(
+            builder.contains(needle),
+            "OOB pinned collector client must preserve {needle}"
+        );
+    }
+}
+
+#[test]
+fn enable_oob_uses_engine_network_policy_for_collector_client() {
+    let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/verify/mod.rs"))
+        .expect("verify/mod.rs must be readable");
+    let enable = src
+        .split("pub async fn enable_oob(")
+        .nth(1)
+        .expect("enable_oob must exist");
+    let enable_body = enable
+        .split("pub async fn shutdown_oob")
+        .next()
+        .expect("enable_oob section must be bounded");
+
+    assert!(
+        enable_body.contains("OobSession::start_with_network_policy"),
+        "enable_oob must use the OOB start path that accepts network policy"
+    );
+    for needle in ["self.timeout", "self.proxy_in_use", "self.insecure_tls"] {
+        assert!(
+            enable_body.contains(needle),
+            "enable_oob must pass {needle} into the OOB collector client"
+        );
+    }
+}

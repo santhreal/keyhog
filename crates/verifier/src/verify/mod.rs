@@ -404,7 +404,14 @@ impl VerificationEngine {
         if let Some(old) = self.oob_session.take() {
             old.shutdown().await;
         }
-        let session = crate::oob::OobSession::start(self.client.clone(), config).await?;
+        let session = crate::oob::OobSession::start_with_network_policy(
+            self.client.clone(),
+            config,
+            self.timeout,
+            self.proxy_in_use,
+            self.insecure_tls,
+        )
+        .await?;
         self.oob_session = Some(session);
         Ok(())
     }

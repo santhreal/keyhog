@@ -108,6 +108,10 @@ pub struct Interaction {
 /// caller's side; here we hold owned values because the session pins this
 /// for the lifetime of the engine).
 pub struct InteractshClient {
+    /// Collector client after the OOB SSRF/DNS policy is applied. On direct
+    /// connections this client pins the collector host to the screened DNS
+    /// answers; with an explicit proxy it is the caller-provided proxy client
+    /// after the string-level private-host block has run.
     http: Client,
     server: String,
     correlation_id: String,
@@ -223,6 +227,17 @@ impl InteractshClient {
     /// Build, generate keys, and register with the collector. The returned
     /// client is ready to mint URLs and be polled.
     pub async fn register(http: Client, server: &str) -> Result<Self, InteractshError> {
+        Self::register_with_network_policy(http, server, Duration::from_secs(30), false, false)
+            .await
+    }
+
+    pub(crate) async fn register_with_network_policy(
+        http: Client,
+        server: &str,
+        timeout: Duration,
+        proxy_in_use: bool,
+        insecure_tls: bool,
+    ) -> Result<Self, InteractshError> {
         // RSA-2048 keygen happens on a blocking thread - it's CPU-bound for
         // ~100ms and would otherwise stall the runtime.
         let private_key = tokio::task::spawn_blocking(|| {
@@ -249,22 +264,8 @@ impl InteractshClient {
         let secret_key = uuid::Uuid::new_v4().to_string();
 
         let server = normalize_server(server);
-
-        // SSRF gate (kimi verifier audit MEDIUM finding). The OOB collector
-        // traffic - register/poll/deregister - does NOT flow through
-        // `resolved_client_for_url`, which is the only place the verify path
-        // enforces private-IP / DNS-rebinding protection. Without a gate here,
-        // `--oob-server 169.254.169.254` (cloud metadata), `127.0.0.1`, or any
-        // RFC1918 host turns the unattended poller into an SSRF primitive that
-        // also leaks the session secret (embedded in the poll query string) to
-        // an internal service. We validate the collector host BEFORE the first
-        // request: first the URL-string check (literal IPs, integer/hex/octal
-        // encodings, `localhost`/`.internal`/`.local`), then a post-resolution
-        // IP check so a hostname that resolves to a private address - the DNS
-        // rebinding case a 'trusted' hostname cannot rule out - is refused too.
-        // The check is a pure validation: re-running it is a no-op, so the fix
-        // is idempotent.
-        ssrf_check_collector(&server).await?;
+        let collector_http =
+            collector_http_client(&http, &server, timeout, proxy_in_use, insecure_tls).await?;
 
         let body = RegisterRequest {
             public_key: &public_key_b64,
@@ -282,7 +283,7 @@ impl InteractshClient {
         crate::rate_limit::get_rate_limiter()
             .wait(OOB_SERVICE)
             .await;
-        let resp = http
+        let resp = collector_http
             .post(format!("{server}/register"))
             .json(&body)
             .send()
@@ -302,7 +303,7 @@ impl InteractshClient {
         debug!(target: "keyhog::oob", correlation_id = %correlation_id, server = %server, "registered with interactsh collector");
 
         Ok(Self {
-            http,
+            http: collector_http,
             server,
             correlation_id,
             secret_key,
@@ -475,38 +476,59 @@ pub struct MintedUrl {
     pub url: String,
 }
 
-/// SSRF guard for the OOB collector host. Mirrors the protection
-/// `resolved_client_for_url` applies to every credential-verify URL, which the
-/// OOB register/poll/deregister path otherwise bypasses entirely.
+/// Build the only HTTP client OOB collector traffic may use.
 ///
-/// Two layers, both pure validation (idempotent - re-running refuses or passes
-/// identically with no side effects):
+/// Direct connections mirror `resolved_client_for_url`: block private-looking
+/// collector URLs, resolve once, reject any private resolved address, then pin
+/// the accepted addresses into reqwest via `resolve_to_addrs`. Register, poll,
+/// and deregister all use this stored client, so a collector host cannot pass a
+/// first DNS screen and later rebind the unattended poller to an internal
+/// service that receives the session secret.
 ///
-/// 1. URL-string check (`is_private_url`): rejects literal private/loopback/
-///    link-local/multicast IPs, integer/hex/octal-encoded IPs, and the
-///    `localhost` / `.internal` / `.local` / `.localdomain` suffixes before any
-///    network I/O.
-/// 2. Post-resolution IP check: resolves the host once and rejects if ANY
-///    answer is a private address. This is the DNS-rebinding defense - a
-///    hostname an operator believes is a benign collector can still resolve to
-///    `169.254.169.254` or `127.0.0.1`, and the unattended poller embeds the
-///    session secret in its query string, so an internal target is both an
-///    SSRF and a secret-disclosure sink.
-///
-/// `normalize_server` has already force-upgraded to `https://` and stripped any
-/// trailing slash, so `server` here is `https://<host>` with no path.
-async fn ssrf_check_collector(server: &str) -> Result<(), InteractshError> {
+/// With an explicit proxy, DNS resolution belongs to the proxy. We still run
+/// the string-level private-host block locally, then keep the caller-provided
+/// proxy client instead of rebuilding a direct client that would drop proxy
+/// policy.
+async fn collector_http_client(
+    base_client: &Client,
+    server: &str,
+    timeout: Duration,
+    proxy_in_use: bool,
+    insecure_tls: bool,
+) -> Result<Client, InteractshError> {
     if crate::ssrf::is_private_url(server) {
         return Err(InteractshError::BlockedCollector(format!(
             "{server} resolves to a private/loopback/link-local address"
         )));
     }
 
-    let host_port = collector_host_port(server)?;
+    if proxy_in_use {
+        return Ok(base_client.clone());
+    }
+
+    let (host, host_port) = collector_host_and_port(server)?;
     let addrs = crate::ssrf::resolve_dns_cached(&host_port)
         .await
         .map_err(|error| collector_dns_failure(server, error))?;
-    check_collector_resolved_addrs(server, &addrs)
+    check_collector_resolved_addrs(server, &addrs)?;
+    let pinned_addrs = addrs;
+
+    Client::builder()
+        .timeout(timeout)
+        .danger_accept_invalid_certs(insecure_tls)
+        .no_proxy()
+        .no_gzip()
+        .no_brotli()
+        .no_zstd()
+        .no_deflate()
+        .redirect(reqwest::redirect::Policy::none())
+        .resolve_to_addrs(&host, &pinned_addrs)
+        .build()
+        .map_err(|error| {
+            InteractshError::BlockedCollector(format!(
+                "{server} DNS pin client build failed ({error}); refusing an unpinned collector client"
+            ))
+        })
 }
 
 pub(crate) fn ssrf_check_collector_dns_result_for_test(
@@ -519,6 +541,11 @@ pub(crate) fn ssrf_check_collector_dns_result_for_test(
 }
 
 fn collector_host_port(server: &str) -> Result<String, InteractshError> {
+    let (_host, host_port) = collector_host_and_port(server)?;
+    Ok(host_port)
+}
+
+fn collector_host_and_port(server: &str) -> Result<(String, String), InteractshError> {
     let url = url::Url::parse(server).map_err(|_error| {
         InteractshError::BlockedCollector(format!("{server} is not a parseable collector URL"))
     })?;
@@ -526,7 +553,7 @@ fn collector_host_port(server: &str) -> Result<String, InteractshError> {
         InteractshError::BlockedCollector(format!("{server} has no collector host"))
     })?;
     let port = url.port_or_known_default().unwrap_or(443); // LAW10: no explicit port => scheme default (443); recall-irrelevant
-    Ok(format!("{host}:{port}"))
+    Ok((host.to_string(), format!("{host}:{port}")))
 }
 
 fn collector_dns_failure(server: &str, error: std::io::Error) -> InteractshError {

@@ -148,7 +148,24 @@ impl OobSession {
         http: Client,
         config: OobConfig,
     ) -> Result<Arc<Self>, super::InteractshError> {
-        let client = InteractshClient::register(http, &config.server).await?;
+        Self::start_with_network_policy(http, config, Duration::from_secs(30), false, false).await
+    }
+
+    pub(crate) async fn start_with_network_policy(
+        http: Client,
+        config: OobConfig,
+        timeout: Duration,
+        proxy_in_use: bool,
+        insecure_tls: bool,
+    ) -> Result<Arc<Self>, super::InteractshError> {
+        let client = InteractshClient::register_with_network_policy(
+            http,
+            &config.server,
+            timeout,
+            proxy_in_use,
+            insecure_tls,
+        )
+        .await?;
         let client = Arc::new(client);
         info!(
             target: "keyhog::oob",
