@@ -62,6 +62,69 @@ fn docker_manifest_gzip_layer_yields_chunks() {
 
 #[cfg(feature = "docker")]
 #[test]
+fn docker_gzip_layer_reads_concatenated_members() {
+    use flate2::{write::GzEncoder, Compression};
+    use std::io::Write;
+
+    fn append_file(builder: &mut tar::Builder<Vec<u8>>, path: &str, payload: &[u8]) {
+        let mut header = tar::Header::new_gnu();
+        header.set_path(path).expect("set layer path");
+        header.set_size(payload.len() as u64);
+        header.set_entry_type(tar::EntryType::Regular);
+        header.set_cksum();
+        builder
+            .append(&header, payload)
+            .expect("append layer payload");
+    }
+
+    let mut builder = tar::Builder::new(Vec::new());
+    append_file(&mut builder, "first.env", b"FIRST=visible\n");
+    append_file(&mut builder, "second.env", b"SECOND=AKIAIOSFODNN7EXAMPLE\n");
+    builder.finish().expect("finish tar");
+    let tar_bytes = builder.into_inner().expect("tar bytes");
+    let second_header = tar_bytes
+        .windows("second.env".len())
+        .position(|window| window == b"second.env")
+        .expect("second header marker");
+    assert!(
+        second_header > 0,
+        "fixture must split after the first complete tar member"
+    );
+
+    let mut first_member = GzEncoder::new(Vec::new(), Compression::default());
+    first_member
+        .write_all(&tar_bytes[..second_header])
+        .expect("write first gzip member");
+    let first_member = first_member.finish().expect("finish first gzip member");
+
+    let mut second_member = GzEncoder::new(Vec::new(), Compression::default());
+    second_member
+        .write_all(&tar_bytes[second_header..])
+        .expect("write second gzip member");
+    let second_member = second_member.finish().expect("finish second gzip member");
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let layer_path = dir.path().join("layer.tar.gz");
+    let mut concatenated = first_member;
+    concatenated.extend_from_slice(&second_member);
+    std::fs::write(&layer_path, concatenated).expect("write concatenated gzip layer");
+
+    let unpacked = dir.path().join("unpacked");
+    std::fs::create_dir(&unpacked).expect("mkdir unpacked");
+    TestApi
+        .unpack_docker_layer_archive(&layer_path, &unpacked)
+        .expect("concatenated gzip Docker layer must unpack");
+
+    let second = std::fs::read_to_string(unpacked.join("second.env"))
+        .expect("second gzip member file must be extracted");
+    assert!(
+        second.contains("AKIAIOSFODNN7EXAMPLE"),
+        "Docker gzip layer extraction must not stop after the first gzip member"
+    );
+}
+
+#[cfg(feature = "docker")]
+#[test]
 fn docker_layer_filesystem_error_propagates() {
     let dir = tempfile::tempdir().expect("tempdir");
     let err = TestApi

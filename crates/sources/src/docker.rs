@@ -269,10 +269,10 @@ fn unpack_layer_archive(
         LayerArchiveEncoding::RawTar => unpack_tar(archive_path, destination, limits),
         LayerArchiveEncoding::GzipTar => {
             let validation_file = File::open(archive_path).map_err(SourceError::Io)?;
-            validate_tar_reader(flate2::read::GzDecoder::new(validation_file), limits)?;
+            validate_tar_reader(flate2::read::MultiGzDecoder::new(validation_file), limits)?;
 
             let extract_file = File::open(archive_path).map_err(SourceError::Io)?;
-            unpack_tar_reader(flate2::read::GzDecoder::new(extract_file), destination)
+            unpack_tar_reader(flate2::read::MultiGzDecoder::new(extract_file), destination)
         }
         LayerArchiveEncoding::ZstdTar => {
             let validation_file = File::open(archive_path).map_err(SourceError::Io)?;
