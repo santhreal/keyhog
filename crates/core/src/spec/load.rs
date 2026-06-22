@@ -3,13 +3,95 @@
 
 #![allow(clippy::result_large_err)] // SpecError carries a 128-byte toml::de::Error; boxing it would be a breaking API change.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
+use thiserror::Error;
 
-use super::{
-    read_detector_toml_file, validate_detector, DetectorFile, DetectorSpec, QualityIssue, SpecError,
-};
+use super::{validate_detector, DetectorFile, DetectorSpec, QualityIssue};
+
+/// Maximum accepted size for one on-disk detector TOML file.
+///
+/// Detector specs are control-plane data, not scan input. A multi-megabyte
+/// detector file is either corrupt or hostile; refusing it keeps corpus loading
+/// from becoming an unbounded allocation path.
+pub const DETECTOR_TOML_FILE_BYTES: u64 = 16 * 1024 * 1024;
+
+/// Errors returned while loading or validating detector specifications.
+#[derive(Debug, Error)]
+#[allow(clippy::result_large_err)] // SpecError variants include 128-byte toml::de::Error; boxing would be a breaking API change.
+pub enum SpecError {
+    #[error(
+        "failed to read detector file {path}: {source}. Fix: check the detector path exists and that the file is readable TOML"
+    )]
+    ReadFile {
+        path: String,
+        source: std::io::Error,
+    },
+    #[error(
+        "invalid TOML in detector {path}: {source}. Fix: repair the TOML syntax in the detector file"
+    )]
+    InvalidToml {
+        path: PathBuf,
+        source: toml::de::Error,
+    },
+    #[error(
+        "{failed_count} of {total} embedded detector(s) failed to parse — the binary \
+         baked in a CORRUPT detector set, so its recall is silently degraded. This is \
+         a build/source bug, not a runtime condition: the embedded corpus is compiled \
+         in and cannot have been edited at runtime. Offending detector(s):\n{detail}\n\
+         Fix: repair the named TOML(s) under `detectors/` (the toml error names the \
+         line/column) and rebuild keyhog so build.rs re-embeds a valid set."
+    )]
+    EmbeddedCorpusCorrupt {
+        failed_count: usize,
+        total: usize,
+        detail: String,
+    },
+    #[error(
+        "{failed_count} of {total} detector file(s) from {dir} failed to load, \
+         pass the quality gate, or exist at all; refusing to scan without a \
+         complete detector corpus. \
+         Offending detector(s):\n{detail}\nFix: repair the named TOML file(s) \
+         or add at least one valid `*.toml` detector spec, then rerun the scan."
+    )]
+    DetectorCorpusRejected {
+        dir: String,
+        failed_count: usize,
+        total: usize,
+        detail: String,
+    },
+}
+
+/// Read one detector TOML file through the shared corpus cap.
+pub fn read_detector_toml_file(path: &Path) -> std::io::Result<String> {
+    let file = std::fs::File::open(path)?;
+    let len = file.metadata()?.len();
+    if len > DETECTOR_TOML_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "detector TOML exceeds {} byte cap; split the detector corpus or remove the oversized file",
+                DETECTOR_TOML_FILE_BYTES
+            ),
+        ));
+    }
+
+    let mut contents = String::new();
+    file.take(DETECTOR_TOML_FILE_BYTES.saturating_add(1))
+        .read_to_string(&mut contents)?;
+    if contents.len() as u64 > DETECTOR_TOML_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "detector TOML grew past {} byte cap while reading; rerun after the file is stable",
+                DETECTOR_TOML_FILE_BYTES
+            ),
+        ));
+    }
+    Ok(contents)
+}
 
 /// Load all detector specs from a directory of TOML files.
 /// Runs the quality gate on each detector and fails closed if any detector

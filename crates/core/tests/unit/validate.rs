@@ -169,8 +169,8 @@ fn warns_but_accepts_companion_character_class_with_tight_radius() {
 
 #[test]
 fn regex_validator_uses_one_iterative_ast_walk() {
-    let source =
-        std::fs::read_to_string("src/spec/validate_regex.rs").expect("read validate_regex source");
+    let source = std::fs::read_to_string("src/spec/validate/regex_complexity.rs")
+        .expect("read regex complexity source");
 
     assert!(source.contains("struct RegexWalkFrame"));
     assert!(source.contains("fn collect_regex_stats"));

@@ -151,6 +151,29 @@ fn oversized_toml_files_fail_closed_instead_of_allocating_unboundedly() {
 }
 
 #[test]
+fn spec_loader_and_validator_boundaries_are_explicit() {
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let spec_source =
+        std::fs::read_to_string(manifest_dir.join("src/spec.rs")).expect("read spec root");
+    let load_source =
+        std::fs::read_to_string(manifest_dir.join("src/spec/load.rs")).expect("read spec loader");
+    let validate_source = std::fs::read_to_string(manifest_dir.join("src/spec/validate.rs"))
+        .expect("read spec validator");
+
+    assert!(spec_source.contains("pub use load::{"));
+    assert!(!spec_source.contains("pub enum SpecError"));
+    assert!(!spec_source.contains("pub fn read_detector_toml_file"));
+    assert!(!spec_source.contains("pub const DETECTOR_TOML_FILE_BYTES"));
+
+    assert!(load_source.contains("pub enum SpecError"));
+    assert!(load_source.contains("pub fn read_detector_toml_file"));
+    assert!(load_source.contains("pub const DETECTOR_TOML_FILE_BYTES"));
+
+    assert!(validate_source.contains("mod regex_complexity;"));
+    assert!(!validate_source.contains("#[path ="));
+}
+
+#[test]
 fn no_detector_uses_singular_companion_table() {
     let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR not set");
     // The in-crate `detectors` is a Unix symlink to `../../detectors`. On

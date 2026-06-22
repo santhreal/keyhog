@@ -7,10 +7,10 @@ use serde::Serialize;
 const MAX_REGEX_PATTERN_LEN: usize = 4096;
 // MAX_REGEX_AST_NODES / MAX_REGEX_ALTERNATION_BRANCHES /
 // MAX_REGEX_REPEAT_BOUND were originally defined here too but are the
-// canonical constants in `validate_regex.rs` (which is where they're
-// actually consumed). Duplicates here had no consumers - clippy
+// canonical constants in `validate/regex_complexity.rs` (which is where
+// they're actually consumed). Duplicates here had no consumers - clippy
 // `dead_code` flagged them. Re-imports happen via the `use
-// validate_regex::validate_regex_complexity;` below.
+// regex_complexity::validate_regex_complexity;` below.
 
 /// Quality issue found in a detector spec.
 ///
@@ -415,6 +415,5 @@ fn is_pure_character_class(pattern: &str) -> bool {
     false
 }
 
-#[path = "validate_regex.rs"]
-mod validate_regex;
-use validate_regex::validate_regex_complexity;
+mod regex_complexity;
+use regex_complexity::validate_regex_complexity;
