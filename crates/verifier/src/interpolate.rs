@@ -93,6 +93,54 @@ pub(crate) fn interpolate(
     credential: &str,
     companions: &HashMap<String, String>,
 ) -> String {
+    interpolate_url(template, credential, companions)
+}
+
+/// Interpolate a URL template. Embedded match/companion values are
+/// percent-encoded because they occupy URL component positions.
+pub(crate) fn interpolate_url(
+    template: &str,
+    credential: &str,
+    companions: &HashMap<String, String>,
+) -> String {
+    interpolate_with_context(template, credential, companions, InterpolationContext::Url)
+}
+
+/// Interpolate an HTTP header or body template. Embedded match/companion values
+/// are control-stripped but not percent-encoded; callers that need JSON or form
+/// escaping must express that in the detector template itself.
+pub(crate) fn interpolate_http_value(
+    template: &str,
+    credential: &str,
+    companions: &HashMap<String, String>,
+) -> String {
+    interpolate_with_context(
+        template,
+        credential,
+        companions,
+        InterpolationContext::HttpValue,
+    )
+}
+
+#[derive(Copy, Clone)]
+enum InterpolationContext {
+    Url,
+    HttpValue,
+}
+
+fn interpolate_placeholder_value(value: &str, context: InterpolationContext) -> String {
+    match context {
+        InterpolationContext::Url => url_encode(value),
+        InterpolationContext::HttpValue => sanitize_raw_value(value),
+    }
+}
+
+fn interpolate_with_context(
+    template: &str,
+    credential: &str,
+    companions: &HashMap<String, String>,
+    context: InterpolationContext,
+) -> String {
     const MAX_INTERPOLATION_REPLACEMENTS: usize = 1024;
 
     if template == "{{match}}" {
@@ -110,7 +158,8 @@ pub(crate) fn interpolate(
         return sanitize_raw_value(raw);
     }
 
-    let mut interpolated = template.replace("{{match}}", &url_encode(credential));
+    let match_replacement = interpolate_placeholder_value(credential, context);
+    let mut interpolated = template.replace("{{match}}", &match_replacement);
 
     // OOB callback substitutions. Unlike `{{match}}` and `{{companion.*}}` we
     // do NOT URL-encode the value: the minted host is already URL-safe (only
@@ -161,7 +210,11 @@ pub(crate) fn interpolate(
             let name_start = start + "{{companion.".len();
             let name_end = start + end_offset;
             let name = &interpolated[name_start..name_end];
-            let replacement = url_encode(companions.get(name).map(String::as_str).unwrap_or("")); // LAW10: missing/non-string field => empty/placeholder; recall-safe
+            let raw = match companions.get(name) {
+                Some(value) => value.as_str(),
+                None => "", // LAW10: missing/non-string field => empty/placeholder; recall-safe
+            };
+            let replacement = interpolate_placeholder_value(raw, context);
 
             let end = start + end_offset + 2;
             interpolated = format!(

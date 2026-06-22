@@ -4,7 +4,7 @@ use std::time::Duration;
 use keyhog_core::VerificationResult;
 use reqwest::Client;
 
-use crate::interpolate::interpolate;
+use crate::interpolate::{interpolate_http_value, interpolate_url};
 use crate::verify::credential::verification_timeout;
 use crate::verify::{
     body_indicates_error, build_request_for_step, evaluate_success, execute_request,
@@ -30,7 +30,7 @@ pub(crate) async fn verify_multi_step(
 
     for step in &spec.steps {
         let step_timeout = verification_timeout(spec, timeout);
-        let raw_url = interpolate(&step.url, credential, &current_companions);
+        let raw_url = interpolate_url(&step.url, credential, &current_companions);
         // SECURITY: per-step domain allowlist enforcement, same gate as
         // single-step verify. Multi-step URLs are interpolated from earlier
         // step responses (`extract` companions), so an attacker who controls
@@ -93,12 +93,12 @@ pub(crate) async fn verify_multi_step(
         };
 
         for header in &step.headers {
-            let value = interpolate(&header.value, credential, &current_companions);
+            let value = interpolate_http_value(&header.value, credential, &current_companions);
             request = request.header(&header.name, &value);
         }
 
         if let Some(body_template) = &step.body {
-            let body = interpolate(body_template, credential, &current_companions);
+            let body = interpolate_http_value(body_template, credential, &current_companions);
             request = request.body(body);
         }
 

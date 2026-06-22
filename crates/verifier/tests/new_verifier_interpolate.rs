@@ -196,6 +196,30 @@ fn interpolate_match_inside_url_is_url_encoded() {
 }
 
 #[test]
+fn interpolate_url_context_embedded_match_is_url_encoded() {
+    let c = companions(&[]);
+    assert_eq!(
+        TestApi.interpolate_url("https://api.example.com/v1/{{match}}", "a+b/c=d", &c),
+        "https://api.example.com/v1/a%2Bb%2Fc%3Dd"
+    );
+}
+
+#[test]
+fn interpolate_http_value_context_embedded_match_is_raw_sanitized() {
+    let c = companions(&[]);
+    assert_eq!(
+        TestApi.interpolate_http_value("Bearer {{match}}", "a+b/c=d", &c),
+        "Bearer a+b/c=d",
+        "header/body interpolation must not percent-encode valid credential bytes"
+    );
+    assert_eq!(
+        TestApi.interpolate_http_value("Bearer {{match}}", "tok\r\nen", &c),
+        "Bearer token",
+        "HTTP value interpolation still strips control bytes"
+    );
+}
+
+#[test]
 fn interpolate_bare_companion_is_raw_sanitized() {
     let c = companions(&[("secret", "a+b/c")]);
     assert_eq!(
@@ -211,6 +235,15 @@ fn interpolate_companion_inside_template_is_url_encoded() {
     assert_eq!(
         TestApi.interpolate("k={{companion.secret}}&z=1", "cred", &c),
         "k=a%20b&z=1"
+    );
+}
+
+#[test]
+fn interpolate_http_value_context_embedded_companion_is_raw_sanitized() {
+    let c = companions(&[("secret", "a+b/c=d")]);
+    assert_eq!(
+        TestApi.interpolate_http_value("X-Key {{companion.secret}}", "cred", &c),
+        "X-Key a+b/c=d"
     );
 }
 

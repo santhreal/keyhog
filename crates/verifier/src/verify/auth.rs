@@ -4,7 +4,7 @@ use std::time::Duration;
 use keyhog_core::{AuthSpec, VerificationResult};
 use reqwest::Client;
 
-use crate::interpolate::{interpolate, resolve_field, sanitize_raw_value};
+use crate::interpolate::{interpolate_http_value, resolve_field, sanitize_raw_value};
 use crate::verify::{build_aws_probe, RequestBuildResult};
 
 pub(crate) async fn build_request_for_auth(
@@ -22,7 +22,8 @@ pub(crate) async fn build_request_for_auth(
             // SECURITY: kimi verifier audit LOW finding. Bearer token
             // values feed into `Authorization:` headers. If a credential
             // contains a CR/LF or NUL it must be stripped first, matching
-            // the sanitization Header auth already applies via interpolate().
+            // the sanitization Header auth already applies via
+            // interpolate_http_value().
             // A raw newline in a bearer token would silently terminate the
             // header line and inject the next byte into the request stream.
             let token = sanitize_raw_value(&resolve_field(field, credential, companions));
@@ -39,7 +40,7 @@ pub(crate) async fn build_request_for_auth(
             RequestBuildResult::Ready(request.basic_auth(u, Some(p)))
         }
         AuthSpec::Header { name, template } => {
-            let value = interpolate(template, credential, companions);
+            let value = interpolate_http_value(template, credential, companions);
             RequestBuildResult::Ready(request.header(name, value))
         }
         AuthSpec::Query { param, field } => {

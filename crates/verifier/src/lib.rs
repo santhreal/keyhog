@@ -401,6 +401,18 @@ pub mod testing {
             credential: &str,
             companions: &HashMap<String, String>,
         ) -> String;
+        fn interpolate_url(
+            &self,
+            template: &str,
+            credential: &str,
+            companions: &HashMap<String, String>,
+        ) -> String;
+        fn interpolate_http_value(
+            &self,
+            template: &str,
+            credential: &str,
+            companions: &HashMap<String, String>,
+        ) -> String;
         fn companions_with_oob(
             &self,
             base: &HashMap<String, String>,
@@ -519,6 +531,24 @@ pub mod testing {
             companions: &HashMap<String, String>,
         ) -> String {
             crate::interpolate::interpolate(template, credential, companions)
+        }
+
+        fn interpolate_url(
+            &self,
+            template: &str,
+            credential: &str,
+            companions: &HashMap<String, String>,
+        ) -> String {
+            crate::interpolate::interpolate_url(template, credential, companions)
+        }
+
+        fn interpolate_http_value(
+            &self,
+            template: &str,
+            credential: &str,
+            companions: &HashMap<String, String>,
+        ) -> String {
+            crate::interpolate::interpolate_http_value(template, credential, companions)
         }
 
         fn companions_with_oob(

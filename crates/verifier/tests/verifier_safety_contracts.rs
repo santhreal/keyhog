@@ -681,6 +681,59 @@ fn ssrf_ip_policy_has_one_classifier_owner() {
     }
 }
 
+#[test]
+fn interpolation_context_is_explicit_at_request_call_sites() {
+    let credential = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/verify/credential.rs"
+    ))
+    .expect("verify/credential.rs must be readable");
+    assert!(
+        credential
+            .contains("let raw_url = interpolate_url(url_template, credential, companions_ref);"),
+        "single-step URL templates must use URL-context interpolation"
+    );
+    assert!(
+        credential.contains("interpolate_http_value(&header.value, credential, companions_ref)")
+            && credential
+                .contains("interpolate_http_value(body_template, credential, companions_ref)"),
+        "single-step header/body templates must use HTTP-value interpolation"
+    );
+    assert!(
+        !credential.contains("use crate::interpolate::{companions_with_oob, interpolate};"),
+        "single-step verification must not import the ambiguous generic interpolation helper"
+    );
+
+    let multi_step = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/verify/multi_step.rs"
+    ))
+    .expect("verify/multi_step.rs must be readable");
+    assert!(
+        multi_step
+            .contains("let raw_url = interpolate_url(&step.url, credential, &current_companions);"),
+        "multi-step URL templates must use URL-context interpolation"
+    );
+    assert!(
+        multi_step
+            .contains("interpolate_http_value(&header.value, credential, &current_companions)")
+            && multi_step
+                .contains("interpolate_http_value(body_template, credential, &current_companions)"),
+        "multi-step header/body templates must use HTTP-value interpolation"
+    );
+
+    let auth = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/verify/auth.rs"))
+        .expect("verify/auth.rs must be readable");
+    assert!(
+        auth.contains("let value = interpolate_http_value(template, credential, companions);"),
+        "AuthSpec::Header templates feed Authorization/header values and must not URL-encode"
+    );
+    assert!(
+        !auth.contains("use crate::interpolate::{interpolate,"),
+        "auth verification must not import the ambiguous generic interpolation helper"
+    );
+}
+
 // ===========================================================================
 // 5b. OOB interaction drops are LOUD, not silent (Law 10)
 // ===========================================================================

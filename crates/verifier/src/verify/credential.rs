@@ -6,7 +6,7 @@ use keyhog_core::{AuthSpec, HttpMethod, OobPolicy, VerificationResult};
 use rand::Rng;
 use reqwest::Client;
 
-use crate::interpolate::{companions_with_oob, interpolate};
+use crate::interpolate::{companions_with_oob, interpolate_http_value, interpolate_url};
 use crate::oob::{OobObservation, OobSession};
 use crate::verify::multi_step::verify_multi_step;
 use crate::verify::{
@@ -287,7 +287,7 @@ pub(crate) async fn verify_credential(
         )
         .await
     } else {
-        let raw_url = interpolate(url_template, credential, companions_ref);
+        let raw_url = interpolate_url(url_template, credential, companions_ref);
         if let Err(reason) = crate::domain_allowlist::check_url_against_spec(&raw_url, spec) {
             return VerificationAttempt {
                 result: VerificationResult::Error(reason),
@@ -344,12 +344,12 @@ pub(crate) async fn verify_credential(
     };
 
     for header in &spec.headers {
-        let value = interpolate(&header.value, credential, companions_ref);
+        let value = interpolate_http_value(&header.value, credential, companions_ref);
         request = request.header(&header.name, &value);
     }
 
     if let Some(body_template) = &spec.body {
-        let body = interpolate(body_template, credential, companions_ref);
+        let body = interpolate_http_value(body_template, credential, companions_ref);
         request = request.body(body);
     }
 
