@@ -57,7 +57,7 @@ impl CompiledScanner {
             );
             return;
         }
-        if context::is_false_positive_context(
+        let false_positive_context = context::is_false_positive_context(
             code_lines,
             line.saturating_sub(PREVIOUS_LINE_DISTANCE),
             chunk.metadata.path.as_deref(),
@@ -65,11 +65,19 @@ impl CompiledScanner {
             data,
             credential_start,
             chunk.metadata.path.as_deref(),
-        ) {
+        );
+        let false_positive_ctx = crate::adjudicate::MatchCtx::for_process_signals(
+            crate::adjudicate::ProcessCandidateSignals::from_false_positive_context(
+                false_positive_context,
+            ),
+        );
+        if let Some(stage_id) =
+            crate::adjudicate::adjudicate_match(candidate, &false_positive_ctx).suppressed_stage()
+        {
             crate::telemetry::record_shape_suppression(
                 chunk.metadata.path.as_deref(),
                 credential,
-                "false_positive_context",
+                stage_id.as_str(),
             );
             return;
         }

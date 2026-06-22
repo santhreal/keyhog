@@ -12,6 +12,7 @@ pub(crate) enum StageId {
     WithinHexContext,
     HexDigestFragment,
     ProbabilisticGateNotPromising,
+    FalsePositiveContext,
     NamedDetectorSuppression,
 }
 
@@ -23,6 +24,7 @@ impl StageId {
             Self::WithinHexContext => "within_hex_context",
             Self::HexDigestFragment => "hex_digest_fragment",
             Self::ProbabilisticGateNotPromising => "probabilistic_gate_not_promising",
+            Self::FalsePositiveContext => "false_positive_context",
             Self::NamedDetectorSuppression => "named_detector_suppressed",
         }
     }
@@ -71,6 +73,7 @@ pub(crate) struct ProcessCandidateSignals {
     within_hex_context: bool,
     hex_digest_fragment: bool,
     generic_without_prefix_not_promising: bool,
+    false_positive_context: bool,
 }
 
 impl ProcessCandidateSignals {
@@ -102,6 +105,18 @@ impl ProcessCandidateSignals {
             within_hex_context,
             hex_digest_fragment,
             generic_without_prefix_not_promising,
+            false_positive_context: false,
+        }
+    }
+
+    pub(crate) const fn from_false_positive_context(false_positive_context: bool) -> Self {
+        Self {
+            invalid_aws_access_key_length: false,
+            invalid_anthropic_legacy_length: false,
+            within_hex_context: false,
+            hex_digest_fragment: false,
+            generic_without_prefix_not_promising: false,
+            false_positive_context,
         }
     }
 }
@@ -163,6 +178,9 @@ fn process_signal_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> S
     }
     if signals.generic_without_prefix_not_promising {
         return StageOutcome::Suppress(StageId::ProbabilisticGateNotPromising);
+    }
+    if signals.false_positive_context {
+        return StageOutcome::Suppress(StageId::FalsePositiveContext);
     }
     StageOutcome::Pass
 }

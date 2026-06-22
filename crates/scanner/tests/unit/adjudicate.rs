@@ -74,6 +74,18 @@ fn process_stage_suppresses_generic_without_prefix_not_promising() {
 }
 
 #[test]
+fn process_stage_suppresses_false_positive_context() {
+    let credential = "AKIAIOSFODNN7EXAMPLE";
+    let ctx =
+        MatchCtx::for_process_signals(ProcessCandidateSignals::from_false_positive_context(true));
+
+    assert_eq!(
+        adjudicate_match(CandidateMatch::new(credential), &ctx),
+        Verdict::Suppressed(StageId::FalsePositiveContext)
+    );
+}
+
+#[test]
 fn process_stage_reports_service_anchored_candidate() {
     let credential = "AKIAIOSFODNN7EXAMPLE";
 

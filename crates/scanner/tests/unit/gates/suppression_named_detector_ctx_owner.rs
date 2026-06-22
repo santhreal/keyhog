@@ -121,6 +121,7 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
         "within_hex_context",
         "hex_digest_fragment",
         "probabilistic_gate_not_promising",
+        "false_positive_context",
     ] {
         assert!(
             !process.contains(&format!("\"{reason}\"")),
