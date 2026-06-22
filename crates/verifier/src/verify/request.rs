@@ -4,9 +4,10 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
-use keyhog_core::{HttpMethod, VerificationResult};
+use keyhog_core::{HeaderSpec, HttpMethod, VerificationResult};
 use reqwest::Client;
 
+use crate::interpolate::interpolate_http_value;
 use crate::ssrf::{is_private_ip_addr, is_private_url};
 
 pub(crate) const PRIVATE_URL_ERROR: &str = "blocked: private URL";
@@ -309,6 +310,26 @@ pub(crate) async fn build_request_for_step(
         allow_script_verify,
     )
     .await
+}
+
+pub(crate) fn apply_header_body_templates(
+    mut request: reqwest::RequestBuilder,
+    headers: &[HeaderSpec],
+    body_template: Option<&str>,
+    credential: &str,
+    companions: &HashMap<String, String>,
+) -> reqwest::RequestBuilder {
+    for header in headers {
+        let value = interpolate_http_value(&header.value, credential, companions);
+        request = request.header(&header.name, &value);
+    }
+
+    if let Some(body_template) = body_template {
+        let body = interpolate_http_value(body_template, credential, companions);
+        request = request.body(body);
+    }
+
+    request
 }
 
 fn request_for_method(

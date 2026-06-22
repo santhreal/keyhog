@@ -3,9 +3,23 @@ use std::collections::HashMap;
 use futures_util::StreamExt;
 use keyhog_core::{MetadataSpec, VerificationResult};
 
-use crate::verify::request::RequestError;
+use crate::verify::request::{execute_request, RequestError};
 
 pub(crate) const MAX_RESPONSE_BODY_BYTES: usize = 1024 * 1024;
+
+pub(crate) struct HttpResponseBody {
+    pub status: u16,
+    pub body: String,
+}
+
+pub(crate) async fn execute_and_read_response(
+    request: reqwest::RequestBuilder,
+) -> std::result::Result<HttpResponseBody, RequestError> {
+    let response = execute_request(request).await?;
+    let status = response.status().as_u16();
+    let body = read_response_body(response).await?;
+    Ok(HttpResponseBody { status, body })
+}
 
 pub(crate) async fn read_response_body(
     response: reqwest::Response,

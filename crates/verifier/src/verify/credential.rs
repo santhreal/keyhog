@@ -6,12 +6,12 @@ use keyhog_core::{AuthSpec, HttpMethod, OobPolicy, VerificationResult};
 use rand::Rng;
 use reqwest::Client;
 
-use crate::interpolate::{companions_with_oob, interpolate_http_value, interpolate_url};
+use crate::interpolate::{companions_with_oob, interpolate_url};
 use crate::oob::{OobObservation, OobSession};
 use crate::verify::multi_step::verify_multi_step;
 use crate::verify::{
-    body_indicates_error, build_request_for_step, evaluate_success, execute_request,
-    extract_metadata, read_response_body, resolved_client_for_url, RequestBuildResult,
+    apply_header_body_templates, body_indicates_error, build_request_for_step, evaluate_success,
+    execute_and_read_response, extract_metadata, resolved_client_for_url, RequestBuildResult,
 };
 
 const MAX_VERIFY_ATTEMPTS: usize = 3;
@@ -336,7 +336,7 @@ pub(crate) async fn verify_credential(
         )
         .await
     };
-    let mut request = match base_request {
+    let request = match base_request {
         RequestBuildResult::Ready(request) => request,
         RequestBuildResult::Final {
             result,
@@ -350,23 +350,20 @@ pub(crate) async fn verify_credential(
             };
         }
     };
-
-    for header in &spec.headers {
-        let value = interpolate_http_value(&header.value, credential, companions_ref);
-        request = request.header(&header.name, &value);
-    }
-
-    if let Some(body_template) = &spec.body {
-        let body = interpolate_http_value(body_template, credential, companions_ref);
-        request = request.body(body);
-    }
+    let request = apply_header_body_templates(
+        request,
+        &spec.headers,
+        spec.body.as_deref(),
+        credential,
+        companions_ref,
+    );
 
     crate::rate_limit::get_rate_limiter()
         .wait(&spec.service)
         .await;
 
-    let response = match execute_request(request).await {
-        Ok(resp) => resp,
+    let response = match execute_and_read_response(request).await {
+        Ok(response) => response,
         Err(error) => {
             return VerificationAttempt {
                 result: error.result,
@@ -376,17 +373,8 @@ pub(crate) async fn verify_credential(
         }
     };
 
-    let status = response.status().as_u16();
-    let body = match read_response_body(response).await {
-        Ok(body) => body,
-        Err(error) => {
-            return VerificationAttempt {
-                result: error.result,
-                metadata: HashMap::new(),
-                transient: error.transient,
-            };
-        }
-    };
+    let status = response.status;
+    let body = response.body;
 
     let is_live = if let Some(s) = success {
         evaluate_success(s, status, &body)

@@ -683,6 +683,25 @@ fn ssrf_ip_policy_has_one_classifier_owner() {
 
 #[test]
 fn interpolation_context_is_explicit_at_request_call_sites() {
+    let request = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/verify/request.rs"
+    ))
+    .expect("verify/request.rs must be readable");
+    let template_helper = request
+        .split("pub(crate) fn apply_header_body_templates(")
+        .nth(1)
+        .expect("request.rs must own the header/body template helper")
+        .split("fn request_for_method(")
+        .next()
+        .expect("template helper must be bounded before request_for_method");
+    assert!(
+        template_helper.contains("interpolate_http_value(&header.value, credential, companions)")
+            && template_helper
+                .contains("interpolate_http_value(body_template, credential, companions)"),
+        "shared header/body template helper must use HTTP-value interpolation"
+    );
+
     let credential = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/verify/credential.rs"
@@ -694,10 +713,8 @@ fn interpolation_context_is_explicit_at_request_call_sites() {
         "single-step URL templates must use URL-context interpolation"
     );
     assert!(
-        credential.contains("interpolate_http_value(&header.value, credential, companions_ref)")
-            && credential
-                .contains("interpolate_http_value(body_template, credential, companions_ref)"),
-        "single-step header/body templates must use HTTP-value interpolation"
+        credential.contains("apply_header_body_templates("),
+        "single-step verification must route header/body templates through the shared HTTP-value helper"
     );
     assert!(
         !credential.contains("use crate::interpolate::{companions_with_oob, interpolate};"),
@@ -715,11 +732,8 @@ fn interpolation_context_is_explicit_at_request_call_sites() {
         "multi-step URL templates must use URL-context interpolation"
     );
     assert!(
-        multi_step
-            .contains("interpolate_http_value(&header.value, credential, &current_companions)")
-            && multi_step
-                .contains("interpolate_http_value(body_template, credential, &current_companions)"),
-        "multi-step header/body templates must use HTTP-value interpolation"
+        multi_step.contains("apply_header_body_templates("),
+        "multi-step verification must route header/body templates through the shared HTTP-value helper"
     );
 
     let auth = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/verify/auth.rs"))
@@ -732,6 +746,76 @@ fn interpolation_context_is_explicit_at_request_call_sites() {
         !auth.contains("use crate::interpolate::{interpolate,"),
         "auth verification must not import the ambiguous generic interpolation helper"
     );
+}
+
+#[test]
+fn single_and_multi_step_share_http_request_lifecycle_helpers() {
+    let request = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/verify/request.rs"
+    ))
+    .expect("verify/request.rs must be readable");
+    assert!(
+        request.contains("pub(crate) fn apply_header_body_templates(")
+            && request.contains("interpolate_http_value(&header.value, credential, companions)")
+            && request.contains("request = request.body(body);"),
+        "one request helper must own header/body interpolation and attachment"
+    );
+
+    let response = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/verify/response.rs"
+    ))
+    .expect("verify/response.rs must be readable");
+    assert!(
+        response.contains("pub(crate) struct HttpResponseBody")
+            && response.contains("pub(crate) async fn execute_and_read_response(")
+            && response.contains("execute_request(request).await?")
+            && response.contains("read_response_body(response).await?"),
+        "one response helper must own execute + capped-body-read for verifier HTTP steps"
+    );
+
+    let credential = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/verify/credential.rs"
+    ))
+    .expect("verify/credential.rs must be readable");
+    assert!(
+        credential.contains("apply_header_body_templates(")
+            && credential.contains("execute_and_read_response(request).await"),
+        "single-step verify must use the shared request lifecycle helpers"
+    );
+    for forbidden in [
+        "for header in &spec.headers",
+        "execute_request(request).await",
+        "read_response_body(response).await",
+    ] {
+        assert!(
+            !credential.contains(forbidden),
+            "single-step verify must not grow a duplicate request lifecycle via {forbidden}"
+        );
+    }
+
+    let multi_step = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/verify/multi_step.rs"
+    ))
+    .expect("verify/multi_step.rs must be readable");
+    assert!(
+        multi_step.contains("apply_header_body_templates(")
+            && multi_step.contains("execute_and_read_response(request).await"),
+        "multi-step verify must use the shared request lifecycle helpers"
+    );
+    for forbidden in [
+        "for header in &step.headers",
+        "execute_request(request).await",
+        "read_response_body(response).await",
+    ] {
+        assert!(
+            !multi_step.contains(forbidden),
+            "multi-step verify must not grow a duplicate request lifecycle via {forbidden}"
+        );
+    }
 }
 
 #[test]
