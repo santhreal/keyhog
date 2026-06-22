@@ -74,6 +74,7 @@ pub(crate) fn read_capped_line<R: std::io::BufRead>(
 pub(crate) fn wait_for_git_child(
     child: &mut std::process::Child,
     label: &str,
+    operation: &str,
 ) -> Result<(), SourceError> {
     let status = child.wait().map_err(SourceError::Io)?;
     if status.success() {
@@ -87,7 +88,7 @@ pub(crate) fn wait_for_git_child(
         }
     }
     Err(SourceError::Git(format!(
-        "{label} failed while enumerating git commits: {}",
+        "{label} failed while {operation}: {}",
         stderr.trim()
     )))
 }

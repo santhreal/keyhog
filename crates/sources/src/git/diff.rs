@@ -156,6 +156,7 @@ fn stream_added_lines(
     let mut in_hunk = false;
     let mut done = false;
     let mut emit_untracked = false;
+    let mut wait_after_final_chunk = false;
     let mut line_buf: Vec<u8> = Vec::new();
     let hunk_byte_cap = super::git_blob_bytes_limit_usize(limits);
     // New-file line BEFORE the current hunk's first added line (i.e. the
@@ -169,8 +170,24 @@ fn stream_added_lines(
     let mut current_base_line: usize = 0;
 
     Ok(std::iter::from_fn(move || {
+        if wait_after_final_chunk {
+            wait_after_final_chunk = false;
+            match super::wait_for_git_child(&mut child, "git diff", "enumerating changed lines") {
+                Ok(()) => emit_untracked = true,
+                Err(error) => {
+                    done = true;
+                    return Some(Err(error));
+                }
+            }
+        }
         if emit_untracked {
-            return untracked_chunks.next().map(Ok);
+            match untracked_chunks.next() {
+                Some(chunk) => return Some(Ok(chunk)),
+                None => {
+                    done = true;
+                    return None;
+                }
+            }
         }
         if done {
             return None;
@@ -188,10 +205,9 @@ fn stream_added_lines(
                         return Some(Err(SourceError::Io(e)));
                     }
                     Ok(_) => {
-                        done = true;
-                        emit_untracked = true;
                         if let Some(ref path) = current_path {
                             if !current_content.trim().is_empty() {
+                                wait_after_final_chunk = true;
                                 return Some(Ok(Chunk {
                                     data: current_content.trim().to_string().into(),
                                     metadata: ChunkMetadata {
@@ -209,7 +225,20 @@ fn stream_added_lines(
                                 }));
                             }
                         }
-                        return untracked_chunks.next().map(Ok);
+                        match super::wait_for_git_child(
+                            &mut child,
+                            "git diff",
+                            "enumerating changed lines",
+                        ) {
+                            Ok(()) => {
+                                emit_untracked = true;
+                                return untracked_chunks.next().map(Ok);
+                            }
+                            Err(error) => {
+                                done = true;
+                                return Some(Err(error));
+                            }
+                        }
                     }
                 };
 

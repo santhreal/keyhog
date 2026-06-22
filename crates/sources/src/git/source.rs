@@ -305,7 +305,11 @@ fn stream_git_blobs(
                     }
                     None => {
                         log_done = true;
-                        if let Err(error) = super::wait_for_git_child(&mut log_child, "git log") {
+                        if let Err(error) = super::wait_for_git_child(
+                            &mut log_child,
+                            "git log",
+                            "enumerating git commits",
+                        ) {
                             done = true;
                             return Some(Err(error));
                         }

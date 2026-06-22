@@ -213,8 +213,26 @@ fn git_history_waits_for_log_child_at_eof() {
     let source = std::fs::read_to_string(path).expect("git history source readable");
     assert!(
         source.contains("wait_after_final_chunk")
-            && source.contains("super::wait_for_git_child(&mut child, \"git log\")"),
+            && source.contains(
+                "super::wait_for_git_child(&mut child, \"git log\", \"enumerating git patches\")"
+            ),
         "git history iterator must wait on git log at EOF so command failure cannot look like a clean history scan"
+    );
+}
+
+#[cfg(feature = "git")]
+#[test]
+fn git_diff_waits_for_diff_child_before_untracked_chunks() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/git/diff.rs");
+    let source = std::fs::read_to_string(path).expect("git diff source readable");
+    assert!(
+        source.contains("wait_after_final_chunk")
+            && source.contains(
+                "super::wait_for_git_child(&mut child, \"git diff\", \"enumerating changed lines\")"
+            )
+            && source.find("super::wait_for_git_child(&mut child, \"git diff\"")
+                < source.find("untracked_chunks.next().map(Ok)"),
+        "git diff iterator must wait on git diff before worktree-only chunks so command failure cannot look like clean changed-line coverage"
     );
 }
 

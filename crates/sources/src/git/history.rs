@@ -142,7 +142,7 @@ fn stream_git_history_chunks(
         if wait_after_final_chunk {
             wait_after_final_chunk = false;
             done = true;
-            return super::wait_for_git_child(&mut child, "git log")
+            return super::wait_for_git_child(&mut child, "git log", "enumerating git patches")
                 .err()
                 .map(Err);
         }
@@ -181,9 +181,13 @@ fn stream_git_history_chunks(
                             }
                         }
                         done = true;
-                        return super::wait_for_git_child(&mut child, "git log")
-                            .err()
-                            .map(Err);
+                        return super::wait_for_git_child(
+                            &mut child,
+                            "git log",
+                            "enumerating git patches",
+                        )
+                        .err()
+                        .map(Err);
                     }
                     Ok(_) => {
                         let l = String::from_utf8_lossy(&line_buf);
