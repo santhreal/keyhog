@@ -93,6 +93,24 @@ fn false_positive_context_detects_go_sum() {
 }
 
 #[test]
+fn false_positive_context_does_not_suppress_bare_h1_outside_go_sum() {
+    let lines = vec!["api_secret = \"h1:AKIAIOSFODNN7EXAMPLEabc\""];
+    assert!(
+        !is_false_positive_context(&lines, 0, Some("src/config.env")),
+        "a bare h1: substring outside go.sum must not suppress a real secret"
+    );
+}
+
+#[test]
+fn false_positive_context_detects_strict_go_sum_checksum_without_path() {
+    let lines = vec!["github.com/example/module v1.0.0 h1:Fr1vK8xdpbQ5OCaCB3ABAfRtq5B4JZc0jRUXPv7Q3k0="];
+    assert!(
+        is_false_positive_context(&lines, 0, None),
+        "pathless go.sum-shaped h1 checksums should still suppress when the checksum token shape is strict"
+    );
+}
+
+#[test]
 fn false_positive_context_detects_configmap_binary_data_block() {
     let lines = vec![
         "kind: ConfigMap",
@@ -120,7 +138,10 @@ fn false_positive_context_detects_integrity_hash() {
 #[test]
 fn false_positive_context_detects_sum_file_path() {
     let lines = vec!["github.com/example/module v1.0.0 checksum"];
-    assert!(is_false_positive_context(&lines, 0, Some("deps/go.sum")));
+    assert!(
+        !is_false_positive_context(&lines, 0, Some("deps/go.sum")),
+        "go.sum path alone is not enough; the line must carry an h1 checksum token"
+    );
 }
 
 #[test]

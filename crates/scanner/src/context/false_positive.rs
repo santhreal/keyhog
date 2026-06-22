@@ -171,9 +171,62 @@ fn is_false_positive_context_with_path(
 }
 
 fn is_go_sum_checksum_bytes(bytes: &[u8], path: Option<&str>) -> bool {
-    ci_find(bytes, b"h1:")
-        || path
-            .is_some_and(|p| crate::ascii_ci::ends_with_ignore_ascii_case(p.as_bytes(), b"go.sum"))
+    let path_is_go_sum =
+        path.is_some_and(|p| crate::ascii_ci::ends_with_ignore_ascii_case(p.as_bytes(), b"go.sum"));
+    let mut start = 0;
+    while let Some(h1_pos) = find_h1_marker(bytes, start) {
+        if has_h1_token_boundary(bytes, h1_pos)
+            && (path_is_go_sum || has_strict_go_sum_checksum_shape(bytes, h1_pos))
+        {
+            return true;
+        }
+        start = h1_pos + b"h1:".len();
+    }
+    false
+}
+
+fn find_h1_marker(bytes: &[u8], start: usize) -> Option<usize> {
+    let mut cursor = start;
+    while let Some(colon_rel) = memchr::memchr(b':', bytes.get(cursor..)?) {
+        let colon = cursor + colon_rel;
+        if colon >= 2 && bytes[colon - 1] == b'1' && bytes[colon - 2].eq_ignore_ascii_case(&b'h') {
+            return Some(colon - 2);
+        }
+        cursor = colon + 1;
+    }
+    None
+}
+
+fn has_h1_token_boundary(bytes: &[u8], h1_pos: usize) -> bool {
+    h1_pos == 0 || bytes[h1_pos - 1].is_ascii_whitespace()
+}
+
+fn has_strict_go_sum_checksum_shape(bytes: &[u8], h1_pos: usize) -> bool {
+    if count_ascii_fields(&bytes[..h1_pos]) < 2 {
+        return false;
+    }
+    let digest_start = h1_pos + b"h1:".len();
+    let Some(digest) = bytes.get(digest_start..digest_start + 44) else {
+        return false;
+    };
+    digest.iter().all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'='))
+        && bytes
+            .get(digest_start + 44)
+            .is_none_or(u8::is_ascii_whitespace)
+}
+
+fn count_ascii_fields(bytes: &[u8]) -> usize {
+    let mut count = 0;
+    let mut in_field = false;
+    for byte in bytes {
+        if byte.is_ascii_whitespace() {
+            in_field = false;
+        } else if !in_field {
+            count += 1;
+            in_field = true;
+        }
+    }
+    count
 }
 
 fn is_integrity_hash_context(lines: &[&str], line_idx: usize, line_bytes: &[u8]) -> bool {

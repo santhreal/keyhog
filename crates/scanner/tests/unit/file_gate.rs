@@ -306,6 +306,22 @@ fn context_false_positive_error() {
     );
 }
 
+#[test]
+fn context_false_positive_go_sum_suppression_is_not_bare_h1_substring() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source = std::fs::read_to_string(root.join("src/context/false_positive.rs"))
+        .expect("read false positive context source");
+    assert!(
+        !source.contains("ci_find(bytes, b\"h1:\")\n        || path"),
+        "go.sum suppression must not be a bare h1: substring ORed with path"
+    );
+    assert!(
+        source.contains("has_strict_go_sum_checksum_shape(bytes, h1_pos)")
+            && source.contains("path_is_go_sum || has_strict_go_sum_checksum_shape"),
+        "go.sum suppression must require the go.sum path or a strict h1 checksum token shape"
+    );
+}
+
 // ── crates/scanner/src/context/inference.rs ───────────────────────────
 #[test]
 fn context_inference_happy() {
