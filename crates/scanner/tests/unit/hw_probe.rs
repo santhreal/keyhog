@@ -74,11 +74,37 @@ fn hardware_probes_do_not_fall_back_to_path_binaries() {
         "hardware probes must not execute PATH binaries when trusted resolution misses"
     );
     assert!(
-        src.contains(r#"resolve_safe_bin("sysctl")"#)
-            && src.contains(r#"resolve_safe_bin("powershell")"#)
-            && src.contains(r#"resolve_safe_bin("wmic")"#),
-        "hardware probes must resolve platform commands through the trusted absolute binary resolver"
+        src.contains("keyhog_core::resolve_safe_bin(bin_name)")
+            && src.contains("run_probe_command(")
+            && src.contains(r#""sysctl""#)
+            && src.contains(r#""powershell""#)
+            && src.contains(r#""wmic""#),
+        "hardware probes must route platform command names through the trusted absolute binary resolver helper"
     );
+    assert!(
+        src.contains("fn run_probe_command("),
+        "platform probe command spawning must have one helper owner"
+    );
+    assert_eq!(
+        src.matches("std::process::Command::new").count(),
+        1,
+        "platform probes must not duplicate Command::new boilerplate outside run_probe_command"
+    );
+}
+
+#[test]
+fn gpu_tier_classifier_uses_series_prefixes_for_rtx_40_50_cards() {
+    let src = include_str!("../../src/hw_probe/tier.rs");
+    assert!(src.contains(r#"lower.contains("rtx 40")"#));
+    assert!(src.contains(r#"lower.contains("rtx 50")"#));
+    for redundant in [
+        "rtx 4090", "rtx 4080", "rtx 4070", "rtx 5090", "rtx 5080", "rtx 5070",
+    ] {
+        assert!(
+            !src.contains(redundant),
+            "RTX 40/50 submodel {redundant} is already covered by the series prefix"
+        );
+    }
 }
 
 #[cfg(target_os = "linux")]

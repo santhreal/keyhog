@@ -2,6 +2,9 @@
 //! memory, io_uring availability. Each helper has Linux / macOS /
 //! Windows arms; the dispatch fns route based on `cfg!(target_os = …)`.
 
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+use std::str::FromStr;
+
 pub(super) fn physical_core_count() -> Option<usize> {
     #[cfg(target_os = "linux")]
     {
@@ -71,12 +74,8 @@ fn macos_physical_cores() -> Option<usize> {
     // SECURITY: kimi-wave1 audit finding 3.PATH-sysctl. Resolve only from
     // trusted absolute system dirs; a missing probe tool means unknown cores,
     // not execution of an arbitrary PATH binary.
-    let bin = keyhog_core::resolve_safe_bin("sysctl")?;
-    std::process::Command::new(&bin)
-        .args(["-n", "hw.physicalcpu"])
-        .output()
-        .ok() // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
-        .and_then(|o| String::from_utf8_lossy(&o.stdout).trim().parse().ok()) // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
+    run_probe_command("sysctl", &["-n", "hw.physicalcpu"])
+        .and_then(|stdout| parse_trimmed_probe_value(&stdout))
 }
 
 #[cfg(target_os = "windows")]
@@ -84,34 +83,23 @@ fn windows_physical_cores() -> Option<usize> {
     // SECURITY: kimi-wave1 audit finding 3.PATH-powershell/wmic. Resolve each
     // binary against trusted absolute dirs; fall through to None if neither is
     // found there. Refuses unconditional PATH lookup.
-    let core_count = keyhog_core::resolve_safe_bin("powershell").and_then(|ps| {
-        std::process::Command::new(&ps)
-            .args([
-                "-NoProfile",
-                "-Command",
-                "(Get-CimInstance Win32_Processor).NumberOfCores",
-            ])
-            .output()
-            .ok() // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
-            .and_then(|o| {
-                String::from_utf8_lossy(&o.stdout).trim().parse().ok() // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
-            })
-    });
+    let core_count = run_probe_command(
+        "powershell",
+        &[
+            "-NoProfile",
+            "-Command",
+            "(Get-CimInstance Win32_Processor).NumberOfCores",
+        ],
+    )
+    .and_then(|stdout| parse_trimmed_probe_value(&stdout));
     if core_count.is_some() {
         return core_count;
     }
-    let wmic = keyhog_core::resolve_safe_bin("wmic")?;
-    std::process::Command::new(&wmic)
-        .args(["cpu", "get", "NumberOfCores", "/value"])
-        .output()
-        .ok() // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
-        .and_then(|o| {
-            String::from_utf8_lossy(&o.stdout)
-                .lines()
-                .find(|l| l.starts_with("NumberOfCores="))
-                .and_then(|l| l.split('=').nth(1))
-                .and_then(|v| v.trim().parse().ok()) // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
-        })
+    run_probe_command("wmic", &["cpu", "get", "NumberOfCores", "/value"]).and_then(|stdout| {
+        stdout
+            .lines()
+            .find_map(|line| parse_wmic_value::<usize>(line, "NumberOfCores"))
+    })
 }
 
 pub(super) fn detect_total_memory_mb() -> Option<u64> {
@@ -122,53 +110,73 @@ pub(super) fn detect_total_memory_mb() -> Option<u64> {
     }
     #[cfg(target_os = "macos")]
     {
-        let bin = keyhog_core::resolve_safe_bin("sysctl")?;
-        std::process::Command::new(&bin)
-            .args(["-n", "hw.memsize"])
-            .output()
-            .ok() // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
-            .and_then(|o| {
-                let bytes: u64 = String::from_utf8_lossy(&o.stdout).trim().parse().ok()?; // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
-                Some(bytes / 1024 / 1024)
-            })
+        run_probe_command("sysctl", &["-n", "hw.memsize"])
+            .and_then(|stdout| parse_trimmed_probe_value::<u64>(&stdout))
+            .map(|bytes| bytes / 1024 / 1024)
     }
     #[cfg(target_os = "windows")]
     {
-        let memory = keyhog_core::resolve_safe_bin("powershell").and_then(|ps| {
-            std::process::Command::new(&ps)
-                .args([
-                    "-NoProfile",
-                    "-Command",
-                    "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory",
-                ])
-                .output()
-                .ok() // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
-                .and_then(|o| {
-                    let bytes: u64 = String::from_utf8_lossy(&o.stdout).trim().parse().ok()?; // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
-                    Some(bytes / 1024 / 1024)
-                })
-        });
+        let memory = run_probe_command(
+            "powershell",
+            &[
+                "-NoProfile",
+                "-Command",
+                "(Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory",
+            ],
+        )
+        .and_then(|stdout| parse_trimmed_probe_value::<u64>(&stdout))
+        .map(|bytes| bytes / 1024 / 1024);
         if memory.is_some() {
             return memory;
         }
-        let wmic = keyhog_core::resolve_safe_bin("wmic")?;
-        std::process::Command::new(&wmic)
-            .args(["computersystem", "get", "TotalPhysicalMemory", "/value"])
-            .output()
-            .ok() // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
-            .and_then(|o| {
-                String::from_utf8_lossy(&o.stdout)
-                    .lines()
-                    .find(|l| l.starts_with("TotalPhysicalMemory="))
-                    .and_then(|l| l.split('=').nth(1))
-                    .and_then(|v| v.trim().parse::<u64>().ok()) // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
-                    .map(|bytes| bytes / 1024 / 1024)
-            })
+        run_probe_command(
+            "wmic",
+            &["computersystem", "get", "TotalPhysicalMemory", "/value"],
+        )
+        .and_then(|stdout| {
+            stdout
+                .lines()
+                .find_map(|line| parse_wmic_value::<u64>(line, "TotalPhysicalMemory"))
+        })
+        .map(|bytes| bytes / 1024 / 1024)
     }
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
     {
         None
     }
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn run_probe_command(bin_name: &str, args: &[&str]) -> Option<String> {
+    let bin = keyhog_core::resolve_safe_bin(bin_name)?;
+    let output = match std::process::Command::new(&bin).args(args).output() {
+        Ok(output) => output,
+        Err(_) => return None, // LAW10: host/OS hardware probe command failure => None/conservative default; perf-only, recall-irrelevant
+    };
+    Some(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn parse_trimmed_probe_value<T>(stdout: &str) -> Option<T>
+where
+    T: FromStr,
+{
+    match stdout.trim().parse() {
+        Ok(value) => Some(value),
+        Err(_) => None, // LAW10: host/OS hardware probe parse failure => None/conservative default; perf-only, recall-irrelevant
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn parse_wmic_value<T>(line: &str, key: &str) -> Option<T>
+where
+    T: FromStr,
+{
+    let (field, raw_value) = line.split_once('=')?;
+    if field != key {
+        return None;
+    }
+    parse_trimmed_probe_value(raw_value)
 }
 
 #[cfg(target_os = "linux")]

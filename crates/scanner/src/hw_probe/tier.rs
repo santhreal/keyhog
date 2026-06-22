@@ -35,12 +35,6 @@ pub(crate) fn classify_gpu_tier(adapter_name: Option<&str>) -> GpuTier {
     // High-tier discretes.
     if lower.contains("rtx 40")
         || lower.contains("rtx 50")
-        || lower.contains("rtx 4090")
-        || lower.contains("rtx 4080")
-        || lower.contains("rtx 4070")
-        || lower.contains("rtx 5090")
-        || lower.contains("rtx 5080")
-        || lower.contains("rtx 5070")
         || lower.contains("a100")
         || lower.contains("h100")
         || lower.contains("h200")
