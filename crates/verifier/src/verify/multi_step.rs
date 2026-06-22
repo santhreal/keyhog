@@ -128,10 +128,12 @@ pub(crate) async fn verify_multi_step(
             }
         };
 
-        if status == 429 {
-            crate::rate_limit::get_rate_limiter()
-                .update_limit(service, 0.5)
-                .await;
+        if retryable_http_status(status) {
+            if status == 429 {
+                crate::rate_limit::get_rate_limiter()
+                    .update_limit(service, 0.5)
+                    .await;
+            }
             return VerificationAttempt {
                 result: VerificationResult::RateLimited,
                 metadata: all_metadata,
@@ -167,4 +169,8 @@ fn auth_service_name(auth: &keyhog_core::AuthSpec) -> Option<&str> {
         keyhog_core::AuthSpec::AwsV4 { service, .. } => Some(service),
         _ => None,
     }
+}
+
+fn retryable_http_status(status: u16) -> bool {
+    status == 429 || (500..=504).contains(&status)
 }
