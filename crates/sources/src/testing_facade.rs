@@ -529,7 +529,7 @@ pub mod testing {
 
         #[cfg(feature = "gcs")]
         fn gcs_credential_forward_allowed(&self, allow_explicit: bool) -> bool {
-            crate::gcs::credential_forward_allowed(allow_explicit)
+            crate::cloud::credential_forward_allowed(allow_explicit)
         }
 
         #[cfg(feature = "gcs")]
@@ -564,7 +564,7 @@ pub mod testing {
 
         #[cfg(feature = "s3")]
         fn s3_credential_forward_allowed(&self, allow_explicit: bool) -> bool {
-            crate::s3::credential_forward_allowed(allow_explicit)
+            crate::cloud::credential_forward_allowed(allow_explicit)
         }
 
         #[cfg(feature = "s3")]

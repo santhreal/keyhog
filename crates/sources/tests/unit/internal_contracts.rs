@@ -162,6 +162,13 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
         cloud.contains("OBJECT_FETCH_THREADS") && cloud.contains("fn object_fetch_pool"),
         "cloud/mod.rs must own the shared cloud object-fetch pool and thread cap"
     );
+    assert!(
+        cloud.contains("fn collect_on_blocking_thread")
+            && cloud.contains("fn blocking_client")
+            && cloud.contains("fn parse_http_endpoint")
+            && cloud.contains("fn credential_forward_allowed"),
+        "cloud/mod.rs must own shared cloud blocking thread, client, endpoint, and credential-forward primitives"
+    );
 
     for rel in ["src/s3/mod.rs", "src/gcs.rs", "src/cloud/azure_blob.rs"] {
         let source = std::fs::read_to_string(root.join(rel)).expect("read cloud source");
@@ -173,6 +180,36 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
             source.matches("ThreadPoolBuilder::new()").count(),
             0,
             "{rel} must not rebuild a Rayon pool inside its pagination loop"
+        );
+        assert!(
+            source.contains("collect_on_blocking_thread("),
+            "{rel} must use the shared cloud blocking-thread wrapper"
+        );
+        assert!(
+            source.contains("blocking_client("),
+            "{rel} must use the shared cloud blocking-client builder"
+        );
+        assert_eq!(
+            source.matches("std::thread::scope").count(),
+            0,
+            "{rel} must not own a private scoped-thread wrapper"
+        );
+        assert_eq!(
+            source.matches("blocking_client_builder(").count(),
+            0,
+            "{rel} must not build blocking HTTP clients outside cloud/mod.rs"
+        );
+        assert!(
+            !source.contains("http.timeout = Some(crate::timeouts::HTTP_REQUEST)"),
+            "{rel} must not own private cloud HTTP timeout fallback wiring"
+        );
+        assert!(
+            !source.contains("fn credential_forward_allowed("),
+            "{rel} must not own a private credential-forward policy helper"
+        );
+        assert!(
+            source.contains("parse_http_endpoint("),
+            "{rel} must route endpoint shape parsing through cloud/mod.rs"
         );
     }
 

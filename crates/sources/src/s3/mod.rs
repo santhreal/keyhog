@@ -117,27 +117,19 @@ impl Source for S3Source {
         // (dropping its internal runtime in an async context aborts the
         // process). Collection is eager, so run it on a scoped std thread with
         // no ambient tokio runtime.
-        let result = std::thread::scope(|s| {
-            match s
-                .spawn(|| {
-                    collect_s3_chunks(
-                        &self.bucket,
-                        self.prefix.as_deref(),
-                        self.endpoint.as_deref(),
-                        match self.max_objects {
-                            Some(max_objects) => max_objects,
-                            None => self.limits.cloud_max_objects, // LAW10: no explicit per-source object-count override => use resolved Tier-A SourceLimits default
-                        },
-                        self.limits,
-                        &self.http,
-                        self.allow_credential_forward,
-                    )
-                })
-                .join()
-            {
-                Ok(result) => result,
-                Err(_panic) => Err(SourceError::Other("s3 fetch thread panicked".to_string())),
-            }
+        let result = crate::cloud::collect_on_blocking_thread("s3", || {
+            collect_s3_chunks(
+                &self.bucket,
+                self.prefix.as_deref(),
+                self.endpoint.as_deref(),
+                match self.max_objects {
+                    Some(max_objects) => max_objects,
+                    None => self.limits.cloud_max_objects, // LAW10: no explicit per-source object-count override => use resolved Tier-A SourceLimits default
+                },
+                self.limits,
+                &self.http,
+                self.allow_credential_forward,
+            )
         });
         match result {
             Ok(rows) => Box::new(rows.into_iter()),
@@ -162,17 +154,7 @@ fn collect_s3_chunks(
     // Honor the shared HTTP policy (proxy, insecure TLS, UA). Falls back to
     // the per-source default timeout when `http.timeout` is None - keeps the
     // existing behavior for callers that don't override.
-    let http = if http.timeout.is_none() {
-        let mut h = http.clone();
-        h.timeout = Some(crate::timeouts::HTTP_REQUEST);
-        h
-    } else {
-        http.clone()
-    };
-    let client = crate::http::blocking_client_builder(&http)
-        .map_err(SourceError::Other)?
-        .build()
-        .map_err(|e| SourceError::Other(format!("failed to build S3 client: {e}")))?;
+    let client = crate::cloud::blocking_client("S3", http)?;
     let base_url = build_base_url(&bucket, endpoint)?;
     // Issue #4: scope SigV4 auto-signing to AWS-owned endpoints. When the
     // user points `--s3-endpoint` at a non-AWS host (MinIO, Ceph, attacker-
@@ -189,7 +171,7 @@ fn collect_s3_chunks(
     };
     let aws_auth = if endpoint_is_aws_host {
         AwsSigV4Config::from_env(&base_url)
-    } else if credential_forward_allowed(allow_credential_forward) {
+    } else if crate::cloud::credential_forward_allowed(allow_credential_forward) {
         tracing::warn!(
             endpoint = %endpoint.unwrap_or(""),  // LAW10: missing/non-string field => empty/placeholder; recall-safe
             "explicit S3 credential-forwarding override active: forwarding \
@@ -520,13 +502,6 @@ pub(crate) fn endpoint_is_aws(endpoint: &str) -> bool {
         || host.ends_with(".amazonaws.com.cn")
 }
 
-/// True iff the caller explicitly opted into forwarding ambient AWS
-/// credentials to non-AWS endpoints. This must stay parameter-driven: a keyhog
-/// env var cannot weaken this policy.
-pub(crate) fn credential_forward_allowed(allow_explicit: bool) -> bool {
-    allow_explicit
-}
-
 fn build_base_url(bucket: &str, endpoint: Option<&str>) -> Result<String, SourceError> {
     match endpoint {
         Some(endpoint) => {
@@ -566,17 +541,8 @@ fn validate_bucket_name(bucket: &str) -> Result<String, SourceError> {
 }
 
 fn validate_endpoint(endpoint: &str) -> Result<String, SourceError> {
-    let endpoint = endpoint.trim();
-    let parsed = reqwest::Url::parse(endpoint)
-        .map_err(|e| SourceError::Other(format!("invalid S3 endpoint: {e}")))?;
-
-    if !matches!(parsed.scheme(), "http" | "https")
-        || parsed.host_str().is_none()
-        || !parsed.username().is_empty()
-        || parsed.password().is_some()
-        || parsed.query().is_some()
-        || parsed.fragment().is_some()
-    {
+    let parsed = crate::cloud::parse_http_endpoint(endpoint, "S3")?;
+    if parsed.query().is_some() {
         return Err(SourceError::Other("invalid S3 endpoint".into()));
     }
 

@@ -1,11 +1,10 @@
 //! Google Cloud Storage bucket source: lists objects with the JSON API and
 //! downloads text-like object bodies for scanning.
 
-use std::io::Read;
-
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use reqwest::blocking::Client;
 use serde::Deserialize;
+use std::io::Read;
 
 const DEFAULT_GCS_ENDPOINT: &str = "https://storage.googleapis.com";
 
@@ -75,27 +74,19 @@ impl Source for GcsSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        let result = std::thread::scope(|s| {
-            match s
-                .spawn(|| {
-                    collect_gcs_chunks(
-                        &self.bucket,
-                        self.prefix.as_deref(),
-                        &self.endpoint,
-                        match self.max_objects {
-                            Some(max_objects) => max_objects,
-                            None => self.limits.cloud_max_objects, // LAW10: no explicit per-source object-count override => use resolved Tier-A SourceLimits default
-                        },
-                        self.limits,
-                        &self.http,
-                        self.allow_token_forward,
-                    )
-                })
-                .join()
-            {
-                Ok(result) => result,
-                Err(_panic) => Err(SourceError::Other("gcs fetch thread panicked".to_string())),
-            }
+        let result = crate::cloud::collect_on_blocking_thread("gcs", || {
+            collect_gcs_chunks(
+                &self.bucket,
+                self.prefix.as_deref(),
+                &self.endpoint,
+                match self.max_objects {
+                    Some(max_objects) => max_objects,
+                    None => self.limits.cloud_max_objects, // LAW10: no explicit per-source object-count override => use resolved Tier-A SourceLimits default
+                },
+                self.limits,
+                &self.http,
+                self.allow_token_forward,
+            )
         });
         match result {
             Ok(rows) => Box::new(rows.into_iter()),
@@ -148,14 +139,7 @@ fn collect_gcs_chunks(
 ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     let bucket = validate_bucket_name(bucket)?;
     let endpoint = validate_endpoint(endpoint)?;
-    let mut http = http.clone();
-    if http.timeout.is_none() {
-        http.timeout = Some(crate::timeouts::HTTP_REQUEST);
-    }
-    let client = crate::http::blocking_client_builder(&http)
-        .map_err(SourceError::Other)?
-        .build()
-        .map_err(|error| SourceError::Other(format!("failed to build GCS client: {error}")))?;
+    let client = crate::cloud::blocking_client("GCS", http)?;
     let bearer = gcs_bearer_token(&endpoint, allow_token_forward);
     let mut page_token = None::<String>;
     let mut chunks = Vec::new();
@@ -447,17 +431,8 @@ fn validate_bucket_name(bucket: &str) -> Result<String, SourceError> {
 }
 
 fn validate_endpoint(endpoint: &str) -> Result<String, SourceError> {
-    let endpoint = endpoint.trim();
-    let parsed = reqwest::Url::parse(endpoint)
-        .map_err(|error| SourceError::Other(format!("invalid GCS endpoint: {error}")))?;
-    if !matches!(parsed.scheme(), "http" | "https")
-        || parsed.host_str().is_none()
-        || !parsed.username().is_empty()
-        || parsed.password().is_some()
-        || parsed.query().is_some()
-        || parsed.fragment().is_some()
-        || !matches!(parsed.path(), "" | "/")
-    {
+    let parsed = crate::cloud::parse_http_endpoint(endpoint, "GCS")?;
+    if parsed.query().is_some() || !matches!(parsed.path(), "" | "/") {
         return Err(SourceError::Other("invalid GCS endpoint".into()));
     }
     Ok(parsed.to_string().trim_end_matches('/').to_string())
@@ -475,15 +450,12 @@ pub(crate) fn endpoint_is_google(endpoint: &str) -> bool {
     host == "googleapis.com" || host.ends_with(".googleapis.com")
 }
 
-pub(crate) fn credential_forward_allowed(allow_explicit: bool) -> bool {
-    allow_explicit
-}
-
 fn gcs_bearer_token(endpoint: &str, allow_token_forward: bool) -> Option<String> {
     let token = std::env::var("GOOGLE_OAUTH_ACCESS_TOKEN")
         .or_else(|_| std::env::var("GCS_BEARER_TOKEN"))
         .ok()?; // LAW10: absent bearer env is an intended default for anonymous GCS; listing/fetch failures still surface normally.
-    if endpoint_is_google(endpoint) || credential_forward_allowed(allow_token_forward) {
+    if endpoint_is_google(endpoint) || crate::cloud::credential_forward_allowed(allow_token_forward)
+    {
         return Some(token);
     }
     tracing::warn!(

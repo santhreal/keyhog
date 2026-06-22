@@ -1,14 +1,13 @@
 //! Azure Blob Storage container source: lists blobs through the Blob service
 //! REST API and downloads text-like blob bodies for scanning.
 
-use std::io::Read;
-
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use quick_xml::de::{Deserializer, PredefinedEntityResolver};
 use quick_xml::events::Event;
 use quick_xml::Reader;
 use reqwest::blocking::Client;
 use serde::Deserialize;
+use std::io::Read;
 
 pub struct AzureBlobSource {
     container_url: String,
@@ -59,27 +58,17 @@ impl Source for AzureBlobSource {
     }
 
     fn chunks(&self) -> Box<dyn Iterator<Item = Result<Chunk, SourceError>> + '_> {
-        let result = std::thread::scope(|s| {
-            match s
-                .spawn(|| {
-                    collect_azure_blob_chunks(
-                        &self.container_url,
-                        self.prefix.as_deref(),
-                        match self.max_objects {
-                            Some(max_objects) => max_objects,
-                            None => self.limits.cloud_max_objects, // LAW10: no explicit per-source object-count override => use resolved Tier-A SourceLimits default
-                        },
-                        self.limits,
-                        &self.http,
-                    )
-                })
-                .join()
-            {
-                Ok(result) => result,
-                Err(_panic) => Err(SourceError::Other(
-                    "azure blob fetch thread panicked".to_string(),
-                )),
-            }
+        let result = crate::cloud::collect_on_blocking_thread("azure blob", || {
+            collect_azure_blob_chunks(
+                &self.container_url,
+                self.prefix.as_deref(),
+                match self.max_objects {
+                    Some(max_objects) => max_objects,
+                    None => self.limits.cloud_max_objects, // LAW10: no explicit per-source object-count override => use resolved Tier-A SourceLimits default
+                },
+                self.limits,
+                &self.http,
+            )
         });
         match result {
             Ok(rows) => Box::new(rows.into_iter()),
@@ -141,16 +130,7 @@ fn collect_azure_blob_chunks(
     http: &crate::http::HttpClientConfig,
 ) -> Result<Vec<Result<Chunk, SourceError>>, SourceError> {
     let container_url = validate_container_url(container_url)?;
-    let mut http = http.clone();
-    if http.timeout.is_none() {
-        http.timeout = Some(crate::timeouts::HTTP_REQUEST);
-    }
-    let client = crate::http::blocking_client_builder(&http)
-        .map_err(SourceError::Other)?
-        .build()
-        .map_err(|error| {
-            SourceError::Other(format!("failed to build Azure Blob client: {error}"))
-        })?;
+    let client = crate::cloud::blocking_client("Azure Blob", http)?;
     let mut marker = None::<String>;
     let mut chunks = Vec::new();
     let mut listed_objects = 0usize;
@@ -449,20 +429,7 @@ fn azure_blob_display_path(
 }
 
 fn validate_container_url(raw: &str) -> Result<reqwest::Url, SourceError> {
-    let raw = raw.trim();
-    let parsed = reqwest::Url::parse(raw).map_err(|error| {
-        SourceError::Other(format!("invalid Azure Blob container URL: {error}"))
-    })?;
-    if !matches!(parsed.scheme(), "http" | "https")
-        || parsed.host_str().is_none()
-        || !parsed.username().is_empty()
-        || parsed.password().is_some()
-        || parsed.fragment().is_some()
-    {
-        return Err(SourceError::Other(
-            "invalid Azure Blob container URL".into(),
-        ));
-    }
+    let parsed = crate::cloud::parse_http_endpoint(raw, "Azure Blob container URL")?;
     if parsed.path().trim_matches('/').is_empty() {
         return Err(SourceError::Other(
             "invalid Azure Blob container URL: path must include the container".into(),

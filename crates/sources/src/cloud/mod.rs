@@ -1,14 +1,66 @@
 use std::path::Path;
 
+use keyhog_core::SourceError;
+use reqwest::blocking::Client;
+
 #[cfg(feature = "azure")]
 pub(crate) mod azure_blob;
 
 pub(crate) const OBJECT_FETCH_THREADS: usize = crate::parallel_fetch::CLOUD_OBJECT_FETCH_THREADS;
 
+pub(crate) fn collect_on_blocking_thread<T, F>(source: &'static str, f: F) -> Result<T, SourceError>
+where
+    T: Send,
+    F: FnOnce() -> Result<T, SourceError> + Send,
+{
+    std::thread::scope(|scope| match scope.spawn(f).join() {
+        Ok(result) => result,
+        Err(_panic) => Err(SourceError::Other(format!(
+            "{source} fetch thread panicked"
+        ))),
+    })
+}
+
 pub(crate) fn object_fetch_pool(
     source: &str,
 ) -> Result<rayon::ThreadPool, keyhog_core::SourceError> {
     crate::parallel_fetch::bounded_fetch_pool(source, OBJECT_FETCH_THREADS)
+}
+
+pub(crate) fn blocking_client(
+    source: &str,
+    http: &crate::http::HttpClientConfig,
+) -> Result<Client, SourceError> {
+    let http = if http.timeout.is_none() {
+        let mut http = http.clone();
+        http.timeout = Some(crate::timeouts::HTTP_REQUEST);
+        http
+    } else {
+        http.clone()
+    };
+    crate::http::blocking_client_builder(&http)
+        .map_err(SourceError::Other)?
+        .build()
+        .map_err(|error| SourceError::Other(format!("failed to build {source} client: {error}")))
+}
+
+pub(crate) fn parse_http_endpoint(raw: &str, source: &str) -> Result<reqwest::Url, SourceError> {
+    let raw = raw.trim();
+    let parsed = reqwest::Url::parse(raw)
+        .map_err(|error| SourceError::Other(format!("invalid {source} endpoint: {error}")))?;
+    if !matches!(parsed.scheme(), "http" | "https")
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.fragment().is_some()
+    {
+        return Err(SourceError::Other(format!("invalid {source} endpoint")));
+    }
+    Ok(parsed)
+}
+
+pub(crate) fn credential_forward_allowed(allow_explicit: bool) -> bool {
+    allow_explicit
 }
 
 pub(crate) fn is_probably_text_object_key(key: &str) -> bool {
