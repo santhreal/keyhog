@@ -18,6 +18,7 @@ mod line_boundary_99_joins;
 mod line_for_offset_appended_region;
 mod max_join_boundary_does_not_skip_next_line;
 mod max_join_lines_respected;
+mod parenthesized_unclosed_block_does_not_hide_later_block;
 mod phantom_append_single_line_trailing_newline;
 mod plus_concat_disabled;
 mod python_implicit_concat;

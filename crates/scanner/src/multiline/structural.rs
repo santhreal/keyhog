@@ -391,6 +391,8 @@ fn join_inline_array_strings(line: &str) -> String {
     array_joined
 }
 
+const PARENTHESIZED_IMPLICIT_SCAN_LINES: usize = 16;
+
 fn collect_parenthesized_implicit_blocks(lines: &[&str]) -> Vec<(usize, String)> {
     let mut blocks = Vec::new();
     let mut index = 0usize;
@@ -403,11 +405,13 @@ fn collect_parenthesized_implicit_blocks(lines: &[&str]) -> Vec<(usize, String)>
         let mut parts = Vec::new();
         let mut first_literal_line = None;
         let mut cursor = index + 1;
-        let mut closed = false;
-        while cursor < lines.len() && cursor.saturating_sub(index) <= 16 {
+        let mut closed_at = None;
+        while cursor < lines.len()
+            && cursor.saturating_sub(index) <= PARENTHESIZED_IMPLICIT_SCAN_LINES
+        {
             let trimmed = lines[cursor].trim();
             if trimmed.starts_with(')') {
-                closed = true;
+                closed_at = Some(cursor);
                 break;
             }
             if trimmed.is_empty() {
@@ -423,13 +427,15 @@ fn collect_parenthesized_implicit_blocks(lines: &[&str]) -> Vec<(usize, String)>
             cursor += 1;
         }
 
-        if closed && parts.len() >= 2 {
-            if let Some(start_line) = first_literal_line {
-                blocks.push((start_line, parts.concat()));
+        if let Some(close_index) = closed_at {
+            if parts.len() >= 2 {
+                if let Some(start_line) = first_literal_line {
+                    blocks.push((start_line, parts.concat()));
+                }
             }
-            index = cursor + 1;
+            index = close_index + 1;
         } else {
-            index += 1;
+            index = cursor.max(index + 1);
         }
     }
     blocks
