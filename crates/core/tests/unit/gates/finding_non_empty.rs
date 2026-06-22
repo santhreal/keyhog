@@ -18,4 +18,12 @@ fn finding_non_empty() {
         !prod.contains("todo!()") && !prod.contains("unimplemented!()"),
         "finding: todo!/unimplemented! forbidden in non-test source"
     );
+    assert!(
+        prod.contains("Cow::<'de, str>::deserialize(deserializer)?")
+            && prod.contains("hex::decode_to_slice(s.as_bytes(), &mut bytes)")
+            && !prod.contains("let bytes = hex::decode(&s)")
+            && !prod.contains("String::deserialize(deserializer).map(Arc::from)")
+            && !prod.contains("Option::<String>::deserialize(deserializer)"),
+        "finding: deserialization adapters must borrow input strings and decode credential_hash into a stack array"
+    );
 }

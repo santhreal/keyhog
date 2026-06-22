@@ -387,6 +387,8 @@ pub fn sha256_hash(s: &str) -> [u8; 32] {
 /// preserves the documented JSON/JSONL/baseline/SARIF format (`.credential_hash`
 /// consumers, `keyhogignore` `hash:` entries) with zero heap on the hot path.
 pub(crate) mod serde_hash_hex {
+    use std::borrow::Cow;
+
     use serde::{Deserialize, Deserializer, Serializer};
 
     pub(crate) fn serialize<S>(val: &[u8; 32], serializer: S) -> Result<S::Ok, S::Error>
@@ -400,16 +402,22 @@ pub(crate) mod serde_hash_hex {
     where
         D: Deserializer<'de>,
     {
-        let s = String::deserialize(deserializer)?;
-        let bytes = hex::decode(&s).map_err(serde::de::Error::custom)?;
-        bytes
-            .try_into()
-            .map_err(|_| serde::de::Error::invalid_length(s.len() / 2, &"32-byte SHA-256 digest"))
+        let s = Cow::<'de, str>::deserialize(deserializer)?;
+        if s.len() != 64 {
+            return Err(serde::de::Error::invalid_length(
+                s.len(),
+                &"64-char hex SHA-256 digest",
+            ));
+        }
+        let mut bytes = [0_u8; 32];
+        hex::decode_to_slice(s.as_bytes(), &mut bytes).map_err(serde::de::Error::custom)?;
+        Ok(bytes)
     }
 }
 
 pub(crate) mod serde_arc_str {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::borrow::Cow;
     use std::sync::Arc;
 
     pub(crate) fn serialize<S>(val: &Arc<str>, serializer: S) -> Result<S::Ok, S::Error>
@@ -423,12 +431,21 @@ pub(crate) mod serde_arc_str {
     where
         D: Deserializer<'de>,
     {
-        String::deserialize(deserializer).map(Arc::from)
+        Cow::<'de, str>::deserialize(deserializer).map(arc_from_cow)
+    }
+
+    #[inline]
+    fn arc_from_cow(value: Cow<'_, str>) -> Arc<str> {
+        match value {
+            Cow::Borrowed(value) => Arc::from(value),
+            Cow::Owned(value) => Arc::from(value),
+        }
     }
 }
 
 pub(crate) mod serde_arc_str_opt {
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::borrow::Cow;
     use std::sync::Arc;
 
     pub(crate) fn serialize<S>(val: &Option<Arc<str>>, serializer: S) -> Result<S::Ok, S::Error>
@@ -442,6 +459,14 @@ pub(crate) mod serde_arc_str_opt {
     where
         D: Deserializer<'de>,
     {
-        Option::<String>::deserialize(deserializer).map(|opt| opt.map(Arc::from))
+        Option::<Cow<'de, str>>::deserialize(deserializer).map(|opt| opt.map(arc_from_cow))
+    }
+
+    #[inline]
+    fn arc_from_cow(value: Cow<'_, str>) -> Arc<str> {
+        match value {
+            Cow::Borrowed(value) => Arc::from(value),
+            Cow::Owned(value) => Arc::from(value),
+        }
     }
 }
