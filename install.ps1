@@ -492,7 +492,7 @@ function Verify-Checksum {
     try {
         $hash = (Get-FileHash -Algorithm SHA256 -Path $BinaryPath -ErrorAction Stop).Hash.ToLowerInvariant()
     } catch {
-        return (Allow-UnverifiedInstall "Get-FileHash could not verify $AssetName: $($_.Exception.Message)")
+        return (Allow-UnverifiedInstall "Get-FileHash could not verify ${AssetName}: $($_.Exception.Message)")
     }
     if ($hash -eq $expected.ToLowerInvariant()) {
         Ok "SHA256 verified ($expected)."
@@ -549,7 +549,7 @@ function Clear-MarkOfTheWeb {
     try {
         Unblock-File -Path $Path -ErrorAction Stop
     } catch {
-        Warn "Could not remove Windows Mark-of-the-Web from $Path: $($_.Exception.Message)"
+        Warn "Could not remove Windows Mark-of-the-Web from ${Path}: $($_.Exception.Message)"
         Warn "If SmartScreen prompts on first run, verify the SHA256 above before allowing keyhog.exe."
     }
 }
@@ -1497,7 +1497,7 @@ function Do-Uninstall {
             Remove-Item -Force $bin
         }
     } catch {
-        Err "Could not remove $bin: $($_.Exception.Message)"
+        Err "Could not remove ${bin}: $($_.Exception.Message)"
         Err "Fix: close running keyhog processes or shells using keyhog.exe, then rerun install.ps1 -Uninstall."
         exit 1
     }

@@ -52,6 +52,30 @@ installer_release_api_gate() {
     fi
 }
 
+# Pure-grep guard (NO pwsh needed) for the one PowerShell parse-error class that
+# silently bricks the whole Windows installer: a normal variable followed by a
+# colon inside a double-quoted string. PowerShell parses "$name:" as a
+# drive-qualified reference ($drive:var), so `"$AssetName: $($_.Exception...)"`
+# is a hard parse error (InvalidVariableReferenceWithDrive) and the ENTIRE
+# script fails to load on Windows — `keyhog` never installs. The pwsh ParseFile
+# gate below catches this too, but only where pwsh is installed; it loud-skips
+# on a pwsh-less box (and most CI lacks pwsh), which is exactly how three of
+# these shipped at install.ps1:495/552/1500. This guard runs everywhere.
+# Fix: brace-delimit the name -> "${AssetName}:". Known scopes/drives
+# (env/script/global/local/private/using/variable/function/workflow) are valid
+# and excluded.
+powershell_drive_ref_gate() {
+    local hits
+    hits=$(grep -nE '\$[A-Za-z_][A-Za-z0-9_]*:( |\$|"|'"'"'|\))' install.ps1 |
+          grep -viE '\$(env|script|global|local|private|using|variable|function|workflow):' || true)
+    if [ -n "$hits" ]; then
+        echo "install.ps1 has a PowerShell drive-qualified variable reference (\$name:) that fails to parse on Windows:" >&2
+        echo "$hits" >&2
+        echo 'Fix: brace-delimit the variable name, e.g. "${name}: ..." instead of "$name: ...".' >&2
+        return 1
+    fi
+}
+
 shellcheck_targets=(install.sh)
 shfmt_parse_targets=(install.sh)
 shfmt_diff_targets=(scripts/gates/install_static_analysis.sh)
@@ -64,6 +88,7 @@ for file in "${shellcheck_targets[@]}"; do
 done
 
 run "Installer release API error surfacing" installer_release_api_gate
+run "PowerShell drive-ref parse guard: install.ps1" powershell_drive_ref_gate
 
 if need_tool shellcheck; then
     for file in "${shellcheck_targets[@]}"; do
