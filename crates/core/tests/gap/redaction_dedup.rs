@@ -590,7 +590,7 @@ fn dedup_file_same_secret_same_file_different_line_collapses() {
 
 #[test]
 fn dedup_file_identity_separates_by_source_backend() {
-    // file_scope_identity == source \0 file_path \0 commit. Same file path but
+    // File-scope identity is `(source, file_path, commit)`. Same file path but
     // different source backend => different group.
     let fs = rm(
         "d",
@@ -639,9 +639,9 @@ fn dedup_file_identity_separates_by_commit() {
 }
 
 #[test]
-fn dedup_file_none_path_uses_unknown_sentinel_and_collapses() {
-    // file_path None maps to "<unknown>" sentinel; two None-path matches in the
-    // same source+commit collapse, different LINE => one additional.
+fn dedup_file_none_path_uses_structured_none_and_collapses() {
+    // file_path None stays a structured None; two None-path matches in the same
+    // source+commit collapse, different LINE => one additional.
     let a = rm(
         "d",
         "D",

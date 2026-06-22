@@ -7,10 +7,11 @@
 //! module focused on operator-visible report grouping, not window-overlap raw
 //! hit dedup.
 
-use indexmap::IndexMap;
+use indexmap::{Equivalent, IndexMap, IndexSet};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
@@ -122,7 +123,7 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
     // (insertion order, which we sort post-pass for cross-run stability).
     // BTreeMap was O(log N) per insert and dominated dedup time on 1M+
     // matches - see docs/EXECUTION_PLAN.md.
-    type DedupKey = (Arc<str>, SensitiveString, Option<Arc<str>>);
+    type DedupKey = (Arc<str>, SensitiveString, Option<FileScopeIdentity>);
 
     // O(1) per-match membership for additional_locations. The duplicate arm
     // used to run `existing.additional_locations.iter().any(is_same_location)`
@@ -138,8 +139,6 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
     // to additional_locations iff it differs from the primary AND from every
     // already-recorded additional, now in O(1) instead of O(K). Turns a
     // K-repeat group from O(K^2) to O(K).
-    type LocIdentity = (Arc<str>, Option<Arc<str>>, Option<usize>, Option<Arc<str>>);
-
     // Sort by offset ascending so that for any group of (detector, credential,
     // file) matches the LOWEST offset becomes the primary_location and any
     // higher-offset duplicates land in additional_locations (or get
@@ -156,8 +155,7 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
     let mut matches = matches;
     let match_count = matches.len();
     let mut groups: IndexMap<DedupKey, DedupedMatch> = IndexMap::with_capacity(match_count);
-    let mut seen_locations: Vec<std::collections::HashSet<LocIdentity>> =
-        Vec::with_capacity(match_count);
+    let mut seen_locations: Vec<IndexSet<LocationIdentity>> = Vec::with_capacity(match_count);
     matches.sort_by(|a, b| {
         a.location
             .file_path
@@ -195,7 +193,7 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
                         // is_same_location(primary, ...) guard below handles it,
                         // but recording it keeps the set a faithful mirror).
                         let seen = &mut seen_locations[idx];
-                        seen.remove(&location_identity(&existing.primary_location));
+                        seen.shift_remove(&location_identity_ref(&existing.primary_location));
                         seen.insert(location_identity(&matched.location));
                         existing.primary_location = matched.location;
                     }
@@ -222,14 +220,14 @@ pub fn dedup_matches(matches: Vec<RawMatch>, scope: &DedupScope) -> Vec<DedupedM
                 // set insert returns false exactly when the identity already
                 // exists (primary OR a prior additional), reproducing the old
                 // two-part guard with identical output.
-                if seen_locations[idx].insert(location_identity(&matched.location)) {
+                if insert_new_location_identity(&mut seen_locations[idx], &matched.location) {
                     existing.additional_locations.push(matched.location);
                 }
                 merge_companions(&mut existing.companions, matched.companions);
                 existing.confidence = max_confidence(existing.confidence, matched.confidence);
             }
             None => {
-                let mut seen = std::collections::HashSet::with_capacity(1);
+                let mut seen = IndexSet::with_capacity(1);
                 seen.insert(location_identity(&matched.location));
                 let credential_hash =
                     effective_credential_hash(matched.credential.as_ref(), matched.credential_hash);
@@ -341,8 +339,7 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
     // Group by (credential_hash, primary_location.file_path) - splitting by
     // file keeps file-scope dedup intact when the caller used DedupScope::File.
     type GroupKey = ([u8; 32], Option<Arc<str>>);
-    let mut groups: IndexMap<GroupKey, Vec<DedupedMatch>> =
-        IndexMap::with_capacity(deduped.len());
+    let mut groups: IndexMap<GroupKey, Vec<DedupedMatch>> = IndexMap::with_capacity(deduped.len());
     for m in deduped {
         let key = (m.credential_hash, m.primary_location.file_path.clone());
         groups.entry(key).or_default().push(m);
@@ -417,7 +414,22 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
     out
 }
 
-/// The hashable identity tuple `(source, file_path, line, commit)` that defines
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct FileScopeIdentity {
+    source: Arc<str>,
+    file_path: Option<Arc<str>>,
+    commit: Option<Arc<str>>,
+}
+
+fn file_scope_identity(location: &MatchLocation) -> FileScopeIdentity {
+    FileScopeIdentity {
+        source: Arc::clone(&location.source),
+        file_path: location.file_path.clone(),
+        commit: location.commit.clone(),
+    }
+}
+
+/// The hashable identity `(source, file_path, line, commit)` that defines
 /// when two locations are "the same finding" and must collapse. Offset is
 /// intentionally excluded: the structured preprocessor's synthetic-line append
 /// produces matches whose offset lies past the source file's EOF (the offset is
@@ -425,32 +437,70 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
 /// correctly remapped via LineMapping to the original source line. So
 /// same-(file, line) means the dedupe SHOULD collapse them: emitting both as
 /// "primary at line 1 offset 27" + "additional at line 1 offset 80 (past EOF)"
-/// is a confusing duplicate, not two findings. Cloning the `Arc`s is a refcount
-/// bump, not a string copy, so building the key per match stays O(1). Used as
-/// the per-group seen-set element so additional_locations membership is O(1)
-/// instead of an O(K) linear scan.
-type LocationIdentity = (Arc<str>, Option<Arc<str>>, Option<usize>, Option<Arc<str>>);
-
-fn location_identity(loc: &MatchLocation) -> LocationIdentity {
-    (
-        Arc::clone(&loc.source),
-        loc.file_path.clone(),
-        loc.line,
-        loc.commit.clone(),
-    )
+/// is a confusing duplicate, not two findings. Used as the per-group seen-set
+/// element so additional_locations membership is O(1) instead of an O(K)
+/// linear scan.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+struct LocationIdentity {
+    source: Arc<str>,
+    file_path: Option<Arc<str>>,
+    line: Option<usize>,
+    commit: Option<Arc<str>>,
 }
 
-fn file_scope_identity(location: &MatchLocation) -> Arc<str> {
-    let mut identity = String::new();
-    identity.push_str(location.source.as_ref());
-    identity.push('\0');
-    // A missing file_path/commit folds into a STABLE sentinel so two locations
-    // that both lack the field hash to the same dedup key — a deliberate
-    // identity choice, not a dropped value; `\0` keeps the fields unambiguous.
-    identity.push_str(location.file_path.as_deref().unwrap_or("<unknown>")); // LAW10: stable dedup-key sentinel, see note
-    identity.push('\0');
-    identity.push_str(location.commit.as_deref().unwrap_or("<no-commit>")); // LAW10: stable dedup-key sentinel, see note
-    Arc::from(identity)
+struct LocationIdentityRef<'a> {
+    source: &'a str,
+    file_path: Option<&'a str>,
+    line: Option<usize>,
+    commit: Option<&'a str>,
+}
+
+impl Hash for LocationIdentityRef<'_> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.source.hash(state);
+        self.file_path.hash(state);
+        self.line.hash(state);
+        self.commit.hash(state);
+    }
+}
+
+impl Equivalent<LocationIdentity> for LocationIdentityRef<'_> {
+    fn equivalent(&self, key: &LocationIdentity) -> bool {
+        self.source == key.source.as_ref()
+            && self.file_path == key.file_path.as_deref()
+            && self.line == key.line
+            && self.commit == key.commit.as_deref()
+    }
+}
+
+fn location_identity(loc: &MatchLocation) -> LocationIdentity {
+    LocationIdentity {
+        source: Arc::clone(&loc.source),
+        file_path: loc.file_path.clone(),
+        line: loc.line,
+        commit: loc.commit.clone(),
+    }
+}
+
+fn location_identity_ref(loc: &MatchLocation) -> LocationIdentityRef<'_> {
+    LocationIdentityRef {
+        source: loc.source.as_ref(),
+        file_path: loc.file_path.as_deref(),
+        line: loc.line,
+        commit: loc.commit.as_deref(),
+    }
+}
+
+fn insert_new_location_identity(
+    seen: &mut IndexSet<LocationIdentity>,
+    location: &MatchLocation,
+) -> bool {
+    let identity = location_identity_ref(location);
+    if seen.contains(&identity) {
+        return false;
+    }
+    seen.insert(location_identity(location));
+    true
 }
 
 fn merge_companions(existing: &mut HashMap<String, String>, incoming: HashMap<String, String>) {

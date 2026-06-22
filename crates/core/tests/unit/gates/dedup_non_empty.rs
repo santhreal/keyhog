@@ -46,4 +46,19 @@ fn dedup_non_empty() {
             && !src.contains("IndexMap<GroupKey, Vec<DedupedMatch>> = IndexMap::new()"),
         "dedup hot grouping tables must not regress to zero-capacity allocation"
     );
+    assert!(
+        src.contains("struct FileScopeIdentity")
+            && src.contains("type DedupKey = (Arc<str>, SensitiveString, Option<FileScopeIdentity>)")
+            && !src.contains("fn file_scope_identity(location: &MatchLocation) -> Arc<str>")
+            && !src.contains("let mut identity = String::new();"),
+        "file-scope dedup identity must reuse existing Arc fields instead of formatting a new Arc<str> per match"
+    );
+    assert!(
+        src.contains("struct LocationIdentityRef<'a>")
+            && src.contains("impl Equivalent<LocationIdentity> for LocationIdentityRef<'_>")
+            && src.contains("fn insert_new_location_identity(")
+            && src.contains("seen.contains(&identity)")
+            && src.contains("seen.insert(location_identity(location))"),
+        "dedup location membership must probe with borrowed fields before cloning Arc identity fields on misses"
+    );
 }
