@@ -44,6 +44,7 @@ mod regression_ac_overlap_shadow;
 mod regression_creddata_canonical_shape_generation;
 mod regression_decode_budget_per_decode;
 mod regression_decode_fanout_budget;
+mod regression_decode_postprocess_suppression_trace;
 mod regression_dogfood_entropy_gauntlet_trace;
 mod regression_dogfood_generic_gauntlet_trace;
 mod regression_dogfood_shape_suppression_trace;

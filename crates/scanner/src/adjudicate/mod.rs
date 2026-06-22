@@ -4,6 +4,7 @@
 //! is reportable and names the stage that made the decision.
 
 use crate::suppression::NamedDetectorSuppressionCtx;
+use keyhog_core::RawMatch;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum EntropyShapeStage {
@@ -353,6 +354,19 @@ pub(crate) fn record_example_suppression(
     reason: &'static str,
 ) {
     crate::telemetry::record_example_suppression(detector, path, credential, reason);
+}
+
+pub(crate) fn record_match_example_suppression(
+    m: &RawMatch,
+    fallback_path: Option<&str>,
+    reason: &'static str,
+) {
+    record_example_suppression(
+        m.detector_id.as_ref(),
+        m.location.file_path.as_deref().or(fallback_path),
+        m.credential.as_ref(),
+        reason,
+    );
 }
 
 fn explicit_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageOutcome {

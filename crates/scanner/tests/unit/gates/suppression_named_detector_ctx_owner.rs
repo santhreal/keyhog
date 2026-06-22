@@ -333,6 +333,22 @@ fn example_suppression_telemetry_is_only_called_by_adjudicator() {
 }
 
 #[test]
+fn decoded_postprocess_example_drops_route_through_adjudicator() {
+    let src = scanner_src();
+    let code = uncommented_code(&read(&src.join("engine/scan_postprocess.rs")));
+    assert!(
+        code.contains("crate::adjudicate::record_match_example_suppression(")
+            && code.contains("\"decoded_parent_example\"")
+            && code.contains("\"decoded_reverse_placeholder\""),
+        "decoded postprocess example/reverse drops must emit adjudicator-owned example telemetry"
+    );
+    assert!(
+        !code.contains("crate::telemetry::record_example_suppression("),
+        "scan_postprocess.rs must not bypass adjudicator for decoded suppression telemetry"
+    );
+}
+
+#[test]
 fn final_emit_context_hard_suppression_stays_out_of_scoring_owner() {
     let src = scanner_src();
     let scoring = uncommented_code(&read(&src.join("engine/scoring.rs")));

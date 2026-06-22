@@ -103,11 +103,6 @@ impl CompiledScanner {
                 if crate::deadline::expired(deadline) {
                     break;
                 }
-                // kimi-wave1 finding 5.LOW: a single decoded chunk that
-                // exceeds `max_decode_bytes` slips past the outer guard
-                // (which only checked the *input* chunk size). Skip
-                // anything that grew past the configured ceiling - the
-                // input was already a decode bomb if we got here.
                 if decoded_chunk.data.len() > self.config.max_decode_bytes {
                     crate::telemetry::record_decode_truncation();
                     tracing::debug!(
@@ -163,17 +158,15 @@ impl CompiledScanner {
                     if crate::context::is_known_example_credential(&m.credential)
                         && chunk.data.as_ref().contains(m.credential.as_ref())
                     {
+                        crate::adjudicate::record_match_example_suppression(
+                            &m,
+                            chunk.metadata.path.as_deref(),
+                            "decoded_parent_example",
+                        );
                         continue;
                     }
-                    // Reverse-decoder example guard: a credential surfaced from a
-                    // `/reverse` chunk whose REVERSED form carries a documentation
-                    // marker (`…ELPMAXE…` is `EXAMPLE` reversed) is a reversed
-                    // placeholder, not a hidden real secret. The forward checks
-                    // miss it because the marker bytes are themselves reversed,
-                    // and `is_known_example_credential` only matches a *trailing*
-                    // EXAMPLE - reversal moves the marker mid-string. Without this,
-                    // reversing a negative fixture that embeds EXAMPLE/PLACEHOLDER
-                    // surfaces a false positive (smartsheet contract negative).
+                    // Reverse can hide documentation markers from forward
+                    // example checks, so reverse the candidate before guarding.
                     if decoded_chunk.metadata.source_type.contains("/reverse") {
                         let rev = crate::decode::reverse::reverse_str(&m.credential).to_uppercase();
                         if rev.contains("EXAMPLE")
@@ -181,6 +174,15 @@ impl CompiledScanner {
                             || rev.contains("SAMPLE")
                             || rev.contains("YOUR_")
                         {
+                            crate::adjudicate::record_match_example_suppression(
+                                &m,
+                                decoded_chunk
+                                    .metadata
+                                    .path
+                                    .as_deref()
+                                    .or(chunk.metadata.path.as_deref()),
+                                "decoded_reverse_placeholder",
+                            );
                             continue;
                         }
                     }
