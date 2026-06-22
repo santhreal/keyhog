@@ -1,4 +1,4 @@
-use super::pipeline::{extract_encoded_value_spans, push_decoded_text_chunk};
+use super::pipeline::{push_decoded_text_chunk, with_extracted_value_spans};
 use super::Decoder;
 use aho_corasick::AhoCorasick;
 use keyhog_core::Chunk;
@@ -312,75 +312,77 @@ impl Decoder for CaesarDecoder {
             return Vec::new();
         }
         let private_key_spans = private_key_material_spans(&chunk.data);
-        for candidate in extract_encoded_value_spans(&chunk.data) {
-            if candidate_inside_spans(candidate.span(), &private_key_spans) {
-                continue;
-            }
-            let candidate = candidate.value;
-            if candidate.len() < MIN_CAESAR_LEN {
-                continue;
-            }
-            // SHIFT-INVARIANT PRECONDITION (sound; a true superset of "some
-            // shift is credential-shaped"). `caesar_shift` maps letter->letter,
-            // digit->digit, other->other, so the two structural gates inside
-            // `looks_credential_shaped` are identical for the candidate and ALL
-            // 25 of its shifts:
-            //   * "contains >=1 ASCII digit"        - digits are shift-identity
-            //   * "has an 8+ ASCII-ALPHANUMERIC run" - alnum-ness is preserved
-            // If the RAW candidate fails either gate, NONE of its 25 shifts can
-            // pass `looks_credential_shaped`, so we skip the entire 25x
-            // `caesar_shift` allocation + re-scan loop for it. Only the
-            // KNOWN_PREFIXES check (the one gate a shift CAN newly satisfy) is
-            // left to the per-shift loop. This is byte-for-byte recall-
-            // equivalent - it removes pure-waste allocations, it does not gate
-            // out any shift that could have been shaped (unlike an
-            // alphabetic-run length gate, which is unsound: a `0x`/`SG.`/`hf_`
-            // prefix needs only a 1-2 letter run, so a credential-shaped shift
-            // can arise from a chunk with no long alphabetic run at all).
-            if !candidate_shape_invariant(&candidate) {
-                continue;
-            }
-            // Rotated-prefix SHIFT SELECTION (recall- AND precision-exact, not
-            // merely a prefilter). A shifted variant's final gate is a
-            // KNOWN_PREFIXES substring in `caesar_shift(candidate, k)`. By the
-            // position-wise bijection (see ROTATED_PREFIX_AC),
-            //   caesar_shift(candidate, k).contains(P) ⟺ candidate.contains(needle(P,k))
-            // where needle(P,k) = caesar_shift(P, 26-k) is needle index
-            // `prefix_idx*25 + (k-1)`. So a shift `k` can satisfy
-            // `looks_credential_shaped` ONLY if some needle with that `k` matched.
-            // The old code learned "≥1 needle matched" (`is_match`) then tried ALL
-            // 25 shifts; instead, recover the exact set of matched `k`s and shift
-            // to only those. Every shift that could pass is in this set, so the
-            // emitted-chunk set is byte-identical — but the 25× `caesar_shift`
-            // allocation + re-scan fan-out collapses to the 1–3 aligned shifts.
-            // Caesar emits ~84% of all decode sub-chunks; this is the lever.
-            // `find_overlapping_iter` (not `find_iter`) is required: a needle can
-            // sit inside/over another, and a non-overlapping walk would drop its
-            // `k`, losing a shift that should fire.
-            let try_shift = matched_caesar_shifts(&candidate);
-            for shift in 1..=25u8 {
-                if !try_shift[shift as usize] {
+        with_extracted_value_spans(&chunk.data, |candidates| {
+            for candidate in candidates {
+                if candidate_inside_spans(candidate.span(), &private_key_spans) {
                     continue;
                 }
-                let decoded = caesar_shift(&candidate, shift);
-                if !looks_credential_shaped(&decoded) {
+                let candidate = candidate.value.as_str();
+                if candidate.len() < MIN_CAESAR_LEN {
                     continue;
                 }
-                // NOTE: we intentionally use the non-spliced push.
-                // Splicing the decoded variant back into the parent
-                // (which the base64/hex paths do for companion-anchor
-                // preservation) is wrong for Caesar: Caesar produces
-                // 25 candidate shifts per blob, of which several can
-                // randomly satisfy hex/UUID shape gates. Splicing
-                // those into the parent multiplies findings under
-                // keyword-anchored detectors with shifted credentials
-                // that don't match the ground-truth value the user
-                // planted. Caesar's value is the bare decoded
-                // candidate; let it surface as its own chunk so the
-                // dedup layer can collapse identical findings.
-                push_decoded_text_chunk(&mut out, chunk, decoded, self.name());
+                // SHIFT-INVARIANT PRECONDITION (sound; a true superset of "some
+                // shift is credential-shaped"). `caesar_shift` maps letter->letter,
+                // digit->digit, other->other, so the two structural gates inside
+                // `looks_credential_shaped` are identical for the candidate and ALL
+                // 25 of its shifts:
+                //   * "contains >=1 ASCII digit"        - digits are shift-identity
+                //   * "has an 8+ ASCII-ALPHANUMERIC run" - alnum-ness is preserved
+                // If the RAW candidate fails either gate, NONE of its 25 shifts can
+                // pass `looks_credential_shaped`, so we skip the entire 25x
+                // `caesar_shift` allocation + re-scan loop for it. Only the
+                // KNOWN_PREFIXES check (the one gate a shift CAN newly satisfy) is
+                // left to the per-shift loop. This is byte-for-byte recall-
+                // equivalent - it removes pure-waste allocations, it does not gate
+                // out any shift that could have been shaped (unlike an
+                // alphabetic-run length gate, which is unsound: a `0x`/`SG.`/`hf_`
+                // prefix needs only a 1-2 letter run, so a credential-shaped shift
+                // can arise from a chunk with no long alphabetic run at all).
+                if !candidate_shape_invariant(candidate) {
+                    continue;
+                }
+                // Rotated-prefix SHIFT SELECTION (recall- AND precision-exact, not
+                // merely a prefilter). A shifted variant's final gate is a
+                // KNOWN_PREFIXES substring in `caesar_shift(candidate, k)`. By the
+                // position-wise bijection (see ROTATED_PREFIX_AC),
+                //   caesar_shift(candidate, k).contains(P) ⟺ candidate.contains(needle(P,k))
+                // where needle(P,k) = caesar_shift(P, 26-k) is needle index
+                // `prefix_idx*25 + (k-1)`. So a shift `k` can satisfy
+                // `looks_credential_shaped` ONLY if some needle with that `k` matched.
+                // The old code learned "≥1 needle matched" (`is_match`) then tried ALL
+                // 25 shifts; instead, recover the exact set of matched `k`s and shift
+                // to only those. Every shift that could pass is in this set, so the
+                // emitted-chunk set is byte-identical — but the 25× `caesar_shift`
+                // allocation + re-scan fan-out collapses to the 1–3 aligned shifts.
+                // Caesar emits ~84% of all decode sub-chunks; this is the lever.
+                // `find_overlapping_iter` (not `find_iter`) is required: a needle can
+                // sit inside/over another, and a non-overlapping walk would drop its
+                // `k`, losing a shift that should fire.
+                let try_shift = matched_caesar_shifts(candidate);
+                for shift in 1..=25u8 {
+                    if !try_shift[shift as usize] {
+                        continue;
+                    }
+                    let decoded = caesar_shift(candidate, shift);
+                    if !looks_credential_shaped(&decoded) {
+                        continue;
+                    }
+                    // NOTE: we intentionally use the non-spliced push.
+                    // Splicing the decoded variant back into the parent
+                    // (which the base64/hex paths do for companion-anchor
+                    // preservation) is wrong for Caesar: Caesar produces
+                    // 25 candidate shifts per blob, of which several can
+                    // randomly satisfy hex/UUID shape gates. Splicing
+                    // those into the parent multiplies findings under
+                    // keyword-anchored detectors with shifted credentials
+                    // that don't match the ground-truth value the user
+                    // planted. Caesar's value is the bare decoded
+                    // candidate; let it surface as its own chunk so the
+                    // dedup layer can collapse identical findings.
+                    push_decoded_text_chunk(&mut out, chunk, decoded, self.name());
+                }
             }
-        }
+        });
         out
     }
 }

@@ -1,7 +1,7 @@
 use super::base64::base64_decode;
 use super::pipeline::{
-    decode_candidate_spans_exact, decode_candidates, extract_encoded_value_spans,
-    extract_encoded_values, ExtractedValue,
+    decode_candidate_spans_exact, decode_candidates, extract_encoded_values,
+    with_extracted_value_spans, ExtractedValue,
 };
 use super::unicode_escape::unicode_escape_decode;
 use super::util::hex_val;
@@ -24,10 +24,13 @@ impl Decoder for UrlDecoder {
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-        let mut candidates = extract_encoded_value_spans(&chunk.data)
-            .into_iter()
-            .filter(|candidate| candidate.value.contains('%'))
-            .collect::<Vec<_>>();
+        let mut candidates = with_extracted_value_spans(&chunk.data, |candidates| {
+            candidates
+                .iter()
+                .filter(|candidate| candidate.value.contains('%'))
+                .cloned()
+                .collect::<Vec<_>>()
+        });
         // Also pick up percent-only assignment tails the pct_block accumulator
         // can miss when the `%` run abuts a quote or delimiter mid-chunk.
         for line in chunk.data.lines() {
@@ -120,20 +123,18 @@ macro_rules! simple_decoder {
             }
 
             fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-                let mut candidates = extract_encoded_value_spans(&chunk.data);
+                let mut candidates = with_extracted_value_spans(&chunk.data, |candidates| {
+                    candidates
+                        .iter()
+                        .filter(|candidate| ($filter)(candidate.value.as_str()))
+                        .cloned()
+                        .collect::<Vec<_>>()
+                });
                 let trimmed = chunk.data.trim();
                 if ($filter)(trimmed) && !trimmed.is_empty() {
                     candidates.push(ExtractedValue::synthetic(trimmed.to_string()));
                 }
-                decode_candidate_spans_exact(
-                    chunk,
-                    candidates
-                        .into_iter()
-                        .filter(|candidate| ($filter)(candidate.value.as_str()))
-                        .collect(),
-                    $decode,
-                    self.name(),
-                )
+                decode_candidate_spans_exact(chunk, candidates, $decode, self.name())
             }
         }
     };

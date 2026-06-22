@@ -458,12 +458,42 @@ fn decode_base64_shape_and_decode_have_one_scanner_owner() {
 }
 
 #[test]
-fn decode_z85_extractor_keeps_clean_candidates_allocation_free() {
+fn decode_extract_cache_hot_decoders_use_borrowed_candidate_view() {
+    let extractor = include_str!("../../src/decode/pipeline/extractor.rs");
+    assert!(
+        extractor.contains("pub(crate) fn with_extracted_value_spans<R>")
+            && extractor.contains("return f(cands);")
+            && extractor
+                .contains("let cands = extract_encoded_value_spans_raw(text);\n        f(&cands)"),
+        "extractor must expose a borrowed view so cache hits do not clone every candidate"
+    );
+
+    for (name, owner) in [
+        ("base64", include_str!("../../src/decode/base64.rs")),
+        ("hex", include_str!("../../src/decode/hex.rs")),
+        ("url", include_str!("../../src/decode/url.rs")),
+        ("reverse", include_str!("../../src/decode/reverse.rs")),
+        ("caesar", include_str!("../../src/decode/caesar.rs")),
+    ] {
+        assert!(
+            owner.contains("with_extracted_value_spans"),
+            "{name} decoder must use the borrowed candidate cache view"
+        );
+        assert!(
+            !owner.contains("extract_encoded_value_spans(&chunk.data)"),
+            "{name} decoder must not clone the whole shared candidate cache on the hot path"
+        );
+    }
+}
+
+#[test]
+fn decode_z85_extractor_only_strips_whitespace_when_needed() {
     let owner = include_str!("../../src/decode/base64.rs");
     assert!(
         owner.contains("if candidate.value.chars().any(char::is_whitespace)")
-            && owner.contains("} else {\n            candidate.value\n        }"),
-        "Z85 extraction must move already-clean candidates instead of allocating a cleaned String"
+            && owner.contains(".filter(|ch| !ch.is_whitespace())")
+            && owner.contains("candidate.value.clone()"),
+        "Z85 extraction must avoid building a whitespace-stripped String for already-clean candidates"
     );
     assert!(
         !owner.contains(

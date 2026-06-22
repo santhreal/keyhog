@@ -1,5 +1,5 @@
 use super::pipeline::{
-    ExtractedValue, extract_encoded_value_spans, push_decoded_text_chunk_spliced_at,
+    push_decoded_text_chunk_spliced_at, with_extracted_value_spans, ExtractedValue,
 };
 use super::{Decoder, EncodedString};
 use keyhog_core::Chunk;
@@ -161,19 +161,21 @@ fn find_base64_string_spans(text: &str, min_length: usize) -> Vec<ExtractedValue
 fn find_classified_base64_string_spans(text: &str, min_length: usize) -> Vec<Base64ExtractedValue> {
     let mut results = Vec::new();
 
-    for candidate in extract_encoded_value_spans(text) {
-        if candidate.value.len() < min_length
-            || !candidate.value.bytes().all(is_base64_candidate_byte)
-        {
-            continue;
+    with_extracted_value_spans(text, |candidates| {
+        for candidate in candidates {
+            if candidate.value.len() < min_length
+                || !candidate.value.bytes().all(is_base64_candidate_byte)
+            {
+                continue;
+            }
+            if let Some(variant) = classify_base64(&candidate.value) {
+                results.push(Base64ExtractedValue {
+                    value: candidate.clone(),
+                    variant,
+                });
+            }
         }
-        if let Some(variant) = classify_base64(&candidate.value) {
-            results.push(Base64ExtractedValue {
-                value: candidate,
-                variant,
-            });
-        }
-    }
+    });
     results
 }
 
@@ -247,27 +249,29 @@ fn find_z85_string_spans(text: &str, min_length: usize) -> Vec<ExtractedValue> {
     let is_z85_char =
         |ch: char| ch.is_ascii_alphanumeric() || ".-:+=^!/*?&<>()[]{}@%$#".contains(ch);
 
-    for candidate in extract_encoded_value_spans(text) {
-        let cleaned = if candidate.value.chars().any(char::is_whitespace) {
-            candidate
-                .value
-                .chars()
-                .filter(|ch| !ch.is_whitespace())
-                .collect()
-        } else {
-            candidate.value
-        };
-        if cleaned.len() >= min_length
-            && cleaned.len().is_multiple_of(5)
-            && cleaned.chars().all(is_z85_char)
-        {
-            results.push(ExtractedValue {
-                value: cleaned,
-                start: candidate.start,
-                end: candidate.end,
-            });
+    with_extracted_value_spans(text, |candidates| {
+        for candidate in candidates {
+            let cleaned = if candidate.value.chars().any(char::is_whitespace) {
+                candidate
+                    .value
+                    .chars()
+                    .filter(|ch| !ch.is_whitespace())
+                    .collect()
+            } else {
+                candidate.value.clone()
+            };
+            if cleaned.len() >= min_length
+                && cleaned.len().is_multiple_of(5)
+                && cleaned.chars().all(is_z85_char)
+            {
+                results.push(ExtractedValue {
+                    value: cleaned,
+                    start: candidate.start,
+                    end: candidate.end,
+                });
+            }
         }
-    }
+    });
     results
 }
 

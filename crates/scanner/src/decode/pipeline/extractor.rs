@@ -115,6 +115,25 @@ pub(crate) fn extract_encoded_value_spans(text: &str) -> Vec<ExtractedValue> {
     hit.unwrap_or_else(|| extract_encoded_value_spans_raw(text)) // LAW10: offset/owned/group absent => documented default (original chunk / first group); recall-safe
 }
 
+pub(crate) fn with_extracted_value_spans<R>(
+    text: &str,
+    f: impl FnOnce(&[ExtractedValue]) -> R,
+) -> R {
+    SHARED_CANDIDATES.with(|c| {
+        let borrowed = c.borrow();
+        if let Some((_, _, cands)) = borrowed
+            .as_ref()
+            .filter(|(ptr, len, _)| *ptr == text.as_ptr() as usize && *len == text.len())
+        {
+            return f(cands);
+        }
+        drop(borrowed);
+
+        let cands = extract_encoded_value_spans_raw(text);
+        f(&cands)
+    })
+}
+
 fn extract_encoded_value_spans_raw(text: &str) -> Vec<ExtractedValue> {
     let _prof = extract_prof_enabled().then(|| {
         use std::sync::atomic::Ordering::Relaxed;

@@ -1,5 +1,5 @@
 use super::pipeline::{
-    extract_encoded_value_spans, push_decoded_text_chunk_spliced_at, ExtractedValue,
+    push_decoded_text_chunk_spliced_at, with_extracted_value_spans, ExtractedValue,
 };
 use super::{Decoder, EncodedString};
 use keyhog_core::Chunk;
@@ -46,26 +46,28 @@ pub fn find_hex_strings(text: &str, min_length: usize) -> Vec<EncodedString> {
 
 fn find_hex_string_spans(text: &str, min_length: usize) -> Vec<ExtractedValue> {
     let mut results = Vec::new();
-    for candidate in extract_encoded_value_spans(text) {
-        // Hex literals in firmware dumps and config files commonly use `_`
-        // every 2/4/8 chars for readability (`A1_B2_C3_...`). Tolerate those
-        // when validating - audit class #5 (release-2026-04-26) noted the
-        // previous all-hex check missed this evasion entirely. Validate over
-        // the raw bytes (hex digits and `_` are all single-byte ASCII, so the
-        // non-`_` byte count equals the decoded-input char count) instead of
-        // allocating a throwaway cleaned `String` per candidate on the hot
-        // decode path; `hex_decode` does the final underscore stripping.
-        let hex_len = candidate.value.bytes().filter(|byte| *byte != b'_').count();
-        if hex_len >= min_length
-            && hex_len.is_multiple_of(2)
-            && candidate
-                .value
-                .bytes()
-                .all(|byte| byte == b'_' || byte.is_ascii_hexdigit())
-        {
-            results.push(candidate);
+    with_extracted_value_spans(text, |candidates| {
+        for candidate in candidates {
+            // Hex literals in firmware dumps and config files commonly use `_`
+            // every 2/4/8 chars for readability (`A1_B2_C3_...`). Tolerate those
+            // when validating - audit class #5 (release-2026-04-26) noted the
+            // previous all-hex check missed this evasion entirely. Validate over
+            // the raw bytes (hex digits and `_` are all single-byte ASCII, so the
+            // non-`_` byte count equals the decoded-input char count) instead of
+            // allocating a throwaway cleaned `String` per candidate on the hot
+            // decode path; `hex_decode` does the final underscore stripping.
+            let hex_len = candidate.value.bytes().filter(|byte| *byte != b'_').count();
+            if hex_len >= min_length
+                && hex_len.is_multiple_of(2)
+                && candidate
+                    .value
+                    .bytes()
+                    .all(|byte| byte == b'_' || byte.is_ascii_hexdigit())
+            {
+                results.push(candidate.clone());
+            }
         }
-    }
+    });
     results
 }
 

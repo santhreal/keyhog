@@ -165,7 +165,7 @@ mod extractor;
 mod registry;
 mod splice;
 pub(super) use extractor::{
-    extract_encoded_value_spans, extract_encoded_values, hash_fast, ExtractedValue,
+    extract_encoded_values, hash_fast, with_extracted_value_spans, ExtractedValue,
 };
 pub(crate) use extractor::{extract_profile_dump, extract_profile_reset};
 pub use registry::register_decoder;
