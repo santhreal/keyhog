@@ -77,61 +77,111 @@ fn collect_docker_chunks(
     limits: crate::SourceLimits,
 ) -> Result<Vec<Chunk>, SourceError> {
     let image = validate_image_name(image)?;
-    let tempdir = tempfile::tempdir().map_err(SourceError::Io)?;
-    // Store the temp path in a binding so RAII deletes the archive on scope exit
-    // (including panics). The old `.keep()` call disabled auto-cleanup - a crash
-    // after `docker image save` would leak multi-gigabyte tar files in /tmp.
-    let archive_temppath = tempfile::Builder::new()
-        .prefix("keyhog-image-")
-        .suffix(".tar")
-        .rand_bytes(8)
-        .tempfile_in(tempdir.path())
-        .map_err(SourceError::Io)?
-        .into_temp_path();
-    let archive_path = archive_temppath.to_path_buf();
-    let root_path = tempdir.path().join("root");
-    create_private_directory_all(&root_path)?;
+    let workspace = DockerScanWorkspace::new()?;
+    let docker_bin = resolve_docker_binary()?;
 
+    export_docker_image_archive(&docker_bin, &image, workspace.archive_path())?;
+    unpack_tar(workspace.archive_path(), workspace.root_path(), limits)?;
+
+    let mut chunks = find_manifest_config_chunks(workspace.root_path(), &image, limits)?;
+    chunks.extend(collect_docker_layer_chunks(&workspace, &image, limits)?);
+
+    Ok(chunks)
+}
+
+struct DockerScanWorkspace {
+    tempdir: tempfile::TempDir,
+    archive_temppath: tempfile::TempPath,
+    root_path: PathBuf,
+}
+
+impl DockerScanWorkspace {
+    fn new() -> Result<Self, SourceError> {
+        let tempdir = tempfile::tempdir().map_err(SourceError::Io)?;
+        let archive_temppath = tempfile::Builder::new()
+            .prefix("keyhog-image-")
+            .suffix(".tar")
+            .rand_bytes(8)
+            .tempfile_in(tempdir.path())
+            .map_err(SourceError::Io)?
+            .into_temp_path();
+        let root_path = tempdir.path().join("root");
+        create_private_directory_all(&root_path)?;
+        Ok(Self {
+            tempdir,
+            archive_temppath,
+            root_path,
+        })
+    }
+
+    fn archive_path(&self) -> &Path {
+        self.archive_temppath.as_ref()
+    }
+
+    fn root_path(&self) -> &Path {
+        &self.root_path
+    }
+
+    fn layer_dir(&self, layer_name: &str) -> PathBuf {
+        self.tempdir
+            .path()
+            .join("layers")
+            .join(sanitize_layer_name(layer_name))
+    }
+}
+
+fn resolve_docker_binary() -> Result<PathBuf, SourceError> {
     // SECURITY: kimi-wave1 audit finding 3.PATH-docker. Resolve `docker`
     // to a trusted-system-bin absolute path so a hostile $PATH cannot
     // substitute a binary that receives the image name + archive output
     // location and ships them to an attacker.
-    let docker_bin = keyhog_core::resolve_safe_bin("docker").ok_or_else(|| {
+    keyhog_core::resolve_safe_bin("docker").ok_or_else(|| {
         SourceError::Other(
             "docker binary not found in trusted system bin dirs (refusing to use $PATH lookup); \
              install docker via your package manager or add its absolute directory to \
              [system].trusted_bin_dirs in .keyhog.toml"
                 .into(),
         )
-    })?;
-    export_docker_image_archive(&docker_bin, &image, &archive_path)?;
+    })
+}
 
-    unpack_tar(&archive_path, &root_path, limits)?;
-
+fn collect_docker_layer_chunks(
+    workspace: &DockerScanWorkspace,
+    image: &str,
+    limits: crate::SourceLimits,
+) -> Result<Vec<Chunk>, SourceError> {
     let mut chunks = Vec::new();
-    chunks.extend(find_manifest_config_chunks(&root_path, &image, limits)?);
-    for layer_tar in find_layer_archives(&root_path, limits)? {
-        let layer_name = layer_tar
-            .strip_prefix(&root_path)
-            .ok() // LAW10: a non-prefixed path falls back to the full display path below — both are valid scannable labels, no layer is dropped
-            .map(|path| path.display().to_string())
-            .unwrap_or_else(|| layer_tar.display().to_string()); // LAW10: display-label fallback only; the layer is still unpacked + scanned
-        let layer_dir = tempdir
-            .path()
-            .join("layers")
-            .join(sanitize_layer_name(&layer_name));
-        create_private_directory_all(&layer_dir)?;
-        unpack_layer_archive(&layer_tar, &layer_dir, limits)?;
-
-        chunks.extend(rewrite_layer_chunks(
-            FilesystemSource::new(layer_dir.clone()).chunks(),
-            &image,
-            &layer_dir,
-            &layer_name,
-        )?);
+    for layer_tar in find_layer_archives(workspace.root_path(), limits)? {
+        chunks.extend(scan_docker_layer(workspace, image, &layer_tar, limits)?);
     }
-
     Ok(chunks)
+}
+
+fn scan_docker_layer(
+    workspace: &DockerScanWorkspace,
+    image: &str,
+    layer_tar: &Path,
+    limits: crate::SourceLimits,
+) -> Result<Vec<Chunk>, SourceError> {
+    let layer_name = docker_layer_name(layer_tar, workspace.root_path());
+    let layer_dir = workspace.layer_dir(&layer_name);
+    create_private_directory_all(&layer_dir)?;
+    unpack_layer_archive(layer_tar, &layer_dir, limits)?;
+
+    rewrite_layer_chunks(
+        FilesystemSource::new(layer_dir.clone()).chunks(),
+        image,
+        &layer_dir,
+        &layer_name,
+    )
+}
+
+fn docker_layer_name(layer_tar: &Path, root_path: &Path) -> String {
+    layer_tar
+        .strip_prefix(root_path)
+        .ok() // LAW10: a non-prefixed path falls back to the full display path below — both are valid scannable labels, no layer is dropped
+        .map(|path| path.display().to_string())
+        .unwrap_or_else(|| layer_tar.display().to_string()) // LAW10: display-label fallback only; the layer is still unpacked + scanned
 }
 
 fn export_docker_image_archive(

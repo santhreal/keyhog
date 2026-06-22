@@ -266,6 +266,60 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
     );
 }
 
+#[cfg(feature = "docker")]
+#[test]
+fn docker_collect_is_phase_orchestrator() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source = std::fs::read_to_string(root.join("src/docker.rs")).expect("read docker source");
+    let collect = source
+        .split("fn collect_docker_chunks(")
+        .nth(1)
+        .expect("collect_docker_chunks must exist")
+        .split("struct DockerScanWorkspace")
+        .next()
+        .expect("collect_docker_chunks section must be bounded");
+
+    for required in [
+        "struct DockerScanWorkspace",
+        "fn resolve_docker_binary(",
+        "fn collect_docker_layer_chunks(",
+        "fn scan_docker_layer(",
+        "fn docker_layer_name(",
+    ] {
+        assert!(
+            source.contains(required),
+            "docker.rs must keep {required} as an explicit Docker collection phase boundary"
+        );
+    }
+
+    for required_call in [
+        "DockerScanWorkspace::new()",
+        "resolve_docker_binary()",
+        "find_manifest_config_chunks(",
+        "collect_docker_layer_chunks(",
+    ] {
+        assert!(
+            collect.contains(required_call),
+            "collect_docker_chunks must orchestrate through {required_call}"
+        );
+    }
+
+    for forbidden in [
+        "tempfile::tempdir(",
+        "tempfile::Builder::new()",
+        "resolve_safe_bin(\"docker\")",
+        "for layer_tar in",
+        "unpack_layer_archive(",
+        "FilesystemSource::new(",
+        "sanitize_layer_name(",
+    ] {
+        assert!(
+            !collect.contains(forbidden),
+            "collect_docker_chunks must not own Docker workspace/export/layer implementation detail `{forbidden}`"
+        );
+    }
+}
+
 #[cfg(feature = "git")]
 #[test]
 fn git_hunk_headers_must_not_default_to_line_one() {
