@@ -5,4 +5,5 @@ pub mod dedup_invariants_proptest;
 pub mod is_known_example_never_panics;
 pub mod normalized_entropy_bounded_zero_to_one;
 pub mod scanner_fuzz;
+pub mod segment_attribution_proptest;
 pub mod shannon_entropy_bounded_zero_to_eight;

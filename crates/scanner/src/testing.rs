@@ -1519,30 +1519,29 @@ pub(crate) mod decode_structure {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod segment_attribution {
+pub mod segment_attribution {
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub(crate) struct Segment {
-        pub(crate) id: u32,
-        pub(crate) start: u32,
-        pub(crate) len: u32,
+    pub struct Segment {
+        pub id: u32,
+        pub start: u32,
+        pub len: u32,
     }
 
     impl Segment {
-        pub(crate) const fn new(id: u32, start: u32, len: u32) -> Self {
+        pub const fn new(id: u32, start: u32, len: u32) -> Self {
             Self { id, start, len }
         }
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub(crate) struct GlobalMatch {
-        pub(crate) pattern_id: u32,
-        pub(crate) start: u32,
-        pub(crate) end: u32,
+    pub struct GlobalMatch {
+        pub pattern_id: u32,
+        pub start: u32,
+        pub end: u32,
     }
 
     impl GlobalMatch {
-        pub(crate) const fn new(pattern_id: u32, start: u32, end: u32) -> Self {
+        pub const fn new(pattern_id: u32, start: u32, end: u32) -> Self {
             Self {
                 pattern_id,
                 start,
@@ -1552,15 +1551,15 @@ pub(crate) mod segment_attribution {
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-    pub(crate) struct AttributedMatch {
-        pub(crate) segment_id: u32,
-        pub(crate) pattern_id: u32,
-        pub(crate) local_start: u32,
-        pub(crate) local_end: u32,
+    pub struct AttributedMatch {
+        pub segment_id: u32,
+        pub pattern_id: u32,
+        pub local_start: u32,
+        pub local_end: u32,
     }
 
     impl AttributedMatch {
-        pub(crate) const fn new(
+        pub const fn new(
             segment_id: u32,
             pattern_id: u32,
             local_start: u32,
@@ -1576,7 +1575,7 @@ pub(crate) mod segment_attribution {
     }
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    pub(crate) enum SegmentAttributionError {
+    pub enum SegmentAttributionError {
         SegmentEndOverflow {
             segment_index: usize,
             start: u32,
@@ -1663,7 +1662,7 @@ pub(crate) mod segment_attribution {
         }
     }
 
-    pub(crate) fn map_offsets_to_segments(
+    pub fn map_offsets_to_segments(
         segments: &[Segment],
         matches: &[GlobalMatch],
     ) -> Result<Vec<AttributedMatch>, SegmentAttributionError> {
