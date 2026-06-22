@@ -19,6 +19,11 @@ enum CompressedFormat {
     Xz,
 }
 
+struct DecompressedBytes {
+    bytes: Vec<u8>,
+    recovered_after_error: bool,
+}
+
 impl CompressedFormat {
     fn from_ext(ext: &str) -> Self {
         match ext {
@@ -37,7 +42,7 @@ fn decompress_to_bytes(
     format: CompressedFormat,
     compressed: &[u8],
     budget: usize,
-) -> Option<Vec<u8>> {
+) -> Option<DecompressedBytes> {
     use std::io::Read as _;
 
     // Cap the reader at `budget + 1` bytes: one over the budget so the caller
@@ -90,11 +95,17 @@ fn decompress_to_bytes(
     };
 
     match read_result {
-        Ok(_) => Some(out),
+        Ok(_) => Some(DecompressedBytes {
+            bytes: out,
+            recovered_after_error: false,
+        }),
         // A premature-EOF / decode error after producing some bytes still leaves
         // the decoded prefix in `out`; scan what we recovered rather than drop
         // the whole file.
-        Err(_) if !out.is_empty() => Some(out),
+        Err(_) if !out.is_empty() => Some(DecompressedBytes {
+            bytes: out,
+            recovered_after_error: true,
+        }),
         Err(_) => None, // LAW10: unrecognized/partial => caller scans whole-file/recovered prefix; recall-preserving
     }
 }
@@ -283,6 +294,13 @@ pub(super) fn extract_compressed_chunks(
             return;
         }
     };
+    if decompressed.recovered_after_error {
+        let error = report_compressed_recovered_after_error(path, decompressed.bytes.len());
+        if !emit(Err(error)) {
+            return;
+        }
+    }
+    let decompressed = decompressed.bytes;
     if decompressed.len() >= budget {
         let error = report_compressed_truncation(path, budget, decompressed.len());
         if !emit(Err(error)) {
@@ -326,6 +344,19 @@ pub(super) fn extract_compressed_chunks(
     })) {
         tracing::debug!("compressed chunk consumer stopped before final chunk");
     }
+}
+
+fn report_compressed_recovered_after_error(path: &Path, decoded_len: usize) -> SourceError {
+    eprintln!(
+        "keyhog: WARNING: decompression of {} produced a {} byte prefix and then failed — only the recovered prefix was scanned; the rest was NOT.",
+        path.display(),
+        decoded_len
+    );
+    let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+    SourceError::Other(format!(
+        "decompression of '{}' failed after recovering {decoded_len} bytes; only the recovered prefix was scanned and the remaining compressed stream was not scanned",
+        path.display()
+    ))
 }
 
 fn report_compressed_truncation(path: &Path, budget: usize, decoded_len: usize) -> SourceError {

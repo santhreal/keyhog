@@ -285,3 +285,52 @@ fn gzip_single_stream_bomb_is_truncated_and_counted() {
         4 * MAX as usize
     );
 }
+
+#[test]
+fn gzip_recovered_prefix_after_decode_error_is_counted_truncated() {
+    let _guard = COUNTER_LOCK.lock().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let gz_path = dir.path().join("corrupt-after-prefix.gz");
+
+    let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    enc.write_all(b"aws_access_key_id = AKIAIOSFODNN7EXAMPLE\n")
+        .unwrap();
+    let mut compressed = enc.finish().unwrap();
+    let last = compressed.last_mut().expect("gzip trailer byte");
+    *last = last.wrapping_add(1);
+    std::fs::write(&gz_path, compressed).unwrap();
+
+    TestApi.reset_skip_counters();
+    let rows: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
+        .chunks()
+        .collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+
+    assert!(
+        chunks
+            .iter()
+            .any(|chunk| chunk.data.contains("AKIAIOSFODNN7EXAMPLE")),
+        "recovered gzip prefix must still be scanned"
+    );
+    assert_eq!(
+        errors.len(),
+        1,
+        "partial gzip decode must surface one source error"
+    );
+    let err = errors[0].to_string();
+    assert!(
+        err.contains("failed after recovering")
+            && err.contains("remaining compressed stream was not scanned"),
+        "error should describe partial compressed-stream coverage, got {err}"
+    );
+    assert_eq!(
+        skip_counts().archive_truncated,
+        1,
+        "gzip decode error after a recovered prefix must be visible as partial archive coverage"
+    );
+    assert_eq!(
+        skip_counts().unreadable,
+        0,
+        "a recovered-prefix decode error is partial coverage, not a whole-file unreadable skip"
+    );
+}
