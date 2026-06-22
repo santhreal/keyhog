@@ -4,7 +4,6 @@
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use reqwest::blocking::Client;
 use serde::Deserialize;
-use std::io::Read;
 
 const DEFAULT_GCS_ENDPOINT: &str = "https://storage.googleapis.com";
 
@@ -278,89 +277,19 @@ fn fetch_gcs_object_chunk(
     let response = request.send().map_err(|error| {
         SourceError::Other(format!("failed to download GCS object: {name}: {error}"))
     })?;
-    if !response.status().is_success() {
-        let status = response.status();
-        tracing::warn!(
-            bucket,
-            key = name,
-            %status,
-            "skipping GCS object: GET returned non-success status; NOT scanned",
-        );
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-        return Err(SourceError::Other(format!(
-            "failed to scan GCS object gs://{bucket}/{name}: GET returned {status}; object was not scanned"
-        )));
-    }
-    if let Some(content_length) = response.content_length() {
-        if content_length > max_object_bytes {
-            tracing::warn!(
-                bucket,
-                key = name,
-                content_length,
-                cap = max_object_bytes,
-                "skipping GCS object: Content-Length exceeds the per-object byte cap; NOT scanned",
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-            return Ok(None);
-        }
-    }
-    let content_type = response
-        .headers()
-        .get("content-type")
-        .and_then(|value| match value.to_str() {
-            Ok(value) => Some(value),
-            Err(error) => {
-                tracing::warn!(
-                    %error,
-                    "GCS object content-type header is not valid text; scanning body as unknown content type"
-                );
-                None
-            }
-        });
-    if let Some(content_type) = content_type {
-        if crate::cloud::is_binary_content_type(content_type) {
-            tracing::warn!(
-                bucket,
-                key = name,
-                content_type,
-                "skipping GCS object: binary content-type; NOT scanned as text",
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-            return Ok(None);
-        }
-    }
-
-    let mut body = Vec::new();
-    let mut reader = response.take(max_object_bytes + 1);
-    std::io::Read::read_to_end(&mut reader, &mut body).map_err(|error| {
-        SourceError::Other(format!("failed to read GCS object body: {name}: {error}"))
-    })?;
-    if body.len() as u64 > max_object_bytes {
-        tracing::warn!(
-            bucket,
-            key = name,
-            downloaded = body.len(),
-            cap = max_object_bytes,
-            "skipping GCS object: streamed body exceeds the per-object byte cap; NOT scanned",
-        );
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+    let display_path = format!("gs://{bucket}/{name}");
+    let Some(object_text) = crate::cloud::read_text_object_body(
+        response,
+        crate::cloud::TextObjectBodyContext {
+            source: "GCS object",
+            item_kind: "object",
+            item_name: name,
+            display_path,
+            max_bytes: max_object_bytes,
+        },
+    )?
+    else {
         return Ok(None);
-    }
-    let object_text = match String::from_utf8(body) {
-        Ok(text) => text,
-        Err(error) => {
-            let valid_up_to = error.utf8_error().valid_up_to();
-            tracing::warn!(
-                bucket,
-                key = name,
-                valid_up_to,
-                "skipping GCS object: body claimed text content-type but failed UTF-8 decode; NOT scanned"
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            return Err(SourceError::Other(format!(
-                "failed to scan GCS object gs://{bucket}/{name}: body failed UTF-8 decode at byte {valid_up_to}; object was not scanned"
-            )));
-        }
     };
     Ok(Some(Chunk {
         data: object_text.into(),

@@ -1,7 +1,8 @@
 use std::path::Path;
 
 use keyhog_core::SourceError;
-use reqwest::blocking::Client;
+use reqwest::blocking::{Client, Response};
+use std::io::Read;
 
 #[cfg(feature = "azure")]
 pub(crate) mod azure_blob;
@@ -61,6 +62,118 @@ pub(crate) fn parse_http_endpoint(raw: &str, source: &str) -> Result<reqwest::Ur
 
 pub(crate) fn credential_forward_allowed(allow_explicit: bool) -> bool {
     allow_explicit
+}
+
+pub(crate) struct TextObjectBodyContext<'a> {
+    pub(crate) source: &'static str,
+    pub(crate) item_kind: &'static str,
+    pub(crate) item_name: &'a str,
+    pub(crate) display_path: String,
+    pub(crate) max_bytes: u64,
+}
+
+pub(crate) fn read_text_object_body(
+    response: Response,
+    ctx: TextObjectBodyContext<'_>,
+) -> Result<Option<String>, SourceError> {
+    if !response.status().is_success() {
+        let status = response.status();
+        tracing::warn!(
+            source = ctx.source,
+            key = ctx.item_name,
+            %status,
+            "skipping cloud object: GET returned non-success status; NOT scanned",
+        );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        return Err(SourceError::Other(format!(
+            "failed to scan {} {}: GET returned {status}; {} was not scanned",
+            ctx.source, ctx.display_path, ctx.item_kind
+        )));
+    }
+
+    if let Some(content_length) = response.content_length() {
+        if content_length > ctx.max_bytes {
+            tracing::warn!(
+                source = ctx.source,
+                key = ctx.item_name,
+                content_length,
+                cap = ctx.max_bytes,
+                "skipping cloud object: Content-Length exceeds the per-object byte cap; NOT scanned",
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+            return Ok(None);
+        }
+    }
+
+    let content_type = response
+        .headers()
+        .get("content-type")
+        .and_then(|value| match value.to_str() {
+            Ok(value) => Some(value),
+            Err(error) => {
+                tracing::warn!(
+                    source = ctx.source,
+                    key = ctx.item_name,
+                    %error,
+                    "cloud object content-type header is not valid text; scanning body as unknown content type"
+                );
+                None
+            }
+        });
+    if let Some(content_type) = content_type {
+        if crate::cloud::is_binary_content_type(content_type) {
+            tracing::warn!(
+                source = ctx.source,
+                key = ctx.item_name,
+                content_type,
+                "skipping cloud object: binary content-type; NOT scanned as text",
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
+            return Ok(None);
+        }
+    }
+
+    let initial_capacity = match response.content_length() {
+        Some(len) => len.min(ctx.max_bytes).min(64 * 1024) as usize,
+        None => 0,
+    };
+    let mut body = Vec::with_capacity(initial_capacity);
+    let mut reader = response.take(ctx.max_bytes + 1);
+    Read::read_to_end(&mut reader, &mut body).map_err(|error| {
+        SourceError::Other(format!(
+            "failed to read {} body: {}: {error}",
+            ctx.source, ctx.item_name
+        ))
+    })?;
+    if body.len() as u64 > ctx.max_bytes {
+        tracing::warn!(
+            source = ctx.source,
+            key = ctx.item_name,
+            downloaded = body.len(),
+            cap = ctx.max_bytes,
+            "skipping cloud object: streamed body exceeds the per-object byte cap; NOT scanned",
+        );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+        return Ok(None);
+    }
+
+    match String::from_utf8(body) {
+        Ok(text) => Ok(Some(text)),
+        Err(error) => {
+            let valid_up_to = error.utf8_error().valid_up_to();
+            tracing::warn!(
+                source = ctx.source,
+                key = ctx.item_name,
+                valid_up_to,
+                "skipping cloud object: body claimed text content-type but failed UTF-8 decode; NOT scanned"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            Err(SourceError::Other(format!(
+                "failed to scan {} {}: body failed UTF-8 decode at byte {valid_up_to}; {} was not scanned",
+                ctx.source, ctx.display_path, ctx.item_kind
+            )))
+        }
+    }
 }
 
 pub(crate) fn is_probably_text_object_key(key: &str) -> bool {

@@ -3,7 +3,6 @@
 
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
 use reqwest::blocking::Client;
-use std::io::Read;
 
 mod auth;
 mod listing;
@@ -344,120 +343,19 @@ fn fetch_object_chunk(
     let response = request
         .send()
         .map_err(|e| SourceError::Other(format!("failed to download S3 object: {key}: {e}")))?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        tracing::warn!(
-            bucket,
-            key,
-            %status,
-            "skipping S3 object: GET returned non-success status; NOT scanned",
-        );
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-        return Err(SourceError::Other(format!(
-            "failed to scan S3 object s3://{bucket}/{key}: GET returned {status}; object was not scanned"
-        )));
-    }
-
-    if let Some(content_length) = response.content_length() {
-        if content_length > max_object_bytes {
-            // Law 10: the object's real (Content-Length) size exceeds the cap, so
-            // it is dropped — an UNKNOWN. Surface loudly + count (over-max-size)
-            // exactly like the listed-size guard above so the drop is auditable.
-            tracing::warn!(
-                bucket,
-                key,
-                content_length,
-                cap = max_object_bytes,
-                "skipping S3 object: Content-Length exceeds the per-object byte cap; NOT scanned",
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-            return Ok(None);
-        }
-    }
-
-    // Skip objects that declare a binary content type - they won't contain text secrets.
-    let content_type = response
-        .headers()
-        .get("content-type")
-        .and_then(|v| match v.to_str() {
-            Ok(value) => Some(value),
-            Err(error) => {
-                tracing::warn!(
-                    %error,
-                    "S3 object content-type header is not valid text; scanning body as unknown content type"
-                );
-                None
-            }
-        });
-    if let Some(ct) = content_type {
-        if crate::cloud::is_binary_content_type(ct) {
-            // Law 10: a binary content-type skip is a deliberate non-text drop —
-            // the SAME category as the filesystem walker's binary-extension skip.
-            // Route it to the SKIPPED_BINARY counter (already CLI-surfaced) so it
-            // is visible, not a silent `tracing::debug!` return.
-            tracing::warn!(
-                bucket,
-                key,
-                content_type = %ct,
-                "skipping S3 object: binary content-type; NOT scanned as text",
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-            return Ok(None);
-        }
-    }
-
-    // Read the response body with a hard size cap. The blocking client
-    // lacks byte-stream support, so we use `copy()` into a size-limited
-    // buffer to abort before the full response is buffered into memory.
-    let mut body = Vec::new();
-    let mut reader = response.take(max_object_bytes + 1);
-    std::io::Read::read_to_end(&mut reader, &mut body)
-        .map_err(|e| SourceError::Other(format!("failed to read S3 object body: {key}: {e}")))?;
-    if body.len() as u64 > max_object_bytes {
-        // Law 10: the server streamed more than it declared (lying/absent
-        // Content-Length) and we hit the `.take(cap + 1)` ceiling — the body is
-        // truncated/over-cap and dropped. An UNKNOWN, not a clean object. Surface
-        // loudly + count (over-max-size) so the drop is auditable.
-        tracing::warn!(
-            bucket,
-            key,
-            downloaded = body.len(),
-            cap = max_object_bytes,
-            "skipping S3 object: streamed body exceeds the per-object byte cap \
-             (Content-Length was absent or understated); NOT scanned",
-        );
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+    let display_path = format!("s3://{bucket}/{key}");
+    let Some(object_text) = crate::cloud::read_text_object_body(
+        response,
+        crate::cloud::TextObjectBodyContext {
+            source: "S3 object",
+            item_kind: "object",
+            item_name: key,
+            display_path,
+            max_bytes: max_object_bytes,
+        },
+    )?
+    else {
         return Ok(None);
-    }
-    // Strict UTF-8 because the content-type guard above already
-    // accepted this as a text object. If the bytes don't decode it
-    // usually means the server lied about Content-Type (gzip body
-    // claiming `text/plain`, EBCDIC mainframe export, etc.).
-    // Surface the skip so a user staring at "0 findings" on a bucket
-    // they know has text objects can see what happened, instead of
-    // silently dropping the chunk.
-    let object_text = match String::from_utf8(body) {
-        Ok(text) => text,
-        Err(error) => {
-            // Law 10: a body the server labelled text but that fails UTF-8 is an
-            // UNKNOWN dropped from the scan (server lied about Content-Type, gzip
-            // body claiming text/plain, EBCDIC export, ...). The `tracing::warn!`
-            // alone left it out of the end-of-scan coverage numbers — count it as
-            // unreadable so "0 findings" on a bucket the user knows has text is
-            // not mistaken for full coverage.
-            let valid_up_to = error.utf8_error().valid_up_to();
-            tracing::warn!(
-                bucket,
-                key,
-                valid_up_to,
-                "skipping S3 object: body claimed text content-type but failed UTF-8 decode; NOT scanned"
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            return Err(SourceError::Other(format!(
-                "failed to scan S3 object s3://{bucket}/{key}: body failed UTF-8 decode at byte {valid_up_to}; object was not scanned"
-            )));
-        }
     };
 
     Ok(Some(Chunk {

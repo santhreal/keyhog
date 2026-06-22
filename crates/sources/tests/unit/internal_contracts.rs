@@ -211,6 +211,21 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
             source.contains("parse_http_endpoint("),
             "{rel} must route endpoint shape parsing through cloud/mod.rs"
         );
+        assert!(
+            source.contains("read_text_object_body("),
+            "{rel} must use the shared cloud text-object response reader"
+        );
+        for forbidden in [
+            ".take(max_object_bytes + 1)",
+            ".take(max_blob_bytes + 1)",
+            "String::from_utf8(body)",
+            "response.content_length()",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "{rel} must not own duplicated cloud response-body handling `{forbidden}`"
+            );
+        }
     }
 
     for rel in ["src/slack.rs", "src/hosted_git.rs", "src/cloud/mod.rs"] {

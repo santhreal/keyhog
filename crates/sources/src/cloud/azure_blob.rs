@@ -7,7 +7,6 @@ use quick_xml::events::Event;
 use quick_xml::Reader;
 use reqwest::blocking::Client;
 use serde::Deserialize;
-use std::io::Read;
 
 pub struct AzureBlobSource {
     container_url: String,
@@ -257,86 +256,20 @@ fn fetch_azure_blob_chunk(
     let response = client.get(url).send().map_err(|error| {
         SourceError::Other(format!("failed to download Azure blob: {name}: {error}"))
     })?;
-    if !response.status().is_success() {
-        let status = response.status();
-        tracing::warn!(
-            key = name,
-            %status,
-            "skipping Azure blob: GET returned non-success status; NOT scanned",
-        );
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-        return Err(SourceError::Other(format!(
-            "failed to scan Azure blob {name}: GET returned {status}; blob was not scanned"
-        )));
-    }
-    if let Some(content_length) = response.content_length() {
-        if content_length > max_blob_bytes {
-            tracing::warn!(
-                key = name,
-                content_length,
-                cap = max_blob_bytes,
-                "skipping Azure blob: Content-Length exceeds the per-blob byte cap; NOT scanned",
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-            return Ok(None);
-        }
-    }
-    let content_type = response
-        .headers()
-        .get("content-type")
-        .and_then(|value| match value.to_str() {
-            Ok(value) => Some(value),
-            Err(error) => {
-                tracing::warn!(
-                    %error,
-                    "Azure blob content-type header is not valid text; scanning body as unknown content type"
-                );
-                None
-            }
-        });
-    if let Some(content_type) = content_type {
-        if crate::cloud::is_binary_content_type(content_type) {
-            tracing::warn!(
-                key = name,
-                content_type,
-                "skipping Azure blob: binary content-type; NOT scanned as text",
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Binary);
-            return Ok(None);
-        }
-    }
-
-    let mut body = Vec::new();
-    let mut reader = response.take(max_blob_bytes + 1);
-    std::io::Read::read_to_end(&mut reader, &mut body).map_err(|error| {
-        SourceError::Other(format!("failed to read Azure blob body: {name}: {error}"))
-    })?;
-    if body.len() as u64 > max_blob_bytes {
-        tracing::warn!(
-            key = name,
-            downloaded = body.len(),
-            cap = max_blob_bytes,
-            "skipping Azure blob: streamed body exceeds the per-blob byte cap; NOT scanned",
-        );
-        let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
-        return Ok(None);
-    }
-    let object_text = match String::from_utf8(body) {
-        Ok(text) => text,
-        Err(error) => {
-            let valid_up_to = error.utf8_error().valid_up_to();
-            tracing::warn!(
-                key = name,
-                valid_up_to,
-                "skipping Azure blob: body claimed text content-type but failed UTF-8 decode; NOT scanned"
-            );
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-            return Err(SourceError::Other(format!(
-                "failed to scan Azure blob {name}: body failed UTF-8 decode at byte {valid_up_to}; blob was not scanned"
-            )));
-        }
-    };
     let display_path = azure_blob_display_path(container_url, name)?;
+    let Some(object_text) = crate::cloud::read_text_object_body(
+        response,
+        crate::cloud::TextObjectBodyContext {
+            source: "Azure blob",
+            item_kind: "blob",
+            item_name: name,
+            display_path: display_path.clone(),
+            max_bytes: max_blob_bytes,
+        },
+    )?
+    else {
+        return Ok(None);
+    };
     Ok(Some(Chunk {
         data: object_text.into(),
         metadata: ChunkMetadata {
