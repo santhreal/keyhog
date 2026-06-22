@@ -43,8 +43,10 @@ fn engine_uses_typed_named_detector_suppression_context() {
     let api = read(&src.join("suppression/api.rs"));
     assert!(
         api.contains("struct NamedDetectorSuppressionCtx")
-            && api.contains("fn suppress_named_detector_finding("),
-        "suppression::api must expose the typed named-detector suppression entry point"
+            && api.contains("fn suppress_named_detector_finding(")
+            && api.contains("fn suppress_named_detector_finding_stage(")
+            && api.contains(") -> Option<crate::adjudicate::StageId>"),
+        "suppression::api must expose the typed named-detector suppression entry point and exact adjudicator stage"
     );
     assert!(
         !api.contains("fn should_suppress_named_detector_finding(")
@@ -100,6 +102,7 @@ fn pipeline_does_not_facade_suppression_decisions() {
 fn engine_named_detector_suppression_routes_through_adjudicator() {
     let src = scanner_src();
     let process = uncommented_code(&read(&src.join("engine/process.rs")));
+    let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
     assert!(
         process.contains("crate::adjudicate::record_suppression("),
         "engine/process.rs must route named-detector candidate decisions through the adjudicator recorder"
@@ -107,6 +110,11 @@ fn engine_named_detector_suppression_routes_through_adjudicator() {
     assert!(
         !process.contains("suppress_named_detector_finding("),
         "engine/process.rs must not call suppress_named_detector_finding directly; the adjudicator owns the decision"
+    );
+    assert!(
+        adjudicate.contains("crate::suppression::suppress_named_detector_finding_stage(")
+            && !adjudicate.contains("Suppress(StageId::NamedDetectorSuppression)"),
+        "adjudicator must preserve exact named-detector suppression stages instead of flattening them"
     );
 }
 

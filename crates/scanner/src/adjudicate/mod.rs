@@ -394,12 +394,13 @@ fn named_detector_suppression_stage(
     let Some(suppression_ctx) = ctx.named_detector_suppression else {
         return StageOutcome::Pass;
     };
-    if crate::suppression::suppress_named_detector_finding(candidate.credential(), suppression_ctx)
-    {
-        StageOutcome::Suppress(StageId::NamedDetectorSuppression)
-    } else {
-        StageOutcome::Pass
+    if let Some(stage_id) = crate::suppression::suppress_named_detector_finding_stage(
+        candidate.credential(),
+        suppression_ctx,
+    ) {
+        return StageOutcome::Suppress(stage_id);
     }
+    StageOutcome::Pass
 }
 
 /// True when `credential` (a pure-hex token at `data[start..end]`) is a slice

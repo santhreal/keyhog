@@ -320,11 +320,27 @@ fn named_detector_stage_suppresses_generic_identifier() {
 
     assert_eq!(
         adjudicate_match(CandidateMatch::new("getParameter"), &ctx),
-        Verdict::Suppressed(StageId::NamedDetectorSuppression)
+        Verdict::Suppressed(StageId::ShapeGate("pure_identifier_no_digit"))
     );
     assert_eq!(
-        StageId::NamedDetectorSuppression.as_str(),
-        "named_detector_suppressed"
+        StageId::ShapeGate("pure_identifier_no_digit").as_str(),
+        "pure_identifier_no_digit"
+    );
+}
+
+#[test]
+fn named_detector_stage_reports_exact_email_shape_reason() {
+    let ctx = MatchCtx::for_named_detector(NamedDetectorSuppressionCtx::with_weak_anchor(
+        Some("config.ini"),
+        CodeContext::Unknown,
+        None,
+        crate::detector_ids::GENERIC_SECRET,
+        false,
+    ));
+
+    assert_eq!(
+        adjudicate_match(CandidateMatch::new("noreply@example.test"), &ctx),
+        Verdict::Suppressed(StageId::ShapeGate("email_address"))
     );
 }
 

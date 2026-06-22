@@ -209,12 +209,20 @@ pub(crate) fn suppress_named_detector_finding(
     credential: &str,
     ctx: NamedDetectorSuppressionCtx<'_>,
 ) -> bool {
+    suppress_named_detector_finding_stage(credential, ctx).is_some()
+}
+
+pub(crate) fn suppress_named_detector_finding_stage(
+    credential: &str,
+    ctx: NamedDetectorSuppressionCtx<'_>,
+) -> Option<crate::adjudicate::StageId> {
     let path = ctx.path;
     let context = ctx.context;
     let source_type = ctx.source_type;
     let detector_id = ctx.detector_id;
     let weak_anchor = ctx.weak_anchor;
     let randomness = TokenRandomness::for_candidate(credential);
+    let shape_stage = |reason| Some(crate::adjudicate::StageId::ShapeGate(reason));
 
     // Shape filters split into two tiers based on whether the shape
     // can legitimately appear as the body of a real service-anchored
@@ -251,7 +259,7 @@ pub(crate) fn suppress_named_detector_finding(
             credential,
             "caesar_generic_fallback",
         );
-        return true;
+        return shape_stage("caesar_generic_fallback");
     }
 
     if apply_tier_b {
@@ -261,7 +269,7 @@ pub(crate) fn suppress_named_detector_finding(
             &randomness,
         ) {
             crate::adjudicate::record_example_suppression("pipeline", path, credential, reason);
-            return true;
+            return shape_stage(reason);
         }
     }
 
@@ -281,7 +289,7 @@ pub(crate) fn suppress_named_detector_finding(
             credential,
             "pure_identifier_no_digit",
         );
-        return true;
+        return shape_stage("pure_identifier_no_digit");
     }
     // The word-separated gate uses the STRICTER `keep_word_separated_gate`
     // (mirrors the generic-bridge path): the English bigram model mis-scores
@@ -298,7 +306,7 @@ pub(crate) fn suppress_named_detector_finding(
             credential,
             "word_separated_identifier",
         );
-        return true;
+        return shape_stage("word_separated_identifier");
     }
     if apply_tier_b && looks_like_scheme_prefixed_uri(credential) {
         crate::adjudicate::record_example_suppression(
@@ -307,7 +315,7 @@ pub(crate) fn suppress_named_detector_finding(
             credential,
             "scheme_prefixed_uri",
         );
-        return true;
+        return shape_stage("scheme_prefixed_uri");
     }
     // Tier A: pure syntactic markers (`--flag`, `&ptr`, `@attr`, `$var`,
     // `Label:`) are never a credential body - suppress for every detector.
@@ -318,7 +326,7 @@ pub(crate) fn suppress_named_detector_finding(
             credential,
             "syntactic_punctuation_marker",
         );
-        return true;
+        return shape_stage("syntactic_punctuation_marker");
     }
     // Tier B: `/`-led base64, `!`-led / `!`-trailed secrets look decorated but
     // are valid credential bodies. Only an FP signal for unanchored generic/
@@ -331,7 +339,7 @@ pub(crate) fn suppress_named_detector_finding(
             credential,
             "credential_colliding_punctuation",
         );
-        return true;
+        return shape_stage("credential_colliding_punctuation");
     }
     if apply_tier_b && looks_like_url_or_path_segment(credential) {
         crate::adjudicate::record_example_suppression(
@@ -340,7 +348,7 @@ pub(crate) fn suppress_named_detector_finding(
             credential,
             "url_or_path_segment",
         );
-        return true;
+        return shape_stage("url_or_path_segment");
     }
     // Captured value contains a UUID v4 / RFC-4122 substring anywhere.
     // Tier B because many real credentials are UUIDs (powerbi
@@ -354,7 +362,7 @@ pub(crate) fn suppress_named_detector_finding(
             credential,
             "contains_uuid_v4",
         );
-        return true;
+        return shape_stage("contains_uuid_v4");
     }
     // Email-address shape: `noreply@gogs.localhost` (gogs golden test
     // ini), `bob.norman@mail.example.com` (shopify test response).
@@ -366,7 +374,7 @@ pub(crate) fn suppress_named_detector_finding(
             credential,
             "email_address",
         );
-        return true;
+        return shape_stage("email_address");
     }
     // Vendored 3rd-party minified bundle path: applies to ALL detectors,
     // not just generic-*. A "secret-like" sequence in a minified
@@ -378,7 +386,7 @@ pub(crate) fn suppress_named_detector_finding(
             credential,
             "vendored_minified_path",
         );
-        return true;
+        return shape_stage("vendored_minified_path");
     }
     // Native-binary string extraction (`filesystem:binary-strings`,
     // `filesystem/archive-binary`): the file is an ELF / Mach-O / PE /
@@ -398,7 +406,7 @@ pub(crate) fn suppress_named_detector_finding(
             credential,
             "native_binary_strings",
         );
-        return true;
+        return shape_stage("native_binary_strings");
     }
     // The file at `path` is itself a secret scanner - every detector
     // routinely matches its own regex definitions inside the source.
@@ -409,7 +417,7 @@ pub(crate) fn suppress_named_detector_finding(
             credential,
             "secret_scanner_source",
         );
-        return true;
+        return shape_stage("secret_scanner_source");
     }
     // Files explicitly marked as base64 (`.b64`, `.base64`, or basename
     // starting with `base64_` / containing `base64_string`) hold base64-
@@ -444,7 +452,7 @@ pub(crate) fn suppress_named_detector_finding(
             credential,
             "raw_base64_file",
         );
-        return true;
+        return shape_stage("raw_base64_file");
     }
     // Regex-literal tail: applies to ALL detectors. A capture ending
     // in `)/g`, `)/g,`, `]+`, `})\\b`, etc. is a JS/Go/Python regex
@@ -459,7 +467,7 @@ pub(crate) fn suppress_named_detector_finding(
             credential,
             "regex_literal_tail",
         );
-        return true;
+        return shape_stage("regex_literal_tail");
     }
     // Generic detectors (generic-secret, generic-private-key, entropy-*)
     // never use this bypass - their anchor is keyword-class, not
@@ -470,7 +478,7 @@ pub(crate) fn suppress_named_detector_finding(
         crate::detector_ids::is_service_anchored_detector(detector_id) && !weak_anchor;
     let allow_encoded_text_secret = crate::detector_ids::is_generic_detector(detector_id)
         && crate::decode_structure::decodes_to_printable_text(credential);
-    should_suppress_inner(
+    if should_suppress_inner(
         credential,
         path,
         context,
@@ -481,7 +489,11 @@ pub(crate) fn suppress_named_detector_finding(
         false,
         false,
         allow_encoded_text_secret,
-    )
+    ) {
+        Some(crate::adjudicate::StageId::NamedDetectorSuppression)
+    } else {
+        None
+    }
 }
 
 /// True if the detector that fired has no service-specific anchor -
