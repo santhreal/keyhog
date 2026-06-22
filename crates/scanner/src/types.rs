@@ -317,12 +317,11 @@ impl LazyRegex {
         self.case_insensitive
     }
 
-    /// Compile-on-first-use. A pattern that fails to compile (impossible for
-    /// the curated corpus - the contracts suite compiles every embedded
-    /// detector on each CI run, and the `--detectors` quality gate
-    /// AST-parses + size-bounds user patterns) degrades to a never-matching
-    /// regex with a loud `error!` log rather than panicking: a scanner that
-    /// can't build one rule must still not crash the whole scan.
+    /// Compile-on-first-use. Detector patterns have already been dry-run
+    /// through the same shared regex builder during scanner compilation, so a
+    /// detector compile failure here is an invariant breach. Plain generated
+    /// variants still fail closed to a never-matching regex with a loud
+    /// `error!` log rather than panicking.
     pub(crate) fn get(&self) -> &Regex {
         self.cell
             .get_or_init(|| {

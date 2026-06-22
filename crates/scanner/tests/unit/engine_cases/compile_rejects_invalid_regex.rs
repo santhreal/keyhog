@@ -1,15 +1,40 @@
 use keyhog_core::{DetectorSpec, PatternSpec, Severity};
 use keyhog_scanner::CompiledScanner;
+
 #[test]
 fn compile_rejects_invalid_regex() {
-    let d = DetectorSpec {
+    assert!(CompiledScanner::compile(vec![detector_with_regex("(unclosed")]).is_err());
+}
+
+#[test]
+fn compile_rejects_regex_that_exceeds_scanner_builder_limits() {
+    let oversized_but_syntax_valid = (0..90_000)
+        .map(|idx| format!("KEYHOGSIZE{idx:05}"))
+        .collect::<Vec<_>>()
+        .join("|");
+    let regex = format!("(?:{oversized_but_syntax_valid})");
+
+    let error = match CompiledScanner::compile(vec![detector_with_regex(&regex)]) {
+        Ok(_) => panic!("scanner compile must reject regexes the runtime builder cannot build"),
+        Err(error) => error,
+    };
+
+    let message = error.to_string().to_ascii_lowercase();
+    assert!(
+        message.contains("compiled regex exceeds size limit"),
+        "expected regex size-limit compile failure, got {error}"
+    );
+}
+
+fn detector_with_regex(regex: &str) -> DetectorSpec {
+    DetectorSpec {
         tests: Vec::new(),
         id: "a".into(),
         name: "A".into(),
         service: "s".into(),
         severity: Severity::Low,
         patterns: vec![PatternSpec {
-            regex: "(unclosed".into(),
+            regex: regex.into(),
             description: None,
             group: None,
             client_safe: false,
@@ -19,6 +44,5 @@ fn compile_rejects_invalid_regex() {
         keywords: vec![],
         min_confidence: None,
         ..Default::default()
-    };
-    assert!(CompiledScanner::compile(vec![d]).is_err());
+    }
 }

@@ -181,30 +181,6 @@ pub(crate) fn compile_detector_companions(
         .collect()
 }
 
-/// Process-wide set of regex source strings already proven syntactically
-/// valid by `regex_syntax::Parser`. A one-shot `keyhog scan` rebuilds the whole
-/// engine every invocation, and `compile_pattern` used to re-run the
-/// `regex_syntax` syntax parse over EVERY one of the ~1846 embedded pattern
-/// sources on each rebuild (~17 ms serial, measured) — pure repeated work, since
-/// the embedded corpus never changes within a process and the regex strings are
-/// dedup-stable. Memoize the validation verdict per source so the second and
-/// later engine builds in the same process (daemon recompiles, watch-mode
-/// rebuilds, the per-invocation compile a test/bench harness repeats, the K-fold
-/// cold loop in perf_startup_latency) skip re-parsing an already-validated
-/// source. Mirrors the existing process-wide `REGEX_CACHE` (compiled matchers)
-/// and the on-disk Hyperscan DB cache: validate once, reuse forever.
-/// (PERF-startup_latency-1.) Bounded by the universe of distinct pattern
-/// sources, which is < 2k for the corpus plus any `--detectors` overlay.
-static VALIDATED_REGEX_SOURCES: std::sync::OnceLock<
-    parking_lot::Mutex<std::collections::HashSet<std::sync::Arc<str>>>,
-> = std::sync::OnceLock::new();
-
-fn validated_regex_sources(
-) -> &'static parking_lot::Mutex<std::collections::HashSet<std::sync::Arc<str>>> {
-    VALIDATED_REGEX_SOURCES
-        .get_or_init(|| parking_lot::Mutex::new(std::collections::HashSet::new()))
-}
-
 pub(crate) fn compile_pattern(
     detector_index: usize,
     pattern_index: usize,
@@ -212,45 +188,11 @@ pub(crate) fn compile_pattern(
     detector_id: &str,
     detector_keywords: &[String],
 ) -> Result<CompiledPattern> {
-    // Eagerly validate regex SYNTAX so a malformed detector pattern (e.g.
-    // `(unclosed`) is rejected at compile time rather than silently degrading
-    // to a never-matching rule on first use - a silently-accepted bad regex
-    // is a dead detector. The cheap `regex_syntax` parse builds NO NFA/DFA, so
-    // the lazy-compile win below is preserved; `regex_syntax` is the same front
-    // end the `regex` crate uses, so a parse error here is a build error there.
-    //
-    // The verdict is memoized process-wide (`VALIDATED_REGEX_SOURCES`): a source
-    // already proven valid in this process is NOT re-parsed, so repeated engine
-    // rebuilds (one-shot CLI runs sharing a process, daemon/watch recompiles,
-    // the cold loop in perf_startup_latency) pay the ~17 ms full-corpus syntax
-    // parse only once instead of every build. Correctness is unchanged: a source
-    // only enters the set AFTER a successful parse, and an invalid source never
-    // enters it, so it is re-validated (and re-rejected) on every build.
-    let already_validated = validated_regex_sources()
-        .lock()
-        .contains(spec.regex.as_str());
-    if !already_validated {
-        if regex_syntax::Parser::new().parse(&spec.regex).is_err() {
-            // Re-run through the `regex` crate only on the rare invalid pattern to
-            // obtain the canonical `regex::Error` for the structured error; the
-            // matcher-build cost here is irrelevant since we're erroring out.
-            let source = regex::Regex::new(&spec.regex)
-                .err()
-                .unwrap_or_else(|| regex::Error::Syntax(spec.regex.clone())); // LAW10: constructs the fallback Error value for reporting; not a swallow
-            return Err(ScanError::RegexCompile {
-                detector_id: detector_id.to_string(),
-                index: pattern_index,
-                source,
-            });
-        }
-        validated_regex_sources()
-            .lock()
-            .insert(std::sync::Arc::from(spec.regex.as_str()));
-    }
-    // The matcher is NOT built here - it is built on first use via
-    // `LazyRegex` (see types.rs). Building the whole corpus up front cost
-    // ~450ms-2.3s per invocation; lazy build lets a scan compile only the
-    // patterns the Aho-Corasick prefilter actually selects.
+    shared_regex(spec.regex.as_str()).map_err(|source| ScanError::RegexCompile {
+        detector_id: detector_id.to_string(),
+        index: pattern_index,
+        source,
+    })?;
     Ok(CompiledPattern {
         detector_index,
         regex: LazyRegex::detector(spec.regex.as_str()),
