@@ -298,6 +298,41 @@ fn git_diff_waits_for_diff_child_before_untracked_chunks() {
     );
 }
 
+#[cfg(feature = "git")]
+#[test]
+fn git_diff_hot_path_consolidates_git_processes_and_reuses_buffers() {
+    let diff = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/git/diff.rs"))
+        .expect("git diff source readable");
+    let git_mod = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/git/mod.rs"))
+        .expect("git mod source readable");
+    assert!(
+        diff.contains("super::resolve_commit_hash(&repo_arg, &base_ref)")
+            && diff.contains("super::resolve_commit_hash(&repo_arg, head_ref)")
+            && !diff.contains("super::verify_ref(")
+            && !diff.contains("super::get_commit_hash("),
+        "git-diff must resolve and validate each ref with one rev-parse process"
+    );
+    assert!(
+        diff.contains("super::get_commit_metadata(&repo_arg, &metadata_commit)")
+            && git_mod.contains("--format=%an%x00%aI")
+            && !diff.contains("super::get_commit_author(")
+            && !diff.contains("super::get_commit_date("),
+        "git-diff must read author/date with one git log process"
+    );
+    assert!(
+        diff.contains("trim_diff_line_bytes(&line_buf)")
+            && diff.contains("line.starts_with(b\"diff --git \")")
+            && !diff.contains("let l = String::from_utf8_lossy(&line_buf);"),
+        "git-diff line dispatch must operate on the capped byte buffer instead of allocating one String per diff line"
+    );
+    assert!(
+        diff.contains("current_content.clear();")
+            && !diff.contains("                        current_content = String::new();")
+            && !diff.contains("std::mem::take(&mut current_content)"),
+        "git-diff hunk flushes must retain the hunk buffer allocation"
+    );
+}
+
 // ── crates/sources/src/docker.rs ──────────────────────────────────────
 #[cfg(feature = "docker")]
 #[test]

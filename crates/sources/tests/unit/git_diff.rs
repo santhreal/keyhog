@@ -282,6 +282,21 @@ fn git_diff_source_chunk_metadata_carries_path_and_commit() {
         commit.len() == 40 && commit.chars().all(|c| c.is_ascii_hexdigit()),
         "commit must be 40-char hex SHA; got {commit:?}"
     );
+    assert_eq!(
+        chunks[0].metadata.author.as_deref(),
+        Some("Test User"),
+        "git-diff metadata must carry author from git log"
+    );
+    let date = chunks[0]
+        .metadata
+        .date
+        .as_deref()
+        .expect("commit date must be set");
+    let timezone_sign = date.as_bytes().get(date.len().saturating_sub(6)).copied();
+    assert!(
+        date.contains('T') && matches!(timezone_sign, Some(b'+') | Some(b'-')),
+        "git-diff metadata must carry ISO author date; got {date:?}"
+    );
     assert!(
         chunks[0]
             .data

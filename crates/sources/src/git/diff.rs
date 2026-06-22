@@ -105,12 +105,11 @@ fn stream_added_lines(
     let repo_root = super::canonical_repo_root(repo_path)?;
     let repo_arg = super::validate_repo_path(&repo_root)?;
 
-    // Verify the refs exist first
-    super::verify_ref(&repo_arg, &base_ref)?;
-    let base_commit = super::get_commit_hash(&repo_arg, &base_ref)?;
+    // Resolve refs once each; `rev-parse --verify` both validates and returns
+    // the canonical commit hash used by the diff command.
+    let base_commit = super::resolve_commit_hash(&repo_arg, &base_ref)?;
     let head_commit = if let Some(head_ref) = head_ref.as_deref() {
-        super::verify_ref(&repo_arg, head_ref)?;
-        Some(super::get_commit_hash(&repo_arg, head_ref)?)
+        Some(super::resolve_commit_hash(&repo_arg, head_ref)?)
     } else {
         None
     };
@@ -134,15 +133,14 @@ fn stream_added_lines(
 
     // Get commit info for metadata
     let metadata_commit = head_commit.unwrap_or_else(|| base_commit.clone()); // LAW10: absent verify-spec field => documented default (GET / AuthSpec::None / first); recall-safe
-    let author = super::get_commit_author(&repo_arg, &metadata_commit)?;
-    let date = super::get_commit_date(&repo_arg, &metadata_commit)?;
+    let metadata = super::get_commit_metadata(&repo_arg, &metadata_commit)?;
     let mut untracked_chunks = if head_ref.is_none() {
         list_untracked_worktree_chunks(
             &repo_arg,
             &repo_root,
             &metadata_commit,
-            &author,
-            &date,
+            &metadata.author,
+            &metadata.date,
             limits,
         )?
     } else {
@@ -195,10 +193,7 @@ fn stream_added_lines(
         loop {
             let line =
                 match super::read_capped_line(&mut reader, &mut line_buf, limits.git_line_bytes) {
-                    Ok(n) if n > 0 => {
-                        let l = String::from_utf8_lossy(&line_buf);
-                        l.trim_end_matches('\n').trim_end_matches('\r').to_string()
-                    }
+                    Ok(n) if n > 0 => trim_diff_line_bytes(&line_buf),
                     Err(e) => {
                         done = true;
                         return Some(Err(SourceError::Io(e)));
@@ -215,8 +210,8 @@ fn stream_added_lines(
                                         source_type: "git-diff".into(),
                                         path: Some(path.clone()),
                                         commit: Some(metadata_commit.clone()),
-                                        author: Some(author.clone()),
-                                        date: Some(date.clone()),
+                                        author: Some(metadata.author.clone()),
+                                        date: Some(metadata.date.clone()),
                                         mtime_ns: None,
                                         size_bytes: None,
                                         decoded_span: None,
@@ -241,10 +236,11 @@ fn stream_added_lines(
                     }
                 };
 
-            if line.starts_with("diff --git ") {
+            if line.starts_with(b"diff --git ") {
                 let prev_path = current_path.take();
-                let prev_content = std::mem::take(&mut current_content);
+                let prev_content = current_content.trim().to_string();
                 let prev_base_line = current_base_line;
+                current_content.clear();
 
                 in_hunk = false;
                 // New file: its first `@@` will set the base for its hunks.
@@ -260,8 +256,8 @@ fn stream_added_lines(
                                 source_type: "git-diff".into(),
                                 path: Some(path),
                                 commit: Some(metadata_commit.clone()),
-                                author: Some(author.clone()),
-                                date: Some(date.clone()),
+                                author: Some(metadata.author.clone()),
+                                date: Some(metadata.date.clone()),
                                 mtime_ns: None,
                                 size_bytes: None,
                                 decoded_span: None,
@@ -272,36 +268,39 @@ fn stream_added_lines(
                 continue;
             }
 
-            if line.starts_with("deleted file mode") {
+            if line.starts_with(b"deleted file mode") {
                 current_path = None;
                 continue;
             }
 
-            if line.starts_with("new file mode")
-                || line.starts_with("index ")
-                || line.starts_with("--- ")
+            if line.starts_with(b"new file mode")
+                || line.starts_with(b"index ")
+                || line.starts_with(b"--- ")
             {
                 continue;
             }
 
-            if let Some(path_part) = line.strip_prefix("+++ b/") {
-                current_path = Some(path_part.trim().to_string());
+            if let Some(path_part) = line.strip_prefix(b"+++ b/") {
+                current_path =
+                    Some(String::from_utf8_lossy(trim_ascii_whitespace(path_part)).into_owned());
                 continue;
             }
 
-            if line.starts_with("@@") && line.contains("@@") {
+            if line.starts_with(b"@@") && memchr::memmem::find(&line[2..], b"@@").is_some() {
                 // Start of a new hunk: flush the previous hunk as its own
                 // chunk (so its base line applies cleanly), then adopt this
                 // hunk's new-file start as the base for the lines that follow.
-                let new_start = match super::parse_hunk_new_start_or_error(&line, "git diff") {
+                let hunk_line = String::from_utf8_lossy(line);
+                let new_start = match super::parse_hunk_new_start_or_error(&hunk_line, "git diff") {
                     Ok(new_start) => new_start,
                     Err(error) => {
                         done = true;
                         return Some(Err(error));
                     }
                 };
-                let prev_content = std::mem::take(&mut current_content);
+                let prev_content = current_content.trim().to_string();
                 let prev_base_line = current_base_line;
+                current_content.clear();
                 current_base_line = new_start.saturating_sub(1);
                 in_hunk = true;
                 if let Some(ref path) = current_path {
@@ -314,8 +313,8 @@ fn stream_added_lines(
                                 source_type: "git-diff".into(),
                                 path: Some(path.clone()),
                                 commit: Some(metadata_commit.clone()),
-                                author: Some(author.clone()),
-                                date: Some(date.clone()),
+                                author: Some(metadata.author.clone()),
+                                date: Some(metadata.date.clone()),
                                 mtime_ns: None,
                                 size_bytes: None,
                                 decoded_span: None,
@@ -326,8 +325,8 @@ fn stream_added_lines(
                 continue;
             }
 
-            if in_hunk && line.starts_with('+') && !line.starts_with("+++") {
-                current_content.push_str(&line[1..]);
+            if in_hunk && line.starts_with(b"+") && !line.starts_with(b"+++") {
+                current_content.push_str(&String::from_utf8_lossy(&line[1..]));
                 current_content.push('\n');
             }
 
@@ -343,7 +342,7 @@ fn stream_added_lines(
                             memchr::memchr_iter(b'\n', current_content.as_bytes()).count(),
                         );
                         let chunk_content = current_content.trim().to_string();
-                        current_content = String::new();
+                        current_content.clear();
                         return Some(Ok(Chunk {
                             data: chunk_content.into(),
                             metadata: ChunkMetadata {
@@ -352,8 +351,8 @@ fn stream_added_lines(
                                 source_type: "git-diff".into(),
                                 path: Some(path.clone()),
                                 commit: Some(metadata_commit.clone()),
-                                author: Some(author.clone()),
-                                date: Some(date.clone()),
+                                author: Some(metadata.author.clone()),
+                                date: Some(metadata.date.clone()),
                                 mtime_ns: None,
                                 size_bytes: None,
                                 decoded_span: None,
@@ -364,6 +363,26 @@ fn stream_added_lines(
             }
         }
     }))
+}
+
+fn trim_diff_line_bytes(mut line: &[u8]) -> &[u8] {
+    if line.ends_with(b"\n") {
+        line = &line[..line.len() - 1];
+    }
+    if line.ends_with(b"\r") {
+        line = &line[..line.len() - 1];
+    }
+    line
+}
+
+fn trim_ascii_whitespace(mut bytes: &[u8]) -> &[u8] {
+    while matches!(bytes.first(), Some(byte) if byte.is_ascii_whitespace()) {
+        bytes = &bytes[1..];
+    }
+    while matches!(bytes.last(), Some(byte) if byte.is_ascii_whitespace()) {
+        bytes = &bytes[..bytes.len() - 1];
+    }
+    bytes
 }
 
 fn list_untracked_worktree_chunks(

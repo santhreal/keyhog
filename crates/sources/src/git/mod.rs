@@ -385,7 +385,12 @@ pub(crate) fn validate_ref_name(ref_name: &str) -> Result<String, SourceError> {
     Ok(ref_name.to_string())
 }
 
-pub(crate) fn verify_ref(repo_path: &str, ref_name: &str) -> Result<(), SourceError> {
+pub(crate) struct CommitMetadata {
+    pub(crate) author: String,
+    pub(crate) date: String,
+}
+
+pub(crate) fn resolve_commit_hash(repo_path: &str, ref_name: &str) -> Result<String, SourceError> {
     let output = Command::new(&git_bin()?)
         .args(["-C", repo_path, "rev-parse", "--verify", "--end-of-options"])
         .arg(format!("{ref_name}^{{commit}}"))
@@ -399,74 +404,46 @@ pub(crate) fn verify_ref(repo_path: &str, ref_name: &str) -> Result<(), SourceEr
         )));
     }
 
-    Ok(())
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
-pub(crate) fn get_commit_hash(repo_path: &str, ref_name: &str) -> Result<String, SourceError> {
+pub(crate) fn get_commit_metadata(
+    repo_path: &str,
+    ref_name: &str,
+) -> Result<CommitMetadata, SourceError> {
     let output = Command::new(&git_bin()?)
-        .args(["-C", repo_path, "rev-parse", "--verify", "--end-of-options"])
-        .arg(format!("{ref_name}^{{commit}}"))
+        .args([
+            "-C",
+            repo_path,
+            "log",
+            "-1",
+            "--format=%an%x00%aI",
+            "--end-of-options",
+        ])
+        .arg(ref_name)
         .output()
         .map_err(SourceError::Io)?;
 
     if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(SourceError::Git(format!(
-            "failed to resolve ref: {}",
+            "failed to read commit metadata for '{}': {}",
+            ref_name,
+            stderr.trim()
+        )));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let trimmed = stdout.trim_end_matches(['\r', '\n']);
+    let Some((author, date)) = trimmed.split_once('\0') else {
+        return Err(SourceError::Git(format!(
+            "git log metadata for '{}' was incomplete",
             ref_name
         )));
-    }
+    };
 
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
-pub(crate) fn get_commit_author(repo_path: &str, ref_name: &str) -> Result<String, SourceError> {
-    let output = Command::new(&git_bin()?)
-        .args([
-            "-C",
-            repo_path,
-            "log",
-            "-1",
-            "--format=%an",
-            "--end-of-options",
-        ])
-        .arg(ref_name)
-        .output()
-        .map_err(SourceError::Io)?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(SourceError::Git(format!(
-            "failed to read commit author for '{}': {}",
-            ref_name,
-            stderr.trim()
-        )));
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
-}
-
-pub(crate) fn get_commit_date(repo_path: &str, ref_name: &str) -> Result<String, SourceError> {
-    let output = Command::new(&git_bin()?)
-        .args([
-            "-C",
-            repo_path,
-            "log",
-            "-1",
-            "--format=%aI",
-            "--end-of-options",
-        ])
-        .arg(ref_name)
-        .output()
-        .map_err(SourceError::Io)?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(SourceError::Git(format!(
-            "failed to read commit date for '{}': {}",
-            ref_name,
-            stderr.trim()
-        )));
-    }
-
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    Ok(CommitMetadata {
+        author: author.to_string(),
+        date: date.to_string(),
+    })
 }
