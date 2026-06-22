@@ -107,24 +107,6 @@ impl CompiledScanner {
                 };
 
                 // Per-pattern minimum credential length, in bytes.
-                // The 8-byte blanket floor would let `AKIA12345`
-                // (9 bytes, only 5 after the 4-byte `AKIA` prefix)
-                // through as a "real" AWS access key. Real AKIA
-                // tokens are AKIA + 16 = 20 bytes minimum - tighten
-                // the floor per-pattern so the fast-path never emits
-                // a credential the matching detector's regex would
-                // reject. See
-                // tests/adversarial/engine_cases/scanner_stress.rs::
-                // stress_minified_js_finds_real_pat_not_truncated_aws.
-                //
-                // The other hot patterns keep the loose 8-byte floor
-                // because tightening them speculatively breaks the
-                // base64 / hex / multi-line-split evasion-corpus
-                // tests that exercise SHORT decoded fragments. Each
-                // additional tightening needs its own per-pattern
-                // regression gate first.
-                //
-                // Per-pattern minimum credential length, in bytes.
                 // Each pattern's floor matches the actual minimum length
                 // a valid token of that shape can have - fast-path
                 // findings are emitted as Critical severity without
@@ -148,12 +130,18 @@ impl CompiledScanner {
                     chunk.metadata.path.as_deref(),
                     chunk.metadata.source_type.as_str(),
                 );
-                if credential.len() < min_len
-                    || crate::suppression::suppress_hot_pattern_candidate(
-                        credential,
-                        suppression_ctx,
-                    )
+                if credential.len() < min_len {
+                    continue;
+                }
+                if let Some(stage_id) =
+                    crate::suppression::hot_pattern_suppression_stage(credential, suppression_ctx)
                 {
+                    crate::adjudicate::record_stage_suppression(
+                        chunk.metadata.path.as_deref(),
+                        credential,
+                        stage_id,
+                    )
+                    .expect("hot-pattern suppression stage must suppress");
                     continue;
                 }
 

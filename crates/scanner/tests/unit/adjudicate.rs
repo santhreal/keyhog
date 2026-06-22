@@ -279,6 +279,23 @@ fn explicit_stage_reports_shape_gate_reason() {
     );
 }
 
+#[cfg(feature = "simdsieve")]
+#[test]
+fn hot_pattern_suppression_owner_returns_adjudicator_stage() {
+    let ctx = crate::suppression::HotPatternSuppressionCtx::new(
+        Some("web/node_modules/package/dist/index.min.js"),
+        "filesystem",
+    );
+
+    assert_eq!(
+        crate::suppression::hot_pattern_suppression_stage(
+            "ghp_abcdefghijklmnopqrstuvwxyzABCDEFGHIJ",
+            ctx,
+        ),
+        Some(StageId::ShapeGate("hot_vendored_minified_path"))
+    );
+}
+
 #[test]
 fn named_detector_stage_suppresses_generic_identifier() {
     let ctx = MatchCtx::for_named_detector(NamedDetectorSuppressionCtx::with_weak_anchor(

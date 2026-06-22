@@ -178,13 +178,13 @@ call may exist outside the adjudicator (grep-contract tests), and a cross-path
 test feeds the same tricky value through every path and asserts one identical
 verdict.
 
-> Status: the policy *functions* exist and are shared, but they are still applied
-> from several call sites with drifted gate subsets (entropy/generic/weak-anchor/
-> hot-path), which is the current source of value-vs-path false positives. The
-> consolidation onto the single `adjudicate_match` chokepoint is tracked in
-> [`EXECUTION_PLAN.md`](EXECUTION_PLAN.md) under **SILENT-OVERRIDE-1..4**. This
-> section is the target the migration converges on; until it lands, treat any new
-> emission path as obligated to call the full policy, not a subset.
+> Status: `adjudicate_match` exists and many drop decisions now emit typed
+> `StageId`s through the adjudicator, including hot-pattern suppression. Some
+> policy stages still execute from their emission-path owners instead of one
+> full verdict that owns suppression and report confidence end to end. The
+> consolidation is tracked in [`EXECUTION_PLAN.md`](EXECUTION_PLAN.md) under
+> **SILENT-OVERRIDE-1..4**; any emission path must route policy decisions through
+> the adjudicator stage model, not a silent local subset.
 
 ### The ML model (`weights.bin`)
 

@@ -99,22 +99,42 @@ impl<'a> HotPatternSuppressionCtx<'a> {
 }
 
 #[cfg(feature = "simdsieve")]
-pub(crate) fn suppress_hot_pattern_candidate(
+pub(crate) fn hot_pattern_suppression_stage(
     credential: &str,
     ctx: HotPatternSuppressionCtx<'_>,
-) -> bool {
+) -> Option<crate::adjudicate::StageId> {
     let example_ctx = KnownExampleSuppressionCtx::new(
         ctx.path,
         context::CodeContext::Unknown,
         Some(ctx.source_type),
     );
-    suppress_known_example_credential(credential, example_ctx)
-        || looks_like_regex_literal_tail(credential)
-        || looks_like_vendored_minified_path(ctx.path)
-        || ctx.source_type.contains("binary-strings")
-        || ctx.source_type.contains("archive-binary")
-        || looks_like_secret_scanner_source(ctx.path)
-        || looks_like_hot_pattern_base64_path(ctx.path)
+    if suppress_known_example_credential(credential, example_ctx) {
+        return Some(crate::adjudicate::StageId::ShapeGate(
+            "hot_known_example_or_placeholder",
+        ));
+    }
+    if looks_like_regex_literal_tail(credential) {
+        return Some(crate::adjudicate::StageId::ShapeGate(
+            "hot_regex_literal_tail",
+        ));
+    }
+    if looks_like_vendored_minified_path(ctx.path) {
+        return Some(crate::adjudicate::StageId::ShapeGate(
+            "hot_vendored_minified_path",
+        ));
+    }
+    if ctx.source_type.contains("binary-strings") || ctx.source_type.contains("archive-binary") {
+        return Some(crate::adjudicate::StageId::ShapeGate("hot_binary_source"));
+    }
+    if looks_like_secret_scanner_source(ctx.path) {
+        return Some(crate::adjudicate::StageId::ShapeGate(
+            "hot_secret_scanner_source",
+        ));
+    }
+    if looks_like_hot_pattern_base64_path(ctx.path) {
+        return Some(crate::adjudicate::StageId::ShapeGate("hot_base64_path"));
+    }
+    None
 }
 
 #[cfg(feature = "simdsieve")]

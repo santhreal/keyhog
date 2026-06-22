@@ -12,4 +12,4 @@ pub(crate) use api::{
     detector_weak_anchor, suppress_named_detector_finding, NamedDetectorSuppressionCtx,
 };
 #[cfg(feature = "simdsieve")]
-pub(crate) use api::{suppress_hot_pattern_candidate, HotPatternSuppressionCtx};
+pub(crate) use api::{hot_pattern_suppression_stage, HotPatternSuppressionCtx};

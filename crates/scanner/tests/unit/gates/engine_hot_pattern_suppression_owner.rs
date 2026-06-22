@@ -30,18 +30,24 @@ fn hot_pattern_suppression_routes_through_suppression_owner() {
     let suppression = uncommented_code(&read(&src.join("suppression/api.rs")));
     assert!(
         suppression.contains("struct HotPatternSuppressionCtx")
-            && suppression.contains("fn suppress_hot_pattern_candidate(")
+            && suppression.contains("fn hot_pattern_suppression_stage(")
+            && suppression.contains(") -> Option<crate::adjudicate::StageId>")
             && suppression.contains("suppress_known_example_credential")
             && suppression.contains("looks_like_regex_literal_tail")
             && suppression.contains("looks_like_vendored_minified_path")
             && suppression.contains("looks_like_secret_scanner_source")
             && suppression.contains("looks_like_hot_pattern_base64_path"),
-        "suppression::api must own the hot-pattern suppression gates"
+        "suppression::api must own the hot-pattern suppression gates and return adjudicator stages"
+    );
+    assert!(
+        !suppression.contains("fn suppress_hot_pattern_candidate("),
+        "hot-pattern suppression must not regress to a silent bool API"
     );
 
     let hot_patterns = uncommented_code(&read(&src.join("engine/hot_patterns.rs")));
     assert!(
-        hot_patterns.contains("crate::suppression::suppress_hot_pattern_candidate("),
+        hot_patterns.contains("crate::suppression::hot_pattern_suppression_stage(")
+            && hot_patterns.contains("crate::adjudicate::record_stage_suppression("),
         "hot-pattern fast path must call the suppression owner"
     );
     for forbidden in [
