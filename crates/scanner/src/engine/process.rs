@@ -36,56 +36,24 @@ impl CompiledScanner {
     ) {
         let (credential, match_end) =
             extend_known_prefix_credential(data, credential, credential_end);
-        if detector.id.as_str() == crate::detector_ids::AWS_ACCESS_KEY && credential.len() != 20 {
-            return;
-        }
-        if detector.id.as_str() == crate::detector_ids::ANTHROPIC_API_KEY {
-            const LEGACY_PREFIX: &str = "sk-ant-api03-";
-            if let Some(body) = credential.strip_prefix(LEGACY_PREFIX) {
-                if !(80..=120).contains(&body.len()) {
-                    return;
-                }
-            }
-        }
         let line = match_line_number(preprocessed, line_offsets, credential_start);
-        if is_within_hex_context(data, credential_start, match_end) {
-            crate::telemetry::record_shape_suppression(
-                chunk.metadata.path.as_deref(),
-                credential,
-                "within_hex_context",
-            );
-            return;
-        }
-        // Digest-fragment guard: a fixed-length hex credential (e.g. a {32}-hex
-        // API-key body) whose contiguous hex run is EXTENDED by adjacent hex
-        // digits to digest length (>=40) is a slice of a SHA-1 (40) / SHA-256
-        // (64) / git-commit hash, not a standalone key. `is_within_hex_context`
-        // only fires when hex surrounds the match on BOTH sides; a detector
-        // that matches the leading 32 hex of a 64-hex digest has hex only
-        // AFTER, so it slipped through (etherscan/iterable firing on a sha256
-        // substring). Real 32-hex keys (Twilio auth token, Datadog, Algolia,
-        // Azure subscription) are delimiter-bounded (before==after==0) and are
-        // never suppressed here, so recall is preserved.
-        if is_hex_digest_fragment(data, credential_start, match_end, credential) {
-            crate::telemetry::record_shape_suppression(
-                chunk.metadata.path.as_deref(),
-                credential,
-                "hex_digest_fragment",
-            );
-            return;
-        }
-        // Probabilistic gate: fast rejection of obvious non-secrets (UUIDs, low-diversity
-        // strings) BEFORE the expensive false-positive context check and ML scoring.
-        // Only applied to generic detectors. Specific detectors with known prefixes
-        // already have high confidence from the prefix match.
-        if crate::detector_ids::is_generic_detector(detector.id.as_ref())
-            && crate::confidence::known_prefix_confidence_floor(credential).is_none()
-            && !crate::probabilistic_gate::ProbabilisticGate::looks_promising(credential)
+
+        let candidate = crate::adjudicate::CandidateMatch::new(credential);
+        let process_signals = crate::adjudicate::ProcessCandidateSignals::from_match(
+            detector.id.as_ref(),
+            credential,
+            data,
+            credential_start,
+            match_end,
+        );
+        let process_ctx = crate::adjudicate::MatchCtx::for_process_signals(process_signals);
+        if let Some(stage_id) =
+            crate::adjudicate::adjudicate_match(candidate, &process_ctx).suppressed_stage()
         {
             crate::telemetry::record_shape_suppression(
                 chunk.metadata.path.as_deref(),
                 credential,
-                "probabilistic_gate_not_promising",
+                stage_id.as_str(),
             );
             return;
         }
@@ -134,22 +102,20 @@ impl CompiledScanner {
                 detector.id.as_ref(),
                 weak_anchor,
             );
-        let candidate = crate::adjudicate::CandidateMatch::new(credential);
         let match_ctx = crate::adjudicate::MatchCtx::for_named_detector(named_suppression_ctx);
-        match crate::adjudicate::adjudicate_match(candidate, &match_ctx) {
-            crate::adjudicate::Verdict::Suppressed(stage_id) => {
-                // KH-L-0412 (Law-10): named-detector context/example suppression
-                // was the last silent `return` on this path. Trace it through the
-                // adjudicator so a dropped match is visible to `--dogfood` with
-                // the deciding stage name.
-                crate::telemetry::record_shape_suppression(
-                    chunk.metadata.path.as_deref(),
-                    credential,
-                    stage_id.as_str(),
-                );
-                return;
-            }
-            crate::adjudicate::Verdict::Reported => {}
+        if let Some(stage_id) =
+            crate::adjudicate::adjudicate_match(candidate, &match_ctx).suppressed_stage()
+        {
+            // KH-L-0412 (Law-10): named-detector context/example suppression
+            // was the last silent `return` on this path. Trace it through the
+            // adjudicator so a dropped match is visible to `--dogfood` with
+            // the deciding stage name.
+            crate::telemetry::record_shape_suppression(
+                chunk.metadata.path.as_deref(),
+                credential,
+                stage_id.as_str(),
+            );
+            return;
         }
 
         // `match_companions` returns `None` when a `required = true`
@@ -348,39 +314,4 @@ impl CompiledScanner {
             }
         }
     }
-}
-
-/// True when `credential` (a pure-hex token at `data[start..end]`) is a slice
-/// of a longer contiguous hex run reaching digest length (>=40 chars: SHA-1,
-/// git commit SHA, or SHA-256). Such a match is a fragment of a hash, never a
-/// standalone key. A genuine fixed-length hex API key is delimiter-bounded
-/// (the byte before and after is `"`/`=`/whitespace/EOL, not another hex
-/// digit), so `before == 0 && after == 0` and this returns false - recall on
-/// real 32/40/64-hex keys is preserved.
-pub(super) fn is_hex_digest_fragment(
-    data: &str,
-    start: usize,
-    end: usize,
-    credential: &str,
-) -> bool {
-    if credential.len() < 16 || !credential.bytes().all(|b| b.is_ascii_hexdigit()) {
-        return false;
-    }
-    let bytes = data.as_bytes();
-    if start > end || end > bytes.len() {
-        return false;
-    }
-    let before = bytes[..start]
-        .iter()
-        .rev()
-        .take_while(|b| b.is_ascii_hexdigit())
-        .count();
-    let after = bytes[end..]
-        .iter()
-        .take_while(|b| b.is_ascii_hexdigit())
-        .count();
-    if before == 0 && after == 0 {
-        return false;
-    }
-    before + credential.len() + after >= 40
 }

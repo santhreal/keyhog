@@ -109,3 +109,26 @@ fn engine_named_detector_suppression_routes_through_adjudicator() {
         "engine/process.rs must not call suppress_named_detector_finding directly; the adjudicator owns the decision"
     );
 }
+
+#[test]
+fn engine_process_early_suppression_reasons_live_in_adjudicator() {
+    let src = scanner_src();
+    let process = uncommented_code(&read(&src.join("engine/process.rs")));
+    let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
+    for reason in [
+        "aws_access_key_length_invalid",
+        "anthropic_legacy_length_invalid",
+        "within_hex_context",
+        "hex_digest_fragment",
+        "probabilistic_gate_not_promising",
+    ] {
+        assert!(
+            !process.contains(&format!("\"{reason}\"")),
+            "engine/process.rs must not own the {reason} suppression reason"
+        );
+        assert!(
+            adjudicate.contains(&format!("\"{reason}\"")),
+            "adjudicate/mod.rs must own the {reason} suppression reason"
+        );
+    }
+}
