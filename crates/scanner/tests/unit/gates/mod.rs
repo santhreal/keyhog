@@ -101,6 +101,7 @@ pub mod engine_phase2_no_inline_tests;
 pub mod engine_phase2_no_unwrap_expect;
 pub mod engine_phase2_non_empty;
 pub mod engine_phase2_profile_route_truth;
+pub mod engine_process_no_unwrap_expect;
 pub mod engine_scan_filters_no_inline_tests;
 pub mod engine_scan_filters_no_unwrap_expect;
 pub mod engine_scan_filters_non_empty;
