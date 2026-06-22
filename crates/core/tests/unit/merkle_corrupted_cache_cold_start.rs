@@ -1,6 +1,6 @@
 //! Corrupted merkle cache must cold-start as empty index.
 
-use keyhog_core::{MerkleIndex, MerkleLoadStatus};
+use keyhog_core::MerkleLoadStatus;
 
 #[test]
 fn merkle_corrupted_cache_treated_as_cold_start() {

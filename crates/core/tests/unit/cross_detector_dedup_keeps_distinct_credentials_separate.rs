@@ -28,9 +28,9 @@ fn make_deduped(detector: &str, service: &str, conf: f64) -> DedupedMatch {
 #[test]
 fn cross_detector_dedup_keeps_distinct_credentials_separate() {
     let mut a = make_deduped("github-pat", "github", 0.9);
-    a.credential_hash = "aaaaaaaa".into();
+    a.credential_hash = [0xaa; 32];
     let mut b = make_deduped("openai-key", "openai", 0.9);
-    b.credential_hash = "bbbbbbbb".into();
+    b.credential_hash = [0xbb; 32];
     let out = dedup_cross_detector(vec![a, b]);
     assert_eq!(out.len(), 2);
 }

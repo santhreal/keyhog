@@ -1,7 +1,5 @@
 //! Plain path/detector lines without metadata must load.
 
-use keyhog_core::Allowlist;
-
 #[test]
 fn allowlist_entries_without_metadata_load() {
     let al = keyhog_core::testing::CoreTestApi::allowlist_parse(

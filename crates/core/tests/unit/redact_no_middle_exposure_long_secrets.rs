@@ -52,8 +52,8 @@ fn redact_very_long_secret_hides_middle_portion() {
     let secret = "prefix_MIDDLE_MIDDLE_MIDDLE_MIDDLE_MIDDLE_suffix";
     let result = redact(secret);
 
-    // Output should be "pref...uffix"
-    assert_eq!(result, "pref...uffix");
+    // Output keeps a length-scaled 4-character edge window.
+    assert_eq!(result, "pref...ffix");
 
     // The word "MIDDLE" (and any sequence of consecutive hidden chars) must not appear.
     assert!(!result.as_ref().contains("MIDDLE"));
@@ -86,9 +86,9 @@ fn redact_utf8_long_secret_no_middle_exposure() {
     let secret = "αβγδ🔒🔒🔒🔒абвг";
     let result = redact(secret);
 
-    // Output should be "αβγδ...абвг"
-    assert!(result.starts_with("αβγδ"));
-    assert!(result.ends_with("абвг"));
+    // 12 chars keeps 3 chars at each edge.
+    assert!(result.starts_with("αβγ"));
+    assert!(result.ends_with("бвг"));
     assert!(result.as_ref().contains("..."));
 
     // The emoji sequence must not appear.

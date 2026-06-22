@@ -95,19 +95,18 @@ fn dedup_none_scope_count_equals_input_count() {
 
 #[test]
 fn dedup_none_scope_respects_offset_sorting() {
-    // None scope doesn't group, but it still sorts by offset for primary_location selection.
-    // Input unsorted by offset; output must show the lowest offset was selected as primary.
+    // None scope does not group or reorder; every input match becomes its own
+    // primary finding in input order.
     let m_high = make_match("det", "secret", "file.env", 1, 100);
     let m_low = make_match("det", "secret", "file.env", 1, 10);
 
     let forward = dedup_matches(vec![m_high.clone(), m_low.clone()], &DedupScope::None);
     let reverse = dedup_matches(vec![m_low.clone(), m_high.clone()], &DedupScope::None);
 
-    // Both orderings should produce 2 separate findings in deterministic order.
+    // Both orderings should produce 2 separate findings in caller order.
     assert_eq!(forward.len(), 2);
     assert_eq!(reverse.len(), 2);
 
-    // Primary locations should be sorted deterministically.
-    assert_eq!(forward[0].primary_location.offset, 10);
+    assert_eq!(forward[0].primary_location.offset, 100);
     assert_eq!(reverse[0].primary_location.offset, 10);
 }

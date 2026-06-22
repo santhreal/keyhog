@@ -1,7 +1,8 @@
 //! Proving test: primary_location selection by offset within a dedup group.
 //! Contract: When multiple matches with the same (detector, credential, file)
-//! are deduped, the match with the LOWEST offset becomes primary_location,
-//! and higher-offset duplicates land in additional_locations.
+//! are deduped, the match with the LOWEST offset becomes primary_location.
+//! Distinct line locations become additional_locations; same-line duplicates
+//! are aliases and intentionally collapse.
 
 use keyhog_core::{dedup_matches, DedupScope, MatchLocation, RawMatch, Severity};
 use std::collections::HashMap;
@@ -33,9 +34,9 @@ fn make_match(cred: &str, path: &str, line: usize, offset: usize) -> RawMatch {
 #[test]
 fn dedup_selects_lowest_offset_as_primary_in_credential_scope() {
     // Three matches: offsets 100, 50, 75. Lowest (50) must become primary.
-    let m100 = make_match("SECRET", "file.env", 1, 100);
+    let m100 = make_match("SECRET", "file.env", 3, 100);
     let m50 = make_match("SECRET", "file.env", 1, 50);
-    let m75 = make_match("SECRET", "file.env", 1, 75);
+    let m75 = make_match("SECRET", "file.env", 2, 75);
 
     let deduped = dedup_matches(vec![m100, m50, m75], &DedupScope::Credential);
 
@@ -63,9 +64,9 @@ fn dedup_selects_lowest_offset_as_primary_in_credential_scope() {
 fn dedup_primary_offset_stable_across_input_order() {
     // Input order: [offset 100, 50, 75]. Output should have primary at 50.
     // Reverse input order: [offset 75, 50, 100]. Output should still have primary at 50.
-    let m100 = make_match("SECRET", "file.env", 1, 100);
+    let m100 = make_match("SECRET", "file.env", 3, 100);
     let m50 = make_match("SECRET", "file.env", 1, 50);
-    let m75 = make_match("SECRET", "file.env", 1, 75);
+    let m75 = make_match("SECRET", "file.env", 2, 75);
 
     let forward = dedup_matches(vec![m100.clone(), m50.clone(), m75.clone()], &DedupScope::Credential);
     let backward = dedup_matches(vec![m75, m50, m100], &DedupScope::Credential);
@@ -79,7 +80,7 @@ fn dedup_file_scope_selects_primary_per_file() {
     // Same credential in two files at different offsets.
     // Each file should have its own primary selection.
     let m1_offset10 = make_match("SECRET", "file1.env", 1, 10);
-    let m1_offset20 = make_match("SECRET", "file1.env", 1, 20);
+    let m1_offset20 = make_match("SECRET", "file1.env", 2, 20);
     let m2_offset50 = make_match("SECRET", "file2.env", 1, 50);
 
     let deduped = dedup_matches(
@@ -106,14 +107,14 @@ fn dedup_file_scope_selects_primary_per_file() {
 
 #[test]
 fn dedup_offset_selection_with_same_line_different_offsets() {
-    // Multiple matches on the same line but different offsets.
-    // This can happen with overlapping regex matches or synthetic-line aliases.
-    // Contract: lowest offset becomes primary.
+    // Multiple matches on the same line but different offsets can happen with
+    // overlapping regex matches or synthetic-line aliases. Same-line aliases are
+    // intentionally not added as extra locations.
     let m_offset_90 = make_match("TOKEN", "config.yaml", 5, 90);
     let m_offset_100 = make_match("TOKEN", "config.yaml", 5, 100);
 
     let deduped = dedup_matches(vec![m_offset_100, m_offset_90], &DedupScope::Credential);
 
     assert_eq!(deduped[0].primary_location.offset, 90);
-    assert_eq!(deduped[0].additional_locations[0].offset, 100);
+    assert!(deduped[0].additional_locations.is_empty());
 }

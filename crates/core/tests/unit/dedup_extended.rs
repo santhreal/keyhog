@@ -47,8 +47,8 @@ fn dedup_empty_input_any_scope_returns_empty() {
 
 #[test]
 fn dedup_credential_scope_keeps_max_confidence() {
-    let mut m1 = make("det", "FAKE_SECRET_VALUE_ALPHA", "f.env", 1, Some(0.6));
-    let mut m2 = make("det", "FAKE_SECRET_VALUE_ALPHA", "f2.env", 1, Some(0.9));
+    let m1 = make("det", "FAKE_SECRET_VALUE_ALPHA", "f.env", 1, Some(0.6));
+    let m2 = make("det", "FAKE_SECRET_VALUE_ALPHA", "f2.env", 1, Some(0.9));
     let deduped = dedup_matches(vec![m1, m2], &DedupScope::Credential);
     assert_eq!(deduped.len(), 1);
     assert_eq!(

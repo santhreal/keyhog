@@ -1,6 +1,5 @@
 //! Metadata fast-path matches only on exact mtime+size pair.
 
-use keyhog_core::MerkleIndex;
 use std::path::{Path, PathBuf};
 
 #[test]

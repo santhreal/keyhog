@@ -1,7 +1,5 @@
 //! Bare path globs (no `path:` prefix) register as gitignore-style entries.
 
-use keyhog_core::Allowlist;
-
 #[test]
 fn allowlist_bare_globs_parse_gitignore_style() {
     let content = "*.log

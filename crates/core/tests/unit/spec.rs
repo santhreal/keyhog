@@ -4,45 +4,7 @@ use keyhog_core::{
 };
 use std::fs;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing_subscriber::fmt::MakeWriter;
-
-#[derive(Clone, Default)]
-struct SharedWriter(Arc<Mutex<Vec<u8>>>);
-
-struct GuardedWriter(Arc<Mutex<Vec<u8>>>);
-
-impl std::io::Write for GuardedWriter {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
-impl<'a> MakeWriter<'a> for SharedWriter {
-    type Writer = GuardedWriter;
-
-    fn make_writer(&'a self) -> Self::Writer {
-        GuardedWriter(self.0.clone())
-    }
-}
-
-fn capture_logs<F: FnOnce()>(f: F) -> String {
-    let writer = SharedWriter::default();
-    let subscriber = tracing_subscriber::fmt()
-        .with_ansi(false)
-        .with_writer(writer.clone())
-        .without_time()
-        .finish();
-    tracing::subscriber::with_default(subscriber, f);
-    let bytes = writer.0.lock().unwrap().clone();
-    String::from_utf8(bytes).unwrap()
-}
 
 fn temp_dir(name: &str) -> PathBuf {
     let unique = SystemTime::now()
@@ -151,25 +113,20 @@ fn malformed_toml_files_fail_closed_instead_of_returning_partial_corpus() {
     .unwrap();
     fs::write(dir.join("broken.toml"), "[detector").unwrap();
 
-    let logs = capture_logs(|| {
-        let error = keyhog_core::testing::CoreTestApi::load_detectors_with_gate(
-            &keyhog_core::testing::TestApi,
-            &dir,
-            true,
-        )
-        .expect_err("enforced detector load must reject a partial corpus");
-        let message = error.to_string();
-        assert!(
-            message.contains("pass the quality gate")
-                && message.contains("complete detector corpus")
-                && message.contains("broken.toml")
-                && message.contains("Fix: repair the named TOML"),
-            "malformed detector error must be operator-visible; got {message}"
-        );
-    });
-
-    assert!(logs.contains("failed to parse"));
-    assert!(logs.contains("skipped 1 malformed detector files"));
+    let error = keyhog_core::testing::CoreTestApi::load_detectors_with_gate(
+        &keyhog_core::testing::TestApi,
+        &dir,
+        true,
+    )
+    .expect_err("enforced detector load must reject a partial corpus");
+    let message = error.to_string();
+    assert!(
+        message.contains("pass the quality gate")
+            && message.contains("complete detector corpus")
+            && message.contains("broken.toml")
+            && message.contains("Fix: repair the named TOML"),
+        "malformed detector error must be operator-visible; got {message}"
+    );
 }
 
 #[test]

@@ -1,7 +1,5 @@
 //! Mixed prefixed and bare entries in one file must all load.
 
-use keyhog_core::Allowlist;
-
 #[test]
 fn allowlist_mixed_prefixed_and_bare_entries_all_load() {
     let content = "detector:asana-pat

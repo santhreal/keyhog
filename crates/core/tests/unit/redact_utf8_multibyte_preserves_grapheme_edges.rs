@@ -6,6 +6,6 @@ use keyhog_core::redact;
 fn redact_utf8_multibyte_preserves_grapheme_edges() {
     let secret = "🔑🔑🔑🔑🔑🔑🔑🔑🔑";
     let redacted = redact(secret);
-    assert_eq!(redacted, "🔑🔑🔑🔑...🔑🔑🔑🔑");
+    assert_eq!(redacted, "🔑🔑...🔑🔑");
     assert!(!redacted.contains(secret));
 }

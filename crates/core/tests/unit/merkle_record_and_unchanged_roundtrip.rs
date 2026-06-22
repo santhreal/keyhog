@@ -1,6 +1,5 @@
 //! Merkle index records content hash and detects changes.
 
-use keyhog_core::MerkleIndex;
 use std::path::PathBuf;
 
 #[test]

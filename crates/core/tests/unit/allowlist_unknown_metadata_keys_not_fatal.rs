@@ -1,7 +1,5 @@
 //! Unknown metadata keys must not prevent parsing known fields.
 
-use keyhog_core::Allowlist;
-
 #[test]
 fn allowlist_unknown_metadata_keys_not_fatal() {
     let al = keyhog_core::testing::CoreTestApi::allowlist_parse(
