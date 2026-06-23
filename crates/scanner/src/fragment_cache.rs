@@ -5,6 +5,7 @@
 
 use lru::LruCache;
 use parking_lot::Mutex;
+use std::cell::RefCell;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use zeroize::Zeroizing;
@@ -93,15 +94,15 @@ fn evict_one(cluster: &mut Vec<SecretFragment>) {
     if let Some(idx) = cluster
         .iter()
         .enumerate()
-        .min_by(|(_, a), (_, b)| {
-            a.line
-                .cmp(&b.line)
-                .then_with(|| a.value.as_bytes().cmp(b.value.as_bytes()))
-        })
+        .min_by_key(|(_, fragment)| fragment_eviction_key(fragment))
         .map(|(i, _)| i)
     {
         cluster.remove(idx);
     }
+}
+
+fn fragment_eviction_key(fragment: &SecretFragment) -> (usize, &[u8]) {
+    (fragment.line, fragment.value.as_bytes())
 }
 
 /// Global cache for tracking fragmented secrets across the entire scan run.
@@ -134,8 +135,9 @@ impl FragmentCache {
         let shard_idx = shard_index_of(&fragment.prefix, scope);
         let mut lock = self.shards[shard_idx].lock();
 
-        let key = scoped_key(&fragment);
-        let cluster = lock.get_or_insert_mut(key, Vec::new);
+        let cluster = with_scoped_key(&fragment.prefix, scope, |key| {
+            lock.get_or_insert_mut_ref(key, Vec::new)
+        });
 
         // Don't add duplicate fragments (same path/line/value)
         if !cluster.iter().any(|f| {
@@ -222,8 +224,9 @@ impl FragmentCache {
         let shard_idx = shard_index_of(&fragment.prefix, scope);
         let mut lock = self.shards[shard_idx].lock();
 
-        let key = scoped_key(&fragment);
-        let cluster = lock.get_or_insert_mut(key, Vec::new);
+        let cluster = with_scoped_key(&fragment.prefix, scope, |key| {
+            lock.get_or_insert_mut_ref(key, Vec::new)
+        });
 
         if !cluster.iter().any(|f| {
             f.path == fragment.path && f.line == fragment.line && **f.value == **fragment.value
@@ -294,22 +297,32 @@ impl FragmentCache {
     }
 }
 
-fn scoped_key(fragment: &SecretFragment) -> String {
-    // Scope clusters by the FULL file path, not the parent directory.
-    // Coalesced scan batches several files under one rayon map and the
-    // per-chunk `chunk.metadata.path` is the only provenance the
-    // fragment carries; pooling by parent_dir let every AKIA assignment
-    // in dir X share a cluster with every sibling assignment in dir X.
-    // The `f1.path == f2.path` near-guard in `record_and_reassemble`
-    // was then the SOLE defense against cross-file glue - and it leaked
-    // whenever two fragments were recorded under one shared chunk path.
-    // Keying on the full path means fragments from different files never
-    // pool in the first place; same-file chunk-seam splits (a 1 MB+ file
-    // chunked into windows that all carry the identical path) still land
-    // in one cluster and reassemble. The near-guard stays as a redundant
-    // safety net.
-    let scope = fragment.path.as_deref().unwrap_or(""); // LAW10: absent path/field => display placeholder; reporting-only, recall-safe
-    format!("{}\0{}", fragment.prefix, scope)
+thread_local! {
+    static SCOPED_KEY_SCRATCH: RefCell<String> = const { RefCell::new(String::new()) };
+}
+
+/// Scope clusters by the FULL file path, not the parent directory.
+/// Coalesced scan batches several files under one rayon map and the per-chunk
+/// `chunk.metadata.path` is the only provenance the fragment carries; pooling
+/// by parent_dir let every AKIA assignment in dir X share a cluster with every
+/// sibling assignment in dir X. Keying on the full path means fragments from
+/// different files never pool in the first place; same-file chunk-seam splits
+/// still land in one cluster and reassemble.
+///
+/// The LRU stores owned `String` keys, but `lru::LruCache::get_or_insert_mut_ref`
+/// can query with `&str` and only `to_owned()` on a miss. A thread-local scratch
+/// buffer gives the hot hit path a borrowed `prefix\0scope` key without
+/// allocating a new joined `String` per fragment.
+fn with_scoped_key<R>(prefix: &str, scope: &str, f: impl FnOnce(&str) -> R) -> R {
+    SCOPED_KEY_SCRATCH.with(|scratch| {
+        let mut key = scratch.borrow_mut();
+        key.clear();
+        key.reserve(prefix.len() + 1 + scope.len());
+        key.push_str(prefix);
+        key.push('\0');
+        key.push_str(scope);
+        f(key.as_str())
+    })
 }
 
 /// Fold one more byte into the running shard hash. Single home for the
@@ -346,7 +359,8 @@ fn shard_index_of(prefix: &str, scope: &str) -> usize {
 /// the private `shard_fold` / `SHARD_COUNT` internals.
 #[doc(hidden)]
 pub(crate) fn shard_index_drift_probe(prefix: &str, scope: &str) -> (usize, usize) {
-    let joined = format!("{prefix}\0{scope}");
-    let joined_key_shard = joined.bytes().fold(0usize, shard_fold) % SHARD_COUNT;
-    (shard_index_of(prefix, scope), joined_key_shard)
+    with_scoped_key(prefix, scope, |joined| {
+        let joined_key_shard = joined.bytes().fold(0usize, shard_fold) % SHARD_COUNT;
+        (shard_index_of(prefix, scope), joined_key_shard)
+    })
 }

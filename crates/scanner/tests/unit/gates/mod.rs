@@ -138,6 +138,7 @@ pub mod entropy_scanner_non_empty;
 pub mod error_no_inline_tests;
 pub mod error_no_unwrap_expect;
 pub mod error_non_empty;
+pub mod fragment_cache_hot_path_shape;
 pub mod fragment_cache_no_inline_tests;
 pub mod fragment_cache_no_unwrap_expect;
 pub mod fragment_cache_non_empty;
