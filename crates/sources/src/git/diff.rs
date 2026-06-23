@@ -247,13 +247,22 @@ fn stream_added_lines(
             };
 
             match event {
-                super::UnifiedDiffEvent::FileHeader { new_path } => {
+                super::UnifiedDiffEvent::FileHeader {
+                    new_path,
+                    invalid_path,
+                } => {
                     let prev_path = current_path.take();
                     let prev_content = super::drain_trimmed_hunk(&mut current_content);
                     let prev_base_line = current_base_line;
 
                     // New file: its first `@@` will set the base for its hunks.
                     current_base_line = 0;
+                    if invalid_path {
+                        tracing::warn!(
+                            "git diff file header path failed sanitization; added lines for that file were NOT scanned"
+                        );
+                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                    }
                     current_path = new_path;
 
                     if let Some(path) = prev_path {

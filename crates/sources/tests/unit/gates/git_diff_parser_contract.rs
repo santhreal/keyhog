@@ -13,6 +13,7 @@ fn git_diff_sources_share_byte_oriented_parser() {
         "fn parse_line<'a>(",
         "fn trim_diff_line_bytes(",
         "fn sanitize_path_bytes(",
+        "invalid_path: bool",
         "parse_hunk_new_start_or_error",
         "UnifiedDiffEvent::AddedLine(&line[1..])",
     ] {
@@ -47,6 +48,26 @@ fn git_diff_sources_share_byte_oriented_parser() {
                 "{rel} must not inline unified-diff parsing detail `{forbidden}`"
             );
         }
+    }
+
+    for (rel, source, message) in [
+        (
+            "diff.rs",
+            diff.as_str(),
+            "git diff file header path failed sanitization",
+        ),
+        (
+            "history.rs",
+            history.as_str(),
+            "git history file header path failed sanitization",
+        ),
+    ] {
+        assert!(
+            source.contains("invalid_path")
+                && source.contains(message)
+                && source.contains("SourceSkipEvent::Unreadable"),
+            "{rel} must count invalid unified-diff file headers as unreadable instead of silently dropping added lines"
+        );
     }
 
     let git_mod =

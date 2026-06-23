@@ -2,7 +2,10 @@ use keyhog_core::SourceError;
 
 #[derive(Debug)]
 pub(crate) enum UnifiedDiffEvent<'a> {
-    FileHeader { new_path: Option<String> },
+    FileHeader {
+        new_path: Option<String>,
+        invalid_path: bool,
+    },
     DeletedFile,
     Metadata,
     HunkStart { base_line: usize },
@@ -26,8 +29,10 @@ impl UnifiedDiffParser {
     ) -> Result<UnifiedDiffEvent<'a>, SourceError> {
         if line.starts_with(b"diff --git ") {
             self.in_hunk = false;
+            let (new_path, invalid_path) = extract_new_path_from_header(line);
             return Ok(UnifiedDiffEvent::FileHeader {
-                new_path: extract_new_path_from_header(line),
+                new_path,
+                invalid_path,
             });
         }
 
@@ -45,8 +50,10 @@ impl UnifiedDiffParser {
 
         if let Some(path_part) = line.strip_prefix(b"+++ b/") {
             self.in_hunk = false;
+            let (new_path, invalid_path) = sanitize_path_bytes_with_status(path_part);
             return Ok(UnifiedDiffEvent::FileHeader {
-                new_path: sanitize_path_bytes(path_part),
+                new_path,
+                invalid_path,
             });
         }
 
@@ -77,10 +84,18 @@ pub(crate) fn trim_diff_line_bytes(mut line: &[u8]) -> &[u8] {
     line
 }
 
-fn extract_new_path_from_header(line: &[u8]) -> Option<String> {
-    memchr::memmem::find(line, b" b/")
-        .map(|index| &line[index + 3..])
-        .and_then(sanitize_path_bytes)
+fn extract_new_path_from_header(line: &[u8]) -> (Option<String>, bool) {
+    match memchr::memmem::find(line, b" b/") {
+        Some(index) => sanitize_path_bytes_with_status(&line[index + 3..]),
+        None => (None, true),
+    }
+}
+
+fn sanitize_path_bytes_with_status(path: &[u8]) -> (Option<String>, bool) {
+    match sanitize_path_bytes(path) {
+        Some(path) => (Some(path), false),
+        None => (None, true),
+    }
 }
 
 fn sanitize_path_bytes(path: &[u8]) -> Option<String> {
@@ -131,7 +146,7 @@ fn trim_ascii_whitespace(mut bytes: &[u8]) -> &[u8] {
 
 #[cfg(test)]
 mod tests {
-    use super::{UnifiedDiffEvent, UnifiedDiffParser, sanitize_path_bytes, trim_diff_line_bytes};
+    use super::{sanitize_path_bytes, trim_diff_line_bytes, UnifiedDiffEvent, UnifiedDiffParser};
 
     #[test]
     fn parser_emits_added_lines_only_inside_hunks() {
@@ -151,8 +166,18 @@ mod tests {
         assert!(matches!(
             parser.parse_line(b"+++ b/file.txt", "git diff").unwrap(),
             UnifiedDiffEvent::FileHeader {
-                new_path: Some(path)
+                new_path: Some(path),
+                invalid_path: false
             } if path == "file.txt"
+        ));
+        assert!(matches!(
+            parser
+                .parse_line(b"+++ b/../secret.txt", "git diff")
+                .unwrap(),
+            UnifiedDiffEvent::FileHeader {
+                new_path: None,
+                invalid_path: true
+            }
         ));
         assert!(matches!(
             parser

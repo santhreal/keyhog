@@ -257,7 +257,10 @@ fn stream_git_history_chunks(
             };
 
             match event {
-                super::UnifiedDiffEvent::FileHeader { new_path } => {
+                super::UnifiedDiffEvent::FileHeader {
+                    new_path,
+                    invalid_path,
+                } => {
                     let prev_chunk = if let (Some(commit), Some(author), Some(date), Some(path)) = (
                         &current_commit,
                         &current_author,
@@ -283,6 +286,12 @@ fn stream_git_history_chunks(
                         None
                     };
 
+                    if invalid_path {
+                        tracing::warn!(
+                            "git history file header path failed sanitization; added lines for that file were NOT scanned"
+                        );
+                        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                    }
                     current_path = new_path;
                     current_content.clear();
                     // New commit/file: the next `@@` sets the base for its hunks.
