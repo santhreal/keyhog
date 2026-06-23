@@ -43,4 +43,10 @@ fn gpu_lazy_cache_failure_compiles_uncached_instead_of_disabling_matcher() {
             && src.contains("GpuLiteralSet::compile(&literal_refs)"),
         "cache-dir failure must compile the GPU literal set without disk cache"
     );
+    assert!(
+        src.contains("fn report_gpu_matcher_cache_unavailable")
+            && src.contains("GPU_MATCHER_CACHE_UNAVAILABLE_WARNED")
+            && src.contains("eprintln!("),
+        "cache-dir failure must be visible on normal stderr, not only tracing"
+    );
 }

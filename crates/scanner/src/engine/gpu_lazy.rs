@@ -20,6 +20,39 @@
 
 use super::*;
 
+static GPU_MATCHER_CACHE_UNAVAILABLE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+static GPU_MATCHER_UNAVAILABLE_WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+
+fn report_gpu_matcher_cache_unavailable(error: &super::gpu_cache::GpuMatcherCacheDirError) {
+    tracing::warn!(
+        target: "keyhog::routing",
+        %error,
+        "GPU matcher disk cache unavailable; compiling literal set without cache"
+    );
+    if GPU_MATCHER_CACHE_UNAVAILABLE_WARNED.set(()).is_ok() {
+        eprintln!(
+            "keyhog: GPU matcher disk cache unavailable ({error}); compiling the matcher \
+without persistence, so this process may pay the GPU matcher compile cost again. \
+Fix the OS user cache directory or set XDG_CACHE_HOME to a writable directory."
+        );
+    }
+}
+
+fn report_gpu_matcher_unavailable(error: &crate::error::ScanError, matcher_kind: &str) {
+    tracing::warn!(
+        target: "keyhog::routing",
+        %error,
+        "GPU {matcher_kind} matcher unavailable; CPU/SIMD routes remain authoritative"
+    );
+    if GPU_MATCHER_UNAVAILABLE_WARNED.set(()).is_ok() {
+        eprintln!(
+            "keyhog: GPU {matcher_kind} matcher unavailable ({error}); this scanner \
+cannot use that GPU matcher and will route through CPU/SIMD validation instead. \
+Use --require-gpu when GPU acceleration is mandatory."
+        );
+    }
+}
+
 fn compile_gpu_literal_set(
     literals: &Arc<Vec<Vec<u8>>>,
     cache_prefix: &str,
@@ -36,11 +69,7 @@ fn compile_gpu_literal_set(
                 vyre_libs::scan::GpuLiteralSet::compile(&literal_refs)
             }),
             Err(error) => {
-                tracing::warn!(
-                    target: "keyhog::routing",
-                    %error,
-                    "GPU matcher disk cache unavailable; compiling literal set without cache"
-                );
+                report_gpu_matcher_cache_unavailable(&error);
                 vyre_libs::scan::GpuLiteralSet::compile(&literal_refs)
             }
         }
@@ -85,11 +114,7 @@ impl CompiledScanner {
                 match compile_gpu_literal_set(literals, "lit") {
                     Ok(matcher) => Some(matcher),
                     Err(error) => {
-                        tracing::warn!(
-                            target: "keyhog::routing",
-                            %error,
-                            "GPU literal matcher unavailable; CPU/SIMD routes remain authoritative"
-                        );
+                        report_gpu_matcher_unavailable(&error, "literal");
                         None
                     }
                 }
@@ -109,11 +134,7 @@ impl CompiledScanner {
                 match compile_gpu_literal_set(literals, "pos-lit") {
                     Ok(matcher) => Some(matcher),
                     Err(error) => {
-                        tracing::warn!(
-                            target: "keyhog::routing",
-                            %error,
-                            "GPU positioned literal matcher unavailable; CPU candidate collectors remain authoritative"
-                        );
+                        report_gpu_matcher_unavailable(&error, "positioned literal");
                         None
                     }
                 }

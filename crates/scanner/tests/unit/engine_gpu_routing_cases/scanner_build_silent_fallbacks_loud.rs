@@ -130,6 +130,22 @@ fn phase2_gpu_catalog_loss_is_operator_visible() {
 }
 
 #[test]
+fn gpu_matcher_loss_is_operator_visible() {
+    let src = engine_src("gpu_lazy.rs");
+    assert!(
+        src.contains("fn report_gpu_matcher_unavailable")
+            && src.contains("GPU_MATCHER_UNAVAILABLE_WARNED")
+            && src.contains("eprintln!(")
+            && src.contains("Use --require-gpu when GPU acceleration is mandatory"),
+        "GPU matcher compile loss must be visible to normal CLI stderr, not only tracing"
+    );
+    assert!(
+        src.matches("report_gpu_matcher_unavailable(&error,").count() >= 2,
+        "both literal and positioned-literal matcher compile failures must route through the visible reporter"
+    );
+}
+
+#[test]
 fn phase2_anchor_ac_build_failures_warn() {
     let src = engine_src("phase2_anchor.rs");
     assert!(
