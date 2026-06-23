@@ -345,7 +345,7 @@ impl Source for FilesystemSource {
                 }
                 const EXPANDABLE_SYMLINK_EXTS: &[&str] = &[
                     "har", "zip", "apk", "ipa", "crx", "jar", "tar", "gz", "tgz", "zst", "lz4",
-                    "sz",
+                    "sz", "bz2", "xz", "7z", "rar", "pdf",
                 ];
                 let expandable = p.extension().and_then(|e| e.to_str()).is_some_and(|ext| {
                     EXPANDABLE_SYMLINK_EXTS

@@ -94,6 +94,36 @@ fn har_symlink_target_is_not_followed_via_include() {
     );
 }
 
+#[test]
+fn expandable_symlink_extensions_are_refused_via_include() {
+    for ext in ["7z", "rar", "pdf", "bz2", "xz"] {
+        let target_dir = tempfile::tempdir().unwrap();
+        let scan_dir = tempfile::tempdir().unwrap();
+        let target = target_dir.path().join("victim_credentials");
+        fs::write(&target, format!("LEAKED_{ext}_SYMLINK_TARGET\n")).unwrap();
+
+        let bait = scan_dir.path().join(format!("creds.{ext}"));
+        symlink(&target, &bait).unwrap();
+
+        let source = FilesystemSource::new(scan_dir.path().to_path_buf())
+            .with_include_paths(vec![bait.clone()]);
+        let rows: Vec<_> = source.chunks().collect();
+        assert_eq!(
+            rows.len(),
+            1,
+            ".{ext} archive symlink include must surface one source error"
+        );
+        let err = rows[0]
+            .as_ref()
+            .expect_err("expandable symlink include must be refused");
+        assert!(
+            err.to_string().contains("archive symlink")
+                && err.to_string().contains("refusing to scan"),
+            ".{ext} error should name the refused archive symlink include, got {err}"
+        );
+    }
+}
+
 /// Control: a REAL (non-symlink) `.har` file with the same content IS
 /// expanded and the sentinel surfaces - proving the negative test above
 /// is gated by the symlink guard, not by HAR parsing being broken.

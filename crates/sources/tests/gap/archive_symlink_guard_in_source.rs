@@ -12,6 +12,9 @@ fn archive_symlink_guard_in_source() {
         "/src/filesystem/extract.rs"
     ))
     .expect("filesystem/extract.rs");
+    let filesystem =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/filesystem.rs"))
+            .expect("filesystem.rs");
     assert!(
         src.contains("refusing to open archive at a symlink path"),
         "archive symlink guard log must exist"
@@ -30,4 +33,14 @@ fn archive_symlink_guard_in_source() {
         guard < open,
         "must check symlink_metadata-backed guard before openpack"
     );
+    for ext in [
+        "\"har\"", "\"zip\"", "\"apk\"", "\"ipa\"", "\"crx\"", "\"jar\"", "\"tar\"", "\"gz\"",
+        "\"tgz\"", "\"zst\"", "\"lz4\"", "\"sz\"", "\"bz2\"", "\"xz\"", "\"7z\"", "\"rar\"",
+        "\"pdf\"",
+    ] {
+        assert!(
+            filesystem.contains(ext),
+            "explicit include symlink guard must cover expandable extension {ext}"
+        );
+    }
 }
