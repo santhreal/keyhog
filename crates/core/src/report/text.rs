@@ -4,6 +4,7 @@ use std::io::Write;
 
 use crate::{MatchLocation, VerificationResult, VerifiedFinding};
 
+use super::escape::sanitize_terminal;
 use super::style as report_style;
 use super::{ReportError, Reporter, WriterBackedReporter};
 
@@ -394,36 +395,5 @@ fn format_location(location: &MatchLocation) -> String {
             sanitize_terminal(crate::strip_windows_verbatim_prefix(path)).into_owned()
         }
         _ => sanitize_terminal(&location.source).into_owned(),
-    }
-}
-
-/// True for bytes that can drive a terminal rather than display as text: the C0
-/// controls (0x00-0x1F, incl. ESC/CR/LF/TAB), DEL (0x7F), and the C1 range
-/// (0x80-0x9F). A crafted git author, file path, metadata value, or redacted
-/// credential carrying these would otherwise inject ANSI escapes, cursor moves,
-/// or CR-overwrites into the operator's terminal via the default `text` reporter.
-fn is_terminal_control(c: char) -> bool {
-    let u = c as u32;
-    u < 0x20 || c == '\u{7F}' || (0x80..=0x9F).contains(&u)
-}
-
-/// Replace terminal control characters in an untrusted display value with the
-/// visible replacement char `U+FFFD`, so scan-derived strings cannot inject
-/// escape sequences into the terminal. Borrows on the common clean path.
-fn sanitize_terminal(s: &str) -> std::borrow::Cow<'_, str> {
-    if s.chars().any(is_terminal_control) {
-        std::borrow::Cow::Owned(
-            s.chars()
-                .map(|c| {
-                    if is_terminal_control(c) {
-                        '\u{FFFD}'
-                    } else {
-                        c
-                    }
-                })
-                .collect(),
-        )
-    } else {
-        std::borrow::Cow::Borrowed(s)
     }
 }

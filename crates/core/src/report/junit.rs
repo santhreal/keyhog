@@ -4,7 +4,10 @@ use std::io::Write;
 
 use crate::VerifiedFinding;
 
-use super::{ReportError, Reporter, WriterBackedReporter};
+use super::{
+    escape::{escape_cdata, escape_xml_attr},
+    ReportError, Reporter, WriterBackedReporter,
+};
 
 /// Structured JUnit XML findings reporter.
 pub(crate) struct JunitReporter<W: Write + Send> {
@@ -171,60 +174,5 @@ impl<W: Write + Send> WriterBackedReporter for JunitReporter<W> {
 
     fn writer_mut(&mut self) -> &mut Self::Writer {
         &mut self.writer
-    }
-}
-
-fn escape_xml_attr(val: &str) -> String {
-    sanitize_xml(val)
-        .replace('&', "&amp;")
-        .replace('<', "&lt;")
-        .replace('>', "&gt;")
-        .replace('"', "&quot;")
-        .replace('\'', "&apos;")
-}
-
-/// Replace XML-1.0-illegal control characters with the visible replacement char
-/// U+FFFD. XML 1.0 §2.2 forbids the C0 controls — EXCEPT tab (0x09), LF (0x0A),
-/// and CR (0x0D) — in a conformant document, and (unlike `<`/`&`) entity-escaping
-/// does NOT legalize them: even `&#x1;` is rejected. So a scanned file whose name
-/// carries a raw 0x01, or a git author/committer name that does, would otherwise
-/// make keyhog emit a JUnit report NO conformant CI parser can ingest — the
-/// operator's findings then silently never surface in their CI dashboard. The
-/// parallel `text` reporter already neutralizes these for the terminal
-/// (`sanitize_terminal`); XML needs its own predicate because XML keeps
-/// tab/LF/CR legal where a terminal does not. U+FFFD is itself a valid XML char,
-/// so the report stays parseable and the offending byte is visibly flagged
-/// rather than silently dropped (Law 10). Borrows on the common clean path.
-fn sanitize_xml(val: &str) -> std::borrow::Cow<'_, str> {
-    let illegal = |c: char| {
-        let u = c as u32;
-        u < 0x20 && !matches!(u, 0x09 | 0x0A | 0x0D)
-    };
-    if val.chars().any(illegal) {
-        std::borrow::Cow::Owned(
-            val.chars()
-                .map(|c| if illegal(c) { '\u{FFFD}' } else { c })
-                .collect(),
-        )
-    } else {
-        std::borrow::Cow::Borrowed(val)
-    }
-}
-
-/// Neutralize the CDATA terminator inside a value written into a `<![CDATA[…]]>`
-/// body, and strip XML-illegal control bytes first (`sanitize_xml`). XML escaping
-/// does NOT apply inside CDATA, so an attacker-controlled field (git
-/// author/committer name, file path, or redacted credential bytes) containing the
-/// literal `]]>` would otherwise close the section early and inject arbitrary
-/// markup into the JUnit report a CI system ingests. The standard mitigation
-/// splits the `]]>` token across two CDATA sections (`]]]]><![CDATA[>`); a
-/// conformant XML parser rejoins the surrounding text, so the displayed value is
-/// unchanged. Borrows on the common no-terminator path.
-fn escape_cdata(val: &str) -> std::borrow::Cow<'_, str> {
-    let sanitized = sanitize_xml(val);
-    if sanitized.contains("]]>") {
-        std::borrow::Cow::Owned(sanitized.replace("]]>", "]]]]><![CDATA[>"))
-    } else {
-        sanitized
     }
 }

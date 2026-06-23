@@ -4,7 +4,7 @@ use std::io::Write;
 
 use crate::VerifiedFinding;
 
-use super::{ReportError, Reporter, WriterBackedReporter};
+use super::{escape::escape_csv, ReportError, Reporter, WriterBackedReporter};
 
 /// Tabular CSV output.
 pub(crate) struct CsvReporter<W: Write + Send> {
@@ -104,33 +104,5 @@ impl<W: Write + Send> WriterBackedReporter for CsvReporter<W> {
 
     fn writer_mut(&mut self) -> &mut Self::Writer {
         &mut self.writer
-    }
-}
-
-fn escape_csv(val: &str) -> String {
-    // Neutralize spreadsheet formula injection (OWASP CSV-injection guidance):
-    // a cell whose first character is `=`, `+`, `-`, `@`, or a leading tab/CR is
-    // evaluated as a formula by Excel/LibreOffice/Sheets after CSV unquoting.
-    // Prefix such attacker-controlled values with a single quote so the cell is
-    // rendered as literal text, then apply the normal RFC-4180 quoting below.
-    let neutralized = match val.as_bytes().first() {
-        Some(b'=' | b'+' | b'-' | b'@' | b'\t' | b'\r') => {
-            let mut guarded = String::with_capacity(val.len() + 1);
-            guarded.push('\'');
-            guarded.push_str(val);
-            guarded
-        }
-        _ => val.to_string(),
-    };
-
-    if neutralized.contains(',')
-        || neutralized.contains('"')
-        || neutralized.contains('\n')
-        || neutralized.contains('\r')
-    {
-        let escaped = neutralized.replace('"', "\"\"");
-        format!("\"{}\"", escaped)
-    } else {
-        neutralized
     }
 }
