@@ -466,6 +466,22 @@ impl RawMatchPriority<'_> {
     }
 }
 
+fn raw_match_identity_cmp(
+    a: &keyhog_core::RawMatch,
+    b: &keyhog_core::RawMatch,
+) -> std::cmp::Ordering {
+    a.detector_id
+        .cmp(&b.detector_id)
+        .then_with(|| a.credential.cmp(&b.credential))
+        .then_with(|| a.location.offset.cmp(&b.location.offset))
+}
+
+fn same_raw_match_identity(a: &keyhog_core::RawMatch, b: &keyhog_core::RawMatch) -> bool {
+    a.detector_id == b.detector_id
+        && a.credential == b.credential
+        && a.location.offset == b.location.offset
+}
+
 /// Internal state for a single scan operation (tracks matches and ML cache).
 #[derive(Default)]
 pub(crate) struct ScanState {
@@ -600,43 +616,14 @@ impl ScanState {
         if matches.len() <= 1 {
             return matches;
         }
-        // For small N a sort-based adjacent dedup beats a HashSet: it adds
-        // no allocation and no `Arc::clone` (two atomics per match) - it
-        // only borrows the identity fields for comparison. The Vec is
-        // already sorted best-first above; `sort_by` is a STABLE sort, so
-        // grouping by (detector_id, credential, offset) preserves that
-        // best-first order within each identity group. The
-        // first element of each run is therefore the highest-confidence
-        // entry, which `dedup_by` keeps. A final `sort()` restores the
-        // canonical output order. Same result as the HashSet path, no alloc.
-        if matches.len() <= 64 {
-            matches.sort_by(|a, b| {
-                a.detector_id
-                    .cmp(&b.detector_id)
-                    .then_with(|| a.credential.cmp(&b.credential))
-                    .then_with(|| a.location.offset.cmp(&b.location.offset))
-            });
-            matches.dedup_by(|a, b| {
-                a.detector_id == b.detector_id
-                    && a.credential == b.credential
-                    && a.location.offset == b.location.offset
-            });
-            // Restore best-first order for output.
-            matches.sort();
-            return matches;
-        }
-        // Large N: HashSet dedup amortises better than repeated sorts.
-        // Stable: keeps the highest-confidence entry of any duplicate set
-        // thanks to the confidence sort above.
-        let mut seen: std::collections::HashSet<(std::sync::Arc<str>, SensitiveString, usize)> =
-            std::collections::HashSet::with_capacity(matches.len());
-        matches.retain(|m| {
-            seen.insert((
-                std::sync::Arc::clone(&m.detector_id),
-                m.credential.clone(),
-                m.location.offset,
-            ))
-        });
+        // Stable, allocation-free identity grouping. The Vec is already sorted
+        // best-first above; stable `sort_by` grouping on the borrowed identity
+        // fields preserves that best-first order within each duplicate run, so
+        // `dedup_by` keeps the highest-confidence entry. A final `sort()`
+        // restores canonical output order.
+        matches.sort_by(raw_match_identity_cmp);
+        matches.dedup_by(|a, b| same_raw_match_identity(a, b));
+        matches.sort();
         matches
     }
 }
