@@ -16,10 +16,9 @@ pub use limits::SourceLimitArgs;
 pub use maintenance::{
     BackendArgs, CompletionArgs, DoctorArgs, RepairArgs, UninstallArgs, UpdateArgs,
 };
-pub use scan::ScanArgs;
+pub use scan::{CliDedupScope, DaemonMode, OutputFormat, ScanArgs, SeverityFilter};
 
-use clap::{Parser, ValueEnum};
-use keyhog_core::DedupScope;
+use clap::Parser;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -238,77 +237,6 @@ pub struct ExplainArgs {
     /// missing. Same semantics as `keyhog detectors --detectors`.
     #[arg(short, long, default_value = "detectors")]
     pub detectors: PathBuf,
-}
-
-#[derive(Clone, Debug, ValueEnum)]
-pub enum SeverityFilter {
-    Info,
-    Low,
-    Medium,
-    High,
-    Critical,
-}
-
-impl SeverityFilter {
-    pub fn to_severity(&self) -> keyhog_core::Severity {
-        match self {
-            Self::Info => keyhog_core::Severity::Info,
-            Self::Low => keyhog_core::Severity::Low,
-            Self::Medium => keyhog_core::Severity::Medium,
-            Self::High => keyhog_core::Severity::High,
-            Self::Critical => keyhog_core::Severity::Critical,
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, ValueEnum)]
-pub enum OutputFormat {
-    Text,
-    Json,
-    Jsonl,
-    Sarif,
-    Csv,
-    GithubAnnotations,
-    GitlabSast,
-    Html,
-    Junit,
-}
-
-#[derive(Clone, Debug, ValueEnum, PartialEq)]
-pub enum CliDedupScope {
-    Credential,
-    File,
-    None,
-}
-
-impl CliDedupScope {
-    pub fn to_core(&self) -> DedupScope {
-        match self {
-            Self::Credential => DedupScope::Credential,
-            Self::File => DedupScope::File,
-            Self::None => DedupScope::None,
-        }
-    }
-}
-
-/// Tri-state daemon routing policy for `scan --daemon[=auto|on|off]` (CLI-02).
-///
-/// Collapses what used to be a `--daemon` / `--no-daemon` boolean conflict pair
-/// into a single flag with an explicit value, while preserving both legacy
-/// spellings:
-///   * `--daemon` (bare)  → [`Self::On`]   (back-compat: force the daemon route)
-///   * `--daemon=auto`    → [`Self::Auto`] (the default when the flag is absent)
-///   * `--daemon=off`     → [`Self::Off`]  (canonical form of `--no-daemon`)
-///   * `--no-daemon`      → [`Self::Off`]  (retained compatibility alias)
-#[derive(Clone, Copy, PartialEq, Eq, ValueEnum, Debug)]
-pub enum DaemonMode {
-    /// Use the daemon when a live socket is present, else scan in-process. This
-    /// is the behavior when no `--daemon`/`--no-daemon` flag is given.
-    Auto,
-    /// Force the scan through a running `keyhog daemon`; fail if none is up.
-    On,
-    /// Force in-process scanning even when a daemon is running.
-    Off,
 }
 
 /// Build the top-level clap [`clap::Command`] with the runtime-derived detector

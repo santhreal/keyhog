@@ -3,10 +3,82 @@
 //! Split out of `args.rs` because the scan subcommand has the largest flag
 //! surface and needs its own validation boundary.
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
+use keyhog_core::DedupScope;
 use std::path::PathBuf;
 
-use super::{CliDedupScope, OutputFormat, SeverityFilter, SourceLimitArgs};
+use super::SourceLimitArgs;
+
+#[derive(Clone, Debug, ValueEnum)]
+pub enum SeverityFilter {
+    Info,
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+impl SeverityFilter {
+    pub fn to_severity(&self) -> keyhog_core::Severity {
+        match self {
+            Self::Info => keyhog_core::Severity::Info,
+            Self::Low => keyhog_core::Severity::Low,
+            Self::Medium => keyhog_core::Severity::Medium,
+            Self::High => keyhog_core::Severity::High,
+            Self::Critical => keyhog_core::Severity::Critical,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, ValueEnum)]
+pub enum OutputFormat {
+    Text,
+    Json,
+    Jsonl,
+    Sarif,
+    Csv,
+    GithubAnnotations,
+    GitlabSast,
+    Html,
+    Junit,
+}
+
+#[derive(Clone, Debug, ValueEnum, PartialEq)]
+pub enum CliDedupScope {
+    Credential,
+    File,
+    None,
+}
+
+impl CliDedupScope {
+    pub fn to_core(&self) -> DedupScope {
+        match self {
+            Self::Credential => DedupScope::Credential,
+            Self::File => DedupScope::File,
+            Self::None => DedupScope::None,
+        }
+    }
+}
+
+/// Tri-state daemon routing policy for `scan --daemon[=auto|on|off]` (CLI-02).
+///
+/// Collapses what used to be a `--daemon` / `--no-daemon` boolean conflict pair
+/// into a single flag with an explicit value, while preserving both legacy
+/// spellings:
+///   * `--daemon` (bare)  → [`Self::On`]   (back-compat: force the daemon route)
+///   * `--daemon=auto`    → [`Self::Auto`] (the default when the flag is absent)
+///   * `--daemon=off`     → [`Self::Off`]  (canonical form of `--no-daemon`)
+///   * `--no-daemon`      → [`Self::Off`]  (retained compatibility alias)
+#[derive(Clone, Copy, PartialEq, Eq, ValueEnum, Debug)]
+pub enum DaemonMode {
+    /// Use the daemon when a live socket is present, else scan in-process. This
+    /// is the behavior when no `--daemon`/`--no-daemon` flag is given.
+    Auto,
+    /// Force the scan through a running `keyhog daemon`; fail if none is up.
+    On,
+    /// Force in-process scanning even when a daemon is running.
+    Off,
+}
 
 #[derive(Parser, Clone)]
 pub struct ScanArgs {
@@ -402,7 +474,7 @@ pub struct ScanArgs {
         value_name = "auto|on|off",
         conflicts_with = "no_daemon"
     )]
-    pub daemon: Option<super::DaemonMode>,
+    pub daemon: Option<DaemonMode>,
 
     /// Force in-process scanning even when a daemon is running. Useful for
     /// debugging, hardware probing, contract tests, or any case where you need
@@ -744,10 +816,10 @@ impl ScanArgs {
     /// All daemon-routing logic must read THIS, never the raw `daemon` /
     /// `no_daemon` fields, so the alias can never be silently bypassed.
     #[must_use]
-    pub fn daemon_mode(&self) -> super::DaemonMode {
+    pub fn daemon_mode(&self) -> DaemonMode {
         if self.no_daemon {
-            return super::DaemonMode::Off;
+            return DaemonMode::Off;
         }
-        self.daemon.unwrap_or(super::DaemonMode::Auto) // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
+        self.daemon.unwrap_or(DaemonMode::Auto) // LAW10: absent config => documented default; Tier-A knob, recall-irrelevant
     }
 }

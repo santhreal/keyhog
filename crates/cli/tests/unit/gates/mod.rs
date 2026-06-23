@@ -6,6 +6,7 @@ pub mod args_maintenance_split;
 pub mod args_no_inline_tests;
 pub mod args_no_unwrap_expect;
 pub mod args_non_empty;
+pub mod args_scan_enums_split;
 pub mod autoroute_cache_path_owner;
 pub mod autoroute_install_calibration_contract;
 pub mod baseline_no_inline_tests;
