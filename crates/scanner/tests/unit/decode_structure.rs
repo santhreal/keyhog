@@ -7,8 +7,8 @@
 
 use base64::Engine;
 use keyhog_scanner::testing::decode_structure::{
-    analyze, decoded_contains_nul_byte, decoded_contains_placeholder, is_encoded_binary,
-    looks_like_uniform_base64_blob, DecodeStructure,
+    analyze, decoded_contains_nul_byte, decoded_contains_placeholder, decoded_is_hex_key_material,
+    decodes_to_printable_text, is_encoded_binary, looks_like_uniform_base64_blob, DecodeStructure,
 };
 
 fn b64(bytes: &[u8]) -> String {
@@ -166,6 +166,23 @@ fn base64_wrapping_shared_placeholder_words_is_caught() {
             "decoded placeholder-word detection must catch shared Tier-B word in {raw:?}"
         );
     }
+}
+
+#[test]
+fn base64_wrapping_hex_key_material_is_not_a_decoded_placeholder() {
+    let encoded = "YTFiMmMzZDRlNWY2MDcxODI5M2E0YjVjNmQ3ZThmOTAxYTJiM2M0ZDVlNmY3MDgx";
+    assert!(
+        !decoded_contains_placeholder(encoded),
+        "decoded hex key material must not trip substring placeholder detection"
+    );
+    assert!(
+        decodes_to_printable_text(encoded),
+        "base64-wrapped hex key material is encoded printable secret text, not a binary blob"
+    );
+    assert!(
+        decoded_is_hex_key_material(encoded),
+        "base64-wrapped hex32/hex40/hex48 key material must be an explicit decode fact"
+    );
 }
 
 #[test]

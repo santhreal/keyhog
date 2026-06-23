@@ -103,8 +103,9 @@ fn lift_is_bounded_excluded_lengths_keywords_and_decoys_stay_suppressed() {
         "repetitive hex32 must stay suppressed (repetitive-run arm is preserved)"
     );
     // Repetitive decoy at an EXEMPT length (48) under a strong keyword: proves
-    // the canonical-hex-key exemption skips ONLY the bare-hex-digest/blob arms —
-    // the repetitive-run arm still fires, so a decoy is not surfaced.
+    // the canonical-hex-key exemption skips the bare-hex-digest and pairwise
+    // sequential-placeholder arms only; the repetitive-run arm still fires, so a
+    // decoy is not surfaced.
     let repetitive48 = "abababababababababababababababababababababababab";
     assert_eq!(
         repetitive48.len(),

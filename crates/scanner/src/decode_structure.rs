@@ -68,6 +68,7 @@ const MIN_DECODE_LEN: usize = 16;
 struct DecodeFacts {
     structure: DecodeStructure,
     decoded_is_base64_blob: bool,
+    decoded_is_hex_key_material: bool,
     decoded_contains_nul_byte: bool,
     decoded_contains_placeholder: bool,
 }
@@ -238,6 +239,16 @@ pub(crate) fn decoded_is_base64_blob(candidate: &str) -> bool {
     decode_facts(candidate).decoded_is_base64_blob
 }
 
+/// True when a candidate decodes to printable canonical hex key material.
+///
+/// This is deliberately narrower than "any decoded hex digest": only the
+/// keyword-owned encoded-text path consumes it, and only to stop substring
+/// placeholder words from firing inside real hex key material.
+#[must_use]
+pub(crate) fn decoded_is_hex_key_material(candidate: &str) -> bool {
+    decode_facts(candidate).decoded_is_hex_key_material
+}
+
 /// True when a base64/base64url/hex-shaped candidate decodes to ordinary
 /// printable text, not a binary asset or protobuf envelope.
 #[must_use]
@@ -320,6 +331,8 @@ fn compute_decode_facts(candidate: &str) -> DecodeFacts {
             && bytes
                 .iter()
                 .all(|&b| crate::decode::is_standard_base64_byte(b)),
+        decoded_is_hex_key_material: matches!(bytes.len(), 32 | 40 | 48)
+            && bytes.iter().all(|byte| byte.is_ascii_hexdigit()),
         decoded_contains_nul_byte: bytes.contains(&0),
         decoded_contains_placeholder: crate::placeholder_words::bytes_contain_placeholder_word(
             &bytes,

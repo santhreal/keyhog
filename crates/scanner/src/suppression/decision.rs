@@ -30,10 +30,10 @@ pub(super) fn suppression_stage_inner(
     // COMPLETE, delimiter-terminated pure-hex value of canonical key length
     // (32/48) anchored by a STRONG credential keyword — a real key on CredData
     // (hex48+kw 1033 POS / 0 NEG; hex32+kw 0.976), invisible to the mirror's
-    // len-40/64 hash negatives. When set, skip the bare-hex-digest arm ONLY (the
-    // truncated-sha256-prefix it guards arises on the weak-anchor NAMED path's
-    // `{32,48}` regexes, never on a complete bridge capture). All other gates —
-    // prefixed-hash-digest, UUID, repetitive/placeholder/fake-sequence — stay.
+    // len-40/64 hash negatives. When set, skip the bare-hex-digest arm and the
+    // later pairwise sequential-hex placeholder arm. The earlier fake-sequence,
+    // repetitive-run, repeated-block, prefixed-hash, UUID, and serial gates still
+    // run, so explicit decoys do not surface.
     allow_canonical_hex_key: bool,
     allow_base64_blob_shape: bool,
     allow_encoded_text_secret: bool,
@@ -360,7 +360,7 @@ pub(super) fn suppression_stage_inner(
 
     // ── 6. Algorithmic placeholder detection ──
     // Credentials dominated by filler after stripping known prefixes.
-    if crate::context::is_known_example_credential(credential) {
+    if !allow_canonical_hex_key && crate::context::is_known_example_credential(credential) {
         if bypass_shape_gates && credential.chars().all(|c| c.is_ascii_hexdigit()) {
             // Keep named hex detectors alive (e.g. Algolia admin key)
         } else {

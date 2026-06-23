@@ -535,10 +535,16 @@ pub fn known_example_suppressed(
     path: Option<&str>,
     context: crate::context::CodeContext,
 ) -> bool {
-    crate::suppression::api::suppress_known_example_credential(
+    let stage = crate::suppression::api::suppress_known_example_credential_stage(
         credential,
         crate::suppression::api::KnownExampleSuppressionCtx::new(path, context, None),
-    )
+    );
+    if let Some(stage) = stage {
+        crate::telemetry::record_shape_suppression(path, credential, stage.as_str());
+        true
+    } else {
+        false
+    }
 }
 
 #[cfg(any(feature = "simdsieve", test))]
@@ -548,10 +554,16 @@ pub fn known_example_suppressed_with_source(
     context: crate::context::CodeContext,
     source_type: Option<&str>,
 ) -> bool {
-    crate::suppression::api::suppress_known_example_credential(
+    let stage = crate::suppression::api::suppress_known_example_credential_stage(
         credential,
         crate::suppression::api::KnownExampleSuppressionCtx::new(path, context, source_type),
-    )
+    );
+    if let Some(stage) = stage {
+        crate::telemetry::record_shape_suppression(path, credential, stage.as_str());
+        true
+    } else {
+        false
+    }
 }
 
 pub fn named_detector_suppressed(
@@ -1607,6 +1619,10 @@ pub(crate) mod decode_structure {
 
     pub fn decoded_is_base64_blob(candidate: &str) -> bool {
         crate::decode_structure::decoded_is_base64_blob(candidate)
+    }
+
+    pub fn decoded_is_hex_key_material(candidate: &str) -> bool {
+        crate::decode_structure::decoded_is_hex_key_material(candidate)
     }
 
     pub(crate) fn decodes_to_printable_text(candidate: &str) -> bool {

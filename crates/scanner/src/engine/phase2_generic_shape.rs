@@ -310,8 +310,10 @@ impl CompiledScanner {
             allow_ambiguous_base64_candidate,
             allow_encoded_text_secret,
         );
-        if crate::suppression::api::suppress_known_example_credential(value, example_ctx) {
-            return Some("known_example_or_placeholder");
+        if let Some(stage_id) =
+            crate::suppression::api::suppress_known_example_credential_stage(value, example_ctx)
+        {
+            return Some(stage_id.as_str());
         }
         // Decoded-form placeholder check: a docs sample that arrives
         // base64-wrapped (e.g. QUtJQUVYQU1QTEVFWEFNUExFMTI= which
@@ -322,10 +324,17 @@ impl CompiledScanner {
         // shape; the ml_pending path's penalty has the same check
         // but generic-secret emits directly via push_match and
         // bypasses it.
-        if crate::decode_structure::decoded_contains_placeholder(value) {
+        let allow_decoded_hex_key_material = allow_encoded_text_secret
+            && crate::decode_structure::decoded_is_hex_key_material(value);
+        if crate::decode_structure::decoded_contains_placeholder(value)
+            && !allow_decoded_hex_key_material
+        {
             return Some("decoded_placeholder");
         }
         if let Some(reason) = crate::suppression::decision::decoded_benign_text_reason(value) {
+            if reason == "decoded_placeholder" && allow_decoded_hex_key_material {
+                return None;
+            }
             return Some(reason);
         }
         // Decode-through binary suppression: a generic high-entropy
