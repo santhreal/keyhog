@@ -93,6 +93,10 @@ fn binary_extension_blob_is_counted_binary_without_get() {
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
+    let blobs = support::CLOUD_PREFILTER_BINARY_EXTS
+        .iter()
+        .map(|ext| blob(&format!("bundle.{ext}"), 512, "application/octet-stream"))
+        .collect::<String>();
     let _list = server.mock(|when, then| {
         when.method(httpmock::Method::GET)
             .path("/container")
@@ -100,13 +104,18 @@ fn binary_extension_blob_is_counted_binary_without_get() {
             .query_param("comp", "list");
         then.status(200)
             .header("content-type", "application/xml")
-            .body(listing(&blob("bundle.zip", 512, "application/zip")));
+            .body(listing(&blobs));
     });
-    let object_get = server.mock(|when, then| {
-        when.method(httpmock::Method::GET)
-            .path("/container/bundle.zip");
-        then.status(200).body("SHOULD_NOT_BE_FETCHED");
-    });
+    let object_gets: Vec<_> = support::CLOUD_PREFILTER_BINARY_EXTS
+        .iter()
+        .map(|ext| {
+            server.mock(|when, then| {
+                when.method(httpmock::Method::GET)
+                    .path(format!("/container/bundle.{ext}"));
+                then.status(200).body("SHOULD_NOT_BE_FETCHED");
+            })
+        })
+        .collect();
 
     let ok: Vec<_> = AzureBlobSource::new(container_url(&server))
         .chunks()
@@ -117,14 +126,16 @@ fn binary_extension_blob_is_counted_binary_without_get() {
     let after = skip_counts();
     assert_eq!(
         after.binary - before.binary,
-        1,
+        support::CLOUD_PREFILTER_BINARY_EXTS.len(),
         "Azure binary/container extension prefilter MUST bump SKIPPED_BINARY"
     );
-    assert_eq!(
-        object_get.calls(),
-        0,
-        "binary-extension blob must not be fetched"
-    );
+    for object_get in object_gets {
+        assert_eq!(
+            object_get.calls(),
+            0,
+            "binary-extension blob must not be fetched"
+        );
+    }
 }
 
 #[test]

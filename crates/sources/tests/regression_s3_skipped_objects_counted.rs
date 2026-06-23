@@ -183,7 +183,11 @@ fn binary_extension_object_is_counted_binary_without_get() {
     let before = skip_counts();
 
     let server = httpmock::MockServer::start();
-    let body = listing(&contents("bundle.zip", 512));
+    let objects = support::CLOUD_PREFILTER_BINARY_EXTS
+        .iter()
+        .map(|ext| contents(&format!("bundle.{ext}"), 512))
+        .collect::<String>();
+    let body = listing(&objects);
     let _list = server.mock(|when, then| {
         when.method(httpmock::Method::GET)
             .query_param("list-type", "2");
@@ -191,11 +195,16 @@ fn binary_extension_object_is_counted_binary_without_get() {
             .header("content-type", "application/xml")
             .body(body);
     });
-    let object_get = server.mock(|when, then| {
-        when.method(httpmock::Method::GET)
-            .path_includes("bundle.zip");
-        then.status(200).body("SHOULD_NOT_BE_FETCHED");
-    });
+    let object_gets: Vec<_> = support::CLOUD_PREFILTER_BINARY_EXTS
+        .iter()
+        .map(|ext| {
+            server.mock(|when, then| {
+                when.method(httpmock::Method::GET)
+                    .path_includes(format!("bundle.{ext}"));
+                then.status(200).body("SHOULD_NOT_BE_FETCHED");
+            })
+        })
+        .collect();
 
     let ok: Vec<_> = TestApi
         .s3_source_with_endpoint(BUCKET, server.url(""))
@@ -207,14 +216,16 @@ fn binary_extension_object_is_counted_binary_without_get() {
     let after = skip_counts();
     assert_eq!(
         after.binary - before.binary,
-        1,
-        "binary/container extension prefilter MUST bump SKIPPED_BINARY exactly once"
+        support::CLOUD_PREFILTER_BINARY_EXTS.len(),
+        "binary/container extension prefilter MUST bump SKIPPED_BINARY once per refused object"
     );
-    assert_eq!(
-        object_get.calls(),
-        0,
-        "binary-extension object must be counted before any GET is issued"
-    );
+    for object_get in object_gets {
+        assert_eq!(
+            object_get.calls(),
+            0,
+            "binary-extension object must be counted before any GET is issued"
+        );
+    }
 }
 
 /// A body the server LABELS text but that fails UTF-8 decode is DROPPED and

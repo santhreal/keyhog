@@ -177,6 +177,7 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
     );
     assert!(
         cloud.contains("const BINARY_OBJECT_EXTS")
+            && cloud.contains("crate::filesystem::is_default_skip_extension(ext)")
             && cloud.contains("ext.eq_ignore_ascii_case(candidate)")
             && cloud.contains("fn starts_with_ignore_ascii_case(")
             && !cloud.contains("value.to_ascii_lowercase()")

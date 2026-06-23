@@ -25,6 +25,11 @@ pub(crate) fn is_default_excluded_path(path: &str) -> bool {
     filter::is_default_excluded(path)
 }
 
+#[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
+pub(crate) fn is_default_skip_extension(ext: &str) -> bool {
+    filter::is_skip_extension(ext)
+}
+
 pub(crate) fn reader_pool_thread_count_for_test(scanner_threads: usize) -> usize {
     reader::reader_thread_count(scanner_threads, None)
 }
