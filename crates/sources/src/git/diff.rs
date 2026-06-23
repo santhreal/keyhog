@@ -200,10 +200,12 @@ fn stream_added_lines(
                     }
                     Ok(_) => {
                         if let Some(ref path) = current_path {
-                            if !current_content.trim().is_empty() {
+                            if let Some(chunk_content) =
+                                super::drain_trimmed_hunk(&mut current_content)
+                            {
                                 wait_after_final_chunk = true;
                                 return Some(Ok(Chunk {
-                                    data: current_content.trim().to_string().into(),
+                                    data: chunk_content.into(),
                                     metadata: ChunkMetadata {
                                         base_offset: 0,
                                         base_line: current_base_line,
@@ -247,18 +249,17 @@ fn stream_added_lines(
             match event {
                 super::UnifiedDiffEvent::FileHeader { new_path } => {
                     let prev_path = current_path.take();
-                    let prev_content = current_content.trim().to_string();
+                    let prev_content = super::drain_trimmed_hunk(&mut current_content);
                     let prev_base_line = current_base_line;
-                    current_content.clear();
 
                     // New file: its first `@@` will set the base for its hunks.
                     current_base_line = 0;
                     current_path = new_path;
 
                     if let Some(path) = prev_path {
-                        if !prev_content.trim().is_empty() {
+                        if let Some(prev_content) = prev_content {
                             return Some(Ok(Chunk {
-                                data: prev_content.trim().to_string().into(),
+                                data: prev_content.into(),
                                 metadata: ChunkMetadata {
                                     base_offset: 0,
                                     base_line: prev_base_line,
@@ -287,14 +288,13 @@ fn stream_added_lines(
                     // Start of a new hunk: flush the previous hunk as its own
                     // chunk (so its base line applies cleanly), then adopt this
                     // hunk's new-file start as the base for the lines that follow.
-                    let prev_content = current_content.trim().to_string();
+                    let prev_content = super::drain_trimmed_hunk(&mut current_content);
                     let prev_base_line = current_base_line;
-                    current_content.clear();
                     current_base_line = base_line;
                     if let Some(ref path) = current_path {
-                        if !prev_content.trim().is_empty() {
+                        if let Some(prev_content) = prev_content {
                             return Some(Ok(Chunk {
-                                data: prev_content.trim().to_string().into(),
+                                data: prev_content.into(),
                                 metadata: ChunkMetadata {
                                     base_offset: 0,
                                     base_line: prev_base_line,
@@ -321,17 +321,15 @@ fn stream_added_lines(
 
             if current_content.len() > hunk_byte_cap {
                 if let Some(ref path) = current_path {
-                    if !current_content.trim().is_empty() {
+                    let emitted_lines =
+                        memchr::memchr_iter(b'\n', current_content.as_bytes()).count();
+                    if let Some(chunk_content) = super::drain_trimmed_hunk(&mut current_content) {
                         let flush_base_line = current_base_line;
                         // Mid-hunk flush of a single over-cap hunk: the lines
                         // that follow continue the SAME hunk, so advance the
                         // base by the lines we are emitting now to keep their
                         // attribution correct after the buffer resets.
-                        current_base_line = current_base_line.saturating_add(
-                            memchr::memchr_iter(b'\n', current_content.as_bytes()).count(),
-                        );
-                        let chunk_content = current_content.trim().to_string();
-                        current_content.clear();
+                        current_base_line = current_base_line.saturating_add(emitted_lines);
                         return Some(Ok(Chunk {
                             data: chunk_content.into(),
                             metadata: ChunkMetadata {

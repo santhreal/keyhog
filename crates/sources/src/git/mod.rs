@@ -31,13 +31,24 @@ pub use diff::GitDiffSource;
 pub use history::GitHistorySource;
 pub use source::GitSource;
 
-pub(crate) use diff_parser::{UnifiedDiffEvent, UnifiedDiffParser, trim_diff_line_bytes};
+pub(crate) use diff_parser::{trim_diff_line_bytes, UnifiedDiffEvent, UnifiedDiffParser};
 
 pub(crate) fn git_blob_bytes_limit_usize(limits: crate::SourceLimits) -> usize {
     match usize::try_from(limits.git_blob_bytes) {
         Ok(value) => value,
         Err(_) => usize::MAX, // LAW10: recall-safe size knob; configured cap exceeds platform usize, so saturate to the maximum representable in-memory buffer cap.
     }
+}
+
+pub(crate) fn drain_trimmed_hunk(buffer: &mut String) -> Option<String> {
+    let trimmed = buffer.trim();
+    if trimmed.is_empty() {
+        buffer.clear();
+        return None;
+    }
+    let chunk = trimmed.to_owned();
+    buffer.clear();
+    Some(chunk)
 }
 
 const GIT_STDERR_EXCERPT_BYTES: usize = 64 * 1024;
@@ -291,7 +302,7 @@ mod capped_line_tests {
 
 #[cfg(test)]
 mod git_child_tests {
-    use super::{GIT_STDERR_EXCERPT_BYTES, spawn_git_child, wait_for_git_child};
+    use super::{spawn_git_child, wait_for_git_child, GIT_STDERR_EXCERPT_BYTES};
     use std::io::{Read, Write};
     use std::process::{Command, Stdio};
 

@@ -376,8 +376,22 @@ fn git_diff_hot_path_consolidates_git_processes_and_reuses_buffers() {
     assert!(
         diff.contains("current_content.clear();")
             && !diff.contains("                        current_content = String::new();")
-            && !diff.contains("std::mem::take(&mut current_content)"),
+            && !diff.contains("std::mem::take(&mut current_content)")
+            && !diff.contains("current_content.trim().to_string()"),
         "git-diff hunk flushes must retain the hunk buffer allocation"
+    );
+    let history =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/git/history.rs"))
+            .expect("git history source readable");
+    assert!(
+        diff.contains("super::drain_trimmed_hunk(&mut current_content)")
+            && history.contains("super::drain_trimmed_hunk(&mut current_content)"),
+        "git diff/history hunk flushes must share the single trim-and-drain helper"
+    );
+    assert!(
+        !history.contains("std::mem::take(&mut current_content)")
+            && !history.contains("current_content.trim().to_string()"),
+        "git-history hunk flushes must retain the hunk buffer allocation and copy emitted text once"
     );
 }
 
