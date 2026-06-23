@@ -139,7 +139,7 @@ impl CompiledScanner {
 
             // Pass the lift switch only after generation; the gauntlet still
             // owns every non-canonical precision gate.
-            if let Some(stage_id) = entropy_match_suppression_stage(
+            if let Some(shape_stage) = entropy_match_suppression_stage(
                 &entropy_match,
                 preprocessed,
                 line_offsets,
@@ -147,10 +147,13 @@ impl CompiledScanner {
                 allow_canonical_lift,
                 source_entropy_requires_same_line_credential,
             ) {
-                crate::adjudicate::record_stage_suppression(
+                let entropy_ctx = crate::adjudicate::MatchCtx::for_entropy_fallback(
+                    crate::adjudicate::EntropyFallbackSignal::ValueShape(shape_stage),
+                );
+                crate::adjudicate::record_suppression(
                     chunk.metadata.path.as_deref(),
                     &entropy_match.value,
-                    stage_id,
+                    &entropy_ctx,
                 );
                 continue;
             }
@@ -159,10 +162,13 @@ impl CompiledScanner {
                 preprocessed,
                 line_offsets,
             ) {
-                crate::adjudicate::record_stage_suppression(
+                let entropy_ctx = crate::adjudicate::MatchCtx::for_entropy_fallback(
+                    crate::adjudicate::EntropyFallbackSignal::NamedDetectorOwnedAssignment,
+                );
+                crate::adjudicate::record_suppression(
                     chunk.metadata.path.as_deref(),
                     &entropy_match.value,
-                    crate::adjudicate::StageId::EntropyNamedDetectorOwnedAssignment,
+                    &entropy_ctx,
                 );
                 continue;
             }

@@ -291,6 +291,21 @@ impl GenericBridgeSignal {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EntropyFallbackSignal {
+    NamedDetectorOwnedAssignment,
+    ValueShape(EntropyShapeStage),
+}
+
+impl EntropyFallbackSignal {
+    const fn stage_id(self) -> StageId {
+        match self {
+            Self::NamedDetectorOwnedAssignment => StageId::EntropyNamedDetectorOwnedAssignment,
+            Self::ValueShape(stage) => StageId::EntropyValueShape(stage),
+        }
+    }
+}
+
 fn final_emit_suppression_stage(
     detector_id: &str,
     credential: &str,
@@ -352,6 +367,7 @@ pub(crate) struct MatchCtx<'a> {
     explicit_stage: Option<StageId>,
     process_signals: Option<ProcessCandidateSignals>,
     generic_bridge_signal: Option<GenericBridgeSignal>,
+    entropy_fallback_signal: Option<EntropyFallbackSignal>,
     named_detector_suppression: Option<NamedDetectorSuppressionCtx<'a>>,
     final_emit_signals: Option<FinalEmitSignals<'a>>,
 }
@@ -362,6 +378,7 @@ impl<'a> MatchCtx<'a> {
             explicit_stage: Some(stage_id),
             process_signals: None,
             generic_bridge_signal: None,
+            entropy_fallback_signal: None,
             named_detector_suppression: None,
             final_emit_signals: None,
         }
@@ -372,6 +389,7 @@ impl<'a> MatchCtx<'a> {
             explicit_stage: None,
             process_signals: Some(process_signals),
             generic_bridge_signal: None,
+            entropy_fallback_signal: None,
             named_detector_suppression: None,
             final_emit_signals: None,
         }
@@ -382,6 +400,18 @@ impl<'a> MatchCtx<'a> {
             explicit_stage: None,
             process_signals: None,
             generic_bridge_signal: Some(signal),
+            entropy_fallback_signal: None,
+            named_detector_suppression: None,
+            final_emit_signals: None,
+        }
+    }
+
+    pub(crate) const fn for_entropy_fallback(signal: EntropyFallbackSignal) -> Self {
+        Self {
+            explicit_stage: None,
+            process_signals: None,
+            generic_bridge_signal: None,
+            entropy_fallback_signal: Some(signal),
             named_detector_suppression: None,
             final_emit_signals: None,
         }
@@ -392,6 +422,7 @@ impl<'a> MatchCtx<'a> {
             explicit_stage: None,
             process_signals: None,
             generic_bridge_signal: None,
+            entropy_fallback_signal: None,
             named_detector_suppression: Some(ctx),
             final_emit_signals: None,
         }
@@ -402,6 +433,7 @@ impl<'a> MatchCtx<'a> {
             explicit_stage: None,
             process_signals: None,
             generic_bridge_signal: None,
+            entropy_fallback_signal: None,
             named_detector_suppression: None,
             final_emit_signals: Some(signals),
         }
@@ -417,6 +449,7 @@ const STAGES: &[StageFn] = &[
     explicit_stage,
     process_signal_stage,
     generic_bridge_stage,
+    entropy_fallback_stage,
     named_detector_suppression_stage,
     final_emit_stage,
 ];
@@ -494,6 +527,14 @@ fn process_signal_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> S
 
 fn generic_bridge_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageOutcome {
     if let Some(signal) = ctx.generic_bridge_signal {
+        StageOutcome::Suppress(signal.stage_id())
+    } else {
+        StageOutcome::Pass
+    }
+}
+
+fn entropy_fallback_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageOutcome {
+    if let Some(signal) = ctx.entropy_fallback_signal {
         StageOutcome::Suppress(signal.stage_id())
     } else {
         StageOutcome::Pass

@@ -1,6 +1,6 @@
 //! Entropy-fallback candidate suppression predicate.
 use super::helpers::*;
-use crate::adjudicate::{EntropyShapeStage, StageId};
+use crate::adjudicate::EntropyShapeStage;
 use crate::engine::*;
 
 pub(crate) fn entropy_match_suppression_stage(
@@ -12,7 +12,7 @@ pub(crate) fn entropy_match_suppression_stage(
     // gates; all other precision gates stay live.
     allow_canonical_lift: bool,
     source_entropy_requires_same_line_credential: bool,
-) -> Option<StageId> {
+) -> Option<EntropyShapeStage> {
     let randomness =
         crate::suppression::token_randomness::TokenRandomness::for_candidate(&entropy_match.value);
     // Proximity context is too loose to release canonical shapes; require the
@@ -25,17 +25,13 @@ pub(crate) fn entropy_match_suppression_stage(
             &randomness,
         )
     {
-        return Some(StageId::EntropyValueShape(
-            EntropyShapeStage::SourceIdentifierInSourceContext,
-        ));
+        return Some(EntropyShapeStage::SourceIdentifierInSourceContext);
     }
     if source_entropy_requires_same_line_credential && !same_line_credential_assignment {
-        return Some(StageId::EntropyValueShape(
-            EntropyShapeStage::MissingSameLineCredential,
-        ));
+        return Some(EntropyShapeStage::MissingSameLineCredential);
     }
     if chunk.metadata.source_type.contains("/caesar") {
-        return Some(StageId::EntropyValueShape(EntropyShapeStage::CaesarSource));
+        return Some(EntropyShapeStage::CaesarSource);
     }
     let same_line_high_signal_assignment_owner =
         value_line_has_random_byte_blob_owner(entropy_match, preprocessed, line_offsets);
@@ -52,9 +48,7 @@ pub(crate) fn entropy_match_suppression_stage(
     );
     // Keep shared content gates live even when canonical shape gates are lifted.
     if entropy_fallback_example_suppressed(entropy_match, chunk, canonical_lift) {
-        return Some(StageId::EntropyValueShape(
-            EntropyShapeStage::KnownExampleOrPlaceholder,
-        ));
+        return Some(EntropyShapeStage::KnownExampleOrPlaceholder);
     }
 
     // Kebab identifiers near `key` words are usually config names, not secrets.
@@ -62,22 +56,18 @@ pub(crate) fn entropy_match_suppression_stage(
         && !lower_dash_app_password
         && entropy_path_looks_like_kebab_identifier(&entropy_match.value)
     {
-        return Some(StageId::EntropyValueShape(
-            EntropyShapeStage::KebabIdentifier,
-        ));
+        return Some(EntropyShapeStage::KebabIdentifier);
     }
 
     // Filename-shaped values beside keystore/file keywords are references.
     if entropy_path_looks_like_filename(&entropy_match.value) {
-        return Some(StageId::EntropyValueShape(EntropyShapeStage::Filename));
+        return Some(EntropyShapeStage::Filename);
     }
 
     // Pure identifiers are not entropy credentials; keep this local because the
     // entropy fallback emits directly instead of going through named suppression.
     if crate::suppression::shape::looks_like_pure_identifier(&entropy_match.value) {
-        return Some(StageId::EntropyValueShape(
-            EntropyShapeStage::PureIdentifier,
-        ));
+        return Some(EntropyShapeStage::PureIdentifier);
     }
     // Whitespace-bearing values are natural-language labels or
     // free-text identifiers, not credentials. Real credentials
@@ -85,7 +75,7 @@ pub(crate) fn entropy_match_suppression_stage(
     // macaroon `id: "brave-talk-free sku token v1"` (bat-go),
     // YAML descriptions, log-line excerpts.
     if entropy_match.value.bytes().any(|b| b == b' ' || b == b'\t') {
-        return Some(StageId::EntropyValueShape(EntropyShapeStage::Whitespace));
+        return Some(EntropyShapeStage::Whitespace);
     }
     // English-prose suppression: a 16+ char value that is pure
     // lowercase ASCII letters (no digit, no symbol), OR a
@@ -105,7 +95,7 @@ pub(crate) fn entropy_match_suppression_stage(
     if !keyword_is_credential_anchor(&entropy_match.keyword)
         && crate::suppression::shape::looks_like_english_prose(&entropy_match.value)
     {
-        return Some(StageId::EntropyValueShape(EntropyShapeStage::EnglishProse));
+        return Some(EntropyShapeStage::EnglishProse);
     }
     // Comma-bearing values are config/DSN-style metadata, not
     // credentials. Catches Redis DSN
@@ -113,9 +103,7 @@ pub(crate) fn entropy_match_suppression_stage(
     // (gogs conf/app.ini commented redis config), CSV rows,
     // multi-key=value config blobs.
     if entropy_match.value.contains(',') {
-        return Some(StageId::EntropyValueShape(
-            EntropyShapeStage::CommaDelimited,
-        ));
+        return Some(EntropyShapeStage::CommaDelimited);
     }
     // Word-separated identifier with embedded digits (digits
     // short-circuit `looks_like_pure_identifier`). Catches
@@ -133,9 +121,7 @@ pub(crate) fn entropy_match_suppression_stage(
         && !(same_line_high_signal_assignment_owner && lower_dash_app_password)
         && crate::suppression::shape::looks_like_word_separated_identifier(&entropy_match.value)
     {
-        return Some(StageId::EntropyValueShape(
-            EntropyShapeStage::WordSeparatedIdentifier,
-        ));
+        return Some(EntropyShapeStage::WordSeparatedIdentifier);
     }
     // Long train-case config/policy prose next to a credential keyword is still
     // prose, not an entropy-bearing secret. The same public-shape owner is used
@@ -148,16 +134,12 @@ pub(crate) fn entropy_match_suppression_stage(
     )
     .is_some()
     {
-        return Some(StageId::EntropyValueShape(
-            EntropyShapeStage::PublicNoncredentialShape,
-        ));
+        return Some(EntropyShapeStage::PublicNoncredentialShape);
     }
     // Scheme-prefixed URI / URN (`urn:shopify:...`,
     // `secret-token:<base64>`).
     if crate::suppression::shape::looks_like_scheme_prefixed_uri(&entropy_match.value) {
-        return Some(StageId::EntropyValueShape(
-            EntropyShapeStage::SchemePrefixedUri,
-        ));
+        return Some(EntropyShapeStage::SchemePrefixedUri);
     }
     let high_entropy_punctuation_payload =
         crate::suppression::shape::looks_like_high_entropy_punctuation_payload(
@@ -170,9 +152,7 @@ pub(crate) fn entropy_match_suppression_stage(
             &randomness,
         )
     {
-        return Some(StageId::EntropyValueShape(
-            EntropyShapeStage::SourceCodeExpression,
-        ));
+        return Some(EntropyShapeStage::SourceCodeExpression);
     }
     if crate::decode::caesar::is_program_source_code_path(chunk.metadata.path.as_deref())
         && crate::suppression::shape::looks_like_source_symbol_identifier_with_randomness(
@@ -180,9 +160,7 @@ pub(crate) fn entropy_match_suppression_stage(
             &randomness,
         )
     {
-        return Some(StageId::EntropyValueShape(
-            EntropyShapeStage::SourceSymbolIdentifier,
-        ));
+        return Some(EntropyShapeStage::SourceSymbolIdentifier);
     }
     // Punctuation-decorated identifier (`--api-secret`,
     // `&gss_token`, `@v_password`, `!!apiKey`, `Password:`,
@@ -192,9 +170,7 @@ pub(crate) fn entropy_match_suppression_stage(
             &entropy_match.value,
         )
     {
-        return Some(StageId::EntropyValueShape(
-            EntropyShapeStage::PunctuationDecoratedIdentifier,
-        ));
+        return Some(EntropyShapeStage::PunctuationDecoratedIdentifier);
     }
     // URL / path-fragment shape (`user/settings/password`,
     // `/api/v1/access_token`). Keep long high-entropy base64 punctuation
@@ -202,9 +178,7 @@ pub(crate) fn entropy_match_suppression_stage(
     if !high_entropy_punctuation_payload
         && crate::suppression::shape::looks_like_url_or_path_segment(&entropy_match.value)
     {
-        return Some(StageId::EntropyValueShape(
-            EntropyShapeStage::UrlOrPathSegment,
-        ));
+        return Some(EntropyShapeStage::UrlOrPathSegment);
     }
     // UUID v4 substring (`TOKEN_LIST=636765a9-1f92-4b40-ab0b-85ebd1e2c23d`
     // in bat-go docker-compose.reputation.yml). The entropy fallback
@@ -225,14 +199,12 @@ pub(crate) fn entropy_match_suppression_stage(
     if !(canonical_lift && value_is_exact_uuid)
         && crate::suppression::shape::contains_uuid_v4_substring(&entropy_match.value)
     {
-        return Some(StageId::EntropyValueShape(
-            EntropyShapeStage::UuidV4OrSubstring,
-        ));
+        return Some(EntropyShapeStage::UuidV4OrSubstring);
     }
     // Email address (gogs TestInit.golden.ini:89 `USER=noreply@gogs.localhost`
     // captured as entropy-password due to nearby `PASSWORD=` line).
     if crate::suppression::shape::looks_like_email_address(&entropy_match.value) {
-        return Some(StageId::EntropyValueShape(EntropyShapeStage::EmailAddress));
+        return Some(EntropyShapeStage::EmailAddress);
     }
     // Blockchain / network address keyword context: the line
     // containing the entropy hit is a `<KEY>=<value>` assignment
@@ -280,9 +252,7 @@ pub(crate) fn entropy_match_suppression_stage(
                 .iter()
                 .any(|kw| line_upper.contains(kw))
             {
-                return Some(StageId::EntropyValueShape(
-                    EntropyShapeStage::BlockchainOrNetworkAddress,
-                ));
+                return Some(EntropyShapeStage::BlockchainOrNetworkAddress);
             }
         }
     }
@@ -291,9 +261,7 @@ pub(crate) fn entropy_match_suppression_stage(
     if crate::suppression::path_filter::looks_like_vendored_minified_path(
         chunk.metadata.path.as_deref(),
     ) {
-        return Some(StageId::EntropyValueShape(
-            EntropyShapeStage::VendoredMinifiedPath,
-        ));
+        return Some(EntropyShapeStage::VendoredMinifiedPath);
     }
     // Raw base64 files (`.b64`, `.base64`, `base64_string.txt`):
     // alphabet-coincidence matches inside the base64 stream are
@@ -310,7 +278,7 @@ pub(crate) fn entropy_match_suppression_stage(
         crate::ascii_ci::starts_with_ignore_ascii_case(basename, b"base64_")
             || crate::ascii_ci::ci_find(basename, b"base64_string")
     }) {
-        return Some(StageId::EntropyValueShape(EntropyShapeStage::RawBase64File));
+        return Some(EntropyShapeStage::RawBase64File);
     }
 
     // CI workflow file context: entropy-* in `.github/workflows/`,
@@ -328,9 +296,7 @@ pub(crate) fn entropy_match_suppression_stage(
     // not enough signal in this context. 25+ FPs across bat-go,
     // bat-ledger, brave-talk, malachite, orb-firmware dogfood.
     if entropy_path_is_ci_workflow_file(chunk.metadata.path.as_deref()) {
-        return Some(StageId::EntropyValueShape(
-            EntropyShapeStage::CiWorkflowFile,
-        ));
+        return Some(EntropyShapeStage::CiWorkflowFile);
     }
 
     // i18n / translation file context: gogs ships ~150 .ini
@@ -343,7 +309,7 @@ pub(crate) fn entropy_match_suppression_stage(
     // The same family covers .po (gettext), .properties
     // (Java i18n), and any path with /locale/ or /i18n/.
     if entropy_path_is_i18n_file(chunk.metadata.path.as_deref()) {
-        return Some(StageId::EntropyValueShape(EntropyShapeStage::I18nFile));
+        return Some(EntropyShapeStage::I18nFile);
     }
 
     // Shell-expansion / template-literal shapes: values starting
@@ -365,9 +331,7 @@ pub(crate) fn entropy_match_suppression_stage(
                 .nth(1)
                 .is_some_and(|c| c.is_ascii_uppercase()))
     {
-        return Some(StageId::EntropyValueShape(
-            EntropyShapeStage::ShellExpansionOrTemplate,
-        ));
+        return Some(EntropyShapeStage::ShellExpansionOrTemplate);
     }
 
     // Same standard-base64-arbitrary-bytes suppression the
@@ -379,9 +343,7 @@ pub(crate) fn entropy_match_suppression_stage(
     if !high_entropy_punctuation_payload
         && entropy_path_looks_like_random_base64_blob(&entropy_match.value)
     {
-        return Some(StageId::EntropyValueShape(
-            EntropyShapeStage::RandomBase64Blob,
-        ));
+        return Some(EntropyShapeStage::RandomBase64Blob);
     }
     // Decode-through coherence (entropy phase-2 path). The
     // ML-pending pipeline calls `apply_post_ml_penalties`
@@ -401,7 +363,7 @@ pub(crate) fn entropy_match_suppression_stage(
     if !high_entropy_punctuation_payload
         && crate::decode_structure::is_encoded_binary(&entropy_match.value)
     {
-        return Some(StageId::EntropyValueShape(EntropyShapeStage::EncodedBinary));
+        return Some(EntropyShapeStage::EncodedBinary);
     }
     // Random-byte base64 decoy coherence for the entropy path. The generic
     // bridge already dogfood-suppresses pure standard-base64 random-byte blobs,
@@ -416,9 +378,7 @@ pub(crate) fn entropy_match_suppression_stage(
             &entropy_match.value,
         )
     {
-        return Some(StageId::EntropyValueShape(
-            EntropyShapeStage::RandomByteBlob,
-        ));
+        return Some(EntropyShapeStage::RandomByteBlob);
     }
     // Same gate for the decoded-form placeholder check: a
     // base64-wrapped docs sample (e.g.
@@ -427,9 +387,7 @@ pub(crate) fn entropy_match_suppression_stage(
     // call above because the base64 hides the EXAMPLE marker.
     // Keep parity with the generic-secret emit path.
     if crate::decode_structure::decoded_contains_placeholder(&entropy_match.value) {
-        return Some(StageId::EntropyValueShape(
-            EntropyShapeStage::DecodedPlaceholder,
-        ));
+        return Some(EntropyShapeStage::DecodedPlaceholder);
     }
     None
 }

@@ -207,7 +207,8 @@ fn entropy_and_ml_emit_reject_reasons_route_through_adjudicator() {
     let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
 
     assert!(
-        entropy.contains("crate::adjudicate::record_stage_suppression("),
+        entropy.contains("crate::adjudicate::record_suppression(")
+            && entropy.contains("crate::adjudicate::MatchCtx::for_entropy_fallback("),
         "engine/phase2_entropy.rs must route entropy suppressions through the adjudicator"
     );
     assert!(
@@ -253,21 +254,27 @@ fn entropy_fallback_shape_gauntlet_returns_adjudicator_stage() {
 
     assert!(
         gates.contains("fn entropy_match_suppression_stage(")
-            && gates.contains(") -> Option<StageId>"),
-        "entropy fallback shape gauntlet must return the adjudicator StageId, not a silent bool"
+            && gates.contains(") -> Option<EntropyShapeStage>"),
+        "entropy fallback shape gauntlet must return typed entropy shape stages, not a silent bool"
     );
     assert!(
         !gates.contains("fn entropy_match_suppressed("),
         "the old boolean entropy_match_suppressed entry point must not return"
     );
     assert!(
-        entropy.contains("if let Some(stage_id) = entropy_match_suppression_stage(")
-            && entropy.contains("crate::adjudicate::record_stage_suppression("),
-        "phase2 entropy caller must record the returned adjudicator stage before skipping a candidate"
+        entropy.contains("if let Some(shape_stage) = entropy_match_suppression_stage(")
+            && entropy.contains("crate::adjudicate::MatchCtx::for_entropy_fallback(")
+            && entropy
+                .contains("crate::adjudicate::EntropyFallbackSignal::ValueShape(shape_stage)")
+            && entropy
+                .contains("crate::adjudicate::EntropyFallbackSignal::NamedDetectorOwnedAssignment"),
+        "phase2 entropy caller must route entropy fallback drops through the adjudicator context"
     );
     assert!(
-        gates.contains("StageId::EntropyValueShape("),
-        "entropy fallback shape gauntlet must name typed entropy value stages"
+        !gates.contains("StageId::EntropyValueShape(")
+            && !entropy.contains("StageId::EntropyValueShape(")
+            && !entropy.contains("StageId::EntropyNamedDetectorOwnedAssignment"),
+        "entropy fallback gates/caller must not name adjudicator entropy StageIds directly"
     );
     assert!(
         adjudicate.contains("enum EntropyShapeStage")
