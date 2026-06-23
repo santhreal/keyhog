@@ -43,6 +43,7 @@ pub mod report_escape_single_owner;
 pub mod report_json_no_inline_tests;
 pub mod report_json_no_unwrap_expect;
 pub mod report_json_non_empty;
+pub mod report_junit_streaming;
 pub mod report_no_inline_tests;
 pub mod report_no_unwrap_expect;
 pub mod report_non_empty;
