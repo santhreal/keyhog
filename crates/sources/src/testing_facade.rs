@@ -23,6 +23,16 @@ pub mod testing {
             recorded_size: u64,
             max_size: u64,
         ) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>;
+        fn process_entry_with_merkle(
+            &self,
+            path: std::path::PathBuf,
+            recorded_size: u64,
+            max_size: u64,
+            merkle: std::sync::Arc<keyhog_core::MerkleIndex>,
+        ) -> (
+            Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>,
+            usize,
+        );
         fn configured_reader_pool_thread_count(
             &self,
             scanner_threads: usize,
@@ -396,6 +406,24 @@ pub mod testing {
                 path,
                 recorded_size,
                 max_size,
+            )
+        }
+
+        fn process_entry_with_merkle(
+            &self,
+            path: std::path::PathBuf,
+            recorded_size: u64,
+            max_size: u64,
+            merkle: std::sync::Arc<keyhog_core::MerkleIndex>,
+        ) -> (
+            Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>,
+            usize,
+        ) {
+            crate::filesystem::process_entry_with_merkle_for_test(
+                path,
+                recorded_size,
+                max_size,
+                merkle,
             )
         }
 

@@ -35,12 +35,14 @@
 //! code rather than to codewalk internals.
 
 use crate::support::collect_chunks;
+use keyhog_core::testing as core_testing;
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
 use keyhog_sources::{reset_skipped_over_max_size, skip_counts, FilesystemSource};
 use std::fs;
 use std::io::Write;
 use std::path::Path;
+use std::sync::Arc;
 
 // ─────────────────────────── helpers ───────────────────────────
 
@@ -54,6 +56,13 @@ fn chunks_of(dir: &Path) -> Vec<keyhog_core::Chunk> {
 /// chunk ordering (the walk is parallel and unordered).
 fn combined_body(chunks: &[keyhog_core::Chunk]) -> String {
     chunks.iter().map(|c| c.data.to_string()).collect()
+}
+
+fn symlink_mtime_ns(path: &Path) -> u64 {
+    let modified = fs::symlink_metadata(path).unwrap().modified().unwrap();
+    let duration = modified.duration_since(std::time::UNIX_EPOCH).unwrap();
+    u64::try_from(duration.as_secs() as u128 * 1_000_000_000 + duration.subsec_nanos() as u128)
+        .unwrap_or(u64::MAX)
 }
 
 /// Scan a single explicitly-included file. This drives the
@@ -156,6 +165,55 @@ fn included_symlinked_plain_file_is_canonicalized_then_read() {
         "include path canonicalizes the symlink then reads the target"
     );
     assert!(chunks[0].data.contains("LINK_TARGET_SECRET_0001"));
+}
+
+#[test]
+#[cfg(unix)]
+fn merkle_skip_does_not_mask_symlink_refusal() {
+    use std::os::unix::fs::symlink;
+
+    TestApi.reset_skip_counters();
+
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("target.txt");
+    fs::write(&target, "API_KEY=LINK_TARGET_SECRET_0002").unwrap();
+    let link = dir.path().join("cached-link.txt");
+    symlink(&target, &link).unwrap();
+
+    let link_meta = fs::symlink_metadata(&link).unwrap();
+    let link_size = link_meta.len();
+    let link_mtime_ns = symlink_mtime_ns(&link);
+    let idx = Arc::new(core_testing::CoreTestApi::merkle_empty(
+        &core_testing::TestApi,
+    ));
+    core_testing::CoreTestApi::merkle_record_with_metadata(
+        &core_testing::TestApi,
+        &idx,
+        link.clone(),
+        link_mtime_ns,
+        link_size,
+        [0u8; 32],
+    );
+
+    let (rows, merkle_skipped) = TestApi.process_entry_with_merkle(link, link_size, 0, idx);
+    let chunks = rows
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("symlink refusal should not emit a source error row");
+
+    assert!(
+        chunks.is_empty(),
+        "refused symlink must not scan target bytes or emit a clean chunk"
+    );
+    assert_eq!(
+        merkle_skipped, 0,
+        "Merkle metadata skip must not hide a symlink refusal"
+    );
+    assert_eq!(
+        skip_counts().unreadable,
+        1,
+        "the refused symlink must surface as an unreadable coverage gap"
+    );
 }
 
 #[test]

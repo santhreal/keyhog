@@ -113,6 +113,7 @@ const MMAP_THRESHOLD: u64 = 1024 * 1024;
 struct FileLiveMetadata {
     mtime_ns: Option<u64>,
     size_bytes: u64,
+    is_symlink: bool,
 }
 
 /// Per-entry chunk extraction. Reads the file, archive, or compressed
@@ -179,10 +180,12 @@ pub(super) fn process_entry(
     }
 
     if let (Some(idx), Some(meta)) = (merkle.as_ref(), live_metadata) {
-        if let Some(mtime_ns) = meta.mtime_ns {
-            if idx.metadata_unchanged(&path, mtime_ns, meta.size_bytes) {
-                skipped.fetch_add(1, Ordering::Relaxed);
-                return;
+        if !meta.is_symlink {
+            if let Some(mtime_ns) = meta.mtime_ns {
+                if idx.metadata_unchanged(&path, mtime_ns, meta.size_bytes) {
+                    skipped.fetch_add(1, Ordering::Relaxed);
+                    return;
+                }
             }
         }
     }
@@ -320,7 +323,7 @@ pub(super) fn process_entry(
     // path follows a link-swap target (M17 regression: the guard existed only on
     // the HAR-specific read, not on the fall-through). Same defense + style as the
     // archive-branch guards above.
-    if is_symlink(&path) {
+    if live_metadata.map_or_else(|| is_symlink(&path), |meta| meta.is_symlink) {
         // Law 10: refusing to follow the symlink means this explicitly-included
         // path is NOT scanned. Count it (as unreadable) so end-of-scan coverage
         // reflects the drop — a refused symlink is a deliberate non-scan, but
@@ -556,6 +559,7 @@ pub(super) fn process_entry(
 /// a usable modified time; in that case only the cache fast-path is disabled.
 fn file_live_metadata(path: &Path) -> Option<FileLiveMetadata> {
     let meta = std::fs::symlink_metadata(path).ok()?; // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
+    let file_type = meta.file_type();
     let mtime_ns = meta
         .modified()
         .ok()
@@ -567,5 +571,6 @@ fn file_live_metadata(path: &Path) -> Option<FileLiveMetadata> {
     Some(FileLiveMetadata {
         mtime_ns,
         size_bytes: meta.len(),
+        is_symlink: file_type.is_symlink(),
     })
 }

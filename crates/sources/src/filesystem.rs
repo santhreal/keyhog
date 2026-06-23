@@ -98,6 +98,36 @@ pub(crate) fn process_entry_with_recorded_size_for_test(
     rows
 }
 
+pub(crate) fn process_entry_with_merkle_for_test(
+    path: PathBuf,
+    recorded_size: u64,
+    max_size: u64,
+    merkle: Arc<MerkleIndex>,
+) -> (Vec<Result<Chunk, SourceError>>, usize) {
+    let mut rows = Vec::new();
+    let skipped = Arc::new(AtomicUsize::new(0));
+    let entry = codewalk::FileEntry {
+        path,
+        size: recorded_size,
+        is_binary: false,
+    };
+    extract::process_entry(
+        entry,
+        &Some(merkle),
+        &skipped,
+        std::path::Path::new("."),
+        max_size,
+        reader::DEFAULT_WINDOW_SIZE,
+        reader::DEFAULT_WINDOW_OVERLAP,
+        true,
+        &mut |row| {
+            rows.push(row);
+            true
+        },
+    );
+    (rows, skipped.load(std::sync::atomic::Ordering::Relaxed))
+}
+
 pub(crate) fn max_buffered_read_bytes_for_test() -> u64 {
     read::max_buffered_read_bytes_for_test()
 }
