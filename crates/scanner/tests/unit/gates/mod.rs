@@ -187,6 +187,7 @@ pub mod multiline_preprocessor_join_window_contract;
 pub mod multiline_preprocessor_no_inline_tests;
 pub mod multiline_preprocessor_no_unwrap_expect;
 pub mod multiline_preprocessor_non_empty;
+pub mod multiline_string_extract_hot_path_shape;
 pub mod multiline_structural_no_inline_tests;
 pub mod multiline_structural_no_unwrap_expect;
 pub mod multiline_structural_non_empty;

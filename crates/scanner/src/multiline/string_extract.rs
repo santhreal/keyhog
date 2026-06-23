@@ -347,20 +347,21 @@ fn extract_plus_concatenation(line: &str) -> Option<(String, bool)> {
         return None;
     }
 
-    let parts: Vec<&str> = content_to_split.split('+').collect();
-    if parts.len() < 2 && !ends_with_plus {
+    if !ends_with_plus && !content_to_split.contains('+') {
         return None;
     }
 
     let mut result = String::new();
-    for part in &parts {
+    let mut part_count = 0usize;
+    for part in content_to_split.split('+') {
+        part_count += 1;
         let content = extract_string_content(part.trim());
         if !content.is_empty() {
             result.push_str(&content);
         }
     }
 
-    if result.is_empty() {
+    if result.is_empty() || (part_count < 2 && !ends_with_plus) {
         None
     } else {
         Some((result, ends_with_plus))
