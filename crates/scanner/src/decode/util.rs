@@ -55,7 +55,7 @@ pub(super) fn lazy_decoded_prefix<'a>(
 }
 
 #[allow(clippy::result_unit_err)]
-pub(super) fn hex_val(byte: u8) -> Result<u8, ()> {
+pub(crate) fn hex_val(byte: u8) -> Result<u8, ()> {
     match byte {
         b'0'..=b'9' => Ok(byte - b'0'),
         b'a'..=b'f' => Ok(byte - b'a' + 10),

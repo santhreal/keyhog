@@ -56,12 +56,8 @@ fn is_empty_input_hash(credential: &str) -> bool {
 
 pub(crate) fn is_sequential_placeholder(credential: &str) -> bool {
     // Strip ALL known service prefixes before checking for sequential/placeholder patterns.
-    // Single source of truth: crate::confidence::KNOWN_PREFIXES.
     // Missing a prefix here = false positive (placeholder not suppressed).
-    let body = crate::confidence::KNOWN_PREFIXES
-        .iter()
-        .find_map(|prefix| credential.strip_prefix(prefix))
-        .unwrap_or(credential); // LAW10: no known prefix present ⇒ body IS the whole credential (intended suppression logic, not an error swallow); recall-safe and O(prefixes), no slower path.
+    let body = credential_body_without_known_prefix(credential);
     if body.len() < 8 {
         return false;
     }
@@ -86,70 +82,109 @@ fn is_hex_sequential_placeholder(credential: &str) -> bool {
     // Same canonical prefix list as is_sequential_placeholder. Strip the
     // prefix before the hex-sequence check so e.g. `ghp_0123456789abcdef`
     // still trips the "monotonic hex" suppression on the BODY.
-    let body = crate::confidence::KNOWN_PREFIXES
-        .iter()
-        .find_map(|prefix| credential.strip_prefix(prefix))
-        .unwrap_or(credential); // LAW10: no known prefix present ⇒ body IS the whole credential (intended; the hex-sequence check then runs on the full value); recall-safe, no slower path.
+    let body = credential_body_without_known_prefix(credential);
 
     if body.len() < 16 || !body.bytes().all(|b| b.is_ascii_hexdigit()) {
         return false;
     }
 
-    let bytes: Vec<u8> = body.bytes().collect();
+    let bytes = body.as_bytes();
 
     // Single-byte monotonic sequences such as 0123456789abcdef or fedcba9876543210.
     if bytes.len() >= 16 {
-        let ascending = bytes
-            .windows(2)
-            .filter(|w| {
-                w[1] == w[0] + 1 || (w[0] == b'9' && w[1] == b'a') || (w[0] == b'f' && w[1] == b'0')
-            })
-            .count();
-        let descending = bytes
-            .windows(2)
-            .filter(|w| {
-                w[1] + 1 == w[0] || (w[0] == b'a' && w[1] == b'9') || (w[0] == b'0' && w[1] == b'f')
-            })
-            .count();
+        let ascending = count_adjacent_hex_steps(bytes, hex_forward_step);
+        let descending = count_adjacent_hex_steps(bytes, hex_reverse_step);
         let threshold = (bytes.len() - 1) * 9 / 10;
         if ascending > threshold || descending > threshold {
             return true;
         }
     }
 
-    let pairs: Vec<&[u8]> = bytes.chunks(2).filter(|chunk| chunk.len() == 2).collect();
-    if pairs.len() < 8 {
+    let pair_count = bytes.len() / 2;
+    if pair_count < 8 {
         return false;
     }
 
-    let first_chars: Vec<u8> = pairs
-        .iter()
-        .map(|pair| pair[0].to_ascii_lowercase())
-        .collect();
-    let ascending = first_chars
-        .windows(2)
-        .filter(|window| {
-            window[1] == window[0] + 1
-                || (window[0] == b'f' && window[1] == b'0')
-                || (window[0] == b'9' && window[1] == b'a')
-                || (window[0] == b'9' && window[1] == b'0')
-        })
-        .count();
+    if hex_byte_values_are_sequential(bytes, pair_count) {
+        return true;
+    }
 
-    let second_chars: Vec<u8> = pairs
-        .iter()
-        .map(|pair| pair[1].to_ascii_lowercase())
-        .collect();
-    let ascending2 = second_chars
-        .windows(2)
-        .filter(|window| {
-            window[1] == window[0] + 1
-                || (window[0] == b'f' && window[1] == b'0')
-                || (window[0] == b'9' && window[1] == b'0')
-                || (window[0] == b'9' && window[1] == b'a')
-        })
-        .count();
+    let ascending = count_pair_column_hex_steps(bytes, pair_count, 0);
+    let ascending2 = count_pair_column_hex_steps(bytes, pair_count, 1);
 
-    let threshold = pairs.len() * 9 / 10;
+    let threshold = pair_count * 9 / 10;
     ascending > threshold && ascending2 > threshold
+}
+
+fn credential_body_without_known_prefix(credential: &str) -> &str {
+    crate::confidence::known_prefix_body(credential).unwrap_or(credential)
+}
+
+fn count_adjacent_hex_steps(bytes: &[u8], step: fn(u8, u8) -> bool) -> usize {
+    bytes
+        .windows(2)
+        .filter(|window| step(window[0], window[1]))
+        .count()
+}
+
+fn count_pair_column_hex_steps(bytes: &[u8], pair_count: usize, column: usize) -> usize {
+    (1..pair_count)
+        .filter(|&pair| {
+            let previous = bytes[(pair - 1) * 2 + column];
+            let next = bytes[pair * 2 + column];
+            hex_pair_column_step(previous, next)
+        })
+        .count()
+}
+
+fn hex_byte_values_are_sequential(bytes: &[u8], pair_count: usize) -> bool {
+    let forward = count_pair_value_steps(bytes, pair_count, |previous, next| {
+        next == previous.wrapping_add(1)
+    });
+    let reverse = count_pair_value_steps(bytes, pair_count, |previous, next| {
+        previous == next.wrapping_add(1)
+    });
+    let threshold = (pair_count - 1) * 9 / 10;
+    forward > threshold || reverse > threshold
+}
+
+fn count_pair_value_steps(bytes: &[u8], pair_count: usize, step: fn(u8, u8) -> bool) -> usize {
+    let Some(mut previous) = hex_pair_value(bytes, 0) else {
+        return 0;
+    };
+    let mut count = 0usize;
+    for pair in 1..pair_count {
+        let Some(next) = hex_pair_value(bytes, pair) else {
+            return 0;
+        };
+        if step(previous, next) {
+            count += 1;
+        }
+        previous = next;
+    }
+    count
+}
+
+fn hex_pair_value(bytes: &[u8], pair: usize) -> Option<u8> {
+    let hi = crate::decode::util::hex_val(bytes[pair * 2]).ok()?;
+    let lo = crate::decode::util::hex_val(bytes[pair * 2 + 1]).ok()?;
+    Some((hi << 4) | lo)
+}
+
+fn hex_forward_step(previous: u8, next: u8) -> bool {
+    let previous = previous.to_ascii_lowercase();
+    let next = next.to_ascii_lowercase();
+    next == previous + 1 || (previous == b'9' && next == b'a') || (previous == b'f' && next == b'0')
+}
+
+fn hex_reverse_step(previous: u8, next: u8) -> bool {
+    let previous = previous.to_ascii_lowercase();
+    let next = next.to_ascii_lowercase();
+    next + 1 == previous || (previous == b'a' && next == b'9') || (previous == b'0' && next == b'f')
+}
+
+fn hex_pair_column_step(previous: u8, next: u8) -> bool {
+    let previous = previous.to_ascii_lowercase();
+    let next = next.to_ascii_lowercase();
+    hex_forward_step(previous, next) || (previous == b'9' && next == b'0')
 }

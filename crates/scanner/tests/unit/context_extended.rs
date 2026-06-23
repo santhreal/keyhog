@@ -84,9 +84,10 @@ fn real_high_entropy_token_not_suppressed() {
 fn ascending_hex_pairs_is_example() {
     // Sequential hex placeholders — "0102030405..." pattern
     let cred = "00010203040506070809101112131415";
-    // This matches the is_hex_sequential_placeholder heuristic
-    // Assertion: must not panic; may or may not be suppressed
-    let _ = is_known_example_credential(cred);
+    assert!(
+        is_known_example_credential(cred),
+        "pair-column sequential hex placeholders must suppress"
+    );
 }
 
 #[test]
@@ -99,13 +100,25 @@ fn ascending_hex_pair_columns_wrap_f_to_zero() {
 }
 
 #[test]
-fn hex_pair_column_source_uses_same_f_wrap_for_both_columns() {
+fn uppercase_hex_sequence_still_suppresses_without_allocating_lowercase_copy() {
+    let cred = "0123456789ABCDEF0123456789ABCDEF";
+    assert!(
+        is_known_example_credential(cred),
+        "uppercase monotonic hex placeholders must suppress through byte-wise lowercase comparisons"
+    );
+}
+
+#[test]
+fn hex_pair_column_source_uses_shared_step_helper() {
     let source =
         std::fs::read_to_string("src/context/placeholder.rs").expect("read placeholder source");
     assert!(
-        source.contains("window[0] == b'f' && window[1] == b'0'")
-            && !source.contains("window[0] == b'f' && window[1] == b'a'"),
-        "hex pair-column placeholder detection must not diverge between first and second chars"
+        source.contains("fn hex_pair_column_step(")
+            && source.matches("fn hex_pair_column_step(").count() == 1
+            && !source.contains("let pairs: Vec")
+            && !source.contains("let first_chars: Vec")
+            && !source.contains("let second_chars: Vec"),
+        "hex pair-column placeholder detection must share one step helper and avoid temporary Vec columns"
     );
 }
 
