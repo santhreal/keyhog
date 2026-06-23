@@ -3,6 +3,7 @@ use keyhog_core::MerkleIndex;
 use keyhog_core::{Chunk, SourceError};
 use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
+use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex};
 
@@ -22,6 +23,21 @@ pub(super) const DEFAULT_WINDOW_OVERLAP: usize = 128 * 1024;
 /// Hard ceiling on the dedicated file-reader crew. The crew is sized as a
 /// small fraction of the host's cores, not as a fraction of the scan pool.
 const MAX_READER_THREADS: usize = 4;
+
+type EntryBatch = (usize, Vec<Result<Chunk, SourceError>>);
+type EntryBatchSender = std::sync::mpsc::SyncSender<EntryBatch>;
+
+struct ReaderCursor {
+    next_seq: usize,
+    entries: Box<dyn Iterator<Item = codewalk::FileEntry> + Send>,
+    closed: bool,
+}
+
+enum CursorItem {
+    Entry(usize, codewalk::FileEntry),
+    Error(usize, SourceError),
+    End,
+}
 
 /// Number of dedicated file-reader threads to run alongside a scan pool of
 /// `scanner_threads`.
@@ -52,10 +68,12 @@ pub(super) fn spawn_chunk_producer(
     reader_threads: Option<NonZeroUsize>,
 ) -> std::sync::mpsc::Receiver<Result<Chunk, SourceError>> {
     let (tx, rx) = std::sync::mpsc::sync_channel::<Result<Chunk, SourceError>>(64);
-    let (entry_tx, entry_rx) =
-        std::sync::mpsc::sync_channel::<(usize, Vec<Result<Chunk, SourceError>>)>(64);
-    let cursor: Arc<Mutex<(usize, Box<dyn Iterator<Item = codewalk::FileEntry> + Send>)>> =
-        Arc::new(Mutex::new((0, entries)));
+    let (entry_tx, entry_rx) = std::sync::mpsc::sync_channel::<EntryBatch>(64);
+    let cursor = Arc::new(Mutex::new(ReaderCursor {
+        next_seq: 0,
+        entries,
+        closed: false,
+    }));
     let reader_count = reader_thread_count(rayon::current_num_threads(), reader_threads);
 
     std::thread::spawn(move || {
@@ -74,55 +92,53 @@ pub(super) fn spawn_chunk_producer(
         }
     });
 
-    let run_reader =
-        move |cursor: Arc<Mutex<(usize, Box<dyn Iterator<Item = codewalk::FileEntry> + Send>)>>,
-              tx: std::sync::mpsc::SyncSender<(usize, Vec<Result<Chunk, SourceError>>)>,
-              merkle: Option<Arc<MerkleIndex>>,
-              skipped: Arc<AtomicUsize>| {
-            loop {
-                let entry = {
-                    let mut guard = match cursor.lock() {
-                        Ok(g) => g,
-                        Err(error) => {
-                            tracing::warn!(
-                                %error,
-                                "filesystem reader cursor poisoned; stopping this reader"
+    let run_reader = move |cursor: Arc<Mutex<ReaderCursor>>,
+                           tx: EntryBatchSender,
+                           merkle: Option<Arc<MerkleIndex>>,
+                           skipped: Arc<AtomicUsize>| {
+        loop {
+            let item = {
+                let guard = match cursor.lock() {
+                    Ok(g) => g,
+                    Err(poisoned) => {
+                        tracing::warn!(
+                                "filesystem reader cursor mutex was poisoned; surfacing partial scan error"
                             );
-                            return;
-                        }
-                    };
-                    let (next_seq, entries) = &mut *guard;
-                    entries.next().map(|entry| {
-                        let seq = *next_seq;
-                        *next_seq = next_seq.saturating_add(1);
-                        (seq, entry)
-                    })
+                        poisoned.into_inner()
+                    }
                 };
-                let Some((seq, entry)) = entry else {
-                    return;
-                };
-
-                let mut chunks = Vec::new();
-                let mut emit = |chunk: Result<Chunk, SourceError>| {
-                    chunks.push(chunk);
-                    true
-                };
-                process_entry(
-                    entry,
-                    &merkle,
-                    &skipped,
-                    &default_exclude_root,
-                    max_size,
-                    window_size,
-                    window_overlap,
-                    respect_default_excludes,
-                    &mut emit,
-                );
-                if tx.send((seq, chunks)).is_err() {
+                next_cursor_item(guard)
+            };
+            let (seq, entry) = match item {
+                CursorItem::Entry(seq, entry) => (seq, entry),
+                CursorItem::Error(seq, error) => {
+                    let _ = tx.send((seq, vec![Err(error)]));
                     return;
                 }
+                CursorItem::End => return,
+            };
+
+            let mut chunks = Vec::new();
+            let mut emit = |chunk: Result<Chunk, SourceError>| {
+                chunks.push(chunk);
+                true
+            };
+            process_entry(
+                entry,
+                &merkle,
+                &skipped,
+                &default_exclude_root,
+                max_size,
+                window_size,
+                window_overlap,
+                respect_default_excludes,
+                &mut emit,
+            );
+            if tx.send((seq, chunks)).is_err() {
+                return;
             }
-        };
+        }
+    };
 
     let mut spawned = 0usize;
     for i in 0..reader_count {
@@ -163,4 +179,42 @@ pub(super) fn spawn_chunk_producer(
 
     drop(entry_tx);
     rx
+}
+
+fn next_cursor_item(mut cursor: std::sync::MutexGuard<'_, ReaderCursor>) -> CursorItem {
+    if cursor.closed {
+        return CursorItem::End;
+    }
+    let seq = cursor.next_seq;
+    match catch_unwind(AssertUnwindSafe(|| cursor.entries.next())) {
+        Ok(Some(entry)) => {
+            cursor.next_seq = cursor.next_seq.saturating_add(1);
+            CursorItem::Entry(seq, entry)
+        }
+        Ok(None) => {
+            cursor.closed = true;
+            CursorItem::End
+        }
+        Err(payload) => {
+            cursor.closed = true;
+            cursor.next_seq = cursor.next_seq.saturating_add(1);
+            let message = panic_payload_message(payload);
+            CursorItem::Error(
+                seq,
+                SourceError::Other(format!(
+                    "filesystem file-walk iterator panicked before entry {seq}; remaining files were not scanned: {message}"
+                )),
+            )
+        }
+    }
+}
+
+fn panic_payload_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(message) = payload.downcast_ref::<&str>() {
+        (*message).to_string()
+    } else if let Some(message) = payload.downcast_ref::<String>() {
+        message.clone()
+    } else {
+        "unknown panic payload".to_string()
+    }
 }

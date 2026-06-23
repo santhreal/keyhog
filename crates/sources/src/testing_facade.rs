@@ -13,6 +13,7 @@ pub mod testing {
             max_bytes: usize,
         ) -> std::io::Result<String>;
         fn reader_pool_thread_count(&self, scanner_threads: usize) -> usize;
+        fn reader_panic_rows(&self) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>>;
         fn configured_reader_pool_thread_count(
             &self,
             scanner_threads: usize,
@@ -364,6 +365,10 @@ pub mod testing {
 
         fn reader_pool_thread_count(&self, scanner_threads: usize) -> usize {
             crate::filesystem::reader_pool_thread_count_for_test(scanner_threads)
+        }
+
+        fn reader_panic_rows(&self) -> Vec<Result<keyhog_core::Chunk, keyhog_core::SourceError>> {
+            crate::filesystem::reader_panic_rows_for_test()
         }
 
         fn configured_reader_pool_thread_count(

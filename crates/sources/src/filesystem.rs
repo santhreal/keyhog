@@ -41,6 +41,31 @@ pub(crate) fn reader_pool_thread_count_with_config_for_test(
     reader::reader_thread_count(scanner_threads, Some(configured))
 }
 
+pub(crate) fn reader_panic_rows_for_test() -> Vec<Result<Chunk, SourceError>> {
+    struct PanicEntries;
+
+    impl Iterator for PanicEntries {
+        type Item = codewalk::FileEntry;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            panic!("reader exploded")
+        }
+    }
+
+    let rx = reader::spawn_chunk_producer(
+        Box::new(PanicEntries),
+        None,
+        Arc::new(AtomicUsize::new(0)),
+        PathBuf::from("."),
+        keyhog_core::DEFAULT_MAX_FILE_SIZE_BYTES,
+        reader::DEFAULT_WINDOW_SIZE,
+        reader::DEFAULT_WINDOW_OVERLAP,
+        true,
+        NonZeroUsize::new(1),
+    );
+    rx.into_iter().collect()
+}
+
 pub(crate) fn max_buffered_read_bytes_for_test() -> u64 {
     read::max_buffered_read_bytes_for_test()
 }
