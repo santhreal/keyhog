@@ -456,6 +456,41 @@ fn detectors_subcommand_emits_json_array() {
     );
 }
 
+#[test]
+fn detectors_format_json_matches_json_alias() {
+    let legacy = Command::new(binary())
+        .args(["detectors", "--json"])
+        .output()
+        .expect("spawn keyhog detectors --json");
+    let canonical = Command::new(binary())
+        .args(["detectors", "--format", "json"])
+        .output()
+        .expect("spawn keyhog detectors --format json");
+
+    assert_eq!(
+        legacy.status.code(),
+        Some(0),
+        "detectors --json should exit 0; stderr={}",
+        String::from_utf8_lossy(&legacy.stderr)
+    );
+    assert_eq!(
+        canonical.status.code(),
+        Some(0),
+        "detectors --format json should exit 0; stderr={}",
+        String::from_utf8_lossy(&canonical.stderr)
+    );
+    assert_eq!(
+        canonical.stdout, legacy.stdout,
+        "detectors --format json must be the exact structured listing alias for --json"
+    );
+    let parsed: serde_json::Value = serde_json::from_slice(&canonical.stdout)
+        .expect("detectors --format json stdout is valid JSON");
+    assert!(
+        parsed.as_array().is_some_and(|items| items.len() > 100),
+        "detectors --format json must emit the detector array, got {parsed}"
+    );
+}
+
 /// Tier-B suppression flag: by default keyhog suppresses Stripe's
 /// public docs demo key (and other documented test fixtures), so
 /// scanning a fixture containing it surfaces 0 findings. Passing
