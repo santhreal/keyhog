@@ -28,10 +28,13 @@ impl CompiledScanner {
                 calibration: self.config.calibration.as_deref(),
             },
         ) else {
-            crate::adjudicate::record_stage_suppression(
+            let checksum_ctx = crate::adjudicate::MatchCtx::for_process_signals(
+                crate::adjudicate::ProcessCandidateSignals::from_checksum_invalid(true),
+            );
+            crate::adjudicate::record_suppression(
                 pending.raw_match.location.file_path.as_deref(),
                 &pending.credential,
-                crate::adjudicate::StageId::ChecksumInvalid,
+                &checksum_ctx,
             );
             return;
         };

@@ -321,10 +321,13 @@ impl CompiledScanner {
                     // confirmed false positive — trace the drop (KH-L-0412, Law-10)
                     // so it is not silent, mirroring the named path's
                     // `checksum_invalid` engine gate.
-                    crate::adjudicate::record_stage_suppression(
+                    let checksum_ctx = crate::adjudicate::MatchCtx::for_process_signals(
+                        crate::adjudicate::ProcessCandidateSignals::from_checksum_invalid(true),
+                    );
+                    crate::adjudicate::record_suppression(
                         chunk.metadata.path.as_deref(),
                         value,
-                        crate::adjudicate::StageId::ChecksumInvalid,
+                        &checksum_ctx,
                     );
                     continue;
                 };

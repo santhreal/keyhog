@@ -274,12 +274,14 @@ impl CompiledScanner {
                         calibration: self.config.calibration.as_deref(),
                     },
                 ) else {
-                    let recorded = crate::adjudicate::record_stage_suppression(
+                    let checksum_ctx = crate::adjudicate::MatchCtx::for_process_signals(
+                        crate::adjudicate::ProcessCandidateSignals::from_checksum_invalid(true),
+                    );
+                    crate::adjudicate::record_suppression(
                         chunk.metadata.path.as_deref(),
                         credential,
-                        crate::adjudicate::StageId::ChecksumInvalid,
+                        &checksum_ctx,
                     );
-                    debug_assert_eq!(recorded, Some(crate::adjudicate::StageId::ChecksumInvalid));
                     return;
                 };
                 confidence = adjusted_confidence;
