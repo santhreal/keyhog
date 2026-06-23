@@ -52,9 +52,10 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
         "Hyperscan scratches must be preallocated per shard instead of allocated opportunistically during scan coverage"
     );
     assert!(
-        backend.contains("const HS_CACHE_FILE_BYTES")
+        backend.contains("keyhog_core::HYPERSCAN_CACHE_FILE_BYTES")
             && backend.contains("fn read_hs_cache_file(")
-            && backend.contains("file.take(HS_CACHE_FILE_BYTES.saturating_add(1))")
+            && backend
+                .contains("file.take(keyhog_core::HYPERSCAN_CACHE_FILE_BYTES.saturating_add(1))")
             && backend.contains("read_hs_cache_file(cache_path)")
             && !backend.contains("std::fs::read(&cache_path)"),
         "Hyperscan shard cache loads must be capped before reading cache bytes"
@@ -85,9 +86,8 @@ fn hyperscan_runtime_failures_are_not_silent_partial_scans() {
             && triggered.contains("scanner.scan_matches_result(text.as_bytes()")
             && phase2_hs.contains("scan_each_result")
             && phase2_hs.contains("any_match_result")
-            && phase2_prefilter.contains(
-                "HS always-active prefilter failed; using RegexSet path for this chunk"
-            )
+            && phase2_prefilter
+                .contains("HS always-active prefilter failed; using RegexSet path for this chunk")
             && phase2_prefilter.contains(
                 "HS always-active admission gate failed; using RegexSet path for this chunk"
             ),

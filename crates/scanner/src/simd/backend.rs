@@ -41,12 +41,6 @@ const RETRY_THRESHOLD: usize = 100;
 const RETRY_DROP_DIVISOR: usize = 10;
 const HS_CRATE_CACHE_VERSION: &[u8] = b"0.3.2";
 
-/// Hard cap for one serialized Hyperscan shard cache file. Cache files are
-/// performance artifacts, not source input; refusing an oversized cache and
-/// compiling the shard from detector patterns preserves findings while closing
-/// the unbounded `std::fs::read` allocation path.
-const HS_CACHE_FILE_BYTES: u64 = 64 * 1024 * 1024;
-
 /// Effective user id for cache-dir namespacing and ownership checks. On Unix
 /// this is `geteuid()`; on non-Unix (Windows) there is no euid, and per-user
 /// isolation comes from the ACL'd user profile dir (`dirs::cache_dir()` →
@@ -190,23 +184,23 @@ fn read_hs_cache_file(path: &std::path::Path) -> std::io::Result<Option<Vec<u8>>
 
     let file = std::fs::File::open(path)?;
     let metadata = file.metadata()?;
-    if metadata.len() > HS_CACHE_FILE_BYTES {
+    if metadata.len() > keyhog_core::HYPERSCAN_CACHE_FILE_BYTES {
         tracing::warn!(
             cache = %path.display(),
             size = metadata.len(),
-            cap = HS_CACHE_FILE_BYTES,
+            cap = keyhog_core::HYPERSCAN_CACHE_FILE_BYTES,
             "HS shard cache file exceeds cap; compiling from patterns"
         );
         return Ok(None);
     }
 
     let mut bytes = Vec::with_capacity(metadata.len() as usize);
-    let mut limited = file.take(HS_CACHE_FILE_BYTES.saturating_add(1));
+    let mut limited = file.take(keyhog_core::HYPERSCAN_CACHE_FILE_BYTES.saturating_add(1));
     limited.read_to_end(&mut bytes)?;
-    if bytes.len() as u64 > HS_CACHE_FILE_BYTES {
+    if bytes.len() as u64 > keyhog_core::HYPERSCAN_CACHE_FILE_BYTES {
         tracing::warn!(
             cache = %path.display(),
-            cap = HS_CACHE_FILE_BYTES,
+            cap = keyhog_core::HYPERSCAN_CACHE_FILE_BYTES,
             "HS shard cache grew beyond cap while reading; compiling from patterns"
         );
         return Ok(None);
@@ -552,6 +546,16 @@ impl HsScanner {
                 Vec::with_capacity(ser.as_ref().len() + keyhog_core::HYPERSCAN_CACHE_HEADER_LEN);
             keyhog_core::write_hyperscan_cache_header(&mut data);
             data.extend_from_slice(ser.as_ref());
+            if data.len() as u64 > keyhog_core::HYPERSCAN_CACHE_FILE_BYTES {
+                tracing::warn!(
+                    cache = %cache_path.display(),
+                    shard = shard_idx,
+                    size = data.len(),
+                    cap = keyhog_core::HYPERSCAN_CACHE_FILE_BYTES,
+                    "HS shard cache serialization exceeds cap; not persisting oversized cache artifact"
+                );
+                return;
+            }
             let parent = cache_path
                 .parent()
                 .unwrap_or_else(|| std::path::Path::new(".")); // LAW10: cache_path is constructed with a parent; fallback only disables atomic cache locality, not scanning.

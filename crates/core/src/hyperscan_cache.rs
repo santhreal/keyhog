@@ -9,6 +9,14 @@ pub const HYPERSCAN_CACHE_VERSION: u32 = 1;
 /// Byte length of the Keyhog Hyperscan cache header: magic plus little-endian version.
 pub const HYPERSCAN_CACHE_HEADER_LEN: usize = 8;
 
+/// Hard cap for one serialized Hyperscan shard cache file, including the Keyhog header.
+///
+/// This is a performance-cache bound, not a detector correctness bound. Files above
+/// this cap are not loaded or persisted; the scanner compiles from detector patterns
+/// instead. The cap is intentionally owned in core so read-side validation and
+/// write-side persistence cannot drift.
+pub const HYPERSCAN_CACHE_FILE_BYTES: u64 = 128 * 1024 * 1024;
+
 /// Return true when `header` is exactly the current Keyhog Hyperscan cache header.
 pub fn hyperscan_cache_header_is_valid(header: &[u8]) -> bool {
     if header.len() != HYPERSCAN_CACHE_HEADER_LEN {
