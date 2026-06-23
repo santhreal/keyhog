@@ -83,19 +83,12 @@ impl CompiledScanner {
             }
         }
         #[cfg(feature = "ml")]
-        if !scan_state.ml_pending.is_empty() {
-            for pending in &scan_state.ml_pending {
-                let id = &*pending.raw_match.detector_id;
-                if !crate::detector_ids::is_generic_or_entropy_detector(id) {
-                    if let Some(line_idx) = entropy_skip_line_index(
-                        pending.raw_match.location.line,
-                        chunk.metadata.base_line,
-                    ) {
-                        skip_lines.insert(line_idx);
-                    }
-                }
+        scan_state.for_each_named_pending_ml_line(|absolute_line| {
+            if let Some(line_idx) = entropy_skip_line_index(absolute_line, chunk.metadata.base_line)
+            {
+                skip_lines.insert(line_idx);
             }
-        }
+        });
 
         let keyword_free_threshold =
             if crate::entropy::is_sensitive_file(chunk.metadata.path.as_deref()) {
@@ -219,15 +212,13 @@ impl CompiledScanner {
                     entropy_match.line,
                     chunk.metadata.path.as_deref(),
                 );
-                scan_state
-                    .ml_pending
-                    .push(crate::types::MlPendingMatch::entropy_authoritative(
-                        raw_match,
-                        policy_conf,
-                        entropy_match.value.to_string(),
-                        ml_context,
-                        self.config.min_confidence,
-                    ));
+                scan_state.push_entropy_authoritative_ml_pending(
+                    raw_match,
+                    policy_conf,
+                    entropy_match.value.to_string(),
+                    ml_context,
+                    self.config.min_confidence,
+                );
                 continue;
             }
 

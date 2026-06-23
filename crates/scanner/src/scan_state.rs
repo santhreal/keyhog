@@ -241,6 +241,68 @@ impl ScanState {
         }
     }
 
+    #[cfg(feature = "ml")]
+    pub(crate) fn push_detector_ml_pending(
+        &mut self,
+        raw_match: keyhog_core::RawMatch,
+        heuristic_conf: f64,
+        code_context: crate::context::CodeContext,
+        credential: String,
+        ml_context: String,
+        min_confidence_floor: f64,
+        is_named_detector: bool,
+    ) {
+        self.ml_pending.push(MlPendingMatch::detector_candidate(
+            raw_match,
+            heuristic_conf,
+            code_context,
+            credential,
+            ml_context,
+            min_confidence_floor,
+            is_named_detector,
+        ));
+    }
+
+    #[cfg(feature = "ml")]
+    pub(crate) fn push_entropy_authoritative_ml_pending(
+        &mut self,
+        raw_match: keyhog_core::RawMatch,
+        heuristic_conf: f64,
+        credential: String,
+        ml_context: String,
+        min_confidence_floor: f64,
+    ) {
+        self.ml_pending.push(MlPendingMatch::entropy_authoritative(
+            raw_match,
+            heuristic_conf,
+            credential,
+            ml_context,
+            min_confidence_floor,
+        ));
+    }
+
+    #[cfg(feature = "ml")]
+    pub(crate) fn extend_lines_with_pending_ml_matches(&self, lines: &mut HashSet<usize>) {
+        lines.extend(
+            self.ml_pending
+                .iter()
+                .filter_map(|pending| pending.raw_match.location.line),
+        );
+    }
+
+    #[cfg(feature = "ml")]
+    pub(crate) fn for_each_named_pending_ml_line<F>(&self, mut visit: F)
+    where
+        F: FnMut(Option<usize>),
+    {
+        for pending in &self.ml_pending {
+            let id = &*pending.raw_match.detector_id;
+            if !crate::detector_ids::is_generic_or_entropy_detector(id) {
+                visit(pending.raw_match.location.line);
+            }
+        }
+    }
+
     /// Push a match to the state, maintaining priority and capacity.
     /// High-confidence secrets will displace lower-confidence findings.
     pub(crate) fn push_match(&mut self, m: keyhog_core::RawMatch, limit: usize) {

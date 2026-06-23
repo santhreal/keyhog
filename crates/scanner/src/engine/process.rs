@@ -347,17 +347,15 @@ impl CompiledScanner {
                     scan_state,
                     entry.client_safe,
                 );
-                scan_state
-                    .ml_pending
-                    .push(crate::types::MlPendingMatch::detector_candidate(
-                        raw_match,
-                        heuristic_conf,
-                        code_context,
-                        pending_credential.into_owned(),
-                        ml_context,
-                        min_confidence_floor,
-                        is_named_detector,
-                    ));
+                scan_state.push_detector_ml_pending(
+                    raw_match,
+                    heuristic_conf,
+                    code_context,
+                    pending_credential.into_owned(),
+                    ml_context,
+                    min_confidence_floor,
+                    is_named_detector,
+                );
                 crate::telemetry::record_match_found();
             }
             #[cfg(not(feature = "ml"))]

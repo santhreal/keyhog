@@ -88,12 +88,7 @@ impl CompiledScanner {
         #[cfg(feature = "ml")]
         let covered_lines = {
             let mut lines = covered_lines;
-            lines.extend(
-                scan_state
-                    .ml_pending
-                    .iter()
-                    .filter_map(|pending| pending.raw_match.location.line),
-            );
+            scan_state.extend_lines_with_pending_ml_matches(&mut lines);
             lines
         };
 
