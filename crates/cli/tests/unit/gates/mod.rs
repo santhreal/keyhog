@@ -41,6 +41,7 @@ pub mod orchestrator_config_no_inline_tests;
 pub mod orchestrator_config_no_unwrap_expect;
 pub mod orchestrator_config_non_empty;
 pub mod orchestrator_config_resolved_input_contract;
+pub mod orchestrator_dispatch_batch_producer;
 pub mod orchestrator_dispatch_resource_plan;
 pub mod orchestrator_dispatch_scanner_worker;
 pub mod orchestrator_no_inline_tests;

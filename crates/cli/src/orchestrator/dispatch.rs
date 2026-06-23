@@ -24,6 +24,7 @@ use std::time::Instant;
 
 const COALESCED_BATCH_CHUNK_LIMIT: usize = 4096;
 const COALESCED_PIPELINE_MAX_DEPTH: usize = 3;
+const COALESCED_CHUNK_SCAN_CEILING_BYTES: usize = 512 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy)]
 struct CoalescedPipelinePlan {
@@ -228,6 +229,134 @@ fn append_scanned_batch_findings(
     crate::FINDINGS_COUNT.fetch_add(batch_findings, Ordering::Relaxed);
 }
 
+struct CoalescedProducerOutcome {
+    skipped_unchanged: usize,
+}
+
+struct CoalescedBatchProducer {
+    tx: std::sync::mpsc::SyncSender<Vec<Chunk>>,
+    plan: CoalescedPipelinePlan,
+    merkle: Option<Arc<keyhog_core::MerkleIndex>>,
+    batch: Vec<Chunk>,
+    batch_bytes: usize,
+    pipeline_alive: bool,
+    skipped_unchanged: usize,
+}
+
+impl CoalescedBatchProducer {
+    fn new(
+        tx: std::sync::mpsc::SyncSender<Vec<Chunk>>,
+        plan: CoalescedPipelinePlan,
+        merkle: Option<Arc<keyhog_core::MerkleIndex>>,
+    ) -> Self {
+        Self {
+            tx,
+            plan,
+            merkle,
+            batch: Vec::with_capacity(plan.batch_chunk_limit),
+            batch_bytes: 0,
+            pipeline_alive: true,
+            skipped_unchanged: 0,
+        }
+    }
+
+    fn produce_sources(mut self, sources: &[Box<dyn Source>]) -> CoalescedProducerOutcome {
+        'sources: for source in sources {
+            // Per-source outcome: a source that yields ZERO chunks AND errors
+            // failed entirely (e.g. --github-org with a bad token), even if a
+            // co-requested source succeeded. Tracked so `run()` can fail closed
+            // rather than report "clean" off another source's data.
+            let mut src_chunks = 0usize;
+            let mut src_errored = false;
+            for chunk_result in source.chunks() {
+                match chunk_result {
+                    Ok(c) if c.data.len() <= COALESCED_CHUNK_SCAN_CEILING_BYTES => {
+                        src_chunks += 1;
+                        if self.record_unchanged_chunk(&c) {
+                            continue;
+                        }
+                        self.push_chunk(c);
+                        if self.should_flush() {
+                            self.flush_batch();
+                            if !self.pipeline_alive {
+                                break 'sources;
+                            }
+                        }
+                    }
+                    Ok(c) => {
+                        src_chunks += 1;
+                        let mb = c.data.len() / (1024 * 1024);
+                        let path = c.metadata.path.as_deref().unwrap_or("<unknown>"); // LAW10: absent path/field => display placeholder for REPORTING only; finding still emitted, recall-safe
+                        tracing::warn!(
+                            path = %path,
+                            size_mb = mb,
+                            "skipping chunk over 512 MiB scan ceiling"
+                        );
+                    }
+                    Err(e) => {
+                        let _receipt = crate::record_source_error();
+                        src_errored = true;
+                        tracing::warn!("source: {e}");
+                    }
+                }
+            }
+            if src_chunks == 0 && src_errored {
+                let _receipt = crate::record_failed_source();
+            }
+        }
+
+        self.flush_batch();
+        CoalescedProducerOutcome {
+            skipped_unchanged: self.skipped_unchanged,
+        }
+    }
+
+    fn record_unchanged_chunk(&mut self, c: &Chunk) -> bool {
+        let Some(idx) = self.merkle.as_ref() else {
+            return false;
+        };
+        let Some(path_str) = c.metadata.path.as_deref() else {
+            return false;
+        };
+        let path = std::path::PathBuf::from(path_str);
+        let unchanged = idx.record_chunk_at_offset_and_check_unchanged(
+            path,
+            c.metadata.base_offset as u64,
+            c.metadata.mtime_ns.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
+            c.metadata.size_bytes.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
+            c.data.as_bytes(),
+        );
+        if unchanged {
+            self.skipped_unchanged += 1;
+        }
+        unchanged
+    }
+
+    fn push_chunk(&mut self, c: Chunk) {
+        self.batch_bytes += c.data.len();
+        self.batch.push(c);
+        crate::TOTAL_CHUNKS.fetch_add(1, Ordering::Relaxed);
+    }
+
+    fn should_flush(&self) -> bool {
+        self.batch.len() >= self.plan.batch_chunk_limit
+            || self.batch_bytes >= self.plan.batch_bytes_budget
+    }
+
+    fn flush_batch(&mut self) {
+        if !self.pipeline_alive || self.batch.is_empty() {
+            self.batch.clear();
+            self.batch_bytes = 0;
+            return;
+        }
+        let payload = std::mem::take(&mut self.batch);
+        self.batch_bytes = 0;
+        if self.tx.send(payload).is_err() {
+            self.pipeline_alive = false;
+        }
+    }
+}
+
 impl ScanOrchestrator {
     fn coalesced_scanner_worker(&self, scanner: Arc<CompiledScanner>) -> CoalescedScannerWorker {
         let perf_trace = self.effective_config.scanner.perf_trace;
@@ -358,90 +487,8 @@ impl ScanOrchestrator {
         let scanner_worker = self.coalesced_scanner_worker(scanner);
         let scanner_thread = std::thread::spawn(move || scanner_worker.run(rx));
 
-        let mut batch: Vec<keyhog_core::Chunk> =
-            Vec::with_capacity(pipeline_plan.batch_chunk_limit);
-        let mut batch_bytes: usize = 0;
-        let mut skipped_unchanged = 0usize;
-        let mut pipeline_alive = true;
-
-        let send_batch =
-            |batch: &mut Vec<keyhog_core::Chunk>, batch_bytes: &mut usize, alive: &mut bool| {
-                if !*alive || batch.is_empty() {
-                    batch.clear();
-                    *batch_bytes = 0;
-                    return;
-                }
-                let payload = std::mem::take(batch);
-                *batch_bytes = 0;
-                if tx.send(payload).is_err() {
-                    *alive = false;
-                }
-            };
-
-        'sources: for source in &sources {
-            // Per-source outcome: a source that yields ZERO chunks AND errors
-            // failed entirely (e.g. --github-org with a bad token), even if a
-            // co-requested source succeeded. Tracked so `run()` can fail closed
-            // rather than report "clean" off another source's data.
-            let mut src_chunks = 0usize;
-            let mut src_errored = false;
-            for chunk_result in source.chunks() {
-                match chunk_result {
-                    Ok(c) if c.data.len() <= 512 * 1024 * 1024 => {
-                        src_chunks += 1;
-                        if let (Some(idx), Some(path_str)) =
-                            (merkle.as_ref(), c.metadata.path.as_deref())
-                        {
-                            let path = std::path::PathBuf::from(path_str);
-                            if idx.record_chunk_at_offset_and_check_unchanged(
-                                path,
-                                c.metadata.base_offset as u64,
-                                c.metadata.mtime_ns.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
-                                c.metadata.size_bytes.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
-                                c.data.as_bytes(),
-                            ) {
-                                skipped_unchanged += 1;
-                                continue;
-                            }
-                        }
-
-                        let len = c.data.len();
-                        batch.push(c);
-                        batch_bytes += len;
-                        crate::TOTAL_CHUNKS.fetch_add(1, Ordering::Relaxed);
-                        if batch.len() >= pipeline_plan.batch_chunk_limit
-                            || batch_bytes >= pipeline_plan.batch_bytes_budget
-                        {
-                            send_batch(&mut batch, &mut batch_bytes, &mut pipeline_alive);
-                            if !pipeline_alive {
-                                break 'sources;
-                            }
-                        }
-                    }
-                    Ok(c) => {
-                        src_chunks += 1;
-                        let mb = c.data.len() / (1024 * 1024);
-                        let path = c.metadata.path.as_deref().unwrap_or("<unknown>"); // LAW10: absent path/field => display placeholder for REPORTING only; finding still emitted, recall-safe
-                        tracing::warn!(
-                            path = %path,
-                            size_mb = mb,
-                            "skipping chunk over 512 MiB scan ceiling"
-                        );
-                    }
-                    Err(e) => {
-                        let _receipt = crate::record_source_error();
-                        src_errored = true;
-                        tracing::warn!("source: {e}");
-                    }
-                }
-            }
-            if src_chunks == 0 && src_errored {
-                let _receipt = crate::record_failed_source();
-            }
-        }
-
-        send_batch(&mut batch, &mut batch_bytes, &mut pipeline_alive);
-        drop(tx);
+        let producer_outcome = CoalescedBatchProducer::new(tx, pipeline_plan, merkle.clone())
+            .produce_sources(&sources);
         let findings = match scanner_thread.join() {
             Ok(Ok(findings)) => findings,
             Ok(Err(error)) => {
@@ -467,7 +514,7 @@ impl ScanOrchestrator {
         self.finalize_incremental(
             merkle.as_ref(),
             incremental_path.as_deref(),
-            skipped_unchanged,
+            producer_outcome.skipped_unchanged,
             &findings,
         );
 
