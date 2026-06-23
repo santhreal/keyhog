@@ -197,6 +197,14 @@ struct CoalescedProducerOutcome {
     skipped_unchanged: usize,
 }
 
+pub(super) fn filesystem_source_skipped_unchanged(source: &dyn Source) -> usize {
+    source
+        .as_any()
+        .downcast_ref::<keyhog_sources::FilesystemSource>()
+        .map(keyhog_sources::FilesystemSource::skipped_unchanged_count)
+        .unwrap_or(0)
+}
+
 struct CoalescedProgressTicker {
     done: Arc<std::sync::atomic::AtomicBool>,
     handle: Option<std::thread::JoinHandle<()>>,
@@ -295,6 +303,7 @@ impl CoalescedBatchProducer {
             if src_chunks == 0 && src_errored {
                 let _receipt = crate::record_failed_source();
             }
+            self.skipped_unchanged += filesystem_source_skipped_unchanged(source.as_ref());
         }
 
         self.flush_batch();

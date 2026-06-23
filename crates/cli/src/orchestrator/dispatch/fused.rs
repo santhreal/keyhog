@@ -171,6 +171,7 @@ impl ScanOrchestrator {
             .fused_depth
             .unwrap_or_else(|| fused_depth_default(rayon::current_num_threads())); // LAW10: absent fused-depth config => documented worker-derived default, surfaced by effective config as auto and hashed through thread/hardware identity; recall-safe throughput default
         let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<keyhog_core::Chunk>>(fused_depth);
+        let drain_skipped_unchanged = Arc::clone(&skipped_unchanged);
         let drain = std::thread::spawn(move || {
             let mut batch: Vec<keyhog_core::Chunk> = Vec::with_capacity(fused_batch);
             'sources: for source in &sources {
@@ -210,6 +211,10 @@ impl ScanOrchestrator {
                 }
                 if src_chunks == 0 && src_errored {
                     let _receipt = crate::record_failed_source();
+                }
+                let source_skipped = super::filesystem_source_skipped_unchanged(source.as_ref());
+                if source_skipped > 0 {
+                    drain_skipped_unchanged.fetch_add(source_skipped, Ordering::Relaxed);
                 }
             }
             if !batch.is_empty() {

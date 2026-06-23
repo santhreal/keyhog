@@ -64,6 +64,16 @@ fn lib_scan_failure_counters_have_typed_owner() {
             && !fused.contains("let _ = drain.join()"),
         "fused dispatch must fail loud when the source drain thread panics, not ignore the join result"
     );
+    assert!(
+        dispatch.contains("fn filesystem_source_skipped_unchanged")
+            && dispatch.contains("skipped_unchanged_count")
+            && dispatch.contains(
+                "self.skipped_unchanged += filesystem_source_skipped_unchanged(source.as_ref())"
+            )
+            && fused.contains("super::filesystem_source_skipped_unchanged(source.as_ref())")
+            && fused.contains("drain_skipped_unchanged.fetch_add(source_skipped"),
+        "coalesced and fused dispatch must include file-level Merkle skips from FilesystemSource, not only chunk-level skips"
+    );
 }
 
 #[test]

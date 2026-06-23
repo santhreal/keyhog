@@ -336,6 +336,7 @@ fn merkle_skip_avoids_reading_unchanged_files() {
 
     assert!(chunks.is_empty(), "unchanged file should not yield a chunk");
     assert_eq!(TestApi.filesystem_skipped_count(&source), 1);
+    assert_eq!(source.skipped_unchanged_count(), 1);
 }
 
 #[test]

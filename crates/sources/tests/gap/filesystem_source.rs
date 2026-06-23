@@ -58,11 +58,19 @@ fn combined_body(chunks: &[keyhog_core::Chunk]) -> String {
     chunks.iter().map(|c| c.data.to_string()).collect()
 }
 
+#[cfg(unix)]
 fn symlink_mtime_ns(path: &Path) -> u64 {
-    let modified = fs::symlink_metadata(path).unwrap().modified().unwrap();
-    let duration = modified.duration_since(std::time::UNIX_EPOCH).unwrap();
-    u64::try_from(duration.as_secs() as u128 * 1_000_000_000 + duration.subsec_nanos() as u128)
-        .unwrap_or(u64::MAX)
+    fs::symlink_metadata(path)
+        .ok()
+        .and_then(|metadata| metadata.modified().ok())
+        .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|duration| {
+            u64::try_from(
+                duration.as_secs() as u128 * 1_000_000_000 + duration.subsec_nanos() as u128,
+            )
+            .unwrap_or(u64::MAX)
+        })
+        .unwrap_or(0)
 }
 
 /// Scan a single explicitly-included file. This drives the

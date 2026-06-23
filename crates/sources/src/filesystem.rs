@@ -295,6 +295,15 @@ impl FilesystemSource {
         self.skipped.clone()
     }
 
+    /// Number of files skipped by the Merkle metadata fast-path.
+    ///
+    /// This is read by CLI dispatch after the source iterator drains because
+    /// metadata-skipped files emit no chunks, so chunk-level incremental
+    /// accounting cannot observe them.
+    pub fn skipped_unchanged_count(&self) -> usize {
+        self.skipped.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
     /// Only include files whose paths match one of the given paths.
     /// Paths are compared against the absolute path of each discovered file.
     pub fn with_include_paths(mut self, paths: Vec<PathBuf>) -> Self {
