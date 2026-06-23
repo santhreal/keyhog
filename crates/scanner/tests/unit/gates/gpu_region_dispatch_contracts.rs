@@ -89,19 +89,26 @@ fn gpu_region_dispatch_uses_one_coalesced_region_presence_batch() {
             && gpu_lazy_src.contains("GPU positioned literal matcher unavailable"),
         "positioned confirmed-anchor/generic candidates must use the smaller positioned matcher, not appended rows in the region-presence bitset"
     );
+    let helper_src = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/gpu_region_dispatch_helpers.rs"
+    ))
+    .expect("gpu region dispatch helpers readable");
     assert!(
         dispatch_src.contains("source_bytes={}")
             && dispatch_src.contains("coalesced_bytes={}")
             && dispatch_src.contains("batch_mode={}")
             && dispatch_src.contains("coalesce_mib_s={:.3}")
-            && dispatch_src.contains("mib_per_second(region_source_bytes, co_s)"),
+            && dispatch_src.contains("mib_per_second(region_source_bytes, co_s)")
+            && helper_src.contains("fn mib_per_second("),
         "GPU region perf trace must expose the CPU copy/fold pre-pass bytes and throughput, not just a rounded wall-time field"
     );
     assert!(
         dispatch_src.contains("phase2_gpu_dfa")
             && dispatch_src.contains("scan_coalesced_phase2_with_admission")
             && dispatch_src.contains("phase2_gpu_admitted")
-            && dispatch_src.contains("CPU admission remains authoritative"),
+            && (dispatch_src.contains("CPU admission remains authoritative")
+                || helper_src.contains("CPU admission remains authoritative")),
         "region dispatch must wire phase-2 GPU regex-DFA admission visibly, with CPU admission authoritative on failure"
     );
     assert!(

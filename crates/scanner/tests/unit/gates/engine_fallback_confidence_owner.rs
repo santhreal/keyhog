@@ -40,7 +40,7 @@ fn uncommented_code(src: &str) -> String {
 #[test]
 fn entropy_and_generic_fallback_confidence_route_through_scoring_owner() {
     let src = scanner_src();
-    let scoring = uncommented_code(&read(&src.join("engine/scoring.rs")));
+    let scoring = uncommented_code(&read(&src.join("engine/scoring_policy.rs")));
     for required in [
         "fn entropy_fallback_confidence(",
         "fn generic_secret_confidence(",
@@ -52,7 +52,7 @@ fn entropy_and_generic_fallback_confidence_route_through_scoring_owner() {
     ] {
         assert!(
             scoring.contains(required),
-            "engine::scoring must own fallback confidence policy token {required:?}"
+            "engine::scoring_policy must own fallback confidence policy token {required:?}"
         );
     }
 
@@ -98,7 +98,7 @@ fn entropy_and_generic_fallback_confidence_route_through_scoring_owner() {
 #[test]
 fn report_confidence_tail_routes_through_scoring_owner() {
     let src = scanner_src();
-    let owner = src.join("engine/scoring.rs");
+    let owner = src.join("engine/scoring_policy.rs");
     let scoring = uncommented_code(&read(&owner));
     for required in [
         "fn finalize_report_confidence(",
@@ -110,7 +110,7 @@ fn report_confidence_tail_routes_through_scoring_owner() {
     ] {
         assert!(
             scoring.contains(required),
-            "engine::scoring must own report-confidence policy token {required:?}"
+            "engine::scoring_policy must own report-confidence policy token {required:?}"
         );
     }
 

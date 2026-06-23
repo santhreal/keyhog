@@ -27,12 +27,12 @@ fn uncommented_code(src: &str) -> String {
 #[test]
 fn hot_pattern_confidence_routes_through_scoring_owner() {
     let src = scanner_src();
-    let scoring = uncommented_code(&read(&src.join("engine/scoring.rs")));
+    let scoring = uncommented_code(&read(&src.join("engine/scoring_policy.rs")));
     assert!(
         scoring.contains("fn hot_pattern_confidence(")
             && scoring.contains("const BASE_CONFIDENCE")
             && scoring.contains("finalize_report_confidence"),
-        "engine::scoring must own hot-pattern base confidence plus report-confidence finalization"
+        "engine::scoring_policy must own hot-pattern base confidence plus report-confidence finalization"
     );
 
     let hot_patterns = uncommented_code(&read(&src.join("engine/hot_patterns.rs")));

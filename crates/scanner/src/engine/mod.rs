@@ -38,11 +38,13 @@
 //! - no-hit fragment reassembly for the shared tail .............................................. scan_no_hit_reassembly.rs
 //! - `scan_chunks_with_backend_internal` (CPU-vs-GPU batch routing) .. backend_dispatch.rs
 //! - `scan_coalesced_gpu_region_presence` (GPU trigger production) ... gpu_region_dispatch.rs
+//! - GPU region reporting/throughput helpers ................. gpu_region_dispatch_helpers.rs
 //! - `scan_prepared_with_triggered` / `collect_triggered_patterns_*` . backend_triggered.rs
 //! - `scan_windowed*` (the windowing contract) .............. windowed.rs
 //! - confirmed-pattern extraction ................................... extract.rs
 //! - phase-2 prefilter + keyword/anchor/generic/entropy passes ...... phase2*.rs
 //! - hot-pattern fast path (simdsieve) ............................. hot_patterns.rs
+//! - confidence policy helpers ..................................... scoring_policy.rs
 //! - post-process (suppression, dedup, confidence, decode/ML) ...... scan_postprocess.rs, scan_postprocess/*
 //! - cross-chunk seam reassembly ................................... boundary.rs
 //! - loud GPU-degrade / fail-closed helpers ....................... gpu_forced.rs
@@ -70,6 +72,8 @@ mod gpu_literal_scratch;
 mod gpu_region_batch;
 #[cfg(feature = "gpu")]
 mod gpu_region_dispatch;
+#[cfg(feature = "gpu")]
+mod gpu_region_dispatch_helpers;
 mod gpu_stack;
 mod hot_patterns;
 pub(crate) mod phase2;
@@ -111,6 +115,7 @@ mod scan_postprocess_profile;
 #[path = "scan_postprocess/suffix_gate.rs"]
 mod scan_postprocess_suffix_gate;
 mod scoring;
+mod scoring_policy;
 pub(crate) mod segment_attribution;
 mod trigger_bitmap;
 mod windowed;

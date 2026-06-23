@@ -84,17 +84,19 @@ fn phase2_prefilter_compile_failures_warn() {
 
 #[test]
 fn phase2_gpu_admission_loss_is_operator_visible() {
-    let src = engine_src("gpu_region_dispatch.rs");
+    let helper_src = engine_src("gpu_region_dispatch_helpers.rs");
+    let dispatch_src = engine_src("gpu_region_dispatch.rs");
     assert!(
-        src.contains("fn report_phase2_gpu_admission_loss")
-            && src.contains("PHASE2_GPU_ADMISSION_LOSS_WARNED")
-            && src.contains("eprintln!(")
-            && src.contains("GPU speed evidence is incomplete")
-            && src.contains("CPU admission remains authoritative"),
+        helper_src.contains("fn report_phase2_gpu_admission_loss")
+            && helper_src.contains("PHASE2_GPU_ADMISSION_LOSS_WARNED")
+            && helper_src.contains("eprintln!(")
+            && helper_src.contains("GPU speed evidence is incomplete")
+            && helper_src.contains("CPU admission remains authoritative"),
         "phase-2 GPU regex-DFA admission loss must be visible to normal CLI stderr, not only tracing"
     );
     assert!(
-        src.matches("report_phase2_gpu_admission_loss(error);")
+        dispatch_src
+            .matches("report_phase2_gpu_admission_loss(error);")
             .count()
             >= 2,
         "both full-batch and subset phase-2 GPU admission failures must route through the visible reporter"
