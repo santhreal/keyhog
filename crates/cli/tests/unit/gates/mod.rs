@@ -1,3 +1,4 @@
+pub mod args_command_modules_split;
 pub mod args_config_split;
 pub mod args_daemon_split;
 pub mod args_detectors_split;

@@ -1,25 +1,34 @@
 //! Command-line argument parsing for KeyHog.
 
+mod calibrate;
 mod config;
 mod daemon;
 mod detectors;
+mod diff;
+mod explain;
 mod hook;
 mod limits;
 mod maintenance;
 mod scan;
+mod scan_system;
+mod watch;
 
+pub use calibrate::CalibrateArgs;
 pub use config::ConfigArgs;
 pub use daemon::{DaemonAction, DaemonArgs};
 pub use detectors::{DetectorArgs, DetectorFormat};
+pub use diff::DiffArgs;
+pub use explain::ExplainArgs;
 pub use hook::HookCommand;
 pub use limits::SourceLimitArgs;
 pub use maintenance::{
     BackendArgs, CompletionArgs, DoctorArgs, RepairArgs, UninstallArgs, UpdateArgs,
 };
 pub use scan::{CliDedupScope, DaemonMode, OutputFormat, ScanArgs, SeverityFilter};
+pub use scan_system::{parse_space_bytes, ScanSystemArgs};
+pub use watch::WatchArgs;
 
 use clap::Parser;
-use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(
@@ -109,134 +118,6 @@ pub enum Command {
     /// 🔌 Manage the long-lived `keyhog daemon` (start, stop, status)
     #[command(verbatim_doc_comment)]
     Daemon(DaemonArgs),
-}
-
-#[derive(Parser)]
-pub struct ScanSystemArgs {
-    /// Hard ceiling on total bytes scanned. Walker tracks running total
-    /// and stops when the next file would push past this. Examples:
-    ///   --space 50G   --space 1T   --space 500M
-    /// Default 50 GiB; enough to cover most home directories without
-    /// drowning the scan on a NAS-mount.
-    #[arg(long, default_value = "50G", value_parser = parse_space_bytes)]
-    pub space: u64,
-
-    /// Include network-mounted filesystems (NFS, SMB, sshfs). Off by
-    /// default; these are typically slow and contain other people's
-    /// secrets the user hasn't authorized scanning.
-    #[arg(long, default_value_t = false)]
-    pub include_network: bool,
-
-    /// Skip auto-discovery of `.git` directories. By default scan-system
-    /// finds every git repo on every walked drive and runs --git-history
-    /// on each, including bare repos and submodules. Disable to save time
-    /// when you only care about working-tree state.
-    #[arg(long, default_value_t = false)]
-    pub no_git_history: bool,
-
-    /// Honor `.gitignore` like `keyhog scan` does. Default OFF; system
-    /// scans are paranoid because an attacker stashing a leaked key
-    /// would `.gitignore` it. Set this to behave like a normal scan.
-    #[arg(long, default_value_t = false)]
-    pub respect_gitignore: bool,
-
-    /// Output JSON path. Defaults to stderr (text format) if unset.
-    #[arg(long)]
-    pub output: Option<PathBuf>,
-
-    /// Detector directory (same as `keyhog scan --detectors`).
-    #[arg(long, default_value = "detectors")]
-    pub detectors: PathBuf,
-
-    /// Override the Hyperscan compiled-database cache directory.
-    #[arg(long, value_name = "DIR")]
-    pub cache_dir: Option<PathBuf>,
-
-    /// Number of parallel scanning threads (default: number of CPU cores).
-    #[arg(long, value_name = "N", value_parser = crate::value_parsers::parse_positive_thread_count)]
-    pub threads: Option<usize>,
-
-    /// Apply hardening protections (mlocked + coredump-blocked) and
-    /// refuse the operations that weaken detection or expand attack
-    /// surface. See `keyhog scan --lockdown` for the full list.
-    #[arg(long, default_value_t = false)]
-    pub lockdown: bool,
-}
-
-/// Parse human-readable byte sizes for `--space` (`50G`, `1T`, `500M`, `1024K`).
-///
-/// Thin `u64`-returning adapter over the single source of truth in
-/// `crate::value_parsers::parse_byte_size` (overflow-checked, unit-required,
-/// NaN/negative-guarded, with committed test fixtures). `ScanSystemArgs::space`
-/// is a `u64`; the shared parser yields a sanity-capped `usize` (< usize::MAX/2),
-/// so the widening cast is lossless on every supported platform.
-#[doc(hidden)]
-pub fn parse_space_bytes(s: &str) -> Result<u64, String> {
-    crate::value_parsers::parse_byte_size(s).map(|bytes| bytes as u64)
-}
-
-#[derive(Parser)]
-pub struct WatchArgs {
-    /// Directory to watch recursively. Defaults to the current directory.
-    #[arg(value_name = "PATH", default_value = ".")]
-    pub path: PathBuf,
-    /// Detector TOML directory. Falls back to embedded corpus if missing.
-    #[arg(short, long, default_value = "detectors")]
-    pub detectors: PathBuf,
-    /// Override the Hyperscan compiled-database cache directory.
-    #[arg(long, value_name = "DIR")]
-    pub cache_dir: Option<PathBuf>,
-    /// Quiet mode: only print findings (suppress "watching X" status).
-    #[arg(long)]
-    pub quiet: bool,
-}
-
-#[derive(Parser)]
-pub struct CalibrateArgs {
-    /// Mark these detector IDs as confirmed true positives (α += 1 each).
-    /// Use `--tp` repeatedly: `--tp aws-access-key --tp github-pat`.
-    #[arg(long, value_name = "DETECTOR_ID")]
-    pub tp: Vec<String>,
-    /// Mark these detector IDs as confirmed false positives (β += 1 each).
-    #[arg(long, value_name = "DETECTOR_ID")]
-    pub fp: Vec<String>,
-    /// Print every recorded counter and exit (no updates). Read-only: it cannot
-    /// be combined with the `--tp`/`--fp` update flags (mixing "show me the
-    /// state" with "mutate the state" is contradictory and silently ran the
-    /// update before — clap now rejects it with exit 2).
-    #[arg(long, conflicts_with_all = ["tp", "fp"])]
-    pub show: bool,
-    /// Override the calibration cache path. Defaults to
-    /// $XDG_CACHE_HOME/keyhog/calibration.json.
-    #[arg(long, value_name = "PATH")]
-    pub cache: Option<PathBuf>,
-}
-
-#[derive(Parser)]
-pub struct DiffArgs {
-    /// Baseline file A (the "before" / older state).
-    pub before: PathBuf,
-    /// Baseline file B (the "after" / newer state).
-    pub after: PathBuf,
-    /// Suppress the `UNCHANGED` section (default: shown).
-    #[arg(long)]
-    pub hide_unchanged: bool,
-    /// Emit results as JSON instead of human-readable text. Useful for CI
-    /// that wants to gate merges on regressions programmatically.
-    #[arg(long)]
-    pub json: bool,
-}
-
-#[derive(Parser)]
-pub struct ExplainArgs {
-    /// Detector ID to explain (e.g. `aws-access-key`, `github-pat`).
-    /// Use `keyhog detectors` to list available IDs.
-    pub detector_id: String,
-
-    /// Detector TOML directory; falls back to the embedded corpus when
-    /// missing. Same semantics as `keyhog detectors --detectors`.
-    #[arg(short, long, default_value = "detectors")]
-    pub detectors: PathBuf,
 }
 
 /// Build the top-level clap [`clap::Command`] with the runtime-derived detector
