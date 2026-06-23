@@ -181,28 +181,14 @@ impl CompiledScanner {
         let is_generic = crate::detector_ids::is_generic_detector(detector.id.as_ref())
             && detector.id.as_str() != crate::detector_ids::GENERIC_PRIVATE_KEY;
         let is_weakly_anchored = weak_anchor;
-        let mut entropy_below_floor = false;
-        let mut camel_case_no_digit = false;
-        if is_generic || is_weakly_anchored {
-            // Per-detector entropy floor. Structured tokens (UUIDs, short API keys)
-            // have lower entropy than random strings. A blanket 3.5 floor misses them.
-            let floor_id = if is_weakly_anchored {
-                crate::detector_ids::GENERIC_API_KEY
-            } else {
-                detector.id.as_str()
-            };
-            let entropy_floor =
-                generic_entropy_floor(self.config.entropy_threshold, floor_id, credential.len());
-            if entropy < entropy_floor {
-                entropy_below_floor = true;
-            } else if crate::suppression::shape::looks_like_camel_case_no_digit(credential) {
-                camel_case_no_digit = true;
-            }
-        }
         let entropy_shape_ctx = crate::adjudicate::MatchCtx::for_process_signals(
-            crate::adjudicate::ProcessCandidateSignals::from_entropy_shape(
-                entropy_below_floor,
-                camel_case_no_digit,
+            crate::adjudicate::ProcessCandidateSignals::from_process_entropy_shape(
+                is_generic,
+                is_weakly_anchored,
+                entropy,
+                self.config.entropy_threshold,
+                detector.id.as_ref(),
+                credential,
             ),
         );
         if crate::adjudicate::record_suppression(

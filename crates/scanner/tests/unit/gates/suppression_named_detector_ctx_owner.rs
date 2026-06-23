@@ -168,13 +168,29 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
         "engine/process.rs checksum drops must ask adjudicate to derive the checksum signal"
     );
     let shape = uncommented_code(&read(&src.join("suppression/shape/mod.rs")));
+    let generic_shape = uncommented_code(&read(&src.join("engine/phase2_generic_shape.rs")));
+    let scan_filters = uncommented_code(&read(&src.join("engine/scan_filters.rs")));
     assert!(
         shape.contains("fn looks_like_camel_case_no_digit(")
-            && process.contains("crate::suppression::shape::looks_like_camel_case_no_digit(")
+            && adjudicate.contains("crate::suppression::shape::looks_like_camel_case_no_digit(")
+            && !process.contains("crate::suppression::shape::looks_like_camel_case_no_digit(")
             && !process.contains("let camel_transitions =")
             && !process.contains(".windows(2)")
             && !process.contains("w[0].is_ascii_lowercase() && w[1].is_ascii_uppercase()"),
-        "engine/process.rs must route camel-case/no-digit value-shape checks through suppression::shape"
+        "engine/process.rs must route camel-case/no-digit value-shape checks through adjudicate"
+    );
+    assert!(
+        adjudicate.contains("fn generic_entropy_floor(")
+            && adjudicate.contains("fn generic_entropy_below_floor(")
+            && adjudicate.contains("fn from_process_entropy_shape(")
+            && process.contains("ProcessCandidateSignals::from_process_entropy_shape(")
+            && generic_shape.contains("crate::adjudicate::generic_entropy_below_floor(")
+            && !process.contains("generic_entropy_floor(")
+            && !process.contains("generic_entropy_below_floor(")
+            && !process.contains("ProcessCandidateSignals::from_entropy_shape(")
+            && !scan_filters.contains("fn generic_entropy_floor(")
+            && !generic_shape.contains("super::scan_filters::generic_entropy_floor("),
+        "generic entropy-floor policy must live in adjudicate, not engine leaves"
     );
     assert!(
         adjudicate.contains("fn detector_min_confidence_floor(")

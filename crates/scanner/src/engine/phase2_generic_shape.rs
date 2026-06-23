@@ -55,24 +55,17 @@ impl CompiledScanner {
             return Some(GenericValueShapeStage::CaesarGenericFallback);
         }
 
-        // Keyword-anchored values use the relaxed `generic-keyword-secret`
-        // floor when `generic_keyword_low_entropy` is on (the default):
-        // the credential keyword in the key is the evidence, and precision
-        // is carried downstream by the MoE + shape filters. This is what
-        // admits real low-entropy CredData passwords (`gjbubxsu`) that the
-        // 2.8/3.2/3.5 `generic-secret` floor discarded. The
-        // `--no-keyword-low-entropy` opt-out restores the high floor.
         let floor_id = if self.config.generic_keyword_low_entropy {
             crate::detector_ids::GENERIC_KEYWORD_SECRET
         } else {
             crate::detector_ids::GENERIC_SECRET
         };
-        let min_entropy = super::scan_filters::generic_entropy_floor(
+        if crate::adjudicate::generic_entropy_below_floor(
+            entropy,
             self.config.entropy_threshold,
             floor_id,
             value.len(),
-        );
-        if entropy < min_entropy {
+        ) {
             return Some(GenericValueShapeStage::EntropyBelowFloor);
         }
 

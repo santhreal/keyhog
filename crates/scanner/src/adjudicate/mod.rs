@@ -119,6 +119,28 @@ impl ProcessCandidateSignals {
             crate::confidence::policy::checksum_policy_for(credential).is_invalid(),
         )
     }
+
+    pub(crate) fn from_process_entropy_shape(
+        is_generic: bool,
+        is_weakly_anchored: bool,
+        entropy: f64,
+        entropy_threshold: f64,
+        detector_id: &str,
+        credential: &str,
+    ) -> Self {
+        if !(is_generic || is_weakly_anchored) {
+            return Self::pass();
+        }
+        let floor_id = if is_weakly_anchored {
+            crate::detector_ids::GENERIC_API_KEY
+        } else {
+            detector_id
+        };
+        Self::from_entropy_shape(
+            generic_entropy_below_floor(entropy, entropy_threshold, floor_id, credential.len()),
+            crate::suppression::shape::looks_like_camel_case_no_digit(credential),
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -212,6 +234,46 @@ pub(crate) fn detector_min_confidence_floor(
     default_floor: f64,
 ) -> f64 {
     detector_floor.unwrap_or(default_floor)
+}
+
+/// The compiled default for the Tier-A `entropy_threshold` knob
+/// (`keyhog_core::ScanConfig::default().entropy_threshold == 4.5`).
+const DEFAULT_GENERIC_ENTROPY_THRESHOLD: f64 = 4.5;
+
+/// Single source of truth for the generic-detector entropy gate used by named
+/// generic/weak-anchor processing and the generic-secret fallback bridge.
+pub(crate) fn generic_entropy_floor(
+    entropy_threshold: f64,
+    detector_id: &str,
+    credential_len: usize,
+) -> f64 {
+    let base: f64 = match detector_id {
+        id if id == crate::detector_ids::GENERIC_API_KEY && credential_len <= 24 => 3.0,
+        id if id == crate::detector_ids::GENERIC_API_KEY && credential_len <= 40 => 2.8,
+        id if id == crate::detector_ids::GENERIC_API_KEY => 3.5,
+        id if id == crate::detector_ids::GENERIC_PASSWORD => 2.5,
+        id if id == crate::detector_ids::GENERIC_DATABASE_URL => 2.0,
+        id if id == crate::detector_ids::GENERIC_SECRET && credential_len <= 24 => 2.8,
+        id if id == crate::detector_ids::GENERIC_SECRET && credential_len <= 40 => 3.2,
+        id if id == crate::detector_ids::GENERIC_SECRET => 3.5,
+        id if id == crate::detector_ids::GENERIC_KEYWORD_SECRET => 1.5,
+        _ => 3.5,
+    };
+
+    if entropy_threshold.is_finite() && entropy_threshold > DEFAULT_GENERIC_ENTROPY_THRESHOLD {
+        base.max(entropy_threshold)
+    } else {
+        base
+    }
+}
+
+pub(crate) fn generic_entropy_below_floor(
+    entropy: f64,
+    entropy_threshold: f64,
+    detector_id: &str,
+    credential_len: usize,
+) -> bool {
+    entropy < generic_entropy_floor(entropy_threshold, detector_id, credential_len)
 }
 
 #[derive(Debug, Clone, Copy, Default)]
