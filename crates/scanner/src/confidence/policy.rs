@@ -237,6 +237,25 @@ pub(crate) fn ml_pending_confidence(policy: MlConfidencePolicy) -> f64 {
 }
 
 #[cfg(feature = "ml")]
+pub(crate) fn ml_pending_match_confidence(
+    pending: &crate::types::MlPendingMatch,
+    model_confidence: f64,
+    ml_weight: f64,
+    scan_comments: bool,
+    penalize_test_paths: bool,
+) -> f64 {
+    ml_pending_confidence(MlConfidencePolicy {
+        heuristic_confidence: pending.heuristic_conf,
+        model_confidence,
+        ml_weight,
+        model_authoritative: pending.model_authoritative,
+        code_context: pending.code_context,
+        scan_comments,
+        penalize_test_paths,
+    })
+}
+
+#[cfg(feature = "ml")]
 #[inline]
 pub(crate) fn ml_score_for_candidate_text(text: &str, score: impl FnOnce() -> f64) -> f64 {
     if text.is_empty() {

@@ -71,16 +71,12 @@ impl CompiledScanner {
             &self.config.placeholder_keywords,
         );
         for (pending, ml_conf) in pending_matches.into_iter().zip(scores.into_iter()) {
-            let report_conf = crate::confidence::policy::ml_pending_confidence(
-                crate::confidence::policy::MlConfidencePolicy {
-                    heuristic_confidence: pending.heuristic_conf,
-                    model_confidence: ml_conf,
-                    ml_weight: self.config.ml_weight,
-                    model_authoritative: pending.model_authoritative,
-                    code_context: pending.code_context,
-                    scan_comments: self.config.scan_comments,
-                    penalize_test_paths: self.config.penalize_test_paths,
-                },
+            let report_conf = crate::confidence::policy::ml_pending_match_confidence(
+                &pending,
+                ml_conf,
+                self.config.ml_weight,
+                self.config.scan_comments,
+                self.config.penalize_test_paths,
             );
 
             self.emit_finalized_pending_match(scan_state, pending, report_conf);

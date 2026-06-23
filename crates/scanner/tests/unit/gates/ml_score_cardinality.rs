@@ -86,6 +86,17 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
         "ML postprocess must not mutate finalized confidence or pass a split credential into adjudicate"
     );
     assert!(
+        ml_postprocess.contains("crate::confidence::policy::ml_pending_match_confidence(")
+            && !ml_postprocess.contains("crate::confidence::policy::MlConfidencePolicy")
+            && !ml_postprocess.contains("pending.model_authoritative")
+            && !ml_postprocess.contains("pending.heuristic_conf")
+            && policy.contains("fn ml_pending_match_confidence(")
+            && policy.contains("pending.model_authoritative")
+            && policy.contains("pending.heuristic_conf")
+            && policy.contains("pending.code_context"),
+        "ML postprocess must not rebuild confidence policy from pending internals"
+    );
+    assert!(
         !ml_postprocess.contains("final_score")
             && !ml_postprocess.contains("let confidence =")
             && !ml_postprocess.contains("let Some(confidence)"),

@@ -303,6 +303,7 @@ fn ml_pending_confidence_policy_routes_through_confidence_owner() {
         "enum MlScoreResult",
         "struct MlConfidencePolicy",
         "fn ml_pending_confidence(",
+        "fn ml_pending_match_confidence(",
         "model_authoritative",
         "ml_weight",
         "CodeContext::Comment",
@@ -321,8 +322,9 @@ fn ml_pending_confidence_policy_routes_through_confidence_owner() {
 
     let ml = uncommented_code(&read(&src.join("engine/scan_postprocess/ml.rs")));
     assert!(
-        ml.contains("crate::confidence::policy::ml_pending_confidence(")
-            && ml.contains("crate::confidence::policy::MlConfidencePolicy")
+        ml.contains("crate::confidence::policy::ml_pending_match_confidence(")
+            && !ml.contains("crate::confidence::policy::ml_pending_confidence(")
+            && !ml.contains("crate::confidence::policy::MlConfidencePolicy")
             && ml.contains("internal invariant violation: ML pending queue populated while ML is disabled")
             && ml.contains("scan_state.ml_pending.clear();"),
         "ML postprocess must route pending confidence through confidence owner and fail loud on impossible disabled-ML pending state"
