@@ -82,6 +82,11 @@ pub(crate) fn extract_literal_prefixes(pattern: &str) -> Vec<String> {
             for part in parts {
                 if let Some(p) = extract_literal_prefix(part) {
                     results.push(p);
+                } else {
+                    // Partial alternation coverage is unsafe: AC routing would
+                    // admit only the prefixed branches and make the others dead.
+                    results.clear();
+                    break;
                 }
             }
             if !results.is_empty() {
