@@ -94,17 +94,17 @@ pub(crate) fn bytes_contain_placeholder_word(bytes: &[u8]) -> bool {
 }
 
 pub(crate) fn bytes_contain_entropy_placeholder_marker(bytes: &[u8]) -> bool {
-    let upper = String::from_utf8_lossy(bytes).to_uppercase();
-    upper.contains("YOUR_")
-        || upper.contains("REPLACE_ME")
-        || upper.contains("CHANGE_ME")
-        || upper.contains("INSERT_HERE")
-        || upper.contains("FAKE_")
-        || upper.contains("DUMMY_")
-        || upper.contains("MOCK_")
-        || (upper.contains("SECRET_KEY") && upper.len() < 20)
-        || (upper.starts_with("AKIA")
-            && (upper.ends_with("EXAMPLE") || upper.contains("1234567890")))
+    crate::ascii_ci::ci_find(bytes, b"your_")
+        || crate::ascii_ci::ci_find(bytes, b"replace_me")
+        || crate::ascii_ci::ci_find(bytes, b"change_me")
+        || crate::ascii_ci::ci_find(bytes, b"insert_here")
+        || crate::ascii_ci::ci_find(bytes, b"fake_")
+        || crate::ascii_ci::ci_find(bytes, b"dummy_")
+        || crate::ascii_ci::ci_find(bytes, b"mock_")
+        || (crate::ascii_ci::ci_find(bytes, b"secret_key") && bytes.len() < 20)
+        || (crate::ascii_ci::starts_with_ignore_ascii_case(bytes, b"AKIA")
+            && (crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b"EXAMPLE")
+                || crate::ascii_ci::ci_find(bytes, b"1234567890")))
         || bytes.contains(&b'<')
         || bytes.contains(&b'>')
         || matches!(

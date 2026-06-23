@@ -273,6 +273,19 @@ fn passes_secret_shape_checks(value: &str, context: PlausibilityContext) -> bool
 }
 
 fn unique_char_count(value: &str) -> usize {
+    if value.is_ascii() {
+        let mut seen = [false; 256];
+        let mut count = 0usize;
+        for byte in value.bytes() {
+            let slot = &mut seen[byte as usize];
+            if !*slot {
+                *slot = true;
+                count += 1;
+            }
+        }
+        return count;
+    }
+
     let mut seen = std::collections::HashSet::new();
     for ch in value.chars() {
         seen.insert(ch);
