@@ -207,6 +207,13 @@ pub(crate) struct ReportAdjudicationPolicy<'a> {
     pub(crate) calibration: Option<&'a keyhog_core::Calibration>,
 }
 
+pub(crate) fn detector_min_confidence_floor(
+    detector_floor: Option<f64>,
+    default_floor: f64,
+) -> f64 {
+    detector_floor.unwrap_or(default_floor)
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct MatchCtx<'a> {
     explicit_stage: Option<StageId>,

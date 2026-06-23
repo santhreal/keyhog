@@ -177,6 +177,12 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
         "engine/process.rs must route camel-case/no-digit value-shape checks through suppression::shape"
     );
     assert!(
+        adjudicate.contains("fn detector_min_confidence_floor(")
+            && process.contains("crate::adjudicate::detector_min_confidence_floor(")
+            && !process.contains("match detector.min_confidence"),
+        "engine/process.rs must not own detector-vs-default min-confidence floor resolution"
+    );
+    assert!(
         !process.contains("from_scoring_rejected")
             && !adjudicate.contains("from_scoring_rejected")
             && !adjudicate.contains("scoring_rejected"),

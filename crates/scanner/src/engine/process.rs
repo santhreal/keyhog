@@ -260,10 +260,10 @@ impl CompiledScanner {
             },
         );
 
-        let min_confidence_floor = match detector.min_confidence {
-            Some(detector_floor) => detector_floor,
-            None => self.config.min_confidence,
-        };
+        let min_confidence_floor = crate::adjudicate::detector_min_confidence_floor(
+            detector.min_confidence,
+            self.config.min_confidence,
+        );
 
         match policy_result {
             MlScoreResult::Final(policy_conf) => {
