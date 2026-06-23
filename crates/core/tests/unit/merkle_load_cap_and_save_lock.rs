@@ -51,6 +51,9 @@ fn save_lock_and_cap_source_contract() {
     assert!(storage_source.contains("struct CacheWriteLock"));
     assert!(storage_source.contains(".lock_exclusive()?"));
     assert!(storage_source.contains("fn cache_lock_path("));
+    assert!(storage_source.contains("fn cache_file_fingerprint("));
+    assert!(storage_source.contains("cache_file_changed_since_load_or_save(path)"));
+    assert!(storage_source.contains("remember_cache_file_fingerprint(path)"));
     assert!(storage_source.contains("load_with_max_entries(path, self.max_entries)"));
     assert!(storage_source.contains("load_with_spec_and_max_entries(path, hash, self.max_entries)"));
 
@@ -70,5 +73,17 @@ fn save_lock_and_cap_source_contract() {
     assert!(
         lock_pos < merge_pos,
         "save must acquire the sidecar lock before reading merge base"
+    );
+    let merge_base = storage_source
+        .split("fn load_merge_base(")
+        .nth(1)
+        .expect("load_merge_base exists")
+        .split("fn overlay_in_memory_entries(")
+        .next()
+        .expect("load_merge_base boundary");
+    assert!(
+        merge_base.contains("if !self.cache_file_changed_since_load_or_save(path)")
+            && merge_base.contains("return HashMap::new();"),
+        "load_merge_base should skip disk read/parse when the cache file fingerprint is unchanged"
     );
 }

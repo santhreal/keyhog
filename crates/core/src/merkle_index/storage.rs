@@ -13,8 +13,8 @@ use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 
 use super::{
-    tmp_hygiene::sweep_stale_tmp_files, CacheEntry, CacheKey, MerkleIndex, MerkleLoadReport,
-    MerkleLoadStatus, SCHEMA_VERSION,
+    tmp_hygiene::sweep_stale_tmp_files, CacheEntry, CacheFileFingerprint, CacheKey, MerkleIndex,
+    MerkleLoadReport, MerkleLoadStatus, SCHEMA_VERSION,
 };
 use crate::hex_encode;
 use crate::merkle_spec_hash::hex_to_array;
@@ -87,6 +87,18 @@ fn now_unix_ns() -> u64 {
         return 0;
     };
     ns
+}
+
+fn cache_file_fingerprint(path: &Path) -> std::io::Result<Option<CacheFileFingerprint>> {
+    let metadata = match std::fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
+    Ok(Some(CacheFileFingerprint {
+        modified: metadata.modified()?,
+        len: metadata.len(),
+    }))
 }
 
 impl MerkleIndex {
@@ -292,6 +304,7 @@ impl MerkleIndex {
             count = idx.len(),
             "merkle index loaded"
         );
+        idx.remember_cache_file_fingerprint(path);
         let entries = idx.len();
         (
             idx,
@@ -327,7 +340,9 @@ impl MerkleIndex {
         };
         let serialized = serde_json::to_vec_pretty(&on_disk)
             .map_err(|error| std::io::Error::other(format!("merkle index encode: {error}")))?;
-        persist_atomically(path, &serialized)
+        persist_atomically(path, &serialized)?;
+        self.remember_cache_file_fingerprint(path);
+        Ok(())
     }
 
     fn load_merge_base(
@@ -335,6 +350,9 @@ impl MerkleIndex {
         path: &Path,
         spec_hash: Option<&[u8; 32]>,
     ) -> HashMap<CacheKey, CacheEntry> {
+        if !self.cache_file_changed_since_load_or_save(path) {
+            return HashMap::new();
+        }
         // Preserve existing disk entries only when they match the spec gate we
         // are about to write. Corrupt or mismatched disk state has already been
         // surfaced by load and must not block writing a fresh cache.
@@ -343,6 +361,20 @@ impl MerkleIndex {
             None => Self::load_with_max_entries(path, self.max_entries),
         };
         flatten_shards(&on_disk_now)
+    }
+
+    fn cache_file_changed_since_load_or_save(&self, path: &Path) -> bool {
+        let current = match cache_file_fingerprint(path) {
+            Ok(fingerprint) => fingerprint,
+            Err(_) => return true,
+        };
+        current != *self.cache_file_fingerprint.read()
+    }
+
+    fn remember_cache_file_fingerprint(&self, path: &Path) {
+        if let Ok(fingerprint) = cache_file_fingerprint(path) {
+            *self.cache_file_fingerprint.write() = fingerprint;
+        }
     }
 
     fn overlay_in_memory_entries(

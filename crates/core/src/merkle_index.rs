@@ -54,6 +54,7 @@
 
 use std::collections::{hash_map::Entry, HashMap};
 use std::path::{Path, PathBuf};
+use std::time::SystemTime;
 
 use parking_lot::RwLock;
 
@@ -229,6 +230,12 @@ struct CacheEntry {
     hash: [u8; 32],
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct CacheFileFingerprint {
+    modified: SystemTime,
+    len: u64,
+}
+
 /// In-memory file-hash index loaded from / saved to a JSON cache file.
 ///
 /// Concurrency model: the orchestrator holds an `Arc<MerkleIndex>` and
@@ -257,6 +264,10 @@ pub struct MerkleIndex {
     /// conservative side for a "stop growing" budget. Exact counts use
     /// [`Self::len`].
     approx_count: std::sync::atomic::AtomicUsize,
+    /// Fingerprint of the cache file that populated this index, or the cache
+    /// file written by the most recent successful save. Save uses this to skip
+    /// the expensive read/parse merge when disk has not changed under us.
+    cache_file_fingerprint: RwLock<Option<CacheFileFingerprint>>,
 }
 
 impl MerkleIndex {
@@ -279,6 +290,7 @@ impl MerkleIndex {
             max_entries,
             cap_warned: std::sync::atomic::AtomicBool::new(false),
             approx_count: std::sync::atomic::AtomicUsize::new(0),
+            cache_file_fingerprint: RwLock::new(None),
         }
     }
 
