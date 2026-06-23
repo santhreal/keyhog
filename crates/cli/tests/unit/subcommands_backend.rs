@@ -29,7 +29,7 @@ fn backend_self_test_json_preserves_failing_ac_probe() {
 fn backend_max_buffer_display_marks_keyhog_cap() {
     assert_eq!(
         API.format_gpu_max_buffer(262_144),
-        "256 GB (keyhog cap; wgpu max_buffer_size)"
+        ">=256 GB (keyhog cap; wgpu max_buffer_size)"
     );
     assert_eq!(
         API.format_gpu_max_buffer(32 * 1024),

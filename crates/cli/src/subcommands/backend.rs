@@ -489,7 +489,7 @@ fn format_gpu_max_buffer(max_buffer_mb: u64) -> String {
         format!("{max_buffer_mb} MB")
     };
     if max_buffer_mb >= KEYHOG_GPU_MAX_BUFFER_CAP_MB {
-        format!("{base} (keyhog cap; wgpu max_buffer_size)")
+        format!(">={base} (keyhog cap; wgpu max_buffer_size)")
     } else {
         format!("{base} (wgpu max_buffer_size)")
     }
