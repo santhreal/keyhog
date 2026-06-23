@@ -12,5 +12,6 @@ mod nightly_matrix_has_fourteen_runner_binaries;
 mod no_dogfood_ci_gate;
 mod pr_ci_runs_all_fourteen_strict_runners;
 mod readme_missing_santh_status_badge;
+mod release_gpu_literal_artifacts_are_shipped;
 mod workflows_unset_cc_distcc_guard;
 mod workspace_cargo_metadata_drift;

@@ -188,6 +188,8 @@ jobs:
         run: cargo test -p keyhog-core --test all_tests --profile release-fast
       - name: scanner all_tests
         run: cargo test -p keyhog-scanner --test all_tests --no-default-features --features ci-lean --profile release-fast
+      - name: scanner GPU literal artifact writer
+        run: cargo test -p keyhog-scanner --test gpu_literal_artifact_writer --no-default-features --features ci-lean --profile release-fast
       # Dead-corpus adversarial scanner fixtures are a standalone target because
       # the full adversarial directory contains integration-unsafe unit-internal
       # probes. This target keeps the real corpus recall shards live in CI.
@@ -309,6 +311,8 @@ jobs:
         run: cargo check -p keyhog --no-default-features
       - name: scanner standalone, all data features
         run: cargo check -p keyhog-scanner --features "entropy,multiline,ml,decode"
+      - name: scanner artifact writer release command
+        run: cargo run -p keyhog-scanner --bin keyhog-scanner-artifacts --no-default-features --features ml,entropy,decode,multiline -- --out-dir "$RUNNER_TEMP/keyhog-gpu-literals"
 
   clippy:
     name: Clippy (advisory)

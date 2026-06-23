@@ -141,6 +141,21 @@ jobs:
         shell: bash
         run: cargo build --release -p keyhog ${{ matrix.features }}
 
+      - name: Build GPU literal artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle_dir="${{ matrix.asset }}.gpu-literals"
+          rm -rf "$bundle_dir" "$bundle_dir.tar.gz"
+          cargo run --release \
+            -p keyhog-scanner \
+            --bin keyhog-scanner-artifacts \
+            --no-default-features \
+            --features ml,entropy,decode,multiline \
+            -- \
+            --out-dir "$bundle_dir"
+          tar -czf "$bundle_dir.tar.gz" "$bundle_dir"
+
       - name: Stage binary
         shell: bash
         run: |
@@ -153,21 +168,27 @@ jobs:
           else
             cp target/release/keyhog "${{ matrix.asset }}"
           fi
-          # Per-asset SHA256 checksum. install.sh verifies this when
-          # downloading the binary so a partial transfer / tampered
-          # mirror / corrupted CDN cache surfaces loudly instead of
-          # silently installing garbage. Portable across the three
-          # runner OSes: ubuntu has sha256sum, macOS has shasum, Git
-          # Bash on Windows ships sha256sum via msys2.
-          if command -v sha256sum >/dev/null 2>&1; then
-            sha256sum "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
-          elif command -v shasum >/dev/null 2>&1; then
-            shasum -a 256 "${{ matrix.asset }}" > "${{ matrix.asset }}.sha256"
-          else
-            echo "ERROR: no sha256 tool found on $(uname -s)" >&2
-            exit 1
-          fi
-          cat "${{ matrix.asset }}.sha256"
+          # Per-asset SHA256 checksums. install.sh verifies the binary checksum
+          # today; the shipped GPU literal sidecar is checksummed and signed now
+          # so installer/runtime consumption can fail closed instead of trusting
+          # a detached blob once the runtime loader lands.
+          assets=(
+            "${{ matrix.asset }}"
+            "${{ matrix.asset }}.gpu-literals.tar.gz"
+          )
+          # Portable across the three runner OSes: ubuntu has sha256sum,
+          # macOS has shasum, Git Bash on Windows ships sha256sum via msys2.
+          for asset in "${assets[@]}"; do
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "$asset" > "$asset.sha256"
+            elif command -v shasum >/dev/null 2>&1; then
+              shasum -a 256 "$asset" > "$asset.sha256"
+            else
+              echo "ERROR: no sha256 tool found on $(uname -s)" >&2
+              exit 1
+            fi
+            cat "$asset.sha256"
+          done
 
       - name: Upload to release
         env:
@@ -192,10 +213,12 @@ jobs:
           gh release upload "$tag" \
             "$asset" \
             "$asset.sha256" \
+            "$asset.gpu-literals.tar.gz" \
+            "$asset.gpu-literals.tar.gz.sha256" \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
 
-  # Sign every uploaded binary with the keyhog minisign secret key. Runs once
+  # Sign every uploaded binary/sidecar with the keyhog minisign secret key. Runs once
   # on a single runner after all build arms finish, so the signing secret is
   # exposed to exactly one job. `keyhog update` verifies these `.minisig`
   # files against the embedded public key (installer::RELEASE_PUBLIC_KEY)
@@ -239,7 +262,7 @@ jobs:
         shell: bash
         run: cargo install rsign2 --version 0.6.6 --locked
 
-      - name: Sign binaries and upload signatures
+      - name: Sign release assets and upload signatures
         env:
           GH_TOKEN: ${{ github.token }}
           KEYHOG_MINISIGN_SECRET_KEY: ${{ secrets.KEYHOG_MINISIGN_SECRET_KEY }}
