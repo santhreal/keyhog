@@ -15,6 +15,11 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
         "/src/orchestrator_config/runtime.rs"
     ))
     .expect("orchestrator_config runtime source readable");
+    let policy = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator_config/policy.rs"
+    ))
+    .expect("orchestrator_config policy source readable");
 
     assert!(
         scanner.contains("struct ScannerConfigInput"),
@@ -25,12 +30,17 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
         "orchestrator_config/runtime.rs must keep a resolved runtime/path input boundary"
     );
     assert!(
-        src.contains("struct ResolvedReportPolicy"),
-        "orchestrator_config must keep a resolved reporting/postprocess policy boundary"
+        policy.contains("struct ResolvedReportPolicy"),
+        "orchestrator_config/policy.rs must keep a resolved reporting/postprocess policy boundary"
     );
     assert!(
-        src.contains("struct ResolvedVerifyPolicy"),
-        "orchestrator_config must keep a resolved verifier policy boundary"
+        policy.contains("struct ResolvedVerifyPolicy"),
+        "orchestrator_config/policy.rs must keep a resolved verifier policy boundary"
+    );
+    assert!(
+        policy.contains("struct ResolvedAllowlistConfig")
+            && policy.contains("struct ResolvedOobPolicy"),
+        "orchestrator_config/policy.rs must own allowlist and OOB policy leaves"
     );
     assert!(
         scanner.contains("fn build_scanner_config_from_input(input: &ScannerConfigInput)"),
@@ -114,10 +124,14 @@ fn resolved_scan_config_uses_scanner_config_input_boundary() {
         "struct ScannerConfigInput",
         "fn build_scanner_config_from_input(input: &ScannerConfigInput)",
         "struct ScanRuntimeInput",
+        "struct ResolvedReportPolicy",
+        "struct ResolvedVerifyPolicy",
+        "struct ResolvedAllowlistConfig",
+        "struct ResolvedOobPolicy",
     ] {
         assert!(
             !src.contains(forbidden),
-            "orchestrator_config.rs must not re-own scanner-builder detail `{forbidden}`"
+            "orchestrator_config.rs must not re-own resolved-input detail `{forbidden}`"
         );
     }
 }
