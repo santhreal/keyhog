@@ -211,6 +211,11 @@ fn engine_scoring_confidence_adjustments_use_confidence_owner() {
     }
 
     let scoring = uncommented_code(&read(&src.join("engine/scoring.rs")));
+    let process = uncommented_code(&read(&src.join("engine/process.rs")));
+    assert!(
+        process.contains("fn match_companions(") && !scoring.contains("fn match_companions("),
+        "companion matching is process wiring, not engine/scoring confidence ownership"
+    );
     for required in [
         "match_heuristic_confidence(",
         "MatchHeuristicConfidencePolicy",

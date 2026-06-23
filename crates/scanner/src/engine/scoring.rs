@@ -8,39 +8,11 @@ use crate::confidence::policy::{
     apply_known_prefix_floor, match_heuristic_confidence, MatchHeuristicConfidencePolicy,
 };
 use crate::context;
-use std::collections::HashMap;
 
 #[cfg(feature = "ml")]
 use crate::confidence::policy::probabilistic_promise_confidence_override;
 
 impl CompiledScanner {
-    pub(crate) fn match_companions(
-        &self,
-        entry: &CompiledPattern,
-        preprocessed: &ScannerPreprocessedText<'_>,
-        line: usize,
-    ) -> Option<HashMap<String, String>> {
-        // Most detectors declare no companions. Return the empty map without
-        // sizing a bucket array (`HashMap::new()` is allocation-free until the
-        // first insert) and without entering the search loop. Only detectors
-        // that actually have companions pay for the map.
-        let Some(detector_companions) = self.companions.get(entry.detector_index) else {
-            return Some(HashMap::new());
-        };
-        if detector_companions.is_empty() {
-            return Some(HashMap::new());
-        }
-        let mut results = HashMap::with_capacity(detector_companions.len());
-        for companion in detector_companions {
-            if let Some(val) = find_companion(preprocessed, line, companion) {
-                results.insert(companion.name.clone(), val);
-            } else if companion.required {
-                return None;
-            }
-        }
-        Some(results)
-    }
-
     pub(crate) fn match_confidence<'a>(
         &self,
         entry: &CompiledPattern,
