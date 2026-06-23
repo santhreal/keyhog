@@ -22,6 +22,25 @@ async fn daemon_frame_reports_truncated_large_body_without_full_payload() {
     );
 }
 
+#[tokio::test]
+async fn daemon_frame_reports_truncated_length_prefix_as_error() {
+    let (mut client, mut server) = tokio::io::duplex(16);
+    client
+        .write_all(&[0, 0])
+        .await
+        .expect("write partial length prefix");
+    drop(client);
+
+    let err = frame::read_request(&mut server)
+        .await
+        .expect_err("partial length prefix must fail, not look like a clean close");
+    let message = err.to_string();
+    assert!(
+        message.contains("closed after 2 of 4 length-prefix bytes"),
+        "partial header must report observed prefix bytes; got {message}"
+    );
+}
+
 #[test]
 fn daemon_frame_read_path_does_not_eager_allocate_announced_len() {
     let source = include_str!("../src/daemon/frame.rs");
@@ -36,5 +55,13 @@ fn daemon_frame_read_path_does_not_eager_allocate_announced_len() {
     assert!(
         source.contains("body.len() != expected_len"),
         "read_frame must reject short reads after incremental buffering"
+    );
+    assert!(
+        !source.contains("read_exact(&mut len_bytes)"),
+        "read_frame must distinguish clean EOF from partial length-prefix EOF"
+    );
+    assert!(
+        source.contains("header_read == 0") && source.contains("length-prefix bytes"),
+        "read_frame must treat only zero-byte header reads as clean close"
     );
 }

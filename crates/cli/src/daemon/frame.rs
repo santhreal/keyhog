@@ -6,8 +6,8 @@
 //! arrive, so a hostile peer cannot pin `MAX_FRAME_BYTES` of zeroed
 //! memory by announcing a large frame and then stalling.
 
-use crate::daemon::protocol::{Request, Response, MAX_FRAME_BYTES};
-use anyhow::{bail, Context, Result};
+use crate::daemon::protocol::{MAX_FRAME_BYTES, Request, Response};
+use anyhow::{Context, Result, bail};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 pub async fn write_request<W>(writer: &mut W, request: &Request) -> Result<()>
@@ -100,10 +100,20 @@ where
     let mut len_bytes = [0u8; 4];
     // EOF on the first byte means the peer closed cleanly - propagate
     // as None so the caller's loop exits without an error.
-    match reader.read_exact(&mut len_bytes).await {
-        Ok(_) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
-        Err(e) => return Err(e.into()),
+    let mut header_read = 0usize;
+    while header_read < len_bytes.len() {
+        let read = reader.read(&mut len_bytes[header_read..]).await?;
+        if read == 0 {
+            if header_read == 0 {
+                return Ok(None);
+            }
+            bail!(
+                "frame: peer closed after {} of {} length-prefix bytes",
+                header_read,
+                len_bytes.len()
+            );
+        }
+        header_read += read;
     }
     let len = u32::from_be_bytes(len_bytes);
     if len > MAX_FRAME_BYTES {
