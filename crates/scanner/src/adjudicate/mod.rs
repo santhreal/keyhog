@@ -353,6 +353,14 @@ pub(crate) fn record_suppression(
     stage_id
 }
 
+pub(crate) fn record_checksum_invalid_suppression(
+    path: Option<&str>,
+    credential: &str,
+) -> Option<StageId> {
+    let ctx = MatchCtx::for_process_signals(ProcessCandidateSignals::from_checksum_invalid(true));
+    record_suppression(path, credential, &ctx)
+}
+
 pub(crate) fn record_example_suppression(
     detector: &str,
     path: Option<&str>,

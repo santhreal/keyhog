@@ -166,6 +166,16 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
         process.contains("ProcessCandidateSignals::from_checksum_invalid("),
         "engine/process.rs checksum drops must use the adjudicator checksum signal"
     );
+    assert!(
+        process.contains("crate::adjudicate::record_checksum_invalid_suppression(")
+            && !process.contains("ProcessCandidateSignals::from_checksum_invalid(true)"),
+        "engine/process.rs finalizer checksum drops must route through the adjudicator helper"
+    );
+    assert!(
+        adjudicate.contains("fn record_checksum_invalid_suppression(")
+            && adjudicate.contains("ProcessCandidateSignals::from_checksum_invalid(true)"),
+        "adjudicate module must own finalizer checksum-invalid suppression conversion"
+    );
 }
 
 #[test]
@@ -181,8 +191,12 @@ fn generic_bridge_suppression_reasons_route_through_adjudicator() {
         "engine/phase2_generic.rs must route generic suppression telemetry through the adjudicator"
     );
     assert!(
-        generic.contains("ProcessCandidateSignals::from_checksum_invalid(true)"),
-        "engine/phase2_generic.rs finalizer checksum drops must use the adjudicator checksum signal"
+        generic.contains("crate::adjudicate::record_checksum_invalid_suppression("),
+        "engine/phase2_generic.rs finalizer checksum drops must use the adjudicator checksum helper"
+    );
+    assert!(
+        !generic.contains("ProcessCandidateSignals::from_checksum_invalid(true)"),
+        "engine/phase2_generic.rs must not rebuild finalizer checksum-invalid context"
     );
 
     for reason in [
@@ -258,17 +272,26 @@ fn entropy_and_ml_emit_reject_reasons_route_through_adjudicator() {
         "engine/phase2_entropy.rs must route entropy suppressions through the adjudicator"
     );
     assert!(
-        entropy.contains("ProcessCandidateSignals::from_checksum_invalid(true)"),
-        "engine/phase2_entropy.rs finalizer checksum drops must use the adjudicator checksum signal"
+        entropy.contains("crate::adjudicate::record_checksum_invalid_suppression("),
+        "engine/phase2_entropy.rs finalizer checksum drops must use the adjudicator checksum helper"
     );
     assert!(
         ml.contains("crate::adjudicate::record_suppression("),
         "engine/scan_postprocess/ml.rs must route pending-match suppressions through the adjudicator"
     );
     assert!(
-        ml.contains("ProcessCandidateSignals::from_checksum_invalid(true)"),
-        "engine/scan_postprocess/ml.rs checksum drops must use the adjudicator checksum signal"
+        ml.contains("crate::adjudicate::record_checksum_invalid_suppression("),
+        "engine/scan_postprocess/ml.rs checksum drops must use the adjudicator checksum helper"
     );
+    for (path, code) in [
+        ("engine/phase2_entropy.rs", entropy.as_str()),
+        ("engine/scan_postprocess/ml.rs", ml.as_str()),
+    ] {
+        assert!(
+            !code.contains("ProcessCandidateSignals::from_checksum_invalid(true)"),
+            "{path} must not rebuild finalizer checksum-invalid context"
+        );
+    }
 
     for reason in [
         "entropy_named_detector_owned_assignment",
