@@ -504,6 +504,7 @@ fn decode_extract_cache_hot_decoders_use_borrowed_candidate_view() {
         ("base64", include_str!("../../src/decode/base64.rs")),
         ("hex", include_str!("../../src/decode/hex.rs")),
         ("url", include_str!("../../src/decode/url.rs")),
+        ("quoted-printable", include_str!("../../src/decode/url.rs")),
         ("reverse", include_str!("../../src/decode/reverse.rs")),
         ("caesar", include_str!("../../src/decode/caesar.rs")),
     ] {

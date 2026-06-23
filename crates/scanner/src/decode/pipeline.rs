@@ -57,7 +57,7 @@ pub(crate) fn decode_chunk(
 
         // Prime the whole-chunk extraction ONCE per BFS item so the ~5
         // whole-chunk decoders reuse it instead of each recomputing
-        // `extract_encoded_values(&current.data)` (it was ~67% of decode-gen).
+        // the same candidate extraction (it was ~67% of decode-gen).
         extractor::prime_shared_candidates(&current.data);
         let prof_dec = registry::profile_enabled();
         for (dec_i, decoder) in decoders.iter().enumerate() {
@@ -87,7 +87,7 @@ pub(crate) fn decode_chunk(
                 // (C9 root cause). The pre-decoder check above only fires
                 // once per decoder, but `decode_chunk` returns a fully
                 // materialized Vec whose length is O(chunk size) -
-                // `extract_encoded_values` yields one candidate per quoted
+                // candidate extraction yields one candidate per quoted
                 // string / `key=value` / base64 run, and Caesar fans each out
                 // 25x. Without this check the pipeline still hashes, screens,
                 // clones, and queues every one of those results after the
@@ -166,10 +166,8 @@ pub(crate) fn decode_chunk(
 mod extractor;
 mod registry;
 mod splice;
-pub(super) use extractor::{
-    extract_encoded_values, hash_fast, with_extracted_value_spans, ExtractedValue,
-};
 pub(crate) use extractor::{extract_profile_dump, extract_profile_reset};
+pub(super) use extractor::{hash_fast, with_extracted_value_spans, ExtractedValue};
 pub use registry::register_decoder;
 pub(crate) use registry::{decoder_profile_dump, decoder_profile_reset};
 #[cfg(test)]

@@ -96,6 +96,18 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
             && !url_body.contains(".collect::<Vec<_>>()"),
         "URL decoder should stream shared percent candidates and own only synthetic assignment tails"
     );
+    let qp_body = impl_body(
+        &url,
+        "impl Decoder for QuotedPrintableDecoder",
+        "/// True if `s` contains",
+    );
+    assert!(
+        qp_body.contains("with_extracted_value_spans(&chunk.data")
+            && qp_body.contains("decode_candidate_refs_exact(")
+            && !qp_body.contains("extract_encoded_values(")
+            && !qp_body.contains("decode_candidates("),
+        "quoted-printable decoder should reuse the whole-chunk candidate view instead of re-extracting per line"
+    );
     let macro_body = impl_body(&url, "macro_rules! simple_decoder", "simple_decoder!(");
     assert!(
         macro_body.contains("decode_candidate_refs_exact(")

@@ -67,7 +67,7 @@ thread_local! {
     /// Per-BFS-item shared WHOLE-CHUNK candidate cache. `decode_chunk` primes
     /// this once per chunk so the ~5 whole-chunk decoders (base64/hex/url/caesar/
     /// reverse) reuse ONE extraction instead of each recomputing the identical
-    /// `extract_encoded_values(&chunk.data)` (it was ~67% of decode-gen, called
+    /// chunk candidate extraction (it was ~67% of decode-gen, called
     /// 5-6× per chunk on the same input). Keyed by the chunk text's (ptr,len) and
     /// cleared per item, so a per-line call (different ptr) or a later chunk
     /// (different ptr) never reads a stale result.
@@ -88,31 +88,6 @@ pub(super) fn prime_shared_candidates(text: &str) {
 /// Drop the primed cache so it can never be read for a different chunk.
 pub(super) fn clear_shared_candidates() {
     SHARED_CANDIDATES.with(|c| *c.borrow_mut() = None);
-}
-
-/// Extract candidates for decoding (freestanding Base64, quotes, delimited
-/// key/values, percent runs). Returns the pipeline-primed whole-chunk result
-/// when called for that same text (same ptr+len); per-line / different-chunk
-/// calls compute fresh. The result is identical either way (pure function), so
-/// sharing is recall-preserving.
-pub(crate) fn extract_encoded_values(text: &str) -> Vec<String> {
-    extract_encoded_value_spans(text)
-        .into_iter()
-        .map(|candidate| candidate.value)
-        .collect()
-}
-
-pub(crate) fn extract_encoded_value_spans(text: &str) -> Vec<ExtractedValue> {
-    let hit = SHARED_CANDIDATES.with(|c| {
-        c.borrow().as_ref().and_then(|(ptr, len, cands)| {
-            (*ptr == text.as_ptr() as usize && *len == text.len()).then(|| cands.clone())
-        })
-    });
-    // Law 10: recall-safe — a thread-local cache MISS recomputes the IDENTICAL
-    // candidate set via `extract_encoded_values_raw` (a pure function of `text`,
-    // see the cache contract above). The cache is a perf optimization for the
-    // re-scan-same-buffer case; missing it changes timing, never the result.
-    hit.unwrap_or_else(|| extract_encoded_value_spans_raw(text)) // LAW10: offset/owned/group absent => documented default (original chunk / first group); recall-safe
 }
 
 pub(crate) fn with_extracted_value_spans<R>(

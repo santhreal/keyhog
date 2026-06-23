@@ -1,7 +1,7 @@
 use super::base64::base64_decode;
 use super::pipeline::{
     decode_candidate_refs_exact, decode_candidate_spans_exact, decode_candidates,
-    extract_encoded_values, with_extracted_value_spans, ExtractedValue,
+    with_extracted_value_spans, ExtractedValue,
 };
 use super::unicode_escape::unicode_escape_decode;
 use super::util::hex_val;
@@ -79,49 +79,92 @@ impl Decoder for QuotedPrintableDecoder {
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-        let mut decoded_chunks = Vec::new();
-        let lines: Vec<&str> = chunk.data.lines().collect();
-        for (line_idx, line) in lines.iter().enumerate() {
-            // Cheap O(line) gate FIRST: real Quoted-Printable needs a `=XX` hex
-            // escape, and every candidate is a substring of this line, so a line
-            // with no `=XX` cannot yield ANY QP candidate (the post-extraction
-            // `has_qp_escape` filter below already drops every such candidate).
-            // Skip the expensive `extract_encoded_values` + per-line
-            // `is_false_positive_context` for it — most source lines (`key=value`,
-            // prose) have no `=XX`, so this cuts the bulk of QP's ~22%-of-decode-
-            // gen cost with an identical candidate set (recall-preserving).
-            if !has_qp_escape(line) {
-                continue;
+        let line_views = line_views_with_offsets(&chunk.data);
+        let lines = line_views.iter().map(|line| line.text).collect::<Vec<_>>();
+
+        with_extracted_value_spans(&chunk.data, |candidates| {
+            let mut decoded_chunks = Vec::new();
+            for (line_idx, line) in line_views.iter().enumerate() {
+                // Cheap O(line) gate FIRST: real Quoted-Printable needs a
+                // `=XX` hex escape, and every candidate is a substring of this
+                // line, so a line with no `=XX` cannot yield ANY QP candidate.
+                // Reuse the whole-chunk extractor view below; per-line
+                // extraction misses the shared cache by pointer/len and
+                // recomputes the same candidates on every QP-shaped line.
+                if !has_qp_escape(line.text) {
+                    continue;
+                }
+                if context::is_false_positive_context(
+                    &lines,
+                    line_idx,
+                    chunk.metadata.path.as_deref(),
+                ) {
+                    continue;
+                }
+
+                decoded_chunks.extend(decode_candidate_refs_exact(
+                    chunk,
+                    candidates.iter().filter_map(|candidate| {
+                        let (start, end) = candidate.span()?;
+                        (start >= line.start && end <= line.end && has_qp_escape(&candidate.value))
+                            .then_some(candidate)
+                    }),
+                    quoted_printable_decode,
+                    self.name(),
+                ));
+
+                if let Some(trimmed) = trimmed_line_candidate(line) {
+                    decoded_chunks.extend(decode_candidate_spans_exact(
+                        chunk,
+                        vec![trimmed],
+                        quoted_printable_decode,
+                        self.name(),
+                    ));
+                }
             }
-            if context::is_false_positive_context(&lines, line_idx, chunk.metadata.path.as_deref())
-            {
-                continue;
-            }
-            let mut candidates = extract_encoded_values(line);
-            let trimmed = line.trim();
-            if trimmed.contains('=') && !trimmed.is_empty() {
-                candidates.push(trimmed.to_string());
-            }
-            decoded_chunks.extend(decode_candidates(
-                chunk,
-                candidates
-                    .into_iter()
-                    // Real Quoted-Printable encodes a non-ASCII byte as `=XX`
-                    // (hex). A plain trailing `=` (`token=`) or a string of
-                    // `=` signs is NOT QP - the decoder used to copy it
-                    // through unchanged and re-scan, wasting one full
-                    // scan pass per `key=value`-shaped line. Require at
-                    // least one well-formed `=XX` sequence with hex chars
-                    // before treating the candidate as QP-encoded.
-                    // Kimi-decode audit finding #2.
-                    .filter(|candidate| has_qp_escape(candidate))
-                    .collect(),
-                quoted_printable_decode,
-                self.name(),
-            ));
-        }
-        decoded_chunks
+            decoded_chunks
+        })
     }
+}
+
+struct LineView<'a> {
+    text: &'a str,
+    start: usize,
+    end: usize,
+}
+
+fn line_views_with_offsets(text: &str) -> Vec<LineView<'_>> {
+    text.split_inclusive('\n')
+        .scan(0usize, |offset, segment| {
+            let start = *offset;
+            *offset += segment.len();
+            let line = strip_line_ending(segment);
+            Some(LineView {
+                text: line,
+                start,
+                end: start + line.len(),
+            })
+        })
+        .collect()
+}
+
+fn strip_line_ending(segment: &str) -> &str {
+    let line = segment.strip_suffix('\n').unwrap_or(segment);
+    line.strip_suffix('\r').unwrap_or(line)
+}
+
+fn trimmed_line_candidate(line: &LineView<'_>) -> Option<ExtractedValue> {
+    let trimmed = line.text.trim();
+    if trimmed.is_empty() || !trimmed.contains('=') || !has_qp_escape(trimmed) {
+        return None;
+    }
+    let leading = line.text.len() - line.text.trim_start().len();
+    let trailing = line.text.trim_end().len();
+    Some(ExtractedValue::new(
+        trimmed.to_string(),
+        line.start + leading,
+        line.start + trailing,
+    ))
 }
 
 /// True if `s` contains at least one well-formed Quoted-Printable
