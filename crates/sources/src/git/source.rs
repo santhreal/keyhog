@@ -825,85 +825,16 @@ fn collect_tree_blobs_metadata(
     blob_metadata: &mut Vec<(gix::ObjectId, Vec<u8>)>,
     prefix: &[u8],
 ) {
-    for entry_ref in tree.iter() {
-        let entry = match entry_ref {
-            Ok(e) => e,
-            Err(error) => {
-                // Law 10: a tree entry that fails to parse (corrupt/truncated tree
-                // object) means the blob(s) it would reference are NOT scanned — an
-                // UNKNOWN, not a clean tree. The old `tracing::debug!` was invisible
-                // at default verbosity, so the dropped blobs vanished from coverage
-                // with no trace. Surface loudly + count as unreadable so a "0
-                // findings --git" run is not mistaken for full history coverage.
-                tracing::warn!(
-                    %error,
-                    "git tree entry could not be read (corrupt tree object); \
-                     its blob(s) were NOT scanned"
-                );
-                let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                continue;
-            }
-        };
-
-        let oid = entry.oid().to_owned();
-
-        let filepath = if prefix.is_empty() {
-            entry.filename().to_vec()
-        } else {
-            let mut p = prefix.to_vec();
-            p.push(b'/');
-            p.extend_from_slice(entry.filename());
-            p
-        };
-
-        let default_exclude_path = String::from_utf8_lossy(&filepath);
-        if crate::filesystem::is_default_excluded_path(default_exclude_path.as_ref()) {
-            let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
-            continue;
-        }
-
-        let mode = entry.mode();
-
-        if mode.is_tree() {
-            let obj = match repo.find_object(oid) {
-                Ok(obj) => obj,
-                Err(error) => {
-                    tracing::warn!(
-                        %error,
-                        "git subtree object unreadable; its blob(s) were NOT scanned"
-                    );
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                    continue;
-                }
-            };
-            match obj.try_into_tree() {
-                Ok(subtree) => {
-                    collect_tree_blobs_metadata(
-                        repo,
-                        &subtree,
-                        seen_blob_paths,
-                        blob_metadata,
-                        &filepath,
-                    );
-                }
-                Err(error) => {
-                    tracing::warn!(
-                        %error,
-                        "git tree entry resolved to a non-tree object; its blob(s) were NOT scanned"
-                    );
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                }
-            }
-            continue;
-        }
-
-        if !mode.is_blob() {
-            continue;
-        }
-
-        if seen_blob_paths.insert((oid.to_owned(), filepath.clone())) {
-            blob_metadata.push((oid, filepath));
-        }
+    let mut visitor = HistoricalBlobCollector {
+        seen_blob_paths,
+        blob_metadata,
+    };
+    if let Err(error) = super::walk_tree_recursive(repo, tree, prefix, &mut visitor) {
+        tracing::warn!(
+            %error,
+            "git tree walk failed; remaining blob(s) were NOT scanned"
+        );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
     }
 }
 
@@ -947,47 +878,109 @@ fn collect_head_blob_path_set(
         ))
     })?;
     let mut out = HashSet::new();
-    walk_tree_for_blob_paths(repo, &tree, &mut out, b"")?;
+    let mut visitor = HeadBlobPathCollector { out: &mut out };
+    super::walk_tree_recursive(repo, &tree, b"", &mut visitor)?;
     Ok(out)
 }
 
-fn walk_tree_for_blob_paths(
-    repo: &gix::Repository,
-    tree: &gix::Tree<'_>,
-    out: &mut HashSet<GitBlobPathKey>,
-    prefix: &[u8],
-) -> Result<(), SourceError> {
-    for entry_ref in tree.iter() {
-        let entry = entry_ref.map_err(|error| {
-            SourceError::Git(format!(
-                "failed to read git HEAD tree entry while collecting live blob set: {error}"
-            ))
-        })?;
-        let oid = entry.oid().to_owned();
-        let mode = entry.mode();
-        let filepath = if prefix.is_empty() {
-            entry.filename().to_vec()
-        } else {
-            let mut path = prefix.to_vec();
-            path.push(b'/');
-            path.extend_from_slice(entry.filename());
-            path
-        };
-        if mode.is_tree() {
-            let obj = repo.find_object(oid).map_err(|error| {
-                SourceError::Git(format!(
-                    "failed to read git HEAD subtree object while collecting live blob set: {error}"
-                ))
-            })?;
-            let subtree = obj.try_into_tree().map_err(|error| {
-                SourceError::Git(format!(
-                    "git HEAD subtree object is not a tree while collecting live blob set: {error}"
-                ))
-            })?;
-            walk_tree_for_blob_paths(repo, &subtree, out, &filepath)?;
-        } else if mode.is_blob() {
-            out.insert((oid, filepath));
+struct HistoricalBlobCollector<'a> {
+    seen_blob_paths: &'a mut HashSet<GitBlobPathKey>,
+    blob_metadata: &'a mut Vec<(gix::ObjectId, Vec<u8>)>,
+}
+
+impl super::GitTreeVisitor for HistoricalBlobCollector<'_> {
+    fn accept_path(&mut self, filepath: &[u8]) -> Result<bool, SourceError> {
+        let default_exclude_path = String::from_utf8_lossy(filepath);
+        if crate::filesystem::is_default_excluded_path(default_exclude_path.as_ref()) {
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Excluded);
+            return Ok(false);
         }
+        Ok(true)
     }
-    Ok(())
+
+    fn visit_blob(&mut self, oid: gix::ObjectId, filepath: Vec<u8>) -> Result<(), SourceError> {
+        if self
+            .seen_blob_paths
+            .insert((oid.to_owned(), filepath.clone()))
+        {
+            self.blob_metadata.push((oid, filepath));
+        }
+        Ok(())
+    }
+
+    fn handle_entry_error(&mut self, error: String) -> Result<(), SourceError> {
+        // Law 10: a tree entry that fails to parse (corrupt/truncated tree
+        // object) means the blob(s) it would reference are NOT scanned — an
+        // UNKNOWN, not a clean tree. Surface loudly + count as unreadable so a
+        // "0 findings --git" run is not mistaken for full history coverage.
+        tracing::warn!(
+            %error,
+            "git tree entry could not be read (corrupt tree object); its blob(s) were NOT scanned"
+        );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        Ok(())
+    }
+
+    fn handle_subtree_object_error(
+        &mut self,
+        _filepath: &[u8],
+        error: String,
+    ) -> Result<(), SourceError> {
+        tracing::warn!(
+            %error,
+            "git subtree object unreadable; its blob(s) were NOT scanned"
+        );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        Ok(())
+    }
+
+    fn handle_subtree_type_error(
+        &mut self,
+        _filepath: &[u8],
+        error: String,
+    ) -> Result<(), SourceError> {
+        tracing::warn!(
+            %error,
+            "git tree entry resolved to a non-tree object; its blob(s) were NOT scanned"
+        );
+        let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        Ok(())
+    }
+}
+
+struct HeadBlobPathCollector<'a> {
+    out: &'a mut HashSet<GitBlobPathKey>,
+}
+
+impl super::GitTreeVisitor for HeadBlobPathCollector<'_> {
+    fn visit_blob(&mut self, oid: gix::ObjectId, filepath: Vec<u8>) -> Result<(), SourceError> {
+        self.out.insert((oid, filepath));
+        Ok(())
+    }
+
+    fn handle_entry_error(&mut self, error: String) -> Result<(), SourceError> {
+        Err(SourceError::Git(format!(
+            "failed to read git HEAD tree entry while collecting live blob set: {error}"
+        )))
+    }
+
+    fn handle_subtree_object_error(
+        &mut self,
+        _filepath: &[u8],
+        error: String,
+    ) -> Result<(), SourceError> {
+        Err(SourceError::Git(format!(
+            "failed to read git HEAD subtree object while collecting live blob set: {error}"
+        )))
+    }
+
+    fn handle_subtree_type_error(
+        &mut self,
+        _filepath: &[u8],
+        error: String,
+    ) -> Result<(), SourceError> {
+        Err(SourceError::Git(format!(
+            "git HEAD subtree object is not a tree while collecting live blob set: {error}"
+        )))
+    }
 }

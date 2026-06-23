@@ -163,6 +163,83 @@ pub(crate) fn wait_for_git_child(
     )))
 }
 
+pub(crate) trait GitTreeVisitor {
+    fn accept_path(&mut self, _filepath: &[u8]) -> Result<bool, SourceError> {
+        Ok(true)
+    }
+
+    fn visit_blob(&mut self, oid: gix::ObjectId, filepath: Vec<u8>) -> Result<(), SourceError>;
+
+    fn handle_entry_error(&mut self, error: String) -> Result<(), SourceError>;
+
+    fn handle_subtree_object_error(
+        &mut self,
+        filepath: &[u8],
+        error: String,
+    ) -> Result<(), SourceError>;
+
+    fn handle_subtree_type_error(
+        &mut self,
+        filepath: &[u8],
+        error: String,
+    ) -> Result<(), SourceError>;
+}
+
+pub(crate) fn walk_tree_recursive<V: GitTreeVisitor + ?Sized>(
+    repo: &gix::Repository,
+    tree: &gix::Tree<'_>,
+    prefix: &[u8],
+    visitor: &mut V,
+) -> Result<(), SourceError> {
+    for entry_ref in tree.iter() {
+        let entry = match entry_ref {
+            Ok(entry) => entry,
+            Err(error) => {
+                visitor.handle_entry_error(error.to_string())?;
+                continue;
+            }
+        };
+
+        let oid = entry.oid().to_owned();
+        let filepath = join_tree_path(prefix, entry.filename());
+        if !visitor.accept_path(&filepath)? {
+            continue;
+        }
+
+        let mode = entry.mode();
+        if mode.is_tree() {
+            let obj = match repo.find_object(oid) {
+                Ok(obj) => obj,
+                Err(error) => {
+                    visitor.handle_subtree_object_error(&filepath, error.to_string())?;
+                    continue;
+                }
+            };
+            match obj.try_into_tree() {
+                Ok(subtree) => walk_tree_recursive(repo, &subtree, &filepath, visitor)?,
+                Err(error) => {
+                    visitor.handle_subtree_type_error(&filepath, error.to_string())?;
+                }
+            }
+        } else if mode.is_blob() {
+            visitor.visit_blob(oid, filepath)?;
+        }
+    }
+    Ok(())
+}
+
+fn join_tree_path(prefix: &[u8], filename: &[u8]) -> Vec<u8> {
+    if prefix.is_empty() {
+        filename.to_vec()
+    } else {
+        let mut path = Vec::with_capacity(prefix.len() + 1 + filename.len());
+        path.extend_from_slice(prefix);
+        path.push(b'/');
+        path.extend_from_slice(filename);
+        path
+    }
+}
+
 #[cfg(test)]
 mod capped_line_tests {
     use super::read_capped_line;
@@ -211,7 +288,7 @@ mod capped_line_tests {
 
 #[cfg(test)]
 mod git_child_tests {
-    use super::{spawn_git_child, wait_for_git_child, GIT_STDERR_EXCERPT_BYTES};
+    use super::{GIT_STDERR_EXCERPT_BYTES, spawn_git_child, wait_for_git_child};
     use std::io::{Read, Write};
     use std::process::{Command, Stdio};
 
