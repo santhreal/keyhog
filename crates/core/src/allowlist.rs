@@ -13,8 +13,8 @@
 use std::collections::HashSet;
 use std::path::Path;
 
-use crate::merkle_spec_hash::hex_nibble;
 use crate::VerifiedFinding;
+use crate::merkle_spec_hash::hex_to_array;
 
 // Submodules live in `allowlist/` (native resolution), matching the
 // `foo.rs` + `foo/` layout used across the workspace.
@@ -25,7 +25,7 @@ use metadata::*;
 // index) is its own subsystem; the `Allowlist` holds a precompiled index and
 // delegates every path decision to it.
 mod glob;
-use glob::{normalize_path, PathGlobIndex};
+use glob::{PathGlobIndex, normalize_path};
 
 /// User-defined suppressions loaded from `.keyhogignore`: credential hashes, detector IDs, and path globs.
 ///
@@ -523,12 +523,12 @@ impl Allowlist {
     /// # Ok(()) }
     /// ```
     pub(crate) fn is_hash_allowed(&self, credential: &str) -> bool {
-        parse_sha256_hex(credential).is_some_and(|bytes| self.matches_ignored_hash(&bytes))
+        self.matches_ignored_hash_hex(credential)
     }
 
     /// Check if a hex-encoded SHA-256 hash is allowlisted.
     pub(crate) fn is_raw_hash_ignored(&self, hash_hex: &str) -> bool {
-        parse_sha256_hex(hash_hex).is_some_and(|bytes| self.matches_ignored_hash(&bytes))
+        self.matches_ignored_hash_hex(hash_hex)
     }
 
     /// Check whether a raw path matches an ignored-path glob.
@@ -578,6 +578,10 @@ impl Allowlist {
         // see audit release-2026-04-26.)
         self.credential_hashes.contains(hash)
     }
+
+    fn matches_ignored_hash_hex(&self, hash_hex: &str) -> bool {
+        parse_sha256_hex(hash_hex).is_some_and(|bytes| self.matches_ignored_hash(&bytes))
+    }
 }
 
 impl Default for Allowlist {
@@ -587,23 +591,7 @@ impl Default for Allowlist {
 }
 
 fn parse_sha256_hex(input: &str) -> Option<[u8; 32]> {
-    let input = input.trim();
-    // A SHA-256 hex digest is 64 ASCII bytes. Operate on the byte slice, not
-    // `&str[..]` slicing: a 64-*byte* input containing a multibyte UTF-8 char
-    // at an odd offset (e.g. a stray `é` pasted into `.keyhogignore`) would
-    // make `&input[idx*2..idx*2+2]` panic on a non-char boundary. Decode each
-    // nibble directly so any non-hex byte just fails the parse.
-    let bytes = input.as_bytes();
-    if bytes.len() != 64 {
-        return None;
-    }
-    let mut digest = [0u8; 32];
-    for idx in 0..32 {
-        let hi = hex_nibble(bytes[idx * 2])?;
-        let lo = hex_nibble(bytes[idx * 2 + 1])?;
-        digest[idx] = (hi << 4) | lo;
-    }
-    Some(digest)
+    hex_to_array(input.trim())
 }
 
 /// Inline metadata parsed from a `.keyhogignore` line trailer. Used to

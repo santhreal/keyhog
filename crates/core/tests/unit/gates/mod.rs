@@ -1,3 +1,4 @@
+pub mod allowlist_hash_hex_single_owner;
 pub mod allowlist_no_inline_tests;
 pub mod allowlist_no_unwrap_expect;
 pub mod allowlist_non_empty;
