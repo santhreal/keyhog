@@ -37,6 +37,12 @@ struct DecodedGitBlob {
     file_text: String,
 }
 
+struct GitCommitBlobSet {
+    commit_id: String,
+    author: String,
+    blob_metadata: Vec<(gix::ObjectId, Vec<u8>)>,
+}
+
 type GitBlobPathKey = (gix::ObjectId, Vec<u8>);
 
 #[derive(Debug)]
@@ -359,131 +365,34 @@ fn stream_git_blobs(
                 }
             };
 
-            let repo = &repo_handle;
             // Cache visited Git commit OIDs in a fast set to avoid traversing duplicate merge commits (KH-56)
             if !seen_commits.insert(id) {
                 continue;
             }
-            let commit_id_str = id.to_string();
-            // Law 10: `git log` already enumerated this commit, so a gix failure to
-            // load its object / commit / tree means a commit's blobs are NOT
-            // scanned (corrupt object, partial clone missing the tree). Count each
-            // as unreadable + warn so the dropped commit is operator-visible rather
-            // than a silent `continue` that reads as full history coverage.
-            let obj = match repo.find_object(id) {
-                Ok(o) => o,
-                Err(error) => {
-                    tracing::warn!(%error, commit = %commit_id_str, "git commit object unreadable; its blobs were NOT scanned");
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                    continue;
-                }
-            };
-            let commit = match obj.try_into_commit() {
-                Ok(c) => c,
-                Err(error) => {
-                    tracing::warn!(%error, commit = %commit_id_str, "git object is not a commit; its blobs were NOT scanned");
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                    continue;
-                }
-            };
-            let author_str = match commit_author_name(&commit, &commit_id_str) {
-                Ok(author) => author,
+
+            let commit_blobs = match load_commit_blob_set(&repo_handle, id, &mut seen_blob_paths) {
+                Ok(Some(commit_blobs)) => commit_blobs,
+                Ok(None) => continue,
                 Err(error) => {
                     done = true;
                     return Some(Err(error));
                 }
             };
-            let tree = match commit.tree() {
-                Ok(t) => t,
-                Err(error) => {
-                    tracing::warn!(%error, commit = %commit_id_str, "git commit tree unreadable; its blobs were NOT scanned");
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                    continue;
-                }
-            };
 
-            let mut blob_metadata = Vec::new();
-            collect_tree_blobs_metadata(repo, &tree, &mut seen_blob_paths, &mut blob_metadata, b"");
-
-            if !blob_metadata.is_empty() {
-                let mut blob_metadata = blob_metadata.into_iter();
-                let head_blob_paths_ref = &head_blob_paths;
-
-                'blob_batches: loop {
-                    if git_history_cap_status(total_bytes, chunk_count, limits).is_some() {
-                        break;
-                    }
-
-                    let batch = next_git_blob_batch(repo, &mut blob_metadata, limits);
-                    if batch.is_empty() {
-                        break;
-                    }
-
-                    let candidates = batch
-                        .iter()
-                        .filter_map(|item| match item {
-                            GitBlobBatchItem::Candidate(candidate) => Some(candidate.clone()),
-                            GitBlobBatchItem::Skip(_) => None,
-                        })
-                        .collect::<Vec<_>>();
-                    let mut decoded =
-                        decode_git_blob_candidates_parallel(&repo_owned, candidates).into_iter();
-
-                    for item in batch {
-                        if git_history_cap_status(total_bytes, chunk_count, limits).is_some() {
-                            break 'blob_batches;
-                        }
-
-                        let decoded_blob = match item {
-                            GitBlobBatchItem::Skip(skip) => {
-                                record_git_blob_skip(skip);
-                                continue;
-                            }
-                            GitBlobBatchItem::Candidate(candidate) => match decoded.next() {
-                                Some(GitBlobDecodeOutcome::Decoded(decoded_blob)) => decoded_blob,
-                                Some(GitBlobDecodeOutcome::Skip(skip)) => {
-                                    record_git_blob_skip(skip);
-                                    continue;
-                                }
-                                None => {
-                                    tracing::warn!(
-                                        %candidate.oid,
-                                        "git blob decode batch lost an outcome; blob NOT scanned"
-                                    );
-                                    let _event = crate::record_skip_event(
-                                        crate::SourceSkipEvent::Unreadable,
-                                    );
-                                    continue;
-                                }
-                            },
-                        };
-
-                        let in_head = head_blob_paths_ref.contains(&(
-                            decoded_blob.oid.to_owned(),
-                            decoded_blob.filepath.clone(),
-                        ));
-                        let path = String::from_utf8_lossy(&decoded_blob.filepath).to_string();
-                        let chunk = Chunk {
-                            data: decoded_blob.file_text.into(),
-                            metadata: ChunkMetadata {
-                                base_offset: 0,
-                                base_line: 0,
-                                source_type: if in_head { "git/head" } else { "git/history" }
-                                    .into(),
-                                path: Some(path),
-                                commit: Some(commit_id_str.clone()),
-                                author: Some(author_str.clone()),
-                                date: None,
-                                mtime_ns: None,
-                                size_bytes: Some(decoded_blob.size_bytes),
-                                decoded_span: None,
-                            },
-                        };
-                        total_bytes = total_bytes.saturating_add(chunk.data.len());
-                        chunk_count += 1;
-                        current_tree_blobs.push_back(chunk);
-                    }
-                }
+            if !commit_blobs.blob_metadata.is_empty() {
+                let chunk_decoder = GitBlobChunkDecoder {
+                    repo: &repo_handle,
+                    repo_path: &repo_owned,
+                    head_blob_paths: &head_blob_paths,
+                    limits,
+                };
+                current_tree_blobs.extend(chunk_decoder.decode_commit_chunks(
+                    commit_blobs.blob_metadata,
+                    &commit_blobs.commit_id,
+                    &commit_blobs.author,
+                    &mut total_bytes,
+                    &mut chunk_count,
+                ));
 
                 if let Some(chunk) = current_tree_blobs.pop_front() {
                     return Some(Ok(chunk));
@@ -491,6 +400,158 @@ fn stream_git_blobs(
             }
         }
     }))
+}
+
+fn load_commit_blob_set(
+    repo: &gix::Repository,
+    id: gix::ObjectId,
+    seen_blob_paths: &mut HashSet<GitBlobPathKey>,
+) -> Result<Option<GitCommitBlobSet>, SourceError> {
+    let commit_id = id.to_string();
+    // Law 10: `git log` already enumerated this commit, so a gix failure to
+    // load its object / commit / tree means a commit's blobs are NOT
+    // scanned (corrupt object, partial clone missing the tree). Count each
+    // as unreadable + warn so the dropped commit is operator-visible rather
+    // than a silent `continue` that reads as full history coverage.
+    let obj = match repo.find_object(id) {
+        Ok(o) => o,
+        Err(error) => {
+            tracing::warn!(%error, commit = %commit_id, "git commit object unreadable; its blobs were NOT scanned");
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return Ok(None);
+        }
+    };
+    let commit = match obj.try_into_commit() {
+        Ok(c) => c,
+        Err(error) => {
+            tracing::warn!(%error, commit = %commit_id, "git object is not a commit; its blobs were NOT scanned");
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return Ok(None);
+        }
+    };
+    let author = commit_author_name(&commit, &commit_id)?;
+    let tree = match commit.tree() {
+        Ok(t) => t,
+        Err(error) => {
+            tracing::warn!(%error, commit = %commit_id, "git commit tree unreadable; its blobs were NOT scanned");
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return Ok(None);
+        }
+    };
+
+    let mut blob_metadata = Vec::new();
+    collect_tree_blobs_metadata(repo, &tree, seen_blob_paths, &mut blob_metadata, b"");
+
+    Ok(Some(GitCommitBlobSet {
+        commit_id,
+        author,
+        blob_metadata,
+    }))
+}
+
+struct GitBlobChunkDecoder<'a> {
+    repo: &'a gix::Repository,
+    repo_path: &'a Path,
+    head_blob_paths: &'a HashSet<GitBlobPathKey>,
+    limits: crate::SourceLimits,
+}
+
+impl GitBlobChunkDecoder<'_> {
+    fn decode_commit_chunks(
+        &self,
+        blob_metadata: Vec<(gix::ObjectId, Vec<u8>)>,
+        commit_id: &str,
+        author: &str,
+        total_bytes: &mut usize,
+        chunk_count: &mut usize,
+    ) -> VecDeque<Chunk> {
+        let mut chunks = VecDeque::new();
+        let mut blob_metadata = blob_metadata.into_iter();
+
+        'blob_batches: loop {
+            if git_history_cap_status(*total_bytes, *chunk_count, self.limits).is_some() {
+                break;
+            }
+
+            let batch = next_git_blob_batch(self.repo, &mut blob_metadata, self.limits);
+            if batch.is_empty() {
+                break;
+            }
+
+            let candidates = batch
+                .iter()
+                .filter_map(|item| match item {
+                    GitBlobBatchItem::Candidate(candidate) => Some(candidate.clone()),
+                    GitBlobBatchItem::Skip(_) => None,
+                })
+                .collect::<Vec<_>>();
+            let mut decoded =
+                decode_git_blob_candidates_parallel(self.repo_path, candidates).into_iter();
+
+            for item in batch {
+                if git_history_cap_status(*total_bytes, *chunk_count, self.limits).is_some() {
+                    break 'blob_batches;
+                }
+
+                let decoded_blob = match item {
+                    GitBlobBatchItem::Skip(skip) => {
+                        record_git_blob_skip(skip);
+                        continue;
+                    }
+                    GitBlobBatchItem::Candidate(candidate) => match decoded.next() {
+                        Some(GitBlobDecodeOutcome::Decoded(decoded_blob)) => decoded_blob,
+                        Some(GitBlobDecodeOutcome::Skip(skip)) => {
+                            record_git_blob_skip(skip);
+                            continue;
+                        }
+                        None => {
+                            tracing::warn!(
+                                %candidate.oid,
+                                "git blob decode batch lost an outcome; blob NOT scanned"
+                            );
+                            let _event =
+                                crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                            continue;
+                        }
+                    },
+                };
+
+                let chunk = self.chunk_from_decoded_blob(decoded_blob, commit_id, author);
+                *total_bytes = total_bytes.saturating_add(chunk.data.len());
+                *chunk_count += 1;
+                chunks.push_back(chunk);
+            }
+        }
+
+        chunks
+    }
+
+    fn chunk_from_decoded_blob(
+        &self,
+        decoded_blob: DecodedGitBlob,
+        commit_id: &str,
+        author: &str,
+    ) -> Chunk {
+        let in_head = self
+            .head_blob_paths
+            .contains(&(decoded_blob.oid.to_owned(), decoded_blob.filepath.clone()));
+        let path = String::from_utf8_lossy(&decoded_blob.filepath).to_string();
+        Chunk {
+            data: decoded_blob.file_text.into(),
+            metadata: ChunkMetadata {
+                base_offset: 0,
+                base_line: 0,
+                source_type: if in_head { "git/head" } else { "git/history" }.into(),
+                path: Some(path),
+                commit: Some(commit_id.to_owned()),
+                author: Some(author.to_owned()),
+                date: None,
+                mtime_ns: None,
+                size_bytes: Some(decoded_blob.size_bytes),
+                decoded_span: None,
+            },
+        }
+    }
 }
 
 fn next_git_blob_batch(
