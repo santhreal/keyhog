@@ -19,11 +19,13 @@ pub(crate) fn parse_k8s_secret(text: &str) -> Vec<ExtractedPair> {
     if let Some(serde_yaml::Value::Mapping(map)) = value.get("data") {
         for (k, v) in map {
             let key = k.as_str().unwrap_or_default(); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
-            let encoded = v.as_str().unwrap_or_default(); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
+            let Some(encoded) = yaml_scalar_value_text(v) else {
+                continue;
+            };
             if key.is_empty() || encoded.is_empty() {
                 continue;
             }
-            let decoded = match keyhog_core::decode_standard_base64(encoded) {
+            let decoded = match keyhog_core::decode_standard_base64(&encoded) {
                 Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
                 Err(error) => {
                     crate::telemetry::record_structured_parse_failure();
@@ -40,7 +42,7 @@ pub(crate) fn parse_k8s_secret(text: &str) -> Vec<ExtractedPair> {
                 key,
                 decoded,
                 format!("{}:", key),
-                encoded.to_string(),
+                encoded,
             ));
         }
     }
@@ -48,7 +50,9 @@ pub(crate) fn parse_k8s_secret(text: &str) -> Vec<ExtractedPair> {
     if let Some(serde_yaml::Value::Mapping(map)) = value.get("stringData") {
         for (k, v) in map {
             let key = k.as_str().unwrap_or_default(); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
-            let secret_value = v.as_str().unwrap_or_default().to_string(); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
+            let Some(secret_value) = yaml_scalar_value_text(v) else {
+                continue;
+            };
             if key.is_empty() {
                 continue;
             }
@@ -140,7 +144,9 @@ fn extract_environment_block(value: &serde_yaml::Value, pending: &mut Vec<Pendin
         serde_yaml::Value::Mapping(map) => {
             for (k, v) in map {
                 let key = k.as_str().unwrap_or_default(); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
-                let val = v.as_str().unwrap_or_default().to_string(); // LAW10: missing/non-string field => empty; value then fails downstream shape/length checks, recall-safe
+                let Some(val) = yaml_scalar_value_text(v) else {
+                    continue;
+                };
                 if key.is_empty() {
                     continue;
                 }
@@ -168,5 +174,14 @@ fn extract_environment_block(value: &serde_yaml::Value, pending: &mut Vec<Pendin
             }
         }
         _ => {}
+    }
+}
+
+fn yaml_scalar_value_text(value: &serde_yaml::Value) -> Option<String> {
+    match value {
+        serde_yaml::Value::String(s) => Some(s.clone()),
+        serde_yaml::Value::Number(n) => Some(n.to_string()),
+        serde_yaml::Value::Bool(b) => Some(b.to_string()),
+        _ => None,
     }
 }

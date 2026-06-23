@@ -211,6 +211,17 @@ fn docker_compose_map_environment() {
 }
 
 #[test]
+fn docker_compose_map_environment_stringifies_yaml_scalars() {
+    let text = "services:\n  web:\n    environment:\n      NUMERIC_PASSWORD: 12345678901234567890\n      FEATURE_TOKEN: true\n";
+    let pairs = parse_docker_compose(text);
+    assert_eq!(
+        value_of!(pairs, "NUMERIC_PASSWORD"),
+        Some("12345678901234567890")
+    );
+    assert_eq!(value_of!(pairs, "FEATURE_TOKEN"), Some("true"));
+}
+
+#[test]
 fn docker_compose_list_environment() {
     let text = "services:\n  web:\n    environment:\n      - DB_PASS=supersecret\n";
     let pairs = parse_docker_compose(text);
@@ -250,6 +261,17 @@ fn k8s_secret_stringdata_kept_verbatim() {
     let text = "apiVersion: v1\nkind: Secret\nstringData:\n  token: ghp_abcdefghij0123456789\n";
     let pairs = parse_k8s_secret(text);
     assert_eq!(value_of!(pairs, "token"), Some("ghp_abcdefghij0123456789"));
+}
+
+#[test]
+fn k8s_secret_stringdata_stringifies_yaml_scalars() {
+    let text = "apiVersion: v1\nkind: Secret\nstringData:\n  numeric_password: 12345678901234567890\n  enabled_token: false\n";
+    let pairs = parse_k8s_secret(text);
+    assert_eq!(
+        value_of!(pairs, "numeric_password"),
+        Some("12345678901234567890")
+    );
+    assert_eq!(value_of!(pairs, "enabled_token"), Some("false"));
 }
 
 #[test]
