@@ -167,6 +167,7 @@ pub mod jwt_hot_path_shape;
 pub mod jwt_no_inline_tests;
 pub mod jwt_no_unwrap_expect;
 pub mod jwt_non_empty;
+pub mod lib_normalize_chunk_hot_path_shape;
 pub mod ml_features_entropy_threshold_owner;
 pub mod ml_features_no_inline_tests;
 pub mod ml_features_no_unwrap_expect;

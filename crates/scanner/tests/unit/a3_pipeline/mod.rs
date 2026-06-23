@@ -50,6 +50,7 @@ mod match_line_number_last_line;
 mod match_line_number_mid_line_offset;
 mod named_detector_keeps_algolia_hex;
 mod named_detector_suppresses_vendored_minified_path;
+mod normalize_chunk_data_borrows_clean_non_ascii;
 mod normalize_chunk_data_idempotent;
 mod normalize_chunk_data_strips_zero_width;
 mod normalize_scannable_chunk_allocates_on_evasion;

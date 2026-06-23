@@ -196,20 +196,21 @@ pub(crate) fn normalize_chunk_data(data: &str) -> Cow<'_, str> {
     if data.is_ascii() {
         return Cow::Borrowed(data);
     }
-    let mut normalized = String::with_capacity(data.len());
-    let mut changed = false;
-    for ch in data.chars() {
-        if !unicode_hardening::is_evasion_char(ch) {
-            normalized.push(ch);
-        } else {
-            changed = true;
+    let mut normalized: Option<String> = None;
+    for (byte_pos, ch) in data.char_indices() {
+        if unicode_hardening::is_evasion_char(ch) {
+            normalized.get_or_insert_with(|| {
+                let mut out = String::with_capacity(data.len());
+                out.push_str(&data[..byte_pos]);
+                out
+            });
+        } else if let Some(out) = &mut normalized {
+            out.push(ch);
         }
     }
-    if changed {
-        Cow::Owned(normalized)
-    } else {
-        Cow::Borrowed(data)
-    }
+    normalized
+        .map(Cow::Owned)
+        .unwrap_or(Cow::Borrowed(data)) // LAW10: no evasion chars means the original scan text is byte-preserved.
 }
 
 #[doc(hidden)]
