@@ -3,7 +3,10 @@
 //! call site, then delegate the rest to [`super::decision::suppression_stage_inner`].
 
 use super::decision::suppression_stage_inner;
-use super::path_filter::{looks_like_secret_scanner_source, looks_like_vendored_minified_path};
+use super::path_filter::{
+    looks_like_hot_pattern_base64_path, looks_like_raw_base64_file_path,
+    looks_like_secret_scanner_source, looks_like_vendored_minified_path,
+};
 use super::shape::{
     contains_uuid_v4_substring, looks_like_credential_colliding_punctuation,
     looks_like_email_address, looks_like_pure_identifier, looks_like_regex_literal_tail,
@@ -153,25 +156,6 @@ pub(crate) fn hot_pattern_suppression_stage(
         ));
     }
     None
-}
-
-#[cfg(feature = "simdsieve")]
-fn looks_like_hot_pattern_base64_path(path: Option<&str>) -> bool {
-    let Some(path) = path else {
-        return false;
-    };
-    let bytes = path.as_bytes();
-    if crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b".b64")
-        || crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b".base64")
-    {
-        return true;
-    }
-    let basename = crate::platform_compat::path_basename_bytes(bytes);
-    (crate::ascii_ci::starts_with_ignore_ascii_case(basename, b"base64_")
-        || crate::ascii_ci::ci_find(basename, b"base64_string"))
-        && !crate::ascii_ci::ends_with_ignore_ascii_case(basename, b".json")
-        && !crate::ascii_ci::ends_with_ignore_ascii_case(basename, b".yml")
-        && !crate::ascii_ci::ends_with_ignore_ascii_case(basename, b".yaml")
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -432,24 +416,7 @@ pub(crate) fn suppress_named_detector_finding_stage(
     // `filesystem/base64` chunk with the decoded content; that chunk
     // hits `has_binary_magic` if it's image/binary, otherwise it's
     // scanned normally.
-    if path.is_some_and(|p| {
-        // Case-insensitive checks over raw bytes - avoids the per-match
-        // `p.to_ascii_lowercase()` allocation. Endswith checks are also
-        // case-insensitive so `.B64` / `.BASE64` extensions still suppress.
-        let bytes = p.as_bytes();
-        if crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b".b64")
-            || crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b".base64")
-        {
-            return true;
-        }
-        let basename = crate::platform_compat::path_basename_bytes(bytes);
-        basename
-            .get(..7)
-            .is_some_and(|p| p.eq_ignore_ascii_case(b"base64_"))
-            || crate::ascii_ci::ci_find(basename, b"base64_string")
-            || basename.eq_ignore_ascii_case(b"base64.txt")
-    }) && source_type.is_some_and(|s| s == "filesystem")
-    {
+    if looks_like_raw_base64_file_path(path) && source_type.is_some_and(|s| s == "filesystem") {
         crate::adjudicate::record_example_suppression(
             "pipeline",
             path,

@@ -6,6 +6,9 @@ use super::line_context::{
 };
 use crate::adjudicate::EntropyShapeStage;
 use crate::engine::*;
+use crate::suppression::path_filter::{
+    looks_like_entropy_raw_base64_file_path, path_is_ci_workflow_file, path_is_i18n_file,
+};
 
 pub(crate) fn entropy_match_suppression_stage(
     entropy_match: &crate::entropy::EntropyMatch,
@@ -272,18 +275,7 @@ pub(crate) fn entropy_match_suppression_stage(
     // Raw base64 files (`.b64`, `.base64`, `base64_string.txt`):
     // alphabet-coincidence matches inside the base64 stream are
     // not credentials.
-    if chunk.metadata.path.as_deref().is_some_and(|p| {
-        // Raw-byte case-insensitive checks, no per-match alloc.
-        let bytes = p.as_bytes();
-        if crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b".b64")
-            || crate::ascii_ci::ends_with_ignore_ascii_case(bytes, b".base64")
-        {
-            return true;
-        }
-        let basename = crate::platform_compat::path_basename_bytes(bytes);
-        crate::ascii_ci::starts_with_ignore_ascii_case(basename, b"base64_")
-            || crate::ascii_ci::ci_find(basename, b"base64_string")
-    }) {
+    if looks_like_entropy_raw_base64_file_path(chunk.metadata.path.as_deref()) {
         return Some(EntropyShapeStage::RawBase64File);
     }
 
@@ -301,7 +293,7 @@ pub(crate) fn entropy_match_suppression_stage(
     // evidence - entropy phase-2's "lots of varied bytes" is
     // not enough signal in this context. 25+ FPs across bat-go,
     // bat-ledger, brave-talk, malachite, orb-firmware dogfood.
-    if entropy_path_is_ci_workflow_file(chunk.metadata.path.as_deref()) {
+    if path_is_ci_workflow_file(chunk.metadata.path.as_deref()) {
         return Some(EntropyShapeStage::CiWorkflowFile);
     }
 
@@ -314,7 +306,7 @@ pub(crate) fn entropy_match_suppression_stage(
     // entropy. 103 entropy-password FPs in gogs alone.
     // The same family covers .po (gettext), .properties
     // (Java i18n), and any path with /locale/ or /i18n/.
-    if entropy_path_is_i18n_file(chunk.metadata.path.as_deref()) {
+    if path_is_i18n_file(chunk.metadata.path.as_deref()) {
         return Some(EntropyShapeStage::I18nFile);
     }
 

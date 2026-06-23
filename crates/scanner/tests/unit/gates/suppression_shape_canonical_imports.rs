@@ -257,6 +257,60 @@ fn random_byte_base64_shape_lives_in_shape_owner() {
 }
 
 #[test]
+fn path_suppression_predicates_live_in_path_filter_owner() {
+    let src = scanner_src();
+    let path_filter = uncommented_code(&read(&src.join("suppression/path_filter.rs")));
+    let suppression_api = uncommented_code(&read(&src.join("suppression/api.rs")));
+    let entropy_helpers = uncommented_code(&read(&src.join("engine/phase2_entropy/helpers.rs")));
+    let entropy_gates = uncommented_code(&read(&src.join("engine/phase2_entropy/gates.rs")));
+
+    for required in [
+        "fn path_is_ci_workflow_file(",
+        "fn path_is_i18n_file(",
+        "fn looks_like_raw_base64_file_path(",
+        "fn looks_like_entropy_raw_base64_file_path(",
+        "fn looks_like_hot_pattern_base64_path(",
+        "fn raw_base64_path_match(",
+    ] {
+        assert!(
+            path_filter.contains(required),
+            "suppression/path_filter.rs must own path predicate {required}"
+        );
+    }
+
+    for forbidden in [
+        "fn entropy_path_is_ci_workflow_file(",
+        "fn entropy_path_is_i18n_file(",
+        "ends_with_ignore_ascii_case(bytes, b\".b64\")",
+        "ci_find(basename, b\"base64_string\")",
+    ] {
+        assert!(
+            !entropy_helpers.contains(forbidden),
+            "entropy helpers must not own path predicate token {forbidden:?}"
+        );
+        assert!(
+            !entropy_gates.contains(forbidden),
+            "entropy gates must not own path predicate token {forbidden:?}"
+        );
+    }
+
+    assert!(
+        entropy_gates.contains("looks_like_entropy_raw_base64_file_path(")
+            && entropy_gates.contains("path_is_ci_workflow_file(")
+            && entropy_gates.contains("path_is_i18n_file("),
+        "entropy gates must call suppression::path_filter-owned path predicates"
+    );
+    assert!(
+        suppression_api.contains("looks_like_raw_base64_file_path(path)")
+            && suppression_api.contains("looks_like_hot_pattern_base64_path(ctx.path)")
+            && !suppression_api.contains("fn looks_like_hot_pattern_base64_path(")
+            && !suppression_api.contains("ends_with_ignore_ascii_case(bytes, b\".b64\")")
+            && !suppression_api.contains("ci_find(basename, b\"base64_string\")"),
+        "suppression API must use path_filter for base64 path policy instead of owning duplicate matching code"
+    );
+}
+
+#[test]
 fn aws_iam_arn_shape_lives_in_shape_owner() {
     let src = scanner_src();
     let shape = uncommented_code(&read(&src.join("suppression/shape/canonical.rs")));
