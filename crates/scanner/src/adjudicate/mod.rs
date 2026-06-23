@@ -323,6 +323,19 @@ impl HotPatternSignal {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EntropyGenerationSignal {
+    SuppressionStage(StageId),
+}
+
+impl EntropyGenerationSignal {
+    const fn stage_id(self) -> StageId {
+        match self {
+            Self::SuppressionStage(stage_id) => stage_id,
+        }
+    }
+}
+
 fn final_emit_suppression_stage(
     detector_id: &str,
     credential: &str,
@@ -386,11 +399,13 @@ pub(crate) struct MatchCtx<'a> {
     generic_bridge_signal: Option<GenericBridgeSignal>,
     entropy_fallback_signal: Option<EntropyFallbackSignal>,
     hot_pattern_signal: Option<HotPatternSignal>,
+    entropy_generation_signal: Option<EntropyGenerationSignal>,
     named_detector_suppression: Option<NamedDetectorSuppressionCtx<'a>>,
     final_emit_signals: Option<FinalEmitSignals<'a>>,
 }
 
 impl<'a> MatchCtx<'a> {
+    #[cfg(test)]
     pub(crate) const fn for_stage(stage_id: StageId) -> Self {
         Self {
             explicit_stage: Some(stage_id),
@@ -398,6 +413,7 @@ impl<'a> MatchCtx<'a> {
             generic_bridge_signal: None,
             entropy_fallback_signal: None,
             hot_pattern_signal: None,
+            entropy_generation_signal: None,
             named_detector_suppression: None,
             final_emit_signals: None,
         }
@@ -410,6 +426,7 @@ impl<'a> MatchCtx<'a> {
             generic_bridge_signal: None,
             entropy_fallback_signal: None,
             hot_pattern_signal: None,
+            entropy_generation_signal: None,
             named_detector_suppression: None,
             final_emit_signals: None,
         }
@@ -422,6 +439,7 @@ impl<'a> MatchCtx<'a> {
             generic_bridge_signal: Some(signal),
             entropy_fallback_signal: None,
             hot_pattern_signal: None,
+            entropy_generation_signal: None,
             named_detector_suppression: None,
             final_emit_signals: None,
         }
@@ -434,6 +452,7 @@ impl<'a> MatchCtx<'a> {
             generic_bridge_signal: None,
             entropy_fallback_signal: Some(signal),
             hot_pattern_signal: None,
+            entropy_generation_signal: None,
             named_detector_suppression: None,
             final_emit_signals: None,
         }
@@ -446,6 +465,20 @@ impl<'a> MatchCtx<'a> {
             generic_bridge_signal: None,
             entropy_fallback_signal: None,
             hot_pattern_signal: Some(signal),
+            entropy_generation_signal: None,
+            named_detector_suppression: None,
+            final_emit_signals: None,
+        }
+    }
+
+    pub(crate) const fn for_entropy_generation(signal: EntropyGenerationSignal) -> Self {
+        Self {
+            explicit_stage: None,
+            process_signals: None,
+            generic_bridge_signal: None,
+            entropy_fallback_signal: None,
+            hot_pattern_signal: None,
+            entropy_generation_signal: Some(signal),
             named_detector_suppression: None,
             final_emit_signals: None,
         }
@@ -458,6 +491,7 @@ impl<'a> MatchCtx<'a> {
             generic_bridge_signal: None,
             entropy_fallback_signal: None,
             hot_pattern_signal: None,
+            entropy_generation_signal: None,
             named_detector_suppression: Some(ctx),
             final_emit_signals: None,
         }
@@ -470,6 +504,7 @@ impl<'a> MatchCtx<'a> {
             generic_bridge_signal: None,
             entropy_fallback_signal: None,
             hot_pattern_signal: None,
+            entropy_generation_signal: None,
             named_detector_suppression: None,
             final_emit_signals: Some(signals),
         }
@@ -487,6 +522,7 @@ const STAGES: &[StageFn] = &[
     generic_bridge_stage,
     entropy_fallback_stage,
     hot_pattern_stage,
+    entropy_generation_stage,
     named_detector_suppression_stage,
     final_emit_stage,
 ];
@@ -511,15 +547,6 @@ pub(crate) fn record_suppression(
         crate::telemetry::record_shape_suppression(path, credential, stage_id.as_str());
     }
     stage_id
-}
-
-pub(crate) fn record_stage_suppression(
-    path: Option<&str>,
-    credential: &str,
-    stage_id: StageId,
-) -> Option<StageId> {
-    let ctx = MatchCtx::for_stage(stage_id);
-    record_suppression(path, credential, &ctx)
 }
 
 pub(crate) fn record_example_suppression(
@@ -580,6 +607,14 @@ fn entropy_fallback_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) ->
 
 fn hot_pattern_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageOutcome {
     if let Some(signal) = ctx.hot_pattern_signal {
+        StageOutcome::Suppress(signal.stage_id())
+    } else {
+        StageOutcome::Pass
+    }
+}
+
+fn entropy_generation_stage(_candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageOutcome {
+    if let Some(signal) = ctx.entropy_generation_signal {
         StageOutcome::Suppress(signal.stage_id())
     } else {
         StageOutcome::Pass

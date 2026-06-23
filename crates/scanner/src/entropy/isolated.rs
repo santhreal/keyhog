@@ -169,7 +169,10 @@ pub(super) fn collect_isolated_bare_candidates(
             Ok(entropy) => entropy,
             Err(stage_id) => {
                 if crate::telemetry::is_dogfood_enabled() {
-                    crate::adjudicate::record_stage_suppression(None, candidate, stage_id);
+                    let ctx = crate::adjudicate::MatchCtx::for_entropy_generation(
+                        crate::adjudicate::EntropyGenerationSignal::SuppressionStage(stage_id),
+                    );
+                    crate::adjudicate::record_suppression(None, candidate, &ctx);
                 }
                 return;
             }

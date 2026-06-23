@@ -379,7 +379,10 @@ fn collect_line_candidates(
             context.allow_canonical_shapes,
         );
         for rejection in &extracted.rejections {
-            crate::adjudicate::record_stage_suppression(None, &rejection.value, rejection.stage_id);
+            let ctx = crate::adjudicate::MatchCtx::for_entropy_generation(
+                crate::adjudicate::EntropyGenerationSignal::SuppressionStage(rejection.stage_id),
+            );
+            crate::adjudicate::record_suppression(None, &rejection.value, &ctx);
         }
         extracted.candidates
     } else {
@@ -401,7 +404,10 @@ fn collect_line_candidates(
             placeholder_keywords,
         ) {
             if crate::telemetry::is_dogfood_enabled() {
-                crate::adjudicate::record_stage_suppression(None, &candidate, stage_id);
+                let ctx = crate::adjudicate::MatchCtx::for_entropy_generation(
+                    crate::adjudicate::EntropyGenerationSignal::SuppressionStage(stage_id),
+                );
+                crate::adjudicate::record_suppression(None, &candidate, &ctx);
             }
             continue;
         }

@@ -1,6 +1,7 @@
 use crate::adjudicate::{
-    adjudicate_match, CandidateMatch, EntropyFallbackSignal, EntropyShapeStage, FinalEmitSignals,
-    GenericBridgeSignal, HotPatternSignal, MatchCtx, ProcessCandidateSignals, StageId, Verdict,
+    adjudicate_match, CandidateMatch, EntropyFallbackSignal, EntropyGenerationSignal,
+    EntropyShapeStage, FinalEmitSignals, GenericBridgeSignal, HotPatternSignal, MatchCtx,
+    ProcessCandidateSignals, StageId, Verdict,
 };
 use crate::context::CodeContext;
 use crate::suppression::NamedDetectorSuppressionCtx;
@@ -283,6 +284,18 @@ fn explicit_stage_reports_entropy_value_shape_reason() {
     assert_eq!(
         StageId::EntropyValueShape(shape_stage).as_str(),
         "entropy_random_base64_blob"
+    );
+}
+
+#[test]
+fn entropy_generation_stage_reports_plausibility_drop() {
+    let credential = "structured.not.secret";
+    let stage = StageId::EntropyValueShape(EntropyShapeStage::StructuredDottedTooShort);
+    let ctx = MatchCtx::for_entropy_generation(EntropyGenerationSignal::SuppressionStage(stage));
+
+    assert_eq!(
+        adjudicate_match(CandidateMatch::new(credential), &ctx),
+        Verdict::Suppressed(stage)
     );
 }
 

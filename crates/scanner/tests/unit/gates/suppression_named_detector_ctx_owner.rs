@@ -300,7 +300,9 @@ fn entropy_generation_plausibility_rejections_route_through_adjudicator() {
         scanner.contains("candidate_plausibility_rejection_stage(")
             && scanner.contains("&candidate")
             && scanner.contains("crate::telemetry::is_dogfood_enabled()")
-            && scanner.contains("crate::adjudicate::record_stage_suppression(None, &candidate, stage_id)"),
+            && scanner.contains("crate::adjudicate::MatchCtx::for_entropy_generation(")
+            && scanner.contains("crate::adjudicate::EntropyGenerationSignal::SuppressionStage(stage_id)")
+            && scanner.contains("crate::adjudicate::record_suppression(None, &candidate, &ctx)"),
         "collect_line_candidates must record generation-side entropy drops through the adjudicator when dogfood is enabled"
     );
     assert!(
@@ -308,15 +310,22 @@ fn entropy_generation_plausibility_rejections_route_through_adjudicator() {
             && keywords.contains("pub(super) stage_id: StageId")
             && keywords.contains("EntropyShapeStage::ConcatenationFragmentLine")
             && scanner.contains("extract_candidates_with_rejections(")
-            && scanner.contains("rejection.stage_id"),
+            && scanner.contains("EntropyGenerationSignal::SuppressionStage(rejection.stage_id)"),
         "entropy extraction-time drops must carry typed adjudicator stages back to the collector"
     );
     assert!(
         isolated.contains("fn isolated_bare_secret_entropy_decision(")
             && isolated.contains(") -> Result<f64, StageId>")
             && isolated.contains("crate::telemetry::is_dogfood_enabled()")
-            && isolated.contains("crate::adjudicate::record_stage_suppression(None, candidate, stage_id)"),
+            && isolated.contains("crate::adjudicate::MatchCtx::for_entropy_generation(")
+            && isolated.contains("crate::adjudicate::EntropyGenerationSignal::SuppressionStage(stage_id)")
+            && isolated.contains("crate::adjudicate::record_suppression(None, candidate, &ctx)"),
         "isolated bare entropy generation drops must carry typed adjudicator stages back to the collector"
+    );
+    assert!(
+        !scanner.contains("crate::adjudicate::record_stage_suppression(None,")
+            && !isolated.contains("crate::adjudicate::record_stage_suppression(None,"),
+        "entropy generation paths must not bypass the adjudicator context with direct stage recording"
     );
     for reason in [
         "entropy_concatenation_fragment_line",
