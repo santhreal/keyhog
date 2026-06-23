@@ -49,19 +49,25 @@ fn daemon_frame_read_path_does_not_eager_allocate_announced_len() {
         "read_frame must not allocate MAX_FRAME_BYTES before the peer sends the body"
     );
     assert!(
-        source.contains("reader.take(u64::from(len))"),
-        "read_frame should cap reads with AsyncReadExt::take"
+        source.contains("tokio_util::codec::{Decoder, Encoder, Framed, FramedRead, FramedWrite}"),
+        "daemon frame transport should be owned by tokio_util codec types"
     );
     assert!(
-        source.contains("body.len() != expected_len"),
-        "read_frame must reject short reads after incremental buffering"
+        source.contains("fn decode_body(")
+            && source.contains("peer closed after {} of {} announced bytes"),
+        "frame decoder must grow only as bytes arrive and reject short bodies at EOF"
     );
     assert!(
-        !source.contains("read_exact(&mut len_bytes)"),
+        !source.contains("src.reserve(full_len - src.len())"),
+        "frame decoder must not reserve the announced body length before bytes arrive"
+    );
+    assert!(
+        !source.contains("read_exact(&mut len_bytes)")
+            && !source.contains("vec![0u8; len as usize]"),
         "read_frame must distinguish clean EOF from partial length-prefix EOF"
     );
     assert!(
-        source.contains("header_read == 0") && source.contains("length-prefix bytes"),
-        "read_frame must treat only zero-byte header reads as clean close"
+        source.contains("if eof && !src.is_empty()") && source.contains("length-prefix bytes"),
+        "frame decoder must treat only empty EOF as clean close and reject partial length prefixes"
     );
 }

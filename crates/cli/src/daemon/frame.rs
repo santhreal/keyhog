@@ -6,50 +6,58 @@
 //! arrive, so a hostile peer cannot pin `MAX_FRAME_BYTES` of zeroed
 //! memory by announcing a large frame and then stalling.
 
-use crate::daemon::protocol::{MAX_FRAME_BYTES, Request, Response};
-use anyhow::{Context, Result, bail};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use crate::daemon::protocol::{response_kind, Request, Response, MAX_FRAME_BYTES};
+use anyhow::{bail, Context, Result};
+use bytes::{Buf, BufMut, BytesMut};
+use futures_util::{SinkExt, StreamExt};
+use std::marker::PhantomData;
+use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::net::UnixStream;
+use tokio_util::codec::{Decoder, Encoder, Framed, FramedRead, FramedWrite};
+
+const LENGTH_PREFIX_BYTES: usize = 4;
+
+pub(crate) type ServerTransport = Framed<UnixStream, ServerCodec>;
+pub(crate) type ClientTransport = Framed<UnixStream, ClientCodec>;
+
+pub(crate) fn server_transport(stream: UnixStream) -> ServerTransport {
+    Framed::new(stream, ServerCodec::default())
+}
+
+pub(crate) fn client_transport(stream: UnixStream) -> ClientTransport {
+    Framed::new(stream, ClientCodec::default())
+}
 
 pub async fn write_request<W>(writer: &mut W, request: &Request) -> Result<()>
 where
-    W: AsyncWriteExt + Unpin,
+    W: AsyncWrite + Unpin,
 {
-    let body = serde_json::to_vec(request)
-        .with_context(|| format!("frame: serialize Request::{}", request_kind(request)))?;
-    write_frame(writer, &body).await
+    let mut framed = FramedWrite::new(writer, RequestEncoder::default());
+    framed.send(request.clone()).await
 }
 
 pub async fn write_response<W>(writer: &mut W, response: &Response) -> Result<()>
 where
-    W: AsyncWriteExt + Unpin,
+    W: AsyncWrite + Unpin,
 {
-    let body = serde_json::to_vec(response)
-        .with_context(|| format!("frame: serialize Response::{}", response_kind(response)))?;
-    write_frame(writer, &body).await
+    let mut framed = FramedWrite::new(writer, ResponseEncoder::default());
+    framed.send(response.clone()).await
 }
 
 pub async fn read_request<R>(reader: &mut R) -> Result<Option<Request>>
 where
-    R: AsyncReadExt + Unpin,
+    R: AsyncRead + Unpin,
 {
-    let Some(body) = read_frame(reader).await? else {
-        return Ok(None);
-    };
-    let req = serde_json::from_slice(&body)
-        .with_context(|| format!("frame: parse request ({} bytes)", body.len()))?;
-    Ok(Some(req))
+    let mut framed = FramedRead::new(reader, RequestDecoder::default());
+    framed.next().await.transpose()
 }
 
 pub async fn read_response<R>(reader: &mut R) -> Result<Option<Response>>
 where
-    R: AsyncReadExt + Unpin,
+    R: AsyncRead + Unpin,
 {
-    let Some(body) = read_frame(reader).await? else {
-        return Ok(None);
-    };
-    let resp = serde_json::from_slice(&body)
-        .with_context(|| format!("frame: parse response ({} bytes)", body.len()))?;
-    Ok(Some(resp))
+    let mut framed = FramedRead::new(reader, ResponseDecoder::default());
+    framed.next().await.transpose()
 }
 
 /// One-word kind label for a Request. Keeps frame-serialize errors
@@ -64,21 +72,91 @@ fn request_kind(r: &Request) -> &'static str {
     }
 }
 
-/// One-word kind label for a Response. Same rationale as request_kind.
-fn response_kind(r: &Response) -> &'static str {
-    match r {
-        Response::Hello { .. } => "Hello",
-        Response::Health { .. } => "Health",
-        Response::ScanResults { .. } => "ScanResults",
-        Response::Shutdown => "Shutdown",
-        Response::Error { .. } => "Error",
+#[derive(Default)]
+pub(crate) struct ServerCodec {
+    decoder: RequestDecoder,
+    encoder: ResponseEncoder,
+}
+
+impl Decoder for ServerCodec {
+    type Item = Request;
+    type Error = anyhow::Error;
+
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>> {
+        self.decoder.decode(src)
+    }
+
+    fn decode_eof(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>> {
+        self.decoder.decode_eof(src)
     }
 }
 
-async fn write_frame<W>(writer: &mut W, body: &[u8]) -> Result<()>
-where
-    W: AsyncWriteExt + Unpin,
-{
+impl Encoder<Response> for ServerCodec {
+    type Error = anyhow::Error;
+
+    fn encode(&mut self, item: Response, dst: &mut BytesMut) -> Result<()> {
+        self.encoder.encode(item, dst)
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct ClientCodec {
+    decoder: ResponseDecoder,
+    encoder: RequestEncoder,
+}
+
+impl Decoder for ClientCodec {
+    type Item = Response;
+    type Error = anyhow::Error;
+
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>> {
+        self.decoder.decode(src)
+    }
+
+    fn decode_eof(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>> {
+        self.decoder.decode_eof(src)
+    }
+}
+
+impl Encoder<Request> for ClientCodec {
+    type Error = anyhow::Error;
+
+    fn encode(&mut self, item: Request, dst: &mut BytesMut) -> Result<()> {
+        self.encoder.encode(item, dst)
+    }
+}
+
+#[derive(Default)]
+struct RequestEncoder {
+    _marker: PhantomData<Request>,
+}
+
+impl Encoder<Request> for RequestEncoder {
+    type Error = anyhow::Error;
+
+    fn encode(&mut self, item: Request, dst: &mut BytesMut) -> Result<()> {
+        let body = serde_json::to_vec(&item)
+            .with_context(|| format!("frame: serialize Request::{}", request_kind(&item)))?;
+        encode_body(dst, &body)
+    }
+}
+
+#[derive(Default)]
+struct ResponseEncoder {
+    _marker: PhantomData<Response>,
+}
+
+impl Encoder<Response> for ResponseEncoder {
+    type Error = anyhow::Error;
+
+    fn encode(&mut self, item: Response, dst: &mut BytesMut) -> Result<()> {
+        let body = serde_json::to_vec(&item)
+            .with_context(|| format!("frame: serialize Response::{}", response_kind(&item)))?;
+        encode_body(dst, &body)
+    }
+}
+
+fn encode_body(dst: &mut BytesMut, body: &[u8]) -> Result<()> {
     if body.len() > MAX_FRAME_BYTES as usize {
         bail!(
             "frame: body of {} bytes exceeds {} byte cap",
@@ -86,36 +164,73 @@ where
             MAX_FRAME_BYTES
         );
     }
-    let len = body.len() as u32;
-    writer.write_all(&len.to_be_bytes()).await?;
-    writer.write_all(body).await?;
-    writer.flush().await?;
+    dst.reserve(LENGTH_PREFIX_BYTES + body.len());
+    dst.put_u32(body.len() as u32);
+    dst.extend_from_slice(body);
     Ok(())
 }
 
-async fn read_frame<R>(reader: &mut R) -> Result<Option<Vec<u8>>>
-where
-    R: AsyncReadExt + Unpin,
-{
-    let mut len_bytes = [0u8; 4];
-    // EOF on the first byte means the peer closed cleanly - propagate
-    // as None so the caller's loop exits without an error.
-    let mut header_read = 0usize;
-    while header_read < len_bytes.len() {
-        let read = reader.read(&mut len_bytes[header_read..]).await?;
-        if read == 0 {
-            if header_read == 0 {
-                return Ok(None);
-            }
+#[derive(Default)]
+struct RequestDecoder {
+    _marker: PhantomData<Request>,
+}
+
+impl Decoder for RequestDecoder {
+    type Item = Request;
+    type Error = anyhow::Error;
+
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>> {
+        let Some(body) = decode_body(src, false)? else {
+            return Ok(None);
+        };
+        parse_request(&body)
+    }
+
+    fn decode_eof(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>> {
+        let Some(body) = decode_body(src, true)? else {
+            return Ok(None);
+        };
+        parse_request(&body)
+    }
+}
+
+#[derive(Default)]
+struct ResponseDecoder {
+    _marker: PhantomData<Response>,
+}
+
+impl Decoder for ResponseDecoder {
+    type Item = Response;
+    type Error = anyhow::Error;
+
+    fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>> {
+        let Some(body) = decode_body(src, false)? else {
+            return Ok(None);
+        };
+        parse_response(&body)
+    }
+
+    fn decode_eof(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>> {
+        let Some(body) = decode_body(src, true)? else {
+            return Ok(None);
+        };
+        parse_response(&body)
+    }
+}
+
+fn decode_body(src: &mut BytesMut, eof: bool) -> Result<Option<BytesMut>> {
+    if src.len() < LENGTH_PREFIX_BYTES {
+        if eof && !src.is_empty() {
             bail!(
                 "frame: peer closed after {} of {} length-prefix bytes",
-                header_read,
-                len_bytes.len()
+                src.len(),
+                LENGTH_PREFIX_BYTES
             );
         }
-        header_read += read;
+        return Ok(None);
     }
-    let len = u32::from_be_bytes(len_bytes);
+
+    let len = u32::from_be_bytes([src[0], src[1], src[2], src[3]]);
     if len > MAX_FRAME_BYTES {
         bail!(
             "frame: peer announced {} bytes, exceeds {} byte cap",
@@ -124,15 +239,29 @@ where
         );
     }
     let expected_len = len as usize;
-    let mut body = Vec::new();
-    let mut limited = reader.take(u64::from(len));
-    limited.read_to_end(&mut body).await?;
-    if body.len() != expected_len {
-        bail!(
-            "frame: peer closed after {} of {} announced bytes",
-            body.len(),
-            expected_len
-        );
+    let full_len = LENGTH_PREFIX_BYTES + expected_len;
+    if src.len() < full_len {
+        if eof {
+            bail!(
+                "frame: peer closed after {} of {} announced bytes",
+                src.len() - LENGTH_PREFIX_BYTES,
+                expected_len
+            );
+        }
+        return Ok(None);
     }
-    Ok(Some(body))
+    src.advance(LENGTH_PREFIX_BYTES);
+    Ok(Some(src.split_to(expected_len)))
+}
+
+fn parse_request(body: &[u8]) -> Result<Option<Request>> {
+    let req = serde_json::from_slice(body)
+        .with_context(|| format!("frame: parse request ({} bytes)", body.len()))?;
+    Ok(Some(req))
+}
+
+fn parse_response(body: &[u8]) -> Result<Option<Response>> {
+    let resp = serde_json::from_slice(body)
+        .with_context(|| format!("frame: parse response ({} bytes)", body.len()))?;
+    Ok(Some(resp))
 }

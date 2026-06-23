@@ -6,6 +6,7 @@ use crate::daemon::protocol::{Request, Response, WIRE_VERSION};
 use crate::daemon::trust;
 use crate::style;
 use anyhow::{Context, Result};
+use futures_util::{SinkExt, StreamExt};
 use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, RawMatch, Source};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::path::{Path, PathBuf};
@@ -316,11 +317,8 @@ pub fn is_transient_accept_error(e: &std::io::Error) -> bool {
     false
 }
 
-async fn handle_connection(state: Arc<ServerState>, mut stream: UnixStream) -> Result<()> {
-    let (reader, writer) = stream.split();
-    let mut reader = tokio::io::BufReader::new(reader);
-    let mut writer = tokio::io::BufWriter::new(writer);
-
+async fn handle_connection(state: Arc<ServerState>, stream: UnixStream) -> Result<()> {
+    let mut transport = frame::server_transport(stream);
     let read_timeout = state.request_read_timeout;
     loop {
         // Bound the per-request read so a half-frame / slowloris stall (a peer
@@ -330,26 +328,25 @@ async fn handle_connection(state: Arc<ServerState>, mut stream: UnixStream) -> R
         // round-trip then disconnect, so a connection idle past the timeout is
         // either finished (should have closed) or stuck — closing it is correct
         // and frees the permit.
-        let request =
-            match tokio::time::timeout(read_timeout, frame::read_request(&mut reader)).await {
-                Ok(Ok(Some(req))) => req,
-                // Clean EOF: peer closed. Done.
-                Ok(Ok(None)) => break,
-                // Frame/parse error: propagate so the connection is dropped.
-                Ok(Err(e)) => return Err(e),
-                Err(_elapsed) => {
-                    anyhow::bail!(
-                        "daemon: connection idle for {}s without a complete request; \
-                     closing it to reclaim the connection slot (a stuck or slow \
-                     client). Restart the daemon with --request-timeout-secs \
-                     <N> for very large pre-warmed batches.",
-                        read_timeout.as_secs()
-                    );
-                }
-            };
+        let request = match tokio::time::timeout(read_timeout, transport.next()).await {
+            Ok(Some(Ok(req))) => req,
+            // Clean EOF: peer closed. Done.
+            Ok(None) => break,
+            // Frame/parse error: propagate so the connection is dropped.
+            Ok(Some(Err(e))) => return Err(e),
+            Err(_elapsed) => {
+                anyhow::bail!(
+                    "daemon: connection idle for {}s without a complete request; \
+                 closing it to reclaim the connection slot (a stuck or slow \
+                 client). Restart the daemon with --request-timeout-secs \
+                 <N> for very large pre-warmed batches.",
+                    read_timeout.as_secs()
+                );
+            }
+        };
         let response = dispatch(&state, request).await;
         let is_shutdown_ack = matches!(response, Response::Shutdown);
-        frame::write_response(&mut writer, &response).await?;
+        transport.send(response).await?;
         if is_shutdown_ack {
             state.shutdown.notify_waiters();
             break;

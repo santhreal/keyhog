@@ -2,12 +2,12 @@
 //! one request/response pair at a time over a Unix socket.
 
 use crate::daemon::frame;
-use crate::daemon::protocol::{Request, Response, WIRE_VERSION, response_kind};
+use crate::daemon::protocol::{response_kind, Request, Response, WIRE_VERSION};
 use crate::daemon::trust;
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
+use futures_util::{SinkExt, StreamExt};
 use std::path::Path;
 use std::time::Duration;
-use tokio::io::{BufReader, BufWriter};
 use tokio::net::UnixStream;
 
 /// This client binary's keyhog version. A daemon reporting a DIFFERENT version
@@ -55,10 +55,8 @@ async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result
         .with_context(|| format!("daemon client: connect to {}", socket_path.display()))?;
     trust::verify_connected_peer(&stream, socket_path)?;
 
-    let (reader, writer) = stream.into_split();
     let mut client = Client {
-        reader: BufReader::new(reader),
-        writer: BufWriter::new(writer),
+        transport: frame::client_transport(stream),
         daemon_version: String::new(),
     };
 
@@ -133,8 +131,7 @@ pub(crate) mod testing {
 }
 
 pub struct Client {
-    reader: BufReader<tokio::net::unix::OwnedReadHalf>,
-    writer: BufWriter<tokio::net::unix::OwnedWriteHalf>,
+    transport: frame::ClientTransport,
     /// The `keyhog_version` the daemon reported in its `Hello`. Set during
     /// `connect`/`connect_any_version`. Lets `daemon status` warn loudly when a
     /// daemon left running across an upgrade is now stale.
@@ -157,11 +154,11 @@ impl Client {
     }
 
     pub(crate) async fn send(&mut self, request: &Request) -> Result<()> {
-        frame::write_request(&mut self.writer, request).await
+        self.transport.send(request.clone()).await
     }
 
     pub(crate) async fn recv(&mut self) -> Result<Response> {
-        match frame::read_response(&mut self.reader).await? {
+        match self.transport.next().await.transpose()? {
             Some(r) => Ok(r),
             None => bail!(
                 "daemon client: connection closed before response. \
