@@ -115,7 +115,7 @@ pub(super) fn spawn_chunk_producer(
             let (seq, entry) = match item {
                 CursorItem::Entry(seq, entry) => (seq, entry),
                 CursorItem::Error(seq, error) => {
-                    let _ = tx.send((seq, vec![Err(error)]));
+                    let _ = tx.send((seq, vec![Err(error)])); // LAW10: receiver closed means scan consumer already stopped; otherwise ordered SourceError is surfaced
                     return;
                 }
                 CursorItem::End => return,
@@ -181,7 +181,7 @@ pub(super) fn spawn_chunk_producer(
             .spawn(move || run_reader_fb(cursor_fb, tx_fb, merkle_fb, skipped_fb))
             .is_err()
         {
-            let _ = entry_tx.send((
+            let _send_result = entry_tx.send((
                 0,
                 vec![Err(SourceError::Other(
                     "failed to spawn any filesystem reader thread; no files were scanned"

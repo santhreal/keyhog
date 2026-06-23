@@ -363,7 +363,7 @@ pub(crate) fn parse_hunk_new_start(header: &str) -> Option<usize> {
     let digits_end = after_plus
         .bytes()
         .position(|b| !b.is_ascii_digit())
-        .unwrap_or(after_plus.len());
+        .unwrap_or(after_plus.len()); // LAW10: hunk header digits run to end => borrowed digit slice, no error swallowed
     if digits_end == 0 {
         return None;
     }

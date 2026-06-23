@@ -281,7 +281,7 @@ pub(crate) fn is_probably_text_object_key(key: &str) -> bool {
 }
 
 fn cloud_key_extension(key: &str) -> Option<&str> {
-    let file_name = key.rsplit('/').next().unwrap_or(key);
+    let file_name = key.rsplit('/').next().unwrap_or(key); // LAW10: object key has no slash => whole key is the filename segment, recall-safe
     let (stem, ext) = file_name.rsplit_once('.')?;
     if stem.is_empty() || ext.is_empty() {
         return None;

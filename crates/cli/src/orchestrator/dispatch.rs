@@ -202,7 +202,7 @@ pub(super) fn filesystem_source_skipped_unchanged(source: &dyn Source) -> usize 
         .as_any()
         .downcast_ref::<keyhog_sources::FilesystemSource>()
         .map(keyhog_sources::FilesystemSource::skipped_unchanged_count)
-        .unwrap_or(0)
+        .unwrap_or(0) // LAW10: non-filesystem sources cannot have filesystem Merkle skips; zero is the exact typed count, recall-safe
 }
 
 struct CoalescedProgressTicker {

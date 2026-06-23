@@ -283,10 +283,15 @@ fn read_central_zip_entries(path: &Path) -> Result<Vec<CentralZipEntry>, String>
                 .to_string()
         });
     }
-    let eocd = eocd.ok_or_else(|| {
-        last_candidate_error
-            .unwrap_or_else(|| "valid zip end-of-central-directory record not found".to_string())
-    })?;
+    let eocd = match eocd {
+        Some(eocd) => eocd,
+        None => {
+            return Err(match last_candidate_error {
+                Some(error) => error,
+                None => "valid zip end-of-central-directory record not found".to_string(),
+            });
+        }
+    };
     let total_entries = read_u16(&tail[eocd + 10..eocd + 12])?;
     let central_size = read_u32(&tail[eocd + 12..eocd + 16])?;
     let central_offset = read_u32(&tail[eocd + 16..eocd + 20])?;

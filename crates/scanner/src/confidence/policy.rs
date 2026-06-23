@@ -131,7 +131,7 @@ pub(crate) fn candidate_match_score<'a>(
 
     #[cfg(not(feature = "ml"))]
     let score_result = {
-        let _ = (policy.ml_enabled, policy.is_named_detector);
+        let _ = (policy.ml_enabled, policy.is_named_detector); // LAW10: cfg-only unused-field marker in no-ML build; heuristic confidence still emitted, recall-safe
         MlScoreResult::Final(heuristic_conf)
     };
 

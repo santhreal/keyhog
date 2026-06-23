@@ -117,7 +117,7 @@ fn is_hex_sequential_placeholder(credential: &str) -> bool {
 }
 
 fn credential_body_without_known_prefix(credential: &str) -> &str {
-    crate::confidence::known_prefix_body(credential).unwrap_or(credential)
+    crate::confidence::known_prefix_body(credential).unwrap_or(credential) // LAW10: unknown prefix => inspect full credential body, over-suppresses less, recall-safe
 }
 
 fn count_adjacent_hex_steps(bytes: &[u8], step: fn(u8, u8) -> bool) -> usize {
@@ -166,8 +166,8 @@ fn count_pair_value_steps(bytes: &[u8], pair_count: usize, step: fn(u8, u8) -> b
 }
 
 fn hex_pair_value(bytes: &[u8], pair: usize) -> Option<u8> {
-    let hi = crate::decode::util::hex_val(bytes[pair * 2]).ok()?;
-    let lo = crate::decode::util::hex_val(bytes[pair * 2 + 1]).ok()?;
+    let hi = crate::decode::util::hex_val(bytes[pair * 2]).ok()?; // LAW10: non-hex pair => not a sequential hex placeholder, so candidate remains reportable
+    let lo = crate::decode::util::hex_val(bytes[pair * 2 + 1]).ok()?; // LAW10: non-hex pair => not a sequential hex placeholder, so candidate remains reportable
     Some((hi << 4) | lo)
 }
 

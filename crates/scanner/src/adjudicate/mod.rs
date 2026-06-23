@@ -238,7 +238,7 @@ pub(crate) fn detector_min_confidence_floor(
     detector_floor: Option<f64>,
     default_floor: f64,
 ) -> f64 {
-    detector_floor.unwrap_or(default_floor)
+    detector_floor.unwrap_or(default_floor) // LAW10: absent detector floor => explicit Tier-A scan default floor, recall-safe
 }
 
 pub(crate) fn detectorless_min_confidence_floor(default_floor: f64) -> f64 {

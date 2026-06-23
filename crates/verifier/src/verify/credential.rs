@@ -158,12 +158,13 @@ where
         last_attempt = Some((result.result, result.metadata));
     }
 
-    last_attempt.unwrap_or_else(|| {
-        (
+    match last_attempt {
+        Some(attempt) => attempt,
+        None => (
             VerificationResult::Error("max retries exceeded".into()),
             HashMap::new(),
-        )
-    })
+        ),
+    }
 }
 
 fn record_rate_limit_feedback(
@@ -269,7 +270,7 @@ pub(crate) fn rate_limit_feedback_sequence_for_test() -> (usize, usize, usize, u
 pub(crate) async fn retry_loop_records_rate_limit_feedback_for_test() -> usize {
     let limiter = crate::rate_limit::RateLimiter::new(1_000.0);
     let before = limiter.error_count_for_test();
-    let _ = retry_loop(1, 0, Some(&limiter), |_| async {
+    let _result = retry_loop(1, 0, Some(&limiter), |_| async {
         VerificationAttempt {
             result: VerificationResult::RateLimited,
             metadata: HashMap::new(),

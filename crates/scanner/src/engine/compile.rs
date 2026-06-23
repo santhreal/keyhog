@@ -498,7 +498,8 @@ fn build_hot_ac_map_index_by_index(
         .iter()
         .enumerate()
         .map(|(slot, detector_id)| {
-            let hot_literal = std::str::from_utf8(HOT_PATTERNS[slot]).ok()?;
+            let hot_literal = std::str::from_utf8(HOT_PATTERNS[slot])
+                .expect("static simdsieve hot-pattern literal must be valid UTF-8");
             ac_map.iter().position(|entry| {
                 detectors
                     .get(entry.detector_index)

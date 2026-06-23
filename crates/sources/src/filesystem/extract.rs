@@ -562,8 +562,8 @@ fn file_live_metadata(path: &Path) -> Option<FileLiveMetadata> {
     let file_type = meta.file_type();
     let mtime_ns = meta
         .modified()
-        .ok()
-        .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
+        .ok() // LAW10: missing platform mtime disables only Merkle fast-path; live size and scan still proceed
+        .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok()) // LAW10: pre-epoch mtime disables only Merkle fast-path; live size and scan still proceed
         .map(|dur| {
             let nanos = dur.as_secs() as u128 * 1_000_000_000 + dur.subsec_nanos() as u128;
             u64::try_from(nanos).unwrap_or(u64::MAX) // LAW10: empty/absent => documented numeric default, recall-safe
