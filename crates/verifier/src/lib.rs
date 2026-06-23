@@ -475,6 +475,12 @@ pub mod testing {
             Output = (keyhog_core::VerificationResult, HashMap<String, String>),
         > + Send;
         fn retry_delay_bounds_for_attempt(&self, attempt: usize, base_delay_ms: u64) -> (u64, u64);
+        fn evaluate_success_for_test(
+            &self,
+            spec: &keyhog_core::SuccessSpec,
+            status: u16,
+            body: &str,
+        ) -> bool;
         fn ssrf_check_url_with_resolved_addrs_for_test(
             &self,
             raw_url: &str,
@@ -675,6 +681,15 @@ pub mod testing {
 
         fn retry_delay_bounds_for_attempt(&self, attempt: usize, base_delay_ms: u64) -> (u64, u64) {
             crate::verify::retry_delay_bounds_for_attempt(attempt, base_delay_ms)
+        }
+
+        fn evaluate_success_for_test(
+            &self,
+            spec: &keyhog_core::SuccessSpec,
+            status: u16,
+            body: &str,
+        ) -> bool {
+            crate::verify::evaluate_success(spec, status, body)
         }
 
         fn ssrf_check_url_with_resolved_addrs_for_test(

@@ -69,10 +69,9 @@ pub(crate) fn evaluate_success(spec: &keyhog_core::SuccessSpec, status: u16, bod
     if let Some(ref json_path) = spec.json_path {
         if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
             if let Some(val) = json.pointer(json_path) {
-                return spec
-                    .equals
-                    .as_ref()
-                    .map_or(!val.is_null(), |expected| val.as_str() == Some(expected));
+                return spec.equals.as_ref().map_or(!val.is_null(), |expected| {
+                    json_value_to_contract_string(val) == *expected
+                });
             }
         }
         return false;
@@ -145,15 +144,18 @@ pub(crate) fn extract_metadata(specs: &[MetadataSpec], body: &str) -> HashMap<St
     if let Ok(json) = serde_json::from_str::<serde_json::Value>(body) {
         for spec in specs {
             if let Some(val) = json.pointer(&spec.json_path) {
-                let val_str = match val {
-                    serde_json::Value::String(s) => s.clone(),
-                    serde_json::Value::Number(n) => n.to_string(),
-                    serde_json::Value::Bool(b) => b.to_string(),
-                    _ => val.to_string(),
-                };
-                metadata.insert(spec.name.clone(), val_str);
+                metadata.insert(spec.name.clone(), json_value_to_contract_string(val));
             }
         }
     }
     metadata
+}
+
+fn json_value_to_contract_string(value: &serde_json::Value) -> String {
+    match value {
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        _ => value.to_string(),
+    }
 }
