@@ -11,10 +11,10 @@ fn decode_structure_uses_one_fact_cache() {
         .join("\n");
 
     assert!(
-        prod.contains("struct DecodeFacts")
+        prod.contains("struct DecodeEvidence")
             && prod.contains("static DECODE_FACTS_CACHE")
-            && prod.contains("fn decode_facts(candidate: &str) -> DecodeFacts")
-            && prod.contains("fn compute_decode_facts(candidate: &str) -> DecodeFacts"),
+            && prod.contains("pub(crate) fn evidence(candidate: &str) -> DecodeEvidence")
+            && prod.contains("fn compute_decode_facts(candidate: &str) -> DecodeEvidence"),
         "decode_structure should cache one decoded fact record per candidate"
     );
     assert!(
@@ -27,6 +27,52 @@ fn decode_structure_uses_one_fact_cache() {
             && !prod.contains("static CACHE: RefCell<HashMap<u64, bool>>"),
         "decode_structure predicates must not re-decode through private bool caches"
     );
+}
+
+#[test]
+fn decode_evidence_feeds_ml_confidence_and_fallback_paths() {
+    let manifest = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let source = |relative: &str| {
+        std::fs::read_to_string(manifest.join(relative))
+            .unwrap_or_else(|e| panic!("{relative} not readable: {e}"))
+    };
+    let uncommented = |src: &str| {
+        src.lines()
+            .filter(|line| !line.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let ml_features = uncommented(&source("src/ml_scorer/ml_features.rs"));
+    assert!(
+        ml_features.contains("crate::decode_structure::evidence(text).is_binary_payload()")
+            && !ml_features.contains("crate::decode_structure::is_encoded_binary(text)"),
+        "ML decode feature must read the shared decoded-evidence record, not a private bool wrapper"
+    );
+
+    for relative in [
+        "src/confidence/penalties.rs",
+        "src/engine/phase2_entropy/gates.rs",
+        "src/engine/phase2_generic_shape.rs",
+    ] {
+        let code = uncommented(&source(relative));
+        assert!(
+            code.contains("let decode_evidence = crate::decode_structure::evidence("),
+            "{relative} must bind one decode-evidence record before consuming decode-through predicates"
+        );
+        for forbidden in [
+            "crate::decode_structure::is_encoded_binary(",
+            "crate::decode_structure::decoded_contains_placeholder(",
+            "crate::decode_structure::decoded_contains_nul_byte(",
+            "crate::decode_structure::decoded_is_hex_key_material(",
+            "crate::decode_structure::decoded_is_base64_blob(",
+        ] {
+            assert!(
+                !code.contains(forbidden),
+                "{relative} must not restore duplicate decode predicate wrapper call {forbidden}"
+            );
+        }
+    }
 }
 
 #[test]

@@ -99,7 +99,7 @@ pub(crate) const KNOWN_PREFIXES: &[&str] = &[
 #[must_use]
 pub(crate) fn known_prefix_confidence_floor(credential: &str) -> Option<f64> {
     if super::penalties::contains_placeholder_word(credential)
-        || crate::decode_structure::decoded_contains_placeholder(credential)
+        || crate::decode_structure::evidence(credential).decoded_contains_placeholder()
         || super::penalties::is_degenerate_repeat(credential)
     {
         return None;

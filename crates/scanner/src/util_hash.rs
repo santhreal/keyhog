@@ -92,11 +92,9 @@ pub(crate) const DEFAULT_MAX_CACHE_ENTRIES: usize = 4096;
 ///
 /// This is the shared form of the bounded-cache idiom that had been copy-pasted
 /// across `entropy::shannon_entropy`, `ml_scorer::score_with_config`,
-/// `decode_structure::is_encoded_binary` /
-/// `decode_structure::decoded_is_base64_blob` /
-/// `decode_structure::decoded_contains_placeholder`. Eviction is wholesale (the
-/// whole map is cleared once it reaches `max_entries`) - simple and bounded,
-/// matching the prior behavior of every site.
+/// and `decode_structure::evidence`. Eviction is wholesale (the whole map is
+/// cleared once it reaches `max_entries`) - simple and bounded, matching the
+/// prior behavior of every site.
 ///
 /// `cache` must be a distinct thread-local per call site so verdicts of one
 /// kind never collide with another. `T: Copy` keeps the value cheap to return

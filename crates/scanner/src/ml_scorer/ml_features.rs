@@ -190,7 +190,7 @@ pub fn compute_features_with_config(
 /// secrets (which carry no magic header and do not parse as protobuf) survive.
 fn apply_decode_structure_feature(features: &mut [f32; NUM_FEATURES], text: &str) {
     features[DECODE_STRUCTURE_FEATURE_INDEX] =
-        binary_feature(crate::decode_structure::is_encoded_binary(text));
+        binary_feature(crate::decode_structure::evidence(text).is_binary_payload());
 }
 
 /// File-context fragments that imply this match is in test/fixture code.

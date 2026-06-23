@@ -171,7 +171,8 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
     // docs-example-marker FPs on the SecretBench mirror that the
     // surface-form check missed.
     let has_surface_placeholder = contains_placeholder_word(credential);
-    let has_decoded_placeholder = crate::decode_structure::decoded_contains_placeholder(credential);
+    let decode_evidence = crate::decode_structure::evidence(credential);
+    let has_decoded_placeholder = decode_evidence.decoded_contains_placeholder();
     let placeholder_is_only_url_host = is_named
         && has_surface_placeholder
         && !has_decoded_placeholder
@@ -213,7 +214,7 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
         // not parse end-to-end as protobuf - so this never fires on a named
         // detector (skipped here) and effectively never on a real generic
         // secret. This is keyhog's decode-through advantage feeding scoring.
-        if crate::decode_structure::is_encoded_binary(credential) {
+        if decode_evidence.is_binary_payload() {
             adjusted *= 0.02;
         }
         // Uniform random-base64 blob (44+ chars, all-base64 alphabet, with
@@ -237,8 +238,7 @@ pub(crate) fn apply_post_ml_penalties_with_encoded_text_lift(
         // >= 32). The inner bytes are the user-supplied content; the outer
         // wrapper is categorically a data envelope, not a credential. Mirror
         // v32 had 7 such FPs concentrated in yaml/k8s-secret fixtures.
-        if !allow_encoded_text_secret && crate::decode_structure::decoded_is_base64_blob(credential)
-        {
+        if !allow_encoded_text_secret && decode_evidence.decoded_is_base64_blob() {
             adjusted *= 0.02;
         }
     }

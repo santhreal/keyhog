@@ -323,11 +323,10 @@ impl CompiledScanner {
         // shape; the ml_pending path's penalty has the same check
         // but generic-secret emits directly via push_match and
         // bypasses it.
-        let allow_decoded_hex_key_material = allow_encoded_text_secret
-            && crate::decode_structure::decoded_is_hex_key_material(value);
-        if crate::decode_structure::decoded_contains_placeholder(value)
-            && !allow_decoded_hex_key_material
-        {
+        let decode_evidence = crate::decode_structure::evidence(value);
+        let allow_decoded_hex_key_material =
+            allow_encoded_text_secret && decode_evidence.decoded_is_hex_key_material();
+        if decode_evidence.decoded_contains_placeholder() && !allow_decoded_hex_key_material {
             return Some(GenericValueShapeStage::DecodedPlaceholder);
         }
         if let Some(reason) = crate::suppression::decision::decoded_benign_text_reason(value) {
@@ -343,7 +342,7 @@ impl CompiledScanner {
         if !high_entropy_punctuation_payload
             && !allow_canonical_hex_key
             && !allow_encoded_text_secret
-            && crate::decode_structure::is_encoded_binary(value)
+            && decode_evidence.is_binary_payload()
         {
             return Some(GenericValueShapeStage::EncodedBinary);
         }

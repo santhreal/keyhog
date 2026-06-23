@@ -1715,20 +1715,20 @@ pub(crate) mod decode_structure {
     }
 
     pub(crate) fn decoded_contains_placeholder(candidate: &str) -> bool {
-        crate::decode_structure::decoded_contains_placeholder(candidate)
+        crate::decode_structure::evidence(candidate).decoded_contains_placeholder()
     }
 
     #[cfg(any(feature = "entropy", test))]
     pub(crate) fn decoded_contains_nul_byte(candidate: &str) -> bool {
-        crate::decode_structure::decoded_contains_nul_byte(candidate)
+        crate::decode_structure::evidence(candidate).decoded_contains_nul_byte()
     }
 
     pub fn decoded_is_base64_blob(candidate: &str) -> bool {
-        crate::decode_structure::decoded_is_base64_blob(candidate)
+        crate::decode_structure::evidence(candidate).decoded_is_base64_blob()
     }
 
     pub fn decoded_is_hex_key_material(candidate: &str) -> bool {
-        crate::decode_structure::decoded_is_hex_key_material(candidate)
+        crate::decode_structure::evidence(candidate).decoded_is_hex_key_material()
     }
 
     pub(crate) fn decodes_to_printable_text(candidate: &str) -> bool {
@@ -1736,7 +1736,7 @@ pub(crate) mod decode_structure {
     }
 
     pub(crate) fn is_encoded_binary(candidate: &str) -> bool {
-        crate::decode_structure::is_encoded_binary(candidate)
+        crate::decode_structure::evidence(candidate).is_binary_payload()
     }
 
     pub(crate) fn looks_like_uniform_base64_blob(value: &str) -> bool {

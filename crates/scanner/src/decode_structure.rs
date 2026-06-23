@@ -33,8 +33,8 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 
 /// Structured view of what a candidate decodes to. Carried as-is into the ML
-/// feature vector once the model is retrained; consumed today by
-/// [`is_encoded_binary`].
+/// feature vector once the model is retrained; consumed today through
+/// [`DecodeEvidence::is_binary_payload`].
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub(crate) struct DecodeStructure {
     /// The candidate is a syntactically valid base64 (standard or url-safe) or
@@ -65,33 +65,51 @@ impl DecodeStructure {
 const MIN_DECODE_LEN: usize = 16;
 
 #[derive(Clone, Copy, Default)]
-struct DecodeFacts {
+pub(crate) struct DecodeEvidence {
     structure: DecodeStructure,
     decoded_is_base64_blob: bool,
     decoded_is_hex_key_material: bool,
+    #[cfg(any(feature = "entropy", test))]
     decoded_contains_nul_byte: bool,
     decoded_contains_placeholder: bool,
 }
 
-thread_local! {
-    static DECODE_FACTS_CACHE: RefCell<HashMap<u64, DecodeFacts>> =
-        RefCell::new(HashMap::with_capacity(256));
+impl DecodeEvidence {
+    #[must_use]
+    pub(crate) const fn structure(self) -> DecodeStructure {
+        self.structure
+    }
+
+    #[must_use]
+    pub(crate) fn is_binary_payload(self) -> bool {
+        self.structure.is_binary_payload()
+    }
+
+    #[must_use]
+    pub(crate) const fn decoded_is_base64_blob(self) -> bool {
+        self.decoded_is_base64_blob
+    }
+
+    #[must_use]
+    pub(crate) const fn decoded_is_hex_key_material(self) -> bool {
+        self.decoded_is_hex_key_material
+    }
+
+    #[cfg(any(feature = "entropy", test))]
+    #[must_use]
+    pub(crate) const fn decoded_contains_nul_byte(self) -> bool {
+        self.decoded_contains_nul_byte
+    }
+
+    #[must_use]
+    pub(crate) const fn decoded_contains_placeholder(self) -> bool {
+        self.decoded_contains_placeholder
+    }
 }
 
-/// Conservative verdict for the confidence pipeline: does this generic
-/// candidate decode to identifiable binary / serialized data? Real secrets
-/// return `false`.
-///
-/// Memoized: a single match is scored on this twice (ML feature #41 in
-/// `ml_features` and the generic-detector confidence penalty in
-/// `confidence::penalties`), and a scan re-encounters the same token across
-/// chunks. Without the cache every call re-decodes and re-parses the bytes.
-/// Thread-local + bounded with wholesale eviction, mirroring
-/// `entropy::shannon_entropy`. The verdict is a pure function of `candidate`,
-/// so caching by content hash is always correct.
-#[must_use]
-pub(crate) fn is_encoded_binary(candidate: &str) -> bool {
-    decode_facts(candidate).structure.is_binary_payload()
+thread_local! {
+    static DECODE_FACTS_CACHE: RefCell<HashMap<u64, DecodeEvidence>> =
+        RefCell::new(HashMap::with_capacity(256));
 }
 
 /// Unified shape-only gate for the "uniform random base64 blob" class - the
@@ -221,68 +239,15 @@ pub(crate) fn is_byte_distribution_base64_blob(
         || (shape.has_padding && (shape.has_plus || shape.has_slash))
 }
 
-/// True when `value` base64-decodes to bytes that are themselves all in
-/// the base64 alphabet (double-encoded base64). k8s `data:` fields wrap
-/// their values in another base64 layer; the inner decoded bytes are the
-/// actual user content, and when those bytes are themselves a printable
-/// base64 blob the outer wrapper is categorically data, not a credential.
-///
-/// Conservative: requires the decoded length to be >= 32 chars AND the
-/// decoded bytes to be all standard-base64 alphabet (A-Za-z0-9+/=).
-/// Random secret bytes would produce non-base64 bytes (non-printable,
-/// 0x00..0x20, 0x80..0xFF) so this is definitional, not heuristic.
-///
-/// Memoized via the same FNV-1a hash + thread-local cache pattern as the
-/// other decode-through helpers.
-#[must_use]
-pub(crate) fn decoded_is_base64_blob(candidate: &str) -> bool {
-    decode_facts(candidate).decoded_is_base64_blob
-}
-
-/// True when a candidate decodes to printable canonical hex key material.
-///
-/// This is deliberately narrower than "any decoded hex digest": only the
-/// keyword-owned encoded-text path consumes it, and only to stop substring
-/// placeholder words from firing inside real hex key material.
-#[must_use]
-pub(crate) fn decoded_is_hex_key_material(candidate: &str) -> bool {
-    decode_facts(candidate).decoded_is_hex_key_material
-}
-
 /// True when a base64/base64url/hex-shaped candidate decodes to ordinary
 /// printable text, not a binary asset or protobuf envelope.
 #[must_use]
 pub(crate) fn decodes_to_printable_text(candidate: &str) -> bool {
-    let structure = decode_facts(candidate).structure;
+    let structure = evidence(candidate).structure();
     structure.decodable
         && structure.decoded_len >= 8
         && structure.printable_ratio >= 0.85
         && !structure.is_binary_payload()
-}
-
-/// True when a base64/base64url/hex-shaped candidate decodes to bytes carrying
-/// at least one NUL byte. This is narrower than `printable_ratio`: random bytes
-/// and opaque credentials can both be mostly non-printable, but a NUL-bearing
-/// decoded payload is binary data evidence for fallback entropy gates that have
-/// no service-specific detector anchor.
-#[must_use]
-#[cfg(any(feature = "entropy", test))]
-pub(crate) fn decoded_contains_nul_byte(candidate: &str) -> bool {
-    decode_facts(candidate).decoded_contains_nul_byte
-}
-
-/// Decode `candidate` (base64 / url-safe-base64 / hex) and check whether the
-/// decoded bytes contain any placeholder word case-insensitively. Composes
-/// keyhog's decode-through with the placeholder suppression: a docs sample
-/// that arrives base64-wrapped (e.g. AWS docs publishing AKIAEXAMPLEEXAMPLE12
-/// as the base64-encoded body of a yaml secret) is now recognized as a sample
-/// even though the surface form looks like high-entropy random bytes. Mirror
-/// v26: 9 docs-example-marker FPs (all `QUtJQUVYQU1QTEVFWEFNUExFMTI=`, base64
-/// of AKIA...EXAMPLE...12) collapsed by this gate. Memoized to match the
-/// existing `is_encoded_binary` call cadence.
-#[must_use]
-pub(crate) fn decoded_contains_placeholder(candidate: &str) -> bool {
-    decode_facts(candidate).decoded_contains_placeholder
 }
 
 /// Decode `candidate` (base64 standard, base64 url-safe, or hex) and describe
@@ -290,10 +255,13 @@ pub(crate) fn decoded_contains_placeholder(candidate: &str) -> bool {
 /// candidate is too short or not a clean encoding.
 #[must_use]
 pub(crate) fn analyze(candidate: &str) -> DecodeStructure {
-    decode_facts(candidate).structure
+    evidence(candidate).structure()
 }
 
-fn decode_facts(candidate: &str) -> DecodeFacts {
+/// Decode `candidate` once and return every decode-through predicate input
+/// consumed by ML, confidence, generic fallback, and entropy fallback paths.
+#[must_use]
+pub(crate) fn evidence(candidate: &str) -> DecodeEvidence {
     let key = crate::util_hash::hash_fast(candidate.as_bytes());
     crate::util_hash::memoize_by_hash(
         &DECODE_FACTS_CACHE,
@@ -303,16 +271,16 @@ fn decode_facts(candidate: &str) -> DecodeFacts {
     )
 }
 
-fn compute_decode_facts(candidate: &str) -> DecodeFacts {
+fn compute_decode_facts(candidate: &str) -> DecodeEvidence {
     let trimmed = candidate.trim();
     if trimmed.len() < MIN_DECODE_LEN {
-        return DecodeFacts::default();
+        return DecodeEvidence::default();
     }
     let Some(bytes) = decode_candidate(trimmed) else {
-        return DecodeFacts::default();
+        return DecodeEvidence::default();
     };
     if bytes.is_empty() {
-        return DecodeFacts::default();
+        return DecodeEvidence::default();
     }
     let printable = bytes
         .iter()
@@ -325,7 +293,7 @@ fn compute_decode_facts(candidate: &str) -> DecodeFacts {
         magic: magic_format(&bytes),
         protobuf_wire: parse_protobuf_wire(&bytes),
     };
-    DecodeFacts {
+    DecodeEvidence {
         structure,
         decoded_is_base64_blob: bytes.len() >= 32
             && bytes
@@ -333,6 +301,7 @@ fn compute_decode_facts(candidate: &str) -> DecodeFacts {
                 .all(|&b| crate::decode::is_standard_base64_byte(b)),
         decoded_is_hex_key_material: matches!(bytes.len(), 32 | 40 | 48)
             && bytes.iter().all(|byte| byte.is_ascii_hexdigit()),
+        #[cfg(any(feature = "entropy", test))]
         decoded_contains_nul_byte: bytes.contains(&0),
         decoded_contains_placeholder: crate::placeholder_words::bytes_contain_placeholder_word(
             &bytes,

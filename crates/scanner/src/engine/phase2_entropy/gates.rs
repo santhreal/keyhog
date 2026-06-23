@@ -345,9 +345,10 @@ pub(crate) fn entropy_match_suppression_stage(
     {
         return Some(EntropyShapeStage::RandomBase64Blob);
     }
+    let decode_evidence = crate::decode_structure::evidence(&entropy_match.value);
     // Decode-through coherence (entropy phase-2 path). The
     // ML-pending pipeline calls `apply_post_ml_penalties`
-    // which gates on `decode_structure::is_encoded_binary`,
+    // which gates on the shared decode evidence,
     // but the entropy-fallback emits directly via
     // `push_match` and skips that gate - so a generic
     // high-entropy candidate that decodes to a PNG / gzip /
@@ -360,9 +361,7 @@ pub(crate) fn entropy_match_suppression_stage(
     // protobuf-wire parse) so it never false-suppresses a
     // real secret. Memoized in `decode_structure`, so the
     // cost is a single bytes-hash + cache lookup.
-    if !high_entropy_punctuation_payload
-        && crate::decode_structure::is_encoded_binary(&entropy_match.value)
-    {
+    if !high_entropy_punctuation_payload && decode_evidence.is_binary_payload() {
         return Some(EntropyShapeStage::EncodedBinary);
     }
     // Random-byte base64 decoy coherence for the entropy path. The generic
@@ -373,7 +372,7 @@ pub(crate) fn entropy_match_suppression_stage(
     if !isolated_bare_token
         && !same_line_high_signal_assignment_owner
         && !high_entropy_punctuation_payload
-        && crate::decode_structure::decoded_contains_nul_byte(&entropy_match.value)
+        && decode_evidence.decoded_contains_nul_byte()
         && crate::suppression::shape::looks_like_random_byte_base64_blob(&entropy_match.value)
     {
         return Some(EntropyShapeStage::RandomByteBlob);
@@ -384,7 +383,7 @@ pub(crate) fn entropy_match_suppression_stage(
     // through the surface-form `should_suppress_known_example_…`
     // call above because the base64 hides the EXAMPLE marker.
     // Keep parity with the generic-secret emit path.
-    if crate::decode_structure::decoded_contains_placeholder(&entropy_match.value) {
+    if decode_evidence.decoded_contains_placeholder() {
         return Some(EntropyShapeStage::DecodedPlaceholder);
     }
     None
