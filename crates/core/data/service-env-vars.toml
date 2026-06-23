@@ -11,13 +11,13 @@
 # additional entries here and review them as data changes; the shipped binary
 # does not read ambient process environment to change SARIF fix suggestions.
 #
-# Matching: `match` is a lowercase needle tested against the lowercased service
-# string. By default it is a SUBSTRING test; set `prefix = true` to require the
-# service to START with the needle (used for the `gh-` / `ghp_` GitHub token
-# prefixes, which must not match a substring buried mid-name). The FIRST matching
-# entry in file order wins, so order from most-specific to least-specific if two
-# needles could both match. `env` is the variable name emitted verbatim (already
-# SCREAMING_SNAKE).
+# Matching: `match` is an ASCII-case-insensitive needle tested against the
+# service string. By default it is a SUBSTRING test; set `prefix = true` to
+# require the service to START with the needle (used for the `gh-` / `ghp_`
+# GitHub token prefixes, which must not match a substring buried mid-name). The
+# FIRST matching entry in file order wins, so order from most-specific to
+# least-specific if two needles could both match. `env` is the variable name
+# emitted verbatim (already SCREAMING_SNAKE).
 #
 # Sources: 12-factor config conventions and the canonical SDK env-var names
 # documented by each provider (AWS CLI `AWS_ACCESS_KEY_ID`, GitHub Actions

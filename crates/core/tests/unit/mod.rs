@@ -12,6 +12,7 @@ pub mod allowlist_inline_metadata_reason_parsed;
 pub mod allowlist_mixed_prefixed_and_bare_entries_load;
 pub mod allowlist_unknown_metadata_keys_not_fatal;
 pub mod apply_default_protections_populates_report_fields;
+pub mod auto_fix_remediation_uses_canonical_severity;
 pub mod aws;
 pub mod banner;
 pub mod chunk_metadata_defaults_are_empty;

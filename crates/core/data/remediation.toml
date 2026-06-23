@@ -110,7 +110,7 @@ severity = "low"
 action = "Remove the exposed value from the codebase and confirm it cannot authenticate."
 
 [[severity]]
-severity = "clientsafe"
+severity = "client-safe"
 action = "Public by design; verify domain, origin, referrer, and quota restrictions before suppressing."
 
 [[severity]]

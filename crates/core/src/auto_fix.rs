@@ -24,7 +24,7 @@ use crate::Severity;
 /// `[[service]]` tables in `data/service-env-vars.toml`.
 #[derive(serde::Deserialize)]
 struct ServiceEnvEntry {
-    /// Lowercase needle tested against the lowercased service string.
+    /// ASCII-case-insensitive needle tested against the service string.
     #[serde(rename = "match")]
     needle: String,
     /// The environment-variable name emitted verbatim when the needle matches.
@@ -185,16 +185,9 @@ fn parse_remediation_file(raw: &str, origin: &str) -> RemediationFile {
 /// The curated mappings follow community conventions (12-factor, common SDKs);
 /// see `data/service-env-vars.toml` for the authoritative list.
 pub(crate) fn env_var_name_for_service(service: &str) -> String {
-    let lower = service.to_lowercase();
     SERVICE_ENV_MAP
         .iter()
-        .find(|entry| {
-            if entry.prefix {
-                lower.starts_with(&entry.needle)
-            } else {
-                lower.contains(&entry.needle)
-            }
-        })
+        .find(|entry| service_entry_matches(service, &entry.needle, entry.prefix))
         .map(|entry| entry.env.clone())
         // The default below is not an error fallback — it is the documented
         // `<SERVICE>_KEY` mapping for any service the curated Tier-B map does not
@@ -231,22 +224,18 @@ pub(crate) fn remediation_for(detector_id: &str, service: &str, severity: Severi
         return Remediation::from(&entry.fields);
     }
 
-    let service_lower = service.to_lowercase();
-    if let Some(entry) = data.service.iter().find(|entry| {
-        if entry.prefix {
-            service_lower.starts_with(&entry.needle)
-        } else {
-            service_lower.contains(&entry.needle)
-        }
-    }) {
+    if let Some(entry) = data
+        .service
+        .iter()
+        .find(|entry| service_entry_matches(service, &entry.needle, entry.prefix))
+    {
         return Remediation::from(&entry.fields);
     }
 
-    let severity_key = format!("{severity:?}").to_lowercase();
     if let Some(entry) = data
         .severity
         .iter()
-        .find(|entry| entry.severity == severity_key)
+        .find(|entry| entry.severity == severity.as_str())
     {
         return Remediation::from(&entry.fields);
     }
@@ -258,4 +247,30 @@ pub(crate) fn remediation_for(detector_id: &str, service: &str, severity: Severi
         docs_url: None,
         revoke_command: None,
     }
+}
+
+fn service_entry_matches(service: &str, needle: &str, prefix: bool) -> bool {
+    if prefix {
+        starts_with_ignore_ascii_case(service, needle)
+    } else {
+        contains_ignore_ascii_case(service, needle)
+    }
+}
+
+fn starts_with_ignore_ascii_case(value: &str, prefix: &str) -> bool {
+    value
+        .as_bytes()
+        .get(..prefix.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(prefix.as_bytes()))
+}
+
+fn contains_ignore_ascii_case(value: &str, needle: &str) -> bool {
+    let needle = needle.as_bytes();
+    if needle.is_empty() {
+        return true;
+    }
+    value
+        .as_bytes()
+        .windows(needle.len())
+        .any(|window| window.eq_ignore_ascii_case(needle))
 }

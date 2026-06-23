@@ -18,4 +18,12 @@ fn auto_fix_non_empty() {
         !prod.contains("todo!()") && !prod.contains("unimplemented!()"),
         "auto_fix: todo!/unimplemented! forbidden in non-test source"
     );
+    assert!(
+        prod.contains("fn service_entry_matches(")
+            && prod.contains("contains_ignore_ascii_case(")
+            && prod.contains("severity.as_str()")
+            && !prod.contains(".to_lowercase()")
+            && !prod.contains("format!(\"{severity:?}\")"),
+        "auto_fix: service/remediation matching must stay allocation-free and use canonical severity labels"
+    );
 }

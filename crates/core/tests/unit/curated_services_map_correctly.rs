@@ -25,6 +25,13 @@ fn curated_services_map_correctly() {
     assert_eq!(
         keyhog_core::testing::CoreTestApi::auto_fix_env_var_name_for_service(
             &keyhog_core::testing::TestApi,
+            "GitHub"
+        ),
+        "GITHUB_TOKEN"
+    );
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::auto_fix_env_var_name_for_service(
+            &keyhog_core::testing::TestApi,
             "openai"
         ),
         "OPENAI_API_KEY"
