@@ -57,9 +57,21 @@ fn entropy_and_generic_fallback_confidence_route_through_confidence_owner() {
     }
 
     let entropy = uncommented_code(&read(&src.join("engine/phase2_entropy.rs")));
+    let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
+    assert!(
+        adjudicate.contains("fn detectorless_min_confidence_floor(")
+            && adjudicate.contains("detector_min_confidence_floor(None, default_floor)"),
+        "adjudicate must own detectorless fallback min-confidence floor resolution"
+    );
     assert!(
         entropy.contains("crate::confidence::policy::entropy_fallback_confidence("),
         "entropy fallback must ask the confidence owner for its base confidence"
+    );
+    assert!(
+        entropy.contains("crate::adjudicate::detectorless_min_confidence_floor(")
+            && !entropy.contains("min_confidence_floor: self.config.min_confidence")
+            && !entropy.contains("ml_context,\n                    self.config.min_confidence"),
+        "entropy fallback must not bind detectorless min-confidence floors directly in the engine leaf"
     );
     for forbidden in [
         "base_confidence",
@@ -89,6 +101,11 @@ fn entropy_and_generic_fallback_confidence_route_through_confidence_owner() {
     assert!(
         generic.contains("crate::confidence::policy::generic_secret_confidence("),
         "generic fallback must ask the confidence owner for its base confidence"
+    );
+    assert!(
+        generic.contains("crate::adjudicate::detectorless_min_confidence_floor(")
+            && !generic.contains("min_confidence_floor: self.config.min_confidence"),
+        "generic fallback must not bind detectorless min-confidence floors directly in the engine leaf"
     );
     for forbidden in [
         "let base_conf",

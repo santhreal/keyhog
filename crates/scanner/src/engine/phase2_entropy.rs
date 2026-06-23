@@ -204,6 +204,8 @@ impl CompiledScanner {
             // `checksum_adjusted_confidence` tail (the batch path applies both,
             // identically). The shape gates above remain cheap, recall-safe
             // pre-filters.
+            let min_confidence_floor =
+                crate::adjudicate::detectorless_min_confidence_floor(self.config.min_confidence);
             #[cfg(feature = "ml")]
             if self.config.ml_enabled && self.config.entropy_ml_authoritative {
                 let raw_match = build_raw_match(scan_state, policy_conf);
@@ -217,7 +219,7 @@ impl CompiledScanner {
                     policy_conf,
                     entropy_match.value.to_string(),
                     ml_context,
-                    self.config.min_confidence,
+                    min_confidence_floor,
                 );
                 continue;
             }
@@ -231,7 +233,7 @@ impl CompiledScanner {
                     detector_id: metadata.0.as_ref(),
                     code_context: crate::context::CodeContext::Unknown,
                     confidence: policy_conf,
-                    min_confidence_floor: self.config.min_confidence,
+                    min_confidence_floor,
                     penalize_test_paths: self.config.penalize_test_paths,
                     file_path: chunk.metadata.path.as_deref(),
                     is_named_detector: false,

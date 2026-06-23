@@ -310,6 +310,9 @@ impl CompiledScanner {
                 // named-detector emit paths use. `is_named=false` keeps the
                 // generic fallback's shape penalties active; the encoded-text
                 // lift is the one extra raw signal this path contributes.
+                let min_confidence_floor = crate::adjudicate::detectorless_min_confidence_floor(
+                    self.config.min_confidence,
+                );
                 let Some(report_conf) = crate::adjudicate::finalize_report_candidate(
                     chunk.metadata.path.as_deref(),
                     value,
@@ -317,7 +320,7 @@ impl CompiledScanner {
                         detector_id: crate::detector_ids::GENERIC_SECRET,
                         code_context: context,
                         confidence: policy_conf,
-                        min_confidence_floor: self.config.min_confidence,
+                        min_confidence_floor,
                         penalize_test_paths: self.config.penalize_test_paths,
                         file_path: chunk.metadata.path.as_deref(),
                         is_named_detector: false,

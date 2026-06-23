@@ -239,6 +239,10 @@ pub(crate) fn detector_min_confidence_floor(
     detector_floor.unwrap_or(default_floor)
 }
 
+pub(crate) fn detectorless_min_confidence_floor(default_floor: f64) -> f64 {
+    detector_min_confidence_floor(None, default_floor)
+}
+
 /// The compiled default for the Tier-A `entropy_threshold` knob
 /// (`keyhog_core::ScanConfig::default().entropy_threshold == 4.5`).
 const DEFAULT_GENERIC_ENTROPY_THRESHOLD: f64 = 4.5;
