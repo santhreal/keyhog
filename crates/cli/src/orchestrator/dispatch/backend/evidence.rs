@@ -81,7 +81,12 @@ impl AutorouteDecision {
                 }
                 None => (None, None, None),
             };
-        let candidates = route_candidates(&simd_timing, cpu_timing.as_ref(), gpu_route_ns);
+        let candidates = route_candidates_with_gpu_backend(
+            &simd_timing,
+            cpu_timing.as_ref(),
+            gpu_route_ns,
+            gpu_evidence_backend(backend),
+        );
         let selected_margin_ns = selected_backend_margin_ns(backend, &candidates);
         Self {
             backend: backend.label().to_string(),
@@ -155,11 +160,15 @@ impl AutorouteDecision {
         }
     }
 
-    pub(super) fn route_candidates(&self) -> Vec<(ScanBackend, u128)> {
-        route_candidates(
+    pub(super) fn route_candidates_for_selected_backend(
+        &self,
+        selected_backend: ScanBackend,
+    ) -> Vec<(ScanBackend, u128)> {
+        route_candidates_with_gpu_backend(
             &self.simd_timing,
             self.cpu_timing.as_ref(),
             self.gpu_route_ns,
+            gpu_evidence_backend(selected_backend),
         )
     }
 
@@ -167,7 +176,7 @@ impl AutorouteDecision {
         &self,
         selected: ScanBackend,
     ) -> bool {
-        let intervals = self.route_confidence_intervals();
+        let intervals = self.route_confidence_intervals(selected);
         let Some((_, selected_interval)) = intervals
             .iter()
             .find(|(backend, _)| *backend == selected)
@@ -181,7 +190,10 @@ impl AutorouteDecision {
             .all(|(_, competitor_interval)| selected_interval.high_ns < competitor_interval.low_ns)
     }
 
-    fn route_confidence_intervals(&self) -> Vec<(ScanBackend, TimingConfidenceInterval)> {
+    fn route_confidence_intervals(
+        &self,
+        selected_backend: ScanBackend,
+    ) -> Vec<(ScanBackend, TimingConfidenceInterval)> {
         let mut intervals = vec![(
             ScanBackend::SimdCpu,
             self.simd_timing.confidence_interval_95_ns,
@@ -199,7 +211,7 @@ impl AutorouteDecision {
         ) {
             let warm_interval = warm_timing.confidence_interval_95_ns;
             intervals.push((
-                ScanBackend::Gpu,
+                gpu_evidence_backend(selected_backend),
                 TimingConfidenceInterval {
                     low_ns: cold_ns.max(warm_interval.low_ns),
                     high_ns: cold_ns.max(warm_interval.high_ns),
@@ -210,19 +222,36 @@ impl AutorouteDecision {
     }
 }
 
+#[cfg(test)]
 pub(super) fn route_candidates(
     simd_timing: &BackendTimingEvidence,
     cpu_timing: Option<&BackendTimingEvidence>,
     gpu_route_ns: Option<u128>,
+) -> Vec<(ScanBackend, u128)> {
+    route_candidates_with_gpu_backend(simd_timing, cpu_timing, gpu_route_ns, ScanBackend::Gpu)
+}
+
+fn route_candidates_with_gpu_backend(
+    simd_timing: &BackendTimingEvidence,
+    cpu_timing: Option<&BackendTimingEvidence>,
+    gpu_route_ns: Option<u128>,
+    gpu_backend: ScanBackend,
 ) -> Vec<(ScanBackend, u128)> {
     let mut candidates = vec![(ScanBackend::SimdCpu, simd_timing.best_ns)];
     if let Some(cpu_timing) = cpu_timing {
         candidates.push((ScanBackend::CpuFallback, cpu_timing.best_ns));
     }
     if let Some(gpu_route_ns) = gpu_route_ns {
-        candidates.push((ScanBackend::Gpu, gpu_route_ns));
+        candidates.push((gpu_backend, gpu_route_ns));
     }
     candidates
+}
+
+fn gpu_evidence_backend(selected_backend: ScanBackend) -> ScanBackend {
+    match selected_backend {
+        ScanBackend::MegaScan => ScanBackend::MegaScan,
+        _ => ScanBackend::Gpu,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

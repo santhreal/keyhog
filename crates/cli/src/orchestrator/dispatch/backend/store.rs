@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::io::Read;
 
 use super::evidence::{
     gpu_cold_warm_route_evidence, selected_backend_margin_ns, AutorouteDecision,
@@ -10,6 +11,8 @@ use super::host::AutorouteHostProfile;
 use super::workload::WorkloadKey;
 use super::AUTOROUTE_CACHE_VERSION;
 use super::AUTOROUTE_CALIBRATION_TRIALS;
+
+pub(super) const AUTOROUTE_CACHE_FILE_BYTES: u64 = 8 * 1024 * 1024;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(super) struct AutorouteCache {
@@ -184,7 +187,7 @@ pub(super) fn load_autoroute_cache(
     config_digest: u64,
     host_profile: &AutorouteHostProfile,
 ) -> Result<HashMap<WorkloadKey, AutorouteDecision>, Box<dyn std::error::Error + Send + Sync>> {
-    let data = std::fs::read(path)?;
+    let data = read_autoroute_cache_file(path)?;
     let cache: AutorouteCache = serde_json::from_slice(&data)?;
     if cache.version != AUTOROUTE_CACHE_VERSION {
         return Err("unsupported autoroute cache version".into());
@@ -234,6 +237,34 @@ pub(super) fn load_autoroute_cache(
         out.insert(key, decision);
     }
     Ok(out)
+}
+
+fn read_autoroute_cache_file(path: &std::path::Path) -> std::io::Result<Vec<u8>> {
+    let file = std::fs::File::open(path)?;
+    let len = file.metadata()?.len();
+    if len > AUTOROUTE_CACHE_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "autoroute cache exceeds {} byte cap; delete the cache file and rerun install calibration",
+                AUTOROUTE_CACHE_FILE_BYTES
+            ),
+        ));
+    }
+
+    let mut data = Vec::with_capacity(len as usize);
+    file.take(AUTOROUTE_CACHE_FILE_BYTES.saturating_add(1))
+        .read_to_end(&mut data)?;
+    if data.len() as u64 > AUTOROUTE_CACHE_FILE_BYTES {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "autoroute cache grew past {} byte cap while reading; retry after the file is stable",
+                AUTOROUTE_CACHE_FILE_BYTES
+            ),
+        ));
+    }
+    Ok(data)
 }
 
 fn validate_decision_route_evidence(
@@ -289,7 +320,7 @@ fn validate_decision_route_evidence(
     if !selected_timing.is_valid_for_trials(AUTOROUTE_CALIBRATION_TRIALS) {
         return Err("selected backend timing evidence is invalid".into());
     }
-    let candidates = decision.route_candidates();
+    let candidates = decision.route_candidates_for_selected_backend(selected_backend);
     let Some((fastest_backend, _)) = candidates.iter().min_by_key(|(_, ns)| *ns).copied() else {
         return Err("cache decision has no route timing evidence".into());
     };

@@ -2,7 +2,9 @@ use super::evidence::{
     route_candidates, selected_backend_margin_ns, AutorouteDecision, BackendTimingEvidence,
 };
 use super::host::AutorouteHostProfile;
-use super::store::{load_autoroute_cache, save_autoroute_cache, AutorouteCache};
+use super::store::{
+    load_autoroute_cache, save_autoroute_cache, AutorouteCache, AUTOROUTE_CACHE_FILE_BYTES,
+};
 use super::workload::{
     autoroute_stable_bucket, autoroute_stable_density_bucket, source_class_hash, workload_key,
     WorkloadKey,
@@ -572,6 +574,78 @@ fn autoroute_cache_rejects_empty_decision_set() {
             .to_string()
             .contains("no workload decisions"),
         "a persisted autoroute cache with no measured workload decisions must not be accepted as calibrated"
+    );
+
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
+fn autoroute_cache_roundtrips_megascan_backend_decision() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_megascan_{}.json",
+        std::process::id()
+    ));
+    let digest = 0x1234_5678_9ABC_DEF0u64;
+    let config_digest = 0xA55A_D00D_CAFE_BEEFu64;
+    let host = test_host(Some("NVIDIA GeForce RTX 5090"));
+    let key = test_workload_key();
+    let mut decisions = HashMap::new();
+    decisions.insert(
+        key,
+        AutorouteDecision::new(
+            ScanBackend::MegaScan,
+            8 * 1024 * 1024,
+            1,
+            16,
+            Some(20),
+            Some(10),
+        ),
+    );
+
+    save_autoroute_cache(
+        &path,
+        digest,
+        test_rules_digest(),
+        config_digest,
+        &host,
+        &decisions,
+    )
+    .expect("MegaScan autoroute decision should persist");
+    let loaded = load_autoroute_cache(&path, digest, test_rules_digest(), config_digest, &host)
+        .expect("MegaScan autoroute decision should reload");
+    assert_eq!(
+        loaded.get(&key).and_then(AutorouteDecision::backend),
+        Some(ScanBackend::MegaScan),
+        "persisted MegaScan route evidence must not be relabeled as plain GPU"
+    );
+
+    std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
+}
+
+#[test]
+fn autoroute_cache_rejects_oversized_artifact_before_json_parse() {
+    let path = std::env::temp_dir().join(format!(
+        "keyhog_autoroute_oversized_cache_{}.json",
+        std::process::id()
+    ));
+    let file = std::fs::File::create(&path).expect("create oversized autoroute cache fixture");
+    file.set_len(AUTOROUTE_CACHE_FILE_BYTES + 1)
+        .expect("sparse oversized autoroute cache fixture");
+    drop(file);
+
+    let loaded = load_autoroute_cache(
+        &path,
+        0x1234_5678_9ABC_DEF0,
+        test_rules_digest(),
+        0xA55A_D00D_CAFE_BEEF,
+        &test_host(None),
+    );
+    let err = loaded
+        .expect_err("oversized autoroute cache must be rejected before parse")
+        .to_string();
+    assert!(
+        err.contains("autoroute cache exceeds") && err.contains("byte cap"),
+        "oversized autoroute cache must fail with the cap oracle, got: {err}"
     );
 
     std::fs::remove_file(&path).ok(); // LAW10: best-effort cleanup remove; absence/failure is the desired post-state, recall-irrelevant
