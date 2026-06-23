@@ -222,6 +222,21 @@ fn docker_compose_map_environment_stringifies_yaml_scalars() {
 }
 
 #[test]
+fn docker_compose_map_environment_prefers_value_line_when_key_repeats() {
+    let text = "services:\n  web:\n    labels:\n      API_KEY: label-only\n    environment:\n      API_KEY: ghp_abcdefghij0123456789\n";
+    let pairs = parse_docker_compose(text);
+    let pair = pairs
+        .iter()
+        .find(|pair| pair.context == "API_KEY")
+        .expect("environment API_KEY extracted");
+    assert_eq!(pair.value, "ghp_abcdefghij0123456789");
+    assert_eq!(
+        pair.line, 6,
+        "environment mapping line must win over an earlier duplicate key"
+    );
+}
+
+#[test]
 fn docker_compose_list_environment() {
     let text = "services:\n  web:\n    environment:\n      - DB_PASS=supersecret\n";
     let pairs = parse_docker_compose(text);
@@ -272,6 +287,21 @@ fn k8s_secret_stringdata_stringifies_yaml_scalars() {
         Some("12345678901234567890")
     );
     assert_eq!(value_of!(pairs, "enabled_token"), Some("false"));
+}
+
+#[test]
+fn k8s_secret_stringdata_prefers_value_line_when_key_repeats() {
+    let text = "apiVersion: v1\nkind: Secret\nmetadata:\n  labels:\n    token: label-only\nstringData:\n  token: ghp_abcdefghij0123456789\n";
+    let pairs = parse_k8s_secret(text);
+    let pair = pairs
+        .iter()
+        .find(|pair| pair.context == "token")
+        .expect("stringData token extracted");
+    assert_eq!(pair.value, "ghp_abcdefghij0123456789");
+    assert_eq!(
+        pair.line, 7,
+        "stringData mapping line must win over an earlier duplicate key"
+    );
 }
 
 #[test]

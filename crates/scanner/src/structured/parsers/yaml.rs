@@ -25,6 +25,7 @@ pub(crate) fn parse_k8s_secret(text: &str) -> Vec<ExtractedPair> {
             if key.is_empty() || encoded.is_empty() {
                 continue;
             }
+            let (line_anchor, fallback_anchor) = yaml_mapping_anchors(key, &encoded);
             let decoded = match keyhog_core::decode_standard_base64(&encoded) {
                 Ok(bytes) => String::from_utf8_lossy(&bytes).into_owned(),
                 Err(error) => {
@@ -41,8 +42,8 @@ pub(crate) fn parse_k8s_secret(text: &str) -> Vec<ExtractedPair> {
             pending.push(PendingExtractedPair::owned_anchor_with_fallback(
                 key,
                 decoded,
-                format!("{}:", key),
-                encoded,
+                line_anchor,
+                fallback_anchor,
             ));
         }
     }
@@ -56,10 +57,12 @@ pub(crate) fn parse_k8s_secret(text: &str) -> Vec<ExtractedPair> {
             if key.is_empty() {
                 continue;
             }
-            pending.push(PendingExtractedPair::owned_anchor(
+            let (line_anchor, fallback_anchor) = yaml_mapping_anchors(key, &secret_value);
+            pending.push(PendingExtractedPair::owned_anchor_with_fallback(
                 key,
                 secret_value,
-                key.to_string(),
+                line_anchor,
+                fallback_anchor,
             ));
         }
     }
@@ -150,10 +153,12 @@ fn extract_environment_block(value: &serde_yaml::Value, pending: &mut Vec<Pendin
                 if key.is_empty() {
                     continue;
                 }
-                pending.push(PendingExtractedPair::owned_anchor(
+                let (line_anchor, fallback_anchor) = yaml_mapping_anchors(key, &val);
+                pending.push(PendingExtractedPair::owned_anchor_with_fallback(
                     key,
                     val,
-                    key.to_string(),
+                    line_anchor,
+                    fallback_anchor,
                 ));
             }
         }
@@ -175,6 +180,10 @@ fn extract_environment_block(value: &serde_yaml::Value, pending: &mut Vec<Pendin
         }
         _ => {}
     }
+}
+
+fn yaml_mapping_anchors(key: &str, value: &str) -> (String, String) {
+    (format!("{key}: {value}"), format!("{key}:"))
 }
 
 fn yaml_scalar_value_text(value: &serde_yaml::Value) -> Option<String> {
