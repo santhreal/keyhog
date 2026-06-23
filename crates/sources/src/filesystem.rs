@@ -62,6 +62,14 @@ pub(crate) fn read_file_for_compressed_input_for_test(
     read::read_file_for_compressed_input_for_test(path, size_cap)
 }
 
+pub(crate) fn read_file_windowed_mmap_len_for_test(
+    path: &std::path::Path,
+    window_size: usize,
+    overlap: usize,
+) -> Option<usize> {
+    read::read_file_windowed_mmap_len_for_test(path, window_size, overlap)
+}
+
 pub(crate) fn slice_into_windows_for_test(
     bytes: &[u8],
     window_size: usize,

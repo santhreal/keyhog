@@ -194,29 +194,12 @@ pub(in crate::filesystem) fn read_file_mmap(path: &Path) -> Option<String> {
         let fd = file.as_raw_fd();
         // SAFETY: Simple advisory lock FFI call.
         if unsafe { libc::flock(fd, libc::LOCK_SH | libc::LOCK_NB) } != 0 {
-            // Bound the buffered read at the SAME 2 GiB TOCTOU sanity cap the
-            // mmap path enforces below (`meta.len() > MMAP_TOCTOU_SANITY_CAP_BYTES`
-            // refusal). An UNCAPPED `read_to_end` here was an OOM hole: a file
-            // grown past the walker's stat between the walk and this read would
-            // be slurped whole into a `Vec`, defeating the very cap the mmap twin
-            // applies on the same function. `.take()` makes the fallback bounded
-            // exactly like the primary path. (KH-GAP-OOM-mmap-fallback)
-            let mut bytes = Vec::new();
-            match std::io::Read::read_to_end(
-                &mut (&mut file).take(MMAP_TOCTOU_SANITY_CAP_BYTES),
-                &mut bytes,
-            ) {
-                Ok(_) => return super::decode::decode_text_file(&bytes),
-                Err(error) => {
-                    tracing::warn!(
-                        path = %path.display(),
-                        %error,
-                        "cannot read locked file; skipping"
-                    );
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                    return None;
-                }
-            }
+            tracing::warn!(
+                path = %path.display(),
+                "file is locked by another process; skipping to avoid scanning a torn write"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return None;
         }
     }
 

@@ -38,6 +38,12 @@ pub mod testing {
             path: &std::path::Path,
             size_cap: u64,
         ) -> Option<Vec<u8>>;
+        fn read_file_windowed_mmap_len(
+            &self,
+            path: &std::path::Path,
+            window_size: usize,
+            overlap: usize,
+        ) -> Option<usize>;
         fn slice_into_windows(
             &self,
             bytes: &[u8],
@@ -412,6 +418,15 @@ pub mod testing {
             size_cap: u64,
         ) -> Option<Vec<u8>> {
             crate::filesystem::read_file_for_compressed_input_for_test(path, size_cap)
+        }
+
+        fn read_file_windowed_mmap_len(
+            &self,
+            path: &std::path::Path,
+            window_size: usize,
+            overlap: usize,
+        ) -> Option<usize> {
+            crate::filesystem::read_file_windowed_mmap_len_for_test(path, window_size, overlap)
         }
 
         fn slice_into_windows(

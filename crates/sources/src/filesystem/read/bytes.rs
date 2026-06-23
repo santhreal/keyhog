@@ -36,9 +36,9 @@ pub(in crate::filesystem) enum FileBytes {
     /// readahead, dropped automatically when this variant is freed.
     /// Preferred whenever the platform supports mmap.
     Mmap(memmap2::Mmap),
-    /// Heap-owned bytes from a regular read. The fallback path when
-    /// mmap is refused (locked file, exotic filesystem, zero-byte
-    /// input on some kernels).
+    /// Heap-owned bytes from a regular read. The fallback path when mmap is
+    /// refused by an exotic filesystem or zero-byte input on some kernels.
+    /// Locked files are skipped instead of reopened unlocked.
     Owned(Vec<u8>),
 }
 
@@ -122,34 +122,16 @@ pub(in crate::filesystem) fn read_file_for_compressed_input(
     #[cfg(unix)]
     {
         use std::os::unix::io::AsRawFd;
-        // SAFETY: Simple advisory lock FFI call. A failure means
-        // someone else holds an exclusive lock; back out to the
-        // owned-bytes path so we still try to read (compressed
-        // inputs are usually not actively being written, but
-        // belt-and-braces).
+        // SAFETY: Simple advisory lock FFI call. A failure means someone else
+        // holds an exclusive lock; do not reopen and read the compressed file
+        // unlocked because that can scan a torn write.
         if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) } != 0 {
-            tracing::debug!(
+            tracing::warn!(
                 path = %path.display(),
-                "compressed file is locked; falling back to buffered read"
+                "compressed file is locked by another process; skipping to avoid scanning a torn write"
             );
-            // Law 10: recall-safe — mmap vs buffered is a mechanism choice, not a
-            // recall change; the buffered read recovers the FULL file content the
-            // decompressor needs. The only true failure (read error) takes the
-            // `.or_else` arm below, which bumps SKIPPED_UNREADABLE + warns loudly.
-            // Now routed through `read_capped_no_follow` so it is bounded at
-            // `effective_size_cap` AND honours the no-follow symlink guard (the old bare
-            // `std::fs::read` did neither).
-            return read_capped_no_follow(path, effective_size_cap)
-                .ok() // LAW10: mmap/read failure => release lock + buffered read path / loud-skip counter; recall-preserving
-                .or_else(|| {
-                    tracing::warn!(
-                        path = %path.display(),
-                        "cannot read locked compressed file; skipping"
-                    );
-                    let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
-                    None
-                })
-                .map(FileBytes::Owned);
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return None;
         }
     }
 
@@ -193,10 +175,10 @@ pub(in crate::filesystem) fn read_file_for_compressed_input(
                 // the advisory shared lock taken above.
                 unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_UN) };
             }
-            // Law 10: recall-safe + now bounded/no-follow — see the locked-file
-            // arm above. The bare `std::fs::read` here was both unbounded (OOM on
-            // a TOCTOU-grown compressed file) and symlink-following; `read_capped_no_follow`
-            // fixes both while recovering the same bytes for the decompressor.
+            // Law 10: recall-safe + bounded/no-follow. The bare `std::fs::read`
+            // here was both unbounded (OOM on a TOCTOU-grown compressed file)
+            // and symlink-following; `read_capped_no_follow` fixes both while
+            // recovering the same bytes for the decompressor.
             read_capped_no_follow(path, effective_size_cap)
                 .ok() // LAW10: mmap/read failure => release lock + buffered read path / loud-skip counter; recall-preserving
                 .or_else(|| {

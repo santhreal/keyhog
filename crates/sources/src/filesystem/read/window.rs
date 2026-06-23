@@ -33,11 +33,13 @@ pub(in crate::filesystem) struct FileWindow {
 ///
 /// Returns `None` when:
 ///   * the file cannot be opened safely (symlink guard, permission),
-///   * an advisory shared lock cannot be taken on Unix (a writer holds
-///     it; we don't want to scan a torn write),
 ///   * the mmap call itself fails (typically a 0-byte file or a
 ///     filesystem that refuses mmap - falls through to the caller's
 ///     non-mmap windowed path).
+///
+/// Returns `Some(Vec::new())` when an advisory shared lock cannot be taken on
+/// Unix: that is an already-counted unreadable skip, not permission for the
+/// caller to reopen and stream the same locked file without a lock.
 pub(in crate::filesystem) fn read_file_windowed_mmap(
     path: &Path,
     window_size: usize,
@@ -69,10 +71,15 @@ pub(in crate::filesystem) fn read_file_windowed_mmap(
         use std::os::unix::io::AsRawFd;
         let fd = file.as_raw_fd();
         // SAFETY: Simple advisory lock FFI call. A failure means
-        // someone else holds an exclusive lock - back out so the
-        // caller can take the buffered fallback (or just skip).
+        // someone else holds an exclusive lock; do not reopen and scan the
+        // file unlocked through the caller's buffered fallback.
         if unsafe { libc::flock(fd, libc::LOCK_SH | libc::LOCK_NB) } != 0 {
-            return None;
+            tracing::warn!(
+                path = %path.display(),
+                "large file is locked by another process; skipping to avoid scanning a torn write"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            return Some(Vec::new());
         }
     }
 
