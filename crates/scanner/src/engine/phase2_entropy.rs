@@ -249,19 +249,22 @@ impl CompiledScanner {
                 );
                 continue;
             };
-            if let Some(stage_id) = crate::adjudicate::final_emit_suppression_stage(
-                metadata.0.as_ref(),
+            let final_emit_ctx = crate::adjudicate::MatchCtx::for_final_emit(
+                crate::adjudicate::FinalEmitSignals::new(
+                    metadata.0.as_ref(),
+                    crate::context::CodeContext::Unknown,
+                    confidence,
+                    self.config.min_confidence,
+                    self.config.penalize_test_paths,
+                ),
+            );
+            if crate::adjudicate::record_suppression(
+                chunk.metadata.path.as_deref(),
                 &entropy_match.value,
-                crate::context::CodeContext::Unknown,
-                confidence,
-                self.config.min_confidence,
-                self.config.penalize_test_paths,
-            ) {
-                crate::adjudicate::record_stage_suppression(
-                    chunk.metadata.path.as_deref(),
-                    &entropy_match.value,
-                    stage_id,
-                );
+                &final_emit_ctx,
+            )
+            .is_some()
+            {
                 continue;
             }
             scan_state.push_match_lazy(

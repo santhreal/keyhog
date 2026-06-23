@@ -36,19 +36,21 @@ impl CompiledScanner {
             return;
         };
         final_score = adjusted_score;
-        if let Some(stage_id) = crate::adjudicate::final_emit_suppression_stage(
-            pending.raw_match.detector_id.as_ref(),
+        let final_emit_ctx =
+            crate::adjudicate::MatchCtx::for_final_emit(crate::adjudicate::FinalEmitSignals::new(
+                pending.raw_match.detector_id.as_ref(),
+                pending.code_context,
+                final_score,
+                pending.min_confidence_floor,
+                self.config.penalize_test_paths,
+            ));
+        if crate::adjudicate::record_suppression(
+            pending.raw_match.location.file_path.as_deref(),
             &pending.credential,
-            pending.code_context,
-            final_score,
-            pending.min_confidence_floor,
-            self.config.penalize_test_paths,
-        ) {
-            crate::adjudicate::record_stage_suppression(
-                pending.raw_match.location.file_path.as_deref(),
-                &pending.credential,
-                stage_id,
-            );
+            &final_emit_ctx,
+        )
+        .is_some()
+        {
             return;
         }
         let mut raw_match = pending.raw_match;

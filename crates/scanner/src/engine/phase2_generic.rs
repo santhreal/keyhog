@@ -329,19 +329,22 @@ impl CompiledScanner {
                     continue;
                 };
 
-                if let Some(stage_id) = crate::adjudicate::final_emit_suppression_stage(
-                    crate::detector_ids::GENERIC_SECRET,
+                let final_emit_ctx = crate::adjudicate::MatchCtx::for_final_emit(
+                    crate::adjudicate::FinalEmitSignals::new(
+                        crate::detector_ids::GENERIC_SECRET,
+                        context,
+                        confidence,
+                        self.config.min_confidence,
+                        self.config.penalize_test_paths,
+                    ),
+                );
+                if crate::adjudicate::record_suppression(
+                    chunk.metadata.path.as_deref(),
                     value,
-                    context,
-                    confidence,
-                    self.config.min_confidence,
-                    self.config.penalize_test_paths,
-                ) {
-                    crate::adjudicate::record_stage_suppression(
-                        chunk.metadata.path.as_deref(),
-                        value,
-                        stage_id,
-                    );
+                    &final_emit_ctx,
+                )
+                .is_some()
+                {
                     continue;
                 }
 

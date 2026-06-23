@@ -272,7 +272,7 @@ impl ProcessCandidateSignals {
     }
 }
 
-pub(crate) fn final_emit_suppression_stage(
+fn final_emit_suppression_stage(
     detector_id: &str,
     credential: &str,
     code_context: crate::context::CodeContext,
@@ -301,11 +301,39 @@ pub(crate) fn final_emit_suppression_stage(
     None
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FinalEmitSignals<'a> {
+    detector_id: &'a str,
+    code_context: crate::context::CodeContext,
+    confidence: f64,
+    min_confidence_floor: f64,
+    penalize_test_paths: bool,
+}
+
+impl<'a> FinalEmitSignals<'a> {
+    pub(crate) const fn new(
+        detector_id: &'a str,
+        code_context: crate::context::CodeContext,
+        confidence: f64,
+        min_confidence_floor: f64,
+        penalize_test_paths: bool,
+    ) -> Self {
+        Self {
+            detector_id,
+            code_context,
+            confidence,
+            min_confidence_floor,
+            penalize_test_paths,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct MatchCtx<'a> {
     explicit_stage: Option<StageId>,
     process_signals: Option<ProcessCandidateSignals>,
     named_detector_suppression: Option<NamedDetectorSuppressionCtx<'a>>,
+    final_emit_signals: Option<FinalEmitSignals<'a>>,
 }
 
 impl<'a> MatchCtx<'a> {
@@ -314,6 +342,7 @@ impl<'a> MatchCtx<'a> {
             explicit_stage: Some(stage_id),
             process_signals: None,
             named_detector_suppression: None,
+            final_emit_signals: None,
         }
     }
 
@@ -322,6 +351,7 @@ impl<'a> MatchCtx<'a> {
             explicit_stage: None,
             process_signals: Some(process_signals),
             named_detector_suppression: None,
+            final_emit_signals: None,
         }
     }
 
@@ -330,6 +360,16 @@ impl<'a> MatchCtx<'a> {
             explicit_stage: None,
             process_signals: None,
             named_detector_suppression: Some(ctx),
+            final_emit_signals: None,
+        }
+    }
+
+    pub(crate) const fn for_final_emit(signals: FinalEmitSignals<'a>) -> Self {
+        Self {
+            explicit_stage: None,
+            process_signals: None,
+            named_detector_suppression: None,
+            final_emit_signals: Some(signals),
         }
     }
 }
@@ -343,6 +383,7 @@ const STAGES: &[StageFn] = &[
     explicit_stage,
     process_signal_stage,
     named_detector_suppression_stage,
+    final_emit_stage,
 ];
 
 pub(crate) fn adjudicate_match(candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> Verdict {
@@ -426,6 +467,23 @@ fn named_detector_suppression_stage(
     if let Some(stage_id) = crate::suppression::suppress_named_detector_finding_stage(
         candidate.credential(),
         suppression_ctx,
+    ) {
+        return StageOutcome::Suppress(stage_id);
+    }
+    StageOutcome::Pass
+}
+
+fn final_emit_stage(candidate: CandidateMatch<'_>, ctx: &MatchCtx<'_>) -> StageOutcome {
+    let Some(signals) = ctx.final_emit_signals else {
+        return StageOutcome::Pass;
+    };
+    if let Some(stage_id) = final_emit_suppression_stage(
+        signals.detector_id,
+        candidate.credential(),
+        signals.code_context,
+        signals.confidence,
+        signals.min_confidence_floor,
+        signals.penalize_test_paths,
     ) {
         return StageOutcome::Suppress(stage_id);
     }

@@ -378,6 +378,8 @@ fn final_emit_context_hard_suppression_stays_out_of_scoring_owner() {
     let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
     let scoring = uncommented_code(&read(&src.join("engine/scoring.rs")));
     let process = uncommented_code(&read(&src.join("engine/process.rs")));
+    let generic = uncommented_code(&read(&src.join("engine/phase2_generic.rs")));
+    let entropy = uncommented_code(&read(&src.join("engine/phase2_entropy.rs")));
     let ml = uncommented_code(&read(&src.join("engine/scan_postprocess/ml.rs")));
 
     assert!(
@@ -387,8 +389,18 @@ fn final_emit_context_hard_suppression_stays_out_of_scoring_owner() {
     assert!(
         adjudicate.contains("fn final_emit_suppression_stage(")
             && adjudicate.contains("StageId::HardSuppressedContext")
-            && process.contains("crate::adjudicate::final_emit_suppression_stage(")
-            && ml.contains("crate::adjudicate::final_emit_suppression_stage("),
-        "both direct and ML final emit tails must report hard_suppressed_context through the shared adjudicator stage selector"
+            && adjudicate.contains("fn final_emit_stage(")
+            && process.contains("crate::adjudicate::MatchCtx::for_final_emit(")
+            && generic.contains("crate::adjudicate::MatchCtx::for_final_emit(")
+            && entropy.contains("crate::adjudicate::MatchCtx::for_final_emit(")
+            && ml.contains("crate::adjudicate::MatchCtx::for_final_emit("),
+        "all final emit tails must route through adjudicate_match via MatchCtx::for_final_emit"
+    );
+    assert!(
+        !process.contains("crate::adjudicate::final_emit_suppression_stage(")
+            && !generic.contains("crate::adjudicate::final_emit_suppression_stage(")
+            && !entropy.contains("crate::adjudicate::final_emit_suppression_stage(")
+            && !ml.contains("crate::adjudicate::final_emit_suppression_stage("),
+        "engine code must not locally ask for a final emit stage and post-record it"
     );
 }

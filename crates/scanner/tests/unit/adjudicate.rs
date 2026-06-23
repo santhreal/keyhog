@@ -1,5 +1,5 @@
 use crate::adjudicate::{
-    adjudicate_match, final_emit_suppression_stage, CandidateMatch, EntropyShapeStage, MatchCtx,
+    adjudicate_match, CandidateMatch, EntropyShapeStage, FinalEmitSignals, MatchCtx,
     ProcessCandidateSignals, StageId, Verdict,
 };
 use crate::context::CodeContext;
@@ -17,6 +17,24 @@ fn adjudicate_process_signal(
         CandidateMatch::new(credential),
         &MatchCtx::for_process_signals(signals),
     )
+}
+
+fn adjudicate_final_emit(
+    detector_id: &str,
+    credential: &str,
+    code_context: CodeContext,
+    confidence: f64,
+    min_confidence_floor: f64,
+    penalize_test_paths: bool,
+) -> Verdict {
+    let ctx = MatchCtx::for_final_emit(FinalEmitSignals::new(
+        detector_id,
+        code_context,
+        confidence,
+        min_confidence_floor,
+        penalize_test_paths,
+    ));
+    adjudicate_match(CandidateMatch::new(credential), &ctx)
 }
 
 #[test]
@@ -296,7 +314,7 @@ fn explicit_stage_reports_shape_gate_reason() {
 #[test]
 fn final_emit_stage_prefers_hard_context_before_floor() {
     assert_eq!(
-        final_emit_suppression_stage(
+        adjudicate_final_emit(
             crate::detector_ids::AWS_ACCESS_KEY,
             "AKIAIOSFODNN7EXAMPLE",
             CodeContext::Documentation,
@@ -304,14 +322,14 @@ fn final_emit_stage_prefers_hard_context_before_floor() {
             0.85,
             true,
         ),
-        Some(StageId::HardSuppressedContext)
+        Verdict::Suppressed(StageId::HardSuppressedContext)
     );
 }
 
 #[test]
 fn final_emit_stage_names_generic_floor_drop() {
     assert_eq!(
-        final_emit_suppression_stage(
+        adjudicate_final_emit(
             crate::detector_ids::GENERIC_SECRET,
             "random_api_key_value_123456",
             CodeContext::Assignment,
@@ -319,14 +337,14 @@ fn final_emit_stage_names_generic_floor_drop() {
             0.40,
             true,
         ),
-        Some(StageId::GenericBelowMinConfidence)
+        Verdict::Suppressed(StageId::GenericBelowMinConfidence)
     );
 }
 
 #[test]
 fn final_emit_stage_preserves_known_prefix_not_promising_root_cause() {
     assert_eq!(
-        final_emit_suppression_stage(
+        adjudicate_final_emit(
             crate::detector_ids::GENERIC_API_KEY,
             "hf_ababababababababababababababababab",
             CodeContext::Assignment,
@@ -334,7 +352,7 @@ fn final_emit_stage_preserves_known_prefix_not_promising_root_cause() {
             0.85,
             true,
         ),
-        Some(StageId::ProbabilisticGateNotPromising)
+        Verdict::Suppressed(StageId::ProbabilisticGateNotPromising)
     );
 }
 

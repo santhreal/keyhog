@@ -28,7 +28,7 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
                 "self.emit_finalized_pending_match(scan_state, pending, final_score)"
             )
             && ml_postprocess.contains("StageId::ChecksumInvalid")
-            && ml_postprocess.contains("crate::adjudicate::final_emit_suppression_stage("),
+            && ml_postprocess.contains("crate::adjudicate::MatchCtx::for_final_emit("),
         "every ML-pending drain path must pass through the report finalizer and adjudicator-owned rejection stages"
     );
     assert!(

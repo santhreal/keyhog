@@ -283,20 +283,22 @@ impl CompiledScanner {
                     return;
                 };
                 confidence = adjusted_confidence;
-                if let Some(stage_id) = crate::adjudicate::final_emit_suppression_stage(
-                    detector.id.as_ref(),
+                let final_emit_ctx = crate::adjudicate::MatchCtx::for_final_emit(
+                    crate::adjudicate::FinalEmitSignals::new(
+                        detector.id.as_ref(),
+                        inferred_context,
+                        confidence,
+                        min_confidence_floor,
+                        self.config.penalize_test_paths,
+                    ),
+                );
+                if crate::adjudicate::record_suppression(
+                    chunk.metadata.path.as_deref(),
                     credential,
-                    inferred_context,
-                    confidence,
-                    min_confidence_floor,
-                    self.config.penalize_test_paths,
-                ) {
-                    let recorded = crate::adjudicate::record_stage_suppression(
-                        chunk.metadata.path.as_deref(),
-                        credential,
-                        stage_id,
-                    );
-                    debug_assert_eq!(recorded, Some(stage_id));
+                    &final_emit_ctx,
+                )
+                .is_some()
+                {
                     return;
                 }
                 let source_offset =
