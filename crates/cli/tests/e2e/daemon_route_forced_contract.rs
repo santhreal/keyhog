@@ -1,8 +1,8 @@
 #![cfg(unix)]
 
-use crate::e2e::support::{binary, DaemonGuard};
+use crate::e2e::support::{DaemonGuard, binary};
 use keyhog::daemon::protocol::{Request, Response};
-use keyhog::testing::{CliTestApi as _, API};
+use keyhog::testing::{API, CliTestApi as _};
 use std::io::Write;
 use std::process::{Command, Stdio};
 use tempfile::TempDir;
@@ -80,6 +80,37 @@ fn forced_daemon_rejects_directory_without_in_process_fallback() {
     assert!(
         !combined.contains("aws-access-key"),
         "forced daemon rejection must not scan and report findings; output={combined}"
+    );
+}
+
+#[test]
+fn forced_daemon_missing_file_reports_path_inspection_error() {
+    let runtime = TempDir::new().expect("isolated runtime");
+    let work = TempDir::new().expect("work dir");
+    let missing = work.path().join("missing.env");
+
+    let out = Command::new(binary())
+        .env("XDG_RUNTIME_DIR", runtime.path())
+        .args(["scan", "--daemon=on", "--format", "json"])
+        .arg(&missing)
+        .output()
+        .expect("spawn keyhog scan");
+
+    let combined = combined_output(&out);
+    assert_eq!(
+        out.status.code(),
+        Some(2),
+        "forced daemon over a missing file must fail before daemon connect or in-process scan; output={combined}"
+    );
+    assert!(
+        combined.contains("--daemon=on cannot be honored")
+            && combined.contains("daemon single-file route cannot inspect")
+            && combined.contains(&missing.to_string_lossy().to_string()),
+        "forced-daemon rejection must name the path-inspection failure; output={combined}"
+    );
+    assert!(
+        !combined.contains("directories, git, remote"),
+        "missing-file metadata errors must not collapse into the generic unsupported-shape message; output={combined}"
     );
 }
 

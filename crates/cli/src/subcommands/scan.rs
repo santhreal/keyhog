@@ -219,7 +219,20 @@ fn daemon_route(args: &ScanArgs, policy: &EffectivePolicy) -> DaemonRoute {
         return DaemonRoute::Forbidden;
     }
 
-    let single_file = effective_single_file_path(args).is_some();
+    let single_file = match effective_single_file_path(args) {
+        Ok(path) => path.is_some(),
+        Err(error) => {
+            if let Some(route) = reject_forced_daemon(
+                forced_on,
+                &format!(
+                    "the daemon single-file route cannot inspect the requested path: {error:#}"
+                ),
+            ) {
+                return route;
+            }
+            return DaemonRoute::Forbidden;
+        }
+    };
     let primary_sources = usize::from(args.stdin) + usize::from(single_file);
     if primary_sources != 1 || has_daemon_incompatible_extra_sources(args) {
         if let Some(route) = reject_forced_daemon(
@@ -414,13 +427,16 @@ fn daemon_incompatible_scan_options(args: &ScanArgs) -> Option<&'static str> {
 }
 
 #[cfg(unix)]
-fn effective_single_file_path(args: &ScanArgs) -> Option<&Path> {
-    let raw = args.path.as_deref().or(args.input.as_deref())?;
-    let meta = std::fs::metadata(raw).ok()?; // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
+fn effective_single_file_path(args: &ScanArgs) -> Result<Option<&Path>> {
+    let Some(raw) = args.path.as_deref().or(args.input.as_deref()) else {
+        return Ok(None);
+    };
+    let meta = std::fs::metadata(raw)
+        .with_context(|| format!("inspect {} as daemon single-file input", raw.display()))?;
     if !meta.is_file() {
-        return None;
+        return Ok(None);
     }
-    Some(raw)
+    Ok(Some(raw))
 }
 
 #[cfg(unix)]
@@ -440,7 +456,7 @@ async fn run_via_daemon(args: &ScanArgs) -> Result<ExitCode> {
             .round_trip(&Request::ScanText { path: None, text })
             .await?;
         unwrap_scan_results(resp)?
-    } else if let Some(path) = effective_single_file_path(args) {
+    } else if let Some(path) = effective_single_file_path(args)? {
         let working_dir = std::env::current_dir()
             .ok() // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
             .map(|p| p.to_string_lossy().into_owned());
