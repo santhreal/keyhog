@@ -1,7 +1,6 @@
 use super::plausibility::{is_candidate_plausible, is_secret_plausible, PlausibilityContext};
 use crate::adjudicate::{EntropyShapeStage, StageId};
 use crate::engine::phase2_generic::keywords::normalize_assignment_keyword;
-use crate::engine::phase2_generic::shape_helpers::is_structured_dotted_token;
 
 pub(crate) struct KeywordContext {
     pub(crate) keyword: String,
@@ -183,7 +182,8 @@ fn extract_candidates_internal(
             }
             return;
         }
-        let structured_dotted = allow_structured_dotted && is_structured_dotted_token(cleaned);
+        let structured_dotted = allow_structured_dotted
+            && crate::suppression::shape::is_structured_dotted_token(cleaned);
         let plausibility_context =
             PlausibilityContext::new(is_credential_context, allow_canonical_shapes);
         let plausible = structured_dotted

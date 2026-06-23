@@ -1,37 +1,5 @@
 //! Shape helpers used by the generic-secret value gauntlet.
 
-/// Exact dotted credential shapes the generic fallback may treat as real
-/// tokens. Property/method chains also use dots, so keep this as a tight
-/// allowlist instead of a punctuation relaxation.
-pub(crate) fn is_structured_dotted_token(value: &str) -> bool {
-    if !value.contains('.') {
-        return false;
-    }
-    let mut parts = value.split('.');
-    let (Some(first), Some(second), Some(third), None) =
-        (parts.next(), parts.next(), parts.next(), parts.next())
-    else {
-        return false;
-    };
-    let segments = [first, second, third];
-    let is_jwt_like = first.starts_with("eyJ")
-        && segments.iter().all(|segment| {
-            segment.len() >= 4
-                && segment.bytes().all(|byte| {
-                    byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=' | b'-' | b'_')
-                })
-        });
-    let is_discord_style = (23..=28).contains(&first.len())
-        && (6..=8).contains(&second.len())
-        && (27..=38).contains(&third.len())
-        && segments.iter().all(|segment| {
-            segment
-                .bytes()
-                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
-        });
-    is_jwt_like || is_discord_style
-}
-
 /// Standard-base64-arbitrary-bytes shape detector for the
 /// generic-secret path only. Returns true when `value` looks like
 /// a protobuf wire dump / marshalled binary / k8s data field rather

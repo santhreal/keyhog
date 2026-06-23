@@ -1,5 +1,4 @@
 use super::{shannon_entropy, HIGH_ENTROPY_THRESHOLD, MIXED_ALNUM_TOKEN_THRESHOLD};
-use crate::engine::phase2_generic::shape_helpers::is_structured_dotted_token;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct PlausibilityContext {
@@ -162,7 +161,7 @@ pub(crate) fn is_isolated_bare_secret_plausible(
     if value.contains('.') {
         if value.len() >= 40
             && !is_placeholder_ci(value, placeholder_keywords)
-            && is_structured_dotted_token(value)
+            && crate::suppression::shape::is_structured_dotted_token(value)
         {
             return true;
         }

@@ -441,7 +441,7 @@ pub(crate) fn candidate_plausibility_rejection_stage(
     context: &KeywordContext,
     placeholder_keywords: &[String],
 ) -> Option<StageId> {
-    if crate::engine::phase2_generic::shape_helpers::is_structured_dotted_token(candidate) {
+    if crate::suppression::shape::is_structured_dotted_token(candidate) {
         return (candidate.len() < KEYWORD_FREE_MIN_LEN.min(context.min_len)).then_some(
             StageId::EntropyValueShape(EntropyShapeStage::StructuredDottedTooShort),
         );

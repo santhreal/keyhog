@@ -51,6 +51,39 @@ pub(crate) fn looks_like_entropy_canonical_hex_digest(value: &str) -> bool {
     matches!(value.len(), 32 | 40 | 64 | 128) && value.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+/// Exact dotted credential shapes the scanner may treat as real tokens.
+///
+/// Property/method chains also use dots, so keep this as a tight allowlist
+/// instead of a general punctuation relaxation.
+pub(crate) fn is_structured_dotted_token(value: &str) -> bool {
+    if !value.contains('.') {
+        return false;
+    }
+    let mut parts = value.split('.');
+    let (Some(first), Some(second), Some(third), None) =
+        (parts.next(), parts.next(), parts.next(), parts.next())
+    else {
+        return false;
+    };
+    let segments = [first, second, third];
+    let is_jwt_like = first.starts_with("eyJ")
+        && segments.iter().all(|segment| {
+            segment.len() >= 4
+                && segment.bytes().all(|byte| {
+                    byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'=' | b'-' | b'_')
+                })
+        });
+    let is_discord_style = (23..=28).contains(&first.len())
+        && (6..=8).contains(&second.len())
+        && (27..=38).contains(&third.len())
+        && segments.iter().all(|segment| {
+            segment
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
+        });
+    is_jwt_like || is_discord_style
+}
+
 fn looks_like_entropy_integrity_digest(value: &str) -> bool {
     for prefix in ["sha512-", "sha384-", "sha256-"] {
         if let Some(body) = value.strip_prefix(prefix) {
@@ -445,4 +478,30 @@ pub(crate) fn is_dash_segmented_alnum_decoy_with_randomness(
             .iter()
             .all(|group| group.bytes().all(|b| b.is_ascii_alphabetic()))
         && !randomness.is_random_token(value)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_structured_dotted_token;
+
+    #[test]
+    fn structured_dotted_token_accepts_jwt_like_shape() {
+        assert!(is_structured_dotted_token(
+            "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
+        ));
+    }
+
+    #[test]
+    fn structured_dotted_token_accepts_discord_style_shape() {
+        assert!(is_structured_dotted_token(
+            "MTIzNDU2Nzg5MDEyMzQ1Njc4.Oabc12.xYz0123456789abcDEFghijk_lmnop"
+        ));
+    }
+
+    #[test]
+    fn structured_dotted_token_rejects_property_chains() {
+        assert!(!is_structured_dotted_token("this.someService.copilotToken"));
+        assert!(!is_structured_dotted_token("example.com"));
+        assert!(!is_structured_dotted_token("alpha.beta.gamma.delta"));
+    }
 }

@@ -174,9 +174,7 @@ impl CompiledScanner {
         // the other bounded three-segment credential shape: 23-28, 6-8, and
         // 27-38 base64url chars. Keep that exact length profile alive while
         // leaving property access suppressed.
-        if value.contains('.')
-            && !crate::engine::phase2_generic::shape_helpers::is_structured_dotted_token(value)
-        {
+        if value.contains('.') && !crate::suppression::shape::is_structured_dotted_token(value) {
             return Some("non_jwt_dotted");
         }
         // Reject pure identifiers: only alphanumeric + underscore
