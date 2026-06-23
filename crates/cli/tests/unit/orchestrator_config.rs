@@ -219,6 +219,60 @@ fn cli_calibration_cache_wins_over_system_calibration_cache() {
     );
 }
 
+#[cfg(any(
+    feature = "web",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket",
+    feature = "s3",
+    feature = "gcs",
+    feature = "azure"
+))]
+#[test]
+fn http_proxy_and_insecure_tls_reach_scan_args() {
+    let args = args_for_config(
+        "[http]\n\
+         proxy = \"http://127.0.0.1:8080\"\n\
+         insecure_tls = true\n",
+    );
+
+    assert_eq!(
+        args.proxy.as_deref(),
+        Some("http://127.0.0.1:8080"),
+        "[http].proxy must reach the outbound HTTP policy fields consumed by sources and verifier"
+    );
+    assert!(
+        args.insecure,
+        "[http].insecure_tls must reach the outbound HTTP policy fields consumed by sources and verifier"
+    );
+}
+
+#[cfg(any(
+    feature = "web",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket",
+    feature = "s3",
+    feature = "gcs",
+    feature = "azure"
+))]
+#[test]
+fn cli_http_flags_win_over_http_toml() {
+    let args = args_for_config_with_extra(
+        "[http]\n\
+         proxy = \"http://127.0.0.1:8080\"\n\
+         insecure_tls = false\n",
+        &["--proxy", "off", "--insecure"],
+    );
+
+    assert_eq!(
+        args.proxy.as_deref(),
+        Some("off"),
+        "--proxy must override [http].proxy"
+    );
+    assert!(args.insecure, "--insecure must remain enabled over TOML");
+}
+
 #[test]
 fn relative_system_trusted_bin_dir_is_config_error() {
     let _guard = global_config_state_lock();

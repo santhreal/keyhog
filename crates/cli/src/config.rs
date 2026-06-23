@@ -14,7 +14,8 @@ use policy::{config_file_error, resolve_policy_outcome, shipped_config_outcome};
 use scan::{apply_scan_section, apply_top_level_scan_fields};
 use schema::ConfigFile;
 use sections::{
-    apply_allowlist_section, apply_aws_section, apply_system_section, apply_tuning_section,
+    apply_allowlist_section, apply_aws_section, apply_http_section, apply_system_section,
+    apply_tuning_section,
 };
 
 pub(super) fn invalid_config_value(field: &str, value: &str, detail: &str) -> String {
@@ -169,6 +170,26 @@ fn apply_config_file_impl(args: &mut ScanArgs, emit_diagnostics: bool) -> Config
         &mut scanner_tuning,
         config.tuning.as_ref(),
     );
+    #[cfg(any(
+        feature = "web",
+        feature = "github",
+        feature = "gitlab",
+        feature = "bitbucket",
+        feature = "s3",
+        feature = "gcs",
+        feature = "azure"
+    ))]
+    apply_http_section(args, config.http.as_ref());
+    #[cfg(not(any(
+        feature = "web",
+        feature = "github",
+        feature = "gitlab",
+        feature = "bitbucket",
+        feature = "s3",
+        feature = "gcs",
+        feature = "azure"
+    )))]
+    apply_http_section(args, &mut config_errors, config.http.as_ref());
 
     apply_top_level_scan_fields(args, &mut config_errors, &mut config);
     apply_scan_section(args, &mut config_errors, config.scan.take());

@@ -1,4 +1,4 @@
-use super::schema::{AllowlistSection, AwsSection, SystemSection, TuningSection};
+use super::schema::{AllowlistSection, AwsSection, HttpSection, SystemSection, TuningSection};
 use crate::args::ScanArgs;
 use std::path::{Path, PathBuf};
 
@@ -125,6 +125,55 @@ pub(super) fn apply_system_section(
     if let Some(autoroute_gpu) = system.and_then(|section| section.autoroute_gpu) {
         if !args.autoroute_gpu && !args.no_autoroute_gpu {
             args.autoroute_gpu = autoroute_gpu;
+        }
+    }
+}
+
+#[cfg(any(
+    feature = "web",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket",
+    feature = "s3",
+    feature = "gcs",
+    feature = "azure"
+))]
+pub(super) fn apply_http_section(args: &mut ScanArgs, http: Option<&HttpSection>) {
+    if let Some(http) = http {
+        if args.proxy.is_none() {
+            args.proxy = http.proxy.clone();
+        }
+        if let Some(insecure_tls) = http.insecure_tls {
+            if !args.insecure {
+                args.insecure = insecure_tls;
+            }
+        }
+    }
+}
+
+#[cfg(not(any(
+    feature = "web",
+    feature = "github",
+    feature = "gitlab",
+    feature = "bitbucket",
+    feature = "s3",
+    feature = "gcs",
+    feature = "azure"
+)))]
+pub(super) fn apply_http_section(
+    _args: &mut ScanArgs,
+    config_errors: &mut Vec<String>,
+    http: Option<&HttpSection>,
+) {
+    if let Some(http) = http {
+        if http.proxy.is_some() {
+            config_errors
+                .push("- [http].proxy: this key requires an HTTP-capable keyhog build".to_string());
+        }
+        if http.insecure_tls.is_some() {
+            config_errors.push(
+                "- [http].insecure_tls: this key requires an HTTP-capable keyhog build".to_string(),
+            );
         }
     }
 }

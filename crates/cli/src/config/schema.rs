@@ -89,6 +89,8 @@ pub(super) struct ConfigFile {
     pub lockdown: Option<LockdownSection>,
     /// `[limits]` - source byte/count ceilings.
     pub limits: Option<LimitsSection>,
+    /// `[http]` - explicit outbound HTTP proxy/TLS policy.
+    pub http: Option<HttpSection>,
     /// `[system]` - host integration paths and other non-scan behavior.
     pub system: Option<SystemSection>,
     /// `[aws]` - AWS-specific offline safety metadata.
@@ -164,6 +166,16 @@ pub(super) struct LimitsSection {
     pub hosted_git_pages: Option<usize>,
     pub binary_read_bytes: Option<String>,
     pub binary_decompiled_bytes: Option<String>,
+}
+
+/// `[http]` explicit outbound HTTP policy.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(default)]
+pub(super) struct HttpSection {
+    /// Proxy URL or `off`.
+    pub proxy: Option<String>,
+    /// Disable TLS certificate verification for outbound HTTP.
+    pub insecure_tls: Option<bool>,
 }
 
 /// `[system]` host integration settings.
