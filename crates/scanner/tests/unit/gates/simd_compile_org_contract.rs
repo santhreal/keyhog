@@ -9,12 +9,15 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
         "const BASE_PATTERN_COST: u64 = 16;",
         "const RETRY_THRESHOLD: usize = 100;",
         "const RETRY_DROP_DIVISOR: usize = 10;",
+        "fn hs_partition_cost(",
+        "fn counted_repeat_upper_bound(",
         "fn prepare_patterns(",
         "fn compile_cache_key(",
         "fn compile_shard_count(",
         "fn partition_patterns_lpt(",
         "fn compile_cached_shards(",
         "fn assemble_scanner_shards(",
+        "scratch_pool: parking_lot::Mutex::new(Vec::new())",
     ] {
         assert!(
             source.contains(required),
@@ -49,6 +52,20 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
             && !compile_body.contains("read_hs_cache_file(")
             && !compile_body.contains("Pattern::with_flags("),
         "compile_with_opts must not own pattern prep, cache I/O, or parallel shard build loops"
+    );
+
+    let assemble_body = source
+        .split("fn assemble_scanner_shards(")
+        .nth(1)
+        .expect("assemble_scanner_shards present")
+        .split("/// Compile patterns with explicit per-pattern flags.")
+        .next()
+        .expect("assemble_scanner_shards boundary present");
+    assert!(
+        assemble_body.contains("scratch_pool: parking_lot::Mutex::new(Vec::new())")
+            && !assemble_body.contains("alloc_scratch()")
+            && !source.contains("fn scratch_pool_size("),
+        "Hyperscan compile must not eagerly allocate per-core scratch pools for every shard; scan threads allocate shard scratches lazily"
     );
 
     let cache_key_body = source
@@ -97,11 +114,28 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
     assert!(
         partition_body.contains("order.sort_unstable_by(")
             && partition_body.contains(".expression")
-            && partition_body.contains(".len()")
+            && partition_body.contains("let costs: Vec<u64>")
+            && partition_body.contains("hs_partition_cost(&pattern.expression)")
+            && partition_body.contains("shard_cost[lightest].saturating_add(costs[i])")
             && partition_body.contains(".then_with(|| hs_pats[a].id.cmp(&hs_pats[b].id))")
             && partition_body.contains(".then_with(|| a.cmp(&b))")
             && !partition_body.contains("sort_unstable_by_key"),
-        "Hyperscan LPT partitioning must use deterministic tie-breakers so equal-length patterns do not churn shard cache keys"
+        "Hyperscan LPT partitioning must balance estimated compile cost with deterministic tie-breakers so heavy patterns do not churn shard cache keys or serialize one shard"
+    );
+
+    let prepare_body = source
+        .split("fn prepare_patterns(")
+        .nth(1)
+        .expect("prepare_patterns present")
+        .split("fn pattern_flags(")
+        .next()
+        .expect("prepare_patterns boundary present");
+    assert!(
+        !prepare_body.contains("hs_partition_cost(")
+            && !prepare_body.contains("MAX_HS_COMPILE_COST")
+            && prepare_body.contains(".par_iter()")
+            && prepare_body.contains("pattern.id = Some(pattern_map.len())"),
+        "Hyperscan prepare must parallelize pattern validation but keep compile-cost estimates shard-only and assign stable ids serially"
     );
 }
 

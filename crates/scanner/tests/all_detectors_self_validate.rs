@@ -247,7 +247,7 @@ fn smoke_scanner_fires_on_canonical_aws_ghp_re_examples() {
             "aws-access-key",
             "export AWS_ACCESS_KEY_ID=AKIAQYLPMN5HFIQR7XYA\nexport AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYxqfwh4qWqHJK",
         ),
-        ("github-classic-pat", "GITHUB_TOKEN=ghp_aBcDefGhIjKlMnOpQrStUvWxYzAbCdEf01"),
+        ("github-classic-pat", "GITHUB_TOKEN=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"),
         ("resend-api-key", "RESEND_API_KEY=re_aBcDefGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQrStUvWx"),
         ("openai-api-key", "OPENAI_API_KEY=sk-AbCdEfGhIjKlMnOpQrStUvWxYzAbCdEfGhIjKlMnOpQrStUvWxYz"),
     ];

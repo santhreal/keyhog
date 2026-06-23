@@ -49,20 +49,24 @@ impl Phase2AlwaysActivePrefilter {
         if valid_always_active_indices.is_empty() {
             return None;
         }
-        // HS covers small chunks; RegexSet batches cover large/no-simd chunks.
-        #[cfg(feature = "simd")]
-        let hs = Phase2HsEngine::build(phase2_patterns, &valid_always_active_indices);
-        let combined_gate =
-            Self::build_combined_gate(phase2_patterns, &valid_always_active_indices);
         Some(Self {
             valid_always_active_indices,
             portable: std::sync::OnceLock::new(),
-            combined_gate,
-            // Reuse the `hs` built above; both engines are always present so
-            // `mark_matches` can size-dispatch between them.
+            combined_gate: std::sync::OnceLock::new(),
             #[cfg(feature = "simd")]
-            hs,
+            hs: std::sync::OnceLock::new(),
         })
+    }
+
+    fn combined_gate<'a>(
+        &'a self,
+        phase2_patterns: &[(CompiledPattern, Vec<String>)],
+    ) -> Option<&'a CombinedNoCandidateGate> {
+        self.combined_gate
+            .get_or_init(|| {
+                Self::build_combined_gate(phase2_patterns, &self.valid_always_active_indices)
+            })
+            .as_ref()
     }
 
     fn portable<'a>(
@@ -71,6 +75,18 @@ impl Phase2AlwaysActivePrefilter {
     ) -> &'a PortablePrefilter {
         self.portable
             .get_or_init(|| self.compile_portable(phase2_patterns))
+    }
+
+    #[cfg(feature = "simd")]
+    fn hs<'a>(
+        &'a self,
+        phase2_patterns: &[(CompiledPattern, Vec<String>)],
+    ) -> Option<&'a Phase2HsEngine> {
+        self.hs
+            .get_or_init(|| {
+                Phase2HsEngine::build(phase2_patterns, &self.valid_always_active_indices)
+            })
+            .as_ref()
     }
 
     fn compile_portable(
@@ -594,7 +610,7 @@ impl Phase2AlwaysActivePrefilter {
         // degraded build (`None`), or a real candidate fall through to the full
         // body — never a silent skip (Law 10).
         if tuning.no_candidate_gate {
-            if let Some(gate) = &self.combined_gate {
+            if let Some(gate) = self.combined_gate(phase2_patterns) {
                 if match_text.is_ascii() && !gate.anchor_present(match_text) {
                     // No anchorable pattern can fire; mark only the non-anchorable
                     // patterns that actually match (precise, recall-identical).
@@ -614,12 +630,12 @@ impl Phase2AlwaysActivePrefilter {
         // SUPERSET (eligible patterns still route through the AC+verify path,
         // non-eligible through whole-chunk extraction), proven findings-identical.
         #[cfg(feature = "simd")]
-        if let Some(hs) = &self.hs {
+        if tuning.fallback_hs && match_text.len() <= tuning.hs_prefilter_max_len {
             // Size-dispatch: HS wins on SMALL chunks (its near-constant per-scan
             // cost beats the RegexSet's per-call lazy-DFA setup), but its unicode
             // automaton over MANY bytes loses to the folded/truncated RegexSet on
             // large chunks. Above the threshold, fall through to the batches.
-            if tuning.fallback_hs && match_text.len() <= tuning.hs_prefilter_max_len {
+            if let Some(hs) = self.hs(phase2_patterns) {
                 let _ = localize_plain; // LAW10: unused-binding marker (signature/borrowck/cfg/compile-time assert); no runtime effect, not a fallback
                 match hs.mark(match_text, scratch) {
                     Ok(()) => return,
@@ -768,15 +784,15 @@ impl Phase2AlwaysActivePrefilter {
         // `is_match`, and a handful of per-pattern `is_match` calls instead of
         // the full ~2,700-pattern HS/RegexSet scan.
         if tuning.no_candidate_gate {
-            if let Some(gate) = &self.combined_gate {
+            if let Some(gate) = self.combined_gate(phase2_patterns) {
                 if match_text.is_ascii() && !gate.anchor_present(match_text) {
                     return gate.any_non_anchorable_match(match_text);
                 }
             }
         }
         #[cfg(feature = "simd")]
-        if let Some(hs) = &self.hs {
-            if tuning.fallback_hs && match_text.len() <= tuning.hs_prefilter_max_len {
+        if tuning.fallback_hs && match_text.len() <= tuning.hs_prefilter_max_len {
+            if let Some(hs) = self.hs(phase2_patterns) {
                 match hs.any_match(match_text) {
                     Ok(hit) => return hit,
                     Err(error) => {

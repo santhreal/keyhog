@@ -350,14 +350,14 @@ pub(crate) struct Phase2AlwaysActivePrefilter {
     pub(crate) portable: OnceLock<PortablePrefilter>,
     /// SWE-101 combined no-candidate gate — the ONE fast combined prefilter that
     /// gates the expensive per-pattern marking. See [`CombinedNoCandidateGate`].
-    /// `Some` whenever the gate can be built (an `ascii_case_insensitive`
-    /// Aho-Corasick over the anchorable always-active patterns' required-prefix
-    /// literals, plus exact regex checks for the small non-anchorable always-mark
-    /// list); `None` only on a degraded build, where `mark_matches` runs the full
-    /// body unconditionally (recall-safe, never a silent skip — Law 10).
-    pub(crate) combined_gate: Option<CombinedNoCandidateGate>,
-    /// Hyperscan-backed engine over the SAME always-active patterns. When present
-    /// and enabled (`phase2_hs_enabled`), `mark_matches` uses it instead of the
+    /// Lazily initialized so scanner construction stores only validated routing
+    /// indices; a scan that disables the gate or never reaches phase-2 does not
+    /// compile its Aho-Corasick state.
+    pub(crate) combined_gate: OnceLock<Option<CombinedNoCandidateGate>>,
+    /// Hyperscan-backed engine over the SAME always-active patterns. Lazily
+    /// initialized so scanner construction and no-candidate chunks do not compile
+    /// the one-shard ~2k-pattern HS database. When present and enabled
+    /// (`phase2_hs_enabled`), `mark_matches` uses it instead of the
     /// `regex::RegexSet` batches above: one SIMD multi-pattern scan with
     /// `SINGLEMATCH` (fire-once = "does P match") replaces the ~2,679-pattern
     /// whole-chunk RegexSet pass — the measured #1 scan cost (`phase2:prefilter`),
@@ -365,7 +365,7 @@ pub(crate) struct Phase2AlwaysActivePrefilter {
     /// (`phase2_prefilter_hs_findings_parity`). `None` when the `simd` feature
     /// is off or HS failed to compile (then the RegexSet batches are the path).
     #[cfg(feature = "simd")]
-    pub(crate) hs: Option<Phase2HsEngine>,
+    pub(crate) hs: OnceLock<Option<Phase2HsEngine>>,
 }
 
 /// Bytes of already-scanned parent context kept on each side of the decoded span

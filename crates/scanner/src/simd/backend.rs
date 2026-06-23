@@ -16,19 +16,18 @@ mod scan;
 /// grows, the number of shards grows while each shard's serial build stays
 /// ~constant, so on a many-core box "double the patterns" is absorbed by
 /// spinning up more parallel shards instead of doubling each shard's work.
-/// ~80 was chosen empirically: on the ~900-detector corpus (~1.7k compiled
-/// patterns) it lands the full set at ~21 shards and a half set at ~11, so
-/// BOTH sit comfortably under a 32-core box's one-wave budget AND carry a
-/// near-equal per-shard pattern count - which flattens the full/half
-/// cold-compile ratio to ~1.3x (vs ~1.9-2.0x serial). A smaller target
-/// (e.g. 40) pushes the full set up against the core count, making its
-/// per-shard size diverge from the half set's and the ratio worse; a much
-/// larger target gives up parallelism. Per-shard builds stay ~150-190ms
+/// ~320 was chosen empirically: on the ~900-detector corpus (~2.2k compiled
+/// patterns) it keeps the full and half corpora in a small number of similarly
+/// heavy shards. That gives the ratio gate stable margin (about 1.25x on the
+/// 22-core dev box) while avoiding the tiny-shard regime where cache
+/// serialization, temp-file persistence, and scan-time fanout dominate. A much
+/// smaller target makes the half corpus artificially fast and the ratio flakes;
+/// a much larger target gives up parallelism. Per-shard builds stay sub-second
 /// (vs ~1600ms for the serial all-patterns build). Each shard is
 /// disk-cached independently (keyed by the SHA-256 of its own pattern
 /// list), so the warm path stays a deserialize-only load. Overridable through
 /// explicit scanner compile tuning (`[tuning].hs_shard_target` in the CLI).
-const TARGET_PATTERNS_PER_SHARD: usize = 80;
+const TARGET_PATTERNS_PER_SHARD: usize = 320;
 
 /// Hard ceiling on shard count, so a pathologically large detector set on a
 /// 128-core box cannot spawn an unbounded number of databases (each costs a
@@ -216,7 +215,10 @@ static SCANNER_ID_SEQ: AtomicU64 = AtomicU64::new(0);
 
 /// One compiled shard: its database plus a Mutex-guarded scratch pool. Each
 /// `Scratch` is tied to exactly one `BlockDatabase`, so the pools are
-/// per-shard.
+/// per-shard. The pool starts empty; scan threads allocate the first scratch
+/// they need lazily and then retain it in thread-local storage. Eagerly
+/// allocating `cores * shards` scratches made scanner construction scale with
+/// shard count and erased much of the parallel compile win.
 struct Shard {
     db: BlockDatabase,
     scratch_pool: parking_lot::Mutex<Vec<Scratch>>,
@@ -322,29 +324,71 @@ impl HsScanner {
         patterns: &[(usize, usize, &str, bool)],
         opts: HsCompileOpts<'_>,
     ) -> PreparedPatterns {
+        use rayon::prelude::*;
+
+        enum PrepResult {
+            Pattern {
+                det_idx: usize,
+                pat_idx: usize,
+                has_group: bool,
+                pattern: Pattern,
+            },
+            Unsupported {
+                index: usize,
+            },
+            Rejected {
+                index: usize,
+                error: String,
+            },
+        }
+
+        let prepared: Vec<PrepResult> = patterns
+            .par_iter()
+            .enumerate()
+            .map(|(i, &(det_idx, pat_idx, regex, has_group))| {
+                if regex.len() > MAX_HS_PATTERN_LEN {
+                    return PrepResult::Unsupported { index: i };
+                }
+                match Pattern::with_flags(regex, Self::pattern_flags(i, opts)) {
+                    Ok(pattern) => PrepResult::Pattern {
+                        det_idx,
+                        pat_idx,
+                        has_group,
+                        pattern,
+                    },
+                    Err(error) => PrepResult::Rejected {
+                        index: i,
+                        error: error.to_string(),
+                    },
+                }
+            })
+            .collect();
+
         let mut hs_pats = Vec::new();
         let mut pattern_map = Vec::new();
         let mut unsupported = Vec::new();
 
-        for (i, &(det_idx, pat_idx, regex, has_group)) in patterns.iter().enumerate() {
-            if regex.len() > MAX_HS_PATTERN_LEN {
-                unsupported.push(i);
-                continue;
-            }
-            match Pattern::with_flags(regex, Self::pattern_flags(i, opts)) {
-                Ok(mut p) => {
-                    p.id = Some(pattern_map.len());
-                    hs_pats.push(p);
+        for result in prepared {
+            match result {
+                PrepResult::Pattern {
+                    det_idx,
+                    pat_idx,
+                    has_group,
+                    mut pattern,
+                } => {
+                    pattern.id = Some(pattern_map.len());
+                    hs_pats.push(pattern);
                     pattern_map.push((det_idx, pat_idx, has_group));
                 }
-                Err(error) => {
+                PrepResult::Unsupported { index } => unsupported.push(index),
+                PrepResult::Rejected { index, error } => {
                     tracing::debug!(
-                        %error,
-                        pattern_index = i,
+                        error,
+                        pattern_index = index,
                         "pattern rejected by hyperscan; caller reroutes it through keyword phase-2 path"
                     );
                     // Law 10: unsupported HS pattern id is returned to the caller and rerouted through the phase-2 keyword lane.
-                    unsupported.push(i);
+                    unsupported.push(index);
                 }
             }
         }
@@ -449,11 +493,13 @@ impl HsScanner {
 
     fn partition_patterns_lpt(hs_pats: &[Pattern], shard_count: usize) -> Vec<Vec<Pattern>> {
         let mut order: Vec<usize> = (0..hs_pats.len()).collect();
+        let costs: Vec<u64> = hs_pats
+            .iter()
+            .map(|pattern| hs_partition_cost(&pattern.expression))
+            .collect();
         order.sort_unstable_by(|&a, &b| {
-            hs_pats[b]
-                .expression
-                .len()
-                .cmp(&hs_pats[a].expression.len())
+            costs[b]
+                .cmp(&costs[a])
                 .then_with(|| hs_pats[a].id.cmp(&hs_pats[b].id))
                 .then_with(|| a.cmp(&b))
         });
@@ -466,7 +512,7 @@ impl HsScanner {
                 .min_by_key(|(_, &c)| c)
                 .map(|(idx, _)| idx)
                 .unwrap_or(0); // LAW10: shard_count is clamped to >=1 above; fallback is unreachable and preserves shard 0.
-            shard_cost[lightest] += hs_pats[i].expression.len() as u64 + BASE_PATTERN_COST;
+            shard_cost[lightest] = shard_cost[lightest].saturating_add(costs[i]);
             shard_pats[lightest].push(hs_pats[i].clone());
         }
         shard_pats
@@ -573,9 +619,7 @@ impl HsScanner {
                 .parent()
                 .unwrap_or_else(|| std::path::Path::new(".")); // LAW10: cache_path is constructed with a parent; fallback only disables atomic cache locality, not scanning.
             if let Ok(mut tmp) = tempfile::NamedTempFile::new_in(parent) {
-                if std::io::Write::write_all(&mut tmp, &data).is_ok()
-                    && tmp.as_file().sync_all().is_ok()
-                {
+                if std::io::Write::write_all(&mut tmp, &data).is_ok() {
                     if let Err(error) = tmp.persist(cache_path) {
                         tracing::debug!(
                             cache = %cache_path.display(),
@@ -598,17 +642,9 @@ impl HsScanner {
         for result in shard_results {
             let (db, dropped) = result?;
             unsupported.extend(dropped);
-            let scratch_count = scratch_pool_size();
-            let mut scratch_pool = Vec::with_capacity(scratch_count);
-            for _ in 0..scratch_count {
-                scratch_pool.push(
-                    db.alloc_scratch()
-                        .map_err(|e| format!("hyperscan scratch: {e}"))?,
-                );
-            }
             shards.push(Shard {
                 db,
-                scratch_pool: parking_lot::Mutex::new(scratch_pool),
+                scratch_pool: parking_lot::Mutex::new(Vec::new()),
             });
         }
         Ok(shards)
@@ -702,12 +738,83 @@ impl HsScanner {
     }
 }
 
-fn scratch_pool_size() -> usize {
-    rayon::current_num_threads()
-        .max(
-            std::thread::available_parallelism()
-                .map(usize::from)
-                .unwrap_or(1), // LAW10: host parallelism probe failure ⇒ 1 (then max'd with rayon's count, clamped 1..64); scratch-pool size is perf-only, recall-unchanged.
-        )
-        .clamp(1, 64)
+fn hs_partition_cost(regex: &str) -> u64 {
+    let bytes = regex.as_bytes();
+    let mut cost = BASE_PATTERN_COST.saturating_add(bytes.len() as u64);
+    let mut i = 0usize;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'|' => cost = cost.saturating_add(400),
+            b'[' => {
+                let start = i;
+                i += 1;
+                while i < bytes.len() {
+                    if bytes[i] == b'\\' {
+                        i = i.saturating_add(2);
+                        continue;
+                    }
+                    if bytes[i] == b']' {
+                        break;
+                    }
+                    i += 1;
+                }
+                let class_len = i.saturating_sub(start);
+                if class_len >= 20 {
+                    cost = cost.saturating_add(200);
+                }
+            }
+            b'{' => {
+                if let Some((upper, end)) = counted_repeat_upper_bound(bytes, i) {
+                    cost = cost.saturating_add(upper.min(10_000).saturating_mul(20));
+                    i = end;
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    cost
+}
+
+fn counted_repeat_upper_bound(bytes: &[u8], open: usize) -> Option<(u64, usize)> {
+    let mut i = open + 1;
+    let first_start = i;
+    while i < bytes.len() && bytes[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i == first_start {
+        return None;
+    }
+    let Ok(lower_str) = std::str::from_utf8(&bytes[first_start..i]) else {
+        return None;
+    };
+    let Ok(lower) = lower_str.parse::<u64>() else {
+        return None;
+    };
+    match bytes.get(i).copied() {
+        Some(b'}') => Some((lower, i)),
+        Some(b',') => {
+            i += 1;
+            let upper_start = i;
+            while i < bytes.len() && bytes[i].is_ascii_digit() {
+                i += 1;
+            }
+            if bytes.get(i).copied() != Some(b'}') {
+                return None;
+            }
+            let upper = if i == upper_start {
+                lower.saturating_add(100)
+            } else {
+                let Ok(upper_str) = std::str::from_utf8(&bytes[upper_start..i]) else {
+                    return None;
+                };
+                let Ok(upper) = upper_str.parse::<u64>() else {
+                    return None;
+                };
+                upper
+            };
+            Some((upper, i))
+        }
+        _ => None,
+    }
 }

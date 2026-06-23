@@ -36,7 +36,7 @@ pub struct ScannerTuningConfig {
 impl ScannerTuningConfig {
     pub(crate) const FALLBACK_HS_DEFAULT: bool = true;
     pub(crate) const HS_PREFILTER_MAX_LEN_DEFAULT: usize = 4096;
-    pub(crate) const HS_SHARD_TARGET_DEFAULT: usize = 80;
+    pub(crate) const HS_SHARD_TARGET_DEFAULT: usize = 320;
     pub(crate) const FALLBACK_ANCHOR_DEFAULT: bool = true;
     pub(crate) const HOMOGLYPH_GATE_DEFAULT: bool = true;
     pub(crate) const HOMOGLYPH_ASCII_SKIP_DEFAULT: bool = true;
