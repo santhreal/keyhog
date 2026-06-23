@@ -29,20 +29,17 @@ use crate::daemon::protocol::{Request, Response};
 #[cfg(unix)]
 use crate::daemon::server::default_socket_path;
 use crate::orchestrator::ScanOrchestrator;
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 // The daemon-only result-massaging path (unwrap_scan_results,
 // finalize_for_report) is the only consumer of `RawMatch` /
-// `VerifiedFinding` / the dedup helpers in this file. The
-// in-process orchestrator path handles its own conversion inside
-// `ScanOrchestrator::run`. Cfg-gate the imports so Windows builds
-// don't trip the unused-imports denial.
+// `VerifiedFinding` in this file. The in-process orchestrator path
+// handles its own conversion inside `ScanOrchestrator::run`, and shared
+// postprocess helpers own dedup/redaction. Cfg-gate the imports so Windows
+// builds don't trip the unused-imports denial.
 #[cfg(unix)]
 use anyhow::Context;
 #[cfg(unix)]
-use keyhog_core::{
-    dedup_cross_detector, dedup_matches, RawMatch, RuleSuppressor, VerificationResult,
-    VerifiedFinding,
-};
+use keyhog_core::{RawMatch, RuleSuppressor, VerifiedFinding};
 #[cfg(unix)]
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -81,22 +78,22 @@ pub(crate) async fn run(args: ScanArgs) -> Result<ExitCode> {
     #[cfg(unix)]
     match daemon_route(&args, &policy) {
         DaemonRoute::Required => run_via_daemon(&policy.effective_args).await,
-        DaemonRoute::Opportunistic => {
-            match run_via_daemon(&policy.effective_args).await {
-                Ok(exit) => Ok(exit),
-                Err(e) => {
-                    if matches!(args.daemon, Some(DaemonMode::Auto)) {
-                        eprintln!("keyhog: daemon auto route unavailable ({e:#}); running in-process scanner");
-                    }
-                    tracing::debug!(
-                        error = %e,
-                        "daemon auto route unavailable; running in-process scanner"
+        DaemonRoute::Opportunistic => match run_via_daemon(&policy.effective_args).await {
+            Ok(exit) => Ok(exit),
+            Err(e) => {
+                if matches!(args.daemon, Some(DaemonMode::Auto)) {
+                    eprintln!(
+                        "keyhog: daemon auto route unavailable ({e:#}); running in-process scanner"
                     );
-                    let orchestrator = ScanOrchestrator::new(args)?;
-                    orchestrator.run().await
                 }
+                tracing::debug!(
+                    error = %e,
+                    "daemon auto route unavailable; running in-process scanner"
+                );
+                let orchestrator = ScanOrchestrator::new(args)?;
+                orchestrator.run().await
             }
-        }
+        },
         DaemonRoute::Rejected(reason) => bail!("{reason}"),
         DaemonRoute::Forbidden => {
             let orchestrator = ScanOrchestrator::new(args)?;
@@ -559,27 +556,13 @@ fn finalize_for_report(matches: Vec<RawMatch>, args: &ScanArgs) -> Result<Vec<Ve
     let mut matches: Vec<RawMatch> = matches
         .into_iter()
         .filter(|m| {
-            if fixtures.suppresses(&m.credential) {
-                keyhog_scanner::telemetry::record_example_suppression(
-                    m.detector_id.as_ref(),
-                    m.location.file_path.as_deref(),
-                    &m.credential,
-                    "test_fixture_suppression",
-                );
+            if crate::orchestrator::suppresses_test_fixture(&fixtures, m) {
                 return false;
             }
             // `.keyhogignore` legacy line-based allowlist: path globs,
             // credential-hash entries, and whole-detector ignores. Same
             // predicates the orchestrator runs in `filter_and_resolve`.
-            if let Some(path) = m.location.file_path.as_deref() {
-                if allowlist.is_path_ignored(path) {
-                    return false;
-                }
-            }
-            if allowlist.credential_hashes.contains(&m.credential_hash) {
-                return false;
-            }
-            if allowlist.ignored_detectors.contains(&*m.detector_id) {
+            if crate::orchestrator::suppresses_allowlist_match(&allowlist, m) {
                 return false;
             }
             true
@@ -609,38 +592,11 @@ fn finalize_for_report(matches: Vec<RawMatch>, args: &ScanArgs) -> Result<Vec<Ve
             m.location.source = filesystem_source.clone();
         }
     }
-    let mut matches = crate::inline_suppression::filter_inline_suppressions(matches);
-
-    matches.sort_by_key(|m| std::cmp::Reverse(m.severity));
+    let matches = crate::inline_suppression::filter_inline_suppressions(matches);
 
     let scope = args.dedup.to_core();
-    let deduped = dedup_matches(matches, &scope);
-    let deduped = dedup_cross_detector(deduped);
-
-    let findings: Vec<VerifiedFinding> = deduped
-        .into_iter()
-        .map(|m| VerifiedFinding {
-            detector_id: m.detector_id,
-            detector_name: m.detector_name,
-            service: m.service,
-            severity: m.severity,
-            credential_redacted: if args.show_secrets {
-                m.credential.to_string().into()
-            } else {
-                keyhog_core::redact(&m.credential)
-            },
-            credential_hash: m.credential_hash,
-            location: m.primary_location,
-            verification: VerificationResult::Skipped,
-            // Same offline structural evidence the in-process finalize attaches
-            // (JWT alg=none anomaly + alg/iss/sub/aud/exp claims, and the
-            // offline-decoded AWS account ID), so neither diverges on the
-            // daemon route. One shared helper keeps every route in lockstep.
-            metadata: crate::orchestrator::offline_finding_metadata(&m.credential),
-            additional_locations: m.additional_locations,
-            confidence: m.confidence,
-        })
-        .collect();
+    let deduped = crate::orchestrator::dedup_for_report(matches, &scope);
+    let findings = crate::orchestrator::skipped_findings_from_deduped(deduped, args.show_secrets);
 
     // `.keyhogignore.toml` declarative rule suppressor (vyre rule engine).
     // The orchestrator applies this AFTER dedup on the final

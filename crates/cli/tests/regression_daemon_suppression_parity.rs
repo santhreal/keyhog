@@ -25,8 +25,10 @@
 
 #![cfg(unix)]
 
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
+use std::sync::{Mutex, MutexGuard, OnceLock};
 use std::time::{Duration, Instant};
 
 use tempfile::TempDir;
@@ -46,6 +48,14 @@ fn workspace_detectors() -> PathBuf {
         .expect("workspace detectors dir")
 }
 
+fn daemon_slot() -> MutexGuard<'static, ()> {
+    static DAEMON_SLOT: OnceLock<Mutex<()>> = OnceLock::new();
+    DAEMON_SLOT
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// A planted AWS access key. The `AKIA` prefix + 16 base32 chars is the
 /// canonical AWS key shape every keyhog build detects (named
 /// `aws-access-key` detector or the `hot-aws_key` simd fast path). Split
@@ -58,20 +68,32 @@ fn planted_secret() -> String {
 /// (used by BOTH `daemon start` and `scan --daemon`) resolves to a
 /// per-test socket and never collides with a real user daemon.
 struct Daemon {
+    _slot: MutexGuard<'static, ()>,
     child: Child,
     runtime_dir: TempDir,
+    _cache_root: TempDir,
+    xdg_cache_home: PathBuf,
     socket: PathBuf,
 }
 
 impl Daemon {
     fn start() -> Daemon {
+        let slot = daemon_slot();
         let runtime_dir = TempDir::new().expect("runtime tempdir");
+        std::fs::set_permissions(runtime_dir.path(), std::fs::Permissions::from_mode(0o700))
+            .expect("secure runtime tempdir");
+        let cache_root = TempDir::new().expect("daemon cache tempdir");
+        std::fs::set_permissions(cache_root.path(), std::fs::Permissions::from_mode(0o700))
+            .expect("secure daemon cache tempdir");
+        let xdg_cache_home = cache_root.path().join("xdg");
+        std::fs::create_dir_all(&xdg_cache_home).expect("daemon xdg cache dir");
         let socket = runtime_dir.path().join("keyhog.sock");
 
         let child = Command::new(binary())
             .arg("daemon")
             .arg("start")
             .env("XDG_RUNTIME_DIR", runtime_dir.path())
+            .env("XDG_CACHE_HOME", &xdg_cache_home)
             .arg("--detectors")
             .arg(workspace_detectors())
             // Keep this parity harness independent of host autoroute calibration.
@@ -82,9 +104,12 @@ impl Daemon {
             .spawn()
             .expect("spawn keyhog daemon start");
 
-        let daemon = Daemon {
+        let mut daemon = Daemon {
+            _slot: slot,
             child,
             runtime_dir,
+            _cache_root: cache_root,
+            xdg_cache_home,
             socket,
         };
         daemon.wait_until_ready();
@@ -99,13 +124,20 @@ impl Daemon {
     /// (the compiled scanner takes a beat to warm). Fails the test loudly
     /// if it never comes up - a silent timeout would let a broken daemon
     /// masquerade as "no findings to suppress".
-    fn wait_until_ready(&self) {
-        let deadline = Instant::now() + Duration::from_secs(60);
+    fn wait_until_ready(&mut self) {
+        let deadline = Instant::now() + Duration::from_secs(180);
         loop {
+            if let Some(status) = self.child.try_wait().expect("poll daemon startup") {
+                panic!(
+                    "daemon exited before becoming ready; status={:?}",
+                    status.code()
+                );
+            }
             let status = Command::new(binary())
                 .arg("daemon")
                 .arg("status")
                 .env("XDG_RUNTIME_DIR", self.runtime_dir.path())
+                .env("XDG_CACHE_HOME", &self.xdg_cache_home)
                 .arg("--socket")
                 .arg(&self.socket)
                 .output()
@@ -115,7 +147,7 @@ impl Daemon {
             }
             if Instant::now() >= deadline {
                 panic!(
-                    "daemon never became ready within 60s; status stderr={}",
+                    "daemon never became ready within 180s; status stderr={}",
                     String::from_utf8_lossy(&status.stderr)
                 );
             }
@@ -132,6 +164,7 @@ impl Drop for Daemon {
             .arg("daemon")
             .arg("stop")
             .env("XDG_RUNTIME_DIR", self.runtime_dir.path())
+            .env("XDG_CACHE_HOME", &self.xdg_cache_home)
             .arg("--socket")
             .arg(&self.socket)
             .output();
@@ -149,7 +182,8 @@ fn scan_json(daemon: &Daemon, path: &Path, route_flag: &str) -> Vec<serde_json::
         .arg(route_flag)
         .arg("--format")
         .arg("json")
-        .env("XDG_RUNTIME_DIR", daemon.runtime_dir());
+        .env("XDG_RUNTIME_DIR", daemon.runtime_dir())
+        .env("XDG_CACHE_HOME", &daemon.xdg_cache_home);
     if route_flag == "--no-daemon" {
         // Match the daemon's process-level backend pin without relying on
         // ambient autoroute calibration for the in-process control scan.

@@ -30,7 +30,10 @@ use std::sync::Arc;
 /// unused import on Windows/non-unix targets. The function itself stays
 /// available to `postprocess`'s own in-process routes on every platform.
 #[cfg(unix)]
-pub(crate) use postprocess::offline_finding_metadata;
+pub(crate) use postprocess::{
+    dedup_for_report, skipped_findings_from_deduped, suppresses_allowlist_match,
+    suppresses_test_fixture,
+};
 
 #[doc(hidden)]
 pub(crate) use dispatch::backend_requires_coalesced_batch_pipeline_for_test;

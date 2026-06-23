@@ -4,9 +4,7 @@ use super::ScanOrchestrator;
 #[cfg(feature = "verify")]
 use anyhow::Context;
 use anyhow::Result;
-#[cfg(feature = "verify")]
-use keyhog_core::DedupedMatch;
-use keyhog_core::{RawMatch, VerificationResult, VerifiedFinding, dedup_matches};
+use keyhog_core::{DedupScope, DedupedMatch, RawMatch, VerificationResult, VerifiedFinding};
 
 /// Offline (no-verify, no-network) structural metadata for a finding's
 /// credential, surfaced on every scan-output route.
@@ -93,6 +91,67 @@ fn finding_inside_keyhog_repo(file_path: &str) -> bool {
     canonical.starts_with(root)
 }
 
+pub(crate) fn suppresses_test_fixture(
+    fixtures: &crate::test_fixture_suppressions::TestFixtureSuppressions,
+    m: &RawMatch,
+) -> bool {
+    if fixtures.suppresses(&m.credential) {
+        keyhog_scanner::telemetry::record_example_suppression(
+            m.detector_id.as_ref(),
+            m.location.file_path.as_deref(),
+            &m.credential,
+            "test_fixture_suppression",
+        );
+        return true;
+    }
+    false
+}
+
+pub(crate) fn suppresses_allowlist_match(allowlist: &keyhog_core::Allowlist, m: &RawMatch) -> bool {
+    if let Some(path) = m.location.file_path.as_deref() {
+        if allowlist.is_path_ignored(path) {
+            return true;
+        }
+    }
+    allowlist.credential_hashes.contains(&m.credential_hash)
+        || allowlist.ignored_detectors.contains(&*m.detector_id)
+}
+
+pub(crate) fn dedup_for_report(
+    mut matches: Vec<RawMatch>,
+    scope: &DedupScope,
+) -> Vec<DedupedMatch> {
+    matches.sort_by_key(|m| std::cmp::Reverse(m.severity));
+    let deduped = keyhog_core::dedup_matches(matches, scope);
+    keyhog_core::dedup_cross_detector(deduped)
+}
+
+pub(crate) fn skipped_findings_from_deduped(
+    deduped: Vec<DedupedMatch>,
+    show_secrets: bool,
+) -> Vec<VerifiedFinding> {
+    deduped
+        .into_iter()
+        .map(|m| VerifiedFinding {
+            detector_id: m.detector_id,
+            detector_name: m.detector_name,
+            service: m.service,
+            severity: m.severity,
+            credential_redacted: if show_secrets {
+                m.credential.to_string().into()
+            } else {
+                keyhog_core::redact(&m.credential)
+            },
+            credential_hash: m.credential_hash,
+            location: m.primary_location,
+            verification: VerificationResult::Skipped,
+            metadata: offline_finding_metadata(&m.credential),
+            additional_locations: m.additional_locations,
+            confidence: m.confidence,
+        })
+        .collect()
+}
+
 impl ScanOrchestrator {
     pub(crate) fn filter_and_resolve(
         &self,
@@ -116,13 +175,7 @@ impl ScanOrchestrator {
                 {
                     return false;
                 }
-                if self.test_fixture_suppressions.suppresses(cred) {
-                    keyhog_scanner::telemetry::record_example_suppression(
-                        m.detector_id.as_ref(),
-                        m.location.file_path.as_deref(),
-                        cred,
-                        "test_fixture_suppression",
-                    );
+                if suppresses_test_fixture(&self.test_fixture_suppressions, m) {
                     return false;
                 }
 
@@ -172,15 +225,7 @@ impl ScanOrchestrator {
                     }
                 }
 
-                if let Some(path) = m.location.file_path.as_deref() {
-                    if allowlist.is_path_ignored(path) {
-                        return false;
-                    }
-                }
-                if allowlist.credential_hashes.contains(&m.credential_hash) {
-                    return false;
-                }
-                if allowlist.ignored_detectors.contains(&*m.detector_id) {
+                if suppresses_allowlist_match(allowlist, m) {
                     return false;
                 }
                 if let Some(conf) = m.confidence {
@@ -214,14 +259,9 @@ impl ScanOrchestrator {
         crate::inline_suppression::filter_inline_suppressions(filtered)
     }
 
-    pub(crate) async fn finalize(
-        &self,
-        mut matches: Vec<RawMatch>,
-    ) -> Result<Vec<VerifiedFinding>> {
-        matches.sort_by_key(|m| std::cmp::Reverse(m.severity));
+    pub(crate) async fn finalize(&self, matches: Vec<RawMatch>) -> Result<Vec<VerifiedFinding>> {
         let scope = self.effective_config.report.dedup.to_core();
-        let deduped = dedup_matches(matches, &scope);
-        let deduped = keyhog_core::dedup_cross_detector(deduped);
+        let deduped = dedup_for_report(matches, &scope);
 
         #[cfg(feature = "verify")]
         if self.effective_config.report.verify {
@@ -241,31 +281,10 @@ impl ScanOrchestrator {
             );
         }
 
-        Ok(deduped
-            .into_iter()
-            .map(|m| VerifiedFinding {
-                detector_id: m.detector_id,
-                detector_name: m.detector_name,
-                service: m.service,
-                severity: m.severity,
-                credential_redacted: if self.effective_config.report.show_secrets {
-                    m.credential.to_string().into()
-                } else {
-                    keyhog_core::redact(&m.credential)
-                },
-                credential_hash: m.credential_hash,
-                location: m.primary_location,
-                verification: VerificationResult::Skipped,
-                // Surface offline structural analysis with no verify / no
-                // network: the JWT analysis (alg/iss/sub/aud/exp + the
-                // alg=none anomaly) for JWT-shaped credentials, and the
-                // offline-decoded AWS account ID for AKIA…/ASIA… keys. Empty
-                // for everything else.
-                metadata: offline_finding_metadata(&m.credential),
-                additional_locations: m.additional_locations,
-                confidence: m.confidence,
-            })
-            .collect())
+        Ok(skipped_findings_from_deduped(
+            deduped,
+            self.effective_config.report.show_secrets,
+        ))
     }
 
     #[cfg(feature = "verify")]
