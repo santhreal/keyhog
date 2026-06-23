@@ -359,12 +359,15 @@ mod git_child_tests {
 /// chunk built from those lines reports absolute file lines once it carries
 /// `base_line = new_start - 1`.
 pub(crate) fn parse_hunk_new_start(header: &str) -> Option<usize> {
-    let after_plus = header.split('+').nth(1)?;
-    let digits: String = after_plus
-        .chars()
-        .take_while(|c| c.is_ascii_digit())
-        .collect();
-    digits.parse().ok() // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
+    let (_, after_plus) = header.split_once('+')?;
+    let digits_end = after_plus
+        .bytes()
+        .position(|b| !b.is_ascii_digit())
+        .unwrap_or(after_plus.len());
+    if digits_end == 0 {
+        return None;
+    }
+    after_plus[..digits_end].parse().ok() // LAW10: malformed input => None (fail-closed at the boundary), recall-safe
 }
 
 pub(crate) fn parse_hunk_new_start_or_error(

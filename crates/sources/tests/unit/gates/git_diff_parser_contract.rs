@@ -48,4 +48,17 @@ fn git_diff_sources_share_byte_oriented_parser() {
             );
         }
     }
+
+    let git_mod =
+        std::fs::read_to_string(root.join("src/git/mod.rs")).expect("git module readable");
+    assert!(
+        git_mod.contains("header.split_once('+')")
+            && git_mod.contains("let digits_end = after_plus"),
+        "git hunk header parsing must locate borrowed digit slices in git/mod.rs"
+    );
+    assert!(
+        !git_mod.contains("let digits: String")
+            && !git_mod.contains(".take_while(|c| c.is_ascii_digit()).collect()"),
+        "git hunk header parsing must parse borrowed digit slices without allocating"
+    );
 }
