@@ -22,7 +22,7 @@ impl CompiledScanner {
         // `self.hot_metadata_by_index` at construction and are cloned by index
         // below (PERF-locality_intern-1). Only the literal table is still
         // needed for the sieve + dispatch.
-        use crate::simdsieve_prefilter::HOT_PATTERNS;
+        use crate::simdsieve_prefilter::{HOT_PATTERNS, HOT_PATTERN_MIN_LENGTHS};
         use simdsieve::SimdSieve;
 
         let text_bytes = text.as_bytes();
@@ -152,26 +152,7 @@ impl CompiledScanner {
                     continue;
                 }
 
-                // Per-pattern minimum credential length, in bytes.
-                // Each pattern's floor matches the actual minimum length
-                // a valid token of that shape can have - fast-path
-                // findings are emitted as Critical severity without
-                // re-running the full detector regex, so a too-loose
-                // floor turns every `SG.length` / `ghp_xxxx` / `xoxb-abc`
-                // substring into a hard finding.
-                //
-                // Index-parallel floors: ghp=40, sk-proj=20, AKIA/ASIA=20,
-                // SG=26, Slack/Square=16, Stripe=32.
-                //
-                // Dogfood: pre-tightening the v0.5.19 binary fired
-                // `SG.length` in claude-code's OAuthFlowStep.tsx
-                // (PASTE_HERE_MSG.length substring) as Critical
-                // sendgrid_key. SG. floor of 8 meant `SG.length` (9
-                // chars) cleared. 26-floor leaves the first-segment
-                // shape intact while killing the JS-property FP.
-                const PER_PATTERN_MIN_LEN: &[usize] =
-                    &[40, 20, 20, 20, 26, 16, 16, 16, 32, 32, 32, 32];
-                let min_len = PER_PATTERN_MIN_LEN.get(pattern_idx).copied().unwrap_or(8); // LAW10: bounds-checked lookup; out-of-range => documented default (total fn), recall-safe
+                let min_len = HOT_PATTERN_MIN_LENGTHS[pattern_idx];
                 let suppression_ctx = crate::suppression::HotPatternSuppressionCtx::new(
                     chunk.metadata.path.as_deref(),
                     chunk.metadata.source_type.as_str(),

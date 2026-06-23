@@ -7,85 +7,147 @@
 //! This module integrates it as Layer 1 of the scanning pipeline:
 //! hot patterns are checked first, and if found, we can often skip AC/Regex.
 
-/// Common high-value secret prefixes that trigger Layer 1 SIMD.
-pub(crate) const HOT_PATTERNS: &[&[u8]] = &[
-    b"ghp_",
-    b"sk-proj-",
-    b"AKIA",
-    b"ASIA",
-    b"SG.",
-    b"xoxb-",
-    b"xoxp-",
-    b"sq0csp-",
-    b"sk_live_",
-    b"sk_test_",
-    b"rk_live_",
-    b"rk_test_",
-];
+macro_rules! define_hot_pattern_tables {
+    ($(($prefix:expr, $min_len:expr, $service:expr, $detector_id:expr, $display_name:expr $(,)?)),+ $(,)?) => {
+        /// Common high-value secret prefixes that trigger Layer 1 SIMD.
+        pub(crate) const HOT_PATTERNS: &[&[u8]] = &[$($prefix),+];
 
-/// `service` field per hot pattern - the CANONICAL service of the detector
-/// this fast-path stands in for, NOT an internal `*_key` label. The hot path
-/// is a perf optimization, not a distinct detector: a leaked `AKIA…` is an
-/// `aws-access-key` finding however the engine found it. Before 2026-05-29
-/// these were `aws_key`/`github_pat`/… so the SAME secret surfaced as
-/// `hot-aws_key`/service `aws_key` on Linux (Hyperscan path) but
-/// `aws-access-key`/service `aws` on macOS/Windows (portable, no hot path) -
-/// a cross-platform id divergence. Emitting canonical identity here makes all
-/// platforms agree and matches what `keyhog explain` already resolves hot ids
-/// to. Index-parallel with HOT_PATTERNS / the two arrays below.
-pub(crate) const HOT_PATTERN_NAMES: &[&str] = &[
-    "github", "openai", "aws", "aws", "sendgrid", "slack", "slack", "square", "stripe", "stripe",
-    "stripe", "stripe",
-];
+        /// Per-pattern minimum credential length, in bytes.
+        ///
+        /// Each floor matches the shortest valid token for the same slot in
+        /// [`HOT_PATTERNS`]. This lives beside the prefix/identity tables so a
+        /// new hot pattern cannot silently inherit a permissive default in the
+        /// engine fast path.
+        pub(crate) const HOT_PATTERN_MIN_LENGTHS: &[usize] = &[$($min_len),+];
 
-/// Canonical `detector_id` per hot pattern - the id of the named detector the
-/// fast-path represents, so scan output (JSON/SARIF/text/baselines) is
-/// identical regardless of which engine path made the find. `sq0csp-` keeps
-/// `hot-square_secret`: no standalone square-secret detector exists yet, so it
-/// is genuinely fast-path-only (`keyhog explain` documents this). Static (not
-/// `format!`-per-match) to keep the per-hit allocation the perf audit removed.
-///
-/// `ASIA` maps to `aws-access-key`, NOT `aws-session-token`: an `ASIA…` string
-/// is a temporary STS *access key ID* (the same shape as `AKIA…` - the
-/// `aws-access-key` detector regex is literally `(?-i)(AKIA|ASIA)[0-9A-Z]{16}`
-/// and the verifier lists `ASIA` in `AWS_VALID_ACCESS_KEY_PREFIXES`). The
-/// *session token* is the separate long base64 blob the `aws-session-token`
-/// detector matches via the `AWS_SESSION_TOKEN=`/`X-Amz-Security-Token=`
-/// anchors - none of which begin with `ASIA`. The old `ASIA→aws-session-token`
-/// mapping mis-attributed every `ASIA` key ID and (once the hot path gained
-/// precise-regex validation) would have rejected them outright, since the
-/// session-token regex can never match an `ASIA…` literal.
-pub(crate) const HOT_PATTERN_DETECTOR_IDS: &[&str] = &[
-    crate::detector_ids::GITHUB_CLASSIC_PAT,
-    crate::detector_ids::OPENAI_API_KEY,
-    crate::detector_ids::AWS_ACCESS_KEY,
-    crate::detector_ids::AWS_ACCESS_KEY,
-    crate::detector_ids::SENDGRID_API_KEY,
-    crate::detector_ids::SLACK_BOT_TOKEN,
-    crate::detector_ids::SLACK_USER_TOKEN,
-    crate::detector_ids::HOT_SQUARE_SECRET,
-    crate::detector_ids::STRIPE_SECRET_KEY,
-    crate::detector_ids::STRIPE_SECRET_KEY,
-    crate::detector_ids::STRIPE_SECRET_KEY,
-    crate::detector_ids::STRIPE_SECRET_KEY,
-];
+        /// `service` field per hot pattern - the CANONICAL service of the detector
+        /// this fast-path stands in for, NOT an internal `*_key` label. The hot path
+        /// is a perf optimization, not a distinct detector: a leaked `AKIA…` is an
+        /// `aws-access-key` finding however the engine found it. Before 2026-05-29
+        /// these were `aws_key`/`github_pat`/… so the SAME secret surfaced as
+        /// `hot-aws_key`/service `aws_key` on Linux (Hyperscan path) but
+        /// `aws-access-key`/service `aws` on macOS/Windows (portable, no hot path) -
+        /// a cross-platform id divergence. Emitting canonical identity here makes all
+        /// platforms agree and matches what `keyhog explain` already resolves hot ids
+        /// to.
+        pub(crate) const HOT_PATTERN_NAMES: &[&str] = &[$($service),+];
 
-/// Canonical human-readable detector name per hot pattern (matches the `name`
-/// field of the corresponding `detectors/*.toml`). Square has no canonical
-/// detector, so it carries a plain "Square Secret" label.
-pub(crate) const HOT_PATTERN_DISPLAY_NAMES: &[&str] = &[
-    "GitHub Classic PAT",
-    "OpenAI API Key",
-    "AWS Access Key",
-    "AWS Access Key",
-    "SendGrid API Key",
-    "Slack Bot Token",
-    "Slack User Token",
-    "Square Secret",
-    "Stripe Secret Key",
-    "Stripe Secret Key",
-    "Stripe Secret Key",
-    "Stripe Secret Key",
+        /// Canonical `detector_id` per hot pattern - the id of the named detector the
+        /// fast-path represents, so scan output (JSON/SARIF/text/baselines) is
+        /// identical regardless of which engine path made the find. `sq0csp-` keeps
+        /// `hot-square_secret`: no standalone square-secret detector exists yet, so it
+        /// is genuinely fast-path-only (`keyhog explain` documents this). Static (not
+        /// `format!`-per-match) to keep the per-hit allocation the perf audit removed.
+        ///
+        /// `ASIA` maps to `aws-access-key`, NOT `aws-session-token`: an `ASIA…` string
+        /// is a temporary STS *access key ID* (the same shape as `AKIA…` - the
+        /// `aws-access-key` detector regex is literally `(?-i)(AKIA|ASIA)[0-9A-Z]{16}`
+        /// and the verifier lists `ASIA` in `AWS_VALID_ACCESS_KEY_PREFIXES`). The
+        /// *session token* is the separate long base64 blob the `aws-session-token`
+        /// detector matches via the `AWS_SESSION_TOKEN=`/`X-Amz-Security-Token=`
+        /// anchors - none of which begin with `ASIA`. The old `ASIA→aws-session-token`
+        /// mapping mis-attributed every `ASIA` key ID and (once the hot path gained
+        /// precise-regex validation) would have rejected them outright, since the
+        /// session-token regex can never match an `ASIA…` literal.
+        pub(crate) const HOT_PATTERN_DETECTOR_IDS: &[&str] = &[$($detector_id),+];
+
+        /// Canonical human-readable detector name per hot pattern (matches the `name`
+        /// field of the corresponding `detectors/*.toml`). Square has no canonical
+        /// detector, so it carries a plain "Square Secret" label.
+        pub(crate) const HOT_PATTERN_DISPLAY_NAMES: &[&str] = &[$($display_name),+];
+
+        const _: [(); HOT_PATTERNS.len()] = [(); HOT_PATTERN_MIN_LENGTHS.len()];
+        const _: [(); HOT_PATTERNS.len()] = [(); HOT_PATTERN_NAMES.len()];
+        const _: [(); HOT_PATTERNS.len()] = [(); HOT_PATTERN_DETECTOR_IDS.len()];
+        const _: [(); HOT_PATTERNS.len()] = [(); HOT_PATTERN_DISPLAY_NAMES.len()];
+    };
+}
+
+define_hot_pattern_tables![
+    (
+        b"ghp_",
+        40,
+        "github",
+        crate::detector_ids::GITHUB_CLASSIC_PAT,
+        "GitHub Classic PAT",
+    ),
+    (
+        b"sk-proj-",
+        20,
+        "openai",
+        crate::detector_ids::OPENAI_API_KEY,
+        "OpenAI API Key",
+    ),
+    (
+        b"AKIA",
+        20,
+        "aws",
+        crate::detector_ids::AWS_ACCESS_KEY,
+        "AWS Access Key",
+    ),
+    (
+        b"ASIA",
+        20,
+        "aws",
+        crate::detector_ids::AWS_ACCESS_KEY,
+        "AWS Access Key",
+    ),
+    (
+        b"SG.",
+        26,
+        "sendgrid",
+        crate::detector_ids::SENDGRID_API_KEY,
+        "SendGrid API Key",
+    ),
+    (
+        b"xoxb-",
+        16,
+        "slack",
+        crate::detector_ids::SLACK_BOT_TOKEN,
+        "Slack Bot Token",
+    ),
+    (
+        b"xoxp-",
+        16,
+        "slack",
+        crate::detector_ids::SLACK_USER_TOKEN,
+        "Slack User Token",
+    ),
+    (
+        b"sq0csp-",
+        16,
+        "square",
+        crate::detector_ids::HOT_SQUARE_SECRET,
+        "Square Secret",
+    ),
+    (
+        b"sk_live_",
+        32,
+        "stripe",
+        crate::detector_ids::STRIPE_SECRET_KEY,
+        "Stripe Secret Key",
+    ),
+    (
+        b"sk_test_",
+        32,
+        "stripe",
+        crate::detector_ids::STRIPE_SECRET_KEY,
+        "Stripe Secret Key",
+    ),
+    (
+        b"rk_live_",
+        32,
+        "stripe",
+        crate::detector_ids::STRIPE_SECRET_KEY,
+        "Stripe Secret Key",
+    ),
+    (
+        b"rk_test_",
+        32,
+        "stripe",
+        crate::detector_ids::STRIPE_SECRET_KEY,
+        "Stripe Secret Key",
+    ),
 ];
 
 /// Build a precise-regex validator for each hot-pattern slot, index-parallel
@@ -93,8 +155,7 @@ pub(crate) const HOT_PATTERN_DISPLAY_NAMES: &[&str] = &[
 ///
 /// The hot path is a literal-prefix prefilter: a single-pass SIMD sieve finds
 /// `ghp_`/`xoxp-`/`AKIA`/… and historically emitted a `Critical` finding
-/// gated ONLY by a per-prefix length floor (`PER_PATTERN_MIN_LEN` in
-/// `engine/hot_patterns.rs`). A length floor is a crude proxy for the
+/// gated ONLY by a per-prefix length floor. A length floor is a crude proxy for the
 /// detector's real regex and admits wrong-character-class tokens the precise
 /// pattern rejects:
 ///   - `ghp_THIS_HAS_UNDERSCORES_IN_IT_NOT_A_TOKEN0` (43 ≥ 40 floor, but `_`

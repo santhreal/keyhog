@@ -224,6 +224,7 @@ pub mod simd_no_inline_tests;
 pub mod simd_no_silent_hyperscan_partial_contract;
 pub mod simd_no_unwrap_expect;
 pub mod simd_non_empty;
+pub mod simdsieve_prefilter_hot_pattern_table_owner;
 pub mod simdsieve_prefilter_no_inline_tests;
 pub mod simdsieve_prefilter_no_unwrap_expect;
 pub mod simdsieve_prefilter_non_empty;

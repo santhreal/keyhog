@@ -975,9 +975,18 @@ fn engine_hot_and_entropy_metadata_clones_are_heap_admission_gated() {
     }
 
     let hot_src = include_str!("../../src/engine/hot_patterns.rs");
+    let simdsieve_src = include_str!("../../src/simdsieve_prefilter.rs");
     assert!(
         !hot_src.contains("scan_state.matches.len() >= self.config.max_matches_per_chunk"),
         "hot-pattern scanning must not stop at first-N and bypass best-N heap admission"
+    );
+    assert!(
+        hot_src.contains("HOT_PATTERN_MIN_LENGTHS[pattern_idx]")
+            && !hot_src.contains("PER_PATTERN_MIN_LEN")
+            && !hot_src.contains("unwrap_or(8)")
+            && simdsieve_src.contains("define_hot_pattern_tables!")
+            && simdsieve_src.contains("HOT_PATTERN_MIN_LENGTHS"),
+        "hot-pattern min lengths must be owned by the simdsieve hot-pattern table and must not silently default on slot drift"
     );
 }
 

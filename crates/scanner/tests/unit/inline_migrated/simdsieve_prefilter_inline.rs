@@ -14,7 +14,8 @@
 #![cfg(feature = "simdsieve")]
 
 use keyhog_scanner::testing::{
-    HOT_PATTERNS, HOT_PATTERN_DETECTOR_IDS, HOT_PATTERN_DISPLAY_NAMES, HOT_PATTERN_NAMES,
+    HOT_PATTERNS, HOT_PATTERN_DETECTOR_IDS, HOT_PATTERN_DISPLAY_NAMES, HOT_PATTERN_MIN_LENGTHS,
+    HOT_PATTERN_NAMES,
 };
 
 #[test]
@@ -27,61 +28,92 @@ fn hot_pattern_arrays_are_index_parallel() {
         n,
         "display-name array length"
     );
+    assert_eq!(HOT_PATTERN_MIN_LENGTHS.len(), n, "min-length array length");
 }
 
 #[test]
 fn hot_patterns_map_to_canonical_detector_identity() {
-    // (prefix, detector_id, display_name, service). The id/name/service must
+    // (prefix, min_len, detector_id, display_name, service). The id/name/service must
     // match the corresponding detectors/*.toml so scan output is identical
     // whether the named detector or the fast-path made the find. `sq0csp-`
     // has no canonical detector and stays fast-path-only (`hot-square_secret`).
-    let expected: &[(&[u8], &str, &str, &str)] = &[
+    let expected: &[(&[u8], usize, &str, &str, &str)] = &[
         (
             b"ghp_",
+            40,
             "github-classic-pat",
             "GitHub Classic PAT",
             "github",
         ),
-        (b"sk-proj-", "openai-api-key", "OpenAI API Key", "openai"),
-        (b"AKIA", "aws-access-key", "AWS Access Key", "aws"),
+        (
+            b"sk-proj-",
+            20,
+            "openai-api-key",
+            "OpenAI API Key",
+            "openai",
+        ),
+        (b"AKIA", 20, "aws-access-key", "AWS Access Key", "aws"),
         // ASIA is a temporary STS *access key ID* (same `[0-9A-Z]{16}` shape
         // as AKIA, both owned by the aws-access-key detector + the verifier's
         // AWS_VALID_ACCESS_KEY_PREFIXES). It is NOT the session token (the
         // long base64 blob aws-session-token matches), so it maps to
         // aws-access-key, not aws-session-token.
-        (b"ASIA", "aws-access-key", "AWS Access Key", "aws"),
-        (b"SG.", "sendgrid-api-key", "SendGrid API Key", "sendgrid"),
-        (b"xoxb-", "slack-bot-token", "Slack Bot Token", "slack"),
-        (b"xoxp-", "slack-user-token", "Slack User Token", "slack"),
-        (b"sq0csp-", "hot-square_secret", "Square Secret", "square"),
+        (b"ASIA", 20, "aws-access-key", "AWS Access Key", "aws"),
+        (
+            b"SG.",
+            26,
+            "sendgrid-api-key",
+            "SendGrid API Key",
+            "sendgrid",
+        ),
+        (b"xoxb-", 16, "slack-bot-token", "Slack Bot Token", "slack"),
+        (
+            b"xoxp-",
+            16,
+            "slack-user-token",
+            "Slack User Token",
+            "slack",
+        ),
+        (
+            b"sq0csp-",
+            16,
+            "hot-square_secret",
+            "Square Secret",
+            "square",
+        ),
         (
             b"sk_live_",
+            32,
             "stripe-secret-key",
             "Stripe Secret Key",
             "stripe",
         ),
         (
             b"sk_test_",
+            32,
             "stripe-secret-key",
             "Stripe Secret Key",
             "stripe",
         ),
         (
             b"rk_live_",
+            32,
             "stripe-secret-key",
             "Stripe Secret Key",
             "stripe",
         ),
         (
             b"rk_test_",
+            32,
             "stripe-secret-key",
             "Stripe Secret Key",
             "stripe",
         ),
     ];
     assert_eq!(HOT_PATTERNS.len(), expected.len());
-    for (i, (prefix, id, name, service)) in expected.iter().enumerate() {
+    for (i, (prefix, min_len, id, name, service)) in expected.iter().enumerate() {
         assert_eq!(HOT_PATTERNS[i], *prefix, "prefix at {i}");
+        assert_eq!(HOT_PATTERN_MIN_LENGTHS[i], *min_len, "min_len at {i}");
         assert_eq!(HOT_PATTERN_DETECTOR_IDS[i], *id, "detector_id at {i}");
         assert_eq!(HOT_PATTERN_DISPLAY_NAMES[i], *name, "display_name at {i}");
         assert_eq!(HOT_PATTERN_NAMES[i], *service, "service at {i}");

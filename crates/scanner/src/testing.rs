@@ -2011,6 +2011,9 @@ pub(crate) const HOT_PATTERN_DETECTOR_IDS: &[&str] =
 pub(crate) const HOT_PATTERN_DISPLAY_NAMES: &[&str] =
     crate::simdsieve_prefilter::HOT_PATTERN_DISPLAY_NAMES;
 #[cfg(all(test, feature = "simdsieve"))]
+pub(crate) const HOT_PATTERN_MIN_LENGTHS: &[usize] =
+    crate::simdsieve_prefilter::HOT_PATTERN_MIN_LENGTHS;
+#[cfg(all(test, feature = "simdsieve"))]
 pub(crate) const HOT_PATTERN_NAMES: &[&str] = crate::simdsieve_prefilter::HOT_PATTERN_NAMES;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
