@@ -26,6 +26,9 @@ impl CompiledScanner {
         let _tuning_config = tuning_config;
         let state = build_compile_state(&detectors)?;
         let ac = build_ac_pattern_set(&state.ac_literals)?;
+        let credential_shape_by_detector_index =
+            crate::credential_shapes::build_detector_shape_rules(&detectors)
+                .map_err(crate::error::ScanError::Config)?;
         // GPU is unconditional in the build; runtime probe decides whether to
         // actually use it. `gpu_available` is set by hw_probe based on adapter
         // detection (excluding software renderers like llvmpipe/lavapipe).
@@ -436,6 +439,7 @@ impl CompiledScanner {
             phase2_patterns: state.phase2_patterns,
             companions: state.companions,
             detectors,
+            credential_shape_by_detector_index,
             same_prefix_patterns,
             phase2_keyword_ac,
             phase2_keyword_to_patterns,

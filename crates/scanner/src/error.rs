@@ -25,6 +25,8 @@ pub enum ScanError {
     Gpu(String),
     #[error("SIMD scanner failure: {0}")]
     Simd(String),
+    #[error("scanner configuration failure: {0}. Fix: correct the bundled scanner rules")]
+    Config(String),
 }
 
 /// Specialized Result type for scanning operations.

@@ -9,12 +9,20 @@ use crate::suppression::NamedDetectorSuppressionCtx;
 
 fn adjudicate_process_signal(
     detector_id: &str,
+    credential_shape: Option<&crate::credential_shapes::CredentialShapeRule>,
     credential: &str,
     data: &str,
     start: usize,
     end: usize,
 ) -> Verdict {
-    let signals = ProcessCandidateSignals::from_match(detector_id, credential, data, start, end);
+    let signals = ProcessCandidateSignals::from_match(
+        detector_id,
+        credential_shape,
+        credential,
+        data,
+        start,
+        end,
+    );
     adjudicate_match(
         CandidateMatch::new(credential),
         &MatchCtx::for_process_signals(signals),
@@ -43,26 +51,40 @@ fn adjudicate_final_emit(
 fn process_stage_preserves_aws_length_before_hex_context_order() {
     let data = "feedfacefeedfacefeedfacefeedface";
     let credential = &data[8..24];
+    let shape = crate::credential_shapes::CredentialShapeRule::exact_length_for_test(20);
 
     assert_eq!(
-        adjudicate_process_signal(crate::detector_ids::AWS_ACCESS_KEY, credential, data, 8, 24),
-        Verdict::Suppressed(StageId::AwsAccessKeyLengthInvalid)
+        adjudicate_process_signal(
+            crate::detector_ids::AWS_ACCESS_KEY,
+            Some(&shape),
+            credential,
+            data,
+            8,
+            24
+        ),
+        Verdict::Suppressed(StageId::DetectorCredentialShapeInvalid)
     );
 }
 
 #[test]
 fn process_stage_suppresses_anthropic_legacy_length() {
     let credential = "sk-ant-api03-short";
+    let shape = crate::credential_shapes::CredentialShapeRule::prefix_body_range_for_test(
+        "sk-ant-api03-",
+        80,
+        120,
+    );
 
     assert_eq!(
         adjudicate_process_signal(
-            crate::detector_ids::ANTHROPIC_API_KEY,
+            "shape-test-detector",
+            Some(&shape),
             credential,
             credential,
             0,
             credential.len()
         ),
-        Verdict::Suppressed(StageId::AnthropicLegacyLengthInvalid)
+        Verdict::Suppressed(StageId::DetectorCredentialShapeInvalid)
     );
 }
 
@@ -73,7 +95,14 @@ fn process_stage_suppresses_hex_digest_fragment() {
     let credential = &data[start..start + 32];
 
     assert_eq!(
-        adjudicate_process_signal("algolia-admin-api-key", credential, data, start, start + 32),
+        adjudicate_process_signal(
+            "algolia-admin-api-key",
+            None,
+            credential,
+            data,
+            start,
+            start + 32
+        ),
         Verdict::Suppressed(StageId::HexDigestFragment)
     );
 }
@@ -85,6 +114,7 @@ fn process_stage_suppresses_generic_without_prefix_not_promising() {
     assert_eq!(
         adjudicate_process_signal(
             crate::detector_ids::GENERIC_SECRET,
+            None,
             credential,
             credential,
             0,
@@ -157,10 +187,12 @@ fn process_stage_suppresses_checksum_invalid() {
 #[test]
 fn process_stage_reports_service_anchored_candidate() {
     let credential = "AKIAIOSFODNN7EXAMPLE";
+    let shape = crate::credential_shapes::CredentialShapeRule::exact_length_for_test(20);
 
     assert_eq!(
         adjudicate_process_signal(
             crate::detector_ids::AWS_ACCESS_KEY,
+            Some(&shape),
             credential,
             credential,
             0,

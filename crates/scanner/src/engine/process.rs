@@ -68,6 +68,9 @@ impl CompiledScanner {
 
         let process_signals = crate::adjudicate::ProcessCandidateSignals::from_match(
             detector.id.as_ref(),
+            self.credential_shape_by_detector_index
+                .get(entry.detector_index)
+                .and_then(Option::as_ref),
             credential,
             data,
             credential_start,

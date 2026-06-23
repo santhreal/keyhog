@@ -52,20 +52,14 @@ impl ProcessCandidateSignals {
 
     pub(crate) fn from_match(
         detector_id: &str,
+        credential_shape: Option<&crate::credential_shapes::CredentialShapeRule>,
         credential: &str,
         data: &str,
         credential_start: usize,
         match_end: usize,
     ) -> Self {
-        if detector_id == crate::detector_ids::AWS_ACCESS_KEY && credential.len() != 20 {
-            return Self::suppress(StageId::AwsAccessKeyLengthInvalid);
-        }
-        if detector_id == crate::detector_ids::ANTHROPIC_API_KEY
-            && credential
-                .strip_prefix("sk-ant-api03-")
-                .is_some_and(|body| !(80..=120).contains(&body.len()))
-        {
-            return Self::suppress(StageId::AnthropicLegacyLengthInvalid);
+        if credential_shape.is_some_and(|shape| !shape.allows(credential)) {
+            return Self::suppress(StageId::DetectorCredentialShapeInvalid);
         }
         if crate::pipeline::is_within_hex_context(data, credential_start, match_end) {
             return Self::suppress(StageId::WithinHexContext);

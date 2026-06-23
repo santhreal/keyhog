@@ -231,6 +231,11 @@ pub struct CompiledScanner {
     pub(crate) phase2_patterns: Vec<(CompiledPattern, Vec<String>)>,
     pub(crate) companions: Vec<Vec<CompiledCompanion>>,
     pub(crate) detectors: Vec<DetectorSpec>,
+    /// Detector-owned credential shape rules, indexed by detector index.
+    /// These come from Tier-B data so per-detector length contracts do not
+    /// live as hardcoded adjudicator branches.
+    pub(crate) credential_shape_by_detector_index:
+        Vec<Option<crate::credential_shapes::CredentialShapeRule>>,
     pub(crate) same_prefix_patterns: CsrU32,
     pub(crate) phase2_keyword_ac: Option<AhoCorasick>,
     pub(crate) phase2_keyword_to_patterns: CsrU32,

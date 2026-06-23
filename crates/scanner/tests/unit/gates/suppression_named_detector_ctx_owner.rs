@@ -151,8 +151,7 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
     let process = uncommented_code(&read(&src.join("engine/process.rs")));
     let adjudicate = adjudicate_code(&src);
     for reason in [
-        "aws_access_key_length_invalid",
-        "anthropic_legacy_length_invalid",
+        "detector_credential_shape_invalid",
         "within_hex_context",
         "hex_digest_fragment",
         "probabilistic_gate_not_promising",
@@ -231,6 +230,36 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
             && adjudicate.contains("ProcessCandidateSignals::from_checksum_invalid(true)"),
         "adjudicate module must own finalizer checksum-invalid suppression conversion"
     );
+    let credential_shapes = uncommented_code(&read(&src.join("credential_shapes.rs")));
+    assert!(
+        credential_shapes
+            .contains("include_str!(\"../../../rules/detector-credential-shapes.toml\")")
+            && credential_shapes.contains("exact_length")
+            && credential_shapes.contains("body_min_length")
+            && credential_shapes.contains("body_max_length")
+            && credential_shapes.contains("static SHAPE_RULES: OnceLock")
+            && credential_shapes.contains("static DETECTOR_IDS: OnceLock")
+            && credential_shapes.contains("build_detector_shape_rules"),
+        "detector credential shape policy must be loaded from the Tier-B rules file and cached at compile construction"
+    );
+    assert!(
+        process.contains("credential_shape_by_detector_index")
+            && process.contains("ProcessCandidateSignals::from_match("),
+        "engine/process.rs must pass construction-time detector shape policy into adjudicate"
+    );
+    for forbidden in [
+        "crate::detector_ids::AWS_ACCESS_KEY",
+        "crate::detector_ids::ANTHROPIC_API_KEY",
+        "credential.len() != 20",
+        "strip_prefix(\"sk-ant-api03-\")",
+        "AwsAccessKeyLengthInvalid",
+        "AnthropicLegacyLengthInvalid",
+    ] {
+        assert!(
+            !adjudicate.contains(forbidden),
+            "adjudicate must not own detector-specific credential shape literal {forbidden}"
+        );
+    }
 }
 
 #[test]

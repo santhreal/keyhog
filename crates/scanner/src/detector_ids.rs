@@ -25,7 +25,6 @@ pub(crate) const SSH_PRIVATE_KEY: &str = "ssh-private-key";
 pub(crate) const GITHUB_APP_PRIVATE_KEY: &str = "github-app-private-key";
 
 pub(crate) const AWS_ACCESS_KEY: &str = "aws-access-key";
-pub(crate) const ANTHROPIC_API_KEY: &str = "anthropic-api-key";
 pub(crate) const GITHUB_CLASSIC_PAT: &str = "github-classic-pat";
 pub(crate) const GITHUB_FINE_GRAINED_PAT: &str = "github-fine-grained-pat";
 pub(crate) const GITLAB_TOKEN: &str = "gitlab-token";

@@ -2,8 +2,7 @@ use super::{entropy::EntropyShapeStage, generic::GenericValueShapeStage};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StageId {
-    AwsAccessKeyLengthInvalid,
-    AnthropicLegacyLengthInvalid,
+    DetectorCredentialShapeInvalid,
     WithinHexContext,
     HexDigestFragment,
     ProbabilisticGateNotPromising,
@@ -27,8 +26,7 @@ pub(crate) enum StageId {
 impl StageId {
     pub(crate) const fn as_str(self) -> &'static str {
         match self {
-            Self::AwsAccessKeyLengthInvalid => "aws_access_key_length_invalid",
-            Self::AnthropicLegacyLengthInvalid => "anthropic_legacy_length_invalid",
+            Self::DetectorCredentialShapeInvalid => "detector_credential_shape_invalid",
             Self::WithinHexContext => "within_hex_context",
             Self::HexDigestFragment => "hex_digest_fragment",
             Self::ProbabilisticGateNotPromising => "probabilistic_gate_not_promising",
