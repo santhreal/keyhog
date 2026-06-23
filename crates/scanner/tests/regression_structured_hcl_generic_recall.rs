@@ -82,6 +82,30 @@ fn hcl_variable_default_generic_secret_surfaces_with_source_line_and_offset() {
 }
 
 #[test]
+fn hcl_inline_variable_default_generic_secret_surfaces_with_source_line_and_offset() {
+    let secret = "f1e2d3c4b5a69788776655443322110fedcba9876543210a";
+    let body = format!("variable \"api_key\" {{ default = \"{secret}\" }}\n");
+    let scanner = scanner_with_floor(0.40);
+    let matches = scan(&scanner, &body, "/repo/infra/inline.tf");
+    let hits = generic_hits(&matches, secret);
+    assert_eq!(
+        hits.len(),
+        1,
+        "single-line HCL variable defaults must feed the generic bridge exactly once"
+    );
+    let hit = hits[0];
+    assert_eq!(hit.location.line, Some(1));
+    assert_eq!(
+        hit.location.offset,
+        body.find(secret).expect("secret offset")
+    );
+    assert!(
+        hit.location.offset < body.len(),
+        "inline structured synthetic offset must be mapped back into the source file"
+    );
+}
+
+#[test]
 fn mirror_shaped_hcl_base64_surfaces_at_default_floor() {
     let secret = "gD+iWXpmkfIoEZcJV55KwQf/z2VyN87XesmdPZbZgtVHuZhwAVaRPi";
     let body = format!(

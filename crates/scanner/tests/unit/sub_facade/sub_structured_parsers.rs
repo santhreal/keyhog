@@ -78,6 +78,23 @@ fn hcl_extracts_variable_default() {
 }
 
 #[test]
+fn hcl_extracts_inline_variable_default() {
+    let text = "variable \"api_key\" { default = \"ghp_inlineToken1234567890\" }\n";
+    let pairs = parse_hcl(text);
+    assert_eq!(
+        value_of!(pairs, "api_key"),
+        Some("ghp_inlineToken1234567890")
+    );
+    assert_eq!(
+        pairs
+            .iter()
+            .find(|pair| pair.context == "api_key")
+            .map(|p| p.line),
+        Some(1)
+    );
+}
+
+#[test]
 fn hcl_extracts_flat_tfvars_assignment() {
     let text = "api_token = \"ghp_abcdefghij0123456789\"\n";
     let pairs = parse_hcl(text);

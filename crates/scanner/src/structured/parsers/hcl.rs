@@ -10,9 +10,18 @@ pub(crate) fn parse_hcl(text: &str) -> Vec<ExtractedPair> {
     while index < lines.len() {
         let line = lines[index];
         let trimmed = line.trim_start();
-        if let Some((var_name, _start_line)) = parse_variable_header(trimmed) {
+        if let Some(var_name) = parse_variable_header(trimmed) {
             let mut depth = 1usize;
             let mut consumed = 1usize;
+            if let Some(value) = parse_hcl_default_in_fragment(trimmed) {
+                if !value.is_empty() {
+                    pairs.push(ExtractedPair {
+                        context: var_name.clone(),
+                        value,
+                        line: index + 1,
+                    });
+                }
+            }
             for offset in 1..MAX_VARIABLE_BLOCK_LINES {
                 if index + offset >= lines.len() {
                     break;
@@ -60,7 +69,7 @@ pub(crate) fn parse_hcl(text: &str) -> Vec<ExtractedPair> {
 /// run into the next block indefinitely.
 const MAX_VARIABLE_BLOCK_LINES: usize = 16;
 
-fn parse_variable_header(line: &str) -> Option<(String, usize)> {
+fn parse_variable_header(line: &str) -> Option<String> {
     let rest = line.strip_prefix("variable")?;
     if !rest.starts_with(|c: char| c.is_ascii_whitespace()) {
         return None;
@@ -72,7 +81,7 @@ fn parse_variable_header(line: &str) -> Option<(String, usize)> {
     if name.is_empty() {
         return None;
     }
-    Some((name.to_string(), 0))
+    Some(name.to_string())
 }
 
 fn parse_hcl_default(line: &str) -> Option<String> {
@@ -81,6 +90,30 @@ fn parse_hcl_default(line: &str) -> Option<String> {
     let rest = rest.trim_start();
     let rest = rest.strip_prefix('=')?.trim_start();
     extract_quoted_value(rest)
+}
+
+fn parse_hcl_default_in_fragment(fragment: &str) -> Option<String> {
+    let mut search_start = 0usize;
+    while search_start < fragment.len() {
+        let pos = search_start + fragment[search_start..].find("default")?;
+        let before_ok = pos == 0
+            || fragment[..pos]
+                .chars()
+                .last()
+                .is_none_or(|c| !c.is_ascii_alphanumeric() && c != '_' && c != '-');
+        let after = &fragment[pos + "default".len()..];
+        let after_ok = after
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_whitespace());
+        if before_ok && after_ok {
+            if let Some(value) = parse_hcl_default(&fragment[pos..]) {
+                return Some(value);
+            }
+        }
+        search_start = pos + "default".len();
+    }
+    None
 }
 
 fn parse_hcl_assignment(line: &str) -> Option<(String, String)> {
