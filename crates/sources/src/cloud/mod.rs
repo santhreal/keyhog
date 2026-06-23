@@ -239,45 +239,36 @@ pub(crate) fn read_text_object_body(
 }
 
 pub(crate) fn is_probably_text_object_key(key: &str) -> bool {
-    let ext = Path::new(key)
-        .extension()
-        .and_then(|value| value.to_str())
-        .map(|value| value.to_ascii_lowercase());
-
-    !matches!(
-        ext.as_deref(),
-        Some(
-            "png"
-                | "jpg"
-                | "jpeg"
-                | "gif"
-                | "webp"
-                | "zip"
-                | "gz"
-                | "tgz"
-                | "tar"
-                | "7z"
-                | "pdf"
-                | "woff"
-                | "woff2"
-                | "mp3"
-                | "mp4"
-                | "mov"
-                | "dll"
-                | "so"
-                | "dylib"
-        )
-    )
+    const BINARY_OBJECT_EXTS: &[&str] = &[
+        "png", "jpg", "jpeg", "gif", "webp", "zip", "gz", "tgz", "tar", "7z", "pdf", "woff",
+        "woff2", "mp3", "mp4", "mov", "dll", "so", "dylib",
+    ];
+    let Some(ext) = Path::new(key).extension().and_then(|value| value.to_str()) else {
+        return true;
+    };
+    !BINARY_OBJECT_EXTS
+        .iter()
+        .any(|candidate| ext.eq_ignore_ascii_case(candidate))
 }
 
 pub(crate) fn is_binary_content_type(content_type: &str) -> bool {
-    let lower = content_type.to_ascii_lowercase();
-    lower.starts_with("image/")
-        || lower.starts_with("audio/")
-        || lower.starts_with("video/")
-        || lower == "application/octet-stream"
-        || lower == "application/zip"
-        || lower == "application/gzip"
+    let media_type = content_type
+        .split_once(';')
+        .map_or(content_type, |(media_type, _)| media_type)
+        .trim();
+    starts_with_ignore_ascii_case(media_type, "image/")
+        || starts_with_ignore_ascii_case(media_type, "audio/")
+        || starts_with_ignore_ascii_case(media_type, "video/")
+        || media_type.eq_ignore_ascii_case("application/octet-stream")
+        || media_type.eq_ignore_ascii_case("application/zip")
+        || media_type.eq_ignore_ascii_case("application/gzip")
+}
+
+fn starts_with_ignore_ascii_case(value: &str, prefix: &str) -> bool {
+    value
+        .as_bytes()
+        .get(..prefix.len())
+        .is_some_and(|head| head.eq_ignore_ascii_case(prefix.as_bytes()))
 }
 
 pub(crate) fn encode_object_key_path(key: &str) -> String {

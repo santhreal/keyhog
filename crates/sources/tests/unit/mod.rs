@@ -4,6 +4,8 @@ mod a5_lr2_http_proxy_flag_overrides_env;
 mod a5_lr2_http_proxy_off_preserved;
 pub mod basic_sources;
 pub mod binary;
+#[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
+pub mod cloud;
 pub mod file_gate;
 pub mod filesystem;
 pub mod gates;

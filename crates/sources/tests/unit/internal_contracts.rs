@@ -174,6 +174,14 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
             && cloud.contains("fn credential_forward_allowed"),
         "blocking_thread.rs and cloud/mod.rs must own shared remote thread, cloud client, endpoint, and credential-forward primitives"
     );
+    assert!(
+        cloud.contains("const BINARY_OBJECT_EXTS")
+            && cloud.contains("ext.eq_ignore_ascii_case(candidate)")
+            && cloud.contains("fn starts_with_ignore_ascii_case(")
+            && !cloud.contains("value.to_ascii_lowercase()")
+            && !cloud.contains("content_type.to_ascii_lowercase()"),
+        "cloud object extension and content-type routing must be allocation-free and ASCII-case-insensitive"
+    );
 
     for rel in ["src/s3/mod.rs", "src/gcs.rs", "src/cloud/azure_blob.rs"] {
         let source = std::fs::read_to_string(root.join(rel)).expect("read cloud source");

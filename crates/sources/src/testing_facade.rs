@@ -56,6 +56,10 @@ pub mod testing {
             compressed_size: u64,
         ) -> Result<String, String>;
         fn filesystem_default_max_file_size(&self) -> u64;
+        #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
+        fn cloud_is_probably_text_object_key(&self, key: &str) -> bool;
+        #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
+        fn cloud_is_binary_content_type(&self, content_type: &str) -> bool;
 
         #[cfg(any(
             feature = "azure",
@@ -444,6 +448,16 @@ pub mod testing {
 
         fn filesystem_default_max_file_size(&self) -> u64 {
             crate::filesystem::default_max_file_size_for_test()
+        }
+
+        #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
+        fn cloud_is_probably_text_object_key(&self, key: &str) -> bool {
+            crate::cloud::is_probably_text_object_key(key)
+        }
+
+        #[cfg(any(feature = "azure", feature = "s3", feature = "gcs"))]
+        fn cloud_is_binary_content_type(&self, content_type: &str) -> bool {
+            crate::cloud::is_binary_content_type(content_type)
         }
 
         #[cfg(any(
