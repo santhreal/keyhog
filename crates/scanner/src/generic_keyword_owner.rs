@@ -84,6 +84,16 @@ pub(crate) fn candidate_embeds_owned_assignment_key(
         || candidate_starts_with_owned_assignment_key(owned_keywords, candidate)
 }
 
+pub(crate) fn entropy_candidate_owned_by_named_assignment(
+    owned_keywords: &[Arc<str>],
+    candidate: &str,
+    same_line: Option<&str>,
+) -> bool {
+    candidate_embeds_owned_assignment_key(owned_keywords, candidate)
+        || same_line
+            .is_some_and(|line| line_assignment_owned_by_named_detector(owned_keywords, line))
+}
+
 pub(crate) fn keyword_span_owned_by_named_detector(
     owned_keywords: &[Arc<str>],
     line: &str,

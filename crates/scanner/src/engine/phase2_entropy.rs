@@ -156,10 +156,10 @@ impl CompiledScanner {
                 );
                 continue;
             }
-            if self.entropy_match_owned_by_named_assignment(
-                &entropy_match,
-                preprocessed,
-                line_offsets,
+            if crate::generic_keyword_owner::entropy_candidate_owned_by_named_assignment(
+                &self.generic_named_assignment_keywords,
+                &entropy_match.value,
+                entropy_value_line(&entropy_match, preprocessed, line_offsets),
             ) {
                 let entropy_ctx = crate::adjudicate::MatchCtx::for_entropy_fallback(
                     crate::adjudicate::EntropyFallbackSignal::NamedDetectorOwnedAssignment,
@@ -256,26 +256,6 @@ impl CompiledScanner {
                 |scan_state| build_raw_match(scan_state, report_conf),
             );
         }
-    }
-
-    fn entropy_match_owned_by_named_assignment(
-        &self,
-        entropy_match: &crate::entropy::EntropyMatch,
-        preprocessed: &ScannerPreprocessedText<'_>,
-        line_offsets: &[usize],
-    ) -> bool {
-        if crate::generic_keyword_owner::candidate_embeds_owned_assignment_key(
-            &self.generic_named_assignment_keywords,
-            &entropy_match.value,
-        ) {
-            return true;
-        }
-        entropy_value_line(entropy_match, preprocessed, line_offsets).is_some_and(|line| {
-            crate::generic_keyword_owner::line_assignment_owned_by_named_detector(
-                &self.generic_named_assignment_keywords,
-                line,
-            )
-        })
     }
 }
 

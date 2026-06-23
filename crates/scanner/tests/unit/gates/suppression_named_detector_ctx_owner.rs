@@ -385,6 +385,7 @@ fn entropy_fallback_shape_gauntlet_returns_adjudicator_stage() {
     let src = scanner_src();
     let entropy = uncommented_code(&read(&src.join("engine/phase2_entropy.rs")));
     let gates = uncommented_code(&read(&src.join("engine/phase2_entropy/gates.rs")));
+    let generic_keyword_owner = uncommented_code(&read(&src.join("generic_keyword_owner.rs")));
     let adjudicate = adjudicate_code(&src);
 
     assert!(
@@ -402,8 +403,18 @@ fn entropy_fallback_shape_gauntlet_returns_adjudicator_stage() {
             && entropy
                 .contains("crate::adjudicate::EntropyFallbackSignal::ValueShape(shape_stage)")
             && entropy
-                .contains("crate::adjudicate::EntropyFallbackSignal::NamedDetectorOwnedAssignment"),
+                .contains("crate::adjudicate::EntropyFallbackSignal::NamedDetectorOwnedAssignment")
+            && generic_keyword_owner.contains("fn entropy_candidate_owned_by_named_assignment(")
+            && entropy.contains(
+                "crate::generic_keyword_owner::entropy_candidate_owned_by_named_assignment("
+            ),
         "phase2 entropy caller must route entropy fallback drops through the adjudicator context"
+    );
+    assert!(
+        !entropy.contains("fn entropy_match_owned_by_named_assignment(")
+            && !entropy.contains("candidate_embeds_owned_assignment_key(")
+            && !entropy.contains("line_assignment_owned_by_named_detector("),
+        "phase2 entropy must not own the named-assignment predicate used to suppress entropy fallback candidates"
     );
     assert!(
         !gates.contains("StageId::EntropyValueShape(")
