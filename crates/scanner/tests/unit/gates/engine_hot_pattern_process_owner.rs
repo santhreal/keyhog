@@ -58,8 +58,12 @@ fn canonical_hot_patterns_delegate_to_process_match() {
     let simdsieve = uncommented_code(&read(&src.join("simdsieve_prefilter.rs")));
     assert!(
         simdsieve.contains("fn hot_pattern_direct_emit_allowed(")
-            && simdsieve.contains("HOT_PATTERN_DETECTOR_IDS[slot] == crate::detector_ids::HOT_SQUARE_SECRET"),
-        "the prefilter table owner must be the only place that allows synthetic direct hot-pattern emission"
+            && simdsieve.contains(
+                "pub(crate) const fn hot_pattern_direct_emit_allowed(_slot: usize) -> bool",
+            )
+            && simdsieve.contains("false")
+            && !simdsieve.contains("HOT_SQUARE_SECRET"),
+        "the prefilter table owner must forbid synthetic direct hot-pattern emission"
     );
     assert!(
         backend_triggered

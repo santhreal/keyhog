@@ -36,8 +36,7 @@ fn hot_pattern_arrays_are_index_parallel() {
 fn hot_patterns_map_to_canonical_detector_identity() {
     // (prefix, min_len, detector_id, display_name, service). The id/name/service must
     // match the corresponding detectors/*.toml so scan output is identical
-    // whether the named detector or the fast-path made the find. `sq0csp-`
-    // has no canonical detector and stays fast-path-only (`hot-square_secret`).
+    // whether the named detector or the fast-path made the find.
     let expected: &[(&[u8], usize, &str, &str, &str)] = &[
         (
             b"ghp_",
@@ -78,8 +77,8 @@ fn hot_patterns_map_to_canonical_detector_identity() {
         (
             b"sq0csp-",
             16,
-            "hot-square_secret",
-            "Square Secret",
+            "square-access-token",
+            "Square Access Token",
             "square",
         ),
         (
@@ -120,11 +119,10 @@ fn hot_patterns_map_to_canonical_detector_identity() {
         assert_eq!(HOT_PATTERN_NAMES[i], *service, "service at {i}");
     }
 
-    // No id may regress to a leaky internal `hot-*` form except the one
-    // pattern with no canonical detector.
+    // No id may regress to a leaky internal `hot-*` form.
     for id in HOT_PATTERN_DETECTOR_IDS {
         assert!(
-            !id.starts_with("hot-") || *id == "hot-square_secret",
+            !id.starts_with("hot-"),
             "{id} leaks an internal hot-* id into scan output"
         );
     }

@@ -30,7 +30,7 @@ fn hot_ids_resolve_to_real_detectors() {
     let ids: std::collections::HashSet<String> =
         detectors.iter().map(|d| d.id.to_lowercase()).collect();
 
-    // The 7 hot patterns with a canonical registry equivalent.
+    // The hot patterns with a canonical registry equivalent.
     for hot in [
         "hot-github_pat",
         "hot-openai_key",
@@ -39,6 +39,7 @@ fn hot_ids_resolve_to_real_detectors() {
         "hot-sendgrid_key",
         "hot-slack_bot_token",
         "hot-slack_user_token",
+        "hot-square_secret",
     ] {
         let canon = API
             .canonical_for_hot_id(hot)
@@ -54,15 +55,9 @@ fn hot_ids_resolve_to_real_detectors() {
         Some("github-classic-pat"),
         "hot-id aliases should be ASCII-case-insensitive without lowercasing the request"
     );
-
-    // Square (`sq0csp-`) has no standalone registry detector yet: it must
-    // map to None and the not-found path must say so without pretending it
-    // is a typo or mis-resolving to `squarespace-api-key`.
-    assert!(API.canonical_for_hot_id("hot-square_secret").is_none());
-    let err = API.explain_not_found(&detectors, "hot-square_secret", "hot-square_secret");
-    let msg = format!("{err}");
-    assert!(
-        msg.contains("fast-path"),
-        "hot-square_secret should explain it is a fast-path pattern, got: {msg}"
+    assert_eq!(
+        API.canonical_for_hot_id("hot-square_secret"),
+        Some("square-access-token"),
+        "Square hot ids must resolve to Square payments, not Squarespace"
     );
 }

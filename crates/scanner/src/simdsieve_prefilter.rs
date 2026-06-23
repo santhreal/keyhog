@@ -34,9 +34,7 @@ macro_rules! define_hot_pattern_tables {
 
         /// Canonical `detector_id` per hot pattern - the id of the named detector the
         /// fast-path represents, so scan output (JSON/SARIF/text/baselines) is
-        /// identical regardless of which engine path made the find. `sq0csp-` keeps
-        /// `hot-square_secret`: no standalone square-secret detector exists yet, so it
-        /// is genuinely fast-path-only (`keyhog explain` documents this). Static (not
+        /// identical regardless of which engine path made the find. Static (not
         /// `format!`-per-match) to keep the per-hit allocation the perf audit removed.
         ///
         /// `ASIA` maps to `aws-access-key`, NOT `aws-session-token`: an `ASIA…` string
@@ -52,8 +50,7 @@ macro_rules! define_hot_pattern_tables {
         pub(crate) const HOT_PATTERN_DETECTOR_IDS: &[&str] = &[$($detector_id),+];
 
         /// Canonical human-readable detector name per hot pattern (matches the `name`
-        /// field of the corresponding `detectors/*.toml`). Square has no canonical
-        /// detector, so it carries a plain "Square Secret" label.
+        /// field of the corresponding `detectors/*.toml`).
         pub(crate) const HOT_PATTERN_DISPLAY_NAMES: &[&str] = &[$($display_name),+];
 
         const _: [(); HOT_PATTERNS.len()] = [(); HOT_PATTERN_MIN_LENGTHS.len()];
@@ -117,8 +114,8 @@ define_hot_pattern_tables![
         b"sq0csp-",
         16,
         "square",
-        crate::detector_ids::HOT_SQUARE_SECRET,
-        "Square Secret",
+        crate::detector_ids::SQUARE_ACCESS_TOKEN,
+        "Square Access Token",
     ),
     (
         b"sk_live_",
@@ -166,8 +163,8 @@ pub(crate) fn hot_pattern_index_at(text_bytes: &[u8], offset: usize) -> Option<u
 }
 
 #[inline]
-pub(crate) fn hot_pattern_direct_emit_allowed(slot: usize) -> bool {
-    HOT_PATTERN_DETECTOR_IDS[slot] == crate::detector_ids::HOT_SQUARE_SECRET
+pub(crate) const fn hot_pattern_direct_emit_allowed(_slot: usize) -> bool {
+    false
 }
 
 pub(crate) fn validate_hot_pattern_runtime_table_lengths(
@@ -208,9 +205,8 @@ pub(crate) fn validate_hot_pattern_runtime_table_lengths(
 /// fast path emits exactly what the precise path would, just sooner.
 ///
 /// A slot is `None` when its `HOT_PATTERN_DETECTOR_IDS` entry names no loaded
-/// detector. Only `hot-square_secret` is allowed to direct-emit without a
-/// canonical detector; absent canonical detectors remain disabled and are
-/// skipped by the hot path.
+/// detector. Absent canonical detectors remain disabled and are skipped by the
+/// hot path rather than emitted as synthetic findings.
 ///
 /// This module (`mod simdsieve_prefilter`) and the sole caller in
 /// `engine::compile` are both gated on `feature = "simdsieve"`, so whenever
@@ -222,10 +218,10 @@ pub(crate) fn build_hot_pattern_validators(
     HOT_PATTERN_DETECTOR_IDS
         .iter()
         .map(|&id| -> crate::error::Result<Option<regex::Regex>> {
-            // A slot with no loaded detector is the ONE legitimate `None`
-            // (`hot-square_secret`, genuinely fast-path-only): keep the
-            // length-floor as its sole gate. This is a documented design choice,
-            // not a failure.
+            // A missing detector means the operator did not compile this
+            // canonical detector into the scanner. Keep the validator absent;
+            // the hot path will skip the slot instead of emitting a synthetic
+            // finding for a disabled detector.
             let Some(detector) = detectors.iter().find(|d| d.id == id) else {
                 return Ok(None);
             };

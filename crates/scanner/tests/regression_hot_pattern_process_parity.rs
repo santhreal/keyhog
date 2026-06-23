@@ -63,3 +63,53 @@ fn hot_openai_key_does_not_emit_when_canonical_detector_is_not_loaded() {
         "simdsieve hot path must not direct-emit a canonical detector that was not compiled; matches={matches:?}"
     );
 }
+
+#[test]
+fn hot_square_key_routes_to_canonical_square_detector() {
+    let token = "sq0csp-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij0123456";
+    let chunk = Chunk {
+        data: format!("SQUARE_OAUTH_SECRET={token}\n").into(),
+        metadata: ChunkMetadata {
+            source_type: "filesystem".into(),
+            path: Some("repo/.env".into()),
+            ..Default::default()
+        },
+    };
+
+    let matches = scanner().scan(&chunk);
+    assert!(
+        matches.iter().any(|m| m.detector_id.as_ref() == "square-access-token"
+            && m.detector_name.as_ref() == "Square Access Token"
+            && m.credential.as_ref() == token),
+        "simdsieve square hot path must route through the canonical Square detector; matches={matches:?}"
+    );
+    assert!(
+        matches
+            .iter()
+            .all(|m| m.detector_id.as_ref() != "hot-square_secret"),
+        "simdsieve square hot path must not emit legacy synthetic hot-square_secret ids; matches={matches:?}"
+    );
+}
+
+#[test]
+fn hot_square_key_does_not_emit_when_canonical_detector_is_not_loaded() {
+    let token = "sq0csp-ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghij0123456";
+    let chunk = Chunk {
+        data: format!("SQUARE_OAUTH_SECRET={token}\n").into(),
+        metadata: ChunkMetadata {
+            source_type: "filesystem".into(),
+            path: Some("repo/.env".into()),
+            ..Default::default()
+        },
+    };
+
+    let matches = scanner_without("square-access-token").scan(&chunk);
+    assert!(
+        matches
+            .iter()
+            .all(|m| !(m.detector_id.as_ref() == "square-access-token"
+                && m.credential.as_ref() == token)
+                && m.detector_id.as_ref() != "hot-square_secret"),
+        "simdsieve square hot path must not direct-emit when the canonical Square detector is not compiled; matches={matches:?}"
+    );
+}

@@ -45,10 +45,6 @@ pub(crate) fn run(args: ExplainArgs) -> Result<()> {
 /// labels out of the scanner but can still be fed a `hot-*` id by hand or from
 /// a baseline produced on a SIMD build.
 ///
-/// `hot-square_secret` (Square `sq0csp-` OAuth) intentionally returns None:
-/// there is no standalone Square-payments detector in the registry yet (only
-/// `squarespace-api-key`, a different service), so it falls through to the
-/// tailored not-found path rather than mis-resolving to the wrong service.
 fn canonical_for_hot_id(id: &str) -> Option<&'static str> {
     const HOT_IDS: &[(&str, &str)] = &[
         ("hot-github_pat", "github-classic-pat"),
@@ -58,6 +54,7 @@ fn canonical_for_hot_id(id: &str) -> Option<&'static str> {
         ("hot-sendgrid_key", "sendgrid-api-key"),
         ("hot-slack_bot_token", "slack-bot-token"),
         ("hot-slack_user_token", "slack-user-token"),
+        ("hot-square_secret", "square-access-token"),
     ];
     HOT_IDS
         .iter()

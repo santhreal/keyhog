@@ -87,9 +87,9 @@ fn detector_ids_module_owns_scanner_detector_identity() {
         "\"slack-bot-token\"",
         "\"slack-token\"",
         "\"slack-user-token\"",
+        "\"square-access-token\"",
         "\"stripe-api-key\"",
         "\"stripe-secret-key\"",
-        "\"hot-square_secret\"",
     ];
     let forbidden_family_checks = [
         ".starts_with(\"generic-\")",

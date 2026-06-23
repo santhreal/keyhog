@@ -39,10 +39,10 @@ pub(crate) const SLACK_BOT_TOKEN: &str = "slack-bot-token";
 pub(crate) const SLACK_TOKEN: &str = "slack-token";
 #[cfg(feature = "simdsieve")]
 pub(crate) const SLACK_USER_TOKEN: &str = "slack-user-token";
+#[cfg(feature = "simdsieve")]
+pub(crate) const SQUARE_ACCESS_TOKEN: &str = "square-access-token";
 pub(crate) const STRIPE_API_KEY: &str = "stripe-api-key";
 pub(crate) const STRIPE_SECRET_KEY: &str = "stripe-secret-key";
-#[cfg(feature = "simdsieve")]
-pub(crate) const HOT_SQUARE_SECRET: &str = "hot-square_secret";
 
 #[inline]
 pub(crate) fn is_generic_detector(detector_id: &str) -> bool {
