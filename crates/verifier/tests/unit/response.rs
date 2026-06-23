@@ -51,3 +51,31 @@ fn success_json_equals_keeps_string_exact_match_contract() {
         "string comparisons stay exact and case-sensitive"
     );
 }
+
+#[test]
+fn body_error_detection_is_ascii_case_insensitive_for_plaintext_words() {
+    assert!(TestApi.body_indicates_error_for_test("ERROR: INVALID token"));
+    assert!(TestApi.body_indicates_error_for_test("credential Expired"));
+    assert!(
+        !TestApi.body_indicates_error_for_test("error_rate is zero"),
+        "underscore-separated metric names are not standalone error words"
+    );
+    assert!(
+        !TestApi.body_indicates_error_for_test("myinvalidatedname"),
+        "embedded substrings must not classify a live response as dead"
+    );
+}
+
+#[test]
+fn json_error_key_detection_is_ascii_case_insensitive_without_substring_keys() {
+    assert!(TestApi.body_indicates_error_for_test(r#"{"ERROR":"bad"}"#));
+    assert!(TestApi.body_indicates_error_for_test(r#"{"meta":{"Expired":true}}"#));
+    assert!(
+        !TestApi.body_indicates_error_for_test(r#"{"Errors":[]}"#),
+        "empty JSON error arrays mean no populated error"
+    );
+    assert!(
+        !TestApi.body_indicates_error_for_test(r#"{"error_rate":1}"#),
+        "JSON keys must match the error contract exactly"
+    );
+}

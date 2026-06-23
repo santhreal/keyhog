@@ -495,6 +495,7 @@ pub mod testing {
             status: u16,
             body: &str,
         ) -> bool;
+        fn body_indicates_error_for_test(&self, body: &str) -> bool;
         fn ssrf_check_url_with_resolved_addrs_for_test(
             &self,
             raw_url: &str,
@@ -727,6 +728,10 @@ pub mod testing {
             body: &str,
         ) -> bool {
             crate::verify::evaluate_success(spec, status, body)
+        }
+
+        fn body_indicates_error_for_test(&self, body: &str) -> bool {
+            crate::verify::body_indicates_error(body)
         }
 
         fn ssrf_check_url_with_resolved_addrs_for_test(

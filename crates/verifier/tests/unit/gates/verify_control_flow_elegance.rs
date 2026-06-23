@@ -26,7 +26,10 @@ fn verifier_control_flow_uses_single_expression_helpers() {
         response.contains(".map_or(!val.is_null(), |expected|")
             && response.contains("map.iter().any(|(key, val)|")
             && response.contains("n.as_f64().map_or(true, |f| f != 0.0)")
+            && response.contains("eq_ignore_ascii_case(candidate)")
+            && !response.contains("let lower = body.to_lowercase();")
+            && !response.contains("let lk = key.to_lowercase();")
             && !response.contains("n.as_f64().map(|f| f != 0.0).unwrap_or(true)"),
-        "response verifier should use map_or/any without hand-rolled early-return loops"
+        "response verifier should use allocation-free ASCII case checks, map_or/any, and no hand-rolled early-return loops"
     );
 }
