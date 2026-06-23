@@ -21,10 +21,10 @@ fn seven_zip_routes_to_dedicated_extractor() {
     let extract = read("src/filesystem/extract.rs");
     for needle in [
         "mod seven_zip;",
-        "ext == \"7z\"",
+        "ext.eq_ignore_ascii_case(\"7z\")",
         "extract_seven_zip_chunks",
         "mod rar;",
-        "ext == \"rar\"",
+        "ext.eq_ignore_ascii_case(\"rar\")",
         "extract_rar_chunks",
     ] {
         assert!(

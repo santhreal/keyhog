@@ -975,7 +975,8 @@ fn web_dns_screen_and_proxy_contracts() {
     assert!(
         TestApi
             .build_web_client(&proxied, "http://127.0.0.1:9/", true, false)
-            .is_ok()
+            .is_err(),
+        "explicit proxy mode must not bypass WebSource's local URL SSRF prefilter"
     );
 }
 

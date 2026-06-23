@@ -286,7 +286,10 @@ fn read_central_zip_entries(path: &Path) -> Result<Vec<CentralZipEntry>, String>
     let mut entries = Vec::with_capacity(usize::from(total_entries));
     let mut offset = 0usize;
     for _ in 0..total_entries {
-        if offset + 46 > central.len() {
+        let fixed_end = offset
+            .checked_add(46)
+            .ok_or_else(|| "zip central directory fixed header length overflow".to_string())?;
+        if fixed_end > central.len() {
             return Err("truncated zip central directory entry".to_string());
         }
         if read_u32(&central[offset..offset + 4])? != CENTRAL_SIGNATURE {
@@ -309,7 +312,7 @@ fn read_central_zip_entries(path: &Path) -> Result<Vec<CentralZipEntry>, String>
                 "zip64 central directory entry is not handled by duplicate fallback".to_string(),
             );
         }
-        let name_start = offset + 46;
+        let name_start = fixed_end;
         let name_end = name_start
             .checked_add(name_len)
             .ok_or_else(|| "zip central directory name length overflow".to_string())?;
