@@ -231,6 +231,7 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
         "adjudicate module must own finalizer checksum-invalid suppression conversion"
     );
     let credential_shapes = uncommented_code(&read(&src.join("credential_shapes.rs")));
+    let detector_catalog = uncommented_code(&read(&src.join("detector_catalog.rs")));
     assert!(
         credential_shapes
             .contains("include_str!(\"../../../rules/detector-credential-shapes.toml\")")
@@ -238,8 +239,11 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
             && credential_shapes.contains("body_min_length")
             && credential_shapes.contains("body_max_length")
             && credential_shapes.contains("static SHAPE_RULES: OnceLock")
-            && credential_shapes.contains("static DETECTOR_IDS: OnceLock")
-            && credential_shapes.contains("build_detector_shape_rules"),
+            && credential_shapes.contains("build_detector_shape_rules")
+            && credential_shapes.contains("crate::detector_catalog::validate_rule_detector_ids")
+            && credential_shapes.contains("crate::detector_catalog::bundled_detector_ids()")
+            && detector_catalog.contains("static DETECTOR_IDS: OnceLock")
+            && detector_catalog.contains("keyhog_core::load_embedded_detectors_or_fail()"),
         "detector credential shape policy must be loaded from the Tier-B rules file and cached at compile construction"
     );
     assert!(
