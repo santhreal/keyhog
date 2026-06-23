@@ -25,7 +25,7 @@ fn coalesced_batch_producer_owns_source_to_batch_flow() {
         .split("pub(crate) fn scan_sources(")
         .nth(1)
         .and_then(|tail| {
-            tail.split("let findings = match scanner_thread.join()")
+            tail.split("let findings = join_coalesced_scanner_thread")
                 .next()
         })
         .expect("scan_sources producer section extractable");

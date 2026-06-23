@@ -233,6 +233,34 @@ struct CoalescedProducerOutcome {
     skipped_unchanged: usize,
 }
 
+struct CoalescedProgressTicker {
+    done: Arc<std::sync::atomic::AtomicBool>,
+    handle: Option<std::thread::JoinHandle<()>>,
+}
+
+impl CoalescedProgressTicker {
+    fn spawn(enabled: bool) -> Self {
+        let done = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let handle = if enabled {
+            let ticker_done = Arc::clone(&done);
+            let started_t = Instant::now();
+            Some(std::thread::spawn(move || {
+                super::reporting::progress_ticker(ticker_done, started_t)
+            }))
+        } else {
+            None
+        };
+        Self { done, handle }
+    }
+
+    fn stop(self) {
+        self.done.store(true, Ordering::Relaxed);
+        if let Some(handle) = self.handle {
+            let _ = handle.join(); // LAW10: progress ticker panic affects UI cleanup only; scan findings/error result already determined, recall-safe
+        }
+    }
+}
+
 struct CoalescedBatchProducer {
     tx: std::sync::mpsc::SyncSender<Vec<Chunk>>,
     plan: CoalescedPipelinePlan,
@@ -357,6 +385,26 @@ impl CoalescedBatchProducer {
     }
 }
 
+fn join_coalesced_scanner_thread(
+    scanner_thread: std::thread::JoinHandle<
+        std::result::Result<Vec<RawMatch>, AutorouteRoutingError>,
+    >,
+    progress: CoalescedProgressTicker,
+) -> Result<Vec<RawMatch>> {
+    let findings = match scanner_thread.join() {
+        Ok(Ok(findings)) => Ok(findings),
+        Ok(Err(error)) => Err(error.into()),
+        Err(error) => {
+            drop(error);
+            tracing::error!("scanner thread panicked mid-scan; results are incomplete");
+            let _receipt = crate::record_scanner_panic();
+            Ok(Vec::new())
+        }
+    };
+    progress.stop();
+    findings
+}
+
 impl ScanOrchestrator {
     fn coalesced_scanner_worker(&self, scanner: Arc<CompiledScanner>) -> CoalescedScannerWorker {
         let perf_trace = self.effective_config.scanner.perf_trace;
@@ -421,16 +469,7 @@ impl ScanOrchestrator {
         #[cfg(feature = "binary")]
         keyhog_sources::reset_binary_counters();
 
-        let progress_done = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let progress_handle = if show_progress && !self.args.stream {
-            let done = Arc::clone(&progress_done);
-            let started_t = Instant::now();
-            Some(std::thread::spawn(move || {
-                super::reporting::progress_ticker(done, started_t)
-            }))
-        } else {
-            None
-        };
+        let progress = CoalescedProgressTicker::spawn(show_progress && !self.args.stream);
 
         // Bytes budget per coalesced batch. Sized to match the
         // engine's `megascan_input_len()` (the pre-compiled
@@ -489,27 +528,7 @@ impl ScanOrchestrator {
 
         let producer_outcome = CoalescedBatchProducer::new(tx, pipeline_plan, merkle.clone())
             .produce_sources(&sources);
-        let findings = match scanner_thread.join() {
-            Ok(Ok(findings)) => findings,
-            Ok(Err(error)) => {
-                progress_done.store(true, std::sync::atomic::Ordering::Relaxed);
-                if let Some(h) = progress_handle {
-                    let _ = h.join(); // LAW10: unused-binding marker; no runtime effect, not a fallback
-                }
-                return Err(error.into());
-            }
-            Err(error) => {
-                drop(error);
-                tracing::error!("scanner thread panicked mid-scan; results are incomplete");
-                let _receipt = crate::record_scanner_panic();
-                Vec::new()
-            }
-        };
-
-        progress_done.store(true, std::sync::atomic::Ordering::Relaxed);
-        if let Some(h) = progress_handle {
-            let _ = h.join(); // LAW10: unused-binding marker; no runtime effect, not a fallback
-        }
+        let findings = join_coalesced_scanner_thread(scanner_thread, progress)?;
 
         self.finalize_incremental(
             merkle.as_ref(),
