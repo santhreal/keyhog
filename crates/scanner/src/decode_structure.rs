@@ -29,10 +29,13 @@
 //! Tests live in `tests/unit/decode_structure*.rs` (Santh no-inline-tests
 //! contract).
 
+use std::cell::RefCell;
+use std::collections::HashMap;
+
 /// Structured view of what a candidate decodes to. Carried as-is into the ML
 /// feature vector once the model is retrained; consumed today by
 /// [`is_encoded_binary`].
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub(crate) struct DecodeStructure {
     /// The candidate is a syntactically valid base64 (standard or url-safe) or
     /// hex string of a length worth decoding.
@@ -61,6 +64,19 @@ impl DecodeStructure {
 /// of the named detectors anyway.
 const MIN_DECODE_LEN: usize = 16;
 
+#[derive(Clone, Copy, Default)]
+struct DecodeFacts {
+    structure: DecodeStructure,
+    decoded_is_base64_blob: bool,
+    decoded_contains_nul_byte: bool,
+    decoded_contains_placeholder: bool,
+}
+
+thread_local! {
+    static DECODE_FACTS_CACHE: RefCell<HashMap<u64, DecodeFacts>> =
+        RefCell::new(HashMap::with_capacity(256));
+}
+
 /// Conservative verdict for the confidence pipeline: does this generic
 /// candidate decode to identifiable binary / serialized data? Real secrets
 /// return `false`.
@@ -74,23 +90,7 @@ const MIN_DECODE_LEN: usize = 16;
 /// so caching by content hash is always correct.
 #[must_use]
 pub(crate) fn is_encoded_binary(candidate: &str) -> bool {
-    use std::cell::RefCell;
-    use std::collections::HashMap;
-
-    thread_local! {
-        static CACHE: RefCell<HashMap<u64, bool>> = RefCell::new(HashMap::with_capacity(256));
-    }
-
-    // FNV-1a content key + bounded thread-local memoization, both from the one
-    // `util_hash` home (MC-12) so this cache keys identically to the entropy /
-    // ML-score / sibling decode-structure caches.
-    let key = crate::util_hash::hash_fast(candidate.as_bytes());
-    crate::util_hash::memoize_by_hash(
-        &CACHE,
-        key,
-        crate::util_hash::DEFAULT_MAX_CACHE_ENTRIES,
-        || analyze(candidate).is_binary_payload(),
-    )
+    decode_facts(candidate).structure.is_binary_payload()
 }
 
 /// Unified shape-only gate for the "uniform random base64 blob" class - the
@@ -235,29 +235,14 @@ pub(crate) fn is_byte_distribution_base64_blob(
 /// other decode-through helpers.
 #[must_use]
 pub(crate) fn decoded_is_base64_blob(candidate: &str) -> bool {
-    use std::cell::RefCell;
-    use std::collections::HashMap;
-
-    thread_local! {
-        static CACHE: RefCell<HashMap<u64, bool>> = RefCell::new(HashMap::with_capacity(256));
-    }
-
-    // Shared FNV-1a key + bounded memoization (MC-12), keyed identically to the
-    // sibling decode-structure caches.
-    let key = crate::util_hash::hash_fast(candidate.as_bytes());
-    crate::util_hash::memoize_by_hash(
-        &CACHE,
-        key,
-        crate::util_hash::DEFAULT_MAX_CACHE_ENTRIES,
-        || compute_decoded_is_base64_blob(candidate),
-    )
+    decode_facts(candidate).decoded_is_base64_blob
 }
 
 /// True when a base64/base64url/hex-shaped candidate decodes to ordinary
 /// printable text, not a binary asset or protobuf envelope.
 #[must_use]
 pub(crate) fn decodes_to_printable_text(candidate: &str) -> bool {
-    let structure = analyze(candidate);
+    let structure = decode_facts(candidate).structure;
     structure.decodable
         && structure.decoded_len >= 8
         && structure.printable_ratio >= 0.85
@@ -272,45 +257,7 @@ pub(crate) fn decodes_to_printable_text(candidate: &str) -> bool {
 #[must_use]
 #[cfg(any(feature = "entropy", test))]
 pub(crate) fn decoded_contains_nul_byte(candidate: &str) -> bool {
-    use std::cell::RefCell;
-    use std::collections::HashMap;
-
-    thread_local! {
-        static CACHE: RefCell<HashMap<u64, bool>> = RefCell::new(HashMap::with_capacity(256));
-    }
-
-    let key = crate::util_hash::hash_fast(candidate.as_bytes());
-    crate::util_hash::memoize_by_hash(
-        &CACHE,
-        key,
-        crate::util_hash::DEFAULT_MAX_CACHE_ENTRIES,
-        || {
-            let trimmed = candidate.trim();
-            if trimmed.len() < MIN_DECODE_LEN {
-                return false;
-            }
-            let Some(bytes) = decode_candidate(trimmed) else {
-                return false;
-            };
-            bytes.contains(&0)
-        },
-    )
-}
-
-fn compute_decoded_is_base64_blob(candidate: &str) -> bool {
-    let trimmed = candidate.trim();
-    if trimmed.len() < MIN_DECODE_LEN {
-        return false;
-    }
-    let Some(bytes) = decode_candidate(trimmed) else {
-        return false;
-    };
-    if bytes.len() < 32 {
-        return false;
-    }
-    bytes
-        .iter()
-        .all(|&b| crate::decode::is_standard_base64_byte(b))
+    decode_facts(candidate).decoded_contains_nul_byte
 }
 
 /// Decode `candidate` (base64 / url-safe-base64 / hex) and check whether the
@@ -324,36 +271,7 @@ fn compute_decoded_is_base64_blob(candidate: &str) -> bool {
 /// existing `is_encoded_binary` call cadence.
 #[must_use]
 pub(crate) fn decoded_contains_placeholder(candidate: &str) -> bool {
-    use std::cell::RefCell;
-    use std::collections::HashMap;
-
-    thread_local! {
-        static CACHE: RefCell<HashMap<u64, bool>> = RefCell::new(HashMap::with_capacity(256));
-    }
-
-    // Shared FNV-1a key + bounded memoization (MC-12), keyed identically to
-    // is_encoded_binary so the two caches cost a single hash per credential.
-    let key = crate::util_hash::hash_fast(candidate.as_bytes());
-    crate::util_hash::memoize_by_hash(
-        &CACHE,
-        key,
-        crate::util_hash::DEFAULT_MAX_CACHE_ENTRIES,
-        || compute_decoded_contains_placeholder(candidate),
-    )
-}
-
-fn compute_decoded_contains_placeholder(candidate: &str) -> bool {
-    let trimmed = candidate.trim();
-    if trimmed.len() < MIN_DECODE_LEN {
-        return false;
-    }
-    let Some(bytes) = decode_candidate(trimmed) else {
-        return false;
-    };
-    if bytes.is_empty() {
-        return false;
-    }
-    crate::placeholder_words::bytes_contain_placeholder_word(&bytes)
+    decode_facts(candidate).decoded_contains_placeholder
 }
 
 /// Decode `candidate` (base64 standard, base64 url-safe, or hex) and describe
@@ -361,26 +279,51 @@ fn compute_decoded_contains_placeholder(candidate: &str) -> bool {
 /// candidate is too short or not a clean encoding.
 #[must_use]
 pub(crate) fn analyze(candidate: &str) -> DecodeStructure {
+    decode_facts(candidate).structure
+}
+
+fn decode_facts(candidate: &str) -> DecodeFacts {
+    let key = crate::util_hash::hash_fast(candidate.as_bytes());
+    crate::util_hash::memoize_by_hash(
+        &DECODE_FACTS_CACHE,
+        key,
+        crate::util_hash::DEFAULT_MAX_CACHE_ENTRIES,
+        || compute_decode_facts(candidate),
+    )
+}
+
+fn compute_decode_facts(candidate: &str) -> DecodeFacts {
     let trimmed = candidate.trim();
     if trimmed.len() < MIN_DECODE_LEN {
-        return DecodeStructure::default();
+        return DecodeFacts::default();
     }
     let Some(bytes) = decode_candidate(trimmed) else {
-        return DecodeStructure::default();
+        return DecodeFacts::default();
     };
     if bytes.is_empty() {
-        return DecodeStructure::default();
+        return DecodeFacts::default();
     }
     let printable = bytes
         .iter()
         .filter(|&&b| (32..127).contains(&b) || matches!(b, 9 | 10 | 13))
         .count();
-    DecodeStructure {
+    let structure = DecodeStructure {
         decodable: true,
         decoded_len: bytes.len(),
         printable_ratio: printable as f32 / bytes.len() as f32,
         magic: magic_format(&bytes),
         protobuf_wire: parse_protobuf_wire(&bytes),
+    };
+    DecodeFacts {
+        structure,
+        decoded_is_base64_blob: bytes.len() >= 32
+            && bytes
+                .iter()
+                .all(|&b| crate::decode::is_standard_base64_byte(b)),
+        decoded_contains_nul_byte: bytes.contains(&0),
+        decoded_contains_placeholder: crate::placeholder_words::bytes_contain_placeholder_word(
+            &bytes,
+        ),
     }
 }
 
@@ -392,22 +335,28 @@ fn decode_candidate(s: &str) -> Option<Vec<u8>> {
     // base64 decoder first and only fall back to hex for strings that are NOT
     // valid base64 under the same padding/alphabet contract used by decode
     // through and suppression rechecks.
+    if s.as_bytes().contains(&b'_') && is_underscore_hex_candidate(s) {
+        return crate::decode::hex_decode(s).ok();
+    }
     if let Ok(bytes) = crate::decode::base64_decode(s) {
         return Some(bytes);
     }
-    if s.len() >= MIN_DECODE_LEN && s.len() % 2 == 0 && s.bytes().all(|b| b.is_ascii_hexdigit()) {
-        let mut out = Vec::with_capacity(s.len() / 2);
-        let raw = s.as_bytes();
-        let mut i = 0;
-        while i + 1 < raw.len() {
-            let hi = (raw[i] as char).to_digit(16)?;
-            let lo = (raw[i + 1] as char).to_digit(16)?;
-            out.push(((hi << 4) | lo) as u8);
-            i += 2;
-        }
-        return Some(out);
+    if s.len() >= MIN_DECODE_LEN && s.len().is_multiple_of(2) && is_plain_hex_candidate(s) {
+        return crate::decode::hex_decode(s).ok();
     }
     None
+}
+
+fn is_plain_hex_candidate(s: &str) -> bool {
+    s.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn is_underscore_hex_candidate(s: &str) -> bool {
+    let hex_len = s.bytes().filter(|&byte| byte != b'_').count();
+    hex_len >= MIN_DECODE_LEN
+        && hex_len.is_multiple_of(2)
+        && s.bytes()
+            .all(|byte| byte == b'_' || byte.is_ascii_hexdigit())
 }
 
 /// Identify common binary container/asset formats by their leading magic
@@ -454,6 +403,8 @@ fn magic_format(b: &[u8]) -> Option<&'static str> {
 /// the profile of a real serialized message, which random bytes hit < 0.5% of
 /// the time.
 fn parse_protobuf_wire(data: &[u8]) -> bool {
+    const FIXED_WIRE_WIDTHS: [usize; 8] = [0, 8, 0, 0, 0, 4, 0, 0];
+
     let n = data.len();
     if n < 8 {
         return false;
@@ -480,7 +431,7 @@ fn parse_protobuf_wire(data: &[u8]) -> bool {
             }
             1 => {
                 // 64-bit fixed
-                match i.checked_add(8) {
+                match i.checked_add(FIXED_WIRE_WIDTHS[wire as usize]) {
                     Some(x) if x <= n => i = x,
                     _ => return false,
                 }
@@ -497,7 +448,7 @@ fn parse_protobuf_wire(data: &[u8]) -> bool {
             }
             5 => {
                 // 32-bit fixed
-                match i.checked_add(4) {
+                match i.checked_add(FIXED_WIRE_WIDTHS[wire as usize]) {
                     Some(x) if x <= n => i = x,
                     _ => return false,
                 }

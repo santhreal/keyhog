@@ -66,6 +66,7 @@ pub mod decode_pipeline_non_empty;
 pub mod decode_reverse_no_inline_tests;
 pub mod decode_reverse_no_unwrap_expect;
 pub mod decode_reverse_non_empty;
+pub mod decode_structure_hot_path_shape;
 pub mod decode_unicode_escape_no_inline_tests;
 pub mod decode_unicode_escape_no_unwrap_expect;
 pub mod decode_unicode_escape_non_empty;

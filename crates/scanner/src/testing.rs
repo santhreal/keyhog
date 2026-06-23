@@ -1604,6 +1604,11 @@ pub(crate) mod decode_structure {
         crate::decode_structure::decoded_contains_placeholder(candidate)
     }
 
+    #[cfg(any(feature = "entropy", test))]
+    pub(crate) fn decoded_contains_nul_byte(candidate: &str) -> bool {
+        crate::decode_structure::decoded_contains_nul_byte(candidate)
+    }
+
     pub fn decoded_is_base64_blob(candidate: &str) -> bool {
         crate::decode_structure::decoded_is_base64_blob(candidate)
     }

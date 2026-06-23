@@ -7,8 +7,8 @@
 
 use base64::Engine;
 use keyhog_scanner::testing::decode_structure::{
-    analyze, decoded_contains_placeholder, is_encoded_binary, looks_like_uniform_base64_blob,
-    DecodeStructure,
+    analyze, decoded_contains_nul_byte, decoded_contains_placeholder, is_encoded_binary,
+    looks_like_uniform_base64_blob, DecodeStructure,
 };
 
 fn b64(bytes: &[u8]) -> String {
@@ -127,6 +127,24 @@ fn impossible_base64_length_does_not_decode_through_shape_analysis() {
 fn base64_wrapping_aws_example_credential_is_caught() {
     // base64("AKIAEXAMPLEEXAMPLE12") = "QUtJQUVYQU1QTEVFWEFNUExFMTI="
     assert!(decoded_contains_placeholder("QUtJQUVYQU1QTEVFWEFNUExFMTI="));
+}
+
+#[test]
+fn underscore_hex_uses_shared_hex_decode_contract() {
+    // hex("AKIAEXAMPLEEXAMPLE12") with readability separators. decode_structure
+    // must use the same underscore-stripping hex decoder as the decode pipeline.
+    assert!(decoded_contains_placeholder(
+        "414b_4941_4558_414d_504c_4545_5841_4d50_4c45_3132"
+    ));
+}
+
+#[test]
+fn decoded_nul_byte_fact_is_cached_with_decode_structure() {
+    let encoded = base64::engine::general_purpose::STANDARD.encode(b"prefix\0suffix-binary");
+    assert!(
+        decoded_contains_nul_byte(&encoded),
+        "decoded NUL evidence must be preserved by the consolidated decode facts"
+    );
 }
 
 #[test]
