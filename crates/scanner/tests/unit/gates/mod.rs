@@ -52,6 +52,7 @@ pub mod decode_base64_classifier_hot_path_shape;
 pub mod decode_base64_no_inline_tests;
 pub mod decode_base64_no_unwrap_expect;
 pub mod decode_base64_non_empty;
+pub mod decode_borrowed_candidate_paths;
 pub mod decode_caesar_no_inline_tests;
 pub mod decode_caesar_no_unwrap_expect;
 pub mod decode_caesar_non_empty;

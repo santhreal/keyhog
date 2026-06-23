@@ -1,7 +1,7 @@
 use super::base64::base64_decode;
 use super::pipeline::{
-    decode_candidate_spans_exact, decode_candidates, extract_encoded_values,
-    with_extracted_value_spans, ExtractedValue,
+    decode_candidate_refs_exact, decode_candidate_spans_exact, decode_candidates,
+    extract_encoded_values, with_extracted_value_spans, ExtractedValue,
 };
 use super::unicode_escape::unicode_escape_decode;
 use super::util::hex_val;
@@ -123,18 +123,26 @@ macro_rules! simple_decoder {
             }
 
             fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-                let mut candidates = with_extracted_value_spans(&chunk.data, |candidates| {
-                    candidates
-                        .iter()
-                        .filter(|candidate| ($filter)(candidate.value.as_str()))
-                        .cloned()
-                        .collect::<Vec<_>>()
+                let mut decoded_chunks = with_extracted_value_spans(&chunk.data, |candidates| {
+                    decode_candidate_refs_exact(
+                        chunk,
+                        candidates.iter().filter_map(|candidate| {
+                            ($filter)(candidate.value.as_str()).then_some(candidate)
+                        }),
+                        $decode,
+                        self.name(),
+                    )
                 });
                 let trimmed = chunk.data.trim();
                 if ($filter)(trimmed) && !trimmed.is_empty() {
-                    candidates.push(ExtractedValue::synthetic(trimmed.to_string()));
+                    decoded_chunks.extend(decode_candidate_spans_exact(
+                        chunk,
+                        vec![ExtractedValue::synthetic(trimmed.to_string())],
+                        $decode,
+                        self.name(),
+                    ));
                 }
-                decode_candidate_spans_exact(chunk, candidates, $decode, self.name())
+                decoded_chunks
             }
         }
     };

@@ -215,6 +215,32 @@ where
     decoded_chunks
 }
 
+pub(in crate::decode) fn decode_candidate_refs_exact<'a, I, F>(
+    chunk: &Chunk,
+    candidates: I,
+    mut decode: F,
+    decoder_name: &str,
+) -> Vec<Chunk>
+where
+    I: IntoIterator<Item = &'a ExtractedValue>,
+    F: FnMut(&str) -> Result<String, ()>,
+{
+    let mut decoded_chunks = Vec::new();
+    for candidate in candidates {
+        if let Ok(text) = decode(&candidate.value) {
+            push_decoded_text_chunk_spliced_at(
+                &mut decoded_chunks,
+                chunk,
+                candidate.span(),
+                &candidate.value,
+                text,
+                decoder_name,
+            );
+        }
+    }
+    decoded_chunks
+}
+
 pub(in crate::decode) fn decode_candidate_spans_exact<F>(
     chunk: &Chunk,
     candidates: Vec<ExtractedValue>,

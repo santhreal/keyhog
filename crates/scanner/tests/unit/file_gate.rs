@@ -522,10 +522,9 @@ fn decode_extract_cache_hot_decoders_use_borrowed_candidate_view() {
 fn decode_z85_extractor_only_strips_whitespace_when_needed() {
     let owner = include_str!("../../src/decode/base64.rs");
     assert!(
-        owner.contains("if candidate.value.chars().any(char::is_whitespace)")
-            && owner.contains(".filter(|ch| !ch.is_whitespace())")
-            && owner.contains("candidate.value.clone()"),
-        "Z85 extraction must avoid building a whitespace-stripped String for already-clean candidates"
+        owner.contains("std::borrow::Cow::Owned(")
+            && owner.contains("std::borrow::Cow::Borrowed(candidate.value.as_str())"),
+        "Z85 extraction must borrow already-clean candidates and allocate only for whitespace stripping"
     );
     assert!(
         !owner.contains(

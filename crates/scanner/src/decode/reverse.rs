@@ -1,4 +1,4 @@
-use super::pipeline::{decode_candidate_spans_exact, with_extracted_value_spans};
+use super::pipeline::{decode_candidate_refs_exact, with_extracted_value_spans};
 use super::Decoder;
 use keyhog_core::Chunk;
 
@@ -28,16 +28,21 @@ impl Decoder for ReverseDecoder {
         if chunk.metadata.source_type.contains("/reverse") {
             return Vec::new();
         }
-        let candidates = with_extracted_value_spans(&chunk.data, |candidates| {
-            candidates
-                .iter()
-                .filter(|c| c.value.len() >= MIN_REVERSE_LEN)
-                .filter(|c| !crate::suppression::shape::looks_like_prefixed_hash_digest(&c.value))
-                .filter(|c| looks_reversible(&c.value))
-                .cloned()
-                .collect()
-        });
-        decode_candidate_spans_exact(chunk, candidates, |s| Ok(reverse_str(s)), self.name())
+        with_extracted_value_spans(&chunk.data, |candidates| {
+            decode_candidate_refs_exact(
+                chunk,
+                candidates.iter().filter_map(|candidate| {
+                    (candidate.value.len() >= MIN_REVERSE_LEN
+                        && !crate::suppression::shape::looks_like_prefixed_hash_digest(
+                            &candidate.value,
+                        )
+                        && looks_reversible(&candidate.value))
+                    .then_some(candidate)
+                }),
+                |s| Ok(reverse_str(s)),
+                self.name(),
+            )
+        })
     }
 }
 

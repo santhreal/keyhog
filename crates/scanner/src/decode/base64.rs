@@ -16,10 +16,8 @@ impl Decoder for Base64Decoder {
         // Floor lowered from 20→12 so short contract credentials (7–15
         // chars) survive encode-through in `encoding_explosion_runner`.
         // `extract_encoded_values` already rejects noise shorter than 4.
-        for b64_match in find_classified_base64_string_spans(&chunk.data, 12) {
-            if let Ok(decoded) =
-                base64_decode_with_variant(&b64_match.value.value, b64_match.variant)
-            {
+        visit_classified_base64_string_spans(&chunk.data, 12, |b64_match, variant| {
+            if let Ok(decoded) = base64_decode_with_variant(&b64_match.value, variant) {
                 if let Ok(text) = String::from_utf8(decoded) {
                     // Splice the decoded text back over the original
                     // base64 blob in the parent so companion context
@@ -31,13 +29,13 @@ impl Decoder for Base64Decoder {
                         &mut decoded_chunks,
                         chunk,
                         b64_match.span(),
-                        &b64_match.value.value,
+                        &b64_match.value,
                         text,
                         self.name(),
                     );
                 }
             }
-        }
+        });
         decoded_chunks
     }
 }
@@ -51,20 +49,20 @@ impl Decoder for Z85Decoder {
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
         let mut decoded_chunks = Vec::new();
-        for z_match in find_z85_string_spans(&chunk.data, 20) {
-            if let Ok(decoded) = z85_decode(&z_match.value) {
+        visit_z85_string_spans(&chunk.data, 20, |z_match, value| {
+            if let Ok(decoded) = z85_decode(value.as_ref()) {
                 if let Ok(text) = String::from_utf8(decoded) {
                     push_decoded_text_chunk_spliced_at(
                         &mut decoded_chunks,
                         chunk,
                         z_match.span(),
-                        &z_match.value,
+                        value.as_ref(),
                         text.trim_end_matches('\0').to_string(),
                         self.name(),
                     );
                 }
             }
-        }
+        });
         decoded_chunks
     }
 }
@@ -75,17 +73,6 @@ enum Base64Variant {
     StandardNoPad,
     UrlSafe,
     UrlSafeNoPad,
-}
-
-struct Base64ExtractedValue {
-    value: ExtractedValue,
-    variant: Base64Variant,
-}
-
-impl Base64ExtractedValue {
-    fn span(&self) -> Option<(usize, usize)> {
-        self.value.span()
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -152,15 +139,17 @@ pub fn find_base64_strings(text: &str, min_length: usize) -> Vec<EncodedString> 
 fn find_base64_string_spans(text: &str, min_length: usize) -> Vec<ExtractedValue> {
     let mut results = Vec::new();
 
-    for candidate in find_classified_base64_string_spans(text, min_length) {
-        results.push(candidate.value);
-    }
+    visit_classified_base64_string_spans(text, min_length, |candidate, _variant| {
+        results.push(candidate.clone());
+    });
     results
 }
 
-fn find_classified_base64_string_spans(text: &str, min_length: usize) -> Vec<Base64ExtractedValue> {
-    let mut results = Vec::new();
-
+fn visit_classified_base64_string_spans(
+    text: &str,
+    min_length: usize,
+    mut visit: impl FnMut(&ExtractedValue, Base64Variant),
+) {
     with_extracted_value_spans(text, |candidates| {
         for candidate in candidates {
             if candidate.value.len() < min_length
@@ -169,14 +158,10 @@ fn find_classified_base64_string_spans(text: &str, min_length: usize) -> Vec<Bas
                 continue;
             }
             if let Some(variant) = classify_base64(&candidate.value) {
-                results.push(Base64ExtractedValue {
-                    value: candidate.clone(),
-                    variant,
-                });
+                visit(candidate, variant);
             }
         }
     });
-    results
 }
 
 fn classify_base64(candidate: &str) -> Option<Base64Variant> {
@@ -262,35 +247,34 @@ fn base64_decode_with_variant(input: &str, variant: Base64Variant) -> Result<Vec
     .map_err(|_| ())
 }
 
-fn find_z85_string_spans(text: &str, min_length: usize) -> Vec<ExtractedValue> {
-    let mut results = Vec::new();
+fn visit_z85_string_spans(
+    text: &str,
+    min_length: usize,
+    mut visit: impl FnMut(&ExtractedValue, std::borrow::Cow<'_, str>),
+) {
     let is_z85_char =
         |ch: char| ch.is_ascii_alphanumeric() || ".-:+=^!/*?&<>()[]{}@%$#".contains(ch);
-
     with_extracted_value_spans(text, |candidates| {
         for candidate in candidates {
-            let cleaned = if candidate.value.chars().any(char::is_whitespace) {
-                candidate
-                    .value
-                    .chars()
-                    .filter(|ch| !ch.is_whitespace())
-                    .collect()
+            let value = if candidate.value.chars().any(char::is_whitespace) {
+                std::borrow::Cow::Owned(
+                    candidate
+                        .value
+                        .chars()
+                        .filter(|ch| !ch.is_whitespace())
+                        .collect(),
+                )
             } else {
-                candidate.value.clone()
+                std::borrow::Cow::Borrowed(candidate.value.as_str())
             };
-            if cleaned.len() >= min_length
-                && cleaned.len().is_multiple_of(5)
-                && cleaned.chars().all(is_z85_char)
+            if value.len() >= min_length
+                && value.len().is_multiple_of(5)
+                && value.chars().all(is_z85_char)
             {
-                results.push(ExtractedValue {
-                    value: cleaned,
-                    start: candidate.start,
-                    end: candidate.end,
-                });
+                visit(candidate, value);
             }
         }
     });
-    results
 }
 
 /// Maximum Z85 input length we'll decode.
