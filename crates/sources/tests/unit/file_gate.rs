@@ -363,6 +363,23 @@ fn git_history_waits_for_log_child_at_eof() {
 
 #[cfg(feature = "git")]
 #[test]
+fn git_blob_batch_non_blob_mismatches_are_counted() {
+    let source = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/git/source.rs"
+    ))
+    .expect("git source readable");
+    assert!(
+        source.contains("GitBlobSkip::NonBlob")
+            && source.contains("git tree entry resolved to a non-blob object; blob NOT scanned")
+            && source.contains("SourceSkipEvent::Unreadable")
+            && !source.contains("if header.kind() != Kind::Blob {\n            continue;\n        }"),
+        "git blob batch must count non-blob object mismatches instead of silently continuing"
+    );
+}
+
+#[cfg(feature = "git")]
+#[test]
 fn git_diff_waits_for_diff_child_before_untracked_chunks() {
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/src/git/diff.rs");
     let source = std::fs::read_to_string(path).expect("git diff source readable");

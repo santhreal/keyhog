@@ -63,6 +63,10 @@ enum GitBlobSkip {
         oid: gix::ObjectId,
         error: String,
     },
+    NonBlob {
+        oid: gix::ObjectId,
+        kind: String,
+    },
     OverMaxSize {
         oid: gix::ObjectId,
         size: u64,
@@ -582,6 +586,10 @@ fn next_git_blob_batch(
         };
 
         if header.kind() != Kind::Blob {
+            batch.push(GitBlobBatchItem::Skip(GitBlobSkip::NonBlob {
+                oid,
+                kind: format!("{:?}", header.kind()),
+            }));
             continue;
         }
 
@@ -660,6 +668,14 @@ fn record_git_blob_skip(skip: GitBlobSkip) {
             tracing::warn!(
                 %error, %oid,
                 "git blob header unreadable (corrupt/missing object); blob NOT scanned"
+            );
+            let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+        }
+        GitBlobSkip::NonBlob { oid, kind } => {
+            tracing::warn!(
+                %oid,
+                kind,
+                "git tree entry resolved to a non-blob object; blob NOT scanned"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
         }
