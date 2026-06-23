@@ -302,3 +302,114 @@ fn powershell_default_install_resolves_concrete_latest_before_download() {
         "PowerShell release-resolution API request must honor optional GITHUB_TOKEN"
     );
 }
+
+#[test]
+fn powershell_installer_downloads_and_seeds_gpu_literal_sidecar() {
+    let script = include_str!("../../../install.ps1");
+    let sidecar_download = ps_function(script, "Download-VerifiedGpuLiteralSidecar");
+    let sidecar_check = ps_function(script, "Test-GpuLiteralSidecarArchive");
+    let sidecar_install = ps_function(script, "Install-VerifiedGpuLiteralSidecar");
+    let cache_backup = ps_function(script, "Backup-GpuProgramsCacheForInstall");
+    let cache_restore = ps_function(script, "Restore-GpuProgramsCacheBackup");
+    let stage_install = ps_function(script, "Stage-Install");
+    let do_install = ps_function(script, "Do-Install");
+    let do_repair = ps_function(script, "Do-Repair");
+
+    assert!(
+        sidecar_download.contains("$($Script:Asset).gpu-literals.tar.gz")
+            && sidecar_download.contains("$FromFile.gpu-literals.tar.gz")
+            && sidecar_download.contains("No local checksum file found beside -FromFile GPU literal sidecar")
+            && !sidecar_download.contains("if ($FromFile) { return $true }")
+            && sidecar_download.contains("Verify-ReleaseSignature -BinaryPath $sidecarPath -AssetName $sidecarName")
+            && sidecar_download
+                .contains("Verify-Checksum -BinaryPath $sidecarPath -AssetName $sidecarName")
+            && sidecar_download.contains("Test-GpuLiteralSidecarArchive -ArchivePath $sidecarPath")
+            && sidecar_download.contains("Refusing to install a release that would recompile shipped detector matchers at runtime."),
+        "PowerShell installer must verify the GPU literal sidecar before any cache install"
+    );
+    assert!(
+        sidecar_check.contains("tar.exe")
+            && sidecar_check.contains("$tarPath = $tar.Path")
+            && !sidecar_check.contains("$tar.Source")
+            && sidecar_check.contains("-tzf $ArchivePath")
+            && sidecar_check.contains("^[A-Za-z]:")
+            && sidecar_check.contains("(^|[\\\\/])\\.\\.[\\s\\.]*([\\\\/]|$)")
+            && sidecar_check.contains("-tvzf $ArchivePath")
+            && sidecar_check.contains("$global:LASTEXITCODE = 0")
+            && sidecar_check.contains("if (-not $? -or $LASTEXITCODE -ne 0)")
+            && sidecar_check.contains("$entryKind -eq 'l' -or $entryKind -eq 'h'"),
+        "PowerShell sidecar archive validation must reject traversal plus symlink/hardlink tar entries"
+    );
+    assert!(
+        sidecar_install.contains("Get-GpuProgramsCacheDirForInstall")
+            && sidecar_install.contains("keyhog-gpu-literals")
+            && sidecar_install.contains("Get-ChildItem -Path $extractDir -Filter '*.bin'")
+            && sidecar_install.contains("Move-Item -Force -Path $tmpTarget"),
+        "PowerShell sidecar install must seed verified .bin artifacts into the runtime program cache"
+    );
+    assert!(
+        cache_backup.contains("Copy-Item -Recurse -Force -Path $programsDir")
+            && cache_backup.contains("$Script:GpuProgramsCacheWasMissing = $true")
+            && cache_restore.contains("Remove-Item -Recurse -Force $programsDir")
+            && cache_restore.contains("Move-Item -Force -Path (Join-Path $Script:GpuProgramsCacheBackupPath 'programs')")
+            && cache_restore.contains("Clear-GpuProgramsCacheBackup"),
+        "PowerShell installer must be able to roll back GPU literal cache state when final verification fails"
+    );
+    assert_in_order(
+        stage_install,
+        &[
+            "Verify-ReleaseSignature -BinaryPath $tmp -AssetName $Script:Asset",
+            "Verify-Checksum -BinaryPath $tmp -AssetName $Script:Asset",
+            "Download-VerifiedGpuLiteralSidecar",
+            "Remove-Item -Force $tmp -ErrorAction SilentlyContinue",
+            "Clear-GpuLiteralSidecarTemp",
+            "exit 1",
+            "New-Item -ItemType Directory -Force -Path $InstallDir",
+        ],
+    );
+    assert_in_order(
+        do_install,
+        &[
+            "$bin = Stage-Install",
+            "Backup-GpuProgramsCacheForInstall",
+            "Install-VerifiedGpuLiteralSidecar",
+            "Restore-GpuProgramsCacheBackup",
+            "Rollback-StagedInstallAfterSidecarFailure -BinPath $bin",
+            "Install failed while seeding shipped GPU literal artifacts.",
+            "Finalize-Install -BinPath $bin",
+            "Restore-GpuProgramsCacheBackup",
+            "Clear-GpuLiteralSidecarTemp",
+            "Install failed verification; see above.",
+            "Clear-GpuProgramsCacheBackup",
+            "Ensure-OnPath",
+        ],
+    );
+    assert_in_order(
+        do_repair,
+        &[
+            "$bin = Stage-Install",
+            "Backup-GpuProgramsCacheForInstall",
+            "Install-VerifiedGpuLiteralSidecar",
+            "Restore-GpuProgramsCacheBackup",
+            "Rollback-StagedInstallAfterSidecarFailure -BinPath $bin",
+            "Repair failed while seeding shipped GPU literal artifacts.",
+            "Finalize-Install -BinPath $bin",
+            "Restore-GpuProgramsCacheBackup",
+            "Clear-GpuLiteralSidecarTemp",
+            "Repair failed; see above.",
+            "Clear-GpuProgramsCacheBackup",
+            "return",
+            "$newBin = Stage-Install",
+            "Backup-GpuProgramsCacheForInstall",
+            "Install-VerifiedGpuLiteralSidecar",
+            "Restore-GpuProgramsCacheBackup",
+            "Rollback-StagedInstallAfterSidecarFailure -BinPath $newBin",
+            "Repair failed while seeding shipped GPU literal artifacts.",
+            "Finalize-Install -BinPath $newBin",
+            "Restore-GpuProgramsCacheBackup",
+            "Clear-GpuLiteralSidecarTemp",
+            "Repair failed; your previous binary was preserved where possible (see above).",
+            "Clear-GpuProgramsCacheBackup",
+        ],
+    );
+}

@@ -18,7 +18,8 @@
 #   -Version v0.5.37      pin a release tag (default: latest release with assets)
 #   -FromFile PATH        install a pre-built/pre-downloaded keyhog.exe instead
 #                         of querying GitHub (offline / air-gapped / CI proving).
-#                         Requires a sibling PATH.sha256 unless -Insecure is explicit.
+#                         Requires PATH.sha256, PATH.gpu-literals.tar.gz, and
+#                         PATH.gpu-literals.tar.gz.sha256 unless -Insecure is explicit.
 #   -InstallDir PATH      override the default install directory
 #   -Yes                  non-interactive: accept defaults, no prompts
 #   -Insecure             allow install only when release signature/checksum
@@ -47,6 +48,9 @@ $Repo = 'santhsecurity/keyhog'
 $Script:ReleasePublicKey = 'RWTPnJ/p6xVJ3TJIxr+ZVHMD/MTHWZhsdE38Go/oD3DYBoi4bePR55go'
 $Script:InsecureInstall = [bool]$Insecure
 $Script:LatestReleaseAlias = $false
+$Script:GpuLiteralSidecarPath = $null
+$Script:GpuProgramsCacheBackupPath = $null
+$Script:GpuProgramsCacheWasMissing = $false
 
 # ============================================================
 # colors + i/o helpers
@@ -561,6 +565,241 @@ function Get-AutorouteCachePathForInstall {
     }
     if (-not $root) { return $null }
     return (Join-Path (Join-Path $root 'keyhog') 'autoroute.json')
+}
+
+function Get-GpuProgramsCacheDirForInstall {
+    $root = $env:LOCALAPPDATA
+    if (-not $root) {
+        $root = [Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData)
+    }
+    if (-not $root) { return $null }
+    return (Join-Path (Join-Path $root 'keyhog') 'programs')
+}
+
+function Clear-GpuLiteralSidecarTemp {
+    if ($Script:GpuLiteralSidecarPath) {
+        Remove-Item -Force $Script:GpuLiteralSidecarPath -ErrorAction SilentlyContinue
+        $Script:GpuLiteralSidecarPath = $null
+    }
+}
+
+function Clear-GpuProgramsCacheBackup {
+    if ($Script:GpuProgramsCacheBackupPath) {
+        Remove-Item -Recurse -Force $Script:GpuProgramsCacheBackupPath -ErrorAction SilentlyContinue
+        $Script:GpuProgramsCacheBackupPath = $null
+    }
+    $Script:GpuProgramsCacheWasMissing = $false
+}
+
+function Backup-GpuProgramsCacheForInstall {
+    Clear-GpuProgramsCacheBackup
+    $programsDir = Get-GpuProgramsCacheDirForInstall
+    if (-not $programsDir) {
+        Err "GPU literal cache directory is unavailable because LocalAppData could not be resolved."
+        return $false
+    }
+    $backupRoot = Join-Path ([System.IO.Path]::GetTempPath()) ("keyhog-gpu-programs-backup-{0}" -f ([System.Guid]::NewGuid().ToString('N')))
+    try {
+        New-Item -ItemType Directory -Force -Path $backupRoot | Out-Null
+        if (Test-Path -PathType Container $programsDir) {
+            Copy-Item -Recurse -Force -Path $programsDir -Destination (Join-Path $backupRoot 'programs')
+            $Script:GpuProgramsCacheWasMissing = $false
+        } else {
+            $Script:GpuProgramsCacheWasMissing = $true
+        }
+        $Script:GpuProgramsCacheBackupPath = $backupRoot
+        return $true
+    } catch {
+        Remove-Item -Recurse -Force $backupRoot -ErrorAction SilentlyContinue
+        Err "Could not back up GPU literal cache directory at ${programsDir}: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+function Restore-GpuProgramsCacheBackup {
+    if (-not $Script:GpuProgramsCacheBackupPath) { return $true }
+    $programsDir = Get-GpuProgramsCacheDirForInstall
+    if (-not $programsDir) {
+        Err "GPU literal cache directory is unavailable because LocalAppData could not be resolved."
+        return $false
+    }
+    try {
+        Remove-Item -Recurse -Force $programsDir -ErrorAction SilentlyContinue
+        if (-not $Script:GpuProgramsCacheWasMissing) {
+            $parent = Split-Path -Parent $programsDir
+            New-Item -ItemType Directory -Force -Path $parent | Out-Null
+            Move-Item -Force -Path (Join-Path $Script:GpuProgramsCacheBackupPath 'programs') -Destination $programsDir
+        }
+        Clear-GpuProgramsCacheBackup
+        return $true
+    } catch {
+        Err "Could not restore GPU literal cache directory at ${programsDir}: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+function Download-VerifiedGpuLiteralSidecar {
+    $sidecarName = if ($FromFile) { [System.IO.Path]::GetFileName("$FromFile.gpu-literals.tar.gz") } else { "$($Script:Asset).gpu-literals.tar.gz" }
+    $sidecarPath = [System.IO.Path]::GetTempFileName()
+    try {
+        if ($FromFile) {
+            $localSidecar = "$FromFile.gpu-literals.tar.gz"
+            $localSum = "$localSidecar.sha256"
+            if (-not (Test-Path -PathType Leaf $localSidecar)) {
+                Err "-FromFile requires a sibling GPU literal sidecar: $localSidecar"
+                Err "Refusing to install a local binary that would recompile shipped detector matchers at runtime."
+                return $false
+            }
+            if ((Get-Item $localSidecar).Length -eq 0) {
+                Err "GPU literal artifact sidecar $localSidecar is empty."
+                return $false
+            }
+            if (Test-Path -PathType Leaf $localSum) {
+                if (-not (Verify-LocalChecksum -BinaryPath $localSidecar -SumFile $localSum)) {
+                    return $false
+                }
+            } else {
+                if (-not (Allow-UnverifiedInstall "No local checksum file found beside -FromFile GPU literal sidecar: $localSum")) {
+                    return $false
+                }
+            }
+            try {
+                Copy-Item -Force -Path $localSidecar -Destination $sidecarPath
+            } catch {
+                Err "-FromFile: could not read GPU literal sidecar ${localSidecar}: $_"
+                return $false
+            }
+        } else {
+            try {
+                Download-Asset -Name $sidecarName -OutPath $sidecarPath
+            } catch {
+                Err "No GPU literal artifact sidecar was published for $($Script:Asset) at $($Script:Tag)."
+                Err "Refusing to install a release that would recompile shipped detector matchers at runtime."
+                Err "Fix: rebuild the release workflow so $sidecarName, $sidecarName.sha256, and $sidecarName.minisig are uploaded."
+                return $false
+            }
+            if (-not (Verify-ReleaseSignature -BinaryPath $sidecarPath -AssetName $sidecarName)) {
+                return $false
+            }
+            if (-not (Verify-Checksum -BinaryPath $sidecarPath -AssetName $sidecarName)) {
+                return $false
+            }
+        }
+        if ((Get-Item $sidecarPath).Length -eq 0) {
+            Err "GPU literal artifact sidecar $sidecarName is empty."
+            return $false
+        }
+        if (-not (Test-GpuLiteralSidecarArchive -ArchivePath $sidecarPath)) {
+            Err "Refusing GPU literal sidecar with unsafe archive contents."
+            return $false
+        }
+        Clear-GpuLiteralSidecarTemp
+        $Script:GpuLiteralSidecarPath = $sidecarPath
+        return $true
+    } finally {
+        if ($Script:GpuLiteralSidecarPath -ne $sidecarPath) {
+            Remove-Item -Force $sidecarPath -ErrorAction SilentlyContinue
+        }
+    }
+}
+
+function Test-GpuLiteralSidecarArchive {
+    param([string]$ArchivePath)
+    $tar = Get-Command tar.exe -ErrorAction SilentlyContinue
+    if (-not $tar) {
+        Err "tar.exe is required to install GPU literal artifact sidecars."
+        Err "Fix: use a supported Windows build with bsdtar/tar.exe on PATH, then rerun install.ps1."
+        return $false
+    }
+    $tarPath = $tar.Path
+    $global:LASTEXITCODE = 0
+    $entries = & $tarPath -tzf $ArchivePath 2>$null
+    if (-not $? -or $LASTEXITCODE -ne 0) {
+        Err "GPU literal artifact sidecar is not a readable tar.gz archive."
+        return $false
+    }
+    foreach ($entry in @($entries)) {
+        if ([string]::IsNullOrWhiteSpace($entry) -or
+            $entry.StartsWith('/') -or
+            $entry.StartsWith('\') -or
+            $entry -match '^[A-Za-z]:' -or
+            $entry -match '(^|[\\/])\.\.[\s\.]*([\\/]|$)') {
+            Err "GPU literal artifact sidecar contains an unsafe archive path: $entry"
+            return $false
+        }
+    }
+    $global:LASTEXITCODE = 0
+    $listings = & $tarPath -tvzf $ArchivePath 2>$null
+    if (-not $? -or $LASTEXITCODE -ne 0) {
+        Err "GPU literal artifact sidecar contents could not be inspected for link entries."
+        return $false
+    }
+    foreach ($listing in @($listings)) {
+        if ([string]::IsNullOrWhiteSpace($listing)) { continue }
+        $entryKind = $listing.Substring(0, 1)
+        if ($entryKind -eq 'l' -or $entryKind -eq 'h') {
+            Err "GPU literal artifact sidecar contains a link entry: $listing"
+            return $false
+        }
+    }
+    return $true
+}
+
+function Install-VerifiedGpuLiteralSidecar {
+    if (-not $Script:GpuLiteralSidecarPath) { return $true }
+    if (-not (Test-GpuLiteralSidecarArchive -ArchivePath $Script:GpuLiteralSidecarPath)) {
+        Clear-GpuLiteralSidecarTemp
+        return $false
+    }
+    $programsDir = Get-GpuProgramsCacheDirForInstall
+    if (-not $programsDir) {
+        Clear-GpuLiteralSidecarTemp
+        Err "GPU literal cache directory is unavailable because LocalAppData could not be resolved."
+        return $false
+    }
+    $extractDir = Join-Path ([System.IO.Path]::GetTempPath()) ("keyhog-gpu-literals-{0}" -f ([System.Guid]::NewGuid().ToString('N')))
+    try {
+        New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
+        New-Item -ItemType Directory -Force -Path $programsDir | Out-Null
+        $tar = (Get-Command tar.exe -ErrorAction Stop).Path
+        $global:LASTEXITCODE = 0
+        & $tar -xzf $Script:GpuLiteralSidecarPath -C $extractDir
+        if (-not $? -or $LASTEXITCODE -ne 0) {
+            Err "Could not extract GPU literal artifact sidecar."
+            return $false
+        }
+        $artifacts = @(Get-ChildItem -Path $extractDir -Filter '*.bin' -File -Recurse -ErrorAction Stop)
+        if ($artifacts.Count -eq 0) {
+            Err "GPU literal artifact sidecar contained no matcher .bin files."
+            return $false
+        }
+        foreach ($artifact in $artifacts) {
+            $tmpTarget = Join-Path $programsDir (".{0}.{1}" -f $artifact.Name, $PID)
+            Copy-Item -Force -Path $artifact.FullName -Destination $tmpTarget
+            Move-Item -Force -Path $tmpTarget -Destination (Join-Path $programsDir $artifact.Name)
+        }
+        Ok "Installed $($artifacts.Count) GPU literal matcher artifact(s) into $programsDir."
+        return $true
+    } catch {
+        Err "Could not install GPU literal artifacts into ${programsDir}: $($_.Exception.Message)"
+        return $false
+    } finally {
+        Remove-Item -Recurse -Force $extractDir -ErrorAction SilentlyContinue
+        Clear-GpuLiteralSidecarTemp
+    }
+}
+
+function Rollback-StagedInstallAfterSidecarFailure {
+    param([string]$BinPath)
+    Clear-GpuLiteralSidecarTemp
+    if ($Script:InstallBackup -and (Test-Path $Script:InstallBackup)) {
+        Move-Item -Force $Script:InstallBackup $BinPath
+        $Script:InstallBackup = $null
+        Warn "Rolled back to your previous working keyhog at $BinPath."
+    } else {
+        Remove-Item -Force $BinPath -ErrorAction SilentlyContinue
+        Warn "Removed the binary because shipped GPU literal artifacts could not be seeded."
+    }
 }
 
 function Format-AutorouteByteCount {
@@ -1220,6 +1459,11 @@ function Stage-Install {
                 exit 1
             }
         }
+        if (-not (Download-VerifiedGpuLiteralSidecar)) {
+            Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+            Clear-GpuLiteralSidecarTemp
+            exit 1
+        }
     } else {
         if (-not (Verify-ReleaseSignature -BinaryPath $tmp -AssetName $Script:Asset)) {
             Remove-Item -Force $tmp -ErrorAction SilentlyContinue
@@ -1227,6 +1471,11 @@ function Stage-Install {
         }
         if (-not (Verify-Checksum -BinaryPath $tmp -AssetName $Script:Asset)) {
             Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+            exit 1
+        }
+        if (-not (Download-VerifiedGpuLiteralSidecar)) {
+            Remove-Item -Force $tmp -ErrorAction SilentlyContinue
+            Clear-GpuLiteralSidecarTemp
             exit 1
         }
     }
@@ -1457,10 +1706,24 @@ function Do-Install {
         if (-not (Confirm-Choice "Proceed with this install?" 'Y')) { Warn "Aborted."; return }
     }
     $bin = Stage-Install
+    if (-not (Backup-GpuProgramsCacheForInstall)) {
+        Rollback-StagedInstallAfterSidecarFailure -BinPath $bin
+        Err "Install failed while backing up GPU literal cache state."
+        exit 1
+    }
+    if (-not (Install-VerifiedGpuLiteralSidecar)) {
+        Restore-GpuProgramsCacheBackup | Out-Null
+        Rollback-StagedInstallAfterSidecarFailure -BinPath $bin
+        Err "Install failed while seeding shipped GPU literal artifacts."
+        exit 1
+    }
     if (-not (Finalize-Install -BinPath $bin)) {
+        Restore-GpuProgramsCacheBackup | Out-Null
+        Clear-GpuLiteralSidecarTemp
         Err "Install failed verification; see above."
         exit 1
     }
+    Clear-GpuProgramsCacheBackup
     Ensure-OnPath
     Post-Install-Wizard
     Write-Host ""
@@ -1478,10 +1741,24 @@ function Do-Repair {
     if (-not $bin) {
         Warn "No existing keyhog binary found. Installing fresh."
         $bin = Stage-Install
+        if (-not (Backup-GpuProgramsCacheForInstall)) {
+            Rollback-StagedInstallAfterSidecarFailure -BinPath $bin
+            Err "Repair failed while backing up GPU literal cache state."
+            exit 1
+        }
+        if (-not (Install-VerifiedGpuLiteralSidecar)) {
+            Restore-GpuProgramsCacheBackup | Out-Null
+            Rollback-StagedInstallAfterSidecarFailure -BinPath $bin
+            Err "Repair failed while seeding shipped GPU literal artifacts."
+            exit 1
+        }
         if (-not (Finalize-Install -BinPath $bin)) {
+            Restore-GpuProgramsCacheBackup | Out-Null
+            Clear-GpuLiteralSidecarTemp
             Err "Repair failed; see above."
             exit 1
         }
+        Clear-GpuProgramsCacheBackup
         Ok "Repair complete."
         return
     }
@@ -1493,10 +1770,24 @@ function Do-Repair {
         Warn "Existing binary does not run. Replacing with $($Script:Asset)."
     }
     $newBin = Stage-Install
+    if (-not (Backup-GpuProgramsCacheForInstall)) {
+        Rollback-StagedInstallAfterSidecarFailure -BinPath $newBin
+        Err "Repair failed while backing up GPU literal cache state."
+        exit 1
+    }
+    if (-not (Install-VerifiedGpuLiteralSidecar)) {
+        Restore-GpuProgramsCacheBackup | Out-Null
+        Rollback-StagedInstallAfterSidecarFailure -BinPath $newBin
+        Err "Repair failed while seeding shipped GPU literal artifacts."
+        exit 1
+    }
     if (-not (Finalize-Install -BinPath $newBin)) {
+        Restore-GpuProgramsCacheBackup | Out-Null
+        Clear-GpuLiteralSidecarTemp
         Err "Repair failed; your previous binary was preserved where possible (see above)."
         exit 1
     }
+    Clear-GpuProgramsCacheBackup
     Ok "Repair complete."
 }
 

@@ -386,6 +386,16 @@ sha_of() {
 mkdir -p "$FIX_DIR/gpu-sidecar/keyhog-linux-x86_64.gpu-literals"
 printf 'mock gpu literal artifact\n' > "$FIX_DIR/gpu-sidecar/keyhog-linux-x86_64.gpu-literals/lit-mock.bin"
 tar -czf "$FIX_DIR/gpu-literals.tar.gz" -C "$FIX_DIR/gpu-sidecar" keyhog-linux-x86_64.gpu-literals
+mkdir -p "$FIX_DIR/gpu-sidecar-link/keyhog-linux-x86_64.gpu-literals"
+ln -s /tmp/keyhog-gpu-literal-link-target "$FIX_DIR/gpu-sidecar-link/keyhog-linux-x86_64.gpu-literals/lit-link.bin"
+tar -czf "$FIX_DIR/gpu-literals-link.tar.gz" -C "$FIX_DIR/gpu-sidecar-link" keyhog-linux-x86_64.gpu-literals
+printf 'mock absolute gpu literal artifact\n' > "$FIX_DIR/abs-lit.bin"
+tar -czPf "$FIX_DIR/gpu-literals-absolute.tar.gz" "$FIX_DIR/abs-lit.bin"
+printf '%s  fake_keyhog_healthy\n' "$(sha_of "$FIX_DIR/fake_keyhog_healthy")" > "$FIX_DIR/fake_keyhog_healthy.sha256"
+cp "$FIX_DIR/gpu-literals.tar.gz" "$FIX_DIR/fake_keyhog_healthy.gpu-literals.tar.gz"
+printf '%s  fake_keyhog_healthy.gpu-literals.tar.gz\n' "$(sha_of "$FIX_DIR/fake_keyhog_healthy.gpu-literals.tar.gz")" > "$FIX_DIR/fake_keyhog_healthy.gpu-literals.tar.gz.sha256"
+cp "$FIX_DIR/fake_keyhog_healthy" "$FIX_DIR/local_keyhog_no_sidecar"
+printf '%s  local_keyhog_no_sidecar\n' "$(sha_of "$FIX_DIR/local_keyhog_no_sidecar")" > "$FIX_DIR/local_keyhog_no_sidecar.sha256"
 
 # ── sandbox builder ───────────────────────────────────────────────────
 # build_sandbox writes a bin/ of mocks. Behaviour is steered by env vars
@@ -810,35 +820,49 @@ expect_match  "6.4f missing GPU literal sidecar refuses" "No GPU literal artifac
 expect_status "6.4g missing GPU literal sidecar exits 1" 1 "$st"
 expect_nofile "6.4h no binary written without GPU literal sidecar" "$h/.local/bin/keyhog"
 rm -rf "$h"
-# 6.4i missing .minisig refuses by default.
+# 6.4i link entries in the GPU literal sidecar refuse before binary overwrite.
+h=$(newhome)
+out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match MOCK_GPU_LITERAL_SIDECAR="$FIX_DIR/gpu-literals-link.tar.gz" run_install "$sb" "$h" -- --no-prompt); st=$?
+expect_match  "6.4i GPU literal sidecar link entry refuses" "GPU literal artifact sidecar contains link entries" "$out"
+expect_status "6.4j GPU literal sidecar link entry exits 1" 1 "$st"
+expect_nofile "6.4k no binary written after GPU literal sidecar link entry" "$h/.local/bin/keyhog"
+rm -rf "$h"
+# 6.4l absolute paths in the GPU literal sidecar refuse before binary overwrite.
+h=$(newhome)
+out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match MOCK_GPU_LITERAL_SIDECAR="$FIX_DIR/gpu-literals-absolute.tar.gz" run_install "$sb" "$h" -- --no-prompt); st=$?
+expect_match  "6.4l GPU literal sidecar absolute path refuses" "GPU literal artifact sidecar contains unsafe archive paths" "$out"
+expect_status "6.4m GPU literal sidecar absolute path exits 1" 1 "$st"
+expect_nofile "6.4n no binary written after GPU literal sidecar absolute path" "$h/.local/bin/keyhog"
+rm -rf "$h"
+# 6.4o missing .minisig refuses by default.
 h=$(newhome)
 out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SIG=absent MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match  "6.4i absent .minisig refuses unverified install" "No \\.minisig signature|Refusing to install an unverified" "$out"
-expect_status "6.4j absent .minisig exits 1" 1 "$st"
-expect_nofile "6.4k no binary written without signature" "$h/.local/bin/keyhog"
+expect_match  "6.4o absent .minisig refuses unverified install" "No \\.minisig signature|Refusing to install an unverified" "$out"
+expect_status "6.4p absent .minisig exits 1" 1 "$st"
+expect_nofile "6.4q no binary written without signature" "$h/.local/bin/keyhog"
 rm -rf "$h"
-# 6.4g missing .minisig with --insecure is loud and still requires checksum.
+# 6.4r missing .minisig with --insecure is loud and still requires checksum.
 h=$(newhome)
 out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SIG=absent MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --insecure); st=$?
-expect_match  "6.4g absent .minisig insecure override is loud" "INSECURE" "$out"
-expect_match  "6.4h absent .minisig insecure override still checks checksum" "SHA256 verified" "$out"
-expect_status "6.4i absent .minisig insecure override installs" 0 "$st"
-expect_exec   "6.4j binary present after signature bypass" "$h/.local/bin/keyhog"
+expect_match  "6.4r absent .minisig insecure override is loud" "INSECURE" "$out"
+expect_match  "6.4s absent .minisig insecure override still checks checksum" "SHA256 verified" "$out"
+expect_status "6.4t absent .minisig insecure override installs" 0 "$st"
+expect_exec   "6.4u binary present after signature bypass" "$h/.local/bin/keyhog"
 rm -rf "$h"
-# 6.4k invalid signatures are known-bad proof and cannot be bypassed.
+# 6.4v invalid signatures are known-bad proof and cannot be bypassed.
 h=$(newhome)
 out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SIG=invalid MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt); st=$?
-expect_match  "6.4k invalid .minisig refuses" "Minisign signature verification failed" "$out"
-expect_status "6.4l invalid .minisig exits 1" 1 "$st"
-expect_nofile "6.4m no binary written after invalid signature" "$h/.local/bin/keyhog"
+expect_match  "6.4v invalid .minisig refuses" "Minisign signature verification failed" "$out"
+expect_status "6.4w invalid .minisig exits 1" 1 "$st"
+expect_nofile "6.4x no binary written after invalid signature" "$h/.local/bin/keyhog"
 rm -rf "$h"
 h=$(newhome)
 out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SIG=invalid MOCK_SHA=match run_install "$sb" "$h" -- --no-prompt --insecure); st=$?
-expect_match  "6.4n invalid .minisig still refuses with insecure" "Minisign signature verification failed" "$out"
-expect_status "6.4o invalid .minisig insecure exits 1" 1 "$st"
-expect_nofile "6.4p no binary written after invalid signature with insecure" "$h/.local/bin/keyhog"
+expect_match  "6.4y invalid .minisig still refuses with insecure" "Minisign signature verification failed" "$out"
+expect_status "6.4z invalid .minisig insecure exits 1" 1 "$st"
+expect_nofile "6.4aa no binary written after invalid signature with insecure" "$h/.local/bin/keyhog"
 rm -rf "$h"
-# 6.4q missing minisign verifier fails closed unless explicitly insecure.
+# 6.4ab missing minisign verifier fails closed unless explicitly insecure.
 sb_no_minisign=$(build_sandbox Linux x86_64 no no no); rm -f "$sb_no_minisign/bin/minisign"
 cat > "$sb_no_minisign/bin/apt-get" <<'EOF'
 #!/bin/sh
@@ -847,17 +871,30 @@ EOF
 chmod +x "$sb_no_minisign/bin/apt-get"
 h=$(newhome)
 out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb_no_minisign" "$h" -- --no-prompt); st=$?
-expect_match  "6.4q no minisign tool refuses" "minisign is not installed|Refusing to install an unverified" "$out"
-expect_match  "6.4r no minisign tool gives Debian install command" "sudo apt-get update && sudo apt-get install -y minisign" "$out"
-expect_status "6.4s no minisign tool exits 1" 1 "$st"
-expect_nofile "6.4t no binary written without minisign" "$h/.local/bin/keyhog"
+expect_match  "6.4ab no minisign tool refuses" "minisign is not installed|Refusing to install an unverified" "$out"
+expect_match  "6.4ac no minisign tool gives Debian install command" "sudo apt-get update && sudo apt-get install -y minisign" "$out"
+expect_status "6.4ad no minisign tool exits 1" 1 "$st"
+expect_nofile "6.4ae no binary written without minisign" "$h/.local/bin/keyhog"
 rm -rf "$h"
 h=$(newhome)
 out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=match run_install "$sb_no_minisign" "$h" -- --no-prompt --insecure); st=$?
-expect_match  "6.4u no minisign tool insecure override is loud" "INSECURE" "$out"
-expect_status "6.4v no minisign tool insecure override installs" 0 "$st"
-expect_exec   "6.4w binary present after verifier-tool bypass" "$h/.local/bin/keyhog"
+expect_match  "6.4af no minisign tool insecure override is loud" "INSECURE" "$out"
+expect_status "6.4ag no minisign tool insecure override installs" 0 "$st"
+expect_exec   "6.4ah binary present after verifier-tool bypass" "$h/.local/bin/keyhog"
 rm -rf "$sb_no_minisign" "$h"
+# 6.4ai --from-file still requires a local GPU literal sidecar and seeds it before calibration.
+h=$(newhome)
+out=$(run_install "$sb" "$h" -- --from-file="$FIX_DIR/fake_keyhog_healthy" --no-prompt); st=$?
+expect_status "6.4ai from-file with local GPU sidecar installs" 0 "$st"
+expect_match  "6.4aj from-file local GPU sidecar installs cache artifact" "Installed 1 GPU literal matcher artifact" "$out"
+expect_file   "6.4ak from-file local GPU sidecar seeds runtime cache" "$h/.cache/keyhog/programs/lit-mock.bin"
+rm -rf "$h"
+h=$(newhome)
+out=$(run_install "$sb" "$h" -- --from-file="$FIX_DIR/local_keyhog_no_sidecar" --no-prompt); st=$?
+expect_match  "6.4al from-file missing local GPU sidecar refuses" "--from-file requires a sibling GPU literal sidecar" "$out"
+expect_status "6.4am from-file missing local GPU sidecar exits 1" 1 "$st"
+expect_nofile "6.4an no binary written without from-file GPU sidecar" "$h/.local/bin/keyhog"
+rm -rf "$h"
 # 6.5 checksum mismatch refuses + no install
 h=$(newhome)
 out=$(KEYHOG_VERSION=v9.9.9 MOCK_ASSET="$FIX_DIR/fake_keyhog_healthy" MOCK_SHA=mismatch run_install "$sb" "$h" -- --no-prompt); st=$?

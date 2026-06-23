@@ -27,7 +27,9 @@
 #                       and CI proving a freshly-built binary). Skips the GitHub
 #                       release lookup; still runs the full backup + atomic swap
 #                       + verify (`keyhog doctor`) + rollback path. Requires a
-#                       sibling PATH.sha256 unless --insecure is explicit.
+#                       sibling PATH.sha256, PATH.gpu-literals.tar.gz, and
+#                       PATH.gpu-literals.tar.gz.sha256 unless --insecure is
+#                       explicit.
 #   --yes / -y          non-interactive: accept defaults, no prompts
 #   --insecure          allow an install only when release signature/checksum
 #                       proof is unavailable; fetched mismatches still fail
@@ -739,6 +741,8 @@ verify_local_checksum() {
 # broken one. Empty when there was nothing to back up (fresh install).
 INSTALL_BACKUP=""
 GPU_LITERAL_SIDECAR_TMP=""
+GPU_PROGRAMS_CACHE_BACKUP=""
+GPU_PROGRAMS_CACHE_WAS_MISSING=0
 
 gpu_programs_cache_dir_for_install() {
     if [ "$OS" = "darwin" ]; then
@@ -757,8 +761,91 @@ cleanup_gpu_literal_sidecar_tmp() {
     fi
 }
 
+clear_gpu_programs_cache_backup() {
+    if [ -n "$GPU_PROGRAMS_CACHE_BACKUP" ]; then
+        rm -rf "$GPU_PROGRAMS_CACHE_BACKUP" 2>/dev/null || true
+        GPU_PROGRAMS_CACHE_BACKUP=""
+    fi
+    GPU_PROGRAMS_CACHE_WAS_MISSING=0
+}
+
+backup_gpu_programs_cache_for_install() {
+    clear_gpu_programs_cache_backup
+    programs_dir="$(gpu_programs_cache_dir_for_install)"
+    backup_root=$(mktemp -d -t keyhog-gpu-programs-backup-XXXXXX)
+    if [ -z "$backup_root" ] || [ ! -d "$backup_root" ]; then
+        err "Could not create a temporary GPU literal cache backup directory."
+        return 1
+    fi
+    if [ -d "$programs_dir" ]; then
+        if ! cp -Rp "$programs_dir" "$backup_root/programs" 2>/dev/null; then
+            rm -rf "$backup_root"
+            err "Could not back up GPU literal cache directory at $programs_dir."
+            return 1
+        fi
+        GPU_PROGRAMS_CACHE_WAS_MISSING=0
+    else
+        GPU_PROGRAMS_CACHE_WAS_MISSING=1
+    fi
+    GPU_PROGRAMS_CACHE_BACKUP="$backup_root"
+}
+
+restore_gpu_programs_cache_backup() {
+    [ -n "$GPU_PROGRAMS_CACHE_BACKUP" ] || return 0
+    programs_dir="$(gpu_programs_cache_dir_for_install)"
+    if ! rm -rf "$programs_dir" 2>/dev/null; then
+        err "Could not remove GPU literal cache directory at $programs_dir during rollback."
+        return 1
+    fi
+    if [ "$GPU_PROGRAMS_CACHE_WAS_MISSING" != "1" ] && [ -d "$GPU_PROGRAMS_CACHE_BACKUP/programs" ]; then
+        if ! mkdir -p "$(dirname "$programs_dir")" || ! mv "$GPU_PROGRAMS_CACHE_BACKUP/programs" "$programs_dir"; then
+            err "Could not restore GPU literal cache directory at $programs_dir."
+            return 1
+        fi
+    fi
+    clear_gpu_programs_cache_backup
+}
+
+stage_local_gpu_literal_sidecar() {
+    local_sidecar="$FROM_FILE.gpu-literals.tar.gz"
+    local_sum="$local_sidecar.sha256"
+    sidecar_tmp=$(mktemp)
+    if [ ! -f "$local_sidecar" ] || [ ! -s "$local_sidecar" ]; then
+        rm -f "$sidecar_tmp"
+        err "--from-file requires a sibling GPU literal sidecar: $local_sidecar"
+        err "Refusing to install a local binary that would recompile shipped detector matchers at runtime."
+        return 1
+    fi
+    if [ -f "$local_sum" ]; then
+        if ! verify_local_checksum "$local_sidecar" "$local_sum"; then
+            rm -f "$sidecar_tmp"
+            return 1
+        fi
+    else
+        if ! allow_unverified_install "No local checksum file found beside --from-file GPU literal sidecar: $local_sum"; then
+            rm -f "$sidecar_tmp"
+            return 1
+        fi
+    fi
+    if ! cp "$local_sidecar" "$sidecar_tmp" 2>/dev/null; then
+        rm -f "$sidecar_tmp"
+        err "--from-file: could not read GPU literal sidecar $local_sidecar"
+        return 1
+    fi
+    if ! validate_gpu_literal_sidecar_archive "$sidecar_tmp"; then
+        rm -f "$sidecar_tmp"
+        err "Refusing GPU literal sidecar with unsafe archive contents."
+        return 1
+    fi
+    cleanup_gpu_literal_sidecar_tmp
+    GPU_LITERAL_SIDECAR_TMP="$sidecar_tmp"
+}
+
 download_verified_gpu_literal_sidecar() {
-    [ -z "$FROM_FILE" ] || return 0
+    if [ -n "$FROM_FILE" ]; then
+        stage_local_gpu_literal_sidecar
+        return $?
+    fi
     sidecar_name="$ASSET.gpu-literals.tar.gz"
     sidecar_tmp=$(mktemp)
     if ! download_asset "$sidecar_name" "$sidecar_tmp" 2>/dev/null || [ ! -s "$sidecar_tmp" ]; then
@@ -776,8 +863,26 @@ download_verified_gpu_literal_sidecar() {
         rm -f "$sidecar_tmp"
         return 1
     fi
+    if ! validate_gpu_literal_sidecar_archive "$sidecar_tmp"; then
+        rm -f "$sidecar_tmp"
+        err "Refusing GPU literal sidecar with unsafe archive contents."
+        return 1
+    fi
     cleanup_gpu_literal_sidecar_tmp
     GPU_LITERAL_SIDECAR_TMP="$sidecar_tmp"
+}
+
+rollback_staged_install_after_sidecar_failure() {
+    target="$1"
+    cleanup_gpu_literal_sidecar_tmp
+    if [ -n "$INSTALL_BACKUP" ] && [ -e "$INSTALL_BACKUP" ]; then
+        mv -f "$INSTALL_BACKUP" "$target"
+        INSTALL_BACKUP=""
+        warn "Rolled back to your previous working keyhog at $target."
+    else
+        rm -f "$target" 2>/dev/null || true
+        warn "Removed the binary because shipped GPU literal artifacts could not be seeded."
+    fi
 }
 
 validate_gpu_literal_sidecar_archive() {
@@ -786,14 +891,33 @@ validate_gpu_literal_sidecar_archive() {
         err "GPU literal artifact sidecar is not a readable tar.gz archive."
         return 1
     fi
-    tar -tzf "$archive" | while IFS= read -r entry; do
+    if ! tar -tzf "$archive" | while IFS= read -r entry; do
         case "$entry" in
-          ""|/*|../*|*/../*|*/..)
+          ""|/*)
             printf '%s\n' "$entry"
             exit 1
             ;;
         esac
-    done
+        if printf '%s\n' "$entry" | grep -Eq '(^|[\\/])\.\.[[:space:].]*([\\/]|$)'; then
+            printf '%s\n' "$entry"
+            exit 1
+        fi
+    done >/dev/null; then
+        err "GPU literal artifact sidecar contains unsafe archive paths."
+        return 1
+    fi
+    if ! tar -tvzf "$archive" | while IFS= read -r listing; do
+        entry_kind=$(printf '%s' "$listing" | cut -c 1)
+        case "$entry_kind" in
+          l|h)
+            printf '%s\n' "$listing"
+            exit 1
+            ;;
+        esac
+    done >/dev/null; then
+        err "GPU literal artifact sidecar contains link entries."
+        return 1
+    fi
 }
 
 install_verified_gpu_literal_sidecar() {
@@ -936,6 +1060,12 @@ stage_and_install() {
                 trap - EXIT INT TERM
                 exit 1
             fi
+        fi
+        if ! download_verified_gpu_literal_sidecar; then
+            rm -f "$tmp"
+            cleanup_gpu_literal_sidecar_tmp
+            trap - EXIT INT TERM
+            exit 1
         fi
     else
         if ! verify_release_signature "$tmp" "$ASSET"; then
@@ -2220,15 +2350,24 @@ do_install() {
     fi
 
     stage_and_install
+    if ! backup_gpu_programs_cache_for_install; then
+        rollback_staged_install_after_sidecar_failure "$INSTALL_DIR/keyhog"
+        err "Install failed while backing up GPU literal cache state."
+        exit 1
+    fi
+    if ! install_verified_gpu_literal_sidecar; then
+        restore_gpu_programs_cache_backup || true
+        rollback_staged_install_after_sidecar_failure "$INSTALL_DIR/keyhog"
+        err "Install failed while seeding shipped GPU literal artifacts."
+        exit 1
+    fi
     if ! finalize_install; then
+        restore_gpu_programs_cache_backup || true
         cleanup_gpu_literal_sidecar_tmp
         err "Install failed verification; see above."
         exit 1
     fi
-    if ! install_verified_gpu_literal_sidecar; then
-        err "Install failed while seeding shipped GPU literal artifacts."
-        exit 1
-    fi
+    clear_gpu_programs_cache_backup
     post_install_wizard
 
     printf '\n%sNext steps:%s\n' "$C_BOLD" "$C_RESET"
@@ -2245,15 +2384,24 @@ do_repair() {
     if [ -z "$bin" ]; then
         warn "No existing keyhog binary found. Installing fresh."
         stage_and_install
+        if ! backup_gpu_programs_cache_for_install; then
+            rollback_staged_install_after_sidecar_failure "$INSTALL_DIR/keyhog"
+            err "Repair failed while backing up GPU literal cache state."
+            exit 1
+        fi
+        if ! install_verified_gpu_literal_sidecar; then
+            restore_gpu_programs_cache_backup || true
+            rollback_staged_install_after_sidecar_failure "$INSTALL_DIR/keyhog"
+            err "Repair failed while seeding shipped GPU literal artifacts."
+            exit 1
+        fi
         if ! finalize_install; then
+            restore_gpu_programs_cache_backup || true
             cleanup_gpu_literal_sidecar_tmp
             err "Repair failed; see above."
             exit 1
         fi
-        if ! install_verified_gpu_literal_sidecar; then
-            err "Repair failed while seeding shipped GPU literal artifacts."
-            exit 1
-        fi
+        clear_gpu_programs_cache_backup
         ok "Repair complete."
         return
     fi
@@ -2264,15 +2412,24 @@ do_repair() {
         warn "Existing binary does not run. Replacing with $ASSET."
     fi
     stage_and_install
+    if ! backup_gpu_programs_cache_for_install; then
+        rollback_staged_install_after_sidecar_failure "$INSTALL_DIR/keyhog"
+        err "Repair failed while backing up GPU literal cache state."
+        exit 1
+    fi
+    if ! install_verified_gpu_literal_sidecar; then
+        restore_gpu_programs_cache_backup || true
+        rollback_staged_install_after_sidecar_failure "$INSTALL_DIR/keyhog"
+        err "Repair failed while seeding shipped GPU literal artifacts."
+        exit 1
+    fi
     if ! finalize_install; then
+        restore_gpu_programs_cache_backup || true
         cleanup_gpu_literal_sidecar_tmp
         err "Repair failed; your previous binary state was preserved where possible (see above)."
         exit 1
     fi
-    if ! install_verified_gpu_literal_sidecar; then
-        err "Repair failed while seeding shipped GPU literal artifacts."
-        exit 1
-    fi
+    clear_gpu_programs_cache_backup
     ok "Repair complete."
 }
 

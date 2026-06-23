@@ -103,3 +103,35 @@ fn bootstrap_installers_verify_release_minisig_with_updater_key() {
         );
     }
 }
+
+#[test]
+fn bootstrap_installers_verify_gpu_literal_sidecars_before_installing_cache_artifacts() {
+    let sh = include_str!("../../../install.sh");
+    assert!(
+        sh.contains("verify_release_signature \"$sidecar_tmp\" \"$sidecar_name\"")
+            && sh.contains("verify_checksum \"$sidecar_tmp\" \"$sidecar_name\"")
+            && sh.contains("stage_local_gpu_literal_sidecar")
+            && sh.contains("--from-file requires a sibling GPU literal sidecar")
+            && sh.contains("validate_gpu_literal_sidecar_archive")
+            && sh.contains("GPU literal artifact sidecar contains link entries.")
+            && sh.contains("backup_gpu_programs_cache_for_install")
+            && sh.contains("restore_gpu_programs_cache_backup")
+            && sh.contains("clear_gpu_programs_cache_backup")
+            && !sh.contains("[ -z \"$FROM_FILE\" ] || return 0"),
+        "install.sh must verify and inspect GPU literal sidecar archives before extraction"
+    );
+
+    let ps1 = include_str!("../../../install.ps1");
+    assert!(
+        ps1.contains("Verify-ReleaseSignature -BinaryPath $sidecarPath -AssetName $sidecarName")
+            && ps1.contains("Verify-Checksum -BinaryPath $sidecarPath -AssetName $sidecarName")
+            && ps1.contains("-FromFile requires a sibling GPU literal sidecar")
+            && ps1.contains("Test-GpuLiteralSidecarArchive")
+            && ps1.contains("GPU literal artifact sidecar contains a link entry")
+            && ps1.contains("Backup-GpuProgramsCacheForInstall")
+            && ps1.contains("Restore-GpuProgramsCacheBackup")
+            && ps1.contains("Clear-GpuProgramsCacheBackup")
+            && !ps1.contains("if ($FromFile) { return $true }"),
+        "install.ps1 must verify and inspect GPU literal sidecar archives before extraction"
+    );
+}
