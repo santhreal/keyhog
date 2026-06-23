@@ -2022,6 +2022,10 @@ pub(crate) const HOT_PATTERN_MIN_LENGTHS: &[usize] =
     crate::simdsieve_prefilter::HOT_PATTERN_MIN_LENGTHS;
 #[cfg(all(test, feature = "simdsieve"))]
 pub(crate) const HOT_PATTERN_NAMES: &[&str] = crate::simdsieve_prefilter::HOT_PATTERN_NAMES;
+#[cfg(all(test, feature = "simdsieve"))]
+pub(crate) fn hot_pattern_index_at(text_bytes: &[u8], offset: usize) -> Option<usize> {
+    crate::simdsieve_prefilter::hot_pattern_index_at(text_bytes, offset)
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg(test)]

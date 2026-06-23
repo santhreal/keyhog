@@ -22,7 +22,9 @@ impl CompiledScanner {
         // `self.hot_metadata_by_index` at construction and are cloned by index
         // below (PERF-locality_intern-1). Only the literal table is still
         // needed for the sieve + dispatch.
-        use crate::simdsieve_prefilter::{HOT_PATTERNS, HOT_PATTERN_MIN_LENGTHS};
+        use crate::simdsieve_prefilter::{
+            hot_pattern_index_at, HOT_PATTERNS, HOT_PATTERN_MIN_LENGTHS,
+        };
         use simdsieve::SimdSieve;
 
         let text_bytes = text.as_bytes();
@@ -35,19 +37,16 @@ impl CompiledScanner {
         };
 
         for offset in sieve {
-            // Resolve the SimdSieve offset to one table slot without a
-            // linear HOT_PATTERNS scan. The full literal compare below remains
-            // the verifier; this only handles first-byte collision families.
+            // Resolve the SimdSieve offset to the table-owned hot-pattern slot.
             let Some(pattern_idx) = hot_pattern_index_at(text_bytes, offset) else {
                 continue;
             };
             {
                 let pattern = HOT_PATTERNS[pattern_idx];
                 let end = offset + pattern.len();
-                // Confirm the full literal. `hot_pattern_index_at` only
-                // inspects the first 1-2 bytes, so a candidate whose tail
-                // diverges (e.g. `xoxq-`, `sk-pXoj-`) is rejected here exactly
-                // as the old `&text_bytes[offset..end] != *pattern` guard did.
+                // Confirm the full literal at this offset. The table-owned
+                // resolver already uses the same literal table, so this is a
+                // cheap invariant check before span extraction.
                 if end > text_bytes.len() || &text_bytes[offset..end] != pattern {
                     continue;
                 }
@@ -223,46 +222,5 @@ impl CompiledScanner {
                 // offset. This replaces the old per-offset pattern loop.
             }
         }
-    }
-}
-
-/// Resolve a sieve hit to the single HOT_PATTERNS slot that can begin there.
-/// The caller still verifies the full literal; this is dispatch only.
-#[cfg(feature = "simdsieve")]
-#[inline]
-fn hot_pattern_index_at(text_bytes: &[u8], offset: usize) -> Option<usize> {
-    let rest = text_bytes.get(offset..)?;
-    match *rest.first()? {
-        b'g' => Some(0), // ghp_
-        b'S' => Some(4), // SG.
-        b's' => match *rest.get(1)? {
-            b'k' if rest.starts_with(b"sk-proj-") => Some(1),
-            b'k' if rest.starts_with(b"sk_live_") => Some(8),
-            b'k' if rest.starts_with(b"sk_test_") => Some(9),
-            b'q' => Some(7),
-            _ => None,
-        },
-        b'r' => {
-            if rest.starts_with(b"rk_live_") {
-                Some(10)
-            } else if rest.starts_with(b"rk_test_") {
-                Some(11)
-            } else {
-                None
-            }
-        }
-        b'A' => match *rest.get(1)? {
-            // AKIA vs ASIA
-            b'K' => Some(2),
-            b'S' => Some(3),
-            _ => None,
-        },
-        b'x' => match *rest.get(3)? {
-            // xoxb- vs xoxp- (share `xox`)
-            b'b' => Some(5),
-            b'p' => Some(6),
-            _ => None,
-        },
-        _ => None,
     }
 }

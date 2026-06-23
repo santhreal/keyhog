@@ -982,11 +982,15 @@ fn engine_hot_and_entropy_metadata_clones_are_heap_admission_gated() {
     );
     assert!(
         hot_src.contains("HOT_PATTERN_MIN_LENGTHS[pattern_idx]")
+            && hot_src.contains("hot_pattern_index_at")
+            && !hot_src.contains("fn hot_pattern_index_at")
+            && !hot_src.contains("=> Some(")
             && !hot_src.contains("PER_PATTERN_MIN_LEN")
             && !hot_src.contains("unwrap_or(8)")
             && simdsieve_src.contains("define_hot_pattern_tables!")
-            && simdsieve_src.contains("HOT_PATTERN_MIN_LENGTHS"),
-        "hot-pattern min lengths must be owned by the simdsieve hot-pattern table and must not silently default on slot drift"
+            && simdsieve_src.contains("HOT_PATTERN_MIN_LENGTHS")
+            && simdsieve_src.contains("pub(crate) fn hot_pattern_index_at"),
+        "hot-pattern slot dispatch and min lengths must be owned by the simdsieve hot-pattern table and must not silently default on slot drift"
     );
 }
 

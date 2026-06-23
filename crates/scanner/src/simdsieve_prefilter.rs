@@ -150,6 +150,21 @@ define_hot_pattern_tables![
     ),
 ];
 
+/// Resolve a sieve hit to the HOT_PATTERNS slot that begins at `offset`.
+///
+/// Slot resolution lives beside the hot-pattern table so prefix order, added
+/// prefixes, and identity metadata have one owner. The caller still owns the
+/// candidate extraction and validator path; this only translates a SimdSieve
+/// byte offset into the canonical table index.
+#[inline]
+pub(crate) fn hot_pattern_index_at(text_bytes: &[u8], offset: usize) -> Option<usize> {
+    let rest = text_bytes.get(offset..)?;
+    HOT_PATTERNS
+        .iter()
+        .enumerate()
+        .find_map(|(idx, pattern)| rest.starts_with(pattern).then_some(idx))
+}
+
 /// Build a precise-regex validator for each hot-pattern slot, index-parallel
 /// with [`HOT_PATTERNS`].
 ///

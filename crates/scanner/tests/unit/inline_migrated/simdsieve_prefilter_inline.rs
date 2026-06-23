@@ -14,8 +14,8 @@
 #![cfg(feature = "simdsieve")]
 
 use keyhog_scanner::testing::{
-    HOT_PATTERNS, HOT_PATTERN_DETECTOR_IDS, HOT_PATTERN_DISPLAY_NAMES, HOT_PATTERN_MIN_LENGTHS,
-    HOT_PATTERN_NAMES,
+    hot_pattern_index_at, HOT_PATTERNS, HOT_PATTERN_DETECTOR_IDS, HOT_PATTERN_DISPLAY_NAMES,
+    HOT_PATTERN_MIN_LENGTHS, HOT_PATTERN_NAMES,
 };
 
 #[test]
@@ -127,4 +127,41 @@ fn hot_patterns_map_to_canonical_detector_identity() {
             "{id} leaks an internal hot-* id into scan output"
         );
     }
+}
+
+#[test]
+fn hot_pattern_index_resolves_every_prefix_from_the_shared_table() {
+    for (idx, prefix) in HOT_PATTERNS.iter().enumerate() {
+        assert_eq!(
+            hot_pattern_index_at(prefix, 0),
+            Some(idx),
+            "prefix at slot {idx} resolves to its own slot"
+        );
+
+        let mut haystack = b"xx".to_vec();
+        let offset = haystack.len();
+        haystack.extend_from_slice(prefix);
+        haystack.extend_from_slice(b"TAIL");
+        assert_eq!(
+            hot_pattern_index_at(&haystack, offset),
+            Some(idx),
+            "prefix at slot {idx} resolves at non-zero offset"
+        );
+
+        let mut near_miss = (*prefix).to_vec();
+        let last = near_miss.len() - 1;
+        near_miss[last] = if near_miss[last] == b'Z' { b'Y' } else { b'Z' };
+        assert_eq!(
+            hot_pattern_index_at(&near_miss, 0),
+            None,
+            "near miss for slot {idx} must not resolve"
+        );
+    }
+
+    assert_eq!(hot_pattern_index_at(b"", 0), None, "empty haystack");
+    assert_eq!(
+        hot_pattern_index_at(b"prefix", b"prefix".len()),
+        None,
+        "offset at end of haystack"
+    );
 }
