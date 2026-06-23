@@ -17,6 +17,7 @@ pub mod proxy_resolution_owner;
 pub mod rate_limit_no_inline_tests;
 pub mod rate_limit_no_unwrap_expect;
 pub mod rate_limit_non_empty;
+pub mod ssrf_ipv4_shape_hot_path;
 pub mod ssrf_no_inline_tests;
 pub mod ssrf_no_unwrap_expect;
 pub mod ssrf_non_empty;

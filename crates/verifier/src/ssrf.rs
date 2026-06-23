@@ -208,24 +208,29 @@ pub fn is_private_url(url_str: &str) -> bool {
 /// a leading `0` → octal, otherwise decimal. Any out-of-range field or parse
 /// failure yields `None` (the caller then falls through to its other checks).
 fn canonicalize_short_form_ipv4(domain: &str) -> Option<Ipv4Addr> {
-    let parts: Vec<&str> = domain.split('.').collect();
-    if parts.len() < 2 || parts.len() > 3 {
+    let mut values = [0u32; 3];
+    let mut len = 0usize;
+    for part in domain.split('.') {
+        if len == values.len() {
+            return None;
+        }
+        values[len] = parse_ip_field(part)?;
+        len += 1;
+    }
+    if len < 2 {
         return None;
     }
-    let values: Option<Vec<u32>> = parts.iter().map(|p| parse_ip_field(p)).collect();
-    let values = values?;
-    let n = values.len();
     // Leading fields each occupy one byte (must fit in a u8).
     let mut acc: u32 = 0;
-    for &leading in &values[..n - 1] {
+    for &leading in &values[..len - 1] {
         if leading > 0xFF {
             return None;
         }
         acc = (acc << 8) | leading;
     }
     // The final field packs into the remaining low bytes.
-    let remaining_bytes = 4 - (n - 1);
-    let last = values[n - 1];
+    let remaining_bytes = 4 - (len - 1);
+    let last = values[len - 1];
     let max_last = if remaining_bytes >= 4 {
         u32::MAX
     } else {
@@ -263,28 +268,37 @@ fn parse_ip_field(part: &str) -> Option<u32> {
 }
 
 fn looks_like_malformed_ip(domain: &str) -> bool {
-    let parts: Vec<&str> = domain.split('.').collect();
+    let mut part_count = 0usize;
+    let mut all_octet_shaped = true;
+    let mut all_octal_shaped = true;
+    for part in domain.split('.') {
+        part_count += 1;
+        if part.is_empty() {
+            all_octet_shaped = false;
+            all_octal_shaped = false;
+            continue;
+        }
+        if !part
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() || c == '-' || c == 'x' || c == 'X')
+        {
+            all_octet_shaped = false;
+        }
+        if !(part.starts_with('0') && part.len() > 1 && part.chars().all(|c| c.is_ascii_digit())) {
+            all_octal_shaped = false;
+        }
+    }
     // Domains with 4+ dot-separated parts where every part is an octet-shaped
     // token a permissive resolver might canonicalize into an IP: decimal,
     // `0x`-hex, or a (always-invalid) negative octet. The `f` in `0x7f` must
     // count - the pre-fix `digit|-|x|X` set excluded a..f, leaving an SSRF
     // bypass via `0x7f.0.0.-1`. `is_ascii_hexdigit` subsumes the old digit
     // check, so this only widens blocking (fail closed).
-    if parts.len() >= 4
-        && parts.iter().all(|p| {
-            !p.is_empty()
-                && p.chars()
-                    .all(|c| c.is_ascii_hexdigit() || c == '-' || c == 'x' || c == 'X')
-        })
-    {
+    if part_count >= 4 && all_octet_shaped {
         return true;
     }
     // Octal-encoded IP: starts with 0 and contains dots (e.g. 0177.0.0.1)
-    if parts.len() == 4
-        && parts
-            .iter()
-            .all(|p| p.starts_with('0') && p.len() > 1 && p.chars().all(|c| c.is_ascii_digit()))
-    {
+    if part_count == 4 && all_octal_shaped {
         return true;
     }
     false
