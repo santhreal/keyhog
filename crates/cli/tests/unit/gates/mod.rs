@@ -26,6 +26,7 @@ pub mod daemon_protocol_non_empty;
 pub mod daemon_server_no_inline_tests;
 pub mod daemon_server_no_unwrap_expect;
 pub mod daemon_server_non_empty;
+pub mod daemon_trust_ancestor_single_owner;
 pub mod default_exclude_owner;
 pub mod duplicate_primitive_leads;
 pub mod git_staged_exclude_empty_source;

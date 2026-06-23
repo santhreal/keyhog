@@ -177,41 +177,47 @@ fn validate_socket_parent_identity(parent: &Path) -> Result<std::fs::Metadata> {
     Ok(meta)
 }
 
+#[derive(Clone, Copy)]
+enum MissingAncestorPolicy {
+    Error,
+    Tolerate,
+}
+
+#[derive(Clone, Copy)]
+enum AncestorUse {
+    TrustSocket,
+    CreateSocketDir,
+}
+
 fn validate_no_symlink_ancestors(path: &Path) -> Result<()> {
-    for ancestor in path.ancestors() {
-        if ancestor.as_os_str().is_empty() {
-            continue;
-        }
-        let meta = std::fs::symlink_metadata(ancestor)
-            .with_context(|| format!("stat daemon socket path component {}", ancestor.display()))?;
-        if meta.file_type().is_symlink() {
-            bail!(
-                "daemon: socket path {} contains symlink component {}; refusing to trust a \
-                 credential-streaming daemon socket through a redirectable path.",
-                path.display(),
-                ancestor.display()
-            );
-        }
-    }
-    Ok(())
+    validate_ancestors_no_symlink(path, MissingAncestorPolicy::Error, AncestorUse::TrustSocket)
 }
 
 fn validate_existing_ancestors_no_symlink(path: &Path) -> Result<()> {
+    validate_ancestors_no_symlink(
+        path,
+        MissingAncestorPolicy::Tolerate,
+        AncestorUse::CreateSocketDir,
+    )
+}
+
+fn validate_ancestors_no_symlink(
+    path: &Path,
+    missing_policy: MissingAncestorPolicy,
+    ancestor_use: AncestorUse,
+) -> Result<()> {
     for ancestor in path.ancestors() {
         if ancestor.as_os_str().is_empty() {
             continue;
         }
         match std::fs::symlink_metadata(ancestor) {
             Ok(meta) if meta.file_type().is_symlink() => {
-                bail!(
-                    "daemon: socket path {} contains symlink component {}; refusing to create \
-                     daemon socket directories through a redirectable path.",
-                    path.display(),
-                    ancestor.display()
-                );
+                return Err(symlink_ancestor_error(path, ancestor, ancestor_use));
             }
             Ok(_) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error)
+                if error.kind() == std::io::ErrorKind::NotFound
+                    && matches!(missing_policy, MissingAncestorPolicy::Tolerate) => {}
             Err(error) => {
                 return Err(error).with_context(|| {
                     format!("stat daemon socket path component {}", ancestor.display())
@@ -220,6 +226,27 @@ fn validate_existing_ancestors_no_symlink(path: &Path) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn symlink_ancestor_error(
+    path: &Path,
+    ancestor: &Path,
+    ancestor_use: AncestorUse,
+) -> anyhow::Error {
+    match ancestor_use {
+        AncestorUse::TrustSocket => anyhow::anyhow!(
+            "daemon: socket path {} contains symlink component {}; refusing to trust a \
+             credential-streaming daemon socket through a redirectable path.",
+            path.display(),
+            ancestor.display()
+        ),
+        AncestorUse::CreateSocketDir => anyhow::anyhow!(
+            "daemon: socket path {} contains symlink component {}; refusing to create \
+             daemon socket directories through a redirectable path.",
+            path.display(),
+            ancestor.display()
+        ),
+    }
 }
 
 fn validate_socket_file(socket_path: &Path) -> Result<()> {
