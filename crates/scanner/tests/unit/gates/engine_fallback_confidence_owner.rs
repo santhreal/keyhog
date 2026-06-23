@@ -38,7 +38,7 @@ fn uncommented_code(src: &str) -> String {
 }
 
 #[test]
-fn entropy_and_generic_fallback_confidence_route_through_scoring_owner() {
+fn entropy_and_generic_fallback_confidence_route_through_confidence_owner() {
     let src = scanner_src();
     let scoring = uncommented_code(&read(&src.join("confidence/policy.rs")));
     for required in [
@@ -58,8 +58,8 @@ fn entropy_and_generic_fallback_confidence_route_through_scoring_owner() {
 
     let entropy = uncommented_code(&read(&src.join("engine/phase2_entropy.rs")));
     assert!(
-        entropy.contains("super::scoring::entropy_fallback_confidence("),
-        "entropy fallback must ask the scoring owner for its base confidence"
+        entropy.contains("crate::confidence::policy::entropy_fallback_confidence("),
+        "entropy fallback must ask the confidence owner for its base confidence"
     );
     for forbidden in [
         "base_confidence",
@@ -77,8 +77,8 @@ fn entropy_and_generic_fallback_confidence_route_through_scoring_owner() {
 
     let generic = uncommented_code(&read(&src.join("engine/phase2_generic.rs")));
     assert!(
-        generic.contains("super::scoring::generic_secret_confidence("),
-        "generic fallback must ask the scoring owner for its base confidence"
+        generic.contains("crate::confidence::policy::generic_secret_confidence("),
+        "generic fallback must ask the confidence owner for its base confidence"
     );
     for forbidden in [
         "let base_conf",
@@ -96,7 +96,7 @@ fn entropy_and_generic_fallback_confidence_route_through_scoring_owner() {
 }
 
 #[test]
-fn report_confidence_tail_routes_through_scoring_owner() {
+fn report_confidence_tail_routes_through_confidence_owner() {
     let src = scanner_src();
     let owner = src.join("confidence/policy.rs");
     let scoring = uncommented_code(&read(&owner));
@@ -155,8 +155,8 @@ fn report_confidence_tail_routes_through_scoring_owner() {
     }
     let hot_patterns = uncommented_code(&read(&src.join("engine/hot_patterns.rs")));
     assert!(
-        hot_patterns.contains("super::scoring::hot_pattern_confidence("),
-        "hot patterns must route final report confidence through the hot scoring owner"
+        hot_patterns.contains("crate::confidence::policy::hot_pattern_confidence("),
+        "hot patterns must route final report confidence through the confidence owner"
     );
 
     let mut files = Vec::new();
@@ -189,7 +189,7 @@ fn report_confidence_tail_routes_through_scoring_owner() {
 }
 
 #[test]
-fn engine_scoring_confidence_adjustments_route_through_confidence_owner() {
+fn engine_scoring_confidence_adjustments_use_confidence_owner() {
     let src = scanner_src();
     let policy = uncommented_code(&read(&src.join("confidence/policy.rs")));
     for required in [
@@ -212,20 +212,20 @@ fn engine_scoring_confidence_adjustments_route_through_confidence_owner() {
 
     let scoring = uncommented_code(&read(&src.join("engine/scoring.rs")));
     for required in [
-        "super::scoring::match_heuristic_confidence(",
-        "super::scoring::MatchHeuristicConfidencePolicy",
-        "super::scoring::apply_known_prefix_floor(",
+        "match_heuristic_confidence(",
+        "MatchHeuristicConfidencePolicy",
+        "apply_known_prefix_floor(",
     ] {
         assert!(
             scoring.contains(required),
-            "engine scoring must route adjustment through confidence owner token {required:?}"
+            "engine scoring must use direct confidence-owner token {required:?}"
         );
     }
     for forbidden in [
         "let context_multiplier =",
         "crate::confidence::compute_confidence(",
         "crate::confidence::ConfidenceSignals",
-        "super::scoring::pre_ml_heuristic_confidence(",
+        "pre_ml_heuristic_confidence(",
         "CodeContext::TestCode | crate::context::CodeContext::Documentation",
         "context.confidence_multiplier()",
         "known_prefix_confidence_floor(credential)",
@@ -259,9 +259,9 @@ fn ml_pending_confidence_policy_routes_through_confidence_owner() {
 
     let ml = uncommented_code(&read(&src.join("engine/scan_postprocess/ml.rs")));
     assert!(
-        ml.contains("super::scoring::ml_pending_confidence(")
-            && ml.contains("super::scoring::MlConfidencePolicy"),
-        "ML postprocess must route pending confidence through engine::scoring/confidence owner"
+        ml.contains("crate::confidence::policy::ml_pending_confidence(")
+            && ml.contains("crate::confidence::policy::MlConfidencePolicy"),
+        "ML postprocess must route pending confidence through confidence owner"
     );
     for forbidden in [
         "let ml_weight =",
@@ -298,8 +298,9 @@ fn probabilistic_promise_confidence_routes_through_confidence_owner() {
 
     let scoring = uncommented_code(&read(&src.join("engine/scoring.rs")));
     assert!(
-        scoring.contains("super::scoring::probabilistic_promise_confidence_override("),
-        "engine scoring must route probabilistic promise confidence through confidence owner"
+        scoring.contains("probabilistic_promise_confidence_override(")
+            && !scoring.contains("super::scoring::probabilistic_promise_confidence_override("),
+        "engine scoring must use direct confidence owner for probabilistic promise confidence"
     );
     for forbidden in [
         "ProbabilisticGate::looks_promising",

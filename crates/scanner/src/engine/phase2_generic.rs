@@ -304,7 +304,7 @@ impl CompiledScanner {
                         preprocessed_documentation_lines.as_slice(),
                     )
                 };
-                let confidence = super::scoring::generic_secret_confidence(
+                let confidence = crate::confidence::policy::generic_secret_confidence(
                     context,
                     self.config.scan_comments,
                     self.config.penalize_test_paths,

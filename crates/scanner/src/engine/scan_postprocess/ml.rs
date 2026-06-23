@@ -97,8 +97,8 @@ impl CompiledScanner {
             self.score_ml_pending_cpu(&pending_matches)
         };
         for (pending, ml_conf) in pending_matches.into_iter().zip(scores.into_iter()) {
-            let final_score =
-                super::scoring::ml_pending_confidence(super::scoring::MlConfidencePolicy {
+            let final_score = crate::confidence::policy::ml_pending_confidence(
+                crate::confidence::policy::MlConfidencePolicy {
                     heuristic_confidence: pending.heuristic_conf,
                     model_confidence: ml_conf,
                     ml_weight: self.config.ml_weight,
@@ -106,7 +106,8 @@ impl CompiledScanner {
                     code_context: pending.code_context,
                     scan_comments: self.config.scan_comments,
                     penalize_test_paths: self.config.penalize_test_paths,
-                });
+                },
+            );
 
             self.emit_finalized_pending_match(scan_state, pending, final_score);
         }

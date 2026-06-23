@@ -1,31 +1,17 @@
-//! `CompiledScanner` match-scoring / confidence methods.
+//! `CompiledScanner` match-scoring methods.
 //!
-//! Extracted from the phase-2 scanner tail to
-//! separate the fallback-*scanning* path from the match-*scoring* path. These
-//! are satellite `impl CompiledScanner` methods: the struct lives in `mod.rs`,
-//! and the same `use super::*` glob the phase-2 modules rely on brings every
-//! referenced symbol (`CompiledPattern`, `MlScoreResult`, `find_companion`,
-//! `extract_literal_prefix`, `local_context_window`, `ML_CONTEXT_RADIUS_LINES`)
-//! into scope here unchanged. Pure move — no behaviour change.
+//! Confidence policy lives in `crate::confidence::policy`; this module keeps
+//! only the scanner methods that need `CompiledScanner` state or chunk context.
 
 use super::*;
+use crate::confidence::policy::{
+    apply_known_prefix_floor, match_heuristic_confidence, MatchHeuristicConfidencePolicy,
+};
 use crate::context;
 use std::collections::HashMap;
 
-#[cfg(feature = "entropy")]
-pub(super) use crate::confidence::policy::entropy_fallback_confidence;
-#[cfg(feature = "simdsieve")]
-pub(super) use crate::confidence::policy::hot_pattern_confidence;
 #[cfg(feature = "ml")]
-pub(super) use crate::confidence::policy::ml_pending_confidence;
-#[cfg(feature = "ml")]
-pub(super) use crate::confidence::policy::probabilistic_promise_confidence_override;
-#[cfg(feature = "ml")]
-pub(super) use crate::confidence::policy::MlConfidencePolicy;
-pub(super) use crate::confidence::policy::{
-    apply_known_prefix_floor, checksum_policy_for, generic_secret_confidence,
-    match_heuristic_confidence, MatchHeuristicConfidencePolicy,
-};
+use crate::confidence::policy::probabilistic_promise_confidence_override;
 
 impl CompiledScanner {
     pub(crate) fn match_companions(
@@ -86,24 +72,22 @@ impl CompiledScanner {
     ) -> Option<MlScoreResult<'a>> {
         // Checksum validation is handled in process_match (early reject for Invalid,
         // confidence floor for Valid). No need to re-validate here.
-        let heuristic_conf = super::scoring::match_heuristic_confidence(
-            super::scoring::MatchHeuristicConfidencePolicy {
-                // Per-PATTERN constant, memoized on the `LazyRegex` (see
-                // `LazyRegex::has_literal_prefix`): the prior inline
-                // `extract_literal_prefix(entry.regex.as_str()).is_some()`
-                // re-ran the allocating prefix parser on every surviving
-                // candidate. Identical value, computed at most once.
-                has_literal_prefix: entry.regex.has_literal_prefix(),
-                has_context_anchor: entry.group.is_some(),
-                entropy,
-                keyword_nearby,
-                sensitive_file,
-                match_length: credential.len(),
-                has_companion,
-                code_context: context,
-                penalize_test_paths: self.config.penalize_test_paths,
-            },
-        );
+        let heuristic_conf = match_heuristic_confidence(MatchHeuristicConfidencePolicy {
+            // Per-PATTERN constant, memoized on the `LazyRegex` (see
+            // `LazyRegex::has_literal_prefix`): the prior inline
+            // `extract_literal_prefix(entry.regex.as_str()).is_some()`
+            // re-ran the allocating prefix parser on every surviving
+            // candidate. Identical value, computed at most once.
+            has_literal_prefix: entry.regex.has_literal_prefix(),
+            has_context_anchor: entry.group.is_some(),
+            entropy,
+            keyword_nearby,
+            sensitive_file,
+            match_length: credential.len(),
+            has_companion,
+            code_context: context,
+            penalize_test_paths: self.config.penalize_test_paths,
+        });
         let score_result = self.calculate_final_score(
             heuristic_conf,
             context,
@@ -117,7 +101,7 @@ impl CompiledScanner {
 
         match score_result {
             MlScoreResult::Final(confidence) => {
-                let final_score = super::scoring::apply_known_prefix_floor(confidence, credential);
+                let final_score = apply_known_prefix_floor(confidence, credential);
                 Some(MlScoreResult::Final(final_score))
             }
             #[cfg(feature = "ml")]
@@ -152,10 +136,9 @@ impl CompiledScanner {
                 return Some(MlScoreResult::Final(heuristic_conf));
             }
 
-            if let Some(confidence) = super::scoring::probabilistic_promise_confidence_override(
-                credential,
-                is_named_detector,
-            ) {
+            if let Some(confidence) =
+                probabilistic_promise_confidence_override(credential, is_named_detector)
+            {
                 return Some(MlScoreResult::Final(confidence));
             }
 

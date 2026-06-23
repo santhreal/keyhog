@@ -651,10 +651,8 @@ fn known_prefix_floor_suppressed_by_placeholder_word_case_insensitive() {
 
 #[test]
 fn hot_path_base_confidence_is_0_7_without_known_prefix() {
-    // engine::scoring::hot_pattern_confidence uses
-    //   known_prefix_confidence_floor(cred).unwrap_or(0.7)
-    // as the base confidence. Mirror that composition: an unknown-prefix hot
-    // literal starts at 0.7.
+    // confidence::policy::hot_pattern_confidence starts unknown-prefix hot
+    // literals at 0.7 before the shared report-confidence finalizer runs.
     let base = known_prefix_confidence_floor("sq0csp-nochecksumhere000000").unwrap_or(0.7);
     assert_eq!(base, 0.7);
 }

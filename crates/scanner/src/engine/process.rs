@@ -205,9 +205,9 @@ impl CompiledScanner {
 
         // Checksum validation: tokens with embedded checksums (GitHub, npm, Slack,
         // Stripe, GitLab, PyPI) can be verified without network requests. The
-        // engine match-policy owner makes the drop/floor rule shared with hot,
+        // confidence policy owner makes the drop/floor rule shared with hot,
         // generic, entropy, and ML emitters.
-        let checksum_policy = super::scoring::checksum_policy_for(credential);
+        let checksum_policy = crate::confidence::policy::checksum_policy_for(credential);
         let checksum_ctx = crate::adjudicate::MatchCtx::for_process_signals(
             crate::adjudicate::ProcessCandidateSignals::from_checksum_invalid(
                 checksum_policy.is_invalid(),

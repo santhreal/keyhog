@@ -56,10 +56,14 @@ fn engine_emitters_do_not_call_checksum_policy_primitives_directly() {
 
     let scoring = uncommented_code(&read(&src.join("engine/scoring.rs")));
     assert!(
-        scoring.contains("checksum_policy_for")
-            && scoring.contains("finalize_report_confidence")
-            && scoring.contains("crate::confidence::policy"),
-        "engine::scoring must only re-export checksum/report confidence policy"
+        !scoring.contains("pub(super) use crate::confidence::policy"),
+        "engine::scoring must not re-export confidence policy as a facade"
+    );
+
+    let process = uncommented_code(&read(&src.join("engine/process.rs")));
+    assert!(
+        process.contains("crate::confidence::policy::checksum_policy_for("),
+        "engine process must ask confidence::policy directly for checksum confidence policy"
     );
 
     let mut files = Vec::new();
@@ -82,6 +86,6 @@ fn engine_emitters_do_not_call_checksum_policy_primitives_directly() {
 
     assert!(
         offenders.is_empty(),
-        "engine emission paths must route checksum confidence through confidence::policy via engine::scoring: {offenders:#?}"
+        "engine emission paths must route checksum confidence through confidence::policy without owning primitives: {offenders:#?}"
     );
 }

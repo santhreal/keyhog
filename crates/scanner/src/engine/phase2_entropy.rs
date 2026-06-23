@@ -127,7 +127,7 @@ impl CompiledScanner {
         for entropy_match in entropy_matches {
             // Resolve metadata once; emit clones the pre-interned triple.
             let entropy_meta_idx = helpers::classify_entropy_detector_index(&entropy_match.keyword);
-            let confidence = super::scoring::entropy_fallback_confidence(
+            let confidence = crate::confidence::policy::entropy_fallback_confidence(
                 entropy_match.entropy,
                 &entropy_match.keyword,
             );

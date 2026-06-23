@@ -151,7 +151,7 @@ impl CompiledScanner {
                 }
 
                 let metadata = &self.hot_metadata_by_index[pattern_idx];
-                let Some(confidence) = super::scoring::hot_pattern_confidence(
+                let Some(confidence) = crate::confidence::policy::hot_pattern_confidence(
                     credential,
                     metadata.0.as_ref(),
                     chunk.metadata.path.as_deref(),

@@ -25,7 +25,7 @@ fn uncommented_code(src: &str) -> String {
 }
 
 #[test]
-fn hot_pattern_confidence_routes_through_scoring_owner() {
+fn hot_pattern_confidence_routes_through_confidence_owner() {
     let src = scanner_src();
     let scoring = uncommented_code(&read(&src.join("confidence/policy.rs")));
     assert!(
@@ -37,8 +37,8 @@ fn hot_pattern_confidence_routes_through_scoring_owner() {
 
     let hot_patterns = uncommented_code(&read(&src.join("engine/hot_patterns.rs")));
     assert!(
-        hot_patterns.contains("super::scoring::hot_pattern_confidence("),
-        "hot-pattern fast path must call the scoring owner"
+        hot_patterns.contains("crate::confidence::policy::hot_pattern_confidence("),
+        "hot-pattern fast path must call the confidence owner directly"
     );
     for forbidden in [
         "known_prefix_confidence_floor",
