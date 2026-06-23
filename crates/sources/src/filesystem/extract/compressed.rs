@@ -335,7 +335,7 @@ pub(super) fn extract_compressed_chunks(
         }
     }
     let decompressed = decompressed.bytes;
-    if decompressed.len() >= budget {
+    if decompressed.len() > budget {
         let error = report_compressed_truncation(path, budget, decompressed.len());
         if !emit(Err(error)) {
             return;

@@ -287,6 +287,52 @@ fn gzip_single_stream_bomb_is_truncated_and_counted() {
 }
 
 #[test]
+fn gzip_exact_4x_budget_is_not_counted_truncated() {
+    let _guard = COUNTER_LOCK.lock().unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let gz_path = dir.path().join("exact-budget.gz");
+
+    const MAX: u64 = 1024;
+    let payload = vec![b'A'; 4 * MAX as usize];
+    {
+        let f = std::fs::File::create(&gz_path).unwrap();
+        let mut enc = flate2::write::GzEncoder::new(f, flate2::Compression::best());
+        enc.write_all(&payload).unwrap();
+        enc.finish().unwrap();
+    }
+
+    TestApi.reset_skip_counters();
+    let source = FilesystemSource::new(dir.path().to_path_buf()).with_max_file_size(MAX);
+    let rows: Vec<_> = source.chunks().collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+
+    assert!(
+        errors.is_empty(),
+        "a gzip stream exactly at the 4x decompression budget reached EOF and must not emit a truncation error; errors={errors:?}"
+    );
+    assert_eq!(
+        skip_counts().archive_truncated,
+        0,
+        "a gzip stream exactly at the 4x budget must not be counted as partial coverage"
+    );
+    let total: usize = chunks
+        .iter()
+        .filter(|chunk| {
+            chunk
+                .metadata
+                .source_type
+                .starts_with("filesystem/compressed")
+        })
+        .map(|chunk| chunk.data.as_ref().len())
+        .sum();
+    assert_eq!(
+        total,
+        payload.len(),
+        "the full exact-budget gzip body must still be scanned"
+    );
+}
+
+#[test]
 fn gzip_recovered_prefix_after_decode_error_is_counted_truncated() {
     let _guard = COUNTER_LOCK.lock().unwrap();
     let dir = tempfile::tempdir().unwrap();
