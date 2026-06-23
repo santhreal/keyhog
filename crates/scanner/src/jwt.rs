@@ -139,7 +139,12 @@ pub fn finding_metadata(credential: &str) -> Option<std::collections::HashMap<St
 
 /// Returns `true` when `s` looks like a JWT (three base64url segments).
 /// Cheap shape check - does NOT decode.
+#[cfg(test)]
 pub(crate) fn looks_like_jwt(s: &str) -> bool {
+    jwt_segments(s).is_some()
+}
+
+fn jwt_segments(s: &str) -> Option<(&str, &str, &str)> {
     let s = s.trim();
     const MAX_JWT_SEGMENT_LEN: usize = 16 * 1024; // 16KB limit per segment
 
@@ -147,7 +152,7 @@ pub(crate) fn looks_like_jwt(s: &str) -> bool {
     let (Some(h), Some(p), Some(sig), None) =
         (parts.next(), parts.next(), parts.next(), parts.next())
     else {
-        return false;
+        return None;
     };
 
     // Length gate to prevent quadratic DoS on pathological inputs (millions of dots)
@@ -155,15 +160,20 @@ pub(crate) fn looks_like_jwt(s: &str) -> bool {
         || p.len() > MAX_JWT_SEGMENT_LEN
         || sig.len() > MAX_JWT_SEGMENT_LEN
     {
-        return false;
+        return None;
     }
 
-    !h.is_empty()
+    if !h.is_empty()
         && !p.is_empty()
         && !sig.is_empty()
         && h.bytes().all(is_base64url_byte)
         && p.bytes().all(is_base64url_byte)
         && sig.bytes().all(is_base64url_byte)
+    {
+        Some((h, p, sig))
+    } else {
+        None
+    }
 }
 
 /// Full structural analysis. Returns `None` if `s` is not a parseable JWT
@@ -174,15 +184,8 @@ pub(crate) fn looks_like_jwt(s: &str) -> bool {
 /// the high-recall layer; the verifier crate handles cryptographic checks
 /// for services that expose them.
 pub(crate) fn analyze(s: &str) -> Option<JwtAnalysis> {
-    let s = s.trim();
-    if !looks_like_jwt(s) {
-        return None;
-    }
-    let mut parts = s.split('.');
-    let header_b64 = parts.next()?;
-    let payload_b64 = parts.next()?;
+    let (header_b64, payload_b64, _signature_b64) = jwt_segments(s)?;
     // We don't read the signature segment beyond the shape check.
-    let _signature_b64 = parts.next()?;
 
     let header_json = decode_b64url(header_b64)?;
     let payload_json = decode_b64url(payload_b64)?;
@@ -212,11 +215,7 @@ pub(crate) fn analyze(s: &str) -> Option<JwtAnalysis> {
         }
     }
 
-    let exp_val = payload.exp.take();
-    let exp = exp_val.and_then(|v| match v {
-        serde_json::Value::Number(n) => n.as_i64(),
-        _ => None,
-    });
+    let exp = payload.exp.take().and_then(json_i64);
 
     let expired = exp.map(|exp_val| {
         let now = std::time::SystemTime::now()
@@ -241,6 +240,13 @@ pub(crate) fn analyze(s: &str) -> Option<JwtAnalysis> {
         expired,
         anomalies,
     })
+}
+
+fn json_i64(value: serde_json::Value) -> Option<i64> {
+    match value {
+        serde_json::Value::Number(number) => number.as_i64(),
+        _ => None,
+    }
 }
 
 #[inline]
@@ -300,23 +306,23 @@ impl JwtPayload {
     fn take_aud(&mut self) -> Option<String> {
         match std::mem::take(&mut self.aud) {
             serde_json::Value::String(s) if !s.is_empty() => Some(s),
-            serde_json::Value::Array(items) if !items.is_empty() => {
-                let joined: Vec<String> = items
-                    .into_iter()
-                    .filter_map(|v| match v {
-                        serde_json::Value::String(s) => Some(s),
-                        _ => None,
-                    })
-                    .collect();
-                if joined.is_empty() {
-                    None
-                } else {
-                    Some(joined.join(","))
-                }
-            }
+            serde_json::Value::Array(items) if !items.is_empty() => join_audience_strings(items),
             _ => None,
         }
     }
+}
+
+fn join_audience_strings(items: Vec<serde_json::Value>) -> Option<String> {
+    let mut strings = items.into_iter().filter_map(|value| match value {
+        serde_json::Value::String(value) => Some(value),
+        _ => None,
+    });
+    let mut joined = strings.next()?;
+    for audience in strings {
+        joined.push(',');
+        joined.push_str(&audience);
+    }
+    Some(joined)
 }
 
 fn check_nesting_depth(json: &[u8], max_depth: usize) -> bool {

@@ -157,6 +157,7 @@ pub mod hw_probe_no_inline_tests;
 pub mod hw_probe_no_unwrap_expect;
 pub mod hw_probe_non_empty;
 pub mod inline_gate;
+pub mod jwt_hot_path_shape;
 pub mod jwt_no_inline_tests;
 pub mod jwt_no_unwrap_expect;
 pub mod jwt_non_empty;
