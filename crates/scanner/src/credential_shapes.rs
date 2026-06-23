@@ -91,7 +91,11 @@ pub(crate) fn build_detector_shape_rules(
     detectors: &[DetectorSpec],
 ) -> Result<Vec<Option<CredentialShapeRule>>, String> {
     let entries = parsed_shape_rules()?;
-    validate_shape_rules_reference_detector_ids(&entries, bundled_detector_ids()?)?;
+    crate::detector_catalog::validate_rule_detector_ids(
+        "credential shape rule",
+        entries.iter().map(|entry| entry.detector.as_str()),
+        crate::detector_catalog::bundled_detector_ids()?,
+    )?;
     Ok(detectors
         .iter()
         .map(|detector| {
@@ -213,40 +217,6 @@ fn validate_shape_entries(entries: &[CredentialShapeEntry]) -> Result<(), String
     Ok(())
 }
 
-fn bundled_detector_ids() -> Result<&'static HashSet<String>, String> {
-    static DETECTOR_IDS: OnceLock<Result<HashSet<String>, String>> = OnceLock::new();
-    DETECTOR_IDS
-        .get_or_init(|| {
-            keyhog_core::load_embedded_detectors_or_fail()
-                .map(|detectors| {
-                    detectors
-                        .into_iter()
-                        .map(|detector| detector.id)
-                        .collect::<HashSet<_>>()
-                })
-                .map_err(|error| {
-                    format!("failed to validate credential shape rule detector ids: {error}")
-                })
-        })
-        .as_ref()
-        .map_err(Clone::clone)
-}
-
-fn validate_shape_rules_reference_detector_ids(
-    entries: &[CredentialShapeEntry],
-    detector_ids: &HashSet<String>,
-) -> Result<(), String> {
-    for entry in entries {
-        if !detector_ids.contains(&entry.detector) {
-            return Err(format!(
-                "credential shape rule references unknown detector '{}'",
-                entry.detector
-            ));
-        }
-    }
-    Ok(())
-}
-
 impl CredentialShapeEntry {
     fn rule(&self) -> CredentialShapeRule {
         CredentialShapeRule {
@@ -359,7 +329,12 @@ exact_length = 20
         )
         .unwrap();
         let detector_ids = ["present".to_string()].into_iter().collect();
-        let err = validate_shape_rules_reference_detector_ids(&entries, &detector_ids).unwrap_err();
+        let err = crate::detector_catalog::validate_rule_detector_ids(
+            "credential shape rule",
+            entries.iter().map(|entry| entry.detector.as_str()),
+            &detector_ids,
+        )
+        .unwrap_err();
 
         assert!(err.contains("unknown detector 'missing'"));
     }

@@ -52,7 +52,6 @@ fn detector_ids_module_owns_scanner_detector_identity() {
         "is_generic_detector",
         "is_entropy_detector",
         "is_service_anchored_detector",
-        "RESIDUAL_WEAK_ANCHORED",
     ] {
         assert!(
             owner.contains(expected),
@@ -118,5 +117,15 @@ fn detector_ids_module_owns_scanner_detector_identity() {
     assert!(
         offenders.is_empty(),
         "detector ids and detector-family checks must route through detector_ids.rs: {offenders:#?}"
+    );
+
+    let classification = read(&src.join("detector_classification.rs"));
+    assert!(
+        !owner.contains("RESIDUAL_WEAK_ANCHORED")
+            && !owner.contains("is_residual_weak_anchored")
+            && classification.contains("include_str!(\"../../../rules/detector-classification.toml\")")
+            && classification.contains("weak_anchor")
+            && classification.contains("is_residual_weak_anchor"),
+        "residual weak-anchor classification must live in Tier-B detector-classification rules, not detector_ids.rs"
     );
 }

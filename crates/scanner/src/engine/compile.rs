@@ -331,7 +331,8 @@ impl CompiledScanner {
         let detector_weak_anchor_by_index: Vec<bool> = detectors
             .iter()
             .map(crate::suppression::detector_weak_anchor)
-            .collect();
+            .collect::<std::result::Result<_, _>>()
+            .map_err(crate::error::ScanError::Config)?;
         let generic_named_assignment_keywords =
             crate::generic_keyword_owner::build_generic_named_assignment_keywords(&detectors);
 

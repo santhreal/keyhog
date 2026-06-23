@@ -44,30 +44,6 @@ pub(crate) const STRIPE_SECRET_KEY: &str = "stripe-secret-key";
 #[cfg(feature = "simdsieve")]
 pub(crate) const HOT_SQUARE_SECRET: &str = "hot-square_secret";
 
-pub(crate) const RESIDUAL_WEAK_ANCHORED: &[&str] = &[
-    "aerisweather-api-credentials",
-    "base-api-credentials",
-    "flickr-api-key",
-    "census-api-key",
-    "workato-api-credentials",
-    "adobe-api-key",
-    "alchemy-api-key",
-    "azure-openai-api-key",
-    "datadog-api-key",
-    "etherscan-api-key",
-    "spotify-client-credentials",
-    "bamboohr-api-key",
-    "calendly-api-key",
-    "crowdin-api-token",
-    "github-oauth-secret",
-    "sonarcloud-token",
-    "activecampaign-api-key",
-    "chef-automate-token",
-    "foundation-api-key",
-    "getresponse-api-key",
-    "rudder-api-token",
-];
-
 #[inline]
 pub(crate) fn is_generic_detector(detector_id: &str) -> bool {
     detector_id.starts_with(GENERIC_PREFIX)
@@ -106,9 +82,4 @@ pub(crate) fn is_private_key_block_detector(detector_id: &str) -> bool {
         detector_id,
         PRIVATE_KEY | SSH_PRIVATE_KEY | GITHUB_APP_PRIVATE_KEY
     )
-}
-
-#[inline]
-pub(crate) fn is_residual_weak_anchored(detector_id: &str) -> bool {
-    RESIDUAL_WEAK_ANCHORED.contains(&detector_id)
 }

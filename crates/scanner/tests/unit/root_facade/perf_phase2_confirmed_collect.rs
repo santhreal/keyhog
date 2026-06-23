@@ -193,8 +193,8 @@ fn weak_anchor_is_a_pure_function_of_the_spec() {
     let mut weak = 0usize;
     let mut strong = 0usize;
     for d in &detectors {
-        let a = detector_weak_anchor(d);
-        let b = detector_weak_anchor(d);
+        let a = detector_weak_anchor(d).expect("detector classification rules must be valid");
+        let b = detector_weak_anchor(d).expect("detector classification rules must be valid");
         assert_eq!(
             a, b,
             "detector_weak_anchor is non-deterministic for `{}` ({a} vs {b}) — the \
@@ -205,7 +205,7 @@ fn weak_anchor_is_a_pure_function_of_the_spec() {
         // spec, not of identity/address).
         let cloned = d.clone();
         assert_eq!(
-            detector_weak_anchor(&cloned),
+            detector_weak_anchor(&cloned).expect("detector classification rules must be valid"),
             a,
             "clone of `{}` classified differently — value is not spec-pure",
             d.id
@@ -240,7 +240,7 @@ fn weak_anchor_known_shapes() {
         None,
     );
     assert!(
-        !detector_weak_anchor(&generic),
+        !detector_weak_anchor(&generic).expect("detector classification rules must be valid"),
         "a generic-* detector is never weak-anchored"
     );
 
@@ -253,7 +253,7 @@ fn weak_anchor_known_shapes() {
         None,
     );
     assert!(
-        detector_weak_anchor(&weak),
+        detector_weak_anchor(&weak).expect("detector classification rules must be valid"),
         "a service-anchored detector with a broad identifier capture and no \
          min_confidence is weak-anchored"
     );
@@ -266,7 +266,7 @@ fn weak_anchor_known_shapes() {
         Some(0.5),
     );
     assert!(
-        !detector_weak_anchor(&pinned),
+        !detector_weak_anchor(&pinned).expect("detector classification rules must be valid"),
         "an explicit min_confidence floor removes the weak-anchor classification"
     );
 }

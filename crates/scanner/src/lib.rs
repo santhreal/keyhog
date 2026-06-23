@@ -83,6 +83,8 @@ pub mod decode;
 /// Decode-structure analysis: classify what a candidate base64/hex-decodes to
 /// (binary asset magic bytes, protobuf wire) so decode-through feeds scoring.
 pub(crate) mod decode_structure;
+pub(crate) mod detector_catalog;
+pub(crate) mod detector_classification;
 /// Canonical detector-id strings and scanner-side detector-family predicates.
 pub(crate) mod detector_ids;
 /// Core scan execution engine.
@@ -209,9 +211,7 @@ pub(crate) fn normalize_chunk_data(data: &str) -> Cow<'_, str> {
             out.push(ch);
         }
     }
-    normalized
-        .map(Cow::Owned)
-        .unwrap_or(Cow::Borrowed(data)) // LAW10: no evasion chars means the original scan text is byte-preserved.
+    normalized.map(Cow::Owned).unwrap_or(Cow::Borrowed(data)) // LAW10: no evasion chars means the original scan text is byte-preserved.
 }
 
 #[doc(hidden)]

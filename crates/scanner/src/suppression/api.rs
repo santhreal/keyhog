@@ -474,14 +474,6 @@ fn is_generic_or_entropy(detector_id: &str, weak_anchor: bool) -> bool {
     crate::detector_ids::is_generic_or_entropy_detector(detector_id) || weak_anchor
 }
 
-/// Detectors that are weakly anchored but NOT caught by the structural
-/// broad-identifier rule in [`detector_weak_anchor`], because their
-/// capture is pure-hex (`[a-f0-9]{32}` / `{40}`) - structurally identical
-/// to a legitimate hex API key such as `algolia-admin-api-key`, so shape
-/// alone cannot tell them apart - or a high-minimum broad identifier
-/// (`{20,}` / `{32}`). These were measured FP-prone on the SecretBench
-/// mirror corpus and so remain an explicit, corpus-derived data set rather
-/// than a structural derivation.
 /// Structurally classify whether a named detector is *weakly anchored*:
 /// it relies on a generic keyword anchor (`api_key=`, `token=`, …) with a
 /// capture that can collide with non-secrets, so the shape-suppression
@@ -495,22 +487,22 @@ fn is_generic_or_entropy(detector_id: &str, weak_anchor: bool) -> bool {
 /// `docs/EXECUTION_PLAN.md`: a `[a-zA-Z0-9_-]`-style capture with a small
 /// minimum length that matches any short identifier) is derived here; the
 /// pure-hex class, which is shape-indistinguishable from real hex keys,
-/// stays in [`RESIDUAL_WEAK_ANCHORED`].
-pub(crate) fn detector_weak_anchor(spec: &keyhog_core::DetectorSpec) -> bool {
+/// stays in `rules/detector-classification.toml`.
+pub(crate) fn detector_weak_anchor(spec: &keyhog_core::DetectorSpec) -> Result<bool, String> {
     let id = spec.id.as_str();
     if crate::detector_ids::is_generic_or_entropy_detector(id)
         || crate::detector_ids::is_private_key_fallback(id)
     {
-        return false;
+        return Ok(false);
     }
     if spec.min_confidence.is_some() {
-        return false;
+        return Ok(false);
     }
-    crate::detector_ids::is_residual_weak_anchored(id)
+    Ok(crate::detector_classification::is_residual_weak_anchor(id)?
         || spec
             .patterns
             .iter()
-            .any(|p| has_broad_identifier_capture(&p.regex))
+            .any(|p| has_broad_identifier_capture(&p.regex)))
 }
 
 /// True if `regex` contains a capture group whose entire body is a single

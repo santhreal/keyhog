@@ -1,0 +1,30 @@
+# Detector classification overrides.
+#
+# Schema:
+# - weak_anchor: detector ids whose regex captures are service-anchored but
+#   still structurally collide with generic values, so scanner suppression keeps
+#   generic shape gates active for them.
+
+weak_anchor = [
+  "aerisweather-api-credentials",
+  "base-api-credentials",
+  "flickr-api-key",
+  "census-api-key",
+  "workato-api-credentials",
+  "adobe-api-key",
+  "alchemy-api-key",
+  "azure-openai-api-key",
+  "datadog-api-key",
+  "etherscan-api-key",
+  "spotify-client-credentials",
+  "bamboohr-api-key",
+  "calendly-api-key",
+  "crowdin-api-token",
+  "github-oauth-secret",
+  "sonarcloud-token",
+  "activecampaign-api-key",
+  "chef-automate-token",
+  "foundation-api-key",
+  "getresponse-api-key",
+  "rudder-api-token",
+]
