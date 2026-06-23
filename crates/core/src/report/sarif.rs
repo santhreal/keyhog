@@ -92,6 +92,35 @@ impl<W: Write + Send> SarifReporter<W> {
 
     fn build_sarif_result(finding: &VerifiedFinding) -> SarifResult {
         let locations = vec![Self::location_to_sarif(&finding.location)];
+        let related_locations = Self::related_locations(finding);
+        let properties = Self::result_properties(finding);
+        let fixes = Self::result_fixes(finding);
+
+        SarifResult {
+            rule_id: finding.detector_id.to_string(),
+            level: Self::severity_to_level(finding.severity),
+            message: SarifMessage {
+                text: format!(
+                    "{} secret detected: {}",
+                    finding.service, finding.credential_redacted
+                ),
+                markdown: None,
+            },
+            locations,
+            properties: Some(properties),
+            related_locations: if related_locations.is_empty() {
+                None
+            } else {
+                Some(related_locations)
+            },
+            fixes,
+            partial_fingerprints: super::sarif_uri::credential_fingerprints(
+                &finding.credential_hash,
+            ),
+        }
+    }
+
+    fn related_locations(finding: &VerifiedFinding) -> Vec<SarifLocation> {
         // GitHub Code Scanning rejects SARIF whose `relatedLocations`
         // contains duplicate items. Some detector pipelines emit the
         // same location twice (e.g. a credential found via two rules
@@ -113,7 +142,10 @@ impl<W: Write + Send> SarifReporter<W> {
             })
             .map(Self::location_to_sarif)
             .collect();
+        related_locations
+    }
 
+    fn result_properties(finding: &VerifiedFinding) -> SarifResultProperties {
         // CWE / OWASP taxonomy. CWE-798 ("Use of Hard-coded Credentials") and
         // OWASP A07:2021 ("Identification and Authentication Failures") apply
         // to every secret-scanning finding by definition. Compliance dashboards
@@ -123,7 +155,7 @@ impl<W: Write + Send> SarifReporter<W> {
             &finding.service,
             finding.severity,
         );
-        let properties = SarifResultProperties {
+        SarifResultProperties {
             verification: format!("{:?}", finding.verification).to_lowercase(),
             confidence: finding.confidence.map(|confidence| {
                 if confidence.is_finite() {
@@ -143,14 +175,15 @@ impl<W: Write + Send> SarifReporter<W> {
                 .iter()
                 .map(|(key, value)| (format!("metadata.{key}"), value.to_string()))
                 .collect::<BTreeMap<_, _>>(),
-        };
+        }
+    }
 
+    fn result_fixes(finding: &VerifiedFinding) -> Option<Vec<SarifFix>> {
         // Auto-fix suggestion: replace the leaked credential with a
         // ${ENV_VAR_NAME} reference at the same physical location. We emit
         // this only when we have a file_path (no fix possible for stdin /
         // git-history-only findings) AND a line number.
-        let fixes = if let (Some(_), Some(line)) =
-            (finding.location.file_path.as_ref(), finding.location.line)
+        if let (Some(_), Some(line)) = (finding.location.file_path.as_ref(), finding.location.line)
         {
             let replacement = crate::auto_fix::fix_replacement_text(&finding.service);
             let env_name = crate::auto_fix::env_var_name_for_service(&finding.service);
@@ -186,40 +219,17 @@ impl<W: Write + Send> SarifReporter<W> {
             }])
         } else {
             None
-        };
-
-        SarifResult {
-            rule_id: finding.detector_id.to_string(),
-            level: Self::severity_to_level(finding.severity).to_string(),
-            message: SarifMessage {
-                text: format!(
-                    "{} secret detected: {}",
-                    finding.service, finding.credential_redacted
-                ),
-                markdown: None,
-            },
-            locations,
-            properties: Some(properties),
-            related_locations: if related_locations.is_empty() {
-                None
-            } else {
-                Some(related_locations)
-            },
-            fixes,
-            partial_fingerprints: super::sarif_uri::credential_fingerprints(
-                &finding.credential_hash,
-            ),
         }
     }
 
-    fn severity_to_level(severity: Severity) -> &'static str {
+    fn severity_to_level(severity: Severity) -> SarifLevel {
         match severity {
-            Severity::Critical => "error",
-            Severity::High => "error",
-            Severity::Medium => "warning",
-            Severity::Low => "note",
-            Severity::ClientSafe => "note",
-            Severity::Info => "note",
+            Severity::Critical => SarifLevel::Error,
+            Severity::High => SarifLevel::Error,
+            Severity::Medium => SarifLevel::Warning,
+            Severity::Low => SarifLevel::Note,
+            Severity::ClientSafe => SarifLevel::Note,
+            Severity::Info => SarifLevel::Note,
         }
     }
 
@@ -297,21 +307,21 @@ impl<W: Write + Send> SarifReporter<W> {
         if let Some(commit) = &loc.commit {
             logical_locations.push(SarifLogicalLocation {
                 name: commit.to_string(),
-                kind: "commit".to_string(),
+                kind: SarifLogicalLocationKind::Commit,
             });
         }
 
         if let Some(author) = &loc.author {
             logical_locations.push(SarifLogicalLocation {
                 name: author.to_string(),
-                kind: "author".to_string(),
+                kind: SarifLogicalLocationKind::Author,
             });
         }
 
         if let Some(date) = &loc.date {
             logical_locations.push(SarifLogicalLocation {
                 name: date.to_string(),
-                kind: "date".to_string(),
+                kind: SarifLogicalLocationKind::Date,
             });
         }
 
@@ -393,7 +403,7 @@ impl<W: Write + Send> Reporter for SarifReporter<W> {
                 .skip_summary
                 .iter()
                 .map(|(reason, count)| SarifNotification {
-                    level: "note",
+                    level: SarifLevel::Note,
                     message: SarifMessage {
                         text: format!("{count} coverage gap(s): {reason}"),
                         markdown: None,

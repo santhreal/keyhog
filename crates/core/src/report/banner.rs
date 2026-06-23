@@ -91,6 +91,21 @@ fn sample_gradient(t: f32) -> (u8, u8, u8) {
     lerp_color(GRADIENT[idx], GRADIENT[idx + 1], local_t)
 }
 
+fn write_gradient_char<W: Write>(
+    w: &mut W,
+    ch: char,
+    t: f32,
+    true_color: bool,
+) -> std::io::Result<()> {
+    let (r, g, b) = sample_gradient(t);
+    if true_color {
+        super::style::write_rgb_fg(w, ch, r, g, b)
+    } else {
+        let idx = 208 + ((t.clamp(0.0, 1.0) * 15.0) as u8).min(15);
+        super::style::write_ansi256_fg(w, ch, idx)
+    }
+}
+
 /// Given the `KEYHOLE_GRID`, pack each 2×4 cell into a braille character.
 /// Returns a `Vec` of rows, where each row is a `Vec<(char, f32)>`:
 /// the braille character and its normalized x-position for gradient lookup.
@@ -185,14 +200,7 @@ pub(crate) fn print_banner<W: Write>(
                 let vert_t = row_idx as f32 / braille_rows.len().max(1) as f32;
                 // Blend horizontal and vertical gradients (60% horizontal, 40% vertical)
                 let blended_t = t * 0.6 + vert_t * 0.4;
-                let (r, g, b) = sample_gradient(blended_t);
-
-                if true_color {
-                    super::style::write_rgb_fg(w, ch, r, g, b)?;
-                } else {
-                    let idx = 208 + ((blended_t * 15.0) as u8).min(15);
-                    super::style::write_ansi256_fg(w, ch, idx)?;
-                }
+                write_gradient_char(w, ch, blended_t, true_color)?;
             } else {
                 write!(w, "{ch}")?;
             }
@@ -218,13 +226,7 @@ pub(crate) fn print_banner<W: Write>(
         for (i, ch) in brand_chars.iter().enumerate() {
             if *ch != ' ' {
                 let t = i as f32 / width as f32;
-                let (r, g, b) = sample_gradient(t);
-                if true_color {
-                    super::style::write_rgb_fg(w, *ch, r, g, b)?;
-                } else {
-                    let idx = 208 + ((t * 15.0) as u8).min(15);
-                    super::style::write_ansi256_fg(w, *ch, idx)?;
-                }
+                write_gradient_char(w, *ch, t, true_color)?;
             } else {
                 write!(w, "{ch}")?;
             }

@@ -47,7 +47,7 @@ pub(super) struct SarifToolDriver {
 #[serde(rename_all = "camelCase")]
 pub(super) struct SarifResult {
     pub(super) rule_id: String,
-    pub(super) level: String,
+    pub(super) level: SarifLevel,
     pub(super) message: SarifMessage,
     pub(super) locations: Vec<SarifLocation>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -139,7 +139,23 @@ pub(super) struct SarifSnippet {
 #[serde(rename_all = "camelCase")]
 pub(super) struct SarifLogicalLocation {
     pub(super) name: String,
-    pub(super) kind: String,
+    pub(super) kind: SarifLogicalLocationKind,
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub(super) enum SarifLevel {
+    Error,
+    Warning,
+    Note,
+}
+
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub(super) enum SarifLogicalLocationKind {
+    Commit,
+    Author,
+    Date,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -190,7 +206,7 @@ pub(super) struct SarifInvocation {
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct SarifNotification {
-    pub(super) level: &'static str,
+    pub(super) level: SarifLevel,
     pub(super) message: SarifMessage,
     pub(super) descriptor: SarifNotificationDescriptor,
     pub(super) properties: SarifNotificationProperties,
