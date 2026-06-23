@@ -5,6 +5,7 @@ use super::{
     record_default_excluded_archive_entry,
 };
 use keyhog_core::{Chunk, ChunkMetadata, SourceError};
+use std::fmt::Display;
 use std::path::{Component, Path};
 
 pub(super) use super::report_archive_truncation;
@@ -221,6 +222,15 @@ pub(super) fn extract_openpack_archive(
                     "cannot list archive entries; skipping"
                 );
                 let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+                if !emit_archive_unreadable_error(
+                    emit,
+                    "archive",
+                    &archive_display,
+                    "cannot list archive entries",
+                    error,
+                ) {
+                    return;
+                }
             }
         },
         Err(error) => {
@@ -231,8 +241,29 @@ pub(super) fn extract_openpack_archive(
                 "cannot open archive; skipping"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            if !emit_archive_unreadable_error(
+                emit,
+                "archive",
+                &archive_display,
+                "cannot open archive",
+                error,
+            ) {
+                return;
+            }
         }
     }
+}
+
+pub(super) fn emit_archive_unreadable_error(
+    emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+    kind: &str,
+    path_display: &str,
+    action: &str,
+    error: impl Display,
+) -> bool {
+    emit(Err(SourceError::Other(format!(
+        "failed to scan {kind} '{path_display}': {action} ({error}); {kind} was not scanned"
+    ))))
 }
 
 pub(super) fn chunk_from_archive_content(

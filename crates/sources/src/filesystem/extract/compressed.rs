@@ -1,5 +1,6 @@
 //! Compressed stream and tar-container extraction for filesystem entries.
 
+use super::archive::emit_archive_unreadable_error;
 use super::{
     display_path, extraction_total_budget, extraction_total_budget_usize, is_symlink, read,
     record_binary_without_printable_strings, record_default_excluded_archive_entry,
@@ -132,6 +133,15 @@ pub(super) fn emit_tar_entries(
             // Law 10: the tar could not be enumerated => no entries scanned; count it.
             tracing::warn!(archive = %container_display, %error, "failed to read tar entries");
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            if !emit_archive_unreadable_error(
+                emit,
+                "tar archive",
+                container_display,
+                "failed to read tar entries",
+                error,
+            ) {
+                return;
+            }
             return;
         }
     };
@@ -291,6 +301,12 @@ pub(super) fn extract_compressed_chunks(
             // was NOT scanned. Count it as unreadable so the drop is surfaced.
             tracing::warn!(path = %path.display(), "failed to decompress file; skipping");
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            let path_display = display_path(path);
+            if !emit(Err(SourceError::Other(format!(
+                "failed to scan compressed file '{path_display}': failed to decompress file; compressed file was not scanned"
+            )))) {
+                return;
+            }
             return;
         }
     };

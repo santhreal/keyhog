@@ -1,17 +1,31 @@
-//! Zero-byte `.gz` wrapper must not panic gzip dispatch.
+//! Zero-byte `.gz` wrapper must fail loud while scan continues.
 
-use super::support::collect_chunks;
+use crate::support::split_chunk_results;
+use keyhog_core::Source;
 use keyhog_sources::FilesystemSource;
 
 #[test]
-fn zero_byte_gzip_no_panic() {
+fn zero_byte_gzip_fails_loud_and_scan_continues() {
     let dir = tempfile::tempdir().expect("tempdir");
     std::fs::write(dir.path().join("empty.gz"), []).expect("empty gz");
     std::fs::write(dir.path().join("side.txt"), "SIDE=ok\n").expect("side");
 
-    let bodies: Vec<String> = collect_chunks(&FilesystemSource::new(dir.path().to_path_buf()))
-        .into_iter()
-        .map(|c| c.data.to_string())
+    let rows: Vec<_> = FilesystemSource::new(dir.path().to_path_buf())
+        .chunks()
         .collect();
+    let (chunks, errors) = split_chunk_results(&rows);
+    let bodies: Vec<String> = chunks.iter().map(|c| c.data.to_string()).collect();
     assert!(bodies.iter().any(|b| b.contains("SIDE=ok")));
+    assert_eq!(
+        errors.len(),
+        1,
+        "zero-byte gzip must emit one visible source error"
+    );
+    let err = errors[0].to_string();
+    assert!(
+        err.contains("failed to scan compressed file")
+            && err.contains("failed to decompress file")
+            && err.contains("was not scanned"),
+        "zero-byte gzip error should name the coverage gap, got {err}"
+    );
 }

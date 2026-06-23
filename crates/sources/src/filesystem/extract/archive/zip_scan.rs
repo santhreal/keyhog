@@ -1,5 +1,6 @@
 use super::{
-    chunk_from_archive_content, report_archive_truncation, validate_scan_archive_entry_name,
+    chunk_from_archive_content, emit_archive_unreadable_error, report_archive_truncation,
+    validate_scan_archive_entry_name,
 };
 use crate::filesystem::filter;
 use keyhog_core::{Chunk, SourceError};
@@ -48,6 +49,15 @@ pub(super) fn extract_zip_archive(
                 "cannot open archive; skipping"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            if !emit_archive_unreadable_error(
+                emit,
+                "ZIP archive",
+                archive_display,
+                "cannot open archive",
+                error,
+            ) {
+                return;
+            }
             return;
         }
     };
@@ -60,6 +70,15 @@ pub(super) fn extract_zip_archive(
                 "cannot read zip archive directory; skipping"
             );
             let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+            if !emit_archive_unreadable_error(
+                emit,
+                "ZIP archive",
+                archive_display,
+                "cannot read zip archive directory",
+                error,
+            ) {
+                return;
+            }
             return;
         }
     };
