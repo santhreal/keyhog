@@ -1,11 +1,13 @@
 //! Command-line argument parsing for KeyHog.
 
+mod config;
 mod daemon;
 mod detectors;
 mod limits;
 mod maintenance;
 mod scan;
 
+pub use config::ConfigArgs;
 pub use daemon::{DaemonAction, DaemonArgs};
 pub use detectors::{DetectorArgs, DetectorFormat};
 pub use limits::SourceLimitArgs;
@@ -118,20 +120,6 @@ pub enum HookCommand {
     },
     /// Remove the KeyHog pre-commit hook from the current repository
     Uninstall,
-}
-
-#[derive(Parser)]
-pub struct ConfigArgs {
-    /// Print the resolved scan configuration and exit without scanning.
-    ///
-    /// Accepts the same config-affecting flags as `keyhog scan`, so operators
-    /// can prove the compiled defaults, TOML config, and CLI overrides that
-    /// would reach the scanner for the same scan invocation.
-    #[arg(long, required = true)]
-    pub effective: bool,
-
-    #[command(flatten)]
-    pub scan: ScanArgs,
 }
 
 #[derive(Parser)]
