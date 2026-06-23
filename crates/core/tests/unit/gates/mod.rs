@@ -29,6 +29,7 @@ pub mod hardening_no_filter_map_result_ok;
 pub mod hardening_no_inline_tests;
 pub mod hardening_no_unwrap_expect;
 pub mod hardening_non_empty;
+pub mod hyperscan_cache_header_single_owner;
 pub mod merkle_index_no_inline_tests;
 pub mod merkle_index_no_unwrap_expect;
 pub mod merkle_index_non_empty;

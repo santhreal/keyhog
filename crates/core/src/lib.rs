@@ -44,6 +44,7 @@ mod encoding;
 mod finding;
 /// Security hardening: memory zeroization and process isolation helpers.
 mod hardening;
+mod hyperscan_cache;
 /// Structured reporting (JSON, SARIF, Text).
 mod report;
 /// Safe absolute-path resolution for external binaries.
@@ -56,6 +57,10 @@ use std::borrow::Cow;
 mod registry;
 
 pub use api::*;
+pub use hyperscan_cache::{
+    HYPERSCAN_CACHE_HEADER_LEN, HYPERSCAN_CACHE_MAGIC, HYPERSCAN_CACHE_VERSION,
+    hyperscan_cache_header_is_valid, write_hyperscan_cache_header,
+};
 /// Auto-fix suggestion logic for SARIF output.
 mod auto_fix;
 /// Bayesian confidence calibration for detectors.

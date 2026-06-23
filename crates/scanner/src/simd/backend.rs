@@ -2,8 +2,8 @@ use hyperscan::{
     Block as BlockMode, BlockDatabase, Builder, Pattern, PatternFlags, Patterns, Scratch,
 };
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 mod scan;
 
@@ -39,8 +39,6 @@ const MAX_HS_PATTERN_LEN: usize = 500;
 const BASE_PATTERN_COST: u64 = 16;
 const RETRY_THRESHOLD: usize = 100;
 const RETRY_DROP_DIVISOR: usize = 10;
-const HS_CACHE_MAGIC: &[u8; 4] = b"KHHS";
-const HS_CACHE_VERSION: u32 = 1;
 const HS_CRATE_CACHE_VERSION: &[u8] = b"0.3.2";
 
 /// Hard cap for one serialized Hyperscan shard cache file. Cache files are
@@ -517,20 +515,21 @@ impl HsScanner {
     ) -> Option<BlockDatabase> {
         match read_hs_cache_file(cache_path) {
             Ok(Some(bytes)) => {
-                if bytes.len() > 8 && &bytes[0..4] == HS_CACHE_MAGIC {
-                    let cache_version = bytes[4..8].try_into().map(u32::from_le_bytes).unwrap_or(0); // LAW10: invalid cache header misses cache and recompiles the same patterns.
-                    if cache_version == HS_CACHE_VERSION {
-                        use hyperscan::Serialized;
-                        let payload: &[u8] = &bytes[8..];
-                        if let Ok(db) = payload.deserialize::<BlockMode>() {
-                            tracing::info!(
-                                cache = %cache_path.display(),
-                                shard = shard_idx,
-                                patterns = pattern_count,
-                                "HS shard loaded from cache"
-                            );
-                            return Some(db);
-                        }
+                if bytes.len() > keyhog_core::HYPERSCAN_CACHE_HEADER_LEN
+                    && keyhog_core::hyperscan_cache_header_is_valid(
+                        &bytes[..keyhog_core::HYPERSCAN_CACHE_HEADER_LEN],
+                    )
+                {
+                    use hyperscan::Serialized;
+                    let payload: &[u8] = &bytes[keyhog_core::HYPERSCAN_CACHE_HEADER_LEN..];
+                    if let Ok(db) = payload.deserialize::<BlockMode>() {
+                        tracing::info!(
+                            cache = %cache_path.display(),
+                            shard = shard_idx,
+                            patterns = pattern_count,
+                            "HS shard loaded from cache"
+                        );
+                        return Some(db);
                     }
                 }
             }
@@ -549,9 +548,9 @@ impl HsScanner {
 
     fn persist_cached_shard(db: &BlockDatabase, cache_path: &std::path::Path, shard_idx: usize) {
         if let Ok(ser) = db.serialize() {
-            let mut data = Vec::with_capacity(ser.as_ref().len() + 8);
-            data.extend_from_slice(HS_CACHE_MAGIC);
-            data.extend_from_slice(&HS_CACHE_VERSION.to_le_bytes());
+            let mut data =
+                Vec::with_capacity(ser.as_ref().len() + keyhog_core::HYPERSCAN_CACHE_HEADER_LEN);
+            keyhog_core::write_hyperscan_cache_header(&mut data);
             data.extend_from_slice(ser.as_ref());
             let parent = cache_path
                 .parent()

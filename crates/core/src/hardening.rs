@@ -29,12 +29,9 @@ use std::ffi::OsStr;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 
-const HYPERSCAN_CACHE_MAGIC: &[u8; 4] = b"KHHS";
-const HYPERSCAN_CACHE_VERSION: u32 = 1;
 const HYPERSCAN_CACHE_PREFIX: &str = "hs-";
 const HYPERSCAN_CACHE_SUFFIX: &str = ".db";
 const SHA256_HEX_LEN: usize = 64;
-const HYPERSCAN_CACHE_HEADER_LEN: usize = 8;
 
 /// Outcome of a hardening attempt - collected so callers can log which
 /// protections actually took.
@@ -395,12 +392,9 @@ fn compiled_pattern_cache_filename(name: &OsStr) -> bool {
 
 fn compiled_pattern_cache_header_is_valid(path: &Path) -> std::io::Result<bool> {
     let mut file = std::fs::File::open(path)?;
-    let mut header = [0_u8; HYPERSCAN_CACHE_HEADER_LEN];
+    let mut header = [0_u8; crate::HYPERSCAN_CACHE_HEADER_LEN];
     match file.read_exact(&mut header) {
-        Ok(()) => {
-            let version = u32::from_le_bytes([header[4], header[5], header[6], header[7]]);
-            Ok(&header[..4] == HYPERSCAN_CACHE_MAGIC && version == HYPERSCAN_CACHE_VERSION)
-        }
+        Ok(()) => Ok(crate::hyperscan_cache_header_is_valid(&header)),
         Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
         Err(error) => Err(error),
     }
