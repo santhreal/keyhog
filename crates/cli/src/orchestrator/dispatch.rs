@@ -19,6 +19,45 @@ use keyhog_core::{RawMatch, Source};
 use std::sync::Arc;
 use std::time::Instant;
 
+const COALESCED_BATCH_CHUNK_LIMIT: usize = 4096;
+const COALESCED_PIPELINE_MAX_DEPTH: usize = 3;
+
+#[derive(Debug, Clone, Copy)]
+struct CoalescedPipelinePlan {
+    batch_chunk_limit: usize,
+    batch_bytes_budget: usize,
+    pipeline_depth: usize,
+}
+
+fn coalesced_pipeline_plan() -> CoalescedPipelinePlan {
+    let engine_cap = keyhog_scanner::megascan_input_len();
+    let caps = keyhog_scanner::hw_probe::probe_hardware();
+    let total_ram_bytes = caps
+        .total_memory_mb
+        .map(|mb| (mb as usize) * 1024 * 1024)
+        .unwrap_or(0); // LAW10: empty/absent => documented numeric default, recall-safe
+    // Pipeline depth is derived below from the same hardware probe. Assume the
+    // max depth for the headroom clamp so worst-case resident memory remains
+    // under 1/8 of system RAM even on big-VRAM cards.
+    let headroom_cap = total_ram_bytes / (8 * COALESCED_PIPELINE_MAX_DEPTH);
+    let batch_bytes_budget = if headroom_cap == 0 {
+        engine_cap
+    } else {
+        engine_cap.min(headroom_cap)
+    };
+    let pipeline_depth = match caps.total_memory_mb {
+        Some(mb) if mb >= 32 * 1024 => 3,
+        Some(mb) if mb >= 16 * 1024 => 2,
+        _ => 1,
+    };
+
+    CoalescedPipelinePlan {
+        batch_chunk_limit: COALESCED_BATCH_CHUNK_LIMIT,
+        batch_bytes_budget,
+        pipeline_depth,
+    }
+}
+
 impl ScanOrchestrator {
     pub(crate) fn scan_sources(
         &self,
@@ -60,7 +99,6 @@ impl ScanOrchestrator {
             None
         };
 
-        const BATCH_CHUNK_LIMIT: usize = 4096;
         // Bytes budget per coalesced batch. Sized to match the
         // engine's `megascan_input_len()` (the pre-compiled
         // `RulePipeline` input cap) so the GPU dispatch never
@@ -78,23 +116,7 @@ impl ScanOrchestrator {
         // (still well over the dispatch breakeven for any card big
         // enough to want the bigger buffer) than to break the
         // memory-safety invariant.
-        let batch_bytes_budget: usize = {
-            let engine_cap = keyhog_scanner::megascan_input_len();
-            let total_ram_bytes = keyhog_scanner::hw_probe::probe_hardware()
-                .total_memory_mb
-                .map(|mb| (mb as usize) * 1024 * 1024)
-                .unwrap_or(0); // LAW10: empty/absent => documented numeric default, recall-safe
-            // Pipeline depth here is still being computed below, so
-            // assume the max (3) for the headroom clamp. Worst case
-            // is the orchestrator picking depth=1 and only using a
-            // third of the headroom - safe in the under-direction.
-            let headroom_cap = total_ram_bytes / (8 * 3);
-            if headroom_cap == 0 {
-                engine_cap
-            } else {
-                engine_cap.min(headroom_cap)
-            }
-        };
+        let pipeline_plan = coalesced_pipeline_plan();
         // Producer/scanner pipeline depth. Each in-flight batch holds up
         // to `batch_bytes_budget` (256 MiB default, up to 1 GiB on
         // big-VRAM cards) of coalesced chunks, so the worst-case
@@ -117,23 +139,15 @@ impl ScanOrchestrator {
         // The peak resident is now `depth × batch_bytes_budget`, where
         // batch_bytes_budget is itself capped at RAM/24 above, so even
         // depth=3 cannot push us past 1/8 of system RAM.
-        let pipeline_depth: usize = {
-            let caps = keyhog_scanner::hw_probe::probe_hardware();
-            match caps.total_memory_mb {
-                Some(mb) if mb >= 32 * 1024 => 3,
-                Some(mb) if mb >= 16 * 1024 => 2,
-                _ => 1,
-            }
-        };
-
         let scanner = Arc::clone(&self.scanner);
-        let (tx, rx) = std::sync::mpsc::sync_channel::<Vec<keyhog_core::Chunk>>(pipeline_depth);
+        let (tx, rx) =
+            std::sync::mpsc::sync_channel::<Vec<keyhog_core::Chunk>>(pipeline_plan.pipeline_depth);
 
         tracing::debug!(
             target: "keyhog::routing",
-            pipeline_depth,
-            batch_bytes_budget,
-            batch_chunk_limit = BATCH_CHUNK_LIMIT,
+            pipeline_depth = pipeline_plan.pipeline_depth,
+            batch_bytes_budget = pipeline_plan.batch_bytes_budget,
+            batch_chunk_limit = pipeline_plan.batch_chunk_limit,
             "scan dispatch pipeline sized"
         );
 
@@ -299,7 +313,8 @@ impl ScanOrchestrator {
             },
         );
 
-        let mut batch: Vec<keyhog_core::Chunk> = Vec::with_capacity(BATCH_CHUNK_LIMIT);
+        let mut batch: Vec<keyhog_core::Chunk> =
+            Vec::with_capacity(pipeline_plan.batch_chunk_limit);
         let mut batch_bytes: usize = 0;
         let mut skipped_unchanged = 0usize;
         let mut pipeline_alive = true;
@@ -349,7 +364,9 @@ impl ScanOrchestrator {
                         batch.push(c);
                         batch_bytes += len;
                         crate::TOTAL_CHUNKS.fetch_add(1, Ordering::Relaxed);
-                        if batch.len() >= BATCH_CHUNK_LIMIT || batch_bytes >= batch_bytes_budget {
+                        if batch.len() >= pipeline_plan.batch_chunk_limit
+                            || batch_bytes >= pipeline_plan.batch_bytes_budget
+                        {
                             send_batch(&mut batch, &mut batch_bytes, &mut pipeline_alive);
                             if !pipeline_alive {
                                 break 'sources;
