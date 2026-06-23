@@ -75,8 +75,9 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
         extract.contains("let mut buf = [0u8; 256]")
             && extract.contains("read::read_file_prefix_safe(&path, &mut buf)")
             && extract.contains("read::looks_binary_prefix(head)")
-            && !extract.contains("if let Ok(mut f) = std::fs::File::open(&path)"),
-        "extensionless header sniff must use a bounded stack buffer plus the shared binary-prefix verdict and no-follow prefix reader, not symlink-following File::open"
+            && extract.contains("match read::open_file_safe(&path)")
+            && !extract.contains("std::fs::File::open(&path)"),
+        "extensionless header sniff and large-file fallback must use bounded/no-follow shared readers, not symlink-following File::open"
     );
     assert!(
         extract

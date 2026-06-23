@@ -367,7 +367,7 @@ pub(super) fn process_entry(
             }
             return;
         }
-        match std::fs::File::open(&path) {
+        match read::open_file_safe(&path) {
             Ok(mut file) => {
                 let mut current_offset = 0;
                 // Newlines in the file before `current_offset` - the absolute
