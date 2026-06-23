@@ -276,6 +276,20 @@ pub(crate) fn generic_entropy_below_floor(
     entropy < generic_entropy_floor(entropy_threshold, detector_id, credential_len)
 }
 
+pub(crate) fn generic_bridge_entropy_below_floor(
+    entropy: f64,
+    entropy_threshold: f64,
+    generic_keyword_low_entropy: bool,
+    credential_len: usize,
+) -> bool {
+    let detector_id = if generic_keyword_low_entropy {
+        crate::detector_ids::GENERIC_KEYWORD_SECRET
+    } else {
+        crate::detector_ids::GENERIC_SECRET
+    };
+    generic_entropy_below_floor(entropy, entropy_threshold, detector_id, credential_len)
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub(crate) struct MatchCtx<'a> {
     explicit_stage: Option<StageId>,

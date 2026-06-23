@@ -55,15 +55,10 @@ impl CompiledScanner {
             return Some(GenericValueShapeStage::CaesarGenericFallback);
         }
 
-        let floor_id = if self.config.generic_keyword_low_entropy {
-            crate::detector_ids::GENERIC_KEYWORD_SECRET
-        } else {
-            crate::detector_ids::GENERIC_SECRET
-        };
-        if crate::adjudicate::generic_entropy_below_floor(
+        if crate::adjudicate::generic_bridge_entropy_below_floor(
             entropy,
             self.config.entropy_threshold,
-            floor_id,
+            self.config.generic_keyword_low_entropy,
             value.len(),
         ) {
             return Some(GenericValueShapeStage::EntropyBelowFloor);
