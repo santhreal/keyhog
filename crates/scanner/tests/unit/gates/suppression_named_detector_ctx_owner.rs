@@ -159,6 +159,7 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
 fn generic_bridge_suppression_reasons_route_through_adjudicator() {
     let src = scanner_src();
     let generic = uncommented_code(&read(&src.join("engine/phase2_generic.rs")));
+    let generic_shape = uncommented_code(&read(&src.join("engine/phase2_generic_shape.rs")));
     let adjudicate = uncommented_code(&read(&src.join("adjudicate/mod.rs")));
 
     assert!(
@@ -195,6 +196,38 @@ fn generic_bridge_suppression_reasons_route_through_adjudicator() {
         assert!(
             !generic.contains(forbidden),
             "engine/phase2_generic.rs must not name generic suppression stages directly: {forbidden}"
+        );
+    }
+    for reason in [
+        "caesar_generic_fallback",
+        "generic_entropy_below_floor",
+        "value_too_short",
+        "code_expression_chars",
+        "source_code_expression",
+        "source_symbol_identifier",
+        "scope_resolution",
+        "type_name_shape",
+        "non_jwt_dotted",
+        "pure_identifier_no_digit",
+        "pure_identifier",
+        "word_separated_identifier",
+        "scheme_prefixed_uri",
+        "punctuation_decorated_identifier",
+        "url_or_path_segment",
+        "vendored_minified_path",
+        "regex_literal_tail",
+        "base64_blob",
+        "trimmed_aws_arn",
+        "encoded_binary",
+        "random_byte_blob",
+    ] {
+        assert!(
+            !generic_shape.contains(&format!("\"{reason}\"")),
+            "engine/phase2_generic_shape.rs must not own the {reason} suppression reason"
+        );
+        assert!(
+            adjudicate.contains(&format!("\"{reason}\"")),
+            "adjudicate/mod.rs must own the {reason} suppression reason"
         );
     }
 }

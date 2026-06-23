@@ -1,7 +1,7 @@
 use crate::adjudicate::{
     adjudicate_match, CandidateMatch, EntropyFallbackSignal, EntropyGenerationSignal,
-    EntropyShapeStage, FinalEmitSignals, GenericBridgeSignal, HotPatternSignal, MatchCtx,
-    ProcessCandidateSignals, StageId, Verdict,
+    EntropyShapeStage, FinalEmitSignals, GenericBridgeSignal, GenericValueShapeStage,
+    HotPatternSignal, MatchCtx, ProcessCandidateSignals, StageId, Verdict,
 };
 use crate::context::CodeContext;
 use crate::suppression::NamedDetectorSuppressionCtx;
@@ -227,16 +227,15 @@ fn generic_bridge_stage_reports_bare_auth_unstructured() {
 #[test]
 fn generic_bridge_stage_reports_value_shape_reason() {
     let credential = "DUMMY_TOKEN_VALUE_abc123def456";
-    let ctx = MatchCtx::for_generic_bridge(GenericBridgeSignal::ValueShape(
-        "known_example_or_placeholder",
-    ));
+    let stage = GenericValueShapeStage::SharedSuppression("known_example_or_placeholder");
+    let ctx = MatchCtx::for_generic_bridge(GenericBridgeSignal::ValueShape(stage));
 
     assert_eq!(
         adjudicate_match(CandidateMatch::new(credential), &ctx),
-        Verdict::Suppressed(StageId::GenericValueShape("known_example_or_placeholder"))
+        Verdict::Suppressed(StageId::GenericValueShape(stage))
     );
     assert_eq!(
-        StageId::GenericValueShape("known_example_or_placeholder").as_str(),
+        StageId::GenericValueShape(stage).as_str(),
         "known_example_or_placeholder"
     );
 }

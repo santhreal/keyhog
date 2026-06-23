@@ -6,14 +6,15 @@
 //! (identifier / type-name / uri / base64-blob / encoded-binary / placeholder
 //! families), naming the firing gate, else `None`. Behaviour-identical to the
 //! former inline gauntlet — every gate is verbatim, each `continue` became
-//! `return Some("<gate>")` (KH-L-0412: the name feeds the `--dogfood`
-//! suppression trace; the caller records it, the predicate stays pure). Recall is
-//! guarded by the generic-secret bench gates. The three `generic_path_looks_like_*`
-//! helpers (the gauntlet's only callers) move with it.
+//! `return Some(GenericValueShapeStage::...)` (KH-L-0412: the name feeds the
+//! `--dogfood` suppression trace; the caller records it, the predicate stays
+//! pure). Recall is guarded by the generic-secret bench gates. The three
+//! `generic_path_looks_like_*` helpers (the gauntlet's only callers) move with it.
 use super::phase2_generic::shape_helpers::{
     generic_path_allows_ambiguous_base64_candidate, generic_path_looks_like_random_base64_blob,
 };
 use super::*;
+use crate::adjudicate::GenericValueShapeStage;
 
 /// KH-L-0413: the identifier/type-name cluster (`pure_identifier_no_digit` /
 /// `pure_identifier` / `type_name_shape` / `word_separated_identifier`) drops
@@ -31,10 +32,10 @@ use crate::suppression::token_randomness::{
 impl CompiledScanner {
     /// `Some(gate)` iff a generic-secret candidate `value` (with precomputed
     /// `entropy`) is rejected by a precision shape gate — the returned
-    /// `&'static str` names the FIRING gate (for the `--dogfood` suppression
-    /// trace); `None` means the value passes every gate. Pure: reads `value`,
-    /// `entropy`, `chunk` metadata and `self.config` only — no side effects, no
-    /// emission (the caller, `scan_generic_assignments`, records the telemetry).
+    /// stage names the FIRING gate (for the `--dogfood` suppression trace);
+    /// `None` means the value passes every gate. Pure: reads `value`, `entropy`,
+    /// `chunk` metadata and `self.config` only — no side effects, no emission
+    /// (the caller, `scan_generic_assignments`, records the telemetry).
     ///
     /// KH-L-0412: this gauntlet was the last SILENT suppression path — the caller
     /// did `if generic_value_shape_rejected(..) { continue }` with no telemetry,
@@ -53,9 +54,9 @@ impl CompiledScanner {
         // the bare-hex-digest gate ONLY (every other shape gate here still runs).
         allow_canonical_hex_key: bool,
         allow_encoded_text_secret: bool,
-    ) -> Option<&'static str> {
+    ) -> Option<GenericValueShapeStage> {
         if chunk.metadata.source_type.contains("/caesar") {
-            return Some("caesar_generic_fallback");
+            return Some(GenericValueShapeStage::CaesarGenericFallback);
         }
 
         // Keyword-anchored values use the relaxed `generic-keyword-secret`
@@ -76,12 +77,12 @@ impl CompiledScanner {
             value.len(),
         );
         if entropy < min_entropy {
-            return Some("generic_entropy_below_floor");
+            return Some(GenericValueShapeStage::EntropyBelowFloor);
         }
 
         // Length gate
         if value.len() < 8 {
-            return Some("value_too_short");
+            return Some(GenericValueShapeStage::ValueTooShort);
         }
         let randomness = TokenRandomness::for_candidate(value);
         let allow_ambiguous_base64_candidate =
@@ -93,14 +94,14 @@ impl CompiledScanner {
             crate::suppression::shape::PublicShapeScope::Full,
             &randomness,
         ) {
-            return Some(reason);
+            return Some(GenericValueShapeStage::SharedShape(reason));
         }
 
         // Variable-name filter: real secrets have mixed character classes.
         // Reject code expressions and whitespace-bearing labels before they
         // can be scored as keyword-anchored generic credentials.
         if value.contains(' ') {
-            return Some("code_expression_chars");
+            return Some(GenericValueShapeStage::CodeExpressionChars);
         }
         if !high_entropy_punctuation_payload
             && crate::suppression::shape::looks_like_source_code_expression_with_randomness(
@@ -108,7 +109,7 @@ impl CompiledScanner {
                 &randomness,
             )
         {
-            return Some("source_code_expression");
+            return Some(GenericValueShapeStage::SourceCodeExpression);
         }
         if crate::decode::caesar::is_source_code_path(chunk.metadata.path.as_deref())
             && crate::suppression::shape::looks_like_source_symbol_identifier_with_randomness(
@@ -116,7 +117,7 @@ impl CompiledScanner {
                 &randomness,
             )
         {
-            return Some("source_symbol_identifier");
+            return Some(GenericValueShapeStage::SourceSymbolIdentifier);
         }
         // C++ / Rust scope-resolution (`Class::Member`, `Etc::passwd`,
         // `PrivateKey::<T>`) is the dominant generic-secret FP class
@@ -133,7 +134,7 @@ impl CompiledScanner {
         //     shape).  Real sha256 / git-blob digests never have
         //     `::`, so this never weakens digest recall.
         if value.starts_with(':') || value.contains("::") {
-            return Some("scope_resolution");
+            return Some(GenericValueShapeStage::ScopeResolution);
         }
         // Type-name / fully-qualified-path shape: starts with an
         // uppercase letter, has ≥ 2 uppercase letters, has lowercase
@@ -154,7 +155,7 @@ impl CompiledScanner {
             && value.bytes().filter(u8::is_ascii_uppercase).count() >= 2
             && value.bytes().any(|b| b.is_ascii_lowercase())
         {
-            return Some("type_name_shape");
+            return Some(GenericValueShapeStage::TypeNameShape);
         }
         // Allow dots ONLY in structured token patterns (exactly 2 dots
         // separating base64 segments). Reject other dotted values (method
@@ -174,7 +175,7 @@ impl CompiledScanner {
         // 27-38 base64url chars. Keep that exact length profile alive while
         // leaving property access suppressed.
         if value.contains('.') && !crate::suppression::shape::is_structured_dotted_token(value) {
-            return Some("non_jwt_dotted");
+            return Some(GenericValueShapeStage::NonJwtDotted);
         }
         // Reject pure identifiers: only alphanumeric + underscore
         if value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
@@ -185,7 +186,7 @@ impl CompiledScanner {
             if keep_identifier_gate_with_randomness(value, &randomness)
                 && !(has_digit && (has_upper || has_lower))
             {
-                return Some("pure_identifier_no_digit");
+                return Some(GenericValueShapeStage::PureIdentifierNoDigit);
             }
         }
         // Kebab-case / snake-case identifier shape: same filter the
@@ -197,7 +198,7 @@ impl CompiledScanner {
         if keep_identifier_gate_with_randomness(value, &randomness)
             && crate::suppression::shape::looks_like_pure_identifier(value)
         {
-            return Some("pure_identifier");
+            return Some(GenericValueShapeStage::PureIdentifier);
         }
         // Word-separated identifier with embedded digits. The stricter
         // context-aware gate owns the acronym/product-key carve-out and the
@@ -205,14 +206,14 @@ impl CompiledScanner {
         if keep_word_separated_gate_with_randomness(value, &randomness)
             && crate::suppression::shape::looks_like_word_separated_identifier(value)
         {
-            return Some("word_separated_identifier");
+            return Some(GenericValueShapeStage::WordSeparatedIdentifier);
         }
         // Scheme-prefixed URI / URN: `urn:shopify:params:oauth:...`,
         // `secret-token:<base64>` (bat-go merchant README). Documented
         // OAuth grant types and protocol URIs that the regex captures
         // via the trailing `token-type:...token` keyword.
         if crate::suppression::shape::looks_like_scheme_prefixed_uri(value) {
-            return Some("scheme_prefixed_uri");
+            return Some(GenericValueShapeStage::SchemePrefixedUri);
         }
         // Punctuation-decorated identifier: `--api-secret` (CLI flag),
         // `&gss_recv_token` (C pointer), `@v_password` (SQL bind),
@@ -221,7 +222,7 @@ impl CompiledScanner {
         if !high_entropy_punctuation_payload
             && crate::suppression::shape::looks_like_punctuation_decorated_identifier(value)
         {
-            return Some("punctuation_decorated_identifier");
+            return Some(GenericValueShapeStage::PunctuationDecoratedIdentifier);
         }
         // URL / path-fragment shape: `user/settings/password` (gogs
         // template constants), `user/auth/forgot_passwd` (gogs auth
@@ -234,14 +235,14 @@ impl CompiledScanner {
         if !high_entropy_long_punctuation_payload
             && crate::suppression::shape::looks_like_url_or_path_segment(value)
         {
-            return Some("url_or_path_segment");
+            return Some(GenericValueShapeStage::UrlOrPathSegment);
         }
         // Vendored 3rd-party minified bundle: drop generic-secret
         // hits in vendored codemirror/pdfjs/wp-includes/etc. paths.
         if crate::suppression::path_filter::looks_like_vendored_minified_path(
             chunk.metadata.path.as_deref(),
         ) {
-            return Some("vendored_minified_path");
+            return Some(GenericValueShapeStage::VendoredMinifiedPath);
         }
         // Regex-literal suppression: the fast-path hot patterns and
         // generic-secret regex sometimes capture rules being defined
@@ -253,7 +254,7 @@ impl CompiledScanner {
         // 3 hot-aws_session_key / hot-slack_bot_token findings on
         // its own regex definitions.
         if crate::suppression::shape::looks_like_regex_literal_tail(value) {
-            return Some("regex_literal_tail");
+            return Some(GenericValueShapeStage::RegexLiteralTail);
         }
 
         // Standard-base64-arbitrary-bytes suppression for generic
@@ -272,7 +273,7 @@ impl CompiledScanner {
             && !allow_encoded_text_secret
             && generic_path_looks_like_random_base64_blob(value, entropy)
         {
-            return Some("base64_blob");
+            return Some(GenericValueShapeStage::Base64Blob);
         }
 
         // ARN-without-prefix suppression for generic path.
@@ -287,7 +288,7 @@ impl CompiledScanner {
         // dedicated trimmed-prefix gate catches it without
         // weakening the global gate.
         if crate::suppression::shape::looks_like_trimmed_aws_iam_arn(value) {
-            return Some("trimmed_aws_arn");
+            return Some(GenericValueShapeStage::TrimmedAwsArn);
         }
 
         // Placeholder suppression. NOTE: the credential-anchor variant
@@ -313,7 +314,7 @@ impl CompiledScanner {
         if let Some(stage_id) =
             crate::suppression::api::suppress_known_example_credential_stage(value, example_ctx)
         {
-            return Some(stage_id.as_str());
+            return Some(GenericValueShapeStage::SharedSuppression(stage_id.as_str()));
         }
         // Decoded-form placeholder check: a docs sample that arrives
         // base64-wrapped (e.g. QUtJQUVYQU1QTEVFWEFNUExFMTI= which
@@ -329,13 +330,13 @@ impl CompiledScanner {
         if crate::decode_structure::decoded_contains_placeholder(value)
             && !allow_decoded_hex_key_material
         {
-            return Some("decoded_placeholder");
+            return Some(GenericValueShapeStage::DecodedPlaceholder);
         }
         if let Some(reason) = crate::suppression::decision::decoded_benign_text_reason(value) {
             if reason == "decoded_placeholder" && allow_decoded_hex_key_material {
                 return None;
             }
-            return Some(reason);
+            return Some(GenericValueShapeStage::DecodedBenignText(reason));
         }
         // Decode-through binary suppression: a generic high-entropy
         // candidate that base64/hex-decodes to identifiable binary
@@ -346,7 +347,7 @@ impl CompiledScanner {
             && !allow_encoded_text_secret
             && crate::decode_structure::is_encoded_binary(value)
         {
-            return Some("encoded_binary");
+            return Some(GenericValueShapeStage::EncodedBinary);
         }
         // Random-byte base64 decoy suppression (generic path only).
         // `is_encoded_binary` above only fires on bytes that carry a
@@ -374,7 +375,7 @@ impl CompiledScanner {
             && !allow_encoded_text_secret
             && crate::suppression::shape::looks_like_random_byte_base64_blob(value)
         {
-            return Some("random_byte_blob");
+            return Some(GenericValueShapeStage::RandomByteBlob);
         }
         None
     }
