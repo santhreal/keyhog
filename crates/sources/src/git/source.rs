@@ -4,7 +4,7 @@
 use std::collections::{HashSet, VecDeque};
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{ChildStdout, Command};
 
 use gix::objs::Kind;
 use keyhog_core::{Chunk, ChunkMetadata, Source, SourceError};
@@ -206,42 +206,105 @@ impl Source for GitSource {
     }
 }
 
+struct GitCommitEnumerator {
+    repo_arg: String,
+    max_commits: Option<usize>,
+    log_child: super::GitChild,
+    log_lines: std::io::Lines<std::io::BufReader<ChildStdout>>,
+    log_done: bool,
+    unreachable_loaded: bool,
+    unreachable_commits: VecDeque<gix::ObjectId>,
+}
+
+impl GitCommitEnumerator {
+    fn new(repo_arg: String, max_commits: Option<usize>) -> Result<Self, SourceError> {
+        // Get commit hashes from refs plus reflogs. `--all` alone misses deleted
+        // branch reflog commits on current Git, and it also misses refs/stash on
+        // some versions, so stash is added explicitly when present.
+        let mut log_cmd = Command::new(super::git_bin()?);
+        log_cmd.args([
+            "-C",
+            &repo_arg,
+            "log",
+            "--reflog",
+            "--all",
+            "--date-order",
+            "-m", // emit patches for merge commits ("evil merges")
+            "--format=%H",
+        ]);
+        if let Some(limit) = max_commits {
+            log_cmd.args(["--max-count", &limit.to_string()]);
+        }
+        log_cmd.arg("--end-of-options");
+        if git_ref_exists(&repo_arg, "refs/stash")? {
+            log_cmd.arg("refs/stash");
+        }
+
+        log_cmd.stdout(std::process::Stdio::piped());
+        log_cmd.stderr(std::process::Stdio::piped());
+        let mut log_child = super::spawn_git_child(log_cmd)?;
+        let log_stdout = log_child
+            .take_stdout()
+            .ok_or_else(|| SourceError::Io(std::io::Error::other("missing log stdout")))?;
+        let log_lines = std::io::BufReader::new(log_stdout).lines();
+
+        Ok(Self {
+            repo_arg,
+            max_commits,
+            log_child,
+            log_lines,
+            log_done: false,
+            unreachable_loaded: false,
+            unreachable_commits: VecDeque::new(),
+        })
+    }
+
+    fn next_id(&mut self, seen_commit_count: usize) -> Result<Option<gix::ObjectId>, SourceError> {
+        loop {
+            if let Some(id) = self.unreachable_commits.pop_front() {
+                return Ok(Some(id));
+            }
+            if !self.log_done {
+                match self.log_lines.next() {
+                    Some(Ok(line)) => {
+                        if let Some(id) = parse_commit_id_line(&line)? {
+                            return Ok(Some(id));
+                        }
+                        continue;
+                    }
+                    Some(Err(error)) => return Err(SourceError::Io(error)),
+                    None => {
+                        self.log_done = true;
+                        super::wait_for_git_child(
+                            &mut self.log_child,
+                            "git log",
+                            "enumerating git commits",
+                        )?;
+                        continue;
+                    }
+                }
+            }
+            if !self.unreachable_loaded {
+                self.unreachable_loaded = true;
+                let remaining = self
+                    .max_commits
+                    .map(|limit| limit.saturating_sub(seen_commit_count));
+                self.unreachable_commits =
+                    collect_unreachable_commit_ids(&self.repo_arg, remaining)?;
+                continue;
+            }
+            return Ok(None);
+        }
+    }
+}
+
 fn stream_git_blobs(
     repo_path: &Path,
     max_commits: Option<usize>,
     limits: crate::SourceLimits,
 ) -> Result<impl Iterator<Item = Result<Chunk, SourceError>>, SourceError> {
     let repo_arg = super::validate_repo_path(repo_path)?;
-
-    // Get commit hashes from refs plus reflogs. `--all` alone misses deleted
-    // branch reflog commits on current Git, and it also misses refs/stash on
-    // some versions, so stash is added explicitly when present.
-    let mut log_cmd = Command::new(super::git_bin()?);
-    log_cmd.args([
-        "-C",
-        &repo_arg,
-        "log",
-        "--reflog",
-        "--all",
-        "--date-order",
-        "-m", // emit patches for merge commits ("evil merges")
-        "--format=%H",
-    ]);
-    if let Some(limit) = max_commits {
-        log_cmd.args(["--max-count", &limit.to_string()]);
-    }
-    log_cmd.arg("--end-of-options");
-    if git_ref_exists(&repo_arg, "refs/stash")? {
-        log_cmd.arg("refs/stash");
-    }
-
-    log_cmd.stdout(std::process::Stdio::piped());
-    log_cmd.stderr(std::process::Stdio::piped());
-    let mut log_child = super::spawn_git_child(log_cmd)?;
-    let log_stdout = log_child
-        .take_stdout()
-        .ok_or_else(|| SourceError::Io(std::io::Error::other("missing log stdout")))?;
-    let mut log_lines = std::io::BufReader::new(log_stdout).lines();
+    let mut commit_ids = GitCommitEnumerator::new(repo_arg.clone(), max_commits)?;
 
     // Open the gix repo ONCE and reuse it for every commit. The previous
     // version called `gix::open(&repo_owned)` per-commit which on a 10k-commit
@@ -265,9 +328,6 @@ fn stream_git_blobs(
     let mut seen_commits: HashSet<gix::ObjectId> = HashSet::new();
     let mut total_bytes = 0usize;
     let mut chunk_count = 0usize;
-    let mut log_done = false;
-    let mut unreachable_loaded = false;
-    let mut unreachable_commits: VecDeque<gix::ObjectId> = VecDeque::new();
     let mut done = false;
     let mut aggregate_cap_reported = false;
 
@@ -287,55 +347,16 @@ fn stream_git_blobs(
                 return error.map(Err);
             }
 
-            let id = if let Some(id) = unreachable_commits.pop_front() {
-                id
-            } else if !log_done {
-                match log_lines.next() {
-                    Some(Ok(line)) => match parse_commit_id_line(&line) {
-                        Ok(Some(id)) => id,
-                        Ok(None) => continue,
-                        Err(error) => {
-                            done = true;
-                            return Some(Err(error));
-                        }
-                    },
-                    Some(Err(e)) => {
-                        done = true;
-                        return Some(Err(SourceError::Io(e)));
-                    }
-                    None => {
-                        log_done = true;
-                        if let Err(error) = super::wait_for_git_child(
-                            &mut log_child,
-                            "git log",
-                            "enumerating git commits",
-                        ) {
-                            done = true;
-                            return Some(Err(error));
-                        }
-                        continue;
-                    }
+            let id = match commit_ids.next_id(seen_commits.len()) {
+                Ok(Some(id)) => id,
+                Ok(None) => {
+                    done = true;
+                    return None;
                 }
-            } else if !unreachable_loaded {
-                let remaining = max_commits.map(|limit| limit.saturating_sub(seen_commits.len()));
-                unreachable_loaded = true;
-                match collect_unreachable_commit_ids(&repo_arg, remaining) {
-                    Ok(ids) => unreachable_commits = ids,
-                    Err(error) => {
-                        done = true;
-                        return Some(Err(error));
-                    }
+                Err(error) => {
+                    done = true;
+                    return Some(Err(error));
                 }
-                match unreachable_commits.pop_front() {
-                    Some(id) => id,
-                    None => {
-                        done = true;
-                        return None;
-                    }
-                }
-            } else {
-                done = true;
-                return None;
             };
 
             let repo = &repo_handle;

@@ -13,6 +13,7 @@ pub mod docker_non_empty;
 pub mod filesystem_no_inline_tests;
 pub mod filesystem_no_unwrap_expect;
 pub mod filesystem_non_empty;
+pub mod git_commit_enumerator_contract;
 pub mod git_diff_no_inline_tests;
 pub mod git_diff_no_unwrap_expect;
 pub mod git_diff_non_empty;
