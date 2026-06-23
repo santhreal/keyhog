@@ -18,4 +18,10 @@ fn daemon_client_non_empty() {
         !prod.contains("todo!()") && !prod.contains("unimplemented!()"),
         "daemon::client: todo!/unimplemented! forbidden in non-test source"
     );
+    assert!(
+        prod.contains("const DAEMON_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);")
+            && prod.contains("tokio::time::timeout(DAEMON_HANDSHAKE_TIMEOUT, client.recv())")
+            && prod.contains("handshake timeout waiting for Hello"),
+        "daemon client Hello handshake receive must have an operator-visible timeout"
+    );
 }

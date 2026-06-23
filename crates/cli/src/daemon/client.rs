@@ -2,9 +2,9 @@
 //! one request/response pair at a time over a Unix socket.
 
 use crate::daemon::frame;
-use crate::daemon::protocol::{response_kind, Request, Response, WIRE_VERSION};
+use crate::daemon::protocol::{Request, Response, WIRE_VERSION, response_kind};
 use crate::daemon::trust;
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use std::path::Path;
 use std::time::Duration;
 use tokio::io::{BufReader, BufWriter};
@@ -16,6 +16,7 @@ use tokio::net::UnixStream;
 /// just upgraded. Routing scans to it would silently return stale-corpus
 /// results, so [`connect`] fails closed on a mismatch.
 const CLIENT_KEYHOG_VERSION: &str = env!("CARGO_PKG_VERSION");
+const DAEMON_HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Open a connection to the daemon and confirm BOTH wire compatibility AND
 /// that the daemon is running the SAME keyhog version as this client. Use this
@@ -67,7 +68,21 @@ async fn connect_inner(socket_path: &Path, require_same_version: bool) -> Result
     // either upgrade the daemon, fall back to in-process, or fail
     // cleanly.
     client.send(&Request::Hello).await?;
-    match client.recv().await? {
+    let response = tokio::time::timeout(DAEMON_HANDSHAKE_TIMEOUT, client.recv())
+        .await
+        .with_context(|| {
+            format!(
+                "daemon client: handshake timeout waiting for Hello from {}",
+                socket_path.display()
+            )
+        })?
+        .with_context(|| {
+            format!(
+                "daemon client: handshake receive from {}",
+                socket_path.display()
+            )
+        })?;
+    match response {
         Response::Hello {
             wire_version,
             keyhog_version,

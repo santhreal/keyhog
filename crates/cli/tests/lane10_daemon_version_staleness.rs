@@ -18,9 +18,10 @@
 use keyhog::daemon::client;
 use keyhog::daemon::frame;
 use keyhog::daemon::protocol::{Request, Response, WIRE_VERSION};
-use keyhog::testing::{CliTestApi as _, API};
+use keyhog::testing::{API, CliTestApi as _};
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 use tokio::io::{BufReader, BufWriter};
 use tokio::net::UnixListener;
 
@@ -68,6 +69,30 @@ async fn spawn_mock_daemon_response(socket: PathBuf, response: Response) {
     });
     // Give the spawned accept loop a beat to be ready.
     tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+}
+
+async fn spawn_stuck_handshake_daemon(socket: PathBuf) -> tokio::task::JoinHandle<()> {
+    if let Some(parent) = socket.parent() {
+        std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))
+            .expect("chmod mock daemon parent 0700");
+    }
+    let listener = UnixListener::bind(&socket).expect("bind stuck mock daemon socket");
+    std::fs::set_permissions(&socket, std::fs::Permissions::from_mode(0o600))
+        .expect("chmod stuck mock daemon socket 0600");
+    let handle = tokio::spawn(async move {
+        if let Ok((stream, _)) = listener.accept().await {
+            let (reader, _writer) = stream.into_split();
+            let mut reader = BufReader::new(reader);
+            if matches!(
+                frame::read_request(&mut reader).await,
+                Ok(Some(Request::Hello))
+            ) {
+                std::future::pending::<()>().await;
+            }
+        }
+    });
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    handle
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -201,5 +226,29 @@ async fn connect_protocol_mismatch_does_not_dump_response_payload() {
     assert!(
         !msg.contains("plaintext payload") && !msg.contains("message:"),
         "daemon client must not Debug-dump daemon-controlled response fields: {msg}"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn connect_times_out_when_daemon_never_answers_hello() {
+    let dir = tempfile::tempdir().unwrap();
+    let socket = dir.path().join("stuck-hello.sock");
+    let stuck_daemon = spawn_stuck_handshake_daemon(socket.clone()).await;
+
+    let started = Instant::now();
+    let res = tokio::time::timeout(Duration::from_secs(3), client::connect(&socket))
+        .await
+        .expect("client::connect must return via its internal handshake timeout");
+    stuck_daemon.abort();
+
+    assert!(res.is_err(), "stuck daemon handshake must fail");
+    let msg = format!("{:#}", res.err().unwrap());
+    assert!(
+        msg.contains("handshake timeout waiting for Hello"),
+        "timeout error must name the stuck Hello handshake: {msg}"
+    );
+    assert!(
+        started.elapsed() < Duration::from_secs(3),
+        "internal handshake timeout should fire before the outer test guard"
     );
 }
