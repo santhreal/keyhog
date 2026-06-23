@@ -228,20 +228,20 @@ fn random_byte_base64_shape_lives_in_shape_owner() {
     let src = scanner_src();
     let shape = uncommented_code(&read(&src.join("suppression/shape/canonical.rs")));
     let shape_mod = uncommented_code(&read(&src.join("suppression/shape/mod.rs")));
-    let generic_helpers =
-        uncommented_code(&read(&src.join("engine/phase2_generic/shape_helpers.rs")));
     let generic_shape = uncommented_code(&read(&src.join("engine/phase2_generic_shape.rs")));
     let entropy_gates = uncommented_code(&read(&src.join("engine/phase2_entropy/gates.rs")));
 
     assert!(
         shape.contains("fn looks_like_random_byte_base64_blob(")
             && shape.contains("fn looks_like_entropy_random_base64_blob_decoy(")
+            && shape.contains("fn looks_like_generic_random_base64_blob_decoy(")
+            && shape.contains("fn generic_base64_candidate_is_ambiguous(")
             && shape_mod.contains("looks_like_random_byte_base64_blob"),
         "suppression::shape must own and re-export the random-byte base64 blob predicate"
     );
     assert!(
-        !generic_helpers.contains("fn generic_path_looks_like_random_byte_blob("),
-        "generic engine helpers must not own the random-byte base64 blob shape predicate"
+        !src.join("engine/phase2_generic/shape_helpers.rs").exists(),
+        "generic engine helpers must not own base64 shape predicates"
     );
     assert!(
         !entropy_gates.contains("entropy_path_looks_like_random_base64_blob("),
@@ -258,6 +258,15 @@ fn random_byte_base64_shape_lives_in_shape_owner() {
         entropy_gates
             .contains("crate::suppression::shape::looks_like_entropy_random_base64_blob_decoy("),
         "entropy-specific base64 decoy policy must call the suppression::shape owner"
+    );
+    assert!(
+        generic_shape
+            .contains("crate::suppression::shape::looks_like_generic_random_base64_blob_decoy(")
+            && generic_shape
+                .contains("crate::suppression::shape::generic_base64_candidate_is_ambiguous(")
+            && !generic_shape.contains("generic_path_looks_like_random_base64_blob(")
+            && !generic_shape.contains("generic_path_allows_ambiguous_base64_candidate("),
+        "generic base64 policy must call suppression::shape owners"
     );
     assert!(
         !generic_shape.contains("generic_path_looks_like_random_byte_blob(")
@@ -321,12 +330,49 @@ fn path_suppression_predicates_live_in_path_filter_owner() {
 }
 
 #[test]
+fn entropy_value_reference_shapes_live_in_shape_owner() {
+    let src = scanner_src();
+    let shape_path = uncommented_code(&read(&src.join("suppression/shape/path.rs")));
+    let shape_source = uncommented_code(&read(&src.join("suppression/shape/source.rs")));
+    let shape_mod = uncommented_code(&read(&src.join("suppression/shape/mod.rs")));
+    let entropy_helpers = uncommented_code(&read(&src.join("engine/phase2_entropy/helpers.rs")));
+    let entropy_gates = uncommented_code(&read(&src.join("engine/phase2_entropy/gates.rs")));
+
+    assert!(
+        shape_path.contains("fn looks_like_filename_reference(")
+            && shape_mod.contains("looks_like_filename_reference"),
+        "suppression::shape::path must own filename-reference value shapes"
+    );
+    assert!(
+        shape_source.contains("fn looks_like_kebab_config_identifier(")
+            && shape_mod.contains("looks_like_kebab_config_identifier"),
+        "suppression::shape::source must own kebab config identifier value shapes"
+    );
+    for forbidden in [
+        "fn entropy_path_looks_like_kebab_identifier(",
+        "fn entropy_path_looks_like_filename(",
+    ] {
+        assert!(
+            !entropy_helpers.contains(forbidden),
+            "entropy helpers must not own value-shape predicate {forbidden}"
+        );
+        assert!(
+            !entropy_gates.contains(forbidden),
+            "entropy gates must not call value-shape predicate {forbidden}"
+        );
+    }
+    assert!(
+        entropy_gates.contains("crate::suppression::shape::looks_like_kebab_config_identifier(")
+            && entropy_gates.contains("crate::suppression::shape::looks_like_filename_reference("),
+        "entropy gates must call suppression::shape value-reference owners"
+    );
+}
+
+#[test]
 fn aws_iam_arn_shape_lives_in_shape_owner() {
     let src = scanner_src();
     let shape = uncommented_code(&read(&src.join("suppression/shape/canonical.rs")));
     let shape_mod = uncommented_code(&read(&src.join("suppression/shape/mod.rs")));
-    let generic_helpers =
-        uncommented_code(&read(&src.join("engine/phase2_generic/shape_helpers.rs")));
     let generic_shape = uncommented_code(&read(&src.join("engine/phase2_generic_shape.rs")));
     let decision = uncommented_code(&read(&src.join("suppression/decision.rs")));
 
@@ -339,9 +385,9 @@ fn aws_iam_arn_shape_lives_in_shape_owner() {
         "suppression::shape must own full and trimmed AWS IAM ARN predicates"
     );
     assert!(
-        !generic_helpers.contains("generic_path_looks_like_trimmed_aws_arn")
+        !src.join("engine/phase2_generic/shape_helpers.rs").exists()
             && !decision.contains("fn decoded_looks_like_aws_iam_arn("),
-        "generic helpers and suppression decision must not re-own AWS IAM ARN predicates"
+        "generic helpers must stay deleted and suppression decision must not re-own AWS IAM ARN predicates"
     );
     assert!(
         generic_shape.contains("crate::suppression::shape::looks_like_trimmed_aws_iam_arn(value)")

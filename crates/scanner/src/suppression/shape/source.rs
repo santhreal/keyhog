@@ -255,6 +255,25 @@ pub(crate) fn looks_like_program_identifier(value: &str) -> bool {
     transitions >= 1
 }
 
+pub(crate) fn looks_like_kebab_config_identifier(value: &str) -> bool {
+    if value.len() > 24 {
+        return false;
+    }
+    let bytes = value.as_bytes();
+    let dash_count = bytes.iter().filter(|&&b| b == b'-').count();
+    if dash_count == 0 {
+        return false;
+    }
+    let lower_count = bytes
+        .iter()
+        .filter(|&&b| (b as char).is_ascii_lowercase())
+        .count();
+    if lower_count * 2 < bytes.len() {
+        return false;
+    }
+    !bytes.iter().any(|&b| matches!(b as char, '+' | '/' | '='))
+}
+
 pub(crate) fn looks_like_dotted_source_identifier(value: &str) -> bool {
     let segments: Vec<&str> = value.split('.').collect();
     if !(2..=5).contains(&segments.len()) || segments.iter().any(|segment| segment.is_empty()) {

@@ -1070,9 +1070,6 @@ path = "crates/scanner/src/engine/phase2_generic/line_mapping.rs"
 path = "crates/scanner/src/engine/phase2_generic/metrics.rs"
 
 [[module]]
-path = "crates/scanner/src/engine/phase2_generic/shape_helpers.rs"
-
-[[module]]
 path = "crates/scanner/src/engine/phase2_gpu_dfa/batch.rs"
 
 [[module]]

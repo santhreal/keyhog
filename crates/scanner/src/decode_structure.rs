@@ -182,7 +182,7 @@ pub(crate) fn looks_like_uniform_base64_blob(value: &str) -> bool {
 
 /// Stricter sibling of [`is_random_base64_blob`] for the **emit-drop** fallback
 /// paths (`suppression::shape::looks_like_entropy_random_base64_blob_decoy`
-/// and `engine::phase2_generic::generic_path_looks_like_random_base64_blob`).
+/// and `suppression::shape::looks_like_generic_random_base64_blob_decoy`).
 /// Same band + padding/mult-4 + standard-base64 alphabet skeleton, but the admit
 /// clause demands a genuine **byte-distribution** signal: BOTH `+` AND `/`
 /// present, or trailing `=` padding with at least one of them.

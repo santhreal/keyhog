@@ -3,55 +3,6 @@
 #[cfg(feature = "entropy")]
 use crate::detector_ids::{ENTROPY_API_KEY, ENTROPY_GENERIC, ENTROPY_PASSWORD, ENTROPY_TOKEN};
 
-#[cfg(feature = "entropy")]
-pub(crate) fn entropy_path_looks_like_kebab_identifier(value: &str) -> bool {
-    if value.len() > 24 {
-        return false;
-    }
-    let bytes = value.as_bytes();
-    let dash_count = bytes.iter().filter(|&&b| b == b'-').count();
-    if dash_count == 0 {
-        return false;
-    }
-    let lower_count = bytes
-        .iter()
-        .filter(|&&b| (b as char).is_ascii_lowercase())
-        .count();
-    if lower_count * 2 < bytes.len() {
-        return false;
-    }
-    !bytes.iter().any(|&b| matches!(b as char, '+' | '/' | '='))
-}
-
-#[cfg(feature = "entropy")]
-pub(crate) fn entropy_path_looks_like_filename(value: &str) -> bool {
-    const FILENAME_SUFFIXES: &[&[u8]] = &[
-        b".jks",
-        b".yml",
-        b".yaml",
-        b".toml",
-        b".json",
-        b".properties",
-        b".pem",
-        b".key",
-        b".crt",
-        b".cer",
-        b".pfx",
-        b".p12",
-        b".keystore",
-        b".truststore",
-        b".conf",
-        b".ini",
-        b".env",
-        b".lock",
-        b".log",
-    ];
-    let bytes = value.as_bytes();
-    FILENAME_SUFFIXES
-        .iter()
-        .any(|s| crate::ascii_ci::ends_with_ignore_ascii_case(bytes, s))
-}
-
 /// The four synthetic entropy-fallback metadata triples, index-parallel with
 /// [`classify_entropy_detector_index`]. Single source of truth: the scanner
 /// pre-interns this exact table into `entropy_metadata_by_index` at

@@ -421,7 +421,7 @@ fn decode_base64_shape_and_decode_have_one_scanner_owner() {
         "decode/base64.rs must own the scanner base64 variant classifier"
     );
     assert!(
-        owner.contains("base64_decode_with_variant(&b64_match.value.value, b64_match.variant)"),
+        owner.contains("base64_decode_with_variant(&b64_match.value, variant)"),
         "Base64Decoder must reuse the variant classified during candidate extraction"
     );
     assert_eq!(
@@ -444,10 +444,6 @@ fn decode_base64_shape_and_decode_have_one_scanner_owner() {
         (
             "engine/phase2_entropy/helpers.rs",
             include_str!("../../src/engine/phase2_entropy/helpers.rs"),
-        ),
-        (
-            "engine/phase2_generic/shape_helpers.rs",
-            include_str!("../../src/engine/phase2_generic/shape_helpers.rs"),
         ),
         (
             "engine/scan_filters.rs",

@@ -1,7 +1,9 @@
 //! Migrated from suppression::shape module-root tests (KH-GAP-004).
 
 use keyhog_scanner::testing::shape::{
-    looks_like_credential_colliding_punctuation, looks_like_punctuation_decorated_identifier,
+    generic_base64_candidate_is_ambiguous, looks_like_credential_colliding_punctuation,
+    looks_like_filename_reference, looks_like_generic_random_base64_blob_decoy,
+    looks_like_kebab_config_identifier, looks_like_punctuation_decorated_identifier,
     looks_like_syntactic_punctuation_marker, looks_like_train_case_prose_identifier,
     public_noncredential_shape_full, public_noncredential_shape_weak_anchor,
 };
@@ -77,6 +79,24 @@ fn train_case_policy_prose_is_structural_even_when_bigrams_look_random() {
             "connector-bearing policy prose must be suppressed before randomness scoring: {value}"
         );
     }
+}
+
+#[test]
+fn entropy_value_reference_shapes_live_in_shape_owner() {
+    assert!(looks_like_kebab_config_identifier("project-api-key"));
+    assert!(!looks_like_kebab_config_identifier("AbC/+/base64-token"));
+    assert!(looks_like_filename_reference("production.keystore"));
+    assert!(looks_like_filename_reference("SERVICE.YAML"));
+    assert!(!looks_like_filename_reference("not_a_file_reference"));
+}
+
+#[test]
+fn generic_base64_policy_shapes_live_in_shape_owner() {
+    let value = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJ0123456789++//ZZAB==";
+    assert!(looks_like_generic_random_base64_blob_decoy(value, 4.7));
+    assert!(!looks_like_generic_random_base64_blob_decoy(value, 4.8));
+    assert!(!generic_base64_candidate_is_ambiguous(value, 4.7));
+    assert!(generic_base64_candidate_is_ambiguous(value, 4.8));
 }
 
 #[test]

@@ -1511,6 +1511,25 @@ pub(crate) mod shape {
         crate::suppression::shape::looks_like_train_case_prose_identifier(credential)
     }
 
+    pub(crate) fn looks_like_filename_reference(credential: &str) -> bool {
+        crate::suppression::shape::looks_like_filename_reference(credential)
+    }
+
+    pub(crate) fn looks_like_kebab_config_identifier(credential: &str) -> bool {
+        crate::suppression::shape::looks_like_kebab_config_identifier(credential)
+    }
+
+    pub(crate) fn looks_like_generic_random_base64_blob_decoy(
+        credential: &str,
+        entropy: f64,
+    ) -> bool {
+        crate::suppression::shape::looks_like_generic_random_base64_blob_decoy(credential, entropy)
+    }
+
+    pub(crate) fn generic_base64_candidate_is_ambiguous(credential: &str, entropy: f64) -> bool {
+        crate::suppression::shape::generic_base64_candidate_is_ambiguous(credential, entropy)
+    }
+
     pub(crate) fn public_noncredential_shape_full(credential: &str) -> Option<&'static str> {
         crate::suppression::shape::public_noncredential_shape(
             credential,

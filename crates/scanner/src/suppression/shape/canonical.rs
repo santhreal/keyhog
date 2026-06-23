@@ -284,6 +284,28 @@ pub(crate) fn looks_like_entropy_random_base64_blob_decoy(value: &str) -> bool {
     crate::decode_structure::is_byte_distribution_base64_blob(value, 50, 300)
 }
 
+pub(crate) fn looks_like_generic_random_base64_blob_decoy(value: &str, entropy: f64) -> bool {
+    const HIGH_ENTROPY_BASE64_CUTOFF: f64 = 4.8;
+
+    if entropy >= HIGH_ENTROPY_BASE64_CUTOFF {
+        return false;
+    }
+    crate::decode_structure::is_byte_distribution_base64_blob(value, 40, 300)
+}
+
+pub(crate) fn generic_base64_candidate_is_ambiguous(value: &str, entropy: f64) -> bool {
+    const HIGH_ENTROPY_BASE64_CUTOFF: f64 = 4.8;
+    const MIN_DISTINCT_ALNUM: u32 = 32;
+
+    if entropy < HIGH_ENTROPY_BASE64_CUTOFF {
+        return false;
+    }
+    let Some(shape) = crate::decode::standard_base64_shape(value) else {
+        return false;
+    };
+    shape.distinct_alnum >= MIN_DISTINCT_ALNUM
+}
+
 /// Pure standard-base64 random-byte decoy shape in the 40-80 char band.
 ///
 /// This is the decode-through sibling for decoys that miss the punctuation /

@@ -6,7 +6,6 @@ mod auth_value;
 pub(crate) mod keywords;
 mod line_mapping;
 mod metrics;
-pub(crate) mod shape_helpers;
 
 use self::auth_value::bare_auth_value_allowed;
 use self::keywords::{

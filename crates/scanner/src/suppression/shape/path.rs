@@ -48,3 +48,31 @@ pub(crate) fn looks_like_url_or_path_segment(value: &str) -> bool {
             && s.bytes().any(|b| b.is_ascii_alphabetic())
     })
 }
+
+pub(crate) fn looks_like_filename_reference(value: &str) -> bool {
+    const FILENAME_SUFFIXES: &[&[u8]] = &[
+        b".jks",
+        b".yml",
+        b".yaml",
+        b".toml",
+        b".json",
+        b".properties",
+        b".pem",
+        b".key",
+        b".crt",
+        b".cer",
+        b".pfx",
+        b".p12",
+        b".keystore",
+        b".truststore",
+        b".conf",
+        b".ini",
+        b".env",
+        b".lock",
+        b".log",
+    ];
+    let bytes = value.as_bytes();
+    FILENAME_SUFFIXES
+        .iter()
+        .any(|s| crate::ascii_ci::ends_with_ignore_ascii_case(bytes, s))
+}

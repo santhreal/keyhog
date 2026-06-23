@@ -63,13 +63,13 @@ pub(crate) fn entropy_match_suppression_stage(
     // Kebab identifiers near `key` words are usually config names, not secrets.
     if !isolated_bare_token
         && !lower_dash_app_password
-        && entropy_path_looks_like_kebab_identifier(&entropy_match.value)
+        && crate::suppression::shape::looks_like_kebab_config_identifier(&entropy_match.value)
     {
         return Some(EntropyShapeStage::KebabIdentifier);
     }
 
     // Filename-shaped values beside keystore/file keywords are references.
-    if entropy_path_looks_like_filename(&entropy_match.value) {
+    if crate::suppression::shape::looks_like_filename_reference(&entropy_match.value) {
         return Some(EntropyShapeStage::Filename);
     }
 

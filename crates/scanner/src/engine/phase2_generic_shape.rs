@@ -8,11 +8,7 @@
 //! former inline gauntlet — every gate is verbatim, each `continue` became
 //! `return Some(GenericValueShapeStage::...)` (KH-L-0412: the name feeds the
 //! `--dogfood` suppression trace; the caller records it, the predicate stays
-//! pure). Recall is guarded by the generic-secret bench gates. The three
-//! `generic_path_looks_like_*` helpers (the gauntlet's only callers) move with it.
-use super::phase2_generic::shape_helpers::{
-    generic_path_allows_ambiguous_base64_candidate, generic_path_looks_like_random_base64_blob,
-};
+//! pure). Recall is guarded by the generic-secret bench gates.
 use super::*;
 use crate::adjudicate::GenericValueShapeStage;
 
@@ -86,7 +82,7 @@ impl CompiledScanner {
         }
         let randomness = TokenRandomness::for_candidate(value);
         let allow_ambiguous_base64_candidate =
-            generic_path_allows_ambiguous_base64_candidate(value, entropy);
+            crate::suppression::shape::generic_base64_candidate_is_ambiguous(value, entropy);
         let high_entropy_punctuation_payload =
             crate::suppression::shape::looks_like_high_entropy_punctuation_payload(value, entropy);
         if let Some(reason) = crate::suppression::shape::public_noncredential_shape_with_randomness(
@@ -271,7 +267,9 @@ impl CompiledScanner {
         // shard × 256 shards = ~2.5k FPs from this path alone.
         if !allow_canonical_hex_key
             && !allow_encoded_text_secret
-            && generic_path_looks_like_random_base64_blob(value, entropy)
+            && crate::suppression::shape::looks_like_generic_random_base64_blob_decoy(
+                value, entropy,
+            )
         {
             return Some(GenericValueShapeStage::Base64Blob);
         }
@@ -359,7 +357,7 @@ impl CompiledScanner {
         // gate, and they carry no magic header, so they slip the magic
         // gate too. They are ALSO pure base62 (no `+`/`/`, no padding)
         // when the random bytes happen to encode without them, so the
-        // local `generic_path_looks_like_random_base64_blob` punct/pad
+        // generic base64 punct/pad
         // gate misses them. This decode-through gate closes the family:
         // a value that is pure standard-base64 alphabet, lands in the
         // 40-80-char decoy band, has NO service-prefix anchor, and
