@@ -13,6 +13,10 @@ fn git_diff_sources_share_byte_oriented_parser() {
         "fn parse_line<'a>(",
         "fn trim_diff_line_bytes(",
         "fn sanitize_path_bytes(",
+        "fn extract_new_path_from_plus_header(",
+        "fn sanitize_quoted_git_path_with_status(",
+        "fn normalize_git_relative_path(",
+        "quoted_git_path_body",
         "invalid_path: bool",
         "parse_hunk_new_start_or_error",
         "UnifiedDiffEvent::AddedLine(&line[1..])",
@@ -22,6 +26,13 @@ fn git_diff_sources_share_byte_oriented_parser() {
             "shared git diff parser must own `{required}`"
         );
     }
+
+    assert!(
+        parser.contains("new_path: None")
+            && parser.contains("invalid_path: false")
+            && !parser.contains("memmem::find(line, b\" b/\")"),
+        "`diff --git` headers are path-ambiguous; parser must use them only as file boundaries and take scan paths from +++ headers"
+    );
 
     for (rel, source) in [("diff.rs", diff.as_str()), ("history.rs", history.as_str())] {
         assert!(
@@ -65,6 +76,8 @@ fn git_diff_sources_share_byte_oriented_parser() {
         assert!(
             source.contains("invalid_path")
                 && source.contains(message)
+                && source.contains("if current_path.is_none()")
+                && source.contains("continue;")
                 && source.contains("SourceSkipEvent::Unreadable"),
             "{rel} must count invalid unified-diff file headers as unreadable instead of silently dropping added lines"
         );

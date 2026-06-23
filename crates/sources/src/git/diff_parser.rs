@@ -8,7 +8,9 @@ pub(crate) enum UnifiedDiffEvent<'a> {
     },
     DeletedFile,
     Metadata,
-    HunkStart { base_line: usize },
+    HunkStart {
+        base_line: usize,
+    },
     AddedLine(&'a [u8]),
     Other,
 }
@@ -29,10 +31,9 @@ impl UnifiedDiffParser {
     ) -> Result<UnifiedDiffEvent<'a>, SourceError> {
         if line.starts_with(b"diff --git ") {
             self.in_hunk = false;
-            let (new_path, invalid_path) = extract_new_path_from_header(line);
             return Ok(UnifiedDiffEvent::FileHeader {
-                new_path,
-                invalid_path,
+                new_path: None,
+                invalid_path: false,
             });
         }
 
@@ -48,9 +49,8 @@ impl UnifiedDiffParser {
             return Ok(UnifiedDiffEvent::Metadata);
         }
 
-        if let Some(path_part) = line.strip_prefix(b"+++ b/") {
+        if let Some((new_path, invalid_path)) = extract_new_path_from_plus_header(line) {
             self.in_hunk = false;
-            let (new_path, invalid_path) = sanitize_path_bytes_with_status(path_part);
             return Ok(UnifiedDiffEvent::FileHeader {
                 new_path,
                 invalid_path,
@@ -84,11 +84,20 @@ pub(crate) fn trim_diff_line_bytes(mut line: &[u8]) -> &[u8] {
     line
 }
 
-fn extract_new_path_from_header(line: &[u8]) -> (Option<String>, bool) {
-    match memchr::memmem::find(line, b" b/") {
-        Some(index) => sanitize_path_bytes_with_status(&line[index + 3..]),
-        None => (None, true),
+fn extract_new_path_from_plus_header(line: &[u8]) -> Option<(Option<String>, bool)> {
+    if let Some(path_part) = line.strip_prefix(b"+++ b/") {
+        return Some(sanitize_path_bytes_with_status(path_part));
     }
+    if line == b"+++ /dev/null" {
+        return Some((None, false));
+    }
+    if let Some(path_part) = line.strip_prefix(b"+++ \"b/") {
+        return Some(sanitize_quoted_git_path_with_status(path_part));
+    }
+    if line == b"+++ \"/dev/null\"" {
+        return Some((None, false));
+    }
+    None
 }
 
 fn sanitize_path_bytes_with_status(path: &[u8]) -> (Option<String>, bool) {
@@ -99,7 +108,46 @@ fn sanitize_path_bytes_with_status(path: &[u8]) -> (Option<String>, bool) {
 }
 
 fn sanitize_path_bytes(path: &[u8]) -> Option<String> {
-    let path = trim_ascii_whitespace(path);
+    sanitize_path_bytes_inner(path, true, true)
+}
+
+fn sanitize_quoted_git_path_with_status(path_after_open_quote: &[u8]) -> (Option<String>, bool) {
+    match quoted_git_path_body(path_after_open_quote)
+        .and_then(|path| sanitize_path_bytes_inner(path, false, false))
+    {
+        Some(path) => (Some(path), false),
+        None => (None, true),
+    }
+}
+
+fn quoted_git_path_body(path_after_open_quote: &[u8]) -> Option<&[u8]> {
+    let mut escaped = false;
+    for (index, byte) in path_after_open_quote.iter().copied().enumerate() {
+        if escaped {
+            escaped = false;
+            continue;
+        }
+        if byte == b'\\' {
+            escaped = true;
+            continue;
+        }
+        if byte == b'"' {
+            return Some(&path_after_open_quote[..index]);
+        }
+    }
+    None
+}
+
+fn sanitize_path_bytes_inner(
+    path: &[u8],
+    trim_whitespace: bool,
+    backslash_is_separator: bool,
+) -> Option<String> {
+    let path = if trim_whitespace {
+        trim_ascii_whitespace(path)
+    } else {
+        path
+    };
     if path.is_empty() || path == b"/dev/null" {
         return None;
     }
@@ -107,23 +155,28 @@ fn sanitize_path_bytes(path: &[u8]) -> Option<String> {
         return None;
     }
 
-    let path = String::from_utf8_lossy(path).replace('\\', "/");
-    let candidate = std::path::Path::new(&path);
-    if candidate.is_absolute() {
+    let path = String::from_utf8_lossy(path);
+    let path = if backslash_is_separator {
+        path.replace('\\', "/")
+    } else {
+        path.into_owned()
+    };
+    normalize_git_relative_path(&path)
+}
+
+fn normalize_git_relative_path(path: &str) -> Option<String> {
+    if path.starts_with('/') {
         return None;
     }
 
     let mut normalized = Vec::new();
-    for component in candidate.components() {
+    for component in path.split('/') {
         match component {
-            std::path::Component::CurDir => {}
-            std::path::Component::Normal(part) => {
-                normalized.push(part.to_string_lossy().into_owned());
-            }
-            std::path::Component::ParentDir => {
+            "" | "." => {}
+            ".." => {
                 normalized.pop()?;
             }
-            std::path::Component::RootDir | std::path::Component::Prefix(_) => return None,
+            part => normalized.push(part.to_string()),
         }
     }
 
@@ -172,6 +225,15 @@ mod tests {
         ));
         assert!(matches!(
             parser
+                .parse_line(b"+++ \"b/tab\\tfile.txt\"", "git diff")
+                .unwrap(),
+            UnifiedDiffEvent::FileHeader {
+                new_path: Some(path),
+                invalid_path: false
+            } if path == "tab\\tfile.txt"
+        ));
+        assert!(matches!(
+            parser
                 .parse_line(b"+++ b/../secret.txt", "git diff")
                 .unwrap(),
             UnifiedDiffEvent::FileHeader {
@@ -209,6 +271,20 @@ mod tests {
         assert_eq!(sanitize_path_bytes(b"/abs.txt"), None);
         assert_eq!(sanitize_path_bytes(b"a/\x01/b.txt"), None);
         assert_eq!(sanitize_path_bytes(b"/dev/null"), None);
+    }
+
+    #[test]
+    fn diff_git_header_is_only_a_boundary() {
+        let mut parser = UnifiedDiffParser::new();
+        assert!(matches!(
+            parser
+                .parse_line(b"diff --git a/my b/file.txt b/my b/file.txt", "git diff")
+                .unwrap(),
+            UnifiedDiffEvent::FileHeader {
+                new_path: None,
+                invalid_path: false
+            }
+        ));
     }
 
     #[test]

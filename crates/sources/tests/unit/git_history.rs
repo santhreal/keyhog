@@ -233,6 +233,34 @@ fn git_history_source_honors_max_commits() {
 
 #[cfg(feature = "git")]
 #[test]
+fn git_history_source_scans_quoted_tab_path_headers() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    commit_file(
+        &repo_path,
+        "tab\tfile.txt",
+        "QUOTED_HISTORY_SECRET = ghp_quotedHistoryPathHeader00001\n",
+        "Add quoted path secret",
+    );
+
+    let chunks: Vec<_> = GitHistorySource::new(repo_path)
+        .with_max_commits(1)
+        .chunks()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let chunk = chunks
+        .iter()
+        .find(|chunk| chunk.data.contains("ghp_quotedHistoryPathHeader00001"))
+        .expect("git-history must scan added lines for quoted path headers");
+
+    assert_eq!(
+        chunk.metadata.path.as_deref(),
+        Some("tab\\tfile.txt"),
+        "quoted git path metadata must stay printable without dropping the hunk"
+    );
+}
+
+#[cfg(feature = "git")]
+#[test]
 fn git_history_source_ignores_deleted_file_hunks() {
     let (_temp_dir, repo_path) = create_test_repo();
     commit_file(

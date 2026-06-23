@@ -322,6 +322,9 @@ fn stream_added_lines(
                     continue;
                 }
                 super::UnifiedDiffEvent::AddedLine(bytes) => {
+                    if current_path.is_none() {
+                        continue;
+                    }
                     current_content.push_str(&String::from_utf8_lossy(bytes));
                     current_content.push('\n');
                 }

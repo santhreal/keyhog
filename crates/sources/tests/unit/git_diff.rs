@@ -305,3 +305,35 @@ fn git_diff_source_chunk_metadata_carries_path_and_commit() {
         chunks[0].data
     );
 }
+
+#[cfg(feature = "git")]
+#[test]
+fn git_diff_source_scans_quoted_tab_path_headers() {
+    let (_temp_dir, repo_path) = create_test_repo();
+    let filename = "tab\tfile.txt";
+    commit_file(&repo_path, filename, "clean = true\n", "Initial");
+    Command::new("git")
+        .args(["checkout", "-b", "feature"])
+        .current_dir(&repo_path)
+        .output()
+        .unwrap();
+    commit_file(
+        &repo_path,
+        filename,
+        "clean = true\nQUOTED_TAB_SECRET = ghp_quotedTabPathHeader0000000000001\n",
+        "Add quoted path secret",
+    );
+
+    let source = GitDiffSource::new(repo_path, "main").with_head_ref("feature");
+    let chunks: Vec<_> = source.chunks().collect::<Result<Vec<_>, _>>().unwrap();
+    let chunk = chunks
+        .iter()
+        .find(|chunk| chunk.data.contains("ghp_quotedTabPathHeader0000000000001"))
+        .expect("git-diff must scan added lines for quoted path headers");
+
+    assert_eq!(
+        chunk.metadata.path.as_deref(),
+        Some("tab\\tfile.txt"),
+        "quoted git path metadata must stay printable without dropping the hunk"
+    );
+}
