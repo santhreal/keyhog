@@ -265,8 +265,12 @@ fn engine_scoring_confidence_adjustments_use_confidence_owner() {
     assert!(
         !policy.contains("fn candidate_match_score<'a>(\n    policy: CandidateMatchScorePolicy<'a>,\n) -> Option")
             && !process.contains("from_scoring_rejected")
-            && !process.contains("let Some(score_result)"),
-        "candidate scoring must return a concrete result and must not preserve the dead scoring_rejected branch"
+            && !process.contains("let Some(score_result)")
+            && !process.contains("let score_result =")
+            && !process.contains("match score_result")
+            && !process.contains("MlScoreResult::Final(confidence)")
+            && !process.contains("let Some(confidence) = crate::adjudicate::finalize_report_candidate("),
+        "candidate scoring must return a concrete result without preserving dead scoring_rejected or leaf-owned confidence/score result names"
     );
     for forbidden in [
         "let context_multiplier =",

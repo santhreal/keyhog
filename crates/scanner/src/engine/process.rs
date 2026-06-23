@@ -257,7 +257,7 @@ impl CompiledScanner {
         // fallbacks and weak anchors.
         let is_named_detector =
             crate::confidence::is_service_anchored_detector(&detector.id) && !weak_anchor;
-        let score_result = crate::confidence::policy::candidate_match_score(
+        let policy_result = crate::confidence::policy::candidate_match_score(
             crate::confidence::policy::CandidateMatchScorePolicy {
                 // Per-PATTERN constant, memoized on the `LazyRegex` (see
                 // `LazyRegex::has_literal_prefix`): the prior inline
@@ -284,15 +284,15 @@ impl CompiledScanner {
             None => self.config.min_confidence,
         };
 
-        match score_result {
-            MlScoreResult::Final(confidence) => {
-                let Some(confidence) = crate::adjudicate::finalize_report_candidate(
+        match policy_result {
+            MlScoreResult::Final(policy_conf) => {
+                let Some(report_conf) = crate::adjudicate::finalize_report_candidate(
                     chunk.metadata.path.as_deref(),
                     credential,
                     crate::adjudicate::ReportAdjudicationPolicy {
                         detector_id: detector.id.as_ref(),
                         code_context: inferred_context,
-                        confidence,
+                        confidence: policy_conf,
                         min_confidence_floor,
                         penalize_test_paths: self.config.penalize_test_paths,
                         file_path: chunk.metadata.path.as_deref(),
@@ -314,7 +314,7 @@ impl CompiledScanner {
                     source_offset + base_offset,
                     line + base_line,
                     entropy,
-                    confidence,
+                    report_conf,
                     scan_state,
                     entry.client_safe,
                 );
