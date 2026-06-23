@@ -1,6 +1,6 @@
 //! Logic for compiling detector specifications into an efficient scanning engine.
 
-use crate::error::Result;
+use crate::error::{Result, ScanError};
 use crate::types::*;
 use keyhog_core::DetectorSpec;
 
@@ -124,16 +124,20 @@ pub(crate) fn build_compile_state(detectors: &[DetectorSpec]) -> Result<CompileS
                         // safe text rewrite we can do here.
                         continue;
                     };
-                // Deferred like every other pattern: build the homoglyph
-                // variant's Regex on first use, not here. The old eager
-                // `Regex::new` doubled as a validity gate (skip-if-Err); the
-                // lazy path's never-match fallback covers a non-compiling
-                // variant instead, so a bad expansion simply never fires
-                // rather than being silently dropped at build.
+                let compiled_homoglyph_regex = regex::Regex::new(&full_homoglyph_regex)
+                    .map(std::sync::Arc::new)
+                    .map_err(|source| ScanError::RegexCompile {
+                        detector_id: detector.id.clone(),
+                        index: pattern_index,
+                        source,
+                    })?;
                 phase2_patterns.push((
                     CompiledPattern {
                         detector_index,
-                        regex: LazyRegex::plain(full_homoglyph_regex),
+                        regex: LazyRegex::plain_compiled(
+                            full_homoglyph_regex,
+                            compiled_homoglyph_regex,
+                        ),
                         group: pattern.group,
                         client_safe: pattern.client_safe,
                         match_proves_keyword_nearby: false,

@@ -23,3 +23,22 @@ fn detector_compile_uses_runtime_regex_builder_before_scan() {
         "syntax-only detector validation misses builder size/flag failures and can leave a runtime-only never-match fallback"
     );
 }
+
+#[test]
+fn generated_plain_regexes_compile_before_scanner_construction() {
+    let build = include_str!("../../../src/compiler/compiler_build.rs");
+    assert!(
+        build.contains("regex::Regex::new(&full_homoglyph_regex)")
+            && build.contains("LazyRegex::plain_compiled(")
+            && !build.contains("LazyRegex::plain(full_homoglyph_regex)"),
+        "generated homoglyph/plain regexes must be validated and seeded during compiler build, not disabled by LazyRegex::get at first use"
+    );
+
+    let types = include_str!("../../../src/types.rs");
+    assert!(
+        types.contains("pub(crate) fn plain_compiled")
+            && !types.contains("never_match_regex")
+            && !types.contains("disabled for this run"),
+        "LazyRegex must not hide construction-missed regex compile failures behind a never-match regex"
+    );
+}

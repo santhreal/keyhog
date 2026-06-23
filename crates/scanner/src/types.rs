@@ -217,14 +217,12 @@ pub(crate) type ScannerPreprocessedText<'a> = crate::multiline::PreprocessedText
 pub(crate) type ScannerPreprocessedText<'a> = PreprocessedText<'a>;
 
 /// A regex wrapper that can either hold a detector regex compiled during
-/// scanner construction or defer generated/plain fallback regex compilation
-/// until first use.
+/// scanner construction.
 ///
 /// Detector patterns are validated through the bounded shared builder before a
 /// scan can start, then seeded here so `warm()` or first extraction does not
-/// compile the same detector regex again. Generated homoglyph/plain fallback
-/// variants still compile on first use because they are derived scanner-side,
-/// not user-authored detector TOML that must fail closed at compile time.
+/// compile the same detector regex again. Generated homoglyph/plain variants
+/// are also validated and seeded by the compiler before a scan can start.
 ///
 /// `as_str()` returns the source with no compilation, so the Hyperscan /
 /// GPU literal-set builders that only read pattern text stay zero-cost.
@@ -239,9 +237,9 @@ pub(crate) type ScannerPreprocessedText<'a> = PreprocessedText<'a>;
 pub(crate) struct LazyRegex {
     src: Arc<str>,
     /// Detector patterns are case-insensitive + CRLF-aware + size-bounded
-    /// (the `shared_regex_compile` build); homoglyph-expanded fallback
-    /// variants use plain defaults (the old `Regex::new`). Tracked so the
-    /// lazy build reproduces the exact regex the eager path produced.
+    /// (the `shared_regex_compile` build); homoglyph-expanded plain variants
+    /// use default regex flags. Tracked for callers that need to build an
+    /// equivalent combined matcher.
     case_insensitive: bool,
     cell: Arc<std::sync::OnceLock<Arc<Regex>>>,
     /// Memoized `extract_literal_prefix(src).is_some()` — a per-PATTERN
@@ -288,13 +286,28 @@ impl LazyRegex {
         }
     }
 
-    /// A plain pattern with default flags - matches the old `Regex::new`
-    /// used for homoglyph-expanded fallback variants.
+    /// Test-only plain pattern constructor without a seeded compiled regex.
+    /// Production scanner compilation validates and seeds generated plain
+    /// variants through [`Self::plain_compiled`].
+    #[cfg(test)]
     pub(crate) fn plain(src: impl Into<Arc<str>>) -> Self {
         Self {
             src: src.into(),
             case_insensitive: false,
             cell: Arc::new(std::sync::OnceLock::new()),
+            has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
+        }
+    }
+
+    /// A generated plain pattern whose default-regex validation already
+    /// produced the compiled regex. Scanner construction uses this for
+    /// homoglyph-expanded variants so an invalid generated regex cannot become
+    /// a first-use never-match pattern.
+    pub(crate) fn plain_compiled(src: impl Into<Arc<str>>, compiled: Arc<Regex>) -> Self {
+        Self {
+            src: src.into(),
+            case_insensitive: false,
+            cell: Arc::new(std::sync::OnceLock::from(compiled)),
             has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
         }
     }
@@ -331,11 +344,9 @@ impl LazyRegex {
         self.case_insensitive
     }
 
-    /// Compile-on-first-use. Detector patterns built by the compiler are seeded
-    /// from the same shared regex builder during scanner compilation, so a
-    /// detector compile failure here is an invariant breach. Plain generated
-    /// variants still fail closed to a never-matching regex with a loud
-    /// `error!` log rather than panicking.
+    /// Return the compiled regex seeded during scanner construction. Test-only
+    /// constructors may still compile here; a compile error is an invariant
+    /// breach and fails loud instead of returning a never-matching regex.
     pub(crate) fn get(&self) -> &Regex {
         self.cell
             .get_or_init(|| {
@@ -350,10 +361,11 @@ impl LazyRegex {
                         tracing::error!(
                             pattern = %self.src,
                             %error,
-                            "detector regex failed to compile on first use; \
-                             this pattern is disabled for this run"
+                            "scanner regex reached first-use compilation after construction validation"
                         );
-                        never_match_regex()
+                        unreachable!(
+                            "scanner regex reached first-use compilation after construction validation failed: {error}"
+                        )
                     }
                 }
             })
@@ -361,36 +373,8 @@ impl LazyRegex {
     }
 }
 
-/// A shared, process-wide regex that matches nothing. Returned by
-/// `LazyRegex::get` when a pattern fails to compile, so callers always get a
-/// usable `&Regex` (one that simply never fires) instead of a panic.
-/// `[^\s\S]` is the canonical empty-language pattern: no char is both
-/// non-whitespace and non-non-whitespace.
-fn never_match_regex() -> Arc<Regex> {
-    static NEVER: std::sync::OnceLock<Arc<Regex>> = std::sync::OnceLock::new();
-    NEVER
-        .get_or_init(|| {
-            // `[^\s\S]` is the canonical empty-language pattern (no char is both
-            // whitespace and non-whitespace) and a compile-time constant, so
-            // `Regex::new` here cannot fail. We avoid `.expect()` to honor the
-            // no-panic source contract enforced by `unit::gates::
-            // types_no_unwrap_expect`; the `unreachable!` arm documents the
-            // invariant and is dead code (it is not a stub - the value is fully
-            // implemented on the `Ok` path).
-            match Regex::new(r"[^\s\S]") {
-                Ok(re) => Arc::new(re),
-                Err(_error) => {
-                    // Law 10: Err arm is unreachable! on a compile-time-const valid pattern; fail-closed, not a swallow
-                    unreachable!("empty-language regex `[^\\s\\S]` is a valid constant pattern")
-                }
-            }
-        })
-        .clone()
-}
-
-/// A compiled entry: one pattern from one detector. Detector regexes are
-/// scanner-compile seeded; generated/plain variants remain first-use lazy - see
-/// [`LazyRegex`].
+/// A compiled entry: one pattern from one detector. Detector and generated
+/// plain regexes are scanner-compile seeded - see [`LazyRegex`].
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledPattern {
     pub detector_index: usize,
