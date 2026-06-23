@@ -33,7 +33,52 @@ fn r5t_zip_duplicate_entry_names_no_panic() {
     );
 }
 
+#[test]
+fn duplicate_zip_with_fake_eocd_in_comment_scans_both_entries() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let zip_path = dir.path().join("dup-comment.zip");
+    let mut fake_eocd = Vec::new();
+    write_u32(&mut fake_eocd, 0x0605_4b50);
+    fake_eocd.extend_from_slice(&[0u8; 18]);
+    std::fs::write(
+        &zip_path,
+        stored_zip_with_duplicate_names_and_comment(
+            &[
+                ("dup.txt", b"DUPLICATE_COMMENT_FIRST=1\n".as_slice()),
+                ("dup.txt", b"DUPLICATE_COMMENT_SECOND=1\n".as_slice()),
+            ],
+            &fake_eocd,
+        ),
+    )
+    .expect("write duplicate-name zip with fake EOCD comment");
+
+    let bodies: Vec<String> = FilesystemSource::new(dir.path().to_path_buf())
+        .chunks()
+        .map(|chunk| chunk.expect("fake-comment duplicate zip must not emit source errors"))
+        .map(|chunk| chunk.data.to_string())
+        .collect();
+    assert!(
+        bodies
+            .iter()
+            .any(|body| body.contains("DUPLICATE_COMMENT_FIRST=1")),
+        "first duplicate entry must be scanned despite fake EOCD comment; bodies={bodies:?}"
+    );
+    assert!(
+        bodies
+            .iter()
+            .any(|body| body.contains("DUPLICATE_COMMENT_SECOND=1")),
+        "second duplicate entry must be scanned despite fake EOCD comment; bodies={bodies:?}"
+    );
+}
+
 fn stored_zip_with_duplicate_names(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    stored_zip_with_duplicate_names_and_comment(entries, &[])
+}
+
+fn stored_zip_with_duplicate_names_and_comment(
+    entries: &[(&str, &[u8])],
+    comment: &[u8],
+) -> Vec<u8> {
     #[derive(Clone)]
     struct CentralEntry {
         name: String,
@@ -109,7 +154,11 @@ fn stored_zip_with_duplicate_names(entries: &[(&str, &[u8])]) -> Vec<u8> {
     write_u16(&mut out, u16::try_from(central.len()).expect("entry count"));
     write_u32(&mut out, central_size);
     write_u32(&mut out, central_offset);
-    write_u16(&mut out, 0);
+    write_u16(
+        &mut out,
+        u16::try_from(comment.len()).expect("zip comment length"),
+    );
+    out.extend_from_slice(comment);
     out
 }
 

@@ -248,15 +248,45 @@ fn read_central_zip_entries(path: &Path) -> Result<Vec<CentralZipEntry>, String>
     let mut tail = vec![0u8; tail_len];
     file.read_exact(&mut tail)
         .map_err(|error| error.to_string())?;
-    let eocd = tail
-        .windows(EOCD_LEN)
-        .enumerate()
-        .rev()
-        .find_map(|(index, window)| window.starts_with(EOCD_SIGNATURE).then_some(index))
-        .ok_or_else(|| "zip end-of-central-directory record not found".to_string())?;
-    if eocd + EOCD_LEN > tail.len() {
-        return Err("truncated zip end-of-central-directory record".to_string());
+    let tail_file_offset = file_len.saturating_sub(tail_len as u64);
+    let mut eocd = None;
+    let mut last_candidate_error = None;
+    for (index, window) in tail.windows(EOCD_LEN).enumerate().rev() {
+        if !window.starts_with(EOCD_SIGNATURE) {
+            continue;
+        }
+        let comment_len = usize::from(read_u16(&tail[index + 20..index + 22])?);
+        if index
+            .checked_add(EOCD_LEN)
+            .and_then(|value| value.checked_add(comment_len))
+            != Some(tail.len())
+        {
+            continue;
+        }
+        let central_size = read_u32(&tail[index + 12..index + 16])?;
+        let central_offset = read_u32(&tail[index + 16..index + 20])?;
+        let absolute_eocd = tail_file_offset
+            .checked_add(index as u64)
+            .ok_or_else(|| "zip end-of-central-directory offset overflow".to_string())?;
+        let central_end = u64::from(central_offset)
+            .checked_add(u64::from(central_size))
+            .ok_or_else(|| "zip central directory end offset overflow".to_string())?;
+        if central_end == absolute_eocd {
+            eocd = Some(index);
+            break;
+        }
+        last_candidate_error = Some(if central_end > file_len {
+            "zip end-of-central-directory record declares a central directory past the end of the file"
+                .to_string()
+        } else {
+            "zip end-of-central-directory record does not point to the central directory immediately before it"
+                .to_string()
+        });
     }
+    let eocd = eocd.ok_or_else(|| {
+        last_candidate_error
+            .unwrap_or_else(|| "valid zip end-of-central-directory record not found".to_string())
+    })?;
     let total_entries = read_u16(&tail[eocd + 10..eocd + 12])?;
     let central_size = read_u32(&tail[eocd + 12..eocd + 16])?;
     let central_offset = read_u32(&tail[eocd + 16..eocd + 20])?;
