@@ -133,6 +133,10 @@ fn sarif_skip_summary() -> Vec<(String, usize)> {
             c.structured_source_parse_failures,
         ),
         (
+            "archive duplicate-entry detection unavailable (zip64 or malformed central directory; shadow entries may be missed)".to_string(),
+            c.archive_duplicate_scan_unavailable,
+        ),
+        (
             "scanner structured parse failed (raw text scanned; encoded structured values not decoded)".to_string(),
             keyhog_scanner::telemetry::structured_parse_failure_count(),
         ),

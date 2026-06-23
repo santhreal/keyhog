@@ -285,6 +285,7 @@ pub(crate) fn report_skip_summary(ansi: bool) {
         && c.binary_section_name_unresolved == 0
         && c.source_truncated == 0
         && c.structured_source_parse_failures == 0
+        && c.archive_duplicate_scan_unavailable == 0
         && !binary_gap
         && decode_truncations == 0
         && invalid_detector_index_skips == 0
@@ -375,6 +376,19 @@ pub(crate) fn report_skip_summary(ansi: bool) {
             format!(
                 "{} structured source file(s) only PARTIALLY scanned: format-specific expansion failed, so raw text was scanned but derived request/response/body chunks were not expanded.",
                 c.structured_source_parse_failures
+            ),
+            true,
+        ));
+    }
+    if c.archive_duplicate_scan_unavailable > 0 {
+        // `warn` = true: duplicate-entry detection could not run (zip64 / malformed
+        // central directory), so the standard parser scanned the archive but may
+        // have missed a duplicated/shadow central-directory entry — partial
+        // coverage, an evasion-bypass surface, not a clean archive (Law 10).
+        lines.push((
+            format!(
+                "{} archive(s) scanned WITHOUT duplicate-entry detection: a zip64 or malformed central directory prevented it, so a duplicated/shadow entry hiding a secret may have been missed.",
+                c.archive_duplicate_scan_unavailable
             ),
             true,
         ));
