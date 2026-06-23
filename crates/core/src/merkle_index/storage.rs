@@ -374,7 +374,7 @@ impl MerkleIndex {
     fn cache_file_changed_since_load_or_save(&self, path: &Path) -> bool {
         let current = match cache_file_fingerprint(path) {
             Ok(fingerprint) => fingerprint,
-            Err(_) => return true, // LAW10: fingerprint failure forces dirty=true so save reloads/rewrites instead of trusting stale cache state.
+            Err(_) => return true, // LAW10: fail-closed fingerprint failure; dirty=true forces reload/rewrite instead of trusting stale cache state.
         };
         current != *self.cache_file_fingerprint.read()
     }

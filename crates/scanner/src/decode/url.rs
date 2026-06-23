@@ -149,8 +149,8 @@ fn line_views_with_offsets(text: &str) -> Vec<LineView<'_>> {
 }
 
 fn strip_line_ending(segment: &str) -> &str {
-    let line = segment.strip_suffix('\n').unwrap_or(segment); // LAW10: missing newline means the caller handed us the final unterminated line; identity preserves all bytes for scanning.
-    line.strip_suffix('\r').unwrap_or(line) // LAW10: missing carriage return means no CRLF trimming is needed; identity preserves all bytes for scanning.
+    let line = segment.strip_suffix('\n').unwrap_or(segment); // LAW10: recall-preserving identity for final unterminated lines; whole-line bytes still flow to scanning.
+    line.strip_suffix('\r').unwrap_or(line) // LAW10: recall-preserving identity when no CR is present; whole-line bytes still flow to scanning.
 }
 
 fn trimmed_line_candidate(line: &LineView<'_>) -> Option<ExtractedValue> {

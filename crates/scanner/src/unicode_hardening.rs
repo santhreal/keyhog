@@ -207,7 +207,7 @@ fn normalize_evasive_chars(text: &str) -> std::borrow::Cow<'_, str> {
     }
     normalized
         .map(std::borrow::Cow::Owned)
-        .unwrap_or(std::borrow::Cow::Borrowed(text)) // LAW10: no evasive unicode transform was needed; borrowed identity preserves the exact scan text.
+        .unwrap_or(std::borrow::Cow::Borrowed(text)) // LAW10: recall-preserving no-transform identity; whole-file scan text is unchanged.
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

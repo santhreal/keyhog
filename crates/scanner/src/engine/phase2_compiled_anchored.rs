@@ -118,10 +118,8 @@ impl CompiledScanner {
                     let _verify_g = super::profile::span(super::profile::P::Phase2AnchoredVerify);
                     let mut i = 0usize;
                     while i < cands.len() {
-                        if let Some(deadline) = deadline {
-                            if std::time::Instant::now() >= deadline {
-                                break;
-                            }
+                        if crate::deadline::expired(deadline) {
+                            break;
                         }
                         let pat = cands[i].0 as usize;
                         let mut j = i + 1;
@@ -192,10 +190,8 @@ impl CompiledScanner {
                         }
                         let mut i = 0usize;
                         while i < cands.len() {
-                            if let Some(deadline) = deadline {
-                                if std::time::Instant::now() >= deadline {
-                                    break;
-                                }
+                            if crate::deadline::expired(deadline) {
+                                break;
                             }
                             let pat = cands[i].0 as usize;
                             let mut j = i + 1;
@@ -243,10 +239,8 @@ impl CompiledScanner {
                         }
                     });
                     for &idx in anchor_idx.plain_always_mark() {
-                        if let Some(deadline) = deadline {
-                            if std::time::Instant::now() >= deadline {
-                                break;
-                            }
+                        if crate::deadline::expired(deadline) {
+                            break;
                         }
                         let pat = idx as usize;
                         let (entry, _) = &this.phase2_patterns[pat];
@@ -281,10 +275,8 @@ impl CompiledScanner {
                     if localize_keyword_anchors && anchor_idx.is_eligible(index) {
                         continue;
                     }
-                    if let Some(deadline) = deadline {
-                        if tested.is_multiple_of(16) && std::time::Instant::now() >= deadline {
-                            break;
-                        }
+                    if crate::deadline::expired_on_cadence(deadline, tested, 16) {
+                        break;
                     }
                     let (entry, _) = &this.phase2_patterns[index];
                     let t0 = if prof { Some(Instant::now()) } else { None };
