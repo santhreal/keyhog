@@ -1,4 +1,4 @@
-use keyhog_core::{DedupedMatch, MatchLocation, Severity, dedup_cross_detector};
+use keyhog_core::{dedup_cross_detector, DedupedMatch, MatchLocation, Severity};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -25,6 +25,18 @@ fn make_deduped(detector: &str, service: &str, conf: f64) -> DedupedMatch {
     }
 }
 
+fn loc(line: usize, offset: usize) -> MatchLocation {
+    MatchLocation {
+        source: Arc::from("test"),
+        file_path: Some(Arc::from("config.js")),
+        line: Some(line),
+        offset,
+        commit: None,
+        author: None,
+        date: None,
+    }
+}
+
 #[test]
 fn cross_detector_dedup_collapses_overlapping_detectors() {
     let input = vec![
@@ -38,4 +50,26 @@ fn cross_detector_dedup_collapses_overlapping_detectors() {
     assert_eq!(winner.detector_id.as_ref(), "google-api-key");
     assert!(winner.companions.contains_key("cross_detector.0"));
     assert!(winner.companions.contains_key("cross_detector.1"));
+}
+
+#[test]
+fn cross_detector_dedup_preserves_loser_locations() {
+    let winner = make_deduped("google-api-key", "google-api", 0.95);
+    let mut loser = make_deduped("google-maps-api-key", "google-maps", 0.75);
+    loser.primary_location = loc(2, 40);
+    loser.additional_locations = vec![loc(1, 0), loc(3, 80)];
+
+    let out = dedup_cross_detector(vec![winner, loser]);
+
+    assert_eq!(out.len(), 1);
+    let lines: Vec<Option<usize>> = out[0]
+        .additional_locations
+        .iter()
+        .map(|loc| loc.line)
+        .collect();
+    assert_eq!(
+        lines,
+        vec![Some(2), Some(3)],
+        "loser primary and additional locations must survive, but duplicate winner primary must not"
+    );
 }

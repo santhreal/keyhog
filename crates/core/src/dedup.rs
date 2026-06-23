@@ -12,10 +12,10 @@ use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
-use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use std::sync::Arc;
 
-use crate::{CredentialHash, MatchLocation, RawMatch, SensitiveString, Severity, sha256_hash};
+use crate::{sha256_hash, CredentialHash, MatchLocation, RawMatch, SensitiveString, Severity};
 
 /// Count of times [`dedup_cross_detector`] reached the (guard-impossible) empty
 /// singleton-group branch, where a finding would otherwise vanish from the
@@ -388,6 +388,11 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
                 .then_with(|| a.primary_location.offset.cmp(&b.primary_location.offset))
         });
         let mut winner = group.remove(0);
+        let mut seen_locations = IndexSet::new();
+        insert_new_location_identity(&mut seen_locations, &winner.primary_location);
+        for loc in &winner.additional_locations {
+            insert_new_location_identity(&mut seen_locations, loc);
+        }
         for (idx, loser) in group.into_iter().enumerate() {
             let key = format!("cross_detector.{idx}");
             let value = format!(
@@ -400,6 +405,7 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
                     .unwrap_or_else(|| "n/a".to_string()) // LAW10: display-only label for absent confidence in cross_detector evidence, no recall impact
             );
             winner.companions.entry(key).or_insert(value);
+            merge_cross_detector_locations(&mut winner, &mut seen_locations, loser);
         }
         out.push(winner);
     }
@@ -411,6 +417,21 @@ pub fn dedup_cross_detector(deduped: Vec<DedupedMatch>) -> Vec<DedupedMatch> {
             .then_with(|| a.credential_hash.cmp(&b.credential_hash))
     });
     out
+}
+
+fn merge_cross_detector_locations(
+    winner: &mut DedupedMatch,
+    seen_locations: &mut IndexSet<LocationIdentity>,
+    loser: DedupedMatch,
+) {
+    if insert_new_location_identity(seen_locations, &loser.primary_location) {
+        winner.additional_locations.push(loser.primary_location);
+    }
+    for loc in loser.additional_locations {
+        if insert_new_location_identity(seen_locations, &loc) {
+            winner.additional_locations.push(loc);
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
