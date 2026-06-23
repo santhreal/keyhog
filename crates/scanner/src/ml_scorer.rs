@@ -142,6 +142,47 @@ pub(crate) fn score_pending_matches_with_config(
         .collect()
 }
 
+/// Borrow the exact pending-match candidate/context pairs used by every model
+/// scoring backend.
+#[cfg(feature = "ml")]
+pub(crate) fn pending_match_score_inputs(
+    pending_matches: &[crate::types::MlPendingMatch],
+) -> Vec<(&str, &str)> {
+    pending_matches
+        .iter()
+        .map(|pending| (pending.credential.as_str(), pending.ml_context.as_str()))
+        .collect()
+}
+
+/// Preserve pending-match cardinality before confidence blending. A malformed
+/// GPU/backend score vector is a backend failure, not permission to drop queued
+/// findings.
+#[cfg(feature = "ml")]
+pub(crate) fn complete_pending_match_scores_with_config(
+    scores: Vec<f64>,
+    pending_matches: &[crate::types::MlPendingMatch],
+    known_prefixes: &[String],
+    secret_keywords: &[String],
+    test_keywords: &[String],
+    placeholder_keywords: &[String],
+) -> Vec<f64> {
+    if scores.len() == pending_matches.len() {
+        return scores;
+    }
+    tracing::warn!(
+        pending = pending_matches.len(),
+        scores = scores.len(),
+        "ML score count mismatch; recomputing CPU MoE scores before confidence blending"
+    );
+    score_pending_matches_with_config(
+        pending_matches,
+        known_prefixes,
+        secret_keywords,
+        test_keywords,
+        placeholder_keywords,
+    )
+}
+
 /// Score precomputed model features without recomputing text/context signals.
 #[cfg(feature = "ml")]
 pub(crate) fn score_features(features: &[f32; NUM_FEATURES]) -> f64 {

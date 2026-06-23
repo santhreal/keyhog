@@ -53,15 +53,7 @@ impl CompiledScanner {
             return;
         }
 
-        // Borrow rather than clone - `ml_pending` is alive for the duration
-        // of the call, so `&str` references stay valid through ML scoring.
-        // On a wide scan with hundreds of pending matches this drops 2N
-        // owned-string allocations per batch.
-        let candidates: Vec<(&str, &str)> = scan_state
-            .ml_pending
-            .iter()
-            .map(|pending| (pending.credential.as_str(), pending.ml_context.as_str()))
-            .collect();
+        let candidates = crate::ml_scorer::pending_match_score_inputs(&scan_state.ml_pending);
 
         let tuning = self.tuning.resolve();
         let scores = crate::gpu::batch_ml_inference_with_timeout(
@@ -70,22 +62,14 @@ impl CompiledScanner {
             tuning.gpu_moe_timeout(),
         );
         let pending_matches: Vec<_> = scan_state.ml_pending.drain(..).collect();
-        let scores = if scores.len() == pending_matches.len() {
-            scores
-        } else {
-            tracing::warn!(
-                pending = pending_matches.len(),
-                scores = scores.len(),
-                "ML score count mismatch; recomputing CPU MoE scores before confidence blending"
-            );
-            crate::ml_scorer::score_pending_matches_with_config(
-                &pending_matches,
-                &self.config.known_prefixes,
-                &self.config.secret_keywords,
-                &self.config.test_keywords,
-                &self.config.placeholder_keywords,
-            )
-        };
+        let scores = crate::ml_scorer::complete_pending_match_scores_with_config(
+            scores,
+            &pending_matches,
+            &self.config.known_prefixes,
+            &self.config.secret_keywords,
+            &self.config.test_keywords,
+            &self.config.placeholder_keywords,
+        );
         for (pending, ml_conf) in pending_matches.into_iter().zip(scores.into_iter()) {
             let report_conf = crate::confidence::policy::ml_pending_confidence(
                 crate::confidence::policy::MlConfidencePolicy {

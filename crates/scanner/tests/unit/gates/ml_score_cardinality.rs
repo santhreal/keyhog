@@ -34,15 +34,29 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
 
     assert!(
         ml_postprocess.contains("fn emit_finalized_pending_match")
-            && ml_postprocess.contains("crate::ml_scorer::score_pending_matches_with_config(")
+            && ml_postprocess.contains("crate::ml_scorer::pending_match_score_inputs(")
+            && ml_postprocess
+                .contains("crate::ml_scorer::complete_pending_match_scores_with_config(")
             && !ml_postprocess.contains("fn score_ml_pending_cpu")
+            && !ml_postprocess.contains("scores.len() == pending_matches.len()")
             && !ml_postprocess.contains("crate::ml_scorer::score_with_config(")
-            && ml_postprocess.contains("scores.len() == pending_matches.len()")
+            && !ml_postprocess.contains(".map(|pending| (pending.credential.as_str()")
             && ml_postprocess.contains(
+                "pending_matches.into_iter().zip(scores.into_iter())"
+            ),
+        "postprocess ML scoring must delegate score input extraction and cardinality repair to the ML scorer owner"
+    );
+    assert!(
+        ml_scorer.contains("fn pending_match_score_inputs(")
+            && ml_scorer.contains("pending_matches: &[crate::types::MlPendingMatch]")
+            && ml_scorer.contains("(pending.credential.as_str(), pending.ml_context.as_str())")
+            && ml_scorer.contains("fn complete_pending_match_scores_with_config(")
+            && ml_scorer.contains("scores.len() == pending_matches.len()")
+            && ml_scorer.contains(
                 "ML score count mismatch; recomputing CPU MoE scores before confidence blending"
             )
-            && ml_postprocess.contains("pending_matches.into_iter().zip(scores.into_iter())"),
-        "postprocess ML scoring must preserve every pending finding when score cardinality drifts"
+            && ml_scorer.contains("score_pending_matches_with_config("),
+        "ML scorer must preserve every pending finding when score cardinality drifts"
     );
     assert!(
         ml_scorer.contains("fn score_pending_matches_with_config(")
