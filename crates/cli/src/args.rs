@@ -3,6 +3,7 @@
 mod config;
 mod daemon;
 mod detectors;
+mod hook;
 mod limits;
 mod maintenance;
 mod scan;
@@ -10,6 +11,7 @@ mod scan;
 pub use config::ConfigArgs;
 pub use daemon::{DaemonAction, DaemonArgs};
 pub use detectors::{DetectorArgs, DetectorFormat};
+pub use hook::HookCommand;
 pub use limits::SourceLimitArgs;
 pub use maintenance::{
     BackendArgs, CompletionArgs, DoctorArgs, RepairArgs, UninstallArgs, UpdateArgs,
@@ -108,18 +110,6 @@ pub enum Command {
     /// 🔌 Manage the long-lived `keyhog daemon` (start, stop, status)
     #[command(verbatim_doc_comment)]
     Daemon(DaemonArgs),
-}
-
-#[derive(clap::Subcommand, Debug, Clone)]
-pub enum HookCommand {
-    /// Install a git pre-commit hook in the current repository
-    Install {
-        /// Replace an existing non-KeyHog pre-commit hook.
-        #[arg(long, default_value_t = false)]
-        force: bool,
-    },
-    /// Remove the KeyHog pre-commit hook from the current repository
-    Uninstall,
 }
 
 #[derive(Parser)]

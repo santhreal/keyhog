@@ -1,6 +1,7 @@
 pub mod args_config_split;
 pub mod args_daemon_split;
 pub mod args_detectors_split;
+pub mod args_hook_split;
 pub mod args_maintenance_split;
 pub mod args_no_inline_tests;
 pub mod args_no_unwrap_expect;
