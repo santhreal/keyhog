@@ -246,7 +246,6 @@ pub(crate) fn ends_with_ignore_ascii_case(bytes: &[u8], suffix: &[u8]) -> bool {
 
 /// Case-insensitive `starts_with`.
 #[inline]
-#[cfg(any(feature = "entropy", feature = "simdsieve"))]
 pub(crate) fn starts_with_ignore_ascii_case(bytes: &[u8], prefix: &[u8]) -> bool {
     bytes
         .get(..prefix.len())

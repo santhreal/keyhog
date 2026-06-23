@@ -247,7 +247,9 @@ fn engine_scoring_confidence_adjustments_use_confidence_owner() {
 fn ml_pending_confidence_policy_routes_through_confidence_owner() {
     let src = scanner_src();
     let policy = uncommented_code(&read(&src.join("confidence/policy.rs")));
+    let engine_mod = uncommented_code(&read(&src.join("engine/mod.rs")));
     for required in [
+        "enum MlScoreResult",
         "struct MlConfidencePolicy",
         "fn ml_pending_confidence(",
         "model_authoritative",
@@ -261,6 +263,10 @@ fn ml_pending_confidence_policy_routes_through_confidence_owner() {
             "confidence::policy must own ML confidence token {required:?}"
         );
     }
+    assert!(
+        !engine_mod.contains("enum MlScoreResult"),
+        "engine/mod.rs must not own ML confidence result state"
+    );
 
     let ml = uncommented_code(&read(&src.join("engine/scan_postprocess/ml.rs")));
     assert!(

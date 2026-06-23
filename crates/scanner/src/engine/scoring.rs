@@ -6,6 +6,7 @@
 use super::*;
 use crate::confidence::policy::{
     apply_known_prefix_floor, match_heuristic_confidence, MatchHeuristicConfidencePolicy,
+    MlScoreResult,
 };
 use crate::context;
 

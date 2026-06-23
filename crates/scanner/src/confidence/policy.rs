@@ -1,5 +1,25 @@
 use crate::context;
 
+pub(crate) enum MlScoreResult<'a> {
+    /// Score is final and the match can be pushed immediately.
+    Final(f64),
+    #[cfg(feature = "ml")]
+    /// ML scoring is batched at the end of the scan.
+    Pending {
+        heuristic_conf: f64,
+        code_context: crate::context::CodeContext,
+        credential: std::borrow::Cow<'a, str>,
+        ml_context: std::borrow::Cow<'a, str>,
+    },
+    /// Zero-sized placeholder that keeps the `'a` lifetime live when ML batch
+    /// scoring is compiled out (lean / `--no-default-features` build). Never
+    /// constructed - it exists solely so the type still carries `'a` without
+    /// the `ml` feature, where only the borrowing `Pending` variant uses it.
+    #[cfg(not(feature = "ml"))]
+    #[doc(hidden)]
+    _Lifetime(std::marker::PhantomData<&'a ()>),
+}
+
 pub(crate) type CredentialChecksumPolicy = crate::checksum::ChecksumConfidenceDecision;
 
 #[inline]

@@ -7,6 +7,7 @@
 
 use super::scan_filters::*;
 use super::CompiledScanner;
+use crate::confidence::policy::MlScoreResult;
 use crate::context;
 use crate::pipeline::*;
 use crate::types::*;
@@ -288,7 +289,7 @@ impl CompiledScanner {
         };
 
         match score_result {
-            super::MlScoreResult::Final(confidence) => {
+            MlScoreResult::Final(confidence) => {
                 let Some(confidence) = crate::adjudicate::finalize_report_candidate(
                     chunk.metadata.path.as_deref(),
                     credential,
@@ -325,7 +326,7 @@ impl CompiledScanner {
                 crate::telemetry::record_match_found();
             }
             #[cfg(feature = "ml")]
-            super::MlScoreResult::Pending {
+            MlScoreResult::Pending {
                 heuristic_conf,
                 code_context,
                 credential: pending_credential,
@@ -362,7 +363,7 @@ impl CompiledScanner {
                 crate::telemetry::record_match_found();
             }
             #[cfg(not(feature = "ml"))]
-            super::MlScoreResult::_Lifetime(_) => {
+            MlScoreResult::_Lifetime(_) => {
                 unreachable!("_Lifetime is a never-constructed placeholder variant")
             }
         }
