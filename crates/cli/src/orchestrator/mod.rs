@@ -357,17 +357,16 @@ impl ScanOrchestrator {
             .with_tuning_config(effective_config.scanner_tuning.clone()),
         );
 
-        // Detector regexes compile lazily on first use. Warm the whole set in
-        // parallel now, on every scan, instead of letting the first file pay a
-        // serial first-touch compile of each detector. The earlier `is_dir`
+        // Detector regexes are validated and seeded during scanner construction;
+        // `warm()` now primarily pays regex DFA/transition-cache first-touch and
+        // generated/plain fallback regex work in parallel. The earlier `is_dir`
         // gate was meant to keep one-shot single-file/stdin startup fast, but it
-        // backfired: a single-file scan then fell into a SERIAL lazy compile of
-        // all embedded regexes on the hot path (~340ms measured), strictly slower
-        // than the parallel `warm()` a directory scan got. Single file, stdin,
-        // pre-commit hooks and editor integrations all hit that worst case.
-        // `warm()` is idempotent and a no-op for already-compiled patterns, so
-        // warming unconditionally costs nothing the lazy path would not have
-        // paid anyway - it just parallelizes it.
+        // backfired: a single-file scan then paid that first-touch work serially
+        // on the hot path (~340ms measured), strictly slower than the parallel
+        // `warm()` a directory scan got. Single file, stdin, pre-commit hooks
+        // and editor integrations all hit that worst case. `warm()` is
+        // idempotent and a no-op for already-warmed patterns, so warming
+        // unconditionally parallelizes work the first scan would otherwise pay.
         scanner.warm();
 
         let signatures: std::collections::HashSet<Arc<str>> = detectors

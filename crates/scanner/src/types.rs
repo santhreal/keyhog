@@ -216,16 +216,15 @@ pub(crate) type ScannerPreprocessedText<'a> = crate::multiline::PreprocessedText
 #[cfg(not(feature = "multiline"))]
 pub(crate) type ScannerPreprocessedText<'a> = PreprocessedText<'a>;
 
-/// A detector pattern whose `Regex` is compiled on first use, not at load.
+/// A regex wrapper that can either hold a detector regex compiled during
+/// scanner construction or defer generated/plain fallback regex compilation
+/// until first use.
 ///
-/// Building the full ~1000-pattern corpus up front cost ~450ms (Hyperscan
-/// path) to ~2.3s (portable regex path) on EVERY invocation - even to scan a
-/// one-line file where a single detector fires. The Aho-Corasick literal
-/// prefilter already decides which patterns a given input could match;
-/// deferring each pattern's `Regex::build` until that prefilter (or a
-/// keyword-gated fallback sweep) actually needs it means a typical scan
-/// compiles a handful of patterns instead of all of them. Startup drops to
-/// the cost of the AC automaton plus the few regexes that fire.
+/// Detector patterns are validated through the bounded shared builder before a
+/// scan can start, then seeded here so `warm()` or first extraction does not
+/// compile the same detector regex again. Generated homoglyph/plain fallback
+/// variants still compile on first use because they are derived scanner-side,
+/// not user-authored detector TOML that must fail closed at compile time.
 ///
 /// `as_str()` returns the source with no compilation, so the Hyperscan /
 /// GPU literal-set builders that only read pattern text stay zero-cost.
@@ -389,8 +388,9 @@ fn never_match_regex() -> Arc<Regex> {
         .clone()
 }
 
-/// A compiled entry: one pattern from one detector. The regex is compiled
-/// lazily on first use - see [`LazyRegex`].
+/// A compiled entry: one pattern from one detector. Detector regexes are
+/// scanner-compile seeded; generated/plain variants remain first-use lazy - see
+/// [`LazyRegex`].
 #[derive(Debug, Clone)]
 pub(crate) struct CompiledPattern {
     pub detector_index: usize,

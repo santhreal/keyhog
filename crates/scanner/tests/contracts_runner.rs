@@ -305,14 +305,13 @@ fn every_contract_perf_budget_holds() {
         return;
     }
     let scanner = scanner();
-    // Compile every pattern up front: the per-detector perf budget measures
-    // match THROUGHPUT (catching a regex that is catastrophically slow to
-    // match), not one-time compilation. Patterns compile lazily on first use
-    // (LazyRegex), so without warming the first scan to touch each detector
-    // would fold that detector's one-time compile into the measured μs and
-    // blow the budget - an artifact of this harness scanning ~895 separate
-    // fixtures, not a real per-scan cost (a real repo scan compiles each
-    // detector once then reuses it across every file).
+    // Warm regex transition caches up front: the per-detector perf budget
+    // measures match THROUGHPUT (catching a regex that is catastrophically slow
+    // to match), not one-time DFA/cache first-touch. Detector regexes are
+    // already compiled once during scanner construction; without warming, the
+    // first scan to touch each detector would fold transition-cache setup into
+    // the measured μs and blow the budget - an artifact of this harness scanning
+    // ~895 separate fixtures, not a real per-scan cost.
     scanner.warm();
     let contracts = load_contracts();
     let mut failures: Vec<String> = Vec::new();
@@ -378,8 +377,8 @@ fn every_contract_perf_budget_holds() {
 fn every_contract_scale_gate_holds() {
     let scanner = scanner();
     // See `every_contract_perf_budget_holds`: warm so the scale budget
-    // (max_seconds on a multi-MB fixture) measures scanning, not the
-    // one-time lazy regex compile for the detector under test.
+    // (max_seconds on a multi-MB fixture) measures scanning, not one-time
+    // regex transition-cache setup for the detector under test.
     scanner.warm();
     let contracts = load_contracts();
     let mut failures: Vec<String> = Vec::new();

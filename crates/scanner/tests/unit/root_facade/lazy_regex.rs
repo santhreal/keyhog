@@ -1,6 +1,6 @@
-//! Truth tests for `LazyRegex` - the compile-on-first-use wrapper that took
-//! detector startup from "compile all ~1000 regexes every invocation"
-//! (~450ms-2.3s) down to "compile only the patterns a scan actually selects".
+//! Truth tests for `LazyRegex` - the wrapper that stores scanner-construction
+//! detector regexes exactly once while still allowing generated/plain fallback
+//! regexes to compile on first use.
 //!
 //! These assert the behavior the scan engine depends on: the source is
 //! readable without compiling, the detector flavor reproduces the exact
