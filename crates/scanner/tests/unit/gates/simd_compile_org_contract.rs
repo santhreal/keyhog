@@ -51,6 +51,41 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
         "compile_with_opts must not own pattern prep, cache I/O, or parallel shard build loops"
     );
 
+    let cache_key_body = source
+        .split("fn compile_cache_key(")
+        .nth(1)
+        .expect("compile_cache_key present")
+        .split("fn compile_shard_count(")
+        .next()
+        .expect("compile_cache_key boundary present");
+    for required in [
+        "h.update(if opts.singlematch { b\"SM1\" } else { b\"SM0\" });",
+        "h.update(if opts.utf8 { b\"U81\" } else { b\"U80\" });",
+        "None => h.update(b\"CLall\")",
+        "Some(cl) =>",
+        "h.update(b\"CLper\")",
+        "h.update([b as u8]);",
+    ] {
+        assert!(
+            cache_key_body.contains(required),
+            "Hyperscan cache keys must encode compile profile semantics: {required}"
+        );
+    }
+
+    let shard_key_body = source
+        .split("fn shard_cache_key(")
+        .nth(1)
+        .expect("shard_cache_key present")
+        .split("fn load_cached_shard(")
+        .next()
+        .expect("shard_cache_key boundary present");
+    assert!(
+        shard_key_body.contains("h.update(cache_key.as_bytes())")
+            && shard_key_body.contains("h.update((shard_count as u64).to_le_bytes())")
+            && shard_key_body.contains("h.update((shard_idx as u64).to_le_bytes())"),
+        "Hyperscan shard cache keys must include profile key, shard count, and shard index"
+    );
+
     let partition_body = source
         .split("fn partition_patterns_lpt(")
         .nth(1)
@@ -66,5 +101,36 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
             && partition_body.contains(".then_with(|| a.cmp(&b))")
             && !partition_body.contains("sort_unstable_by_key"),
         "Hyperscan LPT partitioning must use deterministic tie-breakers so equal-length patterns do not churn shard cache keys"
+    );
+}
+
+#[test]
+fn hyperscan_call_sites_use_distinct_cache_profiles() {
+    let backend_prepared = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/backend_prepared.rs"
+    ))
+    .expect("backend_prepared source readable");
+    let phase2_hs = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/engine/phase2_hs.rs"
+    ))
+    .expect("phase2_hs source readable");
+
+    assert!(
+        backend_prepared.contains("HsCompileOpts {")
+            && backend_prepared.contains("shard_target: tuning.hs_shard_target")
+            && backend_prepared.contains("..Default::default()")
+            && !backend_prepared.contains("singlematch: true")
+            && !backend_prepared.contains("caseless: Some(")
+            && !backend_prepared.contains("utf8: false"),
+        "phase-1 SIMD scanner must keep the legacy all-caseless sharded cache profile"
+    );
+    assert!(
+        phase2_hs.contains("singlematch: true")
+            && phase2_hs.contains("caseless: Some(&caseless)")
+            && phase2_hs.contains("shard_target: Some(usize::MAX)")
+            && phase2_hs.contains("utf8: false"),
+        "phase-2 HS prefilter must keep its distinct singlematch/per-pattern/one-shard byte-mode cache profile"
     );
 }
