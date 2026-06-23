@@ -243,6 +243,12 @@ fn engine_scoring_confidence_adjustments_use_confidence_owner() {
             "confidence::policy must own candidate scoring token {required:?}"
         );
     }
+    assert!(
+        !policy.contains("fn candidate_match_score<'a>(\n    policy: CandidateMatchScorePolicy<'a>,\n) -> Option")
+            && !process.contains("from_scoring_rejected")
+            && !process.contains("let Some(score_result)"),
+        "candidate scoring must return a concrete result and must not preserve the dead scoring_rejected branch"
+    );
     for forbidden in [
         "let context_multiplier =",
         "crate::confidence::compute_confidence(",

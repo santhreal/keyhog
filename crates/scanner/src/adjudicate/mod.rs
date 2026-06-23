@@ -113,14 +113,6 @@ impl ProcessCandidateSignals {
             Self::pass()
         }
     }
-
-    pub(crate) const fn from_scoring_rejected(scoring_rejected: bool) -> Self {
-        if scoring_rejected {
-            Self::suppress(StageId::ScoringRejected)
-        } else {
-            Self::pass()
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

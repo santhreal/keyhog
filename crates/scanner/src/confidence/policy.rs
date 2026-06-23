@@ -116,7 +116,7 @@ pub(crate) fn match_heuristic_confidence(policy: MatchHeuristicConfidencePolicy)
 
 pub(crate) fn candidate_match_score<'a>(
     policy: CandidateMatchScorePolicy<'a>,
-) -> Option<MlScoreResult<'a>> {
+) -> MlScoreResult<'a> {
     let heuristic_conf = match_heuristic_confidence(MatchHeuristicConfidencePolicy {
         has_literal_prefix: policy.has_literal_prefix,
         has_context_anchor: policy.has_context_anchor,
@@ -153,12 +153,11 @@ pub(crate) fn candidate_match_score<'a>(
     };
 
     match score_result {
-        MlScoreResult::Final(confidence) => Some(MlScoreResult::Final(apply_known_prefix_floor(
-            confidence,
-            policy.credential,
-        ))),
+        MlScoreResult::Final(confidence) => {
+            MlScoreResult::Final(apply_known_prefix_floor(confidence, policy.credential))
+        }
         #[cfg(feature = "ml")]
-        MlScoreResult::Pending { .. } => Some(score_result),
+        MlScoreResult::Pending { .. } => score_result,
         #[cfg(not(feature = "ml"))]
         MlScoreResult::_Lifetime(_) => {
             unreachable!("_Lifetime is a never-constructed placeholder variant")

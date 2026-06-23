@@ -150,7 +150,6 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
         "entropy_below_floor",
         "camel_case_no_digit",
         "checksum_invalid",
-        "scoring_rejected",
         "below_min_confidence",
     ] {
         assert!(
@@ -165,6 +164,12 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
     assert!(
         process.contains("ProcessCandidateSignals::from_checksum_invalid("),
         "engine/process.rs checksum drops must use the adjudicator checksum signal"
+    );
+    assert!(
+        !process.contains("from_scoring_rejected")
+            && !adjudicate.contains("from_scoring_rejected")
+            && !adjudicate.contains("scoring_rejected"),
+        "dead candidate-score rejection route must not return as a fake suppression stage"
     );
     assert!(
         process.contains("crate::adjudicate::finalize_report_candidate(")

@@ -257,7 +257,7 @@ impl CompiledScanner {
         // fallbacks and weak anchors.
         let is_named_detector =
             crate::confidence::is_service_anchored_detector(&detector.id) && !weak_anchor;
-        let Some(score_result) = crate::confidence::policy::candidate_match_score(
+        let score_result = crate::confidence::policy::candidate_match_score(
             crate::confidence::policy::CandidateMatchScorePolicy {
                 // Per-PATTERN constant, memoized on the `LazyRegex` (see
                 // `LazyRegex::has_literal_prefix`): the prior inline
@@ -277,18 +277,7 @@ impl CompiledScanner {
                 credential,
                 is_named_detector,
             },
-        ) else {
-            let scoring_ctx = crate::adjudicate::MatchCtx::for_process_signals(
-                crate::adjudicate::ProcessCandidateSignals::from_scoring_rejected(true),
-            );
-            let recorded = crate::adjudicate::record_suppression(
-                chunk.metadata.path.as_deref(),
-                credential,
-                &scoring_ctx,
-            );
-            debug_assert_eq!(recorded, Some(crate::adjudicate::StageId::ScoringRejected));
-            return;
-        };
+        );
 
         let min_confidence_floor = match detector.min_confidence {
             Some(detector_floor) => detector_floor,
