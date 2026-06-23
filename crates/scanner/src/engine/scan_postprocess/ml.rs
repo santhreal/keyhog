@@ -122,45 +122,16 @@ impl CompiledScanner {
             self.score_ml_pending_cpu(&pending_matches)
         };
         for (pending, ml_conf) in pending_matches.into_iter().zip(scores.into_iter()) {
-            // Honour the runtime `--ml-weight` / `ml_weight` knob instead
-            // of the compile-time ML_WEIGHT/HEURISTIC_WEIGHT consts: the
-            // blend is `w·ml + (1-w)·heuristic` with `w` already clamped to
-            // [0,1] by `ScannerConfig::sanitise`. A hardcoded 0.6/0.4 made
-            // the tuned knob a no-op (the tuned!=shipped trap) - now the
-            // value the user / benchmark sets is the value the blend uses.
-            let ml_weight = self.config.ml_weight;
-            let mut final_score = if pending.model_authoritative {
-                // Entropy-fallback candidate: the MoE is the unified scorer. The
-                // "heuristic" here is bare entropy magnitude, which is precisely
-                // what mislabels high-entropy non-secrets (FQDNs, git SHAs,
-                // base64 blobs) - so it must NOT floor the model. Taking the
-                // model score directly lets the MoE suppress those FPs (probe:
-                // structured non-secrets score ~0.01, real secrets ~0.98) while
-                // the downstream penalty/checksum/floor pipeline below still
-                // applies uniformly. The shape gates in scan_entropy_fallback
-                // already removed the cheap non-secrets before this point.
-                ml_conf
-            } else {
-                // Detector/generic match: the regex is positive evidence, so the
-                // heuristic is a confidence FLOOR and the model can only raise.
-                let blended = (ml_weight * ml_conf) + ((1.0 - ml_weight) * pending.heuristic_conf);
-                blended.max(pending.heuristic_conf).max(ml_conf)
-            };
-
-            // `--scan-comments` opts the Comment context out of the
-            // ML-blended confidence multiplier so a real credential in
-            // a `// TODO: rotate this ...` comment surfaces with the
-            // same weight as one on a bare assignment line. Test/docs contexts
-            // stay penalized unless `--no-suppress-test-fixtures` is active.
-            let context_penalty_applies = match pending.code_context {
-                crate::context::CodeContext::Comment => !self.config.scan_comments,
-                crate::context::CodeContext::TestCode
-                | crate::context::CodeContext::Documentation => self.config.penalize_test_paths,
-                _ => false,
-            };
-            if context_penalty_applies && final_score < 0.95 {
-                final_score *= pending.code_context.confidence_multiplier();
-            }
+            let final_score =
+                super::scoring::ml_pending_confidence(super::scoring::MlConfidencePolicy {
+                    heuristic_confidence: pending.heuristic_conf,
+                    model_confidence: ml_conf,
+                    ml_weight: self.config.ml_weight,
+                    model_authoritative: pending.model_authoritative,
+                    code_context: pending.code_context,
+                    scan_comments: self.config.scan_comments,
+                    penalize_test_paths: self.config.penalize_test_paths,
+                });
 
             self.emit_finalized_pending_match(scan_state, pending, final_score);
         }

@@ -179,6 +179,29 @@ pub mod confidence {
     ) -> f64 {
         crate::confidence::penalties::apply_path_confidence_penalties(score, path, penalize)
     }
+
+    #[cfg(all(test, feature = "ml"))]
+    pub(crate) fn ml_pending_confidence(
+        heuristic_confidence: f64,
+        model_confidence: f64,
+        ml_weight: f64,
+        model_authoritative: bool,
+        code_context: crate::context::CodeContext,
+        scan_comments: bool,
+        penalize_test_paths: bool,
+    ) -> f64 {
+        crate::confidence::policy::ml_pending_confidence(
+            crate::confidence::policy::MlConfidencePolicy {
+                heuristic_confidence,
+                model_confidence,
+                ml_weight,
+                model_authoritative,
+                code_context,
+                scan_comments,
+                penalize_test_paths,
+            },
+        )
+    }
 }
 
 pub mod entropy_fast {

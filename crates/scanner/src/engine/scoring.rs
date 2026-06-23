@@ -16,6 +16,10 @@ use std::collections::HashMap;
 pub(super) use crate::confidence::policy::entropy_fallback_confidence;
 #[cfg(feature = "simdsieve")]
 pub(super) use crate::confidence::policy::hot_pattern_confidence;
+#[cfg(feature = "ml")]
+pub(super) use crate::confidence::policy::ml_pending_confidence;
+#[cfg(feature = "ml")]
+pub(super) use crate::confidence::policy::MlConfidencePolicy;
 pub(super) use crate::confidence::policy::{
     checksum_policy_for, finalize_report_confidence, generic_secret_confidence,
     ReportConfidencePolicy,

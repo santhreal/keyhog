@@ -51,6 +51,43 @@ pub(crate) fn finalize_report_confidence(
     apply_checksum_confidence(confidence, policy.credential)
 }
 
+#[cfg(feature = "ml")]
+#[derive(Clone, Copy)]
+pub(crate) struct MlConfidencePolicy {
+    pub(crate) heuristic_confidence: f64,
+    pub(crate) model_confidence: f64,
+    pub(crate) ml_weight: f64,
+    pub(crate) model_authoritative: bool,
+    pub(crate) code_context: context::CodeContext,
+    pub(crate) scan_comments: bool,
+    pub(crate) penalize_test_paths: bool,
+}
+
+#[cfg(feature = "ml")]
+pub(crate) fn ml_pending_confidence(policy: MlConfidencePolicy) -> f64 {
+    let mut confidence = if policy.model_authoritative {
+        policy.model_confidence
+    } else {
+        let blended = (policy.ml_weight * policy.model_confidence)
+            + ((1.0 - policy.ml_weight) * policy.heuristic_confidence);
+        blended
+            .max(policy.heuristic_confidence)
+            .max(policy.model_confidence)
+    };
+
+    let context_penalty_applies = match policy.code_context {
+        context::CodeContext::Comment => !policy.scan_comments,
+        context::CodeContext::TestCode | context::CodeContext::Documentation => {
+            policy.penalize_test_paths
+        }
+        _ => false,
+    };
+    if context_penalty_applies && confidence < 0.95 {
+        confidence *= policy.code_context.confidence_multiplier();
+    }
+    confidence
+}
+
 #[cfg(feature = "simdsieve")]
 pub(crate) fn hot_pattern_confidence(
     credential: &str,

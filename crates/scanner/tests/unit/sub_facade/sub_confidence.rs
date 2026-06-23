@@ -8,6 +8,9 @@ use keyhog_scanner::confidence::{
     compute_confidence, compute_confidence_with_threshold, is_sensitive_path,
     known_prefix_confidence_floor, ConfidenceSignals, KNOWN_PREFIXES,
 };
+use keyhog_scanner::context::CodeContext;
+#[cfg(feature = "ml")]
+use keyhog_scanner::testing::confidence::ml_pending_confidence;
 use keyhog_scanner::testing::confidence::{
     apply_calibration_multiplier, apply_calibration_multiplier_with_store,
     apply_path_confidence_penalties, apply_post_ml_penalties, char_diversity,
@@ -276,6 +279,36 @@ fn path_penalty_disabled_passes_through() {
 #[test]
 fn path_penalty_none_path_is_nan_safe() {
     assert_eq!(apply_path_confidence_penalties(f64::NAN, None, true), 0.0);
+}
+
+// ---------------------------------------------------------------------------
+// ml_pending_confidence
+// ---------------------------------------------------------------------------
+
+#[test]
+#[cfg(feature = "ml")]
+fn ml_authoritative_score_uses_model_without_heuristic_floor() {
+    let out = ml_pending_confidence(0.9, 0.2, 0.5, true, CodeContext::Assignment, false, true);
+    assert!((out - 0.2).abs() < 1e-9, "expected model score, got {out}");
+}
+
+#[test]
+#[cfg(feature = "ml")]
+fn ml_detector_score_keeps_heuristic_and_model_floors() {
+    let out = ml_pending_confidence(0.7, 0.2, 0.5, false, CodeContext::Assignment, false, true);
+    assert!(
+        (out - 0.7).abs() < 1e-9,
+        "detector/generic blend must keep heuristic floor, got {out}"
+    );
+}
+
+#[test]
+#[cfg(feature = "ml")]
+fn ml_context_policy_honors_scan_comments_opt_out() {
+    let penalized = ml_pending_confidence(0.7, 0.7, 0.5, false, CodeContext::Comment, false, true);
+    let unpenalized = ml_pending_confidence(0.7, 0.7, 0.5, false, CodeContext::Comment, true, true);
+    assert!(penalized < unpenalized, "{penalized} vs {unpenalized}");
+    assert!((unpenalized - 0.7).abs() < 1e-9);
 }
 
 // ---------------------------------------------------------------------------

@@ -160,3 +160,44 @@ fn report_confidence_tail_routes_through_scoring_owner() {
         "engine files other than scoring.rs must not own report-confidence policy calls: {offenders:#?}"
     );
 }
+
+#[test]
+fn ml_pending_confidence_policy_routes_through_confidence_owner() {
+    let src = scanner_src();
+    let policy = uncommented_code(&read(&src.join("confidence/policy.rs")));
+    for required in [
+        "struct MlConfidencePolicy",
+        "fn ml_pending_confidence(",
+        "model_authoritative",
+        "ml_weight",
+        "CodeContext::Comment",
+        "CodeContext::TestCode",
+        "confidence_multiplier()",
+    ] {
+        assert!(
+            policy.contains(required),
+            "confidence::policy must own ML confidence token {required:?}"
+        );
+    }
+
+    let ml = uncommented_code(&read(&src.join("engine/scan_postprocess/ml.rs")));
+    assert!(
+        ml.contains("super::scoring::ml_pending_confidence(")
+            && ml.contains("super::scoring::MlConfidencePolicy"),
+        "ML postprocess must route pending confidence through engine::scoring/confidence owner"
+    );
+    for forbidden in [
+        "let ml_weight =",
+        "let mut final_score =",
+        "let blended =",
+        ".max(pending.heuristic_conf)",
+        "context_penalty_applies",
+        "final_score *=",
+        "confidence_multiplier()",
+    ] {
+        assert!(
+            !ml.contains(forbidden),
+            "ML postprocess must not own confidence policy token {forbidden:?}"
+        );
+    }
+}
