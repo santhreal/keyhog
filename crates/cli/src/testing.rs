@@ -96,7 +96,7 @@ pub trait CliTestApi {
         merkle: Option<Arc<keyhog_core::MerkleIndex>>,
     ) -> Result<Vec<Box<dyn Source>>>;
     fn merge_scan_ignore_paths(&self, args: &ScanArgs, allowlist_paths: Vec<String>)
-    -> Vec<String>;
+        -> Vec<String>;
     fn validate_cli_path_arg(&self, path: &Path, name: &str) -> Result<()>;
     fn report_findings(&self, findings: &[VerifiedFinding], args: &ScanArgs) -> Result<()>;
     fn filter_inline_suppressions(&self, matches: Vec<RawMatch>) -> Vec<RawMatch>;
@@ -257,6 +257,13 @@ pub trait CliTestApi {
         explicit: Option<keyhog_scanner::ScanBackend>,
     ) -> bool;
     fn gpu_init_policy_for_args_for_test(&self, args: &ScanArgs) -> keyhog_scanner::GpuInitPolicy;
+    fn gpu_init_policy_for_resolved_autoroute_for_test(
+        &self,
+        args: &ScanArgs,
+        autoroute_cache_path: Option<&Path>,
+        autoroute_gpu: bool,
+        autoroute_calibration: bool,
+    ) -> keyhog_scanner::GpuInitPolicy;
     fn scanner_panic_notice_for_test(&self, panicked: bool) -> Option<String>;
     fn scan_orchestrator_from_parts_for_test(
         &self,
@@ -733,6 +740,20 @@ impl CliTestApi for TestApi {
     }
     fn gpu_init_policy_for_args_for_test(&self, args: &ScanArgs) -> keyhog_scanner::GpuInitPolicy {
         crate::orchestrator::gpu_init_policy_for_args_for_test(args)
+    }
+    fn gpu_init_policy_for_resolved_autoroute_for_test(
+        &self,
+        args: &ScanArgs,
+        autoroute_cache_path: Option<&Path>,
+        autoroute_gpu: bool,
+        autoroute_calibration: bool,
+    ) -> keyhog_scanner::GpuInitPolicy {
+        crate::orchestrator::gpu_init_policy_for_resolved_autoroute_for_test(
+            args,
+            autoroute_cache_path,
+            autoroute_gpu,
+            autoroute_calibration,
+        )
     }
     fn scanner_panic_notice_for_test(&self, panicked: bool) -> Option<String> {
         crate::orchestrator::scanner_panic_notice_for_test(panicked)

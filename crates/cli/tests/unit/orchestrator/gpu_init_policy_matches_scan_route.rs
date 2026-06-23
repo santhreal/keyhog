@@ -48,6 +48,59 @@ fn filesystem_auto_scan_skips_gpu_compile() {
 }
 
 #[test]
+fn filesystem_auto_scan_with_existing_autoroute_cache_keeps_gpu_policy_open() {
+    with_route_policy_lock(|| {
+        let cache = tempfile::Builder::new()
+            .prefix("keyhog_gpu_policy_existing_cache_")
+            .suffix(".json")
+            .tempfile()
+            .expect("create placeholder autoroute cache");
+        let cache_arg = cache.path().to_string_lossy().into_owned();
+        let args = scan_args(&[
+            "scan",
+            "--backend",
+            "auto",
+            "--autoroute-cache",
+            &cache_arg,
+            "--path",
+            ".",
+        ]);
+
+        assert_eq!(
+            API.gpu_init_policy_for_resolved_autoroute_for_test(
+                &args,
+                Some(cache.path()),
+                false,
+                false,
+            ),
+            GpuInitPolicy::FromRuntimePolicy,
+            "an existing autoroute cache must be validated by the router with full runtime identity; \
+             startup policy must not force-disable GPU first"
+        );
+    });
+}
+
+#[test]
+fn filesystem_autoroute_gpu_calibration_keeps_gpu_policy_open_without_cache() {
+    with_route_policy_lock(|| {
+        let args = scan_args(&[
+            "scan",
+            "--backend",
+            "auto",
+            "--autoroute-calibrate",
+            "--autoroute-gpu",
+            "--path",
+            ".",
+        ]);
+        assert_eq!(
+            API.gpu_init_policy_for_resolved_autoroute_for_test(&args, None, true, true),
+            GpuInitPolicy::FromRuntimePolicy,
+            "explicit GPU calibration must be able to acquire GPU runtime before any cache exists"
+        );
+    });
+}
+
+#[test]
 fn batch_pipeline_filesystem_auto_keeps_runtime_gpu_policy() {
     with_route_policy_lock(|| {
         let args = scan_args(&[

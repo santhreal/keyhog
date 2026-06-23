@@ -9,9 +9,9 @@ mod streaming;
 
 use crate::args::ScanArgs;
 use crate::orchestrator_config::{
-    ResolvedScanConfig, auto_discover_detectors, autoroute_config_digest, configure_threads,
-    load_detectors_no_cache, load_detectors_with_cache, parse_backend_override,
-    resolve_scan_config, resolved_scan_config_for_scanner,
+    auto_discover_detectors, autoroute_config_digest, configure_threads, load_detectors_no_cache,
+    load_detectors_with_cache, parse_backend_override, resolve_scan_config,
+    resolved_scan_config_for_scanner, ResolvedScanConfig,
 };
 use crate::style;
 use anyhow::{Context, Result};
@@ -40,7 +40,7 @@ pub(crate) use postprocess::{
 pub(crate) use dispatch::backend_requires_coalesced_batch_pipeline_for_test;
 
 pub(crate) use dispatch::CachedBackendRouter;
-pub(crate) use streaming::{StreamingSourceEvent, scan_streaming_source};
+pub(crate) use streaming::{scan_streaming_source, StreamingSourceEvent};
 
 pub(crate) fn cached_autoroute_router_for_default_config(
     scanner: &CompiledScanner,
@@ -107,7 +107,27 @@ pub(crate) fn compile_default_scan_runtime(
 
 #[doc(hidden)]
 pub(crate) fn gpu_init_policy_for_args_for_test(args: &ScanArgs) -> GpuInitPolicy {
-    gpu_init_policy_for_args(args)
+    gpu_init_policy_for_args(
+        args,
+        None,
+        args.autoroute_gpu && !args.no_autoroute_gpu,
+        args.autoroute_calibrate,
+    )
+}
+
+#[doc(hidden)]
+pub(crate) fn gpu_init_policy_for_resolved_autoroute_for_test(
+    args: &ScanArgs,
+    autoroute_cache_path: Option<&std::path::Path>,
+    autoroute_gpu: bool,
+    autoroute_calibration: bool,
+) -> GpuInitPolicy {
+    gpu_init_policy_for_args(
+        args,
+        autoroute_cache_path,
+        autoroute_gpu,
+        autoroute_calibration,
+    )
 }
 
 #[doc(hidden)]
@@ -320,7 +340,12 @@ impl ScanOrchestrator {
         let detector_spec_hash = keyhog_core::compute_spec_hash(&detectors);
         let detector_rules_digest = keyhog_core::hex_encode(&detector_spec_hash);
 
-        let gpu_init_policy = gpu_init_policy_for_args(&args);
+        let gpu_init_policy = gpu_init_policy_for_args(
+            &args,
+            effective_config.autoroute_cache_path.as_deref(),
+            effective_config.autoroute_gpu,
+            effective_config.autoroute_calibration,
+        );
         let scanner = Arc::new(
             CompiledScanner::compile_with_gpu_policy_and_tuning(
                 detectors.clone(),
@@ -559,7 +584,12 @@ fn incremental_cache_warning(status: &MerkleLoadStatus) -> Option<String> {
     }
 }
 
-fn gpu_init_policy_for_args(args: &ScanArgs) -> GpuInitPolicy {
+fn gpu_init_policy_for_args(
+    args: &ScanArgs,
+    autoroute_cache_path: Option<&std::path::Path>,
+    autoroute_gpu: bool,
+    autoroute_calibration: bool,
+) -> GpuInitPolicy {
     // GPU init (which acquires the backend the region-presence route needs)
     // follows the selected backend: an explicit `--backend gpu`, or the measured
     // backend-selection policy below.
@@ -569,7 +599,13 @@ fn gpu_init_policy_for_args(args: &ScanArgs) -> GpuInitPolicy {
     if args.no_gpu && !args.require_gpu {
         return GpuInitPolicy::ForceDisabled;
     }
+    if autoroute_calibration && autoroute_gpu {
+        return GpuInitPolicy::FromRuntimePolicy;
+    }
     if filesystem_auto_scan_cannot_route_gpu(args) && !args.require_gpu {
+        if autoroute_cache_path.is_some_and(std::path::Path::exists) {
+            return GpuInitPolicy::FromRuntimePolicy;
+        }
         return GpuInitPolicy::ForceDisabled;
     }
     GpuInitPolicy::FromRuntimePolicy

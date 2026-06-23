@@ -10,10 +10,10 @@ use self::calibration::calibrate_fastest_correct_backend;
 use self::evidence::AutorouteDecision;
 use self::host::AutorouteHostProfile;
 use self::store::{load_autoroute_cache, save_autoroute_cache};
-use self::workload::{WorkloadClassificationError, WorkloadKey, workload_key};
+use self::workload::{workload_key, WorkloadClassificationError, WorkloadKey};
 use keyhog_core::Chunk;
-use keyhog_scanner::CompiledScanner;
 use keyhog_scanner::hw_probe::{HardwareCaps, ScanBackend};
+use keyhog_scanner::CompiledScanner;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::path::PathBuf;
@@ -376,6 +376,9 @@ fn load_persistent_autoroute_decisions(
         }
     };
     let mut cache_load_error = None;
+    if !matches!(cache_path.as_ref(), Some(path) if path.exists()) {
+        return (cache_path, HashMap::new(), None);
+    }
     if let Err(error) = host_profile.require_exact_identity() {
         cache_load_error = Some(error.to_string());
         return (cache_path, HashMap::new(), cache_load_error);

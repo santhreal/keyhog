@@ -379,6 +379,34 @@ fn autoroute_cache_roundtrip_and_digest_invalidation() {
 }
 
 #[test]
+fn missing_autoroute_cache_does_not_require_gpu_runtime_identity() {
+    let dir = tempfile::TempDir::new().expect("tempdir for missing autoroute cache");
+    let path = dir.path().join("missing-autoroute-cache.json");
+    let mut host = test_host(Some("NVIDIA GeForce RTX 5090"));
+    host.gpu_runtime_backend = None;
+    host.gpu_driver_runtime_identity = None;
+
+    let (loaded_path, decisions, cache_load_error) = load_persistent_autoroute_decisions(
+        0x1234_5678_9ABC_DEF0,
+        test_rules_digest(),
+        0xA55A_D00D_CAFE_BEEF,
+        &host,
+        Ok(Some(path.clone())),
+    );
+
+    assert_eq!(loaded_path, Some(path));
+    assert!(
+        decisions.is_empty(),
+        "missing cache file cannot produce route decisions"
+    );
+    assert_eq!(
+        cache_load_error, None,
+        "a missing cache file must surface as a missing-cache autoroute state, \
+         not as a GPU host-identity failure"
+    );
+}
+
+#[test]
 fn autoroute_cache_rejects_different_build_feature_set() {
     let path = std::env::temp_dir().join(format!(
         "keyhog_autoroute_feature_mismatch_{}.json",
