@@ -2,6 +2,11 @@
 fn config_file_merge_uses_section_helpers() {
     let src = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/config.rs"))
         .expect("config source readable");
+    let sections = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/config/sections.rs"
+    ))
+    .expect("config sections source readable");
     let apply = src
         .split("fn apply_config_file_impl(")
         .nth(1)
@@ -12,6 +17,14 @@ fn config_file_merge_uses_section_helpers() {
         "fn apply_aws_section(",
         "fn apply_allowlist_section(",
         "fn apply_tuning_section(",
+    ] {
+        assert!(
+            sections.contains(helper),
+            "config/sections.rs must keep {helper} as a focused config section owner"
+        );
+    }
+
+    for helper in [
         "fn apply_scan_section(",
         "fn apply_top_level_scan_fields(",
         "fn resolve_policy_outcome(",
