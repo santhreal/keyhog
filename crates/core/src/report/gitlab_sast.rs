@@ -1,8 +1,10 @@
 //! GitLab SAST security-report JSON reporter.
 
+use std::borrow::Cow;
 use std::io::Write;
 
 use crate::{Severity, VerifiedFinding};
+use serde::Serialize;
 
 use super::{ReportError, Reporter, WriterBackedReporter};
 
@@ -77,42 +79,99 @@ impl<W: Write + Send> WriterBackedReporter for GitlabSastReporter<W> {
     }
 }
 
-fn scan_object(scan_started_at: &str, scan_finished_at: &str) -> serde_json::Value {
-    serde_json::json!({
-        "type": "sast",
-        "status": "success",
-        "start_time": scan_started_at,
-        "end_time": scan_finished_at,
-        "analyzer": analyzer_object(),
-        "scanner": scanner_object(),
-    })
+#[derive(Serialize)]
+struct GitlabScan<'a> {
+    #[serde(rename = "type")]
+    scan_type: &'static str,
+    status: &'static str,
+    start_time: &'a str,
+    end_time: &'a str,
+    analyzer: GitlabTool,
+    scanner: GitlabTool,
 }
 
-fn analyzer_object() -> serde_json::Value {
-    serde_json::json!({
-        "id": "keyhog",
-        "name": "KeyHog",
-        "version": env!("CARGO_PKG_VERSION"),
-        "vendor": {
-            "name": "Santh Security"
+#[derive(Clone, Copy, Serialize)]
+struct GitlabTool {
+    id: &'static str,
+    name: &'static str,
+    version: &'static str,
+    vendor: GitlabVendor,
+    url: &'static str,
+}
+
+#[derive(Clone, Copy, Serialize)]
+struct GitlabVendor {
+    name: &'static str,
+}
+
+#[derive(Serialize)]
+struct GitlabVulnerability<'a> {
+    id: String,
+    category: &'static str,
+    name: String,
+    message: String,
+    description: String,
+    severity: &'static str,
+    solution: &'static str,
+    scanner: GitlabTool,
+    identifiers: [GitlabIdentifier<'a>; 1],
+    location: GitlabLocation<'a>,
+    details: GitlabDetails<'a>,
+}
+
+#[derive(Serialize)]
+struct GitlabIdentifier<'a> {
+    #[serde(rename = "type")]
+    identifier_type: &'static str,
+    name: &'a str,
+    value: &'a str,
+}
+
+#[derive(Serialize)]
+struct GitlabLocation<'a> {
+    file: &'a str,
+    start_line: usize,
+}
+
+#[derive(Serialize)]
+struct GitlabDetails<'a> {
+    credential: GitlabTextDetail<'a>,
+    service: GitlabTextDetail<'a>,
+    credential_hash: GitlabTextDetail<'a>,
+}
+
+#[derive(Serialize)]
+struct GitlabTextDetail<'a> {
+    name: &'static str,
+    #[serde(rename = "type")]
+    detail_type: &'static str,
+    value: Cow<'a, str>,
+}
+
+fn scan_object<'a>(scan_started_at: &'a str, scan_finished_at: &'a str) -> GitlabScan<'a> {
+    GitlabScan {
+        scan_type: "sast",
+        status: "success",
+        start_time: scan_started_at,
+        end_time: scan_finished_at,
+        analyzer: keyhog_tool(),
+        scanner: keyhog_tool(),
+    }
+}
+
+fn keyhog_tool() -> GitlabTool {
+    GitlabTool {
+        id: "keyhog",
+        name: "KeyHog",
+        version: env!("CARGO_PKG_VERSION"),
+        vendor: GitlabVendor {
+            name: "Santh Security",
         },
-        "url": "https://github.com/santhsecurity/keyhog"
-    })
+        url: "https://github.com/santhsecurity/keyhog",
+    }
 }
 
-fn scanner_object() -> serde_json::Value {
-    serde_json::json!({
-        "id": "keyhog",
-        "name": "KeyHog",
-        "version": env!("CARGO_PKG_VERSION"),
-        "vendor": {
-            "name": "Santh Security"
-        },
-        "url": "https://github.com/santhsecurity/keyhog"
-    })
-}
-
-fn vulnerability_object(finding: &VerifiedFinding) -> Result<serde_json::Value, ReportError> {
+fn vulnerability_object(finding: &VerifiedFinding) -> Result<GitlabVulnerability<'_>, ReportError> {
     let file = gitlab_file(finding)?;
     let start_line = gitlab_start_line(finding)?;
     let credential_hash = crate::hex_encode(&finding.credential_hash);
@@ -126,47 +185,42 @@ fn vulnerability_object(finding: &VerifiedFinding) -> Result<serde_json::Value, 
         finding.detector_name, finding.detector_id, file, start_line
     );
 
-    Ok(serde_json::json!({
-        "id": id,
-        "category": "sast",
-        "name": name,
-        "message": message,
-        "description": format!(
+    Ok(GitlabVulnerability {
+        id,
+        category: "sast",
+        name,
+        message,
+        description: format!(
             "KeyHog detected a redacted {} credential. Rotate the credential and remove it from source control.",
             finding.service
         ),
-        "severity": gitlab_severity(finding.severity),
-        "solution": "Rotate this credential, revoke the exposed value, and load the replacement from a secret manager or CI secret variable.",
-        "scanner": scanner_object(),
-        "identifiers": [
-            {
-                "type": "keyhog_rule",
-                "name": finding.detector_name.as_ref(),
-                "value": finding.detector_id.as_ref()
-            }
-        ],
-        "location": {
-            "file": file,
-            "start_line": start_line
+        severity: gitlab_severity(finding.severity),
+        solution: "Rotate this credential, revoke the exposed value, and load the replacement from a secret manager or CI secret variable.",
+        scanner: keyhog_tool(),
+        identifiers: [GitlabIdentifier {
+            identifier_type: "keyhog_rule",
+            name: finding.detector_name.as_ref(),
+            value: finding.detector_id.as_ref(),
+        }],
+        location: GitlabLocation { file, start_line },
+        details: GitlabDetails {
+            credential: GitlabTextDetail {
+                name: "Redacted credential",
+                detail_type: "text",
+                value: Cow::Borrowed(finding.credential_redacted.as_ref()),
+            },
+            service: GitlabTextDetail {
+                name: "Service",
+                detail_type: "text",
+                value: Cow::Borrowed(finding.service.as_ref()),
+            },
+            credential_hash: GitlabTextDetail {
+                name: "Credential hash",
+                detail_type: "text",
+                value: Cow::Owned(credential_hash),
+            },
         },
-        "details": {
-            "credential": {
-                "name": "Redacted credential",
-                "type": "text",
-                "value": finding.credential_redacted.as_ref()
-            },
-            "service": {
-                "name": "Service",
-                "type": "text",
-                "value": finding.service.as_ref()
-            },
-            "credential_hash": {
-                "name": "Credential hash",
-                "type": "text",
-                "value": credential_hash
-            }
-        }
-    }))
+    })
 }
 
 fn gitlab_file(finding: &VerifiedFinding) -> Result<&str, ReportError> {
