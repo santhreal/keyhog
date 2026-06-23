@@ -87,3 +87,21 @@ fn clone_shares_compiled_state() {
     assert!(lr.get().is_match("sk-wxyz"));
     assert_eq!(lr.as_str(), cloned.as_str());
 }
+
+#[test]
+fn detector_compiled_reuses_seeded_regex() {
+    let compiled = std::sync::Arc::new(
+        regex::RegexBuilder::new("ghp_[a-z0-9]{4}")
+            .case_insensitive(true)
+            .crlf(true)
+            .build()
+            .expect("seed regex compiles"),
+    );
+    let seeded = LazyRegex::detector_compiled("ghp_[a-z0-9]{4}", std::sync::Arc::clone(&compiled));
+
+    assert!(
+        std::ptr::eq(seeded.get(), compiled.as_ref()),
+        "compile-time validated detector regex must be reused, not compiled again"
+    );
+    assert!(seeded.get().is_match("GHP_AB12"));
+}

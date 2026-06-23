@@ -59,8 +59,9 @@ fn hyperscan_compile_with_opts_delegates_compile_stages() {
         .next()
         .expect("compile_cache_key boundary present");
     for required in [
-        "h.update(if opts.singlematch { b\"SM1\" } else { b\"SM0\" });",
-        "h.update(if opts.utf8 { b\"U81\" } else { b\"U80\" });",
+        "let HsCompileOpts {\n            singlematch,\n            caseless,\n            shard_target: _,\n            utf8,\n        } = opts;",
+        "h.update(if singlematch { b\"SM1\" } else { b\"SM0\" });",
+        "h.update(if utf8 { b\"U81\" } else { b\"U80\" });",
         "None => h.update(b\"CLall\")",
         "Some(cl) =>",
         "h.update(b\"CLper\")",

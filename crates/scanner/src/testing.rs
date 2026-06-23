@@ -707,6 +707,13 @@ impl LazyRegexProbe {
         Self(crate::types::LazyRegex::detector(src))
     }
 
+    pub(crate) fn detector_compiled(
+        src: impl Into<std::sync::Arc<str>>,
+        compiled: std::sync::Arc<regex::Regex>,
+    ) -> Self {
+        Self(crate::types::LazyRegex::detector_compiled(src, compiled))
+    }
+
     pub(crate) fn plain(src: impl Into<std::sync::Arc<str>>) -> Self {
         Self(crate::types::LazyRegex::plain(src))
     }

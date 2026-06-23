@@ -262,14 +262,29 @@ pub(crate) struct LazyRegex {
 }
 
 impl LazyRegex {
-    /// A detector pattern: case-insensitive, CRLF-aware, DFA-size-bounded -
-    /// identical to the eager `shared_regex_compile` build, and routed
-    /// through the same process-wide dedup cache on first use.
+    /// Test-only detector pattern constructor without a seeded compiled regex.
+    /// Production scanner compilation validates and seeds detector patterns
+    /// through [`Self::detector_compiled`] so it does not compile each regex
+    /// twice.
+    #[cfg(test)]
     pub(crate) fn detector(src: impl Into<Arc<str>>) -> Self {
         Self {
             src: src.into(),
             case_insensitive: true,
             cell: Arc::new(std::sync::OnceLock::new()),
+            has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
+        }
+    }
+
+    /// A detector pattern whose builder-level validation already produced the
+    /// shared compiled regex. Scanner construction uses this so startup does
+    /// not compile every curated regex once for validation and then compile the
+    /// same regexes again on `warm()` or first scan.
+    pub(crate) fn detector_compiled(src: impl Into<Arc<str>>, compiled: Arc<Regex>) -> Self {
+        Self {
+            src: src.into(),
+            case_insensitive: true,
+            cell: Arc::new(std::sync::OnceLock::from(compiled)),
             has_literal_prefix: Arc::new(std::sync::OnceLock::new()),
         }
     }
@@ -317,8 +332,8 @@ impl LazyRegex {
         self.case_insensitive
     }
 
-    /// Compile-on-first-use. Detector patterns have already been dry-run
-    /// through the same shared regex builder during scanner compilation, so a
+    /// Compile-on-first-use. Detector patterns built by the compiler are seeded
+    /// from the same shared regex builder during scanner compilation, so a
     /// detector compile failure here is an invariant breach. Plain generated
     /// variants still fail closed to a never-matching regex with a loud
     /// `error!` log rather than panicking.

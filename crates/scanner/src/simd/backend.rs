@@ -380,6 +380,12 @@ impl HsScanner {
 
     fn compile_cache_key(hs_pats: &[Pattern], opts: HsCompileOpts<'_>) -> String {
         use sha2::{Digest, Sha256};
+        let HsCompileOpts {
+            singlematch,
+            caseless,
+            shard_target: _,
+            utf8,
+        } = opts;
         let mut h = Sha256::new();
         for p in hs_pats {
             h.update(p.expression.as_bytes());
@@ -410,9 +416,9 @@ impl HsScanner {
         // Flags are baked into the serialized DB, so the cache key must
         // distinguish a caseless-all/no-singlematch build from a
         // per-pattern/singlematch one.
-        h.update(if opts.singlematch { b"SM1" } else { b"SM0" });
-        h.update(if opts.utf8 { b"U81" } else { b"U80" });
-        match opts.caseless {
+        h.update(if singlematch { b"SM1" } else { b"SM0" });
+        h.update(if utf8 { b"U81" } else { b"U80" });
+        match caseless {
             None => h.update(b"CLall"),
             Some(cl) => {
                 h.update(b"CLper");

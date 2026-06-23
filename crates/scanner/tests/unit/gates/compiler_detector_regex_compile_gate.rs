@@ -11,8 +11,12 @@ fn detector_compile_uses_runtime_regex_builder_before_scan() {
     let body = &source[start..end];
 
     assert!(
-        body.contains("shared_regex(spec.regex.as_str())"),
-        "compile_pattern must dry-run detector regexes through the same shared RegexBuilder used by LazyRegex before a scan can start"
+        body.contains("let regex = shared_regex(spec.regex.as_str())"),
+        "compile_pattern must validate detector regexes through the same shared RegexBuilder used by LazyRegex before a scan can start"
+    );
+    assert!(
+        body.contains("LazyRegex::detector_compiled(spec.regex.as_str(), regex)"),
+        "compile_pattern must seed LazyRegex with the validated shared regex instead of compiling once for validation and again on warm/first scan"
     );
     assert!(
         !body.contains("regex_syntax::Parser::new().parse(&spec.regex)"),

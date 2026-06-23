@@ -188,14 +188,14 @@ pub(crate) fn compile_pattern(
     detector_id: &str,
     detector_keywords: &[String],
 ) -> Result<CompiledPattern> {
-    shared_regex(spec.regex.as_str()).map_err(|source| ScanError::RegexCompile {
+    let regex = shared_regex(spec.regex.as_str()).map_err(|source| ScanError::RegexCompile {
         detector_id: detector_id.to_string(),
         index: pattern_index,
         source,
     })?;
     Ok(CompiledPattern {
         detector_index,
-        regex: LazyRegex::detector(spec.regex.as_str()),
+        regex: LazyRegex::detector_compiled(spec.regex.as_str(), regex),
         group: spec.group,
         client_safe: spec.client_safe,
         match_proves_keyword_nearby: match_proves_keyword_nearby(
