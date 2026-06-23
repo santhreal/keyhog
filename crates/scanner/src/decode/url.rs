@@ -1,7 +1,7 @@
 use super::base64::base64_decode;
 use super::pipeline::{
-    decode_candidate_refs_exact, decode_candidate_spans_exact, decode_candidates,
-    with_extracted_value_spans, ExtractedValue,
+    decode_candidate_refs_exact, decode_candidate_spans_exact, with_extracted_value_spans,
+    ExtractedValue,
 };
 use super::unicode_escape::unicode_escape_decode;
 use super::util::hex_val;
@@ -247,11 +247,12 @@ impl Decoder for MimeEncodedWordDecoder {
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
-        let mut candidates = Vec::new();
-        for line in chunk.data.lines() {
-            candidates.extend(find_mime_encoded_words(line));
-        }
-        decode_candidates(chunk, candidates, mime_encoded_word_decode, self.name())
+        decode_candidate_spans_exact(
+            chunk,
+            find_mime_encoded_word_spans(&chunk.data),
+            mime_encoded_word_decode,
+            self.name(),
+        )
     }
 }
 
@@ -535,17 +536,23 @@ fn mime_q_decode(input: &str) -> Result<Vec<u8>, ()> {
     Ok(bytes)
 }
 
-fn find_mime_encoded_words(line: &str) -> Vec<String> {
+fn find_mime_encoded_word_spans(text: &str) -> Vec<ExtractedValue> {
     let mut words = Vec::new();
-    let mut offset = 0;
-    while let Some(start) = line[offset..].find("=?") {
-        let absolute_start = offset + start;
-        if let Some(end) = line[absolute_start + 2..].find("?=") {
-            let absolute_end = absolute_start + 2 + end + 2;
-            words.push(line[absolute_start..absolute_end].to_string());
-            offset = absolute_end;
-        } else {
-            break;
+    for line in line_views_with_offsets(text) {
+        let mut offset = 0;
+        while let Some(start) = line.text[offset..].find("=?") {
+            let absolute_start = offset + start;
+            if let Some(end) = line.text[absolute_start + 2..].find("?=") {
+                let absolute_end = absolute_start + 2 + end + 2;
+                words.push(ExtractedValue::new(
+                    line.text[absolute_start..absolute_end].to_string(),
+                    line.start + absolute_start,
+                    line.start + absolute_end,
+                ));
+                offset = absolute_end;
+            } else {
+                break;
+            }
         }
     }
     words

@@ -108,6 +108,17 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
             && !qp_body.contains("decode_candidates("),
         "quoted-printable decoder should reuse the whole-chunk candidate view instead of re-extracting per line"
     );
+    let mime_body = impl_body(
+        &url,
+        "impl Decoder for MimeEncodedWordDecoder",
+        "fn percent_decode",
+    );
+    assert!(
+        mime_body.contains("decode_candidate_spans_exact(")
+            && mime_body.contains("find_mime_encoded_word_spans(&chunk.data)")
+            && !mime_body.contains("decode_candidates("),
+        "MIME encoded-word decoder should preserve parser spans instead of using synthetic decode candidates"
+    );
     let macro_body = impl_body(&url, "macro_rules! simple_decoder", "simple_decoder!(");
     assert!(
         macro_body.contains("decode_candidate_refs_exact(")

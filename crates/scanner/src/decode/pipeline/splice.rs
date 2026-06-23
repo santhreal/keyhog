@@ -171,50 +171,6 @@ fn consume_adjacent_base64_padding(parent: &[u8], start: usize) -> usize {
     }
 }
 
-pub(in crate::decode) fn decode_candidates<F>(
-    chunk: &Chunk,
-    candidates: Vec<String>,
-    decode: F,
-    decoder_name: &str,
-) -> Vec<Chunk>
-where
-    F: FnMut(&str) -> Result<String, ()>,
-{
-    decode_candidate_spans(
-        chunk,
-        candidates
-            .into_iter()
-            .map(ExtractedValue::synthetic)
-            .collect(),
-        decode,
-        decoder_name,
-    )
-}
-
-pub(super) fn decode_candidate_spans<F>(
-    chunk: &Chunk,
-    candidates: Vec<ExtractedValue>,
-    mut decode: F,
-    decoder_name: &str,
-) -> Vec<Chunk>
-where
-    F: FnMut(&str) -> Result<String, ()>,
-{
-    let mut decoded_chunks = Vec::new();
-    for candidate in candidates {
-        if let Ok(text) = decode(&candidate.value) {
-            push_decoded_text_chunk_spliced(
-                &mut decoded_chunks,
-                chunk,
-                &candidate.value,
-                text,
-                decoder_name,
-            );
-        }
-    }
-    decoded_chunks
-}
-
 pub(in crate::decode) fn decode_candidate_refs_exact<'a, I, F>(
     chunk: &Chunk,
     candidates: I,

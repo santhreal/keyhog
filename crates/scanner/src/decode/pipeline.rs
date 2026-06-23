@@ -173,6 +173,6 @@ pub(crate) use registry::{decoder_profile_dump, decoder_profile_reset};
 #[cfg(test)]
 pub(crate) use registry::{register_thread_decoder, ScopedDecoderRegistration};
 pub(super) use splice::{
-    decode_candidate_refs_exact, decode_candidate_spans_exact, decode_candidates,
-    push_decoded_text_chunk, push_decoded_text_chunk_spliced, push_decoded_text_chunk_spliced_at,
+    decode_candidate_refs_exact, decode_candidate_spans_exact, push_decoded_text_chunk,
+    push_decoded_text_chunk_spliced, push_decoded_text_chunk_spliced_at,
 };
