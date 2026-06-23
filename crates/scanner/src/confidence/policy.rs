@@ -88,6 +88,20 @@ pub(crate) fn ml_pending_confidence(policy: MlConfidencePolicy) -> f64 {
     confidence
 }
 
+#[cfg(feature = "ml")]
+pub(crate) fn probabilistic_promise_confidence_override(
+    credential: &str,
+    is_named_detector: bool,
+) -> Option<f64> {
+    if crate::probabilistic_gate::ProbabilisticGate::looks_promising(credential) {
+        return None;
+    }
+    let identifier_shaped =
+        crate::suppression::shape::looks_like_word_separated_identifier(credential)
+            || crate::suppression::shape::looks_like_pure_identifier(credential);
+    (!is_named_detector || identifier_shaped).then_some(0.1)
+}
+
 #[cfg(feature = "simdsieve")]
 pub(crate) fn hot_pattern_confidence(
     credential: &str,

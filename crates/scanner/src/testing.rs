@@ -202,6 +202,17 @@ pub mod confidence {
             },
         )
     }
+
+    #[cfg(all(test, feature = "ml"))]
+    pub(crate) fn probabilistic_promise_confidence_override(
+        credential: &str,
+        is_named_detector: bool,
+    ) -> Option<f64> {
+        crate::confidence::policy::probabilistic_promise_confidence_override(
+            credential,
+            is_named_detector,
+        )
+    }
 }
 
 pub mod entropy_fast {

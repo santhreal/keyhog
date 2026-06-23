@@ -19,6 +19,8 @@ pub(super) use crate::confidence::policy::hot_pattern_confidence;
 #[cfg(feature = "ml")]
 pub(super) use crate::confidence::policy::ml_pending_confidence;
 #[cfg(feature = "ml")]
+pub(super) use crate::confidence::policy::probabilistic_promise_confidence_override;
+#[cfg(feature = "ml")]
 pub(super) use crate::confidence::policy::MlConfidencePolicy;
 pub(super) use crate::confidence::policy::{
     checksum_policy_for, finalize_report_confidence, generic_secret_confidence,
@@ -165,42 +167,11 @@ impl CompiledScanner {
                 return Some(MlScoreResult::Final(heuristic_conf));
             }
 
-            // The probabilistic-promise gate fast-rejects low-diversity /
-            // UUID / structured strings to 0.1 (below the 0.3 report floor).
-            // That is correct for generic-* / entropy-* detectors - their
-            // only evidence is shape - but a NAMED service-anchored detector
-            // proved via its own regex that these bytes are the credential
-            // (Heroku / Braze / Codecov / Consul / Linode UUID & hex keys).
-            // generic-no-prefix-not-promising matches were already dropped
-            // upstream in `process_match`, so the only hits reaching here with
-            // `!looks_promising` are named detectors or known-prefix generics.
-            if !crate::probabilistic_gate::ProbabilisticGate::looks_promising(credential) {
-                // A named detector bypasses the 0.1 slam ONLY for genuinely
-                // structured secrets (UUID / hex / random tokens). A weak-prefix
-                // detector (e.g. stackblitz `sb_[A-Za-z0-9_-]{20,}`) can still
-                // match a CODE IDENTIFIER like `sb_get_string_descriptor` or
-                // `SB_ENDPOINT_ADDRESS_MASK` - those are never secrets, so they
-                // stay slammed even for named detectors. A UUID/hex credential
-                // is never identifier-shaped (digit-only segments, no `_`/`-`
-                // word structure), so the recall win for the 90+ real
-                // structured-key detectors is preserved.
-                // KH-L-0416 (EVALUATED, intentionally NOT discriminator-gated):
-                // this block runs ONLY in the `!looks_promising` branch — i.e. on
-                // LOW-DIVERSITY / structured values — and `token_randomness` is
-                // unreliable there: a repetitive run (`aaaaaaaaaaaaaaaa` −9.34,
-                // `qqqqwwww` −12.0) has improbable ENGLISH bigrams so it scores as
-                // "random", which would WRONGLY un-slam low-diversity junk for
-                // named detectors. The randomness discriminator is sound only
-                // where an upstream entropy/diversity floor runs first (the
-                // generic bridge); here `looks_promising` has already done the
-                // opposite filtering. A/B confirmed no-op on both corpora; left as
-                // the plain shape check by documented decision.
-                let identifier_shaped =
-                    crate::suppression::shape::looks_like_word_separated_identifier(credential)
-                        || crate::suppression::shape::looks_like_pure_identifier(credential);
-                if !is_named_detector || identifier_shaped {
-                    return Some(MlScoreResult::Final(0.1));
-                }
+            if let Some(confidence) = super::scoring::probabilistic_promise_confidence_override(
+                credential,
+                is_named_detector,
+            ) {
+                return Some(MlScoreResult::Final(confidence));
             }
 
             let text_context = local_context_window(data, line, ML_CONTEXT_RADIUS_LINES);

@@ -9,12 +9,14 @@ use keyhog_scanner::confidence::{
     known_prefix_confidence_floor, ConfidenceSignals, KNOWN_PREFIXES,
 };
 use keyhog_scanner::context::CodeContext;
-#[cfg(feature = "ml")]
-use keyhog_scanner::testing::confidence::ml_pending_confidence;
 use keyhog_scanner::testing::confidence::{
     apply_calibration_multiplier, apply_calibration_multiplier_with_store,
     apply_path_confidence_penalties, apply_post_ml_penalties, char_diversity,
     contains_placeholder_word, finalize_confidence, max_repeat_run, placeholder_words,
+};
+#[cfg(feature = "ml")]
+use keyhog_scanner::testing::confidence::{
+    ml_pending_confidence, probabilistic_promise_confidence_override,
 };
 
 fn all_false_signals() -> ConfidenceSignals {
@@ -309,6 +311,33 @@ fn ml_context_policy_honors_scan_comments_opt_out() {
     let unpenalized = ml_pending_confidence(0.7, 0.7, 0.5, false, CodeContext::Comment, true, true);
     assert!(penalized < unpenalized, "{penalized} vs {unpenalized}");
     assert!((unpenalized - 0.7).abs() < 1e-9);
+}
+
+#[test]
+#[cfg(feature = "ml")]
+fn probabilistic_promise_override_slams_generic_unpromising_values() {
+    assert_eq!(
+        probabilistic_promise_confidence_override("aaaaaaaaaaaaaaaa", false),
+        Some(0.1)
+    );
+}
+
+#[test]
+#[cfg(feature = "ml")]
+fn probabilistic_promise_override_keeps_named_structured_values() {
+    assert_eq!(
+        probabilistic_promise_confidence_override("1f48cec7-bbee-4eb7-8e35-3bc1e7a0f2c2", true),
+        None
+    );
+}
+
+#[test]
+#[cfg(feature = "ml")]
+fn probabilistic_promise_override_still_slams_named_unpromising_identifier_shapes() {
+    assert_eq!(
+        probabilistic_promise_confidence_override("aaaaaaaaaaaaaaaa", true),
+        Some(0.1)
+    );
 }
 
 // ---------------------------------------------------------------------------
