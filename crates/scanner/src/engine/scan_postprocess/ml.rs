@@ -35,22 +35,6 @@ impl CompiledScanner {
         scan_state.push_match(raw_match, self.config.max_matches_per_chunk);
     }
 
-    fn score_ml_pending_cpu(&self, pending_matches: &[MlPendingMatch]) -> Vec<f64> {
-        pending_matches
-            .iter()
-            .map(|pending| {
-                crate::ml_scorer::score_with_config(
-                    pending.credential.as_str(),
-                    pending.ml_context.as_str(),
-                    &self.config.known_prefixes,
-                    &self.config.secret_keywords,
-                    &self.config.test_keywords,
-                    &self.config.placeholder_keywords,
-                )
-            })
-            .collect()
-    }
-
     pub(crate) fn apply_ml_batch_scores(&self, scan_state: &mut ScanState) {
         if scan_postprocess_profile::ml_batch_prof_enabled() {
             scan_postprocess_profile::ml_batch_record(scan_state.ml_pending.len());
@@ -94,7 +78,13 @@ impl CompiledScanner {
                 scores = scores.len(),
                 "ML score count mismatch; recomputing CPU MoE scores before confidence blending"
             );
-            self.score_ml_pending_cpu(&pending_matches)
+            crate::ml_scorer::score_pending_matches_with_config(
+                &pending_matches,
+                &self.config.known_prefixes,
+                &self.config.secret_keywords,
+                &self.config.test_keywords,
+                &self.config.placeholder_keywords,
+            )
         };
         for (pending, ml_conf) in pending_matches.into_iter().zip(scores.into_iter()) {
             let report_conf = crate::confidence::policy::ml_pending_confidence(

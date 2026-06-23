@@ -18,6 +18,9 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
         "/src/engine/scan_postprocess/ml.rs"
     ))
     .expect("scan_postprocess/ml.rs readable");
+    let ml_scorer =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/ml_scorer.rs"))
+            .expect("ml_scorer.rs readable");
     let policy = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/confidence/policy.rs"
@@ -30,15 +33,24 @@ fn ml_batch_score_cardinality_is_checked_at_every_boundary() {
             .expect("gpu/backend.rs readable");
 
     assert!(
-        ml_postprocess.contains("fn score_ml_pending_cpu")
-            && ml_postprocess.contains("fn emit_finalized_pending_match")
-            && ml_postprocess.contains("crate::ml_scorer::score_with_config(")
+        ml_postprocess.contains("fn emit_finalized_pending_match")
+            && ml_postprocess.contains("crate::ml_scorer::score_pending_matches_with_config(")
+            && !ml_postprocess.contains("fn score_ml_pending_cpu")
+            && !ml_postprocess.contains("crate::ml_scorer::score_with_config(")
             && ml_postprocess.contains("scores.len() == pending_matches.len()")
             && ml_postprocess.contains(
                 "ML score count mismatch; recomputing CPU MoE scores before confidence blending"
             )
             && ml_postprocess.contains("pending_matches.into_iter().zip(scores.into_iter())"),
         "postprocess ML scoring must preserve every pending finding when score cardinality drifts"
+    );
+    assert!(
+        ml_scorer.contains("fn score_pending_matches_with_config(")
+            && ml_scorer.contains("pending_matches: &[crate::types::MlPendingMatch]")
+            && ml_scorer.contains("pending.credential.as_str()")
+            && ml_scorer.contains("pending.ml_context.as_str()")
+            && ml_scorer.contains("score_with_config("),
+        "ML scorer must own the CPU pending-match scoring loop"
     );
     assert!(
         ml_postprocess.contains("self.emit_finalized_pending_match(scan_state, pending, report_conf)")

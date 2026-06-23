@@ -117,6 +117,31 @@ pub(crate) fn score_with_config(
     score
 }
 
+/// Score pending ML matches on the CPU using the same candidate/context fields
+/// the GPU batch path receives.
+#[cfg(feature = "ml")]
+pub(crate) fn score_pending_matches_with_config(
+    pending_matches: &[crate::types::MlPendingMatch],
+    known_prefixes: &[String],
+    secret_keywords: &[String],
+    test_keywords: &[String],
+    placeholder_keywords: &[String],
+) -> Vec<f64> {
+    pending_matches
+        .iter()
+        .map(|pending| {
+            score_with_config(
+                pending.credential.as_str(),
+                pending.ml_context.as_str(),
+                known_prefixes,
+                secret_keywords,
+                test_keywords,
+                placeholder_keywords,
+            )
+        })
+        .collect()
+}
+
 /// Score precomputed model features without recomputing text/context signals.
 #[cfg(feature = "ml")]
 pub(crate) fn score_features(features: &[f32; NUM_FEATURES]) -> f64 {
