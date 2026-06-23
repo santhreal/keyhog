@@ -9,6 +9,9 @@ fn config_file_merge_uses_section_helpers() {
     .expect("config sections source readable");
     let scan = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/config/scan.rs"))
         .expect("config scan source readable");
+    let policy =
+        std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/config/policy.rs"))
+            .expect("config policy source readable");
     let apply = src
         .split("fn apply_config_file_impl(")
         .nth(1)
@@ -39,10 +42,17 @@ fn config_file_merge_uses_section_helpers() {
         );
     }
 
-    for helper in ["fn resolve_policy_outcome("] {
+    for helper in [
+        "fn resolve_policy_outcome(",
+        "fn shipped_config_outcome(",
+        "fn config_file_error(",
+        "struct ConfigOutcome",
+        "const SHIPPED_DETECTOR_FLOORS",
+        "const SHIPPED_DISABLED_DETECTORS",
+    ] {
         assert!(
-            src.contains(helper),
-            "config.rs must keep {helper} as the config policy outcome owner"
+            policy.contains(helper),
+            "config/policy.rs must keep {helper} as the config policy outcome owner"
         );
     }
 
@@ -89,6 +99,20 @@ fn config_file_merge_uses_section_helpers() {
         assert!(
             !apply.contains(forbidden),
             "apply_config_file_impl must not re-own section implementation detail `{forbidden}`"
+        );
+    }
+
+    for forbidden in [
+        "const SHIPPED_DETECTOR_FLOORS",
+        "const SHIPPED_DISABLED_DETECTORS",
+        "struct ConfigOutcome",
+        "fn resolve_policy_outcome(",
+        "section.enabled",
+        "section.min_confidence",
+    ] {
+        assert!(
+            !src.contains(forbidden),
+            "config.rs must not re-own policy implementation detail `{forbidden}`"
         );
     }
 }
