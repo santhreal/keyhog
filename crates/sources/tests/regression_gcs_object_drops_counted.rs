@@ -278,7 +278,9 @@ fn max_objects_limit_is_counted_source_truncated() {
 #[test]
 fn custom_endpoint_is_not_treated_as_google_for_token_forwarding() {
     assert!(TestApi.gcs_endpoint_is_google("https://storage.googleapis.com"));
+    assert!(TestApi.gcs_endpoint_is_google("https://STORAGE.GOOGLEAPIS.COM"));
     assert!(!TestApi.gcs_endpoint_is_google("https://storage.googleapis.com.attacker.example"));
+    assert!(!TestApi.gcs_endpoint_is_google("https://GOOGLEAPIS.COM.attacker.example"));
     assert!(!TestApi.gcs_endpoint_is_google("https://minio.example.test"));
 }
 

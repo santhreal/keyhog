@@ -32,6 +32,7 @@ fn aws_owned_endpoints_are_recognized_as_aws() {
         "https://s3.eu-west-2.amazonaws.com",
         "https://s3.dualstack.us-east-1.amazonaws.com",
         "https://mybucket.s3.us-east-1.amazonaws.com",
+        "https://S3.US-EAST-1.AMAZONAWS.COM",
         "https://s3.cn-north-1.amazonaws.com.cn",
         "https://s3.us-gov-east-1.amazonaws.com",
     ] {
@@ -60,6 +61,7 @@ fn non_aws_endpoints_do_not_pass_aws_gate() {
         "https://s3.example.test",                // generic S3-API vendor
         "https://attacker.example",               // attacker-controlled
         "https://amazonaws.com.attacker.example", // suffix-confusion attack
+        "https://AMAZONAWS.COM.attacker.example", // case variant suffix-confusion
         "https://s3.amazonaws.co",                // typo'd TLD
         "https://s3-amazonaws.com",               // missing dot
         "http://127.0.0.1:9000",                  // IP literal

@@ -171,7 +171,8 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
         blocking_thread.contains("fn collect_on_blocking_thread")
             && cloud.contains("fn blocking_client")
             && cloud.contains("fn parse_http_endpoint")
-            && cloud.contains("fn credential_forward_allowed"),
+            && cloud.contains("fn credential_forward_allowed")
+            && cloud.contains("fn host_matches_domain_ascii_ci"),
         "blocking_thread.rs and cloud/mod.rs must own shared remote thread, cloud client, endpoint, and credential-forward primitives"
     );
     assert!(
@@ -220,6 +221,13 @@ fn cloud_object_fetch_pool_is_single_shared_owner() {
             !source.contains("fn credential_forward_allowed("),
             "{rel} must not own a private credential-forward policy helper"
         );
+        if matches!(rel, "src/s3/mod.rs" | "src/gcs.rs") {
+            assert!(
+                source.contains("host_matches_domain_ascii_ci(")
+                    && !source.contains("host.to_ascii_lowercase()"),
+                "{rel} must use allocation-free shared host suffix matching for credential-forward guards"
+            );
+        }
         assert!(
             source.contains("parse_http_endpoint("),
             "{rel} must route endpoint shape parsing through cloud/mod.rs"

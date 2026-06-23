@@ -398,8 +398,7 @@ pub(crate) fn endpoint_is_google(endpoint: &str) -> bool {
     let Some(host) = parsed.host_str() else {
         return false;
     };
-    let host = host.to_ascii_lowercase();
-    host == "googleapis.com" || host.ends_with(".googleapis.com")
+    crate::cloud::host_matches_domain_ascii_ci(host, "googleapis.com")
 }
 
 fn gcs_bearer_token(endpoint: &str, allow_token_forward: bool) -> Option<String> {

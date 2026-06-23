@@ -53,6 +53,21 @@ pub(crate) fn credential_forward_allowed(allow_explicit: bool) -> bool {
     allow_explicit
 }
 
+pub(crate) fn host_matches_domain_ascii_ci(host: &str, domain: &str) -> bool {
+    if host.eq_ignore_ascii_case(domain) {
+        return true;
+    }
+    if host.len() <= domain.len() {
+        return false;
+    }
+    let dot_index = host.len() - domain.len() - 1;
+    host.as_bytes().get(dot_index) == Some(&b'.')
+        && host
+            .as_bytes()
+            .get(dot_index + 1..)
+            .is_some_and(|suffix| suffix.eq_ignore_ascii_case(domain.as_bytes()))
+}
+
 pub(crate) fn take_listing_page<T>(items: Vec<T>, remaining: usize) -> (Vec<T>, bool) {
     let reached_limit = items.len() > remaining;
     let page = items.into_iter().take(remaining).collect();

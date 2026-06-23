@@ -410,12 +410,11 @@ pub(crate) fn endpoint_is_aws(endpoint: &str) -> bool {
         Err(_) => return false, // LAW10: failure => fail-closed error (blocked/refused), never proceeds; security guard
     };
     let host = match parsed.host_str() {
-        Some(h) => h.to_ascii_lowercase(),
+        Some(h) => h,
         None => return false,
     };
-    host == "amazonaws.com"
-        || host.ends_with(".amazonaws.com")
-        || host.ends_with(".amazonaws.com.cn")
+    crate::cloud::host_matches_domain_ascii_ci(host, "amazonaws.com")
+        || crate::cloud::host_matches_domain_ascii_ci(host, "amazonaws.com.cn")
 }
 
 fn build_base_url(bucket: &str, endpoint: Option<&str>) -> Result<String, SourceError> {
