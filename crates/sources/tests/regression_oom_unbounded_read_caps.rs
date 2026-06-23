@@ -119,3 +119,21 @@ fn seven_zip_entry_reads_are_capped() {
         "7z decoded-entry overflow must be classified as over-max-size before falling through to aggregate archive truncation"
     );
 }
+
+#[test]
+fn rar_entry_sink_uses_remaining_archive_budget() {
+    let rar = read_src("src/filesystem/extract/rar.rs");
+    assert!(
+        !rar.contains("RarEntrySink::new(entry_name.clone(), entry_size, state.per_entry_cap)"),
+        "RAR entry sinks must not use the static per-entry cap: uncapped mode or late entries can allocate beyond the aggregate archive budget"
+    );
+    assert!(
+        rar.matches("RarEntrySink::new(entry_name.clone(), entry_size, state.sink_cap())")
+            .count()
+            == 3
+            && rar.contains("fn sink_cap(&self) -> u64")
+            && rar.contains("self.per_entry_cap")
+            && rar.contains("self.total_budget.saturating_sub(self.total_uncompressed)"),
+        "RAR entry sinks must cap decoded output to min(per-entry cap, remaining aggregate archive budget)"
+    );
+}

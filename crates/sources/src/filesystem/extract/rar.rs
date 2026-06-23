@@ -67,12 +67,11 @@ pub(super) fn extract_rar_chunks(
                     );
                     continue;
                 }
-                let mut sink =
-                    RarEntrySink::new(entry_name.clone(), entry_size, state.per_entry_cap);
+                let mut sink = RarEntrySink::new(entry_name.clone(), entry_size, state.sink_cap());
                 match entry.write_to(archive, None, &mut sink) {
                     Ok(()) => state.emit_entry(emit, sink),
                     Err(error) => {
-                        state.report_entry_error(&entry_name, &error);
+                        state.report_entry_error(&entry_name, &error, emit);
                     }
                 }
                 if state.consumer_stopped {
@@ -100,12 +99,11 @@ pub(super) fn extract_rar_chunks(
                     );
                     continue;
                 }
-                let mut sink =
-                    RarEntrySink::new(entry_name.clone(), entry_size, state.per_entry_cap);
+                let mut sink = RarEntrySink::new(entry_name.clone(), entry_size, state.sink_cap());
                 match entry.write_to(archive, None, &mut sink) {
                     Ok(()) => state.emit_entry(emit, sink),
                     Err(error) => {
-                        state.report_entry_error(&entry_name, &error);
+                        state.report_entry_error(&entry_name, &error, emit);
                     }
                 }
                 if state.consumer_stopped {
@@ -137,12 +135,11 @@ pub(super) fn extract_rar_chunks(
                     );
                     continue;
                 }
-                let mut sink =
-                    RarEntrySink::new(entry_name.clone(), entry_size, state.per_entry_cap);
+                let mut sink = RarEntrySink::new(entry_name.clone(), entry_size, state.sink_cap());
                 match entry.write_to(archive, None, &mut sink) {
                     Ok(()) => state.emit_entry(emit, sink),
                     Err(error) => {
-                        state.report_entry_error(&entry_name, &error);
+                        state.report_entry_error(&entry_name, &error, emit);
                     }
                 }
                 if state.consumer_stopped {
@@ -244,7 +241,33 @@ impl<'a> RarExtractionState<'a> {
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
     }
 
-    fn report_entry_error(&self, entry_name: &str, error: &rars::Error) {
+    fn report_entry_error(
+        &mut self,
+        entry_name: &str,
+        error: &rars::Error,
+        emit: &mut dyn FnMut(Result<Chunk, SourceError>) -> bool,
+    ) {
+        let error_text = error.to_string();
+        if error_text.contains("RAR entry decoded size exceeds configured extraction cap") {
+            if self.sink_cap() < self.per_entry_cap {
+                self.report_archive_truncation(self.total_budget.saturating_add(1), emit);
+            } else {
+                tracing::warn!(
+                    archive = %self.archive_path.display(),
+                    entry = %entry_name,
+                    cap = self.per_entry_cap,
+                    "skipping RAR entry: decoded size exceeds per-file cap; remaining entries were NOT scanned"
+                );
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::OverMaxSize);
+                let _event = crate::record_skip_event(crate::SourceSkipEvent::ArchiveTruncated);
+                self.archive_truncated = true;
+                self.consumer_stopped = !emit(Err(SourceError::Other(format!(
+                    "RAR entry '{}//{}' exceeded the per-file cap during capped decode; remaining entries were not scanned",
+                    self.archive_display, entry_name
+                ))));
+            }
+            return;
+        }
         tracing::warn!(
             archive = %self.archive_path.display(),
             entry = %entry_name,
@@ -252,6 +275,11 @@ impl<'a> RarExtractionState<'a> {
             "cannot read RAR entry; skipping"
         );
         let _event = crate::record_skip_event(crate::SourceSkipEvent::Unreadable);
+    }
+
+    fn sink_cap(&self) -> u64 {
+        self.per_entry_cap
+            .min(self.total_budget.saturating_sub(self.total_uncompressed))
     }
 
     fn emit_entry(
@@ -320,7 +348,7 @@ impl Write for RarEntrySink {
         if next_len > self.cap {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "RAR entry decoded size exceeds per-file cap",
+                "RAR entry decoded size exceeds configured extraction cap",
             ));
         }
         self.content.extend_from_slice(buf);
