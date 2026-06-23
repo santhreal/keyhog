@@ -24,6 +24,9 @@ impl Decoder for UrlDecoder {
     }
 
     fn decode_chunk(&self, chunk: &Chunk) -> Vec<Chunk> {
+        if !chunk.data.contains('%') {
+            return Vec::new();
+        }
         with_extracted_value_spans(&chunk.data, |candidates| {
             let mut decoded_chunks = decode_candidate_refs_exact(
                 chunk,

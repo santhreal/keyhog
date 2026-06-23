@@ -90,11 +90,12 @@ fn hot_decoders_decode_borrowed_candidates_without_clone_collect() {
         "impl Decoder for QuotedPrintableDecoder",
     );
     assert!(
-        url_body.contains("decode_candidate_refs_exact(")
+        url_body.contains("if !chunk.data.contains('%')")
+            && url_body.contains("decode_candidate_refs_exact(")
             && url_body.contains("percent_assignment_tail_candidates(")
             && !url_body.contains(".cloned()")
             && !url_body.contains(".collect::<Vec<_>>()"),
-        "URL decoder should stream shared percent candidates and own only synthetic assignment tails"
+        "URL decoder should skip no-percent chunks before extraction, stream shared percent candidates, and own only synthetic assignment tails"
     );
     let qp_body = impl_body(
         &url,
