@@ -235,6 +235,7 @@ fn random_byte_base64_shape_lives_in_shape_owner() {
 
     assert!(
         shape.contains("fn looks_like_random_byte_base64_blob(")
+            && shape.contains("fn looks_like_entropy_random_base64_blob_decoy(")
             && shape_mod.contains("looks_like_random_byte_base64_blob"),
         "suppression::shape must own and re-export the random-byte base64 blob predicate"
     );
@@ -243,11 +244,20 @@ fn random_byte_base64_shape_lives_in_shape_owner() {
         "generic engine helpers must not own the random-byte base64 blob shape predicate"
     );
     assert!(
+        !entropy_gates.contains("entropy_path_looks_like_random_base64_blob("),
+        "entropy gates must not call an entropy-owned base64 blob predicate"
+    );
+    assert!(
         generic_shape.contains("crate::suppression::shape::looks_like_random_byte_base64_blob(value)")
             && entropy_gates.contains(
                 "crate::suppression::shape::looks_like_random_byte_base64_blob(&entropy_match.value)"
             ),
         "generic and entropy callers must use the shared suppression::shape owner"
+    );
+    assert!(
+        entropy_gates
+            .contains("crate::suppression::shape::looks_like_entropy_random_base64_blob_decoy("),
+        "entropy-specific base64 decoy policy must call the suppression::shape owner"
     );
     assert!(
         !generic_shape.contains("generic_path_looks_like_random_byte_blob(")

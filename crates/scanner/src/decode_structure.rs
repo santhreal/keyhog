@@ -98,7 +98,7 @@ pub(crate) fn is_encoded_binary(candidate: &str) -> bool {
 /// single parameterized definition behind every base64-protobuf-decoy gate in
 /// the scanner. Reconciles two previously-divergent copies (this module's
 /// penalty-path [`looks_like_uniform_base64_blob`] and the entropy-path's
-/// `engine::phase2_entropy::helpers::entropy_path_looks_like_random_base64_blob`)
+/// `suppression::shape::looks_like_entropy_random_base64_blob_decoy`)
 /// so their length/diversity bands are tuned in one place and can never drift
 /// in opposite directions un-benched again.
 ///
@@ -181,7 +181,7 @@ pub(crate) fn looks_like_uniform_base64_blob(value: &str) -> bool {
 }
 
 /// Stricter sibling of [`is_random_base64_blob`] for the **emit-drop** fallback
-/// paths (`engine::phase2_entropy::helpers::entropy_path_looks_like_random_base64_blob`
+/// paths (`suppression::shape::looks_like_entropy_random_base64_blob_decoy`
 /// and `engine::phase2_generic::generic_path_looks_like_random_base64_blob`).
 /// Same band + padding/mult-4 + standard-base64 alphabet skeleton, but the admit
 /// clause demands a genuine **byte-distribution** signal: BOTH `+` AND `/`

@@ -339,7 +339,9 @@ pub(crate) fn entropy_match_suppression_stage(
     // detector path missed because they have no service-
     // specific keyword anchor.
     if !high_entropy_punctuation_payload
-        && entropy_path_looks_like_random_base64_blob(&entropy_match.value)
+        && crate::suppression::shape::looks_like_entropy_random_base64_blob_decoy(
+            &entropy_match.value,
+        )
     {
         return Some(EntropyShapeStage::RandomBase64Blob);
     }

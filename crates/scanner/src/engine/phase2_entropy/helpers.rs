@@ -52,21 +52,6 @@ pub(crate) fn entropy_path_looks_like_filename(value: &str) -> bool {
         .any(|s| crate::ascii_ci::ends_with_ignore_ascii_case(bytes, s))
 }
 
-#[cfg(feature = "entropy")]
-pub(crate) fn entropy_path_looks_like_random_base64_blob(value: &str) -> bool {
-    // Band 50..=300: lower bound 50 (was 40) so 40-49 char base64-shaped
-    // credentials get a path through the entropy fallback. Real-world recall
-    // fixtures sit in this 40-49 char band (Stripe-style restricted-secret-key
-    // bodies, GitHub legacy 40-char auth secrets). Protobuf-of-random-bytes
-    // decoys skew larger (median 64 chars per negatives.py: 30-80 random bytes)
-    // so this band is overwhelmingly real credentials.
-    //
-    // The band + padding + standard-base64-alphabet + BOTH-`+`-AND-`/` skeleton
-    // is the shared `is_byte_distribution_base64_blob` canonical (MC-12); this
-    // path composes only its band on top.
-    crate::decode_structure::is_byte_distribution_base64_blob(value, 50, 300)
-}
-
 /// The four synthetic entropy-fallback metadata triples, index-parallel with
 /// [`classify_entropy_detector_index`]. Single source of truth: the scanner
 /// pre-interns this exact table into `entropy_metadata_by_index` at

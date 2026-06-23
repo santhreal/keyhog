@@ -1446,8 +1446,8 @@ pub(crate) mod phase2_entropy_helpers {
         crate::engine::phase2_entropy::helpers::keyword_is_credential_anchor(keyword)
     }
 
-    pub(crate) fn entropy_path_looks_like_random_base64_blob(value: &str) -> bool {
-        crate::engine::phase2_entropy::helpers::entropy_path_looks_like_random_base64_blob(value)
+    pub(crate) fn looks_like_entropy_random_base64_blob_decoy(value: &str) -> bool {
+        crate::suppression::shape::looks_like_entropy_random_base64_blob_decoy(value)
     }
 }
 

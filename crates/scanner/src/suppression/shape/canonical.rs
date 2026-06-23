@@ -280,6 +280,10 @@ pub(crate) fn looks_like_standard_base64_blob(credential: &str) -> bool {
     crate::decode_structure::is_random_base64_blob(credential, 40, 80, 32)
 }
 
+pub(crate) fn looks_like_entropy_random_base64_blob_decoy(value: &str) -> bool {
+    crate::decode_structure::is_byte_distribution_base64_blob(value, 50, 300)
+}
+
 /// Pure standard-base64 random-byte decoy shape in the 40-80 char band.
 ///
 /// This is the decode-through sibling for decoys that miss the punctuation /
