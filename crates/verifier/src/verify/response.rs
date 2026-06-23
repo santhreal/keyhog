@@ -105,7 +105,7 @@ pub(crate) fn body_indicates_error(body: &str) -> bool {
     // Non-JSON fallback: whole-word match so embedded substrings
     // (e.g. `error_rate`, `myinvalidatedname`) do not trip the heuristic.
     body.split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
-        .any(is_error_word)
+        .any(is_error_contract_token)
 }
 
 /// Error key names recognized inside a JSON response body.
@@ -115,23 +115,18 @@ const JSON_ERROR_KEYS: &[&str] = &["error", "errors", "invalid", "expired", "rev
 fn json_indicates_error(value: &serde_json::Value) -> bool {
     match value {
         serde_json::Value::Object(map) => map.iter().any(|(key, val)| {
-            (is_json_error_key(key) && json_value_is_truthy_error(val)) || json_indicates_error(val)
+            (is_error_contract_token(key) && json_value_is_truthy_error(val))
+                || json_indicates_error(val)
         }),
         serde_json::Value::Array(items) => items.iter().any(json_indicates_error),
         _ => false,
     }
 }
 
-fn is_error_word(word: &str) -> bool {
+fn is_error_contract_token(token: &str) -> bool {
     JSON_ERROR_KEYS
         .iter()
-        .any(|candidate| word.eq_ignore_ascii_case(candidate))
-}
-
-fn is_json_error_key(key: &str) -> bool {
-    JSON_ERROR_KEYS
-        .iter()
-        .any(|candidate| key.eq_ignore_ascii_case(candidate))
+        .any(|candidate| token.eq_ignore_ascii_case(candidate))
 }
 
 /// Whether the value attached to an error key actually denotes a present error.
