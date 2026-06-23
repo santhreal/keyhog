@@ -59,39 +59,18 @@ impl RateLimiter {
         };
         let wait_time = {
             let default = self.default_interval();
-            let entry = self.services.entry(service.to_string()).or_insert_with(|| {
-                Mutex::new(ServiceLimit {
-                    last_request: Instant::now() - default,
-                    interval: default,
-                })
-            });
-            let mut limit = entry.value().lock();
-            let now = Instant::now();
-            // `last_request` is the start of the most-recent SLOT (real or
-            // reserved-for-an-in-flight-waiter). The next legal slot is at
-            // `last_request + interval`.
-            //
-            // Earlier flow used `now.duration_since(last_request)` which
-            // saturates to zero when `last_request` is in the future (a
-            // previous caller reserved a slot we haven'"'"'t reached yet).
-            // That made the second-and-onward queued caller wait `interval`
-            // from THEIR arrival instead of `interval` after the previous
-            // reserved slot - back-to-back arrivals therefore burst at
-            // close to 1 request per slot-arrival-rate, blowing past the
-            // configured per-service cap.
-            //
-            // Fix: always queue strictly after `last_request + interval`,
-            // computed from `last_request` (not `now`), and roll
-            // `last_request` forward by exactly one interval per queued
-            // caller so the next arrival queues after this one'"'"'s slot.
-            let next_slot = limit.last_request + limit.interval;
-            if now >= next_slot {
-                limit.last_request = now;
-                None
+            if let Some(entry) = self.services.get(service) {
+                let mut limit = entry.value().lock();
+                reserve_service_slot(&mut limit, Instant::now())
             } else {
-                let wait = next_slot.saturating_duration_since(now);
-                limit.last_request = next_slot;
-                Some(wait)
+                let inserted = self.services.entry(service.to_string()).or_insert_with(|| {
+                    Mutex::new(ServiceLimit {
+                        last_request: Instant::now() - default,
+                        interval: default,
+                    })
+                });
+                let mut limit = inserted.value().lock();
+                reserve_service_slot(&mut limit, Instant::now())
             }
         };
         let delay = match wait_time {
@@ -124,6 +103,35 @@ impl RateLimiter {
                 interval,
             }),
         );
+    }
+}
+
+fn reserve_service_slot(limit: &mut ServiceLimit, now: Instant) -> Option<Duration> {
+    // `last_request` is the start of the most-recent SLOT (real or
+    // reserved-for-an-in-flight-waiter). The next legal slot is at
+    // `last_request + interval`.
+    //
+    // Earlier flow used `now.duration_since(last_request)` which
+    // saturates to zero when `last_request` is in the future (a
+    // previous caller reserved a slot we haven't reached yet).
+    // That made the second-and-onward queued caller wait `interval`
+    // from THEIR arrival instead of `interval` after the previous
+    // reserved slot - back-to-back arrivals therefore burst at
+    // close to 1 request per slot-arrival-rate, blowing past the
+    // configured per-service cap.
+    //
+    // Fix: always queue strictly after `last_request + interval`,
+    // computed from `last_request` (not `now`), and roll
+    // `last_request` forward by exactly one interval per queued
+    // caller so the next arrival queues after this one's slot.
+    let next_slot = limit.last_request + limit.interval;
+    if now >= next_slot {
+        limit.last_request = now;
+        None
+    } else {
+        let wait = next_slot.saturating_duration_since(now);
+        limit.last_request = next_slot;
+        Some(wait)
     }
 }
 
