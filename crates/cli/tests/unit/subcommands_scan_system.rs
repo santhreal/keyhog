@@ -1,4 +1,4 @@
-use keyhog::testing::{CliTestApi as _, API};
+use keyhog::testing::{API, CliTestApi as _};
 use keyhog_core::{MatchLocation, RawMatch, Severity};
 use std::sync::Arc;
 
@@ -172,25 +172,48 @@ fn macos_scan_system_mount_enumeration_does_not_fall_back_to_path() {
 }
 
 #[test]
-fn linux_mount_skip_prefixes_match_decoded_targets() {
+fn linux_mount_filters_are_tier_b_and_match_decoded_targets() {
     let src = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/subcommands/scan_system/mounts.rs"
     ))
     .expect("scan-system mount source readable");
+    let data = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/data/scan_system/mount_filters.toml"
+    ))
+    .expect("scan-system mount filter data readable");
+
+    assert!(
+        src.contains("include_str!(\"../../../data/scan_system/mount_filters.toml\")")
+            && src.contains("fn load_mount_filters()")
+            && !src.contains("const SKIP_FS_TYPES")
+            && !src.contains("const SKIP_PATH_PREFIXES")
+            && !src.contains("const NETWORK_FS_TYPES"),
+        "linux mount filtering must be loaded from Tier-B data instead of local hardcoded lists"
+    );
+    assert!(
+        data.contains("skip_fs_types")
+            && data.contains("skip_path_prefixes")
+            && data.contains("network_fs_types")
+            && data.contains("\"proc\"")
+            && data.contains("\"/snap/\"")
+            && data.contains("\"nfs\""),
+        "mount_filters.toml must carry the linux skip and network filter sets"
+    );
+
     let decode_pos = src
         .find("let decoded = decode_octal_escapes(target);")
         .expect("linux mount enumeration must decode /proc/mounts targets");
     let skip_pos = src
-        .find("SKIP_PATH_PREFIXES.iter().any(|p| decoded.starts_with(p))")
+        .find("decoded.starts_with(prefix)")
         .expect("linux mount skip prefixes must compare against decoded targets");
-
     assert!(
         decode_pos < skip_pos,
         "linux scan-system must decode escaped mount targets before applying skip_path_prefixes"
     );
     assert!(
-        !src.contains("SKIP_PATH_PREFIXES.iter().any(|p| target.starts_with(p))"),
+        !src.contains("target.starts_with"),
         "raw /proc/mounts targets contain octal escapes, so skip_path_prefixes must not match raw targets"
     );
 }

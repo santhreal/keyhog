@@ -43,52 +43,67 @@ pub(super) fn enumerate_mounts(_include_network: bool) -> Result<Vec<PathBuf>> {
     }
 }
 
+/// Scan-system mount filters loaded from Tier-B data. Linux-only: the
+/// filesystem-type names are Linux `/proc/mounts` types.
+#[cfg(target_os = "linux")]
+#[derive(Debug, Default, serde::Deserialize)]
+struct MountFilters {
+    #[serde(default)]
+    skip_fs_types: Vec<String>,
+    #[serde(default)]
+    skip_path_prefixes: Vec<String>,
+    #[serde(default)]
+    network_fs_types: Vec<String>,
+}
+
+/// Compiled-in Tier-B baseline. Always applied.
+#[cfg(target_os = "linux")]
+const BUNDLED_MOUNT_FILTERS: &str = include_str!("../../../data/scan_system/mount_filters.toml");
+
+/// Load scan-system mount filters: the embedded baseline UNIONED with an
+/// optional `<config>/keyhog/mount_filters.toml`, so an operator can skip an
+/// exotic filesystem or path without recompiling.
+///
+/// No silent fallback (Law 10): the baseline parse is surfaced as an error (a
+/// failure means the embedded data is corrupt — a build bug, caught by the data
+/// test), and a user file that EXISTS but is unreadable or unparseable is a hard
+/// error. Only the ordinary "no user file present" case uses the baseline alone,
+/// which is the intended default — not a degraded fallback.
+#[cfg(target_os = "linux")]
+fn load_mount_filters() -> Result<MountFilters> {
+    let mut filters: MountFilters = toml::from_str(BUNDLED_MOUNT_FILTERS)
+        .context("parse bundled scan_system/mount_filters.toml (build bug)")?;
+    let Some(user_path) = dirs::config_dir().map(|d| d.join("keyhog/mount_filters.toml")) else {
+        return Ok(filters);
+    };
+    match std::fs::read_to_string(&user_path) {
+        Ok(text) => {
+            let user: MountFilters = toml::from_str(&text)
+                .with_context(|| format!("parse mount filters {}", user_path.display()))?;
+            filters.skip_fs_types.extend(user.skip_fs_types);
+            filters.skip_path_prefixes.extend(user.skip_path_prefixes);
+            filters.network_fs_types.extend(user.network_fs_types);
+            Ok(filters)
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(filters),
+        Err(error) => Err(anyhow::Error::new(error))
+            .with_context(|| format!("read mount filters {}", user_path.display())),
+    }
+}
+
 #[cfg(target_os = "linux")]
 fn linux_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
-    const SKIP_FS_TYPES: &[&str] = &[
-        "proc",
-        "sysfs",
-        "tmpfs",
-        "devtmpfs",
-        "devpts",
-        "cgroup",
-        "cgroup2",
-        "pstore",
-        "bpf",
-        "tracefs",
-        "debugfs",
-        "securityfs",
-        "configfs",
-        "fusectl",
-        "binfmt_misc",
-        "rpc_pipefs",
-        "ramfs",
-        "autofs",
-        "mqueue",
-        "hugetlbfs",
-        "fuse.gvfsd-fuse",
-        "overlay",
-        "squashfs",
-        "nsfs",
-        "fuse.portal",
-        "fuse.snapfuse",
-        "fuse.gvfs-fuse-daemon",
-        "fuse.fusectl",
-        "rootfs",
-    ];
-    const SKIP_PATH_PREFIXES: &[&str] = &["/run/", "/proc/", "/sys/", "/dev/", "/snap/"];
-    const NETWORK_FS_TYPES: &[&str] = &[
-        "nfs",
-        "nfs4",
-        "cifs",
-        "smb",
-        "smbfs",
-        "fuse.sshfs",
-        "fuse.rclone",
-        "9p",
-        "afs",
-        "ceph",
-    ];
+    // Tier-B data, not a hardcoded list: the shipped baseline plus any user
+    // extension. A user file that exists but won't parse is a hard error here,
+    // never a silent fall back to defaults (Law 10).
+    let filters = load_mount_filters()?;
+    let skip_fs_types: std::collections::HashSet<&str> =
+        filters.skip_fs_types.iter().map(String::as_str).collect();
+    let network_fs_types: std::collections::HashSet<&str> = filters
+        .network_fs_types
+        .iter()
+        .map(String::as_str)
+        .collect();
 
     let mounts_text = std::fs::read_to_string("/proc/mounts").context("read /proc/mounts")?;
     let mut roots = Vec::new();
@@ -101,16 +116,15 @@ fn linux_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
             None => continue,
         };
         let fstype = fields.next().unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
-        if SKIP_FS_TYPES.contains(&fstype) {
+        if skip_fs_types.contains(fstype) {
             continue;
         }
-        if !include_network && NETWORK_FS_TYPES.contains(&fstype) {
+        if !include_network && network_fs_types.contains(fstype) {
             continue;
         }
-        let decoded = decode_octal_escapes(target);
-        if SKIP_PATH_PREFIXES.iter().any(|p| decoded.starts_with(p)) {
+        let Some(decoded) = decoded_mount_target_if_included(target, &filters) else {
             continue;
-        }
+        };
         if seen.insert(decoded.clone()) {
             roots.push(PathBuf::from(decoded));
         }
@@ -129,6 +143,19 @@ fn linux_mounts(include_network: bool) -> Result<Vec<PathBuf>> {
         }
     }
     Ok(deduped)
+}
+
+#[cfg(target_os = "linux")]
+fn decoded_mount_target_if_included(target: &str, filters: &MountFilters) -> Option<String> {
+    let decoded = decode_octal_escapes(target);
+    if filters
+        .skip_path_prefixes
+        .iter()
+        .any(|prefix| decoded.starts_with(prefix))
+    {
+        return None;
+    }
+    Some(decoded)
 }
 
 /// Linux `/proc/mounts` emits spaces and special characters as `\040`,
@@ -163,6 +190,29 @@ fn decode_octal_escapes(s: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::{MountFilters, decoded_mount_target_if_included};
+
+    #[test]
+    fn skip_path_prefixes_match_decoded_mount_targets() {
+        let filters = MountFilters {
+            skip_path_prefixes: vec!["/mnt/my disk/".to_string()],
+            ..MountFilters::default()
+        };
+
+        assert_eq!(
+            decoded_mount_target_if_included("/mnt/my\\040disk/secrets", &filters),
+            None,
+            "Tier-B skip prefixes must match decoded /proc/mounts targets"
+        );
+        assert_eq!(
+            decoded_mount_target_if_included("/mnt/other\\040disk/secrets", &filters).as_deref(),
+            Some("/mnt/other disk/secrets")
+        );
+    }
 }
 
 #[cfg(target_os = "macos")]
