@@ -5,12 +5,11 @@
 //! only hashes so plaintext credentials are not retained in memory longer than needed.
 
 use std::collections::HashMap;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
-use keyhog_core::VerificationResult;
+use keyhog_core::{sha256_hash, CredentialHash, VerificationResult};
 
 /// Bounded in-memory cache for verification outcomes.
 ///
@@ -41,9 +40,8 @@ pub(crate) struct VerificationCache {
 
 #[derive(Hash, Eq, PartialEq, Clone)]
 struct CacheKey {
-    credential_hash: [u8; VerificationCache::HASH_BYTES],
-    detector_id_hash: [u8; VerificationCache::HASH_BYTES],
-    detector_id: Arc<str>,
+    credential_hash: CredentialHash,
+    detector_id_hash: CredentialHash,
 }
 
 struct CacheEntry {
@@ -56,8 +54,6 @@ impl VerificationCache {
     const DEFAULT_TTL_SECS: u64 = 300;
     const DEFAULT_MAX_ENTRIES: usize = 10_000;
     const EVICTION_INTERVAL: usize = 64;
-    pub(crate) const HASH_BYTES: usize = 32;
-    const MAX_DETECTOR_ID_BYTES: usize = 128;
     const MAX_METADATA_ENTRIES: usize = 16;
     const MAX_METADATA_KEY_BYTES: usize = 64;
     const MAX_METADATA_VALUE_BYTES: usize = 256;
@@ -339,21 +335,9 @@ impl VerificationCache {
 
 fn cache_key(credential: &str, detector_id: &str) -> CacheKey {
     CacheKey {
-        credential_hash: cache_key_hash(credential),
-        detector_id_hash: cache_key_hash(detector_id),
-        detector_id: Arc::<str>::from(truncate_to_char_boundary(
-            detector_id,
-            VerificationCache::MAX_DETECTOR_ID_BYTES,
-        )),
+        credential_hash: sha256_hash(credential),
+        detector_id_hash: sha256_hash(detector_id),
     }
-}
-
-fn cache_key_hash(value: &str) -> [u8; VerificationCache::HASH_BYTES] {
-    use sha2::{Digest, Sha256};
-
-    let mut hasher = Sha256::new();
-    hasher.update(value.as_bytes());
-    hasher.finalize().into()
 }
 
 fn sanitize_metadata(metadata: HashMap<String, String>) -> HashMap<String, String> {

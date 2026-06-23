@@ -139,7 +139,7 @@ fn cache_bound_enforcement_has_non_fifo_progress_fallback() {
 }
 
 #[test]
-fn long_detector_ids_do_not_collide_after_truncation_boundary() {
+fn long_detector_ids_do_not_collide_after_shared_prefix() {
     let cache = VerificationCache::new(Duration::from_secs(60));
     let shared_prefix = "x".repeat(128);
     let detector_a = format!("{shared_prefix}alpha");
