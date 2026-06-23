@@ -24,21 +24,23 @@ pub(crate) fn duplicate_zip_local_entry_data_error_for_test(
 }
 
 pub(super) fn is_openpack_archive_ext(ext: &str) -> bool {
-    matches!(
-        ext,
+    const OPENPACK_EXTS: &[&str] = &[
         // Plain ZIP and ZIP-wrapped app/package formats.
-        "zip" | "apk" | "ipa" | "crx" | "jar"
+        "zip", "apk", "ipa", "crx", "jar",
         // OOXML office documents (Word/Excel/PowerPoint) are ZIP containers
         // whose text lives in member XML (`word/document.xml`,
         // `xl/sharedStrings.xml`, `ppt/slides/*.xml`). A credential pasted into
         // a spreadsheet/doc is a real, common leak that was previously dropped
         // silently at the walker (it was in SKIP_EXTENSIONS); unpacking the ZIP
         // reaches the XML so it is scanned like any other archived file.
-        | "docx" | "xlsx" | "pptx"
+        "docx", "xlsx", "pptx",
         // OpenDocument (LibreOffice/OpenOffice) are likewise ZIP containers
         // (`content.xml`); without this they would be read as opaque binary.
-        | "odt" | "ods" | "odp"
-    )
+        "odt", "ods", "odp",
+    ];
+    OPENPACK_EXTS
+        .iter()
+        .any(|candidate| ext.eq_ignore_ascii_case(candidate))
 }
 
 pub(super) fn extract_openpack_archive(
@@ -63,11 +65,11 @@ pub(super) fn extract_openpack_archive(
     // aggregate bomb ceiling instead of letting the budget collapse to 0.
     let per_entry_cap: u64 = if max_size == 0 { u64::MAX } else { max_size };
     let total_budget: u64 = extraction_total_budget(max_size);
-    let ext = match path.extension().and_then(|s| s.to_str()) {
-        Some(ext) => ext.to_ascii_lowercase(),
-        None => String::new(),
-    };
-    if ext != "crx" {
+    let is_crx = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("crx"));
+    if !is_crx {
         zip_scan::extract_zip_archive(path, &archive_display, per_entry_cap, total_budget, emit);
         return;
     }

@@ -61,6 +61,23 @@ fn xz_plain_payload_is_decompressed_and_scanned() {
 }
 
 #[test]
+fn uppercase_xz_extension_is_decompressed_and_scanned() {
+    let chunks = scan_file(
+        "payload.XZ",
+        encode_xz(b"KEYHOG_UPPER_XZ_COMPRESSED_SECRET_1234567890"),
+    );
+    assert!(
+        chunks.iter().any(|chunk| {
+            chunk.metadata.source_type == "filesystem/compressed"
+                && chunk
+                    .data
+                    .contains("KEYHOG_UPPER_XZ_COMPRESSED_SECRET_1234567890")
+        }),
+        "uppercase .XZ payload must route to compressed extraction without lowercase allocation; got {chunks:?}"
+    );
+}
+
+#[test]
 fn bzip2_plain_payload_is_decompressed_and_scanned() {
     let chunks = scan_file(
         "payload.bz2",

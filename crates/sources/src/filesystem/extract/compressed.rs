@@ -27,16 +27,28 @@ struct DecompressedBytes {
 
 impl CompressedFormat {
     fn from_ext(ext: &str) -> Self {
-        match ext {
+        if ext.eq_ignore_ascii_case("gz") || ext.eq_ignore_ascii_case("tgz") {
             // `.tgz` is `gzip(tar)`; the outer stream is always gzip.
-            "gz" | "tgz" => CompressedFormat::Gzip,
-            "zst" => CompressedFormat::Zstd,
-            "lz4" => CompressedFormat::Lz4,
-            "bz2" => CompressedFormat::Bzip2,
-            "xz" => CompressedFormat::Xz,
-            _ => CompressedFormat::Snappy,
+            CompressedFormat::Gzip
+        } else if ext.eq_ignore_ascii_case("zst") {
+            CompressedFormat::Zstd
+        } else if ext.eq_ignore_ascii_case("lz4") {
+            CompressedFormat::Lz4
+        } else if ext.eq_ignore_ascii_case("bz2") {
+            CompressedFormat::Bzip2
+        } else if ext.eq_ignore_ascii_case("xz") {
+            CompressedFormat::Xz
+        } else {
+            CompressedFormat::Snappy
         }
     }
+}
+
+pub(super) fn is_compressed_ext(ext: &str) -> bool {
+    const COMPRESSED_EXTS: &[&str] = &["gz", "tgz", "zst", "lz4", "sz", "bz2", "xz"];
+    COMPRESSED_EXTS
+        .iter()
+        .any(|candidate| ext.eq_ignore_ascii_case(candidate))
 }
 
 fn decompress_to_bytes(
@@ -280,12 +292,8 @@ pub(super) fn extract_compressed_chunks(
         return;
     }
 
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("") // LAW10: missing/non-string field => empty/placeholder; recall-safe
-        .to_lowercase();
-    let format = CompressedFormat::from_ext(&ext);
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or(""); // LAW10: missing/non-string field => empty/placeholder; recall-safe
+    let format = CompressedFormat::from_ext(ext);
 
     let file_bytes = match read::read_file_for_compressed_input(path, max_size) {
         Some(b) => b,
@@ -328,7 +336,7 @@ pub(super) fn extract_compressed_chunks(
 
     // `.tgz` is unconditionally a tarball; for the other extensions sniff the
     // decompressed bytes (a `foo.tar.gz` arrives as ext `gz`).
-    if ext == "tgz" || looks_like_tar(&decompressed) {
+    if ext.eq_ignore_ascii_case("tgz") || looks_like_tar(&decompressed) {
         emit_tar_entries(&decompressed, &path_display, max_size, emit);
         return;
     }

@@ -2,7 +2,7 @@
 
 use keyhog_core::Source;
 use keyhog_sources::testing::{SourceTestApi, TestApi};
-use keyhog_sources::{FilesystemSource, StdinSource, create_source, reset_skipped_over_max_size};
+use keyhog_sources::{create_source, reset_skipped_over_max_size, FilesystemSource, StdinSource};
 
 // ── crates/sources/src/lib.rs ─────────────────────────────────────────
 #[test]
@@ -49,7 +49,10 @@ fn filesystem_read_error() {
 
 #[test]
 fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() {
+    let filesystem = include_str!("../../src/filesystem.rs");
     let extract = include_str!("../../src/filesystem/extract.rs");
+    let archive = include_str!("../../src/filesystem/extract/archive.rs");
+    let compressed = include_str!("../../src/filesystem/extract/compressed.rs");
     let filter = include_str!("../../src/filesystem/filter.rs");
     let read_mod = include_str!("../../src/filesystem/read/mod.rs");
     let raw = include_str!("../../src/filesystem/read/raw.rs");
@@ -67,6 +70,27 @@ fn filesystem_extract_hot_path_avoids_extension_lowercase_and_buffered_reread() 
             && extract.contains("ext.eq_ignore_ascii_case(\"rar\")")
             && !extract.contains(".to_lowercase();"),
         "filesystem extract hot path must not allocate a lowercase extension per file"
+    );
+    assert!(
+        filesystem.contains("EXPANDABLE_SYMLINK_EXTS")
+            && filesystem.contains("ext.eq_ignore_ascii_case(candidate)")
+            && !filesystem.contains(".to_ascii_lowercase();"),
+        "filesystem include-symlink archive extension checks must be allocation-free and ASCII-case-insensitive"
+    );
+    assert!(
+        archive.contains("const OPENPACK_EXTS")
+            && archive.contains("ext.eq_ignore_ascii_case(candidate)")
+            && archive.contains("ext.eq_ignore_ascii_case(\"crx\")")
+            && !archive.contains("to_ascii_lowercase()"),
+        "archive extension routing must stay allocation-free and ASCII-case-insensitive"
+    );
+    assert!(
+        compressed.contains("pub(super) fn is_compressed_ext(ext: &str)")
+            && compressed.contains("ext.eq_ignore_ascii_case(candidate)")
+            && compressed.contains("ext.eq_ignore_ascii_case(\"tgz\")")
+            && !compressed.contains(".to_lowercase();")
+            && !compressed.contains(".to_ascii_lowercase();"),
+        "compressed extension routing must stay allocation-free and ASCII-case-insensitive"
     );
     assert!(
         read_mod.contains("BufferedFileRead")

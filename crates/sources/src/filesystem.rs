@@ -335,26 +335,15 @@ impl Source for FilesystemSource {
                     allowed.push(p.canonicalize().unwrap_or_else(|_| p.clone())); // LAW10: canonicalize failure => original path (best-effort normalization); recall-safe
                     continue;
                 }
-                let ext = p
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("") // LAW10: missing/non-string field => empty/placeholder; recall-safe
-                    .to_ascii_lowercase();
-                let expandable = matches!(
-                    ext.as_str(),
-                    "har"
-                        | "zip"
-                        | "apk"
-                        | "ipa"
-                        | "crx"
-                        | "jar"
-                        | "tar"
-                        | "gz"
-                        | "tgz"
-                        | "zst"
-                        | "lz4"
-                        | "sz"
-                );
+                const EXPANDABLE_SYMLINK_EXTS: &[&str] = &[
+                    "har", "zip", "apk", "ipa", "crx", "jar", "tar", "gz", "tgz", "zst", "lz4",
+                    "sz",
+                ];
+                let expandable = p.extension().and_then(|e| e.to_str()).is_some_and(|ext| {
+                    EXPANDABLE_SYMLINK_EXTS
+                        .iter()
+                        .any(|candidate| ext.eq_ignore_ascii_case(candidate))
+                });
                 if expandable {
                     tracing::warn!(
                         path = %p.display(),

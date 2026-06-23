@@ -205,10 +205,10 @@ pub(super) fn process_entry(
     } else if ext.eq_ignore_ascii_case("rar") {
         rar::extract_rar_chunks(&path, max_size, emit);
         return;
-    } else if archive::is_openpack_archive_ext(&ext) {
+    } else if archive::is_openpack_archive_ext(ext) {
         archive::extract_openpack_archive(&path, max_size, emit);
         return;
-    } else if ext == "tar" {
+    } else if ext.eq_ignore_ascii_case("tar") {
         // Bare (uncompressed) `.tar`: unpack per-entry exactly as the zip
         // branch does, so a secret committed inside a tarball (docker layer
         // export, helm chart, source tarball — the dominant Linux/cloud
@@ -252,14 +252,7 @@ pub(super) fn process_entry(
                 return;
             }
         }
-    } else if ext == "gz"
-        || ext == "zst"
-        || ext == "lz4"
-        || ext == "sz"
-        || ext == "bz2"
-        || ext == "xz"
-        || ext == "tgz"
-    {
+    } else if compressed::is_compressed_ext(ext) {
         // `.gz` / `.tar.gz` (ext `gz`) / `.tgz` / `.zst` / `.lz4` / `.sz` /
         // `.bz2` / `.xz`: fully decompress, then untar per-entry if the
         // decompressed stream is a tar container, else scan the real
@@ -267,7 +260,7 @@ pub(super) fn process_entry(
         // so they reach this branch.
         compressed::extract_compressed_chunks(&path, max_size, emit);
         return;
-    } else if ext == "har" {
+    } else if ext.eq_ignore_ascii_case("har") {
         // Route the HAR read through the same no-follow-symlink guard
         // every other content path uses (`read_file_safe` -> `open_file_safe`
         // with `O_NOFOLLOW` on Unix / `symlink_metadata` refusal on Windows).
