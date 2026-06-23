@@ -246,6 +246,72 @@ fn rejects_broad_companion_character_class() {
 }
 
 #[test]
+fn rejects_escaped_closing_bracket_character_class_pattern() {
+    let detector = detector_with_pattern(r"[A-Z\]]+");
+
+    let issues = validate_detector(&detector);
+
+    assert!(
+        issues.iter().any(|issue| matches!(
+            issue,
+            QualityIssue::Error(message) if message.contains("pure character class")
+        )),
+        "escaped class terminators must not hide a pure character-class pattern: {issues:?}"
+    );
+}
+
+#[test]
+fn rejects_anchored_character_class_pattern() {
+    let detector = detector_with_pattern(r"^[A-Z0-9]{32}$");
+
+    let issues = validate_detector(&detector);
+
+    assert!(
+        issues.iter().any(|issue| matches!(
+            issue,
+            QualityIssue::Error(message) if message.contains("pure character class")
+        )),
+        "anchors do not add textual context to a pure character-class pattern: {issues:?}"
+    );
+}
+
+#[test]
+fn literal_suffix_keeps_character_class_pattern_contextual() {
+    let detector = detector_with_pattern(r"[A-Z\]]+TOKEN");
+
+    let issues = validate_detector(&detector);
+
+    assert!(
+        !issues.iter().any(|issue| matches!(
+            issue,
+            QualityIssue::Error(message) if message.contains("pure character class")
+        )),
+        "literal suffix gives the pattern textual context; got {issues:?}"
+    );
+}
+
+#[test]
+fn rejects_escaped_closing_bracket_character_class_companion() {
+    let mut detector = detector_with_pattern("token_[A-Z0-9]{8}");
+    detector.companions.push(CompanionSpec {
+        name: "secret".into(),
+        regex: r"[A-Z\]]+".into(),
+        within_lines: 12,
+        required: false,
+    });
+
+    let issues = validate_detector(&detector);
+
+    assert!(
+        issues.iter().any(|issue| matches!(
+            issue,
+            QualityIssue::Error(message) if message.contains("pure character class")
+        )),
+        "escaped class terminators must not hide a broad companion class: {issues:?}"
+    );
+}
+
+#[test]
 fn warns_but_accepts_companion_character_class_with_tight_radius() {
     // within_lines ≤ TIGHT_COMPANION_RADIUS (5) - positional anchor
     // substitutes for textual context. Should warn, not reject.
@@ -330,8 +396,12 @@ fn literal_specificity_uses_ast_not_raw_regex_scans() {
 
     assert!(source.contains("fn ast_literal_runs("));
     assert!(source.contains("fn combine_literal_runs("));
+    assert!(source.contains("fn pure_character_class_ast("));
+    assert!(source.contains("fn is_regex_metadata_node("));
+    assert!(source.contains("is_pure_character_class(regex_cache,"));
     assert!(!source.contains("fn is_escaped_literal("));
     assert!(!source.contains("for ch in pattern.chars()"));
+    assert!(!source.contains(".find(']')"));
 }
 
 #[test]

@@ -125,7 +125,7 @@ fn validate_pattern_specificity<'a>(
     for (i, pat) in spec.patterns.iter().enumerate() {
         let has_prefix = has_literal_prefix(regex_cache, &pat.regex, 3);
         let has_group = pat.group.is_some();
-        let is_pure_charclass = is_pure_character_class(&pat.regex);
+        let is_pure_charclass = is_pure_character_class(regex_cache, &pat.regex);
 
         if is_pure_charclass && !has_group {
             issues.push(QualityIssue::Error(format!(
@@ -172,7 +172,7 @@ fn validate_companions<'a>(
         // the positional constraint is itself the contextual anchor. Reject
         // only when the companion permits a wide search radius - at that
         // point the lack of textual context really does over-fire.
-        if is_pure_character_class(&companion.regex) {
+        if is_pure_character_class(regex_cache, &companion.regex) {
             if companion.within_lines <= TIGHT_COMPANION_RADIUS {
                 issues.push(QualityIssue::Warning(format!(
                     "companion {} regex '{}' is a pure character class; \
@@ -714,30 +714,56 @@ fn repetition_is_exact(kind: &ast::RepetitionKind) -> bool {
     )
 }
 
-fn is_pure_character_class(pattern: &str) -> bool {
-    let trimmed = pattern.trim();
-    if !trimmed.starts_with('[') {
-        return false;
+fn is_pure_character_class<'a>(regex_cache: &mut RegexAstCache<'a>, pattern: &'a str) -> bool {
+    match regex_cache.parse(pattern) {
+        Ok(ast) => pure_character_class_ast(ast).is_some(),
+        Err(_) => false, // LAW10: invalid regex already emits a QualityIssue::Error; no recall impact
     }
+}
 
-    let Some(close) = trimmed.find(']') else {
-        return false;
-    };
-    let remainder = trimmed[close + 1..].trim();
-    if remainder.is_empty() {
-        return true;
+fn pure_character_class_ast(ast: &ast::Ast) -> Option<()> {
+    match ast {
+        ast::Ast::ClassBracketed(_) => Some(()),
+        ast::Ast::Group(group) => pure_character_class_ast(&group.ast),
+        ast::Ast::Repetition(repetition) => pure_character_class_ast(&repetition.ast),
+        ast::Ast::Alternation(alternation) => all_nonempty_pure(
+            alternation
+                .asts
+                .iter()
+                .map(|child| pure_character_class_ast(child)),
+        ),
+        ast::Ast::Concat(concat) => all_nonempty_pure(concat.asts.iter().filter_map(|child| {
+            if is_regex_metadata_node(child) {
+                None
+            } else {
+                Some(pure_character_class_ast(child))
+            }
+        })),
+        ast::Ast::Empty(_) | ast::Ast::Flags(_) | ast::Ast::Assertion(_) => None,
+        ast::Ast::Literal(_)
+        | ast::Ast::Dot(_)
+        | ast::Ast::ClassUnicode(_)
+        | ast::Ast::ClassPerl(_) => None,
     }
-    if remainder == "+" || remainder == "*" || remainder == "?" {
-        return true;
-    }
-    if remainder.starts_with('{') {
-        if let Some(qclose) = remainder.find('}') {
-            let after_quantifier = remainder[qclose + 1..].trim();
-            return after_quantifier.is_empty();
-        }
-    }
+}
 
-    false
+fn all_nonempty_pure<I>(items: I) -> Option<()>
+where
+    I: IntoIterator<Item = Option<()>>,
+{
+    let mut saw_item = false;
+    for item in items {
+        saw_item = true;
+        item?;
+    }
+    saw_item.then_some(())
+}
+
+fn is_regex_metadata_node(ast: &ast::Ast) -> bool {
+    matches!(
+        ast,
+        ast::Ast::Empty(_) | ast::Ast::Flags(_) | ast::Ast::Assertion(_)
+    )
 }
 
 mod regex_complexity;
