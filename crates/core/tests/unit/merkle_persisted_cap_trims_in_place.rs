@@ -58,6 +58,71 @@ fn save_cap_prefers_current_in_memory_entries() {
 }
 
 #[test]
+fn save_cap_evicts_oldest_disk_entry_before_newer_disk_entry() {
+    let dir = tempfile::tempdir().unwrap();
+    let cache_path = dir.path().join("merkle.idx");
+    let spec = [8u8; 32];
+
+    let disk = keyhog_core::testing::CoreTestApi::merkle_with_max_entries(
+        &keyhog_core::testing::TestApi,
+        0,
+    );
+    keyhog_core::testing::CoreTestApi::merkle_record_with_metadata(
+        &keyhog_core::testing::TestApi,
+        &disk,
+        PathBuf::from("/disk/old"),
+        1,
+        10,
+        sample_hash(b"old"),
+    );
+    keyhog_core::testing::CoreTestApi::merkle_record_with_metadata(
+        &keyhog_core::testing::TestApi,
+        &disk,
+        PathBuf::from("/disk/new"),
+        2,
+        20,
+        sample_hash(b"new"),
+    );
+    disk.save_with_spec(&cache_path, &spec).unwrap();
+
+    let current = keyhog_core::testing::CoreTestApi::merkle_with_max_entries(
+        &keyhog_core::testing::TestApi,
+        2,
+    );
+    keyhog_core::testing::CoreTestApi::merkle_record_with_metadata(
+        &keyhog_core::testing::TestApi,
+        &current,
+        PathBuf::from("/current"),
+        3,
+        30,
+        sample_hash(b"current"),
+    );
+    current.save_with_spec(&cache_path, &spec).unwrap();
+
+    let loaded = keyhog_core::testing::CoreTestApi::merkle_load_with_spec(
+        &keyhog_core::testing::TestApi,
+        &cache_path,
+        &spec,
+    );
+    assert_eq!(
+        keyhog_core::testing::CoreTestApi::merkle_len(&keyhog_core::testing::TestApi, &loaded),
+        2
+    );
+    assert!(
+        loaded.metadata_unchanged(Path::new("/current"), 3, 30),
+        "current in-memory entry must remain protected during first cap pass"
+    );
+    assert!(
+        loaded.metadata_unchanged(Path::new("/disk/new"), 2, 20),
+        "newer disk entry should survive over the older disk entry"
+    );
+    assert!(
+        !loaded.metadata_unchanged(Path::new("/disk/old"), 1, 10),
+        "oldest unprotected disk entry should be evicted first"
+    );
+}
+
+#[test]
 fn persisted_cap_enforcement_does_not_replace_the_merged_map() {
     let source =
         std::fs::read_to_string("src/merkle_index/storage.rs").expect("read merkle storage source");
@@ -70,6 +135,11 @@ fn persisted_cap_enforcement_does_not_replace_the_merged_map() {
         .expect("cap function boundary");
 
     assert!(cap_fn.contains("merged.remove(&key)"));
+    assert!(cap_fn.contains("oldest_eviction_keys(merged, Some(in_memory_paths), over_cap)"));
+    assert!(cap_fn.contains("oldest_eviction_keys(merged, None, over_cap)"));
+    assert!(source.contains("last_seen_order"));
+    assert!(source.contains(".then_with(|| left_key.path.cmp(&right_key.path))"));
+    assert!(source.contains(".then_with(|| left_key.chunk_offset.cmp(&right_key.chunk_offset))"));
     assert!(!cap_fn.contains("HashMap::<PathBuf, CacheEntry>::with_capacity"));
     assert!(!cap_fn.contains("*merged = kept"));
 }

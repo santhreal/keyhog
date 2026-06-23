@@ -37,7 +37,9 @@
 //! - **v4 (current)** - v3 plus an explicit chunk offset in each persisted
 //!   row. Chunked files no longer overwrite every earlier chunk under the
 //!   same path, so incremental scans can skip unchanged large files by chunk
-//!   instead of re-hashing them on every run.
+//!   instead of re-hashing them on every run. Newer v4 rows also carry a
+//!   default-compatible `last_seen_order` so over-cap saves evict oldest cache
+//!   rows deterministically instead of depending on hash-map iteration order.
 //!
 //! ## Serialization
 //!
@@ -54,6 +56,7 @@
 
 use std::collections::{hash_map::Entry, HashMap};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::SystemTime;
 
 use parking_lot::RwLock;
@@ -78,8 +81,8 @@ const SHARD_MIX: usize = 0x9e37_79b1;
 
 /// Default upper bound on the number of in-memory cache entries.
 ///
-/// Resident cost per entry is roughly `48 bytes` for the [`CacheEntry`]
-/// (`mtime_ns: u64` + `size: u64` + `hash: [u8; 32]`, with padding) plus
+/// Resident cost per entry is roughly `56 bytes` for the [`CacheEntry`]
+/// (`mtime_ns: u64` + `size: u64` + `last_seen_order: u64` + `hash: [u8; 32]`) plus
 /// the heap-allocated [`PathBuf`] key (one allocation, length of the
 /// canonical path). On a typical repo a path averages ~80-120 bytes, so
 /// budget ~150 bytes/entry end-to-end. At the default cap of 8M entries
@@ -227,6 +230,7 @@ impl CacheKey {
 struct CacheEntry {
     mtime_ns: u64,
     size: u64,
+    last_seen_order: u64,
     hash: [u8; 32],
 }
 
@@ -268,6 +272,10 @@ pub struct MerkleIndex {
     /// file written by the most recent successful save. Save uses this to skip
     /// the expensive read/parse merge when disk has not changed under us.
     cache_file_fingerprint: RwLock<Option<CacheFileFingerprint>>,
+    /// Monotonic access order used for deterministic persisted-cache eviction.
+    /// New or updated entries receive a larger value than entries loaded from
+    /// disk, so over-cap saves evict stale rows before fresh scan work.
+    access_order: AtomicU64,
 }
 
 impl MerkleIndex {
@@ -291,6 +299,7 @@ impl MerkleIndex {
             cap_warned: std::sync::atomic::AtomicBool::new(false),
             approx_count: std::sync::atomic::AtomicUsize::new(0),
             cache_file_fingerprint: RwLock::new(None),
+            access_order: AtomicU64::new(0),
         }
     }
 
@@ -336,6 +345,7 @@ impl MerkleIndex {
             CacheEntry {
                 mtime_ns,
                 size,
+                last_seen_order: self.next_access_order(),
                 hash: content_hash,
             },
         );
@@ -408,9 +418,28 @@ impl MerkleIndex {
             CacheEntry {
                 mtime_ns,
                 size,
+                last_seen_order: self.next_access_order(),
                 hash: content_hash,
             },
         );
+    }
+
+    fn next_access_order(&self) -> u64 {
+        let previous = self
+            .access_order
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                Some(current.saturating_add(1))
+            })
+            .unwrap_or(u64::MAX);
+        previous.saturating_add(1)
+    }
+
+    fn observe_loaded_access_order(&self, loaded_order: u64) {
+        let _ = self
+            .access_order
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+                (loaded_order > current).then_some(loaded_order)
+            });
     }
 
     fn record_key_with_metadata(&self, key: CacheKey, entry: CacheEntry) {

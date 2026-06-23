@@ -19,10 +19,12 @@ use super::{
 use crate::hex_encode;
 use crate::merkle_spec_hash::hex_to_array;
 
-/// On-disk per-entry record (v4). The `mtime_ns` + `size` pair is the
-/// fast-path key: a successful match short-circuits the BLAKE3 read entirely.
-/// `hash` remains as a paranoid-mode verifier and as the authoritative content
-/// fingerprint when mtime alone changed.
+/// On-disk per-entry record (v4). The `mtime_ns` + `size` pair is the fast-path
+/// key: a successful match short-circuits the BLAKE3 read entirely. `hash`
+/// remains as a paranoid-mode verifier and as the authoritative content
+/// fingerprint when mtime alone changed. `last_seen_order` makes over-cap
+/// eviction deterministic without changing the schema version for older v4
+/// caches that do not carry it yet.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct EntryV4 {
     /// Source path. Stored inside the entry because v4 allows multiple rows for
@@ -37,6 +39,10 @@ struct EntryV4 {
     mtime_ns: u64,
     /// File size in bytes from `fs::metadata`.
     size: u64,
+    /// Monotonic recency marker. Older v4 caches default to `0` and are evicted
+    /// before entries written by binaries that persist this field.
+    #[serde(default)]
+    last_seen_order: u64,
     /// BLAKE3 hex digest of the chunk content.
     hash: String,
 }
@@ -280,12 +286,14 @@ impl MerkleIndex {
             let entry = CacheEntry {
                 mtime_ns: entry.mtime_ns,
                 size: entry.size,
+                last_seen_order: entry.last_seen_order,
                 hash,
             };
             if entry.mtime_ns >= racy_floor {
                 racy_dropped += 1;
                 continue;
             }
+            idx.observe_loaded_access_order(entry.last_seen_order);
             if !idx.try_insert(key, entry) {
                 break;
             }
@@ -400,33 +408,45 @@ impl MerkleIndex {
             return;
         }
 
-        let mut to_remove = Vec::<CacheKey>::new();
-        for key in merged.keys() {
-            if merged.len().saturating_sub(to_remove.len()) <= self.max_entries {
-                break;
-            }
-            if !in_memory_paths.contains(key) {
-                to_remove.push(key.clone());
-            }
-        }
-        for key in to_remove {
+        let over_cap = merged.len().saturating_sub(self.max_entries);
+        for key in oldest_eviction_keys(merged, Some(in_memory_paths), over_cap) {
             merged.remove(&key);
         }
         if merged.len() <= self.max_entries {
             return;
         }
 
-        let mut to_remove = Vec::<CacheKey>::new();
-        for key in merged.keys() {
-            if merged.len().saturating_sub(to_remove.len()) <= self.max_entries {
-                break;
-            }
-            to_remove.push(key.clone());
-        }
-        for key in to_remove {
+        let over_cap = merged.len().saturating_sub(self.max_entries);
+        for key in oldest_eviction_keys(merged, None, over_cap) {
             merged.remove(&key);
         }
     }
+}
+
+fn oldest_eviction_keys(
+    merged: &HashMap<CacheKey, CacheEntry>,
+    protected: Option<&HashSet<CacheKey>>,
+    remove_count: usize,
+) -> Vec<CacheKey> {
+    let mut candidates = merged
+        .iter()
+        .filter(|(key, _)| match protected {
+            Some(protected) => !protected.contains(key),
+            None => true,
+        })
+        .collect::<Vec<_>>();
+    candidates.sort_by(|(left_key, left_entry), (right_key, right_entry)| {
+        left_entry
+            .last_seen_order
+            .cmp(&right_entry.last_seen_order)
+            .then_with(|| left_key.path.cmp(&right_key.path))
+            .then_with(|| left_key.chunk_offset.cmp(&right_key.chunk_offset))
+    });
+    candidates
+        .into_iter()
+        .take(remove_count)
+        .map(|(key, _)| key.clone())
+        .collect()
 }
 
 /// Default index location: `$XDG_CACHE_HOME/keyhog/merkle.idx` or
@@ -444,6 +464,7 @@ fn encode_entries(entries: &HashMap<CacheKey, CacheEntry>) -> Vec<EntryV4> {
             chunk_offset: key.chunk_offset,
             mtime_ns: entry.mtime_ns,
             size: entry.size,
+            last_seen_order: entry.last_seen_order,
             hash: hex_encode(&entry.hash),
         })
         .collect()
