@@ -162,8 +162,10 @@ fn engine_process_early_suppression_reasons_live_in_adjudicator() {
         );
     }
     assert!(
-        process.contains("ProcessCandidateSignals::from_checksum_invalid("),
-        "engine/process.rs checksum drops must use the adjudicator checksum signal"
+        process.contains("ProcessCandidateSignals::from_checksum_policy(")
+            && !process.contains("ProcessCandidateSignals::from_checksum_invalid(")
+            && !process.contains("crate::confidence::policy::checksum_policy_for("),
+        "engine/process.rs checksum drops must ask adjudicate to derive the checksum signal"
     );
     assert!(
         !process.contains("from_scoring_rejected")

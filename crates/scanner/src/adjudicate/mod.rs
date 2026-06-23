@@ -113,6 +113,12 @@ impl ProcessCandidateSignals {
             Self::pass()
         }
     }
+
+    pub(crate) fn from_checksum_policy(credential: &str) -> Self {
+        Self::from_checksum_invalid(
+            crate::confidence::policy::checksum_policy_for(credential).is_invalid(),
+        )
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
