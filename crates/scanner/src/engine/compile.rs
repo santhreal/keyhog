@@ -375,6 +375,8 @@ impl CompiledScanner {
         #[cfg(feature = "simdsieve")]
         let hot_pattern_validators =
             crate::simdsieve_prefilter::build_hot_pattern_validators(&detectors)?;
+        #[cfg(feature = "simdsieve")]
+        let hot_ac_map_index_by_index = build_hot_ac_map_index_by_index(&detectors, &state.ac_map);
 
         // Pre-intern the hot-pattern metadata constants ONCE, index-parallel
         // with HOT_PATTERNS, so the simdsieve fast path clones by slot index
@@ -456,6 +458,8 @@ impl CompiledScanner {
             #[cfg(feature = "simdsieve")]
             hot_pattern_validators,
             #[cfg(feature = "simdsieve")]
+            hot_ac_map_index_by_index,
+            #[cfg(feature = "simdsieve")]
             hot_metadata_by_index,
             #[cfg(feature = "entropy")]
             entropy_metadata_by_index,
@@ -481,6 +485,32 @@ impl CompiledScanner {
         self.tuning.apply_config(&config);
         self
     }
+}
+
+#[cfg(feature = "simdsieve")]
+fn build_hot_ac_map_index_by_index(
+    detectors: &[DetectorSpec],
+    ac_map: &[CompiledPattern],
+) -> Vec<Option<usize>> {
+    use crate::simdsieve_prefilter::{HOT_PATTERNS, HOT_PATTERN_DETECTOR_IDS};
+
+    HOT_PATTERN_DETECTOR_IDS
+        .iter()
+        .enumerate()
+        .map(|(slot, detector_id)| {
+            let hot_literal = std::str::from_utf8(HOT_PATTERNS[slot]).ok()?;
+            ac_map.iter().position(|entry| {
+                detectors
+                    .get(entry.detector_index)
+                    .is_some_and(|detector| detector.id == *detector_id)
+                    && crate::compiler::compiler_prefix::extract_literal_prefixes(
+                        entry.regex.as_str(),
+                    )
+                    .iter()
+                    .any(|prefix| prefix.as_str() == hot_literal)
+            })
+        })
+        .collect()
 }
 
 /// One-shot guard so the CUDA-acquisition-failed warning fires

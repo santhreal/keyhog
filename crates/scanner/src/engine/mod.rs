@@ -289,6 +289,12 @@ pub struct CompiledScanner {
     /// slot with no canonical detector (square).
     #[cfg(feature = "simdsieve")]
     pub(crate) hot_pattern_validators: Vec<Option<regex::Regex>>,
+    /// Canonical confirmed-pattern entry for each hot-pattern slot. `Some(i)`
+    /// means the SIMD hot path is only an accelerator for `ac_map[i]` and must
+    /// delegate surviving candidates through `process_match`; `None` is
+    /// reserved for genuinely synthetic slots with no loaded detector.
+    #[cfg(feature = "simdsieve")]
+    pub(crate) hot_ac_map_index_by_index: Vec<Option<usize>>,
     /// Pre-interned `(detector_id, detector_name, service)` triple per
     /// hot-pattern slot, index-parallel with `simdsieve_prefilter::HOT_PATTERNS`
     /// / `HOT_PATTERN_NAMES`. The simdsieve fast path emits directly and used to

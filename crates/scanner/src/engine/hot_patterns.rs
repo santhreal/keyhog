@@ -12,6 +12,8 @@ impl CompiledScanner {
         text: &str,
         preprocessed: &ScannerPreprocessedText<'_>,
         line_offsets: &[usize],
+        code_lines: &[&str],
+        documentation_lines: &[bool],
         chunk: &Chunk,
         scan_state: &mut ScanState,
     ) {
@@ -118,6 +120,38 @@ impl CompiledScanner {
                     // fall back to the length-floor-only behavior below.
                     _ => credential,
                 };
+
+                if let Some(Some(ac_map_index)) = self.hot_ac_map_index_by_index.get(pattern_idx) {
+                    let entry = &self.ac_map[*ac_map_index];
+                    let detector = &self.detectors[entry.detector_index];
+                    let (keyword_nearby, sensitive_file) =
+                        super::scan_filters::compute_pattern_signals(
+                            entry,
+                            detector,
+                            chunk,
+                            preprocessed,
+                        );
+                    self.process_match(
+                        entry,
+                        detector,
+                        text,
+                        preprocessed,
+                        line_offsets,
+                        code_lines,
+                        documentation_lines,
+                        chunk,
+                        scan_state,
+                        credential,
+                        offset,
+                        offset + credential.len(),
+                        chunk.metadata.base_line,
+                        chunk.metadata.base_offset,
+                        keyword_nearby,
+                        sensitive_file,
+                    );
+                    continue;
+                }
+
                 // Per-pattern minimum credential length, in bytes.
                 // Each pattern's floor matches the actual minimum length
                 // a valid token of that shape can have - fast-path

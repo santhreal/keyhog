@@ -21,6 +21,10 @@ impl CompiledScanner {
         // Borrow cached line offsets; downstream consumers take `&[usize]`.
         let line_offsets: &[usize] = prepared.line_offsets();
         let code_lines = prepared.code_lines(line_offsets);
+        // Needed by both the hot SIMD accelerator and phase-2 capture paths so
+        // every canonical detector candidate uses the same context-aware
+        // suppression/adjudication chain.
+        let documentation_lines = context::documentation_line_flags(&code_lines);
         let mut scan_state = ScanState::with_static_intern(self.static_intern.clone());
 
         // Unified profiler; phase-2 capture has its own internal sub-spans.
@@ -31,6 +35,8 @@ impl CompiledScanner {
                 &prepared.preprocessed.text,
                 &prepared.preprocessed,
                 line_offsets,
+                &code_lines,
+                &documentation_lines,
                 prepared.chunk,
                 &mut scan_state,
             );
@@ -40,8 +46,6 @@ impl CompiledScanner {
         }
 
         let expanded_patterns = self.expand_triggered_patterns(&triggered_patterns);
-        // Needed by phase-2 capture on both trigger and no-trigger paths.
-        let documentation_lines = context::documentation_line_flags(&code_lines);
         // GPU presence rows are produced from raw chunk bytes. A negative
         // always-anchor row is only a sound skip proof when phase-2 scans the
         // same bytes; unicode/multiline preprocessing can introduce ASCII

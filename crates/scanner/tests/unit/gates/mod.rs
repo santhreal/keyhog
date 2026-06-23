@@ -89,6 +89,7 @@ pub mod engine_boundary_no_unwrap_expect;
 pub mod engine_boundary_non_empty;
 pub mod engine_fallback_confidence_owner;
 pub mod engine_hot_pattern_confidence_owner;
+pub mod engine_hot_pattern_process_owner;
 pub mod engine_hot_pattern_suppression_owner;
 pub mod engine_hot_patterns_no_inline_tests;
 pub mod engine_hot_patterns_no_unwrap_expect;
