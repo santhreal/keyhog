@@ -202,33 +202,32 @@ pub(crate) fn is_strong_keyword_anchored_hex_key(keyword: &str, value: &str) -> 
     // Deliberately EXCLUDES the weaker / more ambiguous bridge anchors
     // (`token`, `pass*`, `auth*`, `credential`, `license_key`, `passphrase`),
     // whose hex captures are not as cleanly real on CredData.
-    let canon: String = keyword
-        .bytes()
-        .filter(|b| !matches!(b, b'_' | b'-' | b'.'))
-        .map(|b| b.to_ascii_lowercase() as char)
-        .collect();
-    if matches!(
-        canon.as_str(),
-        "secret"
-            | "apikey"
-            | "privatekey"
-            | "encryptionkey"
-            | "signingkey"
-            | "accesskey"
-            | "clientsecret"
-            | "appsecret"
-            | "masterkey"
-    ) {
+    if STRONG_HEX_KEY_COMPACT_EXACT
+        .iter()
+        .any(|exact| compact_keyword_eq(keyword, exact, is_assignment_compact_separator))
+    {
         return true;
     }
     // Vendor-prefixed `*_key` / `*_secret` anchors are strong except known weak
     // product/license names.
-    const SUFFIX_EXCLUDED_CANONS: &[&str] = &["licensekey"];
-    if SUFFIX_EXCLUDED_CANONS.contains(&canon.as_str()) {
+    if compact_keyword_eq(keyword, b"licensekey", is_assignment_compact_separator) {
         return false;
     }
-    canon.ends_with("key") || canon.ends_with("secret")
+    compact_keyword_ends_with(keyword, b"key", is_assignment_compact_separator)
+        || compact_keyword_ends_with(keyword, b"secret", is_assignment_compact_separator)
 }
+
+const STRONG_HEX_KEY_COMPACT_EXACT: &[&[u8]] = &[
+    b"secret",
+    b"apikey",
+    b"privatekey",
+    b"encryptionkey",
+    b"signingkey",
+    b"accesskey",
+    b"clientsecret",
+    b"appsecret",
+    b"masterkey",
+];
 
 /// True for a generic assignment where the key is a strong credential anchor
 /// and the value is an encoded printable text secret rather than a binary/base64
@@ -241,15 +240,59 @@ pub(crate) fn is_strong_keyword_anchored_encoded_text_secret(keyword: &str, valu
     let Some(normalized) = normalize_assignment_keyword(keyword) else {
         return false;
     };
-    let compact: String = normalized
-        .bytes()
-        .filter(|b| *b != b'_')
-        .map(|b| b.to_ascii_lowercase() as char)
-        .collect();
     let strong_anchor = normalized_assignment_keyword_has_secret_suffix(&normalized)
-        || matches!(
-            compact.as_str(),
-            "password" | "passwd" | "pwd" | "passphrase" | "token" | "secret" | "credential"
-        );
+        || ENCODED_TEXT_SECRET_ANCHORS
+            .iter()
+            .any(|anchor| compact_keyword_eq(&normalized, anchor, is_normalized_compact_separator));
     strong_anchor && crate::decode_structure::decodes_to_printable_text(value)
+}
+
+const ENCODED_TEXT_SECRET_ANCHORS: &[&[u8]] = &[
+    b"password",
+    b"passwd",
+    b"pwd",
+    b"passphrase",
+    b"token",
+    b"secret",
+    b"credential",
+];
+
+fn is_assignment_compact_separator(byte: u8) -> bool {
+    matches!(byte, b'_' | b'-' | b'.')
+}
+
+fn is_normalized_compact_separator(byte: u8) -> bool {
+    byte == b'_'
+}
+
+fn compact_keyword_eq(keyword: &str, needle: &[u8], is_separator: fn(u8) -> bool) -> bool {
+    let mut bytes = keyword
+        .bytes()
+        .filter(|byte| !is_separator(*byte))
+        .map(|byte| byte.to_ascii_lowercase());
+    for &expected in needle {
+        if bytes.next() != Some(expected) {
+            return false;
+        }
+    }
+    bytes.next().is_none()
+}
+
+fn compact_keyword_ends_with(keyword: &str, suffix: &[u8], is_separator: fn(u8) -> bool) -> bool {
+    let mut suffix_index = suffix.len();
+    for byte in keyword
+        .bytes()
+        .rev()
+        .filter(|byte| !is_separator(*byte))
+        .map(|byte| byte.to_ascii_lowercase())
+    {
+        if suffix_index == 0 {
+            return true;
+        }
+        suffix_index -= 1;
+        if byte != suffix[suffix_index] {
+            return false;
+        }
+    }
+    suffix_index == 0
 }

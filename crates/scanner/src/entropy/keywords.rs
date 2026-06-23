@@ -304,11 +304,6 @@ pub(crate) fn assignment_keyword_for_line(line: &str) -> Option<String> {
 }
 
 pub(crate) fn normalized_assignment_keyword_is_credential(normalized: &str) -> bool {
-    let compact: String = normalized
-        .bytes()
-        .filter(|b| *b != b'_')
-        .map(|b| b.to_ascii_lowercase() as char)
-        .collect();
     let separated_secret_suffix = normalized.contains('_')
         && matches!(
             normalized.rsplit('_').next(),
@@ -317,37 +312,96 @@ pub(crate) fn normalized_assignment_keyword_is_credential(normalized: &str) -> b
     if separated_secret_suffix {
         return true;
     }
-    matches!(
-        compact.as_str(),
-        "password"
-            | "passwd"
-            | "pwd"
-            | "passphrase"
-            | "token"
-            | "secret"
-            | "credential"
-            | "bearer"
-            | "authorization"
-            | "apikey"
-            | "accesskey"
-            | "authkey"
-            | "privatekey"
-            | "signingkey"
-            | "encryptionkey"
-            | "masterkey"
-            | "secretkey"
-            | "sessionkey"
-            | "clientsecret"
-            | "appsecret"
-            | "salt"
-            | "nonce"
-            | "seed"
-            | "hmacsalt"
-            | "hmacseed"
-            | "passwordsalt"
-    ) || compact.ends_with("salt")
-        || compact.ends_with("nonce")
-        || compact.ends_with("seed")
+
+    let mut compact = [0u8; 128];
+    let mut len = 0usize;
+    for byte in normalized.bytes().filter(|byte| *byte != b'_') {
+        if len == compact.len() {
+            return compact_normalized_assignment_keyword_is_credential_slow(normalized);
+        }
+        compact[len] = byte.to_ascii_lowercase();
+        len += 1;
+    }
+    compact_assignment_keyword_bytes_are_credential(&compact[..len])
+}
+
+const CREDENTIAL_COMPACT_KEYWORDS: &[&[u8]] = &[
+    b"password",
+    b"passwd",
+    b"pwd",
+    b"passphrase",
+    b"token",
+    b"secret",
+    b"credential",
+    b"bearer",
+    b"authorization",
+    b"apikey",
+    b"accesskey",
+    b"authkey",
+    b"privatekey",
+    b"signingkey",
+    b"encryptionkey",
+    b"masterkey",
+    b"secretkey",
+    b"sessionkey",
+    b"clientsecret",
+    b"appsecret",
+    b"salt",
+    b"nonce",
+    b"seed",
+    b"hmacsalt",
+    b"hmacseed",
+    b"passwordsalt",
+];
+
+fn compact_assignment_keyword_bytes_are_credential(compact: &[u8]) -> bool {
+    CREDENTIAL_COMPACT_KEYWORDS
+        .iter()
+        .any(|keyword| *keyword == compact)
+        || compact.ends_with(b"salt")
+        || compact.ends_with(b"nonce")
+        || compact.ends_with(b"seed")
+}
+
+fn compact_normalized_assignment_keyword_is_credential_slow(normalized: &str) -> bool {
+    CREDENTIAL_COMPACT_KEYWORDS
+        .iter()
+        .any(|keyword| compact_normalized_keyword_eq(normalized, keyword))
+        || compact_normalized_keyword_ends_with(normalized, b"salt")
+        || compact_normalized_keyword_ends_with(normalized, b"nonce")
+        || compact_normalized_keyword_ends_with(normalized, b"seed")
+}
+
+fn compact_normalized_keyword_eq(normalized: &str, needle: &[u8]) -> bool {
+    let mut bytes = normalized
+        .bytes()
+        .filter(|byte| *byte != b'_')
+        .map(|byte| byte.to_ascii_lowercase());
+    for &expected in needle {
+        if bytes.next() != Some(expected) {
+            return false;
+        }
+    }
+    bytes.next().is_none()
+}
+
+fn compact_normalized_keyword_ends_with(normalized: &str, suffix: &[u8]) -> bool {
+    let mut suffix_index = suffix.len();
+    for byte in normalized
+        .bytes()
+        .rev()
+        .filter(|byte| *byte != b'_')
+        .map(|byte| byte.to_ascii_lowercase())
+    {
+        if suffix_index == 0 {
+            return true;
+        }
+        suffix_index -= 1;
+        if byte != suffix[suffix_index] {
+            return false;
+        }
+    }
+    suffix_index == 0
 }
 
 fn clean_candidate_value(raw: &str) -> &str {
