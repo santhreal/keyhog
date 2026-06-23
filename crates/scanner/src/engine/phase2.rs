@@ -219,6 +219,35 @@ pub(crate) struct PrefilterBatch {
     pub(crate) homoglyph_skippable: bool,
 }
 
+/// Lazily built portable RegexSet prefilter state. Hyperscan and the
+/// no-candidate gate can answer many chunks without ever touching these
+/// heavyweight RegexSet batches, so scanner construction keeps this behind a
+/// per-scanner OnceLock.
+pub(crate) struct PortablePrefilter {
+    /// RegexSet batches; running each and unioning the reported patterns is
+    /// equivalent to running every entry's regex individually, but in a handful
+    /// of linear passes instead of thousands.
+    pub(crate) batches: Vec<PrefilterBatch>,
+    /// Patterns whose batch failed to compile (e.g. exceeded the size limit):
+    /// run unconditionally so a compile failure costs performance, never recall.
+    pub(crate) ungated_indices: Vec<usize>,
+    /// Combined Aho-Corasick over the required-prefix literals of every
+    /// CASE-INSENSITIVE gateable batch's patterns (built `ascii_case_insensitive`
+    /// to mirror the detector regexes' case folding). A no-hit proves NO gateable
+    /// ci pattern can match, so all `gateable` ci batches are skipped. `None`
+    /// when no ci pattern is gate-eligible. SOUND on every chunk (ci batches run
+    /// the same `set` on all chunks).
+    pub(crate) ci_gate: Option<AhoCorasick>,
+    /// Combined Aho-Corasick over the required-prefix literals of every PLAIN
+    /// (homoglyph-variant) gateable batch's ASCII-FOLDED form (case-sensitive,
+    /// matching the `ascii_set` matcher). A no-hit on a pure-ASCII chunk proves
+    /// no gateable plain pattern's folded form can match, so all `gateable` plain
+    /// batches are skipped. Applied ONLY on the ASCII path (`use_ascii`); on a
+    /// non-ASCII chunk the unicode `set` runs unconditionally (the folded literals
+    /// don't describe its required prefixes). `None` when none are gate-eligible.
+    pub(crate) plain_gate: Option<AhoCorasick>,
+}
+
 /// SWE-101 combined no-candidate gate for the always-active phase-2 prefilter.
 ///
 /// The always-active patterns split into ANCHORABLE (every match begins with one
@@ -311,28 +340,14 @@ impl CombinedNoCandidateGate {
 }
 
 pub(crate) struct Phase2AlwaysActivePrefilter {
-    /// RegexSet batches; running each and unioning the reported patterns is
-    /// equivalent to running every entry's regex individually, but in a handful
-    /// of linear passes instead of thousands.
-    pub(crate) batches: Vec<PrefilterBatch>,
-    /// Patterns whose batch failed to compile (e.g. exceeded the size limit):
-    /// run unconditionally so a compile failure costs performance, never recall.
-    pub(crate) ungated_indices: Vec<usize>,
-    /// Combined Aho-Corasick over the required-prefix literals of every
-    /// CASE-INSENSITIVE gateable batch's patterns (built `ascii_case_insensitive`
-    /// to mirror the detector regexes' case folding). A no-hit proves NO gateable
-    /// ci pattern can match, so all `gateable` ci batches are skipped. `None`
-    /// when no ci pattern is gate-eligible. SOUND on every chunk (ci batches run
-    /// the same `set` on all chunks).
-    pub(crate) ci_gate: Option<AhoCorasick>,
-    /// Combined Aho-Corasick over the required-prefix literals of every PLAIN
-    /// (homoglyph-variant) gateable batch's ASCII-FOLDED form (case-sensitive,
-    /// matching the `ascii_set` matcher). A no-hit on a pure-ASCII chunk proves
-    /// no gateable plain pattern's folded form can match, so all `gateable` plain
-    /// batches are skipped. Applied ONLY on the ASCII path (`use_ascii`); on a
-    /// non-ASCII chunk the unicode `set` runs unconditionally (the folded literals
-    /// don't describe its required prefixes). `None` when none are gate-eligible.
-    pub(crate) plain_gate: Option<AhoCorasick>,
+    /// Valid always-active phase-2 indices. Invalid indices are counted and
+    /// warned during construction; portable RegexSet construction consumes this
+    /// clean list lazily on the first RegexSet fallback use.
+    pub(crate) valid_always_active_indices: Vec<usize>,
+    /// Heavy portable RegexSet batches/gates. Lazily initialized so the HS path
+    /// and no-candidate skip path do not pay RegexSet construction for scans
+    /// that never need it.
+    pub(crate) portable: OnceLock<PortablePrefilter>,
     /// SWE-101 combined no-candidate gate — the ONE fast combined prefilter that
     /// gates the expensive per-pattern marking. See [`CombinedNoCandidateGate`].
     /// `Some` whenever the gate can be built (an `ascii_case_insensitive`

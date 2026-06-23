@@ -15,9 +15,11 @@ fn phase2_prefilter_consumes_resolved_tuning_snapshot() {
     );
     assert!(
         compiled.contains("let tuning = self.tuning.resolve();")
-            && compiled.contains("prefilter.any_active_match(data, &tuning)")
             && compiled
-                .contains("prefilter.mark_matches(match_text, scratch, localize_plain, &tuning)"),
+                .contains("prefilter.any_active_match(&self.phase2_patterns, data, &tuning)")
+            && compiled.contains(
+                "prefilter.mark_matches(\n                        &self.phase2_patterns,"
+            ),
         "phase2 scan path should resolve tuning before prefilter admission/marking"
     );
     assert!(

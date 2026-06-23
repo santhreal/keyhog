@@ -344,7 +344,7 @@ impl CompiledScanner {
         match &self.phase2_always_active_prefilter {
             Some(prefilter) => {
                 let tuning = self.tuning.resolve();
-                prefilter.any_active_match(data, &tuning)
+                prefilter.any_active_match(&self.phase2_patterns, data, &tuning)
             }
             // No always-active prefilter compiled (degraded build): there is no
             // discriminating prefilter to run, so defer to the REAL marking path
@@ -417,9 +417,13 @@ impl CompiledScanner {
                 // on EVERY chunk. This span is the cost the old vague label hid.
                 let _g = super::profile::span(super::profile::P::Phase2Prefilter);
                 match &self.phase2_always_active_prefilter {
-                    Some(prefilter) => {
-                        prefilter.mark_matches(match_text, scratch, localize_plain, &tuning)
-                    }
+                    Some(prefilter) => prefilter.mark_matches(
+                        &self.phase2_patterns,
+                        match_text,
+                        scratch,
+                        localize_plain,
+                        &tuning,
+                    ),
                     None => {
                         for &index in &self.phase2_always_active_indices {
                             if anchor_mode && self.anchor_always_active_eligible(index) {

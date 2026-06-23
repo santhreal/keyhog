@@ -177,11 +177,11 @@ fn boolean_admission_honors_homoglyph_ascii_skip() {
     keyhog_scanner::testing::set_phase2_hs(&scanner, Some(false));
     keyhog_scanner::testing::set_homoglyph_ascii_skip(&scanner, Some(false));
     let fold_tuning = scanner.tuning().resolve();
-    let fold_path_admits = prefilter.any_active_match(text, &fold_tuning);
+    let fold_path_admits = prefilter.any_active_match(&scanner.phase2_patterns, text, &fold_tuning);
 
     keyhog_scanner::testing::set_homoglyph_ascii_skip(&scanner, Some(true));
     let skip_tuning = scanner.tuning().resolve();
-    let skip_path_admits = prefilter.any_active_match(text, &skip_tuning);
+    let skip_path_admits = prefilter.any_active_match(&scanner.phase2_patterns, text, &skip_tuning);
     keyhog_scanner::testing::set_phase2_hs(&scanner, None);
     keyhog_scanner::testing::set_homoglyph_ascii_skip(&scanner, None);
 

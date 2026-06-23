@@ -17,7 +17,7 @@ use super::support;
 use support::paths::{corpus_dir, corpus_files, detector_dir};
 
 use base64::Engine;
-use keyhog_core::{Chunk, ChunkMetadata, RawMatch};
+use keyhog_core::{Chunk, ChunkMetadata, DetectorSpec, PatternSpec, RawMatch, Severity};
 use keyhog_scanner::{CompiledScanner, ScanBackend};
 use std::sync::OnceLock;
 
@@ -189,6 +189,55 @@ fn diff_panic(label: &str, on: &[(String, String, String)], off: &[(String, Stri
         eprintln!("  EXTRA with gate: {x:?}");
     }
     panic!("phase-2 prefix gate changed findings on {label}");
+}
+
+fn unicode_casefold_detector() -> DetectorSpec {
+    DetectorSpec {
+        id: "unicode-casefold-prefix".into(),
+        name: "Unicode casefold prefix".into(),
+        service: "test".into(),
+        severity: Severity::High,
+        patterns: vec![PatternSpec {
+            regex: r"(?i)key_[a-z0-9]{4}".into(),
+            description: None,
+            group: None,
+            client_safe: false,
+        }],
+        keywords: Vec::new(),
+        min_confidence: Some(0.0),
+        ..Default::default()
+    }
+}
+
+#[test]
+fn prefix_gate_does_not_skip_unicode_casefold_ci_patterns() {
+    let scanner =
+        CompiledScanner::compile(vec![unicode_casefold_detector()]).expect("scanner compile");
+    let chunk = chunk_of(
+        "token = \"\u{212a}ey_ab12\"\n".as_bytes(),
+        "unicode-casefold.env",
+    );
+
+    keyhog_scanner::testing::set_phase2_hs(&scanner, Some(false));
+    keyhog_scanner::testing::set_phase2_prefix_gate(&scanner, Some(true));
+    scanner.clear_fragment_cache();
+    let gated = canonical(&[scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback)]);
+
+    keyhog_scanner::testing::set_phase2_prefix_gate(&scanner, Some(false));
+    scanner.clear_fragment_cache();
+    let ungated = canonical(&[scanner.scan_with_backend(&chunk, ScanBackend::CpuFallback)]);
+
+    keyhog_scanner::testing::set_phase2_prefix_gate(&scanner, None);
+    keyhog_scanner::testing::set_phase2_hs(&scanner, None);
+
+    assert!(
+        !ungated.is_empty(),
+        "control scan must prove the Unicode case-folding detector matches"
+    );
+    assert_eq!(
+        gated, ungated,
+        "ASCII-only ci prefix gate must not skip non-ASCII chunks where Unicode case folding can match"
+    );
 }
 
 #[test]

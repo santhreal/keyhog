@@ -198,6 +198,7 @@ pub mod multiline_structural_no_unwrap_expect;
 pub mod multiline_structural_non_empty;
 pub mod multiline_structural_parenthesized_scan_contract;
 pub mod no_retired_contract_tree;
+pub mod phase2_prefilter_lazy_portable_contract;
 pub mod pipeline_compute_line_offsets_single_pass;
 pub mod pipeline_no_inline_tests;
 pub mod pipeline_no_unwrap_expect;
