@@ -252,7 +252,8 @@ pub(in crate::filesystem::read) fn decode_utf16(bytes: &[u8]) -> Option<String> 
         return None;
     };
     let chunks = payload.chunks_exact(2);
-    if !chunks.remainder().is_empty() {
+    let has_orphan_trailing_byte = !chunks.remainder().is_empty();
+    if has_orphan_trailing_byte && payload.len() == 1 {
         return None;
     }
     // Stream the u16 units straight into a String through `char::decode_utf16`,
@@ -289,6 +290,14 @@ pub(in crate::filesystem::read) fn decode_utf16(bytes: &[u8]) -> Option<String> 
                 out.push('\u{FFFD}');
             }
         }
+    }
+    if has_orphan_trailing_byte {
+        // Law 10: a single torn trailing byte in an otherwise valid UTF-16
+        // file is local corruption, not evidence that the whole source file is
+        // binary. Keep the decoded body and mark the orphan byte lossily.
+        invalid += 1;
+        total += 1;
+        out.push('\u{FFFD}');
     }
     // A genuine UTF-16 text file carries at most a handful of invalid units; a
     // buffer that is *mostly* undecodable is not text at all (a binary file whose

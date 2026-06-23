@@ -119,6 +119,42 @@ fn decode_utf16_odd_length_payload_is_none() {
 }
 
 #[test]
+fn decode_utf16_trailing_orphan_keeps_valid_prefix_lossily() {
+    let s = "api_key = \"sk-ant-svcacct-abcdefghijklmnopqrstuvwxyz1234567890AB\"";
+    let mut bytes = vec![0xFF, 0xFE];
+    for u in s.encode_utf16() {
+        bytes.extend_from_slice(&u.to_le_bytes());
+    }
+    bytes.push(0x68);
+
+    let decoded = decode_utf16(&bytes).expect("valid UTF-16 prefix survives trailing orphan byte");
+    assert!(
+        decoded.contains("sk-ant-svcacct-abcdefghijklmnopqrstuvwxyz1234567890AB"),
+        "valid decoded UTF-16 content must remain scannable after a torn trailing byte"
+    );
+    assert!(
+        decoded.ends_with('\u{FFFD}'),
+        "the orphan trailing byte is represented as one lossy replacement"
+    );
+}
+
+#[test]
+fn decode_text_file_utf16_trailing_orphan_is_not_binary_skip() {
+    let s = "OPENAI_API_KEY=sk-ant-svcacct-abcdefghijklmnopqrstuvwxyz1234567890AB";
+    let mut bytes = vec![0xFF, 0xFE];
+    for u in s.encode_utf16() {
+        bytes.extend_from_slice(&u.to_le_bytes());
+    }
+    bytes.push(0x00);
+
+    let decoded = decode_text_file(&bytes).expect("UTF-16 text with a torn tail decodes lossily");
+    assert!(
+        decoded.contains("sk-ant-svcacct-abcdefghijklmnopqrstuvwxyz1234567890AB"),
+        "decode_text_file must not fall through to binary skip for a valid UTF-16 body"
+    );
+}
+
+#[test]
 fn decode_utf16_unpaired_surrogate_is_none() {
     // Lone high surrogate followed by ASCII - invalid UTF-16.
     let bytes = [0xFF, 0xFE, 0x00, 0xD8, b'a', 0x00];
