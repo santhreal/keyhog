@@ -65,6 +65,7 @@ mod extract;
 mod gpu_cache;
 #[cfg(all(test, feature = "gpu"))]
 pub(crate) use gpu_cache::gpu_matcher_cache_dir_from_base;
+mod gpu_artifacts;
 mod gpu_forced;
 mod gpu_lazy;
 mod gpu_literal_scratch;
@@ -129,6 +130,10 @@ pub(crate) use backend_prepared::code_lines_from_offsets;
 pub(crate) use backend_prepared::PreparedChunk;
 #[cfg(test)]
 pub(crate) use boundary::scan_chunk_boundaries;
+pub use gpu_artifacts::{
+    compile_gpu_literal_artifacts, compile_gpu_literal_artifacts_default, GpuLiteralArtifact,
+    GpuLiteralArtifacts,
+};
 #[cfg(test)]
 pub(crate) use gpu_forced::gpu_forced_unavailable_message;
 #[cfg(test)]

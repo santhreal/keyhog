@@ -46,7 +46,6 @@ impl CompiledScanner {
 pub(crate) struct ConfirmedAnchorIndex {
     anchor_ac: AhoCorasick,
     anchor_first_bigram: FirstBigramSet,
-    #[cfg(feature = "gpu")]
     anchor_literals: Vec<String>,
     literal_patterns: Vec<Vec<u32>>,
     eligible: Vec<bool>,
@@ -111,7 +110,6 @@ impl ConfirmedAnchorIndex {
         Some(Self {
             anchor_ac,
             anchor_first_bigram,
-            #[cfg(feature = "gpu")]
             anchor_literals: literals,
             literal_patterns,
             eligible,
@@ -124,7 +122,6 @@ impl ConfirmedAnchorIndex {
         self.eligible_count
     }
 
-    #[cfg(feature = "gpu")]
     pub(crate) fn anchor_literals(&self) -> &[String] {
         &self.anchor_literals
     }

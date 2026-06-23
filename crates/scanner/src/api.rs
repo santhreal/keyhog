@@ -4,8 +4,9 @@
 //! compatibility exports in one place.
 
 pub use crate::engine::{
-    megascan_input_len, profile_dump, profile_reset, set_perf_trace_enabled, set_profile_enabled,
-    CompiledScanner, CompiledScannerRuntime, GpuInitPolicy,
+    compile_gpu_literal_artifacts, compile_gpu_literal_artifacts_default, megascan_input_len,
+    profile_dump, profile_reset, set_perf_trace_enabled, set_profile_enabled, CompiledScanner,
+    CompiledScannerRuntime, GpuInitPolicy, GpuLiteralArtifact, GpuLiteralArtifacts,
 };
 pub use crate::error::{Result, ScanError};
 pub use crate::hw_probe::{probe_hardware, select_backend, HardwareCaps, ScanBackend};

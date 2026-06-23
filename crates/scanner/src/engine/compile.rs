@@ -141,11 +141,11 @@ impl CompiledScanner {
         let (simd_prefilter, hs_index_map) =
             match super::build_simd_scanner(&state.ac_map, tuning_config) {
                 Some((scanner, index_map, unsupported_ac)) => {
-                    for ac_idx in unsupported_ac {
-                        let pattern = state.ac_map[ac_idx].clone();
-                        let keywords = detectors[pattern.detector_index].keywords.clone();
-                        state.phase2_patterns.push((pattern, keywords));
-                    }
+                    super::gpu_artifacts::append_hyperscan_unsupported_patterns(
+                        &mut state,
+                        &detectors,
+                        unsupported_ac,
+                    );
                     (Some(scanner), CsrU32::from(index_map))
                 }
                 None => (None, CsrU32::default()),
@@ -157,18 +157,8 @@ impl CompiledScanner {
         let phase2_keyword_to_patterns = CsrU32::from(phase2_keyword_to_patterns);
         // Precompute always-active phase-2 indices so the per-chunk hot path
         // seeds the sparse active set without scanning the full phase-2 table.
-        let phase2_always_active_indices: Vec<usize> = state
-            .phase2_patterns
-            .iter()
-            .enumerate()
-            // Mirrors `compiler::build_phase2_keyword_ac`'s
-            // 4-char floor - see the rationale comment there. The
-            // experimental 3-char floor measured a net F1 regression
-            // on SecretBench-medium, so both checks stay at 4.
-            .filter_map(|(index, (_, keywords))| {
-                (!keywords.iter().any(|k| k.len() >= 4)).then_some(index)
-            })
-            .collect();
+        let phase2_always_active_indices =
+            super::gpu_artifacts::phase2_always_active_indices(&state.phase2_patterns);
 
         // Shared-anchor localization index: one Aho-Corasick over every
         // phase-2 pattern's regex-REQUIRED prefix literals, so a single chunk

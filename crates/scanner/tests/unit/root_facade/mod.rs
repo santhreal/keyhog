@@ -18,6 +18,7 @@ mod fullscan_throughput;
 mod generic_named_pending_coverage;
 #[cfg(feature = "gpu")]
 mod gpu_cache_dir_contract;
+mod gpu_literal_artifacts;
 mod gpu_resident_throughput;
 mod homoglyph_ascii_skip_parity;
 mod homoglyph_gate_repro;

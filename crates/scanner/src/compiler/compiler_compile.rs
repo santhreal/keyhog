@@ -28,7 +28,6 @@ pub(crate) fn build_ac_pattern_set(literals: &[String]) -> Result<Option<AhoCora
 
 /// Keep GPU literal inputs in Keyhog order so Vyre match pattern IDs map back
 /// to `ac_map` without an adapter table.
-#[cfg(feature = "gpu")]
 pub(crate) fn build_gpu_literals(
     ac_literals: &[String],
     phase2_keywords: &[String],
@@ -43,7 +42,6 @@ pub(crate) fn build_gpu_literals(
     )
 }
 
-#[cfg(feature = "gpu")]
 pub(crate) fn build_gpu_position_literals(
     confirmed_anchor_literals: &[String],
     generic_keyword_literals: &[String],
@@ -56,7 +54,6 @@ pub(crate) fn build_gpu_position_literals(
     )
 }
 
-#[cfg(feature = "gpu")]
 fn build_gpu_literal_rows<'a>(
     literals: impl Iterator<Item = &'a String>,
     label: &'static str,
