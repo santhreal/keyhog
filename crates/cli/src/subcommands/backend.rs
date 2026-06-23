@@ -461,21 +461,25 @@ fn print_pass_probe(probe: &BackendSelfTestProbe, palette: &Palette) {
         "moe_kernel" => println!(
             "{pass}  ({}, scores={}, max_buffer={} MB)",
             probe.adapter_name.as_deref().unwrap_or("unknown adapter"), // LAW10: absent name/label => display default; reporting-only, recall-safe
-            probe.scores.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
-            probe.max_buffer_mb.unwrap_or(0) // LAW10: empty/absent => documented numeric default, recall-safe
+            format_probe_metric(probe.scores),
+            format_probe_metric(probe.max_buffer_mb)
         ),
         "vyre_literal_set" => println!(
             "{pass}  (direct={}, coalesced={})",
-            probe.direct_matches.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
-            probe.coalesced_matches.unwrap_or(0) // LAW10: empty/absent => documented numeric default, recall-safe
+            format_probe_metric(probe.direct_matches),
+            format_probe_metric(probe.coalesced_matches)
         ),
         "vyre_ac_kernel" => println!(
             "{pass}  (matches={}, backend={})",
-            probe.matches.unwrap_or(0), // LAW10: empty/absent => documented numeric default, recall-safe
+            format_probe_metric(probe.matches),
             probe.backend_id.unwrap_or("unknown") // LAW10: absent name/label => display default; reporting-only, recall-safe
         ),
         _ => println!("{pass}"),
     }
+}
+
+fn format_probe_metric<T: std::fmt::Display>(value: Option<T>) -> String {
+    value.map_or_else(|| "unknown".to_string(), |value| value.to_string())
 }
 
 fn render_self_test_json_for_contract(report: &BackendSelfTestReport) -> Result<String> {
@@ -556,6 +560,14 @@ pub(crate) mod testing {
 
     pub(crate) fn format_gpu_max_buffer(max_buffer_mb: u64) -> String {
         super::format_gpu_max_buffer(max_buffer_mb)
+    }
+
+    pub(crate) fn format_probe_count_metric(value: Option<usize>) -> String {
+        super::format_probe_metric(value)
+    }
+
+    pub(crate) fn format_probe_mb_metric(value: Option<u64>) -> String {
+        super::format_probe_metric(value)
     }
 }
 

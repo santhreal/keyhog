@@ -85,6 +85,8 @@ pub trait CliTestApi {
 
     fn format_gpu_summary(&self) -> String;
     fn format_gpu_max_buffer(&self, max_buffer_mb: u64) -> String;
+    fn format_backend_probe_count_metric(&self, value: Option<usize>) -> String;
+    fn format_backend_probe_mb_metric(&self, value: Option<u64>) -> String;
     fn find_config_file(&self, start: Option<&Path>) -> Option<PathBuf>;
     fn apply_config_file_quiet(&self, args: &mut ScanArgs);
     fn build_sources(
@@ -94,7 +96,7 @@ pub trait CliTestApi {
         merkle: Option<Arc<keyhog_core::MerkleIndex>>,
     ) -> Result<Vec<Box<dyn Source>>>;
     fn merge_scan_ignore_paths(&self, args: &ScanArgs, allowlist_paths: Vec<String>)
-    -> Vec<String>;
+        -> Vec<String>;
     fn validate_cli_path_arg(&self, path: &Path, name: &str) -> Result<()>;
     fn report_findings(&self, findings: &[VerifiedFinding], args: &ScanArgs) -> Result<()>;
     fn filter_inline_suppressions(&self, matches: Vec<RawMatch>) -> Vec<RawMatch>;
@@ -320,6 +322,12 @@ impl CliTestApi for TestApi {
     }
     fn format_gpu_max_buffer(&self, max_buffer_mb: u64) -> String {
         crate::subcommands::backend::testing::format_gpu_max_buffer(max_buffer_mb)
+    }
+    fn format_backend_probe_count_metric(&self, value: Option<usize>) -> String {
+        crate::subcommands::backend::testing::format_probe_count_metric(value)
+    }
+    fn format_backend_probe_mb_metric(&self, value: Option<u64>) -> String {
+        crate::subcommands::backend::testing::format_probe_mb_metric(value)
     }
     fn find_config_file(&self, start: Option<&Path>) -> Option<PathBuf> {
         crate::config::find_config_file(start)

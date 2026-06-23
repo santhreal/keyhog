@@ -38,6 +38,14 @@ fn backend_max_buffer_display_marks_keyhog_cap() {
 }
 
 #[test]
+fn backend_probe_metrics_do_not_render_missing_evidence_as_zero() {
+    assert_eq!(API.format_backend_probe_count_metric(Some(64)), "64");
+    assert_eq!(API.format_backend_probe_count_metric(None), "unknown");
+    assert_eq!(API.format_backend_probe_mb_metric(Some(262_144)), "262144");
+    assert_eq!(API.format_backend_probe_mb_metric(None), "unknown");
+}
+
+#[test]
 fn gpu_health_messages_do_not_advertise_implicit_cpu_fallback() {
     for (label, source) in [
         (
