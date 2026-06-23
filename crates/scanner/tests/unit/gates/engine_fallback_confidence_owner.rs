@@ -191,6 +191,11 @@ fn report_confidence_tail_routes_through_confidence_owner() {
         hot_patterns.contains("crate::confidence::policy::hot_pattern_confidence("),
         "hot patterns must route final report confidence through the confidence owner"
     );
+    assert!(
+        !hot_patterns
+            .contains("let Some(confidence) = crate::confidence::policy::hot_pattern_confidence("),
+        "hot patterns must not bind confidence-owner output with a leaf-owned confidence local"
+    );
 
     let mut files = Vec::new();
     collect_rs_files(&src.join("engine"), &mut files);

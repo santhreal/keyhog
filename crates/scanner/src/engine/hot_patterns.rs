@@ -151,7 +151,7 @@ impl CompiledScanner {
                 }
 
                 let metadata = &self.hot_metadata_by_index[pattern_idx];
-                let Some(confidence) = crate::confidence::policy::hot_pattern_confidence(
+                let Some(report_conf) = crate::confidence::policy::hot_pattern_confidence(
                     credential,
                     metadata.0.as_ref(),
                     chunk.metadata.path.as_deref(),
@@ -173,7 +173,7 @@ impl CompiledScanner {
                 let absolute_offset = source_offset + chunk.metadata.base_offset;
                 scan_state.push_match_lazy(
                     crate::types::RawMatchPriority {
-                        confidence: Some(confidence),
+                        confidence: Some(report_conf),
                         severity: Severity::Critical,
                         detector_id: metadata.0.as_ref(),
                         credential,
@@ -197,7 +197,7 @@ impl CompiledScanner {
                             absolute_offset,
                             Some(absolute_line),
                             None,
-                            confidence,
+                            report_conf,
                             scan_state,
                         )
                     },
