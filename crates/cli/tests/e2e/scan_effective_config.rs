@@ -385,6 +385,25 @@ fn config_effective_prints_documented_generic_keyword_low_entropy_toml_key() {
 }
 
 #[test]
+fn config_effective_prints_regex_dfa_limit_cli_and_toml() {
+    let (stdout, stderr, code) = effective_config(&["--regex-dfa-limit", "512KB"]);
+
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("regex_dfa_limit = 524288"),
+        "--regex-dfa-limit must be visible in resolved config; stdout={stdout}"
+    );
+
+    let (stdout, stderr, code) = effective_config_with_toml("regex_dfa_limit = \"256KB\"\n");
+
+    assert_eq!(code, Some(0), "stderr={stderr}");
+    assert!(
+        stdout.contains("regex_dfa_limit = 262144"),
+        "regex_dfa_limit TOML key must be visible in resolved config; stdout={stdout}"
+    );
+}
+
+#[test]
 fn config_effective_prints_hyperscan_cache_dir_and_cli_overrides_toml() {
     let (_config_root, config_cache) = home_temp_cache_dir("config-hs-cache");
     let (_cli_root, cli_cache) = home_temp_cache_dir("cli-hs-cache");

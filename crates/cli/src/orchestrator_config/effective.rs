@@ -70,6 +70,12 @@ pub(crate) fn render_effective_config(resolved: &ResolvedScanConfig) -> String {
         s.per_chunk_timeout_ms
             .map_or_else(|| "off".to_string(), |ms| ms.to_string())
     ));
+    out.push_str(&format!(
+        "regex_dfa_limit = {}\n",
+        resolved
+            .regex_dfa_limit
+            .map_or_else(|| "off".to_string(), |bytes| bytes.to_string())
+    ));
     let limits = resolved.source_limits;
     out.push_str(&format!("limit_stdin_bytes = {}\n", limits.stdin_bytes));
     out.push_str(&format!(
