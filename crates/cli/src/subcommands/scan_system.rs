@@ -16,7 +16,7 @@ mod mounts;
 use crate::args::ScanSystemArgs;
 use crate::exit_codes::EXIT_FINDINGS;
 use crate::format::format_bytes;
-use crate::orchestrator::{DefaultScanRuntime, compile_default_scan_runtime};
+use crate::orchestrator::{DefaultScanRuntime, StreamingSourceEvent, compile_default_scan_runtime};
 use crate::style;
 use anyhow::{Context, Result};
 use mounts::enumerate_mounts;
@@ -539,14 +539,16 @@ fn scan_mount(
     // would gitignore it; respecting gitignore here would let that hide.
     let source =
         FilesystemSource::new(root.to_path_buf()).with_respect_gitignore(args.respect_gitignore);
-    scan_source_chunks(
+    crate::orchestrator::scan_streaming_source(
         scan_runtime,
         &source,
         "filesystem",
         root,
-        bytes_scanned,
-        space_cap,
-        out,
+        || bytes_scanned.load(Ordering::Relaxed) >= space_cap,
+        |event| {
+            handle_streaming_source_event(event, bytes_scanned, out);
+            Ok(())
+        },
     )
 }
 
@@ -560,14 +562,16 @@ fn scan_git_history(
     #[cfg(feature = "git")]
     {
         let source = keyhog_sources::GitSource::new(repo.to_path_buf());
-        scan_source_chunks(
+        crate::orchestrator::scan_streaming_source(
             scan_runtime,
             &source,
             "git-history",
             repo,
-            bytes_scanned,
-            space_cap,
-            out,
+            || bytes_scanned.load(Ordering::Relaxed) >= space_cap,
+            |event| {
+                handle_streaming_source_event(event, bytes_scanned, out);
+                Ok(())
+            },
         )
     }
     #[cfg(not(feature = "git"))]
@@ -593,39 +597,16 @@ fn scan_git_history(
     }
 }
 
-fn scan_source_chunks(
-    scan_runtime: &DefaultScanRuntime,
-    source: &dyn keyhog_core::Source,
-    source_kind: &'static str,
-    root: &Path,
+fn handle_streaming_source_event(
+    event: StreamingSourceEvent,
     bytes_scanned: &AtomicU64,
-    space_cap: u64,
     out: &mut FindingSink,
-) -> Result<()> {
-    for chunk_result in source.chunks() {
-        if bytes_scanned.load(Ordering::Relaxed) >= space_cap {
-            return Ok(());
+) {
+    match event {
+        StreamingSourceEvent::UnreadableChunk => out.record_skipped_chunk(),
+        StreamingSourceEvent::Matches { chunk_len, matches } => {
+            bytes_scanned.fetch_add(chunk_len as u64, Ordering::Relaxed);
+            out.absorb(matches);
         }
-        let chunk = match chunk_result {
-            Ok(c) => c,
-            // Law 10: an unreadable source chunk is unscanned bytes. Count it
-            // (surfaced in the final summary) rather than silently dropping a
-            // slice of the filesystem or git history from the audit.
-            Err(error) => {
-                tracing::warn!(
-                    source_kind,
-                    root = %root.display(),
-                    %error,
-                    "system scan source chunk could not be read; counted as skipped"
-                );
-                out.record_skipped_chunk();
-                continue;
-            }
-        };
-        bytes_scanned.fetch_add(chunk.data.len() as u64, Ordering::Relaxed);
-        // Convert + drop raw matches per chunk so plaintext-bearing RawMatch
-        // entries are never accumulated (audit: memory).
-        out.absorb(scan_runtime.scan_chunk(&chunk)?);
     }
-    Ok(())
 }

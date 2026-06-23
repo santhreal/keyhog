@@ -5,6 +5,7 @@ mod dispatch;
 mod postprocess;
 mod reporting;
 mod run;
+mod streaming;
 
 use crate::args::ScanArgs;
 use crate::orchestrator_config::{
@@ -39,6 +40,7 @@ pub(crate) use postprocess::{
 pub(crate) use dispatch::backend_requires_coalesced_batch_pipeline_for_test;
 
 pub(crate) use dispatch::CachedBackendRouter;
+pub(crate) use streaming::{StreamingSourceEvent, scan_streaming_source};
 
 pub(crate) fn cached_autoroute_router_for_default_config(
     scanner: &CompiledScanner,

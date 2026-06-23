@@ -10,6 +10,11 @@ fn scan_system_uses_shared_scan_runtime_boundary() {
         "/src/orchestrator/mod.rs"
     ))
     .expect("orchestrator source readable");
+    let streaming = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/orchestrator/streaming.rs"
+    ))
+    .expect("orchestrator streaming source readable");
 
     for required in [
         "struct DefaultScanRuntime",
@@ -23,13 +28,25 @@ fn scan_system_uses_shared_scan_runtime_boundary() {
             "orchestrator must own default scan runtime detail `{required}`"
         );
     }
+    for required in [
+        "enum StreamingSourceEvent",
+        "fn scan_streaming_source(",
+        "for chunk_result in source.chunks()",
+        "StreamingSourceEvent::UnreadableChunk",
+        "StreamingSourceEvent::Matches { chunk_len, matches }",
+    ] {
+        assert!(
+            streaming.contains(required),
+            "orchestrator streaming module must own source-loop detail `{required}`"
+        );
+    }
 
     for required in [
-        "use crate::orchestrator::{DefaultScanRuntime, compile_default_scan_runtime};",
+        "StreamingSourceEvent",
         "let scan_runtime = compile_default_scan_runtime(",
         "scan_runtime.warm();",
-        "scan_runtime.scan_chunk(&chunk)?",
-        "fn scan_source_chunks(",
+        "crate::orchestrator::scan_streaming_source(",
+        "handle_streaming_source_event(event, bytes_scanned, out);",
         "\"filesystem\"",
         "\"git-history\"",
     ] {
@@ -43,6 +60,7 @@ fn scan_system_uses_shared_scan_runtime_boundary() {
         "cached_autoroute_router_for_default_config(",
         "router.choose(",
         "scan_with_backend(&chunk, backend)",
+        "fn scan_source_chunks(",
     ] {
         assert!(
             !scan_system.contains(forbidden),
